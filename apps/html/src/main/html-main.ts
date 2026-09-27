@@ -139,7 +139,7 @@ const tDlg = createI18n({
     errImageNoText: 'Image attachments have no text; the image is sent along with the user message',
     errNotImage: 'not a supported image type',
   },
-    vi: {
+  vi: {
     dlgSaveTitle: 'Lưu tài liệu HTML',
     filterHtml: 'Tài liệu HTML',
     dlgPickImage: 'Chọn một hình ảnh',
@@ -148,7 +148,7 @@ const tDlg = createI18n({
     closeUnsavedMsg: 'Tài liệu này có những thay đổi chưa được lưu.',
     closeUnsavedDetail: 'Bạn có muốn lưu các thay đổi trước khi đóng không?',
     btnSave: 'Lưu',
-    btnDontSave: "Không lưu",
+    btnDontSave: 'Không lưu',
     btnCancel: 'Hủy',
     dlgAddAttachment: 'Thêm tệp đính kèm',
     filterSupported: 'Các tệp được hỗ trợ',
@@ -160,7 +160,8 @@ const tDlg = createI18n({
     errUnreadable: 'không thể đọc được',
     errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
     errParseFailed: 'Không thể phân tích tệp',
-    errImageNoText: 'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
+    errImageNoText:
+      'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
     errNotImage: 'loại hình ảnh không được hỗ trợ',
   },
   ja: {

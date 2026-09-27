@@ -87,7 +87,7 @@ const tDlg = createI18n({
     btnDontSave: "Don't Save",
     btnCancel: 'Cancel',
   },
-    vi: {
+  vi: {
     dlgSaveTitle: 'Lưu tài liệu Markdown',
     filterMarkdown: 'Tài liệu Markdown',
     dlgPickImage: 'Chọn một hình ảnh',
@@ -97,7 +97,7 @@ const tDlg = createI18n({
     closeUnsavedMsg: 'Tài liệu này có những thay đổi chưa được lưu.',
     closeUnsavedDetail: 'Bạn có muốn lưu các thay đổi trước khi đóng không?',
     btnSave: 'Lưu',
-    btnDontSave: "Không lưu",
+    btnDontSave: 'Không lưu',
     btnCancel: 'Hủy',
   },
   ja: {

@@ -23,7 +23,7 @@ export const strings = {
   ms: { ...appStrings.ms, ...ribbonStrings.ms, ...paneStrings.ms, ...aiStrings.ms },
   he: { ...appStrings.he, ...ribbonStrings.he, ...paneStrings.he, ...aiStrings.he },
   hi: { ...appStrings.hi, ...ribbonStrings.hi, ...paneStrings.hi, ...aiStrings.hi },
-  
+
   vi: {
     ...appStrings.vi,
     ...ribbonStrings.vi,
@@ -37,6 +37,3 @@ export const strings = {
     ...aiStrings['zh-TW'],
   },
 }
-
-
-

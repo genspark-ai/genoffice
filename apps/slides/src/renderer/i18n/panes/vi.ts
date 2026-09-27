@@ -184,8 +184,7 @@ export const vi = {
   panePosFromTL: 'Góc trên cùng bên trái',
   panePosFromCenter: 'Tâm',
   paneFormatCrop: 'Cắt hình ảnh',
-  paneFormatCutoutTip:
-    'Xóa nền ảnh theo dung sai màu (thay thế bằng PNG trong suốt)',
+  paneFormatCutoutTip: 'Xóa nền ảnh theo dung sai màu (thay thế bằng PNG trong suốt)',
   paneFormatCutoutNA: 'Không hỗ trợ xóa nền cho hình ảnh này',
   paneFormatFill: 'Tô',
   paneFormatSolidFill: 'Tô màu đồng nhất',

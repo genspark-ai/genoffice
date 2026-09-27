@@ -15,8 +15,7 @@ export const vi = {
   aiSummarizePrompt: 'Tóm tắt nội dung chính và các ý quan trọng của tài liệu này',
   aiPolishBtn: 'AI Trau chuốt',
   aiPolishPrompt: 'Trau chuốt toàn bộ tài liệu để văn phong rõ ràng và trôi chảy hơn',
-  aiPolishSelectionPrompt:
-    'Trau chuốt nội dung đã chọn để văn phong rõ ràng và trôi chảy hơn',
+  aiPolishSelectionPrompt: 'Trau chuốt nội dung đã chọn để văn phong rõ ràng và trôi chảy hơn',
   aiScopeSelection: 'Đã chọn: {words} từ',
   aiScopeSelectionTip: 'Các yêu cầu viết lại mặc định áp dụng cho phần đã chọn; nhấp để xem trước',
   aiScopeClearTitle: 'Xóa phạm vi đã chọn',
@@ -38,7 +37,8 @@ export const vi = {
   aiChipChartTitle: 'Đổi tiêu đề biểu đồ',
   aiChipTableEdit: 'Điều chỉnh hàng/cột',
   aiQueueTitle: 'Các chỉnh sửa đang chờ',
-  aiQueueHint: 'Nhấp vào một dòng để định vị đoạn văn; khi gửi sẽ áp dụng tất cả chỉnh sửa trong một yêu cầu',
+  aiQueueHint:
+    'Nhấp vào một dòng để định vị đoạn văn; khi gửi sẽ áp dụng tất cả chỉnh sửa trong một yêu cầu',
   aiQueueSend: 'Gửi {count} chỉnh sửa',
   aiQueueDiscard: 'Hủy bỏ',
   aiQueueDiscardConfirm: 'Hủy bỏ tất cả {count} chỉnh sửa đang chờ?',
@@ -104,7 +104,8 @@ export const vi = {
   aiStopped: '(Đã dừng)',
   aiNoReply: 'AI không trả về nội dung nào.',
   aiTruncatedNote: '(Câu trả lời bị ngắt do giới hạn độ dài và có thể chưa hoàn chỉnh.)',
-  aiImagesSendFailed: 'Không thể đọc hình ảnh đính kèm; tin nhắn này đã được gửi mà không có hình ảnh',
+  aiImagesSendFailed:
+    'Không thể đọc hình ảnh đính kèm; tin nhắn này đã được gửi mà không có hình ảnh',
   aiImageReadFail: '{name}: không thể đọc',
   aiTooManyImages: 'Tối đa {max} hình ảnh mỗi tin nhắn; các ảnh thừa đã bị bỏ qua',
   aiUnknownError: 'Lỗi không xác định',
@@ -166,8 +167,7 @@ export const vi = {
   aiCmdNone: 'Không có khối phù hợp; tài liệu không bị thay đổi.',
   aiCmdNoneSkipped:
     'Không có khối nào có thể chỉnh sửa; tài liệu không bị thay đổi (đã bỏ qua {count} khối được bảo vệ — bảng/hình ảnh không thể thay đổi bằng lệnh kiểu dáng).',
-  aiCmdNoneUnchanged:
-    '{count} khối phù hợp được giữ nguyên; tài liệu không bị thay đổi.',
+  aiCmdNoneUnchanged: '{count} khối phù hợp được giữ nguyên; tài liệu không bị thay đổi.',
   aiCmdTextStyle: 'Đã cập nhật kiểu văn bản trên {count} khối',
   aiCmdMatchedStyle: 'Đã định dạng {count} kết quả khớp trên {blocks} khối',
   aiCmdParaStyle: 'Đã cập nhật định dạng đoạn văn trên {count} khối',

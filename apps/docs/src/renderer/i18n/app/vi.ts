@@ -44,8 +44,7 @@ export const vi = {
   appUntitledDocx: 'Tài liệu không tên.docx',
   appOpenedFile: 'Đã mở {name}',
   appOpenFailed: 'Mở thất bại: {error}',
-  appDocTooLargeBlocks:
-    '{name}: tài liệu quá lớn không thể mở ({blocks} đoạn văn, {chars} ký tự)',
+  appDocTooLargeBlocks: '{name}: tài liệu quá lớn không thể mở ({blocks} đoạn văn, {chars} ký tự)',
   appDocLargeReadOnly:
     'Tài liệu lớn ({blocks} đoạn văn): đã mở ở chế độ chỉ đọc — nhấn Esc để chỉnh sửa',
   appDocLargeSpellOff:
@@ -64,7 +63,8 @@ export const vi = {
   appBreakContinuous: 'Liên tục',
   appBreakEvenPage: 'Trang chẵn',
   appBreakOddPage: 'Trang lẻ',
-  appSectionSettingsApplied: 'Đã áp dụng thiết lập trang cho phần {n}; sẽ được ghi vào tài liệu khi lưu',
+  appSectionSettingsApplied:
+    'Đã áp dụng thiết lập trang cho phần {n}; sẽ được ghi vào tài liệu khi lưu',
   appNumberingRestarted: 'Đã đánh số lại từ đầu',
   appNumberingContinued: 'Đã tiếp tục đánh số',
   appFieldInserted: 'Đã chèn trường {instr}',
@@ -107,7 +107,8 @@ export const vi = {
   appExportImagesProgress: 'Đang xuất {count} hình ảnh…',
   appExportImagesDone: 'Đã xuất {count} hình ảnh tới {dir}',
   appExportImagesFailed: 'Xuất hình ảnh thất bại: {error}',
-  appMixedExportOpening: 'Nhiều khổ giấy: đang mở bản xem trước phân trang để xuất các trang đã gộp…',
+  appMixedExportOpening:
+    'Nhiều khổ giấy: đang mở bản xem trước phân trang để xuất các trang đã gộp…',
   appSelectTextToComment: 'Chọn đoạn văn bản cần bình luận trước',
   appCommentSelectionLost: 'Vùng chọn không còn hiệu lực; hãy chọn lại đoạn văn bản cần bình luận',
   appCommentAdded: 'Đã thêm bình luận; sẽ được ghi vào tài liệu khi lưu',
@@ -155,7 +156,8 @@ export const vi = {
   appProtectRemovePersonal: 'Xóa siêu dữ liệu tác giả và tổ chức khỏi tệp này khi lưu',
   appProtectUpdated: 'Đã cập nhật cài đặt bảo vệ; sẽ có hiệu lực khi lưu tài liệu',
   appModifyPwdTitle: 'Tài liệu chống ghi',
-  appModifyPwdBody: '"{name}" có mật khẩu sửa đổi. Hãy nhập mật khẩu để chỉnh sửa, hoặc mở ở chế độ chỉ đọc.',
+  appModifyPwdBody:
+    '"{name}" có mật khẩu sửa đổi. Hãy nhập mật khẩu để chỉnh sửa, hoặc mở ở chế độ chỉ đọc.',
   appOpenReadOnly: 'Mở chỉ đọc',
   appProtectPwdOptional: 'Mật khẩu bảo vệ',
   appWrongPassword: 'Mật khẩu không chính xác',

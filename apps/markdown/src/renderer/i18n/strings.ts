@@ -429,8 +429,7 @@ export const strings = {
     aiScopeSelectionTip:
       'Các yêu cầu viết lại mặc định sẽ áp dụng cho phần đã chọn; nhấp để xem trước',
     aiScopeClearTitle: 'Xóa phạm vi vùng chọn',
-    aiPolishSelectionPrompt:
-      'Trau chuốt nội dung đã chọn để câu văn rõ ràng và lưu loát hơn',
+    aiPolishSelectionPrompt: 'Trau chuốt nội dung đã chọn để câu văn rõ ràng và lưu loát hơn',
     aiAskBtn: 'Hỏi AI',
     aiAskTitle: 'Hỏi AI về phần đã chọn',
     aiAskEditTitle: 'Chỉnh sửa hướng dẫn trong hàng đợi',
@@ -447,7 +446,8 @@ export const strings = {
     aiChipRegenImage: 'Tạo lại bằng AI',
     aiChipImageCaption: 'Thêm chú thích',
     aiQueueTitle: 'Các chỉnh sửa trong hàng đợi',
-    aiQueueHint: 'Nhấp vào một dòng để định vị đoạn văn; gửi sẽ áp dụng tất cả chỉnh sửa trong một yêu cầu',
+    aiQueueHint:
+      'Nhấp vào một dòng để định vị đoạn văn; gửi sẽ áp dụng tất cả chỉnh sửa trong một yêu cầu',
     aiQueueOrphan: 'Văn bản mục tiêu đã bị xóa',
     aiQueueRowEdit: 'Chỉnh sửa',
     aiQueueDiscard: 'Hủy bỏ',
@@ -462,8 +462,7 @@ export const strings = {
     aiToolGenImage: 'Tạo hình ảnh',
     aiToolGenImageDone: 'Đã chèn hình ảnh do AI tạo',
     aiCancel: 'Hủy',
-    aiTidySelectionPrompt:
-      'Dọn dẹp định dạng của nội dung đã chọn mà không làm thay đổi ý nghĩa',
+    aiTidySelectionPrompt: 'Dọn dẹp định dạng của nội dung đã chọn mà không làm thay đổi ý nghĩa',
     aiChipExplainCode: 'Giải thích đoạn mã này',
     aiChipFixCode: 'Sửa lỗi trong đoạn mã này',
     aiChipCommentCode: 'Thêm chú thích vào đoạn mã này',
@@ -567,8 +566,7 @@ export const strings = {
     aiUnknownError: 'Yêu cầu AI thất bại, vui lòng thử lại',
     aiTimeoutError: 'Phản hồi từ AI đã hết thời gian chờ',
     aiOverloadedError: 'Dịch vụ AI hiện đang bận — vui lòng thử lại sau giây lát',
-    aiNetworkError:
-      'Sự cố mạng: không thể kết nối với dịch vụ AI. Kiểm tra kết nối và thử lại',
+    aiNetworkError: 'Sự cố mạng: không thể kết nối với dịch vụ AI. Kiểm tra kết nối và thử lại',
     aiCreditsExhausted: 'Đã hết tín dụng — nạp thêm tại genspark.ai',
     aiOpenAssistant: 'Mở trợ lý AI',
     aiSummarizeBtn: 'AI Tóm tắt',

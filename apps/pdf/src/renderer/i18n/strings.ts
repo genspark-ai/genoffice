@@ -874,7 +874,8 @@ export const strings = {
     textEditNoMatch: 'Không thể chỉnh sửa văn bản này: không tìm thấy vị trí trong tài liệu',
     textBlockOverflow:
       'Đoạn văn đã chỉnh sửa không còn vừa: các dòng thừa sẽ che mất nội dung bên dưới. Hãy rút ngắn văn bản hoặc nhấn Esc để hủy thay đổi',
-    textEditSkipped: 'Một số chỉnh sửa văn bản trên trang {pages} không thể áp dụng và đã bị bỏ qua',
+    textEditSkipped:
+      'Một số chỉnh sửa văn bản trên trang {pages} không thể áp dụng và đã bị bỏ qua',
     removeMarkup: 'Nhấp để chọn chú thích này',
     deleteAnnotation: 'Xóa chú thích',
     annotationDeleted: 'Đã xóa chú thích',
@@ -891,7 +892,8 @@ export const strings = {
     aiQuickKeyPoints: 'Ý chính',
     aiQuickKeyPointsPrompt: 'Vui lòng trích xuất các ý chính của tài liệu này dưới dạng danh sách.',
     aiScopeSelection: 'Đã chọn trên trang {page}: {words} từ',
-    aiScopeSelectionTip: 'Theo mặc định, các câu hỏi và viết lại sẽ nhắm vào phần đã chọn; nhấp để xem trước',
+    aiScopeSelectionTip:
+      'Theo mặc định, các câu hỏi và viết lại sẽ nhắm vào phần đã chọn; nhấp để xem trước',
     aiScopeClearTitle: 'Xóa phạm vi đã chọn',
     aiQuickSummarySelPrompt: 'Vui lòng tóm tắt văn bản đang được chọn.',
     aiQuickKeyPointsSelPrompt:
@@ -1050,7 +1052,8 @@ export const strings = {
     redactSaveAsHint:
       'Các thao tác che nội dung chưa được áp dụng. Nhấp vào Áp dụng che nội dung để áp dụng các đánh dấu này vào bản sao đang làm việc; Lưu thông thường sẽ không bao giờ áp dụng các đánh dấu này.',
     redactSaveFirst: 'Lưu các thay đổi đang chờ khác trước khi áp dụng che nội dung.',
-    redactStructureBlocked: 'Áp dụng hoặc xóa các đánh dấu che nội dung đang chờ trước khi thay đổi cấu trúc trang.',
+    redactStructureBlocked:
+      'Áp dụng hoặc xóa các đánh dấu che nội dung đang chờ trước khi thay đổi cấu trúc trang.',
     editText: 'Chỉnh sửa văn bản',
     editTextHint: 'Nhấp vào văn bản trên trang để thay đổi',
     textBlockMoveHint: 'Kéo viền để di chuyển khối văn bản này',
@@ -1082,7 +1085,8 @@ export const strings = {
     imageLoading: 'Đang tải…',
     imageLoadFail: 'Không thể tải hình ảnh',
     imageProcessFail: 'Xử lý hình ảnh thất bại',
-    imageEditSkipped: 'Một số thay đổi hình ảnh trên trang {pages} không thể áp dụng và đã bị bỏ qua',
+    imageEditSkipped:
+      'Một số thay đổi hình ảnh trên trang {pages} không thể áp dụng và đã bị bỏ qua',
     drawRect: 'Hình chữ nhật',
     drawEllipse: 'Hình elip',
     drawArrow: 'Mũi tên',

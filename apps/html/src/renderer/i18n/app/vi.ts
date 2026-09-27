@@ -33,7 +33,8 @@ export const vi = {
   redo: 'Làm lại',
   cursorPos: 'Dòng {line}, Cột {col}',
   charCount: '{n} ký tự',
-  previewNeedsSave: 'Hình ảnh và kiểu dáng có đường dẫn tương đối sẽ hiển thị trong bản xem trước sau khi tệp được lưu',
+  previewNeedsSave:
+    'Hình ảnh và kiểu dáng có đường dẫn tương đối sẽ hiển thị trong bản xem trước sau khi tệp được lưu',
   inspectHint: 'Nhấp vào một phần tử trong bản xem trước để chọn, nhấp đúp để chỉnh sửa văn bản',
   nodeDynamic:
     'Phần tử này được tạo bởi tập lệnh trang và không có mã nguồn; hãy chỉnh sửa qua mã nguồn hoặc AI',

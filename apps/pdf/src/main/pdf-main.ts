@@ -126,7 +126,7 @@ const tDlg = createI18n({
     btnDontSave: "Don't Save",
     btnCancel: 'Cancel',
   },
-    vi: {
+  vi: {
     dlgExportImages: 'Xuất hình ảnh vào thư mục',
     dlgExtract: 'Trích xuất các trang dưới dạng PDF',
     dlgInsert: 'Chọn một tệp PDF để nhập',
@@ -141,7 +141,7 @@ const tDlg = createI18n({
     closeUnsavedMsg: 'Tệp PDF này có những thay đổi chưa được lưu.',
     closeUnsavedDetail: 'Bạn có muốn lưu các thay đổi trước khi đóng không?',
     btnSave: 'Lưu',
-    btnDontSave: "Không lưu",
+    btnDontSave: 'Không lưu',
     btnCancel: 'Hủy',
   },
   ja: {

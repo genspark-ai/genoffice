@@ -164,7 +164,8 @@ export const vi = {
   ribbonSpaceAfter: 'Khoảng cách sau (pt)',
   ribbonGroupPanes: 'Ngăn',
   ribbonFormatPane: 'Ngăn định dạng',
-  ribbonFormatPaneTip: 'Hiện hoặc ẩn ngăn Định dạng (vị trí, kích thước và màu tô của phần tử đã chọn)',
+  ribbonFormatPaneTip:
+    'Hiện hoặc ẩn ngăn Định dạng (vị trí, kích thước và màu tô của phần tử đã chọn)',
   ribbonGroupArrange: 'Sắp xếp',
   ribbonAlignMenu: 'Căn chỉnh',
   ribbonAlignMenuTip: 'Căn chỉnh hoặc phân phối đều các phần tử đã chọn',
@@ -193,7 +194,8 @@ export const vi = {
   ribbonIcons: 'Biểu tượng',
   ribbonIconsTip: 'Chèn biểu tượng tích hợp (raster hóa dưới dạng hình ảnh)',
   ribbon3dModel: 'Mô hình 3D',
-  ribbon3dModelTip: 'Chèn mô hình 3D (nhúng tệp glb/gltf; canvas hiển thị khung giữ chỗ dạng poster)',
+  ribbon3dModelTip:
+    'Chèn mô hình 3D (nhúng tệp glb/gltf; canvas hiển thị khung giữ chỗ dạng poster)',
   ribbonGroupIllustrations: 'Hình minh họa',
   ribbonShapes: 'Hình dạng',
   ribbonShapesTip: 'Chèn hình dạng (hình cơ bản / mũi tên / ngôi sao)',
@@ -202,7 +204,8 @@ export const vi = {
   ribbonSmartArtTip:
     'Chèn SmartArt (nhóm hình dạng có thể chỉnh sửa: danh sách/quy trình/chu trình/phân cấp/kim tự tháp/ma trận/venn)',
   ribbonChart: 'Biểu đồ',
-  ribbonChartTip: 'Chèn biểu đồ (được ghi thành phần biểu đồ pptx, có thể chỉnh sửa kiểu trong PowerPoint)',
+  ribbonChartTip:
+    'Chèn biểu đồ (được ghi thành phần biểu đồ pptx, có thể chỉnh sửa kiểu trong PowerPoint)',
   ribbonGroupLinks: 'Liên kết',
   ribbonLink: 'Liên kết',
   ribbonLinkTip: 'Thêm siêu liên kết vào phần tử đã chọn (trang web hoặc trang chiếu)',
@@ -212,7 +215,8 @@ export const vi = {
   ribbonCurrentSlideSuffix: ' (hiện tại)',
   ribbonGroupComments: 'Nhận xét',
   ribbonComment: 'Nhận xét',
-  ribbonNewCommentTip: 'Nhận xét mới trên trang chiếu hiện tại (lưu vào pptx, hiển thị trong PowerPoint)',
+  ribbonNewCommentTip:
+    'Nhận xét mới trên trang chiếu hiện tại (lưu vào pptx, hiển thị trong PowerPoint)',
   ribbonInsertTextBoxTip: 'Chèn hộp văn bản',
   ribbonWordArt: 'Chữ nghệ thuật WordArt',
   ribbonWordArtTip: 'Chèn WordArt (văn bản cỡ lớn có màu tô/đường viền)',
@@ -247,7 +251,8 @@ export const vi = {
   ribbonAudioTip: 'Chèn âm thanh cục bộ (nhúng trong pptx, phát được trong PowerPoint)',
   ribbonScreenRec: 'Ghi màn hình',
   ribbonStopRec: 'Dừng ghi',
-  ribbonScreenRecTip: 'Ghi màn hình; được chèn vào trang chiếu hiện tại dưới dạng video khi dừng lại',
+  ribbonScreenRecTip:
+    'Ghi màn hình; được chèn vào trang chiếu hiện tại dưới dạng video khi dừng lại',
   ribbonStopRecTip: 'Dừng ghi và chèn vào trang chiếu hiện tại',
   ribbonGroupSelect: 'Chọn',
   ribbonSelectTip: 'Chọn: thoát vẽ và quay lại chỉnh sửa phần tử',
@@ -266,7 +271,8 @@ export const vi = {
   ribbonEraseAll: 'Xóa tất cả',
   ribbonEraseAllTip: 'Xóa tất cả nét mực trên trang chiếu hiện tại',
   ribbonGroupThemes: 'Chủ đề',
-  ribbonApplyThemeTip: 'Áp dụng chủ đề "{name}" (bộ màu + phông chữ, áp dụng cho tất cả trang chiếu)',
+  ribbonApplyThemeTip:
+    'Áp dụng chủ đề "{name}" (bộ màu + phông chữ, áp dụng cho tất cả trang chiếu)',
   ribbonThemeOffice: 'Office',
   ribbonThemeEmber: 'Tàn lửa',
   ribbonThemeIndigo: 'Chàm',
@@ -405,9 +411,11 @@ export const vi = {
   ribbonViewNormal: 'Bình thường',
   ribbonViewNormalTip: 'Chế độ xem bình thường: hình thu nhỏ + canvas chỉnh sửa',
   ribbonViewOutline: 'Chế độ xem dàn bài',
-  ribbonViewOutlineTip: 'Chế độ xem dàn bài: duyệt và chuyển nhanh giữa các trang chiếu dưới dạng dàn ý văn bản',
+  ribbonViewOutlineTip:
+    'Chế độ xem dàn bài: duyệt và chuyển nhanh giữa các trang chiếu dưới dạng dàn ý văn bản',
   ribbonViewSorter: 'Bộ sắp xếp trang chiếu',
-  ribbonViewSorterTip: 'Bộ sắp xếp trang chiếu: tổng quan dạng lưới về tất cả trang chiếu, nhấp đúp để chỉnh sửa',
+  ribbonViewSorterTip:
+    'Bộ sắp xếp trang chiếu: tổng quan dạng lưới về tất cả trang chiếu, nhấp đúp để chỉnh sửa',
   ribbonViewReading: 'Chế độ xem đọc',
   ribbonViewReadingTip: 'Chế độ xem đọc: duyệt toàn màn hình từng trang chiếu (nhấn Esc để thoát)',
   ribbonViewMaster: 'Trang chiếu cái',
@@ -489,7 +497,8 @@ export const vi = {
   ribbonChartStyleLegendRight: 'Chú giải bên phải',
   ribbonGroupData: 'Dữ liệu',
   ribbonSwitchRowCol: 'Chuyển hàng/cột',
-  ribbonSwitchRowColTip: 'Hoán đổi danh mục và chuỗi dữ liệu (giống như Chuyển hàng/cột trong PowerPoint)',
+  ribbonSwitchRowColTip:
+    'Hoán đổi danh mục và chuỗi dữ liệu (giống như Chuyển hàng/cột trong PowerPoint)',
   ribbonEditData: 'Chỉnh sửa dữ liệu',
   ribbonEditDataTip: 'Chỉnh sửa dữ liệu biểu đồ',
   ribbonGroupType: 'Loại biểu đồ',
@@ -534,7 +543,8 @@ export const vi = {
   ribbonDlgFooterPlaceholder: 'Văn bản chân trang',
   ribbonApplyToAllBtn: 'Áp dụng cho tất cả',
   ribbonDlgInsertEquation: 'Chèn phương trình',
-  ribbonDlgEquationLabel: 'Văn bản phương trình (ký hiệu toán học Unicode, được chèn dưới dạng hộp văn bản phông toán)',
+  ribbonDlgEquationLabel:
+    'Văn bản phương trình (ký hiệu toán học Unicode, được chèn dưới dạng hộp văn bản phông toán)',
   ribbonDlgEquationPlaceholder: 'Chọn mẫu ở trên hoặc nhập trực tiếp, ví dụ: E = mc²',
   ribbonInsert: 'Chèn',
   ribbonShapeGroupLines: 'Đường thẳng',

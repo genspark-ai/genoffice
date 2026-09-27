@@ -283,7 +283,7 @@ const tMain = createI18n({
     csvKeepFormatDetail:
       'CSV keeps plain values of a single sheet only — formulas, formatting, and any additional sheets are not saved to the .csv file.',
   },
-    vi: {
+  vi: {
     filterSpreadsheets: 'Bảng tính',
     filterXlsx: 'Sổ làm việc Excel',
     filterXlsm: 'Sổ làm việc Excel hỗ trợ Macro',
@@ -297,7 +297,8 @@ const tMain = createI18n({
     errUnreadable: 'không thể đọc được',
     errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
     errParseFailed: 'Không thể phân tích tệp',
-    errImageNoText: 'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
+    errImageNoText:
+      'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
     errNotImage: 'loại hình ảnh không được hỗ trợ',
     errGskNotLoggedIn:
       'Chưa đăng nhập vào Genspark: nhấp vào “Đăng nhập vào Genspark” bên dưới, đăng nhập, sau đó thử lại',
@@ -327,9 +328,10 @@ const tMain = createI18n({
     menuRedo: 'Làm lại',
     closeUnsavedMsg: '{count} thay đổi chưa lưu',
     closeUnsavedDetail: 'Các thay đổi của bạn sẽ bị mất nếu bạn đóng mà không lưu.',
-    btnDontSave: "Không lưu",
+    btnDontSave: 'Không lưu',
     btnCancel: 'Hủy',
-    csvSaveAsNotice: "Tệp CSV không thể giữ lại định dạng — lưu dưới dạng .xlsx sẽ giữ lại tất cả các thay đổi của bạn.",
+    csvSaveAsNotice:
+      'Tệp CSV không thể giữ lại định dạng — lưu dưới dạng .xlsx sẽ giữ lại tất cả các thay đổi của bạn.',
     menuExportCsv: 'Xuất CSV…',
     filterCsv: 'CSV (Phân tách bằng dấu phẩy)',
     csvFormulaLossMsg: 'Trang tính này chứa các công thức mà định dạng CSV không thể lưu giữ.',

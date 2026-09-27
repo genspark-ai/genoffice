@@ -36,7 +36,7 @@ const tUpd = createI18n({
     updInstall: 'Restart & Install',
     updLater: 'Remind me later',
   },
-    vi: {
+  vi: {
     updTitle: 'Cập nhật phần mềm',
     updHeadline: 'Đã có phiên bản mới',
     updDesc:

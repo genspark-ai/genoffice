@@ -372,7 +372,7 @@ const tMain = createI18n({
     menuShortcuts: 'Keyboard Shortcuts',
     menuDocsHelp: 'GenOffice Docs Help',
   },
-    vi: {
+  vi: {
     dlgOpenDoc: 'Mở tài liệu',
     filterWord: 'Tài liệu Word',
     dlgSaveAs: 'Lưu dưới dạng',
@@ -386,7 +386,7 @@ const tMain = createI18n({
       'Có những thay đổi chưa được lưu từ phiên làm việc trước của bạn. Khôi phục phiên bản đã lưu tự động?',
     autosaveRestore: 'Khôi phục',
     autosaveDiscard: 'Bỏ qua',
-    btnDontSave: "Không lưu",
+    btnDontSave: 'Không lưu',
     btnCancel: 'Hủy',
     extModifiedMsg: 'Tệp đã được sửa đổi bởi một chương trình khác.',
     extModifiedDetail: 'Vẫn lưu và ghi đè các thay đổi trên ổ đĩa?',
@@ -406,7 +406,8 @@ const tMain = createI18n({
     errUnreadable: 'không thể đọc được',
     errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
     errParseFailed: 'Không thể phân tích tệp',
-    errImageNoText: 'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
+    errImageNoText:
+      'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
     errNotImage: 'loại hình ảnh không được hỗ trợ',
     errGskNotLoggedIn:
       'Chưa đăng nhập vào Genspark: nhấp vào “Đăng nhập vào Genspark” bên dưới, đăng nhập, sau đó thử lại',

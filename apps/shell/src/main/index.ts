@@ -846,7 +846,7 @@ const tMain = createI18n({
     errSaveDirUnusable:
       'The selected folder is not writable and cannot be used as the default save location',
   },
-    vi: {
+  vi: {
     dlgAddFolderRoot: 'Thêm thư mục vào Trang chủ',
     errFolderRootUnusable: 'Không thể đọc thư mục đã chọn',
     menuFile: 'Tệp',
@@ -908,7 +908,7 @@ const tMain = createI18n({
     pdfXlsxFailedMsg: 'Xuất dưới dạng Excel thất bại',
     pdfXlsxBusyMsg: 'Một tác vụ xuất đang được tiến hành. Vui lòng đợi tác vụ hoàn tất.',
     pdfXlsxLocalScannedDetail:
-      "Các trang quét không thể chuyển đổi thành các ô; thay vào đó, trang tính của mỗi trang có một hàng thông báo.",
+      'Các trang quét không thể chuyển đổi thành các ô; thay vào đó, trang tính của mỗi trang có một hàng thông báo.',
     pdfXlsxLocalSkippedMsg: 'Một số trang không được chuyển đổi thành ô',
     pdfXlsxLocalSkippedDetail:
       'Các trang {pages} không thể chuyển đổi thành ô; thay vào đó bảng tính của chúng có một hàng thông báo.',
@@ -934,10 +934,10 @@ const tMain = createI18n({
     pdfPwdPlaceholder: 'Nhập mật khẩu để mở',
     pdfPwdShow: 'Hiện mật khẩu',
     pdfPwdHide: 'Ẩn mật khẩu',
-    pdfDocxLocalCorruptDetail: 'Tệp bị hỏng hoặc không phải là tệp PDF hợp lệ và không thể chuyển đổi.',
+    pdfDocxLocalCorruptDetail:
+      'Tệp bị hỏng hoặc không phải là tệp PDF hợp lệ và không thể chuyển đổi.',
     dlgPickSaveDir: 'Chọn vị trí lưu mặc định',
-    errSaveDirUnusable:
-      'Thư mục đã chọn không thể ghi và không thể dùng làm vị trí lưu mặc định',
+    errSaveDirUnusable: 'Thư mục đã chọn không thể ghi và không thể dùng làm vị trí lưu mặc định',
   },
   ja: {
     dlgAddFolderRoot: 'フォルダーをホームに追加',

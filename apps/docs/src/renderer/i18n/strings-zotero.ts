@@ -365,7 +365,8 @@ export const zoteroStrings = defineStrings({
     zoteroDocumentSettingsTip: 'Cài đặt tài liệu Zotero',
     zoteroDocumentPreferences: 'Tùy chọn tài liệu',
     zoteroRemoveCodes: 'Xóa mã trường',
-    zoteroConnectionError: 'Không thể kết nối với Zotero. Hãy khởi động Zotero và giữ ứng dụng luôn chạy.',
+    zoteroConnectionError:
+      'Không thể kết nối với Zotero. Hãy khởi động Zotero và giữ ứng dụng luôn chạy.',
     zoteroOperationError: 'Thao tác Zotero thất bại.',
     zoteroNoteFieldsUnsupported:
       'Tài liệu này có chứa trích dẫn Zotero trong chú thích cuối trang hoặc chú thích cuối tài liệu mà GenOffice hiện chưa thể cập nhật. Các lệnh Zotero đã bị tắt tại đây để giữ nguyên danh mục tài liệu tham khảo.',

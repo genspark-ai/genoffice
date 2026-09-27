@@ -129,7 +129,8 @@ export const vi = {
   aiChipReplaceImage: 'Thay thế hình ảnh',
   aiChipTableEdit: 'Điều chỉnh hàng/cột',
   aiQueueTitle: 'Các chỉnh sửa trong hàng đợi',
-  aiQueueHint: 'Nhấp vào một dòng để định vị đoạn văn tương ứng; khi gửi sẽ áp dụng tất cả chỉnh sửa trong một yêu cầu',
+  aiQueueHint:
+    'Nhấp vào một dòng để định vị đoạn văn tương ứng; khi gửi sẽ áp dụng tất cả chỉnh sửa trong một yêu cầu',
   aiQueueSend: 'Gửi {count} chỉnh sửa',
   aiQueueDiscard: 'Hủy bỏ',
   aiQueueDiscardConfirm: 'Hủy bỏ toàn bộ {count} chỉnh sửa trong hàng đợi?',
@@ -162,16 +163,19 @@ export const vi = {
   aiSumReadAttachmentName: 'Đọc tệp đính kèm {name}',
   aiIntentLabel: 'Chọn việc cần làm',
   aiIntentDesign: 'Thiết kế trang',
-  aiIntentDesignDesc: 'Trang đích, báo cáo, áp phích — AI sẽ đề xuất bản tóm tắt, sau đó bố trí toàn trang',
+  aiIntentDesignDesc:
+    'Trang đích, báo cáo, áp phích — AI sẽ đề xuất bản tóm tắt, sau đó bố trí toàn trang',
   aiIntentWrite: 'Viết nội dung',
-  aiIntentWriteDesc: 'Bài viết, thông báo, hướng dẫn — soạn trực tiếp thành một trang rõ ràng, dễ đọc',
+  aiIntentWriteDesc:
+    'Bài viết, thông báo, hướng dẫn — soạn trực tiếp thành một trang rõ ràng, dễ đọc',
   aiEmptyWriteTitle: 'Viết nội dung với AI',
   aiEmptyWriteBody:
     'Nêu rõ chủ đề, độc giả và độ dài; AI sẽ soạn thành một trang gọn gàng mà không cần bảng câu hỏi thiết kế',
   aiStarterArticle: 'Viết một bài viết',
   aiStarterArticlePrompt: 'Viết giúp tôi một bài viết. Chủ đề và độc giả: ',
   aiStarterAnnouncement: 'Soạn thảo thông báo sản phẩm',
-  aiStarterAnnouncementPrompt: 'Soạn thảo giúp tôi một thông báo sản phẩm. Sản phẩm và các điểm chính: ',
+  aiStarterAnnouncementPrompt:
+    'Soạn thảo giúp tôi một thông báo sản phẩm. Sản phẩm và các điểm chính: ',
   aiStarterGuide: 'Viết hướng dẫn từng bước',
   aiStarterGuidePrompt: 'Viết giúp tôi một hướng dẫn từng bước. Quy trình cần giải thích: ',
 } satisfies Record<keyof typeof zh, string>

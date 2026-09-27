@@ -524,8 +524,7 @@ export const vi = {
   ribbonTocTip: 'Thêm mục lục',
   ribbonTocUpdate: 'Cập nhật bảng',
   ribbonTocUpdateTip: 'Cập nhật mục lục để khớp với các tiêu đề hiện tại',
-  ribbonTocNoHeadings:
-    'Không có tiêu đề (Heading 1-6) nào trong tài liệu, không thể tạo mục lục.',
+  ribbonTocNoHeadings: 'Không có tiêu đề (Heading 1-6) nào trong tài liệu, không thể tạo mục lục.',
   ribbonTocNotFound:
     'Không tìm thấy trường mục lục để cập nhật; vui lòng chèn một mục lục bằng nút "Mục lục" trước.',
   ribbonTocFieldLabel: 'Trường TOC',
@@ -580,7 +579,8 @@ export const vi = {
     'Hiệu đính toàn bộ tài liệu: sửa lỗi chính tả, dấu câu và ngữ pháp trong khi vẫn giữ nguyên ý nghĩa ban đầu và cấu trúc đoạn văn.',
   ribbonGroupProofing: 'Soát lại',
   ribbonSpellcheckBtn: 'Chính tả',
-  ribbonSpellcheckTip: 'Kiểm tra chính tả khi nhập — gạch chân màu đỏ các từ có thể bị sai chính tả',
+  ribbonSpellcheckTip:
+    'Kiểm tra chính tả khi nhập — gạch chân màu đỏ các từ có thể bị sai chính tả',
   ribbonTranslate: 'Dịch',
   ribbonTranslateTip: 'AI dịch tài liệu',
   ribbonTranslatePrompt:

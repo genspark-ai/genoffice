@@ -5,7 +5,8 @@ export const vi = {
   appMergeWorkbooksTip: 'Thêm các trang tính từ tệp Excel khác vào sổ làm việc này',
   appMergeWorkbooksPicking: 'Chọn các tệp để hợp nhất…',
   appMergeWorkbooksReading: 'Đang nhập {sheet} từ {file}…',
-  appMergeWorkbooksDone: 'Đã hợp nhất {sheets} trang tính từ {files} tệp (công thức được nhập dưới dạng giá trị).',
+  appMergeWorkbooksDone:
+    'Đã hợp nhất {sheets} trang tính từ {files} tệp (công thức được nhập dưới dạng giá trị).',
   appMergeWorkbooksFailed: 'Hợp nhất sổ làm việc thất bại.',
   appMergeWorkbooksInsertFailed: 'Không thể tạo trang tính {sheet}.',
   appMergeWorkbooksLocked: 'Sổ làm việc vẫn đang được tải theo luồng; hiện chưa thể hợp nhất.',
@@ -128,7 +129,8 @@ export const vi = {
   appTruncationNote: '{shown} mục đầu trên tổng số {total}',
   appGoToButtonTitle: 'Đi tới (⌘G)',
   appPivotChartHintIn: 'Tạo PivotChart từ PivotTable hiện tại',
-  appPivotChartHintOut: 'Trước tiên hãy chọn một ô bên trong đầu ra của PivotTable, sau đó chọn loại biểu đồ',
+  appPivotChartHintOut:
+    'Trước tiên hãy chọn một ô bên trong đầu ra của PivotTable, sau đó chọn loại biểu đồ',
   appChartColumn: 'Cột',
   appChartBar: 'Thanh',
   appChartLine: 'Đường',
@@ -168,11 +170,11 @@ export const vi = {
     'Bố cục PivotTable này (dạng thu gọn/nhiều hàng tiêu đề) chưa hỗ trợ tự động mở rộng — hãy làm mới trong Excel.',
   appPivotGrowConflict:
     'Vùng PivotTable sau khi mở rộng xung đột với nội dung hiện có — hãy xóa vùng đích rồi làm mới.',
-  appShapeNotEditable: 'Không có hình dạng có thể chỉnh sửa "{id}" (chỉ có thể chỉnh sửa các hình dạng được thêm trong phiên này).',
+  appShapeNotEditable:
+    'Không có hình dạng có thể chỉnh sửa "{id}" (chỉ có thể chỉnh sửa các hình dạng được thêm trong phiên này).',
   appCalcFieldNameClash: 'Trường được tính toán "{name}" không được trùng tên với tiêu đề nguồn.',
   appCalcFieldNameDuplicate: 'Tên trường được tính toán phải là duy nhất.',
-  appValueFilterFieldMissing:
-    'Bộ lọc giá trị tham chiếu đến trường giá trị {index} không tồn tại.',
+  appValueFilterFieldMissing: 'Bộ lọc giá trị tham chiếu đến trường giá trị {index} không tồn tại.',
   appPivotRelayoutOverlap:
     'Bố cục PivotTable mới sẽ ghi đè lên nội dung hiện có — trước tiên hãy xóa vùng đích.',
   appInvalidRowField: 'Trường hàng không hợp lệ.',
@@ -224,7 +226,8 @@ export const vi = {
   appSlicerCleared: 'Đã xóa bộ lọc slicer "{name}".',
   appSlicerRemoved: 'Đã xóa slicer "{name}"; tất cả thành viên đã được khôi phục.',
   appTimelineHintIn: 'Chèn timeline cho trường ngày tháng của PivotTable hiện tại',
-  appTimelineHintOut: 'Trước tiên hãy chọn một ô bên trong đầu ra của PivotTable, sau đó chèn timeline',
+  appTimelineHintOut:
+    'Trước tiên hãy chọn một ô bên trong đầu ra của PivotTable, sau đó chèn timeline',
   appTimelineNoDateFields:
     'PivotTable này không có trường ngày tháng khả dụng — timeline cần một trường chưa được nhóm có tất cả giá trị là ngày tháng.',
   appTimelineCreated: 'Đã tạo timeline "{name}" — nhấp vào các tháng để lọc PivotTable.',
@@ -236,7 +239,8 @@ export const vi = {
     'Mọi trường đủ điều kiện đều đã có slicer hoặc timeline — hãy xóa cái hiện có trước.',
   appGoToNotReady: 'Sổ làm việc chưa sẵn sàng — không thể đi tới tham chiếu.',
   appGoToEmpty: 'Nhập địa chỉ ô hoặc tên đã xác định.',
-  appGoToUnresolved: 'Không thể đi tới "{ref}": không phải là địa chỉ hợp lệ hoặc tên đã xác định có thể chuyển hướng.',
+  appGoToUnresolved:
+    'Không thể đi tới "{ref}": không phải là địa chỉ hợp lệ hoặc tên đã xác định có thể chuyển hướng.',
   appGoToOutOfBounds: 'Không thể đi tới "{ref}": nằm ngoài giới hạn trang tính.',
   appGoToSheetNotFound: 'Không thể đi tới "{ref}": không tìm thấy trang tính đó.',
   appGoToInvalidAddress: 'Không thể đi tới "{ref}": địa chỉ không hợp lệ.',
@@ -278,7 +282,8 @@ export const vi = {
   appAiTruncatedNote: '(Câu trả lời bị cắt ngắn do giới hạn độ dài và có thể chưa đầy đủ.)',
   appAiStopped: '(đã dừng)',
   appAiNoSummary: 'AI đã hoàn thành mà không có tóm tắt.',
-  appAiNoAction: 'AI không thực hiện thay đổi nào và không đưa ra câu trả lời. Hãy thử lại hoặc diễn đạt lại.',
+  appAiNoAction:
+    'AI không thực hiện thay đổi nào và không đưa ra câu trả lời. Hãy thử lại hoặc diễn đạt lại.',
   appNewConversation: 'Đã bắt đầu cuộc trò chuyện mới.',
   appPivotCellNoEdit: 'Ô này là một phần của PivotTable — chưa hỗ trợ chỉnh sửa.',
   appAreaStreaming: 'Khu vực đó vẫn đang tải theo luồng — vui lòng thử chỉnh sửa lại sau giây lát.',
@@ -286,8 +291,7 @@ export const vi = {
     'Đã ghi lại công thức — công thức sẽ lưu vào tệp, nhưng kết quả trên màn hình có thể chưa đầy đủ vì sổ làm việc lớn này được tải từng phần theo luồng.',
   appFormulaTooExpensive:
     'Công thức này đánh giá một vùng lớn cho từng phần tử — phép tính sẽ làm đơ ứng dụng nên đã bị hủy. Hãy thu hẹp phạm vi tham chiếu và thử lại.',
-  appPivotSheetNoStructural:
-    'Trang tính này chứa PivotTable — chưa hỗ trợ thay đổi cấu trúc.',
+  appPivotSheetNoStructural: 'Trang tính này chứa PivotTable — chưa hỗ trợ thay đổi cấu trúc.',
   appDeleteSpanFormulas:
     'Một công thức chỉ tham chiếu đến các hàng/cột bị xóa — trước tiên hãy cập nhật hoặc xóa công thức đó.',
   appIconSetUnsupported:
@@ -310,8 +314,7 @@ export const vi = {
   appAutofillStreaming: 'Chưa cho phép tự động điền vào khu vực vẫn đang tải theo luồng.',
   appDvNeedsIndexed:
     'Chỉnh sửa xác thực dữ liệu yêu cầu trang tính này phải được lập chỉ mục đầy đủ trước — vui lòng thử lại sau giây lát.',
-  appPivotSheetNoDuplicate:
-    'Trang tính này chứa PivotTable — chưa hỗ trợ nhân bản trang tính.',
+  appPivotSheetNoDuplicate: 'Trang tính này chứa PivotTable — chưa hỗ trợ nhân bản trang tính.',
   appDuplicateScopedNames:
     'Trang tính này có các tên đã xác định trong phạm vi trang tính — chưa hỗ trợ nhân bản trang tính.',
   appMoveRowsColsUnsaved:
@@ -328,7 +331,8 @@ export const vi = {
   appTxCommitted: 'Giao dịch đã được cam kết ở phiên bản {revision}.',
   appPreviewOtherWorkbook: 'Bản xem trước thuộc về một sổ làm việc khác — hãy tạo bản mới.',
   appPreviewSheetGone: 'Trang tính được xem trước không còn tồn tại — hãy tạo bản xem trước mới.',
-  appWorkbookChangedSincePreview: 'Sổ làm việc đã thay đổi kể từ bản xem trước — hãy tạo bản xem trước mới.',
+  appWorkbookChangedSincePreview:
+    'Sổ làm việc đã thay đổi kể từ bản xem trước — hãy tạo bản xem trước mới.',
   appAppliedJournaled: 'Đã áp dụng — các thay đổi đã được ghi nhật ký; lưu bằng ⌘S.',
   appUndoCommitted: 'Đã hoàn tác cam kết dưới dạng phiên bản {revision}.',
   appUndoFailed: 'Không thể hoàn tác.',
@@ -357,7 +361,8 @@ export const vi = {
   appTableSelectRange: 'Trước tiên hãy chọn vùng dữ liệu — hàng đầu tiên là tiêu đề.',
   appTableCreated: 'Đã tạo bảng — lưu bằng ⌘S.',
   appTableCreateFailed: 'Không thể tạo bảng.',
-  appPivotOnAddedSheet: 'Chưa hỗ trợ tạo PivotTable trên trang tính mới thêm trong phiên này — hãy lưu trước.',
+  appPivotOnAddedSheet:
+    'Chưa hỗ trợ tạo PivotTable trên trang tính mới thêm trong phiên này — hãy lưu trước.',
   appPivotSourceNeedsRows: 'Nguồn PivotTable cần một hàng tiêu đề cùng các hàng dữ liệu.',
   appPivotSourceRowLimit: 'Nguồn PivotTable được giới hạn tối đa 10.000 hàng dữ liệu.',
   appPivotSourceColLimit: 'Nguồn PivotTable được giới hạn tối đa 200 cột.',
@@ -371,8 +376,10 @@ export const vi = {
   appPivotTooManyRowLines: 'PivotTable có hơn 20.000 dòng hàng.',
   appPivotOverlapSource:
     'Đầu ra PivotTable sẽ chồng chéo với vùng nguồn — hãy chọn một ô đích khác.',
-  appPivotOverlapExisting: 'Đầu ra PivotTable sẽ chồng chéo với một PivotTable hiện có trên trang tính đích.',
-  appPivotOverlapSession: 'Đầu ra PivotTable sẽ chồng chéo với PivotTable "{name}" được tạo trong phiên này.',
+  appPivotOverlapExisting:
+    'Đầu ra PivotTable sẽ chồng chéo với một PivotTable hiện có trên trang tính đích.',
+  appPivotOverlapSession:
+    'Đầu ra PivotTable sẽ chồng chéo với PivotTable "{name}" được tạo trong phiên này.',
   appPivotNameUsed: 'Tên PivotTable "{name}" đã được sử dụng trong phiên này.',
   appActiveCellFallback: 'ô hiện hoạt',
   appFormulaStartsEquals: 'Công thức phải bắt đầu bằng dấu "=".',
@@ -414,8 +421,7 @@ export const vi = {
   appProtectionNeedsFile: 'Trước tiên hãy mở tệp XLSX — bảo vệ sẽ được lưu vào tệp.',
   appProtectionNeedsIndexed:
     'Bảo vệ yêu cầu trang tính này phải được lập chỉ mục đầy đủ trước — vui lòng thử lại sau giây lát.',
-  appProtectedWithPassword:
-    'Trang tính này được bảo vệ bằng mật khẩu — chưa hỗ trợ gỡ bỏ bảo vệ.',
+  appProtectedWithPassword: 'Trang tính này được bảo vệ bằng mật khẩu — chưa hỗ trợ gỡ bỏ bảo vệ.',
   appProtectionWillWrite:
     'Bảo vệ trang tính sẽ được ghi khi lưu (không có mật khẩu). Bản thân trình chỉnh sửa không bắt buộc thực thi.',
   appProtectionWillRemove: 'Bảo vệ trang tính sẽ được gỡ bỏ khi lưu.',
@@ -445,7 +451,8 @@ export const vi = {
     'Thống kê sổ làm việc: {sheets} trang tính · {cells} ô có dữ liệu · {formulas} công thức{note}.',
   appFrozenAtSelection: 'Đã cố định tại vùng chọn — lưu bằng ⌘S.',
   appSelectCellsFirst: 'Trước tiên hãy chọn các ô.',
-  appCellStyleApplied: 'Đã áp dụng kiểu ô — được ghi nhật ký như mọi chỉnh sửa định dạng (⌘S để lưu).',
+  appCellStyleApplied:
+    'Đã áp dụng kiểu ô — được ghi nhật ký như mọi chỉnh sửa định dạng (⌘S để lưu).',
   appSelectRangeFirst: 'Trước tiên hãy chọn một vùng ô.',
   appSettingNeedsFile: 'Trước tiên hãy mở tệp XLSX — cài đặt này chỉ lưu vào tệp.',
   appTooManyCellsForSetting: 'Chọn ít hơn 10.000 ô cho cài đặt này.',
@@ -471,7 +478,8 @@ export const vi = {
   appAppliedToSelection: 'Đã áp dụng cho vùng chọn hiện tại.',
   appCommandFailed: 'Không thể áp dụng lệnh.',
   appColumnLabel: 'Cột {col}',
-  appBridgeUnavailable: 'Cầu nối tệp trên máy tính để bàn không khả dụng. Khởi động lại ứng dụng Electron.',
+  appBridgeUnavailable:
+    'Cầu nối tệp trên máy tính để bàn không khả dụng. Khởi động lại ứng dụng Electron.',
   appOpenCanceled: 'Đã hủy chọn sổ làm việc.',
   appOpeningWorkbook: 'Đang mở sổ làm việc…',
   appOpened: 'Đã mở {name} — các chỉnh sửa ô được lưu lại bằng ⌘S.',
@@ -514,8 +522,7 @@ export const vi = {
   appPrintFailed: 'Không thể in.',
   appPrintNeedsFullLoad:
     'In ấn cần toàn bộ sổ làm việc được tải — vui lòng đợi quá trình tải hoàn tất.',
-  appCsvExportNeedsFullLoad:
-    'Xuất CSV cần sổ làm việc được tải đầy đủ — vui lòng đợi tải xong.',
+  appCsvExportNeedsFullLoad: 'Xuất CSV cần sổ làm việc được tải đầy đủ — vui lòng đợi tải xong.',
   appCsvExportTooLarge: 'Trang tính quá lớn để xuất dưới dạng CSV.',
   appCsvExportCanceled: 'Đã hủy xuất CSV.',
   appCsvExported: 'Đã xuất {path}.',
@@ -538,8 +545,7 @@ export const vi = {
     'Trang tính này có xác thực dữ liệu mở rộng (x14); chưa hỗ trợ chỉnh sửa quy tắc xác thực của nó.',
   appSaveErrMultiSelectList:
     'Xác thực danh sách đa lựa chọn không thể lưu vào xlsx — hãy xóa quy tắc trước khi lưu.',
-  appSaveErrX14Cf:
-    'Vùng này có định dạng có điều kiện mở rộng (x14) và chưa thể sửa đổi.',
+  appSaveErrX14Cf: 'Vùng này có định dạng có điều kiện mở rộng (x14) và chưa thể sửa đổi.',
   appSaveErrPivotWithSheetOps:
     'PivotTable mới tạo không thể lưu cùng lúc với các thay đổi quản lý trang tính — hãy lưu PivotTable trước.',
   appSaveErrPivotWithRowCol:
@@ -579,10 +585,12 @@ export const vi = {
   appChartDeleted: 'Đã xóa biểu đồ.',
   appChartMoved: 'Đã di chuyển biểu đồ.',
   appVisualNotEditable: 'Hình ảnh trực quan này không thể chỉnh sửa.',
-  appVisualNoDelete: 'Hình ảnh trực quan này không thể xóa — hình dạng vẽ của nó không thể chỉnh sửa.',
+  appVisualNoDelete:
+    'Hình ảnh trực quan này không thể xóa — hình dạng vẽ của nó không thể chỉnh sửa.',
   appFileVisualMoveDeleteOnly:
     'Chỉ hỗ trợ di chuyển hoặc xóa đối với các hình ảnh trực quan đã có sẵn trong tệp.',
-  appVisualNoMove: 'Hình ảnh trực quan này không thể di chuyển — hình dạng vẽ của nó không thể chỉnh sửa.',
+  appVisualNoMove:
+    'Hình ảnh trực quan này không thể di chuyển — hình dạng vẽ của nó không thể chỉnh sửa.',
   appVisualDeleted: 'Đã xóa hình ảnh trực quan — lưu bằng ⌘S.',
   appShapeTextUpdated: 'Đã cập nhật văn bản hình dạng — lưu bằng ⌘S.',
   appShapeMoved: 'Đã di chuyển hình dạng — lưu bằng ⌘S.',
@@ -598,11 +606,13 @@ export const vi = {
     '{count} công thức được tính toán lại trực tiếp (chế độ bao đóng); phần còn lại của sổ làm việc tải theo yêu cầu.',
   appRecalcPartial:
     'Các công thức được tính toán lại từ các chỉnh sửa của bạn — {count} công thức giữ lại giá trị đệm (các hàm mà công cụ dự phòng còn thiếu).',
-  appRecalcDone: 'Các công thức đã được tính toán lại từ các chỉnh sửa của bạn ({count} ô, công cụ dự phòng).',
+  appRecalcDone:
+    'Các công thức đã được tính toán lại từ các chỉnh sửa của bạn ({count} ô, công cụ dự phòng).',
   appIndexing: 'Đang lập chỉ mục {name}: {rows} hàng đã sẵn sàng.',
   appStreamingRows: 'Đang tải theo luồng {name}: {rows} hàng khả dụng.',
   appLoadRangeFailed: 'Không thể tải vùng hiển thị.',
-  appFullyLoaded: 'Đã tải đầy đủ sổ làm việc — công thức tính toán trực tiếp, có thể chỉnh sửa hàng/cột.',
+  appFullyLoaded:
+    'Đã tải đầy đủ sổ làm việc — công thức tính toán trực tiếp, có thể chỉnh sửa hàng/cột.',
   appRangeMustBeVector: '{range} phải là một hàng đơn hoặc một cột ô đơn.',
   appRangeTooManyCells: '{range} bao gồm nhiều hơn {max} ô.',
   appCopyLoadingRange: 'Đang tải {range} để sao chép…',
@@ -610,12 +620,12 @@ export const vi = {
     '{range} được sao chép dưới dạng giá trị thuần túy ({cells} ô): định dạng chỉ được giữ lại tối đa {max} ô.',
   appSheetStillIndexing: 'Trang tính vẫn đang được lập chỉ mục — vui lòng thử lại sau giây lát.',
   appPrintNothing: 'Trang tính không có nội dung để in.',
-  appPrintTooLarge:
-    'Vùng in quá lớn — hãy đặt vùng in nhỏ hơn trên tab Bố trí Trang.',
+  appPrintTooLarge: 'Vùng in quá lớn — hãy đặt vùng in nhỏ hơn trên tab Bố trí Trang.',
   appPrintBadArea: 'Vùng in không hợp lệ "{area}".',
   appPrintBadTitles: 'Tiêu đề in không hợp lệ "{titles}".',
   appPrintTitlesLimit: 'Tiêu đề in lặp lại tối đa 21 hàng.',
-  appVisualHintText: 'Kéo để di chuyển · kéo chốt để đổi kích thước · nhấp đúp để chỉnh sửa văn bản',
+  appVisualHintText:
+    'Kéo để di chuyển · kéo chốt để đổi kích thước · nhấp đúp để chỉnh sửa văn bản',
   appVisualHintEdit: 'Kéo để di chuyển · kéo chốt để đổi kích thước · nhấp đúp để chỉnh sửa',
   appVisualHint: 'Kéo để di chuyển · kéo chốt để đổi kích thước',
   appDeleteVisualTitle: 'Xóa hình ảnh trực quan này',
@@ -1068,7 +1078,7 @@ export const vi = {
   appUseInFormula: 'Sử dụng trong công thức',
   appUseInFormulaTitle: 'Chèn tên đã xác định vào công thức',
   appUseInFormulaNeedsEmptyCell:
-    "Trước tiên hãy chọn một ô trống — việc chèn tên sẽ thay thế nội dung của ô này",
+    'Trước tiên hãy chọn một ô trống — việc chèn tên sẽ thay thế nội dung của ô này',
   appCreateFromSelection: 'Tạo từ vùng chọn',
   appCreateFromSelectionTitle: 'Tạo tên từ các nhãn của vùng chọn',
   appNoNamesYet: 'Chưa có tên nào được xác định',
@@ -1279,7 +1289,7 @@ export const vi = {
   appTableStyleMedium7: 'Trung bình 7 (xanh lục)',
   appTableStyleDark2: 'Tối 2 (xanh hải quân)',
   appCellStyles: 'Kiểu ô',
-  appCellStylesTitle: "Áp dụng một trong các kiểu ô tích hợp sẵn của Excel cho vùng chọn",
+  appCellStylesTitle: 'Áp dụng một trong các kiểu ô tích hợp sẵn của Excel cho vùng chọn',
   appStyleGood: 'Tốt',
   appStyleBad: 'Kém',
   appStyleNeutral: 'Trung tính',

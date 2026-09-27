@@ -222,7 +222,7 @@ export const tMain = createI18n({
     menuZoomOut: 'Zoom Out',
     menuActualSize: 'Actual Size',
   },
-    vi: {
+  vi: {
     dlgInsertImage: 'Chèn hình ảnh',
     dlgReplacePicture: 'Thay thế hình ảnh',
     freezeTitle: 'Trang không phản hồi',
@@ -252,7 +252,7 @@ export const tMain = createI18n({
     autosaveDiscard: 'Bỏ qua',
     closeUnsavedMsg: 'Bản trình bày này có những thay đổi chưa được lưu.',
     closeUnsavedDetail: 'Bạn có muốn lưu các thay đổi trước khi đóng không?',
-    btnDontSave: "Không lưu",
+    btnDontSave: 'Không lưu',
     btnCancel: 'Hủy',
     mediaUnsupportedTitle: 'Video này có thể không phát được bên trong ứng dụng',
     mediaNoAudioBody:
@@ -289,20 +289,25 @@ export const tMain = createI18n({
     errUnreadable: 'không thể đọc được',
     errFileTooLarge: 'Tệp vượt quá giới hạn kích thước',
     errParseFailed: 'Không thể phân tích tệp',
-    errImageNoText: 'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
+    errImageNoText:
+      'Tệp đính kèm hình ảnh không có văn bản; hình ảnh được gửi cùng với tin nhắn của người dùng',
     errNotImage: 'loại hình ảnh không được hỗ trợ',
     errGskNotLoggedIn:
       'Chưa đăng nhập vào Genspark: nhấp vào “Đăng nhập vào Genspark” bên dưới, đăng nhập, sau đó thử lại',
     errNoApiKey: 'Chưa cấu hình khóa API cho {provider}',
     errNoModel: 'Chưa cấu hình tên mô hình',
-    errGskCli: 'gsk chưa đăng nhập: trước tiên hãy chạy gsk login để đăng nhập vào tài khoản Genspark của bạn',
+    errGskCli:
+      'gsk chưa đăng nhập: trước tiên hãy chạy gsk login để đăng nhập vào tài khoản Genspark của bạn',
     errNoDeckAppend:
       'Không có bản trình bày để nối thêm vào (thiếu phiên làm việc). Hãy tạo trang đầu tiên với mode:"replace" hoặc thêm trang bằng các công cụ gốc.',
     errAppendFailed: 'Nối thêm thất bại: {reason}',
     errPartialAppend: 'Một số trang không nối thêm được: {reason}',
-    errMergeFailed: 'Hợp nhất trang trình bày thất bại (tệp pptx một trang nguồn không có trang trình bày hợp lệ)',
-    errNoDeckReplace: 'Không có bản trình bày nào đang mở (thiếu phiên làm việc); không thể làm lại trang.',
-    errNoDeckInsert: 'Không có bản trình bày nào đang mở (thiếu phiên làm việc); không thể chèn trang.',
+    errMergeFailed:
+      'Hợp nhất trang trình bày thất bại (tệp pptx một trang nguồn không có trang trình bày hợp lệ)',
+    errNoDeckReplace:
+      'Không có bản trình bày nào đang mở (thiếu phiên làm việc); không thể làm lại trang.',
+    errNoDeckInsert:
+      'Không có bản trình bày nào đang mở (thiếu phiên làm việc); không thể chèn trang.',
     errIndexRange: 'atIndex nằm ngoài phạm vi (0-{max})',
     errReplaceNeedsOne: 'chế độ replace_at yêu cầu chính xác một trang HTML',
     errInsertNeedsOne: 'chế độ insert_at yêu cầu chính xác một trang HTML',

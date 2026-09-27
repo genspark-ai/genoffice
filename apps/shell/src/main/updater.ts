@@ -73,7 +73,7 @@ const tUpd = createI18n({
     updCheckFailed: "Couldn't check for updates. Check your network and try again.",
     updOpenDownload: 'Open Download Page',
   },
-    vi: {
+  vi: {
     updTitle: 'Cập nhật phần mềm',
     updHeadline: 'Đã có phiên bản mới',
     updDesc:
@@ -86,8 +86,8 @@ const tUpd = createI18n({
     updRetry: 'Thử lại',
     updManual:
       'Cập nhật tự động thất bại. Vui lòng lấy phiên bản mới nhất từ trang tải xuống và cài đặt thủ công.',
-    updUpToDate: "Bạn đang sử dụng phiên bản mới nhất (phiên bản {version}).",
-    updCheckFailed: "Không thể kiểm tra bản cập nhật. Kiểm tra mạng của bạn và thử lại.",
+    updUpToDate: 'Bạn đang sử dụng phiên bản mới nhất (phiên bản {version}).',
+    updCheckFailed: 'Không thể kiểm tra bản cập nhật. Kiểm tra mạng của bạn và thử lại.',
     updOpenDownload: 'Mở trang tải xuống',
   },
   ja: {

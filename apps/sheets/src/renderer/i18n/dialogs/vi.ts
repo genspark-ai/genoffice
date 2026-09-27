@@ -20,7 +20,8 @@ export const vi = {
   dlgGoalSeekNote: 'Quá trình giải sẽ ghi đè ô thay đổi nhiều lần; mọi bước đều có thể hoàn tác.',
   dlgGoalSeekNeedNumber: 'Giá trị cần đạt phải là một số.',
   dlgGoalSeekFound: 'Đã tìm thấy nghiệm: ô thay đổi = {value} (đạt {reached}).',
-  dlgGoalSeekNotFound: 'Không tìm thấy nghiệm; đã khôi phục giá trị ban đầu (kết quả cuối cùng đạt {reached}).',
+  dlgGoalSeekNotFound:
+    'Không tìm thấy nghiệm; đã khôi phục giá trị ban đầu (kết quả cuối cùng đạt {reached}).',
   dlgGoalSeekSolve: 'Giải',
   dlgGoalSeekSolving: 'Đang giải…',
   dlgApply: 'Áp dụng',
@@ -128,8 +129,7 @@ export const vi = {
   dlgPivotErrDupRowField: 'Các trường hàng không được chứa cùng một trường hai lần.',
   dlgPivotErrDupColField: 'Các trường cột không được chứa cùng một trường hai lần.',
   dlgPivotErrRowColOverlap: 'Một trường không thể vừa là trường hàng vừa là trường cột.',
-  dlgPivotErrColNeedsSingleValue:
-    'Chỉ hỗ trợ một trường giá trị khi có các trường cột.',
+  dlgPivotErrColNeedsSingleValue: 'Chỉ hỗ trợ một trường giá trị khi có các trường cột.',
   dlgPivotErrCalcFieldIncomplete: 'Trường tính toán cần có cả tên và công thức.',
   dlgPivotErrRangeStep: 'Bước nhảy khoảng nhóm phải là số dương.',
   dlgPivotErrLabelFilterText: 'Bộ lọc nhãn cần có nội dung văn bản lọc.',
@@ -139,8 +139,7 @@ export const vi = {
     'Không thể đặt đồng thời cả bộ lọc nhãn và bộ lọc giá trị trên trường hàng cấp 1.',
 
   dlgSlicerInsertTitle: 'Chèn Slicer',
-  dlgSlicerPickNote:
-    'Chọn trường cho slicer; nhấp vào các mục trong slicer để lọc PivotTable.',
+  dlgSlicerPickNote: 'Chọn trường cho slicer; nhấp vào các mục trong slicer để lọc PivotTable.',
   dlgSlicerAria: 'Slicer {name}',
   dlgSlicerClear: 'Xóa bộ lọc (chọn tất cả)',
   dlgSlicerRemove: 'Xóa slicer (khôi phục tất cả các mục)',

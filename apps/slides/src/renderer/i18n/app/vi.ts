@@ -34,16 +34,18 @@ export const vi = {
   appStatusIconInserted: 'Đã chèn biểu tượng "{name}"',
   appStatusIconInsertFailed: 'Chèn biểu tượng thất bại',
   appStatusImageUnsupported: 'Chưa hỗ trợ hình ảnh định dạng {ext}',
-  appStatusChartInserted: 'Đã chèn biểu đồ (dữ liệu mẫu; bạn có thể chỉnh sửa dữ liệu trong PowerPoint)',
+  appStatusChartInserted:
+    'Đã chèn biểu đồ (dữ liệu mẫu; bạn có thể chỉnh sửa dữ liệu trong PowerPoint)',
   appStatusSmartArtInserted: 'Đã chèn SmartArt "{name}" (nhóm hình; nhấp đúp để chỉnh sửa văn bản)',
   appWordArtPlaceholder: 'Văn bản của bạn ở đây',
   appStatusWordArtInserted: 'Đã chèn WordArt; nhấp đúp để chỉnh sửa văn bản',
   appStatusDateInserted: 'Đã chèn ngày và giờ (tự động cập nhật khi mở trong PowerPoint)',
-  appStatusSlideNumInserted:
-    'Đã chèn số trang chiếu (tự động cập nhật khi trình chiếu/xuất)',
-  appStatusLinkSet: 'Đã thiết lập siêu liên kết (có hiệu lực khi nhấp trong lúc trình chiếu PowerPoint)',
+  appStatusSlideNumInserted: 'Đã chèn số trang chiếu (tự động cập nhật khi trình chiếu/xuất)',
+  appStatusLinkSet:
+    'Đã thiết lập siêu liên kết (có hiệu lực khi nhấp trong lúc trình chiếu PowerPoint)',
   appStatusLinkRemoved: 'Đã xóa siêu liên kết',
-  appStatusZoomInserted: 'Đã chèn thu phóng: nhấp trong khi trình chiếu để chuyển đến trang chiếu {page}',
+  appStatusZoomInserted:
+    'Đã chèn thu phóng: nhấp trong khi trình chiếu để chuyển đến trang chiếu {page}',
   appStatusHfApplied: 'Đã áp dụng đầu trang và chân trang cho tất cả trang chiếu',
   appStatusHfUnchanged: 'Đầu trang và chân trang không có thay đổi',
   appStatusEquationInserted: 'Đã chèn phương trình',
@@ -57,7 +59,8 @@ export const vi = {
   appStatusRecordingUnavailable:
     'Tính năng ghi màn hình không khả dụng (bị từ chối quyền hoặc đã hủy lựa chọn)',
   appStatusTransitionAll: 'Đã áp dụng hiệu ứng chuyển tiếp cho tất cả trang chiếu',
-  appStatusTransitionSet: 'Đã thiết lập hiệu ứng chuyển tiếp (có hiệu lực khi trình chiếu PowerPoint)',
+  appStatusTransitionSet:
+    'Đã thiết lập hiệu ứng chuyển tiếp (có hiệu lực khi trình chiếu PowerPoint)',
   appStatusAnimRemoved: 'Đã xóa hiệu ứng hoạt hình khỏi các hình đã chọn',
   appStatusAnimSet:
     'Đã thiết lập hiệu ứng hoạt hình (phát từng bước khi trình chiếu; cũng hoạt động trong PowerPoint)',
@@ -73,8 +76,7 @@ export const vi = {
   appStatusSlidesUnhidden: 'Đã bỏ ẩn {count} trang chiếu',
   appStatusCropApplied: 'Đã áp dụng cắt hình',
   appStatusCropRemoved: 'Đã xóa cắt hình',
-  appStatusCutoutMediaUnsupported:
-    'Không hỗ trợ xóa nền cho khung áp phích âm thanh/video',
+  appStatusCutoutMediaUnsupported: 'Không hỗ trợ xóa nền cho khung áp phích âm thanh/video',
   appStatusCutoutNoData: 'Không thể đọc dữ liệu hình ảnh; không thể xóa nền',
   appStatusCutoutEncodeFailed: 'Xóa nền thất bại: không thể mã hóa hình ảnh kết quả',
   appStatusCutoutInsertFailed: 'Xóa nền thất bại: không thể chèn hình ảnh kết quả',
