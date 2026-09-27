@@ -133,7 +133,7 @@ export default function App() {
   const [previewNonce, setPreviewNonce] = useState(0)
   const [draftHtml, setDraftHtml] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: false, redo: false })
-  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem('htmlapp.showAi') !== '0')
+  const [aiOpen, setAiOpen] = useState(false)
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const [askMode, setAskMode] = useState<AskMode | null>(null)

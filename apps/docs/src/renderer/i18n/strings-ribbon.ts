@@ -1,3 +1,4 @@
+import { vi } from './ribbon/vi'
 import { defineStrings } from '@genoffice/i18n'
 import { zh } from './ribbon/zh'
 import { en } from './ribbon/en'
@@ -23,6 +24,7 @@ import { zhTW } from './ribbon/zh-TW'
 /** Strings for Ribbon / ribbon-tabs / icons */
 export const ribbonStrings = defineStrings({
   zh,
+  vi,
   en,
   ja,
   ko,

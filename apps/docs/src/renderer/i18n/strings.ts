@@ -14,6 +14,14 @@ export const strings = {
     ...aiStrings.zh,
     ...zoteroStrings.zh,
   },
+  vi: {
+    ...appStrings.vi,
+    ...ribbonStrings.vi,
+    ...tableStrings.vi,
+    ...editorStrings.vi,
+    ...aiStrings.vi,
+    ...zoteroStrings.vi,
+  },
   en: {
     ...appStrings.en,
     ...ribbonStrings.en,

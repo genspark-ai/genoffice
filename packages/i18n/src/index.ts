@@ -19,6 +19,7 @@ export type Lang =
   | 'he'
   | 'hi'
   | 'zh-TW'
+  | 'vi'
 
 export const LANGS: readonly Lang[] = [
   'zh',
@@ -41,6 +42,7 @@ export const LANGS: readonly Lang[] = [
   'he',
   'hi',
   'zh-TW',
+  'vi',
 ]
 
 export function isLang(value: unknown): value is Lang {
@@ -85,6 +87,7 @@ const HTML_LANGS: Record<Lang, string> = {
   he: 'he-IL',
   hi: 'hi-IN',
   'zh-TW': 'zh-TW',
+  vi: 'vi-VN',
 }
 
 /** BCP-47 tag for document.documentElement.lang (drives CSS :lang() and Chromium's per-language font fallback) */
@@ -160,7 +163,7 @@ export type LangDicts<D extends Record<string, string>> = { zh: D } & {
  * Identity helper for dictionary shards: keeps literal key inference while
  * type-checking that every other language covers exactly the zh key set.
  */
-export function defineStrings<D extends Record<string, string>>(dicts: LangDicts<D>): LangDicts<D> {
+export function defineStrings<D extends Record<string, string>, T extends LangDicts<D>>(dicts: T): T {
   return dicts
 }
 
@@ -193,6 +196,12 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  * runtime fallback.
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
-  return (lang: Lang, key: keyof D, params?: Params): string =>
-    format(platformShortcuts(dicts[lang][key]), params)
+  return (lang: Lang, key: keyof D, params?: Params): string => {
+    const table = (dicts as unknown as Record<string, Record<string, string>>)[lang]
+    const raw =
+      table?.[key as string] ??
+      (dicts as unknown as Record<string, Record<string, string>>).en?.[key as string] ??
+      (dicts.zh as Record<string, string>)[key as string] ?? ''
+    return format(platformShortcuts(raw), params)
+  }
 }

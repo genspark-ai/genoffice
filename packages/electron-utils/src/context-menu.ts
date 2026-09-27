@@ -203,6 +203,15 @@ const LABELS: Record<string, ContextMenuLabels> = {
     copyImage: '複製圖片',
     saveImageAs: '另存圖片為…',
   },
+  vi: {
+    cut: 'Cắt',
+    copy: 'Sao chép',
+    paste: 'Dán',
+    selectAll: 'Chọn tất cả',
+    viewImage: 'Xem hình ảnh',
+    copyImage: 'Sao chép hình ảnh',
+    saveImageAs: 'Lưu hình ảnh dưới dạng…',
+  },
 }
 
 export function contextMenuLabels(lang: string): ContextMenuLabels {

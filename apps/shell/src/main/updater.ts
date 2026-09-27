@@ -376,6 +376,22 @@ const tUpd = createI18n({
     updCheckFailed: '無法檢查更新，請檢查網路後重試。',
     updOpenDownload: '前往下載頁面',
   },
+  vi: {
+    updTitle: 'Cập nhật phần mềm',
+    updHeadline: 'Đã có phiên bản mới',
+    updDesc: 'Bản cập nhật này bao gồm các cải tiến hiệu năng và sửa lỗi. Khuyến nghị cập nhật ngay bây giờ.',
+    updDownload: 'Cập nhật ngay',
+    updLater: 'Nhắc tôi sau',
+    updInstall: 'Khởi động lại & Cài đặt',
+    updDownloading: 'Đang tải bản cập nhật…',
+    updFailed: 'Tải bản cập nhật thất bại. Vui lòng kiểm tra kết nối mạng và thử lại.',
+    updRetry: 'Thử lại',
+    updManual:
+      'Tự động cập nhật thất bại. Vui lòng tải phiên bản mới nhất từ trang tải về và cài đặt thủ công.',
+    updUpToDate: 'Bạn đang dùng phiên bản mới nhất ({version}).',
+    updCheckFailed: 'Không thể kiểm tra bản cập nhật. Vui lòng kiểm tra mạng và thử lại.',
+    updOpenDownload: 'Mở trang tải về',
+  },
 })
 
 const FIRST_CHECK_DELAY_MS = 15_000

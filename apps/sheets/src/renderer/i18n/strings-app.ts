@@ -1,3 +1,4 @@
+import { vi } from './app/vi'
 import { defineStrings } from '@genoffice/i18n'
 import { zh } from './app/zh'
 import { en } from './app/en'
@@ -23,6 +24,7 @@ import { zhTW } from './app/zh-TW'
 /** Copy for App.tsx / ExcelShell / chart panels / non-dialog components */
 export const appStrings = defineStrings({
   zh,
+  vi,
   en,
   ja,
   ko,

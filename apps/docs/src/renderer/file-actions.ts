@@ -625,7 +625,6 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     ctx.onWriteProtectionLoaded(null)
     ctx.setCompareResult(null)
     ctx.dirtyRef.current = false
-    ctx.setShowAi(true)
     ctx.setStatus(t('appNewDocCreated'))
     return true
   } catch (err) {

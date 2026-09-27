@@ -340,10 +340,7 @@ export default function App() {
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
-  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
-  const [aiCollapsed, setAiCollapsed] = useState(
-    () => localStorage.getItem('genoffice-pdf-show-ai') === '0',
-  )
+  const [aiCollapsed, setAiCollapsed] = useState(true)
   useEffect(() => {
     localStorage.setItem('genoffice-pdf-show-ai', aiCollapsed ? '0' : '1')
   }, [aiCollapsed])

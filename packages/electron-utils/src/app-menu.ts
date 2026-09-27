@@ -453,6 +453,27 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: '檢查更新…',
     version: '版本',
   },
+  vi: {
+    window: 'Cửa sổ',
+    minimize: 'Thu nhỏ',
+    closeWindow: 'Đóng cửa sổ',
+    edit: 'Chỉnh sửa',
+    undo: 'Hoàn tác',
+    redo: 'Làm lại',
+    delete: 'Xóa',
+    view: 'Xem',
+    reload: 'Tải lại',
+    forceReload: 'Tải lại cưỡng bức',
+    toggleDevTools: 'Công cụ cho nhà phát triển',
+    actualSize: 'Kích thước thực tế',
+    zoomIn: 'Phóng to',
+    zoomOut: 'Thu nhỏ',
+    fullscreen: 'Toàn màn hình',
+    help: 'Trợ giúp',
+    about: 'Giới thiệu về GenOffice',
+    checkUpdates: 'Kiểm tra cập nhật…',
+    version: 'Phiên bản',
+  },
 }
 
 export function appMenuLabels(lang: string): AppMenuLabels {

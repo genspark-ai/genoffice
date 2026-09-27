@@ -1,3 +1,4 @@
+import { vi } from './panes/vi'
 import { defineStrings } from '@genoffice/i18n'
 import { zh } from './panes/zh'
 import { en } from './panes/en'
@@ -23,6 +24,7 @@ import { zhTW } from './panes/zh-TW'
 /** Copy for the panes/show views (animation, presenter, slide show, comments, format, ...) */
 export const paneStrings = defineStrings({
   zh,
+  vi,
   en,
   ja,
   ko,

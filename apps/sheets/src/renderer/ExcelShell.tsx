@@ -397,10 +397,7 @@ export function ExcelShell({
     collapse: t('appRibbonCollapse'),
     expand: t('appRibbonExpand'),
   })
-  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
-  const [isCopilotOpen, setIsCopilotOpen] = useState(
-    () => localStorage.getItem('ai-sheets-show-ai') !== '0',
-  )
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false)
   useEffect(() => {
     localStorage.setItem('ai-sheets-show-ai', isCopilotOpen ? '1' : '0')
   }, [isCopilotOpen])

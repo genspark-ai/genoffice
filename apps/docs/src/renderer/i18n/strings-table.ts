@@ -31,8 +31,35 @@ const en = {
  * reviewed terminology. Keeping one complete key set prevents partially
  * translated dialogs and lets language packs override the shard incrementally.
  */
+const vi = {
+  ribbonTableStyleOptions: 'Tùy chọn kiểu bảng',
+  ribbonTableFirstRow: 'Hàng tiêu đề',
+  ribbonTableLastRow: 'Hàng tổng số',
+  ribbonTableBandedRows: 'Hàng xen kẽ màu',
+  ribbonTableFirstColumn: 'Cột đầu tiên',
+  ribbonTableLastColumn: 'Cột cuối cùng',
+  ribbonTableBandedColumns: 'Cột xen kẽ màu',
+  ribbonTablePresetGrid: 'Lưới đơn giản',
+  ribbonTablePresetBlueHeader: 'Tiêu đề màu xanh',
+  ribbonTablePresetBlueBanded: 'Xen kẽ màu xanh',
+  ribbonTablePresetGrayBanded: 'Xen kẽ màu xám',
+  ribbonTablePresetGreenHeader: 'Tiêu đề màu xanh lá',
+  ribbonAutoFit: 'Tự động điều chỉnh',
+  ribbonAutoFitContents: 'Tự động vừa khít nội dung',
+  ribbonAutoFitWindow: 'Tự động vừa khít cửa sổ',
+  ribbonFixedColumnWidth: 'Độ rộng cột cố định',
+  ribbonRepeatHeaderRows: 'Lặp lại hàng tiêu đề',
+  ribbonTableProperties: 'Thuộc tính bảng',
+  ribbonTableData: 'Bảng',
+  ribbonHorizontalPosition: 'Vị trí theo chiều ngang',
+  ribbonVerticalPosition: 'Vị trí theo chiều dọc',
+  ribbonDistanceFromText: 'Khoảng cách từ văn bản',
+  ribbonCellMargins: 'Lề ô mặc định',
+}
+
 export const tableStrings = defineStrings({
   zh: en,
+  vi,
   en,
   ja: en,
   ko: en,

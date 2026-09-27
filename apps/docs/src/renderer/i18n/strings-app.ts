@@ -1,3 +1,4 @@
+import { vi } from './app/vi'
 import { defineStrings } from '@genoffice/i18n'
 import { zh } from './app/zh'
 import { en } from './app/en'
@@ -23,6 +24,7 @@ import { zhTW } from './app/zh-TW'
 /** Strings for App.tsx / SettingsModal / non-Ribbon components (keys use the app prefix to mark the area) */
 export const appStrings = defineStrings({
   zh,
+  vi,
   en,
   ja,
   ko,

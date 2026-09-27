@@ -460,7 +460,7 @@ export function App() {
   useEffect(() => {
     window.slidesApi.setAutoSavePref?.(autoSave)
   }, [autoSave])
-  const [showAi, setShowAi] = useState(() => localStorage.getItem('ai-slides-show-ai') !== '0')
+  const [showAi, setShowAi] = useState(false)
   const [showFormat, setShowFormat] = useState(false)
   const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)

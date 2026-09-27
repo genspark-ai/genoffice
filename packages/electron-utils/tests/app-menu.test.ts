@@ -54,6 +54,7 @@ const LANGS = [
   'he',
   'hi',
   'zh-TW',
+  'vi',
 ] as const
 
 const en = appMenuLabels('en')

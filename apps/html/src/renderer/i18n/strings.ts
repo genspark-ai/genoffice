@@ -3,6 +3,7 @@ import { appStrings } from './strings-app'
 
 export const strings = {
   zh: { ...appStrings.zh, ...aiStrings.zh },
+  vi: { ...appStrings.vi, ...aiStrings.vi },
   en: { ...appStrings.en, ...aiStrings.en },
   ja: { ...appStrings.ja, ...aiStrings.ja },
   ko: { ...appStrings.ko, ...aiStrings.ko },

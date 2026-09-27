@@ -21,6 +21,13 @@ import { createI18n, getUiLang } from '@genoffice/i18n'
  */
 
 const tUpd = createI18n({
+  vi: {
+    updTitle: 'Cập nhật phần mềm',
+    updHeadline: 'Đã có phiên bản mới',
+    updDesc: 'Bản cập nhật này bao gồm cải tiến hiệu năng và sửa lỗi. Khuyến nghị cập nhật ngay.',
+    updInstall: 'Khởi động lại & Cài đặt',
+    updLater: 'Nhắc tôi sau',
+  },
   zh: {
     updTitle: '软件更新',
     updHeadline: '发现新版本',

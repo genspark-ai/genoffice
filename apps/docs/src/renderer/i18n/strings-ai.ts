@@ -1,3 +1,4 @@
+import { vi } from './ai/vi'
 import { defineStrings } from '@genoffice/i18n'
 import { zh } from './ai/zh'
 import { en } from './ai/en'
@@ -23,6 +24,7 @@ import { zhTW } from './ai/zh-TW'
 /** User-visible strings for the ai/ panel and tool feedback (LLM prompts are not here) */
 export const aiStrings = defineStrings({
   zh,
+  vi,
   en,
   ja,
   ko,
