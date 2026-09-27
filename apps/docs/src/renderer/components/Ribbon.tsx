@@ -123,7 +123,7 @@ import {
 import { RibbonColorPalette } from './ribbon-color-palette'
 import { HeaderFooterTab, type HfAction, type HfEditingInfo } from './ribbon-hf-tab'
 import { PasteSpecialDialog } from './PasteSpecialDialog'
-import { fontFamiliesFor, isEastAsianFontName, partitionFontFamilies } from '../font-list'
+import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
 import {
   fontSizeLabel,
   fontSizeOptions,
@@ -1295,13 +1295,8 @@ function RibbonInner({
   const currentSize = fs.fontSizePt
   // computed unconditionally (not inside the dropdown render): cheap, and the
   // render-isolation test uses fontFamiliesFor calls as its render probe
-  const { families: allSystemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
-  // Candidates the machine proves absent drop out; when enumeration is
-  // unavailable the full candidate list stays visible.
-  const { builtin: fontFamilies, system: systemFontFamilies } = partitionFontFamilies(
-    fontFamiliesFor(lang),
-    allSystemFontFamilies,
-  )
+  const fontFamilies = fontFamiliesFor(lang)
+  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
   // unset align follows the paragraph direction: start is left in LTR, right in RTL
   const activeAlign = fs.align ?? (fs.bidi ? 'right' : 'left')
   // like Word, direction buttons appear only with an RTL UI language or RTL paragraphs at hand
