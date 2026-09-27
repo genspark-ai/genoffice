@@ -209,6 +209,21 @@ describe('tracked lines with inflated glyph boxes (P30 C)', () => {
     const { chars } = mkText('Wimm', 72, { fontSize: 12 })
     expect(texts(groupIntoWords(chars))).toEqual(['Wimm'])
   })
+
+  it('float-noise overlaps (−0.002 em) are not inflated boxes: "remuneração" stays one word', () => {
+    // Times body text: every loose box overruns the next origin by 0.02pt, so
+    // ALL gaps are negative — yet the boxes are true advances, and the wide
+    // "m" (0.78 em on a 0.44 em median pitch) is a glyph, not a word gap
+    const fontSize = 11
+    const advances = [0.333, 0.444, 0.778, 0.5, 0.5, 0.444, 0.333, 0.444, 0.444, 0.444, 0.5]
+    let x = 72
+    const chars = [...'remuneração'].map((ch, i) => {
+      const c = mkChar(ch, x, { fontSize, width: advances[i] * fontSize + 0.02 })
+      x += advances[i] * fontSize
+      return c
+    })
+    expect(texts(groupIntoWords(chars))).toEqual(['remuneração'])
+  })
 })
 
 describe('fabricated spaces against the line’s real word gaps', () => {
