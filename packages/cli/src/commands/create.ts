@@ -1,9 +1,16 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { flagBool, flagString } from '../args'
 import { assertAllowed, resolveInput, resolveOutput, writeOutput } from '../fs'
 import { applyOps, blankDeck, inlineLocalFiles, parseOps, saveDeck } from '../formats/pptx'
-import { buildDeckFromDir, buildDeckFromSpec, stageContext } from '../formats/slide-spec'
+import {
+  auditDeckBytes,
+  buildDeckFromDir,
+  buildDeckFromSpec,
+  deckAuditDetail,
+  stageContext,
+} from '../formats/slide-spec'
+import { outputDirectory, renderToPngs } from '../formats/render'
 import {
   additionPlan,
   blankWorkbook,
@@ -72,6 +79,17 @@ export const createCommand: CommandDef = {
     },
     { name: 'out', value: 'path', description: 'output file (required)' },
     { name: 'force', description: 'overwrite an existing output file' },
+    {
+      name: 'render',
+      value: 'dir',
+      description:
+        'pptx: after writing, render one PNG per slide into <dir> (default: <output name>-previews beside the file) and list them in detail.previews; starts a hidden GenOffice process for a few seconds',
+    },
+    {
+      name: 'audit',
+      description:
+        'pptx: run the geometry audit on the written deck and report it under detail.audit (advisory findings, with setTransform suggestions)',
+    },
   ],
   async run(args, ctx) {
     const type = flagString(args, 'type')?.toLowerCase()
@@ -85,6 +103,14 @@ export const createCommand: CommandDef = {
         `cannot create .${type} yet`,
         { supported: [...TYPES] },
         { reason: 'unsupported', suggestion: 'pick a type from detail.supported' },
+      )
+    }
+    if (type !== 'pptx' && (flagBool(args, 'audit') || args.flags['render'] !== undefined)) {
+      throw new CliError(
+        EXIT.usage,
+        '--render and --audit preview a built deck; they go with --type pptx',
+        undefined,
+        { reason: 'invalid_argument' },
       )
     }
     const output = resolveOutput(flagString(args, 'out'), ctx, {
@@ -123,10 +149,27 @@ export const createCommand: CommandDef = {
         ? await createPptxFromSpec(args, ctx)
         : await createPptx(args, ctx)
     writeOutput(output, result.bytes)
+    const detail: Record<string, unknown> = { ...result.detail }
+    if (flagBool(args, 'audit')) {
+      detail.audit = deckAuditDetail(await auditDeckBytes(result.bytes))
+    }
+    const renderFlag = args.flags['render']
+    if (renderFlag !== undefined) {
+      const dir =
+        typeof renderFlag === 'string'
+          ? outputDirectory(renderFlag, ctx)
+          : assertAllowed(
+              join(dirname(output), `${basename(output, extname(output))}-previews`),
+              ctx.env,
+              'write',
+            )
+      const files = await renderToPngs(output, ctx, { outDir: dir, scale: 1, log: ctx.log })
+      detail.previews = files.map(({ page, ...f }) => ({ slide: page, ...f }))
+    }
     return {
       summary: `created ${basename(output)} (${result.slides} slides)`,
       outputPath: output,
-      detail: result.detail,
+      detail,
     }
   },
 }

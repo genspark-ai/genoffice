@@ -65,16 +65,19 @@ export function urlErrorOutcome(tool: ResolvedTool, err: unknown): Outcome {
 }
 
 /**
- * Adds `output_url` (and a `url` per detail.files entry) to the envelope and
- * returns the content blocks that carry the output file: the bytes as an
- * embedded resource when small, a resource_link otherwise.
+ * Adds `output_url` (and a `url` per `detail.files` / `detail.previews` entry)
+ * to the envelope and returns the content blocks that carry the output file:
+ * the bytes as an embedded resource when small, a resource_link otherwise.
  */
 export function attachOutputs(ok: JsonOk, ctx: McpContext): CallToolResult['content'] {
   const files = ctx.files
   const base = ctx.baseUrl
   if (!files || !base) return []
   const content: CallToolResult['content'] = []
-  const listed = (ok.detail?.files as { path?: string; url?: string }[] | undefined) ?? []
+  const listed = [
+    ...((ok.detail?.files as unknown[] | undefined) ?? []),
+    ...((ok.detail?.previews as unknown[] | undefined) ?? []),
+  ].filter((f): f is { path?: string; url?: string } => !!f && typeof f === 'object')
   for (const f of listed) {
     if (f.path && isFile(f.path)) f.url = files.urlFor(files.expose(f.path), base)
   }

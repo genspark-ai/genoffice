@@ -16,6 +16,7 @@ genoffice slides read deck.pptx [--full] --json # durable ids + geometry an agen
 genoffice slides read deck.pptx --units in --json # box and size in inches (or cm, pt, px at 96 dpi) with `unit` named; default emu
 genoffice create --type pptx --ops deck.json --out deck.pptx
 genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck.pptx   # one page spec file per slide (`genoffice guide slides design|spec`)
+genoffice create --type pptx --spec deck.json --out deck.pptx --render deck/previews --audit   # plus one PNG per slide (detail.previews) and the geometry audit (detail.audit) in the same call
 genoffice slides check deck/outline.json | deck/pages/03.json   # outline rules (exit 1 on errors) / build + audit one page file
 genoffice slides replace deck.pptx --slide 2 --spec deck/pages/03.json   # rebuild one slide from its page file
 genoffice slides apply deck.pptx --ops edit.json [--dry-run] [--out copy.pptx]

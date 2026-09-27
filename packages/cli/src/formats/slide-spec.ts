@@ -400,6 +400,43 @@ export function auditDeckBytes(bytes: Uint8Array, only?: number): Promise<DeckAu
   return auditDeck(bytes, { metrics, ...(only === undefined ? {} : { only }) })
 }
 
+/**
+ * JSON-ready form of a deck audit, shared by `slides audit` and `create --audit`:
+ * one flattened issue list with durable ids, the same `suggest` setTransform op
+ * the audit produces, and per-slide issue strings. Findings are advisory; only
+ * `counts` needs gating.
+ */
+export function deckAuditDetail(pages: DeckAuditPage[]) {
+  const flat = pages.flatMap((p) => p.findings.map((f) => ({ page: p, f })))
+  const counts = { error: 0, warning: 0 }
+  for (const { f } of flat) counts[f.level]++
+  const issues = flat.map(({ page, f }, i) => ({
+    id: `${f.level[0]!.toUpperCase()}${i + 1}`,
+    code: f.code,
+    level: f.level,
+    path: `${page.id}/${f.el}`,
+    slide: page.slide,
+    el: f.el,
+    ...(f.els ? { els: f.els } : {}),
+    message: f.message,
+    box: f.box,
+    ...(f.overflowPx !== undefined ? { overflowPx: f.overflowPx } : {}),
+    ...(f.distortion_pct !== undefined
+      ? {
+          expected_ratio: f.expected_ratio,
+          actual_ratio: f.actual_ratio,
+          distortion_pct: f.distortion_pct,
+        }
+      : {}),
+    ...(f.suggest ? { suggest: f.suggest } : {}),
+  }))
+  return {
+    counts,
+    issues,
+    slides: pages.map((p) => ({ slide: p.slide, id: p.id, issues: p.issues })),
+  }
+}
+
 export interface RasterizedPage {
   index: number
   png: Uint8Array

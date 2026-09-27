@@ -16,6 +16,7 @@ import { outputDirectory, parseScale, renderToPngs } from '../formats/render'
 import {
   auditDeckBytes,
   checkPageSpec,
+  deckAuditDetail,
   findStageFiles,
   pageIndexOf,
   replaceSlideFromSpec,
@@ -277,39 +278,16 @@ async function audit(
   const opened = await openDeck(bytes)
   const index = slideFlag(args, opened.deck.slides.length)
   const pages = await auditDeckBytes(bytes, index)
+  const { counts, issues, slides } = deckAuditDetail(pages)
   const failing = pages.filter((p) => p.issues.length > 0)
-  const total = failing.reduce((n, p) => n + p.issues.length, 0)
-  const flat = pages.flatMap((p) => p.findings.map((f) => ({ page: p, f })))
-  const counts = { error: 0, warning: 0 }
-  for (const { f } of flat) counts[f.level]++
-  const issues = flat.map(({ page, f }, i) => ({
-    id: `${f.level[0]!.toUpperCase()}${i + 1}`,
-    code: f.code,
-    level: f.level,
-    path: `${page.id}/${f.el}`,
-    slide: page.slide,
-    el: f.el,
-    ...(f.els ? { els: f.els } : {}),
-    message: f.message,
-    box: f.box,
-    ...(f.overflowPx !== undefined ? { overflowPx: f.overflowPx } : {}),
-    ...(f.distortion_pct !== undefined
-      ? {
-          expected_ratio: f.expected_ratio,
-          actual_ratio: f.actual_ratio,
-          distortion_pct: f.distortion_pct,
-        }
-      : {}),
-    ...(f.suggest ? { suggest: f.suggest } : {}),
-  }))
   return {
     summary: failing.length
-      ? `${basename(path)}: ${total} issue(s) on ${failing.length} of ${pages.length} slide(s)`
+      ? `${basename(path)}: ${counts.error + counts.warning} issue(s) on ${failing.length} of ${pages.length} slide(s)`
       : `${basename(path)}: ${pages.length} slide(s), no layout issues`,
     detail: {
       issues,
       counts,
-      slides: pages.map((p) => ({ slide: p.slide, id: p.id, issues: p.issues })),
+      slides,
       metrics: 'heuristic glyph widths; overflow figures are approximate',
       ids: 'element ids match `slides read` / `slides apply` targets; `suggest` is a setTransform op (EMU) for `slides apply`',
     },
