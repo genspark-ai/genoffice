@@ -199,12 +199,15 @@ test.describe('home folders panel', () => {
       expect(hasPdf(root)).toBe(false)
       // and the tab opened on the moved path, not the vanished root one
       await expect(page.locator('.tab-bar .tab-item', { hasText: '.pdf' })).toBeVisible()
-      // a second New from the same folder view lands there too (the folder is not a one-shot slot)
+      // a second New from the same folder view: with #1036 nothing lands on
+      // disk until the user saves — the folder only pre-selects the Save As
+      // location, so the tree view must stay clean
       await page.locator('.tab-bar .tab-item.tab-home').click()
       await page.locator('.quick-card', { hasText: 'AI Sheets' }).click()
+      await expect(page.locator('.tab-bar .tab-item', { hasText: '.xlsx' })).toBeVisible()
       const hasXlsx = (dir: string) =>
         existsSync(dir) && readdirSync(dir).some((f) => f.endsWith('.xlsx'))
-      await expect.poll(() => hasXlsx(join(root, 'Personal')), { timeout: 15_000 }).toBe(true)
+      expect(hasXlsx(join(root, 'Personal'))).toBe(false)
       expect(hasXlsx(root)).toBe(false)
       // back home: the new tab must not block shutdown
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus())

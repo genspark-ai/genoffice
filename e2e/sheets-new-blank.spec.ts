@@ -1,17 +1,20 @@
 import { test, expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } from './helpers'
 
 /**
- * Regression for "new spreadsheet cannot be saved" (feedback 2368785): the
- * quick-create card must create a real backing .xlsx up front so the save
- * pipeline works from the first edit.
+ * Regression for "new spreadsheet cannot be saved" (feedback 2368785), updated
+ * for #1036: quick-create no longer drops a file in the default folder. The
+ * backing workbook lives in a temp directory, the default folder stays empty,
+ * and the first save goes through Save As. The save pipeline must still work
+ * from the first edit.
  */
 test.describe('sheets: new blank workbook', () => {
-  test('quick-create writes a backing file and saves the first edit', async () => {
+  test('quick-create saves the first edit through Save As and leaves the default folder empty', async () => {
     const scratch = await mkdtemp(join(tmpdir(), 'genoffice-sheets-blank-'))
     const launched = await launchShell({ onboardingSeen: true, videoDir: 'sheets-new-blank' })
     try {
@@ -20,6 +23,12 @@ test.describe('sheets: new blank workbook', () => {
       await app.evaluate(({ app: electronApp }, dir) => {
         electronApp.setPath('documents', dir)
       }, scratch)
+      const saveDir = join(scratch, 'GenOffice')
+      const workbook = join(saveDir, 'quick-create.xlsx')
+      // the workbook has no file yet, so Save answers the Save As picker
+      await app.evaluate(({ dialog }, target) => {
+        dialog.showSaveDialog = async () => ({ canceled: false, filePath: target })
+      }, workbook)
 
       await expect(page.locator('.quick-card').nth(1)).toContainText('AI Sheets')
       await page.locator('.quick-card').nth(1).click()
@@ -30,11 +39,11 @@ test.describe('sheets: new blank workbook', () => {
       })
       await sheets.waitForTimeout(1_500)
 
-      // the backing file exists before any edit
-      const saveDir = join(scratch, 'GenOffice')
-      const created = (await readdir(saveDir)).filter((f) => f.endsWith('.xlsx'))
-      expect(created).toHaveLength(1)
-      const workbook = join(saveDir, created[0])
+      // nothing lands in the default folder before the user saves (#1036)
+      const before = existsSync(saveDir)
+        ? (await readdir(saveDir)).filter((f) => f.endsWith('.xlsx'))
+        : []
+      expect(before).toHaveLength(0)
 
       const grid = await sheets.evaluate(() => {
         for (const canvas of document.querySelectorAll('canvas')) {
