@@ -52,6 +52,10 @@ export interface NewElementOptions {
   bodyPr?: NewElementBodyPr
   /** prstGeom adjustment values (<a:avLst><a:gd name fmla="val N"/>), e.g. {adj: 25000} for roundRect radius */
   adjustments?: Record<string, number>
+  /** Mirror horizontally (a:xfrm flipH="1") — a rightArrow points left */
+  flipH?: boolean
+  /** Mirror vertically (a:xfrm flipV="1") — a line runs bottom-left to top-right */
+  flipV?: boolean
 }
 
 /**
@@ -121,6 +125,11 @@ export function isLineKind(kind: string): boolean {
 
 const DEFAULT_LINE_STROKE = { color: '#000000', widthEmu: 12700 }
 
+/** a:xfrm flip attributes for generated fragments; empty when neither flag is set */
+function flipXml(opts: NewElementOptions): string {
+  return `${opts.flipH ? ' flipH="1"' : ''}${opts.flipV ? ' flipV="1"' : ''}`
+}
+
 function buildCxnSpXml(
   slide: Slide,
   opts: NewElementOptions,
@@ -142,7 +151,7 @@ function buildCxnSpXml(
   return (
     `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
-    `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
+    `<p:spPr><a:xfrm${flipXml(opts)}><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
     `<a:prstGeom prst="${def.prst}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>` +
     `<a:ln w="${Math.round(stroke.widthEmu)}" cap="flat">` +
     `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${head}${tail}</a:ln>` +
@@ -168,7 +177,7 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
   const isTextbox = opts.kind === 'textbox'
   const name = isTextbox ? `TextBox ${id}` : `Shape ${id}`
   const o = opts.offset
-  const xfrm = `<a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>`
+  const xfrm = `<a:xfrm${flipXml(opts)}><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>`
   // Parser convention: has txBody and no prstGeom → 'text'; textbox omits prstGeom
   const geom = isTextbox
     ? ''
@@ -201,7 +210,12 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
         originalXml: buildCxnSpXml(slide, opts, lineDef),
         range: [0, 0],
       },
-      transform: { offset: { ...opts.offset }, rot: 0, flipH: false, flipV: false },
+      transform: {
+        offset: { ...opts.offset },
+        rot: 0,
+        flipH: opts.flipH === true,
+        flipV: opts.flipV === true,
+      },
       presetGeometry: lineDef.prst,
       ...(opts.adjustments ? { adjust: { ...opts.adjustments } } : {}),
       fill: { type: 'none' },

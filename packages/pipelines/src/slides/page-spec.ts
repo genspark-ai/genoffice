@@ -89,6 +89,10 @@ export interface SpecShape extends SpecBase {
   stroke?: { color: string; widthPt: number }
   paragraphs?: SpecParagraph[]
   valign?: 'top' | 'middle' | 'bottom'
+  /** mirror the shape horizontally (an arrow points the other way) */
+  flipH?: boolean
+  /** mirror vertically; a `line` box draws bottom-left to top-right */
+  flipV?: boolean
 }
 
 export interface SpecText extends SpecBase {
@@ -321,6 +325,8 @@ export function parsePageSpecObject(
           ...(stroke ? { stroke } : {}),
           ...(paragraphs.some((p) => p.runs.some((r) => r.text.trim())) ? { paragraphs } : {}),
           ...(valign === 'top' || valign === 'middle' || valign === 'bottom' ? { valign } : {}),
+          ...(el.flipH === true ? { flipH: true } : {}),
+          ...(el.flipV === true ? { flipV: true } : {}),
         },
         i,
       )
@@ -579,6 +585,8 @@ export async function buildPagePptx(
             },
           }
         : {}),
+      ...(el.flipH ? { flipH: true } : {}),
+      ...(el.flipV ? { flipV: true } : {}),
       ...(el.paragraphs ? { paragraphs: toEngineParagraphs(el.paragraphs) } : {}),
       ...(el.paragraphs
         ? { bodyPr: { wrap: 'square', anchor: anchorOf(el.valign, 'ctr'), insetsEmu: zeroInsets } }
