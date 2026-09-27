@@ -4,6 +4,7 @@ import {
   CLI_VERSION_BANNER_PREFIX,
   CLI_VERSION_ENV,
   cliVersionBanner,
+  findElectronRequires,
   readBundledCliVersion,
   resolveCliVersion,
 } from '../build.mjs'
@@ -42,5 +43,29 @@ describe('packaged CLI version', () => {
 
   it('builds into the bundle packaging ships', () => {
     expect(CLI_BUNDLE.endsWith('genoffice.cjs')).toBe(true)
+  })
+})
+
+describe('electron-free CLI bundle', () => {
+  it('names the bundled modules that require electron, once each', () => {
+    const bundle = [
+      '// ../../packages/electron-utils/src/remote-image.ts',
+      'var init_remote_image = __esm({ "x"() { fetch2 = require("undici"); } });',
+      '// ../../packages/electron-utils/src/drop-open.ts',
+      'var init_drop_open = __esm({ "y"() { import_electron = require("electron"); } });',
+      "    import_electron_again = require('electron');",
+      '// node_modules/some-dep/index.js',
+      'var z = require("electron");',
+    ].join('\n')
+    expect(findElectronRequires(bundle)).toEqual([
+      '../../packages/electron-utils/src/drop-open.ts',
+      'node_modules/some-dep/index.js',
+    ])
+  })
+
+  it('accepts a bundle that never requires electron', () => {
+    expect(findElectronRequires('// src/cli.ts\nvar e = "electron"; require("node:fs")')).toEqual(
+      [],
+    )
   })
 })

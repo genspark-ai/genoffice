@@ -285,11 +285,12 @@ const isNumberOrNull = (v: unknown) => v === null || (typeof v === 'number' && N
 /** a present number must be positive; null (= clear) passes */
 const isPositiveOrNull = (v: unknown) =>
   v === null || (typeof v === 'number' && Number.isFinite(v) && v > 0)
-/** Word font sizes are points; anything past this is a corrupt/AI-hallucinated value. */
-export const MAX_FONT_SIZE_PT = 400
-/** a present font size must be a finite positive number within the plausible range */
+/** Word's w:sz range is 2..3276 half-points. */
+export const MIN_FONT_SIZE_PT = 1
+export const MAX_FONT_SIZE_PT = 1638
 const isFontSizeOrNull = (v: unknown) =>
-  v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0.5 && v <= MAX_FONT_SIZE_PT)
+  v === null ||
+  (typeof v === 'number' && Number.isFinite(v) && v >= MIN_FONT_SIZE_PT && v <= MAX_FONT_SIZE_PT)
 const isStringOrNull = (v: unknown) => v === null || typeof v === 'string'
 
 function validateFontFields(op: Op, where: string): string | null {
@@ -304,7 +305,7 @@ function validateFontFields(op: Op, where: string): string | null {
     return `${where}: highlight must be a color name / hex string or null`
   }
   if (op.fontSize !== undefined && !isFontSizeOrNull(op.fontSize)) {
-    return `${where}: fontSize must be 0.5-${MAX_FONT_SIZE_PT}pt (or null to clear)`
+    return `${where}: fontSize must be ${MIN_FONT_SIZE_PT}-${MAX_FONT_SIZE_PT}pt (or null to clear)`
   }
   if (op.fontFamily !== undefined && !isStringOrNull(op.fontFamily)) {
     return `${where}: fontFamily must be a string or null`
@@ -752,6 +753,40 @@ function runSetHeadingLevel(op: Op, env: RunEnv): OpResult {
     changed++
   }
   return { op: 'setHeadingLevel', matched: matched.length, changed, skippedProtected }
+}
+
+/** UI: Paragraph dialog outline level — a direct w:outlineLvl, the style stays (Word never restyles for it) */
+function runSetOutlineLevel(op: Op, env: RunEnv): OpResult {
+  const { tr, schema, ctx, sel } = env
+  const level = Number(op.level)
+  const target = targetOf(op)
+  const matched = matchTarget(tr.doc, target, sel)
+  const scoped = scopedRange(target, sel)
+  let changed = 0
+  let skippedProtected = 0
+  for (const b of matched) {
+    if (b.node.type.name === 'docProtected') {
+      skippedProtected++
+      continue
+    }
+    for (const p of paragraphsIn(b, scoped)) {
+      const name = p.node.type.name
+      const isHeading = name === 'docHeading'
+      // a styled heading's level belongs to its style; list items have no level slot
+      if (isHeading ? !p.node.attrs.outlineOnly : name !== 'docParagraph') continue
+      if (level === 0) {
+        if (!isHeading) continue
+        const { level: _l, outlineOnly: _o, ...rest } = p.node.attrs
+        tr.setNodeMarkup(p.pos, schema.nodes.docParagraph, changedAttrs(ctx, rest))
+      } else {
+        if (isHeading && Number(p.node.attrs.level) === level) continue
+        const attrs = { ...p.node.attrs, level, outlineOnly: true }
+        tr.setNodeMarkup(p.pos, schema.nodes.docHeading, changedAttrs(ctx, attrs))
+      }
+      changed++
+    }
+  }
+  return { op: 'setOutlineLevel', matched: matched.length, changed, skippedProtected }
 }
 
 function runFindReplace(op: Op, env: RunEnv): OpResult {
@@ -1266,6 +1301,23 @@ register({
     return null
   },
   apply: runSetParagraphAttrs,
+})
+
+register({
+  name: 'setOutlineLevel',
+  signature: '{ op: "setOutlineLevel", target, level: 0-9 }',
+  keys: ['level'],
+  target: 'required',
+  hidden: true,
+  validate(op, where) {
+    const shape = validateShape(op, this, where)
+    if (shape) return shape
+    if (!Number.isInteger(op.level) || Number(op.level) < 0 || Number(op.level) > 9) {
+      return `${where}: level must be an integer between 0 and 9`
+    }
+    return null
+  },
+  apply: runSetOutlineLevel,
 })
 
 register({

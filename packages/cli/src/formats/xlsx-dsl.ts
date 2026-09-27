@@ -721,8 +721,16 @@ function normalizeOp(
       },
     )
   }
-  // same convention as set_range and --cells: a value starting with "=" is a formula
-  if (op.op === 'set_cell' && typeof op.value === 'string' && op.value.startsWith('=')) {
+  // same convention as set_range and --cells: a value starting with "=" is a formula,
+  // unless type: "text" says the string is literal cell text
+  const literal = op.op === 'set_cell' && op.type === 'text'
+  if (op.op === 'set_cell') delete op.type
+  if (
+    !literal &&
+    op.op === 'set_cell' &&
+    typeof op.value === 'string' &&
+    op.value.startsWith('=')
+  ) {
     op.op = 'set_formula'
     op.formula = op.value
     delete op.value

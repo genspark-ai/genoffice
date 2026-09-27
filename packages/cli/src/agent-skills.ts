@@ -134,6 +134,16 @@ export function detectAgents(
   return out
 }
 
+/** The dotfolder probed for `id` (env overrides applied): where the agent keeps its own config files. */
+export function agentConfigDir(
+  id: AgentId,
+  env: NodeJS.ProcessEnv = process.env,
+  home = homedir(),
+): string | null {
+  const a = AGENTS.find((x) => x.id === id)
+  return a ? a.probe(env, home) : null
+}
+
 export function agentTarget(
   id: AgentId,
   env: NodeJS.ProcessEnv = process.env,

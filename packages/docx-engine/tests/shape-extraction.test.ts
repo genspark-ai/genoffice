@@ -301,6 +301,26 @@ describe('grouped and sibling pictures', () => {
     expect(await dashOf('sysDot')).toBe('dotted')
   })
 
+  it('an empty divider-rule anchor paragraph keeps its own tiny paragraph mark', async () => {
+    const rule = anchorParagraph(
+      custWsp({
+        cx: 6267450,
+        cy: 9525,
+        fill: '<a:solidFill><a:srgbClr val="111111"/></a:solidFill>',
+      }),
+      SHAPE_URI,
+    )
+      .replace('<wp:wrapNone/>', '<wp:wrapTopAndBottom/>')
+      .replace(
+        '<w:p>',
+        '<w:p><w:pPr><w:spacing w:before="84"/><w:rPr><w:sz w:val="5"/></w:rPr></w:pPr>',
+      )
+    const block = (await parseDocx(await buildDocx({ bodyXml: rule }))).blocks[0]
+    expect(block.strayRuns ?? []).toEqual([])
+    expect(block.anchorLine?.format?.emptyRunSizeHalfPoints).toBe(5)
+    expect(block.anchorLine?.format?.spaceBefore).toBe(84)
+  })
+
   it('a text-bearing anchor paragraph keeps its own spacing as the stray line format', async () => {
     const textbox = anchorParagraph(
       `<wps:wsp ${WPS_NS}><wps:cNvSpPr/><wps:spPr>` +
@@ -585,7 +605,7 @@ describe('label group over an inline chart picture', () => {
         withImage: true,
       }),
     )
-    expect(centered.blocks[0].strayRuns?.find((r) => r.image)?.image?.widthPx).toBe(493)
+    expect(centered.blocks[0].strayRuns?.find((r) => r.image)?.image?.widthPx).toBe(493.24)
     expect(centered.blocks[0].strayAlign).toBe('center')
     const plain = await parseDocx(await buildDocx({ bodyXml: paragraph(''), withImage: true }))
     expect(plain.blocks[0].strayAlign).toBeUndefined()

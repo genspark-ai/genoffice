@@ -114,6 +114,77 @@ describe('opaque body regions', () => {
     expect(/<w:p>[^]*<!--NESTED-->[^]*<\/w:p>/.test(xml)).toBe(true)
   })
 
+  it('CDATA inside w:t is run text, not opaque decoration: no duplication or hoisting', async () => {
+    const cdataPara = '<w:p><w:r><w:t><![CDATA[cdata text]]></w:t></w:r></w:p>'
+    const source = await buildDocx({ bodyXml: before + cdataPara + after })
+    const doc = await parseDocx(source)
+    expect(
+      doc.blocks.filter((block) => !block.hidden).map((block) => block.runs?.[0]?.text),
+    ).toEqual(['before', 'cdata text', 'after'])
+
+    // regenerating the paragraph: the CDATA payload must not be re-appended
+    const edited = await saveDocx(doc, [
+      { kind: 'original', docxIndex: 0 },
+      {
+        kind: 'generated',
+        block: { type: 'paragraph', runs: [{ text: 'edited' }] },
+        docxIndex: 1,
+      },
+      { kind: 'original', docxIndex: 2 },
+    ])
+    const editedDoc = await parseDocx(edited)
+    expect(editedDoc.internal.documentXml).not.toContain('<![CDATA[cdata text]]>')
+    expect(
+      editedDoc.blocks.filter((block) => !block.hidden).map((block) => block.runs?.[0]?.text),
+    ).toEqual(['before', 'edited', 'after'])
+
+    // deleting the paragraph: its text must not be hoisted to the start of the body
+    const deleted = await saveDocx(doc, [
+      { kind: 'original', docxIndex: 0 },
+      { kind: 'original', docxIndex: 2 },
+    ])
+    const deletedDoc = await parseDocx(deleted)
+    expect(deletedDoc.internal.documentXml).not.toContain('cdata text')
+    expect(
+      deletedDoc.blocks.filter((block) => !block.hidden).map((block) => block.runs?.[0]?.text),
+    ).toEqual(['before', 'after'])
+  })
+
+  it('an untouched paragraph keeps its CDATA text bytes verbatim', async () => {
+    const cdataPara = '<w:p><w:r><w:t><![CDATA[cdata text]]></w:t></w:r></w:p>'
+    const source = await buildDocx({ bodyXml: cdataPara })
+    const doc = await parseDocx(source)
+    const saved = await saveDocx(doc, [{ kind: 'original', docxIndex: 0 }])
+    const xml = (await parseDocx(saved)).internal.documentXml
+    expect(xml.split('<![CDATA[cdata text]]>')).toHaveLength(2)
+  })
+
+  it('a comment inside an sdt shell is emitted once when its paragraph is regenerated', async () => {
+    const sdt =
+      '<w:sdt><w:sdtPr><!--IN-SDTPR--><w:alias w:val="Ctl"/></w:sdtPr>' +
+      '<w:sdtContent><w:p><w:r><w:t>inside</w:t></w:r></w:p></w:sdtContent><!--IN-TAIL--></w:sdt>'
+    const source = await buildDocx({ bodyXml: before + sdt + after })
+    const doc = await parseDocx(source)
+    const block = doc.blocks[1]!
+    expect(block.sdtShell?.openXml).toContain('<!--IN-SDTPR-->')
+    expect(block.sdtShell?.closeXml).toContain('<!--IN-TAIL-->')
+
+    const saved = await saveDocx(doc, [
+      { kind: 'original', docxIndex: 0 },
+      {
+        kind: 'generated',
+        block: { type: 'paragraph', runs: [{ text: 'edited' }], sdtShell: block.sdtShell },
+        docxIndex: 1,
+      },
+      { kind: 'original', docxIndex: 2 },
+    ])
+    const xml = (await parseDocx(saved)).internal.documentXml
+    expect(xml.split('<!--IN-SDTPR-->')).toHaveLength(2)
+    expect(xml.split('<!--IN-TAIL-->')).toHaveLength(2)
+    expect(xml).toContain('>edited</w:t>')
+    expect(xml).not.toContain('inside')
+  })
+
   it('does not remove comment markers from opaque payloads', async () => {
     const bodyXml =
       '<w:p><w:r><w:commentRangeStart w:id="0"/><w:commentReference w:id="0"/></w:r>' +

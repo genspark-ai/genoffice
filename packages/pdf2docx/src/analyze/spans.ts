@@ -61,7 +61,8 @@ function sameStyle(a: PdfChar, b: PdfChar): boolean {
     a.highlight === b.highlight &&
     a.underline === b.underline &&
     a.strike === b.strike &&
-    a.invisible === b.invisible
+    a.invisible === b.invisible &&
+    a.href === b.href
   )
 }
 
@@ -110,15 +111,16 @@ export function buildSpans(words: readonly Word[]): Span[] {
     if (open.anchor.underline) span.underline = true
     if (open.anchor.strike) span.strike = true
     if (open.anchor.invisible) span.invisible = true
+    if (open.anchor.href !== undefined) span.href = open.anchor.href
     // squeezed text (AI docs: w:w scale + negative w:spacing): restore both,
     // or every rebuilt line wraps earlier than the original and pages overflow.
     // Hostile PDF metrics can be non-finite: Infinity passes `> 0`, so require
-    // finiteness and a sane 0.5..2 range before storing.
+    // finiteness and the OOXML w:w window (1%..600%) before storing.
     const scale = median(open.scales)
     if (
       Number.isFinite(scale) &&
-      scale >= 0.5 &&
-      scale <= 2 &&
+      scale >= 0.01 &&
+      scale <= 6 &&
       Math.abs(scale - 1) >= CHAR_SCALE_TOL
     ) {
       span.charScale = scale

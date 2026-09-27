@@ -55,6 +55,27 @@ const rawText = {
   },
 }
 
+/**
+ * The bundle runs under ELECTRON_RUN_AS_NODE, where `require('electron')` has
+ * no module to resolve to. `electron` is external below, so a top-level import
+ * anywhere in the dependency graph (a package barrel that re-exports a preload
+ * or main-process helper, for instance) survives bundling and crashes the CLI
+ * on startup instead of failing the build. Returns the offending module paths
+ * esbuild recorded above each `require("electron")`.
+ */
+export function findElectronRequires(bundleText) {
+  const modules = []
+  let current = '(unknown module)'
+  for (const line of bundleText.split('\n')) {
+    const header = /^\s*\/\/ ((?:\.\.\/|src\/|node_modules\/)\S+)$/.exec(line)
+    if (header) current = header[1]
+    else if (/\brequire\((["'])electron\1\)/.test(line) && !modules.includes(current)) {
+      modules.push(current)
+    }
+  }
+  return modules
+}
+
 async function bundle() {
   const cliVersion = resolveCliVersion(process.env, version)
   await build({
@@ -91,6 +112,14 @@ async function bundle() {
     },
     plugins: [rawText],
   })
+  const offenders = findElectronRequires(await readFile(CLI_BUNDLE, 'utf8'))
+  if (offenders.length > 0) {
+    throw new Error(
+      `CLI bundle requires "electron" (unavailable under ELECTRON_RUN_AS_NODE) via:\n` +
+        offenders.map((module) => `  ${module}`).join('\n') +
+        '\nImport from an electron-free subpath instead of the package barrel.',
+    )
+  }
 }
 
 // imported by tests and by packaging checks, which only want the helpers above

@@ -452,6 +452,20 @@ export function CropDialog({
 
   // Esc / Tab / initial focus come from useModalKeys on the backdrop.
   const modalKeys = useModalKeys(onCancel, { restoreFocus: true })
+  // useModalKeys lands on the first control, which is Cancel, so Enter would
+  // cancel while the hint promises "Enter to apply". Apply is disabled until
+  // the picture is in; once it is, hand that default focus to Apply unless the
+  // user already moved on to a handle.
+  const applyRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!loaded || error) return
+    const backdrop = modalKeys.ref.current
+    const active = document.activeElement
+    const first = backdrop?.querySelector('input, textarea, select, button')
+    if (!backdrop?.contains(active) || active === backdrop || active === first) {
+      applyRef.current?.focus()
+    }
+  }, [loaded, error, modalKeys.ref])
 
   const minSide = useCallback(
     () => ({
@@ -619,6 +633,7 @@ export function CropDialog({
           <button
             type="button"
             className="gs-imgdlg-btn primary"
+            ref={applyRef}
             onClick={apply}
             disabled={!loaded || !!error}
           >

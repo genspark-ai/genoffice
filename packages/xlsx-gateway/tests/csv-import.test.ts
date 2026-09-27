@@ -171,6 +171,15 @@ describe('isNumericCell', () => {
     expect(isNumericCell('0')).toBe(true)
   })
 
+  it('accepts Excel-style bare-dot decimals but keeps a leading plus as text', () => {
+    for (const value of ['.5', '1.', '-.5', '-1.', '.5e2']) {
+      expect(isNumericCell(value), value).toBe(true)
+    }
+    for (const value of ['+1', '+86', '.', '-.', '-', '1..5', '.5.']) {
+      expect(isNumericCell(value), value).toBe(false)
+    }
+  })
+
   it('rejects leading-zero codes so they stay text', () => {
     expect(isNumericCell('007')).toBe(false)
     expect(isNumericCell('0123')).toBe(false)

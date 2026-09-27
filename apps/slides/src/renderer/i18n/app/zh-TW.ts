@@ -102,6 +102,7 @@ export const zhTW = {
   appPasteOptSource: '保留來源格式設定',
   appPasteOptTheme: '使用目的地佈景主題',
   appStatusPasteOptionsExpired: '貼上選項已失效',
+  appStatusPasteTruncated: '貼上的文字過長，已截斷',
   appCtxHideSlide: '隱藏投影片',
   appCtxUnhideSlide: '取消隱藏投影片',
   appCtxAddSectionBefore: '新增章節（在此頁之前）',

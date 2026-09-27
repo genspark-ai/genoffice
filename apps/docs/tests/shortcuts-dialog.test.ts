@@ -48,6 +48,7 @@ describe('ShortcutsDialog', () => {
     view.type('F9')
     expect(view.rows().map((row) => row.querySelector('.sc-label')!.textContent)).toEqual([
       t('appUpdateField'),
+      t('appToggleFieldCodes'),
     ])
     view.type('nothing here')
     expect(view.rows().length).toBe(0)

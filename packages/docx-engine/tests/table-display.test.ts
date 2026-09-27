@@ -224,6 +224,32 @@ describe('fixed-layout grid vs tcW arbitration', () => {
     expect(fixed.blocks[0].table!.colWidthsTwips).toEqual([542, 1038, 719, 966])
   })
 
+  // Word PDF of a fixed table with w:tblCellSpacing 15: column pitches follow the
+  // saved grid (tcW + 45 each), the table spans Sigma(grid) past the right margin
+  it('fixed layout with cell spacing keeps a grid that is tcW plus the spacing gaps', async () => {
+    const table = (spacing: string, grid: number[]) =>
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${spacing}<w:tblLayout w:type="fixed"/></w:tblPr>` +
+      `<w:tblGrid>${grid.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>` +
+      '<w:tr>' +
+      [2401, 2650, 2066, 1454, 1766]
+        .map(
+          (w) =>
+            `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>`,
+        )
+        .join('') +
+      '</w:tr></w:tbl>'
+    const spacing = '<w:tblCellSpacing w:w="15" w:type="dxa"/>'
+    const grid = [2446, 2695, 2111, 1499, 1811]
+    const spaced = await parseDocx(await buildDocx({ bodyXml: table(spacing, grid) }))
+    expect(spaced.blocks[0].table!.colWidthsTwips).toEqual(grid)
+    expect(spaced.blocks[0].table!.cellSpacingTwips).toBe(15)
+    const plain = await parseDocx(await buildDocx({ bodyXml: table('', grid) }))
+    expect(plain.blocks[0].table!.colWidthsTwips).toEqual([2401, 2650, 2066, 1454, 1766])
+    const stale = grid.map((w) => w * 2)
+    const staleSpaced = await parseDocx(await buildDocx({ bodyXml: table(spacing, stale) }))
+    expect(staleSpaced.blocks[0].table!.colWidthsTwips).toEqual([2401, 2650, 2066, 1454, 1766])
+  })
+
   it('garbage over-wide grid widths stay raw in the model (clamping is render-side only)', async () => {
     const xml =
       '<w:tbl><w:tblGrid><w:gridCol w:w="1871"/><w:gridCol w:w="130618601"/></w:tblGrid>' +

@@ -67,6 +67,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'find', group: 'edit', labelKey: 'appFindPlaceholder', keys: '⌘F' },
   // ⌘H is macOS' Hide role and never reaches the window
   { id: 'replace', group: 'edit', labelKey: 'appReplace', keys: '⌃H', win: 'Ctrl+H' },
+  // Word for Mac's Go To; Windows Word uses Ctrl+G
+  { id: 'goto', group: 'edit', labelKey: 'appGoToTitle', keys: '⌥⌘G', win: 'Ctrl+G' },
   { id: 'shortcuts', group: 'edit', labelKey: 'appScTitle', keys: '⌘/' },
 
   // ---- Text formatting ----
@@ -81,6 +83,15 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'superscript', group: 'text', labelKey: 'ribbonSuperscript', keys: '⇧⌘= / ⌘.' },
   { id: 'subscript', group: 'text', labelKey: 'ribbonSubscript', keys: '⌘,' },
   { id: 'change-case', group: 'text', labelKey: 'ribbonChangeCase', keys: '⇧F3' },
+  { id: 'copy-format', group: 'text', labelKey: 'ribbonCopyFormat', keys: '⇧⌘C' },
+  // Ctrl+Shift+V is Electron's paste-and-match-style accelerator off the Mac
+  {
+    id: 'paste-format',
+    group: 'text',
+    labelKey: 'ribbonPasteFormat',
+    keys: '⇧⌘V',
+    win: 'Ctrl+Alt+Shift+V',
+  },
   { id: 'clear-formatting', group: 'text', labelKey: 'ribbonClearFormatting', keys: '⌃␣' },
 
   // ---- Paragraph formatting ----
@@ -157,6 +168,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'word-count', group: 'review', labelKey: 'appWordCountTitle', keys: '⇧⌘G' },
   { id: 'proofread', group: 'review', labelKey: 'appScProofread', keys: 'F7' },
   { id: 'update-fields', group: 'review', labelKey: 'appUpdateField', keys: 'F9' },
+  { id: 'toggle-field-codes', group: 'review', labelKey: 'appToggleFieldCodes', keys: '⌥F9' },
 
   // ---- View ----
   { id: 'zoom-in', group: 'view', labelKey: 'ribbonZoomIn', keys: '⌘=' },

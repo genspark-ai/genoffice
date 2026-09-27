@@ -88,8 +88,10 @@ export function inferWorksheetAddresses(worksheetXml: string): string {
   const normalizedBody = body.replace(/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g, (rowXml) => {
     const rowOpenEnd = rowXml.indexOf('>')
     if (rowOpenEnd === -1) return rowXml
-    const selfClosing = rowXml.slice(0, rowOpenEnd).endsWith('/>')
-    const rowOpen = selfClosing ? rowXml.slice(0, rowOpenEnd) : rowXml.slice(0, rowOpenEnd + 1)
+    // The open tag keeps its closing `>` (or `/>`) so a self-closing row is
+    // re-emitted as-is instead of gaining a stray `</row>`.
+    const rowOpen = rowXml.slice(0, rowOpenEnd + 1)
+    const selfClosing = rowOpen.endsWith('/>')
     const rowBody = selfClosing ? '' : rowXml.slice(rowOpenEnd + 1, rowXml.length - '</row>'.length)
     const explicitRow = readPositiveInteger(readTagAttribute(rowOpen, 'r'))
     const rowNumber = explicitRow ?? (firstRow ? 1 : currentRow + 1)
@@ -101,10 +103,8 @@ export function inferWorksheetAddresses(worksheetXml: string): string {
     const normalizedCells = rowBody.replace(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g, (cellXml) => {
       const cellOpenEnd = cellXml.indexOf('>')
       if (cellOpenEnd === -1) return cellXml
-      const cellSelfClosing = cellXml.slice(0, cellOpenEnd).endsWith('/>')
-      const cellOpen = cellSelfClosing
-        ? cellXml.slice(0, cellOpenEnd)
-        : cellXml.slice(0, cellOpenEnd + 1)
+      const cellOpen = cellXml.slice(0, cellOpenEnd + 1)
+      const cellSelfClosing = cellOpen.endsWith('/>')
       const cellBody = cellSelfClosing
         ? ''
         : cellXml.slice(cellOpenEnd + 1, cellXml.length - '</c>'.length)
@@ -547,10 +547,13 @@ export function shiftCrossSheetFormulas(
       /<(formula[12]?)>([\s\S]*?)<\/\1>/g,
       (_full, tag: string, body: string) => `<${tag}>${rewrite(body)}</${tag}>`,
     )
+    // Attribute value: `"` must stay `&quot;` (a quoted sheet name may carry one).
     xml = xml.replace(
       /(<hyperlink\b[^>]*?\blocation=")([^"]+)(")/g,
       (_full, prefix: string, location: string, suffix: string) =>
-        `${prefix}${rewrite(location)}${suffix}`,
+        `${prefix}${escapeXmlAttribute(
+          shiftFormulaText(decodeEntities(location), editedSheetName, shift, axis, true),
+        )}${suffix}`,
     )
   }
   return xml
@@ -1766,4 +1769,8 @@ function decodeEntities(input: string): string {
 
 function escapeXmlText(input: string): string {
   return input.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function escapeXmlAttribute(input: string): string {
+  return escapeXmlText(input).replaceAll('"', '&quot;')
 }

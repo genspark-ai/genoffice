@@ -45,6 +45,20 @@ export function borderDrawnPx(b: BorderLine): number {
   return isDrawnBorder(b) ? Math.max(1, Math.round(borderTruePx(b))) : 0
 }
 
+/** drawn px of the collapsed line between a cell and its neighbour: the neighbour's line
+ *  still occupies half of this cell's box when the cell's own side is nil; undefined =
+ *  no per-cell evidence, the table-level default applies */
+export function collapsedEdgePx(own: BorderLine, neighbour: BorderLine): number | undefined {
+  if (isDrawnBorder(own)) return borderDrawnPx(own)
+  if (isDrawnBorder(neighbour)) return borderDrawnPx(neighbour)
+  return own ? 0 : undefined
+}
+
+/** cell margin twips as a CSS px length without a rounded-off fraction (0.667px of a 0.5pt border matters) */
+export function cellPadPx(twips: number): string {
+  return `${Math.round((twips / 15) * 1000) / 1000}px`
+}
+
 /** closest CSS border-style; multi-line families become `double` at their total thickness */
 export function borderCssStyle(style: string): string {
   if (style === 'dotted') return 'dotted'

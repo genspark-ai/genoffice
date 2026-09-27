@@ -15,6 +15,23 @@ async function part(path: string, name: string): Promise<string> {
 }
 
 describe('genoffice sheet apply --ops (workbook DSL)', () => {
+  it('set_cell writes a string starting with "=" as a formula unless type is text', async () => {
+    const dir = tempDir()
+    const out = await book(dir, [['a', 1]])
+    const ops = join(dir, 'ops.json')
+    writeFileSync(
+      ops,
+      JSON.stringify([
+        { op: 'set_cell', sheet: 'table', address: 'C1', value: '=B1*2' },
+        { op: 'set_cell', sheet: 'table', address: 'D1', value: '=B1*2', type: 'text' },
+      ]),
+    )
+    expect((await run(['sheet', 'apply', out, '--ops', ops])).code).toBe(0)
+    const sheet = await cells(out, 'xl/worksheets/sheet1.xml')
+    expect(sheet.get('C1')?.formula).toBe('B1*2')
+    expect(sheet.get('D1')).toEqual({ value: '=B1*2' })
+  })
+
   it('runs content, format and layout ops through the in-memory workbook and saves them', async () => {
     const dir = tempDir()
     const out = await book(dir, [

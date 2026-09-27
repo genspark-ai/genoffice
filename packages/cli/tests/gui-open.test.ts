@@ -62,6 +62,8 @@ describe('GUI-open documents', () => {
     }
     delete env.GENOFFICE_USER_DATA
     const packagedDir = genofficeUserDataDir(env)
+    // The in-process CLI must resolve userData from this env, never the real home directory.
+    expect(packagedDir.startsWith(appRoot)).toBe(true)
     writeRegistry(packagedDir, process.pid, [join(dir, 'packaged.xlsx')])
     writeRegistry(`${packagedDir} Dev`, process.pid, [xlsx])
 

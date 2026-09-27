@@ -348,9 +348,30 @@ describe('tblW-auto layout grid flag', () => {
     )
     expect(autoCells.colWidthsTwips).toEqual([3813, 2508, 929, 2110])
     expect(autoCells.layoutGrid).toBe(true)
+    // tblW dxa without w:tblLayout fixed autofits too: Word draws the saved grid
+    // (probe: 10316 dxa, grid 440/1510/4249/1006/1223/1888 drawn at the grid, not tcW)
+    const declared = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="9016" w:type="dxa"/></w:tblPr>' +
+        gridXml([3554, 1411, 4051]) +
+        row([3554, 1411, 4051]) +
+        '</w:tbl>',
+    )
+    expect(declared.layoutGrid).toBe(true)
+    expect(declared.autoFit).toBe('fixed')
+    // a Word-saved dxa table whose tcW differ from the grid by several percent
+    // (per-column ratio off by 4.6) is still drawn at the grid: the grid is the
+    // autofit result of tcW + content, so only an evenly split grid yields to tcW
+    const disagreeing = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="8356" w:type="dxa"/></w:tblPr>' +
+        gridXml([907, 1557, 5892]) +
+        row([525, 1594, 6237]) +
+        '</w:tbl>',
+    )
+    expect(disagreeing.colWidthsTwips).toEqual([907, 1557, 5892])
+    expect(disagreeing.layoutGrid).toBe(true)
   })
 
-  it('leaves placeholder grids, tcW-driven widths and declared-width tables unflagged', async () => {
+  it('leaves placeholder grids, tcW-driven widths and fixed-layout tables unflagged', async () => {
     const placeholder = await tableOf(
       '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
         gridXml([2000, 2000, 2000]) +
@@ -359,13 +380,20 @@ describe('tblW-auto layout grid flag', () => {
     )
     expect(placeholder.colWidthsTwips).toEqual([3000, 3000, 3000])
     expect(placeholder.layoutGrid).toBeUndefined()
-    const declared = await tableOf(
-      '<w:tbl><w:tblPr><w:tblW w:w="9016" w:type="dxa"/></w:tblPr>' +
+    const uniformDxa = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr>' +
+        gridXml([3000, 3000, 3000]) +
+        row([3000, 3000, 3000]) +
+        '</w:tbl>',
+    )
+    expect(uniformDxa.layoutGrid).toBeUndefined()
+    const fixed = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="9016" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>' +
         gridXml([3554, 1411, 4051]) +
         row([3554, 1411, 4051]) +
         '</w:tbl>',
     )
-    expect(declared.layoutGrid).toBeUndefined()
+    expect(fixed.layoutGrid).toBeUndefined()
   })
 
   it('legacy compat lets the shrunk layout hang by the cell margins', async () => {

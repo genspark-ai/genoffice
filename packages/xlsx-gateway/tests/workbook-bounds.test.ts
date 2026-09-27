@@ -3,7 +3,6 @@ import {
   isGridCellAddress,
   MAX_GRID_COLUMNS,
   MAX_GRID_ROWS,
-  MAX_SHARED_STRINGS,
   parseSharedStringsXml,
 } from '../src/gateway/xlsx-gateway'
 
@@ -20,17 +19,11 @@ describe('workbook open bounds', () => {
     expect(isGridCellAddress('')).toBe(false)
   })
 
-  it('parses shared strings normally below the cap', () => {
+  it('parses shared strings', () => {
     const xml =
       `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">` +
       `<si><t>hello</t></si><si><t>a</t><t>b</t></si></sst>`
     expect(parseSharedStringsXml(xml)).toEqual(['hello', 'ab'])
     expect(parseSharedStringsXml('<sst/>')).toEqual([])
-  })
-
-  it('refuses shared-string bombs instead of exhausting the heap', () => {
-    const one = '<si><t>x</t></si>'
-    const xml = `<sst>${one.repeat(MAX_SHARED_STRINGS + 1)}</sst>`
-    expect(() => parseSharedStringsXml(xml)).toThrow(/too many shared strings/)
   })
 })

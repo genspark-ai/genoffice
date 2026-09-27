@@ -699,7 +699,7 @@ export const es = {
   appTabData: 'Datos',
   appTabReview: 'Revisar',
   appRibbonCollapse: 'Contraer la cinta de opciones',
-  appRibbonPin: 'Anclar la cinta de opciones',
+  appRibbonExpand: 'Expandir la cinta de opciones',
   appTabView: 'Vista',
   appTabAi: 'IA',
   appTabChartDesign: 'Diseño de gráfico',

@@ -909,14 +909,14 @@ describe('quarter-turned block pictures', () => {
     anchoredPicture(x, y, cx, cy).replace('<a:xfrm>', '<a:xfrm rot="5400000">')
 
   it('lifts a side-wrapped picture by the inset when the offset is smaller', async () => {
-    // 371x309 turned: inset 31px; offset 8.3px puts the visual 22.7px above the anchor
+    // 370.87x309.4 turned: inset 30.7px; offset 8.3px puts the visual 22.5px above the anchor
     const { editor } = await openImageDoc(`<w:p>${turned(-330835, 78740, 3532505, 2947035)}</w:p>`)
     const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-tight-left')!
     expect(block.style.marginTop).toBe('0px')
     const wrap = block.querySelector<HTMLElement>('.doc-img-wrap')!
-    expect(parseFloat(wrap.style.marginTop)).toBeCloseTo(-22.7, 1)
+    expect(parseFloat(wrap.style.marginTop)).toBeCloseTo(-22.5, 1)
     expect(wrap.style.marginLeft).toBe('')
-    expect(block.style.marginLeft).toBe('-3.7px')
+    expect(block.style.marginLeft).toBe('-4px')
     editor.destroy()
   })
 

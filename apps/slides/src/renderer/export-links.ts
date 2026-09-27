@@ -11,7 +11,8 @@
  */
 import type { RenderNode, RenderSlide, ShapeRenderNode } from '@genoffice/pptx-render'
 import type { ExportPdfLink, LinkTargetOp } from '../shared/ipc'
-import { safeExternalUrl } from '../shared/run-link'
+import { safeExternalUrl } from '@genoffice/electron-utils/safe-external-url'
+import { DECK_LINK_PROTOCOLS } from '../shared/run-link'
 
 interface TargetRect {
   x: number
@@ -113,7 +114,8 @@ export function exportLinkHref(
   pageCount: number,
 ): string | null {
   const anchor = (p: number): string | null => (p >= 0 && p < pageCount ? `#pg${p + 1}` : null)
-  if (target.kind === 'url') return safeExternalUrl(target.url)
+  if (target.kind === 'url')
+    return safeExternalUrl(target.url, { allowedProtocols: DECK_LINK_PROTOCOLS })
   if (target.kind === 'slide') {
     const p = pageOfModelIndex.get(target.slideIndex)
     return p == null ? null : anchor(p)

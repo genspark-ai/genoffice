@@ -121,6 +121,7 @@ export const pt = {
   appPasteOptSource: 'Manter Formatação Original',
   appPasteOptTheme: 'Usar Tema de Destino',
   appStatusPasteOptionsExpired: 'As opções de colagem não estão mais disponíveis',
+  appStatusPasteTruncated: 'O texto colado era muito longo e foi truncado',
   appCtxHideSlide: 'Ocultar Slide',
   appCtxUnhideSlide: 'Reexibir Slide',
   appCtxAddSectionBefore: 'Adicionar Seção (antes deste slide)',

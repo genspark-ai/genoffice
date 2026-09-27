@@ -57,4 +57,47 @@ describe('tiffToPng', () => {
     expect(tiffToPng(new Uint8Array(buf))).toBeNull()
     expect(Date.now() - start).toBeLessThan(10000)
   })
+
+  it('accepts a 600 dpi A3 scan (~69MP) header', () => {
+    // Header-only TIFF: passes the budget check, then fails in decodeImage
+    // (no strips) rather than being rejected up front by the pixel cap.
+    const dims = tiffHeaderOnly(7016, 9933)
+    expect(tiffToPng(dims)).toBeNull()
+    expect(tiffToPng(tiffHeaderOnly(40000, 40000))).toBeNull()
+  })
+
+  it('skips an over-budget first IFD and decodes the next in-budget page', () => {
+    const w = 6
+    const h = 4
+    const rgba = new Uint8Array(w * h * 4).fill(90)
+    const hostile = { t256: [100000], t257: [100000] }
+    const real = {
+      t256: [w],
+      t257: [h],
+      t258: [8, 8, 8, 8],
+      t259: [1],
+      t262: [2],
+      t273: [1000],
+      t277: [4],
+      t278: [h],
+      t279: [w * h * 4],
+      t284: [1],
+      t338: [1],
+    }
+    const prefix = new Uint8Array(UTIF.encode([hostile, real] as unknown as UTIF.IFD[]))
+    expect(prefix.length).toBeLessThan(1000)
+    const file = new Uint8Array(1000 + rgba.length)
+    file.set(prefix, 0)
+    file.set(rgba, 1000)
+    expect(UTIF.decode(Buffer.from(file))).toHaveLength(2)
+    const decoded = tiffToPng(file)
+    expect(decoded).not.toBeNull()
+    expect(decoded!.width).toBe(w)
+    expect(decoded!.height).toBe(h)
+    expect(PNG.sync.read(Buffer.from(decoded!.png)).data[0]).toBe(90)
+  })
 })
+
+function tiffHeaderOnly(width: number, height: number): Uint8Array {
+  return new Uint8Array(UTIF.encode([{ t256: [width], t257: [height] }] as unknown as UTIF.IFD[]))
+}

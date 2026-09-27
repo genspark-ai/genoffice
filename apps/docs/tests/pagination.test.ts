@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SectionInfo } from '@genoffice/docx-engine'
 import {
   type SliceOutputs,
   appendEndnotesBlock,
+  applyLeadSpills,
+  lineLeadPx,
   assignSections,
   cellCutYs,
   columnLayoutSpecs,
@@ -58,7 +62,7 @@ import {
   type TableRowBox,
 } from '../src/renderer/pagination'
 import { rowFillAttrs } from '../src/renderer/editor/pagination-gaps'
-import { verticalPageCss } from '../src/renderer/components/PaginationPreview'
+import { bodyWindowHeight, verticalPageCss } from '../src/renderer/components/PaginationPreview'
 
 const block = (top: number, height: number, extra?: Partial<BlockBox>): BlockBox => ({
   top,
@@ -1995,6 +1999,44 @@ describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
     ).toEqual(moved)
   })
 
+  it('the anchor demand of a keepNext row charges the bottom cell margin like the split itself', () => {
+    // 200px pages, paragraph 150 + keepNext row 20 leave 30; the anchor is a
+    // 4-line paragraph (10px lines) over a bottom margin. Its first legal
+    // fragment is 2 lines + margin: with a 10px margin (30) it fits and splits
+    // 2+2 under the heading; with 12px (32) it does not, so the chain moves
+    // together instead of the heading staying while the anchor turns alone
+    const lines = (n: number, pitch: number) => ({
+      lines: Array.from({ length: n }, (_, i): [number, number] => [i * pitch, (i + 1) * pitch]),
+      childOf: Array.from({ length: n }, () => 0),
+      paraOf: Array.from({ length: n }, () => 0),
+      alignDy: 0,
+      alignFrac: 0,
+    })
+    const chain = (margin: number) => {
+      const rows: TableRowBox[] = [
+        { height: 20, keepNext: true },
+        { height: 40 + margin, contentBottom: 40, cells: [lines(4, 10)] },
+      ]
+      return computeSectionedSlicesF2(
+        [
+          { top: 0, height: 150 },
+          { ...makeTableBlock(150, rows), modernTableHeaders: true },
+        ],
+        [{ contentHeight: 200, forceBreak: false }],
+        210 + margin,
+        { rowSplits: [] },
+      ).map((s) => [s.start, s.end])
+    }
+    expect(chain(10)).toEqual([
+      [0, 200],
+      [200, 220],
+    ])
+    expect(chain(12)).toEqual([
+      [0, 150],
+      [150, 222],
+    ])
+  })
+
   it('tblHeader on every row: no repetition and every row reaches a page (LO tdf104492)', () => {
     // 12 header rows x 150 = 1800px on 680px pages: Word lays the rows out
     // normally (a header set that is the whole table cannot repeat)
@@ -2647,7 +2689,8 @@ describe('measureBlocks — break-only paragraphs', () => {
       y: top,
       toJSON: () => ({}),
     }) as DOMRect
-  // page height 200; the break paragraph's DOM height is two line boxes (br + trailingBreak) = 44px
+  // page height 200; the break paragraph's DOM height is one 22px line box (the
+  // trailing-break phantom after the break is hidden by CSS)
   const breakDoc = (fillerH: number, gap = 0) => {
     const pm = document.createElement('div')
     const addPara = (top: number, height: number, html: string) => {
@@ -2657,8 +2700,8 @@ describe('measureBlocks — break-only paragraphs', () => {
       pm.appendChild(el)
     }
     addPara(0, fillerH, 'filler text')
-    addPara(fillerH + gap, 44, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
-    addPara(fillerH + gap + 44, 100, 'after the break')
+    addPara(fillerH + gap, 22, '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">')
+    addPara(fillerH + gap + 22, 100, 'after the break')
     return measureBlocks(pm, 0, 1)
   }
   const geoms = [{ contentHeight: 200, forceBreak: false }]
@@ -2672,30 +2715,30 @@ describe('measureBlocks — break-only paragraphs', () => {
   it('absorbs at the page bottom when the break line fits (no blank page)', () => {
     const { blocks, totalHeight } = breakDoc(173) // 27px left >= the 22px line
     expect(blocks[1].breakAfter).toBe(true)
-    // one line's share of the two DOM line boxes (br + trailingBreak)
     expect(blocks[1].breakOnlyLineH).toBe(22)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
-    expect(slices.map((s) => s.start)).toEqual([0, 217])
+    expect(slices.map((s) => s.start)).toEqual([0, 195])
   })
 
   it('opens a Word-style blank page when the previous paragraph exactly fills the page', () => {
     const { blocks, totalHeight } = breakDoc(200)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
     // page 2 holds only the break paragraph (blank), which then pushes the rest to page 3
-    expect(slices.map((s) => s.start)).toEqual([0, 200, 244])
-    expect(slices[1]).toMatchObject({ start: 200, end: 244 })
+    expect(slices.map((s) => s.start)).toEqual([0, 200, 222])
+    expect(slices[1]).toMatchObject({ start: 200, end: 222 })
   })
 
   it('opens a blank page when less than the full break line remains (probe: 11pt of 12pt blanks)', () => {
     const { blocks, totalHeight } = breakDoc(185) // 15px left < the 22px line
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
-    expect(slices.map((s) => s.start)).toEqual([0, 185, 229])
+    expect(slices.map((s) => s.start)).toEqual([0, 185, 207])
   })
 
-  it('judges the fit by a single line share, not the phantom-inflated DOM height', () => {
-    const { blocks, totalHeight } = breakDoc(170) // 30px left: one 22px line fits, the 44px box does not
+  it('counts one line box per break, never the hidden trailing-break phantom', () => {
+    const { blocks, totalHeight } = breakDoc(170) // 30px left: one 22px line fits
+    expect(blocks[1].breakOnlyLineH).toBe(22)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
-    expect(slices.map((s) => s.start)).toEqual([0, 214])
+    expect(slices.map((s) => s.start)).toEqual([0, 192])
   })
 
   it('charges the previous block trailing space-after in the page-bottom fit', () => {
@@ -2704,7 +2747,7 @@ describe('measureBlocks — break-only paragraphs', () => {
     const { blocks, totalHeight } = breakDoc(180, 15)
     expect(blocks[0].spaceAfterPx).toBe(15)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
-    expect(slices.map((s) => s.start)).toEqual([0, 195, 239])
+    expect(slices.map((s) => s.start)).toEqual([0, 195, 217])
   })
 
   it('charges footnote reservations in the page-bottom fit', () => {
@@ -2714,7 +2757,7 @@ describe('measureBlocks — break-only paragraphs', () => {
     blocks[0].footnoteExtraPx = 15
     blocks[0].height += 15 // reservation rides the height (applyBlockMeta)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
-    expect(slices.map((s) => s.start)).toEqual([0, 195, 239])
+    expect(slices.map((s) => s.start)).toEqual([0, 195, 217])
   })
 
   it('divides an auto line-spacing multiple out of the fit height (probe: multiples are not charged)', () => {
@@ -2727,19 +2770,19 @@ describe('measureBlocks — break-only paragraphs', () => {
       pm.appendChild(el)
     }
     addPara(0, 170, 'filler text')
-    // double-spaced break paragraph: 88px DOM box (2 line boxes x 44), natural line 22
+    // double-spaced break paragraph: one 44px line box, natural line 22
     addPara(
       170,
-      88,
+      44,
       '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">',
       '--doc-line-mult:2',
     )
-    addPara(258, 100, 'after the break')
+    addPara(214, 100, 'after the break')
     const { blocks, totalHeight } = measureBlocks(pm, 0, 1)
     expect(blocks[1].breakOnlyLineH).toBe(22)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
     // 30px left fits the 22px natural line: absorbed, no blank page
-    expect(slices.map((s) => s.start)).toEqual([0, 258])
+    expect(slices.map((s) => s.start)).toEqual([0, 214])
   })
 
   it('keeps the full exact-rule line height in the fit (probe: exact lines demand their box)', () => {
@@ -2754,16 +2797,16 @@ describe('measureBlocks — break-only paragraphs', () => {
     addPara(0, 170, 'filler text')
     addPara(
       170,
-      88,
+      44,
       '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">',
       'doc-lh-fixed',
     )
-    addPara(258, 100, 'after the break')
+    addPara(214, 100, 'after the break')
     const { blocks, totalHeight } = measureBlocks(pm, 0, 1)
     expect(blocks[1].breakOnlyLineH).toBe(44)
     const slices = computeSectionedSlicesF2(blocks, geoms, totalHeight)
     // 30px left < the 44px exact line: deliberate blank page
-    expect(slices.map((s) => s.start)).toEqual([0, 170, 258])
+    expect(slices.map((s) => s.start)).toEqual([0, 170, 214])
   })
 
   it('keeps the box of a style-level fixed line (--doc-line-fixed marker, no class)', () => {
@@ -2775,7 +2818,7 @@ describe('measureBlocks — break-only paragraphs', () => {
     const el = document.createElement('p')
     el.innerHTML = '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">'
     el.setAttribute('style', '--doc-line-fixed:1')
-    el.getBoundingClientRect = () => rectOf(0, 88)
+    el.getBoundingClientRect = () => rectOf(0, 44)
     pm.appendChild(el)
     const { blocks } = measureBlocks(pm, 0, 1)
     expect(blocks[0].breakOnlyLineH).toBe(44)
@@ -2786,7 +2829,7 @@ describe('measureBlocks — break-only paragraphs', () => {
     const el = document.createElement('p')
     el.innerHTML = '<br class="doc-page-br"><br class="ProseMirror-trailingBreak">'
     el.setAttribute('style', '--doc-line-fixed:1;--doc-line-mult:2')
-    el.getBoundingClientRect = () => rectOf(0, 88)
+    el.getBoundingClientRect = () => rectOf(0, 44)
     pm.appendChild(el)
     const { blocks } = measureBlocks(pm, 0, 1)
     expect(blocks[0].breakOnlyLineH).toBe(22)
@@ -4776,10 +4819,12 @@ describe('computeSectionedSlicesF2 — multi-cell rows split per cell (Word row 
     expect(out.rowFills).toEqual([{ blockTop: 0, row: 0, targetPx: 550, extraPx: 50 }])
   })
 
-  it('a row whose lines all fit but whose bottom cell margin hangs over stays on the page', () => {
-    // page 200; 40px row, then a 165px row whose last line ends at 158: only the
-    // 7px margin overflows, so no empty continuation fragment and no page turn
-    const rows: TableRowBox[] = [
+  it('a row whose lines fit but whose bottom cell margin hangs over is not kept: it moves whole when no cell can split', () => {
+    // page 200; 40px row, then a 165px row whose last line ends at 158: the 7px
+    // margin overflows and cell 1 holds a 2-line paragraph (no legal cut), so the
+    // row turns the page whole (Word probe) instead of staying with its margin
+    // in the page margin
+    const rows = (): TableRowBox[] => [
       { height: 40 },
       {
         height: 165,
@@ -4787,19 +4832,54 @@ describe('computeSectionedSlicesF2 — multi-cell rows split per cell (Word row 
         cutYs: [20, 40],
         cells: [
           { ...linesOf(2, 20, 2, 0, 2), alignDy: 0, alignFrac: 0 },
-          { ...linesOf(2, 78, 1, 0, 2), alignDy: 0, alignFrac: 0 },
+          { ...linesOf(2, 78, 2, 0, 2), alignDy: 0, alignFrac: 0 },
         ],
       },
       { height: 50 },
     ]
     const out: SliceOutputs = { rowFills: [], rowSplits: [] }
-    const slices = computeSectionedSlicesF2([makeTableBlock(0, rows)], page, 255, out)
+    const slices = computeSectionedSlicesF2([makeTableBlock(0, rows())], page, 255, out)
     expect(slices.map((s) => [s.start, s.end])).toEqual([
-      [0, 205],
+      [0, 40],
+      [40, 205],
       [205, 255],
     ])
     expect(out.rowSplits).toEqual([])
-    expect(out.rowFills).toEqual([])
+    // legacy mode has no widow rule in cells: the paragraph cuts 1+1 and the
+    // first fragment fills the page
+    const legacy: SliceOutputs = { rowFills: [], rowSplits: [] }
+    const legacyBlock = { ...makeTableBlock(0, rows()), modernTableHeaders: false }
+    const legacySlices = computeSectionedSlicesF2([legacyBlock], page, 255, legacy)
+    expect(legacySlices.map((s) => [s.start, s.end])).toEqual([
+      [0, 200],
+      [200, 255],
+    ])
+    expect(legacy.rowSplits).toHaveLength(1)
+  })
+
+  it('a fragment carries the bottom cell margin: four fitting lines with only the margin over the edge split 2+2', () => {
+    // 90px row = 4 x 20px lines of one paragraph + 10px margin, 85px left: every
+    // line fits but the margin does not, so the row splits; 3+1 would fit but
+    // leaves a widow, hence 2+2 (Word probe)
+    const row: TableRowBox = {
+      height: 90,
+      contentBottom: 80,
+      cells: [{ ...linesOf(4, 20, 4), alignDy: 0, alignFrac: 0 }],
+    }
+    const plan = planRowSplit(row, 85, 200, () => 200)
+    expect(plan).toMatchObject({ lastFragment: 50, target: 135 })
+    expect(plan !== 'nofit' && plan?.rules[0]).toEqual({
+      from: 0,
+      cell: 0,
+      child: 0,
+      clipBottom: 40,
+    })
+    // the whole row box fits: no split
+    expect(planRowSplit(row, 90, 200, () => 200)).toEqual({
+      lastFragment: 90,
+      target: 90,
+      rules: [],
+    })
   })
 
   it('modernTableHeaders: a header row never stays alone at the page bottom, but a legal first-row split is fine', () => {
@@ -5219,6 +5299,331 @@ describe('row splits cut between line boxes (box-relative clips)', () => {
     } finally {
       elProto.getBoundingClientRect = origBox
       rangeProto.getClientRects = origRects
+    }
+  })
+})
+
+describe('page-bottom fit: the last line needs only its single-spacing extent (lineLeadPx)', () => {
+  // content 200: `before` ends at 180, leaving 20; a 30px line of an auto multiple whose
+  // extra leading is 10 keeps its glyph extent (20) on the page while the leading spills
+  it('a one-line paragraph whose multiple leading alone overflows stays on the page', () => {
+    const before = block(0, 180)
+    const mark = lineBlock(180, [30], { lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([before, mark], geoms1, 210).map((s) => s.start)).toEqual([0])
+    const noLines = block(180, 30, { lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([before, noLines], geoms1, 210).map((s) => s.start)).toEqual([
+      0,
+    ])
+  })
+
+  it('exact / atLeast lines (no lead) still demand their full box', () => {
+    const before = block(0, 180)
+    const mark = lineBlock(180, [30])
+    expect(computeSectionedSlicesF2([before, mark], geoms1, 210).map((s) => s.start)).toEqual([
+      0, 180,
+    ])
+  })
+
+  it('the previous space-after and the own space-before count in full', () => {
+    // after 6: text 174 + 6 + single extent 20 = 200 fits
+    const a = lineBlock(0, [174], { spaceAfterPx: 6 })
+    const markA = lineBlock(180, [30], { lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([a, markA], geoms1, 210).map((s) => s.start)).toEqual([0])
+    // after 8: 174 + 8 + 20 = 202 does not
+    const b = lineBlock(0, [174], { spaceAfterPx: 8 })
+    const markB = lineBlock(182, [30], { lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([b, markB], geoms1, 212).map((s) => s.start)).toEqual([0, 182])
+    // before 3 on the paragraph itself: 180 + 3 + 20 = 203
+    const c = block(0, 180)
+    const markC = lineBlock(180, [30], { spaceBeforePx: 3, lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([c, markC], geoms1, 213).map((s) => s.start)).toEqual([0, 180])
+  })
+
+  it('widowControl off: the first line stays when its single extent fits', () => {
+    const before = block(0, 180)
+    const para = lineBlock(180, [30, 30], { widowControl: false, lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([before, para], geoms1, 240).map((s) => s.start)).toEqual([
+      0, 210,
+    ])
+    const rigid = lineBlock(180, [30, 30], { widowControl: false })
+    expect(computeSectionedSlicesF2([before, rigid], geoms1, 240).map((s) => s.start)).toEqual([
+      0, 180,
+    ])
+  })
+
+  it('widow control: a split whose kept lines end on a spilling line', () => {
+    // 4 lines of 30: two fit only with the lead (140 + 60 - 10 = 190 <= 200), two go over
+    const before = block(0, 140)
+    const para = lineBlock(140, [30, 30, 30, 30], { lineLeadPx: 10 })
+    expect(computeSectionedSlicesF2([before, para], geoms1, 260).map((s) => s.start)).toEqual([
+      0, 200,
+    ])
+  })
+
+  it('keepLines paragraphs apply the allowance to their whole text', () => {
+    const before = block(0, 180)
+    const kl = lineBlock(180, [14, 14], { keepLines: true, lineLeadPx: 8 })
+    expect(computeSectionedSlicesF2([before, kl], geoms1, 208).map((s) => s.start)).toEqual([0])
+    const tall = lineBlock(180, [15, 15], { keepLines: true, lineLeadPx: 5 })
+    expect(computeSectionedSlicesF2([before, tall], geoms1, 210).map((s) => s.start)).toEqual([
+      0, 180,
+    ])
+  })
+
+  it('keepNext chain: the anchor demand ends on a spilling line', () => {
+    const before = block(0, 150)
+    const heading = lineBlock(150, [20], { keepNext: true })
+    // anchor needs its first two lines: 150 + 20 + 30 + 30 - 10 = 220 > 200 -> the pair moves
+    const body = lineBlock(170, [30, 30, 30], { lineLeadPx: 10 })
+    expect(
+      computeSectionedSlicesF2([before, heading, body], geoms1, 260).map((s) => s.start),
+    ).toEqual([0, 150])
+    // 140 + 10 + 60 - 10 = 200: the demand fits by the lead alone, the body then
+    // splits two lines down (its second line spills the same lead)
+    const before2 = block(0, 140)
+    const short = lineBlock(140, [10], { keepNext: true })
+    const body2 = lineBlock(150, [30, 30, 30, 30], { lineLeadPx: 10 })
+    expect(
+      computeSectionedSlicesF2([before2, short, body2], geoms1, 270).map((s) => s.start),
+    ).toEqual([0, 210])
+  })
+
+  it('applyLeadSpills records the leading that ran past the content bottom', () => {
+    const before = block(0, 180)
+    const mark = lineBlock(180, [30], { lineLeadPx: 10, spaceAfterPx: 12 })
+    const next = block(222, 50)
+    const slices = computeSectionedSlicesF2([before, mark, next], geoms1, 272)
+    expect(slices.map((s) => s.start)).toEqual([0, 222])
+    applyLeadSpills(slices, [before, mark, next], geoms1)
+    // text bottom 210 is 10 past the 200 bottom; the after is not a spill
+    expect(slices[0].leadSpill).toBe(10)
+    expect(slices[1].leadSpill).toBeUndefined()
+    // a plain over-capacity end (space-after only) records nothing
+    const plain = lineBlock(180, [20], { spaceAfterPx: 12 })
+    const s2 = computeSectionedSlicesF2([before, plain, block(212, 50)], geoms1, 262)
+    applyLeadSpills(s2, [before, plain, block(212, 50)], geoms1)
+    expect(s2[0].leadSpill).toBeUndefined()
+  })
+
+  it('keepLines: a paragraph over a page by only its lead moves whole instead of a hard cut', () => {
+    const before = block(0, 100)
+    // 210 of text, 195 by the single-spacing extent of its last line
+    const kl = lineBlock(100, [70, 70, 70], { keepLines: true, lineLeadPx: 15 })
+    expect(computeSectionedSlicesF2([before, kl], geoms1, 310).map((s) => s.start)).toEqual([
+      0, 100,
+    ])
+    const rigid = lineBlock(100, [70, 70, 70], { keepLines: true })
+    expect(computeSectionedSlicesF2([before, rigid], geoms1, 310).map((s) => s.start)).toEqual([
+      0, 170,
+    ])
+  })
+
+  it('keepNext: a chain + anchor demand over a page by only the lead still moves whole', () => {
+    const before = block(0, 50)
+    const heading = lineBlock(50, [20], { keepNext: true })
+    // demand 20 + 95 + 95 = 210, 200 by the second line's extent: the pair moves,
+    // the body then splits two lines down on the fresh page
+    const body = lineBlock(70, [95, 95, 95, 95], { lineLeadPx: 10 })
+    expect(
+      computeSectionedSlicesF2([before, heading, body], geoms1, 450).map((s) => s.start),
+    ).toEqual([0, 50, 260])
+    // a chain alone over a page by its tail's lead is still one unit
+    const h1 = block(50, 100, { keepNext: true })
+    const h2 = lineBlock(150, [110], { keepNext: true, lineLeadPx: 15 })
+    const anchor = lineBlock(260, [20, 20])
+    expect(
+      computeSectionedSlicesF2([before, h1, h2, anchor], geoms1, 300).map((s) => s.start),
+    ).toEqual([0, 50, 260])
+  })
+
+  it('bodyWindowHeight grows the window by the spill on every page, footnotes excepted', () => {
+    const spilled: PageSlice = { start: 0, end: 210, section: 0, leadSpill: 10 }
+    const opts = { hasNotes: false, seamExtend: 0 }
+    expect(bodyWindowHeight(spilled, 200, { ...opts, full: false })).toBe(210)
+    expect(bodyWindowHeight(spilled, 200, { ...opts, full: true })).toBe(210)
+    expect(bodyWindowHeight(spilled, 200, { ...opts, full: true, hasNotes: true })).toBe(200)
+    const plain: PageSlice = { start: 0, end: 150, section: 0 }
+    expect(bodyWindowHeight(plain, 200, { ...opts, full: false })).toBe(150)
+    expect(bodyWindowHeight(plain, 200, { ...opts, full: true })).toBe(200)
+  })
+
+  it('lineLeadPx reads unzoomed computed lengths like the rest of the measurement', () => {
+    const el = document.createElement('p')
+    el.style.lineHeight = '30px'
+    el.style.setProperty('--doc-line-mult', '1.5')
+    document.body.appendChild(el)
+    try {
+      expect(lineLeadPx(el)).toBeCloseTo(10, 5)
+      el.classList.add('doc-lh-fixed')
+      expect(lineLeadPx(el)).toBe(0)
+    } finally {
+      el.remove()
+    }
+  })
+
+  it('applyLeadSpills measures a repeated-header page from the header-shortened bottom', () => {
+    const para = block(0, 190, { lineLeadPx: 10 })
+    const slices: PageSlice[] = [
+      { start: 0, end: 190, section: 0, repeatHeader: { top: 500, height: 20 } },
+    ]
+    applyLeadSpills(slices, [para], geoms1)
+    // the flow bottom is 200 - 20 = 180: the 190 text bottom spills 10
+    expect(slices[0].leadSpill).toBe(10)
+    const plain: PageSlice[] = [{ start: 0, end: 190, section: 0 }]
+    applyLeadSpills(plain, [para], geoms1)
+    expect(plain[0].leadSpill).toBeUndefined()
+  })
+
+  it('applyLeadSpills records a column window spill on multi-column pages', () => {
+    const twoCol = [{ contentHeight: 200, forceBreak: false, cols: 2 }]
+    const before = block(0, 180)
+    const mark = lineBlock(180, [30], { lineLeadPx: 10 })
+    const next = block(210, 50)
+    const slices = computeSectionedSlicesF2([before, mark, next], twoCol, 260)
+    const cols = slices[0].regions![0].columns
+    expect(cols.map((c) => c.start)).toEqual([0, 210])
+    applyLeadSpills(slices, [before, mark, next], twoCol)
+    expect(cols[0].leadSpill).toBe(10)
+    expect(cols[1].leadSpill).toBeUndefined()
+    expect(slices[0].leadSpill).toBeUndefined()
+    // the column window grows the same way as a page window
+    expect(bodyWindowHeight(cols[0], 200, { full: false, hasNotes: false, seamExtend: 0 })).toBe(
+      210,
+    )
+  })
+})
+
+describe('fillLineBoxes — sole picture line a hair taller than the page', () => {
+  const geoms = [
+    { contentHeight: 1000, forceBreak: true },
+    { contentHeight: 1000, forceBreak: true },
+  ]
+  const rectOf = (top: number, height: number) =>
+    ({ top, height, bottom: top + height, left: 0, right: 100, width: 100 }) as DOMRect
+  // the picture keeps its full rect even when the block carries the renderer's clip
+  const picture = (top: number, inkH: number, section: number, clip?: string): BlockBox => {
+    const el = document.createElement('div')
+    el.className = 'doc-protected doc-protected-image'
+    el.innerHTML = '<span class="doc-img-wrap"><img></span>'
+    if (clip) el.dataset.oversizeClip = clip
+    const height = clip ? parseFloat(clip) : inkH
+    el.getBoundingClientRect = () => rectOf(top, height)
+    el.querySelector('img')!.getBoundingClientRect = () => rectOf(top, inkH)
+    return { top, height, el, section }
+  }
+
+  it('flags the atomic clip instead of cutting an ink-less tail into a blank page', () => {
+    const a = picture(0, 1000.4, 0)
+    const b = picture(1000.4, 1000.4, 1)
+    fillLineBoxes([a, b], geoms, 1)
+    expect(a.oversizeLineH).toBeCloseTo(1000.4)
+    expect(b.oversizeLineH).toBeCloseTo(1000.4)
+    expect(b.lineBoxes).toBeUndefined()
+    const slices = computeSectionedSlicesF2([a, b], geoms, 2000.8)
+    expect(slices.map((s) => s.start)).toEqual([0, 1000.4])
+  })
+
+  it('keeps the flag on a block the renderer already clipped to the capacity', () => {
+    const a = picture(0, 1000.4, 0, '1000.0')
+    fillLineBoxes([a], geoms, 1)
+    expect(a.oversizeLineH).toBeCloseTo(1000.4)
+  })
+
+  it('leaves a picture that fits unflagged', () => {
+    const a = picture(0, 999.6, 0)
+    fillLineBoxes([a], geoms, 1)
+    expect(a.oversizeLineH).toBeUndefined()
+  })
+
+  // a paragraph whose only line sits below a page-tall float measures taller
+  // than the page too, but its line is text: it belongs at the next page top
+  const textUnderFloat = (height: number, lineTop: number, lineH: number, clip?: string) => {
+    const el = document.createElement('p')
+    el.textContent = 'Subtitle'
+    if (clip) el.dataset.oversizeClip = clip
+    el.getBoundingClientRect = () => rectOf(0, height)
+    const block: BlockBox = { top: 0, height, el, section: 0 }
+    const orig = Range.prototype.getClientRects
+    Range.prototype.getClientRects = () => [rectOf(lineTop, lineH)] as unknown as DOMRectList
+    try {
+      fillLineBoxes([block], geoms, 1)
+    } finally {
+      Range.prototype.getClientRects = orig
+    }
+    return block
+  }
+
+  it('a text line pushed under a float splits into ink-less lead and the line, no clip flag', () => {
+    const a = textUnderFloat(1034, 980, 20)
+    expect(a.oversizeLineH).toBeUndefined()
+    expect(a.lineBoxes).toEqual([
+      { offsetInBlock: 0, height: 980, lead: true },
+      { offsetInBlock: 980, height: 54 },
+    ])
+  })
+
+  it('a text line pushed past the page bottom opens the next page at its own top', () => {
+    const a = textUnderFloat(1034, 1004, 18)
+    expect(a.oversizeLineH).toBeUndefined()
+    expect(a.lineBoxes?.map((b) => b.offsetInBlock)).toEqual([0, 1004])
+    // the anchor paragraph's own line already used 21px of page 1: the lead is
+    // swallowed by the page bottom and page 2 starts at the text line
+    const anchorLine: BlockBox = { top: 0, height: 21, el: document.createElement('p'), section: 0 }
+    a.top = 21
+    const slices = computeSectionedSlicesF2([anchorLine, a], geoms, 1055)
+    expect(slices.map((s) => s.start)).toEqual([0, 1025])
+  })
+
+  it('a text line taller than the page itself still takes the clip', () => {
+    const a = textUnderFloat(1034, 0, 1034)
+    expect(a.oversizeLineH).toBeCloseTo(1034)
+  })
+
+  it('a renderer-clipped text line measuring at the capacity stays unflagged', () => {
+    const a = textUnderFloat(1000, 980, 20, '1000.0')
+    expect(a.oversizeLineH).toBeUndefined()
+    expect(a.lineBoxes).toBeUndefined()
+  })
+
+  it('an image-only paragraph in the same geometry keeps the flag', () => {
+    const el = document.createElement('p')
+    el.innerHTML = '<img class="doc-inline-img">'
+    el.getBoundingClientRect = () => rectOf(0, 1034)
+    el.querySelector('img')!.getBoundingClientRect = () => rectOf(980, 20)
+    const a: BlockBox = { top: 0, height: 1034, el, section: 0 }
+    fillLineBoxes([a], geoms, 1)
+    expect(a.oversizeLineH).toBeCloseTo(1000)
+  })
+})
+
+describe('trailing page break — phantom line', () => {
+  const css = readFileSync(join(__dirname, '../src/renderer/styles.css'), 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  )
+
+  it('hides the trailing-break phantom after a paragraph-ending page break', () => {
+    const m = /([^{}]*br\.doc-page-br \+ br\.ProseMirror-trailingBreak[^{]*)\{([^}]*)\}/.exec(css)
+    expect(m, 'phantom rule').not.toBeNull()
+    expect(m![2]).toMatch(/display:\s*none/)
+    const selectors = m![1]
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    const host = document.createElement('div')
+    host.className = 'doc-page'
+    host.innerHTML =
+      '<p>text<br class="doc-page-br"><br class="ProseMirror-trailingBreak"></p>' +
+      '<p><span>text<br class="doc-page-br"></span><br class="ProseMirror-trailingBreak"></p>' +
+      '<p>text<br><br class="ProseMirror-trailingBreak"></p>' +
+      '<p><span>text<br class="doc-page-br"></span><span>more</span><br class="ProseMirror-trailingBreak"></p>'
+    document.body.appendChild(host)
+    try {
+      const phantoms = Array.from(host.querySelectorAll('br.ProseMirror-trailingBreak'))
+      const hit = (br: Element) => selectors.some((sel) => br.matches(sel))
+      expect(phantoms.map(hit)).toEqual([true, true, false, false])
+    } finally {
+      host.remove()
     }
   })
 })

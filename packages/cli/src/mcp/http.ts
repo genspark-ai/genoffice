@@ -99,7 +99,7 @@ export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
       files,
       baseUrl: baseUrlOf(req),
     })
-    const server = createMcpServer(ctx, opts)
+    const server = await createMcpServer(ctx, opts)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => id })
     const session: Session = { transport, server, ctx }
     transport.onclose = () => {

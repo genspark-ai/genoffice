@@ -90,3 +90,33 @@ describe('structural edits against a pivot cache source sheet', () => {
     expect(mutation).toBeDefined()
   })
 })
+
+describe('non-shifting edits against a pivot cache source sheet', () => {
+  it('saves a row-size change on the sheet the cache reads from', async () => {
+    const mutation = await plan([
+      { sheetName: 'Data', ops: [{ kind: 'set-row-size', start: 0, end: 0, size: 30 }] },
+    ])
+    expect(mutation).toBeDefined()
+  })
+
+  it('saves a hidden-rows change on the sheet the cache reads from', async () => {
+    const mutation = await plan([
+      { sheetName: 'Data', ops: [{ kind: 'set-rows-hidden', start: 1, end: 1, hidden: true }] },
+    ])
+    expect(mutation).toBeDefined()
+  })
+
+  it('still refuses when a shifting op rides along with a non-shifting one', async () => {
+    await expect(
+      plan([
+        {
+          sheetName: 'Data',
+          ops: [
+            { kind: 'set-row-size', start: 0, end: 0, size: 30 },
+            { kind: 'insert-rows', index: 0, count: 1 },
+          ],
+        },
+      ]),
+    ).rejects.toThrow(StructuralShiftError)
+  })
+})

@@ -331,8 +331,8 @@ mod tests {
     #[test]
     fn does_not_shift_ascii_suffixes_inside_unicode_names() {
         assert_eq!(
-            translate_shared_formula("名A1+A1", 0, 1).as_deref(),
-            Some("名A1+B1")
+            translate_shared_formula("\u{540d}A1+A1", 0, 1).as_deref(),
+            Some("\u{540d}A1+B1")
         );
     }
 

@@ -5,6 +5,7 @@
 import { useState, type ReactNode } from 'react'
 import type { ChartPresetDef } from '../insert-presets'
 import { useI18n, type StringKey } from '../i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 type ChartKind = ChartPresetDef['kind']
 
@@ -298,12 +299,13 @@ interface Props {
 
 export function ChartTypeDialog({ current, onConfirm, onClose }: Props) {
   const { t } = useI18n()
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const [selected, setSelected] = useState<ChartKind>(current ?? 'bar')
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal chart-type-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('ribbonChangeChartType')}</h2>
+      <div className="modal chart-type-modal" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t('ribbonChangeChartType')}</h2>
         <div className="chart-type-grid">
           {KINDS.map((k) => (
             <button

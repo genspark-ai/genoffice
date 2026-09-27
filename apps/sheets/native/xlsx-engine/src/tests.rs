@@ -228,7 +228,7 @@ fn resolves_encoded_internal_relationship_targets() {
     );
     assert_eq!(
         normalize_worksheet_path("worksheets/%E6%95%B0%E6%8D%AE.xml").unwrap(),
-        "xl/worksheets/数据.xml"
+        "xl/worksheets/\u{6570}\u{636e}.xml"
     );
     assert_eq!(
         resolve_part_target("xl/worksheets/sheet.xml", "../drawings/drawing%201.xml").unwrap(),

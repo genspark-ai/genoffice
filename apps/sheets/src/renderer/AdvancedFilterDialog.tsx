@@ -5,6 +5,7 @@ import { BooleanNumber } from '@univerjs/core'
 import type { IFilterColumn } from '@univerjs/preset-sheets-filter'
 
 import { t, useI18n, type StringKey } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's custom auto-filter ("Advanced" in Data → Sort & Filter), minimal:
 /// one column, up to two conditions joined by AND/OR. OK hands the criteria
@@ -96,11 +97,13 @@ export function AdvancedFilterDialog({
   const [and, setAnd] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgAdvFilterTitle')}
         onClick={(event) => event.stopPropagation()}
       >

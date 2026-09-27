@@ -16,7 +16,10 @@
       return 0;
     }
     const count = Math.ceil(value / sliceHeight);
-    return count > MAX_SCREENSHOT_SLICE_COUNT ? 0 : count;
+    // Clamp rather than reject: the bound still caps the work a hostile height
+    // can demand, while a legitimately tall page keeps its first slices (the
+    // document top) instead of converting to nothing.
+    return Math.min(count, MAX_SCREENSHOT_SLICE_COUNT);
   }
 
   const styleCache = new WeakMap();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseOutline } from '../src/slides/outline'
+import { parseOutline, PLACEHOLDER } from '../src/slides/outline'
 
 const HARBOR = String.fromCharCode(0x6e2f, 0x53e3)
 
@@ -62,6 +62,13 @@ describe('parseOutline', () => {
         expect.stringContaining('-: "core_hook" is missing'),
       ]),
     )
+  })
+
+  it('accepts apparel sizes such as XXL while still catching XX%', () => {
+    expect(PLACEHOLDER.test('Available in XS, S, M, L, XL and XXL.')).toBe(false)
+    expect(PLACEHOLDER.test('XXXL hoodie, size xxl')).toBe(false)
+    expect(PLACEHOLDER.test('Revenue grew XX% year over year')).toBe(true)
+    expect(PLACEHOLDER.test('Serving XX customers')).toBe(true)
   })
 
   it('warns about thin briefs, CJK image queries, little variety and missing cover/closing', () => {

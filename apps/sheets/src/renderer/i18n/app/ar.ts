@@ -628,7 +628,7 @@ export const ar = {
   appTabData: 'البيانات',
   appTabReview: 'مراجعة',
   appRibbonCollapse: 'طي الشريط',
-  appRibbonPin: 'تثبيت الشريط',
+  appRibbonExpand: 'توسيع الشريط',
   appTabView: 'عرض',
   appTabAi: 'الذكاء الاصطناعي',
   appTabChartDesign: 'تصميم المخطط',

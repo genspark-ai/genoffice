@@ -36,6 +36,8 @@ export interface StyleParaProps {
   pageBreakBefore?: boolean
   /** 1-9 (w:outlineLvl val + 1) */
   outlineLevel?: number | null
+  /** list level linked to the style (w:numPr); null removes it */
+  numPr?: { numId: string; ilvl: number } | null
 }
 
 /**
@@ -265,6 +267,14 @@ function patchRun(children: Children, rp: StyleRunProps): void {
 }
 
 function patchPara(children: Children, pp: StyleParaProps): void {
+  if (pp.numPr !== undefined) {
+    children.set(
+      'w:numPr',
+      pp.numPr === null
+        ? null
+        : `<w:numPr><w:ilvl w:val="${pp.numPr.ilvl}"/><w:numId w:val="${pp.numPr.numId}"/></w:numPr>`,
+    )
+  }
   if (pp.align !== undefined) {
     children.set(
       'w:jc',

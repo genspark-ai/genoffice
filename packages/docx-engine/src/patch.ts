@@ -24,7 +24,14 @@ import { resolveRelationshipTargetPath } from './parse-package'
 import { assertZipWithinLimits, resolveMainDocumentPath, type ParseExtras } from './parse'
 import { cleanupDocxOwnedResources } from './resource-cleanup'
 import { loadDocxZip } from './zip-load'
-import { BLANK_NUMBERING_XML, abstractNumXml, type CustomNumberingLevel } from './blank'
+import {
+  BLANK_NUMBERING_XML,
+  abstractNumXml,
+  customLevelXml,
+  mergeLevelXml,
+  numPicBulletXml,
+  type CustomNumberingLevel,
+} from './blank'
 import {
   applyPageNumType,
   applySectionSettings,
@@ -57,6 +64,7 @@ import type {
   NewInkImage,
   NoteInfo,
   ParsedDoc,
+  SdtShell,
   SectionSettings,
   SourceInfo,
   ThemeColors,
@@ -153,9 +161,27 @@ export interface SaveOptions {
    * reference injected into this section's sectPr (the section becomes independent,
    * earlier sections are unaffected).
    */
-  sectionHf?: Array<{ lastBlockIndex: number; kind: 'header' | 'footer'; hf: HeaderFooter }>
+  sectionHf?: Array<{
+    lastBlockIndex: number
+    kind: 'header' | 'footer'
+    hf: HeaderFooter
+    /** w:type of the reference; absent = default */
+    variant?: 'default' | 'first' | 'even'
+  }>
+  /**
+   * Word's "Link to Previous" switched on: drop the section's own header/footer
+   * reference of that variant so it inherits the previous section's part again.
+   * lastBlockIndex locates the sectPr (a break paragraph or the trailing sectPr).
+   */
+  sectionHfUnlink?: Array<{
+    lastBlockIndex: number
+    kind: 'header' | 'footer'
+    variant?: 'default' | 'first' | 'even'
+  }>
   /** "different odd & even pages": set/remove settings.xml w:evenAndOddHeaders */
   evenAndOddHeaders?: boolean
+  /** mirrored facing pages: set/remove settings.xml w:mirrorMargins */
+  mirrorMargins?: boolean
   /**
    * Inject the newly created header/footer references into EVERY body sectPr
    * that has none (not just the trailing one). Generated multi-section
@@ -179,6 +205,10 @@ export interface SaveOptions {
       abstractNumId: string
       startOverrides: Record<number, number>
     }>
+    /** replace one w:lvl of an existing abstractNum (Adjust List Indents / define on an existing list) */
+    levelEdits?: Array<{ abstractNumId: string; ilvl: number; level: CustomNumberingLevel }>
+    /** new w:numPicBullet images referenced by levels' picBulletId */
+    picBullets?: Array<{ id: number; base64: string; mime: NewImage['mime'] }>
   }
   /** create/modify styles: surgical upsert of word/styles.xml by styleId (replace when present, else append) */
   styleUpserts?: StyleUpsert[]
@@ -256,6 +286,39 @@ const SETTINGS_REL_TYPE =
 const CHART_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 const CHART_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
 const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+/** Swap one w:lvl inside the named abstractNum; a missing level is appended in ilvl order */
+function replaceAbstractNumLevel(
+  xml: string,
+  abstractNumId: string,
+  ilvl: number,
+  level: CustomNumberingLevel,
+): string {
+  const absRe = new RegExp(
+    `<w:abstractNum [^>]*w:abstractNumId="${abstractNumId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>[\\s\\S]*?</w:abstractNum>`,
+  )
+  const abs = absRe.exec(xml)
+  if (!abs) return xml
+  const lvlRe = new RegExp(
+    `<w:lvl [^>]*w:ilvl="${ilvl}"[^>]*>[\\s\\S]*?</w:lvl>|<w:lvl [^>]*w:ilvl="${ilvl}"[^>]*/>`,
+  )
+  let body = abs[0]
+  const existing = lvlRe.exec(body)?.[0]
+  if (existing) body = body.replace(existing, mergeLevelXml(existing, level, ilvl))
+  else {
+    const lvlXml = customLevelXml(level, ilvl)
+    const later = new RegExp(`<w:lvl [^>]*w:ilvl="(\\d)"`, 'g')
+    let insertAt = body.lastIndexOf('</w:abstractNum>')
+    for (const m of body.matchAll(later)) {
+      if (parseInt(m[1], 10) > ilvl) {
+        insertAt = m.index!
+        break
+      }
+    }
+    body = body.slice(0, insertAt) + lvlXml + body.slice(insertAt)
+  }
+  return xml.replace(abs[0], body)
+}
 
 const IMAGE_EXT: Record<NewImage['mime'], string> = {
   'image/png': 'png',
@@ -376,10 +439,12 @@ export async function saveDocx(
     options.footerEven === undefined &&
     options.titlePg === undefined &&
     (options.sectionHf === undefined || options.sectionHf.length === 0) &&
+    (options.sectionHfUnlink === undefined || options.sectionHfUnlink.length === 0) &&
     options.numbering === undefined &&
     options.defaultFonts === undefined &&
     (options.styleUpserts === undefined || options.styleUpserts.length === 0) &&
     options.evenAndOddHeaders === undefined &&
+    options.mirrorMargins === undefined &&
     options.comments === undefined &&
     options.protection === undefined &&
     options.writeProtection === undefined &&
@@ -795,15 +860,26 @@ export async function saveDocx(
   // ---- Per-section header/footer (non-last sections): with a reference, rewrite the
   // part; without one, create a part + inject the reference ----
   const sectionRefTags = new Map<number, string[]>()
+  const unlinkSectionHf = (xml: string, docxIndex: number): string => {
+    let out = xml
+    for (const u of options.sectionHfUnlink ?? []) {
+      if (u.lastBlockIndex !== docxIndex) continue
+      out = removeHfReference(out, u.kind, u.variant ?? 'default')
+    }
+    return out
+  }
   for (const edit of options.sectionHf ?? []) {
     const block = parsed.blocks.find((b) => b.docxIndex === edit.lastBlockIndex)
     const sectPr =
       block?.originalXml?.match(/<w:sectPr[^>]*\/>|<w:sectPr[\s\S]*?<\/w:sectPr>/)?.[0] ?? ''
     const refs = sectPr.match(new RegExp(`<w:${edit.kind}Reference[^>]*/>`, 'g')) ?? []
+    const variant = edit.variant ?? 'default'
     const existing =
-      refs.find((r) => r.includes('w:type="default"')) ??
-      refs.find((r) => r.includes('w:type="odd"')) ??
-      refs.find((r) => !/w:type="/.test(r))
+      variant === 'default'
+        ? (refs.find((r) => r.includes('w:type="default"')) ??
+          refs.find((r) => r.includes('w:type="odd"')) ??
+          refs.find((r) => !/w:type="/.test(r)))
+        : refs.find((r) => r.includes(`w:type="${variant}"`))
     const rId = existing ? /r:id="([^"]+)"/.exec(existing)?.[1] : undefined
     const target = rId ? relTargets.get(rId) : undefined
     if (target) {
@@ -828,7 +904,7 @@ export async function saveDocx(
         `<Override PartName="/word/${filename}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${edit.kind}+xml"/>`,
       )
       const tags = sectionRefTags.get(edit.lastBlockIndex) ?? []
-      tags.push(`<w:${edit.kind}Reference w:type="default" r:id="${newRId}"/>`)
+      tags.push(`<w:${edit.kind}Reference w:type="${variant}" r:id="${newRId}"/>`)
       sectionRefTags.set(edit.lastBlockIndex, tags)
     }
   }
@@ -838,9 +914,12 @@ export async function saveDocx(
   const numberingPath = 'word/numbering.xml'
   let numberingXmlOut: string | null = null
   let numberingIsNew = false
+  let numberingRelsOut: { path: string; xml: string; isNew: boolean } | null = null
   if (
     (options.numbering?.newDefs?.length ?? 0) > 0 ||
-    (options.numbering?.restartNums?.length ?? 0) > 0
+    (options.numbering?.restartNums?.length ?? 0) > 0 ||
+    (options.numbering?.levelEdits?.length ?? 0) > 0 ||
+    (options.numbering?.picBullets?.length ?? 0) > 0
   ) {
     const file = zip.file(numberingPath)
     let xml = file ? await file.async('string') : null
@@ -862,12 +941,17 @@ export async function saveDocx(
     }
     const absXmls: string[] = []
     const numXmls: string[] = []
+    // the renderer names a not-yet-saved definition's abstractNum "pending-<numId>"
+    const pendingAbs = new Map<string, string>()
     for (const def of options.numbering?.newDefs ?? []) {
       const absId = String(++maxAbs)
+      pendingAbs.set(`pending-${def.numId}`, absId)
       absXmls.push(abstractNumXml(absId, def.kind, def.levels))
       numXmls.push(`<w:num w:numId="${def.numId}"><w:abstractNumId w:val="${absId}"/></w:num>`)
     }
     for (const r of options.numbering?.restartNums ?? []) {
+      const absId = pendingAbs.get(r.abstractNumId) ?? r.abstractNumId
+      if (absId.startsWith('pending-')) continue
       const overrides = Object.entries(r.startOverrides)
         .map(
           ([ilvl, v]) =>
@@ -875,8 +959,37 @@ export async function saveDocx(
         )
         .join('')
       numXmls.push(
-        `<w:num w:numId="${r.numId}"><w:abstractNumId w:val="${r.abstractNumId}"/>${overrides}</w:num>`,
+        `<w:num w:numId="${r.numId}"><w:abstractNumId w:val="${absId}"/>${overrides}</w:num>`,
       )
+    }
+    for (const edit of options.numbering?.levelEdits ?? []) {
+      if (edit.abstractNumId.startsWith('pending-')) continue
+      xml = replaceAbstractNumLevel(xml, edit.abstractNumId, edit.ilvl, edit.level)
+    }
+    if ((options.numbering?.picBullets?.length ?? 0) > 0) {
+      const relsPath = 'word/_rels/numbering.xml.rels'
+      const relsFile = zip.file(relsPath)
+      let relsXml = relsFile
+        ? await relsFile.async('string')
+        : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+      let relNum = 1
+      for (const m of relsXml.matchAll(/Id="rId(\d+)"/g))
+        relNum = Math.max(relNum, parseInt(m[1], 10) + 1)
+      const picXmls: string[] = []
+      for (const pic of options.numbering?.picBullets ?? []) {
+        const mediaPath = landMedia(pic)
+        const rId = `rId${relNum++}`
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${escapeXmlAttr(mediaPath.replace(/^word\//, ''))}"/></Relationships>`,
+        )
+        picXmls.push(numPicBulletXml(pic.id, rId))
+      }
+      // Schema order: numPicBullet* precedes abstractNum*
+      xml = /<w:abstractNum[\s>]/.test(xml)
+        ? xml.replace(/<w:abstractNum[\s>]/, (m) => picXmls.join('') + m)
+        : xml.replace('</w:numbering>', `${picXmls.join('')}</w:numbering>`)
+      numberingRelsOut = { path: relsPath, xml: relsXml, isNew: !relsFile }
     }
     // Schema order: abstractNum* comes before num* — insert new abstracts before the first w:num
     if (absXmls.length > 0) {
@@ -1044,6 +1157,22 @@ export async function saveDocx(
   for (const block of parsed.blocks) {
     if (block.hidden && block.docxIndex !== null) retainedIndexes.add(block.docxIndex)
   }
+  // an sdt shell is re-emitted from its raw openXml/closeXml bytes, so opaque
+  // markup inside the shell (a comment in w:sdtPr) is already carried along
+  const sdtShellByIndex = new Map<number, SdtShell>()
+  for (const block of parsed.blocks) {
+    if (block.sdtShell && block.docxIndex !== null)
+      sdtShellByIndex.set(block.docxIndex, block.sdtShell)
+  }
+  const insideSdtShell = (index: number, region: { start: number; end: number }): boolean => {
+    const shell = sdtShellByIndex.get(index)
+    const element = elements[index]
+    if (!shell || !element) return false
+    return (
+      region.end <= element.start + shell.openXml.length ||
+      region.start >= element.end - shell.closeXml.length
+    )
+  }
   const opaqueBefore = new Map<number, string[]>()
   const opaqueAfter = new Map<number, string[]>()
   const nestedOpaque = new Map<number, string[]>()
@@ -1055,6 +1184,7 @@ export async function saveDocx(
     )
     const xml = documentXml.slice(region.start, region.end)
     if (containingIndex !== -1) {
+      if (insideSdtShell(containingIndex, region)) continue
       if (retainedIndexes.has(containingIndex)) {
         const regions = nestedOpaque.get(containingIndex) ?? []
         regions.push(xml)
@@ -1120,6 +1250,7 @@ export async function saveDocx(
     if (refTags && refTags.length > 0) {
       xml = xml.replace(/(<w:sectPr[^>]*>)/, `$1${refTags.join('')}`)
     }
+    if (fbDocxIndex !== undefined) xml = unlinkSectionHf(xml, fbDocxIndex)
     // The ink list is authoritative: old aidocs-ink runs go away, the desired
     // set is re-injected at its (possibly new) anchor paragraphs.
     if (options.inks !== undefined) xml = stripInkRuns(xml)
@@ -1166,6 +1297,7 @@ export async function saveDocx(
         if (hfRefTags.length > 0) {
           xml = xml.replace(/(<w:sectPr[^>]*>)/, `$1${hfRefTags.join('')}`)
         }
+        xml = unlinkSectionHf(xml, block.docxIndex)
       }
       const index = block.docxIndex
       if (index !== null) {
@@ -1220,7 +1352,8 @@ export async function saveDocx(
     options.protection !== undefined ||
     options.writeProtection !== undefined ||
     options.removePersonalInfo !== undefined ||
-    options.evenAndOddHeaders !== undefined
+    options.evenAndOddHeaders !== undefined ||
+    options.mirrorMargins !== undefined
   ) {
     const file = zip.file(settingsPath)
     let xml: string
@@ -1262,6 +1395,10 @@ export async function saveDocx(
     }
     if (options.evenAndOddHeaders !== undefined) {
       xml = applyEvenAndOddHeaders(xml, options.evenAndOddHeaders)
+      touched = true
+    }
+    if (options.mirrorMargins !== undefined) {
+      xml = applySettingsFlag(xml, 'w:mirrorMargins', options.mirrorMargins)
       touched = true
     }
     if (touched) settingsXml = xml
@@ -1395,6 +1532,8 @@ export async function saveDocx(
       out.file(name, commentsExtXml, { date: entry.date })
     } else if (name === numberingPath && numberingXmlOut !== null) {
       out.file(name, numberingXmlOut, { date: entry.date })
+    } else if (numberingRelsOut && name === numberingRelsOut.path) {
+      out.file(name, numberingRelsOut.xml, { date: entry.date })
     } else if (name === stylesPath && stylesXmlOut !== null) {
       out.file(name, stylesXmlOut, { date: entry.date })
     } else if (notesParts.some((p) => p.path === name)) {
@@ -1435,6 +1574,9 @@ export async function saveDocx(
   }
   if (numberingIsNew && numberingXmlOut !== null) {
     out.file(numberingPath, numberingXmlOut)
+  }
+  if (numberingRelsOut?.isNew) {
+    out.file(numberingRelsOut.path, numberingRelsOut.xml)
   }
   if (stylesXmlOut !== null && !zip.file(stylesPath)) {
     out.file(stylesPath, stylesXmlOut)
@@ -1647,8 +1789,11 @@ function headerFooterPartXml(
     )
     let pageEmitted = !hf.pageNumber || hasPageMark
     content = hf.paras
-      // table-row paragraphs are display-only: the part's original w:tbl bytes are kept below
-      .filter((para) => !para.cells)
+      // table rows and still-empty drawing-only lines are display-only: the
+      // part's original w:tbl / drawing paragraph bytes are kept below. Text
+      // typed into such a line, or a rebuild without the original part, is
+      // written out like any paragraph.
+      .filter((para) => !para.cells && !(para.lineOnly && originalXml && para.runs.length === 0))
       .map((para) => {
         // the parsed format, not just w:jc: hand-building it here dropped w:bidi and wrote
         // the visual align back as the logical one, flipping RTL headers to LTR
@@ -2061,6 +2206,25 @@ async function scrubPersonalMetadata(zip: JSZip): Promise<void> {
 }
 
 /** set or remove <w:titlePg/> ("different first page"), before w:docGrid per schema order */
+/** drop a sectPr's header/footer reference of one variant (default also covers Word's odd and untyped) */
+export function removeHfReference(
+  sectXml: string,
+  kind: 'header' | 'footer',
+  variant: 'default' | 'first' | 'even',
+): string {
+  return sectXml.replace(new RegExp(`<w:${kind}Reference\\b[^>]*/>`, 'g'), (tag) => {
+    const type = /w:type="([^"]+)"/.exec(tag)?.[1]
+    const isDefault = type === undefined || type === 'default' || type === 'odd'
+    return (variant === 'default' ? isDefault : type === variant) ? '' : tag
+  })
+}
+
+/** set or remove an on/off settings flag right after the settings root opens */
+function applySettingsFlag(xml: string, tag: string, on: boolean): string {
+  const out = xml.replace(new RegExp(`<${tag}(?=[\\s/>])[^>]*/>`), '')
+  return on ? out.replace(/(<w:settings[^>]*>)/, `$1<${tag}/>`) : out
+}
+
 /** set or remove <w:evenAndOddHeaders/> right after the settings root opens */
 function applyEvenAndOddHeaders(xml: string, on: boolean): string {
   const out = xml.replace(/<w:evenAndOddHeaders[^>]*\/>/, '')

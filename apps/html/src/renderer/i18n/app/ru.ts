@@ -7,6 +7,8 @@ export const ru = {
   saveFailed: 'Не удалось сохранить: {error}',
   saveFailedStatus: 'Не удалось сохранить',
   exportFailed: 'Не удалось экспортировать',
+  exportHtmlSkipped:
+    'Экспортировано, но {count} ресурс(ов) не удалось встроить (например, {first})',
   viewPreview: 'Просмотр',
   viewSplit: 'Разделить',
   viewSource: 'Исходник',
@@ -52,7 +54,6 @@ export const ru = {
   save: 'Сохранить (⌘S)',
   saveAs: 'Сохранить как…',
   ribbonCollapse: 'Свернуть ленту',
-  ribbonPin: 'Закрепить ленту',
   ribbonExpand: 'Развернуть ленту',
   ribbonGroupInsert: 'Вставка',
   editText: 'Изменить текст',

@@ -70,6 +70,10 @@
   margin-bottom: 8px;
 }
 
+.gcp-row {
+  display: contents;
+}
+
 .gcp-palette.gcp-palette .gcp-swatch {
   display: block;
   box-sizing: border-box;
@@ -83,6 +87,7 @@
 }
 
 .gcp-palette.gcp-palette .gcp-swatch:hover,
+.gcp-palette.gcp-palette .gcp-swatch:focus-visible,
 .gcp-palette.gcp-palette .gcp-swatch.selected {
   position: relative;
   z-index: 1;

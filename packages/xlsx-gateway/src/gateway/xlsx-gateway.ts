@@ -126,14 +126,6 @@ const MAX_UNCOMPRESSED_BYTES = XLSX_ZIP_LIMITS.maxTotalBytes
 /** Excel grid extent: larger addresses are unaddressable (and unopenable) in Excel */
 export const MAX_GRID_ROWS = 1_048_576
 export const MAX_GRID_COLUMNS = 16_384
-/**
- * Shared-string table entry cap: each entry costs object overhead far beyond
- * its bytes, so a tiny (highly compressible) part could otherwise exhaust the
- * heap long before the uncompressed-byte cap trips. Files with more than a
- * million unique strings are vanishingly rare; exceeding it fails the open
- * loudly instead of OOM-crashing it.
- */
-export const MAX_SHARED_STRINGS = 1_000_000
 
 export interface PackageEntry {
   readonly path: string
@@ -887,14 +879,16 @@ export async function planCellEditsToXlsx(
     partPath: string
     insertions: TableColumnInsertion[]
   }> = []
-  const pivotCacheDefinitionPaths = structuralOps.some(({ ops }) => ops.length > 0)
+  // Only shifting ops desync a pivot cache's recorded source range; sizing,
+  // visibility, and outline ops on the source sheet are safe to save.
+  const pivotCacheDefinitionPaths = structuralOps.some(({ ops }) => ops.some(isShiftingOp))
     ? (await pkg.paths()).filter((path) =>
         /^xl\/pivotCache\/pivotCacheDefinition[^/]*\.xml$/.test(path),
       )
     : []
   for (const { sheetName, ops } of structuralOps) {
     if (ops.length === 0) continue
-    for (const cachePath of pivotCacheDefinitionPaths) {
+    for (const cachePath of ops.some(isShiftingOp) ? pivotCacheDefinitionPaths : []) {
       if (pivotCacheReadsFromSheet(await pkg.readText(cachePath), sheetName)) {
         throw new StructuralShiftError(
           `A pivot table reads its source data from "${sheetName}" — ` +
@@ -2970,20 +2964,12 @@ async function readSharedStrings(source: EntrySource): Promise<readonly string[]
   return parseSharedStringsXml(xml)
 }
 
-/** Shared-string table parse with an entry-count cap (see MAX_SHARED_STRINGS). Exported for tests. */
 export function parseSharedStringsXml(xml: string): string[] {
-  const out: string[] = []
-  for (const itemMatch of xml.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)) {
-    if (out.length >= MAX_SHARED_STRINGS) {
-      throw new Error('Workbook contains too many shared strings.')
-    }
-    out.push(
-      [...(itemMatch[1] ?? '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
-        .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
-        .join(''),
-    )
-  }
-  return out
+  return [...xml.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map((itemMatch) =>
+    [...(itemMatch[1] ?? '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
+      .join(''),
+  )
 }
 
 /** Cell addresses outside the Excel grid cannot exist in a valid file; skip them. Exported for tests. */

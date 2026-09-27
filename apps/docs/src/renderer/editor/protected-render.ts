@@ -7,22 +7,24 @@ import {
   autospaceBoundaries,
   autospacePadBetween,
   codePointLengthAt,
-  cjkDeclaredLineFactor,
   cssAutoLineMult,
   cssCsFontFamily,
+  hangulSpaceOffsets,
   cssFontFamily,
   cssRunFontFamily,
   cssGridLineBase,
   cssGridSpacingPt,
+  cssLeadTop,
   cssLineHeight,
+  cssExactLineCap,
   isCjk,
   isCjkFontName,
   lineHeightFactor,
   paraLineFactorCss,
+  runsLineFactor,
   runLetterSpacingCss,
   fontKerningCss,
   strutFontCss,
-  textHasCjk,
   textHasComplexScript,
   textHasHangul,
   WORD_AUTO_SPACING_PT,
@@ -71,6 +73,7 @@ import {
   cellClipStyle,
   borderWidthPx,
   cellPadCss,
+  modelEdgeBorders,
   outerBorderPx,
   cellVAlignGridCss,
   cellWritingMode,
@@ -81,7 +84,8 @@ import {
   tableBordersCss,
   tableRowEatCss,
 } from './extensions'
-import { cellClipTwips, inferredBidi } from './convert'
+import { cellClipTwips, cellSpacingGridSharesTwips, collapsedCellBw, inferredBidi } from './convert'
+import { cellPadPx } from './border-metrics'
 
 // Word: links and TOC entries jump on modifier+click only
 const jumpHint = () =>
@@ -131,9 +135,10 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
     const tocMult = cssAutoLineMult(field.lineRule, field.lineRawTwips, field.lineSpacing)
     if (tocMult && tocMult !== 1) tocStyles.push(`--doc-line-mult:${tocMult}`)
     if (tocStyles.length > 0) attrs.style = tocStyles.join(';')
-    const num: DomSpec[] = field.num
-      ? [['span', { class: 'doc-toc-num', contenteditable: 'false' }, field.num]]
-      : []
+    const numAttrs: Record<string, string> = { class: 'doc-toc-num', contenteditable: 'false' }
+    if (field.indentLeftTwips != null)
+      (field.num ? numAttrs : titleAttrs).style = `padding-left:${field.indentLeftTwips / 20}pt`
+    const num: DomSpec[] = field.num ? [['span', numAttrs, field.num]] : []
     return [
       'div',
       attrs,
@@ -1733,22 +1738,41 @@ export function textboxBoxStyle(box: TextboxDisplay, opts?: { inCell?: boolean }
 }
 
 const AUTOSPACE_PAD_ATTRS = { class: 'doc-autospace-pad' }
+const HANGUL_SPACE_ATTRS = { class: 'doc-hangul-space' }
+
+/** texts directly before/after a run inside its paragraph (empty = none) */
+export type RunNeighbours = { prev?: string; next?: string }
 
 /**
- * static-DOM counterpart of the editor's autospace pad decorations: the
- * character after each CJK-Latin boundary (and the first one when leadPad)
- * carries the pad margin
+ * static-DOM counterpart of the editor's autospace pad and hangul-space
+ * decorations: the character after each CJK-Latin boundary (and the first one
+ * when leadPad) carries the pad margin; a space with a hangul neighbour gets
+ * the half-width space face
  */
-function padSegments(text: string, leadPad = false): unknown[] {
-  const cuts = autospaceBoundaries(text)
-  if (leadPad && text) cuts.unshift(0)
-  if (cuts.length === 0) return [text]
+function padSegments(
+  text: string,
+  pads: boolean,
+  leadPad: boolean,
+  neighbours: RunNeighbours,
+): unknown[] {
+  const wraps: Array<[number, number, object]> = []
+  if (pads) {
+    const cuts = autospaceBoundaries(text)
+    if (leadPad && text) cuts.unshift(0)
+    for (const cut of cuts) {
+      wraps.push([cut, cut + codePointLengthAt(text, cut), AUTOSPACE_PAD_ATTRS])
+    }
+  }
+  for (const i of hangulSpaceOffsets(text, neighbours.prev, neighbours.next)) {
+    wraps.push([i, i + 1, HANGUL_SPACE_ATTRS])
+  }
+  if (wraps.length === 0) return [text]
+  wraps.sort((a, b) => a[0] - b[0])
   const out: unknown[] = []
   let start = 0
-  for (const cut of cuts) {
-    if (cut > start) out.push(text.slice(start, cut))
-    const end = cut + codePointLengthAt(text, cut)
-    out.push(['span', AUTOSPACE_PAD_ATTRS, text.slice(cut, end)])
+  for (const [from, end, attrs] of wraps) {
+    if (from > start) out.push(text.slice(start, from))
+    out.push(['span', attrs, text.slice(from, end)])
     start = end
   }
   if (start < text.length) out.push(text.slice(start))
@@ -1756,11 +1780,16 @@ function padSegments(text: string, leadPad = false): unknown[] {
 }
 
 /** run → styled <span> (+ inline <img>) specs, shared by textbox and table-cell rendering */
-export function runSpanSpecs(run: Run, autoSpace?: boolean, leadPad = false): DomSpec[] {
+export function runSpanSpecs(
+  run: Run,
+  autoSpace?: boolean,
+  leadPad = false,
+  neighbours: RunNeighbours = {},
+): DomSpec[] {
   const out: DomSpec[] = []
   // a run can carry both w:t text and a w:drawing; the text renders before the
   // image (generate.ts / the editable path keep the same order)
-  if (run.text !== '' || !run.image) out.push(textSpanSpec(run, autoSpace, leadPad))
+  if (run.text !== '' || !run.image) out.push(textSpanSpec(run, autoSpace, leadPad, neighbours))
   if (run.image?.rule) {
     const decls = inlineRuleDecls({ ...run.image.rule, sizeHalfPoints: run.sizeHalfPoints })
     out.push([
@@ -1783,7 +1812,12 @@ export function runSpanSpecs(run: Run, autoSpace?: boolean, leadPad = false): Do
   return out
 }
 
-function textSpanSpec(run: Run, autoSpace?: boolean, leadPad = false): DomSpec {
+function textSpanSpec(
+  run: Run,
+  autoSpace?: boolean,
+  leadPad = false,
+  neighbours: RunNeighbours = {},
+): DomSpec {
   const cs = run.csFont && textHasComplexScript(run.text) ? run.csFont : undefined
   const letterSpacing = runLetterSpacingCss(run)
   const kerning = fontKerningCss(run)
@@ -1816,14 +1850,14 @@ function textSpanSpec(run: Run, autoSpace?: boolean, leadPad = false): DomSpec {
   ]
     .filter(Boolean)
     .join(';')
-  const content = autoSpace === false ? [run.text] : padSegments(run.text, leadPad)
+  const content = padSegments(run.text, autoSpace !== false, leadPad, neighbours)
   // hyperlink runs keep the editable path's look (.doc-link) and real href;
   // App-level click handling prevents in-place navigation (jump on mod+click)
   const attrs: Record<string, string> = {}
   if (runStyle) attrs.style = runStyle
   if (run.styleId) attrs['data-style'] = run.styleId
   if (run.link?.href) {
-    attrs.class = 'doc-link'
+    attrs.class = run.link.plain ? 'doc-link doc-link-plain' : 'doc-link'
     attrs.href = run.link.href
     if (run.link.tooltip) attrs.title = run.link.tooltip
     return ['a', attrs, ...content]
@@ -1831,18 +1865,35 @@ function textSpanSpec(run: Run, autoSpace?: boolean, leadPad = false): DomSpec {
   return ['span', attrs, ...content]
 }
 
+/** text directly touching run k on one side; a picture (drawn after its run's
+ *  text) breaks adjacency like the editor's non-text inlines, empty runs are skipped */
+function adjacentRunText(runs: Run[], k: number, step: 1 | -1): string {
+  if (step > 0 && runs[k].image) return ''
+  for (let j = k + step; j >= 0 && j < runs.length; j += step) {
+    const r = runs[j]
+    if (step < 0 && r.image) return ''
+    if (r.text !== '') return r.text
+    if (r.image) return ''
+  }
+  return ''
+}
+
 /** run spans with pads at run-boundary CJK-Latin seams (empty runs keep their span, no pad) */
 function runSpansWithPads(runs: Run[], autoSpace?: boolean): DomSpec[] {
   const out: DomSpec[] = []
   let prevText = ''
-  for (const run of runs) {
+  runs.forEach((run, k) => {
     let leadPad = false
+    const neighbours: RunNeighbours = {
+      prev: adjacentRunText(runs, k, -1),
+      next: adjacentRunText(runs, k, 1),
+    }
     if (run.text !== '') {
       leadPad = autoSpace !== false && autospacePadBetween(prevText, run.text)
       prevText = run.text
     }
-    out.push(...runSpanSpecs(run, autoSpace, leadPad))
-  }
+    out.push(...runSpanSpecs(run, autoSpace, leadPad, neighbours))
+  })
   return out
 }
 
@@ -1920,6 +1971,8 @@ export function renderTextboxSpec(box: TextboxDisplay, opts?: { inCell?: boolean
     }
     const lineMult = cssAutoLineMult(para.lineRule, para.lineRawTwips, para.lineSpacing)
     const lh = cssLineHeight(para.lineRule, para.lineRawTwips, para.lineSpacing)
+    const lhCap = cssExactLineCap(para.lineRule, para.lineRawTwips)
+    const leadTop = cssLeadTop(para.lineRule, para.lineRawTwips, para.lineSpacing)
     const pStyles = [
       para.align ? `text-align:${para.align}` : '',
       // .doc-textbox-para's pre-wrap would still wrap a nowrap (WordArt) box
@@ -1928,8 +1981,10 @@ export function renderTextboxSpec(box: TextboxDisplay, opts?: { inCell?: boolean
       // undeclared spacing inherits the document default via the
       // .doc-textbox-para stylesheet rule (an inline base would override it)
       lh ? `line-height:${lh}` : '',
+      lhCap ? `--doc-lh-cap:${lhCap}` : '',
       // explicit single (mult 1) still overrides an inherited style/doc multiple
       lineMult ? `--doc-line-mult:${lineMult}` : '',
+      leadTop ? `--doc-lead-top:${leadTop}` : '',
       // w:snapToGrid=0 opts the paragraph out of docGrid snapping (Word applies
       // the typed line grid inside textboxes too)
       para.snapToGrid === false ? '--doc-grid-pitch:0.0001px' : '',
@@ -1978,21 +2033,6 @@ function runStrutHalfPoints(runs: Run[]): { halfPoints: number; uniform: boolean
   return max === null ? null : { halfPoints: max, uniform: max === min }
 }
 
-/** Run[] port of extensions' latinParaFactor (declared run fonts override the doc factor). */
-function latinRunsFactor(runs: Run[], scriptVar: string): string {
-  let declaredMax = 0
-  let undeclared = false
-  for (const run of runs) {
-    // ascii slot only, like extensions' latinParaFactor: an eastAsia-only
-    // declaration must not set a Latin line's factor
-    const family = run.fontAscii
-    if (family) declaredMax = Math.max(declaredMax, lineHeightFactor(family))
-    else undeclared = true
-  }
-  if (declaredMax <= 0) return scriptVar
-  return undeclared ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
-}
-
 /** Run[] port of extensions' paraDeclaredFontFamily (strut face follows the runs). */
 function runsDeclaredFontFamily(runs: Run[]): string | null {
   let first: string | null = null
@@ -2003,23 +2043,6 @@ function runsDeclaredFontFamily(runs: Run[]): string | null {
     first ??= cssRunFontFamily(ascii, ea)
   }
   return first
-}
-
-/** Per-paragraph --doc-line-factor from runs (Run[] port of extensions' paraLineFactor). */
-function runsLineFactor(runs: Run[], text: string): string {
-  const scriptVar = paraLineFactorCss(text)
-  if (!textHasCjk(text)) return latinRunsFactor(runs, scriptVar)
-  let declaredMax = 0
-  let undeclaredCjk = false
-  for (const run of runs) {
-    if (!textHasCjk(run.text)) continue
-    const family = run.eaSlotEmpty === true ? null : (run.font ?? run.fontAscii)
-    if (family && isCjkFontName(family)) {
-      declaredMax = Math.max(declaredMax, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
-    } else undeclaredCjk = true
-  }
-  if (declaredMax <= 0) return scriptVar
-  return undeclaredCjk ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
 }
 
 /**
@@ -2156,6 +2179,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
           rowSpan++
         }
       }
+      const collapsedBw = collapsedCellBw(row, ci)
       const style = [
         // gridBefore/gridAfter placeholder: bare grid space, never bordered/filled
         cell.gridGap ? 'border:none;background:none' : '',
@@ -2173,15 +2197,21 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
         // per-cell borders are the only line source for style-less documents
         ...(['top', 'left', 'bottom', 'right'] as const).map((side) => {
           const v = borderLineCss(cell.borders?.[side])
-          if (!v) return ''
+          const collapsed =
+            side === 'left' ? collapsedBw?.l : side === 'right' ? collapsedBw?.r : undefined
+          const bw =
+            side === 'left' || side === 'right'
+              ? (collapsed ?? borderWidthPx(cell.borders?.[side]))
+              : undefined
+          if (!v) return collapsed !== undefined ? `--cell-bw-${DK_SIDE[side]}:${collapsed}px` : ''
           const css = `border-${side}:${v};${dkBorder(DK_SIDE[side], v)}`
           return side === 'left' || side === 'right'
-            ? `${css};--cell-bw-${DK_SIDE[side]}:${borderWidthPx(cell.borders?.[side])}px`
+            ? `${css};--cell-bw-${DK_SIDE[side]}:${bw}px`
             : `${css};${bdDeltaCss(side, cell.borders?.[side])}`
         }),
         ...(['top', 'left', 'bottom', 'right'] as const).map((side) =>
           cell.cellMarTwips?.[side] !== undefined
-            ? `--doc-cell-pad-${DK_SIDE[side]}:${(cell.cellMarTwips[side]! / 15).toFixed(1)}px`
+            ? `--doc-cell-pad-${DK_SIDE[side]}:${cellPadPx(cell.cellMarTwips[side]!)}`
             : '',
         ),
       ]
@@ -2207,7 +2237,9 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
               p,
             )
           })
-        : cell.paras.map((p) => cellParaSpec(p === '' ? [] : [...padSegments(p)], p, null))
+        : cell.paras.map((p) =>
+            cellParaSpec(p === '' ? [] : [...padSegments(p, true, false, {})], p, null),
+          )
       // nested tables spliced in at their paragraph anchors (cells with them are never editable)
       const nested = cell.nestedTables ?? []
       const anchorOf = (i: number) =>
@@ -2261,17 +2293,26 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
     })
     const trAttrs: Record<string, string> = {}
     const rh = model.rowHeightsTwips?.[ri]
-    if (rh)
+    if (rh) {
+      const inFlow = row.filter((cell) => !cell.gridGap)
       trAttrs.style = rowHeightCss(
         rh,
-        row.filter((cell) => !cell.gridGap).map((cell) => cell.borders),
+        inFlow.map((cell) => cell.borders),
+        inFlow.map((cell) => cell.cellMarTwips),
+        model.rowHeightRules?.[ri] ?? null,
       )
+    }
     return ['tr', trAttrs, ...tds]
   })
 
   const tableChildren: unknown[] = []
+  const spacingShares = model.cellSpacingTwips
+    ? cellSpacingGridSharesTwips(model.colWidthsTwips?.length ?? 1, model.cellSpacingTwips)
+    : null
   const colPx = !model.widthPct
-    ? model.colWidthsTwips?.map((w) => Math.max(1, Math.round(w / 15)))
+    ? model.colWidthsTwips?.map((w, i) =>
+        Math.max(1, Math.round((w - (spacingShares?.[i] ?? 0)) / 15)),
+      )
     : undefined
   if (colPx) {
     tableChildren.push(['colgroup', {}, ...colPx.map((w) => ['col', { style: `width:${w}px` }])])
@@ -2309,7 +2350,9 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
     // indent shifts the table right, so it comes out of the budget
     const widthPx =
       colPx.reduce((sum, w) => sum + w, 0) +
-      (model.cellSpacingTwips ? 0 : outerBorderPx(model.borders ?? null))
+      (model.cellSpacingTwips
+        ? Math.round(((colPx.length + 1) * 2 * model.cellSpacingTwips) / 15)
+        : outerBorderPx(model.borders ?? null, modelEdgeBorders(model)))
     // w:tblLayout fixed holds the declared widths even past the paper edge (see DocTable.renderHTML)
     if (!nested && model.fixedLayout) {
       widthExpr = `${widthPx}px`

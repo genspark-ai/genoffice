@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./install": "./src/install.ts",
     "./agent-skills": "./src/agent-skills.ts",
+    "./mcp-launch": "./src/mcp-launch.ts",
     "./control-protocol": "./src/control-protocol.ts"
   },
   "bin": {

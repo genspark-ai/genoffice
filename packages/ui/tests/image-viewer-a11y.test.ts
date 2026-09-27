@@ -73,7 +73,7 @@ describe('shared ImageViewer modal focus', () => {
 
   it('localizes the dialog name', () => {
     mountViewer('zh')
-    expect(dialog(host).getAttribute('aria-label')).toBe('图片查看器')
+    expect(dialog(host).getAttribute('aria-label')).toBe('\u56fe\u7247\u67e5\u770b\u5668')
     mountViewer('ja')
     expect(dialog(host).getAttribute('aria-label')).toBe(IMAGE_VIEWER_TITLES.ja)
   })
@@ -131,6 +131,33 @@ describe('shared ImageViewer modal focus', () => {
     const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     act(() => {
       control(host, 'Close').dispatchEvent(e)
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(e.defaultPrevented).toBe(true)
+  })
+
+  it('pulls focus back onto the backdrop when it drops to body', () => {
+    mountViewer()
+    act(() => {
+      ;(document.activeElement as HTMLElement).blur()
+    })
+    expect(document.activeElement).toBe(dialog(host))
+    const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => {
+      dialog(host).dispatchEvent(e)
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape even when focus has escaped to body', () => {
+    mountViewer()
+    // leave the viewer with a relatedTarget (no body-blur refocus), then drop focus
+    trigger.focus()
+    trigger.blur()
+    expect(document.activeElement).toBe(document.body)
+    const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => {
+      document.body.dispatchEvent(e)
     })
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(e.defaultPrevented).toBe(true)

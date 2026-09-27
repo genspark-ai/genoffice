@@ -1144,6 +1144,7 @@ function parsePicture(
     ...(descr ? { descr } : {}),
     mediaRef,
     ...(srcRect ? { srcRect } : {}),
+    ...(blipFill && typeof blipFill === 'object' && 'a:tile' in blipFill ? { tile: true } : {}),
     ...(picGeom && picGeom !== 'rect'
       ? { presetGeometry: picGeom, ...(picAdjust ? { adjust: picAdjust } : {}) }
       : {}),

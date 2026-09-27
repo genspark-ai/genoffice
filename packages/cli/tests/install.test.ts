@@ -1,7 +1,7 @@
 import { chmodSync, lstatSync, mkdirSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { defaultCandidateDirs, inspectCliLink, installCliLink } from '../src/install'
+import { defaultCandidateDirs, inspectCliLink, installCliLink, isOurLauncher } from '../src/install'
 import { tempDir } from './helpers'
 
 describe('installCliLink', () => {
@@ -30,10 +30,10 @@ describe('installCliLink', () => {
     const dir = tempDir()
     const bin = join(dir, 'bin')
     mkdirSync(bin)
-    const launcher = join(dir, 'new-app', 'resources', 'cli', 'genoffice')
-    mkdirSync(join(dir, 'new-app', 'resources', 'cli'), { recursive: true })
+    const launcher = join(dir, 'new-app', 'cli', 'genoffice')
+    mkdirSync(join(dir, 'new-app', 'cli'), { recursive: true })
     writeFileSync(launcher, '')
-    symlinkSync(join(dir, 'old-app', 'resources', 'cli', 'genoffice'), join(bin, 'genoffice'))
+    symlinkSync(join(dir, 'old-app', 'cli', 'genoffice'), join(bin, 'genoffice'))
     expect(inspectCliLink({ launcher, platform: 'linux', candidateDirs: [bin] }).status).toBe(
       'missing',
     )
@@ -45,6 +45,8 @@ describe('installCliLink', () => {
     const npm = join(dir, 'npm-bin')
     mkdirSync(npm)
     const npmTarget = join(dir, 'lib', 'node_modules', 'genoffice', 'bin', 'genoffice.js')
+    mkdirSync(join(npmTarget, '..'), { recursive: true })
+    writeFileSync(npmTarget, '')
     symlinkSync(npmTarget, join(npm, 'genoffice'))
     expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [npm] }).status).toBe(
       'occupied',
@@ -90,66 +92,61 @@ describe('installCliLink', () => {
     }
   })
 
-  it('does not claim a foreign cli/genoffice symlink', () => {
+  it('owns only launchers shipped with the app, not any path ending in /cli/genoffice (genoffice#895)', () => {
     const dir = tempDir()
+    const launcher = join(dir, 'GenOffice.app', 'Contents', 'Resources', 'cli', 'genoffice')
+    mkdirSync(join(launcher, '..'), { recursive: true })
+    writeFileSync(launcher, '#!/bin/sh\n')
+    writeFileSync(join(launcher, '..', 'genoffice.cjs'), '')
+
+    const vendor = join(dir, 'opt', 'vendor', 'cli', 'genoffice')
+    mkdirSync(join(vendor, '..'), { recursive: true })
+    writeFileSync(vendor, '#!/bin/sh\necho vendor\n')
+    expect(isOurLauncher(vendor, launcher)).toBe(false)
     const bin = join(dir, 'bin')
     mkdirSync(bin)
-    const launcher = join(dir, 'app', 'resources', 'cli', 'genoffice')
-    mkdirSync(join(dir, 'app', 'resources', 'cli'), { recursive: true })
-    writeFileSync(launcher, '')
-    const foreignTarget = join(dir, 'vendor', 'cli', 'genoffice')
-    const link = join(bin, 'genoffice')
-    symlinkSync(foreignTarget, link)
-
+    symlinkSync(vendor, join(bin, 'genoffice'))
     expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [bin] })).toEqual({
       status: 'occupied',
-      location: link,
+      location: join(bin, 'genoffice'),
       manual: expect.any(String),
     })
-    expect(readlinkSync(link)).toBe(foreignTarget)
+    expect(readlinkSync(join(bin, 'genoffice'))).toBe(vendor)
     expect(inspectCliLink({ launcher, platform: 'linux', candidateDirs: [bin] }).status).toBe(
       'occupied',
     )
-  })
 
-  it('uses the packaged launcher layout for the active platform', () => {
-    const dir = tempDir()
-    const linuxBin = join(dir, 'linux-bin')
-    mkdirSync(linuxBin)
-    const linuxLauncher = join(dir, 'GenOffice', 'resources', 'cli', 'genoffice')
-    mkdirSync(join(dir, 'GenOffice', 'resources', 'cli'), { recursive: true })
-    writeFileSync(linuxLauncher, '')
-    const macTarget = join(dir, 'GenOffice.app', 'Contents', 'Resources', 'cli', 'genoffice')
-    symlinkSync(macTarget, join(linuxBin, 'genoffice'))
-    expect(
-      installCliLink({ launcher: linuxLauncher, platform: 'linux', candidateDirs: [linuxBin] }),
-    ).toEqual({
-      status: 'occupied',
-      location: join(linuxBin, 'genoffice'),
-      manual: expect.any(String),
-    })
-
-    const darwinBin = join(dir, 'darwin-bin')
-    mkdirSync(darwinBin)
-    const darwinLauncher = join(dir, 'GenOffice.app', 'Contents', 'Resources', 'cli', 'genoffice')
-    mkdirSync(join(dir, 'GenOffice.app', 'Contents', 'Resources', 'cli'), { recursive: true })
-    writeFileSync(darwinLauncher, '')
-    const staleTarget = join(
-      dir,
-      'old',
-      'GenOffice.app',
-      'Contents',
-      'Resources',
-      'cli',
-      'genoffice',
+    const dead = join(dir, 'dead-bin')
+    mkdirSync(dead)
+    symlinkSync(join(dir, 'gone', 'cli', 'genoffice'), join(dead, 'genoffice'))
+    expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [dead] }).status).toBe(
+      'linked',
     )
-    symlinkSync(staleTarget, join(darwinBin, 'genoffice'))
-    expect(
-      installCliLink({ launcher: darwinLauncher, platform: 'darwin', candidateDirs: [darwinBin] }),
-    ).toEqual({
-      status: 'linked',
-      location: join(darwinBin, 'genoffice'),
-    })
+    expect(readlinkSync(join(dead, 'genoffice'))).toBe(launcher)
+
+    const older = join(dir, 'opt', 'GenOffice', 'resources', 'cli', 'genoffice')
+    mkdirSync(join(older, '..'), { recursive: true })
+    writeFileSync(older, '#!/bin/sh\n')
+    writeFileSync(join(older, '..', 'genoffice.cjs'), '')
+    expect(isOurLauncher(older, launcher)).toBe(true)
+    const upgraded = join(dir, 'upgraded-bin')
+    mkdirSync(upgraded)
+    symlinkSync(older, join(upgraded, 'genoffice'))
+    expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [upgraded] }).status).toBe(
+      'linked',
+    )
+    expect(readlinkSync(join(upgraded, 'genoffice'))).toBe(launcher)
+
+    const alias = join(dir, 'Applications')
+    symlinkSync(join(dir, 'GenOffice.app'), alias, 'dir')
+    const viaAlias = join(alias, 'Contents', 'Resources', 'cli', 'genoffice')
+    expect(isOurLauncher(viaAlias, launcher)).toBe(true)
+    const relative = join(dir, 'relative-bin')
+    mkdirSync(relative)
+    symlinkSync(join('..', 'opt', 'vendor', 'cli', 'genoffice'), join(relative, 'genoffice'))
+    expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [relative] }).status).toBe(
+      'occupied',
+    )
   })
 
   it('reports a missing /usr/local/bin as unwritable instead of skipping it', () => {

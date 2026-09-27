@@ -15,7 +15,7 @@ export const th = {
   ribbonTabSlideShow: 'การนำเสนอสไลด์',
   ribbonTabReview: 'รีวิว',
   ribbonCollapse: 'ยุบ Ribbon',
-  ribbonPin: 'ปักหมุด Ribbon',
+  ribbonExpand: 'ขยาย Ribbon',
   ribbonTabView: 'มุมมอง',
   ribbonTabTableDesign: 'การออกแบบตาราง',
   ribbonTabChartDesign: 'การออกแบบแผนภูมิ',

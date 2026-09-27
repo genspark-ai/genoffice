@@ -178,15 +178,18 @@ describe('FontDialog', () => {
     select(editor, 1, 10)
     const { container, unmount } = render(createElement(FontDialog, { editor, onClose: noop }))
     const dds = container.querySelectorAll<HTMLButtonElement>('.gs-dd-btn')
-    // Latin font, East Asian font, font style → bold
+    // Latin font, East Asian font, font style → bold, size → 12
     pickDropdown(container, dds[0]!, 'Arial')
     pickDropdown(container, dds[1]!, '\u5b8b\u4f53')
     pickDropdown(container, dds[2]!, 'bold')
+    pickDropdown(container, dds[3]!, '12')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === 'OK')!
     act(() => ok.click())
     expect(editor.isActive('bold')).toBe(true)
     const attrs = editor.getAttributes('docTextStyle')
-    expect(attrs.sizeHalfPoints).toBe(22)
+    expect(attrs.sizeHalfPoints).toBe(24)
+    // untouched fields stay as they were
+    expect(attrs.color).toBeNull()
     // each picker writes only its own rFonts slot
     expect(attrs.fontAscii).toBe('Arial')
     expect(attrs.font).toBe('\u5b8b\u4f53')
@@ -285,5 +288,167 @@ describe('EditorContextMenu picture items', () => {
     expect(onViewImage).toHaveBeenCalledWith(src)
     expect(onSaveImageAs).toHaveBeenCalledWith(src)
     unmount()
+  })
+})
+
+describe('EditorContextMenu — Word hyperlink / field / spelling items', () => {
+  const byLabel = (container: Element, label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
+      (b) => b.querySelector('.ctx-label')?.textContent === label,
+    )
+  const labels = (container: Element) =>
+    [...container.querySelectorAll('.ctx-label')].map((el) => el.textContent)
+
+  function linkEditor() {
+    return new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 0 },
+            content: [
+              { type: 'text', text: 'see ' },
+              {
+                type: 'text',
+                text: 'the site',
+                marks: [{ type: 'link', attrs: { href: 'https://example.com/a' } }],
+              },
+              { type: 'text', text: ' now' },
+            ],
+          },
+        ],
+      },
+    })
+  }
+
+  it('replaces Hyperlink… with Edit / Open / Copy / Remove on a link run', () => {
+    const editor = linkEditor()
+    const onOpenLink = vi.fn()
+    const onLink = vi.fn()
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.assign(navigator, { clipboard: { writeText } })
+    // "see " = 1..5, link = 5..13; the pointer position is what counts, not the caret
+    const { container, unmount } = render(
+      createElement(
+        EditorContextMenu,
+        menuProps(editor, { menu: { x: 10, y: 10, pos: 8 }, onOpenLink, onLink }),
+      ),
+    )
+    const names = labels(container)
+    expect(names).not.toContain('Hyperlink…')
+    expect(names.slice(-5)).toEqual([
+      'Edit Hyperlink…',
+      'Open Hyperlink',
+      'Copy Hyperlink',
+      'Remove Hyperlink',
+      'New Comment',
+    ])
+    act(() => byLabel(container, 'Open Hyperlink')!.click())
+    expect(onOpenLink).toHaveBeenCalledWith('https://example.com/a')
+    act(() => byLabel(container, 'Copy Hyperlink')!.click())
+    expect(writeText).toHaveBeenCalledWith('https://example.com/a')
+    act(() => byLabel(container, 'Edit Hyperlink…')!.click())
+    expect(onLink).toHaveBeenCalledOnce()
+    expect([editor.state.selection.from, editor.state.selection.to]).toEqual([5, 13])
+    act(() => byLabel(container, 'Remove Hyperlink')!.click())
+    expect(editor.state.doc.textContent).toBe('see the site now')
+    expect(editor.state.doc.nodeAt(6)!.marks).toHaveLength(0)
+    unmount()
+    editor.destroy()
+  })
+
+  it('offers only Open / Copy on a TOC entry and keeps Hyperlink… off links', () => {
+    const editor = linkEditor()
+    const toc = render(
+      createElement(
+        EditorContextMenu,
+        menuProps(editor, {
+          menu: { x: 10, y: 10, pos: 2, link: { href: '#_Toc1', toc: true, tocTitle: 'Intro' } },
+          onOpenLink: () => {},
+        }),
+      ),
+    )
+    expect(byLabel(toc.container, 'Edit Hyperlink…')!.disabled).toBe(true)
+    expect(byLabel(toc.container, 'Open Hyperlink')!.disabled).toBe(false)
+    expect(byLabel(toc.container, 'Remove Hyperlink')!.disabled).toBe(true)
+    toc.unmount()
+
+    const plain = render(
+      createElement(EditorContextMenu, menuProps(editor, { menu: { x: 10, y: 10, pos: 2 } })),
+    )
+    expect(labels(plain.container)).toContain('Hyperlink…')
+    expect(labels(plain.container)).not.toContain('Open Hyperlink')
+    plain.unmount()
+    editor.destroy()
+  })
+
+  it('adds Toggle Field Codes and Edit Field… on an inline field', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 0 },
+            content: [
+              { type: 'text', text: 'Page ' },
+              {
+                type: 'text',
+                text: '7',
+                marks: [{ type: 'instrField', attrs: { instr: 'PAGE' } }],
+              },
+            ],
+          },
+        ],
+      },
+    })
+    const onEditField = vi.fn()
+    const onUpdateFields = vi.fn()
+    const { container, unmount } = render(
+      createElement(
+        EditorContextMenu,
+        menuProps(editor, { menu: { x: 10, y: 10, pos: 6 }, onEditField, onUpdateFields }),
+      ),
+    )
+    const names = labels(container)
+    const at = names.indexOf('Update Field')
+    expect(names.slice(at, at + 3)).toEqual(['Update Field', 'Toggle Field Codes', 'Edit Field…'])
+    act(() => byLabel(container, 'Edit Field…')!.click())
+    expect(onEditField).toHaveBeenCalledWith(expect.objectContaining({ instr: 'PAGE', from: 6 }))
+    act(() => byLabel(container, 'Toggle Field Codes')!.click())
+    expect(editor.view.dom.querySelector('.doc-field-code')?.textContent).toBe('{ PAGE }')
+    unmount()
+    editor.destroy()
+  })
+
+  it('lists Ignore All before Add to Dictionary and routes it to the session skip list', async () => {
+    const editor = createEditor()
+    const spellIgnoreWord = vi.fn(() => Promise.resolve(true))
+    const spellAddWord = vi.fn(() => Promise.resolve(true))
+    Object.assign(window.desktop, { spellIgnoreWord, spellAddWord })
+    const onRespell = vi.fn()
+    const { container, unmount } = render(
+      createElement(
+        EditorContextMenu,
+        menuProps(editor, {
+          menu: { x: 10, y: 10, pos: 2, spell: { word: 'EVs', suggestions: ['Eve'] } },
+          onRespell,
+        }),
+      ),
+    )
+    const names = labels(container)
+    expect(names.slice(0, 3)).toEqual(['Eve', 'Ignore All', 'Add to Dictionary'])
+    act(() => byLabel(container, 'Ignore All')!.click())
+    expect(spellIgnoreWord).toHaveBeenCalledWith('EVs')
+    expect(spellAddWord).not.toHaveBeenCalled()
+    await act(async () => {})
+    expect(onRespell).toHaveBeenCalled()
+    unmount()
+    editor.destroy()
   })
 })

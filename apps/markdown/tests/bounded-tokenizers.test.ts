@@ -105,6 +105,29 @@ const CASES: Record<string, string> = {
 }
 
 describe('bounded markdown tokenizers', () => {
+  it('ends a table at a whitespace-only blank line', () => {
+    const md = ['| a | b |', '|---|---|', '| 1 | 2 |', '  ', 'After the table.'].join('\n')
+    expect(parseWith(bounded, md)).toEqual(parseWith(stock, md))
+    const json = parseWith(bounded, md) as { content: Array<{ type: string }> }
+    expect(json.content.map((n) => n.type)).toEqual(['table', 'paragraph'])
+  })
+
+  it('stays linear when blank lines carry spaces and cells hold code with pipes', () => {
+    const filler = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(20)
+    const table = '| h1 | h2 |\n| --- | --- |\n| `a|b` | x |\n| c | d |'
+    const md = Array.from(
+      { length: 300 },
+      (_, i) => `## Section ${i}\n  \n${filler}\n  \n${table}`,
+    ).join('\n  \n')
+    const editor = freshEditor(bounded)
+    const started = performance.now()
+    const json = editor.markdown.parse(md)
+    const elapsed = performance.now() - started
+    expect(json.content?.filter((n) => n.type === 'table')).toHaveLength(300)
+    // ~60 ms here; the indexOf('\n\n') bound took ~8 s
+    expect(elapsed).toBeLessThan(5000)
+  })
+
   for (const [name, md] of Object.entries(CASES)) {
     it(`parses like the stock tokenizers: ${name}`, () => {
       expect(parseWith(bounded, md)).toEqual(parseWith(stock, md))

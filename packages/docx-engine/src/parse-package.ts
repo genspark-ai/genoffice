@@ -262,7 +262,14 @@ function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
   const lvlJc = attrsOf(findChild(lvlNode, 'w:lvlJc') ?? {})['w:val']
   if (lvlJc === 'right' || lvlJc === 'end') level.lvlJc = 'right'
   else if (lvlJc === 'center') level.lvlJc = 'center'
+  const pStyle = attrsOf(findChild(lvlNode, 'w:pStyle') ?? {})['w:val']
+  if (pStyle) level.pStyle = pStyle
+  const lvlRestart = parseInt(attrsOf(findChild(lvlNode, 'w:lvlRestart') ?? {})['w:val'] ?? '', 10)
+  if (Number.isFinite(lvlRestart)) level.lvlRestart = lvlRestart
   const lvlPPr = findChild(lvlNode, 'w:pPr')
+  const tabs = lvlPPr ? findChild(lvlPPr, 'w:tabs') : undefined
+  const tabPos = tabs ? parseInt(attrsOf(findChild(tabs, 'w:tab') ?? {})['w:pos'] ?? '', 10) : NaN
+  if (Number.isFinite(tabPos)) level.tabStop = tabPos
   const ind = lvlPPr ? findChild(lvlPPr, 'w:ind') : undefined
   if (ind) {
     const attrs = attrsOf(ind)
@@ -280,6 +287,12 @@ function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
   if (sz > 0) level.szHalfPoints = sz
   const color = lvlRPr ? attrsOf(findChild(lvlRPr, 'w:color') ?? {})['w:val'] : undefined
   if (color && /^[0-9a-f]{6}$/i.test(color)) level.color = color.toUpperCase()
+  const flag = (name: string) => {
+    const el = lvlRPr ? findChild(lvlRPr, name) : undefined
+    return !!el && !['0', 'false', 'off'].includes(attrsOf(el)['w:val'] ?? '')
+  }
+  if (flag('w:b')) level.bold = true
+  if (flag('w:i')) level.italic = true
   const fonts = lvlRPr ? attrsOf(findChild(lvlRPr, 'w:rFonts') ?? {}) : {}
   const font = fonts['w:ascii'] ?? fonts['w:hAnsi'] ?? fonts['w:eastAsia']
   if (font) level.font = font

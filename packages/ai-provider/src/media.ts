@@ -41,10 +41,29 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     keyPlaceholder: 'sk-...',
     defaultBaseUrl: OPENAI_IMAGES_BASE_URL,
     imageProtocol: 'openai-images',
-    imageModels: ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'],
+    // GPT Image 2.5 (sunburst = quality, flare = fast) per the OpenAI models page
+    // 2026-09-24, same token rates as GPT Image 2, both on generations and edits.
+    // GPT-6 reads images over Chat Completions; the tool-call caveat that keeps
+    // it off the chat provider does not apply to analysis.
+    imageModels: [
+      'gpt-image-2.5-sunburst',
+      'gpt-image-2.5-flare',
+      'gpt-image-2',
+      'gpt-image-1.5',
+      'gpt-image-1',
+      'gpt-image-1-mini',
+    ],
     defaultImageModel: 'gpt-image-2',
     analysisProtocol: 'openai-chat',
-    analysisModels: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4-mini'],
+    analysisModels: [
+      'gpt-6-sol',
+      'gpt-6-luna',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
+      'gpt-5.4-mini',
+    ],
     defaultAnalysisModel: 'gpt-5.6-luna',
     videoAnalysis: false,
   },
@@ -64,8 +83,13 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     ],
     defaultImageModel: 'gemini-3.1-flash-image',
     analysisProtocol: 'gemini',
-    analysisModels: ['gemini-3.7-flash', 'gemini-3.1-pro-preview', 'gemini-3.6-flash'],
-    defaultAnalysisModel: 'gemini-3.7-flash',
+    analysisModels: [
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-3.1-pro-preview',
+      'gemini-3.6-flash',
+    ],
+    defaultAnalysisModel: 'gemini-3.8-flash',
     videoAnalysis: true,
   },
   {

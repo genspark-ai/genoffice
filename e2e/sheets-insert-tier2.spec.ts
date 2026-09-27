@@ -176,9 +176,9 @@ test.describe('sheets: Insert → Timeline', () => {
       // retry while the reopened session streams the pivot definition in.
       const picker = sheets.getByRole('dialog', { name: 'Insert Timeline' })
       const e1 = cellPoint(origin, 0, 4)
+      // the Insert tab is already selected; pressing the selected tab collapses the ribbon
       await expect(async () => {
         await sheets.mouse.click(e1.x, e1.y)
-        await sheets.getByRole('button', { name: 'Insert', exact: true }).click()
         await sheets.getByRole('button', { name: 'Timeline' }).click()
         await expect(picker).toBeVisible({ timeout: 2_000 })
       }).toPass({ timeout: 30_000 })

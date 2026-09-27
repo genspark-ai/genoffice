@@ -55,15 +55,19 @@ describe('webSearch (Serper)', () => {
     expect(r.results[0]).toEqual({ title: 'A', url: 'https://a.com', snippet: 'sa' })
   })
 
-  it('falls back to DuckDuckGo when no key', async () => {
+  it('falls back to DuckDuckGo when no key and the free Parallel MCP is down', async () => {
+    const urls: string[] = []
     mockFetch((url) => {
-      expect(url).toContain('duckduckgo.com')
+      urls.push(url)
+      if (url === 'https://search.parallel.ai/mcp') return { ok: false }
       return {
         ok: true,
         text: '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fx.com">X Title</a>',
       }
     })
     const r = await webSearch('q', 3)
+    expect(urls[0]).toBe('https://search.parallel.ai/mcp')
+    expect(urls.at(-1)).toContain('duckduckgo.com')
     expect(r.method).toBe('duckduckgo')
     expect(r.results[0]?.url).toBe('https://x.com')
     expect(r.results[0]?.title).toBe('X Title')
@@ -72,7 +76,8 @@ describe('webSearch (Serper)', () => {
   it('clamps wild maxResults and truncates huge queries at entry', async () => {
     process.env.SERPER_API_KEY = 'test-key'
     let seen: { q: string; num: number } | undefined
-    mockFetch((_url, init) => {
+    mockFetch((url, init) => {
+      if (url !== 'https://google.serper.dev/search') return { ok: false }
       seen = JSON.parse(String(init?.body)) as { q: string; num: number }
       return { ok: true, json: { organic: [] } }
     })
@@ -152,7 +157,13 @@ describe('DuckDuckGo fallback error surfacing', () => {
     const bodyStarted = new Promise<void>((resolve) => {
       markBodyStarted = resolve
     })
+    const urls: string[] = []
     globalThis.fetch = vi.fn(async (url: any, init: any) => {
+      urls.push(String(url))
+      // the keyless Parallel MCP sits between Serper and DuckDuckGo here; take it down
+      if (String(url) === 'https://search.parallel.ai/mcp') {
+        return { ok: false, status: 500, headers: new Map() } as any
+      }
       if (String(url) === 'https://google.serper.dev/search') {
         const signal = (serperSignal = init.signal as AbortSignal)
         return {
@@ -185,7 +196,9 @@ describe('DuckDuckGo fallback error surfacing', () => {
 
     expect(result.method).toBe('duckduckgo')
     expect(result.results[0]?.url).toBe('https://x.com')
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+    // the stalled Serper call is abandoned once, never retried, and the chain ends at DuckDuckGo
+    expect(urls.filter((u) => u === 'https://google.serper.dev/search')).toHaveLength(1)
+    expect(urls.at(-1)).toContain('duckduckgo.com')
   })
 
   it('web: stays a plain empty result when the backend responds with nothing', async () => {

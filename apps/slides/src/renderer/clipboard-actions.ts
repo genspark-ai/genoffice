@@ -157,13 +157,19 @@ export async function repasteSlideAs(ctx: ActionCtx, mode: PasteSlideMode): Prom
  * OS clipboard text is attacker-influenced input: cap the expansion before
  * building the addElement op (a multi-MB paste would blow up IPC + engine).
  */
-export const MAX_PASTE_TEXT_CHARS = 48_000
-export const MAX_PASTE_PARAGRAPHS = 2000
+export const MAX_PASTE_TEXT_CHARS = 1_000_000
+export const MAX_PASTE_PARAGRAPHS = 50_000
 
-export function pasteParagraphs(text: string): { runs: { text: string }[] }[] {
-  const capped = text.slice(0, MAX_PASTE_TEXT_CHARS)
-  const lines = capped.split(/\r?\n/)
-  return lines.slice(0, MAX_PASTE_PARAGRAPHS).map((line) => ({ runs: [{ text: line }] }))
+export function pasteParagraphs(text: string): {
+  paragraphs: { runs: { text: string }[] }[]
+  truncated: boolean
+} {
+  const lines = text.slice(0, MAX_PASTE_TEXT_CHARS).split(/\r?\n/)
+  const kept = lines.slice(0, MAX_PASTE_PARAGRAPHS)
+  return {
+    paragraphs: kept.map((line) => ({ runs: [{ text: line }] })),
+    truncated: text.length > MAX_PASTE_TEXT_CHARS || kept.length < lines.length,
+  }
 }
 
 export async function pasteClipboard(ctx: ActionCtx): Promise<void> {
@@ -178,6 +184,7 @@ export async function pasteClipboard(ctx: ActionCtx): Promise<void> {
   }
   if (external.kind === 'text') {
     const w = 400
+    const { paragraphs, truncated } = pasteParagraphs(external.text)
     const r = await window.slidesApi.addElement({
       slideIndex: ctx.current,
       kind: 'textbox',
@@ -186,11 +193,12 @@ export async function pasteClipboard(ctx: ActionCtx): Promise<void> {
       wPx: w,
       hPx: 80,
       fitWidthPx: FIT_WIDTH,
-      paragraphs: pasteParagraphs(external.text),
+      paragraphs,
     })
     if (r) {
       ctx.applySlide(ctx.current, r.slide)
       ctx.setSelectedIds([r.sourceId])
+      if (truncated) ctx.setStatus(t('appStatusPasteTruncated'))
     }
     return
   }

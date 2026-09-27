@@ -35,15 +35,70 @@ export function effectiveSizeHalfPoints(
   return typeof defaultSize === 'number' && defaultSize > 0 ? defaultSize : null
 }
 
-/** Per-slot effective values across the selection; null means mixed, empty means inherited/unknown. */
+function runSizeHalfPoints(
+  attrs: Record<string, unknown>,
+  paraStyleId: unknown,
+  styles: Map<string, StyleInfo> | undefined,
+  defaults: DocDefaults | undefined,
+): number | null {
+  const direct = Number(attrs.sizeHalfPoints)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const styled = styleSize(attrs.styleId, styles) ?? styleSize(paraStyleId, styles)
+  if (styled !== null) return styled
+  const d = defaults?.sizeHalfPoints
+  return typeof d === 'number' && d > 0 ? d : null
+}
+
+/** Word blanks the size box when the selection's runs resolve to different sizes */
+export function selectedSizeMixed(
+  editor: Editor,
+  styles?: Map<string, StyleInfo>,
+  defaults?: DocDefaults,
+): boolean {
+  const { from, to, empty } = editor.state.selection
+  if (empty) return false
+  let seen: number | null | undefined
+  let mixed = false
+  editor.state.doc.nodesBetween(from, to, (node, _pos, parent) => {
+    if (mixed) return false
+    let size: number | null
+    if (node.isText)
+      size = runSizeHalfPoints(
+        node.marks.find((m) => m.type.name === 'docTextStyle')?.attrs ?? {},
+        parent?.attrs.styleId,
+        styles,
+        defaults,
+      )
+    else if (node.isTextblock && node.childCount === 0)
+      size = runSizeHalfPoints({}, node.attrs.styleId, styles, defaults)
+    else return true
+    if (seen === undefined) seen = size
+    else if (seen !== size) mixed = true
+    return true
+  })
+  return mixed
+}
+
+function defaultParagraphStyle(styles: Map<string, StyleInfo> | undefined) {
+  return (
+    [...(styles?.values() ?? [])].find((style) => style.type === 'paragraph' && style.isDefault) ??
+    styles?.get('Normal')
+  )
+}
+
+function styleEastAsiaFont(display: StyleInfo['display']): string | undefined {
+  return (
+    display?.eastAsiaFont ??
+    (display?.eaSlotEmpty || display?.font === display?.fontAscii ? undefined : display?.font)
+  )
+}
+
 export function selectedFonts(
   editor: Editor,
   styles?: Map<string, StyleInfo>,
   defaults?: DocDefaults,
 ) {
-  const defaultPara =
-    [...(styles?.values() ?? [])].find((style) => style.type === 'paragraph' && style.isDefault) ??
-    styles?.get('Normal')
+  const defaultPara = defaultParagraphStyle(styles)
   let result: { fontEastAsia: string | null; fontLatin: string | null } | undefined
   const add = (attrs: Record<string, unknown>, styleId: unknown) => {
     const char = styles?.get(String(attrs.styleId ?? ''))?.display
@@ -59,13 +114,7 @@ export function selectedFonts(
           : undefined
     const next = {
       fontEastAsia:
-        ea ??
-        char?.eastAsiaFont ??
-        (char?.eaSlotEmpty || char?.font === char?.fontAscii ? undefined : char?.font) ??
-        para?.eastAsiaFont ??
-        (para?.eaSlotEmpty || para?.font === para?.fontAscii ? undefined : para?.font) ??
-        defaults?.eastAsiaFont ??
-        '',
+        ea ?? styleEastAsiaFont(char) ?? styleEastAsiaFont(para) ?? defaults?.eastAsiaFont ?? '',
       fontLatin:
         typeof attrs.fontAscii === 'string'
           ? attrs.fontAscii

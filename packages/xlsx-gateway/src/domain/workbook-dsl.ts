@@ -959,6 +959,56 @@ export const workbookOperationSchema = z.discriminatedUnion('op', [
 ])
 
 export type WorkbookOperation = z.infer<typeof workbookOperationSchema>
+
+const OPERATION_FIELDS = new Map<string, readonly string[]>(
+  workbookOperationSchema.options.map((option) => [
+    (option.shape.op as z.ZodLiteral<string>).value,
+    Object.keys(option.shape).filter((key) => key !== 'op'),
+  ]),
+)
+
+/**
+ * A batch that fails schema validation is rejected whole, so the caller (an
+ * LLM, usually) must be told two things the raw ZodError does not say: nothing
+ * was applied, and what each bad operation should have looked like. Issues are
+ * grouped per operation; misspelled fields are named against the op's real
+ * field list so a `col`/`width` batch is fixed in one retry instead of a guess.
+ */
+export function describeOperationErrors(ops: readonly unknown[], error: z.ZodError): string {
+  const byIndex = new Map<number, string[]>()
+  for (const issue of error.issues) {
+    const index = typeof issue.path[0] === 'number' ? issue.path[0] : -1
+    const raw = ops[index]
+    const record = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+    const field = issue.path.slice(1).map(String).join('.')
+    const text =
+      issue.code === 'invalid_type' && issue.path.length === 2 && !(field in record)
+        ? `missing ${field} (expected ${issue.expected})`
+        : `${field || 'operation'}: ${issue.message}`
+    byIndex.set(index, [...(byIndex.get(index) ?? []), text])
+  }
+  const lines = [...byIndex.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([index, texts]) => {
+      const raw = ops[index]
+      const record = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+      const opName = typeof record.op === 'string' ? record.op : 'unknown'
+      const fields = OPERATION_FIELDS.get(opName)
+      const unknown = fields
+        ? Object.keys(record).filter((key) => key !== 'op' && !fields.includes(key))
+        : []
+      const hint =
+        unknown.length > 0
+          ? `; unknown field(s) ${unknown.join(', ')} — ${opName} takes: ${fields!.join(', ')}`
+          : ''
+      return `- operations[${index}] (${opName}): ${texts.join(', ')}${hint}`
+    })
+  return (
+    `Rejected — none of the ${ops.length} operation(s) were applied (a batch is all-or-nothing). ` +
+    `Fix the operations below and resubmit the whole batch, including the ones that were valid:\n` +
+    lines.join('\n')
+  )
+}
 export type SetCellOperation = z.infer<typeof setCellSchema>
 export type SetRangeOperation = z.infer<typeof setRangeSchema>
 export type SetFormulaOperation = z.infer<typeof setFormulaSchema>

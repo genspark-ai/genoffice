@@ -10,7 +10,9 @@ import { useI18n } from '../i18n/locale'
 import { spellcheckEnabled } from '../spellcheck-pref'
 import {
   hfCellGeometry,
+  hfAnchoredImgStyle,
   hfCellParaStyle,
+  hfImageHangsOnPara,
   hfCellSegStyle,
   hfCellTabLines,
   hfDeclaredStrutPt,
@@ -32,7 +34,8 @@ import {
   hfParaIndentStyle,
   hfStackedSpacingPx,
 } from '../editor/hf-dom'
-import { applyHfText, hfEditText, hfParasOf, PAGE_TOKEN } from '../editor/hf-text'
+import { hfParasOf, PAGE_TOKEN } from '../editor/hf-text'
+import { mountHfEditor, type HfEditorHandle } from '../editor/hf-editor'
 import { dkStyleProps } from '../editor/dark-page'
 import { INLINE_RULE_CLASS, inlineRuleStyle } from '../editor/inline-rule'
 import { textColorValue } from '../editor/text-color'
@@ -108,10 +111,9 @@ function paraStyle(para: HfParagraph): React.CSSProperties {
 }
 
 /**
- * Header / footer zone on the page: renders the rich paragraphs,
- * double-click enters in-place editing (plain text per paragraph; each line
- * keeps its paragraph format and first-run styling), blur commits. PAGE /
- * NUMPAGES sentinels edit as visible {PAGE} / {NUMPAGES} tokens.
+ * Header / footer zone on the page: renders the rich paragraphs; double-click
+ * (or an editRequest) mounts a nested rich-text editor over the strip (Word's
+ * header editing mode), committing when focus leaves it.
  */
 export function HeaderFooterArea({
   kind,
@@ -123,6 +125,10 @@ export function HeaderFooterArea({
   pageTotal,
   style,
   boxGeom,
+  linked,
+  sectionLabel,
+  editRequest,
+  onEditingChange,
 }: {
   kind: 'header' | 'footer'
   value: HfValue
@@ -130,6 +136,14 @@ export function HeaderFooterArea({
   images?: HfImage[]
   readOnly?: boolean
   onCommit: (next: HfValue) => void
+  /** Word's "Same as Previous" tag: this section inherits the strip from the previous one */
+  linked?: boolean | null
+  /** "Header -Section 2-" style label shown while editing */
+  sectionLabel?: string | null
+  /** bump to enter editing from outside (ribbon Edit Header / Go to Footer) */
+  editRequest?: number | null
+  /** editing mode changes, with the live editor handle while open */
+  onEditingChange?: (editing: boolean, handle: HfEditorHandle | null) => void
   /** Page number shown for '#' (may be a section-formatted string); the continuous-flow canvas has no real page number, defaults to 1 */
   pageNo?: number | string
   /** Total page count shown for TOTAL_PAGES_MARK (NUMPAGES field), defaults to 1 */
@@ -162,41 +176,36 @@ export function HeaderFooterArea({
     return () => syncWrapFlag(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, kind])
-  const cancelRef = useRef(false)
-  const initialTextRef = useRef('')
-  const paras = hfParasOf(value)
+  const paras = hfParasOf(value, images)
 
-  // The editing surface is a standalone element: content is injected here and React
-  // does not manage its children; after commit the whole element unmounts, so text
-  // nodes produced while typing don't linger (keeps section/variant switches clean)
+  useEffect(() => {
+    if (editRequest != null && !readOnly) setEditing(true)
+  }, [editRequest, readOnly])
+
+  // The editor host is a standalone element React never populates: the nested
+  // editor owns its children and the whole element unmounts on exit, so no
+  // stale DOM survives section/variant switches
+  const latest = useRef({ value, onCommit, onEditingChange, pageNo, pageTotal })
+  latest.current = { value, onCommit, onEditingChange, pageNo, pageTotal }
   useEffect(() => {
     if (!editing) return
     const el = editRef.current
     if (!el) return
-    // table-row (cells) paragraphs stay out of the text editing flow
-    el.innerText = hfEditText(value)
-    cancelRef.current = false
-    initialTextRef.current = el.innerText
-    el.focus()
-    const sel = window.getSelection()
-    if (sel) {
-      sel.selectAllChildren(el)
-      sel.collapseToEnd()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const { value: v, pageNo: pn, pageTotal: pt } = latest.current
+    const handle = mountHfEditor(el, {
+      value: v,
+      pageNo: String(pn ?? 1),
+      pageTotal: String(pt ?? 1),
+      spellcheck: spellcheckEnabled(),
+      onCommit: (next) => latest.current.onCommit(next),
+      onExit: () => {
+        latest.current.onEditingChange?.(false, null)
+        setEditing(false)
+      },
+    })
+    latest.current.onEditingChange?.(true, handle)
+    return () => handle.exit()
   }, [editing])
-
-  const commit = () => {
-    const el = editRef.current
-    setEditing(false)
-    if (!el) return
-    if (cancelRef.current) {
-      cancelRef.current = false
-      return
-    }
-    if (el.innerText === initialTextRef.current) return
-    onCommit(applyHfText(value, el.innerText))
-  }
 
   const display = (text: string) => {
     const t = text
@@ -273,24 +282,15 @@ export function HeaderFooterArea({
         </div>
       )}
       {editing ? (
-        <div
-          ref={editRef}
-          className="page-hf-edit-surface"
-          contentEditable
-          spellCheck={spellcheckEnabled()}
-          suppressContentEditableWarning
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              e.stopPropagation()
-              cancelRef.current = true
-              ;(e.target as HTMLElement).blur()
-            }
-          }}
-        />
+        <div ref={editRef} className="page-hf-edit-surface" />
       ) : (
-        <HfContent kind={kind} paras={paras} display={display} boxGeom={boxGeom} />
+        <HfContent kind={kind} paras={paras} images={images} display={display} boxGeom={boxGeom} />
+      )}
+      {editing && (sectionLabel || linked) && (
+        <div className="page-hf-tags" contentEditable={false}>
+          {sectionLabel && <span className="page-hf-tag">{sectionLabel}</span>}
+          {linked && <span className="page-hf-tag">{t('appHfSameAsPrevious')}</span>}
+        </div>
       )}
     </div>
   )
@@ -299,11 +299,13 @@ export function HeaderFooterArea({
 function HfContent({
   kind,
   paras,
+  images,
   display,
   boxGeom,
 }: {
   kind: 'header' | 'footer'
   paras: HfParagraph[]
+  images?: HfImage[]
   display: (text: string) => string
   boxGeom?: HfStripGeom
 }) {
@@ -369,7 +371,11 @@ function HfContent({
                 const tabLines = hfCellTabLines(runs, props, geom, para.row, display)
                 if (!tabLines) {
                   return (
-                    <div key={k} className="page-hf-cell-para" style={hfCellParaStyle(props)}>
+                    <div
+                      key={k}
+                      className="page-hf-cell-para"
+                      style={hfCellParaStyle(props, undefined, runs)}
+                    >
                       {runs.length === 0 ? ' ' : null}
                       {spans(runs)}
                     </div>
@@ -380,10 +386,11 @@ function HfContent({
                     key={`${k}-${m}`}
                     className="page-hf-cell-para page-hf-tabbed"
                     style={{
-                      ...hfCellParaStyle(props, {
-                        first: m === 0,
-                        last: m === tabLines.length - 1,
-                      }),
+                      ...hfCellParaStyle(
+                        props,
+                        { first: m === 0, last: m === tabLines.length - 1 },
+                        runs,
+                      ),
                       textAlign: 'left',
                       ...(line.minHeightPt ? { minHeight: `${line.minHeightPt}pt` } : {}),
                     }}
@@ -496,6 +503,19 @@ function HfContent({
   // A box sharing its paragraph with text hangs off that paragraph instead.
   const indices = paras.map((_, i) => i)
   const hostedBy = new Map<number, React.ReactNode[]>()
+  for (const [n, img] of (images ?? []).filter(hfImageHangsOnPara).entries()) {
+    if (img.anchorPara! >= paras.length) continue
+    const node = (
+      <img
+        key={`img${n}`}
+        src={img.dataUrl}
+        alt=""
+        draggable={false}
+        style={hfAnchoredImgStyle(img, boxGeom)}
+      />
+    )
+    hostedBy.set(img.anchorPara!, [...(hostedBy.get(img.anchorPara!) ?? []), node])
+  }
   const out: React.ReactNode[] = []
   for (let i = 0; i < paras.length;) {
     const box = paras[i].box

@@ -838,6 +838,16 @@ function scanImageSources(markdown: string): ImageSourceScan {
   return { ranges, ambiguousHtml: html.ambiguousHtml }
 }
 
+/**
+ * html-asset:// serve gate. Root directories ("/", "C:\\") already end in a
+ * separator, so `dir + sep` would 403 every sibling image of a root document.
+ */
+export function isInDocDir(target: string, dir: string, separator: string = sep): boolean {
+  if (target === dir) return false
+  const prefix = dir.endsWith(separator) ? dir : dir + separator
+  return target.startsWith(prefix)
+}
+
 export function extractHtmlImageSources(markdown: string): string[] {
   return scanImageSources(markdown).ranges.map((range) => range.source)
 }

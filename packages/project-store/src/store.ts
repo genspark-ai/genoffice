@@ -296,8 +296,11 @@ export class ProjectStore {
 
   /**
    * The key a path is stored under in one of the index maps, looking through the
-   * alternate spelling as well: a path registered while the file did not exist yet
-   * is keyed unresolved, and resolves to a real path once it is written.
+   * alternate spellings as well: an older version keyed entries under the raw
+   * path exactly as the shell passed it (on macOS that is the NFD spelling the
+   * file system reports, which canonicalization folds to NFC), and a path
+   * registered while the file did not exist yet is keyed unresolved and resolves
+   * to a real path once it is written.
    */
   private findMapKey(
     map: Record<string, string> | undefined,
@@ -306,9 +309,20 @@ export class ProjectStore {
     if (!map) return undefined
     const key = canonicalPathKey(filePath)
     if (map[key] !== undefined) return key
-    const alt = unresolvedPathKey(filePath)
-    if (alt !== key && map[alt] !== undefined) return alt
+    for (const alt of [filePath, unresolvedPathKey(filePath)]) {
+      if (alt !== key && map[alt] !== undefined) return alt
+    }
     return undefined
+  }
+
+  /**
+   * Moves an entry found under a legacy or unresolved key to the canonical key,
+   * so later lookups through any spelling hit the same single entry.
+   */
+  private static rekeyEntry(map: Record<string, string>, fromKey: string, toKey: string): void {
+    if (fromKey === toKey) return
+    map[toKey] = map[fromKey]!
+    delete map[fromKey]
   }
 
   /** Same identity test for the raw path lists kept in project.json */
@@ -401,11 +415,19 @@ export class ProjectStore {
   resolveProjectForFile(filePath: string): string {
     this.ensureDefaultProject()
     const index = this.readIndex()
+    const key = canonicalPathKey(filePath)
     const existingKey = this.findMapKey(index.fileMap, filePath)
-    if (existingKey !== undefined) return index.fileMap[existingKey]!
+    if (existingKey !== undefined) {
+      const projectId = index.fileMap[existingKey]!
+      if (existingKey !== key) {
+        ProjectStore.rekeyEntry(index.fileMap, existingKey, key)
+        this.writeIndex(index)
+      }
+      return projectId
+    }
 
     // Assign to default
-    index.fileMap[canonicalPathKey(filePath)] = 'default'
+    index.fileMap[key] = 'default'
     this.writeIndex(index)
 
     // Update the files list in project.json
@@ -430,24 +452,26 @@ export class ProjectStore {
   }
 
   /**
-   * The id a path had before canonicalization, so chats written by an older
-   * version under the raw path hash are still found.
+   * The ids a path had before canonicalization, so chats written by an older
+   * version under the raw path hash are still found: the raw string exactly as
+   * given (older macOS entries are NFD) and its NFC form.
    */
-  private static legacyChatIdForFile(filePath: string): string {
-    return hashPathKey(unresolvedPathKey(filePath))
+  private static legacyChatIdsForFile(filePath: string): string[] {
+    return [...new Set([hashPathKey(filePath), hashPathKey(unresolvedPathKey(filePath))])]
   }
 
   /**
    * Chat id for a path with no registered mapping: the canonical hash, unless an
-   * older version already wrote this chat under the raw path hash.
+   * older version already wrote this chat under a raw path hash.
    */
   private fallbackChatId(projectId: string | undefined, filePath: string): string {
     const chatId = ProjectStore.chatIdForFile(filePath)
     if (!projectId) return chatId
-    const legacy = ProjectStore.legacyChatIdForFile(filePath)
-    if (legacy === chatId) return chatId
     if (existsSync(this.chatPath(projectId, chatId))) return chatId
-    return existsSync(this.chatPath(projectId, legacy)) ? legacy : chatId
+    for (const legacy of ProjectStore.legacyChatIdsForFile(filePath)) {
+      if (legacy !== chatId && existsSync(this.chatPath(projectId, legacy))) return legacy
+    }
+    return chatId
   }
 
   /** Gets the chatId from the mapping; falls back to the path hash without registering. */
@@ -467,10 +491,18 @@ export class ProjectStore {
   resolveChatForFile(filePath: string): { projectId: string; chatId: string } {
     const projectId = this.resolveProjectForFile(filePath)
     const index = this.readIndex()
+    const key = canonicalPathKey(filePath)
     const mappedKey = this.findMapKey(index.chatIdByPath, filePath)
-    if (mappedKey !== undefined) return { projectId, chatId: index.chatIdByPath![mappedKey]! }
+    if (mappedKey !== undefined) {
+      const chatId = index.chatIdByPath![mappedKey]!
+      if (mappedKey !== key) {
+        ProjectStore.rekeyEntry(index.chatIdByPath!, mappedKey, key)
+        this.writeIndex(index)
+      }
+      return { projectId, chatId }
+    }
     const chatId = this.fallbackChatId(projectId, filePath)
-    index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [canonicalPathKey(filePath)]: chatId }
+    index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [key]: chatId }
     this.writeIndex(index)
     return { projectId, chatId }
   }
@@ -857,7 +889,7 @@ export class ProjectStore {
     // 1. Migrate the chats first: the transcript has to be readable from the
     // default project before the directory it lives in is moved to the trash.
     for (const filePath of ownedFiles) {
-      const chatId = this.chatIdForPath(filePath)
+      const chatId = this.chatIdForPath(filePath, id)
       this.renameOrMergeChat(id, chatId, 'default', chatId)
     }
 
@@ -881,11 +913,13 @@ export class ProjectStore {
         movedFiles.push(filePath)
       }
     }
-    // Update the default project.json
+    // Update the default project.json, listing each file under the spelling the
+    // deleted project showed it as rather than under its canonical map key
     if (movedFiles.length > 0) {
       const defaultProj = this.readProject('default')
       if (defaultProj) {
-        for (const f of movedFiles) {
+        for (const key of movedFiles) {
+          const f = proj.files.find((listed) => canonicalPathKey(listed) === key) ?? key
           if (!ProjectStore.ownsFile(defaultProj.files, f)) defaultProj.files.push(f)
         }
         defaultProj.updatedAt = nowIso()

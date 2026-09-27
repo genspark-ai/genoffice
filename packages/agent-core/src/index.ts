@@ -18,6 +18,7 @@ export {
   COMPLETED_VIA_TOOLS_TEXT,
   DEFAULT_MAX_TURNS,
   TOOL_ABORTED_OUTPUT,
+  missingRequiredFields,
   runtimePreamble,
   sanitizeAgentPayload,
 } from './loop'

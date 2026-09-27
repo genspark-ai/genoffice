@@ -6,43 +6,16 @@
  * per text node instead of blindly stacking marks.
  */
 import type { Editor } from '@tiptap/core'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import type { EditorState } from '@tiptap/pm/state'
 import type { CommentInfo } from '@genoffice/docx-engine'
 import { TRACK_IGNORE } from './revisions'
+import { wordSegmentAt } from './word-range'
 
 /** smallest unused numeric comment id */
 export function nextCommentId(comments: CommentInfo[]): string {
   const max = comments.reduce((acc, c) => Math.max(acc, parseInt(c.id, 10) || 0), 0)
   return String(max + 1)
-}
-
-const WORD_SEGMENTER: Intl.Segmenter | null =
-  typeof Intl !== 'undefined' && 'Segmenter' in Intl
-    ? new Intl.Segmenter(undefined, { granularity: 'word' })
-    : null
-
-/** the word-like segment containing `off`, or the one ending exactly at it (caret right after a word) */
-function wordSegmentAt(text: string, off: number): { start: number; end: number } | null {
-  if (WORD_SEGMENTER) {
-    let before: { start: number; end: number } | null = null
-    for (const seg of WORD_SEGMENTER.segment(text)) {
-      const start = seg.index
-      const end = seg.index + seg.segment.length
-      if (start > off) break
-      if (!seg.isWordLike) continue
-      if (off < end) return { start, end }
-      if (end === off) before = { start, end }
-    }
-    return before
-  }
-  const isWordChar = (ch: string) => /[\p{L}\p{N}_]/u.test(ch)
-  let at = off
-  if ((at >= text.length || !isWordChar(text[at]!)) && at > 0 && isWordChar(text[at - 1]!)) at--
-  if (at >= text.length || !isWordChar(text[at]!)) return null
-  let start = at
-  while (start > 0 && isWordChar(text[start - 1]!)) start--
-  let end = at + 1
-  while (end < text.length && isWordChar(text[end]!)) end++
-  return { start, end }
 }
 
 /**
@@ -94,6 +67,13 @@ export function addCommentToRange(editor: Editor, from: number, to: number, id: 
 
 /** strip `id` from every comment mark in the document (mark removed when it was the last id) */
 export function removeCommentFromDoc(editor: Editor, id: string): void {
+  removeCommentsFromDoc(editor, [id])
+}
+
+/** one pass for a whole batch (Delete All Comments): per-id passes would rescan the document each time */
+export function removeCommentsFromDoc(editor: Editor, victims: Iterable<string>): void {
+  const gone = new Set(victims)
+  if (gone.size === 0) return
   const { state } = editor
   const markType = state.schema.marks.comment
   const tr = state.tr
@@ -105,8 +85,8 @@ export function removeCommentFromDoc(editor: Editor, id: string): void {
       const ids = String(existing.attrs.ids ?? '')
         .split(' ')
         .filter(Boolean)
-      if (!ids.includes(id)) return
-      const remaining = ids.filter((x) => x !== id)
+      if (!ids.some((x) => gone.has(x))) return
+      const remaining = ids.filter((x) => !gone.has(x))
       const from = pos
       const to = pos + node.nodeSize
       if (remaining.length === 0) tr.removeMark(from, to, markType)
@@ -121,9 +101,9 @@ export function removeCommentFromDoc(editor: Editor, id: string): void {
       ? (node.attrs.commentStarts as string[])
       : []
     const ends = Array.isArray(node.attrs?.commentEnds) ? (node.attrs.commentEnds as string[]) : []
-    if (!starts.includes(id) && !ends.includes(id)) return
-    const remainingStarts = starts.filter((value) => value !== id)
-    const remainingEnds = ends.filter((value) => value !== id)
+    if (!starts.some((x) => gone.has(x)) && !ends.some((x) => gone.has(x))) return
+    const remainingStarts = starts.filter((value) => !gone.has(value))
+    const remainingEnds = ends.filter((value) => !gone.has(value))
     tr.setNodeMarkup(pos, undefined, {
       ...node.attrs,
       commentStarts: remainingStarts.length > 0 ? remainingStarts : null,
@@ -154,4 +134,50 @@ export function addReplyToCommentRange(editor: Editor, parentId: string, newId: 
   })
   if (found && tr.steps.length > 0) editor.view.dispatch(tr)
   return found
+}
+
+export interface CommentAnchor {
+  id: string
+  from: number
+  to: number
+}
+
+/** first anchored range of every comment id, in document order (block-attr ranges count from the block start) */
+export function commentAnchors(doc: PmNode): CommentAnchor[] {
+  const markType = doc.type.schema.marks.comment
+  const seen = new Map<string, CommentAnchor>()
+  doc.descendants((node, pos) => {
+    if (node.isText) {
+      const mark = markType && node.marks.find((m) => m.type === markType)
+      if (!mark) return
+      for (const id of String(mark.attrs.ids ?? '').split(' ')) {
+        if (!id) continue
+        const hit = seen.get(id)
+        if (!hit) seen.set(id, { id, from: pos, to: pos + node.nodeSize })
+        else if (hit.to === pos) hit.to = pos + node.nodeSize
+      }
+      return
+    }
+    const starts = Array.isArray(node.attrs?.commentStarts)
+      ? (node.attrs.commentStarts as string[])
+      : []
+    for (const id of starts) {
+      if (!seen.has(id)) seen.set(id, { id, from: pos + 1, to: pos + 1 })
+    }
+  })
+  return [...seen.values()].sort((a, b) => a.from - b.from)
+}
+
+/** comment ids whose mark covers `pos` (either side of a boundary) */
+export function commentIdsAt(state: EditorState, pos: number): string[] {
+  const markType = state.schema.marks.comment
+  if (!markType || pos < 0 || pos > state.doc.content.size) return []
+  const $pos = state.doc.resolve(pos)
+  const ids = new Set<string>()
+  for (const node of [$pos.nodeAfter, $pos.nodeBefore]) {
+    const mark = node?.isText ? node.marks.find((m) => m.type === markType) : undefined
+    if (!mark) continue
+    for (const id of String(mark.attrs.ids ?? '').split(' ')) if (id) ids.add(id)
+  }
+  return [...ids]
 }

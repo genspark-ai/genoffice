@@ -3,6 +3,7 @@ import { Image } from '@tiptap/extension-image'
 import { Link } from '@tiptap/extension-link'
 import { Paragraph } from '@tiptap/extension-paragraph'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { MAX_PASTED_IMAGE_BYTES } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { showToast } from '../components/toast-bus'
 
@@ -83,6 +84,10 @@ async function persistAndInsert(
   file: File,
   pos: number,
 ): Promise<void> {
+  if (file.size > MAX_PASTED_IMAGE_BYTES) {
+    showToast(t('imageTooLarge', { mb: Math.round(MAX_PASTED_IMAGE_BYTES / 1024 / 1024) }), 'error')
+    return
+  }
   const bytes = new Uint8Array(await file.arrayBuffer())
   let binary = ''
   for (let i = 0; i < bytes.length; i += 0x8000) {

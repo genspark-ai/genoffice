@@ -606,7 +606,7 @@ export const he = {
   appTabData: 'נתונים',
   appTabReview: 'סקירה',
   appRibbonCollapse: 'כווץ את רצועת הכלים',
-  appRibbonPin: 'הצמד את רצועת הכלים',
+  appRibbonExpand: 'הרחב את רצועת הכלים',
   appTabView: 'תצוגה',
   appTabAi: 'AI',
   appTabChartDesign: 'עיצוב תרשים',

@@ -72,8 +72,8 @@ describe('printAreasFromFormula', () => {
     expect(printAreasFromFormula("'S'!#REF!")).toEqual([])
   })
 
-  it('skips bad parts instead of dropping good ones', () => {
-    expect(printAreasFromFormula("'S'!$A$1:$B$2,'S'!$C:$D")).toEqual(['A1:B2'])
+  it('skips #REF! parts but keeps the used-range fallback for uncroppable ones', () => {
+    expect(printAreasFromFormula("'S'!$A$1:$B$2,'S'!$C:$D")).toEqual([])
     expect(printAreasFromFormula("'S'!#REF!,'S'!$D$3")).toEqual(['D3:D3'])
   })
 

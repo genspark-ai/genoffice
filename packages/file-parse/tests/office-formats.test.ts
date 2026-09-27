@@ -295,6 +295,66 @@ describe('parseFileToText: pptx', () => {
     )
   }
 
+  function notesSlideXml(body: string[], slideNum: string): string {
+    const paras = (runs: string[]) =>
+      runs.map((t) => `<a:p><a:r><a:t xml:space="preserve">${t}</a:t></a:r></a:p>`).join('')
+    return (
+      '<p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' +
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>' +
+      '<p:sp><p:nvSpPr><p:nvPr><p:ph type="sldImg"/></p:nvPr></p:nvSpPr></p:sp>' +
+      `<p:sp><p:nvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:txBody>${paras(body)}</p:txBody></p:sp>` +
+      '<p:sp><p:nvSpPr><p:nvPr><p:ph type="sldNum" sz="quarter" idx="10"/></p:nvPr></p:nvSpPr>' +
+      `<p:txBody><a:p><a:fld id="{N}" type="slidenum"><a:t>${slideNum}</a:t></a:fld></a:p></p:txBody></p:sp>` +
+      '</p:spTree></p:cSld></p:notes>'
+    )
+  }
+
+  function notesRelationship(target: string): string {
+    return (
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      `<Relationship Id="rId2" Target="${target}" ` +
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide"/>' +
+      '</Relationships>'
+    )
+  }
+
+  it('appends speaker notes after each slide and skips the slide-number field', async () => {
+    const zip = await presentationFixture(
+      "<p:sldId id='256' r:id='rId1'/><p:sldId id='257' r:id='rId2'/>",
+      slideRelationship('rId1', 'slides/slide1.xml') +
+        slideRelationship('rId2', 'slides/slide2.xml'),
+    )
+    zip.file(
+      'ppt/slides/_rels/slide1.xml.rels',
+      notesRelationship('../notesSlides/notesSlide1.xml'),
+    )
+    zip.file(
+      'ppt/notesSlides/notesSlide1.xml',
+      notesSlideXml(['Remember to greet the audience', 'Mention the Q3 numbers'], '1'),
+    )
+    expect(await pptxToText(await zip.generateAsync({ type: 'uint8array' }))).toBe(
+      '## Slide 1\nProductIntro\nFirst slide subtitle\n### Notes\nRemember to greet the audience\nMention the Q3 numbers' +
+        '\n\n## Slide 2\nMarket Analysis\nOrder 0042',
+    )
+  })
+
+  it('counts notes as text on a slide that otherwise only holds pictures', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'ppt/slides/slide1.xml',
+      '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">' +
+        '<p:cSld><p:spTree><p:pic/></p:spTree></p:cSld></p:sld>',
+    )
+    zip.file(
+      'ppt/slides/_rels/slide1.xml.rels',
+      notesRelationship('../notesSlides/notesSlide1.xml'),
+    )
+    zip.file('ppt/notesSlides/notesSlide1.xml', notesSlideXml(['The chart shows revenue'], '1'))
+    expect(await pptxToText(await zip.generateAsync({ type: 'uint8array' }))).toBe(
+      '## Slide 1\n[picture-only slide: 1 image, no extractable text]\n### Notes\nThe chart shows revenue',
+    )
+  })
+
   it('follows presentation order with positional numbering and excludes orphan slides', async () => {
     const zip = await presentationFixture(
       "<p:sldId id='265' r:id='rId10'/><p:sldId id='256' r:id='rId1'/>",
@@ -527,6 +587,35 @@ describe('parseFileToText: xlsx', () => {
     expect(text).toContain('# Chart\n[image-only sheet: 1 image, no cell data]')
     expect(text).toContain('# Data\n7')
     expect(text).not.toContain('No extractable text')
+  })
+
+  it('surfaces formula text for cells without a cached value', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>SUM(A1:A3)</f></c><c r="C1"><f>A1*2</f><v></v></c></row>' +
+        '<row r="2"><c r="A2"><v>2</v></c><c r="B2"><f t="shared" ref="B2:B3" si="0">A2+1</f></c><c r="C2"><f>A2*2</f><v>4</v></c></row>' +
+        '<row r="3"><c r="A3"><v>3</v></c><c r="B3"><f t="shared" si="0"/></c><c r="C3"><f t="shared" ref="C3:C4" si="1">A3*10</f><v>30</v></c></row>' +
+        '<row r="4"><c r="C4"><f t="shared" si="1"/></c></row>' +
+        '</sheetData></worksheet>',
+    )
+    const text = await xlsxToText(await zip.generateAsync({ type: 'uint8array' }))
+    expect(text).toBe(
+      '# Calc\n1 | =SUM(A1:A3) | =A1*2\n2 | =A2+1 | 4\n3 | =A2+1 | 30\n |  | =A3*10',
+    )
   })
 
   it('leads with a workbook-level note when every sheet is image-only', async () => {

@@ -197,7 +197,7 @@ function ensureNotesMaster(archive: PackageArchive): string | null {
     const existingList = /<p:notesMasterIdLst\b[^>]*(?:\/>|>[\s\S]*?<\/p:notesMasterIdLst>)/.exec(
       pres,
     )?.[0]
-    if (!existingList) {
+    if (!existingList || existingList.endsWith('/>')) {
       const rid = appendRelationship(
         archive,
         presPath,
@@ -205,19 +205,12 @@ function ensureNotesMaster(archive: PackageArchive): string | null {
         'notesMasters/notesMaster1.xml',
       )
       const list = `<p:notesMasterIdLst><p:notesMasterId r:id="${rid}"/></p:notesMasterIdLst>`
-      const next = pres.includes('</p:sldMasterIdLst>')
-        ? pres.replace('</p:sldMasterIdLst>', () => `</p:sldMasterIdLst>${list}`)
-        : pres.replace('<p:sldIdLst>', () => `${list}<p:sldIdLst>`)
+      const next = existingList
+        ? pres.replace(existingList, () => list)
+        : pres.includes('</p:sldMasterIdLst>')
+          ? pres.replace('</p:sldMasterIdLst>', () => `</p:sldMasterIdLst>${list}`)
+          : pres.replace('<p:sldIdLst>', () => `${list}<p:sldIdLst>`)
       setEntry(archive, presPath, next)
-    } else if (existingList.endsWith('/>')) {
-      const rid = appendRelationship(
-        archive,
-        presPath,
-        NOTES_MASTER_REL,
-        'notesMasters/notesMaster1.xml',
-      )
-      const list = `<p:notesMasterIdLst><p:notesMasterId r:id="${rid}"/></p:notesMasterIdLst>`
-      setEntry(archive, presPath, pres.replace(existingList, list))
     }
   }
   return path

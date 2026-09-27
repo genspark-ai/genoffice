@@ -16,6 +16,9 @@ export default defineConfig({
       '@genoffice/electron-utils/headless-export': local(
         '../../packages/electron-utils/src/headless-export.ts',
       ),
+      '@genoffice/electron-utils/atomic-write': local(
+        '../../packages/electron-utils/src/atomic-write.ts',
+      ),
       '@genoffice/electron-utils': local('../../packages/electron-utils/src/index.ts'),
       '@genoffice/ai-provider/browser': local('../../packages/ai-provider/src/browser.ts'),
       '@genoffice/ai-provider': local('../../packages/ai-provider/src/index.ts'),

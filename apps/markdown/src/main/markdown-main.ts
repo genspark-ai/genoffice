@@ -14,7 +14,10 @@ import {
 } from 'electron'
 import type { WebContents } from 'electron'
 import {
+  MAX_REMOTE_IMAGE_BYTES,
   configuredDefaultSaveDir,
+  fetchRemoteImage,
+  readBodyCapped,
   saveImageFromUrl,
   contextMenuLabels,
   installContextMenu,
@@ -47,7 +50,12 @@ import {
   writeImageIntoOwnedAssets,
 } from './asset-lifecycle'
 import { createMarkdownConversionSession, writeMarkdownConversion } from './conversion-lifecycle'
-import { MARKDOWN_CHANNELS } from '../shared/ipc'
+import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
+import {
+  EXPORT_IMAGE_EXTS,
+  EXPORT_IMAGE_MIME_BY_EXT,
+  remoteExportImageMime,
+} from '../shared/export-image-mime'
 import type {
   ExportDocxRequest,
   ExportFormat,
@@ -646,16 +654,25 @@ async function resolveSaveTarget(
   return picked.filePath
 }
 
-const DISPLAY_IMAGE_EXTS = new Set([
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.svg',
-  '.bmp',
-  '.avif',
-])
+const DISPLAY_IMAGE_EXTS = new Set(Object.keys(EXPORT_IMAGE_MIME_BY_EXT))
+
+/**
+ * `![x](https://…)` for the DOCX export: downloaded here so the renderer's
+ * origin restrictions do not apply; the SSRF guard keeps the model-writable
+ * URL off private hosts.
+ */
+async function readRemoteImage(url: string): Promise<ImageData | null> {
+  try {
+    const resp = await fetchRemoteImage(url)
+    if (!resp?.ok) return null
+    const bytes = await readBodyCapped(resp, MAX_REMOTE_IMAGE_BYTES)
+    const mime = remoteExportImageMime(bytes, resp.headers.get('content-type'), url)
+    if (!mime) return null
+    return { base64: Buffer.from(bytes).toString('base64'), mime }
+  } catch {
+    return null
+  }
+}
 
 /**
  * Serves authored image paths to the editor DOM. A plain file:// <img> URL is
@@ -831,8 +848,7 @@ function registerMarkdownIpc(): void {
       BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
     const picked = await showOpenDialogWithMemory(dialog, win, {
       title: tm('dlgPickImage'),
-      // only formats readImage/DOCX export can round-trip (docx-engine NewImage mimes)
-      filters: [{ name: tm('filterImages'), extensions: ['png', 'jpg', 'jpeg', 'gif'] }],
+      filters: [{ name: tm('filterImages'), extensions: EXPORT_IMAGE_EXTS }],
       properties: ['openFile'],
     })
     const source = picked.filePaths[0]
@@ -846,8 +862,8 @@ function registerMarkdownIpc(): void {
       const docPath = savePathByWc.get(e.sender.id)
       const ext = String(data?.ext ?? '').toLowerCase()
       if (!docPath || typeof data?.base64 !== 'string' || !data.base64) return null
-      // keep in sync with readImage's MIME map — every authored asset must stay DOCX-exportable
-      if (!['png', 'jpg', 'jpeg', 'gif'].includes(ext)) return null
+      if (!EXPORT_IMAGE_EXTS.includes(ext)) return null
+      if (data.base64.length > Math.ceil(MAX_PASTED_IMAGE_BYTES / 3) * 4) return null
       return writeImageIntoOwnedAssets(docPath, `image.${ext}`, Buffer.from(data.base64, 'base64'))
     },
   )
@@ -863,13 +879,6 @@ function registerMarkdownIpc(): void {
       }),
   )
 
-  const MIME_BY_EXT: Record<string, ImageData['mime']> = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-  }
-
   ipcMain.handle(MARKDOWN_CHANNELS.saveImageAs, async (e, src: unknown) => {
     if (typeof src !== 'string') return { ok: false }
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -882,11 +891,13 @@ function registerMarkdownIpc(): void {
   ipcMain.handle(
     MARKDOWN_CHANNELS.readImage,
     async (e, src: unknown): Promise<ImageData | null> => {
+      if (typeof src !== 'string') return null
+      if (/^https?:/i.test(src)) return readRemoteImage(src)
       const docPath = savePathByWc.get(e.sender.id)
-      if (!docPath || typeof src !== 'string' || /^[a-z][a-z0-9+.-]*:/i.test(src)) return null
+      if (!docPath || /^[a-z][a-z0-9+.-]*:/i.test(src)) return null
       const target = await resolveSafeRelativeImagePath(docPath, src)
       if (!target) return null
-      const mime = MIME_BY_EXT[extname(target).toLowerCase()]
+      const mime = EXPORT_IMAGE_MIME_BY_EXT[extname(target).toLowerCase()]
       if (!mime || !existsSync(target)) return null
       try {
         return { base64: (await readFile(target)).toString('base64'), mime }

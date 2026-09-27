@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { aiStreamRequestSchema } from '../src/shared/desktop-api'
 
 function isValidRole(role: unknown): boolean {
   return role === 'user' || role === 'assistant'
@@ -10,19 +9,6 @@ function isValidText(text: unknown): boolean {
 }
 
 describe('sheets chat IPC validation', () => {
-  it('accepts Gemini function-call signatures in assistant history', () => {
-    const messages = [
-      {
-        role: 'assistant',
-        text: '',
-        toolCalls: [
-          { id: 't1', name: 'write_document', input: {}, thoughtSignature: 'opaque-signature' },
-        ],
-      },
-    ]
-    expect(aiStreamRequestSchema.shape.messages.safeParse(messages).success).toBe(true)
-  })
-
   it('accepts user/assistant roles', () => {
     expect(isValidRole('user')).toBe(true)
     expect(isValidRole('assistant')).toBe(true)

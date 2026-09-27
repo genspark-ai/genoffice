@@ -1,7 +1,7 @@
 // DOM line-box sampling for page-crossing blocks (cached per element), the
 // line-split re-slice, table row cut positions and line anchors.
 import { rangeSlot } from './dom-range'
-import { applyBlockMeta } from './pagination-measure'
+import { applyBlockMeta, lineLeadPx } from './pagination-measure'
 import { CapacityWindows, SortedYs } from './pagination-index'
 import { blockInlineExtraPx } from './pagination-sections'
 import {
@@ -22,6 +22,7 @@ import type {
   SectionGeom,
   SliceOutputs,
   TableRowBox,
+  LineBox,
 } from './pagination-types'
 
 const rowRange = rangeSlot()
@@ -69,7 +70,7 @@ export function sliceWithLineSplit(
   out?: SliceOutputs,
   resume?: PassResume,
 ): PageSlice[] {
-  if (metaOf) applyBlockMeta(blocks, metaOf, zoomFactor)
+  applyBlockMeta(blocks, metaOf, zoomFactor)
   const outs: SliceOutputs = out ?? {}
   outs.colWrapRequests ??= []
   const prefix = resume ? resume.prevSlices.slice(0, resume.page) : []
@@ -364,7 +365,13 @@ export function probeColWrap(
  */
 const lineSampleCache = new WeakMap<
   HTMLElement,
-  { sig: string; boundaries?: number[]; rows?: TableRowBox[]; soleLineBottom?: number }
+  {
+    sig: string
+    boundaries?: number[]
+    rows?: TableRowBox[]
+    soleLineBottom?: number
+    soleLineTop?: number
+  }
 >()
 
 // webfont loads shift line boxes without changing block height (explicit line
@@ -505,6 +512,7 @@ export function fillLineBoxes(
         ? hit.rows.map((r) => ({ ...r }))
         : domTableRows(block.el, textH, zoomFactor)
       if (!hit?.rows) lineSampleCache.set(block.el, { sig, rows: rows.map((r) => ({ ...r })) })
+      overlayLiveRowFlags(block.el, rows)
       if (rows.length > 0) {
         const flags =
           block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.tableRowFlags : undefined
@@ -514,7 +522,7 @@ export function fillLineBoxes(
             // it must beat the source XML so turning repetition off takes effect
             // before the document is saved and reopened.
             if (r.isHeader === undefined && flags[i]?.isHeader) r.isHeader = true
-            if (flags[i]?.cantSplit) r.cantSplit = true
+            if (r.cantSplit === undefined && flags[i]?.cantSplit) r.cantSplit = true
             if (flags[i]?.keepNext) r.keepNext = true
             if (flags[i]?.minHPx) r.minHPx = flags[i].minHPx
           })
@@ -526,36 +534,68 @@ export function fillLineBoxes(
       }
       continue
     }
+    if (block.lineLeadPx === undefined) {
+      block.lineLeadPx = lineLeadPx(block.el)
+      if (block.lineLeadPx > 0.5) changed = true
+    }
     // synthesized over-page cuts below mutate the list, so cached entries are copied out
     let boundaries: number[]
     let soleLineBottom: number | undefined
+    let soleLineTop: number
     if (hit?.boundaries) {
       boundaries = [...hit.boundaries]
       soleLineBottom = hit.soleLineBottom
+      soleLineTop = hit.soleLineTop ?? 0
     } else {
       const lines = domLineRects(block.el, zoomFactor)
       boundaries = lineBreakBoundaries(lines)
       soleLineBottom = lines.length === 1 ? lines[0].bottom : undefined
+      soleLineTop = lines.length === 1 ? lines[0].offset : 0
       lineSampleCache.set(block.el, {
         sig,
         boundaries: [...boundaries],
-        ...(soleLineBottom !== undefined ? { soleLineBottom } : {}),
+        ...(soleLineBottom !== undefined ? { soleLineBottom, soleLineTop } : {}),
       })
     }
     // sole line taller than the column (oversized inline picture): no break
     // points exist, so flag the block for the atomic page-bottom clip instead
-    // of cutting (Word overflow-clips the line; see the placement branch)
-    if (boundaries.length === 0 && soleLineBottom !== undefined && soleLineBottom > capH + 0.5) {
-      if (block.oversizeLineH !== soleLineBottom) {
-        block.oversizeLineH = soleLineBottom
-        changed = true
+    // of cutting (Word overflow-clips the line; see the placement branch).
+    // Any excess counts, even a sub-pixel one: cutting it would leave an
+    // ink-less tail slice that opens a blank page. A block already clipped
+    // measures at the capacity, so only its unclipped line extent can tell.
+    // A text line counts by its own height: a short line pushed under a
+    // page-tall float ends below the capacity too, but it belongs at the next
+    // page top (the synthesized cut below), not under the clip.
+    if (boundaries.length === 0 && soleLineBottom !== undefined) {
+      const replaced = replacedSoleLine(block.el)
+      const overCap = !replaced
+        ? soleLineBottom - soleLineTop > capH + 0.5
+        : clipMarked
+          ? soleLineBottom > capH - 0.01
+          : soleLineBottom > capH + 0.5 || block.height - (block.spaceAfterPx ?? 0) > capH + 0.01
+      if (overCap) {
+        if (block.oversizeLineH !== soleLineBottom) {
+          block.oversizeLineH = soleLineBottom
+          changed = true
+        }
+        continue
       }
-      continue
+      // the space above a line pushed under a page-tall float is ink-less lead:
+      // the page bottom swallows it and the line opens the next page (Word).
+      // Cutting it at page height would push the lead whole instead.
+      if (!replaced && soleLineTop > 0.5 && block.height > contentH) {
+        const boxes = tileBoxes([soleLineTop], textH)
+        boxes[0].lead = true
+        block.lineBoxes = boxes
+        changed = true
+        continue
+      }
     }
     if (boundaries.length === 0 && block.height > contentH) {
       // over-page block with no in-flow lines at all (floated/absolute content):
-      // synthesize cut points at page height, equivalent to hard pixel cuts
-      for (let y = contentH; y < block.height; y += contentH) boundaries.push(y)
+      // synthesize cut points at page height, equivalent to hard pixel cuts;
+      // a sub-pixel remainder is not a slice
+      for (let y = contentH; y < block.height - 1; y += contentH) boundaries.push(y)
     }
     // a leading page break's line has no text rect, so its cut (the first text
     // line's ink top) lands inside the first sampled line box: make it a boundary
@@ -571,11 +611,14 @@ export function fillLineBoxes(
   return changed
 }
 
+function replacedSoleLine(el: HTMLElement): boolean {
+  if (el.classList.contains('doc-protected-image') || el.classList.contains('doc-protected-chart'))
+    return true
+  return el.querySelector('img') !== null && !(el.textContent ?? '').trim()
+}
+
 /** Boundary list (excluding 0) → line boxes tiling the block height (heights are adjacent-boundary diffs; the first box starts at 0) */
-function tileBoxes(
-  boundaries: number[],
-  blockHeight: number,
-): Array<{ offsetInBlock: number; height: number }> {
+function tileBoxes(boundaries: number[], blockHeight: number): LineBox[] {
   const tops = [0, ...boundaries.filter((b) => b > 0.5 && b < blockHeight)]
   return tops.map((top, i) => ({
     offsetInBlock: top,
@@ -656,6 +699,20 @@ export function applyRowNotes(
   })
 }
 
+/** tr attributes are live editor state (repeat header / cantSplit toggles change no text or
+ *  geometry, so the sample cache would otherwise keep the stale flags) */
+export function overlayLiveRowFlags(el: HTMLElement, rows: TableRowBox[]): void {
+  const trs = outerTableRows(el)
+  rows.forEach((row, i) => {
+    const tr = trs[i]
+    if (!tr) return
+    if (tr.hasAttribute('data-repeat-header'))
+      row.isHeader = tr.getAttribute('data-repeat-header') === '1'
+    if (tr.hasAttribute('data-cant-split'))
+      row.cantSplit = tr.getAttribute('data-cant-split') === '1'
+  })
+}
+
 function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number): TableRowBox[] {
   const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
     g.getBoundingClientRect(),
@@ -688,6 +745,9 @@ function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number):
       contentBottom,
       ...(trs[i].hasAttribute('data-repeat-header')
         ? { isHeader: trs[i].getAttribute('data-repeat-header') === '1' }
+        : {}),
+      ...(trs[i].hasAttribute('data-cant-split')
+        ? { cantSplit: trs[i].getAttribute('data-cant-split') === '1' }
         : {}),
       ...(cuts.length > 0 ? { cutYs: cuts } : {}),
       ...(cells ? { cells } : {}),

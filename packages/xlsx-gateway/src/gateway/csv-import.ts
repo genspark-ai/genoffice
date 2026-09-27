@@ -215,11 +215,13 @@ export function parseCsv(input: string, delimiter = sniffDelimiter(input)): stri
   return rows
 }
 
-/// Plain decimal numbers only; leading zeros ("007") stay text so codes and
-/// phone numbers survive the import. Integers past Excel's 15-digit precision
-/// stay text too, so long IDs are not corrupted on open.
+/// Plain decimal numbers only (".5", "1." and "-.5" count, as in Excel); leading
+/// zeros ("007") and a "+" sign ("+86") stay text so codes and phone numbers
+/// survive the import. Integers past Excel's 15-digit precision stay text too,
+/// so long IDs are not corrupted on open.
 export function isNumericCell(value: string): boolean {
-  if (!/^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/.test(value)) return false
+  if (!/^-?(?:(?:0|[1-9][0-9]*)(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(value))
+    return false
   if (!/[.eE]/.test(value) && value.replace(/^-/, '').length > 15) return false
   return Number.isFinite(Number(value))
 }
@@ -254,7 +256,7 @@ export function buildWorksheetXml(rows: readonly (readonly string[])[]): string 
       const reference = `${columnLabel(columnIndex)}${rowIndex + 1}`
       cells.push(
         isNumericCell(value)
-          ? `<c r="${reference}"><v>${value}</v></c>`
+          ? `<c r="${reference}"><v>${Number(value)}</v></c>`
           : `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(encodeXlsxEscapes(value))}</t></is></c>`,
       )
     })

@@ -396,18 +396,11 @@ export class ZoteroDocumentController {
     if (run.underline && schema.marks.underline) marks.push(schema.marks.underline.create())
     if (run.strike && schema.marks.strike) marks.push(schema.marks.strike.create())
     if ((run.vertAlign || run.caps || run.sizeHalfPoints) && schema.marks.docTextStyle) {
-      const rawRPr =
-        run.caps === 'small'
-          ? '<w:rPr><w:smallCaps/></w:rPr>'
-          : run.caps === 'all'
-            ? '<w:rPr><w:caps/></w:rPr>'
-            : null
       marks.push(
         schema.marks.docTextStyle.create({
           vertAlign: run.vertAlign ?? null,
           caps: run.caps ?? null,
           sizeHalfPoints: run.sizeHalfPoints ?? null,
-          rawRPr,
         }),
       )
     }

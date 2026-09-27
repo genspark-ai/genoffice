@@ -7,6 +7,8 @@ export const ja = {
   saveFailed: '保存に失敗しました: {error}',
   saveFailedStatus: '保存に失敗しました',
   exportFailed: 'エクスポートに失敗しました',
+  exportHtmlSkipped:
+    'エクスポートしましたが、{count} 個のアセットを埋め込めませんでした（例: {first}）',
   viewPreview: 'プレビュー',
   viewSplit: '分割',
   viewSource: 'ソース',
@@ -53,7 +55,6 @@ export const ja = {
   save: '上書き保存 (⌘S)',
   saveAs: '名前を付けて保存…',
   ribbonCollapse: 'リボンを折りたたむ',
-  ribbonPin: 'リボンの固定',
   ribbonExpand: 'リボンを展開する',
   ribbonGroupInsert: '挿入',
   editText: 'テキスト編集',

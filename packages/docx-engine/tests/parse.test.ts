@@ -110,6 +110,34 @@ describe('parseDocx', () => {
     expect(visible[3].runs).toEqual([{ text: '有批注', commentIds: ['0'] }])
   })
 
+  it('keeps the picture of a text-less section-break paragraph (full-bleed cover)', async () => {
+    const { buildDocx } = await import('./helpers/build-docx')
+    const drawing =
+      '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+      '<wp:extent cx="7559040" cy="10692130"/><wp:docPr id="1" name="Cover"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Cover"/><pic:cNvPicPr/></pic:nvPicPr>' +
+      '<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="7559040" cy="10692130"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+    const bytes = await buildDocx({
+      withImage: true,
+      bodyXml:
+        '<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+        '<w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0"/></w:sectPr></w:pPr>' +
+        `<w:r>${drawing}</w:r></w:p>` +
+        '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const cover = doc.blocks.filter((b) => !b.hidden)[0]
+    expect(cover.type).toBe('paragraph')
+    expect(cover.runs?.[0].image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(cover.runs?.[0].image?.widthPx).toBe(793.6)
+    // the section break rides along in rawPPr and survives a regeneration
+    expect(cover.rawPPr).toContain('<w:sectPr>')
+  })
+
   it('detects headings by effective outline level, not only Heading1-style paragraphs', async () => {
     const { buildDocx } = await import('./helpers/build-docx')
     const p = (pPr: string, text: string) =>
@@ -209,6 +237,28 @@ describe('empty paragraph line size', () => {
     expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBe(16)
   })
 
+  it('records the paragraph-mark w:sz of a list item (Word sizes the marker from it)', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="bullet"/><w:lvlText w:val="\u2022"/></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const numPr = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>'
+    const mark = '<w:rPr><w:sz w:val="22"/></w:rPr>'
+    const run = '<w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>text</w:t></w:r>'
+    const bodyXml =
+      `<w:p><w:pPr>${numPr}${mark}</w:pPr>${run}</w:p>` +
+      `<w:p><w:pPr>${numPr}</w:pPr>${run}</w:p>` +
+      `<w:p><w:pPr>${mark}</w:pPr>${run}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, numberingXml }))
+    expect(doc.blocks[0].format?.markSizeHalfPoints).toBe(22)
+    expect(doc.blocks[0].format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(doc.blocks[1].format?.markSizeHalfPoints).toBeUndefined()
+    // plain paragraphs do not carry it
+    expect(doc.blocks[2].format?.markSizeHalfPoints).toBeUndefined()
+  })
+
   // Word probe 2026-09-11: a space-only paragraph lays out like an empty one,
   // sized by the paragraph mark; the space run's own size never counts
   it('a space-only paragraph takes the mark rPr only, never the space run', async () => {
@@ -237,6 +287,21 @@ describe('empty paragraph line size', () => {
     expect(boxes.length).toBe(1)
     expect(boxes[0]?.paras[0]?.emptyRunSizeHalfPoints).toBe(8)
     expect(boxes[0]?.paras[1]?.emptyRunSizeHalfPoints).toBeUndefined()
+  })
+
+  it("a break-only paragraph takes the mark face and size, else the break run's", async () => {
+    const br = '<w:br w:type="page"/>'
+    const bodyXml =
+      `<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Tahoma" w:hAnsi="Tahoma"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Tahoma" w:hAnsi="Tahoma"/></w:rPr>${br}</w:r></w:p>` +
+      `<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/><w:sz w:val="24"/></w:rPr>${br}</w:r></w:p>` +
+      `<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr><w:t>text</w:t>${br}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].format?.emptyRunFontFamily).toBe('Tahoma')
+    expect(doc.blocks[0].format?.emptyRunSizeHalfPoints).toBeUndefined()
+    expect(doc.blocks[1].format?.emptyRunFontFamily).toBe('Arial')
+    expect(doc.blocks[1].format?.emptyRunSizeHalfPoints).toBe(24)
+    expect(doc.blocks[2].format?.emptyRunFontFamily).toBeUndefined()
+    expect(doc.blocks[2].format?.emptyRunSizeHalfPoints).toBeUndefined()
   })
 
   it('records the w:rFonts that faces a run-less paragraph', async () => {

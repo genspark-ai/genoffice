@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import JSZip from 'jszip'
+import { parseDocx, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const HEADER_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml'
@@ -25,8 +26,8 @@ const anchoredBox = (x: number, y: number, text: string) =>
   '<wps:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr"><a:noAutofit/></wps:bodyPr>' +
   '</wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
 
-async function parseHeader(headerBody: string) {
-  const bytes = await buildDocx({
+async function headerDocx(headerBody: string) {
+  return buildDocx({
     bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
     extraRels:
       '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
@@ -39,8 +40,17 @@ async function parseHeader(headerBody: string) {
     ],
     sectPrExtra: '<w:headerReference w:type="default" r:id="rId61"/>',
   })
-  return (await parseDocx(bytes)).headerParas ?? []
 }
+
+async function parseHeader(headerBody: string) {
+  return (await parseDocx(await headerDocx(headerBody))).headerParas ?? []
+}
+
+const WATERMARK_PARA =
+  '<w:p><w:pPr><w:spacing w:after="160"/></w:pPr><w:r><w:pict>' +
+  '<v:shape id="WordPictureWatermark1" type="#_x0000_t75" style="position:absolute;margin-left:0;margin-top:0;width:510pt;height:510pt;z-index:-251651072;mso-position-horizontal-relative:margin;mso-position-vertical-relative:margin">' +
+  '<v:imagedata r:id="rId99" o:title="wm"/><w10:wrap anchorx="margin" anchory="margin"/>' +
+  '</v:shape></w:pict></w:r></w:p>'
 
 describe('header/footer floating textboxes carry their anchor geometry', () => {
   it('page-anchored wps textboxes: position, extent, wrap, insets and vertical anchor', async () => {
@@ -120,5 +130,47 @@ describe('header/footer floating textboxes carry their anchor geometry', () => {
       insets: [16, 0, 37.8, 7.56],
     })
     expect(paras[0].box?.posH).toBeUndefined()
+  })
+  it('a picture-watermark paragraph (floating VML, no text) keeps its own line', async () => {
+    const paras = await parseHeader(WATERMARK_PARA)
+    // Word probe (2026-09-23): the watermark draws at its anchor but the
+    // paragraph still reserves a 22.56pt line above the body
+    expect(paras).toHaveLength(1)
+    expect(paras[0]).toMatchObject({ runs: [], spaceAfter: 160, lineOnly: true })
+    expect(paras[0].boxAnchored).toBeUndefined()
+  })
+
+  it('saving a header edit keeps the drawing paragraph once: its display line is not re-emitted', async () => {
+    const bytes = await headerDocx(WATERMARK_PARA + '<w:p><w:r><w:t>Confidential</w:t></w:r></w:p>')
+    const parsed = await parseDocx(bytes)
+    const paras = parsed.headerParas ?? []
+    expect(paras.map((p) => p.lineOnly ?? false)).toEqual([true, false])
+    const edited = paras.map((p) =>
+      p.lineOnly ? p : { ...p, runs: p.runs.map((r) => ({ ...r, text: 'Changed' })) },
+    )
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+      header: { text: 'Changed', paras: edited },
+    })
+    const hdr = await (await JSZip.loadAsync(saved)).file('word/header1.xml')!.async('string')
+    expect(hdr.match(/<w:pict[\s>]/g)).toHaveLength(1)
+    expect(hdr.match(/<w:p[\s>]/g)).toHaveLength(2)
+    expect(hdr).toContain('Changed')
+    expect(hdr).not.toContain('Confidential')
+  })
+
+  it('text typed into a drawing-only header line is still written on save', async () => {
+    const bytes = await headerDocx(WATERMARK_PARA + '<w:p><w:r><w:t>Confidential</w:t></w:r></w:p>')
+    const parsed = await parseDocx(bytes)
+    const paras = parsed.headerParas ?? []
+    const typed = paras.map((p, i) =>
+      i === 0 ? { ...p, runs: [{ ...paras[1].runs[0], text: 'Typed' }] } : p,
+    )
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+      header: { text: 'Typed Confidential', paras: typed },
+    })
+    const hdr = await (await JSZip.loadAsync(saved)).file('word/header1.xml')!.async('string')
+    expect(hdr.match(/<w:pict[\s>]/g)).toHaveLength(1)
+    expect(hdr).toContain('Typed')
+    expect(hdr).toContain('Confidential')
   })
 })

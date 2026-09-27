@@ -1,85 +1,106 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  installRibbonPeekDismiss,
-  isRibbonToggleShortcut,
-  readRibbonCollapsed,
-} from '@genoffice/ui'
+// Word for Mac model: the selected tab collapses, any tab expands (and stays
+// expanded), the collapsed tab row has no selected tab.
+import { beforeEach, describe, expect, it } from 'vitest'
+import { act, createElement, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import { isRibbonToggleShortcut, readRibbonCollapsed, useRibbonCollapse } from '@genoffice/ui'
 
-const press = (target: Element) =>
-  target.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+const TABS = ['home', 'insert'] as const
+const LABELS = { collapse: 'Collapse', expand: 'Expand' }
+
+function Ribbon() {
+  const collapse = useRibbonCollapse('t.ribbon', LABELS)
+  const [tab, setTab] = useState<string>('home')
+  return createElement(
+    'div',
+    { className: collapse.rootClass },
+    createElement(
+      'div',
+      { className: 'ribbon-tabs', onDoubleClick: collapse.onTabsDoubleClick },
+      ...TABS.map((name) =>
+        createElement(
+          'button',
+          {
+            key: name,
+            id: name,
+            className: `ribbon-tab ${collapse.tabClass(tab === name)}`,
+            'data-tip': collapse.tabTip(tab === name),
+            onClick: () => {
+              collapse.onTabPress(tab === name)
+              setTab(name)
+            },
+          },
+          name,
+        ),
+      ),
+    ),
+    createElement('div', { 'data-ribbon-body': '' }),
+  )
+}
+
+const $ = (id: string) => document.getElementById(id) as HTMLButtonElement
+const rootEl = () => document.querySelector('.ribbon-collapsible') as HTMLElement
+const collapsed = () => rootEl().classList.contains('ribbon-collapsed')
+const click = (id: string) => act(() => $(id).click())
 
 describe('ribbon collapse', () => {
-  let ribbon: HTMLDivElement
-  let doc: HTMLDivElement
-  let close: ReturnType<typeof vi.fn<() => void>>
-  let off: () => void
-
   beforeEach(() => {
+    localStorage.removeItem('t.ribbon')
     document.body.innerHTML = ''
-    ribbon = document.createElement('div')
-    doc = document.createElement('div')
-    document.body.append(ribbon, doc)
-    close = vi.fn<() => void>()
-    off = installRibbonPeekDismiss(() => ribbon, close)
-  })
-  afterEach(() => {
-    off()
-    document.documentElement.classList.remove('genoffice-popover-open')
+    const host = document.createElement('div')
+    document.body.append(host)
+    act(() => createRoot(host).render(createElement(Ribbon)))
   })
 
-  it('a press inside the ribbon keeps the peek open', () => {
-    press(ribbon)
-    expect(close).not.toHaveBeenCalled()
+  it('pressing the selected tab collapses; pressing another tab only switches', () => {
+    click('insert')
+    expect(collapsed()).toBe(false)
+    expect($('insert').className).toContain('active')
+    click('insert')
+    expect(collapsed()).toBe(true)
+    expect(localStorage.getItem('t.ribbon')).toBe('1')
   })
 
-  it('a press in the document closes the peek', () => {
-    press(doc)
-    expect(close).toHaveBeenCalledTimes(1)
+  it('while collapsed no tab is selected and every tab offers Expand', () => {
+    click('home')
+    expect($('home').className).not.toContain('active')
+    expect($('insert').className).not.toContain('active')
+    expect($('home').dataset.tip).toBe($('insert').dataset.tip)
+    expect($('home').dataset.tip).toMatch(/^Expand \(/)
   })
 
-  it('Escape closes the peek; teardown removes the listeners', () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(close).toHaveBeenCalledTimes(1)
-    off()
-    press(doc)
-    expect(close).toHaveBeenCalledTimes(1)
+  it('pressing any tab while collapsed expands for good (no peek)', () => {
+    click('home')
+    click('insert')
+    expect(collapsed()).toBe(false)
+    expect($('insert').className).toContain('active')
+    expect($('insert').dataset.tip).toMatch(/^Collapse \(/)
+    expect($('home').dataset.tip).toBeUndefined()
+    act(() => {
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      window.dispatchEvent(new Event('blur'))
+    })
+    expect(collapsed()).toBe(false)
+    expect(localStorage.getItem('t.ribbon')).toBe('0')
   })
 
-  it('a press inside a portaled popover (unmounted by its own dismissal) does not close', async () => {
-    const popover = document.createElement('div')
-    document.body.append(popover)
-    document.documentElement.classList.add('genoffice-popover-open')
-    press(popover)
-    // the popover's own dismiss listener unmounts it and drops the html class
-    popover.remove()
-    document.documentElement.classList.remove('genoffice-popover-open')
-    await new Promise((r) => setTimeout(r, 0))
-    expect(close).not.toHaveBeenCalled()
-  })
+  // a browser double-click is click, click, dblclick
+  const dblclick = (id: string) => {
+    click(id)
+    click(id)
+    act(() => $(id).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+  }
 
-  it('a document press that only dismissed an open popover still closes the peek', async () => {
-    document.documentElement.classList.add('genoffice-popover-open')
-    press(doc)
-    expect(close).not.toHaveBeenCalled()
-    document.documentElement.classList.remove('genoffice-popover-open')
-    await new Promise((r) => setTimeout(r, 0))
-    expect(close).toHaveBeenCalledTimes(1)
-  })
-
-  it('a press inside a popover that stays open does not close', async () => {
-    document.documentElement.classList.add('genoffice-popover-open')
-    press(doc)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(close).not.toHaveBeenCalled()
-  })
-
-  it('Escape with a ribbon popover open leaves the peek to the popover', () => {
-    document.documentElement.classList.add('genoffice-popover-open')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(close).not.toHaveBeenCalled()
-    document.documentElement.classList.remove('genoffice-popover-open')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(close).toHaveBeenCalledTimes(1)
+  it('double-clicking toggles relative to the state before the first click', () => {
+    dblclick('insert')
+    expect(collapsed()).toBe(true)
+    dblclick('insert')
+    expect(collapsed()).toBe(false)
+    dblclick('home')
+    expect(collapsed()).toBe(true)
+    dblclick('home')
+    expect(collapsed()).toBe(false)
   })
 
   it('a held shortcut (key repeat) does not re-toggle', () => {
@@ -103,7 +124,6 @@ describe('ribbon collapse', () => {
   })
 
   it('reads the persisted flag, defaulting to expanded', () => {
-    localStorage.removeItem('t.ribbon')
     expect(readRibbonCollapsed('t.ribbon')).toBe(false)
     localStorage.setItem('t.ribbon', '1')
     expect(readRibbonCollapsed('t.ribbon')).toBe(true)

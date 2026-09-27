@@ -5,12 +5,14 @@ import type { Editor } from '@tiptap/core'
 import type { SectionSettings, TabStop } from '@genoffice/docx-engine'
 import { MAX_RULER_INCHES, Ruler, rulerDims, snapTabTwips } from '../src/renderer/components/Ruler'
 import { getLang, setModuleLang } from '../src/renderer/i18n/locale'
+import { setMeasurementUnit } from '../src/renderer/units'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const originalLang = getLang()
 afterEach(() => {
   setModuleLang(originalLang)
+  setMeasurementUnit(null)
 })
 
 const section = (over: Partial<SectionSettings> = {}): SectionSettings => ({
@@ -72,7 +74,7 @@ describe('rulerDims', () => {
     const dims = rulerDims(section({ pageWidth: 1e12, marginLeft: NaN }))
     expect(Date.now() - start).toBeLessThan(5000)
     expect(dims.inches).toBeLessThanOrEqual(MAX_RULER_INCHES)
-    expect(Number.isFinite(dims.pageWidth)).toBe(true)
+    expect(dims.pageWidth).toBeLessThanOrEqual(MAX_RULER_INCHES * 1440)
     const nan = rulerDims(section({ pageWidth: NaN }))
     expect(nan.pageWidth).toBe(12240)
   })
@@ -87,6 +89,7 @@ describe('rulerDims', () => {
 describe('Ruler keyboard operation', () => {
   it('exposes stops as sliders with accessible names', () => {
     setModuleLang('en')
+    setMeasurementUnit('cm')
     const { container, cleanup } = mount([{ pos: 1440, val: 'left' }])
     try {
       const stop = container.querySelector('[role="slider"]') as HTMLElement
@@ -94,6 +97,7 @@ describe('Ruler keyboard operation', () => {
       expect(stop.getAttribute('tabindex')).toBe('0')
       expect(stop.getAttribute('aria-label')).toContain('Left')
       expect(stop.getAttribute('aria-valuenow')).toBe('1440')
+      expect(stop.getAttribute('aria-label')).toContain('@ 2.54')
       expect(container.querySelector('[role="group"]')).not.toBeNull()
     } finally {
       cleanup()
@@ -124,8 +128,9 @@ describe('Ruler keyboard operation', () => {
       const ticks = container.querySelectorAll('.ruler-num')
       expect(ticks.length).toBeLessThanOrEqual(MAX_RULER_INCHES)
       const ruler = container.querySelector('.ruler') as HTMLElement
-      expect(ruler.style.width).not.toContain('NaN')
-      expect(ruler.style.width).not.toContain('Infinity')
+      expect(ruler.style.width).toMatch(/^\d+(\.\d+)?px$/)
+      expect(parseFloat(ruler.style.width)).toBeLessThanOrEqual(MAX_RULER_INCHES * 96)
+      expect(ruler.getAttribute('aria-label')).toBeTruthy()
     } finally {
       cleanup()
     }

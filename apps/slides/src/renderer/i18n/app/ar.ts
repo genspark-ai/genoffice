@@ -111,6 +111,7 @@ export const ar = {
   appPasteOptSource: 'الاحتفاظ بتنسيق المصدر',
   appPasteOptTheme: 'استخدام نسق الوجهة',
   appStatusPasteOptionsExpired: 'خيارات اللصق لم تعد متاحة',
+  appStatusPasteTruncated: 'النص الملصق طويل جداً وتم اقتطاعه',
   appCtxHideSlide: 'إخفاء الشريحة',
   appCtxUnhideSlide: 'إلغاء إخفاء الشريحة',
   appCtxAddSectionBefore: 'إضافة مقطع (قبل هذه الشريحة)',

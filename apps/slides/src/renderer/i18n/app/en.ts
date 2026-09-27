@@ -112,6 +112,7 @@ export const en = {
   appPasteOptSource: 'Keep Source Formatting',
   appPasteOptTheme: 'Use Destination Theme',
   appStatusPasteOptionsExpired: 'Paste options are no longer available',
+  appStatusPasteTruncated: 'Pasted text was too long and has been truncated',
   appCtxHideSlide: 'Hide Slide',
   appCtxUnhideSlide: 'Unhide Slide',
   appCtxAddSectionBefore: 'Add Section (before this slide)',

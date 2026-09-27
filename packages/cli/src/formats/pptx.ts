@@ -27,6 +27,7 @@ import {
 } from '@genoffice/pptx-ops'
 import { CliError, EXIT } from '../result'
 import { clipText } from '../preview'
+import { fromEmu, type ReadUnit } from '../length-units'
 
 const EMU_PER_INCH = 914400
 /** Image/media ops that take bytes, with the (possibly nested) field each one reads. A local file path there is read for the caller. */
@@ -153,7 +154,7 @@ export interface ElementSummary {
   kind?: string
   name?: string
   placeholder?: string
-  box: { x: number; y: number; cx: number; cy: number }
+  box: { x: number; y: number; cx: number; cy: number; unit?: ReadUnit }
   text?: string
   /** the text was clipped to the preview length; `--full` or `--max-chars` returns the rest */
   truncated?: true
@@ -185,7 +186,7 @@ export interface SlideSummary {
 
 export interface DeckSummary {
   slides: number
-  size: { cx: number; cy: number; inches: { width: number; height: number } }
+  size: { cx: number; cy: number; unit?: ReadUnit; inches: { width: number; height: number } }
   emu_per_inch: number
   layouts?: LayoutSummary[]
   pages: SlideSummary[]
@@ -202,17 +203,21 @@ export function describeDeck(
   full = false,
   maxChars = full ? Infinity : PREVIEW_CHARS,
   layouts = false,
+  unit: ReadUnit = 'emu',
 ): DeckSummary {
   const { deck } = opened
   const pages = deck.slides
     .map((slide, index) => ({ slide, index }))
     .filter(({ index }) => only === undefined || index === only)
     .map(({ slide, index }) => summarizeSlide(opened, slide, index, full, maxChars))
+  if (unit !== 'emu')
+    for (const page of pages) for (const el of page.elements) convertBoxes(el, unit)
   return {
     slides: deck.slides.length,
     size: {
-      cx: deck.size.cx,
-      cy: deck.size.cy,
+      cx: fromEmu(deck.size.cx, unit),
+      cy: fromEmu(deck.size.cy, unit),
+      ...(unit !== 'emu' ? { unit } : {}),
       inches: {
         width: round(deck.size.cx / EMU_PER_INCH),
         height: round(deck.size.cy / EMU_PER_INCH),
@@ -232,6 +237,18 @@ export function describeLayouts(opened: OpenedPptx): LayoutSummary[] {
     type: l.layoutType,
     placeholders: l.placeholders.map((ph) => ({ type: ph.type || 'body', idx: ph.idx })),
   }))
+}
+
+function convertBoxes(el: ElementSummary, unit: ReadUnit): void {
+  const { x, y, cx, cy } = el.box
+  el.box = {
+    x: fromEmu(x, unit),
+    y: fromEmu(y, unit),
+    cx: fromEmu(cx, unit),
+    cy: fromEmu(cy, unit),
+    unit,
+  }
+  for (const child of el.children ?? []) convertBoxes(child, unit)
 }
 
 function summarizeSlide(

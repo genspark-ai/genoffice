@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Dropdown } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// The Name Manager dialog, minimal: list, add, edit (name / refers-to), and
 /// delete. Scope is chosen at creation and cannot be changed afterwards.
@@ -59,11 +60,13 @@ export function NameManagerDialog({
     }
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog name-manager-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgNmTitle')}
         onClick={(event) => event.stopPropagation()}
       >

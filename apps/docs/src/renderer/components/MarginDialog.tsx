@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
+import { LengthInput } from './LengthInput'
 
 export interface PageMargins {
   top: number
@@ -9,16 +10,8 @@ export interface PageMargins {
   left: number
 }
 
-const TWIPS_PER_CM = 1440 / 2.54
 /** Word rejects margins that leave less than about one inch of body */
 const MIN_BODY_TWIPS = 1440
-
-export const cmFromTwips = (twips: number): number => Math.round((twips / TWIPS_PER_CM) * 100) / 100
-
-export const twipsFromCmInput = (value: string, originalTwips: number): number => {
-  if (value === String(cmFromTwips(originalTwips))) return originalTwips
-  return Math.round(Math.max(0, Number(value) || 0) * TWIPS_PER_CM)
-}
 
 export const marginsFitPage = (
   margins: PageMargins,
@@ -39,53 +32,56 @@ const SIDES: Array<[Side, StringKey]> = [
 
 export function MarginDialog({
   margins,
+  mirror: initialMirror,
   pageWidth,
   pageHeight,
   onApply,
   onClose,
 }: {
   margins: PageMargins
+  /** w:mirrorMargins: left/right are inside/outside (Word's Multiple pages: Mirror margins) */
+  mirror: boolean
   pageWidth: number
   pageHeight: number
-  onApply: (next: PageMargins) => void
+  onApply: (next: PageMargins, mirror: boolean) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const [values, setValues] = useState<Record<Side, string>>({
-    top: String(cmFromTwips(margins.top)),
-    bottom: String(cmFromTwips(margins.bottom)),
-    left: String(cmFromTwips(margins.left)),
-    right: String(cmFromTwips(margins.right)),
-  })
+  const [next, setNext] = useState<PageMargins>(margins)
+  const [mirror, setMirror] = useState(initialMirror)
+  // Enter inside a field commits its value first; submit runs on the flushed state
+  const [submitTick, setSubmitTick] = useState(0)
   const modalKeys = useModalKeys(onClose)
-
-  const twips = (side: Side) => twipsFromCmInput(values[side], margins[side])
-  const next: PageMargins = {
-    top: twips('top'),
-    right: twips('right'),
-    bottom: twips('bottom'),
-    left: twips('left'),
-  }
   const tooLarge = !marginsFitPage(next, pageWidth, pageHeight)
 
   const submit = () => {
     if (tooLarge) return
-    onApply(next)
+    onApply(next, mirror)
     onClose()
   }
+  const submitRef = useRef(submit)
+  submitRef.current = submit
+  useEffect(() => {
+    if (submitTick) submitRef.current()
+  }, [submitTick])
 
+  const sideLabel = (side: Side, labelKey: StringKey): string => {
+    if (!mirror) return t(labelKey)
+    return t(
+      side === 'left' ? 'ribbonMarginInside' : side === 'right' ? 'ribbonMarginOutside' : labelKey,
+    )
+  }
   const field = ([side, labelKey]: [Side, StringKey]) => (
     <label key={side}>
-      {t(labelKey)} ({t('ribbonCm')})
-      <input
-        type="number"
+      {sideLabel(side, labelKey)}
+      <LengthInput
+        value={next[side]}
         min={0}
-        step={0.1}
-        value={values[side]}
-        onChange={(e) => setValues((v) => ({ ...v, [side]: e.target.value }))}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') submit()
-        }}
+        max={side === 'left' || side === 'right' ? pageWidth : pageHeight}
+        ariaLabel={sideLabel(side, labelKey)}
+        live
+        onCommit={(twips) => setNext((m) => ({ ...m, [side]: twips ?? 0 }))}
+        onEnter={() => setSubmitTick((n) => n + 1)}
       />
     </label>
   )
@@ -101,6 +97,18 @@ export function MarginDialog({
         <h2>{t('ribbonMarginDialogTitle')}</h2>
         <div className="modal-row margin-row">{SIDES.slice(0, 2).map(field)}</div>
         <div className="modal-row margin-row">{SIDES.slice(2).map(field)}</div>
+        <div className="modal-row margin-row">
+          <label>
+            {t('ribbonMarginPages')}
+            <select
+              value={mirror ? 'mirror' : 'normal'}
+              onChange={(e) => setMirror(e.target.value === 'mirror')}
+            >
+              <option value="normal">{t('ribbonMarginPagesNormal')}</option>
+              <option value="mirror">{t('ribbonMarginPagesMirror')}</option>
+            </select>
+          </label>
+        </div>
         {tooLarge && <div className="modal-error">{t('ribbonMarginTooLarge')}</div>}
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose}>

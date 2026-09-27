@@ -112,6 +112,11 @@
   background: var(--surface);
 }
 
+.gs-imgdlg-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .gs-imgdlg-actions {
   display: flex;
   justify-content: flex-end;

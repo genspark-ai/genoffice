@@ -56,7 +56,8 @@ describe('mcp bridge apply_ops validation', () => {
     await applyOps({ ops: [{ op: 'set_cell', address: 'A1', value: 'x' }] })
     const reply = reportMcpResult.mock.calls[0]![0] as { ok: boolean; error?: string }
     expect(reply.ok).toBe(false)
-    expect(reply.error).toContain('op #0 (set_cell)')
+    expect(reply.error).toContain('operations[0] (set_cell)')
+    expect(reply.error).toContain('none of the 1 operation(s) were applied')
     expect(reply.error).toContain('sheetId')
     expect(reply.error).toContain('read_sheet')
   })

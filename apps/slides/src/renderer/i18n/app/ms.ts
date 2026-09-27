@@ -120,6 +120,7 @@ export const ms = {
   appPasteOptSource: 'Kekalkan Format Sumber',
   appPasteOptTheme: 'Guna Tema Destinasi',
   appStatusPasteOptionsExpired: 'Pilihan tampal tidak lagi tersedia',
+  appStatusPasteTruncated: 'Teks yang ditampal terlalu panjang dan telah dipotong',
   appCtxHideSlide: 'Sembunyikan Slaid',
   appCtxUnhideSlide: 'Nyahsembunyikan Slaid',
   appCtxAddSectionBefore: 'Tambah Seksyen (sebelum slaid ini)',

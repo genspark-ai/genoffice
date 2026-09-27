@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { MetadataInput } from '../shared/ipc'
 import type { TFunc } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 interface RawInfo {
   Title?: string
@@ -54,32 +55,7 @@ export function PropertiesDialog({
 }): ReactElement {
   const [info, setInfo] = useState<RawInfo | null>(null)
   const [form, setForm] = useState<MetadataInput>({})
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const previouslyFocused = useRef<HTMLElement | null>(null)
-
-  // Escape closes the dialog
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
-
-  // Focus the first field on mount; return focus to the opener on unmount
-  useEffect(() => {
-    previouslyFocused.current = document.activeElement as HTMLElement | null
-    const root = dialogRef.current
-    if (root && !root.contains(document.activeElement)) {
-      root.querySelector<HTMLElement>('input, textarea, select, button')?.focus()
-    }
-    return () => {
-      previouslyFocused.current?.focus?.()
-    }
-  }, [])
+  const dialogRef = useModalDialog(onCancel)
 
   useEffect(() => {
     let cancelled = false

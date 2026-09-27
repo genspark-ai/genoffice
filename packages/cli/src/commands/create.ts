@@ -18,6 +18,7 @@ import { blankDocument, closeDocument, fillFromHtml, saveDocument } from '../for
 import { markdownToDocx } from '../formats/markdown'
 import { runWorkbookDsl } from '../formats/xlsx-dsl'
 import { columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { sheetNameFromStem } from '../formats/csv'
 import { readOpsInput } from '../ops-input'
 import type { CommandContext, CommandDef } from '../registry'
 import type { TxnResult } from '@genoffice/pptx-ops'
@@ -276,7 +277,7 @@ function readTables(
   fallbackName: string,
   opts: CsvTableOptions = {},
 ): TableInput[] {
-  const sheetName = fallbackName.slice(0, 31) || 'Sheet1'
+  const sheetName = sheetNameFromStem(fallbackName)
   if (extname(source).toLowerCase() === '.csv') {
     return [csvTable(readFileSync(source), sheetName, opts)]
   }

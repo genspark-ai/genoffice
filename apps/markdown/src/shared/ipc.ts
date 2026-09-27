@@ -6,6 +6,9 @@ import type {
   AiStreamRequest,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
+import type { ExportImageMime } from './export-image-mime'
+
+export const MAX_PASTED_IMAGE_BYTES = 50 * 1024 * 1024
 
 export const MARKDOWN_CHANNELS = {
   consumePending: 'markdown:consume-pending',
@@ -136,7 +139,7 @@ export type ExportResult =
 
 export interface ImageData {
   base64: string
-  mime: 'image/png' | 'image/jpeg' | 'image/gif'
+  mime: ExportImageMime
 }
 
 /** API exposed by preload to the renderer (window.markdownApi) */

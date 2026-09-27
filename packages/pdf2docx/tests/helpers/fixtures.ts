@@ -524,23 +524,35 @@ export async function buildCheckboxFormPdf(): Promise<Uint8Array> {
   return doc.save()
 }
 
-export async function buildTextFormPdf(): Promise<Uint8Array> {
-  const content =
-    'BT /F1 12 Tf 72 700 Td (Full name) Tj ET\nBT /F1 12 Tf 72 660 Td (Reference) Tj ET\n'
+/** one hand-written AcroForm object; numbered 7, 8, … in array order */
+export interface HandFormObject {
+  /** dictionary body (`<< … >>`); refer to siblings as `${7 + index} 0 R` */
+  body: string
+  /** listed in the page's /Annots */
+  annot?: boolean
+  /** listed in /AcroForm /Fields (root fields only; kids hang off /Kids) */
+  field?: boolean
+}
+
+/**
+ * Minimal hand-built AcroForm PDF (pdf-lib always writes /V onto the widget,
+ * so parent-field layouts need raw objects). `content` is the page stream.
+ */
+export function buildHandAcroFormPdf(content: string, fields: HandFormObject[]): Uint8Array {
   const header = '%PDF-1.4\n'
+  const ref = (i: number): string => `${7 + i} 0 R`
+  const annots = fields.flatMap((f, i) => (f.annot ? [ref(i)] : []))
+  const roots = fields.flatMap((f, i) => (f.field ? [ref(i)] : []))
   const objects = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm 6 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] ' +
       '/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R ' +
-      '/Annots [7 0 R 8 0 R] >>\nendobj\n',
+      `/Annots [${annots.join(' ')}] >>\nendobj\n`,
     '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
     `5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`,
-    '6 0 obj\n<< /Fields [7 0 R 8 0 R] /DA (/Helv 0 Tf 0 g) >>\nendobj\n',
-    '7 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (applicant.name) ' +
-      '/V (Ada Lovelace) /Rect [160 692 380 712] /F 4 /P 3 0 R >>\nendobj\n',
-    '8 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (applicant.reference) ' +
-      '/Rect [160 652 380 672] /F 4 /P 3 0 R >>\nendobj\n',
+    `6 0 obj\n<< /Fields [${roots.join(' ')}] /DA (/Helv 0 Tf 0 g) >>\nendobj\n`,
+    ...fields.map((f, i) => `${7 + i} 0 obj\n${f.body}\nendobj\n`),
   ]
   let body = ''
   const offsets: number[] = []
@@ -552,7 +564,74 @@ export async function buildTextFormPdf(): Promise<Uint8Array> {
   let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
   for (const off of offsets) xref += `${String(off).padStart(10, '0')} 00000 n \n`
   const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`
-  return Promise.resolve(new TextEncoder().encode(header + body + xref + trailer))
+  return new TextEncoder().encode(header + body + xref + trailer)
+}
+
+export async function buildTextFormPdf(): Promise<Uint8Array> {
+  const content =
+    'BT /F1 12 Tf 72 700 Td (Full name) Tj ET\nBT /F1 12 Tf 72 660 Td (Reference) Tj ET\n'
+  return Promise.resolve(
+    buildHandAcroFormPdf(content, [
+      {
+        body:
+          '<< /Type /Annot /Subtype /Widget /FT /Tx /T (applicant.name) ' +
+          '/V (Ada Lovelace) /Rect [160 692 380 712] /F 4 /P 3 0 R >>',
+        annot: true,
+        field: true,
+      },
+      {
+        body:
+          '<< /Type /Annot /Subtype /Widget /FT /Tx /T (applicant.reference) ' +
+          '/Rect [160 652 380 672] /F 4 /P 3 0 R >>',
+        annot: true,
+        field: true,
+      },
+    ]),
+  )
+}
+
+/**
+ * Text-field edge cases: (7) a parent field carrying /FT /V /DA with a (8)
+ * bare kid widget; (9) a multiline field with three rows; (10) a one-letter
+ * value in a very wide field; (11) a password field.
+ */
+export async function buildTextFormVariantsPdf(): Promise<Uint8Array> {
+  const content = 'BT /F1 12 Tf 72 700 Td (Owner) Tj ET\n'
+  return Promise.resolve(
+    buildHandAcroFormPdf(content, [
+      {
+        body: '<< /FT /Tx /T (owner) /V (Kid Value) /DA (/Helv 10 Tf 0 g) /Kids [8 0 R] >>',
+        field: true,
+      },
+      {
+        body:
+          '<< /Type /Annot /Subtype /Widget /Parent 7 0 R ' +
+          '/Rect [160 692 380 712] /F 4 /P 3 0 R >>',
+        annot: true,
+      },
+      {
+        body:
+          '<< /Type /Annot /Subtype /Widget /FT /Tx /T (notes) /Ff 4096 ' +
+          '/V (Line one\\rLine two\\rLine three) /Rect [160 600 380 660] /F 4 /P 3 0 R >>',
+        annot: true,
+        field: true,
+      },
+      {
+        body:
+          '<< /Type /Annot /Subtype /Widget /FT /Tx /T (initial) ' +
+          '/V (X) /Rect [160 560 500 580] /F 4 /P 3 0 R >>',
+        annot: true,
+        field: true,
+      },
+      {
+        body:
+          '<< /Type /Annot /Subtype /Widget /FT /Tx /T (secret) /Ff 8192 ' +
+          '/V (hunter2) /Rect [160 520 380 540] /F 4 /P 3 0 R >>',
+        annot: true,
+        field: true,
+      },
+    ]),
+  )
 }
 
 /**

@@ -15,9 +15,9 @@ export function stripHash(v: string): string {
   return v.startsWith('#') ? v.slice(1) : v
 }
 
-/** Word drops schema-invalid w:line values (e.g. floats from Google Docs) wholesale */
+/** Word reads a fractional w:line (Google Docs exports) and truncates it; garbage stays NaN */
 export function lineTwipsOf(v: string | undefined): number {
-  return v !== undefined && /^-?\d+$/.test(v) ? parseInt(v, 10) : NaN
+  return v !== undefined && /^-?\d+(?:\.\d*)?$/.test(v) ? parseInt(v, 10) : NaN
 }
 
 /** w:color -> display hex; w:themeColor resolves against the live palette (beats stale w:val) */

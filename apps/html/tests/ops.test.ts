@@ -275,6 +275,19 @@ describe('structural ops', () => {
         .errors[0]?.kind,
     ).toBe('bad_args')
   })
+  it('counts an astral numeric character reference as two UTF-16 units', async () => {
+    const { decodedToRaw } = await import('../src/renderer/document/ops')
+    const decodedA = '\u{1F600}abc'.indexOf('a')
+    expect(decodedToRaw('\u{1F600}abc', decodedA)).toBe(2)
+    expect(decodedToRaw('&#x1F600;abc', decodedA)).toBe(9)
+    expect(decodedToRaw('&#128512;abc', decodedA)).toBe(9)
+    expect(decodedToRaw('&#x41;bc', 1)).toBe(6)
+    const E = '<p>&#x1F600;abc</p>'
+    const p = sidOf(E, 'p')
+    expect(
+      run([{ op: 'wrap_text', sid: p, index: 0, start: 2, end: 5, tag: 'strong' }], E).next,
+    ).toBe('<p>&#x1F600;<strong>abc</strong></p>')
+  })
   it('wrap_text maps decoded (DOM) offsets across entities', async () => {
     const { decodedToRaw } = await import('../src/renderer/document/ops')
     const raw = 'A &amp; B&nbsp;C'

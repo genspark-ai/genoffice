@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { imageDpiFromDataUrl } from '../src/image-dpi'
+import { imageDpiFromDataUrl, imageSizeFromBytes } from '../src/image-dpi'
 import { resolveFill } from '../src/fill'
 import { makeViewport } from '../src/coords'
 import type { Fill } from '@genoffice/pptx-engine'
@@ -108,5 +108,28 @@ describe('image dpi tag', () => {
     if (texture.kind === 'image') expect(texture.tile?.scaleX).toBeCloseTo(96 / 75, 3)
     const untagged = resolveFill(f, vp, () => jfif(0, 1, 1))
     if (untagged.kind === 'image') expect(untagged.tile?.scaleX).toBeCloseTo(96 / 144, 3)
+  })
+})
+
+describe('imageSizeFromBytes', () => {
+  it('reads the PNG IHDR size', () => {
+    const b64 = pngWithPhys(2835, 2835).split(',')[1]!
+    expect(imageSizeFromBytes(Buffer.from(b64, 'base64'))).toEqual({ w: 2, h: 2 })
+  })
+
+  it('reads the first JPEG SOF frame after APP segments', () => {
+    const sof0 = [
+      0xff, 0xc0, 0x00, 0x11, 8, 0x01, 0x2c, 0x02, 0x80, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1,
+    ]
+    const bytes = Buffer.concat([
+      Buffer.from(jfif(1, 72, 72).split(',')[1]!, 'base64').subarray(0, 20),
+      Buffer.from(sof0),
+      Buffer.from([0xff, 0xda, 0, 2]),
+    ])
+    expect(imageSizeFromBytes(bytes)).toEqual({ w: 640, h: 300 })
+  })
+
+  it('returns undefined for other formats', () => {
+    expect(imageSizeFromBytes(Buffer.from('GIF89a'.padEnd(30, '\0')))).toBeUndefined()
   })
 })

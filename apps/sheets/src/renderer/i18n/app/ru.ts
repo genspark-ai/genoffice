@@ -678,7 +678,7 @@ export const ru = {
   appTabData: 'Данные',
   appTabReview: 'Рецензирование',
   appRibbonCollapse: 'Свернуть ленту',
-  appRibbonPin: 'Закрепить ленту',
+  appRibbonExpand: 'Развернуть ленту',
   appTabView: 'Вид',
   appTabAi: 'ИИ',
   appTabChartDesign: 'Конструктор диаграмм',

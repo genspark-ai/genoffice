@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { accessSync, constants, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs'
-import { join, win32 } from 'node:path'
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  readlinkSync,
+  realpathSync,
+  symlinkSync,
+  unlinkSync,
+} from 'node:fs'
+import { basename, dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 
 /**
  * Making `genoffice` reachable from a terminal. The launcher ships inside the app
@@ -54,7 +63,7 @@ export function installCliLink(opts: InstallOptions): InstallOutcome {
   let occupied: string | undefined
   for (const dir of dirs) {
     const link = join(dir, 'genoffice')
-    const state = linkState(link, opts.launcher, platform)
+    const state = linkState(link, opts.launcher)
     if (state === 'ours' && readlinkSync(link) === opts.launcher) {
       return { status: 'present', location: link }
     }
@@ -65,6 +74,7 @@ export function installCliLink(opts: InstallOptions): InstallOutcome {
     }
     if (!writable(dir)) continue
     try {
+      // ours from another install dir, or a dead link nobody can run
       if (state !== 'missing') unlinkSync(link)
       symlinkSync(opts.launcher, link)
       return { status: 'linked', location: link }
@@ -87,7 +97,7 @@ export function inspectCliLink(opts: InstallOptions): InstallOutcome {
   // same walk installCliLink does: an occupied name is skipped, the first free writable dir wins
   for (const dir of dirs) {
     const link = join(dir, 'genoffice')
-    const state = linkState(link, opts.launcher, platform)
+    const state = linkState(link, opts.launcher)
     if (state === 'ours' && readlinkSync(link) === opts.launcher) {
       return { status: 'present', location: link }
     }
@@ -108,28 +118,39 @@ function manualCommand(launcher: string): string {
 function linkState(
   path: string,
   launcher: string,
-  platform: NodeJS.Platform,
-): 'missing' | 'ours' | 'file' | 'foreign' {
+): 'missing' | 'ours' | 'dangling' | 'file' | 'foreign' {
   try {
     const st = lstatSync(path)
     if (!st.isSymbolicLink()) return 'file'
     const target = readlinkSync(path)
-    return target === launcher || isOurLauncher(target, platform) ? 'ours' : 'foreign'
+    if (target === launcher) return 'ours'
+    const resolved = isAbsolute(target) ? target : resolve(dirname(path), target)
+    if (!existsSync(resolved)) return 'dangling'
+    return isOurLauncher(resolved, launcher) ? 'ours' : 'foreign'
   } catch {
     return 'missing'
   }
 }
 
-const OWNED_LAUNCHER_PATHS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
-  darwin: ['Contents', 'Resources', 'cli', 'genoffice'],
-  linux: ['resources', 'cli', 'genoffice'],
-}
-
-function isOurLauncher(target: string, platform: NodeJS.Platform): boolean {
-  const expected = OWNED_LAUNCHER_PATHS[platform]
-  if (!expected) return false
-  const parts = target.replace(/[\\/]/g, '/').split('/').filter(Boolean)
-  return expected.every((part, index) => parts.at(-expected.length + index) === part)
+/**
+ * A link is ours when it resolves to the launcher we are installing, or to a
+ * `genoffice` launcher shipped by another copy of the app (an earlier version,
+ * a second install dir): one that has our CLI bundle or the Windows twin beside
+ * it. A path that merely ends in `/cli/genoffice` belongs to whoever put it there.
+ */
+export function isOurLauncher(target: string, launcher: string): boolean {
+  let real: string
+  try {
+    real = realpathSync(target)
+  } catch {
+    return false
+  }
+  try {
+    if (real === realpathSync(launcher)) return true
+  } catch {}
+  if (basename(real) !== 'genoffice') return false
+  const dir = dirname(real)
+  return existsSync(join(dir, 'genoffice.cjs')) || existsSync(join(dir, 'genoffice.cmd'))
 }
 
 function writable(dir: string): boolean {

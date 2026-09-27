@@ -1,6 +1,6 @@
 /**
  * Search utilities (main process) — gsk (Genspark CLI) first, then Serper Google API,
- * then Tavily and Parallel, with DuckDuckGo as the keyless last resort. Runs in the main process
+ * then Tavily and Parallel, whose free Search MCP answers keyless before the DuckDuckGo last resort. Runs in the main process
  * (Node fetch / child process) to avoid renderer CORS; the Serper key reuses SERPER_API_KEY,
  * the Tavily key reuses TAVILY_API_KEY and Parallel uses PARALLEL_API_KEY.
  * For gsk auth see ./gsk.ts (`gsk login` or GSK_API_KEY).
@@ -37,7 +37,7 @@ export interface SearchOptions {
   serperKey?: string
   tavilyKey?: string
   parallelKey?: string
-  /** which backend to try first (default serper); selecting parallel also enables its free MCP */
+  /** which backend to try first (default serper) */
   prefer?: 'serper' | 'tavily' | 'parallel'
 }
 
@@ -145,15 +145,17 @@ async function tavilyWebSearch(
   }
 }
 
-/** Parallel's API and free Search MCP return source excerpts, not a synthesized answer. */
+/**
+ * Parallel's API and free Search MCP return source excerpts, not a synthesized answer.
+ * Without a key the anonymous MCP runs, so an unconfigured install still gets real
+ * results before the DuckDuckGo scrape.
+ */
 async function parallelWebSearch(
   key: string,
   query: string,
   maxResults: number,
-  allowFreeMcp: boolean,
 ): Promise<WebSearchResponse | null> {
   key = key.trim()
-  if (!key && !allowFreeMcp) return null
   try {
     let data: Record<string, unknown>
     if (key) {
@@ -231,7 +233,7 @@ export async function webSearch(
   const keyed = {
     serper: () => serperWebSearch(o.serperKey, q, max),
     tavily: () => tavilyWebSearch(o.tavilyKey, q, max),
-    parallel: () => parallelWebSearch(o.parallelKey, q, max, o.prefer === 'parallel'),
+    parallel: () => parallelWebSearch(o.parallelKey, q, max),
   }
   const order = [
     o.prefer,

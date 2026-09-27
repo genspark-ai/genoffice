@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 
 import { latexToOmml, ommlToMathML } from '@genoffice/docx-engine/math'
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Insert → Equation: LaTeX input with a live MathML preview (docs'
 /// LaTeX→OMML pipeline, rendered natively by Chromium). Inserting rasterizes
@@ -105,11 +106,13 @@ export function EquationDialog({
       .catch(() => setBusy(false))
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog equation-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgEquationTitle')}
         onClick={(event) => event.stopPropagation()}
       >

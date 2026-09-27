@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
-import { TextSelection } from '@tiptap/pm/state'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import { TextSelection, type Transaction } from '@tiptap/pm/state'
 import {
   SHAPE_GALLERY_GROUPS,
   useDismissablePopover,
@@ -14,10 +15,13 @@ import {
   buildWordArtParagraphXml,
   LINE_KINDS,
   type HeaderFooter,
+  type StyleInfo,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
 import { runUiOps } from '../ai/ops'
+import { stepDocsZoom } from '../wheel-zoom'
+import { defaultParagraphStyleId, headingStyleId, type StyleMap } from '../style-gallery'
 import { tableModelToPmNode } from '../editor/convert'
 import { insertPageBreak } from '../editor/page-break'
 import { isStraightLineKind } from '../editor/shape-svg'
@@ -25,11 +29,14 @@ import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
 import iconEditor from '../assets/icon-editor.png'
 import iconTranslate from '../assets/icon-translate.png'
+import type { RevisionDisplayMode } from '../editor/revision-view'
 import {
   IconAccept,
   IconAiPanel,
   IconCaret,
   IconComment,
+  IconCommentNext,
+  IconCommentPrev,
   IconComments,
   IconCompare,
   IconCursor,
@@ -52,9 +59,11 @@ import {
   IconRedo,
   IconReject,
   IconTrackChanges,
+  IconTrash,
   IconUndo,
   IconWebLayout,
   IconWholePage,
+  IconZoom,
   IconZoom100,
   IconZoomIn,
   IconZoomOut,
@@ -87,6 +96,15 @@ export const toggleDropdown = (setDropdown: SetDropdown, key: string) =>
  * setParagraphAttrs op: headings, list items and table-cell paragraphs alike;
  * `align` also lands on selected images as their w:jc).
  */
+/** Word's line-spacing menu: 12 pt before/after when the paragraph has none, none when it has some */
+export function toggleParaSpace(
+  editor: Editor,
+  side: 'spaceBefore' | 'spaceAfter',
+  currentTwips: number,
+): void {
+  setParaAttrs(editor, { [side]: currentTwips > 0 ? 0 : 240, [`${side}Auto`]: null })
+}
+
 export function setParaAttrs(
   editor: Editor,
   attrs: Record<string, unknown>,
@@ -116,6 +134,10 @@ const DIRECT_PARA_ATTRS: Record<string, unknown> = {
   spaceBeforeAuto: null,
   spaceAfterAuto: null,
   contextualSpacing: null,
+  keepNext: null,
+  keepLines: null,
+  widowControl: null,
+  suppressLineNumbers: null,
   shadingFill: null,
   borders: null,
   borderLines: null,
@@ -129,52 +151,144 @@ export function clearParagraphFormatting(editor: Editor): void {
   setParaAttrs(editor, { ...DIRECT_PARA_ATTRS })
 }
 
-/** apply a gallery paragraph style; not for textbox sub-editors (no docHeading in their schema) */
-export function applyParagraphStyle(editor: Editor, key: 'p' | 'h1' | 'h2' | 'h3'): void {
-  let c = editor.chain().focus()
-  if (key === 'p') c = c.setNode('docParagraph')
-  else c = c.setNode('docHeading', { level: Number(key.slice(1)) })
-  // Word-like: applying a paragraph style sheds the runs' direct font/size/color.
-  // Those render as inline span styles and would otherwise mask the style's look
-  // entirely (the click would seem to do nothing on documents whose body runs
-  // carry explicit rPr, common in CJK templates).
-  c.command(({ tr }) => {
-    const { from, to } = tr.selection
-    let start = from
-    let end = to
-    tr.doc.nodesBetween(from, to, (node, pos) => {
-      if (node.isTextblock) {
-        start = Math.min(start, pos + 1)
-        end = Math.max(end, pos + node.nodeSize - 1)
+/** Word's Quick Style gallery keys on the shortcuts (Opt+Cmd+0..3) */
+export function applyParagraphStyle(
+  editor: Editor,
+  key: 'p' | 'h1' | 'h2' | 'h3',
+  styles?: StyleMap,
+): void {
+  const level = key === 'p' ? null : Number(key.slice(1))
+  const styleId = level ? headingStyleId(styles, level) : defaultParagraphStyleId(styles)
+  applyParagraphStyleId(editor, styleId ?? null, level)
+}
+
+/** mark types Word counts as direct character formatting when a paragraph style is applied */
+const DIRECT_MARKS = ['bold', 'italic', 'underline', 'strike'] as const
+const DIRECT_TEXT_STYLE_ATTRS = ['color', 'sizeHalfPoints', 'font', 'fontAscii'] as const
+
+/**
+ * Word's rule for direct character formatting under a new paragraph style: a
+ * property covering more than half of the paragraph's text is dropped from the
+ * whole paragraph (it was standing in for the style), a smaller run keeps it.
+ */
+export function shedMajorityDirectFormatting(tr: Transaction, pos: number): void {
+  const node = tr.doc.nodeAt(pos)
+  if (!node?.isTextblock) return
+  const total = node.textContent.length
+  if (total === 0) return
+  const covered = new Map<string, number>()
+  node.forEach((child) => {
+    if (!child.isText) return
+    const len = child.text!.length
+    for (const m of child.marks) {
+      if ((DIRECT_MARKS as readonly string[]).includes(m.type.name)) {
+        covered.set(m.type.name, (covered.get(m.type.name) ?? 0) + len)
+      } else if (m.type.name === 'docTextStyle') {
+        for (const a of DIRECT_TEXT_STYLE_ATTRS) {
+          if (m.attrs[a] != null) covered.set(`ts:${a}`, (covered.get(`ts:${a}`) ?? 0) + len)
+        }
       }
-    })
-    const type = editor.schema.marks.docTextStyle
-    const jobs: Array<{ from: number; to: number; attrs: Record<string, unknown> | null }> = []
-    tr.doc.nodesBetween(start, end, (node, pos) => {
-      if (!node.isText) return
-      const m = node.marks.find((mm) => mm.type === type)
-      if (!m) return
-      if (
-        m.attrs.color == null &&
-        m.attrs.sizeHalfPoints == null &&
-        m.attrs.font == null &&
-        m.attrs.fontAscii == null
-      )
-        return
-      const attrs = { ...m.attrs, color: null, sizeHalfPoints: null, font: null, fontAscii: null }
-      const keep = Object.values(attrs).some((v) => v !== null)
-      jobs.push({
-        from: Math.max(pos, start),
-        to: Math.min(pos + node.nodeSize, end),
-        attrs: keep ? attrs : null,
-      })
-    })
-    for (const job of jobs) {
-      tr.removeMark(job.from, job.to, type)
-      if (job.attrs) tr.addMark(job.from, job.to, type.create(job.attrs))
     }
-    return true
-  }).run()
+  })
+  const shed = [...covered].filter(([, n]) => n * 2 > total).map(([k]) => k)
+  if (shed.length === 0) return
+  const start = pos + 1
+  const end = pos + node.nodeSize - 1
+  const schema = tr.doc.type.schema
+  for (const k of shed) if (!k.startsWith('ts:')) tr.removeMark(start, end, schema.marks[k])
+  const attrsToClear = shed.filter((k) => k.startsWith('ts:')).map((k) => k.slice(3))
+  if (attrsToClear.length === 0) return
+  const type = schema.marks.docTextStyle
+  const jobs: Array<{ from: number; to: number; attrs: Record<string, unknown> | null }> = []
+  node.forEach((child, offset) => {
+    const m = child.marks.find((mm) => mm.type === type)
+    if (!m || !attrsToClear.some((a) => m.attrs[a] != null)) return
+    const attrs = { ...m.attrs }
+    for (const a of attrsToClear) attrs[a] = null
+    const keep = Object.values(attrs).some((v) => v != null && v !== false)
+    jobs.push({
+      from: start + offset,
+      to: start + offset + child.nodeSize,
+      attrs: keep ? attrs : null,
+    })
+  })
+  for (const job of jobs) {
+    tr.removeMark(job.from, job.to, type)
+    if (job.attrs) tr.addMark(job.from, job.to, type.create(job.attrs))
+  }
+}
+
+/**
+ * Put a paragraph style on every paragraph the selection touches: a heading
+ * style makes docHeading nodes, another style turns headings back into
+ * paragraphs; list items keep their numbering unless they become headings.
+ * Not for textbox sub-editors (no docHeading in their schema).
+ */
+export function applyParagraphStyleId(
+  editor: Editor,
+  styleId: string | null,
+  headingLevel: number | null,
+): void {
+  editor
+    .chain()
+    .focus()
+    .command(({ tr, state }) => {
+      const { from, to } = tr.selection
+      const schema = state.schema
+      const targets: Array<{ pos: number; node: PmNode }> = []
+      tr.doc.nodesBetween(from, to, (node, pos) => {
+        if (!node.isTextblock) return true
+        if (
+          node.type.name === 'docParagraph' ||
+          node.type.name === 'docHeading' ||
+          node.type.name === 'docListItem'
+        )
+          targets.push({ pos, node })
+        return false
+      })
+      for (const { pos, node } of targets) {
+        let type = headingLevel
+          ? schema.nodes.docHeading
+          : node.type.name === 'docHeading'
+            ? schema.nodes.docParagraph
+            : node.type
+        const $p = tr.doc.resolve(pos)
+        if (type !== node.type && !$p.parent.canReplaceWith($p.index(), $p.index() + 1, type))
+          type = node.type
+        const attrs: Record<string, unknown> = { ...node.attrs, styleId }
+        if (type === schema.nodes.docHeading) {
+          attrs.level = headingLevel ?? node.attrs.level
+          attrs.outlineOnly = null
+        }
+        tr.setNodeMarkup(pos, type === node.type ? undefined : type, attrs)
+        shedMajorityDirectFormatting(tr, pos)
+      }
+      return targets.length > 0
+    })
+    .run()
+}
+
+/**
+ * Gallery / Styles pane click: a character style toggles on the selection (the
+ * textbox sub-editor when one is active), a paragraph style goes on the
+ * paragraphs. A fallback entry the document does not define sets the node type only.
+ */
+export function applyGalleryStyle(
+  editor: Editor,
+  sub: Editor | null,
+  info: StyleInfo,
+  styles: StyleMap | undefined,
+  activeCharStyleId: string | null,
+): void {
+  if (info.type === 'character') {
+    const ed = sub ?? editor
+    if (activeCharStyleId === info.styleId) ed.chain().focus().unsetMark('docTextStyle').run()
+    else ed.chain().focus().setMark('docTextStyle', { styleId: info.styleId }).run()
+    return
+  }
+  if (sub) return
+  const styleId = styles?.has(info.styleId) ? info.styleId : null
+  applyParagraphStyleId(editor, styleId, info.headingLevel ?? null)
 }
 
 /** attrs of the paragraph-like node at the cursor */
@@ -327,39 +441,62 @@ export async function insertImageViaDialog(editor: Editor): Promise<void> {
 }
 
 /** 5 cm × 3 cm default textbox size in EMU (1 cm = 360000 EMU) */
-const TEXTBOX_WIDTH_EMU = 1800000
-const TEXTBOX_HEIGHT_EMU = 1080000
+export const TEXTBOX_WIDTH_EMU = 1800000
+export const TEXTBOX_HEIGHT_EMU = 1080000
 
 /** Default TextboxDisplay model for a freshly inserted empty textbox */
-function emptyTextboxDisplay(): TextboxDisplay {
+function emptyTextboxDisplay(widthEmu: number, heightEmu: number): TextboxDisplay {
   return {
     fill: 'FFFFFF',
     borderColor: '000000',
-    widthPx: Math.round(TEXTBOX_WIDTH_EMU / 9525),
-    heightPx: Math.round(TEXTBOX_HEIGHT_EMU / 9525),
+    widthPx: Math.round(widthEmu / 9525),
+    heightPx: Math.round(heightEmu / 9525),
     paras: [{ runs: [{ text: '' }] }],
   }
 }
 
-/** Insert a floating text box (wp:anchor + wps:wsp) at the current cursor. */
-export function insertTextboxAt(editor: Editor): void {
+/**
+ * Insert a floating text box (wp:anchor + wps:wsp) at the current cursor, or at
+ * an explicit top-level position with an explicit size (Draw Text Box).
+ * Returns the position the block was inserted at (null if the insert failed).
+ */
+export function insertTextboxAt(
+  editor: Editor,
+  opts?: { widthEmu?: number; heightEmu?: number; atPos?: number },
+): number | null {
+  const widthEmu = opts?.widthEmu ?? TEXTBOX_WIDTH_EMU
+  const heightEmu = opts?.heightEmu ?? TEXTBOX_HEIGHT_EMU
   const xml = buildTextboxParagraphXml({
-    widthEmu: TEXTBOX_WIDTH_EMU,
-    heightEmu: TEXTBOX_HEIGHT_EMU,
+    widthEmu,
+    heightEmu,
     id: Math.floor(Math.random() * 900000) + 100000,
   })
-  // top-level insert: a plain insertContent would replace a selected floating
-  // node and fails silently from inside a table cell
-  insertTopLevelBlockAtSelection(editor, {
+  const content = {
     type: 'docProtected',
     attrs: {
       docxIndex: null,
       blockType: 'passthrough',
       label: t('ribbonTextBox'),
       genXml: xml,
-      textboxes: [emptyTextboxDisplay()],
+      textboxes: [emptyTextboxDisplay(widthEmu, heightEmu)],
     },
-  })
+  }
+  // top-level insert: a plain insertContent would replace a selected floating
+  // node and fails silently from inside a table cell
+  const { $from } = editor.state.selection
+  const position = opts?.atPos ?? ($from.depth > 0 ? $from.after(1) : editor.state.selection.to)
+  return editor.chain().focus().insertContentAt(position, content).run() ? position : null
+}
+
+/** Put the caret into the (first) text box of the floating node at `pos`. */
+export function focusTextboxEditorAt(editor: Editor, pos: number): void {
+  const wrapper = editor.view.nodeDOM(pos) as HTMLElement | null
+  const box = wrapper?.querySelector('.doc-textbox') as HTMLElement | null
+  const sub = box?.querySelector('.doc-textbox-editor') as HTMLElement | null
+  if (!box || !sub) return
+  // a fresh box sits in object mode; the double-click path is what turns its editor on
+  box.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  sub.focus()
 }
 
 /**
@@ -605,16 +742,16 @@ export interface InsertTabProps extends TabProps {
   onPageNumFormat: () => void
   /** Insert an inline field (DATE/TIME/PAGE/NUMPAGES/FILENAME) */
   onInsertField: (instr: string) => void
-  titlePg: boolean
-  onTitlePg: (v: boolean) => void
-  evenOddHf: boolean
-  onEvenOddHf: (v: boolean) => void
+  /** Header/Footer ▾ Edit: open the strip editor (the Different-page toggles live on the contextual tab) */
+  onHfEdit: (kind: 'header' | 'footer') => void
   /** a selection (or a caret in a word) to anchor a new comment on, as in the Review tab */
   canComment: boolean
   onNewComment: () => void
   /** the Review-tab gate pair: commenting survives the comments-only restriction */
   isProtected: boolean
   commentsAllowed: boolean
+  /** a new table activates Table Design (Word); an existing one only shows the tabs */
+  onTableInserted: () => void
 }
 
 /** target languages of Word's Translate dropdown that the AI backend can serve;
@@ -632,18 +769,23 @@ const TRANSLATE_TARGETS: Array<{ labelKey: StringKey }> = [
 /** One-time "AI rewrites the whole document" acknowledgement */
 export const AI_REWRITE_ACK_KEY = 'docs-ai-rewrite-ack'
 
-/** Revision display modes: All Markup (default) / No Markup (as accepted) / Original (as rejected) */
-export type RevisionDisplayMode = 'all' | 'none' | 'original'
+export type { RevisionDisplayMode }
 
 interface ReviewTabProps extends TabProps {
   onAiPreset: (instruction: string) => void
   commentCount: number
   /** unresolved root comments; 0 disables the AI resolve-comments action */
   openCommentCount: number
+  resolvedCommentCount: number
   onShowComments: () => void
   /** create a comment on the current selection (disabled when selection is empty) */
   canComment: boolean
   onNewComment: () => void
+  /** the caret sits in a comment anchor: Delete ▾ › Delete acts on that thread */
+  commentAtCaret: boolean
+  onDeleteComment: () => void
+  onDeleteAllComments: (resolvedOnly: boolean) => void
+  onGotoComment: (dir: 1 | -1) => void
   trackChanges: boolean
   onTrackChanges: (on: boolean) => void
   /** native check-as-you-type spellcheck (red squiggle) */
@@ -675,9 +817,14 @@ export function ReviewTab({
   onAiPreset,
   commentCount,
   openCommentCount,
+  resolvedCommentCount,
   onShowComments,
   canComment,
   onNewComment,
+  commentAtCaret,
+  onDeleteComment,
+  onDeleteAllComments,
+  onGotoComment,
   trackChanges,
   onTrackChanges,
   spellcheck,
@@ -801,6 +948,72 @@ export function ReviewTab({
             </span>
             <span>{t('ribbonNewComment')}</span>
           </button>
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big"
+              disabled={!hasDoc || commentCount === 0 || (isProtected && !commentsAllowed)}
+              data-tip={t('ribbonDeleteCommentTip')}
+              onClick={() => toggleDropdown(setDropdown, 'deleteComment')}
+            >
+              <span className="rb-big-icon">
+                <IconTrash size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonDeleteComment')}</span>
+            </button>
+            {dropdown === 'deleteComment' && (
+              <div data-rb-panel="" className="layout-menu">
+                <button
+                  disabled={!commentAtCaret}
+                  onClick={() => {
+                    onDeleteComment()
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonDeleteComment')}
+                </button>
+                <button
+                  disabled={resolvedCommentCount === 0}
+                  onClick={() => {
+                    onDeleteAllComments(true)
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonDeleteResolvedComments')}
+                </button>
+                <button
+                  onClick={() => {
+                    onDeleteAllComments(false)
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonDeleteAllComments')}
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            className="rb-big"
+            disabled={!hasDoc || openCommentCount === 0}
+            data-tip={t('ribbonPrevCommentTip')}
+            onClick={() => onGotoComment(-1)}
+          >
+            <span className="rb-big-icon">
+              <IconCommentPrev size={BIG} />
+            </span>
+            <span>{t('ribbonPrevComment')}</span>
+          </button>
+          <button
+            className="rb-big"
+            disabled={!hasDoc || openCommentCount === 0}
+            data-tip={t('ribbonNextCommentTip')}
+            onClick={() => onGotoComment(1)}
+          >
+            <span className="rb-big-icon">
+              <IconCommentNext size={BIG} />
+            </span>
+            <span>{t('ribbonNextComment')}</span>
+          </button>
           <button
             className="rb-big"
             disabled={!hasDoc}
@@ -859,7 +1072,7 @@ export function ReviewTab({
           </button>
           <div className="rb-split-wrap">
             <button
-              className={`rb-big ${revisionDisplay !== 'all' ? 'active' : ''}`}
+              className={`rb-big ${revisionDisplay === 'none' || revisionDisplay === 'original' ? 'active' : ''}`}
               disabled={!hasDoc}
               data-tip={t('ribbonRevDisplayTip')}
               onClick={() => toggleDropdown(setDropdown, 'revDisplay')}
@@ -874,6 +1087,7 @@ export function ReviewTab({
               <div data-rb-panel="" className="layout-menu">
                 {(
                   [
+                    ['simple', t('ribbonRevDisplaySimple')],
                     ['all', t('ribbonRevDisplayAll')],
                     ['none', t('ribbonRevDisplayNone')],
                     ['original', t('ribbonRevDisplayOriginal')],
@@ -1067,6 +1281,7 @@ interface ViewTabProps {
   zoom: number
   onZoom: (zoom: number) => void
   onZoomFit: (mode: 'width' | 'page') => void
+  onZoomDialog: () => void
   showAi: boolean
   onToggleAi: () => void
   darkPage: boolean
@@ -1092,6 +1307,7 @@ export function ViewTab({
   zoom,
   onZoom,
   onZoomFit,
+  onZoomDialog,
   showAi,
   onToggleAi,
   darkPage,
@@ -1199,8 +1415,19 @@ export function ViewTab({
           <button
             className="rb-big"
             disabled={!hasDoc}
+            data-tip={t('ribbonZoomDialogTip')}
+            onClick={onZoomDialog}
+          >
+            <span className="rb-big-icon">
+              <IconZoom size={BIG} />
+            </span>
+            <span>{t('ribbonZoomDialog')}</span>
+          </button>
+          <button
+            className="rb-big"
+            disabled={!hasDoc}
             data-tip={t('ribbonZoomOut')}
-            onClick={() => onZoom(Math.max(50, zoom - 10))}
+            onClick={() => onZoom(stepDocsZoom(zoom, -1))}
           >
             <span className="rb-big-icon">
               <IconZoomOut size={BIG} />
@@ -1211,7 +1438,7 @@ export function ViewTab({
             className="rb-big"
             disabled={!hasDoc}
             data-tip={t('ribbonZoomIn')}
-            onClick={() => onZoom(Math.min(200, zoom + 10))}
+            onClick={() => onZoom(stepDocsZoom(zoom, 1))}
           >
             <span className="rb-big-icon">
               <IconZoomIn size={BIG} />

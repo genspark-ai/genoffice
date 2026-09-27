@@ -372,6 +372,40 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     expect(out).not.toContain('wp:wrapTight')
   })
 
+  it('keeps an inline photo gallery flowing next to banded anchors', async () => {
+    const anchored = (offYEmu: number) =>
+      '<w:r><w:drawing>' +
+      '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>' +
+      `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${offYEmu}</wp:posOffset></wp:positionV>` +
+      '<wp:extent cx="1905000" cy="952500"/>' +
+      '<wp:wrapTopAndBottom/>' +
+      '<wp:docPr id="1" name="p"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const inlinePic =
+      '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+      '<wp:extent cx="1905000" cy="2520000"/><wp:docPr id="2" name="g"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+    const body =
+      '<w:p>' +
+      anchored(0) +
+      anchored(3810000) +
+      '<w:r><w:t>7</w:t></w:r>' +
+      inlinePic.repeat(8) +
+      '</w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, withImage: true }))
+    const block = doc.blocks[0]
+    // a protected textbox block cannot be split across pages: a gallery taller
+    // than one page would be clipped to the anchor paragraph's first page
+    expect(block.type).not.toBe('passthrough')
+    expect((block.runs ?? []).filter((r) => r.image)).toHaveLength(10)
+  })
+
   it('displaces an allowOverlap="0" anchor colliding with a sibling (tdf#134114)', async () => {
     const anchorPic = (attrs: string, cx: number, cy: number) =>
       '<w:r><w:drawing>' +
@@ -398,7 +432,7 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     // the colliding allowOverlap="0" picture leaves the flow as a front overlay
     // under the collider's box
     expect(imgs[1].image!.wrap).toBe('front')
-    expect(imgs[1].image!.offsetYEmu).toBe((126 + 2) * 9525)
+    expect(imgs[1].image!.offsetYEmu).toBe(Math.round((125.86 + 2) * 9525))
   })
 
   it('tight wrap round-trips through save + reparse', async () => {
@@ -414,5 +448,46 @@ describe('tight / through wrap (wrapPolygon fidelity)', () => {
     expect(p2.blocks[0].imageWrap).toBe('tight-left')
     expect(p2.blocks[0].imageOffsetXEmu).toBe(100)
     expect(p2.blocks[0].originalXml).toContain('<wp:wrapPolygon')
+  })
+})
+
+describe('picture paragraph layout metadata', () => {
+  it('reads a w:br w:clear break beside a side-wrapped picture into its anchor line', async () => {
+    const xml = ANCHOR_SQUARE_RIGHT_XML.replace(
+      '</w:r></w:p>',
+      '</w:r><w:r><w:br w:type="textWrapping" w:clear="all"/></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].anchorLine?.clear).toBe('all')
+    const plain = await parseDocx(
+      await buildDocx({ bodyXml: ANCHOR_SQUARE_RIGHT_XML, withImage: true }),
+    )
+    expect(plain.blocks[0].anchorLine?.clear).toBeUndefined()
+  })
+
+  it('keeps the direct spacing of an inline picture paragraph', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:spacing w:before="200" w:after="280"/></w:pPr>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].imageParagraphSpaceBefore).toBe(200)
+    expect(doc.blocks[0].imageParagraphSpaceAfter).toBe(280)
+    const bare = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
+    expect(bare.blocks[0].imageParagraphSpaceAfter).toBeUndefined()
+  })
+
+  it('keeps the inline picture effectExtent as extra line room', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<wp:extent cx="914400" cy="914400"/>',
+      '<wp:extent cx="914400" cy="914400"/><wp:effectExtent l="0" t="19050" r="0" b="6350"/>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].imageEffectExtentTopPx).toBe(2)
+    expect(doc.blocks[0].imageEffectExtentBottomPx).toBe(0.67)
+    const bare = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
+    expect(bare.blocks[0].imageEffectExtentBottomPx).toBeUndefined()
   })
 })

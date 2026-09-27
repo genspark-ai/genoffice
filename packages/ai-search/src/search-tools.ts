@@ -2,8 +2,8 @@
  * ai:web-search / ai:image-search for the editors' main processes: reads
  * ai-settings.json live and turns the search provider choice into
  * SearchOptions — Genspark keeps the historic chain (gsk when signed in and
- * cloud tools are on, then env keys, then DuckDuckGo); a selected custom provider
- * runs first and skips gsk. Parallel uses its free MCP when no key is saved.
+ * cloud tools are on, then env keys, then free Parallel MCP, then DuckDuckGo); a
+ * selected custom provider runs first and skips gsk.
  */
 
 import {

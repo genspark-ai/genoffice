@@ -10,6 +10,7 @@ import {
   type FunctionSpec,
 } from './function-catalog'
 import { useI18n, type StringKey } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Insert Function: browse/search the engine's function catalog,
 /// read the syntax, finish the formula in the dialog, apply to the active cell.
@@ -369,11 +370,13 @@ export function InsertFunctionDialog({
     setError(null)
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog insert-function-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('appInsertFunction')}
         onClick={(event) => event.stopPropagation()}
       >

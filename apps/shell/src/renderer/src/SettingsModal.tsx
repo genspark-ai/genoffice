@@ -9,7 +9,7 @@ import {
   clampAiCustomFontSize,
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
-import type { FileSearchSettings, JevEndpoint } from '../../shared/home-api'
+import type { DefaultAppStatus, FileSearchSettings, JevEndpoint } from '../../shared/home-api'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   MAX_MAX_OUTPUT_TOKENS,
@@ -1251,6 +1251,9 @@ export function SettingsModal({
   const [analyticsOn, setAnalyticsOn] = useState(true)
   const [analyticsSaving, setAnalyticsSaving] = useState(false)
   const [autoSaveOn, setAutoSaveOn] = useState(false)
+  const [defaultApp, setDefaultApp] = useState<DefaultAppStatus | null>(null)
+  const [defaultAppBusy, setDefaultAppBusy] = useState(false)
+  const [defaultAppFailed, setDefaultAppFailed] = useState(false)
   const [aiPrefs, setAiPrefs] = useState<AiPanelPrefs>(DEFAULT_AI_PANEL_PREFS)
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
@@ -1269,6 +1272,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getAutoSaveDefault?.().then((v) => {
       if (alive) setAutoSaveOn(v.on)
+    })
+    void window.aiOffice.getDefaultAppStatus?.().then((st) => {
+      if (alive) setDefaultApp(st)
     })
     void window.aiOffice.getAiPanelPrefs?.().then((prefs) => {
       if (alive) setAiPrefs(prefs)
@@ -1312,6 +1318,38 @@ export function SettingsModal({
       if (dir) setSaveDir(dir)
     })
   }
+
+  // Windows only opens the system page; re-read ownership when the user comes back
+  useEffect(() => {
+    if (!defaultApp?.manualOnly) return
+    const refresh = () => {
+      void window.aiOffice.getDefaultAppStatus?.().then(setDefaultApp)
+    }
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [defaultApp?.manualOnly])
+
+  const claimDefaultApp = () => {
+    setDefaultAppBusy(true)
+    setDefaultAppFailed(false)
+    void window.aiOffice
+      .setDefaultApp()
+      .then((st) => {
+        setDefaultApp(st)
+        if (!st.manualOnly && st.state !== 'default') setDefaultAppFailed(true)
+      })
+      .catch(() => setDefaultAppFailed(true))
+      .finally(() => setDefaultAppBusy(false))
+  }
+
+  const defaultAppDesc = (() => {
+    if (!defaultApp) return ''
+    if (defaultAppFailed) return t('setDefaultAppFailed')
+    if (defaultApp.state === 'default') return t('setDefaultAppIs')
+    if (defaultApp.state === 'other' && defaultApp.others.length > 0)
+      return t('setDefaultAppOther', { app: defaultApp.others.join(', ') })
+    return t('setDefaultAppDesc')
+  })()
 
   const loggedIn = status?.loggedIn ?? false
   const email = status?.email ?? ''
@@ -1501,6 +1539,25 @@ export function SettingsModal({
                     onClick={() => updateAiPrefs({ spellcheck: !aiPrefs.spellcheck })}
                   />
                 </div>
+                {defaultApp && defaultApp.state !== 'unsupported' && (
+                  <div className="set-field">
+                    <div className="set-field-text">
+                      <div className="set-field-stack">
+                        <div className="set-field-label">{t('setDefaultApp')}</div>
+                        <div className="set-field-desc">{defaultAppDesc}</div>
+                      </div>
+                    </div>
+                    <button
+                      className="set-btn"
+                      disabled={defaultAppBusy || defaultApp.state === 'default'}
+                      onClick={claimDefaultApp}
+                    >
+                      {defaultApp.manualOnly
+                        ? t('setDefaultAppOpenSettings')
+                        : t('setDefaultAppSet')}
+                    </button>
+                  </div>
+                )}
                 <Field
                   label={t('saveLocation')}
                   value={saveDir || '—'}

@@ -447,12 +447,13 @@ test('splits a tall visual section into flowable screenshot slices', async () =>
   assert.match(screenshotText, /Consumer map/)
 })
 
-test('rejects hostile screenshot geometry before allocating slices', async () => {
-  const { ir, zip } = await convertHtml(
+test('caps hostile screenshot geometry at the slice bound and keeps the content', async () => {
+  const { ir, xml } = await convertHtml(
     `<!doctype html><html><head><style>
       img { display:block; width:100px; height:100px; }
     </style></head><body>
       <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="hostile">
+      <p>Following content</p>
       <script>
         const image = document.querySelector('img');
         const original = image.getBoundingClientRect.bind(image);
@@ -473,8 +474,19 @@ test('rejects hostile screenshot geometry before allocating slices', async () =>
     </body></html>`,
     'hostile-screenshot-geometry',
   )
-  assert.equal(ir.filter((node) => node.type === 'image' && node.clip).length, 0)
-  assert.equal(Object.keys(zip.files).filter((name) => name.startsWith('word/media/')).length, 0)
+  // Clamped, not rejected: a bounded number of slices that start at the
+  // element's top, and the surrounding text still converts.
+  const slices = ir.filter((node) => node.type === 'image' && node.clip)
+  assert.equal(slices.length, 64, JSON.stringify(ir))
+  slices.forEach((slice, index) => {
+    assert.equal(slice.height, 700)
+    assert.equal(slice.clip.y, slices[0].clip.y + index * 700)
+  })
+  assert.ok(
+    slices[0].clip.y < 100,
+    `first slice should start at the element top, got ${slices[0].clip.y}`,
+  )
+  assert.match((await xml('word/document.xml')) ?? '', /Following content/)
 })
 
 test('keeps a KPI row horizontal inside a card nested in a layout row', async () => {

@@ -101,6 +101,7 @@ export const zh = {
   appPasteOptSource: '保留源格式',
   appPasteOptTheme: '使用目标主题',
   appStatusPasteOptionsExpired: '粘贴选项已失效',
+  appStatusPasteTruncated: '粘贴的文本过长，已截断',
   appCtxHideSlide: '隐藏幻灯片',
   appCtxUnhideSlide: '取消隐藏幻灯片',
   appCtxAddSectionBefore: '新增节（在此页前）',

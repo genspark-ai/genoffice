@@ -4,8 +4,8 @@
  * and only raster subtypes are accepted. Electron-free for direct unit tests.
  */
 
-/** ~15MB data URL (≈ 11MB bitmap). */
-export const MAX_COPY_IMAGE_DATA_URL = 15 * 1024 * 1024
+/** Renderer re-encodes via canvas.toDataURL, so photos routinely exceed 15 MB. */
+export const MAX_COPY_IMAGE_DATA_URL = 64 * 1024 * 1024
 
 const DATA_URL_RE = /^data:image\/(png|jpe?g|gif|webp|bmp);/i
 

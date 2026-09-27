@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Slice } from '@tiptap/pm/model'
 import { setToastEmitter, type ToastData } from '../src/renderer/components/toast-bus'
 import { strings } from '../src/renderer/i18n/strings'
+import { MAX_PASTED_IMAGE_BYTES } from '../src/shared/ipc'
 
 // Undestroyed views leave DOMObserver flush timers that fire after jsdom teardown
 // ("document is not defined" unhandled error) — destroy every editor we create.
@@ -95,6 +96,25 @@ describe('image paste into an untitled document', () => {
     const editor = await newEditor()
     const text = new File(['plain'], 'notes.txt', { type: 'text/plain' })
     expect(paste(editor, [text])).toBe(false)
+    expect(window.markdownApi.saveImage).not.toHaveBeenCalled()
+  })
+})
+
+describe('oversized image paste', () => {
+  it('toasts and never sends the bytes to the main process', async () => {
+    stubSaveImage('assets/shot.png')
+    setToastEmitter((toast) => toasts.push(toast))
+    const editor = await newEditor()
+    const huge = new File([new Uint8Array(4)], 'huge.png', { type: 'image/png' })
+    Object.defineProperty(huge, 'size', { value: MAX_PASTED_IMAGE_BYTES + 1 })
+
+    expect(paste(editor, [huge])).toBe(true)
+
+    await vi.waitFor(() => expect(toasts).toHaveLength(1))
+    expect(toasts[0]).toEqual({
+      text: strings.zh.imageTooLarge.replace('{mb}', '50'),
+      kind: 'error',
+    })
     expect(window.markdownApi.saveImage).not.toHaveBeenCalled()
   })
 })

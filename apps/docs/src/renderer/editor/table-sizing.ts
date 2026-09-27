@@ -91,7 +91,7 @@ function targetFromCellPos(state: EditorState, cellPos: number): GridTarget | nu
 }
 
 function tableGridWidths(
-  state: EditorState,
+  state: { doc: PmNode },
   target: GridTarget,
   maxWidth: number,
 ): number[] | null {
@@ -113,7 +113,7 @@ function tableGridWidths(
 }
 
 function writeGridWidths(
-  state: EditorState,
+  state: { doc: PmNode },
   tr: Transaction,
   target: GridTarget,
   widths: number[],
@@ -182,4 +182,24 @@ export function constrainSelectedTableWidth(maxWidthPx: number): Command {
 export function constrainTableWidthAtCell(cellPos: number, maxWidthPx: number): Command {
   return (state, dispatch) =>
     resizeColumns(state, dispatch, null, maxWidthPx, targetFromCellPos(state, cellPos))
+}
+
+/** Distribute Columns Evenly: the selected columns (or all) share their total width equally */
+export function distributeSelectedColumns(maxWidthPx: number): Command {
+  return (state, dispatch) => {
+    const target = targetFromSelection(state)
+    if (!target) return false
+    const current = tableGridWidths(state, target, maxWidthPx)
+    if (!current) return false
+    const multi = target.right - target.left > 1
+    const from = multi ? target.left : 0
+    const to = multi ? target.right : current.length
+    const avg = current.slice(from, to).reduce((sum, w) => sum + w, 0) / Math.max(1, to - from)
+    const requested = new Map<number, number>()
+    for (let col = from; col < to; col++) requested.set(col, avg)
+    dispatch?.(
+      writeGridWidths(state, state.tr, target, fitColumnWidths(current, requested, maxWidthPx)),
+    )
+    return true
+  }
 }

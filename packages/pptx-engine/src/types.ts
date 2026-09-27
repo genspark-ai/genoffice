@@ -565,6 +565,8 @@ export interface PictureElement extends ElementBase {
   dataUrl?: string
   /** Source crop <a:srcRect>: fraction cropped from each edge (0..1) */
   srcRect?: { l: number; t: number; r: number; b: number }
+  /** <a:tile> fill mode: the bitmap repeats across the frame instead of stretching to it */
+  tile?: true
   /** Whole-image opacity <a:blip><a:alphaModFix amt> (0..1, 1 = opaque; default 1) */
   opacity?: number
   /** Soft edges <a:softEdge rad> (EMU feather radius) */

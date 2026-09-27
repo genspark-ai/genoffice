@@ -94,6 +94,11 @@ interface Loaded {
   text: (group?: string) => string
 }
 
+/** The catalog `guide <domain> --json` prints; the MCP op schemas are built from the same object. */
+export async function loadCatalog(domain: GuideDomain): Promise<OpCatalog> {
+  return (await load(domain, undefined, false)).catalog
+}
+
 async function load(
   domain: GuideDomain,
   topic: string | undefined,

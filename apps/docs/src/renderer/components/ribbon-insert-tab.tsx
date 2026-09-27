@@ -6,15 +6,19 @@ import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
 import { hfHasPageField, hfWithoutPageMarks } from '../editor/hf-dom'
 import { EquationGallery, EquationModal } from './EquationModal'
-import { COVER_PRESETS, insertCoverPage, type CoverPreset } from '../editor/cover-pages'
+import {
+  COVER_PRESETS,
+  coverPageRange,
+  insertCoverPage,
+  removeCoverPage,
+  type CoverPreset,
+} from '../editor/cover-pages'
 import { startShapeDrawMode } from '../editor/shape-draw'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useModalKeys } from './modal-keys'
 import {
   IconBook,
   IconCaret,
-  IconCheckbox,
-  IconCheckboxChecked,
   IconClose,
   IconComment,
   IconDoc,
@@ -45,6 +49,9 @@ import {
   insertShapeAt,
   insertTableAt,
   insertTextboxAt,
+  focusTextboxEditorAt,
+  TEXTBOX_WIDTH_EMU,
+  TEXTBOX_HEIGHT_EMU,
   insertTopLevelBlockAtSelection,
   insertWordArtAt,
   MAX_TABLE_COLS,
@@ -105,51 +112,6 @@ const SYMBOLS = [
   '⑨',
   '⑩',
 ]
-
-/** small dropdown editor for header/footer text */
-function HfEditor({
-  label,
-  current,
-  onApply,
-  onClose,
-}: {
-  label: string
-  current: string
-  onApply: (text: string) => void
-  onClose: () => void
-}) {
-  const { t } = useI18n()
-  const [text, setText] = useState(current)
-  return (
-    <div data-rb-panel="" className="hf-menu">
-      <div className="hf-menu-title">{label}</div>
-      <input
-        autoFocus
-        value={text}
-        placeholder={t('ribbonHfPlaceholder', { label })}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            onApply(text.trim())
-            onClose()
-          }
-        }}
-      />
-      <div className="hf-menu-actions">
-        <button
-          className="btn-primary"
-          onClick={() => {
-            onApply(text.trim())
-            onClose()
-          }}
-        >
-          {t('ribbonOk')}
-        </button>
-        <button onClick={onClose}>{t('ribbonCancel')}</button>
-      </div>
-    </div>
-  )
-}
 
 /** all bookmarks in document order: name + owning node position + preview text */
 function collectBookmarks(editor: Editor): Array<{ name: string; pos: number; preview: string }> {
@@ -466,7 +428,15 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
 }
 
 /** Word's Insert Table dialog: explicit row/column counts beyond the hover grid's reach */
-export function TableInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+export function TableInsertModal({
+  editor,
+  onClose,
+  onInserted,
+}: {
+  editor: Editor
+  onClose: () => void
+  onInserted?: () => void
+}) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
   const [cols, setCols] = useState(5)
@@ -475,6 +445,7 @@ export function TableInsertModal({ editor, onClose }: { editor: Editor; onClose:
   const insert = () => {
     if (!editor.isEditable) return
     insertTableAt(editor, rows, cols)
+    onInserted?.()
     onClose()
   }
 
@@ -715,14 +686,12 @@ export function InsertTab({
   onFooter,
   onPageNumFormat,
   onInsertField,
-  titlePg,
-  onTitlePg,
-  evenOddHf,
-  onEvenOddHf,
+  onHfEdit,
   canComment,
   onNewComment,
   isProtected,
   commentsAllowed,
+  onTableInserted,
 }: InsertTabProps) {
   const { t } = useI18n()
   const [grid, setGrid] = useState<{ r: number; c: number }>({ r: 0, c: 0 })
@@ -736,6 +705,7 @@ export function InsertTab({
   const insertTable = (rows: number, cols: number) => {
     insertTableAt(editor, rows, cols)
     setDropdown(() => null)
+    onTableInserted()
   }
 
   return (
@@ -772,6 +742,16 @@ export function InsertTab({
                     <span className="cover-card-name">{preset.name}</span>
                   </button>
                 ))}
+                <button
+                  className="cover-gallery-remove"
+                  disabled={!coverPageRange(editor.state.doc)}
+                  onClick={() => {
+                    removeCoverPage(editor)
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonRemoveCoverPage')}
+                </button>
               </div>
             )}
           </div>
@@ -935,17 +915,47 @@ export function InsertTab({
       {/* Text group: text box + WordArt + drop cap */}
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <button
-            className="rb-big"
-            disabled={!hasDoc}
-            data-tip={t('ribbonTextBoxTip')}
-            onClick={() => insertTextboxAt(editor)}
-          >
-            <span className="rb-big-icon">
-              <IconTextBox size={BIG} />
-            </span>
-            <span>{t('ribbonTextBox')}</span>
-          </button>
+          <div className="rb-split-wrap">
+            <button
+              className="rb-big"
+              disabled={!hasDoc}
+              data-tip={t('ribbonTextBoxTip')}
+              onClick={() => toggleDropdown(setDropdown, 'textBox')}
+            >
+              <span className="rb-big-icon">
+                <IconTextBox size={BIG} />
+                <IconCaret />
+              </span>
+              <span>{t('ribbonTextBox')}</span>
+            </button>
+            {dropdown === 'textBox' && (
+              <div data-rb-panel="" className="layout-menu rb-textbox-menu">
+                <button
+                  onClick={() => {
+                    setDropdown(() => null)
+                    startShapeDrawMode(editor, 'rect', (opts) => insertTextboxAt(editor, opts), {
+                      clickSize: { widthEmu: TEXTBOX_WIDTH_EMU, heightEmu: TEXTBOX_HEIGHT_EMU },
+                      ghost: { fill: 'rgba(255,255,255,0.6)', border: '#000000' },
+                      onInserted: (pos) => focusTextboxEditorAt(editor, pos),
+                    })
+                  }}
+                >
+                  {t('ribbonTextBoxDraw')}
+                </button>
+                <button
+                  onClick={() => {
+                    setDropdown(() => null)
+                    const pos = insertTextboxAt(editor)
+                    if (pos != null) {
+                      requestAnimationFrame(() => focusTextboxEditorAt(editor, pos))
+                    }
+                  }}
+                >
+                  {t('ribbonTextBoxSimple')}
+                </button>
+              </div>
+            )}
+          </div>
           <div className="rb-split-wrap">
             <button
               className="rb-big"
@@ -1154,12 +1164,24 @@ export function InsertTab({
               <span>{t('ribbonHeader')}</span>
             </button>
             {dropdown === 'header' && (
-              <HfEditor
-                label={t('ribbonHeader')}
-                current={header?.text ?? ''}
-                onApply={(text) => onHeader({ text })}
-                onClose={() => setDropdown(() => null)}
-              />
+              <div data-rb-panel="" className="layout-menu">
+                <button
+                  onClick={() => {
+                    onHfEdit('header')
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfEditHeader')}
+                </button>
+                <button
+                  onClick={() => {
+                    onHeader({ text: '' })
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfRemoveHeader')}
+                </button>
+              </div>
             )}
           </div>
           <div className="rb-split-wrap">
@@ -1176,12 +1198,24 @@ export function InsertTab({
               <span>{t('ribbonFooter')}</span>
             </button>
             {dropdown === 'footer' && (
-              <HfEditor
-                label={t('ribbonFooter')}
-                current={footer?.text ?? ''}
-                onApply={(text) => onFooter({ text, pageNumber: footer?.pageNumber ?? false })}
-                onClose={() => setDropdown(() => null)}
-              />
+              <div data-rb-panel="" className="layout-menu">
+                <button
+                  onClick={() => {
+                    onHfEdit('footer')
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfEditFooter')}
+                </button>
+                <button
+                  onClick={() => {
+                    onFooter({ text: '' })
+                    setDropdown(() => null)
+                  }}
+                >
+                  {t('ribbonHfRemoveFooter')}
+                </button>
+              </div>
             )}
           </div>
           <div className="rb-split-wrap">
@@ -1244,24 +1278,6 @@ export function InsertTab({
                 </button>
               </div>
             )}
-          </div>
-          <div className="rb-col">
-            <button
-              className={`rb-small ${titlePg ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonDiffFirstPageTip')}
-              onClick={() => onTitlePg(!titlePg)}
-            >
-              {titlePg ? <IconCheckboxChecked /> : <IconCheckbox />} {t('ribbonDiffFirstPage')}
-            </button>
-            <button
-              className={`rb-small ${evenOddHf ? 'active' : ''}`}
-              disabled={!hasDoc}
-              data-tip={t('ribbonDiffOddEvenTip')}
-              onClick={() => onEvenOddHf(!evenOddHf)}
-            >
-              {evenOddHf ? <IconCheckboxChecked /> : <IconCheckbox />} {t('ribbonDiffOddEven')}
-            </button>
           </div>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupHeaderFooter')}</div>
@@ -1330,7 +1346,11 @@ export function InsertTab({
       </div>
 
       {tableDialogOpen && (
-        <TableInsertModal editor={editor} onClose={() => setTableDialogOpen(false)} />
+        <TableInsertModal
+          editor={editor}
+          onClose={() => setTableDialogOpen(false)}
+          onInserted={onTableInserted}
+        />
       )}
       {linkOpen && <LinkInsertModal editor={editor} onClose={() => setLinkOpen(false)} />}
       {equationOpen && <EquationModal editor={editor} onClose={() => setEquationOpen(false)} />}

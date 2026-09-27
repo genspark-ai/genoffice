@@ -245,7 +245,21 @@ describe('addTable explicit grid options (genpptx parity)', () => {
       .originalXml as string
     expect(xml).not.toContain('NaN')
     expect(xml).not.toContain('Infinity')
-    expect(xml.match(/<a:tr /g)?.length).toBeLessThanOrEqual(50)
+    expect(xml.match(/<a:tr /g)?.length).toBeLessThanOrEqual(75)
+  })
+
+  it('clamps spans to the cells remaining right of / below the cell', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addTable(opened, 0, {
+      rows: 2,
+      cols: 3,
+      offset: { x: 0, y: 0, cx: 3000000, cy: 1000000 },
+      cellProps: [[undefined, { gridSpan: 5 }, { gridSpan: 3, rowSpan: 4 }], [{ rowSpan: 2 }]],
+    })!
+    const xml = (opened.deck.slides[0]!.elements.find((e) => e.id === r.elementId) as any).anchor
+      .originalXml as string
+    expect(xml.match(/gridSpan="\d+"/g)).toEqual(['gridSpan="2"'])
+    expect(xml.match(/rowSpan="\d+"/g)).toEqual(['rowSpan="2"'])
   })
 })
 

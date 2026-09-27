@@ -15,9 +15,9 @@ export interface DecodedTiff {
 
 /** Pixel budget: a crafted ppt/media/*.tif with giant IFD dims would OOM
  *  the main process in toRGBA8 (w*h*4 bytes). Fail closed (blank placeholder)
- *  past 64MP or 16384px per side. */
-const MAX_TIFF_PIXELS = 64 * 1024 * 1024
-const MAX_TIFF_DIM = 16384
+ *  past 256MP or 32767px per side (a 600 dpi A3 scan is ~69MP). */
+const MAX_TIFF_PIXELS = 256 * 1024 * 1024
+const MAX_TIFF_DIM = 32767
 
 function tiffDimsOk(width: unknown, height: unknown): width is number {
   return (
@@ -46,18 +46,18 @@ export function tiffToPng(bytes: Uint8Array): DecodedTiff | null {
       width: Array.isArray(ifd.t256) ? ifd.t256[0] : (ifd as { width?: unknown }).width,
       height: Array.isArray(ifd.t257) ? ifd.t257[0] : (ifd as { height?: unknown }).height,
     })
-    let page = ifds[0]!
-    let pageDims = headerDims(page)
-    if (!tiffDimsOk(pageDims.width, pageDims.height)) return null
+    let page: (typeof ifds)[number] | null = null
+    let pagePixels = 0
     for (const ifd of ifds) {
       const dims = headerDims(ifd)
       if (!tiffDimsOk(dims.width, dims.height)) continue
-      const cur = (dims.width as number) * (dims.height as number)
-      if (cur > (pageDims.width as number) * (pageDims.height as number)) {
+      const cur = dims.width * (dims.height as number)
+      if (!page || cur > pagePixels) {
         page = ifd
-        pageDims = dims
+        pagePixels = cur
       }
     }
+    if (!page) return null
     UTIF.decodeImage(buf, page)
     const width = page.width as number
     const height = page.height as number

@@ -773,6 +773,58 @@ html.genoffice-popover-open .ribbon-tabs {
   cursor: default;
 }
 
+/* Big split button (Home ▸ Paste): the icon half runs the default action,
+   the label half opens the menu, like Word's Paste. */
+.rb-big-split {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.rb-big-split > .rb-big {
+  padding-bottom: 0;
+}
+
+.rb-big-split-caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  margin: 2px 3px 0;
+  padding: 1px 4px 2px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.rb-big-split-caret:hover:not(:disabled),
+.rb-big-split-caret.active {
+  background: var(--hover);
+}
+
+.rb-big-split-caret:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.paste-menu {
+  min-width: 200px;
+}
+
+.spacing-menu.paste-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.spacing-menu.paste-menu button > svg {
+  flex-shrink: 0;
+}
+
 /* Active state paints only the gray icon plate — ink stays the standard #232425 */
 .rb-big.active .rb-big-icon {
   background: var(--active-bg);
@@ -1121,25 +1173,6 @@ html.genoffice-popover-open .ribbon-tabs {
   outline-offset: 1px;
 }
 
-/* "No Shading" reset row under the swatch grid */
-.color-clear {
-  grid-column: 1 / -1;
-  margin-top: 2px;
-  border: none;
-  background: none;
-  border-radius: 4px;
-  padding: 5px 6px;
-  font-size: 12.5px;
-  text-align: left;
-  white-space: nowrap;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.color-clear:hover {
-  background: var(--hover);
-}
-
 .color-palette-highlight {
   grid-template-columns: none;
 }
@@ -1342,6 +1375,11 @@ html.genoffice-popover-open .ribbon-tabs {
   font-family: system-ui;
 }
 
+/* type-ahead / arrow-key highlight, kept distinct from the check on the current font */
+.rb-font-family-menu button.kbd-focus {
+  background: var(--hover);
+}
+
 .rb-menu-group-label {
   padding: 8px 16px 3px;
   font-size: 11px;
@@ -1349,6 +1387,12 @@ html.genoffice-popover-open .ribbon-tabs {
   border-top: 1px solid var(--border);
   margin-top: 4px;
   cursor: default;
+}
+
+.rb-font-family-menu > div:first-child > .rb-menu-group-label {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 4px;
 }
 
 /* ---- Insert: table size picker ---- */
@@ -1414,6 +1458,29 @@ html.genoffice-popover-open .ribbon-tabs {
 .cover-card-name {
   font-size: 11px;
   color: var(--text);
+}
+
+.cover-gallery-remove {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 7px 12px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cover-gallery-remove:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.cover-gallery-remove:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .table-picker {
@@ -1834,6 +1901,22 @@ html.genoffice-popover-open .ribbon-tabs {
   background: var(--active-bg);
 }
 
+.layout-menu-head {
+  padding: 6px 12px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.layout-menu-head + button {
+  margin-top: 0;
+}
+
+.layout-menu.layout-menu-scroll {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+
 /* w:trHeight hRule="exact": Word clips overflow instead of growing the row. td height is
    min-height in CSS table layout, so cells wrap content in this fixed-height box instead;
    clip (not hidden) so contenteditable's programmatic scrolls can't shift the content */
@@ -1887,17 +1970,24 @@ th.cell-rev-del {
   background: var(--docs-paper-del-bg);
 }
 
-/* no-markup mode = as if all accepted: deleted rows hidden, insert background removed */
+/* no-markup / simple-markup mode = as if all accepted: deleted rows hidden, insert background removed */
 .rev-display-none tr.row-rev-del,
 .rev-display-none td.cell-rev-del,
-.rev-display-none th.cell-rev-del {
+.rev-display-none th.cell-rev-del,
+.rev-display-simple tr.row-rev-del,
+.rev-display-simple td.cell-rev-del,
+.rev-display-simple th.cell-rev-del {
   display: none;
 }
 
 .rev-display-none tr.row-rev-ins > td,
 .rev-display-none tr.row-rev-ins > th,
 .rev-display-none td.cell-rev-ins,
-.rev-display-none th.cell-rev-ins {
+.rev-display-none th.cell-rev-ins,
+.rev-display-simple tr.row-rev-ins > td,
+.rev-display-simple tr.row-rev-ins > th,
+.rev-display-simple td.cell-rev-ins,
+.rev-display-simple th.cell-rev-ins {
   background: none;
 }
 
@@ -2030,12 +2120,6 @@ th.cell-rev-del {
   font-weight: 600;
 }
 
-/* ---- page color swatch selection ---- */
-
-.color-palette-page {
-  grid-template-columns: repeat(5, 20px);
-}
-
 .color-swatch.selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -2143,32 +2227,170 @@ th.cell-rev-del {
 }
 
 .style-card-label {
+  max-width: 100%;
+  padding: 0 3px;
   font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the preview carries the style's own face/weight/color; the card only sizes it */
+.style-card-preview {
+  max-width: 100%;
+  font-size: 15px;
+  line-height: 1.15;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Styles pane (Word for Mac): docked on the right like the comments pane */
+.styles-pane {
+  width: 264px;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.styles-pane-search {
+  margin: 8px 10px 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.styles-pane-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.styles-pane-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.style-pane-card {
+  flex-direction: row;
+  justify-content: space-between;
+  width: 100%;
+  height: auto;
+  min-height: 34px;
+  padding: 5px 8px;
+  gap: 8px;
+  text-align: left;
+}
+
+.style-pane-card .style-card-preview {
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.style-pane-kind {
+  flex: none;
+  font-size: 11px;
   color: var(--text-dim);
 }
 
-.style-card-preview {
-  font-size: 15px;
+.styles-pane-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
 }
 
-.style-card-preview.style-normal {
+.styles-pane-foot label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.styles-pane-foot select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
   color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
 }
 
-.style-card-preview.style-h1 {
-  color: var(--word-heading);
-  font-size: 18px;
-  font-weight: 400;
+.styles-pane-new {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.style-card-preview.style-h2 {
-  color: var(--word-heading);
-  font-size: 15px;
+.styles-pane-new:hover:not(:disabled) {
+  background: var(--hover);
 }
 
-.style-card-preview.style-h3 {
-  color: var(--docs-heading-3);
-  font-size: 13px;
+.styles-pane-new:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.styles-pane-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
+.modal.style-dialog {
+  width: 560px;
+}
+
+.style-dialog .font-dialog-row + .font-dialog-row {
+  margin-top: 10px;
+}
+
+.style-dialog-num {
+  flex: 0 0 84px !important;
+}
+
+.style-dialog-color {
+  flex: 0 0 72px !important;
+}
+
+.style-dialog-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.style-dialog-preview {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--color-bg-page);
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* ================= workspace / document canvas ================= */
@@ -2208,6 +2430,15 @@ th.cell-rev-del {
     url('data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2728%27%20height=%2728%27%20viewBox=%270%200%2028%2028%27%3E%3Cg%20stroke=%27white%27%20stroke-width=%273.4%27%20paint-order=%27stroke%27%20stroke-linecap=%27round%27%20fill=%27none%27%3E%3Cpath%20d=%27M2%205h5M2%2023h5M4.5%205v18%27/%3E%3C/g%3E%3Cg%20stroke=%27black%27%20stroke-width=%271.5%27%20fill=%27none%27%20stroke-linecap=%27round%27%3E%3Cpath%20d=%27M2%205h5M2%2023h5M4.5%205v18%27/%3E%3C/g%3E%3Crect%20x=%2716.6%27%20y=%273.5%27%20width=%273%27%20height=%275.2%27%20rx=%271.4%27%20fill=%27black%27%20stroke=%27white%27%20stroke-width=%271.2%27%20paint-order=%27stroke%27/%3E%3Crect%20x=%2710.5%27%20y=%278.2%27%20width=%2715%27%20height=%2710.3%27%20rx=%271.6%27%20fill=%27black%27%20stroke=%27white%27%20stroke-width=%271.2%27%20paint-order=%27stroke%27/%3E%3Cpath%20d=%27M10.5%2012.4%20H25.5%27%20stroke=%27white%27%20stroke-width=%271.3%27/%3E%3Cpath%20d=%27M15%2014.9%20V16.9%20M21%2014.9%20V16.9%27%20stroke=%27white%27%20stroke-width=%271.3%27%20stroke-linecap=%27round%27/%3E%3C/svg%3E')
       4 14,
     text;
+}
+
+/* selection bar (left page margin): Word's up-right arrow. Fixed black/white
+   affordance like the paintbrush above. */
+.ProseMirror.doc-selbar-hover {
+  cursor:
+    url('data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2720%27%20height=%2720%27%20viewBox=%270%200%2020%2020%27%3E%3Cpath%20d=%27M17.5%202.5v14.2l-3.8-3.7-3%206.3-2.9-1.4%203-6.3H5.2z%27%20fill=%27white%27%20stroke=%27black%27%20stroke-width=%271.2%27%20stroke-linejoin=%27round%27/%3E%3C/svg%3E')
+      17 3,
+    default;
 }
 
 /* gap cursor between isolating blocks, such as a final table */
@@ -2739,11 +2970,67 @@ th.cell-rev-del {
   cursor: text;
 }
 
-/* editing surface: a separate element receives input and clears on unmount (no leftover input text nodes) */
+/* editor host: the nested rich-text editor owns its children and unmounts with the strip */
 .page-hf-edit-surface {
   outline: none;
   min-height: 1.3em;
-  white-space: pre-wrap;
+}
+
+.page-hf-editor {
+  outline: none;
+}
+
+.page-hf-editor .doc-textbox-para {
+  min-height: 1.3em;
+}
+
+/* PAGE / NUMPAGES atoms show the live number (decoration attribute); a selected field takes the selection tint */
+.hf-field {
+  border-radius: 2px;
+}
+
+.hf-field::after {
+  content: attr(data-hf-num);
+}
+
+.hf-field.ProseMirror-selectednode {
+  background: var(--selection-soft, var(--hover));
+}
+
+/* Word's "Header -Section 2-" / "Same as Previous" tags hang off the strip edge while editing */
+.page-hf-tags {
+  position: absolute;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.page-hf-header .page-hf-tags {
+  top: 100%;
+  margin-top: 3px;
+}
+
+.page-hf-footer .page-hf-tags {
+  bottom: 100%;
+  margin-bottom: 3px;
+}
+
+.page-hf-tag {
+  padding: 2px 6px;
+  border-radius: 2px 2px 0 0;
+  background: var(--word-blue);
+  color: var(--docs-on-accent);
+  white-space: nowrap;
+}
+
+/* Word dims the body while a header/footer is being edited; the gap widgets (which host
+   the strip editors on inner pages) keep full contrast */
+.page-wrap.hf-editing .ProseMirror > :not(.page-gap) {
+  opacity: 0.55;
 }
 
 .page-hf-header {
@@ -2808,13 +3095,310 @@ th.cell-rev-del {
 
 /* navigation pane */
 .nav-pane {
-  width: 232px;
+  position: relative;
   flex: none;
   border-right: 1px solid var(--border);
   background: var(--surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.nav-pane-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.nav-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 10px 0;
+  padding: 0 8px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text-dim);
+}
+
+.nav-search:focus-within {
+  border-color: var(--accent);
+}
+
+.nav-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.nav-search-input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.nav-search-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.nav-tabs {
+  display: flex;
+  margin: 6px 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-tab {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 5px 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.nav-tab:hover {
+  color: var(--text);
+}
+
+.nav-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.nav-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.nav-tree {
+  min-height: 100%;
+}
+
+.nav-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px 4px 6px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.nav-row:hover {
+  background: var(--hover);
+}
+
+.nav-row.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.nav-row.dim {
+  opacity: 0.45;
+}
+
+.nav-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.nav-row.drop-before::before,
+.nav-row.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.nav-row.drop-before::before {
+  top: -1px;
+}
+
+.nav-row.drop-after::after {
+  bottom: -1px;
+}
+
+.nav-twisty {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.nav-twisty svg {
+  transform: rotate(90deg);
+  transition: transform 0.12s;
+}
+
+.nav-twisty.closed svg {
+  transform: rotate(0deg);
+}
+
+.nav-twisty.leaf {
+  cursor: default;
+}
+
+.nav-row-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-badge {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+  background: var(--search-hit-bg);
+  color: var(--text);
+}
+
+.nav-results {
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px;
+}
+
+.nav-result {
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  color: var(--text);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.nav-result:hover,
+.nav-result.on {
+  background: var(--hover);
+}
+
+.nav-result mark {
+  background: var(--search-hit-bg);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.nav-result.on mark {
+  background: var(--search-hit-active-bg);
+  color: var(--search-hit-active-ink);
+}
+
+.nav-result-ctx {
+  color: var(--text-dim);
+}
+
+.nav-results-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 8px;
+}
+
+.nav-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 12px 12px;
+}
+
+.nav-thumb {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--page-bg, var(--docs-paper));
+  box-shadow: var(--docs-page-shadow);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.nav-thumb:hover {
+  border-color: var(--accent);
+}
+
+.nav-thumb.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nav-thumb-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 0 !important;
+  min-height: 0 !important;
+  box-shadow: none !important;
+  column-count: auto !important;
+  isolation: isolate;
+}
+
+.nav-thumb-slot {
+  position: absolute;
+}
+
+.nav-thumb-num {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.nav-menu {
+  min-width: 220px;
 }
 
 .nav-pane-head {
@@ -2846,44 +3430,6 @@ th.cell-rev-del {
   color: var(--text);
 }
 
-.nav-pane-list {
-  overflow-y: auto;
-  padding: 6px 0;
-}
-
-.nav-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: none;
-  padding: 4px 14px;
-  font-size: 12.5px;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.nav-item:hover {
-  background: var(--hover);
-  color: var(--accent);
-}
-
-.nav-l2 {
-  padding-left: 28px;
-  font-size: 12px;
-}
-.nav-l3 {
-  padding-left: 42px;
-  font-size: 11.5px;
-}
-.nav-l4 {
-  padding-left: 56px;
-  font-size: 11.5px;
-}
-
 .nav-empty {
   padding: 12px 14px;
   font-size: 12px;
@@ -2910,31 +3456,39 @@ th.cell-rev-del {
   text-decoration: underline line-through;
 }
 
-/* revision display mode: No Markup = as if all accepted (insertions shown normally, deletions hidden) */
-.rev-display-none .doc-ins {
+/* revision display mode: No Markup = as if all accepted (insertions shown normally, deletions hidden);
+   Simple Markup renders the same text and only adds the changed-line bars */
+.rev-display-none .doc-ins,
+.rev-display-simple .doc-ins {
   color: inherit;
   text-decoration: none;
 }
 
 .rev-display-none .doc-del,
-.rev-display-none .has-move-from {
+.rev-display-none .has-move-from,
+.rev-display-simple .doc-del,
+.rev-display-simple .has-move-from {
   display: none;
 }
 
-.rev-display-none .has-move-to {
+.rev-display-none .has-move-to,
+.rev-display-simple .has-move-to {
   background: none;
 }
 
-.rev-display-none .has-rpr-change {
+.rev-display-none .has-rpr-change,
+.rev-display-simple .has-rpr-change {
   text-decoration: none;
 }
 
-.rev-display-none .has-ppr-change {
+.rev-display-none .has-ppr-change,
+.rev-display-simple .has-ppr-change {
   border-left: none;
   padding-left: 0;
 }
 
-.rev-display-none .has-ppr-change::after {
+.rev-display-none .has-ppr-change::after,
+.rev-display-simple .has-ppr-change::after {
   content: none;
 }
 
@@ -2971,6 +3525,7 @@ th.cell-rev-del {
 
 /* inserted then deleted: they cancel out in No Markup view → hidden; also nonexistent in Original view */
 .rev-display-none .doc-ins .doc-del,
+.rev-display-simple .doc-ins .doc-del,
 .rev-display-original .doc-del .doc-ins {
   display: none;
 }
@@ -3288,16 +3843,7 @@ th.cell-rev-del {
   position: relative;
   height: 20px;
   margin: 0 auto 6px;
-  background:
-    repeating-linear-gradient(
-        to right,
-        var(--docs-ruler-tick) 0,
-        var(--docs-ruler-tick) 1px,
-        transparent 1px,
-        transparent 12px
-      )
-      bottom / 100% 5px no-repeat,
-    var(--docs-ruler-bg);
+  background: var(--docs-ruler-bg);
   border: 1px solid var(--docs-ruler-border);
   border-radius: 2px;
   font-size: 9px;
@@ -3352,6 +3898,11 @@ th.cell-rev-del {
   background: var(--docs-accent-ghost);
 }
 
+.ruler-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* default tab stop guide (no interaction) */
 .ruler-tab-default {
   position: absolute;
@@ -3376,6 +3927,95 @@ th.cell-rev-del {
   top: 3px;
   transform: translateX(-50%);
   line-height: 1;
+  pointer-events: none;
+}
+
+.ruler-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 3px;
+  background: var(--docs-ruler-tick);
+  pointer-events: none;
+}
+
+.ruler-tick-mid {
+  height: 6px;
+}
+
+/* indent markers (Word): first-line triangle on top, hanging triangle over the
+   left-indent box below, right-indent triangle at the right edge */
+.ruler-ind {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  transform: translateX(-50%);
+  cursor: default;
+  z-index: 4;
+}
+
+.ruler-ind-firstLine {
+  top: 1px;
+  border-top: 6px solid var(--docs-ruler-btn-ink);
+}
+
+.ruler-ind-hanging,
+.ruler-ind-right {
+  top: 8px;
+  border-bottom: 6px solid var(--docs-ruler-btn-ink);
+}
+
+.ruler-ind-left {
+  top: 14px;
+  width: 10px;
+  height: 4px;
+  border: none;
+  background: var(--docs-ruler-btn-ink);
+}
+
+.ruler-ind:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ruler-margin-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.ruler-margin-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ruler-drag-guide {
+  position: fixed;
+  width: 0;
+  border-left: 1px dotted var(--docs-ruler-ink);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* contextual Header & Footer tab */
+.hf-ribbon-body {
+  display: flex;
+  align-items: stretch;
+}
+
+.hf-distances {
+  gap: 4px;
+  justify-content: center;
+}
+
+.hf-distance > span:first-child {
+  width: auto;
 }
 
 /* header/footer dropdown editor */
@@ -3468,6 +4108,15 @@ th.cell-rev-del {
    breaking inside the CJK run, dropping a third of the line (prod 003). */
 .doc-autospace-pad {
   margin-inline-start: var(--doc-autospace-pad, 0.125em);
+}
+
+/* a space with a hangul neighbour advances 0.5em in Word whatever the run font
+   (line-metrics hangulSpaceOffsets); the half-width space face supplies that
+   advance. Keep it a plain baseline inline: line-height:0 or vertical-align:top
+   on this span made the table-row cut measuring split a two-line row across
+   pages. */
+.doc-hangul-space {
+  font-family: 'GenOffice Hangul Space';
 }
 
 /* dark page in the light theme: Word's gray band around the dark paper — one
@@ -3610,12 +4259,12 @@ th.cell-rev-del {
   }
 }
 
-/* visual page-break indicator (w:pageBreakBefore); a list item's ::before is its
-   numbering marker, so list items carry the label on ::after */
+/* visual page-break indicator (w:pageBreakBefore): one out-of-flow pseudo-element
+   in the margin above the paragraph — as a border + 14px padding it pushed the
+   page's content down 15px, where Word reserves nothing. A list item's ::before
+   is its numbering marker, so list items carry the band on ::after */
 .doc-page .page-break-before {
   position: relative;
-  border-top: 1px dashed var(--border-strong);
-  padding-top: 14px;
   margin-top: 14pt;
 }
 
@@ -3623,13 +4272,16 @@ th.cell-rev-del {
 .doc-page .doc-li.page-break-before::after {
   content: attr(data-page-break-label);
   position: absolute;
-  top: -9px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: -19px;
+  left: 0;
+  right: 0;
+  height: 13px;
+  border-bottom: 1px dashed var(--border-strong);
   font-size: 10px;
+  line-height: 13px;
+  text-align: center;
+  text-indent: 0;
   color: var(--text-dim);
-  background: var(--page-bg, var(--docs-paper));
-  padding: 0 8px;
 }
 
 .doc-page p {
@@ -3828,10 +4480,19 @@ th.cell-rev-del {
   height: 11px;
 }
 
-/* header/footer strips inside canvas page gaps: display-only copies of each page's
-   variant (edit via the document top/bottom areas or the pagination preview) */
+/* header/footer strips inside canvas page gaps: double-click opens that page's
+   strip editor in place (App.startGapHfEdit); hover hints at it like Word */
 .page-gap-hf {
-  pointer-events: none;
+  cursor: default;
+}
+
+.page-gap-hf:hover:not(.page-hf-editing) {
+  outline: 1px dashed var(--docs-paper-hf-line);
+  outline-offset: 2px;
+}
+
+.page-gap-hf .page-hf-tags {
+  display: none;
 }
 
 /* floating textbox in a header/footer part: drawn at its anchor's page position
@@ -3900,11 +4561,7 @@ th.cell-rev-del {
   user-select: none;
 }
 
-/* when a page gap is right next to a page-break indicator, hide the duplicate dashed marker (keep placeholder height) */
-.page-gap + .page-break-before {
-  border-top-color: transparent;
-}
-
+/* when a page gap is right next to a page-break indicator, hide the duplicate dashed marker */
 .page-gap + .page-break-before:where(:not(.doc-li))::before,
 .page-gap + .doc-li.page-break-before::after {
   display: none;
@@ -4025,6 +4682,12 @@ th.cell-rev-del {
 
 .pv-clip {
   overflow: hidden;
+}
+
+/* own formatting context: the clone's first block may carry a negative top
+   margin (lifted table); collapsing it with the window offset would swallow it */
+.pv-offset {
+  display: flow-root;
 }
 
 /* header picture watermark (absolute VML shape): drawn once per preview page,
@@ -4152,11 +4815,7 @@ th.cell-rev-del {
   pointer-events: none;
 }
 
-/* page-break indicators are only visually hidden, keeping placeholder height — clone line heights must match measurement */
-.pv-clip .doc-page .page-break-before {
-  border-top-color: transparent;
-}
-
+/* the clone never paints the indicator (out of flow: line heights are unaffected) */
 .pv-clip .doc-page .page-break-before:where(:not(.doc-li))::before,
 .pv-clip .doc-page .doc-li.page-break-before::after {
   visibility: hidden;
@@ -4241,6 +4900,12 @@ th.cell-rev-del {
   cursor: pointer;
 }
 
+/* unstyled bookmark-link runs (TOC entries) keep the paragraph's ink, as in Word */
+.doc-link.doc-link-plain {
+  color: inherit;
+  text-decoration: none;
+}
+
 /* flat list items (1:1 with w:p anchors)
    geometry comes from w:ind (--li-left text indent / --li-hang hanging marker-area width,
    emitted by extensions.ts; --style-li-left is the style-level w:ind fallback from
@@ -4272,16 +4937,8 @@ th.cell-rev-del {
 }
 
 /* Word HTML auto spacing (sp-auto-*, 14pt inline margins) collapses to 0 between
-   two list items; !important beats the inline auto margin */
-.doc-page .doc-li.sp-auto-a:has(+ .doc-li) {
-  margin-bottom: 0 !important;
-}
-
-.doc-page .doc-li + .doc-li.sp-auto-b {
-  margin-top: 0 !important;
-}
-
-/* auto space-before is also suppressed on the document's first paragraph (Word);
+   two items of the same list: doc-style-css.ts emits those rules per list.
+   auto space-before is also suppressed on the document's first paragraph (Word);
    the page-1 float host is a zero-height widget that may precede the block */
 .doc-page > .sp-auto-b:nth-child(1 of :not(.page-float-host)) {
   margin-top: 0 !important;
@@ -4588,6 +5245,20 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   --doc-line-factor: var(--doc-line-factor-latin, 1.2);
 }
 
+/* Word lays out the mandatory end-of-cell paragraph at zero height when it is
+   empty and directly follows a nested table (any other empty cell paragraph
+   keeps its line); margins are inline, hence the override */
+.doc-table td > .doc-nested-table + .doc-p-empty:last-child,
+.doc-table th > .doc-nested-table + .doc-p-empty:last-child,
+.doc-table td > table.doc-table + .doc-p-empty:last-child,
+.doc-table th > table.doc-table + .doc-p-empty:last-child {
+  height: 0;
+  min-height: 0;
+  line-height: 0;
+  padding: 0;
+  margin: 0 !important;
+}
+
 /* Word ignores page-type w:br inside table cells; a visible line break here
    inflates every cell that carries one (HWP-exported TOC/decor tables) */
 .doc-table td .doc-page-br,
@@ -4741,14 +5412,6 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   grid-template-columns: repeat(2, minmax(66px, auto));
 }
 
-.table-tool-grid-two {
-  grid-template-columns: repeat(2, minmax(58px, auto));
-}
-
-.table-tool-grid-three {
-  grid-template-columns: repeat(3, minmax(94px, auto));
-}
-
 .table-tool-group button {
   min-height: 26px;
   padding: 3px 8px;
@@ -4761,10 +5424,9 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   cursor: pointer;
 }
 
-/* icon + label buttons (insert/delete/merge/align/borders) */
+/* icon + label buttons (insert/merge/align/borders) */
 .table-tool-row > button,
-.table-tool-grid > button,
-.table-tool-delete > .table-tool-button {
+.table-tool-grid > button {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
@@ -4772,14 +5434,15 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 }
 
 .table-tool-row > button svg,
-.table-tool-grid > button svg,
-.table-tool-delete > .table-tool-button svg {
+.table-tool-grid > button svg {
   flex: none;
   opacity: 0.9;
 }
 
-.table-tool-delete > .table-tool-button {
-  justify-content: center;
+.table-tool-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .table-tool-group button:hover:not(:disabled) {
@@ -4794,35 +5457,6 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .table-tool-group button.danger {
   color: var(--danger);
-}
-
-.table-tool-delete {
-  min-width: 72px;
-}
-
-.table-style-swatches {
-  display: grid;
-  /* square swatches with breathing room (matches the slides shape-style grid) */
-  grid-template-columns: repeat(6, 24px);
-  gap: 5px;
-  align-content: center;
-  flex: 1;
-}
-
-.table-tool-group .table-style-swatch {
-  box-sizing: border-box;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0;
-  border-color: var(--docs-swatch-border);
-}
-
-.table-tool-group .table-style-clear {
-  grid-column: span 2;
-  min-height: 22px;
-  padding: 1px 5px;
 }
 
 .table-style-options {
@@ -4880,12 +5514,8 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   transform: rotate(45deg);
 }
 
-.table-tool-autofit {
-  min-width: 158px;
-}
-
-.table-autofit-wrap {
-  width: 100%;
+.table-tool-group .table-autofit-button {
+  width: 150px;
 }
 
 .table-tool-group .table-command-button {
@@ -4968,9 +5598,44 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .table-tool-stack {
   display: grid;
-  grid-template-rows: repeat(2, minmax(25px, 1fr));
+  grid-template-rows: repeat(3, minmax(24px, 1fr));
   gap: 2px;
   flex: 1;
+}
+
+/* Word's split button: the left half repeats the last gallery pick, the caret opens it */
+.table-split {
+  display: flex;
+  align-items: stretch;
+  align-self: center;
+}
+
+.table-tool-group .table-split-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 5px 9px;
+  border-color: var(--border);
+  border-radius: 3px 0 0 3px;
+  background: var(--surface);
+}
+
+.table-tool-group .table-split-caret {
+  min-width: 18px;
+  min-height: 52px;
+  padding: 0 2px;
+  border-color: var(--border);
+  border-left-color: transparent;
+  border-radius: 0 3px 3px 0;
+  background: var(--surface);
+}
+
+.table-tool-group .table-split-main:hover:not(:disabled),
+.table-tool-group .table-split-caret:hover:not(:disabled),
+.table-tool-group .table-split-caret.active {
+  border-color: var(--border-strong);
+  background: var(--hover);
 }
 
 .table-tool-group .table-command-row {
@@ -4981,6 +5646,15 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   align-items: center;
   gap: 6px;
   text-align: left;
+}
+
+.table-tool-group .table-command-row-caret {
+  grid-template-columns: 18px minmax(0, 1fr) 12px;
+}
+
+.table-tool-group .table-command-row.active {
+  border-color: var(--border-strong);
+  background: var(--hover);
 }
 
 .table-command-row > span {
@@ -5093,6 +5767,13 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .doc-img-float > .doc-img-wrap {
   translate: 0 var(--page-float-dy, 0px);
+}
+
+/* a banded picture may overhang the column (cover art at the paper edge): it
+   keeps its wp:extent instead of the wrapper-width cap */
+.doc-img-float.img-wrap-band > .doc-img-wrap,
+.doc-img-float.img-wrap-band > .doc-img-wrap > .doc-protected-img {
+  max-width: none;
 }
 
 /* cell-anchored boxes share the float display-shift channel (paper-top clamp) */
@@ -5312,6 +5993,12 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   position: relative;
 }
 
+/* a leading sized w:br (lineFactorLive): its own block, so the line is as tall
+   as the break run and not the paragraph strut */
+.doc-page .doc-br-line {
+  display: block;
+}
+
 /* CJK stretch of a mixed-script paragraph (lineFactorLive): the strut sits at
    the Latin base and the stretch re-resolves the auto line rule with its own
    factor, so only the lines it lands on lift (Word sizes each line by the faces
@@ -5328,12 +6015,33 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   z-index: -1;
 }
 
-/* page-relative run pictures ride the floating-box shift channel */
-.doc-inline-img-anchor > img[data-page-rel-v='1'] {
-  translate: 0 var(--page-float-dy, 0px);
+/* Word puts the whole (m-1) x single extra of an auto multiple below the glyphs
+   and bottom-aligns atLeast lines (--doc-lead-top), a typed grid centres like CSS;
+   display-only, the line box keeps its height (pagination-measure subtracts top) */
+.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li, .doc-textbox-para, .doc-protected-field) {
+  --doc-lead-shift: var(
+    --doc-lead-top,
+    calc(
+      (1 - var(--doc-lead-grid, 0)) * (1 - var(--doc-line-mult, 1)) * var(--doc-line-factor, 1.2) *
+        1em / 2
+    )
+  );
+  position: relative;
+  top: var(--doc-lead-shift);
+}
+
+/* anchored pictures measure from the paragraph box, not from its glyphs */
+.doc-page .doc-anchor-origin .doc-inline-img-anchor > img {
+  translate: 0 calc(-1 * var(--doc-lead-shift, 0px));
+}
+
+/* page-relative run pictures also ride the floating-box shift channel (same
+   specificity as the rule above, so source order keeps both terms) */
+.doc-anchor-origin .doc-inline-img-anchor > img[data-page-rel-v='1'] {
+  translate: 0 calc(var(--page-float-dy, 0px) - var(--doc-lead-shift, 0px));
 }
 .pv-clip .doc-inline-img-anchor > img[data-page-rel-v='1'] {
-  translate: none;
+  translate: 0 calc(-1 * var(--doc-lead-shift, 0px));
 }
 
 /* square/tight/through wrap: real CSS float so same-paragraph text wraps */
@@ -5367,10 +6075,10 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   user-select: none;
 }
 
-/* body-level invisible markers (stray bookmarkEnd…): occupy no space at all */
+/* body-level invisible markers (stray bookmarkEnd…): occupy no space at all, and
+   no BFC (overflow) so the neighbouring paragraphs' margins still collapse */
 .doc-protected-invisible {
   height: 0;
-  overflow: hidden;
   border: none;
   padding: 0;
   margin: 0;
@@ -5474,6 +6182,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   padding-bottom: 0;
 }
 
+/* exact / atLeast runs keep their own natural box: an inherited absolute
+   line-height centred on a smaller glyph would hang below the strut and grow
+   the line (Word: atLeast is max(rule value, tallest run)); an exact rule caps
+   the box at the rule (--doc-lh-cap) so a taller run never grows the line */
+.doc-lh-fixed span {
+  line-height: min(calc(var(--doc-line-factor, 1.2) * 1em), var(--doc-lh-cap, 9999px));
+}
+
 /* exact / atLeast paragraphs fix every line, the rule line included; typed-grid
    documents already snap the rule through the generic span rule (doc-style-css) */
 .doc-lh-fixed > .doc-inline-rule {
@@ -5493,9 +6209,22 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   display: none !important;
 }
 
+.doc-page br.doc-wrap-br {
+  clear: both;
+}
+
 /* a column break ending a paragraph is one line in Word (the mark opens the
    next column); the trailing-break phantom after it would add a second */
 .doc-page br.doc-col-br + br.ProseMirror-trailingBreak {
+  display: none;
+}
+
+/* a page break ending a paragraph has no line of its own either: the paragraph
+   mark sits on the last text line, and the next page starts with the next
+   paragraph. The phantom line after it (directly, or after the run-mark span
+   holding the break) would charge one more line to the page-bottom fit */
+.doc-page br.doc-page-br + br.ProseMirror-trailingBreak,
+.doc-page span:has(br.doc-page-br:last-child) + br.ProseMirror-trailingBreak {
   display: none;
 }
 
@@ -5557,8 +6286,10 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 }
 
 /* text-field paragraphs are body text in Word: no chip inset (the 4px shifted
-   citation paragraphs off the column edge and shortened every line) */
-.doc-protected-field.doc-protected-field-text {
+   citation paragraphs off the column edge and shortened every line); TOC
+   entries likewise start at the column edge and end at the right tab stop */
+.doc-protected-field.doc-protected-field-text,
+.doc-protected-field.doc-protected-field-toc {
   padding: 0;
 }
 
@@ -5988,14 +6719,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   max-width: none;
 }
 
-/* image blocks: no chip chrome, selection border with resize handle */
+/* image blocks: no chip chrome; zero border/padding/margin/strut because Word
+   sizes a picture-only paragraph to the picture extent (hover frame = outline);
+   the paragraph's own spacing arrives as .doc-img-para margins */
 .doc-protected[data-doc-protected='image'] {
-  border-color: transparent;
+  border: 0;
   background: none;
-  padding: 2px 0;
-  /* no baseline strut/descender slack: Word gives a picture-only paragraph
-     exactly the image height, and the ~8px surplus pushes a page-filling
-     picture past the page and derails the slice boundaries */
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+}
+
+/* the document CSS gives .doc-img-para its paragraph margins and line-height; only the margins apply */
+.doc-protected[data-doc-protected='image'].doc-img-para {
   line-height: 0;
 }
 
@@ -6008,8 +6744,11 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   white-space: pre;
 }
 
-.doc-protected[data-doc-protected='image']:hover {
-  border-color: var(--border);
+/* float anchors are zero-height wrappers: an outline there would paint a
+   full-width bar at the anchor, so only in-flow pictures get the hover frame */
+.doc-protected[data-doc-protected='image']:not(.doc-img-float):hover {
+  outline: 1px solid var(--border);
+  outline-offset: 2px;
 }
 
 .ProseMirror-focused .doc-protected[data-doc-protected='image'].ProseMirror-selectednode {
@@ -6089,6 +6828,17 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .doc-ref-field:hover {
   background: var(--docs-paper-field-bg);
+}
+
+/* Toggle Field Codes: the cached result collapses, the widget shows { INSTR } */
+.doc-field-result-hidden {
+  font-size: 0;
+}
+
+.doc-field-code {
+  background: var(--docs-paper-field-bg);
+  border-radius: 2px;
+  white-space: pre-wrap;
 }
 
 .doc-ref-field[data-instr-field='FORMCHECKBOX'],
@@ -8214,8 +8964,9 @@ body.docs-crop-active
   flex-shrink: 0;
 }
 
-/* Word: clicking the word count in the status bar opens the word-count dialog */
-.status-wordcount {
+/* Word: the page counter, word count and Track Changes readout are buttons
+   (Go To / Word Count / toggle tracking) */
+.status-btn {
   border: none;
   background: none;
   color: inherit;
@@ -8224,8 +8975,17 @@ body.docs-crop-active
   cursor: pointer;
 }
 
-.status-wordcount:hover {
+.status-btn:hover:not(:disabled) {
   text-decoration: underline;
+}
+
+.status-btn:disabled {
+  cursor: default;
+  color: var(--text-dim);
+}
+
+.status-track.on {
+  color: var(--accent);
 }
 
 .status-msg {
@@ -8266,6 +9026,51 @@ body.docs-crop-active
 .zoom-value {
   min-width: 38px;
   text-align: right;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0 2px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.zoom-value:hover:not(:disabled) {
+  background: var(--docs-statusbar-hover);
+}
+
+.zoom-value:disabled {
+  cursor: default;
+}
+
+/* Word's status bar view switcher, left of the zoom slider */
+.status-views {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+}
+
+.status-view-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.status-view-btn:hover {
+  background: var(--docs-statusbar-hover);
+}
+
+.status-view-btn.on {
+  background: var(--active-bg);
+  color: var(--accent);
 }
 
 /* ================= modal ================= */
@@ -8639,7 +9444,11 @@ body.docs-crop-active
 }
 
 .table-border-opts .gs-dd-btn {
-  height: 22px;
+  box-sizing: border-box;
+  height: 20px;
+  min-height: 20px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* ---- Protect Document dialog (Review > Protect, Word's Password Protect layout) ---- */
@@ -8648,6 +9457,10 @@ body.docs-crop-active
   width: 520px;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
+}
+
+.modal.paste-special-dialog {
+  width: 380px;
 }
 
 .protect-dialog .protect-section-title {
@@ -9156,6 +9969,130 @@ body.docs-crop-active
   background: var(--hover);
 }
 
+.find-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.find-tab {
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  padding: 2px 8px 4px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.find-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--word-blue);
+}
+
+.find-spacer {
+  flex: 1;
+}
+
+.find-options {
+  gap: 4px;
+}
+
+.find-results-toggle {
+  font-variant-numeric: tabular-nums;
+}
+
+.find-error,
+.find-hint-miss {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.find-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 220px;
+}
+
+.find-select {
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.find-goto-input {
+  width: 160px;
+}
+
+.find-results {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+  width: 360px;
+}
+
+.find-result {
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.find-result:hover,
+.find-result.on {
+  background: var(--hover);
+}
+
+.find-result mark {
+  background: var(--search-hit-bg);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.find-result.on mark {
+  background: var(--search-hit-active-bg);
+  color: var(--search-hit-active-ink);
+}
+
+.find-result-ctx {
+  color: var(--text-dim);
+}
+
+.find-results-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 6px;
+}
+
+.find-action-primary {
+  background: var(--word-blue);
+  border-color: var(--word-blue);
+  color: var(--docs-on-accent);
+}
+
+.find-action-primary:hover:not(:disabled) {
+  background: var(--word-blue-dark, var(--word-blue));
+}
+
+.rb-editing {
+  justify-content: center;
+}
+
 .find-action:disabled {
   color: var(--border-strong);
   cursor: default;
@@ -9334,6 +10271,12 @@ body.docs-crop-active
     break-before: page;
   }
 
+  /* editor-only band: its glyphs must not reach the PDF text layer */
+  .page-break-before:where(:not(.doc-li))::before,
+  .doc-li.page-break-before::after {
+    display: none !important;
+  }
+
   .doc-field-pagebreak {
     break-after: page;
     visibility: hidden;
@@ -9421,6 +10364,9 @@ body.docs-crop-active
     break-after: page;
     /* 2px shorter than the paper, so print rounding overflow doesn't produce blank pages */
     height: calc(var(--pv-page-h, 1056px) - 2px) !important;
+    /* monolithic sheet: an anchored box positioned past the paper edge (Word clips it)
+       otherwise reaches the page fragmentainer and shrinks the whole print job to fit */
+    contain: size;
   }
 
   .pv-page:last-child {
@@ -9957,6 +10903,15 @@ ruby.doc-ruby rt {
   box-shadow: var(--docs-shadow-ctx);
 }
 
+.ctx-item-strong .ctx-label {
+  font-weight: 600;
+}
+
+.ctx-submenu-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 /* ---- Font / Paragraph dialogs ---- */
 
 .font-dialog-row {
@@ -9991,6 +10946,63 @@ ruby.doc-ruby rt {
   cursor: pointer;
 }
 
+.modal.font-dialog {
+  width: 520px;
+}
+
+.dlg-tabs {
+  display: flex;
+  gap: 2px;
+  margin: -4px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dlg-tabs button {
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.dlg-tabs button:hover {
+  color: var(--text);
+}
+
+.dlg-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.font-effects {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+.font-by {
+  flex: 0 0 110px !important;
+}
+
+.font-kern {
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.font-kern .font-check {
+  padding-bottom: 0;
+}
+
+.font-kern input[type='number'] {
+  width: 72px;
+  margin-top: 0;
+}
+
 .font-preview {
   margin: 4px 0 14px;
   padding: 14px 10px;
@@ -9999,6 +11011,43 @@ ruby.doc-ruby rt {
   text-align: center;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.dlg-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -6px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dlg-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dlg-tabs button:hover {
+  color: var(--text);
+}
+
+.dlg-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.para-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 16px;
+  margin: 4px 0 8px;
+}
+
+.para-checks .font-check {
+  padding-bottom: 4px;
 }
 
 .para-num {
@@ -10015,6 +11064,22 @@ ruby.doc-ruby rt {
 .para-unit {
   color: var(--text-dim);
   font-size: 12px;
+}
+
+.len-input {
+  width: 72px;
+}
+
+.prefs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+
+.prefs-field select {
+  align-self: flex-start;
+  min-width: 180px;
 }
 
 .prompt-textarea {
@@ -10152,27 +11217,37 @@ ruby.doc-ruby rt {
   gap: 8px;
 }
 
-.table-tool-borders .table-tool-grid {
-  flex: none;
-}
-
+/* Border Styles / Line Weight / Pen Color stacked beside Borders ▾ (Word) */
 .table-border-opts {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
+  align-self: center;
+}
+
+.table-tool-group .table-pen-color {
+  display: inline-flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 72px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0 6px;
+  border-color: var(--border);
+  background: var(--surface);
 }
 
-.table-border-opts input[type='color'] {
-  width: 28px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+.table-tool-group .table-pen-color.active {
+  border-color: var(--border-strong);
+  background: var(--hover);
 }
 
-.table-border-opts select {
-  font-size: 12px;
-  padding: 2px 4px;
+.table-pen-swatch {
+  flex: 1;
+  height: 10px;
+  border: 1px solid var(--docs-swatch-outline);
 }
 
 .table-size-inputs {
@@ -10191,9 +11266,18 @@ ruby.doc-ruby rt {
 }
 
 .table-size-inputs input {
-  width: 56px;
+  width: 72px;
   padding: 2px 4px;
   font-size: 12px;
+}
+
+.table-tool-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .table-tool-button.active {
@@ -10293,6 +11377,43 @@ tr > .page-gap-cut {
   position: absolute;
   width: 2px;
   background: var(--docs-paper-rev-ink);
+}
+
+/* Simple Markup: Word's fixed-red changed-line bar, clickable (switches to All Markup) */
+.rev-display-simple .change-bar {
+  background: var(--docs-revision-bar);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.rev-display-simple .change-bar::before {
+  content: '';
+  position: absolute;
+  inset: -2px -6px;
+}
+
+.comment-balloon {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  padding: 1px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--docs-paper-comment-line);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.comment-balloon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+
+.comment-balloon:hover {
+  background: var(--docs-paper-comment-bg);
 }
 
 .comment-leaders {
@@ -10500,46 +11621,308 @@ tr > .page-gap-cut {
   color: var(--accent);
 }
 
-/* Define New Multilevel List dialog */
-.list-define-modal {
-  width: 560px;
-  max-width: 90vw;
-}
-
-.list-define-head,
-.list-define-row {
-  display: grid;
-  grid-template-columns: 36px 110px 1fr 84px 110px;
-  gap: 6px;
+/* Change List Level row inside the bullet / numbering / multilevel galleries */
+.list-gallery-levels {
+  grid-column: 1 / -1;
+  display: flex;
   align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  padding: 2px 2px 4px;
+  border-top: 1px solid var(--border);
 }
 
-.list-define-head {
+.list-gallery-levels .list-gallery-title {
+  flex: 1 0 100%;
+  padding-top: 4px;
+}
+
+.list-gallery .list-gallery-level {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
   font-size: 11px;
-  color: var(--text-dim);
-  padding: 4px 0;
+  color: var(--text);
+  cursor: pointer;
 }
 
-.list-define-rows {
+.list-gallery .list-gallery-level:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.list-gallery .list-gallery-level.selected {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.list-gallery .list-gallery-level:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.spacing-menu .spacing-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+/* List dialogs: numbering value, indents, define bullet / number / multilevel */
+.modal.list-dialog {
+  width: 460px;
+}
+
+.list-dialog .fld {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.list-dialog .fld > span:first-child {
+  flex: 0 0 150px;
+  color: var(--text-dim);
+}
+
+.list-dialog .fld input:not([type='checkbox']):not([type='radio']):not([type='color']) {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.list-dialog .list-dialog-num input {
+  flex: 0 0 96px;
+}
+
+.list-dialog .font-check {
+  padding-bottom: 6px;
+}
+
+.list-dialog .font-check input[type='radio'],
+.list-dialog .font-check input[type='checkbox'] {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.list-dialog .list-dialog-indent {
+  padding-left: 22px;
+}
+
+.list-dialog-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-dialog-color input[type='color'] {
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+}
+
+.list-dialog-link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.list-dialog-link:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.list-dialog-font {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+  padding-top: 4px;
+}
+
+.list-dialog-font .fld:first-child {
+  grid-column: 1 / -1;
+}
+
+.list-dialog-font .fld > span:first-child {
+  flex-basis: 70px;
+}
+
+.list-dialog-preview {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--doc-bg, var(--surface));
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 320px;
+  gap: 8px;
+}
+
+.list-dialog-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-dialog-preview-marker {
+  min-width: 28px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.list-dialog-preview-pic {
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
+}
+
+.list-dialog-preview-line {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  margin: 6px 0 2px;
+}
+
+.list-dialog-symbols {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+  margin-bottom: 10px;
+  max-height: 150px;
   overflow-y: auto;
 }
 
-.list-define-row input,
-.list-define-row select {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 2px 4px;
+.list-dialog-symbols button {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
 }
 
-.list-define-preview {
+.list-dialog-symbols button:hover {
+  border-color: var(--accent);
+}
+
+.list-dialog-symbols button.selected {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.list-dialog-picture {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.list-dialog-file input[type='file'] {
+  display: none;
+}
+
+.list-dialog-file-button {
+  display: inline-block;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.list-dialog-file-button:hover {
+  border-color: var(--accent);
+}
+
+.list-dialog-hint {
   font-size: 12px;
+  color: var(--text-dim);
+}
+
+.modal.list-define-modal {
+  width: 720px;
+  max-width: 92vw;
+}
+
+.list-define-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+}
+
+.list-define-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.list-define-levels button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.list-define-levels button:hover {
+  background: var(--hover);
+}
+
+.list-define-levels button.selected {
+  background: var(--active-bg);
+}
+
+.list-define-level-no {
+  flex: 0 0 14px;
+  color: var(--text-dim);
+}
+
+.list-define-level-text {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.list-define-fields .fld > span:first-child {
+  flex-basis: 130px;
+}
+
+.list-define-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+
+.list-define-grid .fld > span:first-child {
+  flex-basis: 110px;
 }
 
 /* table style gallery cards */
@@ -11180,4 +12563,198 @@ tr > .page-gap-cut {
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
+}
+
+/* ---- table operations wave: 9-way cell alignment, small dialogs, screen gridlines ---- */
+.cell-align-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 22px);
+  gap: 1px;
+}
+
+.table-tool-group .cell-align-grid > button {
+  min-height: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-tool-group .cell-align-grid > button.active,
+.table-tool-group .table-tool-button.active {
+  border-color: var(--border);
+  background: var(--active-bg);
+}
+
+.table-border-style {
+  font-family: ui-monospace, Menlo, monospace;
+  letter-spacing: -0.5px;
+}
+
+.table-small-dialog {
+  width: min(360px, calc(100vw - 48px));
+}
+
+.zoom-dialog {
+  width: min(380px, calc(100vw - 48px));
+}
+
+.zoom-dialog-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px 12px;
+  margin: 0 0 14px;
+}
+
+.zoom-dialog-group legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.zoom-dialog-radios {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+
+/* scoped above the generic .modal label rule */
+.zoom-dialog .zoom-dialog-radio,
+.zoom-dialog .zoom-dialog-percent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+}
+
+.zoom-dialog-radio input,
+.zoom-dialog-percent input {
+  display: inline-block;
+  margin: 0;
+  width: auto;
+  height: auto;
+}
+
+.zoom-dialog-percent input {
+  width: 84px;
+  height: 30px;
+}
+
+.table-dialog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+.table-dialog-radios {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 12px;
+}
+
+.table-dialog-radios label,
+.table-dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.table-dialog-radios label.disabled,
+.table-dialog-check.disabled {
+  color: var(--text-dim);
+}
+
+.table-dialog-radios input,
+.table-dialog-check input {
+  margin: 0;
+  width: auto;
+}
+
+.table-properties-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 16px;
+  margin-bottom: 10px;
+}
+
+.table-properties-inline > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.table-properties-inline > label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-properties-inline input[type='number'] {
+  width: 76px;
+}
+
+.table-properties-card .table-dialog-check {
+  margin: 6px 0;
+}
+
+.table-properties-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.table-properties-nav button {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.table-properties-nav button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.table-properties-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.table-alt-text label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.table-alt-text textarea {
+  resize: vertical;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Word's View Gridlines: a faint dashed grid on screen only, never printed or exported */
+@media screen {
+  .show-table-gridlines .doc-table td,
+  .show-table-gridlines .doc-table th {
+    outline: 1px dashed var(--border-strong);
+    outline-offset: -1px;
+  }
 }

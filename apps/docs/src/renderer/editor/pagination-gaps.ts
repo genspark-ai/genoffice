@@ -4,6 +4,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
 import { rangeSlot } from '../dom-range'
+import { autoLineMultOf } from '../line-metrics'
 import { TopLevelPositions } from './top-level-pos'
 
 const anchorRange = rangeSlot()
@@ -110,10 +111,23 @@ export const RowFillsExtension = Extension.create({
 export function rowFillAttrs(
   targetPx: number,
   extraPx = 0,
+  gapPx = 0,
 ): { style: string; 'data-split-extra'?: string } {
-  const h = Math.round(targetPx)
-  const extra = extraPx > 0 ? h - (targetPx - extraPx) : 0
+  // the target is a row pitch (tr top to tr top): a separate-borders row owns the
+  // border-spacing below it, which the tr height would otherwise add once per pass
+  const h = Math.round(targetPx - gapPx)
+  const extra = extraPx > 0 ? h + gapPx - (targetPx - extraPx) : 0
   return { style: `height:${h}px`, ...(extra > 0 ? { 'data-split-extra': extra.toFixed(1) } : {}) }
+}
+
+/** vertical border-spacing of the row's table (w:tblCellSpacing tables), else 0 */
+function rowGapPx(tr: Element): number {
+  const table = tr.closest('table')
+  if (!table) return 0
+  const cs = getComputedStyle(table)
+  if (cs.borderCollapse !== 'separate') return 0
+  const parts = cs.borderSpacing.split(' ')
+  return parseFloat(parts[1] ?? parts[0]) || 0
 }
 
 /** Apply/replace the split-row height patches (an empty list clears them). */
@@ -124,7 +138,7 @@ export function setRowFills(
 ): void {
   const decos: Decoration[] = []
   for (const [i, fill] of fills.entries()) {
-    const attrs = rowFillAttrs(fill.targetPx, fill.extraPx)
+    const attrs = rowFillAttrs(fill.targetPx, fill.extraPx, rowGapPx(fill.el))
     try {
       const $inside = view.state.doc.resolve(view.posAtDOM(fill.el, 0))
       for (let d = $inside.depth; d > 0; d--) {
@@ -1236,13 +1250,48 @@ export function syncFloatShifts(
  * Layout-affecting, so it runs before measurement; idempotent (inputs are the
  * static data-band values and the anchor-line heights).
  */
-export function syncAnchorBands(pm: HTMLElement, factor: number): void {
+export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = false): void {
   let run: HTMLElement[] = []
   // the inputs are static band data and anchor-line heights, so the writes
   // can wait until the walk has read everything (no layout per anchor run)
   const writes: Array<[HTMLElement, number]> = []
+  const drops: Array<[HTMLElement, number]> = []
   const apply = (el: HTMLElement, minHeight: number): void => {
     writes.push([el, minHeight])
+  }
+  const lineOf = (el: HTMLElement): HTMLElement | null =>
+    el.querySelector<HTMLElement>(':scope > .doc-anchor-strut, :scope > .doc-textbox-stray')
+  // a previously applied drop pads the strut: not part of the line
+  const lineHeightOf = (el: HTMLElement): number => {
+    const strut = lineOf(el)
+    if (!strut) return 0
+    return strut.getBoundingClientRect().height / factor - (parseFloat(strut.style.paddingTop) || 0)
+  }
+  // Word lays a lone anchor paragraph's own line out against its own bands too:
+  // a wrapTopAndBottom box cutting into the line pushes the line below the box
+  // (probe: 1.5pt rules at 0..20pt of a 20.7pt line all drop it, at 25pt not).
+  // Word 2013+ tests the box against the text box of the line (single spacing,
+  // top-aligned), Word 2010 against the whole line. Runs keep their photo-wall
+  // layout: a member's own drop is cleared.
+  const ownDrop = (el: HTMLElement, line: number, inRun: boolean): number => {
+    const strut = lineOf(el)
+    if (!strut) return 0
+    if (inRun || line <= 0 || el.dataset.bandBeside === '1' || el.dataset.bandKeep === '1') {
+      drops.push([strut, 0])
+      return 0
+    }
+    const lineTop = (strut.getBoundingClientRect().top - el.getBoundingClientRect().top) / factor
+    const bands = bandsOf(el)
+    const textH = modernLayout && bands.length ? line / autoLineMultOf(strut) : line
+    let top = lineTop
+    for (let guard = 0; guard < 64; guard++) {
+      const hit = bands.filter(([a, b]) => a < top + textH && b > top)
+      if (hit.length === 0) break
+      top = Math.max(...hit.map(([, b]) => b))
+    }
+    const drop = Math.max(0, Math.round(top - lineTop))
+    drops.push([strut, drop])
+    return drop
   }
   const commit = (el: HTMLElement, minHeight: number): void => {
     const own = Math.round(parseFloat(el.dataset.band ?? '0') || 0)
@@ -1288,10 +1337,7 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
       (next.tagName === 'TABLE' || next.querySelector('table'))
     ) {
       const own = Math.round(parseFloat(besideBand.dataset.band ?? '0') || 0)
-      const line =
-        (besideBand
-          .querySelector(':scope > .doc-anchor-strut, :scope > .doc-textbox-stray')
-          ?.getBoundingClientRect().height ?? 0) / factor
+      const line = lineHeightOf(besideBand)
       apply(besideBand, Math.max(Math.round(line), Math.round(own - besideEmpties)))
     }
     besideBand = null
@@ -1303,14 +1349,18 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
       const tops: number[] = []
       let t = 0
       let bottom = 0
+      // an anchor line that a band pushes down lands below every band it has
+      // passed, never in a gap between two rows of an earlier wrapper (Word's
+      // text position only moves down past a wrapTopAndBottom band). Side-room
+      // bands (data-band-beside) are excluded: their paragraphs do lay out
+      // next to the boxes.
+      let floor = 0
       for (const el of run) {
-        const line =
-          (el
-            .querySelector(':scope > .doc-anchor-strut, :scope > .doc-textbox-stray')
-            ?.getBoundingClientRect().height ?? 0) / factor
-        // the anchor's own line lands on the first slot not substantially
-        // covered by earlier bands (Word excludes text lines from wrap bands;
-        // the half-line tolerance absorbs our taller-than-Word line boxes)
+        const line = lineHeightOf(el)
+        // the anchor's own line stays put when earlier bands barely graze it
+        // (Word excludes text lines from wrap bands; the half-line tolerance
+        // absorbs our taller-than-Word line boxes) and otherwise drops below
+        // every band passed so far
         const merged = mergedOf(intervals)
         let cand = t
         for (let guard = 0; guard < 64 && line > 0; guard++) {
@@ -1320,13 +1370,16 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
             0,
           )
           if (covered <= line / 2) break
-          cand = Math.min(...hit.map(([, b]) => b))
+          cand = Math.max(floor, Math.min(...hit.map(([, b]) => b)))
         }
         tops.push(cand)
+        const beside = el.dataset.bandBeside === '1'
         for (const [a, b] of bandsOf(el)) {
           intervals.push([cand + a, cand + b])
           bottom = Math.max(bottom, cand + b)
+          if (!beside) floor = Math.max(floor, cand + b)
         }
+        ownDrop(el, line, true)
         t = cand + line
         bottom = Math.max(bottom, t)
       }
@@ -1336,6 +1389,7 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
       })
     } else if (run.length === 1) {
       apply(run[0], Math.round(parseFloat(run[0].dataset.band ?? '0') || 0))
+      ownDrop(run[0], lineHeightOf(run[0]), false)
     }
     const last = run[run.length - 1]
     if (last?.dataset.bandBeside === '1') besideBand = last
@@ -1372,6 +1426,10 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
   flush()
   settleBeside(null)
   for (const [el, minHeight] of writes) commit(el, minHeight)
+  for (const [strut, drop] of drops) {
+    const next = drop > 0 ? `${drop}px` : ''
+    if (strut.style.paddingTop !== next) strut.style.paddingTop = next
+  }
 }
 
 /**

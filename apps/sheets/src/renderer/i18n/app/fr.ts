@@ -720,7 +720,7 @@ export const fr = {
   appTabData: 'Données',
   appTabReview: 'Révision',
   appRibbonCollapse: 'Réduire le ruban',
-  appRibbonPin: 'Épingler le ruban',
+  appRibbonExpand: 'Développer le ruban',
   appTabView: 'Affichage',
   appTabAi: 'IA',
   appTabChartDesign: 'Création de graphique',

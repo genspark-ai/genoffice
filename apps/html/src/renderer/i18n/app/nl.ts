@@ -7,6 +7,8 @@ export const nl = {
   saveFailed: 'Opslaan mislukt: {error}',
   saveFailedStatus: 'Opslaan mislukt',
   exportFailed: 'Exporteren mislukt',
+  exportHtmlSkipped:
+    'Geëxporteerd, maar {count} bron(nen) konden niet worden ingesloten (bijv. {first})',
   viewPreview: 'Voorbeeld',
   viewSplit: 'Gesplitst',
   viewSource: 'Bron',
@@ -55,7 +57,6 @@ export const nl = {
   save: 'Opslaan (⌘S)',
   saveAs: 'Opslaan als…',
   ribbonCollapse: 'Het lint samenvouwen',
-  ribbonPin: 'Het lint vastmaken',
   ribbonExpand: 'Het lint uitvouwen',
   ribbonGroupInsert: 'Invoegen',
   editText: 'Tekst bewerken',

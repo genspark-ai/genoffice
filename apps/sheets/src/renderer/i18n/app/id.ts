@@ -660,7 +660,7 @@ export const id = {
   appTabData: 'Data',
   appTabReview: 'Tinjau',
   appRibbonCollapse: 'Ciutkan Pita',
-  appRibbonPin: 'Sematkan Pita',
+  appRibbonExpand: 'Perluas Pita',
   appTabView: 'Tampilan',
   appTabAi: 'AI',
   appTabChartDesign: 'Desain Bagan',

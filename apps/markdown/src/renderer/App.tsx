@@ -42,10 +42,10 @@ import { AiPanel, GensparkMark, type AiPreset, type MarkdownAiDeps } from './ai/
 import { EDIT_QUEUE_MAX, selectionForAnchor, type EditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/aiQueueAnchors'
 import { DOCX_MAX_IMAGE_PX, exportDocxBytes } from './export/docxExport'
+import { decodeImageDataUrl, toDocxImage } from './export/exportImage'
 import { buildPrintHtml } from './export/printHtml'
 import { diagramSvgToPng, renderDiagram } from './editor/diagrams'
 import type { DiagramLanguage } from './editor/diagrams'
-import { resolveImageSrc } from './editor/localImage'
 import type { ExportFormat, SaveMode } from '../shared/ipc'
 import { uiOp } from './editor/ops'
 
@@ -104,15 +104,6 @@ function applyImageRewrites(
 }
 
 /** Measure a document image via the DOM (the editor already displays it) */
-function measureImage(displaySrc: string): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolvePromise) => {
-    const img = new Image()
-    img.onload = () => resolvePromise({ width: img.naturalWidth, height: img.naturalHeight })
-    img.onerror = () => resolvePromise(null)
-    img.src = displaySrc
-  })
-}
-
 /** File name for an AI-generated untitled document: first heading, else first words */
 export function deriveAutoFileName(editor: Editor): string {
   const doc = editor.state.doc
@@ -460,16 +451,8 @@ export default function App() {
         return result.ok && !('canceled' in result)
       }
       const loadImage = async (src: string) => {
-        const data = await window.markdownApi.readImage(src)
-        if (!data) return null
-        const dims = await measureImage(resolveImageSrc(src))
-        let width = dims?.width || 400
-        let height = dims?.height || 300
-        if (width > DOCX_MAX_IMAGE_PX) {
-          height = Math.round((height * DOCX_MAX_IMAGE_PX) / width)
-          width = DOCX_MAX_IMAGE_PX
-        }
-        return { base64: data.base64, mime: data.mime, widthPx: width, heightPx: height }
+        const data = decodeImageDataUrl(src) ?? (await window.markdownApi.readImage(src))
+        return data ? toDocxImage(data, DOCX_MAX_IMAGE_PX) : null
       }
       const rasterizeDiagram = async (source: string, language: DiagramLanguage) => {
         const result = await renderDiagram(language, source)

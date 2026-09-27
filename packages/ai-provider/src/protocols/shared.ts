@@ -280,14 +280,23 @@ export function throwIfCreditsNotice(bodyText: string): void {
 /** Don't throw on parse failure (it would kill the whole stream); return error so the loop feeds it back for retry */
 export function parseToolInput(json: string): { input: Record<string, unknown>; error?: string } {
   if (!json.trim()) return { input: {} }
+  let parsed: unknown
   try {
-    return { input: JSON.parse(json) as Record<string, unknown> }
+    parsed = JSON.parse(json)
   } catch (e) {
     try {
-      return { input: JSON.parse(repairUnescapedQuotes(json)) as Record<string, unknown> }
+      parsed = JSON.parse(repairUnescapedQuotes(json))
     } catch {
       const msg = e instanceof Error ? e.message : String(e)
       return { input: {}, error: `${msg}; raw: ${json.slice(0, 500)}` }
     }
   }
+  if (!isPlainObject(parsed)) {
+    return { input: {}, error: `tool input must be a JSON object; raw: ${json.slice(0, 500)}` }
+  }
+  return { input: parsed }
+}
+
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

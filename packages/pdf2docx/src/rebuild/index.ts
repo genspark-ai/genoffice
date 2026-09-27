@@ -52,6 +52,7 @@ import type {
   TableBlock,
   TextBlock,
 } from '../ir'
+import { pageAnchorName } from '../ir'
 import type { UnicodeScript } from '../script'
 import { isEastAsianScript, isNoSpaceScript } from '../script'
 
@@ -264,6 +265,9 @@ export function nearestHighlight(hex: string): string | undefined {
   return best === 'white' ? undefined : best
 }
 
+/** Word's font size ceiling, 1638 pt */
+const MAX_HALF_POINTS = 3276
+
 function runFromSpan(span: Span): Run {
   // footnote anchor (P6): a bare reference-marker run — Word renders the
   // number itself, the span's own text stays empty
@@ -281,10 +285,9 @@ function runFromSpan(span: Span): Run {
   }
   if (span.color && span.color !== '000000') run.color = span.color
   const halfPoints = Math.round(span.fontSize * 2)
-  // A corrupt declared size (Infinity from a bad Tf operand, or a magnitude
-  // that prints in exponential notation) would land verbatim as w:val and
-  // produce schema-invalid XML; omit the size and let Word fall back instead.
-  if (Number.isSafeInteger(halfPoints) && halfPoints > 0) run.sizeHalfPoints = halfPoints
+  // corrupt Tf operands (Infinity, 1e22) would otherwise land verbatim in w:val
+  if (Number.isInteger(halfPoints) && halfPoints > 0 && halfPoints <= MAX_HALF_POINTS)
+    run.sizeHalfPoints = halfPoints
   if (span.fontFamily) {
     // CJK-family scripts fill the w:eastAsia slot (docx-engine Run.font);
     // everything else declares only the Latin slots (fontAscii)
@@ -295,19 +298,19 @@ function runFromSpan(span: Span): Run {
     run.rtl = true
     run.fontCs = span.fontFamily || RTL_FALLBACK_CS_FONT[span.script] || 'Traditional Arabic'
   }
-  // character compression (P5): w:w / w:spacing are outside docx-engine's run
-  // model — they ride in rawRPr, whose unmanaged children survive generation
-  const compression: string[] = []
   // invisible source text (PDF Tr 3/7, Word's hidden formatting marks like
   // section-break labels): w:vanish keeps it present but unseen, as in the source (P20)
-  if (span.invisible) compression.push('<w:vanish/>')
-  if (span.charSpacingPt !== undefined && Number.isFinite(span.charSpacingPt)) {
-    compression.push(`<w:spacing w:val="${Math.round(span.charSpacingPt * 20)}"/>`)
+  if (span.invisible) {
+    run.vanish = true
+    run.vanishOwn = true
   }
-  if (span.charScale !== undefined && Number.isFinite(span.charScale)) {
-    compression.push(`<w:w w:val="${Math.round(span.charScale * 100)}"/>`)
+  // character compression (P5)
+  if (span.charSpacingPt !== undefined) run.charSpacingTwips = Math.round(span.charSpacingPt * 20)
+  if (span.charScale !== undefined) {
+    const pct = Math.round(span.charScale * 100)
+    if (pct !== 100) run.charScalePct = pct
   }
-  if (compression.length > 0) run.rawRPr = `<w:rPr>${compression.join('')}</w:rPr>`
+  if (span.href !== undefined) run.link = { href: span.href }
   return run
 }
 
@@ -323,7 +326,10 @@ const sameRunStyle = (a: Run, b: Run): boolean =>
   a.fontAscii === b.fontAscii &&
   a.fontCs === b.fontCs &&
   a.rtl === b.rtl &&
-  a.rawRPr === b.rawRPr
+  a.vanishOwn === b.vanishOwn &&
+  a.charSpacingTwips === b.charSpacingTwips &&
+  a.charScalePct === b.charScalePct &&
+  a.link?.href === b.link?.href
 
 function pushRun(runs: Run[], run: Run): void {
   const last = runs[runs.length - 1]
@@ -737,7 +743,11 @@ function tocToSave(
   const numberXml =
     '<w:r><w:tab/></w:r>' +
     rawRunXml({ ...(runs[runs.length - 1] ?? { text: '' }), text: toc.pageNumber })
-  return { kind: 'xml', xml: `<w:p>${pPr}${titleXml}${numberXml}</w:p>` }
+  const anchor = runs.find((r) => r.link?.href.startsWith('#'))?.link?.href.slice(1)
+  const body = anchor
+    ? `<w:hyperlink w:anchor="${escXml(anchor)}">${titleXml}${numberXml}</w:hyperlink>`
+    : `${titleXml}${numberXml}`
+  return { kind: 'xml', xml: `<w:p>${pPr}${body}</w:p>` }
 }
 
 /** cell content → docx-engine rich cell paragraphs (RTL/alignment per block) */
@@ -1756,6 +1766,26 @@ const sectionsFromBlocks = (blocks: PageBlock[]): PageSection[] =>
         },
       ]
 
+/** 0-based indexes of the pages some `#_pdfpageN` link points at */
+function internalLinkTargets(pages: readonly IrPage[]): Set<number> {
+  const targets = new Set<number>()
+  const visit = (block: PageBlock): void => {
+    if (block.kind === 'table') {
+      for (const row of block.rows) for (const cell of row) cell.blocks.forEach(visit)
+      return
+    }
+    if (block.kind !== 'text') return
+    for (const line of block.lines) {
+      for (const span of line.spans) {
+        const m = span.href !== undefined ? /^#_pdfpage(\d+)$/.exec(span.href) : null
+        if (m) targets.add(Number(m[1]) - 1)
+      }
+    }
+  }
+  for (const page of pages) page.blocks.forEach(visit)
+  return targets
+}
+
 export function pagesToSaveBlocks(
   pages: IrPage[],
   furnitureHf: readonly FurnitureHf[] = [],
@@ -1794,6 +1824,12 @@ export function pagesToSaveBlocks(
   // page with y resolved against the unrotated page box), so a canvas page
   // must both OPEN and CLOSE its own section even when signatures match
   let forceClose = false
+  // in-document link targets (P33): the first paragraph emitted for a target
+  // page carries the `_pdfpageN` bookmark its w:hyperlink anchors point at
+  const linkTargets = internalLinkTargets(pages)
+  const pageRanges: { index: number; start: number; end: number }[] = []
+  const curRange = (): { index: number; start: number; end: number } | undefined =>
+    pageRanges[pageRanges.length - 1]
 
   const openSection = (sig: SectionSignature, atPageStart: boolean): void => {
     if (curSig === null) {
@@ -1817,6 +1853,13 @@ export function pagesToSaveBlocks(
       sig.pageHeightTwips = curSig.pageHeightTwips
     }
     blocks.push(sectionBreakParagraph(curSig, geo, curStart, titlePgPending))
+    // the break paragraph closes the PREVIOUS page; the new page starts after it
+    if (atPageStart) {
+      const cur = curRange()
+      const prev = pageRanges[pageRanges.length - 2]
+      if (prev) prev.end = blocks.length
+      if (cur) cur.start = blocks.length
+    }
     titlePgPending = false
     sectionBreaks++
     lastWasTable = false
@@ -1829,6 +1872,9 @@ export function pagesToSaveBlocks(
     // a stitched cross-page paragraph flows naturally — no explicit break (P32)
     needBreak = page.index > 0 && page.flowsFromPrev !== true
     const pageStartBlockCount = blocks.length
+    const prevRange = curRange()
+    if (prevRange) prevRange.end = blocks.length
+    pageRanges.push({ index: page.index, start: blocks.length, end: blocks.length })
 
     if ((page.scanned || page.degraded) && page.render) {
       openSection(singleColumnSig(page), needBreak)
@@ -2377,7 +2423,22 @@ export function pagesToSaveBlocks(
       blocks.push(emptyParagraph())
     }
   }
+  const lastRange = curRange()
+  if (lastRange) lastRange.end = blocks.length
   if (lastWasTable) blocks.push(emptyParagraph())
+  // later pages first: an inserted placeholder must not shift unprocessed ranges
+  for (const { index, start, end } of [...pageRanges].reverse()) {
+    if (!linkTargets.has(index)) continue
+    const name = pageAnchorName(index)
+    const first = blocks.slice(start, end).find((b) => b.kind === 'generated')
+    if (first?.kind === 'generated') {
+      ;(first.block.hiddenBookmarks ??= []).push(name)
+    } else {
+      const holder = emptyParagraph()
+      if (holder.kind === 'generated') holder.block.hiddenBookmarks = [name]
+      blocks.splice(start, 0, holder)
+    }
+  }
 
   // the last open section's properties land in the trailing body sectPr
   const finalSig: SectionSignature =

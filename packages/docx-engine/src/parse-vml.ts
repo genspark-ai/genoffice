@@ -51,15 +51,56 @@ export function vmlRotationDeg(style: string): number | undefined {
  * fields. mso-position-*-relative "text"/"column" is the paragraph box (the
  * margin box in a header); a keyword alignment wins over the margin offsets.
  */
+/** wp:positionH relativeFrom / VML mso-position-horizontal-relative → placement band */
+export function anchorRelH(rel: string | undefined): NonNullable<HfImage['posHRel']> {
+  switch (rel) {
+    case 'page':
+      return 'page'
+    case 'leftMargin':
+    case 'insideMargin':
+    case 'left-margin-area':
+    case 'inner-margin-area':
+      return 'leftMargin'
+    case 'rightMargin':
+    case 'outsideMargin':
+    case 'right-margin-area':
+    case 'outer-margin-area':
+      return 'rightMargin'
+    default:
+      return 'margin'
+  }
+}
+
+/** wp:positionV relativeFrom / VML mso-position-vertical-relative → placement band */
+export function anchorRelV(rel: string | undefined): NonNullable<HfImage['posVRel']> {
+  switch (rel) {
+    case 'page':
+      return 'page'
+    case 'paragraph':
+    case 'line':
+    case 'text':
+      return 'paragraph'
+    case 'topMargin':
+    case 'insideMargin':
+    case 'top-margin-area':
+    case 'inner-margin-area':
+      return 'topMargin'
+    case 'bottomMargin':
+    case 'outsideMargin':
+    case 'bottom-margin-area':
+    case 'outer-margin-area':
+      return 'bottomMargin'
+    default:
+      return 'margin'
+  }
+}
+
 export function vmlFloatAnchor(
   style: string,
   out: Pick<HfImage, 'posH' | 'posV' | 'posXPx' | 'posYPx' | 'posHRel' | 'posVRel'>,
 ): void {
-  const relH = vmlStyleProp(style, 'mso-position-horizontal-relative')
-  const relV = vmlStyleProp(style, 'mso-position-vertical-relative')
-  out.posHRel = relH === 'page' ? 'page' : 'margin'
-  out.posVRel =
-    relV === 'page' ? 'page' : relV === 'text' || relV === 'line' ? 'paragraph' : 'margin'
+  out.posHRel = anchorRelH(vmlStyleProp(style, 'mso-position-horizontal-relative'))
+  out.posVRel = anchorRelV(vmlStyleProp(style, 'mso-position-vertical-relative'))
   const posH = vmlStyleProp(style, 'mso-position-horizontal')
   const posV = vmlStyleProp(style, 'mso-position-vertical')
   if (posH === 'left' || posH === 'center' || posH === 'right') out.posH = posH

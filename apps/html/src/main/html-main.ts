@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   BrowserWindow,
@@ -50,6 +50,7 @@ import {
   copyImageIntoOwnedAssets,
   discardPendingOwnedAssets,
   extractHtmlImageSources,
+  isInDocDir,
   pendingOwnedAssetsForDocument,
   prepareAssetsForSaveAs,
   reconcileOwnedAssets,
@@ -1191,7 +1192,7 @@ function registerImageProtocol(): void {
     let inDocDir = false
     for (const doc of new Set([...openPathByWc.values(), ...savePathByWc.values()])) {
       const dir = resolve(dirname(doc))
-      if (target === dir || !target.startsWith(dir + sep)) continue
+      if (!isInDocDir(target, dir)) continue
       if (await resolveSafeRelativeImagePath(doc, relative(dir, target))) {
         inDocDir = true
         break
@@ -1686,10 +1687,12 @@ function registerHtmlIpc(): void {
         return { ok: false, error: 'single-file export cannot overwrite the open document' }
       }
       try {
-        const { html } = await inlineImagesForSingleFile(request.html, docPath)
+        const { html, skipped } = await inlineImagesForSingleFile(request.html, docPath)
         await writeFile(picked.filePath, html, 'utf8')
         if (!isHeadlessMode()) shell.showItemInFolder(picked.filePath)
-        return { ok: true, path: picked.filePath }
+        return skipped.length
+          ? { ok: true, path: picked.filePath, skipped }
+          : { ok: true, path: picked.filePath }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }

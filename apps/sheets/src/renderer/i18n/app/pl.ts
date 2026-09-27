@@ -686,7 +686,7 @@ export const pl = {
   appTabData: 'Dane',
   appTabReview: 'Recenzja',
   appRibbonCollapse: 'Zwiń Wstążkę',
-  appRibbonPin: 'Przypnij Wstążkę',
+  appRibbonExpand: 'Rozwiń Wstążkę',
   appTabView: 'Widok',
   appTabAi: 'AI',
   appTabChartDesign: 'Projekt wykresu',

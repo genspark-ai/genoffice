@@ -17,7 +17,10 @@ import {
   type SheetStructuralOps,
   type XlsxMutation,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
-import { maxRelationshipId, type SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
+import {
+  nextFreeRelationshipId,
+  type SheetEditPlan,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { EMPTY_PAYLOADS, type GatewayPayloads } from './xlsx-gateway-ops'
 import type { WorkbookStyleEdit } from '@genoffice/xlsx-gateway/shared/edit-schemas'
 import {
@@ -1010,7 +1013,7 @@ export async function blankWorkbook(sheetName = 'Sheet1'): Promise<Buffer> {
       'xl/_rels/workbook.xml.rels',
       rels.replace(
         '</Relationships>',
-        `<Relationship Id="rId${maxRelationshipId(rels) + 1}" ` +
+        `<Relationship Id="${nextFreeRelationshipId(rels)}" ` +
           `Type="${STYLES_REL_TYPE}" Target="styles.xml"/></Relationships>`,
       ),
     )

@@ -107,6 +107,7 @@ export const he = {
   appPasteOptSource: 'שמור על עיצוב המקור',
   appPasteOptTheme: 'השתמש בערכת הנושא של היעד',
   appStatusPasteOptionsExpired: 'אפשרויות ההדבקה אינן זמינות עוד',
+  appStatusPasteTruncated: 'הטקסט שהודבק ארוך מדי ונחתך',
   appCtxHideSlide: 'הסתר שקופית',
   appCtxUnhideSlide: 'בטל הסתרת שקופית',
   appCtxAddSectionBefore: 'הוסף מקטע (לפני שקופית זו)',

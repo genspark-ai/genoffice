@@ -695,7 +695,7 @@ export const nl = {
   appTabData: 'Gegevens',
   appTabReview: 'Controleren',
   appRibbonCollapse: 'Het lint samenvouwen',
-  appRibbonPin: 'Het lint vastmaken',
+  appRibbonExpand: 'Het lint uitvouwen',
   appTabView: 'Beeld',
   appTabAi: 'AI',
   appTabChartDesign: 'Grafiekontwerp',

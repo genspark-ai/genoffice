@@ -129,8 +129,8 @@ export function registerAiIpc(): void {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
-  ipcMain.handle('ai:set-settings', async (_event, settings: AiSettings) => {
-    await writeJsonAtomic(AI_SETTINGS_PATH(), settings)
+  ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
+    writeJsonAtomic(AI_SETTINGS_PATH(), settings)
   })
 
   ipcMain.handle('ai:log-run-failure', (_event, entry: AiRunFailure) => {
@@ -494,7 +494,7 @@ export function registerSlidesOnlyAiIpc(): void {
         // Filename: replace illegal characters in the name with _ then truncate to 64 chars
         const safeName = name.replace(/[/\\:*?"<>|]/g, '_').slice(0, 64)
         if (!safeName) return { ok: false, error: tm('errTplNameInvalid') }
-        await writeJsonAtomic(join(dir, `${safeName}.json`), { ...data, name: safeName })
+        writeJsonAtomic(join(dir, `${safeName}.json`), { ...data, name: safeName })
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

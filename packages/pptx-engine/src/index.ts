@@ -64,6 +64,7 @@ import { ensureCreationId, matchesElementRef } from './identity'
 import { listMasterParts, parseMasterPart } from './master-edit'
 import type {
   Paragraph,
+  TextRun,
   PPrDirty,
   SlideDeck,
   Slide,
@@ -170,6 +171,7 @@ export {
   buildSpXml,
   buildTableXml,
   buildTableGridXml,
+  MAX_INSERT_TABLE_DIM,
   buildGrpSpXml,
   calcBoundingBox,
   type NewElementOptions,
@@ -3145,52 +3147,75 @@ export function replaceAllInDeck(
   let count = 0
   const changed = new Set<number>()
 
+  // A field run or an <a:br/> soft-break sentinel is a hard barrier: matches may
+  // only span the consecutive plain runs between them.
+  const isBarrier = (r: TextRun): boolean => !!r.field || r.text === '\n'
+  const segmentsOf = (p: Paragraph): TextRun[][] => {
+    const segments: TextRun[][] = []
+    let current: TextRun[] = []
+    for (const r of p.runs) {
+      if (isBarrier(r)) {
+        if (current.length) segments.push(current)
+        current = []
+      } else if (r.text) current.push(r)
+    }
+    if (current.length) segments.push(current)
+    return segments
+  }
+
   const replaceInParagraphs = (paragraphs: Paragraph[]): boolean => {
     let hit = false
     for (const p of paragraphs) {
       if (budget <= 0) return hit
-      const runs = p.runs.filter((r) => !r.field && !!r.text)
-      if (!runs.length) continue
-      let full = ''
-      const ends: number[] = []
-      for (const r of runs) {
-        full += r.text
-        ends.push(full.length)
+      for (const runs of segmentsOf(p)) {
+        if (budget <= 0) return hit
+        hit = replaceInRuns(runs) || hit
       }
-      const out = runs.map(() => '')
-      const runAt = (offset: number): number => {
-        for (let k = 0; k < ends.length; k++) if (offset < ends[k]!) return k
-        return ends.length - 1
+    }
+    return hit
+  }
+
+  const replaceInRuns = (runs: TextRun[]): boolean => {
+    let hit = false
+    let full = ''
+    const ends: number[] = []
+    for (const r of runs) {
+      full += r.text
+      ends.push(full.length)
+    }
+    const out = runs.map(() => '')
+    const runAt = (offset: number): number => {
+      for (let k = 0; k < ends.length; k++) if (offset < ends[k]!) return k
+      return ends.length - 1
+    }
+    const keep = (from: number, to: number): void => {
+      let off = from
+      for (let k = 0; k < ends.length && off < to; k++) {
+        const end = ends[k]!
+        if (end <= off) continue
+        const take = Math.min(end, to) - off
+        out[k] += full.slice(off, off + take)
+        off += take
       }
-      const keep = (from: number, to: number): void => {
-        let off = from
-        for (let k = 0; k < ends.length && off < to; k++) {
-          const end = ends[k]!
-          if (end <= off) continue
-          const take = Math.min(end, to) - off
-          out[k] += full.slice(off, off + take)
-          off += take
-        }
+    }
+    re.lastIndex = 0
+    let cursor = 0
+    let n = 0
+    let m: RegExpExecArray | null
+    while (budget > 0 && (m = re.exec(full)) !== null) {
+      n++
+      budget--
+      keep(cursor, m.index)
+      out[runAt(m.index)] += replace
+      cursor = m.index + m[0].length
+    }
+    if (n > 0) {
+      keep(cursor, full.length)
+      for (let i = 0; i < runs.length; i++) {
+        if (runs[i]!.text !== out[i]) runs[i]!.text = out[i]!
       }
-      re.lastIndex = 0
-      let cursor = 0
-      let n = 0
-      let m: RegExpExecArray | null
-      while (budget > 0 && (m = re.exec(full)) !== null) {
-        n++
-        budget--
-        keep(cursor, m.index)
-        out[runAt(m.index)] += replace
-        cursor = m.index + m[0].length
-      }
-      if (n > 0) {
-        keep(cursor, full.length)
-        for (let i = 0; i < runs.length; i++) {
-          if (runs[i]!.text !== out[i]) runs[i]!.text = out[i]!
-        }
-        count += n
-        hit = true
-      }
+      count += n
+      hit = true
     }
     return hit
   }

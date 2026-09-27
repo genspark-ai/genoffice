@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_SHAPE_EMU,
+  commitSizeEmu,
   commitTargetY,
   drawRectToEmu,
   resolveDrawRect,
@@ -47,6 +48,17 @@ describe('drawRectToEmu', () => {
 describe('single-click default', () => {
   it('is Word parity: 1x1 inch', () => {
     expect(DEFAULT_SHAPE_EMU).toBe(914400)
+  })
+
+  it('commitSizeEmu inserts the predefined size on a click and the drawn rect on a drag', () => {
+    const rect = { x: 0, y: 0, w: 96, h: 48 }
+    expect(commitSizeEmu(rect, true, 1)).toEqual({ widthEmu: 914400, heightEmu: 914400 })
+    const textbox = { widthEmu: 1800000, heightEmu: 1080000 }
+    expect(commitSizeEmu(rect, true, 1, textbox)).toEqual(textbox)
+    expect(commitSizeEmu(rect, false, 1, textbox)).toEqual({
+      widthEmu: 96 * 9525,
+      heightEmu: 48 * 9525,
+    })
   })
 })
 

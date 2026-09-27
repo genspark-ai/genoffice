@@ -23,6 +23,7 @@ export type ErrorReason =
   | 'unsupported'
   | 'unknown_op'
   | 'op_rejected'
+  | 'unresolved_placeholder'
   | 'target_not_found'
   | 'out_of_range'
   | 'sheet_not_found'

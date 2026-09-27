@@ -3,6 +3,7 @@ import type {
   RecommendedKind,
 } from '@genoffice/xlsx-gateway/domain/chart-recommend'
 import { useI18n, type StringKey } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Insert → Recommended Charts: ranked suggestions with a mini
 /// preview sketched from the actual selection, one click to insert.
@@ -278,11 +279,13 @@ export function RecommendedChartsDialog({
   readonly onClose: () => void
 }): React.JSX.Element {
   const { t } = useI18n()
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog recommended-charts-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgRecoTitle')}
         onClick={(event) => event.stopPropagation()}
       >

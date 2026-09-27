@@ -62,3 +62,19 @@ describe('cross-sheet replay of qualified targets', () => {
     ).toThrow(StructuralShiftError)
   })
 })
+
+describe('hyperlink location attribute escaping', () => {
+  it('keeps a quote in a quoted sheet name attribute-encoded', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <hyperlinks>
+    <hyperlink ref="A2" location="Data!$A$5" display="go"/>
+    <hyperlink ref="A3" location="'Re&quot;port'!$A$5" display="stay"/>
+  </hyperlinks>
+</worksheet>`
+    const shifted = shiftCrossSheetFormulas(xml, EDITED, ROW_INSERT)
+    expect(shifted).toContain('location="Data!$A$6"')
+    expect(shifted).toContain(`location="'Re&quot;port'!$A$5"`)
+    expect(shifted).not.toContain(`'Re"port'`)
+  })
+})

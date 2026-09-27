@@ -270,8 +270,8 @@ export interface NewTableOptions {
 /** PowerPoint's default style for new tables (Medium Style 2 - Accent 1, built-in fallback in the render layer) */
 const DEFAULT_TABLE_STYLE_ID = '{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}'
 
-/** Largest row/column count an inserted table may have. */
-const MAX_INSERT_TABLE_DIM = 50
+/** Largest row/column count an inserted table may have (PowerPoint's Insert Table limit). */
+export const MAX_INSERT_TABLE_DIM = 75
 
 /** Finite integer clamp with a safe fallback (NaN/Infinity land on `fallback`). */
 function clampInt(v: number, min: number, max: number, fallback = min): number {
@@ -305,8 +305,8 @@ export function buildTableXml(slide: Slide, opts: NewTableOptions): string {
   const cellXml = (r: number, c: number): string => {
     const p = opts.cellProps?.[r]?.[c]
     const attrs: string[] = []
-    const gridSpan = p?.gridSpan !== undefined ? clampInt(p.gridSpan, 1, cols) : 1
-    const rowSpan = p?.rowSpan !== undefined ? clampInt(p.rowSpan, 1, rows) : 1
+    const gridSpan = p?.gridSpan !== undefined ? clampInt(p.gridSpan, 1, cols - c) : 1
+    const rowSpan = p?.rowSpan !== undefined ? clampInt(p.rowSpan, 1, rows - r) : 1
     if (gridSpan > 1) attrs.push(`gridSpan="${gridSpan}"`)
     if (rowSpan > 1) attrs.push(`rowSpan="${rowSpan}"`)
     if (p?.hMerge) attrs.push('hMerge="1"')

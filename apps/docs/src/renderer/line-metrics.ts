@@ -23,7 +23,7 @@
  *   - space-before/space-after keep their face value (Word does not grid-snap them)
  */
 
-import type { DocGrid } from '@genoffice/docx-engine'
+import type { DocGrid, Run } from '@genoffice/docx-engine'
 
 // ─── Font metrics interface (same interface as pptx-render/metrics.ts) ─────
 
@@ -202,8 +202,28 @@ const SYMBOL_FACE_FACTORS: Record<string, number> = {
 /** Segoe UI text family (not the Emoji/Symbol/Historic/Print/Script cuts) */
 const SEGOE_UI_TEXT_RE = /^segoe ui( (light|semilight|semibold|black|variable))?$/
 
+/** line boxes of the open document's embedded faces, keyed like docFontTable */
+let embeddedLineBoxes = new Map<string, { factor: number; descent: number }>()
+
+/** first entry per family wins: callers list the regular cut first */
+export function setEmbeddedLineMetrics(
+  faces: ReadonlyArray<{ family: string; ascent: number; descent: number; lineGap: number }>,
+): void {
+  embeddedLineBoxes = new Map()
+  for (const f of faces) {
+    const key = f.family.normalize('NFKC').toLowerCase().trim()
+    const factor = f.ascent + f.descent + f.lineGap
+    if (embeddedLineBoxes.has(key) || !(factor > 0.5 && factor < 4)) continue
+    embeddedLineBoxes.set(key, { factor: Math.round(factor * 1e4) / 1e4, descent: f.descent })
+  }
+}
+
 export function lineHeightFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
+  // an embedded face renders real: Word lays it with its own hhea total
+  // (probe 2026-09-23, typo/win groups and USE_TYPO_METRICS ignored)
+  const embedded = embeddedLineBoxes.get(f.normalize('NFKC').trim())
+  if (embedded) return embedded.factor
   const symbolFace = SYMBOL_FACE_FACTORS[f.trim()]
   if (symbolFace !== undefined) return symbolFace
   // Aptos (M365 cloud face): Word probe 2026-08-22 measured 1.22, same as Calibri
@@ -216,6 +236,7 @@ export function lineHeightFactor(fontFamily: string): number {
   // its hhea total (1.15em) × Word's 1.3 EA multiplier (the same rule
   // reproduces Batang 1.3029, Malgun 1.7371, Meiryo 1.9429, Yu 1.44);
   // ink-band measured 20.24pt at 10pt/1.35x on regression sample run7/19
+  if (krBatangAltNamed(fontFamily)) return 1.3029
   if (/nanum ?gothic|나눔 ?고딕/.test(f)) return 1.495
   // NanumMyeongjo: the OS downloadable asset renders real (Word probe
   // 2026-08-24: 18pt @12pt and 53.9pt @36pt = 1.5, its hhea 1.154 x 1.3);
@@ -285,6 +306,9 @@ export function lineHeightFactor(fontFamily: string): number {
   ) {
     return 1.775
   }
+  // DFKai-SB is missing on Word for Mac, which lays it out as Microsoft YaHei
+  // (probe 2026-09-23: 20.6pt @12pt)
+  if (/\u6a19\u6977|dfkai/.test(f)) return 1.7143
   // Traditional Chinese sans/kai faces use the PingFang TC class.
   if (/jhenghei|正黑|標楷|biaukai|dfkai|kaiu/.test(f)) return 1.775
   // Traditional/Simplified Arabic are M365 cloud fonts Word downloads and
@@ -325,7 +349,10 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f.includes('poppins')) return 1.5
   // Microsoft New Tai Lue ships with Office (probe 2026-08-23: 1.31 = Win metrics)
   if (f.includes('new tai lue')) return 1.31
-  if (f.includes('helvetica')) return 1.0
+  // Helvetica renders real on Word for Mac (PDF embeds it) at 12.6pt @10.5pt
+  // single spacing = 1.2 (corpus 2026-09-24); Helvetica Neue stays unprobed
+  if (f.includes('helvetica neue')) return 1.0
+  if (f.includes('helvetica')) return 1.2
   // Arial Unicode MS carries CJK glyphs with tall metrics (Word probe 2026-08-22)
   if (f.includes('arial unicode')) return 1.74
   if (f === 'arial' || f.startsWith('arial ') || f.includes('liberation sans')) return 1.15
@@ -360,6 +387,9 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f === 'inter' || f.startsWith('inter ')) return 1.21
   if (f.includes('ubuntu')) return 1.15
   if (f.includes('avenir')) return 1.369
+  // Office DFonts face Word renders real: hhea 2098/727/0 over 2048 (Word
+  // PDF pitch 16.55pt @12pt, 2026-09-24)
+  if (f.includes('lucida handwriting')) return 1.3794
   if (f.includes('lucida console')) return 1.0
   if (f.includes('lucida sans')) return 1.179
   if (f.includes('bradley hand')) return 1.25
@@ -368,6 +398,8 @@ export function lineHeightFactor(fontFamily: string): number {
   // totals (probe 2026-09-17: 11.76/12.96/14.16 and 12.24/13.44/14.64pt at 10/11/12pt)
   if (f.includes('roboto')) return 1.172
   if (f.includes('montserrat')) return 1.219
+  // Merriweather (cloud face, hhea 984/-273/0; probe 2026-09-23: 15.12pt @12pt)
+  if (f.includes('merriweather')) return 1.257
   if (f.includes('shonar bangla')) return 1.0
   // IRANYekan substitutes to Arial like the Iranian B/XB faces (probe 2026-08-23)
   if (f.includes('iranyekan')) return 1.15
@@ -407,6 +439,7 @@ const LATIN_DESCENT: Array<[RegExp, number]> = [
   [/roboto/, 0.25],
   [/lato/, 0.213],
   [/montserrat/, 0.251],
+  [/merriweather/, 0.273],
   [/open sans/, 0.293],
 ]
 
@@ -427,7 +460,10 @@ export function symbolBulletLinePt(
   const asc = SYMBOL_FACE_ASCENT[symbolFont.trim().toLowerCase()]
   if (asc === undefined || !(markerPt > 0) || !(textPt > 0)) return null
   const f = (textFont ?? '').toLowerCase()
-  const desc = LATIN_DESCENT.find(([re]) => re.test(f))?.[1] ?? 0.25
+  const desc =
+    embeddedLineBoxes.get(f.normalize('NFKC').trim())?.descent ??
+    LATIN_DESCENT.find(([re]) => re.test(f))?.[1] ??
+    0.25
   const line = asc * markerPt + desc * textPt
   if (line <= lineHeightFactor(textFont ?? 'Calibri') * textPt + 0.01) return null
   return Math.round(line * 1000) / 1000
@@ -614,6 +650,7 @@ export const BUNDLED_FONTS = new Set([
   'GenOffice Tamil',
   'GenOffice Fullwidth TC',
   'GenOffice Songti SC',
+  'GenOffice Songti TC',
   'Carlito GO',
   'Aptos GO',
   'Aptos Display GO',
@@ -715,6 +752,19 @@ function fontTableAltName(font: string): string | undefined {
   return alt
 }
 
+/**
+ * Hangul-lettered family name whose fontTable altName is Batang: Word for Mac
+ * lays it out in Batang even when the named face is installed (corpus
+ * 2026-09-24, a Nanum Myeongjo declared by its Korean name with altName Batang
+ * pitched 1.3029 with Batang advances), so the installed head must not lead.
+ */
+export function krBatangAltNamed(font: string): boolean {
+  const head = font.split(',')[0].replace(/['"]/g, '').normalize('NFKC').trim()
+  if (!/[\uac00-\ud7a3]/.test(head)) return false
+  const alt = docFontTable.get(head.toLowerCase())?.altName?.normalize('NFKC').toLowerCase()
+  return !!alt && /batang|\ubc14\ud0d5/.test(alt)
+}
+
 /** PANOSE serif-style byte (2nd): 0B-0F sans, 02-0A serif, 00/01/none unknown */
 function panoseSerifHint(font: string): 'serif' | 'sans' | undefined {
   const panose = docFontTable.get(font.normalize('NFKC').toLowerCase())?.panose
@@ -778,6 +828,23 @@ export function hgSubstituted(font: string): boolean {
   return isBundledFont(head) || !isFontAvailable(head)
 }
 
+/** Montserrat family names of Word's cloud-font cache (weight cuts are families of their own) */
+const MONTSERRAT_FAMILY_RE =
+  /^montserrat(?: (?:thin|extralight|light|medium|semibold|extrabold|black))?$/
+
+/**
+ * Metric alias (fonts.css) of an Office-private CJK face Chromium cannot see:
+ * the stand-in's glyphs under the real face's Word line geometry. Leads the
+ * face's chain, and doc-style-css gives paragraphs a strut of the same
+ * geometry so CJK stretches and the strut share one line box.
+ */
+export function wordMetricAliasFace(font: string): string | null {
+  const f = font.toLowerCase().normalize('NFKC')
+  if (f.includes('dengxian') || f.includes('\u7b49\u7ebf')) return 'DengXian GO'
+  if (/p?mingliu|\u7d30\u660e\u9ad4/.test(f)) return 'PMingLiU GO'
+  return null
+}
+
 export function cssFontFamily(font: string, followAltName = true): string {
   const f = font.toLowerCase()
   const chain = (...families: string[]) =>
@@ -834,6 +901,10 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // Sans alias (fonts.css) carries its wide lowercase / narrow capitals
   if (f.includes('century gothic'))
     return `${chain(font, 'Century Gothic GO', CJK_SANS)},sans-serif`
+  // Lucida Handwriting ships with Office and Windows; elsewhere the per-case
+  // size-adjusted Liberation Sans Italic alias (fonts.css) carries its wide script advances
+  if (f.includes('lucida handwriting'))
+    return `${chain(font, 'Lucida Handwriting GO', CJK_SANS)},sans-serif`
   if (MONO_FONT_RE.test(f))
     return `${chain(font, 'Menlo', 'Courier New', 'Liberation Mono', CJK_SANS)},monospace`
   // Nunito Sans is an Office cloud font Word renders real; the size-adjusted
@@ -842,6 +913,11 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // Poppins is an M365 cloud font Word renders real; the bundled Latin subset
   // (fonts.css) carries its true advances (probe 2026-09-01)
   if (f.includes('poppins')) return `${chain(font, 'GenOffice Poppins', CJK_SANS)},sans-serif`
+  // Montserrat is an M365 cloud font Word renders real, ignoring its fontTable
+  // altName; the per-class size-adjusted Liberation Sans alias (fonts.css)
+  // carries its wide advances. Only the cloud family names qualify: a
+  // PostScript-style "Montserrat-Bold" is unknown to Word and keeps the altName
+  if (MONTSERRAT_FAMILY_RE.test(f)) return `${chain(font, 'Montserrat GO', CJK_SANS)},sans-serif`
   // Microsoft New Tai Lue ships with Office; its Latin is Segoe-flavored with
   // Arial-class widths (probe 2026-08-23: +0.5% vs Helvetica)
   if (f.includes('new tai lue'))
@@ -860,15 +936,16 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // 'GenOffice Songti SC' (fonts.css local() alias of Songti SC): macOS Chromium
   // refuses synthetic bold for 'Songti SC' by name at weight 600/700; the alias,
   // registered weight-normal only, lets Blink synthesize. Unresolvable elsewhere.
+  // SimSun's ASCII is half-width fixed pitch (0.5em); the Songti stand-in is proportional
   if (f.includes('simsun') || f.includes('宋体') || f.includes('nsimsun')) {
-    return `${chain(font, 'GenOffice Songti SC', 'STSong', 'SimSun', CJK_SERIF)},serif`
+    return `${chain(font, 'GenOffice SimSun Latin', 'GenOffice Songti SC', 'STSong', 'SimSun', CJK_SERIF)},serif`
   }
   if (f.includes('simhei') || f.includes('黑体') || f.includes('细黑') || f.includes('xihei'))
     return `${chain(font, 'Heiti SC', 'STHeiti', 'SimHei', 'PingFang SC', CJK_SANS)},sans-serif`
   if (f.includes('yahei') || f.includes('雅黑'))
     return `${chain(font, 'Microsoft YaHei', 'PingFang SC', CJK_SANS)},sans-serif`
   if (f.includes('等线') || f.includes('dengxian'))
-    return `${chain(font, 'DengXian', 'PingFang SC', 'Microsoft YaHei', CJK_SANS)},sans-serif`
+    return `${chain(font, 'DengXian GO', 'DengXian', 'PingFang SC', 'Microsoft YaHei', CJK_SANS)},sans-serif`
   if (f.includes('fangsong') || f.includes('仿宋'))
     return `${chain(font, 'STFangsong', 'FangSong', CJK_SERIF)},serif`
   if (f.includes('kaiti') || f.includes('楷体'))
@@ -889,7 +966,14 @@ export function cssFontFamily(font: string, followAltName = true): string {
   const KO_SERIF = ['GenOffice Batang', 'GenOffice Serif KR', 'GenOffice Myungjo', 'Noto Serif KR']
   const TC_SANS = ['Microsoft JhengHei', 'PingFang TC', 'GenOffice Heiti TC', 'Noto Sans TC']
   // 'GenOffice Fullwidth TC' (fonts.css): fullwidth U+FF0D/FF0F/FF3C/FF3F/FF5E whose Songti TC glyphs look half-width
-  const TC_SERIF = ['GenOffice MingLiU', 'GenOffice Fullwidth TC', 'Songti TC', 'Noto Serif TC']
+  // 'GenOffice Songti TC' (fonts.css): weight-normal alias so bold synthesizes like Word's faux-bold PMingLiU
+  const TC_SERIF = [
+    'GenOffice MingLiU',
+    'GenOffice Fullwidth TC',
+    'GenOffice Songti TC',
+    'Songti TC',
+    'Noto Serif TC',
+  ]
   const SC_SANS = ['PingFang SC', 'Microsoft YaHei', CJK_SANS]
   const SC_SERIF = ['GenOffice Songti SC', 'STSong', 'SimSun', CJK_SERIF]
   const nfkc = font.normalize('NFKC')
@@ -1033,6 +1117,7 @@ export function cssFontFamily(font: string, followAltName = true): string {
     // Nanum asset Chromium cannot see (M3 probe sample 19), so the bundled
     // real-metric subset leads the sans chain instead of the Batang-ward
     // substitution. Installed Nanum still resolves at the literal head.
+    if (krBatangAltNamed(font)) return `${chain(...KO_SERIF)},serif`
     if (/nanum ?gothic|나눔 ?고딕/i.test(nfkc)) {
       return `${chain(font, 'GenOffice Gothic KR', ...KO_SANS)},sans-serif`
     }
@@ -1061,13 +1146,20 @@ export function cssFontFamily(font: string, followAltName = true): string {
       (!knownCore && missingLocally() && panoseSerifHint(font) !== 'sans')
     return `${chain(font, ...(serif ? KO_SERIF : KO_SANS))},${serif ? 'serif' : 'sans-serif'}`
   }
+  // DFKai-SB is missing on Word for Mac, which substitutes Microsoft YaHei
+  // wholesale (probe 2026-09-23); the Latin alias keeps YaHei's wide digits
+  // where YaHei itself is missing. Not gated on availability: macOS lists the
+  // name for Apple's on-demand BiauKai asset while drawing nothing with it
+  if (/\u6a19\u6977|dfkai/.test(f))
+    return `${chain(font, 'Microsoft YaHei', 'GenOffice YaHei Latin', 'PingFang SC', CJK_SANS)},sans-serif`
   if (
     /jhenghei|p?mingliu|biaukai|dfkai|kaiu|正黑|細明|標楷|蘋方|-繁|繁體|pingfang (tc|hk)|(heiti|songti|kaiti) tc/i.test(
       nfkc,
     )
   ) {
     const serif = /mingliu|細明|標楷|biaukai|dfkai|kaiu|songti|kaiti|宋/i.test(nfkc)
-    return `${chain(font, ...(serif ? TC_SERIF : TC_SANS))},${serif ? 'serif' : 'sans-serif'}`
+    const alias = serif ? wordMetricAliasFace(font) : null
+    return `${chain(font, ...(alias ? [alias] : []), ...(serif ? TC_SERIF : TC_SANS))},${serif ? 'serif' : 'sans-serif'}`
   }
   // Ethiopic faces (Nyala/Ebrima/Abyssinica) are missing on macOS; the size-adjusted
   // Kefa alias (fonts.css) re-centers Chromium's ~1.35x-wide Kefa fallback. On
@@ -1352,6 +1444,38 @@ export function paraLineFactorCss(text: string): string {
   return 'var(--doc-line-factor-latin,1.2)'
 }
 
+/** Run[] port of extensions' latinParaFactor (declared run fonts override the doc factor). */
+export function latinRunsFactor(runs: Run[], scriptVar: string): string {
+  let declaredMax = 0
+  let undeclared = false
+  for (const run of runs) {
+    // ascii slot only, like extensions' latinParaFactor: an eastAsia-only
+    // declaration must not set a Latin line's factor
+    const family = run.fontAscii
+    if (family) declaredMax = Math.max(declaredMax, lineHeightFactor(family))
+    else undeclared = true
+  }
+  if (declaredMax <= 0) return scriptVar
+  return undeclared ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+}
+
+/** Per-paragraph --doc-line-factor from runs (Run[] port of extensions' paraLineFactor). */
+export function runsLineFactor(runs: Run[], text: string): string {
+  const scriptVar = paraLineFactorCss(text)
+  if (!textHasCjk(text)) return latinRunsFactor(runs, scriptVar)
+  let declaredMax = 0
+  let undeclaredCjk = false
+  for (const run of runs) {
+    if (!textHasCjk(run.text)) continue
+    const family = run.eaSlotEmpty === true ? null : (run.font ?? run.fontAscii)
+    if (family && isCjkFontName(family)) {
+      declaredMax = Math.max(declaredMax, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
+    } else undeclaredCjk = true
+  }
+  if (declaredMax <= 0) return scriptVar
+  return undeclaredCjk ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
+}
+
 /** --doc-line-factor-kr source: the document's East Asian face when Korean, else the Batang-class default */
 export function krLineFactor(fontFamily: string | undefined): number {
   if (!fontFamily) return 1.3029
@@ -1393,6 +1517,13 @@ const GRID_PITCH = 'var(--doc-grid-pitch,0.0001px)'
  *  Word snaps by the tallest run per line, one line-height per paragraph is our simplification. */
 export function cssGridLineExpr(): string {
   return `round(up, calc(var(--doc-line-factor,1.2) * 1em - ${GRID_PITCH} * ${GRID_SNAP_EPS}), ${GRID_PITCH})`
+}
+
+/** typed-grid padding of an inline picture/chart block (--doc-obj-h = object
+ *  height): the line takes whole cells and the object sits centred in them
+ *  (Word: a 279pt chart on an 18pt grid holds 288pt, 4.5pt free above and below) */
+export function cssGridObjectPadExpr(): string {
+  return `calc((round(up, var(--doc-obj-h) - ${GRID_PITCH} * ${GRID_SNAP_EPS}, ${GRID_PITCH}) - var(--doc-obj-h)) / 2)`
 }
 
 /** grid line height with the auto multiple applied (Word probe 2026-08-22):
@@ -1454,6 +1585,14 @@ export const WORD_AUTO_SPACING_PT = 14
 /** space-only run text: never sizes a line, the paragraph mark does (Word probe 2026-09-11) */
 export const SPACE_ONLY_RE = /^[ \u00a0\u3000]+$/
 
+/** an exact rule caps every run's line box at the rule (--doc-lh-cap, styles.css .doc-lh-fixed span) */
+export function cssExactLineCap(
+  lineRule: 'auto' | 'atLeast' | 'exact' | undefined,
+  lineRawTwips: number | undefined,
+): string | null {
+  return lineRule === 'exact' && lineRawTwips ? `${(lineRawTwips / 20).toFixed(1)}pt` : null
+}
+
 export function cssLineHeight(
   lineRule: 'auto' | 'atLeast' | 'exact' | undefined,
   lineRawTwips: number | undefined,
@@ -1475,6 +1614,24 @@ export function cssLineHeight(
   return null
 }
 
+/**
+ * --doc-lead-top override of a fixed line rule (Word probe 2026-09-23: an atLeast
+ * line bottom-aligns its glyphs, exact keeps the CSS centre); styles.css derives
+ * the auto-multiple shift from --doc-line-mult, `initial` releases an inherited override.
+ */
+export function cssLeadTop(
+  lineRule: 'auto' | 'atLeast' | 'exact' | undefined,
+  lineRawTwips: number | undefined,
+  lineSpacing: number | undefined,
+): string | null {
+  if (lineRule === 'exact' && lineRawTwips) return '0px'
+  if (lineRule === 'atLeast' && lineRawTwips != null) {
+    if (lineRawTwips === 0) return '0px'
+    return `max(0px, (${(lineRawTwips / 20).toFixed(1)}pt - var(--doc-line-grid, calc(var(--doc-line-factor,1.2) * 1em))) / 2)`
+  }
+  return cssAutoLineMult(lineRule, lineRawTwips, lineSpacing) ? 'initial' : null
+}
+
 /** auto/multiple factor of a spacing declaration (grid span snapping scales by it) */
 export function cssAutoLineMult(
   lineRule: 'auto' | 'atLeast' | 'exact' | undefined,
@@ -1483,6 +1640,24 @@ export function cssAutoLineMult(
 ): number | undefined {
   if (lineRule === 'exact' || lineRule === 'atLeast') return undefined
   return lineSpacing ?? (lineRule === 'auto' && lineRawTwips ? lineRawTwips / 240 : undefined)
+}
+
+/**
+ * The auto line multiple a rendered paragraph lays out with. Per-paragraph
+ * declarations live in the inline style; style-level and document-default
+ * multiples cascade through the computed style. Fixed-height lines (direct
+ * exact/atLeast = .doc-lh-fixed, style-level = --doc-line-fixed) count as 1
+ * unless a direct auto override re-declares the inline multiple.
+ */
+export function autoLineMultOf(el: HTMLElement): number {
+  if (el.classList.contains('doc-lh-fixed')) return 1
+  const inlineMult = el.style.getPropertyValue('--doc-line-mult')
+  if (inlineMult) return parseFloat(inlineMult) || 1
+  const cs = getComputedStyle(el)
+  const fixed =
+    el.style.getPropertyValue('--doc-line-fixed') || cs.getPropertyValue('--doc-line-fixed')
+  if (fixed.trim() === '1') return 1
+  return parseFloat(cs.getPropertyValue('--doc-line-mult')) || 1
 }
 
 /**
@@ -1573,6 +1748,34 @@ export function autospaceBoundaries(text: string): number[] {
     const cp = text.codePointAt(i)!
     if (prev >= 0 && needsAutospacePad(prev, cp)) out.push(i)
     prev = cp
+    i += cp > 0xffff ? 2 : 1
+  }
+  return out
+}
+
+// ─── Hangul-context spaces ───────────────────────────────────────────────────
+// Word lays out a space touching a hangul character at 0.5em of the run size
+// whatever the font's own space advance (corpus probe 2026-09-24: Batang
+// 0.49-0.50, Malgun Gothic and a Times New Roman space inside a Korean run
+// 0.51-0.52), while spaces between Latin letters, digits or punctuation keep
+// the glyph's advance (0.25-0.36em). One hangul neighbour is enough (hangul
+// then Latin or Latin then hangul are wide; hangul, comma, space, Latin is not).
+// The renderer wraps each such space in a .doc-hangul-space span whose only
+// glyph comes from the half-width space face.
+
+/** UTF-16 offsets of the U+0020 in text with a hangul neighbour; prev/next
+ *  are the texts adjacent to its ends (empty = no direct neighbour) */
+export function hangulSpaceOffsets(text: string, prev = '', next = ''): number[] {
+  const out: number[] = []
+  let prevCp = prev ? lastCodePoint(prev) : -1
+  for (let i = 0; i < text.length;) {
+    const cp = text.codePointAt(i)!
+    if (cp === 0x20) {
+      const nextCp =
+        i + 1 < text.length ? text.codePointAt(i + 1)! : next ? next.codePointAt(0)! : -1
+      if (isHangul(prevCp) || isHangul(nextCp)) out.push(i)
+    }
+    prevCp = cp
     i += cp > 0xffff ? 2 : 1
   }
   return out
@@ -1870,7 +2073,7 @@ export function maxWordWidthPx(
   let cur = 0 // width of the current token's completed segments (may span runs)
   let words = 0
   let scanned = 0
-  let breakAfter = false // pending break opportunity behind a '-' or '/'
+  let breakAfter: '' | '-' | '/' = '' // pending break opportunity behind a '-' or '/'
   const endWord = () => {
     if (cur > max) max = cur
     if (cur > 0) words++
@@ -1897,20 +2100,22 @@ export function maxWordWidthPx(
         return max
       }
       scanned++
-      // Word/UAX14 break after '-' or '/' unless a digit follows ("1/2", "2020-21")
+      // Word breaks after '-' even before a digit ("10-|20", "DDR5-|6400");
+      // '/' keeps UAX14's no-break before a digit ("1/2")
       if (breakAfter) {
-        breakAfter = false
-        if (ch < '0' || ch > '9') {
+        const digit = ch >= '0' && ch <= '9'
+        if (breakAfter === '-' || !digit) {
           flushSeg()
           endWord()
         }
+        breakAfter = ''
       }
       if (ch === ' ' || ch === '\t' || ch === '\n') {
         flushSeg()
         endWord()
         continue
       }
-      if (ch === '-' || ch === '/') breakAfter = true
+      if (ch === '-' || ch === '/') breakAfter = ch
       if (!keepAll && isCjk(ch.codePointAt(0) ?? 0)) {
         flushSeg()
         endWord()
@@ -2141,8 +2346,9 @@ export function estimateHfHeight(
           /** w:ind (twips): narrows the wrap width of a stacked paragraph */
           indentLeft?: number
           indentRight?: number
-          /** blank paragraph: the mark's (or style's) size sizes its line */
+          /** blank paragraph: the mark's (or style's) size and face size its line */
           emptyRunSizeHalfPoints?: number
+          emptyRunFontFamily?: string
         }>
       }
     | null
@@ -2155,23 +2361,23 @@ export function estimateHfHeight(
     behind?: boolean
     wrap?: 'none' | 'square' | 'tight' | 'through' | 'topBottom'
     posYPx?: number
-    posVRel?: 'page' | 'margin' | 'paragraph'
+    posVRel?: 'page' | 'margin' | 'paragraph' | 'topMargin' | 'bottomMargin'
   }> | null,
   /** header geometry (px): pass for headers so wrapped anchored images push the body below their bottom edge (Word); watermarks (wrapNone/behindDoc) still reserve nothing */
   geom?: { marginTopPx: number; headerDistPx: number },
 ): number {
   const inlineImages = (images ?? []).filter((im) => !im.floating && im.heightPx)
   const imagesHeight =
-    inlineImages.length > 0 ? Math.max(...inlineImages.map((im) => im.heightPx!)) + 2 : 0
+    inlineImages.length > 0 ? Math.max(...inlineImages.map((im) => im.heightPx!)) : 0
   let anchoredPx = 0
   if (geom) {
     for (const im of images ?? []) {
       if (!im.floating || im.behind || !im.heightPx) continue
       if (!im.wrap || im.wrap === 'none') continue
-      if (im.posYPx == null || !im.posVRel) continue
+      if (im.posYPx == null || !im.posVRel || im.posVRel === 'bottomMargin') continue
       // bottom edge in page coordinates; the anchor paragraph sits at the header strip top
       const bottom =
-        im.posVRel === 'page'
+        im.posVRel === 'page' || im.posVRel === 'topMargin'
           ? im.posYPx + im.heightPx
           : im.posVRel === 'margin'
             ? geom.marginTopPx + im.posYPx + im.heightPx
@@ -2233,7 +2439,7 @@ export function estimateHfHeight(
     const indentPx = ((p.indentLeft ?? 0) + (p.indentRight ?? 0)) / 15
     const runs =
       p.runs.length === 0 && p.emptyRunSizeHalfPoints
-        ? [{ text: '', sizeHalfPoints: p.emptyRunSizeHalfPoints }]
+        ? [{ text: '', sizeHalfPoints: p.emptyRunSizeHalfPoints, font: p.emptyRunFontFamily }]
         : p.runs
     height += lineH(runs, p, Math.max(1, contentWidthPx - indentPx))
   }

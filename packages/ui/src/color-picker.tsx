@@ -1,4 +1,10 @@
-import type { InputHTMLAttributes, ReactElement } from 'react'
+import {
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react'
 
 /** One named palette entry; `name` is the English color name (tooltip fallback). */
 export interface ColorSwatch {
@@ -143,21 +149,121 @@ export function ColorPicker({
 }: ColorPickerProps): ReactElement {
   const current = value ? normalizeHex(value) : null
   const isSelected = (hex: string): boolean => current === `#${hex}`
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [focusPos, setFocusPos] = useState<string | null>(null)
 
-  const swatch = (hex: string, title: string, key?: string): ReactElement => (
-    <button
-      key={key ?? hex}
-      type="button"
-      className={`gcp-swatch ${isSelected(hex) ? 'selected' : ''}`}
-      title={title}
-      style={{ background: `#${hex}` }}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={() => onPick(`#${hex}`)}
-    />
+  interface Cell {
+    hex: string
+    title: string
+    key: string
+  }
+  const named = (c: ColorSwatch): Cell => ({
+    hex: c.hex,
+    title: strings.colorName?.(c) ?? c.name,
+    key: c.hex,
+  })
+  const rows: Cell[][] = [
+    THEME_COLORS.map(named),
+    ...THEME_COLOR_SHADES.map((row, r) =>
+      row.map((hex, c) => ({
+        hex,
+        title: strings.shadeTip?.(r + 1, c + 1) ?? `#${hex}`,
+        key: `${r}-${c}-${hex}`,
+      })),
+    ),
+    STANDARD_COLORS.map(named),
+  ]
+  const showRecent = Boolean(strings.recentColors && recentColors && recentColors.length > 0)
+  if (showRecent) {
+    rows.push(
+      recentColors!.map((hex, i) => {
+        const bare = hex.replace(/^#/, '').toUpperCase()
+        return { hex: bare, title: `#${bare}`, key: `recent-${i}-${bare}` }
+      }),
+    )
+  }
+
+  // one tab stop: the selected swatch, else the first; arrows rove from there
+  let selectedPos = '0-0'
+  rows.some((row, r) =>
+    row.some((cell, c) => {
+      if (!isSelected(cell.hex)) return false
+      selectedPos = `${r}-${c}`
+      return true
+    }),
+  )
+  const activePos = focusPos ?? selectedPos
+
+  const moveFocus = (e: KeyboardEvent<HTMLButtonElement>, r: number, c: number): void => {
+    const len = (i: number): number => rows[i]?.length ?? 0
+    let nr = r
+    let nc = c
+    switch (e.key) {
+      case 'ArrowRight':
+        nc += 1
+        if (nc >= len(r)) {
+          nr = (r + 1) % rows.length
+          nc = 0
+        }
+        break
+      case 'ArrowLeft':
+        nc -= 1
+        if (nc < 0) {
+          nr = (r + rows.length - 1) % rows.length
+          nc = len(nr) - 1
+        }
+        break
+      case 'ArrowDown':
+        nr = (r + 1) % rows.length
+        break
+      case 'ArrowUp':
+        nr = (r + rows.length - 1) % rows.length
+        break
+      case 'Home':
+        nc = 0
+        break
+      case 'End':
+        nc = len(r) - 1
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    nc = Math.min(nc, len(nr) - 1)
+    const pos = `${nr}-${nc}`
+    setFocusPos(pos)
+    rootRef.current?.querySelector<HTMLElement>(`[data-pos="${pos}"]`)?.focus()
+  }
+
+  const gridRow = (r: number): ReactElement => (
+    <div key={r} role="row" className="gcp-row">
+      {(rows[r] ?? []).map((cell, c) => {
+        const pos = `${r}-${c}`
+        const selected = isSelected(cell.hex)
+        return (
+          <button
+            key={cell.key}
+            type="button"
+            role="gridcell"
+            data-pos={pos}
+            tabIndex={pos === activePos ? 0 : -1}
+            aria-selected={selected}
+            aria-label={cell.title}
+            className={`gcp-swatch ${selected ? 'selected' : ''}`}
+            title={cell.title}
+            style={{ background: `#${cell.hex}` }}
+            onMouseDown={(e) => e.preventDefault()}
+            onFocus={() => setFocusPos(pos)}
+            onKeyDown={(e) => moveFocus(e, r, c)}
+            onClick={() => onPick(`#${cell.hex}`)}
+          />
+        )
+      })}
+    </div>
   )
 
   return (
-    <div className={`gcp-palette${className ? ` ${className}` : ''}`}>
+    <div ref={rootRef} className={`gcp-palette${className ? ` ${className}` : ''}`}>
       {strings.auto && (
         <button
           type="button"
@@ -169,28 +275,21 @@ export function ColorPicker({
         </button>
       )}
       <div className="gcp-section-title">{strings.themeColors}</div>
-      <div className="gcp-theme-base">
-        {THEME_COLORS.map((c) => swatch(c.hex, strings.colorName?.(c) ?? c.name))}
+      <div className="gcp-theme-base" role="grid" aria-label={strings.themeColors}>
+        {gridRow(0)}
       </div>
-      <div className="gcp-theme-shades">
-        {THEME_COLOR_SHADES.flatMap((row, r) =>
-          row.map((hex, c) =>
-            swatch(hex, strings.shadeTip?.(r + 1, c + 1) ?? `#${hex}`, `${r}-${c}-${hex}`),
-          ),
-        )}
+      <div className="gcp-theme-shades" role="grid" aria-label={strings.themeColors}>
+        {THEME_COLOR_SHADES.map((_, r) => gridRow(r + 1))}
       </div>
       <div className="gcp-section-title">{strings.standardColors}</div>
-      <div className="gcp-standard-row">
-        {STANDARD_COLORS.map((c) => swatch(c.hex, strings.colorName?.(c) ?? c.name))}
+      <div className="gcp-standard-row" role="grid" aria-label={strings.standardColors}>
+        {gridRow(THEME_COLOR_SHADES.length + 1)}
       </div>
-      {strings.recentColors && recentColors && recentColors.length > 0 && (
+      {showRecent && (
         <>
           <div className="gcp-section-title">{strings.recentColors}</div>
-          <div className="gcp-standard-row">
-            {recentColors.map((hex, i) => {
-              const bare = hex.replace(/^#/, '').toUpperCase()
-              return swatch(bare, `#${bare}`, `recent-${i}-${bare}`)
-            })}
+          <div className="gcp-standard-row" role="grid" aria-label={strings.recentColors}>
+            {gridRow(rows.length - 1)}
           </div>
         </>
       )}

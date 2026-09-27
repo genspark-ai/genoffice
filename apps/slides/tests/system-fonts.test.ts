@@ -54,7 +54,7 @@ describe.runIf(mac)(
       expect(m.displayFamily!(style('ＭＳ Ｐゴシック'))).toMatch(
         office ? /MS P?Gothic|Hiragino Sans/ : /^Hiragino Sans$/,
       )
-      expect(m.displayFamily!(style('游明朝'))).toMatch(/Yu ?Mincho|Hiragino Mincho/)
+      expect(m.displayFamily!(style('游明朝'))).toMatch(/Yu ?Mincho|Hiragino Mincho/) // public-hygiene: fixture
       expect(m.displayFamily!(style('MS Mincho'))).toMatch(
         office ? /MS Mincho|Hiragino Mincho/ : /^Hiragino Mincho ProN$/,
       )

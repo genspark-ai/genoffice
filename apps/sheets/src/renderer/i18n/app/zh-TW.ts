@@ -576,7 +576,7 @@ export const zhTW = {
   appTabData: '資料',
   appTabReview: '校閱',
   appRibbonCollapse: '摺疊功能區',
-  appRibbonPin: '固定功能區',
+  appRibbonExpand: '展開功能區',
   appTabView: '檢視',
   appTabAi: 'AI',
   appTabChartDesign: '圖表設計',

@@ -1,5 +1,11 @@
 import { elementDurableId, openPptx, slideDurableId } from '@genoffice/pptx-engine'
-import { buildRenderSlide, EMU_PER_PX_96, type FontMetricsProvider } from '@genoffice/pptx-render'
+import {
+  buildRenderSlide,
+  EMU_PER_PX_96,
+  imageSizeFromBytes,
+  type FontMetricsProvider,
+  type ImageSize,
+} from '@genoffice/pptx-render'
 import { auditSlideFindings, type AuditFinding } from './layout-audit'
 
 export interface DeckAuditPage {
@@ -22,6 +28,16 @@ export async function auditDeck(
 ): Promise<DeckAuditPage[]> {
   const opened = await openPptx(bytes)
   const fitWidthPx = opened.deck.size.cx / EMU_PER_PX_96
+  const sizes = new Map<string, ImageSize | null>()
+  const sizeOf = (mediaRef: string): ImageSize | undefined => {
+    let size = sizes.get(mediaRef)
+    if (size === undefined) {
+      const bytes = opened.archive.readBytes(mediaRef)
+      size = (bytes && imageSizeFromBytes(bytes)) ?? null
+      sizes.set(mediaRef, size)
+    }
+    return size ?? undefined
+  }
   const out: DeckAuditPage[] = []
   for (const [index, slide] of opened.deck.slides.entries()) {
     if (opts.only !== undefined && opts.only !== index) continue
@@ -32,7 +48,17 @@ export async function auditDeck(
       slideNo: index + 1,
     })
     const slideId = slideDurableId(slide)
-    const findings = auditSlideFindings(rendered, (id) => ids.get(id) ?? id).map((f) =>
+    const pictures = new Map<string, string>()
+    for (const el of slide.elements) {
+      if (el.type === 'picture' && !el.tile) pictures.set(el.id, el.mediaRef)
+    }
+    const pictureSize = (id: string) => {
+      const ref = pictures.get(id)
+      return ref ? sizeOf(ref) : undefined
+    }
+    const findings = auditSlideFindings(rendered, (id) => ids.get(id) ?? id, {
+      pictureSize,
+    }).map((f) =>
       f.suggest
         ? { ...f, suggest: { ...f.suggest, target: { slide: slideId, el: f.suggest.target.el } } }
         : f,

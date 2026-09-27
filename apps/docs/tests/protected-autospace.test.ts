@@ -12,6 +12,58 @@ const render = (spec: unknown): HTMLElement =>
 
 const pads = (dom: HTMLElement) => dom.querySelectorAll('.doc-autospace-pad')
 
+describe('renderTableSpec hangul spaces', () => {
+  const H = '\ud55c\uae00'
+  it('wraps spaces with a hangul neighbour across rich-cell runs, not Latin ones', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          {
+            paras: [`${H} A B`],
+            richParas: [{ runs: [{ text: `${H} ` }, { text: 'A B', bold: true }] }],
+          },
+        ],
+      ],
+    }
+    const dom = render(renderTableSpec(model))
+    const wraps = dom.querySelectorAll('.doc-hangul-space')
+    expect(wraps).toHaveLength(1)
+    expect(dom.querySelector('td')!.textContent).toBe(`${H} A B`)
+  })
+
+  it('an inline picture between the runs breaks adjacency, an empty run does not', () => {
+    const image = { dataUrl: 'data:image/png;base64,', xml: '', widthPx: 4, heightPx: 4 }
+    const model: TableModel = {
+      rows: [
+        [
+          {
+            paras: [`${H} A ${H}B ${H}`],
+            richParas: [
+              {
+                runs: [
+                  { text: H },
+                  { text: '', image },
+                  { text: ' A' },
+                  { text: '' },
+                  { text: ` ${H}` },
+                  { text: 'B' },
+                  // the picture sits after this run's text: its trailing space is not beside the next hangul
+                  { text: ' ', image },
+                  { text: H },
+                ],
+              },
+            ],
+          },
+        ],
+      ],
+    }
+    const dom = render(renderTableSpec(model))
+    const wraps = Array.from(dom.querySelectorAll('.doc-hangul-space'))
+    expect(wraps).toHaveLength(1)
+    expect(wraps[0].parentElement!.textContent).toBe(` ${H}`)
+  })
+})
+
 describe('renderTableSpec autospace pads', () => {
   it('pads boundaries inside plain cell paragraphs without changing the text', () => {
     const dom = render(renderTableSpec({ rows: [[{ paras: ['ペン12'] }]] }))

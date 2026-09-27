@@ -10,6 +10,7 @@ import type {
   DesktopApi,
   MenuCommand,
   AutoSaveDefault,
+  ContextMenuRequest,
   UiTheme,
   ZoteroRendererRequest,
 } from '../shared/ipc'
@@ -18,6 +19,7 @@ import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 
 const api: DesktopApi = {
   getLanguage: () => ipcRenderer.invoke('app:get-language'),
+  getSystemLocale: () => ipcRenderer.invoke('docs:system-locale'),
   onLanguageChanged: (handler) => {
     const listener = (
       _event: IpcRendererEvent,
@@ -103,6 +105,20 @@ const api: DesktopApi = {
   },
   respellKick: () => ipcRenderer.invoke('docs:respell-kick'),
   spellDiag: (line: string) => ipcRenderer.send('docs:spell-diag', line),
+  armContextMenu: () => ipcRenderer.send('docs:context-menu-arm'),
+  claimContextMenu: (seq: number) => {
+    ipcRenderer.sendSync('docs:context-menu-claim', seq)
+  },
+  onContextMenuRequest: (handler) => {
+    const listener = (_event: IpcRendererEvent, request: ContextMenuRequest) => handler(request)
+    ipcRenderer.on('docs:context-menu', listener)
+    return () => ipcRenderer.removeListener('docs:context-menu', listener)
+  },
+  spellAddWord: (word: string) => ipcRenderer.invoke('docs:spell-add-word', word),
+  spellIgnoreWord: (word: string) => ipcRenderer.invoke('docs:spell-ignore-word', word),
+  spellReplace: (word: string) => ipcRenderer.invoke('docs:spell-replace', word),
+  spellLanguages: () => ipcRenderer.invoke('docs:spell-languages'),
+  spellSetLanguages: (langs: string[]) => ipcRenderer.invoke('docs:spell-set-languages', langs),
   saveDocxAs: (defaultName: string, data: ArrayBuffer, sourcePath?: string | null) =>
     ipcRenderer.invoke('docs:save-as', defaultName, data, sourcePath ?? null),
   saveDocxNew: (defaultName: string, data: ArrayBuffer) =>

@@ -7,6 +7,8 @@ export const de = {
   saveFailed: 'Speichern fehlgeschlagen: {error}',
   saveFailedStatus: 'Speichern fehlgeschlagen',
   exportFailed: 'Export fehlgeschlagen',
+  exportHtmlSkipped:
+    'Exportiert, aber {count} Ressource(n) konnten nicht eingebettet werden (z. B. {first})',
   viewPreview: 'Vorschau',
   viewSplit: 'Geteilt',
   viewSource: 'Quelltext',
@@ -54,7 +56,6 @@ export const de = {
   save: 'Speichern (⌘S)',
   saveAs: 'Speichern unter…',
   ribbonCollapse: 'Menüband reduzieren',
-  ribbonPin: 'Menüband anheften',
   ribbonExpand: 'Menüband erweitern',
   ribbonGroupInsert: 'Einfügen',
   editText: 'Text bearbeiten',

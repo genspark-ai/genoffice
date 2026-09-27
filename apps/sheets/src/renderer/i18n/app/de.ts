@@ -708,7 +708,7 @@ export const de = {
   appTabData: 'Daten',
   appTabReview: 'Überprüfen',
   appRibbonCollapse: 'Menüband reduzieren',
-  appRibbonPin: 'Menüband anheften',
+  appRibbonExpand: 'Menüband erweitern',
   appTabView: 'Ansicht',
   appTabAi: 'KI',
   appTabChartDesign: 'Diagrammentwurf',

@@ -56,15 +56,12 @@ async function helpFor(argv: string[]): Promise<string> {
 
 /**
  * Host-only commands the agent skill legitimately omits: `install-cli` puts the
- * launcher on the PATH and `mcp` serves MCP clients; neither is a document
- * workflow an agent reads the skill for. Both must stay in `genoffice help` and
- * the CLI README. Enforced in both directions below, so extending the skill (or
- * dropping a command) fails loudly instead of silently changing coverage.
+ * launcher on the PATH, not a document workflow an agent reads the skill for.
+ * It must stay in `genoffice help` and the CLI README. Enforced in both
+ * directions below, so extending the skill (or dropping a command) fails loudly
+ * instead of silently changing coverage.
  */
-const SKILL_COMMAND_OMISSIONS = new Map([
-  ['install-cli', 'host setup, not a document workflow'],
-  ['mcp', 'MCP transport for MCP clients, not a CLI document workflow'],
-])
+const SKILL_COMMAND_OMISSIONS = new Map([['install-cli', 'host setup, not a document workflow']])
 
 /**
  * Flags the README example fences legitimately omit: the fences show one common

@@ -219,6 +219,38 @@ describe('Codex app-server bridge', () => {
     ).resolves.toBe('done')
   })
 
+  it('interrupts the server turn when the abort lands before the turn id is known (genoffice#1110)', async () => {
+    const calls: { method: string; params: unknown }[] = []
+    let releaseStart: (() => void) | undefined
+    const transport: CodexTurnTransport = {
+      request: async (method, params) => {
+        calls.push({ method, params })
+        if (method === 'turn/start') {
+          await new Promise<void>((r) => (releaseStart = r))
+          return { turn: { id: 't1' } }
+        }
+        return {}
+      },
+      onNotification: () => () => undefined,
+    }
+    const controller = new AbortController()
+    const pending = waitForTurn(
+      transport,
+      'th',
+      () => transport.request('turn/start', {}),
+      controller.signal,
+      { ...noopCallbacks, signal: controller.signal },
+    )
+    await Promise.resolve()
+    controller.abort()
+    await expect(pending).rejects.toThrow()
+    expect(calls.map((c) => c.method)).toEqual(['turn/start'])
+    releaseStart?.()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls.map((c) => c.method)).toEqual(['turn/start', 'turn/interrupt'])
+    expect(calls[1]!.params).toEqual({ threadId: 'th', turnId: 't1' })
+  })
+
   it('fails the turn on a non-retried error notification', async () => {
     const transport = fakeTransport([
       {

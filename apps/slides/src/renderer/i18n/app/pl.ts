@@ -120,6 +120,7 @@ export const pl = {
   appPasteOptSource: 'Zachowaj formatowanie źródłowe',
   appPasteOptTheme: 'Użyj motywu docelowego',
   appStatusPasteOptionsExpired: 'Opcje wklejania nie są już dostępne',
+  appStatusPasteTruncated: 'Wklejony tekst był zbyt długi i został przycięty',
   appCtxHideSlide: 'Ukryj slajd',
   appCtxUnhideSlide: 'Odkryj slajd',
   appCtxAddSectionBefore: 'Dodaj sekcję (przed tym slajdem)',

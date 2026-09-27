@@ -14,7 +14,7 @@ export const nl = {
   ribbonTabSlideShow: 'Diavoorstelling',
   ribbonTabReview: 'Controleren',
   ribbonCollapse: 'Het lint samenvouwen',
-  ribbonPin: 'Het lint vastmaken',
+  ribbonExpand: 'Het lint uitvouwen',
   ribbonTabView: 'Beeld',
   ribbonTabTableDesign: 'Tabelontwerp',
   ribbonTabChartDesign: 'Grafiekontwerp',

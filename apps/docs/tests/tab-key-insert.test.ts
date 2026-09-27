@@ -71,7 +71,7 @@ describe('Tab key inserts a tab stop', () => {
     editor.destroy()
   })
 
-  it('still indents a list item', () => {
+  it('indents a list item from its start and types a tab inside its text', () => {
     const editor = new Editor({
       element: document.createElement('div'),
       extensions: editorExtensions,
@@ -86,10 +86,14 @@ describe('Tab key inserts a tab stop', () => {
         ],
       } as never,
     })
-    editor.commands.setTextSelection(2)
+    editor.commands.setTextSelection(1)
     pressKey(editor, 'Tab')
     expect(editor.state.doc.child(0).attrs.ilvl).toBe(1)
     expect(editor.state.doc.textContent).toBe('item')
+    editor.commands.setTextSelection(3)
+    pressKey(editor, 'Tab')
+    expect(editor.state.doc.child(0).attrs.ilvl).toBe(1)
+    expect(editor.state.doc.textContent).toBe('it\tem')
     editor.destroy()
   })
 

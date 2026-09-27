@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildOcrPageData } from '../src/renderer/ocr-layer'
 import type { PdfOcrLine } from '../src/shared/ipc'
+import { searchInIndex } from '../src/renderer/search'
 
 const GEOM = { pw: 600, ph: 800, rot: 0 }
 
@@ -149,5 +150,26 @@ describe('buildOcrPageData word joining', () => {
     }
     const shang = data.entry.items[3]!
     expect(data.entry.text.slice(shang.start, shang.end)).toBe('商')
+  })
+
+  it('folds case length-preservingly so OCR offsets agree with text-layer search (genoffice#1130)', () => {
+    const line: PdfOcrLine = {
+      text: '\u0130stanbul Ankara',
+      confidence: 1,
+      box: box(0.1, 0.9),
+      chars: [
+        { text: '\u0130stanbul', box: box(0.1, 0.5) },
+        { text: ' ', box: SEPARATOR },
+        { text: 'Ankara', box: box(0.55, 0.9) },
+      ],
+    }
+    const data = buildOcrPageData([line], GEOM)!
+    expect(data.entry.lower.length).toBe(data.entry.text.length)
+    const dotted = searchInIndex([data.entry], '\u0130stanbul')
+    expect(dotted).toHaveLength(1)
+    const ankara = searchInIndex([data.entry], 'ankara')
+    expect(ankara).toHaveLength(1)
+    const ankaraItem = data.entry.items[1]!
+    expect(ankara[0]!.rects[0]![0]).toBeCloseTo(ankaraItem.x, 5)
   })
 })

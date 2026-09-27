@@ -8,6 +8,8 @@ import type {
   PageNoteItem,
   PageSlice,
 } from './pagination-types'
+import { effectiveParaFlags } from './editor/para-flags'
+import { autoLineMultOf } from './line-metrics'
 
 /**
  * Collect the editor's top-level block boxes (relative to the content-area top,
@@ -16,9 +18,29 @@ import type {
  * they are skipped and subtracted from subsequent block coordinates, yielding
  * "gapless continuous flow" virtual coordinates so slicing is independent of the gaps.
  */
-/** anchor offset painted as a wrapper translate (px): display-only, the flow slot is unshifted */
+/** display-only offsets of a block from its flow slot (px): the anchor wrapper
+ *  translate and the leading shift's relative top (styles.css --doc-lead-shift) */
 export function anchorShiftPx(el: HTMLElement): number {
-  return parseFloat(el.dataset.anchorDy ?? '') || 0
+  const anchor = parseFloat(el.dataset.anchorDy ?? '') || 0
+  return anchor + (parseFloat(getComputedStyle(el).top) || 0)
+}
+
+/**
+ * Extra leading of one line of an auto-multiple paragraph (px, unzoomed like
+ * every computed length here). Word charges only the single-spacing extent at
+ * the page bottom (probe 2026-09-23); exact and atLeast lines demand their full
+ * box, space before/after always counts.
+ */
+export function lineLeadPx(el: HTMLElement): number {
+  const mult = autoLineMultOf(el)
+  if (mult <= 1) return 0
+  const cs = getComputedStyle(el)
+  // typed line grids centre the multiple's extra in the snapped cell (unprobed at
+  // the page bottom): keep charging the full box there
+  if (cs.getPropertyValue('--doc-grid-pitch').trim()) return 0
+  const lh = parseFloat(cs.lineHeight)
+  if (!Number.isFinite(lh) || lh <= 0) return 0
+  return lh * (1 - 1 / mult)
 }
 
 export function measureBlocks(
@@ -116,36 +138,21 @@ export function measureBlocks(
     const top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
-    // break-only paragraph (br line + ProseMirror trailing-break phantom line): marked
-    // for dedicated placement — Word pushes it into a deliberate blank page when its
-    // line doesn't fit at the page bottom. Word renders a single break line, but the
-    // DOM height spans one line box per <br> (a text-less paragraph lays out exactly
-    // brCount line boxes), so the fit height is one line's share. Word only charges
-    // the line's natural single-spacing extent at the page bottom (probe 20260901: a
-    // double-spaced Calibri 11pt break line absorbs at 14pt remaining, while an exact
-    // line demands its full exact height), so auto multiples above 1 are divided out.
+    // break-only paragraph: marked for dedicated placement — Word pushes it into a
+    // deliberate blank page when its line doesn't fit at the page bottom. Word
+    // renders a single break line; the DOM lays out one line box per break (the
+    // trailing-break phantom after the last one is hidden by CSS, as its mark
+    // shares the break's line), so the fit height is one line's share. Word only
+    // charges the line's natural single-spacing extent at the page bottom (probe
+    // 20260901: a double-spaced Calibri 11pt break line absorbs at 14pt remaining,
+    // while an exact line demands its full exact height), so auto multiples above
+    // 1 are divided out.
     const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !el.querySelector('img')
-    const brLines = breakOnly ? el.querySelectorAll('br').length : 0
+    const brLines = breakOnly ? el.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length : 0
     let breakOnlyLineH: number | undefined
     if (breakOnly) {
       const box = brLines > 1 ? height / brLines : height
-      // per-paragraph declarations live in the inline style; the document-level
-      // multiple cascades through the computed style. Fixed-height lines demand
-      // their full box: direct exact/atLeast carries the doc-lh-fixed class, a
-      // style-level exact/atLeast is marked by --doc-line-fixed (doc-style-css)
-      // — unless a direct auto override re-declares the inline multiple.
-      const inlineMult = el.style.getPropertyValue('--doc-line-mult')
-      const fixed =
-        el.classList.contains('doc-lh-fixed') ||
-        (!inlineMult &&
-          (
-            el.style.getPropertyValue('--doc-line-fixed') ||
-            getComputedStyle(el).getPropertyValue('--doc-line-fixed')
-          ).trim() === '1')
-      const mult = fixed
-        ? 1
-        : parseFloat(inlineMult || getComputedStyle(el).getPropertyValue('--doc-line-mult')) || 1
-      breakOnlyLineH = box / Math.max(1, mult)
+      breakOnlyLineH = box / Math.max(1, autoLineMultOf(el))
     }
     // breaks with no text before them lead the block: the break line stays on
     // the current page and the block's text starts the next one (Word), so the
@@ -315,7 +322,10 @@ export function endnotesAnchorY(pm: HTMLElement, baseTop: number, factor: number
       continue
     const rect = el.getBoundingClientRect()
     if (rect.height <= 0) continue
-    return (rect.bottom - baseTop) / factor + (parseFloat(getComputedStyle(el).marginBottom) || 0)
+    return (
+      (rect.bottom - anchorShiftPx(el) * factor - baseTop) / factor +
+      (parseFloat(getComputedStyle(el).marginBottom) || 0)
+    )
   }
   return null
 }
@@ -527,16 +537,22 @@ export function noteRefOffsets(el: HTMLElement, zoomFactor: number): number[] {
 }
 
 /** Inject parse-layer constraints into measured blocks (call before slicing; table row flags are applied by fillLineBoxes) */
-export function applyBlockMeta(blocks: BlockBox[], metaOf: BlockMetaOf, zoomFactor = 1): void {
+export function applyBlockMeta(
+  blocks: BlockBox[],
+  metaOf: BlockMetaOf | undefined,
+  zoomFactor = 1,
+): void {
   for (const b of blocks) {
-    if (b.docxIndex === undefined) continue
-    const meta = metaOf(b.docxIndex)
+    // flags edited in the dialog live on the element: they win over the parsed
+    // paragraph's meta so a change re-paginates before the document is saved
+    const meta = b.docxIndex === undefined ? undefined : metaOf?.(b.docxIndex)
+    const flags = effectiveParaFlags(b.el, meta)
+    if (flags.keepNext) b.keepNext = true
+    if (flags.keepLines) b.keepLines = true
+    if (flags.widowControl === false) b.widowControl = false
     if (!meta) continue
-    if (meta.keepNext) b.keepNext = true
     if (meta.modernTableHeaders) b.modernTableHeaders = true
-    if (meta.keepLines) b.keepLines = true
     if (meta.breakBefore) b.breakBefore = true
-    if (meta.widowControl === false) b.widowControl = false
     if (meta.footnoteExtraPx) {
       // the reservation consumes page capacity through the block height only;
       // it must never ride spaceAfterPx (the page-bottom trailing-space

@@ -1,5 +1,6 @@
 import type {
   GroupRenderNode,
+  PictureRenderNode,
   RenderNode,
   RenderSlide,
   ShapeRenderNode,
@@ -28,6 +29,9 @@ interface AuditEntry {
   /** Pixels by which the widest laid-out line exceeds the box inner width (wrap=false lines, over-wide tokens) */
   overflowXPx: number
   rotationDeg: number
+  srcRect?: { l: number; t: number; r: number; b: number }
+  /** audio/video poster frame: sized to the media, not to the bitmap */
+  poster: boolean
 }
 
 const PREVIEW_MAX = 18
@@ -86,6 +90,7 @@ function collectEntries(nodes: RenderNode[]): AuditEntry[] {
       hasText = groupHasText(n as GroupRenderNode)
       preview = '(group)'
     }
+    const pic = n.type === 'picture' ? (n as PictureRenderNode) : undefined
     out.push({
       id: n.sourceId,
       type: n.type,
@@ -98,6 +103,8 @@ function collectEntries(nodes: RenderNode[]): AuditEntry[] {
       overflowPx,
       overflowXPx,
       rotationDeg: n.box.rotationDeg,
+      ...(pic?.srcRect ? { srcRect: pic.srcRect } : {}),
+      poster: Boolean(pic?.media),
     })
   }
   return out
@@ -139,8 +146,28 @@ const MAX_ISSUES = 12
 /** slack a suggested box adds beyond the measured need */
 const SUGGEST_SLACK_PX = 4
 const EMU_PER_PX = 9525
+/** box aspect may differ from the (cropped) source aspect by this fraction before a picture counts as stretched */
+const DISTORTION_TOLERANCE = 0.05
+/** a picture shrunk to its true aspect below this side length grows instead */
+const MIN_PICTURE_SIDE_PX = 24
 
-export type AuditCode = 'out_of_bounds' | 'text_overflow' | 'text_overflow_width' | 'overlap'
+export type AuditCode =
+  | 'out_of_bounds'
+  | 'off_slide'
+  | 'text_overflow'
+  | 'text_overflow_width'
+  | 'overlap'
+  | 'picture_distorted'
+
+export interface PictureSize {
+  w: number
+  h: number
+}
+
+export interface AuditOptions {
+  /** Natural pixel size of a top-level picture's bitmap by node source id; undefined skips the distortion check. */
+  pictureSize?: (sourceId: string) => PictureSize | undefined
+}
 
 export interface AuditBox {
   x: number
@@ -168,7 +195,40 @@ export interface AuditFinding {
   box: AuditBox
   /** px the text exceeds the box (text_overflow: height, text_overflow_width: width) */
   overflowPx?: number
+  /** picture_distorted: cropped source aspect (w/h), the box aspect and how far apart they are in percent */
+  expected_ratio?: number
+  actual_ratio?: number
+  distortion_pct?: number
   suggest?: AuditSuggest
+}
+
+interface Distortion {
+  expected: number
+  actual: number
+  pct: number
+  /** the size that restores the source aspect (the longer side shrunk unless that leaves it tiny) */
+  w: number
+  h: number
+}
+
+function distortionOf(e: AuditEntry, size: PictureSize): Distortion | undefined {
+  if (e.w <= 0 || e.h <= 0) return undefined
+  const sr = e.srcRect ?? { l: 0, t: 0, r: 0, b: 0 }
+  const srcW = size.w * (1 - sr.l - sr.r)
+  const srcH = size.h * (1 - sr.t - sr.b)
+  if (srcW <= 0 || srcH <= 0) return undefined
+  const expected = srcW / srcH
+  const actual = e.w / e.h
+  const pct = Math.abs(actual / expected - 1) * 100
+  if (pct <= DISTORTION_TOLERANCE * 100) return undefined
+  const keepW = { w: e.w, h: e.w / expected }
+  const keepH = { w: e.h * expected, h: e.h }
+  // Shrinking keeps the picture inside its placeholder (a square logo in a banner stays
+  // banner-high); growing only when the shrunk result would be too small to read.
+  const shrink = actual > expected ? keepH : keepW
+  const grow = shrink === keepH ? keepW : keepH
+  const fit = Math.min(shrink.w, shrink.h) < MIN_PICTURE_SIDE_PX ? grow : shrink
+  return { expected, actual, pct, ...fit }
 }
 
 /**
@@ -178,28 +238,39 @@ export interface AuditFinding {
 export function auditSlideLayout(
   slide: RenderSlide,
   idOf: (sourceId: string) => string = (id) => id,
+  opts: AuditOptions = {},
 ): string[] {
-  return auditSlideFindings(slide, idOf).map((f) => f.message)
+  return auditSlideFindings(slide, idOf, opts).map((f) => f.message)
 }
 
 /** The same audit with each finding typed, located and, where geometry alone fixes it, carrying the op. */
 export function auditSlideFindings(
   slide: RenderSlide,
   idOf: (sourceId: string) => string = (id) => id,
+  opts: AuditOptions = {},
 ): AuditFinding[] {
   const entries = collectEntries(slide.nodes)
   const findings: AuditFinding[] = []
   const W = slide.widthPx
   const H = slide.heightPx
   const boxOf = (e: AuditEntry): AuditBox => ({ x: e.x, y: e.y, w: e.w, h: e.h })
-  const outside = (e: AuditEntry): string[] => {
+  // Strict comparisons: a box touching the canvas edge from outside still reads as out_of_bounds.
+  const offSlide = (e: AuditEntry): boolean => e.x + e.w < 0 || e.y + e.h < 0 || e.x > W || e.y > H
+  const distortions = new Map<AuditEntry, Distortion>()
+  if (opts.pictureSize) {
+    for (const e of entries) {
+      if (e.type !== 'picture' || e.poster) continue
+      const size = opts.pictureSize(e.id)
+      const d = size && distortionOf(e, size)
+      if (d) distortions.set(e, d)
+    }
+  }
+  const outside = (e: AuditEntry, tolerance = EDGE_TOLERANCE_PX): string[] => {
     const parts: string[] = []
-    if (e.x < -EDGE_TOLERANCE_PX) parts.push(`${Math.round(-e.x)}px past the left edge`)
-    if (e.y < -EDGE_TOLERANCE_PX) parts.push(`${Math.round(-e.y)}px past the top edge`)
-    if (e.x + e.w > W + EDGE_TOLERANCE_PX)
-      parts.push(`${Math.round(e.x + e.w - W)}px past the right edge`)
-    if (e.y + e.h > H + EDGE_TOLERANCE_PX)
-      parts.push(`${Math.round(e.y + e.h - H)}px past the bottom edge`)
+    if (e.x < -tolerance) parts.push(`${Math.round(-e.x)}px past the left edge`)
+    if (e.y < -tolerance) parts.push(`${Math.round(-e.y)}px past the top edge`)
+    if (e.x + e.w > W + tolerance) parts.push(`${Math.round(e.x + e.w - W)}px past the right edge`)
+    if (e.y + e.h > H + tolerance) parts.push(`${Math.round(e.y + e.h - H)}px past the bottom edge`)
     return parts
   }
   // One box per element that answers every finding on it at once (grown for the text,
@@ -220,9 +291,20 @@ export function auditSlideFindings(
     const wantH = e.h + (e.overflowPx > OVERFLOW_TOLERANCE_PX ? e.overflowPx + SUGGEST_SLACK_PX : 0)
     const grewW = wantW > e.w && wantW <= W
     const grewH = wantH > e.h && wantH <= H
-    const w = Math.min(grewW ? wantW : e.w, W)
-    const h = Math.min(grewH ? wantH : e.h, H)
-    const box = { x: clamp(e.x, 0, W - w), y: clamp(e.y, 0, H - h), w, h }
+    let w = Math.min(grewW ? wantW : e.w, W)
+    let h = Math.min(grewH ? wantH : e.h, H)
+    let x = e.x
+    let y = e.y
+    const fit = distortions.get(e)
+    if (fit) {
+      // a corrected picture larger than the canvas scales down uniformly so the aspect still holds
+      const scale = Math.min(1, W / fit.w, H / fit.h)
+      w = fit.w * scale
+      h = fit.h * scale
+      x = e.x + (e.w - w) / 2
+      y = e.y + (e.h - h) / 2
+    }
+    const box = { x: clamp(x, 0, W - w), y: clamp(y, 0, H - h), w, h }
     const same = box.x === e.x && box.y === e.y && box.w === e.w && box.h === e.h
     const plan: Plan = {
       grewW,
@@ -251,15 +333,18 @@ export function auditSlideFindings(
     return plan.suggest && when(plan) ? { suggest: plan.suggest } : {}
   }
 
-  // 1. Out of bounds
+  // 1. Off the slide entirely (whatever the overhang), else out of bounds past the tolerance
   for (const e of entries) {
-    const parts = outside(e)
+    const off = offSlide(e)
+    const parts = off ? outside(e, 0) : outside(e)
     if (!parts.length) continue
     findings.push({
-      code: 'out_of_bounds',
+      code: off ? 'off_slide' : 'out_of_bounds',
       level: 'error',
       el: idOf(e.id),
-      message: `Out of bounds: ${label(e, idOf)} ${parts.join(', ')}`,
+      message: off
+        ? `Off slide: ${label(e, idOf)} lies entirely outside the slide (${parts.join(', ')})`
+        : `Out of bounds: ${label(e, idOf)} ${parts.join(', ')}`,
       box: boxOf(e),
       ...withSuggest(e),
     })
@@ -298,6 +383,21 @@ export function auditSlideFindings(
     }
   }
 
+  // 2c. Stretched pictures: the box aspect strays from the (cropped) bitmap aspect
+  for (const [e, d] of distortions) {
+    findings.push({
+      code: 'picture_distorted',
+      level: 'warning',
+      el: idOf(e.id),
+      message: `Picture distorted: ${label(e, idOf)} box aspect ${d.actual.toFixed(3)} vs source ${d.expected.toFixed(3)} (${d.pct.toFixed(1)}% off; resize one side or crop)`,
+      box: boxOf(e),
+      expected_ratio: round3(d.expected),
+      actual_ratio: round3(d.actual),
+      distortion_pct: Math.round(d.pct * 10) / 10,
+      ...withSuggest(e),
+    })
+  }
+
   // 3. Pairwise overlap of content elements
   const content = entries.filter((e) => isContent(e) && e.w * e.h < W * H * BACKGROUND_AREA_RATIO)
   for (let i = 0; i < content.length; i++) {
@@ -330,6 +430,10 @@ export function auditSlideFindings(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000
 }
 
 /** Format the audit result as trailing text for a tool's return value. */

@@ -15,9 +15,12 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { handleDocsControl, type ControlRequest } from './control'
 import { DOMParser as PmDOMParser, type Mark as PmMark, Slice as PmSlice } from '@tiptap/pm/model'
-import { NodeSelection, type Transaction } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, type Command, type Transaction } from '@tiptap/pm/state'
 import { Dropdown, ImageViewer, createZoomWheelClassifier, useAutoSavePref } from '@genoffice/ui'
 import { wordRangeAtCaret } from './editor/comments'
+import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
+import { linkTarget } from './editor/link-actions'
+import { FieldDialog } from './components/FieldDialog'
 import { markdownPasteHtml } from './editor/markdown-paste'
 import { pasteTextSlice, singleCellPasteText } from './editor/paste-text'
 import {
@@ -48,6 +51,7 @@ import {
   BLANK_ORDERED_NUM_ID,
   DEFAULT_SECTION,
   applyPageNumType,
+  customLevelFromNumberingLevel,
   applySectionSettings,
   applySectionStartType,
   applyTitlePg,
@@ -55,17 +59,22 @@ import {
   type Block,
   type CommentInfo,
   type CustomNumberingLevel,
+  type NumberingDef,
   type DocProtection,
   type WriteProtection,
   nextNoteId,
+  PAGE_MARK,
   type HeaderFooter,
   type HfImage,
   type NoteInfo,
+  type ParsedDocFull,
   type SectionInfo,
   type SectionSettings,
   type SourceInfo,
   pendingHeadingLevel,
   pictureWatermarkPreviewImage,
+  previewFontSettings,
+  type StyleInfo,
   type StyleUpsert,
   type DefaultFonts,
   type ThemeColors,
@@ -73,7 +82,7 @@ import {
   type PictureWatermarkSpec,
   type WatermarkSpec,
 } from '@genoffice/docx-engine'
-import type { AiDocContent, AiSettings, OpenDocxResult } from '../shared/ipc'
+import type { AiDocContent, AiSettings, MenuCommand, OpenDocxResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
 import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, AI_REVISION_AUTHOR } from './ai/AiPanel'
@@ -83,6 +92,15 @@ import { applyResolvedPageSetup, describeSection, type AiPageSetupAccess } from 
 import { patchPendingSectPr, sectionIndexAtBlock } from './ai/pending-sections'
 import { protectedNoteMarkBlock, type AiNotesAccess } from './ai/note-ops'
 import { applyHfText, hfEditText } from './editor/hf-text'
+import {
+  insertHfField,
+  insertHfInstrField,
+  mountHfEditor,
+  type HfEditorHandle,
+} from './editor/hf-editor'
+import type { HfAction, HfEditingInfo } from './components/ribbon-hf-tab'
+import { hfCommitTarget, hfLinked, resolveHf, withHfLink, type HfSectionState } from './hf-sections'
+import { hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { textColorValue } from './editor/text-color'
 import { textOutlineCssValue } from './editor/text-outline'
 import { AiAskPopover } from './components/AiAskPopover'
@@ -100,6 +118,7 @@ import { HeaderFooterArea } from './components/HeaderFooterArea'
 import { PageFootnotes, PageEndnotes } from './components/PageNoteAreas'
 import { noteMarkText, type NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
+import { paraPaginationMeta } from './editor/para-flags'
 import { PrintDialog } from './components/PrintDialog'
 import {
   appendEndnotesBlock,
@@ -107,7 +126,6 @@ import {
   assignSections,
   bumpLineSampleFontEpoch,
   endnotesAnchorY,
-  effectiveHfRefs,
   createLineRectsCache,
   anchorElement,
   lineStartAnchor,
@@ -136,6 +154,7 @@ import {
   sectionVertical,
   sectionTopMarginSpecs,
   sectionWidthSpecs,
+  mirrorMarginSpecs,
   paperWidthPx,
   pageLeftPx,
   sectionGridPitchPt,
@@ -183,18 +202,23 @@ import {
   LayoutBatch,
 } from './editor/pagination-gaps'
 import { setColumnLayout } from './editor/column-layout'
+import { pageMargins } from './page-margins'
 import { syncLineNumbers } from './editor/line-numbers'
 import {
   MARKUP_AREA_W,
   clearMarginAnnotations,
   syncMarginAnnotations,
+  type MarginHandlers,
 } from './editor/margin-annotations'
 import {
   bumpHfProbeFontEpoch,
+  hfHasPageField,
   hfHasVisibleContent,
   hfReservedHeightPx,
+  hfWithoutPageMarks,
   hfStripGeom,
   makeGapHfEl,
+  hfImageHangsOnPara,
   makeHfFloatImgEl,
   type HfFloatBox,
 } from './editor/hf-dom'
@@ -214,9 +238,33 @@ import { SPELLCHECK_KEY, spellcheckEnabled } from './spellcheck-pref'
 import { cachedByDoc } from './doc-cache'
 import { useShallowStable, useStableCallbacks } from './use-stable'
 import { FindPanel } from './components/FindPanel'
+import { ZoomDialog } from './components/ZoomDialog'
+import type { PageLayout } from './editor/goto'
 import { Ribbon } from './components/Ribbon'
+import {
+  AdjustListIndentsDialog,
+  DefineBulletDialog,
+  DefineMultilevelDialog,
+  DefineNumberFormatDialog,
+  SetNumberingValueDialog,
+  type ListDialogKind,
+} from './components/ListDialogs'
+import {
+  documentListPresets,
+  numberPresetLevels,
+  recentListPresets,
+  rememberListPreset,
+} from './list-presets'
 import { computeFormatState } from './components/ribbon-format-state'
-import { IconRedo, IconSave, IconUndo } from './components/icons'
+import {
+  IconOutlineView,
+  IconPrintLayout,
+  IconReadMode,
+  IconRedo,
+  IconSave,
+  IconUndo,
+  IconWebLayout,
+} from './components/icons'
 import { ToastHost } from './components/toast'
 import {
   AI_REWRITE_ACK_KEY,
@@ -239,9 +287,31 @@ import {
   ParagraphDialog,
   type ContextMenuState,
 } from './components/ContextMenu'
+import {
+  CellMarginsDialog,
+  DeleteCellsDialog,
+  InsertCellsDialog,
+  SplitCellsDialog,
+  type TableDialogKind,
+} from './components/TableDialogs'
+import { TablePropertiesDialog } from './components/TablePropertiesDialog'
+import { showToast } from './components/toast-bus'
+import { setTableAutoFit, toggleRepeatHeaderRows } from './editor/table-properties'
+import { distributeSelectedColumns } from './editor/table-sizing'
+import {
+  distributeRowsEvenly,
+  editableOrToast,
+  ensureCaretInTable,
+  insertRowsOrColumns,
+  selectTablePart,
+  splitTableAtSelection,
+} from './editor/table-ops'
+import { deleteColumn, deleteRow, deleteTable, mergeCells } from '@tiptap/pm/tables'
 import { PromptModal } from './components/PromptModal'
 import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { WordCountDialog, type DocStats } from './components/WordCountDialog'
+import { AutoCorrectDialog } from './components/AutoCorrectDialog'
+import { PreferencesDialog } from './components/PreferencesDialog'
 import { applyCase, nextCaseMode, selectionText } from './editor/case-transform'
 import { stepHangingIndent, stepParagraphIndent } from './editor/indent'
 import { PasswordDialog } from './components/PasswordDialog'
@@ -252,6 +322,7 @@ import {
   setActiveSubEditor,
   subscribeSubEditorState,
 } from './editor/active-editor'
+import { installSelectionBar } from './editor/selection-bar'
 import type { CompareEntry } from './editor/compare'
 import { collectHeadings } from './editor/headings'
 import { applyTocPageDisplays } from './editor/toc-refresh'
@@ -267,19 +338,28 @@ import { setDkColor } from './editor/dark-page'
 import { useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
 import { InkOverlay } from './components/InkOverlay'
-import { collectRevisions, gotoRevision, type TrackChangesStorage } from './editor/revisions'
+import {
+  TRACK_IGNORE,
+  collectRevisions,
+  nextRevision,
+  selectRevision,
+  type TrackChangesStorage,
+} from './editor/revisions'
+import { initialMarkupMode, revisionHiddenIn } from './editor/revision-view'
 import { NavPane } from './components/NavPane'
+import { StylesPane } from './components/StylesPane'
 import { Ruler } from './components/Ruler'
-import { docBodyFont, docHasCjk, docLineFactor, docThemeCss } from './doc-style-css'
+import { docBodyFont, docHasCjk, docLineFactor, docStyleCss, docThemeCss } from './doc-style-css'
 import { isDocDirty, runGuardedCandidate, runGuardedDocumentAction } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
-  hfFromPart,
   restingHfAreaVariant,
   type DocState,
   type HfVariantKey,
   type HfVariantsState,
   type HfView,
+  EMPTY_PENDING_NUMBERING,
+  pendingNumberingDirty,
   type PendingNumbering,
 } from './doc-state'
 import {
@@ -320,10 +400,24 @@ const WORD_COUNT_THROTTLE_MS = 400
 const MAX_FOLLOW_UP_PASSES = 6
 import { runHeadlessDocumentExport } from './headless-export'
 import { installMcpBridge } from './mcp-bridge'
-import { nextDocsZoom } from './wheel-zoom'
+import {
+  clampDocsZoom,
+  DOCS_ZOOM_MAX,
+  DOCS_ZOOM_MIN,
+  nextDocsZoom,
+  stepDocsZoom,
+  type ZoomFitMode,
+} from './wheel-zoom'
 import {
   allocateListNumId as allocateListNumIdImpl,
+  addPictureBullet,
+  changeListLevel as changeListLevelImpl,
   continueNumbering as continueNumberingImpl,
+  currentListTarget as currentListTargetImpl,
+  currentListValue,
+  editListLevel as editListLevelImpl,
+  hasPreviousList,
+  setNumberingValue as setNumberingValueImpl,
   createCustomListDef as createCustomListDefImpl,
   restartNumbering as restartNumberingImpl,
   type NumberingContext,
@@ -333,10 +427,14 @@ import {
   addCommentAt as addCommentAtImpl,
   cancelNewComment as cancelNewCommentImpl,
   clearInks as clearInksImpl,
+  commentThreadAtCaret as commentThreadAtCaretImpl,
   compareWithFile as compareWithFileImpl,
+  deleteAllComments as deleteAllCommentsImpl,
   deleteComment as deleteCommentImpl,
+  deleteCommentAtCaret as deleteCommentAtCaretImpl,
   deleteNote as deleteNoteImpl,
   editComment as editCommentImpl,
+  gotoComment as gotoCommentImpl,
   handleRevision as handleRevisionImpl,
   removeInks as removeInksImpl,
   replyToComment as replyToCommentImpl,
@@ -609,7 +707,36 @@ const DEFAULT_SETTINGS: AiSettings = {
   ) as AiSettings['providers'],
 }
 
+/** Table menu items that are plain editor commands (the dialogs and Distribute Rows are handled inline) */
+const TABLE_MENU_COMMANDS: Partial<Record<MenuCommand, (widthPx: number) => Command>> = {
+  'table-insert-rows-above': (w) => insertRowsOrColumns(1, 'above', w),
+  'table-insert-rows-below': (w) => insertRowsOrColumns(1, 'below', w),
+  'table-insert-cols-left': (w) => insertRowsOrColumns(1, 'left', w),
+  'table-insert-cols-right': (w) => insertRowsOrColumns(1, 'right', w),
+  'table-delete-table': () => deleteTable,
+  'table-delete-columns': () => deleteColumn,
+  'table-delete-rows': () => deleteRow,
+  'table-select-table': () => selectTablePart('table'),
+  'table-select-column': () => selectTablePart('column'),
+  'table-select-row': () => selectTablePart('row'),
+  'table-select-cell': () => selectTablePart('cell'),
+  'table-merge-cells': () => mergeCells,
+  'table-split-table': () => splitTableAtSelection(),
+  'table-autofit-contents': (w) => setTableAutoFit('contents', w),
+  'table-autofit-window': (w) => setTableAutoFit('window', w),
+  'table-autofit-fixed': (w) => setTableAutoFit('fixed', w),
+  'table-distribute-columns': (w) => distributeSelectedColumns(w),
+  'table-repeat-header': () => toggleRepeatHeaderRows(),
+}
+
 /** heading level after a define_style patch: null outlineLevel drops heading status, a number sets it, absent keeps the current */
+/** An encrypted file is not a document yet: the replace guard waits until the
+ *  password prompt has decrypted one (submitDocPwd), so a cancelled or wrong
+ *  password never saves or discards the document that is still open. */
+function replacesDocument(result: NonNullable<OpenDocxResult>): boolean {
+  return !('needsPassword' in result)
+}
+
 export function App() {
   // subscribe to language switches for re-render; strings all go through module-level t, so memoized callbacks never capture stale closures
   const { lang } = useI18n()
@@ -665,6 +792,9 @@ export function App() {
   const [sectionDirty, setSectionDirty] = useState(false)
   /** Index of the cursor's section (maintained by selectionUpdate) */
   const [activeSection, setActiveSection] = useState(0)
+  // displayed number of the caret's page: a mirrored document's ruler follows its parity
+  const [caretPageNo, setCaretPageNo] = useState(1)
+  const locateCaretPageRef = useRef<() => void>(() => {})
   /** Indexes of edited non-final sections (their section-break paragraphs' sectPr is rewritten on save) */
   const [sectionsDirty, setSectionsDirty] = useState<number[]>([])
   /** Start type pending write to the trailing sectPr after inserting a continuous section break */
@@ -681,6 +811,8 @@ export function App() {
   const [titlePgDirty, setTitlePgDirty] = useState(false)
   const [evenOddHf, setEvenOddHf] = useState(false)
   const [evenOddHfDirty, setEvenOddHfDirty] = useState(false)
+  const [mirrorMargins, setMirrorMargins] = useState(false)
+  const [mirrorMarginsDirty, setMirrorMarginsDirty] = useState(false)
   const [hfView, setHfViewState] = useState<HfView>('default')
   /** false until the user picks a variant (chip/toggle); resting areas then follow their page's variant instead */
   const [hfViewTouched, setHfViewTouched] = useState(false)
@@ -697,38 +829,42 @@ export function App() {
   const [pgNumEdit, setPgNumEdit] = useState<{ fmt?: string; start?: number } | null>(null)
   const [pgNumDirtySections, setPgNumDirtySections] = useState<number[]>([])
   /** Pending numbering definitions to append (saved via SaveOptions.numbering; restart numbering / new list definitions) */
-  const [pendingNumbering, setPendingNumbering] = useState<PendingNumbering>({
-    newDefs: [],
-    restartNums: [],
-  })
-  const numberingDirty =
-    pendingNumbering.newDefs.length > 0 || pendingNumbering.restartNums.length > 0
+  const [pendingNumbering, setPendingNumbering] =
+    useState<PendingNumbering>(EMPTY_PENDING_NUMBERING)
+  const numberingDirty = pendingNumberingDirty(pendingNumbering)
   /** Header/footer edits for non-final sections (key = `${lastBlockIndex}:${kind}`), saved via SaveOptions.sectionHf */
   const [sectionHfEdits, setSectionHfEdits] = useState<Record<string, HeaderFooter>>({})
-  /** The canvas header/footer area always views/edits the first section (multi-section docs: later sections inherit its refs) */
-  const hfSectionClamped = 0
+  /** Link to Previous switched on for `${sectionIdx}:${kind}`: the section's own default reference goes on save */
+  const [hfLinks, setHfLinks] = useState<Record<string, true>>({})
+  /** the strip whose editor is open (drives the contextual Header & Footer tab) */
+  const [hfEditing, setHfEditing] = useState<{
+    kind: 'header' | 'footer'
+    section: number
+    variant: HfView
+    /** absolute page index of the strip (formatted numbers repeat across restarted sections) */
+    pageIdx: number
+    /** section whose part the strip showed when the editor opened */
+    owner: number
+  } | null>(null)
+  const hfEditingRef = useRef(hfEditing)
+  hfEditingRef.current = hfEditing
+  /** an edge strip commits to the variant its editor opened with, not the view a toggle switched to meanwhile */
+  const edgeHfTarget = (kind: 'header' | 'footer', view: HfView) => {
+    const open = hfEditingRef.current
+    return open?.kind === kind
+      ? { variant: open.variant, owner: open.owner }
+      : { variant: view, owner: undefined }
+  }
+  /** bumps on document changes so derived section state follows deleted break paragraphs */
+  const [docVersion, setDocVersion] = useState(0)
+  const hfEditorRef = useRef<HfEditorHandle | null>(null)
+  const [hfAreaEditRequest, setHfAreaEditRequest] = useState<{
+    kind: 'header' | 'footer'
+    nonce: number
+  } | null>(null)
   const multiHf = sections.length > 1
-  const effRefsAll = useMemo(() => effectiveHfRefs(sections), [sections])
   const effHfView: HfView =
     (hfView === 'first' && !titlePg) || (hfView === 'even' && !evenOddHf) ? 'default' : hfView
-  /** Multi-section: the selected section's effective header/footer (local edits > referenced part > final section falls back to global edit state) */
-  const sectionHfValue = (kind: 'header' | 'footer'): HeaderFooter | null => {
-    const idx = hfSectionClamped
-    const sec = sections[idx]
-    const globalState = kind === 'header' ? header : footer
-    if (!sec) return globalState
-    const refVariants = effRefsAll[idx]?.[kind]
-    const fromPart = () => {
-      const rId = refVariants?.default
-      return rId ? hfFromPart(doc?.parsed.hfParts?.[rId]) : null
-    }
-    if (idx === sections.length - 1) {
-      // final section: reuse the global edit state (save writes the final section's sectPr reference)
-      const dirty = kind === 'header' ? headerDirty : footerDirty
-      return dirty ? globalState : (fromPart() ?? globalState)
-    }
-    return sectionHfEdits[`${sec.lastBlockIndex}:${kind}`] ?? fromPart()
-  }
   /** Variant an on-canvas area shows/edits: explicit chip choice wins; at rest the header area is page 1 and the footer area the last page */
   const areaView = (kind: 'header' | 'footer'): HfView =>
     hfViewTouched
@@ -741,94 +877,24 @@ export function App() {
         })
   const headerAreaView = areaView('header')
   const footerAreaView = areaView('footer')
-  const shownHeader =
-    headerAreaView === 'first'
-      ? hfVariants.headerFirst
-      : headerAreaView === 'even'
-        ? hfVariants.headerEven
-        : multiHf
-          ? sectionHfValue('header')
-          : header
-  const shownFooter =
-    footerAreaView === 'first'
-      ? hfVariants.footerFirst
-      : footerAreaView === 'even'
-        ? hfVariants.footerEven
-        : multiHf
-          ? sectionHfValue('footer')
-          : footer
-  /** images of the part in the current view (logos etc., display-only; the save path keeps their bytes untouched) */
-  const hfImagesOf = (kind: 'header' | 'footer') => {
-    const parsed = doc?.parsed
-    if (!parsed) return undefined
-    const raw = (() => {
-      const view = kind === 'header' ? headerAreaView : footerAreaView
-      if (view === 'first') {
-        return (kind === 'header' ? parsed.headerFirst : parsed.footerFirst)?.images
-      }
-      if (view === 'even') {
-        return (kind === 'header' ? parsed.headerEven : parsed.footerEven)?.images
-      }
-      if (multiHf) {
-        const rId = effRefsAll[hfSectionClamped]?.[kind]?.default
-        const fromPart = rId ? parsed.hfParts?.[rId]?.images : undefined
-        if (fromPart?.length) return fromPart
-      }
-      return (kind === 'header' ? parsed.headerImages : parsed.footerImages) ?? undefined
-    })()
-    // floating shapes (watermarks) must not stack into the strip (mirrors PaginationPreview)
-    return raw?.filter((img) => !img.floating)
-  }
 
+  /** the AI header/footer tool edits the strip the matching edge area shows */
   const commitHf = (kind: 'header' | 'footer', next: HeaderFooter, viewOverride?: HfView) => {
-    const view = viewOverride ?? (kind === 'header' ? headerAreaView : footerAreaView)
-    // multi-section and not the final one: use the per-section edit channel (that section becomes its own part; earlier sections are unaffected)
-    if (view === 'default' && multiHf && hfSectionClamped < sections.length - 1) {
-      const sec = sections[hfSectionClamped]
-      setSectionHfEdits((m) => ({ ...m, [`${sec.lastBlockIndex}:${kind}`]: next }))
-      return
-    }
-    if (view === 'default') {
-      if (kind === 'header') {
-        setHeader(next)
-        setHeaderDirty(true)
-      } else {
-        setFooter(next)
-        setFooterDirty(true)
-      }
-      return
-    }
-    const key: HfVariantKey =
-      view === 'first'
-        ? kind === 'header'
-          ? 'headerFirst'
-          : 'footerFirst'
-        : kind === 'header'
-          ? 'headerEven'
-          : 'footerEven'
-    setHfVariants((v) => ({ ...v, [key]: next }))
-    setHfVariantsDirty((d) => (d.includes(key) ? d : [...d, key]))
+    commitHfAt(
+      kind === 'header' ? 0 : lastSectionIdx,
+      kind,
+      viewOverride ?? (kind === 'header' ? headerAreaView : footerAreaView),
+      next,
+    )
   }
   /** "Different first page" toggle, shared by the ribbon checkbox and the on-page chip */
   const toggleTitlePg = (on: boolean) => {
+    hfEditorRef.current?.exit()
     setTitlePg(on)
     setTitlePgDirty(true)
     setHfView(on ? 'first' : 'default')
     setStatus(on ? t('appTitlePgOn') : t('appTitlePgOff'))
   }
-  /** Unsaved section header/footer overrides for the pagination preview (default variant): local edits > document parts */
-  const sectionHfOverride = useCallback(
-    (si: number, kind: 'header' | 'footer'): HeaderFooter | null => {
-      const sec = sections[si]
-      if (!sec) return null
-      if (si === sections.length - 1) {
-        const dirty = kind === 'header' ? headerDirty : footerDirty
-        return dirty ? (kind === 'header' ? header : footer) : null
-      }
-      return sectionHfEdits[`${sec.lastBlockIndex}:${kind}`] ?? null
-    },
-    [sections, sectionHfEdits, header, footer, headerDirty, footerDirty],
-  )
   const [showMarks, setShowMarks] = useState(false)
   const [showRuler, setShowRuler] = useState(false)
   const [showNav, setShowNav] = useState(() => localStorage.getItem('aidocs.showNav') === '1')
@@ -843,12 +909,19 @@ export function App() {
   const [imageDragOver, setImageDragOver] = useState(false)
   const [findFocusInput, setFindFocusInput] = useState(0)
   const [findFocusReplace, setFindFocusReplace] = useState(0)
+  const [findFocusGoTo, setFindFocusGoTo] = useState(0)
+  // last pagination pass, read by the Go To tab (page / section / line targets)
+  const pageLayoutRef = useRef<PageLayout | null>(null)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showAutoCorrect, setShowAutoCorrect] = useState(false)
+  const [showPreferences, setShowPreferences] = useState(false)
   const ribbonActionsRef = useRef<{
     stepFontSize?: (dir: 1 | -1) => void
     nudgeFontSize?: (dir: 1 | -1) => void
   }>({})
   const [showComments, setShowComments] = useState(false)
+  const [showStylesPane, setShowStylesPane] = useState(false)
+  const [commentFocus, setCommentFocus] = useState<{ id: string; nonce: number } | null>(null)
   /** Style definitions pending write-back (key = styleId), saved via SaveOptions.styleUpserts */
   const [defaultFonts, setDefaultFonts] = useState<DefaultFonts>()
   const fontSettingsVersionRef = useRef(0)
@@ -913,6 +986,10 @@ export function App() {
   const [commentComposing, setCommentComposing] = useState(false)
   const [trackChanges, setTrackChanges] = useState(false)
   const [revisionDisplay, setRevisionDisplay] = useState<RevisionDisplayMode>('all')
+  /** the user picked a Markup view this session: opening another document keeps it */
+  const markupPickedRef = useRef(false)
+  const revisionDisplayRef = useRef(revisionDisplay)
+  revisionDisplayRef.current = revisionDisplay
   // the original view restores old formatting via decorations: sync the mode and trigger one repaint
   useEffect(() => {
     revisionDisplayState.mode = revisionDisplay
@@ -987,7 +1064,9 @@ export function App() {
   }, [docCss, liveLineFactor, themeFonts, themeColors])
   const [stats, setStats] = useState<DocStats | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
+  const [fieldEdit, setFieldEdit] = useState<FieldRange | null>(null)
   const [showTableModal, setShowTableModal] = useState(false)
+  const [showZoomDialog, setShowZoomDialog] = useState(false)
   const [showEquationModal, setShowEquationModal] = useState(false)
   const [eqEditTarget, setEqEditTarget] = useState<{
     pos: number
@@ -995,11 +1074,48 @@ export function App() {
     kind: 'inline' | 'block'
   } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
+  const ctxSeq = useRef(0)
+  useEffect(() => {
+    window.desktop.armContextMenu?.()
+    return window.desktop.onContextMenuRequest?.((req) => {
+      setCtxMenu((prev) =>
+        prev && prev.seq === req.seq
+          ? {
+              ...prev,
+              spell: req.misspelledWord
+                ? { word: req.misspelledWord, suggestions: req.suggestions }
+                : null,
+            }
+          : prev,
+      )
+    })
+  }, [])
   const [viewImage, setViewImage] = useState<string | null>(null)
   useEffect(() => window.desktop.onViewImage?.((src) => setViewImage(src)), [])
   const saveImageAs = useCallback((src: string) => void window.desktop.saveImageAs(src), [])
   const [showFontDialog, setShowFontDialog] = useState(false)
   const [showParaDialog, setShowParaDialog] = useState(false)
+  /** Word's table dialogs, shared by the ribbon, the right-click menu and the Table menu */
+  const [tableDialog, setTableDialog] = useState<TableDialogKind | null>(null)
+  const [tableGridlines, setTableGridlines] = useState(
+    () => localStorage.getItem('aidocs.tableGridlines') === '1',
+  )
+  const toggleTableGridlines = useCallback(
+    () =>
+      setTableGridlines((on) => {
+        localStorage.setItem('aidocs.tableGridlines', on ? '0' : '1')
+        return !on
+      }),
+    [],
+  )
+  // section content width the table commands / dialogs fit the grid into (same formula as the ribbon)
+  const tableSection = sections[activeSection]?.settings ?? section
+  const tableSectionWidthPx = tableSection
+    ? Math.max(
+        1,
+        (tableSection.pageWidth - tableSection.marginLeft - tableSection.marginRight) / 15,
+      )
+    : 624
   const [, forceRender] = useReducer((x: number) => x + 1, 0)
   const dirtyRef = useRef(false)
   // serializes save(): overlapping saves (Cmd+S vs autosave timer vs blur) would
@@ -1266,6 +1382,104 @@ export function App() {
     },
   })
 
+  // every header/footer consumer (strips, gaps, heights, preview, AI, save) reads
+  // through one resolver, so pending edits, Link to Previous and inheritance agree
+  // the section list as Word sees it right now: a deleted break paragraph merges its
+  // section into the next, pending breaks are already in `sections`. Derived from the
+  // document itself (not the paint-time measurement), so a strip edit lands in the right
+  // slot even before the canvas has re-measured
+  const hfSections = useMemo(() => {
+    if (!editor || sections.length <= 1) return sections
+    const present: Array<{ docxIndex: number }> = []
+    editor.state.doc.forEach((node) => {
+      const di = node.attrs?.docxIndex
+      if (typeof di === 'number') present.push({ docxIndex: di })
+    })
+    return liveSections(sections, present as BlockBox[], undefined, delSectBreaks)
+    // docVersion: the doc identity is what changes, and it is not a React value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, sections, delSectBreaks, docVersion])
+  const hfState = useMemo<HfSectionState>(
+    () => ({
+      sections: hfSections,
+      edits: sectionHfEdits,
+      links: hfLinks,
+      docStrips: { header, footer, variants: hfVariants },
+      parsed: doc?.parsed ?? null,
+    }),
+    [hfSections, sectionHfEdits, hfLinks, header, footer, hfVariants, doc],
+  )
+  const hfResolveAt = useCallback(
+    (si: number, kind: 'header' | 'footer', variant: HfView) =>
+      resolveHf(hfState, si, kind, variant),
+    [hfState],
+  )
+  const hfValueAt = useCallback(
+    (si: number, kind: 'header' | 'footer', variant: HfView) =>
+      resolveHf(hfState, si, kind, variant).value,
+    [hfState],
+  )
+  const hfLinkedAt = (si: number, kind: 'header' | 'footer', variant: HfView) =>
+    hfLinked(hfState, si, kind, variant)
+  const lastSectionIdx = Math.max(0, hfSections.length - 1)
+  const shownHeader = hfValueAt(0, 'header', headerAreaView)
+  const shownFooter = hfValueAt(lastSectionIdx, 'footer', footerAreaView)
+  /** images of the strip an edge area shows (logos etc., display-only; floating shapes render separately) */
+  const hfImagesOf = (kind: 'header' | 'footer') =>
+    hfResolveAt(
+      kind === 'header' ? 0 : lastSectionIdx,
+      kind,
+      kind === 'header' ? headerAreaView : footerAreaView,
+    ).images?.filter((img) => !img.floating)
+  /**
+   * Write an edit made on section `si`'s strip to the part that owns it. `ownerAtOpen`
+   * (the owner when the editor opened) refuses a write whose owner moved to an earlier
+   * section meanwhile: Link to Previous under an open editor must not overwrite the
+   * strip it reconnects to.
+   */
+  const commitHfAt = (
+    si: number,
+    kind: 'header' | 'footer',
+    variant: HfView,
+    next: HeaderFooter,
+    ownerAtOpen?: number,
+  ): boolean => {
+    const target = hfCommitTarget(hfState, si, kind, variant, ownerAtOpen)
+    if (!target) return false
+    // functional: two commits in one turn (Remove Page Numbers on both strips, an
+    // editor exit racing an AI set) must both land
+    setSectionHfEdits((m) => ({ ...m, [target.key]: next }))
+    return true
+  }
+  const setHfLink = (si: number, kind: 'header' | 'footer', variant: HfView, on: boolean) => {
+    if (
+      on &&
+      !window.confirm(t(kind === 'header' ? 'appHfLinkConfirmHeader' : 'appHfLinkConfirmFooter'))
+    )
+      return
+    // the open editor holds the strip being discarded: it must not commit it anywhere
+    if (on) hfEditorRef.current?.discard()
+    if (!withHfLink(hfState, si, kind, variant, on)) return
+    setSectionHfEdits(
+      (m) => withHfLink({ ...hfState, edits: m }, si, kind, variant, on)?.edits ?? m,
+    )
+    setHfLinks((l) => withHfLink({ ...hfState, links: l }, si, kind, variant, on)?.links ?? l)
+  }
+  const setHfDistance = (si: number, kind: 'header' | 'footer', twips: number) => {
+    // `si` indexes the live list; the saved list (what the save rewrites) is matched by its break paragraph
+    const live = hfSections[si]
+    const saved = live ? sections.findIndex((s) => s.lastBlockIndex === live.lastBlockIndex) : -1
+    const cur = (saved >= 0 ? sections[saved].settings : undefined) ?? section
+    if (!cur) return
+    const next = { ...cur, [kind === 'header' ? 'headerDist' : 'footerDist']: twips }
+    if (saved >= 0)
+      setSections((prev) => prev.map((s, i) => (i === saved ? { ...s, settings: next } : s)))
+    if (sections.length <= 1 || saved < 0 || saved === sections.length - 1) {
+      setSection(next)
+      setSectionDirty(true)
+    } else setSectionsDirty((d) => (d.includes(saved) ? d : [...d, saved]))
+  }
+
   // textbox sub-editors: re-render the ribbon on focus/selection changes and
   // mark the document dirty when their content changes
   useEffect(
@@ -1292,6 +1506,10 @@ export function App() {
 
   const spellcheckWasOn = useRef(spellcheckActive)
   const respellKickBusy = useRef(false)
+  // bumped by the context menu after Add to Dictionary / a language change:
+  // the session checker is updated but existing squiggles only refresh on typing
+  const [respellNonce, setRespellNonce] = useState(0)
+  const respellNonceSeen = useRef(0)
   // spell-diag trace: squiggle losses in the field are intermittent and
   // platform-bound, so the toggle/kick lifecycle leaves a line in
   // userData/spell-diag.log for support to collect (never breaks the app)
@@ -1332,7 +1550,8 @@ export function App() {
     // transaction, no history entry, no dirty flag) and a capture-phase key
     // shield keeps its keymap and other key handlers out of the round trip —
     // the same shield also tells us when the keystroke has actually landed.
-    if (spellcheckActive && !spellcheckWasOn.current) {
+    const respellRequested = respellNonce !== respellNonceSeen.current
+    if (spellcheckActive && (!spellcheckWasOn.current || respellRequested)) {
       let attempts = 0
       // cancel a pending retry/rAF if the effect re-runs (another off/on) or the
       // component unmounts — two overlapping kick chains would each pause the DOM
@@ -1405,8 +1624,8 @@ export function App() {
             if (e.type === 'keydown' && !kickDown) pass = kickDown = true
             else if (e.type === 'keypress' && !kickPress) pass = kickPress = true
           }
-          if (pass) sawKick = true
-          else e.preventDefault()
+          if (pass && e.type === 'keypress') sawKick = true
+          else if (!pass) e.preventDefault()
           e.stopPropagation()
         }
         document.addEventListener('keydown', shield, true)
@@ -1452,14 +1671,15 @@ export function App() {
               while (!sawKick && Date.now() < deadline) {
                 await new Promise((r) => setTimeout(r, 30))
               }
-              // Linux/mac Hunspell respells in the keystroke's wake; the Windows
-              // OS spellchecker samples the text asynchronously with throttling,
-              // and a scrub 0.12s after the keystroke erased the mutation before
-              // the service ever saw it (squiggles only
-              // returned when repeated toggles happened to straddle a sampling
-              // window). Let the typed state live long enough to be sampled.
-              if (sawKick && /win/i.test(navigator.platform)) {
-                await new Promise((r) => setTimeout(r, 900))
+              // Blink respells from an idle task and drops the answer if the text
+              // changed meanwhile: scrub behind the task and the checker's reply
+              if (sawKick) {
+                await new Promise<void>((r) => {
+                  if (typeof requestIdleCallback === 'function')
+                    requestIdleCallback(() => r(), { timeout: 400 })
+                  else setTimeout(r, 250)
+                })
+                await new Promise((r) => setTimeout(r, /win/i.test(navigator.platform) ? 900 : 150))
               }
               scrub()
             } finally {
@@ -1498,8 +1718,9 @@ export function App() {
       rafId = requestAnimationFrame(runKick)
     }
     spellcheckWasOn.current = spellcheckActive
+    respellNonceSeen.current = respellNonce
     return () => cancelRespellKick()
-  }, [editor, spellcheck, spellcheckActive])
+  }, [editor, spellcheck, spellcheckActive, respellNonce])
 
   // Ctrl/⌘+wheel zoom: Chromium delivers a trackpad pinch as ctrlKey wheel
   // events with small fractional deltas (kept continuous), while a mouse notch
@@ -1751,6 +1972,8 @@ export function App() {
     setHfVariantsDirty,
     sectionHfEdits,
     setSectionHfEdits,
+    hfLinks,
+    setHfLinks,
     titlePg,
     titlePgDirty,
     evenOddHf,
@@ -1759,6 +1982,10 @@ export function App() {
     setTitlePgDirty,
     setEvenOddHf,
     setEvenOddHfDirty,
+    mirrorMargins,
+    mirrorMarginsDirty,
+    setMirrorMargins,
+    setMirrorMarginsDirty,
     // opening a document resets to the resting per-page variant selection
     setHfView: (v: HfView) => {
       setHfViewState(v)
@@ -1838,6 +2065,8 @@ export function App() {
       setModifyUnlocked(!wp?.hash)
       setModifyPwdPrompt(wp?.hash ? { value: '', errorKey: '' } : null)
     },
+    onRevisionsLoaded: (has) =>
+      setRevisionDisplay((prev) => initialMarkupMode(prev, markupPickedRef.current, has)),
     setCompareResult,
     promptDocxPassword: (info) =>
       setDocPwdPrompt({ path: info.path, name: info.name, value: '', errorKey: '', busy: false }),
@@ -1924,6 +2153,7 @@ export function App() {
         () => window.desktop.confirmDocumentReplace(),
         () => window.desktop.openDocx(),
         commitOpenedFile,
+        replacesDocument,
       ),
     [commitOpenedFile],
   )
@@ -1940,6 +2170,7 @@ export function App() {
         () => window.desktop.confirmDocumentReplace(),
         () => window.desktop.openDocxPath(path),
         commitOpenedFile,
+        replacesDocument,
       ),
     [commitOpenedFile],
   )
@@ -1948,13 +2179,15 @@ export function App() {
   const submitDocPwd = async () => {
     if (!docPwdPrompt || docPwdPrompt.busy || !docPwdPrompt.value) return
     setDocPwdPrompt({ ...docPwdPrompt, busy: true, errorKey: '' })
-    const confirmed = await window.desktop.confirmDocumentReplace()
-    if (!confirmed) {
-      setDocPwdPrompt((current) => (current ? { ...current, busy: false } : current))
-      return
-    }
     const res = await window.desktop.openDocxDecrypt(docPwdPrompt.path, docPwdPrompt.value)
     if (res.ok) {
+      // Open deferred the replace guard for the encrypted file (see
+      // replacesDocument); it runs once, here, now that a real document exists.
+      // Declining keeps both the prompt and the current document.
+      if (!(await window.desktop.confirmDocumentReplace())) {
+        setDocPwdPrompt((current) => (current ? { ...current, busy: false } : current))
+        return
+      }
       setDocPwdPrompt(null)
       await commitOpenedFile(res.result)
       return
@@ -2179,6 +2412,15 @@ export function App() {
     setPendingNumbering,
     numIdFloorRef,
     setStatus,
+    linkStyle: (styleId, numId, ilvl) =>
+      setStyleUpserts((prev) => ({
+        ...prev,
+        [styleId]: {
+          ...(prev[styleId] ?? { styleId }),
+          styleId,
+          pPr: { ...(prev[styleId]?.pPr ?? {}), numPr: { numId, ilvl } },
+        },
+      })),
   }
 
   const createCustomListDef = useCallback(
@@ -2191,6 +2433,78 @@ export function App() {
   )
   const restartNumbering = useCallback(() => restartNumberingImpl(numberingCtxRef.current), [])
   const continueNumbering = useCallback(() => continueNumberingImpl(numberingCtxRef.current), [])
+
+  /** which list dialog is open (ribbon galleries and the right-click menu open them) */
+  const [listDialog, setListDialog] = useState<ListDialogKind | null>(null)
+  const [listRecentsEpoch, setListRecentsEpoch] = useState(0)
+  const recentLists = useMemo(
+    () => ({
+      bullets: recentListPresets('bullets'),
+      numbers: recentListPresets('numbers'),
+      multi: recentListPresets('multi'),
+    }),
+    // recomputed after every pick
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [listRecentsEpoch],
+  )
+  const documentLists = useMemo(() => {
+    if (!doc) return undefined
+    const defs = new Map(doc.parsed.numbering)
+    for (const d of pendingNumbering.newDefs) {
+      const overlay = (
+        editor?.storage.listNumbering as { defs?: Map<string, NumberingDef> } | undefined
+      )?.defs?.get(d.numId)
+      if (overlay) defs.set(d.numId, overlay)
+    }
+    return documentListPresets(defs.values())
+  }, [doc, pendingNumbering.newDefs, editor])
+  const applyDefinedList = useCallback(
+    (levels: CustomNumberingLevel[], kind: 'bullets' | 'numbers' | 'multi') => {
+      if (!editor) return
+      const numId = createCustomListDefImpl(numberingCtxRef.current, levels)
+      if (!numId) return
+      rememberListPreset(kind, levels)
+      setListRecentsEpoch((n) => n + 1)
+      const ilvl = editor.isActive('docListItem')
+        ? Number(editor.getAttributes('docListItem').ilvl) || 0
+        : 0
+      editor
+        .chain()
+        .focus()
+        .setNode('docListItem', {
+          kind: levels[0]?.numFmt === 'bullet' ? 'bullet' : 'ordered',
+          numId,
+          ilvl,
+        })
+        .run()
+      setListDialog(null)
+    },
+    [editor],
+  )
+  const changeListLevel = useCallback(
+    (ilvl: number) => {
+      if (editor) changeListLevelImpl(editor, ilvl)
+    },
+    [editor],
+  )
+  const listTarget = listDialog ? currentListTargetImpl(numberingCtxRef.current) : null
+
+  // typed "- " / "1. " lists get real numbering definitions, like the ribbon buttons
+  useEffect(() => {
+    if (!editor) return
+    const storage = editor.storage.autocorrect
+    storage.hooks = {
+      bulletNumId: () => allocateListNumId('bullet'),
+      numberedNumId: (numFmt, pattern, start) => {
+        const levels = numberPresetLevels(numFmt, pattern)
+        if (start > 1) levels[0] = { ...levels[0], start }
+        return createCustomListDef(levels)
+      },
+    }
+    return () => {
+      storage.hooks = null
+    }
+  }, [editor, allocateListNumId, createCustomListDef])
 
   // ---- Inline fields: insertion and F9 update (cached results recomputed locally) ----
 
@@ -2488,6 +2802,7 @@ export function App() {
     setCommentsDirty,
     setCommentComposing,
     setShowComments,
+    setCommentFocus,
     setInkAnnotations,
     setInksDirty,
     setCompareResult,
@@ -2549,9 +2864,13 @@ export function App() {
 
   // open comment threads add the markup column right of the paper: width-fit
   // zoom must count it or the canvas overflows the pane
+  // (Simple Markup collapses threads to glyphs inside the page margin: no column)
   const markupExtra = useMemo(
-    () => (comments.some((c) => !c.parentId && !c.done) ? MARKUP_AREA_W : 0),
-    [comments],
+    () =>
+      revisionDisplay !== 'simple' && comments.some((c) => !c.parentId && !c.done)
+        ? MARKUP_AREA_W
+        : 0,
+    [comments, revisionDisplay],
   )
 
   /** Uncapped width-fit ratio (%) from the scroller's measured size */
@@ -2563,30 +2882,39 @@ export function App() {
   }, [section, markupExtra])
 
   /** Last auto-fit: if current zoom still equals its value → "fit mode", re-fit on size changes */
-  const lastFitRef = useRef<{ mode: 'width' | 'page'; value: number } | null>(null)
+  const lastFitRef = useRef<{ mode: ZoomFitMode; value: number } | null>(null)
   const zoomLiveRef = useRef(zoom)
   useEffect(() => {
     zoomLiveRef.current = zoom
   }, [zoom])
 
-  /** Word's page-width / whole-page zoom: compute the actual zoom ratio from the current window size */
-  const zoomFit = useCallback(
-    (mode: 'width' | 'page') => {
-      if (!section) return
+  /** Word's page-width / text-width / whole-page zoom: the zoom ratio for the current window size */
+  const fitZoomFor = useCallback(
+    (mode: ZoomFitMode): number | null => {
+      if (!section) return null
       const scroller = document.querySelector('.editor-scroll')
-      if (!scroller) return
+      if (!scroller) return null
       const pad = 48
       const wFit =
         ((scroller.clientWidth - pad) / (twipsToPx(section.pageWidth) + markupExtra)) * 100
       const hFit = ((scroller.clientHeight - pad) / twipsToPx(section.pageHeight)) * 100
+      const textW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
+      const tFit = ((scroller.clientWidth - pad) / (textW + markupExtra)) * 100
       // whole page = the entire page visible, so it must fit both dimensions;
       // floor, not round: rounding up would push the page past the pane edge
-      const next = mode === 'width' ? wFit : Math.min(wFit, hFit)
-      const applied = Math.min(200, Math.max(50, Math.floor(next)))
+      const next = mode === 'width' ? wFit : mode === 'text' ? tFit : Math.min(wFit, hFit)
+      return clampDocsZoom(Math.floor(next))
+    },
+    [section, markupExtra],
+  )
+  const zoomFit = useCallback(
+    (mode: ZoomFitMode) => {
+      const applied = fitZoomFor(mode)
+      if (applied == null) return
       lastFitRef.current = { mode, value: applied }
       setZoom(applied)
     },
-    [section, markupExtra],
+    [fitZoomFor],
   )
 
   // On scroller size changes (window/AI-dock/nav-pane toggles): follow with a
@@ -2597,17 +2925,22 @@ export function App() {
   useEffect(() => {
     const el = document.querySelector('.editor-scroll')
     if (!doc || !el) return
+    let lastWidth = -1
     const ro = new ResizeObserver(() => {
       const raw = rawFitWidth()
       if (raw == null) return
+      const widthChanged = el.clientWidth !== lastWidth
+      lastWidth = el.clientWidth
       const lf = lastFitRef.current
       if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) {
         zoomFit(lf.mode) // fit mode: follow the container in the user's chosen fit
         return
       }
       // The overflow test uses the uncapped ratio: a manual zoom that still
-      // fits (or is smaller than fit) is the user's choice and must be kept
-      if (zoomLiveRef.current <= raw + 0.5) return
+      // fits (or is smaller than fit) is the user's choice and must be kept.
+      // A height-only change (a classic horizontal scrollbar appearing for the
+      // zoomed-in page) must not clamp a zoom the user just chose.
+      if (!widthChanged || zoomLiveRef.current <= raw + 0.5) return
       zoomFit('width')
     })
     ro.observe(el)
@@ -2633,7 +2966,7 @@ export function App() {
   // lastFitRef first; zoomLiveRef is synced here for the same reason.
   const preReadZoomRef = useRef<{
     zoom: number
-    fit: { mode: 'width' | 'page'; value: number } | null
+    fit: { mode: ZoomFitMode; value: number } | null
   } | null>(null)
   useLayoutEffect(() => {
     if (readMode) {
@@ -2771,42 +3104,41 @@ export function App() {
   // delta (pt); mixed docs deliver it per block via sectionCharSpaceSpecs
   const charSpacePt = useMemo(() => docCharSpacePt(sections), [sections])
 
+  // page color: Word lays out one extra blank Normal paragraph under section 1's header
+  const hfPhantom = useMemo(
+    () => (doc && pageColor ? hfPhantomSpec(doc.parsed) : null),
+    [doc, pageColor],
+  )
+
   // single-section header/footer push-down: body top = max(marginTop, headerDist + header height)
   const singleHfPx = useMemo((): SectionHfHeights => {
     if (!section) return { headerPx: 0, footerPx: 0 }
     const contentW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
+    const h = hfLayoutResolved('header', hfResolveAt(0, 'header', 'default'), hfPhantom)
+    const f = hfResolveAt(0, 'footer', 'default')
+    const hFirst = hfLayoutResolved('header', hfResolveAt(0, 'header', 'first'), hfPhantom)
+    const fFirst = hfResolveAt(0, 'footer', 'first')
     return {
-      headerPx: hfReservedHeightPx(
-        'header',
-        header,
-        contentW,
-        doc?.parsed.headerImages,
-        hfHeaderGeom(section),
-      ),
-      footerPx: hfReservedHeightPx('footer', footer, contentW, doc?.parsed.footerImages),
+      headerPx: hfReservedHeightPx('header', h.value, contentW, h.images, hfHeaderGeom(section)),
+      footerPx: hfReservedHeightPx('footer', f.value, contentW, f.images),
       // live titlePg: the first page draws the live first-page variant (pageHfOf),
       // so its reserved heights track the live state, not the parsed parts
       ...(titlePg
         ? {
             firstHeaderPx: hfReservedHeightPx(
               'header',
-              hfVariants.headerFirst,
+              hFirst.value,
               contentW,
-              doc?.parsed.headerFirst?.images,
+              hFirst.images,
               hfHeaderGeom(section),
             ),
-            firstFooterPx: hfReservedHeightPx(
-              'footer',
-              hfVariants.footerFirst,
-              contentW,
-              doc?.parsed.footerFirst?.images,
-            ),
+            firstFooterPx: hfReservedHeightPx('footer', fFirst.value, contentW, fFirst.images),
           }
         : {}),
     }
     // hfMeasureEpoch: re-measure once the doc-scoped styles have committed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section, header, footer, titlePg, hfVariants, doc, hfMeasureEpoch])
+  }, [section, hfResolveAt, hfPhantom, titlePg, hfMeasureEpoch])
   const effTopSingle = section ? effectiveTopPx(section, singleHfPx.headerPx) : 0
   const effBottomSingle = section ? effectiveBottomPx(section, singleHfPx.footerPx) : 0
   const canvasSection = sections[0]?.settings ?? section
@@ -2828,50 +3160,21 @@ export function App() {
   // multi-section: estimated heights of each section's default-variant header/footer (capacity per section, variant differences ignored)
   const hfHeightsOf = useCallback(
     (secs: SectionInfo[]): SectionHfHeights[] => {
-      const refs = effectiveHfRefs(secs)
+      // pending section breaks make `secs` differ from the saved list: resolve against them
+      const liveState: HfSectionState = { ...hfState, sections: secs }
       return secs.map((s, i) => {
         const set = s.settings
         const contentW = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
-        const pick = (kind: 'header' | 'footer'): HeaderFooter | null => {
-          if (i === secs.length - 1) return kind === 'header' ? header : footer
-          const edited = sectionHfEdits[`${s.lastBlockIndex}:${kind}`]
-          if (edited) return edited
-          const rId = refs[i]?.[kind]?.default
-          return rId ? hfFromPart(doc?.parsed.hfParts?.[rId]) : null
-        }
-        const imagesOf = (kind: 'header' | 'footer') => {
-          const rId = refs[i]?.[kind]?.default
-          const fromPart = rId ? doc?.parsed.hfParts?.[rId]?.images : undefined
-          if (fromPart?.length) return fromPart
-          if (i === secs.length - 1) {
-            return (
-              (kind === 'header' ? doc?.parsed.headerImages : doc?.parsed.footerImages) ?? undefined
-            )
-          }
-          return undefined
-        }
+        const strip = (kind: 'header' | 'footer', variant: HfView) =>
+          hfLayoutResolved(kind, resolveHf(liveState, i, kind, variant), hfPhantom)
+        const pick = (kind: 'header' | 'footer') => strip(kind, 'default').value
+        const imagesOf = (kind: 'header' | 'footer') => strip(kind, 'default').images
         // titlePg first-page variant: the section's first page renders these
-        // strips (pageHfOf/hfFor), so its slice capacity must match. A lone
-        // section draws the LIVE first-page state (pageHfOf's secList.length<=1
-        // branch), so its capacity tracks the live variant/toggle too.
-        const liveFirst = secs.length === 1
-        const firstOn = liveFirst ? titlePg : s.titlePg
-        const firstPart = (kind: 'header' | 'footer'): HeaderFooter | null => {
-          if (liveFirst) return kind === 'header' ? hfVariants.headerFirst : hfVariants.footerFirst
-          const rId = refs[i]?.[kind]?.first
-          return rId ? hfFromPart(doc?.parsed.hfParts?.[rId]) : null
-        }
-        const firstImagesOf = (kind: 'header' | 'footer') => {
-          if (liveFirst) {
-            return (
-              (kind === 'header'
-                ? doc?.parsed.headerFirst?.images
-                : doc?.parsed.footerFirst?.images) ?? undefined
-            )
-          }
-          const rId = refs[i]?.[kind]?.first
-          return rId ? doc?.parsed.hfParts?.[rId]?.images : undefined
-        }
+        // strips (pageHfOf), so its slice capacity must match. A lone section
+        // draws the live first-page state, so its capacity tracks the toggle too.
+        const firstOn = secs.length === 1 ? titlePg : s.titlePg
+        const firstPart = (kind: 'header' | 'footer') => strip(kind, 'first').value
+        const firstImagesOf = (kind: 'header' | 'footer') => strip(kind, 'first').images
         return {
           headerPx: hfReservedHeightPx(
             'header',
@@ -2903,7 +3206,7 @@ export function App() {
     },
     // hfMeasureEpoch: re-measure once the doc-scoped styles have committed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [doc, header, footer, sectionHfEdits, titlePg, hfVariants, hfMeasureEpoch],
+    [hfState, hfPhantom, titlePg, hfMeasureEpoch],
   )
 
   // paragraphs without w:pStyle take the default paragraph style's constraints (widowControl off in Normal)
@@ -2946,21 +3249,12 @@ export function App() {
       }
       const styleDisplay = (b.styleId ? doc?.parsed.styles.get(b.styleId) : defaultParaStyle)
         ?.display
-      const keepNext = b.format?.keepNext ?? styleDisplay?.keepNext
-      const keepLines = b.format?.keepLines ?? styleDisplay?.keepLines
-      const breakBefore = b.format?.pageBreakBefore ?? styleDisplay?.pageBreakBefore
-      const widowOff = (b.format?.widowControl ?? styleDisplay?.widowControl) === false
-      const noLineNo = b.format?.suppressLineNumbers ?? styleDisplay?.suppressLineNumbers
+      const flags = paraPaginationMeta(b.format, styleDisplay)
       const fnBands = footnoteBandsOf(b)
       const fnExtra = fnBands.reduce((s, band) => s + band.heightPx, 0)
-      if (!keepNext && !keepLines && !breakBefore && !widowOff && !noLineNo && fnExtra === 0)
-        return undefined
+      if (!flags && fnExtra === 0) return undefined
       return {
-        ...(keepNext ? { keepNext: true } : {}),
-        ...(keepLines ? { keepLines: true } : {}),
-        ...(noLineNo ? { suppressLineNumbers: true } : {}),
-        ...(breakBefore ? { breakBefore: true } : {}),
-        ...(widowOff ? { widowControl: false as const } : {}),
+        ...flags,
         ...(fnExtra > 0 ? { footnoteExtraPx: fnExtra, footnoteBands: fnBands } : {}),
       }
     },
@@ -3088,7 +3382,11 @@ export function App() {
   // column flow (synchronous layout round-trip, no visible flicker)
   const measureSingleFlow = useCallback(
     function run<T>(pm: HTMLElement, fn: () => T): T {
-      if ((colMode === 'none' && !hasVAlign && !hasVertical) || viewMode !== 'print') return fn()
+      if (
+        (colMode === 'none' && !hasVAlign && !hasVertical && !mirrorMargins) ||
+        viewMode !== 'print'
+      )
+        return fn()
       pm.classList.add('measuring-columns')
       try {
         return fn()
@@ -3096,7 +3394,7 @@ export function App() {
         pm.classList.remove('measuring-columns')
       }
     },
-    [colMode, hasVAlign, hasVertical, viewMode],
+    [colMode, hasVAlign, hasVertical, mirrorMargins, viewMode],
   )
 
   // column-flow geometry gate: when the canvas column layout is inactive, measure as full-width single flow; the geometry must drop cols to match
@@ -3186,6 +3484,7 @@ export function App() {
     if (!doc || !section) {
       setPageInfo({ current: 1, total: 1 })
       setLastPageNo(null)
+      pageLayoutRef.current = null
       return
     }
     const scroller = document.querySelector('.editor-scroll')
@@ -3351,6 +3650,7 @@ export function App() {
         for (let i = 0; i < k; i++) {
           const prev = lastBlocks[i]
           if (prev.lineBoxes) blocks[i].lineBoxes = prev.lineBoxes
+          if (prev.lineLeadPx !== undefined) blocks[i].lineLeadPx = prev.lineLeadPx
           if (prev.tableRows) blocks[i].tableRows = prev.tableRows
           if (prev.colWraps) blocks[i].colWraps = prev.colWraps
           if (prev.oversizeLineH !== undefined) blocks[i].oversizeLineH = prev.oversizeLineH
@@ -3423,7 +3723,7 @@ export function App() {
       let sliceSplit = ''
       // consecutive anchor-paragraph runs collapse onto their band union before
       // measurement (layout-affecting, idempotent)
-      syncAnchorBands(pm, factor)
+      syncAnchorBands(pm, factor, (doc?.parsed.compatibilityMode ?? 0) >= 15)
       // natural-flow measuring state: in-paragraph gap widgets force a line break
       // at the PREVIOUS pass's cut, so measuring with them in layout re-confirms
       // that cut even after decoration-only reflows (justify space-shrink) moved
@@ -3544,6 +3844,8 @@ export function App() {
       } = measured
       slices = measured.s
       lastBlocks = blocks
+      pageLayoutRef.current = { blocks, slices, sections: secList ?? [] }
+      if (mirrorMargins) locateCaretPageRef.current()
       const blockIndex = new BlockIndex(blocks)
       // document-end footer shows the last page's displayed number, not the physical count
       if (slices.length > 0) {
@@ -3607,64 +3909,71 @@ export function App() {
           // per-section references), with real page numbers for the '#' marker
           const nums = secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1)
           const firsts = sectionFirstPages(slices)
-          const effRefs = secList ? effectiveHfRefs(secList) : null
           const parsed = doc.parsed
           // floating shapes (watermarks) must not stack into the strip (mirrors
           // PaginationPreview); they render separately as per-page behind-text images
+          // measured and document-derived section lists agree except mid-transition:
+          // bridge them by the break paragraph so the strip matches what an edit targets
+          const resolveLive = (si: number, kind: 'header' | 'footer', variant: HfView) => {
+            const end = secList?.[si]?.lastBlockIndex
+            const hsi =
+              end === undefined ? -1 : hfSections.findIndex((s) => s.lastBlockIndex === end)
+            return hfResolveAt(hsi >= 0 ? hsi : si, kind, variant)
+          }
           const pageHfOf = (
             pageIdx: number,
             kind: 'header' | 'footer',
-          ): { value: HeaderFooter | null; images?: HfImage[]; floats: HfImage[] } => {
+          ): {
+            value: HeaderFooter | null
+            images?: HfImage[]
+            floats: HfImage[]
+            section: number
+            variant: HfView
+          } => {
             const pageNo = nums[pageIdx]
+            // row-anchored logos render inside the strip (off their anchor row), not on the float layer
             const split = (imgs?: HfImage[] | null) => ({
-              images: imgs?.filter((img) => !img.floating),
+              images: imgs?.filter((img) => !img.floating || hfImageHangsOnPara(img)),
               floats: [
                 ...(kind === 'header' && pendingWatermarkImage ? [pendingWatermarkImage] : []),
                 ...(imgs?.filter(
-                  (img) => img.floating && !(watermarkDirty && (img.wordArt || img.watermark)),
+                  (img) =>
+                    img.floating &&
+                    !hfImageHangsOnPara(img) &&
+                    !(watermarkDirty && (img.wordArt || img.watermark)),
                 ) ?? []),
               ],
             })
-            if (!secList || secList.length <= 1) {
-              if (titlePg && pageIdx === 0) {
-                return kind === 'header'
-                  ? { value: hfVariants.headerFirst, ...split(parsed.headerFirst?.images) }
-                  : { value: hfVariants.footerFirst, ...split(parsed.footerFirst?.images) }
-              }
-              if (evenOddHf && pageNo % 2 === 0) {
-                return kind === 'header'
-                  ? { value: hfVariants.headerEven, ...split(parsed.headerEven?.images) }
-                  : { value: hfVariants.footerEven, ...split(parsed.footerEven?.images) }
-              }
-              return kind === 'header'
-                ? { value: header, ...split(parsed.headerImages) }
-                : { value: footer, ...split(parsed.footerImages) }
-            }
             const pageSlice = slices[pageIdx]
-            const sec = secList[Math.min(pageSlice.section, secList.length - 1)]
-            const refs = effRefs![Math.min(pageSlice.section, effRefs!.length - 1)]
-            const variant = hfVariantOf(sec.titlePg, firsts[pageIdx], evenOddHf, pageNo)
-            const ov = variant === 'default' ? sectionHfOverride(pageSlice.section, kind) : null
-            const rId = refs[kind][variant]
-            return {
-              value: ov ?? hfFromPart(rId ? parsed.hfParts?.[rId] : null),
-              ...split(rId ? parsed.hfParts?.[rId]?.images : undefined),
-            }
+            const si = secList ? Math.min(pageSlice.section, secList.length - 1) : 0
+            const variant: HfView =
+              !secList || secList.length <= 1
+                ? titlePg && pageIdx === 0
+                  ? 'first'
+                  : evenOddHf && pageNo % 2 === 0
+                    ? 'even'
+                    : 'default'
+                : hfVariantOf(secList[si].titlePg, firsts[pageIdx], evenOddHf, pageNo)
+            const resolved = resolveLive(si, kind, variant)
+            return { value: resolved.value, ...split(resolved.images), section: si, variant }
           }
           /** page geometry a page's floating header images position against */
           const floatBoxOf = (pageIdx: number): HfFloatBox => {
             const s = secList?.[slices[pageIdx].section]?.settings ?? section
             const hfH = hfHs?.[slices[pageIdx].section] ?? singleHfPx
+            const side = pageMargins(s, nums[pageIdx], mirrorMargins)
             return {
               pageW: twipsToPx(s.pageWidth),
               pageH: twipsToPx(s.pageHeight),
-              marginLeft: twipsToPx(s.marginLeft),
-              marginRight: twipsToPx(s.marginRight),
+              marginLeft: twipsToPx(side.left),
+              marginRight: twipsToPx(side.right),
               marginTop: effectiveTopPx(s, hfH.headerPx),
               marginBottom: effectiveBottomPx(s, hfH.footerPx),
               headerDist: twipsToPx(s.headerDist ?? 720),
               sectMarginTop: twipsToPx(s.marginTop),
+              sectMarginBottom: twipsToPx(s.marginBottom),
               paperX: pageLeftOf(s),
+              hostLeft: twipsToPx(s.marginLeft),
             }
           }
           const pageNoTextOf = (pageIdx: number) =>
@@ -3691,8 +4000,10 @@ export function App() {
           const canvasContentWPx = canvasSet
             ? twipsToPx(canvasSet.pageWidth - canvasSet.marginLeft - canvasSet.marginRight)
             : 0
+          // mirrored documents pin the strips too: even pages read the swapped margins
           const mixedWidths =
             mixedPaper ||
+            mirrorMargins ||
             (canvasSet != null &&
               (secList ?? []).some(
                 (s) =>
@@ -3716,23 +4027,26 @@ export function App() {
             }
           }
           // page x of a gap strip's left edge, mirroring sizeGapHf (centered, or on the body's left margin)
-          const gapStripLeft = (set: SectionSettings, box: { contentWidth: number }) =>
+          const gapStripLeft = (
+            set: SectionSettings,
+            box: { contentWidth: number },
+            pageIdx: number,
+          ) =>
             mixedWidths
-              ? twipsToPx(set.marginLeft)
+              ? twipsToPx(pageMargins(set, nums[pageIdx], mirrorMargins).left)
               : (canvasPaperW - Math.min(box.contentWidth, canvasPaperW)) / 2
+          // paper x of a page's body left edge: its section's page offset plus the
+          // page's own (mirrored) left margin
+          const bodyLeftOf = (set: SectionSettings, pageIdx: number) =>
+            pageLeftOf(set) + twipsToPx(pageMargins(set, nums[pageIdx], mirrorMargins).left)
           // strip geometry baked in at creation (sizeGapHf, --hf-ml): the gap key's
           // mKey carries the NEXT section's side margins only, while the footer strip
           // is sized and inset by the PREVIOUS section — a left-margin edit on that
           // section alone must not reuse the old footer widget at its stale inset
-          const stripGeomSig = (set: typeof canvasSet) => {
+          const stripGeomSig = (set: typeof canvasSet, pageIdx: number) => {
             if (!set) return ''
             const b = sectionPageBox(set)
-            return [
-              pageLeftOf(set) + twipsToPx(set.marginLeft),
-              b.contentWidth,
-              b.headerDist,
-              b.footerDist,
-            ]
+            return [bodyLeftOf(set, pageIdx), b.contentWidth, b.headerDist, b.footerDist]
               .map((v) => v.toFixed(1))
               .join(',')
           }
@@ -3767,7 +4081,7 @@ export function App() {
               // header/footer strip inset on the paper (alignGapHfStrips): survives
               // the inline/in-cell gaps below overriding marginLeft/Right with the host
               // block's paper offset (which folds in paragraph indents and cell positions)
-              sectionMarginLeft: pageLeftOf(nextSec) + twipsToPx(nextSec.marginLeft),
+              sectionMarginLeft: bodyLeftOf(nextSec, k + 1),
               sectionMarginRight: twipsToPx(nextSec.marginRight),
               sectionMarginTop: twipsToPx(nextSec.marginTop),
               ...(mixedPaper
@@ -3811,17 +4125,22 @@ export function App() {
                 images: gapFooter.images,
                 pageNo: pageNoTextOf(k),
                 pageTotal: visiblePages,
-                geom: { ...hfStripGeom(prevSec), stripLeft: gapStripLeft(prevSec, box) },
+                geom: { ...hfStripGeom(prevSec), stripLeft: gapStripLeft(prevSec, box, k) },
+              })
+              Object.assign(el.dataset, {
+                hfKind: 'footer',
+                hfSection: String(gapFooter.section),
+                hfVariant: gapFooter.variant,
+                hfPageIdx: String(k),
+                hfPage: pageNoTextOf(k),
+                hfTotal: String(visiblePages),
               })
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
               sizeGapHf(el, box)
               // the footer belongs to the page ABOVE the gap: its own section's
               // left margin, not the next section's (alignGapHfStrips)
-              el.style.setProperty(
-                '--hf-ml',
-                `${pageLeftOf(prevSec) + twipsToPx(prevSec.marginLeft)}px`,
-              )
+              el.style.setProperty('--hf-ml', `${bodyLeftOf(prevSec, k)}px`)
               hfEls.push(el)
             }
             if (hfHasVisibleContent(gapHeader.value, gapHeader.images)) {
@@ -3837,16 +4156,21 @@ export function App() {
                 geom: {
                   ...hfStripGeom(nextSec),
                   headerStripTop,
-                  stripLeft: gapStripLeft(nextSec, box),
+                  stripLeft: gapStripLeft(nextSec, box, k + 1),
                 },
+              })
+              Object.assign(el.dataset, {
+                hfKind: 'header',
+                hfSection: String(gapHeader.section),
+                hfVariant: gapHeader.variant,
+                hfPageIdx: String(k + 1),
+                hfPage: pageNoTextOf(k + 1),
+                hfTotal: String(visiblePages),
               })
               el.style.bottom = 'auto'
               el.style.top = `calc(100% - ${metrics.marginTop - headerStripTop}px)`
               sizeGapHf(el, box)
-              el.style.setProperty(
-                '--hf-ml',
-                `${pageLeftOf(nextSec) + twipsToPx(nextSec.marginLeft)}px`,
-              )
+              el.style.setProperty('--hf-ml', `${bodyLeftOf(nextSec, k + 1)}px`)
               hfEls.push(el)
             }
             // next page's floating header images (picture watermarks): behind-text,
@@ -3862,7 +4186,7 @@ export function App() {
                     // key must cover everything baked into the widgets (both pages'
                     // formatted numbers + total count, both sections' strip geometry),
                     // or stale PAGE/NUMPAGES / strip insets survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec)}:${stripGeomSig(nextSec)}`,
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
@@ -3874,15 +4198,16 @@ export function App() {
               const contentW = twipsToPx(
                 prevSec.pageWidth - prevSec.marginLeft - prevSec.marginRight,
               )
+              const notesLeft = bodyLeftOf(prevSec, k)
               notes = makeGapNotesEl(
                 items,
-                pageLeftOf(prevSec) + twipsToPx(prevSec.marginLeft),
+                notesLeft,
                 contentW,
                 fnH,
                 footnoteLineHeightPx(prevSec.docGrid),
                 (id) => editNote('footnote', id),
               )
-              notesKey = `${Math.round(fnH)}:${items.map((n) => `${n.no}${n.text}`).join('|')}`
+              notesKey = `${Math.round(fnH)}:${notesLeft.toFixed(1)}:${items.map((n) => `${n.no}${n.text}`).join('|')}`
               notesMetrics = { ...metrics, marginBottom: metrics.marginBottom + fnH }
             }
             const markShown = () => items.forEach((n) => gapIds.add(n.id))
@@ -4121,7 +4446,7 @@ export function App() {
               const box = floatBoxOf(0)
               firstPageFloats = {
                 els: floats.map((img) => makeHfFloatImgEl(img, box, 'lead')),
-                key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginTop)}·${Math.round(box.sectMarginTop)}·${Math.round(box.paperX ?? 0)}`,
+                key: `${floatSig(floats)}·${Math.round(box.pageW)}x${Math.round(box.pageH)}·${Math.round(box.marginLeft)}·${Math.round(box.hostLeft ?? 0)}·${Math.round(box.marginTop)}·${Math.round(box.sectMarginTop)}·${Math.round(box.paperX ?? 0)}`,
               }
             }
           }
@@ -4285,6 +4610,17 @@ export function App() {
         // sections disagreeing on the top margin: per-block --doc-margin-top for page-relative anchors
         const topSpecs =
           viewMode === 'print' && !readMode && secList ? sectionTopMarginSpecs(blocks, secList) : []
+        // w:mirrorMargins: even pages translate onto the swapped text column
+        const mirrorSpecs =
+          viewMode === 'print' && !readMode && mirrorMargins
+            ? mirrorMarginSpecs(
+                blocks,
+                slices,
+                secList ?? [],
+                section,
+                secList ? pageNumbers(slices, secList) : slices.map((_, n) => n + 1),
+              )
+            : []
         // sectPr w:textDirection sections: writing-mode boxes placed sideways (width wins)
         const vertSpecs =
           viewMode === 'print' && !readMode && secList && hfHs
@@ -4296,6 +4632,7 @@ export function App() {
           charSpecs,
           topSpecs,
           secWSpecs,
+          mirrorSpecs,
           colSpecs,
           vaSpecs,
           vertSpecs,
@@ -4322,7 +4659,7 @@ export function App() {
         // re-anchor them to the paper before the strips are measured/aligned
         alignTableGapFills(pm, factor)
         stage('tableGapFills')
-        if (secWSpecs.length > 0 && section) {
+        if ((secWSpecs.length > 0 || mirrorMargins) && section) {
           const cSet = secList?.[0]?.settings ?? section
           alignGapHfStrips(pm, pageLeftOf(cSet) + twipsToPx(cSet.marginLeft), factor)
         }
@@ -4370,6 +4707,7 @@ export function App() {
           factor,
           doc.parsed.blocks,
           editor.view,
+          marginHandlersRef.current,
         )
         stage('sheets+annotations')
         tSetGaps = performance.now() - tSet0
@@ -4617,7 +4955,10 @@ export function App() {
     hfVariants,
     titlePg,
     evenOddHf,
-    sectionHfOverride,
+    mirrorMargins,
+    hfState,
+    hfSections,
+    hfResolveAt,
     comments,
     // display-mode toggles reflow the text (No Markup hides deletions) and gate
     // the change bars, but dispatch no doc change: remeasure must follow them
@@ -4636,13 +4977,33 @@ export function App() {
       const { $head } = editor.state.selection
       const topIndex = $head.depth > 0 ? $head.index(0) : 0
       setActiveSection(sectionIndexAtBlock(editor.state.doc, sections, topIndex))
+      if (!mirrorMargins) return
+      const layout = pageLayoutRef.current
+      const el = $head.depth > 0 ? editor.view.nodeDOM($head.before(1)) : null
+      // a fresh layout decoration redraws the node, so the measured element may be
+      // the block's previous DOM: fall back to its data-idx identity
+      const idx = el instanceof HTMLElement ? el.dataset.idx : undefined
+      const block =
+        layout && el
+          ? layout.blocks.find(
+              (b) => b.el === el || (idx !== undefined && String(b.docxIndex) === idx),
+            )
+          : undefined
+      setCaretPageNo(
+        block && layout
+          ? (pageNumbers(layout.slices, layout.sections as SectionInfo[])[
+              pageAt(layout.slices, block.top + 1) - 1
+            ] ?? 1)
+          : 1,
+      )
     }
+    locateCaretPageRef.current = locateSection
     locateSection()
     editor.on('selectionUpdate', locateSection)
     return () => {
       editor.off('selectionUpdate', locateSection)
     }
-  }, [editor, sections])
+  }, [editor, sections, mirrorMargins])
 
   // status-bar word count: the whole text is re-walked per doc, so pace it
   // (Word refreshes its count on idle too). A trailing throttle, not a
@@ -4821,6 +5182,18 @@ export function App() {
           setFindFocusReplace((n) => n + 1)
         }
       }
+      // Go To: ⌥⌘G on the Mac (Word for Mac), Ctrl+G elsewhere (⇧⌘G stays Word Count)
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        e.altKey === IS_MAC &&
+        e.code === 'KeyG' &&
+        doc
+      ) {
+        e.preventDefault()
+        setShowFind(true)
+        setFindFocusGoTo((n) => n + 1)
+      }
       // Word dialog shortcuts: Font ⌘D / Paragraph ⌥⌘M / Hyperlink ⌘K
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key === 'd' && doc && canEdit) {
         e.preventDefault()
@@ -4834,7 +5207,10 @@ export function App() {
         e.preventDefault()
         setShowLinkModal(true)
       }
-      if (e.key === 'F9' && doc && editor?.isEditable) {
+      if (e.key === 'F9' && e.altKey && doc && editor) {
+        e.preventDefault()
+        toggleAllFieldCodes(editor.view)
+      } else if (e.key === 'F9' && doc && editor?.isEditable) {
         e.preventDefault()
         updateFields()
       }
@@ -4890,7 +5266,8 @@ export function App() {
       ) {
         e.preventDefault()
         // textboxes have no heading nodes — same gate as the ribbon style gallery
-        if (!getActiveSubEditor()) applyParagraphStyle(editor, STYLE_KEYS[e.code])
+        if (!getActiveSubEditor())
+          applyParagraphStyle(editor, STYLE_KEYS[e.code], ribbonStylesRef.current)
       }
       // Word grow/shrink font ⇧⌘. / ⇧⌘, — via the ribbon closure so bursts stay coalesced
       if (
@@ -5066,13 +5443,16 @@ export function App() {
           editor?.chain().focus().redo().run()
           break
         case 'zoom-in':
-          setZoom((z) => Math.min(200, Math.round(z) + 10))
+          setZoom((z) => stepDocsZoom(z, 1))
           break
         case 'zoom-out':
-          setZoom((z) => Math.max(50, Math.round(z) - 10))
+          setZoom((z) => stepDocsZoom(z, -1))
           break
         case 'zoom-100':
           setZoom(100)
+          break
+        case 'zoom-set':
+          if (payload) setZoom(clampDocsZoom(Number(payload)))
           break
         case 'zoom-page-width':
           zoomFit('width')
@@ -5124,14 +5504,58 @@ export function App() {
         case 'shortcuts':
           setShowShortcuts(true)
           break
+        case 'autocorrect-options':
+          setShowAutoCorrect(true)
+          break
+        case 'preferences':
+          setShowPreferences(true)
+          break
+        case 'table-gridlines':
+          toggleTableGridlines()
+          break
+        case 'table-insert-cells':
+        case 'table-delete-cells':
+        case 'table-split-cells':
+        case 'table-properties':
+          if (!editor || !doc || !editableOrToast(editor)) break
+          if (!ensureCaretInTable(editor.state, editor.view.dispatch)) {
+            showToast(t('ribbonNotInTable'), 'error')
+            break
+          }
+          setTableDialog(
+            command === 'table-insert-cells'
+              ? 'insertCells'
+              : command === 'table-delete-cells'
+                ? 'deleteCells'
+                : command === 'table-split-cells'
+                  ? 'splitCells'
+                  : 'properties',
+          )
+          break
+        default:
+          if (command.startsWith('table-')) {
+            if (!editor || !doc) break
+            // selecting is fine on a read-only document; everything else edits
+            if (!command.startsWith('table-select-') && !editableOrToast(editor)) break
+            if (!ensureCaretInTable(editor.state, editor.view.dispatch)) {
+              showToast(t('ribbonNotInTable'), 'error')
+              break
+            }
+            editor.view.focus()
+            const cmd = TABLE_MENU_COMMANDS[command]?.(tableSectionWidthPx)
+            if (command === 'table-distribute-rows') distributeRowsEvenly(editor.view)
+            else if (cmd) cmd(editor.state, editor.view.dispatch)
+          }
+          break
+        // menu accelerators reach the strip / textbox editor that has focus, like the ribbon
         case 'bold':
-          editor?.chain().focus().toggleMark('bold').run()
+          ;(getActiveSubEditor() ?? editor)?.chain().focus().toggleMark('bold').run()
           break
         case 'italic':
-          editor?.chain().focus().toggleMark('italic').run()
+          ;(getActiveSubEditor() ?? editor)?.chain().focus().toggleMark('italic').run()
           break
         case 'underline':
-          editor?.chain().focus().toggleMark('underline').run()
+          ;(getActiveSubEditor() ?? editor)?.chain().focus().toggleMark('underline').run()
           break
         case 'align-left':
           align('left')
@@ -5152,6 +5576,18 @@ export function App() {
           if (doc) {
             setShowFind(true)
             setFindFocusInput((n) => n + 1)
+          }
+          break
+        case 'replace':
+          if (doc) {
+            setShowFind(true)
+            setFindFocusReplace((n) => n + 1)
+          }
+          break
+        case 'goto':
+          if (doc) {
+            setShowFind(true)
+            setFindFocusGoTo((n) => n + 1)
           }
           break
         case 'export-pdf':
@@ -5183,11 +5619,49 @@ export function App() {
     openStats,
     startNewComment,
     runAiProofread,
+    toggleTableGridlines,
+    tableSectionWidthPx,
   ])
 
-  // Word: TOC entries jump on ⌘/Ctrl+click only; a plain click just places the
-  // caret. Resolve the bookmark anchor against the original block XML, fall
-  // back to matching the heading text.
+  // Resolve the bookmark anchor against the original block XML, fall back to
+  // matching the heading text of a TOC entry.
+  const jumpToAnchor = useCallback(
+    (anchor: string, tocTitle = '') => {
+      let target: Element | null = null
+      if (anchor && doc) {
+        const block = doc.parsed.blocks.find((b) => b.originalXml?.includes(`w:name="${anchor}"`))
+        if (block && block.docxIndex !== null) {
+          target = document.querySelector(`.ProseMirror [data-idx="${block.docxIndex}"]`)
+        }
+      }
+      const title = tocTitle.replace(/\s+/g, '')
+      if (!target && title) {
+        target =
+          [
+            ...document.querySelectorAll(
+              '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6',
+            ),
+          ].find((h) => (h.textContent ?? '').replace(/\s+/g, '') === title) ?? null
+      }
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+    [doc],
+  )
+
+  /** ⌘-click / Open Hyperlink: browser for http(s) (main-process openExternal), in-document jump for #bookmark */
+  const openLink = useCallback(
+    (href: string, tocTitle = '') => {
+      const target = linkTarget(href)
+      if (target?.kind === 'external') window.open(target.url)
+      else if (target?.kind === 'anchor' || tocTitle) {
+        jumpToAnchor(target?.kind === 'anchor' ? target.name : '', tocTitle)
+      }
+    },
+    [jumpToAnchor],
+  )
+
+  // Word: links and TOC entries jump on ⌘/Ctrl+click only; a plain click just
+  // places the caret.
   const onDocClick = useCallback(
     (e: ReactMouseEvent) => {
       const commentSpan = (e.target as HTMLElement).closest('.doc-comment') as HTMLElement | null
@@ -5195,39 +5669,20 @@ export function App() {
         const ids = (commentSpan.dataset.commentIds ?? '').split(' ')
         if (comments.some((c) => !c.done && ids.includes(c.id))) setShowComments(true)
       }
+      const mod = e.metaKey || e.ctrlKey
       // read-only display anchors are outside contenteditable and would navigate
-      // the renderer in place; Word semantics instead: plain click no-op, mod+click opens
+      // the renderer in place
       const a = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
       if (a) {
         e.preventDefault()
-        const href = a.getAttribute('href') ?? ''
-        if ((e.metaKey || e.ctrlKey) && /^https?:/i.test(href)) window.open(href)
+        if (mod) openLink(a.getAttribute('href') ?? '')
+        return
       }
-      if (!e.metaKey && !e.ctrlKey) return
+      if (!mod) return
       const line = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
-      if (!line) return
-      let target: Element | null = null
-      const anchor = line.dataset.tocAnchor
-      if (anchor && doc) {
-        const block = doc.parsed.blocks.find((b) => b.originalXml?.includes(`w:name="${anchor}"`))
-        if (block && block.docxIndex !== null) {
-          target = document.querySelector(`.ProseMirror [data-idx="${block.docxIndex}"]`)
-        }
-      }
-      if (!target) {
-        const title = (line.dataset.tocTitle ?? '').replace(/\s+/g, '')
-        if (title) {
-          target =
-            [
-              ...document.querySelectorAll(
-                '.ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6',
-              ),
-            ].find((h) => (h.textContent ?? '').replace(/\s+/g, '') === title) ?? null
-        }
-      }
-      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (line) jumpToAnchor(line.dataset.tocAnchor ?? '', line.dataset.tocTitle ?? '')
     },
-    [doc, comments],
+    [comments, openLink, jumpToAnchor],
   )
 
   /** Editor right-click menu, only inside the document body */
@@ -5235,7 +5690,21 @@ export function App() {
     (e: ReactMouseEvent) => {
       if (readMode || isProtected) return
       if (!(e.target as HTMLElement).closest('.doc-page')) return
-      e.preventDefault()
+      // no preventDefault: Blink must still request a context menu so the main
+      // process receives the misspelling data it relays to this menu
+      const seq = ++ctxSeq.current
+      window.desktop.claimContextMenu?.(seq)
+      // keyboard-invoked (Shift+F10 / menu key): no pointer, open at the caret
+      const fromKeyboard = e.clientX === 0 && e.clientY === 0
+      let x = e.clientX
+      let y = e.clientY
+      let pos: number | null = null
+      if (fromKeyboard && editor) {
+        pos = editor.state.selection.head
+        const c = editor.view.coordsAtPos(pos)
+        x = c.left
+        y = c.bottom
+      }
       let imageSrc: string | null = null
       // Word behavior: right-clicking outside the selection moves the cursor there first (menu items act on the clicked block)
       if (editor) {
@@ -5248,8 +5717,8 @@ export function App() {
         // behind-text pictures live under the text layer's hit box: when the
         // press hits no glyph, fall through to the picture painted below
         // (Word selects it there too)
-        if (!protectedEl) {
-          const under = findFloatImageAt(e.clientX, e.clientY)
+        if (!protectedEl && !fromKeyboard) {
+          const under = findFloatImageAt(x, y)
           if (under) protectedEl = under.closest('.doc-protected') as HTMLElement | null
         }
         const img = (e.target as HTMLElement).closest('img') ?? protectedEl?.querySelector('img')
@@ -5269,9 +5738,10 @@ export function App() {
             selectedNode = true
           }
         }
-        if (!selectedNode) {
-          const hit = editor.view.posAtCoords({ left: e.clientX, top: e.clientY })
+        if (!selectedNode && !fromKeyboard) {
+          const hit = editor.view.posAtCoords({ left: x, top: y })
           if (hit) {
+            pos = hit.pos
             const { from, to } = editor.state.selection
             if (hit.pos < from || hit.pos > to) {
               editor.commands.setTextSelection(hit.pos)
@@ -5279,19 +5749,201 @@ export function App() {
           }
         }
       }
-      setCtxMenu({ x: e.clientX, y: e.clientY, imageSrc })
+      const anchorEl = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
+      const tocLine = (e.target as HTMLElement).closest('.doc-toc-line') as HTMLElement | null
+      const link = anchorEl
+        ? { href: anchorEl.getAttribute('href') ?? '' }
+        : tocLine
+          ? {
+              href: `#${tocLine.dataset.tocAnchor ?? ''}`,
+              toc: true,
+              tocTitle: tocLine.dataset.tocTitle ?? '',
+            }
+          : null
+      setCtxMenu({ x, y, seq, pos, imageSrc, link })
     },
     [readMode, isProtected, editor],
   )
 
+  /** double-click on a page-gap strip: edit that page's header/footer in place */
+  const startGapHfEdit = (el: HTMLElement) => {
+    if (readMode || isProtected || hfEditorRef.current) return
+    const kind = el.dataset.hfKind as 'header' | 'footer' | undefined
+    if (!kind) return
+    const si = Number(el.dataset.hfSection ?? 0)
+    const variant = (el.dataset.hfVariant as HfView | undefined) ?? 'default'
+    const pageIdx = Number(el.dataset.hfPageIdx ?? 0)
+    const page = el.dataset.hfPage ?? '1'
+    const resolved = hfResolveAt(si, kind, variant)
+    const value = resolved.value ?? { text: '' }
+    let host = el
+    let saved = Array.from(el.childNodes)
+    el.replaceChildren()
+    el.classList.add('page-hf-editing')
+    let committed = false
+    const handle = mountHfEditor(el, {
+      value,
+      pageNo: page,
+      pageTotal: el.dataset.hfTotal ?? '1',
+      spellcheck: spellcheckActive,
+      onCommit: (next) => {
+        committed = true
+        // the ribbon may have unlinked the section since the editor opened
+        commitHfAtRef.current(si, kind, variant, next, resolved.owner)
+      },
+      onExit: () => {
+        host.classList.remove('page-hf-editing')
+        if (!committed) host.replaceChildren(...saved)
+        if (hfEditorRef.current === handle) hfEditorRef.current = null
+        setHfEditing(null)
+      },
+    })
+    hfEditorRef.current = handle
+    setHfEditing({ kind, section: si, variant, pageIdx, owner: resolved.owner })
+    // a re-pagination (Link to Previous, distance, another strip's commit) rebuilds the
+    // gap widgets: the open editor moves into the strip's new element instead of dying
+    const selector = `.page-gap-hf.page-hf-${kind}[data-hf-page-idx="${pageIdx}"]`
+    const watch = () => {
+      if (hfEditorRef.current !== handle) return
+      if (!host.isConnected) {
+        const next = document.querySelector<HTMLElement>(selector)
+        if (!next) {
+          handle.exit()
+          return
+        }
+        saved = Array.from(next.childNodes)
+        next.replaceChildren(handle.editor.view.dom)
+        next.classList.add('page-hf-editing')
+        host = next
+        // detaching dropped the focus with the old widget
+        handle.editor.view.focus()
+      }
+      requestAnimationFrame(watch)
+    }
+    requestAnimationFrame(watch)
+  }
+  const startGapHfEditRef = useRef(startGapHfEdit)
+  startGapHfEditRef.current = startGapHfEdit
+  const commitHfAtRef = useRef(commitHfAt)
+  commitHfAtRef.current = commitHfAt
+  const firstPageNoText = formatPageNumber(
+    sections[0]?.pageNumberStart ?? 1,
+    sections[0]?.pageNumberFmt,
+  )
+  const lastPageNoText = lastPageNo?.text ?? String(pageInfo.total)
+  const lastPageIdx = Math.max(0, pageInfo.total - 1)
+  /** open the strip editor for `kind` on page `pageIdx` (default: the document's first header / last footer) */
+  const openHfEditor = (kind: 'header' | 'footer', pageIdx?: number) => {
+    hfEditorRef.current?.exit()
+    const edge =
+      pageIdx === undefined || (kind === 'header' ? pageIdx === 0 : pageIdx === lastPageIdx)
+    const el = edge
+      ? null
+      : document.querySelector<HTMLElement>(
+          `.page-gap-hf.page-hf-${kind}[data-hf-page-idx="${pageIdx}"]`,
+        )
+    if (el) startGapHfEdit(el)
+    else setHfAreaEditRequest({ kind, nonce: Date.now() })
+  }
+  const toggleEvenOddHf = (on: boolean) => {
+    hfEditorRef.current?.exit()
+    setEvenOddHf(on)
+    setEvenOddHfDirty(true)
+    setHfView(on ? 'even' : 'default')
+    setStatus(on ? t('appEvenOddOn') : t('appEvenOddOff'))
+  }
+  const onHfAction = (action: HfAction) => {
+    const cur = hfEditing
+    const sub = hfEditorRef.current?.editor
+    // the ribbon button took the focus; Word keeps the caret in the strip
+    const refocus = () => {
+      if (hfEditorRef.current) sub?.commands.focus()
+    }
+    const sectionOf = (kind: 'header' | 'footer') =>
+      cur?.section ?? (kind === 'header' ? 0 : lastSectionIdx)
+    const variant = cur?.variant ?? 'default'
+    switch (action.type) {
+      case 'close':
+        hfEditorRef.current?.exit()
+        break
+      case 'goto':
+      case 'edit':
+        openHfEditor(action.kind, cur?.pageIdx)
+        break
+      case 'remove':
+        hfEditorRef.current?.exit()
+        commitHfAt(sectionOf(action.kind), action.kind, variant, { text: '' })
+        break
+      case 'pageNumber':
+        hfEditorRef.current?.exit()
+        commitHfAt(sectionOf(action.kind), action.kind, variant, {
+          text: PAGE_MARK,
+          pageNumber: true,
+          paras: [{ align: action.align, runs: [{ text: PAGE_MARK }] }],
+        })
+        break
+      case 'pageNumberHere':
+        if (sub) insertHfField(sub, 'PAGE')
+        break
+      case 'numPages':
+        if (sub) insertHfField(sub, 'NUMPAGES')
+        break
+      case 'pageNumberFormat':
+        openPgNumModal()
+        break
+      case 'removePageNumbers':
+        hfEditorRef.current?.exit()
+        for (const kind of ['header', 'footer'] as const) {
+          const v = hfValueAt(sectionOf(kind), kind, variant)
+          if (hfHasPageField(v)) commitHfAt(sectionOf(kind), kind, variant, hfWithoutPageMarks(v!))
+        }
+        break
+      case 'field':
+        if (sub) insertHfInstrField(sub, action.instr, fieldValue(action.instr))
+        break
+      case 'linkToPrevious':
+        if (cur) setHfLink(cur.section, cur.kind, cur.variant, action.on)
+        if (!action.on) refocus()
+        break
+      case 'distance':
+        setHfDistance(cur?.section ?? activeSection, action.kind, action.twips)
+        refocus()
+        break
+      case 'titlePg':
+        toggleTitlePg(action.on)
+        refocus()
+        break
+      case 'evenOddHf':
+        toggleEvenOddHf(action.on)
+        refocus()
+        break
+    }
+  }
+  const hfEditingInfo: HfEditingInfo | null = hfEditing
+    ? {
+        kind: hfEditing.kind,
+        section: hfEditing.section,
+        sectionCount: hfSections.length,
+        variant: hfEditing.variant,
+        linked: hfLinkedAt(hfEditing.section, hfEditing.kind, hfEditing.variant),
+        headerDistTwips: (hfSections[hfEditing.section]?.settings ?? section)?.headerDist ?? 720,
+        footerDistTwips: (hfSections[hfEditing.section]?.settings ?? section)?.footerDist ?? 720,
+        titlePg,
+        evenOddHf,
+      }
+    : null
+  const hfSectionLabel = (kind: 'header' | 'footer', si: number) =>
+    hfSections.length > 1
+      ? t(kind === 'header' ? 'appHfHeaderSectionTag' : 'appHfFooterSectionTag', { n: si + 1 })
+      : null
+
+  // Word: double-clicking a picture only selects it (the press already did);
+  // the image viewer stays on the context menu
   const onDocDoubleClick = useCallback((e: ReactMouseEvent) => {
     const target = e.target as HTMLElement
     if (!target.closest('.doc-page')) return
-    // behind-text pictures sit under the text layer; same fall-through as the right-click path
-    const img =
-      target.closest('img') ?? findFloatImageAt(e.clientX, e.clientY)?.querySelector('img')
-    const src = img?.getAttribute('src')
-    if (src) setViewImage(src)
+    const gap = target.closest('.page-gap-hf') as HTMLElement | null
+    if (gap) startGapHfEditRef.current(gap)
   }, [])
 
   // genoffice CLI (`open --block`, `selection`): the shell evaluates this hook
@@ -5299,6 +5951,8 @@ export function App() {
     ;(window as unknown as Record<string, unknown>).__genofficeControl = (req: ControlRequest) =>
       handleDocsControl(req, editor, doc !== null)
   })
+
+  useEffect(() => (editor ? installSelectionBar(editor) : undefined), [editor])
 
   // e2e/automation hook: lets tests drive open/edit/save without native dialogs
   useEffect(() => {
@@ -5312,13 +5966,55 @@ export function App() {
     }
   }, [editor, openRecent, save, status, exportPdf, exportHtml])
 
+  // Pending style definitions (Styles pane / AI define_style) show before the
+  // save writes them: styles.xml is re-resolved with the patches applied and
+  // the live map feeds the gallery, the pane, the format state and the doc CSS.
+  const [liveStyles, setLiveStyles] = useState<{
+    parsed: ParsedDocFull
+    styles: Map<string, StyleInfo>
+  } | null>(null)
+  useEffect(() => {
+    const parsed = doc?.parsed
+    const upserts = Object.values(styleUpserts)
+    if (!parsed || upserts.length === 0) {
+      setLiveStyles(null)
+      return
+    }
+    let cancelled = false
+    previewFontSettings(parsed, upserts, defaultFonts)
+      .then((r) => {
+        // a document switch or a save re-parse while resolving: their open path already set fresh styles
+        if (cancelled || fileCtxRef.current.doc?.parsed !== parsed) return
+        setLiveStyles({ parsed, styles: r.styles })
+        editor.storage.listNumbering.styles = r.styles
+        setDocCss(docStyleCss({ ...parsed, styles: r.styles }))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [doc, styleUpserts, defaultFonts, editor])
   // shallow-stable snapshot of every editor read the ribbon displays: caret moves
   // that change none of it keep the reference, so the memoized Ribbon skips
   const formatState = useShallowStable(
-    computeFormatState(editor, doc?.parsed.styles, doc?.parsed.docDefaults),
+    computeFormatState(
+      editor,
+      liveStyles?.parsed === doc?.parsed ? liveStyles?.styles : doc?.parsed.styles,
+      doc?.parsed.docDefaults,
+    ),
   )
 
-  const ribbonStyles = useMemo(() => (doc ? new Map(doc.parsed.styles) : undefined), [doc])
+  const ribbonStyles = useMemo(
+    () =>
+      doc
+        ? liveStyles?.parsed === doc.parsed
+          ? liveStyles.styles
+          : new Map(doc.parsed.styles)
+        : undefined,
+    [doc, liveStyles],
+  )
+  const ribbonStylesRef = useRef(ribbonStyles)
+  ribbonStylesRef.current = ribbonStyles
 
   /** every function prop of the memoized Ribbon, with stable identities (dispatches into the latest render's closures) */
   // ---- selection-scoped AI edit queue ----
@@ -5468,11 +6164,7 @@ export function App() {
     valueOf(kind: 'header' | 'footer', view: HfView): HeaderFooter | null {
       const pending = this.overlay.get(`${kind}:${view}`)
       if (pending) return pending
-      if (view === 'first')
-        return kind === 'header' ? hfVariants.headerFirst : hfVariants.footerFirst
-      if (view === 'even') return kind === 'header' ? hfVariants.headerEven : hfVariants.footerEven
-      if (multiHf) return sectionHfValue(kind)
-      return kind === 'header' ? header : footer
+      return hfValueAt(kind === 'header' ? 0 : lastSectionIdx, kind, view)
     },
     commit: commitHf,
     titlePg,
@@ -5487,6 +6179,26 @@ export function App() {
   // between renders, so a define_style followed by applyStyle must see the pending entry.
   const aiStyleUpsertsRef = useRef(styleUpserts)
   aiStyleUpsertsRef.current = styleUpserts
+  /** queue a style definition for the next save; shared by the AI tools and the Styles pane */
+  const upsertStyleDef = useCallback((up: StyleUpsert): string | null => {
+    const ctx = fileCtxRef.current
+    if (!ctx.doc) return 'no document is open'
+    const prev = aiStyleUpsertsRef.current[up.styleId]
+    const next = {
+      ...aiStyleUpsertsRef.current,
+      [up.styleId]: prev
+        ? {
+            ...prev,
+            ...up,
+            pPr: up.pPr || prev.pPr ? { ...prev.pPr, ...up.pPr } : undefined,
+            rPr: up.rPr || prev.rPr ? { ...prev.rPr, ...up.rPr } : undefined,
+          }
+        : up,
+    }
+    aiStyleUpsertsRef.current = next
+    ctx.setStyleUpserts(next)
+    return null
+  }, [])
   const aiDocExtras = useMemo<AiDocExtras>(
     () => ({
       styles: {
@@ -5525,25 +6237,7 @@ export function App() {
           }
           return [...out.values()]
         },
-        upsert: (up) => {
-          const ctx = fileCtxRef.current
-          if (!ctx.doc) return 'no document is open'
-          const prev = aiStyleUpsertsRef.current[up.styleId]
-          const next = {
-            ...aiStyleUpsertsRef.current,
-            [up.styleId]: prev
-              ? {
-                  ...prev,
-                  ...up,
-                  pPr: up.pPr || prev.pPr ? { ...prev.pPr, ...up.pPr } : undefined,
-                  rPr: up.rPr || prev.rPr ? { ...prev.rPr, ...up.rPr } : undefined,
-                }
-              : up,
-          }
-          aiStyleUpsertsRef.current = next
-          ctx.setStyleUpserts(next)
-          return null
-        },
+        upsert: upsertStyleDef,
       },
       watermark: {
         current: () => fileCtxRef.current.watermark,
@@ -5569,7 +6263,7 @@ export function App() {
         },
       },
     }),
-    [],
+    [upsertStyleDef],
   )
 
   const aiHfAccess = useMemo<AiHeaderFooterAccess>(
@@ -5746,8 +6440,22 @@ export function App() {
 
   const ribbonActions = useStableCallbacks({
     allocateNumId: (kind: 'bullet' | 'ordered') => allocateListNumId(kind),
-    createListDef: (levels: CustomNumberingLevel[]) => createCustomListDef(levels),
+    createListDef: (levels: CustomNumberingLevel[]) => {
+      setListRecentsEpoch((n) => n + 1)
+      return createCustomListDef(levels)
+    },
+    onListDialog: (kind: ListDialogKind) => setListDialog(kind),
     onParagraphDialog: () => setShowParaDialog(true),
+    onPasteDefaults: () => setShowAutoCorrect(true),
+    onTableDialog: (kind: TableDialogKind) => {
+      if (
+        editor &&
+        editableOrToast(editor) &&
+        ensureCaretInTable(editor.state, editor.view.dispatch)
+      )
+        setTableDialog(kind)
+    },
+    onToggleTableGridlines: toggleTableGridlines,
     onOpen: () => void openFile(),
     onSave: () => void save(false),
     onSaveAs: () => void save(true),
@@ -5764,6 +6472,28 @@ export function App() {
         setSectionsDirty((d) => (d.includes(activeSection) ? d : [...d, activeSection]))
         setStatus(t('appSectionSettingsApplied', { n: activeSection + 1 }))
       }
+    },
+    onPaperSizeAll: (
+      portraitW: number,
+      portraitH: number,
+      orientation: SectionSettings['orientation'],
+    ) => {
+      const sized = (s: SectionSettings): SectionSettings =>
+        orientation === 'landscape'
+          ? { ...s, orientation, pageWidth: portraitH, pageHeight: portraitW }
+          : { ...s, orientation, pageWidth: portraitW, pageHeight: portraitH }
+      setSections((prev) => prev.map((s) => ({ ...s, settings: sized(s.settings) })))
+      if (section) {
+        setSection(sized(section))
+        setSectionDirty(true)
+      }
+      const earlier = sections.slice(0, -1).map((_, i) => i)
+      if (earlier.length > 0) setSectionsDirty((d) => [...new Set([...d, ...earlier])])
+    },
+    onMirrorMargins: (on: boolean) => {
+      if (on === mirrorMargins) return
+      setMirrorMargins(on)
+      setMirrorMarginsDirty(true)
     },
     onInsertSectionBreak: (type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage') =>
       insertSectionBreak(type),
@@ -5801,44 +6531,49 @@ export function App() {
     headingPages,
     onZoom: setZoom,
     onZoomFit: zoomFit,
+    onZoomDialog: () => setShowZoomDialog(true),
     onDarkPage: setDarkPage,
     onAiPreset: (text: string) => {
       // Word's Editor / Translate start working as soon as they're clicked
       setShowAi(true)
       setAiPreset({ text, nonce: Date.now(), autoRun: true })
     },
-    onHeader: (next: HeaderFooter) => {
-      setHeader(next)
-      setHeaderDirty(true)
-    },
+    onHeader: (next: HeaderFooter) => commitHfAt(0, 'header', headerAreaView, next),
     onPageNumFormat: openPgNumModal,
     onInsertField: insertField,
-    onFooter: (next: HeaderFooter) => {
-      setFooter(next)
-      setFooterDirty(true)
-    },
-    onTitlePg: toggleTitlePg,
-    onEvenOddHf: (on: boolean) => {
-      setEvenOddHf(on)
-      setEvenOddHfDirty(true)
-      setHfView(on ? 'even' : 'default')
-      setStatus(on ? t('appEvenOddOn') : t('appEvenOddOff'))
-    },
+    onFooter: (next: HeaderFooter) => commitHfAt(lastSectionIdx, 'footer', footerAreaView, next),
+    onHfAction: (action: HfAction) => onHfAction(action),
+    onHfEdit: (kind: 'header' | 'footer') => openHfEditor(kind),
     onShowMarks: setShowMarks,
     onShowRuler: setShowRuler,
     onShowNav: setShowNav,
     onShowComments: () => setShowComments(true),
     onNewComment: startNewComment,
+    onDeleteComment: () => deleteCommentAtCaretImpl(reviewCtxRef.current),
+    onDeleteAllComments: (resolvedOnly: boolean) =>
+      deleteAllCommentsImpl(reviewCtxRef.current, resolvedOnly),
+    onGotoComment: (dir: 1 | -1) => gotoCommentImpl(reviewCtxRef.current, dir),
     onTrackChanges: setTrackChanges,
     onSpellcheck: (on: boolean) => {
       if (largeDocSpellOff) setLargeDocSpellOff(false)
       setSpellcheck(on)
     },
-    onRevisionDisplay: setRevisionDisplay,
+    onRevisionDisplay: (mode: RevisionDisplayMode) => {
+      markupPickedRef.current = true
+      setRevisionDisplay(mode)
+    },
     onAcceptRevision: (all: boolean) => handleRevision('accept', all),
     onRejectRevision: (all: boolean) => handleRevision('reject', all),
     onGotoRevision: (dir: 1 | -1) => {
-      if (editor) gotoRevision(editor, dir)
+      if (!editor) return
+      const target = nextRevision(editor, dir)
+      if (!target) return
+      // Word: navigating onto a change hidden by the current view shows All
+      // Markup; the view switch must commit before the scroll can find the text
+      if (revisionHiddenIn(revisionDisplayRef.current, target.kind)) {
+        setRevisionDisplay('all')
+        window.setTimeout(() => selectRevision(editor, target), 0)
+      } else selectRevision(editor, target)
     },
     onProtectDoc: () => setShowProtectDialog(true),
     onCompare: () => void compareWithFile(),
@@ -5854,13 +6589,34 @@ export function App() {
     cancelNewComment()
   }, [cancelNewComment])
 
+  // Simple Markup overlay callbacks (the overlay is rebuilt per pagination
+  // frame; a stable object keeps the DOM listeners on the current editor)
+  const marginHandlersRef = useRef<MarginHandlers>({})
+  marginHandlersRef.current = {
+    onChangeBar: (pos) => {
+      setRevisionDisplay('all')
+      if (!editor) return
+      // the bar sits on the change's own line, so it is already in view: just
+      // select it; row / cell bars carry a node position, so snap to the nearest text
+      const { doc, tr } = editor.state
+      const $pos = doc.resolve(Math.min(pos, doc.content.size))
+      editor.view.dispatch(tr.setSelection(TextSelection.near($pos, 1)).setMeta(TRACK_IGNORE, true))
+    },
+    onCommentBalloon: (id) => {
+      setShowComments(true)
+      setCommentFocus({ id, nonce: Date.now() })
+    },
+  }
+
   const hasDoc = !!doc
   // Undo/redo availability: refreshed on every transaction so the QAT buttons grey out when empty
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
   useEffect(() => {
     if (!editor) return
-    const refresh = () =>
+    const refresh = ({ transaction }: { transaction?: { docChanged: boolean } } = {}) => {
       setHistState({ canUndo: editor.can().undo(), canRedo: editor.can().redo() })
+      if (transaction?.docChanged) setDocVersion((v) => v + 1)
+    }
     refresh()
     editor.on('transaction', refresh)
     return () => {
@@ -5932,13 +6688,24 @@ export function App() {
   // pin whenever the shared paper is wider than the footer's own section (a wider
   // middle section widens the paper too) or the strip width differs from the
   // first-section default
+  // mirrored documents pin the first/last page's strips to that page's own (parity)
+  // margin: inside/outside differ, so the stylesheet's centering would miss the body
+  const firstPageMargins = canvasSection
+    ? pageMargins(canvasSection, sections[0]?.pageNumberStart ?? 1, mirrorMargins)
+    : null
+  const lastPageMargins = lastSection
+    ? pageMargins(lastSection, lastPageNo?.num ?? 1, mirrorMargins)
+    : null
   const edgeFooterStyle =
     lastBox &&
     canvasBox &&
-    (paperW - lastBox.width > 0.5 || Math.abs(lastBox.contentWidth - canvasBox.contentWidth) > 0.5)
+    lastPageMargins &&
+    (paperW - lastBox.width > 0.5 ||
+      Math.abs(lastBox.contentWidth - canvasBox.contentWidth) > 0.5 ||
+      mirrorMargins)
       ? {
           width: `${lastBox.contentWidth}px`,
-          left: `${pageLeftOf(lastSection!) + twipsToPx(lastSection!.marginLeft)}px`,
+          left: `${pageLeftOf(lastSection!) + twipsToPx(lastPageMargins.left)}px`,
           transform: 'none',
           bottom: `${lastBox.footerDist}px`,
         }
@@ -5946,13 +6713,22 @@ export function App() {
   // symmetric pin for the leading header (it belongs to the first section): the
   // widened shared paper would otherwise re-center it at the wrong x
   const edgeHeaderStyle =
-    canvasBox && canvasSection && paperW - canvasBox.width > 0.5
+    canvasBox &&
+    canvasSection &&
+    firstPageMargins &&
+    (paperW - canvasBox.width > 0.5 || mirrorMargins)
       ? {
           width: `${canvasBox.contentWidth}px`,
-          left: `${pageLeftOf(canvasSection) + twipsToPx(canvasSection.marginLeft)}px`,
+          left: `${pageLeftOf(canvasSection) + twipsToPx(firstPageMargins.left)}px`,
           transform: 'none',
         }
       : undefined
+  const rulerBase = sections[activeSection]?.settings ?? section
+  const rulerSwap = mirrorMargins && caretPageNo % 2 === 0
+  const rulerSection =
+    rulerBase && rulerSwap
+      ? { ...rulerBase, marginLeft: rulerBase.marginRight, marginRight: rulerBase.marginLeft }
+      : rulerBase
   const docZoomStyle = {
     zoom: zoom / 100,
     '--page-w': canvasBox ? `${paperW}px` : undefined,
@@ -5986,6 +6762,7 @@ export function App() {
     showMarks ? 'show-marks' : '',
     `view-${viewMode}`,
     showGrid ? 'show-grid' : '',
+    tableGridlines ? 'show-table-gridlines' : '',
   ].join(' ')
 
   return (
@@ -6030,12 +6807,24 @@ export function App() {
         editor={editor}
         formatState={formatState}
         hasDoc={!!doc}
+        onFind={() => {
+          setShowFind(true)
+          setFindFocusInput((n) => n + 1)
+        }}
+        onReplace={() => {
+          setShowFind(true)
+          setFindFocusReplace((n) => n + 1)
+        }}
         blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
         styles={ribbonStyles}
         docDefaults={doc?.parsed.docDefaults}
+        documentListPresets={documentLists}
+        recentListPresets={recentLists}
         showAi={showAi}
         section={sections[activeSection]?.settings ?? section}
+        tableGridlines={tableGridlines}
         activeSection={sections.length > 1 ? activeSection : null}
+        mirrorMargins={mirrorMargins}
         pageColor={pageColor}
         watermark={watermark}
         themeFonts={themeFonts}
@@ -6051,15 +6840,18 @@ export function App() {
         zoom={Math.round(zoom)}
         darkPage={darkPage}
         tabRequest={ribbonTabRequest}
-        header={header}
-        footer={footer}
-        titlePg={titlePg}
-        evenOddHf={evenOddHf}
+        header={shownHeader}
+        footer={shownFooter}
+        hfEditing={hfEditingInfo}
         showMarks={showMarks}
         showRuler={showRuler}
         showNav={showNav}
+        showStylesPane={showStylesPane}
+        onShowStylesPane={setShowStylesPane}
         commentCount={comments.length}
         openCommentCount={comments.filter((c) => !c.parentId && c.done !== true).length}
+        resolvedCommentCount={comments.filter((c) => !c.parentId && c.done === true).length}
+        commentAtCaret={commentThreadAtCaretImpl(reviewCtxRef.current) !== null}
         canComment={!editor.state.selection.empty || wordRangeAtCaret(editor) !== null}
         trackChanges={trackChanges}
         spellcheck={spellcheckActive}
@@ -6119,15 +6911,24 @@ export function App() {
                 onClose={() => {
                   setShowFind(false)
                   // else the next plain ⌘F remount would still see a truthy nonce
-                  // and land focus on the replace field
+                  // and land focus on the replace / go-to field
                   setFindFocusReplace(0)
+                  setFindFocusGoTo(0)
                 }}
                 focusFindNonce={findFocusInput}
                 focusReplaceNonce={findFocusReplace}
+                focusGoToNonce={findFocusGoTo}
+                layout={() => pageLayoutRef.current}
               />
             )}
             {doc && showNav && (
-              <NavPane editor={editor} doc={editor.state.doc} onClose={closeNav} />
+              <NavPane
+                editor={editor}
+                doc={editor.state.doc}
+                zoom={zoom / 100}
+                pageInfo={pageInfo}
+                onClose={closeNav}
+              />
             )}
             {doc && (
               <AiAskPopover
@@ -6182,17 +6983,30 @@ export function App() {
                     onDoubleClick={onDocDoubleClick}
                     style={docZoomStyle}
                   >
-                    {showRuler && section && (
+                    {showRuler && rulerSection && (
                       <Ruler
-                        section={section}
+                        section={rulerSection}
                         editor={editor}
                         onTabStopsChange={(stops) => {
                           if (!editor) return
                           setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
                         }}
+                        onIndentsChange={(attrs) => {
+                          if (editor) setParaAttrs(editor, { ...attrs })
+                        }}
+                        onMarginsChange={({ left, right }) => {
+                          const sec = sections[activeSection]?.settings ?? section
+                          ribbonActions.onSection({
+                            ...sec,
+                            marginLeft: rulerSwap ? right : left,
+                            marginRight: rulerSwap ? left : right,
+                          })
+                        }}
                       />
                     )}
-                    <div className={mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}>
+                    <div
+                      className={`${mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}${hfEditing ? ' hf-editing' : ''}`}
+                    >
                       {watermark && watermarkDirty && (
                         <div className="page-watermark" aria-hidden="true">
                           {watermark}
@@ -6243,6 +7057,7 @@ export function App() {
                       {Boolean(
                         multiHf ||
                         (hfViewTouched && effHfView !== 'default') ||
+                        hfAreaEditRequest?.kind === 'header' ||
                         hfHasVisibleContent(shownHeader, hfImagesOf('header')),
                       ) && (
                         <HeaderFooterArea
@@ -6250,15 +7065,38 @@ export function App() {
                           value={shownHeader ?? { text: '' }}
                           images={hfImagesOf('header')}
                           readOnly={isProtected || readMode}
-                          onCommit={(next) => commitHf('header', next)}
+                          onCommit={(next) => {
+                            const target = edgeHfTarget('header', headerAreaView)
+                            commitHfAt(0, 'header', target.variant, next, target.owner)
+                          }}
+                          pageNo={firstPageNoText}
                           pageTotal={pageInfo.total}
+                          sectionLabel={hfSectionLabel('header', 0)}
+                          editRequest={
+                            hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
+                          }
+                          onEditingChange={(editing, handle) => {
+                            hfEditorRef.current = editing ? handle : null
+                            if (!editing) setHfAreaEditRequest(null)
+                            setHfEditing(
+                              editing
+                                ? {
+                                    kind: 'header',
+                                    section: 0,
+                                    variant: headerAreaView,
+                                    pageIdx: 0,
+                                    owner: hfResolveAt(0, 'header', headerAreaView).owner,
+                                  }
+                                : null,
+                            )
+                          }}
                           style={edgeHeaderStyle}
                           boxGeom={
                             canvasSection && canvasBox
                               ? {
                                   ...hfStripGeom(canvasSection),
                                   stripLeft: edgeHeaderStyle
-                                    ? twipsToPx(canvasSection.marginLeft)
+                                    ? twipsToPx(firstPageMargins!.left)
                                     : (paperW - canvasBox.contentWidth) / 2,
                                 }
                               : undefined
@@ -6284,6 +7122,7 @@ export function App() {
                       {Boolean(
                         multiHf ||
                         (hfViewTouched && effHfView !== 'default') ||
+                        hfAreaEditRequest?.kind === 'footer' ||
                         hfHasVisibleContent(shownFooter, hfImagesOf('footer')),
                       ) && (
                         <HeaderFooterArea
@@ -6291,16 +7130,40 @@ export function App() {
                           value={shownFooter ?? { text: '' }}
                           images={hfImagesOf('footer')}
                           readOnly={isProtected || readMode}
-                          onCommit={(next) => commitHf('footer', next)}
-                          pageNo={lastPageNo?.text ?? pageInfo.total}
+                          onCommit={(next) => {
+                            const target = edgeHfTarget('footer', footerAreaView)
+                            commitHfAt(lastSectionIdx, 'footer', target.variant, next, target.owner)
+                          }}
+                          pageNo={lastPageNoText}
                           pageTotal={pageInfo.total}
+                          linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
+                          sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
+                          editRequest={
+                            hfAreaEditRequest?.kind === 'footer' ? hfAreaEditRequest.nonce : null
+                          }
+                          onEditingChange={(editing, handle) => {
+                            hfEditorRef.current = editing ? handle : null
+                            if (!editing) setHfAreaEditRequest(null)
+                            setHfEditing(
+                              editing
+                                ? {
+                                    kind: 'footer',
+                                    section: lastSectionIdx,
+                                    variant: footerAreaView,
+                                    pageIdx: lastPageIdx,
+                                    owner: hfResolveAt(lastSectionIdx, 'footer', footerAreaView)
+                                      .owner,
+                                  }
+                                : null,
+                            )
+                          }}
                           style={edgeFooterStyle}
                           boxGeom={
                             lastSection && lastBox
                               ? {
                                   ...hfStripGeom(lastSection),
                                   stripLeft: edgeFooterStyle
-                                    ? twipsToPx(lastSection.marginLeft)
+                                    ? twipsToPx(lastPageMargins!.left)
                                     : (paperW - lastBox.contentWidth) / 2,
                                 }
                               : undefined
@@ -6367,6 +7230,20 @@ export function App() {
                 onCancelNew={cancelNewComment}
                 onDelete={deleteComment}
                 onClose={closeCommentsPanel}
+                focus={commentFocus}
+              />
+            )}
+            {doc && showStylesPane && (
+              <StylesPane
+                editor={editor}
+                styles={ribbonStyles}
+                docDefaults={doc.parsed.docDefaults}
+                fs={formatState}
+                canEdit={formatState.editable}
+                pending={styleUpserts}
+                onUpsert={upsertStyleDef}
+                onNotice={setStatus}
+                onClose={() => setShowStylesPane(false)}
               />
             )}
             {doc && compareResult && (
@@ -6382,15 +7259,31 @@ export function App() {
             <div className="status-left">
               {doc && (
                 <>
-                  <span className="status-item">
-                    {t('appPageOf', { current: pageInfo.current, total: pageInfo.total })}
-                  </span>
                   <button
-                    className="status-item status-wordcount"
+                    className="status-item status-btn status-page"
+                    data-tip={t('appGoToTitle')}
+                    onClick={() => {
+                      setShowFind(true)
+                      setFindFocusGoTo((n) => n + 1)
+                    }}
+                  >
+                    {t('appPageOf', { current: pageInfo.current, total: pageInfo.total })}
+                  </button>
+                  <button
+                    className="status-item status-btn status-wordcount"
                     data-tip={t('appWordCountTitle')}
                     onClick={openStats}
                   >
                     {t('appWordCountN', { n: wordCount })}
+                  </button>
+                  <button
+                    className={`status-item status-btn status-track${trackChanges ? ' on' : ''}`}
+                    data-tip={t('ribbonTrackChangesTip')}
+                    aria-pressed={trackChanges}
+                    disabled={isProtected || trackChangesForced}
+                    onClick={() => setTrackChanges((v) => !v)}
+                  >
+                    {t(trackChanges ? 'appTrackChangesOn' : 'appTrackChangesOff')}
                   </button>
                 </>
               )}
@@ -6398,28 +7291,68 @@ export function App() {
               {status && <span className="status-msg"> — {status}</span>}
             </div>
             <div className="status-right">
-              <button
-                className="zoom-btn"
-                onClick={() => setZoom((z) => Math.max(50, Math.round(z) - 10))}
-              >
+              {doc && (
+                <div className="status-views" role="group">
+                  <button
+                    className={`status-view-btn${viewMode === 'print' && !readMode ? ' on' : ''}`}
+                    data-tip={t('ribbonPrintLayout')}
+                    aria-label={t('ribbonPrintLayout')}
+                    onClick={() => {
+                      setViewMode('print')
+                      setReadMode(false)
+                    }}
+                  >
+                    <IconPrintLayout size={14} />
+                  </button>
+                  <button
+                    className={`status-view-btn${viewMode === 'web' ? ' on' : ''}`}
+                    data-tip={t('ribbonWebLayout')}
+                    aria-label={t('ribbonWebLayout')}
+                    onClick={() => setViewMode('web')}
+                  >
+                    <IconWebLayout size={14} />
+                  </button>
+                  <button
+                    className={`status-view-btn${viewMode === 'outline' ? ' on' : ''}`}
+                    data-tip={t('ribbonOutlineView')}
+                    aria-label={t('ribbonOutlineView')}
+                    onClick={() => setViewMode('outline')}
+                  >
+                    <IconOutlineView size={14} />
+                  </button>
+                  <button
+                    className={`status-view-btn${readMode ? ' on' : ''}`}
+                    data-tip={t('ribbonReadMode')}
+                    aria-label={t('ribbonReadMode')}
+                    onClick={() => setReadMode((v) => !v)}
+                  >
+                    <IconReadMode size={14} />
+                  </button>
+                </div>
+              )}
+              <button className="zoom-btn" onClick={() => setZoom((z) => stepDocsZoom(z, -1))}>
                 −
               </button>
               <input
                 className="zoom-slider"
                 type="range"
-                min={50}
-                max={200}
+                min={DOCS_ZOOM_MIN}
+                max={DOCS_ZOOM_MAX}
                 step={10}
                 value={Math.round(zoom)}
                 onChange={(e) => setZoom(Number(e.target.value))}
               />
-              <button
-                className="zoom-btn"
-                onClick={() => setZoom((z) => Math.min(200, Math.round(z) + 10))}
-              >
+              <button className="zoom-btn" onClick={() => setZoom((z) => stepDocsZoom(z, 1))}>
                 +
               </button>
-              <span className="zoom-value">{Math.round(zoom)}%</span>
+              <button
+                className="zoom-value"
+                data-tip={t('ribbonZoomDialog')}
+                disabled={!doc}
+                onClick={() => setShowZoomDialog(true)}
+              >
+                {Math.round(zoom)}%
+              </button>
             </div>
           </footer>
         </div>
@@ -6427,8 +7360,27 @@ export function App() {
 
       {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
       {showLinkModal && <LinkInsertModal editor={editor} onClose={() => setShowLinkModal(false)} />}
+      {fieldEdit && (
+        <FieldDialog
+          instr={fieldEdit.instr}
+          onClose={() => setFieldEdit(null)}
+          onSubmit={(instr) => setFieldInstr(editor, fieldEdit, instr, fieldValue(instr))}
+        />
+      )}
       {showTableModal && (
-        <TableInsertModal editor={editor} onClose={() => setShowTableModal(false)} />
+        <TableInsertModal
+          editor={editor}
+          onClose={() => setShowTableModal(false)}
+          onInserted={() => setRibbonTabRequest({ tab: 'tableDesign', nonce: Date.now() })}
+        />
+      )}
+      {showZoomDialog && (
+        <ZoomDialog
+          zoom={zoom}
+          fitValue={fitZoomFor}
+          onApply={(target) => (typeof target === 'number' ? setZoom(target) : zoomFit(target))}
+          onClose={() => setShowZoomDialog(false)}
+        />
       )}
       {showEquationModal && editor && (
         <EquationModal editor={editor} onClose={() => setShowEquationModal(false)} />
@@ -6458,7 +7410,15 @@ export function App() {
           }}
           onRestartNumbering={restartNumbering}
           onContinueNumbering={continueNumbering}
+          onSetNumberingValue={() => setListDialog('value')}
+          onAdjustListIndents={() => setListDialog('indents')}
+          onChangeListLevel={changeListLevel}
           onUpdateFields={updateFields}
+          onEditField={setFieldEdit}
+          onOpenLink={(href) => openLink(href, ctxMenu.link?.tocTitle)}
+          onRespell={() => requestAnimationFrame(() => setRespellNonce((n) => n + 1))}
+          onTableDialog={ribbonActions.onTableDialog}
+          sectionContentWidthPx={tableSectionWidthPx}
         />
       )}
       {viewImage && (
@@ -6481,7 +7441,96 @@ export function App() {
         <FontDialog editor={editor} onClose={() => setShowFontDialog(false)} />
       )}
       {doc && showParaDialog && (
-        <ParagraphDialog editor={editor} onClose={() => setShowParaDialog(false)} />
+        <ParagraphDialog
+          editor={editor}
+          styles={ribbonStyles}
+          pageWidth={section?.pageWidth}
+          onClose={() => setShowParaDialog(false)}
+        />
+      )}
+      {doc && tableDialog === 'properties' && (
+        <TablePropertiesDialog
+          editor={editor}
+          sectionContentWidthPx={tableSectionWidthPx}
+          onClose={() => setTableDialog(null)}
+        />
+      )}
+      {doc && tableDialog === 'splitCells' && (
+        <SplitCellsDialog editor={editor} onClose={() => setTableDialog(null)} />
+      )}
+      {doc && tableDialog === 'insertCells' && (
+        <InsertCellsDialog
+          editor={editor}
+          sectionContentWidthPx={tableSectionWidthPx}
+          onClose={() => setTableDialog(null)}
+        />
+      )}
+      {doc && tableDialog === 'deleteCells' && (
+        <DeleteCellsDialog editor={editor} onClose={() => setTableDialog(null)} />
+      )}
+      {doc && tableDialog === 'cellMargins' && (
+        <CellMarginsDialog
+          editor={editor}
+          sectionContentWidthPx={tableSectionWidthPx}
+          onClose={() => setTableDialog(null)}
+        />
+      )}
+      {doc && listDialog === 'bullet' && (
+        <DefineBulletDialog
+          ilvl={listTarget?.ilvl ?? 0}
+          onApply={(levels, picture) => {
+            if (picture) {
+              const id = addPictureBullet(numberingCtxRef.current, picture)
+              const at = listTarget?.ilvl ?? 0
+              levels = levels.map((l, i) => (i === at ? { ...l, picBulletId: id } : l))
+            }
+            applyDefinedList(levels, 'bullets')
+          }}
+          onClose={() => setListDialog(null)}
+        />
+      )}
+      {doc && listDialog === 'number' && (
+        <DefineNumberFormatDialog
+          ilvl={listTarget?.ilvl ?? 0}
+          onApply={(levels) => applyDefinedList(levels, 'numbers')}
+          onClose={() => setListDialog(null)}
+        />
+      )}
+      {doc && listDialog === 'multi' && (
+        <DefineMultilevelDialog
+          styles={[...doc.parsed.styles.values()]}
+          onApply={(levels) => applyDefinedList(levels, 'multi')}
+          onClose={() => setListDialog(null)}
+        />
+      )}
+      {doc && listDialog === 'value' && listTarget && (
+        <SetNumberingValueDialog
+          numFmt={listTarget.level?.numFmt ?? 'decimal'}
+          lvlText={listTarget.level?.lvlText ?? '%1.'}
+          currentValue={currentListValue(editor, listTarget.numId, listTarget.ilvl)}
+          canContinue={hasPreviousList(editor, listTarget.numId)}
+          onApply={(mode, value) => {
+            setNumberingValueImpl(numberingCtxRef.current, { mode, value })
+            setListDialog(null)
+            editor?.commands.focus()
+          }}
+          onClose={() => setListDialog(null)}
+        />
+      )}
+      {doc && listDialog === 'indents' && listTarget && (
+        <AdjustListIndentsDialog
+          level={
+            listTarget.level
+              ? customLevelFromNumberingLevel(listTarget.level)
+              : { numFmt: 'decimal', lvlText: '%1.', indentLeft: 720, hanging: 360 }
+          }
+          onApply={(patch) => {
+            editListLevelImpl(numberingCtxRef.current, patch)
+            setListDialog(null)
+            editor?.commands.focus()
+          }}
+          onClose={() => setListDialog(null)}
+        />
       )}
 
       {doc && notePrompt && (
@@ -6518,14 +7567,29 @@ export function App() {
           section={section}
           canvasTop={canvasTop}
           sections={sections}
+          mirrorMargins={mirrorMargins}
           delSectBreaks={delSectBreaks}
           hfParts={doc.parsed.hfParts ?? {}}
           colFlow={viewMode === 'print' ? colFlow : null}
           colMode={viewMode === 'print' ? colMode : 'none'}
           hf={{
-            header,
+            header: hfPhantom ? hfWithPhantom(header, hfPhantom, doc.parsed.headerImages) : header,
             footer,
             ...hfVariants,
+            ...(hfPhantom
+              ? {
+                  headerFirst: hfWithPhantom(
+                    hfVariants.headerFirst,
+                    hfPhantom,
+                    doc.parsed.headerFirst?.images,
+                  ),
+                  headerEven: hfWithPhantom(
+                    hfVariants.headerEven,
+                    hfPhantom,
+                    doc.parsed.headerEven?.images,
+                  ),
+                }
+              : {}),
             titlePg,
             evenOddHf,
             images: {
@@ -6544,7 +7608,13 @@ export function App() {
           pageFootnotesOf={pageFootnotesOf}
           footnotesBeneathText={doc.parsed.footnoteProps?.pos === 'beneathText'}
           endnoteItems={endnoteItems}
-          sectionHfOverride={sectionHfOverride}
+          resolveHf={(secs, si, kind, variant) =>
+            hfLayoutResolved(
+              kind,
+              resolveHf({ ...hfState, sections: secs }, si, kind, variant),
+              hfPhantom,
+            )
+          }
           comments={comments}
           anchorBlocks={doc.parsed.blocks}
           revisionView={revisionDisplay === 'all' && viewMode === 'print' ? editor?.view : null}
@@ -6573,6 +7643,9 @@ export function App() {
       {doc && showPrintDialog && <PrintDialog onClose={closePrintDialog} setStatus={setStatus} />}
 
       {stats && <WordCountDialog stats={stats} onClose={() => setStats(null)} />}
+
+      {showAutoCorrect && <AutoCorrectDialog onClose={() => setShowAutoCorrect(false)} />}
+      {showPreferences && <PreferencesDialog onClose={() => setShowPreferences(false)} />}
 
       {docPwdPrompt && (
         <PasswordDialog

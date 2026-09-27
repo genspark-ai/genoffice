@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { solidPng } from '@genoffice/pptx-engine'
 import { run, tempDir } from './helpers'
 
 const INCH = 914400
@@ -97,5 +98,93 @@ describe('slides audit', () => {
     const codes = (second.json().detail.issues as { code: string }[]).map((i) => i.code)
     expect(codes).not.toContain('out_of_bounds')
     expect(codes).not.toContain('text_overflow')
+  })
+
+  it('flags elements fully off the slide and stretched pictures, sparing a well-cropped one', async () => {
+    const dir = tempDir()
+    const png = join(dir, 'wide.png')
+    writeFileSync(png, solidPng(400, 200, [20, 40, 60]))
+    const create = join(dir, 'create.json')
+    writeFileSync(
+      create,
+      JSON.stringify([
+        {
+          op: 'addElement',
+          target: { slide: 0 },
+          kind: 'textbox',
+          offset: { x: 14 * INCH, y: INCH, cx: 2 * INCH, cy: INCH },
+          paragraphs: [{ runs: [{ text: 'Gone', fontSize: 24 }] }],
+        },
+        {
+          op: 'addElement',
+          target: { slide: 0 },
+          kind: 'textbox',
+          offset: { x: 12 * INCH, y: 3 * INCH, cx: 2 * INCH, cy: INCH },
+          paragraphs: [{ runs: [{ text: 'Edge', fontSize: 24 }] }],
+        },
+        {
+          op: 'addPicture',
+          target: { slide: 0 },
+          bytes: png,
+          offset: { x: INCH, y: 5 * INCH, cx: 2 * INCH, cy: 2 * INCH },
+        },
+        {
+          op: 'addPicture',
+          target: { slide: 0 },
+          bytes: png,
+          offset: { x: 4 * INCH, y: 5 * INCH, cx: 2 * INCH, cy: 2 * INCH },
+        },
+      ]),
+    )
+    const out = join(dir, 'deck.pptx')
+    expect((await run(['create', '--type', 'pptx', '--ops', create, '--out', out])).code).toBe(0)
+    const ids = (await run(['slides', 'read', out, '--json']))
+      .json()
+      .detail.pages[0].elements.map((e: { id: string }) => e.id) as string[]
+    const crop = join(dir, 'crop.json')
+    writeFileSync(
+      crop,
+      JSON.stringify([
+        {
+          op: 'setPictureSrcRect',
+          target: { slide: 0, el: ids[3] },
+          srcRect: { l: 0.25, t: 0, r: 0.25, b: 0 },
+        },
+      ]),
+    )
+    expect((await run(['slides', 'apply', out, '--ops', crop, '--json'])).code).toBe(0)
+
+    const r = await run(['slides', 'audit', out, '--json'])
+    expect(r.code).toBe(0)
+    const issues = r.json().detail.issues as {
+      code: string
+      level: string
+      el: string
+      expected_ratio?: number
+      actual_ratio?: number
+      distortion_pct?: number
+      suggest?: { box: Record<string, number> }
+    }[]
+    expect(issues.map((i) => [i.el, i.code])).toEqual([
+      [ids[0], 'off_slide'],
+      [ids[1], 'out_of_bounds'],
+      [ids[2], 'picture_distorted'],
+    ])
+    const off = issues[0]!
+    expect(off.level).toBe('error')
+    expect(off.suggest!.box.x + off.suggest!.box.cx).toBeLessThanOrEqual(13.334 * INCH)
+    const pic = issues[2]!
+    expect(pic).toMatchObject({
+      level: 'warning',
+      expected_ratio: 2,
+      actual_ratio: 1,
+      distortion_pct: 50,
+    })
+    expect(pic.suggest!.box).toMatchObject({ cx: 2 * INCH, cy: INCH })
+
+    const fix = join(dir, 'fix.json')
+    writeFileSync(fix, JSON.stringify(issues.map((i) => i.suggest)))
+    expect((await run(['slides', 'apply', out, '--ops', fix, '--json'])).code).toBe(0)
+    expect((await run(['slides', 'audit', out, '--json'])).json().detail.issues).toEqual([])
   })
 })

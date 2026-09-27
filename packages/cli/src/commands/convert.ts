@@ -1,7 +1,7 @@
 import { basename, dirname, extname, join } from 'node:path'
 import { PdfLoadError } from '@genoffice/pdf2docx'
 import { flagBool, flagString, type ParsedArgs } from '../args'
-import { csvToXlsx } from '../formats/csv'
+import { csvToXlsx, sheetNameFromStem } from '../formats/csv'
 import { convertPdf, type PdfTarget } from '../formats/pdf'
 import { convertLegacyWorkbook, sheetToCsv } from '../formats/xlsx'
 import { exportViaApp, type AppExportTarget } from '../formats/app-export'
@@ -146,7 +146,7 @@ async function run(
     return { bytes: await markdownToDocx(text, { file: input, ctx }), detail: { title } }
   }
   if (from === 'csv') {
-    const sheet = basename(input, extname(input)).slice(0, 31) || 'Sheet1'
+    const sheet = sheetNameFromStem(basename(input, extname(input)))
     return { bytes: await csvToXlsx(readInput(input), sheet), detail: { sheet } }
   }
   if (to === 'csv') {

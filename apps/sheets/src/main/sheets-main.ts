@@ -156,6 +156,7 @@ import {
   cleanupSessionResources,
 } from './temp-files'
 import { XlsxSidecarClient } from './xlsx-sidecar-client'
+import { sessionAfterRename } from './session-rename'
 
 /**
  * Sheets main-process logic as an embeddable module: no top-level lifecycle.
@@ -1674,8 +1675,12 @@ export function sheetsFileRenamed(wc: WebContents, oldPath: string, newPath: str
   if (!entry) return
   let matched = false
   for (const [id, session] of entry.sessions) {
-    if (session.path !== oldPath) continue
-    entry.sessions.set(id, { ...session, path: newPath })
+    // Converted copies (.csv / .xls / .tsv) and restored recovery copies keep
+    // the user's file in a side field, not in `path`; move those too, or the
+    // next Save recreates the file under the old name.
+    const renamed = sessionAfterRename(session, oldPath, newPath)
+    if (renamed === null) continue
+    entry.sessions.set(id, renamed)
     matched = true
   }
   if (matched) wc.send(IPC_CHANNELS.workbookRenamed, basename(newPath))
@@ -3296,7 +3301,7 @@ export function registerSheetsAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.aiSetSettings, async (event, input: unknown) => {
     sessionFor(event)
     const settings = aiSettingsInputSchema.parse(input)
-    await writeJsonAtomic(SETTINGS_PATH(), settings)
+    writeJsonAtomic(SETTINGS_PATH(), settings)
   })
 
   ipcMain.handle(IPC_CHANNELS.aiChat, async (event, input: unknown) => {

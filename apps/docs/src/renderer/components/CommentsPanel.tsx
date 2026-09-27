@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { CommentInfo } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
@@ -57,6 +57,7 @@ export const CommentsPanel = memo(function CommentsPanel({
   onCancelNew,
   onDelete,
   onClose,
+  focus,
 }: {
   comments: CommentInfo[]
   /** current PM doc, used only as the anchor-scan cache key (doc unchanged ⇒ anchors unchanged) */
@@ -73,6 +74,8 @@ export const CommentsPanel = memo(function CommentsPanel({
   onCancelNew: () => void
   onDelete: (id: string) => void
   onClose: () => void
+  /** thread to highlight and scroll to (Review > Previous / Next); nonce re-fires for the same id */
+  focus?: { id: string; nonce: number } | null
 }) {
   const { t } = useI18n()
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -135,11 +138,31 @@ export const CommentsPanel = memo(function CommentsPanel({
     if (composing) draftRef.current?.focus()
   }, [composing])
 
+  useEffect(() => {
+    if (!focus) return
+    setActiveId(focus.id)
+    if (comments.some((c) => c.id === focus.id && c.done)) setShowResolved(true)
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`.comments-pane [data-comment-id="${CSS.escape(focus.id)}"]`)
+        ?.scrollIntoView({ block: 'nearest' })
+    })
+    // comments only matter at fire time; re-running on every edit would re-scroll
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus])
+
   const submit = () => {
     const text = draft.trim()
     if (!text) return
     onSubmitNew(text)
     setDraft('')
+  }
+
+  const onActivate = (fn: () => void) => (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    e.stopPropagation()
+    fn()
   }
 
   const renderThread = (c: CommentInfo) => {
@@ -161,12 +184,7 @@ export const CommentsPanel = memo(function CommentsPanel({
             e.stopPropagation()
             startEdit(c)
           }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.stopPropagation()
-              startEdit(c)
-            }
-          }}
+          onKeyDown={onActivate(() => startEdit(c))}
         >
           <IconPencil size={13} />
         </span>
@@ -181,20 +199,21 @@ export const CommentsPanel = memo(function CommentsPanel({
             cancelEditIn([c.id, ...replies.map((r) => r.id)])
             onDelete(c.id)
           }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.stopPropagation()
-              cancelEditIn([c.id, ...replies.map((r) => r.id)])
-              onDelete(c.id)
-            }
-          }}
+          onKeyDown={onActivate(() => {
+            cancelEditIn([c.id, ...replies.map((r) => r.id)])
+            onDelete(c.id)
+          })}
         >
           <IconTrash size={13} />
         </span>
       </div>
     )
     return (
-      <div key={c.id} className={`comment-thread ${c.done ? 'resolved' : ''}`}>
+      <div
+        key={c.id}
+        data-comment-id={c.id}
+        className={`comment-thread ${c.done ? 'resolved' : ''}`}
+      >
         {editingId === c.id ? (
           // editing swaps the clickable card for a plain one: a textarea cannot live inside a button
           <div className={`comment-card ${activeId === c.id ? 'active' : ''}`}>
@@ -247,6 +266,7 @@ export const CommentsPanel = memo(function CommentsPanel({
                   e.stopPropagation()
                   startEdit(r)
                 }}
+                onKeyDown={onActivate(() => startEdit(r))}
               >
                 <IconPencil size={12} />
               </span>
@@ -261,6 +281,10 @@ export const CommentsPanel = memo(function CommentsPanel({
                   cancelEditIn([r.id])
                   onDelete(r.id)
                 }}
+                onKeyDown={onActivate(() => {
+                  cancelEditIn([r.id])
+                  onDelete(r.id)
+                })}
               >
                 <IconTrash size={12} />
               </span>

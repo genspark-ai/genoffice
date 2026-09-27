@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactElement } from 'react'
 import type { TabsApi, TabSummary } from '../../shared/tabs-api'
+import { notifyFilesChanged } from './file-events'
 import { useI18n } from './locale'
 
 declare global {
@@ -154,6 +155,9 @@ export function TabBar() {
     if (newName === tab.title) return
     void window.aiOffice.renameFile(tab.filePath, newName).then((result) => {
       if (!result.ok) window.alert(result.error ?? t('renameFailed'))
+      // Home shares this renderer and only re-pulls on window focus, which the
+      // rename input already holds: tell it the recents / folder rows moved.
+      else notifyFilesChanged()
     })
   }
 
@@ -414,6 +418,8 @@ export function TabBar() {
                   onPointerDown={(event) => event.stopPropagation()}
                   onChange={(event) => setRenaming({ id: tab.id, value: event.target.value })}
                   onKeyDown={(event) => {
+                    // Enter that confirms an IME candidate is not a commit (Home's rename does the same)
+                    if (event.nativeEvent.isComposing) return
                     if (event.key === 'Enter') commitRename()
                     else if (event.key === 'Escape') {
                       renamingRef.current = null

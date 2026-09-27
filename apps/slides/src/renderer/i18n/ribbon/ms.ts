@@ -14,7 +14,7 @@ export const ms = {
   ribbonTabSlideShow: 'Tayangan Slaid',
   ribbonTabReview: 'Semakan',
   ribbonCollapse: 'Runtuhkan Reben',
-  ribbonPin: 'Semat Reben',
+  ribbonExpand: 'Kembangkan Reben',
   ribbonTabView: 'Pandangan',
   ribbonTabTableDesign: 'Reka Bentuk Jadual',
   ribbonTabChartDesign: 'Reka Bentuk Carta',

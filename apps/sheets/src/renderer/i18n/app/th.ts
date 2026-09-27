@@ -628,7 +628,7 @@ export const th = {
   appTabData: 'ข้อมูล',
   appTabReview: 'รีวิว',
   appRibbonCollapse: 'ยุบ Ribbon',
-  appRibbonPin: 'ปักหมุด Ribbon',
+  appRibbonExpand: 'ขยาย Ribbon',
   appTabView: 'มุมมอง',
   appTabAi: 'AI',
   appTabChartDesign: 'การออกแบบแผนภูมิ',

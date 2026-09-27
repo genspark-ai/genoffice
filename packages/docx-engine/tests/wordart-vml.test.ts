@@ -106,7 +106,7 @@ describe('VML WordArt (v:textpath) display', () => {
     for (const photo of photos) {
       expect(photo.fillImageDataUrl).toMatch(/^data:image\/png;base64,/)
     }
-    expect(photos.map((p) => p.widthPx)).toEqual([149, 152])
+    expect(photos.map((p) => p.widthPx)).toEqual([148.93, 152.07])
   })
 
   it('does not lift a picture nested in VML textbox content into a page-level box', async () => {

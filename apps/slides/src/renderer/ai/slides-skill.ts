@@ -22,6 +22,10 @@ import systemPrompt from './prompts/system.md?raw'
 
 // ── Generation progress events (for the onProgress callback; renderer memory only, never persisted or journaled) ──
 
+/** Upper bound on generate_deck approx_pages; bounds planner round trips and the progress note. */
+export const MAX_APPROX_PAGES = 200
+const MAX_PROGRESS_NOTE_PAGES = 40
+
 /** Per-page progress status */
 export type PageProgressStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -566,7 +570,9 @@ const TOOLS: AgentToolDef[] = [
         },
         approx_pages: {
           type: 'integer',
-          description: 'Expected page count (used together with topic)',
+          minimum: 1,
+          maximum: MAX_APPROX_PAGES,
+          description: `Expected page count (used together with topic; at most ${MAX_APPROX_PAGES})`,
         },
         context: {
           type: 'string',
@@ -1148,9 +1154,14 @@ function buildProgressNote(state?: SkillState): string {
   }
   // Name unfinished pages one by one from pageDone (page numbers stay accurate when a middle page fails)
   const remaining: string[] = []
+  let omitted = 0
   for (let i = 0; i < planned; i++) {
-    if (!flags[i]) remaining.push(`page ${i + 1}${titles[i] ? ` "${titles[i]}"` : ''}`)
+    if (flags[i]) continue
+    if (remaining.length < MAX_PROGRESS_NOTE_PAGES) {
+      remaining.push(`page ${i + 1}${titles[i] ? ` "${titles[i]}"` : ''}`)
+    } else omitted++
   }
+  if (omitted > 0) remaining.push(`and ${omitted} more`)
   return (
     `<generation-progress>\n` +
     `⚠️ Incomplete: ${planned} pages planned, ${done} generated, ${planned - done} still missing.\n` +
@@ -1901,9 +1912,9 @@ async function executeTool(
       if (!styleSkill) styleSkill = style // Fallback: use the user-passed style, or empty
 
       // ── Step 1: plan the outline — without pages, plan in-tool from topic (batched recursion over PLAN_BATCH; layouts chosen per the Style Skill).
-      const approxForProgress = Math.max(
-        1,
-        parseInt(String(call.input.approx_pages ?? '0'), 10) || pages.length || 1,
+      const approxForProgress = Math.min(
+        MAX_APPROX_PAGES,
+        Math.max(1, parseInt(String(call.input.approx_pages ?? '0'), 10) || pages.length || 1),
       )
       if (pages.length === 0) {
         const approx = approxForProgress

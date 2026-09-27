@@ -30,4 +30,17 @@ describe('TOC entry leader rendering', () => {
     expect(heavy[2]).toBe('_'.repeat(220))
     expect(heavy[1].class).toBe('doc-toc-dots doc-toc-leader-heavy')
   })
+
+  it('an unstyled entry indents its first cell only, so the page number stays on the column edge', () => {
+    const spans = (field: FieldDisplay) =>
+      (renderFieldSpec(field) as unknown[]).filter(Array.isArray) as Span[]
+    const [title, , page] = spans({ ...base, indentLeftTwips: 240 })
+    expect(title[1].class).toBe('doc-toc-title')
+    expect(title[1].style).toBe('padding-left:12pt')
+    expect(page[1].style).toBeUndefined()
+    const [num, numTitle] = spans({ ...base, num: '1.', indentLeftTwips: 480 })
+    expect(num[1].style).toBe('padding-left:24pt')
+    expect(numTitle[1].style).toBeUndefined()
+    expect(spans(base)[0][1].style).toBeUndefined()
+  })
 })

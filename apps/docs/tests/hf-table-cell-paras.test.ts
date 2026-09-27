@@ -4,6 +4,7 @@ import {
   hfCellParaStyle,
   hfFloatPagePos,
   hfHasVisibleContent,
+  hfImageHangsOnPara,
   hfStripGeom,
   hfTextBoxStyle,
   hfWashoutFilter,
@@ -517,5 +518,56 @@ describe('boxAnchored paragraphs (floating-textbox content)', () => {
     const stacked = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
     expect(stacked.querySelectorAll('.page-hf-textbox')).toHaveLength(0)
     expect(stacked.querySelectorAll(':scope > .page-hf-para')).toHaveLength(4)
+  })
+})
+
+describe('cell paragraph line factor and row-anchored pictures', () => {
+  it('sizes a cell line by the declared face factor, not the substitute metrics', () => {
+    const runs = [{ text: 'MONTEZ AZULEZ', fontAscii: 'Century Gothic', sizeHalfPoints: 32 }]
+    const style = hfCellParaStyle(undefined, undefined, runs)
+    expect(style['--doc-line-factor']).toBe('1.226')
+    expect(style.lineHeight).toContain('var(--doc-line-factor')
+    expect(hfCellParaStyle(undefined, undefined, [{ text: 'plain' }]).lineHeight).toBeUndefined()
+  })
+
+  it('hosts a row-anchored picture inside its anchor row at the paragraph offset', () => {
+    const value: HeaderFooter = {
+      text: '',
+      paras: [
+        { runs: [] },
+        { runs: [], cells: [{ paras: [[{ text: 'Title' }]] }, { paras: [[]] }] },
+      ],
+    }
+    const img: HfImage = {
+      dataUrl: 'data:image/png;base64,AA==',
+      widthPx: 58,
+      heightPx: 49,
+      floating: true,
+      wrap: 'none',
+      posHRel: 'margin',
+      posXPx: 606,
+      posVRel: 'paragraph',
+      posYPx: 3,
+      anchorPara: 1,
+    }
+    expect(hfImageHangsOnPara(img)).toBe(true)
+    expect(hfImageHangsOnPara({ ...img, anchorPara: undefined })).toBe(false)
+    const geom = hfStripGeom({
+      pageWidth: 12240,
+      pageHeight: 15840,
+      marginLeft: 720,
+      marginRight: 720,
+      marginTop: 349,
+      marginBottom: 720,
+      headerDist: 283,
+      footerDist: 57,
+    } as SectionSettings)
+    const el = makeGapHfEl({ kind: 'header', value, images: [img], pageNo: 1, pageTotal: 1, geom })
+    const hosted = el.querySelector<HTMLElement>('.page-hf-row.page-hf-anchor > img')!
+    expect(hosted).not.toBeNull()
+    expect(hosted.style.top).toBe('3px')
+    // margin band: x = marginLeft + posXPx, strip-relative = posXPx
+    expect(hosted.style.left).toBe('606px')
+    expect(el.querySelector('.page-hf-images')).toBeNull()
   })
 })

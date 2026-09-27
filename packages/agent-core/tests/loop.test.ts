@@ -4,6 +4,7 @@ import {
   COMPLETED_VIA_TOOLS_TEXT,
   TOOL_ABORTED_OUTPUT,
   composeSkills,
+  missingRequiredFields,
   runtimePreamble,
   type AgentMessage,
   type AgentSkill,
@@ -159,32 +160,6 @@ describe('AgentLoop', () => {
     })
     // second request included the tool round-trip
     expect(transport.requests[1].messageCount).toBe(3)
-  })
-
-  it('keeps an opaque tool-call signature in the assistant history', async () => {
-    const transport = scriptedTransport([
-      (cb) => {
-        cb.onToolCall({
-          id: 't1',
-          name: 'do_thing',
-          input: {},
-          thoughtSignature: 'opaque-signature',
-        })
-        cb.onDone()
-      },
-      (cb) => cb.onDone(),
-    ])
-    const loop = new AgentLoop({ transport, skill: makeSkill() })
-    loop.run('make a change')
-    await flush()
-    await flush()
-    const assistant = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
-    expect(assistant.toolCalls?.[0]).toEqual({
-      id: 't1',
-      name: 'do_thing',
-      input: {},
-      thoughtSignature: 'opaque-signature',
-    })
   })
 
   it('stores streamed reasoning on the tool-calling assistant message and drops it on the next run', async () => {
@@ -1234,6 +1209,33 @@ describe('AgentLoop compaction', () => {
     expect(onDone).toHaveBeenCalledWith({ text: 'OK', cancelled: false, turnLimit: false })
   })
 
+  it('keeps the provider signature on stored tool calls while stripping turn-local hints', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({
+          id: 't1',
+          name: 'do_thing',
+          input: {},
+          signature: 'c2ln',
+          inputError: undefined,
+        })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const loop = new AgentLoop({ transport, skill: makeSkill() })
+    loop.run('x')
+    await flush()
+    await flush()
+    const assistant = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
+    expect(assistant.toolCalls).toEqual([
+      { id: 't1', name: 'do_thing', input: {}, signature: 'c2ln' },
+    ])
+  })
+
   it('calls with inputError are not executed; an is_error result is fed back so the model can retry', async () => {
     const transport = scriptedTransport([
       (cb) => {
@@ -1265,6 +1267,139 @@ describe('AgentLoop compaction', () => {
     expect(toolMsg.results[0].isError).toBe(true)
     expect(toolMsg.results[0].output).toContain('bad json')
     expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
+  })
+
+  it('a call missing a schema-required argument is not executed; the model is told which field to add', async () => {
+    // an empty argument stream parses to {} without inputError (the model wrote
+    // prose instead of arguments, or a gateway dropped the stream)
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onDelta('I will bold the selection.')
+        cb.onToolCall({ id: 't1', name: 'apply_ops', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onToolCall({ id: 't2', name: 'apply_ops', input: { ops: [{ op: 'setStyle' }] } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const executed: AgentToolCall[] = []
+    const skill = makeSkill((call) => {
+      executed.push(call)
+      return { output: 'ok', summary: 'ok' }
+    })
+    skill.tools = [
+      {
+        name: 'apply_ops',
+        description: 'd',
+        inputSchema: {
+          type: 'object',
+          properties: { ops: { type: 'array' }, dryRun: { type: 'boolean' } },
+          required: ['ops'],
+        },
+      },
+    ]
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill, events: { onDone } })
+    loop.run('x')
+    await flush()
+    await flush()
+    await flush()
+    expect(executed.map((c) => c.id)).toEqual(['t2'])
+    const toolMsg = loop.messages[2] as Extract<AgentMessage, { role: 'tool' }>
+    expect(toolMsg.results[0].isError).toBe(true)
+    expect(toolMsg.results[0].output).toContain('missing the required argument(s) "ops"')
+    expect(toolMsg.results[0].output).not.toContain('JSON failed to parse')
+    expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
+  })
+
+  it('a batch of empty calls in one turn is one failed attempt, not three: the model gets to retry', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onDelta('Bolding, italicizing and linking.')
+        cb.onToolCall({ id: 'e1', name: 'apply_ops', input: {} })
+        cb.onToolCall({ id: 'e2', name: 'apply_ops', input: {} })
+        cb.onToolCall({ id: 'e3', name: 'apply_ops', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onToolCall({ id: 'ok', name: 'apply_ops', input: { ops: [] } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const executed: AgentToolCall[] = []
+    const skill = makeSkill((call) => {
+      executed.push(call)
+      return { output: 'ok', summary: 'ok' }
+    })
+    skill.tools = [
+      {
+        name: 'apply_ops',
+        description: 'd',
+        inputSchema: { type: 'object', properties: {}, required: ['ops'] },
+      },
+    ]
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill, events: { onError, onDone } })
+    loop.run('x')
+    for (let i = 0; i < 6; i++) await flush()
+    expect(onError).not.toHaveBeenCalled()
+    const toolMsg = loop.messages[2] as Extract<AgentMessage, { role: 'tool' }>
+    expect(toolMsg.results.map((r) => r.isError)).toEqual([true, true, true])
+    expect(executed.map((c) => c.id)).toEqual(['ok'])
+    expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
+  })
+
+  it('missing-argument retries count toward the unusable-input cap', async () => {
+    const transport = scriptedTransport(
+      Array.from({ length: 4 }, () => (cb: AgentStreamCallbacks) => {
+        cb.onToolCall({ id: 'e', name: 'apply_ops', input: {} })
+        cb.onDone()
+      }),
+    )
+    const skill = makeSkill()
+    skill.tools = [
+      {
+        name: 'apply_ops',
+        description: 'd',
+        inputSchema: { type: 'object', properties: {}, required: ['ops'] },
+      },
+    ]
+    const onError = vi.fn()
+    const loop = new AgentLoop({ transport, skill, events: { onError } })
+    loop.run('x')
+    for (let i = 0; i < 6; i++) await flush()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('missing required arguments'))
+    expect(transport.requests).toHaveLength(3)
+  })
+
+  it('tools without a required list, and optional fields, are not checked', () => {
+    expect(missingRequiredFields(undefined, {})).toEqual([])
+    expect(
+      missingRequiredFields({ name: 'a', description: '', inputSchema: { type: 'object' } }, {}),
+    ).toEqual([])
+    expect(
+      missingRequiredFields(
+        { name: 'a', description: '', inputSchema: { type: 'object', required: ['x', 'y'] } },
+        { x: 0, y: null, z: 1 },
+      ),
+    ).toEqual([])
+    expect(
+      missingRequiredFields(
+        { name: 'a', description: '', inputSchema: { type: 'object', required: ['x', 'y'] } },
+        { y: '' },
+      ),
+    ).toEqual(['x'])
   })
 
   it('a truncated tool call is fed back as "split the call", not as a JSON error', async () => {

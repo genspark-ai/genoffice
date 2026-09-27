@@ -168,7 +168,7 @@ export const strings = {
     ribbonTabEdit: '编辑',
     ribbonTabPage: '页面',
     ribbonCollapse: '折叠功能区',
-    ribbonPin: '固定功能区',
+    ribbonExpand: '展开功能区',
     ribbonTabView: '视图',
     aiSummarizeBtn: 'AI 总结',
     aiKeyPointsBtn: 'AI 要点',
@@ -495,7 +495,7 @@ export const strings = {
     ribbonTabEdit: 'Edit',
     ribbonTabPage: 'Pages',
     ribbonCollapse: 'Collapse the Ribbon',
-    ribbonPin: 'Pin the ribbon',
+    ribbonExpand: 'Expand the Ribbon',
     ribbonTabView: 'View',
     aiSummarizeBtn: 'AI Summarize',
     aiKeyPointsBtn: 'AI Key Points',
@@ -830,7 +830,7 @@ export const strings = {
     ribbonTabEdit: '編集',
     ribbonTabPage: 'ページ',
     ribbonCollapse: 'リボンを折りたたむ',
-    ribbonPin: 'リボンの固定',
+    ribbonExpand: 'リボンを展開する',
     ribbonTabView: '表示',
     aiSummarizeBtn: 'AI 要約',
     aiKeyPointsBtn: 'AI 要点',
@@ -1045,9 +1045,9 @@ export const strings = {
     redactClear: 'マークをクリア',
     redactApply: '墨消しを適用',
     redactConfirm:
-      'マークした領域の内容は永久に削除されます。続行後、システムの「名前を付けて保存」ダイアログで新しいコピーを選択します。続行しますか？',
+      'マークした領域の内容は永久に削除されます。初回の適用ではコピーを作成して開き、以降の適用ではそのコピーを更新します。続行しますか？',
     redactSaveAsHint:
-      '墨消しは適用されていません。「墨消しを適用」を再度クリックして新しいコピーを選択してください。通常の保存ではこれらのマークは適用されません。',
+      '墨消しは適用されていません。「墨消しを適用」をクリックすると作業用コピーにこれらのマークが適用されます。通常の保存ではこれらのマークは適用されません。',
     redactSaveFirst: '墨消しを適用する前に、他の未保存の変更を保存してください。',
     redactStructureBlocked:
       'ページ構成を変更する前に、保留中の墨消しを適用またはクリアしてください。',
@@ -1165,7 +1165,7 @@ export const strings = {
     ribbonTabEdit: '편집',
     ribbonTabPage: '페이지',
     ribbonCollapse: '리본 축소',
-    ribbonPin: '리본 고정',
+    ribbonExpand: '리본 확장',
     ribbonTabView: '보기',
     aiSummarizeBtn: 'AI 요약',
     aiKeyPointsBtn: 'AI 핵심 요점',
@@ -1381,9 +1381,9 @@ export const strings = {
     redactClear: '표시 지우기',
     redactApply: '마스킹 적용',
     redactConfirm:
-      '표시한 영역의 내용이 영구적으로 제거됩니다. 계속한 뒤 시스템 "다른 이름으로 저장" 대화상자에서 새 복사본을 선택하세요. 계속하시겠습니까?',
+      '표시한 영역의 내용이 영구적으로 제거됩니다. 처음 적용하면 복사본을 만들어 열고, 이후 적용은 그 복사본을 업데이트합니다. 계속하시겠습니까?',
     redactSaveAsHint:
-      '마스킹이 적용되지 않았습니다. "마스킹 적용"을 다시 클릭하여 새 복사본을 선택하세요. 일반 저장은 이 표시를 적용하지 않습니다.',
+      '마스킹이 적용되지 않았습니다. "마스킹 적용"을 클릭하면 이 표시가 작업 복사본에 적용됩니다. 일반 저장은 이 표시를 적용하지 않습니다.',
     redactSaveFirst: '마스킹을 적용하기 전에 다른 변경 사항을 먼저 저장하세요.',
     redactStructureBlocked: '페이지 구조를 변경하기 전에 대기 중인 마스킹을 적용하거나 지우세요.',
     editText: '텍스트 편집',
@@ -1499,7 +1499,7 @@ export const strings = {
     ribbonTabEdit: 'Édition',
     ribbonTabPage: 'Pages',
     ribbonCollapse: 'Réduire le ruban',
-    ribbonPin: 'Épingler le ruban',
+    ribbonExpand: 'Développer le ruban',
     ribbonTabView: 'Affichage',
     aiSummarizeBtn: 'Résumé IA',
     aiKeyPointsBtn: 'Points clés IA',
@@ -1719,9 +1719,9 @@ export const strings = {
     redactClear: 'Effacer les marques',
     redactApply: 'Appliquer le caviardage',
     redactConfirm:
-      'Le contenu des zones marquées sera définitivement supprimé. Continuer, puis choisir une nouvelle copie dans la boîte de dialogue Enregistrer sous ?',
+      'Le contenu des zones marquées sera définitivement supprimé. La première application crée et ouvre une copie ; les suivantes mettent à jour cette copie. Continuer ?',
     redactSaveAsHint:
-      "Le caviardage n'a pas été appliqué. Cliquez de nouveau sur Appliquer le caviardage pour choisir une nouvelle copie ; l'enregistrement normal n'applique jamais ces marques.",
+      "Le caviardage n'a pas été appliqué. Cliquez sur Appliquer le caviardage pour appliquer ces marques à la copie de travail ; l'enregistrement normal n'applique jamais ces marques.",
     redactSaveFirst:
       "Enregistrez les autres modifications en attente avant d'appliquer le caviardage.",
     redactStructureBlocked:
@@ -1842,7 +1842,7 @@ export const strings = {
     ribbonTabEdit: 'Bearbeiten',
     ribbonTabPage: 'Seiten',
     ribbonCollapse: 'Menüband reduzieren',
-    ribbonPin: 'Menüband anheften',
+    ribbonExpand: 'Menüband erweitern',
     ribbonTabView: 'Ansicht',
     aiSummarizeBtn: 'KI-Zusammenfassung',
     aiKeyPointsBtn: 'KI-Kernpunkte',
@@ -2061,9 +2061,9 @@ export const strings = {
     redactClear: 'Markierungen löschen',
     redactApply: 'Schwärzungen anwenden',
     redactConfirm:
-      'Der Inhalt der markierten Bereiche wird dauerhaft entfernt. Fortfahren und dann im Dialog „Speichern unter“ eine neue Kopie wählen?',
+      'Der Inhalt der markierten Bereiche wird dauerhaft entfernt. Beim ersten Anwenden wird eine Kopie erstellt und geöffnet, weitere Anwendungen aktualisieren diese Kopie. Fortfahren?',
     redactSaveAsHint:
-      'Die Schwärzungen wurden nicht angewendet. Klicken Sie erneut auf „Schwärzungen anwenden“, um eine neue Kopie zu wählen; normales Speichern wendet diese Markierungen nie an.',
+      'Die Schwärzungen wurden nicht angewendet. Klicken Sie auf „Schwärzungen anwenden“, um diese Markierungen auf die Arbeitskopie anzuwenden; normales Speichern wendet diese Markierungen nie an.',
     redactSaveFirst:
       'Speichern Sie andere ausstehende Änderungen, bevor Sie Schwärzungen anwenden.',
     redactStructureBlocked:
@@ -2183,7 +2183,7 @@ export const strings = {
     ribbonTabEdit: 'Editar',
     ribbonTabPage: 'Páginas',
     ribbonCollapse: 'Contraer la cinta de opciones',
-    ribbonPin: 'Anclar la cinta de opciones',
+    ribbonExpand: 'Expandir la cinta de opciones',
     ribbonTabView: 'Vista',
     aiSummarizeBtn: 'Resumen IA',
     aiKeyPointsBtn: 'Puntos clave IA',
@@ -2402,9 +2402,9 @@ export const strings = {
     redactClear: 'Borrar marcas',
     redactApply: 'Aplicar censura',
     redactConfirm:
-      'El contenido de las áreas marcadas se eliminará permanentemente. ¿Continuar y elegir una copia nueva en el diálogo Guardar como del sistema?',
+      'El contenido de las áreas marcadas se eliminará permanentemente. La primera aplicación crea y abre una copia; las siguientes actualizan esa copia. ¿Continuar?',
     redactSaveAsHint:
-      'La censura no se aplicó. Haz clic de nuevo en Aplicar censura para elegir una copia nueva; el guardado normal nunca aplica estas marcas.',
+      'La censura no se aplicó. Haz clic en Aplicar censura para aplicar estas marcas a la copia de trabajo; el guardado normal nunca aplica estas marcas.',
     redactSaveFirst: 'Guarda los demás cambios pendientes antes de aplicar la censura.',
     redactStructureBlocked:
       'Aplica o borra las censuras pendientes antes de cambiar la estructura de páginas.',
@@ -2524,7 +2524,7 @@ export const strings = {
     ribbonTabEdit: 'แก้ไข',
     ribbonTabPage: 'หน้า',
     ribbonCollapse: 'ยุบ Ribbon',
-    ribbonPin: 'ปักหมุด Ribbon',
+    ribbonExpand: 'ขยาย Ribbon',
     ribbonTabView: 'มุมมอง',
     aiSummarizeBtn: 'สรุปด้วย AI',
     aiKeyPointsBtn: 'ประเด็นสำคัญ AI',
@@ -2740,9 +2740,9 @@ export const strings = {
     redactClear: 'ล้างเครื่องหมาย',
     redactApply: 'ใช้การปิดทับ',
     redactConfirm:
-      'เนื้อหาในพื้นที่ที่ทำเครื่องหมายจะถูกลบอย่างถาวร ดำเนินการต่อแล้วเลือกสำเนาใหม่ในกล่องโต้ตอบบันทึกเป็นของระบบหรือไม่',
+      'เนื้อหาในพื้นที่ที่ทำเครื่องหมายจะถูกลบอย่างถาวร การใช้ครั้งแรกจะสร้างและเปิดสำเนา การใช้ครั้งต่อไปจะอัปเดตสำเนานั้น ดำเนินการต่อหรือไม่',
     redactSaveAsHint:
-      'ยังไม่ได้ใช้การปิดทับ คลิก "ใช้การปิดทับ" อีกครั้งเพื่อเลือกสำเนาใหม่ การบันทึกปกติจะไม่ใช้เครื่องหมายเหล่านี้',
+      'ยังไม่ได้ใช้การปิดทับ คลิก "ใช้การปิดทับ" เพื่อใช้เครื่องหมายเหล่านี้กับสำเนาที่ใช้งานอยู่ การบันทึกปกติจะไม่ใช้เครื่องหมายเหล่านี้',
     redactSaveFirst: 'บันทึกการเปลี่ยนแปลงอื่นที่รอดำเนินการก่อนใช้การปิดทับ',
     redactStructureBlocked: 'ใช้หรือล้างการปิดทับที่รอดำเนินการก่อนเปลี่ยนโครงสร้างหน้า',
     editText: 'แก้ไขข้อความ',
@@ -2858,7 +2858,7 @@ export const strings = {
     ribbonTabEdit: 'Edit',
     ribbonTabPage: 'Halaman',
     ribbonCollapse: 'Ciutkan Pita',
-    ribbonPin: 'Sematkan Pita',
+    ribbonExpand: 'Perluas Pita',
     ribbonTabView: 'Tampilan',
     aiSummarizeBtn: 'Ringkasan AI',
     aiKeyPointsBtn: 'Poin Utama AI',
@@ -3075,9 +3075,9 @@ export const strings = {
     redactClear: 'Hapus tanda',
     redactApply: 'Terapkan redaksi',
     redactConfirm:
-      'Konten di dalam area yang ditandai akan dihapus secara permanen. Lanjutkan, lalu pilih salinan baru di dialog Simpan Sebagai sistem?',
+      'Konten di dalam area yang ditandai akan dihapus secara permanen. Penerapan pertama membuat dan membuka salinan; penerapan berikutnya memperbarui salinan itu. Lanjutkan?',
     redactSaveAsHint:
-      'Redaksi belum diterapkan. Klik Terapkan redaksi lagi untuk memilih salinan baru; Simpan biasa tidak pernah menerapkan tanda ini.',
+      'Redaksi belum diterapkan. Klik Terapkan redaksi untuk menerapkan tanda ini ke salinan kerja; Simpan biasa tidak pernah menerapkan tanda ini.',
     redactSaveFirst: 'Simpan perubahan tertunda lainnya sebelum menerapkan redaksi.',
     redactStructureBlocked:
       'Terapkan atau hapus redaksi tertunda sebelum mengubah struktur halaman.',
@@ -3196,7 +3196,7 @@ export const strings = {
     ribbonTabEdit: 'Правка',
     ribbonTabPage: 'Страницы',
     ribbonCollapse: 'Свернуть ленту',
-    ribbonPin: 'Закрепить ленту',
+    ribbonExpand: 'Развернуть ленту',
     ribbonTabView: 'Вид',
     aiSummarizeBtn: 'ИИ-резюме',
     aiKeyPointsBtn: 'Ключевые пункты ИИ',
@@ -3413,9 +3413,9 @@ export const strings = {
     redactClear: 'Снять отметки',
     redactApply: 'Применить затемнение',
     redactConfirm:
-      'Содержимое отмеченных областей будет удалено безвозвратно. Продолжить и выбрать новую копию в системном диалоге «Сохранить как»?',
+      'Содержимое отмеченных областей будет удалено безвозвратно. Первое применение создаёт и открывает копию, последующие обновляют эту копию. Продолжить?',
     redactSaveAsHint:
-      'Затемнение не применено. Нажмите «Применить затемнение» ещё раз, чтобы выбрать новую копию; обычное сохранение никогда не применяет эти отметки.',
+      'Затемнение не применено. Нажмите «Применить затемнение», чтобы применить эти отметки к рабочей копии; обычное сохранение никогда не применяет эти отметки.',
     redactSaveFirst: 'Сохраните другие несохранённые изменения перед применением затемнения.',
     redactStructureBlocked:
       'Примените или снимите ожидающие отметки затемнения перед изменением структуры страниц.',
@@ -3535,7 +3535,7 @@ export const strings = {
     ribbonTabEdit: 'تحرير',
     ribbonTabPage: 'الصفحات',
     ribbonCollapse: 'طي الشريط',
-    ribbonPin: 'تثبيت الشريط',
+    ribbonExpand: 'توسيع الشريط',
     ribbonTabView: 'عرض',
     aiSummarizeBtn: 'تلخيص AI',
     aiKeyPointsBtn: 'النقاط الرئيسية AI',
@@ -3750,9 +3750,9 @@ export const strings = {
     redactClear: 'مسح العلامات',
     redactApply: 'تطبيق التنقيح',
     redactConfirm:
-      'سيُحذف المحتوى داخل المناطق المحددة نهائيًا. هل تريد المتابعة ثم اختيار نسخة جديدة في مربع حوار "حفظ باسم"؟',
+      'سيُحذف المحتوى داخل المناطق المحددة نهائيًا. التطبيق الأول ينشئ نسخة ويفتحها، والتطبيقات اللاحقة تحدّث تلك النسخة. هل تريد المتابعة؟',
     redactSaveAsHint:
-      'لم يُطبَّق التنقيح. انقر "تطبيق التنقيح" مرة أخرى لاختيار نسخة جديدة؛ الحفظ العادي لا يطبّق هذه العلامات أبدًا.',
+      'لم يُطبَّق التنقيح. انقر "تطبيق التنقيح" لتطبيق هذه العلامات على نسخة العمل؛ الحفظ العادي لا يطبّق هذه العلامات أبدًا.',
     redactSaveFirst: 'احفظ التغييرات المعلقة الأخرى قبل تطبيق التنقيح.',
     redactStructureBlocked: 'طبّق التنقيحات المعلقة أو امسحها قبل تغيير بنية الصفحات.',
     editText: 'تحرير النص',
@@ -3868,7 +3868,7 @@ export const strings = {
     ribbonTabEdit: 'Editar',
     ribbonTabPage: 'Páginas',
     ribbonCollapse: 'Recolher a Faixa de Opções',
-    ribbonPin: 'Fixar a Faixa de Opções',
+    ribbonExpand: 'Expandir a Faixa de Opções',
     ribbonTabView: 'Exibir',
     aiSummarizeBtn: 'Resumo IA',
     aiKeyPointsBtn: 'Pontos-chave IA',
@@ -4086,9 +4086,9 @@ export const strings = {
     redactClear: 'Limpar marcações',
     redactApply: 'Aplicar censura',
     redactConfirm:
-      'O conteúdo das áreas marcadas será removido permanentemente. Continuar e escolher uma nova cópia na caixa de diálogo Salvar como do sistema?',
+      'O conteúdo das áreas marcadas será removido permanentemente. A primeira aplicação cria e abre uma cópia; as seguintes atualizam essa cópia. Continuar?',
     redactSaveAsHint:
-      'A censura não foi aplicada. Clique em Aplicar censura novamente para escolher uma nova cópia; o salvamento normal nunca aplica essas marcações.',
+      'A censura não foi aplicada. Clique em Aplicar censura para aplicar essas marcações à cópia de trabalho; o salvamento normal nunca aplica essas marcações.',
     redactSaveFirst: 'Salve as outras alterações pendentes antes de aplicar a censura.',
     redactStructureBlocked:
       'Aplique ou limpe as censuras pendentes antes de alterar a estrutura das páginas.',
@@ -4207,7 +4207,7 @@ export const strings = {
     ribbonTabEdit: 'Modifica',
     ribbonTabPage: 'Pagine',
     ribbonCollapse: 'Riduci a icona la barra multifunzione',
-    ribbonPin: 'Aggiungi la barra multifunzione',
+    ribbonExpand: 'Espandi la barra multifunzione',
     ribbonTabView: 'Visualizza',
     aiSummarizeBtn: 'Riassunto IA',
     aiKeyPointsBtn: 'Punti chiave IA',
@@ -4426,9 +4426,9 @@ export const strings = {
     redactClear: 'Cancella contrassegni',
     redactApply: 'Applica oscuramenti',
     redactConfirm:
-      'Il contenuto delle aree contrassegnate verrà rimosso definitivamente. Continuare e scegliere una nuova copia nella finestra Salva con nome del sistema?',
+      'Il contenuto delle aree contrassegnate verrà rimosso definitivamente. La prima applicazione crea e apre una copia; le successive aggiornano quella copia. Continuare?',
     redactSaveAsHint:
-      'Gli oscuramenti non sono stati applicati. Fai di nuovo clic su Applica oscuramenti per scegliere una nuova copia; il salvataggio normale non applica mai questi contrassegni.',
+      'Gli oscuramenti non sono stati applicati. Fai clic su Applica oscuramenti per applicare questi contrassegni alla copia di lavoro; il salvataggio normale non applica mai questi contrassegni.',
     redactSaveFirst: 'Salva le altre modifiche in sospeso prima di applicare gli oscuramenti.',
     redactStructureBlocked:
       'Applica o cancella gli oscuramenti in sospeso prima di modificare la struttura delle pagine.',
@@ -4549,7 +4549,7 @@ export const strings = {
     ribbonTabEdit: 'Edycja',
     ribbonTabPage: 'Strony',
     ribbonCollapse: 'Zwiń Wstążkę',
-    ribbonPin: 'Przypnij Wstążkę',
+    ribbonExpand: 'Rozwiń Wstążkę',
     ribbonTabView: 'Widok',
     aiSummarizeBtn: 'Podsumowanie AI',
     aiKeyPointsBtn: 'Kluczowe punkty AI',
@@ -4766,9 +4766,9 @@ export const strings = {
     redactClear: 'Wyczyść oznaczenia',
     redactApply: 'Zastosuj zaczernienia',
     redactConfirm:
-      'Treść w oznaczonych obszarach zostanie trwale usunięta. Kontynuować i wybrać nową kopię w systemowym oknie „Zapisz jako”?',
+      'Treść w oznaczonych obszarach zostanie trwale usunięta. Pierwsze zastosowanie tworzy i otwiera kopię; kolejne aktualizują tę kopię. Kontynuować?',
     redactSaveAsHint:
-      'Zaczernienia nie zostały zastosowane. Kliknij ponownie „Zastosuj zaczernienia”, aby wybrać nową kopię; zwykły zapis nigdy nie stosuje tych oznaczeń.',
+      'Zaczernienia nie zostały zastosowane. Kliknij „Zastosuj zaczernienia”, aby zastosować te oznaczenia do kopii roboczej; zwykły zapis nigdy nie stosuje tych oznaczeń.',
     redactSaveFirst: 'Zapisz pozostałe oczekujące zmiany przed zastosowaniem zaczernień.',
     redactStructureBlocked:
       'Zastosuj lub wyczyść oczekujące zaczernienia przed zmianą struktury stron.',
@@ -4888,7 +4888,7 @@ export const strings = {
     ribbonTabEdit: 'Úpravy',
     ribbonTabPage: 'Stránky',
     ribbonCollapse: 'Sbalit pás karet',
-    ribbonPin: 'Připnout pás karet',
+    ribbonExpand: 'Rozbalit pás karet',
     ribbonTabView: 'Zobrazení',
     aiSummarizeBtn: 'AI shrnutí',
     aiKeyPointsBtn: 'AI klíčové body',
@@ -5104,9 +5104,9 @@ export const strings = {
     redactClear: 'Vymazat značky',
     redactApply: 'Použít začernění',
     redactConfirm:
-      'Obsah v označených oblastech bude trvale odstraněn. Pokračovat a poté vybrat novou kopii v systémovém dialogu Uložit jako?',
+      'Obsah v označených oblastech bude trvale odstraněn. První použití vytvoří a otevře kopii; další použití tuto kopii aktualizují. Pokračovat?',
     redactSaveAsHint:
-      'Začernění nebylo použito. Klikněte znovu na Použít začernění a vyberte novou kopii; běžné uložení tyto značky nikdy nepoužije.',
+      'Začernění nebylo použito. Klikněte na Použít začernění a značky se použijí na pracovní kopii; běžné uložení tyto značky nikdy nepoužije.',
     redactSaveFirst: 'Před použitím začernění uložte ostatní čekající změny.',
     redactStructureBlocked:
       'Před změnou struktury stránek použijte nebo vymažte čekající začernění.',
@@ -5225,7 +5225,7 @@ export const strings = {
     ribbonTabEdit: 'Bewerken',
     ribbonTabPage: "Pagina's",
     ribbonCollapse: 'Het lint samenvouwen',
-    ribbonPin: 'Het lint vastmaken',
+    ribbonExpand: 'Het lint uitvouwen',
     ribbonTabView: 'Beeld',
     aiSummarizeBtn: 'AI-samenvatting',
     aiKeyPointsBtn: 'AI-kernpunten',
@@ -5443,9 +5443,9 @@ export const strings = {
     redactClear: 'Markeringen wissen',
     redactApply: 'Zwart maken toepassen',
     redactConfirm:
-      'De inhoud in de gemarkeerde gebieden wordt permanent verwijderd. Doorgaan en daarna een nieuwe kopie kiezen in het systeemvenster Opslaan als?',
+      'De inhoud in de gemarkeerde gebieden wordt permanent verwijderd. De eerste toepassing maakt en opent een kopie; volgende toepassingen werken die kopie bij. Doorgaan?',
     redactSaveAsHint:
-      'Het zwart maken is niet toegepast. Klik opnieuw op Zwart maken toepassen om een nieuwe kopie te kiezen; gewoon opslaan past deze markeringen nooit toe.',
+      'Het zwart maken is niet toegepast. Klik op Zwart maken toepassen om deze markeringen op de werkkopie toe te passen; gewoon opslaan past deze markeringen nooit toe.',
     redactSaveFirst: 'Sla andere openstaande wijzigingen op voordat u zwart maken toepast.',
     redactStructureBlocked:
       'Pas openstaande markeringen toe of wis ze voordat u de paginastructuur wijzigt.',
@@ -5564,7 +5564,7 @@ export const strings = {
     ribbonTabEdit: 'Edit',
     ribbonTabPage: 'Halaman',
     ribbonCollapse: 'Runtuhkan Reben',
-    ribbonPin: 'Semat Reben',
+    ribbonExpand: 'Kembangkan Reben',
     ribbonTabView: 'Pandangan',
     aiSummarizeBtn: 'Ringkasan AI',
     aiKeyPointsBtn: 'Perkara Utama AI',
@@ -5781,9 +5781,9 @@ export const strings = {
     redactClear: 'Kosongkan tanda',
     redactApply: 'Gunakan redaksi',
     redactConfirm:
-      'Kandungan dalam kawasan bertanda akan dibuang secara kekal. Teruskan, kemudian pilih salinan baharu dalam dialog Simpan Sebagai sistem?',
+      'Kandungan dalam kawasan bertanda akan dibuang secara kekal. Penggunaan pertama mencipta dan membuka salinan; penggunaan seterusnya mengemas kini salinan itu. Teruskan?',
     redactSaveAsHint:
-      'Redaksi belum digunakan. Klik Gunakan redaksi sekali lagi untuk memilih salinan baharu; simpan biasa tidak akan menggunakan tanda ini.',
+      'Redaksi belum digunakan. Klik Gunakan redaksi untuk menggunakan tanda ini pada salinan kerja; simpan biasa tidak akan menggunakan tanda ini.',
     redactSaveFirst: 'Simpan perubahan lain yang belum selesai sebelum menggunakan redaksi.',
     redactStructureBlocked:
       'Gunakan atau kosongkan redaksi yang belum selesai sebelum mengubah struktur halaman.',
@@ -5902,7 +5902,7 @@ export const strings = {
     ribbonTabEdit: 'עריכה',
     ribbonTabPage: 'עמודים',
     ribbonCollapse: 'כווץ את רצועת הכלים',
-    ribbonPin: 'הצמד את רצועת הכלים',
+    ribbonExpand: 'הרחב את רצועת הכלים',
     ribbonTabView: 'תצוגה',
     aiSummarizeBtn: 'סיכום AI',
     aiKeyPointsBtn: 'נקודות מפתח AI',
@@ -6113,9 +6113,9 @@ export const strings = {
     redactClear: 'ניקוי סימונים',
     redactApply: 'החלת השחרות',
     redactConfirm:
-      'התוכן באזורים המסומנים יוסר לצמיתות. להמשיך ואז לבחור עותק חדש בתיבת הדו-שיח "שמירה בשם"?',
+      'התוכן באזורים המסומנים יוסר לצמיתות. ההחלה הראשונה יוצרת ופותחת עותק; החלות נוספות מעדכנות את העותק הזה. להמשיך?',
     redactSaveAsHint:
-      'ההשחרות לא הוחלו. לחצו שוב על "החלת השחרות" כדי לבחור עותק חדש; שמירה רגילה לעולם אינה מחילה סימונים אלה.',
+      'ההשחרות לא הוחלו. לחצו על "החלת השחרות" כדי להחיל סימונים אלה על עותק העבודה; שמירה רגילה לעולם אינה מחילה סימונים אלה.',
     redactSaveFirst: 'שמרו שינויים ממתינים אחרים לפני החלת ההשחרות.',
     redactStructureBlocked: 'החילו או נקו השחרות ממתינות לפני שינוי מבנה העמודים.',
     editText: 'עריכת טקסט',
@@ -6231,7 +6231,7 @@ export const strings = {
     ribbonTabEdit: 'संपादन',
     ribbonTabPage: 'पृष्ठ',
     ribbonCollapse: 'रिबन संक्षिप्त करें',
-    ribbonPin: 'रिबन पिन करें',
+    ribbonExpand: 'रिबन विस्तृत करें',
     ribbonTabView: 'दृश्य',
     aiSummarizeBtn: 'AI सारांश',
     aiKeyPointsBtn: 'AI मुख्य बिंदु',
@@ -6447,9 +6447,9 @@ export const strings = {
     redactClear: 'चिह्न हटाएँ',
     redactApply: 'कालापन लागू करें',
     redactConfirm:
-      'चिह्नित क्षेत्रों की सामग्री स्थायी रूप से हटा दी जाएगी। जारी रखें और फिर सिस्टम के "इस रूप में सहेजें" संवाद में नई प्रति चुनें?',
+      'चिह्नित क्षेत्रों की सामग्री स्थायी रूप से हटा दी जाएगी। पहली बार लागू करने पर एक प्रति बनाकर खोली जाती है; बाद में लागू करने पर वही प्रति अद्यतन होती है। जारी रखें?',
     redactSaveAsHint:
-      'कालापन लागू नहीं हुआ। नई प्रति चुनने के लिए "कालापन लागू करें" पर फिर क्लिक करें; सामान्य सहेजना इन चिह्नों को कभी लागू नहीं करता।',
+      'कालापन लागू नहीं हुआ। इन चिह्नों को कार्यशील प्रति पर लागू करने के लिए "कालापन लागू करें" पर क्लिक करें; सामान्य सहेजना इन चिह्नों को कभी लागू नहीं करता।',
     redactSaveFirst: 'कालापन लागू करने से पहले अन्य लंबित परिवर्तन सहेजें।',
     redactStructureBlocked: 'पृष्ठ संरचना बदलने से पहले लंबित कालापन लागू करें या हटाएँ।',
     editText: 'टेक्स्ट संपादित करें',
@@ -6566,7 +6566,7 @@ export const strings = {
     ribbonTabEdit: '編輯',
     ribbonTabPage: '頁面',
     ribbonCollapse: '摺疊功能區',
-    ribbonPin: '固定功能區',
+    ribbonExpand: '展開功能區',
     ribbonTabView: '檢視',
     aiSummarizeBtn: 'AI 總結',
     aiKeyPointsBtn: 'AI 重點',
@@ -6776,9 +6776,9 @@ export const strings = {
     redactClear: '清除標記',
     redactApply: '套用塗黑',
     redactConfirm:
-      '標記區域中的內容將被永久移除。繼續後請在系統「另存新檔」對話方塊中選擇新副本。是否繼續？',
+      '標記區域中的內容將被永久移除。首次套用會另存並開啟副本，後續套用會更新該副本。是否繼續？',
     redactSaveAsHint:
-      '塗黑尚未套用。請再次點擊「套用塗黑」並選擇新副本；一般儲存不會套用這些標記。',
+      '塗黑尚未套用。請點擊「套用塗黑」將標記套用到工作副本；一般儲存不會套用這些標記。',
     redactSaveFirst: '請先儲存其他待處理的變更，再套用塗黑。',
     redactStructureBlocked: '請先套用或清除待處理的塗黑標記，再變更頁面結構。',
     editText: '編輯文字',

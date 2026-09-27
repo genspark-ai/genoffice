@@ -135,6 +135,27 @@ export interface PdfiumModule {
   _FPDFAnnot_IsChecked?(form: number, annot: number): number
   /** UTF-16LE value of a string/name key ('AS', 'V', …); returns byte length */
   _FPDFAnnot_GetStringValue?(annot: number, key: number, buffer: number, buflen: number): number
+  /** UTF-16LE field /V resolved through the field tree (inherits from /Parent); byte length */
+  _FPDFAnnot_GetFormFieldValue?(form: number, annot: number, buffer: number, buflen: number): number
+  /** field /Ff resolved through the field tree (inherits from /Parent) */
+  _FPDFAnnot_GetFormFieldFlags?(form: number, annot: number): number
+  /** /DA font size (float*) resolved widget → field chain → AcroForm; 0 = auto */
+  _FPDFAnnot_GetFontSize?(form: number, annot: number, value: number): number
+  /** bind / unbind a page to the form-fill environment (widget-level queries need it) */
+  _FORM_OnAfterLoadPage?(page: number, form: number): void
+  _FORM_OnBeforeClosePage?(page: number, form: number): void
+  // link annotations (fpdf_doc.h; optional — feature-detect)
+  /** int* startPos, FPDF_LINK* link; returns FPDF_BOOL */
+  _FPDFLink_Enumerate?(page: number, startPos: number, link: number): number
+  /** FS_RECTF* (4 floats: left, top, right, bottom) */
+  _FPDFLink_GetAnnotRect?(link: number, rect: number): number
+  _FPDFLink_GetAction?(link: number): number
+  _FPDFLink_GetDest?(doc: number, link: number): number
+  _FPDFAction_GetType?(action: number): number
+  _FPDFAction_GetDest?(doc: number, action: number): number
+  /** UTF-8 URI incl. NUL; returns bytes needed */
+  _FPDFAction_GetURIPath?(doc: number, action: number, buffer: number, buflen: number): number
+  _FPDFDest_GetDestPageIndex?(doc: number, dest: number): number
   _PDFiumExt_OpenFormFillInfo?(): number
   _PDFiumExt_InitFormFillEnvironment?(doc: number, formInfo: number): number
   _PDFiumExt_ExitFormFillEnvironment?(form: number): void
@@ -229,6 +250,13 @@ export const FPDF_ANNOT_WIDGET = 20
 export const FPDF_FORMFIELD_CHECKBOX = 2
 export const FPDF_FORMFIELD_RADIOBUTTON = 3
 export const FPDF_FORMFIELD_TEXT = 6
+/** field flag bits (/Ff, 1-based bit positions from the spec) */
+export const FPDF_FORMFLAG_TEXT_MULTILINE = 1 << 12
+export const FPDF_FORMFLAG_TEXT_PASSWORD = 1 << 13
+
+// fpdf_doc.h action types
+export const PDFACTION_GOTO = 1
+export const PDFACTION_URI = 3
 
 // path segment types (fpdf_edit.h FPDF_SEGMENT_*)
 export const FPDF_SEGMENT_LINETO = 0

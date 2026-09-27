@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core'
+import type { Lang } from '@genoffice/i18n'
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Mapping } from '@tiptap/pm/transform'
@@ -28,6 +29,22 @@ export function firstStrongDir(text: string): 'ltr' | 'rtl' | null {
 /** effective direction: explicit w:bidi or the render-only inferred flag */
 export function effectiveBidi(attrs: Record<string, unknown>): boolean {
   return attrs.bidi === true || attrs.bidiInferred === true
+}
+
+/** UI languages whose users get the paragraph direction buttons by default */
+export function isRtlUiLang(lang: Lang): boolean {
+  return lang === 'ar' || lang === 'he'
+}
+
+/** whether any paragraph-like block touched by the selection is RTL */
+export function selectionHasBidi(editor: Editor): boolean {
+  const { from, to } = editor.state.selection
+  let found = false
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (DIR_BLOCKS.has(node.type.name) && effectiveBidi(node.attrs)) found = true
+    return !found
+  })
+  return found
 }
 
 /** bidi attr of the paragraph-like node at the cursor (false in textbox sub-editors, which have no bidi) */

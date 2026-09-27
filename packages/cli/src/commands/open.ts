@@ -130,7 +130,7 @@ export function parseTarget(args: ParsedArgs, path: string): ControlTarget | und
     }
     return n
   }
-  if (/^\.pptxm?$|^\.ppsx$|^\.potx$/.test(ext) || ext === '.pptx') {
+  if (/^\.ppt[xm]$|^\.ppsx$|^\.potx$/.test(ext)) {
     expect(['slide', 'el'], 'presentation')
     if (args.flags.slide === undefined) {
       throw new CliError(EXIT.usage, '--el needs --slide', undefined, {
