@@ -37,12 +37,12 @@ const tUpd = createI18n({
     updLater: 'Remind me later',
   },
     vi: {
-    updTitle: 'Software Update',
-    updHeadline: 'A new version is available',
+    updTitle: 'Cập nhật phần mềm',
+    updHeadline: 'Đã có phiên bản mới',
     updDesc:
-      'This update includes performance improvements and bug fixes. We recommend updating now.',
-    updInstall: 'Restart & Install',
-    updLater: 'Remind me later',
+      'Bản cập nhật này bao gồm các cải tiến hiệu suất và sửa lỗi. Chúng tôi khuyên bạn nên cập nhật ngay bây giờ.',
+    updInstall: 'Khởi động lại & Cài đặt',
+    updLater: 'Nhắc tôi sau',
   },
   ja: {
     updTitle: 'ソフトウェアアップデート',
