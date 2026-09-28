@@ -26,7 +26,9 @@ import { readCappedResponseText } from '../src/protocols/shared'
 describe('media response cap', () => {
   it('refuses a gateway response larger than the shared cap before buffering it', async () => {
     const before = process.memoryUsage().rss
-    await expect(readCappedResponseText(streamingResponse(64 * MB))).rejects.toThrow(/exceeded the .*-byte limit/)
+    await expect(readCappedResponseText(streamingResponse(64 * MB))).rejects.toThrow(
+      /exceeded the .*-byte limit/,
+    )
     expect(process.memoryUsage().rss - before).toBeLessThan(32 * MB)
   })
 
