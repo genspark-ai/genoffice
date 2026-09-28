@@ -18,6 +18,16 @@ export function validPrintScale(scale: unknown): boolean {
   )
 }
 
+/** combined geometry guard shared by the printToPDF IPC handlers (docs:export-pdf,
+ * docs:print-pdf-buffer): page width/height in twips plus optional scale */
+export function validPrintGeometry(
+  pageWidthTwips: unknown,
+  pageHeightTwips: unknown,
+  scale?: unknown,
+): boolean {
+  return validPrintDim(pageWidthTwips) && validPrintDim(pageHeightTwips) && validPrintScale(scale)
+}
+
 /** finite positive scale for the printToPDF/print option objects (Infinity fails `> 0` checks) */
 export function printScaleOption(scale: unknown): { scale: number } | Record<string, never> {
   return typeof scale === 'number' && Number.isFinite(scale) && scale > 0 && scale !== 1

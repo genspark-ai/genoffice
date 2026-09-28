@@ -167,7 +167,7 @@ import {
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
-import { printScaleOption, validPrintDim, validPrintScale } from './print-args'
+import { printScaleOption, validPrintGeometry, validPrintScale } from './print-args'
 import { initDocsAutoUpdater } from './updater'
 import { registerZoteroIpc, teardownZoteroIpc } from './zotero-ipc'
 
@@ -4943,6 +4943,13 @@ export function registerDocsIpc(): void {
       outPath?: string,
       scale?: number,
     ) => {
+      // Renderer-supplied page geometry reaches Chromium printToPDF verbatim:
+      // reject non-finite/out-of-range sizes (0.1in..50in) and scales (0.1..5),
+      // same guard as docs:print-pdf-buffer (a malformed w:pgSz in a doc would
+      // otherwise hand Chromium a page thousands of inches wide).
+      if (!validPrintGeometry(pageWidthTwips, pageHeightTwips, scale)) {
+        return { ok: false, error: 'invalid page size or scale' }
+      }
       // renderer-supplied outPath is only honored when a save dialog authorized it before
       let filePath = outPath ?? null
       if (filePath && !canPdfWrite(event.sender.id, filePath)) {
@@ -5081,11 +5088,7 @@ export function registerDocsIpc(): void {
     async (event, pageWidthTwips: number, pageHeightTwips: number, scale?: number) => {
       // Renderer-supplied page geometry reaches Chromium printToPDF verbatim:
       // reject non-finite/out-of-range sizes (0.5in..50in) and scales (0.1..5).
-      if (
-        !validPrintDim(pageWidthTwips) ||
-        !validPrintDim(pageHeightTwips) ||
-        !validPrintScale(scale)
-      ) {
+      if (!validPrintGeometry(pageWidthTwips, pageHeightTwips, scale)) {
         return { ok: false, error: 'invalid page size or scale' }
       }
       try {

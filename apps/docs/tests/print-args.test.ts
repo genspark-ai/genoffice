@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { printScaleOption, validPrintDim, validPrintScale } from '../src/main/print-args'
+import {
+  printScaleOption,
+  validPrintDim,
+  validPrintGeometry,
+  validPrintScale,
+} from '../src/main/print-args'
 
 describe('print arg validators', () => {
   it('accepts real page sizes and default scale', () => {
@@ -23,5 +28,22 @@ describe('print arg validators', () => {
     expect(printScaleOption(2)).toEqual({ scale: 2 })
     expect(printScaleOption(Infinity)).toEqual({})
     expect(printScaleOption(NaN)).toEqual({})
+  })
+
+  // regression: docs:export-pdf used to skip this guard entirely, so a doc with
+  // <w:pgSz w:w="2000000000"/> reached printToPDF as a ~1,388,889-inch page
+  it('validPrintGeometry gates the export-pdf geometry+scale combination', () => {
+    // legit Letter portrait passes
+    expect(validPrintGeometry(12240, 15840)).toBe(true)
+    expect(validPrintGeometry(12240, 15840, 1.5)).toBe(true)
+    expect(validPrintGeometry(12240, 15840, undefined)).toBe(true)
+    // hostile pgSz from a doc (w:w="2000000000") is rejected before printToPDF
+    expect(validPrintGeometry(2_000_000_000, 15840)).toBe(false)
+    expect(validPrintGeometry(12240, 2_000_000_000)).toBe(false)
+    // NaN/Infinity/strings and bad scale rejected too
+    expect(validPrintGeometry(NaN, 15840)).toBe(false)
+    expect(validPrintGeometry(12240, Infinity)).toBe(false)
+    expect(validPrintGeometry('12240', 15840)).toBe(false)
+    expect(validPrintGeometry(12240, 15840, 99)).toBe(false)
   })
 })
