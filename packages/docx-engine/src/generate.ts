@@ -836,6 +836,33 @@ function injectShapeText(
   return paragraphXml
 }
 
+/**
+ * Resize the shape's own a:ext, the one in its wps:spPr/a:xfrm, keeping the dimension
+ * that was not patched. The first a:ext in a drawing is not necessarily the shape's:
+ * a textbox that holds a picture carries that picture's a:ext too, so writing the new
+ * size there resized the picture and left the box at its old size. A shape without an
+ * explicit transform is left alone rather than resized through someone else's a:ext.
+ */
+function setShapeExt(drawingXml: string, size: { cx?: number; cy?: number }): string {
+  const spPr = /<wps:spPr(?:\s[^>]*)?>[\s\S]*?<\/wps:spPr>|<wps:spPr(?:\s[^>]*)?\/>/.exec(
+    drawingXml,
+  )
+  if (!spPr) return drawingXml
+  const tag = /<a:ext\b[^>]*\/>/.exec(spPr[0])
+  if (!tag) return drawingXml
+  const cx = size.cx ?? /\bcx="(\d+)"/.exec(tag[0])?.[1]
+  const cy = size.cy ?? /\bcy="(\d+)"/.exec(tag[0])?.[1]
+  if (cx == null || cy == null) return drawingXml
+  const resized = `<a:ext cx="${cx}" cy="${cy}"/>`
+  return (
+    drawingXml.slice(0, spPr.index) +
+    spPr[0].slice(0, tag.index) +
+    resized +
+    spPr[0].slice(tag.index + tag[0].length) +
+    drawingXml.slice(spPr.index + spPr[0].length)
+  )
+}
+
 /** Resize fixed DrawingML textboxes while preserving their anchors and styling. */
 export function patchTextboxHeights(
   paragraphXml: string,
@@ -853,9 +880,10 @@ export function patchTextboxHeights(
     const heightPx = heightsPx[boxIndex]
     if (!heightPx) continue
     const cy = Math.max(1, Math.round(heightPx * EMU_PER_PX))
-    const resized = drawingXml
-      .replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
-      .replace(/(<a:ext\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
+    const resized = setShapeExt(
+      drawingXml.replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`),
+      { cy },
+    )
     out += paragraphXml.slice(cursor, drawing.start) + resized
     cursor = drawing.end
   }
@@ -914,17 +942,20 @@ export function patchTextboxSizes(
     let resized = drawingXml
     if (size.wPx != null) {
       const cx = Math.max(1, Math.round(size.wPx * EMU_PER_PX))
-      resized = resized
-        .replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
-        .replace(/(<a:ext\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`)
+      resized = setShapeExt(resized.replace(/(<wp:extent\b[^>]*\bcx=")\d+(")/, `$1${cx}$2`), {
+        cx,
+      })
     }
     if (size.hPx != null) {
       const cy = Math.max(1, Math.round(size.hPx * EMU_PER_PX))
-      resized = resized
-        .replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
-        .replace(/(<a:ext\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`)
-        // a fixed height only sticks if Word stops auto-fitting the shape
-        .replace(/<a:spAutoFit\s*\/>|<a:spAutoFit\s*>\s*<\/a:spAutoFit>/, '<a:noAutofit/>')
+      resized = setShapeExt(resized.replace(/(<wp:extent\b[^>]*\bcy=")\d+(")/, `$1${cy}$2`), {
+        cy,
+      })
+      // a fixed height only sticks if Word stops auto-fitting the shape
+      resized = resized.replace(
+        /<a:spAutoFit\s*\/>|<a:spAutoFit\s*>\s*<\/a:spAutoFit>/,
+        '<a:noAutofit/>',
+      )
     }
     out += paragraphXml.slice(cursor, drawing.start) + resized
     cursor = drawing.end
@@ -2034,11 +2065,13 @@ function tableLookXml(look: NonNullable<TableModel['tableLook']>): string {
 }
 
 export function generateTableModelXml(model: TableModel, originalTableXml?: string): string {
-  const columnCount = Math.max(
-    1,
-    model.colWidthsPct?.length ?? 0,
-    ...model.rows.map((row) => row.reduce((sum, cell) => sum + cellSpan(cell), 0)),
-  )
+  // the widest row decides the column count; folding it in a loop keeps the
+  // argument count off the call (a spread here blew the stack past ~125k rows)
+  let columnCount = Math.max(1, model.colWidthsPct?.length ?? 0)
+  for (const row of model.rows) {
+    const span = row.reduce((sum, cell) => sum + cellSpan(cell), 0)
+    if (span > columnCount) columnCount = span
+  }
   const percentages =
     model.colWidthsPct?.length === columnCount
       ? model.colWidthsPct

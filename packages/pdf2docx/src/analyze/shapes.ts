@@ -6,7 +6,7 @@
  * P4. Pure geometry, fully unit-testable.
  */
 import type { Rect } from '../geometry'
-import { approxEq, coversBox, intersectArea, rectArea } from '../geometry'
+import { approxEq, bboxOfPoints, coversBox, intersectArea, rectArea } from '../geometry'
 import type { Fill, PageShapes, RawPath, RawSubpath, Stroke } from '../ir'
 
 /** points this close are the same coordinate when detecting rectangles/axis lines */
@@ -111,11 +111,7 @@ function allEdgesAxisAligned(sub: RawSubpath): boolean {
   return true
 }
 
-const bboxOf = (sub: RawSubpath): Rect => {
-  const xs = sub.points.map((p) => p.x)
-  const ys = sub.points.map((p) => p.y)
-  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }
-}
+const bboxOf = (sub: RawSubpath): Rect => bboxOfPoints(sub.points)
 
 /** thin + elongated → the rect IS a line */
 function thinRectStroke(rect: Rect, color: string): Stroke | null {

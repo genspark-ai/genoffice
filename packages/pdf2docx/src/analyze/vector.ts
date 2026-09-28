@@ -7,7 +7,7 @@
  * caller does the rendering.
  */
 import type { Rect } from '../geometry'
-import { approxEq, median, rectArea, rectUnion } from '../geometry'
+import { approxEq, bboxOfPoints, median, rectArea, rectUnion } from '../geometry'
 import type { PdfChar, RawPath, RawSubpath } from '../ir'
 import { rectOfSubpath } from './shapes'
 
@@ -80,12 +80,8 @@ function bodyTextLineCount(
   return lines
 }
 
-const bboxOfSubpath = (sub: RawSubpath): Rect | null => {
-  if (sub.points.length === 0) return null
-  const xs = sub.points.map((p) => p.x)
-  const ys = sub.points.map((p) => p.y)
-  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }
-}
+const bboxOfSubpath = (sub: RawSubpath): Rect | null =>
+  sub.points.length === 0 ? null : bboxOfPoints(sub.points)
 
 /** a subpath the P2 normalization cannot represent (the raw material of vector art) */
 function isArtSubpath(path: RawPath, sub: RawSubpath): boolean {

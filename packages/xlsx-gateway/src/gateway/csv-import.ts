@@ -189,6 +189,9 @@ export function parseCsv(input: string, delimiter = sniffDelimiter(input)): stri
         } else {
           quoted = false
         }
+      } else if (character === '\r') {
+        if (text[index + 1] === '\n') index += 1
+        field += '\n'
       } else {
         field += character
       }

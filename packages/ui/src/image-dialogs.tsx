@@ -205,16 +205,9 @@ export function CutoutDialog({
     [],
   )
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onCancel()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
+  // Esc / Tab / initial focus come from useModalKeys on the backdrop, the same
+  // way CropDialog does it.
+  const modalKeys = useModalKeys(onCancel, { restoreFocus: true })
 
   const apply = () => {
     const full = fullRef.current
@@ -237,10 +230,16 @@ export function CutoutDialog({
   }
 
   return (
-    <div className="gs-imgdlg-mask" onClick={onCancel}>
+    <div
+      className="gs-imgdlg-mask"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onClick={onCancel}
+    >
       <div
         className="gs-imgdlg"
         role="dialog"
+        aria-modal="true"
         aria-label={labels.cutoutTitle}
         style={{ maxWidth: PREVIEW_MAX + 48 }}
         onClick={(e) => e.stopPropagation()}

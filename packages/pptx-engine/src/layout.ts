@@ -10,7 +10,7 @@
 import { nextSlideId } from './slide-ids'
 import type { PackageArchive } from './zip'
 import { resolveTarget, relsPathFor } from './zip'
-import { escapeXmlAttr } from './xml-utils'
+import { escapeXmlAttr, hasContentTypeOverride, maxRelationshipIdNumber } from './xml-utils'
 import type { SlideDeck } from './types'
 
 // ── Layout placeholder summary ─────────────────────────────────────────────
@@ -234,7 +234,7 @@ export function prepareInsertSlideWithLayout(
   // [Content_Types].xml
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !ct.includes(`PartName="/${newPath}"`)) {
+  if (ct && !hasContentTypeOverride(ct, newPath)) {
     archive.entries.set(
       ctPath,
       Buffer.from(
@@ -254,8 +254,7 @@ export function prepareInsertSlideWithLayout(
   const pres = archive.readText(presPath)
   if (!presRels || !pres) return null
 
-  let maxRid = 0
-  for (const m of presRels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(presRels)
   const newRid = `rId${maxRid + 1}`
   const relEntry = `<Relationship Id="${newRid}" Type="${SLIDE_REL_TYPE}" Target="${newPath.slice('ppt/'.length)}"/>`
   archive.entries.set(

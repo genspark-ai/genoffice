@@ -45,6 +45,23 @@ export function rectUnionAll(rects: readonly Rect[]): Rect {
   return rects.reduce(rectUnion)
 }
 
+/** bounding box of a point list, accumulated in a loop: a single path can carry
+ *  100k+ points (maps, CAD, chart exports) and Math.min(...points) would spread
+ *  them as arguments, throwing past the engine's argument-count limit */
+export function bboxOfPoints(points: readonly { x: number; y: number }[]): Rect {
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const p of points) {
+    if (p.x < x0) x0 = p.x
+    if (p.x > x1) x1 = p.x
+    if (p.y < y0) y0 = p.y
+    if (p.y > y1) y1 = p.y
+  }
+  return { x0, y0, x1, y1 }
+}
+
 export function intersectArea(a: Rect, b: Rect): number {
   const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)
   const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)

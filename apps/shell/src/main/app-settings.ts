@@ -46,3 +46,19 @@ export function writeAppSettings(path: string, updates: Record<string, unknown>)
 export function writeAppSetting(path: string, key: string, value: unknown): void {
   writeAppSettings(path, { [key]: value })
 }
+
+/**
+ * Persist `key` and run `apply` only once the bytes are on disk. writeAppSetting
+ * rethrows when userData/app-settings.json is unwritable, so a caller that
+ * updates its cached value first keeps showing a preference that was never
+ * stored and silently reverts on the next launch.
+ */
+export function writeAppSettingThen<T>(
+  path: string,
+  key: string,
+  value: T,
+  apply: (value: T) => void,
+): void {
+  writeAppSetting(path, key, value)
+  apply(value)
+}

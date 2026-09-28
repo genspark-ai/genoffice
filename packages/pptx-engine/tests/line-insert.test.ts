@@ -90,4 +90,23 @@ describe('line insertion (p:cxnSp)', () => {
     expect(parsed!.stroke?.width).toBe(19050)
     expect(parsed!.transform.offset).toEqual({ x: 914400, y: 914400, cx: 1828800, cy: 0 })
   })
+
+  it('flip flags mirror the connector and survive save → reopen', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, {
+      kind: 'line',
+      offset: { x: 100, y: 200, cx: 3000000, cy: 900000 },
+      stroke: { color: '#0070c0', widthEmu: 12700 },
+      flipV: true,
+    })
+    expect(el.transform.flipV).toBe(true)
+    expect(el.transform.flipH).toBe(false)
+    expect(el.anchor.originalXml).toContain('flipV="1"')
+    const reopened = await openPptx(Buffer.from(await savePptx(opened)))
+    const parsed = reopened.deck.slides[0]!.elements.find(
+      (e) => (e as TextElement).presetGeometry === 'line',
+    ) as TextElement | undefined
+    expect(parsed?.transform.flipV).toBe(true)
+  })
 })

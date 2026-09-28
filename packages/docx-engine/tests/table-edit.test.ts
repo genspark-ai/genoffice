@@ -593,3 +593,15 @@ describe('rich cell patch drawing carryover', () => {
     expect(out).toContain('<a:hlinkClick r:id="rId7"/>')
   })
 })
+
+describe('generateTableModelXml with a table wider than the argument limit', () => {
+  it('regenerates 130k rows instead of blowing the stack on a one-argument-per-row spread', () => {
+    // the column count was Math.max(1, …colWidths, ...rows), so a table with more
+    // rows than the engine's argument limit threw RangeError and the whole document
+    // failed to save
+    const rows = Array.from({ length: 130_000 }, () => [{ paras: ['x'] }])
+    const xml = generateTableModelXml({ rows })
+    expect(xml.match(/<w:tr>/g)).toHaveLength(130_000)
+    expect(xml).toContain('<w:gridCol w:w="9360"/>')
+  })
+})

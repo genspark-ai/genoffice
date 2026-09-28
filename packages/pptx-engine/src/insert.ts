@@ -11,7 +11,7 @@
 import { cNvPrIdsInXml, pruneTimingForSpids } from './animation'
 import type { EmuRect, Paragraph, PictureElement, Slide, SlideElement, TextElement } from './types'
 import { generateParagraphXml, generateXfrmXml } from './generate'
-import { creationIdXml, escapeXmlAttr } from './xml-utils'
+import { creationIdXml, escapeXmlAttr, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
 import type { OpenedPptx } from './index'
 import { cleanupDeletedElementResources } from './resource-cleanup'
@@ -52,6 +52,10 @@ export interface NewElementOptions {
   bodyPr?: NewElementBodyPr
   /** prstGeom adjustment values (<a:avLst><a:gd name fmla="val N"/>), e.g. {adj: 25000} for roundRect radius */
   adjustments?: Record<string, number>
+  /** Mirror horizontally (a:xfrm flipH="1") — a rightArrow points left */
+  flipH?: boolean
+  /** Mirror vertically (a:xfrm flipV="1") — a line runs bottom-left to top-right */
+  flipV?: boolean
 }
 
 /**
@@ -121,6 +125,11 @@ export function isLineKind(kind: string): boolean {
 
 const DEFAULT_LINE_STROKE = { color: '#000000', widthEmu: 12700 }
 
+/** a:xfrm flip attributes for generated fragments; empty when neither flag is set */
+function flipXml(opts: NewElementOptions): string {
+  return `${opts.flipH ? ' flipH="1"' : ''}${opts.flipV ? ' flipV="1"' : ''}`
+}
+
 function buildCxnSpXml(
   slide: Slide,
   opts: NewElementOptions,
@@ -142,7 +151,7 @@ function buildCxnSpXml(
   return (
     `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
-    `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
+    `<p:spPr><a:xfrm${flipXml(opts)}><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
     `<a:prstGeom prst="${def.prst}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>` +
     `<a:ln w="${Math.round(stroke.widthEmu)}" cap="flat">` +
     `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${head}${tail}</a:ln>` +
@@ -154,7 +163,8 @@ function buildCxnSpXml(
 export function nextCNvPrId(slide: Slide): number {
   let max = 1
   const scan = (xml: string) => {
-    for (const m of xml.matchAll(/<p:cNvPr\s[^>]*\bid="(\d+)"/g)) {
+    // quote-agnostic: a writer that single-quotes its attributes still owns those ids
+    for (const m of xml.matchAll(/<p:cNvPr\s[^>]*\bid=["'](\d+)["']/g)) {
       max = Math.max(max, Number(m[1]))
     }
   }
@@ -168,7 +178,7 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
   const isTextbox = opts.kind === 'textbox'
   const name = isTextbox ? `TextBox ${id}` : `Shape ${id}`
   const o = opts.offset
-  const xfrm = `<a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>`
+  const xfrm = `<a:xfrm${flipXml(opts)}><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>`
   // Parser convention: has txBody and no prstGeom → 'text'; textbox omits prstGeom
   const geom = isTextbox
     ? ''
@@ -201,7 +211,12 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
         originalXml: buildCxnSpXml(slide, opts, lineDef),
         range: [0, 0],
       },
-      transform: { offset: { ...opts.offset }, rot: 0, flipH: false, flipV: false },
+      transform: {
+        offset: { ...opts.offset },
+        rot: 0,
+        flipH: opts.flipH === true,
+        flipV: opts.flipV === true,
+      },
       presetGeometry: lineDef.prst,
       ...(opts.adjustments ? { adjust: { ...opts.adjustments } } : {}),
       fill: { type: 'none' },
@@ -368,10 +383,16 @@ function tableCellXml(
   cell: NewTableCellSpec,
   colIdx: number,
   border: NewTableGridOptions['border'],
+  maxGridSpan: number,
+  maxRowSpan: number,
 ): string {
   const attrs: string[] = []
-  if ((cell.gridSpan ?? 1) > 1) attrs.push(`gridSpan="${Math.floor(cell.gridSpan!)}"`)
-  if ((cell.rowSpan ?? 1) > 1) attrs.push(`rowSpan="${Math.floor(cell.rowSpan!)}"`)
+  // cap a span at the cells remaining right of / below it, as buildTableXml
+  // does: Math.floor alone emits gridSpan="Infinity" for a hostile payload
+  const gridSpan = cell.gridSpan !== undefined ? clampInt(cell.gridSpan, 1, maxGridSpan) : 1
+  const rowSpan = cell.rowSpan !== undefined ? clampInt(cell.rowSpan, 1, maxRowSpan) : 1
+  if (gridSpan > 1) attrs.push(`gridSpan="${gridSpan}"`)
+  if (rowSpan > 1) attrs.push(`rowSpan="${rowSpan}"`)
   if (cell.hMerge) attrs.push('hMerge="1"')
   if (cell.vMerge) attrs.push('vMerge="1"')
   const tcAttrs = attrs.length ? ` ${attrs.join(' ')}` : ''
@@ -425,6 +446,7 @@ function tableCellXml(
  */
 export function buildTableGridXml(slide: Slide, opts: NewTableGridOptions): string {
   const id = nextCNvPrId(slide)
+  const cols = opts.colWidthsEmu.length
   const grid = opts.colWidthsEmu
     .map((w) => `<a:gridCol w="${Math.max(1, Math.round(w))}"/>`)
     .join('')
@@ -432,7 +454,11 @@ export function buildTableGridXml(slide: Slide, opts: NewTableGridOptions): stri
     .map((row, r) => {
       const h = Math.max(1, Math.round(opts.rowHeightsEmu[r] ?? 1))
       // one <a:tc> per grid column (covered columns keep their own hMerge tc)
-      const tcs = row.map((cell, colIdx) => tableCellXml(cell, colIdx, opts.border)).join('')
+      const tcs = row
+        .map((cell, colIdx) =>
+          tableCellXml(cell, colIdx, opts.border, cols - colIdx, opts.cells.length - r),
+        )
+        .join('')
       return `<a:tr h="${h}">${tcs}</a:tr>`
     })
     .join('')
@@ -536,8 +562,7 @@ export function addImageMediaAndRel(
   const rels =
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(rels)
   const rid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${rid}" Type="${IMAGE_REL_TYPE}" Target="../media/${mediaPath.slice('ppt/media/'.length)}"/>`
   archive.entries.set(

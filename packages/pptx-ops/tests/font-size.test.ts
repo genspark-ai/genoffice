@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  DEFAULT_FONT_SIZE_PT,
   FONT_SIZES,
   FONT_SIZE_PT_MAX,
   applyFontSizeStep,
@@ -45,6 +46,23 @@ describe('stepFontSizePt', () => {
     expect(stepFontSizePt(6, 1)).toBe(7)
     expect(stepFontSizePt(7.5, 1)).toBe(8)
   })
+
+  /**
+   * A size that parsed to NaN compares false against every rung, so the grow
+   * path's find() came back empty and the caller wrote no size at all — grow
+   * font silently did nothing. Both directions now step from the body default.
+   */
+  it('steps from the body default when the current size is not finite', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      for (const dir of [1, -1] as const) {
+        const next = stepFontSizePt(bad, dir)
+        expect(Number.isFinite(next)).toBe(true)
+        expect(next).toBe(stepFontSizePt(DEFAULT_FONT_SIZE_PT, dir))
+      }
+    }
+    expect(stepFontSizePt(Number.NaN, 1)).toBe(20)
+    expect(stepFontSizePt(Number.NaN, -1)).toBe(16)
+  })
 })
 
 describe('nudgeFontSizePt', () => {
@@ -63,5 +81,14 @@ describe('applyFontSizeStep', () => {
     expect(applyFontSizeStep(18, { dir: 1, mode: 'point' })).toBe(19)
     expect(applyFontSizeStep(18, { dir: -1, mode: 'ladder' })).toBe(16)
     expect(applyFontSizeStep(18, { dir: -1, mode: 'point' })).toBe(17)
+  })
+
+  // the call site substitutes the default only for undefined, so a NaN size
+  // reached both modes: point mode wrote sz="NaN" straight back out
+  it('keeps a non-finite current size out of the result', () => {
+    expect(applyFontSizeStep(Number.NaN, { dir: 1, mode: 'ladder' })).toBe(20)
+    expect(applyFontSizeStep(Number.NaN, { dir: 1, mode: 'point' })).toBe(19)
+    expect(applyFontSizeStep(Number.NaN, { dir: -1, mode: 'ladder' })).toBe(16)
+    expect(applyFontSizeStep(Number.NaN, { dir: -1, mode: 'point' })).toBe(17)
   })
 })

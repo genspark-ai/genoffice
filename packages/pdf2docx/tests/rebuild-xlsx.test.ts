@@ -103,6 +103,12 @@ describe('parseCellValue', () => {
     expect(parseCellValue('1,200%')).toEqual(num(12, '0%'))
   })
 
+  it('clamps the percent round-trip precision to what toFixed accepts', () => {
+    // 99 decimal places + the 2 guard digits = 101, one past toFixed's 0-100 range
+    expect(parseCellValue(`0.${'0'.repeat(98)}1%`)).toEqual(num(0, `0.${'0'.repeat(99)}%`))
+    expect(parseCellValue('45.3%')).toEqual(num(0.453, '0.0%'))
+  })
+
   it('parses currency prefixes and suffixes', () => {
     expect(parseCellValue('$1,200')).toEqual(num(1200, '"$"#,##0'))
     expect(parseCellValue('$1,200.50')).toEqual(num(1200.5, '"$"#,##0.00'))

@@ -547,6 +547,57 @@ describe('appendChatMessage opening buffer', () => {
     expect(msgs[1].tools?.[0].summary).toBe('read page 1')
   })
 
+  it('caps the tool count and the per-tool name and summary on disk', () => {
+    store.appendChatMessage('default', 'tool-flood', {
+      role: 'assistant',
+      text: 'a',
+      tools: Array.from({ length: 500 }, (_, i) => ({
+        name: `tool_${i}_${'n'.repeat(5_000)}`,
+        summary: 's'.repeat(9_000),
+      })),
+    })
+    const tools = store.loadChat('default', 'tool-flood')[0]!.tools!
+    expect(tools).toHaveLength(64)
+    expect(tools[0]!.name).toHaveLength(200)
+    expect(tools[0]!.summary).toHaveLength(2_000)
+  })
+
+  it('caps the attachment count and the per-attachment name and path on disk', () => {
+    store.appendChatMessage('default', 'attach-flood', {
+      role: 'user',
+      text: 'q',
+      attachments: Array.from({ length: 5_000 }, (_, i) => ({
+        name: `file_${i}_${'a'.repeat(4_000)}`,
+        path: `/${'p'.repeat(4_000)}/${i}.bin`,
+        ext: 'bin',
+        sizeBytes: 1,
+      })),
+    })
+    const attachments = store.loadChat('default', 'attach-flood')[0]!.attachments!
+    expect(attachments).toHaveLength(32)
+    expect(attachments[0]!.name).toHaveLength(1_000)
+    expect(attachments[0]!.path).toHaveLength(1_000)
+    expect(attachments[0]!.ext).toBe('bin')
+  })
+
+  it('keeps a message with well-formed tools and attachments intact', () => {
+    store.appendChatMessage('default', 'meta-ok', {
+      role: 'user',
+      text: 'q',
+      attachments: [{ name: 'asset.pdf', path: '/tmp/asset.pdf', ext: 'pdf', sizeBytes: 123 }],
+    })
+    store.appendChatMessage('default', 'meta-ok', {
+      role: 'assistant',
+      text: 'a',
+      tools: [{ name: 'read_slide', summary: 'read page 1', isError: false }],
+    })
+    const msgs = store.loadChat('default', 'meta-ok')
+    expect(msgs[0]!.attachments).toEqual([
+      { name: 'asset.pdf', path: '/tmp/asset.pdf', ext: 'pdf', sizeBytes: 123 },
+    ])
+    expect(msgs[1]!.tools).toEqual([{ name: 'read_slide', summary: 'read page 1', isError: false }])
+  })
+
   it('scope survives the round trip; its excerpt is capped at 400 chars', () => {
     store.appendChatMessage('default', 'scope-chat', {
       role: 'user',

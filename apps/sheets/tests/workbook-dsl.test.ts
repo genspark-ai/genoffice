@@ -65,7 +65,7 @@ describe('expandToPrimitiveOps', () => {
           values: [['Q', 'A', 'note'], ['Q only']],
         },
       ]),
-    ).toThrow(/rectangular.*row 1 has 3 cell\(s\) but row 2 has 1/)
+    ).toThrow(/rectangular.*values\[0\] has 3 cell\(s\) but values\[1\] has 1/)
   })
 
   it('accepts range as an alias for start when its size matches values', () => {

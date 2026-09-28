@@ -48,6 +48,15 @@ import type {
 
 /** Max stored characters for a single tool input/output field */
 const TOOL_FIELD_MAX_CHARS = 16_000
+const MAX_TOOLS_PER_MESSAGE = 64
+const MAX_ATTACHMENTS_PER_MESSAGE = 32
+const TOOL_NAME_MAX_CHARS = 200
+const TOOL_SUMMARY_MAX_CHARS = 2_000
+const ATTACHMENT_FIELD_MAX_CHARS = 1_000
+
+function clampChatField(value: unknown, max: number): string {
+  return typeof value === 'string' ? value.slice(0, max) : ''
+}
 
 /**
  * Max stored characters for message text. A model that falls into a repetition
@@ -397,6 +406,13 @@ export class ProjectStore {
       updatedAt: now,
       files: [],
     }
+    // A project.json that is there but does not parse is corrupt, not absent —
+    // readProject reports both as null, so writing the fresh project over it
+    // would drop the file list for good. Leave the broken file for recovery.
+    if (existsSync(this.projectJsonPath('default'))) {
+      console.warn('[project-store] default project.json is unreadable, not overwriting it')
+      return data
+    }
     ensureDir(this.projectDir('default'))
     this.writeProject(data)
 
@@ -524,8 +540,11 @@ export class ProjectStore {
     const oldKey = canonicalPathKey(oldPath)
     const newKey = canonicalPathKey(newPath)
     const pidKey = this.findMapKey(index.fileMap, oldPath)
-    if (pidKey !== undefined) {
-      const pid = index.fileMap[pidKey]!
+    // Read the owner before the entry is dropped: the chat fallback below is
+    // the only path that can find a transcript an older version wrote under
+    // the raw-path hash, and it needs the projectId to look inside.
+    const pid = pidKey !== undefined ? index.fileMap[pidKey] : undefined
+    if (pidKey !== undefined && pid !== undefined) {
       delete index.fileMap[pidKey]
       index.fileMap[newKey] = pid
       const proj = this.readProject(pid)
@@ -538,9 +557,7 @@ export class ProjectStore {
     // Old data without a mapping: the chatId was derived from the old path hash; register the mapping under that hash on rename so history keeps up
     const chatKey = this.findMapKey(index.chatIdByPath, oldPath)
     const chatId =
-      chatKey !== undefined
-        ? index.chatIdByPath![chatKey]!
-        : this.fallbackChatId(pidKey !== undefined ? index.fileMap[pidKey] : undefined, oldPath)
+      chatKey !== undefined ? index.chatIdByPath![chatKey]! : this.fallbackChatId(pid, oldPath)
     if (chatKey !== undefined) delete index.chatIdByPath![chatKey]
     index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [newKey]: chatId }
     this.writeIndex(index)
@@ -597,13 +614,26 @@ export class ProjectStore {
       if (msg.fileRef !== undefined) record.fileRef = msg.fileRef
       if (msg.tools && msg.tools.length > 0) {
         // Truncate tool inputs/outputs so one JSONL line can't blow up on a huge payload
-        record.tools = msg.tools.map((t) => ({
+        record.tools = msg.tools.slice(0, MAX_TOOLS_PER_MESSAGE).map((t) => ({
           ...t,
+          name: clampChatField(t.name, TOOL_NAME_MAX_CHARS),
+          summary: clampChatField(t.summary, TOOL_SUMMARY_MAX_CHARS),
           ...(t.input !== undefined ? { input: t.input.slice(0, TOOL_FIELD_MAX_CHARS) } : {}),
           ...(t.output !== undefined ? { output: t.output.slice(0, TOOL_FIELD_MAX_CHARS) } : {}),
         }))
       }
-      if (msg.attachments !== undefined) record.attachments = msg.attachments
+      if (msg.attachments !== undefined) {
+        record.attachments = msg.attachments.slice(0, MAX_ATTACHMENTS_PER_MESSAGE).map((a) => ({
+          ...a,
+          name: clampChatField(a.name, ATTACHMENT_FIELD_MAX_CHARS),
+          ...(a.path !== undefined
+            ? { path: clampChatField(a.path, ATTACHMENT_FIELD_MAX_CHARS) }
+            : {}),
+          ...(a.ext !== undefined
+            ? { ext: clampChatField(a.ext, ATTACHMENT_FIELD_MAX_CHARS) }
+            : {}),
+        }))
+      }
       if (msg.scope !== undefined) {
         record.scope = {
           label: msg.scope.label,

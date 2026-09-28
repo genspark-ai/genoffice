@@ -67,7 +67,12 @@ import {
   setUpdateCheckInvoker,
   installRendererProtocol,
 } from '@genoffice/electron-utils'
-import { readAppSettings, writeAppSetting, writeAppSettings } from './app-settings'
+import {
+  readAppSettings,
+  writeAppSetting,
+  writeAppSettings,
+  writeAppSettingThen,
+} from './app-settings'
 import { OPEN_DOCUMENTS_FILE, clearOpenDocuments, publishOpenDocuments } from './open-documents'
 import { startControlServer, type ControlServer } from './control-server'
 import { controlHandler } from './control-handlers'
@@ -480,9 +485,12 @@ function currentLang(): Lang {
 }
 
 function persistLang(lang: Lang): void {
-  uiLang = lang
-  setUiLang(lang)
-  writeAppSetting(APP_SETTINGS_PATH(), 'language', lang)
+  // write first: app-settings.json can be unwritable, and a language committed to
+  // memory before the write survives only until the next launch
+  writeAppSettingThen(APP_SETTINGS_PATH(), 'language', lang, (persisted) => {
+    uiLang = persisted
+    setUiLang(persisted)
+  })
 }
 
 let cachedUpdateChannel: UpdateChannel | null = null
@@ -851,6 +859,99 @@ const tMain = createI18n({
     dlgPickSaveDir: 'Choose Default Save Location',
     errSaveDirUnusable:
       'The selected folder is not writable and cannot be used as the default save location',
+  },
+  vi: {
+    dlgAddFolderRoot: 'Thêm thư mục vào Trang chủ',
+    errFolderRootUnusable: 'Không thể đọc thư mục đã chọn',
+    menuFile: 'Tệp',
+    menuSectionNew: 'Mới',
+    menuOpenInNewWindow: 'Mở trong cửa sổ mới',
+    menuNewDoc: 'AI Docs',
+    menuNewSheet: 'AI Sheets',
+    untitledSheet: 'Bảng tính chưa có tiêu đề',
+    untitledDoc: 'Tài liệu chưa có tiêu đề',
+    untitledDeck: 'Bản trình bày chưa có tiêu đề',
+    untitledMarkdown: 'Markdown chưa có tiêu đề',
+    untitledHtml: 'HTML chưa có tiêu đề',
+    untitledPdf: 'PDF chưa có tiêu đề',
+    menuNewSlide: 'AI Slides',
+    menuNewMarkdown: 'AI Markdown',
+    menuNewHtml: 'AI HTML',
+    menuNewPdf: 'AI PDF',
+    menuExportPdf: 'Xuất dưới dạng PDF…',
+    menuExportImages: 'Xuất dưới dạng hình ảnh…',
+    menuExportHtml: 'Xuất dưới dạng HTML một tệp…',
+    menuOpenInDocs: 'Chuyển đổi và mở trong Docs',
+    menuPrint: 'In…',
+    menuOpen: 'Mở…',
+    menuSave: 'Lưu',
+    menuSaveAs: 'Lưu dưới dạng…',
+    menuClose: 'Đóng',
+    menuEdit: 'Chỉnh sửa',
+    menuWindow: 'Cửa sổ',
+    menuHome: 'Trang chủ',
+    backToHome: 'Quay lại Trang chủ',
+    dlgOpenTitle: 'Mở tệp',
+    filterSupported: 'Các tệp được hỗ trợ',
+    filterWord: 'Tài liệu Word',
+    filterExcel: 'Sổ làm việc Excel',
+    filterPpt: 'Bản trình bày PowerPoint',
+    filterMarkdown: 'Tài liệu Markdown',
+    filterHtml: 'Tài liệu HTML',
+    filterPdf: 'Tài liệu PDF',
+    errBadArgs: 'Đối số không hợp lệ',
+    errBadName: 'Tên tệp không hợp lệ',
+    errMissing: 'Không tìm thấy tệp',
+    errExists: 'Một tệp có tên đó đã tồn tại',
+    errRenameFailed: 'Đổi tên thất bại',
+    errNewTabFailed: 'Không thể tạo tài liệu mới',
+    errUnsupportedExt: 'Tệp .{ext} không được hỗ trợ',
+    copySuffix: 'bản sao',
+    menuHelp: 'Trợ giúp',
+    thirdPartyNotices: 'Thông báo của bên thứ ba',
+    menuExportDocx: 'Xuất dưới dạng Word…',
+    btnCancel: 'Hủy',
+    pdfDocxFailedMsg: 'Xuất dưới dạng Word thất bại',
+    pdfDocxBusyMsg: 'Một tác vụ xuất Word đang được tiến hành. Vui lòng đợi tác vụ hoàn tất.',
+    menuExportPptx: 'Xuất dưới dạng PowerPoint…',
+    pdfPptxFailedMsg: 'Xuất dưới dạng PowerPoint thất bại',
+    pdfPptxBusyMsg: 'Một tác vụ xuất đang được tiến hành. Vui lòng đợi tác vụ hoàn tất.',
+    pdfPptxLocalScannedDetail:
+      'Mỗi trang đã được xuất dưới dạng hình ảnh toàn trang; văn bản trên các trang trình bày không thể chỉnh sửa.',
+    menuExportXlsx: 'Xuất dưới dạng Excel…',
+    pdfXlsxFailedMsg: 'Xuất dưới dạng Excel thất bại',
+    pdfXlsxBusyMsg: 'Một tác vụ xuất đang được tiến hành. Vui lòng đợi tác vụ hoàn tất.',
+    pdfXlsxLocalScannedDetail:
+      'Các trang quét không thể chuyển đổi thành các ô; thay vào đó, trang tính của mỗi trang có một hàng thông báo.',
+    pdfXlsxLocalSkippedMsg: 'Một số trang không được chuyển đổi thành ô',
+    pdfXlsxLocalSkippedDetail:
+      'Các trang {pages} không thể chuyển đổi thành ô; thay vào đó bảng tính của chúng có một hàng thông báo.',
+    pdfDocxLocalScannedMsg: 'Phát hiện tài liệu quét',
+    pdfDocxLocalScannedDetail:
+      'Các trang được xuất dưới dạng hình ảnh để bảo toàn giao diện; không nhận dạng được văn bản có thể chỉnh sửa.',
+    pdfDocxLocalDegradedMsg: 'Một số trang được xuất dưới dạng hình ảnh',
+    pdfDocxLocalDegradedDetail:
+      '(Các) trang {pages} không thể tái cấu trúc đáng tin cậy và đã được xuất dưới dạng hình ảnh toàn trang.',
+    pdfDocxLocalOcrMsg: 'Các trang quét đã được chuyển đổi thành văn bản có thể chỉnh sửa',
+    pdfDocxLocalOcrDetail:
+      '(Các) trang {pages} là bản quét; văn bản của chúng đã được phục hồi bằng OCR trên thiết bị. Vui lòng kiểm tra lại kết quả.',
+    pdfDocxLocalEncryptedDetail:
+      'Tệp PDF này đã được mã hóa và không thể mở nếu không có mật khẩu chính xác.',
+    pdfDocxLocalUnsupportedEncDetail:
+      'Tệp PDF này sử dụng mã hóa dựa trên chứng thư số hoặc mã hóa không được hỗ trợ khác và không thể chuyển đổi.',
+    pdfPwdTitle: 'Nhập mật khẩu',
+    pdfPwdPrompt: 'Tệp PDF này đã được mã hóa. Nhập mật khẩu để mở:',
+    pdfPwdRetryPrompt: 'Mật khẩu không chính xác. Vui lòng thử lại.',
+    pdfPwdOk: 'OK',
+    pdfPwdVerifying: 'Đang xác minh mật khẩu…',
+    pdfPwdLabel: 'Mật khẩu',
+    pdfPwdPlaceholder: 'Nhập mật khẩu để mở',
+    pdfPwdShow: 'Hiện mật khẩu',
+    pdfPwdHide: 'Ẩn mật khẩu',
+    pdfDocxLocalCorruptDetail:
+      'Tệp bị hỏng hoặc không phải là tệp PDF hợp lệ và không thể chuyển đổi.',
+    dlgPickSaveDir: 'Chọn vị trí lưu mặc định',
+    errSaveDirUnusable: 'Thư mục đã chọn không thể ghi và không thể dùng làm vị trí lưu mặc định',
   },
   ja: {
     dlgAddFolderRoot: 'フォルダーをホームに追加',
@@ -3387,7 +3488,7 @@ function newHtmlTab(): void {
 async function newPdfTab(): Promise<void> {
   try {
     const filePath = uniquePathIn(newFileDir('pdf'), `${tm('untitledPdf')}.pdf`)
-    writeFileSync(filePath, await blankPdfBuffer())
+    await atomicWriteFile(filePath, await blankPdfBuffer())
     // Opt the file into content-derived auto-naming on its first save
     markPdfUntitledPath(filePath)
     // route directly (not via openDocumentPath) so creating a pdf emits only
@@ -3672,7 +3773,7 @@ function registerHomeIpc(): void {
     },
   )
 
-  ipcMain.handle(HOME_CHANNELS.duplicateFile, (_event, path: unknown) => {
+  ipcMain.handle(HOME_CHANNELS.duplicateFile, async (_event, path: unknown) => {
     if (typeof path !== 'string' || !existsSync(path)) return
     const ext = extname(path)
     const base = basename(path, ext)
@@ -3680,7 +3781,12 @@ function registerHomeIpc(): void {
     for (let i = 1; ; i++) {
       const target = join(dir, `${base} ${tm('copySuffix')}${i === 1 ? '' : ` ${i}`}${ext}`)
       if (existsSync(target)) continue
-      copyFileSync(path, target)
+      try {
+        await atomicWriteFile(target, readFileSync(path))
+      } catch (err) {
+        showErrorDialog(shellWindow, tm('errNewTabFailed'), err)
+        return
+      }
       recordRecentFile(target)
       return
     }

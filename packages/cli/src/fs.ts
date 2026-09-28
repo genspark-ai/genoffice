@@ -156,6 +156,10 @@ export function resolveOutput(
   ctx: PathContext,
   opts: OutputOptions = {},
 ): string {
+  // `--out=` parses to an empty string, not to undefined: falling through to
+  // the fallback would redirect the write onto the input file, so refuse the
+  // empty value the way the fallback's absence is refused
+  if (spec === '') throw new CliError(EXIT.usage, 'missing --out <path>', undefined, MISSING)
   const abs = spec ? (isAbsolute(spec) ? spec : resolve(ctx.cwd, spec)) : opts.fallback
   if (!abs) throw new CliError(EXIT.usage, 'missing --out <path>', undefined, MISSING)
   assertAllowed(abs, ctx.env, 'write')

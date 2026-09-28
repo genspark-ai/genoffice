@@ -129,7 +129,8 @@ export function parseCellValue(raw: string): ParsedCell {
     if (num) {
       // ×100 sources are exact decimals; /100 reintroduces float noise
       // (45.3 / 100 = 0.45299999…) → round to the source's precision
-      const digits = decimalDigits(percent[1]!) + 2
+      // toFixed() accepts 0-100 only, and a source may carry more decimals
+      const digits = Math.min(decimalDigits(percent[1]!) + 2, 100)
       return {
         kind: 'number',
         value: Number((num.value / 100).toFixed(digits)),

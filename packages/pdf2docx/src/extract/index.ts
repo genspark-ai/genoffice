@@ -5,7 +5,14 @@
  */
 import { detectVectorRegions } from '../analyze/vector'
 import type { Rect } from '../geometry'
-import { coversBox, intersectArea, overlapRatio, printContentBox, rectArea } from '../geometry'
+import {
+  bboxOfPoints,
+  coversBox,
+  intersectArea,
+  overlapRatio,
+  printContentBox,
+  rectArea,
+} from '../geometry'
 import type { PdfChar, PageRender, RawPath, RawSubpath } from '../ir'
 import { pageAnchorName } from '../ir'
 import { isEastAsianScript, scriptOf } from '../script'
@@ -2952,14 +2959,7 @@ export function extractPage(
     paths = paths.filter((p) =>
       p.subpaths.some((sub) => {
         if (sub.points.length === 0) return false
-        const xs = sub.points.map((pt) => pt.x)
-        const ys = sub.points.map((pt) => pt.y)
-        return intersectsPage({
-          x0: Math.min(...xs),
-          y0: Math.min(...ys),
-          x1: Math.max(...xs),
-          y1: Math.max(...ys),
-        })
+        return intersectsPage(bboxOfPoints(sub.points))
       }),
     )
     // spurious 180° char angles: some producers draw through a flipped font
@@ -3083,14 +3083,7 @@ export function extractPage(
           (p) =>
             !p.subpaths.every((sub) => {
               if (sub.points.length === 0) return true
-              const xs = sub.points.map((pt) => pt.x)
-              const ys = sub.points.map((pt) => pt.y)
-              return covered({
-                x0: Math.min(...xs),
-                y0: Math.min(...ys),
-                x1: Math.max(...xs),
-                y1: Math.max(...ys),
-              })
+              return covered(bboxOfPoints(sub.points))
             }),
         )
         outImages = [

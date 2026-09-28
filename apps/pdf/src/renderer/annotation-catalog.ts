@@ -7,6 +7,11 @@ export interface PageSavedAnnots {
   notes: SavedNoteAnnot[]
 }
 
+export interface SavedAnnotCounts {
+  threads: number[]
+  markups: number[]
+}
+
 /**
  * Saved markup + note annotations of one page, read straight from pdf.js.
  * Single source for both the lazy visible-page cache and the AI tools (which
@@ -51,5 +56,30 @@ export async function loadSavedAnnots(
     return { markups, notes }
   } catch {
     return { markups: [], notes: [] } // page unreadable; no saved annotations to offer
+  }
+}
+
+/**
+ * Lazily scan one document for the annotation counts used in AI context.
+ * Concurrent callers share the same scan so opening a PDF never starts it.
+ */
+export function createSavedAnnotCountsLoader(
+  doc: PDFDocumentProxy,
+  loadPage: typeof loadSavedAnnots = loadSavedAnnots,
+  signal?: AbortSignal,
+): () => Promise<SavedAnnotCounts> {
+  let pending: Promise<SavedAnnotCounts> | null = null
+  return () => {
+    pending ??= (async () => {
+      const threads: number[] = []
+      const markups: number[] = []
+      for (let i = 0; i < doc.numPages && !signal?.aborted; i++) {
+        const page = await loadPage(doc, i)
+        threads.push(page.notes.filter((note) => note.inReplyTo === null).length)
+        markups.push(page.markups.length)
+      }
+      return { threads, markups }
+    })()
+    return pending
   }
 }

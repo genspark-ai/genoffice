@@ -89,6 +89,10 @@ export interface SpecShape extends SpecBase {
   stroke?: { color: string; widthPt: number }
   paragraphs?: SpecParagraph[]
   valign?: 'top' | 'middle' | 'bottom'
+  /** mirror the shape horizontally (an arrow points the other way) */
+  flipH?: boolean
+  /** mirror vertically; a `line` box draws bottom-left to top-right */
+  flipV?: boolean
 }
 
 export interface SpecText extends SpecBase {
@@ -129,6 +133,30 @@ function num(v: unknown): number | undefined {
 }
 
 /**
+ * Index of the `}` that closes the object opening at `start`, tracking string
+ * literals and escapes so a brace inside one does not count. -1 when the walk
+ * runs out of text or the braces never balance.
+ */
+function matchingBrace(text: string, start: number): number {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return i
+  }
+  return -1
+}
+
+/**
  * Extracts and validates the spec from raw LLM output. Tolerant of fences and
  * junk around the JSON; invalid elements are dropped with a warning rather
  * than failing the page. Returns an error only when nothing usable remains,
@@ -147,8 +175,13 @@ export function parsePageSpec(
 ): { ok: true; spec: PageSpec; warnings: string[] } | { ok: false; error: string } {
   const text = String(raw ?? '')
   const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start < 0 || end <= start) return { ok: false, error: 'no JSON object found in the output' }
+  if (start < 0) return { ok: false, error: 'no JSON object found in the output' }
+  // Prose around the spec can carry braces of its own, so the object's own
+  // closing brace is the one that matches it; the last brace in the text is
+  // only a fallback for output the walk cannot balance.
+  const matched = matchingBrace(text, start)
+  const end = matched >= 0 ? matched : text.lastIndexOf('}')
+  if (end <= start) return { ok: false, error: 'no JSON object found in the output' }
   let parsed: unknown
   try {
     parsed = JSON.parse(text.slice(start, end + 1))
@@ -321,6 +354,8 @@ export function parsePageSpecObject(
           ...(stroke ? { stroke } : {}),
           ...(paragraphs.some((p) => p.runs.some((r) => r.text.trim())) ? { paragraphs } : {}),
           ...(valign === 'top' || valign === 'middle' || valign === 'bottom' ? { valign } : {}),
+          ...(el.flipH === true ? { flipH: true } : {}),
+          ...(el.flipV === true ? { flipV: true } : {}),
         },
         i,
       )
@@ -579,6 +614,8 @@ export async function buildPagePptx(
             },
           }
         : {}),
+      ...(el.flipH ? { flipH: true } : {}),
+      ...(el.flipV ? { flipV: true } : {}),
       ...(el.paragraphs ? { paragraphs: toEngineParagraphs(el.paragraphs) } : {}),
       ...(el.paragraphs
         ? { bodyPr: { wrap: 'square', anchor: anchorOf(el.valign, 'ctr'), insetsEmu: zeroInsets } }

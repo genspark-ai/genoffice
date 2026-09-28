@@ -8,7 +8,11 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
 import { AiAskPopover, type AskAnchorRect } from './AiAskPopover'
-import { loadSavedAnnots } from './annotation-catalog'
+import {
+  createSavedAnnotCountsLoader,
+  loadSavedAnnots,
+  type SavedAnnotCounts,
+} from './annotation-catalog'
 import {
   OcrTextLayer,
   buildOcrPageData,
@@ -757,28 +761,21 @@ export default function App() {
   } | null>(null)
   /** Ask-AI popover opened from the markup bar; the anchor rect is captured at open */
   const [askPop, setAskPop] = useState<{ rect: AskAnchorRect; excerpt: string } | null>(null)
-  /** Whole-document saved-annotation counts per original page for the AI context
-      (scanned once per doc; kept per-page so deleted pages can be excluded) */
-  const [aiAnnotCounts, setAiAnnotCounts] = useState<{
-    threads: number[]
-    markups: number[]
+  /** Whole-document saved-annotation counts per original page for the AI context.
+      The scan starts on first AI use, not when the document opens. */
+  const [aiAnnotCounts, setAiAnnotCounts] = useState<SavedAnnotCounts | null>(null)
+  const aiAnnotCountsLoaderRef = useRef<{
+    doc: PDFDocumentProxy
+    controller: AbortController
+    load: () => Promise<SavedAnnotCounts>
   } | null>(null)
   useEffect(() => {
     setAiAnnotCounts(null)
-    if (!doc) return
-    let stale = false
-    void (async () => {
-      const threads: number[] = []
-      const markupCounts: number[] = []
-      for (let i = 0; i < doc.numPages && !stale; i++) {
-        const a = await loadSavedAnnots(doc, i)
-        threads.push(a.notes.filter((n) => n.inReplyTo === null).length)
-        markupCounts.push(a.markups.length)
-      }
-      if (!stale) setAiAnnotCounts({ threads, markups: markupCounts })
-    })()
+    aiAnnotCountsLoaderRef.current?.controller.abort()
+    aiAnnotCountsLoaderRef.current = null
     return () => {
-      stale = true
+      aiAnnotCountsLoaderRef.current?.controller.abort()
+      aiAnnotCountsLoaderRef.current = null
     }
   }, [doc])
   const [selected, setSelected] = useState<AnnotSelection | null>(null)
@@ -5283,6 +5280,22 @@ export default function App() {
     // scan still running: "unknown" must not read as "none" — a run started right
     // after open would otherwise never hear the file carries review feedback
     if (!aiAnnotCounts) {
+      if (doc) {
+        let entry = aiAnnotCountsLoaderRef.current
+        if (entry?.doc !== doc) {
+          const controller = new AbortController()
+          entry = {
+            doc,
+            controller,
+            load: createSavedAnnotCountsLoader(doc, loadSavedAnnots, controller.signal),
+          }
+          aiAnnotCountsLoaderRef.current = entry
+          const active = entry
+          void active.load().then((counts) => {
+            if (aiAnnotCountsLoaderRef.current === active) setAiAnnotCounts(counts)
+          })
+        }
+      }
       return 'Whether the file contains notes/markups has not been determined yet; use read_annotations to check when the user asks about review feedback.'
     }
     let savedThreads = 0

@@ -11,6 +11,7 @@ import {
   lazyMediaHashOf,
   lazyMediaPlaceholder,
 } from './lazy-media'
+import { DOCX_ZIP_LIMITS, assertDeclaredSizesWithinLimits, type ZipLimits } from './zip-load'
 
 export interface ZipEntry {
   name: string
@@ -71,7 +72,10 @@ function fileSource(fh: FileHandle, size: number): ByteSource {
   }
 }
 
-export async function readZipEntries(src: ByteSource): Promise<ZipEntry[]> {
+export async function readZipEntries(
+  src: ByteSource,
+  limits: ZipLimits = DOCX_ZIP_LIMITS,
+): Promise<ZipEntry[]> {
   const tailLen = Math.min(src.size, 22 + 0xffff)
   const tail = await src.read(src.size - tailLen, tailLen)
   let eocd = -1
@@ -134,6 +138,16 @@ export async function readZipEntries(src: ByteSource): Promise<ZipEntry[]> {
     })
     pos += 46 + nameLen + extraLen + commentLen
   }
+  // Same bounded-archive gate the normal parse path applies, run before a
+  // single entry is read: this reader backs every lazy-media open (openZipFile,
+  // slimDocx, lazyMediaHashesIn, materializeDocx), and it used to concatenate
+  // an unchecked archive — a central directory declaring excessive parts or
+  // expanded bytes was honoured wholesale. Directories carry no payload, so
+  // they are not counted, exactly as the JSZip-side gate counts them.
+  assertDeclaredSizesWithinLimits(
+    entries.filter((e) => !e.name.endsWith('/')).map((e) => ({ name: e.name, usize: e.usize })),
+    limits,
+  )
   // the local header's name/extra lengths may differ from the central copy
   for (const e of entries) {
     const local = await src.read(e.dataOffset, 30)

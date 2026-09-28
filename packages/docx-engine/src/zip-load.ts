@@ -60,9 +60,45 @@ export const DOCX_ZIP_LIMITS = {
   maxPartBytes: 512 * 1024 * 1024,
   maxTotalBytes: 1.5 * 1024 * 1024 * 1024,
 } as const
-const MAX_ZIP_PARTS = DOCX_ZIP_LIMITS.maxParts
-const MAX_PART_UNCOMPRESSED_BYTES = DOCX_ZIP_LIMITS.maxPartBytes
-const MAX_TOTAL_UNCOMPRESSED_BYTES = DOCX_ZIP_LIMITS.maxTotalBytes
+
+/** What the gate needs to know about one part's declared uncompressed size. */
+export interface DeclaredPart {
+  name: string
+  usize: number
+}
+
+/**
+ * The part-count / per-part / total declared-size gate.
+ *
+ * Split out of `assertZipWithinLimits` (which reads the sizes off a loaded
+ * JSZip) so the raw entry reader in `zip-splice` can apply the same limits
+ * before it copies anything: every lazy-media open path goes through that
+ * reader, and it used to rebuild the archive with no bounds at all.
+ */
+export function assertDeclaredSizesWithinLimits(
+  parts: readonly DeclaredPart[],
+  limits: ZipLimits = DOCX_ZIP_LIMITS,
+): void {
+  if (parts.length > limits.maxParts) {
+    throw new Error(`docx rejected: ${parts.length} parts exceeds the ${limits.maxParts} limit`)
+  }
+  let total = 0
+  for (const part of parts) {
+    if (part.usize > limits.maxPartBytes) {
+      throw new Error(
+        `docx rejected: part ${part.name} declares ${part.usize} uncompressed bytes ` +
+          `(limit ${limits.maxPartBytes})`,
+      )
+    }
+    if (part.usize > 0) total += part.usize
+  }
+  if (total > limits.maxTotalBytes) {
+    throw new Error(
+      `docx rejected: total uncompressed size ${total} exceeds the ` +
+        `${limits.maxTotalBytes} limit`,
+    )
+  }
+}
 
 /**
  * Cheap fast path: reject zip bombs using the uncompressed sizes the central
@@ -74,27 +110,13 @@ const MAX_TOTAL_UNCOMPRESSED_BYTES = DOCX_ZIP_LIMITS.maxTotalBytes
  */
 export function assertZipWithinLimits(zip: JSZip): void {
   const files = Object.values(zip.files).filter((f) => !f.dir)
-  if (files.length > MAX_ZIP_PARTS) {
-    throw new Error(`docx rejected: ${files.length} parts exceeds the ${MAX_ZIP_PARTS} limit`)
-  }
-  let total = 0
-  for (const file of files) {
-    const size =
-      (file as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0
-    if (size > MAX_PART_UNCOMPRESSED_BYTES) {
-      throw new Error(
-        `docx rejected: part ${file.name} declares ${size} uncompressed bytes ` +
-          `(limit ${MAX_PART_UNCOMPRESSED_BYTES})`,
-      )
-    }
-    if (size > 0) total += size
-  }
-  if (total > MAX_TOTAL_UNCOMPRESSED_BYTES) {
-    throw new Error(
-      `docx rejected: total uncompressed size ${total} exceeds the ` +
-        `${MAX_TOTAL_UNCOMPRESSED_BYTES} limit`,
-    )
-  }
+  assertDeclaredSizesWithinLimits(
+    files.map((file) => ({
+      name: file.name,
+      usize:
+        (file as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0,
+    })),
+  )
 }
 
 /** What `assertZipInflatesWithinLimits` enforces; `DOCX_ZIP_LIMITS` is the default. */

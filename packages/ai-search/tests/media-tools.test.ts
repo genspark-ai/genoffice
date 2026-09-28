@@ -74,3 +74,23 @@ describe('generateImageTool transparentBackground (Genspark route)', () => {
     expect(gskGen).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('generateImageTool reference budget (Genspark route)', () => {
+  it('rejects too many reference images with the BYOK wording, before calling the CLI', async () => {
+    gskGen.mockResolvedValue({ url: 'https://cdn/x/out.png', taskId: '1' })
+    const referenceImageUrls = Array.from({ length: 13 }, (_, i) => `https://cdn/x/${i}.png`)
+    const r = await generateImageTool(SETTINGS, { prompt: 'red podcast icon', referenceImageUrls })
+    expect(r).toEqual({
+      error: 'Too many media items in one request (13, limit 12); analyze them in smaller batches',
+    })
+    expect(gskGen).not.toHaveBeenCalled()
+  })
+
+  it('still passes a reference count within the budget to the CLI', async () => {
+    gskGen.mockResolvedValueOnce({ url: 'https://cdn/x/out.png', taskId: '1' })
+    const referenceImageUrls = Array.from({ length: 12 }, (_, i) => `https://cdn/x/${i}.png`)
+    const r = await generateImageTool(SETTINGS, { prompt: 'red podcast icon', referenceImageUrls })
+    expect(r).toEqual({ url: 'https://cdn/x/out.png' })
+    expect(gskGen).toHaveBeenCalledTimes(1)
+  })
+})

@@ -174,10 +174,14 @@ export function createFolder(parent: string, name: string, errors: FolderErrors)
   return { ok: true, path: target }
 }
 
-/** `name.ext` → `name (2).ext`, `name (3).ext`… — first free name inside dir */
-export function uniqueNameIn(dir: string, name: string): string {
+/**
+ * `name.ext` → `name (2).ext`, `name (3).ext`… — first free name inside dir.
+ * A folder has no extension, so `isDir` appends the counter to the whole name:
+ * splitting `v1.0` would yield the mid-name `v1 (2).0`.
+ */
+export function uniqueNameIn(dir: string, name: string, isDir = false): string {
   if (!existsSync(join(dir, name))) return name
-  const ext = extname(name)
+  const ext = isDir ? '' : extname(name)
   const base = name.slice(0, name.length - ext.length)
   for (let i = 2; ; i++) {
     const candidate = `${base} (${i})${ext}`
@@ -258,7 +262,7 @@ export function movePathsInto(
         continue
       }
       if (policy === 'keepBoth') {
-        to = join(targetDir, uniqueNameIn(targetDir, name))
+        to = join(targetDir, uniqueNameIn(targetDir, name, isDir))
       } else {
         try {
           replaced = options.replaceExisting(to)

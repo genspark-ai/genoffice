@@ -61,6 +61,19 @@ describe('single-quoted note attributes', () => {
   })
 })
 
+describe('self-closing note entries', () => {
+  it('does not swallow the next entry when an empty note is written as <w:footnote w:id="1"/>', () => {
+    const xml =
+      XML_DECL +
+      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:footnote w:id="1"/>' +
+      '<w:footnote w:id="2"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t>second</w:t></w:r></w:p></w:footnote>' +
+      '</w:footnotes>'
+    const notes = parseNotesXml(xml, 'footnote')
+    expect(notes.map((n) => [n.id, n.text])).toEqual([['2', 'second']])
+  })
+})
+
 describe('Zotero fields inside notes', () => {
   it('flags notes whose body carries a Zotero citation field', () => {
     const zoteroNote =
@@ -393,6 +406,21 @@ describe('rich-text footnote display runs', () => {
     expect(notes.map((n) => n.noRefMark)).toEqual([undefined, undefined, true])
     // the ref-mark run is still dropped from the display text
     expect(notes.map((n) => n.text)).toEqual(['spaced', 'paired', 'only a cross-ref'])
+  })
+
+  it('keeps a spaced self-closing <w:p/> as its own (empty) paragraph', () => {
+    // the same producers write an empty note paragraph as <w:p w:rsidR="..."/>
+    const footnotesXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:footnote w:id="1">' +
+      '<w:p w:rsidR="00AB1234" w:rsidRDefault="00AB1234"/>' +
+      '<w:p><w:r><w:footnoteRef/></w:r>' +
+      '<w:r><w:rPr><w:b/></w:rPr><w:t>bold tail</w:t></w:r></w:p>' +
+      '</w:footnote>' +
+      '</w:footnotes>'
+    const notes = parseNotesXml(footnotesXml, 'footnote')
+    expect(notes[0].richParas).toEqual([[], [{ text: 'bold tail', bold: true }]])
   })
 
   it('serializes richParas runs with size/font formatting for fresh notes (P17)', async () => {

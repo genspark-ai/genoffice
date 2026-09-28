@@ -52,6 +52,15 @@ describe('parsePdfDate', () => {
     expect(parsePdfDate('yesterday')).toBeNull()
     expect(parsePdfDate('D:20261399')).toBeNull()
   })
+
+  it('rejects a day the month does not have instead of rolling it into the next month', () => {
+    // D:20240231000000 used to normalise to 2024-03-02, dating the note two days late
+    expect(parsePdfDate('D:20240231000000')).toBeNull()
+    expect(parsePdfDate('D:20240431000000')).toBeNull() // April has 30
+    expect(parsePdfDate('D:20230229000000')).toBeNull() // 2023 is not a leap year
+    expect(parsePdfDate('D:20240131Z')).toBe(Date.UTC(2024, 0, 31))
+    expect(parsePdfDate('D:20240229Z')).toBe(Date.UTC(2024, 1, 29))
+  })
 })
 
 describe('toSavedNote', () => {

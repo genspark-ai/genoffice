@@ -2,16 +2,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ColorPicker } from '../src/color-picker'
+import { ColorPicker, type ColorPickerProps } from '../src/color-picker'
 
 const strings = { themeColors: 'Theme Colors', standardColors: 'Standard Colors' }
 let root: Root | null = null
 
-function mount(value: string | null, onPick = vi.fn()): HTMLElement {
+function mount(
+  value: string | null,
+  onPick = vi.fn(),
+  extra: Partial<ColorPickerProps> = {},
+): HTMLElement {
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root!.render(createElement(ColorPicker, { value, strings, onPick })))
+  act(() => root!.render(createElement(ColorPicker, { value, strings, onPick, ...extra })))
   return container
 }
 
@@ -51,5 +55,34 @@ describe('ColorPicker keyboard grid', () => {
     expect(document.activeElement).toBe(all[19])
     press(all[19], 'ArrowRight')
     expect(document.activeElement).toBe(all[20])
+  })
+
+  it('keeps a tab stop when the roved cell leaves with the recent-colors row', () => {
+    const withRecent = { ...strings, recentColors: 'Recent' }
+    const c = mount(null, vi.fn(), {
+      strings: withRecent,
+      recentColors: ['112233', '445566', '778899', 'AABBCC'],
+    })
+    const standard = c.querySelector<HTMLElement>('[data-pos="6-3"]')!
+    act(() => standard.focus())
+    press(standard, 'ArrowDown')
+    // row 7 is the recent-colors row, so the roved stop is now 7-3
+    expect(c.querySelector('[data-pos="7-3"]')).toBeTruthy()
+    expect(swatches(c).filter((b) => b.tabIndex === 0)).toHaveLength(1)
+    // the recent list empties: the row is dropped, and the roved position with it
+    act(() =>
+      root!.render(
+        createElement(ColorPicker, {
+          value: null,
+          strings: withRecent,
+          recentColors: [],
+          onPick: vi.fn(),
+        }),
+      ),
+    )
+    expect(c.querySelector('[data-pos="7-3"]')).toBeNull()
+    const stops = swatches(c).filter((b) => b.tabIndex === 0)
+    expect(stops).toHaveLength(1)
+    expect(stops[0]!.getAttribute('data-pos')).toBe('0-0')
   })
 })

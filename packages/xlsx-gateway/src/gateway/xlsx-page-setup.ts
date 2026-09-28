@@ -3,6 +3,7 @@
 /// attributes), and maintains the sheet-scoped `_xlnm.Print_Area` defined
 /// name in workbook.xml. Untouched attributes and elements stay verbatim.
 
+import { parseRange } from '../domain/cell-address'
 import { parseSheetElements } from './xlsx-sheets'
 
 export class PageSetupError extends Error {}
@@ -77,8 +78,8 @@ function insertWorksheetElement(xml: string, element: string, anchor: RegExp): s
   return xml.slice(0, end) + element + xml.slice(end)
 }
 
-/// Sets (or removes, on null) attributes on the first match of `tag`,
-/// creating the element when absent and any attribute is set.
+/// Sets (or removes, on null) attributes on every match of `tag`, creating
+/// the element when absent and any attribute is set.
 function mergeElementAttrs(
   xml: string,
   tag: string,
@@ -86,26 +87,36 @@ function mergeElementAttrs(
   insertAnchor: RegExp,
 ): string {
   const entries = Object.entries(attrs)
-  const pattern = new RegExp(`<${tag}\\b[^>]*?(/?)>`)
-  const existing = pattern.exec(xml)
-  if (existing) {
-    let element = existing[0]
-    for (const [name, value] of entries) {
-      const attrPattern = new RegExp(` ${name}="[^"]*"`)
-      if (value === null) {
-        element = element.replace(attrPattern, '')
-      } else if (attrPattern.test(element)) {
-        element = element.replace(attrPattern, ` ${name}="${value}"`)
-      } else {
-        element = element.replace(new RegExp(`<${tag}\\b`), `<${tag} ${name}="${value}"`)
-      }
-    }
-    return xml.slice(0, existing.index) + element + xml.slice(existing.index + existing[0].length)
-  }
+  // A sheet may repeat the element; one pass leaves no match half-updated.
+  let matched = false
+  const merged = xml.replace(new RegExp(`<${tag}\\b[^>]*?(/?)>`, 'g'), (element) => {
+    matched = true
+    return mergeAttrs(element, tag, entries)
+  })
+  if (matched) return merged
   const kept = entries.filter(([, value]) => value !== null)
   if (kept.length === 0) return xml
   const body = kept.map(([name, value]) => ` ${name}="${value}"`).join('')
   return insertWorksheetElement(xml, `<${tag}${body}/>`, insertAnchor)
+}
+
+function mergeAttrs(
+  element: string,
+  tag: string,
+  entries: readonly (readonly [string, string | null])[],
+): string {
+  let merged = element
+  for (const [name, value] of entries) {
+    const attrPattern = new RegExp(` ${name}="[^"]*"`)
+    if (value === null) {
+      merged = merged.replace(attrPattern, '')
+    } else if (attrPattern.test(merged)) {
+      merged = merged.replace(attrPattern, ` ${name}="${value}"`)
+    } else {
+      merged = merged.replace(new RegExp(`<${tag}\\b`), `<${tag} ${name}="${value}"`)
+    }
+  }
+  return merged
 }
 
 /// Fit-to-page lives in `<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`,
@@ -513,13 +524,25 @@ function toAbsoluteRowSpan(rows: string): string {
 
 /// "A1:C10" → "$A$1:$C$10" (already-absolute refs pass through).
 function toAbsoluteRange(range: string): string {
-  if (!/^[$A-Za-z0-9:]+$/.test(range)) {
+  if (!/^[$A-Za-z0-9:]+$/.test(range) || !hasCellRowEnds(range)) {
     throw new PageSetupError(`Invalid print area "${range}".`)
   }
   return range
     .split(':')
     .map((part) => part.replace(/^\$?([A-Za-z]{1,3})\$?(\d{1,7})$/, '$$$1$$$2'))
     .join(':')
+}
+
+/// parseRange needs a row on every endpoint, so whole-column ("A:A") and
+/// half-open ("A1:B") refs — which Excel rejects inside _xlnm.Print_Area —
+/// are refused before the refs are absolutised.
+function hasCellRowEnds(range: string): boolean {
+  try {
+    parseRange(range)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function escapeXml(value: string): string {

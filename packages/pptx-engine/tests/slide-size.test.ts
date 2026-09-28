@@ -66,6 +66,49 @@ describe('setSlideSize', () => {
     const opened = await openPptx(await createBlankPptx())
     expect(setSlideSize(opened, 12192000, 6858000)).toBe(false)
   })
+
+  /**
+   * sldSz was rewritten with a double-quoted cx=/cy= pattern only, so a deck
+   * that single-quotes its attributes kept the old size in the saved file while
+   * every element offset was rescaled in the model to match a size never written.
+   */
+  it('rewrites a single-quoted p:sldSz and saves the size it rescaled to', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const presPath = 'ppt/presentation.xml'
+    const pres = opened.archive.readText(presPath)!
+    const singleQuoted = pres.replace(/<p:sldSz\b[^>]*\/>/, (tag) =>
+      tag.replace(/="([^"]*)"/g, "='$1'"),
+    )
+    expect(singleQuoted).toMatch(/<p:sldSz\b[^>]*cx='\d+'/)
+    opened.archive.entries.set(presPath, Buffer.from(singleQuoted))
+
+    const slide = opened.deck.slides[0]!
+    addElement(slide, { kind: 'rect', offset: { x: 0, y: 0, cx: 12192000, cy: 6858000 } })
+
+    expect(setSlideSize(opened, 9144000, 6858000)).toBe(true)
+    expect(slide.elements[0]!.transform.offset.cx).toBe(9144000)
+    // the file must carry the same size the model was rescaled to
+    const after = opened.archive.readText(presPath)!
+    expect(after).toMatch(/<p:sldSz\b[^>]*cx="9144000"/)
+    expect(after).toMatch(/<p:sldSz\b[^>]*cy="6858000"/)
+
+    const reopened = await openPptx(await savePptx(opened))
+    expect(reopened.deck.size).toEqual({ cx: 9144000, cy: 6858000 })
+  })
+
+  it('reports failure when p:sldSz carries no cx or cy to rewrite', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const presPath = 'ppt/presentation.xml'
+    const pres = opened.archive.readText(presPath)!
+    opened.archive.entries.set(
+      presPath,
+      Buffer.from(pres.replace(/<p:sldSz\b[^>]*\/>/, '<p:sldSz type="screen16x9"/>')),
+    )
+
+    // rescaling here would rewrite every offset against a size the file never gets
+    expect(setSlideSize(opened, 9144000, 6858000)).toBe(false)
+    expect(opened.deck.size).toEqual({ cx: 12192000, cy: 6858000 })
+  })
 })
 
 describe('setSlideSize scales masters in sync', () => {

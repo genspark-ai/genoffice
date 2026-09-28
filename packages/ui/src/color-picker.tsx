@@ -192,7 +192,15 @@ export function ColorPicker({
       return true
     }),
   )
-  const activePos = focusPos ?? selectedPos
+  // A roved position can outlive the cell it names - the recent-colors row is
+  // dropped as soon as that list empties - and a position no cell carries would
+  // leave every swatch at tabIndex={-1}, skipping the palette in the tab order.
+  const hasPos = (pos: string): boolean => {
+    const [r, c] = pos.split('-').map(Number)
+    if (r === undefined || c === undefined) return false
+    return Boolean(rows[r]?.[c])
+  }
+  const activePos = focusPos && hasPos(focusPos) ? focusPos : selectedPos
 
   const moveFocus = (e: KeyboardEvent<HTMLButtonElement>, r: number, c: number): void => {
     const len = (i: number): number => rows[i]?.length ?? 0

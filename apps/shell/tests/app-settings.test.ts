@@ -1,8 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readAppSettings, writeAppSetting, writeAppSettings } from '../src/main/app-settings'
+import {
+  readAppSettings,
+  writeAppSetting,
+  writeAppSettings,
+  writeAppSettingThen,
+} from '../src/main/app-settings'
 
 /**
  * userData/app-settings.json helpers (src/main/app-settings.ts): a flat JSON
@@ -81,5 +86,26 @@ describe('writeAppSettings', () => {
       onboardingSeen: true,
       analyticsEnabled: false,
     })
+  })
+})
+
+describe('writeAppSettingThen', () => {
+  it('applies the cached value once the write has landed', () => {
+    const applied: string[] = []
+    writeAppSettingThen(settingsPath, 'language', 'ja', (lang) => applied.push(lang))
+    expect(applied).toEqual(['ja'])
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ language: 'ja' })
+  })
+
+  it('leaves the cached value untouched when the settings file is unwritable', () => {
+    // a directory where the file belongs: writeFileSync cannot create it
+    mkdirSync(settingsPath)
+    const applied: string[] = []
+    expect(() =>
+      writeAppSettingThen(settingsPath, 'language', 'ja', (lang) => applied.push(lang)),
+    ).toThrow()
+    // persistLang used to commit first, so the app ran a language that was never
+    // stored and reverted on the next launch
+    expect(applied).toEqual([])
   })
 })

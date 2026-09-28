@@ -9,7 +9,7 @@
  */
 import type { OpenedPptx } from './index'
 import { resolveTarget, type PackageArchive } from './zip'
-import { escapeXmlAttr, escapeXmlText } from './xml-utils'
+import { escapeXmlAttr, escapeXmlText, hasContentTypeOverride } from './xml-utils'
 import { appendRelationship, unescapeXml } from './notes'
 import { removeRelationshipAndCollectOwnedTarget } from './resource-cleanup'
 
@@ -46,7 +46,7 @@ function addContentTypeOverride(
 ): void {
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (!ct || ct.includes(`PartName="/${partPath}"`)) return
+  if (!ct || hasContentTypeOverride(ct, partPath)) return
   setEntry(
     archive,
     ctPath,

@@ -13,7 +13,7 @@
  */
 import { deflateSync } from 'node:zlib'
 import type { EmuRect, Slide } from './types'
-import { creationIdXml, escapeXmlAttr } from './xml-utils'
+import { creationIdXml, escapeXmlAttr, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
@@ -133,8 +133,7 @@ function appendRels(
   let xml =
     opened.archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of xml.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  let maxRid = maxRelationshipIdNumber(xml)
   const rids: string[] = []
   for (const rel of rels) {
     const rid = `rId${++maxRid}`

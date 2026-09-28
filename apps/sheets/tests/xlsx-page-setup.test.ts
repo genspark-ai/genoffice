@@ -63,6 +63,12 @@ describe('applyPageSetupState', () => {
     expect(patched).toContain('<printOptions headings="1"/>')
   })
 
+  it('applies the change to every printOptions match, not just the first', () => {
+    const xml = '<worksheet><sheetData/><printOptions headings="1"/><printOptions/></worksheet>'
+    const patched = applyPageSetupState(xml, { sheetName: 'S', printGridlines: true })
+    expect(patched.match(/<printOptions gridLines="1"/g)).toHaveLength(2)
+  })
+
   it('writes fit-to-page: pageSetUpPr plus fitToWidth/fitToHeight', () => {
     const xml = applyPageSetupState(BARE, {
       sheetName: 'S',
@@ -344,6 +350,15 @@ describe('applyPrintAreas', () => {
     )
     expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printArea: 'A1;B2' }])).toThrow(
       PageSetupError,
+    )
+  })
+
+  it('rejects a whole-column print area, which Excel refuses to open', () => {
+    expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printArea: 'A:A' }])).toThrow(
+      PageSetupError,
+    )
+    expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printArea: 'A1:B' }])).toThrow(
+      'Invalid print area "A1:B".',
     )
   })
 

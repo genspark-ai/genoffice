@@ -39,6 +39,20 @@ describe('parsePageSpec', () => {
     expect(r.spec.elements).toHaveLength(1)
   })
 
+  it('stops at the spec when the trailing prose carries a brace', () => {
+    // A brace in the run text and a brace in the model's sign-off: the spec
+    // itself is intact, so neither may decide where the JSON ends.
+    const raw =
+      'Here is the design:\n```json\n{"background":"#0E1A2B","elements":[' +
+      JSON.stringify(textSpec('Close } brace')) +
+      ']}\n```\nLet me know if you want changes {x}'
+    const r = parsePageSpec(raw)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.spec.background).toBe('#0E1A2B')
+    expect(r.spec.elements).toHaveLength(1)
+  })
+
   it('rejects output without a usable JSON object', () => {
     expect(parsePageSpec('sorry, I cannot').ok).toBe(false)
     expect(parsePageSpec('{"elements":[]}').ok).toBe(false)
@@ -98,6 +112,31 @@ describe('parsePageSpec', () => {
       'https://example.com/a.png',
       'http://example.com/b.png',
     ])
+  })
+
+  it('keeps boolean flipH/flipV on shapes and drops other values', () => {
+    const r = parsePageSpec(
+      JSON.stringify({
+        elements: [
+          {
+            type: 'shape',
+            shape: 'line',
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 60,
+            stroke: { color: '#fff' },
+            flipV: true,
+            flipH: 'yes',
+          },
+        ],
+      }),
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const el = r.spec.elements[0] as { flipV?: boolean; flipH?: boolean }
+    expect(el.flipV).toBe(true)
+    expect(el.flipH).toBeUndefined()
   })
 })
 
@@ -409,5 +448,31 @@ describe('buildPagePptx text-box height fix', () => {
     const opened = await openPptx(bytes)
     const el = opened.deck.slides[0]!.elements.find((e): e is TextElement => e.type === 'text')!
     expect(el.transform.offset.cy).toBe(30 * EMU_PER_PX)
+  })
+})
+
+describe('buildPagePptx shape flip', () => {
+  it('writes flipV on a line into the saved pptx (bottom-left to top-right)', async () => {
+    const spec: PageSpec = {
+      elements: [
+        {
+          type: 'shape',
+          shape: 'line',
+          x: 40,
+          y: 40,
+          w: 400,
+          h: 200,
+          stroke: { color: '#0070C0', widthPt: 2 },
+          flipV: true,
+        },
+      ],
+    }
+    const { bytes } = await buildPagePptx(spec, { fetchImage: async () => null })
+    const opened = await openPptx(bytes)
+    const el = opened.deck.slides[0]!.elements.find(
+      (e) => (e as TextElement).presetGeometry === 'line',
+    ) as TextElement | undefined
+    expect(el?.transform.flipV).toBe(true)
+    expect(el?.anchor.originalXml).toContain('flipV="1"')
   })
 })

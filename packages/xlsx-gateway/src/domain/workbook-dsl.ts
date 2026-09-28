@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
-import { columnIndex, columnLabel, formatAddress, parseRange, rangeCellCount } from './cell-address'
+import {
+  columnIndex,
+  columnLabel,
+  formatAddress,
+  parseAddress,
+  parseRange,
+  rangeCellCount,
+} from './cell-address'
 import { computeSortChanges } from './sort-range'
 import {
   describeStyleColor,
@@ -10,9 +17,41 @@ import {
   THEME_SLOT_NAMES,
 } from './style-color'
 
-const cellAddressSchema = z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}$/)
+const MAX_GRID_ROWS = 1_048_576
+const MAX_GRID_COLUMNS = 16_384
+
+/// An address past the last grid row or column names no cell that can exist in
+/// the file: the write is accepted here and the value is gone on reopen.
+/// The address pattern above already rejects anything unparseable, and a refine
+/// runs even after that pattern fails, so this must not throw.
+const withinGrid = (address: string): boolean => {
+  let row: number
+  let column: number
+  try {
+    ;({ row, column } = parseAddress(address))
+  } catch {
+    return true
+  }
+  return row + 1 <= MAX_GRID_ROWS && column + 1 <= MAX_GRID_COLUMNS
+}
+
+const withinGridColumn = (label: string): boolean => {
+  try {
+    return columnIndex(label) + 1 <= MAX_GRID_COLUMNS
+  } catch {
+    return true
+  }
+}
+
+const cellAddressSchema = z
+  .string()
+  .regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}$/)
+  .refine(withinGrid, 'Address is outside the worksheet grid (XFD1048576)')
 const cellRangeSchema = z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}(:[A-Z]{1,3}[1-9][0-9]{0,6})?$/)
-const columnLabelSchema = z.string().regex(/^[A-Z]{1,3}$/)
+const columnLabelSchema = z
+  .string()
+  .regex(/^[A-Z]{1,3}$/)
+  .refine(withinGridColumn, 'Column is past the last grid column (XFD)')
 const sheetNameSchema = z
   .string()
   .trim()
@@ -1495,8 +1534,12 @@ function setRangeOrigin(operation: SetRangeOperation): { startRow: number; start
   const width = operation.values[0]?.length ?? 0
   const jaggedIndex = operation.values.findIndex((row) => row.length !== width)
   if (jaggedIndex !== -1) {
+    // Name the array position, not a sheet row: `values` is 0-based, so
+    // "row ${jaggedIndex + 1}" pointed one line below the offending row and
+    // read like a spreadsheet row number. Matches the operations[index] and
+    // seriesData[index=] convention used elsewhere in this file.
     throw new Error(
-      `set_range values must be rectangular: row 1 has ${width} cell(s) but row ${jaggedIndex + 1} has ${operation.values[jaggedIndex]?.length}. ` +
+      `set_range values must be rectangular: values[0] has ${width} cell(s) but values[${jaggedIndex}] has ${operation.values[jaggedIndex]?.length}. ` +
         'Use null for cells that should be cleared, or split into separate set_range operations.',
     )
   }

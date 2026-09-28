@@ -8,7 +8,13 @@
  * fine, but "Edit Data" is unavailable).
  */
 import type { EmuRect, Slide } from './types'
-import { escapeXmlAttr, escapeXmlText, creationIdXml } from './xml-utils'
+import {
+  creationIdXml,
+  escapeXmlAttr,
+  escapeXmlText,
+  hasContentTypeOverride,
+  maxRelationshipIdNumber,
+} from './xml-utils'
 import { relsPathFor } from './zip'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
@@ -353,7 +359,7 @@ export function addChart(
   // 2) [Content_Types].xml Override
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !ct.includes(`PartName="/${chartPath}"`)) {
+  if (ct && !hasContentTypeOverride(ct, chartPath)) {
     const override = `<Override PartName="/${chartPath}" ContentType="${CHART_CONTENT_TYPE}"/>`
     archive.entries.set(
       ctPath,
@@ -369,8 +375,7 @@ export function addChart(
   const rels =
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(rels)
   const rid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${rid}" Type="${CHART_REL_TYPE}" Target="../charts/chart${maxNum + 1}.xml"/>`
   archive.entries.set(

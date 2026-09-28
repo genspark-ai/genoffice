@@ -114,9 +114,19 @@ export interface ImageBlock {
 const MAX_IMAGES = 12
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024
 
-/** The rendered PNGs a result lists (detail.files[].path), as image content within a size budget. */
+/**
+ * The rendered PNGs a result lists (`detail.files[].path` and
+ * `detail.previews[].path`), as image content within a size budget.
+ * `detail.files` also carries plain page-file names for deck-spec directory
+ * builds, so only object entries with a path count.
+ */
 export function imageBlocks(ok: JsonOk): { images: ImageBlock[]; omitted: number } {
-  const files = (ok.detail?.files as { path?: string }[] | undefined) ?? []
+  const files = [
+    ...((ok.detail?.files as unknown[] | undefined) ?? []),
+    ...((ok.detail?.previews as unknown[] | undefined) ?? []),
+  ].filter((f): f is { path: string } => {
+    return !!f && typeof f === 'object' && typeof (f as { path?: unknown }).path === 'string'
+  })
   const images: ImageBlock[] = []
   let bytes = 0
   let omitted = 0

@@ -169,3 +169,52 @@ describe('speaker notes', () => {
     expect(getSlideNotes(reopened.archive, reopened.deck.slides[1]!.path)).toBe('slide 1 notes')
   })
 })
+
+/**
+ * The body placeholder was matched with type="body" only, so a deck that
+ * single-quotes its attributes read as having no notes at all and gained a
+ * second body shape on the next write.
+ */
+describe('notes body placeholder matching', () => {
+  const notesPathOf = (opened: Awaited<ReturnType<typeof openPptx>>): string =>
+    [...opened.archive.entries.keys()].find((p) =>
+      /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(p),
+    )!
+
+  it('reads and rewrites a single-quoted body placeholder without adding a shape', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slidePath = opened.deck.slides[0]!.path
+    setSlideNotes(opened, 0, 'first')
+    const notesPath = notesPathOf(opened)
+
+    const original = opened.archive.readText(notesPath)!
+    const singleQuoted = original.replace(
+      '<p:ph type="body" idx="1"/>',
+      `<p:ph type='body' idx='1'/>`,
+    )
+    expect(singleQuoted).not.toBe(original)
+    opened.archive.entries.set(notesPath, Buffer.from(singleQuoted))
+
+    // the existing placeholder is found, so the notes are not reported empty
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('first')
+    expect(setSlideNotes(opened, 0, 'second')).toBe(true)
+    // and the write patched that placeholder instead of appending a second one
+    expect(opened.archive.readText(notesPath)!.match(/type=["']body["']/g)).toHaveLength(1)
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('second')
+  })
+
+  it('adds a body shape only when the notesSlide has no placeholder at all', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slidePath = opened.deck.slides[0]!.path
+    setSlideNotes(opened, 0, 'first')
+    const notesPath = notesPathOf(opened)
+
+    const stripped = opened.archive.readText(notesPath)!.replace(/<p:ph\b[^>]*\/>/g, '')
+    opened.archive.entries.set(notesPath, Buffer.from(stripped))
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('')
+
+    expect(setSlideNotes(opened, 0, 'added')).toBe(true)
+    expect(opened.archive.readText(notesPath)!.match(/type=["']body["']/g)).toHaveLength(1)
+    expect(getSlideNotes(opened.archive, slidePath)).toBe('added')
+  })
+})

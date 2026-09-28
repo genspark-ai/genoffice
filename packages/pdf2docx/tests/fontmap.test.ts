@@ -33,6 +33,22 @@ describe('resolveOutputFamily', () => {
     expect(resolveOutputFamily('Arial Bold', installedSet('Arial'))).toBe('Arial')
   })
 
+  it('treats Object.prototype member names as unknown families', () => {
+    const mac = installedSet('Helvetica')
+    for (const name of [
+      'Constructor',
+      'toString',
+      'valueOf',
+      '__proto__',
+      'hasOwnProperty',
+      'isPrototypeOf',
+      'propertyIsEnumerable',
+      'toLocaleString',
+    ]) {
+      expect(resolveOutputFamily(name, mac)).toBe(name)
+    }
+  })
+
   it('leaves unknown missing families alone (CJK included)', () => {
     const mac = installedSet('Helvetica')
     expect(resolveOutputFamily('Universal Std Newswith Comm Pi', mac)).toBe(

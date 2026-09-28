@@ -572,3 +572,56 @@ describe('testMediaProvider', () => {
     expect(failed.error).toMatch(/403/)
   })
 })
+
+describe('a failed media request does not buffer the whole error body', () => {
+  /** an error body far larger than any diagnostic needs; counts what the reader pulls */
+  function hugeErrorBody(): { response: Response; pulled: () => number } {
+    const chunk = new TextEncoder().encode('x'.repeat(64 * 1024))
+    const chunks = 64
+    let sent = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= chunks) return controller.close()
+        sent += 1
+        controller.enqueue(chunk)
+      },
+    })
+    return {
+      response: new Response(body, { status: 500 }),
+      pulled: () => sent * chunk.byteLength,
+    }
+  }
+
+  it('reads only the diagnostic prefix of an analysis failure', async () => {
+    const { response, pulled } = hugeErrorBody()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response),
+    )
+    await expect(
+      analyzeMediaWithProvider(
+        'openai',
+        { apiKey: 'sk', imageModel: '', analysisModel: 'gpt-5.6-luna' },
+        { media: [{ bytes: PNG, mime: 'image/png', name: 'logo.png' }], requirements: 'describe' },
+      ),
+    ).rejects.toThrow(/Media analysis failed: 500/)
+    // httpBodyDetail keeps 500 characters; the rest of the 4 MB body is never buffered
+    expect(pulled()).toBeLessThanOrEqual(128 * 1024)
+  })
+
+  it('reads only the diagnostic prefix of a credential-test failure', async () => {
+    const { response, pulled } = hugeErrorBody()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response),
+    )
+    const failed = await testMediaProvider('openai', {
+      apiKey: 'sk',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(failed.ok).toBe(false)
+    expect(failed.error).toMatch(/500/)
+    expect(pulled()).toBeLessThanOrEqual(128 * 1024)
+  })
+})

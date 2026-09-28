@@ -106,6 +106,7 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     error?: { message?: string } | string
   }>
   let emitted = false
+  let toolCallCount = 0
   let stopReason: string | undefined
   let abnormalFinish: string | undefined
   for (const event of events) {
@@ -123,6 +124,9 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       }
       if (part.functionCall?.name) {
         emitted = true
+        // A complete JSON body carries the whole turn at once, so the per-turn
+        // tool budget of the streamed path has to be applied here as well
+        throwIfToolCountOverBudget(++toolCallCount, 'gemini')
         cb.onToolCall(geminiToolCall(part))
       }
     }

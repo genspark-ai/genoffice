@@ -126,6 +126,27 @@ describe('shared ImageViewer modal focus', () => {
     expect(document.activeElement).toBe(focusables[focusables.length - 1])
   })
 
+  it('keeps Shift+Tab inside the viewer when the backdrop itself holds focus', () => {
+    mountViewer()
+    // the backdrop can take focus back after a toolbar click blurs to body
+    act(() => {
+      ;(document.activeElement as HTMLElement).blur()
+    })
+    expect(document.activeElement).toBe(dialog(host))
+    const focusables = [...host.querySelectorAll<HTMLElement>('button')]
+    const e = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      dialog(host).dispatchEvent(e)
+    })
+    expect(e.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(focusables[focusables.length - 1])
+  })
+
   it('closes on Escape without reaching the editor behind', () => {
     mountViewer()
     const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })

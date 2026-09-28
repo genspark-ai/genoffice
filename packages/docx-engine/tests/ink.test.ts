@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   INK_NAME_PREFIX,
   anchoredInkRunXml,
+  findInkRuns,
   injectInkRunsIntoParagraph,
   parseDocx,
   saveDocx,
@@ -200,6 +201,25 @@ describe('ink XML helpers', () => {
     expect(xml).not.toContain('NaN')
     expect(xml).not.toContain('Infinity')
     expect(xml).toContain('cx="1"')
+  })
+
+  it('findInkRuns reads the extent whatever order its attributes come in', () => {
+    const ink = { widthPx: 200, heightPx: 100, offsetXPx: 10, offsetYPx: 20, payload: 'strokes' }
+    const run = anchoredInkRunXml(ink, 'rId7', 3)
+    const [found] = findInkRuns(`<w:p>${run}</w:p>`)
+    expect(found).toMatchObject({ widthPx: 200, heightPx: 100, embedRId: 'rId7' })
+
+    // the old patterns wanted cx first and cy immediately after it, so a producer or
+    // serializer that ordered them differently reopened the stroke as a 0x0 box
+    for (const extent of [
+      '<wp:extent cy="952500" cx="1905000"/>',
+      '<wp:extent distT="0" cy="952500" cx="1905000"/>',
+    ]) {
+      const [reordered] = findInkRuns(
+        `<w:p>${run.replace('<wp:extent cx="1905000" cy="952500"/>', extent)}</w:p>`,
+      )
+      expect(reordered).toMatchObject({ widthPx: 200, heightPx: 100 })
+    }
   })
 
   it('injectInkRunsIntoParagraph rejects non-paragraph roots', () => {

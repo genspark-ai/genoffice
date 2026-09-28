@@ -143,6 +143,13 @@ const TRACKED_PITCH_UNIFORM_MIN = 0.7
 const TRACKED_PITCH_BAND = 0.25
 /** minimum adjacent pairs before the pattern is trusted */
 const TRACKED_MIN_PAIRS = 6
+/**
+ * a gap counts as an inflated-box overlap only below this share of the font
+ * size: ordinary body text reports gaps of −0.002 em from float noise, and
+ * treating those as overlaps sent every wide glyph ("m" at 0.78 em against a
+ * 0.45 em median pitch) down the pitch path as a word gap ("rem uneração")
+ */
+const TRACKED_OVERLAP_MIN_EMS = 0.05
 
 /** the line's median origin pitch, or null when the pattern does not hold */
 function trackedPitchOf(chars: readonly PdfChar[]): number | null {
@@ -152,7 +159,8 @@ function trackedPitchOf(chars: readonly PdfChar[]): number | null {
   for (const c of chars) {
     if (isSpaceCode(c.code) || c.code <= 0x1f) continue
     if (prev && !isNoSpaceScript(prev.script) && !isNoSpaceScript(c.script)) {
-      if (charGap(prev, c) < 0) negGaps++
+      const fontSize = Math.min(prev.fontSize, c.fontSize) || 1
+      if (charGap(prev, c) < -TRACKED_OVERLAP_MIN_EMS * fontSize) negGaps++
       pitches.push(c.originX - prev.originX)
     }
     prev = c

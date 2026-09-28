@@ -81,8 +81,15 @@ const stripInset = (page: Page, selector: string) =>
     .locator(selector)
     .first()
     .evaluate((el) => {
-      const paper = el.closest('.page-wrap')!.querySelector('.doc-page') as HTMLElement
+      // NaN, not a throw: every caller feeds this into expect.poll, and a
+      // throw aborts the poll instead of letting it retry. The page re-renders
+      // while the layout settles, and an element resolved just before that
+      // re-render is detached by the time this runs — closest() then answers
+      // null and the poll below would fail on its first attempt.
+      const paper = el.closest('.page-wrap')?.querySelector('.doc-page') as HTMLElement | null
+      if (!paper) return Number.NaN
       const pr = paper.getBoundingClientRect()
+      if (!pr.width) return Number.NaN
       return (el.getBoundingClientRect().left - pr.left) / (pr.width / paper.offsetWidth)
     })
 

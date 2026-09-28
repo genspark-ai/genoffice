@@ -10,6 +10,7 @@
  */
 import type { PackageArchive } from './zip'
 import { relsPathFor, resolveTarget } from './zip'
+import { hasContentTypeOverride, maxRelationshipIdNumber } from './xml-utils'
 import type { SlideSize } from './types'
 import {
   LAYOUT_REL_TYPE,
@@ -198,7 +199,7 @@ export function ensureBuiltinLayout(
 
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !ct.includes(`PartName="/${layoutPath}"`)) {
+  if (ct && !hasContentTypeOverride(ct, layoutPath)) {
     archive.entries.set(
       ctPath,
       Buffer.from(
@@ -211,8 +212,7 @@ export function ensureBuiltinLayout(
     )
   }
 
-  let maxRid = 0
-  for (const m of masterRels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(masterRels)
   const rid = `rId${maxRid + 1}`
   archive.entries.set(
     masterRelsPath,

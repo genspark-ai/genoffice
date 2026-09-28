@@ -38,6 +38,24 @@ describe('setTableRowHeight', () => {
     expect(tbl.transform.offset.cy).toBe(sum)
     expect(setTableRowHeight(r.slide, r.elementId, 9, 100)).toBe(false)
   })
+
+  it('rejects a non-finite column width or row height instead of writing NaN', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addTable(opened, 0, {
+      rows: 2,
+      cols: 2,
+      offset: { x: 0, y: 0, cx: 2000000, cy: 800000 },
+    })!
+    const tbl = r.slide.elements.find((e) => e.id === r.elementId) as TableElement
+    const before = tbl.anchor.originalXml
+    // the op validator only checks typeof, so NaN/Infinity reach the writer
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(setTableColWidth(r.slide, r.elementId, 0, bad)).toBe(false)
+      expect(setTableRowHeight(r.slide, r.elementId, 0, bad)).toBe(false)
+    }
+    expect(tbl.anchor.originalXml).toBe(before)
+    expect(tbl.anchor.originalXml).not.toMatch(/="(NaN|Infinity)"/)
+  })
 })
 
 describe('resizeTable', () => {

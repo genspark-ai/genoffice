@@ -133,7 +133,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 async function failFrom(label: string, resp: Response): Promise<never> {
-  const body = await resp.text().catch(() => '')
+  const body = await readCappedErrorText(resp)
   throw new Error(`${label} ${resp.status}: ${httpBodyDetail(body)}`)
 }
 
@@ -147,6 +147,43 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
 }
 
 const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
+
+/** An error body is only ever read for a short diagnostic (httpBodyDetail keeps 500
+ * characters), so it is capped hard: a vendor answering an error with a multi-megabyte
+ * HTML page must not be buffered whole just to be truncated afterwards. */
+const MAX_ERROR_BODY_BYTES = 64 * 1024
+
+/**
+ * Reads at most the first MAX_ERROR_BODY_BYTES of a failed response. A partial body still
+ * yields whatever arrived, and reading never throws: the caller is already on its way to
+ * reporting the status, and a body that cannot be read is not worth a second error.
+ */
+async function readCappedErrorText(resp: Response): Promise<string> {
+  if (!resp.body) return ''
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  let bytes = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const room = MAX_ERROR_BODY_BYTES - bytes
+      if (value.byteLength >= room) {
+        text += decoder.decode(value.subarray(0, room), { stream: true })
+        break
+      }
+      bytes += value.byteLength
+      text += decoder.decode(value, { stream: true })
+    }
+    text += decoder.decode()
+  } catch {
+    /* truncated or aborted: report what arrived */
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  return text
+}
 
 /** the body counted as it streams and dropped past the cap; a missing Content-Length is unknown, not zero */
 async function readCapped(resp: Response, label: string): Promise<Uint8Array> {
@@ -416,7 +453,8 @@ async function generateImageMinimax(
 
 // ── OpenAI-compatible chat understanding ───────────────────────────
 
-function openAiContentText(content: unknown): string {
+/** Flatten an OpenAI `content` field to text: gateways may answer with a string or an array of parts. */
+export function openAiContentText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content
@@ -746,7 +784,7 @@ export async function testMediaProvider(
     // Vendors without a model-listing endpoint answer 404/405 to a valid
     // key, so those statuses still mean the credentials are usable.
     if (resp.status === 404 || resp.status === 405) return { ok: true }
-    const body = await resp.text().catch(() => '')
+    const body = await readCappedErrorText(resp)
     const detail = httpBodyDetail(body)
     if (resp.status === 429) {
       return {

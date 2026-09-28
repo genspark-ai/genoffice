@@ -83,7 +83,9 @@ export interface CodexChildLike {
  * Split the child's stdout into RPC lines, with a cap on the line being buffered. Over the cap the
  * reader stops, the child is killed and `onOverflow` reports a bounded diagnostic, which fails every
  * in-flight request instead of letting the buffer grow. A trailing line without a newline is still
- * delivered when the stream ends, as the previous readline reader did.
+ * delivered when the stream ends, as the previous readline reader did. A throwing `onLine` is
+ * reported through `onOverflow` the same way, because a listener throw would otherwise surface as an
+ * uncaught exception instead of failing the in-flight requests.
  */
 export function attachBoundedRpcStdout(
   child: CodexChildLike,
@@ -98,7 +100,18 @@ export function attachBoundedRpcStdout(
   let pendingBytes = 0
   let stopped = false
   const emit = (line: string): void => {
-    onLine(line.endsWith('\r') ? line.slice(0, -1) : line)
+    try {
+      onLine(line.endsWith('\r') ? line.slice(0, -1) : line)
+    } catch (error) {
+      // `onLine` writes back to the child (rejecting an unsupported server request, for one) and
+      // throws once stdin is no longer writable, which is a normal shutdown race while buffered
+      // stdout lines are still being delivered. A listener throw is not catchable by the caller's
+      // promise chain, so report it like an overflow and stop reading rather than crashing the host.
+      stopped = true
+      pending = ''
+      pendingBytes = 0
+      onOverflow(error instanceof Error ? error : new Error(String(error)))
+    }
   }
   const flush = (): void => {
     if (stopped) return

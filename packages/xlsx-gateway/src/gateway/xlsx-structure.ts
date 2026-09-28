@@ -135,6 +135,15 @@ function readTagAttribute(tag: string, name: string): string | undefined {
   return new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(tag)?.[1]
 }
 
+function setTagAttribute(tag: string, name: string, value: string): string {
+  const pattern = new RegExp(`((?:^|\\s)${name}=")[^"]*(")`)
+  if (!pattern.test(tag)) return addTagAttribute(tag, name, value)
+  return tag.replace(
+    pattern,
+    (_match, prefix: string, suffix: string) => `${prefix}${value}${suffix}`,
+  )
+}
+
 function addTagAttribute(tag: string, name: string, value: string): string {
   const nameEnd = /^<[^ \t\r\n/>]+/.exec(tag)?.[0].length ?? 1
   return `${tag.slice(0, nameEnd)} ${name}="${value}"${tag.slice(nameEnd)}`
@@ -1319,14 +1328,22 @@ function transformSheetColumns(xml: string, shift: Shift): string {
 }
 
 function transformColDefinitions(xml: string, shift: Shift): string {
-  return xml.replace(
-    /<col\b([^>]*?)\bmin="([0-9]+)"([^>]*?)\bmax="([0-9]+)"([^>]*?)\/>/g,
-    (_full, b1: string, min: string, b2: string, max: string, b3: string) => {
-      const moved = moveRange(Number(min) - 1, Number(max) - 1, shift)
-      if (moved === null) return ''
-      return `<col${b1}min="${moved.start + 1}"${b2}max="${moved.end + 1}"${b3}/>`
-    },
-  )
+  // Attribute order carries no meaning in XML, so read min/max by name rather
+  // than assuming min comes first: the old pattern only matched the schema
+  // order, and a <col> written max-before-min was left unshifted, stranding
+  // its width on the wrong columns after an insert or delete.
+  return xml.replace(/<col\b([^>]*?)\/>/g, (full, attributes: string) => {
+    const min = readPositiveInteger(readTagAttribute(attributes, 'min'))
+    const max = readPositiveInteger(readTagAttribute(attributes, 'max'))
+    if (min === undefined || max === undefined) return full
+    const moved = moveRange(min - 1, max - 1, shift)
+    if (moved === null) return ''
+    return setTagAttribute(
+      setTagAttribute(full, 'min', String(moved.start + 1)),
+      'max',
+      String(moved.end + 1),
+    )
+  })
 }
 
 /// Rewrites `<f>` bodies plus shared/array formula `ref` attributes, and the

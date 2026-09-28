@@ -129,7 +129,8 @@ function noteDirectSpacing(entryXml: string): NoteInfo['spacing'] {
 /** Display runs per paragraph (bold/italic/underline/strike, color, size); the footnote self-reference mark run is skipped */
 function noteRichParas(entryXml: string): NoteRun[][] {
   const out: NoteRun[][] = []
-  const pRe = /<w:p[\s>][\s\S]*?<\/w:p>|<w:p\/>/g
+  // the self-closing form first: the open-to-close alternative would swallow it
+  const pRe = /<w:p(?:\s[^>]*)?\/>|<w:p[\s>][\s\S]*?<\/w:p>/g
   let p: RegExpExecArray | null
   const flag = (rPr: string, tag: string) =>
     new RegExp(
@@ -201,7 +202,9 @@ function noteEntriesOf(
 ): Array<{ id: string; text: string; xml: string }> {
   const out: Array<{ id: string; text: string; xml: string }> = []
   const entry = ENTRY[kind]
-  const re = new RegExp(`<${entry}(\\s[^>]*)?>([\\s\\S]*?)</${entry}>`, 'g')
+  // the attribute run must not end in "/" so a self-closing empty entry
+  // ("<w:footnote w:id="1"/>") is not read as an open tag over the next entry
+  const re = new RegExp(`<${entry}(\\s[^>]*[^/>])?>([\\s\\S]*?)</${entry}>`, 'g')
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const attrs = m[1] ?? ''
@@ -209,7 +212,8 @@ function noteEntriesOf(
     const id = /w:id=(?:"([^"]+)"|'([^']+)')/.exec(attrs)?.slice(1, 3).find(Boolean)
     if (!id) continue
     const paras: string[] = []
-    const pRe = /<w:p[\s>][\s\S]*?<\/w:p>|<w:p\/>/g
+    // the self-closing form first: the open-to-close alternative would swallow it
+    const pRe = /<w:p(?:\s[^>]*)?\/>|<w:p[\s>][\s\S]*?<\/w:p>/g
     let p: RegExpExecArray | null
     while ((p = pRe.exec(m[2])) !== null) paras.push(notePlainText(p[0]))
     // the first paragraph starts with the self-reference mark + a spacer

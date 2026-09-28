@@ -100,6 +100,12 @@ const CLASSIC_MAP: Record<string, string[]> = {
   cumberland: COURIER,
 }
 
+// own-property lookup only: a non-embedded /BaseFont of /Constructor (or
+// toString, __proto__, ...) would otherwise inherit an Object.prototype member
+// and be iterated as if it were a candidate list
+const classicFor = (key: string): string[] | undefined =>
+  Object.hasOwn(CLASSIC_MAP, key) ? CLASSIC_MAP[key] : undefined
+
 export type InstalledCheck = (family: string) => boolean
 
 /** tracking below this (ems) is metric reconciliation, dropped on substitution */
@@ -115,7 +121,7 @@ export function resolveOutputFamily(family: string, installed: InstalledCheck): 
   if (!family || installed(family)) return family
   const stripped = stripTrailingStyleWords(family)
   if (stripped !== family && installed(stripped)) return stripped
-  const candidates = CLASSIC_MAP[norm(family)] ?? CLASSIC_MAP[norm(stripped)]
+  const candidates = classicFor(norm(family)) ?? classicFor(norm(stripped))
   if (candidates) {
     for (const cand of candidates) if (installed(cand)) return cand
   }

@@ -31,7 +31,11 @@ const ATTRIBUTE = /\s[\w:.-]+\s*=\s*(["'])(.*?)\1/g
 const ID_ATTRIBUTE = /\bId\s*=\s*(["'])(.*?)\1/
 const PART_NAME_ATTRIBUTE = /\bPartName\s*=\s*(["'])(.*?)\1/
 const OVERRIDE_TAG = /<Override\b[^>]*\/\s*>/g
+const MODEL_3D_MARKER = 'aislides-3d:'
 const MODEL_3D_REF = /aislides-3d:(ppt\/media\/[^"'&<\s]+)/g
+
+/** Shape-tree parts: the only ones a cNvPr@descr 3D marker can live in. */
+const MODEL_3D_PART_PREFIXES = ['ppt/slides/', 'ppt/slideLayouts/', 'ppt/slideMasters/']
 
 /**
  * Parts below these directories are owned by a slide object/slide and can be
@@ -70,8 +74,18 @@ function attributeValues(xml: string): Set<string> {
 
 function model3dRefs(xml: string): Set<string> {
   const out = new Set<string>()
+  if (!xml.includes(MODEL_3D_MARKER)) return out
   for (const match of xml.matchAll(MODEL_3D_REF)) out.add(match[1]!)
   return out
+}
+
+function mayCarryModel3dRef(path: string): boolean {
+  if (!path.endsWith('.xml') || path.includes('/_rels/')) return false
+  return MODEL_3D_PART_PREFIXES.some((prefix) => path.startsWith(prefix))
+}
+
+function hasModel3dMarker(bytes: Uint8Array): boolean {
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes(MODEL_3D_MARKER)
 }
 
 function currentSlideXml(slide: Slide): string {
@@ -176,8 +190,10 @@ function removeUnreferencedOwnedParts(
   // GenOffice's simplified 3D placeholder records the model path in cNvPr@descr
   // rather than an OOXML relationship, so include those direct references.
   for (const [path, bytes] of archive.entries) {
-    if (!path.endsWith('.xml') || closure.has(path)) continue
-    const xml = xmlOverrides.get(path) ?? Buffer.from(bytes).toString('utf8')
+    if (closure.has(path) || !mayCarryModel3dRef(path)) continue
+    const override = xmlOverrides.get(path)
+    if (override === undefined && !hasModel3dMarker(bytes)) continue
+    const xml = override ?? Buffer.from(bytes).toString('utf8')
     for (const target of model3dRefs(xml)) {
       if (closure.has(target)) retained.add(target)
     }

@@ -26,6 +26,8 @@ import {
   type WebSearchResult,
 } from './shared'
 import { genofficeApiKey, genofficeAuthPath, reloadGenofficeAuth } from './genoffice-auth'
+// deep import: the package root re-exports Electron-bound modules, and this file also runs in the genoffice CLI
+import { readBodyCapped } from '@genoffice/electron-utils/remote-image'
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -168,31 +170,70 @@ export function gskChildEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
 // ── Low-level execution ─────────────────────────────────────────────
 
 /**
+ * How many opener lines the recovery scan below may try. gsk prefixes its log
+ * lines with `[INFO]`, which itself looks like an array opener, so the scan has
+ * to walk forward — but the walk must stay bounded instead of growing with the
+ * size of the output.
+ */
+const MAX_JSON_SCAN_CANDIDATES = 8
+
+/**
+ * The balanced `{...}` / `[...]` block that starts at `start`, or null when it
+ * never closes. String-aware, so braces and quotes inside string values do not
+ * change the depth, and a block ends at its own closer rather than at the end
+ * of the output (trailing log lines are left out).
+ */
+function jsonBlockAt(text: string, start: number): string | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]!
+    if (inString) {
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') inString = true
+    else if (c === '{' || c === '[') depth++
+    else if (c === '}' || c === ']') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+/**
  * gsk output may have [INFO] log lines mixed in before or after the JSON;
- * scan for a line starting with { or [ and parse the longest valid JSON
- * block from there, shrinking past any trailing logs.
+ * find the first line that opens a JSON block and take that block, so a
+ * pretty-printed payload is located in one linear scan instead of by reparsing
+ * every line-bounded prefix.
  */
 export function parseGskOutput(stdout: string): unknown {
   const trimmed = stdout.trim()
   try {
     return JSON.parse(trimmed)
   } catch {
-    /* fall through to line-by-line scan */
+    /* fall through to the bounded recovery scan */
   }
-  // Pretty-printed output puts inner elements on their own `{` lines, so the
-  // scan must start from the earliest candidate and take the longest parse.
-  const lines = trimmed.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!.trim()
-    if (line.startsWith('{') || line.startsWith('[')) {
-      for (let j = lines.length; j > i; j--) {
+  let offset = 0
+  let candidates = 0
+  for (const line of trimmed.split('\n')) {
+    const opener = line.trimStart()[0]
+    if (opener === '{' || opener === '[') {
+      const block = jsonBlockAt(trimmed, offset + line.indexOf(opener))
+      if (block) {
         try {
-          return JSON.parse(lines.slice(i, j).join('\n'))
+          return JSON.parse(block)
         } catch {
-          continue
+          /* a log line that only looks like JSON; try the next opener */
         }
       }
+      if (++candidates >= MAX_JSON_SCAN_CANDIDATES) break
     }
+    offset += line.length + 1
   }
   throw new Error(`No JSON found in gsk output: ${stdout.slice(0, 300)}`)
 }
@@ -392,6 +433,16 @@ export async function gskResolveDownloadUrl(url: string): Promise<string> {
 const GSK_TOOL_CLI_BASE = 'https://www.genspark.ai/api/tool_cli'
 const SLIDE_GENERATE_TIMEOUT_MS = 240_000
 
+/**
+ * tool_cli answers a long call with an NDJSON heartbeat stream, so the body is
+ * read through the capped reader: a gateway that never stops sending must not
+ * grow the main-process buffer for the whole request.
+ */
+export const MAX_TOOL_CLI_NDJSON_BYTES = 8 * 1024 * 1024
+
+/** Cap for a downloaded slide artifact: one page of HTML plus its images. */
+export const MAX_SLIDE_ARTIFACT_BYTES = 64 * 1024 * 1024
+
 export interface GskSlideGenerateOptions {
   /** Content and layout brief for this page */
   brief: string
@@ -449,7 +500,7 @@ async function toolCliPost(
       body: JSON.stringify(body),
       signal: controller.signal,
     })
-    const text = await resp.text()
+    const text = new TextDecoder().decode(await readBodyCapped(resp, MAX_TOOL_CLI_NDJSON_BYTES))
     if (!resp.ok) throw new Error(`tool_cli ${path} HTTP ${resp.status}: ${text.slice(0, 200)}`)
     const result = parseToolCliNdjson(text)
     if (result.status !== 'ok') {
@@ -492,7 +543,10 @@ export async function gskSlideGenerate(
   if (!downloadUrl) throw new Error('file/download returned no download_url')
   const resp = await fetch(String(downloadUrl), signal ? { signal } : undefined)
   if (!resp.ok) throw new Error(`PPTX download failed: HTTP ${resp.status}`)
-  return { bytes: new Uint8Array(await resp.arrayBuffer()), model: String(data.model ?? '') }
+  return {
+    bytes: await readBodyCapped(resp, MAX_SLIDE_ARTIFACT_BYTES),
+    model: String(data.model ?? ''),
+  }
 }
 
 // ── Media analysis / transcription ──────────────────────────────────

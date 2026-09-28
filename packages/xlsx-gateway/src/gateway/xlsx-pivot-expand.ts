@@ -117,14 +117,17 @@ function updateLocationRef(pivotTableXml: string, newRef: string): string {
 function worksheetHasContentInArea(worksheetXml: string, area: AreaRef): boolean {
   // Walk every <row r="N"> in the range, then every <c r="XX"> in the column band.
   const { start, end } = area
-  const rowPattern = /<row\b([^>]*)>([\s\S]*?)<\/row>/g
+  const rowPattern = /<row\b([^>]*?)>([\s\S]*?)<\/row>/g
   for (const rowMatch of worksheetXml.matchAll(rowPattern)) {
     const rAttr = /\br="(\d+)"/.exec(rowMatch[1] ?? '')
     if (!rAttr) continue
     const rowIdx = Number(rAttr[1]) - 1 // 0-based
     if (rowIdx < start.row || rowIdx > end.row) continue
     // Check each cell in this row
-    const cellPattern = /<c\b([^>]*)(?:\/>|>[\s\S]*?<\/c>)/g
+    // Lazy attributes: greedy `[^>]*` swallows the "/" of a self-closing <c/>
+    // and makes the match run on to the next </c>, so an empty cell would
+    // borrow its neighbour's value.
+    const cellPattern = /<c\b([^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g
     for (const cellMatch of rowMatch[2]!.matchAll(cellPattern)) {
       const rCell = /\br="([A-Z]+\d+)"/.exec(cellMatch[1] ?? '')
       if (!rCell) continue

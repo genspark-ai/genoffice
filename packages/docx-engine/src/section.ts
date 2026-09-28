@@ -28,8 +28,9 @@ function vAlignOf(xml: string): 'center' | 'both' | 'bottom' | undefined {
   return v as 'center' | 'both' | 'bottom' | undefined
 }
 
+/** Integer attribute of a tag; XML allows either quote style, so match both. */
 function intAttr(tag: string, name: string, fallback: number): number {
-  const m = new RegExp(`${name}="(-?\\d+)"`).exec(tag)
+  const m = new RegExp(`${name}=["'](-?\\d+)["']`).exec(tag)
   const v = m ? parseInt(m[1], 10) : NaN
   return Number.isFinite(v) ? v : fallback
 }
@@ -145,9 +146,11 @@ export function sectionSettingsFromXml(
     }
   }
 
-  // explicit unequal column widths (w:cols > w:col children)
+  // explicit unequal column widths (w:cols > w:col children). w:col is an empty
+  // element, so matching its start tag covers both the self-closing and the paired
+  // spelling, and either attribute quote style
   const colsElement = /<w:cols[^>]*>[\s\S]*?<\/w:cols>/.exec(xml)?.[0]
-  const colWidths = (colsElement?.match(/<w:col [^>]*w:w="\d+"[^>]*\/>/g) ?? [])
+  const colWidths = (colsElement?.match(/<w:col [^>]*w:w=["']\d+["'][^>]*>/g) ?? [])
     .map((tag) => intAttr(tag, 'w:w', 0))
     .filter((w) => w > 0)
 
@@ -257,15 +260,41 @@ export function xmlFlagOn(xml: string, tag: string): boolean {
   return false
 }
 
+/**
+ * Header/footer reference elements of a sectPr, in document order. Matching is
+ * quote-agnostic and covers the empty element pair LibreOffice writes, so a
+ * reference a producer spelled differently still resolves: matching only
+ * self-closing double-quoted tags dropped the part from the model, the save
+ * plan and the section info at once.
+ */
+export function hfReferenceTags(xml: string, kind: 'header' | 'footer'): string[] {
+  return (
+    xml.match(
+      new RegExp(`<w:${kind}Reference\\b[^>]*(?:\\/>|>\\s*<\\/w:${kind}Reference>)`, 'g'),
+    ) ?? []
+  )
+}
+
+/** w:type of a header/footer reference element (undefined when undeclared) */
+export function hfReferenceType(tag: string): string | undefined {
+  return /\bw:type\s*=\s*["']([^"']*)["']/.exec(tag)?.[1]
+}
+
+/** r:id of a header/footer reference element (undefined when undeclared) */
+export function hfReferenceRId(tag: string): string | undefined {
+  return /\br:id\s*=\s*["']([^"']+)["']/.exec(tag)?.[1]
+}
+
 function hfRefs(
   xml: string,
   kind: 'header' | 'footer',
 ): Partial<Record<'default' | 'first' | 'even', string>> {
   const refs: Partial<Record<'default' | 'first' | 'even', string>> = {}
-  for (const ref of xml.match(new RegExp(`<w:${kind}Reference[^>]*/>`, 'g')) ?? []) {
-    const type = /w:type="(default|first|even)"/.exec(ref)?.[1] ?? 'default'
-    const rId = /r:id="([^"]+)"/.exec(ref)?.[1]
-    if (rId) refs[type as 'default' | 'first' | 'even'] = rId
+  for (const ref of hfReferenceTags(xml, kind)) {
+    const declared = hfReferenceType(ref)
+    const type = declared === 'first' || declared === 'even' ? declared : 'default'
+    const rId = hfReferenceRId(ref)
+    if (rId) refs[type] = rId
   }
   return refs
 }
@@ -296,6 +325,16 @@ export function sectionFromSectPr(
 }
 
 /**
+ * Remove every occurrence of an element written either self-closing
+ * (<w:pgNumType .../>) or as an empty element pair (<w:pgNumType ...></w:pgNumType>).
+ * Both spellings are valid OOXML, and stripping only the self-closing one left the
+ * paired copy behind, so the tag got written twice into a single sectPr.
+ */
+function stripElement(xml: string, tag: string): string {
+  return xml.replace(new RegExp(`<${tag}[^>]*\\/>|<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, 'g'), '')
+}
+
+/**
  * Rewrite the sectPr page numbering w:pgNumType (fmt = number format, start = starting
  * page number; undefined fields are omitted, and the tag is removed when both are unset).
  * Schema order: pgNumType comes after pgMar/pgBorders and before cols/docGrid.
@@ -305,7 +344,7 @@ export function applyPageNumType(
   fmt: string | undefined,
   start: number | undefined,
 ): string {
-  const xml = sectPrXml.replace(/<w:pgNumType[^>]*\/>/, '')
+  const xml = stripElement(sectPrXml, 'w:pgNumType')
   if (fmt === undefined && start === undefined) return xml
   const tag = `<w:pgNumType${fmt !== undefined ? ` w:fmt="${fmt}"` : ''}${start !== undefined ? ` w:start="${start}"` : ''}/>`
   return insertBefore(xml, tag, PG_NUM_TYPE_FOLLOWERS)
@@ -486,7 +525,7 @@ export function applySectionStartType(
   sectPrXml: string,
   type: 'nextPage' | 'continuous' | 'evenPage' | 'oddPage' | 'nextColumn',
 ): string {
-  let xml = sectPrXml.replace(/<w:type[^>]*\/>/, '')
+  let xml = stripElement(sectPrXml, 'w:type')
   if (type === 'nextPage') return xml
   const tag = `<w:type w:val="${type}"/>`
   if (/<w:pgSz/.test(xml)) xml = xml.replace(/(<w:pgSz)/, `${tag}$1`)
@@ -496,7 +535,7 @@ export function applySectionStartType(
 
 /** set or remove w:titlePg (different first page) at its CT_SectPr position */
 export function applyTitlePg(sectPrXml: string, on: boolean): string {
-  const xml = sectPrXml.replace(/<w:titlePg[^>]*\/>/, '')
+  const xml = stripElement(sectPrXml, 'w:titlePg')
   return on ? insertBefore(xml, '<w:titlePg/>', TITLE_PG_FOLLOWERS) : xml
 }
 

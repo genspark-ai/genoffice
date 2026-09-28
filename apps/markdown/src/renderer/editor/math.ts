@@ -6,11 +6,20 @@ import { BlockMath, InlineMath } from '@tiptap/extension-mathematics'
 import { openMathEditor } from './mathEdit'
 import { matchInlineMath } from './mathSyntax'
 
+/** An escaped dollar ("costs \$5") never opens a formula, so the tokenizer has to
+ * start at the first unescaped one instead of the first `$` in the source. */
+const UNESCAPED_DOLLAR_RE = /(?<!\\)(?:\\\\)*\$/
+
+function strictInlineMathStart(src: string): number {
+  const match = UNESCAPED_DOLLAR_RE.exec(src)
+  return match ? match.index + match[0].length - 1 : -1
+}
+
 const StrictInlineMath = InlineMath.extend({
   markdownTokenizer: {
     name: 'inlineMath',
     level: 'inline',
-    start: (src: string) => src.indexOf('$'),
+    start: strictInlineMathStart,
     tokenize: (src: string) => {
       const match = matchInlineMath(src)
       return match && { type: 'inlineMath', ...match }

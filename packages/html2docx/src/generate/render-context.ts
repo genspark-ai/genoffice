@@ -50,7 +50,11 @@ function createRenderContext(docSettings: any = {}, options: any = {}) {
     pageWidthDxa,
     pageHeightDxa,
     pageMargins,
-    contentDxa: pageWidthDxa - pageMargins.left - pageMargins.right,
+    // Each margin is clamped on its own, but two healthy ones can still add up
+    // past the page width. A negative content width scales every downstream
+    // extent (floating images included) negative, and Word reads that as a
+    // corrupt file, so floor it at the 1in minimum the page width already uses.
+    contentDxa: Math.max(1440, pageWidthDxa - pageMargins.left - pageMargins.right),
     measurementScale,
     fontScale,
     marginDxa: MARGIN_DXA,

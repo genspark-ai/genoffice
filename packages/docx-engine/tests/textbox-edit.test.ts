@@ -36,6 +36,27 @@ const TEXTBOX_PARAGRAPH =
 
 const para = (patch: TextboxParaPatch): TextboxParaPatch => patch
 
+/** a picture inside the box, so the drawing carries a second, unrelated a:ext */
+const PIC_IN_BOX =
+  '<w:p><w:r><w:drawing><wp:inline><wp:extent cx="457200" cy="457200"/>' +
+  '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="457200" cy="457200"/></a:xfrm>' +
+  '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+  '<pic:blipFill><a:blip r:embed="rId4"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+  '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+
+/** a textbox whose shape carries no a:xfrm of its own (only wp:extent sizes it) */
+const BOX_WITH_PICTURE = (spPr: string) =>
+  '<w:p><w:r><w:drawing><wp:anchor><wp:extent cx="6038850" cy="1704975"/>' +
+  '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+  '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+  spPr +
+  `<wps:txbx><w:txbxContent><w:p><w:r><w:t>caption</w:t></w:r></w:p>${PIC_IN_BOX}</w:txbxContent></wps:txbx>` +
+  '</wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+
+const PIC_EXT = '<a:ext cx="457200" cy="457200"/>'
+
 describe('textbox editing', () => {
   it('extracts the box size from the shape extent', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: TEXTBOX_PARAGRAPH }))
@@ -142,6 +163,37 @@ describe('textbox editing', () => {
     expect(out).toContain('<a:ext cx="6038850" cy="2286000"/>')
     expect(out).toContain('width:475.5pt;height:180pt')
     expect(out).toContain('<a:srgbClr val="F5F5F5"/>')
+  })
+
+  it('resizes the shape a:ext, never the picture a:ext that sits inside the box', () => {
+    // the a:ext replacement was applied to the first a:ext in the drawing, which for a
+    // box holding a picture is the picture's own: the image was resized and the box kept
+    // its old size, so the edit appeared to do nothing
+    const noXform = BOX_WITH_PICTURE(
+      '<wps:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>',
+    )
+    // the picture is never the thing that gets sized
+    for (const [out, cx] of [
+      [patchTextboxHeights(noXform, [240]), '6038850'],
+      [patchTextboxSizes(noXform, [{ wPx: null, hPx: 240 }]), '6038850'],
+      [patchTextboxSizes(noXform, [{ wPx: 300, hPx: 240 }]), '2857500'],
+    ] as const) {
+      // the frame the shape is placed by is still sized ...
+      expect(out).toContain(`<wp:extent cx="${cx}" cy="2286000"/>`)
+      // ... and the picture keeps its own size
+      expect(out).toContain(PIC_EXT)
+      expect(out.match(/<a:ext\b/g)).toHaveLength(1)
+    }
+
+    // with a transform of its own the shape is what gets written
+    const withXform = BOX_WITH_PICTURE(
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6038850" cy="1704975"/></a:xfrm>' +
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>',
+    )
+    const sized = patchTextboxSizes(withXform, [{ wPx: 300, hPx: 240 }])
+    expect(sized).toContain('<wp:extent cx="2857500" cy="2286000"/>')
+    expect(sized).toContain('<a:ext cx="2857500" cy="2286000"/>')
+    expect(sized).toContain(PIC_EXT)
   })
 
   it('regenerates changed paragraphs from rich runs and keeps unchanged bytes', () => {

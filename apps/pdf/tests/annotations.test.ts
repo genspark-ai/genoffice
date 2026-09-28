@@ -333,4 +333,19 @@ describe('selectionQuadsByPage', () => {
 
     expect(selectionQuadsByPage(scrollEl, [geom(rot)], 1)!.get(0)).toEqual([first, second])
   })
+
+  it('handles a selection spanning more client rects than Math.min can be spread', () => {
+    // A large text page returns thousands of Range.getClientRects() boxes. The old
+    // path spread them into Math.min/Math.max and compared every pair for
+    // containment, so this either blew the argument limit or never finished.
+    const COUNT = 150_000
+    const WIDTH = 4
+    const rects = Array.from({ length: COUNT }, (_, i) => domRect(i * WIDTH, 20, i * WIDTH + 2, 30))
+    const span = COUNT * WIDTH
+    const { scrollEl } = setupPage(domRect(0, 0, span, 200))
+    mockSelection(scrollEl, rects)
+
+    const result = selectionQuadsByPage(scrollEl, [geom(0, span, 200)], 1)
+    expect(result!.get(0)).toEqual([[0, 180, span - 2, 180, 0, 170, span - 2, 170]])
+  })
 })

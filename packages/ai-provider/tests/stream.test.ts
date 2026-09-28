@@ -844,6 +844,34 @@ describe('streamForProvider: gemini', () => {
 })
 
 describe('streamForProvider: openai-compatible', () => {
+  it('flattens a content array into text (streamed and JSON body)', async () => {
+    const parts = [
+      { type: 'text', text: 'Here is ' },
+      { type: 'text', text: 'the change.' },
+    ]
+    const body = sseStream([
+      `data: {"choices":[{"delta":{"content":${JSON.stringify(parts)}}}]}`,
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const streamed = collector()
+    await streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, streamed.cb)
+    expect(streamed.deltas.join('')).toBe('Here is the change.')
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { content: parts }, finish_reason: 'stop' }],
+        }),
+      ),
+    )
+    const complete = collector()
+    await streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, complete.cb)
+    expect(complete.deltas.join('')).toBe('Here is the change.')
+  })
+
   it('reassembles fragmented tool call arguments and flushes on finish_reason', async () => {
     const body = sseStream([
       'data: {"choices":[{"delta":{"content":"partial "}}]}',
@@ -1416,6 +1444,75 @@ describe('streamForProvider: 200 + non-stream JSON instead of SSE', () => {
     const { deltas, cb } = collector()
     await streamForProvider('anthropic', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb)
     expect(deltas.join('')).toBe('The service is under maintenance until 06:00 UTC.')
+  })
+
+  it('anthropic route: a JSON body over the per-turn tool-call budget stops at the same cap as SSE', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        json({
+          type: 'message',
+          content: Array.from({ length: 150 }, (_, i) => ({
+            type: 'tool_use',
+            id: `t${i}`,
+            name: 'do_thing',
+            input: { index: i },
+          })),
+          stop_reason: 'tool_use',
+        }),
+      ),
+    )
+    const { toolCalls, cb } = collector()
+    await expect(
+      streamForProvider('anthropic', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
+    ).rejects.toThrow(/Too many streamed tool calls/)
+    expect(toolCalls).toHaveLength(0)
+  })
+
+  it('gemini route: a JSON body over the per-turn tool-call budget stops at the same cap as SSE', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        json(
+          Array.from({ length: 150 }, (_, i) => ({
+            candidates: [
+              { content: { parts: [{ functionCall: { name: 'do_thing', args: { index: i } } }] } },
+            ],
+          })),
+        ),
+      ),
+    )
+    const { toolCalls, cb } = collector()
+    await expect(
+      streamForProvider('gemini', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
+    ).rejects.toThrow(/Too many streamed tool calls/)
+    expect(toolCalls).toHaveLength(100)
+  })
+
+  it('openai route: a JSON body over the per-turn tool-call budget stops at the same cap as SSE', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        json({
+          choices: [
+            {
+              message: {
+                tool_calls: Array.from({ length: 150 }, (_, i) => ({
+                  id: `c${i}`,
+                  function: { name: 'do_thing', arguments: `{"index":${i}}` },
+                })),
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        }),
+      ),
+    )
+    const { toolCalls, cb } = collector()
+    await expect(
+      streamForProvider('openai', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
+    ).rejects.toThrow(/Too many streamed tool calls/)
+    expect(toolCalls).toHaveLength(0)
   })
 
   it('an unextractable body throws with a body summary', async () => {

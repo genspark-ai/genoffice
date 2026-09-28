@@ -163,8 +163,9 @@ export const TOOLS: ToolSpec[] = [
   {
     name: 'create_pptx',
     command: 'create',
+    images: true,
     description:
-      'Create a .pptx in one call from ops on a blank one-slide deck, or from a deck spec (pages of px-positioned text, shapes and images on a 1280x720 canvas; guide slides spec). This is the path for a short deck (up to about 5 slides) and whenever the user gives concrete content and no design brief: write the ops or the spec directly, then slides_render to look. The staged deck_start / deck_page / deck_build flow is for longer or design-sensitive presentations a person will present. Give exactly one of ops or spec.',
+      'Create a .pptx in one call from ops on a blank one-slide deck, or from a deck spec (pages of px-positioned text, shapes and images on a 1280x720 canvas; guide slides spec). This is the path for a short deck (up to about 5 slides) and whenever the user gives concrete content and no design brief: write the ops or the spec directly, then slides_render to look. Set render=true to get the slide PNGs back in the same call and audit=true for the geometry findings; otherwise run slides_render and slides_audit after. The staged deck_start / deck_page / deck_build flow is for longer or design-sensitive presentations a person will present. Give exactly one of ops or spec.',
     fixed: ['--type', 'pptx'],
     options: [
       {
@@ -188,6 +189,17 @@ export const TOOLS: ToolSpec[] = [
       'outline',
       { key: 'out', description: 'output .pptx path (required)', required: true },
       'force',
+      {
+        key: 'render',
+        kind: 'boolean',
+        description:
+          'render one PNG per slide after writing and return them as images (detail.previews); starts a hidden GenOffice process for a few seconds',
+      },
+      {
+        key: 'audit',
+        kind: 'boolean',
+        description: 'include the geometry audit of the built deck under detail.audit',
+      },
     ],
   },
   {

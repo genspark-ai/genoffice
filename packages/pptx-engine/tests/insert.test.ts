@@ -10,6 +10,7 @@ import {
   deleteElement,
   createBlankPptx,
 } from '../src/index'
+import { nextCNvPrId } from '../src/insert'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -78,6 +79,31 @@ describe('add/delete element', () => {
     const b = addElement(slide, { kind: 'rect', offset: { ...OFF } })
     const idOf = (xml: string) => /<p:cNvPr\s[^>]*\bid="(\d+)"/.exec(xml)![1]
     expect(idOf(a.anchor.originalXml)).not.toBe(idOf(b.anchor.originalXml))
+  })
+
+  /**
+   * nextCNvPrId counted only double-quoted ids, so in a deck that single-quotes
+   * its attributes it saw none of them, returned a low id and minted a shape id
+   * that collided with an existing one.
+   */
+  it('counts single-quoted cNvPr ids so an insert cannot reuse one', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const singleQuote = (xml: string) => xml.replace(/\bid="(\d+)"/g, "id='$1'")
+    slide.originalXml = singleQuote(slide.originalXml)
+    for (const el of slide.elements) el.anchor.originalXml = singleQuote(el.anchor.originalXml)
+    const maxId = Math.max(
+      ...[...slide.elements.map((e) => e.anchor.originalXml)].flatMap((xml) =>
+        [...xml.matchAll(/<p:cNvPr\s[^>]*\bid=["'](\d+)["']/g)].map((m) => Number(m[1])),
+      ),
+    )
+    expect(maxId).toBeGreaterThan(2)
+
+    expect(nextCNvPrId(slide)).toBe(maxId + 1)
+    const added = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const newId = Number(/<p:cNvPr\s[^>]*\bid=["'](\d+)["']/.exec(added.anchor.originalXml)![1])
+    expect(newId).toBe(maxId + 1)
+    expect(newId).toBeGreaterThan(maxId)
   })
 
   it('delete element persists through save → reopen', async () => {

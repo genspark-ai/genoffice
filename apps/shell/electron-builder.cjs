@@ -75,7 +75,14 @@ if (winArm64 && !process.env.ELECTRON_BUILDER_7Z_FILTER) {
 }
 const winArch = winArm64 ? 'arm64' : 'x64'
 const winSidecarTarget = winArm64 ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-gnu'
-const WIN_SIDECAR = `../sheets/native/xlsx-engine/target/${winSidecarTarget}/release/xlsx-sidecar.exe`
+const WIN_SIDECAR = existsSync(
+  join(
+    __dirname,
+    `../sheets/native/xlsx-engine/target/${winSidecarTarget}/release/xlsx-sidecar.exe`,
+  ),
+)
+  ? `../sheets/native/xlsx-engine/target/${winSidecarTarget}/release/xlsx-sidecar.exe`
+  : `../sheets/native/xlsx-engine/target/release/xlsx-sidecar.exe`
 
 function assertExtraResourceSources() {
   for (const rel of [
@@ -635,6 +642,13 @@ const config = {
     publish: null,
     afterInstall: 'build/linux-after-install.sh',
     afterRemove: 'build/linux-after-remove.sh',
+    // rpmbuild links every packaged ELF file into /usr/lib/.build-id/<hash>.
+    // Two Electron apps built on the same Electron release ship identical
+    // binaries, so the links are identical too and dnf refuses the install
+    // with a file conflict against the other app (#1145). The links exist only
+    // to locate detached debuginfo, which this package does not ship, so turn
+    // them off. rpm-level `fpm` (not linux-level) keeps it away from the deb.
+    fpm: ['--rpm-rpmbuild-define=_build_id_links none'],
   },
   nsis: {
     oneClick: false,

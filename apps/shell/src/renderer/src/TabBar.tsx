@@ -127,6 +127,18 @@ const KIND_ICON: Record<TabSummary['kind'], ReactElement> = {
   html: <HtmlIcon />,
 }
 
+/**
+ * Extension of a path's last segment, without the dot ('' when it has none).
+ * Read off the basename: a dot in a directory name is not an extension, and
+ * taking 'v2\Notes' from C:\Users\me.v2\Notes built a rename target that
+ * renameFile could not resolve.
+ */
+export function fileExtension(filePath: string): string {
+  const name = filePath.slice(Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/')) + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > -1 ? name.slice(dot + 1) : ''
+}
+
 export function TabBar() {
   const { t } = useI18n()
   const [tabs, setTabs] = useState<TabSummary[]>([])
@@ -149,8 +161,7 @@ export function TabBar() {
     const tab = tabsRef.current.find((tb) => tb.id === r.id)
     const value = r.value.trim()
     if (!tab?.filePath || !value) return
-    const dot = tab.filePath.lastIndexOf('.')
-    const ext = dot > -1 ? tab.filePath.slice(dot + 1) : ''
+    const ext = fileExtension(tab.filePath)
     const newName = ext ? `${value}.${ext}` : value
     if (newName === tab.title) return
     void window.aiOffice.renameFile(tab.filePath, newName).then((result) => {
@@ -318,6 +329,18 @@ export function TabBar() {
                   Math.round(event.clientY),
                 )
               }}
+              onDoubleClick={(event) => {
+                if (tab.id === 'home' || !tab.filePath) return
+                if ((event.target as HTMLElement).closest('.tab-close')) return
+                if ((event.target as HTMLElement).closest('.tab-rename-input')) return
+                const ext = fileExtension(tab.filePath)
+                const base =
+                  ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
+                    ? tab.title.slice(0, -(ext.length + 1))
+                    : tab.title
+                setRenaming({ id: tab.id, value: base })
+              }}
+
               onPointerDown={(event) => {
                 if (event.button !== 0) return
                 if ((event.target as HTMLElement).closest('.tab-close')) return
@@ -341,6 +364,8 @@ export function TabBar() {
                   target: index,
                   started: false,
                 }
+                // pointer capture prevents dblclick from firing — skip while renaming
+                if (renaming?.id === tab.id) return
                 event.currentTarget.setPointerCapture(event.pointerId)
               }}
               onPointerMove={(event) => {
@@ -429,22 +454,7 @@ export function TabBar() {
                   onBlur={commitRename}
                 />
               ) : (
-                <span
-                  className="tab-title"
-                  onDoubleClick={(event) => {
-                    if (tab.id === 'home' || !tab.filePath) return
-                    if ((event.target as HTMLElement).closest('.tab-close')) return
-                    const dot = tab.filePath.lastIndexOf('.')
-                    const ext = dot > -1 ? tab.filePath.slice(dot + 1) : ''
-                    const base =
-                      ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
-                        ? tab.title.slice(0, -(ext.length + 1))
-                        : tab.title
-                    setRenaming({ id: tab.id, value: base })
-                  }}
-                >
-                  {tab.title}
-                </span>
+                <span className="tab-title">{tab.title}</span>
               )}
               {tab.closable && (
                 <button

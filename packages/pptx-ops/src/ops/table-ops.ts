@@ -34,6 +34,36 @@ import { GuidedError, register, resolveElement, type Op, type OpRecord } from '.
 /** PowerPoint's line weight ceiling. */
 const MAX_BORDER_WIDTH_PT = 1584
 
+/** Per-edit cell targets accepted by setTableStyle (a table is at most 50x50). */
+const MAX_TABLE_STYLE_CELLS = 4096
+
+function resolveStyleCells(raw: unknown): TableStyleEdit['cells'] | undefined {
+  if (raw == null) return undefined
+  if (!Array.isArray(raw)) {
+    throw new GuidedError(
+      'op "setTableStyle": cells must be an array of { "row": number, "col": number } pairs.',
+    )
+  }
+  if (raw.length > MAX_TABLE_STYLE_CELLS) {
+    throw new GuidedError(
+      `op "setTableStyle": cells takes at most ${MAX_TABLE_STYLE_CELLS} entries, got ${raw.length}.`,
+    )
+  }
+  return raw.map((entry, i) => {
+    if (typeof entry !== 'object' || entry === null) {
+      throw new GuidedError(`op "setTableStyle": cells[${i}] must be a { row, col } object.`)
+    }
+    const { row, col } = entry as { row?: unknown; col?: unknown }
+    if (!Number.isInteger(row) || !Number.isInteger(col)) {
+      throw new GuidedError(`op "setTableStyle": cells[${i}] row and col must be integers.`)
+    }
+    if ((row as number) < 0 || (col as number) < 0) {
+      throw new GuidedError(`op "setTableStyle": cells[${i}] row and col must be >= 0.`)
+    }
+    return { row: row as number, col: col as number }
+  })
+}
+
 register({
   name: 'setTableCell',
   validate(op, ctx) {
@@ -295,7 +325,7 @@ function resolveTableStyle(op: Op): ResolvedTableStyle {
         ? { borderWidthEmu: Math.round(Number(op.borderWidthPt) * EMU_PER_PT) }
         : {}),
       ...(op.borderPreset != null ? { borderPreset: op.borderPreset as 'all' | 'none' } : {}),
-      ...(op.cells != null ? { cells: op.cells as TableStyleEdit['cells'] } : {}),
+      ...(op.cells != null ? { cells: resolveStyleCells(op.cells) } : {}),
     },
   }
 }

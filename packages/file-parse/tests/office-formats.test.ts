@@ -740,6 +740,35 @@ describe('parseFileToText: xlsx', () => {
     expect(text).toContain('ok | orphan')
   })
 
+  it('keeps an appended cell when a later explicit ref targets its column', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="1"><v>orphan</v></c><c r="A1"><v>late</v></c></row>' +
+        '</sheetData></worksheet>',
+    )
+    const bytes = await zip.generateAsync({ type: 'uint8array' })
+    const text = await xlsxToText(bytes)
+    // A1 claims its declared column; the appended cell keeps its text one to the right
+    expect(text).toContain('late | orphan')
+  })
+
   it('clamps wild column refs instead of padding millions of cells', async () => {
     const zip = new JSZip()
     zip.file(
@@ -769,11 +798,74 @@ describe('parseFileToText: xlsx', () => {
     expect(text.length).toBeLessThan(1000)
   })
 
+  async function workbookZip(rels: string, sheets: string): Promise<Uint8Array> {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        `<sheets>${sheets}</sheets></workbook>`,
+    )
+    if (rels !== '') zip.file('xl/_rels/workbook.xml.rels', rels)
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1"><v>7</v></c></row>' +
+        '</sheetData></worksheet>',
+    )
+    return zip.generateAsync({ type: 'uint8array' })
+  }
+
+  function worksheetRel(id: string, target: string): string {
+    return (
+      `<Relationship Id="${id}" Target="${target}" ` +
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/>'
+    )
+  }
+
+  it('fails with a diagnostic when the workbook rels part is missing', async () => {
+    const bytes = await workbookZip('', '<sheet name="Data" sheetId="1" r:id="rId1"/>')
+    await expect(xlsxToText(bytes)).rejects.toThrow(/xl\/_rels\/workbook\.xml\.rels is missing/)
+    const result = await parseFileToText(writeFixture('norels.xlsx', bytes))
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('xl/_rels/workbook.xml.rels is missing')
+  })
+
+  it('fails with a diagnostic when a sheet relationship has an empty target', async () => {
+    const rels =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      worksheetRel('rId1', '') +
+      '</Relationships>'
+    const bytes = await workbookZip(rels, '<sheet name="Data" sheetId="1" r:id="rId1"/>')
+    await expect(xlsxToText(bytes)).rejects.toThrow(/resolves to a readable worksheet part/)
+  })
+
+  it('still extracts the resolvable sheets when one relationship target is empty', async () => {
+    const rels =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      worksheetRel('rId1', 'worksheets/sheet1.xml') +
+      worksheetRel('rId2', '   ') +
+      '</Relationships>'
+    const bytes = await workbookZip(
+      rels,
+      '<sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Broken" sheetId="2" r:id="rId2"/>',
+    )
+    const text = await xlsxToText(bytes)
+    expect(text).toBe('# Data\n7')
+  })
+
   it('resolves workbook rel targets against xl/workbook.xml', () => {
     const wb = (t: string) => resolveTarget('xl/workbook.xml', t)
     expect(wb('worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
     expect(wb('worksheets\\sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
     expect(wb('/xl/worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
+    // a backslash-rooted target is still root-anchored: the root test has to
+    // run on the normalized string, or it resolves relative and the part is lost
+    expect(wb('\\xl\\worksheets\\sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
     expect(wb('../customXml/item1.xml')).toBe('customXml/item1.xml')
     expect(wb('../../xl/worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
   })

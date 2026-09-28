@@ -13,10 +13,14 @@ export function resolveTarget(basePart: string, target: string): string {
     return ''
   }
   const baseSlash = basePart.lastIndexOf('/')
-  const parts = decoded.startsWith('/')
+  // the root anchor has to be tested on the normalized string: a backslash-led
+  // "\ppt\slides\slide2.xml" is root-anchored too, and testing `decoded` left it
+  // resolving relative to the base part, quietly dropping the part
+  const normalized = decoded.replace(/\\/g, '/')
+  const parts = normalized.startsWith('/')
     ? []
     : (baseSlash >= 0 ? basePart.slice(0, baseSlash) : '').split('/').filter(Boolean)
-  for (const seg of decoded.replace(/\\/g, '/').split('/')) {
+  for (const seg of normalized.split('/')) {
     if (seg === '.' || seg === '') continue
     if (seg === '..') {
       if (parts.length > 0) parts.pop()

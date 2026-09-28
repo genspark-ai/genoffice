@@ -204,4 +204,14 @@ export const CROP_EDGE_LABELS: Record<Lang, Record<CropEdge, string>> = {
     sw: '左下邊緣',
     w: '左邊緣',
   },
+  vi: {
+    nw: '左上邊緣',
+    n: '上邊緣',
+    ne: '右上邊緣',
+    e: '右邊緣',
+    se: '右下邊緣',
+    s: '下邊緣',
+    sw: '左下邊緣',
+    w: '左邊緣',
+  },
 }

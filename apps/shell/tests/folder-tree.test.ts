@@ -292,6 +292,34 @@ describe('helpers', () => {
     expect(uniqueNameIn(root, 'b.md')).toBe('b.md')
   })
 
+  it('uniqueNameIn appends the counter to a dotted folder name whole', () => {
+    // a folder has no extension: 'v1.0' must not become 'v1 (2).0'
+    mkdirSync(join(root, 'v1.0'))
+    expect(uniqueNameIn(root, 'v1.0', true)).toBe('v1.0 (2)')
+    mkdirSync(join(root, 'v1.0 (2)'))
+    expect(uniqueNameIn(root, 'v1.0', true)).toBe('v1.0 (3)')
+    // a file keeps the extension split
+    touch('report.docx')
+    expect(uniqueNameIn(root, 'report.docx')).toBe('report (2).docx')
+  })
+
+  it("'keepBoth' appends the counter to a dotted folder name whole", () => {
+    mkdirSync(join(root, 'src', 'v1.0'), { recursive: true })
+    mkdirSync(join(root, 'dest', 'v1.0'), { recursive: true })
+    const moved = movePathsInto(
+      [join(root, 'src', 'v1.0')],
+      join(root, 'dest'),
+      'keepBoth',
+      errors,
+      {
+        replaceExisting: () => ({ commit: () => {}, rollback: () => {} }),
+      },
+    )
+    expect(moved.moved).toEqual([
+      { from: join(root, 'src', 'v1.0'), to: join(root, 'dest', 'v1.0 (2)') },
+    ])
+  })
+
   it('describeRoot creates a missing root and reports it usable', () => {
     const fresh = join(root, 'GenOffice')
     expect(describeRoot(fresh)).toEqual({

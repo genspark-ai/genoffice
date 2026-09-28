@@ -109,6 +109,10 @@ test.describe('docs Simple Markup view', () => {
       const balloon = page.locator('.comment-balloon')
       await expect(balloon).toHaveCount(1)
       await expect(balloon).toHaveAttribute('title', /Ann/)
+      // The node exists, but an unrendered one answers null to boundingBox().
+      // Wait for the layout instead of reading the box the moment the count
+      // settles.
+      await expect(balloon).toBeVisible()
       const paperRight = await page
         .locator('.ProseMirror')
         .first()

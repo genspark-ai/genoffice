@@ -23,14 +23,17 @@ const ABOVE_LADDER_STEP = 8
 
 /** Next/previous ladder value; a size between two rungs snaps to the neighbouring rung. */
 export function stepFontSizePt(cur: number, dir: 1 | -1): number {
+  // a non-finite size (a bad sz= that parsed to NaN) sits on no rung at all, so
+  // every comparison below is false and the grow path used to find nothing
+  const from = Number.isFinite(cur) ? cur : DEFAULT_FONT_SIZE_PT
   if (dir > 0) {
-    if (cur >= LADDER_MAX) return Math.min(FONT_SIZE_PT_MAX, cur + ABOVE_LADDER_STEP)
-    if (cur < LADDER_MIN) return Math.min(LADDER_MIN, cur + 1)
-    return FONT_SIZES.find((s) => s > cur)!
+    if (from >= LADDER_MAX) return Math.min(FONT_SIZE_PT_MAX, from + ABOVE_LADDER_STEP)
+    if (from < LADDER_MIN) return Math.min(LADDER_MIN, from + 1)
+    return FONT_SIZES.find((s) => s > from) ?? DEFAULT_FONT_SIZE_PT
   }
-  if (cur > LADDER_MAX) return Math.max(LADDER_MAX, cur - ABOVE_LADDER_STEP)
-  if (cur <= LADDER_MIN) return Math.max(FONT_SIZE_PT_MIN, cur - 1)
-  for (let i = FONT_SIZES.length - 1; i >= 0; i--) if (FONT_SIZES[i]! < cur) return FONT_SIZES[i]!
+  if (from > LADDER_MAX) return Math.max(LADDER_MAX, from - ABOVE_LADDER_STEP)
+  if (from <= LADDER_MIN) return Math.max(FONT_SIZE_PT_MIN, from - 1)
+  for (let i = FONT_SIZES.length - 1; i >= 0; i--) if (FONT_SIZES[i]! < from) return FONT_SIZES[i]!
   return LADDER_MIN
 }
 
@@ -39,5 +42,8 @@ export function nudgeFontSizePt(cur: number, dir: 1 | -1): number {
 }
 
 export function applyFontSizeStep(cur: number, step: FontSizeStep): number {
-  return step.mode === 'ladder' ? stepFontSizePt(cur, step.dir) : nudgeFontSizePt(cur, step.dir)
+  // clampInt-style guard: `cur ?? DEFAULT` never fires for NaN, and point mode
+  // would otherwise write sz="NaN" back out
+  const from = Number.isFinite(cur) ? cur : DEFAULT_FONT_SIZE_PT
+  return step.mode === 'ladder' ? stepFontSizePt(from, step.dir) : nudgeFontSizePt(from, step.dir)
 }

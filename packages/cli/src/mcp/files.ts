@@ -49,7 +49,13 @@ export const MAX_SAFE_NAME_CHARS = 128
 /** A client-supplied file name reduced to one safe path segment. */
 export function safeName(raw: string | undefined, fallback = 'file'): string {
   const base = basename((raw ?? '').trim().replace(/\\/g, '/'))
-  let clean = base.replace(/[^\w.\- ()]/g, '_').replace(/^\.+/, '')
+  // Letters, marks and digits of any script are allowed: remoteName decodes its
+  // source first, and an ASCII-only class folded `résumé.pdf` to `r_sum_.pdf`,
+  // so distinct uploads collapsed onto the same segment. \p{M} keeps combining
+  // marks, which is what an NFD name (what macOS volumes and many mac clients
+  // emit) is built from: dropping them would still fold `résumé.pdf` onto
+  // `re_sume_.pdf`.
+  let clean = base.replace(/[^\p{L}\p{N}\p{M}._\- ()]/gu, '_').replace(/^\.+/, '')
   if (clean === '') return fallback
   if (clean.length > MAX_SAFE_NAME_CHARS) {
     const ext = extname(clean).slice(0, 16)

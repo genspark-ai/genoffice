@@ -327,6 +327,7 @@ export const strings = {
     setAiSearchGensparkHint:
       '网页与图片搜索使用 Genspark 账号登录；未登录或关闭云工具时改用免费来源。',
     setAiSearchSerperHint: 'Serper 用你的 key 同时提供网页与图片搜索。',
+    setAiSearchSerplyHint: 'Serply 用你的 key 同时提供网页与图片搜索。',
     setAiSearchTavilyHint: 'Tavily 用你的 key 提供网页搜索；图片搜索改用免费来源。',
     setAiSearchParallelHint:
       '留空 API key 即可免费使用 Parallel 搜索（用量有限）。填写 key 可使用你的 Parallel 账户。图片搜索使用其他来源。',
@@ -711,6 +712,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Web and image search use your Genspark sign-in; signed out or with cloud tools off they fall back to free sources.',
     setAiSearchSerperHint: 'Serper serves both web and image search with your key.',
+    setAiSearchSerplyHint: 'Serply serves both web and image search with your key.',
     setAiSearchTavilyHint:
       'Tavily serves web search with your key; image search falls back to free sources.',
     setAiSearchParallelHint:
@@ -765,6 +767,390 @@ export const strings = {
     onbBody3: 'No license fees. No ads. No watermarks.',
     onbNote3: 'AI features may consume Genspark credits.',
     onbBack: 'Back',
+  },
+  vi: {
+    addFolderRoot: 'Thêm thư mục…',
+    removeFolderRoot: 'Xóa khỏi danh sách',
+    rootUnavailable: 'Không khả dụng',
+    navRecent: 'Gần đây',
+    navStarred: 'Đã gắn sao',
+    navCloud: 'Dự án Genspark',
+    cloudSubtitle:
+      'Các dự án được tạo trên web với Genspark AI. Tiếp tục chỉnh sửa trên trình duyệt của bạn — nhấp vào bất kỳ dự án nào để mở.',
+    cloudSearchPlaceholder: 'Tìm kiếm {n} dự án…',
+    cloudNoResults: 'Không có dự án phù hợp.',
+    cloudGroupThisWeek: 'Tuần này',
+    cloudGroupThisMonth: 'Đầu tháng này',
+    cloudSortLabel: 'Sắp xếp: {v}',
+    cloudSortRecent: 'Gần đây',
+    cloudSortOldest: 'Cũ nhất',
+    cloudRefresh: 'Làm mới',
+    cloudLoginHint: 'Đăng nhập vào tài khoản Genspark để xem các dự án bạn đã tạo trên web.',
+    cloudEmpty: 'Chưa có dự án web nào.',
+    cloudError: 'Tải thất bại. Vui lòng thử lại sau.',
+    cloudRetry: 'Thử lại',
+    cloudLoadMore: 'Tải thêm',
+    cloudOpenInBrowser: 'Mở trong trình duyệt',
+    navTrash: 'Thùng rác',
+    navTrashTip: 'Các tệp đã xóa sẽ chuyển vào Thùng rác hệ thống và có thể khôi phục tại đó',
+    secQuickStart: 'Bắt đầu nhanh',
+    secRecent: 'Gần đây',
+    secStarred: 'Đã gắn sao',
+    secActivity: 'Hoạt động',
+    colName: 'Tên',
+    colLocation: 'Vị trí',
+    colModified: 'Đã sửa đổi',
+    colSize: 'Kích thước',
+    newDoc: 'Tài liệu AI',
+    newSheet: 'Bảng tính AI',
+    newSlide: 'Bản trình bày AI',
+    newMarkdown: 'AI Markdown',
+    newHtml: 'AI HTML',
+    newPdf: 'AI PDF',
+    openLocal: 'Mở tệp cục bộ',
+    dropToOpenTitle: 'Thả để mở',
+    greetMorning: 'Chào buổi sáng',
+    greetAfternoon: 'Chào buổi chiều',
+    greetEvening: 'Chào buổi tối',
+    greetAsk1: 'Hôm nay bạn muốn tạo nội dung gì?',
+    greetAsk2: 'Sẵn sàng bắt đầu chưa?',
+    greetAsk3: 'Bạn đang làm gì thế?',
+    greetAsk4: 'Hôm nay chúng ta sẽ bắt đầu từ đâu?',
+    greetAsk5: 'Đang tràn đầy cảm hứng sáng tạo?',
+    greetAsk6: 'Dự định tiếp theo của bạn là gì?',
+    filterAll: 'Tất cả',
+    filterDocs: 'Tài liệu',
+    filterSheets: 'Bảng tính',
+    filterSlides: 'Bản trình bày',
+    filterPdf: 'PDF',
+    filterMd: 'Markdown',
+    filterHtml: 'HTML',
+    filterAria: 'Lọc theo loại',
+    fileCount: '{n} tệp',
+    fileCountOne: '{n} tệp',
+    selectedCount: 'Đã chọn {n}',
+    selectAll: 'Chọn tất cả',
+    selectFile: 'Chọn {name}',
+    removeFromList: 'Xóa khỏi danh sách',
+    missingFileTitle: 'Tệp không khả dụng',
+    missingFileBody:
+      'Không thể tìm thấy “{name}”. Tệp có thể nằm trên ổ đĩa đã ngắt kết nối, hoặc đã bị di chuyển hay xóa. Xóa tệp khỏi danh sách?',
+    deleteFiles: 'Xóa tệp',
+    cancel: 'Hủy',
+    star: 'Gắn sao',
+    unstar: 'Bỏ gắn sao',
+    moreActions: 'Thao tác khác',
+    open: 'Mở',
+    revealInFolder: 'Hiển thị trong thư mục',
+    copyPath: 'Sao chép đường dẫn',
+    rename: 'Đổi tên',
+    duplicate: 'Tạo bản sao',
+    renameFailed: 'Đổi tên thất bại',
+    emptyStarred: 'Chưa có tệp gắn sao — di chuột vào một dòng và nhấp vào ngôi sao.',
+    emptyRecent: 'Chưa có tệp gần đây — tạo hoặc mở một tệp để bắt đầu.',
+    emptyFiltered: 'Không có tệp nào thuộc loại này.',
+    // Folders panel
+    folders: 'Thư mục',
+    newFolder: 'Thư mục mới',
+    newSubfolder: 'Thư mục con mới',
+    untitledFolder: 'Thư mục chưa đặt tên',
+    folderType: 'Thư mục',
+    moveToFolder: 'Di chuyển vào thư mục…',
+    moveToFolderTitle: 'Di chuyển vào thư mục',
+    searchFolders: 'Tìm kiếm thư mục',
+    searchFilesPlaceholder: 'Tìm kiếm tên tệp và nội dung…',
+    searchIndexing: 'Đang lập chỉ mục {n} tệp…',
+    searchNoResults: 'Không có tệp nào khớp với “{q}”',
+    searchResultCount: '{n} kết quả',
+    searchResultCountOne: '{n} kết quả',
+    searchClear: 'Xóa tìm kiếm',
+    noMatchingFolders: 'Không có thư mục phù hợp.',
+    currentFolder: 'Hiện tại',
+    moveCount: 'Di chuyển {n}',
+    itemCount: '{n} mục',
+    itemCountOne: '{n} mục',
+    emptyFolder: 'Thư mục này trống. Hãy tạo một tệp, hoặc kéo tệp vào đây.',
+    deleteFolder: 'Xóa thư mục…',
+    deleteFolderTitle: 'Xóa thư mục?',
+    deleteFolderConfirm: '"{name}" và mọi thứ bên trong sẽ được chuyển vào thùng rác.',
+    folderMoreActions: 'Thao tác khác cho {name}',
+    conflictTitle: 'Một mục có tên này đã tồn tại',
+    conflictBodyOne: 'Thư mục đích đã chứa "{name}". Bạn muốn làm gì?',
+    conflictBodyMany: 'Thư mục đích đã chứa {n} mục có cùng tên. Bạn muốn làm gì?',
+    conflictKeepBoth: 'Giữ cả hai',
+    conflictReplace: 'Thay thế',
+    rootUnusable: 'Vị trí lưu mặc định không khả dụng, do đó không thể hiển thị thư mục.',
+    pickSaveDir: 'Chọn vị trí lưu',
+    deleteModalTitle: 'Xóa tệp',
+    deleteConfirmOne: 'Chuyển "{name}" vào Thùng rác?',
+    deleteConfirmMany: 'Chuyển {n} tệp này vào Thùng rác?',
+    deleteMoreCount: '… tổng cộng {n}',
+    delete: 'Xóa',
+    timelineCount: '{n} mục',
+    timelineCountOne: '{n} mục',
+    timelineEmpty: 'Chưa có cuộc trò chuyện AI nào trong dự án này.',
+    timelineYou: 'Bạn',
+    timelineUserAria: 'Người dùng',
+    untitled: 'Chưa có tiêu đề',
+    noContent: '(trống)',
+    accountGenspark: 'Tài khoản Genspark',
+    account: 'Tài khoản',
+    login: 'Đăng nhập',
+    loginGenspark: 'Đăng nhập bằng Genspark',
+    loggedIn: 'Đã đăng nhập',
+    loggedInGenspark: 'Đã đăng nhập vào Genspark',
+    waitingLogin: 'Đang đợi đăng nhập trên trình duyệt… Nhấp để mở lại trang đăng nhập',
+    loginTimeout: 'Hết thời gian chờ đăng nhập — nhấp để thử lại',
+    loginLaunchFailed: 'Không thể mở trang đăng nhập — nhấp để thử lại',
+    loginOpenManually: 'Trình duyệt không mở? Nhấp để mở thủ công',
+    loginOpenShort: 'Mở trang đăng nhập thủ công',
+    loginCopyUrl: 'Sao chép liên kết đăng nhập',
+    loginCopied: 'Đã sao chép',
+    loginNetworkError: 'Không thể kết nối tới Genspark — hãy kiểm tra cài đặt mạng hoặc proxy',
+    loginExpired: 'Phiên đăng nhập đã hết hạn — nhấp để thử lại',
+    loginFailed: 'Đăng nhập thất bại — nhấp để thử lại',
+    waitingShort: 'Đang đợi…',
+    loggingOut: 'Đang đăng xuất…',
+    logout: 'Đăng xuất',
+    credits: 'Credits',
+    creditsTip: 'Xem chi tiết mức sử dụng credit',
+    appVersion: 'Phiên bản {v}',
+    versionLabel: 'Phiên bản',
+    updateChannel: 'Kênh cập nhật',
+    channelStable: 'Ổn định',
+    channelBeta: 'Beta',
+    theme: 'Giao diện',
+    themeLight: 'Sáng',
+    themeDark: 'Tối',
+    themeSystem: 'Theo hệ thống',
+    saveLocation: 'Vị trí lưu',
+    setAutoSave: 'Tự động lưu tất cả tài liệu',
+    setAutoSaveDesc:
+      'Bật Tự động lưu theo mặc định trong mọi trình soạn thảo. Bạn vẫn có thể tắt tính năng này cho từng cửa sổ riêng lẻ.',
+    setAnalytics: 'Gửi số liệu thống kê sử dụng ẩn danh',
+    setAnalyticsDesc:
+      'Được bật theo mặc định và có thể tắt bất cứ lúc nào trong Cài đặt → Chung. Sử dụng Google Analytics 4; Google nhận địa chỉ IP công khai và siêu dữ liệu truyền tải của bạn, nhưng nội dung tài liệu và tên tệp không bao giờ bị thu thập.',
+    setSearchRerank: 'Sắp xếp lại kết quả tìm kiếm Jev',
+    setSearchRerankDesc:
+      'Gửi đoạn trích của 20 kết quả hàng đầu cục bộ tới mô hình Jev của TypeSafe và sắp xếp lại theo mức độ liên quan. Tắt theo mặc định; khi bật, các đoạn trích sẽ được gửi ra ngoài thiết bị này.',
+    setSearchRerankEndpoint: 'Điểm cuối Jev',
+    searchRerankedBy: 'Được sắp xếp lại theo mức độ liên quan với Jev',
+    searchJevSettings: 'Sắp xếp lại ngữ nghĩa Jev',
+    setAiPanelSide: 'Vị trí thanh bên AI',
+    aiPanelSideLeft: 'Trái',
+    aiPanelSideRight: 'Phải',
+    setAiFontSize: 'Cỡ chữ bảng điều khiển AI',
+    aiFontSizeDefault: 'Mặc định',
+    aiFontSizeLarge: 'Lớn',
+    aiFontSizeXLarge: 'Rất lớn',
+    aiFontSizeCustom: 'Tùy chỉnh',
+    setAiSpellcheck: 'Kiểm tra chính tả trong trò chuyện AI',
+    setAiSpellcheckDesc: 'Gạch chân các từ sai chính tả khi nhập vào ô trò chuyện AI.',
+    settings: 'Cài đặt',
+    setSecAccount: 'Tài khoản',
+    setSecGeneral: 'Chung',
+    setMcp: 'Máy chủ MCP cục bộ',
+    setMcpDesc:
+      'Cho phép các tác tử AI bên ngoài (Claude Desktop, Cursor…) tạo tài liệu Word thông qua ứng dụng đang chạy này. Chỉ trên máy cục bộ (localhost).',
+    setMcpPort: 'Cổng',
+    setMcpRunning: 'Đang chạy',
+    setMcpStopped: 'Không chạy',
+    setMcpConn: 'Kết nối',
+    setMcpUrlHttp: 'HTTP truyền luồng (khuyến nghị)',
+    setMcpUrlSse: 'SSE (máy khách cũ)',
+    setMcpCopy: 'Sao chép',
+    setMcpCopied: 'Đã sao chép',
+    setMcpConfig: 'Ví dụ cấu hình máy khách',
+    setMcpConfigDesc:
+      'Thêm nội dung này vào cấu hình máy chủ MCP của máy khách (mcp.json của Claude Desktop, cài đặt MCP của Cursor, …).',
+    setMcpBg: 'Tạo ngầm dưới nền',
+    setMcpBgDesc:
+      'Ghi tài liệu trực tiếp vào đường dẫn mà không cần mở giao diện; khi tắt, quá trình tạo tài liệu sẽ hiển thị trong ứng dụng.',
+    setMcpLog: 'Ghi nhật ký',
+    setMcpLogDesc: 'Ghi lại hoạt động của máy chủ MCP và công cụ vào tệp nhật ký cục bộ',
+    setMcpLogFile: 'Tệp nhật ký',
+    setMcpLogOpen: 'Mở',
+    setMcpLogClear: 'Xóa',
+    setMcpHealth: 'Kiểm tra tình trạng',
+    setMcpLogRefresh: 'Làm mới',
+    setMcpLogEmpty: 'Chưa có mục nhật ký nào',
+    setSecAbout: 'Giới thiệu',
+    setSecIntegrations: 'Tích hợp',
+    intgHeroTitle: 'Sử dụng GenOffice từ trợ lý AI của bạn',
+    intgHeroDesc:
+      'Sau khi kết nối, Claude Code, Codex, Cursor, Claude Desktop và các trợ lý tương tự có thể tạo, chuyển đổi, đọc và chỉnh sửa các tệp Word, Excel, PowerPoint, PDF và Markdown cho bạn. Mọi thứ đều chạy trên máy tính này; không có gì được tải lên.',
+    intgHeroStep1:
+      'Chọn một cách thức: CLI nếu trợ lý của bạn có thể chạy các lệnh terminal, MCP nếu không thể',
+    intgHeroStep2: 'Làm theo phần tương ứng bên dưới; thường chỉ cần một cú nhấp chuột',
+    intgHeroStep3: 'Bắt đầu cuộc trò chuyện mới và chỉ cần yêu cầu',
+    intgStep1Title: 'Cài đặt kỹ năng vào trợ lý của bạn',
+    intgStep1Desc:
+      'Chỉ các trợ lý được tìm thấy trên máy tính này mới được liệt kê. Hãy cài đặt vào trợ lý bạn thực sự sử dụng; bạn không cần phải cài đặt tất cả.',
+    intgStep1Update:
+      'Khi bản cập nhật GenOffice cung cấp kỹ năng mới hơn, nút Cập nhật sẽ xuất hiện bên cạnh trợ lý đó.',
+    intgSkillVersion: 'kỹ năng {v}',
+    intgStateMissing: 'Chưa cài đặt kỹ năng',
+    intgStateInstalled: 'Đã cài đặt kỹ năng {v} · sẵn sàng cho cuộc trò chuyện tiếp theo của bạn',
+    intgOtherToggle: 'Trợ lý của tôi không có trong danh sách',
+    intgOtherDesc:
+      'Chọn bất kỳ cách nào trong ba cách này. Tất cả đều cài đặt cùng một kỹ năng, vì vậy không cần làm nhiều hơn một cách.',
+    intgOtherFolderTitle: 'Bất kỳ trợ lý nào đọc thư mục SKILL.md',
+    intgOtherFolderDesc: 'Chọn thư mục kỹ năng của trợ lý và GenOffice sẽ ghi tệp vào đó.',
+    intgOtherZipTitle: 'Giao tệp cho trợ lý',
+    intgOtherZipDesc: 'Lưu kỹ năng dưới dạng zip, sau đó yêu cầu trợ lý cài đặt.',
+    intgOtherNpxTitle: 'Bằng lệnh skills (yêu cầu Node.js)',
+    intgOtherNpxDesc: 'Chạy lệnh này trong terminal:',
+    intgCopy: 'Sao chép',
+    intgStep2Title: 'Dùng thử',
+    intgStep2Desc:
+      'Mở một cuộc trò chuyện mới trong trợ lý của bạn và hỏi bằng ngôn ngữ tự nhiên, ví dụ:',
+    intgStep2DescBefore:
+      'Sau khi cài đặt, hãy mở một cuộc trò chuyện mới trong trợ lý của bạn và hỏi bằng ngôn ngữ tự nhiên, ví dụ:',
+    intgExample1: 'Chuyển đổi ~/Downloads/report.md thành tài liệu Word',
+    intgExample2: 'Tạo bài thuyết trình 6 trang trình bày về kết quả quý 3 của chúng tôi',
+    intgExample3: 'Chuyển đổi budget.xlsx sang PDF và mở trong GenOffice',
+    intgStep2Note: 'Trợ lý tự chạy dòng lệnh genoffice; bạn không bao giờ phải nhập lệnh.',
+    intgCliPartTitle: 'CLI · dòng lệnh + kỹ năng',
+    intgCliPartDesc:
+      'Dành cho các trợ lý có thể chạy lệnh terminal (Claude Code, Codex, Cursor và các trợ lý khác). Khi kỹ năng đã được cài đặt, trợ lý sẽ tự gọi dòng lệnh genoffice để tạo, chuyển đổi, đọc và chỉnh sửa tệp; bạn không cần nhập lệnh.',
+    intgMcpPartTitle: 'MCP',
+    intgMcpPartDesc:
+      'MCP là giao thức tiêu chuẩn mà các trợ lý AI dùng để gọi công cụ bên ngoài. Sử dụng khi trợ lý của bạn không thể chạy lệnh (ví dụ Claude Desktop) hoặc khi bạn muốn trợ lý điều khiển trực tiếp cửa sổ GenOffice. Chọn một trong hai cách bên dưới.',
+    intgMcpStdioTitle: 'Được khởi động bởi trợ lý (khuyến nghị)',
+    intgMcpStdioDesc:
+      'Trợ lý sẽ tự khởi chạy genoffice mcp: không cần bật gì ở đây và GenOffice không cần phải mở. Có đầy đủ tính năng tương tự CLI.',
+    intgMcpHttpTitle: 'Máy chủ HTTP cục bộ',
+    intgMcpHttpDesc:
+      'Chạy bên trong GenOffice; trợ lý kết nối với một URL và bạn có thể theo dõi nó tạo tài liệu từng bước trong trình chỉnh sửa Word. GenOffice phải luôn mở; hiện tại chỉ hỗ trợ tài liệu Word.',
+    intgMcpHttpAdvanced: 'Nâng cao: các điểm cuối khác và nhật ký',
+    intgMcpTryNote: 'Trợ lý gọi GenOffice thông qua MCP; bạn không bao giờ phải nhập lệnh.',
+    intgMcpClaudeTitle: 'Claude Code',
+    intgMcpClaudeDesc: 'Chạy lệnh này một lần trong terminal:',
+    intgMcpOtherTitle: 'Cursor, Claude Desktop hoặc bất kỳ trợ lý hỗ trợ MCP nào khác',
+    intgMcpOtherDesc:
+      'Thêm nội dung này vào cài đặt máy chủ MCP của trợ lý (tệp JSON hoặc "Add MCP server" trong phần cài đặt):',
+    intgMcpNote:
+      'Kỹ năng và MCP có thể được thiết lập song song; trợ lý sẽ chọn một trong hai. Chúng thực hiện chức năng hoàn toàn giống nhau.',
+    intgCliTitle: 'Nâng cao: dòng lệnh genoffice',
+    intgCliReady: 'genoffice {v} · đã sẵn sàng trong terminal của bạn ({path})',
+    intgCliNotOnPath:
+      'genoffice {v} · không có trong PATH của terminal. Trợ lý vẫn tìm thấy qua ~/.genoffice/launcher, vì vậy kỹ năng vẫn hoạt động. Để tự chạy lệnh genoffice, hãy thực hiện lệnh này một lần:',
+    intgCliLauncher: 'Thư mục trình khởi chạy',
+    intgStateOutdated: 'Đã cài đặt {v}, có bản cập nhật lên {next}',
+    intgStateModified: 'Đã cài đặt {v} (đã sửa đổi)',
+    intgStateForeign: 'Đã cài đặt {v} (không phải do ứng dụng này)',
+    intgStateNewer: 'Đã cài đặt {v} (mới hơn bản đi kèm)',
+    intgStateOccupied: 'Thư mục đã được sử dụng',
+    intgInstall: 'Cài đặt',
+    intgUpdate: 'Cập nhật',
+    intgUninstall: 'Gỡ cài đặt',
+    intgReinstall: 'Cài đặt lại dưới dạng {v}',
+    intgOverwrite: 'Ghi đè',
+    intgConfirm: 'Xác nhận',
+    intgConfirmWrite: 'Sẽ ghi: {path}',
+    intgConfirmRemove: 'Sẽ xóa: {path}',
+    intgConfirmOverwriteModified: 'Các chỉnh sửa của bạn đối với tệp đó sẽ bị ghi đè.',
+    intgConfirmOverwriteOccupied: 'Tệp SKILL.md hiện có trong thư mục đó sẽ bị thay thế.',
+    intgInstalledHint: 'Đã cài đặt. Sẽ có hiệu lực trong phiên mới.',
+    intgInstallElsewhere: 'Cài đặt vào một thư mục khác…',
+    intgPickDirTitle: 'Chọn một thư mục kỹ năng',
+    intgDownloadZip: 'Tải xuống kỹ năng (zip)',
+    intgSaveZipTitle: 'Lưu kỹ năng',
+    intgSavedTo: 'Đã lưu vào {path}',
+    intgCopied: 'Đã sao chép',
+    intgCliEphemeral:
+      'Trước tiên hãy kéo GenOffice vào Applications, sau đó mới sử dụng dòng lệnh.',
+    intgCopyPath: 'Sao chép đường dẫn',
+    intgCliNeedsUpdate:
+      'Kỹ năng này yêu cầu dòng lệnh {v} hoặc mới hơn; vui lòng cập nhật GenOffice.',
+    intgLoading: 'Đang kiểm tra…',
+    intgUpdateDue: 'Có bản cập nhật kỹ năng',
+    setSecAiModel: 'Mô hình AI',
+    setAiProvider: 'Nhà cung cấp',
+    setAiModelId: 'Mô hình',
+    setAiApiKey: 'Khóa API',
+    setAiKeyHint: 'Chỉ được lưu trữ trên thiết bị này.',
+    setAiBaseUrl: 'URL cơ sở',
+    setAiBaseUrlHint: 'Để trống để sử dụng điểm cuối chính thức.',
+    setAiGensparkHint: 'Sử dụng thông tin đăng nhập Genspark của bạn; không cần khóa API.',
+    setAiCodexPath: 'Tệp thực thi Codex',
+    setAiCodexPathHint: 'Chỉ đặt mục này nếu cài đặt tùy chỉnh; để trống để tự động phát hiện.',
+    setAiCodexAutoPlaceholder: 'Tự động phát hiện (khuyến nghị)',
+    setAiCodexHint:
+      'Tự động tìm CLI Codex đã đăng nhập hiện tại sau các bản cập nhật; đường dẫn tùy chỉnh là không bắt buộc. Không cần khóa API.',
+    setAiByokNote:
+      'Các cuộc trò chuyện sử dụng khóa của riêng bạn. Việc tạo hình ảnh và phân tích phương tiện tuân theo phần Phương tiện AI; tìm kiếm web vẫn sử dụng đăng nhập Genspark hoặc các nguồn miễn phí.',
+    setAiSave: 'Lưu',
+    setAiSaved: 'Đã lưu',
+    setAiTest: 'Kiểm tra kết nối',
+    setAiTesting: 'Đang kiểm tra…',
+    setAiTestOk: 'Kết nối thành công',
+    setAiTestFail: 'Kết nối thất bại',
+    setAiMaxTokens: 'Số token đầu ra tối đa',
+    setAiMaxTokensDesc:
+      'Ngân sách đầu ra cho một lượt trao đổi. Các mô hình suy luận dành một phần trong đó để suy nghĩ, do đó câu trả lời có thể trống nếu hết ngân sách; hãy tăng giá trị này nếu gặp tình trạng trên.',
+    setSecAiMedia: 'Phương tiện AI & Tìm kiếm',
+    setAiMediaGensparkHint:
+      'Tạo hình ảnh và phân tích hình ảnh/video sử dụng thông tin đăng nhập Genspark của bạn.',
+    setAiImageModel: 'Mô hình hình ảnh',
+    setAiAnalysisModel: 'Mô hình phân tích',
+    setAiSearchGensparkHint:
+      'Tìm kiếm web và hình ảnh sử dụng thông tin đăng nhập Genspark của bạn; khi đăng xuất hoặc tắt công cụ đám mây, hệ thống sẽ chuyển sang dùng các nguồn miễn phí.',
+    setAiSearchSerperHint: 'Serper cung cấp cả tìm kiếm web và hình ảnh bằng khóa của bạn.',
+    setAiSearchTavilyHint:
+      'Tavily cung cấp tìm kiếm web bằng khóa của bạn; tìm kiếm hình ảnh sẽ chuyển sang dùng các nguồn miễn phí.',
+    setAiSearchParallelHint:
+      'Để trống khóa để dùng tìm kiếm Parallel miễn phí (giới hạn lượt dùng). Nhập khóa để dùng tài khoản Parallel của bạn. Tìm kiếm hình ảnh sử dụng các nguồn khác.',
+    setAiCapImage: 'Tạo hình ảnh',
+    setAiCapAnalysis: 'Phân tích hình ảnh',
+    setAiCapVideo: 'Phân tích video',
+    setAiCapSearch: 'Tìm kiếm web',
+    setAiCapFileSearch: 'Tìm kiếm tệp cục bộ',
+    setAiSharedKeyHint:
+      'Khóa và URL cơ sở của nhà cung cấp được dùng chung cho các chức năng; chỉ cần nhập một lần.',
+    setAiGskTools: 'Công cụ đám mây Genspark',
+    setAiGskToolsDesc:
+      'Tìm kiếm web, tạo hình ảnh và phân tích phương tiện được xử lý qua Genspark và tiêu tốn credit khi nhà cung cấp được đặt là Genspark; khi tắt, tìm kiếm sẽ dùng các nguồn miễn phí và công cụ hình ảnh Genspark sẽ không khả dụng.',
+    setGithub: 'Mã nguồn mở',
+    starOnGitHub: 'Gắn sao trên GitHub',
+    starPromptTitle: 'Bạn thích GenOffice chứ?',
+    starPromptTitleN: 'Bạn đã mở {n} tài liệu với GenOffice',
+    starPromptBody:
+      'GenOffice là phần mềm nguồn mở và miễn phí. Tặng một sao trên GitHub là cách tuyệt vời nhất để ủng hộ đội ngũ phát triển.',
+    starPromptGo: 'Gắn sao trên GitHub',
+    starPromptDone: 'Đã gắn sao',
+    starPromptLater: 'Để sau',
+    onbStarHint: 'Nếu bạn yêu thích GenOffice, hãy tặng chúng tôi một sao trên GitHub.',
+    setEmail: 'Email',
+    setNotLoggedIn: 'Chưa đăng nhập',
+    setViewUsage: 'Xem mức sử dụng',
+    setChange: 'Thay đổi',
+    today: 'Hôm nay',
+    yesterday: 'Hôm qua',
+    daysAgo: '{n} ngày trước',
+    language: 'Ngôn ngữ',
+    closeTab: 'Đóng tab',
+    tabList: 'Tất cả các tab',
+    appMenu: 'Menu',
+    newTab: 'Tab mới',
+    // First-run onboarding
+    onbTitle1: 'Chào mừng đến với GenOffice',
+    onbSubtitle1: 'Bộ ứng dụng văn phòng AI nguồn mở đầu tiên',
+    onbBody1:
+      'Tạo tài liệu, xây dựng bảng tính, tạo bản trình bày và xem lại PDF. AI được tích hợp trong từng bước.',
+    onbTitle2: 'Đây mới chỉ là khởi đầu',
+    onbBody2:
+      'GenOffice vẫn đang trong giai đoạn alpha. Hãy tham gia nhóm trò chuyện trên GenTeam để chia sẻ phản hồi và định hình những bước phát triển tiếp theo.',
+    onbCredits: 'Thành viên đóng góp tích cực nhận được **1.000+ credit Genspark**',
+    onbJoinGenTeam: 'Tham gia GenTeam',
+    onbSkip: 'Bỏ qua',
+    onbNext: 'Tiếp theo',
+    onbStart: 'Bắt đầu',
+    onbStepAria: 'Trang {n} / {total}',
+    onbTitle3: 'Miễn phí cho mọi người',
+    onbBody3: 'Không phí bản quyền. Không quảng cáo. Không hình mờ.',
+    onbNote3: 'Các tính năng AI có thể tiêu tốn credit Genspark.',
+    onbBack: 'Quay lại',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
@@ -1111,6 +1497,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Web 検索と画像検索は Genspark のサインインを使用します。サインアウト時やクラウドツールがオフのときは無料ソースにフォールバックします。',
     setAiSearchSerperHint: 'Serper はあなたのキーで Web 検索と画像検索の両方を提供します。',
+    setAiSearchSerplyHint: 'Serply はあなたのキーで Web 検索と画像検索の両方を提供します。',
     setAiSearchTavilyHint:
       'Tavily はあなたのキーで Web 検索を提供します。画像検索は無料ソースにフォールバックします。',
     setAiSearchParallelHint:
@@ -1503,6 +1890,7 @@ export const strings = {
     setAiSearchGensparkHint:
       '웹 검색과 이미지 검색은 Genspark 로그인을 사용합니다. 로그아웃 상태거나 클라우드 도구가 꺼져 있으면 무료 소스로 대체됩니다.',
     setAiSearchSerperHint: 'Serper는 내 키로 웹 검색과 이미지 검색을 모두 제공합니다.',
+    setAiSearchSerplyHint: 'Serply는 내 키로 웹 검색과 이미지 검색을 모두 제공합니다.',
     setAiSearchTavilyHint:
       'Tavily는 내 키로 웹 검색을 제공합니다. 이미지 검색은 무료 소스로 대체됩니다.',
     setAiSearchParallelHint:
@@ -1910,6 +2298,8 @@ export const strings = {
       "La recherche web et d'images utilise votre connexion Genspark ; déconnecté ou avec les outils cloud désactivés, elle se rabat sur des sources gratuites.",
     setAiSearchSerperHint:
       "Serper assure la recherche web et la recherche d'images avec votre clé.",
+    setAiSearchSerplyHint:
+      "Serply assure la recherche web et la recherche d'images avec votre clé.",
     setAiSearchTavilyHint:
       "Tavily assure la recherche web avec votre clé ; la recherche d'images se rabat sur des sources gratuites.",
     setAiSearchParallelHint:
@@ -2320,6 +2710,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Web- und Bildsuche nutzen deine Genspark-Anmeldung; abgemeldet oder mit ausgeschalteten Cloud-Tools greifen sie auf kostenlose Quellen zurück.',
     setAiSearchSerperHint: 'Serper liefert mit deinem Schlüssel Web- und Bildsuche.',
+    setAiSearchSerplyHint: 'Serply liefert mit deinem Schlüssel Web- und Bildsuche.',
     setAiSearchTavilyHint:
       'Tavily liefert mit deinem Schlüssel die Websuche; die Bildsuche greift auf kostenlose Quellen zurück.',
     setAiSearchParallelHint:
@@ -2726,6 +3117,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'La búsqueda web y de imágenes usa tu inicio de sesión de Genspark; sin sesión o con las herramientas en la nube desactivadas recurre a fuentes gratuitas.',
     setAiSearchSerperHint: 'Serper ofrece búsqueda web y de imágenes con tu clave.',
+    setAiSearchSerplyHint: 'Serply ofrece búsqueda web y de imágenes con tu clave.',
     setAiSearchTavilyHint:
       'Tavily ofrece búsqueda web con tu clave; la búsqueda de imágenes recurre a fuentes gratuitas.',
     setAiSearchParallelHint:
@@ -3116,6 +3508,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'การค้นหาเว็บและภาพใช้การลงชื่อเข้าใช้ Genspark หากไม่ได้ลงชื่อเข้าใช้หรือปิดเครื่องมือคลาวด์ จะใช้แหล่งข้อมูลฟรีแทน',
     setAiSearchSerperHint: 'Serper ให้บริการค้นหาเว็บและภาพด้วยคีย์ของคุณ',
+    setAiSearchSerplyHint: 'Serply ให้บริการค้นหาเว็บและภาพด้วยคีย์ของคุณ',
     setAiSearchTavilyHint:
       'Tavily ให้บริการค้นหาเว็บด้วยคีย์ของคุณ ส่วนการค้นหาภาพจะใช้แหล่งข้อมูลฟรีแทน',
     setAiSearchParallelHint:
@@ -3515,6 +3908,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Pencarian web dan gambar memakai login Genspark Anda; saat keluar atau alat cloud dimatikan, keduanya memakai sumber gratis.',
     setAiSearchSerperHint: 'Serper menyediakan pencarian web dan gambar dengan kunci Anda.',
+    setAiSearchSerplyHint: 'Serply menyediakan pencarian web dan gambar dengan kunci Anda.',
     setAiSearchTavilyHint:
       'Tavily menyediakan pencarian web dengan kunci Anda; pencarian gambar memakai sumber gratis.',
     setAiSearchParallelHint:
@@ -3913,6 +4307,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Веб-поиск и поиск изображений используют ваш вход в Genspark; без входа или при выключенных облачных инструментах используются бесплатные источники.',
     setAiSearchSerperHint: 'Serper обеспечивает веб-поиск и поиск изображений с вашим ключом.',
+    setAiSearchSerplyHint: 'Serply обеспечивает веб-поиск и поиск изображений с вашим ключом.',
     setAiSearchTavilyHint:
       'Tavily обеспечивает веб-поиск с вашим ключом; поиск изображений использует бесплатные источники.',
     setAiSearchParallelHint:
@@ -4304,6 +4699,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'يستخدم البحث في الويب والصور تسجيل دخولك إلى Genspark؛ وعند الخروج أو إيقاف الأدوات السحابية يعود إلى مصادر مجانية.',
     setAiSearchSerperHint: 'يوفّر Serper البحث في الويب والصور بمفتاحك.',
+    setAiSearchSerplyHint: 'يوفّر Serply البحث في الويب والصور بمفتاحك.',
     setAiSearchTavilyHint:
       'يوفّر Tavily البحث في الويب بمفتاحك؛ ويعود البحث في الصور إلى مصادر مجانية.',
     setAiSearchParallelHint:
@@ -4700,6 +5096,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'A busca na web e de imagens usa o seu login do Genspark; desconectado ou com as ferramentas na nuvem desativadas, recorre a fontes gratuitas.',
     setAiSearchSerperHint: 'O Serper oferece busca na web e de imagens com a sua chave.',
+    setAiSearchSerplyHint: 'O Serply oferece busca na web e de imagens com a sua chave.',
     setAiSearchTavilyHint:
       'O Tavily oferece busca na web com a sua chave; a busca de imagens recorre a fontes gratuitas.',
     setAiSearchParallelHint:
@@ -5094,6 +5491,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'La ricerca web e di immagini usa il tuo accesso Genspark; disconnesso o con gli strumenti cloud disattivati ricorre a fonti gratuite.',
     setAiSearchSerperHint: 'Serper offre ricerca web e di immagini con la tua chiave.',
+    setAiSearchSerplyHint: 'Serply offre ricerca web e di immagini con la tua chiave.',
     setAiSearchTavilyHint:
       'Tavily offre la ricerca web con la tua chiave; la ricerca di immagini ricorre a fonti gratuite.',
     setAiSearchParallelHint:
@@ -5483,6 +5881,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Wyszukiwanie w sieci i obrazów korzysta z logowania Genspark; po wylogowaniu lub przy wyłączonych narzędziach chmurowych używa darmowych źródeł.',
     setAiSearchSerperHint: 'Serper zapewnia wyszukiwanie w sieci i obrazów z Twoim kluczem.',
+    setAiSearchSerplyHint: 'Serply zapewnia wyszukiwanie w sieci i obrazów z Twoim kluczem.',
     setAiSearchTavilyHint:
       'Tavily zapewnia wyszukiwanie w sieci z Twoim kluczem; wyszukiwanie obrazów używa darmowych źródeł.',
     setAiSearchParallelHint:
@@ -5846,6 +6245,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Webové a obrázkové vyhledávání používá vaše přihlášení ke Genspark; při odhlášení nebo vypnutých cloudových nástrojích se použijí bezplatné zdroje.',
     setAiSearchSerperHint: 'Serper zajišťuje webové i obrázkové vyhledávání s vaším klíčem.',
+    setAiSearchSerplyHint: 'Serply zajišťuje webové i obrázkové vyhledávání s vaším klíčem.',
     setAiSearchTavilyHint:
       'Tavily zajišťuje webové vyhledávání s vaším klíčem; obrázkové vyhledávání použije bezplatné zdroje.',
     setAiSearchParallelHint:
@@ -6264,6 +6664,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Web- en afbeeldingszoeken gebruiken je Genspark-aanmelding; afgemeld of met cloudtools uit vallen ze terug op gratis bronnen.',
     setAiSearchSerperHint: 'Serper levert web- en afbeeldingszoeken met je sleutel.',
+    setAiSearchSerplyHint: 'Serply levert web- en afbeeldingszoeken met je sleutel.',
     setAiSearchTavilyHint:
       'Tavily levert webzoeken met je sleutel; afbeeldingszoeken valt terug op gratis bronnen.',
     setAiSearchParallelHint:
@@ -6659,6 +7060,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'Carian web dan imej menggunakan log masuk Genspark anda; apabila log keluar atau alat awan dimatikan, ia menggunakan sumber percuma.',
     setAiSearchSerperHint: 'Serper menyediakan carian web dan imej dengan kunci anda.',
+    setAiSearchSerplyHint: 'Serply menyediakan carian web dan imej dengan kunci anda.',
     setAiSearchTavilyHint:
       'Tavily menyediakan carian web dengan kunci anda; carian imej menggunakan sumber percuma.',
     setAiSearchParallelHint:
@@ -7038,6 +7440,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'חיפוש באינטרנט ובתמונות משתמש בהתחברות Genspark שלך; כשלא מחוברים או כשכלי הענן כבויים הוא חוזר למקורות חינמיים.',
     setAiSearchSerperHint: 'Serper מספק חיפוש באינטרנט ובתמונות עם המפתח שלך.',
+    setAiSearchSerplyHint: 'Serply מספק חיפוש באינטרנט ובתמונות עם המפתח שלך.',
     setAiSearchTavilyHint:
       'Tavily מספק חיפוש באינטרנט עם המפתח שלך; חיפוש תמונות חוזר למקורות חינמיים.',
     setAiSearchParallelHint:
@@ -7425,6 +7828,7 @@ export const strings = {
     setAiSearchGensparkHint:
       'वेब और इमेज खोज आपके Genspark साइन-इन का उपयोग करती हैं; साइन-आउट होने पर या क्लाउड टूल बंद होने पर वे मुफ़्त स्रोतों पर लौट जाती हैं।',
     setAiSearchSerperHint: 'Serper आपकी कुंजी से वेब और इमेज खोज दोनों देता है।',
+    setAiSearchSerplyHint: 'Serply आपकी कुंजी से वेब और इमेज खोज दोनों देता है।',
     setAiSearchTavilyHint:
       'Tavily आपकी कुंजी से वेब खोज देता है; इमेज खोज मुफ़्त स्रोतों पर लौट जाती है।',
     setAiSearchParallelHint:
@@ -7801,6 +8205,7 @@ export const strings = {
     setAiSearchGensparkHint:
       '網頁與圖片搜尋使用 Genspark 帳號登入；未登入或關閉雲端工具時改用免費來源。',
     setAiSearchSerperHint: 'Serper 用你的 key 同時提供網頁與圖片搜尋。',
+    setAiSearchSerplyHint: 'Serply 用你的 key 同時提供網頁與圖片搜尋。',
     setAiSearchTavilyHint: 'Tavily 用你的 key 提供網頁搜尋；圖片搜尋改用免費來源。',
     setAiSearchParallelHint:
       '留空 API key 即可免費使用 Parallel 搜尋（用量有限）。填寫 key 可使用你的 Parallel 帳戶。圖片搜尋使用其他來源。',

@@ -109,11 +109,22 @@ const VML_HEADER =
   '<v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/>' +
   '</v:shapetype>'
 
-function noteShape(note: SheetNote, index: number): string {
+const FIRST_NOTE_SHAPE_ID = 1025
+
+function nextShapeId(vmlXml: string): number {
+  let next = FIRST_NOTE_SHAPE_ID
+  for (const match of vmlXml.matchAll(/\bid="_x0000_s(\d+)"/g)) {
+    const id = Number(match[1])
+    if (id >= next) next = id + 1
+  }
+  return next
+}
+
+function noteShape(note: SheetNote, index: number, firstId: number): string {
   // Anchor: from one column right of the cell, spanning ~3 columns / 4 rows.
   const anchor = [note.column + 1, 15, note.row, 2, note.column + 4, 15, note.row + 4, 2].join(',')
   return (
-    `<v:shape id="_x0000_s${1025 + index}" type="#_x0000_t202"` +
+    `<v:shape id="_x0000_s${firstId + index}" type="#_x0000_t202"` +
     ' style="position:absolute;margin-left:80pt;margin-top:2pt;width:108pt;height:60pt;' +
     `z-index:${index + 1};visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">` +
     '<v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/>' +
@@ -129,7 +140,7 @@ function noteShape(note: SheetNote, index: number): string {
 
 /// Drops every Note-typed shape, keeping other legacy objects verbatim.
 function stripNoteShapes(vmlXml: string): string {
-  return vmlXml.replace(/<v:shape\b[\s\S]*?<\/v:shape>/g, (shape) =>
+  return vmlXml.replace(/<v:shape\b(?![^>]*\/>)[\s\S]*?<\/v:shape>/g, (shape) =>
     shape.includes('ObjectType="Note"') ? '' : shape,
   )
 }
@@ -254,11 +265,12 @@ export async function applySheetNotes(
   touchedEntries.add(commentsPath)
 
   // VML part: keep foreign shapes, replace the note shapes.
-  const shapes = notes.map((note, index) => noteShape(note, index)).join('')
   if (existingVmlPath !== null && (await pkg.has(existingVmlPath))) {
     const vml = stripNoteShapes(await pkg.readText(existingVmlPath))
     const end = vml.lastIndexOf('</xml>')
     if (end === -1) throw new NoteEditError(`${existingVmlPath} is not a VML drawing.`)
+    const firstId = nextShapeId(vml)
+    const shapes = notes.map((note, index) => noteShape(note, index, firstId)).join('')
     pkg.write(existingVmlPath, vml.slice(0, end) + shapes + vml.slice(end))
     touchedEntries.add(existingVmlPath)
   } else {
@@ -266,6 +278,7 @@ export async function applySheetNotes(
     const rid = nextFreeRelationshipId(relsXml)
     relsXml = appendRel(relsXml, rid, VML_REL_TYPE, `../drawings/${vmlPath.split('/').pop()}`)
     relsChanged = true
+    const shapes = notes.map((note, index) => noteShape(note, index, FIRST_NOTE_SHAPE_ID)).join('')
     pkg.add(vmlPath, `${VML_HEADER}${shapes}</xml>`)
     touchedEntries.add(vmlPath)
     const worksheetXml = await pkg.readText(worksheetPath)

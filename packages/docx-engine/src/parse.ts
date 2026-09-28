@@ -10,7 +10,14 @@ import { ommlFragmentsOf, ommlToLatex, ommlToMathML } from './math'
 import { splitXmlChildren } from './generate'
 import { NOTE_PART_PATH, parseNotesXml } from './notes'
 import { scanBody, type BodyElement } from './scan'
-import { notePropsFromXml, sectionSettingsFromXml, xmlFlagOn } from './section'
+import {
+  hfReferenceRId,
+  hfReferenceTags,
+  hfReferenceType,
+  notePropsFromXml,
+  sectionSettingsFromXml,
+  xmlFlagOn,
+} from './section'
 import { findSourcesPart, parseSourcesXml } from './sources'
 import { decodeSymbolText, symbolGlyph } from './symbol-fonts'
 import { readZoteroDocumentData } from './zotero-doc-props'
@@ -6026,13 +6033,13 @@ function hfContentFromXml(
   // page numbers), so only the Choice branch feeds text/paragraph extraction
   let cleaned = xml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
   cleaned = cleaned.replace(
-    /<w:fldChar[^>]*w:fldCharType="begin"[^>]*?(?:\/>|>\s*<\/w:fldChar>)[\s\S]*?<w:fldChar[^>]*w:fldCharType="end"[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g,
+    /<w:fldChar[^>]*w:fldCharType\s*=\s*["']begin["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)[\s\S]*?<w:fldChar[^>]*w:fldCharType\s*=\s*["']end["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)/g,
     (span) => {
       const instr = (span.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? [])
         .map((m) => m.replace(/<[^>]+>/g, ''))
         .join('')
       const cached =
-        /<w:fldChar[^>]*w:fldCharType="separate"[^>]*?(?:\/>|>\s*<\/w:fldChar>)([\s\S]*)$/.exec(
+        /<w:fldChar[^>]*w:fldCharType\s*=\s*["']separate["'][^>]*?(?:\/>|>\s*<\/w:fldChar>)([\s\S]*)$/.exec(
           span,
         )?.[1]
       // Word formats the number with the result run's rPr; the separate run's
@@ -6064,7 +6071,7 @@ function hfContentFromXml(
   )
   // <w:fldSimple w:instr=" PAGE "> single-element field form
   cleaned = cleaned.replace(
-    /<w:fldSimple[^>]*w:instr="([^"]*)"[^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
+    /<w:fldSimple[^>]*w:instr\s*=\s*["']([^"']*)["'][^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g,
     (whole, instr: string, inner: string | undefined) => {
       const rPr = inner ? (/<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? '') : ''
       if (/\bNUMPAGES\b/.test(instr)) return `<w:r>${rPr}<w:t>${TOTAL_PAGES_MARK}</w:t></w:r>`
@@ -6119,18 +6126,18 @@ async function readHeaderFooterPart(
   paras: HfParagraph[]
   images?: HfImage[]
 } | null> {
-  const refs = documentXml.match(new RegExp(`<w:${kind}Reference[^>]*/>`, 'g')) ?? []
-  const typed = refs.find((r) => r.includes(`w:type="${hfType}"`))
+  const refs = hfReferenceTags(documentXml, kind)
+  const typed = refs.find((r) => hfReferenceType(r) === hfType)
   // untyped references count as default (w:type is technically required but often
   // omitted); non-schema w:type="odd" is Word's default (odd-page) part too
   const ref =
     hfType === 'default'
       ? (typed ??
-        refs.find((r) => r.includes('w:type="odd"')) ??
-        refs.find((r) => !/w:type="/.test(r)))
+        refs.find((r) => hfReferenceType(r) === 'odd') ??
+        refs.find((r) => hfReferenceType(r) === undefined))
       : typed
   if (!ref) return null
-  const rId = /r:id="([^"]+)"/.exec(ref)?.[1]
+  const rId = hfReferenceRId(ref)
   const target = rId ? rels.get(rId)?.target : undefined
   if (!target) return null
   const path = resolveRelationshipTargetPath(sourcePath, target)

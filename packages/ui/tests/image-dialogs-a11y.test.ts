@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CropDialog,
+  CutoutDialog,
   cropEdgeArrowDelta,
   cropEdgeValue,
   nudgeCropEdge,
@@ -80,6 +81,53 @@ const key = (target: HTMLElement, k: string, init: KeyboardEventInit = {}) => {
     target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...init }))
   })
 }
+
+/** CutoutDialog loads its own image, which jsdom never resolves; the chrome and
+ * the actions are enough to exercise the modal wiring. */
+function mountCutout() {
+  const outside = document.createElement('button')
+  document.body.append(outside)
+  outside.focus()
+  act(() =>
+    root.render(
+      createElement(CutoutDialog, {
+        labels: LABELS,
+        image: 'data:,x',
+        onApply,
+        onCancel,
+      }),
+    ),
+  )
+  return { outside, dialog: host.querySelector('[role="dialog"]') as HTMLElement }
+}
+
+describe('shared CutoutDialog keyboard and focus', () => {
+  it('behaves as a modal: focus moves in, Tab stays inside, Escape is swallowed', () => {
+    const { outside, dialog } = mountCutout()
+    // focus is moved into the dialog, not left on the editor behind it
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    const buttons = [...dialog.querySelectorAll<HTMLElement>('button')]
+    const last = buttons[buttons.length - 1]!
+    last.focus()
+    const wrap = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    act(() => {
+      dialog.dispatchEvent(wrap)
+    })
+    expect(wrap.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(buttons[0])
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => {
+      dialog.dispatchEvent(esc)
+    })
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(esc.defaultPrevented).toBe(true)
+    // focus returns to whatever opened the dialog
+    act(() => root.unmount())
+    expect(document.activeElement).toBe(outside)
+    outside.remove()
+  })
+})
 
 describe('nudgeCropEdge', () => {
   it('moves only the sides the handle owns', () => {

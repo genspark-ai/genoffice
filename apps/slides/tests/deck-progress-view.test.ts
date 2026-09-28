@@ -86,4 +86,35 @@ describe('deriveDeckProgressView', () => {
     expect(view.head).toEqual({ text: 'aiProgressTitle', tone: 'running' })
     expect(view.steps[0]).toMatchObject({ stepStatus: 'running', label: 'Generating page 2/3' })
   })
+
+  it('does not report a stopped run as the planned page set completed', () => {
+    // stopped after 3 of 10: the unlanded items are still pending/running, never
+    // error, so only the cancelled outcome distinguishes this from a success
+    const planned: DeckProgressSnapshot['pages'] = {
+      label: 'Pages',
+      done: 3,
+      total: 10,
+      status: 'running',
+      summary: 'Generating page 4/10',
+      items: Array.from({ length: 10 }, (_, i) => ({
+        title: `P${i + 1}`,
+        status: i < 3 ? ('done' as const) : ('pending' as const),
+      })),
+    }
+    const view = deriveDeckProgressView(
+      {
+        pages: planned,
+        isDone: true,
+        finalTotal: 3,
+        doneSummary: 'Stopped (kept 3)',
+        doneOutcome: 'cancelled',
+      },
+      t,
+    )
+    const step = view.steps.find((s) => s.key === 'pages')!
+    expect(step.stepStatus).not.toBe('done')
+    // labelled with the pages that actually landed, not the 10 that were planned
+    expect(step.label).toBe('PagesaiPagesSuffix:{"n":3}')
+    expect(step.label).not.toContain('"n":10')
+  })
 })

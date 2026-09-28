@@ -11,14 +11,54 @@ function ymlVersion(text) {
   return m ? m[1] : null
 }
 
-function semverNewer(a, b) {
-  // returns true when a > b (plain x.y.z comparison)
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
-    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0)
+const NUMERIC = /^\d+$/
+
+function parseVersion(value) {
+  const core = String(value).split('+')[0]
+  const dash = core.indexOf('-')
+  const release = dash === -1 ? core : core.slice(0, dash)
+  const parts = release.split('.')
+  if (parts.length === 0 || parts.some((p) => !NUMERIC.test(p))) return null
+  return {
+    parts: parts.map(Number),
+    prerelease: dash === -1 ? null : core.slice(dash + 1),
   }
-  return false
+}
+
+function comparePrerelease(a, b) {
+  if (a === null && b === null) return 0
+  if (a === null) return 1
+  if (b === null) return -1
+  const left = a.split('.')
+  const right = b.split('.')
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const x = left[i]
+    const y = right[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    const numericX = NUMERIC.test(x)
+    const numericY = NUMERIC.test(y)
+    if (numericX && numericY) {
+      const delta = Number(x) - Number(y)
+      if (delta !== 0) return delta
+      continue
+    }
+    if (numericX !== numericY) return numericX ? -1 : 1
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
+
+function semverNewer(a, b) {
+  const pa = parseVersion(a)
+  const pb = parseVersion(b)
+  if (!pa || !pb) return false
+  for (let i = 0; i < 3; i++) {
+    const x = pa.parts[i] ?? 0
+    const y = pb.parts[i] ?? 0
+    if (x !== y) return x > y
+  }
+  return comparePrerelease(pa.prerelease, pb.prerelease) > 0
 }
 
 function assertPromotable(candidate, currentStable, force) {

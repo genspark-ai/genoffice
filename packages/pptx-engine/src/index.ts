@@ -57,7 +57,7 @@ import {
   type NewTableOptions,
 } from './insert'
 import { BLANK_SLIDE_XML } from './blank'
-import { escapeXmlAttr } from './xml-utils'
+import { escapeXmlAttr, hasContentTypeOverride, maxRelationshipIdNumber } from './xml-utils'
 import { elementSpid } from './animation'
 import { stripStaleEmbeddedFonts } from './embedded-fonts'
 import { ensureCreationId, matchesElementRef } from './identity'
@@ -986,8 +986,7 @@ function imageRelFor(archive: PackageArchive, slide: Slide, mediaPath: string): 
   const rels =
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  let maxRid = 0
-  for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(rels)
   const rid = `rId${maxRid + 1}`
   // slide parts live in ppt/slides/, media in ppt/media/
   const target = mediaPath.replace(/^ppt\//, '../')
@@ -1872,8 +1871,7 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
   const presPath = 'ppt/presentation.xml'
   const pres = archive.readText(presPath)
   if (!presRels || !pres) return null
-  let maxRid = 0
-  for (const m of presRels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  const maxRid = maxRelationshipIdNumber(presRels)
   const newRid = `rId${maxRid + 1}`
   const relXml = `<Relationship Id="${newRid}" Type="${SLIDE_REL_TYPE}" Target="${newPath.slice('ppt/'.length)}"/>`
   archive.entries.set(
@@ -2478,8 +2476,7 @@ export function setSlideLayout(
     break
   }
   if (!next) {
-    let maxRid = 0
-    for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+    const maxRid = maxRelationshipIdNumber(rels)
     next = rels.replace(
       '</Relationships>',
       `<Relationship Id="rId${maxRid + 1}" Type="${LAYOUT_REL_TYPE}" Target="${escapeXmlAttr(relTarget)}"/></Relationships>`,
@@ -2551,9 +2548,18 @@ export function setSlideSize(opened: OpenedPptx, cx: number, cy: number): boolea
   if (old.cx === cx && old.cy === cy) return false
   const presPath = 'ppt/presentation.xml'
   const pres = archive.readText(presPath)
-  if (!pres || !/<p:sldSz\b[^>]*\/?>/.test(pres)) return false
-  const next = pres.replace(/<p:sldSz\b[^>]*?(\/?)>/, (tag) =>
-    tag.replace(/\bcx="\d+"/, `cx="${cx}"`).replace(/\bcy="\d+"/, `cy="${cy}"`),
+  if (!pres) return false
+  const sldSz = /<p:sldSz\b[^>]*?\/?>/.exec(pres)?.[0]
+  if (!sldSz) return false
+  // re-emit the tag from its parsed attributes: cx=/cy= are rewritten whatever
+  // quote style they were written in, and a tag carrying neither cannot be
+  // resized — reporting success would rescale the model while the saved file
+  // kept the old size
+  const hasCx = /\bcx=["']\d+["']/.test(sldSz)
+  const hasCy = /\bcy=["']\d+["']/.test(sldSz)
+  if (!hasCx && !hasCy) return false
+  const next = pres.replace(sldSz, () =>
+    sldSz.replace(/\bcx=["']\d+["']/, `cx="${cx}"`).replace(/\bcy=["']\d+["']/, `cy="${cy}"`),
   )
   archive.entries.set(presPath, Buffer.from(next, 'utf8'))
   deck.size = { cx, cy }
@@ -2757,7 +2763,7 @@ export function ensureTableStylePart(
   if (existing) return
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !ct.includes(`PartName="/${path}"`)) {
+  if (ct && !hasContentTypeOverride(ct, path)) {
     archive.entries.set(
       ctPath,
       Buffer.from(
@@ -2772,8 +2778,7 @@ export function ensureTableStylePart(
   const presRelsPath = 'ppt/_rels/presentation.xml.rels'
   const presRels = archive.readText(presRelsPath)
   if (presRels && !presRels.includes('/relationships/tableStyles"')) {
-    let maxRid = 0
-    for (const m of presRels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+    const maxRid = maxRelationshipIdNumber(presRels)
     const rel = `<Relationship Id="rId${maxRid + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/>`
     archive.entries.set(
       presRelsPath,
@@ -3815,6 +3820,8 @@ export function setTableColWidth(
   if (!el || el.type !== 'table') return false
   const table = el as TableElement
   if (col < 0 || col >= table.colWidths.length) return false
+  // a non-finite EMU (NaN, 1e308 overflow) would serialize verbatim into w=
+  if (!Number.isFinite(wEmu)) return false
 
   let xml = patchedElementXml(el)
   const gc = gridColSpans(xml)[col]
@@ -3860,6 +3867,7 @@ export function setTableRowHeight(
   if (!el || el.type !== 'table') return false
   const table = el as TableElement
   if (row < 0 || row >= table.rowHeights.length) return false
+  if (!Number.isFinite(hEmu)) return false
 
   let xml = patchedElementXml(el)
   const tr = nthTagSpan(xml, 'a:tr', row)
@@ -4068,8 +4076,7 @@ export function pasteElements(
     archive.readText(relsPath) ??
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
   let relsDirty = false
-  let maxRid = 0
-  for (const m of relsXml.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  let maxRid = maxRelationshipIdNumber(relsXml)
   // The target slide's existing relationships (type+resolved target → rId); ones created during the paste count too
   const byKey = new Map<string, string>()
   for (const rel of archive.readRels(slide.path).values()) {

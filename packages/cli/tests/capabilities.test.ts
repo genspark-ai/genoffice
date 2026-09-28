@@ -74,6 +74,18 @@ describe('genoffice capabilities', () => {
     expect(r.json().summary).toContain('image_generation')
   })
 
+  it('counts a Serply key as search + image search', async () => {
+    const settings = settingsFile(tempDir(), {
+      search: { provider: 'serply', providers: { serply: { apiKey: 'k' } } },
+    })
+    const r = await run(['capabilities', '--json'], {
+      env: { ...process.env, GENOFFICE_AI_SETTINGS: settings },
+    })
+    const d = r.json().detail
+    expect(d.search).toEqual({ available: true, via: 'serply' })
+    expect(d.image_search).toEqual({ available: true, via: 'serply' })
+  })
+
   it.each(['tavily', 'parallel'])('%s gives web search but no image search', async (provider) => {
     const dir = tempDir()
     const settings = settingsFile(dir, {

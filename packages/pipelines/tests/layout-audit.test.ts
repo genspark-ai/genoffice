@@ -312,3 +312,53 @@ describe('auditSlideLayout overlap', () => {
     expect(auditSlideFindings(slide([backdrop, small]))).toEqual([])
   })
 })
+
+describe('auditSlideLayout issue budget', () => {
+  const pair = (): RenderSlide['nodes'] => [
+    textNode('a', 500, 300, 200, 100),
+    textNode('b', 550, 320, 200, 100),
+  ]
+
+  it('keeps reporting overlap findings after the text passes fill the cap', () => {
+    const overflowing = Array.from({ length: 20 }, (_, i) =>
+      textNode(`tall${i}`, 40, 20 + i * 34, 200, 20, { contentHeight: 90 }),
+    )
+    const findings = auditSlideFindings(slide([...overflowing, ...pair()]))
+    expect(findings.filter((f) => f.code === 'text_overflow')).toHaveLength(8)
+    expect(findings.filter((f) => f.code === 'overlap')).toHaveLength(1)
+    expect(findings.length).toBeLessThanOrEqual(12)
+  })
+
+  it('keeps reporting overlap findings after the out-of-bounds pass fills the cap', () => {
+    const stray = Array.from({ length: 20 }, (_, i) =>
+      textNode(`stray${i}`, -200 - i, 20 + i * 50, 120, 40),
+    )
+    const findings = auditSlideFindings(slide([...stray, ...pair()]))
+    const offSlide = findings.filter((f) => f.code === 'off_slide' || f.code === 'out_of_bounds')
+    expect(offSlide).toHaveLength(6)
+    expect(findings.filter((f) => f.code === 'overlap')).toHaveLength(1)
+    expect(findings.length).toBeLessThanOrEqual(12)
+  })
+
+  it('never exceeds the total cap when every category overflows', () => {
+    const nodes: RenderSlide['nodes'] = []
+    for (let i = 0; i < 12; i++) {
+      nodes.push(textNode(`stray${i}`, -200 - i, 20 + i * 50, 120, 40))
+      nodes.push(textNode(`tall${i}`, 40, 20 + i * 34, 200, 20, { contentHeight: 90 }))
+      nodes.push(textNode(`overA${i}`, 700 + i, 500, 200, 100))
+      nodes.push(textNode(`overB${i}`, 750 + i, 520, 200, 100))
+    }
+    const findings = auditSlideFindings(slide(nodes))
+    expect(findings).toHaveLength(12)
+    expect(findings.filter((f) => f.code === 'overlap').length).toBeGreaterThan(0)
+  })
+
+  it('leaves an under-budget slide untouched', () => {
+    const s = slide([
+      textNode('tall', 40, 20, 200, 20, { contentHeight: 90 }),
+      textNode('a', 500, 300, 200, 100),
+      textNode('b', 550, 320, 200, 100),
+    ])
+    expect(auditSlideFindings(s).map((f) => f.code)).toEqual(['text_overflow', 'overlap'])
+  })
+})

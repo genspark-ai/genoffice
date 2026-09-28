@@ -103,7 +103,13 @@ type Branch = 'std' | 'hangR' | 'hangL'
 function stdRowsOf(node: HierTreeNode): number {
   const kids = kidsOf(node)
   const asstRows = asstsOf(node).length ? 1 : 0
-  return kids.length ? 1 + asstRows + Math.max(...kids.map(stdRowsOf)) : 1 + asstRows
+  if (!kids.length) return 1 + asstRows
+  let deepest = 0
+  for (const kid of kids) {
+    const rows = stdRowsOf(kid)
+    if (rows > deepest) deepest = rows
+  }
+  return 1 + asstRows + deepest
 }
 
 /**
@@ -157,7 +163,11 @@ export function layoutHierTree(
   const bh = cons.boxAspect
   const pitch = bh + cons.sp
   const rowTop = (row: number) => row * pitch
-  const stdRows = Math.max(...roots.map(stdRowsOf))
+  let stdRows = 0
+  for (const root of roots) {
+    const rows = stdRowsOf(root)
+    if (rows > stdRows) stdRows = rows
+  }
 
   const layout = (node: HierTreeNode, depth: number): Sub => {
     const kids = kidsOf(node)

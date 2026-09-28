@@ -45,6 +45,19 @@ describe('parseChartXml', () => {
     expect(m.valAxis?.labelSizePt).toBe(12)
   })
 
+  /**
+   * sz="auto" is a legal attribute value that parseInt turns into NaN, and a
+   * NaN labelSizePt is not nullish: the render layer's
+   * `valAxis?.labelSizePt ?? default` takes the NaN and the value axis label
+   * gutter collapses.
+   */
+  it('ignores a non-numeric axis label size instead of storing NaN', () => {
+    const m = parseChartXml(LINE_CHART.replace('sz="1200"', 'sz="auto"'))!
+    expect(m.valAxis?.labelSizePt).toBeUndefined()
+    // the rest of the axis text properties still parse
+    expect(m.valAxis?.labelColor).toBe('#666666')
+  })
+
   it('parses clustered bar chart with fill color and gapWidth', () => {
     const m = parseChartXml(BAR_CHART)!
     expect(m.kind).toBe('bar')
@@ -1382,6 +1395,17 @@ describe('date axis chronological order', () => {
     const m = parseChartXml(chartXml('minMax', [46113, 46143, 46174]), undefined as never)!
     expect(m.categories).toEqual(['Apr-26', 'May-26', 'Jun-26'])
     expect(m.series[0]!.values).toEqual([10, 20, 30])
+  })
+
+  it('moves value-from-cells labels with their points', () => {
+    const dlbls = `<c:dLbls><c:extLst><c:ext uri="{CE6537A1-D6FC-4f65-9D91-7224C49458BB}" xmlns:c15="http://schemas.microsoft.com/office/drawing/2012/chart"><c15:showDataLabelsRange val="1"/></c:ext></c:extLst></c:dLbls>`
+    const dlblRange = `<c:extLst><c:ext uri="{02D57815-91ED-43cb-92C2-25804820EDAC}" xmlns:c15="http://schemas.microsoft.com/office/drawing/2012/chart"><c15:datalabelsRange><c15:dlblRangeCache><c:pt idx="0"><c:v>Jun cell</c:v></c:pt><c:pt idx="1"><c:v>May cell</c:v></c:pt><c:pt idx="2"><c:v>Apr cell</c:v></c:pt></c15:dlblRangeCache></c15:datalabelsRange></c:ext></c:extLst>`
+    const xml = chartXml('maxMin', [46174, 46143, 46113])
+      .replace('<c:cat>', `${dlbls}<c:cat>`)
+      .replace('</c:val>', `</c:val>${dlblRange}`)
+    const m = parseChartXml(xml, undefined as never)!
+    // sheet order Jun/May/Apr carries labels Jun/May/Apr: the plot reads Apr/May/Jun
+    expect(m.series[0]!.pointLabels).toEqual(['Apr cell', 'May cell', 'Jun cell'])
   })
 })
 

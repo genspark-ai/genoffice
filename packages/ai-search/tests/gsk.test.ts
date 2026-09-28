@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   gskChildEnv,
   setGskProxyUrl,
@@ -9,7 +9,11 @@ import {
   parseGskPastProjects,
   extractGskText,
   parseToolCliNdjson,
+  gskSlideGenerate,
+  MAX_SLIDE_ARTIFACT_BYTES,
+  MAX_TOOL_CLI_NDJSON_BYTES,
 } from '../src/gsk'
+import { ResponseTooLargeError } from '@genoffice/electron-utils/remote-image'
 
 describe('parseGskOutput', () => {
   it('parses clean JSON', () => {
@@ -44,6 +48,50 @@ describe('parseGskOutput', () => {
 
   it('throws when no JSON present', () => {
     expect(() => parseGskOutput('[INFO] nothing here')).toThrow()
+  })
+
+  it('recovers past a log line that only looks like an array opener', () => {
+    expect(parseGskOutput('[INFO] progress {50%}\n{"status":"ok"}')).toEqual({ status: 'ok' })
+  })
+
+  it('takes the outer block, not the first inner one, of a large pretty payload', () => {
+    const rows = Array.from({ length: 2000 }, (_, i) => `    { "id": ${i}, "t": "row ${i}" },`)
+    const out = [
+      '[INFO] Calling /tools...',
+      '[INFO] cache hit',
+      '{',
+      '  "status": "ok",',
+      '  "data": [',
+      ...rows.slice(0, -1),
+      rows.at(-1)!.replace(/,$/, ''),
+      '  ]',
+      '}',
+      '[INFO] done in 900ms',
+    ].join('\n')
+    const parsed = parseGskOutput(out) as { status: string; data: unknown[] }
+    expect(parsed.status).toBe('ok')
+    expect(parsed.data).toHaveLength(2000)
+    expect(parsed.data[0]).toEqual({ id: 0, t: 'row 0' })
+  })
+
+  it('locates a large payload in linear time', () => {
+    const rows = Array.from({ length: 20_000 }, (_, i) => `  { "id": ${i} },`)
+    const out = [
+      '[INFO] starting',
+      '{',
+      '  "data": [',
+      ...rows.slice(0, -1),
+      rows.at(-1)!.replace(/,$/, ''),
+      '  ]',
+      '}',
+      '[INFO] done',
+    ].join('\n')
+    const started = performance.now()
+    const parsed = parseGskOutput(out) as { data: unknown[] }
+    const elapsed = performance.now() - started
+    expect(parsed.data).toHaveLength(20_000)
+    // the previous nested slice-and-reparse scan needed minutes at this size
+    expect(elapsed).toBeLessThan(5_000)
   })
 })
 
@@ -305,6 +353,117 @@ describe('extractGskText', () => {
 
   it('stringifies unknown shapes', () => {
     expect(extractGskText({ data: { foo: 1 } })).toBe('{"foo":1}')
+  })
+})
+
+describe('gskSlideGenerate response caps', () => {
+  const originalApiKey = process.env.GSK_API_KEY
+  const slideResult = JSON.stringify({
+    status: 'ok',
+    data: { pptx_url: 'https://www.genspark.ai/api/files/deck.pptx', model: 'claude-opus-4-7' },
+  })
+  const downloadResult = JSON.stringify({
+    status: 'ok',
+    data: { download_url: 'https://cdn.example/deck.pptx' },
+  })
+
+  function stubSlideGenerate(artifact: () => Response) {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ndjsonResponse(slideResult))
+      .mockResolvedValueOnce(ndjsonResponse(downloadResult))
+      .mockImplementationOnce(() => Promise.resolve(artifact()))
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  function ndjsonResponse(payload: string, contentLength?: number): Response {
+    return new Response(payload, {
+      status: 200,
+      headers: {
+        'content-type': 'application/x-ndjson',
+        ...(contentLength === undefined ? {} : { 'content-length': String(contentLength) }),
+      },
+    })
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    if (originalApiKey === undefined) delete process.env.GSK_API_KEY
+    else process.env.GSK_API_KEY = originalApiKey
+  })
+
+  it('returns the downloaded slide bytes within both caps', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    stubSlideGenerate(() => new Response(new Uint8Array([1, 2, 3, 4])))
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).resolves.toEqual({
+      bytes: new Uint8Array([1, 2, 3, 4]),
+      model: 'claude-opus-4-7',
+    })
+  })
+
+  it('refuses a tool_cli NDJSON body that declares more than the NDJSON cap', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 200,
+          headers: {
+            'content-type': 'application/x-ndjson',
+            'content-length': String(MAX_TOOL_CLI_NDJSON_BYTES + 1),
+          },
+        }),
+      ),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toBeInstanceOf(
+      ResponseTooLargeError,
+    )
+    expect(cancelled).toBe(true)
+  })
+
+  it('refuses a chunked tool_cli NDJSON body that streams past the NDJSON cap', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const chunk = new Uint8Array(1024 * 1024)
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i <= MAX_TOOL_CLI_NDJSON_BYTES / chunk.byteLength; i++) {
+          controller.enqueue(chunk)
+        }
+        controller.close()
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { status: 200, headers: { 'content-type': 'application/x-ndjson' } }),
+        ),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(
+      /response larger than 8 MB/,
+    )
+  })
+
+  it('refuses a slide artifact download larger than the artifact cap', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    stubSlideGenerate(
+      () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'content-length': String(MAX_SLIDE_ARTIFACT_BYTES + 1) },
+        }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toBeInstanceOf(
+      ResponseTooLargeError,
+    )
   })
 })
 

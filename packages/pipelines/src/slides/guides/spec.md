@@ -61,7 +61,7 @@ deck/pages/02.json   { "title": "Where the margin went", "type": "content", "lay
 }
 ```
 
-`shape` is one of `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow`, `leftArrow`, `upArrow`, `downArrow`, `chevron`, `diamond`, `parallelogram`, `trapezoid`, `hexagon`, `pentagon`, `pie`, `donut`, `star5`, `heart`, `cloud`, `line`, `lineArrow`. `line` and `lineArrow` draw the diagonal of their box from top-left to bottom-right and need a `stroke`; a horizontal rule is a box with `h: 1`. A shape needs a `fill` or a `stroke` (or both). `paragraphs` is optional label text, vertically centered unless `valign` says otherwise.
+`shape` is one of `rect`, `roundRect`, `ellipse`, `triangle`, `rightArrow`, `leftArrow`, `upArrow`, `downArrow`, `chevron`, `diamond`, `parallelogram`, `trapezoid`, `hexagon`, `pentagon`, `pie`, `donut`, `star5`, `heart`, `cloud`, `line`, `lineArrow`. `line` and `lineArrow` draw the diagonal of their box from top-left to bottom-right and need a `stroke`; add `"flipV": true` to draw it from bottom-left to top-right instead, or `"flipH": true` to mirror it horizontally; a horizontal rule is a box with `h: 1`. The two flags mirror any shape — a `rightArrow` with `"flipH": true` points left. A shape needs a `fill` or a `stroke` (or both). `paragraphs` is optional label text, vertically centered unless `valign` says otherwise.
 
 **Text**
 

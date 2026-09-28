@@ -63,6 +63,15 @@ export class MediaTooLargeError extends Error {}
 /** Subclasses MediaTooLargeError so the existing "too big, try Genspark" fallback applies. */
 export class MediaBudgetExceededError extends MediaTooLargeError {}
 
+/** The item ceiling in one place, so the Genspark route rejects like the BYOK one. */
+function assertMediaItemCount(count: number, maxItems: number): void {
+  if (count > maxItems) {
+    throw new MediaBudgetExceededError(
+      `Too many media items in one request (${count}, limit ${maxItems}); analyze them in smaller batches`,
+    )
+  }
+}
+
 const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -199,11 +208,7 @@ export async function loadMediaReferences(
   const maxItemBytes = budget.maxItemBytes ?? MAX_MEDIA_BYTES
   const maxTotalBytes = budget.maxTotalBytes ?? MAX_MEDIA_TOTAL_BYTES
   const concurrency = Math.max(1, budget.concurrency ?? MEDIA_LOAD_CONCURRENCY)
-  if (refs.length > maxItems) {
-    throw new MediaBudgetExceededError(
-      `Too many media items in one request (${refs.length}, limit ${maxItems}); analyze them in smaller batches`,
-    )
-  }
+  assertMediaItemCount(refs.length, maxItems)
   const declared = refs.map(dataUrlDecodedSize)
   for (const bytes of declared) {
     if (bytes > maxItemBytes) {
@@ -259,6 +264,9 @@ export async function generateImageTool(
     if (!byok) {
       const gate = gskGate(settings, options.notLoggedInError ?? GSK_NOT_LOGGED_IN_ERROR)
       if (gate) return gate
+      // gskGenerateImage hands the references straight to the CLI argv, so this route
+      // enforces the same item ceiling as the BYOK one instead of passing them on
+      assertMediaItemCount(op.referenceImageUrls?.length ?? 0, MEDIA_BUDGET.maxItems)
       const gen = await gskGenerateImage({ ...op, prompt })
       if (!op.transparentBackground || op.model === GSK_RMBG_MODEL) return { url: gen.url }
       try {

@@ -56,6 +56,7 @@ const LANG_OPTIONS = [
   { value: 'pt', label: 'Português' },
   { value: 'ru', label: 'Русский' },
   { value: 'th', label: 'ไทย' },
+  { value: 'vi', label: 'Tiếng Việt' },
   { value: 'zh', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
 ] as const
@@ -1082,9 +1083,11 @@ function AiMediaPane({
             ? t('setAiSearchGensparkHint')
             : search.provider === 'parallel'
               ? t('setAiSearchParallelHint')
-              : searchMeta?.imageSearch
-                ? t('setAiSearchSerperHint')
-                : t('setAiSearchTavilyHint')}
+              : search.provider === 'serply'
+                ? t('setAiSearchSerplyHint')
+                : searchMeta?.imageSearch
+                  ? t('setAiSearchSerperHint')
+                  : t('setAiSearchTavilyHint')}
         </div>
         {search.provider !== 'genspark' &&
           keyRow('set-ai-search-key', searchKey, searchMeta?.keyPlaceholder ?? 'API Key', (v) =>

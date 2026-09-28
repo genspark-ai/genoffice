@@ -54,6 +54,16 @@ describe('detectVectorRegions', () => {
     expect(regions).toHaveLength(0)
   })
 
+  it('bounds a 131072-point subpath without spreading it as call arguments', () => {
+    // a single path can carry 100k+ points (maps, CAD, chart exports);
+    // Math.min(...points) throws RangeError past the argument-count limit.
+    // hasCurves short-circuits the art test, keeping this on the bbox path
+    const points = Array.from({ length: 131072 }, (_, i) => ({ x: 100 + (i % 997), y: i / 400 }))
+    const sub: RawSubpath = { points, closed: false, hasCurves: true }
+    const regions = detectVectorRegions([strokedPath([sub])], [], PAGE)
+    expect(regions).toHaveLength(0)
+  })
+
   it('leaves text-dense areas alone (decorated paragraph, not an illustration)', () => {
     const chars = []
     for (let row = 0; row < 12; row++) {

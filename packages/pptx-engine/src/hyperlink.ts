@@ -12,7 +12,7 @@
  * current fragment, then reparse the whole slide (same path as appendRawElements).
  */
 import type { GroupElement, Slide } from './types'
-import { escapeXmlAttr } from './xml-utils'
+import { escapeXmlAttr, maxRelationshipIdNumber } from './xml-utils'
 import { sliceGroupChildXmls } from './parse'
 import { relsPathFor, resolveTarget } from './zip'
 import { cleanupSupersededSlideResources } from './resource-cleanup'
@@ -44,9 +44,7 @@ function appendRel(
   const { archive } = opened
   const relsPath = relsPathFor(slide.path)
   const rels = archive.readText(relsPath) ?? EMPTY_RELS
-  let maxRid = 0
-  for (const m of rels.matchAll(/Id=(?:"rId(\d+)"|'rId(\d+)')/g))
-    maxRid = Math.max(maxRid, Number(m[1] ?? m[2]))
+  const maxRid = maxRelationshipIdNumber(rels)
   const rid = `rId${maxRid + 1}`
   const mode = external ? ' TargetMode="External"' : ''
   const relXml = `<Relationship Id="${rid}" Type="${type}" Target="${escapeXmlAttr(target)}"${mode}/>`

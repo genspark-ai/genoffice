@@ -86,6 +86,9 @@ function emitAnthropicJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       cb.onDelta(block.text)
     } else if (block.type === 'tool_use' && block.name) {
       emitted = true
+      // A complete JSON body carries the whole turn at once, so the per-turn tool
+      // budget of the streamed path has to be applied here as well
+      throwIfToolCountOverBudget(toolCalls.length + 1, 'anthropic')
       toolCalls.push({
         id: block.id ?? crypto.randomUUID(),
         name: block.name,

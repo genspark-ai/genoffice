@@ -150,4 +150,24 @@ describe('Codex app-server stdout reader', () => {
     await settle()
     expect(errors).toHaveLength(1)
   })
+
+  it('reports a throwing line handler through onOverflow instead of letting it escape', async () => {
+    const { child, stdout } = fakeChild()
+    const errors: Error[] = []
+    // What onLine does once the child is gone: write() throws "Codex app-server input is closed".
+    attachBoundedRpcStdout(
+      child,
+      () => {
+        throw new Error('Codex app-server input is closed')
+      },
+      (error) => errors.push(error),
+    )
+    stdout.write('{"id":1,"method":"unsupported"}\n{"id":2}\n')
+    await settle()
+    expect(errors.map((error) => error.message)).toEqual(['Codex app-server input is closed'])
+    // The reader stops after the report instead of throwing again on the next line.
+    stdout.write('{"id":3}\n')
+    await settle()
+    expect(errors).toHaveLength(1)
+  })
 })

@@ -90,6 +90,34 @@ describe('buildTableGridXml', () => {
     expect((xml.match(/<a:tc[\s>]/g) ?? []).length).toBe(6)
   })
 
+  /**
+   * A span was written with Math.floor, so a hostile gridSpan/rowSpan serialized
+   * as gridSpan="Infinity" — a schema-invalid value PowerPoint refuses. It is now
+   * clamped to the cells remaining right of / below the cell, as buildTableXml does.
+   */
+  it('clamps spans to the cells remaining instead of writing Infinity', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const xml = buildTableGridXml(
+      opened.deck.slides[0]!,
+      spec({
+        cells: [
+          [
+            { gridSpan: 99, rowSpan: 99 },
+            { hMerge: true },
+            { paragraphs: [{ runs: [{ text: 'C1' }] }] },
+          ],
+          [{ gridSpan: Number.NaN, rowSpan: Number.POSITIVE_INFINITY }, {}, {}],
+        ],
+      }),
+    )
+    // col 0 of 3 columns, row 0 of 2 rows
+    expect(xml.match(/gridSpan="\d+"/g)).toEqual(['gridSpan="3"'])
+    expect(xml.match(/rowSpan="\d+"/g)).toEqual(['rowSpan="2"'])
+    // a non-finite span falls back to 1, which emits no attribute (buildTableXml)
+    expect(xml).not.toContain('Infinity')
+    expect(xml).not.toContain('NaN')
+  })
+
   it('insideV scope only rules verticals between columns', async () => {
     const opened = await openPptx(await createBlankPptx())
     const xml = buildTableGridXml(

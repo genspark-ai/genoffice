@@ -55,13 +55,22 @@ export function deriveDeckProgressView(progress: DeckProgressSnapshot, t: TFunc)
     steps.push({ key: 'images', ...stepView(images.status, images.label, images.summary) })
   }
   if (pages) {
-    const allDone = isDone || pages.status === 'done'
+    const cancelled = doneOutcome === 'cancelled'
+    // a stopped run is not a finished one: the pages that never landed stay
+    // pending/running, so isDone alone would tick the step as a success
+    const allDone = !cancelled && (isDone || pages.status === 'done')
     const hasError = failed || pages.items.some((p) => p.status === 'error')
-    const settledLabel = `${pages.label}${pages.total > 0 ? t('aiPagesSuffix', { n: pages.total }) : ''}`
+    // after a stop the plan is not the count: only finalTotal pages actually landed
+    const total = cancelled && finalTotal != null ? finalTotal : pages.total
+    const settledLabel = `${pages.label}${total > 0 ? t('aiPagesSuffix', { n: total }) : ''}`
     steps.push({
       key: 'pages',
       label:
-        failed && doneSummary ? doneSummary : allDone ? settledLabel : pages.summary || pages.label,
+        failed && doneSummary
+          ? doneSummary
+          : allDone || cancelled
+            ? settledLabel
+            : pages.summary || pages.label,
       stepStatus: allDone ? (hasError ? 'error' : 'done') : 'running',
     })
   }
