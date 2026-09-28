@@ -107,7 +107,7 @@ pub(crate) fn index_worksheet(
                             &mut pending_formulas,
                             cache_directory,
                             state,
-                            row_chunk * CHUNK_ROW_COUNT - 1,
+                            row_chunk.saturating_mul(CHUNK_ROW_COUNT).saturating_sub(1),
                         )?;
                         chunk_index = row_chunk;
                     }
@@ -137,7 +137,7 @@ pub(crate) fn index_worksheet(
                             &mut pending_formulas,
                             cache_directory,
                             state,
-                            cell_chunk * CHUNK_ROW_COUNT - 1,
+                            cell_chunk.saturating_mul(CHUNK_ROW_COUNT).saturating_sub(1),
                         )?;
                         chunk_index = cell_chunk;
                     }
@@ -313,7 +313,7 @@ pub(crate) fn index_worksheet(
                             &mut pending_formulas,
                             cache_directory,
                             state,
-                            cell_chunk * CHUNK_ROW_COUNT - 1,
+                            cell_chunk.saturating_mul(CHUNK_ROW_COUNT).saturating_sub(1),
                         )?;
                         chunk_index = cell_chunk;
                     }

@@ -156,6 +156,7 @@ pub(crate) fn read_drawing(
                     drawing_path,
                     &relationships,
                     &mut visuals,
+                    0,
                 )?;
             }
             continue;
@@ -727,7 +728,16 @@ pub(crate) fn expand_group(
     drawing_path: &str,
     relationships: &HashMap<String, Relationship>,
     visuals: &mut Vec<VisualObject>,
+    depth: usize,
 ) -> Result<(), SidecarError> {
+    // A stack overflow is not a panic — catch_unwind cannot stop the process
+    // abort, and the file itself decides how deep this recursion goes. Excel
+    // nests groups a handful of levels deep; anything past MAX_GROUP_DEPTH is
+    // skipped, not followed.
+    const MAX_GROUP_DEPTH: usize = 32;
+    if depth > MAX_GROUP_DEPTH {
+        return Ok(());
+    }
     let (box_x, box_y, box_width, box_height) = group_box;
     let xfrm = group_xfrm(group);
     let ch_off_x = xfrm_value(xfrm, "chOff", "x").unwrap_or(0.0);
@@ -779,6 +789,7 @@ pub(crate) fn expand_group(
                 drawing_path,
                 relationships,
                 visuals,
+                depth + 1,
             )?;
             continue;
         }
