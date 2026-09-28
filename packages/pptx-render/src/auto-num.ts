@@ -1,5 +1,9 @@
 /** <a:buAutoNum type> numbering shared by the pptx text layout and xlsx shape text. */
 function toRoman(n: number): string {
+  // The roman system tops out at 3999 by construction; a hostile/ludicrous
+  // startAt (1e20 measured: 36 s of unbounded string building and climbing
+  // past 4 GB) degrades to the numeric form PowerPoint shows for such values.
+  if (!Number.isFinite(n) || n > 3999 || n < 1) return String(Math.max(0, Math.trunc(n)) || 0)
   const table: Array<[number, string]> = [
     [1000, 'm'],
     [900, 'cm'],
@@ -25,6 +29,8 @@ function toRoman(n: number): string {
 }
 
 function toAlpha(n: number): string {
+  // Same guard: the loop is O(n/26) and an astronomical startAt never ends.
+  if (!Number.isFinite(n) || n > 1_000_000 || n < 1) return String(Math.max(0, Math.trunc(n)) || 0)
   let out = ''
   while (n > 0) {
     n--
