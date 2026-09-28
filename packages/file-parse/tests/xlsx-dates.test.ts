@@ -36,6 +36,14 @@ describe('classifyFormatCode', () => {
     expect(classifyFormatCode('YYYY/MM/DD')).toMatchObject({ date: true, time: false })
   })
 
+  it('treats - and / as h/m/s separators too (#1480)', () => {
+    expect(classifyFormatCode('h-m')).toMatchObject({ date: false, time: true, seconds: false })
+    expect(classifyFormatCode('mm/ss')).toMatchObject({ date: false, time: true, seconds: true })
+    // dash/slash between m and a real date token stays a month, not a minute
+    expect(classifyFormatCode('mm-yyyy')).toMatchObject({ date: true, time: false })
+    expect(classifyFormatCode('mm/yy')).toMatchObject({ date: true, time: false })
+  })
+
   it('does not mistake numeric, text or literal-heavy formats for dates', () => {
     expect(classifyFormatCode('"$"#,##0.00')).toBeNull()
     expect(classifyFormatCode('0.00%')).toBeNull()
