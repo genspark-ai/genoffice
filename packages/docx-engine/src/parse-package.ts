@@ -62,6 +62,18 @@ export function resolveRelationshipTargetPath(sourcePath: string, target: string
   return parts.join('/') || null
 }
 
+/**
+ * fast-xml-parser rejects a DOCTYPE declaring external entities; drop the
+ * prologue instead of failing the part (entities never resolve - XXE-safe -
+ * and OOXML parts carry everything in attributes/elements). Shared by every
+ * part-reading entry point, not just .rels: a DOCTYPE in document.xml or
+ * [Content_Types].xml used to make the whole document unopenable
+ * ("External entities are not supported", measured).
+ */
+export function stripDocType(xml: string): string {
+  return xml.replace(/<!DOCTYPE(?:[^>[]|\[[\s\S]*?\])*>/i, '')
+}
+
 export async function parseRels(zip: JSZip, path: string): Promise<Map<string, RelInfo>> {
   const rels = new Map<string, RelInfo>()
   const file = zip.file(path)
@@ -69,7 +81,7 @@ export async function parseRels(zip: JSZip, path: string): Promise<Map<string, R
   // fast-xml-parser rejects a DOCTYPE declaring external entities; drop the
   // prologue instead of failing the whole document (entities never resolve —
   // XXE-safe — and Relationship elements carry everything in attributes)
-  const relsXml = (await file.async('string')).replace(/<!DOCTYPE(?:[^>[]|\[[\s\S]*?\])*>/i, '')
+  const relsXml = stripDocType(await file.async('string'))
   const parsed = xmlParser.parse(relsXml) as XNode[]
   const root = parsed.find((n) => nameOf(n) === 'Relationships')
   if (!root) return rels

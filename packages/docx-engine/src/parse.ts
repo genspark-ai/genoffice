@@ -205,6 +205,7 @@ import {
   parseWriteProtection,
   resolveMainDocumentPath,
   resolveRelationshipTargetPath,
+  stripDocType,
 } from './parse-package'
 import { parseSdtBlock, sdtMeta, sdtTableXml, splitSdtParts } from './parse-sdt'
 import { sdtCheckboxControl } from './checkbox-control'
@@ -276,7 +277,7 @@ function contentTypesOf(zip: JSZip) {
       const overrides = new Map<string, string>()
       const file = zip.file('[Content_Types].xml')
       if (!file) return { defaults, overrides }
-      const parsed = xmlParser.parse(await file.async('string')) as XNode[]
+      const parsed = xmlParser.parse(stripDocType(await file.async('string'))) as XNode[]
       const root = parsed.find((n) => nameOf(n) === 'Types')
       for (const node of root ? findChildren(root, 'Default') : []) {
         const attrs = attrsOf(node)
@@ -7646,7 +7647,7 @@ async function extractDiagramDrawing(
   if (!widthPx || !heightPx) return null
   let parsed: XNode[]
   try {
-    parsed = xmlParser.parse(await file.async('string')) as XNode[]
+    parsed = xmlParser.parse(stripDocType(await file.async('string'))) as XNode[]
   } catch {
     return null
   }
