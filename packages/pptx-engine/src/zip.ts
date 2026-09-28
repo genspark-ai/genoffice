@@ -7,6 +7,7 @@
  * This module only handles reading and metadata.
  */
 import JSZip from 'jszip'
+import { assertZipInflatesWithinLimits } from '@genoffice/zip-gate'
 import { createHash } from 'node:crypto'
 import { XMLParser } from 'fast-xml-parser'
 import type { SlideSize } from './types'
@@ -70,6 +71,10 @@ export class PackageArchive {
 
   static async open(bytes: Uint8Array): Promise<PackageArchive> {
     const originalHash = createHash('sha256').update(bytes).digest('hex')
+    // The declared-size pass below is advisory; this metered gate is the one
+    // that holds when a part lies about its size (GH #759, measured at
+    // 1.2 GB of RSS from a 1.1 MB deck).
+    await assertZipInflatesWithinLimits(bytes, PPTX_ZIP_LIMITS)
     const zip = await JSZip.loadAsync(bytes)
     assertZipWithinLimits(zip)
     const entries = new Map<string, Uint8Array>()

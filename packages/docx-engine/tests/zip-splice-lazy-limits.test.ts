@@ -106,7 +106,7 @@ describe('the lazy-media entry reader inherits the shared zip limits', () => {
         }),
       ]),
     )
-    await expect(openZipFile(path)).rejects.toThrow(/docx rejected: part word\/media\/image1\.png/)
+    await expect(openZipFile(path)).rejects.toThrow(/zip rejected: part word\/media\/image1\.png/)
   })
 
   it('still opens and strips a normal media-heavy document', async () => {

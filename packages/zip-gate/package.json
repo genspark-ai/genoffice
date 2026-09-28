@@ -1,0 +1,22 @@
+{
+  "name": "@genoffice/zip-gate",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Metered-inflation zip bomb gate shared by the docx and pptx engines: reject archives whose parts inflate past what they declare, before any caller materialises them",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "jszip": "^3.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

@@ -21,7 +21,7 @@ describe('zip bomb protection', () => {
   it('rejects a part whose declared uncompressed size exceeds the per-part limit', async () => {
     const bytes = await buildDocx({ bodyXml: PLAIN_PARA })
     const bomb = patchCentralSizes(bytes, 600 * 1024 * 1024)
-    await expect(parseDocx(bomb)).rejects.toThrow(/docx rejected.*uncompressed/)
+    await expect(parseDocx(bomb)).rejects.toThrow(/zip rejected.*uncompressed/)
   })
 
   it('rejects an archive whose total declared uncompressed size exceeds the limit', async () => {

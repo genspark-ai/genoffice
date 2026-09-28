@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import { assertZipWithinLimits } from '@genoffice/docx-engine'
+import { assertZipInflatesWithinLimits, assertZipWithinLimits } from '@genoffice/docx-engine'
 import { resolveTarget } from './opc'
 import { XMLParser } from 'fast-xml-parser'
 
@@ -235,6 +235,9 @@ function joinSections(sections: SlideSection[]): string {
 
 /** extract slide text from a pptx: one "## Slide N" section per slide, a line per paragraph */
 export async function pptxToText(bytes: Uint8Array): Promise<string> {
+  // The declared-size pass below is advisory; this metered gate is the one that
+  // holds when a part lies about its size (GH #759).
+  await assertZipInflatesWithinLimits(bytes)
   const zip = await JSZip.loadAsync(bytes)
   assertZipWithinLimits(zip)
   const slideEntries = await presentationSlideEntries(zip)
