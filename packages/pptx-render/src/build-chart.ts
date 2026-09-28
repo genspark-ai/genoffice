@@ -3472,7 +3472,7 @@ function ppTicks(
 
 /** Logarithmic value axis: one tick per power of the base; auto ends snap to the powers
  *  enclosing the positive data (PowerPoint: 9..960 on base 10 → 1, 10, 100, 1000). */
-function logTicks(
+export function logTicks(
   posDataMin: number,
   dataMax: number,
   explicitMin: number | undefined,
@@ -3481,28 +3481,59 @@ function logTicks(
 ): { min: number; max: number; ticks: number[] } {
   // log(1000)/log(10) = 2.999…: snap exponents with slack so exact powers stay put
   const lg = (v: number) => Math.log(v) / Math.log(base)
-  const lo =
+  // A data point near 1e308 overflows `base ** e` to Infinity, and on an
+  // unguarded axis "Infinity <= Infinity" never terminates the tick loop
+  // below (one hostile number then froze the slide forever). Clamp both ends
+  // to finite values and cap the tick count.
+  let lo =
     explicitMin && explicitMin > 0
       ? explicitMin
       : base **
         Math.floor(lg(Number.isFinite(posDataMin) && posDataMin > 0 ? posDataMin : 1) + 1e-9)
+  if (!Number.isFinite(lo) || lo <= 0) lo = base
   let hi =
-    explicitMax && explicitMax > lo
+    explicitMax && explicitMax > lo && Number.isFinite(explicitMax)
       ? explicitMax
       : base ** Math.ceil(lg(Math.max(dataMax, lo * base)) - 1e-9)
-  if (hi <= lo) hi = lo * base
+  if (!Number.isFinite(hi) || hi <= lo) hi = Math.min(lo * base, Number.MAX_VALUE)
+  if (!Number.isFinite(hi)) hi = Number.MAX_VALUE
   const ticks: number[] = []
   if (Math.abs(lg(lo) - Math.round(lg(lo))) > 1e-9) ticks.push(lo)
-  for (let e = Math.ceil(lg(lo) - 1e-9); base ** e <= hi * (1 + 1e-9); e++)
-    ticks.push(round12(base ** e))
+  // hi * (1 + 1e-9) itself overflows to Infinity when hi is MAX_VALUE, and
+  // "base ** e <= Infinity" is always true — clamp the comparison bound too.
+  const cap = Math.min(hi * (1 + 1e-9), Number.MAX_VALUE)
+  for (
+    let e = Math.ceil(lg(lo) - 1e-9);
+    base ** e <= cap && ticks.length < MAX_LOG_TICKS;
+    e++
+  ) {
+    const v = base ** e
+    // Past MAX_VALUE — and rounding (v * 1e12) would overflow too — the axis
+    // ends at the last representable tick.
+    if (!Number.isFinite(v)) break
+    const tick = round12(v)
+    if (!Number.isFinite(tick)) break
+    ticks.push(tick)
+  }
+  // The axis still needs one anchor even when every decade rounded past the
+  // numeric ceiling.
+  if (!ticks.length) ticks.push(lo)
   return { min: lo, max: hi, ticks }
 }
 
+/** Hard ceiling for log-axis tick/minor generation: a finite axis has at most
+ *  a few hundred decades even at base 2, so hitting this means the range was
+ *  non-finite and the render must degrade instead of spin. */
+const MAX_LOG_TICKS = 200
+
 /** Minor positions of a log axis: 2..base-1 multiples of every decade inside the range. */
-function logMinors(min: number, max: number, base: number): number[] {
+export function logMinors(min: number, max: number, base: number): number[] {
   const out: number[] = []
+  // Same non-finite guard as logTicks: an infinite range made the decade loop
+  // below run forever.
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= min) return out
   const e0 = Math.floor(Math.log(min) / Math.log(base) + 1e-9)
-  for (let e = e0; base ** e < max; e++)
+  for (let e = e0; base ** e < max && out.length < MAX_LOG_TICKS * base; e++)
     for (let k = 2; k < base; k++) {
       const v = k * base ** e
       if (v > min * (1 + 1e-9) && v < max * (1 - 1e-9)) out.push(round12(v))
