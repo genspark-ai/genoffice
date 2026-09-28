@@ -708,8 +708,11 @@ describe('parseFileToText: xlsx', () => {
     )
     const bytes = await zip.generateAsync({ type: 'uint8array' })
     const text = await xlsxToText(bytes)
-    // Only the valid index 0 survives; every malformed shared ref degrades to empty.
-    expect(text).toContain('First |  |  |  |  | ')
+    // Only the valid index 0 survives; every malformed shared ref degrades to
+    // empty (trailing empty slots are trimmed from the line since they carry
+    // no column information — see the xlsx text-output cap).
+    expect(text).toContain('First')
+    expect(text).not.toContain('Second')
   })
 
   it('appends cells with malformed refs instead of dropping their text', async () => {

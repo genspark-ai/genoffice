@@ -254,6 +254,12 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
         cells[target] = text
         if (text.trim()) hasData = true
       }
+      // Trailing empty slots carry no information (the leading cells and the
+      // gaps between real cells keep their column positions): one row with a
+      // lone far-right cell used to emit ~49 KB of separators, and rows like
+      // that multiplied into gigabytes of output from a few-KB file
+      // (measured: 18 KB / 2,000 rows -> 94 MB, 5,200x).
+      while (cells.length > 0 && cells[cells.length - 1] === '') cells.pop()
       lines.push(cells.join(' | '))
     }
     if (hasData) sheetsWithData += 1
