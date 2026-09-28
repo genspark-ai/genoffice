@@ -21,6 +21,12 @@ export interface IndexerSources {
 }
 
 const RESCAN_DEBOUNCE_MS = 1500
+/**
+ * a worker request left unanswered this long means a wedged parse or a stalled
+ * walk: the request fails as an extraction error and the worker is recycled,
+ * so one bad file cannot stall indexing (and search with it) for good
+ */
+const WORKER_REQUEST_TIMEOUT_MS = 120_000
 
 /**
  * Keeps the store in step with the disk: a scan diffs mtime/size against the
@@ -45,6 +51,7 @@ export class FileIndexer {
     private readonly store: FileIndexStore,
     private readonly workerPath: string,
     private readonly sources: IndexerSources,
+    private readonly requestTimeoutMs = WORKER_REQUEST_TIMEOUT_MS,
   ) {}
 
   progress(): IndexProgress {
@@ -155,15 +162,41 @@ export class FileIndexer {
 
   private ask(req: WorkerRequest): Promise<WorkerResponse> {
     const id = this.nextId++
-    return new Promise((resolve, reject) => {
-      this.waiting.set(id, resolve)
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        // a wedged worker never answers: fail this request the way a crashed
+        // worker's requests fail, and retire the worker so later requests get a
+        // fresh one instead of hanging too
+        this.waiting.delete(id)
+        this.recycleWorker()
+        resolve({ id, type: 'extract', result: { kind: 'error', error: 'worker request timed out' } })
+      }, this.requestTimeoutMs)
+      this.waiting.set(id, (r: WorkerResponse) => {
+        clearTimeout(timer)
+        resolve(r)
+      })
       try {
         this.ensureWorker().postMessage({ ...req, id })
       } catch (e) {
+        // a failed post must not reject into the void-ed callers: answer as an
+        // extraction error, exactly like the drop handler does for a crash
+        clearTimeout(timer)
         this.waiting.delete(id)
-        reject(e)
+        resolve({
+          id,
+          type: 'extract',
+          result: { kind: 'error', error: e instanceof Error ? e.message : String(e) },
+        })
       }
     })
+  }
+
+  /** retire the current worker; 'exit' fails any other in-flight request via drop */
+  private recycleWorker(): void {
+    const w = this.worker
+    if (!w) return
+    this.worker = null
+    void w.terminate()
   }
 
   private ensureWorker(): Worker {
