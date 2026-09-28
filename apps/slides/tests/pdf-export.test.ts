@@ -53,6 +53,7 @@ class TestPdfWindow implements PdfExportWindow {
   tempDirectoryExistedAtDestroy: boolean | null = null
   shouldFailLoad = false
   shouldFailPrint = false
+  shouldHangSettle = false
   executedScript: string | null = null
   executedWithUserGesture: boolean | undefined
   printOptions: Electron.PrintToPDFOptions | null = null
@@ -67,6 +68,9 @@ class TestPdfWindow implements PdfExportWindow {
     executeJavaScript: async (script: string, userGesture?: boolean): Promise<void> => {
       this.executedScript = script
       this.executedWithUserGesture = userGesture
+      // a renderer whose fonts/bitmaps never settle: the promise must not
+      // keep the export alive past the watchdog
+      if (this.shouldHangSettle) return new Promise<void>(() => {})
     },
     printToPDF: async (options: Electron.PrintToPDFOptions): Promise<Buffer> => {
       this.printOptions = options
@@ -223,6 +227,32 @@ describe('slides PDF export', () => {
     const html = buildPdfExportHtml([{ png: 'png' }], 13.333, 7.5)
     expect(html).toContain('<div class="page" id="pg1">')
     expect(html).not.toContain('<a ')
+  })
+
+  // regression: a hung renderer used to leave the export promise unsettled
+  // forever — spinning button, leaked hidden window and temp dir per retry.
+  it('fails the export and cleans up when the renderer never settles', async () => {
+    const win = new TestPdfWindow()
+    win.shouldHangSettle = true
+    const filePath = await outputPath()
+
+    const result = await exportSlidesPdf({
+      pages: [{ png: 'png' }],
+      widthPx: 1600,
+      heightPx: 900,
+      filePath,
+      createWindow: () => win,
+      openExportedPdf: () => {},
+      timeoutMs: 50,
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('slides PDF export timed out after 50ms')
+    // the finally block still ran: window destroyed, temp dir removed
+    expect(win.destroyed).toBe(true)
+    expect(win.tempDirectoryExistedAtDestroy).toBe(true)
+    expect(existsSync(dirname(win.loadedPath!))).toBe(false)
+    expect(existsSync(filePath)).toBe(false)
   })
 
   it('keeps real capture dimensions exact and falls back for degenerate ones', async () => {

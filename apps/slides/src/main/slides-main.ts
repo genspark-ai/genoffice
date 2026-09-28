@@ -4510,7 +4510,10 @@ export function registerSlidesIpc(): void {
   ipcMain.handle('slides:export-pdf', async (_e, op: ExportPdfOp): Promise<ExportPdfResult> => {
     return exportSlidesPdf({
       ...op,
-      createWindow: () => new BrowserWindow({ show: false, webPreferences: { sandbox: true } }),
+      // hidden window: without this, throttled timers/rAF stall the
+      // PRINT_READY_SCRIPT settle wait (same as the headless export window)
+      createWindow: () =>
+        new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } }),
       openExportedPdf,
     })
   })

@@ -23,6 +23,8 @@ export interface ExportSlidesPdfOptions {
   fontCss?: string
   createWindow(): PdfExportWindow
   openExportedPdf(path: string): void
+  /** Watchdog for a hung renderer (default 300s, matching the headless export) */
+  timeoutMs?: number
 }
 
 export interface ExportSlidesPdfResult {
@@ -126,6 +128,12 @@ export function exportPageWidthIn(widthPx: number, heightPx: number): number {
   return Math.round(safe * PDF_EXPORT_HEIGHT_IN * 1000) / 1000
 }
 
+/** Hidden export window watchdog: a renderer that never settles (a stuck font
+ * or bitmap, a wedged print job) must fail the export instead of spinning the
+ * button forever and leaking the hidden window + temp dir on every retry.
+ * Same budget as the headless export in slides-main.ts. */
+export const PDF_EXPORT_TIMEOUT_MS = 300_000
+
 /** Export rendered slide pages via an app-owned temporary HTML file. */
 export async function exportSlidesPdf({
   pages,
@@ -136,31 +144,45 @@ export async function exportSlidesPdf({
   fontCss,
   createWindow,
   openExportedPdf,
+  timeoutMs = PDF_EXPORT_TIMEOUT_MS,
 }: ExportSlidesPdfOptions): Promise<ExportSlidesPdfResult> {
   // PDF page size: fixed 7.5in height, width by slide ratio (16:9 -> 13.333in, 4:3 -> 10in)
   const heightIn = PDF_EXPORT_HEIGHT_IN
   const widthIn = exportPageWidthIn(widthPx, heightPx)
   const win = createWindow()
   let tempDir: string | null = null
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     tempDir = await mkdtemp(join(tmpdir(), 'genoffice-slides-pdf-'))
     const htmlPath = join(tempDir, 'slides.html')
     await writeFile(htmlPath, buildPdfExportHtml(pages, widthIn, heightIn, links, fontCss), 'utf8')
-    await win.loadFile(htmlPath)
-    await win.webContents.executeJavaScript(PRINT_READY_SCRIPT, true)
-    const pdf = await win.webContents.printToPDF({
-      landscape: false, // The page size is already landscape (width > height); passing landscape would rotate a second time
-      printBackground: true,
-      pageSize: { width: widthIn, height: heightIn },
-      margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      preferCSSPageSize: false,
-    })
-    await writeFile(filePath, pdf)
-    openExportedPdf(filePath)
-    return { ok: true, path: filePath }
+    const result = await Promise.race([
+      (async (): Promise<ExportSlidesPdfResult> => {
+        await win.loadFile(htmlPath)
+        await win.webContents.executeJavaScript(PRINT_READY_SCRIPT, true)
+        const pdf = await win.webContents.printToPDF({
+          landscape: false, // The page size is already landscape (width > height); passing landscape would rotate a second time
+          printBackground: true,
+          pageSize: { width: widthIn, height: heightIn },
+          margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          preferCSSPageSize: false,
+        })
+        await writeFile(filePath, pdf)
+        openExportedPdf(filePath)
+        return { ok: true, path: filePath }
+      })(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`slides PDF export timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        )
+      }),
+    ])
+    return result
   } catch (err) {
     return { ok: false, error: String(err) }
   } finally {
+    if (timer) clearTimeout(timer)
     try {
       win.destroy()
     } finally {
