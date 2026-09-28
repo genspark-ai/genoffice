@@ -224,12 +224,14 @@ export function getFontIndex(): FontIndex {
 // bold toggle on an italic run wants both tokens; an atomic token would score zero).
 // "oblique" folds into "italic": families like Helvetica name their slanted faces
 // Oblique, and an italic want must still count them as hits.
+// "demibold"/"demi" fold the same way and must precede "bold": otherwise 'demibold'
+// contains 'bold' and a Demibold face tokenizes as Bold, tying it on a bold want.
 export const styleTokens = (ps: string): string[] =>
   (
     norm(ps).match(
-      /semibold|extrabold|bold|italic|oblique|light|thin|medium|heavy|black|regular|w\d/g,
+      /semibold|extrabold|demibold|demi|bold|italic|oblique|light|thin|medium|heavy|black|regular|w\d/g,
     ) ?? []
-  ).map((t) => (t === 'oblique' ? 'italic' : t))
+  ).map((t) => (t === 'oblique' ? 'italic' : t === 'demi' ? 'demibold' : t))
 
 const REGULARISH = ['regular', 'medium', 'w3', 'w4']
 
