@@ -321,7 +321,7 @@ export function runLayoutScript(
     if (logs.length >= 50 || logChars >= LOG_MAX_TOTAL_CHARS) return
     const entry = args
       .map((a) => {
-        const text = typeof a === 'string' ? a : JSON.stringify(a) ?? ''
+        const text = typeof a === 'string' ? a : (JSON.stringify(a) ?? '')
         return text.length > LOG_MAX_ENTRY_CHARS
           ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)`
           : text
@@ -355,7 +355,9 @@ export function runLayoutScript(
     try {
       const text = typeof returned === 'string' ? returned : JSON.stringify(returned)
       returnedStr =
-        text.length > LOG_MAX_ENTRY_CHARS ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)` : text
+        text.length > LOG_MAX_ENTRY_CHARS
+          ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)`
+          : text
     } catch {
       returnedStr = String(returned)
     }
