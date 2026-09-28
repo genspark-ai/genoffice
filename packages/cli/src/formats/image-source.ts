@@ -20,6 +20,10 @@ export interface ImageSource {
  * downloads, or a local path (absolute, else relative to the current directory
  * and then to the file the reference came from).
  */
+/** Same byte budget as remote image downloads; checked on the encoded text
+ *  (x4/3) before a single byte is allocated. */
+const MAX_DATA_URL_BASE64_CHARS = Math.ceil((MAX_REMOTE_IMAGE_BYTES * 4) / 3)
+
 export async function readImageSource(
   url: string,
   ctx: PathContext,
@@ -28,6 +32,11 @@ export async function readImageSource(
   if (url.startsWith('data:')) {
     const m = /^data:image\/([a-z0-9.+-]+);base64,(.*)$/is.exec(url)
     if (!m) return null
+    // Size the base64 text before decoding it: Buffer.from allocated the full
+    // payload first (measured: a 400 MB data URL peaked at ~1 GB RSS before
+    // any cap ran). base64 inflates by 4/3, so the encoded length is checked
+    // against the same byte budget the remote branch enforces after decoding.
+    if (m[2]!.length > MAX_DATA_URL_BASE64_CHARS) return null
     const bytes = new Uint8Array(Buffer.from(m[2]!, 'base64'))
     return withType(bytes, m[1]!.toLowerCase())
   }
