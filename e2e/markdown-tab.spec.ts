@@ -4,6 +4,18 @@ import { join } from 'node:path'
 import { test, expect } from '@playwright/test'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } from './helpers'
 
+/**
+ * The slice of the tiptap editor that this spec drives directly. The instance is
+ * attached to the `.doc-editor` element by tiptap (`view.dom.editor = editor`),
+ * so setting the caret through it keeps ProseMirror's state and the DOM in sync.
+ */
+type MarkdownEditorHandle = {
+  commands: {
+    focus: (position: 'start' | 'end' | 'all' | number | boolean | null) => boolean
+  }
+  state: { doc: { content: { size: number } }; selection: { from: number } }
+}
+
 test.describe('markdown editor', () => {
   test('newly opened long Markdown starts at the title', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'genoffice-md-scroll-'))
@@ -123,17 +135,34 @@ test.describe('markdown editor', () => {
       await expect(editor.locator('strong')).toHaveText('bold')
 
       // type at the end of the document, save with ⌘/Ctrl+S
+      // Place the caret through the editor instance rather than a raw DOM Range:
+      // ProseMirror is not obliged to adopt a selection written from the outside,
+      // and when it does not the caret stays where the load-time
+      // setTextSelection(1) left it, so the keystrokes land inside the heading
+      // ("# Appended line.Hello") instead of in a new trailing block.
       await editor.focus()
       await editor.evaluate((element) => {
-        const last = element.lastElementChild
-        const selection = window.getSelection()
-        if (!last || !selection) throw new Error('Markdown editor has no final block')
-        const range = document.createRange()
-        range.selectNodeContents(last)
-        range.collapse(false)
-        selection.removeAllRanges()
-        selection.addRange(range)
+        const instance = (element as HTMLElement & { editor?: MarkdownEditorHandle }).editor
+        if (!instance) throw new Error('No editor instance attached to .doc-editor')
+        if (!instance.commands.focus('end')) {
+          throw new Error('Could not move the caret to the end of the document')
+        }
+        // `focus('end')` resolves to Selection.atEnd(doc); allow one position of
+        // slack so the guard trips on a caret stuck near the top of the document
+        // (position 1, where the load-time selection sits) rather than on an
+        // off-by-one in the resolved end position.
+        const end = instance.state.doc.content.size
+        if (Math.abs(instance.state.selection.from - end) > 1) {
+          throw new Error(
+            `Caret at ${instance.state.selection.from}, expected the end of the document (${end})`,
+          )
+        }
       })
+      // `focus('end')` focuses the view on the next frame; wait for it so the
+      // keystrokes below are not delivered before the editor owns the caret.
+      await editorPage.waitForFunction(
+        () => document.activeElement?.classList.contains('doc-editor') === true,
+      )
       await editorPage.keyboard.press('Enter')
       await editorPage.keyboard.type('Appended line.')
       await editorPage.keyboard.press('ControlOrMeta+s')
