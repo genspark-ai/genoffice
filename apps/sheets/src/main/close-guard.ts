@@ -23,3 +23,28 @@ export function closeGuardDecision(state: {
   if (state.shuttingDown) return 'proceed'
   return 'prompt'
 }
+
+/**
+ * Tracks an in-flight quit for the close guard. Set by before-quit / SIGTERM /
+ * SIGINT; MUST be reset when the quit is vetoed (a prevented window close that
+ * ends up not proceeding). Left set after a cancelled quit, every later
+ * interactive close would read `shuttingDown: true` and silently discard the
+ * user's unsaved edits.
+ */
+export class ShutdownLatch {
+  private shuttingDown = false
+
+  /** before-quit / SIGTERM / SIGINT seen */
+  mark(): void {
+    this.shuttingDown = true
+  }
+
+  /** the quit was vetoed (window close prevented and not proceeding) */
+  reset(): void {
+    this.shuttingDown = false
+  }
+
+  get active(): boolean {
+    return this.shuttingDown
+  }
+}

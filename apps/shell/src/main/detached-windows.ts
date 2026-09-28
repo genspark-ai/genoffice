@@ -10,6 +10,7 @@ import {
 } from '../../../docs/src/main/docs-main'
 import {
   requestSheetsClose,
+  resetSheetsShuttingDown,
   setActiveSheetsWebContents,
   sheetsPendingEditCount,
 } from '../../../sheets/src/main/sheets-main'
@@ -509,7 +510,10 @@ export function createDetachedEditorWindow(options: {
     if (closeConfirmed || rec.released) return
     event.preventDefault()
     void (async () => {
+      // a denied close vetoes any quit that was in flight: the sheets close
+      // guard must prompt again on later closes instead of silently proceeding
       if (await confirmDetachedClose(rec)) tearDown()
+      else resetSheetsShuttingDown()
     })()
   })
   win.on('closed', () => {

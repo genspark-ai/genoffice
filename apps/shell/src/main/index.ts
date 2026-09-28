@@ -174,6 +174,7 @@ import {
   hasActiveQueuedWorkbook,
   installSheetsMenu,
   markSheetsShuttingDown,
+  resetSheetsShuttingDown,
   requestSheetsClose,
   resolveSheetsSessionPath,
   markSheetsUnsavedNew,
@@ -3251,33 +3252,41 @@ function createShellWindow(): void {
       return
     event.preventDefault()
     void (async () => {
-      for (const tab of dirtySheets) {
-        manager.activateTab(tab.id)
-        if (!(await requestSheetsClose(tab.webContents, win))) return
+      const denied = await (async () => {
+        for (const tab of dirtySheets) {
+          manager.activateTab(tab.id)
+          if (!(await requestSheetsClose(tab.webContents, win))) return true
+        }
+        for (const tab of dirtyPdf) {
+          manager.activateTab(tab.id)
+          if (!(await requestPdfClose(tab.webContents, win))) return true
+        }
+        for (const tab of dirtyMarkdown) {
+          manager.activateTab(tab.id)
+          if (!(await requestMarkdownClose(tab.webContents, win))) return true
+        }
+        for (const tab of dirtyHtml) {
+          manager.activateTab(tab.id)
+          if (!(await requestHtmlClose(tab.webContents, win))) return true
+        }
+        for (const tab of dirtySlides) {
+          manager.activateTab(tab.id)
+          if (!(await requestSlidesClose(tab.webContents, win))) return true
+        }
+        for (const tab of docsTabs) {
+          if (!(await docsQueryDirty(tab.webContents))) continue
+          manager.activateTab(tab.id)
+          if (!(await requestDocsClose(tab.webContents, win))) return true
+        }
+        return false
+      })()
+      // a denied close vetoes any quit that was in flight: the sheets close
+      // guard must prompt again on later closes instead of silently proceeding
+      if (denied) resetSheetsShuttingDown()
+      else {
+        closeConfirmed = true
+        if (!win.isDestroyed()) win.close()
       }
-      for (const tab of dirtyPdf) {
-        manager.activateTab(tab.id)
-        if (!(await requestPdfClose(tab.webContents, win))) return
-      }
-      for (const tab of dirtyMarkdown) {
-        manager.activateTab(tab.id)
-        if (!(await requestMarkdownClose(tab.webContents, win))) return
-      }
-      for (const tab of dirtyHtml) {
-        manager.activateTab(tab.id)
-        if (!(await requestHtmlClose(tab.webContents, win))) return
-      }
-      for (const tab of dirtySlides) {
-        manager.activateTab(tab.id)
-        if (!(await requestSlidesClose(tab.webContents, win))) return
-      }
-      for (const tab of docsTabs) {
-        if (!(await docsQueryDirty(tab.webContents))) continue
-        manager.activateTab(tab.id)
-        if (!(await requestDocsClose(tab.webContents, win))) return
-      }
-      closeConfirmed = true
-      if (!win.isDestroyed()) win.close()
     })()
   })
 

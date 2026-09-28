@@ -142,7 +142,7 @@ import {
 } from '../shared/desktop-api'
 import { IPC_CHANNELS } from '../shared/ipc-channels'
 import { atomicWriteFile } from './atomic-write'
-import { closeGuardDecision } from './close-guard'
+import { closeGuardDecision, ShutdownLatch } from './close-guard'
 import { SaveEditsTransferStore } from './save-edits-transfer'
 import { exportPdf, printWorkbook } from './pdf-export'
 import { allowsAutomaticWorkbookRecovery } from './recovery-policy'
@@ -2159,6 +2159,9 @@ export async function createSheetsWindow(
       // destroy() skips this handler on the way out (close() would re-enter
       // with the count possibly still non-zero after a discard).
       if (proceed && !window.isDestroyed()) window.destroy()
+      // not proceeding vetoes any quit that was in flight: go back to
+      // prompting on later closes (see resetSheetsShuttingDown)
+      else resetSheetsShuttingDown()
     })
   })
   window.on('closed', () => {
@@ -2437,16 +2440,26 @@ export function sheetsPendingEditCount(webContentsId: number): number {
  * silently overwrote the user's original file. Unsaved work is covered
  * by the 30s recovery copy instead — the next launch offers to restore it.
  */
-let appShuttingDown = false
+const shutdownLatch = new ShutdownLatch()
 
 export function markSheetsShuttingDown(): void {
-  appShuttingDown = true
+  shutdownLatch.mark()
+}
+
+/**
+ * The quit was vetoed (a prevented window close that ended up not proceeding).
+ * The latch must go back down: from now on closes are interactive again and
+ * the save prompt must run — leaving it set would silently discard unsaved
+ * edits on every later close.
+ */
+export function resetSheetsShuttingDown(): void {
+  shutdownLatch.reset()
 }
 
 app.on('before-quit', markSheetsShuttingDown)
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
-    appShuttingDown = true
+    shutdownLatch.mark()
     app.quit()
   })
 }
@@ -2467,7 +2480,7 @@ export async function requestSheetsClose(
   const decision = closeGuardDecision({
     pendingEdits: count,
     destroyed: contents.isDestroyed(),
-    shuttingDown: appShuttingDown,
+    shuttingDown: shutdownLatch.active,
   })
   if (decision === 'proceed') return true
   const options = {
@@ -2487,7 +2500,7 @@ export async function requestSheetsClose(
   if (response === 2) return false
   if (response === 1) return true
   // The window went away (or a quit started) while the prompt was up: don't save
-  if (appShuttingDown || contents.isDestroyed()) return true
+  if (shutdownLatch.active || contents.isDestroyed()) return true
   return await new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
       closeSaveWaiters.delete(contents.id)

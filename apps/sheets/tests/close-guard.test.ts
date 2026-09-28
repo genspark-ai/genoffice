@@ -5,7 +5,7 @@
  * shutting down — unsaved work is covered by the periodic recovery copy.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { closeGuardDecision } from '../src/main/close-guard'
+import { closeGuardDecision, ShutdownLatch } from '../src/main/close-guard'
 import {
   commitActiveCellEditor,
   pendingEditsForClose,
@@ -41,6 +41,38 @@ describe('closeGuardDecision', () => {
         expect(closeGuardDecision({ pendingEdits, destroyed, shuttingDown: true })).toBe('proceed')
       }
     }
+  })
+})
+
+describe('ShutdownLatch', () => {
+  // regression: the latch used to be set-once — after one quit was vetoed
+  // (prevented close that did not proceed), every later interactive close
+  // still read shuttingDown=true and silently discarded unsaved edits.
+  it('prompts again after a vetoed quit resets the latch', () => {
+    const latch = new ShutdownLatch()
+    expect(latch.active).toBe(false)
+    latch.mark()
+    expect(latch.active).toBe(true)
+    // designed quit-time behavior: proceed without prompting
+    expect(closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active })).toBe(
+      'proceed',
+    )
+    // quit vetoed (user hit Cancel on a prompt) → later closes are interactive
+    latch.reset()
+    expect(latch.active).toBe(false)
+    expect(closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active })).toBe(
+      'prompt',
+    )
+  })
+
+  it('re-arms for the next quit after a reset', () => {
+    const latch = new ShutdownLatch()
+    latch.mark()
+    latch.reset()
+    latch.mark()
+    expect(closeGuardDecision({ pendingEdits: 1, destroyed: false, shuttingDown: latch.active })).toBe(
+      'proceed',
+    )
   })
 })
 
