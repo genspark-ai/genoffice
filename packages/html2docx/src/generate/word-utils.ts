@@ -146,7 +146,7 @@ function makeNodeRuns(context, node, images: any = {}) {
 // content starts far right becomes a right-aligned stop at the margin
 // (dates), otherwise a left stop at the measured column position.
 function tabStopsFor(context, runs) {
-  const tabs = runs.filter((r) => r.text.includes('\t'))
+  const tabs = runs.filter((r) => r.text?.includes('\t'))
   if (!tabs.length) return []
   const stops = []
   const seen = new Set()
