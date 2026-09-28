@@ -56,11 +56,29 @@ function lineFontSize(line: Line): number {
   return median(line.spans.map((s) => s.fontSize)) || 12
 }
 
+/**
+ * Loop reductions instead of spreads: Math.min(...xs) passes every element as
+ * a function argument, so a page with ≥125k lines threw RangeError before a
+ * single line rendered (V8 argument limit, measured). The arrays here are
+ * page-data-sized, not structurally bounded.
+ */
+function minOf(values: readonly number[]): number {
+  let m = Infinity
+  for (const v of values) if (v < m) m = v
+  return m
+}
+
+function maxOf(values: readonly number[]): number {
+  let m = -Infinity
+  for (const v of values) if (v > m) m = v
+  return m
+}
+
 export function bodyContextOf(lines: readonly Line[]): BodyContext {
   if (lines.length === 0) return { bodyLeft: 0, bodyRight: 0 }
   return {
-    bodyLeft: Math.min(...lines.map((l) => l.box.x0)),
-    bodyRight: Math.max(...lines.map((l) => l.box.x1)),
+    bodyLeft: minOf(lines.map((l) => l.box.x0)),
+    bodyRight: maxOf(lines.map((l) => l.box.x1)),
   }
 }
 
@@ -143,7 +161,7 @@ function splitRunOnItems(group: Line[], wrap: { left: number; right: number }): 
   const left = group[0]!.box.x0
   if (left - wrap.left >= ITEM_MAX_INDENT_EMS * fontSize) return [group]
   if (!group.every((l) => approxEq(l.box.x0, left, tol))) return [group]
-  const groupRight = Math.max(...group.map((l) => l.box.x1))
+  const groupRight = maxOf(group.map((l) => l.box.x1))
   const isItemEnd = (l: Line, next: Line): boolean =>
     l.box.x1 - l.box.x0 < ITEM_MAX_WIDTH_RATIO * (wrap.right - wrap.left) &&
     groupRight - l.box.x1 >= firstWordWidthPt(next) + HARD_BREAK_WORD_SLACK_EMS * fontSize
@@ -183,7 +201,7 @@ function inferFormat(
   const lefts = lines.map((l) => l.box.x0)
   const rights = lines.map((l) => l.box.x1)
   const centers = lines.map((l) => rectCenterX(l.box))
-  const spread = (values: number[]): number => Math.max(...values) - Math.min(...values)
+  const spread = (values: number[]): number => maxOf(values) - minOf(values)
 
   // the first line may be indented; judge left alignment on the rest
   const bodyLefts = lefts.slice(1)
@@ -195,7 +213,7 @@ function inferFormat(
   // floating clear of the body's left edge. Checked before the left test —
   // a two-line group's leftAligned is vacuous (one body line), so a centered
   // title pair used to read as "left + huge first-line indent" and reflow.
-  const floating = Math.min(...lefts) - body.bodyLeft > tol
+  const floating = minOf(lefts) - body.bodyLeft > tol
   if (centerAligned && spread(lefts) > tol && spread(rights) > tol && floating) {
     return { align: 'center', firstLineIndentPt: 0 }
   }
@@ -210,7 +228,7 @@ function inferFormat(
     const nonLast = rights.slice(0, -1)
     if (
       spread(nonLast) <= JUSTIFY_RIGHT_TOL_EMS * fontSize &&
-      rights[rights.length - 1]! <= Math.max(...nonLast) + tol
+      rights[rights.length - 1]! <= maxOf(nonLast) + tol
     ) {
       align = 'justify'
     }
@@ -218,7 +236,7 @@ function inferFormat(
 
   let firstLineIndentPt = 0
   if ((align === 'left' || align === 'justify') && leftAligned) {
-    const paraLeft = Math.min(...bodyLefts)
+    const paraLeft = minOf(bodyLefts)
     const indent = lines[0]!.box.x0 - paraLeft
     if (indent > 0.5 * fontSize && indent < INDENT_MAX_EMS * fontSize) firstLineIndentPt = indent
   }
@@ -289,7 +307,7 @@ function markHardBreaks(
 ): Line[] {
   if (group.length < 2) return group
   const groupLeft = Math.min(...group.map((l) => l.box.x0))
-  const groupRight = Math.max(...group.map((l) => l.box.x1))
+  const groupRight = maxOf(group.map((l) => l.box.x1))
   // display-heading pass (P12 B): a short stack of ≥24pt lines is a title
   // whose breaks the author placed — substitute fonts run wider, so a natural
   // re-wrap lands in an ugly spot even when the source line reaches the wrap
@@ -515,8 +533,8 @@ export function groupIntoBlocks(
   // wrap edges for the short-item and hard-break judgments: the body edge
   // tightened to the real text extent — the page-level mirrored bodyRight
   // must not read every line of a narrow layout as "short"
-  const wrapRight = Math.min(ctx.bodyRight, Math.max(...lines.map((l) => l.box.x1)))
-  const wrapLeft = Math.max(ctx.bodyLeft, Math.min(...lines.map((l) => l.box.x0)))
+  const wrapRight = Math.min(ctx.bodyRight, maxOf(lines.map((l) => l.box.x1)))
+  const wrapLeft = Math.max(ctx.bodyLeft, minOf(lines.map((l) => l.box.x0)))
   const wrap = { left: wrapLeft, right: wrapRight }
 
   const grouped: Line[][] = []
