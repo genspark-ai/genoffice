@@ -397,6 +397,13 @@ export class ProjectStore {
       updatedAt: now,
       files: [],
     }
+    // A project.json that is there but does not parse is corrupt, not absent —
+    // readProject reports both as null, so writing the fresh project over it
+    // would drop the file list for good. Leave the broken file for recovery.
+    if (existsSync(this.projectJsonPath('default'))) {
+      console.warn('[project-store] default project.json is unreadable, not overwriting it')
+      return data
+    }
     ensureDir(this.projectDir('default'))
     this.writeProject(data)
 
