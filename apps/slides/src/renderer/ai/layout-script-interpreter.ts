@@ -509,12 +509,17 @@ export function interpretLayoutScript(
         return values
       }
       case 'ObjectExpression': {
+        // Arrays are capped at MAX_COLLECTION_SIZE; an object built by doubling
+        // ({x:o, y:o} chains) had no such bound and could balloon to hundreds of
+        // MB before any check ran.
         const out: Record<string, ScriptValue> = Object.create(null)
         for (const property of node.properties as AstNode[]) {
           if (property.type === 'SpreadElement') {
             const spread = evaluate(property.argument as AstNode, scope)
             if (!ownRecord(spread)) throw new Error('Object spread requires a plain data object')
             Object.assign(out, spread)
+            if (Object.keys(out).length > MAX_COLLECTION_SIZE)
+              throw new Error('Layout-script object is too large')
             continue
           }
           if (property.type !== 'Property' || property.kind !== 'init' || property.method) {
@@ -524,6 +529,8 @@ export function interpretLayoutScript(
             ? propertyKey(evaluate(property.key as AstNode, scope))
             : String((property.key as AstNode).name ?? (property.key as AstNode).value)
           out[key] = evaluate(property.value as AstNode, scope)
+          if (Object.keys(out).length > MAX_COLLECTION_SIZE)
+            throw new Error('Layout-script object is too large')
         }
         return out
       }

@@ -15,6 +15,9 @@
 import type { EditParagraph } from '../../shared/ipc'
 import { FONT_SIZE_PT_MIN, FONT_SIZE_PT_MAX } from '@genoffice/pptx-ops/font-size'
 import { interpretLayoutScript } from './layout-script-interpreter'
+// Debug output that flows into the next model request, per script run.
+const LOG_MAX_TOTAL_CHARS = 20_000
+const LOG_MAX_ENTRY_CHARS = 4_000
 
 export interface LayoutScriptElement {
   id: string
@@ -311,9 +314,21 @@ export function runLayoutScript(
     edits.push({ kind: 'stroke', id: key, stroke: { color: hex, widthPt }, ...grp })
   }
 
+  // Entries are count-capped AND byte-capped: 50 entries of unbounded size
+  // let a script push 100+ MB of text into the next model request.
+  let logChars = 0
   const log = (...args: unknown[]) => {
-    if (logs.length >= 50) return
-    logs.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '))
+    if (logs.length >= 50 || logChars >= LOG_MAX_TOTAL_CHARS) return
+    const entry = args
+      .map((a) => {
+        const text = typeof a === 'string' ? a : JSON.stringify(a) ?? ''
+        return text.length > LOG_MAX_ENTRY_CHARS
+          ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)`
+          : text
+      })
+      .join(' ')
+    logs.push(entry)
+    logChars += entry.length
   }
 
   let returned: unknown
@@ -338,7 +353,9 @@ export function runLayoutScript(
   let returnedStr: string | undefined
   if (returned !== undefined) {
     try {
-      returnedStr = typeof returned === 'string' ? returned : JSON.stringify(returned)
+      const text = typeof returned === 'string' ? returned : JSON.stringify(returned)
+      returnedStr =
+        text.length > LOG_MAX_ENTRY_CHARS ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)` : text
     } catch {
       returnedStr = String(returned)
     }

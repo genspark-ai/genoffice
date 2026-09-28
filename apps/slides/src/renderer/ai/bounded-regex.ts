@@ -338,8 +338,11 @@ export function compileBoundedRegex(source: string, flags: string): BoundedRegex
   }
   const anchoredOnly = !multiline && startsAnchored(root)
 
+  // The budget is shared by the whole compiled pattern, not re-issued per
+  // test() call: per-call budgets let a loop stack hundreds of them and block
+  // the renderer for minutes while reporting almost no steps consumed.
+  let budget = MAX_MATCH_STEPS
   const test = (input: string): boolean => {
-    let budget = MAX_MATCH_STEPS
     let depth = 0
     const step = (): void => {
       budget -= 1
