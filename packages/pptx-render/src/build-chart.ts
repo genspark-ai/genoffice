@@ -3502,11 +3502,7 @@ export function logTicks(
   // hi * (1 + 1e-9) itself overflows to Infinity when hi is MAX_VALUE, and
   // "base ** e <= Infinity" is always true — clamp the comparison bound too.
   const cap = Math.min(hi * (1 + 1e-9), Number.MAX_VALUE)
-  for (
-    let e = Math.ceil(lg(lo) - 1e-9);
-    base ** e <= cap && ticks.length < MAX_LOG_TICKS;
-    e++
-  ) {
+  for (let e = Math.ceil(lg(lo) - 1e-9); base ** e <= cap && ticks.length < MAX_LOG_TICKS; e++) {
     const v = base ** e
     // Past MAX_VALUE — and rounding (v * 1e12) would overflow too — the axis
     // ends at the last representable tick.
