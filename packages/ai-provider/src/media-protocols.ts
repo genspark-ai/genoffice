@@ -10,6 +10,7 @@
  */
 
 import { aiFetch } from './fetch'
+import { endpointUrl } from './protocols/shared'
 import { httpBodyDetail } from './http-error'
 import {
   DASHSCOPE_BASE_URL,
@@ -313,7 +314,7 @@ async function generateImageOpenAi(
     )
   }
   if (refs.length === 0 || style.edits === 'inline') {
-    const resp = await aiFetch(`${base}/images/generations`, {
+    const resp = await aiFetch(endpointUrl(base, '/images/generations'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...bearer(config) },
       body: JSON.stringify({
@@ -343,7 +344,7 @@ async function generateImageOpenAi(
       ref.name ?? `ref-${i}.${ext}`,
     )
   })
-  const resp = await aiFetch(`${base}/images/edits`, {
+  const resp = await aiFetch(endpointUrl(base, '/images/edits'), {
     method: 'POST',
     headers: bearer(config),
     body: form,
@@ -423,7 +424,7 @@ async function generateImageMinimax(
   const base = trimSlash(config.baseUrl || MINIMAX_BASE_URL)
   const ratio =
     input.aspectRatio && MINIMAX_RATIOS.has(input.aspectRatio) ? input.aspectRatio : undefined
-  const resp = await aiFetch(`${base}/image_generation`, {
+  const resp = await aiFetch(endpointUrl(base, '/image_generation'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...bearer(config) },
     body: JSON.stringify({
@@ -489,7 +490,7 @@ async function analyzeMediaOpenAi(
       )
     }
   }
-  const resp = await aiFetch(`${openAiBase(provider, config)}/chat/completions`, {
+  const resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/chat/completions'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...bearer(config) },
     body: JSON.stringify({ model, messages: [{ role: 'user', content: parts }] }),
@@ -544,7 +545,7 @@ async function generateImageGemini(
   const aspectRatio =
     input.aspectRatio && GEMINI_ASPECT_RATIOS.has(input.aspectRatio) ? input.aspectRatio : undefined
   if (model.startsWith('imagen-')) {
-    const resp = await aiFetch(`${base}/models/${model}:predict`, {
+    const resp = await aiFetch(endpointUrl(base, `/models/${model}:predict`), {
       method: 'POST',
       headers: geminiHeaders(config),
       body: JSON.stringify({
@@ -561,7 +562,7 @@ async function generateImageGemini(
     }
     return fromBase64(first.bytesBase64Encoded, first.mimeType)
   }
-  const resp = await aiFetch(`${base}/models/${model}:generateContent`, {
+  const resp = await aiFetch(endpointUrl(base, `/models/${model}:generateContent`), {
     method: 'POST',
     headers: geminiHeaders(config),
     body: JSON.stringify({
@@ -644,7 +645,7 @@ async function geminiUploadFile(
       throw new Error('Media upload timed out while the file was processing')
     }
     await new Promise((r) => setTimeout(r, GEMINI_FILE_POLL_MS))
-    const poll = await aiFetch(`${base}/${String(file.name)}`, {
+    const poll = await aiFetch(endpointUrl(base, `/${String(file.name)}`), {
       headers: { 'x-goog-api-key': config.apiKey },
       signal,
     })
@@ -776,7 +777,7 @@ export async function testMediaProvider(
             headers: { 'x-goog-api-key': config.apiKey },
             signal: guard,
           })
-        : await aiFetch(`${openAiBase(provider, config)}/models`, {
+        : await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
             headers: bearer(config),
             signal: guard,
           })
