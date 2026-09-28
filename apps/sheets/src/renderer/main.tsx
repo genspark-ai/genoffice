@@ -74,7 +74,7 @@ async function bootstrap(): Promise<void> {
   // Check the queued path before the first React paint so it never looks Ready.
   const queuedWorkbookAtBoot = await window.desktopApi?.hasQueuedWorkbook?.().catch(() => false)
   window.desktopApi?.onThemeChanged(applyTheme)
-  void window.desktopApi
+  await window.desktopApi
     ?.getAiPanelPrefs?.()
     .then(applyAiPanelPrefs)
     .catch(() => {})

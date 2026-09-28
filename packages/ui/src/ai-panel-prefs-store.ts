@@ -42,6 +42,22 @@ export function aiPanelWidthAtPointer(clientX: number): number {
   return current.side === 'right' ? window.innerWidth - clientX : clientX
 }
 
+/**
+ * Initial open state of an app's AI panel: the app's remembered last state,
+ * unless the user turned off "open the AI panel in new documents". Call after
+ * the shell prefs have been applied (the apps await them before first render).
+ */
+export function aiPanelInitiallyOpen(storageKey: string): boolean {
+  if (!current.openInNewDocs) return false
+  return localStorage.getItem(storageKey) !== '0'
+}
+
+/** Persist the panel state for `aiPanelInitiallyOpen`; a no-op while the setting is off so the memory survives */
+export function rememberAiPanelOpen(storageKey: string, open: boolean): void {
+  if (!current.openInNewDocs) return
+  localStorage.setItem(storageKey, open ? '1' : '0')
+}
+
 export function useAiPanelPrefs(): AiPanelPrefs {
   return useSyncExternalStore(
     subscribe,

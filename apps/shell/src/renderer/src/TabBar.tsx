@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties, ReactElement } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import type { TabsApi, TabSummary } from '../../shared/tabs-api'
+import { TEAR_OFF_SLACK, insertionIndexForX, isBeyondBand } from '../../shared/tab-drag-geometry'
 import { notifyFilesChanged } from './file-events'
 import { useI18n } from './locale'
 
@@ -174,6 +175,8 @@ export function TabBar() {
 
   // Chrome-style drag-to-reorder: the grabbed tab tracks the pointer 1:1 while
   // its neighbours slide aside live; the final order is committed on release.
+  // Leaving the strip vertically tears the tab off into its own window, which
+  // then follows the still-held pointer; coming back over the strip docks it.
   interface DragInfo {
     pointerId: number
     id: string
@@ -182,8 +185,15 @@ export function TabBar() {
     /** viewport-x left edge + width of every tab, sampled at drag start */
     lefts: number[]
     widths: number[]
+    /** the strip's vertical band, sampled at drag start (tear-off threshold) */
+    stripTop: number
+    stripBottom: number
     target: number
     started: boolean
+    /** tear-off requested, main has not answered yet */
+    tearing: boolean
+    /** the tab is a window now; moves steer it, release lets it go */
+    torn: boolean
   }
   const dragRef = useRef<DragInfo | null>(null)
   const [dragVisual, setDragVisual] = useState<{
@@ -193,11 +203,28 @@ export function TabBar() {
     target: number
     width: number
   } | null>(null)
+  // a detached window is being dragged over the strip: insertion indicator x
+  // (strip-relative) — the main process asks, this strip answers with the slot
+  const [dockX, setDockX] = useState<number | null>(null)
+
+  const tabRects = () =>
+    Array.from(stripRef.current?.querySelectorAll<HTMLElement>('.tab-item') ?? [], (el) => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, width: r.width }
+    })
 
   const finishDrag = (pointerId: number, commit: boolean) => {
     const drag = dragRef.current
     if (!drag || pointerId !== drag.pointerId) return
     dragRef.current = null
+    if (drag.torn) {
+      // release: the window under the pointer stays where it is and takes focus
+      void window.aiOfficeTabs.endTornDrag()
+      return
+    }
+    // released while main is still creating the window: the tearOff callback
+    // sees no drag and ends the drag itself
+    if (drag.tearing) return
     if (!drag.started) {
       // plain click: the in-view scroll was suppressed while the press was
       // held (dragRef was set), so honor it now that the press is over
@@ -241,11 +268,110 @@ export function TabBar() {
   // and pointerup/pointercancel never fire — clear the drag state ourselves
   useEffect(() => {
     const drag = dragRef.current
-    if (drag && !tabs.some((t) => t.id === drag.id)) {
+    // a torn-off tab leaves the list by design and its drag goes on
+    if (drag && !drag.torn && !drag.tearing && !tabs.some((t) => t.id === drag.id)) {
       dragRef.current = null
       setDragVisual(null)
     }
   }, [tabs])
+
+  // A detached window dragged over this strip: place the insertion indicator
+  // at the slot under the pointer and tell main which slot that is.
+  useEffect(() => {
+    return window.aiOfficeTabs.onDockPreview?.((preview) => {
+      const strip = stripRef.current
+      if (!preview || !strip) {
+        setDockX(null)
+        return
+      }
+      const rects = tabRects()
+      const index = insertionIndexForX(rects, preview.x)
+      window.aiOfficeTabs.reportDockIndex(index)
+      const stripLeft = strip.getBoundingClientRect().left - strip.scrollLeft
+      const slot = rects[index]
+      const last = rects[rects.length - 1]
+      const edge = slot ? slot.left : last ? last.left + last.width : preview.x
+      setDockX(Math.round(edge - stripLeft))
+    })
+  }, [])
+
+  /** pointer moves during a drag, delivered to the strip (it holds the capture) */
+  const handleDragMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+    if (drag.torn) {
+      window.aiOfficeTabs.dragTornWindow(event.screenX, event.screenY)
+      // back over the strip: the window folds back into a tab at the pointer's slot
+      if (!isBeyondBand(event.clientY, drag.stripTop, drag.stripBottom, 0)) {
+        dragRef.current = null
+        void window.aiOfficeTabs.dockTornWindow(insertionIndexForX(tabRects(), event.clientX))
+      }
+      return
+    }
+    if (drag.tearing) return
+    let dx = event.clientX - drag.startX
+    // 4px dead zone so plain clicks never wiggle the tab
+    if (!drag.started) {
+      if (Math.abs(dx) < 4 && Math.abs(event.clientY - (drag.stripTop + drag.stripBottom) / 2) < 4)
+        return
+      // re-sample geometry the moment the drag really starts — the
+      // pointer-down activation re-renders and could have moved tabs
+      const rects = tabRects()
+      drag.lefts = rects.map((r) => r.left)
+      drag.widths = rects.map((r) => r.width)
+      drag.started = true
+    }
+    // far enough above or below the strip: tear the tab off into its own window
+    if (isBeyondBand(event.clientY, drag.stripTop, drag.stripBottom, TEAR_OFF_SLACK)) {
+      drag.tearing = true
+      const { screenX, screenY, pointerId } = event
+      void window.aiOfficeTabs.tearOff(drag.id, screenX, screenY).then((ok) => {
+        const current = dragRef.current
+        if (!current || current.pointerId !== pointerId) {
+          // released meanwhile: let the window go (it exists only when ok)
+          if (ok) void window.aiOfficeTabs.endTornDrag()
+          return
+        }
+        current.tearing = false
+        if (!ok) return
+        current.torn = true
+        setDragVisual(null)
+      })
+      return
+    }
+    // keep the tab inside the strip; slot 0 (Home) is off limits
+    const last = drag.lefts.length - 1
+    const minDx = drag.lefts[1] - drag.lefts[drag.from]
+    const maxDx =
+      drag.lefts[last] + drag.widths[last] - drag.widths[drag.from] - drag.lefts[drag.from]
+    dx = Math.min(Math.max(dx, minDx), Math.max(minDx, maxDx))
+    // Chrome's rule: swap once the grabbed tab's leading edge crosses
+    // a neighbour's midpoint (the clamped center can only ever *touch*
+    // the first slot's midpoint, so edge-based tests have no dead spot)
+    const draggedLeft = drag.lefts[drag.from] + dx
+    const draggedRight = draggedLeft + drag.widths[drag.from]
+    let target = drag.from
+    for (let i = 1; i < drag.from; i++) {
+      if (draggedLeft < drag.lefts[i] + drag.widths[i] / 2) {
+        target = i
+        break
+      }
+    }
+    for (let i = last; i > drag.from; i--) {
+      if (draggedRight > drag.lefts[i] + drag.widths[i] / 2) {
+        target = i
+        break
+      }
+    }
+    drag.target = target
+    setDragVisual({
+      id: drag.id,
+      dx,
+      from: drag.from,
+      target,
+      width: drag.widths[drag.from],
+    })
+  }
 
   // Trackpads scroll the strip natively; map a mouse's vertical wheel to
   // horizontal scrolling. Native listener because React registers wheel as
@@ -298,7 +424,19 @@ export function TabBar() {
           </svg>
         </button>
       )}
-      <div className={dragVisual ? 'tab-strip dragging' : 'tab-strip'} ref={stripRef}>
+      <div
+        className={`tab-strip ${dragVisual ? 'dragging' : ''} ${dockX !== null ? 'dock-target' : ''}`}
+        ref={stripRef}
+        // the strip, not the grabbed tab, owns the pointer capture: a torn-off
+        // tab's element unmounts mid-gesture, and the moves must keep coming
+        onPointerMove={handleDragMove}
+        onPointerUp={(event) => finishDrag(event.pointerId, true)}
+        onPointerCancel={(event) => finishDrag(event.pointerId, false)}
+        onLostPointerCapture={(event) => finishDrag(event.pointerId, false)}
+      >
+        {dockX !== null && (
+          <div className="tab-dock-indicator" style={{ left: dockX }} aria-hidden="true" />
+        )}
         {tabs.map((tab, index) => {
           // live transforms: the grabbed tab tracks the pointer; tabs between
           // the origin and the current target slide aside by the grabbed width
@@ -329,10 +467,17 @@ export function TabBar() {
                   Math.round(event.clientY),
                 )
               }}
-              onDoubleClick={(event) => {
+              onMouseDown={(event) => {
+                // the strip captures the pointer for dragging, which retargets
+                // the derived dblclick to the strip; pointer events carry no
+                // click count either, so read it off the compat mousedown
+                if (event.button !== 0 || event.detail !== 2) return
                 if (tab.id === 'home' || !tab.filePath) return
                 if ((event.target as HTMLElement).closest('.tab-close')) return
                 if ((event.target as HTMLElement).closest('.tab-rename-input')) return
+                // the input mounts and autofocuses inside this dispatch; the
+                // default mousedown focus step would blur it straight away
+                event.preventDefault()
                 const ext = fileExtension(tab.filePath)
                 const base =
                   ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
@@ -340,7 +485,6 @@ export function TabBar() {
                     : tab.title
                 setRenaming({ id: tab.id, value: base })
               }}
-
               onPointerDown={(event) => {
                 if (event.button !== 0) return
                 if ((event.target as HTMLElement).closest('.tab-close')) return
@@ -351,9 +495,8 @@ export function TabBar() {
                 if (tab.id === 'home') return
                 const strip = stripRef.current
                 if (!strip) return
-                const rects = Array.from(strip.querySelectorAll<HTMLElement>('.tab-item'), (el) =>
-                  el.getBoundingClientRect(),
-                )
+                const rects = tabRects()
+                const band = strip.getBoundingClientRect()
                 dragRef.current = {
                   pointerId: event.pointerId,
                   id: tab.id,
@@ -361,72 +504,15 @@ export function TabBar() {
                   startX: event.clientX,
                   lefts: rects.map((r) => r.left),
                   widths: rects.map((r) => r.width),
+                  stripTop: band.top,
+                  stripBottom: band.bottom,
                   target: index,
                   started: false,
+                  tearing: false,
+                  torn: false,
                 }
-                // pointer capture prevents dblclick from firing — skip while renaming
-                if (renaming?.id === tab.id) return
-                event.currentTarget.setPointerCapture(event.pointerId)
+                strip.setPointerCapture(event.pointerId)
               }}
-              onPointerMove={(event) => {
-                const drag = dragRef.current
-                if (!drag || event.pointerId !== drag.pointerId) return
-                let dx = event.clientX - drag.startX
-                // 4px dead zone so plain clicks never wiggle the tab
-                if (!drag.started) {
-                  if (Math.abs(dx) < 4) return
-                  // re-sample geometry the moment the drag really starts — the
-                  // pointer-down activation re-renders and could have moved tabs
-                  const strip = stripRef.current
-                  if (strip) {
-                    const rects = Array.from(
-                      strip.querySelectorAll<HTMLElement>('.tab-item'),
-                      (el) => el.getBoundingClientRect(),
-                    )
-                    drag.lefts = rects.map((r) => r.left)
-                    drag.widths = rects.map((r) => r.width)
-                  }
-                  drag.started = true
-                }
-                // keep the tab inside the strip; slot 0 (Home) is off limits
-                const last = drag.lefts.length - 1
-                const minDx = drag.lefts[1] - drag.lefts[drag.from]
-                const maxDx =
-                  drag.lefts[last] +
-                  drag.widths[last] -
-                  drag.widths[drag.from] -
-                  drag.lefts[drag.from]
-                dx = Math.min(Math.max(dx, minDx), Math.max(minDx, maxDx))
-                // Chrome's rule: swap once the grabbed tab's leading edge crosses
-                // a neighbour's midpoint (the clamped center can only ever *touch*
-                // the first slot's midpoint, so edge-based tests have no dead spot)
-                const draggedLeft = drag.lefts[drag.from] + dx
-                const draggedRight = draggedLeft + drag.widths[drag.from]
-                let target = drag.from
-                for (let i = 1; i < drag.from; i++) {
-                  if (draggedLeft < drag.lefts[i] + drag.widths[i] / 2) {
-                    target = i
-                    break
-                  }
-                }
-                for (let i = last; i > drag.from; i--) {
-                  if (draggedRight > drag.lefts[i] + drag.widths[i] / 2) {
-                    target = i
-                    break
-                  }
-                }
-                drag.target = target
-                setDragVisual({
-                  id: drag.id,
-                  dx,
-                  from: drag.from,
-                  target,
-                  width: drag.widths[drag.from],
-                })
-              }}
-              onPointerUp={(event) => finishDrag(event.pointerId, true)}
-              onPointerCancel={(event) => finishDrag(event.pointerId, false)}
-              onLostPointerCapture={(event) => finishDrag(event.pointerId, false)}
             >
               {/* highlight plate behind the content — hover capsule / active white body */}
               <span className="tab-plate" aria-hidden="true" />

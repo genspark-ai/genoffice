@@ -52,6 +52,11 @@ export const ko = {
   dlgGoToNote:
     '셀 참조를 입력하거나 이름 범위를 선택하세요. 이동을 누르면 대상으로 이동하여 선택합니다. 이름을 클릭하면 입력란에 채워지고, 두 번 클릭하면 바로 이동합니다.',
   dlgGoToGo: '이동',
+  dlgZoomTitle: '확대/축소',
+  dlgZoomMagnification: '배율',
+  dlgZoomFitSelection: '선택 영역에 맞춤',
+  dlgZoomCustom: '사용자 지정',
+  dlgZoomRangeError: '{min}에서 {max} 사이의 숫자를 입력하세요.',
 
   dlgHfTitle: '머리글/바닥글',
   dlgHfHeaderLeft: '머리글 · 왼쪽',
@@ -403,4 +408,12 @@ export const ko = {
   dlgFnCatWeb: '웹',
   dlgFnCatArray: '배열',
   dlgFnCatOther: '기타',
+  dlgInsertCellsTitle: '삽입',
+  dlgDeleteCellsTitle: '삭제',
+  dlgCellsShiftRight: '셀을 오른쪽으로 밀기',
+  dlgCellsShiftDown: '셀을 아래로 밀기',
+  dlgCellsShiftLeft: '셀을 왼쪽으로 밀기',
+  dlgCellsShiftUp: '셀을 위로 밀기',
+  dlgCellsEntireRow: '행 전체',
+  dlgCellsEntireColumn: '열 전체',
 } satisfies Record<keyof typeof zh, string>

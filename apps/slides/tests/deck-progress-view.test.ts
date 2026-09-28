@@ -112,7 +112,7 @@ describe('deriveDeckProgressView', () => {
       t,
     )
     const step = view.steps.find((s) => s.key === 'pages')!
-    expect(step.stepStatus).not.toBe('done')
+    expect(step.stepStatus).toBe('stopped')
     // labelled with the pages that actually landed, not the 10 that were planned
     expect(step.label).toBe('PagesaiPagesSuffix:{"n":3}')
     expect(step.label).not.toContain('"n":10')

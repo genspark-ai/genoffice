@@ -15,9 +15,19 @@
  * - Home: start of the current row (first unfrozen column)
  * - Ctrl+Space / Shift+Space: select the whole column / row of the
  *   active cell (mac: ⌃Space — ⌘Space belongs to Spotlight)
+ * - Ctrl+Shift+= / Ctrl+Numpad+ and Ctrl+- / Ctrl+Numpad-: insert / delete
+ *   cells (whole rows/columns act directly, otherwise the dialog opens)
+ * - mac editing keys Excel-for-Mac accepts next to Univer's own: ⌘Enter
+ *   fills the selection like ⌃Enter, ⌃⌥Enter / ⌘⌥Enter break the line like
+ *   ⌥Enter, ⌘T cycles the reference like F4
  */
 import {
   CommandType,
+  EDITOR_ACTIVATED,
+  FOCUSING_EDITOR_INPUT_FORMULA,
+  FOCUSING_EDITOR_STANDALONE,
+  FOCUSING_SHEET,
+  FOCUSING_UNIVER_EDITOR,
   ICommandService,
   IUniverInstanceService,
   RANGE_TYPE,
@@ -38,14 +48,26 @@ import {
   getCellAtRowCol,
   getSheetCommandTarget,
 } from '@univerjs/sheets'
-import { whenSheetEditorFocused } from '@univerjs/sheets-ui'
+import {
+  SetCellEditVisibleOperation,
+  whenSheetEditorActivated,
+  whenSheetEditorFocused,
+} from '@univerjs/sheets-ui'
+import { BreakLineCommand } from '@univerjs/docs-ui'
+import { ReferenceAbsoluteOperation } from '@univerjs/sheets-formula-ui'
+import { DeviceInputEventType } from '@univerjs/engine-render'
+import type { IContextService } from '@univerjs/core'
 import type { UniverRuntime } from './univer-state'
+import { requestCellsAction } from './insert-delete-cells'
+import type { CellsMode } from './insert-delete-cells'
 
 // browser keycodes Univer's KeyCode enum doesn't name
 const KEY_PAGE_UP = 33
 const KEY_PAGE_DOWN = 34
 const KEY_END = 35
 const KEY_HOME = 36
+const KEY_NUMPAD_ADD = 107
+const KEY_NUMPAD_SUBTRACT = 109
 
 const ACTIVATE_ADJACENT_SHEET_ID = 'genoffice.command.activate-adjacent-sheet'
 const SELECT_SHEET_HOME_ID = 'genoffice.command.select-sheet-home'
@@ -57,6 +79,8 @@ const HIDE_SELECTED_ROWS_ID = 'genoffice.command.hide-selected-rows'
 const UNHIDE_SELECTED_ROWS_ID = 'genoffice.command.unhide-selected-rows'
 const HIDE_SELECTED_COLS_ID = 'genoffice.command.hide-selected-cols'
 const UNHIDE_SELECTED_COLS_ID = 'genoffice.command.unhide-selected-cols'
+const INSERT_CELLS_ID = 'genoffice.command.insert-cells'
+const DELETE_CELLS_ID = 'genoffice.command.delete-cells'
 
 /** first visible line at or after `from` (hidden rows/columns are not landing spots) */
 function firstVisible(worksheet: Worksheet, axis: 'row' | 'column', from: number): number {
@@ -115,6 +139,7 @@ function selectCell(accessor: IAccessor, row: number, column: number): Promise<b
 export function registerExcelShortcuts(
   runtime: UniverRuntime,
   usedEndOf?: (subUnitId: string) => { row: number; column: number } | null,
+  openCellsDialog: (mode: CellsMode) => void = () => {},
 ): void {
   const injector = runtime.univer.__getInjector()
   const commandService = injector.get(ICommandService)
@@ -311,6 +336,17 @@ export function registerExcelShortcuts(
     handler: (accessor) => hideOrUnhide(accessor, 'column', 'unhide'),
   }
 
+  const insertCells: ICommand = {
+    id: INSERT_CELLS_ID,
+    type: CommandType.COMMAND,
+    handler: () => requestCellsAction(runtime, 'insert', openCellsDialog),
+  }
+  const deleteCells: ICommand = {
+    id: DELETE_CELLS_ID,
+    type: CommandType.COMMAND,
+    handler: () => requestCellsAction(runtime, 'delete', openCellsDialog),
+  }
+
   for (const command of [
     activateAdjacentSheet,
     selectSheetHome,
@@ -322,6 +358,8 @@ export function registerExcelShortcuts(
     unhideSelectedRows,
     hideSelectedCols,
     unhideSelectedCols,
+    insertCells,
+    deleteCells,
   ]) {
     commandService.registerCommand(command)
   }
@@ -410,8 +448,75 @@ export function registerExcelShortcuts(
       binding: KeyCode.Digit0 | MetaKeys.CTRL_COMMAND | MetaKeys.SHIFT,
       preconditions: whenSheetEditorFocused,
     },
+    // Excel's Insert/Delete Cells. Upstream binds Ctrl+= / Ctrl+- to zoom
+    // (priority 1); Ctrl+- goes to Excel semantics, plain Ctrl+= stays zoom-in.
+    {
+      id: INSERT_CELLS_ID,
+      priority: 100,
+      binding: KeyCode.EQUAL | MetaKeys.CTRL_COMMAND | MetaKeys.SHIFT,
+      preconditions: whenSheetEditorFocused,
+    },
+    {
+      id: INSERT_CELLS_ID,
+      priority: 100,
+      binding: KEY_NUMPAD_ADD | MetaKeys.CTRL_COMMAND,
+      preconditions: whenSheetEditorFocused,
+    },
+    {
+      id: DELETE_CELLS_ID,
+      priority: 100,
+      binding: KeyCode.MINUS | MetaKeys.CTRL_COMMAND,
+      preconditions: whenSheetEditorFocused,
+    },
+    {
+      id: DELETE_CELLS_ID,
+      priority: 100,
+      binding: KEY_NUMPAD_SUBTRACT | MetaKeys.CTRL_COMMAND,
+      preconditions: whenSheetEditorFocused,
+    },
+    // Upstream's ⌃Enter precondition (whenEditorDidNotInputFormulaActivated)
+    // is not exported; same context checks.
+    {
+      id: SetCellEditVisibleOperation.id,
+      binding: 0,
+      mac: KeyCode.ENTER | MetaKeys.CTRL_COMMAND,
+      preconditions: whenCellEditorNotFormulaActivated,
+      staticParameters: {
+        visible: false,
+        eventType: DeviceInputEventType.Keyboard,
+        keycode: KeyCode.ENTER | MetaKeys.CTRL_COMMAND,
+      },
+    },
+    {
+      id: BreakLineCommand.id,
+      binding: 0,
+      mac: KeyCode.ENTER | MetaKeys.ALT | MetaKeys.MAC_CTRL,
+      preconditions: whenSheetEditorActivated,
+    },
+    {
+      id: BreakLineCommand.id,
+      binding: 0,
+      mac: KeyCode.ENTER | MetaKeys.ALT | MetaKeys.CTRL_COMMAND,
+      preconditions: whenSheetEditorActivated,
+    },
+    {
+      id: ReferenceAbsoluteOperation.id,
+      binding: 0,
+      mac: KeyCode.T | MetaKeys.CTRL_COMMAND,
+      preconditions: whenSheetEditorActivated,
+    },
   ]
   for (const item of items) shortcutService.registerShortcut(item)
+}
+
+function whenCellEditorNotFormulaActivated(contextService: IContextService): boolean {
+  return (
+    contextService.getContextValue(FOCUSING_SHEET) &&
+    contextService.getContextValue(FOCUSING_UNIVER_EDITOR) &&
+    contextService.getContextValue(EDITOR_ACTIVATED) &&
+    !contextService.getContextValue(FOCUSING_EDITOR_INPUT_FORMULA) &&
+    !contextService.getContextValue(FOCUSING_EDITOR_STANDALONE)
+  )
 }
 
 /** exported for tests */
@@ -426,5 +531,9 @@ export const _shortcutInternals = {
   KEY_PAGE_DOWN,
   KEY_END,
   KEY_HOME,
+  KEY_NUMPAD_ADD,
+  KEY_NUMPAD_SUBTRACT,
+  INSERT_CELLS_ID,
+  DELETE_CELLS_ID,
   unfrozenOrigin,
 }

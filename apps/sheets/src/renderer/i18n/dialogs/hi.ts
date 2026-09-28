@@ -52,6 +52,11 @@ export const hi = {
   dlgGoToNote:
     "सेल संदर्भ टाइप करें या नामित श्रेणी चुनें; 'जाएं' लक्ष्य पर पहुंचकर उसे चुन लेता है। नाम पर क्लिक करने से वह भर जाता है, डबल-क्लिक से सीधे पहुंच जाते हैं।",
   dlgGoToGo: 'जाएं',
+  dlgZoomTitle: 'ज़ूम',
+  dlgZoomMagnification: 'आवर्धन',
+  dlgZoomFitSelection: 'चयन में फ़िट करें',
+  dlgZoomCustom: 'कस्टम',
+  dlgZoomRangeError: '{min} और {max} के बीच कोई संख्या दर्ज करें।',
 
   dlgHfTitle: 'शीर्षलेख और पादलेख',
   dlgHfHeaderLeft: 'शीर्षलेख · बायां',
@@ -407,4 +412,12 @@ export const hi = {
   dlgFnCatWeb: 'वेब',
   dlgFnCatArray: 'सरणी',
   dlgFnCatOther: 'अन्य',
+  dlgInsertCellsTitle: 'सम्मिलित करें',
+  dlgDeleteCellsTitle: 'हटाएँ',
+  dlgCellsShiftRight: 'सेल दाएँ शिफ्ट करें',
+  dlgCellsShiftDown: 'सेल नीचे शिफ्ट करें',
+  dlgCellsShiftLeft: 'सेल बाएँ शिफ्ट करें',
+  dlgCellsShiftUp: 'सेल ऊपर शिफ्ट करें',
+  dlgCellsEntireRow: 'पूरी पंक्ति',
+  dlgCellsEntireColumn: 'पूरा स्तंभ',
 } satisfies Record<keyof typeof zh, string>

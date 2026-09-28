@@ -245,10 +245,11 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
         // Clamp wild columns (e.g. XXXXXX99) to append: padding millions of
         // empty cells would OOM on a hostile file.
         const col = ref ? columnIndex(ref) : cells.length
-        // A ref that points back into already-filled columns lands on a cell an
-        // earlier ref-less or malformed one was appended to; assigning over it
-        // would drop that value with no warning, so open a slot and push it right.
-        if (col >= 0 && col < MAX_XLSX_COLS && col < cells.length) cells.splice(col, 0, '')
+        // A ref landing on a slot an earlier ref-less or malformed cell was
+        // appended to would drop that value silently: push it right instead.
+        // An empty slot (unsorted but valid refs like C1,A1) is just taken.
+        if (col >= 0 && col < MAX_XLSX_COLS && col < cells.length && cells[col] !== '')
+          cells.splice(col, 0, '')
         const target = col >= 0 && col < MAX_XLSX_COLS ? col : cells.length
         while (cells.length < target) cells.push('')
         cells[target] = text

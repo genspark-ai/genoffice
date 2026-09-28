@@ -189,15 +189,11 @@ export const ko = {
   appSourceAdded: "출처 '{title}'을(를) 추가했습니다. '인용 삽입'에서 인용할 수 있습니다",
   // Header & footer
   appTitlePgOn:
-    "'첫 페이지를 다르게 지정'을 설정했습니다. 페이지 위쪽에서 전환하여 첫 페이지 머리글/바닥글을 편집할 수 있습니다",
+    "'첫 페이지를 다르게 지정'을 설정했습니다. 첫 페이지 머리글/바닥글은 1페이지에서 편집할 수 있습니다",
   appTitlePgOff: "'첫 페이지를 다르게 지정'을 해제했습니다",
   appEvenOddOn:
-    "'짝수와 홀수 페이지를 다르게 지정'을 설정했습니다. 페이지 위쪽에서 전환하여 짝수 페이지 머리글/바닥글을 편집할 수 있습니다",
+    "'짝수와 홀수 페이지를 다르게 지정'을 설정했습니다. 짝수 페이지 머리글/바닥글은 아무 짝수 페이지에서 편집할 수 있습니다",
   appEvenOddOff: "'짝수와 홀수 페이지를 다르게 지정'을 해제했습니다",
-  appFirstPage: '첫 페이지',
-  appOddPage: '홀수 페이지',
-  appEvenPage: '짝수 페이지',
-  appDefaultPage: '기본 페이지',
   appDblclickEditHeader: '두 번 클릭하여 머리글 편집',
   appDblclickEditFooter: '두 번 클릭하여 바닥글 편집',
   appHfPageNumHint: '(#은 자동 페이지 번호)',

@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addElement,
   addSlideComment,
   addMedia,
   createBlankPptx,
+  deleteSlide,
+  duplicateSlide,
   openPptx,
   setSlideNotes,
   type OpenedPptx,
 } from '../src/index'
+import { cNvPrIdsInXml, elementSpid } from '../src/animation'
 import { hasContentTypeOverride, maxRelationshipIdNumber } from '../src/xml-utils'
 import { relsPathFor } from '../src/zip'
 
@@ -128,5 +132,48 @@ describe('writers allocate unique ids and overrides on a single-quoted package',
     expectNoDuplicates(ids)
     expect(ids.length).toBeGreaterThan(1)
     expect(opened.archive.readText(relsPathFor(first.path))).toBeTruthy()
+  })
+})
+
+describe('quote-agnostic shape id and presentation scans', () => {
+  it('collects cNvPr ids written with either quote style', () => {
+    const xml =
+      `<p:grpSp><p:nvGrpSpPr><p:cNvPr id='7' name="g"/></p:nvGrpSpPr>` +
+      `<p:sp><p:nvSpPr><p:cNvPr id="8" name='a'/></p:nvSpPr></p:sp>` +
+      `<p:sp><p:nvSpPr><p:cNvPr name='b' id='9'/></p:nvSpPr></p:sp></p:grpSp>`
+    expect([...cNvPrIdsInXml(xml)]).toEqual([7, 8, 9])
+    expect(elementSpid({ anchor: { originalXml: xml } } as any)).toBe(7)
+  })
+
+  it('mints a fresh shape id above single-quoted ones', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    addElement(slide, { kind: 'rect', offset: OFF })
+    for (const el of slide.elements)
+      el.anchor.originalXml = el.anchor.originalXml.replace(/\bid="(\d+)"/g, "id='$1'")
+    const taken = new Set<number>()
+    for (const el of slide.elements)
+      for (const id of cNvPrIdsInXml(el.anchor.originalXml)) taken.add(id)
+
+    const added = addElement(slide, { kind: 'rect', offset: OFF })
+    const minted = elementSpid(added)!
+    expect(taken.size).toBeGreaterThan(0)
+    expect(taken.has(minted)).toBe(false)
+  })
+
+  it('deletes a slide from a single-quoted presentation.xml and rels', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    duplicateSlide(opened, 0)
+    for (const path of ['ppt/presentation.xml', 'ppt/_rels/presentation.xml.rels']) {
+      const xml = opened.archive.readText(path)!
+      opened.archive.entries.set(path, Buffer.from(singleQuoteIds(xml), 'utf8'))
+    }
+
+    expect(deleteSlide(opened, 1)).toBe(true)
+    expect(opened.deck.slides).toHaveLength(1)
+    const pres = opened.archive.readText('ppt/presentation.xml')!
+    expect(pres.match(/<p:sldId\b/g)).toHaveLength(1)
+    const rels = opened.archive.readText('ppt/_rels/presentation.xml.rels')!
+    expect(rels).not.toContain('slides/slide2.xml')
   })
 })

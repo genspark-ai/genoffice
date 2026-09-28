@@ -128,6 +128,22 @@ describe('create --audit / --render', () => {
     expect(existsSync(previews[0]!.path)).toBe(true)
   })
 
+  it('a failed preview render keeps the written deck and reports a warning', async () => {
+    if (process.platform === 'win32') return
+    const dir = tempDir()
+    const out = join(dir, 'deck.pptx')
+    const r = await run(
+      ['create', '--type', 'pptx', '--spec', deckSpec(dir), '--out', out, '--render', '--json'],
+      { env: { ...process.env, GENOFFICE_APP_BIN: join(dir, 'no-such-app') } },
+    )
+    expect(r.code).toBe(0)
+    const body = r.json()
+    expect(body.output_path).toBe(out)
+    expect(existsSync(out)).toBe(true)
+    expect(body.detail.previews).toBeUndefined()
+    expect((body.warnings as { code: string }[]).map((w) => w.code)).toContain('render_failed')
+  })
+
   it('a bare --render defaults to <out>-previews beside the deck', async () => {
     if (process.platform === 'win32') return
     const dir = tempDir()

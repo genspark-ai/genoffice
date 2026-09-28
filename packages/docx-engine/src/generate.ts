@@ -848,7 +848,7 @@ function setShapeExt(drawingXml: string, size: { cx?: number; cy?: number }): st
     drawingXml,
   )
   if (!spPr) return drawingXml
-  const tag = /<a:ext\b[^>]*\/>/.exec(spPr[0])
+  const tag = /<a:ext\b[^>]*?(?:\/>|><\/a:ext>)/.exec(spPr[0])
   if (!tag) return drawingXml
   const cx = size.cx ?? /\bcx="(\d+)"/.exec(tag[0])?.[1]
   const cy = size.cy ?? /\bcy="(\d+)"/.exec(tag[0])?.[1]

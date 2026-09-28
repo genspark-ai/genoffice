@@ -173,16 +173,11 @@ export const en = {
     'Theme fonts changed; written to the document on save (styles that reference theme fonts take effect in Word)',
   appThemeColorsApplied: 'Theme colors "{name}" applied; written to the document on save',
   appSourceAdded: 'Source "{title}" added; reference it via Insert Citation',
-  appTitlePgOn:
-    '"Different First Page" enabled; switch at the top of the page to edit the first-page header and footer',
+  appTitlePgOn: '"Different First Page" enabled; edit the first-page header and footer on page 1',
   appTitlePgOff: '"Different First Page" disabled',
   appEvenOddOn:
-    '"Different Odd & Even Pages" enabled; switch at the top of the page to edit the even-page header and footer',
+    '"Different Odd & Even Pages" enabled; edit the even-page header and footer on any even page',
   appEvenOddOff: '"Different Odd & Even Pages" disabled',
-  appFirstPage: 'First Page',
-  appOddPage: 'Odd Pages',
-  appEvenPage: 'Even Pages',
-  appDefaultPage: 'Default',
   appDblclickEditHeader: 'Double-click to edit the header',
   appDblclickEditFooter: 'Double-click to edit the footer',
   appHfPageNumHint: ' (# stands for the automatic page number)',

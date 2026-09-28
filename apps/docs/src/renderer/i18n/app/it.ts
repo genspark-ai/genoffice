@@ -182,15 +182,11 @@ export const it = {
   appThemeColorsApplied: 'Colori del tema "{name}" applicati; scritti nel documento al salvataggio',
   appSourceAdded: 'Fonte "{title}" aggiunta; puoi citarla tramite "Inserisci citazione"',
   appTitlePgOn:
-    '"Prima pagina diversa" attivata; usa il selettore in cima alla pagina per modificare intestazione e piè di pagina della prima pagina',
+    '"Prima pagina diversa" attivata; modifica intestazione e piè di pagina della prima pagina a pagina 1',
   appTitlePgOff: '"Prima pagina diversa" disattivata',
   appEvenOddOn:
-    '"Pagine pari e dispari diverse" attivata; usa il selettore in cima alla pagina per modificare intestazione e piè di pagina delle pagine pari',
+    '"Pagine pari e dispari diverse" attivata; modifica intestazione e piè di pagina delle pagine pari su una qualsiasi pagina pari',
   appEvenOddOff: '"Pagine pari e dispari diverse" disattivata',
-  appFirstPage: 'Prima pagina',
-  appOddPage: 'Pagine dispari',
-  appEvenPage: 'Pagine pari',
-  appDefaultPage: 'Predefinita',
   appDblclickEditHeader: "Fai doppio clic per modificare l'intestazione",
   appDblclickEditFooter: 'Fai doppio clic per modificare il piè di pagina',
   appHfPageNumHint: ' (# rappresenta il numero di pagina automatico)',

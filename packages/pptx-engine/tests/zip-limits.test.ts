@@ -32,6 +32,9 @@ describe('pptx zip limits', () => {
     expect(resolveTarget('ppt/presentation.xml', '/ppt/slides/slide1.xml')).toBe(
       'ppt/slides/slide1.xml',
     )
+    expect(resolveTarget('ppt/slides/slide1.xml', '\\ppt\\slides\\slide2.xml')).toBe(
+      'ppt/slides/slide2.xml',
+    )
   })
 
   it('rejects too many parts before inflating', async () => {

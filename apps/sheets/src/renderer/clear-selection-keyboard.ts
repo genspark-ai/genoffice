@@ -92,3 +92,8 @@ export function isGridKeyTarget(target: ClearSelectionKeyEvent['target']): boole
 function hasClosest(value: ClearSelectionKeyEvent['target']): value is Element {
   return value != null && typeof (value as Element).closest === 'function'
 }
+
+/** Univer's formula bar: the one skipped host Excel's formula-bar keys must still reach. */
+export function isFormulaBarKeyTarget(target: ClearSelectionKeyEvent['target']): boolean {
+  return hasClosest(target) && target.closest('[data-u-comp="formula-bar"]') !== null
+}

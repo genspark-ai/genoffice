@@ -353,7 +353,7 @@ describe('applyPrintAreas', () => {
     )
   })
 
-  it('rejects a whole-column print area, which Excel refuses to open', () => {
+  it('rejects a print area without a row-bounded range (our reader and schema only accept A1:B2 forms)', () => {
     expect(() => applyPrintAreas(WORKBOOK, [{ sheetName: 'Sheet1', printArea: 'A:A' }])).toThrow(
       PageSetupError,
     )

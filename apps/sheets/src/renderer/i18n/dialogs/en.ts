@@ -52,6 +52,11 @@ export const en = {
   dlgGoToNote:
     'Type a cell reference or pick a named range; Go jumps to and selects the target. Click a name to fill it in, double-click to go directly.',
   dlgGoToGo: 'Go',
+  dlgZoomTitle: 'Zoom',
+  dlgZoomMagnification: 'Magnification',
+  dlgZoomFitSelection: 'Fit selection',
+  dlgZoomCustom: 'Custom',
+  dlgZoomRangeError: 'Enter a number between {min} and {max}.',
 
   dlgHfTitle: 'Header & Footer',
   dlgHfHeaderLeft: 'Header · Left',
@@ -409,4 +414,12 @@ export const en = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Array',
   dlgFnCatOther: 'Other',
+  dlgInsertCellsTitle: 'Insert',
+  dlgDeleteCellsTitle: 'Delete',
+  dlgCellsShiftRight: 'Shift cells right',
+  dlgCellsShiftDown: 'Shift cells down',
+  dlgCellsShiftLeft: 'Shift cells left',
+  dlgCellsShiftUp: 'Shift cells up',
+  dlgCellsEntireRow: 'Entire row',
+  dlgCellsEntireColumn: 'Entire column',
 } satisfies Record<keyof typeof zh, string>

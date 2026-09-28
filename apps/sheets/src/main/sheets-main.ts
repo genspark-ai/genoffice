@@ -1473,6 +1473,10 @@ interface SessionInfo {
   /// Set when the session opened a converted copy (.xls import): the
   /// first save routes through Save As, defaulting to this .xlsx path.
   readonly suggestSaveAs?: string
+  /// The shell's "New spreadsheet" backing file in a temp directory: like an
+  /// import the first Save is a Save As, but AutoSave and the recovery copy
+  /// keep running (keyed on suggestSaveAs), and a quiet save writes in place.
+  readonly unsavedNew?: boolean
   /// The converted copy came from a CSV: the Save As dialog explains that
   /// formatting requires .xlsx (CSV keeps values only).
   readonly csvImport?: boolean
@@ -1494,6 +1498,11 @@ interface SessionInfo {
   /// write-back against external modification, mirroring the sha256 check on
   /// the session's own path.
   readonly restoreTargetSha?: string
+  /// The opened file was 0 bytes: the session runs on a blank archive in the
+  /// temp dir and restoreTarget is the empty original. Unlike a restored
+  /// recovery copy, this session still needs its own crash-recovery copy,
+  /// keyed by the original.
+  readonly emptySource?: boolean
 }
 
 // ---- runtime configuration (paths differ when bundled into the shell) ----
@@ -1740,8 +1749,21 @@ export function sheetsFileRenamed(wc: WebContents, oldPath: string, newPath: str
     // Converted copies (.csv / .xls / .tsv) and restored recovery copies keep
     // the user's file in a side field, not in `path`; move those too, or the
     // next Save recreates the file under the old name.
-    const renamed = sessionAfterRename(session, oldPath, newPath)
+    let renamed = sessionAfterRename(session, oldPath, newPath)
     if (renamed === null) continue
+    // An unsaved new workbook's tab renames its hidden backing file; the name
+    // the user typed is what the first Save As should offer, and the crash copy
+    // is keyed on that name.
+    if (session.unsavedNew && session.path === oldPath && session.suggestSaveAs !== undefined) {
+      const suggested = join(dirname(session.suggestSaveAs), basename(newPath))
+      if (
+        suggested !== session.suggestSaveAs &&
+        !existsSync(suggested) &&
+        !sheetsSuggestedPathTaken(suggested) &&
+        retargetUnsavedNewRecovery(session.suggestSaveAs, suggested)
+      )
+        renamed = { ...renamed, suggestSaveAs: suggested }
+    }
     entry.sessions.set(id, renamed)
     matched = true
   }
@@ -1767,6 +1789,19 @@ export function markSheetsUntitledPath(path: string): void {
  */
 const unsavedNewWorkbooks = new Map<string, { suggestSaveAs: string; tempDir: string }>()
 
+/**
+ * shell: a would-be path already promised to another unsaved new workbook (open
+ * tab, tab about to open, or a crash copy waiting to be re-offered). The file
+ * itself does not exist yet, so uniqueness on disk is not enough.
+ */
+export function sheetsSuggestedPathTaken(path: string): boolean {
+  for (const pending of unsavedNewWorkbooks.values())
+    if (pending.suggestSaveAs === path) return true
+  for (const tab of sheetsTabs.values())
+    for (const session of tab.sessions.values()) if (session.suggestSaveAs === path) return true
+  return readUnsavedNewIndex().includes(path)
+}
+
 /** shell: mark a backing workbook it just created as not-yet-saved (see above) */
 export function markSheetsUnsavedNew(
   openPath: string,
@@ -1774,6 +1809,11 @@ export function markSheetsUnsavedNew(
   tempDir: string,
 ): void {
   unsavedNewWorkbooks.set(openPath, { suggestSaveAs, tempDir })
+}
+
+/** shell: the backing workbook could not be written, release its name */
+export function unmarkSheetsUnsavedNew(openPath: string): void {
+  unsavedNewWorkbooks.delete(openPath)
 }
 
 const mcpWritablePaths = new Map<number, Set<string>>()
@@ -1842,6 +1882,62 @@ function clearWorkbookRecovery(filePath: string): void {
   } catch {
     /* nothing to clean */
   }
+}
+
+// An unsaved new workbook has no file for pendingRecoveryFor to compare
+// against, so the would-be paths of its recovery copies are listed here and
+// the shell re-offers them at launch (and "New spreadsheet" reuses the name).
+const unsavedNewIndexPath = () => join(recoveryDir(), 'unsaved-new.json')
+
+function readUnsavedNewIndex(): string[] {
+  const list = readJson<unknown>(unsavedNewIndexPath(), [])
+  return Array.isArray(list) ? list.filter((p): p is string => typeof p === 'string') : []
+}
+
+function writeUnsavedNewIndex(list: string[]): void {
+  try {
+    mkdirSync(recoveryDir(), { recursive: true })
+    writeFileSync(unsavedNewIndexPath(), JSON.stringify(list))
+  } catch (error) {
+    console.warn('[sheets] unsaved-new index write failed:', error)
+  }
+}
+
+function rememberUnsavedNewRecovery(suggestSaveAs: string): void {
+  const list = readUnsavedNewIndex()
+  if (!list.includes(suggestSaveAs)) writeUnsavedNewIndex([...list, suggestSaveAs])
+}
+
+function forgetUnsavedNewRecovery(suggestSaveAs: string): void {
+  clearWorkbookRecovery(suggestSaveAs)
+  const list = readUnsavedNewIndex()
+  if (list.includes(suggestSaveAs)) writeUnsavedNewIndex(list.filter((p) => p !== suggestSaveAs))
+}
+
+/** shell, at launch: would-be paths of new workbooks whose recovery copy survived a crash */
+export function pendingUnsavedNewRecoveries(): string[] {
+  const live = readUnsavedNewIndex().filter((p) => existsSync(recoveryPathFor(p)))
+  writeUnsavedNewIndex(live)
+  return live
+}
+
+/** the would-be name changed: the crash copy keyed on it follows (false = copy stays under the old key) */
+function retargetUnsavedNewRecovery(from: string, to: string): boolean {
+  if (!pendingUnsavedNewRecoveryFor(from)) return true
+  try {
+    renameSync(recoveryPathFor(from), recoveryPathFor(to))
+    rememberUnsavedNewRecovery(to)
+    forgetUnsavedNewRecovery(from)
+    return true
+  } catch (err) {
+    console.warn('[sheets] recovery copy rename failed:', err)
+    return false
+  }
+}
+
+function pendingUnsavedNewRecoveryFor(suggestSaveAs: string): string | null {
+  const copy = recoveryPathFor(suggestSaveAs)
+  return readUnsavedNewIndex().includes(suggestSaveAs) && existsSync(copy) ? copy : null
 }
 
 /// Restore/Discard choice for a pending recovery copy. Rendered as a styled
@@ -2359,7 +2455,15 @@ export async function requestSheetsClose(
   contents: WebContents,
   parent?: BrowserWindow | null,
 ): Promise<boolean> {
-  const count = pendingEditCounts.get(contents.id) ?? 0
+  // A quiet AutoSave leaves an unsaved new workbook's journal empty, but its
+  // work still sits on no user-visible path: closing it is discarding it.
+  const autosavedNew = [...(sheetsTabs.get(contents.id)?.sessions.values() ?? [])].filter(
+    (s) =>
+      s.unsavedNew &&
+      s.suggestSaveAs !== undefined &&
+      pendingUnsavedNewRecoveryFor(s.suggestSaveAs),
+  ).length
+  const count = (pendingEditCounts.get(contents.id) ?? 0) + autosavedNew
   const decision = closeGuardDecision({
     pendingEdits: count,
     destroyed: contents.isDestroyed(),
@@ -2509,9 +2613,7 @@ export function registerSheetsIpc(): void {
     // already run closeAllSessions and dropped the tab entry, so a session
     // opened now would never be closed and its snapshot would leak.
     if (event.sender.isDestroyed()) {
-      if (prepared.importTempDir !== undefined) {
-        await cleanupImportTempDirectory(app.getPath('temp'), prepared.importTempDir)
-      }
+      await discardPreparedOpen(prepared)
       return null
     }
     const result = await openWorkbookSession(entry.client, prepared.openPath, entry.sessions, {
@@ -2521,6 +2623,8 @@ export function registerSheetsIpc(): void {
       emptyCsv: prepared.emptyCsv,
       importTempDir: prepared.importTempDir,
       restoreTarget: prepared.restoreTarget,
+      emptySource: prepared.emptySource,
+      unsavedNew: prepared.unsavedNew,
     })
     // The sidecar open itself can also outlive the tab after the pre-open
     // check. Close the newly registered session instead of stranding it in
@@ -2538,7 +2642,9 @@ export function registerSheetsIpc(): void {
       }
       return null
     }
-    workbookOpenedHook?.(event.sender, path)
+    // an unsaved new workbook's tab already shows the untitled name; its temp
+    // backing path must not become a recent file
+    if (!prepared.unsavedNew) workbookOpenedHook?.(event.sender, path)
     return result
   }
 
@@ -2590,9 +2696,7 @@ export function registerSheetsIpc(): void {
           { skipRecoveryPrompt: true },
         )
         if (event.sender.isDestroyed()) {
-          if (prepared.importTempDir !== undefined) {
-            await cleanupImportTempDirectory(app.getPath('temp'), prepared.importTempDir)
-          }
+          await discardPreparedOpen(prepared)
           break
         }
         const result = await openWorkbookSession(entry.client, prepared.openPath, entry.sessions, {
@@ -2601,6 +2705,8 @@ export function registerSheetsIpc(): void {
           csvSourcePath: prepared.csvSourcePath,
           importTempDir: prepared.importTempDir,
           restoreTarget: prepared.restoreTarget,
+          emptySource: prepared.emptySource,
+          unsavedNew: prepared.unsavedNew,
         })
         opened.push(result as { sessionId: string })
         if (event.sender.isDestroyed()) break
@@ -3019,6 +3125,11 @@ export function registerSheetsIpc(): void {
       if (existsSync(targetPath) && request.overwrite !== true) {
         throw new Error(`file already exists: ${targetPath}`)
       }
+    } else if (request.mode === 'save' && request.quiet && session.unsavedNew) {
+      // AutoSave / AI-run autosave of a workbook the user has not named yet:
+      // no dialog mid-flow, the edits land in the backing temp file and the
+      // session stays an unsaved new one (Ctrl+S still asks where to save)
+      targetPath = session.path
     } else if (request.mode === 'save-as' || session.suggestSaveAs !== undefined) {
       // .xlsm keeps its extension: untouched archive entries (vbaProject.bin,
       // the macro-enabled content type) round-trip verbatim through the save.
@@ -3102,13 +3213,15 @@ export function registerSheetsIpc(): void {
 
     // The sidecar session still streams the pre-save bytes; swap it for a
     // fresh session over the saved file so future reads match the disk state.
+    const quietUnsavedNew = targetPath === session.path && session.unsavedNew === true
     entry.sessions.delete(request.sessionId)
     await cleanupSessionResources({
       tempRoot: app.getPath('temp'),
       snapshotPath: session.snapshotPath,
-      // A CSV in-place save keeps saving into the temp copy — its directory
+      // A CSV in-place save keeps saving into the temp copy, and a quiet save of
+      // an unsaved new workbook just wrote its backing file — the directory
       // must survive the session swap.
-      importTempDir: csvInPlace ? undefined : session.importTempDir,
+      importTempDir: csvInPlace || quietUnsavedNew ? undefined : session.importTempDir,
       closeSidecar: () => client.close(request.sessionId),
     })
     const file = await openWorkbookSession(
@@ -3121,8 +3234,26 @@ export function registerSheetsIpc(): void {
             csvSourcePath: session.csvSourcePath,
             importTempDir: session.importTempDir,
           }
-        : undefined,
+        : quietUnsavedNew
+          ? {
+              suggestSaveAs: session.suggestSaveAs,
+              importTempDir: session.importTempDir,
+              unsavedNew: true,
+            }
+          : undefined,
     )
+    if (quietUnsavedNew && session.suggestSaveAs !== undefined) {
+      // the temp path must not reach the title or recents; the recovery copy
+      // is what a crash restores from, so it tracks the saved bytes
+      try {
+        await mkdir(recoveryDir(), { recursive: true })
+        await copyFile(targetPath, recoveryPathFor(session.suggestSaveAs))
+        rememberUnsavedNewRecovery(session.suggestSaveAs)
+      } catch (error) {
+        console.warn('[sheets] recovery copy of an unsaved new workbook failed:', error)
+      }
+      return { canceled: false, file, touchedEntries: mutation.touchedEntries }
+    }
     // Notify shell (if running) so it can update the tab title and record the
     // saved path in recent files (mirrors the open hook; covers Save As + first
     // save after converting an .xls/.csv import). A CSV session's user-visible
@@ -3133,7 +3264,10 @@ export function registerSheetsIpc(): void {
     )
     // The file on disk now carries these edits
     clearWorkbookRecovery(targetPath)
-    if (session.suggestSaveAs !== undefined) clearWorkbookRecovery(session.suggestSaveAs)
+    if (session.suggestSaveAs !== undefined) {
+      if (session.unsavedNew) forgetUnsavedNewRecovery(session.suggestSaveAs)
+      else clearWorkbookRecovery(session.suggestSaveAs)
+    }
     // Restored session saved (possibly Save As elsewhere): the unsaved work is
     // persisted, so the original's recovery copy must not re-offer it.
     if (session.restoreTarget !== undefined) clearWorkbookRecovery(session.restoreTarget)
@@ -3183,15 +3317,23 @@ export function registerSheetsIpc(): void {
     // the sidecar streams from would corrupt the open session.
     if (
       !session ||
-      session.suggestSaveAs !== undefined ||
+      (session.suggestSaveAs !== undefined && !session.unsavedNew) ||
       session.csvSourcePath !== undefined ||
-      session.restoreTarget !== undefined
+      (session.restoreTarget !== undefined && !session.emptySource)
     )
       return { ok: false }
     if (session.automaticRecoveryDisabled) return { ok: false }
+    // an unsaved new workbook recovers under the name its first save would get;
+    // an empty original's session runs on a temp blank and recovers into the file the user opened
+    const recoveryKey = session.unsavedNew
+      ? session.suggestSaveAs!
+      : session.emptySource
+        ? (session.restoreTarget ?? session.path)
+        : session.path
     try {
       await mkdir(recoveryDir(), { recursive: true })
-      await writeWorkbookTo(entry.client, session, request, recoveryPathFor(session.path))
+      await writeWorkbookTo(entry.client, session, request, recoveryPathFor(recoveryKey))
+      if (session.unsavedNew) rememberUnsavedNewRecovery(recoveryKey)
       return { ok: true }
     } catch (error) {
       console.warn('[sheets] recovery copy failed:', error)
@@ -3206,6 +3348,8 @@ export function registerSheetsIpc(): void {
     const session = entry.sessions.get(validatedSessionId)
     if (!entry.sessions.delete(validatedSessionId)) return
     if (session === undefined) return
+    if (session.unsavedNew && session.suggestSaveAs !== undefined)
+      forgetUnsavedNewRecovery(session.suggestSaveAs)
     await cleanupSessionResources({
       tempRoot: app.getPath('temp'),
       snapshotPath: session.snapshotPath,
@@ -3234,10 +3378,17 @@ export function registerSheetsIpc(): void {
       if (session.suggestSaveAs !== undefined) {
         const suggestDir = dirname(session.suggestSaveAs)
         let suggested = join(suggestDir, `${base}.xlsx`)
-        for (let i = 2; existsSync(suggested) && i < 100; i++) {
+        const taken = (p: string) =>
+          p !== session.suggestSaveAs && (existsSync(p) || sheetsSuggestedPathTaken(p))
+        for (let i = 2; taken(suggested) && i < 100; i++) {
           suggested = join(suggestDir, `${base}-${i}.xlsx`)
         }
+        if (suggested === session.suggestSaveAs || taken(suggested)) return { renamed: false }
+        // a failed move leaves the copy valid under the old name; a crash can still restore it
+        if (session.unsavedNew && !retargetUnsavedNewRecovery(session.suggestSaveAs, suggested))
+          return { renamed: false }
         entry.sessions.set(validatedSessionId, { ...session, suggestSaveAs: suggested })
+        event.sender.send(IPC_CHANNELS.workbookRenamed, basename(suggested))
         return { renamed: true, name: basename(suggested) }
       }
       const dir = dirname(session.path)
@@ -3991,6 +4142,16 @@ function systemShortDate(): string {
   return cachedShortDate
 }
 
+/** the tab died between prepare and open: release the temp copy and any name reserved for it */
+async function discardPreparedOpen(prepared: {
+  openPath: string
+  importTempDir?: string | undefined
+}): Promise<void> {
+  unsavedNewWorkbooks.delete(prepared.openPath)
+  if (prepared.importTempDir !== undefined)
+    await cleanupImportTempDirectory(app.getPath('temp'), prepared.importTempDir)
+}
+
 async function openWorkbookSession(
   client: XlsxSidecarClient,
   path: string,
@@ -4002,10 +4163,20 @@ async function openWorkbookSession(
     emptyCsv?: boolean | undefined
     importTempDir?: string | undefined
     restoreTarget?: string | undefined
+    emptySource?: boolean | undefined
+    unsavedNew?: boolean | undefined
   },
 ): Promise<WorkbookFile> {
-  const { suggestSaveAs, csvImport, csvSourcePath, emptyCsv, importTempDir, restoreTarget } =
-    options ?? {}
+  const {
+    suggestSaveAs,
+    csvImport,
+    csvSourcePath,
+    emptyCsv,
+    importTempDir,
+    restoreTarget,
+    emptySource,
+    unsavedNew,
+  } = options ?? {}
   // Snapshot first, then the sidecar opens the snapshot (not the live path):
   // everything the session serves — cell reads, media, recalc, saves — comes
   // from the same bytes, even if the file on disk changes right after the
@@ -4039,7 +4210,10 @@ async function openWorkbookSession(
       ...(importTempDir === undefined ? {} : { importTempDir }),
       ...(restoreTarget === undefined ? {} : { restoreTarget }),
       ...(restoreTargetSha === undefined ? {} : { restoreTargetSha }),
+      ...(emptySource ? { emptySource } : {}),
+      ...(unsavedNew ? { unsavedNew } : {}),
     })
+    unsavedNewWorkbooks.delete(path)
     return workbookFileSchema.parse({
       ...opened,
       // The renderer-facing path is what the user opened: for a restored
@@ -4049,6 +4223,7 @@ async function openWorkbookSession(
       fileBytes: snapshotStat.size,
       readOnly: false,
       needsSaveAs: suggestSaveAs !== undefined,
+      ...(unsavedNew ? { unsavedNew: true } : {}),
       ...(csvSourcePath === undefined ? {} : { csvPath: csvSourcePath }),
       ...(emptyCsv ? { emptyCsv: true } : {}),
       restoredFromRecovery: restoreTarget !== undefined,
@@ -4056,11 +4231,33 @@ async function openWorkbookSession(
     })
   } catch (error) {
     await rm(snapshotPath, { force: true }).catch(() => undefined)
+    unsavedNewWorkbooks.delete(path)
     if (importTempDir !== undefined) {
       await cleanupImportTempDirectory(app.getPath('temp'), importTempDir)
     }
     throw error
   }
+}
+
+/// A 0-byte .xlsx is an empty workbook, not a corrupt one. The sidecar needs a
+/// real archive, so a blank one opens from the temp dir with the original as
+/// the write-back target (the restore path: Save writes it even with no edits).
+async function openEmptyXlsx(path: string): Promise<{
+  openPath: string
+  importTempDir: string
+  restoreTarget: string
+  emptySource: true
+}> {
+  const directory = join(app.getPath('temp'), 'genoffice-imports', randomUUID())
+  await mkdir(directory, { recursive: true })
+  const openPath = join(directory, basename(path))
+  try {
+    await writeFile(openPath, (await csvToXlsxBufferForOpen('', 'Sheet1')).buffer)
+  } catch (error) {
+    await cleanupImportTempDirectory(app.getPath('temp'), directory)
+    throw error
+  }
+  return { openPath, importTempDir: directory, restoreTarget: path, emptySource: true }
 }
 
 /** which legacy charset an Excel CSV most likely uses, judged by the UI language */
@@ -4091,18 +4288,41 @@ async function prepareWorkbookForOpen(
   emptyCsv?: boolean
   importTempDir?: string
   restoreTarget?: string
+  emptySource?: boolean
+  unsavedNew?: boolean
 }> {
   // A shell-created "New spreadsheet" opens from a temp directory and has no
   // user-visible file yet: Save As produces it, and closing unsaved discards
-  // the directory. Consumed on first open so a reopened path is a normal file.
+  // the directory. The mark is consumed once the session exists (see
+  // openWorkbookSession) so the name stays reserved through the open and a
+  // reopened path is a normal file.
   const unsavedNew = unsavedNewWorkbooks.get(path)
   if (unsavedNew !== undefined) {
-    unsavedNewWorkbooks.delete(path)
-    return {
-      openPath: path,
+    const base = {
       suggestSaveAs: unsavedNew.suggestSaveAs,
       importTempDir: unsavedNew.tempDir,
+      unsavedNew: true,
     }
+    // a crash left work under this would-be name: offer it like a file's
+    // recovery copy, opening the copy itself as the (still unsaved) workbook
+    const recovery = pendingUnsavedNewRecoveryFor(unsavedNew.suggestSaveAs)
+    if (recovery) {
+      const choice =
+        contents && !contents.isDestroyed()
+          ? await promptRecoveryRestore(contents, unsavedNew.suggestSaveAs, recovery)
+          : await promptRecoveryRestoreNative(parent)
+      // the copy is what the recovery writer keeps overwriting, so the session
+      // streams from the backing file, not from the copy
+      if (choice === 'restore') {
+        try {
+          await copyFile(recovery, path)
+        } catch (error) {
+          await discardPreparedOpen({ openPath: path, importTempDir: unsavedNew.tempDir })
+          throw error
+        }
+      } else if (choice === 'discard') forgetUnsavedNewRecovery(unsavedNew.suggestSaveAs)
+    }
+    return { openPath: path, ...base }
   }
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
   if (extension !== 'csv' && extension !== 'tsv' && extension !== 'xls') {
@@ -4121,6 +4341,7 @@ async function prepareWorkbookForOpen(
       if (choice === 'restore') return { openPath: recovery, restoreTarget: path }
       if (choice === 'discard') clearWorkbookRecovery(path)
     }
+    if (extension === 'xlsx' && (await stat(path)).size === 0) return openEmptyXlsx(path)
     return { openPath: path }
   }
   const stem = basename(path).replace(/\.[^.]+$/, '')
@@ -4260,7 +4481,9 @@ function installApplicationMenu(): void {
           { role: 'selectAll', label: labels.selectAll },
         ],
       },
-      viewMenuTemplate(labels),
+      // ⌘R is Fill Right and ⌘0/⌘+/⌘- hide columns / zoom the sheet; menu
+      // accelerators would swallow them on macOS.
+      viewMenuTemplate(labels, { devItems: !app.isPackaged, pageZoom: false }),
       windowMenuTemplate(process.platform, labels),
       helpMenuTemplate(labels),
     ]),

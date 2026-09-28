@@ -187,15 +187,11 @@ export const de = {
     'Designfarben „{name}“ angewendet; wird beim Speichern in das Dokument geschrieben',
   appSourceAdded: 'Quelle „{title}“ hinzugefügt; über „Zitat einfügen“ zitierbar',
   appTitlePgOn:
-    '„Erste Seite anders“ aktiviert; wechseln Sie oben auf der Seite, um Kopf- und Fußzeile der ersten Seite zu bearbeiten',
+    '„Erste Seite anders“ aktiviert; Kopf- und Fußzeile der ersten Seite bearbeiten Sie auf Seite 1',
   appTitlePgOff: '„Erste Seite anders“ deaktiviert',
   appEvenOddOn:
-    '„Gerade & ungerade Seiten unterschiedlich“ aktiviert; wechseln Sie oben auf der Seite, um Kopf- und Fußzeile der geraden Seiten zu bearbeiten',
+    '„Gerade & ungerade Seiten unterschiedlich“ aktiviert; Kopf- und Fußzeile der geraden Seiten bearbeiten Sie auf einer beliebigen geraden Seite',
   appEvenOddOff: '„Gerade & ungerade Seiten unterschiedlich“ deaktiviert',
-  appFirstPage: 'Erste Seite',
-  appOddPage: 'Ungerade Seiten',
-  appEvenPage: 'Gerade Seiten',
-  appDefaultPage: 'Standard',
   appDblclickEditHeader: 'Doppelklicken, um die Kopfzeile zu bearbeiten',
   appDblclickEditFooter: 'Doppelklicken, um die Fußzeile zu bearbeiten',
   appHfPageNumHint: ' (# steht für die automatische Seitenzahl)',

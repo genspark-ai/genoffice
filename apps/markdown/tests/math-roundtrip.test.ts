@@ -70,4 +70,11 @@ describe('inline math vs currency', () => {
     expect(containsMathSyntax('a $b$ c')).toBe(true)
     expect(containsMathSyntax('a $$b$$ c')).toBe(true)
   })
+
+  it('containsMathSyntax skips escaped dollars like the tokenizer start rule', () => {
+    expect(containsMathSyntax('costs \\$5\\$')).toBe(false)
+    expect(containsMathSyntax('costs \\$5 and \\$$x$')).toBe(true)
+    expect(containsMathSyntax('\\\\$x^2$')).toBe(true)
+    expect(containsMathSyntax('\\$$')).toBe(false)
+  })
 })

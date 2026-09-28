@@ -249,6 +249,7 @@ import {
   dialogParent,
   endHistoryBatch,
   getFontMetrics,
+  hostWindowFor,
   resetFontMetrics,
   journalOps,
   makeMediaResolver,
@@ -299,6 +300,7 @@ export {
   configureSlidesRuntime,
   setActiveSlidesWebContents,
   setSlidesShellWindow,
+  setSlidesHostWindowHook,
   setSlidesShowBleed,
 } from './session-state'
 
@@ -379,7 +381,7 @@ async function handleRendererFreeze(wc: WebContents): Promise<void> {
   if (freezeDialogOpen.has(wc.id)) return
   freezeDialogOpen.add(wc.id)
   try {
-    const parent = BrowserWindow.fromWebContents(wc)
+    const parent = hostWindowFor(wc)
     const options = {
       type: 'warning' as const,
       message: tm('freezeTitle'),
@@ -841,7 +843,12 @@ async function openAndBuild(
     }
   }
   const raw = await readFile(path)
-  const { bytes, recovered } = await maybeRecoverBytes(path, new Uint8Array(raw))
+  // a 0-byte .pptx is an empty deck, not a corrupt one: open the blank template
+  // under the file's own path so Save writes back to it
+  const { bytes, recovered } = await maybeRecoverBytes(
+    path,
+    raw.length === 0 ? await createBlankPptx() : new Uint8Array(raw),
+  )
   await shapedMetricsReady() // Lay out only after complex-script shaped metrics are ready, avoiding an init race falling back to estimation
   const opened = await openPptx(bytes)
   adoptEmbeddedFonts(opened)
@@ -4520,7 +4527,7 @@ export function registerSlidesIpc(): void {
         ...(op.orientation ? { orientation: op.orientation } : {}),
         ...(op.frame ? { frame: true } : {}),
       })
-      const owner = BrowserWindow.fromWebContents(e.sender) ?? dialogParent()
+      const owner = hostWindowFor(e.sender) ?? dialogParent()
       const win = new BrowserWindow({
         show: false,
         ...(owner && !owner.isDestroyed() ? { parent: owner } : {}),
@@ -4572,7 +4579,8 @@ export function registerSlidesIpc(): void {
   // immediately makes the window visibly bounce. ──
   let showFsRelease: ReturnType<typeof setTimeout> | null = null
   ipcMain.handle('slides:show-fullscreen', (e, on: boolean) => {
-    const win = BrowserWindow.fromWebContents(e.sender) ?? windowRefs.shellWindow
+    // a detached editor window fullscreens itself, never the shell behind it
+    const win = hostWindowFor(e.sender)
     if (!win || win.isDestroyed()) return
     const wc = e.sender
     if (showFsRelease) {

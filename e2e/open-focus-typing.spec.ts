@@ -28,11 +28,8 @@ async function openFromHome(app: ElectronApplication, home: Page, file: string):
   // Native window activation is asynchronous (especially between app launches).
   await expect
     .poll(() =>
-      app.evaluate(({ app: electronApp, BrowserWindow }) => {
-        electronApp.focus({ steal: true })
+      app.evaluate(({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0]
-        win.focus()
-        win.webContents.focus()
         return win.isFocused() && win.webContents.isFocused()
       }),
     )
@@ -154,24 +151,6 @@ async function domState(page: Page): Promise<Omit<TypingState, 'activeRange'>> {
   })
 }
 
-/**
- * Playwright can omit Chromium's input event after a hidden WebContentsView is
- * adopted. Drive Univer's contenteditable input boundary directly; native view
- * focus and DOM editor focus are asserted separately by the test.
- */
-async function dispatchEditorInput(page: Page, text: string): Promise<void> {
-  await page.evaluate((value) => {
-    const editor = document.activeElement
-    if (!(editor instanceof HTMLElement) || !editor.isContentEditable || !editor.isConnected) {
-      throw new Error('connected contenteditable is not focused')
-    }
-    editor.textContent = value
-    editor.dispatchEvent(
-      new InputEvent('input', { bubbles: true, data: value, inputType: 'insertText' }),
-    )
-  }, text)
-}
-
 /** Observe an initialized hidden spare before opening a workbook. */
 async function waitForSpareViewReady(app: ElectronApplication): Promise<number> {
   let spareId = 0
@@ -285,7 +264,9 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
     // broken adoption cannot pass by typing into nothing.
     await expect.poll(() => activeRangeNotation(sheets), { timeout: 30_000 }).toBe('A1')
     const before = await domState(sheets)
-    await dispatchEditorInput(sheets, '4242')
+    // Character key simulation can omit input events in an adopted Electron
+    // view. Use the text-input channel after asserting native/editor focus.
+    await sheets.keyboard.insertText('4242')
     const afterInsert = await domState(sheets)
     await sheets.keyboard.press('Enter')
     const afterEnter = await domState(sheets)

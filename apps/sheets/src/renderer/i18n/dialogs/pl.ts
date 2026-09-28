@@ -52,6 +52,11 @@ export const pl = {
   dlgGoToNote:
     'Wpisz odwołanie do komórki lub wybierz nazwany zakres; Przejdź przechodzi do celu i zaznacza go. Kliknij nazwę, aby ją wstawić, kliknij dwukrotnie, aby przejść od razu.',
   dlgGoToGo: 'Przejdź',
+  dlgZoomTitle: 'Powiększenie',
+  dlgZoomMagnification: 'Powiększenie',
+  dlgZoomFitSelection: 'Dopasuj do zaznaczenia',
+  dlgZoomCustom: 'Niestandardowe',
+  dlgZoomRangeError: 'Wprowadź liczbę od {min} do {max}.',
 
   dlgHfTitle: 'Nagłówek i stopka',
   dlgHfHeaderLeft: 'Nagłówek · Lewa',
@@ -410,4 +415,12 @@ export const pl = {
   dlgFnCatWeb: 'Sieć Web',
   dlgFnCatArray: 'Tablicowe',
   dlgFnCatOther: 'Inne',
+  dlgInsertCellsTitle: 'Wstawianie',
+  dlgDeleteCellsTitle: 'Usuwanie',
+  dlgCellsShiftRight: 'Przesuń komórki w prawo',
+  dlgCellsShiftDown: 'Przesuń komórki w dół',
+  dlgCellsShiftLeft: 'Przesuń komórki w lewo',
+  dlgCellsShiftUp: 'Przesuń komórki w górę',
+  dlgCellsEntireRow: 'Cały wiersz',
+  dlgCellsEntireColumn: 'Cała kolumna',
 } satisfies Record<keyof typeof zh, string>

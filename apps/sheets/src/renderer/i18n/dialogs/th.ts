@@ -52,6 +52,11 @@ export const th = {
   dlgGoToNote:
     'พิมพ์การอ้างอิงเซลล์หรือเลือกช่วงที่ตั้งชื่อไว้ ปุ่มไปที่จะข้ามไปยังเป้าหมายและเลือกให้ คลิกชื่อเพื่อกรอกลงช่อง ดับเบิลคลิกเพื่อไปทันที',
   dlgGoToGo: 'ไปที่',
+  dlgZoomTitle: 'ย่อ/ขยาย',
+  dlgZoomMagnification: 'การขยาย',
+  dlgZoomFitSelection: 'พอดีกับส่วนที่เลือก',
+  dlgZoomCustom: 'กำหนดเอง',
+  dlgZoomRangeError: 'ป้อนตัวเลขระหว่าง {min} ถึง {max}',
 
   dlgHfTitle: 'หัวกระดาษและท้ายกระดาษ',
   dlgHfHeaderLeft: 'หัวกระดาษ · ซ้าย',
@@ -404,4 +409,12 @@ export const th = {
   dlgFnCatWeb: 'เว็บ',
   dlgFnCatArray: 'อาร์เรย์',
   dlgFnCatOther: 'อื่นๆ',
+  dlgInsertCellsTitle: 'แทรก',
+  dlgDeleteCellsTitle: 'ลบ',
+  dlgCellsShiftRight: 'เลื่อนเซลล์ไปทางขวา',
+  dlgCellsShiftDown: 'เลื่อนเซลล์ลง',
+  dlgCellsShiftLeft: 'เลื่อนเซลล์ไปทางซ้าย',
+  dlgCellsShiftUp: 'เลื่อนเซลล์ขึ้น',
+  dlgCellsEntireRow: 'ทั้งแถว',
+  dlgCellsEntireColumn: 'ทั้งคอลัมน์',
 } satisfies Record<keyof typeof zh, string>

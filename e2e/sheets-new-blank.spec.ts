@@ -8,7 +8,7 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } fr
 
 /**
  * Regression for "new spreadsheet cannot be saved" (feedback 2368785), updated
- * for #1036: quick-create no longer drops a file in the default folder. The
+ * for genoffice#1036: quick-create no longer drops a file in the default folder. The
  * backing workbook lives in a temp directory, the default folder stays empty,
  * and the first save goes through Save As. The save pipeline must still work
  * from the first edit.
@@ -39,7 +39,7 @@ test.describe('sheets: new blank workbook', () => {
       })
       await sheets.waitForTimeout(1_500)
 
-      // nothing lands in the default folder before the user saves (#1036)
+      // nothing lands in the default folder before the user saves (genoffice#1036)
       const before = existsSync(saveDir)
         ? (await readdir(saveDir)).filter((f) => f.endsWith('.xlsx'))
         : []

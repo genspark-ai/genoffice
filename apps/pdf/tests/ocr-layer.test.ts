@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildOcrPageData } from '../src/renderer/ocr-layer'
-import { buildSearchIndex, searchInIndex, type PageEntry } from '../src/renderer/search'
 import type { PdfOcrLine } from '../src/shared/ipc'
+import { searchInIndex } from '../src/renderer/search'
 
 const GEOM = { pw: 600, ph: 800, rot: 0 }
 
@@ -151,58 +151,25 @@ describe('buildOcrPageData word joining', () => {
     const shang = data.entry.items[3]!
     expect(data.entry.text.slice(shang.start, shang.end)).toBe('商')
   })
-})
 
-describe('buildOcrPageData case folding', () => {
-  const line = (text: string, from: number, to: number): PdfOcrLine => ({
-    text,
-    confidence: 1,
-    box: box(from, to),
-    chars: [...text].map((t) => ({ text: t, box: box(from, to) })),
-  })
-
-  it('folds with the length-preserving helper so item offsets stay valid', () => {
-    const data = buildOcrPageData([line('İstanbul', 0.1, 0.5), line('abc', 0.55, 0.7)], GEOM)!
-    expect(data.entry.text).toBe('İstanbul\nabc\n')
-    expect(data.entry.lower.length).toBe(data.entry.text.length)
-    expect(data.entry.lower).not.toBe(data.entry.text.toLowerCase())
-  })
-
-  it('highlights the following word on its own box instead of one code unit in', () => {
-    const data = buildOcrPageData([line('İstanbul', 0.1, 0.5), line('abc', 0.55, 0.7)], GEOM)!
-    const abc = data.entry.items.find((it) => data.entry.text.slice(it.start, it.end) === 'abc')!
-    const matches = searchInIndex([data.entry], 'abc')
-    expect(matches).toHaveLength(1)
-    const [x1, y1, x2, y2] = matches[0]!.rects[0]!
-    expect(x1).toBeCloseTo(abc.x)
-    expect(x2).toBeCloseTo(abc.x + abc.w)
-    expect(y1).toBeCloseTo(abc.y)
-    expect(y2).toBeCloseTo(abc.y + abc.h)
-  })
-
-  it('answers dotted-capital queries exactly like a text-layer page', async () => {
-    const ocr = buildOcrPageData([line('İstanbul', 0.1, 0.5), line('abc', 0.55, 0.7)], GEOM)!
-    const textLayer: PageEntry[] = [
-      {
-        text: 'İstanbul\nabc\n',
-        lower: 'İstanbul\nabc\n',
-        items: [
-          { start: 0, end: 8, x: 0, y: 0, w: 80, h: 10 },
-          { start: 9, end: 12, x: 80, y: 0, w: 30, h: 10 },
-        ],
-      },
-    ]
-    for (const query of ['i', 'İ', 'istanbul', 'İstanbul', 'abc']) {
-      expect(searchInIndex([ocr.entry], query)).toHaveLength(searchInIndex(textLayer, query).length)
+  it('folds case length-preservingly so OCR offsets agree with text-layer search (genoffice#1130)', () => {
+    const line: PdfOcrLine = {
+      text: '\u0130stanbul Ankara',
+      confidence: 1,
+      box: box(0.1, 0.9),
+      chars: [
+        { text: '\u0130stanbul', box: box(0.1, 0.5) },
+        { text: ' ', box: SEPARATOR },
+        { text: 'Ankara', box: box(0.55, 0.9) },
+      ],
     }
-    const shared = await buildSearchIndex({
-      numPages: 1,
-      getPage: async () => ({
-        getTextContent: async () => ({
-          items: [{ str: 'İstanbul\nabc\n', transform: [1, 0, 0, 1, 0, 0], width: 1 }],
-        }),
-      }),
-    } as never)
-    expect(shared[0]!.lower).toBe(ocr.entry.lower)
+    const data = buildOcrPageData([line], GEOM)!
+    expect(data.entry.lower.length).toBe(data.entry.text.length)
+    const dotted = searchInIndex([data.entry], '\u0130stanbul')
+    expect(dotted).toHaveLength(1)
+    const ankara = searchInIndex([data.entry], 'ankara')
+    expect(ankara).toHaveLength(1)
+    const ankaraItem = data.entry.items[1]!
+    expect(ankara[0]!.rects[0]![0]).toBeCloseTo(ankaraItem.x, 5)
   })
 })

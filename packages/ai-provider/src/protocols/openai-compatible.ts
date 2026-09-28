@@ -1,7 +1,6 @@
 import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 import { aiFetch } from '../fetch'
 import { httpBodyDetail } from '../http-error'
-import { openAiContentText } from '../media-protocols'
 import { gensparkAttributionHeaders, opencodeSessionHeaders } from '../providers'
 import { modelEchoesReasoning } from '../registry'
 import type { AiChatResponse, AiProviderConfig } from '../types'
@@ -9,6 +8,7 @@ import { createStreamWatchdog, type StreamWatchdog } from '../watchdog'
 import {
   endpointUrl,
   jsonBodyInsteadOfSse,
+  openAiContentText,
   parseToolInput,
   readCappedResponseText,
   sseErrorText,

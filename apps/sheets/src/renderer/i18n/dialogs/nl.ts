@@ -52,6 +52,11 @@ export const nl = {
   dlgGoToNote:
     'Typ een celverwijzing of kies een benoemd bereik; Ga springt naar het doel en selecteert het. Klik op een naam om deze in te vullen, dubbelklik om er direct heen te gaan.',
   dlgGoToGo: 'Ga',
+  dlgZoomTitle: 'Zoomen',
+  dlgZoomMagnification: 'Vergroting',
+  dlgZoomFitSelection: 'Aanpassen aan selectie',
+  dlgZoomCustom: 'Aangepast',
+  dlgZoomRangeError: 'Voer een getal in tussen {min} en {max}.',
 
   dlgHfTitle: 'Kop- en voettekst',
   dlgHfHeaderLeft: 'Koptekst · Links',
@@ -408,4 +413,12 @@ export const nl = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Matrix',
   dlgFnCatOther: 'Overig',
+  dlgInsertCellsTitle: 'Invoegen',
+  dlgDeleteCellsTitle: 'Verwijderen',
+  dlgCellsShiftRight: 'Cellen naar rechts verplaatsen',
+  dlgCellsShiftDown: 'Cellen naar beneden verplaatsen',
+  dlgCellsShiftLeft: 'Cellen naar links verplaatsen',
+  dlgCellsShiftUp: 'Cellen naar boven verplaatsen',
+  dlgCellsEntireRow: 'Hele rij',
+  dlgCellsEntireColumn: 'Hele kolom',
 } satisfies Record<keyof typeof zh, string>

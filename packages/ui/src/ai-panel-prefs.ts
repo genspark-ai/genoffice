@@ -20,6 +20,8 @@ export interface AiPanelPrefs {
   /** Body text size in px, used only when `fontSize` is `'custom'` */
   readonly customFontSize: number
   readonly spellcheck: boolean
+  /** Off: every new document opens with the panel collapsed, ignoring the remembered state */
+  readonly openInNewDocs: boolean
 }
 
 export const DEFAULT_AI_PANEL_PREFS: AiPanelPrefs = {
@@ -27,6 +29,7 @@ export const DEFAULT_AI_PANEL_PREFS: AiPanelPrefs = {
   fontSize: 'default',
   customFontSize: AI_FONT_BASE_PX,
   spellcheck: true,
+  openInNewDocs: true,
 }
 
 export function isAiFontSize(value: unknown): value is AiFontSize {
@@ -58,7 +61,8 @@ export function sameAiPanelPrefs(a: AiPanelPrefs, b: AiPanelPrefs): boolean {
     a.side === b.side &&
     a.fontSize === b.fontSize &&
     a.customFontSize === b.customFontSize &&
-    a.spellcheck === b.spellcheck
+    a.spellcheck === b.spellcheck &&
+    a.openInNewDocs === b.openInNewDocs
   )
 }
 
@@ -72,5 +76,9 @@ export function normalizeAiPanelPrefs(raw: unknown): AiPanelPrefs {
       clampAiCustomFontSize(obj.customFontSize) ?? DEFAULT_AI_PANEL_PREFS.customFontSize,
     spellcheck:
       typeof obj.spellcheck === 'boolean' ? obj.spellcheck : DEFAULT_AI_PANEL_PREFS.spellcheck,
+    openInNewDocs:
+      typeof obj.openInNewDocs === 'boolean'
+        ? obj.openInNewDocs
+        : DEFAULT_AI_PANEL_PREFS.openInNewDocs,
   }
 }

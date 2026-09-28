@@ -43,6 +43,7 @@ export type ControlErrorReason =
   | 'file_not_found'
   | 'file_not_open_in_gui'
   | 'app_unavailable'
+  | 'app_crashed'
 
 export interface ControlError {
   reason: ControlErrorReason

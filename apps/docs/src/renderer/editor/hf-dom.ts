@@ -638,7 +638,13 @@ export function hfHasVisibleContent(
   )
 }
 
-/** rendered strip heights keyed by content signature (pagination recomputes per page) */
+/**
+ * Rendered strip heights keyed by content signature (pagination recomputes per
+ * page). Least-recently-used eviction: a document with hundreds of sections
+ * carries one distinct strip per section, and clearing the whole map once it
+ * filled up made every pass re-probe every strip (a forced layout each).
+ */
+const HF_HEIGHT_CACHE_MAX = 2000
 const hfHeightCache = new Map<string, number>()
 // strips probed before an @font-face finished loading wrapped in the fallback
 // face (prod-sas 047: a footer measured two lines, one once its font arrived)
@@ -656,8 +662,10 @@ function hfProbeHost(): HTMLElement | null {
     // .doc-page: the probe inherits the same document-default font/line-height
     // CSS the real gap strips get inside the editor root
     host.className = 'doc-page'
+    // layout containment: the probe swaps its children per measure, and the
+    // forced layout that reads them back must not re-lay out the document
     host.style.cssText =
-      'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none'
+      'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;contain:layout style'
     // editor-chrome floors (dashed separator, clickable-strip min-height) are
     // not Word geometry: with them the measure over-reserves ~1 line per strip
     // paragraph, costing body lines on every page of every footered document.
@@ -674,17 +682,45 @@ function hfProbeHost(): HTMLElement | null {
   return host
 }
 
-/** djb2 over the mounted doc-scoped stylesheets (memoized on the concatenated string) */
-let mountedCssMemo: { text: string; hash: string } | null = null
+/** the mounted doc-scoped stylesheets (`<style data-doc-css>`, rendered by App) */
+function mountedDocCssStyles(): HTMLStyleElement[] {
+  // a tag-name collection is served from the DOM's cache; an attribute
+  // selector walks every node (a third of a pass on a 300k-node document)
+  const out: HTMLStyleElement[] = []
+  for (const style of document.getElementsByTagName('style')) {
+    if (style.hasAttribute('data-doc-css')) out.push(style)
+  }
+  return out
+}
+
+/**
+ * djb2 over the mounted doc-scoped stylesheets, memoized per style element.
+ * A pagination pass asks for the signature once per section strip (hundreds
+ * of times on a long document) while the stylesheets never change in between:
+ * re-joining megabytes of CSS on every call was most of a pass on large files.
+ * An unchanged text node hands back the same string, so the per-element
+ * comparison is a pointer check on the hot path.
+ */
+let mountedCssMemo: { parts: string[]; hash: string } | null = null
 function mountedDocCssSig(): string {
-  const text = Array.from(document.querySelectorAll('style[data-doc-css]'))
-    .map((s) => s.textContent ?? '')
-    .join('\0')
-  if (mountedCssMemo?.text === text) return mountedCssMemo.hash
+  const styles = mountedDocCssStyles()
+  const memo = mountedCssMemo
+  if (memo && memo.parts.length === styles.length) {
+    let same = true
+    for (let i = 0; i < styles.length; i++) {
+      if ((styles[i].textContent ?? '') !== memo.parts[i]) {
+        same = false
+        break
+      }
+    }
+    if (same) return memo.hash
+  }
+  const parts = Array.from(styles, (s) => s.textContent ?? '')
+  const text = parts.join('\0')
   let h = 5381
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
   const hash = `${text.length}:${h}`
-  mountedCssMemo = { text, hash }
+  mountedCssMemo = { parts, hash }
   return hash
 }
 
@@ -722,7 +758,11 @@ export function hfReservedHeightPx(
     `${JSON.stringify(value, noDataUrl)}|` +
     inline.map((im) => `${im.widthPx ?? ''}x${im.heightPx ?? ''}:${im.dataUrl.length}`).join(',')
   let dom = hfHeightCache.get(key)
-  if (dom === undefined) {
+  if (dom !== undefined) {
+    // re-insert: Map iteration order is insertion order, so the oldest entry is first
+    hfHeightCache.delete(key)
+    hfHeightCache.set(key, dom)
+  } else {
     const host = hfProbeHost()
     if (!host) return est
     const el = makeGapHfEl({
@@ -746,7 +786,10 @@ export function hfReservedHeightPx(
     host.replaceChildren(el)
     dom = el.getBoundingClientRect().height
     host.replaceChildren()
-    if (hfHeightCache.size > 300) hfHeightCache.clear()
+    if (hfHeightCache.size >= HF_HEIGHT_CACHE_MAX) {
+      const oldest = hfHeightCache.keys().next().value
+      if (oldest !== undefined) hfHeightCache.delete(oldest)
+    }
     hfHeightCache.set(key, dom)
   }
   if (dom <= 0) return est

@@ -42,9 +42,13 @@ describe('createWheelZoomStepper', () => {
   })
 
   it('clamps to the slider range and skips a no-op set', () => {
+    expect(SHEET_ZOOM_MIN).toBe(0.1)
     const lo = harness(SHEET_ZOOM_MIN)
     lo.wheel(100, 0)
     expect(lo.set).toEqual([])
+    const below = harness(0.5)
+    below.wheel(100, 0)
+    expect(below.set).toEqual([0.4])
     const hi = harness(3.95)
     hi.wheel(-100, 0)
     expect(hi.set).toEqual([SHEET_ZOOM_MAX])

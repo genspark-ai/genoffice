@@ -817,6 +817,25 @@ export function liveSections(
   return changed ? out : sections
 }
 
+/**
+ * Same section list by content: entries are identical objects, or (the merged
+ * ones liveSections re-creates) objects whose own fields are all identical.
+ * Lets a per-transaction memo keep its identity while a document streams in.
+ */
+export function sameSectionInfos(a: readonly SectionInfo[], b: readonly SectionInfo[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!
+    const y = b[i]!
+    if (x === y) continue
+    const keys = Object.keys(x) as Array<keyof SectionInfo>
+    if (keys.length !== Object.keys(y).length) return false
+    for (const k of keys) if (x[k] !== y[k]) return false
+  }
+  return true
+}
+
 /** Tag each block's owning section by the sections' block ranges (lastBlockIndex); new blocks without docxIndex inherit from the previous block */
 export function assignSections(blocks: BlockBox[], sections: SectionInfo[]): void {
   const ends = sections.map((s) => s.lastBlockIndex)

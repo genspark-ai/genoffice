@@ -194,6 +194,15 @@ const LABELS: Record<string, ContextMenuLabels> = {
     copyImage: 'छवि कॉपी करें',
     saveImageAs: 'छवि इस रूप में सहेजें…',
   },
+  vi: {
+    cut: 'Cắt',
+    copy: 'Sao chép',
+    paste: 'Dán',
+    selectAll: 'Chọn tất cả',
+    viewImage: 'Xem ảnh',
+    copyImage: 'Sao chép ảnh',
+    saveImageAs: 'Lưu ảnh thành…',
+  },
   'zh-TW': {
     cut: '剪下',
     copy: '複製',

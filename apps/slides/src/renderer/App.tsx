@@ -100,6 +100,8 @@ import {
   useAutoSavePref,
   type AiScopeQuoteData,
   type WordArtPreset,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
 } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
@@ -460,7 +462,7 @@ export function App() {
   useEffect(() => {
     window.slidesApi.setAutoSavePref?.(autoSave)
   }, [autoSave])
-  const [showAi, setShowAi] = useState(() => localStorage.getItem('ai-slides-show-ai') !== '0')
+  const [showAi, setShowAi] = useState(() => aiPanelInitiallyOpen('ai-slides-show-ai'))
   const [showFormat, setShowFormat] = useState(false)
   const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
@@ -1258,7 +1260,7 @@ export function App() {
 
   const toggleAi = useCallback(() => {
     setShowAi((v) => {
-      localStorage.setItem('ai-slides-show-ai', v ? '0' : '1')
+      rememberAiPanelOpen('ai-slides-show-ai', !v)
       return !v
     })
   }, [])
@@ -1273,7 +1275,7 @@ export function App() {
       scope?: AiScopeQuoteData,
     ) => {
       setShowAi(() => {
-        localStorage.setItem('ai-slides-show-ai', '1')
+        rememberAiPanelOpen('ai-slides-show-ai', true)
         return true
       })
       setAiPreset({
@@ -1413,7 +1415,7 @@ export function App() {
       })
       // The queue lives in the panel; annotating with it collapsed would look like nothing happened
       setShowAi(() => {
-        localStorage.setItem('ai-slides-show-ai', '1')
+        rememberAiPanelOpen('ai-slides-show-ai', true)
         return true
       })
     },

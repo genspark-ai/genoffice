@@ -63,6 +63,22 @@ describe('groupValue', () => {
     }
   })
 
+  it('places an exact boundary in its own bucket with a non-zero range start', () => {
+    const cases: readonly [number, number, number, string][] = [
+      [100, 0.1, 95.1, '95.1-95.2'],
+      [100, 0.1, 100.3, '100.3-100.4'],
+      [25, 0.5, 27.5, '27.5-28'],
+      [1000, 0.3, 1000.9, '1000.9-1001.2'],
+      [-7, 0.7, -5.6, '-5.6--4.9'],
+    ]
+    for (const [rangeStart, rangeStep, value, label] of cases) {
+      expect(groupValue({ kind: 'range', rangeStep, rangeStart }, value).label).toBe(label)
+    }
+    expect(groupValue({ kind: 'range', rangeStep: 0.1, rangeStart: 100 }, 95.15).label).toBe(
+      '95.1-95.2',
+    )
+  })
+
   it('keeps a value short of a boundary in the lower bucket', () => {
     expect(groupValue({ kind: 'range', rangeStep: 0.1 }, 0.25).label).toBe('0.2-0.3')
     expect(groupValue({ kind: 'range', rangeStep: 0.1 }, 0.29999).label).toBe('0.2-0.3')

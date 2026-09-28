@@ -187,15 +187,11 @@ export const nl = {
     'Themakleuren "{name}" toegepast; worden bij het opslaan naar het document geschreven',
   appSourceAdded: 'Bron "{title}" toegevoegd; verwijs ernaar via "Citaat invoegen"',
   appTitlePgOn:
-    '"Eerste pagina afwijkend" ingeschakeld; schakel bovenaan de pagina om de kop- en voettekst van de eerste pagina te bewerken',
+    '"Eerste pagina afwijkend" ingeschakeld; bewerk de kop- en voettekst van de eerste pagina op pagina 1',
   appTitlePgOff: '"Eerste pagina afwijkend" uitgeschakeld',
   appEvenOddOn:
-    '"Even en oneven pagina\'s verschillend" ingeschakeld; schakel bovenaan de pagina om de kop- en voettekst van even pagina\'s te bewerken',
+    '"Even en oneven pagina\'s verschillend" ingeschakeld; bewerk de kop- en voettekst van even pagina\'s op een willekeurige even pagina',
   appEvenOddOff: '"Even en oneven pagina\'s verschillend" uitgeschakeld',
-  appFirstPage: 'Eerste pagina',
-  appOddPage: "Oneven pagina's",
-  appEvenPage: "Even pagina's",
-  appDefaultPage: 'Standaard',
   appDblclickEditHeader: 'Dubbelklik om de koptekst te bewerken',
   appDblclickEditFooter: 'Dubbelklik om de voettekst te bewerken',
   appHfPageNumHint: ' (# staat voor het automatische paginanummer)',

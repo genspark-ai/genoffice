@@ -35,6 +35,7 @@ export type ErrorReason =
   | 'outside_allowed_roots'
   | 'conversion_failed'
   | 'app_unavailable'
+  | 'app_crashed'
   | 'invalid_usage'
 
 export interface ErrorHints {

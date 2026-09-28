@@ -219,6 +219,25 @@ describe('stripEmbeddedFonts', () => {
     expect(archive.has('ppt/fonts/font3.fntdata')).toBe(false)
   })
 
+  it('strips a package whose rels and content types use single quotes', async () => {
+    const archive = await archiveWithFonts()
+    for (const path of ['ppt/_rels/presentation.xml.rels', '[Content_Types].xml']) {
+      const xml = archive.readText(path)!.replace(/="([^"]*)"/g, "='$1'")
+      archive.entries.set(path, Buffer.from(xml, 'utf8'))
+    }
+
+    expect(stripEmbeddedFonts(archive)).toBe(true)
+
+    const rels = archive.readText('ppt/_rels/presentation.xml.rels')!
+    expect(rels).not.toContain("/font'")
+    expect(rels).toContain('slides/slide1.xml')
+    const ct = archive.readText('[Content_Types].xml')!
+    expect(ct).not.toContain('fntdata')
+    expect(ct).toContain("Extension='xml'")
+    expect(archive.has('ppt/fonts/font1.fntdata')).toBe(false)
+    expect(archive.has('ppt/fonts/font3.fntdata')).toBe(false)
+  })
+
   it('removes only the named face and keeps the list for the rest', async () => {
     const archive = await archiveWithFonts()
     expect(stripEmbeddedFonts(archive, new Set(['misans']))).toBe(true)

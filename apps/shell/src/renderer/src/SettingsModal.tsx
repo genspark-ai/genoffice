@@ -1542,6 +1542,21 @@ export function SettingsModal({
                     onClick={() => updateAiPrefs({ spellcheck: !aiPrefs.spellcheck })}
                   />
                 </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <div className="set-field-label">{t('setAiOpenInNewDocs')}</div>
+                      <div className="set-field-desc">{t('setAiOpenInNewDocsDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={aiPrefs.openInNewDocs}
+                    aria-label={t('setAiOpenInNewDocs')}
+                    onClick={() => updateAiPrefs({ openInNewDocs: !aiPrefs.openInNewDocs })}
+                  />
+                </div>
                 {defaultApp && defaultApp.state !== 'unsupported' && (
                   <div className="set-field">
                     <div className="set-field-text">

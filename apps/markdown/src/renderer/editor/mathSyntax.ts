@@ -12,6 +12,15 @@
 const INLINE_MATH_RE = /\$(?!\s)([^$\n]*[^\\\s$])\$(?![$\d])/g
 const CURRENCY_SPAN_RE = /^\d[\d.,]*(?:\s+[\p{L}\p{N}]+)*\s+\d[\d.,]*$/u
 
+/** An escaped dollar ("costs \$5") never opens a formula, so the tokenizer has to
+ * start at the first unescaped one instead of the first `$` in the source. */
+const UNESCAPED_DOLLAR_RE = /(?<!\\)(?:\\\\)*\$/
+
+export function strictInlineMathStart(src: string): number {
+  const match = UNESCAPED_DOLLAR_RE.exec(src)
+  return match ? match.index + match[0].length - 1 : -1
+}
+
 export function matchInlineMath(src: string): { raw: string; latex: string } | undefined {
   INLINE_MATH_RE.lastIndex = 0
   const match = INLINE_MATH_RE.exec(src)
@@ -21,10 +30,11 @@ export function matchInlineMath(src: string): { raw: string; latex: string } | u
 
 /** true when the text, written back as-is, would tokenize a `$...$` or `$$...$$` span */
 export function containsMathSyntax(text: string): boolean {
-  if (!text.includes('$')) return false
-  if (text.includes('$$')) return true
-  for (let i = text.indexOf('$'); i >= 0; i = text.indexOf('$', i + 1)) {
-    if (matchInlineMath(text.slice(i))) return true
+  for (let i = strictInlineMathStart(text); i >= 0;) {
+    const rest = text.slice(i)
+    if (rest.startsWith('$$') || matchInlineMath(rest)) return true
+    const next = strictInlineMathStart(text.slice(i + 1))
+    i = next < 0 ? -1 : i + 1 + next
   }
   return false
 }

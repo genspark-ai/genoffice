@@ -3045,54 +3045,6 @@ th.cell-rev-del {
   padding-top: 2px;
 }
 
-/* first/odd/even header-footer switcher (only shown when Different First Page or Different Odd & Even is on) */
-.hf-variant-chips {
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 4px;
-  z-index: 2;
-}
-
-.hf-variant-chips button {
-  font-size: 10px;
-  padding: 1px 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.hf-variant-chips button.on {
-  background: var(--word-blue);
-  border-color: var(--word-blue);
-  color: var(--docs-on-accent);
-}
-
-/* "Different first page" entry next to the header itself: while the
-   feature is off the whole chip bar stays invisible until the header area is
-   hovered or being edited, so plain documents keep a clean page top. The
-   padding-bottom stretches the (invisible) bar down to the header so the cursor
-   can travel from the header up to the chip without a hover gap. */
-.hf-chips-idle {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  padding-bottom: max(0px, calc(var(--header-dist, 48px) - 24px));
-}
-
-/* data-hf-active is set by HeaderFooterArea (header hovered or being edited):
-   a :has() anchored on .page-wrap re-ran on every editor DOM mutation and
-   restyled every span in the document (75k on a 400-page table file) */
-.page-wrap[data-hf-active] .hf-chips-idle,
-.hf-variant-chips.hf-chips-idle:hover {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 /* navigation pane */
 .nav-pane {
   position: relative;
@@ -11352,8 +11304,7 @@ tr > .page-gap-cut {
 }
 
 /* percentage-centered wrap overlays must keep centering on the paper, not the widened padding box */
-.page-wrap.has-markup-area .page-hf,
-.page-wrap.has-markup-area .hf-variant-chips {
+.page-wrap.has-markup-area .page-hf {
   left: calc((100% - var(--markup-w, 0px)) / 2);
 }
 

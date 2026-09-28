@@ -5,7 +5,12 @@ import {
   type MarkdownSourceSnapshot,
 } from './markdown/roundtripSerializer'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ImageViewer, useAutoSavePref } from '@genoffice/ui'
+import {
+  ImageViewer,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
+  useAutoSavePref,
+} from '@genoffice/ui'
 import {
   pollUntilReady,
   runHeadlessRendererExport,
@@ -132,7 +137,7 @@ export default function App() {
   const [fmOpen, setFmOpen] = useState(false)
   const [fmText, setFmText] = useState('')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
-  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem('mdapp.showAi') !== '0')
+  const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('mdapp.showAi'))
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const editQueueRef = useRef(editQueue)
@@ -661,7 +666,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('mdapp.showAi', aiOpen ? '1' : '0')
+    rememberAiPanelOpen('mdapp.showAi', aiOpen)
   }, [aiOpen])
 
   // autosave: every 30s and on window blur, silently persist pending changes

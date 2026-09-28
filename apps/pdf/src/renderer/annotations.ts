@@ -210,10 +210,12 @@ function dropEnclosingRects(rects: readonly DOMRect[]): DOMRect[] {
   const open: DOMRect[] = []
   for (const r of rects) {
     // a container can hold nothing more once the sweep has moved past its box:
-    // tree order only ever moves right along a line and down to the next line
+    // tree order only ever moves right along a line and down to the next line.
+    // A box starting at another's right edge is a sibling, not a child, so
+    // abutting spans on one line drop off the stack instead of piling up
     while (open.length > 0) {
       const top = open[open.length - 1]!
-      if (r.left <= top.right + 1 && r.top <= top.bottom + 1) break
+      if (r.left < top.right - 1 && r.top < top.bottom - 1) break
       open.pop()
     }
     for (const c of open) {

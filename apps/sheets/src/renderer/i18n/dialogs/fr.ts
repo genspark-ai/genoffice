@@ -53,6 +53,11 @@ export const fr = {
   dlgGoToNote:
     'Saisissez une référence de cellule ou choisissez une plage nommée ; Atteindre se déplace vers la cible et la sélectionne. Cliquez sur un nom pour le remplir, double-cliquez pour y aller directement.',
   dlgGoToGo: 'Atteindre',
+  dlgZoomTitle: 'Zoom',
+  dlgZoomMagnification: 'Agrandissement',
+  dlgZoomFitSelection: 'Ajusté à la sélection',
+  dlgZoomCustom: 'Personnalisé',
+  dlgZoomRangeError: 'Entrez un nombre compris entre {min} et {max}.',
 
   dlgHfTitle: 'En-tête et pied de page',
   dlgHfHeaderLeft: 'En-tête · Gauche',
@@ -413,4 +418,12 @@ export const fr = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Matrice',
   dlgFnCatOther: 'Autres',
+  dlgInsertCellsTitle: 'Insertion',
+  dlgDeleteCellsTitle: 'Suppression',
+  dlgCellsShiftRight: 'Décaler les cellules vers la droite',
+  dlgCellsShiftDown: 'Décaler les cellules vers le bas',
+  dlgCellsShiftLeft: 'Décaler les cellules vers la gauche',
+  dlgCellsShiftUp: 'Décaler les cellules vers le haut',
+  dlgCellsEntireRow: 'Ligne entière',
+  dlgCellsEntireColumn: 'Colonne entière',
 } satisfies Record<keyof typeof zh, string>

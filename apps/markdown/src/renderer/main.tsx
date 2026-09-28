@@ -31,7 +31,7 @@ void (async () => {
   document.documentElement.lang = htmlLang(lang as Lang)
   applyTheme(theme)
   window.markdownApi.onThemeChanged(applyTheme)
-  void window.markdownApi
+  await window.markdownApi
     ?.getAiPanelPrefs?.()
     .then(applyAiPanelPrefs)
     .catch(() => {})

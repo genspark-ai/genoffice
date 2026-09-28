@@ -53,6 +53,11 @@ export const ms = {
   dlgGoToNote:
     'Taipkan rujukan sel atau pilih julat bernama; Pergi melompat ke sasaran dan memilihnya. Klik nama untuk mengisinya, dwiklik untuk pergi terus.',
   dlgGoToGo: 'Pergi',
+  dlgZoomTitle: 'Zum',
+  dlgZoomMagnification: 'Pembesaran',
+  dlgZoomFitSelection: 'Muat pilihan',
+  dlgZoomCustom: 'Tersuai',
+  dlgZoomRangeError: 'Masukkan nombor antara {min} dan {max}.',
 
   dlgHfTitle: 'Pengepala dan Pengaki',
   dlgHfHeaderLeft: 'Pengepala · Kiri',
@@ -407,4 +412,12 @@ export const ms = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Tatasusunan',
   dlgFnCatOther: 'Lain-lain',
+  dlgInsertCellsTitle: 'Sisip',
+  dlgDeleteCellsTitle: 'Padam',
+  dlgCellsShiftRight: 'Anjak sel ke kanan',
+  dlgCellsShiftDown: 'Anjak sel ke bawah',
+  dlgCellsShiftLeft: 'Anjak sel ke kiri',
+  dlgCellsShiftUp: 'Anjak sel ke atas',
+  dlgCellsEntireRow: 'Seluruh baris',
+  dlgCellsEntireColumn: 'Seluruh lajur',
 } satisfies Record<keyof typeof zh, string>

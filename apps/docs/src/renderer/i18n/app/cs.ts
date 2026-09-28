@@ -178,15 +178,11 @@ export const cs = {
   appThemeColorsApplied: 'Barvy motivu „{name}“ použity; do dokumentu se zapíší při uložení',
   appSourceAdded: 'Pramen „{title}“ přidán; odkažte na něj přes Vložit citaci',
   appTitlePgOn:
-    '„Jiné na první stránce“ zapnuto; přepněte v horní části stránky pro úpravu záhlaví a zápatí první stránky',
+    '„Jiné na první stránce“ zapnuto; záhlaví a zápatí první stránky upravte na stránce 1',
   appTitlePgOff: '„Jiné na první stránce“ vypnuto',
   appEvenOddOn:
-    '„Různé liché a sudé stránky“ zapnuto; přepněte v horní části stránky pro úpravu záhlaví a zápatí sudých stránek',
+    '„Různé liché a sudé stránky“ zapnuto; záhlaví a zápatí sudých stránek upravte na libovolné sudé stránce',
   appEvenOddOff: '„Různé liché a sudé stránky“ vypnuto',
-  appFirstPage: 'První stránka',
-  appOddPage: 'Liché stránky',
-  appEvenPage: 'Sudé stránky',
-  appDefaultPage: 'Výchozí',
   appDblclickEditHeader: 'Poklepáním upravíte záhlaví',
   appDblclickEditFooter: 'Poklepáním upravíte zápatí',
   appHfPageNumHint: ' (# zastupuje automatické číslo stránky)',

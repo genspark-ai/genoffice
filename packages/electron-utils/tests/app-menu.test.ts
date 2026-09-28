@@ -160,6 +160,19 @@ describe('viewMenuTemplate', () => {
     expect(item.accelerator).toBe(process.platform === 'darwin' ? 'Alt+Command+I' : 'Ctrl+Shift+I')
   })
 
+  it('drops the dev and page-zoom groups on request, keeping fullscreen', () => {
+    const tpl = viewMenuTemplate(en, { devItems: false, pageZoom: false })
+    expect(submenuOf(tpl).map((i) => i.role ?? i.type)).toEqual(['togglefullscreen'])
+    const devOnly = viewMenuTemplate(en, { pageZoom: false })
+    expect(submenuOf(devOnly).map((i) => i.role ?? i.type ?? i.label)).toEqual([
+      'reload',
+      'forceReload',
+      'Developer Tools',
+      'separator',
+      'togglefullscreen',
+    ])
+  })
+
   it('closes detached DevTools when they have focus', async () => {
     const target = {
       devToolsWebContents: {},

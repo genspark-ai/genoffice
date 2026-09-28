@@ -196,6 +196,21 @@ const UNIVER_LOCALES: Record<
         import('@univerjs/preset-sheets-table/locales/pl-PL'),
       ]),
   },
+  vi: {
+    type: LocaleType.VI_VN,
+    load: () =>
+      Promise.all([
+        import('@univerjs/preset-sheets-core/locales/vi-VN'),
+        import('@univerjs/preset-sheets-conditional-formatting/locales/vi-VN'),
+        import('@univerjs/preset-sheets-data-validation/locales/vi-VN'),
+        import('@univerjs/preset-sheets-drawing/locales/vi-VN'),
+        import('@univerjs/preset-sheets-filter/locales/vi-VN'),
+        import('@univerjs/preset-sheets-find-replace/locales/vi-VN'),
+        import('@univerjs/preset-sheets-note/locales/vi-VN'),
+        import('@univerjs/preset-sheets-sort/locales/vi-VN'),
+        import('@univerjs/preset-sheets-table/locales/vi-VN'),
+      ]),
+  },
   'zh-TW': {
     type: LocaleType.ZH_TW,
     load: () =>

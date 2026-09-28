@@ -52,6 +52,11 @@ export const id = {
   dlgGoToNote:
     'Ketik referensi sel atau pilih rentang bernama; tombol Buka melompat ke target dan memilihnya. Klik sebuah nama untuk mengisinya, klik dua kali untuk langsung menuju ke sana.',
   dlgGoToGo: 'Buka',
+  dlgZoomTitle: 'Zoom',
+  dlgZoomMagnification: 'Perbesaran',
+  dlgZoomFitSelection: 'Sesuaikan dengan pilihan',
+  dlgZoomCustom: 'Kustom',
+  dlgZoomRangeError: 'Masukkan angka antara {min} dan {max}.',
 
   dlgHfTitle: 'Header & Footer',
   dlgHfHeaderLeft: 'Header · Kiri',
@@ -409,4 +414,12 @@ export const id = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Array',
   dlgFnCatOther: 'Lainnya',
+  dlgInsertCellsTitle: 'Sisipkan',
+  dlgDeleteCellsTitle: 'Hapus',
+  dlgCellsShiftRight: 'Geser sel ke kanan',
+  dlgCellsShiftDown: 'Geser sel ke bawah',
+  dlgCellsShiftLeft: 'Geser sel ke kiri',
+  dlgCellsShiftUp: 'Geser sel ke atas',
+  dlgCellsEntireRow: 'Seluruh baris',
+  dlgCellsEntireColumn: 'Seluruh kolom',
 } satisfies Record<keyof typeof zh, string>

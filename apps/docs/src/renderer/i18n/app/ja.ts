@@ -189,15 +189,11 @@ export const ja = {
   appSourceAdded: '資料文献「{title}」を追加しました。「引用文献の挿入」から引用できます',
   // Header & footer
   appTitlePgOn:
-    '「先頭ページのみ別指定」を有効にしました。ページ上部の切り替えで先頭ページのヘッダー/フッターを編集できます',
+    '「先頭ページのみ別指定」を有効にしました。先頭ページのヘッダー/フッターは 1 ページ目で編集できます',
   appTitlePgOff: '「先頭ページのみ別指定」を無効にしました',
   appEvenOddOn:
-    '「奇数/偶数ページ別指定」を有効にしました。ページ上部の切り替えで偶数ページのヘッダー/フッターを編集できます',
+    '「奇数/偶数ページ別指定」を有効にしました。偶数ページのヘッダー/フッターは任意の偶数ページで編集できます',
   appEvenOddOff: '「奇数/偶数ページ別指定」を無効にしました',
-  appFirstPage: '先頭ページ',
-  appOddPage: '奇数ページ',
-  appEvenPage: '偶数ページ',
-  appDefaultPage: '既定のページ',
   appDblclickEditHeader: 'ダブルクリックしてヘッダーを編集',
   appDblclickEditFooter: 'ダブルクリックしてフッターを編集',
   appHfPageNumHint: '(# は自動ページ番号)',

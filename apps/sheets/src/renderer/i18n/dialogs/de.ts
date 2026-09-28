@@ -53,6 +53,11 @@ export const de = {
   dlgGoToNote:
     'Geben Sie einen Zellbezug ein oder wählen Sie einen benannten Bereich; „Gehe zu“ springt zum Ziel und markiert es. Klicken Sie auf einen Namen, um ihn einzutragen; Doppelklick springt direkt.',
   dlgGoToGo: 'Gehe zu',
+  dlgZoomTitle: 'Zoom',
+  dlgZoomMagnification: 'Vergrößerung',
+  dlgZoomFitSelection: 'An Markierung anpassen',
+  dlgZoomCustom: 'Benutzerdefiniert',
+  dlgZoomRangeError: 'Geben Sie eine Zahl zwischen {min} und {max} ein.',
 
   dlgHfTitle: 'Kopf- und Fußzeile',
   dlgHfHeaderLeft: 'Kopfzeile · Links',
@@ -412,4 +417,12 @@ export const de = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Matrix',
   dlgFnCatOther: 'Sonstige',
+  dlgInsertCellsTitle: 'Zellen einfügen',
+  dlgDeleteCellsTitle: 'Zellen löschen',
+  dlgCellsShiftRight: 'Zellen nach rechts verschieben',
+  dlgCellsShiftDown: 'Zellen nach unten verschieben',
+  dlgCellsShiftLeft: 'Zellen nach links verschieben',
+  dlgCellsShiftUp: 'Zellen nach oben verschieben',
+  dlgCellsEntireRow: 'Ganze Zeile',
+  dlgCellsEntireColumn: 'Ganze Spalte',
 } satisfies Record<keyof typeof zh, string>

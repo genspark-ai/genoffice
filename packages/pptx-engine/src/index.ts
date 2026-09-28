@@ -2247,10 +2247,10 @@ export function deleteSlide(opened: OpenedPptx, index: number): boolean {
   )?.id
   if (!rid) return false
 
-  const sldTag = new RegExp(`<p:sldId\\s[^>]*r:id="${rid}"[^>]*/>`).exec(pres)?.[0]
+  const sldTag = new RegExp(`<p:sldId\\s[^>]*r:id=["']${rid}["'][^>]*/>`).exec(pres)?.[0]
   if (!sldTag) return false
   archive.entries.set(presPath, Buffer.from(pres.replace(sldTag, ''), 'utf8'))
-  const relTag = new RegExp(`<Relationship\\s[^>]*Id="${rid}"[^>]*/>`).exec(presRels)?.[0]
+  const relTag = new RegExp(`<Relationship\\s[^>]*Id=["']${rid}["'][^>]*/>`).exec(presRels)?.[0]
   if (relTag) {
     archive.entries.set(presRelsPath, Buffer.from(presRels.replace(relTag, ''), 'utf8'))
   }
@@ -2494,7 +2494,7 @@ export function setSlideLayout(
     // ftr/sldNum/dt live outside the content-slot namespace (their idx 2/3/4 must not block body slots)
     if (m && !['ftr', 'sldNum', 'dt'].includes(type))
       taken.add(phSlotKey(type, /\bidx="([^"]*)"/.exec(m[1]!)?.[1] ?? ''))
-    for (const idm of xml.matchAll(/<p:cNvPr\s[^>]*\bid="(\d+)"/g))
+    for (const idm of xml.matchAll(/<p:cNvPr\s[^>]*\bid=["'](\d+)["']/g))
       maxId = Math.max(maxId, Number(idm[1]))
   }
   const missing = layoutPhs.filter((ph) => !taken.has(phSlotKey(ph.type, ph.idx)))
@@ -2834,12 +2834,12 @@ export function editChartElement(
   if (!rels) return false
 
   // Find the r:id in originalXml
-  const rIdInFrame = /r:id="([^"]+)"/.exec(el.anchor.originalXml)
+  const rIdInFrame = /r:id=["']([^"']+)["']/.exec(el.anchor.originalXml)
   if (!rIdInFrame) return false
   const rId = rIdInFrame[1]!
 
   // Find the chart part path in the rels
-  const relRe = new RegExp(`Id="${escapeRegex(rId)}"[^>]*Target="([^"]+)"`)
+  const relRe = new RegExp(`Id=["']${escapeRegex(rId)}["'][^>]*Target=["']([^"']+)["']`)
   const relMatch = relRe.exec(rels)
   if (!relMatch) return false
   const chartPath = resolveTarget(slide.path, relMatch[1]!)
@@ -4118,7 +4118,7 @@ export function pasteElements(
       }
     }
     xml = xml.replace(
-      /(<p:cNvPr\s[^>]*\bid=")\d+(")/g,
+      /(<p:cNvPr\s[^>]*\bid=["'])\d+(["'])/g,
       (_a, pre: string, post: string) => `${pre}${nextId++}${post}`,
     )
     // Pasted elements are new identities: mint fresh creationIds so durable ids

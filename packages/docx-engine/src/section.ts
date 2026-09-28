@@ -461,8 +461,8 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
   ) {
     // explicit unequal widths: rebuild the element (opt-in via colWidths) —
     // unless the document already carries exactly these values (round-trip)
-    const currentWidths = (colsMatch?.[0].match(/<w:col [^>]*w:w="\d+"[^>]*\/>/g) ?? []).map((t) =>
-      intAttr(t, 'w:w', 0),
+    const currentWidths = (colsMatch?.[0].match(/<w:col [^>]*w:w=["']\d+["'][^>]*>/g) ?? []).map(
+      (t) => intAttr(t, 'w:w', 0),
     )
     const unchanged =
       colsMatch !== null &&

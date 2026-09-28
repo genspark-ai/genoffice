@@ -12,6 +12,7 @@ interface Script {
   stdout?: string
   stderr?: string
   code?: number | null
+  signal?: string
   hang?: boolean
   ignoreTerm?: boolean
   writeOutput?: boolean
@@ -48,11 +49,13 @@ function fakeSpawn(script: Script, calls: { command: string; args: string[] }[])
       if (script.stdout) child.stdout.write(script.stdout)
       if (script.stderr) child.stderr.write(script.stderr)
       if (script.hang) return
-      child.emit('exit', script.code ?? 0)
+      const code = script.signal ? null : (script.code ?? 0)
+      const signal = script.signal ?? null
+      child.emit('exit', code, signal)
       if (script.exitOnly) return
       child.stdout.end()
       child.stderr.end()
-      child.emit('close', script.code ?? 0)
+      child.emit('close', code, signal)
     }, 5)
     return child
   }) as unknown as typeof import('node:child_process').spawn
@@ -107,6 +110,49 @@ describe('exportViaApp', () => {
     await expect(
       attempt({ code: 0, stdout: '{"status":"ok","summary":"x"}\n' }),
     ).rejects.toBeInstanceOf(CliError)
+  })
+
+  it('keeps a finished export when GenOffice crashes while quitting', async () => {
+    const dir = tempDir()
+    const out = join(dir, 'crash-ok.pdf')
+    const logs: string[] = []
+    const r = await exportViaApp('/tmp/a.docx', 'pdf', out, {
+      env,
+      log: (m) => logs.push(m),
+      spawn: fakeSpawn(
+        { stdout: '{"status":"ok","summary":"done"}\n', writeOutput: true, signal: 'SIGSEGV' },
+        [],
+      ),
+    })
+    expect(r.summary).toBe('done')
+    expect(logs.some((m) => m.includes('crashed (SIGSEGV) while quitting'))).toBe(true)
+  })
+
+  it('reports a crash before the envelope as app_crashed with the signal', async () => {
+    const dir = tempDir()
+    await expect(
+      exportViaApp('/tmp/a.docx', 'pdf', join(dir, 'crash.pdf'), {
+        env,
+        spawn: fakeSpawn({ signal: 'SIGSEGV', stderr: 'boom\n' }, []),
+      }),
+    ).rejects.toMatchObject({
+      code: 4,
+      reason: 'app_crashed',
+      message: 'GenOffice crashed (SIGSEGV) while exporting /tmp/a.docx: boom',
+    })
+  })
+
+  it('keeps the error envelope when GenOffice crashes after reporting a failure', async () => {
+    const dir = tempDir()
+    await expect(
+      exportViaApp('/tmp/a.docx', 'pdf', join(dir, 'err.pdf'), {
+        env,
+        spawn: fakeSpawn(
+          { stdout: '{"status":"error","error":"unsupported chart"}\n', signal: 'SIGSEGV' },
+          [],
+        ),
+      }),
+    ).rejects.toMatchObject({ message: 'unsupported chart' })
   })
 
   it('terminates a hung export and escalates to SIGKILL when it ignores SIGTERM', async () => {

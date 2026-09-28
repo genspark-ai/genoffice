@@ -216,6 +216,29 @@ body.overlay-title-bar .tab-bar-drag-spacer {
   z-index: 2;
 }
 
+/* ---- dock target (a detached window dragged over the strip): the strip
+ * tints and a slim bar marks the slot the document will land in ---- */
+
+.tab-strip {
+  position: relative;
+}
+
+.tab-strip.dock-target {
+  background: var(--hover);
+}
+
+.tab-dock-indicator {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .tab-icon {
   flex-shrink: 0;
   display: flex;

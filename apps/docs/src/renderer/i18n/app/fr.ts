@@ -186,15 +186,11 @@ export const fr = {
     "Couleurs de thème « {name} » appliquées ; écrites dans le document à l'enregistrement",
   appSourceAdded: 'Source « {title} » ajoutée ; citez-la via « Insérer une citation »',
   appTitlePgOn:
-    "« Première page différente » activé ; basculez en haut de la page pour modifier l'en-tête et le pied de page de la première page",
+    "« Première page différente » activé ; modifiez l'en-tête et le pied de page de la première page sur la page 1",
   appTitlePgOff: '« Première page différente » désactivé',
   appEvenOddOn:
-    "« Pages paires et impaires différentes » activé ; basculez en haut de la page pour modifier l'en-tête et le pied de page des pages paires",
+    "« Pages paires et impaires différentes » activé ; modifiez l'en-tête et le pied de page des pages paires sur n'importe quelle page paire",
   appEvenOddOff: '« Pages paires et impaires différentes » désactivé',
-  appFirstPage: 'Première page',
-  appOddPage: 'Pages impaires',
-  appEvenPage: 'Pages paires',
-  appDefaultPage: 'Par défaut',
   appDblclickEditHeader: "Double-cliquez pour modifier l'en-tête",
   appDblclickEditFooter: 'Double-cliquez pour modifier le pied de page',
   appHfPageNumHint: ' (# représente le numéro de page automatique)',

@@ -91,6 +91,19 @@ describe('line insertion (p:cxnSp)', () => {
     expect(parsed!.transform.offset).toEqual({ x: 914400, y: 914400, cx: 1828800, cy: 0 })
   })
 
+  it('flip flags reach a preset shape model as well as its xml', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, {
+      kind: 'rightArrow',
+      offset: { x: 100, y: 200, cx: 3000000, cy: 900000 },
+      flipH: true,
+    })
+    expect(el.transform.flipH).toBe(true)
+    expect(el.transform.flipV).toBe(false)
+    expect(el.anchor.originalXml).toContain('flipH="1"')
+  })
+
   it('flip flags mirror the connector and survive save → reopen', async () => {
     const opened = await openPptx(await createBlankPptx())
     const slide = opened.deck.slides[0]!

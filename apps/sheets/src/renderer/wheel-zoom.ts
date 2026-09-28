@@ -1,8 +1,10 @@
 import { createZoomWheelClassifier, notchStep } from '@genoffice/ui'
 
-/// Same range as the status-bar slider and +/- buttons.
-export const SHEET_ZOOM_MIN = 0.5
-export const SHEET_ZOOM_MAX = 4
+import { SHEET_ZOOM_MAX as MAX_PERCENT, SHEET_ZOOM_MIN as MIN_PERCENT } from './zoom-range'
+
+/// Same range as the status-bar slider and +/- buttons, as a ratio.
+export const SHEET_ZOOM_MIN = MIN_PERCENT / 100
+export const SHEET_ZOOM_MAX = MAX_PERCENT / 100
 
 export interface WheelZoomTarget {
   readonly getZoom: () => number | undefined

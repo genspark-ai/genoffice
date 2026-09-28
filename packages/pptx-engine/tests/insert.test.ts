@@ -7,8 +7,10 @@ import {
   savePptx,
   addElement,
   addTable,
+  buildTableGridXml,
   deleteElement,
   createBlankPptx,
+  type NewTableGridOptions,
 } from '../src/index'
 import { nextCNvPrId } from '../src/insert'
 
@@ -286,6 +288,73 @@ describe('addTable explicit grid options (genpptx parity)', () => {
       .originalXml as string
     expect(xml.match(/gridSpan="\d+"/g)).toEqual(['gridSpan="2"'])
     expect(xml.match(/rowSpan="\d+"/g)).toEqual(['rowSpan="2"'])
+  })
+})
+
+/**
+ * ST_Coordinate ceiling (generate.ts COORD_MAX): the largest value the
+ * schema accepts for a:off/a:ext.
+ */
+const COORD_MAX = '27273042316900'
+
+/** x/y/cx/cy values of the first xfrm, in document order. */
+function xfrmNums(xml: string): string[] {
+  const block = /<(?:a|p):xfrm\b[^>]*>[\s\S]*?<\/(?:a|p):xfrm>/.exec(xml)?.[0] ?? ''
+  return [...block.matchAll(/\b(?:x|y|cx|cy)="([^"]*)"/g)].map((m) => m[1]!)
+}
+
+/**
+ * The shape/connector/table builders hand-interpolated the offset straight into
+ * <a:off>/<a:ext>, so a hostile op payload wrote the raw number into the
+ * attribute: x="0.5" and cx="1e+30" are both invalid ST_Coordinate values and
+ * PowerPoint rejects the file. They now go through generateXfrmXml, the
+ * clamping helper the picture builder already used.
+ */
+describe('insert geometry attribute bounds', () => {
+  const HOSTILE = { x: 0.5, y: 1e30, cx: 1e30, cy: Number.NaN }
+
+  it('clamps shape, connector and table offsets to finite integers', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+
+    const shape = addElement(slide, { kind: 'ellipse', offset: { ...HOSTILE } })
+    const conn = addElement(slide, { kind: 'line', offset: { ...HOSTILE } })
+    const tbl = addTable(opened, 0, { rows: 2, cols: 2, offset: { ...HOSTILE } })!
+    const grid: NewTableGridOptions = {
+      offset: { ...HOSTILE },
+      colWidthsEmu: [1000000, 1000000],
+      rowHeightsEmu: [500000, 500000],
+      cells: [
+        [{}, {}],
+        [{}, {}],
+      ],
+    }
+
+    for (const xml of [
+      shape.anchor.originalXml,
+      conn.anchor.originalXml,
+      (tbl.slide.elements.find((e) => e.id === tbl.elementId) as any).anchor.originalXml as string,
+      buildTableGridXml(slide, grid),
+    ]) {
+      for (const v of xfrmNums(xml)) expect(v).toMatch(/^-?\d+$/)
+      expect(xml).not.toMatch(/="(?:NaN|Infinity|1e[+-])/)
+      expect(xml).not.toMatch(/="-?\d+\.\d+"/)
+    }
+
+    // 0.5 rounds to an integer, 1e30 lands on the ST_Coordinate ceiling and the
+    // NaN height falls back to the 0 lower bound
+    expect(xfrmNums(shape.anchor.originalXml)).toEqual(['1', COORD_MAX, COORD_MAX, '0'])
+  })
+
+  it('a clamped table offset survives save → reopen as a finite rect', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    addTable(opened, 0, { rows: 2, cols: 2, offset: { ...HOSTILE } })
+
+    const reopened = await openPptx(await savePptx(opened))
+    const o = (reopened.deck.slides[0]!.elements.find((e) => e.type === 'table') as any).transform
+      .offset
+    expect(Number.isFinite(o.x) && Number.isFinite(o.y)).toBe(true)
+    expect(Number.isFinite(o.cx) && Number.isFinite(o.cy)).toBe(true)
   })
 })
 

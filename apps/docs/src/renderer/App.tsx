@@ -16,7 +16,14 @@ import type { Editor } from '@tiptap/core'
 import { handleDocsControl, type ControlRequest } from './control'
 import { DOMParser as PmDOMParser, type Mark as PmMark, Slice as PmSlice } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type Command, type Transaction } from '@tiptap/pm/state'
-import { Dropdown, ImageViewer, createZoomWheelClassifier, useAutoSavePref } from '@genoffice/ui'
+import {
+  Dropdown,
+  ImageViewer,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
+  createZoomWheelClassifier,
+  useAutoSavePref,
+} from '@genoffice/ui'
 import { wordRangeAtCaret } from './editor/comments'
 import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
 import { linkTarget } from './editor/link-actions'
@@ -377,6 +384,7 @@ import {
 } from './file-actions'
 import { BlockIndex } from './pagination-index'
 import { isPhasedContentPending } from './phased-content'
+import { sameSectionInfos } from './pagination-sections'
 import {
   blocksKeepSlicing,
   firstChangedTopLevelIndex,
@@ -766,7 +774,7 @@ export function App() {
   } | null>(null)
   const [_recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<AiSettings>(DEFAULT_SETTINGS)
-  const [showAi, setShowAi] = useState(() => localStorage.getItem('aidocs.showAi') !== '0')
+  const [showAi, setShowAi] = useState(() => aiPanelInitiallyOpen('aidocs.showAi'))
   const [spellcheck, setSpellcheck] = useState(spellcheckEnabled)
   const [largeDocSpellOff, setLargeDocSpellOff] = useState(false)
   const spellcheckActive = spellcheck && !largeDocSpellOff
@@ -813,13 +821,6 @@ export function App() {
   const [evenOddHfDirty, setEvenOddHfDirty] = useState(false)
   const [mirrorMargins, setMirrorMargins] = useState(false)
   const [mirrorMarginsDirty, setMirrorMarginsDirty] = useState(false)
-  const [hfView, setHfViewState] = useState<HfView>('default')
-  /** false until the user picks a variant (chip/toggle); resting areas then follow their page's variant instead */
-  const [hfViewTouched, setHfViewTouched] = useState(false)
-  const setHfView = (v: HfView) => {
-    setHfViewState(v)
-    setHfViewTouched(true)
-  }
   const [pageInfo, setPageInfo] = useState({ current: 1, total: 1 })
   // last page's number for the document-end footer: text for the page marker, num for
   // even/odd parity (section restarts / pageNumberFmt make both differ from the physical count)
@@ -863,18 +864,14 @@ export function App() {
     nonce: number
   } | null>(null)
   const multiHf = sections.length > 1
-  const effHfView: HfView =
-    (hfView === 'first' && !titlePg) || (hfView === 'even' && !evenOddHf) ? 'default' : hfView
-  /** Variant an on-canvas area shows/edits: explicit chip choice wins; at rest the header area is page 1 and the footer area the last page */
+  /** Variant an on-canvas edge area shows/edits: like Word, it follows its page — the header area is page 1 and the footer area the last page */
   const areaView = (kind: 'header' | 'footer'): HfView =>
-    hfViewTouched
-      ? effHfView
-      : restingHfAreaVariant(kind, {
-          titlePg,
-          evenOddHf,
-          pageCount: pageInfo.total,
-          ...(lastPageNo ? { lastPageNo: lastPageNo.num } : {}),
-        })
+    restingHfAreaVariant(kind, {
+      titlePg,
+      evenOddHf,
+      pageCount: pageInfo.total,
+      ...(lastPageNo ? { lastPageNo: lastPageNo.num } : {}),
+    })
   const headerAreaView = areaView('header')
   const footerAreaView = areaView('footer')
 
@@ -887,12 +884,11 @@ export function App() {
       next,
     )
   }
-  /** "Different first page" toggle, shared by the ribbon checkbox and the on-page chip */
+  /** "Different first page" toggle (ribbon checkbox); page 1's header/footer become the first-page variant, as in Word */
   const toggleTitlePg = (on: boolean) => {
     hfEditorRef.current?.exit()
     setTitlePg(on)
     setTitlePgDirty(true)
-    setHfView(on ? 'first' : 'default')
     setStatus(on ? t('appTitlePgOn') : t('appTitlePgOff'))
   }
   const [showMarks, setShowMarks] = useState(false)
@@ -1388,6 +1384,7 @@ export function App() {
   // section into the next, pending breaks are already in `sections`. Derived from the
   // document itself (not the paint-time measurement), so a strip edit lands in the right
   // slot even before the canvas has re-measured
+  const hfSectionsMemoRef = useRef<SectionInfo[] | null>(null)
   const hfSections = useMemo(() => {
     if (!editor || sections.length <= 1) return sections
     const present: Array<{ docxIndex: number }> = []
@@ -1395,7 +1392,15 @@ export function App() {
       const di = node.attrs?.docxIndex
       if (typeof di === 'number') present.push({ docxIndex: di })
     })
-    return liveSections(sections, present as BlockBox[], undefined, delSectBreaks)
+    const next = liveSections(sections, present as BlockBox[], undefined, delSectBreaks)
+    // every transaction re-runs this memo, and a streaming open appends a
+    // chunk per frame: a fresh array per chunk re-ran the pagination effect
+    // (a synchronous whole-document pass each) for every chunk. Unchanged
+    // content keeps the previous identity.
+    const prev = hfSectionsMemoRef.current
+    if (prev && sameSectionInfos(prev, next)) return prev
+    hfSectionsMemoRef.current = next
+    return next
     // docVersion: the doc identity is what changes, and it is not a React value
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, sections, delSectBreaks, docVersion])
@@ -1497,7 +1502,7 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
+    rememberAiPanelOpen('aidocs.showAi', showAi)
   }, [showAi])
 
   useEffect(() => {
@@ -1986,11 +1991,6 @@ export function App() {
     mirrorMarginsDirty,
     setMirrorMargins,
     setMirrorMarginsDirty,
-    // opening a document resets to the resting per-page variant selection
-    setHfView: (v: HfView) => {
-      setHfViewState(v)
-      setHfViewTouched(false)
-    },
     pgNumEdit,
     pgNumDirtySections,
     setPgNumEdit,
@@ -3505,12 +3505,16 @@ export function App() {
     let selfScheduled = false
     let retrigger: string[] = []
     // several reasons in one pass debounce into one follow-up: count passes, not reasons
-    const followUp = (why: string) => {
+    // decoration-only re-decisions (justify shrink, float flow) arrive after a
+    // pass and re-run it from the changed block: they count against the same
+    // cap, or a flip-flopping decision paginates forever
+    const followUpAt = (why: string, dirtyIndex: number | null) => {
       retrigger.push(why)
       if (followUps >= MAX_FOLLOW_UP_PASSES) return
       selfScheduled = true
-      onUpdate(null, null, true)
+      onUpdate(null, dirtyIndex, true)
     }
+    const followUp = (why: string) => followUpAt(why, null)
     let secWidthSig = ''
     let charSpaceSig = ''
     const colWidthPass = newWidthPassState()
@@ -3957,6 +3961,20 @@ export function App() {
             const resolved = resolveLive(si, kind, variant)
             return { value: resolved.value, ...split(resolved.images), section: si, variant }
           }
+          // Like Word there is no variant switcher: a header/footer part is edited on a
+          // page that shows it. The edge areas cover page 1's header and the last page's
+          // footer; a gap strip for any other (section, variant) pair is kept even while
+          // the part is empty so it still has a double-click target (an empty even-page
+          // header, a first-page footer on a multi-page document, ...)
+          const edgeHeaderHf = slices.length > 0 ? pageHfOf(0, 'header') : null
+          const edgeFooterHf = slices.length > 0 ? pageHfOf(slices.length - 1, 'footer') : null
+          const gapStripNeeded = (
+            gap: ReturnType<typeof pageHfOf>,
+            edge: ReturnType<typeof pageHfOf> | null,
+          ) =>
+            hfHasVisibleContent(gap.value, gap.images) ||
+            gap.variant !== edge?.variant ||
+            gap.section !== edge.section
           /** page geometry a page's floating header images position against */
           const floatBoxOf = (pageIdx: number): HfFloatBox => {
             const s = secList?.[slices[pageIdx].section]?.settings ?? section
@@ -4117,7 +4135,7 @@ export function App() {
             const gapFooter = pageHfOf(k, 'footer')
             const gapHeader = pageHfOf(k + 1, 'header')
             const hfEls: HTMLElement[] = []
-            if (hfHasVisibleContent(gapFooter.value, gapFooter.images)) {
+            if (gapStripNeeded(gapFooter, edgeFooterHf)) {
               const box = sectionPageBox(prevSec)
               const el = makeGapHfEl({
                 kind: 'footer',
@@ -4143,7 +4161,7 @@ export function App() {
               el.style.setProperty('--hf-ml', `${bodyLeftOf(prevSec, k)}px`)
               hfEls.push(el)
             }
-            if (hfHasVisibleContent(gapHeader.value, gapHeader.images)) {
+            if (gapStripNeeded(gapHeader, edgeHeaderHf)) {
               const box = sectionPageBox(nextSec)
               // the strip cannot start below the body top: a top margin under headerDist pins it higher
               const headerStripTop = Math.min(box.headerDist, metrics.marginTop)
@@ -4184,9 +4202,12 @@ export function App() {
                 ? {
                     hfEls,
                     // key must cover everything baked into the widgets (both pages'
-                    // formatted numbers + total count, both sections' strip geometry),
-                    // or stale PAGE/NUMPAGES / strip insets survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
+                    // formatted numbers + total count, both sections' strip geometry,
+                    // and the (section, variant) each strip edits — a Different First
+                    // Page / Odd & Even toggle can swap the variant behind identical
+                    // text), or stale PAGE/NUMPAGES / strip insets / edit targets
+                    // survive reuse
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${gapFooter.section}${gapFooter.variant[0]}·${gapHeader.section}${gapHeader.variant[0]}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec, k)}:${stripGeomSig(nextSec, k + 1)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
@@ -4867,7 +4888,12 @@ export function App() {
           : Math.min(EDIT_PASS_DEBOUNCE_MAX_MS, Math.max(300, lastPassMs * EDIT_PASS_DUTY)),
       )
     }
-    remeasure()
+    // while a phased open streams its tail, this effect re-runs as the section
+    // state fills in: a synchronous whole-document pass per run made a long
+    // open quadratic, so the paced scheduler takes it (the last chunk's update
+    // still lands a full pass once the tail has settled)
+    if (isPhasedContentPending()) onUpdate()
+    else remeasure()
     // async @font-face loading triggers a full reflow (line-break points change); pagination
     // must be remeasured, and cached line samples invalidated (block heights may not change)
     // header/footer strips probed under a fallback face re-measure too
@@ -4916,10 +4942,10 @@ export function App() {
         shrinkSig = next
         if (minPos === Infinity) return
         const { doc: pmDoc } = editor.state
-        onUpdate(null, pmDoc.resolve(Math.min(minPos, pmDoc.content.size)).index(0))
+        followUpAt('justify-shrink', pmDoc.resolve(Math.min(minPos, pmDoc.content.size)).index(0))
         return
       }
-      if (props.transaction.getMeta(floatFlowChangedMeta)) onUpdate()
+      if (props.transaction.getMeta(floatFlowChangedMeta)) followUp('float-flow')
     }
     editor?.on('transaction', onShrinkTr)
     return () => {
@@ -5849,7 +5875,6 @@ export function App() {
     hfEditorRef.current?.exit()
     setEvenOddHf(on)
     setEvenOddHfDirty(true)
-    setHfView(on ? 'even' : 'default')
     setStatus(on ? t('appEvenOddOn') : t('appEvenOddOff'))
   }
   const onHfAction = (action: HfAction) => {
@@ -7012,51 +7037,10 @@ export function App() {
                           {watermark}
                         </div>
                       )}
-                      {!readMode && (
-                        <div
-                          className={`hf-variant-chips${titlePg || evenOddHf ? '' : ' hf-chips-idle'}`}
-                        >
-                          {/* Always-available entry point: the ribbon checkbox alone was
-                          undiscoverable while editing the header, so the toggle also lives here
-                          (revealed on header hover until enabled) */}
-                          <button
-                            className={`hf-first-toggle${titlePg ? ' on' : ''}`}
-                            data-tip={t('ribbonDiffFirstPageTip')}
-                            onClick={() => toggleTitlePg(!titlePg)}
-                          >
-                            {titlePg ? '✓ ' : ''}
-                            {t('ribbonDiffFirstPage')}
-                          </button>
-                          {titlePg && (
-                            <button
-                              className={headerAreaView === 'first' ? 'on' : ''}
-                              onClick={() => setHfView('first')}
-                            >
-                              {t('appFirstPage')}
-                            </button>
-                          )}
-                          {(titlePg || evenOddHf) && (
-                            <button
-                              className={headerAreaView === 'default' ? 'on' : ''}
-                              onClick={() => setHfView('default')}
-                            >
-                              {evenOddHf ? t('appOddPage') : t('appDefaultPage')}
-                            </button>
-                          )}
-                          {evenOddHf && (
-                            <button
-                              className={headerAreaView === 'even' ? 'on' : ''}
-                              onClick={() => setHfView('even')}
-                            >
-                              {t('appEvenPage')}
-                            </button>
-                          )}
-                        </div>
-                      )}
                       {/* Boolean(): a trailing 0 (empty non-floating image list) must not render as a literal "0" text node */}
                       {Boolean(
                         multiHf ||
-                        (hfViewTouched && effHfView !== 'default') ||
+                        headerAreaView !== 'default' ||
                         hfAreaEditRequest?.kind === 'header' ||
                         hfHasVisibleContent(shownHeader, hfImagesOf('header')),
                       ) && (
@@ -7121,7 +7105,7 @@ export function App() {
                       />
                       {Boolean(
                         multiHf ||
-                        (hfViewTouched && effHfView !== 'default') ||
+                        footerAreaView !== 'default' ||
                         hfAreaEditRequest?.kind === 'footer' ||
                         hfHasVisibleContent(shownFooter, hfImagesOf('footer')),
                       ) && (

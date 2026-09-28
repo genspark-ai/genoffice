@@ -276,10 +276,10 @@ export function stripEmbeddedFonts(
   const rels = archive.readText(relsPath)
   if (rels) {
     const nextRels = rels.replace(/<Relationship\b[^>]*\/>/g, (tag) => {
-      const isFont = /\bType="[^"]*\/font"/.test(tag)
-      const id = /\bId="([^"]*)"/.exec(tag)?.[1] ?? ''
+      const isFont = /\bType=["'][^"']*\/font["']/.test(tag)
+      const id = /\bId=["']([^"']*)["']/.exec(tag)?.[1] ?? ''
       if (!isFont || !(removeAll || relIds.has(id))) return tag
-      const target = /\bTarget="([^"]*)"/.exec(tag)?.[1]
+      const target = /\bTarget=["']([^"']*)["']/.exec(tag)?.[1]
       if (target) parts.add(resolveTarget(presPath, target))
       return ''
     })
@@ -294,10 +294,11 @@ export function stripEmbeddedFonts(
   const ct = archive.readText(ctPath)
   if (ct) {
     let nextCt = ct.replace(/<Override\b[^>]*\/>/g, (tag) => {
-      const partName = /\bPartName="([^"]*)"/.exec(tag)?.[1] ?? ''
+      const partName = /\bPartName=["']([^"']*)["']/.exec(tag)?.[1] ?? ''
       return parts.has(partName.replace(/^\//, '')) ? '' : tag
     })
-    if (removeAll) nextCt = nextCt.replace(/<Default\b[^>]*\bExtension="fntdata"[^>]*\/>/g, '')
+    if (removeAll)
+      nextCt = nextCt.replace(/<Default\b[^>]*\bExtension=["']fntdata["'][^>]*\/>/g, '')
     if (nextCt !== ct) archive.entries.set(ctPath, Buffer.from(nextCt, 'utf8'))
   }
   return true

@@ -1264,6 +1264,15 @@ export const fr = {
   appResetZoom: 'Réinitialiser le zoom',
   appZoomToSelection: 'Zoom sur la sélection',
   appZoomToSelectionDetail: 'Ajuster à la sélection',
+  appStatAverage: 'Moyenne',
+  appStatCount: 'Nb (nombre)',
+  appStatNumericalCount: 'Nb (nombres uniquement)',
+  appStatMin: 'Min.',
+  appStatMax: 'Max.',
+  appStatSum: 'Somme',
+  appZoomLevel: 'Niveau de zoom',
+  appNormalViewTip: 'Affichage normal',
+  appPageBreakPreviewTip: 'Aperçu des sauts de page',
   appGroupWindow: 'Fenêtre',
   appFreezePanes: 'Figer les volets',
   appFreezeTitle: 'Figer des lignes et des colonnes',
@@ -1307,6 +1316,10 @@ export const fr = {
   appCutTitle: 'Couper ⌘X',
   appCopyTitle: 'Copier ⌘C',
   appFormatPainter: 'Reproduire la mise en forme',
+  appFormatPainterTip:
+    "Reproduire la mise en forme — double-cliquez pour la conserver jusqu'à Échap",
+  appFormatPainterLocked:
+    'Reproduction de la mise en forme verrouillée — sélectionnez des plages ; Échap ou un clic sur le bouton arrête.',
   appGroupFont: 'Police',
   appIncreaseFontSize: 'Augmenter la taille de police',
   appDecreaseFontSize: 'Réduire la taille de police',
@@ -1400,4 +1413,6 @@ export const fr = {
   appFindTitle: 'Rechercher et sélectionner ⌘F',
   appReplace: 'Remplacer',
   appGoTo: 'Atteindre',
+  appInsertCells: 'Insérer des cellules…',
+  appDeleteCells: 'Supprimer des cellules…',
 } satisfies Record<keyof typeof zh, string>

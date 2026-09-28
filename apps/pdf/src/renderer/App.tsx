@@ -111,7 +111,13 @@ import {
 } from './color-runs'
 import type { CharStyle } from './color-runs'
 import { platformShortcuts } from '@genoffice/i18n'
-import { Dropdown, useDismissablePopover, useRibbonCollapse } from '@genoffice/ui'
+import {
+  Dropdown,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
+  useDismissablePopover,
+  useRibbonCollapse,
+} from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
 import type {
@@ -346,10 +352,10 @@ export default function App() {
   }
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [aiCollapsed, setAiCollapsed] = useState(
-    () => localStorage.getItem('genoffice-pdf-show-ai') === '0',
+    () => !aiPanelInitiallyOpen('genoffice-pdf-show-ai'),
   )
   useEffect(() => {
-    localStorage.setItem('genoffice-pdf-show-ai', aiCollapsed ? '0' : '1')
+    rememberAiPanelOpen('genoffice-pdf-show-ai', !aiCollapsed)
   }, [aiCollapsed])
   /** One-shot prompt pushed by the ribbon AI buttons; the panel auto-runs it (docs preset pattern) */
   const [aiPreset, setAiPreset] = useState<{ text: string; nonce: number } | null>(null)
@@ -778,6 +784,24 @@ export default function App() {
       aiAnnotCountsLoaderRef.current = null
     }
   }, [doc])
+  const startAiAnnotCountScan = useCallback(() => {
+    if (!doc || aiAnnotCountsLoaderRef.current?.doc === doc) return
+    const controller = new AbortController()
+    const entry = {
+      doc,
+      controller,
+      load: createSavedAnnotCountsLoader(doc, loadSavedAnnots, controller.signal),
+    }
+    aiAnnotCountsLoaderRef.current = entry
+    void entry.load().then((counts) => {
+      if (aiAnnotCountsLoaderRef.current === entry) setAiAnnotCounts(counts)
+    })
+  }, [doc])
+  // the first AI turn should already know whether the file carries review
+  // feedback, so an open panel starts the scan before the user sends anything
+  useEffect(() => {
+    if (!aiCollapsed) startAiAnnotCountScan()
+  }, [aiCollapsed, startAiAnnotCountScan])
   const [selected, setSelected] = useState<AnnotSelection | null>(null)
   /** Transparency presets fold-out inside the image selection popup */
   const [opacityMenu, setOpacityMenu] = useState(false)
@@ -5280,22 +5304,7 @@ export default function App() {
     // scan still running: "unknown" must not read as "none" — a run started right
     // after open would otherwise never hear the file carries review feedback
     if (!aiAnnotCounts) {
-      if (doc) {
-        let entry = aiAnnotCountsLoaderRef.current
-        if (entry?.doc !== doc) {
-          const controller = new AbortController()
-          entry = {
-            doc,
-            controller,
-            load: createSavedAnnotCountsLoader(doc, loadSavedAnnots, controller.signal),
-          }
-          aiAnnotCountsLoaderRef.current = entry
-          const active = entry
-          void active.load().then((counts) => {
-            if (aiAnnotCountsLoaderRef.current === active) setAiAnnotCounts(counts)
-          })
-        }
-      }
+      startAiAnnotCountScan()
       return 'Whether the file contains notes/markups has not been determined yet; use read_annotations to check when the user asks about review feedback.'
     }
     let savedThreads = 0

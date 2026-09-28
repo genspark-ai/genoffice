@@ -978,6 +978,11 @@ html.genoffice-popover-open .ribbon-tabs {
   background: var(--ribbon-hover);
 }
 
+.tool-stack button.is-active,
+.tool-stack button.is-active:hover {
+  background: var(--ribbon-active);
+}
+
 .inline-tools button.labeled {
   display: flex;
   align-items: center;
@@ -1253,7 +1258,7 @@ html.genoffice-popover-open .ribbon-tabs {
     flip-block,
     flip-inline flip-block;
   position-visibility: anchors-visible;
-  z-index: 60;
+  z-index: 1000;
 }
 
 /* body-portal variant for transformed/clipping hosts (Univer float DOM);
@@ -1369,7 +1374,7 @@ html.genoffice-popover-open .ribbon-tabs {
   position-try-fallbacks: flip-inline;
   /* trigger scrolled out of the ribbon → hide the panel with it */
   position-visibility: anchors-visible;
-  z-index: 60;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   min-width: 148px;
@@ -1663,6 +1668,101 @@ button.check-item:hover {
 .zoom-value {
   min-width: 38px;
   text-align: right;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0 4px;
+  height: 20px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.zoom-value:hover,
+.view-btn:hover {
+  background: var(--sheets-statusbar-hover);
+}
+
+.view-btn {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  width: 22px;
+  height: 20px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.view-btn[aria-checked='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.view-switch {
+  display: flex;
+  gap: 2px;
+  margin-right: 6px;
+}
+
+.status-stats-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+}
+
+.status-stats-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.status-stats-menu button:hover {
+  background: var(--hover);
+}
+
+.zoom-dialog .zoom-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.zoom-dialog .zoom-choices legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.zoom-dialog .dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zoom-dialog .zoom-custom input[type='number'] {
+  width: 64px;
+  margin-left: 6px;
 }
 
 .app-shell.copilot-collapsed .sheet-body {
@@ -1705,7 +1805,7 @@ button.check-item:hover {
 
 .ai-ask-pop {
   position: fixed;
-  z-index: 60;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3507,6 +3607,18 @@ textarea:focus {
   grid-column: 1 / -1;
 }
 
+.cells-dialog {
+  min-width: 280px;
+}
+
+.cells-dialog-body {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
 /* Pivot dialog: long localized labels and stacked field rows outgrow the
    shared 420px card, so it gets its own bounds and a scrolling body. */
 .format-cells-dialog.pivot-dialog {
@@ -5160,7 +5272,7 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 60;
+  z-index: 1000;
   max-height: calc(100vh - 260px);
   overflow-y: auto;
 }
@@ -5442,7 +5554,7 @@ textarea:focus {
   background: var(--surface);
   box-shadow: var(--sheets-shadow-slicer);
   overflow: hidden;
-  z-index: 60;
+  z-index: 1000;
 }
 
 .watch-window header {

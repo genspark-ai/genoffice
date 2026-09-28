@@ -125,12 +125,8 @@ export function setSlideNotes(opened: OpenedPptx, slideIndex: number, text: stri
   if (body) {
     const patched = body.xml.replace(/<p:txBody>[\s\S]*?<\/p:txBody>/, () => txBody)
     next = xml.slice(0, body.start) + patched + xml.slice(body.end)
-  } else if (!/<p:ph\b/.test(xml)) {
-    next = xml.replace('</p:spTree>', () => `${NOTES_BODY_SP_OPEN}${txBody}</p:sp></p:spTree>`)
   } else {
-    // a placeholder we did not recognize is still a placeholder: adding a body
-    // shape here would leave the notesSlide with two of them
-    return false
+    next = xml.replace('</p:spTree>', () => `${NOTES_BODY_SP_OPEN}${txBody}</p:sp></p:spTree>`)
   }
   setEntry(archive, notesPath, next)
   return true

@@ -52,6 +52,11 @@ export const he = {
   dlgGoToNote:
     'הקלידו הפניה לתא או בחרו טווח בעל שם; "עבור" קופץ אל היעד ובוחר אותו. לחצו על שם כדי למלא אותו, לחיצה כפולה עוברת ישירות.',
   dlgGoToGo: 'עבור',
+  dlgZoomTitle: 'זום',
+  dlgZoomMagnification: 'הגדלה',
+  dlgZoomFitSelection: 'התאם לבחירה',
+  dlgZoomCustom: 'מותאם אישית',
+  dlgZoomRangeError: 'הזן מספר בין {min} ל-{max}.',
 
   dlgHfTitle: 'כותרת עליונה ותחתונה',
   dlgHfHeaderLeft: 'כותרת עליונה · שמאל',
@@ -401,4 +406,12 @@ export const he = {
   dlgFnCatWeb: 'אינטרנט',
   dlgFnCatArray: 'מערך',
   dlgFnCatOther: 'אחר',
+  dlgInsertCellsTitle: 'הוספה',
+  dlgDeleteCellsTitle: 'מחיקה',
+  dlgCellsShiftRight: 'הסט תאים ימינה',
+  dlgCellsShiftDown: 'הסט תאים למטה',
+  dlgCellsShiftLeft: 'הסט תאים שמאלה',
+  dlgCellsShiftUp: 'הסט תאים למעלה',
+  dlgCellsEntireRow: 'שורה שלמה',
+  dlgCellsEntireColumn: 'עמודה שלמה',
 } satisfies Record<keyof typeof zh, string>

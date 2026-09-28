@@ -52,6 +52,11 @@ export const ja = {
   dlgGoToNote:
     'セル参照を入力するか名前付き範囲を選択すると、ジャンプで対象へ移動して選択します。名前をクリックすると入力欄に反映、ダブルクリックで直接移動します。',
   dlgGoToGo: 'ジャンプ',
+  dlgZoomTitle: 'ズーム',
+  dlgZoomMagnification: '倍率',
+  dlgZoomFitSelection: '選択範囲をズーム',
+  dlgZoomCustom: '指定',
+  dlgZoomRangeError: '{min}～{max} の数値を入力してください。',
 
   dlgHfTitle: 'ヘッダーとフッター',
   dlgHfHeaderLeft: 'ヘッダー · 左',
@@ -407,4 +412,12 @@ export const ja = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: '配列',
   dlgFnCatOther: 'その他',
+  dlgInsertCellsTitle: 'セルの挿入',
+  dlgDeleteCellsTitle: 'セルの削除',
+  dlgCellsShiftRight: '右方向にシフト',
+  dlgCellsShiftDown: '下方向にシフト',
+  dlgCellsShiftLeft: '左方向にシフト',
+  dlgCellsShiftUp: '上方向にシフト',
+  dlgCellsEntireRow: '行全体',
+  dlgCellsEntireColumn: '列全体',
 } satisfies Record<keyof typeof zh, string>

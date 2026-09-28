@@ -2796,6 +2796,15 @@ function DeckProgressCard({ progress }: { progress: DeckProgressSnapshot }) {
                 <span className={`deck-progress-icon ${step.stepStatus}`}>
                   {step.stepStatus === 'running' ? (
                     <span className="deck-progress-spinner" />
+                  ) : step.stepStatus === 'stopped' ? (
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M2.5 6h7"
+                        stroke="currentColor"
+                        strokeWidth="0.75"
+                        strokeLinecap="round"
+                      />
+                    </svg>
                   ) : step.stepStatus === 'done' ? (
                     <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                       <path

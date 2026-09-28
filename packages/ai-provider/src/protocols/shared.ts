@@ -37,14 +37,24 @@ export class ResponseBodyTooLargeError extends Error {
   }
 }
 
+export interface CappedReadOptions {
+  maxBytes?: number
+  onBytes?: () => void
+  /** `truncate` keeps what fit under the cap and never throws (error-body diagnostics). */
+  onOverflow?: 'throw' | 'truncate'
+}
+
 export async function readCappedResponseText(
   response: Response,
-  onBytes?: () => void,
+  options: (() => void) | CappedReadOptions = {},
 ): Promise<string> {
+  const opts = typeof options === 'function' ? { onBytes: options } : options
+  const maxBytes = opts.maxBytes ?? MAX_RESPONSE_BODY_BYTES
+  const truncate = opts.onOverflow === 'truncate'
   const declaredBytes = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declaredBytes) && declaredBytes > MAX_RESPONSE_BODY_BYTES) {
+  if (!truncate && Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
     if (response.body) await response.body.cancel().catch(() => undefined)
-    throw new ResponseBodyTooLargeError(declaredBytes, MAX_RESPONSE_BODY_BYTES)
+    throw new ResponseBodyTooLargeError(declaredBytes, maxBytes)
   }
   if (!response.body) return ''
 
@@ -56,18 +66,39 @@ export async function readCappedResponseText(
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      onBytes?.()
-      bytes += value.byteLength
-      if (bytes > MAX_RESPONSE_BODY_BYTES) {
-        throw new ResponseBodyTooLargeError(bytes, MAX_RESPONSE_BODY_BYTES)
+      opts.onBytes?.()
+      const total = bytes + value.byteLength
+      if (truncate && total >= maxBytes) {
+        text += decoder.decode(value.subarray(0, maxBytes - bytes), { stream: true })
+        break
       }
+      if (total > maxBytes) throw new ResponseBodyTooLargeError(total, maxBytes)
+      bytes += value.byteLength
       text += decoder.decode(value, { stream: true })
     }
+    return text + decoder.decode()
+  } catch (err) {
+    // truncate mode reports whatever arrived: the caller is already reporting the status
+    if (!truncate) throw err
     return text + decoder.decode()
   } finally {
     await reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
+}
+
+/** Flatten an OpenAI `content` field to text: gateways may answer with a string or an array of parts. */
+export function openAiContentText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        const text = (part as { text?: unknown } | null)?.text
+        return typeof text === 'string' ? text : ''
+      })
+      .join('')
+  }
+  return ''
 }
 
 export async function* sseLines(

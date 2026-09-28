@@ -52,6 +52,11 @@ export const ar = {
   dlgGoToNote:
     'اكتب مرجع خلية أو اختر نطاقًا مسمى؛ يقفز زر الانتقال إلى الهدف ويحدده. انقر على اسم لتعبئته في الحقل، وانقر نقرًا مزدوجًا للانتقال مباشرة.',
   dlgGoToGo: 'انتقال',
+  dlgZoomTitle: 'تكبير/تصغير',
+  dlgZoomMagnification: 'نسبة التكبير',
+  dlgZoomFitSelection: 'ملاءمة التحديد',
+  dlgZoomCustom: 'مخصص',
+  dlgZoomRangeError: 'أدخل رقمًا بين {min} و{max}.',
 
   dlgHfTitle: 'رأس وتذييل الصفحة',
   dlgHfHeaderLeft: 'الرأس · يسار',
@@ -405,4 +410,12 @@ export const ar = {
   dlgFnCatWeb: 'ويب',
   dlgFnCatArray: 'صفيف',
   dlgFnCatOther: 'أخرى',
+  dlgInsertCellsTitle: 'إدراج',
+  dlgDeleteCellsTitle: 'حذف',
+  dlgCellsShiftRight: 'إزاحة الخلايا لليمين',
+  dlgCellsShiftDown: 'إزاحة الخلايا للأسفل',
+  dlgCellsShiftLeft: 'إزاحة الخلايا لليسار',
+  dlgCellsShiftUp: 'إزاحة الخلايا للأعلى',
+  dlgCellsEntireRow: 'صف بأكمله',
+  dlgCellsEntireColumn: 'عمود بأكمله',
 } satisfies Record<keyof typeof zh, string>

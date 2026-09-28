@@ -7,6 +7,8 @@ import {
   useAutoSavePref,
   type FindPanelStrings,
   type FindTarget,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
 } from '@genoffice/ui'
 import {
   pollUntilReady,
@@ -133,7 +135,7 @@ export default function App() {
   const [previewNonce, setPreviewNonce] = useState(0)
   const [draftHtml, setDraftHtml] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: false, redo: false })
-  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem('htmlapp.showAi') !== '0')
+  const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('htmlapp.showAi'))
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const [askMode, setAskMode] = useState<AskMode | null>(null)
@@ -342,7 +344,7 @@ export default function App() {
   }, [canvasMode])
 
   useEffect(() => {
-    localStorage.setItem('htmlapp.showAi', aiOpen ? '1' : '0')
+    rememberAiPanelOpen('htmlapp.showAi', aiOpen)
   }, [aiOpen])
 
   useEffect(() => {

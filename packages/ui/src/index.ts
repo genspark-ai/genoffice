@@ -15,7 +15,13 @@ export {
   type AiPanelPrefs,
   type AiPanelSide,
 } from './ai-panel-prefs'
-export { applyAiPanelPrefs, useAiPanelPrefs, aiPanelWidthAtPointer } from './ai-panel-prefs-store'
+export {
+  applyAiPanelPrefs,
+  aiPanelInitiallyOpen,
+  rememberAiPanelOpen,
+  useAiPanelPrefs,
+  aiPanelWidthAtPointer,
+} from './ai-panel-prefs-store'
 export {
   ColorPicker,
   THEME_COLORS,

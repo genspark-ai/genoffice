@@ -3335,7 +3335,35 @@ export const DocTable = Node.create({
         ['tbody', 0],
       ]
     }
-    return ['table', attrs, ['tbody', 0]]
+    // the resize plugin previews drag widths on the table's first child, so a
+    // table without a percentage grid still needs a (bare) colgroup there
+    return ['table', attrs, ['colgroup', {}], ['tbody', 0]]
+  },
+  addNodeView() {
+    return ({ node }) => {
+      let current = node
+      const { dom, contentDOM } = DOMSerializer.renderSpec(document, node.type.spec.toDOM!(node))
+      const table = dom as HTMLElement
+      return {
+        dom,
+        contentDOM,
+        update: (next) => {
+          if (!next.sameMarkup(current)) return false
+          current = next
+          return true
+        },
+        // prosemirror-tables previews a column drag by writing px widths onto the
+        // colgroup and table; without this ProseMirror treats that as foreign DOM
+        // and redraws the table from the model on every mousemove (genoffice#1156)
+        ignoreMutation: (mutation) => {
+          if (mutation.type === 'selection') return false
+          const { target } = mutation
+          if (target === table) return mutation.type === 'attributes'
+          const colgroup = table.firstElementChild
+          return colgroup?.tagName === 'COLGROUP' && colgroup.contains(target)
+        },
+      }
+    }
   },
 })
 

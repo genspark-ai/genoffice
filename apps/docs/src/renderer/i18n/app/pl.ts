@@ -183,15 +183,11 @@ export const pl = {
     'Zastosowano kolory motywu „{name}”; zostaną zapisane w dokumencie przy zapisie',
   appSourceAdded: 'Dodano źródło „{title}”; możesz się na nie powołać przez „Wstaw cytat”',
   appTitlePgOn:
-    'Włączono „Inne na pierwszej stronie”; przełącz u góry strony, aby edytować nagłówek i stopkę pierwszej strony',
+    'Włączono „Inne na pierwszej stronie”; nagłówek i stopkę pierwszej strony edytuj na stronie 1',
   appTitlePgOff: 'Wyłączono „Inne na pierwszej stronie”',
   appEvenOddOn:
-    'Włączono „Inne na stronach parzystych i nieparzystych”; przełącz u góry strony, aby edytować nagłówek i stopkę stron parzystych',
+    'Włączono „Inne na stronach parzystych i nieparzystych”; nagłówek i stopkę stron parzystych edytuj na dowolnej stronie parzystej',
   appEvenOddOff: 'Wyłączono „Inne na stronach parzystych i nieparzystych”',
-  appFirstPage: 'Pierwsza strona',
-  appOddPage: 'Strony nieparzyste',
-  appEvenPage: 'Strony parzyste',
-  appDefaultPage: 'Domyślna',
   appDblclickEditHeader: 'Kliknij dwukrotnie, aby edytować nagłówek',
   appDblclickEditFooter: 'Kliknij dwukrotnie, aby edytować stopkę',
   appHfPageNumHint: ' (# oznacza automatyczny numer strony)',

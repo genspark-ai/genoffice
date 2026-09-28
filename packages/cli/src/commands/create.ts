@@ -150,21 +150,37 @@ export const createCommand: CommandDef = {
         : await createPptx(args, ctx)
     writeOutput(output, result.bytes)
     const detail: Record<string, unknown> = { ...result.detail }
+    // The deck is already on disk: a preview or audit failure must not turn the
+    // command into an error that hides outputPath.
     if (flagBool(args, 'audit')) {
-      detail.audit = deckAuditDetail(await auditDeckBytes(result.bytes))
+      try {
+        detail.audit = deckAuditDetail(await auditDeckBytes(result.bytes))
+      } catch (err) {
+        ctx.warn({
+          code: 'audit_failed',
+          message: `deck written; audit failed: ${errorMessage(err)}`,
+        })
+      }
     }
     const renderFlag = args.flags['render']
     if (renderFlag !== undefined) {
-      const dir =
-        typeof renderFlag === 'string'
-          ? outputDirectory(renderFlag, ctx)
-          : assertAllowed(
-              join(dirname(output), `${basename(output, extname(output))}-previews`),
-              ctx.env,
-              'write',
-            )
-      const files = await renderToPngs(output, ctx, { outDir: dir, scale: 1, log: ctx.log })
-      detail.previews = files.map(({ page, ...f }) => ({ slide: page, ...f }))
+      try {
+        const dir =
+          typeof renderFlag === 'string'
+            ? outputDirectory(renderFlag, ctx)
+            : assertAllowed(
+                join(dirname(output), `${basename(output, extname(output))}-previews`),
+                ctx.env,
+                'write',
+              )
+        const files = await renderToPngs(output, ctx, { outDir: dir, scale: 1, log: ctx.log })
+        detail.previews = files.map(({ page, ...f }) => ({ slide: page, ...f }))
+      } catch (err) {
+        ctx.warn({
+          code: 'render_failed',
+          message: `deck written; preview render failed: ${errorMessage(err)}`,
+        })
+      }
     }
     return {
       summary: `created ${basename(output)} (${result.slides} slides)`,
@@ -387,4 +403,8 @@ async function createDocx(
     undefined,
     { reason: 'unsupported' },
   )
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }

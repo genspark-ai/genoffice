@@ -12,6 +12,7 @@ import {
   gskSlideGenerate,
   MAX_SLIDE_ARTIFACT_BYTES,
   MAX_TOOL_CLI_NDJSON_BYTES,
+  summarizeGskFailure,
 } from '../src/gsk'
 import { ResponseTooLargeError } from '@genoffice/electron-utils/remote-image'
 
@@ -488,5 +489,73 @@ describe('parseToolCliNdjson', () => {
 
   it('throws when no result line exists', () => {
     expect(() => parseToolCliNdjson('{"heartbeat":1}\nnot json')).toThrow(/No result line/)
+  })
+})
+
+describe('summarizeGskFailure', () => {
+  // trimmed version of the gateway page Genspark serves for refused calls
+  const HTML_403 = `<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>Genspark</title>
+  </head>
+  <body>
+    <div class="tt">Service unavailable. Please check your internet connection.</div>
+    <form id="codeForm">
+      <input type="text" id="codeInput" maxlength="8" />
+      <button type="submit" class="submit-button">Submit</button>
+    </form>
+  </body>
+  <script>function setCookie(event) { location.reload() }</script>
+</html>`
+
+  it('distills an HTML error page to its status and visible text', () => {
+    const s = summarizeGskFailure(`HTTP 403: ${HTML_403}`)
+    expect(s).toBe(
+      'HTTP 403 (HTML error page): Service unavailable. Please check your internet connection.',
+    )
+    expect(s).not.toContain('<')
+  })
+
+  it('labels an HTML page that carries no status', () => {
+    expect(summarizeGskFailure(HTML_403)).toBe(
+      'an HTML error page: Service unavailable. Please check your internet connection.',
+    )
+  })
+
+  it('keeps a short plain message as it is', () => {
+    expect(summarizeGskFailure('HTTP 500: internal error')).toBe('HTTP 500: internal error')
+    expect(summarizeGskFailure('deck_context must be an object')).toBe(
+      'deck_context must be an object',
+    )
+  })
+
+  it('keeps the [ERROR] lines, drops [INFO] chatter and crash noise', () => {
+    const s = summarizeGskFailure(
+      '[INFO] Uploading a.png...\n[INFO] Calling /file/upload_url...\n[ERROR] Failed to get upload URL: HTTP 403: Forbidden\nAssertion failed: !(handle->flags)',
+    )
+    expect(s).toBe('[ERROR] Failed to get upload URL: HTTP 403: Forbidden')
+  })
+
+  it('collapses multi-line plain text to one line', () => {
+    expect(summarizeGskFailure('first line\nsecond line')).toBe('first line second line')
+  })
+
+  it('clips a long plain message', () => {
+    const s = summarizeGskFailure('x'.repeat(400))
+    expect(s.length).toBe(301)
+    expect(s.endsWith('…')).toBe(true)
+  })
+
+  it('falls back on empty input and stringifies non-strings', () => {
+    expect(summarizeGskFailure(undefined)).toBe('unknown error')
+    expect(summarizeGskFailure(null, '')).toBe('')
+    expect(summarizeGskFailure(404)).toBe('404')
+  })
+
+  it('never returns an empty string when the page has no readable text', () => {
+    expect(summarizeGskFailure('HTTP 502: <html><body><script>x()</script></body></html>')).toBe(
+      'HTTP 502 (HTML error page)',
+    )
   })
 })

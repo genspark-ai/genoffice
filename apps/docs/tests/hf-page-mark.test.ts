@@ -354,7 +354,7 @@ describe('page-number substitution (PAGE_MARK)', () => {
   })
 })
 
-describe('restingHfAreaVariant (canvas area variant when no chip is picked)', () => {
+describe('restingHfAreaVariant (variant the canvas edge areas follow)', () => {
   it('header area sits on page 1: first variant when titlePg is on', () => {
     expect(restingHfAreaVariant('header', { titlePg: true, evenOddHf: false, pageCount: 2 })).toBe(
       'first',

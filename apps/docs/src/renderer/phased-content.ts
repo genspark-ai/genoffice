@@ -66,9 +66,28 @@ export function cancelPhasedContent(): void {
   cancelPending = null
 }
 
-/** double-rAF: the browser paints the previous mount between the two callbacks */
+/**
+ * Double-rAF: the browser paints the previous mount between the two callbacks.
+ * A timer races the frames: a background tab (a hidden shell view keeps
+ * document.hidden false but is handed about one frame a second) would
+ * otherwise stretch a long open into hours, one chunk per second.
+ */
+export const PAINTED_FRAME_FALLBACK_MS = 80
 const nextPaintedFrame = (cb: () => void): void => {
-  requestAnimationFrame(() => requestAnimationFrame(cb))
+  let done = false
+  let raf2 = 0
+  const fire = (): void => {
+    if (done) return
+    done = true
+    clearTimeout(timer)
+    cancelAnimationFrame(raf1)
+    cancelAnimationFrame(raf2)
+    cb()
+  }
+  const raf1 = requestAnimationFrame(() => {
+    raf2 = requestAnimationFrame(fire)
+  })
+  const timer = setTimeout(fire, PAINTED_FRAME_FALLBACK_MS)
 }
 
 export function setContentPhased(

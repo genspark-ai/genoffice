@@ -87,7 +87,7 @@ export function hfFromPart(part: HfPartInfo | null | undefined): HeaderFooter | 
 }
 
 /**
- * Variant a resting canvas header/footer area shows (no variant chip picked):
+ * Variant a canvas edge header/footer area shows (it follows its page, as in Word):
  * the header area sits on page 1 (titlePg -> first-page variant, blank when
  * that part is absent — Word semantics), the footer area on the last page.
  */

@@ -51,7 +51,6 @@ import {
   type DocState,
   type HfVariantKey,
   type HfVariantsState,
-  type HfView,
   type PendingNumbering,
 } from './doc-state'
 import { hfSaveOptions } from './hf-sections'
@@ -167,7 +166,6 @@ export interface FileActionContext {
   setEvenOddHfDirty: (dirty: boolean) => void
   setMirrorMargins: (on: boolean) => void
   setMirrorMarginsDirty: (dirty: boolean) => void
-  setHfView: (view: HfView) => void
   pgNumEdit: { fmt?: string; start?: number } | null
   pgNumDirtySections: number[]
   setPgNumEdit: (value: { fmt?: string; start?: number } | null) => void
@@ -396,7 +394,13 @@ export async function loadFile(
   }
   const generation = ++openGeneration
   try {
-    const parsed = await parseDocxOffThread(await fetchDocBytes(result.dataUrl), { owned: true })
+    const bytes = await fetchDocBytes(result.dataUrl)
+    // a 0-byte .docx (touch, failed download) is not a corrupt archive but an
+    // empty document: open the blank template under the file's own path
+    const parsed = await parseDocxOffThread(
+      bytes.byteLength === 0 ? await blankDocxBytes() : bytes,
+      { owned: true },
+    )
     if (generation !== openGeneration) return 'superseded'
     const tier = openTierFor(docWeight(parsed.blocks))
     if (tier === 'refuse') {
@@ -475,7 +479,6 @@ export async function loadFile(
     ctx.setEvenOddHfDirty(false)
     ctx.setMirrorMargins(parsed.mirrorMargins ?? false)
     ctx.setMirrorMarginsDirty(false)
-    ctx.setHfView('default')
     ctx.setShowComments(hasUnanchoredComments(parsed.comments, parsed.blocks))
     ctx.setReadMode(tier === 'readOnly')
     ctx.setLargeDocSpellOff(tier !== 'normal')
@@ -546,15 +549,19 @@ async function systemLocale(): Promise<string> {
   }
 }
 
+async function blankDocxBytes(): Promise<Uint8Array> {
+  return buildBlankDocx({
+    eastAsiaFont: defaultEastAsiaFontFor(getLang()),
+    paperSize: paperSizeForLocale(await systemLocale()),
+  })
+}
+
 /** new document from the built-in blank template (AI can then generate into it) */
 export async function newFile(ctx: FileActionContext): Promise<boolean | undefined> {
   if (!ctx.editor) return
   const generation = ++openGeneration
   try {
-    const bytes = await buildBlankDocx({
-      eastAsiaFont: defaultEastAsiaFontFor(getLang()),
-      paperSize: paperSizeForLocale(await systemLocale()),
-    })
+    const bytes = await blankDocxBytes()
     const parsed = await parseDocx(bytes)
     if (generation !== openGeneration) return
     setLazyMediaHashes([])

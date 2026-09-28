@@ -266,10 +266,12 @@ export function resolveTarget(basePart: string, target: string): string {
     return ''
   }
   const baseSlash = basePart.lastIndexOf('/')
-  const parts = decoded.startsWith('/')
+  // Test the root anchor after normalizing: a backslash-led target is rooted too.
+  const normalized = decoded.replace(/\\/g, '/')
+  const parts = normalized.startsWith('/')
     ? []
     : (baseSlash >= 0 ? basePart.slice(0, baseSlash) : '').split('/').filter(Boolean)
-  for (const seg of decoded.replace(/\\/g, '/').split('/')) {
+  for (const seg of normalized.split('/')) {
     if (seg === '.' || seg === '') continue
     if (seg === '..') parts.pop()
     else parts.push(seg)

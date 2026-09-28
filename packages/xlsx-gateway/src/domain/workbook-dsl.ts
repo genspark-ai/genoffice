@@ -47,7 +47,13 @@ const cellAddressSchema = z
   .string()
   .regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}$/)
   .refine(withinGrid, 'Address is outside the worksheet grid (XFD1048576)')
-const cellRangeSchema = z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}(:[A-Z]{1,3}[1-9][0-9]{0,6})?$/)
+const cellRangeSchema = z
+  .string()
+  .regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}(:[A-Z]{1,3}[1-9][0-9]{0,6})?$/)
+  .refine(
+    (range) => range.split(':').every(withinGrid),
+    'Range is outside the worksheet grid (XFD1048576)',
+  )
 const columnLabelSchema = z
   .string()
   .regex(/^[A-Z]{1,3}$/)

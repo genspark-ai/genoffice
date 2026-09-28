@@ -14,7 +14,7 @@ export const vi = {
   ribbonTabSlideShow: 'Trình chiếu',
   ribbonTabReview: 'Xem lại',
   ribbonCollapse: 'Thu gọn dải băng',
-  ribbonPin: 'Ghim dải băng',
+  ribbonExpand: 'Mở rộng dải băng',
   ribbonTabView: 'Chế độ xem',
   ribbonTabTableDesign: 'Thiết kế bảng',
   ribbonTabChartDesign: 'Thiết kế biểu đồ',

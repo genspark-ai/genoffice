@@ -608,6 +608,10 @@ describe('column widths + section bidi (P3 pdf2docx support)', () => {
     const parsed = sectionSettingsFromXml(paired)
     expect(parsed.columns).toBe(3)
     expect(parsed.colWidths).toEqual([2000, 3000, 4390])
+    // the writer reads the current widths with the same pattern, so a paired
+    // w:cols element round-trips untouched instead of being rebuilt
+    const cols = /<w:cols[\s\S]*?<\/w:cols>/.exec(paired)![0]
+    expect(applySectionSettings(paired, parsed)).toContain(cols)
   })
 
   it('undefined bidi leaves an existing w:bidi untouched; false removes it', async () => {

@@ -572,6 +572,28 @@ const tabsApi: TabsApi = {
   async detach(id) {
     await ipcRenderer.invoke(TABS_CHANNELS.detach, id)
   },
+  async tearOff(id, screenX, screenY) {
+    const result: unknown = await ipcRenderer.invoke(TABS_CHANNELS.tearOff, id, screenX, screenY)
+    return result === true
+  },
+  dragTornWindow(screenX, screenY) {
+    ipcRenderer.send(TABS_CHANNELS.dragTornWindow, screenX, screenY)
+  },
+  async dockTornWindow(index) {
+    await ipcRenderer.invoke(TABS_CHANNELS.dockTornWindow, index)
+  },
+  async endTornDrag() {
+    await ipcRenderer.invoke(TABS_CHANNELS.endTornDrag)
+  },
+  onDockPreview(handler) {
+    const listener = (_event: IpcRendererEvent, preview: { x: number } | null) =>
+      handler(preview && typeof preview.x === 'number' ? { x: preview.x } : null)
+    ipcRenderer.on(TABS_CHANNELS.dockPreview, listener)
+    return () => ipcRenderer.removeListener(TABS_CHANNELS.dockPreview, listener)
+  },
+  reportDockIndex(index) {
+    ipcRenderer.send(TABS_CHANNELS.dockIndex, index)
+  },
   async showAppMenu(x, y) {
     await ipcRenderer.invoke(TABS_CHANNELS.showAppMenu, x, y)
   },

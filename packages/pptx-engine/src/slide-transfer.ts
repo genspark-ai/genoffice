@@ -56,7 +56,7 @@ function extOf(path: string): string {
 function overrideContentType(ct: string | null, partPath: string): string | undefined {
   if (!ct) return undefined
   const re = new RegExp(
-    `<Override[^>]*PartName="/${partPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*ContentType="([^"]+)"`,
+    `<Override[^>]*PartName=["']/${partPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*ContentType=["']([^"']+)["']`,
   )
   return re.exec(ct)?.[1]
 }

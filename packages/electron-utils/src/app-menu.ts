@@ -432,6 +432,27 @@ const LABELS: Record<string, Labels> = {
     checkUpdates: 'अपडेट जांचें…',
     version: 'संस्करण',
   },
+  vi: {
+    window: 'Cửa sổ',
+    minimize: 'Thu nhỏ',
+    closeWindow: 'Đóng cửa sổ',
+    edit: 'Chỉnh sửa',
+    undo: 'Hoàn tác',
+    redo: 'Làm lại',
+    delete: 'Xóa',
+    view: 'Xem',
+    reload: 'Tải lại',
+    forceReload: 'Buộc tải lại',
+    toggleDevTools: 'Công cụ nhà phát triển',
+    actualSize: 'Kích cỡ thực',
+    zoomIn: 'Phóng to',
+    zoomOut: 'Thu nhỏ',
+    fullscreen: 'Toàn màn hình',
+    help: 'Trợ giúp',
+    about: 'Giới thiệu GenOffice',
+    checkUpdates: 'Kiểm tra bản cập nhật…',
+    version: 'Phiên bản',
+  },
   'zh-TW': {
     window: '視窗',
     minimize: '最小化',
@@ -529,21 +550,43 @@ export function toggleDevToolsItem(labels: AppMenuLabels): MenuItemConstructorOp
   }
 }
 
-/** role:'viewMenu' expands identically on every platform, so no branch. */
-export function viewMenuTemplate(labels: AppMenuLabels): MenuItemConstructorOptions {
-  return {
-    label: labels.view,
-    submenu: [
+export interface ViewMenuOptions {
+  /** Reload / Force Reload / DevTools (default on) */
+  readonly devItems?: boolean
+  /** Actual Size / Zoom In / Zoom Out page-zoom roles (default on) */
+  readonly pageZoom?: boolean
+}
+
+/**
+ * role:'viewMenu' expands identically on every platform, so no branch. Menu
+ * accelerators beat renderer key handlers on macOS, so apps whose document
+ * shortcuts collide with ⌘R / ⌘0 / ⌘+ / ⌘- opt those groups out.
+ */
+export function viewMenuTemplate(
+  labels: AppMenuLabels,
+  { devItems = true, pageZoom = true }: ViewMenuOptions = {},
+): MenuItemConstructorOptions {
+  const groups: MenuItemConstructorOptions[][] = []
+  if (devItems) {
+    groups.push([
       { role: 'reload', label: labels.reload },
       { role: 'forceReload', label: labels.forceReload },
       toggleDevToolsItem(labels),
-      { type: 'separator' },
+    ])
+  }
+  if (pageZoom) {
+    groups.push([
       { role: 'resetZoom', label: labels.actualSize },
       { role: 'zoomIn', label: labels.zoomIn },
       { role: 'zoomOut', label: labels.zoomOut },
-      { type: 'separator' },
-      { role: 'togglefullscreen', label: labels.fullscreen },
-    ],
+    ])
+  }
+  groups.push([{ role: 'togglefullscreen', label: labels.fullscreen }])
+  return {
+    label: labels.view,
+    submenu: groups.flatMap((group, index) =>
+      index === 0 ? group : [{ type: 'separator' }, ...group],
+    ),
   }
 }
 

@@ -52,6 +52,11 @@ export const pt = {
   dlgGoToNote:
     'Digite uma referência de célula ou escolha um intervalo nomeado; Ir salta para o destino e o seleciona. Clique em um nome para preenchê-lo, clique duas vezes para ir diretamente.',
   dlgGoToGo: 'Ir',
+  dlgZoomTitle: 'Zoom',
+  dlgZoomMagnification: 'Ampliação',
+  dlgZoomFitSelection: 'Ajustar à seleção',
+  dlgZoomCustom: 'Personalizado',
+  dlgZoomRangeError: 'Insira um número entre {min} e {max}.',
 
   dlgHfTitle: 'Cabeçalho e Rodapé',
   dlgHfHeaderLeft: 'Cabeçalho · Esquerda',
@@ -409,4 +414,12 @@ export const pt = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Matriz',
   dlgFnCatOther: 'Outras',
+  dlgInsertCellsTitle: 'Inserir',
+  dlgDeleteCellsTitle: 'Excluir',
+  dlgCellsShiftRight: 'Deslocar células para a direita',
+  dlgCellsShiftDown: 'Deslocar células para baixo',
+  dlgCellsShiftLeft: 'Deslocar células para a esquerda',
+  dlgCellsShiftUp: 'Deslocar células para cima',
+  dlgCellsEntireRow: 'Linha inteira',
+  dlgCellsEntireColumn: 'Coluna inteira',
 } satisfies Record<keyof typeof zh, string>

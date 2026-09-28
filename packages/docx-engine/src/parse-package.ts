@@ -48,9 +48,11 @@ export function resolveRelationshipTargetPath(sourcePath: string, target: string
   }
   const sourceSlash = sourcePath.lastIndexOf('/')
   const base = sourceSlash >= 0 ? sourcePath.slice(0, sourceSlash + 1) : ''
-  const path = decoded.startsWith('/') ? decoded.slice(1) : `${base}${decoded}`
+  // Test the root anchor after normalizing: a backslash-led target is rooted too.
+  const normalized = decoded.replace(/\\/g, '/')
+  const path = normalized.startsWith('/') ? normalized.slice(1) : `${base}${normalized}`
   const parts: string[] = []
-  for (const segment of path.replace(/\\/g, '/').split('/')) {
+  for (const segment of path.split('/')) {
     if (!segment || segment === '.') continue
     if (segment === '..') {
       if (parts.length === 0) return null

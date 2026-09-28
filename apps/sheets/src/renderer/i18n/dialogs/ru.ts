@@ -52,6 +52,11 @@ export const ru = {
   dlgGoToNote:
     'Введите ссылку на ячейку или выберите именованный диапазон; кнопка «Перейти» переходит к цели и выделяет её. Щёлкните имя, чтобы подставить его; двойной щелчок — перейти сразу.',
   dlgGoToGo: 'Перейти',
+  dlgZoomTitle: 'Масштаб',
+  dlgZoomMagnification: 'Масштаб',
+  dlgZoomFitSelection: 'По выделению',
+  dlgZoomCustom: 'Произвольный',
+  dlgZoomRangeError: 'Введите число от {min} до {max}.',
 
   dlgHfTitle: 'Колонтитулы',
   dlgHfHeaderLeft: 'Верхний колонтитул · Слева',
@@ -411,4 +416,12 @@ export const ru = {
   dlgFnCatWeb: 'Интернет',
   dlgFnCatArray: 'Массив',
   dlgFnCatOther: 'Другие',
+  dlgInsertCellsTitle: 'Добавление ячеек',
+  dlgDeleteCellsTitle: 'Удаление ячеек',
+  dlgCellsShiftRight: 'Ячейки, со сдвигом вправо',
+  dlgCellsShiftDown: 'Ячейки, со сдвигом вниз',
+  dlgCellsShiftLeft: 'Ячейки, со сдвигом влево',
+  dlgCellsShiftUp: 'Ячейки, со сдвигом вверх',
+  dlgCellsEntireRow: 'Строку',
+  dlgCellsEntireColumn: 'Столбец',
 } satisfies Record<keyof typeof zh, string>

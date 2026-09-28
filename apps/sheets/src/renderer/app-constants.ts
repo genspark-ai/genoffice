@@ -126,6 +126,10 @@ export const REORDER_RANGE_MUTATION = 'sheet.mutation.reorder-range'
 // vacated source and the landing target as plain cell edits.
 export const MOVE_RANGE_MUTATION = 'sheet.mutation.move-range'
 export const MOVE_RANGE_COMMAND = 'sheet.command.move-range'
+// Insert/Delete Cells with a shift decompose into move-range + set-range-values
+// mutations, so they journal like a drag-move and share its load-mode gate.
+export const RANGE_SHIFT_COMMAND_PATTERN =
+  /^sheet\.command\.(insert|delete)-range-move-(left|right|up|down)$/
 export const CF_RULE_COMMAND_PATTERN = /^sheet\.command\.(add|set)-conditional-rule$/
 export const SORT_COMMAND_PATTERN =
   /^sheet\.command\.(sort-range|reorder-range|split-text-to-columns)$/

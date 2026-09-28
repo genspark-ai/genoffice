@@ -8078,7 +8078,8 @@ body.show-curtain::after {
   flex-shrink: 0;
 }
 
-.deck-progress-icon.done {
+.deck-progress-icon.done,
+.deck-progress-icon.stopped {
   color: var(--color-text-secondary);
 }
 .deck-progress-icon.error {

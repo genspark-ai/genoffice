@@ -179,15 +179,11 @@ export const pt = {
   appThemeColorsApplied: 'Cores do tema "{name}" aplicadas; gravadas no documento ao salvar',
   appSourceAdded: 'Fonte bibliográfica "{title}" adicionada; cite-a por meio de "Inserir citação"',
   appTitlePgOn:
-    '"Primeira página diferente" ativada; alterne no topo da página para editar o cabeçalho e o rodapé da primeira página',
+    '"Primeira página diferente" ativada; edite o cabeçalho e o rodapé da primeira página na página 1',
   appTitlePgOff: '"Primeira página diferente" desativada',
   appEvenOddOn:
-    '"Páginas pares e ímpares diferentes" ativada; alterne no topo da página para editar o cabeçalho e o rodapé das páginas pares',
+    '"Páginas pares e ímpares diferentes" ativada; edite o cabeçalho e o rodapé das páginas pares em qualquer página par',
   appEvenOddOff: '"Páginas pares e ímpares diferentes" desativada',
-  appFirstPage: 'Primeira página',
-  appOddPage: 'Páginas ímpares',
-  appEvenPage: 'Páginas pares',
-  appDefaultPage: 'Padrão',
   appDblclickEditHeader: 'Clique duas vezes para editar o cabeçalho',
   appDblclickEditFooter: 'Clique duas vezes para editar o rodapé',
   appHfPageNumHint: ' (# representa o número de página automático)',

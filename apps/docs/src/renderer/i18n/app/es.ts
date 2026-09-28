@@ -184,15 +184,11 @@ export const es = {
     'Colores del tema "{name}" aplicados; se escribirán en el documento al guardar',
   appSourceAdded: 'Fuente "{title}" agregada; puede citarla mediante "Insertar cita"',
   appTitlePgOn:
-    '"Primera página diferente" activado; cambie en la parte superior de la página para editar el encabezado y pie de página de la primera página',
+    '"Primera página diferente" activado; edite el encabezado y pie de página de la primera página en la página 1',
   appTitlePgOff: '"Primera página diferente" desactivado',
   appEvenOddOn:
-    '"Páginas pares e impares diferentes" activado; cambie en la parte superior de la página para editar el encabezado y pie de página de las páginas pares',
+    '"Páginas pares e impares diferentes" activado; edite el encabezado y pie de página de las páginas pares en cualquier página par',
   appEvenOddOff: '"Páginas pares e impares diferentes" desactivado',
-  appFirstPage: 'Primera página',
-  appOddPage: 'Páginas impares',
-  appEvenPage: 'Páginas pares',
-  appDefaultPage: 'Predeterminada',
   appDblclickEditHeader: 'Haga doble clic para editar el encabezado',
   appDblclickEditFooter: 'Haga doble clic para editar el pie de página',
   appHfPageNumHint: ' (# representa el número de página automático)',

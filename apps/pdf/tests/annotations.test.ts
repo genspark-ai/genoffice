@@ -348,4 +348,22 @@ describe('selectionQuadsByPage', () => {
     const result = selectionQuadsByPage(scrollEl, [geom(0, span, 200)], 1)
     expect(result!.get(0)).toEqual([[0, 180, span - 2, 180, 0, 170, span - 2, 170]])
   })
+
+  it('sweeps abutting spans on one line in linear time', () => {
+    // text-layer spans touch (next.left === prev.right); the sweep must not keep
+    // every earlier span open, or one long line becomes quadratic again
+    const COUNT = 60_000
+    const WIDTH = 4
+    const rects = Array.from({ length: COUNT }, (_, i) =>
+      domRect(i * WIDTH, 20, (i + 1) * WIDTH, 30),
+    )
+    const span = COUNT * WIDTH
+    const { scrollEl } = setupPage(domRect(0, 0, span, 200))
+    mockSelection(scrollEl, [domRect(0, 20, span, 30), ...rects])
+
+    const started = performance.now()
+    const result = selectionQuadsByPage(scrollEl, [geom(0, span, 200)], 1)
+    expect(performance.now() - started).toBeLessThan(3_000)
+    expect(result!.get(0)).toEqual([[0, 180, span, 180, 0, 170, span, 170]])
+  })
 })

@@ -52,6 +52,11 @@ export const it = {
   dlgGoToNote:
     'Digita un riferimento di cella o scegli un intervallo denominato; Vai passa alla destinazione e la seleziona. Fai clic su un nome per inserirlo, doppio clic per andare direttamente.',
   dlgGoToGo: 'Vai',
+  dlgZoomTitle: 'Zoom',
+  dlgZoomMagnification: 'Ingrandimento',
+  dlgZoomFitSelection: 'Adatta alla selezione',
+  dlgZoomCustom: 'Personalizzato',
+  dlgZoomRangeError: 'Immettere un numero compreso tra {min} e {max}.',
 
   dlgHfTitle: 'Intestazione e piè di pagina',
   dlgHfHeaderLeft: 'Intestazione · Sinistra',
@@ -410,4 +415,12 @@ export const it = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Matrice',
   dlgFnCatOther: 'Altre',
+  dlgInsertCellsTitle: 'Inserisci',
+  dlgDeleteCellsTitle: 'Elimina',
+  dlgCellsShiftRight: 'Sposta le celle a destra',
+  dlgCellsShiftDown: 'Sposta le celle in basso',
+  dlgCellsShiftLeft: 'Sposta le celle a sinistra',
+  dlgCellsShiftUp: 'Sposta le celle in alto',
+  dlgCellsEntireRow: 'Riga intera',
+  dlgCellsEntireColumn: 'Colonna intera',
 } satisfies Record<keyof typeof zh, string>

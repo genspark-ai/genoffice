@@ -194,6 +194,15 @@ describe('textbox editing', () => {
     expect(sized).toContain('<wp:extent cx="2857500" cy="2286000"/>')
     expect(sized).toContain('<a:ext cx="2857500" cy="2286000"/>')
     expect(sized).toContain(PIC_EXT)
+
+    const pairedXform = BOX_WITH_PICTURE(
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6038850" cy="1704975"></a:ext></a:xfrm>' +
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>',
+    )
+    const pairedSized = patchTextboxSizes(pairedXform, [{ wPx: 300, hPx: 240 }])
+    expect(pairedSized).toContain('<a:ext cx="2857500" cy="2286000"/>')
+    expect(pairedSized).not.toContain('cy="1704975"')
+    expect(pairedSized).toContain(PIC_EXT)
   })
 
   it('regenerates changed paragraphs from rich runs and keeps unchanged bytes', () => {

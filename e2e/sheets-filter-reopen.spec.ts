@@ -33,7 +33,7 @@ test.describe('sheets: filter criteria survive save and reopen', () => {
         electronApp.setPath('documents', dir)
       }, scratch)
       const saveDir = join(scratch, 'GenOffice')
-      // the workbook has no file yet: Save answers the Save As picker (#1036)
+      // the workbook has no file yet: Save answers the Save As picker (genoffice#1036)
       await app.evaluate(
         ({ dialog }, target) => {
           dialog.showSaveDialog = async () => ({ canceled: false, filePath: target })

@@ -1,5 +1,7 @@
 import { BooleanNumber, type IStyleData, WrapStrategy } from '@univerjs/core'
 
+import { isAccountingPattern } from './numfmt-dialog'
+
 /// One OOXML indent step rendered as left cell padding, in px — roughly the
 /// width of three spaces at the default 11pt font.
 /// The padding is the only on-screen model for indent, so converting back
@@ -130,6 +132,7 @@ export function numberFormatLabel(pattern: string): string {
   // detection must not read date/digit letters inside them.
   const bare = pattern.replace(/\[[^\]]*\]/g, '').replace(/"[^"]*"/g, '')
   if (bare.includes('%')) return 'Percentage'
+  if (isAccountingPattern(pattern)) return 'Accounting'
   // Accounting is currency plus the aligning fill/padding tokens (_( and *).
   const quoted = pattern.match(/"[^"]*"/g)?.join('') ?? ''
   const currency = /[$¥€£]/.test(bare + quoted) || /\[\$[^\-\]]/.test(pattern)

@@ -124,6 +124,28 @@ vi.mock('../../slides/src/main/slides-main', () => ({
   slidesIsDirty: (...args: unknown[]) => slidesIsDirty(...(args as [])),
 }))
 
+const createMarkdownView = vi.fn(() => makeFakeView())
+const markdownIsDirty = vi.fn(() => false)
+const requestMarkdownClose = vi.fn(() => Promise.resolve(true))
+
+vi.mock('../../markdown/src/main/markdown-main', () => ({
+  createMarkdownView: (...args: unknown[]) => createMarkdownView(...(args as [])),
+  markdownIsDirty: (...args: unknown[]) => markdownIsDirty(...(args as [])),
+  requestMarkdownClose: (...args: unknown[]) => requestMarkdownClose(...(args as [])),
+}))
+
+const createHtmlView = vi.fn(() => makeFakeView())
+const createHtmlPresentView = vi.fn(() => makeFakeView())
+const htmlIsDirty = vi.fn(() => false)
+const requestHtmlClose = vi.fn(() => Promise.resolve(true))
+
+vi.mock('../../html/src/main/html-main', () => ({
+  createHtmlView: (...args: unknown[]) => createHtmlView(...(args as [])),
+  createHtmlPresentView: (...args: unknown[]) => createHtmlPresentView(...(args as [])),
+  htmlIsDirty: (...args: unknown[]) => htmlIsDirty(...(args as [])),
+  requestHtmlClose: (...args: unknown[]) => requestHtmlClose(...(args as [])),
+}))
+
 import { TabManager } from '../src/main/tab-manager'
 
 const TAB_STRIP_HEIGHT = 40
@@ -720,5 +742,132 @@ describe('dirty-tab queries (shell close guard)', () => {
     manager.openSheetsTab()
     manager.openDocsTab('/tmp/a.docx')
     expect(manager.docsTabs().map((t) => t.id)).toEqual(['t1', 't3'])
+  })
+})
+
+describe('detach / attach (Open in New Window, tear-off, dock)', () => {
+  it('lifts a tab out without closing its renderer and hands the live view back', () => {
+    manager.openDocsTab('/tmp/a.docx')
+    const id = manager.openPdfTab('/tmp/scan.pdf')
+    const view = lastCreatedView(createPdfView)
+    const record = manager.detachTab(id)
+    expect(record).toMatchObject({ kind: 'pdf', title: 'scan.pdf', filePath: '/tmp/scan.pdf' })
+    expect(record!.view).toBe(view)
+    expect(shellWindow.contentView.removeChildView).toHaveBeenCalledWith(view)
+    expect(view.webContents.close).not.toHaveBeenCalled()
+    expect(manager.list().map((t) => t.id)).toEqual(['home', 't1'])
+    expect(manager.list()[1].active).toBe(true)
+  })
+
+  it('every document kind can be detached; Home and Present tabs cannot', () => {
+    const docs = manager.openDocsTab()
+    const sheets = manager.openSheetsTab()
+    const slides = manager.openSlidesTab()
+    const pdf = manager.openPdfTab('/tmp/scan.pdf')
+    const markdown = manager.openMarkdownTab()
+    const html = manager.openHtmlTab()
+    const present = manager.openHtmlPresentTab({ id: 999 } as never, 'Preview')
+    for (const id of [docs, sheets, slides, pdf, markdown, html])
+      expect(manager.canDetachTab(id)).toBe(true)
+    expect(manager.canDetachTab('home')).toBe(false)
+    expect(manager.canDetachTab(present)).toBe(false)
+    expect(manager.canDetachTab('nope')).toBe(false)
+    expect(manager.detachTab(present)).toBeNull()
+  })
+
+  it('attaches a view back as a new, active tab at the requested slot', () => {
+    manager.openDocsTab('/tmp/a.docx')
+    manager.openDocsTab('/tmp/b.docx')
+    const id = manager.openSlidesTab('/tmp/deck.pptx')
+    const record = manager.detachTab(id)!
+    shellWindow.contentView.addChildView.mockClear()
+
+    const newId = manager.attachTab(record, 1)
+    expect(newId).not.toBe(id)
+    expect(shellWindow.contentView.addChildView).toHaveBeenCalledWith(record.view)
+    expect(record.view.setVisible).toHaveBeenLastCalledWith(true)
+    expect(record.view.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: TAB_STRIP_HEIGHT,
+      width: WINDOW_WIDTH,
+      height: WINDOW_HEIGHT - TAB_STRIP_HEIGHT,
+    })
+    expect(manager.list().map((t) => [t.id, t.title, t.active])).toEqual([
+      ['home', 'GenOffice', false],
+      [newId, 'deck.pptx', true],
+      ['t1', 'a.docx', false],
+      ['t2', 'b.docx', false],
+    ])
+    expect(setActiveSlidesWebContents).toHaveBeenLastCalledWith(record.view.webContents)
+    expect(applyMenuFor).toHaveBeenLastCalledWith('slides')
+  })
+
+  it('keeps Home pinned: slot 0 and negative slots land right after it, out-of-range appends', () => {
+    manager.openDocsTab('/tmp/a.docx')
+    const first = manager.detachTab(manager.openSheetsTab('/tmp/x.xlsx'))!
+    const second = manager.detachTab(manager.openSheetsTab('/tmp/y.xlsx'))!
+    const third = manager.detachTab(manager.openSheetsTab('/tmp/z.xlsx'))!
+    manager.attachTab(first, 0)
+    expect(manager.list().map((t) => t.title)).toEqual(['GenOffice', 'x.xlsx', 'a.docx'])
+    manager.attachTab(second, -4)
+    expect(manager.list().map((t) => t.title)).toEqual(['GenOffice', 'y.xlsx', 'x.xlsx', 'a.docx'])
+    manager.attachTab(third, 99)
+    expect(manager.list().map((t) => t.title)).toEqual([
+      'GenOffice',
+      'y.xlsx',
+      'x.xlsx',
+      'a.docx',
+      'z.xlsx',
+    ])
+  })
+
+  it('appends when no slot is given', () => {
+    manager.openDocsTab('/tmp/a.docx')
+    const record = manager.detachTab(manager.openPdfTab('/tmp/scan.pdf'))!
+    manager.openDocsTab('/tmp/b.docx')
+    manager.attachTab(record)
+    expect(manager.list().map((t) => t.title)).toEqual([
+      'GenOffice',
+      'a.docx',
+      'b.docx',
+      'scan.pdf',
+    ])
+  })
+
+  it('installs the HTML-fullscreen listeners once per view across detach and re-attach', () => {
+    const id = manager.openSlidesTab('/tmp/deck.pptx')
+    const view = lastCreatedView(createSlidesView)
+    const fullScreenRegistrations = () =>
+      view.webContents.on.mock.calls.filter(([event]) => event === 'enter-html-full-screen').length
+    expect(fullScreenRegistrations()).toBe(1)
+    const record = manager.detachTab(id)!
+    const newId = manager.attachTab(record)
+    expect(fullScreenRegistrations()).toBe(1)
+
+    // the listener resolves the *current* id: fullscreen after re-attach covers the strip
+    view.webContents.listeners.get('enter-html-full-screen')!()
+    expect(view.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 0,
+      width: WINDOW_WIDTH,
+      height: WINDOW_HEIGHT,
+    })
+    view.webContents.listeners.get('leave-html-full-screen')!()
+    expect(view.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: TAB_STRIP_HEIGHT,
+      width: WINDOW_WIDTH,
+      height: WINDOW_HEIGHT - TAB_STRIP_HEIGHT,
+    })
+    expect(manager.list()[1].id).toBe(newId)
+  })
+
+  it('a re-attached docs tab closes through the docs teardown path like any docs tab', async () => {
+    const record = manager.detachTab(manager.openDocsTab('/tmp/a.docx'))!
+    const newId = manager.attachTab(record)
+    await manager.closeTab(newId)
+    expect(teardownDocsRenderer).toHaveBeenCalledWith(record.view.webContents)
+    expect(record.view.webContents.close).not.toHaveBeenCalled()
+    expect(manager.list()).toHaveLength(1)
   })
 })

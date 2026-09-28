@@ -49,6 +49,11 @@ export const zhTW = {
   dlgGoToNote:
     '輸入儲存格位址或選擇具名範圍，Go 跳轉並選取目標；按一下名稱填入輸入欄，按兩下直接跳轉。',
   dlgGoToGo: '移至',
+  dlgZoomTitle: '縮放',
+  dlgZoomMagnification: '縮放比例',
+  dlgZoomFitSelection: '符合選取範圍',
+  dlgZoomCustom: '自訂',
+  dlgZoomRangeError: '請輸入 {min} 到 {max} 之間的數字。',
 
   dlgHfTitle: '頁首頁尾',
   dlgHfHeaderLeft: '頁首 · 左',
@@ -395,4 +400,12 @@ export const zhTW = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: '陣列',
   dlgFnCatOther: '其他',
+  dlgInsertCellsTitle: '插入',
+  dlgDeleteCellsTitle: '刪除',
+  dlgCellsShiftRight: '現有儲存格右移',
+  dlgCellsShiftDown: '現有儲存格下移',
+  dlgCellsShiftLeft: '右側儲存格左移',
+  dlgCellsShiftUp: '下方儲存格上移',
+  dlgCellsEntireRow: '整列',
+  dlgCellsEntireColumn: '整欄',
 } satisfies Record<keyof typeof zh, string>

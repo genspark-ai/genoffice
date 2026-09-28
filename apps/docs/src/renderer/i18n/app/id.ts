@@ -180,15 +180,11 @@ export const id = {
   appThemeColorsApplied: 'Warna tema "{name}" diterapkan; ditulis ke dokumen saat disimpan',
   appSourceAdded: 'Sumber "{title}" ditambahkan; kutip melalui "Sisipkan Kutipan"',
   appTitlePgOn:
-    '"Halaman Pertama Berbeda" diaktifkan; beralih di bagian atas halaman untuk mengedit header dan footer halaman pertama',
+    '"Halaman Pertama Berbeda" diaktifkan; edit header dan footer halaman pertama di halaman 1',
   appTitlePgOff: '"Halaman Pertama Berbeda" dinonaktifkan',
   appEvenOddOn:
-    '"Halaman Ganjil & Genap Berbeda" diaktifkan; beralih di bagian atas halaman untuk mengedit header dan footer halaman genap',
+    '"Halaman Ganjil & Genap Berbeda" diaktifkan; edit header dan footer halaman genap di halaman genap mana pun',
   appEvenOddOff: '"Halaman Ganjil & Genap Berbeda" dinonaktifkan',
-  appFirstPage: 'Halaman Pertama',
-  appOddPage: 'Halaman Ganjil',
-  appEvenPage: 'Halaman Genap',
-  appDefaultPage: 'Default',
   appDblclickEditHeader: 'Klik dua kali untuk mengedit header',
   appDblclickEditFooter: 'Klik dua kali untuk mengedit footer',
   appHfPageNumHint: ' (# mewakili nomor halaman otomatis)',

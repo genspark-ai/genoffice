@@ -182,15 +182,11 @@ export const ms = {
   appThemeColorsApplied: 'Warna tema "{name}" digunakan; ditulis ke dokumen semasa disimpan',
   appSourceAdded: 'Sumber "{title}" ditambah; rujuk melalui "Sisipkan Petikan"',
   appTitlePgOn:
-    '"Halaman Pertama Berbeza" dihidupkan; tukar di bahagian atas halaman untuk menyunting pengepala dan pengaki halaman pertama',
+    '"Halaman Pertama Berbeza" dihidupkan; sunting pengepala dan pengaki halaman pertama pada halaman 1',
   appTitlePgOff: '"Halaman Pertama Berbeza" dimatikan',
   appEvenOddOn:
-    '"Halaman Ganjil & Genap Berbeza" dihidupkan; tukar di bahagian atas halaman untuk menyunting pengepala dan pengaki halaman genap',
+    '"Halaman Ganjil & Genap Berbeza" dihidupkan; sunting pengepala dan pengaki halaman genap pada mana-mana halaman genap',
   appEvenOddOff: '"Halaman Ganjil & Genap Berbeza" dimatikan',
-  appFirstPage: 'Halaman Pertama',
-  appOddPage: 'Halaman Ganjil',
-  appEvenPage: 'Halaman Genap',
-  appDefaultPage: 'Lalai',
   appDblclickEditHeader: 'Dwiklik untuk menyunting pengepala',
   appDblclickEditFooter: 'Dwiklik untuk menyunting pengaki',
   appHfPageNumHint: ' (# mewakili nombor halaman automatik)',

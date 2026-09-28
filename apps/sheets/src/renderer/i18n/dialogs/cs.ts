@@ -53,6 +53,11 @@ export const cs = {
   dlgGoToNote:
     'Zadejte odkaz na buňku nebo vyberte pojmenovanou oblast; tlačítko Přejít na cíl přeskočí a vybere ho. Kliknutím na název ho vyplníte, poklepáním přejdete rovnou.',
   dlgGoToGo: 'Přejít',
+  dlgZoomTitle: 'Lupa',
+  dlgZoomMagnification: 'Zvětšení',
+  dlgZoomFitSelection: 'Přizpůsobit výběru',
+  dlgZoomCustom: 'Vlastní',
+  dlgZoomRangeError: 'Zadejte číslo od {min} do {max}.',
 
   dlgHfTitle: 'Záhlaví a zápatí',
   dlgHfHeaderLeft: 'Záhlaví · vlevo',
@@ -409,4 +414,12 @@ export const cs = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: 'Matice',
   dlgFnCatOther: 'Ostatní',
+  dlgInsertCellsTitle: 'Vložit',
+  dlgDeleteCellsTitle: 'Odstranit',
+  dlgCellsShiftRight: 'Posunout buňky vpravo',
+  dlgCellsShiftDown: 'Posunout buňky dolů',
+  dlgCellsShiftLeft: 'Posunout buňky vlevo',
+  dlgCellsShiftUp: 'Posunout buňky nahoru',
+  dlgCellsEntireRow: 'Celý řádek',
+  dlgCellsEntireColumn: 'Celý sloupec',
 } satisfies Record<keyof typeof zh, string>

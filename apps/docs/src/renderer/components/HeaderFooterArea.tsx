@@ -157,25 +157,6 @@ export function HeaderFooterArea({
   const [editing, setEditing] = useState(false)
   const editRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
-  const hoverRef = useRef(false)
-  // the wrap the flag was last set on: rootRef is already null in the unmount cleanup
-  const wrapRef = useRef<Element | null>(null)
-  // the idle variant chips sit before the page in .page-wrap and reveal while
-  // the header is hovered or edited; a data flag on the wrap replaces the
-  // .page-wrap:has(...) rule that restyled the whole document on every mutation
-  const syncWrapFlag = (on: boolean) => {
-    if (kind !== 'header') return
-    const wrap = rootRef.current?.closest('.page-wrap') ?? wrapRef.current
-    if (!wrap) return
-    wrapRef.current = wrap
-    if (on) wrap.setAttribute('data-hf-active', '')
-    else wrap.removeAttribute('data-hf-active')
-  }
-  useEffect(() => {
-    syncWrapFlag(editing || hoverRef.current)
-    return () => syncWrapFlag(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, kind])
   const paras = hfParasOf(value, images)
 
   useEffect(() => {
@@ -226,14 +207,6 @@ export function HeaderFooterArea({
     <div
       ref={rootRef}
       className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}${hasBoxes ? ' page-hf-has-boxes' : ''}`}
-      onMouseEnter={() => {
-        hoverRef.current = true
-        syncWrapFlag(true)
-      }}
-      onMouseLeave={() => {
-        hoverRef.current = false
-        syncWrapFlag(editing)
-      }}
       style={{
         ...(strutPt != null ? { fontSize: `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))` } : {}),
         ...(tabOver > 0 ? { ['--hf-tab-over' as string]: `${tabOver.toFixed(1)}px` } : {}),

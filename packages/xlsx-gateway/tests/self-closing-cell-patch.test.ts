@@ -41,18 +41,24 @@ const WORKSHEET = `<?xml version="1.0" encoding="UTF-8"?>
   <sheetData><row r="1"><c r="A1" s="1"/><c r="B1"><v>5</v></c></row></sheetData>
 </worksheet>`
 
-async function fixture(): Promise<Buffer> {
+// Row 1 is an empty custom-height row Excel writes self-closing; row 2 holds A2.
+const WORKSHEET_EMPTY_ROW = `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1" ht="20" customHeight="1"/><row r="2"><c r="A2"><v>7</v></c></row></sheetData>
+</worksheet>`
+
+async function fixture(worksheet = WORKSHEET): Promise<Buffer> {
   const zip = new JSZip()
   zip.file('[Content_Types].xml', CONTENT_TYPES)
   zip.file('_rels/.rels', PACKAGE_RELS)
   zip.file('xl/workbook.xml', WORKBOOK)
   zip.file('xl/_rels/workbook.xml.rels', WORKBOOK_RELS)
   zip.file('xl/styles.xml', STYLES)
-  zip.file('xl/worksheets/sheet1.xml', WORKSHEET)
+  zip.file('xl/worksheets/sheet1.xml', worksheet)
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
-function plan(): ChangePlan {
+function plan(address = 'A1'): ChangePlan {
   return {
     transactionId: 't1',
     baseRevision: 0,
@@ -60,7 +66,7 @@ function plan(): ChangePlan {
     structuralChanges: [],
     formatChanges: [],
     warnings: [],
-    cellChanges: [{ sheetId: '1', address: 'A1', before: { value: null }, after: { value: 'hi' } }],
+    cellChanges: [{ sheetId: '1', address, before: { value: null }, after: { value: 'hi' } }],
   }
 }
 
@@ -73,5 +79,18 @@ describe('self-closing cell patching', () => {
     // A1 now carries the new value, and its sibling B1 is untouched.
     expect(sheet).toContain('<is><t xml:space="preserve">hi</t></is>')
     expect(sheet).toContain('<c r="B1"><v>5</v></c>')
+  })
+
+  it('appends into a self-closing <row/> instead of the next row', async () => {
+    const mutation = await applyPlanToXlsx(await fixture(WORKSHEET_EMPTY_ROW), plan('B1'), {
+      '1': 'Data',
+    })
+    const zip = await JSZip.loadAsync(mutation.buffer)
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')!.async('string')
+
+    expect(sheet).toMatch(
+      /<row r="1" ht="20" customHeight="1"><c r="B1"[^>]*><is><t xml:space="preserve">hi<\/t><\/is><\/c><\/row>/,
+    )
+    expect(sheet).toContain('<row r="2"><c r="A2"><v>7</v></c></row>')
   })
 })

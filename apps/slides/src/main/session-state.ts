@@ -351,10 +351,29 @@ export function setSlidesShellWindow(win: BrowserWindow | null): void {
  *  windows have no tab strip and leave this null. */
 export const showChrome = {
   setBleed: null as ((wc: WebContents, on: boolean) => void) | null,
+  /** the window hosting a tab's WebContentsView when BrowserWindow.fromWebContents
+   *  cannot tell (a detached "Open in New Window" / torn-off editor) */
+  hostWindow: null as ((wc: WebContents) => BrowserWindow | undefined) | null,
 }
 
 export function setSlidesShowBleed(cb: (wc: WebContents, on: boolean) => void): void {
   showChrome.setBleed = cb
+}
+
+export function setSlidesHostWindowHook(
+  fn: ((wc: WebContents) => BrowserWindow | undefined) | null,
+): void {
+  showChrome.hostWindow = fn
+}
+
+/** the window a tab view lives in: its own BrowserWindow, the shell-registered
+ *  detached window, else the shell window */
+export function hostWindowFor(wc: WebContents): BrowserWindow | undefined {
+  const own = BrowserWindow.fromWebContents(wc) ?? showChrome.hostWindow?.(wc)
+  if (own && !own.isDestroyed()) return own
+  return windowRefs.shellWindow && !windowRefs.shellWindow.isDestroyed()
+    ? windowRefs.shellWindow
+    : undefined
 }
 
 export function setActiveSlidesWebContents(wc: WebContents | null): void {

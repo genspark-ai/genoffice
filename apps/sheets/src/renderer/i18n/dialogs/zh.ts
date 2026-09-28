@@ -49,6 +49,11 @@ export const zh = {
   dlgGoToNote:
     '输入单元格地址或选择命名区域，Go 跳转并选中目标；单击名称填入输入框，双击直接跳转。',
   dlgGoToGo: '定位',
+  dlgZoomTitle: '缩放',
+  dlgZoomMagnification: '缩放比例',
+  dlgZoomFitSelection: '恰好容纳选定区域',
+  dlgZoomCustom: '自定义',
+  dlgZoomRangeError: '请输入 {min} 到 {max} 之间的数字。',
 
   dlgHfTitle: '页眉页脚',
   dlgHfHeaderLeft: '页眉 · 左',
@@ -393,4 +398,12 @@ export const zh = {
   dlgFnCatWeb: 'Web',
   dlgFnCatArray: '数组',
   dlgFnCatOther: '其他',
+  dlgInsertCellsTitle: '插入',
+  dlgDeleteCellsTitle: '删除',
+  dlgCellsShiftRight: '活动单元格右移',
+  dlgCellsShiftDown: '活动单元格下移',
+  dlgCellsShiftLeft: '右侧单元格左移',
+  dlgCellsShiftUp: '下方单元格上移',
+  dlgCellsEntireRow: '整行',
+  dlgCellsEntireColumn: '整列',
 }

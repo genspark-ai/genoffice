@@ -769,6 +769,35 @@ describe('parseFileToText: xlsx', () => {
     expect(text).toContain('late | orphan')
   })
 
+  it('keeps out-of-order explicit refs in their declared columns', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="C1"><v>third</v></c><c r="A1"><v>first</v></c></row>' +
+        '</sheetData></worksheet>',
+    )
+    const bytes = await zip.generateAsync({ type: 'uint8array' })
+    const text = await xlsxToText(bytes)
+    expect(text).toContain('first |  | third')
+    expect(text).not.toContain('| third |')
+  })
+
   it('clamps wild column refs instead of padding millions of cells', async () => {
     const zip = new JSZip()
     zip.file(
