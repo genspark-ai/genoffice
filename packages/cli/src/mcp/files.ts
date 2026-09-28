@@ -147,11 +147,43 @@ export function isHttpUrl(value: unknown): value is string {
   return typeof value === 'string' && /^https?:\/\//i.test(value)
 }
 
-/** Cloud instance-metadata endpoints: the one address range a server fetching on a client's behalf must never reach. BlockList canonicalises, so IPv4-mapped and expanded IPv6 spellings match too. */
-const BLOCKED = new BlockList()
-BLOCKED.addSubnet('169.254.0.0', 16, 'ipv4')
-BLOCKED.addSubnet('fe80::', 10, 'ipv6')
-BLOCKED.addAddress('fd00:ec2::254', 'ipv6')
+/** Loopback stays fetchable (local-first tool, tests fetch local servers);
+ *  ::1 would otherwise be caught by the ::/96 rule below. */
+const LOOPBACK = (() => {
+  const list = new BlockList()
+  list.addSubnet('127.0.0.0', 8, 'ipv4')
+  list.addAddress('::1', 'ipv6')
+  return list
+})()
+
+/** Non-public address ranges, mirroring electron-utils' safe-remote-url gate: the
+ *  server fetches on a client's behalf, so a client-steered URL must never land
+ *  on loopback, private, link-local, NAT64 or reserved space. BlockList
+ *  canonicalises, so IPv4-mapped and expanded IPv6 spellings match too. */
+const BLOCKED = (() => {
+  const list = new BlockList()
+  // Loopback is deliberately absent: this is a local-first tool and localhost
+  // is its most legitimate fetch target (tests fetch a local server too). The
+  // other non-public ranges close the read-back proxy onto LAN/internal space.
+  list.addSubnet('0.0.0.0', 8, 'ipv4') // "this network"
+  list.addSubnet('10.0.0.0', 8, 'ipv4') // private
+  list.addSubnet('100.64.0.0', 10, 'ipv4') // carrier NAT
+  list.addSubnet('169.254.0.0', 16, 'ipv4') // link-local (cloud metadata)
+  list.addSubnet('172.16.0.0', 12, 'ipv4') // private
+  list.addSubnet('192.0.0.0', 24, 'ipv4') // IETF protocol assignments
+  list.addSubnet('192.168.0.0', 16, 'ipv4') // private
+  list.addSubnet('198.18.0.0', 15, 'ipv4') // benchmarking
+  list.addSubnet('224.0.0.0', 4, 'ipv4') // multicast
+  list.addSubnet('240.0.0.0', 4, 'ipv4') // reserved + broadcast
+  list.addAddress('::', 'ipv6') // unspecified
+  list.addSubnet('::', 96, 'ipv6') // deprecated IPv4-compatible
+  list.addSubnet('64:ff9b::', 96, 'ipv6') // NAT64
+  list.addSubnet('fc00::', 7, 'ipv6') // unique local
+  list.addSubnet('fe80::', 10, 'ipv6') // link-local
+  list.addSubnet('ff00::', 8, 'ipv6') // multicast
+  list.addAddress('fd00:ec2::254', 'ipv6') // AWS IPv6 instance metadata
+  return list
+})()
 
 interface Pinned {
   address: string
@@ -171,6 +203,7 @@ async function pinnedAddresses(url: URL): Promise<Pinned[]> {
     : await lookup(host, { all: true, verbatim: true })
   if (found.length === 0) throw new Error(`cannot resolve ${host}`)
   for (const a of found) {
+    if (LOOPBACK.check(a.address, a.family === 6 ? 'ipv6' : 'ipv4')) continue
     if (BLOCKED.check(a.address, a.family === 6 ? 'ipv6' : 'ipv4')) {
       throw new Error(`refusing to fetch ${url.href}`)
     }

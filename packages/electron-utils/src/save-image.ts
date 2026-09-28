@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { showSaveDialogWithMemory } from './dialog-memory'
 import { MAX_REMOTE_IMAGE_BYTES, readBodyCapped } from './remote-image'
+import { isSafeRemoteUrl } from './safe-remote-url'
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
@@ -63,6 +64,13 @@ async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; mime: stri
     return decoded
   }
   const { net } = await import('electron')
+  // Only outbound path in this package that skipped the SSRF gate: a docx can
+  // carry <img src="http://192.168.1.10/…">, and this fetched it before the
+  // save dialog. http(s) only — custom schemes (md-asset://) enforce their own
+  // access rules and are not network addresses.
+  if (/^https?:/i.test(url) && !(await isSafeRemoteUrl(url))) {
+    throw new Error(`refusing to fetch ${url}`)
+  }
   const res = await net.fetch(url)
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`)
   return {
