@@ -30,6 +30,39 @@ describe('parseFileToText: plain-text formats', () => {
     expect(result.text).toBe('upper')
   })
 
+  it('strips a UTF-8 BOM instead of leaking it into the text', async () => {
+    const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('bom hello', 'utf8')])
+    const result = await parseFileToText(writeFixture('bom.txt', bytes))
+    expect(result).toEqual({ ok: true, kind: 'text', text: 'bom hello' })
+  })
+
+  it('decodes UTF-16LE and UTF-16BE BOM files instead of returning mojibake', async () => {
+    const le = writeFixture(
+      'utf16le.txt',
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('héllo le', 'utf16le')]),
+    )
+    expect(await parseFileToText(le)).toEqual({ ok: true, kind: 'text', text: 'héllo le' })
+    const beBody = Buffer.from('héllo be', 'utf16le')
+    beBody.swap16()
+    const be = writeFixture('utf16be.txt', Buffer.concat([Buffer.from([0xfe, 0xff]), beBody]))
+    expect(await parseFileToText(be)).toEqual({ ok: true, kind: 'text', text: 'héllo be' })
+  })
+
+  it('rejects undecodable encodings instead of returning corrupted text', async () => {
+    const utf32 = writeFixture(
+      'utf32le.txt',
+      Buffer.from([0xff, 0xfe, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00]),
+    )
+    const utf32Result = await parseFileToText(utf32)
+    expect(utf32Result.ok).toBe(false)
+    expect(utf32Result.error).toContain('encoding')
+
+    const latin1 = writeFixture('latin1.txt', Buffer.from([0x63, 0x61, 0x66, 0xe9])) // "caf" + latin-1 é
+    const latin1Result = await parseFileToText(latin1)
+    expect(latin1Result.ok).toBe(false)
+    expect(latin1Result.error).toContain('encoding')
+  })
+
   it('fails gracefully on a missing file', async () => {
     const result = await parseFileToText('/nonexistent/nowhere.txt')
     expect(result.ok).toBe(false)
