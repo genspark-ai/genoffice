@@ -92,7 +92,16 @@ test.describe('docs quick style gallery', () => {
       await expect(pane.locator('.style-pane-card')).toHaveCount(2)
       await pane.locator('.style-pane-card[data-style-id="Quote"]').click()
       expect((await paraAttrs()).styleId).toBe('Quote')
+      // applying a style focuses the editor on the next frame (TipTap's focus()
+      // uses requestAnimationFrame); a fill() racing that frame loses its Delete
+      // to the editor and the search keeps "quo"
+      await expect
+        .poll(() =>
+          editorPage.evaluate(() => document.activeElement?.closest('.ProseMirror') !== null),
+        )
+        .toBe(true)
       await pane.locator('.styles-pane-search').fill('')
+      await expect(pane.locator('.styles-pane-search')).toHaveValue('')
       await pane.locator('.styles-pane-foot select').selectOption('all')
       // count() reads once, and the list re-renders when the filter clears — the
       // read could still see the two filtered cards above. Poll for the value.

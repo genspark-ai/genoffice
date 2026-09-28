@@ -106,6 +106,7 @@ type TypingState = {
   activeIsEditor: boolean
   activeIsConnected: boolean | null
   activeTag: string | null
+  activeId: string | null
   activeClass: string | null
   activeRange: string | null
   ariaBusy: string | null
@@ -144,6 +145,7 @@ async function domState(page: Page): Promise<Omit<TypingState, 'activeRange'>> {
       activeIsEditor: editor !== null && active === editor,
       activeIsConnected: active instanceof HTMLElement ? active.isConnected : null,
       activeTag: active?.tagName ?? null,
+      activeId: active instanceof HTMLElement ? active.id || null : null,
       activeClass: active instanceof HTMLElement ? active.getAttribute('class') : null,
       ariaBusy: document.querySelector('main.app-shell')?.getAttribute('aria-busy') ?? null,
       canvasPresent: document.querySelector('#univer-container canvas') !== null,
@@ -280,7 +282,8 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
           `after insert: ${JSON.stringify(afterInsert.editorText)}, ` +
           `after enter: ${JSON.stringify(afterEnter.editorText)}; ` +
           `active element is the editor: ${JSON.stringify(afterInsert.activeIsEditor)} ` +
-          `(${JSON.stringify(afterInsert.activeTag)} ${JSON.stringify(afterInsert.activeClass)}, ` +
+          `(${JSON.stringify(afterInsert.activeTag)} ${JSON.stringify(afterInsert.activeId)} ` +
+          `${JSON.stringify(afterInsert.activeClass)}, ` +
           `connected: ${JSON.stringify(afterInsert.activeIsConnected)}); ` +
           `active range: ${JSON.stringify(await activeRangeNotation(sheets))}; ` +
           `aria-busy: ${JSON.stringify(afterEnter.ariaBusy)}`,

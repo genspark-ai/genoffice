@@ -2,7 +2,7 @@
 name: genoffice
 description: Create, convert, read and edit Office documents locally with GenOffice's command line. Build a new presentation (pptx) from a brief through a checked outline, per-page spec and render pipeline, a new spreadsheet (xlsx) from CSV or JSON data with formulas, a new Word document (docx) from Markdown or HTML, or a PDF; convert between pdf, docx, xlsx, pptx, md, html and csv; read the structure and text of an existing file (including the user's own docx / xlsx / pptx as source material) and apply structured edits to it. Use whenever the user asks for a slide deck, presentation, spreadsheet, workbook, report, Word document or any real Office file, a format conversion, a rewrite of part of an existing document, or wants the result opened in the GenOffice editor. Documents are processed locally; only search, image and media send the query or the referenced file to the provider configured in GenOffice.
 metadata:
-  version: 2.67.0
+  version: 2.67.1
   cli: '>=0.9.0'
 ---
 
@@ -125,7 +125,7 @@ Branch on `error`, do what `suggestion` says, then resend the **whole** batch (a
 | `resource_limit`                       | The package has too many or too large parts, an implausible compression ratio or an entry path that escapes the archive; `detail` names the entry and the limit. Do not retry; tell the user |
 | `unsupported`                          | `detail.supported` lists what this command accepts; pick another route from the table above                                                                                                  |
 | `conversion_failed`, `app_unavailable` | The file or the app: retry once; if `capabilities --json` says the app is missing, tell the user (PDF and `→html`/`html→` routes need GenOffice)                                             |
-| `app_crashed`                          | GenOffice crashed during a headless export (`detail.signal`): retry once; if it repeats, tell the user and name the document and the crash log path from `suggestion`                       |
+| `app_crashed`                          | GenOffice crashed during a headless export (`detail.signal`): retry once; if it repeats, tell the user and name the document and the crash log path from `suggestion`                        |
 
 A successful result may still carry `warnings[]` (`{code, message, suggestion?}`): `formulas_not_cached`, `op_warning` (a sheets op was adjusted), `images_dropped` (`convert docx→md`), `output_renamed` (`image` saved with the provider's real extension), `unresolved_placeholder` (`merge` left placeholders without a value in place). Read them, report what matters, do not retry.
 

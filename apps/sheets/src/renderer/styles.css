@@ -5756,3 +5756,161 @@ textarea:focus {
 .menu-select-drop .menu-option-icon:hover {
   background: transparent;
 }
+
+/* Find & Replace panel (Ctrl+F / Ctrl+H): Excel-style modeless dialog.
+   Sits above the grid but below modal dialog backdrops (z 900+), so Format
+   Cells and friends still cover it. */
+.find-replace-panel {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  z-index: 120;
+  display: grid;
+  gap: 10px;
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  padding: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+}
+
+.find-replace-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.find-replace-panel .fr-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.find-replace-panel .fr-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.find-replace-panel .fr-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.find-replace-panel .fr-grid > label {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.find-replace-panel .fr-grid input:not([type='checkbox']),
+.find-replace-panel .fr-options select {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.find-replace-panel .fr-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.find-replace-panel .fr-options label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.find-replace-panel .fr-checks {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.find-replace-panel .fr-status {
+  min-height: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.find-replace-panel .fr-actions {
+  flex-wrap: wrap;
+}
+
+.find-replace-panel .fr-results {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.find-replace-panel .fr-results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  display: block;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.find-replace-panel .fr-results th,
+.find-replace-panel .fr-results td {
+  text-align: start;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.find-replace-panel .fr-results th {
+  color: var(--text-muted);
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.find-replace-panel .fr-results tbody tr {
+  cursor: pointer;
+}
+
+.find-replace-panel .fr-results tbody tr:hover {
+  background: var(--hover);
+}
+
+.find-replace-panel .fr-results-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* The stock Univer find dialog is replaced by .find-replace-panel; it still
+   mounts (its controller carries the find-session lifecycle) but must never
+   show. Keyed on the component marker because the portal wrapper carries no
+   stable class. */
+body > div:has([data-u-comp='find-replace-dialog']) {
+  display: none !important;
+}

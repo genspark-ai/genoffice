@@ -294,9 +294,30 @@ export function installLazyFindBridge(deps: LazyFindBridgeDeps): { dispose(): vo
   }
   const registration = service.registerFindReplaceProvider(wrapper)
   adoptForeign()
+  // The find()-time re-sweep cannot cover a builtin that registers between
+  // this install and a session start: FindReplaceModel captures the provider
+  // set when the session STARTS, so a late builtin gets dispatched both
+  // directly and through the wrapper (the doubled find() breaks the session).
+  // Sweep at registration time instead, the moment a foreign provider lands.
+  const originalRegister = service.registerFindReplaceProvider.bind(service)
+  const hookedRegister: typeof service.registerFindReplaceProvider = (provider) => {
+    const disposable = originalRegister(provider)
+    if (provider !== wrapper) {
+      adoptForeign()
+      // A session that started before this provider existed searched nothing
+      // (an empty model list still reports "completed"); run it again now
+      // that the provider is reachable.
+      if ((service.getFindString?.() ?? '') !== '') service.find()
+    }
+    return disposable
+  }
+  service.registerFindReplaceProvider = hookedRegister
   return {
     dispose() {
       generation += 1
+      if (service.registerFindReplaceProvider === hookedRegister) {
+        service.registerFindReplaceProvider = originalRegister
+      }
       registration.dispose()
       for (const builtin of adopted) providers.add(builtin)
       adopted.clear()

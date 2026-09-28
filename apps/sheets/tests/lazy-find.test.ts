@@ -390,7 +390,11 @@ function facade(
   }
   const providers = new Set<unknown>()
   const registrations: { provider: unknown; dispose: () => void }[] = []
+  let findString = ''
+  const find = vi.fn()
   const service = {
+    getFindString: () => findString,
+    find,
     getProviders: () => providers,
     registerFindReplaceProvider: (provider: unknown) => {
       const registration = {
@@ -433,6 +437,10 @@ function facade(
     registrations,
     rowFiltered,
     active,
+    find,
+    setFindString: (value: string) => {
+      findString = value
+    },
   }
 }
 
@@ -913,7 +921,12 @@ describe('service-level dispatch (Univer semantics)', () => {
     const harness = facade(state({}))
     const bridge = installLazyFindBridge(harness)
     const builtin = univerLikeBuiltin([match('s1', 1, 1)])
+    harness.setFindString('needle')
     harness.service.registerFindReplaceProvider(builtin)
+    // the sweep happens at registration, before any find() dispatch …
+    expect([...harness.providers]).not.toContain(builtin)
+    // … and a session that was already searching gets re-run
+    expect(harness.find).toHaveBeenCalledTimes(1)
 
     mockRead.mockResolvedValue(mapped([]))
     await dispatchLikeUniver(harness)
