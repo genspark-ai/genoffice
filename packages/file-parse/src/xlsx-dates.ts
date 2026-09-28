@@ -5,13 +5,21 @@ export interface DateFormatParts {
   seconds: boolean
   /** [h] / [mm] / [ss] elapsed-duration tokens, not clock time */
   elapsed: boolean
+  /** which elapsed token leads the format; only meaningful when elapsed is true */
+  elapsedUnit?: 'h' | 'm' | 's'
 }
 
 const DATE_ONLY: DateFormatParts = { date: true, time: false, seconds: false, elapsed: false }
 const DATE_TIME: DateFormatParts = { date: true, time: true, seconds: false, elapsed: false }
 const TIME_ONLY: DateFormatParts = { date: false, time: true, seconds: false, elapsed: false }
 const TIME_SECONDS: DateFormatParts = { date: false, time: true, seconds: true, elapsed: false }
-const ELAPSED: DateFormatParts = { date: false, time: true, seconds: true, elapsed: true }
+const ELAPSED: DateFormatParts = {
+  date: false,
+  time: true,
+  seconds: true,
+  elapsed: true,
+  elapsedUnit: 'h',
+}
 
 /**
  * Built-in ids (ECMA-376 §18.8.30 plus the CJK 27-36 / 50-58 ranges Excel reserves) that
@@ -50,6 +58,7 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
   if (/general/i.test(section) && !/[ydhs]/i.test(section.replace(/general/gi, ''))) return null
   let elapsed = false
   let elapsedMinutes = false
+  let elapsedUnit: 'h' | 'm' | 's' | undefined
   const stripped = section
     .replace(/"[^"]*"/g, '')
     .replace(/\\./g, '')
@@ -57,6 +66,7 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
     // elapsed [h] / [mm] / [ss] keep their letter so the minute adjacency rule below still sees them
     .replace(/\[(h+|m+|s+)\]/gi, (_all, token: string) => {
       elapsed = true
+      elapsedUnit ??= (token[0].toLowerCase() as 'h' | 'm' | 's')
       if (/^m/i.test(token)) elapsedMinutes = true
       return token
     })
@@ -75,7 +85,13 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
   const date = hasY || hasD || (hasM && !minuteM)
   const time = hasH || hasS || minuteM || elapsed
   if (!date && !time) return null
-  return { date, time, seconds: hasS, elapsed: elapsed && !date }
+  return {
+    date,
+    time,
+    seconds: hasS,
+    elapsed: elapsed && !date,
+    elapsedUnit: elapsed && !date ? elapsedUnit : undefined,
+  }
 }
 
 function pad(n: number, width = 2): string {
@@ -96,6 +112,13 @@ export function formatSerial(
   if (parts.elapsed) {
     if (serial < 0) return null
     const total = Math.round(serial * 86400)
+    // [mm] / [mm]:ss count total minutes; [ss] counts total seconds — only the
+    // leading [h] form renders as an h:mm:ss clock
+    if (parts.elapsedUnit === 'm') {
+      const mm = Math.floor(total / 60)
+      return parts.seconds ? `${mm}:${pad(total % 60)}` : String(mm)
+    }
+    if (parts.elapsedUnit === 's') return String(total)
     const h = Math.floor(total / 3600)
     const m = Math.floor((total % 3600) / 60)
     const s = total % 60
