@@ -1196,6 +1196,9 @@ function formatDateSerial(serial: number, fmt: string, date1904: boolean): strin
 /** c:pt list → value array ordered by idx. */
 /** Largest point count honored: a hostile ptCount must not allocate the array. */
 const MAX_CHART_POINTS = 1_048_576
+/** How far past the last real point a declared count may pad the array (trailing
+ *  empty slots in legit sparse caches; a hostile ptCount stops here). */
+const MAX_TAIL_PADDING = 1024
 /** Largest series count honored: bounds the series spreads and per-series work. */
 const MAX_CHART_SERIES = 256
 
@@ -1203,16 +1206,22 @@ function readPoints(cache: any): Array<string | null> {
   const ptsRaw = cache?.['c:pt']
   const pts: any[] = Array.isArray(ptsRaw) ? ptsRaw : ptsRaw ? [ptsRaw] : []
   const count = cache?.['c:ptCount']?.['@_val']
-  const parsed = count != null ? parseInt(count, 10) : pts.length
-  const n = Number.isFinite(parsed) ? Math.min(Math.max(0, parsed), MAX_CHART_POINTS) : pts.length
-  const out: Array<string | null> = new Array(
-    Math.max(n, Math.min(pts.length, MAX_CHART_POINTS)),
-  ).fill(null)
+  // Allocation follows the data, not the declaration alone. Legit caches use
+  // ptCount for trailing empty slots (sparse idx, all-gap series), so the
+  // array honors the declared count — but a hostile declaration may only buy
+  // MAX_TAIL_PADDING slots past what the real points occupy. 400 series ×
+  // 1,048,576 declared held 2.3 GB of RSS; each real point now costs what its
+  // own bytes are worth.
+  const declaredRaw = count != null ? parseInt(count, 10) : pts.length
+  const declared = Number.isFinite(declaredRaw) ? Math.max(0, declaredRaw) : pts.length
+  const maxIdx = pts.reduce((m: number, pt: any) => Math.max(m, parseInt(pt?.['@_idx'], 10) || 0), -1)
+  const n = Math.min(Math.max(declared, maxIdx + 1), maxIdx + 1 + MAX_TAIL_PADDING, MAX_CHART_POINTS)
+  const out: Array<string | null> = new Array(n).fill(null)
   for (const pt of pts) {
     const idx = parseInt(pt['@_idx'], 10) || 0
     // A sparse hostile idx would grow the array without bound: ignore
     // out-of-range entries instead.
-    if (idx < 0 || idx >= out.length) continue
+    if (idx < 0 || idx >= n) continue
     const v = pt['c:v']
     out[idx] = typeof v === 'string' ? v : v != null ? String(v['#text'] ?? v) : null
   }
