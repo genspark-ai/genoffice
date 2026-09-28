@@ -164,8 +164,10 @@ export function decodeQuotedPrintable(text: string): Uint8Array {
       const a = src.charCodeAt(i + 1)
       const b = src.charCodeAt(i + 2)
       // both hex digits?
-      if (((a >= 48 && a <= 57) || (a >= 65 && a <= 70) || (a >= 97 && a <= 102)) &&
-          ((b >= 48 && b <= 57) || (b >= 65 && b <= 70) || (b >= 97 && b <= 102))) {
+      if (
+        ((a >= 48 && a <= 57) || (a >= 65 && a <= 70) || (a >= 97 && a <= 102)) &&
+        ((b >= 48 && b <= 57) || (b >= 65 && b <= 70) || (b >= 97 && b <= 102))
+      ) {
         i += 2
       }
     }
