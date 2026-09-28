@@ -1197,7 +1197,16 @@ async function readPages(deps: PdfAiDeps, input: Record<string, unknown>): Promi
   const start = Number(input.start)
   const end = Math.min(Number(input.end ?? start), start + 9)
   const summary = t('aiToolReadPages', { start, end })
-  if (!Number.isInteger(start) || start < 1 || end < start || start > doc.numPages) {
+  // end is NaN when the model passes a non-numeric string (Number('all')); the
+  // old `end < start` test is false for NaN, so the range slipped through and
+  // the loop never ran — reported as "no extractable text" on valid pages.
+  if (
+    !Number.isInteger(start) ||
+    !Number.isFinite(end) ||
+    start < 1 ||
+    end < start ||
+    start > doc.numPages
+  ) {
     return err(`Invalid page range (document has ${doc.numPages} pages)`, summary)
   }
   let out = ''

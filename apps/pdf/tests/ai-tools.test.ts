@@ -174,6 +174,15 @@ describe('AGENT_TOOLS definitions', () => {
 })
 
 describe('read_pages', () => {
+  it('rejects a non-numeric end instead of reporting no text on valid pages', async () => {
+    // Number('all') is NaN; the old `end < start` test is false for NaN, so
+    // the range slipped past validation and the loop never ran — the model
+    // got "(No extractable text...)" for pages that do have text.
+    const result = await executePdfTool(makeDeps(), call('read_pages', { start: 1, end: 'all' }))
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('Invalid page range')
+  })
+
   it('reads a page range with [Page N] markers', async () => {
     const result = await executePdfTool(makeDeps(), call('read_pages', { start: 1, end: 2 }))
     expect(result.isError).toBeUndefined()
