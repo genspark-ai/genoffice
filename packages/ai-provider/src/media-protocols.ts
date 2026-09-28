@@ -10,6 +10,17 @@
  */
 
 import { aiFetch } from './fetch'
+import { readCappedResponseText } from './protocols/shared'
+
+/**
+ * `await resp.json()` buffers the whole body with no bound — a failing BYOK
+ * gateway returning hundreds of MB of JSON took the main process down before
+ * any downstream size check ran. The chat protocols already cap theirs
+ * (readCappedResponseText, 4 MB); the media side now shares it.
+ */
+async function readCappedJson(resp: Response): Promise<unknown> {
+  return JSON.parse(await readCappedResponseText(resp))
+}
 import { httpBodyDetail } from './http-error'
 import {
   DASHSCOPE_BASE_URL,
@@ -287,7 +298,7 @@ async function openAiImageResult(
   signal: AbortSignal,
 ): Promise<MediaBlob> {
   if (!resp.ok) return failFrom(label, resp)
-  const json = asRecord(await resp.json())
+  const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
   const first = asRecord((json.data as unknown[] | undefined)?.[0])
   if (typeof first.b64_json === 'string' && first.b64_json) return fromBase64(first.b64_json)
   if (typeof first.url === 'string' && first.url) return downloadImage(label, first.url, signal)
@@ -390,7 +401,7 @@ async function generateImageDashscope(
     },
   )
   if (!resp.ok) return failFrom('Image generation failed:', resp)
-  const json = asRecord(await resp.json())
+  const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
   if (typeof json.code === 'string' && json.code) {
     throw new Error(`Image generation failed: ${json.code} ${String(json.message ?? '')}`)
   }
@@ -436,7 +447,7 @@ async function generateImageMinimax(
     signal,
   })
   if (!resp.ok) return failFrom('Image generation failed:', resp)
-  const json = asRecord(await resp.json())
+  const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
   const status = asRecord(json.base_resp)
   if (typeof status.status_code === 'number' && status.status_code !== 0) {
     throw new Error(
@@ -496,7 +507,7 @@ async function analyzeMediaOpenAi(
     signal,
   })
   if (!resp.ok) return failFrom('Media analysis failed:', resp)
-  const json = asRecord(await resp.json())
+  const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
   const choice = asRecord((json.choices as unknown[] | undefined)?.[0])
   const text = openAiContentText(asRecord(choice.message).content).trim()
   if (!text) throw new Error('Media analysis returned an empty answer')
@@ -554,7 +565,7 @@ async function generateImageGemini(
       signal,
     })
     if (!resp.ok) return failFrom('Image generation failed:', resp)
-    const json = asRecord(await resp.json())
+    const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
     const first = asRecord((json.predictions as unknown[] | undefined)?.[0])
     if (typeof first.bytesBase64Encoded !== 'string') {
       throw new Error(`Image generation returned no image: ${JSON.stringify(json).slice(0, 200)}`)
@@ -584,7 +595,7 @@ async function generateImageGemini(
     signal,
   })
   if (!resp.ok) return failFrom('Image generation failed:', resp)
-  const json = asRecord(await resp.json())
+  const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
   const parts = geminiParts((json.candidates as unknown[] | undefined)?.[0])
   const image = parts
     .map((p) => asRecord(p.inlineData ?? p.inline_data))
@@ -682,7 +693,7 @@ async function analyzeMediaGemini(
     signal,
   })
   if (!resp.ok) return failFrom('Media analysis failed:', resp)
-  const json = asRecord(await resp.json())
+  const json = asRecord((await readCappedJson(resp)) as Record<string, unknown>)
   const text = geminiParts((json.candidates as unknown[] | undefined)?.[0])
     .map((p) => (typeof p.text === 'string' ? p.text : ''))
     .join('')
