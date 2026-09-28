@@ -1214,8 +1214,15 @@ function readPoints(cache: any): Array<string | null> {
   // own bytes are worth.
   const declaredRaw = count != null ? parseInt(count, 10) : pts.length
   const declared = Number.isFinite(declaredRaw) ? Math.max(0, declaredRaw) : pts.length
-  const maxIdx = pts.reduce((m: number, pt: any) => Math.max(m, parseInt(pt?.['@_idx'], 10) || 0), -1)
-  const n = Math.min(Math.max(declared, maxIdx + 1), maxIdx + 1 + MAX_TAIL_PADDING, MAX_CHART_POINTS)
+  const maxIdx = pts.reduce(
+    (m: number, pt: any) => Math.max(m, parseInt(pt?.['@_idx'], 10) || 0),
+    -1,
+  )
+  const n = Math.min(
+    Math.max(declared, maxIdx + 1),
+    maxIdx + 1 + MAX_TAIL_PADDING,
+    MAX_CHART_POINTS,
+  )
   const out: Array<string | null> = new Array(n).fill(null)
   for (const pt of pts) {
     const idx = parseInt(pt['@_idx'], 10) || 0

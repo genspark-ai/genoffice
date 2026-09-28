@@ -8,7 +8,9 @@ function chartXml(sers: number, declared: number, realPts = 1): string {
   const ser = (i: number) =>
     `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
     `<c:val><c:numRef><c:f>Sheet1!$A$1</c:f><c:numCache><c:ptCount val="${declared}"/>` +
-    Array.from({ length: realPts }, (_, k) => `<c:pt idx="${k}"><c:v>${k + 1}</c:v></c:pt>`).join('') +
+    Array.from({ length: realPts }, (_, k) => `<c:pt idx="${k}"><c:v>${k + 1}</c:v></c:pt>`).join(
+      '',
+    ) +
     `</c:numCache></c:numRef></c:val></c:ser>`
   return (
     `<?xml version="1.0"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
