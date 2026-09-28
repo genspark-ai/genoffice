@@ -172,6 +172,18 @@ export class ElectronBrowserDriver implements BrowserDriver {
     return this.evaluate<boolean>((sel: string) => document.querySelector(sel) !== null, selector)
   }
 
+  /** Whether the hidden window is already gone (destroyed externally or by a crash). */
+  isWindowDestroyed(): boolean {
+    return this.win.isDestroyed()
+  }
+
+  /** Forcibly tear the hidden window down; for watchdogs that must stop a
+   *  conversion whose renderer never yields (a pending executeJavaScript can
+   *  never settle, so a graceful close would never run either). */
+  destroyNow(): void {
+    if (!this.win.isDestroyed()) this.win.destroy()
+  }
+
   async close(): Promise<void> {
     try {
       this.cdp.detach()

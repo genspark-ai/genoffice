@@ -4155,6 +4155,9 @@ export function registerProjectIpc(): void {
 /** A4 at 96dpi, as the HTML app exports */
 const ALT_CHUNK_VIEWPORT = { width: 794, height: 1123, deviceScaleFactor: 2 }
 const ALT_CHUNK_HTML_MAX_CHARS = 64 * 1024 * 1024
+// An AI-generated page whose scripts never yield must not strand the hidden
+// conversion window; the slides export path uses the same shape.
+const ALT_CHUNK_TIMEOUT_MS = 120_000
 
 /** an encrypted save leaves no plain file to serve lazy pictures from: the
  *  renderer takes the materialized document back and leaves lazy mode */
@@ -4210,9 +4213,26 @@ export function registerDocsIpc(): void {
       // the BOM outranks a stale <meta charset> left in the decoded markup
       await writeFile(htmlPath, `\ufeff${html}`, 'utf8')
       driver = await ElectronBrowserDriver.create(ALT_CHUNK_VIEWPORT)
-      const { docx } = await convertHtmlToDocx({ url: pathToFileURL(htmlPath).href }, driver, {
+      // The markup is an unsanitised AI artifact: a script that never yields
+      // would otherwise keep executeJavaScript pending forever, and the
+      // finally below would never run (the hidden window and workDir leak for
+      // good). Race a watchdog and destroy the window on timeout, matching
+      // the slides export guard.
+      const conversion = convertHtmlToDocx({ url: pathToFileURL(htmlPath).href }, driver, {
         naturalTableWidth: true,
-      })
+      }).then(({ docx }) => docx)
+      let watchdog: ReturnType<typeof setTimeout> | undefined
+      const docx = await Promise.race([
+        conversion,
+        new Promise<null>((resolve) => {
+          watchdog = setTimeout(() => {
+            if (driver && !driver.isWindowDestroyed()) driver.destroyNow()
+            driver = null
+            console.warn('[docs] altChunk conversion timed out; window destroyed')
+            resolve(null)
+          }, ALT_CHUNK_TIMEOUT_MS)
+        }),
+      ]).finally(() => clearTimeout(watchdog))
       return docx
     } catch (err) {
       console.warn('[docs] altChunk conversion failed:', err)

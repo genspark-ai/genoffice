@@ -67,13 +67,20 @@ If you find a way for a layout script to reach anything beyond the injected
 primitives (network, storage, IPC channels not reachable by design, or the
 main process), that is a vulnerability — please report it.
 
-## Threat Model: Rendering AI-Generated HTML (slides export)
+## Threat Model: Rendering AI-Generated HTML
 
-The HTML-to-pptx export pipeline renders AI-generated HTML in a hidden
-`BrowserWindow`. That window is treated as hostile content: full renderer
+Three pipelines render AI-generated or untrusted HTML in a hidden
+`BrowserWindow`. Every window is treated as hostile content: full renderer
 lockdown (`sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`),
-no preload script, no IPC surface — the main process drives it exclusively
-through `executeJavaScript` and destroys it under a watchdog timeout.
+no preload script, no IPC surface. The slides export drives the window
+exclusively through `executeJavaScript` and destroys it under a watchdog
+timeout; the HTML app's DOCX export and the docs altChunk conversion now do
+the same (`Promise.race` against a fixed timeout, then `destroy()`), so a
+page whose scripts never yield cannot strand the hidden window. HTML→DOCX
+conversion renders the page with scripts enabled and does not sanitize the
+markup before conversion — the output is a document, not a sandbox escape;
+report it as a vulnerability if you find a way from the converted page into
+the main process.
 
 ## Out of Scope
 
