@@ -38,6 +38,8 @@ export function streamBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * assignable to the `WritableStream<Uint8Array>` `pipeThrough` asks for. Same
  * object, same runtime contract; only the two libs' generics disagree.
  */
-export function decompressionStream(format: 'deflate-raw'): TransformStream<Uint8Array, Uint8Array> {
+export function decompressionStream(
+  format: 'deflate-raw',
+): TransformStream<Uint8Array, Uint8Array> {
   return new DecompressionStream(format) as unknown as TransformStream<Uint8Array, Uint8Array>
 }

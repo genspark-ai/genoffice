@@ -95,7 +95,6 @@ const LOCAL_SIG = 0x04034b50
 const ZIP64_LOCATOR_SIG = 0x07064b50
 const FLAG_ENCRYPTED = 0x1
 
-
 /**
  * The gate that actually holds against a forged central directory.
  *

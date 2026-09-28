@@ -48,10 +48,14 @@ describe('xlsx/pptx zip bomb gate', () => {
   })
 
   it('rejects a lying declaration by inflating past the claim, not by reading it', async () => {
-    await expect(xlsxToText(await bytesWithLyingDeclaration())).rejects.toThrow(/inflates past that/)
+    await expect(xlsxToText(await bytesWithLyingDeclaration())).rejects.toThrow(
+      /inflates past that/,
+    )
   })
 
   it('rejects a lying pptx declaration the same way', async () => {
-    await expect(pptxToText(await bytesWithLyingDeclaration())).rejects.toThrow(/inflates past that/)
+    await expect(pptxToText(await bytesWithLyingDeclaration())).rejects.toThrow(
+      /inflates past that/,
+    )
   })
 })

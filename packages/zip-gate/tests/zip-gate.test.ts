@@ -17,12 +17,17 @@ const NAME = 'word/document.xml'
 
 /** A valid one-part archive whose real payload is `realBytes`, with the
  *  central directory's declared uncompressed size rewritten to `declares`. */
-async function onePart(realBytes: number, declares: number, opts?: { method?: 'store'; name?: string }): Promise<Buffer> {
+async function onePart(
+  realBytes: number,
+  declares: number,
+  opts?: { method?: 'store'; name?: string },
+): Promise<Buffer> {
   const zip = new JSZip()
   const name = opts?.name ?? NAME
-  const content = opts?.method === 'store'
-    ? zip.file(name, Buffer.alloc(realBytes), { compression: 'STORE' })
-    : zip.file(name, Buffer.alloc(realBytes))
+  const content =
+    opts?.method === 'store'
+      ? zip.file(name, Buffer.alloc(realBytes), { compression: 'STORE' })
+      : zip.file(name, Buffer.alloc(realBytes))
   void content
   const bytes = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer
   // rewrite the *file* entry's declared size (JSZip also emits an auto-created
@@ -38,7 +43,9 @@ describe('assertZipInflatesWithinLimits', () => {
     // number is inside the limits, so only inflating can find out.
     const archive = await onePart(1024 * KB, 300)
     await expect(assertZipInflatesWithinLimits(archive, LIMITS)).rejects.toThrow(
-      new RegExp(`part ${NAME.replace(/\//g, '\\/')} declares 300 uncompressed bytes but inflates past that`),
+      new RegExp(
+        `part ${NAME.replace(/\//g, '\\/')} declares 300 uncompressed bytes but inflates past that`,
+      ),
     )
   })
 
@@ -52,9 +59,14 @@ describe('assertZipInflatesWithinLimits', () => {
   })
 
   it('accepts an honest part, and a stored part that tells the truth', async () => {
-    await expect(assertZipInflatesWithinLimits(await onePart(300, 300), LIMITS)).resolves.toBeUndefined()
     await expect(
-      assertZipInflatesWithinLimits(await onePart(64 * KB, 64 * KB, { method: 'store', name: 'word/media/image1.png' }), LIMITS),
+      assertZipInflatesWithinLimits(await onePart(300, 300), LIMITS),
+    ).resolves.toBeUndefined()
+    await expect(
+      assertZipInflatesWithinLimits(
+        await onePart(64 * KB, 64 * KB, { method: 'store', name: 'word/media/image1.png' }),
+        LIMITS,
+      ),
     ).resolves.toBeUndefined()
   })
 
@@ -77,7 +89,11 @@ describe('assertZipInflatesWithinLimits', () => {
     zip.file('b.bin', Buffer.alloc(3 * MB), { compression: 'STORE' })
     const bytes = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer
     await expect(
-      assertZipInflatesWithinLimits(new Uint8Array(bytes), { ...LIMITS, maxPartBytes: 4 * MB, maxTotalBytes: 5 * MB }),
+      assertZipInflatesWithinLimits(new Uint8Array(bytes), {
+        ...LIMITS,
+        maxPartBytes: 4 * MB,
+        maxTotalBytes: 5 * MB,
+      }),
     ).rejects.toThrow(/total uncompressed size/)
   })
 
