@@ -101,7 +101,6 @@ describe('assertZipInflatesWithinLimits', () => {
     // A declared csize past the end of the file must never reach a reader
     // that allocates from declarations.
     const good = await onePart(300, 300)
-    const CENTRAL_SIG = Buffer.from([0x50, 0x4b, 0x01, 0x02])
     const centralOfPart = good.lastIndexOf(Buffer.from(NAME)) - 46
     const oversized = Buffer.from(good)
     oversized.writeUInt32LE(0xffffff00, centralOfPart + 20)
