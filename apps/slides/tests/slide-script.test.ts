@@ -404,6 +404,208 @@ describe('runLayoutScript security boundary', () => {
   })
 })
 
+// ── Review round 2: per-run regex budget, bounded serializer, property counter ──
+
+describe('runLayoutScript regex budget (per-run total owned by the interpreter)', () => {
+  const canvas = { w: 1280, h: 720 }
+  // 230 chars with no 'z': every start position of /zzzz\d+q/ fails after ~3 steps
+  const LOREM_230 = (
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor ' +
+    'incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud ' +
+    'exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duiaut'
+  ).slice(0, 230)
+  const bigDeck = (count: number): LayoutScriptElement[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `e${i}`,
+      type: 'shape',
+      text: LOREM_230,
+      x: i,
+      y: 0,
+      w: 10,
+      h: 10,
+      rotation: 0,
+    }))
+
+  it('hoisted regex over a 2000-element × 230-char deck still completes (maintainer probe)', () => {
+    // 2000 test() calls cost ≈1.39M matcher steps in total: re-arming a budget per
+    // call (main) or per compiled pattern aborted this mid-loop; the per-run pool
+    // keeps the normal "hoisted pattern over a large deck" script working.
+    const r = runLayoutScript(
+      `const re = /zzzz\\d+q/; let hits = 0; for (const e of els) { if (re.test(e.text)) hits += 1; } return hits;`,
+      bigDeck(2000),
+      canvas,
+    )
+    expect(r.error).toBeUndefined()
+    expect(r.returned).toBe('0')
+  })
+
+  it('regex literals re-created every iteration draw from the same pool (stacking aborts)', () => {
+    // A literal inside the loop mints a fresh RegexValue per iteration; each
+    // /^(a|aa)+$/ call on 22 a's + 'b' burns ≈0.5M steps. Per-call (main) or
+    // per-literal budgets let all 12 calls run; the per-run pool aborts the run
+    // (9th call crosses the 4M-step total).
+    const nearBudget = `${'a'.repeat(22)}b`
+    const r = runLayoutScript(
+      `let hits = 0; for (let i = 0; i < 12; i++) { if (/^(a|aa)+$/.test('${nearBudget}')) hits += 1; } return hits;`,
+      [{ id: 'a', type: 'shape', text: 'title', x: 0, y: 0, w: 10, h: 10, rotation: 0 }],
+      canvas,
+    )
+    expect(r.error).toMatch(/execution budget/)
+    expect(r.ops).toEqual([])
+  })
+
+  it('repeated calls of one hoisted near-budget pattern share the pool too', () => {
+    const nearBudget = `${'a'.repeat(22)}b`
+    const r = runLayoutScript(
+      `const re = /^(a|aa)+$/; let hits = 0; for (let i = 0; i < 12; i++) { if (re.test('${nearBudget}')) hits += 1; } return hits;`,
+      [{ id: 'a', type: 'shape', text: 'title', x: 0, y: 0, w: 10, h: 10, rotation: 0 }],
+      canvas,
+    )
+    expect(r.error).toMatch(/execution budget/)
+  })
+
+  it('a budget-exhausting pattern still aborts the whole script', () => {
+    const r = runLayoutScript(
+      `let long = ''; for (let i = 0; i < 200; i++) long += 'aaaaaaaaaa'; return /(a+)+$/.test(long + 'b');`,
+      [{ id: 'a', type: 'shape', text: 'title', x: 0, y: 0, w: 10, h: 10, rotation: 0 }],
+      canvas,
+    )
+    expect(r.error).toMatch(/execution budget/)
+    expect(r.ops).toEqual([])
+  })
+})
+
+describe('runLayoutScript output caps (size-bounded serializer)', () => {
+  const els: LayoutScriptElement[] = [
+    { id: 'a', type: 'shape', text: 'title', x: 100, y: 200, w: 300, h: 100, rotation: 0 },
+  ]
+  const canvas = { w: 1280, h: 720 }
+  const ENTRY_CAP = 4_000
+  const TRUNCATED = '…(truncated)'
+
+  it('log() of a {x:o, y:o} doubling chain truncates without materializing it', () => {
+    const r = runLayoutScript(
+      `let o = {}; for (let i = 0; i < 20; i++) o = { x: o, y: o }; log(o); return 'ok';`,
+      els,
+      canvas,
+    )
+    expect(r.error).toBeUndefined()
+    expect(r.logs).toHaveLength(1)
+    expect(r.logs[0]!.length).toBeLessThanOrEqual(ENTRY_CAP + TRUNCATED.length)
+    expect(r.logs[0]).toContain(TRUNCATED)
+    expect(r.returned).toBe('ok')
+  })
+
+  it('returning a doubling chain is bounded at the entry cap (no 25 MB stringify)', () => {
+    const r = runLayoutScript(
+      `let o = {}; for (let i = 0; i < 20; i++) o = { x: o, y: o }; return o;`,
+      els,
+      canvas,
+    )
+    expect(r.error).toBeUndefined()
+    expect(r.returned!.length).toBeLessThanOrEqual(ENTRY_CAP + TRUNCATED.length)
+    expect(r.returned).toContain(TRUNCATED)
+  })
+
+  it('a cyclic return value depth-caps instead of hanging or erroring', () => {
+    const r = runLayoutScript(`const o = {}; o.self = o; return o;`, els, canvas)
+    expect(r.error).toBeUndefined()
+    expect(r.returned!.length).toBeLessThanOrEqual(ENTRY_CAP + TRUNCATED.length)
+    expect(r.returned).toContain(TRUNCATED)
+  })
+
+  it('per-entry (4k) and total (20k) log caps hold', () => {
+    const longEntry = JSON.stringify('x'.repeat(5000))
+    const r = runLayoutScript(
+      `for (let i = 0; i < 60; i++) log(${longEntry}); return 'ok';`,
+      els,
+      canvas,
+    )
+    expect(r.error).toBeUndefined()
+    expect(r.logs.length).toBeGreaterThan(0)
+    expect(r.logs.length).toBeLessThanOrEqual(50)
+    for (const entry of r.logs)
+      expect(entry.length).toBeLessThanOrEqual(ENTRY_CAP + TRUNCATED.length)
+    expect(r.logs[0]).toContain(TRUNCATED)
+    const total = r.logs.reduce((sum, entry) => sum + entry.length, 0)
+    expect(total).toBeLessThanOrEqual(20_000 + ENTRY_CAP + TRUNCATED.length)
+
+    const countCapped = runLayoutScript(
+      `for (let i = 0; i < 60; i++) log('entry-' + i); return 'ok';`,
+      els,
+      canvas,
+    )
+    expect(countCapped.logs).toHaveLength(50)
+  })
+
+  it('a long string return value is truncated at the entry cap', () => {
+    const r = runLayoutScript(`return ${JSON.stringify('y'.repeat(100000))};`, els, canvas)
+    expect(r.error).toBeUndefined()
+    expect(r.returned!.length).toBe(ENTRY_CAP + TRUNCATED.length)
+    expect(r.returned!.endsWith(TRUNCATED)).toBe(true)
+  })
+
+  it('the bounded serializer matches JSON.stringify for ordinary data', () => {
+    const cases: Array<[string, string]> = [
+      [`return { count: 2, left: 100 };`, '{"count":2,"left":100}'],
+      [`return { s: 'a"b\\\\c\\nd\\té' };`, '{"s":"a\\"b\\\\c\\nd\\té"}'],
+      [`return { a: 1, b: els[0].missing };`, '{"a":1}'],
+      [`return [1, 'two', null, true];`, '[1,"two",null,true]'],
+      [`return { n: 0.5, big: 1e21 };`, '{"n":0.5,"big":1e+21}'],
+    ]
+    for (const [code, expected] of cases) {
+      const r = runLayoutScript(code, els, canvas)
+      expect(r.error).toBeUndefined()
+      expect(r.returned).toBe(expected)
+    }
+  })
+
+  it('error messages are capped at the entry cap too', () => {
+    const r = runLayoutScript(`throw ${JSON.stringify('e'.repeat(100000))};`, els, canvas)
+    expect(r.error!.length).toBe(ENTRY_CAP + TRUNCATED.length)
+    expect(r.error!.endsWith(TRUNCATED)).toBe(true)
+  })
+})
+
+describe('runLayoutScript object property cap (O(1) counter)', () => {
+  const els: LayoutScriptElement[] = [
+    { id: 'a', type: 'shape', text: 'title', x: 100, y: 200, w: 300, h: 100, rotation: 0 },
+  ]
+  const canvas = { w: 1280, h: 720 }
+  const objectLiteral = (props: number): string =>
+    'return {' + Array.from({ length: props }, (_, i) => `p${i}: ${i}`).join(',') + '}'
+
+  it('object literals above 10,000 properties are rejected', () => {
+    const r = runLayoutScript(objectLiteral(10_001), els, canvas)
+    expect(r.error).toContain('too large')
+    expect(r.ops).toEqual([])
+    expect(r.edits).toEqual([])
+  })
+
+  it('a 10,000-property literal still builds (counter stays O(1) per property)', () => {
+    const r = runLayoutScript(objectLiteral(10_000), els, canvas)
+    expect(r.error).toBeUndefined()
+    expect(r.returned).toBeTruthy()
+  })
+
+  it('spreading an object with more than 10,000 properties is rejected', () => {
+    const bigJson =
+      '{"p0":0' + Array.from({ length: 10_000 }, (_, i) => `,"p${i + 1}":${i + 1}`).join('') + '}'
+    const r = runLayoutScript(
+      `const o = JSON.parse(${JSON.stringify(bigJson)}); return { ...o };`,
+      els,
+      canvas,
+    )
+    expect(r.error).toContain('too large')
+  })
+
+  it('duplicate keys do not trip the property counter', () => {
+    const r = runLayoutScript(`return { a: 1, a: 2, a: 3 };`, els, canvas)
+    expect(r.error).toBeUndefined()
+    expect(r.returned).toBe('{"a":3}')
+  })
+})
+
 // ── execute_slide_script tool chain ────────────────────────────
 
 describe('execute_slide_script tool', () => {

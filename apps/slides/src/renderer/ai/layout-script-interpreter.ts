@@ -1,6 +1,6 @@
 import { parse } from 'acorn'
 
-import { compileBoundedRegex, type BoundedRegex } from './bounded-regex'
+import { compileBoundedRegex, type BoundedRegex, type RegexStepPool } from './bounded-regex'
 
 type AstNode = {
   type: string
@@ -15,6 +15,17 @@ type HostCall = (...args: ScriptValue[]) => ScriptValue
 const MAX_STEPS = 25_000
 const MAX_CALL_DEPTH = 64
 const MAX_COLLECTION_SIZE = 10_000
+/**
+ * Per-run regex step total, owned by the interpreter (MAX_STEPS' counterpart for
+ * match steps, which run outside `tick`). Every RegexValue of the run — hoisted
+ * patterns and regex literals re-evaluated per iteration alike — charges into
+ * this one pool, so looping can never re-arm it. Sized 4× the old per-call
+ * budget: a hoisted never-matching pattern scanned across a deck at the
+ * interpreter's own step limit (≈3000 elements × 230 chars ≈ 2.1M steps) still
+ * passes, while a budget-exhausting pattern throws and aborts the script, so
+ * near-budget catastrophic calls cannot be stacked either.
+ */
+const MAX_REGEX_STEPS = 4_000_000
 
 class Builtin {
   constructor(
@@ -35,8 +46,8 @@ class ScriptFunction {
 class RegexValue {
   readonly matcher: BoundedRegex
 
-  constructor(source: string, flags: string) {
-    this.matcher = compileBoundedRegex(source, flags)
+  constructor(source: string, flags: string, pool: RegexStepPool) {
+    this.matcher = compileBoundedRegex(source, flags, pool)
   }
 }
 
@@ -103,30 +114,46 @@ function ownRecord(value: ScriptValue): value is Record<string, ScriptValue> {
   return Object.getPrototypeOf(value) === null
 }
 
-/** Convert host input/output to prototype-free JSON-like data before scripts can inspect it. */
-function cloneData(value: ScriptValue, depth = 0): ScriptValue {
-  if (depth > MAX_CALL_DEPTH) throw new Error('Layout-script data is nested too deeply')
-  if (
-    value === undefined ||
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean'
-  )
-    return value
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error('Layout-script data contains a non-finite number')
-    return value
-  }
-  if (Array.isArray(value)) {
-    if (value.length > MAX_COLLECTION_SIZE) throw new Error('Layout-script array is too large')
-    return value.map((item) => cloneData(item, depth + 1))
-  }
-  if (typeof value === 'object') {
+/**
+ * Convert host input/output to prototype-free JSON-like data before scripts can inspect it.
+ * Shared sub-objects are cloned once (memoized per call): a doubling chain like
+ * `{x:o, y:o}` repeated 20 times has 2^20 references but only ~40 distinct
+ * objects, and cloning it per reference path duplicated the structure
+ * exponentially before any size check could run.
+ */
+function cloneData(value: ScriptValue): ScriptValue {
+  const seen = new Map<object, ScriptValue>()
+  const walk = (item: ScriptValue, depth: number): ScriptValue => {
+    if (depth > MAX_CALL_DEPTH) throw new Error('Layout-script data is nested too deeply')
+    if (
+      item === undefined ||
+      item === null ||
+      typeof item === 'string' ||
+      typeof item === 'boolean'
+    )
+      return item
+    if (typeof item === 'number') {
+      if (!Number.isFinite(item)) throw new Error('Layout-script data contains a non-finite number')
+      return item
+    }
+    if (typeof item !== 'object') {
+      throw new Error(`Unsupported layout-script value type: ${typeof item}`)
+    }
+    const memoized = seen.get(item)
+    if (memoized !== undefined) return memoized
+    if (Array.isArray(item)) {
+      if (item.length > MAX_COLLECTION_SIZE) throw new Error('Layout-script array is too large')
+      const out: ScriptValue[] = []
+      seen.set(item, out)
+      for (const element of item) out.push(walk(element, depth + 1))
+      return out
+    }
     const out: Record<string, ScriptValue> = Object.create(null)
-    for (const [key, item] of Object.entries(value)) out[key] = cloneData(item, depth + 1)
+    seen.set(item, out)
+    for (const [key, element] of Object.entries(item)) out[key] = walk(element, depth + 1)
     return out
   }
-  throw new Error(`Unsupported layout-script value type: ${typeof value}`)
+  return walk(value, 0)
 }
 
 function displayValue(value: ScriptValue): string {
@@ -184,6 +211,10 @@ export function interpretLayoutScript(
       )
     }
   }
+
+  // The per-run regex step pool: one total for the whole run, so regex literals
+  // re-created per loop iteration cannot mint fresh budgets (see MAX_REGEX_STEPS).
+  const regexPool: RegexStepPool = { remaining: MAX_REGEX_STEPS }
 
   const root = new Scope()
   const exposeCall = (name: keyof LayoutInterpreterGlobals): void => {
@@ -489,7 +520,7 @@ export function interpretLayoutScript(
     switch (node.type) {
       case 'Literal': {
         const regex = node.regex as { pattern: string; flags: string } | undefined
-        return regex ? new RegexValue(regex.pattern, regex.flags) : node.value
+        return regex ? new RegexValue(regex.pattern, regex.flags, regexPool) : node.value
       }
       case 'Identifier':
         return scope.get(String(node.name))
@@ -509,16 +540,20 @@ export function interpretLayoutScript(
         return values
       }
       case 'ObjectExpression': {
-        // Arrays are capped at MAX_COLLECTION_SIZE; an object built by doubling
-        // ({x:o, y:o} chains) had no such bound and could balloon to hundreds of
-        // MB before any check ran.
+        // Arrays are capped at MAX_COLLECTION_SIZE; object literals get the same
+        // bound, tracked with an O(1) counter (an Object.keys scan per property
+        // would be O(n²) — and the doubling chain {x:o, y:o} stays cheap to
+        // BUILD since values are shared by reference; the output-size bound for
+        // that lives in the bounded serializer used by log()/return).
         const out: Record<string, ScriptValue> = Object.create(null)
+        let propertyCount = 0
         for (const property of node.properties as AstNode[]) {
           if (property.type === 'SpreadElement') {
             const spread = evaluate(property.argument as AstNode, scope)
             if (!ownRecord(spread)) throw new Error('Object spread requires a plain data object')
             Object.assign(out, spread)
-            if (Object.keys(out).length > MAX_COLLECTION_SIZE)
+            propertyCount = Object.keys(out).length
+            if (propertyCount > MAX_COLLECTION_SIZE)
               throw new Error('Layout-script object is too large')
             continue
           }
@@ -528,8 +563,9 @@ export function interpretLayoutScript(
           const key = property.computed
             ? propertyKey(evaluate(property.key as AstNode, scope))
             : String((property.key as AstNode).name ?? (property.key as AstNode).value)
+          if (!Object.prototype.hasOwnProperty.call(out, key)) propertyCount += 1
           out[key] = evaluate(property.value as AstNode, scope)
-          if (Object.keys(out).length > MAX_COLLECTION_SIZE)
+          if (propertyCount > MAX_COLLECTION_SIZE)
             throw new Error('Layout-script object is too large')
         }
         return out

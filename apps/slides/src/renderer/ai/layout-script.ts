@@ -15,6 +15,7 @@
 import type { EditParagraph } from '../../shared/ipc'
 import { FONT_SIZE_PT_MIN, FONT_SIZE_PT_MAX } from '@genoffice/pptx-ops/font-size'
 import { interpretLayoutScript } from './layout-script-interpreter'
+import { boundedJsonStringify, truncateString } from './bounded-json'
 // Debug output that flows into the next model request, per script run.
 const LOG_MAX_TOTAL_CHARS = 20_000
 const LOG_MAX_ENTRY_CHARS = 4_000
@@ -315,17 +316,19 @@ export function runLayoutScript(
   }
 
   // Entries are count-capped AND byte-capped: 50 entries of unbounded size
-  // let a script push 100+ MB of text into the next model request.
+  // let a script push 100+ MB of text into the next model request. The
+  // serializer is size-bounded: it stops at the entry cap instead of
+  // materializing the full JSON first (a {x:o, y:o} doubling chain made
+  // JSON.stringify build a ~25 MB string before the slice ran).
   let logChars = 0
   const log = (...args: unknown[]) => {
     if (logs.length >= 50 || logChars >= LOG_MAX_TOTAL_CHARS) return
     const entry = args
-      .map((a) => {
-        const text = typeof a === 'string' ? a : (JSON.stringify(a) ?? '')
-        return text.length > LOG_MAX_ENTRY_CHARS
-          ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)`
-          : text
-      })
+      .map((a) =>
+        typeof a === 'string'
+          ? truncateString(a, LOG_MAX_ENTRY_CHARS)
+          : (boundedJsonStringify(a, LOG_MAX_ENTRY_CHARS) ?? ''),
+      )
       .join(' ')
     logs.push(entry)
     logChars += entry.length
@@ -346,18 +349,18 @@ export function runLayoutScript(
       log,
     })
   } catch (err) {
+    // Errors echo back to the model too — keep them inside the same per-entry cap
     const msg = err instanceof Error ? err.message : String(err)
-    return { ops: [], edits: [], logs, error: msg }
+    return { ops: [], edits: [], logs, error: truncateString(msg, LOG_MAX_ENTRY_CHARS) }
   }
 
   let returnedStr: string | undefined
   if (returned !== undefined) {
     try {
-      const text = typeof returned === 'string' ? returned : JSON.stringify(returned)
       returnedStr =
-        text.length > LOG_MAX_ENTRY_CHARS
-          ? `${text.slice(0, LOG_MAX_ENTRY_CHARS)}…(truncated)`
-          : text
+        typeof returned === 'string'
+          ? truncateString(returned, LOG_MAX_ENTRY_CHARS)
+          : (boundedJsonStringify(returned, LOG_MAX_ENTRY_CHARS) ?? '')
     } catch {
       returnedStr = String(returned)
     }
