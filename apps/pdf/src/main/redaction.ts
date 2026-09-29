@@ -93,16 +93,35 @@ function collectImageHashes(
   return hasImage
 }
 
-/** PDFium 2.15.1 edits a shared image stream in place. Allow a single-instance
- * image, but reject a selected shared image or an image-bearing Form XObject whose
- * child transform cannot be inspected through this API. */
-function assertImageRedactionIsSafe(
+/** Boolean-only walk of a Form XObject's children: an image anywhere inside makes
+ *  the form unsafe to redact through. Same traversal as collectImageHashes, but it
+ *  skips the fingerprinting — the census already read every image's bytes. */
+function formContainsImage(
+  m: Awaited<ReturnType<typeof loadPdfium>>,
+  object: number,
+  seen: Set<number>,
+): boolean {
+  if (!object || seen.has(object)) return false
+  seen.add(object)
+  const type = m._FPDFPageObj_GetType(object)
+  if (type === FPDF_PAGEOBJ_IMAGE) return true
+  if (type !== FPDF_PAGEOBJ_FORM) return false
+  for (let i = 0; i < m._FPDFFormObj_CountObjects(object); i++) {
+    if (formContainsImage(m, m._FPDFFormObj_GetObject(object, i), seen)) return true
+  }
+  return false
+}
+
+/**
+ * One census per apply: fingerprint every image object in the document once,
+ * counting content repeats so the shared-image gate can tell a private image
+ * from a placed-many one. The document is not mutated until after the census
+ * and every region check pass, so one walk answers for all regions.
+ */
+function censusImageHashes(
   m: Awaited<ReturnType<typeof loadPdfium>>,
   doc: number,
-  page: number,
-  rect: readonly number[],
-  pageIndex: number,
-): void {
+): Map<string, number> {
   const hashes = new Map<string, number>()
   for (let p = 0; p < m._FPDF_GetPageCount(doc); p++) {
     const candidate = m._FPDF_LoadPage(doc, p)
@@ -115,6 +134,19 @@ function assertImageRedactionIsSafe(
       m._FPDF_ClosePage(candidate)
     }
   }
+  return hashes
+}
+
+/** PDFium 2.15.1 edits a shared image stream in place. Allow a single-instance
+ * image, but reject a selected shared image or an image-bearing Form XObject whose
+ * child transform cannot be inspected through this API. */
+function assertImageRedactionIsSafe(
+  m: Awaited<ReturnType<typeof loadPdfium>>,
+  hashes: Map<string, number>,
+  page: number,
+  rect: readonly number[],
+  pageIndex: number,
+): void {
   for (let i = 0; i < m._FPDFPage_CountObjects(page); i++) {
     const object = m._FPDFPage_GetObject(page, i)
     const bounds = objectBounds(m, object)
@@ -129,7 +161,7 @@ function assertImageRedactionIsSafe(
     }
     if (
       m._FPDFPageObj_GetType(object) === FPDF_PAGEOBJ_FORM &&
-      collectImageHashes(m, object, new Map(), new Set())
+      formContainsImage(m, object, new Set())
     ) {
       throw new Error(
         `redaction intersects an image Form XObject on page ${pageIndex + 1}; refusing unsafe image mutation`,
@@ -323,11 +355,14 @@ export function redactPdf(bytes: Uint8Array, regions: RedactionRegion[]): Promis
       }))
       // Do every fail-closed check before creating annotations, preserving all-or-nothing
       // behavior even when one later page contains a shared image placement.
+      // One census for the whole apply: nothing is mutated until after it and the
+      // region checks, so N rectangles cost one document walk instead of N.
+      const hashes = censusImageHashes(m, doc)
       for (const region of checked) {
         const page = m._FPDF_LoadPage(doc, region.pageIndex)
         if (!page) throw new Error(`PDFium could not load redaction page ${region.pageIndex + 1}`)
         try {
-          assertImageRedactionIsSafe(m, doc, page, region.nativeRect, region.pageIndex)
+          assertImageRedactionIsSafe(m, hashes, page, region.nativeRect, region.pageIndex)
           assertFormRedactionIsSafe(m, page, region.nativeRect, region.pageIndex)
         } finally {
           m._FPDF_ClosePage(page)
