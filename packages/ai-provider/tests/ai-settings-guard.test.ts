@@ -5,16 +5,17 @@
  * user's gsk bearer token. 'ai:stream' / 'ai:chat' consumed the same payload
  * per request without any check. The main process must schema-check first.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { sanitizeAiSettings, validCliPath } from '../src/main/ai-settings-guard'
+import { sanitizeAiSettings, validCliPath } from '../src/ai-settings-guard'
 
 const tempDirs: string[] = []
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -102,7 +103,7 @@ describe('sanitizeAiSettings', () => {
     expect(sanitized!.providers.glm.baseUrl).toBeUndefined()
   })
 
-  it('keeps only metacharacter-free cliPaths, existing when it names a path', () => {
+  it('keeps cliPaths that exist as files, drops missing paths and directories', () => {
     const real = existingFilePath()
     const sanitized = sanitizeAiSettings({
       ...baseSettings(),
@@ -115,11 +116,61 @@ describe('sanitizeAiSettings', () => {
         doubao: { apiKey: 'k', model: 'm', cliPath: 'codex' },
       },
     })
+    // rejected by the existence check (no such file), not by a character class:
+    // spawn() runs without a shell, so metacharacters are inert anyway
     expect(sanitized!.providers.glm.cliPath).toBeUndefined()
     expect(sanitized!.providers.kimi.cliPath).toBeUndefined()
     expect(sanitized!.providers.qwen.cliPath).toBe(real)
     // bare command names stay allowed: PATH resolution at spawn, ENOENT handled
     expect(sanitized!.providers.doubao.cliPath).toBe('codex')
+  })
+
+  it('keeps non-ASCII home paths (reviewer case: /Users/王/bin/codex)', () => {
+    // the old ASCII-only [\w./:\\ -] class dropped these, silently losing the
+    // saved Codex CLI path on the next settings save
+    const dir = mkdtempSync(join(tmpdir(), '王-genoffice-ai-guard-'))
+    tempDirs.push(dir)
+    const cliPath = join(dir, 'bin', 'codex')
+    mkdirSync(join(dir, 'bin'), { recursive: true })
+    writeFileSync(cliPath, '#!/bin/sh\n')
+    const sanitized = sanitizeAiSettings({
+      ...baseSettings(),
+      providers: { openai: { apiKey: 'k', model: 'm' }, codex: { apiKey: '', model: 'c', cliPath } },
+    })
+    expect(sanitized!.providers.codex.cliPath).toBe(cliPath)
+    expect(validCliPath(cliPath)).toBe(true)
+  })
+
+  it('keeps Windows-style paths with spaces and non-ASCII (reviewer case: C:\\Users\\Ana María\\codex.exe)', () => {
+    // on POSIX the reviewer's string cannot name a real file, so exercise the
+    // same shape (backslashes, dot, space, í) as a literal file name; on
+    // Windows the exact reviewer string is stat'd directly and behaves the same
+    const dir = mkdtempSync(join(tmpdir(), 'genoffice-ai-guard-'))
+    tempDirs.push(dir)
+    const cliPath = join(dir, 'C:\\Users\\Ana María\\codex.exe')
+    writeFileSync(cliPath, 'bin\n')
+    expect(validCliPath(cliPath)).toBe(true)
+  })
+
+  it('expands ~/bin/codex for the existence check and stores it expanded', () => {
+    const home = mkdtempSync(join(tmpdir(), 'genoffice-ai-guard-home-'))
+    tempDirs.push(home)
+    mkdirSync(join(home, 'bin'), { recursive: true })
+    writeFileSync(join(home, 'bin', 'codex'), '#!/bin/sh\n')
+    vi.stubEnv('HOME', home)
+    vi.stubEnv('USERPROFILE', home)
+    expect(validCliPath('~/bin/codex')).toBe(true)
+    expect(validCliPath('~/bin/missing')).toBe(false)
+    const sanitized = sanitizeAiSettings({
+      ...baseSettings(),
+      providers: {
+        openai: { apiKey: 'k', model: 'm' },
+        codex: { apiKey: '', model: 'c', cliPath: '~/bin/codex' },
+      },
+    })
+    // stored expanded: spawn() does not expand tilde and resolveCodexCliPath()
+    // would treat the raw `~/…` value as a relative command name
+    expect(sanitized!.providers.codex.cliPath).toBe(join(home, 'bin', 'codex'))
   })
 
   it('coerces scalar fields and drops non-conforming optional ones', () => {
@@ -149,13 +200,34 @@ describe('validCliPath', () => {
     expect(validCliPath('  codex  ')).toBe(true)
   })
 
-  it('rejects shell metacharacters, missing paths, and non-strings', () => {
+  it('accepts any characters in existing paths, including Unicode and spaces', () => {
     const dir = mkdtempSync(join(tmpdir(), 'genoffice-ai-guard-'))
     tempDirs.push(dir)
+    const unicode = join(dir, '工具', 'codex')
+    mkdirSync(join(dir, '工具'), { recursive: true })
+    writeFileSync(unicode, '#!/bin/sh\n')
+    const spaces = join(dir, 'App Support', 'codex.exe')
+    mkdirSync(join(dir, 'App Support'), { recursive: true })
+    writeFileSync(spaces, 'bin\n')
+    expect(validCliPath(unicode)).toBe(true)
+    expect(validCliPath(spaces)).toBe(true)
+    expect(validCliPath(join(homedir(), 'definitely-not-a-real-codex-bin'))).toBe(false)
+  })
+
+  it('treats anything without path characters as a bare command (metacharacters are inert)', () => {
+    // spawn() runs without a shell, so these resolve via PATH at spawn time
+    // and a miss is a handled ENOENT — there is deliberately no character
+    // filter left
+    expect(validCliPath('`id`')).toBe(true)
+    expect(validCliPath('$(curl x)')).toBe(true)
+    expect(validCliPath('a | b')).toBe(true)
+  })
+
+  it('rejects missing paths, directories, and non-strings', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'genoffice-ai-guard-'))
+    tempDirs.push(dir)
+    // path-like values must exist as a file
     expect(validCliPath('/bin/sh; rm -rf ~')).toBe(false)
-    expect(validCliPath('`id`')).toBe(false)
-    expect(validCliPath('$(curl x)')).toBe(false)
-    expect(validCliPath('a | b')).toBe(false)
     expect(validCliPath(join(dir, 'missing'))).toBe(false)
     expect(validCliPath(dir)).toBe(false) // exists but is a directory
     expect(validCliPath(42)).toBe(false)

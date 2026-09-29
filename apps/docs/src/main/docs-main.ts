@@ -94,6 +94,8 @@ import {
   type AiSearchProviderId,
   resolveAiSettings,
   maxOutputTokensOf,
+  sanitizeAiSettings,
+  validCliPath,
   setAiUserAgent,
   setRescueFetch,
   streamForProvider,
@@ -166,7 +168,6 @@ import {
   snapshotDocPassword,
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
-import { sanitizeAiSettings, validCliPath } from './ai-settings-guard'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
 import { printScaleOption, validPrintDim, validPrintScale } from './print-args'
 import { initDocsAutoUpdater } from './updater'

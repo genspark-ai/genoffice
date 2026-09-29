@@ -1,21 +1,22 @@
 /**
- * Schema check for renderer-supplied AI settings, shared by 'ai:set-settings'
- * (what gets persisted), 'ai:stream' / 'ai:chat' (what the main process acts
- * on), and 'ai:codex-models' (the direct cliPath probe). SECURITY.md promises
- * payloads are schema-checked in the main process; a compromised renderer must
- * not be able to plant an arbitrary cliPath (later spawn()ed by the Codex
- * app-server) or a baseUrl that would receive the user's gsk bearer token.
- * Electron-free so unit tests can import it directly.
+ * Schema check for renderer-supplied AI settings. Apps wire it into their AI
+ * IPC handlers: 'ai:set-settings' (what gets persisted), 'ai:stream' and
+ * 'ai:chat' (what the main process acts on), and 'ai:codex-models' (the direct
+ * cliPath probe). SECURITY.md promises payloads are schema-checked in the main
+ * process; a compromised renderer must not be able to plant an arbitrary
+ * cliPath (later spawn()ed by the Codex app-server) or a baseUrl that would
+ * receive the user's gsk bearer token. Electron-free so unit tests can import
+ * it directly.
  *
  * Coercion follows the file's own house style (String() narrowing like the
  * web-search handler, filename sanitizing like the style-template handler).
- * Mirrors apps/slides/src/main/ai-settings-guard.ts (PR #1492); move both into
- * @genoffice/electron-utils once that package grows an AI home.
  */
 import { statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
-import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from '@genoffice/ai-provider'
-import type { AiProviderConfig, AiProviderId, AiSettings } from '@genoffice/ai-provider'
+import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from './registry'
+import type { AiProviderConfig, AiProviderId, AiSettings } from './types'
 
 const PROVIDER_IDS = Object.keys(AI_PROVIDER_ADAPTERS) as AiProviderId[]
 
@@ -24,22 +25,36 @@ const MAX_MODEL_LENGTH = 256
 const MAX_CLI_PATH_LENGTH = 1024
 
 /**
- * Executable path accepted from the renderer: plain path characters only (no
- * shell metacharacters — it is handed to spawn() by the Codex app-server), and
- * when it names a path it must already exist as a file. A bare command name
- * ("codex") is kept: it resolves via PATH at spawn time and a miss is a
- * handled ENOENT. Empty means auto-detect.
+ * `~` / `~/…` (`~\…` on Windows) expanded against the real home directory, so
+ * a user with a non-ASCII home can keep the short form. Non-`~` values pass
+ * through untouched.
+ */
+function expandHome(value: string): string {
+  if (value === '~') return homedir()
+  if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2))
+  return value
+}
+
+/**
+ * Executable path accepted from the renderer. The Codex app-server hands it to
+ * child_process.spawn() without a shell, so metacharacters are inert and no
+ * character is rejected — including the non-ASCII user and directory names
+ * common in real home paths (`/Users/王/bin/codex`,
+ * `C:\Users\Ana María\codex.exe`). When the value looks like a path (`/`, `\`
+ * or `.` anywhere, or a leading `~`) rather than a bare command, it must exist
+ * as a file (`~` expanded for the check). A bare command name ("codex") is
+ * kept: it resolves via PATH at spawn time and a miss is a handled ENOENT.
+ * Empty means auto-detect.
  */
 export function validCliPath(raw: unknown): raw is string {
   if (typeof raw !== 'string') return false
   const value = raw.trim()
   if (value === '') return false
   if (value.length > MAX_CLI_PATH_LENGTH) return false
-  if (/[^\w./:\\ -]/.test(value)) return false
-  if (/[./\\]/.test(value)) {
+  if (/[./\\~]/.test(value)) {
     // a path, not a bare command: it must be an existing file
     try {
-      return statSync(value).isFile()
+      return statSync(expandHome(value)).isFile()
     } catch {
       return false
     }
@@ -67,7 +82,9 @@ function sanitizeProviderConfig(input: unknown): AiProviderConfig {
     if (baseUrl !== undefined) config.baseUrl = baseUrl
   }
   if (typeof raw.cliPath === 'string' && validCliPath(raw.cliPath)) {
-    config.cliPath = raw.cliPath.trim()
+    // store the ~-expanded absolute path: spawn() does not expand tilde and
+    // resolveCodexCliPath() would treat `~/…` as a relative command name
+    config.cliPath = expandHome(raw.cliPath.trim())
   }
   return config
 }
