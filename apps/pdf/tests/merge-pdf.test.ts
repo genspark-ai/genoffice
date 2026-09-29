@@ -196,7 +196,8 @@ describe('mergePdf handler', () => {
     const result = await invokeMerge({ path: base, suggestedName: 'merged.pdf' })
 
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toMatch(/pdf: merge too large — .* over the 1024 MB merge limit/)
+    if (!result.ok)
+      expect(result.error).toMatch(/pdf: merge too large — .* over the 1024 MB merge limit/)
   })
 
   it('merges an under-cap selection and writes the output', async () => {
