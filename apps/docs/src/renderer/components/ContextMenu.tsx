@@ -17,6 +17,7 @@ import { platformShortcuts } from '@genoffice/i18n'
 
 import { useI18n, type StringKey } from '../i18n/locale'
 import { wordRangeAtCaret } from '../editor/comments'
+import { bringForward, bringToFront, sendBackward, sendToBack } from '../editor/floating-z-order'
 import { pasteFromClipboard } from '../editor/paste-actions'
 import { setTableAutoFit } from '../editor/table-properties'
 import { distributeSelectedColumns } from '../editor/table-sizing'
@@ -302,34 +303,6 @@ export function EditorContextMenu({
       .updateAttributes('docProtected', { imageWrap: wrap, ...clearedPosition })
       .run()
   }
-  // Stacking order among overlapping floating pictures. z-order only has a
-  // visible effect on floating (front/behind) images, so the menu enables it
-  // there; a bring-forward on an inline image also floats it (Word parity).
-  const currentZOrder = Number((protAttrs?.imageZOrder as number | null) ?? 0)
-  const isFloatingWrap = currentWrap === 'front' || currentWrap === 'behind'
-  const setZOrder = (z: number) => {
-    const attrs: Record<string, unknown> = { imageZOrder: z }
-    // an inline image has no paint order; floating it (in front) makes the
-    // reorder meaningful, matching Word's "Bring to Front" on an inline picture
-    if (!isFloatingWrap) attrs.imageWrap = 'front'
-    editor.chain().focus().updateAttributes('docProtected', attrs).run()
-  }
-  /** z-order of every floating anchor in the document (Word's to-front/to-back are document-global) */
-  const floatingZOrders = (): number[] => {
-    const zs: number[] = [currentZOrder]
-    editor.state.doc.descendants((n) => {
-      if (
-        n.type.name === 'docProtected' &&
-        (n.attrs.imageWrap === 'front' || n.attrs.imageWrap === 'behind')
-      )
-        zs.push(Number(n.attrs.imageZOrder ?? 0))
-    })
-    return zs
-  }
-  const bringToFront = () => setZOrder(Math.max(...floatingZOrders()) + 1)
-  const sendToBack = () => setZOrder(Math.min(...floatingZOrders()) - 1)
-  const bringForward = () => setZOrder(currentZOrder + 1)
-  const sendBackward = () => setZOrder(currentZOrder - 1)
 
   const clipboard = (action: 'cut' | 'copy') => {
     editor.commands.focus()
@@ -739,16 +712,16 @@ export function EditorContextMenu({
             {item(t('appArrangeMenu'), { submenuKey: 'arrange' })}
             {submenu === 'arrange' && (
               <div className="ctx-submenu">
-                <button className="ctx-item" onClick={run(bringToFront)}>
+                <button className="ctx-item" onClick={run(() => bringToFront(editor))}>
                   <span className="ctx-label">{t('appBringToFront')}</span>
                 </button>
-                <button className="ctx-item" onClick={run(bringForward)}>
+                <button className="ctx-item" onClick={run(() => bringForward(editor))}>
                   <span className="ctx-label">{t('appBringForward')}</span>
                 </button>
-                <button className="ctx-item" onClick={run(sendBackward)}>
+                <button className="ctx-item" onClick={run(() => sendBackward(editor))}>
                   <span className="ctx-label">{t('appSendBackward')}</span>
                 </button>
-                <button className="ctx-item" onClick={run(sendToBack)}>
+                <button className="ctx-item" onClick={run(() => sendToBack(editor))}>
                   <span className="ctx-label">{t('appSendToBack')}</span>
                 </button>
               </div>
