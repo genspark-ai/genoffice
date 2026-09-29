@@ -169,7 +169,11 @@ export class FileIndexer {
         // fresh one instead of hanging too
         this.waiting.delete(id)
         this.recycleWorker()
-        resolve({ id, type: 'extract', result: { kind: 'error', error: 'worker request timed out' } })
+        resolve({
+          id,
+          type: 'extract',
+          result: { kind: 'error', error: 'worker request timed out' },
+        })
       }, this.requestTimeoutMs)
       this.waiting.set(id, (r: WorkerResponse) => {
         clearTimeout(timer)
