@@ -995,41 +995,59 @@ export default function App() {
         setActiveFormWidgetId(null)
         formControlRefs.current.clear()
       }
-      const loaded = await getDocument({
+      const task = getDocument({
         data: bytes,
         password: passwordRef.current,
         ...DOC_OPTS,
-      }).promise
-      const metadata = await loaded.getMetadata()
-      const documentInfo = metadata.info as {
-        EncryptFilterName?: string | null
-        IsXFAPresent?: boolean
-        Title?: string
-        Author?: string
-        Subject?: string
-        Keywords?: string
-      }
-      setDocInfo({
-        title: documentInfo.Title ?? '',
-        author: documentInfo.Author ?? '',
-        subject: documentInfo.Subject ?? '',
-        keywords: documentInfo.Keywords ?? '',
       })
-      const formFeatures = documentFormFeatures(documentInfo, bytes)
-      setFormHasXfa(formFeatures.hasXfa)
-      setDocumentEncrypted(formFeatures.encrypted)
+      let loaded: PDFDocumentProxy
+      try {
+        loaded = await task.promise
+      } catch (err) {
+        // a failed open (wrong password, corrupt file) leaves the rejected task
+        // holding the file bytes and its worker: retire it before surfacing
+        void task.destroy()
+        throw err
+      }
       const all: PageSize[] = []
       const rots: number[] = []
       const origins: [number, number][] = []
       const userUnits: number[] = []
-      for (let i = 1; i <= loaded.numPages; i++) {
-        const page = await loaded.getPage(i)
-        // Unrotated size; display size is derived by geom from the total rotation
-        const vp = page.getViewport({ scale: 1, rotation: 0 })
-        all.push({ width: vp.width, height: vp.height })
-        rots.push(page.rotate ?? 0)
-        origins.push([page.view[0]!, page.view[1]!])
-        userUnits.push(page.userUnit ?? 1)
+      try {
+        const metadata = await loaded.getMetadata()
+        const documentInfo = metadata.info as {
+          EncryptFilterName?: string | null
+          IsXFAPresent?: boolean
+          Title?: string
+          Author?: string
+          Subject?: string
+          Keywords?: string
+        }
+        setDocInfo({
+          title: documentInfo.Title ?? '',
+          author: documentInfo.Author ?? '',
+          subject: documentInfo.Subject ?? '',
+          keywords: documentInfo.Keywords ?? '',
+        })
+        const formFeatures = documentFormFeatures(documentInfo, bytes)
+        setFormHasXfa(formFeatures.hasXfa)
+        setDocumentEncrypted(formFeatures.encrypted)
+        for (let i = 1; i <= loaded.numPages; i++) {
+          const page = await loaded.getPage(i)
+          // Unrotated size; display size is derived by geom from the total rotation
+          const vp = page.getViewport({ scale: 1, rotation: 0 })
+          all.push({ width: vp.width, height: vp.height })
+          rots.push(page.rotate ?? 0)
+          origins.push([page.view[0]!, page.view[1]!])
+          userUnits.push(page.userUnit ?? 1)
+        }
+      } catch (err) {
+        // getMetadata/page probing failed after the document resolved but before
+        // setDoc adopted it: destroy the half-open document (pdfjs-dist 6.x
+        // removed PDFDocumentProxy.destroy(); go through the loading task) and
+        // keep the previous document on screen, then surface the error
+        void loaded.loadingTask.destroy()
+        throw err
       }
       try {
         setFormCatalog(await buildFormCatalog(loaded))
