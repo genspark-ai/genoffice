@@ -66,9 +66,9 @@ function attrsOf(
 }
 
 function close(editor: Editor): void {
-  const element = editor.view.dom as HTMLElement
+  const container = (editor.view.dom as HTMLElement).parentElement
   editor.destroy()
-  element.remove()
+  container?.remove()
 }
 
 describe('floating z-order commands', () => {
@@ -119,5 +119,15 @@ describe('floating z-order commands', () => {
     sendBackward(editor)
     expect(attrsOf(editor, 0)).toEqual({ imageWrap: 'front', imageZOrder: 3 })
     close(editor)
+  })
+
+  it('steps a behind anchor one rank and keeps its wrap', async () => {
+    const editor = await openAnchors()
+    setAttrs(editor, 0, { imageWrap: 'behind', imageZOrder: -1 })
+    select(editor, 0)
+    bringForward(editor)
+    expect(attrsOf(editor, 0)).toEqual({ imageWrap: 'behind', imageZOrder: 0 })
+    close(editor)
+    expect(document.body.children).toHaveLength(0)
   })
 })

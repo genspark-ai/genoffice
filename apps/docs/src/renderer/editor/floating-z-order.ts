@@ -6,10 +6,10 @@ import type { Editor } from '@tiptap/core'
 
 /** Rank of the selected anchor (docProtected): imageZOrder, absent = 0. */
 function currentZOrder(editor: Editor): number {
-  return Number((editor.getAttributes('docProtected').imageZOrder as number | null) ?? 0)
+  return Number(editor.getAttributes('docProtected').imageZOrder ?? 0)
 }
 
-/** z-order of every floating anchor in the document (Word's to-front/to-back are document-global) */
+/** z-order of every floating anchor in the document plus the selected anchor's own rank (an inline selection is not in the document list, so its rank is seeded here); Word's to-front/to-back are document-global */
 function floatingZOrders(editor: Editor, rank: number): number[] {
   const zs: number[] = [rank]
   editor.state.doc.descendants((n) => {
@@ -23,9 +23,9 @@ function floatingZOrders(editor: Editor, rank: number): number[] {
 }
 
 /** Apply a rank; an inline anchor has no paint order, so it floats in front to make the reorder meaningful. */
-export function setZOrder(editor: Editor, z: number): void {
+function setZOrder(editor: Editor, z: number): void {
   const attrs: Record<string, unknown> = { imageZOrder: z }
-  const wrap = editor.getAttributes('docProtected').imageWrap as string | null | undefined
+  const wrap = editor.getAttributes('docProtected').imageWrap
   if (wrap !== 'front' && wrap !== 'behind') attrs.imageWrap = 'front'
   editor.chain().focus().updateAttributes('docProtected', attrs).run()
 }
