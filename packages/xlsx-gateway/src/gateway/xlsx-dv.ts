@@ -247,6 +247,10 @@ function formulaText(type: string | undefined, raw: unknown): string | undefined
 /// Impossible calendar dates or clock times return undefined so the caller
 /// keeps the original text instead of writing a silently wrong serial; a
 /// pre-1900 year throws DvEditError, because it has no serial to write.
+/// Serials 1–59 sit one day before that linear rule, because the 1900 system
+/// counts a 29-Feb-1900 that never existed; 1900-03-01 (61) onward is already
+/// correct. The read side (formatSerial in @genoffice/file-parse) shifts back
+/// the same way in reverse, so both ends have to agree.
 function dateToSerial(text: string): number | undefined {
   const match =
     /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T ](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(
@@ -279,7 +283,11 @@ function dateToSerial(text: string): number | undefined {
     seconds = hourNum * 3600 + minuteNum * 60 + secondNum
   }
   const days = (Date.UTC(yearNum, monthNum - 1, dayNum) - Date.UTC(1899, 11, 30)) / 86_400_000
-  return seconds === 0 ? days : days + seconds / 86_400
+  // The linear count already includes the phantom day, so 1900-01-01..1900-02-28
+  // each need one day back to land on the serial Excel stores (and that
+  // formatSerial reads back out).
+  const serial = days < 61 ? days - 1 : days
+  return seconds === 0 ? serial : serial + seconds / 86_400
 }
 
 /// Days in a 1-based month, with the Gregorian leap-year rule for February.
