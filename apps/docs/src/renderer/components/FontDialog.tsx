@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/core'
 import type { Selection, Transaction } from '@tiptap/pm/state'
 import { Dropdown, isSymbolFontFamily, type DropdownOption } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor } from '../font-list'
+import { fontFamiliesFor, systemFamiliesBesidesCandidates } from '../font-list'
 import { fontSizeLabel, fontSizeOptions, parseFontSize } from '../font-sizes'
 import { useSystemFontFamilies } from '../system-fonts'
 import { charScaleEm, cssFontFamily, wordKerns } from '../line-metrics'
@@ -172,9 +172,12 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
   const modalKeys = useModalKeys(onClose)
   const fontFamilies = fontFamiliesFor(lang)
   const sizeOptions = fontSizeOptions(lang)
-  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const { families: allSystemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
   // the dialog opens from a click, so activation is still live here
   useEffect(() => loadSystemFonts(), [loadSystemFonts])
+  // every candidate stays listed (the machine may genuinely lack some), so the
+  // system section is the candidates-deduped remainder: no builtin is listed twice
+  const systemFontFamilies = systemFamiliesBesidesCandidates(fontFamilies, allSystemFontFamilies)
   const textAttrs = editor.getAttributes('docTextStyle')
   const initialStyle = editor.isActive('bold')
     ? editor.isActive('italic')

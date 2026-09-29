@@ -29,8 +29,8 @@ function loadSystemFontFamilies(): Promise<readonly string[]> {
 /// Empty until load() runs — call it from the picker's open click so the
 /// Local Font Access API sees user activation; cached for the page lifetime,
 /// and on failure the pickers just keep the built-in list. Returns every
-/// family: candidates vs system section is decided per render by
-/// partitionFontFamilies (which also hides candidates the machine lacks).
+/// family: the pickers dedupe the candidate names where the two sections
+/// merge (docs keeps every candidate visible, so it never partitions).
 export function useSystemFontFamilies(): {
   readonly families: readonly string[]
   readonly load: () => void

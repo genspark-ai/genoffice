@@ -196,3 +196,5 @@ export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>
   return (lang: Lang, key: keyof D, params?: Params): string =>
     format(platformShortcuts(dicts[lang][key]), params)
 }
+
+export * from './font-names'

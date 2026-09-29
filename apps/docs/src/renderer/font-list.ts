@@ -4,10 +4,15 @@ import type { Lang } from '@genoffice/i18n'
  * The suite-wide candidate lists live in @genoffice/ui so every app offers the
  * same fonts; this module re-exports them and keeps the docx-specific helpers.
  */
-export { BUILTIN_FONT_FAMILIES, fontFamiliesFor, partitionFontFamilies } from '@genoffice/ui'
+export {
+  BUILTIN_FONT_FAMILIES,
+  fontFamiliesFor,
+  partitionFontFamilies,
+  systemFamiliesBesidesCandidates,
+} from '@genoffice/ui'
 
 const EAST_ASIAN_FONT_RE =
-  /[⺀-鿿豈-﫿぀-ヿㇰ-ㇿ가-힯]|sim(sun|hei)|nsimsun|kaiti|fangsong|dengxian|yahei|songti|heiti|xingkai|lisu|youyuan|st(zhongsong|song|kai|fangsong|xihei|hupo|liti|caiyun)|pingfang|hiragino|meiryo|osaka|kozuka|yu (gothic|mincho)|yugoth|ms (ui )?p?(gothic|mincho)|biz ud|malgun|batang|gulim|dotum|gungsuh|m(ye|yu)ngjo|nanum|apple (sd )?gothic|applemyungjo|jhenghei|p?mingliu|biaukai|dfkai|kaiu|source han|noto (sans|serif) (cjk|sc|tc|hk|jp|kr)|wenquanyi/i
+  /[\u2E80-\u9FFF\uF900-\uFAFF\u3040-\u30FF\u31F0-\u31FF\uAC00-\uD7AF]|sim(sun|hei)|nsimsun|kaiti|fangsong|dengxian|yahei|songti|heiti|xingkai|lisu|youyuan|st(zhongsong|song|kai|fangsong|xihei|hupo|liti|caiyun)|pingfang|hiragino|meiryo|osaka|kozuka|yu (gothic|mincho)|yugoth|ms (ui )?p?(gothic|mincho)|biz ud|malgun|batang|gulim|dotum|gungsuh|m(ye|yu)ngjo|nanum|apple (sd )?gothic|applemyungjo|jhenghei|p?mingliu|biaukai|dfkai|kaiu|source han|noto (sans|serif) (cjk|sc|tc|hk|jp|kr)|wenquanyi/i
 
 /**
  * Which rFonts slot a font-box pick should target: East Asian names go to
