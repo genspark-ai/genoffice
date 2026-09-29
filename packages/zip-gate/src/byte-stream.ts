@@ -39,7 +39,7 @@ export function streamBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * object, same runtime contract; only the two libs' generics disagree.
  */
 export function decompressionStream(
-  format: 'deflate-raw',
+  format: 'deflate' | 'deflate-raw' | 'gzip',
 ): TransformStream<Uint8Array, Uint8Array> {
   return new DecompressionStream(format) as unknown as TransformStream<Uint8Array, Uint8Array>
 }
