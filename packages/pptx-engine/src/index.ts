@@ -2041,7 +2041,13 @@ function ensureDefaultContentType(archive: PackageArchive, ext: string, contentT
   // declaration and <Types> — outside the root element — and every OPC reader
   // would then reject the package (#1518).
   const def = `<Default Extension="${ext}" ContentType="${contentType}"/>`
-  archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', () => `${def}</Types>`), 'utf8'))
+  archive.entries.set(
+    ctPath,
+    Buffer.from(
+      ct.replace('</Types>', () => `${def}</Types>`),
+      'utf8',
+    ),
+  )
 }
 
 const MIME_BY_EXT: Record<string, string> = {
