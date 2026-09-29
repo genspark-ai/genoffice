@@ -67,16 +67,21 @@ function metaOf(provider: ByokMediaProviderId): AiMediaProviderMeta {
 
 /** base URL of the OpenAI-shaped endpoints (images + chat) for a provider */
 function openAiBase(provider: ByokMediaProviderId, config: AiMediaProviderConfig): string {
-  if (provider === 'qwen') return `${dashscopeRoot(config)}/compatible-mode/v1`
+  if (provider === 'qwen') return endpointUrl(dashscopeRoot(config), '/compatible-mode/v1')
   const meta = metaOf(provider)
   return trimSlash(config.baseUrl || meta.defaultBaseUrl || OPENAI_IMAGES_BASE_URL)
 }
 
-/** DashScope root; a pasted compatible-mode or api/v1 URL is reduced to it */
+/**
+ * DashScope root; a pasted compatible-mode or api/v1 URL is reduced to it. The
+ * suffixes are stripped from the pathname, not the whole string: a base URL
+ * carrying a query (gateway style) ends with `?...`, so an anchored replace on
+ * the raw string would miss and the suffix would ride along.
+ */
 function dashscopeRoot(config: AiMediaProviderConfig): string {
-  return trimSlash(config.baseUrl || DASHSCOPE_BASE_URL)
-    .replace(/\/compatible-mode\/v1$/, '')
-    .replace(/\/api\/v1$/, '')
+  const url = new URL(config.baseUrl || DASHSCOPE_BASE_URL)
+  url.pathname = trimSlash(url.pathname).replace(/(\/compatible-mode\/v1|\/api\/v1)$/, '')
+  return url.toString()
 }
 
 function geminiBase(config: AiMediaProviderConfig): string {
@@ -350,7 +355,7 @@ async function generateImageDashscope(
   }
   const size = input.aspectRatio ? DASHSCOPE_SIZES[input.aspectRatio] : undefined
   const resp = await aiFetch(
-    `${dashscopeRoot(config)}/api/v1/services/aigc/multimodal-generation/generation`,
+    endpointUrl(dashscopeRoot(config), '/api/v1/services/aigc/multimodal-generation/generation'),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...bearer(config) },
@@ -567,8 +572,11 @@ async function geminiUploadFile(
   signal: AbortSignal,
 ): Promise<{ file_data: { mime_type: string; file_uri: string } }> {
   const base = geminiBase(config)
-  const root = base.replace(/\/v1(beta)?$/, '')
-  const start = await aiFetch(`${root}/upload/v1beta/files`, {
+  // the Files upload lives outside the versioned path; strip the version from
+  // the pathname (not the raw string) so a query in the base survives the strip
+  const root = new URL(base)
+  root.pathname = trimSlash(root.pathname).replace(/\/v1(beta)?$/, '')
+  const start = await aiFetch(endpointUrl(root.toString(), '/upload/v1beta/files'), {
     method: 'POST',
     headers: {
       ...geminiHeaders(config),
@@ -632,7 +640,7 @@ async function analyzeMediaGemini(
         : await geminiUploadFile(config, blob, signal),
     )
   }
-  const resp = await aiFetch(`${geminiBase(config)}/models/${model}:generateContent`, {
+  const resp = await aiFetch(endpointUrl(geminiBase(config), `/models/${model}:generateContent`), {
     method: 'POST',
     headers: geminiHeaders(config),
     body: JSON.stringify({
@@ -729,16 +737,21 @@ export async function testMediaProvider(
     const meta = metaOf(provider)
     requireBaseUrl(meta, config)
     const guard = withTimeout(signal, TEST_TIMEOUT_MS)
-    const resp =
-      provider === 'gemini'
-        ? await aiFetch(`${geminiBase(config)}/models?pageSize=1`, {
-            headers: { 'x-goog-api-key': config.apiKey },
-            signal: guard,
-          })
-        : await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
-            headers: bearer(config),
-            signal: guard,
-          })
+    let resp: Response
+    if (provider === 'gemini') {
+      // pageSize merges with a query pinned in the base URL instead of replacing it
+      const models = new URL(endpointUrl(geminiBase(config), '/models'))
+      models.searchParams.set('pageSize', '1')
+      resp = await aiFetch(models.toString(), {
+        headers: { 'x-goog-api-key': config.apiKey },
+        signal: guard,
+      })
+    } else {
+      resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
+        headers: bearer(config),
+        signal: guard,
+      })
+    }
     if (resp.ok) return { ok: true }
     // Vendors without a model-listing endpoint answer 404/405 to a valid
     // key, so those statuses still mean the credentials are usable.

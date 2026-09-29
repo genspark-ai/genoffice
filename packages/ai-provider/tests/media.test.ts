@@ -573,6 +573,201 @@ describe('testMediaProvider', () => {
   })
 })
 
+describe('endpoint composition with a query string in the base URL', () => {
+  /** gateway-style base: a path prefix and a pinned query parameter */
+  const queryBase = 'https://gw.example.com/v1?key=abc'
+
+  it('keeps the query when appending the images path to a custom base', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'custom',
+      { apiKey: '', baseUrl: queryBase, imageModel: 'flux', analysisModel: '' },
+      { prompt: 'a cat' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/v1/images/generations?key=abc',
+    )
+  })
+
+  it('keeps the query when appending the chat path to a custom base', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeMediaWithProvider(
+      'custom',
+      { apiKey: '', baseUrl: queryBase, imageModel: '', analysisModel: 'vision-1' },
+      { media: [{ bytes: PNG, mime: 'image/png' }], requirements: 'describe' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/v1/chat/completions?key=abc',
+    )
+  })
+
+  it('appends the path of a trailing-slash base without query (unchanged)', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'custom',
+      { apiKey: '', baseUrl: 'http://localhost:1234/v1/', imageModel: 'flux', analysisModel: '' },
+      { prompt: 'a cat' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'http://localhost:1234/v1/images/generations',
+    )
+  })
+
+  it('rides the compatible-mode suffix on the path, keeping the query (qwen chat)', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeMediaWithProvider(
+      'qwen',
+      {
+        apiKey: 'k',
+        baseUrl: 'https://gw.example.com/ds?key=abc',
+        imageModel: '',
+        analysisModel: 'qwen3-vl-plus',
+      },
+      { media: [{ bytes: PNG, mime: 'image/png' }], requirements: 'describe' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/ds/compatible-mode/v1/chat/completions?key=abc',
+    )
+  })
+
+  it('builds the DashScope generation URL on the path, keeping the query (qwen image)', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes('multimodal-generation')
+        ? jsonResponse({
+            output: {
+              choices: [{ message: { content: [{ image: 'https://oss.example/q.png' }] } }],
+            },
+          })
+        : new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'qwen',
+      {
+        apiKey: 'k',
+        baseUrl: 'https://gw.example.com/ds?key=abc',
+        imageModel: 'qwen-image-plus',
+        analysisModel: '',
+      },
+      { prompt: 'a fox' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/ds/api/v1/services/aigc/multimodal-generation/generation?key=abc',
+    )
+  })
+
+  it('reduces a pasted compatible-mode URL that carries a query to the DashScope root', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes('multimodal-generation')
+        ? jsonResponse({
+            output: {
+              choices: [{ message: { content: [{ image: 'https://oss.example/q.png' }] } }],
+            },
+          })
+        : new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'qwen',
+      {
+        apiKey: 'k',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1?x=1',
+        imageModel: 'qwen-image-plus',
+        analysisModel: '',
+      },
+      { prompt: 'a fox' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation?x=1',
+    )
+  })
+
+  it('keeps the query when composing the Gemini generateContent URL', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        candidates: [
+          { content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_B64 } }] } },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'gemini',
+      {
+        apiKey: 'AIza',
+        baseUrl: 'https://gw.example.com/v1beta?key=abc',
+        imageModel: 'gemini-3.1-flash-image',
+        analysisModel: '',
+      },
+      { prompt: 'a dog' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=abc',
+    )
+  })
+
+  it('keeps the query when composing the Gemini inline-analysis URL', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ candidates: [{ content: { parts: [{ text: 'a cat' }] } }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await analyzeMediaWithProvider(
+      'gemini',
+      {
+        apiKey: 'AIza',
+        baseUrl: 'https://gw.example.com/v1beta?key=abc',
+        imageModel: '',
+        analysisModel: 'gemini-3.8-flash',
+      },
+      { media: [{ bytes: PNG, mime: 'image/png' }], requirements: 'describe' },
+    )
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/v1beta/models/gemini-3.8-flash:generateContent?key=abc',
+    )
+  })
+
+  it('uploads through the Files API on the path and keeps the query for oversized media', async () => {
+    // one byte over the inline cap forces the Files API route
+    const huge = new Uint8Array(18 * 1024 * 1024 + 1)
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/upload/session')) {
+        return jsonResponse({
+          file: { state: 'ACTIVE', uri: 'https://files.example/1', mimeType: 'video/mp4' },
+        })
+      }
+      if (url.includes('/upload/')) {
+        return new Response('', {
+          status: 200,
+          headers: { 'x-goog-upload-url': 'https://gw.example.com/upload/session?up=1' },
+        })
+      }
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: 'a summary' }] } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const text = await analyzeMediaWithProvider(
+      'gemini',
+      {
+        apiKey: 'AIza',
+        baseUrl: 'https://gw.example.com/v1beta?key=abc',
+        imageModel: '',
+        analysisModel: 'gemini-3.8-flash',
+      },
+      { media: [{ bytes: huge, mime: 'video/mp4', name: 'clip.mp4' }], requirements: 'summarize' },
+    )
+    expect(text).toBe('a summary')
+    const urls = fetchMock.mock.calls.map((c) => (c as unknown as [string])[0])
+    expect(urls[0]).toBe('https://gw.example.com/upload/v1beta/files?key=abc')
+    expect(urls[1]).toBe('https://gw.example.com/upload/session?up=1')
+    expect(urls[2]).toBe(
+      'https://gw.example.com/v1beta/models/gemini-3.8-flash:generateContent?key=abc',
+    )
+  })
+})
+
 describe('a failed media request does not buffer the whole error body', () => {
   /** an error body far larger than any diagnostic needs; counts what the reader pulls */
   function hugeErrorBody(): { response: Response; pulled: () => number } {

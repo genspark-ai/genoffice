@@ -54,4 +54,33 @@ describe('testMediaProvider connection test', () => {
     expect(result.error).toMatch(/500/)
     expect(result.error).toMatch(/server error/i)
   })
+
+  it('appends /models on the path of an OpenAI-shaped base that carries a query', async () => {
+    const fetchMock = vi.fn(async () => errorResponse({ data: [] }, 404))
+    vi.stubGlobal('fetch', fetchMock)
+    await testMediaProvider('custom', {
+      ...config,
+      baseUrl: 'https://gw.example.com/v1?key=abc',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/v1/models?key=abc',
+    )
+  })
+
+  it('merges pageSize into the query of a Gemini base that already carries one', async () => {
+    const fetchMock = vi.fn(async () => errorResponse({ models: [] }, 200))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await testMediaProvider('gemini', {
+      ...config,
+      baseUrl: 'https://gw.example.com/v1beta?key=abc',
+      imageModel: '',
+      analysisModel: '',
+    })
+    expect(result).toEqual({ ok: true })
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      'https://gw.example.com/v1beta/models?key=abc&pageSize=1',
+    )
+  })
 })
