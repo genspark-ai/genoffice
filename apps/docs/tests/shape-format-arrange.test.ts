@@ -69,7 +69,7 @@ describe('the Shape Format Arrange group', () => {
   it('is only on screen while a shape is selected', async () => {
     const { editor } = await openBlankDoc()
     const { container, root, render } = mountRibbon(editor)
-    expect(tipped(container, 'appBringToFront') ?? null).toBeNull()
+    expect(tipped(container, 'appBringToFront')).toBeNull()
 
     selectShape(editor)
     // the ribbon switches to Shape Format itself once the shape is selected

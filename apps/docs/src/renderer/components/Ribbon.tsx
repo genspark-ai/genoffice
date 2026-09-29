@@ -558,6 +558,15 @@ const CELL_TEXT_DIRECTIONS: Array<[CellTextDirection, StringKey]> = [
 ]
 const IMAGE_TABS = ['pictureFormat'] as const
 const SHAPE_TABS = ['shapeFormat'] as const
+/** Shape Format ▸ Arrange ordering: label + glyph + command, in Word order */
+const ARRANGE_ORDER_ITEMS: Array<
+  [StringKey, (props: { size?: number }) => ReactNode, (editor: Editor) => void]
+> = [
+  ['appBringToFront', IconBringToFront, bringToFront],
+  ['appBringForward', IconBringForward, bringForward],
+  ['appSendBackward', IconSendBackward, sendBackward],
+  ['appSendToBack', IconSendToBack, sendToBack],
+]
 const HF_TABS = ['headerFooter'] as const
 type RibbonTab =
   | (typeof TABS)[number]
@@ -2256,16 +2265,7 @@ function RibbonInner({
                 />
               </div>
               <div className="table-tool-row">
-                {(
-                  [
-                    ['appBringToFront', IconBringToFront, bringToFront],
-                    ['appBringForward', IconBringForward, bringForward],
-                    ['appSendBackward', IconSendBackward, sendBackward],
-                    ['appSendToBack', IconSendToBack, sendToBack],
-                  ] as Array<
-                    [StringKey, (props: { size?: number }) => ReactNode, (editor: Editor) => void]
-                  >
-                ).map(([label, Icon, action]) => (
+                {ARRANGE_ORDER_ITEMS.map(([label, Icon, action]) => (
                   <button
                     key={label}
                     className="table-tool-button"
