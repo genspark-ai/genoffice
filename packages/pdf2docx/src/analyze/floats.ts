@@ -4,7 +4,14 @@
  * TOP of it (a backdrop) — becomes an anchored float; everything else keeps
  * P1's inline-image treatment. Never drops an image either way.
  */
-import { intersectArea, maxOf, minOf, overlapRatio, rectArea, verticalOverlapRatio } from '../geometry'
+import {
+  intersectArea,
+  maxOf,
+  minOf,
+  overlapRatio,
+  rectArea,
+  verticalOverlapRatio,
+} from '../geometry'
 import type { Rect } from '../geometry'
 import type { ImageBlock } from '../ir'
 import type { LineUnit } from './units'
