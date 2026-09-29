@@ -48,7 +48,15 @@ describe('sanitizeAiSettings', () => {
   })
 
   it('rejects payloads that are not the right shape at all', () => {
-    for (const bad of [null, undefined, 42, 'settings', [], { provider: 'nope' }, { provider: 'openai' }]) {
+    for (const bad of [
+      null,
+      undefined,
+      42,
+      'settings',
+      [],
+      { provider: 'nope' },
+      { provider: 'openai' },
+    ]) {
       expect(sanitizeAiSettings(bad)).toBeNull()
     }
   })

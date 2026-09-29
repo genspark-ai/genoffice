@@ -9,7 +9,7 @@
  * Coercion follows the file's own house style (String() narrowing like the
  * web-search handler, filename sanitizing like the style-template handler).
  */
-import { existsSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 
 import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from '@genoffice/ai-provider'
 import type { AiProviderConfig, AiProviderId, AiSettings } from '@genoffice/ai-provider'

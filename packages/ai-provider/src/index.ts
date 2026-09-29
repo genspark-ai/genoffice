@@ -67,7 +67,12 @@ export type {
   GenerateImageInput,
   MediaBlob,
 } from './media-protocols'
-export { AI_PROVIDER_ADAPTERS, getProviderAdapter, modelLacksVision, normalizeBaseUrl } from './registry'
+export {
+  AI_PROVIDER_ADAPTERS,
+  getProviderAdapter,
+  modelLacksVision,
+  normalizeBaseUrl,
+} from './registry'
 export type {
   AiProtocol,
   ProviderAdapter,
