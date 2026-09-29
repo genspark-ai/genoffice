@@ -51,9 +51,9 @@ describe('shouldRunSaveTick', () => {
 
   it('an AutoSave real save makes the recovery tick no-op via the empty journal', () => {
     // after AutoSave flushed, the journal is clean: recovery has nothing to copy
-    expect(
-      shouldRunSaveTick(dirtyWorkbookState({ kind: 'recovery', journalEmpty: true })),
-    ).toBe(false)
+    expect(shouldRunSaveTick(dirtyWorkbookState({ kind: 'recovery', journalEmpty: true }))).toBe(
+      false,
+    )
   })
 
   it('the 30 s crash-recovery guarantee holds with AutoSave off', () => {
