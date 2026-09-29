@@ -48,6 +48,7 @@ import {
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import { applyCase, type CaseMode } from '../editor/case-transform'
 import { isRtlUiLang, setParagraphDirection, setSelectionAlign } from '../editor/direction'
+import { bringForward, bringToFront, sendBackward, sendToBack } from '../editor/floating-z-order'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
 import { stepParagraphIndent } from '../editor/indent'
 import { pasteFromClipboard } from '../editor/paste-actions'
@@ -217,6 +218,10 @@ import {
   IconSearch,
   IconStylesPane,
   IconSelectAll,
+  IconBringForward,
+  IconBringToFront,
+  IconSendBackward,
+  IconSendToBack,
 } from './icons'
 interface RibbonProps {
   /** App keyboard shortcuts reuse ribbon closures through here (font-size stepping keeps its coalescing) */
@@ -2227,6 +2232,57 @@ function RibbonInner({
                 <div className="ribbon-group-label">{t('ribbonGroupText')}</div>
               </div>
             )}
+            <div className="ribbon-sep" />
+            {/* ---- Arrange: wrap text / stacking order, mirroring the Picture Format group ---- */}
+            <div className="table-tool-group">
+              <div className="table-tool-row">
+                <Dropdown
+                  className="rb-wrap-dd"
+                  disabled={!canEdit}
+                  tip={t('ribbonWrapText')}
+                  value={fs.imageWrap ?? ''}
+                  options={WRAP_OPTIONS.map((opt) => ({
+                    value: opt.value ?? '',
+                    label: t(opt.labelKey),
+                  }))}
+                  onPick={(v) => {
+                    if (!canEdit) return
+                    editor
+                      .chain()
+                      .focus()
+                      .updateAttributes('docProtected', { imageWrap: v || null })
+                      .run()
+                  }}
+                />
+              </div>
+              <div className="table-tool-row">
+                {(
+                  [
+                    ['appBringToFront', IconBringToFront, bringToFront],
+                    ['appBringForward', IconBringForward, bringForward],
+                    ['appSendBackward', IconSendBackward, sendBackward],
+                    ['appSendToBack', IconSendToBack, sendToBack],
+                  ] as Array<
+                    [StringKey, (props: { size?: number }) => ReactNode, (editor: Editor) => void]
+                  >
+                ).map(([label, Icon, action]) => (
+                  <button
+                    key={label}
+                    className="table-tool-button"
+                    disabled={!canEdit}
+                    data-tip={t(label)}
+                    aria-label={t(label)}
+                    onClick={() => {
+                      if (!canEdit) return
+                      action(editor)
+                    }}
+                  >
+                    <Icon size={17} />
+                  </button>
+                ))}
+              </div>
+              <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
+            </div>
           </div>
         ) : tab === 'pictureFormat' && inImage ? (
           <div className="table-ribbon-body">
