@@ -1051,10 +1051,12 @@ export const workbookRecalcRequestSchema = z
             sheetId: z.string().min(1),
             range: z
               .object({
-                startRow: z.number().int().nonnegative(),
-                endRow: z.number().int().nonnegative(),
-                startColumn: z.number().int().nonnegative(),
-                endColumn: z.number().int().nonnegative(),
+                // the xlsx sheet limits, 0-indexed — a larger value would reach
+                // the Rust engine as usize and truncate on the i32 cast there
+                startRow: z.number().int().nonnegative().max(1_048_575),
+                endRow: z.number().int().nonnegative().max(1_048_575),
+                startColumn: z.number().int().nonnegative().max(16_383),
+                endColumn: z.number().int().nonnegative().max(16_383),
               })
               .strict(),
           })
