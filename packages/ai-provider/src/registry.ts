@@ -115,7 +115,7 @@ const OPENCODE_GATEWAY_ROOTS = {
  * up in request logs and error messages, and the api key field is the
  * supported place for them.
  */
-function normalizeBaseUrl(raw: string | undefined, fallback: string): string {
+export function normalizeBaseUrl(raw: string | undefined, fallback: string): string {
   const candidate = (raw ?? fallback).trim()
   if (candidate === '' || candidate.length > 2048) {
     throw new Error('Base URL must be a non-empty http(s) URL under 2048 characters')
