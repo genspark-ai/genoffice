@@ -54,15 +54,15 @@ describe('ShutdownLatch', () => {
     latch.mark()
     expect(latch.active).toBe(true)
     // designed quit-time behavior: proceed without prompting
-    expect(closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active })).toBe(
-      'proceed',
-    )
+    expect(
+      closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active }),
+    ).toBe('proceed')
     // quit vetoed (user hit Cancel on a prompt) → later closes are interactive
     latch.reset()
     expect(latch.active).toBe(false)
-    expect(closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active })).toBe(
-      'prompt',
-    )
+    expect(
+      closeGuardDecision({ pendingEdits: 3, destroyed: false, shuttingDown: latch.active }),
+    ).toBe('prompt')
   })
 
   it('re-arms for the next quit after a reset', () => {
@@ -70,9 +70,9 @@ describe('ShutdownLatch', () => {
     latch.mark()
     latch.reset()
     latch.mark()
-    expect(closeGuardDecision({ pendingEdits: 1, destroyed: false, shuttingDown: latch.active })).toBe(
-      'proceed',
-    )
+    expect(
+      closeGuardDecision({ pendingEdits: 1, destroyed: false, shuttingDown: latch.active }),
+    ).toBe('proceed')
   })
 })
 
