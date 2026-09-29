@@ -41,7 +41,10 @@ export function parseArgs(
       if (booleans.has(key)) {
         throw new CliError(
           EXIT.usage,
-          `--${key} is a boolean flag; use --${key} or --no-${key}, not --${key}=<value>`,
+          // The parser has no --no-<flag> negation (--no-force would store
+          // flags['no-force']=true and be silently ignored), so the message
+          // must not suggest a spelling that does nothing.
+          `--${key} is a boolean flag; use --${key}, not --${key}=<value>`,
           undefined,
           { reason: 'invalid_argument' },
         )

@@ -10,6 +10,15 @@ describe('boolean flags reject =values', () => {
     )
   })
 
+  it('the usage error names only spellings the parser actually supports', () => {
+    // There is no --no-<flag> negation in parseArgs (--no-force would store
+    // flags['no-force']=true and be silently ignored), so the error must not
+    // suggest it.
+    expect(() => parseArgs(['--force=false'], new Set(['force']))).toThrow(
+      '--force is a boolean flag; use --force, not --force=<value>',
+    )
+  })
+
   it('plain boolean flags and string =values keep working', () => {
     const a = parseArgs(['convert', '--force', 'a.docx'], new Set(['force']))
     expect(flagBool(a, 'force')).toBe(true)
