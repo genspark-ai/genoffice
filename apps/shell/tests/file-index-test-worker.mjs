@@ -9,7 +9,7 @@ parentPort?.on('message', (req) => {
   if (req.type === 'scan') {
     const files = []
     const walk = (dir) => {
-      let ents = []
+      let ents
       try {
         ents = readdirSync(dir, { withFileTypes: true })
       } catch {
