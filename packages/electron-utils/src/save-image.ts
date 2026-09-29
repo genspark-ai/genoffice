@@ -71,7 +71,9 @@ async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; mime: stri
   // with a 302 — while custom schemes (md-asset://) enforce their own access
   // rules and are not network addresses.
   const res = /^https?:/i.test(url)
-    ? await fetchWithSsrfGuard(url, { fetchImpl: (input, init) => net.fetch(input as string, init) })
+    ? await fetchWithSsrfGuard(url, {
+        fetchImpl: (input, init) => net.fetch(input as string, init),
+      })
     : await net.fetch(url)
   if (!res) throw new Error(`refusing to fetch ${url}`)
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`)
