@@ -85,7 +85,8 @@ export async function parseFileToText(filePath: string): Promise<ParsedFile> {
         return {
           ok: false,
           kind: 'text',
-          error: 'Unsupported text encoding: BOM-declared UTF-32 cannot be decoded (UTF-8 and UTF-16 are supported)',
+          error:
+            'Unsupported text encoding: BOM-declared UTF-32 cannot be decoded (UTF-8 and UTF-16 are supported)',
         }
       }
       return { ok: true, kind: 'text', text }

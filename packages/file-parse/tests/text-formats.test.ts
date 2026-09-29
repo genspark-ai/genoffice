@@ -93,10 +93,7 @@ describe('parseFileToText: plain-text formats', () => {
     expect(gbkResult.kind).toBe('text')
     expect(gbkResult.text?.length).toBe(4)
 
-    const shiftJis = writeFixture(
-      'shiftjis.txt',
-      Buffer.from([0x93, 0xfa, 0x96, 0x7b, 0x8c, 0xea]),
-    )
+    const shiftJis = writeFixture('shiftjis.txt', Buffer.from([0x93, 0xfa, 0x96, 0x7b, 0x8c, 0xea]))
     const shiftJisResult = await parseFileToText(shiftJis)
     expect(shiftJisResult.ok).toBe(true)
     expect(shiftJisResult.text?.length).toBe(6)
