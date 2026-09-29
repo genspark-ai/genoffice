@@ -6,7 +6,7 @@
  * here deterministically through a loadPdfium wrapper.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { PDFDocument, PDFDict, PDFName, PDFRawStream, StandardFonts } from 'pdf-lib'
+import { PDFDocument, PDFDict, PDFRawStream, StandardFonts } from 'pdf-lib'
 import { redactPdf } from '../src/main/redaction'
 
 const pdfiumCounts = vi.hoisted(() => ({ loadPage: 0 }))
