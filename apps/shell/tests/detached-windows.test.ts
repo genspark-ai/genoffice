@@ -92,6 +92,7 @@ vi.mock('../../sheets/src/main/sheets-main', () => ({
   requestSheetsClose: vi.fn(() => Promise.resolve(true)),
   setActiveSheetsWebContents: vi.fn(),
   sheetsPendingEditCount: vi.fn(() => 0),
+  resetSheetsShuttingDown: vi.fn(),
 }))
 
 vi.mock('../../slides/src/main/slides-main', () => ({
