@@ -167,7 +167,7 @@ import {
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
-import { printScaleOption, validPrintGeometry, validPrintScale } from './print-args'
+import { printScaleOption, validPrintGeometry } from './print-args'
 import { initDocsAutoUpdater } from './updater'
 import { registerZoteroIpc, teardownZoteroIpc } from './zotero-ipc'
 
