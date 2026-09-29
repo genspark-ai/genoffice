@@ -61,6 +61,7 @@ import {
 } from './plan-operations'
 import { isNumericIdentifierText } from './cell-warning'
 import { consumePendingUndoCarry, undoStackDepth } from './undo-carry'
+import { shouldRunSaveTick } from './save-scheduler'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useAutoSavePref, type AiScopeQuoteData } from '@genoffice/ui'
 
@@ -553,29 +554,43 @@ export function App({
   // Ref mirror for callbacks captured when an AI run starts
   const autoSaveRef = useRef(autoSave)
   autoSaveRef.current = autoSave
+  // One save at a time, shared by BOTH timers below: AutoSave ('save') and the
+  // crash-recovery copy ('recovery') used to carry independent in-flight flags,
+  // so with AutoSave on a dirty workbook could start both saves concurrently;
+  // the first finisher tears the workbook session down while the second is
+  // still reading, and the survivor reports "Unknown workbook session."
+  // (保存失败) although the file was written.
+  const saveInFlightRef = useRef(false)
   // AutoSave tick (docs/slides parity): every 30 s and on window blur, flush
   // pending edits of the open workbook. The journal is read at tick time so
   // the interval stays stable; demo mode has no backing file and is skipped.
   useEffect(() => {
     if (!autoSave) return
-    let saving = false
     const tick = () => {
       const state = lazyWorkbookRef.current
-      if (saving || !state || journalSize(state.editJournal) === 0) return
       // Never while the in-cell editor is open (saving reloads the workbook
       // and would wipe the edit), never for converted .xls imports whose
       // first save opens a Save As dialog (a new unsaved workbook saves its
       // backing file quietly instead), and never for CSV sessions —
       // AutoSave would silently flatten the user's file.
       if (
-        editingCellRef.current ||
-        (state.file.needsSaveAs && !state.file.unsavedNew) ||
-        state.file.csvPath !== undefined
+        !state ||
+        !shouldRunSaveTick({
+          saveInFlight: saveInFlightRef.current,
+          hasWorkbook: true,
+          journalEmpty: journalSize(state.editJournal) === 0,
+          editingCell: editingCellRef.current,
+          needsSaveAsNotUnsavedNew: Boolean(state.file.needsSaveAs) && !state.file.unsavedNew,
+          isCsv: state.file.csvPath !== undefined,
+          kind: 'save',
+          restoredFromRecovery: false,
+          automaticRecoveryDisabled: false,
+        })
       )
         return
-      saving = true
+      saveInFlightRef.current = true
       void handleSaveRef.current('save', true).finally(() => {
-        saving = false
+        saveInFlightRef.current = false
       })
     }
     const id = window.setInterval(tick, 30_000)
@@ -591,24 +606,31 @@ export function App({
   // renderer crash no longer costs everything since the last manual save. A normal
   // save removes the copy; reopening a file whose copy is newer offers Restore.
   useEffect(() => {
-    let writing = false
     const tick = () => {
       const state = lazyWorkbookRef.current
-      if (writing || !state || journalSize(state.editJournal) === 0) return
       // The in-cell editor's pending text is not in the journal yet, a
       // converted import has no original file to recover into, and a restored
-      // recovery session is backed by the recovery copy itself.
+      // recovery session is backed by the recovery copy itself. Shares the
+      // in-flight gate with the AutoSave tick above so the two saves can
+      // never race (see save-scheduler.ts).
       if (
-        editingCellRef.current ||
-        (state.file.needsSaveAs && !state.file.unsavedNew) ||
-        state.file.csvPath !== undefined ||
-        state.file.restoredFromRecovery ||
-        state.file.automaticRecoveryDisabled
+        !state ||
+        !shouldRunSaveTick({
+          saveInFlight: saveInFlightRef.current,
+          hasWorkbook: true,
+          journalEmpty: journalSize(state.editJournal) === 0,
+          editingCell: editingCellRef.current,
+          needsSaveAsNotUnsavedNew: Boolean(state.file.needsSaveAs) && !state.file.unsavedNew,
+          isCsv: state.file.csvPath !== undefined,
+          kind: 'recovery',
+          restoredFromRecovery: state.file.restoredFromRecovery === true,
+          automaticRecoveryDisabled: state.file.automaticRecoveryDisabled === true,
+        })
       )
         return
-      writing = true
+      saveInFlightRef.current = true
       void handleSaveRef.current('recovery').finally(() => {
-        writing = false
+        saveInFlightRef.current = false
       })
     }
     const id = window.setInterval(tick, 30_000)
