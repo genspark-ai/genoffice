@@ -2036,10 +2036,12 @@ function ensureDefaultContentType(archive: PackageArchive, ext: string, contentT
   const ct = archive.readText(ctPath)
   if (!ct) return
   if (new RegExp(`<Default\\s[^>]*Extension="${ext}"`, 'i').test(ct)) return
-  // Insert the Default after the root <Types …> open tag (after the first >)
+  // Insert before </Types>. indexOf('>') finds the XML declaration's closing
+  // angle bracket first, so splicing there would put the Default between the
+  // declaration and <Types> — outside the root element — and every OPC reader
+  // would then reject the package (#1518).
   const def = `<Default Extension="${ext}" ContentType="${contentType}"/>`
-  const at = ct.indexOf('>') + 1
-  archive.entries.set(ctPath, Buffer.from(ct.slice(0, at) + def + ct.slice(at), 'utf8'))
+  archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', () => `${def}</Types>`), 'utf8'))
 }
 
 const MIME_BY_EXT: Record<string, string> = {
