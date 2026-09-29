@@ -39,7 +39,7 @@ function expandHome(value: string): string {
  * Executable path accepted from the renderer. The Codex app-server hands it to
  * child_process.spawn() without a shell, so metacharacters are inert and no
  * character is rejected — including the non-ASCII user and directory names
- * common in real home paths (`/Users/王/bin/codex`,
+ * common in real home paths (`/Users/<name>/bin/codex`,
  * `C:\Users\Ana María\codex.exe`). When the value looks like a path (`/`, `\`
  * or `.` anywhere, or a leading `~`) rather than a bare command, it must exist
  * as a file (`~` expanded for the check). A bare command name ("codex") is
