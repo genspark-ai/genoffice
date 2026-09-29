@@ -5,7 +5,7 @@ import { writeFile } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { showSaveDialogWithMemory } from './dialog-memory'
 import { MAX_REMOTE_IMAGE_BYTES, readBodyCapped } from './remote-image'
-import { isSafeRemoteUrl } from './safe-remote-url'
+import { fetchWithSsrfGuard } from './safe-remote-url'
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
@@ -66,12 +66,14 @@ async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; mime: stri
   const { net } = await import('electron')
   // Only outbound path in this package that skipped the SSRF gate: a docx can
   // carry <img src="http://192.168.1.10/…">, and this fetched it before the
-  // save dialog. http(s) only — custom schemes (md-asset://) enforce their own
-  // access rules and are not network addresses.
-  if (/^https?:/i.test(url) && !(await isSafeRemoteUrl(url))) {
-    throw new Error(`refusing to fetch ${url}`)
-  }
-  const res = await net.fetch(url)
+  // save dialog. http(s) goes through the per-hop guard — validating only the
+  // initial URL lets a public host bounce the request at an internal address
+  // with a 302 — while custom schemes (md-asset://) enforce their own access
+  // rules and are not network addresses.
+  const res = /^https?:/i.test(url)
+    ? await fetchWithSsrfGuard(url, { fetchImpl: (input, init) => net.fetch(input as string, init) })
+    : await net.fetch(url)
+  if (!res) throw new Error(`refusing to fetch ${url}`)
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`)
   return {
     bytes: Buffer.from(await readBodyCapped(res, MAX_REMOTE_IMAGE_BYTES)),
