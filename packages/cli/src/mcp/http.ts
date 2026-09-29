@@ -43,6 +43,13 @@ interface Session {
 }
 
 const MAX_JSON_BYTES = 32 * 1024 * 1024
+/**
+ * Concurrent MCP sessions cap. Each session owns a context and directories
+ * under the temp root; a client that opens sessions without closing them
+ * (crashed tabs, looping scripts) used to grow the map without bound until
+ * the process died. Over the cap the oldest session is closed first (FIFO).
+ */
+const MAX_SESSIONS = 100
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
 export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
@@ -106,6 +113,19 @@ export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
       if (sessions.delete(id)) {
         disposeContext(ctx)
         log(`[mcp] session ${id} closed`)
+      }
+    }
+    // FIFO eviction: Map preserves insertion order, so the first key is oldest
+    while (sessions.size >= MAX_SESSIONS) {
+      const oldest = sessions.keys().next().value as string | undefined
+      if (oldest === undefined) break
+      const evicted = sessions.get(oldest)
+      sessions.delete(oldest)
+      if (evicted) {
+        // deleting first keeps transport.onclose from double-disposing
+        void evicted.transport.close().catch(() => {})
+        disposeContext(evicted.ctx)
+        log(`[mcp] session ${oldest} evicted (cap ${MAX_SESSIONS})`)
       }
     }
     sessions.set(id, session)
