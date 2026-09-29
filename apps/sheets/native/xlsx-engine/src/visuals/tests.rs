@@ -651,6 +651,7 @@ fn expands_group_children_through_child_space() {
         "xl/drawings/drawing1.xml",
         &HashMap::new(),
         &mut visuals,
+        0,
     )
     .unwrap();
     assert_eq!(visuals.len(), 1, "hidden child must be skipped");
@@ -722,6 +723,7 @@ fn expands_group_chart_children_with_their_part_path() {
         "xl/drawings/drawing1.xml",
         &relationships,
         &mut visuals,
+        0,
     )
     .unwrap();
     assert_eq!(visuals.len(), 1);
