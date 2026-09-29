@@ -21,7 +21,7 @@ export interface GskLoginProgress {
   phase: 'url' | 'success' | 'error'
   url?: string
   expiresInSec?: number
-  /** 'network' | 'expired' | raw error text */
+  /** 'network' | 'expired' | 'auth_url_rejected' | raw error text */
   error?: string
 }
 
@@ -29,15 +29,25 @@ const APP_TYPE = 'genoffice'
 const KEY_NAME = 'genoffice'
 const HTTP_TIMEOUT_MS = 30_000
 
-/** The only URL the login flow may ask the OS to open: https, same host as
- *  the endpoint we authenticated against (subdomains allowed for the auth
- *  service's own login pages). */
-function isAllowedAuthUrl(raw: string, origin: string): URL | null {
+/** The only URL the login flow may ask the OS to open: https, on the
+ *  endpoint's registrable domain — host == or a `.`-suffix of the endpoint
+ *  host minus a leading "www." — so the auth service may serve its login
+ *  pages from any of its own hosts (apex, www, auth.*, a staging tree).
+ *  IP literals and single-label hosts (localhost) have no subdomain tree and
+ *  must match exactly: `evil.127.0.0.1` is a public DNS name that resolves
+ *  elsewhere, not a sibling of 127.0.0.1. Exported for the allowlist tests. */
+export function isAllowedAuthUrl(raw: string, origin: string): URL | null {
   try {
     const url = new URL(raw)
-    const originHost = new URL(origin).hostname
     if (url.protocol !== 'https:') return null
-    if (url.hostname !== originHost && !url.hostname.endsWith(`.${originHost}`)) return null
+    const endpointHost = new URL(origin).hostname
+    const registrable = endpointHost.replace(/^www\./, '')
+    const flatHost =
+      endpointHost.startsWith('[') /* IPv6 literal */ ||
+      /^[\d.]+$/.test(endpointHost) /* IPv4 literal */ ||
+      !registrable.includes('.') /* localhost & co */
+    if (flatHost) return url.hostname === endpointHost ? url : null
+    if (url.hostname !== registrable && !url.hostname.endsWith(`.${registrable}`)) return null
     return url
   } catch {
     return null
@@ -298,11 +308,12 @@ async function runDeviceLogin(
   const authUrl = String(json.auth_url ?? '')
   if (!resp.ok || !code || !authUrl) throw new LoginFlowError('network')
   // The server (or a repointed GSK_BASE_URL) decides this URL and every caller
-  // hands it to the OS opener: only https on the auth host we talked to passes,
-  // so a compromised endpoint cannot turn the login flow into "open arbitrary
-  // protocol handler / phishing URL".
+  // hands it to the OS opener: only https on the endpoint's registrable domain
+  // passes, so a compromised endpoint cannot turn the login flow into "open
+  // arbitrary protocol handler / phishing URL". Distinct from 'network' so the
+  // shell can log/show a policy rejection instead of an outage.
   const allowed = isAllowedAuthUrl(authUrl, baseUrl())
-  if (!allowed) throw new LoginFlowError('network')
+  if (!allowed) throw new LoginFlowError('auth_url_rejected')
   const expiresInSec = Number(json.expires_in) > 0 ? Number(json.expires_in) : 600
   const pollMs = Number(json.poll_interval) > 0 ? Number(json.poll_interval) * 1000 : 2000
   emit({ phase: 'url', url: allowed.href, expiresInSec })
