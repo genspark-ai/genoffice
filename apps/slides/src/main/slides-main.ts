@@ -4513,7 +4513,10 @@ export function registerSlidesIpc(): void {
       // hidden window: without this, throttled timers/rAF stall the
       // PRINT_READY_SCRIPT settle wait (same as the headless export window)
       createWindow: () =>
-        new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } }),
+        new BrowserWindow({
+          show: false,
+          webPreferences: { sandbox: true, backgroundThrottling: false },
+        }),
       openExportedPdf,
     })
   })
