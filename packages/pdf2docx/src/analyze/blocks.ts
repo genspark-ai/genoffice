@@ -3,7 +3,7 @@
  * first-line indent). Median-based gap clustering follows pdftext; the
  * indent / short-line refinements follow pdf2docx's paragraph rules.
  */
-import { approxEq, median, rectCenterX, rectUnionAll } from '../geometry'
+import { approxEq, maxOf, median, minOf, rectCenterX, rectUnionAll } from '../geometry'
 import type { Line, TextBlock } from '../ir'
 import { isNoSpaceScript } from '../script'
 import { firstStrongDir } from './rtl'
@@ -54,24 +54,6 @@ const SIZE_BREAK_RATIO = 1.5
 
 function lineFontSize(line: Line): number {
   return median(line.spans.map((s) => s.fontSize)) || 12
-}
-
-/**
- * Loop reductions instead of spreads: Math.min(...xs) passes every element as
- * a function argument, so a page with ≥125k lines threw RangeError before a
- * single line rendered (V8 argument limit, measured). The arrays here are
- * page-data-sized, not structurally bounded.
- */
-function minOf(values: readonly number[]): number {
-  let m = Infinity
-  for (const v of values) if (v < m) m = v
-  return m
-}
-
-function maxOf(values: readonly number[]): number {
-  let m = -Infinity
-  for (const v of values) if (v > m) m = v
-  return m
 }
 
 export function bodyContextOf(lines: readonly Line[]): BodyContext {
@@ -306,7 +288,7 @@ function markHardBreaks(
   pinOpenLeaded: boolean,
 ): Line[] {
   if (group.length < 2) return group
-  const groupLeft = Math.min(...group.map((l) => l.box.x0))
+  const groupLeft = minOf(group.map((l) => l.box.x0))
   const groupRight = maxOf(group.map((l) => l.box.x1))
   // display-heading pass (P12 B): a short stack of ≥24pt lines is a title
   // whose breaks the author placed — substitute fonts run wider, so a natural
@@ -454,7 +436,7 @@ const VERSE_EOL_PUNCT = /[.,;:!?…—–"'"'»«)\]]\s*$/u
 function isVerseRun(run: Line[]): boolean {
   if (run.length < VERSE_MIN_LINES) return false
   const fontSize = median(run.map(lineFontSize)) || 12
-  const maxRight = Math.max(...run.map((l) => l.box.x1))
+  const maxRight = maxOf(run.map((l) => l.box.x1))
   const nearFullShare = run.filter((l) => l.box.x1 >= maxRight - fontSize).length / run.length
   let evidence = 0
   for (let i = 0; i + 1 < run.length; i++) {
