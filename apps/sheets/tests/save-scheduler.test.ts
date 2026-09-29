@@ -4,7 +4,7 @@
  * dirty workbook started both saves concurrently every 30 s. In the main
  * process the first finisher tears the workbook session down while the second
  * is still reading; the survivor reported "Unknown workbook session."
- * (保存失败) although the file had been written. Both ticks now share one
+ * (save failed) although the file had been written. Both ticks now share one
  * gate (save-scheduler.ts / saveInFlightRef), so a second tick skips instead
  * of racing, and retries on its next 30 s wake-up.
  */

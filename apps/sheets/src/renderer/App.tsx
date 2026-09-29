@@ -559,7 +559,7 @@ export function App({
   // so with AutoSave on a dirty workbook could start both saves concurrently;
   // the first finisher tears the workbook session down while the second is
   // still reading, and the survivor reports "Unknown workbook session."
-  // (保存失败) although the file was written.
+  // (save failed) although the file was written.
   const saveInFlightRef = useRef(false)
   // AutoSave tick (docs/slides parity): every 30 s and on window blur, flush
   // pending edits of the open workbook. The journal is read at tick time so

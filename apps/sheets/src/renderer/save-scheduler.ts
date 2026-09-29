@@ -5,7 +5,7 @@
  * flags, so with AutoSave on, a dirty workbook could start BOTH saves
  * concurrently; in the main process the first finisher tears the workbook
  * session down while the second is still reading, and the survivor reports
- * "Unknown workbook session." (保存失败) although the file was written.
+ * "Unknown workbook session." (save failed) although the file was written.
  * One gate: at most one save at a time. With AutoSave on, its real save
  * flushes the journal so the recovery tick no-ops; with AutoSave off, the
  * 30s crash-recovery guarantee is unchanged. Pure so it can be unit tested.
