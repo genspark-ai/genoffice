@@ -43,6 +43,37 @@ describe('mcp http hardening', () => {
     ).rejects.toThrow(/--token needs a non-empty value/)
   })
 
+  it('fails closed on an empty --host value instead of binding every interface', async () => {
+    const { mcpCommand } = await import('../src/commands/mcp')
+    const { parseArgs } = await import('../src/args')
+    await expect(
+      mcpCommand.run(parseArgs(['--http', '8080', '--host', '']), {
+        cwd: process.cwd(),
+        env: {},
+        log: () => {},
+        warn: () => {},
+      }),
+    ).rejects.toThrow(/--host needs a non-empty value/)
+  })
+
+  it('treats a programmatically empty host as the loopback default', async () => {
+    const { startHttp } = await import('../src/mcp/http')
+    const handle = await startHttp({
+      cwd: process.cwd(),
+      env: {},
+      log: () => {},
+
+      port: 0,
+      host: '',
+    })
+    try {
+      // the empty string fell back to the loopback default, not every interface
+      expect(handle.url.startsWith('http://127.0.0.1:')).toBe(true)
+    } finally {
+      await handle.close()
+    }
+  })
+
   it('ignores poisoned forwarded host/proto by default', async () => {
     const res = await fetch(`${handle.url}/files/report.txt`, {
       method: 'PUT',

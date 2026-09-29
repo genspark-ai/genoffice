@@ -46,7 +46,9 @@ const MAX_JSON_BYTES = 32 * 1024 * 1024
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
 export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
-  const host = opts.host ?? '127.0.0.1'
+  // an empty-string host would bypass the loopback fallback and bind every
+  // interface; the command layer rejects it, this keeps any other caller safe
+  const host = opts.host?.trim() || '127.0.0.1'
   const files = new FileStore(
     join(tmpdir(), `genoffice-mcp-http-${process.pid}-${randomBytes(4).toString('hex')}`),
   )

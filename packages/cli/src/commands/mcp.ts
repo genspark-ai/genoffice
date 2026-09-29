@@ -140,13 +140,27 @@ async function serve(args: Parameters<CommandDef['run']>[0], ctx: CommandContext
       { reason: 'invalid_argument' },
     )
   }
+  const hostFlag = flagString(args, 'host')
+  // `--host ""` — the same unset-variable accident --token guards against —
+  // is worse here: an empty string skips the `?? '127.0.0.1'` fallback in
+  // http.ts, fails the LOOPBACK_HOSTS check (it has('') is false, disabling
+  // the DNS-rebinding guard) and ends up as listen(port, ''), i.e. every
+  // interface. Fail closed with a usage error instead.
+  if (hostFlag !== undefined && hostFlag.trim() === '') {
+    throw new CliError(
+      EXIT.usage,
+      '--host needs a non-empty value (omit the flag to bind 127.0.0.1)',
+      undefined,
+      { reason: 'invalid_argument' },
+    )
+  }
   const { serveHttp } = await import('../mcp/http')
   await serveHttp({
     cwd: ctx.cwd,
     env: ctx.env,
     log: ctx.log,
     port,
-    host: flagString(args, 'host'),
+    host: hostFlag,
     token: tokenFlag ?? (ctx.env.GENOFFICE_MCP_TOKEN?.trim() || undefined),
     compactSchemas,
   })
