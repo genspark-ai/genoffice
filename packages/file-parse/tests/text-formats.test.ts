@@ -86,7 +86,7 @@ describe('parseFileToText: plain-text formats', () => {
   })
 
   it('keeps GBK / Shift-JIS text indexed (mojibake) instead of erroring it away', async () => {
-    // "中文" in GBK; "日本語" in Shift-JIS — neither is valid UTF-8
+    // The bytes decode as CJK text in GBK / Shift-JIS and are invalid UTF-8
     const gbk = writeFixture('gbk.txt', Buffer.from([0xd6, 0xd0, 0xce, 0xc4]))
     const gbkResult = await parseFileToText(gbk)
     expect(gbkResult.ok).toBe(true)
