@@ -135,7 +135,10 @@ describe('sanitizeAiSettings', () => {
     writeFileSync(cliPath, '#!/bin/sh\n')
     const sanitized = sanitizeAiSettings({
       ...baseSettings(),
-      providers: { openai: { apiKey: 'k', model: 'm' }, codex: { apiKey: '', model: 'c', cliPath } },
+      providers: {
+        openai: { apiKey: 'k', model: 'm' },
+        codex: { apiKey: '', model: 'c', cliPath },
+      },
     })
     expect(sanitized!.providers.codex.cliPath).toBe(cliPath)
     expect(validCliPath(cliPath)).toBe(true)
