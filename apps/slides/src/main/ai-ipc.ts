@@ -24,6 +24,7 @@ import {
   activeProvider,
   maxOutputTokensOf,
   resolveAiSettings,
+  sanitizeAiSettings,
   setAiUserAgent,
   setRescueFetch,
   streamForProvider,
@@ -54,7 +55,6 @@ import { addPicture, editPictureSrcRect, replacePictureBytes } from '@genoffice/
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { coverCropFractions } from '@genoffice/pipelines/slides'
 import type { AiRunFailure } from '../shared/ipc'
-import { sanitizeAiSettings } from './ai-settings-guard'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'
 import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './session-state'

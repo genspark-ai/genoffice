@@ -22,12 +22,6 @@
       "@genoffice/pipelines/slides/layout-audit": [
         "../../packages/pipelines/src/slides/layout-audit.ts"
       ],
-      "@genoffice/ai-provider": ["../../packages/ai-provider/src/index.ts"],
-      "@genoffice/ai-provider/browser": ["../../packages/ai-provider/src/browser.ts"],
-      "@genoffice/ai-provider/codex-app-server": [
-        "../../packages/ai-provider/src/codex-app-server.ts"
-      ],
-      "@genoffice/ai-provider/custom-models": ["../../packages/ai-provider/src/custom-models.ts"],
       "@genoffice/docx-engine/metafile": ["../../packages/docx-engine/src/metafile.ts"],
       "@genoffice/docx-engine/math": ["../../packages/docx-engine/src/math.ts"]
     }

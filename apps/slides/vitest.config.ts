@@ -43,16 +43,6 @@ export default defineConfig({
         '../../packages/pipelines/src/slides/layout-audit.ts',
       ),
       '@genoffice/pipelines/slides': resolve(here, '../../packages/pipelines/src/slides/index.ts'),
-      '@genoffice/ai-provider/codex-app-server': resolve(
-        here,
-        '../../packages/ai-provider/src/codex-app-server.ts',
-      ),
-      '@genoffice/ai-provider/custom-models': resolve(
-        here,
-        '../../packages/ai-provider/src/custom-models.ts',
-      ),
-      '@genoffice/ai-provider/browser': resolve(here, '../../packages/ai-provider/src/browser.ts'),
-      '@genoffice/ai-provider': resolve(here, '../../packages/ai-provider/src/index.ts'),
       '@genoffice/docx-engine/metafile': resolve(
         here,
         '../../packages/docx-engine/src/metafile.ts',
