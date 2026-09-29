@@ -1345,6 +1345,8 @@ export interface SlidesApi {
   >
   /** Whether cloud single-page generation (gsk slide_generate) is available (GENOFFICE_CLOUD_SLIDE=1 + gsk login) */
   cloudGenStatus: () => Promise<{ enabled: boolean }>
+  /** Abort every in-flight cloud page generation of this window (AI panel stop) */
+  cloudPageCancel: () => Promise<void>
   /** Cloud single-page generation: brief → one-slide pptx temp file; the marker goes into a landGeneratedPages pageMarkers slot */
   cloudGeneratePage: (op: {
     brief: string

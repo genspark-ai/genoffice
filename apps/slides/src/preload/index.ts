@@ -167,6 +167,7 @@ const api: SlidesApi = {
       deckName,
     ),
   cloudGenStatus: () => ipcRenderer.invoke('slides:cloud-gen-status'),
+  cloudPageCancel: () => ipcRenderer.invoke('slides:cloud-page-cancel'),
   cloudGeneratePage: (op: {
     brief: string
     title?: string
