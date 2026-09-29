@@ -66,7 +66,7 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
     // elapsed [h] / [mm] / [ss] keep their letter so the minute adjacency rule below still sees them
     .replace(/\[(h+|m+|s+)\]/gi, (_all, token: string) => {
       elapsed = true
-      elapsedUnit ??= (token[0].toLowerCase() as 'h' | 'm' | 's')
+      elapsedUnit ??= token[0].toLowerCase() as 'h' | 'm' | 's'
       if (/^m/i.test(token)) elapsedMinutes = true
       return token
     })
