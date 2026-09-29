@@ -3233,8 +3233,13 @@ function createShellWindow(): void {
   // docs dirtiness lives renderer-side, so any live docs tab forces the async path
   // and gets queried there (clean tabs pass through without activation).
   let closeConfirmed = false
+  // a second close event while the save prompts are still open (double ⌘Q, an
+  // OS retry) used to re-enter the whole prompt chain; prompt once at a time
+  let closePromptInFlight = false
   win.on('close', (event) => {
     if (closeConfirmed) return
+    event.preventDefault()
+    if (closePromptInFlight) return
     const dirtySheets = manager.dirtySheetsTabs()
     const dirtyPdf = manager.dirtyPdfTabs()
     const dirtyMarkdown = manager.dirtyMarkdownTabs()
@@ -3248,9 +3253,13 @@ function createShellWindow(): void {
       dirtyHtml.length === 0 &&
       dirtySlides.length === 0 &&
       docsTabs.length === 0
-    )
+    ) {
+      // nothing to protect: let this close through
+      closeConfirmed = true
+      win.close()
       return
-    event.preventDefault()
+    }
+    closePromptInFlight = true
     void (async () => {
       const denied = await (async () => {
         for (const tab of dirtySheets) {
@@ -3287,6 +3296,7 @@ function createShellWindow(): void {
         closeConfirmed = true
         if (!win.isDestroyed()) win.close()
       }
+      closePromptInFlight = false
     })()
   })
 

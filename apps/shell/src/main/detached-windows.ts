@@ -506,14 +506,20 @@ export function createDetachedEditorWindow(options: {
   }
 
   // Unsaved-changes guard, same helpers as the tab close path.
+  // a second close event while the prompt is open must not re-enter the
+  // prompt (the same double-trigger the main window guards against)
+  let promptInFlight = false
   win.on('close', (event) => {
     if (closeConfirmed || rec.released) return
     event.preventDefault()
+    if (promptInFlight) return
+    promptInFlight = true
     void (async () => {
       // a denied close vetoes any quit that was in flight: the sheets close
       // guard must prompt again on later closes instead of silently proceeding
       if (await confirmDetachedClose(rec)) tearDown()
       else resetSheetsShuttingDown()
+      promptInFlight = false
     })()
   })
   win.on('closed', () => {
