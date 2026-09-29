@@ -66,3 +66,29 @@ describe('XlsxSidecarClient error teardown', () => {
     expect(client.getProcessId()).toBeNull()
   })
 })
+
+describe('XlsxSidecarClient stdin error', () => {
+  afterEach(() => spawnMock.mockReset())
+
+  it('an async stdin EPIPE tears the client down instead of crashing the app', async () => {
+    const child = new FakeSidecarProcess(201)
+    spawnMock.mockReturnValueOnce(child)
+    const { XlsxSidecarClient } = await import('../src/main/xlsx-sidecar-client')
+    const client = new XlsxSidecarClient('/nonexistent/sidecar')
+
+    // a pending request, then the child dies OOM-style: killed stays false
+    const pending = client.readRange({ sessionId: 's', sheetId: 'sheet', range })
+    // PassThrough with no consumer end: destroy() emits the async 'error'
+    child.stdin.destroy(new Error('write EPIPE'))
+
+    await expect(pending).rejects.toThrow(/stdin failed|EPIPE/)
+    // the client tore down cleanly: no unhandled error escapes, and the dead
+    // child is replaced on the next request
+    const again = client.readRange({ sessionId: 's', sheetId: 'sheet', range })
+    expect(spawnMock.mock.calls.length).toBeGreaterThan(1)
+    void again.catch(() => {})
+    child.stdout.end()
+    child.stderr.end()
+    client.stop()
+  })
+})

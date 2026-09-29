@@ -265,6 +265,19 @@ export class XlsxSidecarClient {
       this.rejectPending(reason)
     }
     child.once('error', teardown)
+    // A dead child (OOM-killed — killed stays false, only a Node-initiated
+    // kill sets it) still passes the !killed guards in sendCancel/request;
+    // the next stdin write then emits an EPIPE error asynchronously. Without
+    // this listener that error crashed the whole app instead of tearing the
+    // client down like any other sidecar death (the write callbacks only
+    // cover their own synchronous error argument).
+    child.stdin.on('error', () => {
+      teardown(
+        new Error(
+          `XLSX sidecar stdin failed (${this.stderr.trim() || 'broken pipe'}).`.slice(0, 200),
+        ),
+      )
+    })
     child.once('exit', (code, signal) => {
       const detail = this.stderr.trim()
       const reason = detail
