@@ -290,6 +290,24 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // a base URL on this provider
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://tokenhub.tencentmaas.com/v1'),
   },
+  ling: {
+    meta: metaOf('ling'),
+    capabilities: { auth: 'api-key', vision: false },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://ling-1t.ai/api/v1'),
+  },
+  spark: {
+    meta: metaOf('spark'),
+    capabilities: { auth: 'api-key', vision: false },
+    // the vendor's own HTTP doc states this host is the OpenAI SDK base_url and
+    // authenticates with a plain Bearer APIPassword (the AppID/APIKey/APISecret
+    // HMAC belongs to the separate websocket endpoint)
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://spark-api-open.xf-yun.com/v1'),
+  },
+  longcat: {
+    meta: metaOf('longcat'),
+    capabilities: { auth: 'api-key', vision: false },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.longcat.chat/openai/v1'),
+  },
   minimax: {
     meta: metaOf('minimax'),
     capabilities: { auth: 'api-key', vision: false },

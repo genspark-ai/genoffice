@@ -260,6 +260,27 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M7 9.5c3 2 7 2 10 0M7 14.5c3-2 7-2 10 0" strokeLinecap="round" />
     </svg>
   ),
+  ling: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#1668DC" strokeWidth="1.9" aria-hidden="true">
+      <path d="M4 18V6l4 6 4-6v12" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 6v7.5a2.5 2.5 0 005 0V6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  spark: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#0A9BFF" strokeWidth="1.9" aria-hidden="true">
+      <path
+        d="M12 2.5l2.2 5.4 5.4-2.2-2.2 5.4 5.4 2.2-5.4 2.2 2.2 5.4-5.4-2.2-2.2 5.4-2.2-5.4-5.4 2.2 2.2-5.4-5.4-2.2 5.4-2.2z"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="1.6" fill="#0A9BFF" stroke="none" />
+    </svg>
+  ),
+  longcat: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#1AAD19" strokeWidth="1.9" aria-hidden="true">
+      <path d="M3 14c0-4.4 4-8 9-8s9 3.6 9 8v6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 14.2c.9-1 2.2-1.5 3.5-1.5s2.6.5 3.5 1.5" strokeLinecap="round" />
+    </svg>
+  ),
   custom: (
     <svg
       viewBox="0 0 24 24"
