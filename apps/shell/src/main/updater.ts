@@ -3,6 +3,7 @@ import path from 'node:path'
 import { app, dialog, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { installResumeDownload } from './update-resume'
 import type { UpdateInfo } from 'electron-updater'
 import { createI18n, getUiLang, htmlLang } from '@genoffice/i18n'
 import type {
@@ -620,6 +621,10 @@ export function initAutoUpdater(
   // full-package policy: never attempt blockmap differential downloads
   // (CI does not publish .blockmap files)
   autoUpdater.disableDifferentialDownload = true
+  // Range-resumable installer downloads: a dropped connection restarts from
+  // the .part bytes instead of byte 0 (falls back to the stock download on
+  // any error placing the request — see update-resume.ts)
+  installResumeDownload(autoUpdater as unknown as Parameters<typeof installResumeDownload>[0])
 
   let latestSeenVersion: string | null = null
   // CDN installer link for latestSeenVersion (channel/track/arch-correct);
