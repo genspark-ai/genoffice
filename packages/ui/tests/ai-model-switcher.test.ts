@@ -128,6 +128,27 @@ describe('AiModelSwitcher', () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  it('tolerates a partial settings payload without a providers map', () => {
+    // {} is what a test bridge / an unparseable settings read can hand over
+    const entries = modelSwitcherEntries({} as never, false)
+    expect(entries).toHaveLength(1) // the active row alone
+    expect(entries[0]!.models).toEqual([''])
+    const onSwitch = vi.fn()
+    const reload = vi.fn(async () => ({}) as never)
+    act(() =>
+      root.render(
+        createElement(AiModelSwitcher, {
+          lang: 'en',
+          settings: {} as never,
+          gskLoggedIn: false,
+          reload,
+          onSwitch,
+        }),
+      ),
+    )
+    expect(host.querySelector('.gs-dd-btn')).toBeTruthy()
+  })
+
   it('says when nothing besides the active selection is configured', () => {
     const settings = defaultAiSettings()
     settings.providers.genspark.model = 'gpt-6-sol'

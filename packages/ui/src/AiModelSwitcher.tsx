@@ -43,9 +43,11 @@ export function modelSwitcherEntries(
   gskLoggedIn: boolean,
 ): AiModelSwitcherEntry[] {
   const entries: { meta: AiProviderMeta; models: string[] }[] = []
+  // settings can be a partial payload ({} from a test bridge or a hand-edited
+  // file): every read guards the providers map
   for (const meta of AI_PROVIDERS) {
     if (!isProviderConfigured(settings, meta.id, gskLoggedIn)) continue
-    const stored = settings.providers[meta.id]?.model?.trim()
+    const stored = settings.providers?.[meta.id]?.model?.trim()
     if (meta.needsCliPath || meta.needsBaseUrl) {
       entries.push({ meta, models: [stored ?? ''] })
     } else {
@@ -55,7 +57,7 @@ export function modelSwitcherEntries(
     }
   }
   const activeMeta = AI_PROVIDERS.find((m) => m.id === settings.provider)
-  const activeModel = settings.providers[settings.provider]?.model?.trim() ?? ''
+  const activeModel = settings.providers?.[settings.provider]?.model?.trim() ?? ''
   const active = entries.find((entry) => entry.meta.id === settings.provider)
   if (!active) {
     entries.push({
@@ -99,7 +101,7 @@ export function AiModelSwitcher({
     () => modelSwitcherEntries(settings, gskLoggedIn),
     [settings, gskLoggedIn],
   )
-  const activeModel = settings.providers[settings.provider]?.model?.trim() ?? ''
+  const activeModel = settings.providers?.[settings.provider]?.model?.trim() ?? ''
   const activeKey = rowKey(settings.provider, activeModel)
   const options = useMemo<ReadonlyArray<DropdownOption<string>>>(
     () =>
@@ -129,7 +131,7 @@ export function AiModelSwitcher({
     setBusy(true)
     try {
       const fresh = await reload().catch(() => settings)
-      const config = fresh.providers[providerId as keyof AiSettings['providers']] ?? {
+      const config = fresh.providers?.[providerId as keyof AiSettings['providers']] ?? {
         apiKey: '',
         model: '',
       }
