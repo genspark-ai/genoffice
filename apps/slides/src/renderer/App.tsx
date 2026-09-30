@@ -466,6 +466,12 @@ export function App() {
   const [showFormat, setShowFormat] = useState(false)
   const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
+  /** quick model switcher (genoffice#692): the in-memory pick lands first so
+   *  the next turn uses it, then the file is updated for the other windows */
+  const onSwitchAiModel = useCallback((next: AiSettings): void => {
+    setAiSettings(next)
+    void window.slidesApi.setAiSettings(next).catch(() => {})
+  }, [])
   const [aiPreset, setAiPreset] = useState<{
     text: string
     nonce: number
@@ -1251,6 +1257,7 @@ export function App() {
 
   useEffect(() => {
     void window.slidesApi.getAiSettings().then(setAiSettings)
+
   }, [])
 
   // Recent files for the start screen
@@ -3479,6 +3486,7 @@ export function App() {
                 applyDeck={applyDeck}
                 fitWidthPx={FIT_WIDTH}
                 settings={aiSettings}
+                onSwitchAiModel={onSwitchAiModel}
                 preset={aiPreset}
                 open={showAi}
                 onExpand={toggleAi}

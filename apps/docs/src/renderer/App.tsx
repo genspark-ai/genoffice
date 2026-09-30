@@ -1496,6 +1496,13 @@ export function App() {
     [],
   )
 
+  /** quick model switcher (genoffice#692): the in-memory pick lands first so
+   *  the next turn uses it, then the file is updated for the other windows */
+  const switchAiModel = useCallback((next: AiSettings) => {
+    setSettings(next)
+    void window.desktop.setAiSettings(next).catch(() => {})
+  }, [])
+
   useEffect(() => {
     void window.desktop.getRecentFiles().then(setRecent)
     void window.desktop.getAiSettings().then(setSettings)
@@ -6905,6 +6912,7 @@ export function App() {
               editor={editor}
               blocks={doc.parsed.blocks}
               settings={settings}
+              onSwitchAiModel={switchAiModel}
               docEmpty={wordCount === 0}
               numIdFallback={
                 doc.isBlank ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID } : null

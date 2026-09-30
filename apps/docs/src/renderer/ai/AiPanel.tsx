@@ -1,4 +1,4 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import { aiPanelWidthAtPointer, AiModelSwitcher, AiPanelSideButton } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
@@ -285,6 +285,8 @@ interface AiPanelProps {
   editor: Editor
   blocks: Block[]
   settings: AiSettings
+  /** quick model switcher pick (genoffice#692); App owns persisting + state */
+  onSwitchAiModel?: (next: AiSettings) => void | Promise<void>
   /** the document has no text yet — the empty-state copy offers drafting instead of editing */
   docEmpty?: boolean
   /** fallback numbering ids for documents created from the blank template */
@@ -324,6 +326,7 @@ export function AiPanel({
   editor,
   blocks,
   settings,
+  onSwitchAiModel,
   docEmpty,
   numIdFallback,
   preset,
@@ -1286,6 +1289,15 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          {onSwitchAiModel && (
+            <AiModelSwitcher
+              lang={lang}
+              settings={settings}
+              gskLoggedIn={gskLoggedInRef.current}
+              reload={() => window.desktop.getAiSettings()}
+              onSwitch={onSwitchAiModel}
+            />
+          )}
           <AiPanelSideButton
             lang={lang}
             onMove={(side) => window.desktop.setAiPanelPrefs({ side })}

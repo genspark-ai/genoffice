@@ -1,4 +1,5 @@
 export { AiPanelSideButton } from './AiPanelSideButton'
+export { AiModelSwitcher, modelSwitcherEntries, type AiModelSwitcherEntry } from './AiModelSwitcher'
 export { AiComposer } from './AiComposer'
 export { AiScopeQuote, type AiScopeQuoteData } from './AiScopeQuote'
 export {

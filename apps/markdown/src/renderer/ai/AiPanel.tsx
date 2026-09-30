@@ -1,4 +1,4 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import { aiPanelWidthAtPointer, AiPanelSideButton, AiModelSwitcher,} from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills, streamText } from '@genoffice/agent-core'
@@ -187,6 +187,30 @@ export function AiPanel({
   }, [panelWidth])
 
   const settingsRef = useRef<AiSettings | null>(null)
+  /** quick model switcher (genoffice#692): reactive mirror of settingsRef,
+   *  loaded on mount so the header can offer the switch before the first run */
+  const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
+  useEffect(() => {
+    let alive = true
+    void window.markdownApi
+      .getAiSettings()
+      .then((s) => {
+        if (!alive) return
+        settingsRef.current = s
+        setAiSettingsState(s)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  /** persist the pick and move this panel's own state in one step: the
+   *  transport reads settingsRef per turn, so the next run uses it at once */
+  const onSwitchAiModel = (next: AiSettings): void => {
+    settingsRef.current = next
+    setAiSettingsState(next)
+    void window.markdownApi.setAiSettings(next).catch(() => {})
+  }
   /** gsk login state for the generate_image gate (refreshed on mount and window focus) */
   const gskLoggedInRef = useRef(false)
   useEffect(() => {
@@ -770,6 +794,15 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          {aiSettings && (
+            <AiModelSwitcher
+              lang={lang}
+              settings={aiSettings}
+              gskLoggedIn={gskLoggedInRef.current}
+              reload={() => window.markdownApi.getAiSettings()}
+              onSwitch={onSwitchAiModel}
+            />
+          )}
           <AiPanelSideButton
             lang={lang}
             onMove={(side) => window.markdownApi.setAiPanelPrefs({ side })}

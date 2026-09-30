@@ -949,6 +949,12 @@ export function App({
   // ---- AI: real LLM agent (falls back to the deterministic planner above
   // when no provider is configured — see isAgentConfigured/handleSend) ----
   const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
+  /** quick model switcher (genoffice#692): the in-memory pick lands first so
+   *  the next turn uses it, then the file is updated for the other windows */
+  const onSwitchAiModel = useCallback((next: AiSettings): void => {
+    setAiSettingsState(next)
+    void window.desktopApi?.setAiSettings(next)?.catch(() => {})
+  }, [])
   const aiSettingsRef = useRef<AiSettings | null>(null)
   aiSettingsRef.current = aiSettings
 
@@ -4636,6 +4642,10 @@ export function App({
         onOpenWorkbook={() => void handleInspectWorkbook()}
         onDismissEmptyCsvNotice={() => setEmptyCsvNotice(false)}
         aiBusy={aiBusy}
+        aiSettings={aiSettings}
+        gskLoggedIn={gskLoggedInRef.current}
+        onSwitchAiModel={onSwitchAiModel}
+        reloadAiSettings={() => window.desktopApi.getAiSettings()}
         chat={chat}
         historicChat={historicChat}
         attachments={attachments}

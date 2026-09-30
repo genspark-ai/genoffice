@@ -1,4 +1,4 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import { aiPanelWidthAtPointer, AiModelSwitcher, AiPanelSideButton } from '@genoffice/ui'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   AgentLoop,
@@ -253,6 +253,8 @@ interface AiPanelProps {
   applyDeck: (slides: RenderSlide[], goTo?: number) => void
   fitWidthPx: number
   settings: AiSettings
+  /** quick model switcher pick (genoffice#692); App owns persisting + state */
+  onSwitchAiModel?: (next: AiSettings) => void | Promise<void>
   /** Preset instruction pushed from the ribbon/start screen; sent immediately when autoRun. When displayText exists the chat bubble shows only it while the full text still goes to the model.
       attachments are local files added in the start-screen input, taking effect with the first message.
       slideShot attaches a rendering of the current slide so the model sees what it's editing (AI Beautify) */
@@ -360,6 +362,7 @@ export function AiPanel({
   applyDeck,
   fitWidthPx,
   settings,
+  onSwitchAiModel,
   preset,
   open = true,
   onExpand,
@@ -2070,6 +2073,15 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
+          {onSwitchAiModel && (
+            <AiModelSwitcher
+              lang={lang}
+              settings={settings}
+              gskLoggedIn={gskLoggedInRef.current}
+              reload={() => window.slidesApi.getAiSettings()}
+              onSwitch={onSwitchAiModel}
+            />
+          )}
           <AiPanelSideButton
             lang={lang}
             onMove={(side) => window.slidesApi.setAiPanelPrefs({ side })}

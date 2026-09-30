@@ -1,4 +1,4 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import { aiPanelWidthAtPointer, AiPanelSideButton, AiModelSwitcher,} from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
@@ -474,6 +474,44 @@ export function AiPanel({
   }, [panelWidth])
 
   const settingsRef = useRef<AiSettings | null>(null)
+  /** gsk login state for the switcher's genspark row and the generate_image gate */
+  const gskLoggedInRef = useRef(false)
+  useEffect(() => {
+    let alive = true
+    void window.htmlApi
+      .aiGskStatus?.()
+      .then((s) => {
+        if (alive) gskLoggedInRef.current = !!s?.loggedIn
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  /** quick model switcher (genoffice#692): reactive mirror of settingsRef,
+   *  loaded on mount so the header can offer the switch before the first run */
+  const [aiSettings, setAiSettingsState] = useState<AiSettings | null>(null)
+  useEffect(() => {
+    let alive = true
+    void window.htmlApi
+      .getAiSettings()
+      .then((s) => {
+        if (!alive) return
+        settingsRef.current = s
+        setAiSettingsState(s)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  /** persist the pick and move this panel's own state in one step: the
+   *  transport reads settingsRef per turn, so the next run uses it at once */
+  const onSwitchAiModel = (next: AiSettings): void => {
+    settingsRef.current = next
+    setAiSettingsState(next)
+    void window.htmlApi.setAiSettings(next).catch(() => {})
+  }
   const langRef = useRef(lang)
   langRef.current = lang
   const depsRef = useRef(deps)
@@ -1127,6 +1165,15 @@ export function AiPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          {aiSettings && (
+            <AiModelSwitcher
+              lang={lang}
+              settings={aiSettings}
+              gskLoggedIn={gskLoggedInRef.current}
+              reload={() => window.htmlApi.getAiSettings()}
+              onSwitch={onSwitchAiModel}
+            />
+          )}
           <AiPanelSideButton
             lang={lang}
             onMove={(side) => window.htmlApi.setAiPanelPrefs({ side })}

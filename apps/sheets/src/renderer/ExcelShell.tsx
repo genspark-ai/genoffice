@@ -57,6 +57,7 @@ import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/char
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { AttachmentMeta } from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
+import type { AiSettings } from '@genoffice/ai-provider/browser'
 import { AiSelectionAsk } from './ai/AiSelectionAsk'
 import type { SelectionAskAnchor } from './ai/selection-ask'
 import {
@@ -184,6 +185,12 @@ interface ExcelShellProps {
   readonly sheetHasContent: boolean
   /// true while the real LLM agent is running (composer disabled meanwhile).
   readonly aiBusy: boolean
+  /// current AI settings for the panel header's quick model switcher (genoffice#692);
+  /// null until loaded, which leaves the switcher out
+  readonly aiSettings: AiSettings | null
+  readonly gskLoggedIn: boolean
+  readonly onSwitchAiModel: (next: AiSettings) => void
+  readonly reloadAiSettings: () => Promise<AiSettings>
   readonly chat: readonly AiChatMessage[]
   readonly historicChat?: readonly AiChatMessage[]
   /// Chat attachments (chips + 📎 button + drag-and-drop), same structure as the
@@ -339,6 +346,10 @@ export function ExcelShell({
   formatPainterActive,
   sheetHasContent,
   aiBusy,
+  aiSettings,
+  gskLoggedIn,
+  onSwitchAiModel,
+  reloadAiSettings,
   chat,
   historicChat,
   attachments,
@@ -722,6 +733,10 @@ export function ExcelShell({
           prompt={prompt}
           preview={preview}
           aiBusy={aiBusy}
+          aiSettings={aiSettings}
+          gskLoggedIn={gskLoggedIn}
+          onSwitchAiModel={onSwitchAiModel}
+          reloadAiSettings={reloadAiSettings}
           onPromptChange={onPromptChange}
           onSend={onSend}
           onStop={onStop}
