@@ -205,6 +205,35 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'ling',
+    label: 'Ling',
+    // Ant Group's Ling line. 3.0-flash is the sparse MoE with published weights
+    // (124B total / 5.1B active, 256K); 3.1-flash is the newer, far larger
+    // 560B/25B step and is still inside its launch free trial, so the older
+    // stable tier stays the default.
+    models: ['Ling-3.1-flash', 'Ling-3.0-flash'],
+    defaultModel: 'Ling-3.0-flash',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'spark',
+    label: 'Spark',
+    // iFlytek Spark. The edge tiers (X2.5-4B / X2.5-1.7B) are deliberately
+    // left out: they are on-device checkpoints, not a hosted chat tier.
+    models: ['Spark-X2.5'],
+    defaultModel: 'Spark-X2.5',
+    keyPlaceholder: 'xxxxxxxxxxxxxxxx',
+  },
+  {
+    id: 'longcat',
+    label: 'LongCat',
+    // Meituan's LongCat-2.0 is a 1.6T/48B-active MoE built for agentic coding
+    // with a 1M window. Also reachable through OpenCode Go.
+    models: ['longcat-2.0'],
+    defaultModel: 'longcat-2.0',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'minimax',
     label: 'MiniMax',
     // M3 is the current agentic/tool-use model; M2.5 moved to the legacy tier
