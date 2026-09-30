@@ -11,6 +11,7 @@ import {
   PDFHexString,
   PDFName,
   PDFRawStream,
+  PDFRef,
   decodePDFRawStream,
   degrees,
   rgb,
@@ -33,7 +34,11 @@ import {
   splitPdfBytes,
 } from '../src/main/save-pdf'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../src/shared/ipc'
+import { PDFJS_ANNOT_TEXT } from '../src/renderer/note-threads'
 import type { SavePdfRequest } from '../src/shared/ipc'
+
+/** pdf.js AnnotationType.POPUP — a note's popup must never surface as its own entry */
+const PDFJS_ANNOT_POPUP = 12
 
 /** 1x1 red pixel PNG */
 const TINY_PNG =
@@ -656,6 +661,118 @@ describe('applySaveRequest', () => {
     )
     const out = await PDFDocument.load(saved)
     expect(pageAnnots(out, 0).map(subtypeOf)).toEqual(['Text', 'Ink', 'Square', 'Line'])
+  })
+
+  // A sticky note is the one annotation whose own entries are not enough for
+  // macOS Preview and Chrome/pdf.js: without /AP they have no icon to draw, and
+  // without /Popup there is no object to open, so the note reads as absent.
+  describe('sticky note interop (Preview / pdf.js)', () => {
+    const note = (over: Record<string, unknown> = {}) => ({
+      kind: 'note' as const,
+      pageIndex: 0,
+      color: [1, 0.9, 0.3] as [number, number, number],
+      at: [120, 700] as [number, number],
+      contents: 'hello note',
+      ...over,
+    })
+
+    async function saveNoteWith(drawing: ReturnType<typeof note>) {
+      const bytes = await makePdf([[612, 792]])
+      const saved = await apply(bytes, request({ drawings: [drawing] }))
+      const doc = await PDFDocument.load(saved)
+      const annots = doc.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray)
+      return { doc, annots, noteRef: annots.lookup(0) as PDFRef }
+    }
+
+    it('writes an appearance stream for the note icon', async () => {
+      const { doc, noteRef } = await saveNoteWith(note())
+      const dict = doc.context.lookup(noteRef) as PDFDict
+      expect(dict.lookup(PDFName.of('AP'), PDFDict).has(PDFName.of('N'))).toBe(true)
+    })
+
+    it('gives the appearance form its own /Resources', async () => {
+      // A Form XObject with no /Resources key at all draws dark grey in Quartz
+      // and yellow in Poppler — the note appears in one viewer only. This is the
+      // difference that silently shipped, so it is asserted directly.
+      const { doc, noteRef } = await saveNoteWith(note())
+      const dict = doc.context.lookup(noteRef) as PDFDict
+      const apRef = dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFRef
+      const ap = doc.context.lookup(apRef) as PDFRawStream
+      expect(ap.dict.lookup(PDFName.of('Subtype'), PDFName).decodeText()).toBe('Form')
+      expect(ap.dict.has(PDFName.of('Resources'))).toBe(true)
+    })
+
+    it('pairs the note with a popup that points back at it and starts closed', async () => {
+      const { doc, noteRef } = await saveNoteWith(note())
+      const dict = doc.context.lookup(noteRef) as PDFDict
+      const popup = dict.lookup(PDFName.of('Popup'), PDFDict)
+      expect(subtypeOf(popup)).toBe('Popup')
+      expect(popup.lookup(PDFName.of('Parent'))).toBe(noteRef)
+      expect(String(popup.lookup(PDFName.of('Open')))).toBe('false')
+      // the popup carries the text too, so a viewer shows it without the parent
+      expect(popup.lookup(PDFName.of('Contents'), PDFHexString).decodeText()).toBe('hello note')
+    })
+
+    it('keeps the popup out of the page /Annots array, as the spec requires', async () => {
+      const { annots } = await saveNoteWith(note())
+      // exactly the one Text annot: a popup listed here would be drawn twice and
+      // pdf.js would report the note twice
+      expect(annots.size()).toBe(1)
+    })
+
+    it('docks the popup beside the icon, flipping left at the right page edge', async () => {
+      const mid = await saveNoteWith(note())
+      const midRect = (mid.doc.context.lookup(mid.noteRef) as PDFDict)
+        .lookup(PDFName.of('Popup'), PDFDict)
+        .lookup(PDFName.of('Rect'), PDFArray)
+        .asRectangle()
+      expect(midRect.x).toBeGreaterThanOrEqual(140) // right of the 120..140 icon
+      expect(midRect.x + midRect.width).toBeLessThanOrEqual(612)
+
+      const edge = await saveNoteWith(note({ at: [600, 700] }))
+      const edgeRect = (edge.doc.context.lookup(edge.noteRef) as PDFDict)
+        .lookup(PDFName.of('Popup'), PDFDict)
+        .lookup(PDFName.of('Rect'), PDFArray)
+        .asRectangle()
+      expect(edgeRect.x + edgeRect.width).toBeLessThanOrEqual(612) // flipped, still on the page
+      expect(edgeRect.x).toBeLessThan(600)
+    })
+
+    it('keeps a reply note self-contained, popup and all', async () => {
+      const bytes = await makePdf([[612, 792]])
+      const saved = await apply(
+        bytes,
+        request({
+          drawings: [
+            note({ localId: 'root' }),
+            note({ localId: 'kid', replyToLocalId: 'root', contents: 'reply' }),
+          ],
+        }),
+      )
+      const doc = await PDFDocument.load(saved)
+      for (const dict of pageAnnots(doc, 0)) {
+        expect(dict.lookup(PDFName.of('Popup'), PDFDict)).toBeDefined()
+      }
+    })
+
+    it('still reads back as exactly one note in pdf.js', async () => {
+      const bytes = await makePdf([[612, 792]])
+      const saved = await apply(
+        bytes,
+        request({ drawings: [note(), note({ at: [300, 400], contents: 'second' })] }),
+      )
+      const loadingTask = getDocument({ data: saved.slice() })
+      try {
+        const pdfJsDoc = await loadingTask.promise
+        const annos = await (await pdfJsDoc.getPage(1)).getAnnotations()
+        const texts = annos.filter((a) => a.annotationType === PDFJS_ANNOT_TEXT)
+        expect(texts.map((a) => a.contentsObj?.str)).toEqual(['hello note', 'second'])
+        // the popup is reachable from the note but is not an entry of its own
+        expect(annos.filter((a) => a.annotationType === PDFJS_ANNOT_POPUP)).toHaveLength(0)
+      } finally {
+        await loadingTask.destroy()
+      }
+    })
   })
 
   it('ignores markups and drawings addressing missing pages', async () => {
