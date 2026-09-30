@@ -33,20 +33,30 @@ export interface DownloadExecutor {
 
 /** progress events are noisier than the stock transform; keep the UI cadence */
 const PROGRESS_INTERVAL_MS = 250
+/**
+ * A wedged connection (gateway black hole) never errors the stream by itself.
+ * The stock httpExecutor fails a stalled socket after 60 s; the fetch-based
+ * wrapper must match that or a silent hang replaces a retryable failure.
+ */
+const STALL_TIMEOUT_MS = 60_000
 
 /**
  * Install the resumable download on an electron-updater instance by replacing
  * its httpExecutor.download (a public method on ElectronHttpExecutor). Safe to
  * call once per updater; exported for tests.
  */
-export function installResumeDownload(updater: { httpExecutor: DownloadExecutor }): void {
+export function installResumeDownload(
+  updater: { httpExecutor: DownloadExecutor },
+  /** shorter stall window for tests; production uses STALL_TIMEOUT_MS */
+  stallTimeoutMs: number = STALL_TIMEOUT_MS,
+): void {
   const executor = updater.httpExecutor
   // a no-op on any unexpected shape (test doubles, a future electron-updater
   // restructuring): resume is an enhancement, never a load-bearing feature
   if (!executor || typeof executor.download !== 'function') return
   const original = executor.download.bind(executor)
   executor.download = (url, destination, options) =>
-    resumeDownload(url, destination, options ?? {}, original)
+    resumeDownload(url, destination, options ?? {}, original, stallTimeoutMs)
 }
 
 interface PartMeta {
@@ -111,6 +121,7 @@ async function resumeDownload(
   destination: string,
   options: ExecutorDownloadOptions,
   fallback: (url: URL, destination: string, options: ExecutorDownloadOptions) => Promise<string>,
+  stallTimeoutMs: number,
 ): Promise<string> {
   // without a checksum a resumed file cannot be validated: keep stock behaviour
   if (!options.sha512) return fallback(url, destination, options)
@@ -211,14 +222,30 @@ async function resumeDownload(
   const fileOut = createWriteStream(partPath, appending ? { flags: 'r+', start: resumeFrom } : {})
   /** wait for buffered writes to reach the disk; on failure keep what made it */
   const settle = (): Promise<void> => new Promise((resolve) => fileOut.end(() => resolve()))
+  // re-armed on every chunk (clear+set, not refresh, so fake timers work too)
+  let stallTimer: ReturnType<typeof setTimeout> | undefined
+  let stalled = false
+  let streamIn: Readable | undefined
+  const onStall = (): void => {
+    stalled = true
+    abort.abort()
+    // a hand-built Response body ignores the signal; destroy the stream directly
+    streamIn?.destroy(new DownloadAbortedError('stalled'))
+  }
+  const armStallWatchdog = (): void => {
+    if (stallTimer) clearTimeout(stallTimer)
+    stallTimer = setTimeout(onStall, stallTimeoutMs)
+  }
   try {
     if (!response.body) throw new DownloadAbortedError('empty body')
-    const nodeStream = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
+    streamIn = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])
     // a manual loop (not pipeline): the write stream must never be destroyed
     // with writes still buffered, or a dropped connection loses the very
     // bytes this file exists to keep. Backpressure via drain.
-    for await (const chunk of nodeStream) {
+    armStallWatchdog()
+    for await (const chunk of streamIn) {
       cancelCheck()
+      armStallWatchdog()
       const buf = chunk as Buffer
       if (!fileOut.write(buf)) {
         await new Promise<void>((resolve) => fileOut.once('drain', resolve))
@@ -226,6 +253,7 @@ async function resumeDownload(
       transferred += buf.length
       reportProgress(buf.length)
     }
+    if (stallTimer) clearTimeout(stallTimer)
     cancelCheck()
     await settle()
     reportProgress(0, true)
@@ -242,8 +270,11 @@ async function resumeDownload(
     return destination
   } catch (error) {
     // the .part stays (what has reached the disk): the next attempt resumes
+    if (stallTimer) clearTimeout(stallTimer)
     abort.abort()
     await settle().catch(() => {})
+    if (stalled)
+      throw new DownloadAbortedError(`download stalled: no data for ${stallTimeoutMs / 1000} s`)
     throw error instanceof Error ? error : new Error(String(error))
   }
 }
