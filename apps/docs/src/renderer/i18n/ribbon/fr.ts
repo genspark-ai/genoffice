@@ -196,6 +196,8 @@ export const fr = {
   ribbonInnerBorders: 'Bordures intérieures',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Couleur de bordure',
   ribbonBorderWidth: 'Épaisseur de bordure',
   ribbonPtValue: '{n} pt',

@@ -159,6 +159,8 @@ import {
   IconAutoFit,
   IconBorderAll,
   IconBorderBottom,
+  IconBorderDiagonalDown,
+  IconBorderDiagonalUp,
   IconBorderInner,
   IconBorderInsideH,
   IconBorderInsideV,
@@ -520,6 +522,8 @@ const TABLE_BORDER_ITEMS: Record<
   inner: { label: 'ribbonInnerBorders', Icon: IconBorderInner },
   insideH: { label: 'ribbonTableInsideHBorders', Icon: IconBorderInsideH },
   insideV: { label: 'ribbonTableInsideVBorders', Icon: IconBorderInsideV },
+  tl2br: { label: 'ribbonTableDiagonalDownBorders', Icon: IconBorderDiagonalDown },
+  tr2bl: { label: 'ribbonTableDiagonalUpBorders', Icon: IconBorderDiagonalUp },
 }
 
 /** Table Layout ▸ Select ▾ in Word for Mac order */

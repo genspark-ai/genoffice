@@ -193,6 +193,8 @@ export const vi = {
   ribbonInnerBorders: 'Viền trong',
   ribbonTableInsideHBorders: 'Viền ngang bên trong',
   ribbonTableInsideVBorders: 'Viền dọc bên trong',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Màu viền',
   ribbonBorderWidth: 'Độ dày viền',
   ribbonPtValue: '{n} pt',

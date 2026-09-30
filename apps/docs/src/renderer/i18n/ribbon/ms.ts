@@ -196,6 +196,8 @@ export const ms = {
   ribbonInnerBorders: 'Sempadan Dalam',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Warna sempadan',
   ribbonBorderWidth: 'Ketebalan sempadan',
   ribbonPtValue: '{n} pt',

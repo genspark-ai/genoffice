@@ -194,6 +194,8 @@ export const en = {
   ribbonInnerBorders: 'Inside Borders',
   ribbonTableInsideHBorders: 'Inside Horizontal Border',
   ribbonTableInsideVBorders: 'Inside Vertical Border',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Pen Color',
   ribbonBorderWidth: 'Line Weight',
   ribbonPtValue: '{n} pt',

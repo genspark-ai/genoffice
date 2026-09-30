@@ -196,6 +196,8 @@ export const pt = {
   ribbonInnerBorders: 'Bordas Internas',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Cor da borda',
   ribbonBorderWidth: 'Espessura da borda',
   ribbonPtValue: '{n} pt',

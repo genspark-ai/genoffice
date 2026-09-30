@@ -196,6 +196,8 @@ export const id = {
   ribbonInnerBorders: 'Batas Dalam',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Warna batas',
   ribbonBorderWidth: 'Ketebalan batas',
   ribbonPtValue: '{n} pt',

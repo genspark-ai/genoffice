@@ -105,6 +105,8 @@ describe('Borders gallery order', () => {
       'inner',
       'insideH',
       'insideV',
+      'tl2br',
+      'tr2bl',
     ])
   })
 })
@@ -177,6 +179,9 @@ describe('setSelectionBorders', () => {
       bottom: { style: 'none' },
       left: { style: 'none' },
       right: { style: 'none' },
+      // No Border clears the diagonals too, like Word's
+      tl2br: { style: 'none' },
+      tr2bl: { style: 'none' },
     })
     expect(editor.state.doc.child(1).attrs.borders).toEqual({ top: inside })
   })

@@ -203,6 +203,8 @@ export const ja = {
   ribbonInnerBorders: '内側の罫線',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: '罫線の色',
   ribbonBorderWidth: '罫線の太さ',
   ribbonPtValue: '{n} pt',

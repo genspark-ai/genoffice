@@ -95,7 +95,13 @@ import {
 } from './numbering'
 import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
-import { type BorderLine, borderDrawnPx, borderTruePx, cellPadPx } from './border-metrics'
+import {
+  type BorderLine,
+  borderDrawnPx,
+  borderTruePx,
+  cellDiagonalCss,
+  cellPadPx,
+} from './border-metrics'
 import { borderLineCss, paraBorderCss, paraBorderPadding, paraBorderPaddingDecls } from './hf-dom'
 import { paraFrameCss } from './para-frame'
 
@@ -2795,6 +2801,11 @@ function tableCellHtml(node: PmNode): Record<string, string> {
       : `${css};${bdDeltaCss(side, cellBorders?.[side])}`
   }
   const mar = node.attrs.cellMar as Record<string, number> | null
+  // w:tl2br / w:tr2bl cross the whole cell, so they paint as background layers
+  // over the fill rather than through the border box
+  const diagonalLayers = (['tl2br', 'tr2bl'] as const)
+    .map((side) => cellDiagonalCss(cellBorders?.[side], side))
+    .filter((v): v is string => v !== null)
   const styles = [
     // gridBefore/gridAfter placeholder: bare grid space (inline border beats the --doc-b-* cell rules)
     node.attrs.gridGap ? 'border:none;background:none' : '',
@@ -2820,6 +2831,7 @@ function tableCellHtml(node: PmNode): Record<string, string> {
     borderCss('left'),
     borderCss('bottom'),
     borderCss('right'),
+    diagonalLayers.length ? `background-image:${diagonalLayers.join(',')}` : '',
     // tcMar only overrides declared sides; the rest inherit the table-level --doc-cell-pad-*
     ...(['top', 'left', 'bottom', 'right'] as const).map((side) =>
       mar?.[side] !== undefined ? `--doc-cell-pad-${DK_SIDE[side]}:${cellPadPx(mar[side])}` : '',

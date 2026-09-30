@@ -194,6 +194,8 @@ export const ar = {
   ribbonInnerBorders: 'الحدود الداخلية',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'لون الحدود',
   ribbonBorderWidth: 'سُمك الحدود',
   ribbonPtValue: '{n} نقطة',

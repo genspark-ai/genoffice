@@ -200,6 +200,8 @@ export const zh = {
   ribbonInnerBorders: '内侧框线',
   ribbonTableInsideHBorders: '内部横框线',
   ribbonTableInsideVBorders: '内部竖框线',
+  ribbonTableDiagonalDownBorders: '下对角线边框',
+  ribbonTableDiagonalUpBorders: '上对角线边框',
   ribbonBorderColor: '笔颜色',
   ribbonBorderWidth: '线条粗细',
   ribbonPtValue: '{n} 磅',

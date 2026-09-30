@@ -196,6 +196,8 @@ export const hi = {
   ribbonInnerBorders: 'भीतरी बॉर्डर',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'बॉर्डर रंग',
   ribbonBorderWidth: 'बॉर्डर मोटाई',
   ribbonPtValue: '{n} पॉइंट',

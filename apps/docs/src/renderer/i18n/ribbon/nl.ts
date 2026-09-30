@@ -197,6 +197,8 @@ export const nl = {
   ribbonInnerBorders: 'Binnenranden',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Randkleur',
   ribbonBorderWidth: 'Randdikte',
   ribbonPtValue: '{n} pt',

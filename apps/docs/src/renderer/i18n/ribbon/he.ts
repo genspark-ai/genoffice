@@ -193,6 +193,8 @@ export const he = {
   ribbonInnerBorders: 'גבולות פנימיים',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'צבע גבול',
   ribbonBorderWidth: 'עובי גבול',
   ribbonPtValue: "{n} נק'",

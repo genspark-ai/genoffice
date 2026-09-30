@@ -193,6 +193,8 @@ export const th = {
   ribbonInnerBorders: 'เส้นขอบด้านใน',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'สีเส้นขอบ',
   ribbonBorderWidth: 'ความหนาเส้นขอบ',
   ribbonPtValue: '{n} พอยต์',

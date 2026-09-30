@@ -201,6 +201,8 @@ export const ko = {
   ribbonInnerBorders: '안쪽 테두리',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: '테두리 색',
   ribbonBorderWidth: '테두리 두께',
   ribbonPtValue: '{n}pt',

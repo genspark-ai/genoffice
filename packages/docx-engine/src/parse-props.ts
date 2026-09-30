@@ -1028,7 +1028,10 @@ function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorde
     'w:right': 'right',
     'w:start': 'left',
     'w:end': 'right',
-    ...(withInside ? { 'w:insideH': 'insideH', 'w:insideV': 'insideV' } : {}),
+    // the diagonals are cell-level only (CT_TblBorders has no tl2br/tr2bl child)
+    ...(withInside
+      ? { 'w:insideH': 'insideH', 'w:insideV': 'insideV' }
+      : { 'w:tl2br': 'tl2br', 'w:tr2bl': 'tr2bl' }),
   }
   const borders: TableBorders = {}
   for (const [tag, side] of Object.entries(ALIAS)) {

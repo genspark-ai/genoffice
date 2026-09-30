@@ -194,6 +194,8 @@ export const cs = {
   ribbonInnerBorders: 'Vnitřní ohraničení',
   ribbonTableInsideHBorders: 'Vnitřní vodorovné',
   ribbonTableInsideVBorders: 'Vnitřní svislé',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Barva ohraničení',
   ribbonBorderWidth: 'Tloušťka ohraničení',
   ribbonPtValue: '{n} b.',

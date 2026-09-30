@@ -1890,7 +1890,7 @@ function setTcPrChild(children: PPrChild[], name: string, xml: string | null): v
 }
 
 function cellBordersXml(borders: NonNullable<TableCell['borders']>): string {
-  const side = (name: 'top' | 'left' | 'bottom' | 'right') => {
+  const side = (name: 'top' | 'left' | 'bottom' | 'right' | 'tl2br' | 'tr2bl') => {
     const b = borders[name]
     if (!b) return ''
     const sz =
@@ -1901,7 +1901,8 @@ function cellBordersXml(borders: NonNullable<TableCell['borders']>): string {
         : ` w:color="${escapeXmlAttr(b.color ?? 'auto')}"`
     return `<w:${name} w:val="${escapeXmlAttr(b.style)}"${sz}${color}/>`
   }
-  return `<w:tcBorders>${side('top')}${side('left')}${side('bottom')}${side('right')}</w:tcBorders>`
+  // CT_TcBorders is a sequence: top, left, bottom, right, tl2br, tr2bl
+  return `<w:tcBorders>${side('top')}${side('left')}${side('bottom')}${side('right')}${side('tl2br')}${side('tr2bl')}</w:tcBorders>`
 }
 
 /** w:tcMar / w:tblCellMar with only the declared sides; null when nothing is declared */

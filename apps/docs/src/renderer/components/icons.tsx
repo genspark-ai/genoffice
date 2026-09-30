@@ -907,6 +907,24 @@ export function IconBorderInsideV(props: IconProps) {
   )
 }
 
+export function IconBorderDiagonalDown(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <IconBorderDashedFrame />
+      <path d="M 3.02 3.02 L 12.98 12.98" />
+    </Svg>
+  )
+}
+
+export function IconBorderDiagonalUp(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <IconBorderDashedFrame />
+      <path d="M 3.02 12.98 L 12.98 3.02" />
+    </Svg>
+  )
+}
+
 /* ---------- Design ---------- */
 
 export function IconTheme(props: IconProps) {

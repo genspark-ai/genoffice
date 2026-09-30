@@ -191,6 +191,8 @@ export const zhTW = {
   ribbonInnerBorders: '內框線',
   ribbonTableInsideHBorders: '內側橫框線',
   ribbonTableInsideVBorders: '內側縱框線',
+  ribbonTableDiagonalDownBorders: '下對角線框線',
+  ribbonTableDiagonalUpBorders: '上對角線框線',
   ribbonBorderColor: '框線色彩',
   ribbonBorderWidth: '框線粗細',
   ribbonPtValue: '{n} 點',

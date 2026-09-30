@@ -196,6 +196,8 @@ export const pl = {
   ribbonInnerBorders: 'Krawędzie wewnętrzne',
   ribbonTableInsideHBorders: 'Inside Horizontal',
   ribbonTableInsideVBorders: 'Inside Vertical',
+  ribbonTableDiagonalDownBorders: 'Diagonal Down Border',
+  ribbonTableDiagonalUpBorders: 'Diagonal Up Border',
   ribbonBorderColor: 'Kolor krawędzi',
   ribbonBorderWidth: 'Grubość krawędzi',
   ribbonPtValue: '{n} pkt',
