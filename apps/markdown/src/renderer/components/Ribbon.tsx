@@ -21,6 +21,7 @@ import {
   IconNumbered,
   IconOutlineView,
   IconPicture,
+  IconCloudUpload,
   IconProperties,
   IconRedo,
   IconSave,
@@ -43,6 +44,8 @@ interface Props {
   onToggleAutoSave: (on: boolean) => void
   imageEnabled: boolean
   onInsertImage: () => void
+  /** open the image host configuration (genoffice#388) */
+  onImageHost: () => void
   frontmatterOpen: boolean
   onToggleFrontmatter: () => void
   /** the source view replaces the document canvas, so editor-shaped commands go dead */
@@ -177,6 +180,7 @@ export function Ribbon({
   onToggleAutoSave,
   imageEnabled,
   onInsertImage,
+  onImageHost,
   frontmatterOpen,
   onToggleFrontmatter,
   sourceViewOpen,
@@ -517,6 +521,9 @@ export function Ribbon({
               >
                 <IconPicture size={ICON} />
               </IconBtn>
+              <IconBtn title={t('imageHostTitle')} onClick={onImageHost}>
+                <IconCloudUpload size={ICON} />
+              </IconBtn>
               <IconBtn
                 title={t('insertHr')}
                 disabled={off}
@@ -527,7 +534,6 @@ export function Ribbon({
                 <IconHr size={ICON} />
               </IconBtn>
             </div>
-          </div>
         )}
 
         <div className="rb-spacer" />

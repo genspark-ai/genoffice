@@ -2994,3 +2994,105 @@ div.tiptap-mathematics-render {
   min-width: 0;
   height: 100%;
 }
+
+/* Image host configuration dialog (genoffice#388) */
+.image-host-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.35);
+}
+
+.image-host-dialog {
+  box-sizing: border-box;
+  width: 440px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--color-bg, var(--surface, #fff));
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.2);
+}
+
+.image-host-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.image-host-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary, #777);
+}
+
+.image-host-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.image-host-label {
+  flex: 0 0 128px;
+  color: var(--color-text-secondary, #777);
+}
+
+.image-host-input {
+  flex: 1;
+  box-sizing: border-box;
+  height: 26px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--color-border, #bbb);
+  border-radius: 3px;
+  background: var(--color-bg, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.image-host-input:focus-visible {
+  border-color: var(--color-accent, #4a7dbe);
+  outline: none;
+}
+
+.image-host-error {
+  font-size: 12px;
+  color: var(--color-danger, #c0392b);
+}
+
+.image-host-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.image-host-btn {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border, #bbb);
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.image-host-btn-primary {
+  background: var(--color-accent, #4a7dbe);
+  border-color: var(--color-accent, #4a7dbe);
+  color: #fff;
+}
+
+.image-host-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

@@ -49,6 +49,9 @@ const api: MarkdownApi = {
   saveImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImage, data),
   readImage: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.readImage, src),
   saveImageAs: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImageAs, src),
+  getImageHost: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.getImageHost),
+  setImageHost: (config) => ipcRenderer.invoke(MARKDOWN_CHANNELS.setImageHost, config),
+  uploadImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.uploadImage, data),
   onViewImage: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, src: string) => handler(src)
     ipcRenderer.on(MARKDOWN_CHANNELS.viewImage, listener)
