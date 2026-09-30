@@ -21,6 +21,7 @@ import {
   IconNumbered,
   IconOutlineView,
   IconPicture,
+  IconCloudUpload,
   IconProperties,
   IconRedo,
   IconSave,
@@ -42,6 +43,8 @@ interface Props {
   onToggleAutoSave: (on: boolean) => void
   imageEnabled: boolean
   onInsertImage: () => void
+  /** open the image host configuration (genoffice#388) */
+  onImageHost: () => void
   frontmatterOpen: boolean
   onToggleFrontmatter: () => void
   outlineOpen: boolean
@@ -166,6 +169,7 @@ export function Ribbon({
   onToggleAutoSave,
   imageEnabled,
   onInsertImage,
+  onImageHost,
   frontmatterOpen,
   onToggleFrontmatter,
   outlineOpen,
@@ -492,6 +496,9 @@ export function Ribbon({
               onClick={onInsertImage}
             >
               <IconPicture size={ICON} />
+            </IconBtn>
+            <IconBtn title={t('imageHostTitle')} onClick={onImageHost}>
+              <IconCloudUpload size={ICON} />
             </IconBtn>
             <IconBtn
               title={t('insertHr')}

@@ -185,3 +185,14 @@ export function IconQuoteMark(props: IconProps) {
     </Svg>
   )
 }
+
+/** cloud with an up arrow: the image host (pasted pictures upload here first) */
+export function IconCloudUpload(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.4 11.2a3 3 0 0 1 .4-5.9 3.6 3.6 0 0 1 7 0 3 3 0 0 1 .2 5.9" />
+      <path d="M8 7.6v5" />
+      <path d="M6.2 9.4 8 7.6l1.8 1.8" />
+    </Svg>
+  )
+}
