@@ -51,11 +51,16 @@ interface NavSession {
   query: string
 }
 
+/** mirror the document-scoped half that outlives the document (see NavPrefs) */
+const persistSession = (s: NavSession): void =>
+  writePrefs({ tab: s.tab, maxLevel: s.maxLevel, query: s.query })
+
 const sessions = new WeakMap<Editor, NavSession>()
 const sessionOf = (editor: Editor): NavSession => {
   let s = sessions.get(editor)
   if (!s) {
-    s = { tab: 'headings', collapsed: new Set(), maxLevel: MAX_HEADING_LEVEL, query: '' }
+    const prefs = readPrefs()
+    s = { tab: prefs.tab, collapsed: new Set(), maxLevel: prefs.maxLevel, query: prefs.query }
     sessions.set(editor, s)
   }
   return s
@@ -71,6 +76,59 @@ const SEARCH_OPTIONS: FindOptions = { matchCase: false, wholeWord: false, mode: 
 const readWidth = (): number => {
   const n = Number(localStorage.getItem(WIDTH_KEY))
   return n >= MIN_WIDTH && n <= MAX_WIDTH ? n : DEFAULT_WIDTH
+}
+
+/**
+ * Pane preferences that outlive the document: which sub-view was last used, how
+ * deep the outline was opened, and the last search. These seed a NEW editor's
+ * session, so reopening the app lands where you left off instead of resetting to
+ * a blank outline.
+ *
+ * The collapsed set is deliberately NOT here — it is keyed by heading text, so
+ * another document's folds mean nothing in this one. It stays in the per-editor
+ * session, which already survives closing and reopening the pane.
+ */
+const PREFS_KEY = 'aidocs.navPrefs'
+const NAV_TABS: readonly NavTab[] = ['headings', 'pages', 'results']
+
+interface NavPrefs {
+  tab: NavTab
+  maxLevel: number
+  query: string
+}
+
+const readPrefs = (): NavPrefs => {
+  const fallback: NavPrefs = { tab: 'headings', maxLevel: MAX_HEADING_LEVEL, query: '' }
+  // one guard for both failure modes: storage unavailable (private mode) and a
+  // value that is missing, hand-edited or truncated — none of which may break
+  // the pane
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<NavPrefs>
+    const level = Number(parsed.maxLevel)
+    return {
+      tab: NAV_TABS.includes(parsed.tab as NavTab) ? (parsed.tab as NavTab) : fallback.tab,
+      maxLevel:
+        Number.isInteger(level) && level >= 1 && level <= MAX_HEADING_LEVEL
+          ? level
+          : fallback.maxLevel,
+      query: typeof parsed.query === 'string' ? parsed.query.slice(0, 200) : '',
+    }
+  } catch {
+    return fallback
+  }
+}
+
+/** exported for tests: the parsing/validation is the part that must not throw */
+export const readNavPrefs = readPrefs
+
+const writePrefs = (prefs: NavPrefs): void => {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    // quota or storage disabled: the pane still works, it just will not remember
+  }
 }
 
 interface MenuState {
@@ -125,12 +183,14 @@ export function NavPane({
   const setTab = useCallback(
     (next: NavTab) => {
       session.tab = next
+      persistSession(session)
       setTabState(next)
     },
     [session],
   )
   const setMaxLevel = (n: number) => {
     session.maxLevel = n
+    persistSession(session)
     setMaxLevelState(n)
   }
   const toggleCollapsed = (ref: HeadingRef) => {
@@ -300,6 +360,7 @@ export function NavPane({
       setTab('results')
     } else if (query && !q) setTab(preSearchTabRef.current)
     session.query = q
+    persistSession(session)
     setQuery(q)
     scheduleRefresh(q, 'reset')
   }
