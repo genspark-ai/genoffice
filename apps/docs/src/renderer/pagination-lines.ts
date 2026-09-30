@@ -61,6 +61,48 @@ const PATCH_KEYS = [
   'oversizeClips',
 ] as const
 
+/**
+ * Carry the previous pass's line/row samples onto the freshly measured blocks
+ * of a streaming open's pass (genoffice#526): only the appended tail can
+ * change layout, and fillLineBoxes skips blocks that already carry samples, so
+ * the unchanged prefix pays no DOM sampling at all — the sampler's own
+ * per-element cache still charges a full subtree signature per block per pass.
+ *
+ * Gated on pure appends: `dirty` is the first top-level index the pass was
+ * triggered for, `lastPassChildCount` the document's child count at the last
+ * pass. An edit below the append frontier (dirty < lastPassChildCount)
+ * disables the carry outright — a same-height edit would keep stale line
+ * boxes the height gate cannot see; an edit above it sits beyond the element
+ * identity prefix and never matches. A webfont load reaches the pass with
+ * dirty = null, so the gate drops the carry there too (line boxes shift
+ * without height). Caller passes `pending` (a phased open is streaming) so
+ * this module stays decoupled from the phased-open state.
+ */
+export function carryStreamedSamples(
+  blocks: BlockBox[],
+  lastBlocks: BlockBox[],
+  opts: { pending: boolean; dirty: number | null; lastPassChildCount: number },
+): void {
+  if (!opts.pending || lastBlocks.length === 0) return
+  if (opts.dirty === null || opts.dirty < opts.lastPassChildCount) return
+  const n = Math.min(blocks.length, lastBlocks.length)
+  for (let i = 0; i < n; i++) {
+    const b = blocks[i]
+    const p = lastBlocks[i]
+    // element identity is the append frontier: once it diverges (user
+    // insert/delete, remount), the arrays no longer align
+    if (!b.el || b.el !== p.el) break
+    if (Math.abs(b.height - p.height) > 0.01) continue
+    if ((b.spaceAfterPx ?? 0) !== (p.spaceAfterPx ?? 0)) continue
+    if ((b.widthPx ?? -1) !== (p.widthPx ?? -1)) continue
+    if (p.lineBoxes) b.lineBoxes = p.lineBoxes
+    if (p.tableRows) b.tableRows = p.tableRows
+    if (p.lineLeadPx !== undefined) b.lineLeadPx = p.lineLeadPx
+    if (p.colWraps) b.colWraps = p.colWraps
+    if (p.oversizeLineH !== undefined) b.oversizeLineH = p.oversizeLineH
+  }
+}
+
 export function sliceWithLineSplit(
   blocks: BlockBox[],
   geoms: SectionGeom[],
@@ -381,7 +423,6 @@ let lineSampleFontEpoch = 0
 export function bumpLineSampleFontEpoch(): void {
   lineSampleFontEpoch++
 }
-
 // the DOM does not change inside one slicing call, so its fixed-point iterations
 // share the per-element signature reads instead of repeating them
 let sigMemo: Map<HTMLElement, string> | null = null

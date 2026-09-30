@@ -132,6 +132,7 @@ import {
   appendFloatSpillBlock,
   assignSections,
   bumpLineSampleFontEpoch,
+  carryStreamedSamples,
   endnotesAnchorY,
   createLineRectsCache,
   anchorElement,
@@ -3557,6 +3558,12 @@ export function App() {
     let lastPre: PageSlice[] = []
     let lastOut: SliceOutputs | null = null
     let lastSecSig = ''
+    /** top-level child count at the last pass: a streaming pass whose only
+     *  trigger is the appended tail (dirty ≥ this) may carry the prefix's
+     *  line/row samples; any user edit below the frontier (dirty < this)
+     *  disables the carry — a same-height edit would otherwise keep stale
+     *  line boxes that the height gate cannot see */
+    let lastPassChildCount = 0
     /** first top-level index a transaction touched since the last pass; null once a trigger needs the whole document */
     let dirtyFrom: number | null = null
     let resumePasses = 0
@@ -3746,6 +3753,11 @@ export function App() {
         const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(pm, origin, factor)
         if (hasVertical)
           for (const b of blocks) if (b.el && !b.floated) b.inlineExtraPx = blockInlineExtraPx(b.el)
+        carryStreamedSamples(blocks, lastBlocks, {
+          pending: isPhasedContentPending(),
+          dirty,
+          lastPassChildCount,
+        })
         tMeasure = performance.now() - t0
         // multi-section: assign blocks to sections by docxIndex; each section has its own content height / forced breaks.
         // liveSections: when a section-break block is deleted, that section merges into the next in real time (effective before saving)
@@ -3848,6 +3860,7 @@ export function App() {
       } = measured
       slices = measured.s
       lastBlocks = blocks
+      lastPassChildCount = editor?.state.doc.childCount ?? lastPassChildCount
       pageLayoutRef.current = { blocks, slices, sections: secList ?? [] }
       if (mirrorMargins) locateCaretPageRef.current()
       const blockIndex = new BlockIndex(blocks)
