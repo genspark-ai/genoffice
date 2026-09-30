@@ -58,9 +58,9 @@ describe('modelSwitcherEntries', () => {
     expect(byId.get('codex')!.models).toEqual([''])
     // an untouched codex (no CLI path, no saved model) stays off the list
     settings.providers.codex.cliPath = ''
-    expect(
-      modelSwitcherEntries(settings, true).some((entry) => entry.meta.id === 'codex'),
-    ).toBe(false)
+    expect(modelSwitcherEntries(settings, true).some((entry) => entry.meta.id === 'codex')).toBe(
+      false,
+    )
   })
 })
 

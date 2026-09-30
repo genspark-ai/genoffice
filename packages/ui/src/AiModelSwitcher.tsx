@@ -59,14 +59,13 @@ export function modelSwitcherEntries(
   const active = entries.find((entry) => entry.meta.id === settings.provider)
   if (!active) {
     entries.push({
-      meta:
-        activeMeta ?? {
-          id: settings.provider,
-          label: settings.provider,
-          models: [],
-          defaultModel: '',
-          keyPlaceholder: '',
-        },
+      meta: activeMeta ?? {
+        id: settings.provider,
+        label: settings.provider,
+        models: [],
+        defaultModel: '',
+        keyPlaceholder: '',
+      },
       models: [activeModel],
     })
   } else if (!active.models.includes(activeModel)) {

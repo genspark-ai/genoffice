@@ -1,4 +1,4 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton, AiModelSwitcher,} from '@genoffice/ui'
+import { aiPanelWidthAtPointer, AiPanelSideButton, AiModelSwitcher } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'

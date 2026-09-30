@@ -1257,7 +1257,6 @@ export function App() {
 
   useEffect(() => {
     void window.slidesApi.getAiSettings().then(setAiSettings)
-
   }, [])
 
   // Recent files for the start screen
