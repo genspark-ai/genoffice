@@ -239,6 +239,20 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   ),
   'opencode-zen': opencodeLogo,
   'opencode-go': opencodeLogo,
+  // Simplified stand-ins, not the vendors' official marks — same treatment the
+  // codex and custom entries already get. Swap in real assets when available.
+  mimo: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#FF6900" strokeWidth="2" aria-hidden="true">
+      <path d="M3 18V6l4.5 6 4.5-6v12" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M15 6v7a3 3 0 006 0V6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  hunyuan: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#0052D9" strokeWidth="2" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M7 9.5c3 2 7 2 10 0M7 14.5c3-2 7-2 10 0" strokeLinecap="round" />
+    </svg>
+  ),
   custom: (
     <svg
       viewBox="0 0 24 24"

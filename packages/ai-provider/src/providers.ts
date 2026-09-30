@@ -173,6 +173,29 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
   },
   {
+    id: 'mimo',
+    label: 'MiMo',
+    // Xiaomi's open-weight omni-modal pair (released 2026-09-22): Pro is the
+    // trillion-parameter flagship, Flash the efficiency/cost tier. Both take
+    // text, image, video and audio input; a -pro-ultraspeed tier also exists but
+    // is the same weights behind a faster serving path, so it is not a
+    // separate model to pick here.
+    models: ['mimo-v2.6-pro', 'mimo-v2.6-flash'],
+    defaultModel: 'mimo-v2.6-pro',
+    keyPlaceholder: 'sk-...',
+  },
+  {
+    id: 'hunyuan',
+    label: 'Hunyuan',
+    // Tencent's TokenHub chat models (docs 1823/132252, read 2026-09-30).
+    // hy4-preview is the 1M-context flagship and has deep thinking on by
+    // default; hy3 is the 256k balanced tier. Every other provider here
+    // defaults to its flagship, so this does too.
+    models: ['hy4-preview', 'hy3'],
+    defaultModel: 'hy4-preview',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'minimax',
     label: 'MiniMax',
     // M3 is the current agentic/tool-use model; M2.5 moved to the legacy tier

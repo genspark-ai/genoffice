@@ -67,10 +67,12 @@ export function modelLacksVision(model: string): boolean {
  * Interleaved-thinking families whose vendors want the reasoning echoed back
  * on assistant messages: MiniMax documents that stripping it degrades
  * multi-turn tool use, and DeepSeek V4 rejects tool turns without it. Gated
- * per model because other vendors may reject the unknown field.
+ * per model because other vendors may reject the unknown field. Hunyuan joins
+ * them because hy4-preview ships deep thinking on by default, so its first
+ * turn already carries `reasoning_content`.
  */
 export function modelEchoesReasoning(model: string): boolean {
-  return /(^|\/)(minimax-m|deep-?seek-(v4|flash))/i.test(model)
+  return /(^|\/)(minimax-m|deep-?seek-(v4|flash)|hy-?[34]([^\w]|$))/i.test(model)
 }
 
 /**
@@ -258,6 +260,22 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     meta: metaOf('doubao'),
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://ark.cn-beijing.volces.com/api/v3'),
+  },
+  mimo: {
+    meta: metaOf('mimo'),
+    // the V2.6 series is omni-modal: text, image, video and audio in, text out
+    capabilities: { auth: 'api-key', vision: true },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.xiaomimimo.com/v1'),
+  },
+  hunyuan: {
+    meta: metaOf('hunyuan'),
+    // conservative: the chat models are documented for text first, so we do not
+    // hand them screenshots until a model card says otherwise
+    capabilities: { auth: 'api-key', vision: false },
+    // the mainland TokenHub host; the international one differs only by the
+    // `intl` label (tokenhub-intl.tencentcloudmaas.com), reachable by storing
+    // a base URL on this provider
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://tokenhub.tencentmaas.com/v1'),
   },
   minimax: {
     meta: metaOf('minimax'),

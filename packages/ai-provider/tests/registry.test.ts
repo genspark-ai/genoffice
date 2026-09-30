@@ -110,6 +110,10 @@ describe('provider registry', () => {
       ['glm', 'glm-5.3', 'https://open.bigmodel.cn/api/paas/v4'],
       ['qwen', 'qwen3.8-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
       ['doubao', 'doubao-seed-2-1-pro-260628', 'https://ark.cn-beijing.volces.com/api/v3'],
+      ['mimo', 'mimo-v2.6-pro', 'https://api.xiaomimimo.com/v1'],
+      ['mimo', 'mimo-v2.6-flash', 'https://api.xiaomimimo.com/v1'],
+      ['hunyuan', 'hy3', 'https://tokenhub.tencentmaas.com/v1'],
+      ['hunyuan', 'hy4-preview', 'https://tokenhub.tencentmaas.com/v1'],
       ['minimax', 'MiniMax-M3', 'https://api.minimax.io/v1'],
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
       ['mistral', 'mistral-large-latest', 'https://api.mistral.ai/v1'],
@@ -384,6 +388,16 @@ describe('modelEchoesReasoning', () => {
     expect(modelEchoesReasoning('deepseek-flash')).toBe(true)
     expect(modelEchoesReasoning('gpt-5.6-luna')).toBe(false)
     expect(modelEchoesReasoning('kimi-k3')).toBe(false)
+  })
+
+  it('flags Hunyuan (hy4-preview thinks by default) without swallowing other ids', () => {
+    expect(modelEchoesReasoning('hy3')).toBe(true)
+    expect(modelEchoesReasoning('hy4-preview')).toBe(true)
+    expect(modelEchoesReasoning('HY3')).toBe(true)
+    // a model id that merely starts with the same letters must not match
+    expect(modelEchoesReasoning('hunyuan-turbo')).toBe(false)
+    expect(modelEchoesReasoning('phy3')).toBe(false)
+    expect(modelEchoesReasoning('mimo-v2.6-pro')).toBe(false)
   })
 })
 

@@ -11,6 +11,8 @@ export type AiProviderId =
   | 'glm'
   | 'qwen'
   | 'doubao'
+  | 'mimo'
+  | 'hunyuan'
   | 'minimax'
   | 'xai'
   | 'mistral'
