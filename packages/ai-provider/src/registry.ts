@@ -74,16 +74,6 @@ export function modelEchoesReasoning(model: string): boolean {
 }
 
 /**
- * DeepSeek V4 thinks by default, and once a request carries `tools` the API
- * rejects (400) every later turn whose assistant messages don't echo back the
- * `reasoning_content` it produced. Our OpenAI-compatible transcript has no
- * field to carry that, so the agent loop would die right after its first tool
- * call. Pin the models to non-thinking mode — what the retired deepseek-chat
- * alias did — until the transcript can round-trip reasoning.
- */
-const DEEPSEEK_NON_THINKING = { thinking: { type: 'disabled' } }
-
-/**
  * The direct API 400s on the versioned pool spelling we list (verified
  * 2026-09-21: GET /v1/models serves only `deepseek-flash` and `deepseek-v4-pro`).
  */
@@ -217,10 +207,14 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint(config) {
       const wire = DEEPSEEK_WIRE_IDS[config.model]
+      // No thinking override: both V4 models think by default and the agent
+      // transcript round-trips the reasoning (deepseek sits on the
+      // modelEchoesReasoning list). The tool-turn 400 that once forced
+      // non-thinking no longer reproduces — verified against the live API
+      // 2026-09-30: flash and v4-pro accept thinking+tools with and without
+      // the reasoning_content echo.
       return {
-        ...fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1', {
-          bodyExtras: DEEPSEEK_NON_THINKING,
-        })(config),
+        ...fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1')(config),
         ...(wire ? { model: wire } : {}),
       }
     },

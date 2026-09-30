@@ -49,18 +49,17 @@ describe('provider registry', () => {
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
       omitTemperature: true,
     })
-    // thinking stays off: once tools are in play DeepSeek 400s any turn that
-    // does not echo back the reasoning_content our transcript cannot carry
+    // no thinking override: both models think by default and the transcript
+    // round-trips the reasoning (live-API verified 2026-09-30 — the tool-turn
+    // 400 that once forced non-thinking no longer reproduces)
     expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deepseek-v4-pro'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://api.deepseek.com/v1',
-      bodyExtras: { thinking: { type: 'disabled' } },
     })
     // the listed V4.1 Flash name is the pool spelling; the vendor only serves `deepseek-flash`
     expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deep-seek-v4.1-flash'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://api.deepseek.com/v1',
-      bodyExtras: { thinking: { type: 'disabled' } },
       model: 'deepseek-flash',
     })
     expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config('gpt-4.1-mini'))).toEqual({
