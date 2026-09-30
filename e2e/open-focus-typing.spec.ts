@@ -292,9 +292,22 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
       }
       await waitForEditableFocus(sheets)
       const before = await domState(sheets)
-      // Character key simulation can omit input events in an adopted Electron
-      // view. Use the text-input channel after asserting native/editor focus.
-      await sheets.keyboard.insertText('4242')
+      // Two input channels reach a cell, and the CI failures show them failing
+      // independently in an adopted view: the CI-only signature is keydowns
+      // arriving (Enter moves the cursor) while the IME-style text-input
+      // channel (insertText) drops everything — and character-key simulation
+      // can omit input events in the same view (#1151's original reason for
+      // insertText). So every attempt alternates the channel instead of
+      // repeating the one that just failed: odd attempts open the editor with
+      // a real keydown and commit the rest via insertText; even attempts type
+      // real characters all the way.
+      const channel = attempt % 2 === 1 ? 'hybrid' : 'typed'
+      if (channel === 'hybrid') {
+        await sheets.keyboard.press('4') // a real keydown: opens the cell editor
+        await sheets.keyboard.insertText('242') // text-input channel for the rest
+      } else {
+        await sheets.keyboard.type('4242') // real keydowns for every character
+      }
       const afterInsert = await domState(sheets)
       await sheets.keyboard.press('Enter')
       const afterEnter = await domState(sheets)
@@ -302,7 +315,7 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
       // text, and this case only fails on CI, so every layer goes into the
       // failure message: attach() is not written to disk in this setup.
       attempts.push(
-        `attempt ${attempt}: editor text before insert: ${JSON.stringify(before.editorText)}, ` +
+        `attempt ${attempt} (${channel}): editor text before insert: ${JSON.stringify(before.editorText)}, ` +
           `after insert: ${JSON.stringify(afterInsert.editorText)}, ` +
           `after enter: ${JSON.stringify(afterEnter.editorText)}; ` +
           `active element is the editor: ${JSON.stringify(afterInsert.activeIsEditor)} ` +
