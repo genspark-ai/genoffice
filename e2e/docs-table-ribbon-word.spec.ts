@@ -131,6 +131,9 @@ test.describe('docs table ribbon (Word layout)', () => {
         'Inside Borders',
         'Inside Horizontal Border',
         'Inside Vertical Border',
+        // the two diagonals close the gallery, in Word's order (#691)
+        'Diagonal Down Border',
+        'Diagonal Up Border',
       ])
       await page.keyboard.press('Escape')
 
