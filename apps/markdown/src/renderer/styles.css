@@ -2995,15 +2995,18 @@ div.tiptap-mathematics-render {
   height: 100%;
 }
 
-/* Image host configuration dialog (genoffice#388) */
+/* Image host configuration dialog (genoffice#388). Colors come from the shared
+ * tokens (theming rules in CLAUDE.md); the two raw values live on
+ * custom-property definitions, the only place raw colors are allowed. */
 .image-host-backdrop {
+  --image-host-dim: rgb(0 0 0 / 35%);
   position: fixed;
   inset: 0;
   z-index: 90;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 0.35);
+  background: var(--image-host-dim);
 }
 
 .image-host-dialog {
@@ -3016,21 +3019,22 @@ div.tiptap-mathematics-render {
   flex-direction: column;
   gap: 8px;
   padding: 16px;
-  background: var(--color-bg, var(--surface, #fff));
-  border: 1px solid var(--color-border, #ccc);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.2);
+  box-shadow: 0 12px 40px var(--md-shadow-color);
 }
 
 .image-host-title {
   margin: 0;
   font-size: 15px;
+  color: var(--text);
 }
 
 .image-host-sub {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-secondary, #777);
+  color: var(--text-secondary);
 }
 
 .image-host-row {
@@ -3038,11 +3042,12 @@ div.tiptap-mathematics-render {
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  color: var(--text);
 }
 
 .image-host-label {
   flex: 0 0 128px;
-  color: var(--color-text-secondary, #777);
+  color: var(--text-secondary);
 }
 
 .image-host-input {
@@ -3051,21 +3056,21 @@ div.tiptap-mathematics-render {
   height: 26px;
   min-width: 0;
   padding: 0 6px;
-  border: 1px solid var(--color-border, #bbb);
+  border: 1px solid var(--border-strong);
   border-radius: 3px;
-  background: var(--color-bg, #fff);
-  color: inherit;
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
 }
 
 .image-host-input:focus-visible {
-  border-color: var(--color-accent, #4a7dbe);
+  border-color: var(--accent);
   outline: none;
 }
 
 .image-host-error {
   font-size: 12px;
-  color: var(--color-danger, #c0392b);
+  color: var(--danger);
 }
 
 .image-host-actions {
@@ -3078,18 +3083,23 @@ div.tiptap-mathematics-render {
 .image-host-btn {
   height: 26px;
   padding: 0 12px;
-  border: 1px solid var(--color-border, #bbb);
+  border: 1px solid var(--border-strong);
   border-radius: 3px;
   background: none;
-  color: inherit;
+  color: var(--text);
   font: inherit;
   cursor: pointer;
 }
 
+.image-host-btn:hover {
+  background: var(--hover);
+}
+
 .image-host-btn-primary {
-  background: var(--color-accent, #4a7dbe);
-  border-color: var(--color-accent, #4a7dbe);
-  color: #fff;
+  --image-host-on-accent: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--image-host-on-accent);
 }
 
 .image-host-btn:disabled {
