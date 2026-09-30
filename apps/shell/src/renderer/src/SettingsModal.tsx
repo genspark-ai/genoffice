@@ -10,6 +10,7 @@ import {
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
 import type { DefaultAppStatus, FileSearchSettings, JevEndpoint } from '../../shared/home-api'
+import type { UpdateUiState } from '../../shared/update-api'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   MAX_MAX_OUTPUT_TOKENS,
@@ -1261,6 +1262,7 @@ export function SettingsModal({
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
+  const [updateState, setUpdateState] = useState<UpdateUiState | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -1288,12 +1290,21 @@ export function SettingsModal({
     void window.aiOffice.getAppVersion?.().then((v) => {
       if (alive && v) setAppVersion(v)
     })
+    void window.aiOffice.getUpdateState?.().then((s) => {
+      if (alive) setUpdateState(s)
+    })
     void window.aiOffice.githubStars?.().then((n) => {
       if (alive && n !== null) setGithubStars(n)
     })
     return () => {
       alive = false
     }
+  }, [])
+
+  // live update state: the About row offers the update as soon as one is known
+  useEffect(() => {
+    const off = window.aiOffice.onUpdateStateChanged?.((s) => setUpdateState(s))
+    return () => off?.()
   }, [])
 
   useEffect(() => {
@@ -1640,6 +1651,26 @@ export function SettingsModal({
               <>
                 <h3 className="set-pane-title">{t('setSecAbout')}</h3>
                 <Field label={t('versionLabel')} value={appVersion || '—'} />
+                {updateState && (
+                  <div className="set-field">
+                    <div className="set-field-text">
+                      <label className="set-field-label">{t('setUpdateAvailableLabel')}</label>
+                    </div>
+                    <button
+                      type="button"
+                      className="set-update-btn"
+                      onClick={() => void window.aiOffice.openUpdateDialog?.()}
+                    >
+                      {updateState.phase === 'downloading'
+                        ? t('setUpdateDownloading', {
+                            percent: Math.round(updateState.percent),
+                          })
+                        : updateState.phase === 'downloaded'
+                          ? t('setUpdateRestart')
+                          : t('setUpdateTo', { version: updateState.version })}
+                    </button>
+                  </div>
+                )}
                 <div className="set-field">
                   <div className="set-field-text">
                     <label className="set-field-label">{t('updateChannel')}</label>
