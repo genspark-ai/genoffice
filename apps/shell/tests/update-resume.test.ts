@@ -41,7 +41,7 @@ const REST = Buffer.from('abcdefghijklmnopqrstuvwxyz')
 const FULL = Buffer.concat([PREFIX, REST])
 
 /** a minimal updater double whose httpExecutor records the fallback calls */
-function makeUpdater() {
+function makeUpdater(stallTimeoutMs?: number) {
   const calls: Array<{ url: string; destination: string }> = []
   const executor = {
     download: async (url: URL, destination: string) => {
@@ -49,7 +49,11 @@ function makeUpdater() {
       return destination
     },
   }
-  installResumeDownload({ httpExecutor: executor })
+  installResumeDownload(
+    { httpExecutor: executor },
+    // 50 ms: the stall window is behaviour under test, not the 60 s value
+    stallTimeoutMs ?? 50,
+  )
   return { executor, fallbackCalls: calls }
 }
 
@@ -156,6 +160,30 @@ describe('resumable installer download', () => {
     // the received prefix survives: the next attempt resumes from it
     expect((await stat(dest + '.part')).size).toBe(4)
     expect(await readFile(dest + '.part')).toEqual(FULL.subarray(0, 4))
+  })
+
+  it('aborts a wedged stream with no data arriving and keeps the .part', async () => {
+    const dest = destOf()
+    // the injected stall window is 50 ms (see makeUpdater)
+    const { executor } = makeUpdater()
+    // one chunk arrives, then the connection goes silent (no error, no end)
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(FULL.subarray(0, 5)))
+      },
+    })
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-length': String(FULL.length) },
+        }),
+    ) as unknown as typeof fetch
+    await expect(executor.download(url, dest, { sha512: sha512(FULL) })).rejects.toThrow(
+      /stalled: no data for/,
+    )
+    // the received prefix survives for the next attempt
+    expect(await readFile(dest + '.part')).toEqual(FULL.subarray(0, 5))
   })
 
   it('honours the cancellation token mid-stream and keeps the .part', async () => {
