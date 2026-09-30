@@ -8,8 +8,8 @@ import type { AiProviderId } from '@genoffice/ai-provider'
 // generic icon for the "custom" endpoint.
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
-// (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, OpenCode, Genspark, Custom) use
-// currentColor so they stay legible in dark mode.
+// (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, OpenCode,
+// Genspark, Custom) use currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
 // namespace their <linearGradient> ids per mount: the dropdown renders the
@@ -235,6 +235,13 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   opper: (
     <svg viewBox="-49.5 0 315 315" fill="currentColor" fillRule="evenodd" aria-hidden="true">
       <path d="M159.78 315C71.53 315 0 244.49 0 157.5C0 -18.9499 159.78 0.650075 159.78 0.650075C159.78 87.2201 88.36 157.4 0.2 157.5C149.8 157.64 159.78 315 159.78 315ZM160.52 217.98C160.52 217.98 156.94 161.65 105.04 157.52C120.6 157.34 160.52 151.54 160.52 96.5601C160.52 151.54 200.44 157.34 216 157.52C164.1 161.63 160.52 217.98 160.52 217.98Z" />
+    </svg>
+  ),
+  // Cheaper Inference's mark (cheaperinference.com): a "C" with a bar, 24-unit frame
+  cheaperinference: (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M9.107 2.786H15.429V8.839H9.589a3.213 3.213 0 0 0 0.321 6.375H15.214L9.434 20.994A9.107 9.107 0 1 1 9.107 2.786Z" />
+      <path d="M22.179 3.429H22.607a1.286 1.286 0 0 1 1.286 1.286V19.714a1.393 1.393 0 0 1 -1.393 1.393H17.464V8.143Z" />
     </svg>
   ),
   'opencode-zen': opencodeLogo,

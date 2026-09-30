@@ -259,6 +259,17 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'API Key',
   },
   {
+    id: 'cheaperinference',
+    label: 'Cheaper Inference',
+    // Bare model ids as GET api.cheaperinference.com/v1/models lists them (the
+    // chat rows, type "text"): no vendor prefix, one key for every lab. Other
+    // ids from that list work as-is when typed in. Full list at
+    // cheaperinference.com/#models.
+    models: ['gpt-5.4-mini', 'gpt-5.4', 'claude-sonnet-5', 'gemini-3.1-pro'],
+    defaultModel: 'gpt-5.4-mini',
+    keyPlaceholder: 'ci_live_...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

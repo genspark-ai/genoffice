@@ -291,6 +291,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // one chat-completions endpoint for every pool and vendor route; the model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.opper.ai/v3/compat'),
   },
+  cheaperinference: {
+    meta: metaOf('cheaperinference'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the model id picks the lab
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.cheaperinference.com/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

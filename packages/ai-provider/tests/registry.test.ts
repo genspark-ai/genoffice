@@ -116,6 +116,7 @@ describe('provider registry', () => {
       ['openrouter', 'openrouter/auto', 'https://openrouter.ai/api/v1'],
       ['requesty', 'claude-sonnet-5', 'https://router.requesty.ai/v1'],
       ['opper', 'claude-sonnet-4-6', 'https://api.opper.ai/v3/compat'],
+      ['cheaperinference', 'claude-sonnet-5', 'https://api.cheaperinference.com/v1'],
     ]
     for (const [id, model, baseUrl] of cases) {
       expect(AI_PROVIDER_ADAPTERS[id].resolveEndpoint(config(model))).toEqual({
@@ -350,6 +351,22 @@ describe('fixed-sampling models on indirect routes', () => {
     expect(resolve('claude-sonnet-5', 'https://router.eu.requesty.ai/v1')).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://router.eu.requesty.ai/v1',
+    })
+  })
+
+  it('omits temperature for fixed-sampling models via Cheaper Inference', () => {
+    const resolve = (model: string) =>
+      AI_PROVIDER_ADAPTERS.cheaperinference.resolveEndpoint(config(model))
+    for (const model of ['gpt-5.4-mini', 'gpt-5.4', 'gemini-3.1-pro']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://api.cheaperinference.com/v1',
+        omitTemperature: true,
+      })
+    }
+    expect(resolve('claude-sonnet-5')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.cheaperinference.com/v1',
     })
   })
 })
