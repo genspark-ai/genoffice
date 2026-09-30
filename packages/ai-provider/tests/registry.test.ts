@@ -197,19 +197,36 @@ describe('provider registry', () => {
   it('routes OpenCode Go with its own table (MiniMax rides Messages there, not chat-completions)', () => {
     const resolve = (model: string) =>
       AI_PROVIDER_ADAPTERS['opencode-go'].resolveEndpoint(config(model))
-    for (const model of ['minimax-m3', 'qwen3.8-flash']) {
+    for (const model of ['minimax-m3', 'minimax-m2.7', 'qwen3.8-flash']) {
       expect(resolve(model)).toEqual({
         protocol: 'anthropic',
         baseUrl: 'https://opencode.ai/zen/go',
       })
     }
-    for (const model of ['glm-5.3', 'deepseek-v4-flash', 'qwen3.8-max', 'longcat-2.0']) {
+    for (const model of [
+      'glm-5.3',
+      'glm-5.2',
+      'deepseek-v4-flash',
+      'deepseek-v4.1-flash',
+      'qwen3.8-max',
+      'longcat-2.0',
+      'longcat-2.5-preview-free',
+      'mimo-v2.6-pro',
+      'mimo-v2.6-flash',
+      'hy4-preview',
+      'hy3',
+    ]) {
       expect(resolve(model)).toEqual({
         protocol: 'openai-compatible',
         baseUrl: 'https://opencode.ai/zen/go/v1',
       })
     }
     expect(resolve('kimi-k2.7-code')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://opencode.ai/zen/go/v1',
+      omitTemperature: true,
+    })
+    expect(resolve('kimi-k2.6')).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://opencode.ai/zen/go/v1',
       omitTemperature: true,

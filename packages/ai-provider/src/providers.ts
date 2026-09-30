@@ -141,16 +141,23 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'kimi',
     label: 'Kimi',
-    models: ['kimi-k3'],
+    // K2.8 Preview (2026-09-11) sits between the code-tuned K2.7 and the K3
+    // flagship: 1M context and image/video input, closed weights, thinking
+    // effort low/high/max with max the default
+    models: ['kimi-k3', 'kimi-k2.8-preview'],
     defaultModel: 'kimi-k3',
     keyPlaceholder: 'sk-...',
   },
   {
     id: 'glm',
     label: 'GLM',
-    // bigmodel.cn text-model lineup (2026-08); 5.3 and 5.2 share a base model,
-    // 5-Turbo is the cheap tier
-    models: ['glm-5.3', 'glm-5.2', 'glm-5-turbo'],
+    // bigmodel.cn text-model lineup (2026-08); 5.3 and 5.2 share a base model.
+    // 5.3-Flash is the first multimodal GLM-5 and the documented successor to
+    // 5-Turbo, which Z.ai delisted from its price card in late August and
+    // Tencent CloudBase retires on 2026-10-30 with migration advice pointing
+    // here. 5.2 is marked deprecated on third-party catalogues but is still
+    // sold pay-as-you-go, so it stays listed.
+    models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2'],
     defaultModel: 'glm-5.3',
     keyPlaceholder: 'xxxxxxxx.xxxxxxxx',
   },
@@ -158,8 +165,10 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     id: 'qwen',
     label: 'Qwen',
     // Versioned DashScope ids: the bare qwen-max alias still points at a
-    // Qwen2.5-era snapshot, so name the 3.x tiers explicitly (2026-08)
-    models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'],
+    // Qwen2.5-era snapshot, so name the 3.x tiers explicitly (2026-08).
+    // 3.8 ships as Max and Flash only — there is no 3.8-Plus tier, and
+    // 3.7-Flash is still the listed high-volume option.
+    models: ['qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus', 'qwen3.7-flash'],
     defaultModel: 'qwen3.8-max',
     keyPlaceholder: 'sk-...',
   },
@@ -183,7 +192,11 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'xai',
     label: 'Grok',
-    models: ['grok-4.6', 'grok-4.5'],
+    // 4.7 (2026-09-21) is 2.1T / 500K context at 4.6's price. 4.6 stays the
+    // default so a fresh config does not silently move to a model released
+    // this month; say the word and the default follows the flagship like every
+    // other provider here.
+    models: ['grok-4.7', 'grok-4.6', 'grok-4.5'],
     defaultModel: 'grok-4.6',
     keyPlaceholder: 'xai-...',
   },
@@ -289,20 +302,29 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     label: 'OpenCode Go',
     // $10/month subscription to open-weight coding models (opencode.ai/docs/go),
     // same key as Zen; ids exactly as GET /zen/go/v1/models lists them
-    // (2026-09-03). GPT-5.6 Luna, Grok and Muse Spark are Responses-only and
-    // left out for the same reason as above.
+    // (re-read 2026-09-30). GPT-5.6 Luna, Grok and Muse Spark are
+    // Responses-only and left out for the same reason as above.
     models: [
       'kimi-k2.7-code',
       'kimi-k3',
+      'kimi-k2.6',
       'glm-5.3',
       'glm-5.3-flash',
+      'glm-5.2',
       'deepseek-v4-pro',
       'deepseek-v4-flash',
+      'deepseek-v4.1-flash',
       'qwen3.8-max',
       'qwen3.8-flash',
       'minimax-m3',
+      'minimax-m2.7',
       'mimo-v2.5-pro',
+      'mimo-v2.6-pro',
+      'mimo-v2.6-flash',
       'longcat-2.0',
+      'longcat-2.5-preview-free',
+      'hy4-preview',
+      'hy3',
     ],
     defaultModel: 'kimi-k2.7-code',
     keyPlaceholder: 'API Key',
