@@ -1,8 +1,10 @@
 /**
  * Search utilities (main process) — gsk (Genspark CLI) first, then Serper Google API,
- * then Serply, Tavily and Parallel, whose free Search MCP answers keyless before the DuckDuckGo last resort. Runs in the main process
+ * then Serply, Tavily, Parallel (whose free Search MCP answers keyless), Exa and Firecrawl,
+ * before the DuckDuckGo last resort. Runs in the main process
  * (Node fetch / child process) to avoid renderer CORS; the Serper key reuses SERPER_API_KEY,
- * the Serply key reuses SERPLY_API_KEY, the Tavily key reuses TAVILY_API_KEY and Parallel uses PARALLEL_API_KEY.
+ * the Serply key reuses SERPLY_API_KEY, the Tavily key reuses TAVILY_API_KEY, Parallel uses
+ * PARALLEL_API_KEY, Exa uses EXA_API_KEY and Firecrawl uses FIRECRAWL_API_KEY.
  * For gsk auth see ./gsk.ts (`gsk login` or GSK_API_KEY).
  */
 
@@ -26,6 +28,8 @@ const SERPER_KEY = () => process.env.SERPER_API_KEY ?? ''
 const SERPLY_KEY = () => process.env.SERPLY_API_KEY ?? ''
 const TAVILY_KEY = () => process.env.TAVILY_API_KEY ?? ''
 const PARALLEL_KEY = () => process.env.PARALLEL_API_KEY ?? ''
+const EXA_KEY = () => process.env.EXA_API_KEY ?? ''
+const FIRECRAWL_KEY = () => process.env.FIRECRAWL_API_KEY ?? ''
 
 /**
  * Backend selection for one search. Keys default to the SERPER_API_KEY /
@@ -39,8 +43,10 @@ export interface SearchOptions {
   serplyKey?: string
   tavilyKey?: string
   parallelKey?: string
+  exaKey?: string
+  firecrawlKey?: string
   /** which backend to try first (default serper) */
-  prefer?: 'serper' | 'serply' | 'tavily' | 'parallel'
+  prefer?: 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl'
 }
 
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
@@ -51,6 +57,8 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     serplyKey: o.serplyKey ?? SERPLY_KEY(),
     tavilyKey: o.tavilyKey ?? TAVILY_KEY(),
     parallelKey: o.parallelKey ?? PARALLEL_KEY(),
+    exaKey: o.exaKey ?? EXA_KEY(),
+    firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
     prefer: o.prefer ?? 'serper',
   }
 }
@@ -240,6 +248,103 @@ async function parallelWebSearch(
   }
 }
 
+/**
+ * Exa's AI search (api.exa.ai/search): results carry the page contents we ask
+ * for, so a capped text pass (not the default full text) serves as the
+ * snippet. No synthesized answer on this endpoint — results only.
+ */
+async function exaWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    return await fetchWithTimeout(
+      'https://api.exa.ai/search',
+      {
+        method: 'POST',
+        headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          numResults: maxResults,
+          contents: { text: { maxCharacters: 500 } },
+        }),
+      },
+      async (resp) => {
+        if (!resp.ok) return null
+        const data = asRecord(await resp.json())
+        const raw: unknown[] = Array.isArray(data.results) ? data.results : []
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          const url = typeof o.url === 'string' ? o.url : ''
+          if (!/^https?:\/\//i.test(url)) continue
+          const text = o.text
+          const summary = o.summary
+          results.push({
+            title: String(o.title ?? url),
+            url,
+            snippet:
+              typeof text === 'string' && text ? text : typeof summary === 'string' ? summary : '',
+          })
+        }
+        return results.length ? { results, method: 'exa' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Firecrawl's /v2/search groups results by source; the web list is the
+ * snippet-bearing one (news carries `snippet` instead of `description` and
+ * serves as the fallback). No scrapeOptions: scraping costs extra credits and
+ * the plain description is exactly the snippet shape we need.
+ */
+async function firecrawlWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    return await fetchWithTimeout(
+      'https://api.firecrawl.dev/v2/search',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: maxResults }),
+      },
+      async (resp) => {
+        if (!resp.ok) return null
+        const data = asRecord(asRecord(await resp.json()).data)
+        // an empty web list must fall through to news, not read as "no results"
+        const web = Array.isArray(data.web) ? data.web : []
+        const news = Array.isArray(data.news) ? data.news : []
+        const raw: unknown[] = web.length > 0 ? web : news
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          const url = typeof o.url === 'string' ? o.url : ''
+          if (!/^https?:\/\//i.test(url)) continue
+          results.push({
+            title: String(o.title ?? url),
+            url,
+            snippet: String(o.description ?? o.snippet ?? ''),
+          })
+        }
+        return results.length ? { results, method: 'firecrawl' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
 // ── Web search ──────────────────────────────────────────────────────
 
 /**
@@ -280,10 +385,14 @@ export async function webSearch(
     serply: () => serplyWebSearch(o.serplyKey, q, max),
     tavily: () => tavilyWebSearch(o.tavilyKey, q, max),
     parallel: () => parallelWebSearch(o.parallelKey, q, max),
+    exa: () => exaWebSearch(o.exaKey, q, max),
+    firecrawl: () => firecrawlWebSearch(o.firecrawlKey, q, max),
   }
   const order = [
     o.prefer,
-    ...(['serper', 'serply', 'tavily', 'parallel'] as const).filter((id) => id !== o.prefer),
+    ...(['serper', 'serply', 'tavily', 'parallel', 'exa', 'firecrawl'] as const).filter(
+      (id) => id !== o.prefer,
+    ),
   ]
   for (const id of order) {
     const r = await keyed[id]()

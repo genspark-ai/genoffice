@@ -16,6 +16,8 @@ afterEach(() => {
   delete process.env.SERPLY_API_KEY
   delete process.env.PARALLEL_API_KEY
   delete process.env.TAVILY_API_KEY
+  delete process.env.EXA_API_KEY
+  delete process.env.FIRECRAWL_API_KEY
 })
 
 function mockFetch(
@@ -312,6 +314,94 @@ describe('webSearch (SearchOptions)', () => {
   })
 })
 
+describe('webSearch (Exa)', () => {
+  it('parses results with the capped text as the snippet', async () => {
+    process.env.EXA_API_KEY = 'exa-key'
+    const urls: string[] = []
+    let body: any
+    mockFetch((url, init) => {
+      urls.push(String(url))
+      body = JSON.parse(String(init?.body))
+      return {
+        ok: true,
+        json: {
+          results: [
+            { title: 'A', url: 'https://a.com', text: 'capped text' },
+            { title: 'B', url: 'https://b.com', summary: 'fallback summary' },
+            { title: 'C', url: 'javascript:alert(1)', text: 'dropped' },
+          ],
+        },
+      }
+    })
+    const r = await webSearch('q', 5, { useGsk: false, exaKey: 'exa-key', prefer: 'exa' })
+    expect(urls).toEqual(['https://api.exa.ai/search'])
+    expect(body).toEqual({ query: 'q', numResults: 5, contents: { text: { maxCharacters: 500 } } })
+    expect(r.method).toBe('exa')
+    expect(r.results).toEqual([
+      { title: 'A', url: 'https://a.com', snippet: 'capped text' },
+      { title: 'B', url: 'https://b.com', snippet: 'fallback summary' },
+    ])
+  })
+
+  it('an exa failure falls through to the next backend', async () => {
+    process.env.EXA_API_KEY = 'exa-key'
+    mockFetch((url) => (url.includes('exa.ai') ? { ok: false } : { ok: false }))
+    const r = await webSearch('q', 2, { useGsk: false, exaKey: 'k', prefer: 'exa' })
+    // every keyed backend refused → the free DuckDuckGo scrape answers (or errors)
+    expect(r.method).not.toBe('exa')
+  })
+})
+
+describe('webSearch (Firecrawl)', () => {
+  it('parses the web list and falls back to news when web is empty', async () => {
+    let body: any
+    mockFetch((url, init) => {
+      expect(String(url)).toBe('https://api.firecrawl.dev/v2/search')
+      body = JSON.parse(String(init?.body))
+      return {
+        ok: true,
+        json: {
+          success: true,
+          data: {
+            web: [],
+            news: [
+              { title: 'N1', url: 'https://n1.com', snippet: 'news snippet' },
+              { title: 'N2', url: 'https://n2.com', description: 'ignored on news' },
+            ],
+          },
+        },
+      }
+    })
+    const r = await webSearch('q', 3, { useGsk: false, firecrawlKey: 'fc-k', prefer: 'firecrawl' })
+    expect(body).toEqual({ query: 'q', limit: 3 })
+    expect(r.method).toBe('firecrawl')
+    expect(r.results).toEqual([
+      { title: 'N1', url: 'https://n1.com', snippet: 'news snippet' },
+      { title: 'N2', url: 'https://n2.com', snippet: 'ignored on news' },
+    ])
+  })
+
+  it('web results use description as the snippet and respect the cap', async () => {
+    mockFetch(() => ({
+      ok: true,
+      json: {
+        success: true,
+        data: {
+          web: [
+            { url: 'https://a.com', title: 'A', description: 'da' },
+            { url: 'https://b.com', title: 'B', description: 'db' },
+            { url: 'https://c.com', title: 'C', description: 'dc' },
+          ],
+        },
+      },
+    }))
+    const r = await webSearch('q', 2, { useGsk: false, firecrawlKey: 'fc-k', prefer: 'firecrawl' })
+    expect(r.method).toBe('firecrawl')
+    expect(r.results).toHaveLength(2)
+    expect(r.results[0]).toEqual({ title: 'A', url: 'https://a.com', snippet: 'da' })
+  })
+})
+
 describe('search-tools', () => {
   it('maps the settings block onto SearchOptions', () => {
     const base = defaultAiSettings()
@@ -328,6 +418,8 @@ describe('search-tools', () => {
           serply: { apiKey: '' },
           tavily: { apiKey: '' },
           parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: '' },
         },
       },
     }
@@ -341,6 +433,8 @@ describe('search-tools', () => {
           serply: { apiKey: '' },
           tavily: { apiKey: 't' },
           parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: '' },
         },
       },
     }
@@ -348,6 +442,40 @@ describe('search-tools', () => {
       useGsk: false,
       tavilyKey: 't',
       prefer: 'tavily',
+    })
+    const exa = {
+      ...base,
+      search: {
+        provider: 'exa' as const,
+        providers: {
+          serper: { apiKey: '' },
+          serply: { apiKey: '' },
+          tavily: { apiKey: '' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: 'e' },
+          firecrawl: { apiKey: '' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(exa)).toEqual({ useGsk: false, exaKey: 'e', prefer: 'exa' })
+    const firecrawl = {
+      ...base,
+      search: {
+        provider: 'firecrawl' as const,
+        providers: {
+          serper: { apiKey: '' },
+          serply: { apiKey: '' },
+          tavily: { apiKey: '' },
+          parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: 'fc-1' },
+        },
+      },
+    }
+    expect(searchOptionsFromSettings(firecrawl)).toEqual({
+      useGsk: false,
+      firecrawlKey: 'fc-1',
+      prefer: 'firecrawl',
     })
     // no key → genspark chain
     const empty = {
@@ -359,6 +487,8 @@ describe('search-tools', () => {
           serply: { apiKey: '' },
           tavily: { apiKey: '' },
           parallel: { apiKey: '' },
+          exa: { apiKey: '' },
+          firecrawl: { apiKey: '' },
         },
       },
     }
@@ -379,5 +509,23 @@ describe('search-tools', () => {
     }))
     expect(await testSearchProvider('serper', 'right')).toEqual({ ok: true })
     expect(await testSearchProvider('tavily', '')).toEqual({ ok: false, error: 'API key is empty' })
+    mockFetch((url) =>
+      url.includes('exa.ai')
+        ? { ok: true, json: { results: [{ title: 'A', url: 'https://a.com', text: 't' }] } }
+        : { ok: false },
+    )
+    expect(await testSearchProvider('exa', 'right')).toEqual({ ok: true })
+    mockFetch((url) =>
+      url.includes('firecrawl.dev')
+        ? {
+            ok: true,
+            json: {
+              success: true,
+              data: { web: [{ url: 'https://a.com', title: 'A', description: 'd' }] },
+            },
+          }
+        : { ok: false },
+    )
+    expect(await testSearchProvider('firecrawl', 'right')).toEqual({ ok: true })
   })
 })
