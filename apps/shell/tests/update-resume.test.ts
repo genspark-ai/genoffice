@@ -203,19 +203,33 @@ describe('resumable installer download', () => {
         cancel = true
       },
     }
+    // The first chunk has to clear the reader's high-water mark, or it proves
+    // nothing. Readable.fromWeb keeps pulling until its internal buffer reaches
+    // the HWM (16384 for a non-object Readable), so two 36-byte chunks are
+    // coalesced into a single read and the writer's between-chunks cancellation
+    // check only ever runs after the whole body has already landed. Measured on
+    // the Node versions this runs on: 36 B in two chunks reads as [36] on v22
+    // but as two reads on v26, which is why this has to be forced structurally
+    // rather than left to scheduling. 64 KiB clears the HWM on both.
+    const HEAD = 64 * 1024 + 7
+    const body = Buffer.concat([Buffer.alloc(HEAD, 0x61), Buffer.from('tail')])
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(new Uint8Array(FULL.subarray(0, 5)))
-        controller.enqueue(new Uint8Array(FULL.subarray(5)))
+        controller.enqueue(new Uint8Array(body.subarray(0, HEAD)))
+        controller.enqueue(new Uint8Array(body.subarray(HEAD)))
+        controller.close()
       },
     })
     globalThis.fetch = vi.fn(
       async () =>
-        new Response(stream, { status: 200, headers: { 'content-length': String(FULL.length) } }),
+        new Response(stream, { status: 200, headers: { 'content-length': String(body.length) } }),
     ) as unknown as typeof fetch
-    await expect(executor.download(url, dest, options)).rejects.toThrow(/aborted|cancelled/)
-    expect((await stat(dest + '.part')).size).toBeGreaterThan(0)
-    expect((await stat(dest + '.part')).size).toBeLessThan(FULL.length)
+    await expect(
+      executor.download(url, dest, { ...options, sha512: sha512(body) }),
+    ).rejects.toThrow(/aborted|cancelled/)
+    // exactly the first chunk: the token was checked and honoured at the boundary
+    expect((await stat(dest + '.part')).size).toBe(HEAD)
+    expect((await stat(dest + '.part')).size).toBeLessThan(body.length)
   })
 
   it('falls back to the stock download without a sha512 to validate against', async () => {
