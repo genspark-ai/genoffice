@@ -3925,3 +3925,70 @@ fn source_linked_chart_formats_resolve_in_one_pass_per_worksheet() {
     }
     assert_eq!(seen, CHARTS.len(), "every chart visual was resolved");
 }
+
+/// Rewrites one entry's declared uncompressed size in both its local and its
+/// central header, leaving the compressed size, the CRC and the payload alone.
+/// The archive therefore stays fully readable — only the declaration becomes a
+/// lie, which is exactly the shape `zip` 4.6.1 will hand to a caller: its
+/// `find_content` limits the *input* by `compressed_size`, so the deflate
+/// stream still delivers every byte it carries.
+fn forge_declared_size(path: &Path, entry: &str, declared: u32) {
+    const LOCAL_HEADER: u32 = 0x0403_4b50;
+    const CENTRAL_HEADER: u32 = 0x0201_4b50;
+    let mut bytes = fs::read(path).unwrap();
+    let mut patched = 0;
+    for index in 0..bytes.len().saturating_sub(4) {
+        let signature = u32::from_le_bytes(bytes[index..index + 4].try_into().unwrap());
+        // The declared size sits at +22 (local) and +24 (central); the name
+        // follows the fixed block, which is 30 bytes locally and 46 in the
+        // central directory. Both name the entry without parsing the deflate
+        // stream.
+        let (name_len_at, extra_len_at, size_at, name_at) = match signature {
+            LOCAL_HEADER => (26, 28, 22, 30),
+            CENTRAL_HEADER => (28, 30, 24, 46),
+            _ => continue,
+        };
+        let length_at = |at: usize| {
+            u16::from_le_bytes(bytes[index + at..index + at + 2].try_into().unwrap()) as usize
+        };
+        let start = index + name_at + length_at(name_len_at) + length_at(extra_len_at);
+        if start > bytes.len() || &bytes[index + name_at..start] != entry.as_bytes() {
+            continue;
+        }
+        bytes[index + size_at..index + size_at + 4].copy_from_slice(&declared.to_le_bytes());
+        patched += 1;
+    }
+    assert_eq!(patched, 2, "entry {entry} was not found in both headers");
+    fs::write(path, &bytes).unwrap();
+}
+
+/// The media cap used to consult only the central directory's declared size
+/// and then `read_to_end` the rest, so it bounded nothing: a part claiming a
+/// few bytes inflated to whatever the deflate stream carried and the whole
+/// payload landed in one allocation. `@genoffice/zip-gate` closes the same gap
+/// for the docx/pptx hosts by inflating one byte past the claim (#781); the
+/// sidecar reads the entry itself, so it has to hold the same line here.
+#[test]
+fn rejects_media_entry_that_inflates_past_its_declared_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bomb.xlsx");
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/media/image1.png", options).unwrap();
+        writer.write_all(&vec![b'A'; 4 * 1024 * 1024]).unwrap();
+        writer.finish().unwrap();
+    }
+    // 12 declared bytes for a 4 MiB entry. The CRC is untouched, so the entry
+    // itself reads back cleanly and only the size declaration understates it.
+    forge_declared_size(&path, "xl/media/image1.png", 12);
+
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let result = crate::visuals::read_media(&mut archive, "xl/media/image1.png");
+    assert!(
+        result.is_err(),
+        "a 12-byte declaration must not authorize a 4 MiB inflate"
+    );
+}
+
