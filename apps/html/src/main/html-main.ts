@@ -86,6 +86,8 @@ import type {
   ExportPdfRequest,
   ExportResult,
   ImageData,
+  PrintHtmlRequest,
+  PrintResult,
   SaveHtmlRequest,
   SaveHtmlResult,
   SaveMode,
@@ -965,6 +967,51 @@ export function sendHtmlPrintRequest(contents: WebContents): void {
   contents.send(HTML_CHANNELS.printRequest)
 }
 
+/**
+ * Print the document in the same hidden script-free window renderPrintPdf uses,
+ * so relative assets resolve through html-asset:// exactly as in the preview,
+ * then hand it to the system print dialog instead of writing a PDF.
+ *
+ * The window is script-free, exactly as the PDF export path already is, so the
+ * printout and "Export as PDF" cannot drift apart. The cost is that a document
+ * which builds its content with <script> prints the empty shell, because
+ * nothing runs there — while the editor canvas does run those scripts, so the
+ * two views disagree. Turning script on here would make print match the canvas
+ * and diverge from the export instead; whichever is right, the two paths should
+ * change together.
+ */
+async function printHtml(
+  html: string,
+  docPath: string | undefined,
+  workDir: string,
+): Promise<void> {
+  const base = docPath ? assetBaseHref(dirname(docPath)) : null
+  const htmlPath = join(workDir, 'print.html')
+  await writeFile(htmlPath, buildPreviewDocument(html, base), 'utf8')
+  const printWin = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, javascript: false },
+  })
+  try {
+    await printWin.loadFile(htmlPath)
+    // The dialog is modal to this hidden window, so the window must outlive it:
+    // destroying on the load callback would close the sheet as it opens.
+    await new Promise<void>((resolve, reject) => {
+      printWin.webContents.print(
+        { silent: false, printBackground: true },
+        (success, failureReason) => {
+          // A cancelled or failed dialog is the user's own outcome, not an error
+          // to surface; only a destroyed frame is worth reporting.
+          if (failureReason && printWin.isDestroyed()) reject(new Error(failureReason))
+          else resolve()
+        },
+      )
+    })
+  } finally {
+    if (!printWin.isDestroyed()) printWin.destroy()
+  }
+}
+
 export function htmlIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
 }
@@ -1696,6 +1743,24 @@ function registerHtmlIpc(): void {
         await writeFile(picked.filePath, await renderPrintPdf(request.html, docPath, workDir))
         openExportedPdf(picked.filePath)
         return { ok: true, path: picked.filePath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      } finally {
+        await rm(workDir, { recursive: true, force: true }).catch(() => {})
+      }
+    },
+  )
+
+  ipcMain.handle(
+    HTML_CHANNELS.printHtml,
+    async (e, request: PrintHtmlRequest): Promise<PrintResult> => {
+      if (typeof request?.html !== 'string') {
+        return { ok: false, error: 'html: bad print request' }
+      }
+      const workDir = await mkdtemp(join(tmpdir(), 'genoffice-html-print-'))
+      try {
+        await printHtml(request.html, savePathByWc.get(e.sender.id), workDir)
+        return { ok: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       } finally {
