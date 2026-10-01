@@ -6231,10 +6231,12 @@ export function toUniverDvRule(
 
 /// Excel ignores the whitespace around each item of a literal list
 /// (`"Yes, No"`); Univer splits on the bare comma and would reject "No".
+/// An embedded quote is doubled on write (`a"b` -> `"a""b"`), so un-double it
+/// here — otherwise every save/reopen cycle of a dirty DV grows the item.
 function trimListItems(items: string): string {
   return items
     .split(',')
-    .map((item) => item.trim())
+    .map((item) => item.trim().replaceAll('""', '"'))
     .join(',')
 }
 
