@@ -149,7 +149,7 @@ export const ru = {
   ribbonBulletHangNarrow: 'Узкий',
   ribbonBulletHangNormal: 'Обычный',
   ribbonBulletHangWide: 'Широкий',
-  ribbonBulletHangCustomTip: 'Пользовательский отступ маркера (px, Enter — применить)',
+  ribbonBulletHangCustomTip: 'Пользовательский отступ маркера (пикс., Enter — применить)',
   ribbonBulletSize: 'Размер маркера',
   ribbonBulletColor: 'Цвет маркера',
   ribbonNumberStyle: 'Стиль нумерации',

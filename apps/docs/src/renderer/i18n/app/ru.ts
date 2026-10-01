@@ -227,7 +227,7 @@ export const ru = {
   appRemoveSplit: 'Снять разделение',
   appExitReadMode: 'Выйти из режима чтения (Esc)',
   appExpandAiPanel: 'Развернуть панель редактирования ИИ',
-  appAiRail: 'AI',
+  appAiRail: 'ИИ',
   appPageOf: 'Страница {current} из {total}',
   appWordCountTitle: 'Статистика',
   appWordCountN: 'Слов: {n}',
