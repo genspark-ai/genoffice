@@ -551,11 +551,15 @@ export type TransitionKind =
 
 // ── Shape animations (the "Animations" tab) ──────────────────────────
 
+/** Reveal direction for the directional effects. 'bottom' reveals upward (default). */
+export type AnimDirection = 'top' | 'bottom' | 'left' | 'right'
+
 export type AnimEffectKind =
   | 'appear'
   | 'fade'
   | 'flyIn'
   | 'wipe'
+  /** Write-compatible alias for wipe with direction 'top' (the same preset subtype). */
   | 'wipeDown'
   | 'splitIn'
   | 'bounce'
@@ -589,6 +593,9 @@ export interface AnimationItem {
   delayMs: number
   /** Path when effect='motionPath' (SVG subset M/L/C/Z, coordinates 0..1 relative to slide width/height) */
   motionPath?: string
+  /** Wipe/fly direction (enters only when the engine models one); the player reads it
+   *  so a top wipe does not play bottom-up. Defaults per effect when absent. */
+  direction?: AnimDirection
   /** Per-paragraph animation: 0-based paragraph number; default = the whole shape */
   paragraph?: number
 }

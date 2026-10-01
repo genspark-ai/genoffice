@@ -139,13 +139,14 @@ describe('extended effects + motion paths', () => {
     const slide = opened.deck.slides[0]!
     const spid = elementSpid(slide.elements[0]!)!
     const anims: SlideAnimation[] = (
-      ['wipeDown', 'splitIn', 'bounce', 'flipIn', 'teeter', 'wipeOut', 'shrink'] as const
+      ['wipe', 'splitIn', 'bounce', 'flipIn', 'teeter', 'wipeOut', 'shrink'] as const
     ).map((effect, i) => ({
       spid,
       effect,
       trigger: i === 0 ? ('onClick' as const) : ('afterPrev' as const),
       durationMs: 500 + i * 100,
       delayMs: 0,
+      ...(i === 0 ? { direction: 'top' as const } : {}),
     }))
     setSlideAnimations(slide, anims)
     expect(getSlideAnimations(slide)).toEqual(anims)
@@ -156,12 +157,37 @@ describe('extended effects + motion paths', () => {
   it('distinguishes wipe directions by presetSubtype on read-back', () => {
     const anims: SlideAnimation[] = [
       { spid: 3, effect: 'wipe', trigger: 'onClick', durationMs: 500, delayMs: 0 },
-      { spid: 3, effect: 'wipeDown', trigger: 'onClick', durationMs: 500, delayMs: 0 },
+      {
+        spid: 3,
+        effect: 'wipe',
+        trigger: 'onClick',
+        durationMs: 500,
+        delayMs: 0,
+        direction: 'top',
+      },
     ]
     const xml = buildTimingXml(anims)
     expect(xml).toContain('filter="wipe(up)"')
     expect(xml).toContain('filter="wipe(down)"')
     expect(readSlideTimingXml(`</p:cSld>${xml}</p:sld>`)).toEqual(anims)
+  })
+
+  it('wipe from top round-trips with direction intact (legacy wipeDown normalizes to it)', () => {
+    const top: SlideAnimation[] = [
+      {
+        spid: 3,
+        effect: 'wipe',
+        trigger: 'onClick',
+        durationMs: 500,
+        delayMs: 0,
+        direction: 'top',
+      },
+    ]
+    expect(readSlideTimingXml(`</p:cSld>${buildTimingXml(top)}</p:sld>`)).toEqual(top)
+    const legacy: SlideAnimation[] = [
+      { spid: 3, effect: 'wipeDown', trigger: 'onClick', durationMs: 500, delayMs: 0 },
+    ]
+    expect(readSlideTimingXml(`</p:cSld>${buildTimingXml(legacy)}</p:sld>`)).toEqual(top)
   })
 
   it('writes motion paths as p:animMotion with a relative path and E terminator', () => {
