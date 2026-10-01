@@ -697,8 +697,11 @@ export function parseChartXml(
   if (kind === 'bar') {
     const dir = plot['c:barDir']?.['@_val']
     model.barDir = dir === 'bar' ? 'bar' : 'col'
-    const gap = plot['c:gapWidth']?.['@_val']
-    model.gapWidthPct = gap != null ? parseInt(gap, 10) : 150
+    // A malformed c:gapWidth (val="abc", an empty element, ...) parses to NaN, which
+    // would flow into the chart geometry and into Math.round on write-back and make
+    // every bar disappear. Guard it like the up/down-bar and chartEx gapWidths do.
+    const gap = parseInt(plot['c:gapWidth']?.['@_val'], 10)
+    model.gapWidthPct = Number.isFinite(gap) ? gap : 150
     const ov = plot['c:overlap']?.['@_val']
     if (ov != null) model.overlapPct = parseInt(ov, 10) || 0
   }
