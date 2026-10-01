@@ -2551,6 +2551,7 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     session.fitWidthPx = op.fitWidthPx
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: op.sourceIndex + 1,
@@ -2593,6 +2594,10 @@ export function registerSlidesIpc(): void {
     if (!r.applied) return null
     const rec = r.records![0]!
     session.fitWidthPx = op.fitWidthPx
+    // Pasted slides are parsed fresh, so no element dirty flag is set: flag the
+    // session here or the paste is invisible to the close guard and autosave.
+    // repaste-slide re-runs this after restoring a snapshot that cleared the flag.
+    markMetaDirty(session)
     const created = r.records!.flatMap((x) => x.created ?? [])
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
@@ -2657,7 +2662,9 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     session.fitWidthPx = op.fitWidthPx
-    if (op.before) markMetaDirty(session)
+    // Always: the blank slide is parsed fresh, so neither structureDirty nor an
+    // element dirty flag is set and the insert would otherwise be unsaveable.
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: op.before ? op.sourceIndex : op.sourceIndex + 1,
@@ -2693,6 +2700,7 @@ export function registerSlidesIpc(): void {
       return null
     }
     session.fitWidthPx = op.fitWidthPx
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: op.sourceIndex + 1,
@@ -2967,7 +2975,9 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     const r = sessionTxn(session, { ops: [{ op: 'deleteSlide', target: { slide: slideIndex } }] })
-    return r ? buildAllRenderSlides(session.opened, session.fitWidthPx) : null
+    if (!r) return null
+    markMetaDirty(session)
+    return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
   // Highest index first: every op is validated against the pre-transaction deck
@@ -2980,7 +2990,9 @@ export function registerSlidesIpc(): void {
     const r = sessionTxn(session, {
       ops: indexes.map((i) => ({ op: 'deleteSlide' as const, target: { slide: i } })),
     })
-    return r ? buildAllRenderSlides(session.opened, session.fitWidthPx) : null
+    if (!r) return null
+    markMetaDirty(session)
+    return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
   ipcMain.handle('slides:duplicate-slides', (e, op: DuplicateSlidesOp) => {
@@ -2997,7 +3009,9 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     session.fitWidthPx = op.fitWidthPx
-    if (steps.length > 1) markMetaDirty(session)
+    // Not just for multi-slide plans: a single duplicate is parsed fresh too and
+    // would otherwise leave the deck changed but reported clean.
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: Math.max(...op.slideIndexes) + 1,
