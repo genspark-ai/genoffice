@@ -1410,7 +1410,7 @@ describe('AgentLoop compaction', () => {
     expect(
       missingRequiredFields(
         { name: 'a', description: '', inputSchema: { type: 'object', required: ['x', 'y'] } },
-        { x: 0, y: null, z: 1 },
+        { x: 0, y: 1, z: 1 },
       ),
     ).toEqual([])
     expect(
@@ -1419,6 +1419,91 @@ describe('AgentLoop compaction', () => {
         { y: '' },
       ),
     ).toEqual(['x'])
+  })
+
+  it('a null required field counts as missing, not as a value', () => {
+    // A model that garbles a field emits "ops": null instead of leaving it
+    // out. Only `undefined` was treated as missing, so the null reached the
+    // tool, where Number(null) is 0 — a silently wrong value instead of the
+    // targeted retry this check exists to produce.
+    const tool = {
+      name: 'a',
+      description: '',
+      inputSchema: { type: 'object', required: ['x', 'y'] },
+    }
+    expect(missingRequiredFields(tool, { x: 0, y: undefined })).toEqual(['y'])
+    expect(missingRequiredFields(tool, { x: 0, y: null })).toEqual(['y'])
+    // An absent key is still missing too
+    expect(missingRequiredFields(tool, { x: 0 })).toEqual(['y'])
+    // ...and a real falsy value is still a value
+    expect(missingRequiredFields(tool, { x: 0, y: '' })).toEqual([])
+    expect(missingRequiredFields(tool, { x: 0, y: 0 })).toEqual([])
+  })
+
+  it('a field whose own schema declares null as valid keeps a null value', () => {
+    // The escape hatch: a tool that genuinely takes null (clearing a style
+    // value) says so in the schema, so the check must not reject it.
+    const nullable = (schema: unknown) => ({
+      name: 'a',
+      description: '',
+      inputSchema: { type: 'object', properties: { value: schema }, required: ['value'] },
+    })
+    for (const schema of [
+      { type: ['string', 'null'] },
+      { type: 'string', nullable: true },
+      { enum: ['auto', null] },
+      { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    ]) {
+      expect(missingRequiredFields(nullable(schema), { value: null })).toEqual([])
+    }
+    // A field that does not declare null is still checked
+    expect(missingRequiredFields(nullable({ type: 'string' }), { value: null })).toEqual(['value'])
+  })
+
+  it('a null required argument produces the targeted retry, not a silent run', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 'n', name: 'apply_ops', input: { ops: null } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onToolCall({ id: 'ok', name: 'apply_ops', input: { ops: [] } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const executed: AgentToolCall[] = []
+    const skill = makeSkill((call) => {
+      executed.push(call)
+      return { output: 'ok', summary: 'ok' }
+    })
+    skill.tools = [
+      {
+        name: 'apply_ops',
+        description: 'd',
+        inputSchema: {
+          type: 'object',
+          properties: { ops: { type: 'array' } },
+          required: ['ops'],
+        },
+      },
+    ]
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill, events: { onDone } })
+    loop.run('x')
+    await flush()
+    await flush()
+    await flush()
+    // The null call never reached the tool
+    expect(executed.map((c) => c.id)).toEqual(['ok'])
+    const toolMsg = loop.messages[2] as Extract<AgentMessage, { role: 'tool' }>
+    expect(toolMsg.results[0].isError).toBe(true)
+    expect(toolMsg.results[0].output).toContain('missing the required argument(s) "ops"')
+    expect(toolMsg.results[0].output).not.toContain('JSON failed to parse')
+    expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
   })
 
   it('a truncated tool call is fed back as "split the call", not as a JSON error', async () => {

@@ -86,11 +86,41 @@ export const DEFAULT_MAX_TURNS = 100
 const MAX_INPUT_PARSE_RETRIES = 3
 
 /**
+ * Whether a property's own JSON Schema declares null as an acceptable value.
+ * A tool that genuinely takes null (e.g. clearing a style value) says so in
+ * the schema, so the required-field check must not reject it. Covers the
+ * spellings in use: `type: ['string','null']`, OpenAPI/Gemini `nullable: true`,
+ * an enum listing null, and an anyOf/oneOf branch typed null.
+ */
+function schemaAcceptsNull(schema: unknown): boolean {
+  if (!schema || typeof schema !== 'object') return false
+  const s = schema as {
+    type?: unknown
+    nullable?: unknown
+    enum?: unknown
+    anyOf?: unknown
+    oneOf?: unknown
+  }
+  if (s.nullable === true) return true
+  // `type` is a bare "null" in an anyOf/oneOf branch, a list in `type: ['string','null']`
+  if (s.type === 'null') return true
+  if (Array.isArray(s.type) && s.type.includes('null')) return true
+  if (Array.isArray(s.enum) && s.enum.includes(null)) return true
+  for (const branch of [s.anyOf, s.oneOf]) {
+    if (Array.isArray(branch) && branch.some((b) => schemaAcceptsNull(b))) return true
+  }
+  return false
+}
+
+/**
  * Required fields the model left out of a tool call, per the tool's JSON
  * Schema. Providers turn an empty argument stream into `{}` without an
  * inputError (the model wrote prose instead of arguments, or a gateway dropped
  * the argument stream), so without this check the empty object reaches the
  * skill and fails with a tool-specific message instead of a targeted retry.
+ * `null` counts as missing too: a garbled field arrives as `"ops": null`, and
+ * downstream coercion (Number(null) === 0) would pass a silently wrong value
+ * to the tool. A field whose schema declares null as valid is exempt.
  */
 export function missingRequiredFields(
   tool: AgentToolDef | undefined,
@@ -98,9 +128,17 @@ export function missingRequiredFields(
 ): string[] {
   const required = tool?.inputSchema.required
   if (!Array.isArray(required)) return []
-  return required.filter(
-    (field): field is string => typeof field === 'string' && input[field] === undefined,
-  )
+  const properties = tool?.inputSchema.properties
+  const propSchema = (field: string): unknown =>
+    properties && typeof properties === 'object' && !Array.isArray(properties)
+      ? (properties as Record<string, unknown>)[field]
+      : undefined
+  return required.filter((field): field is string => {
+    if (typeof field !== 'string') return false
+    const value = input[field]
+    if (value === undefined) return true
+    return value === null && !schemaAcceptsNull(propSchema(field))
+  })
 }
 
 /**
