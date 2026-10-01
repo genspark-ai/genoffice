@@ -34,6 +34,7 @@ export {
   applyImageZOrder,
   applyShapeWrapAt,
   applyShapeZOrderAt,
+  type ShapeDrawingLocation,
   buildAnchoredTextboxParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
