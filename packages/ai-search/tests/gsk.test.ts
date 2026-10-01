@@ -95,6 +95,32 @@ describe('parseGskOutput', () => {
     // the previous nested slice-and-reparse scan needed minutes at this size
     expect(elapsed).toBeLessThan(5_000)
   })
+
+  it('gives up on a hostile response in bounded time', () => {
+    // Every line opens a block that never closes, so each candidate re-scans the
+    // rest of the output: N lines of length L cost N x L. gsk output is
+    // model-controlled and capped only by MAX_BUFFER, so the recovery scan has
+    // to be bounded rather than quadratic.
+    const out = Array.from(
+      { length: 16_000 },
+      (_, i) => `{"step":${i},"msg":"still rendering`,
+    ).join('\n')
+    const started = performance.now()
+    expect(() => parseGskOutput(out)).toThrow(/No JSON found/)
+    const elapsed = performance.now() - started
+    // the unbounded scan needed ~25s at this size
+    expect(elapsed).toBeLessThan(1_000)
+  })
+
+  it('still finds a payload buried behind unclosed log lines', () => {
+    const out = [
+      '{"msg":"still rendering',
+      '{"msg":"still rendering',
+      '{"status":"ok","data":{"n":7}}',
+      '[INFO] done',
+    ].join('\n')
+    expect(parseGskOutput(out)).toEqual({ status: 'ok', data: { n: 7 } })
+  })
 })
 
 describe('gskChildEnv', () => {

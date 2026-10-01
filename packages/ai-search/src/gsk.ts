@@ -216,12 +216,18 @@ export function summarizeGskFailure(raw: unknown, fallback = 'unknown error'): s
  * never closes. String-aware, so braces and quotes inside string values do not
  * change the depth, and a block ends at its own closer rather than at the end
  * of the output (trailing log lines are left out).
+ *
+ * `budget` is drawn down per character so the caller can stop the scan: each
+ * candidate restarts at its own offset, so without a shared budget the whole
+ * recovery pass is quadratic in the number of candidate lines.
  */
-function jsonBlockAt(text: string, start: number): string | null {
+function jsonBlockAt(text: string, start: number, budget: ScanBudget): string | null {
   let depth = 0
   let inString = false
   let escaped = false
   for (let i = start; i < text.length; i++) {
+    if (budget.chars <= 0) return null
+    budget.chars--
     const c = text[i]!
     if (inString) {
       if (escaped) escaped = false
@@ -239,6 +245,22 @@ function jsonBlockAt(text: string, start: number): string | null {
   return null
 }
 
+/** Remaining characters the recovery scan may examine; drawn down by jsonBlockAt. */
+interface ScanBudget {
+  chars: number
+}
+
+/**
+ * Ceiling on the characters the recovery scan may examine in total, across all
+ * candidate openers. A candidate is scanned from its own offset to its closer
+ * or to the end of the output, so an output of N candidate lines costs O(N x
+ * len) — and the output is model-controlled, bounded only by MAX_BUFFER. The
+ * ceiling makes the pass a fixed amount of work instead: a normal response
+ * parses on the first candidate, and even one buried behind noise needs only a
+ * few scans of its own length.
+ */
+const MAX_RECOVERY_SCAN_CHARS = 4 * 1024 * 1024
+
 /**
  * gsk output may have [INFO] log lines mixed in before or after the JSON;
  * find the first line that opens a JSON block and take that block, so a
@@ -253,10 +275,12 @@ export function parseGskOutput(stdout: string): unknown {
     /* fall through to the recovery scan */
   }
   let offset = 0
+  const budget: ScanBudget = { chars: MAX_RECOVERY_SCAN_CHARS }
   for (const line of trimmed.split('\n')) {
+    if (budget.chars <= 0) break // scan budget spent: no candidate can be tried
     const opener = line.trimStart()[0]
     if (opener === '{' || opener === '[') {
-      const block = jsonBlockAt(trimmed, offset + line.indexOf(opener))
+      const block = jsonBlockAt(trimmed, offset + line.indexOf(opener), budget)
       if (block) {
         try {
           return JSON.parse(block)
