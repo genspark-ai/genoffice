@@ -115,11 +115,13 @@ describe('media settings', () => {
     expect(activeMediaProvider(withMedia(custom), 'image')).toBe('custom')
     expect(activeMediaProvider(withMedia(custom), 'analysis')).toBe('genspark')
     expect(activeMediaConfig(withMedia(custom), 'image')?.provider).toBe('custom')
-    // MiniMax has no analysis endpoint: picking it for analysis falls back
+    // MiniMax-M3 supports both image and video analysis
     const mm = defaultAiMediaSettings()
     mm.analysisProvider = 'minimax'
     mm.providers.minimax.apiKey = 'k'
-    expect(activeMediaProvider(withMedia(mm), 'analysis')).toBe('genspark')
+    expect(activeMediaProvider(withMedia(mm), 'analysis')).toBe('minimax')
+    mm.videoAnalysisProvider = 'minimax'
+    expect(activeMediaProvider(withMedia(mm), 'video')).toBe('minimax')
     // DeepSeek reads images (V4.1 Flash vision) but takes no video
     const ds = defaultAiMediaSettings()
     ds.analysisProvider = 'deepseek'
