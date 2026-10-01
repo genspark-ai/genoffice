@@ -25,6 +25,7 @@ import {
   IconRedo,
   IconSave,
   IconSearch,
+  IconSourceCode,
   IconSpellcheck,
   IconTable,
   IconTaskList,
@@ -44,6 +45,9 @@ interface Props {
   onInsertImage: () => void
   frontmatterOpen: boolean
   onToggleFrontmatter: () => void
+  /** the source view replaces the document canvas, so editor-shaped commands go dead */
+  sourceMode: boolean
+  onToggleSource: () => void
   outlineOpen: boolean
   onToggleOutline: () => void
   hasOutline: boolean
@@ -168,6 +172,8 @@ export function Ribbon({
   onInsertImage,
   frontmatterOpen,
   onToggleFrontmatter,
+  sourceMode,
+  onToggleSource,
   outlineOpen,
   onToggleOutline,
   hasOutline,
@@ -223,7 +229,10 @@ export function Ribbon({
     inside: () => [linkAnchorRef.current],
   })
 
-  const off = disabled || !editor || !state
+  // In the source view the canvas is a textarea: formatting acts on a selection
+  // the user cannot see, and undo/focus would yank them out of the pane, so the
+  // editor-shaped commands stand down. Saving and the source toggle stay live.
+  const off = disabled || sourceMode || !editor || !state
 
   const openLink = () => {
     if (!editor) return
@@ -267,7 +276,7 @@ export function Ribbon({
           className="qa-btn"
           data-tip={t('save')}
           aria-label={t('save')}
-          disabled={off || !dirty}
+          disabled={disabled || !dirty}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onSave}
         >
@@ -509,6 +518,14 @@ export function Ribbon({
 
         <div className="ribbon-group">
           <div className="ribbon-group-items">
+            <IconBtn
+              title={t('sourceView')}
+              active={sourceMode}
+              disabled={disabled}
+              onClick={onToggleSource}
+            >
+              <IconSourceCode size={ICON} />
+            </IconBtn>
             <IconBtn
               title={t('fmProperties')}
               active={frontmatterOpen}
