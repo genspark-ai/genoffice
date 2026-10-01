@@ -1256,6 +1256,21 @@ export default function App() {
     })
     const offRenamed = window.htmlApi.onFileRenamed((next) => setPath(next))
     const offExport = window.htmlApi.onExportRequest((format) => void runExport(format))
+    // Shell menu Print / ⌘P. The menu owns the accelerator, so this subscription
+    // is the only route the keystroke takes; without it ⌘P did nothing at all.
+    const offPrint = window.htmlApi.onPrintRequest(() => {
+      if (statusRef.current !== 'ready') return
+      try {
+        flushPending()
+        void window.htmlApi
+          .printHtml({
+            html: serializeDocText({ text: textRef.current, envelope: envelopeRef.current }),
+          })
+          .catch(() => {})
+      } catch {
+        // a serialization failure leaves the document untouched; nothing to do
+      }
+    })
     const offTheme = window.htmlApi.onThemeChanged(() => {
       // let main.tsx flip data-theme first
       window.setTimeout(
@@ -1307,6 +1322,7 @@ export default function App() {
       offClose()
       offRenamed()
       offExport()
+      offPrint()
       offTheme()
       window.removeEventListener('keydown', onKeyDown, true)
     }

@@ -36,6 +36,7 @@ export const HTML_CHANNELS = {
   consumeHeadlessExport: 'html:consume-headless-export',
   headlessExportDone: 'html:headless-export-done',
   printRequest: 'html:print-request',
+  printHtml: 'html:print-html',
   aiGenerateImage: 'html:ai-generate-image',
   filesPick: 'html:files-pick',
   filesAdd: 'html:files-add',
@@ -182,6 +183,14 @@ export type ExportResult =
   | { ok: true; canceled: true }
   | { ok: false; error: string }
 
+/** Shell menu Print: the renderer hands over the document text, main opens the system dialog */
+export interface PrintHtmlRequest {
+  /** the document text */
+  html: string
+}
+
+export type PrintResult = { ok: true } | { ok: false; error: string }
+
 export interface ImageData {
   base64: string
   mime: 'image/png' | 'image/jpeg' | 'image/gif'
@@ -265,6 +274,8 @@ export interface HtmlApi {
   exportDocx(request: ExportDocxRequest): Promise<ExportResult>
   exportPdf(request: ExportPdfRequest): Promise<ExportResult>
   exportHtml(request: ExportHtmlRequest): Promise<ExportResult>
+  /** Shell menu Print → main renders the document and opens the system print dialog */
+  printHtml(request: PrintHtmlRequest): Promise<PrintResult>
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>
