@@ -19,6 +19,9 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import { t } from '../src/renderer/i18n/locale'
 import { ribbonProps } from './helpers/ribbon-props'
 
+// React's act() needs the test environment flag or it warns on every commit
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
 async function openBlankDoc() {
   const source = await buildDocx({ bodyXml: '<w:p><w:r><w:t>Body text</w:t></w:r></w:p>' })
   const parsed = await parseDocx(source)
