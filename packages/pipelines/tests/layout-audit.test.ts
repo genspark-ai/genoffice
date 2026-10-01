@@ -253,6 +253,36 @@ describe('auditSlideLayout picture distortion', () => {
     })
     expect(findings[0]!.suggest).toEqual(findings[1]!.suggest)
   })
+
+  // The distortion loop used to push one finding per picture with no budget
+  // gate, while every sibling section reserves ISSUE_RESERVE slots for the
+  // sections after it. 14 stretched pictures therefore filled MAX_ISSUES (12)
+  // before section 3 ran, and section 3's `findings.length >= budgetFor(0)`
+  // broke on its first iteration: the slide's real overlaps were never
+  // reported, and two distortion warnings were silently dropped by the final
+  // slice. The write->verify->fix loop never sees overlaps on image-heavy
+  // slides, which is exactly when they are most likely.
+  it('reserves budget for overlap when pictures exhaust the issue budget', () => {
+    const distorted = (i: number) => pictureNode(`stretched${i}`, 40 + i * 8, 40, 200, 200)
+    const opts = { pictureSize: () => ({ w: 800, h: 400 }) }
+    const overlaps = [textNode('overA', 700, 500, 200, 100), textNode('overB', 750, 520, 200, 100)]
+
+    // the same slide reports overlaps at 0/2/4/8 pictures ...
+    for (const n of [0, 2, 4, 8]) {
+      const s = slide([...Array.from({ length: n }, (_, i) => distorted(i)), ...overlaps])
+      const findings = auditSlideFindings(s, undefined, opts)
+      expect(findings.filter((f) => f.code === 'overlap').length).toBeGreaterThan(0)
+      expect(findings.length).toBeLessThanOrEqual(12)
+    }
+
+    // ... and still must at 14, where the distortion loop alone would fill the cap
+    const s = slide([...Array.from({ length: 14 }, (_, i) => distorted(i)), ...overlaps])
+    const findings = auditSlideFindings(s, undefined, opts)
+    const codes = findings.map((f) => f.code)
+    expect(codes.filter((c) => c === 'picture_distorted').length).toBe(10)
+    expect(codes).toContain('overlap')
+    expect(findings.length).toBeLessThanOrEqual(12)
+  })
 })
 
 describe('auditSlideLayout text overflow', () => {
