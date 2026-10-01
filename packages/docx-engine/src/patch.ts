@@ -116,6 +116,17 @@ const RELATIONSHIP_TARGET = /\bTarget\s*=\s*(["'])([^"']*)\1/
 const RELATIONSHIP_TAG = /<Relationship\b[^>]*\/>/g
 
 /**
+ * wp:docPr/@id of a drawing, either quote style. Read to find the ids the
+ * document already owns, for the same reason as RELATIONSHIP_ID_NUMBER above:
+ * an id read as "absent" is worse than no read at all, because a new picture
+ * then mints one that is already in use.
+ */
+const DRAWING_DOCPR_ID = /<wp:docPr\s[^>]*?\bid\s*=\s*(["'])(\d+)\1/g
+
+/** wp:docPr/@id of a newly embedded picture is DOCPR_ID_BASE + its sequence */
+const DOCPR_ID_BASE = 9000
+
+/**
  * The <Relationship> tag carrying a given Id, either quote style and with any
  * spacing around `=`. Used both to reclaim the relationship a superseded
  * watermark owned and to tell which ids the part already hands out, so the two
@@ -553,7 +564,9 @@ export async function saveDocx(
   const mediaRelByContent = new Map<string, string>()
   const mediaPathByContent = new Map<string, string>()
   let imageSeq = nextImageSeq(zip)
-  let docPrSeq = imageSeq
+  // docPr ids are minted from their own counter, so it has to start clear of
+  // both the media sequence and the ids already in the document
+  let docPrSeq = nextDocPrSeq(zip, documentXml)
   /** Land image bytes as a media part (no relationship); identical bytes share one part. */
   const landMedia = (image: {
     base64: string
@@ -610,7 +623,7 @@ export async function saveDocx(
     const eeX = Math.max(0, Math.round((bw - cx) / 2))
     const eeY = Math.max(0, Math.round((bh - cy) / 2))
     // dedup means imageSeq does not advance for repeated bytes — docPr ids need their own counter
-    const docPrId = 9000 + ++docPrSeq
+    const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const ps = image.paraSpacing
     const spacingAttrs: string[] = []
     if (ps?.beforeTwips && ps.beforeTwips > 0)
@@ -2304,6 +2317,26 @@ function nextImageSeq(zip: JSZip): number {
     if (m) max = Math.max(max, parseInt(m[1], 10))
   }
   return max + 1
+}
+
+/** Highest wp:docPr/@id already in the document, 0 when it holds no drawing. */
+function maxDocPrId(documentXml: string): number {
+  let max = 0
+  // quote-agnostic: a writer that single-quotes its attributes still owns those ids
+  for (const m of documentXml.matchAll(DRAWING_DOCPR_ID)) max = Math.max(max, parseInt(m[2], 10))
+  return max
+}
+
+/**
+ * Seed for the docPr sequence counter, which new pictures pre-increment to mint
+ * `DOCPR_ID_BASE + ++docPrSeq`. The media count says nothing about the ids the
+ * original producer used: seeded from it alone, a document with no GenOffice
+ * media always started at the base, so a save that inserted one picture next to
+ * an existing <wp:docPr id="9002"> emitted a second id 9002, and Word flags the
+ * duplicate drawing id for repair. Start above both floors instead.
+ */
+function nextDocPrSeq(zip: JSZip, documentXml: string): number {
+  return Math.max(nextImageSeq(zip), maxDocPrId(documentXml) - DOCPR_ID_BASE)
 }
 
 /**
