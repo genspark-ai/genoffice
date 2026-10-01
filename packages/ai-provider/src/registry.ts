@@ -60,6 +60,8 @@ export function modelHasFixedSampling(model: string): boolean {
  * branches take images, so they fall through and receive screenshots.
  */
 export function modelLacksVision(model: string): boolean {
+  // MiniMax-M2.7 remains text-only when MiniMax-M3 enables provider vision.
+  if (/(^|\/)minimax-m2\.7($|-)/i.test(model)) return true
   return /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model)
 }
 
@@ -292,7 +294,7 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   },
   minimax: {
     meta: metaOf('minimax'),
-    capabilities: { auth: 'api-key', vision: false },
+    capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.minimax.io/v1'),
   },
   xai: {

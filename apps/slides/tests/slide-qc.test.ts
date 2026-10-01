@@ -104,6 +104,14 @@ describe('isQcEnabled', () => {
 })
 
 describe('vision capability fallback', () => {
+  it('sends MiniMax-M3 screenshots while keeping MiniMax-M2.7 text-only', () => {
+    const settings = { ...defaultAiSettings(), provider: 'minimax' as const }
+    settings.providers.minimax.model = 'MiniMax-M3'
+    expect(settingsSupportVision(settings)).toBe(true)
+    settings.providers.minimax.model = 'MiniMax-M2.7'
+    expect(settingsSupportVision(settings)).toBe(false)
+  })
+
   it('uses the selected model when a provider mixes text and vision models', () => {
     const withProvider = (provider: AiProviderId) => ({ ...defaultAiSettings(), provider })
     const deepseek = withProvider('deepseek')
