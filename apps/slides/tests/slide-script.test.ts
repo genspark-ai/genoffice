@@ -439,14 +439,39 @@ describe('runLayoutScript regex budget (per-run total owned by the interpreter)'
     expect(r.returned).toBe('0')
   })
 
+  it('an ordinary alternation over a 2000-element × 230-char deck completes (review probe)', () => {
+    // Regression: MAX_REGEX_STEPS used to be sized from the /zzzz\d+q/ probe
+    // above (693 steps per call), but an ordinary 3-4-alternative pattern costs
+    // ~2083 steps per call, so 2000 elements needed 4.16M steps and the 4M pool
+    // rejected this legitimate script while it passed at n=1000.
+    const patterns = [
+      `(foo|bar|baz)\\s+(qux|quux)\\d+`, // 2083 steps/call
+      `(Q[1-4]|FY\\d{2})`, // 1386
+      `\\bTotal\\b`, // 766
+      `https?:\\/\\/\\S+`, // 693
+    ]
+    for (const pattern of patterns) {
+      const flags = pattern === `\\bTotal\\b` ? 'i' : ''
+      const r = runLayoutScript(
+        `const re = /${pattern}/${flags}; let h = 0; for (const e of els) { if (re.test(e.text)) h += 1; } return h;`,
+        bigDeck(2000),
+        canvas,
+      )
+      expect(r.error, `/${pattern}/${flags} over 2000 elements`).toBeUndefined()
+      expect(r.returned).toBe('0')
+    }
+  })
+
   it('regex literals re-created every iteration draw from the same pool (stacking aborts)', () => {
     // A literal inside the loop mints a fresh RegexValue per iteration; each
     // /^(a|aa)+$/ call on 22 a's + 'b' burns ≈0.5M steps. Per-call (main) or
-    // per-literal budgets let all 12 calls run; the per-run pool aborts the run
-    // (9th call crosses the 4M-step total).
+    // per-literal budgets let all 100 calls run; the per-run pool aborts the run
+    // (the 65th call crosses the 32M-step total). The iteration count is sized
+    // to the pool: it scales with MAX_REGEX_STEPS, the property under test — one
+    // shared total — does not.
     const nearBudget = `${'a'.repeat(22)}b`
     const r = runLayoutScript(
-      `let hits = 0; for (let i = 0; i < 12; i++) { if (/^(a|aa)+$/.test('${nearBudget}')) hits += 1; } return hits;`,
+      `let hits = 0; for (let i = 0; i < 100; i++) { if (/^(a|aa)+$/.test('${nearBudget}')) hits += 1; } return hits;`,
       [{ id: 'a', type: 'shape', text: 'title', x: 0, y: 0, w: 10, h: 10, rotation: 0 }],
       canvas,
     )
@@ -457,7 +482,7 @@ describe('runLayoutScript regex budget (per-run total owned by the interpreter)'
   it('repeated calls of one hoisted near-budget pattern share the pool too', () => {
     const nearBudget = `${'a'.repeat(22)}b`
     const r = runLayoutScript(
-      `const re = /^(a|aa)+$/; let hits = 0; for (let i = 0; i < 12; i++) { if (re.test('${nearBudget}')) hits += 1; } return hits;`,
+      `const re = /^(a|aa)+$/; let hits = 0; for (let i = 0; i < 100; i++) { if (re.test('${nearBudget}')) hits += 1; } return hits;`,
       [{ id: 'a', type: 'shape', text: 'title', x: 0, y: 0, w: 10, h: 10, rotation: 0 }],
       canvas,
     )

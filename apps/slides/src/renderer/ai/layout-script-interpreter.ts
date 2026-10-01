@@ -19,13 +19,34 @@ const MAX_COLLECTION_SIZE = 10_000
  * Per-run regex step total, owned by the interpreter (MAX_STEPS' counterpart for
  * match steps, which run outside `tick`). Every RegexValue of the run — hoisted
  * patterns and regex literals re-evaluated per iteration alike — charges into
- * this one pool, so looping can never re-arm it. Sized 4× the old per-call
- * budget: a hoisted never-matching pattern scanned across a deck at the
- * interpreter's own step limit (≈3000 elements × 230 chars ≈ 2.1M steps) still
- * passes, while a budget-exhausting pattern throws and aborts the script, so
- * near-budget catastrophic calls cannot be stacked either.
+ * this one pool, so neither a per-call nor a per-compiled-pattern budget can be
+ * re-armed by looping. The pool is created once per run and only ever
+ * decremented, so a loop cannot accumulate regex work past this total however
+ * long it runs.
+ *
+ * Sized from ORDINARY patterns, never from a single cheap probe. Measured
+ * matcher steps for one `test()` over a 230-char element text:
+ * /(foo|bar|baz)\s+(qux|quux)\d+/ 2083, /(Q[1-4]|FY\d{2})/ 1386,
+ * /\bTotal\b/i 766, /https?:\/\/\S+/ 693, and even a never-matching /zzzz\d+q/
+ * 693 — the last one is what the previous 4M budget was derived from, and it is
+ * 3x too cheap to represent real scripts. MAX_STEPS caps a single-statement
+ * `for..of` loop at ~3500 calls (measured: 3500 elements run, 4000 hit the step
+ * limit), so the worst pattern listed above needs 3500 x 2083 ~= 7.3M steps to
+ * scan one deck. 32M is the low end of the range that keeps that working with
+ * ~4x headroom, rather than the smallest number that merely passes the probes.
+ *
+ * Worst case per run: steps are charged 1:1, and a step is NOT a constant
+ * amount of time. Measured throughput spans ~41M steps/s for a tight linear
+ * scan to ~7.6M steps/s for an alternation/quantifier recursion, so 32M steps
+ * is ~0.8s for cheap patterns and ~4.2s for a deep-recursion one. A wide
+ * alternation costs ~12k steps per call and reaches the whole pool in ~2700
+ * calls, which is inside MAX_STEPS — so the ~4.2s figure is reachable, not
+ * hypothetical. Do not re-derive this from one pattern, and do not raise it
+ * without re-checking that ceiling: the bound only stays meaningful because
+ * the total is finite, and the fix for a tighter time bound would be charging
+ * steps by cost rather than by count.
  */
-const MAX_REGEX_STEPS = 4_000_000
+const MAX_REGEX_STEPS = 32_000_000
 
 class Builtin {
   constructor(
