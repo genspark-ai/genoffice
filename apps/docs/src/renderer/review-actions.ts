@@ -29,6 +29,7 @@ import {
 } from './editor/compare'
 import { pendingCommentPluginKey } from './editor/extensions'
 import type { InkAnnotation } from './editor/ink'
+import { renumber } from './ai/note-ops'
 import {
   TRACK_IGNORE,
   acceptAllRevisions,
@@ -90,6 +91,12 @@ export function submitNote(ctx: ReviewContext, text: string): void {
         attrs: { kind, id: newId, num: list.length + 1 },
       } as never)
       .run()
+    // the mark lands at the caret, which can be above marks that are already
+    // in the body, so the `num` it was given is only the append order: rewrite
+    // every mark of this kind in document order before anything reads it
+    const tr = ctx.editor.state.tr
+    renumber(tr, kind)
+    if (tr.docChanged) ctx.editor.view.dispatch(tr)
   }
   ctx.setNotesDirty(true)
 }
