@@ -127,6 +127,147 @@ const DRAWING_DOCPR_ID = /<wp:docPr\s[^>]*?\bid\s*=\s*(["'])(\d+)\1/g
 const DOCPR_ID_BASE = 9000
 
 /**
+ * CT_Settings child sequence (ECMA-376 17.15.1.78), in schema order. The type is
+ * an xsd:sequence, so a child written at the wrong position makes Word offer to
+ * repair the part. Local names, because a settings part may spell its elements
+ * with the w: prefix or with a default namespace.
+ */
+const SETTINGS_CHILD_ORDER = [
+  'writeProtection',
+  'view',
+  'zoom',
+  'removePersonalInformation',
+  'removeDateAndTime',
+  'doNotDisplayPageBoundaries',
+  'displayBackgroundShape',
+  'printPostScriptOverText',
+  'printFractionalCharacterWidth',
+  'printFormsData',
+  'embedTrueTypeFonts',
+  'embedSystemFonts',
+  'saveSubsetFonts',
+  'saveFormsData',
+  'mirrorMargins',
+  'alignBordersAndEdges',
+  'bordersDoNotSurroundHeader',
+  'bordersDoNotSurroundFooter',
+  'gutterAtTop',
+  'hideSpellingErrors',
+  'hideGrammaticalErrors',
+  'activeWritingStyle',
+  'proofState',
+  'formsDesign',
+  'attachedTemplate',
+  'linkStyles',
+  'stylePaneFormatFilter',
+  'stylePaneSortMethod',
+  'documentType',
+  'mailMerge',
+  'revisionView',
+  'trackChanges',
+  'doNotTrackMoves',
+  'doNotTrackFormatting',
+  'documentProtection',
+  'autoFormatOverride',
+  'styleLockTheme',
+  'styleLockQFSet',
+  'defaultTabStop',
+  'autoHyphenation',
+  'consecutiveHyphenLimit',
+  'hyphenationZone',
+  'doNotHyphenateCaps',
+  'showEnvelope',
+  'summaryLength',
+  'clickAndTypeStyle',
+  'defaultTableStyle',
+  'evenAndOddHeaders',
+  'bookFoldRevPrinting',
+  'bookFoldPrinting',
+  'bookFoldPrintingSheets',
+  'drawingGridHorizontalSpacing',
+  'drawingGridVerticalSpacing',
+  'displayHorizontalDrawingGridEvery',
+  'displayVerticalDrawingGridEvery',
+  'doNotUseMarginsForDrawingGridOrigin',
+  'drawingGridHorizontalOrigin',
+  'drawingGridVerticalOrigin',
+  'doNotShadeFormData',
+  'noPunctuationKerning',
+  'characterSpacingControl',
+  'printTwoOnOne',
+  'strictFirstAndLastChars',
+  'noLineBreaksAfter',
+  'noLineBreaksBefore',
+  'savePreviewPicture',
+  'doNotValidateAgainstSchema',
+  'saveInvalidXml',
+  'ignoreMixedContent',
+  'alwaysShowPlaceholderText',
+  'doNotDemarcateInvalidXml',
+  'saveXmlDataOnly',
+  'useXSLTWhenSaving',
+  'saveThroughXslt',
+  'showXMLTags',
+  'alwaysMergeEmptyNamespace',
+  'updateFields',
+  'hdrShapeDefaults',
+  'footnotePr',
+  'endnotePr',
+  'compat',
+  'docVars',
+  'rsids',
+  'mathPr',
+  'uiCompat97To2003',
+  'attachedSchema',
+  'themeFontLang',
+  'clrSchemeMapping',
+  'doNotIncludeSubdocsInStats',
+  'doNotAutoCompressPictures',
+  'forceUpgrade',
+  'captions',
+  'readModeInkLockDown',
+  'smartTagType',
+  'schemaLibrary',
+  'shapeDefaults',
+  'doNotEmbedSmartTags',
+  'decimalSymbol',
+  'listSeparator',
+] as const
+
+/** an element start tag anywhere in the part, capturing the local name */
+const ELEMENT_LOCAL_NAME = /<(?:[A-Za-z0-9._-]+:)?([A-Za-z0-9._-]+)[\s/>]/g
+
+/** rank of a CT_Settings child; -1 for a child this list does not model */
+function settingsChildRank(localName: string): number {
+  return (SETTINGS_CHILD_ORDER as readonly string[]).indexOf(localName)
+}
+
+/**
+ * Insert `childXml` as a child of the w:settings root at its CT_Settings
+ * position, leaving every other child byte-identical. Each apply* used to
+ * insert right after the open tag, so whichever ran last took the first slot
+ * and a save touching several settings came out in the reverse of the sequence.
+ */
+function insertSettingsChild(xml: string, localName: string, childXml: string): string {
+  const rank = settingsChildRank(localName)
+  for (const m of xml.matchAll(ELEMENT_LOCAL_NAME)) {
+    // Anchor on a child whose position this list knows: an unmodeled element
+    // (including the w:settings root itself) could sit anywhere in the
+    // sequence, so it is not a safe place to cut.
+    if (settingsChildRank(m[1]) > rank) {
+      const at = m.index
+      return xml.slice(0, at) + childXml + xml.slice(at)
+    }
+  }
+  // nothing modeled to order against: land last, or after the root open tag
+  const close = xml.match(/<\/(?:[A-Za-z0-9._-]+:)?settings>/)
+  if (close?.index !== undefined) {
+    return xml.slice(0, close.index) + childXml + xml.slice(close.index)
+  }
+  return xml.replace(/(<([A-Za-z0-9._-]+:)?settings\b[^>]*>)/, `$1${childXml}`)
+}
+
+/**
  * The <Relationship> tag carrying a given Id, either quote style and with any
  * spacing around `=`. Used both to reclaim the relationship a superseded
  * watermark owned and to tell which ids the part already hands out, so the two
@@ -1425,12 +1566,12 @@ export async function saveDocx(
     }
     // Word only renders w:background when settings.xml opts in.
     if (options.pageColor && !xml.includes('<w:displayBackgroundShape')) {
-      xml = xml.replace(/(<w:settings[^>]*>)/, '$1<w:displayBackgroundShape/>')
+      xml = insertSettingsChild(xml, 'displayBackgroundShape', '<w:displayBackgroundShape/>')
       touched = true
     }
-    // Each apply* inserts right after the settings root, so run them in reverse
-    // schema order — the final order becomes writeProtection, removePersonalInformation,
-    // documentProtection (CT_Settings sequence).
+    // Each apply* places its element at its CT_Settings position, so the order
+    // these run in does not matter: the part comes out in schema sequence
+    // whatever combination of options the save carried.
     if (options.protection !== undefined) {
       xml = applyProtection(xml, options.protection)
       touched = true
@@ -2039,7 +2180,7 @@ function commentPlainText(commentXml: string): string {
   return paras.join('\n')
 }
 
-/** set or remove <w:documentProtection> right after the settings root opens */
+/** set or remove <w:documentProtection> at its CT_Settings position */
 function applyProtection(xml: string, protection: DocProtection | null): string {
   let out = xml.replace(/<w:documentProtection[^>]*\/>/, '')
   if (protection) {
@@ -2055,12 +2196,12 @@ function applyProtection(xml: string, protection: DocProtection | null): string 
       (protection.enforced ? ' w:enforcement="1"' : '') +
       crypt +
       '/>'
-    out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
+    out = insertSettingsChild(out, 'documentProtection', tag)
   }
   return out
 }
 
-/** set or remove <w:writeProtection> (password to modify) right after the settings root opens */
+/** set or remove <w:writeProtection> (password to modify) at its CT_Settings position */
 function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
   let out = xml.replace(/<w:writeProtection[^>]*\/>/, '')
   if (wp && (wp.recommended || wp.hash)) {
@@ -2072,7 +2213,7 @@ function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
         (wp.salt ? ` w:salt="${escapeXmlAttr(wp.salt)}"` : '')
       : ''
     const tag = `<w:writeProtection${wp.recommended ? ' w:recommended="1"' : ''}${crypt}/>`
-    out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
+    out = insertSettingsChild(out, 'writeProtection', tag)
   }
   return out
 }
@@ -2088,8 +2229,7 @@ function applyRemovePersonalInfo(xml: string, on: boolean): string {
     '',
   )
   if (!on) return out
-  const settingsName = prefix ? `${prefix}:settings` : 'settings'
-  return out.replace(new RegExp(`(<${regexEscape(settingsName)}\\b[^>]*>)`), `$1<${propertyName}/>`)
+  return insertSettingsChild(out, 'removePersonalInformation', `<${propertyName}/>`)
 }
 
 const WORDPROCESSINGML_NAMESPACES = [
@@ -2270,7 +2410,7 @@ export function removeHfReference(
   })
 }
 
-/** set or remove an on/off settings flag right after the settings root opens */
+/** set or remove an on/off settings flag at its CT_Settings position */
 function applySettingsFlag(xml: string, tag: string, on: boolean): string {
   // Match the start tag and an optional paired end tag. Matching only the
   // self-closing form left a paired element in place, so switching the flag ON
@@ -2278,13 +2418,14 @@ function applySettingsFlag(xml: string, tag: string, on: boolean): string {
   // zero-or-one element, which is schema-invalid; switching it OFF did nothing
   // at all. A producer that writes <w:mirrorMargins></w:mirrorMargins> is legal.
   const out = xml.replace(new RegExp(`<${tag}(?=[\\s/>])[^>]*>(?:<\\/${tag}>)?`), '')
-  return on ? out.replace(/(<w:settings[^>]*>)/, `$1<${tag}/>`) : out
+  if (!on) return out
+  return insertSettingsChild(out, tag.slice(tag.indexOf(':') + 1), `<${tag}/>`)
 }
 
-/** set or remove <w:evenAndOddHeaders/> right after the settings root opens */
+/** set or remove <w:evenAndOddHeaders/> at its CT_Settings position */
 function applyEvenAndOddHeaders(xml: string, on: boolean): string {
   const out = xml.replace(/<w:evenAndOddHeaders(?=[\s/>])[^>]*>(?:<\/w:evenAndOddHeaders>)?/, '')
-  return on ? out.replace(/(<w:settings[^>]*>)/, '$1<w:evenAndOddHeaders/>') : out
+  return on ? insertSettingsChild(out, 'evenAndOddHeaders', '<w:evenAndOddHeaders/>') : out
 }
 
 /** Set, replace or remove <w:background> (must be the first child of w:document). */
