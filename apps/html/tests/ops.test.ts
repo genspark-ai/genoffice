@@ -3,6 +3,7 @@ import { findSnippet } from '../src/renderer/document/match'
 import { buildParseMap } from '../src/renderer/document/parse-map'
 import { compileOps, type HtmlOp } from '../src/renderer/document/ops'
 import { applyPatches } from '../src/renderer/document/patch'
+import { PAGE_MAX_CHARS } from '../src/renderer/ai/page-writer'
 
 const DOC = `<!doctype html>
 <html>
@@ -73,6 +74,32 @@ describe('findSnippet ladder', () => {
     expect(r.ok).toBe(false)
     if (!r.ok && r.kind === 'not_found') expect(r.nearest?.similarity).toBeGreaterThan(0.6)
   })
+
+  it('canonicalises a max-size entity-free document in bounded time', () => {
+    // A `str_replace` with no sid searches the whole document, and rungs 0-2
+    // miss whenever only the canonical fold separates the snippet from the
+    // source — so the canonical rung scans a full PAGE_MAX_CHARS haystack on the
+    // renderer thread. It must stay linear: entity-free text is the common case,
+    // and the quadratic version froze the editor for ~40s on this input.
+    const line = '  <p>Some ordinary paragraph text with no entities at all.</p>\n'
+    const document = `${'<!doctype html>\n<html><body>\n<section>\n'.repeat(1)}${line.repeat(
+      Math.ceil(PAGE_MAX_CHARS / line.length),
+    )}<div id="target">alpha  beta</div>\n</body></html>\n`
+    expect(document.length).toBeGreaterThan(PAGE_MAX_CHARS)
+
+    const started = performance.now()
+    const r = findSnippet(document, '<div id="target">alpha beta</div>')
+    const elapsed = performance.now() - started
+
+    // The snippet differs only by a whitespace run, so the canonical rung is
+    // the one that has to resolve it over the whole document.
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.rung).toBe(3)
+    // Bound: ~60x the ~30ms this costs, so a loaded machine cannot flake it,
+    // while the quadratic regression (~40s) fails on the clock rather than on
+    // the suite timeout.
+    expect(elapsed).toBeLessThan(2000)
+  }, 60_000)
 })
 
 describe('compileOps', () => {
