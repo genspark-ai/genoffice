@@ -295,15 +295,10 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   ling: {
     meta: metaOf('ling'),
     capabilities: { auth: 'api-key', vision: false },
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://ling-1t.ai/api/v1'),
-  },
-  spark: {
-    meta: metaOf('spark'),
-    capabilities: { auth: 'api-key', vision: false },
-    // the vendor's own HTTP doc states this host is the OpenAI SDK base_url and
-    // authenticates with a plain Bearer APIPassword (the AppID/APIKey/APISecret
-    // HMAC belongs to the separate websocket endpoint)
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://spark-api-open.xf-yun.com/v1'),
+    // the base_url every official example uses (quickstart + OpenAI-compatible
+    // reference, read 2026-10-01); /v1/models on it answers 401
+    // sdk_token_not_found, so it is the live first-party host
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ant-ling.com/v1'),
   },
   longcat: {
     meta: metaOf('longcat'),
