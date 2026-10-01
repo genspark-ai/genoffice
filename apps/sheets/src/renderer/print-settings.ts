@@ -287,10 +287,17 @@ export function clampTitleRows(start: number, end: number): string {
   return `${safeStart}:${Math.min(Math.max(safeEnd, safeStart), safeStart + MAX_PRINT_TITLE_ROWS - 1)}`
 }
 
+/// Excel's formatting toggles (&B bold, &I italic, &U underline, &S strike)
+/// and codes the layout cannot render (&E elapsed, &X/&Y, &Z path): they
+/// carry no text of their own, so they are dropped. Any other &X is literal
+/// user text and must survive.
+const STRIPPED_CODES = new Set(['B', 'I', 'U', 'S', 'E', 'X', 'Y', 'Z'])
+
 /// Excel's encoded header/footer → left/center/right parts. Field codes the
 /// layout resolves (&P &N &D &T &F &A &G picture, && literal) stay verbatim;
-/// formatting codes (font/size/color/bold/…) and unsupported codes (&Z
-/// path) are stripped. Text before the first section marker is centered.
+/// formatting codes (font/size/color/bold/…) and unsupported codes (&Z path)
+/// are stripped, while an unrecognised &X is kept as the literal text Excel
+/// prints. Text before the first section marker is centered.
 export function decodeHeaderFooter(encoded: string): HeaderFooterParts | null {
   const sections = { L: '', C: '', R: '' }
   let current: 'L' | 'C' | 'R' = 'C'
@@ -342,7 +349,16 @@ export function decodeHeaderFooter(encoded: string): HeaderFooterParts | null {
       code === 'G'
     ) {
       sections[current] += `&${code}`
+      index += 2
+      continue
     }
+    // An unrecognised &X is literal user text, not a code: keeping the
+    // character (and any space after the &) is what Excel prints.
+    if (STRIPPED_CODES.has(code)) {
+      index += 2
+      continue
+    }
+    sections[current] += `&${code}`
     index += 2
   }
   if (sections.L === '' && sections.C === '' && sections.R === '') return null

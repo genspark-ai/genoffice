@@ -52,6 +52,24 @@ describe('decodeHeaderFooter', () => {
   it('accepts lowercase section markers', () => {
     expect(decodeHeaderFooter('&lLeft&rRight')).toEqual({ left: 'Left', right: 'Right' })
   })
+
+  it('keeps the character after an unrecognised code as literal text', () => {
+    // The decoder used to advance past any &X it did not know, so the
+    // character (or the space after the &) disappeared from the printout.
+    expect(decodeHeaderFooter('Tom&Jerry')).toEqual({ center: 'Tom&Jerry' })
+    expect(decodeHeaderFooter('R&D')).toEqual({ center: 'R&D' })
+    expect(decodeHeaderFooter('Tom & Jerry')).toEqual({ center: 'Tom & Jerry' })
+    expect(decodeHeaderFooter('&L50% & up')).toEqual({ left: '50% & up' })
+    // The recognised sequences keep behaving exactly as before: && and the
+    // field codes stay verbatim, and the formatting toggles stay stripped
+    // (&B is Excel's bold toggle, so "A&B" still prints a bold "A").
+    expect(decodeHeaderFooter('&LProfit && Loss')).toEqual({ left: 'Profit && Loss' })
+    expect(decodeHeaderFooter('&C&P of &N in &F')).toEqual({ center: '&P of &N in &F' })
+    expect(decodeHeaderFooter('&C&"Broadway,Bold"&12&KFF0000Big &BRed&B Title&Z')).toEqual({
+      center: 'Big Red Title',
+    })
+    expect(decodeHeaderFooter('A&B')).toEqual({ center: 'A' })
+  })
 })
 
 describe('printAreasFromFormula', () => {
