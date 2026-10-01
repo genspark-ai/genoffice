@@ -3,7 +3,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Editor } from '@tiptap/core'
 import type { SectionSettings, TabStop } from '@genoffice/docx-engine'
-import { MAX_RULER_INCHES, Ruler, rulerDims, snapTabTwips } from '../src/renderer/components/Ruler'
+import {
+  MAX_RULER_INCHES,
+  Ruler,
+  rulerDims,
+  snapTabTwips,
+  stableStopIds,
+} from '../src/renderer/components/Ruler'
 import { getLang, setModuleLang } from '../src/renderer/i18n/locale'
 import { setMeasurementUnit } from '../src/renderer/units'
 
@@ -57,6 +63,48 @@ function keydown(el: Element, key: string, shift = false): void {
   act(() => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, shiftKey: shift }))
   })
+}
+
+/**
+ * A ruler whose paragraph attributes follow what it emits, the way the editor
+ * does: every nudge writes back and the next render reads the new list.
+ */
+function mountLive(stops: TabStop[]): {
+  container: HTMLElement
+  render: () => void
+  emitted: () => TabStop[] | null
+  marker: (i: number) => HTMLElement | null
+  cleanup: () => void
+} {
+  let current = stops
+  let last: TabStop[] | null = null
+  const onTabStopsChange = vi.fn((next: TabStop[] | null) => {
+    last = next
+    if (next) current = next
+  })
+  const editor = {
+    isActive: () => true,
+    getAttributes: () => ({ tabStops: JSON.stringify(current) }),
+  } as unknown as Editor
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root: Root = createRoot(container)
+  const render = () => {
+    act(() => {
+      root.render(createElement(Ruler, { section: section(), editor, onTabStopsChange }))
+    })
+  }
+  render()
+  return {
+    container,
+    render,
+    emitted: () => last,
+    marker: (i) => container.querySelector(`[data-ruler-stop="${i}"]`),
+    cleanup: () => {
+      act(() => root.unmount())
+      container.remove()
+    },
+  }
 }
 
 describe('rulerDims', () => {
@@ -134,5 +182,57 @@ describe('Ruler keyboard operation', () => {
     } finally {
       cleanup()
     }
+  })
+})
+
+describe('Ruler tab stop nudge across a neighbour', () => {
+  it('keeps nudging the same marker after the stop list re-sorts', () => {
+    // The first stop is nudged right past the second one, so the emitted list
+    // re-sorts and the marker the user is holding the arrow on moves to another
+    // index. The next arrow must still move that marker.
+    const { render, emitted, marker, cleanup } = mountLive([
+      { pos: 1440, val: 'left' },
+      { pos: 1500, val: 'left' },
+    ])
+    try {
+      const first = marker(0)!
+      first.focus()
+      expect(document.activeElement).toBe(first)
+      // 1440 + 720 crosses the stop at 1500, so the list re-sorts
+      keydown(first, 'ArrowRight', true)
+      expect(emitted()).toEqual([
+        { pos: 1500, val: 'left' },
+        { pos: 2160, val: 'left' },
+      ])
+      render()
+      // the focused marker followed its stop to the new index
+      const moved = marker(1)!
+      expect(moved.getAttribute('aria-valuenow')).toBe('2160')
+      expect(document.activeElement).toBe(moved)
+
+      // the queued arrow on the still-focused marker moves the same stop
+      keydown(document.activeElement as Element, 'ArrowRight')
+      expect(emitted()).toEqual([
+        { pos: 1500, val: 'left' },
+        { pos: 2220, val: 'left' },
+      ])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('gives a stop its own id when the list is replaced', () => {
+    const prev = [
+      { pos: 1440, val: 'left' },
+      { pos: 1500, val: 'left' },
+    ] as TabStop[]
+    const ids = stableStopIds([], [], prev)
+    expect(new Set(ids).size).toBe(2)
+    // a stop that kept its position keeps its id
+    expect(stableStopIds(prev, ids, [prev[1]!, prev[0]!])).toEqual([ids[1], ids[0]])
+    // the nudged stop keeps its id even though it moved to another index
+    const moved = stableStopIds(prev, ids, [prev[1]!, { pos: 2160, val: 'left' }])
+    expect(moved[1]).toBe(ids[0])
+    expect(new Set(moved).size).toBe(2)
   })
 })
