@@ -288,6 +288,7 @@ import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
 import { startRendererWatchdog } from './renderer-watchdog'
 import {
+  capStatPaths,
   matchesExtFamily,
   normalizeRecentQuery,
   pageRecentPaths,
@@ -3887,7 +3888,7 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.statPaths, (_event, paths: unknown): RecentEntry[] =>
-    statEntries(stringPaths(paths)),
+    statEntries(capStatPaths(stringPaths(paths))),
   )
 
   ipcMain.handle(HOME_CHANNELS.toggleStar, (_event, path: unknown) => {

@@ -40,6 +40,20 @@ export function statPathEntries(
   return paths.map((path) => toRecentEntry(path, starredPaths))
 }
 
+/**
+ * How many paths one statPaths call may stat. stat is synchronous, so the
+ * renderer-supplied list has to be bounded like every other recents list: the
+ * page bound, which is already the largest one the UI asks for. statting an
+ * unbounded list blocked the main process once it grew past a few hundred
+ * entries (see pageRecentPaths).
+ */
+export const STAT_PATHS_MAX = RECENT_PAGE_MAX
+
+/** statPaths crosses the IPC boundary, so the caller's list is capped before any stat. */
+export function capStatPaths(paths: readonly string[]): string[] {
+  return paths.slice(0, STAT_PATHS_MAX)
+}
+
 export function normalizeRecentQuery(
   raw: unknown,
 ): Required<Omit<RecentQuery, 'ext'>> & { ext?: string } {

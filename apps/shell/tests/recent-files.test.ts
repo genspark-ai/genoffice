@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { matchesExtFamily, normalizeRecentQuery } from '../src/main/recent-files'
+import {
+  capStatPaths,
+  matchesExtFamily,
+  normalizeRecentQuery,
+  STAT_PATHS_MAX,
+} from '../src/main/recent-files'
 
 describe('matchesExtFamily', () => {
   it('maps sidebar filter keys onto their extension families', () => {
@@ -27,5 +32,22 @@ describe('normalizeRecentQuery', () => {
       offset: 3,
       limit: 200,
     })
+  })
+})
+
+describe('capStatPaths', () => {
+  const paths = (n: number) => Array.from({ length: n }, (_, i) => `/f${i}.docx`)
+
+  it('leaves a list at the cap untouched', () => {
+    expect(capStatPaths(paths(0))).toEqual([])
+    expect(capStatPaths(paths(STAT_PATHS_MAX - 1))).toHaveLength(STAT_PATHS_MAX - 1)
+    expect(capStatPaths(paths(STAT_PATHS_MAX))).toHaveLength(STAT_PATHS_MAX)
+  })
+
+  it('truncates past the cap, keeping the first paths in order', () => {
+    const capped = capStatPaths(paths(STAT_PATHS_MAX + 500))
+    expect(capped).toHaveLength(STAT_PATHS_MAX)
+    expect(capped[0]).toBe('/f0.docx')
+    expect(capped.at(-1)).toBe(`/f${STAT_PATHS_MAX - 1}.docx`)
   })
 })
