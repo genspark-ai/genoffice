@@ -123,6 +123,9 @@ const RELATIONSHIP_TAG = /<Relationship\b[^>]*\/>/g
  */
 const DRAWING_DOCPR_ID = /<wp:docPr\s[^>]*?\bid\s*=\s*(["'])(\d+)\1/g
 
+/** w:id of a bookmark endpoint, either quote style */
+const BOOKMARK_ID = /<w:bookmark(?:Start|End)\s[^>]*?\bid\s*=\s*(["'])(\d+)\1/g
+
 /** wp:docPr/@id of a newly embedded picture is DOCPR_ID_BASE + its sequence */
 const DOCPR_ID_BASE = 9000
 
@@ -697,6 +700,7 @@ export async function saveDocx(
     headingStyleIds: parsed.headingStyleIds,
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
+    allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
   }
 
   const newMedia: Array<{ path: string; base64: string }> = []
@@ -2465,6 +2469,25 @@ function maxDocPrId(documentXml: string): number {
   let max = 0
   // quote-agnostic: a writer that single-quotes its attributes still owns those ids
   for (const m of documentXml.matchAll(DRAWING_DOCPR_ID)) max = Math.max(max, parseInt(m[2], 10))
+  return max
+}
+
+/**
+ * Allocator handing out w:bookmarkStart/@w:id values for one save, seeded above
+ * every id the part already holds. w:id is unique within the part, so a rebuilt
+ * bookmark that reused an id already in use made Word pair the two bookmarks
+ * wrongly and land a cross-reference on the wrong target.
+ */
+function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
+  let next = maxBookmarkId(documentXml) + 1
+  return () => next++
+}
+
+/** Highest w:bookmarkStart/@w:id in the document, 0 when it holds no bookmark. */
+function maxBookmarkId(documentXml: string): number {
+  let max = 0
+  // quote-agnostic, and the end tag carries the same id as its start
+  for (const m of documentXml.matchAll(BOOKMARK_ID)) max = Math.max(max, parseInt(m[2], 10))
   return max
 }
 

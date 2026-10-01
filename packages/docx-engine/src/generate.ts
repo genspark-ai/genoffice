@@ -20,6 +20,14 @@ export interface GenerateContext {
   listParagraphStyleId?: string
   /** allocate a new relationship id for a hyperlink target; returns rId */
   allocateHyperlinkRel: (href: string) => string
+  /**
+   * Mint the w:bookmarkStart/@w:id for a bookmark name. w:id must be unique in
+   * the part, so a caller writing into an existing document supplies an
+   * allocator seeded above that part's highest id. Without one (a fragment
+   * rendered outside any document) ids come from a process counter, which
+   * keeps them unique among themselves but is not coordinated with a part.
+   */
+  allocateBookmarkId?: (name: string) => number
 }
 
 const EMU_PER_PX = 9525
@@ -1781,8 +1789,8 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
     )
     .join('')
   const content =
-    bookmarksXml(block.hiddenBookmarks) +
-    bookmarksXml(block.bookmarks) +
+    bookmarksXml(ctx, block.hiddenBookmarks) +
+    bookmarksXml(ctx, block.bookmarks) +
     crossStarts +
     generateRunsXml(block.runs, ctx) +
     crossEnds
@@ -1820,18 +1828,21 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
   return `<w:p>${pPr}${content}</w:p>`
 }
 
-/** stable 31-bit id per bookmark name (start/end pair only needs to agree with itself) */
-function bookmarkIdOf(name: string): number {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
-  return Math.abs(h) % 0x7fffffff
-}
+/**
+ * Fallback id source for a caller that has no document to coordinate with: a
+ * counter, so ids stay unique among themselves. A hash of the name cannot do
+ * that job: w:id is unique per part, the hash space overlaps the small ids
+ * Word itself hands out, and two names collide by birthday at a few tens of
+ * thousands of bookmarks — after which Word mis-pairs the bookmarks and a
+ * cross-reference lands on the wrong target.
+ */
+let standaloneBookmarkSeq = 0
 
-function bookmarksXml(names: string[] | undefined): string {
+function bookmarksXml(ctx: GenerateContext, names: string[] | undefined): string {
   if (!names?.length) return ''
   return names
     .map((name) => {
-      const id = bookmarkIdOf(name)
+      const id = ctx.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
       return `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/><w:bookmarkEnd w:id="${id}"/>`
     })
     .join('')
