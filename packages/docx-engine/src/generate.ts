@@ -263,6 +263,78 @@ export function applyImageWrap(
   return out.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
 }
 
+/** The box drawings (wps shapes/textboxes) in a paragraph, in document order — same walk patchShapeStyles uses. */
+function boxDrawingSegments(paragraphXml: string): Array<{ start: number; end: number }> {
+  return xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).filter((seg) =>
+    isBoxDrawing(paragraphXml.slice(seg.start, seg.end)),
+  )
+}
+
+/**
+ * Re-encode ONLY the stacking rank of one box drawing as Word's base + rank
+ * relativeHeight. Everything else keeps its bytes, like applyImageZOrder.
+ */
+export function applyShapeZOrderAt(paragraphXml: string, boxIndex: number, zOrder: number): string {
+  const seg = boxDrawingSegments(paragraphXml)[boxIndex]
+  if (!seg) return paragraphXml
+  const next = paragraphXml
+    .slice(seg.start, seg.end)
+    .replace(/(<wp:anchor[^>]*?relativeHeight=")\d+(")/, `$1${251658240 + zOrder}$2`)
+  return paragraphXml.slice(0, seg.start) + next + paragraphXml.slice(seg.end)
+}
+
+/**
+ * Switch one box drawing's wrap mode in place, preserving its positionH/V
+ * bytes: only the anchor attributes, the wrap element and (when given)
+ * relativeHeight change. `wrap === null` converts the anchor to inline.
+ */
+export function applyShapeWrapAt(
+  paragraphXml: string,
+  boxIndex: number,
+  wrap: ImageWrap | null,
+  zOrder?: number,
+): string {
+  const seg = boxDrawingSegments(paragraphXml)[boxIndex]
+  if (!seg) return paragraphXml
+  const drawing = paragraphXml.slice(seg.start, seg.end)
+  const hasAnchor = /<wp:anchor[\s>]/.test(drawing)
+  let next: string
+  if (wrap === null) {
+    if (!hasAnchor) return paragraphXml
+    next = drawing
+      .replace(/<wp:simplePos[^>]*\/>/, '')
+      .replace(/<wp:positionH[\s\S]*?<\/wp:positionH>/, '')
+      .replace(/<wp:positionV[\s\S]*?<\/wp:positionV>/, '')
+      .replace(WRAP_ELEMENT_RE, '')
+      .replace(/<wp:anchor[^>]*>/, '<wp:inline distT="0" distB="0" distL="0" distR="0">')
+      .replace(/<\/wp:anchor>/, '</wp:inline>')
+  } else if (!hasAnchor) {
+    next = applyImageWrap(drawing, wrap, undefined, undefined, zOrder)
+  } else {
+    const behind = wrap === 'behind' ? '1' : '0'
+    const wrapElement =
+      wrap === 'front' || wrap === 'behind'
+        ? '<wp:wrapNone/>'
+        : wrap === 'topBottom'
+          ? '<wp:wrapTopAndBottom/>'
+          : '<wp:wrapSquare wrapText="bothSides"/>'
+    next = drawing
+      .replace(WRAP_ELEMENT_RE, '')
+      .replace(/<wp:anchor[^>]*>/, (tag) =>
+        tag.includes('behindDoc=')
+          ? tag.replace(/behindDoc="[^"]*"/, `behindDoc="${behind}"`)
+          : tag.replace(/<wp:anchor/, `<wp:anchor behindDoc="${behind}"`),
+      )
+    if (zOrder !== undefined) {
+      next = next.replace(/(<wp:anchor[^>]*?relativeHeight=")\d+(")/, `$1${251658240 + zOrder}$2`)
+    }
+    next = /<wp:docPr/.test(next)
+      ? next.replace(/<wp:docPr/, `${wrapElement}<wp:docPr`)
+      : next.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
+  }
+  return paragraphXml.slice(0, seg.start) + next + paragraphXml.slice(seg.end)
+}
+
 // ---- protected field / formula token patching ----
 
 interface XmlTextNode {
