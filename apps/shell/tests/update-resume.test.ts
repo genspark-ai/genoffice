@@ -203,10 +203,21 @@ describe('resumable installer download', () => {
         cancel = true
       },
     }
+    // Enqueue one chunk per pull(), not both from start(): everything queued
+    // synchronously in start() is coalesced by Readable.fromWeb into a single
+    // read, so the writer's between-chunks cancellation check would only ever
+    // run after the whole body had already landed and the test would prove
+    // nothing. One chunk per pull() is what makes the boundary real.
+    let sent = 0
     const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array(FULL.subarray(0, 5)))
-        controller.enqueue(new Uint8Array(FULL.subarray(5)))
+      pull(controller) {
+        if (sent === 0) {
+          controller.enqueue(new Uint8Array(FULL.subarray(0, 5)))
+          sent = 1
+        } else {
+          controller.enqueue(new Uint8Array(FULL.subarray(5)))
+          controller.close()
+        }
       },
     })
     globalThis.fetch = vi.fn(
@@ -214,7 +225,8 @@ describe('resumable installer download', () => {
         new Response(stream, { status: 200, headers: { 'content-length': String(FULL.length) } }),
     ) as unknown as typeof fetch
     await expect(executor.download(url, dest, options)).rejects.toThrow(/aborted|cancelled/)
-    expect((await stat(dest + '.part')).size).toBeGreaterThan(0)
+    // exactly the first chunk: the token was checked and honoured at the boundary
+    expect((await stat(dest + '.part')).size).toBe(5)
     expect((await stat(dest + '.part')).size).toBeLessThan(FULL.length)
   })
 
