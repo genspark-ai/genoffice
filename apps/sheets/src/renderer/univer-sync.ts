@@ -1772,6 +1772,62 @@ export interface MappedRangeRead {
 /// stay under it (just below MAX_RANGE_CELLS in shared/desktop-api.ts).
 const SIDECAR_READ_BATCH_CELLS = 90_000
 
+/// A crashed sidecar is replaced with a process that has never heard of the
+/// session ids the renderer is holding, so every read from then on comes back
+/// rejected and the grid can never load data again. The sidecar names the
+/// condition with exactly this message (xlsx-engine read_range), which is also
+/// the wording sheets-main's own session guard uses.
+const UNKNOWN_WORKBOOK_SESSION = 'Unknown workbook session.'
+
+function isSessionLost(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(UNKNOWN_WORKBOOK_SESSION)
+}
+
+/// One recovery at a time: a crash fails every in-flight read at once, and
+/// each would otherwise re-open the file separately.
+let sessionRecoveryInFlight: Promise<boolean> | null = null
+/// Workbooks already given one automatic recovery. A second loss in the same
+/// open workbook is a real failure, not the same crash seen twice — re-opening
+/// in a loop would leave the user with a pile of dead sessions.
+const sessionRecoveryAttempted = new WeakSet<object>()
+
+/// Re-opens the workbook to get a live sidecar session and adopts its id, so
+/// reads resume instead of failing forever against a process that has never
+/// seen our session. Unsaved edits are untouched: they live in the edit
+/// journal, which is keyed by sheet rather than by session. Only the streaming
+/// memos are dropped — the new session streams the file from scratch, and
+/// leaving them would claim the windows are already loaded and keep the grid
+/// blank.
+export async function recoverSidecarSession(state: LazyWorkbookState): Promise<boolean> {
+  if (sessionRecoveryInFlight) return sessionRecoveryInFlight
+  if (sessionRecoveryAttempted.has(state)) return false
+  sessionRecoveryAttempted.add(state)
+  sessionRecoveryInFlight = (async () => {
+    const path = state.file.path
+    // Nothing on disk to re-open (a new or imported workbook): leave the
+    // status message, only a manual open can recover these.
+    if (!path) return false
+    const [reopened] = (await window.desktopApi.openWorkbooksForMerge([path])) ?? []
+    if (!reopened) return false
+    state.file = { ...state.file, sessionId: reopened.sessionId }
+    for (const timer of state.retryTimers.values()) clearTimeout(timer)
+    state.retryTimers.clear()
+    state.loadedRanges.clear()
+    state.loadingKeys.clear()
+    state.frozenStripKeys.clear()
+    return true
+  })()
+  try {
+    return await sessionRecoveryInFlight
+  } catch {
+    // A failed re-open is reported by the read that triggered it; do not let
+    // the attempt block later ones.
+    return false
+  } finally {
+    sessionRecoveryInFlight = null
+  }
+}
+
 /// Reads a screen-space range, translating through the sheet's journaled
 /// structural operations. Returns null when the range is entirely
 /// journal-owned (inserted this session — nothing streams into it). A
@@ -1779,6 +1835,24 @@ const SIDECAR_READ_BATCH_CELLS = 90_000
 /// buffered viewport at far zoom-out — can exceed the sidecar's per-read
 /// cell budget, so reads are split into row batches.
 export async function readSheetRangeMapped(
+  state: LazyWorkbookState,
+  sheetId: string,
+  screenRange: IRange,
+  sheet: WorkbookFile['sheets'][number],
+): Promise<MappedRangeRead | null> {
+  try {
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
+  } catch (error: unknown) {
+    // Every range read in the app funnels through here, so this is the one
+    // place a lost session can be noticed. Without it the crash only ever
+    // produced a status-bar message over a permanently empty sheet, and the
+    // user had to reopen the file by hand.
+    if (!isSessionLost(error) || !(await recoverSidecarSession(state))) throw error
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
+  }
+}
+
+async function readSheetRangeMappedOnce(
   state: LazyWorkbookState,
   sheetId: string,
   screenRange: IRange,
