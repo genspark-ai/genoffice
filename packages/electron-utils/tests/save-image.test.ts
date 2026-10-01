@@ -68,4 +68,11 @@ describe('decodeDataUrl', () => {
     const elapsed = performance.now() - started
     expect(elapsed).toBeLessThan(1_000)
   })
+
+  it('requires an exact ;base64 parameter, not a substring match', () => {
+    const lookalike = decodeDataUrl('data:image/png;base64x=1,%3Csvg%3E')
+    expect(lookalike?.bytes.toString()).toBe('<svg>')
+    const real = decodeDataUrl('data:image/png;charset=utf-8;base64,aGVsbG8=')
+    expect(real?.bytes.toString()).toBe('hello')
+  })
 })
