@@ -3,7 +3,7 @@ import { parseDocx } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import { encodeRgbaPng } from '../src/extract'
 import type { ImageBlock, IrPage, Line, PageSection, Span, TableBlock, TextBlock } from '../src/ir'
-import { rebuildDocx, bytesToBase64 } from '../src/rebuild'
+import { pagesToSaveBlocks, rebuildDocx, bytesToBase64 } from '../src/rebuild'
 
 function span(text: string, over: Partial<Span> = {}): Span {
   return {
@@ -1341,5 +1341,45 @@ describe('document background (pageColor)', () => {
     ])
     const parsed = await parseDocx(docx)
     expect(parsed.internal.documentXml).toMatch(/<w:background w:color="(EFE4D2|F5EDE0|FDF1E4)"/)
+  })
+})
+
+describe('pagesToSaveBlocks margins', () => {
+  const PNG = () => encodeRgbaPng(new Uint8Array(4 * 4 * 4).fill(200), 4, 4)
+
+  /** one text column inset 72pt on each side of a 612pt page */
+  const body = (x1: number): TextBlock =>
+    textBlock([line([span('body', { box: { x0: 72, y0: 690, x1, y1: 700 } })], 700)])
+
+  /** a drawn shape whose right edge sits at `x1` on the 612pt page */
+  const shape = (x1: number): ImageBlock => ({
+    kind: 'image',
+    box: { x0: x1 - 40, y0: 400, x1, y1: 460 },
+    data: PNG(),
+    mime: 'image/png',
+    pixelWidth: 4,
+    pixelHeight: 4,
+  })
+
+  /** the emitted section's right margin, back in points (w:pgMar is twips) */
+  const rightMarginPt = (blocks: IrPage['blocks']): number =>
+    pagesToSaveBlocks([page(blocks)]).section.marginRight / 20
+
+  // Margins are the min across EVERY page, so a single block hanging off the
+  // right edge made `page.widthPt - block.box.x1` negative document-wide.
+  // clampMargin maps a non-positive measurement to MARGIN_MIN_PT, whose
+  // comment claims it means "content TOUCHING the page edge" — an overhang is
+  // not a measurement at all. Measured: clean content 72pt, one shape 88pt
+  // past the edge 12pt, i.e. the text column widened ~60pt on every page.
+  it('keeps a sane right margin when a shape hangs off the right edge', () => {
+    expect(rightMarginPt([body(540)])).toBe(72)
+
+    // 88pt past the edge: an off-page shape is not a right-edge measurement,
+    // so it must not drive the margin to the floor
+    expect(rightMarginPt([body(540), shape(700)])).toBe(72)
+  })
+
+  it('still clamps to the minimum when content merely touches the edge', () => {
+    expect(rightMarginPt([body(540), shape(612)])).toBe(12)
   })
 })
