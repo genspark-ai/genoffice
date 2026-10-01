@@ -1142,6 +1142,64 @@ describe('AgentLoop', () => {
     await flush()
     expect(transport.requests).toHaveLength(2)
   })
+
+  it('a throwing buildContext fails the run instead of wedging every later send', async () => {
+    // buildContext runs inside run() before any turn exists, so a throw would
+    // leave the loop permanently busy and silently drop every later message.
+    const transport = scriptedTransport([(cb) => cb.onDone()])
+    const onError = vi.fn()
+    let boom = true
+    const loop = new AgentLoop({
+      transport,
+      skill: {
+        ...makeSkill(),
+        // reading the live document throws once, then recovers
+        buildContext: () => {
+          if (boom) {
+            boom = false
+            throw new Error('ctx boom')
+          }
+          return 'CTX'
+        },
+      },
+      events: { onError },
+    })
+    // the throw is reported to the consumer, not propagated into its render
+    expect(() => loop.run('q')).not.toThrow()
+    await flush()
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('ctx boom'))
+    // nothing was ever pushed: the failed instruction is not left half-started
+    expect(loop.messages).toHaveLength(0)
+    // running was cleared, so the next run is not silently dropped
+    loop.run('q again')
+    await flush()
+    expect(transport.requests).toHaveLength(1)
+  })
+
+  it('a throwing formatUserMessage fails the run instead of wedging every later send', async () => {
+    const transport = scriptedTransport([(cb) => cb.onDone()])
+    const onError = vi.fn()
+    let boom = true
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      formatUserMessage: (instr: string) => {
+        if (boom) {
+          boom = false
+          throw new Error('format boom')
+        }
+        return instr
+      },
+      events: { onError },
+    })
+    expect(() => loop.run('q')).not.toThrow()
+    await flush()
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('format boom'))
+    expect(loop.messages).toHaveLength(0)
+    loop.run('q again')
+    await flush()
+    expect(transport.requests).toHaveLength(1)
+  })
 })
 
 describe('AgentLoop compaction', () => {

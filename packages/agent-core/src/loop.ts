@@ -369,16 +369,27 @@ export class AgentLoop<TSnapshot = unknown> {
     this.executedCalls = []
     this.verifyRetryUsed = false
     this.abortController = new AbortController()
-    const context = this.options.skill.buildContext?.() ?? ''
-    const format =
-      this.options.formatUserMessage ??
-      ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
-    const userMsg: AgentMessage = {
-      role: 'user',
-      text: format(instruction, context),
-      ...(images?.length ? { images } : {}),
+    // buildContext and formatUserMessage are consumer-supplied and run before any
+    // turn exists, so a throw here would escape run() with `running` still true:
+    // the guard at the top then drops every later message silently, cancel()
+    // no-ops, and only reset() frees the loop. composeSkills fans buildContext out
+    // to every sub-skill, each of which reads the live document, so a document
+    // mid-transition is enough to wedge the panel. The user message was never
+    // pushed, so the rollback in failRun() is a no-op and only the report matters.
+    try {
+      const context = this.options.skill.buildContext?.() ?? ''
+      const format =
+        this.options.formatUserMessage ??
+        ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+      const userMsg: AgentMessage = {
+        role: 'user',
+        text: format(instruction, context),
+        ...(images?.length ? { images } : {}),
+      }
+      void this.beginRun(userMsg)
+    } catch (err) {
+      this.failRun(err instanceof Error ? err.message : String(err))
     }
-    void this.beginRun(userMsg)
   }
 
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
