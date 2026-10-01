@@ -1,0 +1,34 @@
+/* Quick AI model switcher in the editor AI panel headers (AiModelSwitcher.tsx).
+ * The trigger is a Dropdown sitting among the ai-header-btn icon controls, so
+ * colors and popover chrome come from dropdown.css tokens; only the width cap
+ * and the provider·model row layout live here. */
+
+.ai-model-switcher {
+  max-width: 220px;
+  flex-shrink: 1;
+}
+
+.ai-model-switcher .gs-dd-value {
+  display: inline-flex;
+  gap: 5px;
+  max-width: 175px;
+}
+
+.ai-model-switcher .ai-model-switcher-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 260px;
+}
+
+.ai-model-switcher .ai-model-switcher-provider {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.ai-model-switcher .ai-model-switcher-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

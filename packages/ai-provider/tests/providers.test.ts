@@ -8,6 +8,7 @@ import {
   clampMaxOutputTokens,
   cloudToolsEnabled,
   defaultAiSettings,
+  isProviderConfigured,
   maxOutputTokensOf,
   resolveAiSettings,
 } from '../src/providers'
@@ -385,6 +386,48 @@ describe('activeProvider', () => {
     const settings = defaultAiSettings()
     settings.provider = 'genspark'
     expect(activeProvider(settings)).toBe('genspark')
+  })
+})
+
+describe('isProviderConfigured', () => {
+  it('lists an api-key provider only once key and model are present, trimming whitespace', () => {
+    const settings = defaultAiSettings()
+    expect(isProviderConfigured(settings, 'kimi', false)).toBe(false)
+    settings.providers.kimi.apiKey = 'sk-user'
+    expect(isProviderConfigured(settings, 'kimi', false)).toBe(true)
+    settings.providers.kimi.apiKey = '  '
+    expect(isProviderConfigured(settings, 'kimi', false)).toBe(false)
+  })
+
+  it('follows the gsk login for genspark, not the settings file', () => {
+    const settings = defaultAiSettings()
+    expect(isProviderConfigured(settings, 'genspark', false)).toBe(false)
+    expect(isProviderConfigured(settings, 'genspark', true)).toBe(true)
+  })
+
+  it('custom needs base URL and model, the key stays optional', () => {
+    const settings = defaultAiSettings()
+    settings.providers.custom.baseUrl = 'http://localhost:11434/v1'
+    settings.providers.custom.model = 'llama3'
+    expect(isProviderConfigured(settings, 'custom', false)).toBe(true)
+    settings.providers.custom.baseUrl = '   '
+    expect(isProviderConfigured(settings, 'custom', false)).toBe(false)
+  })
+
+  it('codex counts once a CLI path or a saved model exists, not when untouched', () => {
+    const settings = defaultAiSettings()
+    expect(isProviderConfigured(settings, 'codex', false)).toBe(false)
+    settings.providers.codex.cliPath = ' /usr/local/bin/codex '
+    expect(isProviderConfigured(settings, 'codex', false)).toBe(true)
+    const noPath = defaultAiSettings()
+    noPath.providers.codex.cliPath = ''
+    noPath.providers.codex.model = 'gpt-5.6-sol'
+    expect(isProviderConfigured(noPath, 'codex', false)).toBe(true)
+  })
+
+  it('unknown ids from a hand-edited file are never listed', () => {
+    const settings = defaultAiSettings()
+    expect(isProviderConfigured(settings, 'nonsense' as AiProviderId, true)).toBe(false)
   })
 })
 

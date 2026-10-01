@@ -1,6 +1,12 @@
 import { defaultAiMediaSettings, resolveAiMediaSettings } from './media'
 import { defaultAiSearchSettings, resolveAiSearchSettings } from './search-settings'
-import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from './types'
+import type {
+  AiProviderConfig,
+  AiProviderId,
+  AiProviderMeta,
+  AiSettings,
+  LegacyAiSettings,
+} from './types'
 
 /**
  * Genspark server-side LLM proxy endpoints. All three protocols share the
@@ -405,6 +411,19 @@ export function cloudToolsEnabled(settings: Pick<AiSettings, 'gskToolsEnabled'>)
   return settings.gskToolsEnabled !== false
 }
 
+/** key/model/url usability shared by activeProvider and isProviderConfigured */
+function configUsable(meta: AiProviderMeta, config: AiProviderConfig): boolean {
+  // Trim-aware: in-memory settings bypass the trimConfigs applied to
+  // persisted files, and a whitespace-only key/URL/model is a 401, not a config.
+  if (!config.model?.trim()) return false
+  if (meta.needsBaseUrl) {
+    // Custom OpenAI-compatible endpoints (Ollama, LM Studio, vLLM) accept
+    // anonymous requests: base URL + model suffice, the key stays optional.
+    return !!config.baseUrl?.trim()
+  }
+  return !!config.apiKey?.trim()
+}
+
 /**
  * The stored provider selection is honored only when its config is usable
  * (api-key providers need a key and a model id; custom also needs a base URL).
@@ -420,17 +439,30 @@ export function activeProvider(settings: AiSettings): AiProviderId {
   const config = settings.providers?.[provider]
   if (!meta || !config) return 'genspark'
   if (meta.needsCliPath) return provider
-  // Trim-aware: in-memory settings bypass the trimConfigs applied to
-  // persisted files, and a whitespace-only key/URL/model is a 401, not a config.
-  if (!config.model?.trim()) return 'genspark'
-  if (meta.needsBaseUrl) {
-    // Custom OpenAI-compatible endpoints (Ollama, LM Studio, vLLM) accept
-    // anonymous requests: base URL + model suffice, the key stays optional.
-    if (!config.baseUrl?.trim()) return 'genspark'
-    return provider
-  }
-  if (!config.apiKey?.trim()) return 'genspark'
-  return provider
+  if (configUsable(meta, config)) return provider
+  return 'genspark'
+}
+
+/**
+ * Whether picking `id` would yield a working provider — the checks
+ * activeProvider applies to the stored selection, evaluated for any provider,
+ * so the AI panel's quick model switcher only lists entries that would work.
+ * genspark counts as configured only with a gsk login (its key is injected at
+ * request time); codex counts once the user pointed at a CLI or saved a model,
+ * because an untouched codex row in the switcher is noise rather than a usable
+ * fallback (unlike the stored-selection optimism in activeProvider).
+ */
+export function isProviderConfigured(
+  settings: AiSettings,
+  id: AiProviderId,
+  gskLoggedIn: boolean,
+): boolean {
+  if (id === 'genspark') return gskLoggedIn
+  const meta = AI_PROVIDERS.find((m) => m.id === id)
+  const config = settings.providers?.[id]
+  if (!meta || !config) return false
+  if (meta.needsCliPath) return !!config.cliPath?.trim() || !!config.model?.trim()
+  return configUsable(meta, config)
 }
 
 /**

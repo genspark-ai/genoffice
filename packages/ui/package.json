@@ -16,6 +16,7 @@
     "./ribbon-collapse.css": "./src/ribbon-collapse.css",
     "./markdown.css": "./src/markdown.css",
     "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
+    "./ai-model-switcher.css": "./src/ai-model-switcher.css",
     "./ai-scope-quote.css": "./src/ai-scope-quote.css",
     "./image-dialogs.css": "./src/image-dialogs.css",
     "./image-viewer.css": "./src/image-viewer.css",
@@ -34,6 +35,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@genoffice/ai-provider": "*",
     "@genoffice/i18n": "*",
     "@genoffice/pptx-render": "*"
   }

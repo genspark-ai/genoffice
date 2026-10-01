@@ -1,4 +1,5 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import { aiPanelWidthAtPointer, AiModelSwitcher, AiPanelSideButton } from '@genoffice/ui'
+import type { AiSettings } from '@genoffice/ai-provider/browser'
 import React, { useEffect, useRef, useState } from 'react'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
@@ -223,6 +224,10 @@ export function AiChatPanel({
   prompt,
   preview,
   aiBusy,
+  aiSettings,
+  gskLoggedIn,
+  onSwitchAiModel,
+  reloadAiSettings,
   onPromptChange,
   onSend,
   onStop,
@@ -254,6 +259,12 @@ export function AiChatPanel({
   readonly prompt: string
   readonly preview: ChangePlan | null
   readonly aiBusy: boolean
+  /// current AI settings; the quick model switcher (genoffice#692) renders only
+  /// once these are loaded, and the pick goes up to App which owns persisting
+  readonly aiSettings: AiSettings | null
+  readonly gskLoggedIn: boolean
+  readonly onSwitchAiModel: (next: AiSettings) => void
+  readonly reloadAiSettings: () => Promise<AiSettings>
   readonly onPromptChange: (prompt: string) => void
   /** Send the composer text, or the given instruction when provided (used by the
    *  failed-run Retry, which also resends the message's original attachments;
@@ -518,6 +529,15 @@ export function AiChatPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
+          {aiSettings && (
+            <AiModelSwitcher
+              lang={lang}
+              settings={aiSettings}
+              gskLoggedIn={gskLoggedIn}
+              reload={reloadAiSettings}
+              onSwitch={onSwitchAiModel}
+            />
+          )}
           <AiPanelSideButton
             lang={lang}
             onMove={(side) => window.desktopApi.setAiPanelPrefs({ side })}
