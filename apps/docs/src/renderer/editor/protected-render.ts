@@ -263,6 +263,28 @@ function pointColor(chart: ChartDisplay, s: number, i: number): string {
 }
 
 /**
+ * Iterative max/min, for arrays whose length comes from the document. A chart
+ * part may declare up to MAX_CHART_CACHE_POINTS cached points while carrying a
+ * handful of <c:pt>, and cachePoints densifies the array to the declared count,
+ * so `categories` and the series `values` reach this file a million long.
+ * Spreading one of those into a Math.max/Math.min call overflows the argument
+ * limit (V8 throws at roughly 200k arguments). `seed` carries the extra value
+ * the spread call mixed in, and keeps the empty-array results of a bare
+ * Math.max() / Math.min() (-Infinity / Infinity).
+ */
+function maxNum(values: ArrayLike<number>, seed: number): number {
+  let out = seed
+  for (let i = 0; i < values.length; i++) out = Math.max(out, values[i])
+  return out
+}
+
+function minNum(values: ArrayLike<number>, seed: number): number {
+  let out = seed
+  for (let i = 0; i < values.length; i++) out = Math.min(out, values[i])
+  return out
+}
+
+/**
  * Chart preview + data grid. The grid is a chart data sheet
  * (rows = series, columns = categories); its cells and the title become
  * editable on double-click, everything else stays protected.
@@ -301,7 +323,10 @@ export function renderChartSpec(chart: ChartDisplay): DomSpec {
     ],
   ]
 
-  const colCount = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length))
+  const colCount = maxNum(
+    chart.series.map((s) => s.values.length),
+    chart.categories.length,
+  )
   const headCells: DomSpec[] = [['th', { class: 'doc-chart-corner' }, '\u00a0']]
   for (let c = 0; c < colCount; c++) {
     headCells.push([
@@ -521,7 +546,7 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   // horizontal bars put category labels on the y axis; reserve room for the longest one
   const catLabelPx = (s: string) => chartTextPx(s, labelPx)
   const legendTextPx = (s: string) => chartTextPx(s, legendPx)
-  const maxCatPx = Math.max(0, ...chart.categories.map(catLabelPx))
+  const maxCatPx = maxNum(chart.categories.map(catLabelPx), 0)
   const width = chartPlotWidth(chart)
   // l/r/tr legends stack vertically in a side gutter, like Word; other
   // positions (and legacy models without legendPos) keep the bottom row
@@ -529,7 +554,7 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
     showLegend && (chart.legendPos === 'l' || chart.legendPos === 'r' || chart.legendPos === 'tr')
   const topLegend = showLegend && chart.legendPos === 't'
   const legendW = sideLegend
-    ? Math.min(Math.round(width * 0.35), 20 + Math.max(0, ...legendNames.map(legendTextPx)))
+    ? Math.min(Math.round(width * 0.35), 20 + maxNum(legendNames.map(legendTextPx), 0))
     : 0
   // bottom legends wrap into centered rows when the entries overflow the width, like Word
   const legendEntryW = (i: number) => 14 + legendTextPx(legendNames[i]) + 12
@@ -587,9 +612,9 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   if (cartesian && !(chart.kind === 'bar' && chart.horizontal) && !geom.noCatLabels) {
     const cols = Math.max(chart.categories.length, 1)
     const slotW = (geom.width - geom.left - geom.right) / cols
-    const lines = Math.max(
+    const lines = maxNum(
+      chart.categories.map((c) => wrapChartText(c, slotW - 4, labelPx).length),
       1,
-      ...chart.categories.map((c) => wrapChartText(c, slotW - 4, labelPx).length),
     )
     geom.bottom += (lines - 1) * Math.round(labelPx * 1.2)
   }
@@ -767,7 +792,10 @@ function drawDataTable(
   table: NonNullable<ChartDisplay['dataTable']>,
   rowH: number,
 ): void {
-  const cols = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const cols = maxNum(
+    chart.series.map((s) => s.values.length),
+    Math.max(chart.categories.length, 1),
+  )
   const x0 = 4
   const x1 = geom.left
   const xEnd = geom.width - geom.right
@@ -864,7 +892,10 @@ function stackSums(
 
 /** bar / line / area charts share the same axes and scale */
 function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
-  const cols = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const cols = maxNum(
+    chart.series.map((s) => s.values.length),
+    Math.max(chart.categories.length, 1),
+  )
   const stacked =
     (chart.kind === 'bar' || chart.kind === 'area' || chart.kind === 'line') &&
     chart.grouping !== undefined
@@ -877,8 +908,8 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
     ? [...sums!.pos.map(norm), ...sums!.neg.map(norm)]
     : chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
   // "nice" axis bounds (1/2/5×10ⁿ step, integer-friendly labels like Word/LO)
-  const rawMax = Math.max(0, ...values)
-  const rawMin = Math.min(0, ...values)
+  const rawMax = maxNum(values, 0)
+  const rawMin = minNum(values, 0)
   const step = niceStep((rawMax - rawMin) / 5 || 1)
   const min = Math.floor(rawMin / step) * step
   // Word/LO leave headroom: the top tick sits strictly above the data maximum
@@ -1088,10 +1119,13 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
 
 /** radar: one spoke per category, polygon rings at the value steps, series as closed outlines (filled: opaque) */
 function drawRadar(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
-  const cols = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const cols = maxNum(
+    chart.series.map((s) => s.values.length),
+    Math.max(chart.categories.length, 1),
+  )
   const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
-  const rawMax = Math.max(0, ...values)
-  const rawMin = Math.min(0, ...values)
+  const rawMax = maxNum(values, 0)
+  const rawMin = minNum(values, 0)
   const step = niceStep((rawMax - rawMin) / 5 || 1)
   const min = Math.floor(rawMin / step) * step
   let max = Math.ceil(rawMax / step) * step || step
@@ -1230,8 +1264,8 @@ function drawScatter(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): voi
   const all = pts.flat()
   if (all.length === 0) return
   const axis = (vals: number[]) => {
-    let rawMax = Math.max(...vals)
-    let rawMin = Math.min(...vals)
+    let rawMax = maxNum(vals, -Infinity)
+    let rawMin = minNum(vals, Infinity)
     // Excel-style auto minimum: anchor at 0 unless the data sits far above it
     // (date-serial x values must not squash the points against the right edge)
     if (rawMin > 0 && rawMin <= rawMax - rawMin) rawMin = 0
@@ -1315,7 +1349,10 @@ function drawScatter(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): voi
     })
   }
 
-  const maxSize = Math.max(0, ...all.map((p) => p.size ?? 0))
+  const maxSize = maxNum(
+    all.map((p) => p.size ?? 0),
+    0,
+  )
   const rMax = Math.min(plotW, plotH) * 0.125
   pts.forEach((points, s) => {
     const color = seriesColor(chart, s)
@@ -1350,7 +1387,10 @@ function drawScatter(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): voi
 /** horizontal bar charts (c:barDir="bar"): value axis on x, categories on y,
  * first category in the bottom row and series 1 at the bottom of each group, like Word */
 function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
-  const rows = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const rows = maxNum(
+    chart.series.map((s) => s.values.length),
+    Math.max(chart.categories.length, 1),
+  )
   const stacked = chart.grouping !== undefined
   const pct = chart.grouping === 'percentStacked'
   const sums = stacked ? stackSums(chart, rows) : null
@@ -1359,8 +1399,8 @@ function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeo
   const values = stacked
     ? [...sums!.pos.map(norm), ...sums!.neg.map(norm)]
     : chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
-  const rawMax = Math.max(0, ...values)
-  const rawMin = Math.min(0, ...values)
+  const rawMax = maxNum(values, 0)
+  const rawMin = minNum(values, 0)
   const step = niceStep((rawMax - rawMin) / 5 || 1)
   const min = Math.floor(rawMin / step) * step
   let max = Math.ceil(rawMax / step) * step || step

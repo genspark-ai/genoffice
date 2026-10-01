@@ -105,6 +105,45 @@ export function directTabStops(original: TabStop[], edited: TabStop[]): TabStop[
   )
 }
 
+/**
+ * Stable identity per stop, carried across renders. The stop list is re-parsed
+ * from the paragraph attributes on every render, so neither the array nor its
+ * objects survive, and a marker's position in the list is not an identity
+ * either: a nudge that re-sorts `stops` moves it to another index. Stops that
+ * kept their position keep their id; the rest are aligned to the still
+ * unclaimed ids, so a stop that crossed a neighbour follows its own marker
+ * instead of the index it used to sit at. Exported for tests.
+ */
+export function stableStopIds(prev: TabStop[], prevIds: string[], next: TabStop[]): string[] {
+  const taken = new Set<number>()
+  const out: string[] = new Array(next.length)
+  const claim = (index: number, want: (s: TabStop) => boolean): void => {
+    for (let i = 0; i < prev.length; i++) {
+      if (!taken.has(i) && want(prev[i]!)) {
+        taken.add(i)
+        out[index] = prevIds[i]!
+        return
+      }
+    }
+  }
+  // a stop that did not move keeps its marker
+  next.forEach((stop, i) => claim(i, (p) => p.pos === stop.pos && p.val === stop.val))
+  // the moved ones take the ids of the stops they passed, in order
+  let cursor = 0
+  next.forEach((stop, i) => {
+    if (out[i] !== undefined) return
+    while (cursor < prev.length && taken.has(cursor)) cursor++
+    if (cursor >= prev.length) {
+      out[i] = `s${i}`
+      return
+    }
+    taken.add(cursor)
+    out[i] = prevIds[cursor]!
+    cursor++
+  })
+  return out
+}
+
 /** Paragraph indents in twips, w:ind semantics: negative firstLine = hanging. */
 export interface ParagraphIndents {
   left: number
@@ -385,6 +424,11 @@ export function Ruler({
   }
 
   const { stops, relStops } = currentTabStops()
+  // markers are keyed by stop identity, not by list position, so a nudge that
+  // re-sorts the list moves the marker with its stop
+  const stopIdsRef = useRef<{ stops: TabStop[]; ids: string[] }>({ stops: [], ids: [] })
+  const stopIds = stableStopIds(stopIdsRef.current.stops, stopIdsRef.current.ids, stops)
+  stopIdsRef.current = { stops, ids: stopIds }
   const withRel = (edited: TabStop[]): TabStop[] | null => {
     const direct = directTabStops(stops, edited)
     return direct.length > 0 || relStops.length > 0 ? [...direct, ...relStops] : null
@@ -583,8 +627,13 @@ export function Ruler({
   }
 
   // Keyboard: arrows nudge the focused stop on the snap grid, Delete removes it.
-  const handleStopKeyDown = (e: ReactKeyboardEvent<HTMLSpanElement>, stopIndex: number) => {
-    const stop = stops[stopIndex]
+  // The target is resolved from the marker's own id, not from the index this
+  // render handed the handler: nudging across a neighbour re-sorts `stops`, and
+  // the index then names a different stop, so the next arrow moved the wrong
+  // marker (and the marker's own node was replaced under the focused element).
+  const handleStopKeyDown = (e: ReactKeyboardEvent<HTMLSpanElement>, stopId: string) => {
+    const stopIndex = stopIds.indexOf(stopId)
+    const stop = stopIndex === -1 ? undefined : stops[stopIndex]
     if (!stop) return
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault()
@@ -710,7 +759,7 @@ export function Ruler({
       {stops.map((stop, i) =>
         !isRenderableTabStop(stop) ? null : (
           <span
-            key={`${stop.pos}-${i}`}
+            key={stopIds[i]}
             data-ruler-stop={i}
             className={`ruler-tab ruler-tab-${stop.val}`}
             style={{ left: Math.min(Math.max(twipsToPx(stop.pos), 0), width) }}
@@ -722,7 +771,7 @@ export function Ruler({
             aria-valuemax={dims.pageWidth}
             aria-valuenow={Number.isFinite(stop.pos) ? stop.pos : 0}
             onMouseDown={(e) => handleTabMouseDown(e, i)}
-            onKeyDown={(e) => handleStopKeyDown(e, i)}
+            onKeyDown={(e) => handleStopKeyDown(e, stopIds[i]!)}
           >
             {TAB_TYPE_LABELS[stop.val]}
           </span>
