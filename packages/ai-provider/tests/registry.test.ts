@@ -6,6 +6,7 @@ import {
   modelHasFixedSampling,
   modelLacksVision,
 } from '../src/registry'
+import { endpointUrl } from '../src/protocols/shared'
 import { AI_PROVIDERS, GENSPARK_LLM_BASE_URLS } from '../src/providers'
 import type { AiProviderConfig, AiProviderId } from '../src/types'
 
@@ -115,10 +116,13 @@ describe('provider registry', () => {
       ['hunyuan', 'hy3', 'https://tokenhub.tencentmaas.com/v1'],
       ['hunyuan', 'hy4-preview', 'https://tokenhub.tencentmaas.com/v1'],
       ['ling', 'Ling-3.0-flash', 'https://api.ant-ling.com/v1'],
+      ['ling', 'Ling-3.0-flash-VL', 'https://api.ant-ling.com/v1'],
       ['ling', 'Ling-3.0-tiny', 'https://api.ant-ling.com/v1'],
       ['ling', 'Ling-2.6-1T', 'https://api.ant-ling.com/v1'],
       ['ling', 'Ring-2.6-1T', 'https://api.ant-ling.com/v1'],
       ['ling', 'Ling-2.6-flash', 'https://api.ant-ling.com/v1'],
+      ['spark', 'spark-x2.5', 'https://maas-api.cn-huabei-1.xf-yun.com/v2'],
+      ['longcat', 'LongCat-2.5-Preview', 'https://api.longcat.chat/openai/v1'],
       ['longcat', 'LongCat-2.0', 'https://api.longcat.chat/openai/v1'],
       ['minimax', 'MiniMax-M3', 'https://api.minimax.io/v1'],
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
@@ -134,6 +138,57 @@ describe('provider registry', () => {
         baseUrl,
       })
     }
+  })
+
+  // Pins the exact strings the three providers' vendor docs give, so a later
+  // "I could not find it" pass cannot quietly reintroduce the wrong host or
+  // the old capitalisation.
+  it('pins the Spark host, model id and key prefix to the iFlytek product guide', () => {
+    const spark = AI_PROVIDERS.find((p) => p.id === 'spark')!
+    // the guide's examples read `model: spark-x2.5` and `ak-f30b1****...`:
+    // lower case on the model, `ak-` on the key
+    expect(spark.models).toEqual(['spark-x2.5'])
+    expect(spark.defaultModel).toBe('spark-x2.5')
+    expect(spark.keyPlaceholder).toBe('ak-...')
+    // the guide's chat endpoint is POST .../v2/chat/completions on the Huabei
+    // MaaS host, which is the retired spark-api-open.xf-yun.com host's successor
+    const endpoint = AI_PROVIDER_ADAPTERS.spark.resolveEndpoint(config('spark-x2.5'))
+    expect(endpoint.baseUrl).toBe('https://maas-api.cn-huabei-1.xf-yun.com/v2')
+    // the base alone is half a URL: the composed request must be the documented
+    // one, or every Spark call 404s
+    expect(endpointUrl(endpoint.baseUrl, 'chat/completions')).toBe(
+      'https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions',
+    )
+    for (const wrong of ['Spark-X2.5', 'spark-api-open.xf-yun.com']) {
+      expect(spark.models.join(' ')).not.toContain(wrong)
+      expect(spark.defaultModel).not.toContain(wrong)
+      expect(
+        AI_PROVIDER_ADAPTERS.spark.resolveEndpoint(config('spark-x2.5')).baseUrl,
+      ).not.toContain(wrong)
+    }
+  })
+
+  it('pins the LongCat model ids to the official pricing pages', () => {
+    const longcat = AI_PROVIDERS.find((p) => p.id === 'longcat')!
+    // the pricing pages spell these exactly this way
+    expect(longcat.models).toEqual(['LongCat-2.5-Preview', 'LongCat-2.0'])
+    for (const model of longcat.models) {
+      expect(AI_PROVIDER_ADAPTERS.longcat.resolveEndpoint(config(model))).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://api.longcat.chat/openai/v1',
+      })
+    }
+    // the lower-case pool spelling is the OpenCode Go route, not this provider
+    expect(longcat.models).not.toContain('longcat-2.0')
+    expect(longcat.models).not.toContain('longcat-2.5-preview')
+  })
+
+  it('keeps the Ling ids off this first-party endpoint and the corrected omissions visible', () => {
+    const ling = AI_PROVIDERS.find((p) => p.id === 'ling')!
+    // the Options column re-read 2026-10-01 lists no 3.1, so 3.1 stays out
+    expect(ling.models).not.toContain('Ling-3.1-flash')
+    // Ling-3.0-flash-VL is documented and is the multimodal member
+    expect(ling.models).toContain('Ling-3.0-flash-VL')
   })
 
   it('marks Kimi as fixed-sampling (K3 rejects any temperature but 1)', () => {
@@ -416,6 +471,39 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('DeepSeek-V4-Pro')).toBe(true)
     expect(modelLacksVision('DEEPSEEK-V4-FLASH')).toBe(true)
     expect(modelLacksVision('DeepSeek-V4-Flash-Vision-Exp')).toBe(false)
+  })
+
+  it('holds back the text-only Ling ids but not the VL branch', () => {
+    for (const model of [
+      'Ling-3.0-flash',
+      'Ling-3.0-tiny',
+      'Ling-2.6-1T',
+      'Ring-2.6-1T',
+      'Ling-2.6-flash',
+      'ling-3.0-flash',
+      'LING-2.6-1T',
+    ]) {
+      expect(modelLacksVision(model)).toBe(true)
+    }
+    // the multimodal member reads images, so it must fall through
+    expect(modelLacksVision('Ling-3.0-flash-VL')).toBe(false)
+    expect(modelLacksVision('ling-3.0-flash-vl')).toBe(false)
+  })
+
+  it('flags LongCat-2.0 but not the multimodal 2.5 preview', () => {
+    expect(modelLacksVision('LongCat-2.0')).toBe(true)
+    expect(modelLacksVision('longcat-2.0')).toBe(true)
+    expect(modelLacksVision('LongCat-2.5-Preview')).toBe(false)
+    // the OpenCode Go pool spelling of the same preview tier
+    expect(modelLacksVision('longcat-2.5-preview-free')).toBe(false)
+  })
+
+  it('splits vision per model on the two providers that carry one multimodal id', () => {
+    // the provider flag alone would hand screenshots to the text ids
+    for (const id of ['ling', 'longcat'] as const) {
+      expect(AI_PROVIDER_ADAPTERS[id].capabilities.vision).toBe(true)
+    }
+    expect(AI_PROVIDER_ADAPTERS.spark.capabilities.vision).toBe(false)
   })
 })
 
