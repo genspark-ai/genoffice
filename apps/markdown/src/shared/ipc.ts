@@ -26,6 +26,9 @@ export const MARKDOWN_CHANNELS = {
   saveImage: 'markdown:save-image',
   readImage: 'markdown:read-image',
   saveImageAs: 'markdown:save-image-as',
+  getImageHost: 'markdown:get-image-host',
+  setImageHost: 'markdown:set-image-host',
+  uploadImage: 'markdown:upload-image',
   viewImage: 'genoffice:view-image',
   exportRequest: 'markdown:export-request',
   exportDocx: 'markdown:export-docx',
@@ -48,6 +51,50 @@ export const MARKDOWN_CHANNELS = {
 } as const
 
 export type UiTheme = 'light' | 'dark' | 'system'
+
+/**
+ * Bring-your-own image host for pasted/dropped pictures in Markdown
+ * (genoffice#388). Keys are stored plaintext in the user's own settings file,
+ * like every other credential in the app. The local assets/ copy stays the
+ * fallback whenever the host is disabled, unconfigured or the upload fails.
+ */
+export type ImageHostKind = 's3' | 'smms' | 'github'
+
+export interface ImageHostConfig {
+  kind: ImageHostKind
+  /** SM.MS and GitHub take a bearer token; S3 uses the key pair below */
+  token?: string
+  /** s3: endpoint base, path-style (`https://<account>.r2.cloudflarestorage.com`, `https://oss-<region>.aliyuncs.com`, …) */
+  endpoint?: string
+  /** s3 */
+  region?: string
+  /** s3 */
+  bucket?: string
+  /** s3 */
+  accessKeyId?: string
+  /** s3 */
+  secretAccessKey?: string
+  /** s3: optional key prefix inside the bucket (e.g. `notes/`) */
+  prefix?: string
+  /** s3: public base the bucket is served from when it differs from the API endpoint (R2 custom domain, CDN); URLs become `<publicBase>/<key>` */
+  publicBase?: string
+  /** github: repository coordinates of the image branch */
+  owner?: string
+  /** github */
+  repo?: string
+  /** github: branch to commit to (default `main`) */
+  branch?: string
+  /** github: directory inside the repo (default `images/`) */
+  dir?: string
+  /** github: serve URLs from this base instead of the API's download_url (e.g. a jsDelivr CDN) */
+  urlPrefix?: string
+}
+
+export interface ImageUploadResult {
+  ok: boolean
+  url?: string
+  error?: string
+}
 
 /** shell-wide AutoSave default; updatedAt is 0 until the user has ever set it */
 export interface AutoSaveDefault {
@@ -186,6 +233,24 @@ export interface MarkdownApi {
    * document; returns the relative path to author, or null when untitled.
    */
   saveImage(data: { base64: string; ext: string }): Promise<string | null>
+  /**
+   * The configured image host (genoffice#388), or null when none was ever
+   * saved. Pasted/dropped images upload here first and fall back to the
+   * local `assets/` copy when the upload fails or the host is disabled.
+   */
+  getImageHost(): Promise<ImageHostConfig | null>
+  /** Validate and persist the image host configuration; returns null on invalid input */
+  setImageHost(config: ImageHostConfig | null): Promise<ImageHostConfig | null>
+  /**
+   * Upload one image through the configured host. Returns the public URL on
+   * success; ok=false with a message when the host rejected the upload or is
+   * not configured (the renderer then keeps the local-copy fallback).
+   */
+  uploadImage(data: { base64: string; ext: string; name?: string }): Promise<{
+    ok: boolean
+    url?: string
+    error?: string
+  }>
   /**
    * Read an image referenced by the document for DOCX embedding. Only paths
    * inside the document's directory are allowed; anything else returns null.
