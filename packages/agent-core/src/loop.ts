@@ -588,6 +588,36 @@ export class AgentLoop<TSnapshot = unknown> {
     this.runUserMsg = null
   }
 
+  /**
+   * Terminal failure path for the callback guard sites: clear `running` (or
+   * every later message is silently dropped, and even cancel() no-ops), roll
+   * the failed instruction back out of history so no orphaned tool_use is left
+   * behind, then report. onError is the consumer's last callback, so a throw
+   * from it must not escape and wedge the loop a second time.
+   */
+  private failRun(message: string): void {
+    this.running = false
+    this.rollbackFailedRun()
+    try {
+      this.options.events?.onError?.(message)
+    } catch {
+      // nothing left to notify
+    }
+  }
+
+  /**
+   * finishTurn() runs consumer-supplied callbacks (onToolStart, onToolExecuted
+   * with its snapshotBefore, onTurnEnd, onDone) and the captureSnapshot hook.
+   * Its promise is discarded, so a throw from any of them would escape as an
+   * unhandled rejection and leave `running` true forever. Same terminal-state
+   * guarantee as the tools-getter guard in startTurn().
+   */
+  private settleTurn(): void {
+    void this.finishTurn().catch((err: unknown) => {
+      this.failRun(err instanceof Error ? err.message : String(err))
+    })
+  }
+
   /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request. */
   private trimHistory(): void {
     const max = this.options.maxHistory ?? 40
@@ -623,7 +653,15 @@ export class AgentLoop<TSnapshot = unknown> {
           onDelta: (text) => {
             if (generation !== this.generation || settled) return
             this.turnText += text
-            this.options.events?.onText?.(this.turnText)
+            try {
+              this.options.events?.onText?.(this.turnText)
+            } catch (err) {
+              // A transport drives onDelta from its own async event handler
+              // (see the Electron IPC transport), so this throw never reaches
+              // the try/catch around stream() below.
+              settled = true
+              this.failRun(err instanceof Error ? err.message : String(err))
+            }
           },
           onReasoning: (text) => {
             if (generation !== this.generation || settled) return
@@ -640,7 +678,7 @@ export class AgentLoop<TSnapshot = unknown> {
           onDone: () => {
             if (generation !== this.generation || settled) return
             settled = true
-            void this.finishTurn()
+            this.settleTurn()
           },
           onError: (error) => {
             if (generation !== this.generation || settled) return
@@ -665,7 +703,7 @@ export class AgentLoop<TSnapshot = unknown> {
                 if (generation !== this.generation) return
                 // Stopped during the backoff window: finalize like a normal cancel
                 if (this.cancelled) {
-                  void this.finishTurn()
+                  this.settleTurn()
                   return
                 }
                 this.startTurn(retriesUsed + 1)

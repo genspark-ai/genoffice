@@ -1045,6 +1045,103 @@ describe('AgentLoop', () => {
     await flush()
     expect(onError).toHaveBeenCalledTimes(2)
   })
+
+  it('a throwing event callback ends the run instead of wedging the loop', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => cb.onDone(),
+    ])
+    const onError = vi.fn()
+    // the consumer's own rendering code throws
+    const onToolExecuted = vi.fn(() => {
+      throw new Error('ui boom')
+    })
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onToolExecuted, onError },
+    })
+    loop.run('q')
+    await flush()
+    await flush()
+    expect(onToolExecuted).toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('ui boom'))
+    // the failed instruction is rolled back, like any other failed run
+    expect(loop.messages).toHaveLength(0)
+    // running was cleared, so the next run is not silently dropped
+    loop.run('q again')
+    await flush()
+    expect(transport.requests).toHaveLength(2)
+  })
+
+  it('a throwing snapshot hook ends the run instead of wedging the loop', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => cb.onDone(),
+    ])
+    const onError = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      // serializing the document for rollback throws
+      captureSnapshot: () => {
+        throw new Error('snapshot boom')
+      },
+      events: { onError },
+    })
+    loop.run('q')
+    await flush()
+    await flush()
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('snapshot boom'))
+    expect(loop.messages).toHaveLength(0)
+    loop.run('q again')
+    await flush()
+    expect(transport.requests).toHaveLength(2)
+  })
+
+  it('a throwing onText callback ends the run instead of wedging the loop', async () => {
+    // A transport drives onDelta from its own async handler (the Electron IPC
+    // transport does), so the throw never reaches startTurn's try/catch.
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onDelta('partial')
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('second run')
+        cb.onDone()
+      },
+    ])
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: {
+        onText: vi.fn(() => {
+          throw new Error('render boom')
+        }),
+        onError,
+        onDone,
+      },
+    })
+    loop.run('q')
+    await flush()
+    await flush()
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('render boom'))
+    // the turn is closed, so the stream's own onDone cannot finalize it again
+    expect(onDone).not.toHaveBeenCalled()
+    expect(loop.messages).toHaveLength(0)
+    loop.run('q again')
+    await flush()
+    expect(transport.requests).toHaveLength(2)
+  })
 })
 
 describe('AgentLoop compaction', () => {
