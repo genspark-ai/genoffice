@@ -32,6 +32,8 @@ export {
   TABLE_HEADER_FILL,
   applyImageWrap,
   applyImageZOrder,
+  applyShapeWrapAt,
+  applyShapeZOrderAt,
   buildAnchoredTextboxParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,

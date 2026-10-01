@@ -7,6 +7,8 @@ import {
   patchFieldParagraphXml,
   applyImageWrap,
   applyImageZOrder,
+  applyShapeWrapAt,
+  applyShapeZOrderAt,
   patchImageParagraphXml,
   patchMathTokens,
   patchTableCellTexts,
@@ -61,6 +63,7 @@ import { borderDrawnPx, borderTotalPt, collapsedEdgePx } from './border-metrics'
 import { parseRunBorderAttr } from './run-border'
 import { parseTextOutlineAttr } from './text-outline'
 import { charScaleXAttr, parseGlowAttr, parseTextEffectAttr } from './text-effects'
+import { shapeWrapOf } from './floating-z-order'
 
 /** minimal ProseMirror JSON shapes */
 export interface PmMark {
@@ -2054,6 +2057,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         const textboxTexts = textboxParasPatch(node, original)
         const textboxSizes = textboxSizesPatch(node, original)
         const textboxStyles = textboxStylesPatch(node, original)
+        const shapeWrapChanges = shapeWrapPatchOf(node, original)
         const textboxOffsetX =
           node.attrs?.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) : undefined
         const textboxOffsetY =
@@ -2149,7 +2153,11 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           changedCount++
           pushBlock({ kind: 'xml', xml: patchTableCellTexts(original.originalXml, tableTexts) })
         } else if (
-          (textboxTexts || textboxSizes || textboxStyles || textboxPositionChanged) &&
+          (textboxTexts ||
+            textboxSizes ||
+            textboxStyles ||
+            textboxPositionChanged ||
+            shapeWrapChanges.length > 0) &&
           original.originalXml
         ) {
           changedCount++
@@ -2157,6 +2165,18 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
+          for (const change of shapeWrapChanges) {
+            if (change.wrapChanged) {
+              xml = applyShapeWrapAt(
+                xml,
+                change.index,
+                change.wrap,
+                change.zChanged ? change.z : undefined,
+              )
+            } else if (change.zChanged) {
+              xml = applyShapeZOrderAt(xml, change.index, change.z ?? 0)
+            }
+          }
           if (textboxPositionChanged) {
             const wrap =
               (node.attrs?.imageWrap as ImageWrap | null) ?? original.imageWrap ?? 'square-left'
@@ -2267,8 +2287,14 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
             genOffsetX !== undefined && genOffsetY !== undefined
               ? { x: genOffsetX, y: genOffsetY }
               : undefined
-          xml = applyImageWrap(xml, genWrap, posOffset)
+          // a moved shape rebuilds its position from the drag offsets; a pure
+          // wrap change keeps the anchor's own position bytes
+          xml = posOffset
+            ? applyImageWrap(xml, genWrap, posOffset)
+            : applyShapeWrapAt(xml, 0, genWrap)
         }
+        const genZ = node.attrs?.imageZOrder != null ? Number(node.attrs.imageZOrder) : undefined
+        if (genZ !== undefined) xml = applyShapeZOrderAt(xml, 0, genZ)
         pushBlock({ kind: 'xml', xml })
       } else if (node.attrs?.genImage) {
         changedCount++
@@ -2803,6 +2829,36 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
     return { fillHex, borderHex }
   })
   return changed ? styles : null
+}
+
+interface ShapeWrapChange {
+  index: number
+  wrap: ImageWrap | null
+  wrapChanged: boolean
+  z?: number
+  zChanged: boolean
+}
+
+/** Per-box wrap/rank changes of a shape node vs its parsed original. */
+function shapeWrapPatchOf(
+  node: { attrs?: Record<string, unknown> } | null,
+  original: Block,
+): ShapeWrapChange[] {
+  const boxes = node?.attrs?.textboxes as TextboxDisplay[] | undefined
+  const originals = original.textboxes
+  if (!Array.isArray(boxes) || !originals?.length) return []
+  const out: ShapeWrapChange[] = []
+  const count = Math.min(boxes.length, originals.length)
+  for (let i = 0; i < count; i++) {
+    const mode = shapeWrapOf(boxes[i])
+    const origMode = shapeWrapOf(originals[i])
+    const z = boxes[i].z !== undefined ? Number(boxes[i].z) : undefined
+    const origZ = originals[i].z !== undefined ? Number(originals[i].z) : undefined
+    const wrapChanged = mode !== origMode
+    const zChanged = z !== origZ
+    if (wrapChanged || zChanged) out.push({ index: i, wrap: mode, wrapChanged, z, zChanged })
+  }
+  return out
 }
 
 function fieldTextPatch(node: PmNode, original: Block): FieldTextPatch | null {
