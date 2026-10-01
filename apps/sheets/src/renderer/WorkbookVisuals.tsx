@@ -3786,7 +3786,7 @@ function CategoryGroupBand({
   )
 }
 
-function formatAxisValue(value: number, numberFormat: string | undefined): string {
+export function formatAxisValue(value: number, numberFormat: string | undefined): string {
   if (numberFormat && numberFormat !== 'General' && !numberFormat.includes('%')) {
     try {
       const text = numfmt.format(numberFormat, value, { throws: false })
@@ -3796,11 +3796,9 @@ function formatAxisValue(value: number, numberFormat: string | undefined): strin
     }
   }
   if (numberFormat?.includes('%')) return `${Math.round(value * 100)}%`
-  const magnitude = Math.abs(value)
-  // Excel prints full numbers on value axes (no K abbreviation); only guard
-  // the layout against extreme magnitudes.
-  if (magnitude >= 1e9) return `${(value / 1e9).toFixed(1)}B`
-  if (magnitude >= 1e6) return `${(value / 1e6).toFixed(1)}M`
+  // Excel prints full numbers on value axes (no M/B abbreviation), and the
+  // data labels of the same series go through numfmt and print them in full
+  // too — abbreviating here made the axis disagree with its own labels.
   const clean = Number(value.toPrecision(12))
   return clean.toLocaleString('en-US', { maximumFractionDigits: 4 })
 }
