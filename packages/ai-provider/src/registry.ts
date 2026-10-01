@@ -58,9 +58,21 @@ export function modelHasFixedSampling(model: string): boolean {
  * Model ids that reject image input even under a vision-capable provider.
  * DeepSeek V4 Pro and V4 Flash are text-only; V4.1 Flash and the -vision*
  * branches take images, so they fall through and receive screenshots.
+ *
+ * Ant's Ling line and Meituan's LongCat are the same shape: a text catalog
+ * with one multimodal member. `Ling-3.0-flash-VL` and `LongCat-2.5-Preview`
+ * (image understanding, per the 2026-09-25 LongCat change log) take images;
+ * every other id on those two providers is text-only. A text-only id added to
+ * either list has to be added here too — the provider flag alone would hand it
+ * screenshots, which is what this function exists to prevent.
  */
 export function modelLacksVision(model: string): boolean {
-  return /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model)
+  return (
+    /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model) ||
+    /(^|\/)(?:ling-(?:3\.0-flash(?!-vl)|3\.0-tiny|2\.6-1t|2\.6-flash)|ring-2\.6-1t|longcat-2\.0(?:$|-))/i.test(
+      model,
+    )
+  )
 }
 
 /**
@@ -292,15 +304,32 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   },
   ling: {
     meta: metaOf('ling'),
-    capabilities: { auth: 'api-key', vision: false },
+    // Ling-3.0-flash-VL reads images, so the provider is vision-capable;
+    // modelLacksVision() keeps the five text-only ids off screenshots
+    capabilities: { auth: 'api-key', vision: true },
     // the base_url every official example uses (quickstart + OpenAI-compatible
     // reference, read 2026-10-01); /v1/models on it answers 401
     // sdk_token_not_found, so it is the live first-party host
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ant-ling.com/v1'),
   },
+  spark: {
+    meta: metaOf('spark'),
+    capabilities: { auth: 'api-key', vision: false },
+    // the MaaS base from section 1.1 of the product guide (read 2026-10-01):
+    // chat is POST https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions,
+    // which is this base plus the path endpointUrl() appends, so the two
+    // compose back to the documented URL. The same host also serves
+    // /v1/responses and /anthropic/v1/messages; we speak chat-completions
+    resolveEndpoint: fixedEndpoint(
+      'openai-compatible',
+      'https://maas-api.cn-huabei-1.xf-yun.com/v2',
+    ),
+  },
   longcat: {
     meta: metaOf('longcat'),
-    capabilities: { auth: 'api-key', vision: false },
+    // 2.5-Preview reads images (2026-09-25 change log); modelLacksVision()
+    // holds 2.0 back, which predates image understanding
+    capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.longcat.chat/openai/v1'),
   },
   minimax: {
