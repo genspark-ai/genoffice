@@ -126,6 +126,90 @@ describe('assertZipInflatesWithinLimits', () => {
   })
 })
 
+const EOCD_SIG = Buffer.from([0x50, 0x4b, 0x05, 0x06])
+
+/** A forged end-of-central-directory record, fields laid out as a reader reads them. */
+function forgedEocd(count: number, cdSize: number, cdOffset: number, commentLen: number): Buffer {
+  const record = Buffer.alloc(22)
+  EOCD_SIG.copy(record, 0)
+  record.writeUInt16LE(count, 8)
+  record.writeUInt16LE(count, 10)
+  record.writeUInt32LE(cdSize, 12)
+  record.writeUInt32LE(cdOffset, 16)
+  record.writeUInt16LE(commentLen, 20)
+  return record
+}
+
+/**
+ * A valid one-part archive carrying an 84-byte archive comment, with a forged
+ * EOCD written `fromEnd` bytes before the end of the file and the file entry's
+ * declared uncompressed size rewritten to `declares`.
+ *
+ * 84 bytes is the region the backward scan walks through first, so the decoy is
+ * found before the archive's real end of central directory — exactly what a
+ * legitimate commented .docx plus attacker-chosen comment bytes looks like.
+ */
+async function commented(opts: {
+  realBytes?: number
+  declares?: number
+  decoy?: Buffer | null
+  fromEnd?: number
+}): Promise<Buffer> {
+  const zip = new JSZip()
+  zip.file(NAME, Buffer.alloc(opts.realBytes ?? 300))
+  // ASCII filler, so 84 characters is 84 bytes of comment region.
+  const bytes = (await zip.generateAsync({
+    type: 'nodebuffer',
+    comment: 'c'.repeat(84),
+  })) as Buffer
+  opts.decoy?.copy(bytes, bytes.length - (opts.fromEnd ?? 40) - 22)
+  if (opts.declares !== undefined) {
+    bytes.writeUInt32LE(opts.declares, bytes.lastIndexOf(Buffer.from(NAME)) - 46 + 24)
+  }
+  return bytes
+}
+
+describe('archive comments', () => {
+  it('accepts an archive whose comment carries the EOCD signature', async () => {
+    // The signature in a comment is not the archive's end of central
+    // directory, and the bytes after it are not its fields.
+    const archive = await commented({ decoy: forgedEocd(2, 0x100, 0xffffff00, 0) })
+    await expect(assertZipInflatesWithinLimits(archive, LIMITS)).resolves.toBeUndefined()
+  })
+
+  it('still refuses a bomb hidden behind a record in the comment', async () => {
+    // A decoy claiming zero entries makes a reader that trusts it scan nothing
+    // at all, so a part under-declaring its size would pass as clean. Reaching
+    // the real central directory past the comment is what keeps this a gate.
+    const archive = await commented({
+      realBytes: 1024 * KB,
+      declares: 300,
+      decoy: forgedEocd(0, 0, 0, 0),
+    })
+    await expect(assertZipInflatesWithinLimits(archive, LIMITS)).rejects.toThrow(
+      /declares 300 uncompressed bytes but inflates past that/,
+    )
+  })
+
+  it('still refuses an archive that is corrupt or truncated behind a comment', async () => {
+    const good = await commented({})
+    const eocd = good.lastIndexOf(EOCD_SIG)
+
+    // The real record is intact but points its central directory nowhere.
+    const corrupt = Buffer.from(good)
+    corrupt.writeUInt32LE(0xffffff00, eocd + 16)
+    await expect(assertZipInflatesWithinLimits(corrupt, LIMITS)).rejects.toThrow(
+      /corrupt central directory/,
+    )
+
+    // Cut the real record in half: its signature survives, its fields do not,
+    // and no candidate is left that owns the end of the file.
+    await expect(
+      assertZipInflatesWithinLimits(good.subarray(0, good.length - 30), LIMITS),
+    ).rejects.toThrow(/end of central directory/)
+  })
+})
+
 describe('assertDeclaredSizesWithinLimits', () => {
   it('rejects too many parts by declared count alone', () => {
     const parts: DeclaredPart[] = Array.from({ length: LIMITS.maxParts + 1 }, (_, i) => ({

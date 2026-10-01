@@ -147,10 +147,17 @@ function scanParts(bytes: Uint8Array): ScannedPart[] {
   if (end < 0) throw new Error('zip: end of central directory not found')
   let eocd = -1
   for (let i = end; i >= Math.max(0, end - 0xffff); i--) {
-    if (at(i, 4) === EOCD_SIG) {
-      eocd = i
-      break
-    }
+    if (at(i, 4) !== EOCD_SIG) continue
+    // Only the record that owns the end of the file is the archive's EOCD: its
+    // comment length has to account for every trailing byte. A signature inside
+    // the archive comment is comment text, and taking its fields as the entry
+    // count and central-directory offset hands a comment the archive's
+    // structure — a real commented .docx then reads as corrupt, and a forged
+    // record claiming zero entries has the gate scan nothing at all. The
+    // window already ends at `byteLength - 22`, so this read cannot run past it.
+    if (i + 22 + at(i + 20, 2) !== bytes.byteLength) continue
+    eocd = i
+    break
   }
   if (eocd < 0) throw new Error('zip: end of central directory not found')
   if (eocd >= 20 && at(eocd - 20, 4) === ZIP64_LOCATOR_SIG) {
