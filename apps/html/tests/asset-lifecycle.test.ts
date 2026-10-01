@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   discardPendingOwnedAssets,
+  extractHtmlAssetReferences,
   extractHtmlImageSources,
   prepareAssetsForSaveAs,
   readOwnedAssetManifest,
@@ -121,6 +122,90 @@ describe('HTML owned asset lifecycle', () => {
     await reconcileOwnedAssets(secondDocument, [authored])
     expect(existsSync(assetPath)).toBe(true)
     await reconcileOwnedAssets(secondDocument, [])
+    expect(existsSync(assetPath)).toBe(false)
+  })
+
+  it('keeps an asset that only a CSS url() references, and still collects a dead one', async () => {
+    const directory = await temporaryDirectory('html-assets-css-url-')
+    const documentPath = join(directory, 'page.html')
+    const hero = await writeImageIntoOwnedAssets(
+      documentPath,
+      'hero.png',
+      Buffer.from('hero image bytes'),
+    )
+    const orphan = await writeImageIntoOwnedAssets(
+      documentPath,
+      'orphan.png',
+      Buffer.from('orphan image bytes'),
+    )
+    const heroPath = join(directory, hero)
+    const orphanPath = join(directory, orphan)
+
+    // Referenced from a <style> rule and an inline background-image, never <img>.
+    const html = [
+      '<!doctype html>',
+      '<html><head><style>',
+      '.hero { background-image: url(assets/hero.png); }',
+      '</style></head>',
+      `<body><div style="background: url('assets/hero.png')">Title</div></body>`,
+      '</html>',
+    ].join('\n')
+    await writeFile(documentPath, html, 'utf8')
+
+    // What the save handler hands the GC: every source the document points at.
+    const result = await reconcileOwnedAssets(documentPath, extractHtmlAssetReferences(html))
+
+    // The GC still works: nothing in the document points at orphan.png.
+    expect(result.errors).toEqual([])
+    expect(result.deleted).toEqual(['orphan.png'])
+    expect(existsSync(orphanPath)).toBe(false)
+    // The CSS-only reference survives, and the manifest keeps recording it.
+    expect(result.deleted).not.toContain('hero.png')
+    expect(existsSync(heroPath)).toBe(true)
+    expect(await readFile(heroPath, 'utf8')).toBe('hero image bytes')
+    expect((await readOwnedAssetManifest(documentPath))?.documents[basename(documentPath)]).toEqual([
+      'hero.png',
+    ])
+  })
+
+  it('collects a CSS-only asset once the rule referencing it is gone', async () => {
+    const directory = await temporaryDirectory('html-assets-css-url-gone-')
+    const documentPath = join(directory, 'page.html')
+    const hero = await writeImageIntoOwnedAssets(
+      documentPath,
+      'hero.png',
+      Buffer.from('hero image bytes'),
+    )
+    const assetPath = join(directory, hero)
+    const referencing = '<style>.hero { background-image: url(assets/hero.png); }</style>'
+    await writeFile(documentPath, referencing, 'utf8')
+    await reconcileOwnedAssets(documentPath, extractHtmlAssetReferences(referencing))
+    expect(existsSync(assetPath)).toBe(true)
+
+    const without = '<style>.hero { background-image: none; }</style>'
+    await writeFile(documentPath, without, 'utf8')
+    const result = await reconcileOwnedAssets(documentPath, extractHtmlAssetReferences(without))
+    expect(result.deleted).toEqual(['hero.png'])
+    expect(existsSync(assetPath)).toBe(false)
+  })
+
+  it('preserves an asset a sibling document holds open from its own CSS url()', async () => {
+    const directory = await temporaryDirectory('html-assets-css-url-sibling-')
+    const documentPath = join(directory, 'owner.html')
+    const siblingPath = join(directory, 'sibling.html')
+    const authored = await writeImageIntoOwnedAssets(
+      documentPath,
+      'shared.png',
+      Buffer.from('shared image'),
+    )
+    const assetPath = join(directory, authored)
+    await writeFile(siblingPath, '<style>.a { background: url(assets/shared.png) }</style>')
+
+    await reconcileOwnedAssets(documentPath, [])
+    expect(existsSync(assetPath)).toBe(true)
+
+    await writeFile(siblingPath, '<style>.a { background: none }</style>')
+    await reconcileOwnedAssets(documentPath, [])
     expect(existsSync(assetPath)).toBe(false)
   })
 

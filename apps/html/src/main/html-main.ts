@@ -49,7 +49,7 @@ import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/driver
 import {
   copyImageIntoOwnedAssets,
   discardPendingOwnedAssets,
-  extractHtmlImageSources,
+  extractHtmlAssetReferences,
   isInDocDir,
   pendingOwnedAssetsForDocument,
   prepareAssetsForSaveAs,
@@ -1392,7 +1392,7 @@ function registerHtmlIpc(): void {
         const isNewPath = currentPath !== target
         const imageSources = [...(request.imageSources ?? [])]
         const knownImageSources = new Set(imageSources)
-        for (const source of extractHtmlImageSources(request.text)) {
+        for (const source of extractHtmlAssetReferences(request.text)) {
           if (knownImageSources.has(source)) continue
           knownImageSources.add(source)
           imageSources.push(source)
