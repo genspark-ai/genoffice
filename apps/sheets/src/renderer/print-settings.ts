@@ -251,7 +251,11 @@ export function printAreasFromFormula(formula: string | undefined): string[] {
       continue
     }
     if (/^[A-Z]{1,3}[0-9]{1,7}:[A-Z]{1,3}[0-9]{1,7}$/.test(reference)) {
-      areas.push(reference)
+      // Some writers store the corners reversed ($B$4:$A$1). The print layout
+      // reads an area positionally, so an inverted pair would make the span
+      // negative and abort the whole export; parseRange normalises it, and
+      // the rest of the app already relies on that.
+      areas.push(normaliseArea(reference))
       continue
     }
     return []
@@ -285,6 +289,16 @@ export function clampTitleRows(start: number, end: number): string {
   const safeStart = Number.isFinite(start) ? Math.max(1, Math.floor(start)) : 1
   const safeEnd = Number.isFinite(end) ? Math.floor(end) : safeStart
   return `${safeStart}:${Math.min(Math.max(safeEnd, safeStart), safeStart + MAX_PRINT_TITLE_ROWS - 1)}`
+}
+
+/// Swaps reversed corners back into top-left → bottom-right order, so
+/// `$B$4:$A$1` prints A1:B4 exactly like parseRange treats it.
+function normaliseArea(reference: string): string {
+  const bounds = parseRange(reference)
+  return (
+    `${columnLabel(bounds.startColumn)}${bounds.startRow + 1}:` +
+    `${columnLabel(bounds.endColumn)}${bounds.endRow + 1}`
+  )
 }
 
 /// Excel's formatting toggles (&B bold, &I italic, &U underline, &S strike)
