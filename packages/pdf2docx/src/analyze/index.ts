@@ -907,8 +907,18 @@ export function analyzePage(extracted: ExtractedPage, opts: AnalyzeOptions = {})
   } else {
     // page-level left edge for the weak-bullet indent evidence (P20): slide
     // layouts pin a dash sub-bullet group into a section of its own, so the
-    // column has no plain neighbours to judge the indent against
-    const pageBodyLeftX0 = median(layout.flatMap((ls) => ls.columns.map((c) => c.box.x0)))
+    // column has no plain neighbours to judge the indent against. Only a
+    // page whose sections are all single-column HAS one: on a multi-column
+    // page the median lands BETWEEN two real column edges, so it is neither
+    // column's left edge and measures weak bullets against nothing they are
+    // indented from. Two identical dash-bullet columns then get opposite
+    // verdicts, and the one right of the median becomes a bulleted list
+    // however flush it sits with its own column edge. There each column
+    // judges against its own left edge instead.
+    const multiColumn = layout.some((ls) => ls.columns.length > 1)
+    const pageBodyLeftX0 = multiColumn
+      ? undefined
+      : median(layout.flatMap((ls) => ls.columns.map((c) => c.box.x0)))
     sections = layout.map((ls) => {
       const orderedColumns = ls.dir === 'rtl' ? [...ls.columns].reverse() : ls.columns
       return {
@@ -920,7 +930,7 @@ export function analyzePage(extracted: ExtractedPage, opts: AnalyzeOptions = {})
             extracted.widthPt,
             listSeq,
             extracted.widthPt > extracted.heightPt,
-            pageBodyLeftX0,
+            pageBodyLeftX0 ?? c.box.x0,
             opts.absoluteLayout === true,
           ),
         ),

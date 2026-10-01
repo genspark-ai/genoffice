@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeChars, detectListBlocks, groupIntoBlocks, parseListMarker } from '../src/analyze'
+import {
+  analyzeChars,
+  analyzePage,
+  detectListBlocks,
+  groupIntoBlocks,
+  parseListMarker,
+} from '../src/analyze'
+import type { ExtractedPage } from '../src/extract'
 import type { IrPage, TextBlock } from '../src/ir'
 import { pagesToSaveBlocks } from '../src/rebuild'
 import { mkText } from './helpers/chars'
@@ -336,5 +343,64 @@ describe('detectListBlocks: RTL lists', () => {
     }
     expect(textOf(blocks[0]!)).toBe('\u05e4\u05e8\u05d9\u05d8 \u05e8\u05d0\u05e9\u05d5\u05df')
     expect(textOf(blocks[1]!)).toBe('\u05e4\u05e8\u05d9\u05d8 \u05e9\u05e0\u05d9')
+  })
+})
+
+describe('analyzePage: the weak-bullet indent origin on a multi-column page', () => {
+  const pageOf = (chars: PdfChar[]): ExtractedPage => ({
+    index: 0,
+    widthPt: 612,
+    heightPt: 792,
+    rotation: 0,
+    chars,
+    images: [],
+    paths: [],
+    degraded: false,
+    scanned: false,
+    hasStructTree: false,
+    vectorRegions: [],
+    badUnicodeRatio: 0,
+  })
+  /** the page's text blocks, column by column (floats and tables dropped) */
+  const columnBlocks = (page: IrPage): TextBlock[][] =>
+    (page.sections ?? []).flatMap((s) =>
+      s.columns.map((c) => c.blocks.filter((b): b is TextBlock => b.kind === 'text')),
+    )
+
+  it('judges each bullet column against its own left edge, not the page median', () => {
+    // two identical columns of dash bullets, each flush with its own edge, so
+    // neither has the plain neighbour the indent evidence is judged against.
+    // They must get the SAME verdict: median([72, 320]) is 196, which is no
+    // column's edge, and it read the right column's flush dashes as a
+    // 124pt indent — a bulleted list minted out of column position alone
+    const chars: PdfChar[] = []
+    for (const [x, tag] of [
+      [72, 'left column bullet'],
+      [320, 'right column bullet'],
+    ] as const) {
+      for (let i = 0; i < 3; i++) {
+        chars.push(...mkText(`– ${tag} number ${i}`, x, { y: 700 - i * 20, fontSize: 10 }).chars)
+      }
+    }
+    const columns = columnBlocks(analyzePage(pageOf(chars)))
+    expect(columns).toHaveLength(2)
+    for (const blocks of columns) {
+      expect(blocks.every((b) => b.list === undefined)).toBe(true)
+    }
+  })
+
+  it('still lists dash sub-bullets indented on a single-column page (P20)', () => {
+    // the page-level fallback the fix must not lose: a slide pins the dash
+    // group in a column of its own, so only the page's left edge can say
+    // it is indented
+    const chars: PdfChar[] = [
+      ...mkText('Use it to define your venture', 60, { y: 730, fontSize: 10 }).chars,
+      ...mkText('– To answer questions early', 110, { y: 700, fontSize: 10 }).chars,
+      ...mkText('– In the order they ask them', 110, { y: 686, fontSize: 10 }).chars,
+    ]
+    const listed = columnBlocks(analyzePage(pageOf(chars)))
+      .flat()
+      .filter((b) => b.list?.kind === 'bullet')
+    expect(listed).toHaveLength(2)
   })
 })
