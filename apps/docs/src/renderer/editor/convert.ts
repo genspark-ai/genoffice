@@ -2165,22 +2165,37 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           if (textboxTexts) xml = patchTextboxParas(xml, textboxTexts)
           if (textboxSizes) xml = patchTextboxSizes(xml, textboxSizes)
           if (textboxStyles) xml = patchShapeStyles(xml, textboxStyles)
-          for (const change of shapeWrapChanges) {
+          for (const change of [...shapeWrapChanges].sort((a, b) => b.index - a.index)) {
+            const location = { shapeId: change.shapeId, boxIndex: change.index }
             if (change.wrapChanged) {
               xml = applyShapeWrapAt(
                 xml,
-                change.index,
+                location,
                 change.wrap,
                 change.zChanged ? change.z : undefined,
               )
             } else if (change.zChanged) {
-              xml = applyShapeZOrderAt(xml, change.index, change.z ?? 0)
+              xml = applyShapeZOrderAt(xml, location, change.z ?? 0)
             }
           }
           if (textboxPositionChanged) {
-            const wrap =
-              (node.attrs?.imageWrap as ImageWrap | null) ?? original.imageWrap ?? 'square-left'
-            xml = applyImageWrap(xml, wrap, { x: textboxOffsetX!, y: textboxOffsetY! })
+            const firstBox = (node.attrs?.textboxes as TextboxDisplay[] | undefined)?.[0]
+            const wrap = firstBox
+              ? shapeWrapOf(firstBox)
+              : ((node.attrs?.imageWrap as ImageWrap | null) ?? original.imageWrap ?? 'square-left')
+            const rank =
+              firstBox?.z !== undefined
+                ? Number(firstBox.z)
+                : node.attrs?.imageZOrder != null
+                  ? Number(node.attrs.imageZOrder)
+                  : undefined
+            xml = applyImageWrap(
+              xml,
+              wrap,
+              { x: textboxOffsetX!, y: textboxOffsetY! },
+              undefined,
+              rank,
+            )
           }
           pushBlock({ kind: 'xml', xml })
         } else if (fieldText && original.originalXml) {
@@ -2291,10 +2306,10 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           // wrap change keeps the anchor's own position bytes
           xml = posOffset
             ? applyImageWrap(xml, genWrap, posOffset)
-            : applyShapeWrapAt(xml, 0, genWrap)
+            : applyShapeWrapAt(xml, { boxIndex: 0 }, genWrap)
         }
         const genZ = node.attrs?.imageZOrder != null ? Number(node.attrs.imageZOrder) : undefined
-        if (genZ !== undefined) xml = applyShapeZOrderAt(xml, 0, genZ)
+        if (genZ !== undefined) xml = applyShapeZOrderAt(xml, { boxIndex: 0 }, genZ)
         pushBlock({ kind: 'xml', xml })
       } else if (node.attrs?.genImage) {
         changedCount++
@@ -2833,6 +2848,7 @@ function textboxStylesPatch(node: PmNode, original: Block): (ShapeStylePatch | n
 
 interface ShapeWrapChange {
   index: number
+  shapeId?: string
   wrap: ImageWrap | null
   wrapChanged: boolean
   z?: number
@@ -2852,11 +2868,20 @@ function shapeWrapPatchOf(
   for (let i = 0; i < count; i++) {
     const mode = shapeWrapOf(boxes[i])
     const origMode = shapeWrapOf(originals[i])
-    const z = boxes[i].z !== undefined ? Number(boxes[i].z) : undefined
-    const origZ = originals[i].z !== undefined ? Number(originals[i].z) : undefined
+    const z = boxes[i].z ?? 0
+    const origZ = originals[i].z ?? 0
     const wrapChanged = mode !== origMode
     const zChanged = z !== origZ
-    if (wrapChanged || zChanged) out.push({ index: i, wrap: mode, wrapChanged, z, zChanged })
+    if (wrapChanged || zChanged) {
+      out.push({
+        index: i,
+        shapeId: boxes[i].shapeId,
+        wrap: mode,
+        wrapChanged,
+        ...(zChanged ? { z } : {}),
+        zChanged,
+      })
+    }
   }
   return out
 }

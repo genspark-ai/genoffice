@@ -134,4 +134,44 @@ describe('shape wrap and stacking survive save', () => {
     expect(box.z).toBe(1)
     editor.destroy()
   })
+
+  it('keeps the rank when a loaded shape is dragged', async () => {
+    const { editor, parsed } = await openShapeDoc()
+    selectShape(editor)
+    bringToFront(editor)
+    // a drag commit writes new posOffsets; the rank must survive the rebuild
+    editor.commands.updateAttributes('docProtected', {
+      imageOffsetXEmu: 600000,
+      imageOffsetYEmu: 100000,
+    })
+    const box = firstBox(await parseDocx(await saveShape(editor, parsed)))
+    expect(box.z).toBe(1)
+    expect(box.offsetXEmu).toBe(600000)
+    expect(box.offsetYEmu).toBe(100000)
+    editor.destroy()
+  })
+
+  it('targets the selected shape in a two-shape paragraph', async () => {
+    // a textless first shape is the drawing boxDrawingSegments skips: ordinal
+    // targeting would wrap the texted second shape instead
+    const withId = (xml: string, id: number): string =>
+      xml.replace('<wps:cNvSpPr/>', `<wps:cNvPr id="${id}"/><wps:cNvSpPr/>`)
+    const textless = withId(buildShapeParagraphXml({ prst: 'rect', withTextbox: false }), 7)
+    const texted = withId(buildShapeParagraphXml({ prst: 'rect', withTextbox: true }), 8)
+    const bodyXml =
+      textless.slice(0, textless.indexOf('</w:p>')) +
+      texted.slice(texted.indexOf('<w:p>') + '<w:p>'.length)
+    const { editor, parsed } = await openShapeDoc(bodyXml)
+    expect(parsed.blocks.find((b) => b.textboxes?.length)!.textboxes).toHaveLength(2)
+    selectShape(editor)
+    setFloatingWrap(editor, 'behind')
+    const boxes = (await parseDocx(await saveShape(editor, parsed))).blocks.find(
+      (b) => b.textboxes?.length,
+    )!.textboxes!
+    expect(boxes).toHaveLength(2)
+    expect(boxes[0].behind).toBe(true)
+    expect(boxes[1].behind).toBeFalsy()
+    expect(boxes[1].wrapSides).toBe(true)
+    editor.destroy()
+  })
 })

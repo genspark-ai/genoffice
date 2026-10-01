@@ -164,7 +164,7 @@ export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
 }
 
 const WRAP_ELEMENT_RE =
-  /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
+  /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapTight[^>]*\/>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapThrough[^>]*\/>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
 
 /**
  * Re-encode ONLY the stacking rank of an existing wp:anchor as Word's
@@ -270,31 +270,63 @@ function boxDrawingSegments(paragraphXml: string): Array<{ start: number; end: n
   )
 }
 
+/** How a caller addresses one shape drawing: by its wps:cNvPr id when known, else by box ordinal. */
+export interface ShapeDrawingLocation {
+  /** wps:cNvPr id of the owning shape (parsed boxes carry it) */
+  shapeId?: string
+  /** fallback ordinal among box drawings (generated shapes have no id) */
+  boxIndex: number
+}
+
+function shapeDrawingSegment(
+  paragraphXml: string,
+  location: ShapeDrawingLocation,
+): { start: number; end: number } | null {
+  if (location.shapeId) {
+    // an id was given: never fall back to a different drawing
+    const pattern = new RegExp(`<wps:cNvPr\\b[^>]*\\bid="${location.shapeId}"`)
+    const found = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).find((seg) =>
+      pattern.test(paragraphXml.slice(seg.start, seg.end)),
+    )
+    return found ?? null
+  }
+  return boxDrawingSegments(paragraphXml)[location.boxIndex] ?? null
+}
+
+/** Re-encode the rank of the drawing's own wp:anchor tag, never a nested drawing's. */
+function setAnchorRank(drawingXml: string, zOrder: number): string {
+  return drawingXml.replace(/<wp:anchor[^>]*>/, (tag) =>
+    tag.replace(/relativeHeight="\d+"/, `relativeHeight="${251658240 + zOrder}"`),
+  )
+}
+
 /**
- * Re-encode ONLY the stacking rank of one box drawing as Word's base + rank
+ * Re-encode ONLY the stacking rank of one shape drawing as Word's base + rank
  * relativeHeight. Everything else keeps its bytes, like applyImageZOrder.
  */
-export function applyShapeZOrderAt(paragraphXml: string, boxIndex: number, zOrder: number): string {
-  const seg = boxDrawingSegments(paragraphXml)[boxIndex]
+export function applyShapeZOrderAt(
+  paragraphXml: string,
+  location: ShapeDrawingLocation,
+  zOrder: number,
+): string {
+  const seg = shapeDrawingSegment(paragraphXml, location)
   if (!seg) return paragraphXml
-  const next = paragraphXml
-    .slice(seg.start, seg.end)
-    .replace(/(<wp:anchor[^>]*?relativeHeight=")\d+(")/, `$1${251658240 + zOrder}$2`)
+  const next = setAnchorRank(paragraphXml.slice(seg.start, seg.end), zOrder)
   return paragraphXml.slice(0, seg.start) + next + paragraphXml.slice(seg.end)
 }
 
 /**
- * Switch one box drawing's wrap mode in place, preserving its positionH/V
+ * Switch one shape drawing's wrap mode in place, preserving its positionH/V
  * bytes: only the anchor attributes, the wrap element and (when given)
  * relativeHeight change. `wrap === null` converts the anchor to inline.
  */
 export function applyShapeWrapAt(
   paragraphXml: string,
-  boxIndex: number,
+  location: ShapeDrawingLocation,
   wrap: ImageWrap | null,
   zOrder?: number,
 ): string {
-  const seg = boxDrawingSegments(paragraphXml)[boxIndex]
+  const seg = shapeDrawingSegment(paragraphXml, location)
   if (!seg) return paragraphXml
   const drawing = paragraphXml.slice(seg.start, seg.end)
   const hasAnchor = /<wp:anchor[\s>]/.test(drawing)
@@ -325,9 +357,7 @@ export function applyShapeWrapAt(
           ? tag.replace(/behindDoc="[^"]*"/, `behindDoc="${behind}"`)
           : tag.replace(/<wp:anchor/, `<wp:anchor behindDoc="${behind}"`),
       )
-    if (zOrder !== undefined) {
-      next = next.replace(/(<wp:anchor[^>]*?relativeHeight=")\d+(")/, `$1${251658240 + zOrder}$2`)
-    }
+    if (zOrder !== undefined) next = setAnchorRank(next, zOrder)
     next = /<wp:docPr/.test(next)
       ? next.replace(/<wp:docPr/, `${wrapElement}<wp:docPr`)
       : next.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
