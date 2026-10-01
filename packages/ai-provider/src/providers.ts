@@ -207,31 +207,36 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'ling',
     label: 'Ling',
-    // Ant Group's Ling line. 3.0-flash is the sparse MoE with published weights
-    // (124B total / 5.1B active, 256K); 3.1-flash is the newer, far larger
-    // 560B/25B step and is still inside its launch free trial, so the older
-    // stable tier stays the default.
-    models: ['Ling-3.1-flash', 'Ling-3.0-flash'],
+    // Ant Group's Ling general line plus Ring, its reasoning line. Ids exactly
+    // as the `model` field's Options column lists them on
+    // developer.ant-ling.com/en/docs/api-reference/openai (read 2026-10-01);
+    // that page and the quickstart give the base URL, and
+    // GET https://api.ant-ling.com/v1/models answers 401 sdk_token_not_found,
+    // so the host is live and auth-gated. None of these are on the deprecation
+    // page (en/docs/models/deprecation).
+    // Ling-3.0-flash-VL is deliberately left out: vision is declared per
+    // provider, not per model, so listing it would claim the text ids take
+    // screenshots too. Ling-3.1-flash (released 2026-09-29, models.dev) is a
+    // real model but is not served on this first-party endpoint yet; the
+    // platforms that do serve it today (NanoGPT, Vercel AI Gateway) expose it as
+    // `inclusionai/ling-3.1-flash`.
+    models: ['Ling-3.0-flash', 'Ling-3.0-tiny', 'Ling-2.6-1T', 'Ring-2.6-1T', 'Ling-2.6-flash'],
     defaultModel: 'Ling-3.0-flash',
-    keyPlaceholder: 'sk-...',
-  },
-  {
-    id: 'spark',
-    label: 'Spark',
-    // iFlytek Spark. The edge tiers (X2.5-4B / X2.5-1.7B) are deliberately
-    // left out: they are on-device checkpoints, not a hosted chat tier.
-    models: ['Spark-X2.5'],
-    defaultModel: 'Spark-X2.5',
-    keyPlaceholder: 'xxxxxxxxxxxxxxxx',
+    keyPlaceholder: 'API Key',
   },
   {
     id: 'longcat',
     label: 'LongCat',
-    // Meituan's LongCat-2.0 is a 1.6T/48B-active MoE built for agentic coding
-    // with a 1M window. Also reachable through OpenCode Go.
-    models: ['longcat-2.0'],
-    defaultModel: 'longcat-2.0',
-    keyPlaceholder: 'sk-...',
+    // Meituan's LongCat-2.0, a 1.6T/48B-active MoE for agentic coding with a
+    // 1M window. The id is the model name as Meituan publishes it
+    // (github.com/meituan-longcat/LongCat-2.0, read 2026-10-01). The docs site
+    // (longcat.chat/openapi) is a client-rendered app whose model table we could
+    // not read, and GET https://api.longcat.chat/openai/v1/models answers 401
+    // invalid_api_key, so the casing the platform accepts on the wire is
+    // unverified: if the picker 404s, the id is most likely `longcat-2.0`.
+    models: ['LongCat-2.0'],
+    defaultModel: 'LongCat-2.0',
+    keyPlaceholder: 'API Key',
   },
   {
     id: 'minimax',

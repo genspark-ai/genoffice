@@ -14,7 +14,6 @@ export type AiProviderId =
   | 'mimo'
   | 'hunyuan'
   | 'ling'
-  | 'spark'
   | 'longcat'
   | 'minimax'
   | 'xai'
