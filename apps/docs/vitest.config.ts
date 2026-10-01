@@ -19,6 +19,9 @@ export default defineConfig({
       '@genoffice/electron-utils/atomic-write': local(
         '../../packages/electron-utils/src/atomic-write.ts',
       ),
+      '@genoffice/electron-utils/safe-external-url': local(
+        '../../packages/electron-utils/src/safe-external-url.ts',
+      ),
       '@genoffice/electron-utils': local('../../packages/electron-utils/src/index.ts'),
       '@genoffice/ai-provider/browser': local('../../packages/ai-provider/src/browser.ts'),
       '@genoffice/ai-provider': local('../../packages/ai-provider/src/index.ts'),
