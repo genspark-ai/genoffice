@@ -29,6 +29,7 @@ import { genofficeApiKey, genofficeAuthPath, reloadGenofficeAuth } from './genof
 // deep import: the package root re-exports Electron-bound modules, and this file also runs in the genoffice CLI
 import { readBodyCapped } from '@genoffice/electron-utils/remote-image'
 import { createStreamWatchdog } from '@genoffice/ai-provider'
+import { fetchWithSsrfGuard } from '@genoffice/electron-utils/safe-remote-url'
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -586,7 +587,15 @@ export async function gskSlideGenerate(
   )
   const downloadUrl = dl.download_url
   if (!downloadUrl) throw new Error('file/download returned no download_url')
-  const resp = await fetch(String(downloadUrl), signal ? { signal } : undefined)
+  // The cloud response picks this URL, so it goes through the same SSRF gate as
+  // every other model-influenced download: a plain fetch would follow a redirect
+  // into a private address (or a cloud metadata endpoint) unchecked. The body is
+  // then read through the capped reader.
+  const resp = await fetchWithSsrfGuard(String(downloadUrl), {
+    // the guard has no signal of its own; the caller's abort rides on every hop
+    fetchImpl: (url, init) => fetch(url, signal ? { ...init, signal } : init),
+  })
+  if (!resp) throw new Error('PPTX download blocked: the download URL is not a public address')
   if (!resp.ok) throw new Error(`PPTX download failed: HTTP ${resp.status}`)
   return {
     bytes: await readBodyCapped(resp, MAX_SLIDE_ARTIFACT_BYTES),
