@@ -3992,3 +3992,63 @@ fn rejects_media_entry_that_inflates_past_its_declared_size() {
     );
 }
 
+/// One malformed `<c r=>` made the whole workbook unopenable. Every other
+/// malformed field in this parser degrades rather than erroring — a stale
+/// shared-string index yields a valueless cell because reporting there once
+/// blanked the entire sheet — but the address was still propagated with `?`.
+/// A corrupt address belongs where an omitted one goes: one right of its
+/// predecessor, with its value intact.
+#[test]
+fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1"><v>10</v></c><c r="!bogus"><v>20</v></c><c r="C1"><v>30</v></c></row>
+<row r="2"><c r="A2"><v>40</v></c><c r="ZZZZZZZZZZZZZZZZZZZZ1"><v>50</v></c></row>
+</sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions
+        .open(&path)
+        .expect("one malformed address must not close the workbook");
+    let result = sessions
+        .read_range(
+            &metadata.session_id,
+            "sheet-1",
+            &CellRange {
+                start_row: 0,
+                end_row: 1,
+                start_column: 0,
+                end_column: 2,
+            },
+        )
+        .unwrap();
+    let value_at = |row: usize, column: usize| {
+        result
+            .cells
+            .iter()
+            .find(|cell| cell.row == row && cell.column == column)
+            .and_then(|cell| cell.value.clone())
+    };
+    let number = |value: Option<CellValue>| match value {
+        Some(CellValue::Number(number)) => number,
+        other => panic!("expected a number, got {other:?}"),
+    };
+    // A bad address lands one right of its predecessor, exactly as an omitted
+    // one does, and keeps its value; the well-formed neighbours are untouched.
+    assert_eq!(number(value_at(0, 0)), 10.0);
+    assert_eq!(number(value_at(0, 1)), 20.0);
+    assert_eq!(number(value_at(0, 2)), 30.0);
+    assert_eq!(number(value_at(1, 0)), 40.0);
+    assert_eq!(number(value_at(1, 1)), 50.0);
+}
