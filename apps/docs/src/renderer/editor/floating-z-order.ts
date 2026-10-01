@@ -28,6 +28,7 @@ function withWrapFields(box: TextboxDisplay, wrap: ImageWrap | null): TextboxDis
   delete next.bandTopPx
   delete next.bandBottomPx
   delete next.bandOverflow
+  delete next.bandBeside
   if (wrap === 'front') return { ...next, floating: true, noWrap: true }
   if (wrap === 'behind') return { ...next, floating: true, behind: true, noWrap: true }
   if (wrap === 'square-left' || wrap === 'square-right') {
@@ -41,7 +42,8 @@ function withWrapFields(box: TextboxDisplay, wrap: ImageWrap | null): TextboxDis
   }
   if (wrap === 'topBottom') {
     const top = box.bandTopPx ?? Math.round((box.offsetYEmu ?? 0) / EMU_PER_PX)
-    return { ...next, floating: true, bandTopPx: top, bandBottomPx: top + (box.heightPx ?? 0) }
+    const bottom = box.bandBottomPx ?? top + (box.heightPx ?? 0)
+    return { ...next, floating: true, bandTopPx: top, bandBottomPx: bottom }
   }
   return next
 }
@@ -49,6 +51,8 @@ function withWrapFields(box: TextboxDisplay, wrap: ImageWrap | null): TextboxDis
 /** Apply a rank to a shape box; an in-flow box floats in front first so the rank is visible (Word parity). */
 export function boxWithZ(box: TextboxDisplay, z: number): TextboxDisplay {
   const next = { ...box, z }
+  // a side-wrapped or banded box stores the rank but keeps its CSS float: the
+  // order only paints once the box is front/behind (Word keeps the wrap)
   if (box.wrapSides || box.bandBottomPx != null) return next
   if (!box.floating) return { ...next, floating: true, behind: false, noWrap: true }
   return next
@@ -71,11 +75,29 @@ function writeFirstBox(editor: Editor, box: TextboxDisplay, mirror: Record<strin
     .run()
 }
 
+/** tight/through have no box representation: the nearest renderable mode keeps text beside the shape. */
+function normalizedShapeWrap(wrap: string | null): ImageWrap | null | undefined {
+  if (
+    wrap === null ||
+    wrap === 'front' ||
+    wrap === 'behind' ||
+    wrap === 'topBottom' ||
+    wrap === 'square-left' ||
+    wrap === 'square-right'
+  )
+    return wrap
+  if (wrap === 'tight-left' || wrap === 'through-left') return 'square-left'
+  if (wrap === 'tight-right' || wrap === 'through-right') return 'square-right'
+  return undefined
+}
+
 /** Wrap Text on the selection: the shape's box model for a shape, the anchor attrs for an image. */
 export function setFloatingWrap(editor: Editor, wrap: string | null): void {
   const boxes = selectedShapeBoxes(editor)
   if (boxes) {
-    writeFirstBox(editor, withWrapFields(boxes[0], wrap as ImageWrap | null), { imageWrap: wrap })
+    const mode = normalizedShapeWrap(wrap)
+    if (mode === undefined) return
+    writeFirstBox(editor, withWrapFields(boxes[0], mode), { imageWrap: mode })
     return
   }
   // an inline image drops its floating-position attrs (the existing image behaviour)
@@ -104,7 +126,8 @@ function documentZOrders(editor: Editor, rank: number): number[] {
     if (n.type.name !== 'docProtected') return
     const boxes = n.attrs.textboxes as TextboxDisplay[] | undefined
     if (Array.isArray(boxes) && boxes.length > 0) {
-      zs.push(Number(boxes[0].z ?? 0))
+      const box = boxes[0]
+      if (box.floating || box.wrapSides || box.bandBottomPx != null) zs.push(Number(box.z ?? 0))
       return
     }
     if (n.attrs.imageWrap === 'front' || n.attrs.imageWrap === 'behind')

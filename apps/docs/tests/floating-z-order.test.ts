@@ -56,6 +56,10 @@ function boxesOf(editor: Editor, pos: number): TextboxDisplay[] {
   return editor.state.doc.nodeAt(pos)!.attrs.textboxes as TextboxDisplay[]
 }
 
+function setBoxes(editor: Editor, boxes: TextboxDisplay[]): void {
+  editor.commands.updateAttributes('docProtected', { textboxes: boxes })
+}
+
 function anchorPositions(editor: Editor): number[] {
   const out: number[] = []
   editor.state.doc.forEach((node, pos) => {
@@ -249,6 +253,91 @@ describe('shape wrap and stacking commands', () => {
     const pos = insertShape(editor)
     bringToFront(editor)
     expect(boxesOf(editor, pos)[0].z).toBe(4)
+    close(editor)
+  })
+
+  it('topBottom keeps an existing band when the box has no fixed height', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    const noHeight = { ...boxesOf(editor, pos)[0] }
+    delete noHeight.heightPx
+    setBoxes(editor, [{ ...noHeight, bandBottomPx: 40 }])
+    setFloatingWrap(editor, 'topBottom')
+    const box = boxesOf(editor, pos)[0]
+    expect(box.floating).toBe(true)
+    expect(box.bandBottomPx).toBeGreaterThanOrEqual(40)
+    close(editor)
+  })
+
+  it('topBottom drops a bandBeside flag left by a previous wrap', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    setBoxes(editor, [{ ...boxesOf(editor, pos)[0], bandBeside: true, bandBottomPx: 40 }])
+    setFloatingWrap(editor, 'topBottom')
+    const box = boxesOf(editor, pos)[0]
+    expect('bandBeside' in box).toBe(false)
+    expect(box.bandBottomPx).toBe(40)
+    close(editor)
+  })
+
+  it('setFloatingWrap ignores an unknown mode', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    const before = { ...boxesOf(editor, pos)[0] }
+    const wrapBefore = editor.state.doc.nodeAt(pos)!.attrs.imageWrap
+    setFloatingWrap(editor, 'definitely-not-a-mode')
+    expect(boxesOf(editor, pos)[0]).toEqual(before)
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBe(wrapBefore)
+    close(editor)
+  })
+
+  it('setFloatingWrap maps tight-left to the square-left box wrap', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    setFloatingWrap(editor, 'tight-left')
+    const box = boxesOf(editor, pos)[0]
+    expect(box.wrapSides).toBe(true)
+    expect(box.wrapSide).toBe('left')
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBe('square-left')
+    close(editor)
+  })
+
+  it('setFloatingWrap(null) on an image clears its floating position attrs', async () => {
+    const editor = await openDoc(IMAGE_PARAGRAPH_XML, true)
+    let imagePos = -1
+    editor.state.doc.descendants((node, at) => {
+      if (node.type.name === 'docProtected' && node.attrs.blockType === 'image') imagePos = at
+      return true
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, imagePos)),
+    )
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-left',
+      imagePosH: 'left',
+      imagePosV: 'top',
+      imageOffsetXEmu: 9144,
+      imageOffsetYEmu: 9144,
+    })
+    setFloatingWrap(editor, null)
+    const attrs = editor.state.doc.nodeAt(imagePos)!.attrs
+    expect(attrs.imageWrap).toBeNull()
+    expect(attrs.imagePosH).toBeNull()
+    expect(attrs.imagePosV).toBeNull()
+    expect(attrs.imageOffsetXEmu).toBeNull()
+    expect(attrs.imageOffsetYEmu).toBeNull()
+    close(editor)
+  })
+
+  it('setFloatingWrap only rewrites the first box of a multi-box node', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    const second: TextboxDisplay = { paras: [{ runs: [{ text: 'second' }] }], fill: 'FF0000' }
+    setBoxes(editor, [boxesOf(editor, pos)[0], second])
+    setFloatingWrap(editor, 'behind')
+    const boxes = boxesOf(editor, pos)
+    expect(boxes[0].behind).toBe(true)
+    expect(boxes[1]).toEqual(second)
     close(editor)
   })
 })
