@@ -5,6 +5,7 @@ import { writeFile } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { showSaveDialogWithMemory } from './dialog-memory'
 import { MAX_REMOTE_IMAGE_BYTES, readBodyCapped } from './remote-image'
+import { fetchWithSsrfGuard } from './safe-remote-url'
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
@@ -69,7 +70,20 @@ async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; mime: stri
     return decoded
   }
   const { net } = await import('electron')
-  const res = await net.fetch(url)
+  // Remote http(s) URLs go through the SSRF guard, which validates every
+  // redirect hop against internal addresses — this was the only outbound fetch
+  // in the package that bypassed it, so a compromised renderer could make the
+  // main process fetch internal URLs and write the response to a user-chosen
+  // file. App asset schemes (md-asset:// and siblings) are process-local
+  // protocol handlers, not network addresses; they fetch directly.
+  const res = /^https?:/i.test(url)
+    ? await fetchWithSsrfGuard(url, {
+        // Electron's net.fetch types a narrower input than the DOM fetch; both
+        // take a string URL here
+        fetchImpl: net.fetch as unknown as typeof fetch,
+      })
+    : await net.fetch(url)
+  if (!res) throw new Error('image url blocked (internal or unsafe address)')
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`)
   return {
     bytes: Buffer.from(await readBodyCapped(res, MAX_REMOTE_IMAGE_BYTES)),

@@ -49,6 +49,26 @@ describe('saveImageFromUrl', () => {
     })
   })
 
+  it('routes remote http(s) through the SSRF guard and blocks internal addresses', async () => {
+    fetched.mockClear()
+    // the guard validates before every hop; an internal literal never reaches fetch
+    const res = await saveImageFromUrl(null, 'http://127.0.0.1/x/logo.png', { title: 't' })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toMatch(/blocked|internal|unsafe/)
+    expect(fetched).not.toHaveBeenCalled()
+  })
+
+  it('still fetches app asset schemes directly (no guard hop validation)', async () => {
+    picked.filePath = ''
+    fetched.mockClear()
+    fetched.mockResolvedValueOnce(
+      new Response(new Uint8Array([9]), { headers: { 'content-type': 'image/png' } }),
+    )
+    const res = await saveImageFromUrl(null, 'md-asset:///d/a/pic.png', { title: 't' })
+    expect(res.ok).toBe(true)
+    expect(fetched).toHaveBeenCalledWith('md-asset:///d/a/pic.png')
+  })
+
   it('refuses file URLs without touching the dialog', async () => {
     const res = await saveImageFromUrl(null, 'file:///etc/hosts', { title: 't' })
     expect(res.ok).toBe(false)
