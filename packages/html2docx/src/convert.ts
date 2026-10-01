@@ -117,9 +117,13 @@ export function normalizeIr(raw: unknown): ValidatedIr[] {
       )
     }
     // Numeric geometry flows from page JS into division (renderer scale =
-    // maxPx / node.width) and image dimensions. Reject NaN/Infinity/negative
-    // here so a hostile page cannot produce corrupt-geometry docx.
-    for (const key of ['width', 'height', 'widthFrac', 'heightPx', 'xPx', 'yPx'] as const) {
+    // maxPx / node.width) and image dimensions. A spacer's px is the same
+    // class of input: it becomes the exact line height (pxToTwips(Math.max(px,
+    // 2))), so a non-numeric value emits w:line="0" — a collapsed gap — and
+    // poisons the __h2dSpacerPx marker the layout fixups compare against.
+    // Reject NaN/Infinity/negative here so a hostile page cannot produce
+    // corrupt-geometry docx.
+    for (const key of ['width', 'height', 'widthFrac', 'heightPx', 'xPx', 'yPx', 'px'] as const) {
       const v = candidate[key]
       if (v !== undefined && v !== null) {
         const n = Number(v)
