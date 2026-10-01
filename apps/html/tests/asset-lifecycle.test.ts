@@ -163,9 +163,9 @@ describe('HTML owned asset lifecycle', () => {
     expect(result.deleted).not.toContain('hero.png')
     expect(existsSync(heroPath)).toBe(true)
     expect(await readFile(heroPath, 'utf8')).toBe('hero image bytes')
-    expect((await readOwnedAssetManifest(documentPath))?.documents[basename(documentPath)]).toEqual([
-      'hero.png',
-    ])
+    expect((await readOwnedAssetManifest(documentPath))?.documents[basename(documentPath)]).toEqual(
+      ['hero.png'],
+    )
   })
 
   it('collects a CSS-only asset once the rule referencing it is gone', async () => {
