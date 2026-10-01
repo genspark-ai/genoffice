@@ -24,3 +24,23 @@ export function isUserVisibleFile(path: string, sources: FileTargetSources): boo
   if (sources.insideAnyRoot(path)) return true
   return sources.trackedPaths.includes(path)
 }
+
+export interface MoveSourceSources extends FileTargetSources {
+  isDirectory: (path: string) => boolean
+  isAnyRoot: (path: string) => boolean
+}
+
+/**
+ * Gate for the move/drag-and-drop IPC (movePaths).
+ *
+ * A folder source keeps the tree's own rule — inside a root, never a root
+ * itself. A file source gets the same union as the destructive file IPCs
+ * instead of no gate at all: movePaths also drags out of the Recent list, so a
+ * file outside every root can be legitimate, but a path the UI could never have
+ * shown must not be movable by a compromised renderer.
+ */
+export function isMoveSource(path: string, sources: MoveSourceSources): boolean {
+  if (typeof path !== 'string' || path === '') return false
+  if (sources.isDirectory(path)) return sources.insideAnyRoot(path) && !sources.isAnyRoot(path)
+  return isUserVisibleFile(path, sources)
+}

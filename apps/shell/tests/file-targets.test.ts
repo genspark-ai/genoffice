@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUserVisibleFile } from '../src/main/file-targets'
+import { isMoveSource, isUserVisibleFile } from '../src/main/file-targets'
 
 describe('isUserVisibleFile', () => {
   const sources = {
@@ -26,5 +26,41 @@ describe('isUserVisibleFile', () => {
 
   it('tolerates non-string input defensively', () => {
     expect(isUserVisibleFile(undefined as unknown as string, sources)).toBe(false)
+  })
+})
+
+describe('isMoveSource', () => {
+  const dirs = new Set(['/roots', '/roots/sub'])
+  const folders = new Set(['/roots', '/roots/sub', '/roots/deep/project', '/elsewhere/folder'])
+  const sources = {
+    insideAnyRoot: (p: string) => [...dirs].some((d) => p.startsWith(`${d}/`)),
+    isAnyRoot: (p: string) => dirs.has(p),
+    isDirectory: (p: string) => folders.has(p),
+    trackedPaths: ['/recents/a.docx'],
+  }
+
+  it('accepts a file inside a root', () => {
+    expect(isMoveSource('/roots/sub/b.xlsx', sources)).toBe(true)
+  })
+
+  it('accepts a file the UI can show outside every root (a recent from Downloads)', () => {
+    expect(isMoveSource('/recents/a.docx', sources)).toBe(true)
+  })
+
+  it('rejects a file the UI never showed — the arbitrary-path case', () => {
+    expect(isMoveSource('/Users/me/.ssh/id_rsa', sources)).toBe(false)
+    expect(isMoveSource('/etc/hosts', sources)).toBe(false)
+  })
+
+  it('accepts a folder inside a root and rejects a root or an outside folder', () => {
+    expect(isMoveSource('/roots/deep/project', sources)).toBe(true)
+    expect(isMoveSource('/roots', sources)).toBe(false)
+    expect(isMoveSource('/roots/sub', sources)).toBe(false)
+    expect(isMoveSource('/elsewhere/folder', sources)).toBe(false)
+  })
+
+  it('tolerates non-string input defensively', () => {
+    expect(isMoveSource(undefined as unknown as string, sources)).toBe(false)
+    expect(isMoveSource('', sources)).toBe(false)
   })
 })
