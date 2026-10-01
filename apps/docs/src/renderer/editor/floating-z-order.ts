@@ -51,8 +51,8 @@ function withWrapFields(box: TextboxDisplay, wrap: ImageWrap | null): TextboxDis
 /** Apply a rank to a shape box; an in-flow box floats in front first so the rank is visible (Word parity). */
 export function boxWithZ(box: TextboxDisplay, z: number): TextboxDisplay {
   const next = { ...box, z }
-  // a side-wrapped or banded box stores the rank but keeps its CSS float: the
-  // order only paints once the box is front/behind (Word keeps the wrap)
+  // a banded box already floats; a side-wrapped one keeps its CSS float, so
+  // its rank only paints once the box is front/behind (Word keeps the wrap)
   if (box.wrapSides || box.bandBottomPx != null) return next
   if (!box.floating) return { ...next, floating: true, behind: false, noWrap: true }
   return next
