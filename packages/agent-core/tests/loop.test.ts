@@ -4,12 +4,14 @@ import {
   COMPLETED_VIA_TOOLS_TEXT,
   TOOL_ABORTED_OUTPUT,
   composeSkills,
+  invalidArgumentFields,
   missingRequiredFields,
   runtimePreamble,
   type AgentMessage,
   type AgentSkill,
   type AgentStreamCallbacks,
   type AgentToolCall,
+  type AgentToolDef,
   type AgentTransport,
   type ToolExecution,
 } from '../src'
@@ -1421,6 +1423,52 @@ describe('AgentLoop compaction', () => {
     ).toEqual(['x'])
   })
 
+  it('an argument that contradicts its own schema is fed back as a type error, not executed', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 'bad', name: 'read_rows', input: { rows: 'twelve' } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onToolCall({ id: 'good', name: 'read_rows', input: { rows: 10 } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const executed: AgentToolCall[] = []
+    const skill = makeSkill((call) => {
+      executed.push(call)
+      return { output: 'ok', summary: 'ok' }
+    })
+    skill.tools = [
+      {
+        name: 'read_rows',
+        description: 'd',
+        inputSchema: {
+          type: 'object',
+          properties: { rows: { type: 'integer', maximum: 500 } },
+          required: ['rows'],
+        },
+      },
+    ]
+    const onError = vi.fn()
+    const loop = new AgentLoop({ transport, skill, events: { onError } })
+    loop.run('x')
+    for (let i = 0; i < 6; i++) await flush()
+    // the mistyped call is never forwarded to the tool
+    expect(executed.map((c) => c.id)).toEqual(['good'])
+    const toolMsg = loop.messages[2] as Extract<AgentMessage, { role: 'tool' }>
+    expect(toolMsg.results[0].isError).toBe(true)
+    expect(toolMsg.results[0].output).toContain('"rows"')
+    // a wrong-typed value is not a missing argument; the wording must not claim it is
+    expect(toolMsg.results[0].output).not.toContain('missing the required argument')
+    // it must not abort the run the way an unparseable stream does
+    expect(onError).not.toHaveBeenCalled()
+  })
+
   it('a null required field counts as missing, not as a value', () => {
     // A model that garbles a field emits "ops": null instead of leaving it
     // out. Only `undefined` was treated as missing, so the null reached the
@@ -1504,6 +1552,188 @@ describe('AgentLoop compaction', () => {
     expect(toolMsg.results[0].output).toContain('missing the required argument(s) "ops"')
     expect(toolMsg.results[0].output).not.toContain('JSON failed to parse')
     expect(onDone).toHaveBeenCalledWith({ text: 'done', cancelled: false, turnLimit: false })
+  })
+
+  it('invalidArgumentFields reports only values that contradict their own declared schema', () => {
+    const tool = (properties: Record<string, unknown>) => ({
+      name: 'a',
+      description: '',
+      inputSchema: { type: 'object', properties },
+    })
+    // wrong primitive type, per field
+    expect(
+      invalidArgumentFields(tool({ count: { type: 'integer' } }), { count: 'twelve' }),
+    ).toEqual(['"count" expected integer'])
+    expect(invalidArgumentFields(tool({ name: { type: 'string' } }), { name: { a: 1 } })).toEqual([
+      '"name" expected string',
+    ])
+    expect(invalidArgumentFields(tool({ flag: { type: 'boolean' } }), { flag: 'true' })).toEqual([
+      '"flag" expected boolean',
+    ])
+    expect(invalidArgumentFields(tool({ rows: { type: 'array' } }), { rows: 'A1:D20' })).toEqual([
+      '"rows" expected array',
+    ])
+    // declared range and string bounds
+    expect(
+      invalidArgumentFields(tool({ rows: { type: 'integer', maximum: 500 } }), {
+        rows: 999999999999,
+      }),
+    ).toEqual(['"rows" must be <= 500'])
+    expect(
+      invalidArgumentFields(tool({ rows: { type: 'integer', minimum: 1 } }), { rows: 0 }),
+    ).toEqual(['"rows" must be >= 1'])
+    expect(
+      invalidArgumentFields(tool({ q: { type: 'string', maxLength: 5 } }), { q: 'abcdefgh' }),
+    ).toEqual(['"q" must be at most 5 characters'])
+    // enum and array items
+    expect(
+      invalidArgumentFields(tool({ format: { type: 'string', enum: ['markdown', 'html'] } }), {
+        format: 'pdf',
+      }),
+    ).toEqual(['"format" expected one of "markdown", "html"'])
+    expect(
+      invalidArgumentFields(tool({ guides: { type: 'array', items: { type: 'string' } } }), {
+        guides: ['writing', 7],
+      }),
+    ).toEqual(['"guides" item 1 expected string'])
+    // a type array accepts either member
+    expect(invalidArgumentFields(tool({ v: { type: ['string', 'number'] } }), { v: 3 })).toEqual([])
+    // and the value can still fail the other constraints of its own type
+    expect(
+      invalidArgumentFields(tool({ v: { type: ['string', 'number'], maximum: 10 } }), { v: 30 }),
+    ).toEqual(['"v" must be <= 10'])
+    // correct values pass
+    expect(
+      invalidArgumentFields(
+        tool({ count: { type: 'integer', maximum: 500 }, q: { type: 'string' } }),
+        { count: 10, q: 'hi' },
+      ),
+    ).toEqual([])
+  })
+
+  it('invalidArgumentFields validates nothing for a schema-less or permissive tool', () => {
+    // every one of these is a real inputSchema shape in this repo, or a zod raw
+    // shape: a missing or unconstrained schema is not a validation failure.
+    // The first entry is absent rather than unconstrained — the type declares
+    // inputSchema, but a tool deserialized from another process can lack one.
+    const schemas: Array<Record<string, unknown> | undefined> = [
+      undefined,
+      {},
+      { type: 'object' },
+      { type: 'object', properties: {} },
+      { type: 'object', required: ['a'] },
+      { type: 'object', properties: { a: {} } },
+      { type: 'object', properties: { a: { description: 'anything' } } },
+      { type: 'object', properties: { a: { type: 'any' } } },
+      // properties holding non-schema values must be skipped, not read as schemas
+      { type: 'object', properties: { a: 'string' } },
+    ]
+    for (const inputSchema of schemas) {
+      expect(
+        invalidArgumentFields({ name: 'a', description: '', inputSchema } as AgentToolDef, {
+          a: 123,
+        }),
+      ).toEqual([])
+    }
+    // a zod raw shape (keys are schemas, no `type`/`properties`) stays untouched
+    expect(
+      invalidArgumentFields(
+        { name: 'a', description: '', inputSchema: { path: { kind: 'string' } } },
+        { path: 42, other: { deep: true } },
+      ),
+    ).toEqual([])
+    // absent fields are missingRequiredFields' job, never reported twice
+    expect(invalidArgumentFields(undefined, { a: 1 })).toEqual([])
+    expect(
+      invalidArgumentFields(
+        { name: 'a', description: '', inputSchema: { properties: { a: { type: 'string' } } } },
+        {},
+      ),
+    ).toEqual([])
+    // unknown top-level keywords are not interpreted
+    expect(
+      invalidArgumentFields(
+        {
+          name: 'a',
+          description: '',
+          inputSchema: { type: 'object', anyOf: [{ type: 'string' }], oneOf: [{}] },
+        },
+        { a: 5 },
+      ),
+    ).toEqual([])
+  })
+
+  it('invalidArgumentFields does not judge a null value the schema leaves unconstrained', () => {
+    // a required field with no type still accepts null here; tightening that is
+    // the separate null-as-missing rule, not this check
+    expect(
+      invalidArgumentFields(
+        { name: 'a', description: '', inputSchema: { properties: { a: {} }, required: ['a'] } },
+        { a: null },
+      ),
+    ).toEqual([])
+    // but a typed field does reject it
+    expect(
+      invalidArgumentFields(
+        { name: 'a', description: '', inputSchema: { properties: { a: { type: 'string' } } } },
+        { a: null },
+      ),
+    ).toEqual(['"a" expected string'])
+  })
+
+  it('real tool schemas from this repo still accept their real calls', () => {
+    // copied verbatim from apps/sheets/src/renderer/ai: a regression guard, so
+    // tightening the checker can never quietly lock out a shipping tool
+    const readCells = {
+      name: 'read_cells',
+      description: '',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          addresses: { type: 'array', items: { type: 'string' }, description: 'max 100' },
+          sheetId: { type: 'string', description: 'Target sheet id' },
+        },
+        required: ['addresses'],
+      },
+    }
+    const webSearch = {
+      name: 'web_search',
+      description: '',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search keywords' },
+          maxResults: { type: 'integer', description: 'Maximum number of results, default 6' },
+        },
+        required: ['query'],
+      },
+    }
+    const loadGuides = {
+      name: 'load_guides',
+      description: '',
+      inputSchema: {
+        type: 'object',
+        properties: { guides: { type: 'array', items: { type: 'string' } } },
+        required: ['guides'],
+      },
+    }
+    // well-formed calls of every shape these tools receive
+    expect(
+      invalidArgumentFields(readCells, { addresses: ['A1', 'B2'], sheetId: 'Sheet1' }),
+    ).toEqual([])
+    expect(invalidArgumentFields(readCells, { addresses: [] })).toEqual([])
+    expect(invalidArgumentFields(webSearch, { query: 'genoffice', maxResults: 6 })).toEqual([])
+    // omitted optional field, and an undeclared extra key, are both fine
+    expect(invalidArgumentFields(webSearch, { query: 'genoffice' })).toEqual([])
+    expect(invalidArgumentFields(webSearch, { query: 'x', page: 2 })).toEqual([])
+    expect(invalidArgumentFields(loadGuides, { guides: ['writing', 'formatting'] })).toEqual([])
+    // the same tools do catch a mangled argument
+    expect(invalidArgumentFields(readCells, { addresses: 'A1:D20' })).toEqual([
+      '"addresses" expected array',
+    ])
+    expect(invalidArgumentFields(webSearch, { query: 'genoffice', maxResults: '6' })).toEqual([
+      '"maxResults" expected integer',
+    ])
   })
 
   it('a truncated tool call is fed back as "split the call", not as a JSON error', async () => {
