@@ -382,16 +382,17 @@ describe('gskSlideGenerate response caps', () => {
     status: 'ok',
     data: { pptx_url: 'https://www.genspark.ai/api/files/deck.pptx', model: 'claude-opus-4-7' },
   })
+  // a public address literal, so the download path needs no DNS in tests
   const downloadResult = JSON.stringify({
     status: 'ok',
-    data: { download_url: 'https://cdn.example/deck.pptx' },
+    data: { download_url: 'https://8.8.8.8/deck.pptx' },
   })
 
-  function stubSlideGenerate(artifact: () => Response) {
+  function stubSlideGenerate(artifact: () => Response, downloadResultBody = downloadResult) {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(ndjsonResponse(slideResult))
-      .mockResolvedValueOnce(ndjsonResponse(downloadResult))
+      .mockResolvedValueOnce(ndjsonResponse(downloadResultBody))
       .mockImplementationOnce(() => Promise.resolve(artifact()))
     vi.stubGlobal('fetch', fetchMock)
     return fetchMock
@@ -484,6 +485,37 @@ describe('gskSlideGenerate response caps', () => {
     await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toBeInstanceOf(
       ResponseTooLargeError,
     )
+  })
+
+  // The download_url comes from the cloud response, so a compromised or spoofed
+  // endpoint decides which host the main process dials. It must pass the same
+  // SSRF gate as every other model-influenced download.
+  it('never requests a cloud download URL that points at a private address', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const fetchMock = stubSlideGenerate(
+      () => new Response(new Uint8Array([1, 2, 3])),
+      JSON.stringify({
+        status: 'ok',
+        data: { download_url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/' },
+      }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
+    const requested = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(requested.some((u) => u.includes('169.254.169.254'))).toBe(false)
+  })
+
+  it('revalidates every redirect hop of a cloud download URL', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const fetchMock = stubSlideGenerate(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://127.0.0.1:8080/internal.pptx' },
+        }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
+    const requested = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(requested.some((u) => u.includes('127.0.0.1'))).toBe(false)
   })
 })
 
