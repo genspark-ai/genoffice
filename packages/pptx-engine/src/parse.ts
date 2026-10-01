@@ -58,7 +58,9 @@ import type {
   TableCell,
   TableCellBorders,
   ChartElement,
+  EmuRect,
 } from './types'
+import { COORD_MAX } from './generate'
 import { parseChartXml } from './chart'
 import { parseChartExXml } from './chartex'
 import { parseCustGeom } from './custgeom'
@@ -856,6 +858,30 @@ interface GroupParseBudget {
   remaining: number
 }
 
+/**
+ * Whether a group's child coordinate system is usable: the scale it implies
+ * (group ext / chExt, per axis) must keep the group box inside the coordinate
+ * range the write path emits into — COORD_MAX, the ST_PositiveCoordinate ceiling
+ * generate.ts clamps every a:ext to, with non-finite values refused outright.
+ * The group box is measured after one more trip through the same scale, which is
+ * what bounds the nested-group case; every group PowerPoint writes sits orders of
+ * magnitude below the bound. A chExt of 0 is rejected too, so no consumer sees a
+ * zero denominator.
+ */
+function groupScaleWithinWriteRange(groupExt: EmuRect, childExt: EmuRect): boolean {
+  const axes: Array<[number, number]> = [
+    [groupExt.cx, childExt.cx],
+    [groupExt.cy, childExt.cy],
+  ]
+  for (const [g, ch] of axes) {
+    // An attribute outside the int64 the schema allows parses to Infinity
+    // (parseInt of a 400-digit string), which would make the scale NaN/Infinity.
+    if (!Number.isFinite(g) || !Number.isFinite(ch) || ch <= 0) return false
+    if (g * (g / ch) > COORD_MAX) return false
+  }
+  return true
+}
+
 function groupExceedsBudget(xml: string): boolean {
   const tags = new Set<string>(GROUP_CHILD_TAGS)
   GROUP_TAG_RE.lastIndex = 0
@@ -902,7 +928,7 @@ function parseGroup(
   // Child coordinate system: <a:chOff>/<a:chExt> (child coords are based on it, mapped to the parent when rendering)
   const chOff = xfrm?.['a:chOff']
   const chExt = xfrm?.['a:chExt']
-  const childOffset =
+  let childOffset: EmuRect | undefined =
     chOff || chExt
       ? {
           x: chOff ? parseInt(chOff['@_x'], 10) || 0 : 0,
@@ -911,6 +937,13 @@ function parseGroup(
           cy: chExt ? parseInt(chExt['@_cy'], 10) || 0 : 0,
         }
       : undefined
+  // ext/chExt was unbounded, so the scale multiplied straight into the layout tree:
+  // ext=2^31 with chExt=1 carries an ordinary 1e6 EMU child ~2e11 px away. Bound it by
+  // the write path's own range (COORD_MAX) and drop the child coordinate system when it
+  // is not representable there, leaving the 1:1 mapping every consumer already handles.
+  if (childOffset && !groupScaleWithinWriteRange(transform.offset, childOffset)) {
+    childOffset = undefined
+  }
 
   const group: GroupElement = {
     id: uid('grp'),
