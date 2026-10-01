@@ -14,10 +14,18 @@ import {
   splitCell,
 } from '@tiptap/pm/tables'
 import { platformShortcuts } from '@genoffice/i18n'
+import type { TextboxDisplay } from '@genoffice/docx-engine'
 
 import { useI18n, type StringKey } from '../i18n/locale'
 import { wordRangeAtCaret } from '../editor/comments'
-import { bringForward, bringToFront, sendBackward, sendToBack } from '../editor/floating-z-order'
+import {
+  bringForward,
+  bringToFront,
+  sendBackward,
+  sendToBack,
+  setFloatingWrap,
+  shapeWrapOf,
+} from '../editor/floating-z-order'
 import { pasteFromClipboard } from '../editor/paste-actions'
 import { setTableAutoFit } from '../editor/table-properties'
 import { distributeSelectedColumns } from '../editor/table-sizing'
@@ -291,18 +299,10 @@ export function EditorContextMenu({
   const isFloating =
     isImage ||
     (Array.isArray(protAttrs?.textboxes) && (protAttrs.textboxes as unknown[]).length > 0)
-  const currentWrap = (protAttrs?.imageWrap as string | null) ?? null
-  const setWrap = (wrap: string | null) => {
-    const clearedPosition =
-      wrap === null
-        ? { imagePosH: null, imagePosV: null, imageOffsetXEmu: null, imageOffsetYEmu: null }
-        : {}
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', { imageWrap: wrap, ...clearedPosition })
-      .run()
-  }
+  const boxes = protAttrs?.textboxes as TextboxDisplay[] | undefined
+  const currentWrap = boxes?.length
+    ? shapeWrapOf(boxes[0])
+    : ((protAttrs?.imageWrap as string | null) ?? null)
 
   const clipboard = (action: 'cut' | 'copy') => {
     editor.commands.focus()
@@ -697,7 +697,7 @@ export function EditorContextMenu({
                   <button
                     key={String(opt.value)}
                     className="ctx-item"
-                    onClick={run(() => setWrap(opt.value))}
+                    onClick={run(() => setFloatingWrap(editor, opt.value))}
                   >
                     <span className="ctx-label">
                       {currentWrap === opt.value ? '✓ ' : ''}

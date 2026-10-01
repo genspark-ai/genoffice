@@ -48,7 +48,13 @@ import {
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import { applyCase, type CaseMode } from '../editor/case-transform'
 import { isRtlUiLang, setParagraphDirection, setSelectionAlign } from '../editor/direction'
-import { bringForward, bringToFront, sendBackward, sendToBack } from '../editor/floating-z-order'
+import {
+  bringForward,
+  bringToFront,
+  sendBackward,
+  sendToBack,
+  setFloatingWrap,
+} from '../editor/floating-z-order'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
 import { stepParagraphIndent } from '../editor/indent'
 import { pasteFromClipboard } from '../editor/paste-actions'
@@ -2256,11 +2262,7 @@ function RibbonInner({
                   }))}
                   onPick={(v) => {
                     if (!canEdit) return
-                    editor
-                      .chain()
-                      .focus()
-                      .updateAttributes('docProtected', { imageWrap: v || null })
-                      .run()
+                    setFloatingWrap(editor, v || null)
                   }}
                 />
               </div>

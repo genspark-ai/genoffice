@@ -65,6 +65,9 @@ function pickDropdown(container: HTMLElement, dd: HTMLButtonElement, value: stri
 
 const attrsOf = (editor: Editor, pos: number) => editor.state.doc.nodeAt(pos)!.attrs
 
+const wrapperClass = (editor: Editor, pos: number): string =>
+  (editor.view.nodeDOM(pos) as HTMLElement).className
+
 describe('the Shape Format Arrange group', () => {
   it('is only on screen while a shape is selected', async () => {
     const { editor } = await openBlankDoc()
@@ -88,6 +91,12 @@ describe('the Shape Format Arrange group', () => {
 
     pickDropdown(container, tipped(container, 'ribbonWrapText'), 'behind')
     expect(attrsOf(editor, pos).imageWrap).toBe('behind')
+    expect(wrapperClass(editor, pos)).toContain('doc-protected-floating')
+    expect(wrapperClass(editor, pos)).toContain('doc-protected-behind')
+
+    pickDropdown(container, tipped(container, 'ribbonWrapText'), 'square-left')
+    expect(attrsOf(editor, pos).imageWrap).toBe('square-left')
+    expect(wrapperClass(editor, pos)).toContain('doc-protected-wrapside')
 
     pickDropdown(container, tipped(container, 'ribbonWrapText'), '')
     expect(attrsOf(editor, pos).imageWrap).toBeNull()
@@ -106,6 +115,7 @@ describe('the Shape Format Arrange group', () => {
     // a fresh shape is inline; the first reorder floats it in front
     expect(attrsOf(editor, pos).imageWrap).toBe('front')
     expect(attrsOf(editor, pos).imageZOrder).toBe(1)
+    expect(wrapperClass(editor, pos)).toContain('doc-protected-floating')
 
     act(() => tipped(container, 'appBringForward').click())
     expect(attrsOf(editor, pos).imageZOrder).toBe(2)

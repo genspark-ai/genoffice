@@ -7,25 +7,26 @@
 import { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '@genoffice/docx-engine'
+import { parseDocx, type TextboxDisplay } from '@genoffice/docx-engine'
 import {
   buildDocx,
   IMAGE_PARAGRAPH_XML,
 } from '../../../packages/docx-engine/tests/helpers/build-docx'
+import { insertShapeAt } from '../src/renderer/components/ribbon-tabs'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  boxWithZ,
   bringForward,
   bringToFront,
   sendBackward,
   sendToBack,
+  setFloatingWrap,
+  shapeWrapOf,
 } from '../src/renderer/editor/floating-z-order'
 
-async function openAnchors(): Promise<Editor> {
-  const source = await buildDocx({
-    bodyXml: IMAGE_PARAGRAPH_XML + IMAGE_PARAGRAPH_XML,
-    withImage: true,
-  })
+async function openDoc(bodyXml: string, withImage = false): Promise<Editor> {
+  const source = await buildDocx({ bodyXml, withImage })
   const parsed = await parseDocx(source)
   const element = document.createElement('div')
   document.body.appendChild(element)
@@ -34,6 +35,25 @@ async function openAnchors(): Promise<Editor> {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+}
+
+async function openAnchors(): Promise<Editor> {
+  return openDoc(IMAGE_PARAGRAPH_XML + IMAGE_PARAGRAPH_XML, true)
+}
+
+function insertShape(editor: Editor): number {
+  insertShapeAt(editor, 'rect')
+  let pos = -1
+  editor.state.doc.descendants((node, at) => {
+    if (node.type.name === 'docProtected' && node.attrs.textboxes) pos = at
+    return true
+  })
+  editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+  return pos
+}
+
+function boxesOf(editor: Editor, pos: number): TextboxDisplay[] {
+  return editor.state.doc.nodeAt(pos)!.attrs.textboxes as TextboxDisplay[]
 }
 
 function anchorPositions(editor: Editor): number[] {
@@ -129,5 +149,106 @@ describe('floating z-order commands', () => {
     expect(attrsOf(editor, 0)).toEqual({ imageWrap: 'behind', imageZOrder: 0 })
     close(editor)
     expect(document.body.children).toHaveLength(0)
+  })
+})
+
+describe('shape box-model mapping', () => {
+  const box = (extra: Partial<TextboxDisplay> = {}): TextboxDisplay => ({ paras: [], ...extra })
+
+  it('shapeWrapOf reads the mode out of the box fields', () => {
+    expect(shapeWrapOf(box({ behind: true }))).toBe('behind')
+    expect(shapeWrapOf(box({ wrapSide: 'left' }))).toBe('square-left')
+    expect(shapeWrapOf(box({ wrapSide: 'right' }))).toBe('square-right')
+    expect(shapeWrapOf(box({ bandBottomPx: 40 }))).toBe('topBottom')
+    expect(shapeWrapOf(box({ floating: true }))).toBe('front')
+    expect(shapeWrapOf(box())).toBeNull()
+  })
+
+  it('boxWithZ floats an in-flow box, preserves a side wrap and a float mode', () => {
+    expect(boxWithZ(box(), 2)).toEqual({
+      paras: [],
+      z: 2,
+      floating: true,
+      behind: false,
+      noWrap: true,
+    })
+    const side = box({ wrapSides: true, wrapSide: 'left', wrapEdgePx: 0, wrapGapPx: 12 })
+    expect(boxWithZ(side, 3)).toEqual({ ...side, z: 3 })
+    const floater = box({ floating: true, behind: true, noWrap: true, z: 1 })
+    expect(boxWithZ(floater, 4)).toEqual({ ...floater, z: 4 })
+  })
+})
+
+describe('shape wrap and stacking commands', () => {
+  it('setFloatingWrap(behind) writes the shape box and mirrors the node attr', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    setFloatingWrap(editor, 'behind')
+    const boxes = boxesOf(editor, pos)
+    expect(boxes[0].behind).toBe(true)
+    expect(boxes[0].floating).toBe(true)
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBe('behind')
+    close(editor)
+  })
+
+  it('setFloatingWrap(square-left) sets the box side wrap', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    setFloatingWrap(editor, 'square-left')
+    const boxes = boxesOf(editor, pos)
+    expect(boxes[0].wrapSides).toBe(true)
+    expect(boxes[0].wrapSide).toBe('left')
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBe('square-left')
+    close(editor)
+  })
+
+  it('setFloatingWrap(null) clears every wrap field from the box', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    setFloatingWrap(editor, 'behind')
+    setFloatingWrap(editor, null)
+    const box = boxesOf(editor, pos)[0]
+    expect('floating' in box).toBe(false)
+    expect('behind' in box).toBe(false)
+    expect('noWrap' in box).toBe(false)
+    expect('wrapSides' in box).toBe(false)
+    expect('wrapSide' in box).toBe(false)
+    expect('bandTopPx' in box).toBe(false)
+    expect('bandBottomPx' in box).toBe(false)
+    expect(shapeWrapOf(box)).toBeNull()
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBeNull()
+    close(editor)
+  })
+
+  it('bringToFront ranks a shape on the box model', async () => {
+    const editor = await openDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    const pos = insertShape(editor)
+    bringToFront(editor)
+    const boxes = boxesOf(editor, pos)
+    expect(boxes[0].z).toBe(1)
+    expect(boxes[0].floating).toBe(true)
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageZOrder).toBe(1)
+    close(editor)
+  })
+
+  it('bringToFront shares the document rank scale with floating images', async () => {
+    const editor = await openDoc(
+      '<w:p><w:r><w:t>Body text</w:t></w:r></w:p>' + IMAGE_PARAGRAPH_XML,
+      true,
+    )
+    let imagePos = -1
+    editor.state.doc.descendants((node, at) => {
+      if (node.type.name === 'docProtected' && node.attrs.blockType === 'image') imagePos = at
+      return true
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, imagePos)),
+    )
+    editor.commands.updateAttributes('docProtected', { imageWrap: 'front', imageZOrder: 3 })
+
+    const pos = insertShape(editor)
+    bringToFront(editor)
+    expect(boxesOf(editor, pos)[0].z).toBe(4)
+    close(editor)
   })
 })
