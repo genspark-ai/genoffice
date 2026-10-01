@@ -275,6 +275,24 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 // ── Device-code login ────────────────────────────────────────────────
 
+/**
+ * The device-code endpoint chooses the poll interval and the code lifetime, and
+ * both are read straight off its response, so one odd (or hostile) answer could
+ * stretch a login for hours or leave it polling at a crawl. Both are clamped:
+ * 10s between polls keeps an approval noticed promptly without hammering the
+ * endpoint, and 15 min is far longer than approving a code in a browser takes
+ * while still ending a login that was never going to succeed.
+ */
+const MAX_POLL_INTERVAL_MS = 10_000
+const MAX_LOGIN_SEC = 900
+
+/** `fallback` when the value is absent or not a positive number, else at most `max`. */
+function clampLoginValue(value: unknown, fallback: number, max: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return Math.min(n, max)
+}
+
 async function revokeKey(cookie: string, keyId: string, signal: AbortSignal): Promise<void> {
   await resolveFetch()(`${baseUrl()}/api/api_tokens/revoke`, {
     method: 'POST',
@@ -314,8 +332,8 @@ async function runDeviceLogin(
   // shell can log/show a policy rejection instead of an outage.
   const allowed = isAllowedAuthUrl(authUrl, baseUrl())
   if (!allowed) throw new LoginFlowError('auth_url_rejected')
-  const expiresInSec = Number(json.expires_in) > 0 ? Number(json.expires_in) : 600
-  const pollMs = Number(json.poll_interval) > 0 ? Number(json.poll_interval) * 1000 : 2000
+  const expiresInSec = clampLoginValue(json.expires_in, 600, MAX_LOGIN_SEC)
+  const pollMs = clampLoginValue(Number(json.poll_interval) * 1000, 2000, MAX_POLL_INTERVAL_MS)
   emit({ phase: 'url', url: allowed.href, expiresInSec })
 
   const deadline = Date.now() + expiresInSec * 1000
