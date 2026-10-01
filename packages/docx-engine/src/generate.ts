@@ -164,7 +164,7 @@ export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
 }
 
 const WRAP_ELEMENT_RE =
-  /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapTight[^>]*\/>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapThrough[^>]*\/>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
+  /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapTight[^>]*\/>|<wp:wrapThrough[^>]*\/>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
 
 /**
  * Re-encode ONLY the stacking rank of an existing wp:anchor as Word's
@@ -284,9 +284,10 @@ function shapeDrawingSegment(
 ): { start: number; end: number } | null {
   if (location.shapeId) {
     // an id was given: never fall back to a different drawing
-    const pattern = new RegExp(`<wps:cNvPr\\b[^>]*\\bid="${location.shapeId}"`)
-    const found = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).find((seg) =>
-      pattern.test(paragraphXml.slice(seg.start, seg.end)),
+    const found = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).find(
+      (seg) =>
+        /<wps:cNvPr\b[^>]*\bid="([^"]+)"/.exec(paragraphXml.slice(seg.start, seg.end))?.[1] ===
+        location.shapeId,
     )
     return found ?? null
   }

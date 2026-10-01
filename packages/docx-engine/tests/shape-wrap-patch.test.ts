@@ -54,6 +54,17 @@ describe('shape wrap/rank patching', () => {
     expect(inline).toContain('<wp:inline')
   })
 
+  it('removes a self-closing wrapTight element cleanly', () => {
+    const tight = SHAPE_XML.replace(
+      '<wp:wrapSquare wrapText="bothSides"/>',
+      '<wp:wrapTight wrapText="bothSides"/>',
+    )
+    const out = applyShapeWrapAt(tight, { boxIndex: 0 }, 'behind')
+    expect(out).toContain('<wp:wrapNone/>')
+    expect(out).not.toContain('<wp:wrapTight')
+    expect(out.match(/<wp:wrap/g)).toHaveLength(1)
+  })
+
   it('leaves the paragraph untouched for an out-of-range box index', () => {
     expect(applyShapeWrapAt(SHAPE_XML, { boxIndex: 5 }, 'behind')).toBe(SHAPE_XML)
     expect(applyShapeZOrderAt(SHAPE_XML, { boxIndex: 5 }, 3)).toBe(SHAPE_XML)
@@ -92,5 +103,9 @@ describe('shape targeting by cNvPr id', () => {
   it('leaves the paragraph untouched for an unknown shape id', () => {
     expect(applyShapeWrapAt(two, { shapeId: '99', boxIndex: 0 }, 'behind')).toBe(two)
     expect(applyShapeZOrderAt(two, { shapeId: '99', boxIndex: 0 }, 3)).toBe(two)
+  })
+
+  it('does not throw on a shape id with regex metacharacters', () => {
+    expect(applyShapeWrapAt(two, { shapeId: 'a(1', boxIndex: 0 }, 'behind')).toBe(two)
   })
 })

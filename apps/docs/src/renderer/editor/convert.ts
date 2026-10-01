@@ -2180,9 +2180,11 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           }
           if (textboxPositionChanged) {
             const firstBox = (node.attrs?.textboxes as TextboxDisplay[] | undefined)?.[0]
-            const wrap = firstBox
-              ? shapeWrapOf(firstBox)
-              : ((node.attrs?.imageWrap as ImageWrap | null) ?? original.imageWrap ?? 'square-left')
+            const wrap =
+              (firstBox ? shapeWrapOf(firstBox) : null) ??
+              (node.attrs?.imageWrap as ImageWrap | null) ??
+              original.imageWrap ??
+              'square-left'
             const rank =
               firstBox?.z !== undefined
                 ? Number(firstBox.z)

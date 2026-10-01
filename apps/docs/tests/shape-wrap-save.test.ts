@@ -151,6 +151,26 @@ describe('shape wrap and stacking survive save', () => {
     editor.destroy()
   })
 
+  it('keeps the anchor when a dragged shape has no decidable wrap', async () => {
+    // the gallery default (center-aligned square) parses as wrapSides with no
+    // side; a null wrap must not win over the anchor rebuild and go inline
+    const centered = buildShapeParagraphXml({ prst: 'rect', withTextbox: true })
+    const { editor, parsed } = await openShapeDoc(centered)
+    selectShape(editor)
+    bringToFront(editor)
+    editor.commands.updateAttributes('docProtected', {
+      imageOffsetXEmu: 600000,
+      imageOffsetYEmu: 100000,
+    })
+    const saved = await saveShape(editor, parsed)
+    const box = firstBox(await parseDocx(saved))
+    expect(await documentXml(saved)).toContain('<wp:anchor')
+    expect(box.offsetXEmu).toBe(600000)
+    expect(box.offsetYEmu).toBe(100000)
+    expect(box.z).toBe(1)
+    editor.destroy()
+  })
+
   it('targets the selected shape in a two-shape paragraph', async () => {
     // a textless first shape is the drawing boxDrawingSegments skips: ordinal
     // targeting would wrap the texted second shape instead
