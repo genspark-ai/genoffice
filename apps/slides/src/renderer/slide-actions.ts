@@ -212,8 +212,15 @@ export async function moveSectionDir(
 ): Promise<void> {
   const r = await window.slidesApi.moveSection({ id, dir })
   if (r) {
+    // The engine permutes deck.slides, so the old index names a different page.
+    // Re-anchor on the same slide by its part path, as moveSlidesTo does by position.
+    const partPath = ctx.slides[ctx.current]?.partPath
     ctx.setSlides(r.slides)
     ctx.setSections(r.sections)
+    if (partPath) {
+      const landed = r.slides.findIndex((s) => s.partPath === partPath)
+      if (landed >= 0) ctx.setCurrent(landed)
+    }
     ctx.setSelectedIds([])
     ctx.setEditing(null)
     ctx.setDirty(true)
