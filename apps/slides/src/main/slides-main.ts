@@ -141,6 +141,7 @@ import { cfbKind, isCfbHeader } from './cfb-sniff'
 import { unplayableAudioCodec } from './mp4-audio-sniff'
 import { audioFrame, videoFrame, videoSize, type Point, type Size } from './video-size'
 import { AUDIO_EXTS, VIDEO_EXTS } from '../shared/media-kinds'
+import { baseName } from '../shared/base-name'
 import type {
   AddChartOp,
   AddCommentOp,
@@ -3825,7 +3826,7 @@ export function registerSlidesIpc(): void {
       const filePath = r.filePaths[0]
       const bytes = new Uint8Array(await readFile(filePath))
       const ext = filePath.split('.').pop()!.toLowerCase()
-      const fileName = filePath.split('/').pop()!
+      const fileName = baseName(filePath)
 
       // Warn up front, before the file lands on the slide
       const detail = mediaPlaybackWarning(kind, ext, bytes)
@@ -3949,7 +3950,7 @@ export function registerSlidesIpc(): void {
             cx,
             cy,
           },
-          name: filePath.split('/').pop()!,
+          name: baseName(filePath),
         },
       ],
     })

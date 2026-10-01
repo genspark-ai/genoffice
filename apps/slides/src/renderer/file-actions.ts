@@ -5,6 +5,7 @@
  */
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ExportPdfLink } from '../shared/ipc'
+import { baseName } from '../shared/base-name'
 import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPdfPages } from './export-pages'
@@ -118,7 +119,7 @@ export async function saveAs(getCtx: () => ActionCtx): Promise<void> {
     const ctx = getCtx()
     await flushActiveEdit(ctx)
     await ctx.flushNotes()
-    const name = ctx.path?.split('/').pop() ?? 'presentation.pptx'
+    const name = baseName(ctx.path ?? '') || 'presentation.pptx'
     const r = await window.slidesApi.saveAs(name)
     if (r.ok) {
       if (r.slides) adoptSavedSlides(ctx, r.slides)
@@ -139,7 +140,7 @@ export async function saveAs(getCtx: () => ActionCtx): Promise<void> {
 
 /** Export base name: file name without the .pptx extension */
 export function exportBaseName(ctx: ActionCtx): string {
-  return (ctx.path?.split('/').pop() ?? t('appUntitledPresentation')).replace(/\.pptx$/i, '')
+  return (baseName(ctx.path ?? '') || t('appUntitledPresentation')).replace(/\.pptx$/i, '')
 }
 
 /** Export as images: each page (skipping hidden ones) rendered offscreen to 2x PNG, written to disk by the main process */
