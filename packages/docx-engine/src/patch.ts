@@ -2408,7 +2408,11 @@ export function removeHfReference(
   variant: 'default' | 'first' | 'even',
 ): string {
   return sectXml.replace(new RegExp(`<w:${kind}Reference\\b[^>]*/>`, 'g'), (tag) => {
-    const type = /w:type="([^"]+)"/.exec(tag)?.[1]
+    // Quote-agnostic, like hfReferenceType / onOffTagIn: a single-quoted
+    // w:type went unread here, so its undefined type matched isDefault and
+    // unlinking the default took the first/even references with it.
+    const m = /\bw:type=(?:"([^"]+)"|'([^']*)')/.exec(tag)
+    const type = m?.[1] ?? m?.[2]
     const isDefault = type === undefined || type === 'default' || type === 'odd'
     return (variant === 'default' ? isDefault : type === variant) ? '' : tag
   })

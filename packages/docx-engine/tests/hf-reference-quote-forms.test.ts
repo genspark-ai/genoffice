@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
-import { PAGE_MARK, parseDocx, saveDocx } from '../src/index'
+import { PAGE_MARK, parseDocx, readSections, saveDocx } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const BODY = '<w:p><w:r><w:t>body</w:t></w:r></w:p>'
@@ -126,5 +126,34 @@ describe('header/footer reference quote styles and element forms', () => {
     const parsed = await parseDocx(bytes)
     expect(parsed.footerText).toBe(PAGE_MARK)
     expect(parsed.footerHasPageNumber).toBe(true)
+  })
+
+  it('removing the default reference leaves a single-quoted first-page reference intact', async () => {
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels: REL('rId90', 'header', 'header1.xml') + REL('rId91', 'header', 'header2.xml'),
+      extraParts: [
+        { path: 'word/header1.xml', xml: hdrPart('DEFAULT'), contentType: HEADER_TYPE },
+        { path: 'word/header2.xml', xml: hdrPart('FIRST'), contentType: HEADER_TYPE },
+      ],
+      sectPrExtra:
+        "<w:headerReference w:type='default' r:id='rId90'/>" +
+        "<w:headerReference w:type='first' r:id='rId91'/>" +
+        '<w:titlePg/>',
+    })
+    const parsed = await parseDocx(bytes)
+    const sections = readSections(parsed)
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+      sectionHfUnlink: [
+        {
+          lastBlockIndex: sections[sections.length - 1].lastBlockIndex,
+          kind: 'header',
+          variant: 'default',
+        },
+      ],
+    })
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.headerText).toBeNull()
+    expect(reparsed.headerFirst?.text).toBe('FIRST')
   })
 })
