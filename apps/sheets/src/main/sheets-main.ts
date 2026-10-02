@@ -43,6 +43,7 @@ import {
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  isHeadlessMode,
   printHtmlToPdf,
   safeExternalUrl,
   showOpenDialogWithMemory,
@@ -1545,6 +1546,9 @@ export function configureSheetsRuntime(config: SheetsRuntimeConfig): void {
  * (shell) or reveal it in the folder (standalone). Tab-opening failure must
  * not report the write itself as failed — the file is already persisted. */
 function openGeneratedFile(path: string): void {
+  // Headless export must stay silent: no tab, no file-manager window
+  // (same guard as markdown-main's openExportedPdf, #1815).
+  if (isHeadlessMode()) return
   try {
     if (runtime.openGeneratedPath?.(path)) return
   } catch (err) {
