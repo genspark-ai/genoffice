@@ -122,6 +122,7 @@ export const it = {
   insertImageUrl: 'Immagine da URL…',
   insertConfirm: 'Inserisci',
   insertMore: 'Altro',
+  insertSkeleton: 'Inserisci struttura',
   insertTableSize: 'Tabella {r}×{c}',
   insertTablePickSize: 'Scegli le dimensioni della tabella',
   insertPlaceholderTableHeader: 'Intestazione {n}',

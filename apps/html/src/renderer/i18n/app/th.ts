@@ -117,6 +117,7 @@ export const th = {
   insertImageUrl: 'รูปภาพจาก URL…',
   insertConfirm: 'แทรก',
   insertMore: 'เพิ่มเติม',
+  insertSkeleton: 'แทรกโครงสร้าง',
   insertTableSize: 'ตาราง {r}×{c}',
   insertTablePickSize: 'เลือกขนาดตาราง',
   insertPlaceholderTableHeader: 'หัวตาราง {n}',

@@ -121,6 +121,7 @@ export const es = {
   insertImageUrl: 'Imagen desde URL…',
   insertConfirm: 'Insertar',
   insertMore: 'Más',
+  insertSkeleton: 'Insertar esqueleto',
   insertTableSize: 'Tabla de {r}×{c}',
   insertTablePickSize: 'Elegir el tamaño de la tabla',
   insertPlaceholderTableHeader: 'Encabezado {n}',

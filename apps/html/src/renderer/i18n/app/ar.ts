@@ -118,6 +118,7 @@ export const ar = {
   insertImageUrl: 'صورة من رابط…',
   insertConfirm: 'إدراج',
   insertMore: 'المزيد',
+  insertSkeleton: 'إدراج الهيكل',
   insertTableSize: 'جدول {r}×{c}',
   insertTablePickSize: 'اختيار حجم الجدول',
   insertPlaceholderTableHeader: 'عنوان {n}',

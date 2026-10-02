@@ -116,6 +116,7 @@ export const zh = {
   insertImageUrl: '图片链接…',
   insertConfirm: '插入',
   insertMore: '更多',
+  insertSkeleton: '插入骨架',
   insertTableSize: '{r}×{c} 表格',
   insertTablePickSize: '选择表格尺寸',
   insertPlaceholderTableHeader: '标题 {n}',

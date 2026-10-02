@@ -47,6 +47,8 @@ import {
   TEXT_INSERT_KINDS,
   type InsertKind,
 } from './document/insert-presets'
+import { isDocEmpty } from './document/blank'
+import { documentSkeleton } from './document/skeleton'
 import { moveTarget } from './document/move-target'
 import { StylePanel } from './components/StylePanel'
 import { floatPosition, parseDeclarations } from './document/float-position'
@@ -796,6 +798,14 @@ export default function App() {
     if (rel && selectedSidRef.current === sid)
       runManual([{ op: 'set_attr', sid, name: 'src', value: rel }])
   }
+  /** ribbon Insert > Insert skeleton: a standards-mode page in the UI language, for a still-blank document */
+  const insertSkeleton = useCallback(() => {
+    // the menu is disabled once the page has content, and re-checked here so
+    // the action cannot fire from a stale render (a keyboard path, a queued click)
+    if (!isDocEmpty(textRef.current)) return
+    replaceAll(documentSkeleton(lang), false)
+  }, [lang, replaceAll])
+
   /** ribbon Insert menu: a starter element after the selection (or at the end of the body), then straight into editing */
   const insertElement = async (kind: InsertKind, opts: InsertOptions = {}) => {
     let imageSrc: string | undefined
@@ -1459,6 +1469,8 @@ export default function App() {
         onToggleAi={() => setAiOpen((v) => !v)}
         canInsert={canvasMode === 'edit'}
         onInsert={(kind, opts) => void insertElement(kind, opts)}
+        onInsertSkeleton={insertSkeleton}
+        canInsertSkeleton={canvasMode === 'edit' && isDocEmpty(textRef.current)}
         onAiPreset={(text) => {
           flushPending()
           setAiOpen(true)

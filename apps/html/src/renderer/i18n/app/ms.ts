@@ -118,6 +118,7 @@ export const ms = {
   insertImageUrl: 'Imej daripada URL…',
   insertConfirm: 'Sisipkan',
   insertMore: 'Lagi',
+  insertSkeleton: 'Sisipkan rangka',
   insertTableSize: 'Jadual {r}×{c}',
   insertTablePickSize: 'Pilih saiz jadual',
   insertPlaceholderTableHeader: 'Pengepala {n}',

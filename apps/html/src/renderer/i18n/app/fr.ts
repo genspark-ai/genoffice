@@ -121,6 +121,7 @@ export const fr = {
   insertImageUrl: 'Image depuis une URL…',
   insertConfirm: 'Insérer',
   insertMore: 'Plus',
+  insertSkeleton: 'Insérer la structure',
   insertTableSize: 'Tableau {r}×{c}',
   insertTablePickSize: 'Choisir la taille du tableau',
   insertPlaceholderTableHeader: 'En-tête {n}',

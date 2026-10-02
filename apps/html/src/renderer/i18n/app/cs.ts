@@ -107,6 +107,7 @@ export const cs = {
   insertImageUrl: 'Obrázek z adresy URL…',
   insertConfirm: 'Vložit',
   insertMore: 'Další',
+  insertSkeleton: 'Vložit kostru',
   insertTableSize: 'Tabulka {r}×{c}',
   insertTablePickSize: 'Zvolte velikost tabulky',
   insertPlaceholderTableHeader: 'Záhlaví {n}',

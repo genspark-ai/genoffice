@@ -120,6 +120,7 @@ export const vi = {
   insertImageUrl: 'Hình ảnh từ URL…',
   insertConfirm: 'Chèn',
   insertMore: 'Thêm',
+  insertSkeleton: 'Chèn khung',
   insertTableSize: 'Bảng {r}×{c}',
   insertTablePickSize: 'Chọn kích thước bảng',
   insertPlaceholderTableHeader: 'Tiêu đề {n}',

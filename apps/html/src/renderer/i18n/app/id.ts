@@ -119,6 +119,7 @@ export const id = {
   insertImageUrl: 'Gambar dari URL…',
   insertConfirm: 'Sisipkan',
   insertMore: 'Lainnya',
+  insertSkeleton: 'Sisipkan kerangka',
   insertTableSize: 'Tabel {r}×{c}',
   insertTablePickSize: 'Pilih ukuran tabel',
   insertPlaceholderTableHeader: 'Judul {n}',

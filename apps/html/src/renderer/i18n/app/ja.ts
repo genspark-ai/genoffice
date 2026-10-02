@@ -120,6 +120,7 @@ export const ja = {
   insertImageUrl: 'URL から画像…',
   insertConfirm: '挿入',
   insertMore: 'その他',
+  insertSkeleton: '骨格を挿入',
   insertTableSize: '{r}×{c} の表',
   insertTablePickSize: '表のサイズを選択',
   insertPlaceholderTableHeader: '見出し {n}',

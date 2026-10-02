@@ -119,6 +119,7 @@ export const en = {
   insertImageUrl: 'Image from URL…',
   insertConfirm: 'Insert',
   insertMore: 'More',
+  insertSkeleton: 'Insert skeleton',
   insertTableSize: '{r}×{c} table',
   insertTablePickSize: 'Choose table size',
   insertPlaceholderTableHeader: 'Header {n}',
