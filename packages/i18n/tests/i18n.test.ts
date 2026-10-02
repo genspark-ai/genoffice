@@ -64,6 +64,22 @@ describe('normalizeLang', () => {
     expect(normalizeLang(null)).toBe('en')
   })
 
+  it('falls back to en for a non-string locale instead of throwing', () => {
+    // the declared type was `string | null | undefined`, but every caller is a
+    // boundary read, so these arrive at runtime. `raw?.trim()` threw a TypeError
+    // on all of them, surfacing as a renderer crash rather than a language default.
+    expect(normalizeLang(42)).toBe('en')
+    expect(normalizeLang(0)).toBe('en')
+    expect(normalizeLang(true)).toBe('en')
+    expect(normalizeLang(false)).toBe('en')
+    expect(normalizeLang({})).toBe('en')
+    expect(normalizeLang({ lang: 'zh-CN' })).toBe('en')
+    expect(normalizeLang(['en'])).toBe('en')
+    expect(normalizeLang(() => 'ja')).toBe('en')
+    expect(normalizeLang(Symbol('zh'))).toBe('en')
+    expect(normalizeLang(NaN)).toBe('en')
+  })
+
   it('requires a BCP-47 boundary after the language code', () => {
     expect(normalizeLang('deleted')).toBe('en')
     expect(normalizeLang('french')).toBe('en')

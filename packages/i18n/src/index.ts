@@ -50,8 +50,12 @@ export function isLang(value: unknown): value is Lang {
 }
 
 /** map a raw locale string ('zh-CN', 'zh-Hans', 'ja-JP', 'ko-KR', …) to a supported Lang */
-export function normalizeLang(raw: string | null | undefined): Lang {
-  const value = raw?.trim().toLowerCase()
+export function normalizeLang(raw: unknown): Lang {
+  // every caller is a boundary read (persisted settings, an IPC payload, a
+  // JSON-decoded blob), so `typeof` is the only guard that actually holds:
+  // optional chaining absorbs null/undefined but still calls .trim() on a
+  // number, object, array, boolean or Symbol and throws.
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
   if (!value) return 'en'
   // traditional-script Chinese variants must win over the generic 'zh' prefix
   if (/^zh[-_](tw|hk|mo|hant)/.test(value)) return 'zh-TW'
