@@ -395,6 +395,66 @@ describe('rebindChat', () => {
 })
 
 // ────────────────────────────────────────────────────────────
+// 5a. mergeChatFiles with a corrupt destination
+// ────────────────────────────────────────────────────────────
+
+describe('mergeChatFiles with a corrupt destination', () => {
+  let tmpDir: string
+  let store: ProjectStore
+
+  beforeEach(() => {
+    tmpDir = makeTempDir()
+    store = new ProjectStore(tmpDir)
+    store.ensureDefaultProject()
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('skips a non-finite destination seq and still merges the source instead of losing it', () => {
+    const sourceId = 'unsaved-1'
+    const targetId = 'target'
+    store.appendChatMessage('default', sourceId, { role: 'user', text: 'source-0' })
+    store.appendChatMessage('default', sourceId, { role: 'assistant', text: 'source-1' })
+    const chatsDir = join(tmpDir, 'projects', 'default', 'chats')
+    const sourcePath = join(chatsDir, `${sourceId}.jsonl`)
+    const targetPath = join(chatsDir, `${targetId}.jsonl`)
+    // 1e999 parses back as Infinity: typeof passes but it is not a usable seq
+    const target = '{"seq":1e999,"ts":"1970-01-01T00:00:00.000Z","role":"user","text":"target-0"}\n'
+    writeFileSync(targetPath, target, 'utf8')
+
+    store.rebindChat('default', sourceId, targetId)
+
+    const merged = readFileSync(targetPath, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+    // The corrupt destination line is left alone on disk, the source records are
+    // appended after it, and no moved seq is written as null.
+    expect(merged.map((message) => message.text)).toEqual(['target-0', 'source-0', 'source-1'])
+    expect(merged.slice(1).every((message) => typeof message.seq === 'number')).toBe(true)
+    expect(existsSync(sourcePath)).toBe(false)
+
+    // Reading back skips the non-finite destination record and keeps both moved
+    // ones: before the fix Infinity + 1 stayed Infinity, so every moved record
+    // was written as seq:null and the whole transcript read back as empty.
+    const msgs = store.loadChat('default', targetId)
+    expect(msgs.map((m) => m.text)).toEqual(['source-0', 'source-1'])
+    const seqs = msgs.map((m) => m.seq)
+    expect(seqs.every((seq) => Number.isFinite(seq))).toBe(true)
+    expect(seqs).toEqual([0, 1])
+
+    store.appendChatMessage('default', targetId, { role: 'assistant', text: 'after' })
+    expect(store.loadChat('default', targetId).map((m) => m.text)).toEqual([
+      'source-0',
+      'source-1',
+      'after',
+    ])
+  })
+})
+
+// ────────────────────────────────────────────────────────────
 // 5b. rebindChatToFile
 // ────────────────────────────────────────────────────────────
 
