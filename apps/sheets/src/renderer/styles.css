@@ -414,6 +414,18 @@ textarea:disabled {
   background: var(--surface);
 }
 
+/* The ribbon dropdown popover renders inside this header, so its own
+   z-index: 80 is trapped in the header's stacking context (z-index: 10) and
+   paints under the grid's float layers — pictures, slicers, the watch
+   window — which participate in the root stacking order (#1767; docs/slides
+   don't hit this because their .ribbon creates no stacking context). While a
+   popover is open, lift the header above every in-content overlay; the class
+   brackets exactly the open window, so dialogs and the opening screen — which
+   always dismiss the popover first — are unaffected. */
+html.genoffice-popover-open .excel-header {
+  z-index: 1500;
+}
+
 .ribbon-tabs {
   display: flex;
   align-items: center;
