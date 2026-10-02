@@ -1,5 +1,5 @@
 import { IRenderManagerService } from '@univerjs/engine-render'
-import { SheetScrollManagerService, SheetSkeletonManagerService } from '@univerjs/sheets-ui'
+import { SheetSkeletonManagerService } from '@univerjs/sheets-ui'
 
 import type { UniverRuntime } from './univer-state'
 
@@ -68,98 +68,140 @@ export function nextGridGrowth(edge: GridEdge): GridGrowth | null {
   return { columnCount, rowCount }
 }
 
-interface ScrollState {
+interface ScrollCommandParams {
   readonly sheetViewStartColumn?: number
   readonly sheetViewStartRow?: number
 }
 
-interface FWorksheetLike {
-  getMaxColumns(): number
-  getMaxRows(): number
-  setColumnCount(count: number): unknown
-  setRowCount(count: number): unknown
+interface SkeletonLike {
+  readonly scrollX: number
+  getColWidth(index: number): number
 }
 
 interface SkeletonManagerLike {
-  reCalculate(param?: unknown): void
+  getCurrentSkeleton(): SkeletonLike | null
+  reCalculate(): void
 }
+
+interface RenderUnitLike {
+  with<T>(token: unknown): T
+}
+
+interface InjectorLike {
+  get<T>(token: unknown): T
+}
+
+/** Univer's scroll command: the one carrying the viewport's first row/column. */
+const SET_SCROLL_COMMAND = 'sheet.operation.set-scroll'
 
 /**
  * Grows the active sheet's grid as its viewport nears the edge.
  *
- * Returns a disposer. Missing render services (a runtime that never installed
- * sheets-ui) are not an error: the grid then stays at the size the data
- * implies, which is what it did before.
+ * The viewport arrives through Univer's scroll command rather than a scroll
+ * service: SheetScrollManagerService is declared in @univerjs/sheets-ui but is
+ * not registered in this build, so asking the injector for it throws. The
+ * command is dispatched on every scroll — wheel, scrollbar, keyboard — and
+ * carries sheetViewStartColumn/Row directly, so no pixel-to-index conversion
+ * is needed.
+ *
+ * Two triggers, because neither alone covers everything:
+ *   - the command subscription, which is the real signal
+ *   - a slow poll, for a scroll the command path does not cover, and because
+ *     the render unit only exists a moment after install
+ *
+ * Returns a disposer.
  */
 export function installGridGrowth(runtime: UniverRuntime): () => void {
-  let subscription: { unsubscribe(): void } | undefined
-  let growing = false
-  try {
-    const injector = (
-      runtime.univer as unknown as {
-        __getInjector(): {
-          get<T>(token: unknown): T
-          get<T>(token: unknown, name: string): T
-        }
-      }
-    ).__getInjector()
-    const service = injector.get<{
-      validViewportScrollInfo$?: {
-        subscribe(next: (state: ScrollState | null) => void): { unsubscribe(): void }
-      }
-    }>(SheetScrollManagerService)
-    const observable = service?.validViewportScrollInfo$
-    if (!observable) return () => {}
+  let disposed = false
+  // The render unit appears after install, so resolve it per use and cache only
+  // once it resolves: a cached miss would pin the growth off forever.
+  let skeletonManager: SkeletonManagerLike | null = null
 
-    subscription = observable.subscribe((state) => {
-      // setColumnCount re-lays the skeleton, which can emit another scroll
-      // state synchronously. The new size already sits outside the lookahead so
-      // the nested call returns null, but the flag keeps that from depending on
-      // emission order.
-      if (growing || !state) return
-      growing = true
-      try {
-        const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet() as
-          FWorksheetLike | undefined
-        if (!worksheet) return
-        const growth = nextGridGrowth({
-          startColumn: state.sheetViewStartColumn ?? 0,
-          startRow: state.sheetViewStartRow ?? 0,
-          columnCount: worksheet.getMaxColumns(),
-          rowCount: worksheet.getMaxRows(),
-        })
-        if (!growth) return
-        if (growth.columnCount !== worksheet.getMaxColumns()) {
-          worksheet.setColumnCount(growth.columnCount)
-        }
-        if (growth.rowCount !== worksheet.getMaxRows()) {
-          worksheet.setRowCount(growth.rowCount)
-        }
-        // The skeleton caches the row/column sizes it was built with, so a new
-        // size is invisible until it is rebuilt.
-        const render = (
-          runtime.univer as unknown as {
-            __getInjector(): { get<T>(token: unknown): T }
-          }
-        )
-          .__getInjector()
-          .get<{ getRenderById(id: string): { with<T>(token: unknown): T } | null } | null>(
-            IRenderManagerService,
-          )
-        const unitId = runtime.univerAPI.getActiveWorkbook()?.getId()
-        const skeleton = unitId ? render?.getRenderById(unitId) : null
-        skeleton?.with<SkeletonManagerLike>(SheetSkeletonManagerService)?.reCalculate()
-      } catch {
-        // a sheet that is mid-rebuild has no skeleton to grow; the next scroll
-        // state re-runs this with the rebuilt grid
-      } finally {
-        growing = false
-      }
-    })
-  } catch {
-    return () => {} // sheets-ui not installed in this runtime
+  const currentSkeletonManager = (): SkeletonManagerLike | null => {
+    if (skeletonManager) return skeletonManager
+    try {
+      const workbook = runtime.univerAPI.getActiveWorkbook()
+      if (!workbook) return null
+      const injector = (
+        runtime.univer as unknown as { __getInjector(): InjectorLike }
+      ).__getInjector()
+      const render = injector
+        .get<{ getRenderById(id: string): RenderUnitLike | null }>(IRenderManagerService)
+        .getRenderById(workbook.getId())
+      if (!render) return null
+      skeletonManager = render.with<SkeletonManagerLike>(SheetSkeletonManagerService)
+      return skeletonManager
+    } catch {
+      return null
+    }
   }
+
+  const growIfNearEdge = (startColumn: number, startRow: number): void => {
+    if (disposed) return
+    const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    if (!worksheet) return
+    const growth = nextGridGrowth({
+      startColumn,
+      startRow,
+      columnCount: worksheet.getMaxColumns(),
+      rowCount: worksheet.getMaxRows(),
+    })
+    if (!growth) return
+    if (growth.columnCount !== worksheet.getMaxColumns()) {
+      worksheet.setColumnCount(growth.columnCount)
+    }
+    if (growth.rowCount !== worksheet.getMaxRows()) {
+      worksheet.setRowCount(growth.rowCount)
+    }
+    // the skeleton caches the row/column sizes it was built with
+    currentSkeletonManager()?.reCalculate()
+  }
+
+  let lastColumn = 0
+  let lastRow = 0
+
+  /**
+   * The first column the viewport shows, read from the skeleton: walk the
+   * column widths until they cover the scrolled distance. Independent of the
+   * command stream, so it also answers when no scroll command has arrived.
+   */
+  const firstVisibleColumn = (skeleton: SkeletonLike, columnCount: number): number => {
+    let x = 0
+    for (let i = 0; i < columnCount; i++) {
+      x += skeleton.getColWidth(i)
+      if (x > skeleton.scrollX) return i
+    }
+    return Math.max(0, columnCount - 1)
+  }
+
+  const onCommand = runtime.univerAPI.onCommandExecuted(
+    (command: { id?: string; params?: unknown }) => {
+      if (command?.id !== SET_SCROLL_COMMAND) return
+      const params = command.params as ScrollCommandParams | undefined
+      if (!params) return
+      lastColumn = params.sheetViewStartColumn ?? lastColumn
+      lastRow = params.sheetViewStartRow ?? lastRow
+      growIfNearEdge(lastColumn, lastRow)
+    },
+  )
+
+  // Backstop: a viewport move the command stream does not carry, and the
+  // window between install and the render unit existing.
+  const timer = window.setInterval(() => {
+    if (disposed) return
+    const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    const manager = currentSkeletonManager()
+    if (!worksheet || !manager) return
+    const skeleton = manager.getCurrentSkeleton()
+    if (!skeleton) return
+    const columnCount = worksheet.getMaxColumns()
+    const walked = firstVisibleColumn(skeleton, columnCount)
+    growIfNearEdge(walked, lastRow)
+  }, 250)
+
   return () => {
-    subscription?.unsubscribe()
+    disposed = true
+    window.clearInterval(timer)
+    onCommand?.dispose?.()
   }
 }
