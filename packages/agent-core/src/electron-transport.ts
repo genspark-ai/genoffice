@@ -112,7 +112,7 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
           settle()
           if (chunk.stopReason) cb.onStopReason?.(chunk.stopReason)
           cb.onDone()
-        } else {
+        } else if (chunk.type === 'error') {
           settle()
           cb.onError(
             chunk.errorCode === 'timeout'
@@ -125,6 +125,11 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
                     ? (options.overloadedErrorText?.() ?? chunk.error ?? options.unknownErrorText())
                     : (chunk.error ?? options.unknownErrorText()),
           )
+        } else {
+          // 'type' is an unchecked string at runtime (it crosses the IPC boundary), so a
+          // main-process build that ships a chunk kind this build predates must not kill the
+          // run: ignore it and re-arm the watchdog, since wire traffic proves it is still alive.
+          armSilence()
         }
       })
       armSilence()
