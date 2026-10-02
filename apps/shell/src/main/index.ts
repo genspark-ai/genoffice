@@ -295,6 +295,7 @@ import {
   statPathEntries,
 } from './recent-files'
 import { isMoveSource, isUserVisibleFile, type FileTargetSources } from './file-targets'
+import { DOCX_RE, HTML_RE, MD_RE, PDF_RE, PPTX_RE, XLSX_RE, renameStaysInApp } from './app-routing'
 import { isSameFile, pdfSaveAsTarget, isValidRawRenameName } from './rename-validation'
 import {
   FolderWatcher,
@@ -743,6 +744,7 @@ const tMain = createI18n({
     filterPdf: 'PDF 文档',
     errBadArgs: '参数无效',
     errBadName: '文件名不合法',
+    errBadExtension: '这个扩展名不受支持，改了文件就打不开了',
     errMissing: '文件不存在',
     errExists: '同名文件已存在',
     errRenameFailed: '重命名失败',
@@ -835,6 +837,7 @@ const tMain = createI18n({
     filterPdf: 'PDF Documents',
     errBadArgs: 'Invalid arguments',
     errBadName: 'Invalid file name',
+    errBadExtension: 'That extension is not supported, and the file would no longer open',
     errMissing: 'File not found',
     errExists: 'A file with that name already exists',
     errRenameFailed: 'Rename failed',
@@ -935,6 +938,7 @@ const tMain = createI18n({
     filterPdf: 'Tài liệu PDF',
     errBadArgs: 'Đối số không hợp lệ',
     errBadName: 'Tên tệp không hợp lệ',
+    errBadExtension: 'Phần mở rộng đó không được hỗ trợ và tệp sẽ không còn mở được',
     errMissing: 'Không tìm thấy tệp',
     errExists: 'Một tệp có tên đó đã tồn tại',
     errRenameFailed: 'Đổi tên thất bại',
@@ -1035,6 +1039,7 @@ const tMain = createI18n({
     filterPdf: 'PDF ドキュメント',
     errBadArgs: '引数が無効です',
     errBadName: 'ファイル名が無効です',
+    errBadExtension: 'その拡張子はサポートされていないため、ファイルを開けなくなります',
     errMissing: 'ファイルが見つかりません',
     errExists: '同名のファイルが既に存在します',
     errRenameFailed: '名前の変更に失敗しました',
@@ -1135,6 +1140,7 @@ const tMain = createI18n({
     filterPdf: 'PDF 문서',
     errBadArgs: '잘못된 인수입니다',
     errBadName: '파일 이름이 잘못되었습니다',
+    errBadExtension: '지원하지 않는 확장자이며 파일을 열 수 없게 됩니다',
     errMissing: '파일을 찾을 수 없습니다',
     errExists: '같은 이름의 파일이 이미 있습니다',
     errRenameFailed: '이름 바꾸기에 실패했습니다',
@@ -1234,6 +1240,7 @@ const tMain = createI18n({
     filterPdf: 'Documents PDF',
     errBadArgs: 'Arguments non valides',
     errBadName: 'Nom de fichier non valide',
+    errBadExtension: 'Cette extension n’est pas prise en charge et le fichier ne s’ouvrirait plus',
     errMissing: 'Fichier introuvable',
     errExists: 'Un fichier du même nom existe déjà',
     errRenameFailed: 'Échec du renommage',
@@ -1335,6 +1342,8 @@ const tMain = createI18n({
     filterPdf: 'PDF-Dokumente',
     errBadArgs: 'Ungültige Argumente',
     errBadName: 'Ungültiger Dateiname',
+    errBadExtension:
+      'Diese Erweiterung wird nicht unterstützt, die Datei ließe sich nicht mehr öffnen',
     errMissing: 'Datei nicht gefunden',
     errExists: 'Eine Datei mit diesem Namen existiert bereits',
     errRenameFailed: 'Umbenennen fehlgeschlagen',
@@ -1436,6 +1445,7 @@ const tMain = createI18n({
     filterPdf: 'Documentos PDF',
     errBadArgs: 'Argumentos no válidos',
     errBadName: 'Nombre de archivo no válido',
+    errBadExtension: 'Esa extensión no es compatible y el archivo dejaría de abrirse',
     errMissing: 'Archivo no encontrado',
     errExists: 'Ya existe un archivo con ese nombre',
     errRenameFailed: 'No se pudo cambiar el nombre',
@@ -1537,6 +1547,7 @@ const tMain = createI18n({
     filterPdf: 'เอกสาร PDF',
     errBadArgs: 'อาร์กิวเมนต์ไม่ถูกต้อง',
     errBadName: 'ชื่อไฟล์ไม่ถูกต้อง',
+    errBadExtension: 'ไม่รองรับส่วนขยายนี้ ไฟล์จะเปิดไม่ได้',
     errMissing: 'ไม่พบไฟล์',
     errExists: 'มีไฟล์ชื่อเดียวกันอยู่แล้ว',
     errRenameFailed: 'เปลี่ยนชื่อไม่สำเร็จ',
@@ -1634,6 +1645,7 @@ const tMain = createI18n({
     filterPdf: 'Dokumen PDF',
     errBadArgs: 'Argumen tidak valid',
     errBadName: 'Nama file tidak valid',
+    errBadExtension: 'Ekstensi itu tidak didukung dan berkas tidak akan bisa dibuka',
     errMissing: 'File tidak ditemukan',
     errExists: 'File dengan nama tersebut sudah ada',
     errRenameFailed: 'Gagal mengganti nama',
@@ -1735,6 +1747,7 @@ const tMain = createI18n({
     filterPdf: 'Документы PDF',
     errBadArgs: 'Недопустимые аргументы',
     errBadName: 'Недопустимое имя файла',
+    errBadExtension: 'Это расширение не поддерживается, и файл больше не откроется',
     errMissing: 'Файл не найден',
     errExists: 'Файл с таким именем уже существует',
     errRenameFailed: 'Не удалось переименовать',
@@ -1836,6 +1849,7 @@ const tMain = createI18n({
     filterPdf: 'مستندات PDF',
     errBadArgs: 'وسيطات غير صالحة',
     errBadName: 'اسم ملف غير صالح',
+    errBadExtension: 'هذه الامتداد غير مدعوم وسيصبح الملف غير قابل للفتح',
     errMissing: 'الملف غير موجود',
     errExists: 'يوجد ملف بالاسم نفسه بالفعل',
     errRenameFailed: 'فشلت إعادة التسمية',
@@ -1933,6 +1947,7 @@ const tMain = createI18n({
     filterPdf: 'Documentos PDF',
     errBadArgs: 'Argumentos inválidos',
     errBadName: 'Nome de arquivo inválido',
+    errBadExtension: 'Essa extensão não é suportada e o arquivo deixaria de abrir',
     errMissing: 'Arquivo não encontrado',
     errExists: 'Já existe um arquivo com esse nome',
     errRenameFailed: 'Falha ao renomear',
@@ -2034,6 +2049,7 @@ const tMain = createI18n({
     filterPdf: 'Documenti PDF',
     errBadArgs: 'Argomenti non validi',
     errBadName: 'Nome file non valido',
+    errBadExtension: 'Questa estensione non è supportata e il file non si aprirebbe più',
     errMissing: 'File non trovato',
     errExists: 'Esiste già un file con questo nome',
     errRenameFailed: 'Impossibile rinominare',
@@ -2135,6 +2151,7 @@ const tMain = createI18n({
     filterPdf: 'Dokumenty PDF',
     errBadArgs: 'Nieprawidłowe argumenty',
     errBadName: 'Nieprawidłowa nazwa pliku',
+    errBadExtension: 'To rozszerzenie nie jest obsługiwane i plik przestałby się otwierać',
     errMissing: 'Nie znaleziono pliku',
     errExists: 'Plik o tej nazwie już istnieje',
     errRenameFailed: 'Nie udało się zmienić nazwy',
@@ -2236,6 +2253,7 @@ const tMain = createI18n({
     filterPdf: 'Dokumenty PDF',
     errBadArgs: 'Neplatné argumenty',
     errBadName: 'Neplatný název souboru',
+    errBadExtension: 'Toto rozšíření není podporováno a soubor by se neotevíral',
     errMissing: 'Soubor nebyl nalezen',
     errExists: 'Soubor s tímto názvem už existuje',
     errRenameFailed: 'Přejmenování se nezdařilo',
@@ -2335,6 +2353,7 @@ const tMain = createI18n({
     filterPdf: 'PDF-documenten',
     errBadArgs: 'Ongeldige argumenten',
     errBadName: 'Ongeldige bestandsnaam',
+    errBadExtension: 'Die extensie wordt niet ondersteund en het bestand zou niet meer openen',
     errMissing: 'Bestand niet gevonden',
     errExists: 'Er bestaat al een bestand met die naam',
     errRenameFailed: 'Naam wijzigen mislukt',
@@ -2436,6 +2455,7 @@ const tMain = createI18n({
     filterPdf: 'Dokumen PDF',
     errBadArgs: 'Argumen tidak sah',
     errBadName: 'Nama fail tidak sah',
+    errBadExtension: 'Sambungan itu tidak disokong dan fail tidak akan dibuka',
     errMissing: 'Fail tidak ditemui',
     errExists: 'Fail dengan nama yang sama sudah wujud',
     errRenameFailed: 'Gagal menamakan semula',
@@ -2536,6 +2556,7 @@ const tMain = createI18n({
     filterPdf: 'מסמכי PDF',
     errBadArgs: 'ארגומנטים לא חוקיים',
     errBadName: 'שם קובץ לא חוקי',
+    errBadExtension: 'הסיומת אינה נתמכת והקובץ לא ייפתח יותר',
     errMissing: 'הקובץ לא נמצא',
     errExists: 'כבר קיים קובץ באותו שם',
     errRenameFailed: 'שינוי השם נכשל',
@@ -2634,6 +2655,7 @@ const tMain = createI18n({
     filterPdf: 'PDF दस्तावेज़',
     errBadArgs: 'अमान्य आर्ग्युमेंट',
     errBadName: 'अमान्य फ़ाइल नाम',
+    errBadExtension: 'वह एक्सटेंशन समर्थित नहीं है और फ़ाइल फिर नहीं खुलेगी',
     errMissing: 'फ़ाइल नहीं मिली',
     errExists: 'इस नाम की फ़ाइल पहले से मौजूद है',
     errRenameFailed: 'नाम बदलने में विफल',
@@ -2735,6 +2757,7 @@ const tMain = createI18n({
     filterPdf: 'PDF 文件',
     errBadArgs: '參數無效',
     errBadName: '檔案名稱不合法',
+    errBadExtension: '這個副檔名不受支援，改了檔案就打不開了',
     errMissing: '檔案不存在',
     errExists: '同名檔案已存在',
     errRenameFailed: '重新命名失敗',
@@ -3333,13 +3356,6 @@ function createShellWindow(): void {
 }
 
 // ---- routing: one dispatch function for every open path ----
-
-const DOCX_RE = /\.docx$/i
-const XLSX_RE = /\.(xlsx|xlsm|xls|csv|tsv)$/i
-const PPTX_RE = /\.pptx$/i
-const PDF_RE = /\.pdf$/i
-const MD_RE = /\.(md|markdown)$/i
-const HTML_RE = /\.html?$/i
 
 /**
  * Single source of truth for the open-dialog filter. Includes the
@@ -3973,6 +3989,12 @@ function registerHomeIpc(): void {
       // with the localized gate instead of renaming to a different
       // name than requested.
       if (!isValidRawRenameName(newName)) return { ok: false, error: tm('errBadName') }
+      // A legal name in an extension nothing routes to turns an openable file
+      // into an unopenable one — "note.md" → "note.xyz" renames cleanly and
+      // then cannot be opened. Same-app renames ("note.md" → "note.markdown")
+      // stay legal.
+      if (typeof path === 'string' && !renameStaysInApp(path, newName.trim()))
+        return { ok: false, error: tm('errBadExtension') }
       // only paths the UI could have shown: a compromised renderer must not
       // rename arbitrary files outside every tracked source
       if (!isUserVisibleFile(path, fileTargetSources()))
