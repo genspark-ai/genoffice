@@ -59,8 +59,14 @@ export function parseSdtBlock(sdtXml: string): { shell: SdtShell; pXml: string }
 
 export function sdtMeta(sdtXml: string): Pick<SdtShell, 'alias' | 'tag' | 'controlType'> {
   const sdtPrXml = /<w:sdtPr>([\s\S]*?)<\/w:sdtPr>/.exec(sdtXml)?.[1] ?? ''
-  const alias = /w:val="([^"]*)"/.exec(/<w:alias[^>]*>/.exec(sdtPrXml)?.[0] ?? '')?.[1] ?? ''
-  const tag = /w:val="([^"]*)"/.exec(/<w:tag[^>]*>/.exec(sdtPrXml)?.[0] ?? '')?.[1] ?? ''
+  // w:val may be single- or double-quoted; the caller slices out the single open
+  // tag first so the value can't belong to a later sibling element
+  const attrVal = (tag: string): string => {
+    const m = /\bw:val=(?:"([^"]*)"|'([^']*)')/.exec(tag)
+    return m?.[1] ?? m?.[2] ?? ''
+  }
+  const alias = attrVal(/<w:alias[^>]*>/.exec(sdtPrXml)?.[0] ?? '')
+  const tag = attrVal(/<w:tag[^>]*>/.exec(sdtPrXml)?.[0] ?? '')
   let controlType: SdtShell['controlType'] = 'text'
   if (/<w:date[\s/>]/.test(sdtPrXml)) controlType = 'date'
   else if (/<w:dropDownList[\s/>]|<w:comboBox[\s/>]/.test(sdtPrXml)) controlType = 'dropdown'
