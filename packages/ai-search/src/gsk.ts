@@ -28,6 +28,7 @@ import {
 import { genofficeApiKey, genofficeAuthPath, reloadGenofficeAuth } from './genoffice-auth'
 // deep import: the package root re-exports Electron-bound modules, and this file also runs in the genoffice CLI
 import { readBodyCapped } from '@genoffice/electron-utils/remote-image'
+import { createStreamWatchdog } from '@genoffice/ai-provider'
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -525,11 +526,17 @@ async function toolCliPost(
 ): Promise<unknown> {
   const key = gskApiKey()
   if (!key) throw new Error('Not logged in to Genspark (gsk login)')
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const onAbort = () => controller.abort()
-  signal?.addEventListener('abort', onAbort, { once: true })
-  try {
+  // An abort listener added after the event has already fired is never invoked, so a
+  // signal that arrived while the caller was still dispatching this tool call would
+  // never reach the internal controller and the billed POST would run to completion.
+  if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError')
+  // Route through the shared watchdog so our own deadline surfaces as AiTimeoutError.
+  // A bare controller.abort() is indistinguishable from a user cancel, and the apps
+  // map AiTimeoutError to errorCode 'timeout' -> the localized timeout text; without
+  // it a 240s slide_generate that never answered showed a raw "operation was aborted".
+  const watchdog = createStreamWatchdog(signal, timeoutMs, timeoutMs)
+  // guard() always disposes the watchdog timer, on both the resolve and reject path
+  return watchdog.guard(async () => {
     const resp = await fetch(`${GSK_TOOL_CLI_BASE}${path}`, {
       method: 'POST',
       // X-Agent-Type splits GenOffice usage out of the proxy's "Claw" billing bucket
@@ -539,7 +546,7 @@ async function toolCliPost(
         'X-Agent-Type': 'genoffice',
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: watchdog.signal,
     })
     const text = new TextDecoder().decode(await readBodyCapped(resp, MAX_TOOL_CLI_NDJSON_BYTES))
     if (!resp.ok) throw new Error(`tool_cli ${path} HTTP ${resp.status}: ${text.slice(0, 200)}`)
@@ -548,10 +555,7 @@ async function toolCliPost(
       throw new Error(`tool_cli ${path} failed: ${result.message ?? result.status}`)
     }
     return result.data
-  } finally {
-    clearTimeout(timer)
-    signal?.removeEventListener('abort', onAbort)
-  }
+  })
 }
 
 /**

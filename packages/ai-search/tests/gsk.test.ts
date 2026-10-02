@@ -15,6 +15,7 @@ import {
   summarizeGskFailure,
 } from '../src/gsk'
 import { ResponseTooLargeError } from '@genoffice/electron-utils/remote-image'
+import { AiTimeoutError } from '@genoffice/ai-provider'
 
 describe('parseGskOutput', () => {
   it('parses clean JSON', () => {
@@ -576,5 +577,61 @@ describe('summarizeGskFailure', () => {
     expect(summarizeGskFailure('HTTP 502: <html><body><script>x()</script></body></html>')).toBe(
       'HTTP 502 (HTML error page)',
     )
+  })
+})
+
+describe('gskSlideGenerate cancellation and timeout', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    delete process.env.GSK_API_KEY
+    vi.useRealTimers()
+  })
+
+  it('refuses an already-aborted signal before issuing the billed POST', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    let called = 0
+    globalThis.fetch = vi.fn(async () => {
+      called++
+      return new Response('{}', { status: 500 })
+    }) as unknown as typeof fetch
+
+    const already = AbortSignal.abort()
+    expect(already.aborted).toBe(true)
+    // An abort listener added after the event fired is never invoked, so without an
+    // explicit check the internal controller is never aborted and the request runs
+    // to the full timeout — a billed slide_generate plus its artifact download.
+    await expect(gskSlideGenerate({ brief: 'x', signal: already })).rejects.toThrow(/abort/i)
+    expect(called).toBe(0)
+  })
+
+  it('surfaces its own deadline as AiTimeoutError, not a bare abort', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    // never settles: the call must end on the watchdog deadline, and must be typed so
+    // the apps can map it to errorCode 'timeout' and show the localized message
+    let sawAbort = false
+    globalThis.fetch = vi.fn(
+      (_url: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            sawAbort = true
+            reject(new DOMException('The operation was aborted', 'AbortError'))
+          })
+        }),
+    ) as unknown as typeof fetch
+
+    vi.useFakeTimers()
+    const call = gskSlideGenerate({ brief: 'x' }).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    await vi.advanceTimersByTimeAsync(240_000)
+    const err = await call
+    vi.useRealTimers()
+
+    expect(sawAbort).toBe(true)
+    // AiTimeoutError, not a DOMException AbortError: the apps branch on this type
+    expect(err).toBeInstanceOf(AiTimeoutError)
+    expect((err as Error).message).toMatch(/timed out/i)
   })
 })
