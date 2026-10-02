@@ -32,6 +32,7 @@ import {
   installInjectorResolutionGuard,
   installWrapMeasureLifecycle,
 } from './univer-sync'
+import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
   runHeadlessRendererExport,
@@ -1673,6 +1674,9 @@ export function App({
     installInjectorResolutionGuard(runtime)
     // find-bar reveals share scrollToCell's broken freeze offset (r135)
     const findRevealDispose = installFindRevealFix(runtime)
+    // the grid is sized to the data, so a blank sheet stops scrolling a few
+    // columns past its last cell; this extends it ahead of the viewport
+    const gridGrowthDispose = installGridGrowth(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -2991,6 +2995,7 @@ export function App({
       offThemeChanged?.()
       undoRedoSub.unsubscribe()
       findRevealDispose()
+      gridGrowthDispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()
