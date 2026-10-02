@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   BUCKETS,
+  GuidedError,
+  lookup,
   planEditOps,
   reduceBucket,
   reduceEditOps,
@@ -511,5 +513,54 @@ describe('bucket reduction matches whole-snapshot reduction', () => {
       if (!['deleted', 'markups', 'drawings', 'annotDeletes', 'noteEdits', 'formEdits'].includes(b))
         expect(viaBucket).toBe(base[b])
     }
+  })
+})
+
+describe('edit-op geometry rejects non-finite numbers', () => {
+  // NaN and Infinity are both `typeof === 'number'`, so a `typeof` check let
+  // them through: the op was stored, the stamp drew at zero size, and NaN
+  // reached the PDF content stream on save.
+  const NON_FINITE = [Number.NaN, Infinity, -Infinity]
+
+  for (const bad of NON_FINITE) {
+    it(`setDrawingRect rejects ${bad}`, () => {
+      expect(() =>
+        lookup('setDrawingRect').validate(
+          { op: 'setDrawingRect', id: 'd', rect: [bad, 10, 200, 50] },
+          ctx(),
+        ),
+      ).toThrow(GuidedError)
+    })
+
+    it(`moveDrawing rejects dx=${bad} and dy=${bad}`, () => {
+      expect(() =>
+        lookup('moveDrawing').validate({ op: 'moveDrawing', id: 'd', dx: bad, dy: 1 }, ctx()),
+      ).toThrow(GuidedError)
+      expect(() =>
+        lookup('moveDrawing').validate({ op: 'moveDrawing', id: 'd', dx: 1, dy: bad }, ctx()),
+      ).toThrow(GuidedError)
+    })
+  }
+
+  it('still accepts finite geometry, including negative and fractional coords', () => {
+    expect(() =>
+      lookup('setDrawingRect').validate(
+        { op: 'setDrawingRect', id: 'd', rect: [-1.5, 0, 200.25, 50] },
+        ctx(),
+      ),
+    ).not.toThrow()
+    expect(() =>
+      lookup('moveDrawing').validate({ op: 'moveDrawing', id: 'd', dx: -0.5, dy: 0 }, ctx()),
+    ).not.toThrow()
+  })
+
+  it('a non-finite rect is a planned failure, not a silently applied op', () => {
+    const plan = planEditOps(
+      [{ op: 'setDrawingRect', id: 'd', rect: [NaN, 10, 200, 50] }],
+      ctx(),
+      newId,
+    )
+    expect(plan.ops).toEqual([])
+    expect(plan.failures).toHaveLength(1)
   })
 })
