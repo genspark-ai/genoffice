@@ -92,6 +92,27 @@ describe('webSearch (Serper)', () => {
     expect(tavily.results.map((r) => r.title)).toEqual(['ok'])
   })
 
+  it('treats an unknown prefer as the default instead of throwing', async () => {
+    // `prefer` is typed, but the settings "test connection" handler passes its ipc
+    // payload through after an `as` cast, so an unknown id reaches webSearch at
+    // runtime. It becomes the first entry of the dispatch order, and a name with no
+    // backend function made that throw a TypeError out of the ipcMain handler.
+    process.env.SERPER_API_KEY = 'serper-key'
+    mockFetch((url) => {
+      if (url === 'https://google.serper.dev/search') {
+        return {
+          ok: true,
+          json: { organic: [{ title: 'ok', link: 'https://ok.com/t', snippet: 'c' }] },
+        }
+      }
+      return { ok: false, status: 500, json: {} }
+    })
+
+    const r = await webSearch('q', 5, { useGsk: false, prefer: 'bogus' as never })
+    // falls back to the default backend rather than rejecting
+    expect(r.method).toBe('serper')
+  })
+
   it('falls back to DuckDuckGo when no key and the free Parallel MCP is down', async () => {
     const urls: string[] = []
     mockFetch((url) => {

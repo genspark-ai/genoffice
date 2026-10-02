@@ -49,6 +49,16 @@ export interface SearchOptions {
   prefer?: 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl'
 }
 
+/** The backends webSearch can dispatch to; anything else is not a provider id. */
+const SEARCH_BACKENDS = new Set([
+  'serper',
+  'serply',
+  'tavily',
+  'parallel',
+  'exa',
+  'firecrawl',
+] as const)
+
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
   const o = typeof opts === 'boolean' ? { useGsk: opts } : (opts ?? {})
   return {
@@ -59,7 +69,13 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     parallelKey: o.parallelKey ?? PARALLEL_KEY(),
     exaKey: o.exaKey ?? EXA_KEY(),
     firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
-    prefer: o.prefer ?? 'serper',
+    // `prefer` reaches here from the renderer: the settings "test connection" handler
+    // passes its ipc payload through after an `as` cast, so an unknown id is possible
+    // at runtime. It becomes the first entry of the dispatch order, and a name that
+    // is not a backend has no function to call, so validate it at this choke point
+    // rather than letting the dispatch throw a TypeError out of the ipc handler.
+    prefer:
+      o.prefer !== undefined && SEARCH_BACKENDS.has(o.prefer) ? o.prefer : ('serper' as const),
   }
 }
 
