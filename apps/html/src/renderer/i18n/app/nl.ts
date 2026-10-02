@@ -122,6 +122,7 @@ export const nl = {
   insertImageUrl: 'Afbeelding van URL…',
   insertConfirm: 'Invoegen',
   insertMore: 'Meer',
+  insertSkeleton: 'Skelet invoegen',
   insertTableSize: 'Tabel van {r}×{c}',
   insertTablePickSize: 'Tabelgrootte kiezen',
   insertPlaceholderTableHeader: 'Kop {n}',

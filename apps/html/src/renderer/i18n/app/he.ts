@@ -117,6 +117,7 @@ export const he = {
   insertImageUrl: 'תמונה מכתובת URL…',
   insertConfirm: 'הוספה',
   insertMore: 'עוד',
+  insertSkeleton: 'הוספת שלד',
   insertTableSize: 'טבלה {r}×{c}',
   insertTablePickSize: 'בחר גודל טבלה',
   insertPlaceholderTableHeader: 'כותרת {n}',

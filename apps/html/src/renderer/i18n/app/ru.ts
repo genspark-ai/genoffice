@@ -119,6 +119,7 @@ export const ru = {
   insertImageUrl: 'Изображение по URL…',
   insertConfirm: 'Вставить',
   insertMore: 'Ещё',
+  insertSkeleton: 'Вставить каркас',
   insertTableSize: 'Таблица {r}×{c}',
   insertTablePickSize: 'Выберите размер таблицы',
   insertPlaceholderTableHeader: 'Заголовок {n}',

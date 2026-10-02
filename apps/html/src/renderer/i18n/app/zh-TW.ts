@@ -117,6 +117,7 @@ export const zhTW = {
   insertImageUrl: '圖片連結…',
   insertConfirm: '插入',
   insertMore: '更多',
+  insertSkeleton: '插入骨架',
   insertTableSize: '{r}×{c} 表格',
   insertTablePickSize: '選擇表格大小',
   insertPlaceholderTableHeader: '標題 {n}',

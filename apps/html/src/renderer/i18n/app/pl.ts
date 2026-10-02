@@ -118,6 +118,7 @@ export const pl = {
   insertImageUrl: 'Obraz z adresu URL…',
   insertConfirm: 'Wstaw',
   insertMore: 'Więcej',
+  insertSkeleton: 'Wstaw szkielet',
   insertTableSize: 'Tabela {r}×{c}',
   insertTablePickSize: 'Wybierz rozmiar tabeli',
   insertPlaceholderTableHeader: 'Nagłówek {n}',

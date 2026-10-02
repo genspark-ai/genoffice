@@ -119,6 +119,7 @@ export const ko = {
   insertImageUrl: 'URL에서 이미지…',
   insertConfirm: '삽입',
   insertMore: '더 보기',
+  insertSkeleton: '스켈레톤 삽입',
   insertTableSize: '{r}×{c} 표',
   insertTablePickSize: '표 크기 선택',
   insertPlaceholderTableHeader: '머리글 {n}',

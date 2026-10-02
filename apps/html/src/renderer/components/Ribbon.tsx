@@ -78,6 +78,10 @@ interface Props {
   canInsert: boolean
   /** images come from a picked file by default; `url` places a remote image instead; tables take the picker's rows × cols */
   onInsert: (kind: InsertKind, opts?: InsertOptions) => void
+  /** replace a still-blank page with the document skeleton, in the UI language */
+  onInsertSkeleton: () => void
+  /** false once the page has content: a skeleton would only duplicate the document */
+  canInsertSkeleton: boolean
   /** page-wide AI actions: send this instruction to the assistant right away */
   onAiPreset: (text: string) => void
   canvasMode: CanvasMode
@@ -506,6 +510,19 @@ export function Ribbon(p: Props) {
                       {t(INSERT_LABEL[kind])}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!p.canInsertSkeleton}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      closeInsert()
+                      p.onInsertSkeleton()
+                    }}
+                  >
+                    <IconCode size={16} />
+                    {t('insertSkeleton')}
+                  </button>
                 </div>
               )}
             </div>

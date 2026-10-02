@@ -120,6 +120,7 @@ export const hi = {
   insertImageUrl: 'URL से छवि…',
   insertConfirm: 'सम्मिलित करें',
   insertMore: 'और',
+  insertSkeleton: 'कंकाल सम्मिलित करें',
   insertTableSize: '{r}×{c} तालिका',
   insertTablePickSize: 'तालिका का आकार चुनें',
   insertPlaceholderTableHeader: 'शीर्षक {n}',

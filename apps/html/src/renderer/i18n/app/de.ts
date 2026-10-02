@@ -121,6 +121,7 @@ export const de = {
   insertImageUrl: 'Bild von URL…',
   insertConfirm: 'Einfügen',
   insertMore: 'Mehr',
+  insertSkeleton: 'Grundgerüst einfügen',
   insertTableSize: '{r}×{c} Tabelle',
   insertTablePickSize: 'Tabellengröße auswählen',
   insertPlaceholderTableHeader: 'Kopfzeile {n}',
