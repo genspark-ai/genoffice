@@ -60,6 +60,16 @@ describe('check-skill-version', () => {
     expect(check().stderr).toContain('went backwards')
   })
 
+  it('gates a nested skill as well as a top-level one', () => {
+    writeSkill('group/demo', skill('demo', '1.0.0', 'x'))
+    git('add', '.')
+    git('commit', '-q', '-m', 'nested base')
+    writeSkill('group/demo', skill('demo', '1.0.0', 'x changed'))
+    const r = check()
+    expect(r.ok).toBe(false)
+    expect(r.stderr).toContain('bump it')
+  })
+
   it('requires a version and a name matching the directory on new skills', () => {
     writeSkill('other', '---\nname: other\ndescription: x\n---\n\nbody\n')
     expect(check().stderr).toContain('needs metadata.version')
