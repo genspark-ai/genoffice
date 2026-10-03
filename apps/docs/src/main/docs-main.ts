@@ -6049,7 +6049,9 @@ export function startDocsStandalone(): void {
   // AI_OFFICE_USER_DATA: E2E/screenshot runs isolate userData (and the
   // single-instance lock) so parallel automation sessions don't evict each other
   if (process.env.AI_OFFICE_USER_DATA) app.setPath('userData', process.env.AI_OFFICE_USER_DATA)
-  else if (isDev) app.setPath('userData', join(app.getPath('appData'), 'GenOffice Docs Dev'))
+  // single token: an XDG entry with a space breaks unquoted shell expansions,
+  // dotfile managers and .desktop Exec lines (#1817)
+  else if (isDev) app.setPath('userData', join(app.getPath('appData'), 'GenOffice-Docs-Dev'))
 
   const hasSingleInstanceLock = app.requestSingleInstanceLock()
   if (!hasSingleInstanceLock) {

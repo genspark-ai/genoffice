@@ -372,7 +372,9 @@ import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
 if (!app.isPackaged)
   app.setPath(
     'userData',
-    process.env.GENOFFICE_USER_DATA ?? join(app.getPath('appData'), 'GenOffice Dev'),
+    // single token: an XDG entry with a space breaks unquoted shell
+    // expansions, dotfile managers and .desktop Exec lines (#1817)
+    process.env.GENOFFICE_USER_DATA ?? join(app.getPath('appData'), 'GenOffice-Dev'),
   )
 
 /**
