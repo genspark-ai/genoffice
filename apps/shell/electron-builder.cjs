@@ -222,6 +222,28 @@ function assertModuleTreesPresent() {
   }
 }
 
+// The auto-update hole this guards: a release build bakes app-update.yml from
+// the publish config, and electron-updater's NsisUpdater.verifySignature reads
+// publisherName from it — absent means "return null", so every downloaded
+// installer is installed without checking who signed it and nobody is told. A
+// Windows build that bakes an update feed must therefore declare the publisher
+// name, and it must come from a real signing certificate: the value is
+// maintainer-owned (a certificate CN), so it is supplied per build rather than
+// hard-coded here. Builds with no publish config bake no app-update.yml, leave
+// in-app auto-update disabled, and so have no update signature to skip — they
+// stay packable without any of these variables.
+function assertWinUpdateVerification() {
+  if (!config.publish) return
+  if (!winPublisherName || !winPublisherName.trim()) {
+    throw new Error(
+      'Windows release bakes an update feed with no signature verification: set ' +
+        'GENOFFICE_WIN_PUBLISHER_NAME to the code signing certificate CN (and sign with ' +
+        'GENOFFICE_WIN_SIGN_MODE). Without publisherName electron-updater silently skips ' +
+        'signature verification of every installer it downloads.',
+    )
+  }
+}
+
 const CLI_BUNDLE_REL = '../../packages/cli/dist/genoffice.cjs'
 const CLI_BUILD_REL = '../../packages/cli/build.mjs'
 const CLI_VERSION_ENV = 'GENOFFICE_APP_VERSION'
@@ -657,10 +679,13 @@ const config = {
       assertUniversalSidecar()
       assertUniversalVisionOcr()
     }
-    if (context.electronPlatformName === 'win32' && !existsSync(join(__dirname, WIN_SIDECAR))) {
-      throw new Error(
-        `win extraResources source missing: ${WIN_SIDECAR} (cargo build --target ${winSidecarTarget} first)`,
-      )
+    if (context.electronPlatformName === 'win32') {
+      if (!existsSync(join(__dirname, WIN_SIDECAR))) {
+        throw new Error(
+          `win extraResources source missing: ${WIN_SIDECAR} (cargo build --target ${winSidecarTarget} first)`,
+        )
+      }
+      assertWinUpdateVerification()
     }
   },
   dmg: {
@@ -668,6 +693,24 @@ const config = {
   },
   afterAllArtifactBuild: 'build/notarize-dmg.js',
 }
+
+// Windows update signature verification. electron-updater verifies a
+// downloaded NSIS installer only when the app-update.yml baked into the app
+// declares publisherName: NsisUpdater.verifySignature reads that field and
+// returns null — no error, no check — when it is absent. electron-builder
+// fills it from win.signtoolOptions.publisherName, or derives it from a
+// certificate it can inspect itself (WIN_CSC_LINK, certificateFile,
+// certificateSubjectName); the custom sign hook below keeps that certificate
+// out of the config, so a release build that does not declare the name ships
+// an installer no client ever checks.
+//
+// GENOFFICE_WIN_PUBLISHER_NAME — publisher name exactly as in the code signing
+// certificate's CN (for the official release, the DigiCert KeyLocker subject
+// CN). Declaring it is what makes verification real: it is written into
+// app-update.yml and electron-updater then refuses any installer not signed by
+// that publisher. It is a maintainer-owned value that cannot live in this
+// repository, so it is supplied per build like the other release env vars.
+const winPublisherName = process.env.GENOFFICE_WIN_PUBLISHER_NAME
 
 // Windows in-package code signing. Security features that judge every PE
 // individually (Smart App Control, WDAC/AppLocker, AV heuristics) block
@@ -683,20 +726,40 @@ const config = {
 // extraResources. Unset (local / fork builds) keeps the old behavior:
 // electron-builder has no signing config and packages everything unsigned.
 const winSignMode = process.env.GENOFFICE_WIN_SIGN_MODE
+const winSignScript = join(__dirname, '../../scripts/win-sign.cjs')
 if (winSignMode) {
   if (winSignMode !== 'test' && winSignMode !== 'production') {
     throw new Error(`GENOFFICE_WIN_SIGN_MODE must be "test" or "production", got "${winSignMode}"`)
+  }
+  // Signing is only half of the contract. Without a publisher name the baked
+  // app-update.yml has no publisherName, so every client would install the
+  // downloaded installer without checking who signed it — a signed build
+  // nobody verifies. Refuse that combination instead of producing it.
+  if (!winPublisherName || !winPublisherName.trim()) {
+    throw new Error(
+      `GENOFFICE_WIN_SIGN_MODE=${winSignMode} requires GENOFFICE_WIN_PUBLISHER_NAME: ` +
+        'electron-updater verifies a downloaded Windows installer only when app-update.yml ' +
+        'declares publisherName, and electron-builder cannot derive it from a custom sign hook.',
+    )
+  }
+  // The script is deliberately not tracked here (it holds the certificate
+  // contract and the secret env-var names), so a mode pointing at a missing
+  // script must say that instead of failing deep inside electron-builder's
+  // signing step.
+  if (!existsSync(winSignScript)) {
+    throw new Error(
+      `GENOFFICE_WIN_SIGN_MODE=${winSignMode} but the signing script is missing: ${winSignScript}`,
+    )
   }
   config.win.signtoolOptions = {
     // Single pass per file: the sha1+sha256 dual-signing default is a
     // pre-Win8 relic and would invoke the hook twice per binary.
     signingHashAlgorithms: ['sha256'],
+    publisherName: winPublisherName.trim(),
     sign: (configuration) => {
-      execFileSync(
-        process.execPath,
-        [join(__dirname, '../../scripts/win-sign.cjs'), winSignMode, configuration.path],
-        { stdio: 'inherit' },
-      )
+      execFileSync(process.execPath, [winSignScript, winSignMode, configuration.path], {
+        stdio: 'inherit',
+      })
       return Promise.resolve()
     },
   }
@@ -708,6 +771,14 @@ if (updateUrl) {
       provider: 'generic',
       url: updateUrl.replace(/\/+$/, ''),
       channel: 'latest',
+      // Written verbatim into the packaged app-update.yml, which is the only
+      // place electron-updater looks: with it, a downloaded installer whose
+      // signature publisher differs is rejected (ERR_UPDATER_INVALID_SIGNATURE).
+      // Without it, verification is skipped in silence — see assertWinUpdateVerification.
+      // Array form because that is all electron-builder's publish schema accepts.
+      ...(winPublisherName && winPublisherName.trim()
+        ? { publisherName: [winPublisherName.trim()] }
+        : {}),
     },
   ]
 }
