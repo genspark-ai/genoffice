@@ -1772,6 +1772,62 @@ export interface MappedRangeRead {
 /// stay under it (just below MAX_RANGE_CELLS in shared/desktop-api.ts).
 const SIDECAR_READ_BATCH_CELLS = 90_000
 
+/// A crashed sidecar is replaced with a process that has never heard of the
+/// session ids the renderer is holding, so every read from then on comes back
+/// rejected and the grid can never load data again. The sidecar names the
+/// condition with exactly this message (xlsx-engine read_range), which is also
+/// the wording sheets-main's own session guard uses.
+const UNKNOWN_WORKBOOK_SESSION = 'Unknown workbook session.'
+
+function isSessionLost(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(UNKNOWN_WORKBOOK_SESSION)
+}
+
+/// One recovery at a time: a crash fails every in-flight read at once, and
+/// each would otherwise re-open the file separately.
+let sessionRecoveryInFlight: Promise<boolean> | null = null
+/// Workbooks already given one automatic recovery. A second loss in the same
+/// open workbook is a real failure, not the same crash seen twice — re-opening
+/// in a loop would leave the user with a pile of dead sessions.
+const sessionRecoveryAttempted = new WeakSet<object>()
+
+/// Re-opens the workbook to get a live sidecar session and adopts its id, so
+/// reads resume instead of failing forever against a process that has never
+/// seen our session. Unsaved edits are untouched: they live in the edit
+/// journal, which is keyed by sheet rather than by session. Only the streaming
+/// memos are dropped — the new session streams the file from scratch, and
+/// leaving them would claim the windows are already loaded and keep the grid
+/// blank.
+export async function recoverSidecarSession(state: LazyWorkbookState): Promise<boolean> {
+  if (sessionRecoveryInFlight) return sessionRecoveryInFlight
+  if (sessionRecoveryAttempted.has(state)) return false
+  sessionRecoveryAttempted.add(state)
+  sessionRecoveryInFlight = (async () => {
+    const path = state.file.path
+    // Nothing on disk to re-open (a new or imported workbook): leave the
+    // status message, only a manual open can recover these.
+    if (!path) return false
+    const [reopened] = (await window.desktopApi.openWorkbooksForMerge([path])) ?? []
+    if (!reopened) return false
+    state.file = { ...state.file, sessionId: reopened.sessionId }
+    for (const timer of state.retryTimers.values()) clearTimeout(timer)
+    state.retryTimers.clear()
+    state.loadedRanges.clear()
+    state.loadingKeys.clear()
+    state.frozenStripKeys.clear()
+    return true
+  })()
+  try {
+    return await sessionRecoveryInFlight
+  } catch {
+    // A failed re-open is reported by the read that triggered it; do not let
+    // the attempt block later ones.
+    return false
+  } finally {
+    sessionRecoveryInFlight = null
+  }
+}
+
 /// Reads a screen-space range, translating through the sheet's journaled
 /// structural operations. Returns null when the range is entirely
 /// journal-owned (inserted this session — nothing streams into it). A
@@ -1779,6 +1835,24 @@ const SIDECAR_READ_BATCH_CELLS = 90_000
 /// buffered viewport at far zoom-out — can exceed the sidecar's per-read
 /// cell budget, so reads are split into row batches.
 export async function readSheetRangeMapped(
+  state: LazyWorkbookState,
+  sheetId: string,
+  screenRange: IRange,
+  sheet: WorkbookFile['sheets'][number],
+): Promise<MappedRangeRead | null> {
+  try {
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
+  } catch (error: unknown) {
+    // Every range read in the app funnels through here, so this is the one
+    // place a lost session can be noticed. Without it the crash only ever
+    // produced a status-bar message over a permanently empty sheet, and the
+    // user had to reopen the file by hand.
+    if (!isSessionLost(error) || !(await recoverSidecarSession(state))) throw error
+    return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
+  }
+}
+
+async function readSheetRangeMappedOnce(
   state: LazyWorkbookState,
   sheetId: string,
   screenRange: IRange,
@@ -1891,6 +1965,31 @@ const visualUndoRegistry = new Map<number, VisualUndoStep>()
 let visualUndoSequence = 0
 const visualUndoRuntimes = new WeakSet<object>()
 
+/// How many visual-edit steps stay resolvable, evicted least-recently-used
+/// first. A token only matters while its undo entry is still on the stack, and
+/// a user can only step back a bounded number of times — Excel's own undo depth
+/// is 100 — so a token deeper than that can never be run again. Past the bound
+/// the evicted step's ⌘Z goes inert (the command handler returns false); it does
+/// not corrupt the stack or the redo side. Without a bound the registry grew for
+/// the life of the renderer process, retaining every chart/shape edit's closure
+/// pair for the whole session.
+export const VISUAL_UNDO_REGISTRY_CAP = 100
+
+/// Registers a step and returns the token its mutation pair carries. Evicts
+/// least-recently-used entries past VISUAL_UNDO_REGISTRY_CAP; `Map` iterates in
+/// insertion order, so the first key is the coldest entry. Callers re-insert on
+/// use (see the command handler) to keep an actively-stepped-through step warm.
+function registerVisualUndoStep(step: VisualUndoStep): number {
+  const token = ++visualUndoSequence
+  visualUndoRegistry.set(token, step)
+  while (visualUndoRegistry.size > VISUAL_UNDO_REGISTRY_CAP) {
+    const coldest = visualUndoRegistry.keys().next()
+    if (coldest.done) break
+    visualUndoRegistry.delete(coldest.value)
+  }
+  return token
+}
+
 /// Appends a registry step to the undo entry a Univer command just pushed, so
 /// ONE ⌘Z reverts the whole user action (cells + shadow journal op) instead of
 /// needing a second, visually-inert undo press — and no extra undo-carry
@@ -1929,8 +2028,7 @@ export function attachVisualUndoToLastStep(
     }
   ).__getInjector()
   ensureVisualUndoCommand(injector, runtime)
-  const token = ++visualUndoSequence
-  visualUndoRegistry.set(token, step)
+  const token = registerVisualUndoStep(step)
   const mutation = (direction: 'undo' | 'redo') => ({
     id: VISUAL_UNDO_COMMAND_ID,
     params: { token, direction },
@@ -1986,6 +2084,10 @@ function ensureVisualUndoCommand(
       handler: (_accessor, params) => {
         const entry = params ? visualUndoRegistry.get(params.token) : undefined
         if (!entry || !params) return false
+        // Refresh recency so a step the user is stepping through is never the
+        // one evicted ahead of untouched entries.
+        visualUndoRegistry.delete(params.token)
+        visualUndoRegistry.set(params.token, entry)
         if (params.direction === 'undo') entry.undo()
         else entry.redo()
         return true
@@ -2002,8 +2104,7 @@ export function pushVisualUndo(runtime: UniverRuntime, step: VisualUndoStep): vo
     }
   ).__getInjector()
   ensureVisualUndoCommand(injector, runtime)
-  const token = ++visualUndoSequence
-  visualUndoRegistry.set(token, step)
+  const token = registerVisualUndoStep(step)
   injector
     .get<{
       pushUndoRedo(item: {
