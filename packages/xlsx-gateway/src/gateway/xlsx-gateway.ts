@@ -554,6 +554,15 @@ export async function applyPlanToXlsx(
   }
 
   for (const change of plan.cellChanges) {
+    // The plan's address is an unconstrained string and reaches the worksheet
+    // regexes below (patchCell, parseCell) as raw pattern source, where a
+    // quote or a `.*` stops matching the intended <c> and takes a sibling
+    // with it. This is the only boundary a ChangePlan crosses unvalidated
+    // (mutateXlsxFile and WorkbookAdapter.plan both land here), so reject a
+    // non-literal reference before any pattern is built from it.
+    if (!isGridCellAddress(change.address)) {
+      throw new Error(`Invalid cell address in plan: ${change.address}`)
+    }
     const sheetName = sheetNamesById[change.sheetId]
     if (!sheetName) throw new Error(`Missing XLSX sheet mapping for ${change.sheetId}.`)
     const worksheetPath = await resolveWorksheetPath(pkg, sheetName)
