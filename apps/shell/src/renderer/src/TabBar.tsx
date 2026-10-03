@@ -162,10 +162,8 @@ export function TabBar() {
     const tab = tabsRef.current.find((tb) => tb.id === r.id)
     const value = r.value.trim()
     if (!tab?.filePath || !value) return
-    const ext = fileExtension(tab.filePath)
-    const newName = ext ? `${value}.${ext}` : value
-    if (newName === tab.title) return
-    void window.aiOffice.renameFile(tab.filePath, newName).then((result) => {
+    if (value === tab.title) return
+    void window.aiOffice.renameFile(tab.filePath, value).then((result) => {
       if (!result.ok) window.alert(result.error ?? t('renameFailed'))
       // Home shares this renderer and only re-pulls on window focus, which the
       // rename input already holds: tell it the recents / folder rows moved.
@@ -478,12 +476,9 @@ export function TabBar() {
                 // the input mounts and autofocuses inside this dispatch; the
                 // default mousedown focus step would blur it straight away
                 event.preventDefault()
-                const ext = fileExtension(tab.filePath)
-                const base =
-                  ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
-                    ? tab.title.slice(0, -(ext.length + 1))
-                    : tab.title
-                setRenaming({ id: tab.id, value: base })
+                // the whole name, extension included: the shell owns which
+                // extensions an app can open, so only it may change one
+                setRenaming({ id: tab.id, value: tab.title })
               }}
               onPointerDown={(event) => {
                 if (event.button !== 0) return

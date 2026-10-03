@@ -373,7 +373,7 @@ export class TabManager {
       id,
       kind: 'markdown',
       view,
-      title: openPath ? basename(openPath) : this.untitled('markdown', 'AI Markdown'),
+      title: openPath ? basename(openPath) : this.untitled('markdown', 'AI Text'),
       filePath: openPath,
     })
     this.activateTab(id)
