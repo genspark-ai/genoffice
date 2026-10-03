@@ -743,6 +743,53 @@ describe('parseFileToText: xlsx', () => {
     expect(text).toContain('ok | orphan')
   })
 
+  it('keeps every value when one row declares the same ref N times, without a quadratic splice', async () => {
+    // Every cell below collides on an already-occupied column, and an insert
+    // per collision shifts the whole row built so far: 40,000 of them measured
+    // 3.9 s inside splice for one row of a few-hundred-KB sheet. The counts are
+    // the assertions that must not flake; row 2's order is the deterministic
+    // signature of the linear path (the insert-per-collision loop walked the
+    // values backwards), so this needs no wall clock to catch the regression.
+    const DUPES = 400
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1">' +
+        Array.from({ length: DUPES }, () => '<c r="A1"><v>x</v></c>').join('') +
+        '</row>' +
+        '<row r="2"><c r="B1"><v>t0</v></c>' +
+        Array.from({ length: DUPES }, (_, i) => `<c r="B1"><v>t${i + 1}</v></c>`).join('') +
+        '</row>' +
+        '</sheetData></worksheet>',
+    )
+    const bytes = await zip.generateAsync({ type: 'uint8array' })
+    const rows = (await xlsxToText(bytes)).split('\n')
+    const repeated = rows[1].split(' | ')
+    expect(repeated).toHaveLength(DUPES)
+    expect(repeated.filter((value) => value === 'x')).toHaveLength(DUPES)
+    // The first collision still displaces t0 one slot right of B1; every later
+    // one appends at the tail in document order rather than shifting the row.
+    expect(rows[2]).toBe(
+      ` | t1 | t0 | ${Array.from({ length: DUPES - 1 }, (_, i) => `t${i + 2}`).join(' | ')}`,
+    )
+  })
+
   it('keeps an appended cell when a later explicit ref targets its column', async () => {
     const zip = new JSZip()
     zip.file(

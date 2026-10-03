@@ -240,6 +240,15 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
     const sharedFormulas: SharedFormulas = new Map()
     for (const row of rows) {
       const cells: string[] = []
+      // A row that repeats one ref N times (<c r="A1"> 40,000 times) collides on
+      // every cell, and cells[0] is never empty after the first write, so an
+      // insert per collision shifts an array of length i each time: Theta(N^2)
+      // element moves for one row. Measured on the loop body alone, N=40,000
+      // spent 3.9 s inside splice for a few-hundred-KB sheet. The first
+      // collision still inserts, so a lone displaced value keeps its declared
+      // column; every later one appends at the tail, which is monotonic and
+      // makes the row O(n).
+      let spilled = false
       for (const cell of asArray(row.c as Cell | Cell[])) {
         const text = cellText(cell, shared, dateStyles, date1904, sharedFormulas)
         const ref = cell['@_r']
@@ -251,8 +260,18 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
         // A ref landing on a slot an earlier ref-less or malformed cell was
         // appended to would drop that value silently: push it right instead.
         // An empty slot (unsorted but valid refs like C1,A1) is just taken.
-        if (col >= 0 && col < MAX_XLSX_COLS && col < cells.length && cells[col] !== '')
-          cells.splice(col, 0, '')
+        // Only the first collision may insert (see `spilled` above); the rest
+        // append, which is the same result without the quadratic shift.
+        if (col >= 0 && col < MAX_XLSX_COLS && col < cells.length && cells[col] !== '') {
+          if (!spilled) {
+            cells.splice(col, 0, '')
+            spilled = true
+          } else {
+            cells.push(text)
+            if (text.trim()) hasData = true
+            continue
+          }
+        }
         const target = col >= 0 && col < MAX_XLSX_COLS ? col : cells.length
         while (cells.length < target) cells.push('')
         cells[target] = text
