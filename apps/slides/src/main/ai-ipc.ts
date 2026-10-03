@@ -508,13 +508,14 @@ export function registerSlidesOnlyAiIpc(): void {
     async (
       _event,
       name: string,
-      data: { topic: string; styleSkill: string; createdAt: string },
+      data: { topic: string; styleSkill: string; createdAt: string; layout?: unknown },
     ): Promise<{ ok: boolean; error?: string }> => {
       try {
         const dir = STYLE_TEMPLATES_DIR()
         // Filename: replace illegal characters in the name with _ then truncate to 64 chars
         const safeName = name.replace(/[/\\:*?"<>|]/g, '_').slice(0, 64)
         if (!safeName) return { ok: false, error: tm('errTplNameInvalid') }
+        // `layout` (the deck's chrome skeleton) rides along verbatim when present
         writeJsonAtomic(join(dir, `${safeName}.json`), { ...data, name: safeName })
         return { ok: true }
       } catch (err) {
@@ -562,15 +563,23 @@ export function registerSlidesOnlyAiIpc(): void {
     (
       _event,
       name: string,
-    ): { ok: boolean; styleSkill?: string; topic?: string; error?: string } => {
+    ): { ok: boolean; styleSkill?: string; topic?: string; layout?: unknown; error?: string } => {
       try {
         const dir = STYLE_TEMPLATES_DIR()
         const safeName = name.replace(/[/\\:*?"<>|]/g, '_').slice(0, 64)
         const filePath = join(dir, `${safeName}.json`)
         if (!existsSync(filePath)) return { ok: false, error: tm('errTplMissing', { name }) }
-        const raw = readJson<{ styleSkill?: string; topic?: string }>(filePath, {})
+        const raw = readJson<{ styleSkill?: string; topic?: string; layout?: unknown }>(
+          filePath,
+          {},
+        )
         if (!raw.styleSkill) return { ok: false, error: tm('errTplNoSkill', { name }) }
-        return { ok: true, styleSkill: raw.styleSkill, topic: raw.topic ?? '' }
+        return {
+          ok: true,
+          styleSkill: raw.styleSkill,
+          topic: raw.topic ?? '',
+          ...(raw.layout !== undefined && raw.layout !== null ? { layout: raw.layout } : {}),
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }

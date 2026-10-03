@@ -1067,12 +1067,13 @@ export function AiPanel({
         const ctxBlock = args.context
           ? `\n\nReference material (all real names/figures/facts come from here; do not invent):\n${args.context.slice(0, 4000)}`
           : ''
+        const skeletonBlock = args.skeleton ? `\n\n${args.skeleton}` : ''
         const userMsg =
           `This is the deck's unified style (this page must follow it strictly to stay consistent across pages):\n${args.style}\n\n` +
           (args.topic ? `Deck topic: ${args.topic}\n` : '') +
           `Deck-wide narrative Core Hook: ${args.coreHook}\n\n` +
           `Now design page ${args.pageIndex}/${args.totalPages}.\n` +
-          `Title: ${args.title}\nLayout: ${args.layout}\nContent brief (use real data/facts): ${args.brief}${imgBlock}${ctxBlock}\n\n` +
+          `Title: ${args.title}\nLayout: ${args.layout}\nContent brief (use real data/facts): ${args.brief}${imgBlock}${ctxBlock}${skeletonBlock}\n\n` +
           "Return only this page's spec JSON."
         // One repair round: feed the exact validation error back so the model can fix its JSON
         let lastErr = ''
@@ -1112,10 +1113,13 @@ export function AiPanel({
             briefParts.push(
               `Reference material (all real names/figures/facts come from here; do not invent):\n${args.context.slice(0, 4000)}`,
             )
+          // The cloud service owns its own page prompt; the template chrome rides
+          // in as part of the style so its pages pin the same geometry
+          const styleSkill = args.skeleton ? `${args.style}\n\n${args.skeleton}` : args.style
           const res = await window.slidesApi.cloudGeneratePage({
             brief: briefParts.join('\n\n'),
             title: args.title,
-            styleSkill: args.style,
+            styleSkill,
             deckContext: {
               ...(args.topic ? { topic: args.topic } : {}),
               core_hook: args.coreHook,
