@@ -1,8 +1,14 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { describe, expect, it, vi } from 'vitest'
-import { createSavedAnnotCountsLoader } from '../src/renderer/annotation-catalog'
+import { createSavedAnnotCountsLoader, loadSavedAnnots } from '../src/renderer/annotation-catalog'
 import type { SavedMarkupAnnot } from '../src/renderer/edit-state'
-import type { SavedNoteAnnot } from '../src/renderer/note-threads'
+import type { PdfJsAnnotData, SavedNoteAnnot } from '../src/renderer/note-threads'
+
+/** pdf.js hands out rect/quadPoints; a malformed file can leave either one unusable */
+type StubAnnot = Omit<PdfJsAnnotData, 'rect'> & {
+  rect?: number[]
+  quadPoints?: Float32Array
+}
 
 const doc = { numPages: 2 } as PDFDocumentProxy
 const markup = (pageIndex: number, objNum: number): SavedMarkupAnnot => ({
@@ -61,5 +67,55 @@ describe('createSavedAnnotCountsLoader', () => {
     await loadCounts()
 
     expect(loadPage).toHaveBeenCalledTimes(1)
+  })
+})
+
+function annotDoc(annots: StubAnnot[]): PDFDocumentProxy {
+  return {
+    numPages: 1,
+    getPage: async () => ({ getAnnotations: async () => annots }),
+  } as unknown as PDFDocumentProxy
+}
+
+/** Highlight 9 (MARKUP_TYPE_BY_ANNOT) with one quad and a usable rect */
+const VALID_HIGHLIGHT: StubAnnot = {
+  id: '7R',
+  annotationType: 9,
+  rect: [10, 700, 90, 712],
+  quadPoints: new Float32Array([10, 712, 90, 712, 10, 700, 90, 700]),
+}
+
+/** Text 1 (PDFJS_ANNOT_TEXT) — a note, so the page is non-empty even if the catch fires */
+const NOTE: StubAnnot = {
+  id: '9R',
+  annotationType: 1,
+  rect: [0, 0, 20, 20],
+}
+
+const VALID_HIGHLIGHT_SAVED = {
+  pageIndex: 0,
+  objNum: 7,
+  type: 'highlight',
+  quads: [[10, 712, 90, 712, 10, 700, 90, 700]],
+  rect: [10, 700, 90, 712],
+}
+
+describe('loadSavedAnnots', () => {
+  it('skips a markup with a short rect and keeps the valid ones on the page', async () => {
+    const malformed: StubAnnot = { ...VALID_HIGHLIGHT, id: '8R', rect: [0, 0] }
+
+    const page = await loadSavedAnnots(annotDoc([VALID_HIGHLIGHT, malformed, NOTE]), 0)
+
+    expect(page.markups).toEqual([VALID_HIGHLIGHT_SAVED])
+    expect(page.notes).toHaveLength(1)
+  })
+
+  it('skips a markup with no rect at all instead of failing the whole page', async () => {
+    const malformed: StubAnnot = { ...VALID_HIGHLIGHT, id: '8R', rect: undefined }
+
+    const page = await loadSavedAnnots(annotDoc([VALID_HIGHLIGHT, malformed, NOTE]), 0)
+
+    expect(page.markups).toEqual([VALID_HIGHLIGHT_SAVED])
+    expect(page.notes).toHaveLength(1)
   })
 })

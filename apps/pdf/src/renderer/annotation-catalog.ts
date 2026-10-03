@@ -30,7 +30,12 @@ export async function loadSavedAnnots(
       const type = MARKUP_TYPE_BY_ANNOT[a.annotationType]
       // Only ref-backed annots can be addressed for deletion (id "123R" → object 123)
       const objNum = /^(\d+)R$/.exec(a.id)
+      // The rect guard matters more than it looks: one unreadable annot throws inside
+      // the page-wide catch below, which returns an empty page and silently drops every
+      // valid highlight and note on it. `< 4` skips only the bad annot — a good one with
+      // surplus numbers is kept.
       if (!type || !objNum || !a.quadPoints || a.quadPoints.length < 8) return []
+      if (!Array.isArray(a.rect) || a.rect.length < 4) return []
       const quads: number[][] = []
       for (let q = 0; q + 8 <= a.quadPoints.length; q += 8)
         quads.push([...a.quadPoints.slice(q, q + 8)])
