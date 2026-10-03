@@ -440,7 +440,7 @@ const api: SlidesApi = {
     ipcRenderer.invoke('ai:save-sidecar', data),
   saveStyleTemplate: (
     name: string,
-    data: { topic: string; styleSkill: string; createdAt: string },
+    data: { topic: string; styleSkill: string; createdAt: string; layout?: unknown },
   ) => ipcRenderer.invoke('ai:save-style-template', name, data),
   listStyleTemplates: () => ipcRenderer.invoke('ai:list-style-templates'),
   loadStyleTemplate: (name: string) => ipcRenderer.invoke('ai:load-style-template', name),
