@@ -14,9 +14,12 @@ const BULLET_GLYPHS: Record<string, string> = {
 const DEFAULT_BULLETS = ['•', '◦', '▪', '•', '◦', '▪', '•', '◦', '▪']
 
 function toLetters(value: number): string {
-  // Word: 1..26 -> A..Z, 27 -> AA (repeated same letter, not positional notation)
-  const n = ((value - 1) % 26) + 1
-  const repeat = Math.floor((value - 1) / 26) + 1
+  // Word: 1..26 -> A..Z, 27 -> AA (repeated same letter, not positional notation).
+  // A missing w:start arrives as 0, which repeats 0 times and leaves an empty
+  // marker (a bare "." for "%1."), so clamp up to the first letter as toRoman does.
+  const v = Math.max(1, value)
+  const n = ((v - 1) % 26) + 1
+  const repeat = Math.floor((v - 1) / 26) + 1
   return String.fromCharCode(64 + n).repeat(repeat)
 }
 
@@ -308,6 +311,15 @@ export function formatNumber(rawValue: number, numFmt: string, customFormat?: st
 
 /** w:isLgl leaves Arabic-digit formats alone and turns every other one into decimal */
 const ARABIC_FORMATS = new Set(['decimal', 'decimalZero'])
+const LETTER_FORMATS = new Set(['lowerLetter', 'upperLetter'])
+
+/** The value a level's counter starts at. A missing w:start parses as 0, which
+ * Word renders as "0." for decimal, but the letter alphabets are 1-based: 0 has
+ * no letter and would leave a bare "." marker, so they start at the first letter. */
+function counterStart(level: NumberingLevel | undefined): number {
+  if (!level) return 1
+  return LETTER_FORMATS.has(level.numFmt) ? Math.max(1, level.start) : level.start
+}
 
 export interface ListItemRef {
   numId: string | null
@@ -397,21 +409,21 @@ export function computeListMarkerInfos(
       if (def.startOverrides[a] !== undefined && !applied.has(aKey)) {
         applied.add(aKey)
         c[a] = def.startOverrides[a]
-      } else c[a] = def.levels[a]?.start ?? 1
+      } else c[a] = counterStart(def.levels[a])
     }
     const overrideKey = `${def.numId}:${lvl}`
     if (def.startOverrides[lvl] !== undefined && !applied.has(overrideKey)) {
       applied.add(overrideKey)
       c[lvl] = def.startOverrides[lvl]
     } else {
-      c[lvl] = (c[lvl] ?? level.start - 1) + 1
+      c[lvl] = (c[lvl] ?? counterStart(level) - 1) + 1
     }
     c.length = lvl + 1
 
     const marker = level.lvlText.replace(/%(\d)/g, (_, d: string) => {
       const refLvl = Number(d) - 1
       const refDef = def.levels[refLvl]
-      const value = c[refLvl] ?? refDef?.start ?? 1
+      const value = c[refLvl] ?? counterStart(refDef)
       const fmt = refDef?.numFmt ?? 'decimal'
       if (level.isLgl && !ARABIC_FORMATS.has(fmt)) return String(value)
       return formatNumber(value, fmt, refDef?.customFormat)

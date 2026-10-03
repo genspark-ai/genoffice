@@ -157,6 +157,35 @@ describe('missing w:start default', () => {
     )
     expect(markers).toEqual(['0.', '1.'])
   })
+
+  it('a lettered w:lvl without w:start does not render an empty marker', async () => {
+    const NO_START_LETTER =
+      XML_DECL +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0">' +
+      '<w:lvl w:ilvl="0"><w:numFmt w:val="upperLetter"/><w:lvlText w:val="%1."/></w:lvl>' +
+      '</w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '</w:numbering>'
+    const li = (text: string) =>
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+      `<w:r><w:t>${text}</w:t></w:r></w:p>`
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: li('a') + li('b'), numberingXml: NO_START_LETTER }),
+    )
+    // the level still parses with start 0; the letter counter floors at the first letter
+    expect(doc.numbering.get('1')!.levels[0].start).toBe(0)
+    expect(
+      computeListMarkers(
+        [
+          { numId: '1', ilvl: 0 },
+          { numId: '1', ilvl: 0 },
+        ],
+        doc.numbering,
+      ),
+    ).toEqual(['A.', 'B.'])
+    expect(formatNumber(0, 'upperLetter')).toBe('A')
+  })
 })
 
 describe('greek letter formats', () => {
