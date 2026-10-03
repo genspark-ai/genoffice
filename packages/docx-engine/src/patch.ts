@@ -2434,7 +2434,17 @@ function applyEvenAndOddHeaders(xml: string, on: boolean): string {
 
 /** Set, replace or remove <w:background> (must be the first child of w:document). */
 function applyPageColor(documentXml: string, color: string | null): string {
-  let xml = documentXml.replace(/<w:background[^>]*\/>/, '')
+  // Both spellings are valid OOXML: the background is written self-closing
+  // (<w:background w:color="..."/>) or as an element pair carrying a VML fill
+  // (<w:background ...><v:background .../></w:background>). Removing only the
+  // self-closing form left the paired copy behind, so a save emitted two
+  // w:background children; CT_Document admits one and Word then reports the
+  // file as corrupt. Strip the pair whole, VML child included, and re-emit the
+  // canonical self-closing form, for the same reason stripElement() does.
+  let xml = documentXml.replace(
+    /<w:background[^>]*\/>|<w:background[^>]*>[\s\S]*?<\/w:background>/g,
+    '',
+  )
   if (color) {
     xml = xml.replace(/(<w:document[^>]*>)/, `$1<w:background w:color="${escapeXmlAttr(color)}"/>`)
   }
