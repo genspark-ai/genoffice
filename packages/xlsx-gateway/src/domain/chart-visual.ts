@@ -594,12 +594,21 @@ export function chartDataFromValues(
 }
 
 /// `'Sheet Name'!$B$2:$B$13` (chart `c:f` style) → sheet name + plain range.
+/// A range is a cell, a cell range, or a whole-column range (`$A:$A`) — the
+/// same three shapes the save side shifts (FORMULA_REFERENCE_PATTERN). Case
+/// is accepted because parseAddress downstream is case-strict, so the range is
+/// normalised here. A defined name names no sheet and stays null: rewriting
+/// one would need the defined-names table, not a sheet rename.
 export function splitSheetRef(ref: string): { sheetName: string; range: string } | null {
-  const match = /^'?((?:[^'!]|'')+?)'?!(\$?[A-Z]{1,3}\$?[0-9]+(?::\$?[A-Z]{1,3}\$?[0-9]+)?)$/.exec(
-    ref.trim(),
-  )
+  const match =
+    /^'?((?:[^'!]|'')+?)'?!(\$?[A-Z]{1,3}\$?[0-9]+(?::\$?[A-Z]{1,3}\$?[0-9]+)?|\$?[A-Z]{1,3}:\$?[A-Z]{1,3})$/i.exec(
+      ref.trim(),
+    )
   if (!match?.[1] || !match[2]) return null
-  return { sheetName: match[1].replace(/''/g, "'"), range: match[2].replace(/\$/g, '') }
+  return {
+    sheetName: match[1].replace(/''/g, "'"),
+    range: match[2].toUpperCase().replace(/\$/g, ''),
+  }
 }
 
 /// Rewrites the sheet-name qualifier of a chart `c:f` reference, keeping the
