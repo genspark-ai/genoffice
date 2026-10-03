@@ -279,6 +279,60 @@ function insertSettingsChild(xml: string, localName: string, childXml: string): 
 const relTagWithId = (id: string): RegExp =>
   new RegExp(`<Relationship\\s[^>]*\\bId\\s*=\\s*(["'])${id}\\1[^>]*/>`)
 
+/** The `<Relationship ` half of relTagWithId's shape, which anchors a candidate tag. */
+const RELATIONSHIP_TAG_MARKER = /<Relationship\s/
+
+/**
+ * An exact `Id="rIdN"` inside a candidate tag. The id text is captured
+ * verbatim, so a zero-padded `rId02` is kept distinct from `rId2` exactly as
+ * relTagWithId's literal comparison keeps them distinct.
+ */
+const RELATIONSHIP_TAG_ID = /\bId\s*=\s*(["'])(rId\d+)\1/g
+
+/**
+ * Every relationship id a .rels part already hands out. One pass over the part,
+ * answering the same question as relTagWithId for every id at once: a tag only
+ * counts when it opens with `<Relationship `, self-closes, and spells that id
+ * inside itself, so the ids the allocator treats as taken stay exactly the ids
+ * the reclaim can free. Testing one candidate id at a time instead costs a full
+ * scan of the part per candidate, which is quadratic in the relationship count -
+ * a few MB of relationships then takes minutes to allocate a single id.
+ */
+const occupiedRelIds = (relsXml: string): Set<string> => {
+  const taken = new Set<string>()
+  let pos = 0
+  while (pos < relsXml.length) {
+    const gt = relsXml.indexOf('>', pos)
+    if (gt === -1) break
+    // relTagWithId's `[^>]*` cannot cross a `>`, so one candidate tag is one
+    // `>`-delimited run, and it only matches when that run self-closes
+    if (relsXml[gt - 1] === '/') {
+      const chunk = relsXml.slice(pos, gt)
+      const marker = chunk.search(RELATIONSHIP_TAG_MARKER)
+      if (marker !== -1) {
+        RELATIONSHIP_TAG_ID.lastIndex = marker
+        let m: RegExpExecArray | null
+        while ((m = RELATIONSHIP_TAG_ID.exec(chunk)) !== null) taken.add(m[2])
+      }
+    }
+    pos = gt + 1
+  }
+  return taken
+}
+
+/**
+ * Lowest id from rId1 this part does not already hand out, so a gap is reused
+ * rather than skipped. Deliberately not maxRelId + 1: that never fills a gap and
+ * starts at rId1001 for an absent part, so it would hand out a different id
+ * than the part's own numbering implies.
+ */
+export const nextFreeRelId = (relsXml: string): string => {
+  const taken = occupiedRelIds(relsXml)
+  let n = 1
+  while (taken.has(`rId${n}`)) n++
+  return `rId${n}`
+}
+
 export type ParsedDocFull = ParsedDoc & { extras: ParseExtras }
 
 /** Body content in final editor order (hidden trailing elements are appended automatically). */
@@ -965,9 +1019,7 @@ export async function saveDocx(
     else if (!isPictureWatermark(watermark)) xml = watermarkParagraphXml(watermark)
     else {
       const mediaPath = landMedia(watermark.image)
-      let n = 1
-      while (relTagWithId(`rId${n}`).test(relsXml)) n++
-      const rId = `rId${n}`
+      const rId = nextFreeRelId(relsXml)
       relsXml = relsXml.replace(
         '</Relationships>',
         `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${mediaPath.replace(/^word\//, '')}"/></Relationships>`,
