@@ -39,6 +39,7 @@ import { applySpellingSuggestion } from '../editor/spell-replace'
 import { linkRangeAt, linkTarget, removeLink } from '../editor/link-actions'
 import { fieldRangeAt, toggleFieldCodes, type FieldRange } from '../editor/field-codes'
 import type { SpellLanguages } from '../../shared/ipc'
+import { TRANSLATE_LANGS, appLangKey } from './translate-langs'
 
 export { FontDialog } from './FontDialog'
 
@@ -92,17 +93,6 @@ interface EditorContextMenuProps {
   /** re-mark existing text after the session dictionary or languages changed */
   onRespell?: () => void
 }
-
-/** target languages mirrored from the Review → Translate dropdown; the localized label also goes into the LLM prompt */
-const TRANSLATE_TARGETS: Array<{ labelKey: StringKey }> = [
-  { labelKey: 'appLangEnglish' },
-  { labelKey: 'appLangSimplifiedChinese' },
-  { labelKey: 'appLangJapanese' },
-  { labelKey: 'appLangKorean' },
-  { labelKey: 'appLangFrench' },
-  { labelKey: 'appLangGerman' },
-  { labelKey: 'appLangSpanish' },
-]
 
 const MENU_WIDTH = 240
 
@@ -692,21 +682,21 @@ export function EditorContextMenu({
         {item(t('appTranslate'), { disabled: !hasSelection, submenuKey: 'translate', ai: true })}
         {submenu === 'translate' && hasSelection && (
           <div className="ctx-submenu">
-            {TRANSLATE_TARGETS.map((target) => (
+            {TRANSLATE_LANGS.map(({ code }) => (
               <button
-                key={target.labelKey}
+                key={code}
                 className="ctx-item"
                 onClick={run(() =>
                   onAiPreset(
                     t('appTranslateSelectionPrompt', {
-                      lang: t(target.labelKey),
+                      lang: t(appLangKey(code)),
                       text: selectedText,
                     }),
                   ),
                 )}
               >
                 <span className="ctx-label">
-                  {t('appTranslateTo', { lang: t(target.labelKey) })}
+                  {t('appTranslateTo', { lang: t(appLangKey(code)) })}
                 </span>
               </button>
             ))}
