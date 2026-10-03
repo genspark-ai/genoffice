@@ -70,6 +70,7 @@ import {
   type TableStyleFlags,
 } from './table-style'
 import { decodeNumericCharRefs } from './xml-utils'
+import { clampPosEmu } from './generate'
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -2987,7 +2988,7 @@ function parseTable(
 ): TableElement | null {
   const gridRaw = tbl['a:tblGrid']?.['a:gridCol']
   const gridCols: any[] = Array.isArray(gridRaw) ? gridRaw : gridRaw ? [gridRaw] : []
-  const colWidths = gridCols.map((g) => intOr(g['@_w'], 0))
+  const colWidths = gridCols.map((g) => clampPosEmu(intOr(g['@_w'], 0)))
   const trsRaw = tbl['a:tr']
   const trs: any[] = Array.isArray(trsRaw) ? trsRaw : trsRaw ? [trsRaw] : []
   if (!colWidths.length || !trs.length) return null

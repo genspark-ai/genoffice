@@ -796,6 +796,50 @@ describe('tableRowGridCols', () => {
   })
 })
 
+describe('table gridCol bounds', () => {
+  // ST_PositiveCoordinate ceiling in EMU — the same bound clampPosEmu uses.
+  // generate.ts keeps COORD_MAX module-private, so the schema literal is asserted here.
+  const COORD_MAX = 27273042316900
+
+  const colWidthsOf = (ws: string[]): number[] => {
+    const cols = ws.map((w) => `<a:gridCol${w === '' ? '' : ` w="${w}"`}/>`).join('')
+    const tableXml =
+      '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 1"/></p:nvGraphicFramePr>' +
+      '<p:xfrm><a:off x="0" y="0"/><a:ext cx="3657600" cy="914400"/></p:xfrm>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl>' +
+      `<a:tblGrid>${cols}</a:tblGrid>` +
+      '<a:tr h="914400"><a:tc><a:txBody><a:bodyPr/><a:p/></a:txBody><a:tcPr/></a:tc></a:tr>' +
+      '</a:tbl></a:graphicData></a:graphic></p:graphicFrame>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml:
+        '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld>' +
+        `<p:spTree><p:nvGrpSpPr/><p:grpSpPr/>${tableXml}</p:spTree></p:cSld></p:sld>`,
+      ctx: {},
+    })
+    return (slide.elements[0] as any).colWidths
+  }
+
+  it('clamps an absurd and a negative gridCol w to the positive EMU range', () => {
+    // Raw parseInt kept both: the huge w prefix-sums in the renderer into a
+    // multi-gigapixel table, and the negative one makes cell x/width go negative.
+    expect(colWidthsOf(['27273042316900', '-5000'])).toEqual([COORD_MAX, 0])
+  })
+
+  it('leaves in-range widths untouched', () => {
+    expect(colWidthsOf(['1828800', '914400'])).toEqual([1828800, 914400])
+  })
+
+  it('keeps every parsed width finite and non-negative for a hostile grid', () => {
+    const hostile = ['27273042316901', '99999999999999999999', '-1', '-5000', '0', 'abc', '']
+    for (const w of colWidthsOf(hostile)) {
+      expect(Number.isFinite(w)).toBe(true)
+      expect(w).toBeGreaterThanOrEqual(0)
+      expect(w).toBeLessThanOrEqual(COORD_MAX)
+    }
+  })
+})
+
 describe('group (p:grpSp) parsing', () => {
   const groupSlideXml =
     '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree>' +
