@@ -2186,7 +2186,14 @@ function commentPlainText(commentXml: string): string {
 
 /** set or remove <w:documentProtection> at its CT_Settings position */
 function applyProtection(xml: string, protection: DocProtection | null): string {
-  let out = xml.replace(/<w:documentProtection[^>]*\/>/, '')
+  // CT_DocumentProtection is empty-content, so a producer may write either
+  // spelling. Removing only the self-closing form left a paired element in
+  // place: clearing protection did nothing, and setting it appended a second
+  // zero-or-one element, which is schema-invalid. Same idiom as applySettingsFlag.
+  let out = xml.replace(
+    /<w:documentProtection(?=[\s/>])[^>]*?(?:\/\s*>|>\s*<\/w:documentProtection\s*>)/,
+    '',
+  )
   if (protection) {
     const crypt = protection.hash
       ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
@@ -2207,7 +2214,13 @@ function applyProtection(xml: string, protection: DocProtection | null): string 
 
 /** set or remove <w:writeProtection> (password to modify) at its CT_Settings position */
 function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
-  let out = xml.replace(/<w:writeProtection[^>]*\/>/, '')
+  // same both-forms removal as applyProtection: a paired <w:writeProtection>
+  // is legal and used to survive, so clearing it did nothing and setting it
+  // left two zero-or-one elements behind
+  let out = xml.replace(
+    /<w:writeProtection(?=[\s/>])[^>]*?(?:\/\s*>|>\s*<\/w:writeProtection\s*>)/,
+    '',
+  )
   if (wp && (wp.recommended || wp.hash)) {
     const crypt = wp.hash
       ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +

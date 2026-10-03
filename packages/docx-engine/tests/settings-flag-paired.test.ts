@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
 import { parseDocx, saveDocx } from '../src/index'
+import type { DocProtection } from '../src/types'
 import { buildDocx } from './helpers/build-docx'
 
 const BODY = '<w:p><w:r><w:t>body</w:t></w:r></w:p>'
@@ -28,6 +29,18 @@ async function saveWithFlags(settingsInner: string, options: Record<string, bool
   })
   const parsed = await parseDocx(source)
   const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], options)
+  return settingsOf(saved)
+}
+
+async function saveWithProtection(settingsInner: string, protection: DocProtection | null) {
+  const source = await buildDocx({
+    bodyXml: BODY,
+    extraParts: [
+      { path: 'word/settings.xml', xml: settingsPart(settingsInner), contentType: SETTINGS_TYPE },
+    ],
+  })
+  const parsed = await parseDocx(source)
+  const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], { protection })
   return settingsOf(saved)
 }
 
@@ -84,5 +97,27 @@ describe('settings flags written as an element pair', () => {
         'w:evenAndOddHeaders',
       ),
     ).toBe(0)
+  })
+
+  // w:documentProtection is empty-content and zero-or-one, so the paired
+  // spelling is legal and producers do emit it. Removing only the self-closing
+  // form left the paired element in place, so unprotecting a document did
+  // nothing and setting protection appended a second, schema-invalid element.
+  it('removes a paired w:documentProtection when protection is cleared', async () => {
+    const xml = await saveWithProtection(
+      '<w:documentProtection w:edit="readOnly" w:enforcement="1"></w:documentProtection>',
+      null,
+    )
+    expect(count(xml, 'w:documentProtection')).toBe(0)
+    expect(xml).not.toContain('</w:documentProtection>')
+  })
+
+  it('leaves exactly one w:documentProtection when it is set', async () => {
+    const xml = await saveWithProtection(
+      '<w:documentProtection w:edit="readOnly" w:enforcement="1"></w:documentProtection>',
+      { edit: 'comments', enforced: true },
+    )
+    expect(count(xml, 'w:documentProtection')).toBe(1)
+    expect(xml).not.toContain('</w:documentProtection>')
   })
 })
