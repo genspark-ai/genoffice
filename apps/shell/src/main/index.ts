@@ -120,8 +120,6 @@ import {
   buildDocsMenu,
   configureDocsRuntime,
   docsFileRenamed,
-  docsQueryDirty,
-  requestDocsClose,
   readRecentFiles,
   readStarredFiles,
   recordRecentFile,
@@ -174,8 +172,6 @@ import {
   hasActiveQueuedWorkbook,
   installSheetsMenu,
   markSheetsShuttingDown,
-  resetSheetsShuttingDown,
-  requestSheetsClose,
   resolveSheetsSessionPath,
   markSheetsUnsavedNew,
   markSheetsUntitledPath,
@@ -200,7 +196,6 @@ import {
   installSlidesMenu,
   readSlidesRecentFiles,
   replaceSlidesRecentFile,
-  requestSlidesClose,
   setSlidesCloseTabHook,
   setSlidesExtraFileMenuItems,
   setSlidesOpenedHook,
@@ -215,7 +210,6 @@ import {
   markPdfUntitledPath,
   pdfFileRenamed,
   pdfIsDirty,
-  requestPdfClose,
   requestPdfSaveAs,
   sendPdfPrintRequest,
   setPdfRenamedHook,
@@ -234,7 +228,6 @@ import {
   markdownFileRenamed,
   markdownReadText,
   markdownSaveToPath,
-  requestMarkdownClose,
   requestMarkdownSave,
   sendMarkdownExportRequest,
   sendMarkdownPrintRequest,
@@ -249,7 +242,6 @@ import {
   htmlReadText,
   htmlSaveToPath,
   registerPrivilegedSchemes,
-  requestHtmlClose,
   requestHtmlSave,
   sendHtmlExportRequest,
   sendHtmlPrintRequest,
@@ -327,6 +319,7 @@ import {
 } from './file-index/rerank'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
+import { installShellCloseGuard } from './window-close-guard'
 import {
   activateDetached,
   closeDetachedWithoutPrompt,
@@ -3255,66 +3248,9 @@ function createShellWindow(): void {
   })
 
   // Closing the whole window walks every dirty sheets/pdf/slides/docs tab through
-  // the same save/don't-save/cancel prompt; any cancel aborts the close.
-  // docs dirtiness lives renderer-side, so any live docs tab forces the async path
-  // and gets queried there (clean tabs pass through without activation).
-  let closeConfirmed = false
-  win.on('close', (event) => {
-    if (closeConfirmed) return
-    const dirtySheets = manager.dirtySheetsTabs()
-    const dirtyPdf = manager.dirtyPdfTabs()
-    const dirtyMarkdown = manager.dirtyMarkdownTabs()
-    const dirtyHtml = manager.dirtyHtmlTabs()
-    const dirtySlides = manager.dirtySlidesTabs()
-    const docsTabs = manager.docsTabs()
-    if (
-      dirtySheets.length === 0 &&
-      dirtyPdf.length === 0 &&
-      dirtyMarkdown.length === 0 &&
-      dirtyHtml.length === 0 &&
-      dirtySlides.length === 0 &&
-      docsTabs.length === 0
-    )
-      return
-    event.preventDefault()
-    void (async () => {
-      const denied = await (async () => {
-        for (const tab of dirtySheets) {
-          manager.activateTab(tab.id)
-          if (!(await requestSheetsClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtyPdf) {
-          manager.activateTab(tab.id)
-          if (!(await requestPdfClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtyMarkdown) {
-          manager.activateTab(tab.id)
-          if (!(await requestMarkdownClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtyHtml) {
-          manager.activateTab(tab.id)
-          if (!(await requestHtmlClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtySlides) {
-          manager.activateTab(tab.id)
-          if (!(await requestSlidesClose(tab.webContents, win))) return true
-        }
-        for (const tab of docsTabs) {
-          if (!(await docsQueryDirty(tab.webContents))) continue
-          manager.activateTab(tab.id)
-          if (!(await requestDocsClose(tab.webContents, win))) return true
-        }
-        return false
-      })()
-      // a denied close vetoes any quit that was in flight: the sheets close
-      // guard must prompt again on later closes instead of silently proceeding
-      if (denied) resetSheetsShuttingDown()
-      else {
-        closeConfirmed = true
-        if (!win.isDestroyed()) win.close()
-      }
-    })()
-  })
+  // the same save/don't-save/cancel prompt; any cancel aborts the close. An
+  // all-clean close is left untouched, so ⌘Q keeps quitting the app.
+  installShellCloseGuard(win, manager)
 
   win.on('closed', () => {
     if (shellWindow === win) shellWindow = null
