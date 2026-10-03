@@ -94,6 +94,32 @@ describe('parseGskOutput', () => {
     // the previous nested slice-and-reparse scan needed minutes at this size
     expect(elapsed).toBeLessThan(5_000)
   })
+
+  it('gives up on a hostile response in bounded time', () => {
+    // Every line opens a block that never closes, so each candidate re-scans the
+    // rest of the output: N lines of length L cost N x L. gsk output is
+    // model-controlled and capped only by MAX_BUFFER, so the recovery scan has
+    // to be bounded rather than quadratic.
+    const out = Array.from(
+      { length: 16_000 },
+      (_, i) => `{"step":${i},"msg":"still rendering`,
+    ).join('\n')
+    const started = performance.now()
+    expect(() => parseGskOutput(out)).toThrow(/No JSON found/)
+    const elapsed = performance.now() - started
+    // the unbounded scan needed ~25s at this size
+    expect(elapsed).toBeLessThan(1_000)
+  })
+
+  it('still finds a payload buried behind unclosed log lines', () => {
+    const out = [
+      '{"msg":"still rendering',
+      '{"msg":"still rendering',
+      '{"status":"ok","data":{"n":7}}',
+      '[INFO] done',
+    ].join('\n')
+    expect(parseGskOutput(out)).toEqual({ status: 'ok', data: { n: 7 } })
+  })
 })
 
 describe('gskChildEnv', () => {
@@ -382,16 +408,17 @@ describe('gskSlideGenerate response caps', () => {
     status: 'ok',
     data: { pptx_url: 'https://www.genspark.ai/api/files/deck.pptx', model: 'claude-opus-4-7' },
   })
+  // a public address literal, so the download path needs no DNS in tests
   const downloadResult = JSON.stringify({
     status: 'ok',
-    data: { download_url: 'https://cdn.example/deck.pptx' },
+    data: { download_url: 'https://8.8.8.8/deck.pptx' },
   })
 
-  function stubSlideGenerate(artifact: () => Response) {
+  function stubSlideGenerate(artifact: () => Response, downloadResultBody = downloadResult) {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(ndjsonResponse(slideResult))
-      .mockResolvedValueOnce(ndjsonResponse(downloadResult))
+      .mockResolvedValueOnce(ndjsonResponse(downloadResultBody))
       .mockImplementationOnce(() => Promise.resolve(artifact()))
     vi.stubGlobal('fetch', fetchMock)
     return fetchMock
@@ -484,6 +511,37 @@ describe('gskSlideGenerate response caps', () => {
     await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toBeInstanceOf(
       ResponseTooLargeError,
     )
+  })
+
+  // The download_url comes from the cloud response, so a compromised or spoofed
+  // endpoint decides which host the main process dials. It must pass the same
+  // SSRF gate as every other model-influenced download.
+  it('never requests a cloud download URL that points at a private address', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const fetchMock = stubSlideGenerate(
+      () => new Response(new Uint8Array([1, 2, 3])),
+      JSON.stringify({
+        status: 'ok',
+        data: { download_url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/' },
+      }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
+    const requested = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(requested.some((u) => u.includes('169.254.169.254'))).toBe(false)
+  })
+
+  it('revalidates every redirect hop of a cloud download URL', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const fetchMock = stubSlideGenerate(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://127.0.0.1:8080/internal.pptx' },
+        }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
+    const requested = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(requested.some((u) => u.includes('127.0.0.1'))).toBe(false)
   })
 })
 

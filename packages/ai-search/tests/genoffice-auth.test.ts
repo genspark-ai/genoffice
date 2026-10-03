@@ -47,23 +47,36 @@ function jsonResponse(json: unknown, opts: { status?: number; setCookie?: string
   } as unknown as Response
 }
 
+const deviceCodeOk = {
+  device_code: CODE,
+  auth_url: AUTH_URL,
+  expires_in: 600,
+  poll_interval: 0.001,
+}
+
 /** fetch stub for the full flow; token polls: pending × (pendingPolls) then approved */
-function stubFlow(opts: { pendingPolls?: number; createResponse?: unknown } = {}) {
+function stubFlow(
+  opts: {
+    pendingPolls?: number
+    createResponse?: unknown
+    /** overrides fields of the device_code response (poll_interval, expires_in, …) */
+    deviceCode?: Record<string, unknown>
+    /** keep answering "pending", so only the expiry can end the flow */
+    alwaysPending?: boolean
+  } = {},
+) {
   let tokenPolls = 0
   const fetchMock = vi.fn(async (input: string | URL, _init?: RequestInit) => {
     const url = String(input)
     if (url.includes('/office_addin_auth/device_code')) {
-      return jsonResponse({
-        device_code: CODE,
-        auth_url: AUTH_URL,
-        expires_in: 600,
-        poll_interval: 0.001,
-      })
+      return jsonResponse({ ...deviceCodeOk, ...opts.deviceCode })
     }
     if (url.includes('/office_addin_auth/token')) {
       tokenPolls++
-      if (tokenPolls <= (opts.pendingPolls ?? 1)) return jsonResponse({ status: 'pending' })
-      return jsonResponse({ status: 'approved', access_token: 'bearer-token' })
+      if (!opts.alwaysPending && tokenPolls > (opts.pendingPolls ?? 1)) {
+        return jsonResponse({ status: 'approved', access_token: 'bearer-token' })
+      }
+      return jsonResponse({ status: 'pending' })
     }
     if (url.includes('/office_addin_auth/session')) {
       return jsonResponse(
@@ -219,6 +232,48 @@ describe('startGenofficeLogin', () => {
     const events = await loginAndCollect()
     expect(events.at(-1)).toEqual({ phase: 'error', error: 'Invalid API key name.' })
     expect(loadGenofficeAuth()).toBeNull()
+  })
+
+  // The device-code endpoint chooses the poll interval and the expiry, so one odd
+  // response could stretch a login for hours or leave it polling at a crawl.
+  // Both are clamped; the ceiling is MAX_LOGIN_SEC / MAX_POLL_INTERVAL_MS.
+  it('clamps a server poll interval far above the ceiling', async () => {
+    vi.useFakeTimers()
+    try {
+      stubFlow({ pendingPolls: 0, deviceCode: { ...deviceCodeOk, poll_interval: 2_000_000 } })
+      const events: GskLoginProgress[] = []
+      startGenofficeLogin((progress) => events.push(progress))
+      // 10s is the clamped ceiling; the ~23 days the server asked for never elapse
+      await vi.advanceTimersByTimeAsync(0) // let the device_code reply land and arm the sleep
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(() => {
+        expect(['success', 'error']).toContain(events.at(-1)?.phase)
+      })
+      expect(events.at(-1)).toEqual({ phase: 'success' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops waiting for a device code at the clamped expiry', async () => {
+    vi.useFakeTimers()
+    try {
+      stubFlow({
+        alwaysPending: true,
+        deviceCode: { ...deviceCodeOk, expires_in: 1e9, poll_interval: 2_000_000 },
+      })
+      const events: GskLoginProgress[] = []
+      startGenofficeLogin((progress) => events.push(progress))
+      // 15 min is the clamped ceiling: still waiting one second before it
+      await vi.advanceTimersByTimeAsync(899_000)
+      expect(events.some((e) => e.phase === 'error')).toBe(false)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await vi.waitFor(() => {
+        expect(events.at(-1)).toEqual({ phase: 'error', error: 'expired' })
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('re-login revokes the superseded key (best-effort)', async () => {
