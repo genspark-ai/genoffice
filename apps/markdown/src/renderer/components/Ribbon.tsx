@@ -52,6 +52,12 @@ interface Props {
   aiOpen: boolean
   onToggleAi: () => void
   onAiPreset: (instruction: string) => void
+  /**
+   * A .txt/.json is edited as source, so every button that formats a block
+   * document is hidden rather than left there to act on a document that does
+   * not exist. Save, find, autosave and the AI panel still apply.
+   */
+  sourceMode?: boolean
 }
 
 type BlockStyle = 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'quote' | 'codeBlock'
@@ -176,6 +182,7 @@ export function Ribbon({
   aiOpen,
   onToggleAi,
   onAiPreset,
+  sourceMode = false,
 }: Props) {
   const { t } = useI18n()
   const collapse = useRibbonCollapse('mdapp.ribbonCollapsed', {
@@ -368,163 +375,175 @@ export function Ribbon({
 
         <div className="rb-sep" />
 
-        <div className="ribbon-group">
-          <div className="ribbon-group-items">
-            <Dropdown
-              className="rb-style"
-              value={state?.style ?? 'paragraph'}
-              disabled={off}
-              options={(Object.keys(STYLE_LABEL) as BlockStyle[]).map((s) => ({
-                value: s,
-                label: t(STYLE_LABEL[s]),
-              }))}
-              onPick={(s) => editor && applyBlockStyle(editor, s)}
-            />
+        {!sourceMode && (
+          <div className="ribbon-group">
+            <div className="ribbon-group-items">
+              <Dropdown
+                className="rb-style"
+                value={state?.style ?? 'paragraph'}
+                disabled={off}
+                options={(Object.keys(STYLE_LABEL) as BlockStyle[]).map((s) => ({
+                  value: s,
+                  label: t(STYLE_LABEL[s]),
+                }))}
+                onPick={(s) => editor && applyBlockStyle(editor, s)}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="rb-sep" />
+        {!sourceMode && <div className="rb-sep" />}
 
-        <div className="ribbon-group">
-          <div className="ribbon-group-items">
-            <IconBtn
-              title={t('bold')}
-              active={state?.bold}
-              disabled={off}
-              onClick={() => toggleStyle(editor, 'bold')}
-            >
-              <b>B</b>
-            </IconBtn>
-            <IconBtn
-              title={t('italic')}
-              active={state?.italic}
-              disabled={off}
-              onClick={() => toggleStyle(editor, 'italic')}
-            >
-              <i>I</i>
-            </IconBtn>
-            <IconBtn
-              title={t('strike')}
-              active={state?.strike}
-              disabled={off}
-              onClick={() => toggleStyle(editor, 'strike')}
-            >
-              <s>ab</s>
-            </IconBtn>
-            <IconBtn
-              title={t('inlineCode')}
-              active={state?.code}
-              disabled={off}
-              onClick={() => toggleStyle(editor, 'code')}
-            >
-              <IconInlineCode size={ICON} />
-            </IconBtn>
-            <span className="rb-link-anchor" ref={linkAnchorRef}>
-              <IconBtn title={t('link')} active={state?.link} disabled={off} onClick={openLink}>
-                <IconLink size={ICON} />
+        {!sourceMode && (
+          <div className="ribbon-group">
+            <div className="ribbon-group-items">
+              <IconBtn
+                title={t('bold')}
+                active={state?.bold}
+                disabled={off}
+                onClick={() => toggleStyle(editor, 'bold')}
+              >
+                <b>B</b>
               </IconBtn>
-              {linkOpen && (
-                <span className="rb-link-pop" onMouseDown={(e) => e.stopPropagation()}>
-                  <input
-                    ref={linkInputRef}
-                    value={linkUrl}
-                    placeholder={t('linkPlaceholder')}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && linkUrl.trim()) applyLink()
-                      if (e.key === 'Escape') setLinkOpen(false)
-                    }}
-                  />
-                  <button type="button" disabled={!linkUrl.trim()} onClick={applyLink}>
-                    {t('linkApply')}
-                  </button>
-                </span>
-              )}
-            </span>
+              <IconBtn
+                title={t('italic')}
+                active={state?.italic}
+                disabled={off}
+                onClick={() => toggleStyle(editor, 'italic')}
+              >
+                <i>I</i>
+              </IconBtn>
+              <IconBtn
+                title={t('strike')}
+                active={state?.strike}
+                disabled={off}
+                onClick={() => toggleStyle(editor, 'strike')}
+              >
+                <s>ab</s>
+              </IconBtn>
+              <IconBtn
+                title={t('inlineCode')}
+                active={state?.code}
+                disabled={off}
+                onClick={() => toggleStyle(editor, 'code')}
+              >
+                <IconInlineCode size={ICON} />
+              </IconBtn>
+              <span className="rb-link-anchor" ref={linkAnchorRef}>
+                <IconBtn title={t('link')} active={state?.link} disabled={off} onClick={openLink}>
+                  <IconLink size={ICON} />
+                </IconBtn>
+                {linkOpen && (
+                  <span className="rb-link-pop" onMouseDown={(e) => e.stopPropagation()}>
+                    <input
+                      ref={linkInputRef}
+                      value={linkUrl}
+                      placeholder={t('linkPlaceholder')}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && linkUrl.trim()) applyLink()
+                        if (e.key === 'Escape') setLinkOpen(false)
+                      }}
+                    />
+                    <button type="button" disabled={!linkUrl.trim()} onClick={applyLink}>
+                      {t('linkApply')}
+                    </button>
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="rb-sep" />
+        {!sourceMode && <div className="rb-sep" />}
 
-        <div className="ribbon-group">
-          <div className="ribbon-group-items">
-            <IconBtn
-              title={t('bulletList')}
-              active={state?.bullet}
-              disabled={off}
-              onClick={() => toggleList(editor, 'bullet')}
-            >
-              <IconBullets size={ICON} />
-            </IconBtn>
-            <IconBtn
-              title={t('orderedList')}
-              active={state?.ordered}
-              disabled={off}
-              onClick={() => toggleList(editor, 'ordered')}
-            >
-              <IconNumbered size={ICON} />
-            </IconBtn>
-            <IconBtn
-              title={t('taskList')}
-              active={state?.task}
-              disabled={off}
-              onClick={() => toggleList(editor, 'task')}
-            >
-              <IconTaskList size={ICON} />
-            </IconBtn>
+        {!sourceMode && (
+          <div className="ribbon-group">
+            <div className="ribbon-group-items">
+              <IconBtn
+                title={t('bulletList')}
+                active={state?.bullet}
+                disabled={off}
+                onClick={() => toggleList(editor, 'bullet')}
+              >
+                <IconBullets size={ICON} />
+              </IconBtn>
+              <IconBtn
+                title={t('orderedList')}
+                active={state?.ordered}
+                disabled={off}
+                onClick={() => toggleList(editor, 'ordered')}
+              >
+                <IconNumbered size={ICON} />
+              </IconBtn>
+              <IconBtn
+                title={t('taskList')}
+                active={state?.task}
+                disabled={off}
+                onClick={() => toggleList(editor, 'task')}
+              >
+                <IconTaskList size={ICON} />
+              </IconBtn>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="rb-sep" />
+        {!sourceMode && <div className="rb-sep" />}
 
-        <div className="ribbon-group">
-          <div className="ribbon-group-items">
-            <IconBtn
-              title={t('insertTable')}
-              disabled={off}
-              onClick={() => editor && uiOp(editor, { op: 'insertTable', after: 'selection' })}
-            >
-              <IconTable size={ICON} />
-            </IconBtn>
-            <IconBtn
-              title={t('insertImage')}
-              disabled={off || !imageEnabled}
-              onClick={onInsertImage}
-            >
-              <IconPicture size={ICON} />
-            </IconBtn>
-            <IconBtn
-              title={t('insertHr')}
-              disabled={off}
-              onClick={() =>
-                editor && uiOp(editor, { op: 'insertHorizontalRule', after: 'selection' })
-              }
-            >
-              <IconHr size={ICON} />
-            </IconBtn>
+        {!sourceMode && (
+          <div className="ribbon-group">
+            <div className="ribbon-group-items">
+              <IconBtn
+                title={t('insertTable')}
+                disabled={off}
+                onClick={() => editor && uiOp(editor, { op: 'insertTable', after: 'selection' })}
+              >
+                <IconTable size={ICON} />
+              </IconBtn>
+              <IconBtn
+                title={t('insertImage')}
+                disabled={off || !imageEnabled}
+                onClick={onInsertImage}
+              >
+                <IconPicture size={ICON} />
+              </IconBtn>
+              <IconBtn
+                title={t('insertHr')}
+                disabled={off}
+                onClick={() =>
+                  editor && uiOp(editor, { op: 'insertHorizontalRule', after: 'selection' })
+                }
+              >
+                <IconHr size={ICON} />
+              </IconBtn>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="rb-spacer" />
 
         <div className="ribbon-group">
           <div className="ribbon-group-items">
-            <IconBtn
-              title={t('fmProperties')}
-              active={frontmatterOpen}
-              disabled={disabled}
-              onClick={onToggleFrontmatter}
-            >
-              <IconProperties size={ICON} />
-            </IconBtn>
-            <IconBtn
-              title={t('outline')}
-              active={outlineOpen}
-              disabled={disabled || (!hasOutline && !outlineOpen)}
-              onClick={onToggleOutline}
-            >
-              <IconOutlineView size={ICON} />
-            </IconBtn>
+            {!sourceMode && (
+              <IconBtn
+                title={t('fmProperties')}
+                active={frontmatterOpen}
+                disabled={disabled}
+                onClick={onToggleFrontmatter}
+              >
+                <IconProperties size={ICON} />
+              </IconBtn>
+            )}
+            {!sourceMode && (
+              <IconBtn
+                title={t('outline')}
+                active={outlineOpen}
+                disabled={disabled || (!hasOutline && !outlineOpen)}
+                onClick={onToggleOutline}
+              >
+                <IconOutlineView size={ICON} />
+              </IconBtn>
+            )}
             <IconBtn
               title={t('spellcheck')}
               active={spellcheck}
