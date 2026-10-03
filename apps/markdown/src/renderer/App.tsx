@@ -31,6 +31,7 @@ import {
 } from './markdown/docText'
 import { buildSourceMap, spliceMarkdown, type SourceMap } from './markdown/sourceSplice'
 import { isSourceMode, textModeForPath, type TextMode } from '../shared/text-mode'
+import { renameAction } from '../shared/rename-mode'
 import { readSourceText, writeSourceText, type SourceTextFormat } from '../shared/source-text'
 import { PlainTextEditor, type PlainTextEditorHandle } from './source/PlainTextEditor'
 import { buildExtensions } from './editor/extensions'
@@ -43,6 +44,7 @@ import { Ribbon } from './components/Ribbon'
 import { OutlinePane } from './components/OutlinePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
 import { ToastHost } from './components/toast'
+import { showToast } from './components/toast-bus'
 import { TableMenu } from './components/TableMenu'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { AiAskPopover } from './components/AiAskPopover'
@@ -266,6 +268,52 @@ export default function App() {
     setImageBaseDir(filePath ? dirOf(filePath) : null)
   }, [filePath])
 
+  /**
+   * Read `path` and put it on the surface its extension calls for. Shared by
+   * the initial load and by a rename that crossed surfaces, so a file cannot
+   * end up on one surface because of the path it happened to be renamed to.
+   */
+  const loadFromPath = useCallback(
+    (path: string, raw: string) => {
+      const mode = textModeForPath(path)
+      setTextMode(mode)
+      if (isSourceMode(mode)) {
+        // source files keep their own bytes; the block editor never sees them
+        const { text, format } = readSourceText(raw)
+        sourceTextRef.current = text
+        sourceFormatRef.current = format
+        setFilePath(path)
+        setFmText('')
+        setFmOpen(false)
+        setOutlineItems([])
+        return
+      }
+      const envelope = parseDocText(raw)
+      envelopeRef.current = envelope
+      setImageBaseDir(dirOf(path))
+      // the initial load must not be undoable — Cmd+Z right after opening
+      // would otherwise blank the document (and Cmd+S overwrite the file)
+      const body = stripLegacyFencedDivs(envelope.body)
+      editor
+        ?.chain()
+        .setMeta('addToHistory', false)
+        .setContent(body, { contentType: 'markdown' })
+        .setTextSelection(1)
+        .run()
+      if (editor) {
+        sourceMapRef.current = buildSourceMap(editor, editor.state.doc, body)
+        originalSourceRef.current = roundTripEnabled
+          ? captureMarkdownSource(raw, envelope, editor.state.doc)
+          : undefined
+      }
+      setFilePath(path)
+      const inner = frontmatterInner(envelope.frontmatter)
+      setFmText(inner)
+      setFmOpen(inner !== '')
+    },
+    [editor, roundTripEnabled],
+  )
+
   useEffect(() => {
     if (!editor) return
     let cancelled = false
@@ -276,39 +324,7 @@ export default function App() {
         if (path) {
           const raw = await window.markdownApi.readFile(path)
           if (cancelled) return
-          const mode = textModeForPath(path)
-          setTextMode(mode)
-          if (isSourceMode(mode)) {
-            // source files keep their own bytes; the block editor never sees them
-            const { text, format } = readSourceText(raw)
-            sourceTextRef.current = text
-            sourceFormatRef.current = format
-            setFilePath(path)
-            setFmText('')
-            setFmOpen(false)
-            setOutlineItems([])
-          } else {
-            const envelope = parseDocText(raw)
-            envelopeRef.current = envelope
-            setImageBaseDir(dirOf(path))
-            // the initial load must not be undoable — Cmd+Z right after opening
-            // would otherwise blank the document (and Cmd+S overwrite the file)
-            const body = stripLegacyFencedDivs(envelope.body)
-            editor
-              .chain()
-              .setMeta('addToHistory', false)
-              .setContent(body, { contentType: 'markdown' })
-              .setTextSelection(1)
-              .run()
-            sourceMapRef.current = buildSourceMap(editor, editor.state.doc, body)
-            originalSourceRef.current = roundTripEnabled
-              ? captureMarkdownSource(raw, envelope, editor.state.doc)
-              : undefined
-            setFilePath(path)
-            const inner = frontmatterInner(envelope.frontmatter)
-            setFmText(inner)
-            if (inner) setFmOpen(true)
-          }
+          loadFromPath(path, raw)
         } else {
           envelopeRef.current = { ...EMPTY_ENVELOPE }
         }
@@ -325,7 +341,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [editor, roundTripEnabled])
+  }, [editor, roundTripEnabled, loadFromPath])
 
   const onFrontmatterChange = useCallback(
     (inner: string) => {
@@ -693,7 +709,32 @@ export default function App() {
         window.markdownApi.sendCloseSaveResult(ok)
       })()
     })
-    const offRenamed = window.markdownApi.onFileRenamed((newPath) => setFilePath(newPath))
+    const offRenamed = window.markdownApi.onFileRenamed((newPath) => {
+      // A rename that changes the extension changes what the file is, so the
+      // open document has to follow it onto the matching surface. Reloading
+      // throws away unsaved edits, so a dirty document is refused instead —
+      // the file on disk is untouched and the tab stays open.
+      const action = renameAction(filePathRef.current, newPath, dirtyRef.current)
+      if (action === 'keep') {
+        setFilePath(newPath)
+        return
+      }
+      if (action === 'block-dirty') {
+        showToast(t('renameNeedsSave'), 'error')
+        return
+      }
+      void (async () => {
+        try {
+          const raw = await window.markdownApi.readFile(newPath)
+          // loadFromPath replaces the content with addToHistory off, so the
+          // old surface's undo stack cannot walk back into a document that
+          // has a different shape now
+          loadFromPath(newPath, raw)
+        } catch (err) {
+          console.error('[markdown] reload after rename failed:', err)
+        }
+      })()
+    })
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return
       const key = event.key.toLowerCase()
@@ -729,7 +770,7 @@ export default function App() {
       offRenamed()
       window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [doSave, printDoc, zoomIn, zoomOut, openFind])
+  }, [doSave, printDoc, zoomIn, zoomOut, openFind, loadFromPath, t])
 
   // Chromium reports trackpad pinch as ctrl+wheel. Also support Cmd/Ctrl+scroll
   // while the pointer is over the document canvas.
