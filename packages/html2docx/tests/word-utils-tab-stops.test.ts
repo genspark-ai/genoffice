@@ -16,4 +16,24 @@ describe('tabStopsFor', () => {
     const context = createRenderContext({})
     expect(tabStopsFor(context, [{ text: 'plain' }])).toEqual([])
   })
+
+  it('clamps a negative tabFrac to a non-negative stop position', () => {
+    const context = createRenderContext({})
+    // a measured fraction can arrive negative (an offset column computed before
+    // the left margin was known); w:pos is a signed twips measure, so the raw
+    // product emitted a tab stop before the text margin that Word ignores
+    const stops = tabStopsFor(context, [{ text: 'a\tb', tabFrac: -0.25 }])
+    expect(stops).toHaveLength(1)
+    expect(stops[0]!.position).toBe(0)
+  })
+
+  it('keeps the measured position of an in-range tabFrac and the right stop past 0.75', () => {
+    const context = createRenderContext({})
+    expect(tabStopsFor(context, [{ text: 'a\tb', tabFrac: 0.5 }])[0]!.position).toBe(
+      Math.round(0.5 * context.contentDxa),
+    )
+    expect(tabStopsFor(context, [{ text: 'a\tb', tabFrac: 0.9 }])[0]!.position).toBe(
+      context.contentDxa,
+    )
+  })
 })

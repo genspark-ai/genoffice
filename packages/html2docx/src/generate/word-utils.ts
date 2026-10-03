@@ -173,10 +173,17 @@ function tabStopsFor(context, runs) {
   const seen = new Set()
   for (const r of tabs) {
     // Column starting past 75% of the line is a right-aligned tail (dates);
-    // otherwise reproduce the measured column position with a left stop.
+    // otherwise reproduce the measured column position with a left stop. The
+    // fraction is clamped only where the position is multiplied: w:pos is a
+    // signed twips measure, so a negative measured column was not corrupt but
+    // a stop before the text margin, which Word ignores. Branching on the raw
+    // value keeps tabFrac >= 0.75 on the right stop at contentDxa.
     const stop =
       r.tabFrac != null && r.tabFrac < 0.75
-        ? { type: TabStopType.LEFT, position: Math.round(r.tabFrac * context.contentDxa) }
+        ? {
+            type: TabStopType.LEFT,
+            position: Math.round(Math.max(0, Math.min(1, r.tabFrac)) * context.contentDxa),
+          }
         : { type: TabStopType.RIGHT, position: context.contentDxa }
     const key = `${stop.type}:${stop.position}`
     if (!seen.has(key)) {
