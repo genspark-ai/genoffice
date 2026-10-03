@@ -417,8 +417,12 @@ describe('applyPageSetupState page breaks', () => {
     expect(cleared).toBe('<worksheet><sheetData/></worksheet>')
   })
 
-  it('drops a zero break id instead of writing an invalid brk', () => {
+  it('writes a zero break id, which is a valid 0-based index', () => {
     const xml = applyPageSetupState(BARE, { sheetName: 'S', rowBreaks: [0] })
-    expect(xml).toBe(BARE)
+    expect(xml).toBe(
+      '<worksheet><sheetData/>' +
+        '<rowBreaks count="1" manualBreakCount="1"><brk id="0" max="16383" man="1"/></rowBreaks>' +
+        '</worksheet>',
+    )
   })
 })

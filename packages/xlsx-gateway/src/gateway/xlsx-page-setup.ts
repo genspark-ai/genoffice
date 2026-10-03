@@ -326,7 +326,8 @@ function setPageBreaks(
   const result = existing
     ? xml.slice(0, existing.index) + xml.slice(existing.index + existing[0].length)
     : xml
-  const ids = [...new Set(breaks)].filter((id) => id > 0).sort((a, b) => a - b)
+  // id is a 0-based index, so 0 is a real break; only negatives and NaN drop out.
+  const ids = [...new Set(breaks)].filter((id) => id >= 0).sort((a, b) => a - b)
   if (ids.length === 0) return result
   // brk@max is the last row/column the break spans across (full-width breaks).
   const max = tag === 'rowBreaks' ? 16_383 : 1_048_575
