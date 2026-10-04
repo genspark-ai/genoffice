@@ -12,10 +12,15 @@ import type { UniverRuntime } from './univer-state'
 /// keeps revealing columns, because reaching the edge extends the grid before
 /// the next scroll would have stopped at it.
 ///
-/// The growth is a view concern only. It writes no journal entry and never
-/// reaches the snapshot, so the grid a file declares on save is still the used
-/// range — the same split the engine already makes for a <dimension> that runs
-/// to the last column (workbook.rs declared_extent).
+/// The growth is a view concern only, so it must stay out of both histories:
+/// it writes no journal entry and never reaches the snapshot, so the grid a
+/// file declares on save is still the used range — the same split the engine
+/// already makes for a <dimension> that runs to the last column (workbook.rs
+/// declared_extent) — and it is dispatched as a mutation, so it pushes no undo
+/// entry either. Scrolling is a view action: a pristine blank sheet that grew
+/// past column F on a scroll must leave the Undo button disabled, or the first
+/// Ctrl+Z after typing at AA1 shrinks the grid back instead of undoing the
+/// edit.
 
 /// Univer's last valid column and row index (0-based). The .xlsx grid caps at
 /// 16384 x 1048576, so growth stops here rather than past it.
@@ -109,6 +114,13 @@ const SET_SCROLL_COMMAND = 'sheet.operation.set-scroll'
  *   - a slow poll, for a scroll the command path does not cover, and because
  *     the render unit only exists a moment after install
  *
+ * The poll reads the viewport from the skeleton rather than the command stream,
+ * so it can answer before any scroll command has arrived. Its early bail reads
+ * the command stream's lastColumn to skip the width walk, which narrows the
+ * poll: a scroll the command path genuinely misses now goes ungrown until a
+ * later command moves lastColumn. The command fires on wheel, scrollbar and
+ * keyboard alike, so that miss is rare.
+ *
  * Returns a disposer.
  */
 export function installGridGrowth(runtime: UniverRuntime): () => void {
@@ -147,11 +159,27 @@ export function installGridGrowth(runtime: UniverRuntime): () => void {
       rowCount: worksheet.getMaxRows(),
     })
     if (!growth) return
+    // Dispatch the mutations directly. The facade's setColumnCount/setRowCount
+    // run SetWorksheetColumnCountCommand / SetWorksheetRowCountCommand, and both
+    // handlers call undoRedoService.pushUndoRedo, so every lookahead step would
+    // otherwise leave an undo step behind. The mutation handlers call
+    // worksheet.setColumnCount / setRowCount and stop there, so the grid grows
+    // with the undo stack untouched.
+    const unitId = worksheet.getSheet().getUnitId()
+    const subUnitId = worksheet.getSheetId()
     if (growth.columnCount !== worksheet.getMaxColumns()) {
-      worksheet.setColumnCount(growth.columnCount)
+      runtime.univerAPI.syncExecuteCommand('sheet.mutation.set-worksheet-column-count', {
+        unitId,
+        subUnitId,
+        columnCount: growth.columnCount,
+      })
     }
     if (growth.rowCount !== worksheet.getMaxRows()) {
-      worksheet.setRowCount(growth.rowCount)
+      runtime.univerAPI.syncExecuteCommand('sheet.mutation.set-worksheet-row-count', {
+        unitId,
+        subUnitId,
+        rowCount: growth.rowCount,
+      })
     }
     // the skeleton caches the row/column sizes it was built with
     currentSkeletonManager()?.reCalculate()
@@ -195,6 +223,11 @@ export function installGridGrowth(runtime: UniverRuntime): () => void {
     const skeleton = manager.getCurrentSkeleton()
     if (!skeleton) return
     const columnCount = worksheet.getMaxColumns()
+    // Walking the widths costs one getColWidth per column, and this runs four
+    // times a second, so return while the last scroll command put the viewport
+    // well inside the grid: the walk could only confirm there is nothing to
+    // grow. This trades backstop coverage for the walk — see the note above.
+    if (lastColumn + COLUMN_LOOKAHEAD < columnCount) return
     const walked = firstVisibleColumn(skeleton, columnCount)
     growIfNearEdge(walked, lastRow)
   }, 250)
