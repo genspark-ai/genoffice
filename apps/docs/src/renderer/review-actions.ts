@@ -115,14 +115,13 @@ export function deleteNote(ctx: ReviewContext, kind: 'footnote' | 'endnote', id:
     if (node.type.name !== 'docNoteRef' || node.attrs.kind !== kind) return
     if (String(node.attrs.id) === id) {
       removals.push({ pos, size: node.nodeSize })
-    } else {
-      const num = next.findIndex((n) => n.id === String(node.attrs.id)) + 1
-      if (num > 0 && num !== node.attrs.num) {
-        tr.setNodeMarkup(pos, undefined, { ...node.attrs, num })
-      }
     }
   })
   for (const { pos, size } of removals.reverse()) tr.delete(pos, pos + size)
+  // number the survivors by where they sit in the body, the order submitNote
+  // uses; the list order is not the document order once a note has been
+  // inserted above one that was already there
+  renumber(tr, kind)
   if (tr.docChanged) editor.view.dispatch(tr)
 }
 

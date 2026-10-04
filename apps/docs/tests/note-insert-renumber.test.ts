@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { nextNoteId, type NoteInfo } from '@genoffice/docx-engine'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { submitNote, type ReviewContext } from '../src/renderer/review-actions'
+import { deleteNote, submitNote, type ReviewContext } from '../src/renderer/review-actions'
 
 /** the in-text reference marks of one kind, in document order */
 function marks(editor: Editor, kind: 'footnote' | 'endnote'): Array<{ id: string; num: number }> {
@@ -114,6 +114,63 @@ describe('inserting a note above the existing ones', () => {
 
     expect(marks(editor, 'endnote')).toEqual([{ id: '9', num: 1 }])
     expect(marks(editor, 'footnote').map((m) => m.num)).toEqual([1, 2])
+    editor.destroy()
+  })
+})
+
+describe('deleting a note whose list order differs from document order', () => {
+  it('renumbers the surviving marks by document order, not by list index', () => {
+    // the marks read 3, 5, 7 down the body, but the list was created 7, 3, 5
+    // (the caret moved between insertions), so the two orders disagree
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 0 },
+            content: [
+              { type: 'text', text: 'alpha' },
+              { type: 'docNoteRef', attrs: { kind: 'footnote', id: '3', num: 1 } },
+            ],
+          },
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 1 },
+            content: [
+              { type: 'text', text: 'beta' },
+              { type: 'docNoteRef', attrs: { kind: 'footnote', id: '5', num: 2 } },
+            ],
+          },
+          {
+            type: 'docParagraph',
+            attrs: { docxIndex: 2 },
+            content: [
+              { type: 'text', text: 'gamma' },
+              { type: 'docNoteRef', attrs: { kind: 'footnote', id: '7', num: 3 } },
+            ],
+          },
+        ],
+      },
+    })
+    const { ctx, state } = makeCtx(editor, [
+      { id: '7', text: 'third note' },
+      { id: '3', text: 'first note' },
+      { id: '5', text: 'second note' },
+    ])
+
+    deleteNote(ctx, 'footnote', '5')
+
+    // '3' still comes before '7' in the body, so it keeps number 1; numbering
+    // off the surviving list (7, 3) would hand it 2 and read 1, 2 descending
+    expect(marks(editor, 'footnote')).toEqual([
+      { id: '3', num: 1 },
+      { id: '7', num: 2 },
+    ])
+    // the list drops the note, and its own order is left alone
+    expect(state.map((n) => n.id)).toEqual(['7', '3'])
     editor.destroy()
   })
 })
