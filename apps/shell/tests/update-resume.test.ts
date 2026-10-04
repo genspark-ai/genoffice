@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -10,6 +10,12 @@ import { installResumeDownload } from '../src/main/update-resume'
  * The resumable download is exercised against the real filesystem (a temp dir)
  * with fetch mocked at the boundary; the stock electron-updater flow past the
  * download (checksum, signature, install) is untouched and untested here.
+ *
+ * The layout below mirrors what electron-updater hands the executor: it
+ * downloads into `<cacheDir>/pending/<file>`, and the resume state is kept in a
+ * `resume/` sibling of `pending/` because the updater empties `pending/` on
+ * every failure. See update-resume-updater-cleanup.test.ts for the real
+ * updater driving that cleanup.
  */
 
 const realFetch = globalThis.fetch
@@ -17,6 +23,9 @@ let dir: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'genoffice-resume-'))
+  // electron-updater mkdir's its cache dir and its pending/ subdir before the
+  // download; the wrapper mkdir's the resume/ sibling itself
+  await mkdir(join(dir, 'pending'), { recursive: true })
 })
 afterEach(async () => {
   globalThis.fetch = realFetch
@@ -41,7 +50,7 @@ const REST = Buffer.from('abcdefghijklmnopqrstuvwxyz')
 const FULL = Buffer.concat([PREFIX, REST])
 
 /** a minimal updater double whose httpExecutor records the fallback calls */
-function makeUpdater(stallTimeoutMs?: number) {
+function makeUpdater(stallTimeoutMs?: number, responseTimeoutMs?: number) {
   const calls: Array<{ url: string; destination: string }> = []
   const executor = {
     download: async (url: URL, destination: string) => {
@@ -53,12 +62,23 @@ function makeUpdater(stallTimeoutMs?: number) {
     { httpExecutor: executor },
     // 50 ms: the stall window is behaviour under test, not the 60 s value
     stallTimeoutMs ?? 50,
+    responseTimeoutMs ?? 30_000,
   )
   return { executor, fallbackCalls: calls }
 }
 
 const url = new URL('https://cdn.example.test/genoffice-setup-1.2.3.exe')
-const destOf = (): string => join(dir, 'installer.exe')
+/** what electron-updater passes as the destination: inside <cacheDir>/pending/ */
+const destOf = (): string => join(dir, 'pending', 'installer.exe')
+/** where the wrapper keeps the part: a `resume/` sibling of `pending/` */
+const partOf = (): string => join(dir, 'resume', 'installer.exe.part')
+const metaOf = (): string => `${partOf()}.json`
+/** the stored part, claimed to belong to `sha` (as a previous attempt left it) */
+const seedPart = async (bytes: Buffer, sha: string, ifRange?: string): Promise<void> => {
+  await mkdir(join(dir, 'resume'), { recursive: true })
+  await writeFile(partOf(), bytes)
+  await writeFile(metaOf(), JSON.stringify({ sha512: sha, ...(ifRange ? { ifRange } : {}) }))
+}
 
 describe('resumable installer download', () => {
   it('downloads whole when no .part exists and renames it into place', async () => {
@@ -75,15 +95,14 @@ describe('resumable installer download', () => {
     expect(result).toBe(destOf())
     expect(await readFile(destOf())).toEqual(FULL)
     // the .part and its meta are gone after the rename
-    await expect(stat(destOf() + '.part')).rejects.toThrow()
-    await expect(stat(destOf() + '.part.json')).rejects.toThrow()
+    await expect(stat(partOf())).rejects.toThrow()
+    await expect(stat(metaOf())).rejects.toThrow()
     expect(progress.at(-1)).toBe(100)
   })
 
   it('resumes from the .part with Range + If-Range and appends', async () => {
     const dest = destOf()
-    await writeFile(dest + '.part', PREFIX)
-    await writeFile(dest + '.part.json', JSON.stringify({ ifRange: '"v1"' }))
+    await seedPart(PREFIX, sha512(FULL), '"v1"')
     const { executor } = makeUpdater()
     const fetchMock = vi.fn(async () =>
       respond(206, REST, { 'content-length': String(REST.length), etag: '"v1"' }),
@@ -99,8 +118,7 @@ describe('resumable installer download', () => {
 
   it('a stale If-Range answer (200 whole-file) restarts from byte 0', async () => {
     const dest = destOf()
-    await writeFile(dest + '.part', Buffer.from('STALE-GARBAGE'))
-    await writeFile(dest + '.part.json', JSON.stringify({ ifRange: '"old"' }))
+    await seedPart(Buffer.from('STALE-GARBAGE'), sha512(FULL), '"old"')
     const { executor } = makeUpdater()
     const NEW = Buffer.from('a brand new artifact')
     globalThis.fetch = vi.fn(async () => respond(200, NEW)) as unknown as typeof fetch
@@ -110,7 +128,7 @@ describe('resumable installer download', () => {
 
   it('a 416 (part larger than the artifact) wipes the .part and downloads whole', async () => {
     const dest = destOf()
-    await writeFile(dest + '.part', Buffer.alloc(FULL.length + 50, 1))
+    await seedPart(Buffer.alloc(FULL.length + 50, 1), sha512(FULL))
     const { executor } = makeUpdater()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const headers = (init?.headers ?? {}) as Record<string, string>
@@ -127,16 +145,17 @@ describe('resumable installer download', () => {
 
   it('a checksum mismatch discards the .part and throws', async () => {
     const dest = destOf()
-    await writeFile(dest + '.part', PREFIX)
+    // the part is claimed to be a prefix of the artifact, but the server sends
+    // bytes that do not complete it
+    await seedPart(PREFIX, sha512(FULL))
     const { executor } = makeUpdater()
     globalThis.fetch = vi.fn(async () =>
-      respond(206, REST, { 'content-length': String(REST.length) }),
+      respond(206, Buffer.from('NOT-THE-REAL-REST'), { 'content-length': '16' }),
     ) as unknown as typeof fetch
-    // sha512 of something else entirely
-    await expect(executor.download(url, dest, { sha512: sha512('other bytes') })).rejects.toThrow(
+    await expect(executor.download(url, dest, { sha512: sha512(FULL) })).rejects.toThrow(
       /checksum mismatch/,
     )
-    await expect(stat(dest + '.part')).rejects.toThrow()
+    await expect(stat(partOf())).rejects.toThrow()
     await expect(stat(dest)).rejects.toThrow()
   })
 
@@ -158,8 +177,8 @@ describe('resumable installer download', () => {
     ) as unknown as typeof fetch
     await expect(executor.download(url, dest, { sha512: sha512(FULL) })).rejects.toThrow(/hang up/)
     // the received prefix survives: the next attempt resumes from it
-    expect((await stat(dest + '.part')).size).toBe(4)
-    expect(await readFile(dest + '.part')).toEqual(FULL.subarray(0, 4))
+    expect((await stat(partOf())).size).toBe(4)
+    expect(await readFile(partOf())).toEqual(FULL.subarray(0, 4))
   })
 
   it('aborts a wedged stream with no data arriving and keeps the .part', async () => {
@@ -183,7 +202,7 @@ describe('resumable installer download', () => {
       /stalled: no data for/,
     )
     // the received prefix survives for the next attempt
-    expect(await readFile(dest + '.part')).toEqual(FULL.subarray(0, 5))
+    expect(await readFile(partOf())).toEqual(FULL.subarray(0, 5))
   })
 
   it('honours the cancellation token mid-stream and keeps the .part', async () => {
@@ -228,8 +247,8 @@ describe('resumable installer download', () => {
       executor.download(url, dest, { ...options, sha512: sha512(body) }),
     ).rejects.toThrow(/aborted|cancelled/)
     // exactly the first chunk: the token was checked and honoured at the boundary
-    expect((await stat(dest + '.part')).size).toBe(HEAD)
-    expect((await stat(dest + '.part')).size).toBeLessThan(body.length)
+    expect((await stat(partOf())).size).toBe(HEAD)
+    expect((await stat(partOf())).size).toBeLessThan(body.length)
   })
 
   it('falls back to the stock download without a sha512 to validate against', async () => {
@@ -244,7 +263,7 @@ describe('resumable installer download', () => {
 
   it('falls back when the request cannot be placed at all', async () => {
     const dest = destOf()
-    await writeFile(dest + '.part', PREFIX)
+    await seedPart(PREFIX, sha512(FULL))
     const { executor, fallbackCalls } = makeUpdater()
     globalThis.fetch = vi.fn(async () => {
       throw new TypeError('fetch failed')
@@ -253,12 +272,38 @@ describe('resumable installer download', () => {
     expect(fallbackCalls).toHaveLength(1)
   })
 
-  it('surfaces a server refusal instead of falling back', async () => {
+  it('falls back to the stock download on a non-2xx status, so a proxied user is not stuck', async () => {
+    // undici ignores the Electron session proxy, so a captive portal's 403
+    // arrives here as a plain status instead of the stock executor's own proxy
+    // handling ever running. Falling back keeps the pre-PR behaviour.
     const { executor, fallbackCalls } = makeUpdater()
     globalThis.fetch = vi.fn(async () => respond(403, Buffer.alloc(0))) as unknown as typeof fetch
-    await expect(executor.download(url, destOf(), { sha512: sha512(FULL) })).rejects.toThrow(
-      /status 403/,
-    )
-    expect(fallbackCalls).toHaveLength(0)
+    const result = await executor.download(url, destOf(), { sha512: sha512(FULL) })
+    expect(fallbackCalls).toHaveLength(1)
+    expect(result).toBe(destOf())
+  })
+
+  it("falls back to the stock download on a proxy's 407", async () => {
+    const { executor, fallbackCalls } = makeUpdater()
+    globalThis.fetch = vi.fn(async () => respond(407, Buffer.alloc(0))) as unknown as typeof fetch
+    const result = await executor.download(url, destOf(), { sha512: sha512(FULL) })
+    expect(fallbackCalls).toHaveLength(1)
+    expect(result).toBe(destOf())
+  })
+
+  it('falls back instead of hanging when a black-holed connection never answers', async () => {
+    // undici's fetch has no timeout, and the stall watchdog only arms once a
+    // response exists, so without the response window this would hang forever
+    // and the stock executor would never get its turn
+    const { executor, fallbackCalls } = makeUpdater(50, 50)
+    globalThis.fetch = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        }),
+    ) as unknown as typeof fetch
+    const result = await executor.download(url, destOf(), { sha512: sha512(FULL) })
+    expect(fallbackCalls).toHaveLength(1)
+    expect(result).toBe(destOf())
   })
 })
