@@ -1,5 +1,5 @@
 import ReactDOM from 'react-dom/client'
-import { htmlLang, type Lang } from '@genoffice/i18n'
+import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
 
 import '@genoffice/ui/tokens.css'
@@ -32,6 +32,11 @@ if (!root) throw new Error('Missing application root.')
 
 installScreenTips()
 installCanvasFontFallback()
+
+/** Right-to-left UI for the RTL languages; `lang` is the resolved UI language */
+function applyHtmlDir(lang: string): void {
+  document.documentElement.dir = isRtlLang(lang) ? 'rtl' : 'ltr'
+}
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')
@@ -68,6 +73,7 @@ async function bootstrap(): Promise<void> {
   }
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
+  applyHtmlDir(lang)
   applyTheme(theme)
   await loadCellFonts()
   // A spare view can receive a file while its renderer is still booting.

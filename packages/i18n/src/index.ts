@@ -95,6 +95,14 @@ export function htmlLang(lang: Lang): string {
   return HTML_LANGS[lang]
 }
 
+/** Languages whose script reads right-to-left: UI chrome flips direction for them */
+const RTL_LANGS: readonly Lang[] = ['ar', 'he']
+
+/** Whether this UI language lays out right-to-left (drives the renderers' html dir) */
+export function isRtlLang(lang: string | undefined | null): boolean {
+  return (RTL_LANGS as readonly string[]).includes(lang ?? '')
+}
+
 // ---- platform-native shortcut hints ----
 // Dictionaries write shortcut hints in Mac notation (⌘S, ⇧⌘Z, ⌘+Click); on
 // Windows/Linux every translated string is rewritten to Ctrl/Alt/Shift form.

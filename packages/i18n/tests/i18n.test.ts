@@ -4,6 +4,7 @@ import {
   format,
   htmlLang,
   isLang,
+  isRtlLang,
   LANGS,
   macShortcutsToWin,
   normalizeLang,
@@ -235,5 +236,21 @@ describe('createI18n', () => {
     expect(t('he', 'plain')).toBe('קבצים')
     expect(t('cs', 'plain')).toBe('Soubory')
     expect(t('zh-TW', 'plain')).toBe('檔案')
+  })
+})
+
+describe('isRtlLang', () => {
+  it('flags the right-to-left UI languages', () => {
+    expect(isRtlLang('ar')).toBe(true)
+    expect(isRtlLang('he')).toBe(true)
+  })
+
+  it('leaves left-to-right languages and junk alone', () => {
+    expect(isRtlLang('zh')).toBe(false)
+    expect(isRtlLang('en')).toBe(false)
+    expect(isRtlLang('zh-TW')).toBe(false)
+    expect(isRtlLang('fa')).toBe(false) // not in LANGS today
+    expect(isRtlLang(undefined)).toBe(false)
+    expect(isRtlLang('')).toBe(false)
   })
 })

@@ -2171,3 +2171,9 @@ body.vib .home {
   text-align: right;
   padding-top: 2px;
 }
+
+/* Extension labels like ".docx" read left-to-right even in the RTL UI */
+html[dir='rtl'] .quick-sub {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
