@@ -1290,9 +1290,15 @@ export function SettingsModal({
     void window.aiOffice.getAppVersion?.().then((v) => {
       if (alive && v) setAppVersion(v)
     })
-    void window.aiOffice.getUpdateState?.().then((s) => {
-      if (alive) setUpdateState(s)
-    })
+    // a rejected invoke (main process not ready, a shell whose preload does
+    // not expose the channel) must not surface as an unhandled rejection;
+    // without a known state the About row simply stays hidden
+    void window.aiOffice
+      .getUpdateState?.()
+      .then((s) => {
+        if (alive) setUpdateState(s)
+      })
+      .catch(() => undefined)
     void window.aiOffice.githubStars?.().then((n) => {
       if (alive && n !== null) setGithubStars(n)
     })

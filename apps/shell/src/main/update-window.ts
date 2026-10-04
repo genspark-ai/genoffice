@@ -9,7 +9,9 @@ import { UPDATE_CHANNELS } from '../shared/update-api'
  * "minimize" action folds it away and Settings → About re-opens it on demand.
  * Content lives in renderer/update.html; this module owns the window
  * lifecycle, the pushed UI state, and the download / install / later IPC
- * surface, plus the settings-facing open-for-update entry.
+ * surface, plus the settings-facing get-state / open-for-update entry — the
+ * last two are registered at module load, since the shell window invokes them
+ * before any update is known (see registerSettingsIpc).
  */
 
 interface UpdateActions {
@@ -34,14 +36,19 @@ function broadcastState(): void {
     lastParent.webContents.send(UPDATE_CHANNELS.stateChanged, currentState)
 }
 
-function registerIpc(): void {
-  if (ipcRegistered) return
-  ipcRegistered = true
+/**
+ * The two channels the shell window invokes from Settings → About. That call
+ * happens on mount — long before any update is known, which on a fresh launch
+ * is every launch — so these cannot live behind showUpdateWindow: a handler
+ * that only exists once the dialog has opened cannot answer the very first
+ * invoke, and ipcRenderer.invoke rejects with "No handler registered".
+ * currentState is null until the updater reports something, and null is the
+ * answer ("no update known"), not an error, so module load is the right
+ * registration point: this module is pulled in statically by updater.ts at
+ * main-process start, long before any renderer exists.
+ */
+function registerSettingsIpc(): void {
   ipcMain.handle(UPDATE_CHANNELS.getState, () => currentState)
-  ipcMain.handle(UPDATE_CHANNELS.download, () => actions?.onDownload())
-  ipcMain.handle(UPDATE_CHANNELS.install, () => actions?.onInstall())
-  ipcMain.handle(UPDATE_CHANNELS.later, () => actions?.onLater())
-  ipcMain.handle(UPDATE_CHANNELS.openDownload, () => actions?.onOpenDownload())
   // Settings → About "update to vX": surface the dialog again (it may have
   // been minimized) and, when nothing has started yet, start the download.
   // Returns false while no update is known — the settings button stays
@@ -57,6 +64,22 @@ function registerIpc(): void {
     if (currentState.phase === 'available' || currentState.phase === 'error') actions?.onDownload()
     return true
   })
+}
+registerSettingsIpc()
+
+/**
+ * The dialog's own channels. They stay here: only renderer/update.html loads
+ * preload/update.js, and that file exists solely because showUpdateWindow
+ * created the window, so nothing can reach these handlers before then. Their
+ * callbacks read `actions`, which is only assigned alongside that window.
+ */
+function registerIpc(): void {
+  if (ipcRegistered) return
+  ipcRegistered = true
+  ipcMain.handle(UPDATE_CHANNELS.download, () => actions?.onDownload())
+  ipcMain.handle(UPDATE_CHANNELS.install, () => actions?.onInstall())
+  ipcMain.handle(UPDATE_CHANNELS.later, () => actions?.onLater())
+  ipcMain.handle(UPDATE_CHANNELS.openDownload, () => actions?.onOpenDownload())
 }
 
 /** keeps the handler total when actions are missing (cannot happen today) */

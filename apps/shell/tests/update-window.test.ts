@@ -141,18 +141,18 @@ describe('update window — settings-facing surface', () => {
   })
 
   it('open-for-update reports false while no update is known', async () => {
+    // Settings → About invokes these on mount, so the handlers have to answer
+    // on a fresh module with no dialog ever shown — that is the common case
+    // (a fresh launch with nothing known). Asserting `handlers.has(...)` only
+    // proves a registration call ran, not that the invoke resolves, which is
+    // how this shipped broken: the channel existed, but only after a dialog
+    // had opened, so the real invoke rejected with "No handler registered".
     const mod = await loadModule()
-    // registerIpc runs on first show; state must exist by then, so call with
-    // a live window first, then clear state through a fresh module load
-    mod.showUpdateWindow(parent, state('available'), actions())
-    mod.closeUpdateWindow()
-    vi.resetModules()
-    handlers.clear()
-    const fresh = await import('../src/main/update-window')
-    fresh.showUpdateWindow(parent, state('available'), actions())
-    // simulate the "never seen" case via the exported getter contract instead:
-    // the handler answers from module state, which is set by showUpdateWindow
-    expect(handlers.has('update:open-for-update')).toBe(true)
+    expect(mod.currentUpdateUiState()).toBeNull()
+    expect(handlers.get('update:get-state')!()).toBeNull()
+    expect(handlers.get('update:open-for-update')!()).toBe(false)
+    // the pre-fix bug threw here: handlers.get(...) was undefined
+    expect(handlers.get('update:open-for-update')).toBeTypeOf('function')
   })
 
   it('exposes the freshest state for the settings row', async () => {
