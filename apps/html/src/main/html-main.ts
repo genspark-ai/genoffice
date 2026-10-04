@@ -45,6 +45,7 @@ import { generateImageTool } from '@genoffice/ai-search'
 import { parseFileToText } from '@genoffice/file-parse'
 import { convertHtmlToDocx } from '../../../../packages/html2docx/src'
 import { atomicWriteFile } from './atomic-write'
+import { printHtmlDocument, type PrintDialogOutcome } from './print-window'
 import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/drivers/electron'
 import {
   copyImageIntoOwnedAssets,
@@ -968,48 +969,29 @@ export function sendHtmlPrintRequest(contents: WebContents): void {
 }
 
 /**
- * Print the document in the same hidden script-free window renderPrintPdf uses,
- * so relative assets resolve through html-asset:// exactly as in the preview,
- * then hand it to the system print dialog instead of writing a PDF.
+ * Print the document through the system dialog, in the same window
+ * renderPrintPdf uses so relative assets resolve through html-asset:// exactly
+ * as in the preview.
  *
- * The window is script-free, exactly as the PDF export path already is, so the
- * printout and "Export as PDF" cannot drift apart. The cost is that a document
- * which builds its content with <script> prints the empty shell, because
- * nothing runs there — while the editor canvas does run those scripts, so the
- * two views disagree. Turning script on here would make print match the canvas
- * and diverge from the export instead; whichever is right, the two paths should
- * change together.
+ * The window keeps scripting ON, unlike the PDF export window above. Chromium
+ * rejects `executeJavaScript` outright when a window is created with
+ * `javascript: false` (verified against Electron 43), and the print path has
+ * to run the fonts/images readiness probe — a document that loads a webfont
+ * would otherwise print with fallback metrics and missing bitmaps. The cost is
+ * that print and "Export as PDF" now disagree for a document that builds its
+ * content with <script>: print runs those scripts, as the editor canvas and
+ * the docx export already do, while the PDF export still prints the shell.
+ * That is one of the two "change them together" cases this file already
+ * flagged; flipping the export window is a separate call for whoever owns it.
  */
-async function printHtml(
-  html: string,
-  docPath: string | undefined,
-  workDir: string,
-): Promise<void> {
+function printHtml(html: string, docPath: string | undefined): Promise<PrintDialogOutcome> {
   const base = docPath ? assetBaseHref(dirname(docPath)) : null
-  const htmlPath = join(workDir, 'print.html')
-  await writeFile(htmlPath, buildPreviewDocument(html, base), 'utf8')
-  const printWin = new BrowserWindow({
-    show: false,
-    webPreferences: { sandbox: true, javascript: false },
+  return printHtmlDocument({
+    html: buildPreviewDocument(html, base),
+    window: new BrowserWindow({ show: false, webPreferences: { sandbox: true } }),
+    fileName: 'print.html',
+    dirPrefix: 'genoffice-html-print-',
   })
-  try {
-    await printWin.loadFile(htmlPath)
-    // The dialog is modal to this hidden window, so the window must outlive it:
-    // destroying on the load callback would close the sheet as it opens.
-    await new Promise<void>((resolve, reject) => {
-      printWin.webContents.print(
-        { silent: false, printBackground: true },
-        (success, failureReason) => {
-          // A cancelled or failed dialog is the user's own outcome, not an error
-          // to surface; only a destroyed frame is worth reporting.
-          if (failureReason && printWin.isDestroyed()) reject(new Error(failureReason))
-          else resolve()
-        },
-      )
-    })
-  } finally {
-    if (!printWin.isDestroyed()) printWin.destroy()
-  }
 }
 
 export function htmlIsDirty(webContentsId: number): boolean {
@@ -1757,15 +1739,11 @@ function registerHtmlIpc(): void {
       if (typeof request?.html !== 'string') {
         return { ok: false, error: 'html: bad print request' }
       }
-      const workDir = await mkdtemp(join(tmpdir(), 'genoffice-html-print-'))
-      try {
-        await printHtml(request.html, savePathByWc.get(e.sender.id), workDir)
-        return { ok: true }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      } finally {
-        await rm(workDir, { recursive: true, force: true }).catch(() => {})
-      }
+      // printHtml already reports why it failed and separates a dialog the
+      // user closed from a real failure, so the outcome maps straight onto
+      // PrintResult: the renderer can stay silent on cancel and must surface
+      // a failure instead of swallowing it.
+      return printHtml(request.html, savePathByWc.get(e.sender.id))
     },
   )
 

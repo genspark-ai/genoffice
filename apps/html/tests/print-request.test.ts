@@ -43,7 +43,42 @@ describe('HTML print wiring', () => {
     // The print request carries the live buffer: printing what was last written
     // to disk would silently drop unsaved edits.
     const app = await source(APP)
-    expect(app).toMatch(/onPrintRequest\([\s\S]{0,600}printHtml\(/)
-    expect(app).toMatch(/onPrintRequest\([\s\S]{0,600}serializeDocText\(/)
+    expect(app).toMatch(/runPrint[\s\S]{0,900}serializeDocText\(/)
+    expect(app).toMatch(/printHtml\(\{/)
+  })
+
+  it('gates the print and releases the gate on every exit path', async () => {
+    // The gate itself, and its release, are proven in print-guard.test.ts; this
+    // pins that App.tsx actually routes the keystroke through it.
+    const app = await source(APP)
+    expect(app).toMatch(/const printingRef = useRef\(false\)/)
+    expect(app).toMatch(/runGuardedPrint\(\s*printingRef,/)
+  })
+
+  it('surfaces a failed print instead of swallowing ok:false', async () => {
+    // The old handler ended in .catch(() => {}), so a printer that refused the
+    // job left the user with a document that silently never printed.
+    const app = await source(APP)
+    expect(app).toMatch(/setNotice\(t\('printFailed', \{ error \}\)\)/)
+    const handler = app.slice(app.indexOf('const runPrint = useCallback'))
+    expect(handler).not.toContain('.catch(() => {})')
+  })
+
+  it('prints from a window that can run the fonts/images readiness probe', async () => {
+    // Chromium rejects executeJavaScript when a window is created with
+    // javascript: false, which would make the readiness wait impossible.
+    const main = await source(MAIN)
+    const printFn = main.slice(main.indexOf('function printHtml('))
+    expect(printFn).toMatch(/new BrowserWindow\(\{\s*show: false/)
+    expect(printFn).not.toMatch(/javascript: false/)
+    expect(printFn).toContain('printHtmlDocument({')
+  })
+
+  it('hands the print outcome back to the renderer, cancel included', async () => {
+    // The handler must not re-wrap the outcome into a bare { ok: true }: that
+    // is what made every failure look like a success to the renderer.
+    const main = await source(MAIN)
+    const handler = main.slice(main.indexOf('HTML_CHANNELS.printHtml,'))
+    expect(handler).toMatch(/return printHtml\(request\.html, savePathByWc\.get\(e\.sender\.id\)\)/)
   })
 })

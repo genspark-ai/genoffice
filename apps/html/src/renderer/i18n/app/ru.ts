@@ -7,6 +7,7 @@ export const ru = {
   saveFailed: 'Не удалось сохранить: {error}',
   saveFailedStatus: 'Не удалось сохранить',
   exportFailed: 'Не удалось экспортировать',
+  printFailed: 'Не удалось напечатать: {error}',
   exportHtmlSkipped:
     'Экспортировано, но {count} ресурс(ов) не удалось встроить (например, {first})',
   viewPreview: 'Просмотр',

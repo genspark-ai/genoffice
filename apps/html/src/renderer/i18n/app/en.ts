@@ -7,6 +7,7 @@ export const en = {
   saveFailed: 'Save failed: {error}',
   saveFailedStatus: 'Save failed',
   exportFailed: 'Export failed',
+  printFailed: 'Print failed: {error}',
   exportHtmlSkipped: 'Exported, but {count} asset(s) could not be inlined (e.g. {first})',
   viewPreview: 'Preview',
   viewSplit: 'Split',

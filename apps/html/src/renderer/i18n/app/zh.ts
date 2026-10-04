@@ -6,6 +6,7 @@ export const zh = {
   saveFailed: '保存失败：{error}',
   saveFailedStatus: '保存失败',
   exportFailed: '导出失败',
+  printFailed: '打印失败：{error}',
   exportHtmlSkipped: '已导出，但有 {count} 个资源无法内嵌（如 {first}）',
   viewPreview: '预览',
   viewSplit: '分栏',

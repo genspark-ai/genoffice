@@ -189,7 +189,9 @@ export interface PrintHtmlRequest {
   html: string
 }
 
-export type PrintResult = { ok: true } | { ok: false; error: string }
+/** A cancelled job is the user closing the system dialog: an outcome, not a failure,
+ * so it must stay silent. Mirrors the `canceled` variant ExportResult already uses. */
+export type PrintResult = { ok: true } | { ok: true; canceled: true } | { ok: false; error: string }
 
 export interface ImageData {
   base64: string
