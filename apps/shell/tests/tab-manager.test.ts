@@ -64,7 +64,29 @@ function makeFakeView(): FakeView {
   }
 }
 
-vi.mock('electron', () => ({ BrowserWindow: class {} }))
+vi.mock('electron', () => ({
+  BrowserWindow: class {},
+  // the manual's view is constructed inline in tab-manager (createHelpView),
+  // unlike the editor views which arrive through mocked module factories, so
+  // the electron mock itself must construct one. Self-contained: no outside
+  // references (vi.mock factories run before the module body). The large id
+  // stays clear of makeFakeView's counter.
+  WebContentsView: class {
+    webContents = {
+      id: 900001,
+      setWindowOpenHandler: () => ({ action: 'deny' as const }),
+      loadURL: () => Promise.resolve(),
+      focus: () => {},
+      on: () => {},
+      once: () => {},
+      close: () => {},
+      reload: () => {},
+      isDestroyed: () => false,
+    }
+    setBounds = () => {}
+    setVisible = () => {}
+  },
+}))
 
 const createDocsView = vi.fn(() => makeFakeView())
 const docsQueryDirty = vi.fn(() => Promise.resolve(false))
@@ -765,7 +787,12 @@ describe('file path bookkeeping', () => {
       const after = manager.list()
       if (after.length > before) opened.push(after[after.length - 1]!.kind)
     }
-    expect([...new Set(opened)].sort()).toEqual(RENAMABLE.map((c) => c.kind).sort())
+    // file-less tabs (the in-app manual) have no path to rename, so they are
+    // opened by the enumeration but must not demand a RENAMABLE case
+    const fileless = new Set(['help'])
+    expect([...new Set(opened.filter((k) => !fileless.has(k)))].sort()).toEqual(
+      RENAMABLE.map((c) => c.kind).sort(),
+    )
   })
 
   it('finds tabs by kind and path', () => {

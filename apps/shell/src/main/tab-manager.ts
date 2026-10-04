@@ -1,7 +1,7 @@
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { realpathSync } from 'node:fs'
-import { BrowserWindow } from 'electron'
-import type { Rectangle, WebContents, WebContentsView } from 'electron'
+import { BrowserWindow, shell, WebContentsView } from 'electron'
+import type { Rectangle, WebContents } from 'electron'
 
 import {
   createDocsView,
@@ -45,6 +45,7 @@ import {
   setActiveSlidesWebContents,
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
+import { rendererUrl, safeExternalUrl } from '@genoffice/electron-utils'
 import type { DocumentTabKind, OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
 import { TAB_STRIP_HEIGHT } from '../shared/tab-drag-geometry'
 
@@ -273,6 +274,19 @@ export class TabManager {
 
   openHomeTab(): void {
     this.activateTab(HOME_ID)
+  }
+
+  /** The in-app user manual (issue #1520): a closable tab showing the shell
+      renderer's help mode — the same bundle, branched on ?mode=help, so no
+      second renderer build is needed. */
+  openHelpTab(): string {
+    const view = createHelpView()
+    const id = `t${this.nextId++}`
+    this.shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    this.tabs.push({ id, kind: 'help', view, title: this.untitled('help', 'GenOffice Help') })
+    this.activateTab(id)
+    return id
   }
 
   openDocsTab(
@@ -807,4 +821,28 @@ export function canonicalPath(path: string | undefined): string | undefined {
   } catch {
     return path
   }
+}
+
+/** The manual shares the shell's renderer bundle and preload: the view is just
+    the shell renderer at ?mode=help. Dev serves it from the dev server, the
+    packaged app from the `help` scheme root registered in shell main. */
+function createHelpView(): WebContentsView {
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    const target = safeExternalUrl(url)
+    if (target) void shell.openExternal(target)
+    return { action: 'deny' }
+  })
+  void view.webContents.loadURL(
+    rendererUrl(process.env.ELECTRON_RENDERER_URL, 'help', { mode: 'help' }),
+  )
+  return view
 }

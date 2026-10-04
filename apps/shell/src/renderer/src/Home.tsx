@@ -3258,6 +3258,19 @@ export function Home() {
             <span className="nav-label">{t('navStarred')}</span>
             <span className="nav-count">{navCounts.starred}</span>
           </button>
+          <button className="nav-item" onClick={() => void window.aiOffice.openHelp()}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M6.05 6.4a2.06 2.06 0 1 1 2.9 1.88c-.58.29-.95.89-.95 1.54v.28"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <circle cx="8" cy="12.6" r="0.85" fill="currentColor" />
+              <circle cx="8" cy="8" r="6.6" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+            <span className="nav-label">{t('navUserGuide')}</span>
+          </button>
           {loggedIn && (
             <button
               className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}

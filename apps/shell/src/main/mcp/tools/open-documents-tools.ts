@@ -18,7 +18,7 @@ import { sanitizeFileBase, uniquePathIn } from './document-tools'
  */
 
 /** tab kind -> format family (the registry's vocabulary, for the type label) */
-const FAMILY_BY_KIND: Record<Exclude<TabKind, 'home'>, EditorFamily> = {
+const FAMILY_BY_KIND: Record<Exclude<TabKind, 'home' | 'help'>, EditorFamily> = {
   docs: 'docx',
   sheets: 'xlsx',
   slides: 'pptx',

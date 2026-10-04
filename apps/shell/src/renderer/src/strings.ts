@@ -7,6 +7,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: '最近',
     navStarred: '收藏',
+    navUserGuide: '使用手册',
     navCloud: 'Genspark Projects',
     cloudSubtitle: '在网页端用 Genspark AI 创建的项目。编辑在浏览器中继续——点击任意项目即可打开。',
     cloudSearchPlaceholder: '搜索 {n} 个项目…',
@@ -388,6 +389,7 @@ export const strings = {
     rootUnavailable: 'Not available',
     navRecent: 'Recent',
     navStarred: 'Starred',
+    navUserGuide: 'User Guide',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Projects created on the web with Genspark AI. Editing continues in your browser — click any project to open it.',
@@ -779,6 +781,7 @@ export const strings = {
     rootUnavailable: 'Không khả dụng',
     navRecent: 'Gần đây',
     navStarred: 'Đã gắn sao',
+    navUserGuide: 'Hướng dẫn sử dụng',
     navCloud: 'Dự án Genspark',
     cloudSubtitle:
       'Các dự án được tạo trên web với Genspark AI. Tiếp tục chỉnh sửa trên trình duyệt của bạn — nhấp vào bất kỳ dự án nào để mở.',
@@ -1173,6 +1176,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: '最近使用',
     navStarred: 'お気に入り',
+    navUserGuide: 'ユーザーガイド',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Web で Genspark AI を使って作成したプロジェクト。編集はブラウザで続行します。クリックで開きます。',
@@ -1579,6 +1583,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: '최근 사용',
     navStarred: '즐겨찾기',
+    navUserGuide: '사용자 가이드',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Genspark AI로 웹에서 만든 프로젝트입니다. 편집은 브라우저에서 계속됩니다. 프로젝트를 클릭하면 열립니다.',
@@ -1975,6 +1980,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Récents',
     navStarred: 'Favoris',
+    navUserGuide: "Guide de l'utilisateur",
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       "Projets créés sur le web avec Genspark AI. L'édition continue dans votre navigateur — cliquez sur un projet pour l'ouvrir.",
@@ -2387,6 +2393,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Zuletzt verwendet',
     navStarred: 'Favoriten',
+    navUserGuide: 'Benutzerhandbuch',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Mit Genspark AI im Web erstellte Projekte. Die Bearbeitung läuft im Browser weiter – klicken Sie auf ein Projekt, um es zu öffnen.',
@@ -2801,6 +2808,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Recientes',
     navStarred: 'Destacados',
+    navUserGuide: 'Guía del usuario',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Proyectos creados en la web con Genspark AI. La edición continúa en tu navegador: haz clic en un proyecto para abrirlo.',
@@ -3211,6 +3219,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'ล่าสุด',
     navStarred: 'รายการโปรด',
+    navUserGuide: 'คู่มือผู้ใช้',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'โปรเจกต์ที่สร้างบนเว็บด้วย Genspark AI แก้ไขต่อได้ในเบราว์เซอร์ — คลิกโปรเจกต์เพื่อเปิด',
@@ -3604,6 +3613,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Terbaru',
     navStarred: 'Berbintang',
+    navUserGuide: 'Panduan Pengguna',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Proyek yang dibuat di web dengan Genspark AI. Pengeditan berlanjut di browser — klik proyek untuk membukanya.',
@@ -4008,6 +4018,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Недавние',
     navStarred: 'Избранное',
+    navUserGuide: 'Руководство пользователя',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Проекты, созданные в вебе с Genspark AI. Редактирование продолжается в браузере — нажмите на проект, чтобы открыть его.',
@@ -4410,6 +4421,7 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'الأخيرة',
     navStarred: 'المفضلة',
+    navUserGuide: 'دليل المستخدم',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'مشاريع أُنشئت على الويب باستخدام Genspark AI. يستمر التحرير في المتصفح — انقر على أي مشروع لفتحه.',
@@ -4803,6 +4815,7 @@ export const strings = {
     rootUnavailable: 'Indisponível',
     navRecent: 'Recentes',
     navStarred: 'Favoritos',
+    navUserGuide: 'Guia do Usuário',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Projetos criados na web com o Genspark AI. A edição continua no navegador — clique em um projeto para abri-lo.',
@@ -5202,6 +5215,7 @@ export const strings = {
     rootUnavailable: 'Non disponibile',
     navRecent: 'Recenti',
     navStarred: 'Preferiti',
+    navUserGuide: "Guida dell'utente",
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Progetti creati sul web con Genspark AI. La modifica continua nel browser: fai clic su un progetto per aprirlo.',
@@ -5600,6 +5614,7 @@ export const strings = {
     rootUnavailable: 'Niedostępny',
     navRecent: 'Ostatnie',
     navStarred: 'Ulubione',
+    navUserGuide: 'Podręcznik użytkownika',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Projekty utworzone w sieci za pomocą Genspark AI. Edycja jest kontynuowana w przeglądarce — kliknij projekt, aby go otworzyć.',
@@ -5993,6 +6008,7 @@ export const strings = {
     rootUnavailable: 'Nedostupné',
     navRecent: 'Nedávné',
     navStarred: 'Oblíbené',
+    navUserGuide: 'Uživatelská příručka',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Projekty vytvořené na webu pomocí Genspark AI. Úpravy pokračují v prohlížeči — klikněte na projekt a otevřete ho.',
@@ -6386,6 +6402,7 @@ export const strings = {
     rootUnavailable: 'Niet beschikbaar',
     navRecent: 'Recent',
     navStarred: 'Favorieten',
+    navUserGuide: 'Gebruikershandleiding',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Projecten gemaakt op het web met Genspark AI. Bewerken gaat verder in je browser — klik op een project om het te openen.',
@@ -6782,6 +6799,7 @@ export const strings = {
     rootUnavailable: 'Tidak tersedia',
     navRecent: 'Terkini',
     navStarred: 'Berbintang',
+    navUserGuide: 'Panduan Pengguna',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Projek yang dicipta di web dengan Genspark AI. Penyuntingan diteruskan dalam pelayar — klik projek untuk membukanya.',
@@ -7181,6 +7199,7 @@ export const strings = {
     rootUnavailable: 'לא זמין',
     navRecent: 'אחרונים',
     navStarred: 'מועדפים',
+    navUserGuide: 'מדריך למשתמש',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'פרויקטים שנוצרו באינטרנט עם Genspark AI. העריכה נמשכת בדפדפן — לחצו על פרויקט כדי לפתוח אותו.',
@@ -7562,6 +7581,7 @@ export const strings = {
     rootUnavailable: 'उपलब्ध नहीं',
     navRecent: 'हाल के',
     navStarred: 'तारांकित',
+    navUserGuide: 'उपयोगकर्ता गाइड',
     navCloud: 'Genspark Projects',
     cloudSubtitle:
       'Genspark AI के साथ वेब पर बनाए गए प्रोजेक्ट। संपादन ब्राउज़र में जारी रहता है — खोलने के लिए किसी प्रोजेक्ट पर क्लिक करें।',
@@ -7955,6 +7975,7 @@ export const strings = {
     rootUnavailable: '無法使用',
     navRecent: '最近',
     navStarred: '收藏',
+    navUserGuide: '使用手冊',
     navCloud: 'Genspark Projects',
     cloudSubtitle: '在網頁端用 Genspark AI 建立的專案。編輯在瀏覽器中繼續——點擊任意專案即可開啟。',
     cloudSearchPlaceholder: '搜尋 {n} 個專案…',
