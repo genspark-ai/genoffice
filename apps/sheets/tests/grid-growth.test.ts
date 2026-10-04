@@ -209,7 +209,7 @@ describe('grid growth and the undo stack', () => {
   it('control: the same growth through the facade does push an undo step', () => {
     // Guards the two tests above: if this ever stops growing the stack, the
     // assertions there are measuring nothing and have to be rewritten.
-    const { univerAPI, undoRedoService, worksheet } = bootBlankWorkbook()
+    const { undoRedoService, worksheet } = bootBlankWorkbook()
     expect(undoStackLength(undoRedoService)).toBe(0)
 
     worksheet.setColumnCount(52)
