@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { AUTO_OCR_PAGE_CAP, buildOcrPageData, runAutoOcr } from '../src/renderer/ocr-layer'
+import type { OcrPageData } from '../src/renderer/ocr-layer'
 import type { PdfOcrLine } from '../src/shared/ipc'
 import { createSearchIndexCache, searchInIndex } from '../src/renderer/search'
-import type { SearchIndexCache } from '../src/renderer/search'
+import type { SearchIndex, SearchIndexCache } from '../src/renderer/search'
 
 const GEOM = { pw: 600, ph: 800, rot: 0 }
 
@@ -209,8 +210,11 @@ async function runPass(
   doc: PDFDocumentProxy,
   opts: {
     fromPage?: number
+    /** The queue a continued pass walks (see `result.pending`) */
+    pending?: readonly number[]
     limit?: number
     cache?: SearchIndexCache
+    signal?: AbortSignal
     abortAfter?: (calls: number, controller: AbortController) => void
     engine?: (calls: number) => PdfOcrLine[] | null
     render?: () => Promise<string | null>
@@ -218,13 +222,16 @@ async function runPass(
 ) {
   const controller = new AbortController()
   const recognized: number[] = []
+  /** What `onPage` handed over, keyed the way the app keys its OCR page map */
+  const pages = new Map<number, OcrPageData>()
   const progress: [number, number][] = []
   let engineCalls = 0
   const result = await runAutoOcr({
     doc,
     cache: opts.cache ?? createSearchIndexCache(),
     fromPage: () => opts.fromPage ?? 0,
-    signal: controller.signal,
+    signal: opts.signal ?? controller.signal,
+    ...(opts.pending === undefined ? {} : { pending: opts.pending }),
     ...(opts.limit === undefined ? {} : { limit: opts.limit }),
     geom: () => GEOM,
     render: opts.render ?? (async () => 'png'),
@@ -233,11 +240,16 @@ async function runPass(
       opts.abortAfter?.(engineCalls, controller)
       return opts.engine ? opts.engine(engineCalls) : [LINE]
     },
-    onPage: (origIdx) => recognized.push(origIdx),
+    onPage: (origIdx, data) => {
+      recognized.push(origIdx)
+      pages.set(origIdx, data)
+    },
     onProgress: (done, total) => progress.push([done, total]),
   })
-  return { result, recognized, progress, engineCalls }
+  return { result, recognized, pages, progress, engineCalls }
 }
+
+const span = (from: number, count: number) => Array.from({ length: count }, (_, i) => from + i)
 
 describe('runAutoOcr', () => {
   it('stops at the page cap and reports the pages it left unrecognized', async () => {
@@ -317,5 +329,85 @@ describe('runAutoOcr', () => {
     const { progress } = await runPass(doc, {})
     expect(progress[0]).toEqual([0, 3])
     expect(progress[progress.length - 1]).toEqual([2, 3])
+  })
+
+  it('resumes at the page the cap stopped on, so the far pages become searchable', async () => {
+    // 100 scanned pages under the 40-page cap: the pass has to be continued
+    // three times, and each continuation must pick up at the page the cap cut
+    // it on rather than at page 1, or the tail is never recognized
+    const { doc } = scannedDoc(100)
+    const cache = createSearchIndexCache()
+    const ocrPages = new Map<number, OcrPageData>()
+
+    const first = await runPass(doc, { cache })
+    expect(first.result.stop).toBe('cap')
+    expect(first.result.pending).toEqual(span(AUTO_OCR_PAGE_CAP, 100 - AUTO_OCR_PAGE_CAP))
+    expect(first.recognized).toEqual(span(0, AUTO_OCR_PAGE_CAP))
+
+    const second = await runPass(doc, { cache, pending: first.result.pending ?? [] })
+    expect(second.result.stop).toBe('cap')
+    expect(second.result.pending).toEqual(span(AUTO_OCR_PAGE_CAP * 2, 100 - AUTO_OCR_PAGE_CAP * 2))
+    expect(second.recognized).toEqual(span(AUTO_OCR_PAGE_CAP, AUTO_OCR_PAGE_CAP))
+
+    const third = await runPass(doc, { cache, pending: second.result.pending ?? [] })
+    expect(third.result.stop).toBe('complete')
+    expect(third.result.pending).toBeNull()
+    expect(third.recognized).toEqual(span(AUTO_OCR_PAGE_CAP * 2, 100 - AUTO_OCR_PAGE_CAP * 2))
+
+    // no page was paid for twice, and no page was skipped on the way round
+    const visited = [...first.recognized, ...second.recognized, ...third.recognized]
+    expect(visited).toHaveLength(100)
+    expect(new Set(visited).size).toBe(100)
+
+    // the pages past the cap are searchable once the pass has been continued
+    for (const pass of [first, second, third]) {
+      for (const [origIdx, data] of pass.pages) ocrPages.set(origIdx, data)
+    }
+    const base = await cache.get(doc)
+    const merged: SearchIndex = base.map((entry, i) => ocrPages.get(i)?.entry ?? entry)
+    const hits = new Set(searchInIndex(merged, 'recognized').map((m) => m.pageIndex))
+    expect(hits.has(AUTO_OCR_PAGE_CAP)).toBe(true)
+    expect(hits.has(99)).toBe(true)
+  })
+
+  it('continues the wrap-around order instead of re-paying for the pages it wrapped past', async () => {
+    // Reading near the end of a long scan rotates the order, so the pages after
+    // the anchor come first. A continuation that re-rotated from the current
+    // page would drop the wrapped tail and re-pay for the pages before it
+    const { doc } = scannedDoc(100)
+    const cache = createSearchIndexCache()
+    const first = await runPass(doc, { cache, fromPage: 90, limit: 40 })
+    expect(first.result.stop).toBe('cap')
+    expect(first.recognized).toEqual([...span(90, 10), ...span(0, 30)])
+
+    const second = await runPass(doc, { cache, pending: first.result.pending ?? [] })
+    expect(second.result.stop).toBe('cap')
+    expect(second.recognized).toEqual(span(30, 40))
+
+    const third = await runPass(doc, { cache, pending: second.result.pending ?? [] })
+    expect(third.result.stop).toBe('complete')
+    // 90-99 were recognized by the first pass before it wrapped, so the tail
+    // ends at 89 and they are not paid for a second time
+    expect(third.recognized).toEqual(span(70, 20))
+
+    const visited = [...first.recognized, ...second.recognized, ...third.recognized]
+    expect(visited).toHaveLength(100)
+    expect(new Set(visited).size).toBe(100)
+  })
+
+  it('stops a continued pass whose old signal was aborted in between', async () => {
+    // The cap is a pause, not a cancel, so a continuation reuses the finished
+    // pass's signal. If that signal was torn down in the meantime it is already
+    // aborted, and handing it over would cancel the pass before its first page
+    const { doc } = scannedDoc(100)
+    const controller = new AbortController()
+    controller.abort()
+    const { result, engineCalls } = await runPass(doc, {
+      signal: controller.signal,
+      pending: span(40, 60),
+    })
+    expect(result.stop).toBe('cancelled')
+    expect(result.done).toBe(0)
+    expect(engineCalls).toBe(0)
   })
 })

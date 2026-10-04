@@ -204,8 +204,12 @@ export interface AutoOcrResult {
   done: number
   /** Scanned pages in the document */
   total: number
-  /** Scanned pages the pass never reached (0 unless `cap` or `cancelled`) */
+  /** Scanned pages this pass never reached (0 unless `cap` or `cancelled`) */
   remaining: number
+  /** The pages a following pass still has to walk, in the order this pass had
+      queued them, so a capped pass is continued where it stopped instead of
+      being restarted. Set only for `cap`; `null` once there is nothing left. */
+  pending: number[] | null
 }
 
 /** Recognize the document's scanned pages sequentially, in the background.
@@ -216,8 +220,14 @@ export interface AutoOcrResult {
 export async function runAutoOcr(opts: {
   doc: PDFDocumentProxy
   cache: SearchIndexCache
-  /** Original page to start from, read when the index resolves (it takes a while) */
+  /** Original page to start from, read when the index resolves (it takes a while).
+      Ignored when `pending` continues an earlier pass. */
   fromPage: () => number
+  /** The pages an earlier pass left, in its own visit order, as reported by
+      `pending`. Handing them back is what makes a continuation pick up exactly
+      the pages that pass never reached: the order is already settled, so it is
+      followed rather than rebuilt, and a page is not paid for a second time. */
+  pending?: readonly number[]
   signal: AbortSignal
   limit?: number
   geom: (origIdx: number) => PageGeom
@@ -229,29 +239,43 @@ export async function runAutoOcr(opts: {
   const limit = opts.limit ?? AUTO_OCR_PAGE_CAP
   const index = await opts.cache.get(opts.doc)
   const scanned = index.map((entry, i) => (isScannedEntry(entry) ? i : -1)).filter((i) => i >= 0)
-  const from = scanned.findIndex((i) => i >= opts.fromPage())
-  const ordered = from > 0 ? [...scanned.slice(from), ...scanned.slice(0, from)] : scanned
-  const total = ordered.length
+  // A continuation walks the queue it was handed as it stands. A first pass
+  // builds one from the whole document, rotating so the pages after the reading
+  // position come first; pages that rotation had already walked before the cap
+  // are never re-queued, which is what keeps the wrapped tail from being paid
+  // for twice.
+  let queue: readonly number[] = opts.pending ?? scanned
+  if (!opts.pending) {
+    const from = scanned.findIndex((i) => i >= opts.fromPage())
+    if (from > 0) queue = [...scanned.slice(from), ...scanned.slice(0, from)]
+  }
+  const total = scanned.length
   // The cap counts attempted pages, not successes: a page that fails to render or
   // throws in the engine still cost work, and must not let the pass run forever
-  const finish = (stop: AutoOcrStop, done: number, attempted: number): AutoOcrResult => ({
+  const finish = (
+    stop: AutoOcrStop,
+    done: number,
+    attempted: number,
+    pending: number[] | null,
+  ): AutoOcrResult => ({
     stop,
     done,
     total,
-    remaining: total - attempted,
+    remaining: queue.length - attempted,
+    pending,
   })
   let done = 0
   let attempted = 0
-  for (const origIdx of ordered) {
-    if (attempted >= limit) return finish('cap', done, attempted)
-    if (opts.signal.aborted) return finish('cancelled', done, attempted)
+  for (let at = 0; at < queue.length; at += 1) {
+    if (attempted >= limit) return finish('cap', done, attempted, queue.slice(at))
+    if (opts.signal.aborted) return finish('cancelled', done, attempted, null)
     opts.onProgress(done, total)
     // one geometry snapshot for render and box conversion: a rotation between
     // the two awaits must not remap boxes through different axes
-    const geom = opts.geom(origIdx)
-    const png = await opts.render(opts.doc, origIdx, geom)
+    const geom = opts.geom(queue[at]!)
+    const png = await opts.render(opts.doc, queue[at]!, geom)
     // a cancel after the render must not pay for the engine call
-    if (opts.signal.aborted) return finish('cancelled', done, attempted)
+    if (opts.signal.aborted) return finish('cancelled', done, attempted, null)
     if (!png) {
       attempted += 1
       continue // no bitmap; the next page may still render
@@ -263,16 +287,16 @@ export async function runAutoOcr(opts: {
       attempted += 1
       continue // this page failed; the rest may still recognize
     }
-    if (lines === null) return finish('noEngine', done, attempted)
+    if (lines === null) return finish('noEngine', done, attempted, null)
     // an engine call already in flight is kept: the work is paid for
     const data = buildOcrPageData(lines, geom)
     if (data) {
-      opts.onPage(origIdx, data)
+      opts.onPage(queue[at]!, data)
       done += 1
     }
     attempted += 1
   }
-  return finish('complete', done, attempted)
+  return finish('complete', done, attempted, null)
 }
 
 /** Transparent selectable overlay; spans are re-projected through the live geometry,
