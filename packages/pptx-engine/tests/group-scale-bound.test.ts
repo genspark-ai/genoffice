@@ -31,6 +31,22 @@ const groupSlideXml = (extCx: string, chCx: string) =>
   '</p:grpSp>' +
   '</p:spTree></p:cSld></p:sld>'
 
+/** A p:cxnSp child: what PowerPoint puts in a zero-height connector group. */
+const CXNSP =
+  '<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="4" name="c"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
+  '<p:spPr><a:xfrm><a:off x="1200000" y="2000000"/><a:ext cx="2600000" cy="0"/></a:xfrm>' +
+  '<a:prstGeom prst="line"><a:avLst/></a:prstGeom></p:spPr></p:cxnSp>'
+
+/** A group slide carrying one group whose a:xfrm is given verbatim (asymmetric axes). */
+const groupSlideXmlWith = (xfrm: string, child = SP) =>
+  '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree>' +
+  '<p:nvGrpSpPr/><p:grpSpPr/>' +
+  '<p:grpSp><p:nvGrpSpPr><p:cNvPr id="2" name="g"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>' +
+  `<p:grpSpPr>${xfrm}</p:grpSpPr>` +
+  child +
+  '</p:grpSp>' +
+  '</p:spTree></p:cSld></p:sld>'
+
 const groupOf = (slideXml: string): GroupElement => {
   const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
   const el = slide.elements[0]
@@ -39,11 +55,20 @@ const groupOf = (slideXml: string): GroupElement => {
 }
 
 /**
- * The scale the model hands the layout tree, or null when the group carries no
- * child coordinate system (the 1:1 mapping consumers fall back to).
+ * The per-axis scale the model hands the layout tree, or null when the group
+ * carries no child coordinate system (the 1:1 mapping consumers fall back to).
+ * A zero axis is scale 1 in every consumer (pptx-ops: `ch?.cx ? … : 1`,
+ * pptx-render: `ch?.cx || …`), which is what a dropped chOff gives too.
  */
-const childSpaceScale = (g: GroupElement): number | null =>
-  g.childOffset && g.childOffset.cx > 0 ? g.transform.offset.cx / g.childOffset.cx : null
+const axisScales = (g: GroupElement): { x: number; y: number } | null =>
+  g.childOffset
+    ? {
+        x: g.childOffset.cx > 0 ? g.transform.offset.cx / g.childOffset.cx : 1,
+        y: g.childOffset.cy > 0 ? g.transform.offset.cy / g.childOffset.cy : 1,
+      }
+    : null
+
+const childSpaceScale = (g: GroupElement): number | null => axisScales(g)?.x ?? null
 
 describe('group child-coordinate scale bound', () => {
   it('drops a child coordinate system whose scale walks out of the write-path range', () => {
@@ -87,11 +112,74 @@ describe('group child-coordinate scale bound', () => {
     expect(childSpaceScale(g)).toBeNull()
   })
 
-  it('rejects a zero child extent (no zero denominator in the model)', () => {
-    const g = groupOf(groupSlideXml('2147483648', '0'))
+  it('keeps a zero-height connector group on its child coordinate system', () => {
+    // PowerPoint writes ext cy=0 / chExt cy=0 for a horizontal connector group.
+    // A zero axis is scale 1, but chOff still positions the child, so dropping the
+    // child coordinate system would move the connector.
+    const g = groupOf(
+      groupSlideXmlWith(
+        '<a:xfrm><a:off x="500000" y="4000000"/><a:ext cx="3000000" cy="0"/>' +
+          '<a:chOff x="1000000" y="2000000"/><a:chExt cx="3000000" cy="0"/></a:xfrm>',
+        CXNSP,
+      ),
+    )
+
+    expect(g.childOffset).toEqual({ x: 1000000, y: 2000000, cx: 3000000, cy: 0 })
+    expect(axisScales(g)).toEqual({ x: 1, y: 1 })
+    // The cxnSp child is parsed as usual: a stroke-only shape, line preset.
+    expect(g.children).toHaveLength(1)
+    expect(g.children[0].type).toBe('shape')
+    expect((g.children[0] as { presetGeometry?: string }).presetGeometry).toBe('line')
+  })
+
+  it('scales the healthy axis of a zero-height group and leaves the zero axis at 1', () => {
+    const g = groupOf(
+      groupSlideXmlWith(
+        '<a:xfrm><a:off x="0" y="4000000"/><a:ext cx="7620000" cy="0"/>' +
+          '<a:chOff x="0" y="2000000"/><a:chExt cx="3810000" cy="0"/></a:xfrm>',
+        CXNSP,
+      ),
+    )
+
+    // A zero cy must neither zero nor invalidate the 2x cx.
+    expect(g.childOffset).toEqual({ x: 0, y: 2000000, cx: 3810000, cy: 0 })
+    expect(axisScales(g)).toEqual({ x: 2, y: 1 })
+  })
+
+  it('still drops a group whose healthy axis overflows, next to a zero axis', () => {
+    // The cy axis is judged on its own and cannot mask the cx overflow.
+    const g = groupOf(
+      groupSlideXmlWith(
+        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="2147483648" cy="0"/>' +
+          '<a:chOff x="0" y="0"/><a:chExt cx="1" cy="0"/></a:xfrm>',
+        CXNSP,
+      ),
+    )
 
     expect(g.childOffset).toBeUndefined()
-    expect(childSpaceScale(g)).toBeNull()
+    expect(axisScales(g)).toBeNull()
+  })
+
+  it('rejects a non-finite chOff instead of mapping a child onto NaN', () => {
+    const g = groupOf(
+      groupSlideXmlWith(
+        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="3000000" cy="3000000"/>' +
+          `<a:chOff x="${OVER_INT64}" y="0"/><a:chExt cx="3000000" cy="3000000"/></a:xfrm>`,
+      ),
+    )
+
+    expect(g.childOffset).toBeUndefined()
+    expect(axisScales(g)).toBeNull()
+  })
+
+  it('keeps a zero child extent on both axes (scale 1 on each)', () => {
+    // A zero chExt is legitimate input, not a reason to lose the child coordinate
+    // system: every consumer already maps a zero axis to 1, the same mapping the
+    // 1:1 fallback gives.
+    const g = groupOf(groupSlideXml('2147483648', '0'))
+
+    expect(g.childOffset).toEqual({ x: 0, y: 0, cx: 0, cy: 0 })
+    expect(axisScales(g)).toEqual({ x: 1, y: 1 })
   })
 
   it('leaves a non-finite group box to the write-path clamp (both ends agree)', () => {

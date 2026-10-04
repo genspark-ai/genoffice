@@ -865,18 +865,43 @@ interface GroupParseBudget {
  * generate.ts clamps every a:ext to, with non-finite values refused outright.
  * The group box is measured after one more trip through the same scale, which is
  * what bounds the nested-group case; every group PowerPoint writes sits orders of
- * magnitude below the bound. A chExt of 0 is rejected too, so no consumer sees a
- * zero denominator.
+ * magnitude below the bound.
+ *
+ * Each axis is judged on its own, and a zero on one axis is not a verdict about
+ * the other: PowerPoint writes ext cy=0 / chExt cy=0 for a horizontal connector
+ * group, and a zero chExt (or ext) is a legitimate degenerate group, not a
+ * malformed one. Every consumer already maps a zero axis to scale 1
+ * (pptx-ops: `ch?.cx ? … : 1`, pptx-render: `ch?.cx || …`) — the very mapping
+ * the 1:1 fallback gives — so scale 1 costs nothing and the chOff coordinate
+ * that positions the child survives. Only a real quotient can overflow, and
+ * non-finite input is refused outright on either side of the mapping.
  */
 function groupScaleWithinWriteRange(groupExt: EmuRect, childExt: EmuRect): boolean {
+  // An attribute outside the int64 the schema allows parses to Infinity
+  // (parseInt of a 400-digit string). Infinity/NaN on any field that feeds the
+  // mapping — the group origin, the group box, chOff, chExt — would carry
+  // straight into the layout tree, so the child coordinate system goes.
+  const mapped = [
+    groupExt.x,
+    groupExt.y,
+    groupExt.cx,
+    groupExt.cy,
+    childExt.x,
+    childExt.y,
+    childExt.cx,
+    childExt.cy,
+  ]
+  if (!mapped.every(Number.isFinite)) return false
   const axes: Array<[number, number]> = [
     [groupExt.cx, childExt.cx],
     [groupExt.cy, childExt.cy],
   ]
   for (const [g, ch] of axes) {
-    // An attribute outside the int64 the schema allows parses to Infinity
-    // (parseInt of a 400-digit string), which would make the scale NaN/Infinity.
-    if (!Number.isFinite(g) || !Number.isFinite(ch) || ch <= 0) return false
+    // ch <= 0 (0 for a degenerate group, negative only in a broken file) is
+    // scale 1 on this axis: no quotient, nothing to overflow, and the sibling
+    // axis is never consulted here. Scale 1 leaves the group box at |g|, which
+    // is the a:ext the write path already clamps on its own.
+    if (ch <= 0) continue
     if (g * (g / ch) > COORD_MAX) return false
   }
   return true
