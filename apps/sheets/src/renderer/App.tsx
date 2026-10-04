@@ -31,6 +31,7 @@ import {
   installFindRevealFix,
   installInjectorResolutionGuard,
   installWrapMeasureLifecycle,
+  noteSidecarCrash,
 } from './univer-sync'
 import {
   pollUntilReady,
@@ -1008,6 +1009,19 @@ export function App({
     () =>
       window.desktopApi?.onWorkbookRenamed?.((newName) => {
         setWorkbookFile((prev) => (prev ? { ...prev, name: newName } : prev))
+      }) ?? (() => undefined),
+    [],
+  )
+
+  // The sidecar process died, so every session id this tab holds is unknown
+  // to the replacement. Record the crash: the next range read re-opens the
+  // workbook through the normal open path and adopts a live session. Only an
+  // actual process death reaches here — a session the app closed or swapped
+  // on purpose is not a crash and must not re-open anything.
+  useEffect(
+    () =>
+      window.desktopApi?.onSidecarCrashed?.(() => {
+        noteSidecarCrash()
       }) ?? (() => undefined),
     [],
   )

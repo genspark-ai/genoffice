@@ -1773,14 +1773,20 @@ export interface MappedRangeRead {
 const SIDECAR_READ_BATCH_CELLS = 90_000
 
 /// A crashed sidecar is replaced with a process that has never heard of the
-/// session ids the renderer is holding, so every read from then on comes back
-/// rejected and the grid can never load data again. The sidecar names the
-/// condition with exactly this message (xlsx-engine read_range), which is also
-/// the wording sheets-main's own session guard uses.
-const UNKNOWN_WORKBOOK_SESSION = 'Unknown workbook session.'
+/// session ids the renderer is holding, so every read from then on fails and
+/// the grid can never load data again. Recovery is driven by the main
+/// process's explicit crash notification (see onSidecarCrashed), NOT by an
+/// error message: sheets-main and the Rust sidecar both reject an unknown
+/// session with the identical "Unknown workbook session." text that the Save
+/// swap and closeWorkbook produce on purpose, so a message match fires on
+/// ordinary saves.
+let sidecarCrashNotified = false
 
-function isSessionLost(error: unknown): boolean {
-  return error instanceof Error && error.message.includes(UNKNOWN_WORKBOOK_SESSION)
+/// Called when the main process reports the sidecar process died. Every
+/// session id this renderer holds is now unknown to the replacement process,
+/// so the next read re-opens the workbook and adopts a live one.
+export function noteSidecarCrash(): void {
+  sidecarCrashNotified = true
 }
 
 /// One recovery at a time: a crash fails every in-flight read at once, and
@@ -1799,6 +1805,9 @@ const sessionRecoveryAttempted = new WeakSet<object>()
 /// leaving them would claim the windows are already loaded and keep the grid
 /// blank.
 export async function recoverSidecarSession(state: LazyWorkbookState): Promise<boolean> {
+  // The signal is consumed by the read that acts on it, so a crash noticed
+  // while no read is in flight still recovers on the next one.
+  sidecarCrashNotified = false
   if (sessionRecoveryInFlight) return sessionRecoveryInFlight
   if (sessionRecoveryAttempted.has(state)) return false
   sessionRecoveryAttempted.add(state)
@@ -1807,7 +1816,11 @@ export async function recoverSidecarSession(state: LazyWorkbookState): Promise<b
     // Nothing on disk to re-open (a new or imported workbook): leave the
     // status message, only a manual open can recover these.
     if (!path) return false
-    const [reopened] = (await window.desktopApi.openWorkbooksForMerge([path])) ?? []
+    // The normal open path, not the merge-source one: a crash re-open is
+    // re-opening the workbook itself, so it must adopt the file as a normal
+    // session (with the usual csv/xls import handling) rather than opening a
+    // second merge input that nothing would ever close.
+    const reopened = await window.desktopApi.reopenWorkbook(path)
     if (!reopened) return false
     state.file = { ...state.file, sessionId: reopened.sessionId }
     for (const timer of state.retryTimers.values()) clearTimeout(timer)
@@ -1844,10 +1857,12 @@ export async function readSheetRangeMapped(
     return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
   } catch (error: unknown) {
     // Every range read in the app funnels through here, so this is the one
-    // place a lost session can be noticed. Without it the crash only ever
-    // produced a status-bar message over a permanently empty sheet, and the
-    // user had to reopen the file by hand.
-    if (!isSessionLost(error) || !(await recoverSidecarSession(state))) throw error
+    // place a crashed sidecar can be noticed. The gate is the main process's
+    // crash notification, NOT the rejection's text: a read that raced the Save
+    // swap or a closeWorkbook is rejected with the very same "Unknown workbook
+    // session." and is NOT a crash, so it must surface as an ordinary error
+    // instead of re-opening the file and orphaning a session.
+    if (!sidecarCrashNotified || !(await recoverSidecarSession(state))) throw error
     return await readSheetRangeMappedOnce(state, sheetId, screenRange, sheet)
   }
 }
