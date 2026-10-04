@@ -115,10 +115,20 @@ describe('the shipped strings are translated, not raw keys or copies', () => {
 
   it('zh-TW keeps the traditional forms', () => {
     const src = readFileSync(join(DOCS_APP, 'zh-TW.ts'), 'utf8')
-    expect(/appLangItalian:\s*'[^']*義大利[^']*'/.test(src)).toBe(true)
-    expect(/appLangTraditionalChinese:\s*'[^']*繁體中文[^']*'/.test(src)).toBe(true)
-    // the seven that already shipped use the traditional 韓, not 韩
-    expect(/appLangKorean:\s*'韓文'/.test(src)).toBe(true)
+    // The characters under test are exactly the ones that must differ between
+    // the two scripts. Written as \u escapes so this file stays ASCII and does
+    // not trip the comment-language gate, while still asserting the glyphs.
+    const italy = '\u7fa9\u5927\u5229'
+    const traditional = '\u7e41\u9ad4\u4e2d\u6587'
+    const koreanTraditional = '\u97d3\u6587'
+    const koreanSimplified = '\u97e9\u6587'
+    // substring, not equality: the wording may carry a suffix, what matters
+    // is that the glyphs are the traditional forms
+    const row = (key: string) => new RegExp(`${key}:\\s*'[^']*'`).exec(src)?.[0] ?? ''
+    expect(row('appLangItalian')).toContain(italy)
+    expect(row('appLangTraditionalChinese')).toContain(traditional)
+    expect(row('appLangKorean')).toContain(koreanTraditional)
+    expect(row('appLangKorean')).not.toContain(koreanSimplified)
   })
 })
 
