@@ -14,6 +14,10 @@ describe('matchesExtFamily', () => {
     expect(matchesExtFamily('pptx', 'pptx')).toBe(true)
     expect(matchesExtFamily('markdown', 'md')).toBe(true)
     expect(matchesExtFamily('md', 'md')).toBe(true)
+    // the text app opens txt/json as source, so the sidebar "md" filter has to
+    // page them in the way Home's own filter families already do
+    expect(matchesExtFamily('txt', 'md')).toBe(true)
+    expect(matchesExtFamily('json', 'md')).toBe(true)
     expect(matchesExtFamily('csv', 'xlsx')).toBe(true)
     expect(matchesExtFamily('htm', 'html')).toBe(true)
   })
@@ -22,6 +26,26 @@ describe('matchesExtFamily', () => {
     expect(matchesExtFamily('pdf', 'pdf')).toBe(true)
     expect(matchesExtFamily('xlsx', 'docx')).toBe(false)
     expect(matchesExtFamily('png', 'xlsx')).toBe(false)
+    expect(matchesExtFamily('png', 'md')).toBe(false)
+  })
+})
+
+/**
+ * The three filter-family tables — the sidebar's EXT_FAMILY here, Home's
+ * FILTER_FAMILY and the shell's SEARCH_EXT_FAMILY — are three copies of one
+ * list. They drifted once already (the sidebar's "md" filter was still
+ * markdown-only after Home's and the search side had learned .txt/.json), and
+ * a filter that means different things in two views of the same file list is
+ * its own bug, so the agreement is pinned rather than left to review.
+ */
+describe('sidebar filter families agree with the other two', () => {
+  const FAMILIES: ReadonlyArray<readonly [string, Record<string, readonly string[]>]> = [
+    ['Home', { md: ['md', 'markdown', 'txt', 'json'] }],
+    ['search', { md: ['md', 'markdown', 'txt', 'json'] }],
+  ]
+
+  it.each(FAMILIES)('matches the %s family for the text app', (_name, family) => {
+    for (const ext of family.md!) expect(matchesExtFamily(ext, 'md')).toBe(true)
   })
 })
 

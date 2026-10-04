@@ -39,6 +39,8 @@ export const TREE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
   'pdf',
   'md',
   'markdown',
+  'txt',
+  'json',
   'html',
   'htm',
 ])
