@@ -2186,3 +2186,12 @@ html[dir='rtl'] .quick-sub {
 html[dir='rtl'] body.mac .content {
   padding-left: 76px;
 }
+
+/* Card titles are brand names (LTR runs): under the RTL UI their ellipsis
+   truncated from the wrong end ("…arkdown") and the AI chip swapped sides.
+   Isolate the title row LTR — the one Arabic title (open local files) is a
+   single RTL run and renders unchanged. */
+html[dir='rtl'] .quick-title-row {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
