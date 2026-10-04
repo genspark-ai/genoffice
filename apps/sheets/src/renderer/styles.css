@@ -414,15 +414,28 @@ textarea:disabled {
   background: var(--surface);
 }
 
-/* The ribbon dropdown popover renders inside this header, so its own
- * z-index: 80 is trapped in the header's stacking context (z-index: 10) and
- * paints under the grid's float layers — pictures, slicers, the watch
- * window — which participate in the root stacking order (#1767; docs/slides
- * don't hit this because their .ribbon creates no stacking context). While a
- * popover is open, lift the header above every in-content overlay; the class
- * brackets exactly the open window, so dialogs and the opening screen — which
- * always dismiss the popover first — are unaffected. */
-html.genoffice-popover-open .excel-header {
+/* The ribbon's dropdown popovers render inside this header, so their z-index
+ * is trapped in the header's stacking context (z-index: 10) and they paint
+ * under the grid's float layers — the slicer stack and the watch window, both
+ * z-index: 1000 in the root stacking order (genoffice#1767; docs/slides don't
+ * hit this because their .ribbon creates no stacking context). Raising the
+ * popovers instead cannot work: .menu-select-drop and .sheets-color-pop are
+ * both already 1000, a tie the float layers win on DOM order, and the shared
+ * Dropdown's .gs-dd-pop (z-index: 80) is not header-hosted in sheets at all —
+ * its sheets callers are dialogs, plus WorkbookVisuals, which portals to body.
+ *
+ * Scoped to a header-HOSTED popover, never to popover-ness in general: the
+ * two classes here are what the ribbon actually emits (MenuSelect /
+ * ShapeGallerySelect / EditableMenuSelect -> .menu-select-drop; the ribbon
+ * color tools -> .sheets-color-pop inline — the .sheets-color-pop-portal
+ * variant is a child of body and is never trapped). Keying on the host also
+ * keeps the header under a dialog's dim backdrop: html.genoffice-popover-open
+ * also fires for the Dropdown/ColorDropdown inside Format Cells, Name
+ * Manager, Pivot, Consolidate, Subtotal, Advanced Filter and Insert Function,
+ * all under .dialog-backdrop (z-index: 40) — and "dialogs always dismiss the
+ * popover first" covers only dialogs opened FROM a popover, not popovers
+ * opened INSIDE a dialog. */
+.excel-header:has(.menu-select-drop, .sheets-color-pop) {
   z-index: 1500;
 }
 
