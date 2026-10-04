@@ -234,5 +234,33 @@ describe('Ruler tab stop nudge across a neighbour', () => {
     const moved = stableStopIds(prev, ids, [prev[1]!, { pos: 2160, val: 'left' }])
     expect(moved[1]).toBe(ids[0])
     expect(new Set(moved).size).toBe(2)
+
+    // a stop added after a delete must not land on a key that is still live:
+    // A,B,C mint s0..s2, dropping B takes s1 out of circulation, and the new
+    // stop D has to be given an id that no marker still holds
+    const three = [
+      { pos: 1440, val: 'left' },
+      { pos: 1500, val: 'left' },
+      { pos: 2160, val: 'left' },
+    ] as TabStop[]
+    const threeIds = stableStopIds([], [], three)
+    expect(threeIds).toEqual(['s0', 's1', 's2'])
+    const survivors = [three[0]!, three[2]!] as TabStop[]
+    const withoutB = stableStopIds(three, threeIds, survivors)
+    expect(withoutB).toEqual(['s0', 's2'])
+    const appended = stableStopIds(survivors, withoutB, [
+      survivors[0]!,
+      survivors[1]!,
+      { pos: 2880, val: 'left' },
+    ])
+    // the survivors keep their own ids, so D is the one that has to be distinct
+    expect(appended[0]).toBe('s0')
+    expect(appended[1]).toBe('s2')
+    expect(new Set(appended).size).toBe(3)
+    // a ref still holding a duplicate from the old scheme heals on the next
+    // render instead of passing the colliding pair on
+    const all = [survivors[0]!, survivors[1]!, { pos: 2880, val: 'left' }] as TabStop[]
+    const healed = stableStopIds(all, ['s0', 's2', 's2'], all)
+    expect(new Set(healed).size).toBe(3)
   })
 })

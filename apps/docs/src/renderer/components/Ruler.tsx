@@ -112,16 +112,24 @@ export function directTabStops(original: TabStop[], edited: TabStop[]): TabStop[
  * either: a nudge that re-sorts `stops` moves it to another index. Stops that
  * kept their position keep their id; the rest are aligned to the still
  * unclaimed ids, so a stop that crossed a neighbour follows its own marker
- * instead of the index it used to sit at. Exported for tests.
+ * instead of the index it used to sit at. A stop with no id left to inherit is
+ * given a minted one rather than one derived from its index: a deleted stop
+ * takes its index out of the list, so the next added stop would land on the
+ * key a live marker still holds. Exported for tests.
  */
 export function stableStopIds(prev: TabStop[], prevIds: string[], next: TabStop[]): string[] {
   const taken = new Set<number>()
+  // every id handed out below, so no two stops in one list can share a key
+  const used = new Set<string>()
   const out: string[] = new Array(next.length)
   const claim = (index: number, want: (s: TabStop) => boolean): void => {
     for (let i = 0; i < prev.length; i++) {
-      if (!taken.has(i) && want(prev[i]!)) {
+      const id = prevIds[i]
+      if (taken.has(i) || id === undefined || used.has(id)) continue
+      if (want(prev[i]!)) {
         taken.add(i)
-        out[index] = prevIds[i]!
+        used.add(id)
+        out[index] = id
         return
       }
     }
@@ -133,13 +141,21 @@ export function stableStopIds(prev: TabStop[], prevIds: string[], next: TabStop[
   next.forEach((stop, i) => {
     if (out[i] !== undefined) return
     while (cursor < prev.length && taken.has(cursor)) cursor++
-    if (cursor >= prev.length) {
-      out[i] = `s${i}`
+    const inherited = prevIds[cursor]
+    if (cursor < prev.length && inherited !== undefined && !used.has(inherited)) {
+      taken.add(cursor)
+      used.add(inherited)
+      out[i] = inherited
+      cursor++
       return
     }
-    taken.add(cursor)
-    out[i] = prevIds[cursor]!
-    cursor++
+    // nothing left to inherit: mint the first id no marker is holding, and one
+    // the previous list was not using either, so a re-added stop stays distinct
+    let n = 0
+    while (used.has(`s${n}`) || prevIds.includes(`s${n}`)) n++
+    const minted = `s${n}`
+    out[i] = minted
+    used.add(minted)
   })
   return out
 }
