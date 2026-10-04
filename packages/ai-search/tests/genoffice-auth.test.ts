@@ -264,13 +264,35 @@ describe('startGenofficeLogin', () => {
       })
       const events: GskLoginProgress[] = []
       startGenofficeLogin((progress) => events.push(progress))
-      // 15 min is the clamped ceiling: still waiting one second before it
-      await vi.advanceTimersByTimeAsync(899_000)
+      // 1h is the clamped ceiling: still waiting one second before it
+      await vi.advanceTimersByTimeAsync(3_599_000)
       expect(events.some((e) => e.phase === 'error')).toBe(false)
       await vi.advanceTimersByTimeAsync(2_000)
       await vi.waitFor(() => {
         expect(events.at(-1)).toEqual({ phase: 'error', error: 'expired' })
       })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('honors a provider lifetime longer than the old 15 min ceiling', async () => {
+    // A clamp must never truncate a code the server still considers valid:
+    // Google's device_code answers 1800s, which the previous 900s ceiling cut
+    // in half and logged out a user who could still approve.
+    vi.useFakeTimers()
+    try {
+      stubFlow({
+        alwaysPending: true,
+        deviceCode: { ...deviceCodeOk, expires_in: 1800, poll_interval: 2_000 },
+      })
+      const events: GskLoginProgress[] = []
+      startGenofficeLogin((progress) => events.push(progress))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(events.at(-1)).toEqual({ phase: 'url', url: AUTH_URL, expiresInSec: 1800 })
+      // still alive well past the old 900s ceiling
+      await vi.advanceTimersByTimeAsync(1_500_000)
+      expect(events.some((e) => e.phase === 'error')).toBe(false)
     } finally {
       vi.useRealTimers()
     }

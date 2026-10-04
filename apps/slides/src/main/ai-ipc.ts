@@ -48,6 +48,7 @@ import {
   gskApiKey,
   generateImageTool,
   analyzeMediaTool,
+  documentMediaRoots,
   gskLoginInfo,
   hasGskAuth,
 } from '@genoffice/ai-search'
@@ -62,6 +63,17 @@ import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './se
 // ---- AI settings + streaming proxy (the main process does the networking to avoid renderer CORS; implementation shared via @genoffice/ai-provider) ----
 
 const AI_SETTINGS_PATH = () => join(app.getPath('userData'), 'ai-settings.json')
+
+/**
+ * Local media roots for a slides renderer: the open deck's directory plus the
+ * directory slides stages pasted images in. generate_image (referenceImageUrls)
+ * and analyze_media (mediaUrls) both take paths straight from the model, so
+ * only these two directories are readable — a reference or a media file the
+ * user put next to the deck they are editing, and nothing else.
+ */
+function slidesMediaRoots(wcId: number): string[] {
+  return documentMediaRoots(sessions.get(wcId)?.path, join(app.getPath('temp'), 'genoffice-pasted'))
+}
 
 function readJson<T>(path: string, fallback: T): T {
   try {
@@ -277,7 +289,7 @@ export function registerSlidesOnlyAiIpc(): void {
   ipcMain.handle(
     'ai:generate-image',
     async (
-      _event,
+      event,
       op: {
         prompt: string
         model?: string
@@ -299,21 +311,27 @@ export function registerSlidesOnlyAiIpc(): void {
           imageSize: op.imageSize ? String(op.imageSize) : undefined,
           transparentBackground: op.transparentBackground === true,
         },
-        { notLoggedInError: tm('errGskCli') },
+        {
+          notLoggedInError: tm('errGskCli'),
+          mediaRoots: slidesMediaRoots(event.sender.id),
+        },
       )
     },
   )
 
   ipcMain.handle(
     'ai:analyze-media',
-    async (_event, op: { mediaUrls: string[]; requirements: string }) => {
+    async (event, op: { mediaUrls: string[]; requirements: string }) => {
       return analyzeMediaTool(
         AI_SETTINGS_PATH(),
         {
           mediaUrls: (op.mediaUrls ?? []).map(String),
           requirements: String(op.requirements ?? ''),
         },
-        { notLoggedInError: tm('errGskCli') },
+        {
+          notLoggedInError: tm('errGskCli'),
+          mediaRoots: slidesMediaRoots(event.sender.id),
+        },
       )
     },
   )
