@@ -77,6 +77,66 @@ describe('parseHeadlessExportArgv', () => {
     const parsed = parseHeadlessExportArgv(argv('--headless-export', '--json'))
     expect(parsed).toEqual({ kind: 'error', json: true, message: expect.any(String) })
   })
+
+  it('parses --json-file in both spellings onto the request', () => {
+    const spaced = parseHeadlessExportArgv(
+      argv(
+        '--headless-export',
+        '/tmp/a.docx',
+        '--to',
+        'pdf',
+        '--out',
+        '/tmp/a.pdf',
+        '--json',
+        '--json-file',
+        '/tmp/e.json',
+      ),
+    )
+    expect(spaced).toEqual({
+      kind: 'ok',
+      request: {
+        input: '/tmp/a.docx',
+        targetFormat: 'pdf',
+        outPath: '/tmp/a.pdf',
+        json: true,
+        jsonFile: '/tmp/e.json',
+      },
+    })
+    const joined = parseHeadlessExportArgv(
+      argv(
+        '--headless-export',
+        '/tmp/a.docx',
+        '--to',
+        'pdf',
+        '--out',
+        '/tmp/a.pdf',
+        '--json-file=/tmp/e.json',
+      ),
+    )
+    expect(joined).toEqual({
+      kind: 'ok',
+      request: expect.objectContaining({ jsonFile: '/tmp/e.json' }),
+    })
+  })
+
+  it('carries --json-file on the error branch so a malformed run still reports somewhere', () => {
+    const parsed = parseHeadlessExportArgv(
+      argv('--headless-export', '/tmp/a.docx', '--to', 'txt', '--json-file', '/tmp/e.json'),
+    )
+    expect(parsed).toEqual({
+      kind: 'error',
+      json: false,
+      jsonFile: '/tmp/e.json',
+      message: expect.any(String),
+    })
+  })
+
+  it('rejects --json-file without a path', () => {
+    const parsed = parseHeadlessExportArgv(
+      argv('--headless-export', '/tmp/a.docx', '--to', 'pdf', '--out', '/tmp/a.pdf', '--json-file'),
+    )
+    expect(parsed).toMatchObject({ kind: 'error', message: expect.stringContaining('--json-file') })
+  })
 })
 
 describe('headlessModuleFor', () => {
@@ -131,6 +191,17 @@ describe('formatHeadlessEnvelope', () => {
       summary: 'Export failed: boom at frame',
       error: 'boom at frame',
     })
+  })
+
+  it('appends the exit code only when the caller asks for one', () => {
+    const withCode = formatHeadlessEnvelope(
+      { ok: false, code: HEADLESS_EXIT.inputError, message: 'no file' },
+      true,
+      HEADLESS_EXIT.inputError,
+    )
+    expect(JSON.parse(withCode)).toMatchObject({ status: 'error', exit_code: 2 })
+    const without = formatHeadlessEnvelope({ ok: true, input: '/a.docx', outPath: '/a.pdf' }, true)
+    expect(JSON.parse(without)).not.toHaveProperty('exit_code')
   })
 })
 

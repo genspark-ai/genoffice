@@ -5636,8 +5636,23 @@ async function runHeadlessExportEntry(
       ? ({ ok: false, code: HEADLESS_EXIT.badArgs, message: parsed.message } as const)
       : await runHeadlessExport(parsed.request, headlessExporters)
   const json = parsed.kind === 'error' ? parsed.json : parsed.request.json
+  const jsonFile = parsed.kind === 'error' ? parsed.jsonFile : parsed.request.jsonFile
   stopSheetsSidecar()
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.destroy()
+  // The side-channel envelope for LaunchServices launches: `open` gives the
+  // caller no stdout pipe, so the caller polls this file. Written before the
+  // stdout line — if the file cannot be written the caller just times out, the
+  // pipe envelope is still the primary contract.
+  if (jsonFile) {
+    try {
+      writeFileSync(
+        jsonFile,
+        formatHeadlessEnvelope(outcome, true, headlessExitCode(outcome)) + '\n',
+      )
+    } catch {
+      // see above: the stdout envelope stays authoritative
+    }
+  }
   // Writing to a pipe can finish asynchronously, and app.exit() would cut the
   // envelope off mid-line; wait for the flush (but never longer than 2s).
   const line = formatHeadlessEnvelope(outcome, json) + '\n'

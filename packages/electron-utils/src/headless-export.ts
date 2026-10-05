@@ -2,6 +2,7 @@
  * Argv parsing and the stdout envelope for the headless export entry:
  *
  *   <app binary> --headless-export <input-file> --to <format> --out <path> [--json]
+ *                                                      [--json-file <path>]
  *
  * Pure logic only — the Electron-side host that actually renders the file
  * lives in the shell main process (apps/shell/src/main/headless-export.ts).
@@ -59,12 +60,18 @@ export interface HeadlessExportRequest {
   outPath: string
   /** print the machine-readable one-line envelope instead of a human sentence */
   json: boolean
+  /**
+   * Also write the JSON envelope (with the exit code) to this file. Stdout is
+   * the primary channel, but a LaunchServices launch (`open`) has no pipe to
+   * the caller, so the caller polls this file instead.
+   */
+  jsonFile?: string
 }
 
 export type HeadlessArgvParse =
   | { kind: 'none' }
   | { kind: 'ok'; request: HeadlessExportRequest }
-  | { kind: 'error'; json: boolean; message: string }
+  | { kind: 'error'; json: boolean; jsonFile?: string; message: string }
 
 /** Result of an export attempt, rendered by `formatHeadlessEnvelope`. */
 export type HeadlessExportOutcome =
@@ -113,7 +120,15 @@ export function parseHeadlessExportArgv(argv: readonly string[]): HeadlessArgvPa
   )
   if (flagAt === -1) return { kind: 'none' }
   const json = argv.includes('--json')
-  const fail = (message: string): HeadlessArgvParse => ({ kind: 'error', json, message })
+  // resolved up front so even a malformed run writes the envelope file (with
+  // its error) instead of leaving the caller polling for a file that never comes
+  const jsonFileAt = argv.findIndex(
+    (arg) => arg === '--json-file' || arg.startsWith('--json-file='),
+  )
+  const jsonFile =
+    jsonFileAt === -1 ? undefined : (readOption(argv, jsonFileAt, '--json-file') ?? undefined)
+  const fail = (message: string): HeadlessArgvParse => ({ kind: 'error', json, jsonFile, message })
+  if (jsonFileAt !== -1 && !jsonFile) return fail('--json-file needs a path')
 
   let input: string | null = null
   let to: string | null = null
@@ -149,7 +164,7 @@ export function parseHeadlessExportArgv(argv: readonly string[]): HeadlessArgvPa
   }
   if (!outPath) return fail('--out is required')
 
-  return { kind: 'ok', request: { input, targetFormat, outPath, json } }
+  return { kind: 'ok', request: { input, targetFormat, outPath, json, jsonFile } }
 }
 
 /** One-sentence description of an outcome, shared by the plain and JSON forms. */
@@ -162,16 +177,21 @@ export function headlessSummary(outcome: HeadlessExportOutcome): string {
 /**
  * The single stdout line. With `--json` it is exactly one JSON object;
  * otherwise a human-readable sentence. Newlines inside the message would
- * break the one-line contract, so they are folded to spaces.
+ * break the one-line contract, so they are folded to spaces. `exitCode` is
+ * only meant for the `--json-file` side channel, where there is no process
+ * exit to read.
  */
-export function formatHeadlessEnvelope(outcome: HeadlessExportOutcome, json: boolean): string {
+export function formatHeadlessEnvelope(
+  outcome: HeadlessExportOutcome,
+  json: boolean,
+  exitCode?: HeadlessExitCode,
+): string {
   const summary = headlessSummary(outcome).replace(/\s*[\r\n]+\s*/g, ' ')
   if (!json) return summary
-  return JSON.stringify(
-    outcome.ok
-      ? { status: 'ok', summary, output_path: outcome.outPath }
-      : { status: 'error', summary, error: outcome.message.replace(/\s*[\r\n]+\s*/g, ' ') },
-  )
+  const envelope = outcome.ok
+    ? { status: 'ok', summary, output_path: outcome.outPath }
+    : { status: 'error', summary, error: outcome.message.replace(/\s*[\r\n]+\s*/g, ' ') }
+  return JSON.stringify(exitCode === undefined ? envelope : { ...envelope, exit_code: exitCode })
 }
 
 /** Exit code for an outcome. */

@@ -1,5 +1,7 @@
-import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { spawn as nodeSpawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { appLaunch } from '../resources'
 import { CliError, EXIT } from '../result'
 
@@ -9,6 +11,15 @@ import { CliError, EXIT } from '../result'
  * `--headless-export` entry: Dock hidden, no window, one export, exit. genoffice
  * just spawns it and reads the JSON envelope it prints. The app skips the
  * single-instance lock in that mode, so a running GUI does not interfere.
+ *
+ * On macOS a crash before any envelope is retried once through LaunchServices
+ * (`open`): when genoffice itself runs under a command sandbox (Codex and
+ * friends wrap every command in a deny-default Seatbelt profile), the spawned
+ * app inherits it and AppKit aborts in _RegisterApplication during
+ * `+[NSApplication sharedApplication]`, before any JS can run. A process
+ * launchd starts is outside the caller's sandbox, so the relaunch works where
+ * the direct spawn cannot. `open` has no stdout pipe back, so the retry asks
+ * the app for a `--json-file` envelope instead.
  */
 export type AppExportTarget = 'pdf' | 'docx' | 'html'
 
@@ -20,6 +31,14 @@ export interface AppExportOptions {
   killGraceMs?: number
   /** test seam */
   spawn?: typeof nodeSpawn
+  /** test seam: process probes (pgrep/pkill) for the LaunchServices relaunch */
+  spawnSync?: typeof spawnSync
+  /** test seam */
+  platform?: NodeJS.Platform
+  /** test seam: how often the LaunchServices relaunch polls for its envelope file */
+  lsPollMs?: number
+  /** test seam: how long the relaunched app gets to start before a silent death is reported */
+  lsGraceMs?: number
 }
 
 export interface AppExportResult {
@@ -29,6 +48,7 @@ export interface AppExportResult {
 
 const DEFAULT_TIMEOUT_MS = 180_000
 const STDIO_DRAIN_MS = 500
+const LS_OPEN_TIMEOUT_MS = 15_000
 
 export async function exportViaApp(
   input: string,
@@ -82,6 +102,14 @@ export async function exportViaApp(
       },
     )
   }
+  // A startup crash leaves no envelope to explain it; on macOS the usual cause
+  // is the caller's own command sandbox, which a LaunchServices relaunch escapes.
+  if (signal && !envelope && (opts.platform ?? process.platform) === 'darwin') {
+    const relaunched = await exportViaLaunchServices(launch.command, args, outputPath, opts)
+    if (relaunched.kind === 'success') return { outputPath, summary: relaunched.summary }
+    if (relaunched.kind === 'error') throw relaunched.error
+    // skipped / failed: nothing better to report than the original crash
+  }
   const tail = stderr.trim().split('\n').filter(Boolean).slice(-3).join(' ')
   if (!envelope && (signal || code === null)) {
     throw new CliError(
@@ -108,6 +136,120 @@ export async function exportViaApp(
   })
 }
 
+type LaunchServicesRelaunch =
+  | { kind: 'success'; summary: string }
+  | { kind: 'error'; error: CliError }
+  | { kind: 'skipped' }
+  | { kind: 'failed' }
+
+/**
+ * Re-runs the export through `open`, which asks LaunchServices to start the
+ * app outside this process's sandbox, and polls for the envelope file the app
+ * writes on its way out. Apps older than `--json-file` never write one, so a
+ * finished output file with the app gone is accepted as success too.
+ */
+async function exportViaLaunchServices(
+  command: string,
+  args: string[],
+  outputPath: string,
+  opts: AppExportOptions,
+): Promise<LaunchServicesRelaunch> {
+  const bundle = appBundleOf(command)
+  if (!bundle) return { kind: 'skipped' }
+  const spawn = opts.spawn ?? nodeSpawn
+  const probe = opts.spawnSync ?? spawnSync
+  const pollMs = opts.lsPollMs ?? 250
+  const graceMs = opts.lsGraceMs ?? 3000
+  const jsonFile = join(tmpdir(), `genoffice-export-${process.pid}-${Date.now()}.json`)
+  opts.log?.('direct launch crashed; retrying through LaunchServices')
+  const opened = await waitFor(
+    spawn('open', ['-n', '-a', bundle, '--args', ...args, '--json-file', jsonFile], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }),
+    LS_OPEN_TIMEOUT_MS,
+    2000,
+  )
+  if (opened.code !== 0) {
+    const reason = opened.stderr.trim().split('\n').filter(Boolean).pop() ?? `open exited`
+    opts.log?.(`LaunchServices relaunch unavailable (${reason})`)
+    return { kind: 'failed' }
+  }
+  const startedAt = Date.now()
+  const deadline = startedAt + (opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+    if (existsSync(jsonFile)) {
+      const envelope = parseEnvelope(readOrEmpty(jsonFile))
+      discard(jsonFile)
+      if (envelope?.status === 'ok' && existsSync(outputPath)) {
+        return { kind: 'success', summary: envelope.summary ?? `exported to ${outputPath}` }
+      }
+      if (envelope?.status === 'error') {
+        return {
+          kind: 'error',
+          error: new CliError(
+            exitCodeFor(envelope.exit_code ?? null),
+            envelope.error ?? envelope.summary ?? 'export failed',
+            { app: bundle, exit_code: envelope.exit_code },
+          ),
+        }
+      }
+      return { kind: 'failed' }
+    }
+    if (Date.now() >= deadline) {
+      probe('pkill', ['-f', jsonFile])
+      discard(jsonFile)
+      return {
+        kind: 'error',
+        error: new CliError(
+          EXIT.conversion,
+          `GenOffice did not finish the export within ${Math.round((opts.timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000)}s`,
+          { app: bundle },
+        ),
+      }
+    }
+    // the relaunched app vanished without an envelope: either it crashed again
+    // or it predates --json-file and left only the output file
+    if (Date.now() - startedAt > graceMs && !appRunning(jsonFile, probe)) {
+      if (existsSync(outputPath)) return { kind: 'success', summary: `exported to ${outputPath}` }
+      return { kind: 'failed' }
+    }
+  }
+}
+
+/** The .app bundle a binary lives in, or null when it is not a bundle app. */
+function appBundleOf(command: string): string | null {
+  const at = command.lastIndexOf('/Contents/MacOS/')
+  if (at === -1) return null
+  const bundle = command.slice(0, at)
+  return bundle.endsWith('.app') ? bundle : null
+}
+
+function readOrEmpty(path: string): string {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function discard(path: string): void {
+  try {
+    rmSync(path, { force: true })
+  } catch {
+    // a leftover temp envelope is harmless
+  }
+}
+
+/** `pgrep -f` on the unique envelope path; a failed probe counts as running. */
+function appRunning(marker: string, probe: typeof spawnSync): boolean {
+  try {
+    return probe('pgrep', ['-f', marker]).status === 0
+  } catch {
+    return true
+  }
+}
+
 function describeExit(code: number | null, signal: NodeJS.Signals | null): string {
   return signal ? `crashed (${signal})` : `exited with code ${code}`
 }
@@ -126,6 +268,8 @@ export interface HeadlessEnvelope {
   summary?: string
   output_path?: string
   error?: string
+  /** present in --json-file envelopes, where no process exit can be read */
+  exit_code?: number
 }
 
 /** Last JSON line on stdout; the app may log other lines before it. */
