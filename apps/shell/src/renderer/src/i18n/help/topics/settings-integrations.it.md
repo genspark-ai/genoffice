@@ -40,8 +40,8 @@ GenOffice incorpora un **server MCP locale**, così i client IA esterni (Claude 
 
 ## Riepilogo rapido dei comandi
 
-| Comando            | Cosa fa                    |
-| ------------------ | -------------------------- |
-| `genoffice <file>` | apre un file               |
-| `genoffice mcp`    | avvia il server MCP locale |
+| Comando            | Cosa fa                      |
+| ------------------ | ---------------------------- |
+| `genoffice <file>` | apre un file                 |
+| `genoffice mcp`    | avvia il server MCP locale   |
 | `genoffice --help` | tutti i comandi e le opzioni |

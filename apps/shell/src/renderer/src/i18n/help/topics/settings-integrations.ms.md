@@ -40,8 +40,8 @@ GenOffice menyertakan **pelayan MCP tempatan**. Ini membolehkan klien AI luar, s
 
 ## Ringkasan baris arahan
 
-| Perintah            | Fungsinya                              |
-| ------------------- | -------------------------------------- |
-| `genoffice <fail>`  | membuka fail                           |
-| `genoffice mcp`     | memulakan pelayan MCP tempatan          |
-| `genoffice --help`  | memaparkan semua perintah dan pilihan   |
+| Perintah           | Fungsinya                             |
+| ------------------ | ------------------------------------- |
+| `genoffice <fail>` | membuka fail                          |
+| `genoffice mcp`    | memulakan pelayan MCP tempatan        |
+| `genoffice --help` | memaparkan semua perintah dan pilihan |

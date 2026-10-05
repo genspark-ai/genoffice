@@ -2,7 +2,7 @@
 
 ## Membuka pengaturan
 
-Tombol roda gigi di Beranda membuka panel pengaturan; opsi yang berkaitan dengan AI berada di bagian AI miliknya.
+Baris akun di kiri bawah Beranda membuka panel pengaturan (bacaannya Masuk saat Anda belum masuk); opsi yang berkaitan dengan AI berada di bagian Model AI miliknya.
 
 ![A janela de configurações](img/settings-integrations.png) — a configuração dos modelos está no capítulo Model AI dan pengaturan.
 
@@ -10,7 +10,6 @@ Tombol roda gigi di Beranda membuka panel pengaturan; opsi yang berkaitan dengan
 
 - Pengaturan menawarkan **21 bahasa antarmuka**: Inggris, Tionghoa Sederhana, Jepang, Korea, Prancis, Jerman, Spanyol, Thai, Indonesia, Rusia, Arab, Portugis, Italia, Polandia, Ceko, Belanda, Melayu, Ibrani, Hindi, Tionghoa Tradisional, Vietnam.
 - Beralih bahasa berlaku seketika dan bertahan; bilah menu sistem dibangun ulang mengikuti bahasa tersebut.
-- Manual ini saat ini tersedia dalam bahasa Tionghoa Sederhana dan Inggris; setiap lokalitas lain menampilkan bahasa Inggris.
 
 ## Tema
 
@@ -41,8 +40,8 @@ GenOffice menyematkan **server MCP** lokal agar klien AI eksternal (Claude Deskt
 
 ## Lembar pintasan baris perintah
 
-| Perintah            | Fungsinya                        |
-| ------------------- | -------------------------------- |
-| `genoffice <file>`  | membuka sebuah file              |
-| `genoffice mcp`     | memulai server MCP lokal         |
-| `genoffice --help`  | semua perintah dan opsi          |
+| Perintah           | Fungsinya                |
+| ------------------ | ------------------------ |
+| `genoffice <file>` | membuka sebuah file      |
+| `genoffice mcp`    | memulai server MCP lokal |
+| `genoffice --help` | semua perintah dan opsi  |

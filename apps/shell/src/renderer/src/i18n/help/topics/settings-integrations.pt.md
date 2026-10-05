@@ -2,7 +2,7 @@
 
 ## Abrir as configurações
 
-O botão da engrenagem no ecrã Início abre o painel de configurações; as opções relacionadas com a IA ficam na sua secção de IA.
+A linha da conta no canto inferior esquerdo do ecrã Início abre o painel de configurações (mostra Entrar quando não tem sessão iniciada); e as opções relacionadas com a IA ficam na sua secção Modelo de IA.
 
 ![A janela de configurações](img/settings-integrations.png) — a configuração dos modelos está no capítulo Modelos de IA e configurações.
 
@@ -10,7 +10,6 @@ O botão da engrenagem no ecrã Início abre o painel de configurações; as op�
 
 - As configurações oferecem **21 idiomas de interface**: inglês, chinês simplificado, japonês, coreano, francês, alemão, espanhol, tailandês, indonésio, russo, árabe, português, italiano, polaco, tcheco, neerlandês, malaio, hebraico, híndi, chinês tradicional e vietnamita.
 - A troca aplica-se de imediato e persiste; e a barra de menus do sistema é reconstruída com o novo idioma.
-- Este manual existe atualmente em chinês simplificado e inglês; todos os outros idiomas mostram o texto em inglês.
 
 ## Tema
 
@@ -41,8 +40,8 @@ O GenOffice integra um **servidor MCP** local para que clientes de IA externos (
 
 ## Folha de referência da linha de comandos
 
-| Comando             | O que faz                        |
-| ------------------- | -------------------------------- |
-| `genoffice <file>`  | abrir um ficheiro                 |
-| `genoffice mcp`     | iniciar o servidor MCP local      |
-| `genoffice --help`  | todos os comandos e opções        |
+| Comando            | O que faz                    |
+| ------------------ | ---------------------------- |
+| `genoffice <file>` | abrir um ficheiro            |
+| `genoffice mcp`    | iniciar o servidor MCP local |
+| `genoffice --help` | todos os comandos e opções   |

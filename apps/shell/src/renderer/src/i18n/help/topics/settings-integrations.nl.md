@@ -40,8 +40,8 @@ GenOffice bevat een lokale **MCP-server**, zodat externe AI-clients (Claude Desk
 
 ## Commandoregel in één oogopslag
 
-| Opdracht           | Wat het doet                     |
-| ------------------ | -------------------------------- |
-| `genoffice <bestand>` | opent een bestand             |
-| `genoffice mcp`    | start de lokale MCP-server       |
-| `genoffice --help` | alle opdrachten en opties        |
+| Opdracht              | Wat het doet               |
+| --------------------- | -------------------------- |
+| `genoffice <bestand>` | opent een bestand          |
+| `genoffice mcp`       | start de lokale MCP-server |
+| `genoffice --help`    | alle opdrachten en opties  |

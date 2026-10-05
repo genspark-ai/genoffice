@@ -40,8 +40,8 @@ GenOffice tích hợp sẵn một **máy chủ MCP** cục bộ để các ứng
 
 ## Bảng tra nhanh dòng lệnh
 
-| Lệnh                | Tác dụng                    |
-| ------------------- | --------------------------- |
-| `genoffice <file>`  | mở một tập tin              |
-| `genoffice mcp`     | khởi động máy chủ MCP cục bộ |
-| `genoffice --help`  | mọi lệnh và tuỳ chọn        |
+| Lệnh               | Tác dụng                     |
+| ------------------ | ---------------------------- |
+| `genoffice <file>` | mở một tập tin               |
+| `genoffice mcp`    | khởi động máy chủ MCP cục bộ |
+| `genoffice --help` | mọi lệnh và tuỳ chọn         |

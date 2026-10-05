@@ -37,13 +37,13 @@ O documento novo abre sem título; o ficheiro no disco só é criado no primeiro
 
 ## Atalhos frequentes
 
-| Ação                     | macOS | Windows / Linux |
-| ------------------------ | ----- | --------------- |
-| Novo documento           | ⌘N    | ctrl+N          |
-| Abrir                    | ⌘O    | ctrl+O          |
-| Salvar                   | ⌘S    | ctrl+S          |
-| Fechar guia              | ⌘W    | ctrl+W          |
-| Abrir este manual        | F1    | F1              |
+| Ação              | macOS | Windows / Linux |
+| ----------------- | ----- | --------------- |
+| Novo documento    | ⌘N    | ctrl+N          |
+| Abrir             | ⌘O    | ctrl+O          |
+| Salvar            | ⌘S    | ctrl+S          |
+| Fechar guia       | ⌘W    | ctrl+W          |
+| Abrir este manual | F1    | F1              |
 
 Os atalhos dentro de cada editor (pincel de formatação, pesquisar e substituir, operações de tabela, ...) estão nos respetivos capítulos; o Docs traz ainda uma janela de atalhos de teclado pesquisável (consulte o seu capítulo).
 

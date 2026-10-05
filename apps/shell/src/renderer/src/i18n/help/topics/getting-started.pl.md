@@ -37,13 +37,13 @@ Nowy dokument otwiera się bez tytułu; plik na dysku powstaje dopiero przy pier
 
 ## Popularne skróty
 
-| Czynność                | macOS | Windows / Linux |
-| ----------------------- | ----- | --------------- |
-| Nowy dokument           | ⌘N    | ctrl+N          |
-| Otwórz                  | ⌘O    | ctrl+O          |
-| Zapisz                  | ⌘S    | ctrl+S          |
-| Zamknij kartę           | ⌘W    | ctrl+W          |
-| Otwórz ten podręcznik  | F1    | F1              |
+| Czynność              | macOS | Windows / Linux |
+| --------------------- | ----- | --------------- |
+| Nowy dokument         | ⌘N    | ctrl+N          |
+| Otwórz                | ⌘O    | ctrl+O          |
+| Zapisz                | ⌘S    | ctrl+S          |
+| Zamknij kartę         | ⌘W    | ctrl+W          |
+| Otwórz ten podręcznik | F1    | F1              |
 
 Skróty używane wewnątrz każdego edytora (malarz formatów, znajdź i zamień, operacje na tabelach, ...) opisano w odpowiednich rozdziałach; Docs dodatkowo udostępnia wyszukiwalne okno skrótów klawiaturowych (patrz jego rozdział).
 

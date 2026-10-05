@@ -37,13 +37,13 @@ Een nieuw document opent zonder titel; het bestand op schijf wordt pas aangemaak
 
 ## Veelgebruikte sneltoetsen
 
-| Actie                | macOS | Windows / Linux |
-| -------------------- | ----- | --------------- |
-| Nieuw document       | ⌘N    | ctrl+N          |
-| Openen               | ⌘O    | ctrl+O          |
-| Opslaan              | ⌘S    | ctrl+S          |
-| Tabblad sluiten      | ⌘W    | ctrl+W          |
-| Deze handleiding openen | F1  | F1              |
+| Actie                   | macOS | Windows / Linux |
+| ----------------------- | ----- | --------------- |
+| Nieuw document          | ⌘N    | ctrl+N          |
+| Openen                  | ⌘O    | ctrl+O          |
+| Opslaan                 | ⌘S    | ctrl+S          |
+| Tabblad sluiten         | ⌘W    | ctrl+W          |
+| Deze handleiding openen | F1    | F1              |
 
 Sneltoetsen binnen elke editor (opmaakpenseel, zoeken en vervangen, tabelbewerkingen, ...) staan in de bijbehorende hoofdstukken; Docs heeft bovendien een doorzoekbaar dialoogvenster met sneltoetsen (zie dat hoofdstuk).
 

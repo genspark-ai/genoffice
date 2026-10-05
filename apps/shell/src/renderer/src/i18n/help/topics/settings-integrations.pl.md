@@ -40,8 +40,8 @@ GenOffice zawiera lokalny **serwer MCP**, dzięki czemu zewnętrzne klienty AI (
 
 ## Ściągawka z poleceń
 
-| Polecenie          | Co robi                        |
-| ------------------ | ------------------------------ |
-| `genoffice <plik>` | otwiera plik                   |
-| `genoffice mcp`    | uruchamia lokalny serwer MCP   |
-| `genoffice --help` | wszystkie polecenia i opcje    |
+| Polecenie          | Co robi                      |
+| ------------------ | ---------------------------- |
+| `genoffice <plik>` | otwiera plik                 |
+| `genoffice mcp`    | uruchamia lokalny serwer MCP |
+| `genoffice --help` | wszystkie polecenia i opcje  |

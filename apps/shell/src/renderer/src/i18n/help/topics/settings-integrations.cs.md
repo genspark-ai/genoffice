@@ -40,8 +40,8 @@ GenOffice obsahuje místní **server MCP**, takže externí klienti AI (Claude D
 
 ## Přehled příkazů
 
-| Příkaz                | Co dělá                    |
-| -------------------- | -------------------------- |
-| `genoffice <soubor>` | otevře soubor              |
-| `genoffice mcp`      | spustí místní server MCP   |
+| Příkaz               | Co dělá                     |
+| -------------------- | --------------------------- |
+| `genoffice <soubor>` | otevře soubor               |
+| `genoffice mcp`      | spustí místní server MCP    |
 | `genoffice --help`   | všechny příkazy a přepínače |

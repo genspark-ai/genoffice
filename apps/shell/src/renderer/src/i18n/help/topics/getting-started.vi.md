@@ -37,13 +37,13 @@ Tài liệu mới mở ra chưa có tiêu đề; tập tin trên đĩa chỉ đ�
 
 ## Phím tắt thường dùng
 
-| Thao tác            | macOS | Windows / Linux |
-| ------------------ | ----- | --------------- |
-| Tài liệu mới        | ⌘N    | ctrl+N          |
-| Mở                 | ⌘O    | ctrl+O          |
-| Lưu                | ⌘S    | ctrl+S          |
-| Đóng thẻ           | ⌘W    | ctrl+W          |
-| Mở sổ tay này      | F1    | F1              |
+| Thao tác      | macOS | Windows / Linux |
+| ------------- | ----- | --------------- |
+| Tài liệu mới  | ⌘N    | ctrl+N          |
+| Mở            | ⌘O    | ctrl+O          |
+| Lưu           | ⌘S    | ctrl+S          |
+| Đóng thẻ      | ⌘W    | ctrl+W          |
+| Mở sổ tay này | F1    | F1              |
 
 Các phím tắt bên trong từng trình soạn thảo (công cụ định dạng, tìm và thay thế, thao tác bảng, ...) nằm trong chương tương ứng; Docs còn có hộp thoại phím tắt bàn phím có thể tìm kiếm (xem chương của nó).
 

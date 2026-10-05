@@ -17,14 +17,15 @@ Cuba pada mana-mana perenggan:
 1. **Seret tetikus melepasi ayat** dan selepas dilepaskan, bar anotasi akan muncul di atas teks:
 
 ![Bar anotasi selepas memilih teks](img/pdf-highlight.png)
-2. Pilih **sorotan** yang contoh kuningnya membuka palet warna, **garisan bawah**, atau **potongan garis**, dan **Tanya AI** menghantar pilihan itu bersama soalan anda ke panel AI.
+
+2. 2. Pilih **sorotan** yang contoh kuningnya membuka palet warna, **garisan bawah**, atau **potongan garis**, dan **Tanya AI** menghantar pilihan itu bersama soalan anda ke panel AI.
 3. Untuk membatalkan anotasi, pilih semula petikan yang sama dan klik butang yang sedang aktif pada bar tersebut, atau pilih dan tekan Delete.
 
 Butiran yang perlu diketahui:
 
 - Menu lungsur muncul apabila anda menyeret teks, dan ia menyediakan **sorotan / garisan bawah / potongan garis / salin / Tanya AI**.
 - Warna dipilih daripada palet tersebut, dan **memasang tanda yang sama pada julat yang sudah ditandakan akan mengeluarkannya**, seperti suis dalam Word.
-**FUNKTION** mengeluarkan tanda itu, seperti suis dalam Word.
+  **FUNKTION** mengeluarkan tanda itu, seperti suis dalam Word.
 - Tanda yang telah disimpan ke dalam fail masih boleh dipilih dan dipadam melalui menu atau kekunci Delete.
 - **Nota**: semasa alat lukis diaktifkan, lapisan teks tidak boleh dipilih. Alat itu menekan dirinya sendiri selepas setiap bentuk diletakkan, jadi anda kembali ke mod pilih selepas itu.
 

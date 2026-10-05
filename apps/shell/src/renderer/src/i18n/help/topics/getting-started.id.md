@@ -37,13 +37,13 @@ Dokumen baru terbuka tanpa nama; file di disk baru dibuat saat disimpan pertama 
 
 ## Pintasan yang sering dipakai
 
-| Tindakan            | macOS | Windows / Linux |
-| ------------------- | ----- | --------------- |
-| Dokumen baru        | ⌘N    | ctrl+N          |
-| Buka                | ⌘O    | ctrl+O          |
-| Simpan              | ⌘S    | ctrl+S          |
-| Tutup tab           | ⌘W    | ctrl+W          |
-| Buka panduan ini    | F1    | F1              |
+| Tindakan         | macOS | Windows / Linux |
+| ---------------- | ----- | --------------- |
+| Dokumen baru     | ⌘N    | ctrl+N          |
+| Buka             | ⌘O    | ctrl+O          |
+| Simpan           | ⌘S    | ctrl+S          |
+| Tutup tab        | ⌘W    | ctrl+W          |
+| Buka panduan ini | F1    | F1              |
 
 Pintasan di dalam tiap editor (penyalin format, cari dan ganti, operasi tabel, ...) ada di bab masing-masing; Docs juga menyediakan dialog pintasan papan tikik yang bisa dicari (lihat babnya).
 

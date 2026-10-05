@@ -37,13 +37,13 @@ Dokumen baharu dibuka tanpa tajuk; fail pada cakera hanya dicipta semasa simpana
 
 ## Pintasan lazim
 
-| Tindakan         | macOS | Windows / Linux |
-| ---------------- | ----- | --------------- |
-| Dokumen baharu   | ⌘N    | ctrl+N          |
-| Buka             | ⌘O    | ctrl+O          |
-| Simpan           | ⌘S    | ctrl+S          |
-| Tutup tab        | ⌘W    | ctrl+W          |
-| Buka manual ini  | F1    | F1              |
+| Tindakan        | macOS | Windows / Linux |
+| --------------- | ----- | --------------- |
+| Dokumen baharu  | ⌘N    | ctrl+N          |
+| Buka            | ⌘O    | ctrl+O          |
+| Simpan          | ⌘S    | ctrl+S          |
+| Tutup tab       | ⌘W    | ctrl+W          |
+| Buka manual ini | F1    | F1              |
 
 Pintasan dalam setiap editor (berus format, cari & ganti, operasi jadual, ...) diterangkan dalam bab masing-masing; Docs turut menyediakan dialog pintasan papan kekunci yang boleh dicari (lihat babnya).
 

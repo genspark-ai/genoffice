@@ -37,12 +37,12 @@ Un nuovo documento si apre senza titolo; il file su disco viene creato solo al p
 
 ## Scorciatoie comuni
 
-| Azione               | macOS | Windows / Linux |
-| -------------------- | ----- | --------------- |
-| Nuovo documento      | ⌘N    | ctrl+N          |
-| Apri                 | ⌘O    | ctrl+O          |
-| Salva                | ⌘S    | ctrl+S          |
-| Chiudi scheda        | ⌘W    | ctrl+W          |
+| Azione              | macOS | Windows / Linux |
+| ------------------- | ----- | --------------- |
+| Nuovo documento     | ⌘N    | ctrl+N          |
+| Apri                | ⌘O    | ctrl+O          |
+| Salva               | ⌘S    | ctrl+S          |
+| Chiudi scheda       | ⌘W    | ctrl+W          |
 | Apri questo manuale | F1    | F1              |
 
 Le scorciatoie interne a ogni editor (pennello di formattazione, trova e sostituisci, operazioni sulle tabelle, ...) si trovano nei rispettivi capitoli; Docs dispone inoltre di una finestra di dialogo ricercabile con tutte le scorciatoie da tastiera (vedi il suo capitolo).
