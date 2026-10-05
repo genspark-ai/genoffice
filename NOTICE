@@ -13,6 +13,27 @@ checkout.
 Bundled fonts and their licenses are documented in
 apps/docs/src/renderer/fonts/README.md.
 
+Downloadable fonts
+
+Any app can offer additional font families, at the reader's request, from the
+build-injected font mirror. Those families are not in the bundle and so are not
+in that README; the catalogue is
+packages/electron-utils/src/font-catalog.ts, and every family there carries its
+SPDX licence id in a `license` field, checked against a permissive allowlist by
+packages/electron-utils/tests/font-store.test.ts.
+
+All of them are licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org), which permits the bundling and redistribution
+this application performs. The families are: Open Sans, Roboto, Lato,
+Montserrat, Poppins, Inter, Source Sans 3, Oswald, Raleway, Nunito,
+Merriweather, Playfair Display, Work Sans, Rubik, Noto Sans JP, Noto Sans KR,
+Noto Sans SC, Noto Sans TC, Nanum Gothic, Noto Serif SC, Noto Serif TC,
+Noto Serif JP, Noto Serif KR, Nanum Myeongjo.
+
+Each downloaded file is verified against the sha256 recorded in the catalogue
+before it is installed, and the catalogue states each family's size so an app
+can ask before fetching tens of megabytes.
+
 Unicode Character Database
 
 apps/pdf/src/shared/radicals.ts contains a generated mapping derived from

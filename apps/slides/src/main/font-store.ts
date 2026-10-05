@@ -1,40 +1,35 @@
 /**
- * Downloadable/installable font store (main process).
+ * The download/install half of the font store, wired to Electron.
  *
- * A curated catalog of OFL-licensed families is mirrored on the GenOffice CDN
- * (versioned paths, sha256-pinned). Downloads and user-installed font files both
- * land in <userData>/fonts, which the FontRegistry scans as a private dir — the
- * same measure-and-register pipeline as Office DFonts, so a newly installed font
- * immediately drives both layout metrics and canvas drawing.
+ * The catalog and the store logic live in `@genoffice/electron-utils/font-store`
+ * so docs and sheets can offer the same families; this file is only the glue —
+ * where the store dir is, which mirror this build ships, and how each app
+ * answers "is this family already usable".
  */
-import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { app, net } from 'electron'
 import type { OpenedPptx } from '@genoffice/pptx-engine'
+import {
+  downloadFontFamily as downloadFromStore,
+  familyDownloaded,
+  installLocalFontFiles as installIntoStore,
+  listCatalog,
+  normalizeCdnBaseUrl,
+  type FontStoreEnv,
+} from '@genoffice/electron-utils/font-store'
+import { FONT_CATALOG, type CatalogFamily } from '@genoffice/electron-utils/font-catalog'
 import { familyAvailable, fontFileFamilies, setUserFontDir } from './fonts'
-import { FONT_CATALOG, type CatalogFamily } from './font-catalog'
 
-function normalizeFontCdnBaseUrl(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim()) return null
-  try {
-    const url = new URL(value.trim())
-    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
-      return null
-    }
-    const path = url.pathname.replace(/\/+$/, '')
-    return `${url.origin}${path}`
-  } catch {
-    return null
-  }
-}
+export { FONT_CATALOG, normalizeCdnBaseUrl }
+export type { CatalogFamily }
 
 /** Read the build-injected font CDN URL from packaged app metadata. */
 export function extractFontCdnBaseUrl(pkg: unknown): string | null {
   if (!pkg || typeof pkg !== 'object') return null
   const raw = (pkg as Record<string, unknown>).genofficeFontCdn
   if (!raw || typeof raw !== 'object') return null
-  return normalizeFontCdnBaseUrl((raw as Record<string, unknown>).baseUrl)
+  return normalizeCdnBaseUrl((raw as Record<string, unknown>).baseUrl)
 }
 
 /**
@@ -43,7 +38,7 @@ export function extractFontCdnBaseUrl(pkg: unknown): string | null {
  * all downloadable-font UI stays disabled while local font installation works.
  */
 export function fontCdnBaseUrl(): string | null {
-  if (!app.isPackaged) return normalizeFontCdnBaseUrl(process.env.GENOFFICE_FONT_CDN_URL)
+  if (!app.isPackaged) return normalizeCdnBaseUrl(process.env.GENOFFICE_FONT_CDN_URL)
   try {
     const pkg = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as unknown
     return extractFontCdnBaseUrl(pkg)
@@ -61,110 +56,52 @@ export function initFontStore(): void {
   setUserFontDir(fontStoreDir())
 }
 
-const downloading = new Map<string, Promise<void>>()
+/** The store, described to the shared module in this app's terms. */
+function storeEnv(): FontStoreEnv {
+  return {
+    dir: fontStoreDir(),
+    cdnBaseUrl: fontCdnBaseUrl(),
+    fetchBytes: async (url) => {
+      const response = await net.fetch(url)
+      if (!response.ok) return { ok: false, status: response.status, bytes: new Uint8Array() }
+      return {
+        ok: true,
+        status: response.status,
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      }
+    },
+    isFamilyAvailable: familyAvailable,
+    fontFileFamilies,
+  }
+}
 
 export interface FontCatalogEntry {
   family: string
   script: CatalogFamily['script']
+  license: CatalogFamily['license']
   installed: boolean
-  downloading: boolean
+  /** total download size; the ribbon shows it so a pick never hides a 28 MiB fetch */
+  bytes: number
 }
 
 /** Rows whose files are live on the CDN: the only ones the pickers may offer. */
-function isPublished(f: CatalogFamily): boolean {
-  return f.published !== false
-}
-
 export function listFontCatalog(): FontCatalogEntry[] {
-  if (!fontCdnBaseUrl()) return []
-  return FONT_CATALOG.filter(isPublished).map((f) => ({
-    family: f.family,
-    script: f.script,
-    installed: familyAvailable(f.family),
-    downloading: downloading.has(f.family),
-  }))
+  return listCatalog(storeEnv())
 }
 
-async function fetchVerified(url: string, sha256: string): Promise<Buffer> {
-  const res = await net.fetch(url)
-  if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`)
-  const buf = Buffer.from(await res.arrayBuffer())
-  const got = createHash('sha256').update(buf).digest('hex')
-  if (got !== sha256) throw new Error('download failed: checksum mismatch')
-  return buf
-}
-
-/** Download every style file of a catalog family into the store. Throws on any failure;
- *  a concurrent call for the same family joins the in-flight download. */
 export function downloadFontFamily(family: string): Promise<void> {
-  const entry = FONT_CATALOG.find((f) => f.family === family)
-  // unpublished rows are not offered, so a request for one comes from a stale picker
-  if (!entry || !isPublished(entry)) return Promise.reject(new Error(`not in catalog: ${family}`))
-  const baseUrl = fontCdnBaseUrl()
-  if (!baseUrl) return Promise.reject(new Error('font downloads are unavailable'))
-  const inFlight = downloading.get(family)
-  if (inFlight) return inFlight
-  const run = (async () => {
-    const dir = fontStoreDir()
-    mkdirSync(dir, { recursive: true })
-    for (const file of entry.files) {
-      const dest = join(dir, file.file)
-      if (existsSync(dest)) continue
-      const url = new URL(encodeURIComponent(file.file), `${baseUrl}/`).toString()
-      const buf = await fetchVerified(url, file.sha256)
-      writeFileSync(dest, buf)
-    }
-  })().finally(() => downloading.delete(family))
-  downloading.set(family, run)
-  return run
+  return downloadFromStore(storeEnv(), family)
 }
 
-const SFNT_MAGIC = new Set(['00010000', '4f54544f', '74746366', '74727565']) // sfnt / OTTO / ttcf / true
-
-/**
- * Copy user-picked font files into the store, renamed to their primary family
- * name so the filename-keyed registry index can find them. Returns the family
- * names that were installed.
- */
 export function installLocalFontFiles(paths: string[]): string[] {
-  const dir = fontStoreDir()
-  mkdirSync(dir, { recursive: true })
-  const installed: string[] = []
-  for (const p of paths) {
-    let head: string
-    try {
-      head = readFileSync(p).subarray(0, 4).toString('hex')
-    } catch {
-      continue
-    }
-    if (!SFNT_MAGIC.has(head)) continue
-    const families = fontFileFamilies(p)
-    const primary = families[0]
-    if (!primary) continue
-    const ext =
-      basename(p)
-        .match(/\.(ttc|otc|otf)$/i)?.[1]
-        ?.toLowerCase() ?? 'ttf'
-    // Family-derived name = registry index key; suffix keeps distinct style files apart
-    const styleTag = /bold\s*italic/i.test(basename(p))
-      ? '-BoldItalic'
-      : /bold/i.test(basename(p))
-        ? '-Bold'
-        : /italic|oblique/i.test(basename(p))
-          ? '-Italic'
-          : ''
-    const dest = join(dir, `${primary.replace(/[\\/:]/g, '')}${styleTag}.${ext}`)
-    try {
-      copyFileSync(p, dest)
-      installed.push(...families)
-    } catch {
-      /* unreadable/locked source: skip */
-    }
-  }
-  return [...new Set(installed)]
+  return installIntoStore(storeEnv(), paths)
 }
 
-/** Deck-referenced families that are missing locally but present in the catalog. */
+/** True when every file of a catalog family is already in the store. */
+export function isFamilyDownloaded(family: string): boolean {
+  return familyDownloaded(storeEnv(), family)
+}
+
 export function missingCatalogFonts(opened: OpenedPptx): string[] {
   if (!fontCdnBaseUrl()) return []
   const wanted = new Set<string>()
