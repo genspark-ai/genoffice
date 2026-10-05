@@ -1,27 +1,4 @@
-/**
- * The downloadable font store, shared by every app that can fetch a family.
- *
- * ## Why this is not in apps/slides
- *
- * The catalog is data and the store is the plumbing around it; neither belongs
- * to the app that happened to need them first. Keeping them here is what lets
- * docs and sheets offer the same families without each re-deriving the CDN
- * rules, the checksum discipline and the licence bookkeeping.
- *
- * ## Why the environment arrives as an argument
- *
- * `electron-utils` carries "no Electron dependency, pure TS" in its
- * description, and the store needs `app.getPath` and `net.fetch`. Passing them
- * in keeps that true — and makes the whole thing testable without spawning an
- * Electron process, which is the point of the extraction.
- *
- * ## The rule the callers must honour
- *
- * A family is tens of megabytes — Noto Serif SC alone is 28 MiB. Nothing here
- * decides *when* to download; `listCatalog` hands the caller the byte count so
- * a UI can ask first. Downloading on a bare selection is this store's caller's
- * decision to get wrong, not the store's to make.
- */
+/** The downloadable font store, shared by every app that can fetch a family. */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -46,8 +23,14 @@ export interface FontStoreEnv {
    * Injected rather than imported: the implementation lives in the slides
    * font registry, which is tied to the pptx engine, and a store that guessed
    * from the filename would register the wrong index key.
+   *
+   * Optional because only the hosts that *offer* "install a font file…" need
+   * it. docs has no such affordance, and requiring the field there would mean
+   * writing a filename-guessing stub for a call that never happens — the exact
+   * mistake this injection exists to prevent. Omitted means the host has no
+   * local install, and `installLocalFontFiles` then installs nothing.
    */
-  readonly fontFileFamilies: (path: string) => readonly string[]
+  readonly fontFileFamilies?: (path: string) => readonly string[]
 }
 
 export interface CatalogEntry {
@@ -101,18 +84,33 @@ async function fetchVerified(env: FontStoreEnv, url: string, sha256: string): Pr
 }
 
 /**
- * Fetch every style of a family into the store.
+ * Fetch every style of a catalog family into the store.
  *
- * Verifies every file against the pinned sha256 before it is written, so a
- * truncated or swapped artifact cannot end up registered as a font.
+ * Takes the entry rather than a family name so a caller — or a test — can drive
+ * a synthetic family. The shared catalog is generated data with pinned hashes;
+ * a test that re-pinned a hash on a live entry to make its fake bytes verify
+ * edits the real catalog, and the test that would notice only checks hash
+ * *shape*.
  */
 export function downloadFontFamily(env: FontStoreEnv, family: string): Promise<void> {
   const entry = FONT_CATALOG.find((f) => f.family === family)
   if (!entry || !isPublished(entry)) {
     return Promise.reject(new Error(`not in catalog: ${family}`))
   }
+  return downloadCatalogEntry(env, entry)
+}
+
+/**
+ * Fetch every style of `entry` into the store.
+ *
+ * Verifies every file against the pinned sha256 before it is written, so a
+ * truncated or swapped artifact cannot end up registered as a font. Two callers
+ * asking for the same family join one request; a file already fetched is not
+ * fetched again.
+ */
+export function downloadCatalogEntry(env: FontStoreEnv, entry: CatalogFamily): Promise<void> {
   if (!env.cdnBaseUrl) return Promise.reject(new Error('font downloads are unavailable'))
-  const existing = inFlight.get(family)
+  const existing = inFlight.get(entry.family)
   if (existing) return existing
   const run = (async () => {
     mkdirSync(env.dir, { recursive: true })
@@ -123,23 +121,42 @@ export function downloadFontFamily(env: FontStoreEnv, family: string): Promise<v
       const bytes = await fetchVerified(env, url, file.sha256)
       writeFileSync(dest, bytes)
     }
-  })().finally(() => inFlight.delete(family))
-  inFlight.set(family, run)
+  })().finally(() => inFlight.delete(entry.family))
+  inFlight.set(entry.family, run)
   return run
+}
+
+/**
+ * True when every file of a catalog family is already in `dir`.
+ *
+ * Takes the dir rather than the whole env because the two questions a host asks
+ * are not the same: this one is about bytes on disk, while `isFamilyAvailable`
+ * is about what the host can already render. A host whose renderer owns that
+ * answer (docs: FontFace registration) still needs this to tell "already
+ * fetched" from "never fetched", and building a throwaway env just to ask would
+ * be noise.
+ */
+export function familyDownloadedIn(dir: string, family: string): boolean {
+  const entry = FONT_CATALOG.find((f) => f.family === family)
+  if (!entry) return false
+  return entry.files.every((file) => existsSync(join(dir, file.file)))
 }
 
 /** True when the file is already fetched, whatever the host calls "installed". */
 export function familyDownloaded(env: FontStoreEnv, family: string): boolean {
-  const entry = FONT_CATALOG.find((f) => f.family === family)
-  if (!entry) return false
-  return entry.files.every((file) => existsSync(join(env.dir, file.file)))
+  return familyDownloadedIn(env.dir, family)
 }
 
 /**
  * Copy user-picked font files into the store, renamed to their family so the
  * filename-keyed index can find them. Returns the families that landed.
+ *
+ * Empty for a host that injects no name-table reader: it has no local install
+ * to offer, so it is handed files by nothing and installs nothing.
  */
 export function installLocalFontFiles(env: FontStoreEnv, paths: readonly string[]): string[] {
+  const readFamilies = env.fontFileFamilies
+  if (!readFamilies) return []
   mkdirSync(env.dir, { recursive: true })
   const installed: string[] = []
   for (const path of paths) {
@@ -150,7 +167,7 @@ export function installLocalFontFiles(env: FontStoreEnv, paths: readonly string[
       continue
     }
     if (!SFNT_MAGIC.has(head)) continue
-    const families = env.fontFileFamilies(path)
+    const families = readFamilies(path)
     const primary = families[0]
     if (!primary) continue
     const ext =

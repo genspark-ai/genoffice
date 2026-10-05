@@ -1,13 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { FONT_CATALOG } from '../src/font-catalog'
+import { FONT_CATALOG, type CatalogFamily } from '../src/font-catalog'
 import {
+  downloadCatalogEntry,
   downloadFontFamily,
-  familyDownloaded,
   familyDownloadBytes,
   installLocalFontFiles,
   listCatalog,
@@ -16,11 +16,10 @@ import {
 } from '../src/font-store'
 
 /**
- * The store, driven directly.
- *
- * Nothing here mocks electron: the module takes its environment as an argument
- * precisely so the download discipline can be tested without an app, and a
- * test that needed a mock would say the extraction had not bought anything.
+ * The store, driven directly — no electron mock, because the environment
+ * arrives as an argument. Downloads run against a synthetic family, never a
+ * catalog entry: re-pinning a live row's hash to make fake bytes verify edits
+ * generated data for every later test, and a hash-shape check cannot see it.
  */
 
 const CDN = 'https://fonts.example.test/v1'
@@ -46,12 +45,27 @@ function fakeEnv(overrides: Partial<FontStoreEnv> = {}): FontStoreEnv {
   }
 }
 
+/** A family of our own, with its hashes left for `serve` to pin. */
+function syntheticFamily(overrides: Partial<CatalogFamily> = {}): CatalogFamily {
+  return {
+    family: 'Test Sans',
+    script: 'latin',
+    license: 'OFL-1.1',
+    files: [
+      { style: 'regular', file: 'TestSans-regular.ttf', sha256: '', bytes: 0 },
+      { style: 'bold', file: 'TestSans-bold.ttf', sha256: '', bytes: 0 },
+    ],
+    ...overrides,
+  }
+}
+
 /** Serve fake bytes for every file of a family, pinned to match. */
-function serve(family: (typeof FONT_CATALOG)[number]): void {
+function serve(family: CatalogFamily): void {
   for (const file of family.files) {
     const bytes = Buffer.from(`sfnt-bytes-${file.style}`)
     served.set(new URL(encodeURIComponent(file.file), `${CDN}/`).toString(), bytes)
     file.sha256 = createHash('sha256').update(bytes).digest('hex')
+    file.bytes = bytes.length
   }
 }
 
@@ -59,6 +73,10 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'font-store-'))
   served = new Map()
   env = fakeEnv()
+})
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true })
 })
 
 describe('the catalog', () => {
@@ -122,34 +140,47 @@ describe('what listing tells the caller', () => {
   })
 })
 
-describe('downloadFontFamily', () => {
+describe('downloadCatalogEntry', () => {
   it('verifies the checksum and writes files into the store', async () => {
-    const family = FONT_CATALOG[0]!
+    const family = syntheticFamily()
     serve(family)
-    await downloadFontFamily(env, family.family)
+    await downloadCatalogEntry(env, family)
     for (const file of family.files) {
       const path = join(dir, file.file)
       expect(existsSync(path), file.file).toBe(true)
       expect(readFileSync(path).toString()).toContain('sfnt-bytes')
     }
-    expect(familyDownloaded(env, family.family)).toBe(true)
+    // familyDownloaded asks about a *catalog* family, so it has nothing to say
+    // about a synthetic one — what matters here is that every cut landed
+    expect(family.files.every((file) => existsSync(join(dir, file.file)))).toBe(true)
+  })
+
+  it('leaves an already-fetched file alone', async () => {
+    const family = syntheticFamily()
+    serve(family)
+    await downloadCatalogEntry(env, family)
+    const refetch = fakeEnv({
+      fetchBytes: async () => ({ ok: false, status: 500, bytes: new Uint8Array() }),
+    })
+    // a second run must not depend on the mirror being reachable at all
+    await expect(downloadCatalogEntry(refetch, family)).resolves.toBeUndefined()
   })
 
   it('rejects a non-2xx response even when the bytes hash correctly', async () => {
     // The checksum cannot catch this one: a captive portal can serve the right
     // bytes under an error status, and installing them would register a family
     // the mirror never offered.
-    const family = FONT_CATALOG[0]!
+    const family = syntheticFamily()
     serve(family)
     const statusOnly = fakeEnv({
       fetchBytes: async (url) => ({ ok: false, status: 403, bytes: served.get(url)! }),
     })
-    await expect(downloadFontFamily(statusOnly, family.family)).rejects.toThrow(/HTTP 403/)
+    await expect(downloadCatalogEntry(statusOnly, family)).rejects.toThrow(/HTTP 403/)
     expect(existsSync(join(dir, family.files[0]!.file))).toBe(false)
   })
 
   it('rejects a checksum mismatch and writes nothing', async () => {
-    const family = FONT_CATALOG[0]!
+    const family = syntheticFamily()
     serve(family)
     // the mirror starts serving different bytes than the catalog pins
     for (const file of family.files) {
@@ -158,10 +189,55 @@ describe('downloadFontFamily', () => {
         Buffer.from('tampered'),
       )
     }
-    await expect(downloadFontFamily(env, family.family)).rejects.toThrow(/checksum/)
+    await expect(downloadCatalogEntry(env, family)).rejects.toThrow(/checksum/)
     expect(existsSync(join(dir, family.files[0]!.file))).toBe(false)
   })
 
+  it('rejects downloads when no CDN URL is configured', async () => {
+    const fetchBytes = vi.fn()
+    await expect(
+      downloadCatalogEntry(fakeEnv({ cdnBaseUrl: null, fetchBytes }), syntheticFamily()),
+    ).rejects.toThrow(/unavailable/)
+    expect(fetchBytes).not.toHaveBeenCalled()
+  })
+
+  it('a second caller joins the first rather than fetching again', async () => {
+    const family = syntheticFamily()
+    serve(family)
+    let release: (() => void) | null = null
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let fetches = 0
+    const slow = fakeEnv({
+      fetchBytes: async (url) => {
+        fetches++
+        await gate
+        const body = served.get(url)!
+        return { ok: true, status: 200, bytes: body }
+      },
+    })
+    const first = downloadCatalogEntry(slow, family)
+    const second = downloadCatalogEntry(slow, family)
+    // the join is the whole claim: with the in-flight map deleted, `second`
+    // would be a fresh fetch that has also not resolved yet, and this race
+    // would resolve first — so assert on the settled flag, not on timing alone
+    let secondSettled = false
+    void second.then(() => {
+      secondSettled = true
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(secondSettled).toBe(false)
+    release!()
+    await Promise.all([first, second])
+    // one fetch per file, not two
+    expect(fetches).toBe(family.files.length)
+    for (const file of family.files) expect(existsSync(join(dir, file.file)), file.file).toBe(true)
+  })
+})
+
+describe('downloadFontFamily', () => {
   it('rejects an unknown family', async () => {
     await expect(downloadFontFamily(env, 'Meiryo UI')).rejects.toThrow(/not in catalog/)
   })
@@ -172,7 +248,7 @@ describe('downloadFontFamily', () => {
     await expect(downloadFontFamily(env, family!.family)).rejects.toThrow(/not in catalog/)
   })
 
-  it('rejects downloads when no CDN URL is configured', async () => {
+  it('refuses to download without a mirror, before touching the network', async () => {
     const fetchBytes = vi.fn()
     await expect(
       downloadFontFamily(fakeEnv({ cdnBaseUrl: null, fetchBytes }), FONT_CATALOG[0]!.family),
@@ -181,26 +257,16 @@ describe('downloadFontFamily', () => {
   })
 })
 
-describe('a second download joins the first', () => {
-  it('resolves only after the in-flight one has written every file', async () => {
-    const family = FONT_CATALOG[0]!
+describe('the shipped catalog', () => {
+  it('is not edited by these tests', async () => {
+    // the guard the pinned-hash test above cannot be: a download test that
+    // re-pinned a live entry would still leave every hash 64 hex characters
+    const before = JSON.stringify(FONT_CATALOG)
+    const family = syntheticFamily()
     serve(family)
-    let release: (() => void) | null = null
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const slow = fakeEnv({
-      fetchBytes: async (url) => {
-        await gate
-        const body = served.get(url)!
-        return { ok: true, status: 200, bytes: body }
-      },
-    })
-    const first = downloadFontFamily(slow, family.family)
-    const second = downloadFontFamily(slow, family.family)
-    release!()
-    await Promise.all([first, second])
-    for (const file of family.files) expect(existsSync(join(dir, file.file)), file.file).toBe(true)
+    await downloadCatalogEntry(env, family)
+    await expect(downloadFontFamily(env, 'Meiryo UI')).rejects.toThrow()
+    expect(JSON.stringify(FONT_CATALOG)).toBe(before)
   })
 })
 
@@ -209,17 +275,34 @@ describe('installLocalFontFiles', () => {
     // Picked files live outside the store, which is the whole point of copying
     // them in — a source already at the destination is skipped by design.
     const picked = mkdtempSync(join(tmpdir(), 'font-pick-'))
-    const good = join(picked, 'brand_v2.ttf')
-    writeFileSync(good, Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.from('x'.repeat(64))]))
-    const junk = join(picked, 'notes.txt')
-    writeFileSync(junk, 'not a font at all, definitely not sfnt bytes here')
-    const families = installLocalFontFiles(env, [good, junk, join(picked, 'missing.ttf')])
-    // the family comes from the file's own name table, not from its filename
-    expect(families).toEqual(['Brand Sans'])
-    expect(existsSync(join(dir, 'Brand Sans.ttf'))).toBe(true)
-    // the text file is not a font, so its family is never reported and no
-    // store entry appears under any name derived from it
-    expect(families).not.toContain('Some Other Family')
+    try {
+      const good = join(picked, 'brand_v2.ttf')
+      writeFileSync(good, Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.from('x'.repeat(64))]))
+      const junk = join(picked, 'notes.txt')
+      writeFileSync(junk, 'not a font at all, definitely not sfnt bytes here')
+      const families = installLocalFontFiles(env, [good, junk, join(picked, 'missing.ttf')])
+      // the family comes from the file's own name table, not from its filename
+      expect(families).toEqual(['Brand Sans'])
+      expect(existsSync(join(dir, 'Brand Sans.ttf'))).toBe(true)
+      // the text file is not a font, so its family is never reported and no
+      // store entry appears under any name derived from it
+      expect(families).not.toContain('Some Other Family')
+    } finally {
+      rmSync(picked, { recursive: true, force: true })
+    }
+  })
+
+  it('installs nothing for a host that offers no local install', () => {
+    const picked = mkdtempSync(join(tmpdir(), 'font-pick-'))
+    try {
+      const good = join(picked, 'brand_v2.ttf')
+      writeFileSync(good, Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.from('x'.repeat(64))]))
+      // a host with no local-install affordance simply omits the reader
+      const { fontFileFamilies: _unused, ...host } = fakeEnv()
+      expect(installLocalFontFiles(host, [good])).toEqual([])
+    } finally {
+      rmSync(picked, { recursive: true, force: true })
+    }
   })
 })
 

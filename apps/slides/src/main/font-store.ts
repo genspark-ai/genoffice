@@ -1,18 +1,11 @@
-/**
- * The download/install half of the font store, wired to Electron.
- *
- * The catalog and the store logic live in `@genoffice/electron-utils/font-store`
- * so docs and sheets can offer the same families; this file is only the glue —
- * where the store dir is, which mirror this build ships, and how each app
- * answers "is this family already usable".
- */
+/** The download/install half of the font store, wired to Electron. */
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { app, net } from 'electron'
 import type { OpenedPptx } from '@genoffice/pptx-engine'
 import {
+  downloadCatalogEntry as downloadEntry,
   downloadFontFamily as downloadFromStore,
-  familyDownloaded,
   installLocalFontFiles as installIntoStore,
   listCatalog,
   normalizeCdnBaseUrl,
@@ -80,7 +73,7 @@ export interface FontCatalogEntry {
   script: CatalogFamily['script']
   license: CatalogFamily['license']
   installed: boolean
-  /** total download size; the ribbon shows it so a pick never hides a 28 MiB fetch */
+  /** total download size, so a picker can say what a fetch costs before starting one */
   bytes: number
 }
 
@@ -93,13 +86,18 @@ export function downloadFontFamily(family: string): Promise<void> {
   return downloadFromStore(storeEnv(), family)
 }
 
-export function installLocalFontFiles(paths: string[]): string[] {
-  return installIntoStore(storeEnv(), paths)
+/**
+ * The shared store's fetch step, for a caller that holds a catalog entry rather
+ * than a family name. Exists so this app's tests can drive a family of their
+ * own: re-pinning a hash on a live catalog row to make fake bytes verify edits
+ * generated data for every later test in the run.
+ */
+export function downloadCatalogEntry(entry: CatalogFamily): Promise<void> {
+  return downloadEntry(storeEnv(), entry)
 }
 
-/** True when every file of a catalog family is already in the store. */
-export function isFamilyDownloaded(family: string): boolean {
-  return familyDownloaded(storeEnv(), family)
+export function installLocalFontFiles(paths: string[]): string[] {
+  return installIntoStore(storeEnv(), paths)
 }
 
 export function missingCatalogFonts(opened: OpenedPptx): string[] {

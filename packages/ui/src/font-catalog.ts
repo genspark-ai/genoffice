@@ -2,19 +2,10 @@
  * The downloadable-catalog half of a font picker, shared by every app that
  * offers one.
  *
- * ## What this decides, and what it refuses to
- *
- * A family is tens of megabytes — Noto Serif SC alone is 28 MiB — so a bare
- * selection that quietly starts a download is the failure mode worth designing
- * against. This module therefore **never downloads on its own**: it hands the
+ * It never downloads on its own: a family is tens of megabytes, so it hands the
  * caller the list *with its size* and waits to be asked. Whether a download
- * needs a click, a confirmation dialog, or is fine inline is the host app's
- * call, and it should be a decision someone can review rather than a default
- * inherited from here.
- *
- * The three pieces of copy this needs already exist in the slides app, so a
- * host copies those across rather than inventing new words; the size itself
- * needs no translation, being a number and a unit symbol.
+ * needs a click, a confirmation, or is fine inline is the host's call and should
+ * be a reviewable decision rather than a default inherited from here.
  */
 import { useCallback, useEffect, useState } from 'react'
 
