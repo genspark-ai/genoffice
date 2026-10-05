@@ -791,16 +791,26 @@ function runSetOutlineLevel(op: Op, env: RunEnv): OpResult {
 }
 
 /**
- * The block as the model reads it: withheld spans already replaced by their
- * markers, so a before/after comparison is in one coordinate system.
+ * The block as the model reads it — withheld spans already replaced by their
+ * markers, so a before/after comparison is in one coordinate system — together
+ * with the markers that produced, one per withheld span.
+ *
+ * The markers are returned rather than recovered from the text because a
+ * `{{...}}` in a document is not necessarily ours. A mail-merge template is
+ * full of them, and a model asked to fill one in is doing exactly what it was
+ * asked; only the markers standing in for withheld spans have to survive an
+ * edit untouched, because nothing else in the document promises that.
  */
-function modelViewOf(node: PmDocNode): string {
+function modelViewOf(node: PmDocNode): { text: string; markers: string[] } {
+  const markers: string[] = []
   let out = ''
   const visit = (n: PmDocNode) => {
     const mark = n.marks.find((m) => m.type.name === REDACT_MARK)
     if (mark) {
       const label = mark.attrs?.label
-      out += placeholderSource(typeof label === 'string' ? label : 'private')
+      const source = placeholderSource(typeof label === 'string' ? label : 'private')
+      markers.push(source)
+      out += source
       return
     }
     if (n.isText) {
@@ -811,7 +821,7 @@ function modelViewOf(node: PmDocNode): string {
     n.forEach(visit)
   }
   node.forEach(visit)
-  return out
+  return { text: out, markers }
 }
 
 /**
@@ -895,13 +905,21 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
     //    standing. Both sides are the model's own view: comparing markers
     //    against raw text would report every batch as a deletion.
     //
+    //    A block is policed only when it actually holds a withheld span. A
+    //    block with none is the document's own text, and a `{{token}}` in it
+    //    is content to be filled in rather than a marker of ours — a mail
+    //    merge template is the normal case, and policing it is what stopped
+    //    `genoffice merge` from filling a docx at all. Where a block is
+    //    policed, the whole `{{...}}` bag has to match, so a marker cannot be
+    //    renamed, split, or shadowed by a token the model invented.
+    //
     //    The "after" side is read off the transaction *after* applying the
     //    replacements, rather than computed by shifting offsets. A withheld
     //    span is longer or shorter than the marker that stands in for it, so
     //    any arithmetic between the two coordinate systems drifts; replaying
     //    the real steps cannot. executeOps discards the transaction when this
     //    throws, so nothing reaches the document.
-    const before = new Map<number, string>()
+    const before = new Map<number, { text: string; markers: string[] }>()
     for (const b of blocks) {
       if (touchedIndexes.has(b.index)) before.set(b.index, modelViewOf(b.node))
     }
@@ -916,8 +934,8 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
     let damaged = 0
     for (const b of topLevelBlocks(tr.doc)) {
       const was = before.get(b.index)
-      if (was === undefined) continue
-      damaged += checkPlaceholders(was, modelViewOf(b.node)).length
+      if (was === undefined || was.markers.length === 0) continue
+      damaged += checkPlaceholders(was.text, modelViewOf(b.node).text).length
     }
     if (damaged > 0) {
       throw new Error(

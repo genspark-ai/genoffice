@@ -152,6 +152,42 @@ describe('the write guard on model output', () => {
     expect(out.ok, out.error).toBe(true)
   })
 
+  it('lets a mail-merge template be filled', async () => {
+    // a `{{token}}` the document already contained is content, not one of our
+    // markers. A model asked to fill a template in is doing what it was asked,
+    // and reading the filled token as a damaged marker refused the whole batch
+    // — which is what stopped `genoffice merge` from filling a docx at all.
+    const editor = await open('Invoice for {{name}}, due {{due.date}}')
+    const out = executeOps(editor, replaceOps('{{name}}', 'Ada'))
+    expect(out.ok, out.error).toBe(true)
+    expect(editor.state.doc.textContent).toBe('Invoice for Ada, due {{due.date}}')
+  })
+
+  it('refuses a template fill in a block that also holds a span', async () => {
+    // Deliberate, and the reason the two must not be confused: once a block
+    // holds a withheld span it is policed whole, so a `{{token}}` in it is
+    // treated as part of the marker bag and may not be filled in either. A
+    // document that mixes a redaction with a mail-merge template has to be
+    // filled before the span is marked, not after. Filling is still allowed
+    // everywhere the model is shown the whole block.
+    const editor = await open(`Call {{name}} about ${SECRET}`)
+    selectText(editor, SECRET)
+    editor.commands.setRedaction('客户电话')
+    const before = editor.state.doc.textContent
+    const out = executeOps(editor, replaceOps('{{name}}', 'Ada'))
+    expect(out.ok).toBe(false)
+    expect(editor.state.doc.textContent).toBe(before)
+  })
+
+  it('still refuses a batch that renames a marker into a template token', async () => {
+    // the token spelling is not a free pass: a marker that became ordinary
+    // content is the one damage this guard exists to stop
+    const editor = await marked()
+    const out = executeOps(editor, replaceOps('now', 'and {{name}}'))
+    expect(out.ok).toBe(false)
+    expect(out.error).toMatch(/private placeholder/i)
+  })
+
   it('reports the same reason whatever the damage', async () => {
     // three different ways to wreck a marker, one refusal. a marker that was
     // never there, a span overwritten, a marker broken in half
