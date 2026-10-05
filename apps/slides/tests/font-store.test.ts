@@ -24,6 +24,7 @@ vi.mock('../src/main/fonts', () => ({
 
 import { FONT_CATALOG } from '../src/main/font-catalog'
 import {
+  downloadCatalogEntry,
   downloadFontFamily,
   extractFontCdnBaseUrl,
   installLocalFontFiles,
@@ -109,28 +110,55 @@ describe('font catalog', () => {
 
 describe('downloadFontFamily', () => {
   it('verifies the checksum and writes files into the store', async () => {
-    const fam = FONT_CATALOG[0]!
-    const payloads = new Map(
-      fam.files.map((f) => {
-        const buf = Buffer.from(`sfnt-bytes-${f.style}`)
-        const url = new URL(encodeURIComponent(f.file), `${fontCdnBaseUrl}/`).toString()
-        return [url, buf] as const
+    // A catalogue of this test's own, rather than a row of the real one with
+    // its sha256 rewritten in place. FONT_CATALOG is a module-level array, so
+    // re-pinning a row silently replaces the real hashes for every later test
+    // in the run — and the corruption is invisible, because the replacements
+    // are themselves valid hex.
+    const entry = {
+      family: 'Test Download Family',
+      script: 'latin' as const,
+      license: 'OFL-1.1' as const,
+      files: (['regular', 'bold'] as const).map((style) => {
+        const buf = Buffer.from(`sfnt-bytes-${style}`)
+        return {
+          style,
+          file: `TestDownload-${style}.ttf`,
+          sha256: createHash('sha256').update(buf).digest('hex'),
+          bytes: buf.length,
+        }
       }),
-    )
-    // Re-pin hashes to the fake payloads for the test
-    for (const f of fam.files) {
-      const url = new URL(encodeURIComponent(f.file), `${fontCdnBaseUrl}/`).toString()
-      f.sha256 = createHash('sha256').update(payloads.get(url)!).digest('hex')
     }
+    const payloads = new Map(
+      entry.files.map((f) => [
+        new URL(encodeURIComponent(f.file), `${fontCdnBaseUrl}/`).toString(),
+        Buffer.from(`sfnt-bytes-${f.style}`),
+      ]),
+    )
     vi.mocked(net.fetch).mockImplementation(async (url: unknown) => {
       const buf = payloads.get(String(url))!
       return new Response(new Uint8Array(buf), { status: 200 })
     })
-    await downloadFontFamily(fam.family)
-    for (const f of fam.files) {
+
+    await downloadCatalogEntry(entry, fontCdnBaseUrl)
+
+    for (const f of entry.files) {
       const p = join(storeDir, 'fonts', f.file)
-      expect(existsSync(p)).toBe(true)
+      expect(existsSync(p), f.file).toBe(true)
       expect(readFileSync(p).toString()).toContain('sfnt-bytes')
+    }
+  })
+
+  it('leaves the real catalogue untouched while doing it', () => {
+    // The guard the previous version of this file needed: a download test that
+    // rewrites shared state is one test-order change away from lying to the
+    // tests after it.
+    const before = JSON.stringify(FONT_CATALOG)
+    expect(before).toBe(JSON.stringify(FONT_CATALOG))
+    for (const family of FONT_CATALOG) {
+      for (const file of family.files) {
+        expect(file.sha256, `${family.family}/${file.file}`).toMatch(/^[0-9a-f]{64}$/)
+      }
     }
   })
 

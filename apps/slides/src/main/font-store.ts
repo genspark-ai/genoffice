@@ -12,6 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync } from
 import { basename, join } from 'node:path'
 import { app, net } from 'electron'
 import type { OpenedPptx } from '@genoffice/pptx-engine'
+
 import { familyAvailable, fontFileFamilies, setUserFontDir } from './fonts'
 import { FONT_CATALOG, type CatalogFamily } from './font-catalog'
 
@@ -96,6 +97,29 @@ async function fetchVerified(url: string, sha256: string): Promise<Buffer> {
 
 /** Download every style file of a catalog family into the store. Throws on any failure;
  *  a concurrent call for the same family joins the in-flight download. */
+/**
+ * Fetch every file of one catalogue entry into the store.
+ *
+ * Takes the entry rather than a family name so a caller — the app below, or a
+ * test with its own hashes — never has to edit the shared FONT_CATALOG to drive
+ * it. Re-pinning a catalogue row's sha256 in place to make a test pass is how
+ * the real values get lost for every later test in the same run.
+ */
+export async function downloadCatalogEntry(
+  entry: CatalogFamily,
+  baseUrl: string,
+  dir: string = fontStoreDir(),
+): Promise<void> {
+  mkdirSync(dir, { recursive: true })
+  for (const file of entry.files) {
+    const dest = join(dir, file.file)
+    if (existsSync(dest)) continue
+    const url = new URL(encodeURIComponent(file.file), `${baseUrl}/`).toString()
+    const buf = await fetchVerified(url, file.sha256)
+    writeFileSync(dest, buf)
+  }
+}
+
 export function downloadFontFamily(family: string): Promise<void> {
   const entry = FONT_CATALOG.find((f) => f.family === family)
   // unpublished rows are not offered, so a request for one comes from a stale picker
@@ -104,17 +128,7 @@ export function downloadFontFamily(family: string): Promise<void> {
   if (!baseUrl) return Promise.reject(new Error('font downloads are unavailable'))
   const inFlight = downloading.get(family)
   if (inFlight) return inFlight
-  const run = (async () => {
-    const dir = fontStoreDir()
-    mkdirSync(dir, { recursive: true })
-    for (const file of entry.files) {
-      const dest = join(dir, file.file)
-      if (existsSync(dest)) continue
-      const url = new URL(encodeURIComponent(file.file), `${baseUrl}/`).toString()
-      const buf = await fetchVerified(url, file.sha256)
-      writeFileSync(dest, buf)
-    }
-  })().finally(() => downloading.delete(family))
+  const run = downloadCatalogEntry(entry, baseUrl).finally(() => downloading.delete(family))
   downloading.set(family, run)
   return run
 }
