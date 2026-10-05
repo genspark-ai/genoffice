@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSlide, patchTextElementXml, setElementRedaction } from '../src/index'
+import { parseSlide, setElementRedaction } from '../src/index'
 import { hasRedactExtIn, REDACT_EXT_URI } from '../src/redaction-xml'
 import type { PictureElement, Slide, TextElement } from '../src/types'
 
@@ -17,7 +17,6 @@ import type { PictureElement, Slide, TextElement } from '../src/types'
  */
 
 const LABEL = '客户电话'
-const SECRET = '13800138000'
 
 const slideWith = (body: string) =>
   '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld>' +
