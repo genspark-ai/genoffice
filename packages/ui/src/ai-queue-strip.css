@@ -1,0 +1,115 @@
+/* Queued-messages strip above the AI composer (see AiQueueStrip.tsx) */
+.ai-queue-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-subtle);
+}
+
+.ai-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ai-queue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ai-queue-toggle:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.ai-queue-clear:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ai-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.ai-queue-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--canvas);
+  color: var(--color-text-primary);
+  font-size: var(--text-caption);
+}
+
+.ai-queue-edit:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.ai-queue-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.ai-queue-action:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}

@@ -5,7 +5,15 @@ import {
   type AiModelPickerBridge,
 } from '@genoffice/ui'
 import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
+import {
+  AiComposer,
+  AiQueueStrip,
+  AI_QUEUE_LABELS,
+  AiScopeQuote,
+  AiTypingIndicator,
+  useChatRunQueue,
+  type AiScopeQuoteData,
+} from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -233,6 +241,7 @@ export function AiChatPanel({
   onAddAttachmentPaths,
   onAddPastedImage,
   onRemoveAttachment,
+  onSendQueued,
   prompt,
   preview,
   aiBusy,
@@ -276,6 +285,8 @@ export function AiChatPanel({
     attachments?: readonly AttachmentMeta[],
     retryIndex?: number,
   ) => void
+  /** a queued message is ready to run: return false to keep it queued (panel busy some other way) */
+  readonly onSendQueued?: (instruction: string, attachments: readonly AttachmentMeta[]) => boolean
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: (steps: number) => void
@@ -296,6 +307,11 @@ export function AiChatPanel({
   readonly onCollapse: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
+  /** messages queued while a reply runs; the pump re-sends them through onSend on settle */
+  const msgQueue = useChatRunQueue<readonly AttachmentMeta[]>({
+    busy: aiBusy,
+    submit: (text, atts) => onSendQueued?.(text, atts) ?? false,
+  })
   // Panel chrome follows the UI language; message text follows its own content (dir=auto below)
   const isRtl = lang === 'ar' || lang === 'he'
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -475,6 +491,17 @@ export function AiChatPanel({
     onSend()
   }
 
+  /** Enter while a reply runs: the draft joins the queue above the composer */
+  const enqueueDraft = (): void => {
+    const text = prompt.trim()
+    if (!text) return
+    // the queued message owns the composer attachments; the pump hands them to onSend
+    const atts = attachments
+    for (const a of atts) onRemoveAttachment(a.path)
+    msgQueue.enqueue(text, atts)
+    onPromptChange('')
+  }
+
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     e.stopPropagation()
@@ -538,7 +565,10 @@ export function AiChatPanel({
           {(chat.length > 0 || historicChat.length > 0) && (
             <button
               className="ai-header-btn"
-              onClick={onNewChat}
+              onClick={() => {
+                msgQueue.clear()
+                onNewChat()
+              }}
               data-tip={t('aiNewChat')}
               aria-label={t('aiNewChat')}
             >
@@ -713,6 +743,17 @@ export function AiChatPanel({
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
+          queueStrip={
+            <AiQueueStrip
+              items={msgQueue.queued}
+              labels={AI_QUEUE_LABELS[lang]}
+              onUpdate={msgQueue.update}
+              onRemove={msgQueue.remove}
+              onClear={msgQueue.clear}
+            />
+          }
+          onQueue={enqueueDraft}
+          queuePlaceholder={AI_QUEUE_LABELS[lang].queuePlaceholder}
           header={
             <>
               {/* Only a deliberate multi-cell selection shows here: it tells the

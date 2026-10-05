@@ -3,6 +3,9 @@ import {
   AiPanelSideButton,
   AiModelPicker,
   type AiModelPickerBridge,
+  AiQueueStrip,
+  AI_QUEUE_LABELS,
+  useChatRunQueue,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
@@ -362,6 +365,19 @@ export function AiPanel({
   const isRtl = lang === 'ar' || lang === 'he'
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  /** messages queued while a reply runs; the pump re-runs them through runWith on settle */
+  const msgQueue = useChatRunQueue<{
+    attachments: AttachmentMeta[]
+    scope: AiScopeQuoteData | null
+  }>({
+    busy,
+    submit: (text, meta) => {
+      const loop = loopRef.current
+      if (!loop || loop.busy || pendingSendRef.current) return false
+      runWith(text, text, meta.attachments, meta.scope)
+      return true
+    },
+  })
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
   /** a send waiting on a phased open's tail; Stop / New chat abort it before it runs */
@@ -1125,7 +1141,27 @@ export function AiPanel({
 
   const continueRun = () => runWith(DOCS_CONTINUE_INSTRUCTION, t('aiContinue'))
 
+  /** Enter while a reply runs: the draft joins the queue above the composer */
+  const enqueueDraft = () => {
+    const text = input.trim()
+    if (!text) return
+    // snapshot + consume the composer attachments exactly like a send does: the
+    // queued message owns them, and pump time hands them to runWith as an override
+    const attachments = attachmentsRef.current
+    if (attachments.length > 0) {
+      const seen = new Set(sentAttachmentsRef.current.map((a) => a.path))
+      sentAttachmentsRef.current = [
+        ...sentAttachmentsRef.current,
+        ...attachments.filter((a) => !seen.has(a.path)),
+      ]
+      setAttachments([])
+    }
+    msgQueue.enqueue(text, { attachments, scope: selectionScopeQuote() ?? null })
+    setInput('')
+  }
+
   const newChat = () => {
+    msgQueue.clear()
     if (pendingSendRef.current) {
       pendingSendRef.current.aborted = true
       pendingSendRef.current = null
@@ -1547,6 +1583,17 @@ export function AiPanel({
           onFocus={(qid) => onQueueFocus?.(qid)}
         />
         <AiComposer
+          queueStrip={
+            <AiQueueStrip
+              items={msgQueue.queued}
+              labels={AI_QUEUE_LABELS[lang]}
+              onUpdate={msgQueue.update}
+              onRemove={msgQueue.remove}
+              onClear={msgQueue.clear}
+            />
+          }
+          onQueue={enqueueDraft}
+          queuePlaceholder={AI_QUEUE_LABELS[lang].queuePlaceholder}
           header={
             (hasScopeSelection || attachments.length > 0) && (
               <>

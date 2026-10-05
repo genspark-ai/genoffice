@@ -13,9 +13,12 @@ import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import {
   AiComposer,
+  AiQueueStrip,
+  AI_QUEUE_LABELS,
   AiScopeQuote,
   AiTypingIndicator,
   Markdown,
+  useChatRunQueue,
   type AiScopeQuoteData,
 } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
@@ -304,6 +307,16 @@ export function AiPanel({
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
+  /** messages queued while a reply runs; the pump re-runs them through send on settle */
+  const msgQueue = useChatRunQueue<AttachmentMeta[]>({
+    busy,
+    submit: (text, atts) => {
+      const loop = loopRef.current
+      if (!loop || loop.busy) return false
+      send(text, text, false, atts, undefined)
+      return true
+    },
+  })
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   /** questionnaire / brief cards docked in the composer slot while a tool waits for the user */
@@ -1005,6 +1018,17 @@ export function AiPanel({
     setBusy(false)
   }
 
+  /** Enter while a reply runs: the draft joins the queue above the composer */
+  const enqueueDraft = () => {
+    const text = prompt.trim()
+    if (!text) return
+    // the queued message owns the composer attachments; pump time passes them as an override
+    const atts = attachmentsRef.current
+    if (atts.length > 0) setAttachments([])
+    msgQueue.enqueue(text, atts)
+    setPrompt('')
+  }
+
   const stop = (): void => {
     dismissCards()
     const loop = loopRef.current
@@ -1148,6 +1172,7 @@ export function AiPanel({
             <button
               className="ai-header-btn"
               onClick={() => {
+                msgQueue.clear()
                 stop()
                 loopRef.current?.reset()
                 setBusy(false)
@@ -1509,6 +1534,17 @@ export function AiPanel({
         )}
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
+          queueStrip={
+            <AiQueueStrip
+              items={msgQueue.queued}
+              labels={AI_QUEUE_LABELS[lang]}
+              onUpdate={msgQueue.update}
+              onRemove={msgQueue.remove}
+              onClear={msgQueue.clear}
+            />
+          }
+          onQueue={enqueueDraft}
+          queuePlaceholder={AI_QUEUE_LABELS[lang].queuePlaceholder}
           value={prompt}
           busy={busy}
           placeholder={t('aiComposerPlaceholder')}

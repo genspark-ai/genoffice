@@ -1,5 +1,8 @@
 export { AiPanelSideButton } from './AiPanelSideButton'
 export { AiComposer } from './AiComposer'
+export { AiQueueStrip } from './AiQueueStrip'
+export { useChatRunQueue, type ChatRunQueue, type QueuedChatMessage } from './chat-run-queue'
+export { AI_QUEUE_LABELS, type AiQueueStripLabels } from './strings-ai-queue'
 export { AiScopeQuote, type AiScopeQuoteData } from './AiScopeQuote'
 export {
   AI_CUSTOM_FONT_MAX_PX,
