@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Markdown } from '@genoffice/ui'
 import { HELP_GROUPS, HELP_TOPICS, helpBody, helpImage, searchTopics } from './help-registry'
+import { useI18n } from '../../locale'
+import { groupTitle, topicTitle } from './help-titles'
 
 /**
  * The in-app manual (issue #1520): sidebar topic list with full-text search
@@ -17,7 +19,10 @@ import { HELP_GROUPS, HELP_TOPICS, helpBody, helpImage, searchTopics } from './h
  * from the body's `##` headings and scrolls to them by index.
  */
 export function HelpScreen(): React.ReactElement {
-  const zh = document.documentElement.lang.startsWith('zh')
+  const { t } = useI18n()
+  // the help tab has no locale of its own: it renders in the shell's UI language
+  const langTag = document.documentElement.lang
+  const zh = langTag.startsWith('zh')
   const [query, setQuery] = useState('')
   const [activeId, setActiveId] = useState(HELP_TOPICS[0]!.id)
   const hits = useMemo(() => searchTopics(query, zh ? 'zh' : 'en'), [query, zh])
@@ -99,26 +104,26 @@ export function HelpScreen(): React.ReactElement {
             ref={searchRef}
             className="help-search"
             type="search"
-            placeholder={zh ? '搜索手册…（按 / 聚焦）' : 'Search the manual… (press /)'}
+            placeholder={t('helpSearchPlaceholder')}
             value={query}
-            aria-label={zh ? '搜索手册' : 'Search the manual'}
+            aria-label={t('helpSearchLabel')}
             onChange={(e) => setQuery(e.target.value)}
           />
           {query && (
             <span className="help-hit-count">
-              {zh
-                ? `${visibleTopics.length} 个主题`
-                : `${visibleTopics.length} ${visibleTopics.length === 1 ? 'topic' : 'topics'}`}
+              {t(visibleTopics.length === 1 ? 'helpHitCountOne' : 'helpHitCount', {
+                n: visibleTopics.length,
+              })}
             </span>
           )}
         </div>
-        <nav className="help-nav" aria-label={zh ? '手册目录' : 'Manual contents'}>
+        <nav className="help-nav" aria-label={t('helpContentsLabel')}>
           {HELP_GROUPS.map((g) => {
             const topics = visibleTopics.filter((t) => t.group === g.id)
             if (topics.length === 0) return null
             return (
               <div key={g.id} className="help-group">
-                <div className="help-group-title">{zh ? g.titleZh : g.titleEn}</div>
+                <div className="help-group-title">{groupTitle(g.id, langTag)}</div>
                 {topics.map((t) => (
                   <button
                     key={t.id}
@@ -126,7 +131,7 @@ export function HelpScreen(): React.ReactElement {
                     className={`help-topic${t.id === activeId ? ' active' : ''}`}
                     onClick={() => setActiveId(t.id)}
                   >
-                    {zh ? t.titleZh : t.titleEn}
+                    {topicTitle(t.id, langTag)}
                   </button>
                 ))}
               </div>
@@ -137,10 +142,10 @@ export function HelpScreen(): React.ReactElement {
       <main className="help-main" ref={mainRef}>
         {active ? (
           <article className="help-article" key={active.id}>
-            <h1>{zh ? active.titleZh : active.titleEn}</h1>
+            <h1>{topicTitle(active.id, langTag)}</h1>
             {toc.length > 1 && (
-              <nav className="help-toc" aria-label={zh ? '本页目录' : 'On this page'}>
-                <div className="help-toc-title">{zh ? '本页目录' : 'On this page'}</div>
+              <nav className="help-toc" aria-label={t('helpOnThisPage')}>
+                <div className="help-toc-title">{t('helpOnThisPage')}</div>
                 {toc.map((h, i) => (
                   <button
                     key={i}
@@ -166,9 +171,7 @@ export function HelpScreen(): React.ReactElement {
                 }}
               />
             ) : (
-              <p className="help-missing">
-                {zh ? '本主题的内容尚未编写。' : 'This topic has not been written yet.'}
-              </p>
+              <p className="help-missing">{t('helpTopicMissing')}</p>
             )}
           </article>
         ) : null}

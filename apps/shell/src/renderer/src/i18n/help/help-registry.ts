@@ -8,19 +8,20 @@
  * this list rather than an invisible one.
  */
 
+import { LANGS } from '@genoffice/i18n'
+import { topicTitle } from './help-titles'
+
 export type HelpGroupId = 'start' | 'apps' | 'ai' | 'manage'
 
 export interface HelpGroup {
   id: HelpGroupId
-  titleZh: string
-  titleEn: string
 }
 
 export const HELP_GROUPS: HelpGroup[] = [
-  { id: 'start', titleZh: '入门', titleEn: 'Getting started' },
-  { id: 'apps', titleZh: '应用', titleEn: 'Applications' },
-  { id: 'ai', titleZh: 'AI 能力', titleEn: 'AI features' },
-  { id: 'manage', titleZh: '文件与设置', titleEn: 'Files & settings' },
+  { id: 'start' },
+  { id: 'apps' },
+  { id: 'ai' },
+  { id: 'manage' },
 ]
 
 export interface HelpTopicMeta {
@@ -28,8 +29,6 @@ export interface HelpTopicMeta {
   group: HelpGroupId
   /** within-group sort key */
   order: number
-  titleZh: string
-  titleEn: string
   /** search terms beyond the title (both languages welcome) */
   keywords: string[]
 }
@@ -40,16 +39,12 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'getting-started',
     group: 'start',
     order: 1,
-    titleZh: '快速入门：界面与基本操作',
-    titleEn: 'Quick start: the interface and the basics',
     keywords: ['界面', 'overview', '标签页', 'tab', '窗口', '保存', 'save', '快捷键', 'shortcuts'],
   },
   {
     id: 'home-screen',
     group: 'start',
     order: 2,
-    titleZh: '主屏（Home）：文件都在哪',
-    titleEn: 'The Home screen: where your files live',
     keywords: [
       '最近',
       'recents',
@@ -69,8 +64,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'tabs-and-windows',
     group: 'start',
     order: 3,
-    titleZh: '标签页与窗口管理',
-    titleEn: 'Tabs and window management',
     keywords: [
       '重命名',
       'rename',
@@ -88,8 +81,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'docs',
     group: 'apps',
     order: 1,
-    titleZh: 'Docs：文字处理',
-    titleEn: 'Docs: word processing',
     keywords: [
       'word',
       '文档',
@@ -110,16 +101,12 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'sheets',
     group: 'apps',
     order: 2,
-    titleZh: 'Sheets：电子表格',
-    titleEn: 'Sheets: spreadsheets',
     keywords: ['excel', '表格', '公式', 'formula', 'xlsx', 'csv', 'tsv', 'sheet', '单元格', 'cell'],
   },
   {
     id: 'slides',
     group: 'apps',
     order: 3,
-    titleZh: 'Slides：演示文稿',
-    titleEn: 'Slides: presentations',
     keywords: [
       'ppt',
       'pptx',
@@ -137,8 +124,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'pdf',
     group: 'apps',
     order: 4,
-    titleZh: 'PDF：阅读、注释与涂黑',
-    titleEn: 'PDF: reading, annotating and redacting',
     keywords: [
       '高亮',
       'highlight',
@@ -160,24 +145,18 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'markdown',
     group: 'apps',
     order: 5,
-    titleZh: 'Markdown 编辑器',
-    titleEn: 'The Markdown editor',
     keywords: ['md', 'markdown', '预览', 'preview', 'gfm'],
   },
   {
     id: 'html',
     group: 'apps',
     order: 6,
-    titleZh: 'HTML 编辑器',
-    titleEn: 'The HTML editor',
     keywords: ['网页', 'html', '预览', 'preview', '检查器', 'inspector'],
   },
   {
     id: 'ai-panel',
     group: 'ai',
     order: 1,
-    titleZh: 'AI 助手面板',
-    titleEn: 'The AI assistant panel',
     keywords: [
       'ai',
       '助手',
@@ -195,8 +174,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'ai-models',
     group: 'ai',
     order: 2,
-    titleZh: 'AI 模型与设置',
-    titleEn: 'AI models and settings',
     keywords: [
       '模型',
       'model',
@@ -214,8 +191,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'fonts',
     group: 'ai',
     order: 3,
-    titleZh: '字体：系统字体与可下载字体',
-    titleEn: 'Fonts: system faces and downloadable families',
     keywords: [
       '字体',
       'font',
@@ -233,8 +208,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'file-ops',
     group: 'manage',
     order: 1,
-    titleZh: '文件操作：重命名、删除、导出',
-    titleEn: 'File operations: rename, delete, export',
     keywords: [
       '重命名',
       'rename',
@@ -253,8 +226,6 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
     id: 'settings-integrations',
     group: 'manage',
     order: 2,
-    titleZh: '设置、语言、主题与 MCP 集成',
-    titleEn: 'Settings, language, theme and MCP integrations',
     keywords: [
       '设置',
       'settings',
@@ -290,11 +261,28 @@ export function helpImage(href: string): string | undefined {
   return images[`./topics/${href.replace(/^\.\//, '')}`]
 }
 
+/**
+ * The bundle suffix a UI language maps to.
+ *
+ * `zh-TW` is a real file suffix, not a `zh` variant: the two are written
+ * differently enough (搜尋 vs 搜索) that sharing one file would leave one of
+ * them reading in the other script. Everything else is its own suffix, and an
+ * unknown one falls through to English rather than to a file that is not there.
+ */
+export function helpLangSuffix(lang: string): string {
+  return (LANGS as readonly string[]).includes(lang) ? lang : 'en'
+}
+
+/** A topic's body in the reader's language, falling back to English. */
 export function helpBody(id: string, lang: string): string | null {
-  const short = lang.startsWith('zh') ? 'zh' : 'en'
-  const direct = bodies[`./topics/${id}.${short}.md`]
+  const direct = bodies[`./topics/${id}.${helpLangSuffix(lang)}.md`]
   if (direct !== undefined) return direct
   return bodies[`./topics/${id}.en.md`] ?? null
+}
+
+/** True when the topic has a body in this language rather than the English fallback. */
+export function helpHasBody(id: string, lang: string): boolean {
+  return bodies[`./topics/${id}.${helpLangSuffix(lang)}.md`] !== undefined
 }
 
 /** topics whose title or body mentions the query (case-insensitive, both langs) */
@@ -303,9 +291,11 @@ export function searchTopics(query: string, lang: string): Set<string> {
   if (!q) return new Set(HELP_TOPICS.map((t) => t.id))
   const hits = new Set<string>()
   for (const t of HELP_TOPICS) {
+    // both the reader's title and the English one, so a query typed in either
+    // language finds the topic whichever body is on screen
     const hay = [
-      t.titleZh,
-      t.titleEn,
+      topicTitle(t.id, lang),
+      topicTitle(t.id, 'en'),
       ...t.keywords,
       helpBody(t.id, lang) ?? '',
       helpBody(t.id, 'en') ?? '',
