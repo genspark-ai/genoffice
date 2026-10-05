@@ -127,7 +127,12 @@ export function parseHeadlessExportArgv(argv: readonly string[]): HeadlessArgvPa
   )
   const jsonFile =
     jsonFileAt === -1 ? undefined : (readOption(argv, jsonFileAt, '--json-file') ?? undefined)
-  const fail = (message: string): HeadlessArgvParse => ({ kind: 'error', json, jsonFile, message })
+  const fail = (message: string): HeadlessArgvParse => ({
+    kind: 'error',
+    json,
+    ...(jsonFile ? { jsonFile } : {}),
+    message,
+  })
   if (jsonFileAt !== -1 && !jsonFile) return fail('--json-file needs a path')
 
   let input: string | null = null
@@ -164,7 +169,10 @@ export function parseHeadlessExportArgv(argv: readonly string[]): HeadlessArgvPa
   }
   if (!outPath) return fail('--out is required')
 
-  return { kind: 'ok', request: { input, targetFormat, outPath, json, jsonFile } }
+  return {
+    kind: 'ok',
+    request: { input, targetFormat, outPath, json, ...(jsonFile ? { jsonFile } : {}) },
+  }
 }
 
 /** One-sentence description of an outcome, shared by the plain and JSON forms. */
