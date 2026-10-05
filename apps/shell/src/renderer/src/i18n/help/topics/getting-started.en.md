@@ -4,7 +4,7 @@ GenOffice is an office suite that runs entirely on your machine: one window, one
 
 ## Interface overview
 
-![The Home screen](img/home-screen.en.png)
+![The Home screen](img/home-screen.png)
 
 The window has three parts:
 

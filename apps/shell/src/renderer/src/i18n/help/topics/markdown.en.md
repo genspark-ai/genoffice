@@ -13,7 +13,7 @@ The Markdown editor opens .md / .markdown with a source + rendered-preview exper
 
 One row of buttons above the editor (hover for tooltips):
 
-![The Markdown toolbar](img/md-toolbar.en.png)
+![The Markdown toolbar](img/md-toolbar.png)
 
 - **File & history**: Save, Save As, Undo, Redo, Find; the **AutoSave** toggle on the right writes changes to disk on a timer.
 - **AI button**: opens the AI panel; next to it are the rewrite / extend / translate presets.

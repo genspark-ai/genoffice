@@ -12,7 +12,7 @@ The HTML editor opens .html / .htm with two modes: **preview** (the rendered pag
 
 Click any element in the preview and a toolbar floats above it:
 
-![The floating toolbar over a selected element](img/html-toolbar.en.png)
+![The floating toolbar over a selected element](img/html-toolbar.png)
 
 - **File & history**: Save, Save As, Undo, Redo, Find; the **AutoSave** toggle writes changes on a timer.
 - **Preview / Source** switch; **Present** shows the page full-screen.

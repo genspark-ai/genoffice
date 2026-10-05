@@ -16,7 +16,7 @@ Try it on any paragraph:
 
 1. **Drag the mouse across a sentence** — on release, an annotation bar floats above it:
 
-![The annotation bar after selecting text](img/pdf-highlight.en.png)
+![The annotation bar after selecting text](img/pdf-highlight.png)
 
 2. Pick **highlight** (the yellow swatch opens a color palette), **underline** or **strikethrough**; **Ask AI** sends the selection with your question to the AI panel.
 3. To undo an annotation, drag-select the same passage again and click the active button on the bar (a Word-style toggle), or select it and press Delete.
@@ -40,7 +40,7 @@ Six tools: **ink, rectangle, ellipse, arrow, note**, plus the **redaction box** 
   1. Annotate tab ▸ click **Redact area** (the tool arms).
   2. **Drag a box over the content** — it gets covered by a hatched mark, and the toolbar gains **clear-marks / apply-redaction** buttons:
 
-  ![The page after marking a redaction](img/pdf-redact.en.png)
+  ![The page after marking a redaction](img/pdf-redact.png)
 
   3. Click **Apply redaction** and confirm — the result is a working copy where the covered text and images are physically removed (not covered) and it cannot be undone; the original document stays untouched.
 

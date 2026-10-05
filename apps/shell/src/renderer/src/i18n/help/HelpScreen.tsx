@@ -161,7 +161,7 @@ export function HelpScreen(): React.ReactElement {
             {body !== null ? (
               <Markdown
                 text={body}
-                images={{ resolve: helpImage }}
+                images={{ resolve: (href) => helpImage(href, langTag) }}
                 nav={{
                   scheme: 'help://',
                   onNavigate: (href) => {

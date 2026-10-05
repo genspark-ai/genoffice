@@ -19,11 +19,11 @@ Slides 是类 PowerPoint 的演示编辑器，读写真 .pptx。
 - **设计**：主题、配色与背景；母版与版式入口。
 - **切换**：给当前页挑换页效果（PowerPoint 放映时生效），可**应用到全部**页；「无」移除当前页效果。
 
-  ![切换页签](img/slides-transitions.zh.png)
+  ![切换页签](img/slides-transitions.png)
 
 - **动画**：给选中形状加进入/强调类动画、**动作路径**（沿路径移动）；可在画布上**预览**当前页全部动画；「无」移除选中形状的动画。
 
-  ![动画页签](img/slides-animations.zh.png)
+  ![动画页签](img/slides-animations.png)
 
   试试：选中标题文本框 ▸ 动画页签 ▸ 挑一个进入效果 ▸ 点 **预览** 在画布上直接播放。
 

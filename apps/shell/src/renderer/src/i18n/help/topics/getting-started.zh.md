@@ -4,7 +4,7 @@ GenOffice 是一个完全运行在本机的办公套件：一个窗口、一排�
 
 ## 界面总览
 
-![主屏一览](img/home-screen.zh.png)
+![主屏一览](img/home-screen.png)
 
 窗口分为三块：
 

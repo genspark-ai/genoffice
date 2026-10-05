@@ -23,7 +23,7 @@ Sheets is the Excel-like editor; calculation runs in a separate Rust engine proc
 
 The Data tab, button by button (left to right in the picture):
 
-![The Data tab](img/sheets-data.en.png)
+![The Data tab](img/sheets-data.png)
 
 - **Pivot table**: build a pivot from the current range; drag fields to aggregate.
 - **Refresh**: recalculate the current pivot's data.
@@ -44,7 +44,7 @@ The Data tab, button by button (left to right in the picture):
 
 The Formulas tab, button by button:
 
-![The Formulas tab](img/sheets-formulas.en.png)
+![The Formulas tab](img/sheets-formulas.png)
 
 - **Insert function** (fx): search functions with an argument wizard.
 - **AutoSum** (dropdown): one-click SUM, plus average/count/max/min.

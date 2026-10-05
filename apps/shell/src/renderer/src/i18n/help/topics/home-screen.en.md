@@ -2,7 +2,7 @@
 
 Home is GenOffice's start page: a navigation sidebar on the left, file lists and quick-create cards on the right.
 
-![The Home screen](img/home-screen.en.png)
+![The Home screen](img/home-screen.png)
 
 ## Sidebar navigation
 

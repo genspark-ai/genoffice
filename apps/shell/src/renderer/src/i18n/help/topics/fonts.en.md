@@ -4,7 +4,7 @@
 
 The font controls live on each editor's Home tab (below: the font group in Slides):
 
-![The font group in the Slides ribbon](img/fonts.en.png)
+![The font group in the Slides ribbon](img/fonts.png)
 
 Each editor's font picker merges: locally installed fonts + platform-common candidates (the usual Windows and macOS families, Western and CJK, including the localized names CJK fonts report on their home systems). When the system can enumerate local fonts the list groups by what actually exists; otherwise it degrades to the full candidate list.
 

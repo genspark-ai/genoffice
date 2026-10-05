@@ -2,7 +2,7 @@
 
 主屏是 GenOffice 的起点：左边是导航栏，右边是文件列表和快速创建卡片。
 
-![主屏](img/home-screen.zh.png)
+![主屏](img/home-screen.png)
 
 ## 侧栏导航
 

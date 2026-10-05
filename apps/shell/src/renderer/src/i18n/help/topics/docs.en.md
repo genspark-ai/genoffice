@@ -12,7 +12,7 @@ Tabs: **Home / Insert / Layout / Design / References / Review / View**, plus con
 - **Design**: themes, color sets, watermark, page borders.
 - **References**: table of contents (updatable), footnotes/endnotes, captions, cross-references.
 
-  ![The References tab](img/docs-references.en.png)
+  ![The References tab](img/docs-references.png)
 
 - **Review**: spell check, comments, track changes (All/Simple markup views), word count.
 - **View**: ruler, gridlines, navigation pane, zoom, and the searchable **keyboard-shortcuts dialog**.

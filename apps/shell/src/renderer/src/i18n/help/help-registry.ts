@@ -256,9 +256,26 @@ const images = import.meta.glob<string>('./topics/img/*.png', {
   eager: true,
 })
 
-/** Bundled asset URL for a topic image href, or undefined when absent */
-export function helpImage(href: string): string | undefined {
-  return images[`./topics/${href.replace(/^\.\//, '')}`]
+/**
+ * Bundled asset URL for a topic image href, or undefined when absent.
+ *
+ * A body writes `img/<name>.png` and never names a language: the figures are
+ * the running UI, so a body in a language with no figure of its own falls back
+ * to the English one rather than to a broken image. Where a figure *was*
+ * captured per language (`<name>.<lang>.png`) that one wins, so a reader whose
+ * language has real UI in the shot is not shown the English chrome instead.
+ */
+export function helpImage(href: string, lang?: string): string | undefined {
+  const name = href.replace(/^\.\//, '')
+  const suffix = '.png'
+  if (!name.endsWith(suffix)) return images[`./topics/${name}`]
+  const stem = name.slice(0, -suffix.length)
+  const suffixLang = lang ? helpLangSuffix(lang) : null
+  if (suffixLang) {
+    const localized = images[`./topics/${stem}.${suffixLang}${suffix}`]
+    if (localized !== undefined) return localized
+  }
+  return images[`./topics/${stem}.en${suffix}`] ?? images[`./topics/${name}`]
 }
 
 /**

@@ -2,15 +2,14 @@
 
 ## 打开设置
 
-主屏右上角的设置按钮（齿轮）打开设置面板；AI 相关设置在其中的 AI 分区，模型配置详见[AI 模型与设置](help://ai-models)一章。
+主屏左下角的账号行打开设置面板（未登录时显示为「登录」）；AI 相关设置在其中的 AI 模型分区，模型配置详见[AI 模型与设置](help://ai-models)一章。
 
-![设置窗口](img/settings-integrations.zh.png)
+![设置窗口](img/settings-integrations.png)
 
 ## 语言
 
 - 设置里可选 **21 种界面语言**：简体中文、English、日本語、한국어、Français、Deutsch、Español、ไทย、Bahasa Indonesia、Русский、العربية、Português、Italiano、Polski、Čeština、Nederlands、Bahasa Melayu、עברית、हिन्दी、繁體中文、Tiếng Việt。
 - 切换立即生效并持久化；菜单栏（主进程菜单）随语言重建。
-- 本手册目前提供简体中文与 English 两种内容，其余语言显示英文版。
 
 ## 主题
 

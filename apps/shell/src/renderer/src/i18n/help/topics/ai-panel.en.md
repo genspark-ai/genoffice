@@ -4,7 +4,7 @@ Every editor can summon the AI panel: select something, give an instruction, wat
 
 ## Opening and using it
 
-![The AI panel in Docs](img/ai-panel.en.png)
+![The AI panel in Docs](img/ai-panel.png)
 
 - Entries: the **AI button** in each editor's ribbon, **Ask AI** in context menus, or Ask AI on the markup bar.
 - Describe the task in plain language (rewrite this / make this column percentages / re-layout this page...) and press Enter.

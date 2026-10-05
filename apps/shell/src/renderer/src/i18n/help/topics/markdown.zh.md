@@ -13,7 +13,7 @@ Markdown 编辑器打开 .md / .markdown，双栏体验：源码 + 渲染预览�
 
 编辑区上方一排按钮（悬停可见说明）：
 
-![Markdown 工具条](img/md-toolbar.zh.png)
+![Markdown 工具条](img/md-toolbar.png)
 
 - **文件与历史**：保存、另存为、撤销、重做、查找；右侧的**自动保存**开关定时把改动写盘。
 - **AI 按钮**：展开 AI 面板；旁边是改写、续写、翻译等预设按钮。

@@ -4,7 +4,7 @@ This chapter covers the file operations shared by every editor; each editor's ow
 
 The row's **⋯ menu** (hover a file row) gathers these actions:
 
-![A file row's ⋯ menu](img/file-ops.en.png)
+![A file row's ⋯ menu](img/file-ops.png)
 
 ## Rename
 

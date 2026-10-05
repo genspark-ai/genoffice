@@ -2,15 +2,14 @@
 
 ## Opening settings
 
-The gear button on Home opens the settings panel; AI-related options live in its AI section
+The account row at the bottom left of Home opens the settings panel (it reads Sign in when you are logged out); AI-related options live in its AI Model section
 
-![The Settings window](img/settings-integrations.en.png) — model configuration is covered in AI models and settings.
+![The Settings window](img/settings-integrations.png) — model configuration is covered in AI models and settings.
 
 ## Language
 
 - The settings offer **21 UI languages**: English, Simplified Chinese, Japanese, Korean, French, German, Spanish, Thai, Indonesian, Russian, Arabic, Portuguese, Italian, Polish, Czech, Dutch, Malay, Hebrew, Hindi, Traditional Chinese, Vietnamese.
 - Switching applies immediately and persists; the native menu bar rebuilds with the language.
-- This manual currently ships Simplified Chinese and English bodies; every other locale shows English.
 
 ## Theme
 

@@ -4,7 +4,7 @@
 
 模型与密钥在设置里配置（主屏的设置按钮打开）：
 
-![设置窗口](img/settings-integrations.zh.png)
+![设置窗口](img/settings-integrations.png)
 
 - **Genspark 官方**：登录 Genspark 账号（设备码流程）即可用，免配置。
 - **自定义端点（BYOK）**：设置 ▸ AI 里为每家协议填 base URL 与 API key——OpenAI 兼容、Anthropic、Gemini、DeepSeek、DashScope(qwen) 等。key 只进请求头，不落盘、不进日志与子进程环境。

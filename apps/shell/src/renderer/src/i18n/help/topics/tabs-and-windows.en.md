@@ -2,7 +2,7 @@
 
 Every open file shares one window; the tab strip at the top switches between them, browser-style.
 
-![The tab strip: Home plus two documents](img/tabs.en.png)
+![The tab strip: Home plus two documents](img/tabs.png)
 
 ## Basics
 
