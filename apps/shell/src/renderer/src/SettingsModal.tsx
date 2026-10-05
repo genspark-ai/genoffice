@@ -27,7 +27,7 @@ import type {
 } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
 import type { StringKey, TFunc } from './locale'
-import type { AccountStatus, AiCatalogEntry, UiTheme } from '../../shared/home-api'
+import type { AccountStatus, AiCatalogEntry, DocTheme, UiTheme } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import './settings.css'
@@ -68,6 +68,14 @@ const THEME_OPTIONS = [
   { value: 'light', labelKey: 'themeLight' },
   { value: 'dark', labelKey: 'themeDark' },
 ] as const satisfies readonly { value: UiTheme; labelKey: StringKey }[]
+
+// Document page theme (#1811): the canvas/paper preference the editors follow;
+// 'follow' keeps the pre-existing behavior of riding the UI theme
+const DOC_THEME_OPTIONS = [
+  { value: 'follow', labelKey: 'docThemeFollowApp' },
+  { value: 'light', labelKey: 'themeLight' },
+  { value: 'dark', labelKey: 'themeDark' },
+] as const satisfies readonly { value: DocTheme; labelKey: StringKey }[]
 
 const AI_FONT_SIZE_OPTIONS = [
   { value: 'default', labelKey: 'aiFontSizeDefault' },
@@ -1251,6 +1259,7 @@ export function SettingsModal({
   const { lang, setLang, t } = useI18n()
   const [section, setSection] = useState<SectionId>(target?.section ?? 'account')
   const [theme, setTheme] = useState<UiTheme>('system')
+  const [docTheme, setDocTheme] = useState<DocTheme>('follow')
   const [saveDir, setSaveDir] = useState('')
   const [analyticsOn, setAnalyticsOn] = useState(true)
   const [analyticsSaving, setAnalyticsSaving] = useState(false)
@@ -1268,6 +1277,9 @@ export function SettingsModal({
     let alive = true
     void window.aiOffice.getTheme?.().then((th) => {
       if (alive) setTheme(th)
+    })
+    void window.aiOffice.getDocumentTheme?.().then((th) => {
+      if (alive) setDocTheme(th)
     })
     void window.aiOffice.getDefaultSaveDir?.().then((dir) => {
       if (alive && dir) setSaveDir(dir)
@@ -1326,6 +1338,11 @@ export function SettingsModal({
     void window.aiOffice.setTheme(next)
     if (next === 'system') document.documentElement.removeAttribute('data-theme')
     else document.documentElement.setAttribute('data-theme', next)
+  }
+
+  const applyDocumentTheme = (next: DocTheme) => {
+    setDocTheme(next)
+    void window.aiOffice.setDocumentTheme(next)
   }
 
   const updateAiPrefs = (patch: Partial<AiPanelPrefs>) => {
@@ -1497,6 +1514,21 @@ export function SettingsModal({
                       label: t(opt.labelKey),
                     }))}
                     onPick={(v) => applyTheme(v as UiTheme)}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <label className="set-field-label">{t('documentTheme')}</label>
+                  </div>
+                  <Dropdown
+                    className="set-dd"
+                    value={docTheme}
+                    ariaLabel={t('documentTheme')}
+                    options={DOC_THEME_OPTIONS.map((opt) => ({
+                      value: opt.value,
+                      label: t(opt.labelKey),
+                    }))}
+                    onPick={(v) => applyDocumentTheme(v as DocTheme)}
                   />
                 </div>
                 <div className="set-field">

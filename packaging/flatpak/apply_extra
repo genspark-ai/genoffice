@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Unpack the extra-data GenOffice deb into /app/extra/app (genoffice#1858).
+
+The deb is fetched by flatpak at install time (see the extra-data source in
+com.genoffice.app.json) and lands at /app/extra/genoffice.deb. The freedesktop
+runtime ships no ar/dpkg, so the 60-byte ar headers are walked by hand and the
+payload member data.tar.* is extracted with the standard library's tarfile.
+The first launch runs this (see genoffice.sh); /app/extra is the only
+writable location under /app once the app is installed.
+"""
+
+import os
+import shutil
+import stat
+import sys
+import tarfile
+
+EXTRA = "/app/extra"
+DEB = os.path.join(EXTRA, "genoffice.deb")
+OUT = os.path.join(EXTRA, "app")
+
+
+def die(message):
+    print(f"apply_extra: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def deb_members(path):
+    """Yield (name, bytes) for every member of an ar archive."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if data[:8] != b"!<arch>\n":
+        die(f"{path} is not an ar archive")
+    off = 8
+    while off < len(data):
+        header = data[off : off + 60]
+        if len(header) < 60:
+            die("truncated ar header")
+        name = header[0:16].decode("ascii", "replace").strip().rstrip("/")
+        size = int(header[48:58].decode("ascii").strip())
+        yield name, data[off + 60 : off + 60 + size]
+        off += 60 + size + (size % 2)
+
+
+def main():
+    if not os.path.isfile(DEB):
+        die(f"{DEB} is missing (extra-data did not download?)")
+    payload = None
+    for name, body in deb_members(DEB):
+        if name == "data.tar.xz" or name == "data.tar.gz":
+            payload = body
+            break
+    if payload is None:
+        die("deb carries no data.tar.xz/data.tar.gz member")
+    tar_name = name
+    tar_path = os.path.join(EXTRA, tar_name)
+    with open(tar_path, "wb") as fh:
+        fh.write(payload)
+    if os.path.exists(OUT):
+        shutil.rmtree(OUT)
+    os.makedirs(OUT)
+    mode = "r:xz" if tar_name.endswith(".xz") else "r:gz"
+    with tarfile.open(tar_path, mode) as tar:
+        tar.extractall(OUT, filter="data")
+    os.remove(tar_path)
+    os.remove(DEB)
+    binary = os.path.join(OUT, "opt/GenOffice/genoffice")
+    if not os.path.isfile(binary):
+        die(f"deb payload lacks {binary}")
+    os.chmod(binary, os.stat(binary).st_mode | stat.S_IXUSR)
+    print("apply_extra: GenOffice unpacked to", OUT)
+
+
+if __name__ == "__main__":
+    main()
