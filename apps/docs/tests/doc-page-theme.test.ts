@@ -41,11 +41,11 @@ describe('docThemeIsDark', () => {
 
   it('with no attributes at all it falls back to the OS preference', () => {
     setAttrs(null, null)
-    window.matchMedia = ((query: string) => ({
-      matches: query.includes('dark'),
+    window.matchMedia = ((_query: string) => ({
+      matches: true,
     })) as unknown as typeof window.matchMedia
     expect(docThemeIsDark()).toBe(true)
-    window.matchMedia = ((query: string) => ({
+    window.matchMedia = ((_query: string) => ({
       matches: false,
     })) as unknown as typeof window.matchMedia
     expect(docThemeIsDark()).toBe(false)
