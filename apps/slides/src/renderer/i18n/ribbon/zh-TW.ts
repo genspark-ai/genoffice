@@ -30,6 +30,7 @@ export const zhTW = {
   ribbonFileOpen: '開啟…',
   ribbonFileSave: '儲存',
   ribbonFileSaveAs: '另存新檔…',
+  aiNameFile: '用 AI 命名…',
   ribbonFileExportPdf: '匯出為 PDF…',
   ribbonFilePrint: '列印…',
   ribbonFileExportImages: '匯出為圖片…',

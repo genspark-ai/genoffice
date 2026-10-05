@@ -30,6 +30,7 @@ export const he = {
   ribbonFileOpen: 'פתיחה…',
   ribbonFileSave: 'שמירה',
   ribbonFileSaveAs: 'שמירה בשם…',
+  aiNameFile: 'מתן שם באמצעות AI…',
   ribbonFileExportPdf: 'ייצוא כ-PDF…',
   ribbonFilePrint: 'הדפסה…',
   ribbonFileExportImages: 'ייצוא כתמונות…',

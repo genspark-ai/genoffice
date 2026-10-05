@@ -31,6 +31,7 @@ export const ms = {
   ribbonFileOpen: 'Buka…',
   ribbonFileSave: 'Simpan',
   ribbonFileSaveAs: 'Simpan Sebagai…',
+  aiNameFile: 'Namakan dengan AI…',
   ribbonFileExportPdf: 'Eksport sebagai PDF…',
   ribbonFilePrint: 'Cetak…',
   ribbonFileExportImages: 'Eksport sebagai Imej…',

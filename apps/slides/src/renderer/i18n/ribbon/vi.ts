@@ -31,6 +31,7 @@ export const vi = {
   ribbonFileOpen: 'Mở…',
   ribbonFileSave: 'Lưu',
   ribbonFileSaveAs: 'Lưu dưới dạng…',
+  aiNameFile: 'Đặt tên bằng AI…',
   ribbonFileExportPdf: 'Xuất dưới dạng PDF…',
   ribbonFilePrint: 'In…',
   ribbonFileExportImages: 'Xuất dưới dạng hình ảnh…',

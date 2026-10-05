@@ -31,6 +31,7 @@ export const cs = {
   ribbonFileOpen: 'Otevřít…',
   ribbonFileSave: 'Uložit',
   ribbonFileSaveAs: 'Uložit jako…',
+  aiNameFile: 'Pojmenovat pomocí AI…',
   ribbonFileExportPdf: 'Exportovat do PDF…',
   ribbonFilePrint: 'Tisk…',
   ribbonFileExportImages: 'Exportovat jako obrázky…',

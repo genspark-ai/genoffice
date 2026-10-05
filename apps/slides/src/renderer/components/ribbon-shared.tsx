@@ -290,6 +290,8 @@ export interface Props {
   onUndo: () => void
   onRedo: () => void
   onSaveAs: () => void
+  /** Ask the model for a name, then open Save As with it prefilled */
+  onNameWithAi: () => void
   /** Export as PDF (hidden slides skipped) */
   onExportPdf: () => void
   onPrint: () => void

@@ -32,6 +32,7 @@ export const ru = {
   ribbonFileOpen: 'Открыть…',
   ribbonFileSave: 'Сохранить',
   ribbonFileSaveAs: 'Сохранить как…',
+  aiNameFile: 'Назвать с помощью ИИ…',
   ribbonFileExportPdf: 'Экспорт в PDF…',
   ribbonFilePrint: 'Печать…',
   ribbonFileExportImages: 'Экспорт в изображения…',

@@ -30,6 +30,7 @@ export const hi = {
   ribbonFileOpen: 'खोलें…',
   ribbonFileSave: 'सहेजें',
   ribbonFileSaveAs: 'इस रूप में सहेजें…',
+  aiNameFile: 'AI से नाम दें…',
   ribbonFileExportPdf: 'PDF के रूप में निर्यात करें…',
   ribbonFilePrint: 'प्रिंट करें…',
   ribbonFileExportImages: 'छवियों के रूप में निर्यात करें…',

@@ -31,6 +31,7 @@ export const nl = {
   ribbonFileOpen: 'Openen…',
   ribbonFileSave: 'Opslaan',
   ribbonFileSaveAs: 'Opslaan als…',
+  aiNameFile: 'Naam geven met AI…',
   ribbonFileExportPdf: 'Exporteren als PDF…',
   ribbonFilePrint: 'Afdrukken…',
   ribbonFileExportImages: 'Exporteren als afbeeldingen…',

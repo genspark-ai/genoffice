@@ -33,6 +33,7 @@ export const de = {
   ribbonFileOpen: 'Öffnen…',
   ribbonFileSave: 'Speichern',
   ribbonFileSaveAs: 'Speichern unter…',
+  aiNameFile: 'Mit KI benennen…',
   ribbonFileExportPdf: 'Als PDF exportieren…',
   ribbonFilePrint: 'Drucken…',
   ribbonFileExportImages: 'Als Bilder exportieren…',

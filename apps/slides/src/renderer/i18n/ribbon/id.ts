@@ -33,6 +33,7 @@ export const id = {
   ribbonFileOpen: 'Buka…',
   ribbonFileSave: 'Simpan',
   ribbonFileSaveAs: 'Simpan Sebagai…',
+  aiNameFile: 'Beri nama dengan AI…',
   ribbonFileExportPdf: 'Ekspor sebagai PDF…',
   ribbonFilePrint: 'Cetak…',
   ribbonFileExportImages: 'Ekspor sebagai Gambar…',

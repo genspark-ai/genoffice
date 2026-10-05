@@ -31,6 +31,7 @@ export const zh = {
   ribbonFileOpen: '打开…',
   ribbonFileSave: '保存',
   ribbonFileSaveAs: '另存为…',
+  aiNameFile: '用 AI 命名…',
   ribbonFileExportPdf: '导出为 PDF…',
   ribbonFilePrint: '打印…',
   ribbonFileExportImages: '导出为图片…',

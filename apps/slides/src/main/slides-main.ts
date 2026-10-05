@@ -4426,14 +4426,19 @@ export function registerSlidesIpc(): void {
     )
   })
 
-  ipcMain.handle('slides:save', async (e) => {
+  ipcMain.handle('slides:save', async (e, proposedName?: unknown) => {
     const session = sessions.get(e.sender.id)
     if (!session) return { ok: false, error: 'no file open' }
     // Untitled (new blank file): the first save lands silently in the drafts folder (Save As keeps its dialog)
     if (!session.path) {
       const draftsDir = getDraftsDir()
       if (!existsSync(draftsDir)) mkdirSync(draftsDir, { recursive: true })
-      session.path = pickDraftPath(draftsDir, tm('untitledDeck'))
+      // A name the renderer derived from the deck's own text wins over the
+      // localized untitled default. pickDraftPath sanitizes it and falls back
+      // to timestamp naming when nothing usable is left, so a declined or empty
+      // proposal costs the deck nothing.
+      const proposed = typeof proposedName === 'string' ? proposedName : ''
+      session.path = pickDraftPath(draftsDir, proposed || tm('untitledDeck'))
       await pushRecent(session.path)
       slidesOpenedHook?.(e.sender, session.path)
     }

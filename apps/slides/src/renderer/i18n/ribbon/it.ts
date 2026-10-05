@@ -31,6 +31,7 @@ export const it = {
   ribbonFileOpen: 'Apri…',
   ribbonFileSave: 'Salva',
   ribbonFileSaveAs: 'Salva con nome…',
+  aiNameFile: 'Assegna un nome con IA…',
   ribbonFileExportPdf: 'Esporta come PDF…',
   ribbonFilePrint: 'Stampa…',
   ribbonFileExportImages: 'Esporta come immagini…',

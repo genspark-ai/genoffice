@@ -32,6 +32,7 @@ export const ja = {
   ribbonFileOpen: '開く…',
   ribbonFileSave: '保存',
   ribbonFileSaveAs: '名前を付けて保存…',
+  aiNameFile: 'AI で名前を変更…',
   ribbonFileExportPdf: 'PDF としてエクスポート…',
   ribbonFilePrint: '印刷…',
   ribbonFileExportImages: '画像としてエクスポート…',

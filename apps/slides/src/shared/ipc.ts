@@ -1681,7 +1681,14 @@ export interface SlidesApi {
   exportPdf: (op: ExportPdfOp) => Promise<ExportPdfResult>
   /** Print (system dialog; cancel counts as ok=false without an error) */
   printSlides: (op: PrintSlidesOp) => Promise<{ ok: boolean; error?: string }>
-  save: () => Promise<{ ok: boolean; path?: string; error?: string; slides?: RenderSlide[] }>
+  /**
+   * `proposedName` names a deck that has never been saved: a stem the renderer
+   * derived from the deck's own text, used instead of the localized untitled
+   * default. Ignored once the deck has a path (Save As keeps its dialog).
+   */
+  save: (
+    proposedName?: string,
+  ) => Promise<{ ok: boolean; path?: string; error?: string; slides?: RenderSlide[] }>
   saveAs: (
     defaultName: string,
   ) => Promise<{ ok: boolean; path?: string; error?: string; slides?: RenderSlide[] }>

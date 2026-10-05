@@ -346,7 +346,7 @@ const api: SlidesApi = {
   savePicture: (op: SavePictureOp) => ipcRenderer.invoke('slides:save-picture', op),
   exportPdf: (op: ExportPdfOp) => ipcRenderer.invoke('slides:export-pdf', op),
   printSlides: (op: PrintSlidesOp) => ipcRenderer.invoke('slides:print', op),
-  save: () => ipcRenderer.invoke('slides:save'),
+  save: (proposedName?: string) => ipcRenderer.invoke('slides:save', proposedName),
   saveAs: (defaultName: string) => ipcRenderer.invoke('slides:save-as', defaultName),
   onCloseSaveRequest: (handler: () => void) => {
     const listener = () => handler()
@@ -474,7 +474,30 @@ const api: SlidesApi = {
   },
 }
 
+/**
+ * Model file naming: the transport half of `nameForSave`.
+ *
+ * Inlined rather than imported — a preload entry must stay a single-file bundle,
+ * or the sandbox drops every global it exposed. The three `ai:` channels are
+ * registered app-wide by the shell rather than by this app, the same arrangement
+ * the `project:*` bridge below already depends on.
+ *
+ * `content` crosses this bridge verbatim and the main process cannot see what
+ * this editor withheld, so what the caller hands over is exactly what the model
+ * sees. A caller that passed raw document text would undo its own redactions.
+ */
+const aiNamingApi = {
+  suggestFileName: (input: {
+    content: string
+    trigger: 'first-save' | 'manual'
+    filePath?: string | null
+  }) => ipcRenderer.invoke('ai:suggest-file-name', input),
+  getFileNamingEnabled: () => ipcRenderer.invoke('ai:get-file-naming'),
+  setFileNamingEnabled: (on: boolean) => ipcRenderer.invoke('ai:set-file-naming', on),
+}
+
 contextBridge.exposeInMainWorld('slidesApi', api)
+contextBridge.exposeInMainWorld('aiOffice', aiNamingApi)
 
 // Chat attachment bridge: method names/signatures match the window.desktop attachment subset in docs, so the renderer's files-skill is copied over wholesale
 const filesApi: DesktopFilesApi = {

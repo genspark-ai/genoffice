@@ -33,6 +33,7 @@ export const es = {
   ribbonFileOpen: 'Abrir…',
   ribbonFileSave: 'Guardar',
   ribbonFileSaveAs: 'Guardar como…',
+  aiNameFile: 'Nombrar con IA…',
   ribbonFileExportPdf: 'Exportar como PDF…',
   ribbonFilePrint: 'Imprimir…',
   ribbonFileExportImages: 'Exportar como imágenes…',

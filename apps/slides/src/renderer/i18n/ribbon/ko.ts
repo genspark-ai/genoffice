@@ -32,6 +32,7 @@ export const ko = {
   ribbonFileOpen: '열기…',
   ribbonFileSave: '저장',
   ribbonFileSaveAs: '다른 이름으로 저장…',
+  aiNameFile: 'AI로 이름 지정…',
   ribbonFileExportPdf: 'PDF로 내보내기…',
   ribbonFilePrint: '인쇄…',
   ribbonFileExportImages: '이미지로 내보내기…',

@@ -6,6 +6,7 @@
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ExportPdfLink } from '../shared/ipc'
 import { baseName } from '../shared/base-name'
+import { firstSaveName, modelSaveAsName } from './file-naming'
 import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPdfPages } from './export-pages'
@@ -93,7 +94,12 @@ export async function save(getCtx: () => ActionCtx, quiet = false): Promise<bool
     const ctx = getCtx()
     await flushActiveEdit(ctx)
     await ctx.flushNotes()
-    const r = await window.slidesApi.save()
+    // A deck that has never been saved is named from its own text: the model's,
+    // when the reader asked for model naming, and the localized untitled default
+    // otherwise. Empty means "no proposal", which is exactly what the main
+    // process would have used on its own.
+    const proposed = ctx.path ? '' : await firstSaveName(ctx.slides)
+    const r = await window.slidesApi.save(proposed || undefined)
     if (r.ok) {
       if (r.slides) adoptSavedSlides(ctx, r.slides)
       if (r.path) ctx.setPath(r.path)
@@ -113,13 +119,38 @@ export async function save(getCtx: () => ActionCtx, quiet = false): Promise<bool
 }
 
 export async function saveAs(getCtx: () => ActionCtx): Promise<void> {
+  const ctx = getCtx()
+  await flushActiveEdit(ctx)
+  await ctx.flushNotes()
+  await saveAsWithName(getCtx, baseName(ctx.path ?? '') || 'presentation.pptx')
+}
+
+/**
+ * Ask the model to name this deck, on request, then open Save As with its
+ * answer prefilled.
+ *
+ * The stem goes into the dialog rather than renaming the file on disk: a deck
+ * that may be open elsewhere, presented from another machine, or synced is not
+ * something to move behind the reader's back. A declined or empty answer
+ * leaves the dialog on the deck's current name, so this is a no-op rather than
+ * a failure.
+ */
+export async function nameWithAi(getCtx: () => ActionCtx): Promise<void> {
+  const ctx = getCtx()
+  await flushActiveEdit(ctx)
+  const stem = await modelSaveAsName(ctx.slides, ctx.path)
+  if (!stem) return
+  await saveAsWithName(getCtx, `${stem}.pptx`)
+}
+
+/** Save As with a name the reader (or the model, via `nameWithAi`) chose. */
+export async function saveAsWithName(getCtx: () => ActionCtx, name: string): Promise<void> {
   // Same queue as save(): Save + Save As (or double Save As) write through
   // the same main-process pipe and would interleave without it.
   await runSerialized(async () => {
     const ctx = getCtx()
     await flushActiveEdit(ctx)
     await ctx.flushNotes()
-    const name = baseName(ctx.path ?? '') || 'presentation.pptx'
     const r = await window.slidesApi.saveAs(name)
     if (r.ok) {
       if (r.slides) adoptSavedSlides(ctx, r.slides)

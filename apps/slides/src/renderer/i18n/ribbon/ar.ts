@@ -32,6 +32,7 @@ export const ar = {
   ribbonFileOpen: 'فتح…',
   ribbonFileSave: 'حفظ',
   ribbonFileSaveAs: 'حفظ باسم…',
+  aiNameFile: 'التسمية بالذكاء الاصطناعي…',
   ribbonFileExportPdf: 'تصدير كملف PDF…',
   ribbonFilePrint: 'طباعة…',
   ribbonFileExportImages: 'تصدير كصور…',
