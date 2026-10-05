@@ -14,7 +14,7 @@ Každý editor může vyvolat panel AI: vyberte něco, zadejte pokyn a sledujte 
 ## Co umí
 
 - **Docs**: přepsat/rozšířit/přeložit/shrnout, vkládat tabulky a obrázky, měnit formátování; každý krok nejprve vytvoří snímek stavu.
-- **Sheets**: vzorce, vyplňování dat, hromadné přeměny (volitelně přes izolované prostředí run_script), formátování.
+- **Sheets**: vzorce, vyplňování dat, hromadné přeměny, formátování.
 - **Slides**: vytvoření celé prezentace, úprava rozvržení, přepis textů.
 - **PDF**: otázky, odpovědi a shrnutí nad vybraným textem nebo stránkami.
 - **Markdown / HTML**: přepsat, rozšířit, přeložit.

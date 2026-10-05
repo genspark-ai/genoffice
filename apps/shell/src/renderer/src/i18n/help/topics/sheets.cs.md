@@ -83,28 +83,6 @@ Karta Vzorce, tlačítko po tlačítku:
 - **Na kartě listu dole**: přidat / přejmenovat / odstranit / obarvit / skrýt listy (nabídka karet Univer).
 - Kontextová nabídka horního pruhu karet je popsána v [Karty a správa oken](help://tabs-and-windows).
 
-## Editor skriptů (pokročilé)
-
-Sheets obsahuje **editor skriptů** s API podobným Google Apps Script pro hromadnou práci.
-
-- Otevření: Nástroje ▸ Editor skriptů (nebo vývojářská nabídka, podle verze).
-- Rozhraní: knihovna skriptů vlevo (nový/odstranit), editor kódu a výstupní panel vpravo; tlačítka **Spustit / Zastavit**.
-- API je asynchronní:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D pole
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (vstupní bod), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Skripty běží v **izolovaném workeru**: žádná síť, žádný systém souborů, žádné DOM — dosáhnout mohou pouze výše uvedeného API, takže chybný ani škodlivý skript se nedostane k ničemu jinému.
-- Výstupní panel omezuje počet řádků, aby obrovské logy nezablokovaly rozhraní.
-- **AI umí skripty spouštět také**: nástroj `run_script` asistenta používá stejné izolované API — ideální pro hromadné a pravidlově založené přeměny.
-
 ## AI
 
 - Postranní panel AI: vyberte oblast a zadejte pokud v přirozeném jazyce (přeformátovat, vygenerovat data, napsat vzorce).

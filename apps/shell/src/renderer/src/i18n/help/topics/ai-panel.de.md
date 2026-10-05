@@ -14,7 +14,7 @@ Jeder Editor kann den KI-Bereich aufrufen: Etwas auswählen, eine Anweisung gebe
 ## Was er kann
 
 - **Docs**: umformulieren, ausbauen, übersetzen, zusammenfassen, Tabellen und Bilder einfügen, Formatierung anpassen; jeder Durchgang legt zuerst einen Snapshot an.
-- **Sheets**: Formeln, Datenfüllung, Stapeltransformationen (wunschweise über das run_script-Sandbox), Formatierung.
+- **Sheets**: Formeln, Datenfüllung, Stapeltransformationen, Formatierung.
 - **Slides**: Erzeugen eines kompletten Decks, Layout anpassen, Texte umformulieren.
 - **PDF**: Fragen und Zusammenfassungen zum ausgewählten Text oder zu ausgewählten Seiten.
 - **Markdown / HTML**: umformulieren, ausbauen, übersetzen.

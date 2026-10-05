@@ -14,7 +14,7 @@ Todos os editores podem chamar o painel de IA: selecione algo, dê uma instruç�
 ## O que sabe fazer
 
 - **Docs**: reescrever, desenvolver, traduzir, resumir, inserir tabelas e imagens, ajustar a formatação; cada volta guarda um instantâneo primeiro.
-- **Sheets**: fórmulas, preenchimento de dados, transformações em massa (se necessário através da sandbox run_script), formatação.
+- **Sheets**: fórmulas, preenchimento de dados, transformações em massa, formatação.
 - **Slides**: gerar a apresentação inteira, ajustar o layout, reescrever os textos.
 - **PDF**: perguntas e respostas e resumos com base no texto ou nas páginas selecionadas.
 - **Markdown / HTML**: reescrever, desenvolver, traduzir.

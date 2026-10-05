@@ -83,28 +83,6 @@ The Formulas tab, button by button:
 - **On a sheet tab at the bottom**: add / rename / delete / color / hide sheets (Univer's tab menu).
 - The top tab strip's context menu is covered in [Tabs and window management](help://tabs-and-windows).
 
-## The script editor (advanced)
-
-Sheets ships a **script editor** with a Google-Apps-Script-shaped API for bulk work.
-
-- Open: Tools ▸ Script editor (or the developer menu, per version).
-- UI: script library on the left (new/delete), code editor + output pane on the right; **Run / Stop** buttons.
-- The API is async:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D array
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (entry), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Scripts run in a **sandboxed worker**: no network, no file system, no DOM — the API above is all they can touch, so a buggy or hostile script cannot reach anything else.
-- The output pane caps its line count so huge logs cannot wedge the UI.
-- **The AI can run scripts too**: the assistant's `run_script` tool executes the same sandboxed API — ideal for bulk, rule-based transforms.
-
 ## AI
 
 - The side AI panel: select a range and instruct in plain language (reformat, generate data, write formulas).

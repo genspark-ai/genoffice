@@ -1,6 +1,6 @@
 # Slides: presentasi
 
-Slides adalah editor mirip PowerPoint: membaca dan menulis .pptx asli.
+Slides adalah editor mirip PowerPoint: membaca dan menulis.pptx asli.
 
 ## Antarmuka
 
@@ -19,13 +19,13 @@ Baris tab (di macOS dimulai dari Beranda; Windows menambahkan tab File):
 - **Desain**: tema, skema warna dan latar; master dan tata letak.
 - **Transisi**: pilih transisi untuk slide saat ini (berlaku di presentasi PowerPoint), dengan Terapkan ke Semua; Tidak Ada menghapus efeknya.
 
-  ![Tab Transisi](img/slides-transitions.png)
+![Tab Transisi](img/slides-transitions.png)
 
 - **Animasi**: efek masuk/penegas untuk bentuk yang dipilih, **jalur gerak** (bergerak mengikuti jalur); **Pratinjau** memainkan animasi slide di kanvas; Tidak Ada menghapusnya.
 
-  ![Tab Animasi](img/slides-animations.png)
+![Tab Animasi](img/slides-animations.png)
 
-  Coba: pilih kotak teks judul ▸ tab Animasi ▸ pilih efek masuk ▸ **Pratinjau** memainkannya di kanvas.
+Coba: pilih kotak teks judul ▸ tab Animasi ▸ pilih efek masuk ▸ **Pratinjau** memainkannya di kanvas.
 
 - **Peragaan Slide**: presentasi dari awal atau dari slide saat ini, plus pengaturan presentasi.
 - **Tinjau**: **komentar baru** pada slide saat ini (ditulis ke dalam pptx, terlihat di PowerPoint).
@@ -48,7 +48,7 @@ Menu menyesuaikan tempat Anda klik:
 ## Pembuatan dengan AI
 
 - Kartu AI Slides di Beranda: berikan topik atau kerangka, lalu AI menyusun seluruh dek; jika pembuatan cloud gagal, sistem kembali ke pembuatan lokal.
-- Terus sesuaikan dengan panel AI setelahnya (AI menata ulang gaya lewat sandbox skrip yang terkendali — mekanisme sandbox yang sama seperti di [Sheets](help://sheets)).
+- Terus sesuaikan dengan panel AI setelahnya.
 
 ## Presentasi dan ekspor
 
@@ -58,4 +58,4 @@ Menu menyesuaikan tempat Anda klik:
 
 ## Menyimpan
 
-Putar-balik .pptx penuh: halaman yang tidak disentuh tetap identik byte demi byte; catatan, master, dan anotasi tetap tersimpan.
+Putar-balik.pptx penuh: halaman yang tidak disentuh tetap identik byte demi byte; catatan, master, dan anotasi tetap tersimpan.

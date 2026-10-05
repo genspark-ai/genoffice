@@ -1,6 +1,6 @@
 # Slides: prezentace
 
-Slides je editor podobný PowerPointu: čte a zapisuje skutečné soubory .pptx.
+Slides je editor podobný PowerPointu: čte a zapisuje skutečné soubory.pptx.
 
 ## Rozhraní
 
@@ -19,16 +19,16 @@ Pruh karet (na macOS začíná na Domů; Windows přidává kartu Soubor):
 - **Návrh**: motivy, barevná schéma a pozadí; předlohy a rozvržení.
 - **Přechody**: vyberte přechod pro aktuální snímek (účinkuje v prezentátoru PowerPointu), s použitím na všechny; Žádný jej odstraní.
 
-  ![Karta Přechody](img/slides-transitions.png)
+![Karta Přechody](img/slides-transitions.png)
 
 - **Animace**: efekty vstupu a zvýraznění pro vybraný tvar, **pohybové cesty** (pohyb podél cesty); **náhled** přehraje animace snímku na plátně; Žádný je odstraní.
 
-  ![Karta Animace](img/slides-animations.png)
+![Karta Animace](img/slides-animations.png)
 
-  Vyzkoušejte: vyberte textové pole názvu ▸ karta Animace ▸ zvolte vstupní efekt ▸ **Náhled** jej přehraje na plátně.
+Vyzkoušejte: vyberte textové pole názvu ▸ karta Animace ▸ zvolte vstupní efekt ▸ **Náhled** jej přehraje na plátně.
 
 - **Prezentace**: spuštění od začátku nebo od aktuálního snímku a nastavení prezentace.
-- **Revize**: **nový komentář** k aktuálnímu snímku (zapíše se do souboru .pptx a uvidíte jej v PowerPointu).
+- **Revize**: **nový komentář** k aktuálnímu snímku (zapíše se do souboru.pptx a uvidíte jej v PowerPointu).
 - **Zobrazení**: **Normální** (miniatury a plátno), **Zobrazení osnovy** (prohlížení a přeskakování podle textu), **Řazení snímků** (mřížkový přehled, dvojklik otevře úpravy), **Zobrazení pro čtení** (celá obrazovka, stránka po stránce; Esc ukončí).
 
 ## Kontextové nabídky
@@ -48,7 +48,7 @@ Nabídka závisí na místě, kde jste klikli pravým tlačítkem:
 ## Generování pomocí AI
 
 - Karta AI Slides na domovské stránce: zadejte téma nebo osnovu a AI sestaví prezentaci; pokud selže generování v cloudu, použije se místní generování.
-- Dál můžete upravovat panelem AI (AI přeformátuje text přes řízený izolovaný skript — stejný mechanismus jako v [Sheets](help://sheets)).
+- Dál můžete upravovat panelem AI.
 
 ## Prezentace a export
 
@@ -58,4 +58,4 @@ Nabídka závisí na místě, kde jste klikli pravým tlačítkem:
 
 ## Ukládání
 
-Úplný přechod tam a zpět ve formátu .pptx: nedotčené stránky zůstávají beze změny bajt po bajtu; poznámky, předlohy a poznámky v okraji se zachovávají.
+Úplný přechod tam a zpět ve formátu.pptx: nedotčené stránky zůstávají beze změny bajt po bajtu; poznámky, předlohy a poznámky v okraji se zachovávají.

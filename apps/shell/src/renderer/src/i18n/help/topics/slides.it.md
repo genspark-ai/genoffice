@@ -1,6 +1,6 @@
 # Slides: presentazioni
 
-Slides è l'editor simile a PowerPoint: legge e scrive veri file .pptx.
+Slides è l'editor simile a PowerPoint: legge e scrive veri file.pptx.
 
 ## L'interfaccia
 
@@ -19,16 +19,16 @@ La barra delle schede (su macOS parte da Home; su Windows c'è anche una scheda 
 - **Progettazione**: temi, combinazione di colori e sfondo; master e layout.
 - **Transizioni**: scegli una transizione per la diapositiva corrente (ha effetto nel visualizzatore di PowerPoint), con applicazione a tutte; Nessuna la rimuove.
 
-  ![La scheda Transizioni](img/slides-transitions.png)
+![La scheda Transizioni](img/slides-transitions.png)
 
 - **Animazioni**: effetti di entrata/evidenza per la forma selezionata, **percorsi di movimento** (muoversi lungo un tracciato); l'**anteprima** riproduce le animazioni della diapositiva sul telaio; Nessuna le rimuove.
 
-  ![La scheda Animazioni](img/slides-animations.png)
+![La scheda Animazioni](img/slides-animations.png)
 
-  Prova: seleziona la casella di testo del titolo ▸ scheda Animazioni ▸ scegli un effetto di entrata ▸ l'**Anteprima** lo riproduce sul telaio.
+Prova: seleziona la casella di testo del titolo ▸ scheda Animazioni ▸ scegli un effetto di entrata ▸ l'**Anteprima** lo riproduce sul telaio.
 
 - **Presentazione**: presentare dall'inizio o dalla diapositiva corrente, più le impostazioni della presentazione.
-- **Revisione**: **nuovo commento** sulla diapositiva corrente (scritto nel file .pptx, visibile in PowerPoint).
+- **Revisione**: **nuovo commento** sulla diapositiva corrente (scritto nel file.pptx, visibile in PowerPoint).
 - **Visualizza**: **Normale** (miniatura + telaio), **Visualizzazione Struttura** (sfoglia e salta in base al testo), **Sequenza Diapositive** (panoramica a griglia, doppio clic per modificare), **Visualizzazione di Lettura** (a schermo intero, pagina per pagina; Esc per uscire).
 
 ## Menu contestuali
@@ -48,7 +48,7 @@ Il menu cambia in base al punto in cui fai clic destro:
 ## Generazione con l'IA
 
 - La scheda AI Slides di Home: dai un argomento o uno schema e l'IA costruisce la presentazione; se la generazione nel cloud fallisce, ricade su quella locale.
-- Continua a mettere a punto con il pannello IA (l'IA riformatta il testo tramite un ambiente di script controllato — lo stesso meccanismo di [Sheets](help://sheets)).
+- Continua a mettere a punto con il pannello IA.
 
 ## Presentare ed esportare
 
@@ -58,4 +58,4 @@ Il menu cambia in base al punto in cui fai clic destro:
 
 ## Salvataggio
 
-Andata e ritorno completo in .pptx: le pagine non toccate restano identiche byte per byte; note, master e annotazioni vengono conservati.
+Andata e ritorno completo in.pptx: le pagine non toccate restano identiche byte per byte; note, master e annotazioni vengono conservati.

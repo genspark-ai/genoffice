@@ -83,28 +83,6 @@ O separador Fórmulas, botão a botão:
 - **Num separador de folha em baixo**: adicionar / renomear / eliminar / dar cor / ocultar folhas (o menu de separadores do Univer).
 - O menu de contexto da barra de guias superior está em [Guias e gestão de janelas](help://tabs-and-windows).
 
-## Editor de scripts (avançado)
-
-O Sheets traz um **editor de scripts** com uma API à imagem do Google Apps Script para trabalhos em lote.
-
-- Abrir: Ferramentas ▸ Editor de scripts (ou o menu de programador, consoante a versão).
-- Interface: biblioteca de scripts à esquerda (novo/eliminar), editor de código e painel de saída à direita; botões **Executar** e **Parar**.
-- A API é assíncrona:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // matriz 2D
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (ponto de entrada), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Os scripts correm num **trabalhador isolado**: sem rede, sem sistema de ficheiros, sem DOM — a API acima é tudo o que conseguem tocar, pelo que um script com erros ou hostil não alcança mais nada.
-- O painel de saída limita o número de linhas, para que registos enormes não bloqueiem a interface.
-- **A IA também pode executar scripts**: a ferramenta `run_script` do assistente usa a mesma API isolada — ideal para transformações em lote baseadas em regras.
-
 ## IA
 
 - O painel de IA lateral: selecione um intervalo e dê instruções em linguagem corrente (reformatar, gerar dados, escrever fórmulas).

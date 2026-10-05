@@ -83,28 +83,6 @@ Het tabblad Formules, knop voor knop:
 - **Op een werkbladtab onderaan**: werkbladen toevoegen / hernoemen / verwijderen / kleuren / verbergen (het tabbladmenu van Univer).
 - Het contextmenu van de bovenste tabbladenbalk staat in [Tabbladen en vensterbeheer](help://tabs-and-windows).
 
-## De scripteditor (geavanceerd)
-
-Sheets heeft een **scripteditor** met een API die op Google Apps Script lijkt, voor bulkwerk.
-
-- Openen: Extra ▸ Scripteditor (of het ontwikkelaarsmenu, per versie).
-- Interface: scriptbibliotheek links (nieuw/verwijderen), code-editor en uitvoerpaneel rechts; knoppen **Uitvoeren / Stoppen**.
-- De API is asynchroon:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D-array
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (instappunt), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Scripts draaien in een **afgeschermde worker**: geen netwerk, geen bestandssysteem, geen DOM — ze kunnen uitsluitend de bovenstaande API aanraken, dus een kapotte of kwaadwillende script komt nergens anders bij.
-- Het uitvoerpaneel beperkt het aantal regels, zodat enorme logboeken de interface niet kunnen vastzetten.
-- **De AI kan ook scripts uitvoeren**: de `run_script`-tool van de assistent gebruikt dezelfde afgeschermde API — ideaal voor bulktransformaties op basis van regels.
-
 ## AI
 
 - Het AI-paneel aan de zijkant: selecteer een bereik en geef instructies in gewone taal (opnieuw opmaken, gegevens genereren, formules schrijven).

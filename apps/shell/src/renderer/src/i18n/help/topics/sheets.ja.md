@@ -83,28 +83,6 @@ Sheets は Excel に似た表計算エディターです。計算は独立した
 - **下部のシートタブを右クリック**：シートの追加、名前変更、削除、色、表示の切り替えなど（Univer のタブメニュー）。
 - 上部のタブバーの右クリックメニューは[タブとウィンドウの管理](help://tabs-and-windows)の章で説明しています。
 
-## スクリプトエディター（上級者向け）
-
-Sheets には、まとめて処理するための **スクリプトエディター** が内蔵されています。Google Apps Script に似た API を使います。
-
-- 開くには：ツール ▸ スクリプトエディター（バージョンによっては開発者メニュー）。
-- 画面：左がスクリプトライブラリ（新規作成／削除）、右がコードエディターと出力ペイン。**実行／停止** ボタンがあります。
-- API は非同期です：
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2 次元配列
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp`（入口）、`Sheet`（getName/getRange/getLastRow…）、`Range`（getValue(s)/setValue(s)/clear…）、`Logger.log`、`Utilities.sleep`。
-- スクリプトは**サンドボックス化されたワーカー**の中で動きます。ネットワークもファイルシステムも DOM もなく、触れられるのは上記の API だけなので、バグのあるスクリプトや悪意のあるスクリプトが、他のデータに手を伸ばすことはできません。
-- 出力ペインには行数の上限があるので、巨大なログでも画面が固まることはありません。
-- **AI もスクリプトを実行できます**：アシスタントの `run_script` ツールが同じサンドボックス API を実行します。まとめて規則で書き換える用途に向いています。
-
 ## AI
 
 - サイドの AI パネル：範囲を選んで自然言語で指示します（書式の変更、データの生成、数式の作成など）。

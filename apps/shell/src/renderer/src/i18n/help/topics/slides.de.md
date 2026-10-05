@@ -1,6 +1,6 @@
 # Slides: Präsentationen
 
-Slides ist der PowerPoint-ähnliche Editor: Er liest und schreibt echte .pptx.
+Slides ist der PowerPoint-ähnliche Editor: Er liest und schreibt echte.pptx.
 
 ## Die Oberfläche
 
@@ -19,13 +19,13 @@ Die Tab-Leiste (unter macOS beginnt sie mit „Start“; unter Windows kommt ein
 - **Entwurf**: Designs, Farbschema und Hintergrund; Master und Layouts.
 - **Übergänge**: einen Übergang für die aktuelle Folie wählen (wirkt in der Bildschirmpräsentation von PowerPoint), mit Anwendung auf alle; „Ohne“ entfernt ihn.
 
-  ![Der Tab Übergänge](img/slides-transitions.png)
+![Der Tab Übergänge](img/slides-transitions.png)
 
 - **Animationen**: Eingangs- und Betonungseffekte für die ausgewählte Form, **Animationspfade** (entlang eines Pfades bewegen); **Vorschau** spielt die Animationen der Folie auf der Arbeitsfläche ab; „Ohne“ entfernt sie.
 
-  ![Der Tab Animationen](img/slides-animations.png)
+![Der Tab Animationen](img/slides-animations.png)
 
-  Ausprobieren: Titelfeld auswählen ▸ Tab „Animationen“ ▸ Eingangseffekt wählen ▸ **Vorschau** spielt ihn auf der Arbeitsfläche ab.
+Ausprobieren: Titelfeld auswählen ▸ Tab „Animationen“ ▸ Eingangseffekt wählen ▸ **Vorschau** spielt ihn auf der Arbeitsfläche ab.
 
 - **Bildschirmpräsentation**: von Anfang an oder ab der aktuellen Folie präsentieren, dazu Präsentationseinstellungen.
 - **Überprüfen**: **neuer Kommentar** auf der aktuellen Folie (wird in die pptx geschrieben und ist in PowerPoint sichtbar).
@@ -48,7 +48,7 @@ Das Menü richtet sich danach, wo Sie rechtsklicken:
 ## KI-Generierung
 
 - Die Karte „AI Slides“ auf der Startseite: Nennen Sie ein Thema oder eine Gliederung, und die KI baut das Deck; bei fehlgeschlagener Cloud-Generierung wird auf lokale Generierung zurückgefallen.
-- Passen Sie anschließend weiter mit dem KI-Bereich an (die KI gestaltet über ein kontrolliertes Skript-Sandbox um — derselbe Mechanismus wie in [Sheets](help://sheets)).
+- Passen Sie anschließend weiter mit dem KI-Bereich an.
 
 ## Präsentieren und exportieren
 
@@ -58,4 +58,4 @@ Das Menü richtet sich danach, wo Sie rechtsklicken:
 
 ## Speichern
 
-Vollständiger .pptx-Roundtrip: nicht angefasste Seiten bleiben byteidentisch; Notizen, Master und Anmerkungen bleiben erhalten.
+Vollständiger.pptx-Roundtrip: nicht angefasste Seiten bleiben byteidentisch; Notizen, Master und Anmerkungen bleiben erhalten.

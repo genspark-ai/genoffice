@@ -83,28 +83,6 @@ Sheets 是類 Excel 的表格編輯器；運算由一個獨立的 Rust 引擎程
 - **在底部的工作表索引標籤上**：新增／重新命名／刪除／上色／隱藏工作表（Univer 的索引標籤選單）。
 - 上方分頁列的右鍵選單請見[分頁與視窗管理](help://tabs-and-windows)。
 
-## 腳本編輯器（進階）
-
-Sheets 內建一個**腳本編輯器**，提供類 Google Apps Script 的 API 供你批量處理資料。
-
-- 開啟：選單 工具 ▸ 腳本編輯器（或開發者選單，視版本而定）。
-- 介面：左側是腳本庫（新增／刪除），右側是程式碼編輯器加上輸出窗格；**執行／停止**按鈕。
-- API 為非同步形式：
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D array
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp`（入口）、`Sheet`（getName/getRange/getLastRow⋯）、`Range`（getValue(s)/setValue(s)/clear⋯）、`Logger.log`、`Utilities.sleep`。
-- 腳本在**沙箱化的 worker** 中執行：沒有網路、沒有檔案系統、沒有 DOM——只能透過上述 API 觸及表格，因此有 bug 或惡意的腳本碰不到其他任何東西。
-- 輸出窗格有行數上限，巨量日誌不會拖垮介面。
-- **AI 也能執行腳本**：助手的 `run_script` 工具會呼叫同一套沙箱 API——很適合批量、規則式的轉換。
-
 ## AI
 
 - 側邊的 AI 面板：選取範圍後用自然語言下指令（重排格式、產生資料、撰寫公式）。

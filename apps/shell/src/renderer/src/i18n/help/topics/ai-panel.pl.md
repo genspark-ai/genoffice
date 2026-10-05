@@ -14,7 +14,7 @@ Każdy edytor może przywołać panel AI: zaznacz coś, wydaj polecenie i obserw
 ## Co potrafi
 
 - **Docs**: przepisywanie/rozbudowa/tłumaczenie/streszczanie, wstawianie tabel i obrazów, zmiana formatowania; każda tura zaczyna się od migawki.
-- **Sheets**: formuły, wypełnianie danych, przekształcenia wsadowe (opcjonalnie przez środowisko izolowane run_script), formatowanie.
+- **Sheets**: formuły, wypełnianie danych, przekształcenia wsadowe, formatowanie.
 - **Slides**: generowanie całej prezentacji, korekta układu, przepisywanie tekstów.
 - **PDF**: pytania i odpowiedzi oraz streszczenia na podstawie zaznaczonego tekstu lub stron.
 - **Markdown / HTML**: przepisywanie, rozbudowa, tłumaczenie.

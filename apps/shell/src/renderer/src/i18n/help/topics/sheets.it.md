@@ -83,28 +83,6 @@ La scheda Formule, pulsante per pulsante:
 - **Su una scheda di foglio in basso**: aggiungi / rinomina / elimina / colora / nascondi fogli (menu schede di Univer).
 - Il menu contestuale della barra delle schede in alto è descritto in [Schede e gestione delle finestre](help://tabs-and-windows).
 
-## L'editor di script (avanzato)
-
-Sheets include un **editor di script** con un'API simile a quella di Google Apps Script per il lavoro in blocco.
-
-- Apertura: Strumenti ▸ Editor di script (oppure il menu sviluppatore, a seconda della versione).
-- Interfaccia: libreria degli script a sinistra (nuovo/elimina), editor di codice e riquadro di output a destra; pulsanti **Esegui / Interrompi**.
-- L'API è asincrona:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // matrice 2D
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (punto d'ingresso), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Gli script girano in un **worker isolato**: nessuna rete, nessun file system, nessun DOM — possono toccare solo l'API qui sopra, così uno script difettoso o ostile non raggiunge nulla altro.
-- Il riquadro di output limita il numero di righe, in modo che log enormi non possano bloccare l'interfaccia.
-- **Anche l'IA può eseguire script**: lo strumento `run_script` dell'assistente usa la stessa API in ambiente isolato — l'ideale per trasformazioni in blocco e basate su regole.
-
 ## IA
 
 - Il pannello IA laterale: seleziona un intervallo e dai istruzioni in linguaggio naturale (riformattare, generare dati, scrivere formule).

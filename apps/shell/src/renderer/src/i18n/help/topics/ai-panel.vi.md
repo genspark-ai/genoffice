@@ -14,7 +14,7 @@ Mọi trình soạn thảo đều có thể gọi bảng AI: chọn một nội 
 ## AI có thể làm gì
 
 - **Docs**: viết lại/mở rộng/dịch/tóm tắt, chèn bảng và hình ảnh, điều chỉnh định dạng; mỗi lượt đều chụp ảnh trước.
-- **Sheets**: công thức, điền dữ liệu, biến đổi hàng loạt (nếu cần, qua sandbox run_script), định dạng.
+- **Sheets**: công thức, điền dữ liệu, biến đổi hàng loạt, định dạng.
 - **Slides**: tạo cả bộ trang chiếu, điều chỉnh bố cục, viết lại nội dung.
 - **PDF**: hỏi đáp và tóm tắt dựa trên văn bản hoặc trang đã chọn.
 - **Markdown / HTML**: viết lại, mở rộng, dịch.

@@ -83,28 +83,6 @@ Karta Formuły, przycisk po przycisku:
 - **Na karcie arkusza na dole**: dodaj / zmień nazwę / usuń / pokoloruj / ukryj arkusze (menu kart Univer).
 - Menu kontekstowe górnego paska kart opisano w [Karty i zarządzanie oknami](help://tabs-and-windows).
 
-## Edytor skryptów (zaawansowane)
-
-Sheets zawiera **edytor skryptów** z API o kształcie zbliżonym do Google Apps Script, do pracy wsadowej.
-
-- Otwarcie: Narzędzia ▸ Edytor skryptów (lub menu deweloperskie, zależnie od wersji).
-- Interfejs: biblioteka skryptów po lewej (nowy/usuń), edytor kodu i panel wyjścia po prawej; przyciski **Uruchom / Zatrzymaj**.
-- API jest asynchroniczne:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // tablica 2D
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (punkt wejścia), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Skrypty działają w **odizolowanym procesie roboczym**: bez sieci, bez systemu plików, bez DOM — mogą dotknąć wyłącznie powyższego API, więc wadliwy ani wrogi skrypt nie dosięgnie niczego innego.
-- Panel wyjścia ogranicza liczbę wierszy, aby ogromne logi nie zablokowały interfejsu.
-- **AI też może uruchamiać skrypty**: narzędzie `run_script` asystenta wykonuje to samo odizolowane API — idealne do przekształceń wsadowych i opartych na regułach.
-
 ## AI
 
 - Boczny panel AI: zaznacz zakres i wydaj polecenie w zwykłym języku (zmień formatowanie, wygeneruj dane, napisz formuły).

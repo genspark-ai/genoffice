@@ -1,6 +1,6 @@
 # Slides: prezentacje
 
-Slides to edytor podobny do PowerPointa: otwiera i zapisuje prawdziwe pliki .pptx.
+Slides to edytor podobny do PowerPointa: otwiera i zapisuje prawdziwe pliki.pptx.
 
 ## Interfejs
 
@@ -19,16 +19,16 @@ Pasek kart (w systemie macOS zaczyna się od Narzędzia główne; w Windows doch
 - **Projektowanie**: motywy, schemat kolorów i tło; wzorce slajdów i układy.
 - **Przejścia**: wybierz przejście dla bieżącego slajdu (działa w pokazie PowerPointa), z zastosowaniem do wszystkich; Brak usuwa je.
 
-  ![Karta Przejścia](img/slides-transitions.png)
+![Karta Przejścia](img/slides-transitions.png)
 
 - **Animacje**: efekty wejścia i wyróżnienia dla zaznaczonego kształtu, **ścieżki ruchu** (ruch wzdłuż ścieżki); **podgląd** odtwarza animacje slajdu na obszarze roboczym; Brak je usuwa.
 
-  ![Karta Animacje](img/slides-animations.png)
+![Karta Animacje](img/slides-animations.png)
 
-  Spróbuj: zaznacz ramkę tekstową tytułu ▸ karta Animacje ▸ wybierz efekt wejścia ▸ **Podgląd** odtworzy go na obszarze roboczym.
+Spróbuj: zaznacz ramkę tekstową tytułu ▸ karta Animacje ▸ wybierz efekt wejścia ▸ **Podgląd** odtworzy go na obszarze roboczym.
 
 - **Pokaz slajdów**: rozpocznij od początku lub od bieżącego slajdu, a także ustawienia pokazu.
-- **Recenzja**: **nowy komentarz** do bieżącego slajdu (zapisywany w pliku .pptx, widoczny w PowerPoincie).
+- **Recenzja**: **nowy komentarz** do bieżącego slajdu (zapisywany w pliku.pptx, widoczny w PowerPoincie).
 - **Widok**: **Normalny** (miniatury i obszar roboczy), **Widok konspektu** (przeglądanie i przechodzenie według tekstu), **Sortowanie slajdów** (przegląd w siatce, kliknięcie dwukrotnie przechodzi do edycji), **Widok do czytania** (pełny ekran, strona po stronie; Esc wychodzi).
 
 ## Menu kontekstowe
@@ -48,7 +48,7 @@ Menu zależy od miejsca, w którym klikniesz prawym przyciskiem:
 ## Generowanie przez AI
 
 - Karta AI Slides na stronie głównej: podaj temat lub konspekt, a AI zbuduje prezentację; gdy generowanie w chmurze się nie powiedzie, następuje powrót do generowania lokalnego.
-- Dalej możesz dopracowywać materiał panelem AI (AI zmienia formatowanie przez kontrolowany skrypt w środowisku izolowanym — ten sam mechanizm co w [Sheets](help://sheets)).
+- Dalej możesz dopracowywać materiał panelem AI.
 
 ## Pokaz i eksport
 
@@ -58,4 +58,4 @@ Menu zależy od miejsca, w którym klikniesz prawym przyciskiem:
 
 ## Zapisywanie
 
-Pełna obsługa pliku .pptx w obie strony: strony nietknięte pozostają identyczne bajt w bajt; notatki, wzorce i adnotacje są zachowywane.
+Pełna obsługa pliku.pptx w obie strony: strony nietknięte pozostają identyczne bajt w bajt; notatki, wzorce i adnotacje są zachowywane.

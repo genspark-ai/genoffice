@@ -1,6 +1,6 @@
 # Slides: presentaties
 
-Slides is de PowerPoint-achtige editor: leest en schrijft echte .pptx-bestanden.
+Slides is de PowerPoint-achtige editor: leest en schrijft echte.pptx-bestanden.
 
 ## De interface
 
@@ -19,16 +19,16 @@ De tabbladenbalk (in macOS begint die bij Start; Windows voegt er een tabblad Be
 - **Ontwerpen**: thema's, kleurenschema en achtergrond; masters en indelingen.
 - **Overgangen**: kies een overgang voor de huidige dia (werkt in PowerPoint-diavoorstelling), met toepassen op alles; Geen verwijdert hem.
 
-  ![Het tabblad Overgangen](img/slides-transitions.png)
+![Het tabblad Overgangen](img/slides-transitions.png)
 
 - **Animaties**: binnenkomst- en nadrukeffecten voor de geselecteerde vorm, **bewegingspaden** (langs een pad bewegen); **voorbeeld** speelt de animaties van de dia op het tekenvlak af; Geen verwijdert ze.
 
-  ![Het tabblad Animaties](img/slides-animations.png)
+![Het tabblad Animaties](img/slides-animations.png)
 
-  Probeer het: selecteer het tekstvak met de titel ▸ tabblad Animaties ▸ kies een binnenkomsteffect ▸ **Voorbeeld** speelt het op het tekenvlak af.
+Probeer het: selecteer het tekstvak met de titel ▸ tabblad Animaties ▸ kies een binnenkomsteffect ▸ **Voorbeeld** speelt het op het tekenvlak af.
 
 - **Diavoorstelling**: presenteren vanaf het begin of vanaf de huidige dia, plus weergave-instellingen.
-- **Controleren**: **nieuwe opmerking** op de huidige dia (wordt in het .pptx geschreven en is in PowerPoint zichtbaar).
+- **Controleren**: **nieuwe opmerking** op de huidige dia (wordt in het.pptx geschreven en is in PowerPoint zichtbaar).
 - **Beeld**: **Normaal** (miniaturen en tekenvlak), **Overzichtsweergave** (bladeren en springen op tekst), **Diasorteerder** (rasteroverzicht, dubbelklik om te bewerken), **Leesweergave** (volledig scherm, pagina per pagina; Esc sluit af).
 
 ## Contextmenu's
@@ -48,7 +48,7 @@ Het menu volgt de plek waar je met de rechtermuisknop klikt:
 ## Genereren met AI
 
 - De AI-dia-kaart op Start: geef een onderwerp of een outline en de AI bouwt de presentatie; lukt genereren in de cloud niet, dan valt het terug op lokaal genereren.
-- Ga daarna door met het AI-paneel (de AI past de opmaak aan via een gecontroleerd script in een afgeschermde omgeving — hetzelfde mechanisme als bij [Sheets](help://sheets)).
+- Ga daarna door met het AI-paneel.
 
 ## Presenteren en exporteren
 
@@ -58,4 +58,4 @@ Het menu volgt de plek waar je met de rechtermuisknop klikt:
 
 ## Opslaan
 
-Volledige .pptx-heen-en-terug: ongewijzigde pagina's blijven byte voor byte gelijk; notities, masters en aantekeningen blijven behouden.
+Volledige.pptx-heen-en-terug: ongewijzigde pagina's blijven byte voor byte gelijk; notities, masters en aantekeningen blijven behouden.

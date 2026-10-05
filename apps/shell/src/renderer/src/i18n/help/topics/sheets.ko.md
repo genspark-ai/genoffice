@@ -83,28 +83,6 @@ Sheets는 Excel과 비슷한 스프레드시트 편집기입니다. 계산은 �
 - **아래 시트 탭에서**: 시트 추가, 이름 바꾸기, 삭제, 색, 숨기기 등(Univer의 탭 메뉴).
 - 위쪽 탭 바의 오른쪽 클릭 메뉴는 [탭과 창 관리](help://tabs-and-windows) 장에서 설명합니다.
 
-## 스크립트 편집기(고급)
-
-Sheets에는 일괄 처리를 위한 **스크립트 편집기**가 들어 있습니다. Google Apps Script와 비슷한 API를 씁니다.
-
-- 열기: 도구 ▸ 스크립트 편집기(버전에 따라 개발자 메뉴).
-- 화면: 왼쪽이 스크립트 라이브러리(새로 만들기/삭제), 오른쪽이 코드 편집기와 출력 창. **실행/중지** 버튼이 있습니다.
-- API는 비동기입니다:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2차원 배열
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp`(진입점), `Sheet`(getName/getRange/getLastRow…), `Range`(getValue(s)/setValue(s)/clear…), `Logger.log`, `Utilities.sleep`.
-- 스크립트는 **샌드박스 워커**에서 실행됩니다. 네트워크도 파일 시스템도 DOM도 없고, 닿을 수 있는 것은 위 API뿐이라 버그가 있는 스크립트나 악의적인 스크립트가 다른 데이터에 손댈 수 없습니다.
-- 출력 창에는 줄 수 상한이 있어 엄청난 로그가 화면을 멈추게 하지 않습니다.
-- **AI도 스크립트를 실행할 수 있습니다**: 어시스턴트의 `run_script` 도구가 같은 샌드박스 API를 실행합니다. 일괄적이고 규칙적인 변환에 적합합니다.
-
 ## AI
 
 - 옆의 AI 패널: 범위를 선택해 자연어로 지시합니다(서식 변경, 데이터 생성, 수식 작성 등).

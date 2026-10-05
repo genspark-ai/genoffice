@@ -83,28 +83,6 @@
 - **על כרטיסיית גיליון בתחתית**: הוספה / שינוי שם / מחיקה / צביעה / הסתרה של גיליונות (תפריט הכרטיסיות של Univer).
 - תפריט ההקשר של רשת הכרטיסיות העליונה מוסבר ב[כרטיסיות וניהול חלונות](help://tabs-and-windows).
 
-## עורך הסקריפטים (מתקדם)
-
-‏Sheets כולל **עורך סקריפט** עם API בצורת Google Apps Script לעבודה קבוצתית.
-
-- פתיחה: תפריט Tools ▸ Script editor (או תפריט המפתחים, לפי הגרסה).
-- ממשק: ספריית סקריפטים משמאל (חדש/מחיקה), עורך קוד וחלונית פלט מימין; כפתורי **הרצה / עצירה**.
-- ה-API הוא אסינכרוני:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D array
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (נקודת הכניסה), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- הסקריפטים רצים ב**worker בארציב (sandbox)**: אין רשת, אין מערכת קבצים, אין DOM — ה-API שלמעלה הוא כל מה שהם יכולים לגעת בו, כך שסקריפט תקול או זדוני לא יגיע לכלום אחר.
-- לחלונית הפלט יש מגבלת שורות כדי שיומנים עצומים לא יתקעו על הממשק.
-- **גם AI יכול להריץ סקריפטים**: כלי `run_script` של העוזר מריץ את אותו API בארציב — אידיאלי לשינויים קבוצתיים ומבוססי כללים.
-
 ## AI
 
 - חלונית ה-AI בצד: בחרו טווח והורו בשפה רגילה (שינוי עיצוב, יצירת נתונים, כתיבת נוסחאות).

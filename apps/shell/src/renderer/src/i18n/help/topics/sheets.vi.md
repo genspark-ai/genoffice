@@ -83,28 +83,6 @@ Thẻ "Công thức", từng nút:
 - **Trên một thẻ trang tính ở dưới**: thêm / đổi tên / xóa / tô màu / ẩn trang tính (menu thẻ của Univer).
 - Menu ngữ cảnh của dải thẻ phía trên được nói ở [Quản lý thẻ và cửa sổ](help://tabs-and-windows).
 
-## Trình soạn thảo script (nâng cao)
-
-Sheets đi kèm **trình soạn thảo script** với API giống Google Apps Script cho các thao tác hàng loạt.
-
-- Mở: Tools ▸ Script editor (hoặc menu dành cho nhà phát triển, tùy phiên bản).
-- Giao diện: thư viện script ở bên trái (mới/xóa), trình soạn thảo mã và ngăn kết quả ở bên phải; các nút **Chạy / Dừng**.
-- API có dạng bất đồng bộ:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D array
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (điểm vào), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Script chạy trong một **worker thuộc sandbox**: không mạng, không hệ thống tập tin, không DOM — chỉ API ở trên mới chạm tới được, nên một script lỗi hay độc hại không thể với tới thứ gì khác.
-- Ngăn kết quả giới hạn số dòng, nên nhật ký khổng lồ không làm treo giao diện.
-- **AI cũng chạy được script**: công cụ `run_script` của trợ lý thực thi đúng API sandbox đó — rất hợp với các biến đổi hàng loạt theo quy tắc.
-
 ## AI
 
 - Bảng AI bên cạnh: chọn một vùng rồi ra lệnh bằng ngôn ngữ tự nhiên (đổi định dạng, tạo dữ liệu, viết công thức).

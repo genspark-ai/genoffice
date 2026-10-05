@@ -83,28 +83,6 @@ Tab Rumus, tombol demi tombol:
 - **Pada tab lembar di bawah**: tambah / ganti nama / hapus / warnai / sembunyikan lembar (menu tab Univer).
 - Menu konteks bilah tab atas dibahas di [Tab dan pengelolaan jendela](help://tabs-and-windows).
 
-## Editor skrip (lanjutan)
-
-Sheets menyertakan **editor skrip** dengan API berbentuk Google Apps Script untuk pekerjaan massal.
-
-- Buka: Alat ▸ Editor skrip (atau menu pengembang, tergantung versi).
-- Antarmuka: pustaka skrip di kiri (baru/hapus), editor kode + panel keluaran di kanan; tombol **Jalankan / Hentikan**.
-- API bersifat async:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // larik 2 dimensi
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (titik masuk), `Sheet` (getName/getRange/getLastRow...), `Range` (getValue(s)/setValue(s)/clear...), `Logger.log`, `Utilities.sleep`.
-- Skrip berjalan di **pekerja terisolasi**: tanpa jaringan, tanpa sistem berkas, tanpa DOM — API di atas adalah satu-satunya yang bisa disentuhnya, sehingga skrip yang salah atau jahat tidak bisa menjangkau apa pun yang lain.
-- Panel keluaran membatasi jumlah baris agar log raksasa tidak membuat antarmuka macet.
-- **AI juga bisa menjalankan skrip**: alat `run_script` pada asisten menjalankan API terisolasi yang sama — pas untuk transformasi massal berbasis aturan.
-
 ## AI
 
 - Panel AI di samping: pilih satu rentang lalu beri instruksi dengan bahasa biasa (format ulang, buat data, tulis rumus).

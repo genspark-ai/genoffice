@@ -83,28 +83,6 @@ L’onglet Formules, bouton par bouton :
 - **Sur un onglet de feuille en bas** : ajouter / renommer / supprimer / colorer / masquer des feuilles (menu d’onglet d’Univer).
 - Le menu contextuel de la barre d’onglets en haut est traité dans [Onglets et gestion des fenêtres](help://tabs-and-windows).
 
-## L’éditeur de scripts (avancé)
-
-Sheets fournit un **éditeur de scripts** avec une API calquée sur Google Apps Script pour les traitements par lots.
-
-- Ouverture : Outils ▸ Éditeur de scripts (ou le menu développeur, selon la version).
-- Interface : bibliothèque de scripts à gauche (nouveau/supprimer), éditeur de code et volet de sortie à droite ; boutons **Exécuter / Arrêter**.
-- L’API est asynchrone :
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // tableau 2D
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (point d’entrée), `Sheet` (getName/getRange/getLastRow…), `Range` (getValue(s)/setValue(s)/clear…), `Logger.log`, `Utilities.sleep`.
-- Les scripts s’exécutent dans un **worker isolé** : pas de réseau, pas de système de fichiers, pas de DOM — ils ne peuvent toucher que par l’API ci-dessus, si bien qu’un script bogué ou malveillant ne peut atteindre rien d’autre.
-- Le volet de sortie plafonne son nombre de lignes pour qu’un journal énorme ne bloque pas l’interface.
-- **L’IA peut aussi exécuter des scripts** : l’outil `run_script` de l’assistant exécute la même API isolée — idéal pour les transformations par lots fondées sur des règles.
-
 ## IA
 
 - Le panneau IA latéral : sélectionnez une plage et donnez votre instruction en langage naturel (reformater, générer des données, écrire des formules).

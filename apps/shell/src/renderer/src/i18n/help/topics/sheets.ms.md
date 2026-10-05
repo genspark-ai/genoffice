@@ -83,28 +83,6 @@ Tab Formula, butiran demi butiran:
 - **Pada tab helaian di bawah**: tambah / namakan semula / padam / warnakan / sembunyikan helaian, iaitu menu tab Univer.
 - Menu konteks baris tab di atas diterangkan dalam [Tab dan pengurusan tingkap](help://tabs-and-windows).
 
-## Editor skrip (maju)
-
-Sheets membekalkan **editor skrip** dengan API yang menyerupai Google Apps Script untuk kerja pukal.
-
-- Buka: Alat ▸ Editor skrip, atau menu pembangun, bergantung pada versi.
-- Antara muka: pustaka skrip di kiri (baharu / padam), editor kod dan panel output di kanan, serta butang **Jalankan / Berhenti**.
-- API ini bersifat asinkron:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // tatas 2D
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (titik masuk), `Sheet` (getName / getRange / getLastRow, ...), `Range` (getValue / getValues / setValue / setValues / clear, ...), `Logger.log` dan `Utilities.sleep`.
-- Skrip berjalan dalam **pekerja yang diasingkan**: tiada rangkaian, tiada sistem fail, tiada DOM. Mereka hanya boleh menyentuh API di atas, jadi skrip yang rosak atau berniat jahat tidak dapat mencapai apa-apa yang lain.
-- Panel output mengehadkan bilangan baris, supaya log yang amat besar tidak boleh menyekat antara muka.
-- **AI juga boleh menjalankan skrip**: alat `run_script` milik pembantu menggunakan API terasing yang sama, sesuai untuk transformasi pukal dan berasaskan peraturan.
-
 ## AI
 
 - Panel AI di sisi: pilih julat dan berikan arahan dalam bahasa biasa, seperti memformat semula, menjana data, atau menulis formula.

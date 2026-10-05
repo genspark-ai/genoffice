@@ -14,7 +14,7 @@ Todos los editores pueden invocar el panel de IA: seleccione algo, dé una instr
 ## Qué sabe hacer
 
 - **Docs**: reescribir/ampliar/traducir/resumir, insertar tablas e imágenes, ajustar el formato; cada vuelta guarda primero una instantánea.
-- **Sheets**: fórmulas, relleno de datos, transformaciones masivas (opcionalmente mediante el entorno de pruebas de run_script), formato.
+- **Sheets**: fórmulas, relleno de datos, transformaciones masivas, formato.
 - **Slides**: generación de una presentación completa, ajuste del diseño, reescritura de los textos.
 - **PDF**: preguntas y resúmenes sobre el texto o las páginas seleccionadas.
 - **Markdown / HTML**: reescribir, ampliar, traducir.

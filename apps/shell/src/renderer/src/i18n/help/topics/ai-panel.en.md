@@ -14,7 +14,7 @@ Every editor can summon the AI panel: select something, give an instruction, wat
 ## What it can do
 
 - **Docs**: rewrite/expand/translate/summarize, insert tables and pictures, adjust formatting; every turn snapshots first.
-- **Sheets**: formulas, data fill, bulk transforms (optionally via the run_script sandbox), formatting.
+- **Sheets**: formulas, data fill, bulk transforms, formatting.
 - **Slides**: whole-deck generation, layout adjustment, copy rewriting.
 - **PDF**: Q&A and summaries against selected text or pages.
 - **Markdown / HTML**: rewrite, extend, translate.

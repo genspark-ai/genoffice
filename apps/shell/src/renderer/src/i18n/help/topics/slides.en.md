@@ -1,6 +1,6 @@
 # Slides: presentations
 
-Slides is the PowerPoint-like editor: reads and writes genuine .pptx.
+Slides is the PowerPoint-like editor: reads and writes genuine.pptx.
 
 ## The interface
 
@@ -19,13 +19,13 @@ The tab strip (macOS starts at Home; Windows adds a File tab):
 - **Design**: themes, color scheme and background; masters and layouts.
 - **Transitions**: pick a transition for the current slide (in effect in PowerPoint's presenter), with apply-to-all; None removes it.
 
-  ![The Transitions tab](img/slides-transitions.png)
+![The Transitions tab](img/slides-transitions.png)
 
 - **Animations**: entrance/emphasis effects for the selected shape, **motion paths** (move along a path); **preview** plays the slide's animations on the canvas; None removes them.
 
-  ![The Animations tab](img/slides-animations.png)
+![The Animations tab](img/slides-animations.png)
 
-  Try it: select the title text box ▸ Animations tab ▸ pick an entrance effect ▸ **Preview** plays it on the canvas.
+Try it: select the title text box ▸ Animations tab ▸ pick an entrance effect ▸ **Preview** plays it on the canvas.
 
 - **Slide Show**: present from the start or the current slide, plus show settings.
 - **Review**: **new comment** on the current slide (written into the pptx, visible in PowerPoint).
@@ -48,7 +48,7 @@ The menu follows where you right-click:
 ## AI generation
 
 - Home's AI Slides card: give a topic or outline and the AI builds the deck; cloud generation falls back to local generation on failure.
-- Keep adjusting with the AI panel afterwards (the AI restyles through a controlled script sandbox — the same sandbox mechanism as in [Sheets](help://sheets)).
+- Keep adjusting with the AI panel afterwards.
 
 ## Present and export
 
@@ -58,4 +58,4 @@ The menu follows where you right-click:
 
 ## Saving
 
-Full .pptx round-trip: untouched pages stay byte-identical; notes, masters and annotations persist.
+Full.pptx round-trip: untouched pages stay byte-identical; notes, masters and annotations persist.

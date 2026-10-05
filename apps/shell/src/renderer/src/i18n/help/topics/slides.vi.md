@@ -1,6 +1,6 @@
 # Slides: trình chiếu
 
-Slides là trình soạn thảo giống PowerPoint: đọc và ghi .pptx thật.
+Slides là trình soạn thảo giống PowerPoint: đọc và ghi.pptx thật.
 
 ## Giao diện
 
@@ -19,13 +19,13 @@ Dải thẻ (macOS bắt đầu từ Trang chủ; Windows có thêm thẻ Tệp)
 - **Thiết kế**: chủ đề, bảng màu và nền; bố cục chủ và bố cục.
 - **Chuyển tiếp**: chọn hiệu ứng chuyển tiếp cho trang chiếu hiện tại (có tác dụng trong chế độ trình chiếu của PowerPoint), kèm áp dụng cho tất cả; "Không có" để gỡ bỏ.
 
-  ![Thẻ Chuyển tiếp](img/slides-transitions.png)
+![Thẻ Chuyển tiếp](img/slides-transitions.png)
 
 - **Hoạt hình**: hiệu ứng xuất hiện/nhấn mạnh cho hình dạng đang chọn, **đường chuyển động** (di chuyển dọc theo một đường); **Xem trước** phát các hoạt hình của trang chiếu trên canvas; "Không có" để gỡ bỏ.
 
-  ![Thẻ Hoạt hình](img/slides-animations.png)
+![Thẻ Hoạt hình](img/slides-animations.png)
 
-  Thử xem: chọn hộp văn bản tiêu đề ▸ thẻ Hoạt hình ▸ chọn một hiệu ứng xuất hiện ▸ **Xem trước** phát hiệu ứng đó trên canvas.
+Thử xem: chọn hộp văn bản tiêu đề ▸ thẻ Hoạt hình ▸ chọn một hiệu ứng xuất hiện ▸ **Xem trước** phát hiệu ứng đó trên canvas.
 
 - **Trình chiếu**: trình chiếu từ đầu hoặc từ trang chiếu hiện tại, cùng cài đặt trình chiếu.
 - **Xem lại**: **nhận xét mới** trên trang chiếu hiện tại (được ghi vào tệp pptx và hiện trong PowerPoint).
@@ -48,7 +48,7 @@ Menu đi theo chỗ bạn nhấp chuột phải:
 ## Tạo bằng AI
 
 - Thẻ AI Slides ở Trang chủ: đưa một chủ đề hoặc dàn ý, AI sẽ dựng cả bộ trang chiếu; nếu tạo trên đám mây thất bại thì tự động chuyển sang tạo tại máy.
-- Bạn có thể tiếp tục điều chỉnh bằng bảng AI (AI định kiểu lại thông qua một sandbox script có kiểm soát — cùng cơ chế sandbox như trong chương [Sheets](help://sheets)).
+- Bạn có thể tiếp tục điều chỉnh bằng bảng AI.
 
 ## Trình chiếu và xuất
 
@@ -58,4 +58,4 @@ Menu đi theo chỗ bạn nhấp chuột phải:
 
 ## Lưu
 
-Khứ hồi đầy đủ .pptx: những trang không thay đổi giữ nguyên từng byte; ghi chú, bố cục chủ và nhận xét đều được giữ.
+Khứ hồi đầy đủ.pptx: những trang không thay đổi giữ nguyên từng byte; ghi chú, bố cục chủ và nhận xét đều được giữ.

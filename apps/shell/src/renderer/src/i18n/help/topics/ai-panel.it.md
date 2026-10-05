@@ -14,7 +14,7 @@ Ogni editor può richiamare il pannello IA: seleziona qualcosa, dai un'istruzion
 ## Cosa sa fare
 
 - **Docs**: riscrivere/espandere/tradurre/riassumere, inserire tabelle e immagini, modificare la formattazione; ogni turno crea prima uno snapshot.
-- **Sheets**: formule, riempimento dei dati, trasformazioni in blocco (facoltativamente tramite l'ambiente isolato run_script), formattazione.
+- **Sheets**: formule, riempimento dei dati, trasformazioni in blocco, formattazione.
 - **Slides**: generazione dell'intera presentazione, regolazione del layout, riscrittura dei testi.
 - **PDF**: domande e risposte e riassunti sul testo o sulle pagine selezionate.
 - **Markdown / HTML**: riscrivere, estendere, tradurre.

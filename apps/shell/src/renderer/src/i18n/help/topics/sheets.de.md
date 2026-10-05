@@ -83,28 +83,6 @@ Der Tab „Formeln“, Knopf für Knopf:
 - **Auf einem Blattreiter unten**: Blätter hinzufügen / umbenennen / löschen / einfärben / ausblenden (Tab-Menü von Univer).
 - Das Kontextmenü der Tab-Leiste oben ist in [Tabs und Fensterverwaltung](help://tabs-and-windows) behandelt.
 
-## Der Skript-Editor (für Fortgeschrittene)
-
-Sheets bringt einen **Skript-Editor** mit einer an Google Apps Script angelehnten API für Stapelverarbeitung mit.
-
-- Öffnen: Extras ▸ Skript-Editor (oder das Entwicklermenü, je nach Version).
-- Oberfläche: links die Skriptbibliothek (neu/löschen), rechts Code-Editor und Ausgabebereich; Schaltflächen **Ausführen / Stoppen**.
-- Die API ist asynchron:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // 2D-Array
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (Einstieg), `Sheet` (getName/getRange/getLastRow…), `Range` (getValue(s)/setValue(s)/clear…), `Logger.log`, `Utilities.sleep`.
-- Skripte laufen in einem **isolierten Worker**: kein Netzwerk, kein Dateisystem, kein DOM — sie erreichen nur die obige API, sodass ein fehlerhaftes oder bösartiges Skript nichts anderes erreichen kann.
-- Der Ausgabebereich begrenzt seine Zeilenzahl, damit riesige Protokolle die Oberfläche nicht blockieren.
-- **Auch die KI kann Skripte ausführen**: das Werkzeug `run_script` des Assistenten führt dieselbe isolierte API aus — ideal für regelbasierte Stapeltransformationen.
-
 ## KI
 
 - Der KI-Bereich seitlich: Bereich auswählen und in normaler Sprache anweisen (umformatieren, Daten erzeugen, Formeln schreiben).

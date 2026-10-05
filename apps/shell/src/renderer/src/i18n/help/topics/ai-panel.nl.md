@@ -14,7 +14,7 @@ Elke editor kan het AI-paneel oproepen: selecteer iets, geef een instructie en z
 ## Wat het kan
 
 - **Docs**: herschrijven/uitbreiden/vertalen/samenvatten, tabellen en afbeeldingen invoegen, opmaak aanpassen; elke beurt maakt eerst een momentopname.
-- **Sheets**: formules, gegevens invullen, bulktransformaties (optioneel via de run_script-sandbox), opmaak.
+- **Sheets**: formules, gegevens invullen, bulktransformaties, opmaak.
 - **Slides**: de hele presentatie genereren, indeling bijstellen, teksten herschrijven.
 - **PDF**: vragen en antwoorden en samenvattingen op basis van geselecteerde tekst of pagina's.
 - **Markdown / HTML**: herschrijven, uitbreiden, vertalen.

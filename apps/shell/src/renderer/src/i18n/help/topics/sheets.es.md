@@ -83,28 +83,6 @@ La pestaña Fórmulas, botón por botón:
 - **En una pestaña de hoja abajo**: agregar / cambiar el nombre / quitar / colorear / ocultar hojas (menú de pestañas de Univer).
 - El menú contextual de la barra de pestañas superior se trata en [Pestañas y gestión de ventanas](help://tabs-and-windows).
 
-## El editor de scripts (avanzado)
-
-Sheets incluye un **editor de scripts** con una API_calc en Google Apps Script para el trabajo por lotes.
-
-- Abrir: Herramientas ▸ Editor de scripts (o el menú de desarrollador, según la versión).
-- Interfaz: biblioteca de scripts a la izquierda (nuevo/quitar), editor de código y panel de salida a la derecha; botones **Ejecutar / Detener**.
-- La API es asíncrona:
-
-```js
-const sheet = await SpreadsheetApp.getActiveSpreadsheet()
-const active = await sheet.getActiveSheet()
-const range = await active.getRange('A1:C10')
-const values = await range.getValues() // matriz 2D
-await range.setValues(values.map((row) => row.map((v) => v * 2)))
-Logger.log('done')
-```
-
-- `SpreadsheetApp` (punto de entrada), `Sheet` (getName/getRange/getLastRow…), `Range` (getValue(s)/setValue(s)/clear…), `Logger.log`, `Utilities.sleep`.
-- Los scripts se ejecutan en un **worker aislado**: sin red, sin sistema de archivos, sin DOM; solo pueden alcanzar lo indicado por la API de arriba, así que un script con errores o malicioso no llega a nada más.
-- El panel de salida limita su número de líneas para que un registro enorme no bloquee la interfaz.
-- **La IA también puede ejecutar scripts**: la herramienta `run_script` del asistente ejecuta la misma API aislada, ideal para transformaciones masivas basadas en reglas.
-
 ## IA
 
 - El panel de IA lateral: seleccione un rango e indíquelo en lenguaje natural (reformatear, generar datos, escribir fórmulas).

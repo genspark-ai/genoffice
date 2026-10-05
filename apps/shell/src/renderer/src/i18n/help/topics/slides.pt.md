@@ -1,6 +1,6 @@
 # Slides: apresentações
 
-O Slides é o editor parecido com o PowerPoint: lê e escreve .pptx a sério.
+O Slides é o editor parecido com o PowerPoint: lê e escreve.pptx a sério.
 
 ## A interface
 
@@ -19,13 +19,13 @@ A faixa de separadores (no macOS começa em Página Inicial; o Windows acrescent
 - **Design**: temas, esquema de cores e plano de fundo; mestres e layouts.
 - **Transições**: escolha uma transição para o slide atual (surge na apresentação do PowerPoint), com Aplicar a Todos; Nenhuma remove-a.
 
-  ![O separador Transições](img/slides-transitions.png)
+![O separador Transições](img/slides-transitions.png)
 
 - **Animações**: efeitos de entrada e de ênfase para a forma selecionada, **caminhos de movimento** (mover ao longo de um caminho); **Visualizar** reproduz as animações do slide na tela; Nenhuma remove-as.
 
-  ![O separador Animações](img/slides-animations.png)
+![O separador Animações](img/slides-animations.png)
 
-  Experimente: selecione a caixa de texto do título ▸ separador Animações ▸ escolha um efeito de entrada ▸ **Visualizar** reproduz-o na tela.
+Experimente: selecione a caixa de texto do título ▸ separador Animações ▸ escolha um efeito de entrada ▸ **Visualizar** reproduz-o na tela.
 
 - **Apresentação de Slides**: apresentar do início ou do slide atual, além das definições da apresentação.
 - **Revisão**: **novo comentário** no slide atual (gravado no pptx e visível no PowerPoint).
@@ -48,7 +48,7 @@ O menu depende de onde clicou com o botão direito:
 ## Geração com IA
 
 - O cartão AI Slides no Início: dê um tema ou um esquema e a IA monta a apresentação inteira; se a geração na nuvem falhar, o sistema recorre à geração local.
-- Continue a ajustar com o painel de IA depois disso (a IA reestiliza através de uma sandbox de scripts controlada — o mesmo mecanismo descrito no capítulo [Sheets](help://sheets)).
+- Continue a ajustar com o painel de IA depois disso.
 
 ## Apresentar e exportar
 
@@ -58,4 +58,4 @@ O menu depende de onde clicou com o botão direito:
 
 ## Salvar
 
-Ida e volta completas em .pptx: as páginas não tocadas permanecem byte a byte iguais; as anotações, os mestres e os comentários persistem.
+Ida e volta completas em.pptx: as páginas não tocadas permanecem byte a byte iguais; as anotações, os mestres e os comentários persistem.

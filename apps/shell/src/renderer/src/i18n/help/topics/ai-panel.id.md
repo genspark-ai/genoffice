@@ -14,7 +14,7 @@ Setiap editor bisa memunculkan panel AI: pilih sesuatu, beri instruksi, dan liha
 ## Apa yang dapat dilakukan
 
 - **Docs**: menulis ulang/memperluas/menerjemahkan/merangkum, menyisipkan tabel dan gambar, menyesuaikan format; setiap putaran menyimpan snapshot lebih dulu.
-- **Sheets**: rumus, pengisian data, transformasi massal (bila perlu lewat sandbox run_script), format.
+- **Sheets**: rumus, pengisian data, transformasi massal, format.
 - **Slides**: pembuatan seluruh dek, penyesuaian tata letak, penulisan ulang naskah.
 - **PDF**: tanya jawab dan ringkasan berdasarkan teks atau halaman yang dipilih.
 - **Markdown / HTML**: menulis ulang, mengembangkan, menerjemahkan.

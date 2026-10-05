@@ -1,6 +1,6 @@
 # Slides: persembahan
 
-Slides ialah editor yang menyerupai PowerPoint. Ia membaca dan menulis fail .pptx yang sebenar.
+Slides ialah editor yang menyerupai PowerPoint. Ia membaca dan menulis fail.pptx yang sebenar.
 
 ## Antara muka
 
@@ -19,14 +19,14 @@ Baris tab bermula pada Laman Utama dalam macOS, manakala Windows turut menambah 
 - **Reka Bentuk**: tema, skema warna dan latar belakang, serta induk dan susun atur slaid.
 - **Peralihan**: pilih peralihan untuk slaid semasa, yang berkuat kuasa dalam pemapar PowerPoint, dengan pilihan untuk menerapkannya kepada semua slaid. Tiada mengeluarkannya.
 
-  ![Tab Peralihan](img/slides-transitions.png)
+![Tab Peralihan](img/slides-transitions.png)
 
 - **Animasi**: kesan masuk dan penekanan untuk bentuk yang dipilih, serta **laluan pergerakan** yang menggerakkan objek sepanjang laluan. **Pratonton** memutar semula animasi slaid pada kanvas, manakala Tiada mengeluarkannya.
 
-  ![Tab Animasi](img/slides-animations.png)
+![Tab Animasi](img/slides-animations.png)
 
 - **Tayangan Slaid**: mulakan persembahan dari awal atau dari slaid semasa, bersama tetapan pertunjukan.
-- **Semakan**: **komen baharu** pada slaid semasa. Ia ditulis ke dalam fail .pptx dan kelihatan dalam PowerPoint.
+- **Semakan**: **komen baharu** pada slaid semasa. Ia ditulis ke dalam fail.pptx dan kelihatan dalam PowerPoint.
 - **PANDANGAN**: **Normal** dengan lakaran kenit dan kanvas, **PANDANGAN Rangka** untuk menyemak dan melompat mengikut teks, **Pengisih Slaid** untuk gambaran keseluruhan dalam grid, dan **PANDANGAN Baca** untuk paparan skrin penuh halaman demi halaman. Tekan Esc untuk keluar.
 
 ## Menu konteks
@@ -46,7 +46,7 @@ Menu berubah mengikut tempat anda klik kanan:
 ## Penjanaan dengan AI
 
 - Kad AI Slides pada Laman Utama: berikan topik atau rangka kerja, dan AI akan menyediakan persembahan tersebut. Jika penjanaan dalam awan gagal, sistem akan berpatah balik kepada penjanaan setempat.
-- Anda boleh terus menyelaraskan dengan panel AI, yang mengubah gaya teks melalui skrip dalam persekitaran terkawal, iaitu mekanisme yang sama seperti dalam [Sheets](help://sheets).
+- Anda boleh terus menyelaraskan dengan panel AI, yang mengubah gaya teks melalui skrip dalam persekitaran terkawal, iaitu mekanisme yang sama seperti dalam [Sheets].
 
 ## Pertunjukan dan eksport
 
@@ -56,4 +56,4 @@ Menu berubah mengikut tempat anda klik kanan:
 
 ## Simpanan
 
-Pusingan penuh .pptx: halaman yang tidak disentuh kekal sama bait demi bait, manakala nota, induk dan anotasi kekal.
+Pusingan penuh.pptx: halaman yang tidak disentuh kekal sama bait demi bait, manakala nota, induk dan anotasi kekal.
