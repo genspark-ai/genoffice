@@ -176,6 +176,8 @@ export interface HomeApi {
   statPaths(paths: string[]): Promise<RecentEntry[]>
   /** star / unstar a file */
   toggleStar(path: string): Promise<void>
+  /** open the in-editor files browser tab (issue #542); single instance */
+  openFiles(): Promise<void>
   /** open an existing file, routing to the right module by extension */
   openPath(path: string): Promise<void>
   /** file picker accepting every supported extension, then routes */
@@ -509,6 +511,7 @@ export const HOME_CHANNELS = {
   getAppVersion: 'home:get-app-version',
   onboardingSeen: 'home:onboarding-seen',
   setOnboardingSeen: 'home:set-onboarding-seen',
+  openFiles: 'home:open-files',
   getTheme: 'home:get-theme',
   setTheme: 'home:set-theme',
   getAutoSaveDefault: 'home:get-auto-save-default',

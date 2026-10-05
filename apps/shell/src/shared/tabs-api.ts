@@ -1,7 +1,7 @@
-export type TabKind = 'home' | 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html'
+export type TabKind = 'home' | 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html' | 'files'
 
-/** a tab that holds a document — every kind except the Home screen */
-export type DocumentTabKind = Exclude<TabKind, 'home'>
+/** a tab that holds a document — every kind except the Home screen and the files browser */
+export type DocumentTabKind = Exclude<TabKind, 'home' | 'files'>
 
 /** one open tab in the top tab strip; Home is always id 'home' and not closable */
 export interface TabSummary {

@@ -2,6 +2,9 @@
 export const strings = {
   zh: {
     addFolderRoot: '添加文件夹…',
+    navFiles: '文件面板',
+    filesNoRoots: '添加一个文件夹开始浏览。',
+    filesEmptyDir: '此文件夹没有可显示的文件。',
     removeFolderRoot: '从列表移除',
     rootUnavailable: '不可用',
     // Sidebar navigation
@@ -384,6 +387,9 @@ export const strings = {
   },
   en: {
     addFolderRoot: 'Add folder…',
+    navFiles: 'Files',
+    filesNoRoots: 'Add a folder to start browsing.',
+    filesEmptyDir: 'No displayable files in this folder.',
     removeFolderRoot: 'Remove from list',
     rootUnavailable: 'Not available',
     navRecent: 'Recent',
@@ -775,6 +781,9 @@ export const strings = {
   },
   vi: {
     addFolderRoot: 'Thêm thư mục…',
+    navFiles: 'Tệp',
+    filesNoRoots: 'Thêm một thư mục để bắt đầu duyệt.',
+    filesEmptyDir: 'Không có tệp hiển thị nào trong thư mục này.',
     removeFolderRoot: 'Xóa khỏi danh sách',
     rootUnavailable: 'Không khả dụng',
     navRecent: 'Gần đây',
@@ -1168,6 +1177,9 @@ export const strings = {
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
+    navFiles: 'ファイル',
+    filesNoRoots: 'フォルダを追加して閲覧を始めましょう。',
+    filesEmptyDir: 'このフォルダに表示できるファイルはありません。',
     removeFolderRoot: 'リストから削除',
     rootUnavailable: '利用不可',
     // Sidebar navigation
@@ -1574,6 +1586,9 @@ export const strings = {
   },
   ko: {
     addFolderRoot: '폴더 추가…',
+    navFiles: '파일',
+    filesNoRoots: '폴더를 추가하여 탐색을 시작하세요.',
+    filesEmptyDir: '이 폴더에 표시할 수 있는 파일이 없습니다.',
     removeFolderRoot: '목록에서 제거',
     rootUnavailable: '사용할 수 없음',
     // Sidebar navigation
@@ -1970,6 +1985,9 @@ export const strings = {
   },
   fr: {
     addFolderRoot: 'Ajouter un dossier…',
+    navFiles: 'Fichiers',
+    filesNoRoots: 'Ajoutez un dossier pour commencer à parcourir.',
+    filesEmptyDir: 'Aucun fichier affichable dans ce dossier.',
     removeFolderRoot: 'Retirer de la liste',
     rootUnavailable: 'Indisponible',
     // Sidebar navigation
@@ -2382,6 +2400,9 @@ export const strings = {
   },
   de: {
     addFolderRoot: 'Ordner hinzufügen…',
+    navFiles: 'Dateien',
+    filesNoRoots: 'Fügen Sie einen Ordner hinzu, um zu stöbern.',
+    filesEmptyDir: 'Keine anzeigbaren Dateien in diesem Ordner.',
     removeFolderRoot: 'Aus der Liste entfernen',
     rootUnavailable: 'Nicht verfügbar',
     // Sidebar navigation
@@ -2796,6 +2817,9 @@ export const strings = {
   },
   es: {
     addFolderRoot: 'Añadir carpeta…',
+    navFiles: 'Archivos',
+    filesNoRoots: 'Añade una carpeta para empezar a explorar.',
+    filesEmptyDir: 'No hay archivos visualizables en esta carpeta.',
     removeFolderRoot: 'Quitar de la lista',
     rootUnavailable: 'No disponible',
     // Sidebar navigation
@@ -3206,6 +3230,9 @@ export const strings = {
   },
   th: {
     addFolderRoot: 'เพิ่มโฟลเดอร์…',
+    navFiles: 'ไฟล์',
+    filesNoRoots: 'เพิ่มโฟลเดอร์เพื่อเริ่มการเรียกดู',
+    filesEmptyDir: 'ไม่มีไฟล์ที่แสดงได้ในโฟลเดอร์นี้',
     removeFolderRoot: 'นำออกจากรายการ',
     rootUnavailable: 'ไม่พร้อมใช้งาน',
     // Sidebar navigation
@@ -3599,6 +3626,9 @@ export const strings = {
   },
   id: {
     addFolderRoot: 'Tambah folder…',
+    navFiles: 'File',
+    filesNoRoots: 'Tambahkan folder untuk mulai menjelajah.',
+    filesEmptyDir: 'Tidak ada file yang dapat ditampilkan di folder ini.',
     removeFolderRoot: 'Hapus dari daftar',
     rootUnavailable: 'Tidak tersedia',
     // Sidebar navigation
@@ -4003,6 +4033,9 @@ export const strings = {
   },
   ru: {
     addFolderRoot: 'Добавить папку…',
+    navFiles: 'Файлы',
+    filesNoRoots: 'Добавьте папку, чтобы начать просмотр.',
+    filesEmptyDir: 'В этой папке нет файлов для отображения.',
     removeFolderRoot: 'Убрать из списка',
     rootUnavailable: 'Недоступно',
     // Sidebar navigation
@@ -4405,6 +4438,9 @@ export const strings = {
   },
   ar: {
     addFolderRoot: 'إضافة مجلد…',
+    navFiles: 'الملفات',
+    filesNoRoots: 'أضف مجلدًا لبدء الاستعراض.',
+    filesEmptyDir: 'لا توجد ملفات قابلة للعرض في هذا المجلد.',
     removeFolderRoot: 'إزالة من القائمة',
     rootUnavailable: 'غير متاح',
     // Sidebar navigation
@@ -4799,6 +4835,9 @@ export const strings = {
   },
   pt: {
     addFolderRoot: 'Adicionar pasta…',
+    navFiles: 'Arquivos',
+    filesNoRoots: 'Adicione uma pasta para começar a navegar.',
+    filesEmptyDir: 'Não há arquivos exibíveis nesta pasta.',
     removeFolderRoot: 'Remover da lista',
     rootUnavailable: 'Indisponível',
     navRecent: 'Recentes',
@@ -5198,6 +5237,9 @@ export const strings = {
   },
   it: {
     addFolderRoot: 'Aggiungi cartella…',
+    navFiles: 'File',
+    filesNoRoots: 'Aggiungi una cartella per iniziare a esplorare.',
+    filesEmptyDir: 'Nessun file visualizzabile in questa cartella.',
     removeFolderRoot: "Rimuovi dall'elenco",
     rootUnavailable: 'Non disponibile',
     navRecent: 'Recenti',
@@ -5596,6 +5638,9 @@ export const strings = {
   },
   pl: {
     addFolderRoot: 'Dodaj folder…',
+    navFiles: 'Pliki',
+    filesNoRoots: 'Dodaj folder, aby rozpocząć przeglądanie.',
+    filesEmptyDir: 'W tym folderze nie ma plików do wyświetlenia.',
     removeFolderRoot: 'Usuń z listy',
     rootUnavailable: 'Niedostępny',
     navRecent: 'Ostatnie',
@@ -5989,6 +6034,9 @@ export const strings = {
   },
   cs: {
     addFolderRoot: 'Přidat složku…',
+    navFiles: 'Soubory',
+    filesNoRoots: 'Přidejte složku a začněte procházet.',
+    filesEmptyDir: 'V této složce nejsou žádné soubory k zobrazení.',
     removeFolderRoot: 'Odebrat ze seznamu',
     rootUnavailable: 'Nedostupné',
     navRecent: 'Nedávné',
@@ -6382,6 +6430,9 @@ export const strings = {
   },
   nl: {
     addFolderRoot: 'Map toevoegen…',
+    navFiles: 'Bestanden',
+    filesNoRoots: 'Voeg een map toe om te beginnen met bladeren.',
+    filesEmptyDir: 'Geen weer te geven bestanden in deze map.',
     removeFolderRoot: 'Uit lijst verwijderen',
     rootUnavailable: 'Niet beschikbaar',
     navRecent: 'Recent',
@@ -6778,6 +6829,9 @@ export const strings = {
   },
   ms: {
     addFolderRoot: 'Tambah folder…',
+    navFiles: 'Fail',
+    filesNoRoots: 'Tambahkan folder untuk mula melayari.',
+    filesEmptyDir: 'Tiada fail boleh papar dalam folder ini.',
     removeFolderRoot: 'Buang daripada senarai',
     rootUnavailable: 'Tidak tersedia',
     navRecent: 'Terkini',
@@ -7177,6 +7231,9 @@ export const strings = {
   },
   he: {
     addFolderRoot: 'הוספת תיקייה…',
+    navFiles: 'קבצים',
+    filesNoRoots: 'הוסף תיקייה כדי להתחיל לעיין.',
+    filesEmptyDir: 'אין קבצים שניתן להציג בתיקייה זו.',
     removeFolderRoot: 'הסרה מהרשימה',
     rootUnavailable: 'לא זמין',
     navRecent: 'אחרונים',
@@ -7558,6 +7615,9 @@ export const strings = {
   },
   hi: {
     addFolderRoot: 'फ़ोल्डर जोड़ें…',
+    navFiles: 'फ़ाइलें',
+    filesNoRoots: 'ब्राउज़िंग शुरू करने के लिए एक फ़ोल्डर जोड़ें।',
+    filesEmptyDir: 'इस फ़ोल्डर में कोई प्रदर्शनीय फ़ाइल नहीं है।',
     removeFolderRoot: 'सूची से हटाएँ',
     rootUnavailable: 'उपलब्ध नहीं',
     navRecent: 'हाल के',
@@ -7951,6 +8011,9 @@ export const strings = {
   },
   'zh-TW': {
     addFolderRoot: '加入資料夾…',
+    navFiles: '檔案面板',
+    filesNoRoots: '新增資料夾開始瀏覽。',
+    filesEmptyDir: '此資料夾沒有可顯示的檔案。',
     removeFolderRoot: '從清單移除',
     rootUnavailable: '無法使用',
     navRecent: '最近',

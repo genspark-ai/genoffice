@@ -1,0 +1,156 @@
+/* Files browser tab (?mode=files, issue #542) — a shell-rendered screen, so
+   it rides the same tokens as Home. Layout only: rows are plain buttons with
+   hover/selected states; no bare colors outside custom property lines. */
+
+.files-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.files-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.files-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.files-add {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.files-add:hover {
+  background: var(--hover);
+}
+
+.files-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.files-tree {
+  flex: none;
+  width: 280px;
+  overflow-y: auto;
+  padding: 8px 6px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.files-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+
+.files-list-head {
+  flex: none;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.files-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.files-row:hover {
+  background: var(--hover);
+}
+
+.files-row:focus-visible {
+  outline: 2px solid var(--accent, var(--text-primary));
+  outline-offset: -2px;
+}
+
+.files-row.is-selected {
+  background: var(--active-bg, var(--hover));
+}
+
+.files-row:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.files-row:disabled:hover {
+  background: none;
+}
+
+.files-row-chevron {
+  flex: none;
+  display: inline-flex;
+  width: 12px;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.files-row-icon {
+  flex: none;
+  display: inline-flex;
+}
+
+.files-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-row-star {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.files-empty {
+  padding: 24px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.files-empty-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  flex: 1;
+}

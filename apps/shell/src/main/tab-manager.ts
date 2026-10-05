@@ -1,7 +1,7 @@
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { realpathSync } from 'node:fs'
-import { BrowserWindow } from 'electron'
-import type { Rectangle, WebContents, WebContentsView } from 'electron'
+import { BrowserWindow, shell, WebContentsView } from 'electron'
+import type { Rectangle, WebContents } from 'electron'
 
 import {
   createDocsView,
@@ -45,6 +45,7 @@ import {
   setActiveSlidesWebContents,
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
+import { rendererUrl, safeExternalUrl } from '@genoffice/electron-utils'
 import type { DocumentTabKind, OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
 import { TAB_STRIP_HEIGHT } from '../shared/tab-drag-geometry'
 
@@ -273,6 +274,24 @@ export class TabManager {
 
   openHomeTab(): void {
     this.activateTab(HOME_ID)
+  }
+
+  /** The in-editor files browser (issue #542): a tab hosting the shell
+      renderer at ?mode=files, so it reuses the home folder APIs; the tab is
+      single-instance — opening it again focuses the existing one. */
+  openFilesTab(): string {
+    const existing = this.tabs.find((t) => t.kind === 'files')
+    if (existing) {
+      this.activateTab(existing.id)
+      return existing.id
+    }
+    const view = createFilesView()
+    const id = `t${this.nextId++}`
+    this.shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    this.tabs.push({ id, kind: 'files', view, title: this.untitled('files', 'Files') })
+    this.activateTab(id)
+    return id
   }
 
   openDocsTab(
@@ -689,7 +708,9 @@ export class TabManager {
    *  New Window): every document tab except a chrome-free Present tab. */
   canDetachTab(id: string): boolean {
     const tab = this.tabs.find((t) => t.id === id)
-    return !!tab?.view && !tab.present && !this.closingIds.has(id)
+    // the files browser is single-instance per strip: tearing it off would
+    // orphan the only instance outside the manager and break that contract
+    return !!tab?.view && tab.kind !== 'files' && !tab.present && !this.closingIds.has(id)
   }
 
   /**
@@ -807,4 +828,29 @@ export function canonicalPath(path: string | undefined): string | undefined {
   } catch {
     return path
   }
+}
+
+/** The files browser shares the shell's renderer bundle and preload: the view
+    is just the shell renderer at ?mode=files. Dev serves it from the dev
+    server, the packaged app from the `files` scheme root registered in shell
+    main. */
+function createFilesView(): WebContentsView {
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    const target = safeExternalUrl(url)
+    if (target) void shell.openExternal(target)
+    return { action: 'deny' }
+  })
+  void view.webContents.loadURL(
+    rendererUrl(process.env.ELECTRON_RENDERER_URL, 'files', { mode: 'files' }),
+  )
+  return view
 }

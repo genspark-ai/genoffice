@@ -33,6 +33,8 @@ interface FakeWebContents {
   reload: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
+  setWindowOpenHandler: ReturnType<typeof vi.fn>
+  loadURL: ReturnType<typeof vi.fn>
   listeners: Map<string, () => void>
 }
 
@@ -58,13 +60,24 @@ function makeFakeView(): FakeView {
       reload: vi.fn(),
       focus: vi.fn(),
       isDestroyed: vi.fn(() => false),
+      setWindowOpenHandler: vi.fn(),
+      loadURL: vi.fn(() => Promise.resolve()),
     },
     setVisible: vi.fn(),
     setBounds: vi.fn(),
   }
 }
 
-vi.mock('electron', () => ({ BrowserWindow: class {} }))
+vi.mock('electron', () => ({
+  BrowserWindow: class {},
+  // the files browser view is built by tab-manager itself (createFilesView)
+  shell: { openExternal: vi.fn() },
+  WebContentsView: class {
+    constructor() {
+      Object.assign(this, makeFakeView())
+    }
+  },
+}))
 
 const createDocsView = vi.fn(() => makeFakeView())
 const docsQueryDirty = vi.fn(() => Promise.resolve(false))
@@ -765,7 +778,10 @@ describe('file path bookkeeping', () => {
       const after = manager.list()
       if (after.length > before) opened.push(after[after.length - 1]!.kind)
     }
-    expect([...new Set(opened)].sort()).toEqual(RENAMABLE.map((c) => c.kind).sort())
+    // the files browser (issue #542) is a non-document tab: it opens without a
+    // file path, so it sits outside the RENAMABLE table but is still a kind
+    // the manager can produce
+    expect([...new Set(opened)].sort()).toEqual([...RENAMABLE.map((c) => c.kind), 'files'].sort())
   })
 
   it('finds tabs by kind and path', () => {
@@ -984,5 +1000,38 @@ describe('detach / attach (Open in New Window, tear-off, dock)', () => {
     expect(teardownDocsRenderer).toHaveBeenCalledWith(record.view.webContents)
     expect(record.view.webContents.close).not.toHaveBeenCalled()
     expect(manager.list()).toHaveLength(1)
+  })
+})
+
+describe('opening the files browser tab (issue #542)', () => {
+  it('opens a single files tab, activates it, and attaches its view', () => {
+    const id = manager.openFilesTab()
+    const tabs = manager.list()
+    expect(tabs).toHaveLength(2)
+    expect(tabs[1]).toMatchObject({
+      id,
+      kind: 'files',
+      title: 'Files',
+      closable: true,
+      active: true,
+    })
+    expect(tabs[0].active).toBe(false)
+    expect(shellWindow.contentView.addChildView).toHaveBeenCalledTimes(1)
+    expect(applyMenuFor).toHaveBeenLastCalledWith('files')
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('cannot be torn off into a detached window', () => {
+    const id = manager.openFilesTab()
+    expect(manager.canDetachTab(id)).toBe(false)
+  })
+
+  it('opening it again focuses the existing tab instead of creating a second one', () => {
+    const first = manager.openFilesTab()
+    const second = manager.openFilesTab()
+    expect(second).toBe(first)
+    expect(manager.list()).toHaveLength(2)
+    expect(manager.list().filter((t) => t.kind === 'files')).toHaveLength(1)
+    expect(manager.list().at(-1)).toMatchObject({ id: first, active: true })
   })
 })

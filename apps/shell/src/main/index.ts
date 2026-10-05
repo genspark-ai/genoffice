@@ -708,6 +708,7 @@ const tMain = createI18n({
     watchdogClose: '关闭文档',
     errFolderRootUnusable: '无法读取所选文件夹',
     menuFile: '文件',
+    menuFiles: '文件面板',
     menuSectionNew: '新建',
     menuOpenInNewWindow: '在新窗口中打开',
     menuNewDoc: 'AI Docs',
@@ -801,6 +802,7 @@ const tMain = createI18n({
     watchdogClose: 'Close Document',
     errFolderRootUnusable: 'The selected folder cannot be read',
     menuFile: 'File',
+    menuFiles: 'Files',
     menuSectionNew: 'New',
     menuOpenInNewWindow: 'Open in New Window',
     menuNewDoc: 'AI Docs',
@@ -902,6 +904,7 @@ const tMain = createI18n({
     watchdogClose: 'Đóng tài liệu',
     errFolderRootUnusable: 'Không thể đọc thư mục đã chọn',
     menuFile: 'Tệp',
+    menuFiles: 'Tệp',
     menuSectionNew: 'Mới',
     menuOpenInNewWindow: 'Mở trong cửa sổ mới',
     menuNewDoc: 'AI Docs',
@@ -1003,6 +1006,7 @@ const tMain = createI18n({
     watchdogClose: 'ドキュメントを閉じる',
     errFolderRootUnusable: '選択したフォルダーを読み取れません',
     menuFile: 'ファイル',
+    menuFiles: 'ファイル',
     menuSectionNew: '新規作成',
     menuOpenInNewWindow: '新しいウィンドウで開く',
     menuNewDoc: 'AI Docs',
@@ -1104,6 +1108,7 @@ const tMain = createI18n({
     watchdogClose: '문서 닫기',
     errFolderRootUnusable: '선택한 폴더를 읽을 수 없습니다',
     menuFile: '파일',
+    menuFiles: '파일',
     menuSectionNew: '새로 만들기',
     menuOpenInNewWindow: '새 창에서 열기',
     menuNewDoc: 'AI Docs',
@@ -1204,6 +1209,7 @@ const tMain = createI18n({
     watchdogClose: 'Fermer le document',
     errFolderRootUnusable: 'Le dossier sélectionné ne peut pas être lu',
     menuFile: 'Fichier',
+    menuFiles: 'Fichiers',
     menuSectionNew: 'Nouveau',
     menuOpenInNewWindow: 'Ouvrir dans une nouvelle fenêtre',
     menuNewDoc: 'AI Docs',
@@ -1306,6 +1312,7 @@ const tMain = createI18n({
     watchdogClose: 'Dokument schließen',
     errFolderRootUnusable: 'Der ausgewählte Ordner kann nicht gelesen werden',
     menuFile: 'Datei',
+    menuFiles: 'Dateien',
     menuSectionNew: 'Neu',
     menuOpenInNewWindow: 'In neuem Fenster öffnen',
     menuNewDoc: 'AI Docs',
@@ -1409,6 +1416,7 @@ const tMain = createI18n({
     watchdogClose: 'Cerrar documento',
     errFolderRootUnusable: 'No se puede leer la carpeta seleccionada',
     menuFile: 'Archivo',
+    menuFiles: 'Archivos',
     menuSectionNew: 'Nuevo',
     menuOpenInNewWindow: 'Abrir en una ventana nueva',
     menuNewDoc: 'AI Docs',
@@ -1511,6 +1519,7 @@ const tMain = createI18n({
     watchdogClose: 'ปิดเอกสาร',
     errFolderRootUnusable: 'ไม่สามารถอ่านโฟลเดอร์ที่เลือกได้',
     menuFile: 'ไฟล์',
+    menuFiles: 'ไฟล์',
     menuSectionNew: 'สร้างใหม่',
     menuOpenInNewWindow: 'เปิดในหน้าต่างใหม่',
     menuNewDoc: 'AI Docs',
@@ -1609,6 +1618,7 @@ const tMain = createI18n({
     watchdogClose: 'Tutup Dokumen',
     errFolderRootUnusable: 'Folder yang dipilih tidak dapat dibaca',
     menuFile: 'File',
+    menuFiles: 'File',
     menuSectionNew: 'Baru',
     menuOpenInNewWindow: 'Buka di Jendela Baru',
     menuNewDoc: 'AI Docs',
@@ -1711,6 +1721,7 @@ const tMain = createI18n({
     watchdogClose: 'Закрыть документ',
     errFolderRootUnusable: 'Не удалось прочитать выбранную папку',
     menuFile: 'Файл',
+    menuFiles: 'Файлы',
     menuSectionNew: 'Создать',
     menuOpenInNewWindow: 'Открыть в новом окне',
     menuNewDoc: 'AI Docs',
@@ -1813,6 +1824,7 @@ const tMain = createI18n({
     watchdogClose: 'إغلاق المستند',
     errFolderRootUnusable: 'لا يمكن قراءة المجلد المحدد',
     menuFile: 'ملف',
+    menuFiles: 'الملفات',
     menuSectionNew: 'جديد',
     menuOpenInNewWindow: 'فتح في نافذة جديدة',
     menuNewDoc: 'AI Docs',
@@ -1911,6 +1923,7 @@ const tMain = createI18n({
     watchdogClose: 'Fechar documento',
     errFolderRootUnusable: 'Não é possível ler a pasta selecionada',
     menuFile: 'Arquivo',
+    menuFiles: 'Arquivos',
     menuSectionNew: 'Novo',
     menuOpenInNewWindow: 'Abrir em nova janela',
     menuNewDoc: 'AI Docs',
@@ -2013,6 +2026,7 @@ const tMain = createI18n({
     watchdogClose: 'Chiudi documento',
     errFolderRootUnusable: 'Impossibile leggere la cartella selezionata',
     menuFile: 'File',
+    menuFiles: 'File',
     menuSectionNew: 'Nuovo',
     menuOpenInNewWindow: 'Apri in una nuova finestra',
     menuNewDoc: 'AI Docs',
@@ -2115,6 +2129,7 @@ const tMain = createI18n({
     watchdogClose: 'Zamknij dokument',
     errFolderRootUnusable: 'Nie można odczytać wybranego folderu',
     menuFile: 'Plik',
+    menuFiles: 'Pliki',
     menuSectionNew: 'Nowy',
     menuOpenInNewWindow: 'Otwórz w nowym oknie',
     menuNewDoc: 'AI Docs',
@@ -2217,6 +2232,7 @@ const tMain = createI18n({
     watchdogClose: 'Zavřít dokument',
     errFolderRootUnusable: 'Vybranou složku nelze načíst',
     menuFile: 'Soubor',
+    menuFiles: 'Soubory',
     menuSectionNew: 'Nový',
     menuOpenInNewWindow: 'Otevřít v novém okně',
     menuNewDoc: 'AI Docs',
@@ -2317,6 +2333,7 @@ const tMain = createI18n({
     watchdogClose: 'Document sluiten',
     errFolderRootUnusable: 'De geselecteerde map kan niet worden gelezen',
     menuFile: 'Bestand',
+    menuFiles: 'Bestanden',
     menuSectionNew: 'Nieuw',
     menuOpenInNewWindow: 'Openen in nieuw venster',
     menuNewDoc: 'AI Docs',
@@ -2419,6 +2436,7 @@ const tMain = createI18n({
     watchdogClose: 'Tutup Dokumen',
     errFolderRootUnusable: 'Folder yang dipilih tidak dapat dibaca',
     menuFile: 'Fail',
+    menuFiles: 'Fail',
     menuSectionNew: 'Baharu',
     menuOpenInNewWindow: 'Buka dalam Tetingkap Baharu',
     menuNewDoc: 'AI Docs',
@@ -2520,6 +2538,7 @@ const tMain = createI18n({
     watchdogClose: 'סגירת המסמך',
     errFolderRootUnusable: 'לא ניתן לקרוא את התיקייה שנבחרה',
     menuFile: 'קובץ',
+    menuFiles: 'קבצים',
     menuSectionNew: 'חדש',
     menuOpenInNewWindow: 'פתח בחלון חדש',
     menuNewDoc: 'AI Docs',
@@ -2619,6 +2638,7 @@ const tMain = createI18n({
     watchdogClose: 'दस्तावेज़ बंद करें',
     errFolderRootUnusable: 'चयनित फ़ोल्डर पढ़ा नहीं जा सका',
     menuFile: 'फ़ाइल',
+    menuFiles: 'फ़ाइलें',
     menuSectionNew: 'नया',
     menuOpenInNewWindow: 'नई विंडो में खोलें',
     menuNewDoc: 'AI Docs',
@@ -2721,6 +2741,7 @@ const tMain = createI18n({
     watchdogClose: '關閉文件',
     errFolderRootUnusable: '無法讀取所選資料夾',
     menuFile: '檔案',
+    menuFiles: '檔案面板',
     menuSectionNew: '新增',
     menuOpenInNewWindow: '在新視窗中開啟',
     menuNewDoc: 'AI Docs',
@@ -3109,15 +3130,17 @@ function createShellWindow(): void {
     // no extension: these tabs have no file on disk yet; the title becomes the
     // real filename (the localized untitled default + .docx etc.) once the first save lands
     (kind) =>
-      kind === 'docs'
-        ? tm('untitledDoc')
-        : kind === 'slides'
-          ? tm('untitledDeck')
-          : kind === 'markdown'
-            ? tm('untitledMarkdown')
-            : kind === 'html'
-              ? tm('untitledHtml')
-              : tm('untitledSheet'),
+      kind === 'files'
+        ? tm('menuFiles')
+        : kind === 'docs'
+          ? tm('untitledDoc')
+          : kind === 'slides'
+            ? tm('untitledDeck')
+            : kind === 'markdown'
+              ? tm('untitledMarkdown')
+              : kind === 'html'
+                ? tm('untitledHtml')
+                : tm('untitledSheet'),
   )
   tabManager = manager
 
@@ -4046,6 +4069,10 @@ function registerHomeIpc(): void {
     }
   })
 
+  ipcMain.handle(HOME_CHANNELS.openFiles, () => {
+    tabManager?.openFilesTab()
+  })
+
   ipcMain.handle(HOME_CHANNELS.getTheme, (): UiTheme => currentTheme())
   // editor tabs ask via the app-wide channel (symmetric with app:get-language)
   ipcMain.handle('app:get-theme', (): UiTheme => currentTheme())
@@ -4460,6 +4487,7 @@ function menuIcons(): MenuIconSet {
 
 const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
   home: 'home',
+  files: 'home',
   docs: 'docx',
   sheets: 'xlsx',
   slides: 'pptx',
@@ -4728,6 +4756,10 @@ function buildHomeMenu(): void {
           label: tm('menuOpen'),
           accelerator: 'CmdOrCtrl+O',
           click: () => void openFileViaDialog(),
+        },
+        {
+          label: tm('menuFiles'),
+          click: () => tabManager?.openFilesTab(),
         },
         { type: 'separator' },
         { role: 'close', label: tm('menuClose') },
@@ -5640,6 +5672,8 @@ app.whenReady().then(async () => {
     pdf: join(PDF_OUT, 'renderer'),
     markdown: join(MARKDOWN_OUT, 'renderer'),
     html: join(HTML_OUT, 'renderer'),
+    // the files browser tab shares the shell's own renderer bundle
+    files: join(__dirname, '../renderer'),
   })
   if (headlessArgv.kind !== 'none') {
     await runHeadlessExportEntry(headlessArgv)

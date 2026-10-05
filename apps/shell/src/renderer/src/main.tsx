@@ -2,6 +2,8 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { htmlLang } from '@genoffice/i18n'
 import { AppFrame } from './AppFrame'
+import { FilesScreen } from './FilesScreen'
+import './files-pane.css'
 import { LocaleProvider } from './locale'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
@@ -36,10 +38,13 @@ void Promise.all([
     if (next === 'system') document.documentElement.removeAttribute('data-theme')
     else document.documentElement.setAttribute('data-theme', next)
   })
+  // The files browser tab is the same bundle branched on ?mode=files: no
+  // onboarding, no home state, just the folder browser (issue #542).
+  const isFiles = new URLSearchParams(location.search).get('mode') === 'files'
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <LocaleProvider initial={lang}>
-        <AppFrame initialOnboardingSeen={onboardingSeen} />
+        {isFiles ? <FilesScreen /> : <AppFrame initialOnboardingSeen={onboardingSeen} />}
       </LocaleProvider>
     </React.StrictMode>,
   )

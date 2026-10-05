@@ -118,8 +118,21 @@ function HtmlIcon() {
   )
 }
 
+function FilesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 240 240" fill="none" aria-hidden="true">
+      <rect width="240" height="240" rx="48" fill="#2F6FED" />
+      <path
+        d="M64 88c0-8.8 7.2-16 16-16h28.7c5 0 9.8 2.4 12.8 6.4l10.2 13.6H176c8.8 0 16 7.2 16 16v64c0 8.8-7.2 16-16 16H80c-8.8 0-16-7.2-16-16V88z"
+        fill="#fff"
+      />
+    </svg>
+  )
+}
+
 const KIND_ICON: Record<TabSummary['kind'], ReactElement> = {
   home: <HomeIcon />,
+  files: <FilesIcon />,
   docs: <DocIcon />,
   sheets: <SheetIcon />,
   slides: <SlideIcon />,
