@@ -102,7 +102,9 @@ describe('AI bubble markdown: images', () => {
   })
 
   it('renders an image inside a list step', () => {
-    const html = withImages('- open ![settings](help:s)\- open the dialog', (h) => `blob:${h}`)
+    // the escaped hyphen is what a nested list looks like in the source, and
+    // it is a backslash in a JS string: '\-' would be a useless escape
+    const html = withImages('- open ![settings](help:s)\\ open the dialog', (h) => `blob:${h}`)
     expect(html).toContain('src="blob:help:s')
   })
 
