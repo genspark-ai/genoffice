@@ -19,6 +19,7 @@ import type {
   ScreenCaptureResult,
   ScreenSourcesResult,
   AutoSaveDefault,
+  DocTheme,
   UiTheme,
   WorkbookCellStyle,
   WorkbookConditionalRule,
@@ -70,6 +71,15 @@ const desktopApi: DesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, theme: UiTheme) => handler(theme)
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
+  },
+  getDocumentTheme: async () => {
+    const result: unknown = await ipcRenderer.invoke('app:get-document-theme')
+    return result === 'dark' || result === 'light' ? result : 'follow'
+  },
+  onDocumentThemeChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, theme: DocTheme) => handler(theme)
+    ipcRenderer.on('app:document-theme-changed', listener)
+    return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
   },
   getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
   onAutoSaveDefaultChanged(handler) {

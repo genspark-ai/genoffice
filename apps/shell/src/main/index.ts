@@ -262,6 +262,7 @@ import type {
   RecentEntry,
   RecentPage,
   RenameResult,
+  DocTheme,
   StarPromptShow,
   UiTheme,
   FileSearchPage,
@@ -527,6 +528,15 @@ function currentTheme(): UiTheme {
   const saved = readAppSettings(APP_SETTINGS_PATH()).theme
   cachedTheme = saved === 'light' || saved === 'dark' ? saved : 'system'
   return cachedTheme
+}
+
+let cachedDocTheme: DocTheme | null = null
+
+function currentDocTheme(): DocTheme {
+  if (cachedDocTheme) return cachedDocTheme
+  const saved = readAppSettings(APP_SETTINGS_PATH()).documentTheme
+  cachedDocTheme = saved === 'light' || saved === 'dark' ? saved : 'follow'
+  return cachedDocTheme
 }
 
 let cachedAutoSaveDefault: AutoSaveDefault | null = null
@@ -4058,6 +4068,19 @@ function registerHomeIpc(): void {
     nativeTheme.themeSource = theme
     refreshTitleBarOverlay()
     for (const wc of webContents.getAllWebContents()) wc.send('app:theme-changed', theme)
+  })
+
+  ipcMain.handle(HOME_CHANNELS.getDocumentTheme, (): DocTheme => currentDocTheme())
+  // editor tabs ask via the app-wide channel (symmetric with app:get-theme)
+  ipcMain.handle('app:get-document-theme', (): DocTheme => currentDocTheme())
+
+  ipcMain.handle(HOME_CHANNELS.setDocumentTheme, (_event, theme: unknown) => {
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'follow') return
+    if (theme === currentDocTheme()) return
+    cachedDocTheme = theme
+    writeAppSetting(APP_SETTINGS_PATH(), 'documentTheme', theme)
+    // the native theme is untouched — only the editors' canvas/paper follows this
+    for (const wc of webContents.getAllWebContents()) wc.send('app:document-theme-changed', theme)
   })
 
   ipcMain.handle(HOME_CHANNELS.getAutoSaveDefault, (): AutoSaveDefault => currentAutoSaveDefault())

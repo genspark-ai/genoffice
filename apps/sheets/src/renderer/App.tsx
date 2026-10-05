@@ -1612,11 +1612,19 @@ export function App({
 
   useEffect(() => {
     // Univer paints the grid on canvas, so it can't follow the CSS tokens —
-    // mirror the <html data-theme> state into its official darkMode flag
+    // mirror the canvas state into its official darkMode flag: an explicit
+    // <html data-doc-theme> pin (#1811) wins, otherwise the <html data-theme>
+    // state as before
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
-    const isDarkTheme = () =>
-      document.documentElement.getAttribute('data-theme') === 'dark' ||
-      (!document.documentElement.hasAttribute('data-theme') && prefersDark.matches)
+    const isDarkTheme = () => {
+      const docAttr = document.documentElement.getAttribute('data-doc-theme')
+      if (docAttr === 'dark') return true
+      if (docAttr === 'light') return false
+      return (
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (!document.documentElement.hasAttribute('data-theme') && prefersDark.matches)
+      )
+    }
     const runtime = createUniver({
       // green selection/highlight instead of Univer's default blue
       theme: greenTheme,
@@ -1703,6 +1711,7 @@ export function App({
       crossHighlightRef.current?.refresh()
     }
     const offThemeChanged = window.desktopApi?.onThemeChanged?.(applyUniverDark)
+    const offDocThemeChanged = window.desktopApi?.onDocumentThemeChanged?.(applyUniverDark)
     prefersDark.addEventListener('change', applyUniverDark)
     // Undo/redo stack occupancy: the QAT buttons grey out when there is nothing to apply
     const undoRedoService = runtime.univer.__getInjector().get(IUndoRedoService)
@@ -3007,6 +3016,7 @@ export function App({
       unsubscribeMenu()
       unsubscribeCloseSave()
       offThemeChanged?.()
+      offDocThemeChanged?.()
       undoRedoSub.unsubscribe()
       findRevealDispose()
       gridGrowthDispose()
