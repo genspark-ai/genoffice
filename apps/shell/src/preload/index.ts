@@ -287,6 +287,15 @@ const homeApi: HomeApi = {
       throw new Error('Invalid theme.')
     await ipcRenderer.invoke(HOME_CHANNELS.setTheme, theme)
   },
+  async getDocumentTheme() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDocumentTheme)
+    return result === 'dark' || result === 'light' ? result : 'follow'
+  },
+  async setDocumentTheme(theme) {
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'follow')
+      throw new Error('Invalid document theme.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setDocumentTheme, theme)
+  },
   async getAutoSaveDefault() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAutoSaveDefault)
     const r = result as { on?: unknown; updatedAt?: unknown } | null
@@ -399,6 +408,13 @@ const homeApi: HomeApi = {
     }
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
+  },
+  onDocumentThemeChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, theme: unknown) => {
+      if (theme === 'light' || theme === 'dark' || theme === 'follow') handler(theme)
+    }
+    ipcRenderer.on('app:document-theme-changed', listener)
+    return () => ipcRenderer.removeListener('app:document-theme-changed', listener)
   },
   async openGenTeam() {
     await ipcRenderer.invoke(HOME_CHANNELS.openGenTeam)
