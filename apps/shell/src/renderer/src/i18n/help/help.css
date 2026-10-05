@@ -1,21 +1,24 @@
 /* In-app manual (help tab): sidebar topics + searchable markdown body.
-   Shares the home screen's token vocabulary (--accent etc. via tokens.css). */
+   Every colour below is a token from packages/ui/src/tokens.css, so the manual
+   follows the light and dark themes like the rest of the chrome. The local
+   palette it replaces named two variables that exist nowhere, and its cards
+   were built from white alpha values — right in one theme, invisible in the
+   other. */
 
 .help-root {
-  /* local palette: definition lines may carry raw values (theme-colors gate
-     exempts custom-property definitions); usage below goes through vars only */
-  --help-bg: var(--go-bg, #f5f7fa);
-  --help-accent: var(--go-accent, #4f7cf0);
-  --help-accent-soft: rgba(79, 124, 240, 0.14);
-  --help-glass: rgba(255, 255, 255, 0.55);
-  --help-card: rgba(255, 255, 255, 0.8);
-  --help-line-faint: rgba(125, 125, 135, 0.18);
-  --help-line-soft: rgba(125, 125, 135, 0.2);
-  --help-line: rgba(125, 125, 135, 0.3);
-  --help-fill-hover: rgba(125, 125, 135, 0.12);
-  --help-fill: rgba(125, 125, 135, 0.14);
-  --help-fill-soft: rgba(125, 125, 135, 0.1);
-  --help-fill-faint: rgba(125, 125, 135, 0.07);
+  /* aliases only: the values live in tokens.css, which owns both themes */
+  --help-bg: var(--color-bg-page);
+  --help-accent: var(--color-brand-secondary);
+  --help-accent-soft: var(--bg-hover-accent);
+  --help-glass: var(--color-bg-overlay);
+  --help-card: var(--surface);
+  --help-line-faint: var(--border-subtle);
+  --help-line-soft: var(--border);
+  --help-line: var(--border-strong);
+  --help-fill-hover: var(--bg-hover);
+  --help-fill: var(--bg-hover-strong);
+  --help-fill-soft: var(--bg-hover-subtle);
+  --help-fill-faint: var(--active-bg);
   display: flex;
   height: 100vh;
   overflow: hidden;

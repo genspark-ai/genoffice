@@ -26,12 +26,13 @@ export interface MarkdownImage {
 // arrive as sheetnav://Data%20(2)!B2), so the href cannot simply stop at ')'.
 const HREF = /(?:[^\s()]|\([^\s()]*\))+/.source
 const INLINE_RE = new RegExp(
-  `(\`[^\`\\n]+\`|\\*\\*[^*\\n]+?\\*\\*|\\*[^*\\n]+?\\*|\\[[^\\]\\n]+\\]\\(${HREF}\\))`,
+  `(\`[^\`\\n]+\`|\\*\\*[^*\\n]+?\\*\\*|\\*[^*\\n]+?\\*|!\\[[^\\]\\n]*\\]\\(${HREF}\\)|\\[[^\\]\\n]+\\]\\(${HREF}\\))`,
   'g',
 )
 const LINK_RE = new RegExp(`^\\[([^\\]]+)\\]\\((${HREF})\\)$`)
+const IMG_RE = new RegExp(`^!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
 
-function renderInline(text: string, nav?: MarkdownNav): ReactNode[] {
+function renderInline(text: string, nav?: MarkdownNav, images?: MarkdownImage): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let key = 0
@@ -41,7 +42,21 @@ function renderInline(text: string, nav?: MarkdownNav): ReactNode[] {
     const tok = m[0] ?? ''
     if (tok.startsWith('`')) out.push(<code key={key++}>{tok.slice(1, -1)}</code>)
     else if (tok.startsWith('**')) out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>)
-    else if (tok.startsWith('[')) {
+    else if (tok.startsWith('![')) {
+      // An image sharing a line with prose, a list step or a table cell — not
+      // just a line of its own. parseBlocks only ever made a *whole* line an
+      // image block, so anything with text around it reached this pass, and
+      // this pass had no image case and printed the source. Without a resolver
+      // — every chat panel passes none — the literal stands, which is exactly
+      // what those panels rendered before.
+      const img = IMG_RE.exec(tok)
+      const src = img ? images?.resolve?.(img[2] ?? '') : undefined
+      if (img && src) {
+        out.push(
+          <img key={key++} className="ai-md-img" src={src} alt={img[1] ?? ''} loading="lazy" />,
+        )
+      } else out.push(tok)
+    } else if (tok.startsWith('[')) {
       const link = LINK_RE.exec(tok)
       const href = link?.[2] ?? ''
       if (link && nav && href.startsWith(nav.scheme)) {
@@ -228,7 +243,7 @@ export function Markdown({
           // the manual styles h2/h3 distinctly)
           return (
             <p key={i} className={`ai-md-h ai-md-h${b.level}`}>
-              {renderInline(b.text, nav)}
+              {renderInline(b.text, nav, images)}
             </p>
           )
         }
@@ -238,7 +253,7 @@ export function Markdown({
           return <img key={i} className="ai-md-img" src={src} alt={b.alt} loading="lazy" />
         }
         if (b.kind === 'ul' || b.kind === 'ol') {
-          const items = b.items.map((it, j) => <li key={j}>{renderInline(it, nav)}</li>)
+          const items = b.items.map((it, j) => <li key={j}>{renderInline(it, nav, images)}</li>)
           return b.kind === 'ul' ? <ul key={i}>{items}</ul> : <ol key={i}>{items}</ol>
         }
         if (b.kind === 'code') {
@@ -258,7 +273,7 @@ export function Markdown({
                   <tr>
                     {b.head.map((c, j) => (
                       <th key={j} style={cellStyle(j)}>
-                        {renderInline(c, nav)}
+                        {renderInline(c, nav, images)}
                       </th>
                     ))}
                   </tr>
@@ -268,7 +283,7 @@ export function Markdown({
                     <tr key={r}>
                       {row.map((c, j) => (
                         <td key={j} style={cellStyle(j)}>
-                          {renderInline(c, nav)}
+                          {renderInline(c, nav, images)}
                         </td>
                       ))}
                     </tr>
@@ -283,7 +298,7 @@ export function Markdown({
             {b.lines.map((ln, j) => (
               <Fragment key={j}>
                 {j > 0 && <br />}
-                {renderInline(ln, nav)}
+                {renderInline(ln, nav, images)}
               </Fragment>
             ))}
           </p>

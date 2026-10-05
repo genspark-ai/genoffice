@@ -280,6 +280,14 @@ export class TabManager {
       renderer's help mode — the same bundle, branched on ?mode=help, so no
       second renderer build is needed. */
   openHelpTab(): string {
+    // F1 again, or the Help menu while the manual is already open, focuses it
+    // instead of stacking a second copy: the tab is closable (only Home is
+    // not), so "press F1 again" is an ordinary thing to do
+    const existing = this.tabs.find((t) => t.kind === 'help')
+    if (existing) {
+      this.activateTab(existing.id)
+      return existing.id
+    }
     const view = createHelpView()
     const id = `t${this.nextId++}`
     this.shellWindow.contentView.addChildView(view)
