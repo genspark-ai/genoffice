@@ -8,18 +8,19 @@
   "exports": {
     ".": "./src/index.ts",
     "./ai-panel-prefs": "./src/ai-panel-prefs.ts",
-    "./tokens.css": "./src/tokens.css",
-    "./screentip.css": "./src/screentip.css",
+    "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
+    "./ai-scope-quote.css": "./src/ai-scope-quote.css",
     "./color-picker.css": "./src/color-picker.css",
     "./dropdown.css": "./src/dropdown.css",
     "./find-panel.css": "./src/find-panel.css",
-    "./ribbon-collapse.css": "./src/ribbon-collapse.css",
-    "./markdown.css": "./src/markdown.css",
-    "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
-    "./ai-scope-quote.css": "./src/ai-scope-quote.css",
+    "./font-catalog": "./src/font-catalog.ts",
+    "./fonts/*": "./src/fonts/*",
     "./image-dialogs.css": "./src/image-dialogs.css",
     "./image-viewer.css": "./src/image-viewer.css",
-    "./fonts/*": "./src/fonts/*"
+    "./markdown.css": "./src/markdown.css",
+    "./ribbon-collapse.css": "./src/ribbon-collapse.css",
+    "./screentip.css": "./src/screentip.css",
+    "./tokens.css": "./src/tokens.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
