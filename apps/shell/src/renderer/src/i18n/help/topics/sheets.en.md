@@ -81,7 +81,7 @@ The Formulas tab, button by button:
 - **In the grid**: the editor's (Univer's) own menu — cut/copy/paste, insert and delete rows/columns, hide, merge cells, freeze panes and other everyday items.
 - **On the bottom status strip**: choose which statistics the status bar shows (average / count / sum, ...); the choice sticks.
 - **On a sheet tab at the bottom**: add / rename / delete / color / hide sheets (Univer's tab menu).
-- The top tab strip's context menu is covered in [Tabs and window management](help://tabs).
+- The top tab strip's context menu is covered in [Tabs and window management](help://tabs-and-windows).
 
 ## The script editor (advanced)
 

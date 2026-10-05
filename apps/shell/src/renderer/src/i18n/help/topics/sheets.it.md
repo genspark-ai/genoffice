@@ -81,7 +81,7 @@ La scheda Formule, pulsante per pulsante:
 - **Nella griglia**: il menu proprio dell'editor (Univer) — taglia/copia/incolla, inserisci ed elimina righe/colonne, nascondi, unisci celle, blocca finestre e le altre voci di uso quotidiano.
 - **Sulla barra di stato in basso**: scegli quali statistiche mostrare nella barra di stato (media / conteggio / somma, ...); la scelta viene ricordata.
 - **Su una scheda di foglio in basso**: aggiungi / rinomina / elimina / colora / nascondi fogli (menu schede di Univer).
-- Il menu contestuale della barra delle schede in alto è descritto in [Schede e gestione delle finestre](help://tabs).
+- Il menu contestuale della barra delle schede in alto è descritto in [Schede e gestione delle finestre](help://tabs-and-windows).
 
 ## L'editor di script (avanzato)
 
@@ -117,4 +117,4 @@ Logger.log('done')
 
 ## Stabilità
 
-Il motore di calcolo in Rust è isolato in un processo separato rispetto all'interfaccia: se dati estremi lo fanno terminare, vedi un messaggio e un tentativo di ripristino della sessione — non un crash dell'app.
+- Il motore di calcolo in Rust è isolato in un processo separato rispetto all'interfaccia: se dati estremi lo fanno terminare, vedi un messaggio e un tentativo di ripristino della sessione — non un crash dell'app.
