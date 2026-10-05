@@ -39,6 +39,7 @@ function renderRibbon(sourceMode: boolean, sourceViewOpen = false) {
         dirty: false,
         onSave: vi.fn(),
         onSaveAs: vi.fn(),
+        onNameWithAi: vi.fn(),
         onFind: vi.fn(),
         autoSave: false,
         onToggleAutoSave: vi.fn(),
@@ -100,8 +101,9 @@ describe('Ribbon source mode', () => {
 
   it('keeps the actions that still apply to source text', () => {
     const container = renderRibbon(true)
-    // the quick-access row is untouched: save, save-as, undo, redo, find
-    expect(container.querySelectorAll('.ribbon-tabs .qa-btn').length).toBe(5)
+    // the quick-access row is untouched: save, save-as, name-with-ai, undo,
+    // redo, find
+    expect(container.querySelectorAll('.ribbon-tabs .qa-btn').length).toBe(6)
     expect(container.querySelector('.autosave-toggle')).not.toBeNull()
   })
 

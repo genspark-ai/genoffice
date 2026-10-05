@@ -40,6 +40,8 @@ interface Props {
   dirty: boolean
   onSave: () => void
   onSaveAs: () => void
+  /** Ask the model for a name, then open Save As with it prefilled */
+  onNameWithAi: () => void
   onFind: () => void
   autoSave: boolean
   onToggleAutoSave: (on: boolean) => void
@@ -180,6 +182,7 @@ export function Ribbon({
   dirty,
   onSave,
   onSaveAs,
+  onNameWithAi,
   onFind,
   autoSave,
   onToggleAutoSave,
@@ -312,6 +315,17 @@ export function Ribbon({
           onClick={onSaveAs}
         >
           {t('saveAs')}
+        </button>
+        <button
+          type="button"
+          className="qa-btn qa-name-with-ai"
+          data-tip={t('aiNameFile')}
+          aria-label={t('aiNameFile')}
+          disabled={off}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onNameWithAi}
+        >
+          {t('aiNameFile')}
         </button>
         <button
           type="button"

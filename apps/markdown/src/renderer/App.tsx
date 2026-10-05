@@ -44,6 +44,8 @@ import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
 import { ImageHostDialog } from './components/ImageHostDialog'
 import { RedactMenu } from './components/RedactMenu'
+import { deriveAutoFileName } from './auto-file-name'
+import { firstSaveName, modelSaveAsName, noteDocumentSwapped } from './file-naming'
 import { OutlinePane } from './components/OutlinePane'
 import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
@@ -118,19 +120,8 @@ function applyImageRewrites(
   editor.view.dispatch(transaction)
 }
 
-/** Measure a document image via the DOM (the editor already displays it) */
-/** File name for an AI-generated untitled document: first heading, else first words */
-export function deriveAutoFileName(editor: Editor): string {
-  const doc = editor.state.doc
-  for (let i = 0; i < doc.childCount; i++) {
-    const node = doc.child(i)
-    const text = node.textContent.replace(/\s+/g, ' ').trim()
-    if (!text) continue
-    if (node.type.name === 'heading') return text.slice(0, 60)
-    return text.split(' ').slice(0, 8).join(' ').slice(0, 60)
-  }
-  return ''
-}
+export { deriveAutoFileName } from './auto-file-name'
+
 
 export default function App() {
   const { lang, t } = useI18n()
@@ -316,6 +307,8 @@ export default function App() {
       }
       const envelope = parseDocText(raw)
       envelopeRef.current = envelope
+      // a different document is now open: its first save may ask for a name
+      noteDocumentSwapped()
       setImageBaseDir(dirOf(path))
       // the initial load must not be undoable — Cmd+Z right after opening
       // would otherwise blank the document (and Cmd+S overwrite the file)
@@ -531,7 +524,19 @@ export default function App() {
           sourceAtSave,
         )
         const imageSources = imageSourcesFromEditor(current)
-        const result = await window.markdownApi.save({ text, imageSources, mode, suggestedName })
+        // A never-saved document is offered a name derived from its own content:
+        // the model's, when the reader asked for model naming, and the first
+        // heading otherwise. It prefills the save dialog rather than replacing
+        // it — the reader still chooses where the file goes.
+        const defaultName =
+          !filePathRef.current && !suggestedName ? await firstSaveName(current) : undefined
+        const result = await window.markdownApi.save({
+          text,
+          imageSources,
+          mode,
+          suggestedName,
+          ...(defaultName ? { defaultName } : {}),
+        })
         if (result.ok && 'path' in result) {
           const unchanged =
             editorRef.current?.state.doc === docAtSave &&
@@ -600,6 +605,24 @@ export default function App() {
     },
     [flushSource, sourceMode, doSaveSource],
   )
+
+  /**
+   * Ask the model to name this document, on request, then open Save As with its
+   * answer prefilled.
+   *
+   * The stem goes into the dialog rather than renaming the file on disk: a file
+   * that may be open elsewhere, referenced from a note, or synced is not
+   * something to move behind the reader's back. A declined or empty answer
+   * leaves the dialog on the document's current name, so this is a no-op
+   * rather than a failure.
+   */
+  const nameWithAi = useCallback(async () => {
+    const current = editorRef.current
+    if (!current || statusRef.current !== 'ready' || savingRef.current) return
+    const stem = await modelSaveAsName(current, filePathRef.current)
+    if (!stem) return
+    await doSave('saveAs', stem)
+  }, [doSave])
 
   /** `outPath` (headless export only) skips the save dialog; resolves true when a file was written. */
   const runExport = useCallback(
@@ -1084,6 +1107,7 @@ export default function App() {
         dirty={dirty}
         onSave={() => void doSave('save')}
         onSaveAs={() => void doSave('saveAs')}
+        onNameWithAi={() => void nameWithAi()}
         onFind={() => openFind(false)}
         autoSave={autoSave}
         onToggleAutoSave={setAutoSave}
