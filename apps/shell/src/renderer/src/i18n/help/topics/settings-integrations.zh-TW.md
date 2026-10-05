@@ -32,7 +32,7 @@
 
 ## MCP 整合（供進階使用者／AI 用戶端使用）
 
-GenOffice 內建一個本機 **MCP 伺服器**，讓外部 AI 用戶端（Claude Desktop、Cursor⋯）可以直接讀寫你的文件：
+GenOffice 內建一個本機 **MCP 伺服器**，讓外部 AI 用戶端（Claude Desktop、Cursor⋯）可以直接讀寫你的檔案：
 
 - 啟動：在命令列執行 `genoffice mcp`（連接埠與驗證權杖可設定；預設只監聽本機回環位址）。
 - 能力：建立／開啟／編輯 docx、xlsx、pptx，讀取內容，轉換格式，匯出 PDF 等——與桌面版使用的是同一組工具。
