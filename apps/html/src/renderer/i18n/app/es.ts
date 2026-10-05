@@ -7,6 +7,7 @@ export const es = {
   saveFailed: 'Error al guardar: {error}',
   saveFailedStatus: 'Error al guardar',
   exportFailed: 'Error al exportar',
+  printFailed: 'Error al imprimir: {error}',
   exportHtmlSkipped: 'Exportado, pero {count} recurso(s) no se pudieron incrustar (p. ej. {first})',
   viewPreview: 'Vista previa',
   viewSplit: 'Dividido',

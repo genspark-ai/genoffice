@@ -7,6 +7,7 @@ export const ko = {
   saveFailed: '저장 실패: {error}',
   saveFailedStatus: '저장 실패',
   exportFailed: '내보내기 실패',
+  printFailed: '인쇄 실패: {error}',
   exportHtmlSkipped: '내보냈지만 {count}개의 자산을 인라인할 수 없습니다 (예: {first})',
   viewPreview: '미리보기',
   viewSplit: '분할',

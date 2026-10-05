@@ -7,6 +7,7 @@ export const he = {
   saveFailed: 'השמירה נכשלה: {error}',
   saveFailedStatus: 'השמירה נכשלה',
   exportFailed: 'הייצוא נכשל',
+  printFailed: 'הדפסה נכשלה: {error}',
   exportHtmlSkipped: 'יוצא, אך לא ניתן היה להטמיע {count} משאבים (למשל {first})',
   viewPreview: 'תצוגה מקדימה',
   viewSplit: 'מפוצל',

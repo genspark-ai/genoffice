@@ -64,6 +64,7 @@ import { injectBrief, parseBrief, type Brief } from './document/brief'
 import { applyPatches } from './document/patch'
 import { adoptImageRewrites } from './document/image-rewrites'
 import { deriveAutoFileName, deriveNameFromPrompt, derivePageTitleName } from './document/auto-name'
+import { runGuardedPrint } from './print-guard'
 import type { ExportFormat, SaveMode } from '../shared/ipc'
 
 type LoadStatus = 'loading' | 'ready' | 'error'
@@ -1203,6 +1204,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is not referentially stable
   }, [])
 
+  const printingRef = useRef(false)
+  /** Shell menu Print. The gate lives in runGuardedPrint; this owns the flag and
+   * the notice, so a failure reaches the user instead of being swallowed. */
+  const runPrint = useCallback(async () => {
+    if (statusRef.current !== 'ready') return false
+    return runGuardedPrint(
+      printingRef,
+      async () => {
+        // Serialize inside the gate: a throw here is a failure the user needs to
+        // see, and it must still release the flag.
+        flushPending()
+        return window.htmlApi.printHtml({
+          html: serializeDocText({ text: textRef.current, envelope: envelopeRef.current }),
+        })
+      },
+      (error) => {
+        console.error('[html] print failed:', error)
+        setNotice(t('printFailed', { error }))
+      },
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t is not referentially stable
+  }, [])
+
   // Headless export mode (--headless-export): this renderer lives in a hidden
   // window whose only job is to run the File menu's PDF or Word export against
   // a path the CLI chose, then report back so the main process can quit.
@@ -1266,6 +1290,9 @@ export default function App() {
     })
     const offRenamed = window.htmlApi.onFileRenamed((next) => setPath(next))
     const offExport = window.htmlApi.onExportRequest((format) => void runExport(format))
+    // Shell menu Print / ⌘P. The menu owns the accelerator, so this subscription
+    // is the only route the keystroke takes; without it ⌘P did nothing at all.
+    const offPrint = window.htmlApi.onPrintRequest(() => void runPrint())
     const offTheme = window.htmlApi.onThemeChanged(() => {
       // let main.tsx flip data-theme first
       window.setTimeout(
@@ -1317,6 +1344,7 @@ export default function App() {
       offClose()
       offRenamed()
       offExport()
+      offPrint()
       offTheme()
       window.removeEventListener('keydown', onKeyDown, true)
     }

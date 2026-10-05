@@ -79,6 +79,30 @@ export async function buildSearchIndex(doc: PDFDocumentProxy): Promise<SearchInd
   return entries
 }
 
+/** One text extraction per loaded document, shared by every consumer */
+export interface SearchIndexCache {
+  /** Base index of `doc`; the same promise for the same document until cleared */
+  get(doc: PDFDocumentProxy): Promise<SearchIndex>
+  /** Drop the cached extraction (a save-reload replaces the document content) */
+  clear(): void
+}
+
+/** Building the index walks every page of the document, so it must happen once per
+    loaded document: search, paragraph boxes, the AI tools and the auto-OCR pass all
+    read this cache instead of extracting the text a second time. */
+export function createSearchIndexCache(): SearchIndexCache {
+  let entry: { doc: PDFDocumentProxy; promise: Promise<SearchIndex> } | null = null
+  return {
+    get(doc) {
+      if (entry?.doc !== doc) entry = { doc, promise: buildSearchIndex(doc) }
+      return entry.promise
+    },
+    clear() {
+      entry = null
+    },
+  }
+}
+
 /** Case-insensitive full-text search; rects linearly interpolated within items by char ratio (approximate; bounding box for rotated glyphs) */
 export function searchInIndex(index: SearchIndex, query: string): SearchMatch[] {
   const q = foldCase(query)

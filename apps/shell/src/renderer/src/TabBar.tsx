@@ -153,6 +153,34 @@ export function fileExtension(filePath: string): string {
   return dot > -1 ? name.slice(dot + 1) : ''
 }
 
+/**
+ * True when the typed name already spells an extension.
+ *
+ * A trailing dot counts: "note." is a name the shell rejects outright (Windows
+ * strips trailing dots, so it would land somewhere else), and this must not
+ * paper over that by turning it into "note..md". A leading dot counts too, to
+ * agree with fileExtension about where a name begins.
+ */
+function hasExtension(name: string): boolean {
+  return name.lastIndexOf('.') > -1
+}
+
+/**
+ * The file name a tab rename actually commits.
+ *
+ * The input holds the whole name, extension included, because the shell owns
+ * which extensions an app can open and only the shell may change one. Someone
+ * who types a bare "Meeting" is not asking to drop the extension — they just
+ * are not repeating it — so an extensionless name keeps the file's current one.
+ * A name that does carry an extension is taken verbatim, which is what lets
+ * note.md become note.txt and back.
+ */
+export function renamedFileName(currentPath: string, typedName: string): string {
+  if (hasExtension(typedName)) return typedName
+  const ext = fileExtension(currentPath)
+  return ext ? `${typedName}.${ext}` : typedName
+}
+
 export function TabBar() {
   const { t } = useI18n()
   const [tabs, setTabs] = useState<TabSummary[]>([])
@@ -175,8 +203,10 @@ export function TabBar() {
     const tab = tabsRef.current.find((tb) => tb.id === r.id)
     const value = r.value.trim()
     if (!tab?.filePath || !value) return
-    const ext = fileExtension(tab.filePath)
-    const newName = ext ? `${value}.${ext}` : value
+    // a name typed without an extension keeps the file's current one; see
+    // renamedFileName. Compared against the resolved name so retyping the base
+    // half of the current title is a no-op rather than a pointless IPC.
+    const newName = renamedFileName(tab.filePath, value)
     if (newName === tab.title) return
     void window.aiOffice.renameFile(tab.filePath, newName).then((result) => {
       if (!result.ok) window.alert(result.error ?? t('renameFailed'))
@@ -491,12 +521,10 @@ export function TabBar() {
                 // the input mounts and autofocuses inside this dispatch; the
                 // default mousedown focus step would blur it straight away
                 event.preventDefault()
-                const ext = fileExtension(tab.filePath)
-                const base =
-                  ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
-                    ? tab.title.slice(0, -(ext.length + 1))
-                    : tab.title
-                setRenaming({ id: tab.id, value: base })
+                // the whole name, extension included: the shell owns which
+                // extensions an app can open, so only it may change one. A
+                // name typed without an extension keeps the current one.
+                setRenaming({ id: tab.id, value: tab.title })
               }}
               onPointerDown={(event) => {
                 if (event.button !== 0) return

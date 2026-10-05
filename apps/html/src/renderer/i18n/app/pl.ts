@@ -7,6 +7,7 @@ export const pl = {
   saveFailed: 'Zapis nie powiódł się: {error}',
   saveFailedStatus: 'Zapis nie powiódł się',
   exportFailed: 'Eksport nie powiódł się',
+  printFailed: 'Drukowanie nie powiodło się: {error}',
   exportHtmlSkipped: 'Wyeksportowano, ale nie udało się osadzić {count} zasobów (np. {first})',
   viewPreview: 'Podgląd',
   viewSplit: 'Podzielony',

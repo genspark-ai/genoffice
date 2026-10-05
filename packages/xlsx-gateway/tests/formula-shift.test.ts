@@ -253,6 +253,44 @@ describe('shiftFormulaRefs literals and names', () => {
   })
 })
 
+describe('shiftFormulaRefs structured references', () => {
+  // A structured reference names a COLUMN, not a cell: Table1[Q1] is the Q1 column
+  // and must not move when rows are inserted, while a real ref in the same formula
+  // still shifts.
+  it('leaves a bracketed column name alone but still shifts the real refs', () => {
+    const result = shiftFormulaRefs('=SUM(Table1[Q1],A3)', insertRows(2, 1), true, SHEET)
+    expect(result.formula).toBe('=SUM(Table1[Q1],A4)')
+  })
+
+  it('leaves the this-row form alone', () => {
+    const result = shiftFormulaRefs('=SUM(Table1[@Q1],A3)', insertRows(2, 1), true, SHEET)
+    expect(result.formula).toBe('=SUM(Table1[@Q1],A4)')
+  })
+
+  it('leaves a padded column name alone', () => {
+    const result = shiftFormulaRefs('=SUM(Table1[ Q1 ],A3)', insertRows(2, 1), true, SHEET)
+    expect(result.formula).toBe('=SUM(Table1[ Q1 ],A4)')
+  })
+
+  it('leaves a nested header reference alone', () => {
+    const result = shiftFormulaRefs(
+      '=SUM(Table1[[#Headers],[Q1]],A3)',
+      insertRows(2, 1),
+      true,
+      SHEET,
+    )
+    expect(result.formula).toBe('=SUM(Table1[[#Headers],[Q1]],A4)')
+  })
+
+  it('handles several references and a column insert', () => {
+    const result = shiftFormulaRefs('=SUM(Table1[Q1],B3)', insertRows(2, 1), true, SHEET)
+    expect(result.formula).toBe('=SUM(Table1[Q1],B4)')
+
+    const colInsert = shiftFormulaRefs('=SUM(Table1[Q1],B3)', insertCols('B', 1), true, SHEET)
+    expect(colInsert.formula).toBe('=SUM(Table1[Q1],C3)')
+  })
+})
+
 describe('future function markers', () => {
   it('marks calls after a quoted sheet qualifier', () => {
     expect(withFutureFunctionMarkers('\'Data Sheet\'!MINIFS(A1:A3,A1:A3,">0")')).toBe(

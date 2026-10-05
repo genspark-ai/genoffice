@@ -343,7 +343,8 @@ import {
   revisionDisplayState,
 } from './editor/extensions'
 import { setDkColor } from './editor/dark-page'
-import { useUiThemeIsDark } from './ui-theme'
+import { readDarkPagePref, writeDarkPagePref } from './dark-page-pref'
+import { useDocThemeIsDark, useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
 import { InkOverlay } from './components/InkOverlay'
 import {
@@ -789,12 +790,25 @@ export function App() {
   const [status, setStatus] = useState('')
   const [zoom, setZoom] = useState(100)
   const scrollContainerRef = useRef<HTMLElement>(null)
-  // Word-style dark page (editor/dark-page.ts): on by default in the dark theme,
-  // View ▸ Dark Mode flips it for the session (Word's Switch Modes); a theme
-  // switch drops the override and follows the new theme again
+  // Word-style dark page (editor/dark-page.ts): the shell's document-page-theme
+  // setting (#1811) decides by default — 'follow' rides the UI theme,
+  // 'light'/'dark' pin the paper; View ▸ Dark Mode remains the docs-specific
+  // choice (dark-page-pref.ts) and wins over the setting once the user has
+  // flipped it
   const themeDark = useUiThemeIsDark()
-  const [darkPage, setDarkPage] = useState(themeDark)
-  useEffect(() => setDarkPage(themeDark), [themeDark])
+  const docThemeDark = useDocThemeIsDark()
+  const [darkPage, setDarkPage] = useState(() => readDarkPagePref() ?? docThemeDark)
+  useEffect(() => {
+    if (readDarkPagePref() === null) setDarkPage(docThemeDark)
+  }, [docThemeDark])
+  // for toggle-by-one in the menu path, whose closure is not re-created per render
+  const darkPageRef = useRef(darkPage)
+  darkPageRef.current = darkPage
+  /** View ▸ Dark Mode (menu and ribbon): remember the choice, then apply it */
+  const updateDarkPage = useCallback((next: boolean) => {
+    writeDarkPagePref(next)
+    setDarkPage(next)
+  }, [])
   const [section, setSection] = useState<SectionSettings | null>(null)
   /** All sections (readSections): pagination/preview use per-section geometry; layout edits apply to the cursor's section */
   const [sections, setSections] = useState<SectionInfo[]>([])
@@ -5503,7 +5517,7 @@ export function App() {
           setShowAi((v) => !v)
           break
         case 'toggle-dark':
-          setDarkPage((v) => !v)
+          updateDarkPage(!darkPageRef.current)
           break
         case 'insert-table':
           // Word semantics: the menu opens the Insert Table dialog (custom rows/cols)
@@ -5660,6 +5674,7 @@ export function App() {
     runAiProofread,
     toggleTableGridlines,
     tableSectionWidthPx,
+    updateDarkPage,
   ])
 
   // Resolve the bookmark anchor against the original block XML, fall back to
@@ -6570,7 +6585,7 @@ export function App() {
     onZoom: setZoom,
     onZoomFit: zoomFit,
     onZoomDialog: () => setShowZoomDialog(true),
-    onDarkPage: setDarkPage,
+    onDarkPage: updateDarkPage,
     onAiPreset: (text: string) => {
       // Word's Editor / Translate start working as soon as they're clicked
       setShowAi(true)

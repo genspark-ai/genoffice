@@ -159,6 +159,8 @@ export const strings = {
     themeLight: '浅色',
     themeDark: '深色',
     themeSystem: '跟随系统',
+    documentTheme: '文档页面主题',
+    docThemeFollowApp: '跟随应用主题',
     saveLocation: '默认保存位置',
     setAutoSave: '所有文档自动保存',
     setAutoSaveDesc: '在每个编辑器中默认开启自动保存，仍可在单个窗口中关闭。',
@@ -538,6 +540,8 @@ export const strings = {
     themeLight: 'Light',
     themeDark: 'Dark',
     themeSystem: 'Follow System',
+    documentTheme: 'Document page theme',
+    docThemeFollowApp: 'Follow app theme',
     saveLocation: 'Save Location',
     setAutoSave: 'Auto-save all documents',
     setAutoSaveDesc:
@@ -929,6 +933,8 @@ export const strings = {
     themeLight: 'Sáng',
     themeDark: 'Tối',
     themeSystem: 'Theo hệ thống',
+    documentTheme: 'Chủ đề trang tài liệu',
+    docThemeFollowApp: 'Theo chủ đề ứng dụng',
     saveLocation: 'Vị trí lưu',
     setAutoSave: 'Tự động lưu tất cả tài liệu',
     setAutoSaveDesc:
@@ -1334,6 +1340,8 @@ export const strings = {
     themeLight: 'ライト',
     themeDark: 'ダーク',
     themeSystem: 'システムに従う',
+    documentTheme: 'ドキュメントページのテーマ',
+    docThemeFollowApp: 'アプリのテーマに従う',
     saveLocation: '保存先',
     setAutoSave: 'すべてのドキュメントを自動保存',
     setAutoSaveDesc:
@@ -1737,6 +1745,8 @@ export const strings = {
     themeLight: '라이트',
     themeDark: '다크',
     themeSystem: '시스템 설정 따르기',
+    documentTheme: '문서 페이지 테마',
+    docThemeFollowApp: '앱 테마 따르기',
     saveLocation: '저장 위치',
     setAutoSave: '모든 문서 자동 저장',
     setAutoSaveDesc: '모든 편집기에서 자동 저장을 기본으로 켭니다. 개별 창에서는 끌 수 있습니다.',
@@ -2140,6 +2150,8 @@ export const strings = {
     themeLight: 'Clair',
     themeDark: 'Sombre',
     themeSystem: 'Suivre le système',
+    documentTheme: 'Thème de la page de document',
+    docThemeFollowApp: 'Suivre le thème de l’application',
     saveLocation: "Emplacement d'enregistrement",
     setAutoSave: 'Enregistrer automatiquement tous les documents',
     setAutoSaveDesc:
@@ -2556,6 +2568,8 @@ export const strings = {
     themeLight: 'Hell',
     themeDark: 'Dunkel',
     themeSystem: 'System folgen',
+    documentTheme: 'Dokumentseitenthema',
+    docThemeFollowApp: 'App-Thema übernehmen',
     saveLocation: 'Speicherort',
     setAutoSave: 'Alle Dokumente automatisch speichern',
     setAutoSaveDesc:
@@ -2969,6 +2983,8 @@ export const strings = {
     themeLight: 'Claro',
     themeDark: 'Oscuro',
     themeSystem: 'Seguir el sistema',
+    documentTheme: 'Tema de la página del documento',
+    docThemeFollowApp: 'Seguir el tema de la aplicación',
     saveLocation: 'Ubicación de guardado',
     setAutoSave: 'Guardar automáticamente todos los documentos',
     setAutoSaveDesc:
@@ -3373,6 +3389,8 @@ export const strings = {
     themeLight: 'สว่าง',
     themeDark: 'มืด',
     themeSystem: 'ตามระบบ',
+    documentTheme: 'ธีมหน้าเอกสาร',
+    docThemeFollowApp: 'ตามธีมของแอป',
     saveLocation: 'ตำแหน่งบันทึก',
     setAutoSave: 'บันทึกอัตโนมัติทุกเอกสาร',
     setAutoSaveDesc: 'เปิดบันทึกอัตโนมัติเป็นค่าเริ่มต้นในทุกตัวแก้ไข คุณยังปิดได้ในแต่ละหน้าต่าง',
@@ -3771,6 +3789,8 @@ export const strings = {
     themeLight: 'Terang',
     themeDark: 'Gelap',
     themeSystem: 'Ikuti Sistem',
+    documentTheme: 'Tema halaman dokumen',
+    docThemeFollowApp: 'Ikuti tema aplikasi',
     saveLocation: 'Lokasi penyimpanan',
     setAutoSave: 'Simpan otomatis semua dokumen',
     setAutoSaveDesc:
@@ -4173,6 +4193,8 @@ export const strings = {
     themeLight: 'Светлая',
     themeDark: 'Тёмная',
     themeSystem: 'Как в системе',
+    documentTheme: 'Тема страницы документа',
+    docThemeFollowApp: 'Как в теме приложения',
     saveLocation: 'Папка сохранения',
     setAutoSave: 'Автосохранение всех документов',
     setAutoSaveDesc:
@@ -4575,6 +4597,8 @@ export const strings = {
     themeLight: 'فاتح',
     themeDark: 'داكن',
     themeSystem: 'اتباع النظام',
+    documentTheme: 'سمة صفحة المستند',
+    docThemeFollowApp: 'اتباع سمة التطبيق',
     saveLocation: 'موقع الحفظ',
     setAutoSave: 'حفظ جميع المستندات تلقائيًا',
     setAutoSaveDesc:
@@ -4967,6 +4991,8 @@ export const strings = {
     themeLight: 'Claro',
     themeDark: 'Escuro',
     themeSystem: 'Seguir o Sistema',
+    documentTheme: 'Tema da página do documento',
+    docThemeFollowApp: 'Seguir o tema do aplicativo',
     saveLocation: 'Local de salvamento',
     setAutoSave: 'Salvar automaticamente todos os documentos',
     setAutoSaveDesc:
@@ -5367,6 +5393,8 @@ export const strings = {
     themeLight: 'Chiaro',
     themeDark: 'Scuro',
     themeSystem: 'Segui il sistema',
+    documentTheme: 'Tema della pagina del documento',
+    docThemeFollowApp: 'Segui il tema dell’applicazione',
     saveLocation: 'Posizione di salvataggio',
     setAutoSave: 'Salva automaticamente tutti i documenti',
     setAutoSaveDesc:
@@ -5765,6 +5793,8 @@ export const strings = {
     themeLight: 'Jasny',
     themeDark: 'Ciemny',
     themeSystem: 'Zgodnie z systemem',
+    documentTheme: 'Motyw strony dokumentu',
+    docThemeFollowApp: 'Zgodnie z motywem aplikacji',
     saveLocation: 'Lokalizacja zapisu',
     setAutoSave: 'Automatycznie zapisuj wszystkie dokumenty',
     setAutoSaveDesc:
@@ -6158,6 +6188,8 @@ export const strings = {
     themeLight: 'Světlý',
     themeDark: 'Tmavý',
     themeSystem: 'Podle systému',
+    documentTheme: 'Motiv stránky dokumentu',
+    docThemeFollowApp: 'Podle motivu aplikace',
     saveLocation: 'Umístění pro ukládání',
     setAnalytics: 'Odesílat anonymní statistiky používání',
     setAnalyticsDesc:
@@ -6553,6 +6585,8 @@ export const strings = {
     themeLight: 'Licht',
     themeDark: 'Donker',
     themeSystem: 'Systeem volgen',
+    documentTheme: 'Documentpaginathema',
+    docThemeFollowApp: 'App-thema volgen',
     saveLocation: 'Opslaglocatie',
     setAutoSave: 'Alle documenten automatisch opslaan',
     setAutoSaveDesc:
@@ -6950,6 +6984,8 @@ export const strings = {
     themeLight: 'Cerah',
     themeDark: 'Gelap',
     themeSystem: 'Ikut Sistem',
+    documentTheme: 'Tema halaman dokumen',
+    docThemeFollowApp: 'Ikut tema aplikasi',
     saveLocation: 'Lokasi simpanan',
     setAutoSave: 'Simpan automatik semua dokumen',
     setAutoSaveDesc:
@@ -7347,6 +7383,8 @@ export const strings = {
     themeLight: 'בהיר',
     themeDark: 'כהה',
     themeSystem: 'עקוב אחר המערכת',
+    documentTheme: 'ערכת נושא של דף המסמך',
+    docThemeFollowApp: 'לפי ערכת הנושא של האפליקציה',
     saveLocation: 'מיקום שמירה',
     setAutoSave: 'שמירה אוטומטית של כל המסמכים',
     setAutoSaveDesc: 'מפעיל שמירה אוטומטית כברירת מחדל בכל עורך. עדיין אפשר לכבות אותה בחלון בודד.',
@@ -7732,6 +7770,8 @@ export const strings = {
     themeLight: 'लाइट',
     themeDark: 'डार्क',
     themeSystem: 'सिस्टम का अनुसरण करें',
+    documentTheme: 'दस्तावेज़ पृष्ठ थीम',
+    docThemeFollowApp: 'ऐप थीम के अनुसार',
     saveLocation: 'सहेजने का स्थान',
     setAutoSave: 'सभी दस्तावेज़ स्वतः सहेजें',
     setAutoSaveDesc:
@@ -8122,6 +8162,8 @@ export const strings = {
     themeLight: '淺色',
     themeDark: '深色',
     themeSystem: '跟隨系統',
+    documentTheme: '文件頁面主題',
+    docThemeFollowApp: '跟隨應用程式主題',
     saveLocation: '預設儲存位置',
     setAutoSave: '所有文件自動儲存',
     setAutoSaveDesc: '在每個編輯器中預設開啟自動儲存，仍可在單一視窗中關閉。',

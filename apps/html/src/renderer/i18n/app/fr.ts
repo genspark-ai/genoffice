@@ -7,6 +7,7 @@ export const fr = {
   saveFailed: "Échec de l'enregistrement : {error}",
   saveFailedStatus: "Échec de l'enregistrement",
   exportFailed: "Échec de l'export",
+  printFailed: "Échec de l'impression : {error}",
   exportHtmlSkipped: 'Exporté, mais {count} ressource(s) n’ont pas pu être intégrées (ex. {first})',
   viewPreview: 'Aperçu',
   viewSplit: 'Scindé',

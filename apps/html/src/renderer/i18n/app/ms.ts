@@ -7,6 +7,7 @@ export const ms = {
   saveFailed: 'Gagal menyimpan: {error}',
   saveFailedStatus: 'Gagal menyimpan',
   exportFailed: 'Eksport gagal',
+  printFailed: 'Gagal mencetak: {error}',
   exportHtmlSkipped: 'Dieksport, tetapi {count} aset tidak dapat disisipkan (cth. {first})',
   viewPreview: 'Pratonton',
   viewSplit: 'Terbelah',

@@ -7,6 +7,7 @@ export const hi = {
   saveFailed: 'सहेजना विफल: {error}',
   saveFailedStatus: 'सहेजना विफल',
   exportFailed: 'निर्यात विफल',
+  printFailed: 'प्रिंट विफल: {error}',
   exportHtmlSkipped: 'निर्यात हो गया, लेकिन {count} संसाधन एम्बेड नहीं हो सके (जैसे {first})',
   viewPreview: 'पूर्वावलोकन',
   viewSplit: 'विभाजित',

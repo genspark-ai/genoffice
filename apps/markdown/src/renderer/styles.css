@@ -39,6 +39,8 @@
   --md-toast-ok: #34c759;
   /* diagrams are document content: white paper behind them in both themes */
   --md-diagram-bg: #ffffff;
+  /* preview paper under an explicit light document page (#1811) */
+  --md-paper-light: #ffffff;
 }
 
 [data-theme='dark'] {
@@ -194,6 +196,14 @@ button {
   padding: 40px 72px 120px;
   background: var(--surface);
   box-shadow: var(--md-page-shadow);
+}
+
+/* Document page theme (#1811): an explicit Light keeps the preview paper white
+   under the dark UI theme. Dark behaves as Follow — the preview's ink colors
+   ride the UI theme tokens, so a dark paper without the dark UI would leave
+   dark text on a dark page. */
+html[data-doc-theme='light'] .doc-page {
+  background: var(--md-paper-light);
 }
 
 .status-bar {
@@ -2909,4 +2919,19 @@ div.tiptap-mathematics-render {
   padding: 0 10px 4px;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+
+/* ---- source mode: a .txt/.json edited as text, not as a block document ---- */
+.source-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.source-editor > .cm-editor {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }

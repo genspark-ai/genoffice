@@ -1,5 +1,6 @@
 export const strings = {
   zh: {
+    renameNeedsSave: '先保存或放弃改动，再改文件后缀',
     appExportingImages: '正在导出图片…',
     appExportImagesProgress: '正在导出 {count} 张图片…',
     appExportImagesDone: '已导出 {count} 张图片到 {dir}',
@@ -202,6 +203,7 @@ export const strings = {
     zoomOut: '缩小',
   },
   en: {
+    renameNeedsSave: 'Save or discard your changes before changing the extension',
     appExportingImages: 'Exporting images…',
     appExportImagesProgress: 'Exporting {count} images…',
     appExportImagesDone: 'Exported {count} images to {dir}',
@@ -410,6 +412,7 @@ export const strings = {
     zoomOut: 'Zoom out',
   },
   vi: {
+    renameNeedsSave: 'Hãy lưu hoặc hủy thay đổi trước khi đổi phần mở rộng',
     appExportingImages: 'Đang xuất hình ảnh…',
     appExportImagesProgress: 'Đang xuất {count} hình ảnh…',
     appExportImagesDone: 'Đã xuất {count} hình ảnh sang {dir}',
@@ -616,6 +619,7 @@ export const strings = {
     zoomOut: 'Thu nhỏ',
   },
   ja: {
+    renameNeedsSave: '拡張子を変更する前に変更を保存または破棄してください',
     appExportingImages: '画像をエクスポート中…',
     appExportImagesProgress: '{count} 枚の画像をエクスポート中…',
     appExportImagesDone: '{count} 枚の画像を {dir} にエクスポートしました',
@@ -822,6 +826,7 @@ export const strings = {
     zoomOut: '縮小',
   },
   ko: {
+    renameNeedsSave: '확장자를 바꾸기 전에 변경 사항을 저장하거나 버리세요',
     appExportingImages: '이미지 내보내는 중…',
     appExportImagesProgress: '이미지 {count}장 내보내는 중…',
     appExportImagesDone: '이미지 {count}장을 {dir}에 내보냈습니다',
@@ -1029,6 +1034,7 @@ export const strings = {
     zoomOut: '축소',
   },
   fr: {
+    renameNeedsSave: "Enregistrez ou annulez vos modifications avant de changer l'extension",
     appExportingImages: 'Exportation des images…',
     appExportImagesProgress: 'Exportation de {count} images…',
     appExportImagesDone: '{count} images exportées vers {dir}',
@@ -1241,6 +1247,8 @@ export const strings = {
     zoomOut: 'Zoom arrière',
   },
   de: {
+    renameNeedsSave:
+      'Speichern oder verwerfen Sie Ihre Änderungen, bevor Sie die Erweiterung ändern',
     appExportingImages: 'Bilder werden exportiert…',
     appExportImagesProgress: '{count} Bilder werden exportiert…',
     appExportImagesDone: '{count} Bilder nach {dir} exportiert',
@@ -1452,6 +1460,7 @@ export const strings = {
     zoomOut: 'Verkleinern',
   },
   es: {
+    renameNeedsSave: 'Guarda o descarta los cambios antes de cambiar la extensión',
     appExportingImages: 'Exportando imágenes…',
     appExportImagesProgress: 'Exportando {count} imágenes…',
     appExportImagesDone: 'Se exportaron {count} imágenes a {dir}',
@@ -1664,6 +1673,7 @@ export const strings = {
     zoomOut: 'Alejar',
   },
   th: {
+    renameNeedsSave: 'บันทึกหรือยกเลิกการเปลี่ยนแปลงก่อนเปลี่ยนนามสกุลไฟล์',
     appExportingImages: 'กำลังส่งออกรูปภาพ…',
     appExportImagesProgress: 'กำลังส่งออกรูปภาพ {count} รูป…',
     appExportImagesDone: 'ส่งออกรูปภาพ {count} รูปไปยัง {dir} แล้ว',
@@ -1868,6 +1878,7 @@ export const strings = {
     zoomOut: 'ย่อ',
   },
   id: {
+    renameNeedsSave: 'Simpan atau batalkan perubahan Anda sebelum mengubah ekstensi',
     appExportingImages: 'Mengekspor gambar…',
     appExportImagesProgress: 'Mengekspor {count} gambar…',
     appExportImagesDone: '{count} gambar diekspor ke {dir}',
@@ -2075,6 +2086,7 @@ export const strings = {
     zoomOut: 'Perkecil',
   },
   ru: {
+    renameNeedsSave: 'Сохраните или отмените изменения перед сменой расширения',
     appExportingImages: 'Экспорт изображений…',
     appExportImagesProgress: 'Экспорт {count} изображений…',
     appExportImagesDone: 'Экспортировано {count} изображений в {dir}',
@@ -2283,6 +2295,7 @@ export const strings = {
     zoomOut: 'Уменьшить',
   },
   ar: {
+    renameNeedsSave: 'احفظ تغييراتك أو تجاهلها قبل تغيير الامتداد',
     appExportingImages: 'جارٍ تصدير الصور…',
     appExportImagesProgress: 'جارٍ تصدير {count} صورة…',
     appExportImagesDone: 'تم تصدير {count} صورة إلى {dir}',
@@ -2487,6 +2500,7 @@ export const strings = {
     zoomOut: 'تصغير',
   },
   pt: {
+    renameNeedsSave: 'Salve ou descarte as alterações antes de mudar a extensão',
     appExportingImages: 'Exportando imagens…',
     appExportImagesProgress: 'Exportando {count} imagens…',
     appExportImagesDone: '{count} imagens exportadas para {dir}',
@@ -2697,6 +2711,7 @@ export const strings = {
     zoomOut: 'Reduzir',
   },
   it: {
+    renameNeedsSave: "Salva o annulla le modifiche prima di cambiare l'estensione",
     appExportingImages: 'Esportazione delle immagini…',
     appExportImagesProgress: 'Esportazione di {count} immagini…',
     appExportImagesDone: '{count} immagini esportate in {dir}',
@@ -2907,6 +2922,7 @@ export const strings = {
     zoomOut: 'Riduci',
   },
   pl: {
+    renameNeedsSave: 'Zapisz lub odrzuć zmiany przed zmianą rozszerzenia',
     appExportingImages: 'Eksportowanie obrazów…',
     appExportImagesProgress: 'Eksportowanie {count} obrazów…',
     appExportImagesDone: 'Wyeksportowano {count} obrazów do {dir}',
@@ -3115,6 +3131,7 @@ export const strings = {
     zoomOut: 'Pomniejsz',
   },
   cs: {
+    renameNeedsSave: 'Před změnou přípony uložte nebo zrušte změny',
     appExportingImages: 'Exportují se obrázky…',
     appExportImagesProgress: 'Exportuje se {count} obrázků…',
     appExportImagesDone: 'Exportováno {count} obrázků do {dir}',
@@ -3322,6 +3339,7 @@ export const strings = {
     mermaidError: 'Chyba syntaxe diagramu',
   },
   nl: {
+    renameNeedsSave: 'Sla uw wijzigingen op of verwerp ze voordat u de extensie wijzigt',
     appExportingImages: 'Afbeeldingen exporteren…',
     appExportImagesProgress: '{count} afbeeldingen exporteren…',
     appExportImagesDone: '{count} afbeeldingen geëxporteerd naar {dir}',
@@ -3531,6 +3549,7 @@ export const strings = {
     zoomOut: 'Uitzoomen',
   },
   ms: {
+    renameNeedsSave: 'Simpan atau buang perubahan anda sebelum menukar sambungan',
     appExportingImages: 'Mengeksport imej…',
     appExportImagesProgress: 'Mengeksport {count} imej…',
     appExportImagesDone: '{count} imej dieksport ke {dir}',
@@ -3738,6 +3757,7 @@ export const strings = {
     zoomOut: 'Zum keluar',
   },
   he: {
+    renameNeedsSave: 'שמור או בטל את השינויים לפני שינוי הסיומת',
     appExportingImages: 'מייצא תמונות…',
     appExportImagesProgress: 'מייצא {count} תמונות…',
     appExportImagesDone: '{count} תמונות יוצאו אל {dir}',
@@ -3941,6 +3961,7 @@ export const strings = {
     zoomOut: 'הקטנה',
   },
   hi: {
+    renameNeedsSave: 'एक्सटेंशन बदलने से पहले अपने बदलाव सहेजें या छोड़ें',
     appExportingImages: 'छवियाँ निर्यात की जा रही हैं…',
     appExportImagesProgress: '{count} छवियाँ निर्यात की जा रही हैं…',
     appExportImagesDone: '{count} छवियाँ {dir} में निर्यात की गईं',
@@ -4148,6 +4169,7 @@ export const strings = {
     zoomOut: 'ज़ूम आउट',
   },
   'zh-TW': {
+    renameNeedsSave: '先儲存或捨棄變更，再更改副檔名',
     appExportingImages: '正在匯出圖片…',
     appExportImagesProgress: '正在匯出 {count} 張圖片…',
     appExportImagesDone: '已匯出 {count} 張圖片到 {dir}',
