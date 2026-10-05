@@ -321,12 +321,7 @@ import {
 import extractWorkerPath from './file-index/extract-worker?modulePath'
 import { FileIndexer } from './file-index/indexer'
 import { FileIndexStore } from './file-index/store'
-import {
-  jevEndpointOf,
-  normalizeFileSearchSettings,
-  probeJev,
-  SearchReranker,
-} from './file-index/rerank'
+import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import { installShellCloseGuard } from './window-close-guard'
@@ -3832,20 +3827,16 @@ function registerHomeIpc(): void {
       const next = normalizeFileSearchSettings({
         ...current,
         ...p,
-        jevKeys: { ...current.jevKeys, ...(p.jevKeys ?? {}) },
+        keys: { ...current.keys, ...(p.keys ?? {}) },
       })
       writeAppSetting(APP_SETTINGS_PATH(), 'fileSearch', next)
       return next
     },
   )
 
-  ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) => {
-    const { endpoint, apiKey } = (input && typeof input === 'object' ? input : {}) as {
-      endpoint?: unknown
-      apiKey?: unknown
-    }
-    return probeJev(jevEndpointOf(endpoint), typeof apiKey === 'string' ? apiKey : '')
-  })
+  ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) =>
+    probeDecision(normalizeFileSearchSettings(input)),
+  )
 
   // Starred files sort by mtime, which requires stat-ing them all first; they are hand-picked and few, so this is fine
   ipcMain.handle(HOME_CHANNELS.starred, (_event, query: unknown): RecentPage => {

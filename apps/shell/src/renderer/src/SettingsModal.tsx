@@ -9,7 +9,7 @@ import {
   clampAiCustomFontSize,
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
-import type { DefaultAppStatus, FileSearchSettings, JevEndpoint } from '../../shared/home-api'
+import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
@@ -651,18 +651,23 @@ function AiModelPane({ t }: { t: TFunc }) {
 }
 
 type Capability = 'image' | 'analysis' | 'video' | 'search'
-/** a tested block: the four capabilities plus the Jev reranker of the local file search */
+/** a tested block: the four capabilities plus the decision-model reranker of the local file search */
 type TestedBlock = Capability | 'rerank'
-/** where an outside entry point (e.g. the home list's Jev button) lands when it opens the modal */
+/** where an outside entry point (e.g. the home list's rerank button) lands when it opens the modal */
 export interface SettingsTarget {
   section: SectionId
   block?: TestedBlock
 }
 type TestResult = { ok: boolean; error?: string }
 
-const JEV_ENDPOINTS: { value: JevEndpoint; label: string }[] = [
+const DECISION_ENDPOINTS: { value: DecisionEndpoint; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'direct', label: 'TypeSafe' },
+  { value: 'perplexity', label: 'Perplexity' },
+  { value: 'cloudflare', label: 'Cloudflare' },
+  { value: 'kev', label: 'Kev (local)' },
+  { value: 'rizzo', label: 'Rizzo Flow (local)' },
+  { value: 'custom', label: 'Custom (/v1/systemone)' },
 ]
 
 /**
@@ -805,11 +810,7 @@ function AiMediaPane({
     if (fileSearch?.rerank) {
       blocks.push([
         'rerank',
-        () =>
-          window.aiOffice.testFileSearchRerank?.({
-            endpoint: fileSearch.jevEndpoint,
-            apiKey: fileSearch.jevKeys[fileSearch.jevEndpoint],
-          }) ?? Promise.resolve(fallback),
+        () => window.aiOffice.testFileSearchRerank?.(fileSearch) ?? Promise.resolve(fallback),
       ])
     }
     await Promise.all(
@@ -840,7 +841,7 @@ function AiMediaPane({
             : t('setAiCapFileSearch')
   const blockProvider = (block: TestedBlock) => {
     if (block === 'rerank')
-      return JEV_ENDPOINTS.find((e) => e.value === fileSearch?.jevEndpoint)?.label ?? ''
+      return DECISION_ENDPOINTS.find((e) => e.value === fileSearch?.endpoint)?.label ?? ''
     if (block === 'search')
       return searchCatalog.find((m) => m.id === search.provider)?.label ?? search.provider
     const id =
@@ -964,6 +965,35 @@ function AiMediaPane({
         id={id}
         className="set-input"
         type="password"
+        value={value}
+        placeholder={placeholder}
+        spellCheck={false}
+        autoComplete="off"
+        onChange={(e) => onChange(e.target.value.trim())}
+      />
+    </div>
+  )
+
+  /** a plain text row with an i18n label; used for the decision-endpoint extra fields */
+  const textRow = (
+    id: string,
+    labelKey: StringKey,
+    value: string,
+    placeholder: string,
+    onChange: (v: string) => void,
+  ) => (
+    <div className="set-field">
+      <div className="set-field-text">
+        <div className="set-field-stack">
+          <label className="set-field-label" htmlFor={id}>
+            {t(labelKey)}
+          </label>
+        </div>
+      </div>
+      <input
+        id={id}
+        className="set-input"
+        type="text"
         value={value}
         placeholder={placeholder}
         spellCheck={false}
@@ -1132,26 +1162,57 @@ function AiMediaPane({
                 </div>
                 <Dropdown
                   className="set-dd"
-                  value={fileSearch.jevEndpoint}
+                  value={fileSearch.endpoint}
                   ariaLabel={t('setSearchRerankEndpoint')}
-                  options={JEV_ENDPOINTS}
-                  onPick={(v) =>
-                    setFileSearch({
-                      ...fileSearch,
-                      jevEndpoint: v === 'direct' ? 'direct' : 'openrouter',
-                    })
-                  }
+                  options={DECISION_ENDPOINTS}
+                  onPick={(v) => setFileSearch({ ...fileSearch, endpoint: v as DecisionEndpoint })}
                 />
               </div>
               {keyRow(
-                'set-search-jev-key',
-                fileSearch.jevKeys[fileSearch.jevEndpoint],
-                fileSearch.jevEndpoint === 'openrouter' ? 'sk-or-…' : 'API Key',
+                'set-search-decision-key',
+                fileSearch.keys[fileSearch.endpoint],
+                fileSearch.endpoint === 'openrouter' ? 'sk-or-…' : 'API Key',
                 (v) =>
                   setFileSearch({
                     ...fileSearch,
-                    jevKeys: { ...fileSearch.jevKeys, [fileSearch.jevEndpoint]: v },
+                    keys: { ...fileSearch.keys, [fileSearch.endpoint]: v },
                   }),
+              )}
+              {fileSearch.endpoint === 'custom' && (
+                <>
+                  {textRow(
+                    'set-search-decision-url',
+                    'setSearchRerankCustomUrl',
+                    fileSearch.customBaseUrl,
+                    'http://127.0.0.1:8009/v1/systemone',
+                    (v) => setFileSearch({ ...fileSearch, customBaseUrl: v }),
+                  )}
+                  {textRow(
+                    'set-search-decision-model',
+                    'setSearchRerankCustomModel',
+                    fileSearch.customModel,
+                    'kev-latest',
+                    (v) => setFileSearch({ ...fileSearch, customModel: v }),
+                  )}
+                </>
+              )}
+              {fileSearch.endpoint === 'cloudflare' && (
+                <>
+                  {textRow(
+                    'set-search-decision-account',
+                    'setSearchRerankAccount',
+                    fileSearch.cloudflareAccountId,
+                    '',
+                    (v) => setFileSearch({ ...fileSearch, cloudflareAccountId: v }),
+                  )}
+                  {textRow(
+                    'set-search-decision-cf-model',
+                    'setSearchRerankCustomModel',
+                    fileSearch.cloudflareModel,
+                    '@cf/cloudflare/clef',
+                    (v) => setFileSearch({ ...fileSearch, cloudflareModel: v }),
+                  )}
+                </>
               )}
             </>
           )}
@@ -1228,7 +1289,7 @@ export interface SettingsModalProps {
   onOpenLoginUrl: () => void
   onCopyLoginUrl: () => void
   onClose: () => void
-  /** the Jev search settings were saved; the home search re-judges or drops its current order */
+  /** the decision-model search settings were saved; the home search re-judges or drops its current order */
   onFileSearchChange?: () => void
   /** closes the modal and launches the Genspark login flow (progress shows on the account entry) */
   onLogin: () => void

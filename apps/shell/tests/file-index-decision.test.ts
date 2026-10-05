@@ -3,15 +3,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  endpointUrl,
   evaluate,
   prepare,
   validate,
+  type DecisionCallOptions,
   type JevResponse,
   type JevTransport,
-} from '../src/main/file-index/jev'
+} from '../src/main/file-index/decider'
 import {
+  DEFAULT_FILE_SEARCH_SETTINGS,
   normalizeFileSearchSettings,
-  probeJev,
+  probeDecision,
   SearchReranker,
 } from '../src/main/file-index/rerank'
 import { FileIndexStore } from '../src/main/file-index/store'
@@ -21,6 +24,16 @@ const docs = [
   { title: 'b.md', heading: 'notes', text: 'beta' },
   { title: 'c.md', heading: 'notes', text: 'gamma' },
 ]
+
+const opts = (over: Partial<DecisionCallOptions> = {}): DecisionCallOptions => ({
+  endpoint: 'openrouter',
+  key: 'k',
+  customBaseUrl: '',
+  customModel: '',
+  cloudflareAccountId: '',
+  cloudflareModel: '',
+  ...over,
+})
 
 /** a well-formed OpenRouter answer with the given 0–2 scores */
 function answer(scores: number[], model = 'typesafe/jev-1.13'): string {
@@ -43,7 +56,7 @@ const ok =
 
 describe('prepare', () => {
   it('pins the OpenRouter route to TypeSafe and clips document text', () => {
-    const { body, count } = prepare('q', [{ ...docs[0]!, text: 'x'.repeat(5000) }], 'openrouter')
+    const { body, count } = prepare('q', [{ ...docs[0]!, text: 'x'.repeat(5000) }], opts())
     const parsed = JSON.parse(body)
     expect(count).toBe(1)
     expect(parsed.model).toBe('typesafe/jev-1.13')
@@ -63,10 +76,55 @@ describe('prepare', () => {
       heading: '',
       text: 'y'.repeat(1200),
     }))
-    const { count } = prepare('q', many, 'direct')
+    const { count } = prepare('q', many, opts({ endpoint: 'direct' }))
     expect(count).toBeGreaterThan(10)
     expect(count).toBeLessThan(20)
-    expect(() => prepare('   ', docs, 'direct')).toThrow('empty-request')
+    expect(() => prepare('   ', docs, opts({ endpoint: 'direct' }))).toThrow('empty-request')
+  })
+
+  it('names each endpoint model in the request body', () => {
+    expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'direct' })).body).model).toBe(
+      'jev-1.13.0',
+    )
+    expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'perplexity' })).body).model).toBe(
+      'pplx-decider-v1-27b',
+    )
+    expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'kev' })).body).model).toBe('kev-latest')
+    expect(
+      JSON.parse(prepare('q', docs, opts({ endpoint: 'cloudflare', cloudflareModel: '' })).body)
+        .model,
+    ).toBe('@cf/cloudflare/clef')
+    expect(
+      JSON.parse(prepare('q', docs, opts({ endpoint: 'custom', customModel: 'von-1.0' })).body)
+        .model,
+    ).toBe('von-1.0')
+    expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'custom' })).body).model).toBe('decision')
+  })
+})
+
+describe('endpointUrl', () => {
+  it('builds the Workers AI URL from the account id and keeps the model path literal', () => {
+    expect(endpointUrl(opts({ endpoint: 'cloudflare', cloudflareAccountId: 'abc123' }))).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/abc123/ai/run/@cf/cloudflare/clef',
+    )
+    expect(
+      endpointUrl(
+        opts({
+          endpoint: 'cloudflare',
+          cloudflareAccountId: 'a',
+          cloudflareModel: '@cf/cloudflare/clef-flash',
+        }),
+      ),
+    ).toContain('/ai/run/@cf/cloudflare/clef-flash')
+  })
+
+  it('demands an account id, a custom URL, and rejects unknown shapes', () => {
+    expect(() => endpointUrl(opts({ endpoint: 'cloudflare' }))).toThrow('missing-account')
+    expect(() => endpointUrl(opts({ endpoint: 'custom' }))).toThrow('missing-url')
+    expect(
+      endpointUrl(opts({ endpoint: 'custom', customBaseUrl: ' http://x/v1/systemone ' })),
+    ).toBe('http://x/v1/systemone')
+    expect(endpointUrl(opts({ endpoint: 'rizzo' }))).toBe('http://127.0.0.1:8017/v1/systemone')
   })
 })
 
@@ -92,6 +150,19 @@ describe('validate', () => {
     bad.answers.d0.probabilities = { 0: 0.9, 1: 0.1, 2: 0 }
     expect(() => validate(bad, 1, 'openrouter')).toThrow('invalid-response')
   })
+
+  it('lets third-party and self-hosted servers name their own models', () => {
+    expect(
+      validate(JSON.parse(answer([2, 1]), 'pplx-decider-v1-27b'), 2, 'perplexity').scores,
+    ).toEqual([2, 1])
+    expect(validate(JSON.parse(answer([1, 0]), 'whatever'), 2, 'custom').scores).toEqual([1, 0])
+    expect(validate(JSON.parse(answer([1, 2]), 'kev-latest'), 2, 'kev').scores).toEqual([1, 2])
+  })
+
+  it('unwraps the Workers AI result envelope', () => {
+    const wrapped = JSON.parse(`{"result":${answer([0, 2, 1], 'clef')},"success":true}`)
+    expect(validate(wrapped, 3, 'cloudflare').scores).toEqual([0, 2, 1])
+  })
 })
 
 describe('evaluate', () => {
@@ -105,18 +176,30 @@ describe('evaluate', () => {
       calls.push(url)
       return replies.shift()!
     }
-    const r = await evaluate('q', docs, 'openrouter', 'k', send)
+    const r = await evaluate('q', docs, opts(), send)
     expect(r.scores).toEqual([2, 1, 0])
     expect(calls).toEqual([
       'https://openrouter.ai/api/alpha/decisions',
       'https://openrouter.ai/api/alpha/decisions',
     ])
     await expect(
-      evaluate('q', docs, 'openrouter', 'k', async () => ({ status: 500, body: '' })),
+      evaluate('q', docs, opts(), async () => ({ status: 500, body: '' })),
     ).rejects.toThrow('http-500')
-    await expect(evaluate('q', docs, 'openrouter', '', ok(answer([1])))).rejects.toThrow(
+    await expect(evaluate('q', docs, opts({ key: '' }), ok(answer([1])))).rejects.toThrow(
       'missing-key',
     )
+  })
+
+  it('reaches the local servers without a key and hosted ones at their documented URLs', async () => {
+    const calls: string[] = []
+    const send: JevTransport = async (url) => {
+      calls.push(url)
+      return { status: 200, body: answer([2, 1, 0]) }
+    }
+    await evaluate('q', docs, opts({ endpoint: 'kev', key: '' }), send)
+    expect(calls[0]).toBe('http://127.0.0.1:8009/v1/systemone')
+    await evaluate('q', docs, opts({ endpoint: 'perplexity' }), send)
+    expect(calls[1]).toBe('https://api.perplexity.ai/v1/decisions')
   })
 })
 
@@ -127,12 +210,12 @@ describe('SearchReranker', () => {
   const SHOWN = ['/n/first.md', '/n/second.md', '/n/third.md']
   const settings = normalizeFileSearchSettings({
     rerank: true,
-    jevEndpoint: 'openrouter',
-    jevKeys: { openrouter: 'k' },
+    endpoint: 'openrouter',
+    keys: { openrouter: 'k' },
   })
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'genoffice-jev-'))
+    dir = mkdtempSync(join(tmpdir(), 'genoffice-decision-'))
     store = new FileIndexStore(join(dir, 'index.db'))
     store.upsert(meta('/n/first.md'), 'budget notes and more budget', 'ok')
     store.upsert(meta('/n/second.md'), 'the budget answer is here', 'ok')
@@ -143,7 +226,7 @@ describe('SearchReranker', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('orders the local hits by Jev score, sends excerpts, and caches the judgement', async () => {
+  it('orders the local hits by model score, sends excerpts, and caches the judgement', async () => {
     let sent = 0
     const send: JevTransport = async (_url, body) => {
       sent++
@@ -185,14 +268,28 @@ describe('SearchReranker', () => {
     expect(
       await off.rerank('budget', SHOWN, {
         ...settings,
-        jevKeys: { openrouter: '', direct: '' },
+        keys: { ...settings.keys, openrouter: '' },
       }),
     ).toBeNull()
     // the judged set is exactly the shown one: unknown paths drop, a single survivor is not judged
     expect(await off.rerank('budget', ['/n/first.md', '/gone.md'], settings)).toBeNull()
   })
 
-  it('normalizes settings from loose JSON', () => {
+  it('serves local endpoints with no key and refuses an unconfigured custom endpoint', async () => {
+    const kev = normalizeFileSearchSettings({ rerank: true, endpoint: 'kev' })
+    const off = new SearchReranker(store, ok(answer([2, 1, 0])))
+    expect((await off.rerank('budget', SHOWN, kev))!.order).toEqual([
+      '/n/first.md',
+      '/n/second.md',
+      '/n/third.md',
+    ])
+    const custom = normalizeFileSearchSettings({ rerank: true, endpoint: 'custom' })
+    expect(await off.rerank('budget', SHOWN, custom)).toBeNull()
+    const cloudflare = normalizeFileSearchSettings({ rerank: true, endpoint: 'cloudflare' })
+    expect(await off.rerank('budget', SHOWN, cloudflare)).toBeNull()
+  })
+
+  it('normalizes settings from loose JSON and migrates the pre-decision-model shape', () => {
     expect(
       normalizeFileSearchSettings({
         rerank: 'yes',
@@ -200,34 +297,60 @@ describe('SearchReranker', () => {
         jevKeys: { direct: ' abc ' },
       }),
     ).toEqual({
+      ...DEFAULT_FILE_SEARCH_SETTINGS,
       rerank: false,
-      jevEndpoint: 'direct',
-      jevKeys: { openrouter: '', direct: 'abc' },
+      endpoint: 'direct',
+      keys: { ...DEFAULT_FILE_SEARCH_SETTINGS.keys, direct: 'abc' },
     })
+    expect(normalizeFileSearchSettings({ endpoint: 'nonsense' }).endpoint).toBe('openrouter')
+    expect(
+      normalizeFileSearchSettings({ endpoint: 'custom', customBaseUrl: ' http://x/ ' })
+        .customBaseUrl,
+    ).toBe('http://x/')
+    expect(normalizeFileSearchSettings({ cloudflareModel: '' }).cloudflareModel).toBe(
+      '@cf/cloudflare/clef',
+    )
   })
 })
 
-describe('probeJev', () => {
+describe('probeDecision', () => {
   it('passes on a valid judgement and names the HTTP status or missing key otherwise', async () => {
-    expect(await probeJev('openrouter', 'k', ok(answer([2, 0])))).toEqual({ ok: true })
+    expect(
+      await probeDecision(
+        normalizeFileSearchSettings({ endpoint: 'openrouter', keys: { openrouter: 'k' } }),
+        ok(answer([2, 0])),
+      ),
+    ).toEqual({ ok: true })
     const unauthorized: JevTransport = async () => ({ status: 401, body: '' })
-    expect(await probeJev('openrouter', 'k', unauthorized)).toEqual({
-      ok: false,
-      error: 'HTTP 401',
-    })
-    expect(await probeJev('direct', 'k', ok(answer([2, 0])))).toEqual({
-      ok: false,
-      error: 'model-mismatch',
-    })
+    expect(
+      await probeDecision(
+        normalizeFileSearchSettings({ endpoint: 'openrouter', keys: { openrouter: 'k' } }),
+        unauthorized,
+      ),
+    ).toEqual({ ok: false, error: 'HTTP 401' })
+    expect(
+      await probeDecision(
+        normalizeFileSearchSettings({ endpoint: 'direct', keys: { direct: 'k' } }),
+        ok(answer([2, 0], 'other')),
+      ),
+    ).toEqual({ ok: false, error: 'model-mismatch' })
     let sent = 0
     const spy: JevTransport = async () => {
       sent++
       return { status: 200, body: answer([2, 0]) }
     }
-    expect(await probeJev('openrouter', '  ', spy)).toEqual({
-      ok: false,
-      error: 'Enter an API key',
-    })
+    expect(
+      await probeDecision(
+        normalizeFileSearchSettings({ endpoint: 'openrouter', keys: { openrouter: '  ' } }),
+        spy,
+      ),
+    ).toEqual({ ok: false, error: 'Enter an API key' })
     expect(sent).toBe(0)
+  })
+
+  it('tests local endpoints without a key', async () => {
+    expect(
+      await probeDecision(normalizeFileSearchSettings({ endpoint: 'kev' }), ok(answer([2, 0]))),
+    ).toEqual({ ok: true })
   })
 })

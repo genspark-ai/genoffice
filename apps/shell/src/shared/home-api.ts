@@ -125,18 +125,34 @@ export interface FileSearchHit extends RecentEntry {
   needles: string[]
 }
 
-export type JevEndpoint = 'openrouter' | 'direct'
+/**
+ * Endpoints the search reranker can judge against. The hosted Jev routes are
+ * OpenRouter and TypeSafe's own API; Perplexity and Cloudflare host their own
+ * decision models; Kev and Rizzo Flow are local /v1/systemone servers;
+ * `custom` points at any other /v1/systemone-compatible server.
+ */
+export type DecisionEndpoint =
+  'openrouter' | 'direct' | 'perplexity' | 'cloudflare' | 'kev' | 'rizzo' | 'custom'
 
 /** home search options persisted in app-settings.json under `fileSearch` */
 export interface FileSearchSettings {
-  /** send the top local hits to TypeSafe's Jev model for reranking; default off */
+  /** send the top local hits to a decision model for reranking; default off */
   rerank: boolean
-  jevEndpoint: JevEndpoint
-  jevKeys: Record<JevEndpoint, string>
+  endpoint: DecisionEndpoint
+  /** one API key per endpoint; local endpoints (kev/rizzo/custom) may stay empty */
+  keys: Record<DecisionEndpoint, string>
+  /** `custom` endpoint only: base URL of a /v1/systemone-compatible server */
+  customBaseUrl: string
+  /** `custom` endpoint only: model id the server expects */
+  customModel: string
+  /** `cloudflare` endpoint only: Workers AI account id */
+  cloudflareAccountId: string
+  /** `cloudflare` endpoint only: Workers AI model path, e.g. @cf/cloudflare/clef */
+  cloudflareModel: string
 }
 
 export interface FileSearchRerank {
-  /** paths in Jev's order, most relevant first; paths not judged keep their local order after these */
+  /** paths in the decision model's order, most relevant first; paths not judged keep their local order after these */
   order: string[]
   /** calibrated 0–2 relevance per judged path */
   scores: Record<string, number>
@@ -170,15 +186,12 @@ export interface HomeApi {
   recents(query?: RecentQuery): Promise<RecentPage>
   /** search indexed files by name, folder and content */
   searchFiles(query: FileSearchQuery): Promise<FileSearchPage>
-  /** Jev order for the hits currently shown (≤ 20 paths); null when reranking is off or unavailable */
+  /** decision-model order for the hits currently shown (≤ 20 paths); null when reranking is off or unavailable */
   rerankSearch(query: { q: string; paths: string[] }): Promise<FileSearchRerank | null>
   getFileSearchSettings(): Promise<FileSearchSettings>
   setFileSearchSettings(patch: Partial<FileSearchSettings>): Promise<FileSearchSettings>
-  /** one two-document Jev judgement against a (possibly unsaved) key */
-  testFileSearchRerank(input: {
-    endpoint: JevEndpoint
-    apiKey: string
-  }): Promise<{ ok: boolean; error?: string }>
+  /** one two-document judgement against the (possibly unsaved) settings */
+  testFileSearchRerank(settings: FileSearchSettings): Promise<{ ok: boolean; error?: string }>
   /** starred files (independent of the recent list), newest first (paged) */
   starred(query?: RecentQuery): Promise<RecentPage>
   /** stat a specific set of paths (project view); unstat-able files come back flagged `missing` */
