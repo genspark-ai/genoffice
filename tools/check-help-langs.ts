@@ -136,7 +136,12 @@ for (const lang of LANGS) {
     if (NO_HAN.has(lang) && HAN.test(text)) {
       content.push(`${id}: contains Han characters`)
     }
-    if (/TODO|Lorem|\bTBD\b|\[translate/i.test(text)) content.push(`${id}: placeholder text`)
+    // uppercase-only on purpose: "todo" is an ordinary word in Spanish and
+    // Portuguese (ignorar todo), and a case-insensitive match flags half a
+    // language edition for writing its own language correctly
+    if (/\bTODO\b|\bLorem\b|\bTBD\b|\[translate/.test(text)) {
+      content.push(`${id}: placeholder text`)
+    }
     if (text.trim().length < src.trim().length * 0.35) {
       content.push(`${id}: suspiciously short (${text.trim().length} vs ${src.trim().length})`)
     }
