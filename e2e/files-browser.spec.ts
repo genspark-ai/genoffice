@@ -49,9 +49,12 @@ test.describe('files browser tab', () => {
       await waitForPageWithUrl(app, '://docs/')
       await expect(page.locator('.tab-item', { hasText: 'report.docx' })).toBeVisible()
 
-      // single instance: the sidebar entry focuses the existing tab
-      await page.locator('.tab-item', { hasText: rootName }).first().click()
-      await page.locator('.nav-item', { hasText: 'Files' }).click()
+      // single instance: opening it again (any entry point) focuses the
+      // existing tab instead of stacking a second one
+      await page.evaluate(() => {
+        const api = (window as unknown as { aiOffice: { openFiles(): Promise<void> } }).aiOffice
+        return api.openFiles()
+      })
       await expect(page.locator('.tab-item', { hasText: 'Files' })).toHaveCount(1)
       await expect(page.locator('.tab-item.active', { hasText: 'Files' })).toBeVisible()
     } finally {
