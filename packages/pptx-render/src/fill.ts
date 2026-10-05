@@ -103,6 +103,11 @@ export function resolveStroke(stroke: Stroke | undefined, vp: Viewport): RenderS
     }
     color = rf.stops[0]!.color
   } else if (rf.type === 'none') return undefined
+  // A patterned line is mostly foreground ink, so a solid fg stroke is a far closer
+  // approximation than the #000000 fallback (resolveFill renders pattFill the same way).
+  // An image-filled line has no colour to borrow — returning undefined beats painting black.
+  else if (rf.type === 'pattern') color = rf.fg
+  else if (rf.type === 'image') return undefined
   const widthEmu = stroke.width ?? 12700
   const widthPx = Math.max(emuToPx(widthEmu, vp.scale), 0.5)
   const widthPt = widthEmu / EMU_PER_PT

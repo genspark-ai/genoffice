@@ -18,7 +18,9 @@ if (args.length > 0) {
   process.exit(2)
 }
 
-const SKILL_FILE = /^skills\/[^/]+\/SKILL\.md$/
+// any depth under skills/, so grouped skills (skills/<group>/<name>/SKILL.md)
+// are version-gated too; basename(dirname(file)) below is the skill's own dir
+const SKILL_FILE = /^skills\/.+\/SKILL\.md$/
 
 function git(commandArgs, { allowFailure = false } = {}) {
   const result = spawnSync('git', commandArgs, {

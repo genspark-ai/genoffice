@@ -50,8 +50,16 @@ const pageIndex = (v: unknown, ctx: OpContext, field = 'pageIndex'): number => {
   return v
 }
 
+// `typeof n === 'number'` is not enough: NaN and Infinity are both 'number',
+// so an op carrying them (e.g. a rect computed from an OCR box that yielded
+// no coordinates) was stored, drew at zero size, and put NaN in the PDF
+// content stream. Match save-pdf.ts / redaction.ts and require finiteness.
 const rect = (v: unknown, field: string): Rect => {
-  if (!Array.isArray(v) || v.length !== 4 || v.some((n) => typeof n !== 'number'))
+  if (
+    !Array.isArray(v) ||
+    v.length !== 4 ||
+    v.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+  )
     throw new GuidedError(`"${field}" must be [x1,y1,x2,y2] in PDF user space`)
   return v as Rect
 }
@@ -190,7 +198,12 @@ register({
   touches: ['drawings'],
   validate(op) {
     id(op)
-    if (typeof op.dx !== 'number' || typeof op.dy !== 'number')
+    if (
+      typeof op.dx !== 'number' ||
+      !Number.isFinite(op.dx) ||
+      typeof op.dy !== 'number' ||
+      !Number.isFinite(op.dy)
+    )
       throw new GuidedError('"dx" and "dy" must be numbers (PDF user space)')
   },
   apply(op, s) {

@@ -201,8 +201,13 @@ function parseChatRecords(raw: string): ChatMessage[] {
     if (!line.trim()) continue
     try {
       const msg = JSON.parse(line) as ChatMessage
+      // A non-finite seq (Infinity, either written directly or from an
+      // overflowing max+1 in mergeChatFiles) survives typeof, but JSON.stringify
+      // writes it as null, which fails this gate on the next read and drops
+      // every record of the file. Rejecting it here also keeps the merge from
+      // renumbering moved records from Infinity.
       if (
-        typeof msg.seq === 'number' &&
+        Number.isFinite(msg.seq) &&
         typeof msg.role === 'string' &&
         typeof msg.text === 'string'
       ) {

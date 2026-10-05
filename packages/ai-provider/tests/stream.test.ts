@@ -5,6 +5,7 @@ import {
   MAX_RESPONSE_BODY_BYTES,
   jsonBodyInsteadOfSse,
   parseToolInput,
+  sseDataEvents,
 } from '../src/protocols/shared'
 import { jsonResponse, okResponse, sseStream } from './test-utils'
 
@@ -73,6 +74,72 @@ describe('sseLines', () => {
     const lines: string[] = []
     for await (const line of sseLines(body)) lines.push(line)
     expect(lines).toEqual(['data: a', 'data: b', 'data: c'])
+  })
+})
+
+describe('sseDataEvents', () => {
+  const collect = async (text: string): Promise<string[]> => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text))
+        controller.close()
+      },
+    })
+    const payloads: string[] = []
+    for await (const payload of sseDataEvents(body)) payloads.push(payload)
+    return payloads
+  }
+
+  it('dispatches every event when the server separates them with a single newline', async () => {
+    // No blank line anywhere in this stream. Dispatching only on a blank line
+    // merged all three into one unparseable payload, taking [DONE] with it.
+    expect(await collect('data: {"a":1}\ndata: {"b":2}\ndata: [DONE]\n')).toEqual([
+      '{"a":1}',
+      '{"b":2}',
+      '[DONE]',
+    ])
+  })
+
+  it('dispatches every event when the server separates them with a blank line', async () => {
+    expect(await collect('data: {"a":1}\n\ndata: {"b":2}\n\n')).toEqual(['{"a":1}', '{"b":2}'])
+  })
+
+  it('joins a JSON body that one event split across data: lines', async () => {
+    const [payload] = await collect('data: {"a":\ndata: 1}\n\n')
+    expect(payload).toBe('{"a":\n1}')
+    expect(JSON.parse(payload ?? '')).toEqual({ a: 1 })
+  })
+
+  it('joins a split body even when the stream has no blank line at all', async () => {
+    expect(await collect('data: {"a":\ndata: 1}')).toEqual(['{"a":\n1}'])
+  })
+
+  it('delivers a terminator that never gets a trailing blank line', async () => {
+    expect(await collect('data: {"a":1}\ndata: [DONE]')).toEqual(['{"a":1}', '[DONE]'])
+  })
+
+  // A newline-only stream whose server keeps the socket open after [DONE]. The
+  // generator cannot end on its own here, so this drives it the way the
+  // OpenAI-compatible loop does: break the moment the terminator arrives. Holding
+  // [DONE] back as a fragment meant that break never happened and the caller sat on
+  // an open socket until its race timeout, while main returned immediately.
+  it('hands [DONE] to a consumer that breaks on it, on an open stream', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"a":1}\ndata: [DONE]\n'))
+        // deliberately never closed, and nothing further is ever enqueued
+      },
+    })
+    const seen: string[] = []
+    for await (const payload of sseDataEvents(body)) {
+      seen.push(payload)
+      if (payload === '[DONE]') break
+    }
+    expect(seen).toEqual(['{"a":1}', '[DONE]'])
+  })
+
+  it('does not glue a non-JSON keep-alive onto the terminator', async () => {
+    expect(await collect('data: ping\ndata: [DONE]\n')).toEqual(['ping', '[DONE]'])
   })
 })
 
@@ -1193,7 +1260,7 @@ describe('streamForProvider: openai-compatible', () => {
     )
   })
 
-  it('keeps deepseek in non-thinking mode so a tool-calling loop is not rejected', async () => {
+  it('lets deepseek think: no override, and tool turns echo stored reasoning', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
     vi.stubGlobal('fetch', fetchMock)
     const { cb } = collector()
@@ -1201,15 +1268,30 @@ describe('streamForProvider: openai-compatible', () => {
       'deepseek',
       { apiKey: 'k', model: 'deepseek-v4-pro' },
       'sys',
-      [{ role: 'user', text: 'hi' }],
+      [
+        { role: 'user', text: 'hi' },
+        {
+          role: 'assistant',
+          text: '',
+          reasoning: 'the user greeted me',
+          toolCalls: [{ id: 't1', name: 'edit', input: {} }],
+        },
+        { role: 'user', text: 'go on' },
+      ],
       [{ name: 'edit', description: 'edit', inputSchema: { type: 'object' } }],
       100,
       cb,
     ).catch(() => {})
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
       thinking?: { type?: string }
+      messages?: Array<{ role: string; reasoning_content?: string }>
     }
-    expect(body.thinking).toEqual({ type: 'disabled' })
+    // thinking is the vendor default; the request must not pin it off
+    expect(body.thinking).toBeUndefined()
+    // deepseek sits on the echo list: stored reasoning rides back on the
+    // assistant message
+    const assistant = body.messages?.find((m) => m.role === 'assistant')
+    expect(assistant?.reasoning_content).toBe('the user greeted me')
   })
 
   it('uses the configured base URL for the custom provider', async () => {

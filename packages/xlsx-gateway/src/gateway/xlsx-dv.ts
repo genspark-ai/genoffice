@@ -228,7 +228,7 @@ function formulaText(type: string | undefined, raw: unknown): string | undefined
   const text = String(raw)
   if (text === '') return undefined
   if (type === 'list') {
-    return text.startsWith('=') ? text.slice(1) : `"${text}"`
+    return text.startsWith('=') ? text.slice(1) : `"${text.replaceAll('"', '""')}"`
   }
   if (type === 'custom') {
     return text.startsWith('=') ? text.slice(1) : text

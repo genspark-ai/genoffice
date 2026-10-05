@@ -49,6 +49,16 @@ export interface SearchOptions {
   prefer?: 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl'
 }
 
+/** The backends webSearch can dispatch to; anything else is not a provider id. */
+const SEARCH_BACKENDS = new Set([
+  'serper',
+  'serply',
+  'tavily',
+  'parallel',
+  'exa',
+  'firecrawl',
+] as const)
+
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
   const o = typeof opts === 'boolean' ? { useGsk: opts } : (opts ?? {})
   return {
@@ -59,7 +69,13 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     parallelKey: o.parallelKey ?? PARALLEL_KEY(),
     exaKey: o.exaKey ?? EXA_KEY(),
     firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
-    prefer: o.prefer ?? 'serper',
+    // `prefer` reaches here from the renderer: the settings "test connection" handler
+    // passes its ipc payload through after an `as` cast, so an unknown id is possible
+    // at runtime. It becomes the first entry of the dispatch order, and a name that
+    // is not a backend has no function to call, so validate it at this choke point
+    // rather than letting the dispatch throw a TypeError out of the ipc handler.
+    prefer:
+      o.prefer !== undefined && SEARCH_BACKENDS.has(o.prefer) ? o.prefer : ('serper' as const),
   }
 }
 
@@ -427,7 +443,7 @@ export async function imageSearch(
   const { query: q, max } = normalizeSearchArgs(query, maxResults, 8)
   if (o.useGsk && hasGskAuth()) {
     try {
-      const images = await gskImageSearch(q, max)
+      const images = filterUsableImages(await gskImageSearch(q, max))
       if (images.length) return { images, method: 'gsk' }
     } catch {
       /* fall back to Serper/Serply/DuckDuckGo */
@@ -441,14 +457,33 @@ export async function imageSearch(
   if (o.prefer === 'serply') keyed.reverse()
   for (const run of keyed) {
     const r = await run()
-    if (r) return r
+    // A backend that only offered unusable (tiny) images falls through to the next one
+    if (r && r.images.length > 0) {
+      const usable = filterUsableImages(r.images)
+      if (usable.length) return { images: usable, method: r.method }
+    }
   }
   try {
-    return { images: await duckImageSearch(q, max), method: 'duckduckgo' }
+    return { images: filterUsableImages(await duckImageSearch(q, max)), method: 'duckduckgo' }
   } catch (err) {
     // an unreachable backend must not read as an empty gallery
     return { images: [], method: 'error', error: `duckduckgo: ${String(err)}` }
   }
+}
+
+/** Icons, buttons and avatars render as junk when a slide crops them into a
+ * content frame — anything a backend reports smaller than this is dropped
+ * (#1819). Entries without dimension metadata are kept (no evidence, no verdict). */
+export const MIN_USABLE_IMAGE_PX = 200
+
+export function filterUsableImages(images: ImageSearchResult[]): ImageSearchResult[] {
+  return images.filter((im) => {
+    if (typeof im.width !== 'number' && typeof im.height !== 'number') return true
+    return (
+      (im.width ?? Number.POSITIVE_INFINITY) >= MIN_USABLE_IMAGE_PX &&
+      (im.height ?? Number.POSITIVE_INFINITY) >= MIN_USABLE_IMAGE_PX
+    )
+  })
 }
 
 async function serperImageSearch(

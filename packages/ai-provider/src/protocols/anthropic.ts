@@ -10,7 +10,7 @@ import {
   parseToolInput,
   readCappedResponseText,
   sseErrorText,
-  sseLines,
+  sseDataEvents,
   throwIfCreditsNotice,
   throwIfToolCountOverBudget,
   throwIfToolJsonOverBudget,
@@ -194,10 +194,7 @@ async function anthropicTurn(
   const completedTools: AgentToolCall[] = []
   let stopReason: string | undefined
   let emitted = false
-  for await (const line of sseLines(response.body, onBytes)) {
-    if (!line.startsWith('data:')) continue
-    const payload = line.slice(5).trim()
-    if (!payload) continue
+  for await (const payload of sseDataEvents(response.body, onBytes)) {
     // A truncated frame or a non-JSON keep-alive from a proxy should skip
     // that event, not kill the entire AI turn with a parser error.
     let event

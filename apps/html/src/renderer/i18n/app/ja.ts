@@ -7,6 +7,7 @@ export const ja = {
   saveFailed: '保存に失敗しました: {error}',
   saveFailedStatus: '保存に失敗しました',
   exportFailed: 'エクスポートに失敗しました',
+  printFailed: '印刷に失敗しました: {error}',
   exportHtmlSkipped:
     'エクスポートしましたが、{count} 個のアセットを埋め込めませんでした（例: {first}）',
   viewPreview: 'プレビュー',
@@ -120,6 +121,7 @@ export const ja = {
   insertImageUrl: 'URL から画像…',
   insertConfirm: '挿入',
   insertMore: 'その他',
+  insertSkeleton: '骨格を挿入',
   insertTableSize: '{r}×{c} の表',
   insertTablePickSize: '表のサイズを選択',
   insertPlaceholderTableHeader: '見出し {n}',

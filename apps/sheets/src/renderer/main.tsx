@@ -15,7 +15,7 @@ import '@univerjs/preset-sheets-core/lib/index.css'
 import { App } from './App'
 import { installCanvasFontFallback, registerCellFontAliases } from './cell-font-fallback'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
-import type { UiTheme } from '../shared/desktop-api'
+import type { DocTheme, UiTheme } from '../shared/desktop-api'
 import './styles.css'
 
 if (import.meta.hot) {
@@ -43,6 +43,12 @@ function applyTheme(theme: UiTheme): void {
   else document.documentElement.setAttribute('data-theme', theme)
 }
 
+function applyDocumentTheme(theme: DocTheme): void {
+  // data-doc-theme drives the canvas/paper (#1811); absent means 'follow' the UI theme
+  if (theme === 'follow') document.documentElement.removeAttribute('data-doc-theme')
+  else document.documentElement.setAttribute('data-doc-theme', theme)
+}
+
 // Canvas fillText never triggers @font-face downloads, so the bundled Carlito
 // faces (Calibri/Aptos aliases in styles.css) must be loaded before Univer's
 // first skeleton — MDW, wrap points, and #### overflow all measure with them.
@@ -61,12 +67,14 @@ async function loadCellFonts(): Promise<void> {
 async function bootstrap(): Promise<void> {
   let lang: Lang = 'zh'
   let theme: UiTheme = 'system'
+  let docTheme: DocTheme = 'follow'
   try {
     // per-promise catch: standalone runs have no app:get-theme handler, and
     // that rejection must not drop a resolved language
-    ;[lang, theme] = await Promise.all([
+    ;[lang, theme, docTheme] = await Promise.all([
       window.desktopApi.getLanguage().catch(() => 'zh' as const),
       window.desktopApi.getTheme().catch(() => 'system' as const),
+      window.desktopApi.getDocumentTheme?.().catch(() => 'follow' as const),
     ])
   } catch {
     /* dev renderer without the preload bridge */
@@ -75,11 +83,13 @@ async function bootstrap(): Promise<void> {
   document.documentElement.lang = htmlLang(lang)
   applyHtmlDir(lang)
   applyTheme(theme)
+  applyDocumentTheme(docTheme ?? 'follow')
   await loadCellFonts()
   // A spare view can receive a file while its renderer is still booting.
   // Check the queued path before the first React paint so it never looks Ready.
   const queuedWorkbookAtBoot = await window.desktopApi?.hasQueuedWorkbook?.().catch(() => false)
   window.desktopApi?.onThemeChanged(applyTheme)
+  window.desktopApi?.onDocumentThemeChanged?.(applyDocumentTheme)
   await window.desktopApi
     ?.getAiPanelPrefs?.()
     .then(applyAiPanelPrefs)

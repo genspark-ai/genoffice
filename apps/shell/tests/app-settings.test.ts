@@ -47,6 +47,13 @@ describe('readAppSettings', () => {
     writeFileSync(settingsPath, JSON.stringify({ language: 'zh', onboardingSeen: true }))
     expect(readAppSettings(settingsPath)).toEqual({ language: 'zh', onboardingSeen: true })
   })
+
+  it('round-trips the document page theme preference (#1811)', () => {
+    writeAppSetting(settingsPath, 'documentTheme', 'light')
+    expect(readAppSettings(settingsPath).documentTheme).toBe('light')
+    writeAppSetting(settingsPath, 'documentTheme', 'follow')
+    expect(readAppSettings(settingsPath).documentTheme).toBe('follow')
+  })
 })
 
 describe('writeAppSetting', () => {

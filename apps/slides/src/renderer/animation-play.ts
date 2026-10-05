@@ -286,13 +286,15 @@ function applyEffect(
       st.dy = (1 - q) * canvasH
       break
     case 'wipe':
+    case 'wipeDown': {
+      // 'wipe' is no longer always bottom-up: the engine models the direction, so a
+      // presetSubtype-4 (top) wipe comes back as wipe + direction 'top'. wipeDown is
+      // kept as the write-compatible alias for exactly that case.
       st.hidden = false
-      st.clip = p >= 1 ? null : { t: q, mode: 'btm' }
+      const dir = item.direction ?? (item.effect === 'wipeDown' ? 'top' : 'bottom')
+      st.clip = p >= 1 ? null : { t: q, mode: dir === 'top' ? 'top' : 'btm' }
       break
-    case 'wipeDown':
-      st.hidden = false
-      st.clip = p >= 1 ? null : { t: q, mode: 'top' }
-      break
+    }
     case 'splitIn':
       st.hidden = false
       st.clip = p >= 1 ? null : { t: q, mode: 'mid' }

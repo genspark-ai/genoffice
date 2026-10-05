@@ -31,7 +31,9 @@ import {
   installFindRevealFix,
   installInjectorResolutionGuard,
   installWrapMeasureLifecycle,
+  noteSidecarCrash,
 } from './univer-sync'
+import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
   runHeadlessRendererExport,
@@ -1012,6 +1014,19 @@ export function App({
     [],
   )
 
+  // The sidecar process died, so every session id this tab holds is unknown
+  // to the replacement. Record the crash: the next range read re-opens the
+  // workbook through the normal open path and adopts a live session. Only an
+  // actual process death reaches here — a session the app closed or swapped
+  // on purpose is not a crash and must not re-open anything.
+  useEffect(
+    () =>
+      window.desktopApi?.onSidecarCrashed?.(() => {
+        noteSidecarCrash()
+      }) ?? (() => undefined),
+    [],
+  )
+
   useEffect(() => {
     setVisualSelectionListener({
       select: (visual) =>
@@ -1597,11 +1612,19 @@ export function App({
 
   useEffect(() => {
     // Univer paints the grid on canvas, so it can't follow the CSS tokens —
-    // mirror the <html data-theme> state into its official darkMode flag
+    // mirror the canvas state into its official darkMode flag: an explicit
+    // <html data-doc-theme> pin (#1811) wins, otherwise the <html data-theme>
+    // state as before
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
-    const isDarkTheme = () =>
-      document.documentElement.getAttribute('data-theme') === 'dark' ||
-      (!document.documentElement.hasAttribute('data-theme') && prefersDark.matches)
+    const isDarkTheme = () => {
+      const docAttr = document.documentElement.getAttribute('data-doc-theme')
+      if (docAttr === 'dark') return true
+      if (docAttr === 'light') return false
+      return (
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (!document.documentElement.hasAttribute('data-theme') && prefersDark.matches)
+      )
+    }
     const runtime = createUniver({
       // green selection/highlight instead of Univer's default blue
       theme: greenTheme,
@@ -1673,6 +1696,9 @@ export function App({
     installInjectorResolutionGuard(runtime)
     // find-bar reveals share scrollToCell's broken freeze offset (r135)
     const findRevealDispose = installFindRevealFix(runtime)
+    // the grid is sized to the data, so a blank sheet stops scrolling a few
+    // columns past its last cell; this extends it ahead of the viewport
+    const gridGrowthDispose = installGridGrowth(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -1685,6 +1711,7 @@ export function App({
       crossHighlightRef.current?.refresh()
     }
     const offThemeChanged = window.desktopApi?.onThemeChanged?.(applyUniverDark)
+    const offDocThemeChanged = window.desktopApi?.onDocumentThemeChanged?.(applyUniverDark)
     prefersDark.addEventListener('change', applyUniverDark)
     // Undo/redo stack occupancy: the QAT buttons grey out when there is nothing to apply
     const undoRedoService = runtime.univer.__getInjector().get(IUndoRedoService)
@@ -2989,8 +3016,10 @@ export function App({
       unsubscribeMenu()
       unsubscribeCloseSave()
       offThemeChanged?.()
+      offDocThemeChanged?.()
       undoRedoSub.unsubscribe()
       findRevealDispose()
+      gridGrowthDispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()

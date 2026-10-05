@@ -56,7 +56,8 @@ export function decodeDataUrl(url: string): { bytes: Buffer; mime: string | null
   if (!m) return null
   const mime = m[1] || null
   const payload = m[3] ?? ''
-  const bytes = /;base64/i.test(m[2] ?? '')
+  const isBase64 = (m[2] ?? '').split(';').some((param) => param.toLowerCase() === 'base64')
+  const bytes = isBase64
     ? Buffer.from(payload, 'base64')
     : Buffer.from(decodeURIComponent(payload), 'utf8')
   return { bytes, mime }

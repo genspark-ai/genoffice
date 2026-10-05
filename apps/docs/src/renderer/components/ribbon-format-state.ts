@@ -3,6 +3,7 @@ import type { Node as PmNode } from '@tiptap/pm/model'
 import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/tables'
 import type { DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
+import { shapeWrapOf } from '../editor/floating-z-order'
 import { tableCellsSelection } from '../editor/table-ops'
 import { effectiveBidi, selectionHasBidi } from '../editor/direction'
 import {
@@ -303,7 +304,10 @@ export function computeFormatState(
     canSplitTable,
     imageSelected,
     imageDataUrl: imageSelected ? str(protAttrs.imageDataUrl) : null,
-    imageWrap: str(protAttrs.imageWrap),
+    imageWrap:
+      Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0
+        ? shapeWrapOf(protAttrs.textboxes[0] as TextboxDisplay)
+        : str(protAttrs.imageWrap),
     imageAlign: str(protAttrs.imageAlign),
     imageWidthPx: num(protAttrs.imageWidthPx),
     imageHeightPx: num(protAttrs.imageHeightPx),

@@ -1164,15 +1164,29 @@ export function sanitizeAgentPayload(payload: string): string {
       .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
       .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[REDACTED_API_KEY]')
       .replace(/\bxox[abeoprs]-[A-Za-z0-9-]{10,}/g, '[REDACTED_API_KEY]')
-      .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
+      // The scheme run is bounded for the same reason as the identifier prefix below:
+      // an unbounded `[a-z0-9+.-]*` in front of a literal `://` is ambiguous, so every
+      // start offset consumed the whole run and backtracked looking for the `://`
+      // (measured: 96 KB of hex took ~12s in this regex alone, ~70s for the call).
+      // A 30-char scheme covers every registered one; past it the match simply starts
+      // mid-scheme, which still redacts the password — only the captured scheme
+      // prefix is shorter.
+      .replace(/([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
       .replace(
         /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
         '$1$2"[REDACTED_SECURE_TOKEN]"',
       )
       // Unquoted `password=abc123`: the value must be 6+ chars with a non-letter,
       // so "password: is in the vault" prose stays untouched.
+      // The identifier prefix is bounded: an unbounded `\w*` in front of the
+      // alternation overlaps it, so at every start offset the engine consumed the
+      // whole word run and backtracked one character at a time to place the
+      // keyword — quadratic in the length of an unbroken [A-Za-z0-9_] run. A user
+      // pasting a hex dump or a base64url token froze the renderer for ~70s
+      // (measured: 100 KB of hex, this function, one call). 64 chars is far more
+      // than any real `my_password`-style prefix and keeps the match set identical.
       .replace(
-        /(?<!\/)(\w*(?:password|passwd|secret_key|private_key))(\s*[:=]\s*)(?=[^\s"',;]*[^A-Za-z\s"',;])[^\s"',;]{6,}/gi,
+        /(?<!\/)(\w{0,64}(?:password|passwd|secret_key|private_key))(\s*[:=]\s*)(?=[^\s"',;]*[^A-Za-z\s"',;])[^\s"',;]{6,}/gi,
         '$1$2[REDACTED_SECURE_TOKEN]',
       )
   )

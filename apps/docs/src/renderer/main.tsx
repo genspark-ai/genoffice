@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
 import { App } from './App'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
-import type { UiTheme } from '../shared/ipc'
+import type { DocTheme, UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
 import '@genoffice/ui/color-picker.css'
@@ -32,15 +32,23 @@ function applyTheme(theme: UiTheme): void {
   else document.documentElement.setAttribute('data-theme', theme)
 }
 
+function applyDocumentTheme(theme: DocTheme): void {
+  // data-doc-theme drives the canvas/paper (#1811); absent means 'follow' the UI theme
+  if (theme === 'follow') document.documentElement.removeAttribute('data-doc-theme')
+  else document.documentElement.setAttribute('data-doc-theme', theme)
+}
+
 async function bootstrap(): Promise<void> {
   let lang: Lang = 'zh'
   let theme: UiTheme = 'system'
+  let docTheme: DocTheme = 'follow'
   try {
     // per-promise catch: standalone runs have no app:get-theme handler, and
     // that rejection must not drop a resolved language
-    ;[lang, theme] = await Promise.all([
+    ;[lang, theme, docTheme] = await Promise.all([
       window.desktop.getLanguage().catch(() => 'zh' as const),
       window.desktop.getTheme().catch(() => 'system' as const),
+      window.desktop.getDocumentTheme?.().catch(() => 'follow' as const),
     ])
   } catch {
     /* dev renderer without the preload bridge */
@@ -49,7 +57,9 @@ async function bootstrap(): Promise<void> {
   document.documentElement.lang = htmlLang(lang)
   applyHtmlDir(lang)
   applyTheme(theme)
+  applyDocumentTheme(docTheme ?? 'follow')
   window.desktop?.onThemeChanged(applyTheme)
+  window.desktop?.onDocumentThemeChanged?.(applyDocumentTheme)
   await window.desktop
     ?.getAiPanelPrefs?.()
     .then(applyAiPanelPrefs)

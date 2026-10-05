@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
 import App from './App'
 import { LocaleProvider } from './i18n/locale'
-import type { UiTheme } from '../shared/ipc'
+import type { DocTheme, UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
 import '@genoffice/ui/dropdown.css'
@@ -28,15 +28,24 @@ function applyTheme(theme: UiTheme): void {
   else document.documentElement.setAttribute('data-theme', theme)
 }
 
+function applyDocumentTheme(theme: DocTheme): void {
+  // data-doc-theme drives the preview paper (#1811); absent means 'follow' the UI theme
+  if (theme === 'follow') document.documentElement.removeAttribute('data-doc-theme')
+  else document.documentElement.setAttribute('data-doc-theme', theme)
+}
+
 void (async () => {
-  const [lang, theme] = await Promise.all([
+  const [lang, theme, docTheme] = await Promise.all([
     window.markdownApi.getLanguage().catch(() => 'zh' as const),
     window.markdownApi.getTheme().catch(() => 'system' as const),
+    window.markdownApi.getDocumentTheme?.().catch(() => 'follow' as const),
   ])
   document.documentElement.lang = htmlLang(lang as Lang)
   applyHtmlDir(lang)
   applyTheme(theme)
+  applyDocumentTheme(docTheme ?? 'follow')
   window.markdownApi.onThemeChanged(applyTheme)
+  window.markdownApi.onDocumentThemeChanged?.(applyDocumentTheme)
   await window.markdownApi
     ?.getAiPanelPrefs?.()
     .then(applyAiPanelPrefs)

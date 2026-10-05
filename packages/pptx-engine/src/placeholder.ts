@@ -126,6 +126,23 @@ export interface PlaceholderMap {
 
 const TITLE_TYPES = new Set(['title', 'ctrTitle'])
 const BODY_TYPES = new Set(['body', 'subTitle', 'obj', ''])
+/** Placeholders a slide never renders text into. They can still carry a lstStyle, so the
+ *  idx-only step below must skip them — a master's `dt idx="2"` must not hand its date
+ *  style to a body placeholder that merely shares idx="2". */
+const FUNCTION_TYPES = new Set([
+  'dt',
+  'ftr',
+  'sldNum',
+  'sldImg',
+  'hdr',
+  'clipArt',
+  'dgm',
+  'media',
+  'oleObj',
+  'chart',
+  'tbl',
+  'pic',
+])
 
 const ANCHOR_MAP: Record<string, PlaceholderGeom['anchor']> = {
   t: 'top',
@@ -447,7 +464,12 @@ export function parseMasterTextStyles(
   }
 }
 
-/** Find the lstStyle in a layer's map by placeholder (type, idx). Same match order as geometry inheritance. */
+/** Find the lstStyle in a layer's map by placeholder (type, idx). The idx-only step is
+ *  what ECMA's idx matching needs for legacy decks (slide `<p:ph idx="1"/>` vs layout
+ *  `<p:ph type="obj" idx="1"/>`), so it stays — but it skips FUNCTION_TYPES, since those
+ *  never render slide text and would otherwise donate their style by index collision.
+ *  findInMap's geometry step applies the same skip, so style and geometry resolve to the
+ *  same placeholder. */
 function findStyleInMap(
   map: PlaceholderMap | undefined,
   type: string | undefined,
@@ -458,16 +480,16 @@ function findStyleInMap(
   const i = idx ?? ''
   const styled = map.entries.filter((e) => e.textStyle)
   let hit = styled.find((e) => e.type === t && e.idx === i)
-  if (!hit && i !== '') hit = styled.find((e) => e.idx === i)
+  if (!hit && i !== '') hit = styled.find((e) => e.idx === i && !FUNCTION_TYPES.has(e.type))
   if (!hit) hit = styled.find((e) => e.type === t)
   if (!hit && TITLE_TYPES.has(t)) hit = styled.find((e) => TITLE_TYPES.has(e.type))
   if (!hit && BODY_TYPES.has(t)) hit = styled.find((e) => BODY_TYPES.has(e.type))
   return hit?.textStyle
 }
 
-/** Find the bodyPr anchor in a layer's map by placeholder (type, idx). Unlike
- *  findStyleInMap there is no idx-only step: master placeholders reuse idx values
- *  across types (a dt idx="2" must not anchor a body idx="2" to the bottom). */
+/** Find the bodyPr anchor in a layer's map by placeholder (type, idx). No idx-only
+ *  step: master placeholders reuse idx values across types (a dt idx="2" must not
+ *  anchor a body idx="2" to the bottom). */
 function findAnchorInMap(
   map: PlaceholderMap | undefined,
   type: string | undefined,
@@ -684,9 +706,10 @@ function findInMap(
   // 1. Exact (type, idx)
   let hit = geo.find((e) => e.type === t && e.idx === i)
   if (hit) return hit.transform!
-  // 2. By idx (when idx is non-empty)
+  // 2. By idx (when idx is non-empty), skipping function placeholders so style and
+  //    geometry agree — see findStyleInMap
   if (i !== '') {
-    hit = geo.find((e) => e.idx === i)
+    hit = geo.find((e) => e.idx === i && !FUNCTION_TYPES.has(e.type))
     if (hit) return hit.transform!
   }
   // 3. By type

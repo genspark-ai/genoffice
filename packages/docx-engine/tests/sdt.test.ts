@@ -18,6 +18,20 @@ const BLOCK_SDT_P =
   '</w:sdtContent>' +
   '</w:sdt>'
 
+/** Block-level SDT whose w:val attributes are single-quoted (also valid XML) */
+const SINGLE_QUOTED_SDT_P =
+  '<w:sdt>' +
+  '<w:sdtPr>' +
+  "<w:alias w:val='Binder'/>" +
+  "<w:tag w:val='tag1'/>" +
+  '<w:text/>' +
+  '</w:sdtPr>' +
+  '<w:sdtEndPr/>' +
+  '<w:sdtContent>' +
+  '<w:p><w:r><w:t>Jane Doe</w:t></w:r></w:p>' +
+  '</w:sdtContent>' +
+  '</w:sdt>'
+
 /** Block-level SDT with date picker */
 const DATE_SDT_P =
   '<w:sdt>' +
@@ -58,6 +72,14 @@ describe('SDT parsing', () => {
     expect(block.sdtShell!.alias).toBe('Author Name')
     expect(block.sdtShell!.tag).toBe('author')
     expect(block.sdtShell!.controlType).toBe('text')
+  })
+
+  it('reads a single-quoted w:alias and w:tag', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: SINGLE_QUOTED_SDT_P }))
+    const sdtShell = doc.blocks[0].sdtShell
+    expect(sdtShell).toBeDefined()
+    expect(sdtShell!.alias).toBe('Binder')
+    expect(sdtShell!.tag).toBe('tag1')
   })
 
   it('parses date SDT as controlType "date"', async () => {

@@ -3483,7 +3483,7 @@ fn resolves_locale_reserved_builtin_number_formats() {
     // zh-CN month/day pattern that previously leaked into every workbook.
     let mut portuguese_sessions = WorkbookSessions::new();
     let portuguese = portuguese_sessions
-        .open_with_locale(&path, "pt", None)
+        .open_with_locale(&path, "pt", None, &AtomicBool::new(false))
         .unwrap();
     let portuguese_format = |index: usize| portuguese.styles[index].number_format.as_deref();
     assert_eq!(portuguese_format(1), Some("d/m/yyyy"));
@@ -3527,7 +3527,7 @@ fn applies_system_short_date_to_builtin_date_formats() {
 
     let mut sessions = WorkbookSessions::new();
     let metadata = sessions
-        .open_with_locale(&path, "en", Some("yyyy/m/d"))
+        .open_with_locale(&path, "en", Some("yyyy/m/d"), &AtomicBool::new(false))
         .unwrap();
     let format = |index: usize| metadata.styles[index].number_format.as_deref();
     assert_eq!(format(1), Some("yyyy/m/d"));
@@ -4051,4 +4051,110 @@ fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
     assert_eq!(number(value_at(0, 2)), 30.0);
     assert_eq!(number(value_at(1, 0)), 40.0);
     assert_eq!(number(value_at(1, 1)), 50.0);
+}
+
+
+/// A cancel already in flight when the open is dispatched must abandon it
+/// outright: the host has no session id to read-range or close against, so
+/// a half-registered session would be unreachable garbage.
+#[test]
+fn cancelled_open_registers_no_session() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hi</t></is></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let error = sessions
+        .open_with_locale(&path, "zh", None, &AtomicBool::new(true))
+        .unwrap_err();
+    assert!(matches!(error, SidecarError::Cancelled), "{error:?}");
+    assert_eq!(
+        sessions.session_count(),
+        0,
+        "a cancelled open left a session a later read-range could hit"
+    );
+    // An uncancelled open of the same workbook still works, so the abort was
+    // the flag and not a fixture the engine cannot read.
+    assert_eq!(sessions.open(&path).unwrap().sheets.len(), 1);
+}
+
+/// The one abort that happens after the cache directory exists must reclaim
+/// it. create_cache_directory owns the directory from the moment it is
+/// created, so returning on a cancel removes it exactly as a committed one is
+/// kept for Close to reclaim later.
+#[test]
+fn cancel_after_the_cache_directory_is_created_reclaims_it() {
+    let session_id = Uuid::new_v4().to_string();
+    let path = std::env::temp_dir().join(format!("genspark-ai-excel-{session_id}"));
+
+    let error = create_cache_directory(&session_id, &AtomicBool::new(true)).unwrap_err();
+    assert!(matches!(error, SidecarError::Cancelled), "{error:?}");
+    assert!(
+        !path.exists(),
+        "the cancelled open leaked its cache directory {path:?}"
+    );
+}
+
+/// The guard is what makes the abort path as clean as the success path: it
+/// removes the directory on every exit until the open commits it, and keeps
+/// it afterwards.
+#[test]
+fn cache_directory_outlives_the_open_only_once_committed() {
+    let committed_id = Uuid::new_v4().to_string();
+    let committed = std::env::temp_dir().join(format!("genspark-ai-excel-{committed_id}"));
+    let mut directory = create_cache_directory(&committed_id, &AtomicBool::new(false)).unwrap();
+    assert!(committed.exists());
+    directory.commit();
+    drop(directory);
+    assert!(
+        committed.exists(),
+        "a committed cache directory must survive the open for Close to reclaim"
+    );
+    fs::remove_dir_all(&committed).unwrap();
+
+    // Uncommitted, the guard reclaims it on drop.
+    let abandoned_id = Uuid::new_v4().to_string();
+    let abandoned = std::env::temp_dir().join(format!("genspark-ai-excel-{abandoned_id}"));
+    drop(create_cache_directory(&abandoned_id, &AtomicBool::new(false)).unwrap());
+    assert!(!abandoned.exists());
+}
+
+/// The per-stage polls are cooperative: an open that runs with the flag
+/// clear must still succeed, so the checkpoints never fire on their own.
+#[test]
+fn an_uncancelled_open_completes_and_keeps_its_cache_directory() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hi</t></is></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions
+        .open_with_locale(&path, "zh", None, &AtomicBool::new(false))
+        .unwrap();
+    let cache = std::env::temp_dir().join(format!("genspark-ai-excel-{}", metadata.session_id));
+    assert!(cache.exists(), "a completed open lost its cache directory");
+    assert_eq!(sessions.session_count(), 1);
+    // Close still reclaims it.
+    sessions.close(&metadata.session_id).unwrap();
+    assert!(!cache.exists());
 }

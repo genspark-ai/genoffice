@@ -279,6 +279,60 @@ function insertSettingsChild(xml: string, localName: string, childXml: string): 
 const relTagWithId = (id: string): RegExp =>
   new RegExp(`<Relationship\\s[^>]*\\bId\\s*=\\s*(["'])${id}\\1[^>]*/>`)
 
+/** The `<Relationship ` half of relTagWithId's shape, which anchors a candidate tag. */
+const RELATIONSHIP_TAG_MARKER = /<Relationship\s/
+
+/**
+ * An exact `Id="rIdN"` inside a candidate tag. The id text is captured
+ * verbatim, so a zero-padded `rId02` is kept distinct from `rId2` exactly as
+ * relTagWithId's literal comparison keeps them distinct.
+ */
+const RELATIONSHIP_TAG_ID = /\bId\s*=\s*(["'])(rId\d+)\1/g
+
+/**
+ * Every relationship id a .rels part already hands out. One pass over the part,
+ * answering the same question as relTagWithId for every id at once: a tag only
+ * counts when it opens with `<Relationship `, self-closes, and spells that id
+ * inside itself, so the ids the allocator treats as taken stay exactly the ids
+ * the reclaim can free. Testing one candidate id at a time instead costs a full
+ * scan of the part per candidate, which is quadratic in the relationship count -
+ * a few MB of relationships then takes minutes to allocate a single id.
+ */
+const occupiedRelIds = (relsXml: string): Set<string> => {
+  const taken = new Set<string>()
+  let pos = 0
+  while (pos < relsXml.length) {
+    const gt = relsXml.indexOf('>', pos)
+    if (gt === -1) break
+    // relTagWithId's `[^>]*` cannot cross a `>`, so one candidate tag is one
+    // `>`-delimited run, and it only matches when that run self-closes
+    if (relsXml[gt - 1] === '/') {
+      const chunk = relsXml.slice(pos, gt)
+      const marker = chunk.search(RELATIONSHIP_TAG_MARKER)
+      if (marker !== -1) {
+        RELATIONSHIP_TAG_ID.lastIndex = marker
+        let m: RegExpExecArray | null
+        while ((m = RELATIONSHIP_TAG_ID.exec(chunk)) !== null) taken.add(m[2])
+      }
+    }
+    pos = gt + 1
+  }
+  return taken
+}
+
+/**
+ * Lowest id from rId1 this part does not already hand out, so a gap is reused
+ * rather than skipped. Deliberately not maxRelId + 1: that never fills a gap and
+ * starts at rId1001 for an absent part, so it would hand out a different id
+ * than the part's own numbering implies.
+ */
+export const nextFreeRelId = (relsXml: string): string => {
+  const taken = occupiedRelIds(relsXml)
+  let n = 1
+  while (taken.has(`rId${n}`)) n++
+  return `rId${n}`
+}
+
 export type ParsedDocFull = ParsedDoc & { extras: ParseExtras }
 
 /** Body content in final editor order (hidden trailing elements are appended automatically). */
@@ -965,9 +1019,7 @@ export async function saveDocx(
     else if (!isPictureWatermark(watermark)) xml = watermarkParagraphXml(watermark)
     else {
       const mediaPath = landMedia(watermark.image)
-      let n = 1
-      while (relTagWithId(`rId${n}`).test(relsXml)) n++
-      const rId = `rId${n}`
+      const rId = nextFreeRelId(relsXml)
       relsXml = relsXml.replace(
         '</Relationships>',
         `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${mediaPath.replace(/^word\//, '')}"/></Relationships>`,
@@ -2186,7 +2238,14 @@ function commentPlainText(commentXml: string): string {
 
 /** set or remove <w:documentProtection> at its CT_Settings position */
 function applyProtection(xml: string, protection: DocProtection | null): string {
-  let out = xml.replace(/<w:documentProtection[^>]*\/>/, '')
+  // CT_DocumentProtection is empty-content, so a producer may write either
+  // spelling. Removing only the self-closing form left a paired element in
+  // place: clearing protection did nothing, and setting it appended a second
+  // zero-or-one element, which is schema-invalid. Same idiom as applySettingsFlag.
+  let out = xml.replace(
+    /<w:documentProtection(?=[\s/>])[^>]*?(?:\/\s*>|>\s*<\/w:documentProtection\s*>)/,
+    '',
+  )
   if (protection) {
     const crypt = protection.hash
       ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
@@ -2207,7 +2266,13 @@ function applyProtection(xml: string, protection: DocProtection | null): string 
 
 /** set or remove <w:writeProtection> (password to modify) at its CT_Settings position */
 function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
-  let out = xml.replace(/<w:writeProtection[^>]*\/>/, '')
+  // same both-forms removal as applyProtection: a paired <w:writeProtection>
+  // is legal and used to survive, so clearing it did nothing and setting it
+  // left two zero-or-one elements behind
+  let out = xml.replace(
+    /<w:writeProtection(?=[\s/>])[^>]*?(?:\/\s*>|>\s*<\/w:writeProtection\s*>)/,
+    '',
+  )
   if (wp && (wp.recommended || wp.hash)) {
     const crypt = wp.hash
       ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
@@ -2408,7 +2473,11 @@ export function removeHfReference(
   variant: 'default' | 'first' | 'even',
 ): string {
   return sectXml.replace(new RegExp(`<w:${kind}Reference\\b[^>]*/>`, 'g'), (tag) => {
-    const type = /w:type="([^"]+)"/.exec(tag)?.[1]
+    // Quote-agnostic, like hfReferenceType / onOffTagIn: a single-quoted
+    // w:type went unread here, so its undefined type matched isDefault and
+    // unlinking the default took the first/even references with it.
+    const m = /\bw:type=(?:"([^"]+)"|'([^']*)')/.exec(tag)
+    const type = m?.[1] ?? m?.[2]
     const isDefault = type === undefined || type === 'default' || type === 'odd'
     return (variant === 'default' ? isDefault : type === variant) ? '' : tag
   })
@@ -2434,7 +2503,17 @@ function applyEvenAndOddHeaders(xml: string, on: boolean): string {
 
 /** Set, replace or remove <w:background> (must be the first child of w:document). */
 function applyPageColor(documentXml: string, color: string | null): string {
-  let xml = documentXml.replace(/<w:background[^>]*\/>/, '')
+  // Both spellings are valid OOXML: the background is written self-closing
+  // (<w:background w:color="..."/>) or as an element pair carrying a VML fill
+  // (<w:background ...><v:background .../></w:background>). Removing only the
+  // self-closing form left the paired copy behind, so a save emitted two
+  // w:background children; CT_Document admits one and Word then reports the
+  // file as corrupt. Strip the pair whole, VML child included, and re-emit the
+  // canonical self-closing form, for the same reason stripElement() does.
+  let xml = documentXml.replace(
+    /<w:background[^>]*\/>|<w:background[^>]*>[\s\S]*?<\/w:background>/g,
+    '',
+  )
   if (color) {
     xml = xml.replace(/(<w:document[^>]*>)/, `$1<w:background w:color="${escapeXmlAttr(color)}"/>`)
   }

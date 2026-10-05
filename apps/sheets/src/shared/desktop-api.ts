@@ -2531,6 +2531,12 @@ export interface AttachmentImageResult {
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
+/**
+ * Document page theme preference (#1811): what the editors' canvas/paper does
+ * relative to the UI theme. 'follow' keeps the previous single-theme behavior.
+ */
+export type DocTheme = 'follow' | 'light' | 'dark'
+
 /** shell-wide AutoSave default; updatedAt is 0 until the user has ever set it */
 export interface AutoSaveDefault {
   on: boolean
@@ -2577,6 +2583,10 @@ export interface DesktopApi {
   getTheme(): Promise<UiTheme>
   /** theme switched from the shell home page */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /** current document page theme preference (#1811, persisted by the shell in app-settings.json) */
+  getDocumentTheme(): Promise<DocTheme>
+  /** document page theme switched from the shell home page */
+  onDocumentThemeChanged(handler: (theme: DocTheme) => void): () => void
   /** shell-wide AutoSave default (see useAutoSavePref) */
   getAutoSaveDefault(): Promise<AutoSaveDefault>
   onAutoSaveDefaultChanged(handler: (value: AutoSaveDefault) => void): () => void
@@ -2595,6 +2605,15 @@ export interface DesktopApi {
   selectWorkbooksForMerge(): Promise<WorkbookFile[] | null>
   /** open explicit spreadsheet paths (chat attachments) as merge-source sessions */
   openWorkbooksForMerge(paths: string[]): Promise<WorkbookFile[] | null>
+  /// Re-open a known path through the normal open path (the pipeline
+  /// selectWorkbook runs) to adopt a live session after a sidecar crash.
+  /// Not the merge-source open: a recovered workbook is a normal session, and
+  /// a csv/xls is imported as the workbook itself, not as a merge input.
+  reopenWorkbook(path: string): Promise<WorkbookFile | null>
+  /// The sidecar process died: every session id this renderer holds is gone.
+  /// A positive crash signal — the main process raises it only for an actual
+  /// process death, never for a session it closed or swapped on purpose.
+  onSidecarCrashed(callback: () => void): () => void
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>

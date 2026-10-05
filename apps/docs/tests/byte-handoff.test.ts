@@ -19,4 +19,13 @@ describe('byte handoff', () => {
     expect(takeHandoff('https://example.com/handoff/x')).toBeNull()
     expect(pendingHandoffCount()).toBe(1)
   })
+
+  it('evicts the oldest unclaimed handoff once the cap is reached', () => {
+    // MAX_PENDING_HANDOFFS from src/main/byte-handoff.ts, kept internal to the module
+    const buffers = Array.from({ length: 9 }, (_, i) => Buffer.from(`document ${i}`))
+    const urls = buffers.map((bytes) => handOffBytes(bytes))
+    expect(pendingHandoffCount()).toBe(8)
+    expect(takeHandoff(urls[0])).toBeNull()
+    expect(takeHandoff(urls[8])).toBe(buffers[8])
+  })
 })

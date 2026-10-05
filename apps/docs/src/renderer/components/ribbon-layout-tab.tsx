@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
-import { type SectionSettings } from '@genoffice/docx-engine'
+import { type SectionSettings, type TextboxDisplay } from '@genoffice/docx-engine'
 import { WRAP_OPTIONS } from './ContextMenu'
 import { MarginDialog, marginsFitPage, type PageMargins } from './MarginDialog'
 import { LengthInput } from './LengthInput'
 import { PaperSizeDialog } from './PaperSizeDialog'
 import { insertColumnBreak, insertTextWrappingBreak } from '../editor/page-break'
+import { setFloatingWrap, shapeWrapOf } from '../editor/floating-z-order'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { useMeasurement } from '../use-measurement'
 import {
@@ -204,18 +205,13 @@ export function LayoutTab({
   const canWrap = hasDoc && (isImage || isFloatingBox)
   // position presets go through imagePatchOf (original-document images only); newly inserted objects work after saving
   const canPosition = hasDoc && isImage && protAttrs?.docxIndex != null
-  const currentWrap = (protAttrs?.imageWrap as string | null) ?? null
+  const boxes = protAttrs?.textboxes as TextboxDisplay[] | undefined
+  const currentWrap = boxes?.length
+    ? shapeWrapOf(boxes[0])
+    : ((protAttrs?.imageWrap as string | null) ?? null)
 
   const applyWrap = (value: string | null) => {
-    const cleared =
-      value === null
-        ? { imagePosH: null, imagePosV: null, imageOffsetXEmu: null, imageOffsetYEmu: null }
-        : {}
-    editor
-      .chain()
-      .focus()
-      .updateAttributes('docProtected', { imageWrap: value, ...cleared })
-      .run()
+    setFloatingWrap(editor, value)
     setDropdown(() => null)
   }
 

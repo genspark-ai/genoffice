@@ -15,6 +15,7 @@ import {
   summarizeGskFailure,
 } from '../src/gsk'
 import { ResponseTooLargeError } from '@genoffice/electron-utils/remote-image'
+import { AiTimeoutError } from '@genoffice/ai-provider'
 
 describe('parseGskOutput', () => {
   it('parses clean JSON', () => {
@@ -93,6 +94,32 @@ describe('parseGskOutput', () => {
     expect(parsed.data).toHaveLength(20_000)
     // the previous nested slice-and-reparse scan needed minutes at this size
     expect(elapsed).toBeLessThan(5_000)
+  })
+
+  it('gives up on a hostile response in bounded time', () => {
+    // Every line opens a block that never closes, so each candidate re-scans the
+    // rest of the output: N lines of length L cost N x L. gsk output is
+    // model-controlled and capped only by MAX_BUFFER, so the recovery scan has
+    // to be bounded rather than quadratic.
+    const out = Array.from(
+      { length: 16_000 },
+      (_, i) => `{"step":${i},"msg":"still rendering`,
+    ).join('\n')
+    const started = performance.now()
+    expect(() => parseGskOutput(out)).toThrow(/No JSON found/)
+    const elapsed = performance.now() - started
+    // the unbounded scan needed ~25s at this size
+    expect(elapsed).toBeLessThan(1_000)
+  })
+
+  it('still finds a payload buried behind unclosed log lines', () => {
+    const out = [
+      '{"msg":"still rendering',
+      '{"msg":"still rendering',
+      '{"status":"ok","data":{"n":7}}',
+      '[INFO] done',
+    ].join('\n')
+    expect(parseGskOutput(out)).toEqual({ status: 'ok', data: { n: 7 } })
   })
 })
 
@@ -382,16 +409,17 @@ describe('gskSlideGenerate response caps', () => {
     status: 'ok',
     data: { pptx_url: 'https://www.genspark.ai/api/files/deck.pptx', model: 'claude-opus-4-7' },
   })
+  // a public address literal, so the download path needs no DNS in tests
   const downloadResult = JSON.stringify({
     status: 'ok',
-    data: { download_url: 'https://cdn.example/deck.pptx' },
+    data: { download_url: 'https://8.8.8.8/deck.pptx' },
   })
 
-  function stubSlideGenerate(artifact: () => Response) {
+  function stubSlideGenerate(artifact: () => Response, downloadResultBody = downloadResult) {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(ndjsonResponse(slideResult))
-      .mockResolvedValueOnce(ndjsonResponse(downloadResult))
+      .mockResolvedValueOnce(ndjsonResponse(downloadResultBody))
       .mockImplementationOnce(() => Promise.resolve(artifact()))
     vi.stubGlobal('fetch', fetchMock)
     return fetchMock
@@ -485,6 +513,37 @@ describe('gskSlideGenerate response caps', () => {
       ResponseTooLargeError,
     )
   })
+
+  // The download_url comes from the cloud response, so a compromised or spoofed
+  // endpoint decides which host the main process dials. It must pass the same
+  // SSRF gate as every other model-influenced download.
+  it('never requests a cloud download URL that points at a private address', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const fetchMock = stubSlideGenerate(
+      () => new Response(new Uint8Array([1, 2, 3])),
+      JSON.stringify({
+        status: 'ok',
+        data: { download_url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/' },
+      }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
+    const requested = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(requested.some((u) => u.includes('169.254.169.254'))).toBe(false)
+  })
+
+  it('revalidates every redirect hop of a cloud download URL', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    const fetchMock = stubSlideGenerate(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://127.0.0.1:8080/internal.pptx' },
+        }),
+    )
+    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
+    const requested = fetchMock.mock.calls.map(([u]) => String(u))
+    expect(requested.some((u) => u.includes('127.0.0.1'))).toBe(false)
+  })
 })
 
 describe('parseToolCliNdjson', () => {
@@ -576,5 +635,61 @@ describe('summarizeGskFailure', () => {
     expect(summarizeGskFailure('HTTP 502: <html><body><script>x()</script></body></html>')).toBe(
       'HTTP 502 (HTML error page)',
     )
+  })
+})
+
+describe('gskSlideGenerate cancellation and timeout', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    delete process.env.GSK_API_KEY
+    vi.useRealTimers()
+  })
+
+  it('refuses an already-aborted signal before issuing the billed POST', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    let called = 0
+    globalThis.fetch = vi.fn(async () => {
+      called++
+      return new Response('{}', { status: 500 })
+    }) as unknown as typeof fetch
+
+    const already = AbortSignal.abort()
+    expect(already.aborted).toBe(true)
+    // An abort listener added after the event fired is never invoked, so without an
+    // explicit check the internal controller is never aborted and the request runs
+    // to the full timeout — a billed slide_generate plus its artifact download.
+    await expect(gskSlideGenerate({ brief: 'x', signal: already })).rejects.toThrow(/abort/i)
+    expect(called).toBe(0)
+  })
+
+  it('surfaces its own deadline as AiTimeoutError, not a bare abort', async () => {
+    process.env.GSK_API_KEY = 'test-key'
+    // never settles: the call must end on the watchdog deadline, and must be typed so
+    // the apps can map it to errorCode 'timeout' and show the localized message
+    let sawAbort = false
+    globalThis.fetch = vi.fn(
+      (_url: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            sawAbort = true
+            reject(new DOMException('The operation was aborted', 'AbortError'))
+          })
+        }),
+    ) as unknown as typeof fetch
+
+    vi.useFakeTimers()
+    const call = gskSlideGenerate({ brief: 'x' }).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    await vi.advanceTimersByTimeAsync(240_000)
+    const err = await call
+    vi.useRealTimers()
+
+    expect(sawAbort).toBe(true)
+    // AiTimeoutError, not a DOMException AbortError: the apps branch on this type
+    expect(err).toBeInstanceOf(AiTimeoutError)
+    expect((err as Error).message).toMatch(/timed out/i)
   })
 })

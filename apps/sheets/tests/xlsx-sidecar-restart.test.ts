@@ -92,3 +92,90 @@ describe('XlsxSidecarClient stdin error', () => {
     client.stop()
   })
 })
+
+/// The renderer recovers a crashed workbook from this signal, so it must be
+/// raised by an actual process death and by nothing else. In particular the
+/// Save swap and closeWorkbook tear a session down on purpose while the
+/// sidecar keeps running, and must never look like a crash.
+describe('XlsxSidecarClient crash signal', () => {
+  afterEach(() => spawnMock.mockReset())
+
+  it('reports a process death, which invalidates every session id we hold', async () => {
+    const fake = new FakeSidecarProcess(301)
+    spawnMock.mockReturnValue(fake)
+    const { XlsxSidecarClient } = await import('../src/main/xlsx-sidecar-client')
+    const client = new XlsxSidecarClient('/nonexistent/sidecar')
+    const crashes = vi.fn()
+    client.onProcessExit(crashes)
+
+    const read = client.readRange({ sessionId: 's', sheetId: 'sheet', range })
+    fake.emit('exit', 1, null)
+    await expect(read).rejects.toThrow(/exited/)
+    expect(crashes).toHaveBeenCalledTimes(1)
+    // The signal fires once per death, not once per rejected request: a crash
+    // fails every in-flight read at once and each must not re-open the file.
+    void client.readRange({ sessionId: 's', sheetId: 'sheet', range }).catch(() => {})
+    expect(crashes).toHaveBeenCalledTimes(1)
+    client.stop()
+  })
+
+  it('stays silent for the deliberate close of one workbook', async () => {
+    const fake = new FakeSidecarProcess(302)
+    spawnMock.mockReturnValue(fake)
+    const { XlsxSidecarClient } = await import('../src/main/xlsx-sidecar-client')
+    const client = new XlsxSidecarClient('/nonexistent/sidecar')
+    const crashes = vi.fn()
+    client.onProcessExit(crashes)
+
+    // What closeWorkbook and the Save swap do: drop the session through the
+    // live pipe. The process is untouched, so the renderer must not be told
+    // the workbook needs re-opening.
+    const closing = client.close('s-1')
+    const closeRequest = fake.stdin.read() as Buffer
+    fake.stdout.write(
+      `${JSON.stringify({
+        version: 1,
+        requestId: (JSON.parse(closeRequest.toString('utf8').trim()) as { requestId: string })
+          .requestId,
+        ok: true,
+        result: null,
+      })}\n`,
+    )
+    await closing
+
+    expect(crashes).not.toHaveBeenCalled()
+    expect(client.getProcessId()).toBe(302)
+    client.stop()
+  })
+
+  it('stays silent for the app-quit stop', async () => {
+    const fake = new FakeSidecarProcess(303)
+    spawnMock.mockReturnValue(fake)
+    const { XlsxSidecarClient } = await import('../src/main/xlsx-sidecar-client')
+    const client = new XlsxSidecarClient('/nonexistent/sidecar')
+    const crashes = vi.fn()
+    client.onProcessExit(crashes)
+
+    client.start()
+    client.stop()
+    // The kill is deliberate; the late exit event it triggers must not read
+    // as a crash either.
+    fake.emit('exit', 0, null)
+    expect(crashes).not.toHaveBeenCalled()
+  })
+
+  it('unsubscribes cleanly', async () => {
+    const fake = new FakeSidecarProcess(304)
+    spawnMock.mockReturnValue(fake)
+    const { XlsxSidecarClient } = await import('../src/main/xlsx-sidecar-client')
+    const client = new XlsxSidecarClient('/nonexistent/sidecar')
+    const crashes = vi.fn()
+    const off = client.onProcessExit(crashes)
+
+    client.start()
+    off()
+    fake.emit('exit', 1, null)
+    expect(crashes).not.toHaveBeenCalled()
+    client.stop()
+  })
+})

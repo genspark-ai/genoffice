@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { readZipDirectory, MAX_COMPRESSION_RATIO } from '../src/limits'
+import { assertPackageWithinLimits, readZipDirectory, MAX_COMPRESSION_RATIO } from '../src/limits'
 import { run, tempDir } from './helpers'
 
 const REPO = resolve(__dirname, '../../..')
@@ -196,6 +196,22 @@ describe('package limits', () => {
     const r = (await run(['docs', 'read', path, '--json'])).json()
     expect(r).toMatchObject({ error: 'resource_limit', detail: { limit: MAX_COMPRESSION_RATIO } })
     expect(r.suggestion).toContain('bomb')
+  })
+
+  it('applies the pptx family limits to a macro-enabled slideshow extension', () => {
+    // .ppsm is the macro-enabled PowerPoint Slideshow format, the same container
+    // as .ppsx. It was missing from FAMILY, so assertPackageWithinLimits took the
+    // `if (!family) return` early-out and skipped every check for it.
+    const bomb = rawZip([
+      { name: 'ppt/slides/slide1.xml', compressed: 1024, uncompressed: 200 * MB },
+    ])
+    const path = file('bomb.ppsm', bomb)
+    expect(() => assertPackageWithinLimits(path, 'ppsm')).toThrow(/beyond the \d+:1 limit/)
+  })
+
+  it('still lets a macro-enabled slideshow through when it is not a bomb', () => {
+    const ok = rawZip([{ name: 'ppt/slides/slide1.xml', compressed: 64, uncompressed: 4096 }])
+    expect(() => assertPackageWithinLimits(file('ok.ppsm', ok), 'ppsm')).not.toThrow()
   })
 
   it('lets a real document through untouched', async () => {
