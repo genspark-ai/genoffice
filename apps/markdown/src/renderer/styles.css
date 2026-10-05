@@ -182,7 +182,15 @@ button {
   font-size: 14px;
 }
 
+/*
+ * The document surface stays left-to-right whatever the UI language is: an
+ * Arabic or Hebrew UI mirrors the chrome, but re-authoring the reader's
+ * document is not ours to do. Konva and Univer draw with ctx.direction set to
+ * inherit, so this also keeps the canvas grids running left-to-right.
+ */
+
 .editor-scroll {
+  direction: ltr;
   flex: 1;
   overflow-y: auto;
   /* same canvas backdrop as the slides workspace; .doc-page follows the theme surface */

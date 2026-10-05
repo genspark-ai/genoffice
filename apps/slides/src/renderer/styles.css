@@ -1245,7 +1245,15 @@ body.vib .slide-list {
   outline: none;
 }
 
+/*
+ * The document surface stays left-to-right whatever the UI language is: an
+ * Arabic or Hebrew UI mirrors the chrome, but re-authoring the reader's
+ * document is not ours to do. Konva and Univer draw with ctx.direction set to
+ * inherit, so this also keeps the canvas grids running left-to-right.
+ */
+
 .stage-wrap {
+  direction: ltr;
   flex: 1;
   overflow: auto;
   /* 48px top: headroom for the .stage-ai-bar overhanging the slide card, so it
