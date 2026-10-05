@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.genoffice.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>GenOffice</name>
+  <summary>AI-native office suite — Word, Excel, PowerPoint, PDF and Markdown in one app</summary>
+  <description>
+    <p>
+      GenOffice is a unified, AI-native office suite. One local app hosts the
+      word processor, spreadsheet, presentation and PDF modules behind a home
+      launcher, reads and writes the standard Office file formats, and puts an
+      AI copilot beside every editor.
+    </p>
+    <ul>
+      <li>Docs: full-fidelity Word (.docx) editing with tracked changes, comments and export</li>
+      <li>Sheets: Excel (.xlsx) workbooks with formulas, charts and a native calculation sidecar</li>
+      <li>Slides: PowerPoint (.pptx) decks with presenter tools</li>
+      <li>PDF reading and markup, Markdown with live preview, and an HTML editor</li>
+      <li>An AI copilot in every editor: drafting, translation, summarization and image generation</li>
+      <li>A local-first design: files stay on disk, working offline</li>
+    </ul>
+  </description>
+  <developer id="ai.genspark">
+    <name>Mainfunc, Inc.</name>
+  </developer>
+  <launchable type="desktop-id">com.genoffice.app.desktop</launchable>
+  <url type="homepage">https://github.com/genspark-ai/genoffice</url>
+  <url type="bugtracker">https://github.com/genspark-ai/genoffice/issues</url>
+  <content_rating type="oars-1.1" />
+  <provides>
+    <mediatype type="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+    <mediatype type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    <mediatype type="application/vnd.ms-excel.sheet.macroEnabled.12" />
+    <mediatype type="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+    <mediatype type="application/vnd.ms-excel" />
+    <mediatype type="text/csv" />
+    <mediatype type="text/tab-separated-values" />
+    <mediatype type="application/pdf" />
+    <mediatype type="text/markdown" />
+    <mediatype type="text/html" />
+  </provides>
+  <releases>
+    <release version="0.11.0" date="2026-09-28">
+      <url type="details">https://github.com/genspark-ai/genoffice/releases/tag/v0.11.0</url>
+    </release>
+  </releases>
+</component>
