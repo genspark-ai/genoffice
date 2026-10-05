@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const pl = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Ukryj zaznaczenie przed AI',
+  redactDialogDesc:
+    'Zaznaczona zawartość zostaje w dokumencie i w pliku; model widzi tylko symbol. Nadaj mu nazwę, by wiedział, co oznacza.',
+  redactDialogPlaceholder: 'Nazwa symbolu, np. telefon klienta',
+  redactCancel: 'Anuluj',
+  redactInsert: 'Ukryj',
+  redactEnable: 'Kliknij prawym na zaznaczeniu, aby ukryć je przed modelem.',
+
   appMergeWorkbooks: 'Scal skoroszyty',
   appMergeWorkbooksTip: 'Dodaj arkusze z innych plików Excel do tego skoroszytu',
   appMergeWorkbooksPicking: 'Wybierz pliki do scalenia…',

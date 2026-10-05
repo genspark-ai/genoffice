@@ -218,6 +218,29 @@ Common mistakes
 - Percentages such as 10: fractions are 0..1, so 10 percent is 0.1.
 - Opposing crops summing to 1 or more: nothing would remain visible.
 
+### setRedaction
+
+`{label: string|null}`
+
+Withhold a picture, video or audio shape from the model, or stop withholding it.
+`label` is the only name a model ever sees in place of the shape; `null` clears
+it and leaves the shape exactly as it was.
+
+This is how a reader hides a picture they must not disclose, so the model can
+still lay out the slide around it. The shape itself is untouched — no bytes are
+removed and the file still opens everywhere.
+
+Text is withheld differently, through the text-editing surface, which marks the
+runs under a selection rather than the element. This op only takes pictures.
+
+```json
+{ "op": "setRedaction", "target": { "slide": 0, "el": "e_PICTURE" }, "label": "company logo" }
+```
+
+```json
+{ "op": "setRedaction", "target": { "slide": 0, "el": "e_PICTURE" }, "label": null }
+```
+
 ### setPictureOpacity
 
 `{opacity:0..1}`

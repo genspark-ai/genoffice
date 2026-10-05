@@ -1,0 +1,249 @@
+/// Withholding cell values from the model, on the reading side.
+///
+/// The marks themselves live in `xl/gxRedactions.json` (see
+/// `xlsx-gateway/gateway/xlsx-redaction`). This module turns them into the only
+/// thing the read tools need: a question they can ask about a cell — "is this
+/// withheld, and what is it called?" — answered without ever touching the value.
+///
+/// Two shapes of leak matter here, and only the first exists in the other apps:
+///
+/// 1. **Direct.** `read_range` / `read_cells` hand the value over. Fixed by
+///    substituting the placeholder.
+/// 2. **By arithmetic.** `aggregate_range` computes an exact `sum` over a
+///    column. One withheld cell inside it is solvable: sum − everything else.
+///    No amount of masking the cell fixes that, because the cell is not the
+///    only source of its value. So a withheld cell must not *participate* in a
+///    statistic at all — see `addWithheld` in ./aggregate.
+///
+/// The part is keyed by sheet NAME (that is what the save pipeline addresses),
+/// while the read tools address sheets by id. `buildRedactionIndex` is where
+/// that translation happens, so no call site has to remember it.
+
+import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+
+export const MAX_LABEL_LENGTH = 40
+
+const OPEN = '{{'
+const CLOSE = '}}'
+
+/**
+ * Clean a label for storage and for the model prompt.
+ *
+ * The character set is the stricter of the two carriers used across the apps
+ * (html's, which also drops `*` and `/` because a label there opens a script
+ * comment). A label carries no such risk in a JSON part, but a reader who has
+ * learned the rule in one app should not find it relaxed in another.
+ */
+export function sanitizeLabel(raw: string): string {
+  return raw
+    .replace(/[{}<>="'*/]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_LABEL_LENGTH)
+    .trim()
+}
+
+/** The literal text the model is shown in place of a withheld value. */
+export function placeholderSource(label: string): string {
+  return `${OPEN}${sanitizeLabel(label) || 'private'}${CLOSE}`
+}
+
+/** One withheld rectangle, in zero-based screen coordinates. */
+export interface CellMark {
+  readonly startRow: number
+  readonly endRow: number
+  readonly startColumn: number
+  readonly endColumn: number
+  readonly label: string
+}
+
+/** What the read tools ask about a cell. */
+export interface RedactionIndex {
+  /** the label covering this cell, or null when the cell is not withheld */
+  labelAt(sheetId: string, row: number, column: number): string | null
+  /** true when this workbook withholds nothing — the common case */
+  readonly isEmpty: boolean
+  /** the labels in play on one sheet, for the prompt that tells the model */
+  labelsFor(sheetId: string): readonly string[]
+  /** the raw rectangles, for callers that count an area rather than ask about a cell */
+  marksFor(sheetId: string): readonly CellMark[]
+  /** every sheet id carrying marks, so callers can decide what to say about them */
+  readonly sheetIds: readonly string[]
+}
+
+/** A sheet as the app already lists it: the pair the index is built from. */
+export interface SheetRefLike {
+  readonly id: string
+  readonly name: string
+}
+
+const EMPTY_INDEX: RedactionIndex = {
+  labelAt: () => null,
+  isEmpty: true,
+  labelsFor: () => [],
+  marksFor: () => [],
+  sheetIds: [],
+}
+
+/**
+ * The "nothing is withheld" index, shared.
+ *
+ * Most workbooks never hide a cell, and the readers ask about every cell they
+ * touch. Handing them one immutable empty index keeps the per-cell cost at a
+ * single property read instead of a null check on every call.
+ */
+export const NO_REDACTIONS: RedactionIndex = EMPTY_INDEX
+
+function covers(mark: CellMark, row: number, column: number): boolean {
+  return (
+    row >= mark.startRow &&
+    row <= mark.endRow &&
+    column >= mark.startColumn &&
+    column <= mark.endColumn
+  )
+}
+
+/**
+ * Build the lookup from the marks on disk.
+ *
+ * A mark naming a sheet this workbook does not have is dropped rather than
+ * guessed at: the part is keyed by name, and applying "Sheet1"'s marks to
+ * whatever sheet happens to sit at that index would withhold the wrong cells —
+ * a silent, wrong-direction error. The reader's own marks are still saved (the
+ * save path keys off the same state), so a renamed sheet recovers on the save
+ * that renames it.
+ */
+export function buildRedactionIndex(
+  states: readonly SheetRedactionState[],
+  sheets: readonly SheetRefLike[],
+): RedactionIndex {
+  const idByName = new Map(sheets.map((sheet) => [sheet.name, sheet.id]))
+  const bySheet = new Map<string, CellMark[]>()
+  for (const state of states) {
+    const sheetId = idByName.get(state.sheetName)
+    if (sheetId === undefined) continue
+    const marks = bySheet.get(sheetId) ?? []
+    for (const mark of state.marks) {
+      marks.push({
+        startRow: mark.startRow,
+        endRow: mark.endRow,
+        startColumn: mark.startColumn,
+        endColumn: mark.endColumn,
+        label: sanitizeLabel(mark.label),
+      })
+    }
+    bySheet.set(sheetId, marks)
+  }
+  if (bySheet.size === 0) return EMPTY_INDEX
+
+  return {
+    isEmpty: false,
+    sheetIds: [...bySheet.keys()],
+    labelAt(sheetId, row, column) {
+      for (const mark of bySheet.get(sheetId) ?? []) {
+        if (covers(mark, row, column)) return mark.label
+      }
+      return null
+    },
+    labelsFor(sheetId) {
+      const labels = (bySheet.get(sheetId) ?? []).map((mark) => mark.label)
+      return [...new Set(labels)]
+    },
+    marksFor(sheetId) {
+      return bySheet.get(sheetId) ?? []
+    },
+  }
+}
+
+/**
+ * The number of withheld cells inside a rectangle — the union of the marks,
+ * not their sum.
+ *
+ * Marks routinely overlap: a reader who hides a column and then hides one more
+ * cell inside it has two marks covering one cell. Summing the intersections
+ * would count that cell twice, and the caller subtracts this from a fill band's
+ * repetition count — an over-count there drops real cells out of the range.
+ * A scanline over the covered rows, merging the column intervals on each, is
+ * exact and stays cheap because the loop is bounded by the marks' own extent.
+ */
+export function countWithheldIn(
+  marks: readonly CellMark[],
+  bounds: { startRow: number; endRow: number; startColumn: number; endColumn: number },
+): number {
+  let firstRow = Number.POSITIVE_INFINITY
+  let lastRow = Number.NEGATIVE_INFINITY
+  for (const mark of marks) {
+    if (mark.endRow < bounds.startRow || mark.startRow > bounds.endRow) continue
+    if (mark.endColumn < bounds.startColumn || mark.startColumn > bounds.endColumn) continue
+    firstRow = Math.min(firstRow, Math.max(mark.startRow, bounds.startRow))
+    lastRow = Math.max(lastRow, Math.min(mark.endRow, bounds.endRow))
+  }
+  if (firstRow > lastRow) return 0
+
+  const intervals: [number, number][] = []
+  let total = 0
+  for (let row = firstRow; row <= lastRow; row += 1) {
+    intervals.length = 0
+    for (const mark of marks) {
+      if (row < mark.startRow || row > mark.endRow) continue
+      const start = Math.max(mark.startColumn, bounds.startColumn)
+      const end = Math.min(mark.endColumn, bounds.endColumn)
+      if (end >= start) intervals.push([start, end])
+    }
+    if (intervals.length === 0) continue
+    intervals.sort((left, right) => left[0] - right[0])
+    const [firstStart, firstEnd] = intervals[0]!
+    let start = firstStart
+    let end = firstEnd
+    for (let i = 1; i < intervals.length; i += 1) {
+      const [nextStart, nextEnd] = intervals[i]!
+      if (nextStart <= end + 1) {
+        end = Math.max(end, nextEnd)
+      } else {
+        total += end - start + 1
+        start = nextStart
+        end = nextEnd
+      }
+    }
+    total += end - start + 1
+  }
+  return total
+}
+
+/**
+ * The prompt section that tells the model what the placeholders are.
+ *
+ * Two things here are specific to a spreadsheet and would be wrong to copy
+ * from the other apps:
+ *
+ * 1. A withheld cell is **excluded from the arithmetic**, not merely masked in
+ *    the output. Without saying so, `sum` over a column will not match the
+ *    visible values and the model will "correct" it — by guessing the hidden
+ *    number, which is the exact thing the reader withheld.
+ * 2. A withheld cell does not appear in `find_cells` results at all, so the
+ *    model must not conclude the value is absent from the workbook.
+ */
+export function placeholderInstruction(labels: readonly string[]): string {
+  const list = [...new Set(labels)].map((l) => `- {{${sanitizeLabel(l) || 'private'}}}`).join('\n')
+  return [
+    '## Private placeholders',
+    'This workbook contains {{...}} placeholders. Each stands in for something the reader has deliberately withheld from you; you cannot see what is inside, and that is the point.',
+    '',
+    'Treat every placeholder as one indivisible object:',
+    '- Copy it character for character — same letters, same order, same spacing.',
+    '- Never split it across a cell boundary or put a space inside it.',
+    '- Never merge two into one, never split one into several, never reorder them.',
+    '- Never rename, translate, re-case, expand or shorten it.',
+    '- Never drop one, and never add a placeholder that was not already there.',
+    '',
+    'Write text around them as if each stood for the value it replaces, so a row reading "call {{客户电话}}" still means what it says.',
+    'If a request needs what a placeholder hides, work around it rather than guessing.',
+    '',
+    'Two consequences you must respect, or you will recover what the reader hid:',
+    '- Withheld cells are **left out of every statistic**. A sum, average, min, max, distinct count or top-value list over a range that contains one covers only the remaining cells, and `aggregate_range` reports how many were withheld. Never add the withheld values back in, and never treat a total as covering the whole range.',
+    '- Withheld cells are **absent from `find_cells` results**. If a search returns nothing, that does not mean the value is not in the workbook — it may simply be withheld. Never conclude a value is missing from the file.',
+    '',
+    'The placeholders in this workbook:',
+    list,
+  ].join('\n')
+}

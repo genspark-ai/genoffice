@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const vi = {
+  redactMenuLabel: 'Ẩn phần đã chọn khỏi AI',
+  redactDialogDesc:
+    'Văn bản vẫn còn trong tài liệu và tệp; mô hình chỉ thấy placeholder bên dưới. Đặt tên để mô hình biết nó đại diện cho điều gì.',
+  redactDialogPlaceholder: 'Tên placeholder, ví dụ: số điện thoại khách hàng',
+  redactCancel: 'Hủy',
+  redactInsert: 'Ẩn',
+
   loading: 'Đang tải…',
   loadFailed: 'Không thể mở tệp',
   untitled: 'Không có tiêu đề',

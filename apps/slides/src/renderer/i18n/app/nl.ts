@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const nl = {
+  redactMenuLabel: 'Selectie verbergen voor de AI',
+  redactDialogDesc:
+    'De selectie blijft in het document en het bestand; het model ziet alleen de placeholder. Geef hem een naam.',
+  redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
+  redactCancel: 'Annuleren',
+  redactInsert: 'Verbergen',
+  redactEnable: 'Rechtsklik op een selectie om die voor het model te verbergen.',
+
   appPhPromptTitle: 'Klik om een titel toe te voegen',
   appPhPromptSubtitle: 'Klik om een ondertitel toe te voegen',
   appPhPromptBody: 'Klik om tekst toe te voegen',

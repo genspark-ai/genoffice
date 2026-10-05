@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const ko = {
+  redactMenuLabel: '선택한 부분을 AI에서 숨기기',
+  redactDialogDesc:
+    '문서는 그대로 두고 AI에게는 아래 자리표시자만 보냅니다. 이름을 붙이면 AI가 무엇을 뜻하는지 알 수 있습니다.',
+  redactDialogPlaceholder: '자리표시자 이름, 예: 고객 전화',
+  redactCancel: '취소',
+  redactInsert: '숨기기',
+
   loading: '불러오는 중…',
   loadFailed: '파일을 열 수 없습니다',
   untitled: '제목 없음',

@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const cs = {
+  redactMenuLabel: 'Skrýt výběr před AI',
+  redactDialogDesc:
+    'Vybraný obsah zůstane v dokumentu i v souboru; model uvidí jen zástupný symbol. Pojmenujte ho, aby věděl, co zastupuje.',
+  redactDialogPlaceholder: 'Název zástupného symbolu, např. telefon zákazníka',
+  redactCancel: 'Zrušit',
+  redactInsert: 'Skrýt',
+  redactEnable: 'Pravým klikem na výběr jej skryjete před modelem.',
+
   appPhPromptTitle: 'Klikněte a přidejte nadpis',
   appPhPromptSubtitle: 'Klikněte a přidejte podnadpis',
   appPhPromptBody: 'Klikněte a přidejte text',

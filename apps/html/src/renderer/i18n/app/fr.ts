@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const fr = {
+  redactMenuLabel: 'Masquer la sélection à l’IA',
+  redactDialogDesc:
+    'Les mots restent dans le document et dans le fichier ; le modèle ne voit que le marqueur ci-dessous. Donnez-lui un nom pour qu’il sache ce qu’il désigne.',
+  redactDialogPlaceholder: 'Nom du placeholder, ex. : téléphone du client',
+  redactCancel: 'Annuler',
+  redactInsert: 'Masquer',
+
   loading: 'Chargement…',
   loadFailed: "Impossible d'ouvrir le fichier",
   untitled: 'Sans titre',

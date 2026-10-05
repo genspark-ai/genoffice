@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const de = {
+  redactMenuLabel: 'Auswahl vor der KI verbergen',
+  redactDialogDesc:
+    'Das Ausgewählte bleibt im Dokument und in der Datei; das Modell sieht nur den Platzhalter. Geben Sie ihm einen Namen.',
+  redactDialogPlaceholder: 'Name des Platzhalters, z. B. Telefonnummer des Kunden',
+  redactCancel: 'Abbrechen',
+  redactInsert: 'Verbergen',
+  redactEnable: 'Rechtsklick auf eine Auswahl, um sie vor dem Modell zu verbergen.',
+
   appPhPromptTitle: 'Titel durch Klicken hinzufügen',
   appPhPromptSubtitle: 'Untertitel durch Klicken hinzufügen',
   appPhPromptBody: 'Text durch Klicken hinzufügen',

@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const he = {
+  redactMenuLabel: 'הסתרת הבחירה מהמודל',
+  redactDialogDesc:
+    'המילים נשארות במסמך ובקובץ; המודל רואה רק את הסימון. תן לו שם כדי שיהיה ברור מה הוא מייצג.',
+  redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
+  redactCancel: 'ביטול',
+  redactInsert: 'הסתר',
+
   loading: 'טוען…',
   loadFailed: 'לא ניתן לפתוח את הקובץ',
   untitled: 'ללא שם',

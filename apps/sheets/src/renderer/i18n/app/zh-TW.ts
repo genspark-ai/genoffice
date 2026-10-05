@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const zhTW = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: '把選中的內容對 AI 隱藏',
+  redactDialogDesc:
+    '選取的內容會留在文件裡，AI 讀到的卻是下面的標記。給它起個名字，AI 才知道它是什麼。',
+  redactDialogPlaceholder: '佔位名稱，例如：客戶電話',
+  redactCancel: '取消',
+  redactInsert: '隱藏',
+  redactEnable: '選中文字後右鍵，即可對 AI 隱藏。',
+
   appMergeWorkbooks: '合併活頁簿',
   appMergeWorkbooksTip: '將其他 Excel 檔案的工作表併入目前活頁簿',
   appMergeWorkbooksPicking: '選擇要合併的檔案…',

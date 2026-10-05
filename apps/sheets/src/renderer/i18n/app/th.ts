@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const th = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
+  redactDialogDesc:
+    'เนื้อหาที่เลือกยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
+  redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
+  redactCancel: 'ยกเลิก',
+  redactInsert: 'ซ่อน',
+  redactEnable: 'คลิกขวาที่ข้อความที่เลือกเพื่อซ่อนจาก AI',
+
   appMergeWorkbooks: 'รวมเวิร์กบุ๊ก',
   appMergeWorkbooksTip: 'นำชีตจากไฟล์ Excel อื่นมารวมในเวิร์กบุ๊กนี้',
   appMergeWorkbooksPicking: 'เลือกไฟล์ที่จะรวม…',

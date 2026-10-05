@@ -295,6 +295,7 @@ import {
   ParagraphDialog,
   type ContextMenuState,
 } from './components/ContextMenu'
+import { RedactDialog } from './editor/RedactDialog'
 import {
   CellMarginsDialog,
   DeleteCellsDialog,
@@ -1105,6 +1106,12 @@ export function App() {
   const saveImageAs = useCallback((src: string) => void window.desktop.saveImageAs(src), [])
   const [showFontDialog, setShowFontDialog] = useState(false)
   const [showParaDialog, setShowParaDialog] = useState(false)
+  /** label the reader gives a span they are withholding from the model */
+  const [redactTarget, setRedactTarget] = useState<{
+    from: number
+    to: number
+    seed: string
+  } | null>(null)
   /** Word's table dialogs, shared by the ribbon, the right-click menu and the Table menu */
   const [tableDialog, setTableDialog] = useState<TableDialogKind | null>(null)
   const [tableGridlines, setTableGridlines] = useState(
@@ -2846,6 +2853,21 @@ export function App() {
 
   const cancelNewComment = useCallback(() => cancelNewCommentImpl(reviewCtxRef.current), [])
   const startNewComment = useCallback(() => startNewCommentImpl(reviewCtxRef.current), [])
+  /**
+   * Capture the range now, while the menu still knows what was selected: the
+   * dialog takes seconds to answer and a click elsewhere would otherwise move
+   * the span the reader asked to withhold.
+   */
+  const startRedaction = useCallback(() => {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    if (from === to) return
+    setRedactTarget({
+      from,
+      to,
+      seed: editor.state.doc.textBetween(from, to, ' ').trim().slice(0, 24),
+    })
+  }, [editor])
   const submitNewComment = useCallback(
     (text: string) => submitNewCommentImpl(reviewCtxRef.current, text),
     [],
@@ -7413,6 +7435,7 @@ export function App() {
           onParagraphDialog={() => setShowParaDialog(true)}
           onLink={() => setShowLinkModal(true)}
           onNewComment={startNewComment}
+          onRedact={startRedaction}
           onViewImage={setViewImage}
           onSaveImageAs={saveImageAs}
           onAiPreset={(text) => {
@@ -7457,6 +7480,23 @@ export function App() {
           styles={ribbonStyles}
           pageWidth={section?.pageWidth}
           onClose={() => setShowParaDialog(false)}
+        />
+      )}
+      {doc && redactTarget && (
+        <RedactDialog
+          seed={redactTarget.seed}
+          onCancel={() => setRedactTarget(null)}
+          onSubmit={(label) => {
+            // re-assert the captured range: the command marks the selection,
+            // and the reader may have clicked somewhere while deciding
+            if (editor)
+              editor
+                .chain()
+                .setTextSelection({ from: redactTarget.from, to: redactTarget.to })
+                .setRedaction(label)
+                .run()
+            setRedactTarget(null)
+          }}
         />
       )}
       {doc && tableDialog === 'properties' && (

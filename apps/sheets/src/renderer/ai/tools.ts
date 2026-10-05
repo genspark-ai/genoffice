@@ -22,6 +22,8 @@ import type {
 import { t } from '../i18n/locale'
 import { formatRangeAggregate, type RangeAggregate } from './aggregate'
 import { guideCatalogSummary, loadGuides } from './guides'
+import { NO_REDACTIONS, type RedactionIndex } from './redact'
+import { redactGuardForOps } from './redact-guard'
 
 /**
  * The workbook DSL as an AgentSkill tool set: read-only context/reader tools
@@ -243,6 +245,12 @@ export interface SheetsSkillDeps {
     operations: readonly WorkbookOperation[],
     summary: string,
   ): { ok: true; plan: ChangePlan; applied?: Promise<ApplyOutcome> } | { ok: false; error: string }
+  /**
+   * The cells the reader withheld from the model, resolved per call so the
+   * index never goes stale behind a ref. Optional, and defaulting to "nothing
+   * withheld", so a test or a caller without a session pays nothing.
+   */
+  redactions?(): RedactionIndex
   /** AI create_document: write a new standalone file (xlsx/csv from a
    * worksheet; docx/pdf/md from content) into the default save folder and
    * open it in a new tab (ai/create-document.ts). */
@@ -1283,6 +1291,21 @@ export function executeWorkbookTool(
         return fail(t('aiToolPropose'), describeOperationErrors(rawOps, parsedOps.error))
       }
       const operations: WorkbookOperation[] = parsedOps.data
+      // A cell the reader withheld still holds real data the model never saw,
+      // so a write landing on one destroys something the user chose to keep —
+      // silently, with the file still opening afterwards. Checked here, before
+      // the batch is planned or applied, so a refusal changes nothing.
+      const refusal = redactGuardForOps(
+        operations,
+        deps.redactions?.() ?? NO_REDACTIONS,
+        (sheetId) => deps.getActiveSheetInfo().sheets.find((sheet) => sheet.id === sheetId)?.name,
+      )
+      if (refusal) {
+        return fail(
+          t('aiToolPropose'),
+          `Rejected — none of the ${operations.length} operation(s) were applied (a batch is all-or-nothing): ${refusal.reason}`,
+        )
+      }
       const outcome = deps.proposeOperations(operations, summaryInput.trim())
       if (!outcome.ok) {
         return fail(

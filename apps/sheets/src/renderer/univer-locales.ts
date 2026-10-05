@@ -268,6 +268,47 @@ export function insertRowsBelowLocale(pack: LocalePack): LocalePack {
   }
 }
 
+/**
+ * The right-click item that withholds the selected cells from the AI.
+ *
+ * It is a Univer menu item, so its label is a Univer locale key resolved at
+ * render — the app's own `t()` cannot be used for a menu `title`. That also
+ * fixes the language coverage: Univer ships no pack for th/nl/ms/he/hi/cs, so
+ * those stay English here exactly as every other right-click item does, rather
+ * than the item being the one string in the menu with a language of its own.
+ *
+ * The wording is copied verbatim from the other apps' `redactMenuLabel` so the
+ * same gesture reads identically in markdown, slides, docs and html.
+ */
+const HIDE_FROM_AI: Record<string, string> = {
+  en: 'Hide the selection from AI',
+  zh: '把选中的内容对 AI 隐藏',
+  ja: '選択範囲をAIから隠す',
+  ko: '선택한 부분을 AI에서 숨기기',
+  fr: 'Masquer la sélection à l’IA',
+  de: 'Auswahl vor der KI verbergen',
+  es: 'Ocultar la selección a la IA',
+  id: 'Sembunyikan pilihan dari AI',
+  ru: 'Скрыть выделение от ИИ',
+  ar: 'إخفاء التحديد عن الذكاء الاصطناعي',
+  pt: 'Ocultar a seleção da IA',
+  it: 'Nascondi la selezione all’IA',
+  pl: 'Ukryj zaznaczenie przed AI',
+  vi: 'Ẩn phần đã chọn khỏi AI',
+}
+
+export function hideFromAiLocale(pack: LocalePack, lang: string): LocalePack {
+  const label = HIDE_FROM_AI[lang] ?? HIDE_FROM_AI.en!
+  const sheetsUi = (pack['sheets-ui'] ?? {}) as Record<string, unknown>
+  const rightClick = (sheetsUi.rightClick ?? {}) as Record<string, string>
+  return {
+    'sheets-ui': {
+      ...sheetsUi,
+      rightClick: { ...rightClick, hideSelectionFromAi: label },
+    },
+  }
+}
+
 export function univerLocaleFor(lang: string): LocaleType | null {
   return UNIVER_LOCALES[lang]?.type ?? null
 }
@@ -279,6 +320,7 @@ export async function applyUniverLocale(runtime: UniverRuntime, lang: string): P
   const merged = mergeLocales(...packs) as LocalePack
   Object.assign(merged, numberAsTextAlertLocale(merged))
   Object.assign(merged, insertRowsBelowLocale(merged))
+  Object.assign(merged, hideFromAiLocale(merged, lang))
   const localeService = runtime.univer.__getInjector().get(LocaleService)
   localeService.load({ [entry.type]: merged } as unknown as ILocales)
   localeService.setLocale(entry.type)

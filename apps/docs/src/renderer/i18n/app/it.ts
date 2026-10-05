@@ -348,6 +348,12 @@ export const it = {
   appAiBadgeTip: "Usa l'IA",
   appTranslate: 'Traduci',
   appTranslateTo: 'Traduci in {lang}',
+  redactMenuLabel: 'Nascondi la selezione all’IA',
+  redactDialogDesc:
+    'Le parole restano nel documento e nel file; il modello vede solo il segnaposto. Dai un nome perché sappia cosa rappresenta.',
+  redactDialogPlaceholder: 'Nome del segnaposto, es. telefono del cliente',
+  redactCancel: 'Annulla',
+  redactInsert: 'Nascondi',
   appLangEnglish: 'Inglese',
   appLangSimplifiedChinese: 'Cinese semplificato',
   appLangJapanese: 'Giapponese',

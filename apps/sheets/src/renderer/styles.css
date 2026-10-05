@@ -5939,3 +5939,33 @@ textarea:focus {
 body > div:has([data-u-comp='find-replace-dialog']) {
   display: none !important;
 }
+
+/* ── Withholding cells from the model ─────────────────────────────────────
+ * The dialog itself wears the app's .modal-backdrop / .modal chrome; only
+ * the three pieces unique to a redaction are added here. The placeholder
+ * preview is the important one: it is the literal text the model will read,
+ * so the reader has to see it before committing to the mark. */
+.redact-dialog-desc {
+  display: block;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.redact-dialog-range {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.redact-dialog-preview {
+  margin: 0 0 12px;
+  padding: 6px 8px;
+  border-radius: var(--radius-small);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--color-brand-secondary);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-default);
+}

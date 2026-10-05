@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const ms = {
+  redactMenuLabel: 'Sembunyikan pilihan daripada AI',
+  redactDialogDesc:
+    'Perkataan kekal dalam dokumen dan fail; model hanya melihat placeholder di bawah. Beri nama supaya model tahu apa yang diwakili.',
+  redactDialogPlaceholder: 'Nama placeholder, cth. telefon pelanggan',
+  redactCancel: 'Batal',
+  redactInsert: 'Sembunyikan',
+
   loading: 'Memuatkan…',
   loadFailed: 'Tidak dapat membuka fail',
   untitled: 'Tanpa tajuk',

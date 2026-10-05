@@ -330,6 +330,12 @@ export const zhTW = {
   appAiBadgeTip: '將呼叫 AI',
   appTranslate: '翻譯',
   appTranslateTo: '翻譯成{lang}',
+  redactMenuLabel: '把選中的內容對 AI 隱藏',
+  redactDialogDesc:
+    '這段文字會留在文件裡，AI 讀到的卻是下面的標記。給它起個名字，AI 才知道它是什麼。',
+  redactDialogPlaceholder: '佔位名稱，例如：客戶電話',
+  redactCancel: '取消',
+  redactInsert: '隱藏',
   appLangEnglish: '英文',
   appLangSimplifiedChinese: '簡體中文',
   appLangJapanese: '日文',

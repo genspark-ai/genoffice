@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const nl = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Selectie verbergen voor de AI',
+  redactDialogDesc:
+    'De selectie blijft in het document en het bestand; het model ziet alleen de placeholder. Geef hem een naam.',
+  redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
+  redactCancel: 'Annuleren',
+  redactInsert: 'Verbergen',
+  redactEnable: 'Rechtsklik op een selectie om die voor het model te verbergen.',
+
   appMergeWorkbooks: 'Werkmappen samenvoegen',
   appMergeWorkbooksTip: 'Bladen uit andere Excel-bestanden aan deze werkmap toevoegen',
   appMergeWorkbooksPicking: 'Kies bestanden om samen te voegen…',

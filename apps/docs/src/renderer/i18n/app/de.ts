@@ -354,6 +354,12 @@ export const de = {
   appAiBadgeTip: 'Verwendet KI',
   appTranslate: 'Übersetzen',
   appTranslateTo: 'In {lang} übersetzen',
+  redactMenuLabel: 'Auswahl vor der KI verbergen',
+  redactDialogDesc:
+    'Die Wörter bleiben im Dokument und in der Datei; das Modell sieht nur den Platzhalter. Geben Sie ihm einen Namen.',
+  redactDialogPlaceholder: 'Name des Platzhalters, z. B. Telefonnummer des Kunden',
+  redactCancel: 'Abbrechen',
+  redactInsert: 'Verbergen',
   appLangEnglish: 'Englisch',
   appLangSimplifiedChinese: 'Chinesisch (vereinfacht)',
   appLangJapanese: 'Japanisch',

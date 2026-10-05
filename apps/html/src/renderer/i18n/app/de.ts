@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const de = {
+  redactMenuLabel: 'Auswahl vor der KI verbergen',
+  redactDialogDesc:
+    'Die Wörter bleiben im Dokument und in der Datei; das Modell sieht nur den Platzhalter. Geben Sie ihm einen Namen.',
+  redactDialogPlaceholder: 'Name des Platzhalters, z. B. Telefonnummer des Kunden',
+  redactCancel: 'Abbrechen',
+  redactInsert: 'Verbergen',
+
   loading: 'Wird geladen…',
   loadFailed: 'Datei konnte nicht geöffnet werden',
   untitled: 'Unbenannt',

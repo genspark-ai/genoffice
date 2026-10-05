@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const nl = {
+  redactMenuLabel: 'Selectie verbergen voor de AI',
+  redactDialogDesc:
+    'De woorden blijven in het document en het bestand; het model ziet alleen de placeholder. Geef hem een naam.',
+  redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
+  redactCancel: 'Annuleren',
+  redactInsert: 'Verbergen',
+
   loading: 'Laden…',
   loadFailed: 'Kan het bestand niet openen',
   untitled: 'Naamloos',

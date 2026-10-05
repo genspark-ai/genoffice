@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const ja = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: '選択範囲をAIから隠す',
+  redactDialogDesc:
+    '選択した内容はドキュメントとファイルに残り、AI には下のマーカーしか見えません。名前をつけると、何を表すかAIが理解できます。',
+  redactDialogPlaceholder: 'プレースホルダー名（例：顧客電話）',
+  redactCancel: 'キャンセル',
+  redactInsert: '隠す',
+  redactEnable: '選択範囲を右クリックしてAIから隠します。',
+
   appMergeWorkbooks: 'ブックの結合',
   appMergeWorkbooksTip: '他の Excel ファイルのシートをこのブックに追加します',
   appMergeWorkbooksPicking: '結合するファイルを選択…',

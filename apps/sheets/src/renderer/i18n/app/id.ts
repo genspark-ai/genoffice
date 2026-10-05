@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const id = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Sembunyikan pilihan dari AI',
+  redactDialogDesc:
+    'Konten yang dipilih tetap ada di dokumen dan berkas; model hanya melihat placeholder di bawah. Beri nama agar model tahu apa yang diwakili.',
+  redactDialogPlaceholder: 'Nama placeholder, mis. telepon pelanggan',
+  redactCancel: 'Batal',
+  redactInsert: 'Sembunyikan',
+  redactEnable: 'Klik kanan pada teks yang dipilih untuk menyembunyikannya dari model.',
+
   appMergeWorkbooks: 'Gabungkan Buku Kerja',
   appMergeWorkbooksTip: 'Tambahkan sheet dari file Excel lain ke buku kerja ini',
   appMergeWorkbooksPicking: 'Pilih file yang akan digabungkan…',

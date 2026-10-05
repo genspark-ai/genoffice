@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const pl = {
+  redactMenuLabel: 'Ukryj zaznaczenie przed AI',
+  redactDialogDesc:
+    'Słowa zostają w dokumencie i w pliku; model widzi tylko symbol. Nadaj mu nazwę, by wiedział, co oznacza.',
+  redactDialogPlaceholder: 'Nazwa symbolu, np. telefon klienta',
+  redactCancel: 'Anuluj',
+  redactInsert: 'Ukryj',
+
   loading: 'Wczytywanie…',
   loadFailed: 'Nie można otworzyć pliku',
   untitled: 'Bez tytułu',

@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const he = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'הסתרת הבחירה מהמודל',
+  redactDialogDesc:
+    'הבחירה נשארת במסמך ובקובץ; המודל רואה רק את הסימון. תן לו שם כדי שיהיה ברור מה הוא מייצג.',
+  redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
+  redactCancel: 'ביטול',
+  redactInsert: 'הסתר',
+  redactEnable: 'לחיצה ימנית על טקסט נבחר מסתיר אותו מהמודל.',
+
   appMergeWorkbooks: 'מיזוג חוברות עבודה',
   appMergeWorkbooksTip: 'הוספת גיליונות מקובצי Excel אחרים לחוברת העבודה הזו',
   appMergeWorkbooksPicking: 'בחרו קבצים למיזוג…',

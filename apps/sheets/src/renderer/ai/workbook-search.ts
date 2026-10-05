@@ -5,7 +5,11 @@
  * structural ops translated, session cell edits overlaid from the journal —
  * so the search never has to stream the whole workbook into Univer.
  */
-import { formatAddress, type RangeBounds } from '@genoffice/xlsx-gateway/domain/cell-address'
+import {
+  formatAddress,
+  parseAddress,
+  type RangeBounds,
+} from '@genoffice/xlsx-gateway/domain/cell-address'
 import type { CellScalar } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from '../univer-sync'
 import type { LazyWorkbookState } from '../univer-state'
@@ -16,7 +20,7 @@ import type {
   FindCellsOutcome,
   SelectRangeOutcome,
 } from './tools'
-import type { WorkbookReadContext } from './workbook-readers'
+import { redactionsOf, type WorkbookReadContext } from './workbook-readers'
 
 /** Every error value Excel can display (ECMA-376 ST_CellType plus the modern
     data-type errors): Error Checking, find_cells errorsOnly, and formula
@@ -105,9 +109,20 @@ function findInDemoWorkbook(
   }
   const matches: FindCellsMatch[] = []
   let truncated = false
+  const redactions = redactionsOf(ctx)
   for (const sheet of targets) {
     const worksheet = workbook?.getSheetBySheetId(sheet.id)
     for (const [address, cell] of Object.entries(sheet.cells)) {
+      // A withheld cell is not searched at all. Returning a placeholder as a
+      // match would still leak: "this value is in Customers!B2" is an oracle
+      // the model can test guesses against, and the address alone narrows the
+      // search. Withheld means absent from this tool's world.
+      if (
+        redactions.labelAt(sheet.id, parseAddress(address).row, parseAddress(address).column) !==
+        null
+      ) {
+        continue
+      }
       let value = cell.value
       // The in-memory model stores value:null for formula cells; matching
       // needs the computed value, backfilled from Univer's formula engine
@@ -159,6 +174,7 @@ async function findInLazyWorkbook(
   }
   const matches: FindCellsMatch[] = []
   const incompleteSheets: string[] = []
+  const redactions = redactionsOf(ctx)
   let truncated = false
   let scanBudget = MAX_SCAN_CELLS
   const push = (match: FindCellsMatch): boolean => {
@@ -178,6 +194,7 @@ async function findInLazyWorkbook(
     for (const entry of journal?.values() ?? []) {
       if (!entry.hasValue) continue
       shadowed.add(`${entry.row}:${entry.column}`)
+      if (redactions.labelAt(sheetId, entry.row, entry.column) !== null) continue
       const address = formatAddress(entry.row, entry.column)
       let value = entry.value
       // Journal formula entries store value:null; the computed result lives in
@@ -235,6 +252,7 @@ async function findInLazyWorkbook(
       }
       for (const cell of mapped.screen.cells) {
         if (shadowed.has(`${cell.row}:${cell.column}`)) continue
+        if (redactions.labelAt(sheetId, cell.row, cell.column) !== null) continue
         if (!test(cell.value, cell.formula)) continue
         if (
           !push({

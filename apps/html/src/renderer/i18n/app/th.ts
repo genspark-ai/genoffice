@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const th = {
+  redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
+  redactDialogDesc:
+    'ข้อความยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
+  redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
+  redactCancel: 'ยกเลิก',
+  redactInsert: 'ซ่อน',
+
   loading: 'กำลังโหลด…',
   loadFailed: 'ไม่สามารถเปิดไฟล์ได้',
   untitled: 'ไม่มีชื่อ',

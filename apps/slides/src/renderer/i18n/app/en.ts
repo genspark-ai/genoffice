@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const en = {
+  redactMenuLabel: 'Hide the selection from AI',
+  redactDialogDesc:
+    'The selection stays in the document and in the file; the model sees the placeholder below instead. Name it so the model knows what it stands for.',
+  redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
+  redactCancel: 'Cancel',
+  redactInsert: 'Hide',
+  redactEnable: 'Right-click a selection to hide it from the model.',
+
   appPhPromptTitle: 'Click to add title',
   appPhPromptSubtitle: 'Click to add subtitle',
   appPhPromptBody: 'Click to add text',

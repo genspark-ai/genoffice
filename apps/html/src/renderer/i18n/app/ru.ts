@@ -1,6 +1,13 @@
 import type { zh } from './zh'
 
 export const ru = {
+  redactMenuLabel: 'Скрыть выделение от ИИ',
+  redactDialogDesc:
+    'Слова остаются в документе и в файле, а модель видит только метку. Дайте ей имя, чтобы было понятно, что она обозначает.',
+  redactDialogPlaceholder: 'Имя метки, напр. телефон клиента',
+  redactCancel: 'Отмена',
+  redactInsert: 'Скрыть',
+
   loading: 'Загрузка…',
   loadFailed: 'Не удалось открыть файл',
   untitled: 'Без названия',

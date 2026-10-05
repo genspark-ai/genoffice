@@ -2925,3 +2925,138 @@ div.tiptap-mathematics-render {
   min-width: 0;
   height: 100%;
 }
+
+/* ---- withheld spans: text kept in the document, hidden from the model ----
+   An underline rather than a fill, because every other decoration in this
+   editor is either a fill (search hits) or a style (bold, highlight) and the
+   reader has to be able to tell at a glance that this one means "the model
+   cannot see this". */
+:root {
+  --redact-ink: #6b4fc0;
+  --redact-rule: rgba(107, 79, 192, 0.55);
+  --redact-tint: rgba(107, 79, 192, 0.09);
+  --redact-scrim: rgb(0 0 0 / 28%);
+}
+
+.redact-span {
+  border-bottom: 2px solid var(--redact-rule);
+  background: var(--redact-tint);
+  color: var(--redact-ink);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+.redact-span.ProseMirror-selectednode {
+  outline: 2px solid var(--redact-ink);
+}
+
+.redact-menu {
+  position: fixed;
+  z-index: 1001;
+  min-width: 210px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-menu);
+}
+
+.redact-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.redact-menu-item:hover {
+  background: var(--hover);
+}
+
+.redact-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: var(--redact-scrim);
+}
+
+.redact-dialog-card {
+  width: min(420px, 92vw);
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal-strong);
+}
+
+.redact-dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.redact-dialog-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+.redact-dialog-preview {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--redact-ink);
+  background: var(--redact-tint);
+  border-bottom: 2px solid var(--redact-rule);
+  border-radius: 2px;
+  padding: 4px 6px;
+  margin-bottom: 14px;
+  word-break: break-all;
+}
+
+.redact-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--canvas);
+  color: var(--text);
+}
+
+.redact-dialog-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.redact-dialog-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.redact-dialog-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+
+.redact-dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

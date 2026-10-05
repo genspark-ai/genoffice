@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const it = {
+  redactMenuLabel: 'Nascondi la selezione all’IA',
+  redactDialogDesc:
+    'Il contenuto selezionato resta nel documento e nel file; il modello vede solo il segnaposto. Dai un nome perché sappia cosa rappresenta.',
+  redactDialogPlaceholder: 'Nome del segnaposto, es. telefono del cliente',
+  redactCancel: 'Annulla',
+  redactInsert: 'Nascondi',
+  redactEnable: 'Clic destro su una selezione per nasconderla al modello.',
+
   appPhPromptTitle: 'Fai clic per aggiungere un titolo',
   appPhPromptSubtitle: 'Fai clic per aggiungere un sottotitolo',
   appPhPromptBody: 'Fai clic per aggiungere del testo',

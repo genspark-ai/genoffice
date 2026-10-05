@@ -64,6 +64,8 @@ export const IPC_CHANNELS = {
   recalcWorkbook: 'workbook:recalc',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
+  /** The cells the reader withheld from the model (xl/gxRedactions.json) */
+  readWorkbookRedactions: 'workbook:read-redactions',
   readLocalImage: 'shell:read-local-image',
   closeWorkbook: 'workbook:close',
   saveWorkbook: 'workbook:save',

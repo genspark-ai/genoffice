@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const pt = {
+  redactMenuLabel: 'Ocultar a seleção da IA',
+  redactDialogDesc:
+    'O conteúdo selecionado continua no documento e no arquivo; o modelo vê apenas o marcador. Dê-lhe um nome para que saiba o que representa.',
+  redactDialogPlaceholder: 'Nome do marcador, ex.: telefone do cliente',
+  redactCancel: 'Cancelar',
+  redactInsert: 'Ocultar',
+  redactEnable: 'Clique com o botão direito numa seleção para ocultá-la do modelo.',
+
   appPhPromptTitle: 'Clique para adicionar um título',
   appPhPromptSubtitle: 'Clique para adicionar um subtítulo',
   appPhPromptBody: 'Clique para adicionar texto',

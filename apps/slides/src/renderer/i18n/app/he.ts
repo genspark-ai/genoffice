@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const he = {
+  redactMenuLabel: 'הסתרת הבחירה מהמודל',
+  redactDialogDesc:
+    'הבחירה נשארת במסמך ובקובץ; המודל רואה רק את הסימון. תן לו שם כדי שיהיה ברור מה הוא מייצג.',
+  redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
+  redactCancel: 'ביטול',
+  redactInsert: 'הסתר',
+  redactEnable: 'לחיצה ימנית על טקסט נבחר מסתיר אותו מהמודל.',
+
   appPhPromptTitle: 'לחץ כדי להוסיף כותרת',
   appPhPromptSubtitle: 'לחץ כדי להוסיף כותרת משנה',
   appPhPromptBody: 'לחץ כדי להוסיף טקסט',

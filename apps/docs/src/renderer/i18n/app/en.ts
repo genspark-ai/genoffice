@@ -337,6 +337,12 @@ export const en = {
   appAiBadgeTip: 'Uses AI',
   appTranslate: 'Translate',
   appTranslateTo: 'Translate to {lang}',
+  redactMenuLabel: 'Hide the selection from AI',
+  redactDialogDesc:
+    'The words stay in the document and in the file; the model sees the placeholder below instead. Name it so the model knows what it stands for.',
+  redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
+  redactCancel: 'Cancel',
+  redactInsert: 'Hide',
   appLangEnglish: 'English',
   appLangSimplifiedChinese: 'Simplified Chinese',
   appLangJapanese: 'Japanese',

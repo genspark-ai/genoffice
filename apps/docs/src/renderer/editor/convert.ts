@@ -109,6 +109,20 @@ export function pmDocOptions(parsed: {
   }
 }
 
+/** the element this editor writes into a run's rPr to carry the label */
+const REDACT_RPR_RE = /<go:redact\b/
+const REDACT_LABEL_RE = /<go:redact\b[^>]*\bw:label="([^"]*)"/
+
+function redactLabelIn(rawRPr: string): string {
+  const found = REDACT_LABEL_RE.exec(rawRPr)
+  const label = found?.[1] ?? 'private'
+  return label
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+}
+
 export function blocksToPmDoc(
   blocks: Block[],
   sections?: SectionInfo[],
@@ -1675,6 +1689,19 @@ function runMarks(run: Run): PmMark[] {
       run.charScalePct && !/\s/.test(run.text) && !run.underline && !run.strike && !run.link
         ? charScaleXAttr(run.text, run.charScalePct, charScaleEm(run.text, run.charScalePct))
         : null
+    // A run whose rPr carries our element came back from a file this editor
+    // wrote. The parser has no schema for a custom element, so the label is
+    // lifted out of the raw rPr and the run is re-tagged: without it the
+    // border survives a reopen but the document quietly stops withholding
+    // anything, and a model can read the whole thing again.
+    if (typeof run.rawRPr === 'string' && REDACT_RPR_RE.test(run.rawRPr)) {
+      marks.push({
+        type: 'redaction',
+        // bdr and rawRPr are what the save path needs to write the mark back;
+        // docTextStyle already carries the border, this re-asserts it on ours
+        attrs: { label: redactLabelIn(run.rawRPr), rawRPr: run.rawRPr },
+      })
+    }
     marks.push({
       type: 'docTextStyle',
       attrs: {
@@ -3234,7 +3261,15 @@ function symRuns(run: Run): Run[] {
 function runFromMarks(text: string, marks: PmMark[]): Run {
   const run: Run = { text }
   for (const mark of marks) {
-    if (mark.type === 'bold') run.bold = true
+    if (mark.type === 'redaction') {
+      // rawRPr is the whole story: it carries both the w:bdr Word draws and the
+      // custom element holding the label, and the save path writes it back
+      // byte for byte because the run model never manages a custom element.
+      // Setting run.bdr as well would only duplicate what rPr already has.
+      if (typeof mark.attrs?.rawRPr === 'string' && mark.attrs.rawRPr) {
+        run.rawRPr = mark.attrs.rawRPr
+      }
+    } else if (mark.type === 'bold') run.bold = true
     else if (mark.type === 'italic') run.italic = true
     else if (mark.type === 'underline') run.underline = true
     else if (mark.type === 'strike') run.strike = true

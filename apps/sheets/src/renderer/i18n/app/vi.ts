@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const vi = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Ẩn phần đã chọn khỏi AI',
+  redactDialogDesc:
+    'Nội dung đã chọn vẫn còn trong tài liệu và tệp; mô hình chỉ thấy placeholder bên dưới. Đặt tên để mô hình biết nó đại diện cho điều gì.',
+  redactDialogPlaceholder: 'Tên placeholder, ví dụ: số điện thoại khách hàng',
+  redactCancel: 'Hủy',
+  redactInsert: 'Ẩn',
+  redactEnable: 'Nhấp chuột phải vào phần đã chọn để ẩn khỏi mô hình.',
+
   appMergeWorkbooks: 'Hợp nhất sổ làm việc',
   appMergeWorkbooksTip: 'Thêm các trang tính từ tệp Excel khác vào sổ làm việc này',
   appMergeWorkbooksPicking: 'Chọn các tệp để hợp nhất…',

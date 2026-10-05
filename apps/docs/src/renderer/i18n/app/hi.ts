@@ -342,6 +342,12 @@ export const hi = {
   appAiBadgeTip: 'AI का उपयोग करता है',
   appTranslate: 'अनुवाद करें',
   appTranslateTo: '{lang} में अनुवाद करें',
+  redactMenuLabel: 'चयन को AI से छिपाएँ',
+  redactDialogDesc:
+    'शब्द दस्तावेज़ और फ़ाइल में बने रहते हैं; मॉडल को केवल नीचे वाला प्लेसहोल्डर दिखता है। नाम दें ताकि उसे पता चले कि यह किसका स्थान है।',
+  redactDialogPlaceholder: 'प्लेसहोल्डर का नाम, जैसे ग्राहक का फ़ोन',
+  redactCancel: 'रद्द करें',
+  redactInsert: 'छिपाएँ',
   appLangEnglish: 'अंग्रेज़ी',
   appLangSimplifiedChinese: 'सरलीकृत चीनी',
   appLangJapanese: 'जापानी',

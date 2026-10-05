@@ -95,6 +95,8 @@ interface EditorContextMenuProps {
   onEditField?: (field: FieldRange) => void
   /** Open Hyperlink: browser for http(s), in-document jump for #bookmark */
   onOpenLink?: (href: string) => void
+  /** Ask for a label, then withhold the selection from the model */
+  onRedact?: () => void
   /** Word's table dialogs (Split Cells… / Insert Cells… / Delete Cells… / Table Properties…) */
   onTableDialog?: (kind: TableDialogKind) => void
   /** section content width the AutoFit / Distribute commands fit the grid into */
@@ -142,6 +144,7 @@ export function EditorContextMenu({
   onUpdateFields,
   onEditField,
   onOpenLink,
+  onRedact,
   onTableDialog,
   sectionContentWidthPx = 624,
   onRespell,
@@ -676,6 +679,19 @@ export function EditorContextMenu({
           </div>
         )}
       </div>
+      {/* Withholding a span. No AI badge: the item spends the words rather
+          than using the model, and the badge would read "Uses AI".
+          Text only, deliberately. A picture alone in a paragraph is a *block*
+          node (docProtected), which takes no marks at all, and a picture
+          beside text is an inline atom whose mark is dropped by the docx save
+          (convert.ts reads the run's node attrs, never the node's marks) — so
+          offering it for a picture would hide it for one session and then lose
+          the decision on the next save, with nothing to tell the reader. */}
+      {onRedact &&
+        item(t('redactMenuLabel'), {
+          disabled: !canEdit || !hasSelection,
+          onClick: run(onRedact),
+        })}
       {isFloating && (
         <>
           <div className="ctx-sep" />

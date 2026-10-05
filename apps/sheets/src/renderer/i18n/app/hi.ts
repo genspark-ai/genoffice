@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const hi = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'चयन को AI से छिपाएँ',
+  redactDialogDesc:
+    'चुनी हुई सामग्री दस्तावेज़ और फ़ाइल में बनी रहती है; मॉडल को केवल नीचे वाला प्लेसहोल्डर दिखता है। नाम दें ताकि उसे पता चले कि यह किसका स्थान है।',
+  redactDialogPlaceholder: 'प्लेसहोल्डर का नाम, जैसे ग्राहक का फ़ोन',
+  redactCancel: 'रद्द करें',
+  redactInsert: 'छिपाएँ',
+  redactEnable: 'चयनित पाठ पर राइट-क्लिक करके इसे मॉडल से छिपाएँ।',
+
   appMergeWorkbooks: 'वर्कबुक मर्ज करें',
   appMergeWorkbooksTip: 'अन्य Excel फ़ाइलों की शीट इस वर्कबुक में जोड़ें',
   appMergeWorkbooksPicking: 'मर्ज करने के लिए फ़ाइलें चुनें…',

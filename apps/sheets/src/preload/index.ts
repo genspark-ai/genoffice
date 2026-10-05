@@ -34,6 +34,7 @@ import type {
   WorkbookRangeResult,
   WorkbookRecalcRequest,
   WorkbookRecalcResult,
+  WorkbookRedactionsResult,
   WorkbookRichRun,
   WorkbookSaveRequest,
   WorkbookSaveResult,
@@ -210,6 +211,15 @@ const desktopApi: DesktopApi = {
       validatedRequest,
     )
     return parsePivotDefinitionResult(result)
+  },
+  async readWorkbookRedactions(request) {
+    if (!isRecord(request) || !isUuid(request.sessionId)) {
+      throw new Error('Invalid redaction request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.readWorkbookRedactions, {
+      sessionId: request.sessionId,
+    })
+    return parseWorkbookRedactionsResult(result)
   },
   async saveWorkbookEdits(request) {
     const validatedRequest = parseSaveRequest(request)
@@ -1828,6 +1838,28 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
     )
   )
     invalid('protected-range states: malformed entry')
+  cappedArray('redaction states', input.redactionStates, 1_000)
+  if (
+    input.redactionStates.some(
+      (state) =>
+        !isRecord(state) ||
+        typeof state.sheetName !== 'string' ||
+        state.sheetName.length === 0 ||
+        !Array.isArray(state.marks) ||
+        state.marks.length > 100_000 ||
+        state.marks.some(
+          (mark: unknown) =>
+            !isRecord(mark) ||
+            typeof mark.startRow !== 'number' ||
+            typeof mark.endRow !== 'number' ||
+            typeof mark.startColumn !== 'number' ||
+            typeof mark.endColumn !== 'number' ||
+            typeof mark.label !== 'string' ||
+            mark.label.length === 0,
+        ),
+    )
+  )
+    invalid('redaction states: malformed entry')
   if (
     input.mode !== 'save-as' &&
     input.restoreWriteBack !== true &&
@@ -1854,7 +1886,8 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
     input.definedNamesState === null &&
     input.themeState === null &&
     input.workbookProtectionState === null &&
-    input.protectedRangeStates.length === 0
+    input.protectedRangeStates.length === 0 &&
+    input.redactionStates.length === 0
   )
     invalid('no changes to save')
   if (input.sheetOps.length > 0 && input.sheetOrder.length === 0)
@@ -2802,6 +2835,52 @@ function parsePivotDefinitionResult(input: unknown): WorkbookPivotDefinition {
     throw new Error('Invalid pivot definition response.')
   }
   return input as unknown as WorkbookPivotDefinition
+}
+
+/**
+ * Structural check only — the main process zod-validates the full shape, and
+ * the gateway's own parser is what refuses a part it cannot understand. The
+ * three states stay distinct here: an `unreadable` result must not be folded
+ * into an empty state list on the way to the renderer, or a damaged part would
+ * read as "nothing is withheld".
+ */
+function parseWorkbookRedactionsResult(input: unknown): WorkbookRedactionsResult {
+  if (!isRecord(input)) throw new Error('Invalid redaction response.')
+  if (input.status === 'absent') return { status: 'absent' }
+  if (input.status === 'unreadable') {
+    if (typeof input.error !== 'string' || input.error.length === 0) {
+      throw new Error('Invalid redaction response.')
+    }
+    return { status: 'unreadable', error: input.error }
+  }
+  if (input.status !== 'ok' || !Array.isArray(input.states) || input.states.length > 1_000) {
+    throw new Error('Invalid redaction response.')
+  }
+  for (const state of input.states) {
+    if (
+      !isRecord(state) ||
+      typeof state.sheetName !== 'string' ||
+      state.sheetName.length === 0 ||
+      !Array.isArray(state.marks) ||
+      state.marks.length > 100_000
+    ) {
+      throw new Error('Invalid redaction response.')
+    }
+    for (const mark of state.marks) {
+      if (
+        !isRecord(mark) ||
+        typeof mark.startRow !== 'number' ||
+        typeof mark.endRow !== 'number' ||
+        typeof mark.startColumn !== 'number' ||
+        typeof mark.endColumn !== 'number' ||
+        typeof mark.label !== 'string' ||
+        mark.label.length === 0
+      ) {
+        throw new Error('Invalid redaction response.')
+      }
+    }
+  }
+  return input as unknown as WorkbookRedactionsResult
 }
 
 function parseCellStyle(input: unknown): WorkbookCellStyle {

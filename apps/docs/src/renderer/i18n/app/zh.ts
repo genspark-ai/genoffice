@@ -350,6 +350,12 @@ export const zh = {
   appAiBadgeTip: '将调用 AI',
   appTranslate: '翻译',
   appTranslateTo: '翻译成{lang}',
+  redactMenuLabel: '把选中的内容对 AI 隐藏',
+  redactDialogDesc:
+    '这段文字会留在文档和文件里，AI 读到的却是下面的标记。给它起个名字，AI 才知道它是什么。',
+  redactDialogPlaceholder: '占位名称，例如：客户电话',
+  redactCancel: '取消',
+  redactInsert: '隐藏',
   appLangEnglish: '英文',
   appLangSimplifiedChinese: '简体中文',
   appLangJapanese: '日文',

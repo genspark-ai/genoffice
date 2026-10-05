@@ -92,6 +92,11 @@ import {
 import { applyThemeState, type WorkbookThemeState } from './xlsx-theme'
 import { applySheetNotes, type SheetNote } from './xlsx-notes'
 import {
+  applyRedactionPart,
+  rekeyRedactionStates,
+  type SheetRedactionState,
+} from './xlsx-redaction'
+import {
   applySparklineAdditions,
   type SheetSparklineAddition,
   type SparklineGroupAdd,
@@ -587,6 +592,7 @@ export async function applyCellEditsToXlsx(
   pageSetupStates: readonly SheetPageSetupState[] = [],
   noteStates: readonly SheetNoteState[] = [],
   formulaValues: readonly SheetFormulaValues[] = [],
+  redactionStates: readonly SheetRedactionState[] = [],
 ): Promise<XlsxMutation> {
   const plan = await planCellEditsToXlsx(
     await createBufferEntrySource(source),
@@ -610,6 +616,16 @@ export async function applyCellEditsToXlsx(
     [],
     [],
     formulaValues,
+    // The five slots between formulaValues and redactionStates (theme, workbook
+    // protection, protected ranges, bulk fills) are features this wrapper does
+    // not expose. They must stay positional: planCellEditsToXlsx takes one long
+    // ordered list, so inserting a placeholder here shifts nothing — but
+    // dropping one would silently re-target every later argument.
+    null,
+    null,
+    [],
+    [],
+    redactionStates,
   )
   return assembleWithJsZip(source, plan)
 }
@@ -709,6 +725,7 @@ export async function planCellEditsToXlsx(
   workbookProtectionState: { readonly lockStructure: boolean } | null = null,
   protectedRangeStates: readonly SheetProtectedRangesState[] = [],
   bulkConstantFills: readonly BulkConstantFill[] = [],
+  redactionStates: readonly SheetRedactionState[] = [],
 ): Promise<MutationPlan> {
   // A pending pivot pins final coordinates for its source and output; shifts
   // on either sheet, and sheet renames (worksheetSource@sheet), would desync
@@ -963,6 +980,18 @@ export async function planCellEditsToXlsx(
   )
   const dynamicArrayCm =
     spillEdits.length > 0 ? await ensureDynamicArrayMetadata(pkg, touchedEntries) : null
+
+  // Withheld cells travel in a package part of their own, so they are written
+  // here rather than with the worksheets. A sheet renamed or removed in this
+  // same save takes its marks with it first — see rekeyRedactionStates.
+  if (redactionStates.length > 0) {
+    const rekeyed = rekeyRedactionStates(
+      redactionStates,
+      sheetPlan?.renames ?? [],
+      sheetPlan?.removals ?? [],
+    )
+    await applyRedactionPart(pkg, touchedEntries, rekeyed)
+  }
 
   const editsBySheet = groupBySheet(edits)
   const fillsBySheet = groupBySheet(bulkConstantFills)

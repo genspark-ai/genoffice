@@ -1,6 +1,14 @@
 import type { zh } from './zh'
 
 export const ru = {
+  redactMenuLabel: 'Скрыть выделение от ИИ',
+  redactDialogDesc:
+    'Выбранное остается в документе и в файле, а модель видит только метку. Дайте ей имя, чтобы было понятно, что она обозначает.',
+  redactDialogPlaceholder: 'Имя метки, напр. телефон клиента',
+  redactCancel: 'Отмена',
+  redactInsert: 'Скрыть',
+  redactEnable: 'Правый клик по выделению скрывает его от модели.',
+
   appPhPromptTitle: 'Щелкните, чтобы добавить заголовок',
   appPhPromptSubtitle: 'Щелкните, чтобы добавить подзаголовок',
   appPhPromptBody: 'Щелкните, чтобы добавить текст',

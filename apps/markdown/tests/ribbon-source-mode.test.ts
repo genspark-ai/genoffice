@@ -81,9 +81,11 @@ describe('Ribbon source mode', () => {
     const markdown = counts(renderRibbon(false))
     expect(markdown.styleDropdown).toBe(1)
     expect(source.styleDropdown).toBe(0)
-    expect(markdown.iconButtons).toBe(14)
-    // source mode keeps exactly one: the spellcheck toggle
-    expect(source.iconButtons).toBe(1)
+    // 14, plus this feature's withhold toggle — which stays in source mode,
+    // because it gates the right-click gesture and that now works there too.
+    expect(markdown.iconButtons).toBe(15)
+    // source mode keeps the spellcheck toggle and the withhold toggle
+    expect(source.iconButtons).toBe(2)
   })
 
   it('keeps the actions that still apply to source text', () => {
@@ -96,6 +98,6 @@ describe('Ribbon source mode', () => {
   it('shows the formatting controls again for a markdown file', () => {
     const { styleDropdown, iconButtons } = counts(renderRibbon(false))
     expect(styleDropdown).toBe(1)
-    expect(iconButtons).toBe(14)
+    expect(iconButtons).toBe(15)
   })
 })

@@ -337,6 +337,12 @@ export const ar = {
   appAiBadgeTip: 'يستخدم الذكاء الاصطناعي',
   appTranslate: 'ترجمة',
   appTranslateTo: 'ترجمة إلى {lang}',
+  redactMenuLabel: 'إخفاء التحديد عن الذكاء الاصطناعي',
+  redactDialogDesc:
+    'تبقى الكلمات في المستند وفي الملف؛ يرى النموذج العلامة أدناه. سمِّها ليعرف ما تمثّله.',
+  redactDialogPlaceholder: 'اسم العنصر، مثال: هاتف العميل',
+  redactCancel: 'إلغاء',
+  redactInsert: 'إخفاء',
   appLangEnglish: 'الإنجليزية',
   appLangSimplifiedChinese: 'الصينية المبسطة',
   appLangJapanese: 'اليابانية',
