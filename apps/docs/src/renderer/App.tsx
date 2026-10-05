@@ -345,7 +345,7 @@ import {
 } from './editor/extensions'
 import { setDkColor } from './editor/dark-page'
 import { readDarkPagePref, writeDarkPagePref } from './dark-page-pref'
-import { useUiThemeIsDark } from './ui-theme'
+import { useDocThemeIsDark, useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
 import { InkOverlay } from './components/InkOverlay'
 import {
@@ -791,16 +791,17 @@ export function App() {
   const [status, setStatus] = useState('')
   const [zoom, setZoom] = useState(100)
   const scrollContainerRef = useRef<HTMLElement>(null)
-  // Word-style dark page (editor/dark-page.ts): on by default in the dark theme
-  // and still following it until the user makes an explicit choice; View ▸ Dark
-  // Mode remembers that choice (dark-page-pref.ts) — once switched off it stays
-  // off across documents, windows and restarts, and a theme switch no longer
-  // reverts it
+  // Word-style dark page (editor/dark-page.ts): the shell's document-page-theme
+  // setting (#1811) decides by default — 'follow' rides the UI theme,
+  // 'light'/'dark' pin the paper; View ▸ Dark Mode remains the docs-specific
+  // choice (dark-page-pref.ts) and wins over the setting once the user has
+  // flipped it
   const themeDark = useUiThemeIsDark()
-  const [darkPage, setDarkPage] = useState(() => readDarkPagePref() ?? themeDark)
+  const docThemeDark = useDocThemeIsDark()
+  const [darkPage, setDarkPage] = useState(() => readDarkPagePref() ?? docThemeDark)
   useEffect(() => {
-    if (readDarkPagePref() === null) setDarkPage(themeDark)
-  }, [themeDark])
+    if (readDarkPagePref() === null) setDarkPage(docThemeDark)
+  }, [docThemeDark])
   // for toggle-by-one in the menu path, whose closure is not re-created per render
   const darkPageRef = useRef(darkPage)
   darkPageRef.current = darkPage
