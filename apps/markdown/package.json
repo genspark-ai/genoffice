@@ -14,6 +14,13 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
     "@genoffice/agent-core": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/ai-search": "*",
@@ -22,6 +29,7 @@
     "@genoffice/i18n": "*",
     "@genoffice/project-store": "*",
     "@genoffice/ui": "*",
+    "@lezer/highlight": "^1.2.5",
     "@tiptap/core": "3.31.0",
     "@tiptap/extension-bold": "3.31.0",
     "@tiptap/extension-code-block": "3.31.0",

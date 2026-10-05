@@ -7,6 +7,7 @@ export const ja = {
   saveFailed: '保存に失敗しました: {error}',
   saveFailedStatus: '保存に失敗しました',
   exportFailed: 'エクスポートに失敗しました',
+  printFailed: '印刷に失敗しました: {error}',
   exportHtmlSkipped:
     'エクスポートしましたが、{count} 個のアセットを埋め込めませんでした（例: {first}）',
   viewPreview: 'プレビュー',

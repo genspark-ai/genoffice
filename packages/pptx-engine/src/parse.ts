@@ -58,7 +58,9 @@ import type {
   TableCell,
   TableCellBorders,
   ChartElement,
+  EmuRect,
 } from './types'
+import { COORD_MAX } from './generate'
 import { parseChartXml } from './chart'
 import { parseChartExXml } from './chartex'
 import { parseCustGeom } from './custgeom'
@@ -176,7 +178,12 @@ export function parseSlide(input: SlideParseInput): Slide {
 
   // Parse each shape's XML fragment with fast-xml-parser (independent parses, naturally aligned with scan order)
   const elements: SlideElement[] = []
-  scan.elements.forEach((sp, idx) => {
+  // The slide's own <p:spTree> children spent no budget at all, so a slide carrying a
+  // million top-level shapes built a million model elements. They now share the budget
+  // the group path already spends on p:grpSp descendants (MAX_GROUP_DESCENDANTS); the
+  // surplus stays one byte-preserving passthrough, so a save replays it verbatim.
+  const withinBudget = scan.elements.slice(0, MAX_GROUP_DESCENDANTS)
+  withinBudget.forEach((sp, idx) => {
     const fragXml = slideXml.slice(sp.start, sp.end)
     const anchor: ByteAnchor = {
       spIndex: idx,
@@ -187,6 +194,25 @@ export function parseSlide(input: SlideParseInput): Slide {
     const el = parseShapeFragment(sp, fragXml, anchor, ctx)
     if (el) elements.push(el)
   })
+  const surplus = scan.elements.slice(MAX_GROUP_DESCENDANTS)
+  if (surplus.length > 0) {
+    const first = surplus[0]!
+    const last = surplus[surplus.length - 1]!
+    // One slice spans every surplus shape, so the gaps between them stay inside it;
+    // only the last shape's gapAfter trails the slice.
+    elements.push(
+      passthrough(
+        {
+          spIndex: MAX_GROUP_DESCENDANTS,
+          originalXml: slideXml.slice(first.start, last.end),
+          range: [first.start, last.end],
+          ...(last.gapAfter ? { gapAfter: last.gapAfter } : {}),
+        },
+        'unknown',
+        undefined,
+      ),
+    )
+  }
 
   // Background: the slide's own <p:bg> wins, otherwise inherit layout→master (read-only).
   // Inherited backgrounds resolve blip rIds against their own part's rels, not the slide's.
@@ -832,6 +858,55 @@ interface GroupParseBudget {
   remaining: number
 }
 
+/**
+ * Whether a group's child coordinate system is usable: the scale it implies
+ * (group ext / chExt, per axis) must keep the group box inside the coordinate
+ * range the write path emits into — COORD_MAX, the ST_PositiveCoordinate ceiling
+ * generate.ts clamps every a:ext to, with non-finite values refused outright.
+ * The group box is measured after one more trip through the same scale, which is
+ * what bounds the nested-group case; every group PowerPoint writes sits orders of
+ * magnitude below the bound.
+ *
+ * Each axis is judged on its own, and a zero on one axis is not a verdict about
+ * the other: PowerPoint writes ext cy=0 / chExt cy=0 for a horizontal connector
+ * group, and a zero chExt (or ext) is a legitimate degenerate group, not a
+ * malformed one. Every consumer already maps a zero axis to scale 1
+ * (pptx-ops: `ch?.cx ? … : 1`, pptx-render: `ch?.cx || …`) — the very mapping
+ * the 1:1 fallback gives — so scale 1 costs nothing and the chOff coordinate
+ * that positions the child survives. Only a real quotient can overflow, and
+ * non-finite input is refused outright on either side of the mapping.
+ */
+function groupScaleWithinWriteRange(groupExt: EmuRect, childExt: EmuRect): boolean {
+  // An attribute outside the int64 the schema allows parses to Infinity
+  // (parseInt of a 400-digit string). Infinity/NaN on any field that feeds the
+  // mapping — the group origin, the group box, chOff, chExt — would carry
+  // straight into the layout tree, so the child coordinate system goes.
+  const mapped = [
+    groupExt.x,
+    groupExt.y,
+    groupExt.cx,
+    groupExt.cy,
+    childExt.x,
+    childExt.y,
+    childExt.cx,
+    childExt.cy,
+  ]
+  if (!mapped.every(Number.isFinite)) return false
+  const axes: Array<[number, number]> = [
+    [groupExt.cx, childExt.cx],
+    [groupExt.cy, childExt.cy],
+  ]
+  for (const [g, ch] of axes) {
+    // ch <= 0 (0 for a degenerate group, negative only in a broken file) is
+    // scale 1 on this axis: no quotient, nothing to overflow, and the sibling
+    // axis is never consulted here. Scale 1 leaves the group box at |g|, which
+    // is the a:ext the write path already clamps on its own.
+    if (ch <= 0) continue
+    if (g * (g / ch) > COORD_MAX) return false
+  }
+  return true
+}
+
 function groupExceedsBudget(xml: string): boolean {
   const tags = new Set<string>(GROUP_CHILD_TAGS)
   GROUP_TAG_RE.lastIndex = 0
@@ -878,7 +953,7 @@ function parseGroup(
   // Child coordinate system: <a:chOff>/<a:chExt> (child coords are based on it, mapped to the parent when rendering)
   const chOff = xfrm?.['a:chOff']
   const chExt = xfrm?.['a:chExt']
-  const childOffset =
+  let childOffset: EmuRect | undefined =
     chOff || chExt
       ? {
           x: chOff ? parseInt(chOff['@_x'], 10) || 0 : 0,
@@ -887,6 +962,13 @@ function parseGroup(
           cy: chExt ? parseInt(chExt['@_cy'], 10) || 0 : 0,
         }
       : undefined
+  // ext/chExt was unbounded, so the scale multiplied straight into the layout tree:
+  // ext=2^31 with chExt=1 carries an ordinary 1e6 EMU child ~2e11 px away. Bound it by
+  // the write path's own range (COORD_MAX) and drop the child coordinate system when it
+  // is not representable there, leaving the 1:1 mapping every consumer already handles.
+  if (childOffset && !groupScaleWithinWriteRange(transform.offset, childOffset)) {
+    childOffset = undefined
+  }
 
   const group: GroupElement = {
     id: uid('grp'),

@@ -87,6 +87,15 @@ function clampRefPart(part: RefPart, spec: ShiftSpec, side: 'start' | 'end'): Re
 const REF_RE =
   /(?<![A-Za-z0-9_.$!])(?:(?:'((?:[^']|'')+)'|([A-Za-z0-9_.]+))!)?(\$?)([A-Z]{1,3})(\$?)([0-9]{1,7})(?::(\$?)([A-Z]{1,3})(\$?)([0-9]{1,7}))?(?![A-Za-z0-9(])/gi
 
+// Split a formula into the parts REF_RE may rewrite and the parts it must not
+// touch: string literals, and a structured reference's bracketed contents.
+// A column header is a NAME, not a cell — `Table1[Q1]`, `Table1[@Q1]` and
+// `Table1[ Q1 ]` all name the column Q1 and must survive an insert verbatim, as
+// must `[[#Headers],[Q1]]`. ONE capturing group around the whole alternation, so
+// every protected run lands at an odd index of a split and the existing
+// `index % 2` guard covers both kinds. One level of nesting covers [[...],[...]].
+const REWRITE_SKIP_RE = /((?:"(?:[^"]|"")*")|(?:\[(?:[^\][]|\[[^\][]*\])*\]))/
+
 function decodeQuotedSheetName(quoted: string): string {
   return quoted.replaceAll("''", "'")
 }
@@ -147,7 +156,7 @@ const ROW_SPAN_RE =
  */
 export function offsetFormulaRefs(formula: string, rowDelta: number, columnDelta: number): string {
   if (rowDelta === 0 && columnDelta === 0) return formula
-  const segments = formula.split(/("(?:[^"]|"")*")/)
+  const segments = formula.split(REWRITE_SKIP_RE)
   const rewritten = segments.map((segment, index) => {
     if (index % 2 === 1) return segment
     let out = segment.replace(
@@ -232,8 +241,9 @@ export function shiftFormulaRefs(
   let changed = false
   let hasRefError = false
 
-  // Split on string literals so refs inside "..." are never rewritten.
-  const segments = formula.split(/("(?:[^"]|"")*")/)
+  // Split on string literals and bracketed structured-reference contents so refs
+  // inside "..." and inside Table1[...] are never rewritten.
+  const segments = formula.split(REWRITE_SKIP_RE)
   const rewritten = segments.map((segment, index) => {
     if (index % 2 === 1) return segment
     let out = segment.replace(

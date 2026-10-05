@@ -1260,7 +1260,7 @@ describe('streamForProvider: openai-compatible', () => {
     )
   })
 
-  it('keeps deepseek in non-thinking mode so a tool-calling loop is not rejected', async () => {
+  it('lets deepseek think: no override, and tool turns echo stored reasoning', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(sseStream(['data: [DONE]'])))
     vi.stubGlobal('fetch', fetchMock)
     const { cb } = collector()
@@ -1268,15 +1268,30 @@ describe('streamForProvider: openai-compatible', () => {
       'deepseek',
       { apiKey: 'k', model: 'deepseek-v4-pro' },
       'sys',
-      [{ role: 'user', text: 'hi' }],
+      [
+        { role: 'user', text: 'hi' },
+        {
+          role: 'assistant',
+          text: '',
+          reasoning: 'the user greeted me',
+          toolCalls: [{ id: 't1', name: 'edit', input: {} }],
+        },
+        { role: 'user', text: 'go on' },
+      ],
       [{ name: 'edit', description: 'edit', inputSchema: { type: 'object' } }],
       100,
       cb,
     ).catch(() => {})
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as {
       thinking?: { type?: string }
+      messages?: Array<{ role: string; reasoning_content?: string }>
     }
-    expect(body.thinking).toEqual({ type: 'disabled' })
+    // thinking is the vendor default; the request must not pin it off
+    expect(body.thinking).toBeUndefined()
+    // deepseek sits on the echo list: stored reasoning rides back on the
+    // assistant message
+    const assistant = body.messages?.find((m) => m.role === 'assistant')
+    expect(assistant?.reasoning_content).toBe('the user greeted me')
   })
 
   it('uses the configured base URL for the custom provider', async () => {

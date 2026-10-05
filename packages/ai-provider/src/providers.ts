@@ -205,6 +205,71 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'ling',
+    label: 'Ling',
+    // Ant Group's Ling general line plus Ring, its reasoning line. Ids exactly
+    // as the `model` field's Options column lists them on
+    // https://developer.ant-ling.com/en/docs/api-reference/openai (read
+    // 2026-10-01); that page and the quickstart give the base URL, and
+    // GET https://api.ant-ling.com/v1/models answers 401 sdk_token_not_found,
+    // so the host is live and auth-gated. None of these are on the deprecation
+    // page (en/docs/models/deprecation).
+    // Ling-3.0-flash-VL is in that list and does take images, so the provider is
+    // vision-capable and modelLacksVision() holds back the five text-only ids —
+    // the same split DeepSeek V4 uses. Ling-3.1-flash (released 2026-09-29;
+    // models.dev inclusionai/ling-3.1-flash) is a real model, but this
+    // first-party endpoint does not serve it: the Options column above, re-read
+    // 2026-10-01, still lists no 3.1. Listing it would hand users a 404; the
+    // platforms that do serve it today (NanoGPT, Vercel AI Gateway) expose it
+    // as `inclusionai/ling-3.1-flash`.
+    models: [
+      'Ling-3.0-flash',
+      'Ling-3.0-flash-VL',
+      'Ling-3.0-tiny',
+      'Ling-2.6-1T',
+      'Ring-2.6-1T',
+      'Ling-2.6-flash',
+    ],
+    defaultModel: 'Ling-3.0-flash',
+    keyPlaceholder: 'API Key',
+  },
+  {
+    id: 'spark',
+    label: 'Spark',
+    // iFlytek Spark. Endpoint and id from section 1.1 (API access) of
+    // https://www.xfyun.cn/doc/spark/%E4%BA%A7%E5%93%81%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.html
+    // (read 2026-10-01), which documents chat at
+    // POST https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions alongside
+    // /v1/responses and /anthropic/v1/messages on the same host. The base below
+    // is that chat endpoint minus the path endpointUrl() appends, so the two
+    // compose back to the documented URL. The page's examples spell the key
+    // `ak-f30b1********fc84b82e86a` and the model `spark-x2.5` — lower case,
+    // the form the vendor's own request bodies use. (The page path is
+    // percent-encoded: the literal title is Chinese and CI bans Han characters
+    // in comments.)
+    models: ['spark-x2.5'],
+    defaultModel: 'spark-x2.5',
+    keyPlaceholder: 'ak-...',
+  },
+  {
+    id: 'longcat',
+    label: 'LongCat',
+    // Meituan's LongCat line, a 1.6T/48B-active MoE for agentic coding with a
+    // 1M window. Ids exactly as the pricing pages spell them —
+    // https://longcat.chat/platform/docs/zh/pricing/longcat-2.5 and
+    // https://longcat.chat/platform/docs/zh/pricing/longcat-2.0 (read
+    // 2026-10-01). 2.5-Preview is the current preview tier and the
+    // multimodal member: the 2026-09-25 entry of
+    // https://longcat.chat/platform/docs/zh/change-log (read 2026-10-01) lists
+    // image understanding as the headline new feature, so 2.5 takes
+    // screenshots and modelLacksVision() holds 2.0 back. 2.0 stays the default:
+    // 2.5 carries a Preview suffix and a fresh config should not land on a
+    // preview tier (the same reasoning Grok keeps 4.6 over 4.7).
+    models: ['LongCat-2.5-Preview', 'LongCat-2.0'],
+    defaultModel: 'LongCat-2.0',
+    keyPlaceholder: 'API Key',
+  },
+  {
     id: 'minimax',
     label: 'MiniMax',
     // M3 is the current agentic/tool-use model; M2.5 moved to the legacy tier

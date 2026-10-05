@@ -31,7 +31,9 @@ import {
   installFindRevealFix,
   installInjectorResolutionGuard,
   installWrapMeasureLifecycle,
+  noteSidecarCrash,
 } from './univer-sync'
+import { installGridGrowth } from './grid-growth'
 import {
   pollUntilReady,
   runHeadlessRendererExport,
@@ -1012,6 +1014,19 @@ export function App({
     [],
   )
 
+  // The sidecar process died, so every session id this tab holds is unknown
+  // to the replacement. Record the crash: the next range read re-opens the
+  // workbook through the normal open path and adopts a live session. Only an
+  // actual process death reaches here — a session the app closed or swapped
+  // on purpose is not a crash and must not re-open anything.
+  useEffect(
+    () =>
+      window.desktopApi?.onSidecarCrashed?.(() => {
+        noteSidecarCrash()
+      }) ?? (() => undefined),
+    [],
+  )
+
   useEffect(() => {
     setVisualSelectionListener({
       select: (visual) =>
@@ -1673,6 +1688,9 @@ export function App({
     installInjectorResolutionGuard(runtime)
     // find-bar reveals share scrollToCell's broken freeze offset (r135)
     const findRevealDispose = installFindRevealFix(runtime)
+    // the grid is sized to the data, so a blank sheet stops scrolling a few
+    // columns past its last cell; this extends it ahead of the viewport
+    const gridGrowthDispose = installGridGrowth(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
     // interceptor exists (lifecycle Rendered).
     const wrapMeasureDisposable = installWrapMeasureLifecycle(runtime)
@@ -2991,6 +3009,7 @@ export function App({
       offThemeChanged?.()
       undoRedoSub.unsubscribe()
       findRevealDispose()
+      gridGrowthDispose()
       wrapMeasureDisposable.dispose()
       prefersDark.removeEventListener('change', applyUniverDark)
       dateTextDisposable.dispose()

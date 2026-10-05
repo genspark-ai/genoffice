@@ -256,6 +256,27 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0zm1.652 1.123l-.01-.001c.533.097 1.023.233 1.41.404 6.084 2.683 7.396 9.214 1.601 14.338a3.781 3.781 0 01-5.337-.328 3.654 3.654 0 01-.884-3.044c-1.934.6-3.295 2.305-3.524 4.45-.204 1.912.324 4.044 2.056 5.634l.245.067C10.1 22.876 11.036 23 12 23c6.075 0 11-4.925 11-11 0-5.513-4.056-10.08-9.348-10.877zM2.748 6.21c-.178.269-.348.536-.51.803l-.235.394.078-.167A10.957 10.957 0 001 12c0 4.919 3.228 9.083 7.682 10.49l.214.065C3.523 18.528 2.84 14.149 6.47 8.68A2.234 2.234 0 102.748 6.21zm10.157-5.172c4.408 1.33 3.61 5.41 2.447 6.924-.86 1.117-2.922 1.46-3.708 2.238-.666.657-1.077 1.462-1.212 2.291A5.303 5.303 0 0112 12.258a5.672 5.672 0 001.404-11.169 10.51 10.51 0 00-.5-.052z" />
     </svg>
   ),
+  ling: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#1668DC" strokeWidth="1.9" aria-hidden="true">
+      <path d="M4 18V6l4 6 4-6v12" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 6v7.5a2.5 2.5 0 005 0V6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  spark: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#0A9BFF" strokeWidth="1.9" aria-hidden="true">
+      <path
+        d="M12 2.5l2.2 5.4 5.4-2.2-2.2 5.4 5.4 2.2-5.4 2.2 2.2 5.4-5.4-2.2-2.2 5.4-2.2-5.4-5.4 2.2 2.2-5.4-5.4-2.2 5.4-2.2z"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="1.6" fill="#0A9BFF" stroke="none" />
+    </svg>
+  ),
+  longcat: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="#1AAD19" strokeWidth="1.9" aria-hidden="true">
+      <path d="M3 14c0-4.4 4-8 9-8s9 3.6 9 8v6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 14.2c.9-1 2.2-1.5 3.5-1.5s2.6.5 3.5 1.5" strokeLinecap="round" />
+    </svg>
+  ),
   custom: (
     <svg
       viewBox="0 0 24 24"

@@ -14,10 +14,12 @@ import {
   type SavedAnnotCounts,
 } from './annotation-catalog'
 import {
+  AUTO_OCR_PAGE_CAP,
   OcrTextLayer,
-  buildOcrPageData,
-  isScannedEntry,
   renderPageForOcr,
+  runAutoOcr,
+  type AutoOcrResult,
+  type AutoOcrStop,
   type OcrPageData,
 } from './ocr-layer'
 import type { CropRect, FileOpCanceled, FileOpResult, PdfAppDeps, RotateDelta } from './ai/tools'
@@ -86,7 +88,7 @@ import {
 import { StampDialog } from './StampDialog'
 import { buildStamps } from './stamps'
 import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
-import { buildSearchIndex, searchInIndex } from './search'
+import { createSearchIndexCache, searchInIndex } from './search'
 import type { SearchIndex, SearchMatch } from './search'
 import { mapDocFont, type DocFontStyle } from './doc-font'
 import { groupPageBlocks, reflowOverflows, type TextBlock } from './text-block'
@@ -138,7 +140,6 @@ import type {
   TextEditInput,
   TextInsertFailure,
   TextInsertInput,
-  PdfOcrLine,
 } from '../shared/ipc'
 import {
   ZOOM_STEPS,
@@ -864,9 +865,21 @@ export default function App() {
   docFontsRef.current = docFonts
   /** OCR results for scanned pages, keyed by original page index (reset per doc) */
   const [ocrPages, setOcrPages] = useState<Map<number, OcrPageData>>(new Map())
-  const searchIndexRef = useRef<{ doc: PDFDocumentProxy; promise: Promise<SearchIndex> } | null>(
-    null,
-  )
+  /** One text extraction per loaded document, shared by search, paragraph boxes,
+      the AI tools and the auto-OCR pass */
+  const [searchIndexCache] = useState(createSearchIndexCache)
+  /** In-flight auto-OCR pass, so its toast can stop it */
+  const ocrAbortRef = useRef<AbortController | null>(null)
+  /** Auto-OCR progress: `stop: null` while the pass runs (the toast offers Stop),
+      then the reason it ended, for the cap and a user cancel alike. `pending` is
+      the queue a capped pass can be continued over. */
+  const [ocrRun, setOcrRun] = useState<{
+    done: number
+    total: number
+    stop: Extract<AutoOcrStop, 'cap' | 'cancelled'> | null
+    /** The pages the pass left, which its Continue button hands to the next pass */
+    pending?: number[] | null
+  } | null>(null)
   const warnedXfaPathRef = useRef('')
   const searchJumpRef = useRef<{ matches: SearchMatch[]; cur: number } | null>(null)
 
@@ -1927,53 +1940,90 @@ export default function App() {
       AI tools address them like born-digital text. */
   const getSearchIndex = useCallback((): Promise<SearchIndex> | null => {
     if (!doc) return null
-    if (searchIndexRef.current?.doc !== doc) {
-      searchIndexRef.current = { doc, promise: buildSearchIndex(doc) }
-    }
-    const base = searchIndexRef.current.promise
+    const base = searchIndexCache.get(doc)
     if (ocrPages.size === 0) return base
     return base.then((idx) => idx.map((entry, i) => ocrPages.get(i)?.entry ?? entry))
-  }, [doc, ocrPages])
+  }, [doc, ocrPages, searchIndexCache])
 
   // Auto-OCR for scanned pages (issue #119): once the base index shows pages with
   // no extractable text, recognize them sequentially in the background, starting
   // at the current page. Boxes are stored in PDF space, so later zooms/rotations
-  // reproject.
+  // reproject. The pass runs renderer-side, one page at a time, so the user's
+  // Stop only has to abort this signal.
+
+  /** Start a pass over the document's scanned pages. `pending` continues a
+      capped pass over the pages it left; `null` starts at the current page.
+      `doneBefore` is what the passes already recognized, so a continued
+      pass keeps reporting the count for the whole document and not just for
+      itself. A cap is a pause and not a cancel, so a continuation reuses the
+      finished pass's signal while that signal is still live, which is also what
+      keeps the toast's Stop working on the resumed pass. A signal torn down in
+      between (the document or its page count changed) is already aborted and
+      would cancel the pass on its first check, so a fresh one replaces it. */
+  const startOcrPass = useCallback(
+    (pending: number[] | null, doneBefore = 0) => {
+      if (!doc) return
+      const live = ocrAbortRef.current
+      const controller = live && !live.signal.aborted ? live : new AbortController()
+      ocrAbortRef.current = controller
+      setOcrRun((prev) => ({
+        done: doneBefore,
+        total: prev?.total ?? 0,
+        stop: null,
+        pending: null,
+      }))
+      void (async () => {
+        let result: AutoOcrResult | null = null
+        try {
+          result = await runAutoOcr({
+            doc,
+            cache: searchIndexCache,
+            fromPage: () => currentOrigIdxRef.current,
+            ...(pending === null ? {} : { pending }),
+            signal: controller.signal,
+            geom: (origIdx) => pageGeomRef.current(origIdx),
+            render: renderPageForOcr,
+            ocrPage: (png) => window.pdfApi.ocrPage(png),
+            onPage: (origIdx, data) => setOcrPages((prev) => new Map(prev).set(origIdx, data)),
+            onProgress: (done, total) =>
+              setOcrRun({ done: doneBefore + done, total, stop: null, pending: null }),
+          })
+        } catch {
+          // the document is gone or unreadable: nothing left to recognize
+        }
+        if (ocrAbortRef.current !== controller) return // a newer pass took over
+        // A finished pass and a platform without an OCR engine are not worth a
+        // toast; a cap or a user cancel is, and it says how far the pass got
+        setOcrRun(
+          result && (result.stop === 'cap' || result.stop === 'cancelled')
+            ? {
+                done: doneBefore + result.done,
+                total: result.total,
+                stop: result.stop,
+                pending: result.pending,
+              }
+            : null,
+        )
+      })()
+    },
+    [doc, searchIndexCache],
+  )
+
+  /** The pages the toast's Continue resumes over: only a capped pass has any,
+      and a scan that ran out has nothing left to resume. */
+  const ocrPending = ocrRun?.stop === 'cap' ? (ocrRun.pending ?? null) : null
+
   useEffect(() => {
     setOcrPages(new Map())
+    setOcrRun(null)
     if (!doc || sizes.length !== doc.numPages) return
-    let stale = false
-    void (async () => {
-      const index = await buildSearchIndex(doc).catch(() => null)
-      if (!index || stale) return
-      const scanned = index
-        .map((entry, i) => (isScannedEntry(entry) ? i : -1))
-        .filter((i) => i >= 0)
-      const from = scanned.findIndex((i) => i >= currentOrigIdxRef.current)
-      const ordered = from > 0 ? [...scanned.slice(from), ...scanned.slice(0, from)] : scanned
-      for (const origIdx of ordered) {
-        if (stale) return
-        // one geometry snapshot for render and box conversion: a rotation between
-        // the two awaits must not remap boxes through different axes
-        const geom = pageGeomRef.current(origIdx)
-        const png = await renderPageForOcr(doc, origIdx, geom)
-        if (stale || !png) continue
-        let lines: PdfOcrLine[] | null
-        try {
-          lines = await window.pdfApi.ocrPage(png)
-        } catch {
-          continue // this page failed; the rest may still recognize
-        }
-        if (lines === null) return // no engine on this platform: stop trying
-        if (stale) return
-        const data = buildOcrPageData(lines, geom)
-        if (data) setOcrPages((prev) => new Map(prev).set(origIdx, data))
-      }
-    })()
+    startOcrPass(null)
     return () => {
-      stale = true
+      // tears down the pass this effect started, so its teardown still cancels
+      ocrAbortRef.current?.abort()
+      ocrAbortRef.current = null
     }
-  }, [doc, sizes.length])
+  }, [doc, sizes.length, searchIndexCache, startOcrPass])
 
   /** Paragraph boxes are keyed to the loaded doc; drop them on save-reload */
   useEffect(() => {
@@ -3659,7 +3709,7 @@ export default function App() {
       try {
         await loadDoc(targetPath, doc)
         // loadDoc leaves the text index and hits alone; both still hold the removed text
-        searchIndexRef.current = null
+        searchIndexCache.clear()
         setSearchMatches([])
         setSearchCur(0)
         setStatus('ready')
@@ -8585,6 +8635,40 @@ export default function App() {
                 <button type="button" onClick={() => setNotice(null)}>
                   {t('ok')}
                 </button>
+              </div>
+            )}
+            {ocrRun && (
+              <div className="pdf-toast pdf-toast-notice" role="status">
+                <span>
+                  {ocrRun.stop === null
+                    ? t('ocrRunning', { done: ocrRun.done, total: ocrRun.total })
+                    : ocrRun.stop === 'cap'
+                      ? t('ocrPageCap', {
+                          done: ocrRun.done,
+                          total: ocrRun.total,
+                          limit: AUTO_OCR_PAGE_CAP,
+                        })
+                      : t('ocrStopped', { done: ocrRun.done, total: ocrRun.total })}
+                </span>
+                {ocrRun.stop === null ? (
+                  <button type="button" onClick={() => ocrAbortRef.current?.abort()}>
+                    {t('cancel')}
+                  </button>
+                ) : (
+                  <>
+                    {ocrPending !== null && (
+                      <button
+                        type="button"
+                        onClick={() => startOcrPass(ocrPending, ocrRun?.done ?? 0)}
+                      >
+                        {t('ocrContinue')}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setOcrRun(null)}>
+                      {t('ok')}
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {thumbMenu && (

@@ -7,6 +7,7 @@ export const vi = {
   saveFailed: 'Lưu thất bại: {error}',
   saveFailedStatus: 'Lưu thất bại',
   exportFailed: 'Xuất thất bại',
+  printFailed: 'In thất bại: {error}',
   exportHtmlSkipped: 'Đã xuất, nhưng {count} tài nguyên không thể nhúng (ví dụ {first})',
   viewPreview: 'Xem trước',
   viewSplit: 'Chia đôi',

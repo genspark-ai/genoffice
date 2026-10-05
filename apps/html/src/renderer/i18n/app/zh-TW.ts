@@ -7,6 +7,7 @@ export const zhTW = {
   saveFailed: '儲存失敗：{error}',
   saveFailedStatus: '儲存失敗',
   exportFailed: '匯出失敗',
+  printFailed: '列印失敗：{error}',
   exportHtmlSkipped: '已匯出，但有 {count} 個資源無法內嵌（如 {first}）',
   viewPreview: '預覽',
   viewSplit: '分欄',

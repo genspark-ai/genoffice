@@ -53,6 +53,14 @@ export const IPC_CHANNELS = {
   openWorkbooksForMerge: 'workbook:open-for-merge',
   readWorkbookRange: 'workbook:read-range',
   readWorkbookFormulas: 'workbook:read-formulas',
+  /// The sidecar process died; every session id the renderer holds is gone.
+  /// A positive crash signal, so recovery never has to infer a crash from a
+  /// session guard's error text (the Save swap and closeWorkbook reject ids
+  /// with that same text on purpose).
+  sidecarCrashed: 'workbook:sidecar-crashed',
+  /// Re-open an already-known path through the normal open path (the same
+  /// pipeline selectWorkbook runs), for recovering from a sidecar crash.
+  reopenWorkbook: 'workbook:reopen',
   recalcWorkbook: 'workbook:recalc',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',

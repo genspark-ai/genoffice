@@ -126,6 +126,34 @@ describe('applySparklineAdditions', () => {
       applySparklineAdditions(bareWorksheet, [group(), group({ type: 'column' })]),
     ).toThrow(/D2 already has a sparkline/)
   })
+
+  it('rejects a host cell that is not an A1 grid address', () => {
+    // ZZZZ1 parses as a column but sits far past the 16384-column grid.
+    expect(() =>
+      applySparklineAdditions(bareWorksheet, [
+        group({ cells: [{ cell: 'ZZZZ1', sourceRef: 'Sheet1!A2:F2' }] }),
+      ]),
+    ).toThrow(SparklineAddError)
+    expect(() =>
+      applySparklineAdditions(bareWorksheet, [
+        group({ cells: [{ cell: 'ZZZZ1', sourceRef: 'Sheet1!A2:F2' }] }),
+      ]),
+    ).toThrow(/outside the worksheet grid/)
+  })
+
+  it('escapes a host cell that carries element text', () => {
+    const injected = 'A1</xm:sqref></x14:sparkline><xm:sqref>A1'
+    expect(() =>
+      applySparklineAdditions(bareWorksheet, [
+        group({ cells: [{ cell: injected, sourceRef: 'Sheet1!A2:F2' }] }),
+      ]),
+    ).toThrow(SparklineAddError)
+    expect(() =>
+      applySparklineAdditions(bareWorksheet, [
+        group({ cells: [{ cell: injected, sourceRef: 'Sheet1!A2:F2' }] }),
+      ]),
+    ).toThrow(/is not a cell address/)
+  })
 })
 
 describe('sparkline save integration', () => {

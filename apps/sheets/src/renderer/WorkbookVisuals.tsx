@@ -2806,12 +2806,19 @@ export function BarChart({
   const barMax = isStacked
     ? Math.max(...Array.from({ length: visibleCount }, (_, index) => categoryTotal(index)), 0)
     : Math.max(...seriesList.flatMap((series) => [...series.values]), 0)
+  // Stacked segments clamp negatives to 0 (categoryTotal), so only the plain
+  // branch can plot below the baseline.
+  const barMin = isStacked ? 0 : Math.min(...seriesList.flatMap((series) => [...series.values]))
   // Combo lines without their own value axis share the primary scale.
   const lineValues = lineSeriesList.flatMap((series) => [...series.values])
   const lineOnPrimary = lineSeriesList.length > 0 && secondaryAxis === undefined
   const bounds = isPercent
     ? { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1] }
-    : axisBounds(lineOnPrimary ? Math.max(barMax, ...lineValues) : barMax, valueAxis)
+    : axisBounds(
+        lineOnPrimary ? Math.max(barMax, ...lineValues) : barMax,
+        valueAxis,
+        lineOnPrimary ? Math.min(barMin, ...lineValues) : barMin,
+      )
   const span = bounds.max - bounds.min
   const norm = (value: number): number => Math.max(0, Math.min(1, (value - bounds.min) / span))
   // Stacked segments share the category slot; each value scales against the
@@ -3110,7 +3117,7 @@ export function BarChart({
   const lineScale =
     lineSeriesList.length > 0
       ? secondaryAxis
-        ? valueAxisScale(Math.max(...lineValues, 0), secondaryAxis)
+        ? valueAxisScale(Math.max(...lineValues, 0), secondaryAxis, Math.min(...lineValues))
         : bounds
       : undefined
   const lineSpan = lineScale ? lineScale.max - lineScale.min || 1 : 1
@@ -3865,11 +3872,15 @@ type ChartValueAxis =
   | undefined
 
 /// Explicit axis bounds/unit win; otherwise an Excel-like auto scale.
+/// `dataMin` is the plotted series minimum: stacked charts clamp their
+/// segments at 0 and pass 0, but without it a below-zero series scales to
+/// 0..1 and every bar draws at full height.
 function axisBounds(
   dataMax: number,
   valueAxis: ChartValueAxis,
+  dataMin = 0,
 ): { min: number; max: number; ticks: number[] } {
-  return valueAxisScale(dataMax, valueAxis)
+  return valueAxisScale(dataMax, valueAxis, dataMin)
 }
 
 export function LineChart({
@@ -3935,6 +3946,8 @@ export function LineChart({
           ? Math.max(...(stackTotals[stackTotals.length - 1] ?? [0]), 0)
           : Math.max(...seriesList.flatMap((series) => [...series.values]), 0),
         isStacked ? undefined : valueAxis,
+        // Stack totals clamp negatives to 0; only the plain branch goes below.
+        isStacked ? 0 : Math.min(...seriesList.flatMap((series) => [...series.values])),
       )
   const span = bounds.max - bounds.min
   const categories = primary.categories.map((value) => formatCategoryLabel(value, categoryFormat))
@@ -4219,6 +4232,8 @@ function AreaChart({
           ? Math.max(...(stackBounds[stackBounds.length - 1] ?? [0]), 0)
           : Math.max(...seriesList.flatMap((series) => [...series.values]), 0),
         isStacked ? undefined : valueAxis,
+        // Stack bounds clamp negatives to 0; only the plain branch goes below.
+        isStacked ? 0 : Math.min(...seriesList.flatMap((series) => [...series.values])),
       )
   const axisSpan = bounds.max - bounds.min
   const stackY = (raw: number, index: number): number =>

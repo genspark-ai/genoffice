@@ -73,6 +73,27 @@ function decodeTextBytes(bytes: Buffer): string | null {
   }
 }
 
+type BinaryKind = 'zip' | 'pdf' | 'ole2' | 'unknown'
+
+/** pdf.js scans the first 1024 bytes for the header, and leading junk before it
+ *  (HTTP header remnants, whitespace) is common in the wild, so match the header
+ *  where a real parser does rather than pinning it to bytes 0..3. */
+const PDF_HEADER_WINDOW = 1024
+
+function sniffBinary(bytes: Buffer): BinaryKind {
+  if (bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b) return 'zip'
+  if (bytes.subarray(0, PDF_HEADER_WINDOW).includes(Buffer.from('%PDF-'))) return 'pdf'
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0xd0 &&
+    bytes[1] === 0xcf &&
+    bytes[2] === 0x11 &&
+    bytes[3] === 0xe0
+  )
+    return 'ole2'
+  return 'unknown'
+}
+
 /** parse an attachment into plain text (or flag it as image / unsupported) */
 export async function parseFileToText(filePath: string): Promise<ParsedFile> {
   const ext = extname(filePath).slice(1).toLowerCase()
@@ -91,20 +112,46 @@ export async function parseFileToText(filePath: string): Promise<ParsedFile> {
       }
       return { ok: true, kind: 'text', text }
     }
+    const bytes = await readFile(filePath)
+    const sniffed = sniffBinary(bytes)
+    if (ext === 'pdf' && sniffed !== 'pdf') {
+      return {
+        ok: false,
+        kind: 'text',
+        error: `Content mismatch: .pdf file has ${sniffed} magic bytes`,
+      }
+    }
+    if (
+      (ext === 'docx' || ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') &&
+      sniffed !== 'zip'
+    ) {
+      return {
+        ok: false,
+        kind: 'text',
+        error: `Content mismatch: .${ext} file has ${sniffed} magic bytes`,
+      }
+    }
+    if ((ext === 'doc' || ext === 'ppt') && sniffed !== 'ole2') {
+      return {
+        ok: false,
+        kind: 'text',
+        error: `Content mismatch: .${ext} file has ${sniffed} magic bytes`,
+      }
+    }
     switch (ext) {
       case 'doc':
-        return { ok: true, kind: 'text', text: await docToText(await readFile(filePath)) }
+        return { ok: true, kind: 'text', text: await docToText(bytes) }
       case 'docx':
-        return { ok: true, kind: 'text', text: await docxToText(await readFile(filePath)) }
+        return { ok: true, kind: 'text', text: await docxToText(bytes) }
       case 'ppt':
-        return { ok: true, kind: 'text', text: await pptToText(await readFile(filePath)) }
+        return { ok: true, kind: 'text', text: await pptToText(bytes) }
       case 'pptx':
-        return { ok: true, kind: 'text', text: await pptxToText(await readFile(filePath)) }
+        return { ok: true, kind: 'text', text: await pptxToText(bytes) }
       case 'xlsx':
       case 'xlsm':
-        return { ok: true, kind: 'text', text: await xlsxToText(await readFile(filePath)) }
+        return { ok: true, kind: 'text', text: await xlsxToText(bytes) }
       case 'pdf':
-        return { ok: true, kind: 'text', text: await pdfToText(await readFile(filePath)) }
+        return { ok: true, kind: 'text', text: await pdfToText(bytes) }
     }
   } catch (e) {
     return { ok: false, kind: 'text', error: e instanceof Error ? e.message : String(e) }

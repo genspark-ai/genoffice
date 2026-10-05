@@ -84,7 +84,10 @@ export const EXT_FAMILY: Record<string, readonly string[]> = {
   // sidebar filtered on "xlsx" must page them in too (csv was missing here).
   xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv'],
   pptx: ['pptx', 'ppt'],
-  md: ['md', 'markdown'],
+  // the text app opens txt/json as source too, so the sidebar "md" filter has
+  // to page them in the same way Home's FILTER_FAMILY already does — otherwise
+  // the two views disagree about which files the filter means.
+  md: ['md', 'markdown', 'txt', 'json'],
   html: ['html', 'htm'],
 }
 

@@ -7,6 +7,7 @@ export const ar = {
   saveFailed: 'فشل الحفظ: {error}',
   saveFailedStatus: 'فشل الحفظ',
   exportFailed: 'فشل التصدير',
+  printFailed: 'فشل الطباعة: {error}',
   exportHtmlSkipped: 'تم التصدير، لكن تعذّر تضمين {count} من الأصول (مثل {first})',
   viewPreview: 'معاينة',
   viewSplit: 'مقسم',

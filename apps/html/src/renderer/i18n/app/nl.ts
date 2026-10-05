@@ -7,6 +7,7 @@ export const nl = {
   saveFailed: 'Opslaan mislukt: {error}',
   saveFailedStatus: 'Opslaan mislukt',
   exportFailed: 'Exporteren mislukt',
+  printFailed: 'Afdrukken mislukt: {error}',
   exportHtmlSkipped:
     'Geëxporteerd, maar {count} bron(nen) konden niet worden ingesloten (bijv. {first})',
   viewPreview: 'Voorbeeld',

@@ -51,7 +51,12 @@ export async function runAfterCellEditorCommit(
 export type WrapMeasureCoverage = Array<readonly [number, number]>
 
 export interface LazyWorkbookState {
-  readonly file: WorkbookFile
+  /// Mutable only in its `sessionId`: a sidecar crash drops the session
+  /// server-side, and recovery re-opens the file to adopt a live one
+  /// (see recoverSidecarSession in univer-sync.ts). Every read site reads
+  /// `state.file.sessionId` at call time, so swapping it here re-points the
+  /// whole workbook at the new session without threading a second id through.
+  file: WorkbookFile
   readonly generation: number
   readonly loadedRanges: Map<string, IRange>
   /// Sheets duplicated this session from a streaming source: Univer's copy

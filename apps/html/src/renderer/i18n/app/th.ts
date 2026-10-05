@@ -7,6 +7,7 @@ export const th = {
   saveFailed: 'บันทึกไม่สำเร็จ: {error}',
   saveFailedStatus: 'บันทึกไม่สำเร็จ',
   exportFailed: 'ส่งออกไม่สำเร็จ',
+  printFailed: 'พิมพ์ไม่สำเร็จ: {error}',
   exportHtmlSkipped: 'ส่งออกแล้ว แต่ฝังทรัพยากรไม่ได้ {count} รายการ (เช่น {first})',
   viewPreview: 'ตัวอย่าง',
   viewSplit: 'แบ่งหน้าจอ',
