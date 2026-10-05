@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, afterEach, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
@@ -15,11 +15,26 @@ import { buildDocContext } from '../src/renderer/ai/tools'
 
 const SECRET = '13800138000'
 
+/**
+ * Every editor this file builds, torn down after each case.
+ *
+ * An EditorView left alive keeps ProseMirror's DOMObserver on a timer. Once the
+ * file finishes, that timer fires against a jsdom that is already gone, and
+ * the `document is not defined` it throws lands as an unhandled error — which
+ * fails the whole run even when every assertion passed.
+ */
+const editors = new Set<Editor>()
+afterEach(() => {
+  for (const e of editors) e.destroy()
+  editors.clear()
+})
+
 function makeEditor(md: string) {
   const editor = new Editor({
     extensions: [StarterKit, SelectiveEscapeMarkdown, Redaction],
   })
   editor.commands.setContent(md, { contentType: 'markdown' })
+  editors.add(editor)
   return editor
 }
 
