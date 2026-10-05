@@ -412,10 +412,14 @@ function patchCellsTcPr(xml: string, edit: TableStyleEdit): string {
     const tc = nthSpan(xml, 'a:tc', col, tr.start, tr.end)
     if (!tc) continue
     let tcXml = xml.slice(tc.start, tc.end)
-    const m = /<a:tcPr([^>]*)>(.*?)<\/a:tcPr>|<a:tcPr([^>]*)\/>/s.exec(tcXml)
+    // Self-closing form first, for the same reason as patchAllTcPr above: in the
+    // paired form [^>]* also accepts the '/' of <a:tcPr/>, so the lazy body would run
+    // on to the next </a:tcPr> — the one belonging to a nested table's cell — and the
+    // outer cell's <a:txBody>/<a:tbl> would be swallowed and rewritten.
+    const m = /<a:tcPr([^>]*)\/>|<a:tcPr([^>]*)>(.*?)<\/a:tcPr>/s.exec(tcXml)
     if (m) {
-      const inner = applyTcPrEdit(m[2] ?? '', edit)
-      const attrs = m[1] ?? m[3] ?? ''
+      const inner = applyTcPrEdit(m[3] ?? '', edit)
+      const attrs = m[1] ?? m[2] ?? ''
       tcXml =
         tcXml.slice(0, m.index) +
         `<a:tcPr${attrs}>${inner}</a:tcPr>` +

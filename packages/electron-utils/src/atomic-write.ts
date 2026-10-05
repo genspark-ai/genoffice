@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { open, rename, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 /** Transient Windows codes: antivirus/indexer briefly locks the rename target. */
@@ -77,20 +77,50 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   try {
     await writeFile(tmp, data)
     await syncFileBestEffort(tmp)
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await rename(tmp, filePath)
-        return
-      } catch (error) {
-        if (!isRetryableRename(error) || attempt >= RENAME_RETRY_DELAYS_MS.length) throw error
-        await sleep(RENAME_RETRY_DELAYS_MS[attempt] ?? 0)
-      }
-    }
+    await renameWithRetry(tmp, filePath)
   } catch (error) {
     if (isRetryableRename(error)) {
       // Keep the completed temp until the fallback lands: if that write fails
       // or the process dies, the new bytes still exist somewhere on disk.
       await writeFile(filePath, data)
+      await unlink(tmp).catch(() => {})
+      return
+    }
+    await unlink(tmp).catch(() => {})
+    throw error
+  }
+}
+
+/** Publish a completed temp file over the target, retrying the transient
+ *  Windows rename locks before letting the caller's in-place fallback run. */
+async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(tmp, filePath)
+      return
+    } catch (error) {
+      if (!isRetryableRename(error) || attempt >= RENAME_RETRY_DELAYS_MS.length) throw error
+      await sleep(RENAME_RETRY_DELAYS_MS[attempt] ?? 0)
+    }
+  }
+}
+
+/**
+ * Same temp-file, best-effort fsync and rename sequence as atomicWriteFile, for
+ * a copy of an existing file. The copy itself stays in the kernel, so a
+ * multi-hundred-MB PDF is never read into memory; only the flush and the
+ * publish are shared, so the shell does not need a second implementation.
+ */
+export async function atomicCopyFile(source: string, filePath: string): Promise<void> {
+  const tmp = tempPathBeside(filePath)
+  try {
+    await copyFile(source, tmp)
+    await syncFileBestEffort(tmp)
+    await renameWithRetry(tmp, filePath)
+  } catch (error) {
+    if (isRetryableRename(error)) {
+      // Keep the completed temp until the fallback lands, as atomicWriteFile does.
+      await copyFile(source, filePath)
       await unlink(tmp).catch(() => {})
       return
     }

@@ -110,6 +110,22 @@ describe('w:altChunk expansion', () => {
     expect(outXml).toContain('Edited')
   })
 
+  it('expands a chunk whose r:id uses single quotes', async () => {
+    installStubConverter()
+    const bytes = await buildDocx({
+      bodyXml: "<w:altChunk r:id='rIdChunk'/><w:p><w:r><w:t>After the chunk</w:t></w:r></w:p>",
+      extraRels: CHUNK_REL,
+      extraParts: [{ path: 'word/afchunk.htm', xml: HTML, contentType: 'text/html' }],
+    })
+    const parsed = await parseDocx(bytes)
+    expect(received).toEqual([HTML])
+    expect(parsed.blocks.filter((b) => !b.hidden).map((b) => b.type)).toEqual([
+      'paragraph',
+      'table',
+      'paragraph',
+    ])
+  })
+
   it('adopts chunk numbering under fresh ids, in body and table-cell lists alike', async () => {
     const listPara = (numId: string, text: string) =>
       `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`

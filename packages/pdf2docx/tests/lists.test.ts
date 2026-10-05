@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeChars, detectListBlocks, groupIntoBlocks, parseListMarker } from '../src/analyze'
+import {
+  analyzeChars,
+  analyzePage,
+  detectListBlocks,
+  groupIntoBlocks,
+  parseListMarker,
+} from '../src/analyze'
+import type { ExtractedPage } from '../src/extract'
 import type { IrPage, TextBlock } from '../src/ir'
 import { pagesToSaveBlocks } from '../src/rebuild'
 import { mkText } from './helpers/chars'
@@ -225,6 +232,40 @@ describe('detectListBlocks: ordered lists', () => {
     expect(items).toHaveLength(2)
     expect(blocks.map(textOf).join(' ')).toContain('7. seven')
   })
+
+  it('continues a run broken by a page break (single item on the next page)', () => {
+    // page 1 ends the run, page 2 carries only the next ordinal: a lone item
+    // is a heading unless it continues the run the shared state ended on
+    const seq = { next: 0 }
+    const first = blocksOf(
+      [
+        { text: '1. first item on the opening page', x: 72 },
+        { text: '2. second item on the opening page', x: 72 },
+      ],
+      seq,
+    )
+    expect(first.map((b) => b.list?.seqId)).toEqual([0, 0])
+
+    const second = blocksOf([{ text: '3. the only item on the next page', x: 72 }], seq)
+    expect(second[0]!.list).toMatchObject({ kind: 'ordered', level: 0, start: 1, style: 'dot' })
+    expect(second[0]!.list!.seqId).toBe(0)
+    expect(textOf(second[0]!)).toBe('the only item on the next page')
+  })
+
+  it('still rejects a lone numbered line that continues nothing', () => {
+    const seq = { next: 0 }
+    blocksOf(
+      [
+        { text: '1. one', x: 72 },
+        { text: '2. two', x: 72 },
+      ],
+      seq,
+    )
+    // a different ordinal, not the next one in the run
+    const stray = blocksOf([{ text: '9. unrelated lone paragraph', x: 72 }], seq)
+    expect(stray[0]!.list).toBeUndefined()
+    expect(textOf(stray[0]!)).toContain('9. unrelated lone paragraph')
+  })
 })
 
 describe('rebuild: list items become real docx numbering', () => {
@@ -269,5 +310,97 @@ describe('rebuild: list items become real docx numbering', () => {
     expect(result.numbering?.restartNums).toEqual([
       expect.objectContaining({ numId, startOverrides: expect.objectContaining({ 0: 3 }) }),
     ])
+  })
+})
+
+describe('detectListBlocks: RTL lists', () => {
+  /** lay out an RTL bullet item with the bullet at a fixed right-edge position */
+  function rtlBulletItem(text: string, rightEdge: number, y: number): PdfChar[] {
+    const logical = `\u2022 ${text}`
+    const reversed = [...logical].reverse().join('')
+    const { chars } = mkText(reversed, 0, { y, fontSize: 10 })
+    const width = chars[chars.length - 1]!.box.x1 - chars[0]!.box.x0
+    const offset = rightEdge - width
+    return chars.map((c) => ({
+      ...c,
+      box: { ...c.box, x0: c.box.x0 + offset, x1: c.box.x1 + offset },
+      looseBox: { ...c.looseBox, x0: c.looseBox.x0 + offset, x1: c.looseBox.x1 + offset },
+      originX: c.originX + offset,
+    }))
+  }
+
+  it('detects Hebrew bullet items as a list with markers stripped', () => {
+    const chars = [
+      ...rtlBulletItem('\u05e4\u05e8\u05d9\u05d8 \u05e8\u05d0\u05e9\u05d5\u05df', 540, 700),
+      ...rtlBulletItem('\u05e4\u05e8\u05d9\u05d8 \u05e9\u05e0\u05d9', 540, 672),
+    ]
+    const body = { bodyLeft: 72, bodyRight: 540 }
+    const blocks = detectListBlocks(groupIntoBlocks(analyzeChars(chars), body), { next: 0 })
+    expect(blocks).toHaveLength(2)
+    for (const b of blocks) {
+      expect(b.dir).toBe('rtl')
+      expect(b.list).toMatchObject({ kind: 'bullet', level: 0 })
+    }
+    expect(textOf(blocks[0]!)).toBe('\u05e4\u05e8\u05d9\u05d8 \u05e8\u05d0\u05e9\u05d5\u05df')
+    expect(textOf(blocks[1]!)).toBe('\u05e4\u05e8\u05d9\u05d8 \u05e9\u05e0\u05d9')
+  })
+})
+
+describe('analyzePage: the weak-bullet indent origin on a multi-column page', () => {
+  const pageOf = (chars: PdfChar[]): ExtractedPage => ({
+    index: 0,
+    widthPt: 612,
+    heightPt: 792,
+    rotation: 0,
+    chars,
+    images: [],
+    paths: [],
+    degraded: false,
+    scanned: false,
+    hasStructTree: false,
+    vectorRegions: [],
+    badUnicodeRatio: 0,
+  })
+  /** the page's text blocks, column by column (floats and tables dropped) */
+  const columnBlocks = (page: IrPage): TextBlock[][] =>
+    (page.sections ?? []).flatMap((s) =>
+      s.columns.map((c) => c.blocks.filter((b): b is TextBlock => b.kind === 'text')),
+    )
+
+  it('judges each bullet column against its own left edge, not the page median', () => {
+    // two identical columns of dash bullets, each flush with its own edge, so
+    // neither has the plain neighbour the indent evidence is judged against.
+    // They must get the SAME verdict: median([72, 320]) is 196, which is no
+    // column's edge, and it read the right column's flush dashes as a
+    // 124pt indent — a bulleted list minted out of column position alone
+    const chars: PdfChar[] = []
+    for (const [x, tag] of [
+      [72, 'left column bullet'],
+      [320, 'right column bullet'],
+    ] as const) {
+      for (let i = 0; i < 3; i++) {
+        chars.push(...mkText(`– ${tag} number ${i}`, x, { y: 700 - i * 20, fontSize: 10 }).chars)
+      }
+    }
+    const columns = columnBlocks(analyzePage(pageOf(chars)))
+    expect(columns).toHaveLength(2)
+    for (const blocks of columns) {
+      expect(blocks.every((b) => b.list === undefined)).toBe(true)
+    }
+  })
+
+  it('still lists dash sub-bullets indented on a single-column page (P20)', () => {
+    // the page-level fallback the fix must not lose: a slide pins the dash
+    // group in a column of its own, so only the page's left edge can say
+    // it is indented
+    const chars: PdfChar[] = [
+      ...mkText('Use it to define your venture', 60, { y: 730, fontSize: 10 }).chars,
+      ...mkText('– To answer questions early', 110, { y: 700, fontSize: 10 }).chars,
+      ...mkText('– In the order they ask them', 110, { y: 686, fontSize: 10 }).chars,
+    ]
+    const listed = columnBlocks(analyzePage(pageOf(chars)))
+      .flat()
+      .filter((b) => b.list?.kind === 'bullet')
+    expect(listed).toHaveLength(2)
   })
 })

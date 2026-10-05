@@ -56,6 +56,44 @@ test('accepts honest numeric geometry', () => {
   assert.equal(ir.length, 1)
 })
 
+test('rejects a non-finite or negative spacer px, exactly like heightPx', () => {
+  // px is the spacer's height: a bad value reaches
+  // pxToTwips(Math.max(px, 2)) as w:line="0" with w:lineRule="exact", silently
+  // collapsing the intended vertical gap, and poisons __h2dSpacerPx so the
+  // >8 and >16 layout fixups in renderer/page-settings stop firing.
+  for (const bad of ['not-a-number', NaN, Infinity, -8]) {
+    assert.throws(() => normalizeIr([{ type: 'spacer', px: bad }]), /index 0.*px/, `px=${bad}`)
+  }
+  // identical treatment to the sibling field it is validated alongside
+  for (const bad of ['oops', NaN, Infinity, -1]) {
+    const onPx = () => normalizeIr([{ type: 'spacer', px: bad }])
+    const onSibling = () => normalizeIr([{ type: 'spacer', heightPx: bad }])
+    assert.throws(onPx, /index 0/, `px=${bad} should throw`)
+    assert.throws(onSibling, /index 0/, `heightPx=${bad} should throw`)
+  }
+})
+
+test('accepts an honest spacer px and skips absent px the way heightPx does', () => {
+  assert.equal(normalizeIr([{ type: 'spacer', px: 24 }])[0].px, 24)
+  assert.equal(normalizeIr([{ type: 'spacer', px: 0 }])[0].px, 0)
+  // undefined/null are absent, not invalid — unchanged from the siblings
+  assert.equal(normalizeIr([{ type: 'spacer' }]).length, 1)
+  assert.equal(normalizeIr([{ type: 'spacer', px: null }]).length, 1)
+})
+
+test('a rejected spacer px never reaches the generated geometry', async () => {
+  // Before the fix this produced w:line="0" (an exact zero-height paragraph);
+  // now the hostile value is refused at the same boundary as every other key.
+  assert.throws(
+    () =>
+      normalizeIr([
+        { type: 'spacer', px: 'not-a-number' },
+        { type: 'para', runs: [] },
+      ]),
+    /invalid numeric "px"/,
+  )
+})
+
 test('raceWithAbort resolves when there is no signal', async () => {
   const value = await raceWithAbort(Promise.resolve('ok'))
   assert.equal(value, 'ok')

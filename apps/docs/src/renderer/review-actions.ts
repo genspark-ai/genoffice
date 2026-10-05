@@ -29,6 +29,7 @@ import {
 } from './editor/compare'
 import { pendingCommentPluginKey } from './editor/extensions'
 import type { InkAnnotation } from './editor/ink'
+import { renumber } from './ai/note-ops'
 import {
   TRACK_IGNORE,
   acceptAllRevisions,
@@ -90,6 +91,12 @@ export function submitNote(ctx: ReviewContext, text: string): void {
         attrs: { kind, id: newId, num: list.length + 1 },
       } as never)
       .run()
+    // the mark lands at the caret, which can be above marks that are already
+    // in the body, so the `num` it was given is only the append order: rewrite
+    // every mark of this kind in document order before anything reads it
+    const tr = ctx.editor.state.tr
+    renumber(tr, kind)
+    if (tr.docChanged) ctx.editor.view.dispatch(tr)
   }
   ctx.setNotesDirty(true)
 }
@@ -108,14 +115,13 @@ export function deleteNote(ctx: ReviewContext, kind: 'footnote' | 'endnote', id:
     if (node.type.name !== 'docNoteRef' || node.attrs.kind !== kind) return
     if (String(node.attrs.id) === id) {
       removals.push({ pos, size: node.nodeSize })
-    } else {
-      const num = next.findIndex((n) => n.id === String(node.attrs.id)) + 1
-      if (num > 0 && num !== node.attrs.num) {
-        tr.setNodeMarkup(pos, undefined, { ...node.attrs, num })
-      }
     }
   })
   for (const { pos, size } of removals.reverse()) tr.delete(pos, pos + size)
+  // number the survivors by where they sit in the body, the order submitNote
+  // uses; the list order is not the document order once a note has been
+  // inserted above one that was already there
+  renumber(tr, kind)
   if (tr.docChanged) editor.view.dispatch(tr)
 }
 

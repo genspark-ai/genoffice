@@ -520,3 +520,67 @@ describe('gradFill textbox approximates the average of all stops as a solid fill
     expect(doc.blocks[0].textboxes?.[0].fill).toBe('00B050')
   })
 })
+
+describe('sectionSettingsFromXml single-quote attributes', () => {
+  it('reads w:val/w:restart/w:type spelled with single quotes', () => {
+    const settings = sectionSettingsFromXml(
+      "<w:sectPr><w:footnotePr><w:numFmt w:val='upperRoman'/></w:footnotePr>" +
+        "<w:lnNumType w:restart='continuous' w:start='2'/>" +
+        "<w:pgBorders><w:top w:val='single' w:sz='4' w:space='1' w:color='FF0000'/></w:pgBorders></w:sectPr>",
+    )
+    expect(settings.footnotePr?.numFmt).toBe('upperRoman')
+    expect(settings.lineNumbers?.restart).toBe('continuous')
+    expect(settings.pageBorder).toBe(true)
+    expect(settings.pageBorderProps?.sides?.top?.val).toBe('single')
+  })
+})
+
+describe('single-quoted drawing and table attributes', () => {
+  it('reads image size and table grid regardless of quote style or extent order', async () => {
+    const img =
+      "<w:p><w:r><w:drawing><wp:inline><wp:extent cy='457200' cx='914400'/>" +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      "<pic:pic><pic:blipFill><a:blip r:embed='rId10'/></pic:blipFill></pic:pic>" +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    const table =
+      "<w:tbl><w:tblPr><w:tblW w:w='0' w:type='auto'/><w:tblInd w:w='70' w:type='dxa'/></w:tblPr>" +
+      "<w:tblGrid><w:gridCol w:w='3544'/><w:gridCol w:w='4376'/></w:tblGrid>" +
+      '<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: img,
+        withImage: true,
+        extraRels:
+          '<Relationship Id="rId60" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+        extraParts: [
+          {
+            path: 'word/header1.xml',
+            xml: `<w:hdr ${w}>${table}<w:p/></w:hdr>`,
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+          },
+          {
+            path: 'word/settings.xml',
+            xml:
+              `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${w}><w:compat>` +
+              '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>' +
+              '</w:compat></w:settings>',
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+          },
+        ],
+        sectPrExtra: '<w:headerReference w:type="default" r:id="rId60"/>',
+      }),
+    )
+    const run = doc.blocks[0]
+    expect(run.type).toBe('image')
+    expect(run.imageDataUrl).toMatch(/^data:image\/png;base64,/)
+    expect(run.imageWidthPx).toBe(96) // 914400 EMU / 9525
+    expect(run.imageHeightPx).toBe(48)
+    const [row] = doc.headerParas!.filter((p) => p.cells)
+    expect(row.row).toMatchObject({ indentTwips: 70 })
+    expect(row.cells!.map((c) => c.widthTwips)).toEqual([3544, 4376])
+  })
+})

@@ -28,6 +28,8 @@ import {
 import { genofficeApiKey, genofficeAuthPath, reloadGenofficeAuth } from './genoffice-auth'
 // deep import: the package root re-exports Electron-bound modules, and this file also runs in the genoffice CLI
 import { readBodyCapped } from '@genoffice/electron-utils/remote-image'
+import { createStreamWatchdog } from '@genoffice/ai-provider'
+import { fetchWithSsrfGuard } from '@genoffice/electron-utils/safe-remote-url'
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -214,12 +216,18 @@ export function summarizeGskFailure(raw: unknown, fallback = 'unknown error'): s
  * never closes. String-aware, so braces and quotes inside string values do not
  * change the depth, and a block ends at its own closer rather than at the end
  * of the output (trailing log lines are left out).
+ *
+ * `budget` is drawn down per character so the caller can stop the scan: each
+ * candidate restarts at its own offset, so without a shared budget the whole
+ * recovery pass is quadratic in the number of candidate lines.
  */
-function jsonBlockAt(text: string, start: number): string | null {
+function jsonBlockAt(text: string, start: number, budget: ScanBudget): string | null {
   let depth = 0
   let inString = false
   let escaped = false
   for (let i = start; i < text.length; i++) {
+    if (budget.chars <= 0) return null
+    budget.chars--
     const c = text[i]!
     if (inString) {
       if (escaped) escaped = false
@@ -237,6 +245,22 @@ function jsonBlockAt(text: string, start: number): string | null {
   return null
 }
 
+/** Remaining characters the recovery scan may examine; drawn down by jsonBlockAt. */
+interface ScanBudget {
+  chars: number
+}
+
+/**
+ * Ceiling on the characters the recovery scan may examine in total, across all
+ * candidate openers. A candidate is scanned from its own offset to its closer
+ * or to the end of the output, so an output of N candidate lines costs O(N x
+ * len) — and the output is model-controlled, bounded only by MAX_BUFFER. The
+ * ceiling makes the pass a fixed amount of work instead: a normal response
+ * parses on the first candidate, and even one buried behind noise needs only a
+ * few scans of its own length.
+ */
+const MAX_RECOVERY_SCAN_CHARS = 4 * 1024 * 1024
+
 /**
  * gsk output may have [INFO] log lines mixed in before or after the JSON;
  * find the first line that opens a JSON block and take that block, so a
@@ -251,10 +275,12 @@ export function parseGskOutput(stdout: string): unknown {
     /* fall through to the recovery scan */
   }
   let offset = 0
+  const budget: ScanBudget = { chars: MAX_RECOVERY_SCAN_CHARS }
   for (const line of trimmed.split('\n')) {
+    if (budget.chars <= 0) break // scan budget spent: no candidate can be tried
     const opener = line.trimStart()[0]
     if (opener === '{' || opener === '[') {
-      const block = jsonBlockAt(trimmed, offset + line.indexOf(opener))
+      const block = jsonBlockAt(trimmed, offset + line.indexOf(opener), budget)
       if (block) {
         try {
           return JSON.parse(block)
@@ -347,7 +373,7 @@ export function parseGskWebSearch(
     const o = asRecord(item)
     return {
       title: clipField(o.title),
-      url: clipField(o.link),
+      url: String(o.link ?? ''),
       snippet: clipField(o.snippet),
     }
   })
@@ -369,6 +395,7 @@ export async function gskWebSearch(
 
 /** Parses the `gsk img-search` response shape data[{image_url,title,source,link,width,height}] (exported for tests) */
 export function parseGskImageSearch(raw: unknown, maxResults: number): ImageSearchResult[] {
+  const bounded = normalizeMaxResults(maxResults)
   const dataRaw = asRecord(raw).data
   const data: unknown[] = Array.isArray(dataRaw) ? dataRaw : []
   const images: ImageSearchResult[] = []
@@ -388,7 +415,7 @@ export function parseGskImageSearch(raw: unknown, maxResults: number): ImageSear
     if (Number.isFinite(width) && width > 0) entry.width = width
     if (Number.isFinite(height) && height > 0) entry.height = height
     images.push(entry)
-    if (images.length >= maxResults) break
+    if (images.length >= bounded) break
   }
   return images
 }
@@ -524,11 +551,17 @@ async function toolCliPost(
 ): Promise<unknown> {
   const key = gskApiKey()
   if (!key) throw new Error('Not logged in to Genspark (gsk login)')
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const onAbort = () => controller.abort()
-  signal?.addEventListener('abort', onAbort, { once: true })
-  try {
+  // An abort listener added after the event has already fired is never invoked, so a
+  // signal that arrived while the caller was still dispatching this tool call would
+  // never reach the internal controller and the billed POST would run to completion.
+  if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError')
+  // Route through the shared watchdog so our own deadline surfaces as AiTimeoutError.
+  // A bare controller.abort() is indistinguishable from a user cancel, and the apps
+  // map AiTimeoutError to errorCode 'timeout' -> the localized timeout text; without
+  // it a 240s slide_generate that never answered showed a raw "operation was aborted".
+  const watchdog = createStreamWatchdog(signal, timeoutMs, timeoutMs)
+  // guard() always disposes the watchdog timer, on both the resolve and reject path
+  return watchdog.guard(async () => {
     const resp = await fetch(`${GSK_TOOL_CLI_BASE}${path}`, {
       method: 'POST',
       // X-Agent-Type splits GenOffice usage out of the proxy's "Claw" billing bucket
@@ -538,7 +571,7 @@ async function toolCliPost(
         'X-Agent-Type': 'genoffice',
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: watchdog.signal,
     })
     const text = new TextDecoder().decode(await readBodyCapped(resp, MAX_TOOL_CLI_NDJSON_BYTES))
     if (!resp.ok) throw new Error(`tool_cli ${path} HTTP ${resp.status}: ${text.slice(0, 200)}`)
@@ -547,10 +580,7 @@ async function toolCliPost(
       throw new Error(`tool_cli ${path} failed: ${result.message ?? result.status}`)
     }
     return result.data
-  } finally {
-    clearTimeout(timer)
-    signal?.removeEventListener('abort', onAbort)
-  }
+  })
 }
 
 /**
@@ -581,7 +611,15 @@ export async function gskSlideGenerate(
   )
   const downloadUrl = dl.download_url
   if (!downloadUrl) throw new Error('file/download returned no download_url')
-  const resp = await fetch(String(downloadUrl), signal ? { signal } : undefined)
+  // The cloud response picks this URL, so it goes through the same SSRF gate as
+  // every other model-influenced download: a plain fetch would follow a redirect
+  // into a private address (or a cloud metadata endpoint) unchecked. The body is
+  // then read through the capped reader.
+  const resp = await fetchWithSsrfGuard(String(downloadUrl), {
+    // the guard has no signal of its own; the caller's abort rides on every hop
+    fetchImpl: (url, init) => fetch(url, signal ? { ...init, signal } : init),
+  })
+  if (!resp) throw new Error('PPTX download blocked: the download URL is not a public address')
   if (!resp.ok) throw new Error(`PPTX download failed: HTTP ${resp.status}`)
   return {
     bytes: await readBodyCapped(resp, MAX_SLIDE_ARTIFACT_BYTES),

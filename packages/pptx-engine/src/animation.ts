@@ -200,10 +200,11 @@ function directionFromPreset(effect: AnimEffectKind, sub: number): AnimDirection
 function modeledEffect(cls: string, id: number, sub: number): AnimEffectKind | null {
   if (cls === 'path') return 'motionPath'
   if (cls === 'mediacall') return id === 1 ? 'mediaPause' : id === 3 ? 'mediaStop' : 'mediaPlay'
-  // Effects sharing a presetID distinguished by subtype (e.g. wipe direction)
+  // Effects sharing a presetID distinguished by subtype. entr:22:4 reads as wipe
+  // with direction top (wipeDown is a write-compatible alias for the same bytes).
   const bySub: Record<string, AnimEffectKind> = {
     'entr:22:1': 'wipe',
-    'entr:22:4': 'wipeDown',
+    'entr:22:4': 'wipe',
   }
   const exact: Record<string, AnimEffectKind> = {
     'entr:1': 'appear',

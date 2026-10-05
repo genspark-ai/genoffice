@@ -12,6 +12,7 @@
  * one (several list/quote lines).
  */
 import { marked } from 'marked'
+import { sanitizeMarkdownHtml } from './sanitize-markdown-html'
 
 /// Constructs that essentially never appear in prose accidentally.
 const STRONG_SIGNALS: readonly RegExp[] = [
@@ -45,7 +46,9 @@ export function markdownPasteHtml(text: string): string | null {
   const normalized = text.replace(/\r\n?/g, '\n')
   if (!looksLikeMarkdown(normalized)) return null
   try {
-    return marked.parse(normalized, { gfm: true, breaks: false, async: false })
+    return sanitizeMarkdownHtml(
+      marked.parse(normalized, { gfm: true, breaks: false, async: false }),
+    )
   } catch {
     return null
   }

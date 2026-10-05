@@ -13,6 +13,8 @@ export const TABLE_BORDER_MENU = [
   'inner',
   'insideH',
   'insideV',
+  'tl2br',
+  'tr2bl',
 ] as const
 
 export type TableBorderMode = (typeof TABLE_BORDER_MENU)[number]
@@ -27,6 +29,13 @@ type Sides = Record<string, BorderLine>
 const SIDES = ['top', 'bottom', 'left', 'right'] as const
 type Side = (typeof SIDES)[number]
 
+/** w:tl2br / w:tr2bl: a diagonal crosses the whole cell, so unlike an edge it
+ *  is never a shared boundary and never needs the inner/outer test */
+const DIAGONALS = ['tl2br', 'tr2bl'] as const
+type Diagonal = (typeof DIAGONALS)[number]
+
+const isDiagonal = (side: Side | Diagonal): side is Diagonal => side === 'tl2br' || side === 'tr2bl'
+
 const NONE: BorderLine = { style: 'none' }
 
 /** Word's "Apply to" rule: selected cells get the borders; a bare caret formats the whole table */
@@ -37,10 +46,15 @@ function targetRect(rect: TableRect, cellSelection: boolean): TableRect {
 
 export function sideLine(
   mode: TableBorderMode,
-  side: Side,
+  side: Side | Diagonal,
   edge: Record<Side, boolean>,
   line: BorderLine,
 ): BorderLine | undefined {
+  if (isDiagonal(side)) {
+    // No Border clears the diagonals too, but the compound modes (All/Outer/
+    // Inner) are edges-only in Word and must not add one
+    return mode === 'none' ? NONE : mode === side ? line : undefined
+  }
   const horizontal = side === 'top' || side === 'bottom'
   switch (mode) {
     case 'all':
@@ -85,7 +99,7 @@ export function setSelectionBorders(mode: TableBorderMode, line: BorderLine): Co
         }
         const next: Sides = { ...((node.attrs.borders as Sides | null) ?? {}) }
         let changed = false
-        for (const side of SIDES) {
+        for (const side of [...SIDES, ...DIAGONALS] as const) {
           const value = sideLine(mode, side, edge, line)
           if (value) {
             next[side] = value

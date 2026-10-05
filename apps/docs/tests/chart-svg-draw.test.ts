@@ -1,4 +1,4 @@
-import type { ChartDisplay } from '@genoffice/docx-engine'
+import { parseChartPartXml, type ChartDisplay } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import {
   CHART_TITLE_ROW_PX,
@@ -481,4 +481,68 @@ describe('category label wrapping', () => {
     expect(labelLines.length).toBeLessThanOrEqual(3)
     expect(labelLines.join(' ')).toContain('twelve')
   })
+})
+
+// A chart part may declare far more cached points than it carries <c:pt>
+// elements, and cachePoints densifies the cache up to the declared count, so
+// the display model hands the drawing code arrays a million long. Spreading one
+// of those into Math.max/Math.min overflows the call's argument limit (V8
+// throws at roughly 200k), which crashed the render from addNodeView.
+const declaredPoints = 300_000
+const chartSpace = (inner: string) =>
+  '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
+  'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+  `<c:chart><c:plotArea><c:layout/>${inner}</c:plotArea></c:chart></c:chartSpace>`
+const wideCache = (tag: 'cat' | 'val' | 'xVal') =>
+  `<c:${tag}><c:${tag === 'cat' ? 'strRef' : 'numRef'}><c:f>S!$A$1</c:f><c:${
+    tag === 'cat' ? 'strCache' : 'numCache'
+  }><c:ptCount val="${declaredPoints}"/>` +
+  `<c:pt idx="0"><c:v>${tag === 'cat' ? 'A' : 1}</c:v></c:pt>` +
+  `</c:${tag === 'cat' ? 'strCache' : 'numCache'}></c:${
+    tag === 'cat' ? 'strRef' : 'numRef'
+  }></c:${tag}>`
+const wideSer = (extra = '') =>
+  '<c:ser><c:idx val="0"/><c:order val="0"/>' +
+  '<c:tx><c:strRef><c:f>S!$A$1</c:f><c:strCache><c:ptCount val="1"/>' +
+  '<c:pt idx="0"><c:v>S1</c:v></c:pt></c:strCache></c:strRef></c:tx>' +
+  `${extra}${wideCache('cat')}${wideCache('val')}</c:ser>`
+const narrowX =
+  '<c:xVal><c:numRef><c:f>S!$C$1</c:f><c:numCache><c:formatCode>General</c:formatCode>' +
+  '<c:ptCount val="3"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt>' +
+  '<c:pt idx="2"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:xVal>'
+/** one chart kind per drawing branch, each carrying only a single real point */
+const wideKinds: Record<string, string> = {
+  'column bar': `<c:barChart><c:barDir val="col"/><c:grouping val="clustered"/>${wideSer()}</c:barChart>`,
+  line: `<c:lineChart><c:grouping val="standard"/>${wideSer()}</c:lineChart>`,
+  area: `<c:areaChart><c:grouping val="standard"/>${wideSer()}</c:areaChart>`,
+  pie: `<c:pieChart>${wideSer()}</c:pieChart>`,
+  scatter: `<c:scatterChart>${wideSer(narrowX)}</c:scatterChart>`,
+  bubble: `<c:bubbleChart>${wideSer(narrowX)}</c:bubbleChart>`,
+}
+
+describe('chart drawing with a huge declared point count', () => {
+  it('densifies the caches to the declared count', () => {
+    const chart = parseChartPartXml(
+      chartSpace(`<c:barChart>${wideSer()}</c:barChart>`),
+      'word/charts/chart1.xml',
+    )!
+    // one <c:pt> in the part, declaredPoints slots in the display model
+    expect(chart.categories).toHaveLength(declaredPoints)
+    expect(chart.series[0]!.values).toHaveLength(declaredPoints)
+  })
+
+  for (const [name, inner] of Object.entries(wideKinds)) {
+    it(`renders a ${name} chart without overflowing the call stack`, () => {
+      const chart = parseChartPartXml(chartSpace(inner), 'word/charts/chart1.xml')!
+      expect(chart.categories).toHaveLength(declaredPoints)
+      const dom = document.createElement('div')
+      const canvas = document.createElement('div')
+      canvas.className = 'doc-chart-canvas'
+      dom.appendChild(canvas)
+      // a deleted category axis keeps this about the arithmetic: without it the
+      // chart also draws one label per declared category
+      expect(() => drawChartSvg(dom, { ...chart, xAxis: { deleted: true } })).not.toThrow()
+      expect(dom.querySelector('svg')).not.toBeNull()
+    })
+  }
 })

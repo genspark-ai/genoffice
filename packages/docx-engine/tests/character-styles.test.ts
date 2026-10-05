@@ -52,6 +52,17 @@ describe('character styles (w:rStyle)', () => {
     expect(runs[2].styleId).toBe('Hyperlink')
   })
 
+  it('keeps the #anchor fragment when a hyperlink carries both r:id and w:anchor', async () => {
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:hyperlink r:id="rId20" w:anchor="Sec2"><w:r><w:t>go</w:t></w:r></w:hyperlink></w:p>',
+      extraRels:
+        '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/page" TargetMode="External"/>',
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks[0].runs![0].link?.href).toBe('https://example.com/page#Sec2')
+  })
+
   it('does not merge adjacent runs with different character styles', async () => {
     const bytes = await buildDocx({
       bodyXml:

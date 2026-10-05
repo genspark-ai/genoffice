@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
+import { checkResult, type IssueDraft } from '../src/check'
 import { run, tempDir } from './helpers'
 
 async function patchZip(
@@ -14,6 +15,20 @@ async function patchZip(
   }
   writeFileSync(path, await zip.generateAsync({ type: 'nodebuffer' }))
 }
+
+describe('checkResult ids', () => {
+  it('numbers issues per level instead of by global position', () => {
+    const drafts: IssueDraft[] = [
+      { code: 'w1', level: 'warning', path: 'p1', message: 'm1' },
+      { code: 'e1', level: 'error', path: 'p2', message: 'm2' },
+      { code: 'w2', level: 'warning', path: 'p3', message: 'm3' },
+      { code: 'i1', level: 'info', path: 'p4', message: 'm4' },
+    ]
+    const r = checkResult('f.xlsx', drafts, ['c1'])
+    const issues = r.detail!.issues as { id: string }[]
+    expect(issues.map((i) => i.id)).toEqual(['E1', 'W1', 'W2', 'I1'])
+  })
+})
 
 describe('sheet check', () => {
   it('reports nothing on a plain table', async () => {

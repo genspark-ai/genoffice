@@ -770,6 +770,34 @@ describe('P27 vline-junction row harvest', () => {
     // y=660 junction refuted by the straddling glyphs; others may survive
     expect(tables[0]!.rows.some((row) => row[0] && row[0].box.y0 === 660)).toBe(false)
   })
+
+  it('merges two junction clusters that close instead of minting a hairline row', () => {
+    // a harvested boundary is only checked against the PRE-EXISTING ys, so
+    // two junction clusters 2.5pt apart both survived: clustering splits at
+    // POS_TOL 2.0 while MIN_CELL_DIM is 3.0, and nothing re-ran the dedupe.
+    // The 670-655 row came back as a 40pt row, a 2.5pt empty row and a 15pt
+    // one — and virtual boundaries are bordered, so the hairline draws
+    const xs = [100, 200, 300, 400]
+    const strokes: Stroke[] = [
+      h(100, 400, 710),
+      h(100, 400, 655),
+      h(100, 400, 600),
+      ...xs.map((x) => v(600, 710, x)),
+      ...xs.slice(1).flatMap((x) => [v(655, 670, x), v(672.5, 708, x)]),
+    ]
+    const chars = [
+      ...mkText('alpha', 110, { y: 690 }).chars,
+      ...mkText('beta', 210, { y: 690 }).chars,
+      ...mkText('gamma', 110, { y: 640 }).chars,
+      ...mkText('delta', 210, { y: 640 }).chars,
+    ]
+    const { tables } = detectTables(shapesOf(strokes), chars)
+    expect(tables).toHaveLength(1)
+    // the 670 junction is real and still recovered; the 672.5 one is jitter
+    expect(tables[0]!.rows).toHaveLength(3)
+    const heights = tables[0]!.rows.map((row) => row[0]!.box.y1 - row[0]!.box.y0)
+    expect(heights.map((h) => Number(h.toFixed(2)))).toEqual([40, 15, 55])
+  })
 })
 
 describe('detectTables: shaded borderless columns (P30)', () => {

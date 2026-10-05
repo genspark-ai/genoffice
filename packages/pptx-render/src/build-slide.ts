@@ -727,6 +727,35 @@ function buildTable(
       if (needed > (rowPx[r] ?? 0)) rowPx[r] = needed
     })
   })
+  el.rows.forEach((row, r) => {
+    const gridCols = tableRowGridCols(row)
+    row.forEach((cell, tcIdx) => {
+      const cIdx = gridCols[tcIdx]!
+      const span = cell.rowSpan ?? 1
+      if (cell.merged || span <= 1) return
+      if (!cell.text || !cell.text.paragraphs.length) return
+      const x = colX[cIdx] ?? 0
+      const w = (colX[Math.min(cIdx + (cell.gridSpan ?? 1), colX.length - 1)] ?? x) - x
+      const count = Math.min(span, rowPx.length - r)
+      if (count <= 0) return
+      let cur = 0
+      for (let i = 0; i < count; i++) cur += rowPx[r + i] ?? 0
+      const probe = layoutText({
+        body: cell.text,
+        boxWidthPx: w,
+        boxHeightPx: cur,
+        metrics,
+        vp,
+        media,
+        trimEdgeSpacing: true,
+      })
+      const needed = (probe.inkBottom ?? probe.contentHeight) + probe.insets.t + probe.insets.b
+      if (needed > cur) {
+        const extra = (needed - cur) / count
+        for (let i = 0; i < count; i++) rowPx[r + i] = (rowPx[r + i] ?? 0) + extra
+      }
+    })
+  })
 
   const rowY: number[] = [0]
   for (const h of rowPx) rowY.push(rowY[rowY.length - 1]! + h)

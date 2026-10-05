@@ -203,3 +203,57 @@ export function distributeSelectedColumns(maxWidthPx: number): Command {
     return true
   }
 }
+
+/** Column grid of the table around a resize handle's cell, as the drag starts from it. */
+export interface TableGridAtCell {
+  /** model px per grid column */
+  widths: number[]
+  /** grid column whose right edge the handle sits on */
+  col: number
+}
+
+/**
+ * Model grid for a border drag. Columns follow the rendered colgroup percentages
+ * when they describe the whole grid (that is what the user sees), scaled to the
+ * table's model width, so the drag starts from exactly the displayed layout.
+ */
+export function tableGridAtCell(
+  state: EditorState,
+  cellPos: number,
+  maxWidthPx: number,
+): TableGridAtCell | null {
+  const target = targetFromCellPos(state, cellPos)
+  if (!target) return null
+  const current = tableGridWidths(state, target, maxWidthPx)
+  if (!current) return null
+  const cell = state.doc.nodeAt(cellPos)
+  if (!cell) return null
+  const col =
+    target.map.colCount(cellPos - target.tableStart) + (Number(cell.attrs.colspan) || 1) - 1
+  const attrs = target.table.attrs
+  const declaredTotal = current.reduce((sum, width) => sum + width, 0)
+  const total =
+    finiteWidth(attrs.widthPx, 0) ||
+    (attrs.widthPct ? (Number(attrs.widthPct) / 100) * maxWidthPx : 0) ||
+    declaredTotal
+  const pct = attrs.colWidthsPct as number[] | null
+  const shares =
+    pct && pct.length === current.length && pct.every((p) => Number.isFinite(p) && p > 0)
+      ? pct
+      : current
+  const shareTotal = shares.reduce((sum, share) => sum + share, 0)
+  if (!(shareTotal > 0) || !(total > 0)) return null
+  return { widths: shares.map((share) => (share / shareTotal) * total), col }
+}
+
+/** Commit a dragged grid: every cell gets its slice, the table its new total and percentages. */
+export function setTableGridAtCell(cellPos: number, widths: number[]): Command {
+  return (state, dispatch) => {
+    const target = targetFromCellPos(state, cellPos)
+    if (!target || widths.length !== target.map.width) return false
+    if (!widths.every((width) => Number.isFinite(width) && width > 0)) return false
+    const rounded = widths.map((width) => Math.max(1, Math.round(width * 100) / 100))
+    dispatch?.(writeGridWidths(state, state.tr, target, rounded))
+    return true
+  }
+}

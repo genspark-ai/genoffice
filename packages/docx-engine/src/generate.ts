@@ -20,6 +20,14 @@ export interface GenerateContext {
   listParagraphStyleId?: string
   /** allocate a new relationship id for a hyperlink target; returns rId */
   allocateHyperlinkRel: (href: string) => string
+  /**
+   * Mint the w:bookmarkStart/@w:id for a bookmark name. w:id must be unique in
+   * the part, so a caller writing into an existing document supplies an
+   * allocator seeded above that part's highest id. Without one (a fragment
+   * rendered outside any document) ids come from a process counter, which
+   * keeps them unique among themselves but is not coordinated with a part.
+   */
+  allocateBookmarkId?: (name: string) => number
 }
 
 const EMU_PER_PX = 9525
@@ -156,7 +164,7 @@ export function patchImageParagraphXml(xml: string, patch: ImagePatch): string {
 }
 
 const WRAP_ELEMENT_RE =
-  /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
+  /<wp:wrapNone\s*\/>|<wp:wrapSquare[^>]*\/>|<wp:wrapTight[^>]*\/>|<wp:wrapThrough[^>]*\/>|<wp:wrapTopAndBottom\s*\/>|<wp:wrapSquare[\s\S]*?<\/wp:wrapSquare>|<wp:wrapTight[\s\S]*?<\/wp:wrapTight>|<wp:wrapThrough[\s\S]*?<\/wp:wrapThrough>|<wp:wrapTopAndBottom[\s\S]*?<\/wp:wrapTopAndBottom>/g
 
 /**
  * Re-encode ONLY the stacking rank of an existing wp:anchor as Word's
@@ -253,6 +261,109 @@ export function applyImageWrap(
   // wrap element sits between extent/effectExtent and docPr in CT_Anchor order
   if (/<wp:docPr/.test(out)) return out.replace(/<wp:docPr/, `${wrapElement}<wp:docPr`)
   return out.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
+}
+
+/** The box drawings (wps shapes/textboxes) in a paragraph, in document order — same walk patchShapeStyles uses. */
+function boxDrawingSegments(paragraphXml: string): Array<{ start: number; end: number }> {
+  return xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).filter((seg) =>
+    isBoxDrawing(paragraphXml.slice(seg.start, seg.end)),
+  )
+}
+
+/** How a caller addresses one shape drawing: by its wps:cNvPr id when known, else by box ordinal. */
+export interface ShapeDrawingLocation {
+  /** wps:cNvPr id of the owning shape (parsed boxes carry it) */
+  shapeId?: string
+  /** fallback ordinal among box drawings (generated shapes have no id) */
+  boxIndex: number
+}
+
+function shapeDrawingSegment(
+  paragraphXml: string,
+  location: ShapeDrawingLocation,
+): { start: number; end: number } | null {
+  if (location.shapeId) {
+    // an id was given: never fall back to a different drawing
+    const found = xmlSegments(paragraphXml, 'w:drawing', 0, paragraphXml.length).find(
+      (seg) =>
+        /<wps:cNvPr\b[^>]*\bid="([^"]+)"/.exec(paragraphXml.slice(seg.start, seg.end))?.[1] ===
+        location.shapeId,
+    )
+    return found ?? null
+  }
+  return boxDrawingSegments(paragraphXml)[location.boxIndex] ?? null
+}
+
+/** Re-encode the rank of the drawing's own wp:anchor tag, never a nested drawing's. */
+function setAnchorRank(drawingXml: string, zOrder: number): string {
+  return drawingXml.replace(/<wp:anchor[^>]*>/, (tag) =>
+    tag.replace(/relativeHeight="\d+"/, `relativeHeight="${251658240 + zOrder}"`),
+  )
+}
+
+/**
+ * Re-encode ONLY the stacking rank of one shape drawing as Word's base + rank
+ * relativeHeight. Everything else keeps its bytes, like applyImageZOrder.
+ */
+export function applyShapeZOrderAt(
+  paragraphXml: string,
+  location: ShapeDrawingLocation,
+  zOrder: number,
+): string {
+  const seg = shapeDrawingSegment(paragraphXml, location)
+  if (!seg) return paragraphXml
+  const next = setAnchorRank(paragraphXml.slice(seg.start, seg.end), zOrder)
+  return paragraphXml.slice(0, seg.start) + next + paragraphXml.slice(seg.end)
+}
+
+/**
+ * Switch one shape drawing's wrap mode in place, preserving its positionH/V
+ * bytes: only the anchor attributes, the wrap element and (when given)
+ * relativeHeight change. `wrap === null` converts the anchor to inline.
+ */
+export function applyShapeWrapAt(
+  paragraphXml: string,
+  location: ShapeDrawingLocation,
+  wrap: ImageWrap | null,
+  zOrder?: number,
+): string {
+  const seg = shapeDrawingSegment(paragraphXml, location)
+  if (!seg) return paragraphXml
+  const drawing = paragraphXml.slice(seg.start, seg.end)
+  const hasAnchor = /<wp:anchor[\s>]/.test(drawing)
+  let next: string
+  if (wrap === null) {
+    if (!hasAnchor) return paragraphXml
+    next = drawing
+      .replace(/<wp:simplePos[^>]*\/>/, '')
+      .replace(/<wp:positionH[\s\S]*?<\/wp:positionH>/, '')
+      .replace(/<wp:positionV[\s\S]*?<\/wp:positionV>/, '')
+      .replace(WRAP_ELEMENT_RE, '')
+      .replace(/<wp:anchor[^>]*>/, '<wp:inline distT="0" distB="0" distL="0" distR="0">')
+      .replace(/<\/wp:anchor>/, '</wp:inline>')
+  } else if (!hasAnchor) {
+    next = applyImageWrap(drawing, wrap, undefined, undefined, zOrder)
+  } else {
+    const behind = wrap === 'behind' ? '1' : '0'
+    const wrapElement =
+      wrap === 'front' || wrap === 'behind'
+        ? '<wp:wrapNone/>'
+        : wrap === 'topBottom'
+          ? '<wp:wrapTopAndBottom/>'
+          : '<wp:wrapSquare wrapText="bothSides"/>'
+    next = drawing
+      .replace(WRAP_ELEMENT_RE, '')
+      .replace(/<wp:anchor[^>]*>/, (tag) =>
+        tag.includes('behindDoc=')
+          ? tag.replace(/behindDoc="[^"]*"/, `behindDoc="${behind}"`)
+          : tag.replace(/<wp:anchor/, `<wp:anchor behindDoc="${behind}"`),
+      )
+    if (zOrder !== undefined) next = setAnchorRank(next, zOrder)
+    next = /<wp:docPr/.test(next)
+      ? next.replace(/<wp:docPr/, `${wrapElement}<wp:docPr`)
+      : next.replace(/<a:graphic[\s>]/, (m) => `${wrapElement}${m}`)
+  }
+  return paragraphXml.slice(0, seg.start) + next + paragraphXml.slice(seg.end)
 }
 
 // ---- protected field / formula token patching ----
@@ -1781,8 +1892,8 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
     )
     .join('')
   const content =
-    bookmarksXml(block.hiddenBookmarks) +
-    bookmarksXml(block.bookmarks) +
+    bookmarksXml(ctx, block.hiddenBookmarks) +
+    bookmarksXml(ctx, block.bookmarks) +
     crossStarts +
     generateRunsXml(block.runs, ctx) +
     crossEnds
@@ -1820,18 +1931,21 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
   return `<w:p>${pPr}${content}</w:p>`
 }
 
-/** stable 31-bit id per bookmark name (start/end pair only needs to agree with itself) */
-function bookmarkIdOf(name: string): number {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
-  return Math.abs(h) % 0x7fffffff
-}
+/**
+ * Fallback id source for a caller that has no document to coordinate with: a
+ * counter, so ids stay unique among themselves. A hash of the name cannot do
+ * that job: w:id is unique per part, the hash space overlaps the small ids
+ * Word itself hands out, and two names collide by birthday at a few tens of
+ * thousands of bookmarks — after which Word mis-pairs the bookmarks and a
+ * cross-reference lands on the wrong target.
+ */
+let standaloneBookmarkSeq = 0
 
-function bookmarksXml(names: string[] | undefined): string {
+function bookmarksXml(ctx: GenerateContext, names: string[] | undefined): string {
   if (!names?.length) return ''
   return names
     .map((name) => {
-      const id = bookmarkIdOf(name)
+      const id = ctx.allocateBookmarkId?.(name) ?? ++standaloneBookmarkSeq
       return `<w:bookmarkStart w:id="${id}" w:name="${escapeXmlAttr(name)}"/><w:bookmarkEnd w:id="${id}"/>`
     })
     .join('')
@@ -1890,7 +2004,7 @@ function setTcPrChild(children: PPrChild[], name: string, xml: string | null): v
 }
 
 function cellBordersXml(borders: NonNullable<TableCell['borders']>): string {
-  const side = (name: 'top' | 'left' | 'bottom' | 'right') => {
+  const side = (name: 'top' | 'left' | 'bottom' | 'right' | 'tl2br' | 'tr2bl') => {
     const b = borders[name]
     if (!b) return ''
     const sz =
@@ -1901,7 +2015,8 @@ function cellBordersXml(borders: NonNullable<TableCell['borders']>): string {
         : ` w:color="${escapeXmlAttr(b.color ?? 'auto')}"`
     return `<w:${name} w:val="${escapeXmlAttr(b.style)}"${sz}${color}/>`
   }
-  return `<w:tcBorders>${side('top')}${side('left')}${side('bottom')}${side('right')}</w:tcBorders>`
+  // CT_TcBorders is a sequence: top, left, bottom, right, tl2br, tr2bl
+  return `<w:tcBorders>${side('top')}${side('left')}${side('bottom')}${side('right')}${side('tl2br')}${side('tr2bl')}</w:tcBorders>`
 }
 
 /** w:tcMar / w:tblCellMar with only the declared sides; null when nothing is declared */

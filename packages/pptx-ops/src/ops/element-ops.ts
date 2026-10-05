@@ -259,26 +259,8 @@ register({
     }
     for (const el of targets) {
       const t = el.transform
-      // Rotation pivots on the flip-adjusted box origin, so toggling a flip on a
-      // rotated element would move its visual center: origin + R(rot)·(flip-signed
-      // half-extent) must stay put — shift the offset by the orbit difference.
-      const orbit = () => {
-        const rad = (((t.rot ?? 0) / 60000) * Math.PI) / 180
-        const bx = t.flipH ? t.offset.cx : 0
-        const by = t.flipV ? t.offset.cy : 0
-        const vx = ((t.flipH ? -1 : 1) * t.offset.cx) / 2
-        const vy = ((t.flipV ? -1 : 1) * t.offset.cy) / 2
-        return {
-          x: bx + vx * Math.cos(rad) - vy * Math.sin(rad),
-          y: by + vx * Math.sin(rad) + vy * Math.cos(rad),
-        }
-      }
-      const before = orbit()
       if (op.axis === 'h') t.flipH = !t.flipH
       else t.flipV = !t.flipV
-      const after = orbit()
-      t.offset.x += Math.round(before.x - after.x)
-      t.offset.y += Math.round(before.y - after.y)
       el.dirtyTransform = true
     }
     updateConnectorsForMoved(

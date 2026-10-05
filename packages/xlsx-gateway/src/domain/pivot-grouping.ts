@@ -52,13 +52,23 @@ export interface PivotGroupValue {
 const EXCEL_EPOCH_UTC = Date.UTC(1899, 11, 30)
 const DAY_MS = 86_400_000
 
+/// Serials below 60 fall in the window Excel's phantom 1900-02-29 occupies: the
+/// 1899-12-30 epoch only lines up from serial 61 on, so those days sit one day
+/// early until the shift is applied. Serial 60 is the non-existent 1900-02-29,
+/// which Excel still accepts and displays.
+const EXCEL_PHANTOM_LEAP_SERIAL = 60
+
 /// Parses a cell date: numbers as Excel serial dates, strings in YYYY-MM-DD /
 /// YYYY/M/D read digits directly (avoiding Date.parse timezone ambiguity), and
 /// everything else goes to Date.parse.
 export function parseDateParts(value: string | number): { year: number; month: number } | null {
   if (typeof value === 'number') {
     if (!Number.isFinite(value) || value < 0 || value > 2_958_465) return null
-    const date = new Date(EXCEL_EPOCH_UTC + Math.floor(value) * DAY_MS)
+    const serial = Math.floor(value)
+    // 1900-02-29 does not exist; keep the serial Excel would display
+    if (serial === EXCEL_PHANTOM_LEAP_SERIAL) return { year: 1900, month: 2 }
+    const shift = serial < EXCEL_PHANTOM_LEAP_SERIAL ? 1 : 0
+    const date = new Date(EXCEL_EPOCH_UTC + (serial + shift) * DAY_MS)
     return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 }
   }
   const direct = /^\s*(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?/.exec(value)

@@ -30,4 +30,13 @@ describe('project name length and timeline limit caps', () => {
     expect(store.getProjectTimeline('default', 1e9)).toEqual([])
     expect(store.getProjectTimeline('default', -5)).toEqual([])
   })
+
+  it('loads more than 200 messages per chat when the limit allows', () => {
+    const proj = store.createProject('Timeline Cap')
+    const chatId = ProjectStore.chatIdForFile(join(tmpDir, 'deck.pptx'))
+    for (let i = 0; i < 250; i++) {
+      store.appendChatMessage(proj.id, chatId, { role: 'user', text: `m${i}` })
+    }
+    expect(store.getProjectTimeline(proj.id, 300)).toHaveLength(250)
+  })
 })

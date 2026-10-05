@@ -36,8 +36,27 @@ export class XlsxSidecarClient {
   private lines: Interface | null = null
   private readonly pending = new Map<string, PendingRequest>()
   private stderr = ''
+  /// Notified when the sidecar process dies and the NEXT request will spawn a
+  /// replacement that has never heard of the session ids we are holding. This
+  /// is a positive crash signal, and deliberately NOT the same thing as a
+  /// session guard rejecting an id: closing a workbook (or the Save swap that
+  /// replaces its session) only sends a `close` command down the live pipe, so
+  /// it never reaches here. A renderer that keyed recovery off a guard's error
+  /// text could not tell those two apart, and would re-open the file on every
+  /// ordinary save.
+  private readonly exitListeners = new Set<() => void>()
 
   constructor(private readonly binaryPath: string) {}
+
+  /** Subscribe to unexpected sidecar process death; returns an unsubscribe. */
+  onProcessExit(listener: () => void): () => void {
+    this.exitListeners.add(listener)
+    return () => this.exitListeners.delete(listener)
+  }
+
+  private notifyExit(): void {
+    for (const listener of this.exitListeners) listener()
+  }
 
   async open(path: string, locale = 'zh', shortDateFormat?: string): Promise<unknown> {
     return this.request({
@@ -263,8 +282,26 @@ export class XlsxSidecarClient {
       this.lines?.close()
       this.lines = null
       this.rejectPending(reason)
+      // The process is gone, so every session id we hold is now unknown to
+      // the next spawn. stop() (app quit) sets this.process to null first,
+      // which makes the guard above return, so a deliberate shutdown never
+      // reaches this and never reads as a crash.
+      this.notifyExit()
     }
     child.once('error', teardown)
+    // A dead child (OOM-killed — killed stays false, only a Node-initiated
+    // kill sets it) still passes the !killed guards in sendCancel/request;
+    // the next stdin write then emits an EPIPE error asynchronously. Without
+    // this listener that error crashed the whole app instead of tearing the
+    // client down like any other sidecar death (the write callbacks only
+    // cover their own synchronous error argument).
+    child.stdin.on('error', () => {
+      teardown(
+        new Error(
+          `XLSX sidecar stdin failed (${this.stderr.trim() || 'broken pipe'}).`.slice(0, 200),
+        ),
+      )
+    })
     child.once('exit', (code, signal) => {
       const detail = this.stderr.trim()
       const reason = detail

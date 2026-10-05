@@ -173,8 +173,14 @@ function computeGeometry(pages: IrPage[]): PageGeometry {
   for (const page of pages) {
     for (const block of page.blocks) {
       if (!isEdgeBandFloat(block, page)) {
-        left = Math.min(left, block.box.x0)
-        right = Math.min(right, page.widthPt - block.box.x1)
+        // A block PAST the page edge is an off-page artifact, not a margin
+        // measurement: `widthPt - x1` goes negative and clampMargin reads that
+        // as "content TOUCHING the edge" (MARGIN_MIN_PT), so a full-bleed
+        // image bleeding off one page widened the text column for the whole
+        // document (margins are the min across all pages) and re-wrapped every
+        // paragraph. Only on-page content measures a horizontal margin.
+        if (block.box.x0 >= 0) left = Math.min(left, block.box.x0)
+        if (block.box.x1 <= page.widthPt) right = Math.min(right, page.widthPt - block.box.x1)
       }
       top = Math.min(top, page.heightPt - block.box.y1)
       bottom = Math.min(bottom, block.box.y0)

@@ -1,5 +1,6 @@
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { analyzeMediaTool } from '@genoffice/ai-search'
+import { analyzeMediaTool, localMediaRoots } from '@genoffice/ai-search'
 import { flagString } from '../args'
 import { aiSettingsPath, prepareCloud } from '../cloud'
 import { resolveInput } from '../fs'
@@ -26,10 +27,17 @@ export const mediaCommand: CommandDef = {
       ? ref
       : resolveInput(ref.startsWith('file:') ? fileURLToPath(ref) : ref, ctx)
     await prepareCloud(ctx.env)
-    const r = await analyzeMediaTool(aiSettingsPath(ctx.env), {
-      mediaUrls: [target],
-      requirements: flagString(args, 'ask') ?? DEFAULT_ASK,
-    })
+    // the user named this file on the command line, so its own directory is the
+    // allowlist: an http(s) target is fetched remotely and has no local root
+    const mediaRoots = localMediaRoots(/^https?:\/\//i.test(target) ? undefined : dirname(target))
+    const r = await analyzeMediaTool(
+      aiSettingsPath(ctx.env),
+      {
+        mediaUrls: [target],
+        requirements: flagString(args, 'ask') ?? DEFAULT_ASK,
+      },
+      { mediaRoots },
+    )
     if (r.text === undefined)
       throw new CliError(EXIT.app, r.error ?? 'media analysis failed', undefined, {
         suggestion:

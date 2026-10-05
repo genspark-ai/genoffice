@@ -13,6 +13,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::SidecarError;
+use crate::xml_util::copy_entry_bounded;
 
 const MAX_ENTRY_COUNT: usize = 10_000;
 /// Cap on a single decompressed entry handed to the patching layer. The
@@ -149,15 +150,17 @@ pub fn read_entries_to_dir(
     for (index, name) in names.iter().enumerate() {
         let mut entry = crate::zip_entry(&mut archive, name)
             .map_err(|_| SidecarError::Workbook(format!("Workbook is missing {name}.")))?;
-        if entry.size() > MAX_EXTRACTED_ENTRY_BYTES {
+        let declared = entry.size();
+        if declared > MAX_EXTRACTED_ENTRY_BYTES {
             return Err(SidecarError::Workbook(format!(
-                "Entry {name} is {} bytes uncompressed, above the {MAX_EXTRACTED_ENTRY_BYTES} byte patch limit.",
-                entry.size()
+                "Entry {name} is {declared} bytes uncompressed, above the {MAX_EXTRACTED_ENTRY_BYTES} byte patch limit."
             )));
         }
         let output_path = output_dir.join(format!("entry-{index}.bin"));
         let mut output = BufWriter::new(File::create(&output_path)?);
-        std::io::copy(&mut entry, &mut output)?;
+        // The limit above reads only the declaration; the copy is what keeps a
+        // part that under-declares from streaming its whole payload to disk.
+        copy_entry_bounded(&mut entry, declared, MAX_EXTRACTED_ENTRY_BYTES, &mut output)?;
         output.flush()?;
         extracted.push(ExtractedEntry {
             name: name.clone(),

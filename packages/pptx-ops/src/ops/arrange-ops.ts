@@ -190,16 +190,32 @@ const EMU_PER_PT = 12700
 
 function sideMid(el: SlideElement, side: ConnectionSide): { x: number; y: number } {
   const o = el.transform.offset
+  const cx = o.x + o.cx / 2
+  const cy = o.y + o.cy / 2
+  const hx = o.cx / 2
+  const hy = o.cy / 2
+  let dx = 0
+  let dy = 0
   switch (side) {
     case 'top':
-      return { x: o.x + o.cx / 2, y: o.y }
+      dy = -hy
+      break
     case 'left':
-      return { x: o.x, y: o.y + o.cy / 2 }
+      dx = -hx
+      break
     case 'bottom':
-      return { x: o.x + o.cx / 2, y: o.y + o.cy }
+      dy = hy
+      break
     case 'right':
-      return { x: o.x + o.cx, y: o.y + o.cy / 2 }
+      dx = hx
+      break
   }
+  const rot = el.transform.rot ?? 0
+  if (!rot) return { x: cx + dx, y: cy + dy }
+  const rad = ((rot / 60000) * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
 }
 
 function sideOf(op: Op, field: 'fromSide' | 'toSide'): ConnectionSide | undefined {

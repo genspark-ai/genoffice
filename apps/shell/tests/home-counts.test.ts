@@ -34,6 +34,25 @@ describe('home visible counts', () => {
     expect(visiblePageCount(page)).toBe(1)
   })
 
+  it('stats only the returned page, not the whole list (missing files outside the page stay unstat-ted)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'shell-counts-'))
+    tempDirs.push(dir)
+    // one real file and many paths that do not exist
+    const real = join(dir, 'real.docx')
+    writeFileSync(real, 'x')
+    const paths = [real, ...Array.from({ length: 300 }, (_, i) => join(dir, `gone-${i}.docx`))]
+    const page = pageRecentPaths(paths, { offset: 0, limit: 1 }, new Set())
+    // totals count the whole list, but only the first entry was stat-ted
+    expect(page.total).toBe(301)
+    expect(page.totalAll).toBe(301)
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]!.path).toBe(real)
+    expect(page.entries[0]!.missing).toBeFalsy()
+    // paging past the missing files still flags them per-page
+    const tail = pageRecentPaths(paths, { offset: 300, limit: 1 }, new Set())
+    expect(tail.entries[0]!.missing).toBe(true)
+  })
+
   it('counts .xlsm under the sheets (xlsx) filter', () => {
     const dir = mkdtempSync(join(tmpdir(), 'shell-counts-'))
     tempDirs.push(dir)

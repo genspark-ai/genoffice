@@ -16,6 +16,25 @@ export interface Rect {
   y1: number
 }
 
+/**
+ * Loop reductions instead of spreads: Math.min(...xs) passes every element as
+ * a function argument, so a page-sized array (~125k lines in CAD/map exports)
+ * threw RangeError before a single line rendered (V8 argument limit, measured).
+ * For finite values the semantics match Math.min/Math.max exactly, including
+ * the empty case (minOf → Infinity, maxOf → -Infinity).
+ */
+export function minOf(values: readonly number[]): number {
+  let m = Infinity
+  for (const v of values) if (v < m) m = v
+  return m
+}
+
+export function maxOf(values: readonly number[]): number {
+  let m = -Infinity
+  for (const v of values) if (v > m) m = v
+  return m
+}
+
 /** |a - b| <= tol */
 export const approxEq = (a: number, b: number, tol: number): boolean => Math.abs(a - b) <= tol
 

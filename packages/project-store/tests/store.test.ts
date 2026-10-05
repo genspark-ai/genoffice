@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -297,6 +297,22 @@ describe('rebindChat', () => {
     expect(store.loadChat('default', newId).map((m) => m.seq)).toEqual([0, 1, 2, 3])
   })
 
+  it('flushes the target pending buffer before merge to avoid duplicate seq', () => {
+    const targetId = 'target-pending'
+    const sourceId = 'source-rebind'
+    store.appendChatMessage('default', targetId, { role: 'user', text: 'target-q0' })
+    store.appendChatMessage('default', targetId, { role: 'user', text: 'target-q1' })
+    store.appendChatMessage('default', sourceId, { role: 'user', text: 'source-q0' })
+    store.appendChatMessage('default', sourceId, { role: 'assistant', text: 'source-a0' })
+
+    store.rebindChat('default', sourceId, targetId)
+    store.appendChatMessage('default', targetId, { role: 'assistant', text: 'after' })
+
+    const msgs = store.loadChat('default', targetId)
+    const seqs = msgs.map((m) => m.seq)
+    expect(new Set(seqs).size).toBe(seqs.length)
+  })
+
   it('keeps target and source records separate when the target has no final newline', () => {
     const sourceId = 'unsaved-unterminated'
     const targetId = 'existing-unterminated'
@@ -331,6 +347,22 @@ describe('rebindChat', () => {
     expect(existsSync(sourcePath)).toBe(false)
   })
 
+  it('flushes the target pending buffer before merge so seqs stay unique', () => {
+    const targetId = 'target-pending'
+    const sourceId = 'source-file'
+    store.appendChatMessage('default', targetId, { role: 'user', text: 'target-q0' })
+    store.appendChatMessage('default', targetId, { role: 'user', text: 'target-q1' })
+    store.appendChatMessage('default', sourceId, { role: 'user', text: 'source-q0' })
+    store.appendChatMessage('default', sourceId, { role: 'assistant', text: 'source-a0' })
+
+    store.rebindChat('default', sourceId, targetId)
+
+    const msgs = store.loadChat('default', targetId)
+    const seqs = msgs.map((m) => m.seq)
+    expect(new Set(seqs).size).toBe(seqs.length)
+    expect(msgs).toHaveLength(4)
+  })
+
   it('preserves every source record when merging a chat longer than the display cap', () => {
     const sourceId = 'unsaved-long'
     const targetId = 'existing-long'
@@ -359,6 +391,66 @@ describe('rebindChat', () => {
     expect(merged[1]?.text).toBe('source-0')
     expect(merged.at(-1)?.text).toBe('source-10000')
     expect(existsSync(sourcePath)).toBe(false)
+  })
+})
+
+// ────────────────────────────────────────────────────────────
+// 5a. mergeChatFiles with a corrupt destination
+// ────────────────────────────────────────────────────────────
+
+describe('mergeChatFiles with a corrupt destination', () => {
+  let tmpDir: string
+  let store: ProjectStore
+
+  beforeEach(() => {
+    tmpDir = makeTempDir()
+    store = new ProjectStore(tmpDir)
+    store.ensureDefaultProject()
+  })
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('skips a non-finite destination seq and still merges the source instead of losing it', () => {
+    const sourceId = 'unsaved-1'
+    const targetId = 'target'
+    store.appendChatMessage('default', sourceId, { role: 'user', text: 'source-0' })
+    store.appendChatMessage('default', sourceId, { role: 'assistant', text: 'source-1' })
+    const chatsDir = join(tmpDir, 'projects', 'default', 'chats')
+    const sourcePath = join(chatsDir, `${sourceId}.jsonl`)
+    const targetPath = join(chatsDir, `${targetId}.jsonl`)
+    // 1e999 parses back as Infinity: typeof passes but it is not a usable seq
+    const target = '{"seq":1e999,"ts":"1970-01-01T00:00:00.000Z","role":"user","text":"target-0"}\n'
+    writeFileSync(targetPath, target, 'utf8')
+
+    store.rebindChat('default', sourceId, targetId)
+
+    const merged = readFileSync(targetPath, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+    // The corrupt destination line is left alone on disk, the source records are
+    // appended after it, and no moved seq is written as null.
+    expect(merged.map((message) => message.text)).toEqual(['target-0', 'source-0', 'source-1'])
+    expect(merged.slice(1).every((message) => typeof message.seq === 'number')).toBe(true)
+    expect(existsSync(sourcePath)).toBe(false)
+
+    // Reading back skips the non-finite destination record and keeps both moved
+    // ones: before the fix Infinity + 1 stayed Infinity, so every moved record
+    // was written as seq:null and the whole transcript read back as empty.
+    const msgs = store.loadChat('default', targetId)
+    expect(msgs.map((m) => m.text)).toEqual(['source-0', 'source-1'])
+    const seqs = msgs.map((m) => m.seq)
+    expect(seqs.every((seq) => Number.isFinite(seq))).toBe(true)
+    expect(seqs).toEqual([0, 1])
+
+    store.appendChatMessage('default', targetId, { role: 'assistant', text: 'after' })
+    expect(store.loadChat('default', targetId).map((m) => m.text)).toEqual([
+      'source-0',
+      'source-1',
+      'after',
+    ])
   })
 })
 
@@ -611,6 +703,16 @@ describe('appendChatMessage opening buffer', () => {
     expect(msgs[1].scope).toBeUndefined()
   })
 
+  it('scope label is capped at 200 chars on disk', () => {
+    store.appendChatMessage('default', 'scope-label-cap', {
+      role: 'user',
+      text: 'q',
+      scope: { label: 'L'.repeat(1_000) },
+    })
+    const msgs = store.loadChat('default', 'scope-label-cap')
+    expect(msgs[0].scope?.label).toHaveLength(200)
+  })
+
   it('user messages appended to a chat with an existing file are written directly, not buffered', () => {
     store.appendChatMessage('default', 'has-file', { role: 'user', text: 'q1' })
     store.appendChatMessage('default', 'has-file', { role: 'assistant', text: 'a1' })
@@ -726,6 +828,18 @@ describe('createProject', () => {
     const a = store.createProject('Project A')
     const b = store.createProject('Project B')
     expect(a.id).not.toBe(b.id)
+  })
+
+  it('produces unique ids when two creates share a millisecond', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    try {
+      const a = store.createProject('Same Name')
+      const b = store.createProject('Same Name')
+      expect(a.id).not.toBe(b.id)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

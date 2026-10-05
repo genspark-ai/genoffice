@@ -76,8 +76,8 @@ export function crossParaCommentMarkers(xml: string): {
   commentEnds: string[] | undefined
 } {
   const ids = (re: RegExp) => [...xml.matchAll(re)].map((m) => m[1])
-  const starts = ids(/<w:commentRangeStart [^>]*w:id="([^"]+)"/g)
-  const ends = ids(/<w:commentRangeEnd [^>]*w:id="([^"]+)"/g)
+  const starts = ids(/<w:commentRangeStart\b[^>]*\bw:id\s*=\s*["']([^"']+)["']/g)
+  const ends = ids(/<w:commentRangeEnd\b[^>]*\bw:id\s*=\s*["']([^"']+)["']/g)
   const onlyStarts = starts.filter((id) => !ends.includes(id))
   const onlyEnds = ends.filter((id) => !starts.includes(id))
   return {
@@ -93,8 +93,8 @@ export function bookmarkNamesOf(xml: string): {
 } {
   const names: string[] = []
   const hidden: string[] = []
-  for (const m of xml.matchAll(/<w:bookmarkStart [^>]*w:name="([^"]+)"/g)) {
-    const name = decodeEntities(m[1])
+  for (const m of xml.matchAll(/<w:bookmarkStart [^>]*w:name=(?:"([^"]+)"|'([^']+)')/g)) {
+    const name = decodeEntities(m[1] ?? m[2] ?? '')
     // A _ prefix marks Word internal bookmarks (_Ref/_Toc/_Hlk): hidden from the UI, but
     // they must be re-emitted when the paragraph rebuilds, otherwise REF cross-references
     // and TOC anchors pointing at them break
@@ -1028,7 +1028,10 @@ function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorde
     'w:right': 'right',
     'w:start': 'left',
     'w:end': 'right',
-    ...(withInside ? { 'w:insideH': 'insideH', 'w:insideV': 'insideV' } : {}),
+    // the diagonals are cell-level only (CT_TblBorders has no tl2br/tr2bl child)
+    ...(withInside
+      ? { 'w:insideH': 'insideH', 'w:insideV': 'insideV' }
+      : { 'w:tl2br': 'tl2br', 'w:tr2bl': 'tr2bl' }),
   }
   const borders: TableBorders = {}
   for (const [tag, side] of Object.entries(ALIAS)) {

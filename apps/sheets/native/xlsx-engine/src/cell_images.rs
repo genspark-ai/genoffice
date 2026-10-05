@@ -117,8 +117,11 @@ pub(crate) fn read_sheet_cell_images(
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"c" =>
             {
+                // A corrupt address is the optional one in worse clothes, so
+                // it lands where an omitted one does rather than failing the
+                // whole open over a cell image.
                 let (row, column) = match attribute_value(&reader, &element, b"r")? {
-                    Some(address) => parse_address(&address)?,
+                    Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
                     None => (current_row, next_column),
                 };
                 next_column = column + 1;

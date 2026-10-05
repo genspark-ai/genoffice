@@ -286,8 +286,12 @@ export class FileIndexStore {
       for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i]! - rb[i]!
       return 0
     })
-    const limit = Math.max(0, Math.min(200, opts.limit ?? 50))
-    const offset = Math.max(0, opts.offset ?? 0)
+    const limit =
+      opts.limit != null && Number.isFinite(opts.limit)
+        ? Math.max(0, Math.min(200, opts.limit))
+        : 50
+    const offset =
+      opts.offset != null && Number.isFinite(opts.offset) ? Math.max(0, opts.offset) : 0
     const page = rows.slice(offset, offset + limit)
     const bodies = this.fetchBodies(page.map((r) => r.id))
     const hits = page.map((r) => {

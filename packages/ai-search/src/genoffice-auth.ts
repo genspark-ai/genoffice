@@ -21,13 +21,38 @@ export interface GskLoginProgress {
   phase: 'url' | 'success' | 'error'
   url?: string
   expiresInSec?: number
-  /** 'network' | 'expired' | raw error text */
+  /** 'network' | 'expired' | 'auth_url_rejected' | raw error text */
   error?: string
 }
 
 const APP_TYPE = 'genoffice'
 const KEY_NAME = 'genoffice'
 const HTTP_TIMEOUT_MS = 30_000
+
+/** The only URL the login flow may ask the OS to open: https, on the
+ *  endpoint's registrable domain — host == or a `.`-suffix of the endpoint
+ *  host minus a leading "www." — so the auth service may serve its login
+ *  pages from any of its own hosts (apex, www, auth.*, a staging tree).
+ *  IP literals and single-label hosts (localhost) have no subdomain tree and
+ *  must match exactly: `evil.127.0.0.1` is a public DNS name that resolves
+ *  elsewhere, not a sibling of 127.0.0.1. Exported for the allowlist tests. */
+export function isAllowedAuthUrl(raw: string, origin: string): URL | null {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'https:') return null
+    const endpointHost = new URL(origin).hostname
+    const registrable = endpointHost.replace(/^www\./, '')
+    const flatHost =
+      endpointHost.startsWith('[') /* IPv6 literal */ ||
+      /^[\d.]+$/.test(endpointHost) /* IPv4 literal */ ||
+      !registrable.includes('.') /* localhost & co */
+    if (flatHost) return url.hostname === endpointHost ? url : null
+    if (url.hostname !== registrable && !url.hostname.endsWith(`.${registrable}`)) return null
+    return url
+  } catch {
+    return null
+  }
+}
 
 function baseUrl(): string {
   return (process.env.GSK_BASE_URL || 'https://www.genspark.ai').replace(/\/$/, '')
@@ -250,6 +275,37 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 // ── Device-code login ────────────────────────────────────────────────
 
+/**
+ * The device-code endpoint chooses the poll interval and the code lifetime, and
+ * both are read straight off its response, so one odd (or hostile) answer could
+ * stretch a login for hours or leave it polling at a crawl. Both are clamped.
+ *
+ * The poll ceiling is 10s: an approval is noticed promptly without hammering
+ * the endpoint.
+ *
+ * The lifetime ceiling is 1h. RFC 8628 keeps device codes short-lived and its
+ * own example is 1800s; mainstream providers (Google, Microsoft, Okta, Auth0)
+ * issue somewhere in 600s–3600s, so 1h is above every legitimate value and a
+ * clamp must never truncate a code the server still considers valid — the old
+ * 900s ceiling cut Google's 1800s in half and logged out a user who was still
+ * able to approve. The ceiling is not the round number 1800s for the same
+ * reason: 1h leaves headroom above the largest lifetime in circulation while
+ * still collapsing a hostile or buggy value (1e9s ≈ 31 years) to a bounded
+ * window, and an hour is already past the point where a person who walked away
+ * from the browser is coming back, so ending the login is correct rather than
+ * premature. A full hour is also cheap to bound: the separate 10s poll ceiling
+ * caps it at ~360 requests.
+ */
+const MAX_POLL_INTERVAL_MS = 10_000
+const MAX_LOGIN_SEC = 3600
+
+/** `fallback` when the value is absent or not a positive number, else at most `max`. */
+function clampLoginValue(value: unknown, fallback: number, max: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return Math.min(n, max)
+}
+
 async function revokeKey(cookie: string, keyId: string, signal: AbortSignal): Promise<void> {
   await resolveFetch()(`${baseUrl()}/api/api_tokens/revoke`, {
     method: 'POST',
@@ -282,9 +338,16 @@ async function runDeviceLogin(
   const code = String(json.device_code ?? '')
   const authUrl = String(json.auth_url ?? '')
   if (!resp.ok || !code || !authUrl) throw new LoginFlowError('network')
-  const expiresInSec = Number(json.expires_in) > 0 ? Number(json.expires_in) : 600
-  const pollMs = Number(json.poll_interval) > 0 ? Number(json.poll_interval) * 1000 : 2000
-  emit({ phase: 'url', url: authUrl, expiresInSec })
+  // The server (or a repointed GSK_BASE_URL) decides this URL and every caller
+  // hands it to the OS opener: only https on the endpoint's registrable domain
+  // passes, so a compromised endpoint cannot turn the login flow into "open
+  // arbitrary protocol handler / phishing URL". Distinct from 'network' so the
+  // shell can log/show a policy rejection instead of an outage.
+  const allowed = isAllowedAuthUrl(authUrl, baseUrl())
+  if (!allowed) throw new LoginFlowError('auth_url_rejected')
+  const expiresInSec = clampLoginValue(json.expires_in, 600, MAX_LOGIN_SEC)
+  const pollMs = clampLoginValue(Number(json.poll_interval) * 1000, 2000, MAX_POLL_INTERVAL_MS)
+  emit({ phase: 'url', url: allowed.href, expiresInSec })
 
   const deadline = Date.now() + expiresInSec * 1000
   let accessToken: string

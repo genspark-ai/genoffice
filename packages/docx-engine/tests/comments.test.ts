@@ -91,6 +91,29 @@ describe('comment parsing', () => {
     expect(doc.blocks[0].commentEnds).toBeUndefined()
   })
 
+  it('tracks a cross-paragraph range spelled with single quotes', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          "<w:p><w:commentRangeStart w:id='2'/><w:r><w:t>range opens here</w:t></w:r></w:p>" +
+          "<w:p><w:r><w:t>range closes here</w:t></w:r><w:commentRangeEnd w:id='2'/>" +
+          "<w:r><w:commentReference w:id='2'/></w:r></w:p>",
+        extraParts: [
+          {
+            path: 'word/comments.xml',
+            xml: COMMENTS_XML,
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+          },
+        ],
+      }),
+    )
+    expect(doc.blocks[0].runs).toEqual([{ text: 'range opens here' }])
+    expect(doc.blocks[1].runs).toEqual([{ text: 'range closes here' }])
+    expect(doc.blocks[0].commentStarts).toEqual(['2'])
+    expect(doc.blocks[1].commentEnds).toEqual(['2'])
+  })
+
   it('editing a paragraph inside a cross-paragraph range re-emits its marker (no orphan end)', async () => {
     const bytes = await buildCommentedDocx()
     const doc = await parseDocx(bytes)

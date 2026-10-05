@@ -75,7 +75,10 @@ export function installPopoverDismiss(
   window.addEventListener('blur', onBlur)
   const offChrome = subscribeChromePressed(close)
   bumpOpenPopovers(1)
+  let tornDown = false
   return () => {
+    if (tornDown) return
+    tornDown = true
     if (inside) window.removeEventListener('pointerdown', onPress, true)
     else window.removeEventListener('mousedown', onPress)
     window.removeEventListener('blur', onBlur)

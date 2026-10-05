@@ -117,9 +117,13 @@ export function normalizeIr(raw: unknown): ValidatedIr[] {
       )
     }
     // Numeric geometry flows from page JS into division (renderer scale =
-    // maxPx / node.width) and image dimensions. Reject NaN/Infinity/negative
-    // here so a hostile page cannot produce corrupt-geometry docx.
-    for (const key of ['width', 'height', 'widthFrac', 'heightPx', 'xPx', 'yPx'] as const) {
+    // maxPx / node.width) and image dimensions. A spacer's px is the same
+    // class of input: it becomes the exact line height (pxToTwips(Math.max(px,
+    // 2))), so a non-numeric value emits w:line="0" — a collapsed gap — and
+    // poisons the __h2dSpacerPx marker the layout fixups compare against.
+    // Reject NaN/Infinity/negative here so a hostile page cannot produce
+    // corrupt-geometry docx.
+    for (const key of ['width', 'height', 'widthFrac', 'heightPx', 'xPx', 'yPx', 'px'] as const) {
       const v = candidate[key]
       if (v !== undefined && v !== null) {
         const n = Number(v)
@@ -580,7 +584,14 @@ export async function convertHtmlToDocx(
               backdrop.setAttribute('style', backdrop.getAttribute('data-h2d-old-style') || '')
               backdrop.removeAttribute('data-h2d-old-style')
             }
-            for (const child of document.body.children as HTMLCollectionOf<HTMLElement>) {
+            // Select on the stamp, not on the live child list: page JS can add
+            // a body child between the set and restore phases, and that node
+            // was never stamped or mutated, so reading its (absent) attribute
+            // yielded null and wrote visibility:'' over the page's own value.
+            // Matches how the isolate restore above walks only its stamped nodes.
+            for (const child of document.querySelectorAll<HTMLElement>(
+              '[data-h2d-old-visibility]',
+            )) {
               child.style.visibility = child.getAttribute('data-h2d-old-visibility') || ''
               child.removeAttribute('data-h2d-old-visibility')
             }

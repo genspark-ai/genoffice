@@ -20,9 +20,9 @@ import {
   VerticalPositionAlign,
   WidthType,
 } from 'docx'
-import { withBookmarks } from './bookmarks'
+import { carryTableBookmarks, withBookmarks } from './bookmarks'
 import { createContentControlFactory } from './content-controls'
-import { orderedReference } from './numbering'
+import { BULLET_MARKER_TYPES, orderedReference } from './numbering'
 import { renderCard, renderColorBar, renderKpiRow, renderTable } from './table-renderers'
 import {
   HEADING_LEVELS,
@@ -320,7 +320,11 @@ class Generator {
           const ordered = item.ordered ?? node.ordered
           const level = Math.max(0, Math.min(8, item.level || 0))
           if (level < instanceByLevel.length - 1) instanceByLevel.length = level + 1
-          if (instanceByLevel[level] == null) instanceByLevel[level] = this.olInstance++
+          // <ol style="list-style-type: disc"> still reports ordered, but the
+          // browser paints a glyph; orderedReference has no entry for it and
+          // would fall back to decimal numbers.
+          const numbered = ordered && !BULLET_MARKER_TYPES.has(item.markerType)
+          if (numbered && instanceByLevel[level] == null) instanceByLevel[level] = this.olInstance++
           const bulletReference =
             item.markerType === 'square'
               ? 'h2d-ul-square'
@@ -330,7 +334,7 @@ class Generator {
           if (item.continuation) {
             opts.indent = { left: context.pxToTwips(item.indentLeftPx || node.indentLeftPx || 22) }
           } else {
-            opts.numbering = ordered
+            opts.numbering = numbered
               ? {
                   reference: orderedReference(item.markerType),
                   level: 0,
@@ -501,7 +505,7 @@ class Generator {
         return this.collectFloatingImage(node)
 
       case 'table':
-        return renderTable(this, node, depth)
+        return renderTable(this, carryTableBookmarks(node), depth)
 
       case 'card':
         return renderCard(this, node, depth)

@@ -79,6 +79,8 @@ function toolFieldText(value: unknown): string {
 const TEXT_MAX_CHARS = 32_000
 /** Max stored characters of a scope excerpt */
 const SCOPE_TEXT_MAX_CHARS = 400
+/** Max stored characters of a scope label */
+const SCOPE_LABEL_MAX_CHARS = 200
 const TEXT_TRUNCATED_MARK = '\n\n[truncated]'
 /**
  * Max opening messages buffered in memory per chat before the first
@@ -199,8 +201,13 @@ function parseChatRecords(raw: string): ChatMessage[] {
     if (!line.trim()) continue
     try {
       const msg = JSON.parse(line) as ChatMessage
+      // A non-finite seq (Infinity, either written directly or from an
+      // overflowing max+1 in mergeChatFiles) survives typeof, but JSON.stringify
+      // writes it as null, which fails this gate on the next read and drops
+      // every record of the file. Rejecting it here also keeps the merge from
+      // renumbering moved records from Infinity.
       if (
-        typeof msg.seq === 'number' &&
+        Number.isFinite(msg.seq) &&
         typeof msg.role === 'string' &&
         typeof msg.text === 'string'
       ) {
@@ -651,7 +658,7 @@ export class ProjectStore {
       }
       if (msg.scope !== undefined) {
         record.scope = {
-          label: msg.scope.label,
+          label: clampChatField(msg.scope.label, SCOPE_LABEL_MAX_CHARS),
           ...(msg.scope.text !== undefined
             ? { text: msg.scope.text.slice(0, SCOPE_TEXT_MAX_CHARS) }
             : {}),
@@ -749,6 +756,8 @@ export class ProjectStore {
     if (fromProjectId === toProjectId && fromId === toId) return
     // The source may still have buffered opening messages: materialize them first (once the file is saved, they should be kept)
     this.flushPending(fromProjectId, fromId)
+    // The target may also have buffered opening messages: materialize them too so the merge accounts for their seqs instead of leaving duplicates in memory
+    this.flushPending(toProjectId, toId)
     const oldPath = this.chatPath(fromProjectId, fromId)
     const newPath = this.chatPath(toProjectId, toId)
     let mergedMaxSeq: number | undefined
@@ -862,12 +871,18 @@ export class ProjectStore {
       )
     }
     const now = nowIso()
-    // Generate a stable yet unique id
-    const hash = createHash('sha256')
-      .update(trimmed + now)
-      .digest('hex')
-      .slice(0, 12)
-    const id = `proj-${hash}`
+    // Generate a stable yet unique id: retry with a nonce when the same name
+    // and millisecond would otherwise collide
+    let id: string
+    let attempt = 0
+    do {
+      const hash = createHash('sha256')
+        .update(attempt === 0 ? trimmed + now : `${trimmed}:${now}:${attempt}`)
+        .digest('hex')
+        .slice(0, 12)
+      id = `proj-${hash}`
+      attempt++
+    } while (this.readIndex().projects.some((p) => p.id === id))
     const data: ProjectData = {
       id,
       name: trimmed,
@@ -1047,7 +1062,7 @@ export class ProjectStore {
     const chats = this.listChats(projectId)
     for (const { chatId } of chats) {
       const filePath = chatToFile.get(chatId) ?? ''
-      const msgs = this.loadChat(projectId, chatId, 200)
+      const msgs = this.loadChat(projectId, chatId, boundedLimit)
       for (const msg of msgs) {
         entries.push({
           filePath,

@@ -120,8 +120,6 @@ import {
   buildDocsMenu,
   configureDocsRuntime,
   docsFileRenamed,
-  docsQueryDirty,
-  requestDocsClose,
   readRecentFiles,
   readStarredFiles,
   recordRecentFile,
@@ -174,8 +172,6 @@ import {
   hasActiveQueuedWorkbook,
   installSheetsMenu,
   markSheetsShuttingDown,
-  resetSheetsShuttingDown,
-  requestSheetsClose,
   resolveSheetsSessionPath,
   markSheetsUnsavedNew,
   markSheetsUntitledPath,
@@ -200,7 +196,6 @@ import {
   installSlidesMenu,
   readSlidesRecentFiles,
   replaceSlidesRecentFile,
-  requestSlidesClose,
   setSlidesCloseTabHook,
   setSlidesExtraFileMenuItems,
   setSlidesOpenedHook,
@@ -215,7 +210,6 @@ import {
   markPdfUntitledPath,
   pdfFileRenamed,
   pdfIsDirty,
-  requestPdfClose,
   requestPdfSaveAs,
   sendPdfPrintRequest,
   setPdfRenamedHook,
@@ -234,7 +228,6 @@ import {
   markdownFileRenamed,
   markdownReadText,
   markdownSaveToPath,
-  requestMarkdownClose,
   requestMarkdownSave,
   sendMarkdownExportRequest,
   sendMarkdownPrintRequest,
@@ -249,7 +242,6 @@ import {
   htmlReadText,
   htmlSaveToPath,
   registerPrivilegedSchemes,
-  requestHtmlClose,
   requestHtmlSave,
   sendHtmlExportRequest,
   sendHtmlPrintRequest,
@@ -288,11 +280,22 @@ import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
 import { startRendererWatchdog } from './renderer-watchdog'
 import {
+  capStatPaths,
   matchesExtFamily,
   normalizeRecentQuery,
   pageRecentPaths,
   statPathEntries,
 } from './recent-files'
+import { isMoveSource, isUserVisibleFile, type FileTargetSources } from './file-targets'
+import {
+  DOCX_RE,
+  HTML_RE,
+  PDF_RE,
+  PPTX_RE,
+  TEXT_RE,
+  XLSX_RE,
+  renameStaysInApp,
+} from './app-routing'
 import { isSameFile, pdfSaveAsTarget, isValidRawRenameName } from './rename-validation'
 import {
   FolderWatcher,
@@ -325,6 +328,7 @@ import {
 } from './file-index/rerank'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
+import { installShellCloseGuard } from './window-close-guard'
 import {
   activateDetached,
   closeDetachedWithoutPrompt,
@@ -736,11 +740,12 @@ const tMain = createI18n({
     filterWord: 'Word 文档',
     filterExcel: 'Excel 工作簿',
     filterPpt: 'PowerPoint 演示文稿',
-    filterMarkdown: 'Markdown 文档',
+    filterMarkdown: '文本文件 (Markdown, TXT, JSON)',
     filterHtml: 'HTML 文档',
     filterPdf: 'PDF 文档',
     errBadArgs: '参数无效',
     errBadName: '文件名不合法',
+    errBadExtension: '这个扩展名不受支持，改了文件就打不开了',
     errMissing: '文件不存在',
     errExists: '同名文件已存在',
     errRenameFailed: '重命名失败',
@@ -828,11 +833,12 @@ const tMain = createI18n({
     filterWord: 'Word Documents',
     filterExcel: 'Excel Workbooks',
     filterPpt: 'PowerPoint Presentations',
-    filterMarkdown: 'Markdown Documents',
+    filterMarkdown: 'Text Files (Markdown, TXT, JSON)',
     filterHtml: 'HTML Documents',
     filterPdf: 'PDF Documents',
     errBadArgs: 'Invalid arguments',
     errBadName: 'Invalid file name',
+    errBadExtension: 'That extension is not supported, and the file would no longer open',
     errMissing: 'File not found',
     errExists: 'A file with that name already exists',
     errRenameFailed: 'Rename failed',
@@ -928,11 +934,12 @@ const tMain = createI18n({
     filterWord: 'Tài liệu Word',
     filterExcel: 'Sổ làm việc Excel',
     filterPpt: 'Bản trình bày PowerPoint',
-    filterMarkdown: 'Tài liệu Markdown',
+    filterMarkdown: 'Tệp văn bản (Markdown, TXT, JSON)',
     filterHtml: 'Tài liệu HTML',
     filterPdf: 'Tài liệu PDF',
     errBadArgs: 'Đối số không hợp lệ',
     errBadName: 'Tên tệp không hợp lệ',
+    errBadExtension: 'Phần mở rộng đó không được hỗ trợ và tệp sẽ không còn mở được',
     errMissing: 'Không tìm thấy tệp',
     errExists: 'Một tệp có tên đó đã tồn tại',
     errRenameFailed: 'Đổi tên thất bại',
@@ -1028,11 +1035,12 @@ const tMain = createI18n({
     filterWord: 'Word 文書',
     filterExcel: 'Excel ブック',
     filterPpt: 'PowerPoint プレゼンテーション',
-    filterMarkdown: 'Markdown ドキュメント',
+    filterMarkdown: 'テキストファイル (Markdown, TXT, JSON)',
     filterHtml: 'HTML ドキュメント',
     filterPdf: 'PDF ドキュメント',
     errBadArgs: '引数が無効です',
     errBadName: 'ファイル名が無効です',
+    errBadExtension: 'その拡張子はサポートされていないため、ファイルを開けなくなります',
     errMissing: 'ファイルが見つかりません',
     errExists: '同名のファイルが既に存在します',
     errRenameFailed: '名前の変更に失敗しました',
@@ -1128,11 +1136,12 @@ const tMain = createI18n({
     filterWord: 'Word 문서',
     filterExcel: 'Excel 통합 문서',
     filterPpt: 'PowerPoint 프레젠테이션',
-    filterMarkdown: 'Markdown 문서',
+    filterMarkdown: '텍스트 파일 (Markdown, TXT, JSON)',
     filterHtml: 'HTML 문서',
     filterPdf: 'PDF 문서',
     errBadArgs: '잘못된 인수입니다',
     errBadName: '파일 이름이 잘못되었습니다',
+    errBadExtension: '지원하지 않는 확장자이며 파일을 열 수 없게 됩니다',
     errMissing: '파일을 찾을 수 없습니다',
     errExists: '같은 이름의 파일이 이미 있습니다',
     errRenameFailed: '이름 바꾸기에 실패했습니다',
@@ -1227,11 +1236,12 @@ const tMain = createI18n({
     filterWord: 'Documents Word',
     filterExcel: 'Classeurs Excel',
     filterPpt: 'Présentations PowerPoint',
-    filterMarkdown: 'Documents Markdown',
+    filterMarkdown: 'Fichiers texte (Markdown, TXT, JSON)',
     filterHtml: 'Documents HTML',
     filterPdf: 'Documents PDF',
     errBadArgs: 'Arguments non valides',
     errBadName: 'Nom de fichier non valide',
+    errBadExtension: 'Cette extension n’est pas prise en charge et le fichier ne s’ouvrirait plus',
     errMissing: 'Fichier introuvable',
     errExists: 'Un fichier du même nom existe déjà',
     errRenameFailed: 'Échec du renommage',
@@ -1328,11 +1338,13 @@ const tMain = createI18n({
     filterWord: 'Word-Dokumente',
     filterExcel: 'Excel-Arbeitsmappen',
     filterPpt: 'PowerPoint-Präsentationen',
-    filterMarkdown: 'Markdown-Dokumente',
+    filterMarkdown: 'Textdateien (Markdown, TXT, JSON)',
     filterHtml: 'HTML-Dokumente',
     filterPdf: 'PDF-Dokumente',
     errBadArgs: 'Ungültige Argumente',
     errBadName: 'Ungültiger Dateiname',
+    errBadExtension:
+      'Diese Erweiterung wird nicht unterstützt, die Datei ließe sich nicht mehr öffnen',
     errMissing: 'Datei nicht gefunden',
     errExists: 'Eine Datei mit diesem Namen existiert bereits',
     errRenameFailed: 'Umbenennen fehlgeschlagen',
@@ -1429,11 +1441,12 @@ const tMain = createI18n({
     filterWord: 'Documentos de Word',
     filterExcel: 'Libros de Excel',
     filterPpt: 'Presentaciones de PowerPoint',
-    filterMarkdown: 'Documentos Markdown',
+    filterMarkdown: 'Archivos de texto (Markdown, TXT, JSON)',
     filterHtml: 'Documentos HTML',
     filterPdf: 'Documentos PDF',
     errBadArgs: 'Argumentos no válidos',
     errBadName: 'Nombre de archivo no válido',
+    errBadExtension: 'Esa extensión no es compatible y el archivo dejaría de abrirse',
     errMissing: 'Archivo no encontrado',
     errExists: 'Ya existe un archivo con ese nombre',
     errRenameFailed: 'No se pudo cambiar el nombre',
@@ -1530,11 +1543,12 @@ const tMain = createI18n({
     filterWord: 'เอกสาร Word',
     filterExcel: 'เวิร์กบุ๊ก Excel',
     filterPpt: 'งานนำเสนอ PowerPoint',
-    filterMarkdown: 'เอกสาร Markdown',
+    filterMarkdown: 'ไฟล์ข้อความ (Markdown, TXT, JSON)',
     filterHtml: 'เอกสาร HTML',
     filterPdf: 'เอกสาร PDF',
     errBadArgs: 'อาร์กิวเมนต์ไม่ถูกต้อง',
     errBadName: 'ชื่อไฟล์ไม่ถูกต้อง',
+    errBadExtension: 'ไม่รองรับส่วนขยายนี้ ไฟล์จะเปิดไม่ได้',
     errMissing: 'ไม่พบไฟล์',
     errExists: 'มีไฟล์ชื่อเดียวกันอยู่แล้ว',
     errRenameFailed: 'เปลี่ยนชื่อไม่สำเร็จ',
@@ -1627,11 +1641,12 @@ const tMain = createI18n({
     filterWord: 'Dokumen Word',
     filterExcel: 'Buku Kerja Excel',
     filterPpt: 'Presentasi PowerPoint',
-    filterMarkdown: 'Dokumen Markdown',
+    filterMarkdown: 'File teks (Markdown, TXT, JSON)',
     filterHtml: 'Dokumen HTML',
     filterPdf: 'Dokumen PDF',
     errBadArgs: 'Argumen tidak valid',
     errBadName: 'Nama file tidak valid',
+    errBadExtension: 'Ekstensi itu tidak didukung dan berkas tidak akan bisa dibuka',
     errMissing: 'File tidak ditemukan',
     errExists: 'File dengan nama tersebut sudah ada',
     errRenameFailed: 'Gagal mengganti nama',
@@ -1728,11 +1743,12 @@ const tMain = createI18n({
     filterWord: 'Документы Word',
     filterExcel: 'Книги Excel',
     filterPpt: 'Презентации PowerPoint',
-    filterMarkdown: 'Документы Markdown',
+    filterMarkdown: 'Текстовые файлы (Markdown, TXT, JSON)',
     filterHtml: 'Документы HTML',
     filterPdf: 'Документы PDF',
     errBadArgs: 'Недопустимые аргументы',
     errBadName: 'Недопустимое имя файла',
+    errBadExtension: 'Это расширение не поддерживается, и файл больше не откроется',
     errMissing: 'Файл не найден',
     errExists: 'Файл с таким именем уже существует',
     errRenameFailed: 'Не удалось переименовать',
@@ -1829,11 +1845,12 @@ const tMain = createI18n({
     filterWord: 'مستندات Word',
     filterExcel: 'مصنفات Excel',
     filterPpt: 'عروض PowerPoint التقديمية',
-    filterMarkdown: 'مستندات Markdown',
+    filterMarkdown: 'ملفات نصية (Markdown, TXT, JSON)',
     filterHtml: 'مستندات HTML',
     filterPdf: 'مستندات PDF',
     errBadArgs: 'وسيطات غير صالحة',
     errBadName: 'اسم ملف غير صالح',
+    errBadExtension: 'هذه الامتداد غير مدعوم وسيصبح الملف غير قابل للفتح',
     errMissing: 'الملف غير موجود',
     errExists: 'يوجد ملف بالاسم نفسه بالفعل',
     errRenameFailed: 'فشلت إعادة التسمية',
@@ -1926,11 +1943,12 @@ const tMain = createI18n({
     filterWord: 'Documentos do Word',
     filterExcel: 'Pastas de trabalho do Excel',
     filterPpt: 'Apresentações do PowerPoint',
-    filterMarkdown: 'Documentos Markdown',
+    filterMarkdown: 'Arquivos de texto (Markdown, TXT, JSON)',
     filterHtml: 'Documentos HTML',
     filterPdf: 'Documentos PDF',
     errBadArgs: 'Argumentos inválidos',
     errBadName: 'Nome de arquivo inválido',
+    errBadExtension: 'Essa extensão não é suportada e o arquivo deixaria de abrir',
     errMissing: 'Arquivo não encontrado',
     errExists: 'Já existe um arquivo com esse nome',
     errRenameFailed: 'Falha ao renomear',
@@ -2027,11 +2045,12 @@ const tMain = createI18n({
     filterWord: 'Documenti Word',
     filterExcel: 'Cartelle di lavoro Excel',
     filterPpt: 'Presentazioni PowerPoint',
-    filterMarkdown: 'Documenti Markdown',
+    filterMarkdown: 'File di testo (Markdown, TXT, JSON)',
     filterHtml: 'Documenti HTML',
     filterPdf: 'Documenti PDF',
     errBadArgs: 'Argomenti non validi',
     errBadName: 'Nome file non valido',
+    errBadExtension: 'Questa estensione non è supportata e il file non si aprirebbe più',
     errMissing: 'File non trovato',
     errExists: 'Esiste già un file con questo nome',
     errRenameFailed: 'Impossibile rinominare',
@@ -2128,11 +2147,12 @@ const tMain = createI18n({
     filterWord: 'Dokumenty programu Word',
     filterExcel: 'Skoroszyty programu Excel',
     filterPpt: 'Prezentacje programu PowerPoint',
-    filterMarkdown: 'Dokumenty Markdown',
+    filterMarkdown: 'Pliki tekstowe (Markdown, TXT, JSON)',
     filterHtml: 'Dokumenty HTML',
     filterPdf: 'Dokumenty PDF',
     errBadArgs: 'Nieprawidłowe argumenty',
     errBadName: 'Nieprawidłowa nazwa pliku',
+    errBadExtension: 'To rozszerzenie nie jest obsługiwane i plik przestałby się otwierać',
     errMissing: 'Nie znaleziono pliku',
     errExists: 'Plik o tej nazwie już istnieje',
     errRenameFailed: 'Nie udało się zmienić nazwy',
@@ -2229,11 +2249,12 @@ const tMain = createI18n({
     filterWord: 'Dokumenty Word',
     filterExcel: 'Sešity Excel',
     filterPpt: 'Prezentace PowerPoint',
-    filterMarkdown: 'Dokumenty Markdown',
+    filterMarkdown: 'Textové soubory (Markdown, TXT, JSON)',
     filterHtml: 'Dokumenty HTML',
     filterPdf: 'Dokumenty PDF',
     errBadArgs: 'Neplatné argumenty',
     errBadName: 'Neplatný název souboru',
+    errBadExtension: 'Toto rozšíření není podporováno a soubor by se neotevíral',
     errMissing: 'Soubor nebyl nalezen',
     errExists: 'Soubor s tímto názvem už existuje',
     errRenameFailed: 'Přejmenování se nezdařilo',
@@ -2328,11 +2349,12 @@ const tMain = createI18n({
     filterWord: 'Word-documenten',
     filterExcel: 'Excel-werkmappen',
     filterPpt: 'PowerPoint-presentaties',
-    filterMarkdown: 'Markdown-documenten',
+    filterMarkdown: 'Tekstbestanden (Markdown, TXT, JSON)',
     filterHtml: 'HTML-documenten',
     filterPdf: 'PDF-documenten',
     errBadArgs: 'Ongeldige argumenten',
     errBadName: 'Ongeldige bestandsnaam',
+    errBadExtension: 'Die extensie wordt niet ondersteund en het bestand zou niet meer openen',
     errMissing: 'Bestand niet gevonden',
     errExists: 'Er bestaat al een bestand met die naam',
     errRenameFailed: 'Naam wijzigen mislukt',
@@ -2429,11 +2451,12 @@ const tMain = createI18n({
     filterWord: 'Dokumen Word',
     filterExcel: 'Buku Kerja Excel',
     filterPpt: 'Persembahan PowerPoint',
-    filterMarkdown: 'Dokumen Markdown',
+    filterMarkdown: 'Fail teks (Markdown, TXT, JSON)',
     filterHtml: 'Dokumen HTML',
     filterPdf: 'Dokumen PDF',
     errBadArgs: 'Argumen tidak sah',
     errBadName: 'Nama fail tidak sah',
+    errBadExtension: 'Sambungan itu tidak disokong dan fail tidak akan dibuka',
     errMissing: 'Fail tidak ditemui',
     errExists: 'Fail dengan nama yang sama sudah wujud',
     errRenameFailed: 'Gagal menamakan semula',
@@ -2529,11 +2552,12 @@ const tMain = createI18n({
     filterWord: 'מסמכי Word',
     filterExcel: 'חוברות עבודה של Excel',
     filterPpt: 'מצגות PowerPoint',
-    filterMarkdown: 'מסמכי Markdown',
+    filterMarkdown: 'קובצי טקסט (Markdown, TXT, JSON)',
     filterHtml: 'מסמכי HTML',
     filterPdf: 'מסמכי PDF',
     errBadArgs: 'ארגומנטים לא חוקיים',
     errBadName: 'שם קובץ לא חוקי',
+    errBadExtension: 'הסיומת אינה נתמכת והקובץ לא ייפתח יותר',
     errMissing: 'הקובץ לא נמצא',
     errExists: 'כבר קיים קובץ באותו שם',
     errRenameFailed: 'שינוי השם נכשל',
@@ -2627,11 +2651,12 @@ const tMain = createI18n({
     filterWord: 'Word दस्तावेज़',
     filterExcel: 'Excel वर्कबुक',
     filterPpt: 'PowerPoint प्रस्तुतियाँ',
-    filterMarkdown: 'Markdown दस्तावेज़',
+    filterMarkdown: 'पाठ फ़ाइलें (Markdown, TXT, JSON)',
     filterHtml: 'HTML दस्तावेज़',
     filterPdf: 'PDF दस्तावेज़',
     errBadArgs: 'अमान्य आर्ग्युमेंट',
     errBadName: 'अमान्य फ़ाइल नाम',
+    errBadExtension: 'वह एक्सटेंशन समर्थित नहीं है और फ़ाइल फिर नहीं खुलेगी',
     errMissing: 'फ़ाइल नहीं मिली',
     errExists: 'इस नाम की फ़ाइल पहले से मौजूद है',
     errRenameFailed: 'नाम बदलने में विफल',
@@ -2728,11 +2753,12 @@ const tMain = createI18n({
     filterWord: 'Word 文件',
     filterExcel: 'Excel 活頁簿',
     filterPpt: 'PowerPoint 簡報',
-    filterMarkdown: 'Markdown 文件',
+    filterMarkdown: '文字檔 (Markdown, TXT, JSON)',
     filterHtml: 'HTML 文件',
     filterPdf: 'PDF 文件',
     errBadArgs: '參數無效',
     errBadName: '檔案名稱不合法',
+    errBadExtension: '這個副檔名不受支援，改了檔案就打不開了',
     errMissing: '檔案不存在',
     errExists: '同名檔案已存在',
     errRenameFailed: '重新命名失敗',
@@ -2919,6 +2945,30 @@ function trackedFilesUnder(dir: string): string[] {
   ])
 }
 
+/** stat that tolerates races: the answer is only advisory for the delete gate */
+function statMaybeFile(path: string): { isFile: () => boolean } | null {
+  try {
+    return statSync(path)
+  } catch {
+    return null
+  }
+}
+
+/** the union trackedFilesUnder uses, as a membership check for the file IPCs */
+function fileTargetSources(): FileTargetSources {
+  return {
+    insideAnyRoot: (p) => insideAnyRoot(p),
+    trackedPaths: [
+      ...readRecentFiles(),
+      ...readStarredFiles(),
+      ...projectFilePaths(),
+      ...readSlidesRecentFiles(),
+      ...(tabManager?.openFilePaths() ?? []),
+      ...detachedFilePaths(),
+    ],
+  }
+}
+
 /** a folder moved/renamed: re-key every tracked file that lived under it */
 function afterFolderMoved(oldDir: string, newDir: string, filesBefore: readonly string[]): void {
   for (const file of filesBefore) afterFileMoved(file, rebasePath(file, oldDir, newDir))
@@ -2954,7 +3004,7 @@ const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
   docx: ['docx', 'doc'],
   xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv'],
   pptx: ['pptx', 'ppt'],
-  md: ['md', 'markdown'],
+  md: ['md', 'markdown', 'txt', 'json'],
   html: ['html', 'htm'],
 }
 
@@ -3229,66 +3279,9 @@ function createShellWindow(): void {
   })
 
   // Closing the whole window walks every dirty sheets/pdf/slides/docs tab through
-  // the same save/don't-save/cancel prompt; any cancel aborts the close.
-  // docs dirtiness lives renderer-side, so any live docs tab forces the async path
-  // and gets queried there (clean tabs pass through without activation).
-  let closeConfirmed = false
-  win.on('close', (event) => {
-    if (closeConfirmed) return
-    const dirtySheets = manager.dirtySheetsTabs()
-    const dirtyPdf = manager.dirtyPdfTabs()
-    const dirtyMarkdown = manager.dirtyMarkdownTabs()
-    const dirtyHtml = manager.dirtyHtmlTabs()
-    const dirtySlides = manager.dirtySlidesTabs()
-    const docsTabs = manager.docsTabs()
-    if (
-      dirtySheets.length === 0 &&
-      dirtyPdf.length === 0 &&
-      dirtyMarkdown.length === 0 &&
-      dirtyHtml.length === 0 &&
-      dirtySlides.length === 0 &&
-      docsTabs.length === 0
-    )
-      return
-    event.preventDefault()
-    void (async () => {
-      const denied = await (async () => {
-        for (const tab of dirtySheets) {
-          manager.activateTab(tab.id)
-          if (!(await requestSheetsClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtyPdf) {
-          manager.activateTab(tab.id)
-          if (!(await requestPdfClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtyMarkdown) {
-          manager.activateTab(tab.id)
-          if (!(await requestMarkdownClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtyHtml) {
-          manager.activateTab(tab.id)
-          if (!(await requestHtmlClose(tab.webContents, win))) return true
-        }
-        for (const tab of dirtySlides) {
-          manager.activateTab(tab.id)
-          if (!(await requestSlidesClose(tab.webContents, win))) return true
-        }
-        for (const tab of docsTabs) {
-          if (!(await docsQueryDirty(tab.webContents))) continue
-          manager.activateTab(tab.id)
-          if (!(await requestDocsClose(tab.webContents, win))) return true
-        }
-        return false
-      })()
-      // a denied close vetoes any quit that was in flight: the sheets close
-      // guard must prompt again on later closes instead of silently proceeding
-      if (denied) resetSheetsShuttingDown()
-      else {
-        closeConfirmed = true
-        if (!win.isDestroyed()) win.close()
-      }
-    })()
-  })
+  // the same save/don't-save/cancel prompt; any cancel aborts the close. An
+  // all-clean close is left untouched, so ⌘Q keeps quitting the app.
+  installShellCloseGuard(win, manager)
 
   win.on('closed', () => {
     if (shellWindow === win) shellWindow = null
@@ -3308,13 +3301,6 @@ function createShellWindow(): void {
 
 // ---- routing: one dispatch function for every open path ----
 
-const DOCX_RE = /\.docx$/i
-const XLSX_RE = /\.(xlsx|xlsm|xls|csv|tsv)$/i
-const PPTX_RE = /\.pptx$/i
-const PDF_RE = /\.pdf$/i
-const MD_RE = /\.(md|markdown)$/i
-const HTML_RE = /\.html?$/i
-
 /**
  * Single source of truth for the open-dialog filter. Includes the
  * legacy .doc/.ppt binaries so they are selectable and surface the explicit
@@ -3333,6 +3319,8 @@ const OPEN_DIALOG_EXTENSIONS = [
   'pdf',
   'md',
   'markdown',
+  'txt',
+  'json',
   'html',
   'htm',
 ]
@@ -3443,7 +3431,7 @@ function routeDocumentPath(filePath: string): boolean {
     else tabManager.openPdfTab(filePath)
     return true
   }
-  if (MD_RE.test(filePath)) {
+  if (TEXT_RE.test(filePath)) {
     recordRecentFile(filePath)
     const existing = tabManager.findMarkdownTabByPath(filePath)
     if (existing) tabManager.activateTab(existing)
@@ -3862,7 +3850,7 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.statPaths, (_event, paths: unknown): RecentEntry[] =>
-    statEntries(stringPaths(paths)),
+    statEntries(capStatPaths(stringPaths(paths))),
   )
 
   ipcMain.handle(HOME_CHANNELS.toggleStar, (_event, path: unknown) => {
@@ -3886,7 +3874,7 @@ function registerHomeIpc(): void {
         { name: tm('filterExcel'), extensions: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv'] },
         { name: tm('filterPpt'), extensions: ['pptx', 'ppt'] },
         { name: tm('filterPdf'), extensions: ['pdf'] },
-        { name: tm('filterMarkdown'), extensions: ['md', 'markdown'] },
+        { name: tm('filterMarkdown'), extensions: ['md', 'markdown', 'txt', 'json'] },
         { name: tm('filterHtml'), extensions: ['html', 'htm'] },
       ],
       properties: ['openFile', 'multiSelections'],
@@ -3947,6 +3935,16 @@ function registerHomeIpc(): void {
       // with the localized gate instead of renaming to a different
       // name than requested.
       if (!isValidRawRenameName(newName)) return { ok: false, error: tm('errBadName') }
+      // A legal name in an extension nothing routes to turns an openable file
+      // into an unopenable one — "note.md" → "note.xyz" renames cleanly and
+      // then cannot be opened. Same-app renames ("note.md" → "note.markdown")
+      // stay legal.
+      if (typeof path === 'string' && !renameStaysInApp(path, newName.trim()))
+        return { ok: false, error: tm('errBadExtension') }
+      // only paths the UI could have shown: a compromised renderer must not
+      // rename arbitrary files outside every tracked source
+      if (!isUserVisibleFile(path, fileTargetSources()))
+        return { ok: false, error: tm('errBadArgs') }
       const name = newName.trim()
       if (!existsSync(path)) return { ok: false, error: tm('errMissing') }
       const target = join(dirname(path), name)
@@ -3968,6 +3966,7 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.duplicateFile, async (_event, path: unknown) => {
     if (typeof path !== 'string' || !existsSync(path)) return
+    if (!isUserVisibleFile(path, fileTargetSources())) return
     const ext = extname(path)
     const base = basename(path, ext)
     const dir = dirname(path)
@@ -3986,7 +3985,10 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.deleteFiles, async (_event, paths: unknown) => {
-    const list = stringPaths(paths)
+    const targets = fileTargetSources()
+    const list = stringPaths(paths).filter(
+      (p) => isUserVisibleFile(p, targets) && statMaybeFile(p)?.isFile() === true,
+    )
     for (const p of list) {
       try {
         await shell.trashItem(p)
@@ -4271,8 +4273,9 @@ function registerHomeIpc(): void {
           return false
         }
       }
-      // files may come from anywhere (the Recent list); folders only from inside the tree, never a root itself
-      const sources = list.filter((p) => !isDir(p) || (insideAnyRoot(p) && !isAnyRoot(p)))
+      // files may come from anywhere the UI can show (the Recent list); folders only from inside the tree, never a root itself
+      const moveSources = { ...fileTargetSources(), isDirectory: isDir, isAnyRoot }
+      const sources = list.filter((p) => isMoveSource(p, moveSources))
       const dirFiles = new Map(sources.filter(isDir).map((p) => [p, trackedFilesUnder(p)]))
       // 'replace' must not destroy data: the displaced target goes to the trash,
       // and everything keyed on its path (recents, stars, chat history) leaves

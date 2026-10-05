@@ -1,5 +1,6 @@
 import { readdirSync, rmSync, type Dirent } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -41,6 +42,37 @@ describe('mcp http hardening', () => {
         warn: () => {},
       }),
     ).rejects.toThrow(/--token needs a non-empty value/)
+  })
+
+  it('fails closed on an empty --host value instead of binding every interface', async () => {
+    const { mcpCommand } = await import('../src/commands/mcp')
+    const { parseArgs } = await import('../src/args')
+    await expect(
+      mcpCommand.run(parseArgs(['--http', '8080', '--host', '']), {
+        cwd: process.cwd(),
+        env: {},
+        log: () => {},
+        warn: () => {},
+      }),
+    ).rejects.toThrow(/--host needs a non-empty value/)
+  })
+
+  it('treats a programmatically empty host as the loopback default', async () => {
+    const { startHttp } = await import('../src/mcp/http')
+    const handle = await startHttp({
+      cwd: process.cwd(),
+      env: {},
+      log: () => {},
+
+      port: 0,
+      host: '',
+    })
+    try {
+      // the empty string fell back to the loopback default, not every interface
+      expect(handle.url.startsWith('http://127.0.0.1:')).toBe(true)
+    } finally {
+      await handle.close()
+    }
   })
 
   it('ignores poisoned forwarded host/proto by default', async () => {
@@ -169,6 +201,87 @@ describe('mcp http hardening', () => {
     expect(second.status).toBe(404)
   })
 })
+
+describe('mcp http loopback Host guard', () => {
+  let handle: HttpHandle
+  const logs: string[] = []
+
+  beforeAll(async () => {
+    // no token, so the loopback Host guard is the thing under test
+    handle = await startHttp({
+      port: 0,
+      host: '127.0.0.1',
+      cwd: tempDir(),
+      env: { ...process.env, GENOFFICE_AUDIT_LOG: 'off', GENOFFICE_ALLOWED_ROOTS: '' },
+      log: (line) => logs.push(line),
+      registry: defaultRegistry(),
+    })
+  })
+
+  afterAll(async () => {
+    await handle.close()
+  })
+
+  it('lets a normal loopback Host through and still refuses a rebound name', async () => {
+    const allowed = await rawRequest(
+      handle.port,
+      `GET /nope HTTP/1.1\r\nHost: 127.0.0.1:${handle.port}\r\nConnection: close\r\n\r\n`,
+    )
+    expect(allowed).toMatch(/^HTTP\/1\.1 404 /)
+
+    const rebound = await rawRequest(
+      handle.port,
+      'GET /nope HTTP/1.1\r\nHost: rebound.example.com\r\nConnection: close\r\n\r\n',
+    )
+    expect(rebound).toMatch(/^HTTP\/1\.1 403 /)
+    expect(rebound).toContain('host not allowed')
+  })
+
+  it('refuses a request with no Host header instead of 500ing', async () => {
+    // An HTTP/1.0 client may omit Host entirely; the guard must still answer
+    // 403, not let a URL parse error escape as a 500.
+    const res = await rawRequest(handle.port, 'GET /nope HTTP/1.0\r\n\r\n')
+    expect(res).toMatch(/^HTTP\/1\.1 403 /)
+    expect(res).toContain('host not allowed')
+  })
+
+  it('refuses a Host header the URL parser cannot read instead of 500ing', async () => {
+    const res = await rawRequest(
+      handle.port,
+      'GET /nope HTTP/1.1\r\nHost: a b\r\nConnection: close\r\n\r\n',
+    )
+    expect(res).toMatch(/^HTTP\/1\.1 403 /)
+    expect(res).toContain('host not allowed')
+  })
+
+  it('refuses the other authorities new URL() rejects, none of them 500', async () => {
+    // A non-numeric port, a bare '::1', an unterminated bracket and an
+    // IPv4-mapped form all throw inside new URL(); the guard must absorb them.
+    for (const authority of ['127.0.0.1:abc', '::1', '[::1', '::ffff:127.0.0.1']) {
+      const res = await rawRequest(
+        handle.port,
+        `GET /nope HTTP/1.1\r\nHost: ${authority}\r\nConnection: close\r\n\r\n`,
+      )
+      expect(res, authority).toMatch(/^HTTP\/1\.1 403 /)
+      expect(res, authority).toContain('host not allowed')
+    }
+  })
+
+  it('never reports a rejected Host as a server error', () => {
+    expect(logs.some((line) => /invalid url|TypeError/i.test(line))).toBe(false)
+  })
+})
+
+/** Writes a raw request so a test can control the Host header byte for byte. */
+function rawRequest(port: number, request: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const socket = connect(port, '127.0.0.1', () => socket.write(request))
+    socket.on('data', (chunk: Buffer) => chunks.push(chunk))
+    socket.on('close', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    socket.on('error', reject)
+  })
+}
 
 /** Delete this server's stored copy found under the tmp FileStore roots. */
 function removeStoredCopy(name: string): void {

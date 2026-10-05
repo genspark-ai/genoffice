@@ -13,7 +13,11 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
  */
 
 interface AidocsWindow {
-  __aidocs?: { editor?: unknown; save?: () => Promise<unknown> }
+  __aidocs?: {
+    editor?: unknown
+    save?: () => Promise<unknown>
+    getStatus?: () => string
+  }
 }
 
 async function minimalDocx(): Promise<Buffer> {
@@ -86,6 +90,17 @@ test.describe('docs layout breaks menu', () => {
       await page.keyboard.press('End')
       await openBreaks()
       await menuItem('Continuous').click()
+      // Wait for the break to commit. Applying a paper size to the whole
+      // document maps over the sections array, and insertSectionBreak's
+      // setSections is a separate React update: without this the map can run
+      // against the pre-break array (one section) and the break commits
+      // afterwards, giving the new section the sectPrCopy that was computed
+      // before the paper size existed. The file then holds two <w:sectPr> but
+      // only one landscape <w:pgSz>. The status line is set in the same commit
+      // as the array, so waiting on it waits on the array.
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as AidocsWindow).__aidocs!.getStatus!()))
+        .toBe('Section break inserted (Continuous)')
 
       await para('Beta').click()
       await page.keyboard.press('End')
@@ -134,13 +149,22 @@ test.describe('docs layout breaks menu', () => {
       expect(await page.evaluate(() => (window as unknown as AidocsWindow).__aidocs!.save!())).toBe(
         true,
       )
-      // The save lands in stages: waiting on an early marker hands the asserts
-      // below a half-written document (the second section's pgSz is what goes
-      // missing). Wait on the last thing this case expects instead, so every
-      // read after it sees the finished file.
+      // The save can land in stages, so wait for the finished condition before
+      // reading. The marker has to be one that only the complete file has: the
+      // pgMar this used to wait on is emitted in EVERY sectPr, so the poll was
+      // satisfied as soon as the first section was written and handed the reads
+      // below a half-saved document — the second section's pgSz was what went
+      // missing. The landscape count reaching 2 cannot pass early.
       await expect
-        .poll(() => documentXml(docPath), { timeout: 15_000 })
-        .toContain('<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1800"')
+        .poll(
+          () =>
+            documentXml(docPath).then(
+              (x) =>
+                (x.match(/<w:pgSz w:w="15874" w:h="11339" w:orient="landscape"\/>/g) ?? []).length,
+            ),
+          { timeout: 15_000 },
+        )
+        .toBe(2)
       const xml = await documentXml(docPath)
       expect(xml).toContain('<w:br w:type="column"/>')
       expect(xml).toContain('<w:pageBreakBefore/>')

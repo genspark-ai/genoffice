@@ -3,7 +3,7 @@
 /// attributes), and maintains the sheet-scoped `_xlnm.Print_Area` defined
 /// name in workbook.xml. Untouched attributes and elements stay verbatim.
 
-import { parseRange } from '../domain/cell-address'
+import { columnIndex, parseRange } from '../domain/cell-address'
 import { parseSheetElements } from './xlsx-sheets'
 
 export class PageSetupError extends Error {}
@@ -463,7 +463,7 @@ export function applyPrintAreas(
         xml,
         '_xlnm.Print_Titles',
         sheetIndex,
-        printTitles === null ? null : `${quoted}!${toAbsoluteRowSpan(printTitles)}`,
+        printTitles === null ? null : titleReference(xml, quoted, sheetIndex, printTitles),
       )
     }
   }
@@ -513,13 +513,91 @@ function setSheetScopedName(
   return `${xml.slice(0, at)}<definedNames>${element}</definedNames>${xml.slice(at)}`
 }
 
-/// "1:3" → "$1:$3" (title rows repeated at the top of each page).
-function toAbsoluteRowSpan(rows: string): string {
-  const match = /^\$?(\d{1,7}):\$?(\d{1,7})$/.exec(rows)
-  if (!match || Number(match[1]) > Number(match[2])) {
-    throw new PageSetupError(`Invalid print titles "${rows}".`)
+/// "1:3" → "$1:$3" (title rows), "A:B" → "$A:$B" (title columns), or both
+/// comma-separated. Setting one axis keeps the other axis already stored.
+function titleReference(
+  workbookXml: string,
+  quoted: string,
+  sheetIndex: number,
+  titles: string,
+): string {
+  const incoming = parseTitleSpans(titles)
+  const kept = existingTitleSpans(workbookXml, sheetIndex)
+  const rows = incoming.rows ?? kept.rows
+  const cols = incoming.cols ?? kept.cols
+  const spans: string[] = []
+  if (cols !== undefined) spans.push(`${quoted}!${cols}`)
+  if (rows !== undefined) spans.push(`${quoted}!${rows}`)
+  if (spans.length === 0) throw new PageSetupError(`Invalid print titles "${titles}".`)
+  return spans.join(',')
+}
+
+function parseTitleSpans(titles: string): { rows?: string; cols?: string } {
+  const out: { rows?: string; cols?: string } = {}
+  for (const raw of titles.split(',')) {
+    const span = raw.trim()
+    const rows = /^\$?(\d{1,7}):\$?(\d{1,7})$/.exec(span)
+    if (rows) {
+      if (Number(rows[1]) > Number(rows[2]) || out.rows !== undefined) {
+        throw new PageSetupError(`Invalid print titles "${titles}".`)
+      }
+      out.rows = `$${rows[1]}:$${rows[2]}`
+      continue
+    }
+    const cols = /^\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})$/.exec(span)
+    if (cols) {
+      const first = cols[1]!.toUpperCase()
+      const second = cols[2]!.toUpperCase()
+      let ordered: boolean
+      try {
+        ordered = columnIndex(first) <= columnIndex(second)
+      } catch {
+        ordered = false
+      }
+      if (!ordered || out.cols !== undefined) {
+        throw new PageSetupError(`Invalid print titles "${titles}".`)
+      }
+      out.cols = `$${first}:$${second}`
+      continue
+    }
+    throw new PageSetupError(`Invalid print titles "${titles}".`)
   }
-  return `$${match[1]}:$${match[2]}`
+  return out
+}
+
+function existingTitleSpans(
+  workbookXml: string,
+  sheetIndex: number,
+): { rows?: string; cols?: string } {
+  const pattern = new RegExp(
+    `<definedName[^>]*name="_xlnm\\.Print_Titles"[^>]*localSheetId="${sheetIndex}"[^>]*>([\\s\\S]*?)</definedName>` +
+      `|<definedName[^>]*localSheetId="${sheetIndex}"[^>]*name="_xlnm\\.Print_Titles"[^>]*>([\\s\\S]*?)</definedName>`,
+  )
+  const match = pattern.exec(workbookXml)
+  if (!match) return {}
+  const out: { rows?: string; cols?: string } = {}
+  for (const part of unescapeXml(match[1] ?? match[2] ?? '').split(',')) {
+    const ref = part
+      .slice(part.lastIndexOf('!') + 1)
+      .replace(/\$/g, '')
+      .trim()
+    const rows = /^(\d{1,7}):(\d{1,7})$/.exec(ref)
+    if (rows && Number(rows[1]) <= Number(rows[2]) && out.rows === undefined) {
+      out.rows = `$${rows[1]}:$${rows[2]}`
+      continue
+    }
+    const cols = /^([A-Za-z]{1,3}):([A-Za-z]{1,3})$/.exec(ref)
+    if (cols && out.cols === undefined) {
+      try {
+        if (columnIndex(cols[1]!.toUpperCase()) <= columnIndex(cols[2]!.toUpperCase())) {
+          out.cols = `$${cols[1]!.toUpperCase()}:$${cols[2]!.toUpperCase()}`
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+  return out
 }
 
 /// "A1:C10" → "$A$1:$C$10" (already-absolute refs pass through).
@@ -551,4 +629,12 @@ function escapeXml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+function unescapeXml(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
 }

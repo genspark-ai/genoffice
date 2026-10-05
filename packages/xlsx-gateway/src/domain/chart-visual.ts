@@ -196,18 +196,38 @@ export function scatterAxisBounds(
 /// max = min + unit · ceil(bumped / unit). Calibrated on Excel-rendered
 /// refs: 18 → 20 step 2, 148 → 160 step 20, 877 → 1000 step 100, 1000 →
 /// 1200 step 200, 289753.76 → 350000 step 50000 (real-run1 + prod corpora).
+///
+/// `dataMin` is the series minimum, and it is the LAST parameter on purpose:
+/// `explicit` already sits in second position at every call site, so
+/// inserting a second positional would reinterpret the `c:scaling` object
+/// as a minimum. Non-negative data (the default 0) takes the original
+/// 0-based scale untouched.
 export function valueAxisScale(
   dataMax: number,
   explicit?: { min?: number | undefined; max?: number | undefined; majorUnit?: number | undefined },
+  dataMin = 0,
 ): { min: number; max: number; ticks: number[] } {
-  const min = explicit?.min ?? 0
-  const target = explicit?.max ?? Math.max(dataMax, min)
+  // A caller with no values at all passes Infinity/NaN; treat it as the
+  // non-negative default rather than scaling to -Infinity. Folding dataMax in
+  // keeps the invariant that the axis always contains the data it was given:
+  // a bare valueAxisScale(-100) can only be scaled by a negative floor.
+  const floor = Math.min(Number.isFinite(dataMin) ? dataMin : 0, dataMax)
+  // Below-zero data pushes the axis down to a nice floor, exactly as
+  // scatterAxisBounds does with -niceCeiling(-dataMin); non-negative data
+  // still starts at 0.
+  const min = explicit?.min ?? (floor >= 0 ? 0 : -niceCeiling(-floor))
+  // Data that never rises above zero tops out AT zero, not above it: Excel
+  // shows no headroom over a zero baseline, and a bar/column needs that
+  // baseline inside the plot to have something to stand on.
+  const zeroTop = explicit?.max === undefined && dataMax <= 0
+  const target = explicit?.max ?? (zeroTop ? 0 : Math.max(dataMax, min))
   const span = target - min
-  // Flat data (all zeros): Excel scales 0..1 in 0.2 steps.
+  // Flat data (all zeros, or one repeated negative value): Excel scales
+  // 0..1 in 0.2 steps.
   if (!(span > 0)) {
     return { min, max: min + 1, ticks: unitTicks(min, min + 1, 0.2) }
   }
-  const bumped = explicit?.max === undefined ? span * 1.05 : span
+  const bumped = explicit?.max === undefined && !zeroTop ? span * 1.05 : span
   const unit = explicit?.majorUnit ?? autoAxisUnit(bumped)
   const max = explicit?.max ?? min + Math.ceil(bumped / unit - 1e-9) * unit
   return { min, max: max > min ? max : min + unit, ticks: unitTicks(min, max, unit) }
@@ -594,12 +614,21 @@ export function chartDataFromValues(
 }
 
 /// `'Sheet Name'!$B$2:$B$13` (chart `c:f` style) → sheet name + plain range.
+/// A range is a cell, a cell range, or a whole-column range (`$A:$A`) — the
+/// same three shapes the save side shifts (FORMULA_REFERENCE_PATTERN). Case
+/// is accepted because parseAddress downstream is case-strict, so the range is
+/// normalised here. A defined name names no sheet and stays null: rewriting
+/// one would need the defined-names table, not a sheet rename.
 export function splitSheetRef(ref: string): { sheetName: string; range: string } | null {
-  const match = /^'?((?:[^'!]|'')+?)'?!(\$?[A-Z]{1,3}\$?[0-9]+(?::\$?[A-Z]{1,3}\$?[0-9]+)?)$/.exec(
-    ref.trim(),
-  )
+  const match =
+    /^'?((?:[^'!]|'')+?)'?!(\$?[A-Z]{1,3}\$?[0-9]+(?::\$?[A-Z]{1,3}\$?[0-9]+)?|\$?[A-Z]{1,3}:\$?[A-Z]{1,3})$/i.exec(
+      ref.trim(),
+    )
   if (!match?.[1] || !match[2]) return null
-  return { sheetName: match[1].replace(/''/g, "'"), range: match[2].replace(/\$/g, '') }
+  return {
+    sheetName: match[1].replace(/''/g, "'"),
+    range: match[2].toUpperCase().replace(/\$/g, ''),
+  }
 }
 
 /// Rewrites the sheet-name qualifier of a chart `c:f` reference, keeping the

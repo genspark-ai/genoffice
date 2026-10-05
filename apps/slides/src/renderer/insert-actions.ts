@@ -32,6 +32,20 @@ import { textBoxInsertSpec } from './textbox-insert'
 import { WORDART_FONT_PT, wordArtInsertSpec } from './wordart-insert'
 import { insertSlideZooms } from './zoom-actions'
 
+/**
+ * Run fn as one history batch: every edit inside collapses into a single undo
+ * step. Mirrors zoom-actions' batched(), for the same reason — a gesture that
+ * spans several IPC calls must not cost several ⌘Z presses.
+ */
+async function batched<T>(fn: () => Promise<T>): Promise<T> {
+  const opened = await window.slidesApi.beginHistoryBatch()
+  try {
+    return await fn()
+  } finally {
+    if (opened) await window.slidesApi.endHistoryBatch()
+  }
+}
+
 /** Draw-mode commit: insert a gallery shape at the drawn box (PowerPoint click-or-drag sizing). */
 export async function insertShapeAt(
   ctx: ActionCtx,
@@ -41,32 +55,37 @@ export async function insertShapeAt(
   const { slide, current } = ctx
   if (!slide) return
   const isLine = isLineDrawKind(kind)
-  const r = await window.slidesApi.addElement({
-    slideIndex: current,
-    kind,
-    xPx: Math.round(rect.x),
-    yPx: Math.round(rect.y),
-    wPx: Math.round(rect.w),
-    hPx: Math.round(rect.h),
-    fitWidthPx: FIT_WIDTH,
-    ...(isLine ? { stroke: { color: '#000000', widthPt: 1 } } : defaultShapeStyle()),
-  })
-  if (!r) return
-  let updated = r.slide
-  // Connectors render top-left → bottom-right inside their box; leftward/upward drags are restored by mirroring
-  for (const axis of [
-    ...(rect.flipH ? (['h'] as const) : []),
-    ...(rect.flipV ? (['v'] as const) : []),
-  ]) {
-    const f = await window.slidesApi.flipElements({
+  // The batch opens before addElement, not just around the flips: endHistoryBatch
+  // drops every snapshot past its start, so a batch opened after the insert would
+  // collapse only the flips and leave "remove the line" as a second ⌘Z.
+  await batched(async () => {
+    const r = await window.slidesApi.addElement({
       slideIndex: current,
-      sourceIds: [r.sourceId],
-      axis,
+      kind,
+      xPx: Math.round(rect.x),
+      yPx: Math.round(rect.y),
+      wPx: Math.round(rect.w),
+      hPx: Math.round(rect.h),
+      fitWidthPx: FIT_WIDTH,
+      ...(isLine ? { stroke: { color: '#000000', widthPt: 1 } } : defaultShapeStyle()),
     })
-    if (f) updated = f
-  }
-  ctx.applySlide(current, updated)
-  ctx.setSelectedIds([r.sourceId])
+    if (!r) return
+    let updated = r.slide
+    // Connectors render top-left → bottom-right inside their box; leftward/upward drags are restored by mirroring
+    for (const axis of [
+      ...(rect.flipH ? (['h'] as const) : []),
+      ...(rect.flipV ? (['v'] as const) : []),
+    ]) {
+      const f = await window.slidesApi.flipElements({
+        slideIndex: current,
+        sourceIds: [r.sourceId],
+        axis,
+      })
+      if (f) updated = f
+    }
+    ctx.applySlide(current, updated)
+    ctx.setSelectedIds([r.sourceId])
+  })
 }
 
 /** Draw-mode commit for Insert > Text Box: empty one-line box at the gesture, straight into typing. */

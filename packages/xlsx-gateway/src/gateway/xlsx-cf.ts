@@ -109,23 +109,24 @@ export function applyCfRules(
     },
   )
 
-  // x14 rules and preserved blocks keep their priorities; new rules take the
-  // free values.
-  const used = new Set<number>()
-  for (const match of xml.matchAll(/<(?:\w+:)?cfRule\b[^>]*?\spriority="(\d+)"/g)) {
-    used.add(Number(match[1]))
-  }
+  // x14 rules and preserved blocks keep their priorities; new rules take
+  // max+1 values.
   let priority = 0
+  for (const match of xml.matchAll(/<(?:\w+:)?cfRule\b[^>]*?\spriority="(\d+)"/g)) {
+    const seen = Number(match[1])
+    if (seen > priority) priority = seen
+  }
   const nextPriority = (): number => {
-    do priority += 1
-    while (used.has(priority))
+    priority += 1
     return priority
   }
 
   const sections: string[] = []
   for (const rule of rules) {
     const sqref = rule.ranges.map(toRef).join(' ')
-    const linked = preserved.find((block) => !block.matched && block.sqref === sqref)
+    const linked = preserved.find(
+      (block) => !block.matched && normalizeSqref(block.sqref) === normalizeSqref(sqref),
+    )
     if (linked) {
       // Only a byte-identical round trip proves the rule is unchanged; any
       // difference means the extension's base half was edited.
@@ -137,7 +138,12 @@ export function applyCfRules(
       } catch {
         probe = null
       }
-      if (probe !== bare) throw new CfEditError(linkedMessage(linked.text))
+      const normBare = bare.replace(/\bsqref="([^"]*)"/, (_, s) => `sqref="${normalizeSqref(s)}"`)
+      const normProbe = probe?.replace(
+        /\bsqref="([^"]*)"/,
+        (_, s) => `sqref="${normalizeSqref(s)}"`,
+      )
+      if (normProbe !== normBare) throw new CfEditError(linkedMessage(linked.text))
       linked.matched = true
       continue
     }
@@ -161,14 +167,13 @@ const CF_BLOCK_RE =
 
 function appendCfRules(xml: string, rules: readonly CfWireRule[], dxfs: DxfSink): string {
   if (rules.length === 0) return xml
-  const used = new Set<number>()
-  for (const match of xml.matchAll(/<(?:\w+:)?cfRule\b[^>]*?\spriority="(\d+)"/g)) {
-    used.add(Number(match[1]))
-  }
   let priority = 0
+  for (const match of xml.matchAll(/<(?:\w+:)?cfRule\b[^>]*?\spriority="(\d+)"/g)) {
+    const seen = Number(match[1])
+    if (seen > priority) priority = seen
+  }
   const nextPriority = (): number => {
-    do priority += 1
-    while (used.has(priority))
+    priority += 1
     return priority
   }
   const body = rules.map((rule) => serializeRule(rule, nextPriority(), dxfs)).join('')
@@ -442,8 +447,18 @@ function serializeCfvo(value: unknown, extra = ''): string {
     throw new CfEditError(`Unsupported threshold type "${type}".`)
   }
   const raw = config?.value
-  const val = type === 'formula' ? String(raw ?? '0') : String(Number(raw ?? 0))
-  return `<cfvo type="${type}" val="${escapeXmlAttribute(val)}"${extra}/>`
+  if (type === 'formula') {
+    return `<cfvo type="formula" val="${escapeXmlAttribute(String(raw ?? '0'))}"${extra}/>`
+  }
+  // A non-numeric or non-finite threshold stringifies to "NaN"/"Infinity",
+  // which Excel cannot evaluate, so the rule silently stops applying. The
+  // sibling highlight path already rejects this input; fail the same way here
+  // instead of writing an unusable threshold.
+  const numeric = Number(raw ?? 0)
+  if (!Number.isFinite(numeric)) {
+    throw new CfEditError(`A ${type} threshold needs a finite value.`)
+  }
+  return `<cfvo type="${type}" val="${escapeXmlAttribute(String(numeric))}"${extra}/>`
 }
 
 /// Univer IStyleBase highlight style → dxf XML (font + solid fill).
@@ -502,6 +517,18 @@ function toRef(range: CfCellArea): string {
     ? `${columnToLetters(range.startColumn)}${range.startRow + 1}`
     : `${columnToLetters(range.startColumn)}${range.startRow + 1}` +
         `:${columnToLetters(range.endColumn)}${range.endRow + 1}`
+}
+
+function normalizeSqref(sqref: string): string {
+  return sqref
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => {
+      const [a, b] = part.replace(/\$/g, '').split(':')
+      return b === undefined || b === a ? a! : `${a}:${b}`
+    })
+    .sort()
+    .join(' ')
 }
 
 function columnToLetters(column: number): string {

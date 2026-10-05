@@ -9,6 +9,7 @@ use serde::Serialize;
 use zip::ZipArchive;
 
 use crate::SidecarError;
+use crate::xml_util::copy_entry_bounded;
 
 mod charts;
 mod colors;
@@ -1245,15 +1246,18 @@ pub fn read_media(
     media_path: &str,
 ) -> Result<MediaResult, SidecarError> {
     let mut entry = crate::zip_entry(archive, media_path)?;
-    if entry.size() > MAX_MEDIA_BYTES {
+    let declared = entry.size();
+    if declared > MAX_MEDIA_BYTES {
         return Err(SidecarError::Workbook(
             "Embedded image exceeds the media response limit.".into(),
         ));
     }
     let media_type = media_type_for_path(media_path)
         .ok_or_else(|| SidecarError::Workbook("Unsupported embedded image type.".into()))?;
-    let mut bytes = Vec::with_capacity(entry.size() as usize);
-    entry.read_to_end(&mut bytes)?;
+    let mut bytes = Vec::with_capacity(declared as usize);
+    // The cap above reads only the declaration; the copy is what keeps a part
+    // that under-declares from delivering its whole payload.
+    copy_entry_bounded(&mut entry, declared, MAX_MEDIA_BYTES, &mut bytes)?;
     Ok(MediaResult {
         media_type: media_type.to_owned(),
         base64: base64::engine::general_purpose::STANDARD.encode(bytes),

@@ -58,30 +58,36 @@ export function modelHasFixedSampling(model: string): boolean {
  * Model ids that reject image input even under a vision-capable provider.
  * DeepSeek V4 Pro and V4 Flash are text-only; V4.1 Flash and the -vision*
  * branches take images, so they fall through and receive screenshots.
+ *
+ * Ant's Ling line and Meituan's LongCat are the same shape: a text catalog
+ * with one multimodal member. `Ling-3.0-flash-VL` and `LongCat-2.5-Preview`
+ * (image understanding, per the 2026-09-25 LongCat change log) take images;
+ * every other id on those two providers is text-only. A text-only id added to
+ * either list has to be added here too — the provider flag alone would hand it
+ * screenshots, which is what this function exists to prevent.
  */
 export function modelLacksVision(model: string): boolean {
-  return /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model)
+  // MiniMax-M2.7 remains text-only when MiniMax-M3 enables provider vision.
+  if (/(^|\/)minimax-m2\.7($|-)/i.test(model)) return true
+  return (
+    /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model) ||
+    /(^|\/)(?:ling-(?:3\.0-flash(?!-vl)|3\.0-tiny|2\.6-1t|2\.6-flash)|ring-2\.6-1t|longcat-2\.0(?:$|-))/i.test(
+      model,
+    )
+  )
 }
 
 /**
  * Interleaved-thinking families whose vendors want the reasoning echoed back
  * on assistant messages: MiniMax documents that stripping it degrades
  * multi-turn tool use, and DeepSeek V4 rejects tool turns without it. Gated
- * per model because other vendors may reject the unknown field.
+ * per model because other vendors may reject the unknown field. Hunyuan joins
+ * them because hy4-preview ships deep thinking on by default, so its first
+ * turn already carries `reasoning_content`.
  */
 export function modelEchoesReasoning(model: string): boolean {
-  return /(^|\/)(minimax-m|deep-?seek-(v4|flash))/i.test(model)
+  return /(^|\/)(minimax-m|deep-?seek-(v4|flash)|hy-?[34]([^\w]|$))/i.test(model)
 }
-
-/**
- * DeepSeek V4 thinks by default, and once a request carries `tools` the API
- * rejects (400) every later turn whose assistant messages don't echo back the
- * `reasoning_content` it produced. Our OpenAI-compatible transcript has no
- * field to carry that, so the agent loop would die right after its first tool
- * call. Pin the models to non-thinking mode — what the retired deepseek-chat
- * alias did — until the transcript can round-trip reasoning.
- */
-const DEEPSEEK_NON_THINKING = { thinking: { type: 'disabled' } }
 
 /**
  * The direct API 400s on the versioned pool spelling we list (verified
@@ -115,7 +121,7 @@ const OPENCODE_GATEWAY_ROOTS = {
  * up in request logs and error messages, and the api key field is the
  * supported place for them.
  */
-function normalizeBaseUrl(raw: string | undefined, fallback: string): string {
+export function normalizeBaseUrl(raw: string | undefined, fallback: string): string {
   const candidate = (raw ?? fallback).trim()
   if (candidate === '' || candidate.length > 2048) {
     throw new Error('Base URL must be a non-empty http(s) URL under 2048 characters')
@@ -136,22 +142,35 @@ function normalizeBaseUrl(raw: string | undefined, fallback: string): string {
   return parsed.toString()
 }
 
+/** Strip trailing slashes and a trailing /v1 from the path (before any query) */
+function stripTrailingV1(base: string): string {
+  const q = base.indexOf('?')
+  const path = (q === -1 ? base : base.slice(0, q)).replace(/\/+$/, '').replace(/\/v1$/, '')
+  return q === -1 ? path : `${path}${base.slice(q)}`
+}
+
+/** Append a path segment before any query string so `?api-version=…` stays last */
+function appendPath(base: string, path: string): string {
+  const q = base.indexOf('?')
+  return q === -1 ? `${base}${path}` : `${base.slice(0, q)}${path}${base.slice(q)}`
+}
+
 function opencodeEndpoint(
   root: string,
   routes: { anthropic: RegExp; gemini?: RegExp },
 ): (config: AiProviderConfig) => ResolvedEndpoint {
   return (config) => {
     // a stored base URL replaces the gateway root; the documented `/v1` API base is tolerated
-    const base = normalizeBaseUrl(config.baseUrl, root).replace(/\/+$/, '').replace(/\/v1$/, '')
+    const base = stripTrailingV1(normalizeBaseUrl(config.baseUrl, root))
     const model = config.model ?? ''
     const omit =
       model !== '' && (modelHasFixedSampling(model) || model.toLowerCase().startsWith('kimi-'))
     const sampling = omit ? { omitTemperature: true as const } : {}
     if (routes.anthropic.test(model)) return { protocol: 'anthropic', baseUrl: base, ...sampling }
     if (routes.gemini?.test(model)) {
-      return { protocol: 'gemini', baseUrl: `${base}/v1`, ...sampling }
+      return { protocol: 'gemini', baseUrl: appendPath(base, '/v1'), ...sampling }
     }
-    return { protocol: 'openai-compatible', baseUrl: `${base}/v1`, ...sampling }
+    return { protocol: 'openai-compatible', baseUrl: appendPath(base, '/v1'), ...sampling }
   }
 }
 
@@ -217,10 +236,14 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint(config) {
       const wire = DEEPSEEK_WIRE_IDS[config.model]
+      // No thinking override: both V4 models think by default and the agent
+      // transcript round-trips the reasoning (deepseek sits on the
+      // modelEchoesReasoning list). The tool-turn 400 that once forced
+      // non-thinking no longer reproduces — verified against the live API
+      // 2026-09-30: flash and v4-pro accept thinking+tools with and without
+      // the reasoning_content echo.
       return {
-        ...fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1', {
-          bodyExtras: DEEPSEEK_NON_THINKING,
-        })(config),
+        ...fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1')(config),
         ...(wire ? { model: wire } : {}),
       }
     },
@@ -259,9 +282,55 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://ark.cn-beijing.volces.com/api/v3'),
   },
+  mimo: {
+    meta: metaOf('mimo'),
+    // the V2.6 series is omni-modal: text, image, video and audio in, text out
+    capabilities: { auth: 'api-key', vision: true },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.xiaomimimo.com/v1'),
+  },
+  hunyuan: {
+    meta: metaOf('hunyuan'),
+    // conservative: the chat models are documented for text first, so we do not
+    // hand them screenshots until a model card says otherwise
+    capabilities: { auth: 'api-key', vision: false },
+    // the mainland TokenHub host; the international one differs only by the
+    // `intl` label (tokenhub-intl.tencentcloudmaas.com), reachable by storing
+    // a base URL on this provider
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://tokenhub.tencentmaas.com/v1'),
+  },
+  ling: {
+    meta: metaOf('ling'),
+    // Ling-3.0-flash-VL reads images, so the provider is vision-capable;
+    // modelLacksVision() keeps the five text-only ids off screenshots
+    capabilities: { auth: 'api-key', vision: true },
+    // the base_url every official example uses (quickstart + OpenAI-compatible
+    // reference, read 2026-10-01); /v1/models on it answers 401
+    // sdk_token_not_found, so it is the live first-party host
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.ant-ling.com/v1'),
+  },
+  spark: {
+    meta: metaOf('spark'),
+    capabilities: { auth: 'api-key', vision: false },
+    // the MaaS base from section 1.1 of the product guide (read 2026-10-01):
+    // chat is POST https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions,
+    // which is this base plus the path endpointUrl() appends, so the two
+    // compose back to the documented URL. The same host also serves
+    // /v1/responses and /anthropic/v1/messages; we speak chat-completions
+    resolveEndpoint: fixedEndpoint(
+      'openai-compatible',
+      'https://maas-api.cn-huabei-1.xf-yun.com/v2',
+    ),
+  },
+  longcat: {
+    meta: metaOf('longcat'),
+    // 2.5-Preview reads images (2026-09-25 change log); modelLacksVision()
+    // holds 2.0 back, which predates image understanding
+    capabilities: { auth: 'api-key', vision: true },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.longcat.chat/openai/v1'),
+  },
   minimax: {
     meta: metaOf('minimax'),
-    capabilities: { auth: 'api-key', vision: false },
+    capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.minimax.io/v1'),
   },
   xai: {
@@ -290,6 +359,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     // one chat-completions endpoint for every pool and vendor route; the model id picks it
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.opper.ai/v3/compat'),
+  },
+  cheaperinference: {
+    meta: metaOf('cheaperinference'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every model; the model id picks the lab
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.cheaperinference.com/v1'),
   },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),

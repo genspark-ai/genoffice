@@ -137,3 +137,37 @@ describe('mergeSlideFromPptx layout anchor', () => {
     expect(layoutOf(base, anchored!)).toBe('../slideLayouts/slideLayout1.xml')
   })
 })
+
+describe('mergeSlideFromPptx content types', () => {
+  /**
+   * A deck whose [Content_Types].xml carries no Default for png — like the
+   * html→pptx pipeline's minimal decks, where the extension of an incoming
+   * merged image is genuinely new. #1518: the added Default was spliced right
+   * after the XML declaration (the first '>' in the file), i.e. outside the
+   * <Types> root, which makes the whole package unreadable.
+   */
+  async function deckWithoutPngDefault(): Promise<Uint8Array> {
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(await onePagePptx('FIRST'))
+    const types = (await zip.file('[Content_Types].xml')!.async('string'))!
+    zip.file('[Content_Types].xml', types.replace(/<Default Extension="png"[^>]*\/>/g, ''))
+    return new Uint8Array(await zip.generateAsync({ type: 'uint8array' }))
+  }
+
+  it('adds a missing Default inside <Types>, never between the declaration and the root', async () => {
+    const base = await openPptx(await deckWithoutPngDefault())
+    expect(await mergeSlideFromPptx(base, await onePagePptx('WITHIMG', true))).not.toBeNull()
+
+    const ct = base.archive.readText('[Content_Types].xml') ?? ''
+    // The root element starts before any Default and closes the document:
+    // nothing may sit between the XML declaration and <Types …>.
+    expect(ct.indexOf('<Types')).toBeGreaterThan(-1)
+    expect(ct.indexOf('<Default')).toBeGreaterThan(ct.indexOf('<Types'))
+    expect(ct.trimEnd().endsWith('</Types>')).toBe(true)
+    // The merged image's extension actually got its Default.
+    expect(ct).toContain('<Default Extension="png"')
+    // And the package still opens end to end.
+    const reopened = await openPptx(await savePptx(base))
+    expect(reopened.deck.slides.length).toBe(2)
+  })
+})

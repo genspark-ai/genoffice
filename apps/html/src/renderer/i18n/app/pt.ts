@@ -7,6 +7,7 @@ export const pt = {
   saveFailed: 'Falha ao salvar: {error}',
   saveFailedStatus: 'Falha ao salvar',
   exportFailed: 'Falha na exportação',
+  printFailed: 'Falha ao imprimir: {error}',
   exportHtmlSkipped:
     'Exportado, mas {count} recurso(s) não puderam ser incorporados (ex.: {first})',
   viewPreview: 'Visualizar',
@@ -121,6 +122,7 @@ export const pt = {
   insertImageUrl: 'Imagem da URL…',
   insertConfirm: 'Inserir',
   insertMore: 'Mais',
+  insertSkeleton: 'Inserir esqueleto',
   insertTableSize: 'Tabela {r}×{c}',
   insertTablePickSize: 'Escolher o tamanho da tabela',
   insertPlaceholderTableHeader: 'Cabeçalho {n}',

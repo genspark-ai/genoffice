@@ -9,7 +9,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
@@ -28,7 +28,7 @@ import {
   rendererUrl,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
-import { generateImageTool } from '@genoffice/ai-search'
+import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
@@ -903,6 +903,53 @@ function withSignatures(
 
 let ipcRegistered = false
 
+/** Filesystem seam for readMergeInputs; defaults to node:fs/promises */
+export interface MergeInputIo {
+  stat(path: string): Promise<{ size: number }>
+  readFile(path: string): Promise<Uint8Array>
+}
+
+/**
+ * Total size budget across the open document plus every merge-dialog pick.
+ * The merge used to hold every picked file in memory at once (Promise.all
+ * over readFile) on the main process — a singleton, where an OOM takes the
+ * whole app down, not one tab; 30 × 200 MB scans were enough to get there.
+ * 1 GiB comfortably covers realistic merge jobs while keeping the peak
+ * read footprint bounded.
+ */
+export const MAX_MERGE_TOTAL_BYTES = 1_073_741_824
+
+/**
+ * Stat + sum every merge input before anything is read — refusing an
+ * oversized merge must not require reading it first — then read the picked
+ * files one at a time (so at most one extra copy is live) and finally the
+ * base document, in the same order the merge appends them. Throws a readable
+ * error when the total crosses MAX_MERGE_TOTAL_BYTES.
+ */
+export async function readMergeInputs(
+  basePath: string,
+  pickedPaths: readonly string[],
+  io: MergeInputIo = { stat: (p) => stat(p), readFile: (p) => readFile(p) },
+): Promise<{ base: Uint8Array; others: Uint8Array[] }> {
+  // Same MB rounding the electron-utils remote-image cap error uses.
+  const asMb = (bytes: number): number => Math.round(bytes / (1024 * 1024))
+  let totalBytes = 0
+  for (const input of [basePath, ...pickedPaths]) {
+    totalBytes += (await io.stat(input)).size
+    if (totalBytes > MAX_MERGE_TOTAL_BYTES) {
+      throw new Error(
+        `pdf: merge too large — the selected files total ${asMb(totalBytes)} MB, ` +
+          `over the ${asMb(MAX_MERGE_TOTAL_BYTES)} MB merge limit`,
+      )
+    }
+  }
+  const others: Uint8Array[] = []
+  for (const pickedPath of pickedPaths) {
+    others.push(new Uint8Array(await io.readFile(pickedPath)))
+  }
+  return { base: new Uint8Array(await io.readFile(basePath)), others }
+}
+
 function registerPdfIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
@@ -1345,13 +1392,8 @@ function registerPdfIpc(): void {
       })
       if (picked.canceled || picked.filePaths.length === 0) return { ok: true, canceled: true }
       try {
-        const others = await Promise.all(
-          picked.filePaths.map(async (p) => new Uint8Array(await readFile(p))),
-        )
-        const { merged, appended } = await mergePdfBytes(
-          new Uint8Array(await readFile(path)),
-          others,
-        )
+        const { base, others } = await readMergeInputs(path, picked.filePaths)
+        const { merged, appended } = await mergePdfBytes(base, others)
         const targetPath = uniqueGeneratedPdfPath(
           configuredDefaultSaveDir(app),
           String(suggestedName || 'merged.pdf'),
@@ -1529,13 +1571,21 @@ function registerPdfIpc(): void {
 
   // pdf-owned (unlike ai:image-search / ai:fetch-image, which the shell registers app-wide):
   // slides' ai:generate-image is only registered once a slides view exists, so pdf needs its own
-  ipcMain.handle(
-    PDF_CHANNELS.generateImage,
-    (_e, op: { prompt?: unknown; aspectRatio?: unknown }) =>
-      generateImageTool(join(app.getPath('userData'), 'ai-settings.json'), {
+  ipcMain.handle(PDF_CHANNELS.generateImage, (e, op: { prompt?: unknown; aspectRatio?: unknown }) =>
+    generateImageTool(
+      join(app.getPath('userData'), 'ai-settings.json'),
+      {
         prompt: String(op?.prompt ?? ''),
         aspectRatio: op?.aspectRatio ? String(op.aspectRatio) : undefined,
-      }),
+      },
+      {
+        // pdf keeps its media (exported/edited images) beside the open file
+        mediaRoots: documentMediaRoots(
+          openPathByWc.get(e.sender.id),
+          join(app.getPath('temp'), 'genoffice-pasted'),
+        ),
+      },
+    ),
   )
 
   ipcMain.handle(PDF_CHANNELS.listSignatures, () => withSignatures(async (list) => list))

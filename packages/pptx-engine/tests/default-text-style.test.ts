@@ -3,6 +3,7 @@ import { parseDecorations, parseSlide } from '../src/parse'
 import {
   parseDefaultTextStyle,
   parsePlaceholderMap,
+  placeholderStyleChain,
   resolvePlaceholderFillSpPr,
 } from '../src/placeholder'
 
@@ -161,6 +162,42 @@ describe('presentation defaultTextStyle in table cells', () => {
     const tbl = slide.elements[0] as any
     expect(tbl.type).toBe('table')
     expect(tbl.rows[0][0].text.paragraphs[0].runs[0].fontSize).toBe(12)
+  })
+})
+
+describe('placeholder style lookup', () => {
+  const lvl = (fontSize: number) => ({ levels: [{ fontSize }] }) as any
+
+  it('does not let a dt idx=2 style pollute a body idx=2 lookup', () => {
+    const master = {
+      entries: [
+        { type: 'dt', idx: '2', transform: null, textStyle: lvl(8) },
+        { type: 'body', idx: '5', transform: null, textStyle: lvl(20) },
+      ],
+    } as any
+    const chain = placeholderStyleChain(undefined, master, undefined, 'body', '2')
+    expect(chain[0]?.levels[0]?.fontSize).toBe(20)
+  })
+
+  it('keeps idx matching for a legacy deck where the slide omits the type', () => {
+    // slide <p:ph idx="1"/> against a layout <p:ph type="obj" idx="1"/>: ECMA matches
+    // these by idx, so the step must still run for a non-function type.
+    const layout = {
+      entries: [{ type: 'obj', idx: '1', transform: null, textStyle: lvl(14) }],
+    } as any
+    const chain = placeholderStyleChain(undefined, layout, undefined, undefined, '1')
+    expect(chain[0]?.levels[0]?.fontSize).toBe(14)
+  })
+
+  it('skips a function placeholder on the idx-only step but still finds a real one', () => {
+    const master = {
+      entries: [
+        { type: 'ftr', idx: '1', transform: null, textStyle: lvl(9) },
+        { type: 'obj', idx: '1', transform: null, textStyle: lvl(16) },
+      ],
+    } as any
+    const chain = placeholderStyleChain(undefined, master, undefined, 'body', '1')
+    expect(chain[0]?.levels[0]?.fontSize).toBe(16)
   })
 })
 

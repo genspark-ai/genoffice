@@ -4,8 +4,19 @@
  * catastrophic-backtracking pattern could freeze the renderer past the step
  * limit. This matcher supports the subset layout scripts need (literals,
  * classes, groups, alternation, quantifiers, anchors, i/m/s flags) and charges
- * every match step against a hard budget instead.
+ * every match step against the interpreter-owned per-run pool instead.
  */
+
+/**
+ * The per-run regex step pool, created and owned by `interpretLayoutScript`.
+ * Every `RegexValue` of a script run — hoisted patterns and regex literals
+ * re-evaluated each iteration alike — draws from the same pool, so neither a
+ * per-call nor a per-compiled-pattern budget can be re-armed by looping.
+ */
+export interface RegexStepPool {
+  /** Steps remaining in the run; the matcher charges 1 per match step. */
+  remaining: number
+}
 
 type PredefName = 'd' | 'D' | 'w' | 'W' | 's' | 'S'
 
@@ -27,7 +38,6 @@ type RxNode =
 
 const MAX_PATTERN_LENGTH = 500
 const MAX_REPEAT_COUNT = 1000
-const MAX_MATCH_STEPS = 1_000_000
 const MAX_MATCH_DEPTH = 2000
 
 const BUDGET_MESSAGE = 'Layout script regular expression exceeded its execution budget'
@@ -60,7 +70,11 @@ const predefMatch = (name: PredefName, c: string): boolean => {
   }
 }
 
-export function compileBoundedRegex(source: string, flags: string): BoundedRegex {
+export function compileBoundedRegex(
+  source: string,
+  flags: string,
+  pool: RegexStepPool,
+): BoundedRegex {
   for (const flag of flags) if (!'gimsd'.includes(flag)) unavailable(`flag "${flag}"`)
   if (source.length > MAX_PATTERN_LENGTH)
     throw new Error(
@@ -338,12 +352,14 @@ export function compileBoundedRegex(source: string, flags: string): BoundedRegex
   }
   const anchoredOnly = !multiline && startsAnchored(root)
 
+  // No per-call and no per-compiled-pattern budget: every step is charged
+  // straight into the interpreter's per-run pool, so exhausting it aborts the
+  // whole script and near-budget catastrophic calls cannot be stacked.
   const test = (input: string): boolean => {
-    let budget = MAX_MATCH_STEPS
     let depth = 0
     const step = (): void => {
-      budget -= 1
-      if (budget < 0) throw new Error(BUDGET_MESSAGE)
+      pool.remaining -= 1
+      if (pool.remaining < 0) throw new Error(BUDGET_MESSAGE)
     }
 
     const match = (node: RxNode, at: number, cont: (p: number) => boolean): boolean => {

@@ -52,6 +52,24 @@ describe('decodeHeaderFooter', () => {
   it('accepts lowercase section markers', () => {
     expect(decodeHeaderFooter('&lLeft&rRight')).toEqual({ left: 'Left', right: 'Right' })
   })
+
+  it('keeps the character after an unrecognised code as literal text', () => {
+    // The decoder used to advance past any &X it did not know, so the
+    // character (or the space after the &) disappeared from the printout.
+    expect(decodeHeaderFooter('Tom&Jerry')).toEqual({ center: 'Tom&Jerry' })
+    expect(decodeHeaderFooter('R&D')).toEqual({ center: 'R&D' })
+    expect(decodeHeaderFooter('Tom & Jerry')).toEqual({ center: 'Tom & Jerry' })
+    expect(decodeHeaderFooter('&L50% & up')).toEqual({ left: '50% & up' })
+    // The recognised sequences keep behaving exactly as before: && and the
+    // field codes stay verbatim, and the formatting toggles stay stripped
+    // (&B is Excel's bold toggle, so "A&B" still prints a bold "A").
+    expect(decodeHeaderFooter('&LProfit && Loss')).toEqual({ left: 'Profit && Loss' })
+    expect(decodeHeaderFooter('&C&P of &N in &F')).toEqual({ center: '&P of &N in &F' })
+    expect(decodeHeaderFooter('&C&"Broadway,Bold"&12&KFF0000Big &BRed&B Title&Z')).toEqual({
+      center: 'Big Red Title',
+    })
+    expect(decodeHeaderFooter('A&B')).toEqual({ center: 'A' })
+  })
 })
 
 describe('printAreasFromFormula', () => {
@@ -79,6 +97,15 @@ describe('printAreasFromFormula', () => {
 
   it('returns [] when absent', () => {
     expect(printAreasFromFormula(undefined)).toEqual([])
+  })
+
+  it('normalises an area whose corners are reversed', () => {
+    // parseRange treats $B$4:$A$1 as A1:B4; the print layout reads an area
+    // positionally, so passing the pair through verbatim made the export
+    // abort with "this sheet has nothing printable" instead of printing.
+    expect(printAreasFromFormula("'S'!$B$4:$A$1")).toEqual(['A1:B4'])
+    expect(printAreasFromFormula("'S'!$D$3:$B$9")).toEqual(['B3:D9'])
+    expect(printAreasFromFormula("'S'!$B$2:$B$2")).toEqual(['B2:B2'])
   })
 })
 
@@ -286,6 +313,19 @@ describe('resolveEffectivePageSetup', () => {
       { kind: 'insert-rows', index: 0, count: 5 },
     ])
     expect(setup.printAreas).toEqual(['B2:C3'])
+  })
+
+  it('prints a reversed print area instead of refusing the export', () => {
+    // The whole chain: an inverted $B$4:$A$1 in the file's Print_Area used to
+    // reach parseArea positionally, the rows < 1 guard fired, and Export PDF
+    // refused outright. It must lay out A1:B4 like parseRange resolves it.
+    const setup = resolveEffectivePageSetup({}, null, { printArea: "'S'!$B$4:$A$1" })
+    expect(setup.printAreas).toEqual(['A1:B4'])
+    const payload = buildSheetPrintPayload(fakeWorksheet(), setup, 'Book.pdf', 'S1')
+    expect(payload.html).toContain('<table>')
+    // The normalised corners select the whole A1:B4 span, not a 0-row range.
+    expect(payload.html).toContain('A1')
+    expect(payload.html).toContain('B3')
   })
 
   it('drops title rows stretched past the cap by inserts between them', () => {

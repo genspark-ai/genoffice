@@ -92,8 +92,10 @@ function slotsOf(lines: BandLine[]): Slot[] {
     const sorted = [...group].sort((a, b) => a.edgeDist - b.edgeDist)
     let current: BandLine[] = []
     for (const line of sorted) {
-      const anchor = current[0]
-      if (anchor && line.edgeDist - anchor.edgeDist > EDGE_TOL_PT) {
+      // each step, not the slot's first line: a header baseline that drifts
+      // down the page stays one slot instead of shattering into partials
+      const prev = current[current.length - 1]
+      if (prev && line.edgeDist - prev.edgeDist > EDGE_TOL_PT) {
         slots.push({ lines: current, pages: new Set(current.map((l) => l.page)) })
         current = []
       }

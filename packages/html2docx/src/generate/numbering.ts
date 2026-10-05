@@ -32,6 +32,12 @@ function orderedReference(markerType) {
   )
 }
 
+// Computed list-style-type values that paint a glyph rather than a counter.
+// An <ol style="list-style-type: disc"> still arrives with ordered:true and
+// has no entry in orderedReference, so without this the renderer silently
+// falls back to decimal numbers for a list the browser draws with dots.
+const BULLET_MARKER_TYPES = new Set(['disc', 'circle', 'square'])
+
 function bulletNumberingLevels(text) {
   return Array.from({ length: 9 }, (_, level) => ({
     level,
@@ -74,4 +80,4 @@ function buildNumberingConfig() {
   ]
 }
 
-export { buildNumberingConfig, orderedReference }
+export { BULLET_MARKER_TYPES, buildNumberingConfig, orderedReference }

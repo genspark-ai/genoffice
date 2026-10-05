@@ -141,6 +141,7 @@ import { cfbKind, isCfbHeader } from './cfb-sniff'
 import { unplayableAudioCodec } from './mp4-audio-sniff'
 import { audioFrame, videoFrame, videoSize, type Point, type Size } from './video-size'
 import { AUDIO_EXTS, VIDEO_EXTS } from '../shared/media-kinds'
+import { baseName } from '../shared/base-name'
 import type {
   AddChartOp,
   AddCommentOp,
@@ -1755,6 +1756,16 @@ export function registerSlidesIpc(): void {
 
   ipcMain.handle('slides:cloud-gen-status', () => ({ enabled: cloudSlideEnabled() }))
 
+  // In-flight cloud generations of this window. Stop in the AI panel aborts
+  // every one of them — generation is sequential per panel, so a global-for-
+  // this-window cancel cannot hit an unrelated request.
+  const cloudPageAborts = new Set<AbortController>()
+
+  ipcMain.handle('slides:cloud-page-cancel', () => {
+    for (const c of cloudPageAborts) c.abort()
+    cloudPageAborts.clear()
+  })
+
   ipcMain.handle(
     'slides:cloud-page-generate',
     async (
@@ -1776,16 +1787,27 @@ export function registerSlidesIpc(): void {
         // comparisons and emergency rollback.
         const tier = process.env.GENOFFICE_CLOUD_SLIDE_TIER === 'standard' ? 'standard' : 'ultra'
         const started = Date.now()
-        const { bytes, model } = await gskSlideGenerate({
-          tier,
-          brief: String(op.brief ?? ''),
-          title: op.title ? String(op.title) : undefined,
-          styleSkill: op.styleSkill ? String(op.styleSkill) : undefined,
-          deckContext: op.deckContext,
-          images: Array.isArray(op.images) ? op.images : undefined,
-          width: op.width,
-          height: op.height,
-        })
+        // Stop must reach the cloud request: without this the generation keeps
+        // running (and billing) after the user pressed stop
+        const abort = new AbortController()
+        cloudPageAborts.add(abort)
+        let bytes: Uint8Array
+        let model: string
+        try {
+          ;({ bytes, model } = await gskSlideGenerate({
+            tier,
+            brief: String(op.brief ?? ''),
+            title: op.title ? String(op.title) : undefined,
+            styleSkill: op.styleSkill ? String(op.styleSkill) : undefined,
+            deckContext: op.deckContext,
+            images: Array.isArray(op.images) ? op.images : undefined,
+            width: op.width,
+            height: op.height,
+            signal: abort.signal,
+          }))
+        } finally {
+          cloudPageAborts.delete(abort)
+        }
         console.log(
           `[cloud-slide] page generated: tier=${tier} model=${model} bytes=${bytes.length} ms=${Date.now() - started}`,
         )
@@ -2551,6 +2573,7 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     session.fitWidthPx = op.fitWidthPx
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: op.sourceIndex + 1,
@@ -2593,6 +2616,10 @@ export function registerSlidesIpc(): void {
     if (!r.applied) return null
     const rec = r.records![0]!
     session.fitWidthPx = op.fitWidthPx
+    // Pasted slides are parsed fresh, so no element dirty flag is set: flag the
+    // session here or the paste is invisible to the close guard and autosave.
+    // repaste-slide re-runs this after restoring a snapshot that cleared the flag.
+    markMetaDirty(session)
     const created = r.records!.flatMap((x) => x.created ?? [])
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
@@ -2657,7 +2684,9 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     session.fitWidthPx = op.fitWidthPx
-    if (op.before) markMetaDirty(session)
+    // Always: the blank slide is parsed fresh, so neither structureDirty nor an
+    // element dirty flag is set and the insert would otherwise be unsaveable.
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: op.before ? op.sourceIndex : op.sourceIndex + 1,
@@ -2693,6 +2722,7 @@ export function registerSlidesIpc(): void {
       return null
     }
     session.fitWidthPx = op.fitWidthPx
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: op.sourceIndex + 1,
@@ -2967,7 +2997,9 @@ export function registerSlidesIpc(): void {
     const session = sessions.get(e.sender.id)
     if (!session) return null
     const r = sessionTxn(session, { ops: [{ op: 'deleteSlide', target: { slide: slideIndex } }] })
-    return r ? buildAllRenderSlides(session.opened, session.fitWidthPx) : null
+    if (!r) return null
+    markMetaDirty(session)
+    return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
   // Highest index first: every op is validated against the pre-transaction deck
@@ -2980,7 +3012,9 @@ export function registerSlidesIpc(): void {
     const r = sessionTxn(session, {
       ops: indexes.map((i) => ({ op: 'deleteSlide' as const, target: { slide: i } })),
     })
-    return r ? buildAllRenderSlides(session.opened, session.fitWidthPx) : null
+    if (!r) return null
+    markMetaDirty(session)
+    return buildAllRenderSlides(session.opened, session.fitWidthPx)
   })
 
   ipcMain.handle('slides:duplicate-slides', (e, op: DuplicateSlidesOp) => {
@@ -2997,7 +3031,9 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     session.fitWidthPx = op.fitWidthPx
-    if (steps.length > 1) markMetaDirty(session)
+    // Not just for multi-slide plans: a single duplicate is parsed fresh too and
+    // would otherwise leave the deck changed but reported clean.
+    markMetaDirty(session)
     return {
       slides: buildAllRenderSlides(session.opened, op.fitWidthPx),
       index: Math.max(...op.slideIndexes) + 1,
@@ -3811,7 +3847,7 @@ export function registerSlidesIpc(): void {
       const filePath = r.filePaths[0]
       const bytes = new Uint8Array(await readFile(filePath))
       const ext = filePath.split('.').pop()!.toLowerCase()
-      const fileName = filePath.split('/').pop()!
+      const fileName = baseName(filePath)
 
       // Warn up front, before the file lands on the slide
       const detail = mediaPlaybackWarning(kind, ext, bytes)
@@ -3935,7 +3971,7 @@ export function registerSlidesIpc(): void {
             cx,
             cy,
           },
-          name: filePath.split('/').pop()!,
+          name: baseName(filePath),
         },
       ],
     })
@@ -4118,6 +4154,9 @@ export function registerSlidesIpc(): void {
         trigger: a.trigger,
         durationMs: a.durationMs,
         delayMs: a.delayMs,
+        // a modelled directional effect carries its own direction; a top wipe must not
+        // come back to the player as a bare 'wipe' and play bottom-up
+        ...(a.direction != null ? { direction: a.direction } : {}),
         ...(a.motionPath != null ? { motionPath: a.motionPath } : {}),
         ...(a.paragraph != null ? { paragraph: a.paragraph } : {}),
       })

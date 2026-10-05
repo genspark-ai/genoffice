@@ -266,7 +266,7 @@ export function detectTocRows(units: readonly LineUnit[]): DetectedTocRows {
 export function detectTocBlocks(blocks: TextBlock[]): TextBlock[] {
   const matches = new Map<Line, { title: string; pageNumber: string }>()
   for (const block of blocks) {
-    if (block.list || block.dir === 'rtl') continue
+    if (block.list) continue
     for (const line of block.lines) {
       const m = TOC_LINE_RE.exec(line.spans.map((s) => s.text).join(''))
       if (m) matches.set(line, { title: m[1]!, pageNumber: m[3]! })

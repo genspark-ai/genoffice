@@ -1051,10 +1051,12 @@ export const workbookRecalcRequestSchema = z
             sheetId: z.string().min(1),
             range: z
               .object({
-                startRow: z.number().int().nonnegative(),
-                endRow: z.number().int().nonnegative(),
-                startColumn: z.number().int().nonnegative(),
-                endColumn: z.number().int().nonnegative(),
+                // the xlsx sheet limits, 0-indexed — a larger value would reach
+                // the Rust engine as usize and truncate on the i32 cast there
+                startRow: z.number().int().nonnegative().max(1_048_575),
+                endRow: z.number().int().nonnegative().max(1_048_575),
+                startColumn: z.number().int().nonnegative().max(16_383),
+                endColumn: z.number().int().nonnegative().max(16_383),
               })
               .strict(),
           })
@@ -2593,6 +2595,15 @@ export interface DesktopApi {
   selectWorkbooksForMerge(): Promise<WorkbookFile[] | null>
   /** open explicit spreadsheet paths (chat attachments) as merge-source sessions */
   openWorkbooksForMerge(paths: string[]): Promise<WorkbookFile[] | null>
+  /// Re-open a known path through the normal open path (the pipeline
+  /// selectWorkbook runs) to adopt a live session after a sidecar crash.
+  /// Not the merge-source open: a recovered workbook is a normal session, and
+  /// a csv/xls is imported as the workbook itself, not as a merge input.
+  reopenWorkbook(path: string): Promise<WorkbookFile | null>
+  /// The sidecar process died: every session id this renderer holds is gone.
+  /// A positive crash signal — the main process raises it only for an actual
+  /// process death, never for a session it closed or swapped on purpose.
+  onSidecarCrashed(callback: () => void): () => void
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>

@@ -2,7 +2,7 @@
 /// English-only and (for role:'windowMenu' on Windows/Linux) follow macOS
 /// conventions (Zoom, Ctrl+M minimize, Bring All to Front).
 import type { MenuItemConstructorOptions, WebContents } from 'electron'
-import { contextMenuLabels, type ContextMenuLabels } from './context-menu'
+import { baseLang, contextMenuLabels, type ContextMenuLabels } from './context-menu'
 
 export interface AppMenuLabels extends ContextMenuLabels {
   window: string
@@ -477,7 +477,7 @@ const LABELS: Record<string, Labels> = {
 }
 
 export function appMenuLabels(lang: string): AppMenuLabels {
-  return { ...contextMenuLabels(lang), ...(LABELS[lang] ?? EN) }
+  return { ...contextMenuLabels(lang), ...(LABELS[lang] ?? LABELS[baseLang(lang)] ?? EN) }
 }
 
 /** macOS keeps the native role (Minimize/Zoom/Front, window list); Windows/Linux

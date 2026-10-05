@@ -43,6 +43,30 @@ export function lineLeadPx(el: HTMLElement): number {
   return lh * (1 - 1 / mult)
 }
 
+/**
+ * Per-top-level-block buckets for the whole-flow scans below: one
+ * querySelectorAll per selector over the flow instead of a subtree scan per
+ * block — the scan returns only matches, so a document of plain paragraphs
+ * pays a handful of whole-DOM walks instead of one per block (genoffice#526).
+ * Each hit climbs to its top-level owner (a direct child of the flow root);
+ * hits outside any block (page-gap widgets) land under the widget element and
+ * are never looked up. Bucket lists keep document order, matching what the
+ * per-block scans returned.
+ */
+function bucketByBlock(pm: HTMLElement, selector: string): Map<HTMLElement, HTMLElement[]> {
+  const byOwner = new Map<HTMLElement, HTMLElement[]>()
+  for (const hit of pm.querySelectorAll(selector)) {
+    let owner = hit.parentElement
+    while (owner && owner.parentElement !== pm) owner = owner.parentElement
+    if (!owner || owner === pm) continue
+    const el = owner as HTMLElement
+    const list = byOwner.get(el)
+    if (list) list.push(hit as HTMLElement)
+    else byOwner.set(el, [hit as HTMLElement])
+  }
+  return byOwner
+}
+
 export function measureBlocks(
   pm: HTMLElement,
   origin: number,
@@ -57,6 +81,12 @@ export function measureBlocks(
   // anchor paragraph beside the last portion, so it is not a gap; its height
   // is reported on the block it precedes
   let carryApplied = 0
+  const breaksByBlock = bucketByBlock(pm, '.doc-field-pagebreak, .doc-page-br')
+  const colBreaksByBlock = bucketByBlock(pm, '.doc-col-br')
+  const gapInlinesByBlock = bucketByBlock(pm, '.page-gap-inline')
+  const relImgsByBlock = bucketByBlock(pm, '.doc-inline-img-anchor > img[data-page-rel-v="1"]')
+  const imgsByBlock = bucketByBlock(pm, 'img')
+  const tablesByBlock = bucketByBlock(pm, 'table')
   for (const el of Array.from(pm.children) as HTMLElement[]) {
     const rect = el.getBoundingClientRect()
     if (el.classList.contains('page-gap') || el.classList.contains('page-float-host')) {
@@ -96,9 +126,7 @@ export function measureBlocks(
       }
     }
     // run-level page-relative pictures re-pin like floating boxes (origin = hosting paragraph)
-    for (const img of Array.from(
-      el.querySelectorAll<HTMLElement>('.doc-inline-img-anchor > img[data-page-rel-v="1"]'),
-    )) {
+    for (const img of relImgsByBlock.get(el) ?? []) {
       const b = img.getBoundingClientRect()
       if (b.height <= 0) continue
       const applied = parseFloat(img.dataset.pageFloatDy ?? '0') || 0
@@ -122,11 +150,9 @@ export function measureBlocks(
     }
     // Word ignores page-type w:br inside table cells, and breaks inside a
     // textbox lay out that box's own text — neither may break the body flow
-    const breakEls = Array.from(el.querySelectorAll('.doc-field-pagebreak, .doc-page-br')).filter(
-      (b) => !b.closest('td, th, .doc-textbox'),
-    )
+    const breakEls = (breaksByBlock.get(el) ?? []).filter((b) => !b.closest('td, th, .doc-textbox'))
     const hasBreak = breakEls.length > 0
-    const colBreakEls = Array.from(el.querySelectorAll('.doc-col-br')).filter(
+    const colBreakEls = (colBreaksByBlock.get(el) ?? []).filter(
       (b) => !b.closest('td, th, .doc-textbox'),
     )
     const hasColBreak = colBreakEls.length > 0
@@ -134,7 +160,8 @@ export function measureBlocks(
     // textbox whose anchor paragraph holds a page-type w:br) must still be seen
     if (rect.height <= 0 && !hasBreak) continue
     // in-block gaps from mid-paragraph page breaks: subtract from block height and add to the gap accumulator for later blocks
-    const innerGap = innerGapHeight(el)
+    let innerGap = 0
+    for (const g of gapInlinesByBlock.get(el) ?? []) innerGap += g.getBoundingClientRect().height
     const top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
@@ -147,7 +174,7 @@ export function measureBlocks(
     // 20260901: a double-spaced Calibri 11pt break line absorbs at 14pt remaining,
     // while an exact line demands its full exact height), so auto multiples above
     // 1 are divided out.
-    const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !el.querySelector('img')
+    const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !imgsByBlock.get(el)?.length
     const brLines = breakOnly ? el.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length : 0
     let breakOnlyLineH: number | undefined
     if (breakOnly) {
@@ -180,9 +207,7 @@ export function measureBlocks(
     // net of inline gaps a previous pass already inserted there
     const innerBreaks: number[] = []
     if (hasBreak) {
-      const gapRects = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
-        g.getBoundingClientRect(),
-      )
+      const gapRects = (gapInlinesByBlock.get(el) ?? []).map((g) => g.getBoundingClientRect())
       const gapAbove = (y: number) => gapRects.reduce((s, g) => (g.top <= y ? s + g.height : s), 0)
       const r = document.createRange()
       const brs = breakEls.map((b) => {
@@ -226,13 +251,13 @@ export function measureBlocks(
     const relVAnchor = el.dataset.tblpVanchor
     const relVSpec = el.dataset.tblpVspec
     const relVApplied = Number.isFinite(relVy) ? parseFloat(el.dataset.tblpDy ?? '') || 0 : 0
-    const emptyPara = !(el.textContent ?? '').trim() && !el.querySelector('img')
+    const emptyPara = !(el.textContent ?? '').trim() && !imgsByBlock.get(el)?.length
     // non-reflowable blocks keep their rendered width in any column (tables,
     // anchored/inline textbox shapes; protected text paragraphs still reflow)
     const fixedWidth =
       el.tagName === 'TABLE' ||
       el.classList.contains('doc-protected-textboxes') ||
-      !!el.querySelector('table')
+      !!tablesByBlock.get(el)?.length
     const bandKeep = el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating')
     const liftPx = parseFloat(el.dataset.tblpLift ?? '')
     blocks.push({
@@ -294,7 +319,7 @@ export function measureBlocks(
   // (space-before semantics: counted before the block's own lines)
   const first = blocks[0]
   const firstIsTable =
-    !!first?.el && (first.el.matches('table') || !!first.el.querySelector('table'))
+    !!first?.el && (first.el.matches('table') || !!tablesByBlock.get(first.el)?.length)
   if (blocks.length > 0 && first.top > 0.5 && !firstIsTable) {
     const lead = blocks[0].top
     blocks[0].spaceBeforePx = (blocks[0].spaceBeforePx ?? 0) + lead
@@ -574,11 +599,4 @@ export function applyBlockMeta(
       }
     }
   }
-}
-
-/** Total height of in-block inline gaps (mid-paragraph page-break decorations) (screen px) */
-function innerGapHeight(el: HTMLElement): number {
-  let sum = 0
-  for (const g of el.querySelectorAll('.page-gap-inline')) sum += g.getBoundingClientRect().height
-  return sum
 }

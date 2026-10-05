@@ -82,6 +82,36 @@ pub(crate) fn read_zip_string(
     Ok(value)
 }
 
+/// Copies a zip entry, refusing to deliver more than the smaller of the size it
+/// declares and the caller's cap.
+///
+/// `ZipFile::size()` is the central directory's *declared* uncompressed length,
+/// and zip 4.6.1's `find_content` bounds only the compressed input by
+/// `compressed_size`, so a part may claim twelve bytes and still inflate to
+/// whatever its deflate stream carries. A gate that reads the declaration and
+/// then copies the remainder bounds nothing: the hidden payload is materialised
+/// in full before anything notices. Reading one byte past the claim keeps the
+/// cost of a part tracking its declaration — an honest entry stops at its own
+/// length, a lying one is caught here — which is the metered limit
+/// `@genoffice/zip-gate` enforces for the docx and pptx engines (#781) and the
+/// attachment parsers (#1386). Those callers are TypeScript and cannot be
+/// called from this crate, so the same rule is enforced on the read itself.
+pub(crate) fn copy_entry_bounded<R: Read, W: Write>(
+    entry: &mut R,
+    declared: u64,
+    cap: u64,
+    out: &mut W,
+) -> Result<u64, SidecarError> {
+    let allowance = declared.min(cap);
+    let copied = std::io::copy(&mut entry.take(allowance.saturating_add(1)), out)?;
+    if copied > allowance {
+        return Err(SidecarError::Workbook(
+            "ZIP entry inflates past the size it declares.".into(),
+        ));
+    }
+    Ok(copied)
+}
+
 pub(crate) fn attribute_value<R: std::io::BufRead>(
     reader: &Reader<R>,
     element: &BytesStart<'_>,

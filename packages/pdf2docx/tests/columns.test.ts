@@ -1,10 +1,16 @@
 /** XY-Cut section/column detection unit tests: hand-built chars, no wasm. */
 import { describe, expect, it } from 'vitest'
 import { analyzePage } from '../src/analyze'
-import { detectSections, type SectionElement } from '../src/analyze/columns'
+import {
+  detectSections,
+  mergeTwinSections,
+  type LayoutSection,
+  type SectionElement,
+} from '../src/analyze/columns'
 import { clusterCombiningMarks, groupIntoLines } from '../src/analyze/lines'
 import { splitIntoUnits } from '../src/analyze/units'
 import type { ExtractedPage } from '../src/extract'
+import type { Rect } from '../src/geometry'
 import type { PdfChar } from '../src/ir'
 import { mkChar, mkText } from './helpers/chars'
 
@@ -415,5 +421,43 @@ describe('mergeTwinSections / leader index pages (P22 D)', () => {
     }
     const page = analyzePage(extractedPage(chars))
     expect(page.sections!.every((s) => s.columns.length === 1)).toBe(true)
+  })
+
+  it('does not merge LTR and RTL sections with the same split', () => {
+    // two adjacent two-column sections sharing the same gutter, differing
+    // only in reading direction: the twin test must not fuse them, or the
+    // RTL half inherits the LTR dir and its column order is rebuilt wrong
+    const sect = (top: number, dir: 'ltr' | 'rtl'): LayoutSection => {
+      const box: Rect = { x0: 60, y0: top, x1: 460, y1: top + 60 }
+      return {
+        box,
+        columns: [
+          { box: { x0: 60, y0: top, x1: 240, y1: top + 60 }, elements: [] },
+          { box: { x0: 260, y0: top, x1: 460, y1: top + 60 }, elements: [] },
+        ],
+        gutters: [{ lo: 240, hi: 260 }],
+        dir,
+      }
+    }
+    const merged = mergeTwinSections([sect(700, 'ltr'), sect(640, 'rtl')])
+    expect(merged).toHaveLength(2)
+    expect(merged[0]!.dir).toBe('ltr')
+    expect(merged[1]!.dir).toBe('rtl')
+  })
+
+  it('still merges a same-dir pair with the same split', () => {
+    const sect = (top: number, dir: 'ltr' | 'rtl'): LayoutSection => {
+      const box: Rect = { x0: 60, y0: top, x1: 460, y1: top + 60 }
+      return {
+        box,
+        columns: [
+          { box: { x0: 60, y0: top, x1: 240, y1: top + 60 }, elements: [] },
+          { box: { x0: 260, y0: top, x1: 460, y1: top + 60 }, elements: [] },
+        ],
+        gutters: [{ lo: 240, hi: 260 }],
+        dir,
+      }
+    }
+    expect(mergeTwinSections([sect(700, 'rtl'), sect(640, 'rtl')])).toHaveLength(1)
   })
 })

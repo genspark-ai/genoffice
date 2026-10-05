@@ -647,7 +647,16 @@ function augmentGridRowBoundaries(grid: TableGrid, chars: readonly PdfChar[]): v
     if (!crossed) inner.push(c.pos)
   }
   if (inner.length === 0) return
+  const kept: number[] = []
   for (const pos of inner) {
+    // the MIN_CELL_DIM merge solveGrid's dedupe already applied, re-applied
+    // between the new boundaries themselves: only the PRE-EXISTING ys are
+    // checked above, so two junction clusters that close (clustering splits
+    // at POS_TOL 2.0, this merges below 3.0) both survived and became two
+    // hLines 2-3pt apart — a hairline row, virtual so bordered, splitting
+    // the real row it was recovered from in two
+    if (kept.some((o) => Math.abs(o - pos) < MIN_CELL_DIM)) continue
+    kept.push(pos)
     grid.hLines.push({ pos, segments: [[grid.box.x0, grid.box.x1]], virtual: true })
   }
   grid.hLines.sort((a, b) => b.pos - a.pos) // top → bottom, like solveGrid

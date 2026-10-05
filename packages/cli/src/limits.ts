@@ -37,6 +37,7 @@ const FAMILY: Record<string, keyof typeof LIMITS> = {
   potx: 'pptx',
   potm: 'pptx',
   ppsx: 'pptx',
+  ppsm: 'pptx',
 }
 
 /** Real OOXML parts deflate well under 100:1; a bomb declares thousands to one. */

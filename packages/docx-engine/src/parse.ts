@@ -375,7 +375,9 @@ export async function parseDocx(
   const noteNumbers = noteNumbersOf(documentXml, footnotes, endnotes, footnoteProps, endnoteProps)
 
   const rangedCommentIds = new Set(
-    [...documentXml.matchAll(/<w:commentRangeStart [^>]*w:id="([^"]+)"/g)].map((m) => m[1]),
+    [...documentXml.matchAll(/<w:commentRangeStart\b[^>]*\bw:id\s*=\s*["']([^"']+)["']/g)].map(
+      (m) => m[1],
+    ),
   )
   const referenceOnlyComments = new Set(
     comments.map((c) => c.id).filter((id) => !rangedCommentIds.has(id)),
@@ -733,7 +735,7 @@ async function expandAltChunk(
   numbering: Map<string, NumberingDef>,
   sourcePath = 'word/document.xml',
 ): Promise<Block[]> {
-  const rId = /\br:id="([^"]+)"/.exec(xml)?.[1]
+  const rId = /\br:id\s*=\s*["']([^"']+)["']/.exec(xml)?.[1]
   if (!rId) return []
   try {
     const bytes = await altChunkToDocx(
@@ -2946,17 +2948,19 @@ function extractTextboxes(
       (meta.anchored || !xml.includes('<wp:anchor'))
     ) {
       const rId =
-        /<a:blip[^>]*r:embed="([^"]+)"/.exec(frag)?.[1] ??
-        /<a:blip[^>]*r:link="([^"]+)"/.exec(frag)?.[1]
+        /<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/.exec(frag)?.[1] ??
+        /<a:blip[^>]*r:link\s*=\s*["']([^"']+)["']/.exec(frag)?.[1]
       const dataUrl = rId ? ctx.mediaByRid?.get(rId) : undefined
-      const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(frag)
-      if (dataUrl && extent) {
+      const extentTag = /<wp:extent[^>]*\/?>/.exec(frag)?.[0] ?? ''
+      const extCx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
+      const extCy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
+      if (dataUrl && Number.isFinite(extCx) && Number.isFinite(extCy)) {
         const box: TextboxDisplay = {
           paras: [],
           readOnly: true,
           fillImageDataUrl: dataUrl,
-          widthPx: emuToPx(parseInt(extent[1], 10)),
-          heightPx: emuToPx(parseInt(extent[2], 10)),
+          widthPx: emuToPx(extCx),
+          heightPx: emuToPx(extCy),
           insetTopPx: 0,
           insetRightPx: 0,
           insetBottomPx: 0,
@@ -4124,7 +4128,11 @@ function extractRuns(
         const rId = attrs['r:id']
         const anchor = attrs['w:anchor']
         const tooltip = attrs['w:tooltip']
-        const href = rId ? (ctx.rels.get(rId)?.target ?? '') : anchor ? `#${anchor}` : ''
+        const href = rId
+          ? `${ctx.rels.get(rId)?.target ?? ''}${anchor ? `#${anchor}` : ''}`
+          : anchor
+            ? `#${anchor}`
+            : ''
         const first = runs.length
         walk(childrenOf(node), { href, rId, ...(tooltip ? { tooltip } : {}) }, rev)
         // Word paints a bookmark link only through its character style: an
@@ -4232,13 +4240,13 @@ function buildRun(
     const drawing = findChild(rNode, 'w:drawing') ?? (choice && findChild(choice, 'w:drawing'))
     if (drawing) {
       const drawingXml = serializeXNode(drawing)
-      const rId = /<a:blip[^>]*r:(?:embed|link)="([^"]+)"/.exec(drawingXml)?.[1]
+      const rId = /<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']/.exec(drawingXml)?.[1]
       const dataUrl = rId ? mediaByRid.get(rId) : undefined
       if (dataUrl) {
         image = { dataUrl, xml: drawingXml }
-        const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(drawingXml)
-        const cx = Number(extent?.[1])
-        const cy = Number(extent?.[2])
+        const extentTag = /<wp:extent[^>]*\/?>/.exec(drawingXml)?.[0] ?? ''
+        const cx = Number(/\bcx\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? NaN)
+        const cy = Number(/\bcy\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? NaN)
         if (cx > 0) image.widthPx = emuToPx(cx)
         if (cy > 0) image.heightPx = emuToPx(cy)
         const border = picBorderOf(drawingXml)
@@ -4266,7 +4274,7 @@ function buildRun(
           // Word centers the object on the anchor line (tdf#162551: the picture
           // juts above the line rather than hanging below it)
           if (
-            /<wp:positionV[^>]*relativeFrom="line"[^>]*>\s*<wp:align>center<\/wp:align>/.test(
+            /<wp:positionV[^>]*relativeFrom\s*=\s*["']line["'][^>]*>\s*<wp:align>center<\/wp:align>/.test(
               drawingXml,
             )
           )
@@ -5475,7 +5483,7 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
     // mc:AlternateContent may hold several blips (mac Word: PDF Choice + PNG
     // Fallback); use the first one whose media resolves
     let dataUrl: string | null = null
-    for (const b of frag.matchAll(/<a:blip[^>]*r:embed="([^"]+)"/g)) {
+    for (const b of frag.matchAll(/<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/g)) {
       dataUrl = await mediaDataUrl(zip, rels, b[1], partPath)
       if (dataUrl) break
     }
@@ -5484,8 +5492,8 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
     if (!dataUrl) continue
     const image: HfImage = { dataUrl }
     const extent = /<wp:extent[^>]*\/?>/.exec(frag)?.[0] ?? ''
-    const cx = parseInt(/cx="(\d+)"/.exec(extent)?.[1] ?? '', 10)
-    const cy = parseInt(/cy="(\d+)"/.exec(extent)?.[1] ?? '', 10)
+    const cx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extent)?.[1] ?? '', 10)
+    const cy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extent)?.[1] ?? '', 10)
     if (Number.isFinite(cx) && cx > 0) image.widthPx = emuToPx(cx)
     if (Number.isFinite(cy) && cy > 0) image.heightPx = emuToPx(cy)
     // a:srcRect source crop: two same-image anchors cropped to different
@@ -5671,7 +5679,7 @@ async function hfGroupPictures(
     const cx = (attrNum(size, 'cx') ?? 0) * sx
     const cy = (attrNum(size, 'cy') ?? 0) * sy
     if (cx <= 0 || cy <= 0) return null
-    const rId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(pic)?.[1]
+    const rId = /<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/.exec(pic)?.[1]
     const dataUrl = rId ? await mediaDataUrl(zip, rels, rId, sourcePath) : null
     if (!dataUrl) continue
     const image: HfImage = {
@@ -5824,10 +5832,11 @@ function hfCellColumnLeftPx(xml: string, at: number): number {
   if (!tbl || tbl.row < 0) return 0
   const { start: tblStart, row: rowStart } = tbl
   const head = xml.slice(tblStart, tbl.firstRow)
-  const tblInd = parseInt(/<w:tblInd\b[^>]*\bw:w="(-?\d+)"/.exec(head)?.[1] ?? '0', 10) || 0
+  const tblInd =
+    parseInt(/<w:tblInd\b[^>]*\bw:w\s*=\s*["'](-?\d+)["']/.exec(head)?.[1] ?? '0', 10) || 0
   const grid = Array.from(
     (/<w:tblGrid>([\s\S]*?)<\/w:tblGrid>/.exec(head)?.[1] ?? '').matchAll(
-      /<w:gridCol\b[^>]*\bw:w="(\d+)"/g,
+      /<w:gridCol\b[^>]*\bw:w\s*=\s*["'](\d+)["']/g,
     ),
     (g) => parseInt(g[1], 10),
   )
@@ -5835,7 +5844,8 @@ function hfCellColumnLeftPx(xml: string, at: number): number {
   let cols = 0
   const cells = Array.from(before.matchAll(/<w:tc[\s>]([\s\S]*?)(?=<w:p[\s>]|<w:tc[\s>]|$)/g))
   for (const cell of cells.slice(0, -1)) {
-    cols += parseInt(/<w:gridSpan\b[^>]*\bw:val="(\d+)"/.exec(cell[1])?.[1] ?? '1', 10) || 1
+    cols +=
+      parseInt(/<w:gridSpan\b[^>]*\bw:val\s*=\s*["'](\d+)["']/.exec(cell[1])?.[1] ?? '1', 10) || 1
   }
   const twips = tblInd + grid.slice(0, cols).reduce((a, b) => a + b, 0)
   return Math.round(twips / 15)
@@ -5856,8 +5866,8 @@ async function hfTableMedia(
   for (const [start, end] of hfTblRanges(partXml)) {
     const slice = partXml.slice(start, end)
     const refs = [
-      ...slice.matchAll(/<a:blip[^>]*r:(?:embed|link)="([^"]+)"/g),
-      ...slice.matchAll(/<v:imagedata[^>]*r:id="([^"]+)"/g),
+      ...slice.matchAll(/<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']/g),
+      ...slice.matchAll(/<v:imagedata[^>]*r:id\s*=\s*["']([^"']+)["']/g),
     ]
     for (const m of refs) {
       const rId = m[1]
@@ -7022,8 +7032,8 @@ function imageMeta(xml: string): ImageMeta {
   }
   const extent = /<wp:extent[^>]*\/?>/.exec(xml)?.[0]
   if (extent) {
-    const cx = parseInt(/cx="(\d+)"/.exec(extent)?.[1] ?? '', 10)
-    const cy = parseInt(/cy="(\d+)"/.exec(extent)?.[1] ?? '', 10)
+    const cx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extent)?.[1] ?? '', 10)
+    const cy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extent)?.[1] ?? '', 10)
     if (Number.isFinite(cx) && cx > 0) meta.imageWidthPx = emuToPx(cx)
     if (Number.isFinite(cy) && cy > 0) meta.imageHeightPx = emuToPx(cy)
   }
@@ -7074,25 +7084,28 @@ function imageMeta(xml: string): ImageMeta {
   const anchor = /<wp:anchor[^>]*>/.exec(xml)?.[0]
   if (anchor) {
     const wrapDistance = (attr: string): number | undefined => {
-      const value = Number(new RegExp(`\\b${attr}="(\\d+)"`).exec(anchor)?.[1] ?? NaN)
+      const value = Number(new RegExp(`\\b${attr}\\s*=\\s*["'](\\d+)["']`).exec(anchor)?.[1] ?? NaN)
       return Number.isFinite(value) ? value : undefined
     }
     meta.imageWrapDistTopEmu = wrapDistance('distT')
     meta.imageWrapDistBottomEmu = wrapDistance('distB')
     meta.imageWrapDistLeftEmu = wrapDistance('distL')
     meta.imageWrapDistRightEmu = wrapDistance('distR')
-    if (/allowOverlap="(?:0|false)"/.test(anchor)) meta.imageNoOverlap = true
-    if (/\blocked="(?:1|true)"/.test(anchor)) meta.imageAnchorLocked = true
+    if (/allowOverlap\s*=\s*["'](?:0|false)["']/.test(anchor)) meta.imageNoOverlap = true
+    if (/\blocked\s*=\s*["'](?:1|true)["']/.test(anchor)) meta.imageAnchorLocked = true
     // relativeHeight = 251658240 base + zOrder; keep the delta so overlapping
     // anchors round-trip their paint order and the editor can reorder them
-    const relHeight = Number(/relativeHeight="(\d+)"/.exec(anchor)?.[1] ?? NaN)
+    const relHeight = Number(/relativeHeight\s*=\s*["'](\d+)["']/.exec(anchor)?.[1] ?? NaN)
     if (Number.isFinite(relHeight)) {
       const z = relHeight - 251658240
       if (z !== 0) meta.imageZOrder = z
     }
     // an explicit wrap element wins over behindDoc: Word draws a
     // behindDoc+wrapTight object behind the text and still wraps around it
-    if (/behindDoc="1"/.test(anchor) && !/<wp:wrap(Square|Tight|Through|TopAndBottom)/.test(xml))
+    if (
+      /behindDoc\s*=\s*["']1["']/.test(anchor) &&
+      !/<wp:wrap(Square|Tight|Through|TopAndBottom)/.test(xml)
+    )
       meta.imageWrap = 'behind'
     else if (/<wp:wrapTopAndBottom/.test(xml)) meta.imageWrap = 'topBottom'
     else if (/<wp:wrap(Square|Tight|Through)/.test(xml)) {
@@ -7102,7 +7115,7 @@ function imageMeta(xml: string): ImageMeta {
       // column-relative only: margin/page align pairs are the position-gallery
       // presets and keep their square wrap (imagePosH/V round-trip)
       const alignCenter =
-        /<wp:positionH[^>]*relativeFrom="column"[^>]*>(?:(?!<\/wp:positionH>)[\s\S])*?<wp:align>center<\/wp:align>/.test(
+        /<wp:positionH[^>]*relativeFrom\s*=\s*["']column["'][^>]*>(?:(?!<\/wp:positionH>)[\s\S])*?<wp:align>center<\/wp:align>/.test(
           xml,
         )
       // wrapText names the side the text goes on — the object floats opposite;
@@ -7110,10 +7123,12 @@ function imageMeta(xml: string): ImageMeta {
       // half on Letter/A4) means it hugs the right side: a left-edge test
       // misclassifies wide pictures whose X sits before the midline but whose
       // body fills the right half (public issue #118)
-      const wrapText = /<wp:wrap(?:Square|Tight|Through)[^>]*wrapText="([^"]+)"/.exec(xml)?.[1]
+      const wrapText = /<wp:wrap(?:Square|Tight|Through)[^>]*wrapText\s*=\s*["']([^"']+)["']/.exec(
+        xml,
+      )?.[1]
       const posH = /<wp:positionH[^>]*>([\s\S]*?)<\/wp:positionH>/.exec(xml)?.[1] ?? ''
       const offX = Number(/<wp:posOffset>(-?\d+)<\/wp:posOffset>/.exec(posH)?.[1] ?? NaN)
-      const extentCx = Number(/<wp:extent[^>]*\bcx="(\d+)"/.exec(xml)?.[1] ?? NaN)
+      const extentCx = Number(/<wp:extent[^>]*\bcx\s*=\s*["'](\d+)["']/.exec(xml)?.[1] ?? NaN)
       const centerX = offX + (Number.isFinite(extentCx) ? extentCx / 2 : 0)
       const side =
         alignRight || wrapText === 'left' || (wrapText !== 'right' && centerX > 4680 * 635)
@@ -7325,9 +7340,10 @@ async function tableBlipMedia(
       if (from === -1) continue
       slice = slice.slice(from, slice.lastIndexOf('</w:tbl>') + '</w:tbl>'.length)
     }
-    for (const m of slice.matchAll(/<a:blip[^>]*r:(?:embed|link)="([^"]+)"/g)) rIds.add(m[1])
+    for (const m of slice.matchAll(/<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']/g))
+      rIds.add(m[1])
     // legacy VML pictures and OLE previews inside cells (w:pict / w:object)
-    for (const m of slice.matchAll(/<v:imagedata[^>]*r:id="([^"]+)"/g)) rIds.add(m[1])
+    for (const m of slice.matchAll(/<v:imagedata[^>]*r:id\s*=\s*["']([^"']+)["']/g)) rIds.add(m[1])
   }
   for (const rId of rIds) {
     const rel = rels.get(rId)
@@ -7347,12 +7363,13 @@ const RICH_DRAWING_RE = /<c:chart|<cx:chart|<dgm:|r:dm=|<lc:lockedCanvas|<wps:ws
 
 /** true when the paragraph holds a picture whose media resolves (media is cached for extractRuns) */
 async function hasResolvablePicture(xml: string, ctx: BuildContext): Promise<boolean> {
-  if (!/<a:blip[^>]*r:(?:embed|link)="|<v:imagedata[^>]*r:id="/.test(xml)) return false
+  if (!/<a:blip[^>]*r:(?:embed|link)\s*=\s*["']|<v:imagedata[^>]*r:id\s*=\s*["']/.test(xml))
+    return false
   await resolveBlipMedia(xml, ctx)
   const media = ctx.mediaByRid
   if (!media) return false
   for (const m of xml.matchAll(
-    /<a:blip[^>]*r:(?:embed|link)="([^"]+)"|<v:imagedata[^>]*r:id="([^"]+)"/g,
+    /<a:blip[^>]*r:(?:embed|link)\s*=\s*["']([^"']+)["']|<v:imagedata[^>]*r:id\s*=\s*["']([^"']+)["']/g,
   )) {
     const rId = m[1] ?? m[2]
     if (rId && media.has(rId)) return true
@@ -7367,9 +7384,9 @@ async function resolveBlipMedia(xml: string, ctx: BuildContext): Promise<void> {
   // embed and link matched separately: on a blip carrying both, the greedy
   // combined pattern only captured the link and left the embedded part unresolved
   const refs = [
-    ...xml.matchAll(/<a:blip[^>]*r:embed="([^"]+)"/g),
-    ...xml.matchAll(/<a:blip[^>]*r:link="([^"]+)"/g),
-    ...xml.matchAll(/<v:imagedata[^>]*r:id="([^"]+)"/g),
+    ...xml.matchAll(/<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/g),
+    ...xml.matchAll(/<a:blip[^>]*r:link\s*=\s*["']([^"']+)["']/g),
+    ...xml.matchAll(/<v:imagedata[^>]*r:id\s*=\s*["']([^"']+)["']/g),
   ]
   for (const m of refs) {
     const rId = m[1]
@@ -7393,7 +7410,8 @@ async function resolveBlipMedia(xml: string, ctx: BuildContext): Promise<void> {
 async function extractImage(xml: string, ctx: BuildContext): Promise<string | null> {
   // embedded (r:embed -> word/media/...) or linked (r:link -> external URL)
   const rId =
-    /<a:blip[^>]*r:embed="([^"]+)"/.exec(xml)?.[1] ?? /<a:blip[^>]*r:link="([^"]+)"/.exec(xml)?.[1]
+    /<a:blip[^>]*r:embed\s*=\s*["']([^"']+)["']/.exec(xml)?.[1] ??
+    /<a:blip[^>]*r:link\s*=\s*["']([^"']+)["']/.exec(xml)?.[1]
   if (!rId) return null
   const rel = ctx.rels.get(rId)
   if (!rel) return null
@@ -7486,9 +7504,10 @@ function extractLockedCanvas(xml: string, ctx: BuildContext): DiagramDisplay | n
   const end = xml.indexOf('</lc:lockedCanvas>', ci)
   if (end === -1) return null
   // display size: the nearest wp:extent before the canvas (its own inline/anchor)
-  const extM = [...xml.slice(0, ci).matchAll(/<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/g)].pop()
-  const extCx = extM ? parseInt(extM[1], 10) : NaN
-  const extCy = extM ? parseInt(extM[2], 10) : NaN
+  const extTags = [...xml.slice(0, ci).matchAll(/<wp:extent[^>]*\/?>/g)].map((m) => m[0])
+  const extTag = extTags[extTags.length - 1] ?? ''
+  const extCx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extTag)?.[1] ?? '', 10)
+  const extCy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extTag)?.[1] ?? '', 10)
   if (!Number.isFinite(extCx) || !Number.isFinite(extCy) || extCx <= 0 || extCy <= 0) return null
   let parsed: XNode[]
   try {
@@ -7638,12 +7657,15 @@ async function extractDiagramDrawing(
   // the owning drawing's extent is the last one before its dgm:relIds (a
   // paragraph can hold several drawings)
   const dmAt = xml.indexOf('r:dm="')
-  const extents = [
-    ...(dmAt >= 0 ? xml.slice(0, dmAt) : xml).matchAll(/<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/g),
-  ]
-  const extent = extents[extents.length - 1]
-  const widthPx = extent ? Math.round(parseInt(extent[1], 10) / EMU_PER_PX) : 0
-  const heightPx = extent ? Math.round(parseInt(extent[2], 10) / EMU_PER_PX) : 0
+  const extentTags = [
+    ...(dmAt >= 0 ? xml.slice(0, dmAt) : xml).matchAll(/<wp:extent[^>]*\/?>/g),
+  ].map((m) => m[0])
+  const extentTag = extentTags[extentTags.length - 1] ?? ''
+  const extCx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
+  const extCy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
+  const extent = Number.isFinite(extCx) && Number.isFinite(extCy) ? [extCx, extCy] : undefined
+  const widthPx = extent ? Math.round(extent[0] / EMU_PER_PX) : 0
+  const heightPx = extent ? Math.round(extent[1] / EMU_PER_PX) : 0
   if (!widthPx || !heightPx) return null
   let parsed: XNode[]
   try {
@@ -7825,9 +7847,9 @@ async function extractChart(xml: string, ctx: BuildContext): Promise<ChartDispla
     // speaks classic c: syntax, so keeping them out makes edits no-ops
     // instead of corruption
     if (!partXml.includes('<cx:chartSpace')) ctx.chartParts[path] = partXml
-    const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(xml)
-    const cx = extent ? parseInt(extent[1]!, 10) : NaN
-    const cy = extent ? parseInt(extent[2]!, 10) : NaN
+    const extentTag = /<wp:extent[^>]*\/?>/.exec(xml)?.[0] ?? ''
+    const cx = parseInt(/\bcx\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
+    const cy = parseInt(/\bcy\s*=\s*["'](\d+)["']/.exec(extentTag)?.[1] ?? '', 10)
     if (Number.isFinite(cx) && cx > 0) display.widthPx = Math.round(cx / EMU_PER_PX)
     if (Number.isFinite(cy) && cy > 0) display.heightPx = Math.round(cy / EMU_PER_PX)
   }

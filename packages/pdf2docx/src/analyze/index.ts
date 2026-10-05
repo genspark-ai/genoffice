@@ -38,7 +38,7 @@ import { detectFootnotes } from './footnotes'
 import { extractEmptyFrames } from './frames'
 import { detectFormTables } from './form'
 import { clusterCombiningMarks, groupIntoLines } from './lines'
-import { detectListBlocks } from './lists'
+import { detectListBlocks, type ListSeq } from './lists'
 import { mergeSideBySidePanels } from './panels'
 import { encodeRgbaPng } from '../extract/png'
 import { normalizeArabicForms } from './rtl'
@@ -122,7 +122,7 @@ export { detectFootnotes, type DetectedFootnotes } from './footnotes'
 export { extractEmptyFrames, type EmptyFrame } from './frames'
 export { detectFurniture, type FurniturePage, type FurnitureResult } from './furniture'
 export { applyDecorBorders, type DecorResult } from './decor'
-export { detectListBlocks, parseListMarker } from './lists'
+export { detectListBlocks, parseListMarker, type ListSeq } from './lists'
 export { detectTocBlocks, detectTocRows } from './toc'
 export { detectVectorRegions } from './vector'
 export { pageConfidence, PAGE_CONFIDENCE_MIN, type ConfidenceSignals } from './confidence'
@@ -304,7 +304,7 @@ function assembleColumn(
   column: LayoutSection['columns'][number],
   singleColumn: boolean,
   pageWidthPt: number,
-  listSeq: { next: number },
+  listSeq: ListSeq,
   landscape: boolean,
   pageBodyLeftX0?: number,
   keepUnitGaps = false,
@@ -483,6 +483,9 @@ export interface AnalyzeOptions {
    * warnings (overlapping blocks) do not lower the page confidence, and weak
    * borderless tables dissolve back into positioned text */
   absoluteLayout?: boolean
+  /** shared across a document's pages so an ordered list split by a page
+   * break keeps its numbering (default: a fresh per-page state) */
+  listSeq?: ListSeq
 }
 
 export function analyzePage(extracted: ExtractedPage, opts: AnalyzeOptions = {}): IrPage {
@@ -867,8 +870,9 @@ export function analyzePage(extracted: ExtractedPage, opts: AnalyzeOptions = {})
     tocRowBlocks.length === 0 &&
     floats.length === 0
 
-  // page-unique sequence ids for ordered-list runs (rebuild maps them to numIds)
-  const listSeq = { next: 0 }
+  // document-unique sequence ids for ordered-list runs (rebuild maps them to
+  // numIds); a run split by a page break continues on the next page
+  const listSeq: ListSeq = opts.listSeq ?? { next: 0 }
   /** vertical strokes consumed as w:cols separators (P14 C) */
   const sepStrokes = new Set<Stroke>()
   let sections: PageSection[]
@@ -903,8 +907,18 @@ export function analyzePage(extracted: ExtractedPage, opts: AnalyzeOptions = {})
   } else {
     // page-level left edge for the weak-bullet indent evidence (P20): slide
     // layouts pin a dash sub-bullet group into a section of its own, so the
-    // column has no plain neighbours to judge the indent against
-    const pageBodyLeftX0 = median(layout.flatMap((ls) => ls.columns.map((c) => c.box.x0)))
+    // column has no plain neighbours to judge the indent against. Only a
+    // page whose sections are all single-column HAS one: on a multi-column
+    // page the median lands BETWEEN two real column edges, so it is neither
+    // column's left edge and measures weak bullets against nothing they are
+    // indented from. Two identical dash-bullet columns then get opposite
+    // verdicts, and the one right of the median becomes a bulleted list
+    // however flush it sits with its own column edge. There each column
+    // judges against its own left edge instead.
+    const multiColumn = layout.some((ls) => ls.columns.length > 1)
+    const pageBodyLeftX0 = multiColumn
+      ? undefined
+      : median(layout.flatMap((ls) => ls.columns.map((c) => c.box.x0)))
     sections = layout.map((ls) => {
       const orderedColumns = ls.dir === 'rtl' ? [...ls.columns].reverse() : ls.columns
       return {
@@ -916,7 +930,7 @@ export function analyzePage(extracted: ExtractedPage, opts: AnalyzeOptions = {})
             extracted.widthPt,
             listSeq,
             extracted.widthPt > extracted.heightPt,
-            pageBodyLeftX0,
+            pageBodyLeftX0 ?? c.box.x0,
             opts.absoluteLayout === true,
           ),
         ),

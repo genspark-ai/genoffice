@@ -11,7 +11,7 @@ import { open, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { atomicWriteFile, writeJsonAtomic } from '../src/atomic-write'
+import { atomicCopyFile, atomicWriteFile, writeJsonAtomic } from '../src/atomic-write'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -93,6 +93,57 @@ describe('atomicWriteFile', () => {
     await atomicWriteFile(target, Buffer.from('new'))
     expect(readFileSync(target, 'utf8')).toBe('new')
     expect(readdirSync(dir)).toEqual(['a.docx'])
+  })
+})
+
+describe('atomicCopyFile', () => {
+  it('fsyncs the copied temp file before the rename publishes it', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-ac-'))
+    const source = join(dir, 'a.pdf')
+    const target = join(dir, 'b.pdf')
+    writeFileSync(source, 'pdf-bytes')
+    writeFileSync(target, 'old')
+    const order: string[] = []
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    vi.mocked(open).mockImplementationOnce(async (...args) => {
+      const handle = await actual.open(...(args as Parameters<typeof actual.open>))
+      const sync = handle.sync.bind(handle)
+      handle.sync = async () => {
+        order.push('sync')
+        await sync()
+      }
+      return handle
+    })
+    vi.mocked(rename).mockImplementationOnce(async (from, to) => {
+      order.push('rename')
+      await actual.rename(from, to)
+    })
+    await atomicCopyFile(source, target)
+    expect(order).toEqual(['sync', 'rename'])
+    expect(readFileSync(target, 'utf8')).toBe('pdf-bytes')
+    expect(readdirSync(dir).sort()).toEqual(['a.pdf', 'b.pdf'])
+  })
+
+  // the same tolerated-flush contract as atomicWriteFile
+  it('tolerates a refused flush and still publishes the copy', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-ac-'))
+    const source = join(dir, 'a.pdf')
+    const target = join(dir, 'b.pdf')
+    writeFileSync(source, 'pdf-bytes')
+    writeFileSync(target, 'old')
+    vi.mocked(open).mockRejectedValueOnce(errnoError('EPERM'))
+    await atomicCopyFile(source, target)
+    expect(readFileSync(target, 'utf8')).toBe('pdf-bytes')
+    expect(readdirSync(dir).sort()).toEqual(['a.pdf', 'b.pdf'])
+  })
+
+  it('leaves the target intact and drops no temp when the source is missing', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-ac-'))
+    const target = join(dir, 'b.pdf')
+    writeFileSync(target, 'old')
+    await expect(atomicCopyFile(join(dir, 'nope.pdf'), target)).rejects.toThrow()
+    expect(readFileSync(target, 'utf8')).toBe('old')
+    expect(readdirSync(dir)).toEqual(['b.pdf'])
   })
 })
 

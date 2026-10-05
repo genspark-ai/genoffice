@@ -21,6 +21,22 @@ import {
 import { bookmarkName } from './bookmarks'
 import { mapFont } from './fonts'
 
+// Same finite >=1px floor renderImage applies: a 0/NaN inline measurement
+// would otherwise emit an invalid wp:extent (cx=0 or NaN).
+function finitePx(value) {
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, Math.round(value))
+}
+
+// Run text crosses the page-JavaScript boundary, so it can be absent or a
+// non-string. Every consumer below indexes or iterates it directly, which
+// turned such a run into a TypeError and killed the whole conversion. Coerce
+// once here so the content is kept instead of dropped.
+function runText(value) {
+  if (typeof value === 'string') return value
+  return value == null ? '' : String(value)
+}
+
 function makeRuns(context, runs, images: any = {}) {
   const out = []
   for (const r of runs) {
@@ -48,7 +64,7 @@ function makeRuns(context, runs, images: any = {}) {
           new ImageRun({
             type: 'png',
             data: image,
-            transformation: { width: r.width, height: r.height },
+            transformation: { width: finitePx(r.width), height: finitePx(r.height) },
           }),
         )
       }
@@ -99,7 +115,7 @@ function makeRuns(context, runs, images: any = {}) {
         : undefined,
       noProof: true,
     }
-    const lines = (r.text || '').split('\n')
+    const lines = runText(r.text).split('\n')
     lines.forEach((line, i) => {
       const segments = line.split('\t')
       segments.forEach((segment, j) => {
@@ -151,7 +167,7 @@ function makeNodeRuns(context, node, images: any = {}) {
 // content starts far right becomes a right-aligned stop at the margin
 // (dates), otherwise a left stop at the measured column position.
 function tabStopsFor(context, runs) {
-  const tabs = runs.filter((r) => r.text?.includes('\t'))
+  const tabs = runs.filter((r) => runText(r.text).includes('\t'))
   if (!tabs.length) return []
   const stops = []
   const seen = new Set()
@@ -358,6 +374,7 @@ export {
   makeNodeRuns,
   makeRuns,
   paraOptions,
+  runText,
   spacerParagraph,
   tabStopsFor,
   wordBorder,

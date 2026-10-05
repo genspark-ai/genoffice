@@ -59,6 +59,27 @@ describe('audio/video pictures (p:nvPr a:videoFile/a:audioFile)', () => {
     })
     expect((slide.elements[0] as PictureElement).media).toBeUndefined()
   })
+
+  it('p14-only video resolves media without a legacy videoFile tag', () => {
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        pic(
+          '<p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}">' +
+            '<p14:media xmlns:p14="p14" r:embed="rId9"/>' +
+            '</p:ext></p:extLst>',
+        ),
+      ),
+      ctx: {
+        theme,
+        avRels: new Map([['rId9', { target: 'ppt/media/media9.mp4' }]]),
+      },
+    })
+    expect((slide.elements[0] as PictureElement).media).toEqual({
+      kind: 'video',
+      target: 'ppt/media/media9.mp4',
+    })
+  })
 })
 
 const SMARTART_FRAME =

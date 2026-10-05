@@ -39,6 +39,8 @@ export const TREE_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
   'pdf',
   'md',
   'markdown',
+  'txt',
+  'json',
   'html',
   'htm',
 ])
@@ -315,8 +317,13 @@ function isSameEntry(a: string, b: string): boolean {
 
 /** `oldPrefix/…/file` → `newPrefix/…/file` for a file that lived under a renamed/moved folder */
 export function rebasePath(path: string, oldDir: string, newDir: string): string {
-  const rel = resolve(path).slice(resolve(oldDir).length)
-  return join(newDir, rel)
+  const abs = resolve(path)
+  const base = resolve(oldDir)
+  // a plain slice also matches a sibling that merely shares the prefix
+  // (`/w/src2/f` under `/w/src`), so require the separator boundary and leave
+  // anything that did not live under the moved folder where it was
+  if (abs !== base && !abs.startsWith(base + sep)) return path
+  return join(newDir, abs.slice(base.length))
 }
 
 const WATCH_DEBOUNCE_MS = 250

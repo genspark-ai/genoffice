@@ -94,6 +94,8 @@ import {
   type AiSearchProviderId,
   resolveAiSettings,
   maxOutputTokensOf,
+  sanitizeAiSettings,
+  validCliPath,
   setAiUserAgent,
   setRescueFetch,
   streamForProvider,
@@ -116,6 +118,7 @@ import {
   webSearchTool,
   imageSearchTool,
   analyzeMediaTool,
+  documentMediaRoots,
 } from '@genoffice/ai-search'
 import type {
   AiDocContent,
@@ -3298,6 +3301,28 @@ const docWritablePaths = new Map<number, Set<string>>()
 const pdfWritablePaths = new Map<number, Set<string>>()
 const tornDownWcIds = new Set<number>()
 
+/**
+ * The document each renderer currently has open (set on open and on every
+ * save, so a first-save/save-as keeps it current). Only the local-media
+ * allowlist reads it: a tool call naming a file next to the open document is
+ * the legitimate local-path case for analyze_media / generate_image. Absent for
+ * an untitled document.
+ */
+const openDocByWc = new Map<number, string>()
+
+function rememberOpenDoc(wcId: number, filePath: string): void {
+  openDocByWc.set(wcId, filePath)
+}
+
+/**
+ * Local media roots for a renderer: the open document's directory plus the
+ * directory docs stages pasted images in. A tool call may read a media file
+ * from either, and nothing else.
+ */
+function docsMediaRoots(wcId: number): string[] {
+  return documentMediaRoots(openDocByWc.get(wcId), join(app.getPath('temp'), 'genoffice-pasted'))
+}
+
 function allowDocWrite(wcId: number, filePath: string): void {
   const set = docWritablePaths.get(wcId) ?? new Set<string>()
   set.add(filePath)
@@ -3362,6 +3387,7 @@ function dropDocWriter(wcId: number): void {
   releaseSpellIgnores(wcId)
   docWritablePaths.delete(wcId)
   pdfWritablePaths.delete(wcId)
+  openDocByWc.delete(wcId)
   for (const p of imageExportTemps.get(wcId) ?? []) void rm(p, { force: true })
   imageExportTemps.delete(wcId)
   imageExportDirs.delete(wcId)
@@ -3554,6 +3580,7 @@ async function loadDocx(
   if (recovered) await adoptLazyMediaHashes(bytes, filePath, wcId)
   pushRecent(filePath)
   allowDocWrite(wcId, filePath)
+  rememberOpenDoc(wcId, filePath)
   if (fileOpenedHook) fileOpenedHook(wcId, filePath)
   markDiskEncrypted(wcId, filePath, encrypted)
   // record the on-disk file, not the recovery copy: what matters is what save would overwrite
@@ -3782,17 +3809,39 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJsonAtomic(SETTINGS_PATH(), settings)
+    // SECURITY.md: payloads are schema-checked in the main process. The settings
+    // file feeds cliPath into spawn() and baseUrl receives the gsk bearer token,
+    // so the renderer's copy is sanitized before it touches disk.
+    const sanitized = sanitizeAiSettings(settings)
+    if (!sanitized) {
+      console.warn('[ai] rejected invalid ai:set-settings payload')
+      return
+    }
+    writeJsonAtomic(SETTINGS_PATH(), sanitized)
   })
 
   ipcMain.handle('ai:codex-models', async (_event, cliPath: unknown) => {
-    return listCodexModels(typeof cliPath === 'string' ? cliPath : undefined)
+    // the probe spawns the path directly, so it gets the same metacharacter and
+    // existence check as the stored setting (anything else: auto-detect)
+    return listCodexModels(validCliPath(cliPath) ? cliPath.trim() : undefined)
   })
 
   ipcMain.handle('ai:custom-models', (_event, input: unknown) => listCustomModelsForIpc(input))
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    // per-request settings get the same schema check as the persisted ones: a
+    // compromised renderer could otherwise hand cliPath/baseUrl straight to
+    // the provider layer without ever touching the settings file
+    const settings = sanitizeAiSettings(request.settings)
+    if (!settings) {
+      event.sender.send('ai:stream-chunk', {
+        requestId: request.requestId,
+        type: 'error',
+        error: 'invalid AI settings payload',
+      } satisfies AiStreamChunk)
+      return
+    }
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? maxOutputTokensOf(settings)
     const provider = settings.provider
@@ -3897,7 +3946,7 @@ export function registerAiIpc(): void {
   // docs-prefixed: slides registers its own ai:analyze-media in the same shell process.
   ipcMain.handle(
     'docs:analyze-media',
-    async (_event, op: { mediaUrls: string[]; requirements: string }) => {
+    async (event, op: { mediaUrls: string[]; requirements: string }) => {
       const mediaUrls = (op.mediaUrls ?? []).map(String).filter(Boolean)
       // a picture opened lazily from a large docx is only addressable by its main-process
       // store; hand its bytes over as a data URL so the loader can read them like any other
@@ -3906,10 +3955,14 @@ export function registerAiIpc(): void {
         const lazy = await readLazyMedia(url).catch(() => null)
         resolved.push(lazy ? `data:${lazy.mime};base64,${lazy.body.toString('base64')}` : url)
       }
-      return analyzeMediaTool(SETTINGS_PATH(), {
-        mediaUrls: resolved,
-        requirements: String(op.requirements ?? ''),
-      })
+      return analyzeMediaTool(
+        SETTINGS_PATH(),
+        {
+          mediaUrls: resolved,
+          requirements: String(op.requirements ?? ''),
+        },
+        { mediaRoots: docsMediaRoots(event.sender.id) },
+      )
     },
   )
 
@@ -3942,11 +3995,15 @@ export function registerAiIpc(): void {
   // registered once a slides view exists, so docs needs its own channel
   ipcMain.handle(
     'docs:ai-generate-image',
-    (_event, op: { prompt?: unknown; aspectRatio?: unknown }) =>
-      generateImageTool(SETTINGS_PATH(), {
-        prompt: String(op?.prompt ?? ''),
-        aspectRatio: op?.aspectRatio ? String(op.aspectRatio) : undefined,
-      }),
+    (event, op: { prompt?: unknown; aspectRatio?: unknown }) =>
+      generateImageTool(
+        SETTINGS_PATH(),
+        {
+          prompt: String(op?.prompt ?? ''),
+          aspectRatio: op?.aspectRatio ? String(op.aspectRatio) : undefined,
+        },
+        { mediaRoots: docsMediaRoots(event.sender.id) },
+      ),
   )
 
   ipcMain.handle('ai:search-test', (_event, input: unknown) => {
@@ -3971,7 +4028,11 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:chat', async (_event, request: AiChatRequest) => {
-    const { settings, system, user } = request
+    // same schema check as ai:stream: one-shot requests would otherwise act on
+    // the renderer's settings copy verbatim
+    const settings = sanitizeAiSettings(request.settings)
+    if (!settings) return { ok: false, error: 'invalid AI settings payload' }
+    const { system, user } = request
     const provider = settings.provider
     let config = settings.providers?.[provider]
     if (provider === 'genspark' && config && !config.apiKey) {
@@ -4770,6 +4831,7 @@ export function registerDocsIpc(): void {
           filePath,
         )
         pushRecent(filePath)
+        rememberOpenDoc(event.sender.id, filePath)
         notifyFileSaved(event.sender, filePath)
         return {
           ok: true,

@@ -13,7 +13,7 @@
  * marker, non-consecutive numbers, an unmatched anchor) stays in the body —
  * miss rather than misfire.
  */
-import { median } from '../geometry'
+import { median, minOf } from '../geometry'
 import type { FootnoteIR, PageShapes, PdfChar } from '../ir'
 import { groupIntoBlocks } from './blocks'
 import { analyzeChars } from './chars'
@@ -192,7 +192,10 @@ export function detectFootnotes(
 ): DetectedFootnotes {
   const visible = chars.filter(isVisible)
   if (visible.length === 0 || shapes.strokes.length === 0) return NONE(chars)
-  const contentLeft = Math.min(...visible.map((c) => c.box.x0))
+  // loop reduction, not a spread: `visible` is page-sized, and a spread passes
+  // every glyph as a call argument — a page past V8's ~124,600-argument limit
+  // threw RangeError here, and detectFootnotes runs on every page unconditionally
+  const contentLeft = minOf(visible.map((c) => c.box.x0))
   const bodyFont = median(visible.map((c) => c.fontSize)) || 12
 
   // candidate separator rules, topmost first — body text below a decorative

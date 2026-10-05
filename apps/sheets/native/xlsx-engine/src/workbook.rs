@@ -348,8 +348,11 @@ pub(crate) fn read_sheet_dimensions(
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"c" =>
             {
+                // Measuring the extent must not be the one place a corrupt
+                // address closes the workbook: take the position an omitted
+                // one gets, as the cell reader does.
                 let (row, column) = match attribute_value(&reader, &element, b"r")? {
-                    Some(address) => parse_address(&address)?,
+                    Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
                     None => (current_row, next_column),
                 };
                 next_column = column + 1;

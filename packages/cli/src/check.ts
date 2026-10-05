@@ -37,9 +37,12 @@ export function checkResult(
 ): CommandResult {
   const sorted = [...drafts].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level])
   const truncated = sorted.length > MAX_ISSUES
-  const issues: CheckIssue[] = sorted
-    .slice(0, MAX_ISSUES)
-    .map((d, i) => ({ id: `${d.level[0]!.toUpperCase()}${i + 1}`, ...d }))
+  const levelSeq: Record<IssueLevel, number> = { error: 0, warning: 0, info: 0 }
+  const issues: CheckIssue[] = []
+  for (const d of sorted.slice(0, MAX_ISSUES)) {
+    levelSeq[d.level]++
+    issues.push({ id: `${d.level[0]!.toUpperCase()}${levelSeq[d.level]}`, ...d })
+  }
   const counts = { error: 0, warning: 0, info: 0 }
   for (const d of drafts) counts[d.level]++
   const name = basename(file)

@@ -4,7 +4,14 @@
  * TOP of it (a backdrop) — becomes an anchored float; everything else keeps
  * P1's inline-image treatment. Never drops an image either way.
  */
-import { intersectArea, overlapRatio, rectArea, verticalOverlapRatio } from '../geometry'
+import {
+  intersectArea,
+  maxOf,
+  minOf,
+  overlapRatio,
+  rectArea,
+  verticalOverlapRatio,
+} from '../geometry'
 import type { Rect } from '../geometry'
 import type { ImageBlock } from '../ir'
 import type { LineUnit } from './units'
@@ -90,10 +97,10 @@ export function suppressTextShadowImages(
     })
     if (inside.length < 2) return true
     const union = {
-      x0: Math.min(...inside.map((c) => c.box.x0)),
-      y0: Math.min(...inside.map((c) => c.box.y0)),
-      x1: Math.max(...inside.map((c) => c.box.x1)),
-      y1: Math.max(...inside.map((c) => c.box.y1)),
+      x0: minOf(inside.map((c) => c.box.x0)),
+      y0: minOf(inside.map((c) => c.box.y0)),
+      x1: maxOf(inside.map((c) => c.box.x1)),
+      y1: maxOf(inside.map((c) => c.box.y1)),
     }
     if (rectArea(img.box) > rectArea(union) * SHADOW_MAX_AREA_RATIO) return true
     const charHeights = inside.map((c) => c.box.y1 - c.box.y0).sort((a, b) => a - b)
@@ -143,8 +150,10 @@ export function classifyFloatImages(
   const floats: ImageBlock[] = []
   const inline: ImageBlock[] = []
   const units = allUnits.filter(isVisibleUnit)
-  const bodyLeft = units.length > 0 ? Math.min(...units.map((u) => u.box.x0)) : 0
-  const bodyRight = units.length > 0 ? Math.max(...units.map((u) => u.box.x1)) : 0
+  // loop reductions, not spreads: `units` is page-sized (a 125k-line page
+  // threw RangeError here before any other site on the pipeline ran)
+  const bodyLeft = units.length > 0 ? minOf(units.map((u) => u.box.x0)) : 0
+  const bodyRight = units.length > 0 ? maxOf(units.map((u) => u.box.x1)) : 0
 
   for (const img of images) {
     // a rasterized pattern fill (P35) is a drawn shape, never inline content:
@@ -242,8 +251,8 @@ export function classifyFloatImages(
       img.box.x1 - img.box.x0 <= TINY_ICON_MAX_PT &&
       img.box.y1 - img.box.y0 <= TINY_ICON_MAX_PT &&
       units.length > 0 &&
-      img.box.y1 <= Math.max(...units.map((u) => u.box.y1)) &&
-      img.box.y0 >= Math.min(...units.map((u) => u.box.y0))
+      img.box.y1 <= maxOf(units.map((u) => u.box.y1)) &&
+      img.box.y0 >= minOf(units.map((u) => u.box.y0))
     ) {
       // marker icon (list bullet, link favicon, timeline dot) inside the
       // page's text span — anchor it behind the text

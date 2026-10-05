@@ -7,7 +7,7 @@
 import { useEffect, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
-const FOCUSABLE = 'button, input, textarea, select, [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])'
 
 export function useModalKeys(onClose: () => void, options?: { restoreFocus?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)

@@ -2969,3 +2969,18 @@ div.tiptap-mathematics-render {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
+
+/* ---- source mode: a .txt/.json edited as text, not as a block document ---- */
+.source-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.source-editor > .cm-editor {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}

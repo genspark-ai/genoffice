@@ -69,6 +69,29 @@ describe('parseChartXml', () => {
     expect(m.legendPos).toBeUndefined()
   })
 
+  it('gapWidth: a valid value is kept, a malformed one falls back to 150 (never NaN)', () => {
+    const withGap = (gap: string) =>
+      parseChartXml(BAR_CHART.replace('<c:gapWidth val="28"/>', gap))!
+
+    // Valid: parsed through untouched
+    expect(withGap('<c:gapWidth val="28"/>').gapWidthPct).toBe(28)
+    expect(withGap('<c:gapWidth val="0"/>').gapWidthPct).toBe(0)
+
+    // Malformed: parseInt yields NaN, which must never reach the chart geometry
+    // (it would be rounded on write-back and make every bar disappear)
+    for (const bad of [
+      '<c:gapWidth val="abc"/>',
+      '<c:gapWidth val=""/>',
+      '<c:gapWidth val="  "/>',
+      '<c:gapWidth/>',
+      '',
+    ]) {
+      const gapWidthPct = withGap(bad).gapWidthPct
+      expect(gapWidthPct).toBe(150)
+      expect(Number.isFinite(gapWidthPct)).toBe(true)
+    }
+  })
+
   it('returns null for chart space without recognizable plot', () => {
     expect(parseChartXml('<c:chartSpace><c:chart/></c:chartSpace>')).toBeNull()
   })

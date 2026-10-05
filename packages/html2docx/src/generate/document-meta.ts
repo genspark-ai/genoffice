@@ -2,11 +2,12 @@
 // file by file without logic changes, and until then strict consumers
 // (apps/html, apps/shell) must not fail on it.
 import { CJK_RE } from './fonts'
+import { runText } from './word-utils'
 
 function forEachRunText(ir, fn) {
   ;(function walk(nodes) {
     for (const node of nodes) {
-      for (const run of node.runs || []) fn(run.text || '')
+      for (const run of node.runs || []) fn(runText(run.text))
       if (node.children) walk(node.children)
       if (node.cells) for (const cell of node.cells) walk(cell.children || [])
       if (node.rows) {

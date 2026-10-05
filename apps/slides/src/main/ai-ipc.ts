@@ -24,6 +24,7 @@ import {
   activeProvider,
   maxOutputTokensOf,
   resolveAiSettings,
+  sanitizeAiSettings,
   setAiUserAgent,
   setRescueFetch,
   streamForProvider,
@@ -47,6 +48,7 @@ import {
   gskApiKey,
   generateImageTool,
   analyzeMediaTool,
+  documentMediaRoots,
   gskLoginInfo,
   hasGskAuth,
 } from '@genoffice/ai-search'
@@ -61,6 +63,17 @@ import { pushHistory, rebuildSlide, scheduleHistoryNotify, sessions } from './se
 // ---- AI settings + streaming proxy (the main process does the networking to avoid renderer CORS; implementation shared via @genoffice/ai-provider) ----
 
 const AI_SETTINGS_PATH = () => join(app.getPath('userData'), 'ai-settings.json')
+
+/**
+ * Local media roots for a slides renderer: the open deck's directory plus the
+ * directory slides stages pasted images in. generate_image (referenceImageUrls)
+ * and analyze_media (mediaUrls) both take paths straight from the model, so
+ * only these two directories are readable — a reference or a media file the
+ * user put next to the deck they are editing, and nothing else.
+ */
+function slidesMediaRoots(wcId: number): string[] {
+  return documentMediaRoots(sessions.get(wcId)?.path, join(app.getPath('temp'), 'genoffice-pasted'))
+}
 
 function readJson<T>(path: string, fallback: T): T {
   try {
@@ -130,7 +143,15 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
-    writeJsonAtomic(AI_SETTINGS_PATH(), settings)
+    // SECURITY.md: payloads are schema-checked in the main process. The settings
+    // file feeds cliPath into spawn() and baseUrl receives the gsk bearer token,
+    // so the renderer's copy is sanitized before it touches disk.
+    const sanitized = sanitizeAiSettings(settings)
+    if (!sanitized) {
+      console.warn('[ai] rejected invalid ai:set-settings payload')
+      return
+    }
+    writeJsonAtomic(AI_SETTINGS_PATH(), sanitized)
   })
 
   ipcMain.handle('ai:log-run-failure', (_event, entry: AiRunFailure) => {
@@ -138,7 +159,19 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
-    const { requestId, settings, system, messages } = request
+    // per-request settings get the same schema check as the persisted ones: a
+    // compromised renderer could otherwise hand cliPath/baseUrl straight to
+    // the provider layer without ever touching the settings file
+    const settings = sanitizeAiSettings(request.settings)
+    if (!settings) {
+      event.sender.send('ai:stream-chunk', {
+        requestId: request.requestId,
+        type: 'error',
+        error: 'invalid AI settings payload',
+      } satisfies AiStreamChunk)
+      return
+    }
+    const { requestId, system, messages } = request
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? maxOutputTokensOf(settings)
     const provider = settings.provider
@@ -256,7 +289,7 @@ export function registerSlidesOnlyAiIpc(): void {
   ipcMain.handle(
     'ai:generate-image',
     async (
-      _event,
+      event,
       op: {
         prompt: string
         model?: string
@@ -278,21 +311,27 @@ export function registerSlidesOnlyAiIpc(): void {
           imageSize: op.imageSize ? String(op.imageSize) : undefined,
           transparentBackground: op.transparentBackground === true,
         },
-        { notLoggedInError: tm('errGskCli') },
+        {
+          notLoggedInError: tm('errGskCli'),
+          mediaRoots: slidesMediaRoots(event.sender.id),
+        },
       )
     },
   )
 
   ipcMain.handle(
     'ai:analyze-media',
-    async (_event, op: { mediaUrls: string[]; requirements: string }) => {
+    async (event, op: { mediaUrls: string[]; requirements: string }) => {
       return analyzeMediaTool(
         AI_SETTINGS_PATH(),
         {
           mediaUrls: (op.mediaUrls ?? []).map(String),
           requirements: String(op.requirements ?? ''),
         },
-        { notLoggedInError: tm('errGskCli') },
+        {
+          notLoggedInError: tm('errGskCli'),
+          mediaRoots: slidesMediaRoots(event.sender.id),
+        },
       )
     },
   )
@@ -487,13 +526,14 @@ export function registerSlidesOnlyAiIpc(): void {
     async (
       _event,
       name: string,
-      data: { topic: string; styleSkill: string; createdAt: string },
+      data: { topic: string; styleSkill: string; createdAt: string; layout?: unknown },
     ): Promise<{ ok: boolean; error?: string }> => {
       try {
         const dir = STYLE_TEMPLATES_DIR()
         // Filename: replace illegal characters in the name with _ then truncate to 64 chars
         const safeName = name.replace(/[/\\:*?"<>|]/g, '_').slice(0, 64)
         if (!safeName) return { ok: false, error: tm('errTplNameInvalid') }
+        // `layout` (the deck's chrome skeleton) rides along verbatim when present
         writeJsonAtomic(join(dir, `${safeName}.json`), { ...data, name: safeName })
         return { ok: true }
       } catch (err) {
@@ -541,15 +581,23 @@ export function registerSlidesOnlyAiIpc(): void {
     (
       _event,
       name: string,
-    ): { ok: boolean; styleSkill?: string; topic?: string; error?: string } => {
+    ): { ok: boolean; styleSkill?: string; topic?: string; layout?: unknown; error?: string } => {
       try {
         const dir = STYLE_TEMPLATES_DIR()
         const safeName = name.replace(/[/\\:*?"<>|]/g, '_').slice(0, 64)
         const filePath = join(dir, `${safeName}.json`)
         if (!existsSync(filePath)) return { ok: false, error: tm('errTplMissing', { name }) }
-        const raw = readJson<{ styleSkill?: string; topic?: string }>(filePath, {})
+        const raw = readJson<{ styleSkill?: string; topic?: string; layout?: unknown }>(
+          filePath,
+          {},
+        )
         if (!raw.styleSkill) return { ok: false, error: tm('errTplNoSkill', { name }) }
-        return { ok: true, styleSkill: raw.styleSkill, topic: raw.topic ?? '' }
+        return {
+          ok: true,
+          styleSkill: raw.styleSkill,
+          topic: raw.topic ?? '',
+          ...(raw.layout !== undefined && raw.layout !== null ? { layout: raw.layout } : {}),
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }

@@ -106,7 +106,7 @@ export const ru = {
   aiTooManyImages:
     'В одном сообщении можно отправить не более {max} изображений; лишние были пропущены',
   aiErrStopped: 'Остановлено',
-  aiErrTimeout: 'Превышено время ожидания ({ms}ms)',
+  aiErrTimeout: 'Превышено время ожидания ({ms} мс)',
   aiErrEmptyOutput: 'Пустой вывод',
   aiErrUnknown: 'Неизвестная ошибка',
   aiErrStreamTimeout:
@@ -214,7 +214,7 @@ export const ru = {
   aiSumReplaceImage: 'Изображение заменено на слайде {n}',
   aiSumClarifySkipped: 'Пользователь пропустил опрос',
   aiSumClarifyDone: 'Ответы на опрос собраны',
-  aiSumPlan: 'Спланировано страниц: {count} | Core Hook: {hook}',
+  aiSumPlan: 'Спланировано страниц: {count} | Ключевая идея: {hook}',
   aiSumHtmlAppend: 'Добавлено HTML-страниц: {count} (всего {total})',
   aiSumHtmlGenerate: 'Создано страниц из HTML: {count}',
   aiSumRegen: 'Слайд {n} переделан',

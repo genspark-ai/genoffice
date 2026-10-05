@@ -15,8 +15,10 @@ import type { Interval, Rect } from '../geometry'
 import {
   complementIntervals,
   intersectIntervals,
+  maxOf,
   median,
   mergeIntervals,
+  minOf,
   rectUnion,
   rectUnionAll,
 } from '../geometry'
@@ -244,12 +246,13 @@ function splitByGutters(
   return columns
 }
 
-/** column content width; empty columns count as zero-width (always weak) */
+/** column content width; empty columns count as zero-width (always weak).
+ * Loop reductions, not spreads: a single-column section holds every page
+ * element, so the arrays here are page-sized. */
 const contentWidthOf = (col: LayoutColumn): number =>
   col.elements.length === 0
     ? 0
-    : Math.max(...col.elements.map((e) => e.box.x1)) -
-      Math.min(...col.elements.map((e) => e.box.x0))
+    : maxOf(col.elements.map((e) => e.box.x1)) - minOf(col.elements.map((e) => e.box.x0))
 
 /** solve one section's columns; degrades to a single column when gates fail */
 function buildSection(elements: SectionElement[], gutterMin: number): LayoutSection {
@@ -283,8 +286,7 @@ function buildSection(elements: SectionElement[], gutterMin: number): LayoutSect
     const heightOf = (c: LayoutColumn): number =>
       c.elements.length === 0
         ? 0
-        : Math.max(...c.elements.map((e) => e.box.y1)) -
-          Math.min(...c.elements.map((e) => e.box.y0))
+        : maxOf(c.elements.map((e) => e.box.y1)) - minOf(c.elements.map((e) => e.box.y0))
     const tallest = Math.max(...columns.map(heightOf))
     const isStrong = (c: LayoutColumn): boolean =>
       (c.elements.length >= MIN_COLUMN_ELEMENTS ||
@@ -352,14 +354,16 @@ function peelHeaderFooter(
   const footer = elements.filter((e) => e.box.y1 <= bottomBand)
   const body = elements.filter((e) => !header.includes(e) && !footer.includes(e))
 
+  // loop reductions, not spreads: `body` is page-sized (the whole flow minus
+  // the header/footer bands) and threw past the engine argument limit
   const headerOk =
     header.length > 0 &&
     body.length > 0 &&
-    Math.min(...header.map((e) => e.box.y0)) - Math.max(...body.map((e) => e.box.y1)) >= minGap
+    minOf(header.map((e) => e.box.y0)) - maxOf(body.map((e) => e.box.y1)) >= minGap
   const footerOk =
     footer.length > 0 &&
     body.length > 0 &&
-    Math.min(...body.map((e) => e.box.y0)) - Math.max(...footer.map((e) => e.box.y1)) >= minGap
+    minOf(body.map((e) => e.box.y0)) - maxOf(footer.map((e) => e.box.y1)) >= minGap
 
   return {
     header: headerOk ? header : [],
@@ -392,6 +396,7 @@ export function mergeTwinSections(sections: LayoutSection[]): LayoutSection[] {
     const twins =
       prev !== undefined &&
       prev.columns.length >= 2 &&
+      prev.dir === s.dir &&
       prev.columns.length === s.columns.length &&
       prev.gutters.length === s.gutters.length &&
       prev.gutters.every((g, i) => {

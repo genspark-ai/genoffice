@@ -391,6 +391,10 @@ export function auditSlideFindings(
 
   // 2c. Stretched pictures: the box aspect strays from the (cropped) bitmap aspect
   for (const [e, d] of distortions) {
+    // budget gate like every other section: without it this loop alone filled
+    // MAX_ISSUES on an image-heavy slide, and section 3 (the only later
+    // category) broke on its first iteration, so real overlaps went unreported
+    if (findings.length >= budgetFor(1)) break
     findings.push({
       code: 'picture_distorted',
       level: 'warning',

@@ -47,6 +47,15 @@ describe('mapDocFont', () => {
     expect(f.css).not.toMatch(/"[^"]*Bold[^"]*"/)
   })
 
+  it('does not read sc/tc/gb out of ITC/RGB-classified names', () => {
+    for (const name of ['ZapfinoITC', 'BookmanITC', 'GaramondITC', 'ColorRGB']) {
+      expect(mapDocFont(name).css).not.toMatch(/PingFang|Songti|SimHei|YaHei|Kaiti|FangSong/)
+      expect(mapDocFont(name).css).toMatch(/serif/)
+    }
+    expect(mapDocFont('Noto Sans SC').css).toContain('PingFang SC')
+    expect(mapDocFont('HiraginoSansGB').css).toContain('PingFang SC')
+  })
+
   it('unknown names still yield a usable stack', () => {
     const f = mapDocFont('F1')
     expect(f.css).toContain('sans-serif')

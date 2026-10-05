@@ -1,8 +1,10 @@
 /**
  * Search utilities (main process) — gsk (Genspark CLI) first, then Serper Google API,
- * then Serply, Tavily and Parallel, whose free Search MCP answers keyless before the DuckDuckGo last resort. Runs in the main process
+ * then Serply, Tavily, Parallel (whose free Search MCP answers keyless), Exa and Firecrawl,
+ * before the DuckDuckGo last resort. Runs in the main process
  * (Node fetch / child process) to avoid renderer CORS; the Serper key reuses SERPER_API_KEY,
- * the Serply key reuses SERPLY_API_KEY, the Tavily key reuses TAVILY_API_KEY and Parallel uses PARALLEL_API_KEY.
+ * the Serply key reuses SERPLY_API_KEY, the Tavily key reuses TAVILY_API_KEY, Parallel uses
+ * PARALLEL_API_KEY, Exa uses EXA_API_KEY and Firecrawl uses FIRECRAWL_API_KEY.
  * For gsk auth see ./gsk.ts (`gsk login` or GSK_API_KEY).
  */
 
@@ -26,6 +28,8 @@ const SERPER_KEY = () => process.env.SERPER_API_KEY ?? ''
 const SERPLY_KEY = () => process.env.SERPLY_API_KEY ?? ''
 const TAVILY_KEY = () => process.env.TAVILY_API_KEY ?? ''
 const PARALLEL_KEY = () => process.env.PARALLEL_API_KEY ?? ''
+const EXA_KEY = () => process.env.EXA_API_KEY ?? ''
+const FIRECRAWL_KEY = () => process.env.FIRECRAWL_API_KEY ?? ''
 
 /**
  * Backend selection for one search. Keys default to the SERPER_API_KEY /
@@ -39,9 +43,21 @@ export interface SearchOptions {
   serplyKey?: string
   tavilyKey?: string
   parallelKey?: string
+  exaKey?: string
+  firecrawlKey?: string
   /** which backend to try first (default serper) */
-  prefer?: 'serper' | 'serply' | 'tavily' | 'parallel'
+  prefer?: 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl'
 }
+
+/** The backends webSearch can dispatch to; anything else is not a provider id. */
+const SEARCH_BACKENDS = new Set([
+  'serper',
+  'serply',
+  'tavily',
+  'parallel',
+  'exa',
+  'firecrawl',
+] as const)
 
 function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
   const o = typeof opts === 'boolean' ? { useGsk: opts } : (opts ?? {})
@@ -51,7 +67,15 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     serplyKey: o.serplyKey ?? SERPLY_KEY(),
     tavilyKey: o.tavilyKey ?? TAVILY_KEY(),
     parallelKey: o.parallelKey ?? PARALLEL_KEY(),
-    prefer: o.prefer ?? 'serper',
+    exaKey: o.exaKey ?? EXA_KEY(),
+    firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
+    // `prefer` reaches here from the renderer: the settings "test connection" handler
+    // passes its ipc payload through after an `as` cast, so an unknown id is possible
+    // at runtime. It becomes the first entry of the dispatch order, and a name that
+    // is not a backend has no function to call, so validate it at this choke point
+    // rather than letting the dispatch throw a TypeError out of the ipc handler.
+    prefer:
+      o.prefer !== undefined && SEARCH_BACKENDS.has(o.prefer) ? o.prefer : ('serper' as const),
   }
 }
 
@@ -81,14 +105,17 @@ async function serperWebSearch(
         if (!resp.ok) return null
         const data = asRecord(await resp.json())
         const organic: unknown[] = Array.isArray(data.organic) ? data.organic : []
-        const results: WebSearchResult[] = organic.slice(0, maxResults).map((item) => {
+        const results: WebSearchResult[] = []
+        for (const item of organic) {
           const o = asRecord(item)
-          return {
+          if (typeof o.link !== 'string' || !/^https?:\/\//i.test(o.link)) continue
+          results.push({
             title: String(o.title ?? ''),
-            url: String(o.link ?? ''),
+            url: o.link,
             snippet: String(o.snippet ?? ''),
-          }
-        })
+          })
+          if (results.length >= maxResults) break
+        }
         const answerBox = asRecord(data.answerBox)
         const answerRaw =
           answerBox.answer || answerBox.snippet || asRecord(data.knowledgeGraph).description
@@ -165,14 +192,17 @@ async function tavilyWebSearch(
         if (!resp.ok) return null
         const data = asRecord(await resp.json())
         const raw: unknown[] = Array.isArray(data.results) ? data.results : []
-        const results: WebSearchResult[] = raw.slice(0, maxResults).map((item) => {
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
           const o = asRecord(item)
-          return {
+          if (typeof o.url !== 'string' || !/^https?:\/\//i.test(o.url)) continue
+          results.push({
             title: String(o.title ?? ''),
-            url: String(o.url ?? ''),
+            url: o.url,
             snippet: String(o.content ?? ''),
-          }
-        })
+          })
+          if (results.length >= maxResults) break
+        }
         const answerRaw = data.answer
         const answer = typeof answerRaw === 'string' && answerRaw ? answerRaw : undefined
         if (!results.length) return null
@@ -240,6 +270,103 @@ async function parallelWebSearch(
   }
 }
 
+/**
+ * Exa's AI search (api.exa.ai/search): results carry the page contents we ask
+ * for, so a capped text pass (not the default full text) serves as the
+ * snippet. No synthesized answer on this endpoint — results only.
+ */
+async function exaWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    return await fetchWithTimeout(
+      'https://api.exa.ai/search',
+      {
+        method: 'POST',
+        headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          numResults: maxResults,
+          contents: { text: { maxCharacters: 500 } },
+        }),
+      },
+      async (resp) => {
+        if (!resp.ok) return null
+        const data = asRecord(await resp.json())
+        const raw: unknown[] = Array.isArray(data.results) ? data.results : []
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          const url = typeof o.url === 'string' ? o.url : ''
+          if (!/^https?:\/\//i.test(url)) continue
+          const text = o.text
+          const summary = o.summary
+          results.push({
+            title: String(o.title ?? url),
+            url,
+            snippet:
+              typeof text === 'string' && text ? text : typeof summary === 'string' ? summary : '',
+          })
+        }
+        return results.length ? { results, method: 'exa' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Firecrawl's /v2/search groups results by source; the web list is the
+ * snippet-bearing one (news carries `snippet` instead of `description` and
+ * serves as the fallback). No scrapeOptions: scraping costs extra credits and
+ * the plain description is exactly the snippet shape we need.
+ */
+async function firecrawlWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    return await fetchWithTimeout(
+      'https://api.firecrawl.dev/v2/search',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: maxResults }),
+      },
+      async (resp) => {
+        if (!resp.ok) return null
+        const data = asRecord(asRecord(await resp.json()).data)
+        // an empty web list must fall through to news, not read as "no results"
+        const web = Array.isArray(data.web) ? data.web : []
+        const news = Array.isArray(data.news) ? data.news : []
+        const raw: unknown[] = web.length > 0 ? web : news
+        const results: WebSearchResult[] = []
+        for (const item of raw) {
+          if (results.length >= maxResults) break
+          const o = asRecord(item)
+          const url = typeof o.url === 'string' ? o.url : ''
+          if (!/^https?:\/\//i.test(url)) continue
+          results.push({
+            title: String(o.title ?? url),
+            url,
+            snippet: String(o.description ?? o.snippet ?? ''),
+          })
+        }
+        return results.length ? { results, method: 'firecrawl' } : null
+      },
+    )
+  } catch {
+    return null
+  }
+}
+
 // ── Web search ──────────────────────────────────────────────────────
 
 /**
@@ -280,10 +407,14 @@ export async function webSearch(
     serply: () => serplyWebSearch(o.serplyKey, q, max),
     tavily: () => tavilyWebSearch(o.tavilyKey, q, max),
     parallel: () => parallelWebSearch(o.parallelKey, q, max),
+    exa: () => exaWebSearch(o.exaKey, q, max),
+    firecrawl: () => firecrawlWebSearch(o.firecrawlKey, q, max),
   }
   const order = [
     o.prefer,
-    ...(['serper', 'serply', 'tavily', 'parallel'] as const).filter((id) => id !== o.prefer),
+    ...(['serper', 'serply', 'tavily', 'parallel', 'exa', 'firecrawl'] as const).filter(
+      (id) => id !== o.prefer,
+    ),
   ]
   for (const id of order) {
     const r = await keyed[id]()
@@ -312,7 +443,7 @@ export async function imageSearch(
   const { query: q, max } = normalizeSearchArgs(query, maxResults, 8)
   if (o.useGsk && hasGskAuth()) {
     try {
-      const images = await gskImageSearch(q, max)
+      const images = filterUsableImages(await gskImageSearch(q, max))
       if (images.length) return { images, method: 'gsk' }
     } catch {
       /* fall back to Serper/Serply/DuckDuckGo */
@@ -326,14 +457,33 @@ export async function imageSearch(
   if (o.prefer === 'serply') keyed.reverse()
   for (const run of keyed) {
     const r = await run()
-    if (r) return r
+    // A backend that only offered unusable (tiny) images falls through to the next one
+    if (r && r.images.length > 0) {
+      const usable = filterUsableImages(r.images)
+      if (usable.length) return { images: usable, method: r.method }
+    }
   }
   try {
-    return { images: await duckImageSearch(q, max), method: 'duckduckgo' }
+    return { images: filterUsableImages(await duckImageSearch(q, max)), method: 'duckduckgo' }
   } catch (err) {
     // an unreachable backend must not read as an empty gallery
     return { images: [], method: 'error', error: `duckduckgo: ${String(err)}` }
   }
+}
+
+/** Icons, buttons and avatars render as junk when a slide crops them into a
+ * content frame — anything a backend reports smaller than this is dropped
+ * (#1819). Entries without dimension metadata are kept (no evidence, no verdict). */
+export const MIN_USABLE_IMAGE_PX = 200
+
+export function filterUsableImages(images: ImageSearchResult[]): ImageSearchResult[] {
+  return images.filter((im) => {
+    if (typeof im.width !== 'number' && typeof im.height !== 'number') return true
+    return (
+      (im.width ?? Number.POSITIVE_INFINITY) >= MIN_USABLE_IMAGE_PX &&
+      (im.height ?? Number.POSITIVE_INFINITY) >= MIN_USABLE_IMAGE_PX
+    )
+  })
 }
 
 async function serperImageSearch(
@@ -479,7 +629,7 @@ async function duckImageSearch(query: string, maxResults: number): Promise<Image
   )
   const list: unknown[] = Array.isArray(data.results) ? data.results : []
   const out: ImageSearchResult[] = []
-  for (const item of list.slice(0, maxResults)) {
+  for (const item of list) {
     const img = asRecord(item)
     const imageUrl = String(img.image ?? '')
     if (!imageUrl || isCopyrightHost(imageUrl)) continue
@@ -492,6 +642,7 @@ async function duckImageSearch(query: string, maxResults: number): Promise<Image
     if (typeof img.width === 'number') entry.width = img.width
     if (typeof img.height === 'number') entry.height = img.height
     out.push(entry)
+    if (out.length >= maxResults) break
   }
   return out
 }

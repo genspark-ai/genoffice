@@ -1,7 +1,7 @@
 /** Home tab of the slides ribbon. Extracted from Ribbon.tsx. */
 import { useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
-import { ColorPicker, isSymbolFontFamily } from '@genoffice/ui'
+import { ColorPicker, isSymbolFontFamily, partitionFontFamilies } from '@genoffice/ui'
 import { saveEditSelection } from '../TextEditOverlay'
 import { armColorInput } from '../color-input'
 import { displayFontFamily } from '../konva-adapter'
@@ -163,7 +163,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
   // Typed-ahead font query: only what the user actually typed filters the menu
   // (opening via the caret or focusing shows the full list)
   const [fontFilter, setFontFilter] = useState('')
-  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const { families: allSystemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
   const {
     catalog: fontCatalog,
     busy: fontBusy,
@@ -172,6 +172,16 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     download: downloadFont,
     installLocal: installLocalFonts,
   } = useFontCatalog()
+  // Store fonts are invisible to queryLocalFonts, so installed catalog families
+  // count as known even though the enumeration misses them.
+  const installedCatalogFamilies = fontCatalog.filter((c) => c.installed).map((c) => c.family)
+  // Candidates the machine proves absent drop out; when enumeration is
+  // unavailable the full candidate list stays visible.
+  const { builtin: fontFamilies, system: systemFontFamilies } = partitionFontFamilies(
+    FONT_FAMILIES,
+    allSystemFontFamilies,
+    installedCatalogFamilies,
+  )
   // Catalog families stay listed after install (store fonts are invisible to
   // queryLocalFonts). Installed ones dedupe against the built-in/system sections;
   // uninstalled ones always show here so built-in names like Noto Sans JP keep an
@@ -594,10 +604,10 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   {(curFontFamily &&
-                  !FONT_FAMILIES.includes(curFontFamily) &&
+                  !fontFamilies.includes(curFontFamily) &&
                   !systemFontFamilies.includes(curFontFamily)
-                    ? [curFontFamily, ...FONT_FAMILIES]
-                    : FONT_FAMILIES
+                    ? [curFontFamily, ...fontFamilies]
+                    : fontFamilies
                   )
                     .filter(matchesFontFilter)
                     // Built-in names that are uninstalled catalog fonts render in the

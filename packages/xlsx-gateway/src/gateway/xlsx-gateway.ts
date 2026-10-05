@@ -2807,6 +2807,13 @@ function serializeStyledCell(
   if (typeof cell.value === 'boolean') {
     return `<c r="${address}"${style} t="b"><v>${cell.value ? 1 : 0}</v></c>`
   }
+  // A non-finite number cannot be written to the numeric default type
+  // (CT_Cell/v is xsd:double), so Excel rejects the part and the whole save is
+  // lost to the repair prompt. Degrade to a string cell, the same fallback
+  // patchFormulaCachedValue uses for a non-numeric formula result.
+  if (!Number.isFinite(cell.value)) {
+    return `<c r="${address}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeCellText(String(cell.value))}</t></is></c>`
+  }
   return `<c r="${address}"${style}><v>${cell.value}</v></c>`
 }
 
@@ -2896,6 +2903,11 @@ function serializeCell(address: string, cell: CellState): string {
   }
   if (typeof cell.value === 'boolean') {
     return `<c r="${address}" t="b"><v>${cell.value ? 1 : 0}</v></c>`
+  }
+  // Non-finite numbers are not valid xsd:double; degrade to a string cell
+  // rather than writing <v>NaN</v> into the numeric default type.
+  if (!Number.isFinite(cell.value)) {
+    return `<c r="${address}" t="inlineStr"><is><t xml:space="preserve">${escapeCellText(String(cell.value))}</t></is></c>`
   }
   return `<c r="${address}"><v>${cell.value}</v></c>`
 }

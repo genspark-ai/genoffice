@@ -86,11 +86,41 @@ export const DEFAULT_MAX_TURNS = 100
 const MAX_INPUT_PARSE_RETRIES = 3
 
 /**
+ * Whether a property's own JSON Schema declares null as an acceptable value.
+ * A tool that genuinely takes null (e.g. clearing a style value) says so in
+ * the schema, so the required-field check must not reject it. Covers the
+ * spellings in use: `type: ['string','null']`, OpenAPI/Gemini `nullable: true`,
+ * an enum listing null, and an anyOf/oneOf branch typed null.
+ */
+function schemaAcceptsNull(schema: unknown): boolean {
+  if (!schema || typeof schema !== 'object') return false
+  const s = schema as {
+    type?: unknown
+    nullable?: unknown
+    enum?: unknown
+    anyOf?: unknown
+    oneOf?: unknown
+  }
+  if (s.nullable === true) return true
+  // `type` is a bare "null" in an anyOf/oneOf branch, a list in `type: ['string','null']`
+  if (s.type === 'null') return true
+  if (Array.isArray(s.type) && s.type.includes('null')) return true
+  if (Array.isArray(s.enum) && s.enum.includes(null)) return true
+  for (const branch of [s.anyOf, s.oneOf]) {
+    if (Array.isArray(branch) && branch.some((b) => schemaAcceptsNull(b))) return true
+  }
+  return false
+}
+
+/**
  * Required fields the model left out of a tool call, per the tool's JSON
  * Schema. Providers turn an empty argument stream into `{}` without an
  * inputError (the model wrote prose instead of arguments, or a gateway dropped
  * the argument stream), so without this check the empty object reaches the
  * skill and fails with a tool-specific message instead of a targeted retry.
+ * `null` counts as missing too: a garbled field arrives as `"ops": null`, and
+ * downstream coercion (Number(null) === 0) would pass a silently wrong value
+ * to the tool. A field whose schema declares null as valid is exempt.
  */
 export function missingRequiredFields(
   tool: AgentToolDef | undefined,
@@ -98,9 +128,135 @@ export function missingRequiredFields(
 ): string[] {
   const required = tool?.inputSchema.required
   if (!Array.isArray(required)) return []
-  return required.filter(
-    (field): field is string => typeof field === 'string' && input[field] === undefined,
+  const properties = tool?.inputSchema.properties
+  const propSchema = (field: string): unknown =>
+    properties && typeof properties === 'object' && !Array.isArray(properties)
+      ? (properties as Record<string, unknown>)[field]
+      : undefined
+  return required.filter((field): field is string => {
+    if (typeof field !== 'string') return false
+    const value = input[field]
+    if (value === undefined) return true
+    return value === null && !schemaAcceptsNull(propSchema(field))
+  })
+}
+
+/** Plain object (not null, not an array) — the only schema/value shape we walk into */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Nesting cap for `items`; a value deeper than this is passed through unvalidated */
+const MAX_SCHEMA_DEPTH = 4
+
+/**
+ * Why one value contradicts one property schema, or undefined when it is fine.
+ * Deliberately not a JSON Schema implementation: only the keywords this repo's
+ * tools actually declare are honoured, and a schema that declares none of them
+ * always returns undefined so a permissive or schema-less tool keeps working.
+ */
+function schemaViolation(
+  value: unknown,
+  schema: Record<string, unknown>,
+  depth: number,
+): string | undefined {
+  if (depth > MAX_SCHEMA_DEPTH) return undefined
+  // enum: only trusted when every member is a primitive, otherwise comparing
+  // would need a deep-equality walk this does not do
+  const allowed = schema.enum
+  if (
+    Array.isArray(allowed) &&
+    allowed.every((v) => v === null || (!isPlainRecord(v) && typeof v !== 'function'))
+  ) {
+    if (!allowed.some((v) => Object.is(v, value))) {
+      return `expected one of ${allowed.map((v) => JSON.stringify(v)).join(', ')}`
+    }
+  }
+  // type: a string, or an array of strings. Keywords we do not model are dropped
+  // from the list; an all-unknown list means "unconstrained", not "invalid".
+  const declared = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter(
+    (t): t is string => typeof t === 'string',
   )
+  const typeNames = declared.filter((t) => TYPE_CHECKS[t])
+  if (typeNames.length > 0 && !typeNames.some((t) => TYPE_CHECKS[t]!(value))) {
+    return `expected ${typeNames.join(' or ')}`
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // draft-04 spells exclusivity as a boolean sibling; honour it so the
+    // boundary value is not rejected by an inclusive check
+    if (
+      typeof schema.minimum === 'number' &&
+      schema.exclusiveMinimum !== true &&
+      value < schema.minimum
+    ) {
+      return `must be >= ${schema.minimum}`
+    }
+    if (
+      typeof schema.maximum === 'number' &&
+      schema.exclusiveMaximum !== true &&
+      value > schema.maximum
+    ) {
+      return `must be <= ${schema.maximum}`
+    }
+  }
+  if (typeof value === 'string') {
+    if (typeof schema.minLength === 'number' && value.length < schema.minLength) {
+      return `must be at least ${schema.minLength} characters`
+    }
+    if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) {
+      return `must be at most ${schema.maxLength} characters`
+    }
+  }
+  // items: only the single-schema form; a tuple (array of schemas) is out of scope
+  if (Array.isArray(value) && isPlainRecord(schema.items)) {
+    for (let i = 0; i < value.length; i++) {
+      const bad = schemaViolation(value[i], schema.items, depth + 1)
+      if (bad) return `item ${i} ${bad}`
+    }
+  }
+  return undefined
+}
+
+/** JSON Schema primitive types this repo's tools declare; NaN is not a valid number */
+const TYPE_CHECKS: Record<string, (value: unknown) => boolean> = {
+  string: (v) => typeof v === 'string',
+  number: (v) => typeof v === 'number' && Number.isFinite(v),
+  integer: (v) => typeof v === 'number' && Number.isInteger(v),
+  boolean: (v) => typeof v === 'boolean',
+  array: (v) => Array.isArray(v),
+  object: (v) => isPlainRecord(v),
+  null: (v) => v === null,
+}
+
+/**
+ * Fields the model *sent* but whose value contradicts the tool's own JSON
+ * Schema ({"count": "twelve"}, {"rows": 999999999999} against a bounded
+ * integer). Such a value otherwise reaches the tool, which coerces it
+ * (Number("twelve") -> NaN, a capped range silently clamped) and returns a
+ * confident wrong answer — where missingRequiredFields would have produced a
+ * targeted retry instead.
+ *
+ * Only `properties` are inspected, and a field with no declared constraints is
+ * never reported: a tool with an empty, missing, or non-JSON-Schema inputSchema
+ * (this repo has `{}` and `{ type: 'object' }` tools) validates nothing, exactly
+ * as before. Absent fields are skipped — they belong to missingRequiredFields.
+ */
+export function invalidArgumentFields(
+  tool: AgentToolDef | undefined,
+  input: Record<string, unknown>,
+): string[] {
+  // `?.` on inputSchema as well: a tool can arrive over IPC without one
+  const properties = tool?.inputSchema?.properties
+  if (!isPlainRecord(properties)) return []
+  const violations: string[] = []
+  for (const [field, fieldSchema] of Object.entries(properties)) {
+    if (!isPlainRecord(fieldSchema)) continue
+    const value = input[field]
+    if (value === undefined) continue
+    const violation = schemaViolation(value, fieldSchema, 0)
+    if (violation) violations.push(`"${field}" ${violation}`)
+  }
+  return violations
 }
 
 /**
@@ -311,9 +467,31 @@ export class AgentLoop<TSnapshot = unknown> {
     // Unanswered user messages (a failed or interrupted run persisted them without a
     // reply) must not re-enter the model context: trailing ones would pair with the
     // next instruction as one turn, adjacent ones read as a combined instruction
-    this.history = normalized.filter(
+    const answered = normalized.filter(
       (m, i) => m.role !== 'user' || (normalized[i + 1] && normalized[i + 1]!.role !== 'user'),
     )
+    // An assistant message whose tool calls never received results (a run interrupted
+    // between the model's tool call and its execution) would reach the provider as
+    // unpaired tool_calls and 400 the next turn. Pair each orphan call with an
+    // isError result — the same signal the cancel path synthesizes — so the
+    // transcript stays valid and the model can retry the call.
+    const paired: AgentMessage[] = []
+    for (let i = 0; i < answered.length; i++) {
+      const m = answered[i]!
+      paired.push(m)
+      if (m.role === 'assistant' && m.toolCalls?.length && answered[i + 1]?.role !== 'tool') {
+        paired.push({
+          role: 'tool',
+          results: m.toolCalls.map((call) => ({
+            id: call.id,
+            name: call.name,
+            output: TOOL_ABORTED_OUTPUT,
+            isError: true,
+          })),
+        })
+      }
+    }
+    this.history = paired
     if (this.history.length === 0) return
     if (this.compactionEnabled()) {
       const { maxBytes, keepRecentBytes } = this.compactBudget()
@@ -347,16 +525,27 @@ export class AgentLoop<TSnapshot = unknown> {
     this.executedCalls = []
     this.verifyRetryUsed = false
     this.abortController = new AbortController()
-    const context = this.options.skill.buildContext?.() ?? ''
-    const format =
-      this.options.formatUserMessage ??
-      ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
-    const userMsg: AgentMessage = {
-      role: 'user',
-      text: format(instruction, context),
-      ...(images?.length ? { images } : {}),
+    // buildContext and formatUserMessage are consumer-supplied and run before any
+    // turn exists, so a throw here would escape run() with `running` still true:
+    // the guard at the top then drops every later message silently, cancel()
+    // no-ops, and only reset() frees the loop. composeSkills fans buildContext out
+    // to every sub-skill, each of which reads the live document, so a document
+    // mid-transition is enough to wedge the panel. The user message was never
+    // pushed, so the rollback in failRun() is a no-op and only the report matters.
+    try {
+      const context = this.options.skill.buildContext?.() ?? ''
+      const format =
+        this.options.formatUserMessage ??
+        ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+      const userMsg: AgentMessage = {
+        role: 'user',
+        text: format(instruction, context),
+        ...(images?.length ? { images } : {}),
+      }
+      void this.beginRun(userMsg)
+    } catch (err) {
+      this.failRun(err instanceof Error ? err.message : String(err))
     }
-    void this.beginRun(userMsg)
   }
 
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
@@ -566,6 +755,36 @@ export class AgentLoop<TSnapshot = unknown> {
     this.runUserMsg = null
   }
 
+  /**
+   * Terminal failure path for the callback guard sites: clear `running` (or
+   * every later message is silently dropped, and even cancel() no-ops), roll
+   * the failed instruction back out of history so no orphaned tool_use is left
+   * behind, then report. onError is the consumer's last callback, so a throw
+   * from it must not escape and wedge the loop a second time.
+   */
+  private failRun(message: string): void {
+    this.running = false
+    this.rollbackFailedRun()
+    try {
+      this.options.events?.onError?.(message)
+    } catch {
+      // nothing left to notify
+    }
+  }
+
+  /**
+   * finishTurn() runs consumer-supplied callbacks (onToolStart, onToolExecuted
+   * with its snapshotBefore, onTurnEnd, onDone) and the captureSnapshot hook.
+   * Its promise is discarded, so a throw from any of them would escape as an
+   * unhandled rejection and leave `running` true forever. Same terminal-state
+   * guarantee as the tools-getter guard in startTurn().
+   */
+  private settleTurn(): void {
+    void this.finishTurn().catch((err: unknown) => {
+      this.failRun(err instanceof Error ? err.message : String(err))
+    })
+  }
+
   /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request. */
   private trimHistory(): void {
     const max = this.options.maxHistory ?? 40
@@ -601,7 +820,15 @@ export class AgentLoop<TSnapshot = unknown> {
           onDelta: (text) => {
             if (generation !== this.generation || settled) return
             this.turnText += text
-            this.options.events?.onText?.(this.turnText)
+            try {
+              this.options.events?.onText?.(this.turnText)
+            } catch (err) {
+              // A transport drives onDelta from its own async event handler
+              // (see the Electron IPC transport), so this throw never reaches
+              // the try/catch around stream() below.
+              settled = true
+              this.failRun(err instanceof Error ? err.message : String(err))
+            }
           },
           onReasoning: (text) => {
             if (generation !== this.generation || settled) return
@@ -618,7 +845,7 @@ export class AgentLoop<TSnapshot = unknown> {
           onDone: () => {
             if (generation !== this.generation || settled) return
             settled = true
-            void this.finishTurn()
+            this.settleTurn()
           },
           onError: (error) => {
             if (generation !== this.generation || settled) return
@@ -643,7 +870,7 @@ export class AgentLoop<TSnapshot = unknown> {
                 if (generation !== this.generation) return
                 // Stopped during the backoff window: finalize like a normal cancel
                 if (this.cancelled) {
-                  void this.finishTurn()
+                  this.settleTurn()
                   return
                 }
                 this.startTurn(retriesUsed + 1)
@@ -771,20 +998,22 @@ export class AgentLoop<TSnapshot = unknown> {
       }
       // Unusable input (truncated by the token limit, or JSON that failed to parse):
       // don't execute; feed a targeted error back so the model retries correctly
-      const missing =
-        call.truncated || call.inputError
-          ? []
-          : missingRequiredFields(
-              skill.tools.find((t) => t.name === call.name),
-              call.input,
-            )
-      if (call.truncated || call.inputError || missing.length > 0) {
+      const tool = skill.tools.find((t) => t.name === call.name)
+      const unreadable = call.truncated || call.inputError
+      const missing = unreadable ? [] : missingRequiredFields(tool, call.input)
+      // A value that contradicts the schema is as unusable as a missing one, and
+      // is reported last: telling the model which field is absent is what it needs first.
+      const invalid =
+        unreadable || missing.length > 0 ? [] : invalidArgumentFields(tool, call.input)
+      if (unreadable || missing.length > 0 || invalid.length > 0) {
         unusableInTurn = true
         const output = call.truncated
           ? 'Tool arguments were cut off by the output length limit; the tool was not executed. Split this operation into several smaller tool calls (less content per call) and try again.'
           : call.inputError
             ? `Tool input JSON failed to parse; the tool was not executed: ${call.inputError}\nFix the arguments (make sure quotes inside strings are escaped) and call again.`
-            : `Tool call ${call.name} is missing the required argument(s) ${missing.map((f) => `"${f}"`).join(', ')}; the tool was not executed. Put the arguments in the tool call itself (not in your reply text) and call again with every required field.`
+            : missing.length > 0
+              ? `Tool call ${call.name} is missing the required argument(s) ${missing.map((f) => `"${f}"`).join(', ')}; the tool was not executed. Put the arguments in the tool call itself (not in your reply text) and call again with every required field.`
+              : `Tool call ${call.name} got ${invalid.length === 1 ? 'an argument' : 'arguments'} that do not match the tool's input schema — ${invalid.join('; ')}; the tool was not executed. Call again with every value of the declared type and within the declared limits (a number must be a bare JSON number, not a quoted string).`
         results.push({ id: call.id, name: call.name, output, isError: true })
         events?.onToolExecuted?.({
           call,
@@ -935,15 +1164,29 @@ export function sanitizeAgentPayload(payload: string): string {
       .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
       .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[REDACTED_API_KEY]')
       .replace(/\bxox[abeoprs]-[A-Za-z0-9-]{10,}/g, '[REDACTED_API_KEY]')
-      .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
+      // The scheme run is bounded for the same reason as the identifier prefix below:
+      // an unbounded `[a-z0-9+.-]*` in front of a literal `://` is ambiguous, so every
+      // start offset consumed the whole run and backtracked looking for the `://`
+      // (measured: 96 KB of hex took ~12s in this regex alone, ~70s for the call).
+      // A 30-char scheme covers every registered one; past it the match simply starts
+      // mid-scheme, which still redacts the password — only the captured scheme
+      // prefix is shorter.
+      .replace(/([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
       .replace(
         /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
         '$1$2"[REDACTED_SECURE_TOKEN]"',
       )
       // Unquoted `password=abc123`: the value must be 6+ chars with a non-letter,
       // so "password: is in the vault" prose stays untouched.
+      // The identifier prefix is bounded: an unbounded `\w*` in front of the
+      // alternation overlaps it, so at every start offset the engine consumed the
+      // whole word run and backtracked one character at a time to place the
+      // keyword — quadratic in the length of an unbroken [A-Za-z0-9_] run. A user
+      // pasting a hex dump or a base64url token froze the renderer for ~70s
+      // (measured: 100 KB of hex, this function, one call). 64 chars is far more
+      // than any real `my_password`-style prefix and keeps the match set identical.
       .replace(
-        /(?<!\/)(\w*(?:password|passwd|secret_key|private_key))(\s*[:=]\s*)(?=[^\s"',;]*[^A-Za-z\s"',;])[^\s"',;]{6,}/gi,
+        /(?<!\/)(\w{0,64}(?:password|passwd|secret_key|private_key))(\s*[:=]\s*)(?=[^\s"',;]*[^A-Za-z\s"',;])[^\s"',;]{6,}/gi,
         '$1$2[REDACTED_SECURE_TOKEN]',
       )
   )

@@ -52,6 +52,50 @@ describe('detectFurniture: repeated headers', () => {
   })
 })
 
+describe('detectFurniture: drifting header baseline', () => {
+  const drifting = (text: string, firstDist: number, step: number, pages: number) =>
+    [...Array(pages).keys()].map((i) =>
+      pageOf(
+        i,
+        mkText(text, 72, { y: HEIGHT - (firstDist + i * step) }).chars,
+        body(`Body ${'x'.repeat(i)}`),
+      ),
+    )
+
+  it('keeps a header that steps 5pt down the page per occurrence in one slot', () => {
+    // 40/45/50/55 — every step inside EDGE_TOL_PT, so anchoring the slot on its
+    // first line shattered it into two 2-page slots, both under repeatMin
+    const { drop, droppedLines, hf } = detectFurniture(drifting('ACME REPORT', 40, 5, 4))
+    expect(droppedLines).toBe(4)
+    expect(drop.every((s) => s.size > 0)).toBe(true)
+    expect(hf).toHaveLength(1)
+    expect(hf[0]).toMatchObject({
+      band: 'top',
+      text: 'ACME REPORT',
+      pageNo: false,
+      coversFirstPage: true,
+    })
+  })
+
+  it('keeps a header stepping exactly EDGE_TOL_PT per page in one slot', () => {
+    expect(detectFurniture(drifting('SPAN CHECK', 40, 6, 7)).droppedLines).toBe(7)
+  })
+
+  it('still separates two headers further apart than the tolerance', () => {
+    const pages = [0, 1, 2, 3].map((i) =>
+      pageOf(
+        i,
+        mkText('Alpha', 72, { y: HEIGHT - 40 }).chars,
+        mkText('Beta', 72, { y: HEIGHT - 80 }).chars,
+        body(`Body ${i}`),
+      ),
+    )
+    const { droppedLines, hf } = detectFurniture(pages)
+    expect(droppedLines).toBe(8)
+    expect(hf.map((h) => h.text).sort()).toEqual(['Alpha', 'Beta'])
+  })
+})
+
 describe('detectFurniture: page numbers', () => {
   it('drops bare page numbers on every page, first included', () => {
     const pages = [0, 1, 2].map((i) => pageOf(i, footer(String(i + 1)), body('text')))

@@ -13,7 +13,7 @@
 import { useEffect, useRef } from 'react'
 import type { FocusEvent as ReactFocusEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 
-const FOCUSABLE = 'button, input, textarea, select, [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'a[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])'
 
 export function useImageViewerFocus(onClose: () => void, initialFocus: string) {
   const ref = useRef<HTMLDivElement>(null)

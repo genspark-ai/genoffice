@@ -377,7 +377,7 @@ describe('applyCfRules with x14 extensions', () => {
     const xml = applyCfRules(X14_SHEET, [highlight([range])], new FakeDxfs())
     expect(xml).toContain(X14_EXT)
     expect(xml).not.toContain('operator="lessThan"')
-    expect(xml).toContain('<cfRule type="cellIs" dxfId="0" priority="2" operator="greaterThan">')
+    expect(xml).toContain('<cfRule type="cellIs" dxfId="0" priority="4" operator="greaterThan">')
     const removedAll = applyCfRules(X14_SHEET, [], new FakeDxfs())
     expect(removedAll).toContain(X14_EXT)
     expect(removedAll).not.toContain('<conditionalFormatting ')
@@ -389,9 +389,9 @@ describe('applyCfRules with x14 extensions', () => {
       [highlight([range]), highlight([{ ...range, startColumn: 3, endColumn: 3 }])],
       new FakeDxfs(),
     )
-    expect(xml).toContain('priority="2" operator="greaterThan"')
     expect(xml).toContain('priority="4" operator="greaterThan"')
-    expect(xml).not.toMatch(/<cfRule type="cellIs"[^>]* priority="[13]"/)
+    expect(xml).toContain('priority="5" operator="greaterThan"')
+    expect(xml).not.toMatch(/<cfRule type="cellIs"[^>]* priority="[123]"/)
   })
 
   it('passes an unchanged x14-linked data bar through verbatim and avoids its priority', () => {

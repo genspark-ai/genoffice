@@ -907,6 +907,24 @@ export function IconBorderInsideV(props: IconProps) {
   )
 }
 
+export function IconBorderDiagonalDown(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <IconBorderDashedFrame />
+      <path d="M 3.02 3.02 L 12.98 12.98" />
+    </Svg>
+  )
+}
+
+export function IconBorderDiagonalUp(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <IconBorderDashedFrame />
+      <path d="M 3.02 12.98 L 12.98 3.02" />
+    </Svg>
+  )
+}
+
 /* ---------- Design ---------- */
 
 export function IconTheme(props: IconProps) {
@@ -1487,6 +1505,43 @@ export function IconWrapText(props: IconProps) {
     <Svg {...props}>
       <rect x="3" y="5.69" width="4.62" height="4.62" />
       <path d="M 9.16 3.38 h 3.85 M 9.16 5.69 h 3.85 M 9.16 8 h 3.85 M 9.16 10.31 h 3.85 M 3 12.62 h 10.01 M 3 3.38 h 4.62" />
+    </Svg>
+  )
+}
+
+/** Shape Format Arrange ordering: one chevron = one step, two = all the way. */
+export function IconBringForward(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 5.69 5.69 8 3.38 10.31 5.69" />
+      <rect x="3" y="8" width="10.01" height="4.62" rx="0.62" />
+    </Svg>
+  )
+}
+
+export function IconBringToFront(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 5.69 6.46 8 4.15 10.31 6.46 M 5.69 3.38 8 1.08 10.31 3.38" />
+      <rect x="3" y="9.23" width="10.01" height="3.38" rx="0.62" />
+    </Svg>
+  )
+}
+
+export function IconSendBackward(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3.38" width="10.01" height="4.62" rx="0.62" />
+      <path d="M 5.69 10.31 8 12.62 10.31 10.31" />
+    </Svg>
+  )
+}
+
+export function IconSendToBack(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3.38" width="10.01" height="3.38" rx="0.62" />
+      <path d="M 5.69 9.54 8 11.85 10.31 9.54 M 5.69 12.62 8 14.92 10.31 12.62" />
     </Svg>
   )
 }

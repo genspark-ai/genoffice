@@ -29,8 +29,10 @@ export interface SlideScan {
   bodySuffix: string
 }
 
-// Matches one XML tag, tolerating '>' inside attribute values.
-const TAG_RE = /<\/?(?:[^<>"']|"[^"]*"|'[^']*')*>/g
+// Matches one XML comment or one XML tag, tolerating '>' inside attribute values.
+// The comment alternative must stay first: the tag class cannot cross a '<', so a
+// comment carrying markup (<!-- <p:sp> -->) would otherwise be scanned as real tags.
+const TAG_RE = /<!--[\s\S]*?-->|<\/?(?:[^<>"']|"[^"]*"|'[^']*')*>/g
 const NAME_RE = /^<\/?\s*([A-Za-z_][\w:.-]*)/
 
 // mc:AlternateContent: scanned as an element so its Choice (e.g. a chartEx frame)

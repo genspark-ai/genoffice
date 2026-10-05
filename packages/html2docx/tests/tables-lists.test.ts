@@ -23,6 +23,22 @@ async function documentParts(ir: unknown[]) {
   }
 }
 
+// Resolves the numbering format the Nth list paragraph really renders with:
+// w:numId -> w:num -> w:abstractNumId -> that level's w:numFmt.
+function numFmtOf(documentXml: string, numberingXml: string, index: number): string {
+  const ids = documentXml.match(/<w:numId w:val="\d+"\/>/g) || []
+  const numId = ids[index].match(/"(\d+)"/)![1]
+  const abstractId = numberingXml.match(
+    new RegExp(`<w:num w:numId="${numId}"><w:abstractNumId w:val="(\\d+)"`),
+  )![1]
+  const abstract = numberingXml.match(
+    new RegExp(
+      `<w:abstractNum[^>]*w:abstractNumId="${abstractId}"[^>]*>([\\s\\S]*?)</w:abstractNum>`,
+    ),
+  )![1]
+  return abstract.match(/<w:numFmt w:val="([^"]+)"/)![1]
+}
+
 test('converts a table with a header row', async () => {
   const { documentXml } = await documentParts([
     {
@@ -74,4 +90,18 @@ test('converts an ordered list with decimal numbering', async () => {
   assert.match(documentXml, /Second/)
   assert.match(numberingXml, /w:numFmt w:val="decimal"/)
   assert.equal((documentXml.match(/w:numPr/g) || []).length, 4)
+})
+test('honours a bullet marker type on an ordered list', async () => {
+  const { documentXml, numberingXml } = await documentParts([
+    {
+      type: 'list',
+      ordered: true,
+      items: [
+        { runs: [{ text: 'Numbered' }] },
+        { runs: [{ text: 'Squared' }], markerType: 'square' },
+      ],
+    },
+  ])
+  assert.equal(numFmtOf(documentXml, numberingXml, 0), 'decimal')
+  assert.equal(numFmtOf(documentXml, numberingXml, 1), 'bullet')
 })

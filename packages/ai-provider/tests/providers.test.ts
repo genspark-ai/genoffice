@@ -81,6 +81,15 @@ describe('provider model catalog', () => {
       expect(model).not.toContain('/')
     }
   })
+
+  it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
+    const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
+    expect(ci.models).toContain(ci.defaultModel)
+    expect(ci.needsBaseUrl).toBeUndefined()
+    for (const model of ci.models) {
+      expect(model).not.toContain('/')
+    }
+  })
 })
 
 describe('resolveAiSettings', () => {

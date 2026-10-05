@@ -1192,9 +1192,14 @@ export interface CellBorders {
   left?: CellBorder
   bottom?: CellBorder
   right?: CellBorder
+  /** w:tl2br — top-left to bottom-right diagonal ("\") */
+  tl2br?: CellBorder
+  /** w:tr2bl — top-right to bottom-left diagonal ("/") */
+  tr2bl?: CellBorder
 }
 
-/** Table-level borders (w:tblBorders), including inner horizontal/vertical lines */
+/** Table-level borders (w:tblBorders), including inner horizontal/vertical lines.
+ *  The diagonals are cell-level only: CT_TblBorders has no tl2br/tr2bl child. */
 export interface TableBorders extends CellBorders {
   insideH?: CellBorder
   insideV?: CellBorder

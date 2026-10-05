@@ -97,6 +97,25 @@ describe('listFolder', () => {
       missing: true,
     })
   })
+
+  /**
+   * The Home tree only lists what the shell can open, and TREE_FILE_EXTENSIONS
+   * is kept to mirror the open-dialog filter. A .txt left out of it is invisible
+   * on Home, so a file the open dialog happily offers cannot be clicked into
+   * from the folder pane — the same drift, one list further along.
+   */
+  it('lists the text app extensions alongside markdown', () => {
+    touch('notes.md')
+    touch('notes.txt')
+    touch('data.json')
+    touch('photo.png')
+
+    expect(
+      listFolder(root, new Set())
+        .files.map((f) => f.name)
+        .sort(),
+    ).toEqual(['data.json', 'notes.md', 'notes.txt'])
+  })
 })
 
 describe('isInsideRoot', () => {
@@ -162,6 +181,15 @@ describe('pathsUnder', () => {
     const dir = join(root, 'never-created')
     expect(pathsUnder(dir, [join(dir, 'x.docx')])).toEqual([join(dir, 'x.docx')])
     expect(existsSync(dir)).toBe(false)
+  })
+})
+
+describe('rebasePath', () => {
+  it('leaves a path that did not live under the moved folder alone', () => {
+    const outside = touch('notes.md')
+    const sibling = touch('src2/deep.md')
+    expect(rebasePath(outside, join(root, 'src'), join(root, 'dest'))).toBe(outside)
+    expect(rebasePath(sibling, join(root, 'src'), join(root, 'dest'))).toBe(sibling)
   })
 })
 

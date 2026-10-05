@@ -36,4 +36,16 @@ describe('shared trapTab', () => {
     trapTab(container, e)
     expect(document.activeElement!.textContent).toBe('First')
   })
+
+  it('keeps Tab from escaping through an in-modal link', () => {
+    const container = modal()
+    const link = document.createElement('a')
+    link.href = 'https://example.com'
+    link.textContent = 'Link'
+    container.append(link)
+    const first = container.querySelector('button')!
+    link.focus()
+    trapTab(container, tab(false))
+    expect(document.activeElement).toBe(first)
+  })
 })

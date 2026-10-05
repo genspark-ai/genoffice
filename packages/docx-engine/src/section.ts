@@ -6,6 +6,7 @@ import type {
   NoteProps,
   LineNumbering,
 } from './types'
+import { onOffTagIn } from './parse-xml-text'
 
 /** US Letter, portrait, 1-inch margins */
 export const DEFAULT_SECTION: SectionSettings = {
@@ -24,8 +25,13 @@ export const DEFAULT_SECTION: SectionSettings = {
 
 /** Vertical alignment of page content (sectPr w:vAlign); top/default returns undefined */
 function vAlignOf(xml: string): 'center' | 'both' | 'bottom' | undefined {
-  const v = /<w:vAlign w:val="(center|both|bottom)"\s*\/>/.exec(xml)?.[1]
-  return v as 'center' | 'both' | 'bottom' | undefined
+  const v = strAttr(/<w:vAlign[^>]*\/?>/.exec(xml)?.[0] ?? '', 'w:val')
+  return v === 'center' || v === 'both' || v === 'bottom' ? v : undefined
+}
+
+/** String attribute of a tag; matches either quote style. */
+function strAttr(tag: string, name: string): string | undefined {
+  return new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`).exec(tag)?.[1]
 }
 
 /** Integer attribute of a tag; XML allows either quote style, so match both. */
@@ -45,7 +51,7 @@ function hasVisiblePageBorder(xml: string): boolean {
   if (!pgBorders) return false
   const sides = pgBorders.match(/<w:(?:top|left|bottom|right)\b[^>]*\/?>/g) ?? []
   return sides.some((side) => {
-    const val = /w:val="([^"]*)"/.exec(side)?.[1]
+    const val = strAttr(side, 'w:val')
     return val !== undefined && val !== 'none' && val !== 'nil'
   })
 }
@@ -83,20 +89,18 @@ const LINE_BORDER_VALS = new Set([
 function pageBorderPropsOf(xml: string): SectionSettings['pageBorderProps'] {
   const pgBorders = /<w:pgBorders[^>]*\/>|<w:pgBorders[\s\S]*?<\/w:pgBorders>/.exec(xml)?.[0]
   if (!pgBorders || !hasVisiblePageBorder(xml)) return undefined
-  const display = /w:display="(firstPage|notFirstPage)"/.exec(pgBorders)?.[1] as
-    'firstPage' | 'notFirstPage' | undefined
-  const offsetFrom = /w:offsetFrom="(page|text)"/.exec(pgBorders)?.[1] as
-    'page' | 'text' | undefined
-  const zOrder = /<w:pgBorders[^>]*\bw:zOrder="back"/.test(pgBorders) ? 'back' : undefined
+  const display = strAttr(pgBorders, 'w:display') as 'firstPage' | 'notFirstPage' | undefined
+  const offsetFrom = strAttr(pgBorders, 'w:offsetFrom') as 'page' | 'text' | undefined
+  const zOrder = /\bw:zOrder\s*=\s*["']back["']/.test(pgBorders) ? 'back' : undefined
   let spacePt = 0
   let widthPt = 0
   let color: string | undefined
   const sides: NonNullable<SectionSettings['pageBorderProps']>['sides'] = {}
   for (const side of pgBorders.match(/<w:(?:top|left|bottom|right)\b[^>]*\/?>/g) ?? []) {
-    const val = /w:val="([^"]*)"/.exec(side)?.[1]
+    const val = strAttr(side, 'w:val')
     if (!val || val === 'none' || val === 'nil') continue
     const name = /<w:(top|left|bottom|right)\b/.exec(side)![1] as keyof typeof sides
-    const sideColor = /w:color="([0-9A-Fa-f]{6})"/.exec(side)?.[1]
+    const sideColor = /w:color\s*=\s*["']([0-9A-Fa-f]{6})["']/.exec(side)?.[1]
     // art borders: w:sz is the tiled pattern height in points, not eighth-points
     const art = !LINE_BORDER_VALS.has(val)
     const sz = intAttr(side, 'w:sz', 0)
@@ -134,15 +138,14 @@ export function sectionSettingsFromXml(
   let docGrid: DocGrid | undefined
   const docGridTag = /<w:docGrid[^>]*\/?>/.exec(xml)?.[0]
   if (docGridTag) {
-    const typeMatch = /w:type="([^"]+)"/.exec(docGridTag)
-    const linePitchMatch = /w:linePitch="(\d+)"/.exec(docGridTag)
-    const charSpaceMatch = /w:charSpace="(-?\d+)"/.exec(docGridTag)
-    const gridType = (typeMatch?.[1] ?? 'default') as DocGrid['type']
+    const gridType = (strAttr(docGridTag, 'w:type') ?? 'default') as DocGrid['type']
     const validTypes: DocGrid['type'][] = ['default', 'lines', 'linesAndChars', 'snapToChars']
+    const linePitch = intAttr(docGridTag, 'w:linePitch', -1)
+    const charSpace = intAttr(docGridTag, 'w:charSpace', Number.NaN)
     docGrid = {
       type: validTypes.includes(gridType) ? gridType : 'default',
-      ...(linePitchMatch ? { linePitch: parseInt(linePitchMatch[1], 10) } : {}),
-      ...(charSpaceMatch ? { charSpace: parseInt(charSpaceMatch[1], 10) } : {}),
+      ...(linePitch >= 0 ? { linePitch } : {}),
+      ...(Number.isFinite(charSpace) ? { charSpace } : {}),
     }
   }
 
@@ -168,7 +171,7 @@ export function sectionSettingsFromXml(
   return {
     pageWidth: intAttr(pgSz, 'w:w', DEFAULT_SECTION.pageWidth),
     pageHeight: intAttr(pgSz, 'w:h', DEFAULT_SECTION.pageHeight),
-    orientation: pgSz.includes('w:orient="landscape"') ? 'landscape' : 'portrait',
+    orientation: strAttr(pgSz, 'w:orient') === 'landscape' ? 'landscape' : 'portrait',
     marginTop: Math.abs(marginTop) + (gutterAtTop ? gutter : 0),
     marginRight: intAttr(pgMar, 'w:right', DEFAULT_SECTION.marginRight),
     marginBottom: Math.abs(marginBottom),
@@ -186,7 +189,7 @@ export function sectionSettingsFromXml(
     colSpace: intAttr(/<w:cols[^>]*\/?>/.exec(xml)?.[0] ?? '', 'w:space', 720),
     ...(colWidths.length >= 2 ? { colWidths } : {}),
     ...(lineNumbers ? { lineNumbers } : {}),
-    ...(/<w:bidi\s*\/>/.test(xml) ? { bidi: true } : {}),
+    ...(onOffTagIn(xml, 'w:bidi') ? { bidi: true } : {}),
     ...(docGrid ? { docGrid } : {}),
     ...(textDirectionOf(xml) ? { textDirection: textDirectionOf(xml) } : {}),
     ...(footnotePr ? { footnotePr } : {}),
@@ -204,7 +207,10 @@ export function notePropsFromXml(
 ): NoteProps | undefined {
   const el = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(xml)?.[1]
   if (!el) return undefined
-  const val = (name: string) => new RegExp(`<w:${name} w:val="([^"]+)"`).exec(el)?.[1]
+  const val = (name: string) => {
+    const tag = new RegExp(`<w:${name}\\b[^>]*\\/?>`).exec(el)?.[0] ?? ''
+    return strAttr(tag, 'w:val')
+  }
   const pos = val('pos')
   const numFmt = val('numFmt')
   const numStart = val('numStart')
@@ -226,7 +232,7 @@ export function notePropsFromXml(
 export function lineNumberingOf(xml: string): LineNumbering | undefined {
   const tag = /<w:lnNumType\b[^>]*\/?>/.exec(xml)?.[0]
   if (!tag) return undefined
-  const restart = /w:restart="([^"]+)"/.exec(tag)?.[1]
+  const restart = strAttr(tag, 'w:restart')
   const distance = intAttr(tag, 'w:distance', -1)
   return {
     countBy: Math.max(1, intAttr(tag, 'w:countBy', 1)),
@@ -238,7 +244,7 @@ export function lineNumberingOf(xml: string): LineNumbering | undefined {
 }
 
 function textDirectionOf(xml: string): string | undefined {
-  const val = /<w:textDirection[^>]*w:val="([^"]+)"/.exec(xml)?.[1]
+  const val = strAttr(/<w:textDirection[^>]*\/?>/.exec(xml)?.[0] ?? '', 'w:val')
   return val && val !== 'lrTb' ? val : undefined
 }
 
@@ -254,7 +260,7 @@ const SECT_PR_RE = /<w:sectPr[^>]*\/>|<w:sectPr[\s\S]*?<\/w:sectPr>/
  *  off: matches self-closing and paired forms, w:val="0|false|off" counts as off. */
 export function xmlFlagOn(xml: string, tag: string): boolean {
   for (const m of xml.matchAll(new RegExp(`<${tag}(?=[\\s/>])[^>]*>`, 'g'))) {
-    const val = /w:val="([^"]*)"/.exec(m[0])?.[1]
+    const val = strAttr(m[0], 'w:val')
     if (val === undefined || !/^(?:0|false|off)$/.test(val)) return true
   }
   return false
@@ -305,14 +311,21 @@ export function sectionFromSectPr(
   lastBlockIndex: number,
   gutterAtTop?: boolean,
 ): SectionInfo {
-  const type = /<w:type[^>]*w:val="(nextPage|continuous|evenPage|oddPage|nextColumn)"/.exec(
-    sectPrXml,
-  )?.[1]
-  const pgNumStart = /<w:pgNumType[^>]*w:start="(\d+)"/.exec(sectPrXml)?.[1]
-  const pgNumFmt = /<w:pgNumType[^>]*w:fmt="([^"]+)"/.exec(sectPrXml)?.[1]
+  const pgNumTag = /<w:pgNumType[^>]*\/?>/.exec(sectPrXml)?.[0] ?? ''
+  const type = strAttr(/<w:type[^>]*\/?>/.exec(sectPrXml)?.[0] ?? '', 'w:val')
+  const startType =
+    type === 'continuous' ||
+    type === 'evenPage' ||
+    type === 'oddPage' ||
+    type === 'nextColumn' ||
+    type === 'nextPage'
+      ? type
+      : 'nextPage'
+  const pgNumStart = /w:start\s*=\s*["'](\d+)["']/.exec(pgNumTag)?.[1]
+  const pgNumFmt = /w:fmt\s*=\s*["']([^"']+)["']/.exec(pgNumTag)?.[1]
   return {
     settings: sectionSettingsFromXml(sectPrXml, { gutterAtTop }),
-    startType: (type as SectionInfo['startType']) ?? 'nextPage',
+    startType,
     firstBlockIndex,
     lastBlockIndex,
     sectPrXml,
@@ -516,13 +529,17 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
 
   // section direction (w:bidi, after cols in CT_SectPr): undefined = keep the
   // document's tag untouched; true/false = ensure present/absent
+  // w:bidi as Word may write it: self-closing, paired, or carrying an explicit w:val.
+  // The reader sees all three spellings, so the writer has to match and remove all
+  // three or a round-trip over a paired element leaves a second w:bidi behind.
+  const BIDI_ELEMENT = /<w:bidi(?=[\s/>])[^>]*(?:\/>|>[\s\S]*?<\/w:bidi>)/i
   if (settings.bidi !== undefined) {
-    const hasBidi = /<w:bidi\s*\/>/.test(xml)
+    const hasBidi = BIDI_ELEMENT.test(xml)
     if (settings.bidi && !hasBidi) {
       if (/<w:docGrid/.test(xml)) xml = xml.replace(/(<w:docGrid)/, '<w:bidi/>$1')
       else xml = xml.replace(/<\/w:sectPr>/, '<w:bidi/></w:sectPr>')
     } else if (!settings.bidi && hasBidi) {
-      xml = xml.replace(/<w:bidi\s*\/>/, '')
+      xml = xml.replace(BIDI_ELEMENT, '')
     }
   }
   return xml

@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path'
 import { openPptx, savePptx, listSlideLayouts, insertSlideWithLayout } from '../src/index'
 import { resolveTarget, relsPathFor } from '../src/zip'
 import { parseLayoutPlaceholders } from '../src/layout'
+import { parsePlaceholderMap, resolvePlaceholderTransform } from '../src/placeholder'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -45,6 +46,24 @@ describe('listSlideLayouts', () => {
         hint: 'Click to add text',
       },
     ])
+  })
+
+  it('includes graphicFrame obj placeholders in both placeholder scans', () => {
+    const xml =
+      '<p:sldLayout xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:graphicFrame>' +
+      '<p:nvGraphicFramePr><p:cNvPr id="2" name="Content"/><p:cNvGraphicFramePr/><p:nvPr><p:ph type="obj" idx="0"/></p:nvPr></p:nvGraphicFramePr>' +
+      '<p:xfrm><a:off x="100" y="200"/><a:ext cx="300" cy="400"/></p:xfrm>' +
+      '</p:graphicFrame></p:spTree></p:cSld></p:sldLayout>'
+    expect(parseLayoutPlaceholders(xml)).toEqual([
+      { type: 'obj', idx: '0', x: 100, y: 200, cx: 300, cy: 400, hint: 'Click to add content' },
+    ])
+    const map = parsePlaceholderMap(xml)
+    expect(resolvePlaceholderTransform(map, undefined, 'obj', '0')?.offset).toEqual({
+      x: 100,
+      y: 200,
+      cx: 300,
+      cy: 400,
+    })
   })
 
   it('layout paths sorted by number ascending', async () => {

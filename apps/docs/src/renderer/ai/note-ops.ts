@@ -167,7 +167,8 @@ export function noteInsertPos(
   return posAfterText(block, start + 1, afterText, `block ${blockIndex}`)
 }
 
-function renumber(tr: Transaction, kind: NoteKind): void {
+/** Rewrite every reference mark of `kind` in `tr` to its 1-based document-order number. */
+export function renumber(tr: Transaction, kind: NoteKind): void {
   let num = 0
   tr.doc.descendants((node, pos) => {
     if (node.type.name !== 'docNoteRef' || node.attrs.kind !== kind) return true

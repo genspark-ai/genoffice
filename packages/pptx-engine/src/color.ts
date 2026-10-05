@@ -21,7 +21,11 @@ export function resolveColorNode(
   let mods: XmlNode | undefined
   if (n['a:srgbClr']) {
     mods = asXmlNode(n['a:srgbClr'])
-    base = '#' + String(mods['@_val']).toUpperCase()
+    // A missing val must stay unresolved: '#' + String(undefined) is the truthy string
+    // '#UNDEFINED', which hexToRgb then reinterprets as an authored colour (an empty
+    // val yields '#000000'). Unresolvable is what the sibling branches already return.
+    const raw = String(mods['@_val'] ?? '')
+    if (raw) base = '#' + raw.toUpperCase()
   } else if (n['a:schemeClr']) {
     mods = asXmlNode(n['a:schemeClr'])
     base = resolveSchemeColor(String(mods['@_val']), theme, phClr)

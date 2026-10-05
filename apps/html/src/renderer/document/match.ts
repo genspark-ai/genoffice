@@ -90,33 +90,59 @@ const ENTITY_MAP: Record<string, string> = {
   '—': '-',
 }
 const ENTITY_RE = /&amp;|&quot;|&apos;|&#39;|&nbsp;|[\u00a0‘’“”–—]/g
+/** The only characters ENTITY_RE can start on, so a match is never missed elsewhere. */
+const ENTITY_START = new Set(['&', '\u00a0', '‘', '’', '“', '”', '–', '—'])
 
 /** canonical text: entities and typographic quotes/dashes folded, whitespace runs collapsed */
 function canonical(text: string): { text: string; map: number[] } {
   const map: number[] = []
   let out = ''
   let i = 0
+  // One forward scan, resumed only where an entity can start. Calling exec from
+  // every offset re-scanned the tail per character, so a document with no
+  // entities — the common case, and the whole-document haystack of a
+  // `str_replace` with no sid — cost O(n^2) and froze the renderer thread.
+  // A match found ahead of the cursor is held until the cursor reaches it, and a
+  // failed match ends the search: no entity exists at or after a position that
+  // scanned to the end, so later offsets need not rescan it.
+  let pending: RegExpExecArray | null = null
+  let entitiesExhausted = false
+  // Whether the last character appended was a space, tracked as a flag rather
+  // than read back with out.endsWith: endsWith flattens the whole accumulated
+  // rope, which put a second O(n^2) term on the same loop.
+  let lastWasSpace = false
   while (i < text.length) {
-    ENTITY_RE.lastIndex = i
-    const m = ENTITY_RE.exec(text)
-    if (m && m.index === i) {
-      const rep = ENTITY_MAP[m[0]]!
+    if (pending !== null && pending.index === i) {
+      const rep = ENTITY_MAP[pending[0]]!
       map.push(i)
       out += rep
-      i += m[0].length
+      lastWasSpace = rep === ' '
+      i += pending[0].length
+      pending = null
+      continue
+    }
+    if (pending === null && !entitiesExhausted && ENTITY_START.has(text[i]!)) {
+      ENTITY_RE.lastIndex = i
+      const match = ENTITY_RE.exec(text)
+      // A match ahead of the cursor is still the first one from here, so it is
+      // kept rather than re-found from the next candidate start.
+      if (match === null) entitiesExhausted = true
+      else pending = match
       continue
     }
     const ch = text[i]!
     if (/\s/.test(ch)) {
-      if (!out.endsWith(' ')) {
+      if (!lastWasSpace) {
         map.push(i)
         out += ' '
+        lastWasSpace = true
       }
       i++
       continue
     }
     map.push(i)
     out += ch
+    lastWasSpace = false
     i++
   }
   map.push(text.length)

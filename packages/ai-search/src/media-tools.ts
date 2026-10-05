@@ -7,8 +7,8 @@
  * insert pipelines' fetchRemoteImage accepts.
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, extname } from 'node:path'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, extname, sep } from 'node:path'
 import {
   activeMediaConfig,
   analyzeMediaWithProvider,
@@ -117,6 +117,84 @@ export function readAiSettingsFile(path: string): AiSettings {
 
 type Gate = { error: string } | null
 
+// ── Local media roots ───────────────────────────────────────────────
+
+/** The opt-out: no allowlist configured, so the extension check alone decides. */
+const NO_MEDIA_ROOTS: readonly string[] = []
+
+/**
+ * Directories a bare local media path may be read from, as the caller sees
+ * them: the CLI passes the input file's own directory, an Electron main
+ * process passes the open document's directory plus the directory it stages
+ * attachments in. Undefined/empty entries are dropped, so a caller can pass an
+ * optional open-document directory without branching.
+ *
+ * There is deliberately no default. The path arrives in a tool call, so the
+ * model picks it, and a default cannot be right for every host: process.cwd()
+ * refuses legitimate use from any other directory (and on a packaged macOS app
+ * whose cwd is "/" it is a no-op, so the gain vanishes exactly where it
+ * matters), and tmpdir() is world-readable staging. An allowlist nobody opts
+ * into relocates the trust boundary instead of removing it. A caller that
+ * supplies no roots gets the pre-allowlist behaviour — the extension check
+ * alone — which is what {@link isLocalMediaPathAllowed} reports as "no roots".
+ */
+export function localMediaRoots(...roots: (string | undefined | null)[]): string[] {
+  return roots.filter((root): root is string => Boolean(root))
+}
+
+/**
+ * The allowlist an Electron main process uses: the open document's own
+ * directory (a tool call naming a file next to the document the user is
+ * editing is the legitimate case) plus the directory that app stages pasted
+ * and attachment media in. An untitled document has no directory, so
+ * `docPath` may be undefined and only the staging directory remains.
+ */
+export function documentMediaRoots(
+  docPath: string | undefined | null,
+  attachmentDir: string | undefined | null,
+): string[] {
+  return localMediaRoots(docPath ? dirname(docPath) : undefined, attachmentDir)
+}
+
+/**
+ * The verified real path of `ref`, or null when it is missing or resolves
+ * outside `roots`. Both sides go through realpath, so a symlink planted inside
+ * a root cannot walk out of it, and the containment test is on whole path
+ * segments, so a sibling like /tmp/root-evil does not pass as /tmp/root.
+ *
+ * An empty `roots` means the caller did not opt in to confinement: the
+ * extension check in {@link loadMediaReference} is then the only gate, and any
+ * readable real path is returned (the pre-allowlist behaviour).
+ */
+function verifiedLocalPath(ref: string, roots: readonly string[]): string | null {
+  let real: string
+  try {
+    real = realpathSync(ref)
+  } catch {
+    return null
+  }
+  if (roots.length === 0) return real
+  for (const root of roots) {
+    let realRoot: string
+    try {
+      realRoot = realpathSync(root)
+    } catch {
+      continue
+    }
+    const prefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`
+    if (real === realRoot || real.startsWith(prefix)) return real
+  }
+  return null
+}
+
+/** True when `ref` is a readable path; with no `roots` the allowlist does not apply. */
+export function isLocalMediaPathAllowed(
+  ref: string,
+  roots: readonly string[] = NO_MEDIA_ROOTS,
+): boolean {
+  return verifiedLocalPath(ref, roots) !== null
+}
+
 /** the Genspark route's preconditions; null when it may proceed */
 function gskGate(settings: AiSettings, notLoggedInError: string): Gate {
   if (!hasGskAuth()) return { error: notLoggedInError }
@@ -131,10 +209,15 @@ function errorText(err: unknown): string {
 /**
  * Resolves a tool-supplied media reference to bytes: an https URL (SSRF-guarded),
  * a file:// URL from the generated-image store, or a local media file
- * (attachments). Only media extensions are read locally — the model must not be
- * able to ship arbitrary files to a vendor.
+ * (attachments). Only media extensions are read locally, and — when the caller
+ * supplied `roots` — only from those directories, so the model cannot ship
+ * arbitrary files to a vendor. With no roots the extension check alone applies
+ * (the pre-allowlist behaviour).
  */
-export async function loadMediaReference(ref: string): Promise<MediaBlob> {
+export async function loadMediaReference(
+  ref: string,
+  roots: readonly string[] = NO_MEDIA_ROOTS,
+): Promise<MediaBlob> {
   if (/^https?:\/\//i.test(ref)) {
     const resp = await (ref.match(/\.(png|jpe?g|gif|webp)(\?|$)/i)
       ? fetchRemoteImage(ref)
@@ -176,15 +259,31 @@ export async function loadMediaReference(ref: string): Promise<MediaBlob> {
   const mime = MIME_BY_EXT[extname(ref).toLowerCase()]
   if (!mime) throw new Error(`Unsupported media file: ${ref} (images, video and audio only)`)
   if (!existsSync(ref)) throw new Error(`File not found: ${ref}`)
-  if (statSync(ref).size > MAX_MEDIA_BYTES) {
+  // resolve before the read: a symlink inside a root points wherever it likes,
+  // and readFileSync would follow it out of the allowlist
+  const local = verifiedLocalPath(ref, roots)
+  if (!local) {
+    throw new Error(
+      `Refusing to read a local media file outside the allowed directories: ${ref} (allowed: ${roots.join(', ')})`,
+    )
+  }
+  const stat = statSync(local)
+  if (!stat.isFile()) throw new Error(`Not a regular file: ${ref}`)
+  if (stat.size > MAX_MEDIA_BYTES) {
     throw new MediaTooLargeError(`${ref} is too large to analyze`)
   }
-  return { bytes: new Uint8Array(readFileSync(ref)), mime, name: basename(ref) }
+  return { bytes: new Uint8Array(readFileSync(local)), mime, name: basename(ref) }
 }
 
 export interface MediaToolOptions {
   /** localized replacement for the default signed-out message */
   notLoggedInError?: string
+  /**
+   * Directories a bare local path in a tool call may be read from — the
+   * caller's own list, via {@link localMediaRoots}. Omitted (or empty) means
+   * the allowlist does not apply and the extension check alone decides.
+   */
+  mediaRoots?: readonly string[]
 }
 
 export interface MediaBudget {
@@ -203,6 +302,7 @@ export interface MediaBudget {
 export async function loadMediaReferences(
   refs: readonly string[],
   budget: MediaBudget = MEDIA_BUDGET,
+  roots: readonly string[] = NO_MEDIA_ROOTS,
 ): Promise<MediaBlob[]> {
   const maxItems = budget.maxItems ?? MAX_MEDIA_ITEMS
   const maxItemBytes = budget.maxItemBytes ?? MAX_MEDIA_BYTES
@@ -227,7 +327,7 @@ export async function loadMediaReferences(
   const worker = async (): Promise<void> => {
     while (next < refs.length) {
       const index = next++
-      const blob = await loadMediaReference(refs[index]!)
+      const blob = await loadMediaReference(refs[index]!, roots)
       landed += blob.bytes.byteLength
       if (landed > maxTotalBytes) {
         throw new MediaBudgetExceededError(
@@ -258,6 +358,7 @@ export async function generateImageTool(
 ): Promise<{ url?: string; error?: string }> {
   const prompt = String(op.prompt ?? '').trim()
   if (!prompt) return { error: 'prompt must not be empty' }
+  const mediaRoots = options.mediaRoots ?? NO_MEDIA_ROOTS
   const settings = readAiSettingsFile(settingsPath)
   const byok = activeMediaConfig(settings, 'image')
   try {
@@ -281,7 +382,11 @@ export async function generateImageTool(
       }
     }
     // `model` names Genspark-only special models (fal-*); BYOK uses the configured image model
-    const references = await loadMediaReferences(op.referenceImageUrls ?? [])
+    const references = await loadMediaReferences(
+      op.referenceImageUrls ?? [],
+      MEDIA_BUDGET,
+      mediaRoots,
+    )
     const image = await generateImageWithProvider(byok.provider, byok.config, {
       prompt,
       aspectRatio: op.aspectRatio,
@@ -303,6 +408,7 @@ export async function analyzeMediaTool(
   const requirements = String(op.requirements ?? '').trim()
   if (!mediaUrls.length) return { error: 'mediaUrls must not be empty' }
   if (!requirements) return { error: 'requirements must not be empty' }
+  const mediaRoots = options.mediaRoots ?? NO_MEDIA_ROOTS
   const settings = readAiSettingsFile(settingsPath)
   const imageByok = activeMediaConfig(settings, 'analysis')
   const videoByok = activeMediaConfig(settings, 'video')
@@ -320,7 +426,7 @@ export async function analyzeMediaTool(
     // image-analysis provider, anything with video/audio to the video one
     let media: MediaBlob[]
     try {
-      media = await loadMediaReferences(mediaUrls)
+      media = await loadMediaReferences(mediaUrls, MEDIA_BUDGET, mediaRoots)
     } catch (err) {
       // only the size cap hands the request back to Genspark (the CLI streams large
       // files itself); scheme / path / SSRF rejections stay rejections

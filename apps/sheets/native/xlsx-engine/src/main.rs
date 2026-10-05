@@ -310,12 +310,70 @@ impl CancelledRequests {
     }
 }
 
+/// The request the loop is currently executing, plus the flag a cancel sets
+/// to reach it. `CancelledRequests` only covers requests still waiting their
+/// turn: once the loop dequeues one, its queue entry is never consulted
+/// again, so an in-flight open would run to completion — creating a cache
+/// directory and registering a session for a host that already discarded the
+/// snapshot it was going to open.
+#[derive(Clone)]
+struct InFlightRequest(Arc<InFlightState>);
+
+struct InFlightState {
+    id: Mutex<String>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl InFlightRequest {
+    fn new() -> Self {
+        Self(Arc::new(InFlightState {
+            id: Mutex::new(String::new()),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }))
+    }
+
+    /// Registers the request about to run and clears the flag the previous
+    /// request may have left set. Called before the queue check, so the two
+    /// cover opposite sides of the dequeue: a cancel naming a still-queued
+    /// request is caught by the queue, one naming the request now running is
+    /// caught by the flag.
+    fn begin(&self, request_id: &str) {
+        *self
+            .0
+            .id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = request_id.to_owned();
+        self.0.cancelled.store(false, Ordering::Release);
+    }
+
+    /// The reader thread's half of a cancel that names the running request. A
+    /// target that is not the one running is left entirely to
+    /// `CancelledRequests`, whose cap and forget-on-overflow semantics are
+    /// unchanged.
+    fn cancel(&self, target_request_id: &str) {
+        let id = self
+            .0
+            .id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *id == target_request_id {
+            self.0.cancelled.store(true, Ordering::Release);
+        }
+    }
+
+    /// The live flag an in-flight request polls.
+    fn flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.0.cancelled)
+    }
+}
+
 fn main() {
     let stdin = io::stdin();
     let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
     let mut sessions = WorkbookSessions::new();
     let recalc = RecalcWorker::new();
     let cancelled = CancelledRequests::new();
+    let in_flight = InFlightRequest::new();
 
     // Requests execute on this thread in arrival order; a dedicated reader
     // drains stdin so a cancel can jump the queue while earlier requests are
@@ -324,6 +382,7 @@ fn main() {
     let (queue, requests) = mpsc::sync_channel::<Request>(8);
     let reader_output = Arc::clone(&output);
     let reader_cancelled = cancelled.clone();
+    let reader_in_flight = in_flight.clone();
     let reader = thread::Builder::new()
         .name("xlsx-reader".into())
         .spawn(move || {
@@ -362,7 +421,10 @@ fn main() {
                 };
                 if let Command::Cancel { target_request_id } = request.command {
                     let response = if request.version == PROTOCOL_VERSION {
-                        reader_cancelled.insert(target_request_id);
+                        reader_cancelled.insert(target_request_id.clone());
+                        // A target already running is past the queue's reach;
+                        // trip the flag its open is polling.
+                        reader_in_flight.cancel(&target_request_id);
                         Response::success(
                             request.request_id,
                             serde_json::json!({ "cancelled": true }),
@@ -389,7 +451,15 @@ fn main() {
     }
 
     for request in requests {
-        let response = handle_request(request, &mut sessions, &recalc, &cancelled, &output);
+        in_flight.begin(&request.request_id);
+        let response = handle_request(
+            request,
+            &mut sessions,
+            &recalc,
+            &cancelled,
+            &in_flight,
+            &output,
+        );
         if let Some(response) = response
             && write_response(&output, &response).is_err()
         {
@@ -404,6 +474,7 @@ fn handle_line(
     sessions: &mut WorkbookSessions,
     recalc: &RecalcWorker,
     cancelled: &CancelledRequests,
+    in_flight: &InFlightRequest,
     output: &SharedOutput,
 ) -> Option<Response> {
     let request: Request = match serde_json::from_str(line) {
@@ -416,7 +487,7 @@ fn handle_line(
             ));
         }
     };
-    handle_request(request, sessions, recalc, cancelled, output)
+    handle_request(request, sessions, recalc, cancelled, in_flight, output)
 }
 
 fn handle_request(
@@ -424,6 +495,7 @@ fn handle_request(
     sessions: &mut WorkbookSessions,
     recalc: &RecalcWorker,
     cancelled: &CancelledRequests,
+    in_flight: &InFlightRequest,
     output: &SharedOutput,
 ) -> Option<Response> {
     if cancelled.take(&request.request_id) {
@@ -447,9 +519,20 @@ fn handle_request(
             path,
             locale,
             short_date_format,
-        } => sessions
-            .open_with_locale(&path, &locale, short_date_format.as_deref())
-            .and_then(to_json_value),
+        } => {
+            // The flag the open polls: a cancel that landed after this
+            // request was dequeued reaches it here, where the queue no
+            // longer can.
+            let in_flight_cancelled = in_flight.flag();
+            sessions
+                .open_with_locale(
+                    &path,
+                    &locale,
+                    short_date_format.as_deref(),
+                    &in_flight_cancelled,
+                )
+                .and_then(to_json_value)
+        }
         Command::ReadRange {
             session_id,
             sheet_id,
@@ -561,6 +644,7 @@ impl Response {
             SidecarError::InvalidRequest(_) => "invalid_request",
             SidecarError::Io(_) => "io_error",
             SidecarError::Workbook(_) => "workbook_error",
+            SidecarError::Cancelled => "cancelled",
         };
         Self::failure(request_id, code, error.to_string())
     }
@@ -619,6 +703,7 @@ mod tests {
         write_workbook(&source);
         let mut sessions = WorkbookSessions::new();
         let recalc = RecalcWorker::new();
+        let in_flight = InFlightRequest::new();
         let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
 
         let first = expect_ok(recalc.run("r".into(), &source, &[], &recalc_reads()));
@@ -640,6 +725,7 @@ mod tests {
                 &mut sessions,
                 &recalc,
                 &CancelledRequests::new(),
+                &in_flight,
                 &output,
             )
             .unwrap(),
@@ -659,6 +745,7 @@ mod tests {
         let mut sessions = WorkbookSessions::new();
         let recalc = RecalcWorker::new();
         let cancelled = CancelledRequests::new();
+        let in_flight = InFlightRequest::new();
         let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
         let cancel = serde_json::json!({
             "version": 1,
@@ -672,6 +759,7 @@ mod tests {
                 &mut sessions,
                 &recalc,
                 &cancelled,
+                &in_flight,
                 &output,
             )
             .unwrap(),
@@ -688,6 +776,7 @@ mod tests {
             &mut sessions,
             &recalc,
             &cancelled,
+            &in_flight,
             &output,
         )
         .unwrap();
@@ -700,10 +789,80 @@ mod tests {
                 &mut sessions,
                 &recalc,
                 &cancelled,
+                &in_flight,
                 &output,
             )
             .unwrap(),
         );
+    }
+
+    /// The window `CancelledRequests` cannot cover: the loop has dequeued
+    /// the request, so its queue entry would never be read again, and the
+    /// cancel arrives with the queue deliberately untouched. The open must
+    /// still be abandoned — the queue check in handle_request finds
+    /// nothing, so only the in-flight flag can stop it.
+    #[test]
+    fn cancel_during_an_in_flight_open_abandons_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("open.xlsx");
+        write_workbook(&source);
+        let mut sessions = WorkbookSessions::new();
+        let recalc = RecalcWorker::new();
+        let cancelled = CancelledRequests::new();
+        let in_flight = InFlightRequest::new();
+        let output: SharedOutput = Arc::new(Mutex::new(BufWriter::new(io::stdout())));
+
+        // main()'s order: register the dequeued request, then dispatch. The
+        // reader's cancel lands in between.
+        in_flight.begin("victim");
+        in_flight.cancel("victim");
+        // The queue never saw the id, so this open was stopped by the
+        // in-flight flag alone rather than by the pre-dispatch skip.
+        assert!(!cancelled.take("victim"));
+
+        let open = serde_json::json!({
+            "version": 1,
+            "requestId": "victim",
+            "command": "open",
+            "path": source,
+        });
+        let response = handle_line(
+            &open.to_string(),
+            &mut sessions,
+            &recalc,
+            &cancelled,
+            &in_flight,
+            &output,
+        )
+        .unwrap();
+        assert!(!response.ok, "the in-flight open ran after its cancel landed");
+        assert_eq!(response.error.unwrap().code, "cancelled");
+        // Nothing to clean up: no metadata means no session id, so the host
+        // can neither read-range nor close what the open would have left.
+        assert!(response.result.is_none());
+
+        // A cancel naming a request that is not running is left to the
+        // queue, which still skips it once its turn comes.
+        in_flight.begin("other");
+        in_flight.cancel("other");
+        in_flight.begin("later");
+        in_flight.cancel("other");
+        let queued = handle_line(
+            &serde_json::json!({
+                "version": 1,
+                "requestId": "queued",
+                "command": "open",
+                "path": source,
+            })
+            .to_string(),
+            &mut sessions,
+            &recalc,
+            &cancelled,
+            &in_flight,
+            &output,
+        )
+        .unwrap();
+        assert!(queued.ok, "a cancel for an id that already replied must not skip it");
     }
 
     /// A queued purge for a path evicts its resident model at the next run.

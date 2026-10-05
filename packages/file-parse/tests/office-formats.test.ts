@@ -7,6 +7,7 @@ import { xlsxToText } from '../src/xlsx'
 import { resolveTarget } from '../src/opc'
 import {
   buildDocxFixture,
+  buildPdfFixture,
   buildPptxFixture,
   buildXlsxFixture,
   writeFixture,
@@ -15,6 +16,33 @@ import {
 function legacyFixture(name: string): string {
   return fileURLToPath(new URL(`fixtures/${name}`, import.meta.url))
 }
+
+describe('parseFileToText: magic-byte sniffing', () => {
+  it('rejects a ZIP named .pdf with a content-mismatch error', async () => {
+    const zip = new JSZip()
+    zip.file('test.txt', 'hello')
+    const path = writeFixture('fake.pdf', await zip.generateAsync({ type: 'uint8array' }))
+    const result = await parseFileToText(path)
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Content mismatch')
+  })
+
+  it('rejects a PDF named .docx with a content-mismatch error', async () => {
+    const path = writeFixture('fake.docx', buildPdfFixture('hello'))
+    const result = await parseFileToText(path)
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Content mismatch')
+  })
+
+  it('rejects a ZIP named .doc with a content-mismatch error', async () => {
+    const zip = new JSZip()
+    zip.file('test.txt', 'hello')
+    const path = writeFixture('fake.doc', await zip.generateAsync({ type: 'uint8array' }))
+    const result = await parseFileToText(path)
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Content mismatch')
+  })
+})
 
 describe('parseFileToText: doc', () => {
   it('extracts body text from a Word 97-2003 document', async () => {

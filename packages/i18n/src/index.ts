@@ -198,6 +198,13 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  * runtime fallback.
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
-  return (lang: Lang, key: keyof D, params?: Params): string =>
-    format(platformShortcuts(dicts[lang][key]), params)
+  return (lang: Lang, key: keyof D, params?: Params): string => {
+    // zh defines the key set, but a partial runtime dictionary (a shard that
+    // predates a new key) must degrade to the zh string or the key itself
+    // instead of throwing inside format()
+    const text = dicts[lang]?.[key] ?? dicts.zh[key] ?? String(key)
+    return format(platformShortcuts(text), params)
+  }
 }
+
+export * from './font-names'

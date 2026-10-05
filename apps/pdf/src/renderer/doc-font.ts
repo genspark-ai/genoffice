@@ -57,7 +57,7 @@ export function mapDocFont(psName: string): DocFontStyle {
   // Classification for the approximation tail. CJK first: CJK names often
   // contain latin keywords too ('Noto SERIF CJK'), so the CJK check must win.
   const cjk =
-    /cjk|han(s|t)?(?![a-z])|sc(?![a-z])|tc(?![a-z])|gb(?![a-z])|song|sung|ming|hei(?![a-z])|kai|fang ?song|yahei|pingfang|deng ?xian|source ?han|noto (serif|sans) cjk|sim ?sun|sim ?hei|st ?(song|hei|kai|fangsong)/i.test(
+    /cjk|han(s|t)?(?![a-z])|(?:^|[^a-z])(?:sc|tc|gb)(?![a-z])|song|sung|ming|hei(?![a-z])|kai|fang ?song|yahei|pingfang|deng ?xian|source ?han|noto (serif|sans) cjk|sim ?sun|sim ?hei|st ?(song|hei|kai|fangsong)/i.test(
       spaced,
     )
   let tail: string

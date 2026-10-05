@@ -26,9 +26,9 @@ const SLDJUMP_ACTION = 'ppaction://hlinksldjump'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
 export type LinkTarget =
-  | { kind: 'url'; url: string }
-  | { kind: 'slide'; slideIndex: number }
-  | { kind: 'action'; action: NamedAction }
+  | { kind: 'url'; url: string; tooltip?: string }
+  | { kind: 'slide'; slideIndex: number; tooltip?: string }
+  | { kind: 'action'; action: NamedAction; tooltip?: string }
 
 const EMPTY_RELS =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
@@ -84,18 +84,19 @@ export function setElementLink(
 
   if (target) {
     let hlink: string
+    const tip = target.tooltip ? ` tooltip="${escapeXmlAttr(target.tooltip)}"` : ''
     if (target.kind === 'url') {
       const rid = appendRel(opened, slide, HYPERLINK_REL_TYPE, target.url, true)
-      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="${rid}"/>`
+      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="${rid}"${tip}/>`
     } else if (target.kind === 'action') {
-      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="" action="${namedActionAttr(target.action)}"/>`
+      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="" action="${namedActionAttr(target.action)}"${tip}/>`
     } else {
       const dst = opened.deck.slides[target.slideIndex]
       if (!dst) return null
       // Same directory ppt/slides/, so Target is just the file name
       const fileName = dst.path.split('/').pop()!
       const rid = appendRel(opened, slide, SLIDE_REL_TYPE, fileName, false)
-      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="${rid}" action="${SLDJUMP_ACTION}"/>`
+      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="${rid}" action="${SLDJUMP_ACTION}"${tip}/>`
     }
     // Insert into the first cNvPr (hlinkClick is cNvPr's first valid child)
     const cNvPr = /<p:cNvPr\b((?:"[^"]*"|'[^']*'|[^"'>])*?)(\/?)>/.exec(xml)
@@ -238,19 +239,21 @@ export function getRunLinks(
 function resolveLinkInXml(opened: OpenedPptx, slide: Slide, xml: string): LinkTarget | null {
   const tag = /<a:hlinkClick\b[^>]*>/.exec(xml)?.[0]
   if (!tag) return null
+  const tooltip = /\btooltip=(?:"([^"]*)"|'([^']*)')/.exec(tag)?.slice(1, 3).find(Boolean)
+  const tip = tooltip ? { tooltip } : {}
   const action = namedActionOf(
     /\baction=(?:"([^"]*)"|'([^']*)')/.exec(tag)?.slice(1, 3).find(Boolean),
   )
-  if (action) return { kind: 'action', action }
+  if (action) return { kind: 'action', action, ...tip }
   const m = /\br:id=(?:"(rId\d+)"|'(rId\d+)')/.exec(tag)
   if (!m) return null
   const rel = opened.archive.readRels(slide.path).get(m[1] ?? m[2]!)
   if (!rel) return null
-  if (rel.type === HYPERLINK_REL_TYPE) return { kind: 'url', url: rel.target }
+  if (rel.type === HYPERLINK_REL_TYPE) return { kind: 'url', url: rel.target, ...tip }
   if (rel.type === SLIDE_REL_TYPE) {
     const abs = resolveTarget(slide.path, rel.target)
     const idx = opened.deck.slides.findIndex((s) => s.path === abs)
-    if (idx >= 0) return { kind: 'slide', slideIndex: idx }
+    if (idx >= 0) return { kind: 'slide', slideIndex: idx, ...tip }
   }
   return null
 }

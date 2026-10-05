@@ -613,7 +613,7 @@ function readAttribute(elementXml: string, name: string): string | undefined {
   return new RegExp(`(?:^|\\s)${escapeRegExp(name)}="([^"]*)"`).exec(elementXml)?.[1]
 }
 
-function escapeRegExp(input: string): string {
+export function escapeRegExp(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 

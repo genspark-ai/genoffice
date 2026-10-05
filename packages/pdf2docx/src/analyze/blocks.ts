@@ -3,7 +3,7 @@
  * first-line indent). Median-based gap clustering follows pdftext; the
  * indent / short-line refinements follow pdf2docx's paragraph rules.
  */
-import { approxEq, median, rectCenterX, rectUnionAll } from '../geometry'
+import { approxEq, maxOf, median, minOf, rectCenterX, rectUnionAll } from '../geometry'
 import type { Line, TextBlock } from '../ir'
 import { isNoSpaceScript } from '../script'
 import { firstStrongDir } from './rtl'
@@ -59,8 +59,8 @@ function lineFontSize(line: Line): number {
 export function bodyContextOf(lines: readonly Line[]): BodyContext {
   if (lines.length === 0) return { bodyLeft: 0, bodyRight: 0 }
   return {
-    bodyLeft: Math.min(...lines.map((l) => l.box.x0)),
-    bodyRight: Math.max(...lines.map((l) => l.box.x1)),
+    bodyLeft: minOf(lines.map((l) => l.box.x0)),
+    bodyRight: maxOf(lines.map((l) => l.box.x1)),
   }
 }
 
@@ -143,7 +143,7 @@ function splitRunOnItems(group: Line[], wrap: { left: number; right: number }): 
   const left = group[0]!.box.x0
   if (left - wrap.left >= ITEM_MAX_INDENT_EMS * fontSize) return [group]
   if (!group.every((l) => approxEq(l.box.x0, left, tol))) return [group]
-  const groupRight = Math.max(...group.map((l) => l.box.x1))
+  const groupRight = maxOf(group.map((l) => l.box.x1))
   const isItemEnd = (l: Line, next: Line): boolean =>
     l.box.x1 - l.box.x0 < ITEM_MAX_WIDTH_RATIO * (wrap.right - wrap.left) &&
     groupRight - l.box.x1 >= firstWordWidthPt(next) + HARD_BREAK_WORD_SLACK_EMS * fontSize
@@ -183,7 +183,7 @@ function inferFormat(
   const lefts = lines.map((l) => l.box.x0)
   const rights = lines.map((l) => l.box.x1)
   const centers = lines.map((l) => rectCenterX(l.box))
-  const spread = (values: number[]): number => Math.max(...values) - Math.min(...values)
+  const spread = (values: number[]): number => maxOf(values) - minOf(values)
 
   // the first line may be indented; judge left alignment on the rest
   const bodyLefts = lefts.slice(1)
@@ -195,7 +195,7 @@ function inferFormat(
   // floating clear of the body's left edge. Checked before the left test —
   // a two-line group's leftAligned is vacuous (one body line), so a centered
   // title pair used to read as "left + huge first-line indent" and reflow.
-  const floating = Math.min(...lefts) - body.bodyLeft > tol
+  const floating = minOf(lefts) - body.bodyLeft > tol
   if (centerAligned && spread(lefts) > tol && spread(rights) > tol && floating) {
     return { align: 'center', firstLineIndentPt: 0 }
   }
@@ -210,7 +210,7 @@ function inferFormat(
     const nonLast = rights.slice(0, -1)
     if (
       spread(nonLast) <= JUSTIFY_RIGHT_TOL_EMS * fontSize &&
-      rights[rights.length - 1]! <= Math.max(...nonLast) + tol
+      rights[rights.length - 1]! <= maxOf(nonLast) + tol
     ) {
       align = 'justify'
     }
@@ -218,7 +218,7 @@ function inferFormat(
 
   let firstLineIndentPt = 0
   if ((align === 'left' || align === 'justify') && leftAligned) {
-    const paraLeft = Math.min(...bodyLefts)
+    const paraLeft = minOf(bodyLefts)
     const indent = lines[0]!.box.x0 - paraLeft
     if (indent > 0.5 * fontSize && indent < INDENT_MAX_EMS * fontSize) firstLineIndentPt = indent
   }
@@ -288,8 +288,8 @@ function markHardBreaks(
   pinOpenLeaded: boolean,
 ): Line[] {
   if (group.length < 2) return group
-  const groupLeft = Math.min(...group.map((l) => l.box.x0))
-  const groupRight = Math.max(...group.map((l) => l.box.x1))
+  const groupLeft = minOf(group.map((l) => l.box.x0))
+  const groupRight = maxOf(group.map((l) => l.box.x1))
   // display-heading pass (P12 B): a short stack of ≥24pt lines is a title
   // whose breaks the author placed — substitute fonts run wider, so a natural
   // re-wrap lands in an ugly spot even when the source line reaches the wrap
@@ -362,6 +362,13 @@ export interface BlockOptions {
 // lowercase Latin letter was wrapped mid-word — join it seamlessly. A soft
 // hyphen (U+00AD) exists ONLY to mark a wrap point and always joins. An
 // uppercase/digit continuation stays as-is (likely a compound or a list).
+//
+// A visible hyphen is also how an AUTHORED compound is written, and that break
+// is not a wrap: "self-" / "contained" must not fuse into "selfcontained". The
+// two are separable by the same greedy-wrap evidence markHardBreaks uses — a
+// real hyphenation break fills the line, so the next line's first unit cannot
+// fit in what is left. A hyphen-ended line that still had room for that unit
+// was broken by the author, so its hyphen is part of the word and stays.
 const lineText = (line: Line): string => line.spans.map((s) => s.text).join('')
 const LATIN_THEN_HYPHEN = /\p{Script=Latin}[-‐]$/u
 const SOFT_HYPHEN_END = /­$/
@@ -375,10 +382,15 @@ function isTextHyphenation(prev: Line, next: Line): boolean {
   return first !== undefined && LOWER_LATIN.test(first) && /\p{Script=Latin}/u.test(first)
 }
 
-function markTextHyphenation(lines: readonly Line[]): Line[] {
+function markTextHyphenation(lines: readonly Line[], wrapRight: number): Line[] {
   return lines.map((line, i) => {
     const next = lines[i + 1]
     if (line.endsWithHyphen || !next || !isTextHyphenation(line, next)) return line
+    // authored compound: the next line's first unit would have fitted in the
+    // leftover, so nothing about space forced this break — the hyphen is real
+    const leftover = wrapRight - line.box.x1
+    const need = firstWordWidthPt(next) + HARD_BREAK_WORD_SLACK_EMS * lineFontSize(line)
+    if (leftover >= need) return line
     return { ...line, endsWithHyphen: true }
   })
 }
@@ -436,7 +448,7 @@ const VERSE_EOL_PUNCT = /[.,;:!?…—–"'"'»«)\]]\s*$/u
 function isVerseRun(run: Line[]): boolean {
   if (run.length < VERSE_MIN_LINES) return false
   const fontSize = median(run.map(lineFontSize)) || 12
-  const maxRight = Math.max(...run.map((l) => l.box.x1))
+  const maxRight = maxOf(run.map((l) => l.box.x1))
   const nearFullShare = run.filter((l) => l.box.x1 >= maxRight - fontSize).length / run.length
   let evidence = 0
   for (let i = 0; i + 1 < run.length; i++) {
@@ -500,9 +512,18 @@ export function groupIntoBlocks(
   options: BlockOptions = {},
 ): TextBlock[] {
   if (rawLines.length === 0) return []
-  const lines = markVerseRuns(markTextHyphenation(rawLines))
   const pinOpenLeaded = options.pinOpenLeadedBreaks ?? false
-  const ctx = body ?? bodyContextOf(lines)
+  const ctx = body ?? bodyContextOf(rawLines)
+
+  // wrap edges for the hyphenation, short-item and hard-break judgments: the
+  // body edge tightened to the real text extent — the page-level mirrored
+  // bodyRight must not read every line of a narrow layout as "short". The
+  // hyphenation pass needs its edge first (an authored compound breaks short
+  // of the margin, a greedy hyphenation break does not).
+  const wrapRight = Math.min(ctx.bodyRight, maxOf(rawLines.map((l) => l.box.x1)))
+  const wrapLeft = Math.max(ctx.bodyLeft, minOf(rawLines.map((l) => l.box.x0)))
+  const lines = markVerseRuns(markTextHyphenation(rawLines, wrapRight))
+  const wrap = { left: wrapLeft, right: wrapRight }
 
   const gaps: number[] = []
   for (let i = 1; i < lines.length; i++) {
@@ -511,13 +532,6 @@ export function groupIntoBlocks(
   }
   const medianGap = median(gaps)
   const medianLineH = median(lines.map((l) => l.box.y1 - l.box.y0)) || 12
-
-  // wrap edges for the short-item and hard-break judgments: the body edge
-  // tightened to the real text extent — the page-level mirrored bodyRight
-  // must not read every line of a narrow layout as "short"
-  const wrapRight = Math.min(ctx.bodyRight, Math.max(...lines.map((l) => l.box.x1)))
-  const wrapLeft = Math.max(ctx.bodyLeft, Math.min(...lines.map((l) => l.box.x0)))
-  const wrap = { left: wrapLeft, right: wrapRight }
 
   const grouped: Line[][] = []
   let current: Line[] = [lines[0]!]

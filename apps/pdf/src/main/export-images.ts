@@ -11,7 +11,9 @@ export function hasValidExportPageNumbers(
   return (
     Array.isArray(value) &&
     value.length === expectedLength &&
-    value.every((pageNumber) => isValidExportPageNumber(pageNumber))
+    value.every((pageNumber) => isValidExportPageNumber(pageNumber)) &&
+    // duplicate pages would write two exports over one target file
+    new Set(value).size === value.length
   )
 }
 

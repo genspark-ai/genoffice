@@ -72,6 +72,20 @@ describe('detectTocBlocks (dot leaders)', () => {
     const blocks = groupIntoBlocks(analyzeChars(chars))
     expect(detectTocBlocks(blocks)).toBe(blocks)
   })
+
+  it('detects a Hebrew dot-leader TOC entry (RTL)', () => {
+    // RTL line: page number on the left (digits display LTR), title on the
+    // right drawn right-to-left. The visual string keeps the page as-is and
+    // reverses only the title; analyzeChars restores the logical order.
+    const title = 'הכותרת'
+    const visual = `42 .... ${[...title].reverse().join('')}`
+    const chars = mkText(visual, 72, { y: 700 }).chars
+    const blocks = detectTocBlocks(groupIntoBlocks(analyzeChars(chars)))
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]!.dir).toBe('rtl')
+    expect(blocks[0]!.tocEntry).toEqual({ level: 1, pageNumber: '42' })
+    expect(blocks[0]!.lines[0]!.spans.map((s) => s.text).join('')).toBe('הכותרת')
+  })
 })
 
 describe('hasDotLeaderRun', () => {

@@ -177,13 +177,20 @@ function vmlStyleDimPt(style: string, key: 'width' | 'height'): number {
   return Math.round(parseFloat(m[1]!) * (PT_PER_UNIT[m[2] ?? 'pt'] ?? 1) * 100) / 100
 }
 
-/** the picture watermark of a header part; null when it has none */
+/**
+ * the picture watermark of a header part; null when it has none.
+ *
+ * r:id is read quote-agnostically: a header that spells the attribute with
+ * single quotes still has to yield its relationship id, or the save cannot
+ * reclaim the relationship the old watermark owned and leaves it orphaned
+ * behind the replacement.
+ */
 export function readPictureWatermark(headerXml: string): PictureWatermarkInfo | null {
   for (const m of headerXml.matchAll(/<v:shape\b[^>]*>[\s\S]*?<\/v:shape>/g)) {
     const shape = m[0]
     if (!PICTURE_WATERMARK_ID.test(shape) && !isWatermarkChild({ name: 'w:p', xml: shape }))
       continue
-    const rId = /<v:imagedata[^>]*\br:id="([^"]+)"/.exec(shape)?.[1]
+    const rId = /<v:imagedata[^>]*\br:id\s*=\s*(["'])([^"']+)\1/.exec(shape)?.[2]
     if (!rId) continue
     const style = /\sstyle="([^"]*)"/.exec(shape)?.[1] ?? ''
     return {

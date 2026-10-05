@@ -160,6 +160,14 @@ describe('FileIndexStore', () => {
     expect(store.search('\u7b2c1\u5b63').hits.map((h) => h.name)).toEqual(['b.docx'])
   })
 
+  it('ignores non-finite offset/limit instead of returning an empty page', () => {
+    store.upsert(meta('/a.md'), 'alpha', 'ok')
+    store.upsert(meta('/b.md'), 'alpha too', 'ok')
+    expect(store.search('alpha', { limit: NaN }).hits).toHaveLength(2)
+    expect(store.search('alpha', { offset: NaN }).hits).toHaveLength(2)
+    expect(store.search('alpha', { limit: NaN, offset: NaN }).hits).toHaveLength(2)
+  })
+
   it('applies the type filter before falling back to any-term matches', () => {
     store.upsert(meta('/f/both.pdf'), 'alpha beta', 'ok')
     store.upsert(meta('/f/one.md'), 'alpha only', 'ok')

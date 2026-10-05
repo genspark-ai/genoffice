@@ -4318,7 +4318,7 @@ export const strings = {
     setAiModelId: 'Модель',
     setAiApiKey: 'API-ключ',
     setAiKeyHint: 'Хранится только на этом устройстве.',
-    setAiBaseUrl: 'Base URL',
+    setAiBaseUrl: 'Базовый URL',
     setAiBaseUrlHint: 'Оставьте пустым для официальной конечной точки.',
     setAiGensparkHint: 'Использует вход в Genspark; ключ API не нужен.',
     setAiCodexPath: 'Исполняемый файл Codex',
@@ -4386,7 +4386,7 @@ export const strings = {
     newTab: 'Новая вкладка',
     // First-run onboarding
     onbTitle1: 'Добро пожаловать в GenOffice',
-    onbSubtitle1: 'Первый открытый AI-нативный офисный пакет',
+    onbSubtitle1: 'Первый открытый ИИ-нативный офисный пакет',
     onbBody1:
       'Создавайте документы, таблицы и презентации, работайте с PDF. ИИ встроен в каждый шаг.',
     onbTitle2: 'Это только начало',

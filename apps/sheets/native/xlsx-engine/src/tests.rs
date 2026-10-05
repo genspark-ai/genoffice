@@ -3483,7 +3483,7 @@ fn resolves_locale_reserved_builtin_number_formats() {
     // zh-CN month/day pattern that previously leaked into every workbook.
     let mut portuguese_sessions = WorkbookSessions::new();
     let portuguese = portuguese_sessions
-        .open_with_locale(&path, "pt", None)
+        .open_with_locale(&path, "pt", None, &AtomicBool::new(false))
         .unwrap();
     let portuguese_format = |index: usize| portuguese.styles[index].number_format.as_deref();
     assert_eq!(portuguese_format(1), Some("d/m/yyyy"));
@@ -3527,7 +3527,7 @@ fn applies_system_short_date_to_builtin_date_formats() {
 
     let mut sessions = WorkbookSessions::new();
     let metadata = sessions
-        .open_with_locale(&path, "en", Some("yyyy/m/d"))
+        .open_with_locale(&path, "en", Some("yyyy/m/d"), &AtomicBool::new(false))
         .unwrap();
     let format = |index: usize| metadata.styles[index].number_format.as_deref();
     assert_eq!(format(1), Some("yyyy/m/d"));
@@ -3924,4 +3924,237 @@ fn source_linked_chart_formats_resolve_in_one_pass_per_worksheet() {
         seen += 1;
     }
     assert_eq!(seen, CHARTS.len(), "every chart visual was resolved");
+}
+
+/// Rewrites one entry's declared uncompressed size in both its local and its
+/// central header, leaving the compressed size, the CRC and the payload alone.
+/// The archive therefore stays fully readable — only the declaration becomes a
+/// lie, which is exactly the shape `zip` 4.6.1 will hand to a caller: its
+/// `find_content` limits the *input* by `compressed_size`, so the deflate
+/// stream still delivers every byte it carries.
+fn forge_declared_size(path: &Path, entry: &str, declared: u32) {
+    const LOCAL_HEADER: u32 = 0x0403_4b50;
+    const CENTRAL_HEADER: u32 = 0x0201_4b50;
+    let mut bytes = fs::read(path).unwrap();
+    let mut patched = 0;
+    for index in 0..bytes.len().saturating_sub(4) {
+        let signature = u32::from_le_bytes(bytes[index..index + 4].try_into().unwrap());
+        // The declared size sits at +22 (local) and +24 (central); the name
+        // follows the fixed block, which is 30 bytes locally and 46 in the
+        // central directory. Both name the entry without parsing the deflate
+        // stream.
+        let (name_len_at, extra_len_at, size_at, name_at) = match signature {
+            LOCAL_HEADER => (26, 28, 22, 30),
+            CENTRAL_HEADER => (28, 30, 24, 46),
+            _ => continue,
+        };
+        let length_at = |at: usize| {
+            u16::from_le_bytes(bytes[index + at..index + at + 2].try_into().unwrap()) as usize
+        };
+        let start = index + name_at + length_at(name_len_at) + length_at(extra_len_at);
+        if start > bytes.len() || &bytes[index + name_at..start] != entry.as_bytes() {
+            continue;
+        }
+        bytes[index + size_at..index + size_at + 4].copy_from_slice(&declared.to_le_bytes());
+        patched += 1;
+    }
+    assert_eq!(patched, 2, "entry {entry} was not found in both headers");
+    fs::write(path, &bytes).unwrap();
+}
+
+/// The media cap used to consult only the central directory's declared size
+/// and then `read_to_end` the rest, so it bounded nothing: a part claiming a
+/// few bytes inflated to whatever the deflate stream carried and the whole
+/// payload landed in one allocation. `@genoffice/zip-gate` closes the same gap
+/// for the docx/pptx hosts by inflating one byte past the claim (#781); the
+/// sidecar reads the entry itself, so it has to hold the same line here.
+#[test]
+fn rejects_media_entry_that_inflates_past_its_declared_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bomb.xlsx");
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/media/image1.png", options).unwrap();
+        writer.write_all(&vec![b'A'; 4 * 1024 * 1024]).unwrap();
+        writer.finish().unwrap();
+    }
+    // 12 declared bytes for a 4 MiB entry. The CRC is untouched, so the entry
+    // itself reads back cleanly and only the size declaration understates it.
+    forge_declared_size(&path, "xl/media/image1.png", 12);
+
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let result = crate::visuals::read_media(&mut archive, "xl/media/image1.png");
+    assert!(
+        result.is_err(),
+        "a 12-byte declaration must not authorize a 4 MiB inflate"
+    );
+}
+
+/// One malformed `<c r=>` made the whole workbook unopenable. Every other
+/// malformed field in this parser degrades rather than erroring — a stale
+/// shared-string index yields a valueless cell because reporting there once
+/// blanked the entire sheet — but the address was still propagated with `?`.
+/// A corrupt address belongs where an omitted one goes: one right of its
+/// predecessor, with its value intact.
+#[test]
+fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1"><v>10</v></c><c r="!bogus"><v>20</v></c><c r="C1"><v>30</v></c></row>
+<row r="2"><c r="A2"><v>40</v></c><c r="ZZZZZZZZZZZZZZZZZZZZ1"><v>50</v></c></row>
+</sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions
+        .open(&path)
+        .expect("one malformed address must not close the workbook");
+    let result = sessions
+        .read_range(
+            &metadata.session_id,
+            "sheet-1",
+            &CellRange {
+                start_row: 0,
+                end_row: 1,
+                start_column: 0,
+                end_column: 2,
+            },
+        )
+        .unwrap();
+    let value_at = |row: usize, column: usize| {
+        result
+            .cells
+            .iter()
+            .find(|cell| cell.row == row && cell.column == column)
+            .and_then(|cell| cell.value.clone())
+    };
+    let number = |value: Option<CellValue>| match value {
+        Some(CellValue::Number(number)) => number,
+        other => panic!("expected a number, got {other:?}"),
+    };
+    // A bad address lands one right of its predecessor, exactly as an omitted
+    // one does, and keeps its value; the well-formed neighbours are untouched.
+    assert_eq!(number(value_at(0, 0)), 10.0);
+    assert_eq!(number(value_at(0, 1)), 20.0);
+    assert_eq!(number(value_at(0, 2)), 30.0);
+    assert_eq!(number(value_at(1, 0)), 40.0);
+    assert_eq!(number(value_at(1, 1)), 50.0);
+}
+
+
+/// A cancel already in flight when the open is dispatched must abandon it
+/// outright: the host has no session id to read-range or close against, so
+/// a half-registered session would be unreachable garbage.
+#[test]
+fn cancelled_open_registers_no_session() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hi</t></is></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let error = sessions
+        .open_with_locale(&path, "zh", None, &AtomicBool::new(true))
+        .unwrap_err();
+    assert!(matches!(error, SidecarError::Cancelled), "{error:?}");
+    assert_eq!(
+        sessions.session_count(),
+        0,
+        "a cancelled open left a session a later read-range could hit"
+    );
+    // An uncancelled open of the same workbook still works, so the abort was
+    // the flag and not a fixture the engine cannot read.
+    assert_eq!(sessions.open(&path).unwrap().sheets.len(), 1);
+}
+
+/// The one abort that happens after the cache directory exists must reclaim
+/// it. create_cache_directory owns the directory from the moment it is
+/// created, so returning on a cancel removes it exactly as a committed one is
+/// kept for Close to reclaim later.
+#[test]
+fn cancel_after_the_cache_directory_is_created_reclaims_it() {
+    let session_id = Uuid::new_v4().to_string();
+    let path = std::env::temp_dir().join(format!("genspark-ai-excel-{session_id}"));
+
+    let error = create_cache_directory(&session_id, &AtomicBool::new(true)).unwrap_err();
+    assert!(matches!(error, SidecarError::Cancelled), "{error:?}");
+    assert!(
+        !path.exists(),
+        "the cancelled open leaked its cache directory {path:?}"
+    );
+}
+
+/// The guard is what makes the abort path as clean as the success path: it
+/// removes the directory on every exit until the open commits it, and keeps
+/// it afterwards.
+#[test]
+fn cache_directory_outlives_the_open_only_once_committed() {
+    let committed_id = Uuid::new_v4().to_string();
+    let committed = std::env::temp_dir().join(format!("genspark-ai-excel-{committed_id}"));
+    let mut directory = create_cache_directory(&committed_id, &AtomicBool::new(false)).unwrap();
+    assert!(committed.exists());
+    directory.commit();
+    drop(directory);
+    assert!(
+        committed.exists(),
+        "a committed cache directory must survive the open for Close to reclaim"
+    );
+    fs::remove_dir_all(&committed).unwrap();
+
+    // Uncommitted, the guard reclaims it on drop.
+    let abandoned_id = Uuid::new_v4().to_string();
+    let abandoned = std::env::temp_dir().join(format!("genspark-ai-excel-{abandoned_id}"));
+    drop(create_cache_directory(&abandoned_id, &AtomicBool::new(false)).unwrap());
+    assert!(!abandoned.exists());
+}
+
+/// The per-stage polls are cooperative: an open that runs with the flag
+/// clear must still succeed, so the checkpoints never fire on their own.
+#[test]
+fn an_uncancelled_open_completes_and_keeps_its_cache_directory() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hi</t></is></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions
+        .open_with_locale(&path, "zh", None, &AtomicBool::new(false))
+        .unwrap();
+    let cache = std::env::temp_dir().join(format!("genspark-ai-excel-{}", metadata.session_id));
+    assert!(cache.exists(), "a completed open lost its cache directory");
+    assert_eq!(sessions.session_count(), 1);
+    // Close still reclaims it.
+    sessions.close(&metadata.session_id).unwrap();
+    assert!(!cache.exists());
 }

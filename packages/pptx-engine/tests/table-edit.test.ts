@@ -59,6 +59,18 @@ describe('patchTableStyleXml', () => {
     expect(result).not.toContain('/ rtl')
   })
 
+  it('styleId-only edit expands a self-closing tblPr and sets the style', () => {
+    const selfClosing = MINIMAL_TABLE_XML.replace(
+      /<a:tblPr[^>]*>.*?<\/a:tblPr>/,
+      '<a:tblPr firstRow="1"/>',
+    )
+    const result = patchTableStyleXml(selfClosing, { styleId: '{NEWSTYLE}' })
+    expect(result).toContain(
+      '<a:tblPr firstRow="1"><a:tableStyleId>{NEWSTYLE}</a:tableStyleId></a:tblPr>',
+    )
+    expect(result).not.toContain('{2D5ABB26-0587-4C30-8999-92F81FD0307C}')
+  })
+
   it('set shading color → solidFill inserted in every tcPr, replacing existing fills', () => {
     const result = patchTableStyleXml(MINIMAL_TABLE_XML, { shadingColor: '#AABBCC' })
     expect(result).toContain('<a:srgbClr val="AABBCC"/>')
@@ -159,6 +171,41 @@ describe('patchTableStyleXml', () => {
     expect(result).toContain('111111')
     expect(result).not.toContain('222222')
     expect((result.match(/<a:noFill\/>/g) ?? []).length).toBe(1)
+  })
+
+  it('cells scope: a nested table inside the shaded cell survives intact', () => {
+    // Outer cell carries a self-closing <a:tcPr/> and then a nested <a:tbl> whose
+    // cell has its own paired <a:tcPr> with a fill. A paired-first <a:tcPr> pattern
+    // lets [^>]* swallow the '/' of <a:tcPr/>, then runs the lazy body on to the
+    // NESTED </a:tcPr>: the outer cell's <a:txBody>/<a:tbl> get absorbed into the
+    // match and rewritten, leaving unbalanced tcPr tags and the nested fill gone.
+    const xml =
+      '<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="1828800"/></a:tblGrid>' +
+      '<a:tr h="914400"><a:tc>' +
+      '<a:txBody><a:bodyPr/><a:p/></a:txBody><a:tcPr/>' +
+      '<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="914400"/></a:tblGrid>' +
+      '<a:tr h="457200"><a:tc><a:txBody><a:bodyPr/><a:p/></a:txBody>' +
+      '<a:tcPr><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></a:tcPr>' +
+      '</a:tc></a:tr></a:tbl>' +
+      '</a:tc></a:tr></a:tbl>'
+
+    const result = patchTableStyleXml(xml, {
+      shadingColor: '#AABBCC',
+      cells: [{ row: 0, col: 0 }],
+    })
+
+    // Tags stay balanced: the nested cell's own <a:tcPr> is still closed
+    expect((result.match(/<a:tcPr[\s/>]/g) ?? []).length).toBe(2)
+    expect((result.match(/<\/a:tcPr>/g) ?? []).length).toBe(2)
+    // The outer cell's fill is applied...
+    expect(result).toContain('<a:srgbClr val="AABBCC"/>')
+    // ...and the nested cell keeps its own fill, tcPr and the surrounding table markup
+    expect(result).toContain('<a:srgbClr val="00FF00"/>')
+    expect(result.match(/<a:tbl>/g)).toHaveLength(2)
+    expect(result).toContain('<a:gridCol w="914400"/>')
+    // Every cell element is still properly closed
+    expect((result.match(/<a:tc>/g) ?? []).length).toBe(2)
+    expect((result.match(/<\/a:tc>/g) ?? []).length).toBe(2)
   })
 
   it('all 8 preset styles have valid tblPrXml', () => {

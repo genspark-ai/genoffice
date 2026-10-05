@@ -100,6 +100,239 @@ import {
   patchZoteroDocumentDataXml,
 } from './zotero-doc-props'
 
+/**
+ * Relationship attributes are read quote-agnostically and with any spacing
+ * around `=`, because a .rels part may legally spell them either way. An
+ * id read as "absent" is worse than no read at all: the counter that hands out
+ * new rIds restarts below one that is already taken, and the save emits a
+ * duplicate Id into the same part. Same rule as the pptx engine's reader.
+ */
+const RELATIONSHIP_ID_NUMBER = /\bId\s*=\s*(["'])rId(\d+)\1/g
+const RELATIONSHIP_ID = /\bId\s*=\s*(["'])([^"']*)\1/
+const RELATIONSHIP_TYPE = /\bType\s*=\s*(["'])([^"']*)\1/
+const RELATIONSHIP_TARGET = /\bTarget\s*=\s*(["'])([^"']*)\1/
+
+/** One <Relationship .../> empty tag, either quote style. */
+const RELATIONSHIP_TAG = /<Relationship\b[^>]*\/>/g
+
+/**
+ * wp:docPr/@id of a drawing, either quote style. Read to find the ids the
+ * document already owns, for the same reason as RELATIONSHIP_ID_NUMBER above:
+ * an id read as "absent" is worse than no read at all, because a new picture
+ * then mints one that is already in use.
+ */
+const DRAWING_DOCPR_ID = /<wp:docPr\s[^>]*?\bid\s*=\s*(["'])(\d+)\1/g
+
+/** w:id of a bookmark endpoint, either quote style */
+const BOOKMARK_ID = /<w:bookmark(?:Start|End)\s[^>]*?\bid\s*=\s*(["'])(\d+)\1/g
+
+/** wp:docPr/@id of a newly embedded picture is DOCPR_ID_BASE + its sequence */
+const DOCPR_ID_BASE = 9000
+
+/**
+ * CT_Settings child sequence (ECMA-376 17.15.1.78), in schema order. The type is
+ * an xsd:sequence, so a child written at the wrong position makes Word offer to
+ * repair the part. Local names, because a settings part may spell its elements
+ * with the w: prefix or with a default namespace.
+ */
+const SETTINGS_CHILD_ORDER = [
+  'writeProtection',
+  'view',
+  'zoom',
+  'removePersonalInformation',
+  'removeDateAndTime',
+  'doNotDisplayPageBoundaries',
+  'displayBackgroundShape',
+  'printPostScriptOverText',
+  'printFractionalCharacterWidth',
+  'printFormsData',
+  'embedTrueTypeFonts',
+  'embedSystemFonts',
+  'saveSubsetFonts',
+  'saveFormsData',
+  'mirrorMargins',
+  'alignBordersAndEdges',
+  'bordersDoNotSurroundHeader',
+  'bordersDoNotSurroundFooter',
+  'gutterAtTop',
+  'hideSpellingErrors',
+  'hideGrammaticalErrors',
+  'activeWritingStyle',
+  'proofState',
+  'formsDesign',
+  'attachedTemplate',
+  'linkStyles',
+  'stylePaneFormatFilter',
+  'stylePaneSortMethod',
+  'documentType',
+  'mailMerge',
+  'revisionView',
+  'trackChanges',
+  'doNotTrackMoves',
+  'doNotTrackFormatting',
+  'documentProtection',
+  'autoFormatOverride',
+  'styleLockTheme',
+  'styleLockQFSet',
+  'defaultTabStop',
+  'autoHyphenation',
+  'consecutiveHyphenLimit',
+  'hyphenationZone',
+  'doNotHyphenateCaps',
+  'showEnvelope',
+  'summaryLength',
+  'clickAndTypeStyle',
+  'defaultTableStyle',
+  'evenAndOddHeaders',
+  'bookFoldRevPrinting',
+  'bookFoldPrinting',
+  'bookFoldPrintingSheets',
+  'drawingGridHorizontalSpacing',
+  'drawingGridVerticalSpacing',
+  'displayHorizontalDrawingGridEvery',
+  'displayVerticalDrawingGridEvery',
+  'doNotUseMarginsForDrawingGridOrigin',
+  'drawingGridHorizontalOrigin',
+  'drawingGridVerticalOrigin',
+  'doNotShadeFormData',
+  'noPunctuationKerning',
+  'characterSpacingControl',
+  'printTwoOnOne',
+  'strictFirstAndLastChars',
+  'noLineBreaksAfter',
+  'noLineBreaksBefore',
+  'savePreviewPicture',
+  'doNotValidateAgainstSchema',
+  'saveInvalidXml',
+  'ignoreMixedContent',
+  'alwaysShowPlaceholderText',
+  'doNotDemarcateInvalidXml',
+  'saveXmlDataOnly',
+  'useXSLTWhenSaving',
+  'saveThroughXslt',
+  'showXMLTags',
+  'alwaysMergeEmptyNamespace',
+  'updateFields',
+  'hdrShapeDefaults',
+  'footnotePr',
+  'endnotePr',
+  'compat',
+  'docVars',
+  'rsids',
+  'mathPr',
+  'uiCompat97To2003',
+  'attachedSchema',
+  'themeFontLang',
+  'clrSchemeMapping',
+  'doNotIncludeSubdocsInStats',
+  'doNotAutoCompressPictures',
+  'forceUpgrade',
+  'captions',
+  'readModeInkLockDown',
+  'smartTagType',
+  'schemaLibrary',
+  'shapeDefaults',
+  'doNotEmbedSmartTags',
+  'decimalSymbol',
+  'listSeparator',
+] as const
+
+/** an element start tag anywhere in the part, capturing the local name */
+const ELEMENT_LOCAL_NAME = /<(?:[A-Za-z0-9._-]+:)?([A-Za-z0-9._-]+)[\s/>]/g
+
+/** rank of a CT_Settings child; -1 for a child this list does not model */
+function settingsChildRank(localName: string): number {
+  return (SETTINGS_CHILD_ORDER as readonly string[]).indexOf(localName)
+}
+
+/**
+ * Insert `childXml` as a child of the w:settings root at its CT_Settings
+ * position, leaving every other child byte-identical. Each apply* used to
+ * insert right after the open tag, so whichever ran last took the first slot
+ * and a save touching several settings came out in the reverse of the sequence.
+ */
+function insertSettingsChild(xml: string, localName: string, childXml: string): string {
+  const rank = settingsChildRank(localName)
+  for (const m of xml.matchAll(ELEMENT_LOCAL_NAME)) {
+    // Anchor on a child whose position this list knows: an unmodeled element
+    // (including the w:settings root itself) could sit anywhere in the
+    // sequence, so it is not a safe place to cut.
+    if (settingsChildRank(m[1]) > rank) {
+      const at = m.index
+      return xml.slice(0, at) + childXml + xml.slice(at)
+    }
+  }
+  // nothing modeled to order against: land last, or after the root open tag
+  const close = xml.match(/<\/(?:[A-Za-z0-9._-]+:)?settings>/)
+  if (close?.index !== undefined) {
+    return xml.slice(0, close.index) + childXml + xml.slice(close.index)
+  }
+  return xml.replace(/(<([A-Za-z0-9._-]+:)?settings\b[^>]*>)/, `$1${childXml}`)
+}
+
+/**
+ * The <Relationship> tag carrying a given Id, either quote style and with any
+ * spacing around `=`. Used both to reclaim the relationship a superseded
+ * watermark owned and to tell which ids the part already hands out, so the two
+ * stay consistent: an id the reclaim failed to free is never the one reissued.
+ */
+const relTagWithId = (id: string): RegExp =>
+  new RegExp(`<Relationship\\s[^>]*\\bId\\s*=\\s*(["'])${id}\\1[^>]*/>`)
+
+/** The `<Relationship ` half of relTagWithId's shape, which anchors a candidate tag. */
+const RELATIONSHIP_TAG_MARKER = /<Relationship\s/
+
+/**
+ * An exact `Id="rIdN"` inside a candidate tag. The id text is captured
+ * verbatim, so a zero-padded `rId02` is kept distinct from `rId2` exactly as
+ * relTagWithId's literal comparison keeps them distinct.
+ */
+const RELATIONSHIP_TAG_ID = /\bId\s*=\s*(["'])(rId\d+)\1/g
+
+/**
+ * Every relationship id a .rels part already hands out. One pass over the part,
+ * answering the same question as relTagWithId for every id at once: a tag only
+ * counts when it opens with `<Relationship `, self-closes, and spells that id
+ * inside itself, so the ids the allocator treats as taken stay exactly the ids
+ * the reclaim can free. Testing one candidate id at a time instead costs a full
+ * scan of the part per candidate, which is quadratic in the relationship count -
+ * a few MB of relationships then takes minutes to allocate a single id.
+ */
+const occupiedRelIds = (relsXml: string): Set<string> => {
+  const taken = new Set<string>()
+  let pos = 0
+  while (pos < relsXml.length) {
+    const gt = relsXml.indexOf('>', pos)
+    if (gt === -1) break
+    // relTagWithId's `[^>]*` cannot cross a `>`, so one candidate tag is one
+    // `>`-delimited run, and it only matches when that run self-closes
+    if (relsXml[gt - 1] === '/') {
+      const chunk = relsXml.slice(pos, gt)
+      const marker = chunk.search(RELATIONSHIP_TAG_MARKER)
+      if (marker !== -1) {
+        RELATIONSHIP_TAG_ID.lastIndex = marker
+        let m: RegExpExecArray | null
+        while ((m = RELATIONSHIP_TAG_ID.exec(chunk)) !== null) taken.add(m[2])
+      }
+    }
+    pos = gt + 1
+  }
+  return taken
+}
+
+/**
+ * Lowest id from rId1 this part does not already hand out, so a gap is reused
+ * rather than skipped. Deliberately not maxRelId + 1: that never fills a gap and
+ * starts at rId1001 for an absent part, so it would hand out a different id
+ * than the part's own numbering implies.
+ */
+export const nextFreeRelId = (relsXml: string): string => {
+  const taken = occupiedRelIds(relsXml)
+  let n = 1
+  while (taken.has(`rId${n}`)) n++
+  return `rId${n}`
+}
+
 export type ParsedDocFull = ParsedDoc & { extras: ParseExtras }
 
 /** Body content in final editor order (hidden trailing elements are appended automatically). */
@@ -351,11 +584,15 @@ export async function findChartWorkbookPath(
     const relsFile = zip.file(relsPath)
     if (!relsFile) return null
     const relsXml = await relsFile.async('text')
-    // find Relationship with Type ending in /package
-    const m = relsXml.match(/Type="[^"]*\/package"[^/]*Target="([^"]+)"/)
-    if (!m) return null
-    const target = m[1]
-    return resolveRelationshipTargetPath(chartPath, target)
+    // find Relationship with Type ending in /package; attribute order is the
+    // producer's choice, so Type and Target are read off the tag separately
+    for (const tag of relsXml.match(RELATIONSHIP_TAG) ?? []) {
+      const type = RELATIONSHIP_TYPE.exec(tag)?.[2]
+      if (!type?.endsWith('/package')) continue
+      const target = RELATIONSHIP_TARGET.exec(tag)?.[2]
+      if (target) return resolveRelationshipTargetPath(chartPath, target)
+    }
+    return null
   } catch {
     return null
   }
@@ -517,6 +754,7 @@ export async function saveDocx(
     headingStyleIds: parsed.headingStyleIds,
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
+    allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
   }
 
   const newMedia: Array<{ path: string; base64: string }> = []
@@ -525,7 +763,9 @@ export async function saveDocx(
   const mediaRelByContent = new Map<string, string>()
   const mediaPathByContent = new Map<string, string>()
   let imageSeq = nextImageSeq(zip)
-  let docPrSeq = imageSeq
+  // docPr ids are minted from their own counter, so it has to start clear of
+  // both the media sequence and the ids already in the document
+  let docPrSeq = nextDocPrSeq(zip, documentXml)
   /** Land image bytes as a media part (no relationship); identical bytes share one part. */
   const landMedia = (image: {
     base64: string
@@ -582,7 +822,7 @@ export async function saveDocx(
     const eeX = Math.max(0, Math.round((bw - cx) / 2))
     const eeY = Math.max(0, Math.round((bh - cy) / 2))
     // dedup means imageSeq does not advance for repeated bytes — docPr ids need their own counter
-    const docPrId = 9000 + ++docPrSeq
+    const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const ps = image.paraSpacing
     const spacingAttrs: string[] = []
     if (ps?.beforeTwips && ps.beforeTwips > 0)
@@ -709,9 +949,9 @@ export async function saveDocx(
   const trailingSectPr = sectBlock?.originalXml ?? ''
   const relTargets = new Map<string, string>()
   if (relsXml) {
-    for (const tag of relsXml.match(/<Relationship [^>]*\/>/g) ?? []) {
-      const id = /Id="([^"]+)"/.exec(tag)?.[1]
-      const target = /Target="([^"]+)"/.exec(tag)?.[1]
+    for (const tag of relsXml.match(RELATIONSHIP_TAG) ?? []) {
+      const id = RELATIONSHIP_ID.exec(tag)?.[2]
+      const target = RELATIONSHIP_TARGET.exec(tag)?.[2]
       if (id && target) relTargets.set(id, target)
     }
   }
@@ -766,9 +1006,12 @@ export async function saveDocx(
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
     let relsChanged = false
     const old = originalXml ? readPictureWatermark(originalXml) : null
-    if (old && (originalXml!.match(new RegExp(`r:id="${old.rId}"`, 'g')) ?? []).length === 1) {
+    if (
+      old &&
+      (originalXml!.match(new RegExp(`r:id\\s*=\\s*(["'])${old.rId}\\1`, 'g')) ?? []).length === 1
+    ) {
       const before = relsXml
-      relsXml = relsXml.replace(new RegExp(`<Relationship\\s[^>]*\\bId="${old.rId}"[^>]*/>`), '')
+      relsXml = relsXml.replace(relTagWithId(old.rId), '')
       relsChanged = relsXml !== before
     }
     let xml: string
@@ -776,9 +1019,7 @@ export async function saveDocx(
     else if (!isPictureWatermark(watermark)) xml = watermarkParagraphXml(watermark)
     else {
       const mediaPath = landMedia(watermark.image)
-      let n = 1
-      while (relsXml.includes(`Id="rId${n}"`)) n++
-      const rId = `rId${n}`
+      const rId = nextFreeRelId(relsXml)
       relsXml = relsXml.replace(
         '</Relationships>',
         `<Relationship Id="${rId}" Type="${IMAGE_REL_TYPE}" Target="${mediaPath.replace(/^word\//, '')}"/></Relationships>`,
@@ -979,8 +1220,8 @@ export async function saveDocx(
         ? await relsFile.async('string')
         : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
       let relNum = 1
-      for (const m of relsXml.matchAll(/Id="rId(\d+)"/g))
-        relNum = Math.max(relNum, parseInt(m[1], 10) + 1)
+      for (const m of relsXml.matchAll(RELATIONSHIP_ID_NUMBER))
+        relNum = Math.max(relNum, parseInt(m[2], 10) + 1)
       const picXmls: string[] = []
       for (const pic of options.numbering?.picBullets ?? []) {
         const mediaPath = landMedia(pic)
@@ -1381,12 +1622,12 @@ export async function saveDocx(
     }
     // Word only renders w:background when settings.xml opts in.
     if (options.pageColor && !xml.includes('<w:displayBackgroundShape')) {
-      xml = xml.replace(/(<w:settings[^>]*>)/, '$1<w:displayBackgroundShape/>')
+      xml = insertSettingsChild(xml, 'displayBackgroundShape', '<w:displayBackgroundShape/>')
       touched = true
     }
-    // Each apply* inserts right after the settings root, so run them in reverse
-    // schema order — the final order becomes writeProtection, removePersonalInformation,
-    // documentProtection (CT_Settings sequence).
+    // Each apply* places its element at its CT_Settings position, so the order
+    // these run in does not matter: the part comes out in schema sequence
+    // whatever combination of options the save carried.
     if (options.protection !== undefined) {
       xml = applyProtection(xml, options.protection)
       touched = true
@@ -1995,9 +2236,16 @@ function commentPlainText(commentXml: string): string {
   return paras.join('\n')
 }
 
-/** set or remove <w:documentProtection> right after the settings root opens */
+/** set or remove <w:documentProtection> at its CT_Settings position */
 function applyProtection(xml: string, protection: DocProtection | null): string {
-  let out = xml.replace(/<w:documentProtection[^>]*\/>/, '')
+  // CT_DocumentProtection is empty-content, so a producer may write either
+  // spelling. Removing only the self-closing form left a paired element in
+  // place: clearing protection did nothing, and setting it appended a second
+  // zero-or-one element, which is schema-invalid. Same idiom as applySettingsFlag.
+  let out = xml.replace(
+    /<w:documentProtection(?=[\s/>])[^>]*?(?:\/\s*>|>\s*<\/w:documentProtection\s*>)/,
+    '',
+  )
   if (protection) {
     const crypt = protection.hash
       ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
@@ -2011,14 +2259,20 @@ function applyProtection(xml: string, protection: DocProtection | null): string 
       (protection.enforced ? ' w:enforcement="1"' : '') +
       crypt +
       '/>'
-    out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
+    out = insertSettingsChild(out, 'documentProtection', tag)
   }
   return out
 }
 
-/** set or remove <w:writeProtection> (password to modify) right after the settings root opens */
+/** set or remove <w:writeProtection> (password to modify) at its CT_Settings position */
 function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
-  let out = xml.replace(/<w:writeProtection[^>]*\/>/, '')
+  // same both-forms removal as applyProtection: a paired <w:writeProtection>
+  // is legal and used to survive, so clearing it did nothing and setting it
+  // left two zero-or-one elements behind
+  let out = xml.replace(
+    /<w:writeProtection(?=[\s/>])[^>]*?(?:\/\s*>|>\s*<\/w:writeProtection\s*>)/,
+    '',
+  )
   if (wp && (wp.recommended || wp.hash)) {
     const crypt = wp.hash
       ? ' w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny"' +
@@ -2028,7 +2282,7 @@ function applyWriteProtection(xml: string, wp: WriteProtection | null): string {
         (wp.salt ? ` w:salt="${escapeXmlAttr(wp.salt)}"` : '')
       : ''
     const tag = `<w:writeProtection${wp.recommended ? ' w:recommended="1"' : ''}${crypt}/>`
-    out = out.replace(/(<w:settings[^>]*>)/, `$1${tag}`)
+    out = insertSettingsChild(out, 'writeProtection', tag)
   }
   return out
 }
@@ -2044,8 +2298,7 @@ function applyRemovePersonalInfo(xml: string, on: boolean): string {
     '',
   )
   if (!on) return out
-  const settingsName = prefix ? `${prefix}:settings` : 'settings'
-  return out.replace(new RegExp(`(<${regexEscape(settingsName)}\\b[^>]*>)`), `$1<${propertyName}/>`)
+  return insertSettingsChild(out, 'removePersonalInformation', `<${propertyName}/>`)
 }
 
 const WORDPROCESSINGML_NAMESPACES = [
@@ -2220,13 +2473,17 @@ export function removeHfReference(
   variant: 'default' | 'first' | 'even',
 ): string {
   return sectXml.replace(new RegExp(`<w:${kind}Reference\\b[^>]*/>`, 'g'), (tag) => {
-    const type = /w:type="([^"]+)"/.exec(tag)?.[1]
+    // Quote-agnostic, like hfReferenceType / onOffTagIn: a single-quoted
+    // w:type went unread here, so its undefined type matched isDefault and
+    // unlinking the default took the first/even references with it.
+    const m = /\bw:type=(?:"([^"]+)"|'([^']*)')/.exec(tag)
+    const type = m?.[1] ?? m?.[2]
     const isDefault = type === undefined || type === 'default' || type === 'odd'
     return (variant === 'default' ? isDefault : type === variant) ? '' : tag
   })
 }
 
-/** set or remove an on/off settings flag right after the settings root opens */
+/** set or remove an on/off settings flag at its CT_Settings position */
 function applySettingsFlag(xml: string, tag: string, on: boolean): string {
   // Match the start tag and an optional paired end tag. Matching only the
   // self-closing form left a paired element in place, so switching the flag ON
@@ -2234,31 +2491,45 @@ function applySettingsFlag(xml: string, tag: string, on: boolean): string {
   // zero-or-one element, which is schema-invalid; switching it OFF did nothing
   // at all. A producer that writes <w:mirrorMargins></w:mirrorMargins> is legal.
   const out = xml.replace(new RegExp(`<${tag}(?=[\\s/>])[^>]*>(?:<\\/${tag}>)?`), '')
-  return on ? out.replace(/(<w:settings[^>]*>)/, `$1<${tag}/>`) : out
+  if (!on) return out
+  return insertSettingsChild(out, tag.slice(tag.indexOf(':') + 1), `<${tag}/>`)
 }
 
-/** set or remove <w:evenAndOddHeaders/> right after the settings root opens */
+/** set or remove <w:evenAndOddHeaders/> at its CT_Settings position */
 function applyEvenAndOddHeaders(xml: string, on: boolean): string {
   const out = xml.replace(/<w:evenAndOddHeaders(?=[\s/>])[^>]*>(?:<\/w:evenAndOddHeaders>)?/, '')
-  return on ? out.replace(/(<w:settings[^>]*>)/, '$1<w:evenAndOddHeaders/>') : out
+  return on ? insertSettingsChild(out, 'evenAndOddHeaders', '<w:evenAndOddHeaders/>') : out
 }
 
 /** Set, replace or remove <w:background> (must be the first child of w:document). */
 function applyPageColor(documentXml: string, color: string | null): string {
-  let xml = documentXml.replace(/<w:background[^>]*\/>/, '')
+  // Both spellings are valid OOXML: the background is written self-closing
+  // (<w:background w:color="..."/>) or as an element pair carrying a VML fill
+  // (<w:background ...><v:background .../></w:background>). Removing only the
+  // self-closing form left the paired copy behind, so a save emitted two
+  // w:background children; CT_Document admits one and Word then reports the
+  // file as corrupt. Strip the pair whole, VML child included, and re-emit the
+  // canonical self-closing form, for the same reason stripElement() does.
+  let xml = documentXml.replace(
+    /<w:background[^>]*\/>|<w:background[^>]*>[\s\S]*?<\/w:background>/g,
+    '',
+  )
   if (color) {
     xml = xml.replace(/(<w:document[^>]*>)/, `$1<w:background w:color="${escapeXmlAttr(color)}"/>`)
   }
   return xml
 }
 
+/**
+ * Highest rIdN already present in a .rels part, or 1000 when the part is
+ * absent (so a generated document starts well clear of Word's own ids).
+ */
 function maxRelId(relsXml: string | null): number {
   if (!relsXml) return 1000
   let max = 0
-  const re = /Id="rId(\d+)"/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(relsXml)) !== null) {
-    max = Math.max(max, parseInt(m[1], 10))
+  for (const match of relsXml.matchAll(RELATIONSHIP_ID_NUMBER)) {
+    const n = parseInt(match[2], 10)
+    if (n > max) max = n
   }
   return max
 }
@@ -2270,6 +2541,45 @@ function nextImageSeq(zip: JSZip): number {
     if (m) max = Math.max(max, parseInt(m[1], 10))
   }
   return max + 1
+}
+
+/** Highest wp:docPr/@id already in the document, 0 when it holds no drawing. */
+function maxDocPrId(documentXml: string): number {
+  let max = 0
+  // quote-agnostic: a writer that single-quotes its attributes still owns those ids
+  for (const m of documentXml.matchAll(DRAWING_DOCPR_ID)) max = Math.max(max, parseInt(m[2], 10))
+  return max
+}
+
+/**
+ * Allocator handing out w:bookmarkStart/@w:id values for one save, seeded above
+ * every id the part already holds. w:id is unique within the part, so a rebuilt
+ * bookmark that reused an id already in use made Word pair the two bookmarks
+ * wrongly and land a cross-reference on the wrong target.
+ */
+function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
+  let next = maxBookmarkId(documentXml) + 1
+  return () => next++
+}
+
+/** Highest w:bookmarkStart/@w:id in the document, 0 when it holds no bookmark. */
+function maxBookmarkId(documentXml: string): number {
+  let max = 0
+  // quote-agnostic, and the end tag carries the same id as its start
+  for (const m of documentXml.matchAll(BOOKMARK_ID)) max = Math.max(max, parseInt(m[2], 10))
+  return max
+}
+
+/**
+ * Seed for the docPr sequence counter, which new pictures pre-increment to mint
+ * `DOCPR_ID_BASE + ++docPrSeq`. The media count says nothing about the ids the
+ * original producer used: seeded from it alone, a document with no GenOffice
+ * media always started at the base, so a save that inserted one picture next to
+ * an existing <wp:docPr id="9002"> emitted a second id 9002, and Word flags the
+ * duplicate drawing id for repair. Start above both floors instead.
+ */
+function nextDocPrSeq(zip: JSZip, documentXml: string): number {
+  return Math.max(nextImageSeq(zip), maxDocPrId(documentXml) - DOCPR_ID_BASE)
 }
 
 /**

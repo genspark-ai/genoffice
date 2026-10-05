@@ -1253,9 +1253,14 @@ impl CellBuilder {
         fallback_row: usize,
         fallback_column: usize,
     ) -> Result<Self, SidecarError> {
-        // <c r=> is optional: an unaddressed cell sits one right of its predecessor.
+        // <c r=> is optional: an unaddressed cell sits one right of its
+        // predecessor. A malformed one is the same case in worse clothes — a
+        // corrupt address used to propagate and fail the whole workbook, while
+        // every other bad field here degrades to a valueless cell because
+        // erroring out here once blanked the entire sheet — so it takes the
+        // same position rather than costing the user their workbook.
         let (row, column) = match attribute_value(reader, element, b"r")? {
-            Some(address) => parse_address(&address)?,
+            Some(address) => parse_address(&address).unwrap_or((fallback_row, fallback_column)),
             None => (fallback_row, fallback_column),
         };
         Ok(Self {
