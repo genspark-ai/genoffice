@@ -1110,7 +1110,10 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className={`editor-scroll${sourceViewOpen ? ' source-off' : ''}`} ref={scrollRef}>
+              <div
+                className={`editor-scroll${sourceViewOpen ? ' source-off' : ''}`}
+                ref={scrollRef}
+              >
                 <div className="doc-page" style={{ zoom: zoom / 100 }}>
                   {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
                   <EditorContent editor={editor} />

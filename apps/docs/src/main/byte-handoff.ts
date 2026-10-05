@@ -31,7 +31,10 @@ function dropPending(token: string): void {
 
 /** oldest-first eviction until `bytes` fits under both caps (Map is insertion-ordered) */
 function evictFor(bytes: Buffer): void {
-  while (pending.size + 1 > MAX_PENDING_HANDOFFS || pendingBytes + bytes.length > MAX_PENDING_HANDOFF_BYTES) {
+  while (
+    pending.size + 1 > MAX_PENDING_HANDOFFS ||
+    pendingBytes + bytes.length > MAX_PENDING_HANDOFF_BYTES
+  ) {
     const oldest = pending.keys().next()
     if (oldest.done) return
     dropPending(oldest.value)

@@ -102,16 +102,25 @@ describe('Ribbon source mode', () => {
     expect(container.querySelector('.autosave-toggle')).not.toBeNull()
   })
 
-  it('drops the block-formatting controls in the markdown source view too', () => {
-    // Not the same situation as a .txt/.json, and the same consequence: the
-    // document being formatted is not on screen, so leaving the buttons there
-    // would offer actions against something the reader cannot see.
-    const open = counts(renderRibbon(false, true))
-    expect(open.styleDropdown).toBe(0)
-    // two survive, and both earn their place: the spellcheck toggle still
-    // applies to raw text, and the source-view toggle is how the reader gets
-    // back out.
-    expect(open.iconButtons).toBe(2)
+  it('disables the block-formatting controls in the markdown source view', () => {
+    // A different situation from a .txt/.json, and so a different answer. Here
+    // the document is still live behind the pane — a keystroke in it is parsed
+    // straight back into the editor — so the controls are disabled rather than
+    // removed: they act on a selection the reader cannot see right now, and
+    // removing them would make the ribbon jump on every toggle.
+    const open = renderRibbon(false, true)
+    const plain = renderRibbon(false)
+    // Label-free on purpose: this suite renders in the default locale, so an
+    // aria-label lookup would be asserting on a translation. What matters is
+    // how many controls are live, and whether the ribbon lost any of them.
+    const disabledIn = (container: HTMLElement) =>
+      container.querySelectorAll('button.rb-btn:disabled').length
+    // Relative, not absolute: undo and redo are already disabled on a fresh
+    // document, so the claim is that opening the view quiets MORE of them.
+    expect(disabledIn(open)).toBeGreaterThan(disabledIn(plain))
+    // nothing was removed: the reader's ribbon does not jump on toggle, and
+    // the controls come back enabled when the view closes
+    expect(counts(open).iconButtons).toBe(counts(plain).iconButtons)
   })
 
   it('shows the formatting controls again for a markdown file', () => {

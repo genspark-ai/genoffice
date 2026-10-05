@@ -385,7 +385,7 @@ export function Ribbon({
 
         <div className="rb-sep" />
 
-        {!sourceMode && !sourceViewOpen && (
+        {!sourceMode && (
           <div className="ribbon-group">
             <div className="ribbon-group-items">
               <Dropdown
@@ -402,9 +402,9 @@ export function Ribbon({
           </div>
         )}
 
-        {!sourceMode && !sourceViewOpen && <div className="rb-sep" />}
+        {!sourceMode && <div className="rb-sep" />}
 
-        {!sourceMode && !sourceViewOpen && (
+        {!sourceMode && (
           <div className="ribbon-group">
             <div className="ribbon-group-items">
               <IconBtn
@@ -465,9 +465,9 @@ export function Ribbon({
           </div>
         )}
 
-        {!sourceMode && !sourceViewOpen && <div className="rb-sep" />}
+        {!sourceMode && <div className="rb-sep" />}
 
-        {!sourceMode && !sourceViewOpen && (
+        {!sourceMode && (
           <div className="ribbon-group">
             <div className="ribbon-group-items">
               <IconBtn
@@ -498,9 +498,9 @@ export function Ribbon({
           </div>
         )}
 
-        {!sourceMode && !sourceViewOpen && <div className="rb-sep" />}
+        {!sourceMode && <div className="rb-sep" />}
 
-        {!sourceMode && !sourceViewOpen && (
+        {!sourceMode && (
           <div className="ribbon-group">
             <div className="ribbon-group-items">
               <IconBtn
@@ -552,7 +552,7 @@ export function Ribbon({
                 <IconSourceCode size={ICON} />
               </IconBtn>
             )}
-            {!sourceMode && !sourceViewOpen && (
+            {!sourceMode && (
               <IconBtn
                 title={t('fmProperties')}
                 active={frontmatterOpen}
@@ -562,7 +562,7 @@ export function Ribbon({
                 <IconProperties size={ICON} />
               </IconBtn>
             )}
-            {!sourceMode && !sourceViewOpen && (
+            {!sourceMode && (
               <IconBtn
                 title={t('outline')}
                 active={outlineOpen}
