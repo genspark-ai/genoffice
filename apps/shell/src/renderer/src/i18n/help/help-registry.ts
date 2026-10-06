@@ -242,11 +242,17 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
   },
 ]
 
-/** topic bodies per language, keyed `<id>.<lang>`; missing pairs fall back to en */
+/**
+ * Topic bodies per language, keyed `<id>.<lang>`; missing pairs fall back to en.
+ *
+ * Lazy on purpose. Inlined eagerly, 294 markdown files pushed the shell
+ * renderer's entry chunk from 1.36 MB to 2.63 MB, and Home parses that on
+ * every launch to open a screen most sessions never reach. Each body is its
+ * own chunk now, fetched when its topic is opened.
+ */
 const bodies = import.meta.glob<string>('./topics/*.md', {
   query: '?raw',
   import: 'default',
-  eager: true,
 })
 
 /** screenshots referenced from topic bodies as ![alt](img/<name>.png) */
@@ -291,35 +297,48 @@ export function helpLangSuffix(lang: string): string {
 }
 
 /** A topic's body in the reader's language, falling back to English. */
-export function helpBody(id: string, lang: string): string | null {
+export async function helpBody(id: string, lang: string): Promise<string | null> {
   const direct = bodies[`./topics/${id}.${helpLangSuffix(lang)}.md`]
-  if (direct !== undefined) return direct
-  return bodies[`./topics/${id}.en.md`] ?? null
+  if (direct) return (await direct()) as string
+  const english = bodies[`./topics/${id}.en.md`]
+  if (english) return (await english()) as string
+  return null
 }
 
 /** True when the topic has a body in this language rather than the English fallback. */
 export function helpHasBody(id: string, lang: string): boolean {
+  // the key is in the map without the file having been fetched, so this stays
+  // synchronous where a caller only needs to know the pair exists
   return bodies[`./topics/${id}.${helpLangSuffix(lang)}.md`] !== undefined
 }
 
-/** topics whose title or body mentions the query (case-insensitive, both langs) */
-export function searchTopics(query: string, lang: string): Set<string> {
+/**
+ * Topics whose title or body mentions the query (case-insensitive, both langs).
+ *
+ * Reads every body, so it is a real cost: it runs when the reader types, not on
+ * mount, which is why the screen only calls it once the box has something in
+ * it. The results are cached per language by the caller.
+ */
+export async function searchTopics(query: string, lang: string): Promise<Set<string>> {
   const q = query.trim().toLowerCase()
   if (!q) return new Set(HELP_TOPICS.map((t) => t.id))
   const hits = new Set<string>()
-  for (const t of HELP_TOPICS) {
-    // both the reader's title and the English one, so a query typed in either
-    // language finds the topic whichever body is on screen
-    const hay = [
-      topicTitle(t.id, lang),
-      topicTitle(t.id, 'en'),
-      ...t.keywords,
-      helpBody(t.id, lang) ?? '',
-      helpBody(t.id, 'en') ?? '',
-    ]
-      .join('\n')
-      .toLowerCase()
-    if (hay.includes(q)) hits.add(t.id)
-  }
+  await Promise.all(
+    HELP_TOPICS.map(async (t) => {
+      const [own, english] = await Promise.all([helpBody(t.id, lang), helpBody(t.id, 'en')])
+      // both the reader's title and the English one, so a query typed in either
+      // language finds the topic whichever body is on screen
+      const hay = [
+        topicTitle(t.id, lang),
+        topicTitle(t.id, 'en'),
+        ...t.keywords,
+        own ?? '',
+        english ?? '',
+      ]
+        .join('\n')
+        .toLowerCase()
+      if (hay.includes(q)) hits.add(t.id)
+    }),
+  )
   return hits
 }

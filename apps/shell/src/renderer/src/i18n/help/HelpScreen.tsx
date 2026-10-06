@@ -4,14 +4,17 @@ import { Markdown } from '@genoffice/ui'
 import { HELP_GROUPS, HELP_TOPICS, helpBody, helpImage, searchTopics } from './help-registry'
 import { useI18n } from '../../locale'
 import { groupTitle, topicTitle } from './help-titles'
+// travels with the lazy chunk: this screen's styles are only wanted on this tab
+import './help.css'
 
 /**
  * The in-app manual (issue #1520): sidebar topic list with full-text search
  * over a markdown body per topic. Rendered by the shell renderer when the
  * view is loaded at ?mode=help (the Help tab / F1 / Help menu).
  *
- * Topics ship in zh + en; every other locale falls back to en (the registry
- * makes the gap visible rather than hiding it).
+ * Every one of the 21 locales has its own body, title and figure set; a
+ * locale with no body of its own falls back to English rather than showing a
+ * gap, and the registry keeps the count visible either way.
  *
  * Interactive bits: `[label](help://topic-id)` links in topic bodies jump to
  * another topic (the shared Markdown renderer's nav hook); ArrowUp/ArrowDown
@@ -19,20 +22,53 @@ import { groupTitle, topicTitle } from './help-titles'
  * from the body's `##` headings and scrolls to them by index.
  */
 export function HelpScreen(): React.ReactElement {
-  const { t } = useI18n()
-  // the help tab has no locale of its own: it renders in the shell's UI language
-  const langTag = document.documentElement.lang
-  const zh = langTag.startsWith('zh')
+  const { t, lang } = useI18n()
+  // the help tab has no locale of its own: it renders in the shell's UI language.
+  // `lang` is the shell's own `Lang`, which is the short code every lookup here
+  // keys on — `zh`, `ja`, `zh-TW`. `document.documentElement.lang` is the BCP-47
+  // tag instead (`zh-CN`, `ja-JP`), and handing that to a table keyed by short
+  // codes silently misses every row, so the screen showed English titles over a
+  // body in whatever language matched `startsWith('zh')`.
   const [query, setQuery] = useState('')
   const [activeId, setActiveId] = useState(HELP_TOPICS[0]!.id)
-  const hits = useMemo(() => searchTopics(query, zh ? 'zh' : 'en'), [query, zh])
+  // Bodies are separate chunks, so both the article and the search results are
+  // state that arrives rather than values computed during render. Each load
+  // carries a generation so a slower one cannot land over a newer answer.
+  const [hits, setHits] = useState<Set<string>>(() => new Set(HELP_TOPICS.map((t) => t.id)))
+  const [raw, setRaw] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const mainRef = useRef<HTMLElement>(null)
 
   const active = HELP_TOPICS.find((t) => t.id === activeId) ?? null
-  const raw = active ? helpBody(active.id, zh ? 'zh' : 'en') : null
   // the article header already renders the title; drop the body's own `# ` line
   const body = raw === null ? null : raw.replace(/^#\s+[^\n]*\n+/, '')
+
+  useEffect(() => {
+    if (!active) {
+      setRaw(null)
+      return
+    }
+    let live = true
+    void helpBody(active.id, lang).then((text) => {
+      if (live) setRaw(text)
+    })
+    return () => {
+      live = false
+    }
+  }, [active, lang])
+
+  useEffect(() => {
+    let live = true
+    const handle = setTimeout(() => {
+      void searchTopics(query, lang).then((found) => {
+        if (live) setHits(found)
+      })
+    }, 120)
+    return () => {
+      live = false
+      clearTimeout(handle)
+    }
+  }, [query, lang])
 
   /** topics in sidebar order that match the current query */
   const visibleTopics = useMemo(
@@ -123,7 +159,7 @@ export function HelpScreen(): React.ReactElement {
             if (topics.length === 0) return null
             return (
               <div key={g.id} className="help-group">
-                <div className="help-group-title">{groupTitle(g.id, langTag)}</div>
+                <div className="help-group-title">{groupTitle(g.id, lang)}</div>
                 {topics.map((t) => (
                   <button
                     key={t.id}
@@ -131,7 +167,7 @@ export function HelpScreen(): React.ReactElement {
                     className={`help-topic${t.id === activeId ? ' active' : ''}`}
                     onClick={() => setActiveId(t.id)}
                   >
-                    {topicTitle(t.id, langTag)}
+                    {topicTitle(t.id, lang)}
                   </button>
                 ))}
               </div>
@@ -142,7 +178,7 @@ export function HelpScreen(): React.ReactElement {
       <main className="help-main" ref={mainRef}>
         {active ? (
           <article className="help-article" key={active.id}>
-            <h1>{topicTitle(active.id, langTag)}</h1>
+            <h1>{topicTitle(active.id, lang)}</h1>
             {toc.length > 1 && (
               <nav className="help-toc" aria-label={t('helpOnThisPage')}>
                 <div className="help-toc-title">{t('helpOnThisPage')}</div>
@@ -161,7 +197,7 @@ export function HelpScreen(): React.ReactElement {
             {body !== null ? (
               <Markdown
                 text={body}
-                images={{ resolve: (href) => helpImage(href, langTag) }}
+                images={{ resolve: (href) => helpImage(href, lang) }}
                 nav={{
                   scheme: 'help://',
                   onNavigate: (href) => {
