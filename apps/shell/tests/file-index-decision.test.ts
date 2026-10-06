@@ -400,10 +400,7 @@ describe('probeDecision', () => {
         { endpoint: 'custom', customBaseUrl: 'http://example.test/v1/systemone' },
         'Server URL must be https:// (http:// only for this machine)',
       ],
-      [
-        { endpoint: 'custom', customBaseUrl: 'not a url' },
-        'Server URL is not a valid address',
-      ],
+      [{ endpoint: 'custom', customBaseUrl: 'not a url' }, 'Server URL is not a valid address'],
       [{ endpoint: 'cloudflare', keys: { cloudflare: 'k' } }, 'Enter the Cloudflare account ID'],
       [
         {
