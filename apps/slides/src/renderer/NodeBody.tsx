@@ -379,7 +379,7 @@ export const NodeBody = React.memo(function NodeBody({
                   rotation={g.rotation ?? 0}
                   letterSpacing={g.letterSpacing ?? 0}
                   fill={g.fill}
-                  direction={g.direction ?? 'inherit'}
+                  direction={g.direction ?? 'ltr'}
                   {...(g.stroke
                     ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
                     : {})}
@@ -825,7 +825,7 @@ export const NodeBody = React.memo(function NodeBody({
                   ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
                   : g.fill
               }
-              direction={g.direction ?? 'inherit'}
+              direction={g.direction ?? 'ltr'}
               {...(g.fillPriority && !shape.text?.extrusion
                 ? {
                     fillPriority: g.fillPriority,
