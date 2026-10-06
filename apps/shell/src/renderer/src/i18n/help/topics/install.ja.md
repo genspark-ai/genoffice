@@ -4,15 +4,15 @@
 
 ## 自分のマシンに合わせてファイルを選ぶ
 
-| プラットフォーム | 必要なもの | ファイル |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — ほとんどの PC | Windows 10+、Intel/AMD | `-x64.exe` インストーラー |
-| **Windows** on Arm | Arm 版の Windows 11（Snapdragon X など） | `-arm64.exe` インストーラー |
-| **Linux** — Debian / Ubuntu | x86_64、glibc 2.34+（Ubuntu 22.04 以降） | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64、glibc 2.34+（Fedora 35+、RHEL 9+、Leap 15.6+） | `.rpm` |
-| **Linux** — それ以外 | x86_64、glibc 2.34+、FUSE 2 | `.AppImage` |
+| プラットフォーム                     | 必要なもの                                             | ファイル                    |
+| ------------------------------------ | ------------------------------------------------------ | --------------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                              | `.dmg` (arm64)              |
+| **macOS** — Intel                    | macOS 11+                                              | `.dmg` (x64)                |
+| **Windows** — ほとんどの PC          | Windows 10+、Intel/AMD                                 | `-x64.exe` インストーラー   |
+| **Windows** on Arm                   | Arm 版の Windows 11（Snapdragon X など）               | `-arm64.exe` インストーラー |
+| **Linux** — Debian / Ubuntu          | x86_64、glibc 2.34+（Ubuntu 22.04 以降）               | `.deb`                      |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64、glibc 2.34+（Fedora 35+、RHEL 9+、Leap 15.6+） | `.rpm`                      |
+| **Linux** — それ以外                 | x86_64、glibc 2.34+、FUSE 2                            | `.AppImage`                 |
 
 古いバージョンは Releases ページにそのまま残っています。
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 FUSE 2 ランタイムが必要です。インストールしたくない場合は `--appimage-extract-and-run` を付けて実行してください。展開されたディレクトリーからサンドボックスが動作します。
+
+## いま動かしているビルド
+
+**設定 ▸ 情報** は、アプリが使っているビルド、追随しているチャンネル、プロジェクトが置かれている場所をアプリが示す場所です。そのチャンネルに新しいビルドが公開されると、同じペインが更新を提案します。Flatpak、Nix、Docker でインストールした場合には提案しません。それらを設置したツールが置き換えるものだからです。
+
+![設定 ▸ 情報：インストール済みのバージョン、アプリが従う更新チャンネル、プロジェクトの GitHub リンク](img/install.png)
 
 ## さらに 3 つの入手方法
 

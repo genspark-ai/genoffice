@@ -4,15 +4,15 @@
 
 ## 選擇適合你電腦的檔案
 
-| 平台 | 需求 | 檔案 |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — 大多數 PC | Windows 10+、Intel/AMD | `-x64.exe` 安裝程式 |
-| **Windows** on Arm | Arm 版 Windows 11（Snapdragon X 之類） | `-arm64.exe` 安裝程式 |
-| **Linux** — Debian / Ubuntu | x86_64、glibc 2.34+（Ubuntu 22.04 或更新） | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64、glibc 2.34+（Fedora 35+、RHEL 9+、Leap 15.6+） | `.rpm` |
-| **Linux** — 其他 | x86_64、glibc 2.34+、FUSE 2 | `.AppImage` |
+| 平台                                 | 需求                                                   | 檔案                  |
+| ------------------------------------ | ------------------------------------------------------ | --------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                              | `.dmg` (arm64)        |
+| **macOS** — Intel                    | macOS 11+                                              | `.dmg` (x64)          |
+| **Windows** — 大多數 PC              | Windows 10+、Intel/AMD                                 | `-x64.exe` 安裝程式   |
+| **Windows** on Arm                   | Arm 版 Windows 11（Snapdragon X 之類）                 | `-arm64.exe` 安裝程式 |
+| **Linux** — Debian / Ubuntu          | x86_64、glibc 2.34+（Ubuntu 22.04 或更新）             | `.deb`                |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64、glibc 2.34+（Fedora 35+、RHEL 9+、Leap 15.6+） | `.rpm`                |
+| **Linux** — 其他                     | x86_64、glibc 2.34+、FUSE 2                            | `.AppImage`           |
 
 舊版本仍保留在 Releases 頁面上。
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 它需要 FUSE 2 執行環境。如果不想安裝它，可以用 `--appimage-extract-and-run` 來執行，沙箱會從解壓出來的目錄運作。
+
+## 你正在執行的建置
+
+**設定 ▸ 關於** 是應用程式回報你正在使用的建置版本、它跟隨的更新頻道，以及專案所在位置的地方。當該頻道發布了更新的建置版本時，同一個面板會提供更新；Flatpak、Nix 或 Docker 安裝則不會，因為這些安裝會被當初把它們裝上去的工具取代。
+
+![設定 ▸ 關於，顯示已安裝的版本、應用程式跟隨的更新頻道，以及專案的 GitHub 連結](img/install.png)
 
 ## 另外三條路
 

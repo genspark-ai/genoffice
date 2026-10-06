@@ -2,9 +2,9 @@
 
 ## Providers and models
 
-Models and keys are configured in Settings (the gear button on Home):
+Models and keys are configured in Settings (the account row at the bottom left of Home):
 
-![The Settings window](img/settings-integrations.png)
+![The Settings window](img/settings-general.png)
 
 - **Genspark hosted**: sign in (device-code flow) and use it — zero configuration.
 - **Custom endpoints (BYOK)**: Settings ▸ AI takes a base URL and API key per protocol — OpenAI-compatible, Anthropic, Gemini, DeepSeek, DashScope (qwen) and more. Keys live only in request headers — never on disk, in logs or child-process env.

@@ -2,9 +2,17 @@
 
 GenOffice nói chuyện theo Model Context Protocol, nên một tác nhân lập trình có thể đọc, ghi và kết xuất tài liệu của bạn qua đúng những engine mà ứng dụng dùng. Tác nhân không phải đoán mò một định dạng tệp: nó nhận lược đồ thao tác có kiểu từ đúng những định nghĩa mà bộ thực thi dùng để kiểm tra.
 
-## Đăng ký
+## Đăng ký từ trong ứng dụng
 
-Trường hợp thông thường chỉ cần một lệnh:
+Việc này làm ở **Cài đặt ▸ Tích hợp**. Bảng đó có hai nửa, và bạn có thể dùng một nửa hoặc cả hai.
+
+**Kỹ năng.** Mỗi tác nhân lập trình tìm thấy trên máy này một dòng — Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, OpenCode, Windsurf —, mỗi dòng có **Cài đặt**, **Cập nhật** và **Gỡ cài đặt**, cộng thêm **Cài đặt vào một thư mục khác…**, **Tải xuống kỹ năng (zip)** và **Sao chép đường dẫn**. Nếu trợ lý của bạn không có trong danh sách, hãy chỉ cho GenOffice thư mục mà nó đọc `SKILL.md`, hoặc lưu tệp zip lại rồi bảo trợ lý tự cài đặt. Kỹ năng và MCP có thể nằm cạnh nhau: trợ lý chọn một trong hai, và chúng làm đúng những việc giống nhau.
+
+**MCP.** Có hai đường: **Được khởi động bởi trợ lý (khuyến nghị)**, ở đó bạn thêm cấu hình được hiển thị vào phía khách của mình và trợ lý tự khởi chạy máy chủ, và **Máy chủ HTTP cục bộ**, do ứng dụng chạy thay bạn. Dù chọn đường nào, trợ lý vẫn kết nối với GenOffice và bạn không phải gõ lệnh nào.
+
+## Đăng ký từ dòng lệnh
+
+Cũng làm được từ terminal — đây là đường nâng cao, dùng khi tác nhân nằm ở nơi bảng kia không tìm thấy:
 
 ```sh
 genoffice mcp install all
@@ -19,6 +27,10 @@ genoffice mcp uninstall cursor  # take it back out
 ```
 
 Một tác nhân bạn cài ở chỗ không mấy quen thuộc cần `--dir <path>`; còn `--force` ghi đè một mục đã có sẵn.
+
+Mọi thứ mà máy chủ nhận đều nằm trong một màn hình — các dạng đăng ký, gỡ bỏ và liệt kê, phục vụ qua HTTP, cùng hai cờ lược đồ:
+
+![Kết quả thật của genoffice mcp --help: các dạng install, uninstall và list, kèm các tùy chọn --http, --host, --token, --compact-schemas, --dir và --force](img/mcp.png)
 
 ## Tự chạy nó
 
@@ -52,10 +64,20 @@ genoffice mcp --compact-schemas
 GENOFFICE_MCP_COMPACT_SCHEMAS=1 genoffice mcp
 ```
 
-## Kỹ năng
+## Vì sao cần kỹ năng
 
-Một tác nhân không biết từ vựng thao tác sẽ đoán mò. `genoffice skill` cài một kỹ năng GenOffice vào những tác nhân nó tìm thấy, mang theo tài liệu tham chiếu và các hướng dẫn thiết kế — đúng những tài liệu mà `genoffice guide` in ra.
+Một tác nhân không biết từ vựng thao tác sẽ đoán mò. Kỹ năng mang theo tài liệu tham chiếu và các hướng dẫn thiết kế — đúng những tài liệu mà `genoffice guide` in ra —, nên trợ lý viết ra thao tác mà nó đã thực sự đọc đặc tả. Cài nó từ bảng kia ở trên, hoặc bằng `genoffice skill` trong terminal.
 
-## Nó không phải là gì
+## Nó chạm được gì trong ứng dụng
 
-Máy chủ MCP đọc và ghi tệp. Nó không phải cửa sổ: không có bảng AI, và hộp thoại cập nhật trong ứng dụng không áp dụng. Nếu một bước nào đó cần cửa sổ, hãy mở tệp ra.
+Máy chủ không chỉ dừng ở các tệp trên đĩa. Chừng nào GenOffice còn chạy, tác nhân cũng có thể làm việc qua cửa sổ:
+
+- **`open_in_genoffice`** mở một tệp trong một thẻ và đưa thẻ đó lên tiền cảnh.
+- **`open_documents`** liệt kê mọi tài liệu bạn đang mở — id, loại, đường dẫn và có thay đổi chưa lưu hay không —, rồi đọc nội dung hiện tại của một tài liệu hoặc đóng nó lại, lưu trước trừ khi bạn bảo nó bỏ thay đổi.
+- **Các công cụ nội dung** nhận id (hoặc đường dẫn) đó làm tham số `document`, nên một thay đổi sẽ rơi vào đúng thẻ bạn đang mở và cửa sổ chuyển sang hiển thị nó.
+
+Có hai thứ vẫn nằm ngoài tầm với: không có bảng AI, và hộp thoại cập nhật trong ứng dụng không áp dụng.
+
+## Bảng Máy chủ HTTP cục bộ
+
+Dưới **Máy chủ HTTP cục bộ**, ứng dụng tự chạy máy chủ thay vì để trợ lý lo: công tắc bật, ô **Cổng**, chỉ báo **Đang chạy / Không chạy** và **Tạo ngầm dưới nền** (ghi thẳng tài liệu ra một đường dẫn mà không mở giao diện), cùng **Ví dụ cấu hình máy khách** để sao chép. Mở **Nâng cao** sẽ thêm hai URL kết nối — Streamable HTTP và URL SSE cũ —, URL **Kiểm tra tình trạng** và công tắc **Ghi nhật ký** ghi lại hoạt động của máy chủ và các công cụ vào một tệp cục bộ mà bạn có thể **Mở**, **Làm mới** hoặc **Xóa** ngay tại đó. Nó chỉ lắng nghe trên localhost.

@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Itulah keseluruhan permukaannya dalam satu skrin — setiap arahan dengan satu baris yang memberitahu apa yang dilalui, kemudian pilihan global dan kod keluar:
+
+![Keluaran sebenar daripada genoffice --help: banner versi, setiap arahan dengan penerangan satu baris, serta pilihan global dan kod keluar](img/cli.png)
+
 ## Mendapatkan perintah itu
 
 macOS dan Windows menghantarnya di dalam bungkus aplikasi. Untuk menggunakannya mengikut nama, jalankan `genoffice install-cli` sekali: ia membuat symlink bagi binari yang dibungkus itu ke dalam `/usr/local/bin`, atau ke dalam `PATH` pengguna anda pada Windows.
 
 ## Perintah yang perlu diketahui
 
-| Perintah | Apa yang ia lakukan |
-| --- | --- |
-| `open` | Membuka dokumen dalam aplikasi; memulakan aplikasi jika ia belum berjalan. |
-| `convert` | Menukar antara format menggunakan enjin aplikasi itu sendiri. |
-| `create` | Mencipta dokumen daripada kandungan berstruktur. |
-| `render` | Satu PNG bagi setiap halaman, mengikut susun atur penjana. |
-| `pdf` | Membaca lapisan teks PDF halaman demi halaman, tanpa proses aplikasi. |
-| `info` | Metadatan dan ringkasan struktur sesebuah dokumen. |
-| `search` | Carian web atau imej melalui pembekal yang dikonfigurasi dalam aplikasi. |
-| `image` / `media` | Menghasilkan imej, atau menghuraikan dan bertanya soalan tentang fail imej, video atau audio. |
-| `merge` | Mengisi ruang letak `{{key}}` dalam templat `.docx`, `.pptx` atau `.xlsx`. |
-| `capabilities` | Melaporkan keupayaan awan yang dikonfigurasi pada mesin ini. |
-| `guide` | Rujukan op dan panduan reka bentuk, dijana daripada definisi yang sama seperti yang disahkan oleh pelaku — jadi ia tidak mungkin berbeza daripada apa yang diterima oleh `apply`. `--json` mengembalikannya bersama skema setiap op. |
-| `install-cli` | Meletakkan `genoffice` pada `PATH`. |
-| `skill` | Menyenaraikan ejen penulisan kod yang ditemui pada mesin ini, dan memasang atau mengemas kini kemahiran GenOffice di dalamnya. |
-| `mcp` | Menyediakan setiap perintah sebagai alat Model Context Protocol. Lihat **Menyambungkan ejen penulisan kod**. |
+| Perintah          | Apa yang ia lakukan                                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `open`            | Membuka dokumen dalam aplikasi; memulakan aplikasi jika ia belum berjalan.                                                                                                                                                           |
+| `convert`         | Menukar antara format menggunakan enjin aplikasi itu sendiri.                                                                                                                                                                        |
+| `create`          | Mencipta dokumen daripada kandungan berstruktur.                                                                                                                                                                                     |
+| `render`          | Satu PNG bagi setiap halaman, mengikut susun atur penjana.                                                                                                                                                                           |
+| `pdf`             | Membaca lapisan teks PDF halaman demi halaman, tanpa proses aplikasi.                                                                                                                                                                |
+| `info`            | Metadatan dan ringkasan struktur sesebuah dokumen.                                                                                                                                                                                   |
+| `search`          | Carian web atau imej melalui pembekal yang dikonfigurasi dalam aplikasi.                                                                                                                                                             |
+| `image` / `media` | Menghasilkan imej, atau menghuraikan dan bertanya soalan tentang fail imej, video atau audio.                                                                                                                                        |
+| `merge`           | Mengisi ruang letak `{{key}}` dalam templat `.docx`, `.pptx` atau `.xlsx`.                                                                                                                                                           |
+| `capabilities`    | Melaporkan keupayaan awan yang dikonfigurasi pada mesin ini.                                                                                                                                                                         |
+| `guide`           | Rujukan op dan panduan reka bentuk, dijana daripada definisi yang sama seperti yang disahkan oleh pelaku — jadi ia tidak mungkin berbeza daripada apa yang diterima oleh `apply`. `--json` mengembalikannya bersama skema setiap op. |
+| `install-cli`     | Meletakkan `genoffice` pada `PATH`.                                                                                                                                                                                                  |
+| `skill`           | Menyenaraikan ejen penulisan kod yang ditemui pada mesin ini, dan memasang atau mengemas kini kemahiran GenOffice di dalamnya.                                                                                                       |
+| `mcp`             | Menyediakan setiap perintah sebagai alat Model Context Protocol. Lihat **Menyambungkan ejen penulisan kod**.                                                                                                                         |
 
 ## Penyuntingan: docs, sheets, slides
 

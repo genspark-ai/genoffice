@@ -38,7 +38,7 @@ Het tabblad Gegevens, knop voor knop (van links naar rechts op de afbeelding):
 - **Dubbele waarden verwijderen**: laat dubbele rijen vallen op basis van de geselecteerde kolommen.
 - **Gegevensvalidatie** (keuzelijst): invoerregels voor de selectie (keuzelijsten, getalbereiken...).
 - **Consolideren**: voegt meerdere bereiken op één plek samen per categorie.
-- **What-if-analyse** (keuzelijst): doel zoeken / gegevenstabellen.
+- **What-if-analyse** (keuzelijst): doel zoeken — lost één invoercel op zodat een formulecel de doelwaarde bereikt.
 - **Groeperen / Groepering opheffen** (keuzelijst): rij- of kolomgroepen met in- en uitklappen.
 - **Subtotaal**: voegt subtotalen per categorie in.
 

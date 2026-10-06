@@ -2,9 +2,11 @@
 
 ## Opening settings
 
-The account row at the bottom left of Home opens the settings panel (it reads Sign in when you are logged out); AI-related options live in its AI Model section
+The account row at the bottom left of Home opens the settings panel (it reads Sign in when you are logged out). It has six sections: Account, AI Model, AI Media & Search, General, Integrations and About.
 
-![The Settings window](img/settings-integrations.png) — model configuration is covered in AI models and settings.
+![Settings ▸ General, where language, theme, AutoSave and the usage-statistics switch live](img/settings-general.png)
+
+AI model configuration has its own article; **AI Media & Search** is where you turn image generation, image analysis, video analysis, web search and local file search on per provider.
 
 ## Language
 
@@ -32,11 +34,11 @@ Settings can register GenOffice as the handler for .docx / .xlsx / .pptx / .pdf 
 
 ## MCP integration (for advanced users / AI clients)
 
-GenOffice embeds a local **MCP server** so external AI clients (Claude Desktop, Cursor, ...) can read and write your documents directly:
+**Integrations** is the pane that connects GenOffice to a coding agent, and it has its own article: Connecting a coding agent. The short version — pick a route (the command line, or MCP), follow that section, then start a new chat and ask.
 
-- Start: `genoffice mcp` on the command line (port and auth token configurable; loopback-only by default).
-- Capabilities: create/open/edit docx, xlsx and pptx, read contents, convert formats, export PDF and more — the same toolset the desktop apps use.
-- Security: token auth is optional but recommended; the listener stays on the local machine by default; see `genoffice mcp --help`.
+![Settings ▸ Integrations: the three steps, then the skill rows and the MCP options](img/settings-integrations.png)
+
+Under **Local HTTP server** the app can run the server itself — an enable switch, a port — and **Advanced** adds the health-check URL and the log file. It listens on localhost only.
 
 ## Command-line cheat sheet
 

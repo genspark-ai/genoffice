@@ -2,9 +2,11 @@
 
 ## Otwieranie ustawień
 
-Wiersz konta w lewym dolnym rogu strony głównej otwiera panel ustawień (gdy nie jesteś zalogowany, pokazuje Zaloguj się); opcje dotyczące AI znajdują się w jego sekcji Model AI
+Wiersz konta w lewym dolnym rogu strony głównej otwiera panel ustawień (gdy nie jesteś zalogowany, pokazuje Zaloguj się). Ma sześć sekcji: Konto, Model AI, Media i wyszukiwanie AI, Ogólne, Integracje i O aplikacji.
 
-![Okno Ustawień](img/settings-integrations.png) — konfiguracja modeli jest opisana w rozdziale Modele AI i ustawienia.
+![Ustawienia ▸ Ogólne, gdzie znajdują się język, motyw, automatyczny zapis i przełącznik statystyk użycia](img/settings-general.png)
+
+Konfiguracja modeli ma własny artykuł; w sekcji **Media i wyszukiwanie AI** włączasz dla każdego dostawcy generowanie obrazów, analizę obrazów, analizę wideo, wyszukiwanie w sieci i wyszukiwanie plików lokalnych.
 
 ## Język
 
@@ -32,11 +34,11 @@ Ustawienia mogą zarejestrować GenOffice jako obsługę plików .docx / .xlsx /
 
 ## Integracja MCP (dla zaawansowanych użytkowników i klientów AI)
 
-GenOffice zawiera lokalny **serwer MCP**, dzięki czemu zewnętrzne klienty AI (Claude Desktop, Cursor, ...) mogą bezpośrednio odczytywać i zapisywać Twoje dokumenty:
+Do **Integracji** łączy GenOffice z agentem programistycznym i ma własny artykuł: Podłączenie z agentem programistycznym. Wersja skrócona — wybierz drogę (wiersz poleceń albo MCP), przejdź tę część, a potem rozpocznij nową rozmowę i zapytaj.
 
-- Uruchomienie: `genoffice mcp` w wierszu poleceń (port i token uwierzytelniający są konfigurowalne; domyślnie tylko loopback).
-- Możliwości: tworzenie/otwieranie/edycja plików docx, xlsx i pptx, odczyt treści, konwersja formatów, eksport do PDF i więcej — ten sam zestaw narzędzi, którego używają aplikacje desktopowe.
-- Bezpieczeństwo: uwierzytelnianie tokenem jest opcjonalne, ale zalecane; nasłuch pozostaje domyślnie na komputerze lokalnym; zobacz `genoffice mcp --help`.
+![Ustawienia ▸ Integracje: trzy kroki, potem wiersze umiejętności i opcje MCP](img/settings-integrations.png)
+
+W sekcji **Lokalny serwer HTTP** aplikacja może też sama uruchomić ten serwer — przełącznik włączania i port —, a **Zaawansowane** dodaje adres sprawdzenia stanu i plik dziennika, zamiast zostawiać serwer asystentowi. Nasłuchuje wyłącznie na localhost.
 
 ## Ściągawka z poleceń
 

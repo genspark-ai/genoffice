@@ -38,7 +38,7 @@ La pestaña Datos, botón por botón (de izquierda a derecha en la imagen):
 - **Quitar duplicados**: quita las filas duplicadas según las columnas seleccionadas.
 - **Validación de datos** (desplegable): reglas de entrada para la selección (listas desplegables, rangos numéricos, …).
 - **Consolidar**: agrega varios rangos en un mismo lugar por categoría.
-- **Análisis de hipótesis** (desplegable): buscar objetivo / tablas de datos.
+- **Análisis de hipótesis** (desplegable): buscar objetivo — resuelve una celda de entrada para que una celda con fórmula alcance un valor objetivo.
 - **Agrupar / Desagrupar** (desplegable): grupos de filas o columnas con contraer y expandir.
 - **Subtotal**: inserta filas de subtotal por categoría.
 

@@ -2,9 +2,11 @@
 
 ## Abrir as configurações
 
-A linha da conta no canto inferior esquerdo do ecrã Início abre o painel de configurações (mostra Entrar quando não tem sessão iniciada); e as opções relacionadas com a IA ficam na sua secção Modelo de IA.
+A linha da conta no canto inferior esquerdo do ecrã Início abre o painel de configurações (mostra Entrar quando não tem sessão iniciada). O painel tem seis secções: Conta, Modelo de IA, Mídia e busca de IA, Geral, Integrações e Sobre.
 
-![A janela de configurações](img/settings-integrations.png) — a configuração dos modelos está no capítulo Modelos de IA e configurações.
+![Configurações ▸ Geral, onde vivem o idioma, o tema, a guardado automático e o interruptor das estatísticas de utilização](img/settings-general.png)
+
+A configuração dos modelos tem o seu próprio artigo; em **Mídia e busca de IA** liga, por cada fornecedor, a geração de imagens, a análise de imagens, a análise de vídeo, a busca na web e a pesquisa de arquivos locais.
 
 ## Idioma
 
@@ -32,11 +34,11 @@ As Configurações podem registar o GenOffice como a aplicação que abre fichei
 
 ## Integração MCP (para utilizadores avançados / clientes de IA)
 
-O GenOffice integra um **servidor MCP** local para que clientes de IA externos (Claude Desktop, Cursor, ...) possam ler e escrever diretamente os seus documentos:
+**Integrações** é o painel que liga o GenOffice a um agente de programação, e tem o seu próprio artigo: Ligar um agente de programação. A versão curta — escolha um caminho (a linha de comandos, ou MCP), siga essa secção e depois inicie uma conversa nova e pergunte.
 
-- Arranque: `genoffice mcp` na linha de comandos (a porta e o token de autenticação são configuráveis; só loopback por omissão).
-- Capacidades: criar/abrir/editar .docx, .xlsx e .pptx, ler conteúdos, converter formatos, exportar PDF e mais — o mesmo conjunto de ferramentas que usam as aplicações de ambiente de trabalho.
-- Segurança: a autenticação por token é opcional mas recomendada; e o ouvinte fica na máquina local por omissão; consulte `genoffice mcp --help`.
+![Configurações ▸ Integrações: os três passos, depois as linhas de competências e as opções de MCP](img/settings-integrations.png)
+
+Em **Servidor HTTP local**, a aplicação também pode arrancar o servidor por si — um interruptor de ativação e uma porta —, enquanto **Avançado** acrescenta o URL de verificação de integridade e o arquivo de registro, em vez de o deixar ao assistente. Escuta apenas em localhost.
 
 ## Folha de referência da linha de comandos
 

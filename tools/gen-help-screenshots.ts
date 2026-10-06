@@ -235,14 +235,33 @@ async function main(): Promise<void> {
       // 3. Settings. There is no gear in the top-right: the modal opens from the
       //    account row at the bottom-left (Home.tsx's AccountEntry says so), and
       //    its aria-label is localized, so match the class rather than the text.
-      //    The figure is the General pane because that is where the article's
-      //    own subjects live — language and theme; Account is where the e-mail
-      //    used to leak from.
+      //    Two panes, each saved under the name of the pane it actually shows:
+      //    General is where the manual's own subjects live — language and theme,
+      //    plus the analytics and AutoSave switches — and Account is where the
+      //    e-mail used to leak from. Integrations is the pane the MCP topic is
+      //    about, so it gets its own figure rather than a stand-in.
       await page.locator('.account-btn').click()
-      const nav = page.locator('.set-nav-item').filter({ hasText: /General|通用|一般/ })
-      if (await nav.count()) await nav.first().click()
-      await page.waitForTimeout(500)
-      await shoot(page, 'settings-integrations', lang)
+      const nav = page.locator('.set-nav-item')
+      const openPane = async (name: RegExp, shot: string) => {
+        const item = nav.filter({ hasText: name })
+        if (!(await item.count())) throw new Error(`settings pane not found: ${name}`)
+        await item.first().click()
+        await page.waitForTimeout(500)
+        await shoot(page, shot, lang)
+      }
+      // Every shipped UI language's own label for the pane, taken from
+      // `setSecGeneral` / `setSecIntegrations` in strings.ts. Matching three of
+      // them and skipping the click on a miss is how this silently captured the
+      // default pane for the other eighteen: the figure came out as Account, not
+      // General, and nobody noticed because the file name still said otherwise.
+      await openPane(
+        /通用|General|Chung|一般|일반|Général|Allgemein|ทั่วไป|Umum|Общие|عام|Geral|Generale|Ogólne|Obecné|Algemeen|כללי|सामान्य/,
+        'settings-general',
+      )
+      await openPane(
+        /集成|Integrations|Tích hợp|連携|연동|Intégrations|Integrationen|Integraciones|การเชื่อมต่อ|Integrasi|Интеграции|التكاملات|Integrações|Integrazioni|Integracje|Integrace|Integraties|שילובים|इंटीग्रेशन|整合/,
+        'settings-integrations',
+      )
     } finally {
       await app?.close().catch(() => {})
       scratch.dispose()

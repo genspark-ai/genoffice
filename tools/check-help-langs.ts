@@ -90,11 +90,22 @@ const SCRIPTS: Record<string, RegExp> = {
   hi: /[\u0900-\u097f]/,
 }
 
-/** the longest run of text the two files share, ignoring whitespace and code */
+/**
+ * The longest run of text the two files share, ignoring whitespace and code.
+ *
+ * Markdown tables are excluded along with fenced code, and not as a
+ * convenience: a table's cells are proper nouns and version numbers — macOS,
+ * `.dmg`, Windows 10+ — identical in every translation by construction, and its
+ * `--- | ---` filler is punctuation that matches itself. Counting those made
+ * this report "not translated" for a Polish article whose only shared run was a
+ * separator row. What this is meant to catch is prose, so only prose is
+ * compared.
+ */
 function longestSharedRun(a: string, b: string): number {
   const norm = (t: string) =>
     t
       .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/^\s*\|.*$/gm, ' ')
       .replace(/\s+/g, ' ')
       .trim()
   const sa = norm(a)

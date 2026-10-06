@@ -4,15 +4,15 @@ Ogni build viene pubblicato sulla [pagina Releases](https://github.com/genspark-
 
 ## Scegli il file giusto per il tuo computer
 
-| Piattaforma | Requisiti | File |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — la maggior parte dei PC | Windows 10+, Intel/AMD | programma di installazione `-x64.exe` |
-| **Windows** su Arm | Windows 11 on Arm (Snapdragon X e simili) | programma di installazione `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 o successivo) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — qualsiasi altra cosa | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Piattaforma                           | Requisiti                                             | File                                    |
+| ------------------------------------- | ----------------------------------------------------- | --------------------------------------- |
+| **macOS** — Apple Silicon             | macOS 11+                                             | `.dmg` (arm64)                          |
+| **macOS** — Intel                     | macOS 11+                                             | `.dmg` (x64)                            |
+| **Windows** — la maggior parte dei PC | Windows 10+, Intel/AMD                                | programma di installazione `-x64.exe`   |
+| **Windows** su Arm                    | Windows 11 on Arm (Snapdragon X e simili)             | programma di installazione `-arm64.exe` |
+| **Linux** — Debian / Ubuntu           | x86_64, glibc 2.34+ (Ubuntu 22.04 o successivo)       | `.deb`                                  |
+| **Linux** — Fedora / RHEL / openSUSE  | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                                  |
+| **Linux** — qualsiasi altra cosa      | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`                             |
 
 Le versioni più vecchie restano sulla pagina Releases.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Richiede il runtime FUSE 2. Se preferisci non installarlo, avvialo con `--appimage-extract-and-run`: la sandbox funziona dalla directory estratta.
+
+## La build che stai eseguendo
+
+**Impostazioni ▸ Informazioni** è dove l'app riporta la build che hai, il canale che segue e dove vive il progetto. Quando una build più recente viene pubblicata su quel canale, lo stesso pannello offre l'aggiornamento; un'installazione Flatpak, Nix o Docker non lo fa, perché è quella che l'ha messa lì a sostituirla.
+
+![Impostazioni ▸ Informazioni, con la versione installata, il canale di aggiornamento seguito dall'app e il link GitHub del progetto](img/install.png)
 
 ## Altre tre vie
 

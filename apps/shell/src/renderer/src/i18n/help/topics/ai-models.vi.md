@@ -2,9 +2,9 @@
 
 ## Nhà cung cấp và mô hình
 
-Mô hình và khóa được cấu hình trong Cài đặt (nút bánh răng trên Trang chủ):
+Mô hình và khóa được cấu hình trong Cài đặt (hàng tài khoản ở góc dưới bên trái của Trang chủ):
 
-![Cửa sổ Cài đặt](img/settings-integrations.png)
+![Cửa sổ Cài đặt](img/settings-general.png)
 
 - **Genspark đám mây**: đăng nhập (luồng mã thiết bị) rồi dùng — không phải cấu hình gì.
 - **Điểm cuối tùy chỉnh (BYOK)**: Cài đặt ▸ AI nhận một URL cơ sở và một khóa API cho từng giao thức — tương thích OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) và hơn thế. Khóa chỉ nằm trong phần đầu yêu cầu — không bao giờ trên đĩa, không trong nhật ký, cũng không trong môi trường của tiến trình con.

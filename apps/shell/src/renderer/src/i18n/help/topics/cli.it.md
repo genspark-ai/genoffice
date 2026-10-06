@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Ecco tutta la superficie in una sola schermata: ogni comando con una riga che dice cosa fa, poi le opzioni globali e i codici di uscita:
+
+![L'output reale di genoffice --help: il banner della versione, ogni comando con una descrizione su una riga e le opzioni globali con i codici di uscita](img/cli.png)
+
 ## Ottenere il comando
 
 macOS e Windows lo includono dentro il bundle dell'app. Per usarlo per nome, esegui una volta `genoffice install-cli`: crea un collegamento simbolico del binario incluso in `/usr/local/bin`, o nel `PATH` dell'utente su Windows.
 
 ## I comandi da conoscere
 
-| Comando | Cosa fa |
-| --- | --- |
-| `open` | Apre un documento nell'app; avvia l'app se non è in esecuzione. |
-| `convert` | Converte tra formati usando i motori dell'app. |
-| `create` | Crea un documento da contenuto strutturato. |
-| `render` | Un PNG per pagina, così come il renderer impagina. |
-| `pdf` | Legge il livello di testo di un PDF pagina per pagina, senza processi dell'app. |
-| `info` | Metadati e un riepilogo della struttura di un documento. |
-| `search` | Ricerca web o di immagini tramite il provider configurato nell'app. |
-| `image` / `media` | Genera un'immagine, oppure descrivi e fai domande su un file immagine, video o audio. |
-| `merge` | Compila i segnaposto `{{key}}` in un modello `.docx`, `.pptx` o `.xlsx`. |
-| `capabilities` | Riporta quali funzioni cloud sono configurate su questa macchina. |
-| `guide` | Il riferimento delle op e le guide di progettazione, generati dalle stesse definizioni contro cui l'executor valida — così non può divergere da ciò che `apply` accetta. `--json` lo restituisce con lo schema di ogni op. |
-| `install-cli` | Mette `genoffice` sul `PATH`. |
-| `skill` | Elenca gli agenti di programmazione trovati su questa macchina e installa o aggiorna in essi la skill GenOffice. |
-| `mcp` | Espone ogni comando come strumento Model Context Protocol. Vedi **Collegare un agente di programmazione**. |
+| Comando           | Cosa fa                                                                                                                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Apre un documento nell'app; avvia l'app se non è in esecuzione.                                                                                                                                                            |
+| `convert`         | Converte tra formati usando i motori dell'app.                                                                                                                                                                             |
+| `create`          | Crea un documento da contenuto strutturato.                                                                                                                                                                                |
+| `render`          | Un PNG per pagina, così come il renderer impagina.                                                                                                                                                                         |
+| `pdf`             | Legge il livello di testo di un PDF pagina per pagina, senza processi dell'app.                                                                                                                                            |
+| `info`            | Metadati e un riepilogo della struttura di un documento.                                                                                                                                                                   |
+| `search`          | Ricerca web o di immagini tramite il provider configurato nell'app.                                                                                                                                                        |
+| `image` / `media` | Genera un'immagine, oppure descrivi e fai domande su un file immagine, video o audio.                                                                                                                                      |
+| `merge`           | Compila i segnaposto `{{key}}` in un modello `.docx`, `.pptx` o `.xlsx`.                                                                                                                                                   |
+| `capabilities`    | Riporta quali funzioni cloud sono configurate su questa macchina.                                                                                                                                                          |
+| `guide`           | Il riferimento delle op e le guide di progettazione, generati dalle stesse definizioni contro cui l'executor valida — così non può divergere da ciò che `apply` accetta. `--json` lo restituisce con lo schema di ogni op. |
+| `install-cli`     | Mette `genoffice` sul `PATH`.                                                                                                                                                                                              |
+| `skill`           | Elenca gli agenti di programmazione trovati su questa macchina e installa o aggiorna in essi la skill GenOffice.                                                                                                           |
+| `mcp`             | Espone ogni comando come strumento Model Context Protocol. Vedi **Collegare un agente di programmazione**.                                                                                                                 |
 
 ## Modifica: Docs, Sheets, Slides
 

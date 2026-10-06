@@ -2,9 +2,9 @@
 
 ## Dostawcy i modele
 
-Modele i klucze konfiguruje się w ustawieniach (przycisk zębatki na stronie głównej):
+Modele i klucze konfiguruje się w ustawieniach (wiersz konta w lewym dolnym rogu strony głównej):
 
-![Okno Ustawień](img/settings-integrations.png)
+![Okno Ustawień](img/settings-general.png)
 
 - **Genspark w chmurze**: zaloguj się (przepływ z kodem urządzenia) i korzystaj — bez żadnej konfiguracji.
 - **Własne punkty końcowe (BYOK)**: Ustawienia ▸ Model AI przyjmuje adres bazowy i klucz API dla każdego protokołu — zgodny z OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) i inne. Klucze pozostają wyłącznie w nagłówkach żądań — nigdy na dysku, w dziennikach ani w środowisku procesów potomnych.

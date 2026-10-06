@@ -38,7 +38,7 @@ Thẻ "Dữ liệu", từng nút (theo ảnh, từ trái sang phải):
 - **Xóa các bản sao trùng lặp**: bỏ các hàng trùng theo những cột đang chọn.
 - **Xác thực dữ liệu** (thả xuống): quy tắc nhập cho vùng chọn (danh sách thả xuống, khoảng số...).
 - **Hợp nhất dữ liệu**: gom nhiều vùng vào một chỗ theo danh mục.
-- **Phân tích What-If** (thả xuống): Tìm kiếm mục tiêu (Goal Seek) / bảng dữ liệu.
+- **Phân tích What-If** (thả xuống): Tìm kiếm mục tiêu (Goal Seek) — giải một ô đầu vào để ô công thức đạt giá trị mục tiêu.
 - **Nhóm hàng / Bỏ nhóm hàng** (thả xuống): nhóm hàng hoặc cột, kèm thu gọn và mở rộng.
 - **Tổng phụ**: chèn các hàng tổng phụ theo danh mục.
 

@@ -7,7 +7,7 @@ Semua fail yang dibuka berkongsi satu tingkap. Baris tab di atas bertukar antara
 ## Asas
 
 - **Bertukar**: klik satu tab, atau skrol roda tetikus pada baris tab untuk berpusing.
-- **Tutup**: tanda × pada tab, atau ⌘W/ctrl+W. Jika ada perubahan yang belum disimpan, anda akan ditanya dahulu. Menu semua tab boleh menutup semua tab lain atau semua tab di sebelah kanan sekali gus.
+- **Tutup**: tanda × pada tab, atau ⌘W/ctrl+W. Jika ada perubahan yang belum disimpan, anda akan ditanya dahulu.
 - **Baharu**: tanda + pada hujung kanan baris tab.
 - **Pengaktifan serta-merta**: menekan tab bertukar dengan segera, tanpa menunggu klik selesai.
 
@@ -21,7 +21,7 @@ Tahan dan seret satu tab ke sisi untuk menyusun semula. Tab di sebelahnya mengal
 
 ## Menu konteks
 
-Klik kanan pada tab untuk: tab baharu, tutup, tutup yang lain, tutup ke sebelah kanan, salin fail, dan lain-lain. Item ini dilocalisasi bersama bahasa aplikasi.
+Klik kanan pada tab untuk **Buka dalam Tetingkap Baharu** — disediakan pada setiap tab dokumen yang boleh dilepaskan — dan **Tutup**, yang kelihatan pudar pada tab yang tidak boleh ditutup. Kedua-duanya mengikut bahasa aplikasi.
 
 ## Melepaskan kepada tingkap sendiri
 

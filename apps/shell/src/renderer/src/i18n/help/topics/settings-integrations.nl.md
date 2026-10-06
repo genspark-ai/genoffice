@@ -2,9 +2,11 @@
 
 ## Instellingen openen
 
-De accountregel linksonder op Start opent het instellingenpaneel (als je niet bent aangemeld staat er Inloggen); AI-gerelateerde opties vind je in de sectie AI-model
+De accountregel linksonder op Start opent het instellingenpaneel (als je niet bent aangemeld staat er Inloggen). Het paneel heeft zes secties: Account, AI-model, AI-media en zoeken, Algemeen, Integraties en Over.
 
-![Het venster Instellingen](img/settings-integrations.png) — modelconfiguratie wordt behandeld in AI-modellen en instellingen.
+![Instellingen ▸ Algemeen, waar taal, thema, automatisch opslaan en de schakelaar voor gebruiksstatistieken staan](img/settings-general.png)
+
+Modelconfiguratie heeft een eigen artikel; onder **AI-media en zoeken** zet je per provider beeldgeneratie, afbeeldingsanalyse, video-analyse, zoeken op het web en lokale bestanden zoeken aan.
 
 ## Taal
 
@@ -32,11 +34,11 @@ Met de instellingen kun je GenOffice registreren als verwerker van .docx / .xlsx
 
 ## MCP-integratie (voor gevorderde gebruikers / AI-clients)
 
-GenOffice bevat een lokale **MCP-server**, zodat externe AI-clients (Claude Desktop, Cursor, ...) je documenten rechtstreeks kunnen lezen en bewerken:
+**Integraties** is het paneel dat GenOffice met een coding agent verbindt, en daarvoor is er een eigen artikel: Verbinden met een coding agent. De korte versie — kies een route (de opdrachtregel, of MCP), volg dat onderdeel en start daarna een nieuw gesprek en stel je vraag.
 
-- Starten: `genoffice mcp` op de opdrachtregel (poort en auth-token zijn instelbaar; standaard alleen op loopback).
-- Mogelijkheden: docx-, xlsx- en pptx-bestanden maken/openen/bewerken, inhoud lezen, formaten converteren, naar pdf exporteren en meer — dezelfde gereedschapsset die de desktopapps gebruiken.
-- Beveiliging: tokenauthenticatie is optioneel maar aan te raden; de listener blijft standaard op de lokale machine; zie `genoffice mcp --help`.
+![Instellingen ▸ Integraties: de drie stappen, daarna de skill-rijen en de MCP-opties](img/settings-integrations.png)
+
+Onder **Lokale HTTP-server** kan de app de server ook zelf draaien — een inschakelschakelaar en een poort —, terwijl **Geavanceerd** de URL voor de statuscontrole en het logbestand toevoegt, in plaats van hem over te laten aan de assistent. Hij luistert alleen op localhost.
 
 ## Commandoregel in één oogopslag
 

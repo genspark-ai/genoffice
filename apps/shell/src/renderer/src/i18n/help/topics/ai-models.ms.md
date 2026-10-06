@@ -2,9 +2,9 @@
 
 ## Pembekal dan model
 
-Model dan kunci dikonfigurasikan dalam Tetapan, melalui butang gear pada Laman Utama:
+Model dan kunci dikonfigurasikan dalam Tetapan, melalui baris akaun di penjuru kiri bawah pada Laman Utama:
 
-![Tetingkap Tetapan](img/settings-integrations.png)
+![Tetingkap Tetapan](img/settings-general.png)
 
 - **Genspark dihoskan**: log masuk dan gunakannya terus. Tiada konfigurasi diperlukan.
 - **Titik akhir tersuai (BYOK)**: Tetapan ▸ Model AI menerima URL asas dan kunci API bagi setiap protokol, termasuk yang serasi dengan OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen), dan lain-lain. Kunci hanya tinggal dalam pengepala permintaan, tidak pernah di cakera, dalam log, atau dalam persekitaran proses anak.

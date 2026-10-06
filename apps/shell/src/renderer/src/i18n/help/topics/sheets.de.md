@@ -38,7 +38,7 @@ Der Tab „Daten“, Knopf für Knopf (im Bild von links nach rechts):
 - **Duplikate entfernen**: entfernt doppelte Zeilen anhand der ausgewählten Spalten.
 - **Datenüberprüfung** (Dropdown): Eingaberegeln für die Auswahl (Dropdown-Listen, Zahlenbereiche, …).
 - **Konsolidieren**: fasst mehrere Bereiche nach Kategorien an einer Stelle zusammen.
-- **Was-wäre-wenn-Analyse** (Dropdown): Zielwertsuche / Datentabellen.
+- **Was-wäre-wenn-Analyse** (Dropdown): Zielwertsuche — löst eine Eingabezelle so, dass eine Formelzelle den Zielwert erreicht.
 - **Gruppieren / Gruppierung aufheben** (Dropdown): Zeilen- oder Spaltengruppen mit Ein- und Ausklappen.
 - **Teilergebnis**: fügt je Kategorie Teilergebniszeilen ein.
 

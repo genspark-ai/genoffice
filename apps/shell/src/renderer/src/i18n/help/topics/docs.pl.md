@@ -17,6 +17,31 @@ Karty: **Narzędzia główne / Wstawianie / Układ / Projektowanie / Odwołania 
 - **Recenzja**: sprawdzanie pisowni, komentarze, śledzenie zmian (widok Wszystkie zmiany/Proste oznaczenia), licznik słów.
 - **Widok**: linijka, linie siatki, okno nawigacji, powiększenie oraz wyszukiwalne okno **skrótów klawiaturowych**.
 
+## Okno nawigacji
+
+**Widok ▸ Okienko nawigacji** otwiera panel boczny z konspektem nagłówków dokumentu,
+polem wyszukiwania w całym dokumencie i miniaturą każdej strony. Czy jest otwarty,
+zapamiętywane jest między uruchomieniami, więc dokument, w którym nawigujesz po
+konspekcie, pozostaje nawigowalny.
+
+**Konspekt** to drzewo nagłówków. Kliknij prawym przyciskiem nagłówek w konspekcie, aby
+zwinąć go lub zmienić jego strukturę, a nie tylko nawigować:
+
+- **Zwiń / Rozwiń** przy nagłówku zwijają całe jego poddrzewo: rozdział znika, jego
+  tekst zostaje w dokumencie.
+- **Zwiń wszystko / Rozwiń wszystko** zwijają lub rozwijają wszystko
+  naraz. W długim raporcie to różnica między czytelnym konspektem a ścianą tekstu.
+- **Pokaż poziomy nagłówków** filtruje drzewo do poziomów, które Cię interesują, więc
+  *Pokaż nagłówek 1* zostawia Ci spis treści, który faktycznie da się przejrzeć.
+- **Podnieś poziom / Obniż poziom** zmieniają poziom nagłówka, a wraz z nim poziom,
+  który dziedziczy każdy nagłówek poniżej: tak rozdział staje się sekcją.
+- **Nowy nagłówek przed / po** wstawia nowy nagłówek w miejscu kursora, bez opuszczania
+  panelu.
+- **Usuń** kasuje nagłówek *wraz ze wszystkim, co jest pod nim* — i to jest ta operacja,
+  na którą trzeba uważać: usuwa poddrzewo, a nie wiersz.
+- **Zaznacz nagłówek i zawartość** zaznacza od nagłówka do końca jego poddrzewa,
+  gotowe do edycji całej sekcji.
+
 ## Menu kontekstowe
 
 Kliknij prawym przyciskiem w dowolnym miejscu tekstu — menu dostosowuje się do elementu, który wskazałeś. Główne grupy:

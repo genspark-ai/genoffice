@@ -7,7 +7,7 @@ Mọi tập tin đang mở dùng chung một cửa sổ; dải thẻ ở trên c
 ## Những điều cơ bản
 
 - **Chuyển thẻ**: nhấp vào một thẻ, hoặc lăn bánh xe chuột trên dải thẻ để lần lượt qua các thẻ.
-- **Đóng**: dấu × trên thẻ, hoặc ⌘W/ctrl+W. Có thay đổi chưa lưu sẽ hỏi trước; menu "tất cả các thẻ" có thể đóng một lượt tất cả các thẻ khác / bên phải.
+- **Đóng**: dấu × trên thẻ, hoặc ⌘W/ctrl+W. Có thay đổi chưa lưu sẽ hỏi trước.
 - **Mới**: dấu + ở cuối bên phải của dải thẻ.
 - **Kích hoạt tức thì**: nhấn một thẻ là chuyển ngay, không phải đợi thao tác nhấp hoàn tất.
 
@@ -21,7 +21,7 @@ Giữ và kéo một thẻ sang bên để đổi thứ tự; các thẻ lân c�
 
 ## Menu ngữ cảnh
 
-Nhấp chuột phải vào một thẻ để có: thẻ mới, đóng, đóng những thẻ khác, đóng các thẻ bên phải, nhân bản tập tin và nhiều hơn nữa (được bản địa hóa theo ngôn ngữ ứng dụng).
+Nhấp chuột phải vào một thẻ để có **Mở trong cửa sổ mới** — có trên mọi thẻ tài liệu có thể tách ra — và **Đóng**, bị làm mờ trên một thẻ không thể đóng. Cả hai đều theo ngôn ngữ ứng dụng.
 
 ## Tách ra thành cửa sổ riêng
 

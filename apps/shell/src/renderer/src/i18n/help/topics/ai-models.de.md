@@ -2,9 +2,9 @@
 
 ## Anbieter und Modelle
 
-Modelle und Schlüssel werden in den Einstellungen konfiguriert (die Schaltfläche mit dem Zahnrad auf der Startseite):
+Modelle und Schlüssel werden in den Einstellungen konfiguriert (die Kontenzeile unten links auf der Startseite):
 
-![Das Einstellungsfenster](img/settings-integrations.png)
+![Das Einstellungsfenster](img/settings-general.png)
 
 - **Genspark gehostet**: anmelden (Gerätecode-Verfahren) und loslegen — ganz ohne Konfiguration.
 - **Eigene Endpunkte (BYOK)**: Einstellungen ▸ KI erwartet eine Basis-URL und einen API-Schlüssel pro Protokoll — OpenAI-kompatibel, Anthropic, Gemini, DeepSeek, DashScope (qwen) und mehr. Schlüssel leben nur in den Anfrage-Headern — niemals auf der Festplatte, in Protokollen oder in der Umgebung von Unterprozessen.

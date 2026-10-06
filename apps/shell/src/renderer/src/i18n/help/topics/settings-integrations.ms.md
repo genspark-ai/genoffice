@@ -2,9 +2,11 @@
 
 ## Membuka tetapan
 
-Baris akaun di penjuru kiri bawah pada Laman Utama akan membuka panel tetapan. Ia memaparkan Log masuk apabila anda belum log masuk. Pilihan yang berkaitan dengan AI terletak di bahagian Model AI.
+Baris akaun di penjuru kiri bawah pada Laman Utama akan membuka panel tetapan. Ia memaparkan Log masuk apabila anda belum log masuk. Panel ini mempunyai enam bahagian: Akaun, Model AI, Media & Carian AI, Umum, Integrasi dan Perihal.
 
-![Tetingkap Tetapan](img/settings-integrations.png) — konfigurasi model diterangkan dalam bab Model AI dan tetapan.
+![Tetapan ▸ Umum, tempat bahasa, tema, autosimpan dan suis statistik penggunaan berada](img/settings-general.png)
+
+Konfigurasi model mempunyai babnya sendiri; dalam **Media & Carian AI** anda menghidupkan penjanaan imej, analisis imej, analisis video, carian web dan carian fail tempatan bagi setiap pembekal.
 
 ## Bahasa
 
@@ -32,11 +34,11 @@ Tetapan boleh mendaftar GenOffice sebagai aplikasi yang mengendalikan fail .docx
 
 ## Integrasi MCP
 
-GenOffice menyertakan **pelayan MCP tempatan**. Ini membolehkan klien AI luar, seperti Claude Desktop dan Cursor, membaca dan menulis dokumen anda secara terus.
+**Integrasi** ialah panel yang menyambungkan GenOffice kepada ejen penulisan kod, dan ia ada babnya sendiri: Menyambungkan ejen penulisan kod. Versi ringkas — pilih satu laluan (baris arahan, atau MCP), ikut bahagian itu, kemudian mulakan sembang baharu dan bertanya.
 
-- Untuk mulakan, jalankan `genoffice mcp` pada baris arahan. Port dan token pengesahan boleh dikonfigurasi, dan pendengarannya hanya kekal pada localhost secara lalai.
-- Keupayaan yang disediakan termasuk mencipta, membuka, dan menyunting fail docx, xlsx serta pptx, membaca kandungan, menukar format, dan mengeksport ke PDF. Ini menggunakan set alatan yang sama seperti aplikasi yang berjalan di komputer.
-- Pengesahan token adalah pilihan tetapi sangat disyorkannya. Untuk maklumat lanjut, jalankan `genoffice mcp --help`.
+![Tetapan ▸ Integrasi: tiga langkah, kemudian baris kemahiran dan pilihan MCP](img/settings-integrations.png)
+
+Di bawah **Pelayan HTTP tempatan**, aplikasi ini juga boleh menjalankan pelayan itu sendiri — suis pendayakan dan port — dan **Lanjutan** menambah URL semakan kesihatan serta fail log, dan bukannya meninggalkannya kepada pembantu. Ia hanya mendengarkan pada localhost.
 
 ## Ringkasan baris arahan
 

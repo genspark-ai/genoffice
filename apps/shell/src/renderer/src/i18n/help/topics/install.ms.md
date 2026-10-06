@@ -4,15 +4,15 @@ Setiap keluaran diterbitkan pada [halaman Keluaran](https://github.com/genspark-
 
 ## Memilih fail untuk mesin anda
 
-| Platform | Keperluan | Fail |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — kebanyakan PC | Windows 10+, Intel/AMD | pemasang `-x64.exe` |
-| **Windows** pada Arm | Windows 11 pada Arm (Snapdragon X dan yang serupa) | pemasang `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 atau lebih baharu) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — apa-apa yang lain | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Platform                             | Keperluan                                             | Fail                  |
+| ------------------------------------ | ----------------------------------------------------- | --------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)        |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)          |
+| **Windows** — kebanyakan PC          | Windows 10+, Intel/AMD                                | pemasang `-x64.exe`   |
+| **Windows** pada Arm                 | Windows 11 pada Arm (Snapdragon X dan yang serupa)    | pemasang `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 atau lebih baharu)  | `.deb`                |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                |
+| **Linux** — apa-apa yang lain        | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`           |
 
 Versi lama kekal pada halaman Keluaran.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Ia memerlukan masa larian FUSE 2. Jika anda lebih suka tidak memasangnya, jalankannya dengan `--appimage-extract-and-run` dan sandbox itu berfungsi daripada direktori yang diekstrak.
+
+## Keluaran yang anda jalankan
+
+**Tetapan ▸ Perihal** ialah tempat aplikasi melaporkan keluaran yang anda ada, saluran yang diikutinya dan di mana projek itu terletak. Apabila keluaran yang lebih baharu diterbitkan pada saluran itu, panel yang sama menawarkan kemas kini; pemasangan Flatpak, Nix atau Docker tidak, kerana ia digantikan oleh alat yang meletakkannya di situ.
+
+![Tetapan ▸ Perihal, menunjukkan versi yang dipasang, saluran kemas kini yang diikuti aplikasi dan pautan GitHub projek](img/install.png)
 
 ## Tiga laluan lagi
 

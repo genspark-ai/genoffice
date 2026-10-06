@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Das ist die gesamte Oberfläche auf einem Bildschirm — jeder Befehl mit einer Zeile dazu, was er bewirkt, dann die globalen Optionen und die Exit-Codes:
+
+![Die echte Ausgabe von genoffice --help: die Versionsbanner, jeder Befehl mit einzeiliger Beschreibung sowie die globalen Optionen und die Exit-Codes](img/cli.png)
+
 ## Den Befehl bereitstellen
 
 Unter macOS und Windows liefert die App ihn im Bundle mit. Um ihn beim Namen aufzurufen, führen Sie einmal `genoffice install-cli` aus: Das legt einen symbolischen Link zum mitgelieferten Binary in `/usr/local/bin` an, unter Windows im Benutzer-`PATH`.
 
 ## Die Befehle, die man kennen sollte
 
-| Befehl | Was er bewirkt |
-| --- | --- |
-| `open` | Ein Dokument in der App öffnen; startet die App, wenn sie nicht läuft. |
-| `convert` | Zwischen Formaten mit den Engines der App konvertieren. |
-| `create` | Ein Dokument aus strukturiertem Inhalt erstellen. |
-| `render` | Eine PNG-Datei pro Seite, so wie der Renderer sie setzt. |
-| `pdf` | Die Textebene einer PDF-Datei Seite für Seite lesen, ohne einen App-Prozess zu starten. |
-| `info` | Metadaten und eine Strukturübersicht eines Dokuments. |
-| `search` | Web- oder Bildsuche über den in der App konfigurierten Anbieter. |
-| `image` / `media` | Ein Bild erzeugen oder eine Bild-, Video- oder Audiodatei beschreiben und Fragen dazu stellen. |
-| `merge` | Die Platzhalter `{{key}}` in einer Vorlage `.docx`, `.pptx` oder `.xlsx` füllen. |
-| `capabilities` | Melden, welche Cloud-Funktionen auf diesem Rechner konfiguriert sind. |
-| `guide` | Die op-Referenz und die Design-Leitfäden, erzeugt aus genau den Definitionen, gegen die der Executor prüft — sie kann also nicht von dem abweichen, was `apply` akzeptiert. `--json` liefert sie mit dem Schema jedes ops. |
-| `install-cli` | `genoffice` in den `PATH` legen. |
-| `skill` | Die auf diesem Rechner gefundenen Coding-Agenten auflisten und den GenOffice-Skill dort installieren oder aktualisieren. |
-| `mcp` | Jeden Befehl als Model-Context-Protocol-Werkzeug bereitstellen. Siehe **Einen Coding-Agenten anbinden**. |
+| Befehl            | Was er bewirkt                                                                                                                                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Ein Dokument in der App öffnen; startet die App, wenn sie nicht läuft.                                                                                                                                                     |
+| `convert`         | Zwischen Formaten mit den Engines der App konvertieren.                                                                                                                                                                    |
+| `create`          | Ein Dokument aus strukturiertem Inhalt erstellen.                                                                                                                                                                          |
+| `render`          | Eine PNG-Datei pro Seite, so wie der Renderer sie setzt.                                                                                                                                                                   |
+| `pdf`             | Die Textebene einer PDF-Datei Seite für Seite lesen, ohne einen App-Prozess zu starten.                                                                                                                                    |
+| `info`            | Metadaten und eine Strukturübersicht eines Dokuments.                                                                                                                                                                      |
+| `search`          | Web- oder Bildsuche über den in der App konfigurierten Anbieter.                                                                                                                                                           |
+| `image` / `media` | Ein Bild erzeugen oder eine Bild-, Video- oder Audiodatei beschreiben und Fragen dazu stellen.                                                                                                                             |
+| `merge`           | Die Platzhalter `{{key}}` in einer Vorlage `.docx`, `.pptx` oder `.xlsx` füllen.                                                                                                                                           |
+| `capabilities`    | Melden, welche Cloud-Funktionen auf diesem Rechner konfiguriert sind.                                                                                                                                                      |
+| `guide`           | Die op-Referenz und die Design-Leitfäden, erzeugt aus genau den Definitionen, gegen die der Executor prüft — sie kann also nicht von dem abweichen, was `apply` akzeptiert. `--json` liefert sie mit dem Schema jedes ops. |
+| `install-cli`     | `genoffice` in den `PATH` legen.                                                                                                                                                                                           |
+| `skill`           | Die auf diesem Rechner gefundenen Coding-Agenten auflisten und den GenOffice-Skill dort installieren oder aktualisieren.                                                                                                   |
+| `mcp`             | Jeden Befehl als Model-Context-Protocol-Werkzeug bereitstellen. Siehe **Einen Coding-Agenten anbinden**.                                                                                                                   |
 
 ## Bearbeiten: Dokumente, Tabellen, Folien
 

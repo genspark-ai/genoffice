@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Đó là toàn bộ bề mặt trong một màn hình — mọi lệnh đều có một dòng giải thích nó làm gì, rồi đến các tùy chọn toàn cục và mã thoát:
+
+![Kết quả thực tế của genoffice --help: biểu ngữ phiên bản, từng lệnh kèm mô tả một dòng, cùng các tùy chọn toàn cục và mã thoát](img/cli.png)
+
 ## Lấy lệnh
 
 macOS và Windows đặt nó bên trong gói ứng dụng. Muốn gọi theo tên, hãy chạy `genoffice install-cli` một lần: lệnh này tạo liên kết tượng trỏ tới tệp nhị phân đi kèm trong `/usr/local/bin`, hoặc trong `PATH` của người dùng trên Windows.
 
 ## Những lệnh đáng biết
 
-| Lệnh | Tác dụng |
-| --- | --- |
-| `open` | Mở một tài liệu trong ứng dụng; khởi động ứng dụng nếu nó chưa chạy. |
-| `convert` | Chuyển đổi giữa các định dạng bằng chính engine của ứng dụng. |
-| `create` | Tạo tài liệu từ nội dung có cấu trúc. |
-| `render` | Một PNG cho mỗi trang, đúng bố cục do bộ kết xuất dàn ra. |
-| `pdf` | Đọc lớp văn bản của PDF từng trang một, không cần tiến trình ứng dụng. |
-| `info` | Siêu dữ liệu và phần tóm tắt cấu trúc của tài liệu. |
-| `search` | Tìm kiếm web hoặc hình ảnh qua nhà cung cấp đã cấu hình trong ứng dụng. |
-| `image` / `media` | Tạo hình ảnh, hoặc mô tả và đặt câu hỏi về một tệp hình ảnh, video hay âm thanh. |
-| `merge` | Điền các vùng chờ `{{key}}` trong một mẫu `.docx`, `.pptx` hoặc `.xlsx`. |
-| `capabilities` | Báo cáo những tính năng đám mây nào đã được cấu hình trên máy này. |
-| `guide` | Tra cứu thao tác và các hướng dẫn thiết kế, sinh ra từ đúng những định nghĩa mà bộ thực thi dùng để kiểm tra — nên nó không thể lệch khỏi những gì `apply` chấp nhận. `--json` trả về tra cứu kèm lược đồ của từng thao tác. |
-| `install-cli` | Đưa `genoffice` vào `PATH`. |
-| `skill` | Liệt kê các tác nhân lập trình tìm thấy trên máy này rồi cài hoặc cập nhật kỹ năng GenOffice trong chúng. |
-| `mcp` | Phục vụ mọi lệnh như một công cụ của Model Context Protocol. Xem **Kết nối tác nhân lập trình**. |
+| Lệnh              | Tác dụng                                                                                                                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Mở một tài liệu trong ứng dụng; khởi động ứng dụng nếu nó chưa chạy.                                                                                                                                                         |
+| `convert`         | Chuyển đổi giữa các định dạng bằng chính engine của ứng dụng.                                                                                                                                                                |
+| `create`          | Tạo tài liệu từ nội dung có cấu trúc.                                                                                                                                                                                        |
+| `render`          | Một PNG cho mỗi trang, đúng bố cục do bộ kết xuất dàn ra.                                                                                                                                                                    |
+| `pdf`             | Đọc lớp văn bản của PDF từng trang một, không cần tiến trình ứng dụng.                                                                                                                                                       |
+| `info`            | Siêu dữ liệu và phần tóm tắt cấu trúc của tài liệu.                                                                                                                                                                          |
+| `search`          | Tìm kiếm web hoặc hình ảnh qua nhà cung cấp đã cấu hình trong ứng dụng.                                                                                                                                                      |
+| `image` / `media` | Tạo hình ảnh, hoặc mô tả và đặt câu hỏi về một tệp hình ảnh, video hay âm thanh.                                                                                                                                             |
+| `merge`           | Điền các vùng chờ `{{key}}` trong một mẫu `.docx`, `.pptx` hoặc `.xlsx`.                                                                                                                                                     |
+| `capabilities`    | Báo cáo những tính năng đám mây nào đã được cấu hình trên máy này.                                                                                                                                                           |
+| `guide`           | Tra cứu thao tác và các hướng dẫn thiết kế, sinh ra từ đúng những định nghĩa mà bộ thực thi dùng để kiểm tra — nên nó không thể lệch khỏi những gì `apply` chấp nhận. `--json` trả về tra cứu kèm lược đồ của từng thao tác. |
+| `install-cli`     | Đưa `genoffice` vào `PATH`.                                                                                                                                                                                                  |
+| `skill`           | Liệt kê các tác nhân lập trình tìm thấy trên máy này rồi cài hoặc cập nhật kỹ năng GenOffice trong chúng.                                                                                                                    |
+| `mcp`             | Phục vụ mọi lệnh như một công cụ của Model Context Protocol. Xem **Kết nối tác nhân lập trình**.                                                                                                                             |
 
 ## Soạn thảo: tài liệu, bảng tính, bản trình chiếu
 

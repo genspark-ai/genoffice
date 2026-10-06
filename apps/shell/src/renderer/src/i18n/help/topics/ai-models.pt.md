@@ -2,9 +2,9 @@
 
 ## Provedores e modelos
 
-Os modelos e as chaves configuram-se nas Configurações (o botão da engrenagem no ecrã Início):
+Os modelos e as chaves configuram-se nas Configurações (a linha da conta no canto inferior esquerdo do ecrã Início):
 
-![A janela de configurações](img/settings-integrations.png)
+![A janela de configurações](img/settings-general.png)
 
 - **Genspark alojado**: entre (com o fluxo de código de dispositivo) e use — sem configuração nenhuma.
 - **Endpoints personalizados (BYOK)**: em Configurações ▸ Modelo de IA indicam-se a URL base e a chave de API de cada protocolo — o compatível com OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) e outros. As chaves vivem apenas nos cabeçalhos dos pedidos — nunca em disco, nos registos ou no ambiente dos processos filhos.

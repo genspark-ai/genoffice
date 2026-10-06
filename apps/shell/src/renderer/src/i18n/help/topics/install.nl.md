@@ -4,15 +4,15 @@ Elke build staat op de [Releases-pagina](https://github.com/genspark-ai/genoffic
 
 ## Kies het bestand voor je computer
 
-| Platform | Vereisten | Bestand |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — de meeste pc's | Windows 10+, Intel/AMD | installateur `-x64.exe` |
-| **Windows** op Arm | Windows 11 on Arm (Snapdragon X en vergelijkbaar) | installateur `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 of nieuwer) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — al het andere | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Platform                             | Vereisten                                             | Bestand                   |
+| ------------------------------------ | ----------------------------------------------------- | ------------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)            |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)              |
+| **Windows** — de meeste pc's         | Windows 10+, Intel/AMD                                | installateur `-x64.exe`   |
+| **Windows** op Arm                   | Windows 11 on Arm (Snapdragon X en vergelijkbaar)     | installateur `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 of nieuwer)         | `.deb`                    |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                    |
+| **Linux** — al het andere            | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`               |
 
 Oudere versies blijven op de Releases-pagina staan.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Het heeft de FUSE 2-runtime nodig. Wil je die niet installeren, start het dan met `--appimage-extract-and-run`; de sandbox werkt vanuit de uitgepakte map.
+
+## De build die je draait
+
+**Instellingen ▸ Over** is waar de app meldt welke build je hebt, welk kanaal hij volgt en waar het project woont. Zodra er een nieuwere build op dat kanaal verschijnt, biedt hetzelfde paneel die update aan; een Flatpak-, Nix- of Docker-installatie doet dat niet, omdat ze door het gereedschap dat ze daar heeft geplaatst worden vervangen.
+
+![Instellingen ▸ Over, met de geïnstalleerde versie, het updatekanaal dat de app volgt en de GitHub-link van het project](img/install.png)
 
 ## Nog drie routes
 

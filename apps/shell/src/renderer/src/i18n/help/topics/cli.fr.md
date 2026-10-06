@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Voilà toute la surface sur un seul écran : chaque commande avec une ligne qui dit ce qu'elle fait, puis les options globales et les codes de sortie :
+
+![La vraie sortie de genoffice --help : la bannière de version, chaque commande avec une description d'une ligne, ainsi que les options globales et les codes de sortie](img/cli.png)
+
 ## Obtenir la commande
 
 macOS et Windows la livrent dans le bundle de l’application. Pour l’appeler par son nom, exécutez `genoffice install-cli` une fois : il crée un lien symbolique vers le binaire fourni dans `/usr/local/bin`, ou dans le `PATH` utilisateur sous Windows.
 
 ## Les commandes à connaître
 
-| Commande | Ce qu’elle fait |
-| --- | --- |
-| `open` | Ouvrir un document dans l’application ; démarre l’application si elle ne tourne pas. |
-| `convert` | Convertir entre formats avec les moteurs de l’application. |
-| `create` | Créer un document à partir de contenu structuré. |
-| `render` | Un PNG par page, tel que le moteur de rendu le met en page. |
-| `pdf` | Lire la couche de texte d’un PDF page par page, sans lancer l’application. |
-| `info` | Métadonnées et résumé de la structure d’un document. |
-| `search` | Recherche web ou d’images via le fournisseur configuré dans l’application. |
-| `image` / `media` | Générer une image, ou décrire un fichier image, vidéo ou audio et lui poser des questions. |
-| `merge` | Remplir les espaces réservés `{{key}}` d’un modèle `.docx`, `.pptx` ou `.xlsx`. |
-| `capabilities` | Indiquer quelles fonctions cloud sont configurées sur cette machine. |
-| `guide` | La référence des ops et les guides de conception, générés à partir des définitions mêmes contre lesquelles l’executor valide : ils ne peuvent donc pas diverger de ce que `apply` accepte. `--json` renvoie le tout avec le schéma de chaque op. |
-| `install-cli` | Placer `genoffice` sur le `PATH`. |
-| `skill` | Lister les agents de programmation trouvés sur cette machine et y installer ou mettre à jour la compétence GenOffice. |
-| `mcp` | Exposer chaque commande comme un outil Model Context Protocol. Voir **Connecter un agent de codage**. |
+| Commande          | Ce qu’elle fait                                                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `open`            | Ouvrir un document dans l’application ; démarre l’application si elle ne tourne pas.                                                                                                                                                             |
+| `convert`         | Convertir entre formats avec les moteurs de l’application.                                                                                                                                                                                       |
+| `create`          | Créer un document à partir de contenu structuré.                                                                                                                                                                                                 |
+| `render`          | Un PNG par page, tel que le moteur de rendu le met en page.                                                                                                                                                                                      |
+| `pdf`             | Lire la couche de texte d’un PDF page par page, sans lancer l’application.                                                                                                                                                                       |
+| `info`            | Métadonnées et résumé de la structure d’un document.                                                                                                                                                                                             |
+| `search`          | Recherche web ou d’images via le fournisseur configuré dans l’application.                                                                                                                                                                       |
+| `image` / `media` | Générer une image, ou décrire un fichier image, vidéo ou audio et lui poser des questions.                                                                                                                                                       |
+| `merge`           | Remplir les espaces réservés `{{key}}` d’un modèle `.docx`, `.pptx` ou `.xlsx`.                                                                                                                                                                  |
+| `capabilities`    | Indiquer quelles fonctions cloud sont configurées sur cette machine.                                                                                                                                                                             |
+| `guide`           | La référence des ops et les guides de conception, générés à partir des définitions mêmes contre lesquelles l’executor valide : ils ne peuvent donc pas diverger de ce que `apply` accepte. `--json` renvoie le tout avec le schéma de chaque op. |
+| `install-cli`     | Placer `genoffice` sur le `PATH`.                                                                                                                                                                                                                |
+| `skill`           | Lister les agents de programmation trouvés sur cette machine et y installer ou mettre à jour la compétence GenOffice.                                                                                                                            |
+| `mcp`             | Exposer chaque commande comme un outil Model Context Protocol. Voir **Connecter un agent de codage**.                                                                                                                                            |
 
 ## Édition : documents, tableurs, présentations
 

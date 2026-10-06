@@ -2,9 +2,11 @@
 
 ## Einstellungen öffnen
 
-Die Kontenzeile unten links auf der Startseite öffnet den Einstellungsbereich (wenn Sie abgemeldet sind, steht dort „Anmelden“); KI-bezogene Optionen finden sich im Abschnitt „KI-Modell“
+Die Kontenzeile unten links auf der Startseite öffnet den Einstellungsbereich (wenn Sie abgemeldet sind, steht dort „Anmelden“). Er hat sechs Abschnitte: Konto, KI-Modell, KI-Medien & Suche, Allgemein, Integrationen und Über.
 
-![Das Einstellungsfenster](img/settings-integrations.png) — die Modellkonfiguration ist in „KI-Modelle und Einstellungen“ behandelt.
+![Einstellungen ▸ Allgemein, wo Sprache, Design, AutoSave und der Schalter für die Nutzungsstatistik liegen](img/settings-general.png)
+
+Die Modellkonfiguration hat einen eigenen Artikel; unter **KI-Medien & Suche** schalten Sie je nach Anbieter Bildgenerierung, Bildanalyse, Videoanalyse, Websuche und lokale Dateisuche ein.
 
 ## Sprache
 
@@ -32,11 +34,11 @@ Die Einstellungen können GenOffice als Programm für .docx / .xlsx / .pptx / .p
 
 ## MCP-Integration (für erfahrene Anwender / KI-Clients)
 
-GenOffice betreibt einen lokalen **MCP-Server**, damit externe KI-Clients (Claude Desktop, Cursor, …) Ihre Dokumente direkt lesen und schreiben können:
+**Integrationen** ist der Bereich, der GenOffice mit einem Coding-Agenten verbindet, und er hat einen eigenen Artikel: Einen Coding-Agenten anbinden. Die Kurzfassung — wählen Sie einen Weg (die Kommandozeile oder MCP), folgen Sie dem jeweiligen Abschnitt und starten Sie dann einen neuen Chat.
 
-- Start: `genoffice mcp` in der Kommandozeile (Port und Authentifizierungstoken konfigurierbar; standardmäßig nur auf Loopback).
-- Fähigkeiten: docx, xlsx und pptx erstellen/öffnen/bearbeiten, Inhalte lesen, Formate konvertieren, als PDF exportieren und mehr — derselbe Werkzeugsatz wie in den Desktop-Apps.
-- Sicherheit: Token-Authentifizierung ist optional, aber empfohlen; der Listener bleibt standardmäßig auf dem lokalen Rechner; siehe `genoffice mcp --help`.
+![Einstellungen ▸ Integrationen: die drei Schritte, dann die Skill-Zeilen und die MCP-Optionen](img/settings-integrations.png)
+
+Unter **Lokaler HTTP-Server** kann die App den Server auch selbst betreiben — ein Schalter zum Aktivieren und ein Port —, während **Erweitert** die Zustandsprüfung-URL und die Protokolldatei hinzufügt, statt ihn dem Assistenten zu überlassen. Er lauscht nur auf localhost.
 
 ## Spickzettel für die Kommandozeile
 

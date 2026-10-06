@@ -2,9 +2,11 @@
 
 ## Otevření nastavení
 
-Řádek účtu vlevo dole na domovské stránce otevře panel nastavení (při nepřihlášení ukazuje Přihlásit se); možnosti týkající se AI najdete v jeho části Model AI
+Řádek účtu vlevo dole na domovské stránce otevře panel nastavení (při nepřihlášení ukazuje Přihlásit se). Má šest částí: Účet, Model AI, AI média a vyhledávání, Obecné, Integrace a O aplikaci.
 
-![Okno Nastavení](img/settings-integrations.png) — konfigurace modelů je popsána v kapitole Modely AI a nastavení.
+![Nastavení ▸ Obecné, kde žijí jazyk, motiv, automatické ukládání a přepínač statistik používání](img/settings-general.png)
+
+Konfigurace modelů má vlastní kapitolu; v části **AI média a vyhledávání** zapínáte pro každého poskytovatele generování obrázků, analýzu obrázků, analýzu videí, webové vyhledávání a hledání místních souborů.
 
 ## Jazyk
 
@@ -32,11 +34,11 @@ Nastavení může zaregistrovat GenOffice jako aplikaci pro soubory .docx / .xls
 
 ## Integrace MCP (pro pokročilé uživatele a klienty AI)
 
-GenOffice obsahuje místní **server MCP**, takže externí klienti AI (Claude Desktop, Cursor, ...) mohou vaše dokumenty přímo číst a upravovat:
+**Integrace** je panel, který propojí GenOffice s programovým agentem, a má o tom vlastní kapitolu: Připojení programového agenta. Zkrátka — vyberte cestu (příkazová řádka, nebo MCP), řiďte se danou částí a pak začněte nový chat a zeptejte se.
 
-- Spuštění: `genoffice mcp` v příkazové řádce (port a autentizační token jsou nastavitelné; ve výchozím stavu pouze smyčka).
-- Možnosti: vytvoření/otevření/úprava souborů docx, xlsx a pptx, čtení obsahu, převod formátů, export do PDF a další — stejná sada nástrojů, kterou používají desktopové aplikace.
-- Zabezpečení: ověření tokenem je volitelné, ale doporučené; naslouchání zůstává ve výchozím stavu na místním počítači; viz `genoffice mcp --help`.
+![Nastavení ▸ Integrace: tři kroky, pak řádky dovedností a možnosti MCP](img/settings-integrations.png)
+
+Pod **Místní HTTP server** umí aplikace server spustit sama — přepínač zapnutí a port — a část **Pokročilé** přidá adresu pro kontrolu stavu a soubor protokolu, místo aby ho nechala na pomocníkovi. Naslouchá pouze na localhostu.
 
 ## Přehled příkazů
 

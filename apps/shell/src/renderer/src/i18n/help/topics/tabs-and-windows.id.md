@@ -7,7 +7,7 @@ Semua file yang terbuka berbagi satu jendela; bilah tab di atas berpindah di ant
 ## Dasar-dasar
 
 - **Berpindah**: klik sebuah tab, atau gulir roda mouse di atas bilah untuk memutar satu per satu.
-- **Menutup**: tanda × pada tab, atau ⌘W/ctrl+W. Perubahan yang belum disimpan akan ditanyakan lebih dulu; menu Semua tab dapat menutup semua tab lain atau semua tab di sebelah kanan sekaligus.
+- **Menutup**: tanda × pada tab, atau ⌘W/ctrl+W. Perubahan yang belum disimpan akan ditanyakan lebih dulu.
 - **Baru**: tanda + di ujung kanan bilah.
 - **Aktif seketika**: menekan sebuah tab langsung berpindah begitu ditekan, tanpa menunggu klik selesai.
 
@@ -21,7 +21,7 @@ Tekan dan seret sebuah tab ke samping untuk menyusun ulang; tab di sebelahnya be
 
 ## Menu konteks
 
-Klik kanan sebuah tab untuk: tab baru, tutup, tutup yang lain, tutup ke kanan, duplikat file, dan lainnya (mengikuti bahasa aplikasi).
+Klik kanan sebuah tab untuk **Buka di Jendela Baru** — tersedia pada setiap tab dokumen yang dapat dilepas — dan **Tutup**, yang tampil abu-abu pada tab yang tidak dapat ditutup. Keduanya mengikuti bahasa aplikasi.
 
 ## Lepaskan menjadi jendela
 

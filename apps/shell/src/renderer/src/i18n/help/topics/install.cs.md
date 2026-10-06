@@ -4,15 +4,15 @@ Každá sestavení je zveřejněno na [stránce Releases](https://github.com/gen
 
 ## Vyberte soubor pro svůj počítač
 
-| Platforma | Požadavky | Soubor |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — většina počítačů | Windows 10+, Intel/AMD | instalátor `-x64.exe` |
-| **Windows** s architekturou Arm | Windows 11 on Arm (Snapdragon X a podobné) | instalátor `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 nebo novější) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — cokoliv jiného | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Platforma                            | Požadavky                                             | Soubor                  |
+| ------------------------------------ | ----------------------------------------------------- | ----------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)          |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)            |
+| **Windows** — většina počítačů       | Windows 10+, Intel/AMD                                | instalátor `-x64.exe`   |
+| **Windows** s architekturou Arm      | Windows 11 on Arm (Snapdragon X a podobné)            | instalátor `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 nebo novější)       | `.deb`                  |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                  |
+| **Linux** — cokoliv jiného           | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`             |
 
 Starší verze zůstávají na stránce Releases.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Potřebuje běhové prostředí FUSE 2. Pokud jej nechcete instalovat, spusťte jej s `--appimage-extract-and-run` a izolovaný proces poběží z rozbalené složky.
+
+## Sestavení, které právě běží
+
+**Nastavení ▸ O aplikaci** je místo, kde aplikace oznamuje sestavení, které máte, kanál, kterého sleduje, a kde projekt sídlí. Jakmile se na tom kanálu objeví novější sestavení, stejný panel nabídne i aktualizaci; instalace přes Flatpak, Nix nebo Docker nikoli, protože je nahrazuje nástroj, který je tam nainstaloval.
+
+![Nastavení ▸ O aplikaci — zobrazuje nainstalovanou verzi, kanál aktualizací, kterého aplikace sleduje, a odkaz na GitHub projektu](img/install.png)
 
 ## Tři další cesty
 

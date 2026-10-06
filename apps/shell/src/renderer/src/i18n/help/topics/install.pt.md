@@ -4,15 +4,15 @@ Todas as versões são publicadas na [página de lançamentos](https://github.co
 
 ## Escolher o ficheiro para a sua máquina
 
-| Plataforma | Requisitos | Ficheiro |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — a maioria dos PC | Windows 10+, Intel/AMD | instalador `-x64.exe` |
-| **Windows** em Arm | Windows 11 em Arm (Snapdragon X e semelhantes) | instalador `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 ou mais recente) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — qualquer outra | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Plataforma                           | Requisitos                                            | Ficheiro                |
+| ------------------------------------ | ----------------------------------------------------- | ----------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)          |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)            |
+| **Windows** — a maioria dos PC       | Windows 10+, Intel/AMD                                | instalador `-x64.exe`   |
+| **Windows** em Arm                   | Windows 11 em Arm (Snapdragon X e semelhantes)        | instalador `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 ou mais recente)    | `.deb`                  |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                  |
+| **Linux** — qualquer outra           | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`             |
 
 As versões mais antigas permanecem na página de lançamentos.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Precisa do runtime FUSE 2. Se preferir não o instalar, execute-o com `--appimage-extract-and-run` e a sandbox funciona a partir do diretório extraído.
+
+## A versão que está a executar
+
+**Configurações ▸ Sobre** é onde a aplicação comunica a versão que tem, o canal que segue e onde vive o projeto. Quando é publicada uma versão mais recente nesse canal, o mesmo painel oferece a atualização; uma instalação por Flatpak, Nix ou Docker não o faz, porque essas são substituídas pela ferramenta que as lá colocou.
+
+![Configurações ▸ Sobre, a mostrar a versão instalada, o canal de atualização que a aplicação segue e a ligação GitHub do projeto](img/install.png)
 
 ## Mais três vias
 

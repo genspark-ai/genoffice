@@ -7,7 +7,7 @@ Every open file shares one window; the tab strip at the top switches between the
 ## Basics
 
 - **Switch**: click a tab, or scroll the wheel over the strip to cycle.
-- **Close**: the × on the tab, or ⌘W/ctrl+W. Unsaved changes ask first; the all-tabs menu can close every other / right-hand tab at once.
+- **Close**: the × on the tab, or ⌘W/ctrl+W. Unsaved changes ask first.
 - **New**: the + at the right end of the strip.
 - **Activation is immediate**: pressing a tab switches as soon as it is pressed, without waiting for the click to finish.
 
@@ -21,7 +21,7 @@ Hold and drag a tab sideways to reorder; neighbours slide aside live and the ord
 
 ## Context menu
 
-Right-click a tab for: new tab, close, close others, close to the right, duplicate the file and more (localized with the app language).
+Right-click a tab for **Open in New Window** — offered on every document tab that can be torn off — and **Close**, greyed out on a tab that cannot be closed. Both follow the app language.
 
 ## Tear off into a window
 

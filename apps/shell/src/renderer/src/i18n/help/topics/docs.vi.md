@@ -17,6 +17,20 @@ Các thẻ: **Trang chủ / Chèn / Bố trí / Thiết kế / Tham khảo / Xem
 - **Xem lại**: kiểm tra chính tả, bình luận, theo dõi thay đổi (chế độ All/Simple markup), thống kê từ.
 - **Chế độ xem**: thước, đường lưới, ngăn điều hướng, thu phóng, và **hộp thoại phím tắt bàn phím** có thể tìm kiếm.
 
+## Ngăn điều hướng
+
+**Xem ▸ Ngăn điều hướng** mở một ngăn bên cạnh chứa dàn ý tiêu đề của tài liệu, một hộp tìm trên toàn bộ tài liệu và một hình thu nhỏ cho mỗi trang. Việc ngăn đó đang mở hay không được ghi nhớ giữa các lần khởi chạy, nên tài liệu bạn điều hướng bằng dàn ý vẫn còn điều hướng được.
+
+**Dàn ý** là cây tiêu đề. Nhấp chuột phải vào một tiêu đề trong dàn ý để gập nó lại hoặc sắp xếp lại cấu trúc, chứ không chỉ để điều hướng:
+
+- **Thu gọn / Mở rộng** trên một tiêu đề gập cả cây con của nó lại — chương biến mất, còn chữ của nó vẫn nằm trong tài liệu.
+- **Thu gọn tất cả / Mở rộng tất cả** gập hoặc mở toàn bộ cây cùng lúc. Với một báo cáo dài, đó là khác biệt giữa một dàn ý đọc được và một bức tường chữ.
+- **Hiển thị cấp tiêu đề** lọc cây còn lại đúng những độ sâu bạn quan tâm, để lại cho bạn *Hiển thị Tiêu đề 1* là một mục lục quả thực quét qua được.
+- **Nâng cấp / Hạ cấp** đổi cấp của tiêu đề, và đổi luôn cả cấp mà mọi tiêu đề bên dưới thừa hưởng — đó là cách một chương trở thành một mục.
+- **Tiêu đề mới phía trước / Tiêu đề mới phía sau** chèn một tiêu đề tại vị trí con trỏ, không cần rời khỏi ngăn.
+- **Xóa** gỡ bỏ tiêu đề *cùng mọi thứ bên dưới nó*, và đây là mục cần thận trọng nhất: đó là xóa cả cây con, không phải xóa một dòng.
+- **Chọn tiêu đề và nội dung** chọn từ tiêu đề đến hết cây con của nó, sẵn sàng để sửa trọn cả mục.
+
 ## Menu chuột phải
 
 Nhấp chuột phải ở bất kỳ đâu trong nội dung — menu đi theo thứ bạn nhấp vào. Các nhóm chính:

@@ -38,7 +38,7 @@ Karta Data, tlačítko po tlačítku (zleva doprava na obrázku):
 - **Odebrat duplicity**: odstraní duplicitní řádky podle vybraných sloupců.
 - **Ověření dat** (rozbalovací seznam): pravidla zadávání pro výběr (rozbalovací seznamy, číselné rozsahy...).
 - **Konsolidovat**: sloučí několik oblastí na jednom místě podle kategorie.
-- **Analýza hypotéz** (rozbalovací seznam): hledání řešení / tabulky dat.
+- **Analýza hypotéz** (rozbalovací seznam): hledání řešení — vyřeší jednu vstupní buňku tak, aby buňka se vzorcem dosáhla cílové hodnoty.
 - **Skupit / Zrušit seskupení** (rozbalovací seznam): skupiny řádků nebo sloupců se sbalením a rozbalením.
 - **Součet**: vloží dílčí součty pro jednotlivé kategorie.
 

@@ -2,9 +2,11 @@
 
 ## Membuka pengaturan
 
-Baris akun di kiri bawah Beranda membuka panel pengaturan (bacaannya Masuk saat Anda belum masuk); opsi yang berkaitan dengan AI berada di bagian Model AI miliknya.
+Baris akun di kiri bawah Beranda membuka panel pengaturan (bacaannya Masuk saat Anda belum masuk). Panel ini punya enam bagian: Akun, Model AI, Media & Pencarian AI, Umum, Integrasi, dan Tentang.
 
-![A janela de configurações](img/settings-integrations.png) — a configuração dos modelos está no capítulo Model AI dan pengaturan.
+![Pengaturan ▸ Umum, tempat bahasa, tema, Autosave, dan sakelar statistik penggunaan berada](img/settings-general.png)
+
+Konfigurasi model punya bab tersendiri; di **Media & Pencarian AI** Anda menyalakan pembuatan gambar, analisis gambar, analisis video, pencarian web, dan pencarian file lokal untuk tiap penyedia.
 
 ## Bahasa
 
@@ -32,11 +34,11 @@ Pengaturan dapat mendaftarkan GenOffice sebagai aplikasi penangan .docx / .xlsx 
 
 ## Integrasi MCP (untuk pengguna lanjutan / klien AI)
 
-GenOffice menyematkan **server MCP** lokal agar klien AI eksternal (Claude Desktop, Cursor, ...) dapat langsung membaca dan menulis dokumen Anda:
+**Integrasi** adalah panel yang menghubungkan GenOffice dengan agen pemrograman, dan ia punya artikel tersendiri: Menghubungkan agen pemrograman. Versi singkat — pilih jalurnya (baris perintah, atau MCP), ikuti bagian itu, lalu mulai obrolan baru dan bertanya.
 
-- Mulai: `genoffice mcp` di baris perintah (port dan token autentikasi dapat dikonfigurasi; hanya loopback secara bawaan).
-- Kemampuan: membuat/membuka/mengedit docx, xlsx, dan pptx, membaca isi, mengonversi format, mengekspor PDF, dan lainnya — perangkat alat yang sama dengan yang dipakai aplikasi desktop.
-- Keamanan: autentikasi token bersifat opsional tetapi disarankan; pendengar tetap di mesin lokal secara bawaan; lihat `genoffice mcp --help`.
+![Pengaturan ▸ Integrasi: tiga langkah, lalu baris skill dan opsi MCP](img/settings-integrations.png)
+
+Di bawah **Server HTTP lokal**, aplikasi juga bisa menjalankan server itu sendiri — sakelar aktif dan port — dan **Lanjutan** menambahkan URL pemeriksaan kesehatan serta file log, alih-alih menghandalkannya kepada asisten. Ia hanya mendengarkan di localhost.
 
 ## Lembar pintasan baris perintah
 

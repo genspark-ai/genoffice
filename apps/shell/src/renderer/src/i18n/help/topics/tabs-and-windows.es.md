@@ -7,7 +7,7 @@ Todos los archivos abiertos comparten una sola ventana; la barra de pestañas de
 ## Fundamentos
 
 - **Cambiar**: haga clic en una pestaña o gire la rueda sobre la barra para recorrerlas.
-- **Cerrar**: la × de la pestaña, o ⌘W/ctrl+W. Si hay cambios sin guardar, pregunta primero; el menú de todas las pestañas permite cerrar de una vez las demás / las de la derecha.
+- **Cerrar**: la × de la pestaña, o ⌘W/ctrl+W. Si hay cambios sin guardar, pregunta primero.
 - **Nuevo**: el + al extremo derecho de la barra.
 - **La activación es inmediata**: al pulsar una pestaña ya se cambia, sin esperar a que termine el clic.
 
@@ -21,7 +21,7 @@ Mantenga pulsada una pestaña y arrástrela de lado a lado para reordenarla; las
 
 ## Menú contextual
 
-Con el botón derecho en una pestaña: nueva pestaña, cerrar, cerrar las demás, cerrar las de la derecha, duplicar el archivo y más (traducido al idioma de la aplicación).
+Con el botón derecho en una pestaña: **Abrir en una ventana nueva** — disponible en cada pestaña de documento que se pueda separar — y **Cerrar**, que aparece atenuado en una pestaña que no se pueda cerrar. Ambas siguen el idioma de la aplicación.
 
 ## Separar en una ventana
 

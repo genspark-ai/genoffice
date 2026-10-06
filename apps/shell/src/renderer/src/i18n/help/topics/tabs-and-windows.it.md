@@ -7,7 +7,7 @@ Tutti i file aperti condividono una sola finestra; la barra delle schede in alto
 ## Nozioni di base
 
 - **Cambia scheda**: fai clic su una scheda, oppure scorri la rotellina del mouse sulla barra per scorrere in ciclo.
-- **Chiudi**: la × sulla scheda, oppure ⌘W/ctrl+W. Se ci sono modifiche non salvate ti viene prima chiesto; il menu con tutte le schede può chiudere in un colpo solo tutte le altre o quelle a destra.
+- **Chiudi**: la × sulla scheda, oppure ⌘W/ctrl+W. Se ci sono modifiche non salvate ti viene prima chiesto.
 - **Nuova**: il + all'estremità destra della barra.
 - **L'attivazione è immediata**: premendo una scheda il cambio avviene subito, senza attendere che il clic finisca.
 
@@ -21,7 +21,7 @@ Tieni premuta una scheda e trascinala di lato per riordinarla; le schede vicine 
 
 ## Menu contestuale
 
-Fai clic destro su una scheda per: nuova scheda, chiudi, chiudi le altre, chiudi quelle a destra, duplicare il file e altro (localizzati insieme alla lingua dell'app).
+Fai clic destro su una scheda per **Apri in una nuova finestra** — disponibile su ogni scheda documento che si può staccare — e **Chiudi**, disabilitato su una scheda che non può essere chiusa. Entrambe seguono la lingua dell'app.
 
 ## Stacca in una finestra
 

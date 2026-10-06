@@ -4,15 +4,15 @@
 
 ## اختر الملف المناسب لجهازك
 
-| النظام | المتطلبات | الملف |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — معظم أجهزة PC | Windows 10+، Intel/AMD | حزمة `-x64.exe` |
-| **Windows** على Arm | Windows 11 على Arm (Snapdragon X وما شابه) | حزمة `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64، glibc 2.34+ (Ubuntu 22.04 أو أحدث) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64، glibc 2.34+ (Fedora 35+، RHEL 9+، Leap 15.6+) | `.rpm` |
-| **Linux** — أي شيء آخر | x86_64، glibc 2.34+، FUSE 2 | `.AppImage` |
+| النظام                               | المتطلبات                                             | الملف             |
+| ------------------------------------ | ----------------------------------------------------- | ----------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)    |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)      |
+| **Windows** — معظم أجهزة PC          | Windows 10+، Intel/AMD                                | حزمة `-x64.exe`   |
+| **Windows** على Arm                  | Windows 11 على Arm (Snapdragon X وما شابه)            | حزمة `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64، glibc 2.34+ (Ubuntu 22.04 أو أحدث)            | `.deb`            |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64، glibc 2.34+ (Fedora 35+، RHEL 9+، Leap 15.6+) | `.rpm`            |
+| **Linux** — أي شيء آخر               | x86_64، glibc 2.34+، FUSE 2                           | `.AppImage`       |
 
 تبقى الإصدارات الأقدم على صفحة الإصدارات.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 يحتاج إلى بيئة تشغيل FUSE 2. وإن لم تكن ترغب في تثبيتها فشغّله مع `--appimage-extract-and-run`، وتعمل البيئة المعزولة من المجلد المستخرج.
+
+## النسخة التي تشغّلها
+
+**الإعدادات ▸ حول** هو المكان الذي يبلّغ فيه التطبيق عن نسختك، والقناة التي يتبعها، وموقع المشروع. فحين تُنشر نسخة أحدث على تلك القناة، تعرض اللوحة نفسها التحديث؛ أما تثبيت Flatpak أو Nix أو Docker فلا يفعل، لأن الأداة التي وضعته هناك تستبدله.
+
+![الإعدادات ▸ حول، وهي تعرض النسخة المثبّتة، وقناة التحديث التي يتبعها التطبيق، ورابط GitHub للمشروع](img/install.png)
 
 ## ثلاث طرق أخرى
 

@@ -17,6 +17,20 @@ Pestañas: **Inicio / Insertar / Disposición / Diseño / Referencias / Revisar 
 - **Revisar**: corrección ortográfica, comentarios, control de cambios (vistas Todas las revisiones / Revisiones simples), contar palabras.
 - **Vista**: regla, líneas de la cuadrícula, panel de navegación, zoom y el cuadro de diálogo de **atajos de teclado** en el que se puede buscar.
 
+## El panel de navegación
+
+**Vista ▸ panel de navegación** abre un panel lateral con la estructura de títulos del documento, un cuadro de búsqueda sobre todo el documento y una miniatura por página. Si está abierto se recuerda entre sesiones, de modo que un documento por el que se navega por la estructura sigue siendo navegable.
+
+**La estructura** es el árbol de títulos. Haga clic derecho en un título de ella para plegarlo o reestructurarlo, y no solo para navegar:
+
+- **Contraer / Expandir** en un título pliega todo su subárbol: el capítulo desaparece, su texto sigue en el documento.
+- **Contraer todo / Expandir todo** pliega o despliega todo de una vez. En un informe largo esa es la diferencia entre una estructura legible y un muro de texto.
+- **Mostrar niveles de título** filtra el árbol a las profundidades que le interesan, así que *Mostrar título 1* le deja una tabla de contenido que puede recorrer de verdad.
+- **Aumentar nivel / Disminuir nivel** cambian el nivel del título, y con él el nivel que heredan todos los títulos que están debajo: así un capítulo se convierte en una sección.
+- **Nuevo título antes / después** inserta uno en la posición del cursor, sin salir del panel.
+- **Eliminar** quita el título *y todo lo que hay debajo*, que es el único con el que hay que tener cuidado: borra un subárbol, no una línea.
+- **Seleccionar título y contenido** selecciona desde el título hasta el final de su subárbol, listo para editar una sección entera.
+
 ## Menú contextual
 
 Haga clic derecho en cualquier parte del cuerpo: el menú se ajusta a lo que ha pulsado. Principales grupos:

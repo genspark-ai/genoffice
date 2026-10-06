@@ -2,9 +2,9 @@
 
 ## Penyedia dan model
 
-Model dan kunci dikonfigurasi di Pengaturan (tombol roda gigi di Beranda):
+Model dan kunci dikonfigurasi di Pengaturan (baris akun di kiri bawah Beranda):
 
-![Jendela Pengaturan](img/settings-integrations.png)
+![Jendela Pengaturan](img/settings-general.png)
 
 - **Genspark terkelola**: masuk (alur device-code) lalu pakai — tanpa konfigurasi apa pun.
 - **Endpoint kustom (BYOK)**: Pengaturan ▸ AI menerima base URL dan kunci API untuk tiap protokol — yang kompatibel dengan OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen), dan lainnya. Kunci hanya ada di header permintaan — tidak pernah di disk, di log, atau di lingkungan proses anak.

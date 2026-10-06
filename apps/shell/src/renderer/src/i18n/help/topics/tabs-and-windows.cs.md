@@ -7,7 +7,7 @@ Všechny otevřené soubory sdílejí jedno okno; pruh karet nahoře se mezi nim
 ## Základy
 
 - **Přepnout**: klikněte na kartu nebo otáčejte kolečkem nad páskem a projděte karty.
-- **Zavřít**: × na kartě nebo ⌘W/ctrl+W. U neuložených změn se nejdřív zeptá; nabídka všech karet umožňuje najednou zavřít všechny ostatní nebo všechny vpravo.
+- **Zavřít**: × na kartě nebo ⌘W/ctrl+W. U neuložených změn se nejdřív zeptá.
 - **Nová**: + na pravém konci pruhu.
 - **Aktivace je okamžitá**: stisknutí karty přepne hned, bez čekání na dokončení kliknutí.
 
@@ -21,7 +21,7 @@ Podržte kartu a přetáhněte ji do strany, čímž změníte pořadí; sousedn
 
 ## Kontextová nabídka
 
-Kliknutím pravým tlačítkem na kartu získáte: nová karta, zavřít, zavřít ostatní, zavřít vpravo, duplikovat soubor a další (položky se lokalizují spolu s jazykem aplikace).
+Kliknutím pravým tlačítkem na kartu získáte **Otevřít v novém okně** — nabízí se na každé kartě dokumentu, kterou lze odlomit — a **Zavřít**, které je na kartě, již nelze zavřít, ztlumené. Obě položky se lokalizují podle jazyku aplikace.
 
 ## Odlomení do samostatného okna
 

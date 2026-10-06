@@ -7,7 +7,7 @@ Todos os ficheiros abertos partilham uma janela; a barra de guias no topo muda e
 ## Noções básicas
 
 - **Mudar**: clique numa guia, ou rode a roda do rato sobre a barra para percorrer as guias.
-- **Fechar**: o × na guia, ou ⌘W/ctrl+W. Se houver alterações por salvar, o GenOffice pergunta primeiro; o menu Todas as guias permite fechar de uma só vez todas as outras guias ou todas as guias à direita.
+- **Fechar**: o × na guia, ou ⌘W/ctrl+W. Se houver alterações por salvar, o GenOffice pergunta primeiro.
 - **Nova**: o + no extremo direito da barra.
 - **Ativação imediata**: premir uma guia muda para ela logo que é premida, sem esperar que o clique termine.
 
@@ -21,7 +21,7 @@ Prima e arraste uma guia para o lado para reordenar; as guias vizinhas abrem esp
 
 ## Menu de contexto
 
-Clique com o botão direito numa guia para: nova guia, fechar, fechar as outras, fechar à direita, duplicar o ficheiro e mais (traduzido de acordo com o idioma da aplicação).
+Clique com o botão direito numa guia para **Abrir em nova janela** — disponível em cada guia de documento que possa destacar — e **Fechar**, esbatido numa guia que não possa ser fechada. Ambas seguem o idioma da aplicação.
 
 ## Destacar numa janela
 

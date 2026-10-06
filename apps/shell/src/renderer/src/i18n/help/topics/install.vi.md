@@ -4,15 +4,15 @@ Mọi bản dựng đều được công bố trên [trang phát hành](https://
 
 ## Chọn tệp cho máy của bạn
 
-| Nền tảng | Yêu cầu | Tệp |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — hầu hết PC | Windows 10+, Intel/AMD | trình cài đặt `-x64.exe` |
-| **Windows** trên Arm | Windows 11 trên Arm (Snapdragon X và tương tự) | trình cài đặt `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 hoặc mới hơn) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — thứ khác | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Nền tảng                             | Yêu cầu                                               | Tệp                        |
+| ------------------------------------ | ----------------------------------------------------- | -------------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)             |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)               |
+| **Windows** — hầu hết PC             | Windows 10+, Intel/AMD                                | trình cài đặt `-x64.exe`   |
+| **Windows** trên Arm                 | Windows 11 trên Arm (Snapdragon X và tương tự)        | trình cài đặt `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 hoặc mới hơn)       | `.deb`                     |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                     |
+| **Linux** — thứ khác                 | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`                |
 
 Các bản cũ hơn vẫn nằm trên trang phát hành.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Nó cần môi trường chạy FUSE 2. Nếu bạn không muốn cài đặt, hãy chạy với `--appimage-extract-and-run`, và hộp cát sẽ hoạt động từ thư mục đã giải nén.
+
+## Bản dựng bạn đang chạy
+
+**Cài đặt ▸ Giới thiệu** là nơi ứng dụng báo bạn đang có bản dựng nào, đang theo kênh nào và dự án nằm ở đâu. Khi bản dựng mới hơn được phát hành trên kênh đó, chính bảng đó sẽ đề nghị cập nhật; bản cài đặt qua Flatpak, Nix hoặc Docker thì không, vì bị công cụ đã cài chúng thay thế.
+
+![Cài đặt ▸ Giới thiệu, hiển thị phiên bản đã cài, kênh cập nhật mà ứng dụng theo dõi và liên kết GitHub của dự án](img/install.png)
 
 ## Ba cách nữa
 

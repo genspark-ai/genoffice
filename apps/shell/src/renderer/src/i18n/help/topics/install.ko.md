@@ -4,15 +4,15 @@
 
 ## 내 컴퓨터에 맞는 파일 고르기
 
-| 플랫폼 | 필요한 것 | 파일 |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — 대부분의 PC | Windows 10+, Intel/AMD | `-x64.exe` 설치 프로그램 |
-| **Windows** on Arm | Arm 버전 Windows 11(Snapdragon X 등) | `-arm64.exe` 설치 프로그램 |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+(Ubuntu 22.04 이상) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+(Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — 그 외 | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| 플랫폼                               | 필요한 것                                            | 파일                       |
+| ------------------------------------ | ---------------------------------------------------- | -------------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                            | `.dmg` (arm64)             |
+| **macOS** — Intel                    | macOS 11+                                            | `.dmg` (x64)               |
+| **Windows** — 대부분의 PC            | Windows 10+, Intel/AMD                               | `-x64.exe` 설치 프로그램   |
+| **Windows** on Arm                   | Arm 버전 Windows 11(Snapdragon X 등)                 | `-arm64.exe` 설치 프로그램 |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+(Ubuntu 22.04 이상)               | `.deb`                     |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+(Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                     |
+| **Linux** — 그 외                    | x86_64, glibc 2.34+, FUSE 2                          | `.AppImage`                |
 
 이전 버전은 Releases 페이지에 그대로 남아 있습니다.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 FUSE 2 런타임이 필요합니다. 설치하기를 꺼리면 `--appimage-extract-and-run`으로 실행하세요. 풀린 디렉터리에서 샌드박스가 동작합니다.
+
+## 지금 실행 중인 빌드
+
+**설정 ▸ 정보**는 앱이 지금 가진 빌드, 따르는 업데이트 채널, 프로젝트가 있는 곳을 보고하는 곳입니다. 그 채널에 더 새 빌드가 올라오면 같은 패널이 그 업데이트를 제안합니다. Flatpak, Nix, Docker로 설치한 경우에는 제안하지 않습니다. 그 설치들을 놓아 준 도구가 대신 교체하기 때문입니다.
+
+![설정 ▸ 정보 — 설치된 버전, 앱이 따르는 업데이트 채널, 프로젝트의 GitHub 링크](img/install.png)
 
 ## 또 다른 세 가지 경로
 

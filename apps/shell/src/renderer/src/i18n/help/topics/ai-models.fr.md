@@ -2,9 +2,9 @@
 
 ## Fournisseurs et modèles
 
-Les modèles et les clés se configurent dans les Paramètres (le bouton d’engrenage sur l’accueil) :
+Les modèles et les clés se configurent dans les Paramètres (la ligne de compte en bas à gauche de l’accueil) :
 
-![La fenêtre des paramètres](img/settings-integrations.png)
+![La fenêtre des paramètres](img/settings-general.png)
 
 - **Genspark hébergé** : connectez-vous (flux par code d’appareil) et utilisez-le — aucune configuration.
 - **Points de terminaison personnalisés (BYOK)** : Paramètres ▸ IA prend une URL de base et une clé API par protocole — compatible OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) et plus. Les clés ne vivent que dans les en-têtes de requête — jamais sur le disque, dans les journaux ou dans l’environnement des sous-processus.

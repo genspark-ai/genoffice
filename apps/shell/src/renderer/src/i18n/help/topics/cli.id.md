@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Itulah seluruh permukaannya dalam satu layar — setiap perintah dengan satu baris yang menjelaskan apa yang dilalukannya, lalu opsi global dan kode keluar:
+
+![Keluaran nyata dari genoffice --help: spanduk versi, setiap perintah dengan deskripsi satu baris, serta opsi global dan kode keluar](img/cli.png)
+
 ## Mendapatkan perintahnya
 
 macOS dan Windows menyertakannya di dalam bundel aplikasi. Untuk memakainya dengan namanya, jalankan `genoffice install-cli` sekali: perintah ini membuat symbolic link dari biner yang disertakan ke `/usr/local/bin`, atau ke `PATH` milik pengguna Anda di Windows.
 
 ## Perintah yang perlu diketahui
 
-| Perintah | Yang dikerjakan |
-| --- | --- |
-| `open` | Membuka dokumen di aplikasi; memulai aplikasi bila belum berjalan. |
-| `convert` | Mengonversi antarformat memakai mesin milik aplikasi itu sendiri. |
-| `create` | Membuat dokumen dari konten terstruktur. |
-| `render` | Satu PNG per halaman, sebagaimana diletakkan oleh perender. |
-| `pdf` | Membaca lapisan teks PDF halaman demi halaman, tanpa proses aplikasi. |
-| `info` | Metadata dan ringkasan struktur sebuah dokumen. |
-| `search` | Pencarian web atau gambar lewat penyedia yang dikonfigurasi di aplikasi. |
-| `image` / `media` | Menghasilkan gambar, atau mendeskripsikan dan mengajukan pertanyaan tentang berkas gambar, video, atau audio. |
-| `merge` | Mengisi placeholder `{{key}}` pada templat `.docx`, `.pptx`, atau `.xlsx`. |
-| `capabilities` | Melaporkan fitur awan mana yang sudah dikonfigurasi di komputer ini. |
-| `guide` | Referensi op dan panduan desain, dibangkitkan dari definisi yang sama dengan yang dipakai eksekutor untuk memvalidasi — jadi tidak mungkin melenceng dari apa yang diterima `apply`. `--json` mengembalikannya beserta skema tiap op. |
-| `install-cli` | Menaruh `genoffice` di `PATH`. |
-| `skill` | Mendaftarkan agen pemrograman yang ditemukan di komputer ini, lalu memasang atau memperbarui skill GenOffice di dalamnya. |
-| `mcp` | Menyajikan semua perintah sebagai alat Model Context Protocol. Lihat **Menghubungkan agen pemrograman**. |
+| Perintah          | Yang dikerjakan                                                                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Membuka dokumen di aplikasi; memulai aplikasi bila belum berjalan.                                                                                                                                                                    |
+| `convert`         | Mengonversi antarformat memakai mesin milik aplikasi itu sendiri.                                                                                                                                                                     |
+| `create`          | Membuat dokumen dari konten terstruktur.                                                                                                                                                                                              |
+| `render`          | Satu PNG per halaman, sebagaimana diletakkan oleh perender.                                                                                                                                                                           |
+| `pdf`             | Membaca lapisan teks PDF halaman demi halaman, tanpa proses aplikasi.                                                                                                                                                                 |
+| `info`            | Metadata dan ringkasan struktur sebuah dokumen.                                                                                                                                                                                       |
+| `search`          | Pencarian web atau gambar lewat penyedia yang dikonfigurasi di aplikasi.                                                                                                                                                              |
+| `image` / `media` | Menghasilkan gambar, atau mendeskripsikan dan mengajukan pertanyaan tentang berkas gambar, video, atau audio.                                                                                                                         |
+| `merge`           | Mengisi placeholder `{{key}}` pada templat `.docx`, `.pptx`, atau `.xlsx`.                                                                                                                                                            |
+| `capabilities`    | Melaporkan fitur awan mana yang sudah dikonfigurasi di komputer ini.                                                                                                                                                                  |
+| `guide`           | Referensi op dan panduan desain, dibangkitkan dari definisi yang sama dengan yang dipakai eksekutor untuk memvalidasi — jadi tidak mungkin melenceng dari apa yang diterima `apply`. `--json` mengembalikannya beserta skema tiap op. |
+| `install-cli`     | Menaruh `genoffice` di `PATH`.                                                                                                                                                                                                        |
+| `skill`           | Mendaftarkan agen pemrograman yang ditemukan di komputer ini, lalu memasang atau memperbarui skill GenOffice di dalamnya.                                                                                                             |
+| `mcp`             | Menyajikan semua perintah sebagai alat Model Context Protocol. Lihat **Menghubungkan agen pemrograman**.                                                                                                                              |
 
 ## Menyunting: dokumen, lembar, presentasi
 

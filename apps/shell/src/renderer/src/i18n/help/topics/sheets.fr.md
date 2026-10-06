@@ -38,7 +38,7 @@ L’onglet Données, bouton par bouton (de gauche à droite sur l’image) :
 - **Supprimer les doublons** : retire les lignes en double d’après les colonnes sélectionnées.
 - **Validation des données** (menu déroulant) : règles de saisie pour la sélection (listes déroulantes, plages de nombres…).
 - **Consolider** : agrège plusieurs plages en un seul endroit par catégorie.
-- **Analyse de scénarios** (menu déroulant) : valeur cible / tables de données.
+- **Analyse de scénarios** (menu déroulant) : valeur cible — résout une cellule d’entrée pour qu’une cellule de formule atteigne la valeur cible.
 - **Grouper / Dissocier** (menu déroulant) : groupes de lignes ou de colonnes avec repli et développement.
 - **Sous-total** : insère des lignes de sous-total par catégorie.
 

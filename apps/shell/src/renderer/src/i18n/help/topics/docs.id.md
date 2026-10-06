@@ -17,6 +17,20 @@ Tab: **Beranda / Sisipkan / Tata Letak / Desain / Referensi / Tinjau / Tampilan*
 - **Tinjau**: pemeriksaan ejaan, komentar, lacak perubahan (tampilan Semua/Sederhana), jumlah kata.
 - **Tampilan**: penggaris, garis kisi, panel navigasi, zoom, dan **dialog pintasan papan tikik** yang bisa dicari.
 
+## Panel navigasi
+
+**Tampilan ▸ Panel Navigasi** membuka panel samping yang memuat kerangka judul dokumen, kotak pencarian untuk seluruh dokumen, dan satu thumbnail untuk tiap halaman. Keadaan terbukanya diingat antar-jalankan aplikasi, jadi dokumen yang Anda telusuri lewat kerangka tetap bisa ditelusuri.
+
+**Kerangka** itu pohon judul. Klik kanan sebuah judul di dalamnya untuk melipatnya atau mengubah struktur, bukan sekadar untuk menjelajah:
+
+- **Ciutkan / Perluas** pada sebuah judul melipat seluruh subpohonnya — babnya menghilang, teksnya tetap ada di dokumen.
+- **Ciutkan semua / Perluas semua** melipat atau membuka seluruhnya sekaligus. Pada laporan panjang, inilah beda antara kerangka yang terbaca dan dinding teks.
+- **Tampilkan tingkat judul** menyaring pohon ke kedalaman yang Anda pedulikan, sehingga *Tampilkan judul 1* menyisakan daftar isi yang benar-benar bisa dipindai.
+- **Naikkan tingkat / Turunkan tingkat** mengubah tingkat judul itu, beserta tingkat yang diwarisi setiap judul di bawahnya — begini sebuah bab menjadi seksi.
+- **Judul baru sebelum / Judul baru sesudah** menyisipkan satu di posisi kursor, tanpa meninggalkan panel.
+- **Hapus** menghapus judul *dan segala isinya*, dan inilah yang perlu diwaspadai: ini penghapusan subpohon, bukan penghapusan satu baris.
+- **Pilih judul dan isi** memilih dari judul sampai akhir subpohonnya, siap untuk mengedit seluruh seksi.
+
 ## Menu klik kanan
 
 Klik kanan di mana saja pada isi dokumen — menu menyesuaikan dengan yang Anda klik. Kelompok utamanya:

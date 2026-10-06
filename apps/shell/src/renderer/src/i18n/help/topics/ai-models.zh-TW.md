@@ -2,9 +2,9 @@
 
 ## 服務商與模型
 
-模型與金鑰在設定中配置（首頁的齒輪按鈕即可開啟）：
+模型與金鑰在設定中配置（首頁左下角的帳戶列即可開啟）：
 
-![設定視窗](img/settings-integrations.png)
+![設定視窗](img/settings-general.png)
 
 - **Genspark 官方**：登入（裝置碼流程）即可使用——完全免設定。
 - **自訂端點（BYOK）**：設定 ▸ AI 中可依協定填寫 Base URL 與 API 金鑰——OpenAI 相容、Anthropic、Gemini、DeepSeek、DashScope（qwen）等。金鑰只存在於請求標頭中——絕不寫入磁碟、不進日誌，也不傳給子程序環境。

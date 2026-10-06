@@ -4,15 +4,15 @@ Setiap build dipublikasikan di [halaman Rilis](https://github.com/genspark-ai/ge
 
 ## Pilih berkas untuk komputer Anda
 
-| Platform | Kebutuhan | Berkas |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — kebanyakan PC | Windows 10+, Intel/AMD | installer `-x64.exe` |
-| **Windows** di Arm | Windows 11 di Arm (Snapdragon X dan sejenisnya) | installer `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 atau lebih baru) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — lainnya | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Platform                             | Kebutuhan                                             | Berkas                 |
+| ------------------------------------ | ----------------------------------------------------- | ---------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)         |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)           |
+| **Windows** — kebanyakan PC          | Windows 10+, Intel/AMD                                | installer `-x64.exe`   |
+| **Windows** di Arm                   | Windows 11 di Arm (Snapdragon X dan sejenisnya)       | installer `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 atau lebih baru)    | `.deb`                 |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                 |
+| **Linux** — lainnya                  | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`            |
 
 Versi lama tetap ada di halaman Rilis.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Ia membutuhkan runtime FUSE 2. Jika Anda lebih suka tidak memasangnya, jalankan dengan `--appimage-extract-and-run` dan sandbox tetap berjalan dari direktori hasil ekstrak.
+
+## Build yang sedang Anda jalankan
+
+**Pengaturan ▸ Tentang** adalah tempat aplikasi melaporkan build yang Anda pakai, kanal yang diikutinya, dan letak proyeknya. Ketika build yang lebih baru diterbitkan di kanal itu, panel yang sama menawarkan pembaruan; instalasi Flatpak, Nix, atau Docker tidak, karena semuanya digantikan oleh alat yang memasang mereka di sana.
+
+![Pengaturan ▸ Tentang, menampilkan versi terpasang, kanal pembaruan yang diikuti aplikasi, dan tautan GitHub proyek](img/install.png)
 
 ## Tiga jalur lain
 

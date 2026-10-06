@@ -38,7 +38,7 @@ Karta Dane, przycisk po przycisku (od lewej do prawej na obrazku):
 - **Usuń duplikaty**: odrzuca zduplikowane wiersze na podstawie zaznaczonych kolumn.
 - **Sprawdzanie poprawności** (lista rozwijana): reguły wprowadzania danych dla zaznaczenia (listy, zakresy liczb...).
 - **Scalaj**: agreguje kilka zakresów w jedno miejsce według kategorii.
-- **Analiza what-if** (lista rozwijana): szukanie celu / tabele danych.
+- **Analiza what-if** (lista rozwijana): szukanie celu — rozwiązuje jedną komórkę wejściową tak, aby komórka z formułą osiągnęła wartość docelową.
 - **Grupuj / Anuluj grupowanie** (lista rozwijana): grupy wierszy lub kolumn ze zwijaniem i rozwijaniem.
 - **Podsumowanie**: wstawia wiersze sum częściowych dla każdej kategorii.
 

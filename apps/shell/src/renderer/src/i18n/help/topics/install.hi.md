@@ -4,15 +4,15 @@
 
 ## अपने मशीन के लिए फ़ाइल चुनें
 
-| प्लेटफ़ॉर्म | आवश्यकताएँ | फ़ाइल |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — अधिकतर PC | Windows 10+, Intel/AMD | `-x64.exe` इंस्टॉलर |
-| **Windows** पर Arm | Arm पर Windows 11 (Snapdragon X और समान) | `-arm64.exe` इंस्टॉलर |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 या नया) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — कोई भी अन्य | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| प्लेटफ़ॉर्म                          | आवश्यकताएँ                                            | फ़ाइल                 |
+| ------------------------------------ | ----------------------------------------------------- | --------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)        |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)          |
+| **Windows** — अधिकतर PC              | Windows 10+, Intel/AMD                                | `-x64.exe` इंस्टॉलर   |
+| **Windows** पर Arm                   | Arm पर Windows 11 (Snapdragon X और समान)              | `-arm64.exe` इंस्टॉलर |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 या नया)             | `.deb`                |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                |
+| **Linux** — कोई भी अन्य              | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`           |
 
 पुराने संस्करण Releases पेज पर ही बने रहते हैं।
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 इसे FUSE 2 रनटाइम चाहिए। यदि आप इसे इंस्टॉल नहीं करना चाहते, तो `--appimage-extract-and-run` के साथ चलाएँ, और सैंडबॉक्स निकाली गई निर्देशिका से ही काम करेगी।
+
+## जिस बिल्ड को आप चला रहे हैं
+
+**सेटिंग्स ▸ जानकारी** वही जगह है जहाँ ऐप बताता है कि आपके पास कौन-सा बिल्ड है, वह कौन-सा चैनल अपनाता है और प्रोजेक्ट कहाँ रहता है। जब उसी चैनल पर नया बिल्ड प्रकाशित होता है, वही पैनल अपडेट की पेशकश कर देता है; Flatpak, Nix या Docker इंस्टॉल में ऐसा नहीं होता, क्योंकि वहाँ की इंस्टॉल को वही औज़ार बदल देता है जिसने उसे वहाँ रखा था।
+
+![सेटिंग्स ▸ जानकारी, जहाँ इंस्टॉल किया गया संस्करण, ऐप का अपडेट चैनल और प्रोजेक्ट का GitHub लिंक दिखता है](img/install.png)
 
 ## और तीन रास्ते
 

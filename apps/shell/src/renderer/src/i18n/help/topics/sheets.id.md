@@ -38,7 +38,7 @@ Tab Data, tombol demi tombol (dari kiri ke kanan pada gambar):
 - **Hapus Duplikat**: buang baris duplikat menurut kolom yang dipilih.
 - **Validasi Data** (drop-down): aturan input untuk bagian yang dipilih (daftar drop-down, rentang angka, ...).
 - **Konsolidasikan**: menggabungkan beberapa rentang ke satu tempat menurut kategori.
-- **Analisis Bagaimana-Jika** (drop-down): pencarian tujuan / tabel data.
+- **Analisis Bagaimana-Jika** (drop-down): pencarian tujuan — menyelesaikan satu sel input agar sel formula mencapai nilai target.
 - **Kelompokkan / Pisahkan Kelompok** (drop-down): kelompok baris/kolom dengan lipat dan buka.
 - **Subtotal**: menyisipkan baris subtotal per kategori.
 

@@ -2,9 +2,11 @@
 
 ## Mở cài đặt
 
-Hàng tài khoản ở góc dưới bên trái của Trang chủ mở bảng cài đặt (khi bạn chưa đăng nhập, hàng đó ghi "Đăng nhập"); các tuỳ chọn liên quan tới AI nằm trong mục Mô hình AI của bảng đó
+Hàng tài khoản ở góc dưới bên trái của Trang chủ mở bảng cài đặt (khi bạn chưa đăng nhập, hàng đó ghi "Đăng nhập"). Bảng đó có sáu mục: Tài khoản, Mô hình AI, Phương tiện AI & Tìm kiếm, Chung, Tích hợp và Giới thiệu.
 
-![Cửa sổ Cài đặt](img/settings-integrations.png) — việc cấu hình mô hình được nói ở chương Mô hình AI và cài đặt.
+![Cài đặt ▸ Chung, nơi có ngôn ngữ, chủ đề, tự động lưu và công tắc thống kê sử dụng](img/settings-general.png)
+
+Việc cấu hình mô hình có bài riêng; trong **Phương tiện AI & Tìm kiếm**, bạn bật tạo hình ảnh, phân tích hình ảnh, phân tích video, tìm kiếm web và tìm kiếm tệp cục bộ cho từng nhà cung cấp.
 
 ## Ngôn ngữ
 
@@ -32,11 +34,11 @@ Cài đặt có thể đăng ký GenOffice làm ứng dụng xử lý .docx / .x
 
 ## Tích hợp MCP (dành cho người dùng nâng cao / ứng dụng AI)
 
-GenOffice tích hợp sẵn một **máy chủ MCP** cục bộ để các ứng dụng AI bên ngoài (Claude Desktop, Cursor, ...) có thể đọc và ghi tài liệu của bạn trực tiếp:
+**Tích hợp** là bảng nối GenOffice với một tác nhân lập trình, và nó có bài riêng: Kết nối tác nhân lập trình. Nói ngắn gọn — chọn một lối (dòng lệnh, hoặc MCP), làm theo phần đó, rồi mở một cuộc trò chuyện mới và hỏi.
 
-- Khởi động: chạy `genoffice mcp` ở dòng lệnh (cổng và mã xác thực có thể cấu hình; mặc định chỉ lắng nghe trên loopback).
-- Năng lực: tạo/mở/sửa docx, xlsx và pptx, đọc nội dung, chuyển đổi định dạng, xuất PDF và hơn thế — cùng bộ công cụ mà các ứng dụng máy tính dùng.
-- Bảo mật: xác thực bằng mã là tuỳ chọn nhưng nên bật; trình lắng nghe mặc định không rời khỏi máy của bạn; xem `genoffice mcp --help`.
+![Cài đặt ▸ Tích hợp: ba bước, rồi đến các hàng kỹ năng và tuỳ chọn MCP](img/settings-integrations.png)
+
+Dưới **Máy chủ HTTP cục bộ**, ứng dụng cũng có thể tự chạy máy chủ đó — công tắc bật và cổng —, còn **Nâng cao** thêm URL kiểm tra tình trạng và tệp nhật ký, thay vì để dành cho trợ lý. Nó chỉ lắng nghe trên localhost.
 
 ## Bảng tra nhanh dòng lệnh
 

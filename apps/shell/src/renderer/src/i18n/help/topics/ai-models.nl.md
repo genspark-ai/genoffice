@@ -2,9 +2,9 @@
 
 ## Providers en modellen
 
-Modellen en sleutels stel je in Instellingen in (de tandwielknop op Start):
+Modellen en sleutels stel je in Instellingen in (de accountregel linksonder op Start):
 
-![Het venster Instellingen](img/settings-integrations.png)
+![Het venster Instellingen](img/settings-general.png)
 
 - **Genspark gehost**: meld je aan (flow met apparaatcode) en je kunt ermee aan de slag — nul configuratie.
 - **Eigen eindpunten (BYOK)**: Instellingen ▸ AI-model vraagt een basis-URL en een API-sleutel per protocol — OpenAI-compatibel, Anthropic, Gemini, DeepSeek, DashScope (qwen) en meer. Sleutels staan alleen in aanvraagheaders — nooit op schijf, in logbestanden of in de omgeving van onderliggende processen.

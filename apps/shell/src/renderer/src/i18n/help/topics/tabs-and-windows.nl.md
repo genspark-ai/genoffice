@@ -7,7 +7,7 @@ Alle geopende bestanden delen één venster; de tabbladenbalk bovenaan wisselt t
 ## De basis
 
 - **Wisselen**: klik op een tabblad of scroll met het muiswiel over de balk om ze af te wisselen.
-- **Sluiten**: de × op het tabblad, of ⌘W/ctrl+W. Bij onopgeslagen wijzigingen wordt eerst gevraagd; in het menu met alle tabbladen kun je in één keer alle overige of alle rechter tabbladen sluiten.
+- **Sluiten**: de × op het tabblad, of ⌘W/ctrl+W. Bij onopgeslagen wijzigingen wordt eerst gevraagd.
 - **Nieuw**: de + aan het rechtereinde van de balk.
 - **Activering is direct**: een tabblad indrukken wisselt meteen om, zonder te wachten tot de klik klaar is.
 
@@ -21,7 +21,7 @@ Houd een tabblad ingedrukt en sleep het opzij om de volgorde te wijzigen; buren 
 
 ## Contextmenu
 
-Rechtermuisklik op een tabblad voor: nieuw tabblad, sluiten, overige sluiten, tot aan de rechterkant sluiten, het bestand dupliceren en meer (gelokaliseerd samen met de taal van de app).
+Rechtermuisklik op een tabblad voor **Openen in nieuw venster** — aangeboden op elk documenttabblad dat losgemaakt kan worden — en **Sluiten**, grijs op een tabblad dat niet gesloten kan worden. Beide volgen de taal van de app.
 
 ## Losmaken in een eigen venster
 

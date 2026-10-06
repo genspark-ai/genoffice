@@ -4,15 +4,15 @@ Chaque build est publié sur la [page Releases](https://github.com/genspark-ai/g
 
 ## Choisir le fichier pour votre machine
 
-| Plateforme | Prérequis | Fichier |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — la plupart des PC | Windows 10+, Intel/AMD | installateur `-x64.exe` |
-| **Windows** sur Arm | Windows 11 sur Arm (Snapdragon X et similaires) | installateur `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 ou plus récent) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — tout le reste | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Plateforme                           | Prérequis                                             | Fichier                   |
+| ------------------------------------ | ----------------------------------------------------- | ------------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)            |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)              |
+| **Windows** — la plupart des PC      | Windows 10+, Intel/AMD                                | installateur `-x64.exe`   |
+| **Windows** sur Arm                  | Windows 11 sur Arm (Snapdragon X et similaires)       | installateur `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 ou plus récent)     | `.deb`                    |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                    |
+| **Linux** — tout le reste            | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`               |
 
 Les versions antérieures restent sur la page Releases.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Il lui faut l’environnement d’exécution FUSE 2. Si vous préférez ne pas l’installer, lancez-le avec `--appimage-extract-and-run` : le bac à sable fonctionne alors depuis le répertoire extrait.
+
+## Le build que vous exécutez
+
+**Paramètres ▸ À propos** est l'endroit où l'application indique le build que vous avez, le canal qu'elle suit et où se trouve le projet. Lorsqu'un build plus récent est publié sur ce canal, le même volet propose la mise à jour ; une installation Flatpak, Nix ou Docker ne le fait pas, car elle est remplacée par l'outil qui l'a mise là.
+
+![Paramètres ▸ À propos, avec la version installée, le canal de mise à jour suivi par l'application et le lien GitHub du projet](img/install.png)
 
 ## Trois autres voies
 

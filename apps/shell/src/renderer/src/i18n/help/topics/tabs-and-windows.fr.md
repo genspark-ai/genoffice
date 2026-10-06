@@ -7,7 +7,7 @@ Tous les fichiers ouverts partagent une seule fenêtre ; la barre d’onglets en
 ## Principes
 
 - **Basculer** : cliquez sur un onglet, ou faites défiler la molette au-dessus de la barre pour les parcourir.
-- **Fermer** : la × de l’onglet, ou ⌘W/ctrl+W. Les modifications non enregistrées déclenchent une demande de confirmation ; le menu de tous les onglets permet de fermer d’un coup tous les autres / ceux à droite.
+- **Fermer** : la × de l’onglet, ou ⌘W/ctrl+W. Les modifications non enregistrées déclenchent une demande de confirmation.
 - **Nouveau** : le + à l’extrémité droite de la barre.
 - **L’activation est immédiate** : appuyer sur un onglet bascule tout de suite, sans attendre la fin du clic.
 
@@ -21,7 +21,7 @@ Maintenez un onglet et faites-le glisser latéralement pour le réordonner ; les
 
 ## Menu contextuel
 
-Un clic droit sur un onglet propose : nouvel onglet, fermer, fermer les autres, fermer ceux à droite, dupliquer le fichier, etc. (traduit dans la langue de l’application).
+Un clic droit sur un onglet propose **Ouvrir dans une nouvelle fenêtre** — disponible sur chaque onglet de document détachable — et **Fermer**, grisé sur un onglet qui ne peut pas être fermé. Les deux suivent la langue de l’application.
 
 ## Détacher dans une fenêtre
 

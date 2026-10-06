@@ -17,6 +17,33 @@ Tabs: **Start / Invoegen / Indeling / Ontwerpen / Verwijzingen / Controleren / B
 - **Controleren**: spellingcontrole, opmerkingen, wijzigingen bijhouden (weergaven Alle wijzigingen/Enkele markeringen), woordentelling.
 - **Beeld**: liniaal, rasterlijnen, navigatievenster, zoom en het doorzoekbare dialoogvenster met **sneltoetsen**.
 
+## Het navigatievenster
+
+**Beeld ▸ Navigatiedeelvenster** opent een zijvenster met de koppenstructuur van het
+document, een zoekvak over het hele document en een miniatuur per pagina. Of het
+openstaat, wordt onthouden tussen sessies, zodat een document waarin je via de
+koppenstructuur navigeert navigeerbaar blijft.
+
+**De koppenstructuur** is de koppenboom. Klik met de rechtermuisknop op een kop in de
+koppenstructuur om die te vouwen of te herstructureren in plaats van alleen te
+navigeren:
+
+- **Samenvouwen / Uitvouwen** bij een kop vouwt de hele deelboom van die kop:
+  het hoofdstuk verdwijnt, de tekst blijft in het document staan.
+- **Alles samenvouwen / Alles uitvouwen** vouwt of ontvouwt
+  alles in één keer. Bij een lang rapport is dat het verschil tussen een leesbare
+  koppenstructuur en een muur van tekst.
+- **Kopniveaus weergeven** filtert de boom op de dieptes die je wilt, zodat
+  *Kop 1 weergeven* je een inhoudsopgave overlaat die je echt kunt doorlopen.
+- **Niveau verhogen / Niveau verlagen** wijzigt het niveau van de kop en daarmee het
+  niveau dat elke kop eronder overneemt: zo wordt een hoofdstuk een sectie.
+- **Nieuwe kop ervoor / erna** voegt er een in op de plek van de cursor, zonder het
+  venster te verlaten.
+- **Verwijderen** haalt de kop *en alles eronder* weg, en dat is de knop om op te letten:
+  hij verwijdert een deelboom, geen regel.
+- **Kop en inhoud selecteren** selecteert van de kop tot het einde van de deelboom,
+  klaar om een hele sectie te bewerken.
+
 ## Contextmenu
 
 Rechtermuisklik ergens in de tekst — het menu volgt waarop je klikte. Hoofdgroepen:

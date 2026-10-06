@@ -2,9 +2,9 @@
 
 ## 제공업체와 모델
 
-모델과 키는 설정에서 구성합니다(홈의 톱니바퀴 버튼).
+모델과 키는 설정에서 구성합니다(홈의 왼쪽 아래 계정 줄).
 
-![설정 창](img/settings-integrations.png)
+![설정 창](img/settings-general.png)
 
 - **Genspark 제공형**: 로그인만 하면(기기 코드 방식) 바로 쓸 수 있습니다. 설정이 필요 없습니다.
 - **사용자 지정 엔드포인트(BYOK)**: 설정 ▸ AI에서 프로토콜별로 기본 URL과 API 키를 입력합니다. OpenAI 호환, Anthropic, Gemini, DeepSeek, DashScope(qwen) 등. 키는 요청 헤더에만 들어가며 디스크에도, 로그에도, 하위 프로세스 환경에도 남지 않습니다.

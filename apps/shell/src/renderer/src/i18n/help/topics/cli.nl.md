@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+Dat is het hele oppervlak op één scherm — elke opdracht met een regel die zegt wat hij doet, en daarna de globale opties en de exitcodes:
+
+![De echte uitvoer van genoffice --help: de versiebanner, elke opdracht met een beschrijving op één regel, en de globale opties en de exitcodes](img/cli.png)
+
 ## De opdracht bemachtigen
 
 macOS en Windows leveren hem mee in de app-bundel. Wil je hem bij naam gebruiken, voer dan eenmalig `genoffice install-cli` uit: die maakt een symbolische koppeling naar het meegeleverde binaire bestand in `/usr/local/bin`, of in je gebruikers-`PATH` op Windows.
 
 ## De opdrachten die je moet kennen
 
-| Opdracht | Wat het doet |
-| --- | --- |
-| `open` | Opent een document in de app; start de app als die niet draait. |
-| `convert` | Converteert tussen formaten met de eigen engines van de app. |
-| `create` | Maakt een document van gestructureerde inhoud. |
-| `render` | Eén PNG per pagina, zoals de renderer het opmaakt. |
-| `pdf` | Leest de tekstlaag van een PDF pagina per pagina, zonder app-proces. |
-| `info` | Metadata en een structuuroverzicht van een document. |
-| `search` | Zoeken op het web of in afbeeldingen via de provider die in de app is ingesteld. |
-| `image` / `media` | Genereert een afbeelding, of beschrijft een afbeeldings-, video- of audiobestand en beantwoordt vragen erover. |
-| `merge` | Vult `{{key}}`-placeholders in een `.docx`-, `.pptx`- of `.xlsx`-sjabloon. |
-| `capabilities` | Meldt welke cloudfuncties op deze computer zijn ingesteld. |
-| `guide` | De op-referentie en de ontwerphoogedelen, gegenereerd uit dezelfde definities waarop de executor valideert — dus kan niet afwijken van wat `apply` accepteert. `--json` geeft ze met het schema van elke op. |
-| `install-cli` | Zet `genoffice` in de `PATH`. |
-| `skill` | Toont de coding agents op deze computer en installeert of werkt de GenOffice-skill daarin bij. |
-| `mcp` | Biedt elke opdracht aan als Model Context Protocol-tool. Zie **Verbinden met een coding agent**. |
+| Opdracht          | Wat het doet                                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `open`            | Opent een document in de app; start de app als die niet draait.                                                                                                                                              |
+| `convert`         | Converteert tussen formaten met de eigen engines van de app.                                                                                                                                                 |
+| `create`          | Maakt een document van gestructureerde inhoud.                                                                                                                                                               |
+| `render`          | Eén PNG per pagina, zoals de renderer het opmaakt.                                                                                                                                                           |
+| `pdf`             | Leest de tekstlaag van een PDF pagina per pagina, zonder app-proces.                                                                                                                                         |
+| `info`            | Metadata en een structuuroverzicht van een document.                                                                                                                                                         |
+| `search`          | Zoeken op het web of in afbeeldingen via de provider die in de app is ingesteld.                                                                                                                             |
+| `image` / `media` | Genereert een afbeelding, of beschrijft een afbeeldings-, video- of audiobestand en beantwoordt vragen erover.                                                                                               |
+| `merge`           | Vult `{{key}}`-placeholders in een `.docx`-, `.pptx`- of `.xlsx`-sjabloon.                                                                                                                                   |
+| `capabilities`    | Meldt welke cloudfuncties op deze computer zijn ingesteld.                                                                                                                                                   |
+| `guide`           | De op-referentie en de ontwerphoogedelen, gegenereerd uit dezelfde definities waarop de executor valideert — dus kan niet afwijken van wat `apply` accepteert. `--json` geeft ze met het schema van elke op. |
+| `install-cli`     | Zet `genoffice` in de `PATH`.                                                                                                                                                                                |
+| `skill`           | Toont de coding agents op deze computer en installeert of werkt de GenOffice-skill daarin bij.                                                                                                               |
+| `mcp`             | Biedt elke opdracht aan als Model Context Protocol-tool. Zie **Verbinden met een coding agent**.                                                                                                             |
 
 ## Bewerken: docs, sheets, slides
 

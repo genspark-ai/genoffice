@@ -38,7 +38,7 @@ La scheda Dati, pulsante per pulsante (da sinistra a destra nell'immagine):
 - **Rimuovi duplicati**: elimina le righe duplicate in base alle colonne selezionate.
 - **Convalida dati** (menu a tendina): regole di immissione per la selezione (elenchi a tendina, intervalli di numeri...).
 - **Consolida**: aggrega più intervalli in un unico punto per categoria.
-- **Analisi di simulazione** (menu a tendina): ricerca del valore / tabelle di dati.
+- **Analisi di simulazione** (menu a tendina): ricerca del valore — risolve una cella di input in modo che una cella con formula raggiunga il valore obiettivo.
 - **Raggruppa / Annulla raggruppamento** (menu a tendina): gruppi di righe o colonne con compressione ed espansione.
 - **Subtotale**: inserisce righe di subtotale per ogni categoria.
 

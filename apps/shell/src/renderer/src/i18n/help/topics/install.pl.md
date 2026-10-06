@@ -4,15 +4,15 @@ Każda kompilacja jest publikowana na [stronie Releases](https://github.com/gens
 
 ## Wybierz plik dla swojego komputera
 
-| Platforma | Wymagania | Plik |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — większość komputerów | Windows 10+, Intel/AMD | instalator `-x64.exe` |
-| **Windows** na Arm | Windows 11 on Arm (Snapdragon X i podobne) | instalator `-arm64.exe` |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 lub nowsze) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — wszystko inne | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Platforma                            | Wymagania                                             | Plik                    |
+| ------------------------------------ | ----------------------------------------------------- | ----------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)          |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)            |
+| **Windows** — większość komputerów   | Windows 10+, Intel/AMD                                | instalator `-x64.exe`   |
+| **Windows** na Arm                   | Windows 11 on Arm (Snapdragon X i podobne)            | instalator `-arm64.exe` |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 lub nowsze)         | `.deb`                  |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                  |
+| **Linux** — wszystko inne            | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`             |
 
 Starsze wersje pozostają na stronie Releases.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Wymaga środowiska uruchomieniowego FUSE 2. Jeśli wolisz go nie instalować, uruchom go z `--appimage-extract-and-run`, a sandbox zadziała z katalogu wypakowanego.
+
+## Kompilacja, którą uruchamiasz
+
+**Ustawienia ▸ O aplikacji** to miejsce, w którym aplikacja zgłasza posiadaną kompilację, kanał, za którym podąża, i to, gdzie mieszka projekt. Gdy na tym kanale pojawi się nowsza kompilacja, to samo okno zaproponuje aktualizację; instalacja przez Flatpak, Nix albo Docker tego nie robi, bo zastępuje je narzędzie, które je tam umieściło.
+
+![Ustawienia ▸ O aplikacji — zainstalowana wersja, kanał aktualizacji, za którym podąża aplikacja, oraz link do projektu na GitHubie](img/install.png)
 
 ## Trzy inne drogi
 

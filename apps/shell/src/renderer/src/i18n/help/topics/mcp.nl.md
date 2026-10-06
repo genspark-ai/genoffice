@@ -2,15 +2,23 @@
 
 GenOffice spreekt het Model Context Protocol, zodat een coding agent je documenten kan lezen, schrijven en renderen via dezelfde engines die de app gebruikt. De agent hoeft niet te gokken naar een bestandsformaat: hij krijgt de getypte op-schemas uit dezelfde definities waarop de executor valideert.
 
-## Registreren
+## Registreren vanuit de app
 
-De gebruikelijke situatie is één commando:
+**Instellingen ▸ Integraties** is de plek waar dit gebeurt. Het paneel heeft twee helften, en je kunt een van beide gebruiken of allebei.
+
+**De skill.** Eén rij per coding agent die op deze computer is gevonden — Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, OpenCode, Windsurf —, elk met **Installeren**, **Bijwerken** en **Verwijderen**, plus **In een andere map installeren…**, **Skill downloaden (zip)** en **Pad kopiëren**. Staat je assistent er niet bij, wijs GenOffice dan een map aan waaruit hij `SKILL.md` leest, of sla de zip op en laat de assistent hem installeren. Skill en MCP kunnen naast elkaar staan: de assistent kiest er één, en ze doen precies hetzelfde.
+
+**MCP.** Er worden twee routes aangeboden: **Gestart door de assistent (aanbevolen)**, waarbij je de getoonde configuratie aan je client toevoegt en de assistent de server zelf start, en de **Lokale HTTP-server**, die de app voor je draait. Hoe dan ook eindigt de assistent tegen GenOffice te praten en typ je nooit een commando.
+
+## Registreren vanaf de opdrachtregel
+
+Hetzelfde vanaf een terminal — dit is de geavanceerde route, en degene om naar te grijpen wanneer de agent ergens staat waar het paneel hem niet kan vinden:
 
 ```sh
 genoffice mcp install all
 ```
 
-Het vindt de coding agents op deze computer — Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, OpenCode, Windsurf — en schrijft de stdio-serververmelding in elk van hun eigen configuraties, en laat de rest van dat bestand met rust.
+Het vindt de coding agents op deze computer en schrijft de stdio-serververmelding in elk van hun eigen configuraties, en laat de rest van dat bestand met rust.
 
 ```sh
 genoffice mcp list             # where each agent stands
@@ -20,7 +28,11 @@ genoffice mcp uninstall cursor  # take it back out
 
 Een agent die je op een ongebruikelijke plek hebt geïnstalleerd, heeft `--dir <path>` nodig; `--force` herschrijft een vermelding die er al staat.
 
-## Zelf uitvoeren
+Alles wat de server accepteert staat op één scherm — de vormen om te registreren, te verwijderen en op te sommen, het aanbieden via HTTP, en de twee schema-opties:
+
+![De echte uitvoer van genoffice mcp --help: de vormen install, uninstall en list, met de opties --http, --host, --token, --compact-schemas, --dir en --force](img/mcp.png)
+
+## Zonder assistent uitvoeren
 
 Voor een client op een andere computer bied je die in plaats daarvan via HTTP aan:
 
@@ -52,10 +64,20 @@ genoffice mcp --compact-schemas
 GENOFFICE_MCP_COMPACT_SCHEMAS=1 genoffice mcp
 ```
 
-## De skill
+## Waarom de skill
 
-Een agent die de op-woordenlijst niet kent, gaat gokken. `genoffice skill` installeert een GenOffice-skill in de agents die hij vindt, en neemt de referentie en de ontwerphoogedelen mee — hetzelfde materiaal als `genoffice guide` afdrukt.
+Een agent die de op-woordenlijst niet kent, gaat gokken. De skill neemt de referentie en de ontwerphoogedelen mee — hetzelfde materiaal als `genoffice guide` afdrukt —, zodat de assistent ops schrijft waarvan hij de specificatie echt heeft gelezen. Installeer hem vanuit het paneel hierboven, of met `genoffice skill` vanaf een terminal.
 
-## Wat het niet is
+## Wat hij in de app kan bereiken
 
-De MCP-server leest en schrijft bestanden. Het is niet het venster: er is geen AI-paneel, en het updatevenster in de app geldt hier niet. Heeft een stap het venster nodig, open dan het bestand.
+De server is niet beperkt tot bestanden op schijf. Zolang GenOffice draait, kan de agent ook via het venster werken:
+
+- **`open_in_genoffice`** opent een bestand in een tabblad en brengt dat tabblad op de voorgrond.
+- **`open_documents`** somt elk document op dat je open hebt — id, type, pad en of er onopgeslagen wijzigingen zijn —, en leest daarna de actuele inhoud van een document of sluit het, waarbij eerst wordt opgeslagen tenzij je hem vraagt het weg te gooien.
+- **De inhoudsgereedschappen** nemen die id (of dat pad) als hun `document`-argument, zodat een bewerking terechtkomt in het tabblad dat je al open hebt en het venster ernaar toe overschakelt.
+
+Twee dingen blijven buiten bereik: er is geen AI-paneel, en het updatevenster in de app geldt hier niet.
+
+## Het paneel Lokale HTTP-server
+
+Onder **Lokale HTTP-server** draait de app de server zelf in plaats van hem aan de assistent over te laten: een schakelaar om in te schakelen, een veld **Poort**, een indicator **Actief / Gestopt** en **Generatie op achtergrond** (documenten rechtstreeks naar een pad schrijven zonder de interface te openen), plus een **Voorbeeldclientconfiguratie** om te kopiëren. **Geavanceerd** voegt de twee verbindings-URL's toe — Streamable HTTP en de oudere SSE-URL —, een URL voor **Statuscontrole** en een schakelaar voor **Loggen** die server- en toolactiviteit naar een lokaal bestand schrijft dat je daar **Openen**, **Vernieuwen** of **Wissen** kunt. Hij luistert alleen op localhost.

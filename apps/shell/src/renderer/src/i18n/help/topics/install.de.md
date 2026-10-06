@@ -4,15 +4,15 @@ Jeder Build wird auf der [Releases-Seite](https://github.com/genspark-ai/genoffi
 
 ## Die Datei für Ihren Rechner wählen
 
-| Plattform | Voraussetzungen | Datei |
-| --- | --- | --- |
-| **macOS** — Apple Silicon | macOS 11+ | `.dmg` (arm64) |
-| **macOS** — Intel | macOS 11+ | `.dmg` (x64) |
-| **Windows** — die meisten PCs | Windows 10+, Intel/AMD | `-x64.exe` Installationsprogramm |
-| **Windows** auf Arm | Windows 11 auf Arm (Snapdragon X und Ähnliches) | `-arm64.exe` Installationsprogramm |
-| **Linux** — Debian / Ubuntu | x86_64, glibc 2.34+ (Ubuntu 22.04 oder neuer) | `.deb` |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm` |
-| **Linux** — alles andere | x86_64, glibc 2.34+, FUSE 2 | `.AppImage` |
+| Plattform                            | Voraussetzungen                                       | Datei                              |
+| ------------------------------------ | ----------------------------------------------------- | ---------------------------------- |
+| **macOS** — Apple Silicon            | macOS 11+                                             | `.dmg` (arm64)                     |
+| **macOS** — Intel                    | macOS 11+                                             | `.dmg` (x64)                       |
+| **Windows** — die meisten PCs        | Windows 10+, Intel/AMD                                | `-x64.exe` Installationsprogramm   |
+| **Windows** auf Arm                  | Windows 11 auf Arm (Snapdragon X und Ähnliches)       | `-arm64.exe` Installationsprogramm |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 oder neuer)         | `.deb`                             |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | `.rpm`                             |
+| **Linux** — alles andere             | x86_64, glibc 2.34+, FUSE 2                           | `.AppImage`                        |
 
 Ältere Versionen bleiben auf der Releases-Seite.
 
@@ -47,6 +47,12 @@ chmod +x GenOffice-<version>.AppImage
 ```
 
 Er benötigt die FUSE-2-Laufzeit. Wenn Sie sie lieber nicht installieren, starten Sie ihn mit `--appimage-extract-and-run`; die Sandbox arbeitet dann aus dem entpackten Verzeichnis.
+
+## Der Build, den Sie ausführen
+
+**Einstellungen ▸ Über** ist der Ort, an dem die App meldet, welchen Build Sie haben, welchem Kanal sie folgt und wo das Projekt zu Hause ist. Sobald ein neuerer Build auf diesem Kanal erscheint, bietet derselbe Bereich die Aktualisierung an; eine Flatpak-, Nix- oder Docker-Installation tut das nicht, denn sie wird vom Werkzeug ersetzt, das sie dorthin gebracht hat.
+
+![Einstellungen ▸ Über mit installierter Version, dem Update-Kanal, dem die App folgt, und dem GitHub-Link des Projekts](img/install.png)
 
 ## Drei weitere Wege
 

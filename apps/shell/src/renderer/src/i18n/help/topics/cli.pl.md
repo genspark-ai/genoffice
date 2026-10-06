@@ -7,28 +7,32 @@ genoffice --help          # every command
 genoffice guide slides    # the op reference, for writing your own
 ```
 
+To cała powierzchnia na jednym ekranie — każde polecenie z wierszem, który mówi, co robi, a potem opcje globalne i kody wyjścia:
+
+![Rzeczywiste wyjście polecenia genoffice --help: banner wersji, każde polecenie z opisem w jednym wierszu oraz opcje globalne i kody wyjścia](img/cli.png)
+
 ## Zdobycie polecenia
 
 Systemy macOS i Windows dostarczają je w pakiecie aplikacji. Aby używać go po nazwie, uruchom raz `genoffice install-cli`: tworzy dowiązanie symboliczne do dołączonego pliku binarnego w `/usr/local/bin` albo w `PATH` użytkownika w systemie Windows.
 
 ## Polecenia warte znajomości
 
-| Polecenie | Co robi |
-| --- | --- |
-| `open` | Otwiera dokument w aplikacji; uruchamia aplikację, jeśli nie działa. |
-| `convert` | Konwertuje między formatami przy użyciu silników aplikacji. |
-| `create` | Tworzy dokument z treści strukturalnej. |
-| `render` | Jeden PNG na stronę, tak jak układa je renderujący. |
-| `pdf` | Odczytuje warstwę tekstową PDF-a strona po stronie, bez procesu aplikacji. |
-| `info` | Metadane i podsumowanie struktury dokumentu. |
-| `search` | Wyszukiwanie w sieci lub obrazów przez dostawcę skonfigurowanego w aplikacji. |
-| `image` / `media` | Generuje obraz albo opisuje plik obrazu, wideo lub dźwięk i pozwala o niego pytać. |
-| `merge` | Wypełnia symbole zastępcze `{{key}}` w szablonie `.docx`, `.pptx` lub `.xlsx`. |
-| `capabilities` | Zgłasza, które funkcje chmurowe są skonfigurowane na tym komputerze. |
-| `guide` | Referencja op i przewodniki projektowe, wygenerowane z tych samych definicji, względem których waliduje executor — więc nie może się rozjechać z tym, co przyjmuje `apply`. `--json` zwraca je ze schematem każdej op. |
-| `install-cli` | Umieszcza `genoffice` w `PATH`. |
-| `skill` | Wypisuje agentów programistycznych znalezionych na tym komputerze i instaluje w nich lub aktualizuje skill GenOffice. |
-| `mcp` | Udostępnia każde polecenie jako narzędzie Model Context Protocol. Zobacz **Podłączenie z agentem programistycznym**. |
+| Polecenie         | Co robi                                                                                                                                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Otwiera dokument w aplikacji; uruchamia aplikację, jeśli nie działa.                                                                                                                                                   |
+| `convert`         | Konwertuje między formatami przy użyciu silników aplikacji.                                                                                                                                                            |
+| `create`          | Tworzy dokument z treści strukturalnej.                                                                                                                                                                                |
+| `render`          | Jeden PNG na stronę, tak jak układa je renderujący.                                                                                                                                                                    |
+| `pdf`             | Odczytuje warstwę tekstową PDF-a strona po stronie, bez procesu aplikacji.                                                                                                                                             |
+| `info`            | Metadane i podsumowanie struktury dokumentu.                                                                                                                                                                           |
+| `search`          | Wyszukiwanie w sieci lub obrazów przez dostawcę skonfigurowanego w aplikacji.                                                                                                                                          |
+| `image` / `media` | Generuje obraz albo opisuje plik obrazu, wideo lub dźwięk i pozwala o niego pytać.                                                                                                                                     |
+| `merge`           | Wypełnia symbole zastępcze `{{key}}` w szablonie `.docx`, `.pptx` lub `.xlsx`.                                                                                                                                         |
+| `capabilities`    | Zgłasza, które funkcje chmurowe są skonfigurowane na tym komputerze.                                                                                                                                                   |
+| `guide`           | Referencja op i przewodniki projektowe, wygenerowane z tych samych definicji, względem których waliduje executor — więc nie może się rozjechać z tym, co przyjmuje `apply`. `--json` zwraca je ze schematem każdej op. |
+| `install-cli`     | Umieszcza `genoffice` w `PATH`.                                                                                                                                                                                        |
+| `skill`           | Wypisuje agentów programistycznych znalezionych na tym komputerze i instaluje w nich lub aktualizuje skill GenOffice.                                                                                                  |
+| `mcp`             | Udostępnia każde polecenie jako narzędzie Model Context Protocol. Zobacz **Podłączenie z agentem programistycznym**.                                                                                                   |
 
 ## Edycja: Docs, Sheets, Slides
 

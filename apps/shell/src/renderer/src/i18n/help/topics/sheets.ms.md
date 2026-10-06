@@ -38,7 +38,7 @@ Tab Data, butiran demi butiran (dari kiri ke kanan dalam gambar):
 - **Buang pendua**: membuang baris berulang berdasarkan lajur yang dipilih.
 - **Pengesahan data** (senarai lungsur): peraturan input untuk pilihan tersebut (senarai lungsur, julat nombor, ...).
 - **Gabungkan**: menggabungkan beberapa julat ke satu tempat mengikut kategori.
-- **Analisis what-if** (senarai lungsur): pencarian sasaran / jadual data.
+- **Analisis what-if** (senarai lungsur): pencarian sasaran — menyelesaikan satu sel input supaya sel formula sampai pada nilai sasaran.
 - **Kumpulan / Nyahkumpulan** (senarai lungsur): kumpulan baris atau lajur dengan lipatan dan pengembangan lipatan.
 - **Subjumlah**: menyisip baris subjumlah bagi setiap kategori.
 

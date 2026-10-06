@@ -2,9 +2,11 @@
 
 ## Apertura delle impostazioni
 
-La riga dell'account in basso a sinistra in Home apre il pannello delle impostazioni (quando non hai effettuato l'accesso riporta Accedi); le opzioni relative all'IA si trovano nella sua sezione Modello IA
+La riga dell'account in basso a sinistra in Home apre il pannello delle impostazioni (quando non hai effettuato l'accesso riporta Accedi). Ha sei sezioni: Account, Modello IA, Media e ricerca IA, Generale, Integrazioni e Informazioni.
 
-![La finestra Impostazioni](img/settings-integrations.png) — la configurazione dei modelli è descritta in Modelli IA e impostazioni.
+![Impostazioni ▸ Generale, dove si trovano la lingua, il tema, il salvataggio automatico e l'interruttore delle statistiche di utilizzo](img/settings-general.png)
+
+La configurazione dei modelli ha un articolo tutto suo; in **Media e ricerca IA** attivi, per ogni provider, generazione di immagini, analisi delle immagini, analisi video, ricerca web e ricerca file locali.
 
 ## Lingua
 
@@ -32,11 +34,11 @@ Le impostazioni possono registrare GenOffice come gestore dei file .docx / .xlsx
 
 ## Integrazione MCP (per utenti avanzati / client IA)
 
-GenOffice incorpora un **server MCP locale**, così i client IA esterni (Claude Desktop, Cursor, ...) possono leggere e scrivere direttamente i tuoi documenti:
+**Integrazioni** è il riquadro che collega GenOffice a un agente di programmazione, e ha un articolo tutto suo: Collegare un agente di programmazione. In breve — scegli una strada (la riga di comando, oppure MCP), segui quella sezione, poi apri una nuova conversazione e fai la domanda.
 
-- Avvio: `genoffice mcp` sulla riga di comando (porta e token di autenticazione configurabili; solo loopback per impostazione predefinita).
-- Capacità: creare/aprire/modificare file docx, xlsx e pptx, leggere i contenuti, convertire i formati, esportare in PDF e altro — lo stesso insieme di strumenti usato dalle app desktop.
-- Sicurezza: l'autenticazione con token è facoltativa ma consigliata; il listener resta sulla macchina locale per impostazione predefinita; vedi `genoffice mcp --help`.
+![Impostazioni ▸ Integrazioni: i tre passaggi, poi le righe delle skill e le opzioni MCP](img/settings-integrations.png)
+
+Sotto **Server HTTP locale** l'app può anche eseguire il server per conto proprio — un interruttore di attivazione e una porta — e **Avanzato** aggiunge l'URL di controllo integrità e il file di registro, invece di lasciarlo all'assistente. Ascolta solo su localhost.
 
 ## Riepilogo rapido dei comandi
 

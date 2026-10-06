@@ -7,7 +7,7 @@ Alle geöffneten Dateien teilen sich ein Fenster; die Tab-Leiste oben wechselt w
 ## Grundlagen
 
 - **Wechseln**: Klicken Sie auf einen Tab oder scrollen Sie mit dem Mausrad über die Leiste, um der Reihe nach durchzugehen.
-- **Schließen**: das × am Tab oder ⌘W/ctrl+W. Bei ungespeicherten Änderungen wird nachgefragt; im Menü aller Tabs lassen sich alle anderen / die Tabs rechts auf einmal schließen.
+- **Schließen**: das × am Tab oder ⌘W/ctrl+W. Bei ungespeicherten Änderungen wird nachgefragt.
 - **Neu**: das + am rechten Ende der Leiste.
 - **Die Aktivierung erfolgt sofort**: Ein Tabwechsel passiert beim Drücken, ohne auf das Ende des Klicks zu warten.
 
@@ -21,7 +21,7 @@ Halten Sie einen Tab und ziehen Sie ihn seitwärts, um die Reihenfolge zu änder
 
 ## Kontextmenü
 
-Ein Rechtsklick auf einen Tab bietet: neuer Tab, schließen, andere schließen, rechts schließen, Datei duplizieren und mehr (in der Sprache der App übersetzt).
+Ein Rechtsklick auf einen Tab bietet **„In neuem Fenster öffnen“** — bei jedem Dokument-Tab, der sich abtrennen lässt — und **Schließen**, das auf einem Tab, der nicht geschlossen werden kann, ausgegraut ist. Beide folgen der Sprache der App.
 
 ## In ein Fenster abtrennen
 

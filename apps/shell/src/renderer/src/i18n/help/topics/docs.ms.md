@@ -17,6 +17,31 @@ Tab: **Laman Utama / Sisip / Tataletak / Reka Bentuk / Rujukan / Semakan / Panda
 - **Semakan**: pemeriksaan ejaan, komen,Jejak perubahan (paparan Semua/ Tanda ringkas), kiraan perkataan.
 - **Pandangan**: pembaris, garisan grid, panel navigasi, zum, dan dialog pintasan papan kekunci yang boleh dicari.
 
+## Panel navigasi
+
+**Pandanangan ▸ Anak Tetingkap Navigasi** membuka panel sisi yang mengandungi rangka
+tajuk dokumen, kotak carian meliputi keseluruhan dokumen dan imej kecil bagi setiap
+halaman. Sama ada ia terbuka akan disingati antara pelancaran, jadi dokumen yang anda
+navigate melalui rangka itu kekal boleh dinavigasi.
+
+**Rangka** ialah pokok tajuk. Klik kanan pada tajuk dalam rangka itu untuk melipat atau menyusunnya semula, bukan sekadar untuk bernavigasi:
+
+- **Runtuhkan / Kembangkan** pada sesuatu tajuk akan meruntuhkan seluruh subpohon tajuk
+  itu: bab itu hilang, teksnya kekal dalam dokumen.
+- **Runtuhkan semua / Kembangkan semua** meruntuhkan atau
+  mengembangkan semuanya sekali gus. Pada laporan yang panjang, ini bezanya antara
+  rangka yang boleh dibaca dan dinding teks.
+- **Tunjukkan tahap tajuk** menapis pokok itu kepada kedalaman yang anda pedulikan, jadi
+  *Tunjukkan tajuk 1* meninggalkan anda dengan kandungan yang benar-benar boleh diimbas.
+- **Naikkan tahap / Turunkan tahap** menukar tahap tajuk itu, sekali dengan tahap yang
+  diwarisi oleh setiap tajuk di bawahnya — begitu sesebab menjadi seksyen.
+- **Tajuk baharu sebelum / selepas** memasukkan satu pada kedudukan kursor, tanpa
+  meninggalkan panel.
+- **Padam** membuang tajuk itu *dan segala yang ada di bawahnya* — dan inilah yang perlu
+  diberi perhatian: ia memadamkan subpohon, bukan satu baris.
+- **Pilih tajuk dan kandungan** memilih dari tajuk itu hingga ke hujung subpohonnya,
+  sedia untuk menyunting keseluruhan seksyen.
+
 ## Menu konteks
 
 Klik kanan di mana-mana bahagian teks, dan menu akan mengikut apa yang anda klik. Kumpulan utama:

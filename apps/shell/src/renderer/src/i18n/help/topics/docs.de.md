@@ -17,6 +17,20 @@ Tabs: **Start / Einfügen / Layout / Entwurf / Referenzen / Überprüfen / Ansic
 - **Überprüfen**: Rechtschreibprüfung, Kommentare, Änderungen nachverfolgen (Ansichten „Alle Markups“ / „Einfaches Markup“), Wörter zählen.
 - **Ansicht**: Lineal, Gitternetzlinien, Navigationsbereich, Zoom und der durchsuchbare Dialog für **Tastenkombinationen**.
 
+## Der Navigationsbereich
+
+**Ansicht ▸ Navigationsbereich** öffnet einen seitlichen Bereich mit der Überschriftengliederung des Dokuments, einem Suchfeld für das ganze Dokument und einer Miniaturansicht pro Seite. Ob er geöffnet ist, bleibt zwischen den Starts erhalten — ein Dokument, das Sie über die Gliederung erschließen, bleibt also erschließbar.
+
+**Die Gliederung** ist der Überschriftenbaum. Mit der rechten Maustaste auf eine Überschrift darin klicken, um sie einzuklappen oder umzustrukturieren statt nur zu navigieren:
+
+- **Reduzieren / Erweitern** an einer Überschrift klappt deren gesamten Teilbaum ein bzw. aus — das Kapitel verschwindet, sein Text bleibt im Dokument.
+- **Alle reduzieren / Alle erweitern** klappt alles auf einmal ein bzw. aus. Bei einem langen Bericht ist das der Unterschied zwischen einer lesbaren Gliederung und einer Wand aus Text.
+- **Überschriftenebenen anzeigen** filtert den Baum auf die Ebenen, die Sie interessieren, sodass *Überschrift 1 anzeigen* Ihnen ein Inhaltsverzeichnis übrig lässt, das Sie wirklich überfliegen können.
+- **Höher stufen / Tiefer stufen** ändern die Ebene der Überschrift und damit auch die Ebene, die alle Überschriften darunter erben — so wie aus einem Kapitel ein Abschnitt wird.
+- **Neue Überschrift davor / danach** fügt eine an der Cursorposition ein, ohne den Bereich zu verlassen.
+- **Löschen** entfernt die Überschrift *und alles darunter* — darauf ist zu achten: Es löscht einen Teilbaum, keine Zeile.
+- **Überschrift und Inhalt auswählen** markiert von der Überschrift bis zum Ende ihres Teilbaums, bereit für eine Bearbeitung des ganzen Abschnitts.
+
 ## Rechtsklick-Menü
 
 Rechtsklicken Sie irgendwo im Text — das Menü richtet sich nach dem, was Sie angeklickt haben. Wichtigste Gruppen:

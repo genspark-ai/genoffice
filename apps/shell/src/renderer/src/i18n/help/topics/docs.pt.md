@@ -17,6 +17,20 @@ Separadores: **Página Inicial / Inserir / Layout / Design / Referências / Revi
 - **Revisão**: verificação ortográfica, comentários, controlar alterações ( vistas Todas/Simples), contagem de palavras.
 - **Exibir**: régua, linhas de grade, painel de navegação, zoom e a janela pesquisável de **atalhos de teclado**.
 
+## O painel de navegação
+
+**Exibir ▸ Painel de Navegação** abre um painel lateral com a estrutura de títulos do documento, uma caixa de pesquisa sobre todo o documento e uma miniatura por página. O facto de estar aberto é memorizado entre execuções, pelo que um documento em que se navega pela estrutura continua navegável.
+
+**A estrutura** é a árvore de títulos. Clique com o botão direito num título da estrutura para o dobrar ou reestruturar, e não apenas para navegar:
+
+- **Recolher / Expandir** num título dobra toda a sua subárvore — o capítulo desaparece, o texto dele continua no documento.
+- **Recolher tudo / Expandir tudo** dobra ou desdobra tudo de uma vez. Num relatório longo é a diferença entre uma estrutura legível e uma parede de texto.
+- **Mostrar níveis de título** filtra a árvore até às profundidades que lhe interessam, deixando-lhe com *Mostrar título 1* um índice que se consegue mesmo folhear.
+- **Promover / Rebaixar** mudam o nível do título, e com ele o nível que todos os títulos abaixo herdam — é assim que um capítulo passa a secção.
+- **Novo título antes / Novo título depois** inserem um no ponto de inserção, sem sair do painel.
+- **Excluir** remove o título *e tudo o que está por baixo dele*, e é este o item a ter cuidado: é uma eliminação de subárvore, não uma eliminação de linha.
+- **Selecionar título e conteúdo** seleciona do título até ao fim da sua subárvore, pronto para uma edição de toda a secção.
+
 ## Menu de contexto
 
 Clique com o botão direito em qualquer ponto do texto — o menu acompanha aquilo em que clicou. Os principais grupos:

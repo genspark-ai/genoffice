@@ -38,7 +38,7 @@ O separador Dados, botão a botão (da esquerda para a direita na figura):
 - **Remover Duplicatas**: elimina as linhas repetidas segundo as colunas selecionadas.
 - **Validação de Dados** (menu suspenso): regras de introdução para a seleção (listas suspensas, intervalos numéricos, ...).
 - **Consolidar**: reúne vários intervalos num só sítio por categoria.
-- **Teste de Hipóteses** (menu suspenso): Atingir meta / tabelas de dados.
+- **Teste de Hipóteses** (menu suspenso): Atingir meta — resolve uma célula de entrada para que uma célula com fórmula chegue ao valor de destino.
 - **Agrupar / Desagrupar** (menu suspenso): grupos de linhas e colunas com ocultar e expandível.
 - **Subtotal**: insere linhas de subtotal por categoria.
 

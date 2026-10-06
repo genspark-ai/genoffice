@@ -2,9 +2,11 @@
 
 ## Ouvrir les paramètres
 
-La ligne de compte en bas à gauche de l’accueil ouvre le panneau des paramètres (elle affiche Se connecter lorsque vous êtes déconnecté) ; les options liées à l’IA se trouvent dans sa section Modèle IA
+La ligne de compte en bas à gauche de l’accueil ouvre le panneau des paramètres (elle affiche Se connecter lorsque vous êtes déconnecté). Il comporte six sections : Compte, Modèle IA, Médias IA et recherche, Général, Intégrations et À propos.
 
-![La fenêtre des paramètres](img/settings-integrations.png) — la configuration des modèles est traitée dans Modèles IA et paramètres.
+![Paramètres ▸ Général, où se trouvent la langue, le thème, l’enregistrement automatique et l’interrupteur des statistiques d’utilisation](img/settings-general.png)
+
+La configuration des modèles a son propre article ; dans **Médias IA et recherche**, vous activez, par fournisseur, la génération d’images, l’analyse d’images, l’analyse vidéo, la recherche web et la recherche de fichiers locaux.
 
 ## Langue
 
@@ -32,11 +34,11 @@ Les paramètres peuvent enregistrer GenOffice comme gestionnaire de .docx / .xls
 
 ## Intégration MCP (pour les utilisateurs avancés / clients IA)
 
-GenOffice embarque un **serveur MCP** local pour que des clients IA externes (Claude Desktop, Cursor, …) puissent lire et écrire directement vos documents :
+**Intégrations** est le panneau qui relie GenOffice à un agent de codage, et il a son propre article : Connecter un agent de codage. La version courte — choisissez une voie (la ligne de commande, ou MCP), suivez la section correspondante, puis ouvrez une nouvelle conversation et posez votre question.
 
-- Démarrage : `genoffice mcp` en ligne de commande (port et jeton d’authentification configurables ; boucle locale seule par défaut).
-- Capacités : créer/ouvrir/modifier des docx, xlsx et pptx, lire le contenu, convertir des formats, exporter en PDF et plus encore — le même ensemble d’outils que les applications de bureau.
-- Sécurité : l’authentification par jeton est facultative mais recommandée ; l’écoute reste sur la machine locale par défaut ; voir `genoffice mcp --help`.
+![Paramètres ▸ Intégrations : les trois étapes, puis les lignes de compétences et les options MCP](img/settings-integrations.png)
+
+Sous **Serveur HTTP local**, l’application peut aussi lancer le serveur elle-même — un interrupteur d’activation et un port —, et **Avancé** ajoute l’URL du test de santé et le fichier journal, au lieu de le laisser à l’assistant. Elle n’écoute que sur localhost.
 
 ## Aide-mémoire de la ligne de commande
 

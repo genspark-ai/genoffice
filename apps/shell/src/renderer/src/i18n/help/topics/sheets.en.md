@@ -38,7 +38,7 @@ The Data tab, button by button (left to right in the picture):
 - **Remove duplicates**: drop duplicated rows by the selected columns.
 - **Data validation** (dropdown): input rules for the selection (dropdown lists, number ranges...).
 - **Consolidate**: aggregate several ranges into one place by category.
-- **What-if** (dropdown): goal seek / data tables.
+- **What-if** (dropdown): Goal Seek — solve one input cell so a formula cell lands on a target.
 - **Group / Ungroup** (dropdown): row/column groups with collapse and expand.
 - **Subtotal**: insert subtotal rows per category.
 

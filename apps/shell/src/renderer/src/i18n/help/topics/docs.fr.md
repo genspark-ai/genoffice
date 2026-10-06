@@ -17,6 +17,20 @@ Onglets : **Accueil / Insertion / Mise en page / Création / Références / Rév
 - **Révision** : vérification orthographique, commentaires, suivi des modifications (vues Toutes les marques / Marques simples), comptage des mots.
 - **Affichage** : règle, quadrillage, volet de navigation, zoom, et la boîte de dialogue de **raccourcis clavier** consultable.
 
+## Le volet de navigation
+
+**Affichage ▸ volet de navigation** ouvre un volet latéral qui contient le plan des titres du document, un champ de recherche sur l’ensemble du document et une vignette par page. S’il est ouvert ou non est mémorisé entre les lancements : un document que vous parcourez par son plan le reste navigable.
+
+**Le plan** est l’arborescence des titres. Un clic droit sur un titre du plan sert à le replier ou à le restructurer, pas seulement à naviguer :
+
+- **Réduire / Développer** sur un titre replie toute sa sous-arborescence — le chapitre disparaît, son texte reste dans le document.
+- **Tout réduire / Tout développer** replie ou déploie l’ensemble d’un seul coup. Sur un long rapport, c’est la différence entre un plan lisible et un mur de texte.
+- **Afficher les niveaux de titre** filtre l’arborescence sur les profondeurs qui vous intéressent, si bien que *Afficher le titre 1* vous laisse une table des matières que vous pouvez réellement parcourir.
+- **Promouvoir / Abaisser** changent le niveau du titre, et avec lui le niveau qu’héritent tous les titres en dessous — comme un chapitre qui devient une section.
+- **Nouveau titre avant / après** en insère un à l’emplacement du curseur, sans quitter le volet.
+- **Supprimer** retire le titre *et tout ce qu’il contient* : c’est celui-là auquel il faut faire attention, il supprime une sous-arborescence, pas une ligne.
+- **Sélectionner le titre et le contenu** sélectionne du titre jusqu’à la fin de sa sous-arborescence, prêt pour une édition de section entière.
+
 ## Menu contextuel
 
 Clic droit n’importe où dans le corps — le menu correspond à ce que vous avez cliqué. Principaux groupes :

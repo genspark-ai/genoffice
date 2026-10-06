@@ -2,9 +2,9 @@
 
 ## Provider e modelli
 
-Modelli e chiavi si configurano nelle impostazioni (il pulsante a ingranaggio su Home):
+Modelli e chiavi si configurano nelle impostazioni (la riga dell'account in basso a sinistra in Home):
 
-![La finestra Impostazioni](img/settings-integrations.png)
+![La finestra Impostazioni](img/settings-general.png)
 
 - **Genspark ospitato**: effettua l'accesso (flusso con codice dispositivo) e usalo — nessuna configurazione richiesta.
 - **Endpoint personalizzati (BYOK)**: Impostazioni ▸ IA accetta un URL di base e una chiave API per ogni protocollo — compatibile con OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) e altro. Le chiavi vivono solo nelle intestazioni delle richieste — mai su disco, nei registri o nell'ambiente dei processi figli.

@@ -17,6 +17,33 @@ Le schede: **Home / Inserisci / Layout / Progettazione / Riferimenti / Revisione
 - **Revisione**: controllo ortografico, commenti, revisioni (viste Tutte le modifiche/Revisioni semplici), conteggio delle parole.
 - **Visualizza**: righello, linee della griglia, riquadro di navigazione, zoom e la finestra di dialogo ricercabile delle **scorciatoie da tastiera**.
 
+## Il riquadro di navigazione
+
+**Visualizza ▸ Riquadro di spostamento** apre un pannello laterale che contiene la
+struttura dei titoli del documento, una casella di ricerca su tutto il documento e
+una miniatura per ogni pagina. Lo stato del pannello viene ricordato tra un avvio e
+l'altro, così un documento che consulti tramite la struttura resta navigabile.
+
+**La struttura** è l'albero dei titoli. Fai clic destro su un titolo della struttura
+per piegarlo o riorganizzarlo, non solo per spostarti:
+
+- **Comprimi / Espandi** su un titolo comprimono l'intero sottoalbero di quel titolo:
+  il capitolo scompare, il suo testo resta nel documento.
+- **Comprimi tutto / Espandi tutto** comprimono o espandono
+  tutto in un colpo solo. Su un rapporto lungo è la differenza tra una struttura
+  leggibile e un muro di testo.
+- **Mostra livelli titolo** filtra l'albero alle profondità che ti interessano, così
+  *Mostra titolo 1* ti lascia un indice che puoi davvero scorrere.
+- **Alza di livello / Abbassa di livello** cambiano il livello del titolo e, con esso,
+  il livello che ogni titolo sottostante eredita: è così che un capitolo diventa una
+  sezione.
+- **Nuovo titolo prima / dopo** ne inserisce uno nella posizione del cursore, senza
+  uscire dal pannello.
+- **Elimina** rimuove il titolo *e tutto ciò che c'è sotto*, ed è quello a cui fare
+  attenzione: elimina un sottoalbero, non una riga.
+- **Seleziona titolo e contenuto** seleziona dal titolo fino alla fine del suo
+  sottoalbero, pronto per modificare l'intera sezione.
+
 ## Menu contestuale
 
 Fai clic destro ovunque nel corpo del testo — il menu si adatta all'elemento su cui hai cliccato. I gruppi principali:

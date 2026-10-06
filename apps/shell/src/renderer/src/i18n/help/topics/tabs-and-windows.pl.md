@@ -7,7 +7,7 @@ Wszystkie otwarte pliki zajmują jedno okno; pasek kart u góry przełącza się
 ## Podstawy
 
 - **Przełącz**: kliknij kartę albo przewiń kółkiem myszy nad paskiem, aby przejść do kolejnej.
-- **Zamknij**: × na karcie albo ⌘W/ctrl+W. Przy niezapisanych zmianach najpierw zostanie zapytanie; menu wszystkich kart pozwala zamknąć naraz wszystkie pozostałe albo te po prawej.
+- **Zamknij**: × na karcie albo ⌘W/ctrl+W. Przy niezapisanych zmianach najpierw zostanie zapytanie.
 - **Nowa**: + na prawym końcu paska.
 - **Aktywacja jest natychmiastowa**: naciśnięcie karty przełącza od razu, bez czekania, aż kliknięcie się zakończy.
 
@@ -21,7 +21,7 @@ Przytrzymaj kartę i przeciągnij ją w bok, aby zmienić kolejność; sąsiedni
 
 ## Menu kontekstowe
 
-Kliknij prawym przyciskiem kartę, aby otworzyć: nowa karta, zamknij, zamknij pozostałe, zamknij po prawej, zduplikuj plik i więcej (pozycje są lokalizowane wraz z językiem aplikacji).
+Kliknij prawym przyciskiem kartę, aby otworzyć: **Otwórz w nowym oknie** — dostępne na każdej karcie dokumentu, którą można odłączyć — oraz **Zamknij**, wyszarzone na karcie, której nie można zamknąć. Obie pozycje są lokalizowane wraz z językiem aplikacji.
 
 ## Odłączenie okna
 
