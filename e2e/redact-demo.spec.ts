@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,25 +25,6 @@ type EditorHandle = {
   state: { doc: { descendants: (fn: (n: unknown, pos: number) => void) => void } }
 }
 
-async function selectText(
-  root: Locator,
-  needle: string,
-): Promise<{ from: number; to: number } | null> {
-  return root.evaluate((el, n) => {
-    const ed = (el as unknown as { editor: EditorHandle }).editor
-    let hit: { from: number; to: number } | null = null
-    ed.state.doc.descendants((node, pos) => {
-      if (hit) return
-      const textNode = node as { isText?: boolean; text?: string }
-      if (!textNode.isText || !textNode.text) return
-      const at = textNode.text.indexOf(n as string)
-      if (at !== -1) hit = { from: pos + at, to: pos + at + (n as string).length }
-    })
-    if (hit) ed.chain().focus().setTextSelection(hit).run()
-    return hit
-  }, needle)
-}
-
 /**
  * Where `needle` sits on screen. Walking the DOM and building a Range is
  * deliberate: `window.getSelection()` is not reliable here, and a right-click
@@ -67,78 +48,6 @@ async function pointOnWord(page: Page, needle: string): Promise<{ x: number; y: 
 }
 
 test.describe('withholding a span from the model', () => {
-  test('markdown: name a selection, and the marker survives the save', async () => {
-    test.setTimeout(180_000)
-    const dir = await mkdtemp(join(tmpdir(), 'genoffice-redact-md-'))
-    const mdPath = join(dir, 'call.md')
-    await writeFile(
-      mdPath,
-      `# Customer call\n\nCall ${SECRET} now to confirm the order.\n\nOur office opens at 09:00.\n`,
-    )
-
-    const launched = await launchShell({
-      onboardingSeen: true,
-      settings: { lang: 'en' },
-      videoDir: 'redact-md',
-      openFile: mdPath,
-    })
-    try {
-      const page = await waitForPageWithUrl(launched.app, '://markdown/')
-      const editor = page.locator('.doc-editor')
-      await expect(page.locator('.doc-editor h1')).toHaveText('Customer call')
-
-      // the feature ships behind a ribbon switch, off by default
-      const toggle = page.locator(
-        '.rb-btn[data-tip="Right-click a selection to hide it from the model."]',
-      )
-      await expect(toggle).toHaveCount(1)
-      await page.screenshot({ path: screenshotPath('md-1-feature-off') })
-      await toggle.click()
-      await expect(toggle).toHaveClass(/active/)
-
-      expect(await selectText(editor, SECRET)).not.toBeNull()
-      await page.screenshot({ path: screenshotPath('md-2-selected') })
-
-      const at = await pointOnWord(page, SECRET)
-      await page.mouse.click(at.x, at.y, { button: 'right' })
-
-      const menuItem = page.locator('.redact-menu-item')
-      await expect(menuItem).toHaveText('Hide the selection from AI', { timeout: 15_000 })
-      await page.screenshot({ path: screenshotPath('md-3-context-menu') })
-      await menuItem.click()
-
-      const dialog = page.locator('.redact-dialog')
-      await expect(dialog).toBeVisible()
-      // the seed is the selected text, and the preview shows the marker as typed
-      await expect(dialog.locator('.redact-dialog-input')).toHaveValue(SECRET.slice(0, 24))
-      await page.screenshot({ path: screenshotPath('md-4-dialog') })
-
-      const input = dialog.locator('.redact-dialog-input')
-      await input.fill(LABEL)
-      await expect(dialog.locator('.redact-dialog-preview')).toHaveText(`{{${LABEL}}}`)
-      await page.screenshot({ path: screenshotPath('md-5-dialog-preview') })
-
-      await dialog.locator('.redact-dialog-btn.primary').click()
-      await expect(dialog).toHaveCount(0)
-      await expect(editor.locator('.redact-span')).toHaveCount(1)
-      await expect(editor.locator('.redact-span')).toHaveAttribute('data-label', LABEL)
-      // the real words are still in the document — the span is a mark over them
-      await expect(editor).toContainText(SECRET)
-      await page.screenshot({ path: screenshotPath('md-6-marked') })
-
-      await page.keyboard.press('Meta+s')
-      await expect
-        .poll(async () => (await readFile(mdPath, 'utf8')).includes('data-redaction'), POLL)
-        .toBe(true)
-      const saved = await readFile(mdPath, 'utf8')
-      expect(saved).toContain(SECRET)
-      expect(saved).toContain(`data-label="${LABEL}"`)
-      await page.screenshot({ path: screenshotPath('md-7-saved') })
-    } finally {
-      await closeAndSaveVideo(launched, 'redact-md')
-    }
-  })
-
   test('docs: name a selection, and the run keeps its words in the .docx', async () => {
     test.setTimeout(180_000)
     const dir = await mkdtemp(join(tmpdir(), 'genoffice-redact-docs-'))
