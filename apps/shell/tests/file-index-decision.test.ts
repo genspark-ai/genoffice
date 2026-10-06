@@ -90,10 +90,26 @@ describe('prepare', () => {
       'pplx-decider-v1-27b',
     )
     expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'kev' })).body).model).toBe('kev-latest')
+    expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'rizzo' })).body).model).toBe(
+      'rizzo-latest',
+    )
+    // Workers AI wants the bare id in the body, not the "@cf/..." URL path
     expect(
       JSON.parse(prepare('q', docs, opts({ endpoint: 'cloudflare', cloudflareModel: '' })).body)
         .model,
-    ).toBe('@cf/cloudflare/clef')
+    ).toBe('clef')
+    expect(
+      JSON.parse(
+        prepare(
+          'q',
+          docs,
+          opts({ endpoint: 'cloudflare', cloudflareModel: '@cf/cloudflare/clef-flash' }),
+        ).body,
+      ).model,
+    ).toBe('clef-flash')
+    expect(() =>
+      prepare('q', docs, opts({ endpoint: 'cloudflare', cloudflareModel: '@cf/other/model' })),
+    ).toThrow('unsupported-model')
     expect(
       JSON.parse(prepare('q', docs, opts({ endpoint: 'custom', customModel: 'von-1.0' })).body)
         .model,
@@ -122,9 +138,32 @@ describe('endpointUrl', () => {
     expect(() => endpointUrl(opts({ endpoint: 'cloudflare' }))).toThrow('missing-account')
     expect(() => endpointUrl(opts({ endpoint: 'custom' }))).toThrow('missing-url')
     expect(
-      endpointUrl(opts({ endpoint: 'custom', customBaseUrl: ' http://x/v1/systemone ' })),
-    ).toBe('http://x/v1/systemone')
+      endpointUrl(opts({ endpoint: 'custom', customBaseUrl: ' https://x/v1/systemone ' })),
+    ).toBe('https://x/v1/systemone')
     expect(endpointUrl(opts({ endpoint: 'rizzo' }))).toBe('http://127.0.0.1:8017/v1/systemone')
+    expect(() => endpointUrl(opts({ endpoint: 'custom', customBaseUrl: 'nonsense' }))).toThrow(
+      'bad-url',
+    )
+  })
+
+  it('sends local excerpts only over https or a loopback host', () => {
+    for (const base of [
+      'https://decider.example/v1/systemone',
+      'http://127.0.0.1:8009/v1/systemone',
+      'http://localhost:8010/v1/systemone',
+      'http://[::1]:8010/v1/systemone',
+    ]) {
+      expect(endpointUrl(opts({ endpoint: 'custom', customBaseUrl: base }))).toBe(base)
+    }
+    for (const base of [
+      'http://decider.example/v1/systemone',
+      'ftp://127.0.0.1/v1/systemone',
+      'http://10.0.0.5:8009/v1/systemone',
+    ]) {
+      expect(() => endpointUrl(opts({ endpoint: 'custom', customBaseUrl: base }))).toThrow(
+        'insecure-url',
+      )
+    }
   })
 })
 
@@ -333,7 +372,7 @@ describe('probeDecision', () => {
         normalizeFileSearchSettings({ endpoint: 'direct', keys: { direct: 'k' } }),
         ok(answer([2, 0], 'other')),
       ),
-    ).toEqual({ ok: false, error: 'model-mismatch' })
+    ).toEqual({ ok: false, error: 'The endpoint answered with a different model' })
     let sent = 0
     const spy: JevTransport = async () => {
       sent++
@@ -352,5 +391,35 @@ describe('probeDecision', () => {
     expect(
       await probeDecision(normalizeFileSearchSettings({ endpoint: 'kev' }), ok(answer([2, 0]))),
     ).toEqual({ ok: true })
+  })
+
+  it('reports the misconfiguration codes as sentences, never raw', async () => {
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ endpoint: 'custom' }, 'Enter the server URL'],
+      [
+        { endpoint: 'custom', customBaseUrl: 'http://example.test/v1/systemone' },
+        'Server URL must be https:// (http:// only for this machine)',
+      ],
+      [
+        { endpoint: 'custom', customBaseUrl: 'not a url' },
+        'Server URL is not a valid address',
+      ],
+      [{ endpoint: 'cloudflare', keys: { cloudflare: 'k' } }, 'Enter the Cloudflare account ID'],
+      [
+        {
+          endpoint: 'cloudflare',
+          keys: { cloudflare: 'k' },
+          cloudflareAccountId: 'a',
+          cloudflareModel: '@cf/other/model',
+        },
+        'Cloudflare only serves clef and clef-flash',
+      ],
+    ]
+    for (const [raw, error] of cases) {
+      expect(await probeDecision(normalizeFileSearchSettings(raw), ok(answer([2, 0])))).toEqual({
+        ok: false,
+        error,
+      })
+    }
   })
 })

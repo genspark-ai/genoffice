@@ -1411,7 +1411,7 @@ export function Home() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchPage, setSearchPage] = useState<FileSearchPage | null>(null)
   const [rerank, setRerank] = useState<{ key: string; result: FileSearchRerank } | null>(null)
-  // bumped when the decision-model settings change so the current results are judged again (or the order dropped)
+  // bumped when the Jev settings change so the current results are judged again (or the order dropped)
   const [rerankSettingsTick, setRerankSettingsTick] = useState(0)
   const [settingsRequest, setSettingsRequest] = useState<SettingsTarget | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -1630,7 +1630,7 @@ export function Home() {
     return () => window.clearTimeout(timer)
   }, [q, filter])
 
-  // a decision model judges the top local hits once they settle; the main process answers null when reranking is off.
+  // Jev judges the top local hits once they settle; the main process answers null when reranking is off.
   // The key changes only with the query, filter or candidate set, so index polls do not restart the timer.
   const rerankKey =
     q && searchPage && searchPage.hits.length >= 2
@@ -2831,8 +2831,8 @@ export function Home() {
   const renderSearchSettingsButton = () => (
     <button
       className="file-search-settings"
-      title={t('searchDecisionSettings')}
-      aria-label={t('searchDecisionSettings')}
+      title={t('searchJevSettings')}
+      aria-label={t('searchJevSettings')}
       onClick={() => setSettingsRequest({ section: 'aiMedia', block: 'rerank' })}
     >
       <svg
@@ -2956,7 +2956,7 @@ export function Home() {
 
   const rerankApplied = rerank && rerank.key === rerankKey ? rerank.result : null
 
-  /** judged hits in the decision model's order, then the rest in local order */
+  /** judged hits in Jev's order, then the rest in local order */
   const orderedSearchHits = (hits: readonly FileSearchHit[]): FileSearchHit[] => {
     if (!rerankApplied) return [...hits]
     const rank = new Map(rerankApplied.order.map((path, i) => [path, i]))

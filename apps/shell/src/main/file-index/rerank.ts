@@ -163,6 +163,23 @@ const PROBE_DOCS = [
   { title: 'b.md', heading: '', text: 'An unrelated note.' },
 ]
 
+/** what the settings UI shows for each failure the decision client can report */
+const PROBE_ERRORS: Record<string, string> = {
+  'missing-key': 'Enter an API key',
+  'missing-url': 'Enter the server URL',
+  'missing-account': 'Enter the Cloudflare account ID',
+  'bad-url': 'Server URL is not a valid address',
+  'insecure-url': 'Server URL must be https:// (http:// only for this machine)',
+  'unsupported-model': 'Cloudflare only serves clef and clef-flash',
+  'empty-request': 'Nothing to judge',
+  'rate-limit': 'Rate limited — try again shortly',
+  'response-too-large': 'The reply was too large',
+  'invalid-response': 'The endpoint returned an unexpected reply',
+  'model-mismatch': 'The endpoint answered with a different model',
+  'provider-warning': 'The provider reported a warning',
+  cancelled: 'The call timed out',
+}
+
 /** the settings-UI connection test: one two-document judgement against the given settings */
 export async function probeDecision(
   settings: FileSearchSettings,
@@ -170,13 +187,13 @@ export async function probeDecision(
 ): Promise<{ ok: boolean; error?: string }> {
   const opts = callOptions(settings)
   if (!isLocalEndpoint(settings.endpoint) && !opts.key.trim())
-    return { ok: false, error: 'Enter an API key' }
+    return { ok: false, error: PROBE_ERRORS['missing-key'] }
   try {
     await evaluate('connection test', PROBE_DOCS, opts, send)
     return { ok: true }
   } catch (e) {
     const code = e instanceof Error ? e.message : String(e)
     const http = /^http-(\d+)$/.exec(code)
-    return { ok: false, error: http ? `HTTP ${http[1]}` : code }
+    return { ok: false, error: PROBE_ERRORS[code] ?? (http ? `HTTP ${http[1]}` : code) }
   }
 }

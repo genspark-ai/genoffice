@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { launchShell, closeAndSaveVideo, screenshotPath } from './helpers'
 
-test('Decision model reranking lives in the AI Media & Search pane, saves with it, and reports its own test verdict', async () => {
+test('Jev reranking lives in the AI Media & Search pane, saves with it, and reports its own test verdict', async () => {
   // the star prompt card sits over the pane footer on a small window
   const launched = await launchShell({
     onboardingSeen: true,
@@ -14,19 +14,17 @@ test('Decision model reranking lives in the AI Media & Search pane, saves with i
   try {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await page.locator('.set-nav-item').filter({ hasText: 'General' }).click()
-    await expect(page.getByRole('switch', { name: 'Decision model search reranking' })).toHaveCount(
-      0,
-    )
+    await expect(page.getByRole('switch', { name: 'Jev search reranking' })).toHaveCount(0)
 
     await page.locator('.set-nav-item').filter({ hasText: 'AI Media & Search' }).click()
     const block = page.locator('section', {
       has: page.locator('.set-pane-subtitle', { hasText: 'Local file search' }),
     })
-    const toggle = block.getByRole('switch', { name: 'Decision model search reranking' })
+    const toggle = block.getByRole('switch', { name: 'Jev search reranking' })
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
     await toggle.click()
-    await block.getByRole('button', { name: 'Decision model endpoint', exact: true }).click()
-    await page.getByRole('option', { name: 'TypeSafe', exact: true }).click()
+    await block.getByRole('button', { name: 'Jev endpoint', exact: true }).click()
+    await page.getByRole('option', { name: 'Jev (TypeSafe API)', exact: true }).click()
 
     // the block reports its own verdict: no key entered, nothing leaves the machine
     await page.getByRole('button', { name: 'Test connection', exact: true }).click()
@@ -38,7 +36,7 @@ test('Decision model reranking lives in the AI Media & Search pane, saves with i
     )
     await page.screenshot({ path: screenshotPath('settings-media-search-test') })
 
-    await block.locator('#set-search-decision-key').fill('ts-key')
+    await block.locator('#set-search-jev-key').fill('ts-key')
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.locator('.set-pane-actions .set-ai-status.ok')).toHaveText('Saved')
     await expect

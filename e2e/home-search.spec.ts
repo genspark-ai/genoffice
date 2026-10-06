@@ -108,7 +108,7 @@ test.describe('home file search', () => {
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+f' : 'Control+f')
       await expect(box).toBeFocused()
 
-      // the sort button beside the search box lands on the decision-model reranking block of Settings
+      // the sort button beside the search box lands on the Jev reranking block of Settings
       await page.locator('.file-search-group .file-search-settings').click()
       await expect(page.locator('.set-nav-item.active')).toHaveText('AI Media & Search')
       await expect(

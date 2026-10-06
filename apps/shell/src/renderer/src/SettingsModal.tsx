@@ -660,9 +660,10 @@ export interface SettingsTarget {
 }
 type TestResult = { ok: boolean; error?: string }
 
+/** Jev routes first (OpenRouter is the default), then the other decision-model servers */
 const DECISION_ENDPOINTS: { value: DecisionEndpoint; label: string }[] = [
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'direct', label: 'TypeSafe' },
+  { value: 'openrouter', label: 'Jev (TypeSafe)' },
+  { value: 'direct', label: 'Jev (TypeSafe API)' },
   { value: 'perplexity', label: 'Perplexity' },
   { value: 'cloudflare', label: 'Cloudflare' },
   { value: 'kev', label: 'Kev (local)' },
@@ -1169,7 +1170,7 @@ function AiMediaPane({
                 />
               </div>
               {keyRow(
-                'set-search-decision-key',
+                'set-search-jev-key',
                 fileSearch.keys[fileSearch.endpoint],
                 fileSearch.endpoint === 'openrouter' ? 'sk-or-…' : 'API Key',
                 (v) =>
@@ -1181,14 +1182,14 @@ function AiMediaPane({
               {fileSearch.endpoint === 'custom' && (
                 <>
                   {textRow(
-                    'set-search-decision-url',
+                    'set-search-jev-url',
                     'setSearchRerankCustomUrl',
                     fileSearch.customBaseUrl,
                     'http://127.0.0.1:8009/v1/systemone',
                     (v) => setFileSearch({ ...fileSearch, customBaseUrl: v }),
                   )}
                   {textRow(
-                    'set-search-decision-model',
+                    'set-search-jev-model',
                     'setSearchRerankCustomModel',
                     fileSearch.customModel,
                     'kev-latest',
@@ -1199,14 +1200,14 @@ function AiMediaPane({
               {fileSearch.endpoint === 'cloudflare' && (
                 <>
                   {textRow(
-                    'set-search-decision-account',
+                    'set-search-jev-account',
                     'setSearchRerankAccount',
                     fileSearch.cloudflareAccountId,
                     '',
                     (v) => setFileSearch({ ...fileSearch, cloudflareAccountId: v }),
                   )}
                   {textRow(
-                    'set-search-decision-cf-model',
+                    'set-search-jev-cf-model',
                     'setSearchRerankCustomModel',
                     fileSearch.cloudflareModel,
                     '@cf/cloudflare/clef',

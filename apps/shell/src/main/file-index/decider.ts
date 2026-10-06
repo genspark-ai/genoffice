@@ -44,8 +44,13 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
   perplexity: { url: 'https://api.perplexity.ai/v1/decisions', model: 'pplx-decider-v1-27b' },
   cloudflare: { url: '', model: '@cf/cloudflare/clef' },
   kev: { url: KEV_URL, model: 'kev-latest', local: true },
-  rizzo: { url: RIZZO_URL, model: 'rizzo', local: true },
+  rizzo: { url: RIZZO_URL, model: 'rizzo-latest', local: true },
 }
+
+/** Workers AI takes the model in the URL path but only `clef` / `clef-flash` in the body. */
+const CLOUDFLARE_BODY_MODEL = /^(clef|clef-flash)$/
+/** a custom base URL may only be https, or http on this machine: the body carries local file text */
+const LOOPBACK_HOST = /^(127\.\d+\.\d+\.\d+|\[?::1\]?|localhost)(:\d+)?$/i
 
 /** Endpoints whose server runs on this machine and needs no API key. */
 export function isLocalEndpoint(endpoint: DecisionEndpoint): boolean {
@@ -57,7 +62,7 @@ export function endpointUrl(opts: DecisionCallOptions): string {
   if (opts.endpoint === 'custom') {
     const base = opts.customBaseUrl.trim()
     if (!base) throw new Error('missing-url')
-    return base
+    return assertCustomUrl(base)
   }
   if (opts.endpoint === 'cloudflare') {
     const account = opts.cloudflareAccountId.trim()
@@ -70,11 +75,31 @@ export function endpointUrl(opts: DecisionCallOptions): string {
   return ENDPOINTS[opts.endpoint].url
 }
 
+/**
+ * Rejects a custom base URL that is not https, or http on this machine: the
+ * request carries up to 20 local excerpts and should not cross a plain channel.
+ */
+function assertCustomUrl(base: string): string {
+  let u: URL
+  try {
+    u = new URL(base)
+  } catch {
+    throw new Error('bad-url')
+  }
+  if (u.protocol === 'https:') return base
+  if (u.protocol === 'http:' && LOOPBACK_HOST.test(u.host)) return base
+  throw new Error('insecure-url')
+}
+
 /** Model id sent in the request body; mirroring servers may ignore it. */
 function bodyModel(opts: DecisionCallOptions): string {
   if (opts.endpoint === 'custom') return opts.customModel.trim() || 'decision'
-  if (opts.endpoint === 'cloudflare')
-    return opts.cloudflareModel.trim() || ENDPOINTS.cloudflare.model
+  if (opts.endpoint === 'cloudflare') {
+    // the URL keeps "@cf/cloudflare/clef"; the body wants the bare id
+    const id = (opts.cloudflareModel.trim() || ENDPOINTS.cloudflare.model).split('/').pop() ?? ''
+    if (!CLOUDFLARE_BODY_MODEL.test(id)) throw new Error('unsupported-model')
+    return id
+  }
   return ENDPOINTS[opts.endpoint].model
 }
 
