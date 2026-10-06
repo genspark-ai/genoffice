@@ -162,7 +162,9 @@ test('a reader can withhold a picture from the model without losing it', async (
     const z = await JSZip.loadAsync(await readFile(pptx))
     const xml = await z.file('ppt/slides/slide1.xml')!.async('string')
     expect(xml).toContain('go:redact')
-    expect(xml).toContain(`w:label="${LABEL}"`)
+    // unprefixed: `w` is WordprocessingML and is unbound inside a DrawingML
+    // part, so a `w:label` here is what made PowerPoint offer to repair the file
+    expect(xml).toContain(`<go:redact label="${LABEL}"/>`)
     // the picture's own bytes are untouched — nothing was removed
     expect(xml).toContain('r:embed="rId2"')
     expect(await z.file('ppt/media/image1.png')!.async('nodebuffer')).toEqual(PNG)
