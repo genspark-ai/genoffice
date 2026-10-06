@@ -21,6 +21,9 @@
 
 import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
 
+import { parseAddressParts } from '../formula-values'
+import type { CellScalar } from '@genoffice/xlsx-gateway/domain/workbook.types'
+
 export const MAX_LABEL_LENGTH = 40
 
 const OPEN = '{{'
@@ -83,6 +86,45 @@ const EMPTY_INDEX: RedactionIndex = {
   labelsFor: () => [],
   marksFor: () => [],
   sheetIds: [],
+}
+
+/**
+ * A cell's value as the model may read it.
+ *
+ * The index is the filter, and this is where a reader goes through it. A cell
+ * the reader withheld keeps its real value on the sheet — the point of the
+ * feature is that their data survives — so any reader that formats a value for
+ * the model has to ask, and forgetting to ask is indistinguishable from never
+ * having withheld anything.
+ */
+export function modelCellValue(
+  index: RedactionIndex,
+  sheetId: string,
+  row: number,
+  column: number,
+  value: CellScalar,
+): CellScalar {
+  const label = index.labelAt(sheetId, row, column)
+  return label === null ? value : placeholderSource(label)
+}
+
+/**
+ * The same, from an A1 address, with the sheet the reader is on.
+ *
+ * Most readers only ever hold an address string, and re-deriving the row and
+ * column at each call site is where a second parser — and a second set of
+ * edges — comes from.
+ */
+export function modelCellValueAt(
+  index: RedactionIndex,
+  sheetId: string | undefined,
+  address: string,
+  value: CellScalar,
+): CellScalar {
+  if (!sheetId || index.isEmpty) return value
+  const at = parseAddressParts(address)
+  if (!at) return value
+  return modelCellValue(index, sheetId, at.row, at.column, value)
 }
 
 /**

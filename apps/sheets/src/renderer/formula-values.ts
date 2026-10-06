@@ -213,8 +213,13 @@ export function verifiedFormulaValues(
   return out
 }
 
-/** `A1` -> zero-based row/column, matching the save path's coordinates */
-function parseAddressParts(address: string): { row: number; column: number } | null {
+/**
+ * `A1` -> zero-based row/column, matching the save path's coordinates.
+ *
+ * Exported because a reader that has to ask the redaction index about a cell
+ * only has its address, and a second parser would be a second set of edges.
+ */
+export function parseAddressParts(address: string): { row: number; column: number } | null {
   const match = /^([A-Z]+)(\d+)$/.exec(address.toUpperCase())
   if (!match) return null
   const letters = match[1]!
