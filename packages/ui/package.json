@@ -36,6 +36,6 @@
   "dependencies": {
     "@genoffice/i18n": "*",
     "@genoffice/pptx-render": "*",
-    "@genoffice/agent-core": "workspace:*"
+    "@genoffice/agent-core": "*"
   }
 }
