@@ -61,7 +61,7 @@ function selectText(editor: Editor, needle: string) {
 async function marked(): Promise<Editor> {
   const editor = await open(`Call ${SECRET} now`)
   selectText(editor, SECRET)
-  editor.commands.setRedaction('客户电话')
+  editor.commands.setRedaction('client phone')
   return editor
 }
 
@@ -115,7 +115,7 @@ describe('the write guard on model output', () => {
     // literal braces that mean nothing to anyone. Only a range check sees it.
     const editor = await marked()
     const before = editor.state.doc.textContent
-    const out = executeOps(editor, replaceOps(SECRET, '{{客户电话}}'))
+    const out = executeOps(editor, replaceOps(SECRET, '{{client phone}}'))
     expect(out.ok, out.error).toBe(false)
     expect(editor.state.doc.textContent).toBe(before)
   })
@@ -133,7 +133,7 @@ describe('the write guard on model output', () => {
 
   it('refuses a batch that mangles the marker with a space', async () => {
     const editor = await marked()
-    const out = executeOps(editor, replaceOps('now', '{{客户 电话}} today'))
+    const out = executeOps(editor, replaceOps('now', '{{client phone}} today'))
     expect(out.ok).toBe(false)
     expect(out.error).toMatch(/placeholder/i)
   })
@@ -141,14 +141,14 @@ describe('the write guard on model output', () => {
   it('leaves the document untouched after a refusal', async () => {
     const editor = await marked()
     const before = editor.state.doc.textContent
-    const out = executeOps(editor, replaceOps('now', '{{客户 电话}} today'))
+    const out = executeOps(editor, replaceOps('now', '{{client phone}} today'))
     expect(out.ok).toBe(false)
     expect(editor.state.doc.textContent).toBe(before)
   })
 
   it('does not guard a document with no spans', async () => {
     const editor = await open('nothing secret here')
-    const out = executeOps(editor, replaceOps('now', '{{客户 电话}} today'))
+    const out = executeOps(editor, replaceOps('now', '{{client phone}} today'))
     expect(out.ok, out.error).toBe(true)
   })
 
@@ -172,7 +172,7 @@ describe('the write guard on model output', () => {
     // everywhere the model is shown the whole block.
     const editor = await open(`Call {{name}} about ${SECRET}`)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const before = editor.state.doc.textContent
     const out = executeOps(editor, replaceOps('{{name}}', 'Ada'))
     expect(out.ok).toBe(false)
@@ -192,9 +192,9 @@ describe('the write guard on model output', () => {
     // three different ways to wreck a marker, one refusal. a marker that was
     // never there, a span overwritten, a marker broken in half
     const damages: Array<[string, string]> = [
-      ['now', 'Call {{客户 电话}}'],
+      ['now', 'Call {{client phone}}'],
       [SECRET, 'the number'],
-      ['now', '{{客}户{{电}话}'],
+      ['now', '{{cli}ent{{pho}ne}'],
     ]
     for (const [find, replace] of damages) {
       const editor = await marked()

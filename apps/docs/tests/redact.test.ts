@@ -32,19 +32,21 @@ const doc = (content: RedactableNode[]): RedactableNode => ({ type: 'doc', conte
 describe('modelTextOf — what the model is handed', () => {
   it('writes the marker where the withheld words were', () => {
     expect(
-      modelTextOf(doc([para([text('请拨打 '), marked(SECRET, '客户电话'), text(' 确认')])])),
-    ).toBe('请拨打 {{客户电话}} 确认')
+      modelTextOf(
+        doc([para([text('please call '), marked(SECRET, 'client phone'), text(' to confirm')])]),
+      ),
+    ).toBe('please call {{client phone}} to confirm')
   })
 
   it('recognises a mark whose type was serialised as an object', () => {
     // a strict `=== 'redaction'` silently matches nothing and the span leaks
-    const out = modelTextOf(doc([para([markedAsObject(SECRET, '电话')])]))
-    expect(out).toBe('{{电话}}')
+    const out = modelTextOf(doc([para([markedAsObject(SECRET, 'phone')])]))
+    expect(out).toBe('{{phone}}')
     expect(out).not.toContain(SECRET)
   })
 
   it('never contains a withheld secret', () => {
-    const out = modelTextOf(doc([para([text('凭 '), marked('310101199001011234', '证件号')])]))
+    const out = modelTextOf(doc([para([text('see '), marked('310101199001011234', 'ID number')])]))
     expect(out).not.toContain('310101199001011234')
   })
 
@@ -72,23 +74,23 @@ describe('modelTextOf — what the model is handed', () => {
     const tree = doc([
       {
         type: 'bulletList',
-        content: [{ type: 'listItem', content: [para([marked('a1', '甲')])] }],
+        content: [{ type: 'listItem', content: [para([marked('a1', 'A')])] }],
       },
-      { type: 'blockquote', content: [para([marked('a2', '乙')])] },
+      { type: 'blockquote', content: [para([marked('a2', 'B')])] },
       {
         type: 'table',
         content: [
           {
             type: 'tableRow',
-            content: [{ type: 'tableCell', content: [para([marked('a3', '丙')])] }],
+            content: [{ type: 'tableCell', content: [para([marked('a3', 'C')])] }],
           },
         ],
       },
     ])
     const out = modelTextOf(tree)
-    expect(out).toContain('{{甲}}')
-    expect(out).toContain('{{乙}}')
-    expect(out).toContain('{{丙}}')
+    expect(out).toContain('{{A}}')
+    expect(out).toContain('{{B}}')
+    expect(out).toContain('{{C}}')
     expect(out).not.toContain('a1')
   })
 
@@ -100,10 +102,10 @@ describe('modelTextOf — what the model is handed', () => {
   it('keeps a bold that the reader put inside the span', () => {
     const out = modelTextOf(
       doc([
-        para([text(SECRET, [{ type: 'redaction', attrs: { label: '电话' } }, { type: 'bold' }])]),
+        para([text(SECRET, [{ type: 'redaction', attrs: { label: 'phone' } }, { type: 'bold' }])]),
       ]),
     )
-    expect(out).toContain('{{电话}}')
+    expect(out).toContain('{{phone}}')
   })
 })
 
@@ -112,10 +114,10 @@ describe('withheld pictures', () => {
     const pic: RedactableNode = {
       type: 'docInlineImage',
       attrs: { src: 'assets/id-front.png', dataUrl: 'data:image/png;base64,AAAA' },
-      marks: [{ type: 'redaction', attrs: { label: '证件照' } }],
+      marks: [{ type: 'redaction', attrs: { label: 'ID photo' } }],
     }
-    const out = modelTextOf(doc([para([text('附上 '), pic])]))
-    expect(out).toContain('{{证件照}}')
+    const out = modelTextOf(doc([para([text('attach '), pic])]))
+    expect(out).toContain('{{ID photo}}')
     expect(out).not.toContain('id-front.png')
     expect(out).not.toContain('base64')
   })
@@ -129,8 +131,8 @@ describe('withheld pictures', () => {
 
 describe('redactNode — the node-level view', () => {
   it('replaces a withheld text run with a plain marked-free text node', () => {
-    const out = redactNode(doc([para([text('A '), marked(SECRET, '电话'), text(' B')])]))
-    expect(JSON.stringify(out)).toContain('{{电话}}')
+    const out = redactNode(doc([para([text('A '), marked(SECRET, 'phone'), text(' B')])]))
+    expect(JSON.stringify(out)).toContain('{{phone}}')
     expect(JSON.stringify(out)).not.toContain(SECRET)
   })
 
@@ -138,7 +140,7 @@ describe('redactNode — the node-level view', () => {
     const pic: RedactableNode = {
       type: 'docInlineImage',
       attrs: { src: 'secret.png' },
-      marks: [{ type: 'redaction', attrs: { label: '证件照' } }],
+      marks: [{ type: 'redaction', attrs: { label: 'ID photo' } }],
     }
     const out = redactNode(doc([para([pic])]))
     const flat = JSON.stringify(out)
@@ -147,7 +149,7 @@ describe('redactNode — the node-level view', () => {
   })
 
   it('does not mutate what it was given', () => {
-    const source = doc([para([marked(SECRET, '电话')])])
+    const source = doc([para([marked(SECRET, 'phone')])])
     const before = JSON.stringify(source)
     redactNode(source)
     expect(JSON.stringify(source)).toBe(before)
@@ -156,9 +158,9 @@ describe('redactNode — the node-level view', () => {
 
 describe('redactLabelsOf / redactionCount', () => {
   it('lists one label per span, in order', () => {
-    expect(redactLabelsOf(doc([para([marked('a', '电话'), marked('b', '地址')])]))).toEqual([
-      '电话',
-      '地址',
+    expect(redactLabelsOf(doc([para([marked('a', 'phone'), marked('b', 'address')])]))).toEqual([
+      'phone',
+      'address',
     ])
   })
 
@@ -169,14 +171,16 @@ describe('redactLabelsOf / redactionCount', () => {
 })
 
 describe('the write guard', () => {
-  const before = '请拨打 {{客户电话}} 确认订单'
+  const before = 'call {{client phone}} to confirm the order'
 
   it('accepts a reply that keeps every marker', () => {
-    expect(checkPlaceholders(before, '请在今天之前拨打 {{客户电话}} 以确认订单。')).toEqual([])
+    expect(
+      checkPlaceholders(before, 'please call {{client phone}} before the end of today.'),
+    ).toEqual([])
   })
 
   it('rejects a split across a line break', () => {
-    expect(checkPlaceholders(before, '请拨打 {{客户\n电话}} 确认').length).toBeGreaterThan(0)
+    expect(checkPlaceholders(before, 'call {{client\nphone}} to confirm').length).toBeGreaterThan(0)
   })
 
   it('rejects an interleaving, which an atom could never have prevented', () => {
@@ -224,17 +228,17 @@ describe('labels', () => {
   it('recognises a whole marker but not partial text', () => {
     expect(isWholePlaceholder('{{a}}')).toBe(true)
     expect(isWholePlaceholder('call {{a}}')).toBe(false)
-    expect(readPlaceholderLabel('{{客户电话}}')).toBe('客户电话')
+    expect(readPlaceholderLabel('{{client phone}}')).toBe('client phone')
     expect(readPlaceholderLabel('call {{a}}')).toBeNull()
   })
 })
 
 describe('the model instruction', () => {
   it('lists each marker this document has, once', () => {
-    const text2 = placeholderInstruction(['电话', '地址', '电话'])
-    expect(text2).toContain('- {{电话}}')
-    expect(text2).toContain('- {{地址}}')
-    expect(text2.split('\n').filter((l) => l === '- {{电话}}')).toHaveLength(1)
+    const text2 = placeholderInstruction(['phone', 'address', 'phone'])
+    expect(text2).toContain('- {{phone}}')
+    expect(text2).toContain('- {{address}}')
+    expect(text2.split('\n').filter((l) => l === '- {{phone}}')).toHaveLength(1)
   })
 
   it('forbids each way a marker gets damaged', () => {
@@ -248,6 +252,16 @@ describe('the model instruction', () => {
 
   it('says a placeholder may stand in for a picture', () => {
     expect(placeholderInstruction(['a'])).toMatch(/picture/i)
+  })
+
+  it('keeps its own wording, worked example included, in a Latin script', () => {
+    // The reader's labels may be in any script, but this instruction ships to
+    // every model in every language, and a worked example written in one
+    // script teaches that script's conventions rather than the rule. With no
+    // labels passed, every character in here is ours to keep Latin.
+    const text = placeholderInstruction([])
+    expect(text).not.toMatch(/\p{Script=Han}/u)
+    expect(text).toContain('call {{client phone}}')
   })
 })
 
