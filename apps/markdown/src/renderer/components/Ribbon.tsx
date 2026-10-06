@@ -534,6 +534,7 @@ export function Ribbon({
                 <IconHr size={ICON} />
               </IconBtn>
             </div>
+          </div>
         )}
 
         <div className="rb-spacer" />
