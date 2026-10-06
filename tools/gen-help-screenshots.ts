@@ -154,11 +154,11 @@ async function launch(scratch: Scratch, lang: string): Promise<ElectronApplicati
  * setViewportSize alone is CSS pixels, and a half-resolution figure goes soft
  * on every retina display the manual is read on.
  */
-async function frame(page: Page): Promise<CDPSession> {
-  await page.setViewportSize({ width: 1360, height: 850 })
+async function frame(page: Page, width = 1360): Promise<CDPSession> {
+  await page.setViewportSize({ width, height: 850 })
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 1360,
+    width,
     height: 850,
     deviceScaleFactor: 2,
     mobile: false,
@@ -310,10 +310,13 @@ async function main(): Promise<void> {
         .locator('[data-ribbon-body]')
         .first()
         .waitFor({ state: 'visible', timeout: 45_000 })
+      // Resize before measuring: the clip box has to be the band *after* the
+      // viewport change, and at 1360 the ribbon runs past the right edge and
+      // the capture ends mid-word on 'Find/Replace'.
+      const slidesCdp = await frame(slides, 1680)
       const band = await slides.locator('[data-ribbon-body]').first().boundingBox()
       if (!band || band.width < 200)
         throw new Error(`ribbon band not measurable: ${JSON.stringify(band)}`)
-      const slidesCdp = await frame(slides)
       await writeFileSync(
         join(OUT_DIR, `fonts.${lang}.png`),
         await capture(slides, slidesCdp, {
