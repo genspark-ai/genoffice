@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
+import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import App from './App'
 import { PresentView } from './PresentView'
 import { LocaleProvider } from './i18n/locale'
@@ -18,11 +18,6 @@ import './styles.css'
 
 installScreenTips()
 
-/** Right-to-left UI for the RTL languages; `lang` is the resolved UI language */
-function applyHtmlDir(lang: string): void {
-  document.documentElement.dir = isRtlLang(lang) ? 'rtl' : 'ltr'
-}
-
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')
   else document.documentElement.setAttribute('data-theme', theme)
@@ -34,7 +29,7 @@ void (async () => {
     window.htmlApi.getTheme().catch(() => 'system' as const),
   ])
   document.documentElement.lang = htmlLang(lang as Lang)
-  applyHtmlDir(lang)
+  document.documentElement.dir = htmlDir(lang)
   applyTheme(theme)
   window.htmlApi.onThemeChanged(applyTheme)
   await window.htmlApi

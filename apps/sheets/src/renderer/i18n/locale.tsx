@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createI18n, htmlLang, isRtlLang, type Lang, type Params } from '@genoffice/i18n'
+import { createI18n, htmlDir, htmlLang, type Lang, type Params } from '@genoffice/i18n'
 import { strings } from './strings'
 
 const translate = createI18n(strings)
@@ -81,7 +81,7 @@ export function LocaleProvider({ initial, children }: { initial: Lang; children:
       window.desktopApi.onLanguageChanged((next) => {
         setModuleLang(next)
         document.documentElement.lang = htmlLang(next)
-        document.documentElement.dir = isRtlLang(next) ? 'rtl' : 'ltr'
+        document.documentElement.dir = htmlDir(next)
         setLang(next)
       }),
     [],

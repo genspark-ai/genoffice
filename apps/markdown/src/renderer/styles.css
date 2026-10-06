@@ -182,12 +182,7 @@ button {
   font-size: 14px;
 }
 
-/*
- * The document surface stays left-to-right whatever the UI language is: an
- * Arabic or Hebrew UI mirrors the chrome, but re-authoring the reader's
- * document is not ours to do. Konva and Univer draw with ctx.direction set to
- * inherit, so this also keeps the canvas grids running left-to-right.
- */
+/* the preview stays ltr under an RTL UI — the chrome mirrors, the content does not */
 
 .editor-scroll {
   direction: ltr;

@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
+import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import App from './App'
 import { LocaleProvider } from './i18n/locale'
 import type { DocTheme, UiTheme } from '../shared/ipc'
@@ -17,11 +17,6 @@ import './styles.css'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
 
 installScreenTips()
-
-/** Right-to-left UI for the RTL languages; `lang` is the resolved UI language */
-function applyHtmlDir(lang: string): void {
-  document.documentElement.dir = isRtlLang(lang) ? 'rtl' : 'ltr'
-}
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')
@@ -41,7 +36,7 @@ void (async () => {
     window.markdownApi.getDocumentTheme?.().catch(() => 'follow' as const),
   ])
   document.documentElement.lang = htmlLang(lang as Lang)
-  applyHtmlDir(lang)
+  document.documentElement.dir = htmlDir(lang)
   applyTheme(theme)
   applyDocumentTheme(docTheme ?? 'follow')
   window.markdownApi.onThemeChanged(applyTheme)

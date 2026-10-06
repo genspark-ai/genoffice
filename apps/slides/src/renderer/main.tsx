@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
+import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import { App } from './App'
 import { AudienceView } from './components/AudienceView'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
@@ -33,11 +33,6 @@ const mode = new URLSearchParams(window.location.search).get('mode')
 if (mode !== 'audience' && navigator.platform.toLowerCase().includes('mac'))
   document.body.classList.add('vib')
 
-/** Right-to-left UI for the RTL languages; `lang` is the resolved UI language */
-function applyHtmlDir(lang: string): void {
-  document.documentElement.dir = isRtlLang(lang) ? 'rtl' : 'ltr'
-}
-
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')
   else document.documentElement.setAttribute('data-theme', theme)
@@ -58,7 +53,7 @@ async function bootstrap(): Promise<void> {
   }
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
-  applyHtmlDir(lang)
+  document.documentElement.dir = htmlDir(lang)
   // the audience show window renders slide content only — it never themes
   if (mode !== 'audience') {
     applyTheme(theme)

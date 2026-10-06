@@ -103,6 +103,12 @@ export function isRtlLang(lang: string | undefined | null): boolean {
   return (RTL_LANGS as readonly string[]).includes(lang ?? '')
 }
 
+/** The `dir` attribute value for a UI language: every bootstrap and every locale
+ *  setter writes the same expression, so the ternary lives here once. */
+export function htmlDir(lang: string | undefined | null): 'rtl' | 'ltr' {
+  return isRtlLang(lang) ? 'rtl' : 'ltr'
+}
+
 // ---- platform-native shortcut hints ----
 // Dictionaries write shortcut hints in Mac notation (⌘S, ⇧⌘Z, ⌘+Click); on
 // Windows/Linux every translated string is rewritten to Ctrl/Alt/Shift form.

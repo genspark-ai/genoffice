@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { htmlLang, isRtlLang } from '@genoffice/i18n'
+import { htmlDir, htmlLang } from '@genoffice/i18n'
 import { AppFrame } from './AppFrame'
 import { LocaleProvider } from './locale'
 import '@genoffice/ui/tokens.css'
@@ -21,11 +21,6 @@ document.body.classList.add(IS_MAC ? 'mac' : 'overlay-title-bar')
 
 // resolve the persisted language, first-run flag, and theme before first paint
 // so the UI never flashes (home showing briefly before the onboarding overlay)
-/** Right-to-left UI for the RTL languages; `lang` is the resolved UI language */
-function applyHtmlDir(lang: string): void {
-  document.documentElement.dir = isRtlLang(lang) ? 'rtl' : 'ltr'
-}
-
 void Promise.all([
   window.aiOffice.getLanguage(),
   // if the flag is unreadable, skip onboarding rather than block the home screen
@@ -33,7 +28,7 @@ void Promise.all([
   window.aiOffice.getTheme().catch(() => 'system' as const),
 ]).then(([lang, onboardingSeen, theme]) => {
   document.documentElement.lang = htmlLang(lang)
-  applyHtmlDir(lang)
+  document.documentElement.dir = htmlDir(lang)
   // apply theme attribute before first paint to avoid flash
   if (theme !== 'system') {
     document.documentElement.setAttribute('data-theme', theme)

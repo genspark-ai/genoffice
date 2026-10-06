@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { htmlLang, isRtlLang, type Lang } from '@genoffice/i18n'
+import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import { App } from './App'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
 import type { DocTheme, UiTheme } from '../shared/ipc'
@@ -20,11 +20,6 @@ import { setAltChunkHtmlConverter } from '@genoffice/docx-engine'
 installScreenTips()
 if (window.desktop?.convertAltChunkHtml) {
   setAltChunkHtmlConverter((html) => window.desktop.convertAltChunkHtml(html))
-}
-
-/** Right-to-left UI for the RTL languages; `lang` is the resolved UI language */
-function applyHtmlDir(lang: string): void {
-  document.documentElement.dir = isRtlLang(lang) ? 'rtl' : 'ltr'
 }
 
 function applyTheme(theme: UiTheme): void {
@@ -55,7 +50,7 @@ async function bootstrap(): Promise<void> {
   }
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
-  applyHtmlDir(lang)
+  document.documentElement.dir = htmlDir(lang)
   applyTheme(theme)
   applyDocumentTheme(docTheme ?? 'follow')
   window.desktop?.onThemeChanged(applyTheme)
