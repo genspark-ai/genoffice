@@ -6,6 +6,10 @@ import {
   remoteImageHeaders,
 } from '../src/remote-image'
 
+vi.mock('node:dns/promises', () => ({
+  lookup: async () => [{ address: '93.184.215.14', family: 4 }],
+}))
+
 const png = () => new Response('img', { status: 200 })
 
 describe('remoteImageHeaders', () => {
