@@ -1,7 +1,7 @@
 // Protect Document dialog (Review > Protect): the dialog turns form state into
 // a diff (ProtectDialogResult) — untouched sections must stay undefined, and
 // removing a password-protected restriction must verify the password first.
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { hashProtectionPassword, verifyProtectionPassword } from '@genoffice/docx-engine'
@@ -45,8 +45,11 @@ async function mount(partial: Partial<Props>) {
   // flushing until the expected outcome shows up instead of guessing a delay
   const submit = async (done: () => boolean) => {
     await click(host.querySelector('.btn-primary')!)
-    const start = Date.now()
-    while (!done() && Date.now() - start < 10_000) {
+    let finished = false
+    onTestFinished(() => {
+      finished = true
+    })
+    while (!done() && !finished) {
       await act(async () => {
         await new Promise((r) => setTimeout(r, 10))
       })
