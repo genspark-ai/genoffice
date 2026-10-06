@@ -14,34 +14,34 @@
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { LANGS as I18N_LANGS } from '../packages/i18n/src/index'
 
 const TOPICS = resolve(__dirname, '../apps/shell/src/renderer/src/i18n/help/topics')
+const REGISTRY = join(TOPICS, '..', 'help-registry.ts')
+
+/**
+ * The topic ids, read out of the registry source.
+ *
+ * The registry cannot be imported: it uses `import.meta.glob`, which only a
+ * bundler provides. Reading the ids out of the text is the lesser evil to a
+ * second hand-kept list, and a registry that stops looking like this fails
+ * loudly rather than quietly checking fewer articles than the app has.
+ */
+function topicIdsFrom(source: string): string[] {
+  const array = source.slice(source.indexOf('export const HELP_TOPICS'))
+  if (!array) throw new Error('HELP_TOPICS not found in the registry')
+  const ids = [...array.matchAll(/^\s*id: '([a-z0-9-]+)',$/gm)].map((m) => m[1]!)
+  if (ids.length === 0) throw new Error('no topic ids parsed out of HELP_TOPICS')
+  return ids
+}
 const SOURCE = 'en'
 
-/** the 21 UI languages the manual has to ship */
-const LANGS = [
-  'zh',
-  'zh-TW',
-  'en',
-  'ja',
-  'ko',
-  'fr',
-  'de',
-  'es',
-  'th',
-  'id',
-  'ru',
-  'ar',
-  'pt',
-  'it',
-  'pl',
-  'cs',
-  'nl',
-  'ms',
-  'he',
-  'hi',
-  'vi',
-]
+/**
+ * The languages the manual has to ship, read from the i18n package rather
+ * than listed here: a hand-kept copy of the 21 codes is a 21-code list that
+ * goes stale the day a language is added, and the failure is silent.
+ */
+const LANGS = I18N_LANGS as readonly string[]
 
 /** Latin- or Cyrillic-script languages: any Han character in one of these is a
  *  worker that pasted the Chinese source instead of translating it. */
@@ -63,22 +63,12 @@ const NO_HAN = new Set([
   'vi',
 ])
 
-const IDS = [
-  'getting-started',
-  'home-screen',
-  'tabs-and-windows',
-  'docs',
-  'sheets',
-  'slides',
-  'pdf',
-  'markdown',
-  'html',
-  'ai-panel',
-  'ai-models',
-  'fonts',
-  'file-ops',
-  'settings-integrations',
-]
+/**
+ * The topics, from the registry the app itself reads. A second list here
+ * meant a new article had to be registered twice, and the checker would call
+ * its own files orphans.
+ */
+const IDS = topicIdsFrom(readFileSync(REGISTRY, 'utf-8'))
 
 const read = (id: string, lang: string): string | null => {
   try {

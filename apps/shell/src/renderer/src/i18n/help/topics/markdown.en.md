@@ -30,3 +30,12 @@ Three quick examples:
 - **Heading**: put the cursor on the line ▸ paragraph-style dropdown ▸ "Heading 1".
 - **Table**: click **Insert table** ▸ drag the row/column count ▸ type into the cells; the preview renders it immediately.
 - **Task list**: select a few lines ▸ click **Task list** ▸ each line becomes `- [ ]`, rendered as checkboxes in the preview.
+
+## Source view
+
+The ribbon carries a **Source** toggle (localized with the app). Turn it on and the editor is replaced by the raw Markdown: exactly the text a save writes, nothing prettified, nothing normalised underneath you.
+
+- **Editing is byte-faithful.** A save from source view produces the same bytes a save from the editor does — BOM, CRLF and the presence of a trailing newline all survive.
+- **It is the same document.** Toggle back and forth freely; the source is the editor's own text, not a copy that has to be merged.
+- **The formatting toolbar is unavailable** while it is open, because most of those buttons insert editor constructs that only mean something in the rendered side. It comes back when you close the view.
+- **JSON and other source-mode files** open here directly: there is nothing to render, so the source *is* the document.

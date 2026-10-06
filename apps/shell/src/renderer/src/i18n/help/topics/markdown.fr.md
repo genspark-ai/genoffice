@@ -30,3 +30,13 @@ Trois exemples rapides :
 - **Titre** : placez le curseur sur la ligne ▸ menu style de paragraphe ▸ « Titre 1 ».
 - **Tableau** : cliquez sur **Insérer un tableau** ▸ faites glisser le nombre de lignes et de colonnes ▸ saisissez dans les cellules ; l’aperçu le rend immédiatement.
 - **Liste de tâches** : sélectionnez quelques lignes ▸ cliquez sur **Liste de tâches** ▸ chaque ligne devient `- [ ]`, rendue comme des cases à cocher dans l’aperçu.
+
+## La vue source
+
+La barre d’outils porte un interrupteur **Source** (localisé avec l’application). Activez-le et l’éditeur cède la place au Markdown brut : exactement le texte qu’écrit un enregistrement, rien d’habillé, rien de normalisé sous vos pieds.
+
+- **L’édition est fidèle octet pour octet.** Un enregistrement depuis la vue source produit les mêmes octets qu’un enregistrement depuis l’éditeur — le BOM, les CRLF et la présence d’un saut de ligne final survivent tous.
+- **C’est le même document.** Basculez librement dans les deux sens ; la source est le texte de l’éditeur lui-même, pas une copie qu’il faudrait fusionner.
+- **La barre de mise en forme est indisponible** tant que la vue est ouverte, parce que la plupart de ces boutons insèrent des constructions d’éditeur qui n’ont de sens que du côté rendu. Elle revient quand vous fermez la vue.
+- **Les fichiers JSON et autres fichiers en mode source** s’ouvrent ici directement : il n’y a rien à rendre, donc la source *est* le document.
+

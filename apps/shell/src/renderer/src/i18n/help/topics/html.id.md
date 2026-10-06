@@ -21,3 +21,31 @@ Klik elemen apa pun di pratinjau dan sebuah bilah alat melayang di atasnya:
 - **Tindakan gambar** (dengan gambar dipilih): pangkas, **hapus latar belakang**, ganti, kunci rasio aspek.
 - **Tindakan elemen** (dengan elemen dipilih di inspektur pratinjau): hapus, duplikat, naikkan/turunkan.
 - **Tombol AI**: membuka panel AI; tanyakan apa pun tentang elemen yang dipilih.
+
+## Sisipkan kerangka
+
+Untuk halaman kosong, **Sisipkan ▸ Sisipkan kerangka** menulis dokumen minimal dalam mode standar:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Setiap bagian ada karena alasan tertentu, dan itulah sebabnya ia berupa perintah, bukan sesuatu yang perlu Anda ketik sendiri:
+
+- **doctype**-nya, atau pratinjau berjalan dalam quirks mode, tempat ukuran kotak dan tata letak tabel mengikuti aturan yang berbeda dari yang Anda harapkan;
+- **`lang`**-nya, atau pembaca layar tidak punya bahasa untuk membaca halaman itu, dan peramban memilihkan font serta pemeriksa ejaan untuk bahasa yang salah;
+- **charset**-nya, atau halaman berisi teks non-Latin bisa tampil sebagai karakter kacau (mojibake).
+
+Tag meta viewport sengaja tidak disertakan: ini dirender di panel desktop, tanpa ada viewport seluler yang bisa dipengaruhinya.
+
+`lang` mengikuti bahasa antarmuka aplikasi, jadi kerangka yang Anda sisipkan adalah kerangka yang sudah disiapkan untuk perkakas Anda. Suntinglah sesuka hati setelahnya.
+
+Butir ini hanya muncul dalam mode sunting, dan hanya selama dokumennya masih kosong — begitu ada isi, tidak ada lagi yang bisa disisipkan kerangka *ke dalam*.
+

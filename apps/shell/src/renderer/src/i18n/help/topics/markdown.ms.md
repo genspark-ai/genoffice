@@ -30,3 +30,13 @@ Tiga contoh pantas:
 - **Tajuk**: letakkan kursor pada baris tersebut, pilih gaya perenggan daripada senarai lungsur, dan pilih "Tajuk 1".
 - **Jadual**: klik **Sisip jadual**, seret untuk memilih bilangan baris dan lajur, kemudian taip ke dalam sel. Pratonton akan memaparkannya serta-merta.
 - **Senarai tugasan**: pilih beberapa baris, klik **Senarai tugasan**, dan setiap baris akan menjadi `- [ ]` yang dipaparkan sebagai kotak semak dalam pratonton.
+
+## Paparan sumber
+
+Reben itu membawa togol **Sumber** (dilocalkan bersama aplikasi). Hidupkan ia, dan editor akan digantikan oleh Markdown asal: betul-betul teks yang ditulis oleh sesuatu simpanan, tiada yang dicantikkan, dan tiada apa-apa yang dinormalkan di bawah anda.
+
+- **Penyuntingan mengekalkan setiap bait dengan tepat.** Simpanan daripada paparan sumber menghasilkan bait yang sama seperti simpanan daripada editor — BOM, CRLF dan kehadiran baris akhir kosong semuanya kekal.
+- **Ia dokumen yang sama.** Anda boleh bergantian antara paparan ini dan editor dengan bebas; sumber itu ialah teks editor itu sendiri, bukan salinan yang perlu digabungkan.
+- **Bar alat pemformatan tidak tersedia** semasa ia terbuka, kerana kebanyakan butang itu memasukkan konstruksi editor yang hanya bermakna pada sisi yang dipaparkan. Ia kembali apabila anda menutup paparan tersebut.
+- **Fail JSON dan fail mod sumber yang lain** dibuka di sini secara langsung: tiada apa-apa untuk dipaparkan, jadi sumber itu *ialah* dokumennya.
+

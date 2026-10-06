@@ -30,3 +30,12 @@ Três exemplos rápidos:
 - **Título**: ponha o cursor nessa linha ▸ menu suspenso de estilo de parágrafo ▸ "Título 1".
 - **Tabela**: clique **Inserir tabela** ▸ arraste para escolher o número de linhas e colunas ▸ escreva nas células; a pré-visualização renderiza-a de imediato.
 - **Lista de tarefas**: selecione algumas linhas ▸ clique **Lista de tarefas** ▸ cada linha passa a `- [ ]` e aparece na pré-visualização como uma caixa de verificação.
+
+## Vista de código-fonte
+
+O friso traz um interruptor **Código-fonte** (localizado com a aplicação). Ligue-o e o editor é substituído pelo Markdown em bruto: exatamente o texto que uma gravação escreve, nada embelezado, nada normalizado por baixo de si.
+
+- **A edição é fiel byte a byte.** Uma gravação a partir da vista de código-fonte produz exatamente os mesmos bytes que uma gravação a partir do editor — o BOM, o CRLF e a presença de uma quebra de linha no fim sobrevivem todos.
+- **É o mesmo documento.** Alterne para um lado e para o outro à vontade; a fonte é o próprio texto do editor, não uma cópia que seja preciso fundir.
+- **A barra de formatação fica indisponível** enquanto a vista está aberta, porque a maioria desses botões insere construções do editor que só têm significado do lado renderizado. Reaparece quando fecha a vista.
+- **Ficheiros JSON e outros ficheiros em modo de código-fonte** abrem aqui diretamente: não há nada para renderizar, por isso a fonte *é* o documento.

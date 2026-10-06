@@ -21,3 +21,31 @@ Klikněte na libovolný prvek v náhledu a nad ním se objeví pruh nástrojů:
 - **Operace s obrázkem** (s vybraným obrázkem): oříznout, **odebrat pozadí**, nahradit, zamknout poměr stran.
 - **Operace s prvkem** (s vybraným prvkem v inspektoru náhledu): odstranit, duplikovat, posunout nahoru a dolů.
 - **Tlačítko AI**: otevře panel AI; můžete se rovnou zeptat na vybraný prvek.
+
+## Vložit kostru
+
+Pro prázdnou stránku **Vložit ▸ Vložit kostru** zapíše minimální dokument ve standardním režimu:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Každá část tam je z nějakého důvodu, a proto je to příkaz, a ne něco, co se píše:
+
+- **doctype**, jinak náhled běží v režimu quirks, kde se řízení velikosti rámečků a rozvržení tabulek řídí jinými pravidly, než čekáte;
+- **`lang`**, jinak čtečka obrazovky nemá jazyk, ve kterém by stránku četla, a prohlížeč vybere písmo a kontrolu pravopisu pro nesprávný jazyk;
+- **`charset`**, jinak se stránka s nelatinkovým textem může vykódovat jako mojibake.
+
+Meta viewport je záměrně vynecháno: tento dokument se vykresluje v panelu na ploše bez mobilního viewportu, kterého by se to týkalo.
+
+`lang` sleduje jazyk uživatelského rozhraní aplikace, takže kostru, kterou vložíte, je ta, na kterou jsou vaše nástroje již nastaveny. Potom ji můžete libovolně upravovat.
+
+Položka se zobrazuje pouze v režimu úprav a pouze dokud je dokument prázdný — jakmile je tu obsah, není kam kostru *vložit*.
+

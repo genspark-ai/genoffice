@@ -36,15 +36,21 @@ export interface HelpTopicMeta {
 /** Authoritative topic list. Body files live in ./topics/<id>.<lang>.md */
 export const HELP_TOPICS: HelpTopicMeta[] = [
   {
-    id: 'getting-started',
+    id: 'install',
     group: 'start',
     order: 1,
+    keywords: ['安装', 'install', '下载', 'download', 'dmg', 'deb', 'rpm', 'appimage', '安装包'],
+  },
+  {
+    id: 'getting-started',
+    group: 'start',
+    order: 2,
     keywords: ['界面', 'overview', '标签页', 'tab', '窗口', '保存', 'save', '快捷键', 'shortcuts'],
   },
   {
     id: 'home-screen',
     group: 'start',
-    order: 2,
+    order: 3,
     keywords: [
       '最近',
       'recents',
@@ -63,7 +69,7 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
   {
     id: 'tabs-and-windows',
     group: 'start',
-    order: 3,
+    order: 4,
     keywords: [
       '重命名',
       'rename',
@@ -238,6 +244,27 @@ export const HELP_TOPICS: HelpTopicMeta[] = [
       'mcp',
       '默认应用',
       'default app',
+    ],
+  },
+  {
+    id: 'cli',
+    group: 'manage',
+    order: 3,
+    keywords: ['命令行', 'cli', 'genoffice', 'convert', 'render', '命令行工具', '终端'],
+  },
+  {
+    id: 'mcp',
+    group: 'manage',
+    order: 4,
+    keywords: [
+      'mcp',
+      'model context protocol',
+      '编程助手',
+      'coding agent',
+      'claude',
+      'codex',
+      'cursor',
+      '智能体',
     ],
   },
 ]

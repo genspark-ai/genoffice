@@ -21,3 +21,31 @@ Kliknij dowolny element w podglądzie, a nad nim pojawi się pasek narzędzi:
 - **Operacje na obrazie** (z zaznaczonym obrazem): przytnij, **usuń tło**, zastąp, zablokuj proporcje.
 - **Operacje na elemencie** (z elementem zaznaczonym w inspektorze podglądu): usuń, zduplikuj, przesuń w górę/w dół.
 - **Przycisk AI**: otwiera panel AI; możesz pytać o zaznaczony element.
+
+## Wstaw szkielet
+
+Dla pustej strony **Wstaw ▸ Wstaw szkielet** zapisuje minimalny dokument w trybie standardowym:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Każda część jest tam z jakiegoś powodu — dlatego to polecenie, a nie coś, co się wpisuje:
+
+- **doctype**, bo inaczej podgląd działa w trybie quirks, w którym rozmiary ramek i układ tabel podlegają innym regułom, niż się spodziewasz;
+- **`lang`**, bo inaczej czytnik ekranu nie ma języka, w którym miałby czytać stronę, a przeglądarka dobiera czcionkę i sprawdzanie pisowni do złego języka;
+- **`charset`**, bo inaczej strona z tekstem niełacińskim może zostać zdekodowana jako mojibake.
+
+Meta viewport celowo nie ma: to renderuje się w panelu pulpitu bez mobilnego viewportu, na który miałby wpływ.
+
+`lang` podąża za językiem interfejsu aplikacji, więc wstawiany szkielet jest tym, pod który twoje narzędzia są już skonfigurowane. Potem możesz go swobodnie edytować.
+
+Ta pozycja pojawia się tylko w trybie edycji i tylko, gdy dokument jest pusty — gdy jest treść, nie ma czegoś, *w co* wstawić szkielet.
+

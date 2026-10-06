@@ -30,3 +30,13 @@ Tiga contoh singkat:
 - **Judul**: letakkan kursor di baris itu ▸ drop-down gaya paragraf ▸ "Judul 1".
 - **Tabel**: klik **Sisipkan tabel** ▸ seret untuk memilih jumlah baris/kolom ▸ ketik di dalam sel; pratinjau langsung merendernya.
 - **Daftar tugas**: pilih beberapa baris ▸ klik **Daftar tugas** ▸ setiap baris menjadi `- [ ]`, dan di pratinjau tampil sebagai kotak centang.
+
+## Tampilan Sumber
+
+Pita memuat sakelar **Sumber** (ikut dilokalkan bersama aplikasi). Nyalakan, dan editor diganti oleh Markdown mentah: persis teks yang ditulis sebuah penyimpanan, tidak ada yang dirapikan, tidak ada yang dinormalisasi di bawah Anda.
+
+- **Penyuntingan setia byte demi byte.** Penyimpanan dari tampilan sumber menghasilkan byte yang sama dengan penyimpanan dari editor — BOM, CRLF, dan keberadaan baris baru di akhir file semuanya tetap utuh.
+- **Ini dokumen yang sama.** Berganti bolak-balik sesuka hati; sumber itu adalah teks milik editor itu sendiri, bukan salinan yang harus digabungkan.
+- **Bilah alat format tidak tersedia** selama tampilan ini terbuka, karena sebagian besar tombol itu menyisipkan konstruksi editor yang hanya bermakna di sisi hasil render. Bilah alat itu kembali begitu Anda menutup tampilan ini.
+- **JSON dan berkas mode sumber lainnya** terbuka langsung di sini: tidak ada yang perlu dirender, jadi sumber *adalah* dokumennya.
+

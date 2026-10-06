@@ -21,3 +21,31 @@ Klik op een willekeurig element in het voorbeeld en er verschijnt een werkbalk b
 - **Afbeeldingsacties** (met een afbeelding geselecteerd): bijsnijden, **achtergrond verwijderen**, vervangen, verhouding vergrendelen.
 - **Elementacties** (met een element geselecteerd in de voorbeeldinspecteur): verwijderen, dupliceren, omhoog/omlaag verplaatsen.
 - **AI-knop**: opent het AI-paneel; stel je vraag direct over het geselecteerde element.
+
+## Skeleton invoegen
+
+Voor een lege pagina schrijft **Invoegen ▸ Skeleton invoegen** een minimaal document in de standaardmodus:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Elk onderdeel zit er om een reden, en daarom is het een opdracht en niet iets wat je typt:
+
+- de **doctype**, anders werkt het voorbeeld in de quirksmodus, waar de boxafmetingen en de tabelopmaak andere regels volgen dan je verwacht;
+- de **`lang`**, anders heeft een schermlezer geen taal om de pagina in te lezen en kiest de browser een lettertype en een spellingscontrole voor de verkeerde taal;
+- de **`charset`**, anders kan een pagina met niet-Latijns tekst als mojibake worden gelezen.
+
+Een viewport-meta is bewust weggelaten: dit tekent zich af in een bureaubladpaneel zonder mobiele viewport waarop het van invloed zou zijn.
+
+De `lang` volgt de taal van de gebruikersinterface van de app, dus het skeleton dat je invoegt is degene waar je gereedschap al op is ingesteld. Daarna kun je het vrij bewerken.
+
+De optie verschijnt alleen in de bewerkingsmodus, en alleen zolang het document leeg is — zodra er inhoud is, is er niets meer om een skeleton *in* in te voegen.
+

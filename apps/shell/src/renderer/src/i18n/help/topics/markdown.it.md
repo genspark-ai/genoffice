@@ -30,3 +30,13 @@ Tre esempi rapidi:
 - **Titolo**: metti il cursore sulla riga ▸ menu a tendina dello stile paragrafo ▸ «Titolo 1».
 - **Tabella**: fai clic su **Inserisci tabella** ▸ trascina per scegliere il numero di righe e colonne ▸ digita nelle celle; l'anteprima la renderizza subito.
 - **Elenco di attività**: seleziona qualche riga ▸ fai clic su **Elenco di attività** ▸ ogni riga diventa `- [ ]`, resa come caselle di spunta nell'anteprima.
+
+## Vista sorgente
+
+La barra multifunzione contiene un interruttore **Sorgente** (localizzato con l'app). Attivalo e l'editor viene sostituito dal Markdown grezzo: esattamente il testo che un salvataggio scrive, niente abbellito, niente normalizzato sotto sotto.
+
+- **La modifica è fedele ai byte.** Un salvataggio dalla vista sorgente produce gli stessi byte di un salvataggio dall'editor — BOM, CRLF e la presenza di un a capo finale sopravvivono tutti.
+- **È lo stesso documento.** Passa e ripassa liberamente; il sorgente è il testo stesso dell'editor, non una copia da dover unire.
+- **La barra degli strumenti di formattazione non è disponibile** mentre è aperta, perché la maggior parte di quei pulsanti inserisce costrutti dell'editor che hanno senso solo sul lato renderizzato. Torna quando chiudi la vista.
+- **I file JSON e gli altri in modalità sorgente** si aprono direttamente qui: non c'è nulla da renderizzare, quindi il sorgente *è* il documento.
+

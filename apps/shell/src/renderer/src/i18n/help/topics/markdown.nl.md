@@ -30,3 +30,13 @@ Drie snelle voorbeelden:
 - **Kop**: zet de cursor op de regel ▸ keuzelijst met alineastijl ▸ "Kop 1".
 - **Tabel**: klik op **Tabel invoegen** ▸ sleep het aantal rijen en kolommen ▸ typ in de cellen; het voorbeeld geeft het meteen weer.
 - **Takenlijst**: selecteer een paar regels ▸ klik op **Takenlijst** ▸ elke regel wordt `- [ ]`, in het voorbeeld weergegeven als selectievakjes.
+
+## Bronweergave
+
+Het lint bevat een schakelaar **Bron** (vertalen mee met de app). Zet hem aan en de editor wordt vervangen door de ruwe Markdown: precies de tekst die een opslaactie wegschrijft, niets is opgeschoond, niets wordt eronder genormaliseerd.
+
+- **Bewerken is bytegetrouw.** Een opslaactie vanuit de bronweergave levert dezelfde bytes als een opslaactie vanuit de editor — BOM, CRLF en de aanwezigheid van een afsluitende newline blijven allemaal behouden.
+- **Het is hetzelfde document.** Schakel rustig heen en weer; de bron is de eigen tekst van de editor, geen kopie die je zou moeten samenvoegen.
+- **De opmaakwerkbalk is niet beschikbaar** zolang de weergave open is, omdat de meeste van die knoppen editorconstructies invoegen die alleen aan de weergegeven kant betekenis hebben. Hij komt terug zodra je de weergave sluit.
+- **JSON en andere bestanden in bronmodus** openen hier direct: er valt niets weer te geven, dus de bron *is* het document.
+

@@ -21,3 +21,30 @@ Click any element in the preview and a toolbar floats above it:
 - **Image actions** (with an image selected): crop, **remove background**, replace, lock aspect ratio.
 - **Element actions** (with an element selected in the preview inspector): delete, duplicate, move up/down.
 - **AI button**: opens the AI panel; ask about the selected element directly.
+
+## Insert skeleton
+
+For a blank page, **Insert ▸ Insert skeleton** writes a minimal standards-mode document:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Each part is there for a reason, which is why it is a command rather than something to type:
+
+- the **doctype**, or the preview runs in quirks mode, where box sizing and table layout follow different rules than you expect;
+- the **`lang`**, or a screen reader has no language to read the page in and the browser picks a font and a spell-checker for the wrong one;
+- the **charset**, or a page of non-Latin text can decode as mojibake.
+
+A viewport meta is deliberately absent: this renders in a desktop pane with no mobile viewport for it to affect.
+
+The `lang` follows the app's UI language, so the skeleton you insert is the one your tooling is already set up for. Edit it freely afterwards.
+
+The item only appears in edit mode, and only while the document is empty — there is nothing to insert a skeleton *into* once there is content.

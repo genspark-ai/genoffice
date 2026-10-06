@@ -21,3 +21,31 @@ Klicken Sie in der Vorschau auf ein beliebiges Element, und eine Werkzeugleiste 
 - **Bildaktionen** (wenn ein Bild ausgewählt ist): Zuschneiden, **Hintergrund entfernen**, ersetzen, Seitenverhältnis sperren.
 - **Elementaktionen** (wenn im Vorschau-Inspektor ein Element ausgewählt ist): löschen, duplizieren, nach oben/nach unten verschieben.
 - **KI-Schaltfläche**: öffnet den KI-Bereich; fragen Sie direkt zum ausgewählten Element.
+
+## Gerüst einfügen
+
+Für eine leere Seite schreibt **Einfügen ▸ Gerüst einfügen** ein minimales Dokument im Standardmodus:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Jeder Teil hat seinen Grund, weshalb das ein Befehl ist und nicht etwas, das Sie tippen müssten:
+
+- den **doctype**, sonst läuft die Vorschau im Quirks-Modus, in dem Boxgrößen und Tabellenlayout anderen Regeln folgen als erwartet;
+- das **`lang`**, sonst hat ein Screenreader keine Sprache, um die Seite vorzulesen, und der Browser wählt Schriftart und Rechtschreibprüfung für die falsche Sprache;
+- den **charset**, sonst kann eine Seite mit nicht lateinischer Schrift als Zeichenbrei dekodiert werden.
+
+Die Viewport-Meta-Angabe fehlt bewusst: Sie wird in einer Desktop-Fläche gerendert, auf die kein mobiler Viewport wirkt.
+
+Das `lang` folgt der Oberflächensprache der App; das eingefügte Gerüst ist also das, für das Ihre Werkzeuge bereits eingerichtet sind. Bearbeiten Sie es danach frei.
+
+Der Eintrag erscheint nur im Bearbeitungsmodus und nur, solange das Dokument leer ist — sobald Inhalt da ist, gibt es nichts mehr, *worein* ein Gerüst einzufügen wäre.
+

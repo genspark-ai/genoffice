@@ -21,3 +21,31 @@ Haga clic en cualquier elemento de la vista previa y una barra de herramientas f
 - **Acciones de imagen** (con una imagen seleccionada): recortar, **Quitar fondo**, reemplazar, bloquear proporción.
 - **Acciones de elemento** (con un elemento seleccionado en el inspector de la vista previa): eliminar, duplicar, subir/bajar.
 - **Botón de IA**: abre el panel de IA; pregunte directamente sobre el elemento seleccionado.
+
+## Insertar esqueleto
+
+Para una página en blanco, **Insertar ▸ Insertar esqueleto** escribe un documento mínimo en modo estándar:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Cada parte está ahí por un motivo, y por eso es un comando y no algo que haya que escribir a mano:
+
+- el **doctype**, o la vista previa se ejecuta en modo quirks, donde el dimensionado de las cajas y la disposición de las tablas siguen reglas distintas de las que espera;
+- el **`lang`**, o un lector de pantalla no tiene con qué idioma leer la página, y el navegador elige una fuente y un corrector ortográfico para el idioma equivocado;
+- el **charset**, o una página de texto no latino puede mostrarse con los caracteres corruptos (mojibake).
+
+La etiqueta meta de viewport se omite a propósito: esto se renderiza en un panel de escritorio, sin ningún viewport móvil que pueda afectar.
+
+El `lang` sigue el idioma de la interfaz de la aplicación, así que el esqueleto que inserte es aquel para el que sus herramientas ya están configuradas. Edítelo libremente después.
+
+El elemento solo aparece en modo edición, y solo mientras el documento esté vacío: una vez que hay contenido, no hay nada en lo que insertar un esqueleto.
+

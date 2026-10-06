@@ -21,3 +21,31 @@ Fai clic su un qualsiasi elemento nell'anteprima e sopra di esso compare una bar
 - **Azioni sull'immagine** (con un'immagine selezionata): ritaglio, **rimuovi sfondo**, sostituisci, blocca proporzioni.
 - **Azioni sull'elemento** (con un elemento selezionato nell'ispettore dell'anteprima): elimina, duplica, sposta su/sposta giù.
 - **Pulsante AI**: apre il pannello IA; puoi fare domande direttamente sull'elemento selezionato.
+
+## Inserisci scheletro
+
+Per una pagina vuota, **Inserisci ▸ Inserisci scheletro** scrive un documento minimo in modalità standard:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Ogni parte c'è per una ragione, ed è per questo che è un comando e non qualcosa da digitare:
+
+- il **doctype**, altrimenti l'anteprima funziona in modalità quirks, dove il dimensionamento dei box e il layout delle tabelle seguono regole diverse da quelle che ti aspetti;
+- il **`lang`**, altrimenti uno screen reader non ha una lingua in cui leggere la pagina e il browser sceglie un font e un correttore ortografico per la lingua sbagliata;
+- il **charset**, altrimenti una pagina di testo non latino può decodificarsi come mojibake.
+
+Un meta viewport è deliberatamente assente: questo documento viene renderizzato in un riquadro desktop senza alcun viewport mobile che ne risenta.
+
+Il `lang` segue la lingua dell'interfaccia dell'app, così lo scheletro che inserisci è quello per cui il tuo tooling è già configurato. Poi puoi modificarlo liberamente.
+
+La voce compare solo in modalità modifica e solo mentre il documento è vuoto — quando c'è contenuto, non c'è nulla *in cui* inserire uno scheletro.
+

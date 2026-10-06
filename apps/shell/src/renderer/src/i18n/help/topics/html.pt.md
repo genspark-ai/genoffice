@@ -21,3 +21,30 @@ Clique num elemento da pré-visualização e uma barra de ferramentas flutua por
 - **Ações de imagem** (com uma imagem selecionada): cortar, **remover o plano de fundo**, substituir, bloquear a proporção.
 - **Ações de elemento** (com um elemento selecionado no inspetor de visualização): eliminar, duplicar, mover para cima/baixo.
 - **Botão de IA**: abre o painel de IA; pergunte diretamente sobre o elemento selecionado.
+
+## Inserir esqueleto
+
+Para uma página em branco, **Inserir ▸ Inserir esqueleto** escreve um documento mínimo em modo de normas:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Cada parte está lá por uma razão, e é por isso que isto é um comando e não algo que se escreva à mão:
+
+- o **doctype**, ou a pré-visualização corre em modo de quirks, onde as dimensões das caixas e a disposição das tabelas seguem regras diferentes das que espera;
+- o **`lang`**, ou um leitor de ecrã fica sem nenhuma linguagem para ler a página e o navegador escolhe uma fonte e um corretor ortográfico para a linguagem errada;
+- o **charset**, ou uma página de texto não latino pode descodificar-se como texto ilegível.
+
+A meta de viewport está deliberadamente ausente: isto é renderizado num painel de ambiente de trabalho, sem nenhuma viewport móvel para que afete.
+
+O `lang` segue o idioma da interface da aplicação, por isso o esqueleto que insere é aquele para o qual as suas ferramentas já estão preparadas. Edite-o livremente depois.
+
+O item só aparece no modo de edição, e apenas enquanto o documento está vazio — não há nada para inserir um esqueleto *dentro* quando já há conteúdo.

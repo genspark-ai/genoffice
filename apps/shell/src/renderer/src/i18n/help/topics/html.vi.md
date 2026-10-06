@@ -21,3 +21,30 @@ Nhấp vào bất kỳ phần tử nào trong bản xem trước, một thanh c�
 - **Thao tác hình ảnh** (khi đang chọn một hình ảnh): cắt, **Xóa nền**, thay thế, khóa tỷ lệ khung hình.
 - **Thao tác phần tử** (khi chọn một phần tử trong trình kiểm tra xem trước): xóa, nhân bản, di chuyển lên/dưới.
 - **Nút AI**: mở bảng AI; có thể hỏi trực tiếp về phần tử đang chọn.
+
+## Chèn khung xương
+
+Với một trang trắng, **Chèn ▸ Chèn khung xương** sẽ ghi ra một tài liệu tối giản ở chế độ tiêu chuẩn:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+```
+
+Mỗi phần đều có lý do, và vì vậy đây là một lệnh chứ không phải thứ gõ tay:
+
+- **doctype**, nếu không có nó thì bản xem trước chạy ở chế độ quirks, nơi kích thước khung và bố cục bảng tuân theo những quy tắc khác với điều bạn mong đợi;
+- **`lang`**, nếu không có nó thì trình đọc màn hình chẳng có ngôn ngữ nào để đọc trang, và trình duyệt sẽ chọn phông chữ cùng công cụ kiểm tra chính tả cho một ngôn ngữ sai;
+- **charset**, nếu không có nó thì một trang có văn bản phi chữ Latin có thể hiện ra thành ký tự hỏng.
+
+Thẻ viewport cố ý vắng mặt: nội dung này kết xuất trong một khung làm việc nền, không có khung xem di động nào để nó tác động.
+
+`lang` bám theo ngôn ngữ giao diện của ứng dụng, nên khung xương bạn chèn vào chính là khung mà công cụ của bạn đã được thiết lập cho. Sau đó cứ tùy ý mà sửa.
+
+Mục này chỉ hiện ở chế độ chỉnh sửa, và chỉ khi tài liệu còn trống — đã có nội dung thì không còn gì để chèn khung xương *vào* nữa.

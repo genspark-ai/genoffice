@@ -30,3 +30,13 @@ Drei schnelle Beispiele:
 - **Überschrift**: Cursor in die Zeile setzen ▸ Dropdown „Absatzformat“ ▸ „Überschrift 1“.
 - **Tabelle**: auf **Tabelle einfügen** klicken ▸ Zeilen- und Spaltenzahl ziehen ▸ Zellen ausfüllen; die Vorschau rendert sie sofort.
 - **Aufgabenliste**: ein paar Zeilen auswählen ▸ auf **Aufgabenliste** klicken ▸ jede Zeile wird zu `- [ ]` und in der Vorschau als Liste mit Kontrollkästchen dargestellt.
+
+## Quelltextansicht
+
+Die Werkzeugleiste trägt einen Schalter **Quelltext** (wie die App lokalisiert). Schalten Sie ihn ein, und der Editor wird durch das rohe Markdown ersetzt: genau der Text, den ein Speichern schreibt, nichts hübsch gemacht, nichts unter der Hand normalisiert.
+
+- **Bearbeiten ist bytegetreu.** Ein Speichern aus der Quelltextansicht erzeugt dieselben Bytes wie ein Speichern aus dem Editor — BOM, CRLF und ein abschließender Zeilenumbruch bleiben alle erhalten.
+- **Es ist dasselbe Dokument.** Wechseln Sie frei hin und her; der Quelltext ist der Text des Editors selbst, keine Kopie, die zusammengeführt werden müsste.
+- **Die Formatierungsleiste steht nicht zur Verfügung**, solange die Ansicht offen ist, weil die meisten dieser Schaltflächen Editor-Strukturen einfügen, die auf der gerenderten Seite erst einen Sinn ergeben. Sie ist wieder da, wenn Sie die Ansicht schließen.
+- **JSON und andere Dateien im Quelltextmodus** öffnen sich hier direkt: Es gibt nichts zu rendern, also *ist* der Quelltext das Dokument.
+

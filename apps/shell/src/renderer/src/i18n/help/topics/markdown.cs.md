@@ -30,3 +30,13 @@ Tři rychlé příklady:
 - **Nadpis**: umístěte kurzor na řádek ▸ rozbalovací seznam stylu odstavce ▸ „Nadpis 1“.
 - **Tabulka**: klikněte na **Vložit tabulku** ▸ přetáhněte pro počet řádků a sloupců ▸ napište obsah buněk; náhled ji vykreslí ihned.
 - **Kontrolní seznam**: vyberte několik řádků ▸ klikněte na **Kontrolní seznam** ▸ každý řádek se změní na `- [ ]`, což se v náhledu zobrazí jako zaškrtávací pole.
+
+## Zobrazení zdroje
+
+Pásek obsahuje přepínač **Zdroj** (překládá se spolu s aplikací). Když jej zapnete, editor nahradí nezpracovaný Markdown: přesně ten text, který uložení zapisuje, nic není zkrášlené, nic není pod ním znormalizované.
+
+- **Úpravy jsou věrné bajtům.** Uložení ze zobrazení zdroje vytvoří stejné bajty jako uložení z editoru — BOM, CRLF i přítomnost koncového znaku nového řádku zůstanou zachovány.
+- **Je to stejný dokument.** Klidně mezi nimi přepínejte; zdroj je vlastní text editoru, ne kopie, kterou by bylo nutno slučovat.
+- **Pruh nástrojů pro formátování není dostupný**, dokud je zobrazení otevřené, protože většina těchto tlačítek vkládá konstrukce editoru, které dávají smysl jen na vykreslené straně. Když zobrazení zavřete, vrátí se.
+- **Soubory JSON a další v režimu zdroje** se otevírají přímo zde: není co vykreslovat, takže zdroj *je* dokument.
+

@@ -30,3 +30,13 @@ Trzy szybkie przykłady:
 - **Nagłówek**: umieść kursor w wierszu ▸ lista rozwijana stylu akapitu ▸ „Nagłówek 1”.
 - **Tabela**: kliknij **Wstaw tabelę** ▸ przeciągnij, aby wybrać liczbę wierszy i kolumn ▸ wpisz zawartość komórek; podgląd renderuje ją natychmiast.
 - **Lista zadań**: zaznacz kilka wierszy ▸ kliknij **Lista zadań** ▸ każdy wiersz staje się `- [ ]`, w podglądzie pokazywany jako pola wyboru.
+
+## Widok źródła
+
+Wstążka zawiera przełącznik **Źródło** (z lokalizacją razem z aplikacją). Włącz go, a edytor zostanie zastąpiony surowym Markdownem: dokładnie ten tekst, który zapisuje zapisywanie, nic nie jest ładniejsze, nic nie jest normalizowane w tle.
+
+- **Edycja wierna bajtom.** Zapis z widoku źródła daje te same bajty co zapis z edytora — BOM, CRLF i obecność końcowego znaku nowej linii zostają zachowane.
+- **To ten sam dokument.** Przełączaj się swobodnie; źródło to własny tekst edytora, a nie kopia wymagająca scalenia.
+- **Pasek narzędzi formatowania je niedostępny** podczas jej otwarcia, bo większość tych przycisków wstawia konstrukcje edytora, które mają sens tylko po wyrenderowaniu. Wraca po zamknięciu widoku.
+- **Pliki JSON i inne w trybie źródłowym** otwierają się tutaj bezpośrednio: nie ma czego renderować, więc źródło *jest* dokumentem.
+

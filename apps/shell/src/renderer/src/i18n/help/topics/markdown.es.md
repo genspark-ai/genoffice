@@ -30,3 +30,13 @@ Tres ejemplos rápidos:
 - **Título**: ponga el cursor en la línea ▸ desplegable de estilo de párrafo ▸ «Título 1».
 - **Tabla**: haga clic en **Insertar tabla** ▸ arrastre el número de filas y columnas ▸ escriba en las celdas; la vista previa lo renderiza de inmediato.
 - **Lista de tareas**: seleccione unas líneas ▸ haga clic en **Lista de tareas** ▸ cada línea pasa a ser `- [ ]` y se representa como casillas de verificación en la vista previa.
+
+## Vista de código fuente
+
+La cinta de opciones lleva un conmutador **Código fuente** (localizado junto con la aplicación). Al activarlo, el editor se sustituye por el Markdown en crudo: exactamente el texto que escribe un guardado, nada embellecido, nada normalizado por debajo de usted.
+
+- **La edición es fiel byte a byte.** Un guardado desde la vista de código fuente produce los mismos bytes que un guardado desde el editor: el BOM, los CRLF y la presencia de un salto de línea final se conservan.
+- **Es el mismo documento.** Alterne entre el editor y la fuente tantas veces como quiera; la fuente es el propio texto del editor, no una copia que haya que combinar.
+- **La barra de herramientas de formato no está disponible** mientras esta vista está abierta, porque la mayoría de esos botones insertan construcciones del editor que solo tienen sentido en la parte renderizada. Vuelve a aparecer cuando cierra la vista.
+- **Los archivos JSON y otros archivos en modo fuente** se abren aquí directamente: no hay nada que renderizar, así que la fuente *es* el documento.
+
