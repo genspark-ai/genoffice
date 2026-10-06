@@ -30,6 +30,7 @@ import {
   type DocEnvelope,
 } from './markdown/docText'
 import { buildSourceMap, spliceMarkdown, type SourceMap } from './markdown/sourceSplice'
+import { applySourceText } from './markdown/sourceView'
 import { isSourceMode, textModeForPath, type TextMode } from '../shared/text-mode'
 import { renameAction } from '../shared/rename-mode'
 import { readSourceText, writeSourceText, type SourceTextFormat } from '../shared/source-text'
@@ -49,6 +50,7 @@ import {
   jsonPathAtLine,
 } from './editor/redact-plain'
 import { OutlinePane } from './components/OutlinePane'
+import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
 import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
@@ -223,6 +225,11 @@ export default function App() {
   const [outlineWidth, setOutlineWidth] = useState(
     () => Number(localStorage.getItem('mdapp.outlineWidth')) || undefined,
   )
+  // Source view: the document canvas is swapped for the exact file text, and
+  // every keystroke there is pushed back into the editor (see applySourceText).
+  const [sourceViewOpen, setSourceViewOpen] = useState(false)
+  const [sourceText, setSourceText] = useState('')
+  const sourceViewOpenRef = useRef(false)
   const [spellcheck, setSpellcheck] = useState(
     () => localStorage.getItem('mdapp.spellcheck') !== '0',
   )
@@ -461,6 +468,75 @@ export default function App() {
       savingRef.current = false
     }
   }, [])
+
+  /** The exact text a save would write right now; null before the document is ready. */
+  const currentFileText = useCallback((): string | null => {
+    const current = editorRef.current
+    if (!current || statusRef.current !== 'ready') return null
+    return serializeMarkdown(
+      envelopeRef.current,
+      current.state.doc,
+      () => bodyMarkdown(current),
+      originalSourceRef.current,
+    )
+  }, [])
+
+  const openSource = useCallback(() => {
+    const text = currentFileText()
+    if (text === null) return
+    setSourceText(text)
+    // the Find panel drives a selection in the canvas the user can no longer see
+    setShowFind(false)
+    setSourceViewOpen(true)
+  }, [currentFileText])
+
+  const closeSource = useCallback(() => {
+    setSourceViewOpen(false)
+  }, [])
+
+  const toggleSource = useCallback(() => {
+    if (sourceViewOpenRef.current) closeSource()
+    else openSource()
+  }, [closeSource, openSource])
+
+  /**
+   * A keystroke in the pane is re-parsed into the editor rather than saved, so
+   * every other consumer — save, autosave, the AI tools, the outline — keeps
+   * reading one document and no save-path special case is needed.
+   */
+  const onSourceChange = useCallback(
+    (text: string) => {
+      setSourceText(text)
+      const current = editorRef.current
+      if (!current || statusRef.current !== 'ready') return
+      const hadFrontmatter = envelopeRef.current.frontmatter !== ''
+      const applied = applySourceText(current, text)
+      envelopeRef.current = applied.envelope
+      sourceMapRef.current = applied.sourceMap
+      const inner = frontmatterInner(applied.envelope.frontmatter)
+      setFmText(inner)
+      // surface a frontmatter block that just appeared, but leave a panel the
+      // user closed on purpose closed
+      if (inner && !hadFrontmatter) setFmOpen(true)
+      markDirty()
+    },
+    [markDirty],
+  )
+
+  /**
+   * The pane re-syncs from the editor whenever its focus changes, so a write
+   * that landed while it sat unfocused — an AI run rewriting the document — is
+   * picked up before the user can read stale text, while a half-typed line
+   * under their own cursor is never touched.
+   */
+  const onSourceFocusChange = useCallback(() => {
+    const text = currentFileText()
+    if (text !== null) setSourceText(text)
+  }, [currentFileText])
+
+  useEffect(() => {
+    sourceViewOpenRef.current = sourceViewOpen
+  }, [sourceViewOpen])
 
   /** Serialize and write to disk; false when canceled/failed (caller keeps the tab open) */
   const doSave = useCallback(
@@ -817,6 +893,10 @@ export default function App() {
         // Word's replace shortcut; macOS Cmd+H is the system hide role and never reaches here
         event.preventDefault()
         openFind(true)
+      } else if (key === 'e' && !event.shiftKey) {
+        // Obsidian's edit/preview toggle: the source view
+        event.preventDefault()
+        toggleSource()
       } else if (key === '=' || key === '+') {
         event.preventDefault()
         zoomIn()
@@ -836,7 +916,7 @@ export default function App() {
       offRenamed()
       window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [doSave, printDoc, zoomIn, zoomOut, openFind, loadFromPath, t])
+  }, [doSave, printDoc, zoomIn, zoomOut, openFind, toggleSource, loadFromPath, t])
 
   // Chromium reports trackpad pinch as ctrl+wheel. Also support Cmd/Ctrl+scroll
   // while the pointer is over the document canvas.
@@ -1014,6 +1094,8 @@ export default function App() {
         onInsertImage={insertImage}
         frontmatterOpen={fmOpen}
         onToggleFrontmatter={() => setFmOpen((v) => !v)}
+        sourceViewOpen={sourceViewOpen}
+        onToggleSource={toggleSource}
         outlineOpen={outlineOpen}
         onToggleOutline={() => setOutlineOpen((v) => !v)}
         hasOutline={outlineItems.length > 0}
@@ -1078,6 +1160,12 @@ export default function App() {
               focusRequest={findFocus}
             />
           )}
+          {/* Two different things, three branches. A .txt/.json has no block
+              document behind it at all, so its source text replaces the canvas
+              outright. The markdown source view is a different case: there the
+              editor still owns a live ProseMirror view, and unmounting
+              EditorContent tears it down, so the canvas stays mounted and only
+              hidden while SourcePane sits beside it. */}
           {sourceMode ? (
             <div className="source-editor">
               <PlainTextEditor
@@ -1106,12 +1194,24 @@ export default function App() {
               />
             </div>
           ) : (
-            <div className="editor-scroll" ref={scrollRef}>
-              <div className="doc-page" style={{ zoom: zoom / 100 }}>
-                {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
-                <EditorContent editor={editor} />
+            <>
+              <div
+                className={`editor-scroll${sourceViewOpen ? ' source-off' : ''}`}
+                ref={scrollRef}
+              >
+                <div className="doc-page" style={{ zoom: zoom / 100 }}>
+                  {fmOpen && <FrontmatterPanel value={fmText} onChange={onFrontmatterChange} />}
+                  <EditorContent editor={editor} />
+                </div>
               </div>
-            </div>
+              {sourceViewOpen && (
+                <SourcePane
+                  value={sourceText}
+                  onChange={onSourceChange}
+                  onFocusChange={onSourceFocusChange}
+                />
+              )}
+            </>
           )}
           <footer className="status-bar">
             <div className="status-left">

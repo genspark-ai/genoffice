@@ -75,6 +75,17 @@ export function IconHr(props: IconProps) {
   )
 }
 
+/* raw-text lines with a caret — reads as "the text itself", and stays clear of
+ * the chevron pair IconInlineCode already uses for inline-code formatting */
+export function IconSourceCode(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.2 3.4h11.6M2.2 6.6h7.2M2.2 9.8h11.6M2.2 13h5.4" opacity="0.55" />
+      <path d="M12.4 9.4v3.2" strokeWidth="1.4" />
+    </Svg>
+  )
+}
+
 /* knobs sit at different offsets on purpose: three flush-left lines read as a
  * hamburger/overflow menu, and left-aligned dots collide with IconBullets */
 export function IconProperties(props: IconProps) {
