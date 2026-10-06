@@ -14,12 +14,24 @@ import { toSelectionFormat } from '../selection-format'
 import { lazyCellReader } from '../univer-sync'
 import { lazySheetScreenExtent, type LazyWorkbookState, type UniverRuntime } from '../univer-state'
 import type { ActiveSheetInfo, FrozenSelection } from './tools'
+import { NO_REDACTIONS, placeholderSource, type RedactionIndex } from './redact'
 
 /** The App refs the readers need; passed per call so they never go stale. */
 export interface WorkbookReadContext {
   univerRef: { readonly current: UniverRuntime | null }
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null }
   adapterRef: { readonly current: InMemoryWorkbookAdapter }
+  /**
+   * The cells the reader withheld from the model. Optional so a workbook that
+   * hides nothing costs nothing: `redactionsOf` falls back to NO_REDACTIONS and
+   * every reader below behaves exactly as it did before the feature existed.
+   */
+  redactionIndexRef?: { readonly current: RedactionIndex | null } | undefined
+}
+
+/// The workbook's withheld cells, or the shared "nothing withheld" index.
+export function redactionsOf(ctx: WorkbookReadContext): RedactionIndex {
+  return ctx.redactionIndexRef?.current ?? NO_REDACTIONS
 }
 
 /// Feature-state report for the AI: what already exists before it edits.
@@ -33,6 +45,7 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
       : workbook.getSheetBySheetId(sheetIdInput)
   if (!worksheet) return `Unknown sheet: ${sheetIdInput}`
   const sheetId = worksheet.getSheetId()
+  const redactions = redactionsOf(ctx)
   const state = ctx.lazyWorkbookRef.current
   const a1 = (range: IRange): string =>
     `${columnLabel(range.startColumn)}${range.startRow + 1}:${columnLabel(range.endColumn)}${range.endRow + 1}`
@@ -175,15 +188,35 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
     } else {
       lines.push(`Data validation: ${validations.length} rule(s):`)
       for (const validation of validations.slice(0, 20)) {
-        const ranges = validation
-          .getRanges()
-          .map((range) => range.getA1Notation())
-          .join(',')
+        const rangeList = validation.getRanges()
+        const ranges = rangeList.map((range) => range.getA1Notation()).join(',')
         const rule = validation.rule
+        // A validation formula can carry the value itself — `cellIs equal
+        // "13800138000"` is a rule that stores the secret. The rule still has
+        // to be reported (the model must not break it), but on a range holding
+        // withheld cells the formulas are dropped: their shape is the only part
+        // that is not the reader's data.
+        const covered = redactions.isEmpty
+          ? false
+          : rangeList.some((range) =>
+              redactions
+                .marksFor(sheetId)
+                .some(
+                  (mark) =>
+                    mark.startRow <= range.getLastRow() &&
+                    mark.endRow >= range.getRow() &&
+                    mark.startColumn <= range.getLastColumn() &&
+                    mark.endColumn >= range.getColumn(),
+                ),
+            )
         const parts = [rule.type, rule.operator, rule.formula1, rule.formula2].filter(
           (part) => part !== undefined && part !== '',
         )
-        lines.push(`- ${ranges}: ${parts.join(' ')}`)
+        lines.push(
+          covered
+            ? `- ${ranges}: ${[rule.type, rule.operator, '(withheld)'].filter(Boolean).join(' ')}`
+            : `- ${ranges}: ${parts.join(' ')}`,
+        )
       }
     }
   } catch {
@@ -209,7 +242,16 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
     if (notes.length > 0) {
       lines.push(`Notes: ${notes.length}:`)
       for (const note of notes.slice(0, 20)) {
-        const text = note.note.length > 80 ? `${note.note.slice(0, 80)}…` : note.note
+        // A note is cell-attached content, exactly like the cell's value, and
+        // readers routinely write the same secret in both. Withholding the cell
+        // without withholding its note would leak through the side door.
+        const withheld = redactions.labelAt(sheetId, note.row, note.col)
+        const text =
+          withheld !== null
+            ? placeholderSource(withheld)
+            : note.note.length > 80
+              ? `${note.note.slice(0, 80)}…`
+              : note.note
         lines.push(`- ${columnLabel(note.col)}${note.row + 1}: ${text.replace(/\n/g, ' ')}`)
       }
     }
@@ -424,12 +466,26 @@ export function readCells(
   > = {}
   const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
   const state = ctx.lazyWorkbookRef.current
+  const redactions = redactionsOf(ctx)
   if (state) {
     const worksheet =
       sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
     if (!worksheet) return result
+    const targetId = sheetId ?? worksheet.getSheetId()
     const reader = lazyCellReader(worksheet)
     for (const address of addresses) {
+      // All three fields, not just the rendered value: `formula` is the cell's
+      // own text and `rawValue` the model value behind it, so projecting only
+      // `value` would hand over the very number the reader hid.
+      const withheld = redactions.labelAt(
+        targetId,
+        parseAddress(address).row,
+        parseAddress(address).column,
+      )
+      if (withheld !== null) {
+        result[address] = { value: placeholderSource(withheld) }
+        continue
+      }
       const cell = reader(address)
       // `value` is the rendered text and `rawValue` the model value behind it;
       // machine-facing callers (the MCP bridge, the save pipeline) need the
@@ -450,6 +506,12 @@ export function readCells(
   const worksheet =
     sheetId === undefined ? workbook?.getActiveSheet() : workbook?.getSheetBySheetId(sheetId)
   for (const address of addresses) {
+    const position = parseAddress(address)
+    const withheld = redactions.labelAt(sheet.id, position.row, position.column)
+    if (withheld !== null) {
+      result[address] = { value: placeholderSource(withheld) }
+      continue
+    }
     const cell = sheet.cells[address] ?? { value: null }
     if (cell.formula) {
       let computed = cell.value

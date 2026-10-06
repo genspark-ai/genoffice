@@ -106,6 +106,7 @@ import {
 } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 import { parsePivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
 import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
+import { readWorkbookRedactionPart } from './workbook-redactions'
 import type {
   AttachmentAddResult,
   AttachmentImageResult,
@@ -129,6 +130,8 @@ import {
   workbookMediaRequestSchema,
   workbookMediaResultSchema,
   workbookPivotRequestSchema,
+  workbookRedactionsRequestSchema,
+  workbookRedactionsResultSchema,
   localImageRequestSchema,
   localImageResultSchema,
   screenCaptureRequestSchema,
@@ -3069,6 +3072,18 @@ export function registerSheetsIpc(): void {
     return workbookPivotDefinitionSchema.parse(parsePivotDefinition(pivotXml, cacheXml))
   })
 
+  ipcMain.handle(IPC_CHANNELS.readWorkbookRedactions, async (event, input: unknown) => {
+    const entry = sessionFor(event)
+    const request = workbookRedactionsRequestSchema.parse(input)
+    const session = entry.sessions.get(request.sessionId)
+    if (!session) throw new Error('Unknown workbook session.')
+    // A damaged part answers `unreadable` rather than an empty list: reporting
+    // "nothing is withheld" would hand the model the values it holds.
+    return workbookRedactionsResultSchema.parse(
+      await readWorkbookRedactionPart(entry.client, session.snapshotPath),
+    )
+  })
+
   ipcMain.handle(IPC_CHANNELS.exportPdf, async (event, input: unknown) => {
     sessionFor(event)
     const request = workbookExportPdfRequestSchema.parse(input)
@@ -4217,6 +4232,26 @@ async function writeWorkbookTo(
     sheetName,
     cells,
   }))
+  // The redaction part is keyed by sheet NAME, so there is nothing to resolve
+  // here: the marks arrive under the names the session loaded, which is what
+  // the gateway's re-keying against this save's renames and removals expects.
+  const redactionStates = request.redactionStates.map((state) => ({
+    sheetName: state.sheetName,
+    marks: state.marks.map((mark) => ({
+      startRow: mark.startRow,
+      endRow: mark.endRow,
+      startColumn: mark.startColumn,
+      endColumn: mark.endColumn,
+      label: mark.label,
+      // Carried through, not rebuilt from the known fields: this mapping is
+      // the third place a mark passes through (the zod schema, the preload's
+      // hand-rolled check, and here), and only the zod one refuses an unknown
+      // key. The other two drop it silently, which is how a field added to the
+      // mark can vanish between the renderer and the file with nothing failing.
+      // Omitted when absent so an older part's bytes stay identical.
+      ...('previousFill' in mark ? { previousFill: mark.previousFill ?? null } : {}),
+    })),
+  }))
   const mutation = await saveWorkbookViaSidecar({
     client,
     // The snapshot, not the live path: the save base must be the bytes this
@@ -4265,6 +4300,9 @@ async function writeWorkbookTo(
             }))(update.relayout),
           }),
     })),
+    // The marks ride in a package part of their own; the gateway re-keys them
+    // for the renames and removals `sheetPlan` carries.
+    redactionStates,
   })
   return mutation
 }

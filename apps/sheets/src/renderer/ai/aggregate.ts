@@ -21,12 +21,25 @@ export interface RangeAggregate {
   readonly average: number | null
   /** most frequent values, descending; empty when tracking overflowed */
   readonly topValues: readonly { value: string; count: number }[]
+  /**
+   * Cells the reader withheld. They are counted here and nowhere else: every
+   * statistic above is computed over the remaining cells only.
+   *
+   * A withheld cell cannot simply be masked in the output. `sum` is exact, so
+   * one withheld cell inside a column is solvable — sum minus everything else
+   * gives the very value the reader hid. Excluding it from the arithmetic is
+   * the only fix; the count is then reported honestly so the model does not
+   * present a total as if the column were whole.
+   */
+  readonly withheld: number
 }
 
 export interface RangeAggregator {
   add(value: CellScalar): void
   addRepeated(value: CellScalar, count: number): void
   addEmpty(count: number): void
+  /** record `count` cells the reader withheld; they contribute to nothing else */
+  addWithheld(count: number): void
   finish(topValueCount: number): RangeAggregate
 }
 
@@ -38,6 +51,7 @@ export function createRangeAggregator(): RangeAggregator {
   let min: number | null = null
   let max: number | null = null
   let overflowed = false
+  let withheld = 0
   const counts = new Map<string, number>()
 
   const addRepeated = (value: CellScalar, count: number): void => {
@@ -73,6 +87,14 @@ export function createRangeAggregator(): RangeAggregator {
       if (count <= 0) return
       cells += count
     },
+    addWithheld(count: number): void {
+      if (count <= 0) return
+      // Counted as a cell so the range's own total stays honest, but never as
+      // a value: nonEmpty, distinct, the numeric stats and the frequency table
+      // all have to be blind to it or the number can be back-solved.
+      cells += count
+      withheld += count
+    },
     finish(topValueCount: number): RangeAggregate {
       const topValues = overflowed
         ? []
@@ -90,6 +112,7 @@ export function createRangeAggregator(): RangeAggregator {
         max,
         average: numericCount > 0 ? sum / numericCount : null,
         topValues,
+        withheld,
       }
     },
   }
@@ -113,6 +136,15 @@ export function formatRangeAggregate(
       ? `- distinct values: more than ${formatNumber(MAX_DISTINCT_TRACKED)} (tracking stopped)`
       : `- distinct values: ${formatNumber(aggregate.distinct)}`,
   ]
+  if (aggregate.withheld > 0) {
+    // Stated up front, because every number below is a total over the cells
+    // that remain: without this the model would report a sum that silently
+    // omits the reader's own data.
+    lines.push(
+      `- withheld: ${formatNumber(aggregate.withheld)} cell(s) hidden from the model; ` +
+        'every statistic below covers the remaining cells only',
+    )
+  }
   if (aggregate.numericCount > 0) {
     lines.push(
       `- numeric cells: ${formatNumber(aggregate.numericCount)}, sum: ${formatNumber(aggregate.sum)}, ` +

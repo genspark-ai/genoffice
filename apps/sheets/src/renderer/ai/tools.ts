@@ -22,6 +22,8 @@ import type {
 import { t } from '../i18n/locale'
 import { formatRangeAggregate, type RangeAggregate } from './aggregate'
 import { guideCatalogSummary, loadGuides } from './guides'
+import { modelCellValueAt, NO_REDACTIONS, type RedactionIndex } from './redact'
+import { redactGuardForOps } from './redact-guard'
 
 /**
  * The workbook DSL as an AgentSkill tool set: read-only context/reader tools
@@ -243,6 +245,12 @@ export interface SheetsSkillDeps {
     operations: readonly WorkbookOperation[],
     summary: string,
   ): { ok: true; plan: ChangePlan; applied?: Promise<ApplyOutcome> } | { ok: false; error: string }
+  /**
+   * The cells the reader withheld from the model, resolved per call so the
+   * index never goes stale behind a ref. Optional, and defaulting to "nothing
+   * withheld", so a test or a caller without a session pays nothing.
+   */
+  redactions?(): RedactionIndex
   /** AI create_document: write a new standalone file (xlsx/csv from a
    * worksheet; docx/pdf/md from content) into the default save folder and
    * open it in a new tab (ai/create-document.ts). */
@@ -623,6 +631,23 @@ function contentEchoError(content: string): string | null {
 }
 
 /** Shared input validation for the two formula-audit tools. */
+/**
+ * A reader that hands out a cell's value as the model may see it.
+ *
+ * The trace tools print cell values, and a cell the reader withheld keeps its
+ * real value on the sheet — that is the point of the feature. So every value
+ * they print goes through here, and a workbook with no marks pays one property
+ * read per cell.
+ */
+function cellProjector(
+  deps: SheetsSkillDeps,
+  sheetId: string | undefined,
+): (address: string, value: CellScalar) => CellScalar {
+  const index = deps.redactions?.() ?? NO_REDACTIONS
+  const target = sheetId ?? deps.getActiveSheetInfo().sheetId
+  return (address, value) => modelCellValueAt(index, target, address, value)
+}
+
 function parseAuditAddress(
   input: Record<string, unknown>,
   summary: string,
@@ -1192,18 +1217,30 @@ export function executeWorkbookTool(
     case 'trace_precedents': {
       const parsed = parseAuditAddress(call.input, t('aiToolTracePrecedents'))
       if ('fail' in parsed) return parsed.fail
+      const project = cellProjector(deps, parsed.sheetId)
       const finish = (result: TracePrecedentsOutcome): ToolExecution => {
         if (result.error) return fail(t('aiToolTracePrecedents'), result.error)
         const summary = t('aiToolTracePrecedentsOf', { address: parsed.address })
         if (!result.formula) {
           return {
-            output: `${parsed.address} is not a formula cell; value: ${formatCellScalar({ value: result.value ?? null })}. Nothing to trace upstream — use trace_dependents to see what reads it.`,
+            output: `${parsed.address} is not a formula cell; value: ${formatCellScalar({ value: project(parsed.address, result.value ?? null) })}. Nothing to trace upstream — use trace_dependents to see what reads it.`,
             mutated: false,
             summary,
           }
         }
+        // A formula's own value is its precedents' values added up, so a trace
+        // that reaches a withheld cell has to withhold the result too — showing
+        // `C10 = 42` when `B2` is the withheld number gives the number away
+        // just as plainly as printing `B2`.
+        const refValues = result.refs.flatMap((ref) => ref.samples)
+        const aPrecedentIsWithheld = refValues.some((s) => project(s.address, s.value) !== s.value)
         const lines = [
-          `${parsed.address} = ${formatCellScalar({ value: result.value ?? null, formula: result.formula })}`,
+          `${parsed.address} = ${formatCellScalar({
+            value: aPrecedentIsWithheld
+              ? `(${parsed.address} reads a cell withheld from the model; value not shown)`
+              : project(parsed.address, result.value ?? null),
+            formula: result.formula,
+          })}`,
           `Reads ${result.refs.length}${result.truncatedRefs ? '+' : ''} reference(s):`,
         ]
         for (const ref of result.refs) {
@@ -1214,7 +1251,10 @@ export function executeWorkbookTool(
             continue
           }
           const shown = ref.samples
-            .map((sample) => `${sample.address}=${formatCellScalar(sample)}`)
+            .map(
+              (sample) =>
+                `${sample.address}=${formatCellScalar({ ...sample, value: project(sample.address, sample.value) })}`,
+            )
             .join('; ')
           const rest = ref.cellCount - ref.samples.length
           lines.push(
@@ -1238,6 +1278,10 @@ export function executeWorkbookTool(
     case 'trace_dependents': {
       const parsed = parseAuditAddress(call.input, t('aiToolTraceDependents'))
       if ('fail' in parsed) return parsed.fail
+      const project = cellProjector(deps, parsed.sheetId)
+      // the cell being traced is withheld, so everything downstream of it is
+      // too: `=B2` beside a withheld B2 shows B2's value
+      const tracedIsWithheld = project(parsed.address, null) !== null
       const finish = (result: TraceDependentsOutcome): ToolExecution => {
         if (result.error) return fail(t('aiToolTraceDependents'), result.error)
         const summary = t('aiToolTraceDependentsOf', {
@@ -1251,10 +1295,25 @@ export function executeWorkbookTool(
               ]
             : [
                 `${result.dependents.length}${result.truncated ? '+' : ''} formula cell(s) read ${parsed.address}:`,
-                ...result.dependents.map(
-                  (dep) =>
-                    `- ${dep.sheetName}!${dep.address} = ${formatCellScalar({ value: dep.value, formula: dep.formula })}`,
-                ),
+                ...result.dependents.map((dep) => {
+                  const sheetId = deps
+                    .getActiveSheetInfo()
+                    .sheets.find((sh) => sh.name === dep.sheetName)?.id
+                  const withheld =
+                    tracedIsWithheld ||
+                    modelCellValueAt(
+                      deps.redactions?.() ?? NO_REDACTIONS,
+                      sheetId,
+                      dep.address,
+                      dep.value,
+                    ) !== dep.value
+                  return `- ${dep.sheetName}!${dep.address} = ${formatCellScalar({
+                    value: withheld
+                      ? '(reads a cell withheld from the model; value not shown)'
+                      : dep.value,
+                    formula: dep.formula,
+                  })}`
+                }),
               ]
         if (result.truncated) {
           lines.push('Note: stopped at the result cap — more dependents exist.')
@@ -1284,6 +1343,21 @@ export function executeWorkbookTool(
         return fail(t('aiToolPropose'), describeOperationErrors(rawOps, parsedOps.error))
       }
       const operations: WorkbookOperation[] = parsedOps.data
+      // A cell the reader withheld still holds real data the model never saw,
+      // so a write landing on one destroys something the user chose to keep —
+      // silently, with the file still opening afterwards. Checked here, before
+      // the batch is planned or applied, so a refusal changes nothing.
+      const refusal = redactGuardForOps(
+        operations,
+        deps.redactions?.() ?? NO_REDACTIONS,
+        (sheetId) => deps.getActiveSheetInfo().sheets.find((sheet) => sheet.id === sheetId)?.name,
+      )
+      if (refusal) {
+        return fail(
+          t('aiToolPropose'),
+          `Rejected — none of the ${operations.length} operation(s) were applied (a batch is all-or-nothing): ${refusal.reason}`,
+        )
+      }
       const outcome = deps.proposeOperations(operations, summaryInput.trim())
       if (!outcome.ok) {
         return fail(

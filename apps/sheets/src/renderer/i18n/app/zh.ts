@@ -1,5 +1,16 @@
 /** app strings, zh: defines the key set every other locale shard must match. */
 export const zh = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: '把选中的内容对 AI 隐藏',
+  redactDialogDesc:
+    '选中的内容会留在文档和文件里，AI 读到的却是下面的标记。给它起个名字，AI 才知道它是什么。',
+  redactDialogScope:
+    '这只针对本应用的 AI。命令行、MCP 工具和无界面导出会直接读取文件，仍然看得到这些文字。',
+  redactDialogPlaceholder: '占位名称，例如：客户电话',
+  redactCancel: '取消',
+  redactInsert: '隐藏',
+  redactEnable: '选中文字后右键，即可对 AI 隐藏。',
+
   appMergeWorkbooks: '合并工作簿',
   appMergeWorkbooksTip: '将其他 Excel 文件的工作表并入当前工作簿',
   appMergeWorkbooksPicking: '选择要合并的文件…',
