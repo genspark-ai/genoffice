@@ -130,6 +130,16 @@ async function render(lang: Lang, expected: string, htmlLang = 'en-US'): Promise
       createElement(LocaleProvider, { initial: lang, children: createElement(HelpScreen) }),
     )
   })
+  // Open the topic by name rather than taking the one that happens to be first:
+  // adding an article would otherwise move this test's subject out from under it.
+  const button = [...host.querySelectorAll('button.help-topic')].find(
+    (b) => b.textContent?.trim() === topicTitle(TOPIC, lang),
+  )
+  if (button) {
+    act(() => {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
   await settle(host, expected)
   return host
 }
