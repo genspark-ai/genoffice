@@ -285,7 +285,7 @@ const SHEET_SPEC: PlaceholderSpec = {
   // a sheet's marker cannot be split across cells, not across lines
   boundary: 'a cell boundary',
   middle: [
-    'Write text around them as if each stood for the value it replaces, so a row reading "call {{客户电话}}" still means what it says.',
+    'Write text around them as if each stood for the value it replaces, so a row reading "call {{client phone}}" still means what it says.',
     'If a request needs what a placeholder hides, work around it rather than guessing.',
     'Two consequences you must respect, or you will recover what the reader hid:',
     '- Withheld cells are **left out of every statistic**. A sum, average, min, max, distinct count or top-value list over a range that contains one covers only the remaining cells, and `aggregate_range` reports how many were withheld. Never add the withheld values back in, and never treat a total as covering the whole range.',

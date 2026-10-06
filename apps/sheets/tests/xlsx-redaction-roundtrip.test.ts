@@ -58,7 +58,7 @@ const EDIT: CellEdit = {
 const STATES: SheetRedactionState[] = [
   {
     sheetName: 'Sheet1',
-    marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+    marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
   },
 ]
 

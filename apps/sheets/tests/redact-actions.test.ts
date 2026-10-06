@@ -67,7 +67,7 @@ describe('what a right-click means', () => {
   const MARKED: SheetRedactionState[] = [
     {
       sheetName: 'Customers',
-      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
     },
   ]
 
@@ -97,7 +97,7 @@ describe('what a right-click means', () => {
     const wide: SheetRedactionState[] = [
       {
         sheetName: 'Customers',
-        marks: [{ startRow: 1, endRow: 9, startColumn: 1, endColumn: 1, label: '客户电话' }],
+        marks: [{ startRow: 1, endRow: 9, startColumn: 1, endColumn: 1, label: 'client phone' }],
       },
     ]
     const intent = redactIntentFor(selection(), indexFor(wide, SHEETS), nameOf)
@@ -133,7 +133,7 @@ describe('what a right-click means', () => {
 })
 
 describe('adding and clearing marks', () => {
-  const MARK = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }
+  const MARK = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }
 
   it('adds a mark without touching the others', () => {
     const before: SheetRedactionState[] = [
@@ -185,11 +185,11 @@ describe('the index follows the state the save writes', () => {
         endRow: 1,
         startColumn: 1,
         endColumn: 1,
-        label: '客户电话',
+        label: 'client phone',
       }),
       SHEETS,
     )
-    expect(index.labelAt('sh1', 1, 1)).toBe('客户电话')
+    expect(index.labelAt('sh1', 1, 1)).toBe('client phone')
   })
 
   it('stops withholding once the mark is cleared', () => {
@@ -198,7 +198,7 @@ describe('the index follows the state the save writes', () => {
       endRow: 1,
       startColumn: 1,
       endColumn: 1,
-      label: '客户电话',
+      label: 'client phone',
     })
     const index = indexFor(clearMark(marked, 'Customers', marked[0]!.marks[0]!), SHEETS)
     expect(index.labelAt('sh1', 1, 1)).toBeNull()
@@ -216,7 +216,7 @@ describe('a newly withheld cell counts as a pending change', () => {
   const LOADED: SheetRedactionState[] = [
     {
       sheetName: 'Customers',
-      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
     },
   ]
   const MARK = { startRow: 4, endRow: 4, startColumn: 1, endColumn: 1, label: 'mobile' }
@@ -297,13 +297,13 @@ describe('the prompt tells the model which placeholders exist', () => {
   }
 
   it('names every label in play, across sheets', () => {
-    const prompt = skillWith({ sh1: ['客户电话'], sh2: ['订单号'] }).systemPrompt
-    expect(prompt).toContain('- {{客户电话}}')
-    expect(prompt).toContain('- {{订单号}}')
+    const prompt = skillWith({ sh1: ['client phone'], sh2: ['order number'] }).systemPrompt
+    expect(prompt).toContain('- {{client phone}}')
+    expect(prompt).toContain('- {{order number}}')
   })
 
   it('warns about the two ways a model could recover a withheld value', () => {
-    const prompt = skillWith({ sh1: ['客户电话'] }).systemPrompt
+    const prompt = skillWith({ sh1: ['client phone'] }).systemPrompt
     // Adding the hidden numbers back into a total.
     expect(prompt).toContain('left out of every statistic')
     // Reading an empty search as "not in the workbook".
@@ -322,8 +322,8 @@ describe('the prompt tells the model which placeholders exist', () => {
     const marks: Record<string, string[]> = {}
     const skill = skillWith(marks)
     expect(skill.systemPrompt).not.toContain('Private placeholders')
-    marks.sh1 = ['客户电话']
-    expect(skill.systemPrompt).toContain('{{客户电话}}')
+    marks.sh1 = ['client phone']
+    expect(skill.systemPrompt).toContain('{{client phone}}')
   })
 })
 
@@ -333,7 +333,7 @@ describe('a mark carries the fill it displaced', () => {
    * this is the promise that makes it acceptable: nothing is lost. Clearing has
    * to put the original colour back, not blank the cell.
    */
-  const MARK = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }
+  const MARK = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }
 
   it('stores a previous fill and gives it back on clear', () => {
     const marked = addMark([], 'Customers', { ...MARK, previousFill: '#FFEE00' })

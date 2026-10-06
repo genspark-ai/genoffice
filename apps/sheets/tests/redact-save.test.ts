@@ -43,7 +43,7 @@ beforeEach(() => {
 const MARKS: SheetRedactionState[] = [
   {
     sheetName: 'Data',
-    marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+    marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
   },
 ]
 
@@ -80,7 +80,7 @@ describe('the save carries the withheld cells', () => {
     expect(request.redactionStates).toEqual([
       {
         sheetName: 'Data',
-        marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+        marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
       },
     ])
   })
@@ -93,7 +93,7 @@ describe('the save carries the withheld cells', () => {
     expect(payload.redactionStates).toEqual([
       {
         sheetName: 'Data',
-        marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+        marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
       },
     ])
   })

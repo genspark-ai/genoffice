@@ -4,10 +4,12 @@
  * the matching Univer language packs — every preset ships all 19 — and
  * switches LocaleService, which re-renders the whole Univer React tree
  * (rule-management panels, dialogs, menus). Languages Univer has no pack for
- * (th/nl/ms/he/hi/cs) stay English.
+ * (cs/he/hi/ms/nl/th/zh-TW, plus en, which boots directly) stay English.
  */
 import { LocaleService, LocaleType, mergeLocales, type ILocales } from '@univerjs/core'
+import type { Lang } from '@genoffice/i18n'
 
+import { translateFor } from './i18n/locale'
 import type { UniverRuntime } from './univer-state'
 
 type LocalePack = Record<string, unknown>
@@ -272,33 +274,21 @@ export function insertRowsBelowLocale(pack: LocalePack): LocalePack {
  * The right-click item that withholds the selected cells from the AI.
  *
  * It is a Univer menu item, so its label is a Univer locale key resolved at
- * render — the app's own `t()` cannot be used for a menu `title`. That also
- * fixes the language coverage: Univer ships no pack for th/nl/ms/he/hi/cs, so
- * those stay English here exactly as every other right-click item does, rather
- * than the item being the one string in the menu with a language of its own.
+ * render — the app's own `t()` cannot be used for a menu `title`. The pack,
+ * however, is built here, so the wording is read straight out of the app's
+ * `redactMenuLabel`: one definition, all 21 languages, and the same gesture
+ * reads identically in markdown, slides, docs and html. A second hand-written
+ * table could only ever drift from it.
  *
- * The wording is copied verbatim from the other apps' `redactMenuLabel` so the
- * same gesture reads identically in markdown, slides, docs and html.
+ * Languages Univer has no pack for (th/nl/ms/he/hi/cs/zh-TW) keep the English
+ * pack the runtime booted with, where every other right-click item is English;
+ * the redaction item follows that rather than being the one entry in the menu
+ * with a language of its own. `applyUniverLocale` returns before reaching here
+ * for those languages, so this is belt and braces — but it keeps the rule a
+ * property of this function rather than of its caller.
  */
-const HIDE_FROM_AI: Record<string, string> = {
-  en: 'Hide the selection from AI',
-  zh: '把选中的内容对 AI 隐藏',
-  ja: '選択範囲をAIから隠す',
-  ko: '선택한 부분을 AI에서 숨기기',
-  fr: 'Masquer la sélection à l’IA',
-  de: 'Auswahl vor der KI verbergen',
-  es: 'Ocultar la selección a la IA',
-  id: 'Sembunyikan pilihan dari AI',
-  ru: 'Скрыть выделение от ИИ',
-  ar: 'إخفاء التحديد عن الذكاء الاصطناعي',
-  pt: 'Ocultar a seleção da IA',
-  it: 'Nascondi la selezione all’IA',
-  pl: 'Ukryj zaznaczenie przed AI',
-  vi: 'Ẩn phần đã chọn khỏi AI',
-}
-
-export function hideFromAiLocale(pack: LocalePack, lang: string): LocalePack {
-  const label = HIDE_FROM_AI[lang] ?? HIDE_FROM_AI.en!
+export function hideFromAiLocale(pack: LocalePack, lang: Lang): LocalePack {
+  const label = translateFor(UNIVER_LOCALES[lang] ? lang : 'en')('redactMenuLabel')
   const sheetsUi = (pack['sheets-ui'] ?? {}) as Record<string, unknown>
   const rightClick = (sheetsUi.rightClick ?? {}) as Record<string, string>
   return {
@@ -313,7 +303,7 @@ export function univerLocaleFor(lang: string): LocaleType | null {
   return UNIVER_LOCALES[lang]?.type ?? null
 }
 
-export async function applyUniverLocale(runtime: UniverRuntime, lang: string): Promise<void> {
+export async function applyUniverLocale(runtime: UniverRuntime, lang: Lang): Promise<void> {
   const entry = UNIVER_LOCALES[lang]
   if (!entry) return
   const packs = (await entry.load()).map((mod) => mod.default)

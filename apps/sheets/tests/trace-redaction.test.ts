@@ -41,7 +41,7 @@ const indexWithB2 = buildRedactionIndex(
   [
     {
       sheetName: 'Sheet1',
-      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
     },
   ],
   info.sheets,
@@ -76,7 +76,7 @@ describe('trace_precedents with a withheld cell', () => {
   it('prints the marker where a withheld precedent would be', () => {
     const out = run(tracing, 'trace_precedents', { address: 'C2' })
     expect(out.output).not.toContain(SECRET)
-    expect(out.output).toContain('{{客户电话}}')
+    expect(out.output).toContain('{{client phone}}')
   })
 
   it('withholds the traced cell’s own value, which is its precedents’ value', () => {
@@ -115,7 +115,7 @@ describe('trace_precedents with a withheld cell', () => {
     })
     const out = run(plainCell, 'trace_precedents', { address: 'B2' })
     expect(out.output).not.toContain(SECRET)
-    expect(out.output).toContain('{{客户电话}}')
+    expect(out.output).toContain('{{client phone}}')
   })
 })
 

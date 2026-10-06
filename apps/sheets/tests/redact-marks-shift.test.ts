@@ -18,7 +18,7 @@ const mark = (over: Partial<CellMark> = {}): CellMark => ({
   endRow: 2,
   startColumn: 1,
   endColumn: 1,
-  label: '客户电话',
+  label: 'client phone',
   ...over,
 })
 
@@ -112,7 +112,7 @@ describe('shapes it does not touch', () => {
 
   it('carries the label through untouched', () => {
     const out = shiftMarksThroughOps([mark()], [insertRows(0)])
-    expect(out[0]!.label).toBe('客户电话')
+    expect(out[0]!.label).toBe('client phone')
   })
 })
 

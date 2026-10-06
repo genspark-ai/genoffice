@@ -11,7 +11,7 @@ import {
   type SheetRedactionState,
 } from '../src/gateway/xlsx-redaction'
 
-const MARK = { startRow: 1, endRow: 3, startColumn: 2, endColumn: 2, label: '客户电话' }
+const MARK = { startRow: 1, endRow: 3, startColumn: 2, endColumn: 2, label: 'client phone' }
 
 const STATES: SheetRedactionState[] = [{ sheetName: 'Sheet1', marks: [MARK] }]
 
@@ -65,7 +65,7 @@ describe('redaction part round trip', () => {
     // "Client Phone" is the case a defined-name carrier cannot express: Excel's
     // name grammar allows no space. The label is the only string the model is
     // permitted to see, so it has to survive verbatim.
-    const label = 'Client Phone / 主要客户'
+    const label = 'Client Phone / Primary Contact'
     const states: SheetRedactionState[] = [{ sheetName: 'Sheet 2', marks: [{ ...MARK, label }] }]
     expect(parseRedactionPart(serializeRedactionPart(states))).toEqual(states)
   })

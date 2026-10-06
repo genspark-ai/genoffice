@@ -531,7 +531,7 @@ describe('a withheld cell is kept out of the arithmetic, whichever source it cam
     const ctx = lazyCtx({
       rowCount: 3,
       columnCount: 1,
-      redactions: markOnData(1, 1, 0, 0, '客户电话'),
+      redactions: markOnData(1, 1, 0, 0, 'client phone'),
     })
 
     const result = await aggregateWorkbookRange(ctx, 'sheet-1', parseRange('A1:A3'))

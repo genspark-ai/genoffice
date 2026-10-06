@@ -6,6 +6,7 @@ import { ICommandService } from '@univerjs/core'
 
 import { RedactDialog } from '../src/renderer/components/RedactDialog'
 import { HIDE_SELECTION_COMMAND_ID, installRedactMenu } from '../src/renderer/redact-menu'
+import { strings } from '../src/renderer/i18n/strings'
 import { hideFromAiLocale } from '../src/renderer/univer-locales'
 
 /**
@@ -85,9 +86,9 @@ describe('the redaction dialog', () => {
   it('hands back what the reader typed, not the seed', () => {
     const onSubmit = vi.fn()
     const container = mount(dialog({ seed: '13800138000', onSubmit }))
-    type(container.querySelector('input')!, '客户电话')
+    type(container.querySelector('input')!, 'client phone')
     click(container.querySelector('.btn-primary')!)
-    expect(onSubmit).toHaveBeenCalledWith('客户电话')
+    expect(onSubmit).toHaveBeenCalledWith('client phone')
   })
 
   it('submits the cleaned label, not the raw keystrokes', () => {
@@ -97,9 +98,9 @@ describe('the redaction dialog', () => {
     // whitespace matters, because the label is the literal the model reads.
     const onSubmit = vi.fn()
     const container = mount(dialog({ onSubmit }))
-    type(container.querySelector('input')!, '  客户 电话  ')
+    type(container.querySelector('input')!, '  client phone  ')
     click(container.querySelector('.btn-primary')!)
-    expect(onSubmit).toHaveBeenCalledWith('客户 电话')
+    expect(onSubmit).toHaveBeenCalledWith('client phone')
   })
 
   it('strips the characters that would break a placeholder', () => {
@@ -113,8 +114,8 @@ describe('the redaction dialog', () => {
   it('shows the placeholder the model will read, live', () => {
     const container = mount(dialog({ rangeLabel: 'Customers!B2:B500' }))
     expect(container.querySelector('.redact-dialog-preview')!.textContent).toBe('{{private}}')
-    type(container.querySelector('input')!, '客户电话')
-    expect(container.querySelector('.redact-dialog-preview')!.textContent).toBe('{{客户电话}}')
+    type(container.querySelector('input')!, 'client phone')
+    expect(container.querySelector('.redact-dialog-preview')!.textContent).toBe('{{client phone}}')
   })
 
   it('names the range so a whole-column mark is never a surprise', () => {
@@ -231,30 +232,36 @@ describe('the grid menu item', () => {
 describe('the menu label reaches Univer as a locale key', () => {
   // Univer resolves a menu item's `title` through its own LocaleService, so a
   // missing key does not fail loudly — the item simply renders untranslated.
-  it('adds the key to the sheets-ui pack for the language asked for', () => {
-    const pack = hideFromAiLocale({ 'sheets-ui': { rightClick: { cut: 'Cut' } } }, 'zh')
+  function titleFor(lang: 'en' | 'ja' | 'th') {
+    const pack = hideFromAiLocale({ 'sheets-ui': { rightClick: { cut: 'Cut' } } }, lang)
+    return (pack['sheets-ui'] as { rightClick: Record<string, string> }).rightClick
+      .hideSelectionFromAi
+  }
+
+  it('reads the wording out of the app string, for every language it is given', () => {
+    // Compared against the app's own table rather than a literal, so the
+    // assertion holds for all 21 languages and cannot rot when one is edited.
+    // en is what the runtime boots with and ja is a Univer-pack language;
+    // both must come from here, which is what keeps the gesture identical
+    // across the other editors.
+    expect(titleFor('en')).toBe(strings.en.redactMenuLabel)
+    expect(titleFor('ja')).toBe(strings.ja.redactMenuLabel)
+    // ...and ja is genuinely translated, not quietly falling back to English.
+    expect(strings.ja.redactMenuLabel).not.toBe(strings.en.redactMenuLabel)
+  })
+
+  it('leaves the pack it merged into untouched', () => {
+    const pack = hideFromAiLocale({ 'sheets-ui': { rightClick: { cut: 'Cut' } } }, 'en')
     const rightClick = (pack['sheets-ui'] as { rightClick: Record<string, string> }).rightClick
-    expect(rightClick.hideSelectionFromAi).toBe('把选中的内容对 AI 隐藏')
-    // The pack it merged into is untouched.
     expect(rightClick.cut).toBe('Cut')
   })
 
-  it('falls back to English for a language Univer has no pack for', () => {
-    // th/nl/ms/he/hi/cs have no Univer pack, and the item stays English there
-    // exactly as every other right-click item does.
-    const pack = hideFromAiLocale({}, 'th')
-    const rightClick = (pack['sheets-ui'] as { rightClick: Record<string, string> }).rightClick
-    expect(rightClick.hideSelectionFromAi).toBe('Hide the selection from AI')
-  })
-
-  it('uses the same wording as the other apps for every language', () => {
-    // The gesture reads identically in markdown, slides, docs and html; a
-    // fresh translation here would be the one string that does not match.
-    const slides = { en: 'Hide the selection from AI', zh: '把选中的内容对 AI 隐藏' }
-    for (const [lang, expected] of Object.entries(slides)) {
-      const pack = hideFromAiLocale({}, lang)
-      const rightClick = (pack['sheets-ui'] as { rightClick: Record<string, string> }).rightClick
-      expect(rightClick.hideSelectionFromAi).toBe(expected)
-    }
+  it('stays English where Univer has no pack, like every other right-click item', () => {
+    // th/nl/ms/he/hi/cs/zh-TW keep the English pack the runtime booted with,
+    // where every other entry is English. The redaction item follows that
+    // rather than being the one string in the menu with a language of its own
+    // — so it must not fall back to the app's Thai wording.
+    expect(titleFor('th')).toBe(strings.en.redactMenuLabel)
+    expect(titleFor('th')).not.toBe(strings.th.redactMenuLabel)
   })
 })

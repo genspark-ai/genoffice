@@ -25,7 +25,7 @@ const STATES: SheetRedactionState[] = [
   {
     sheetName: 'Customers',
     // B2 only — the phone number the reader does not want sent anywhere.
-    marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+    marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
   },
 ]
 
@@ -69,7 +69,7 @@ describe('the withheld-cell index', () => {
   it('answers by sheet id, which is not the name the part is keyed by', () => {
     // The part is keyed by name; every read tool addresses sheets by id. If the
     // translation were missing, the mark would never match a cell.
-    expect(index.labelAt('sh1', 1, 1)).toBe('客户电话')
+    expect(index.labelAt('sh1', 1, 1)).toBe('client phone')
     expect(index.labelAt('sh2', 1, 1)).toBeNull()
   })
 
@@ -139,7 +139,7 @@ describe('the label conventions shared with the other apps', () => {
   })
 
   it('renders the same {{label}} the other apps show', () => {
-    expect(placeholderSource('客户电话')).toBe('{{客户电话}}')
+    expect(placeholderSource('client phone')).toBe('{{client phone}}')
     expect(placeholderSource('   ')).toBe('{{private}}')
   })
 })
@@ -153,7 +153,7 @@ describe('read_cells projects every field of a withheld cell', () => {
       B3: { value: 'public' },
     })
     const result = readCells(ctx, ['B2', 'B3'])
-    expect(result.B2).toEqual({ value: '{{客户电话}}' })
+    expect(result.B2).toEqual({ value: '{{client phone}}' })
     expect(result.B2?.formula).toBeUndefined()
     expect(result.B2?.rawValue).toBeUndefined()
     expect(result.B3).toEqual({ value: 'public' })
@@ -282,7 +282,7 @@ describe('read_cells projects a withheld cell on the streaming path too', () => 
     }
 
     const result = readCellsLazy(ctx, ['B2', 'B3'])
-    expect(result.B2).toEqual({ value: '{{客户电话}}' })
+    expect(result.B2).toEqual({ value: '{{client phone}}' })
     expect(result.B2?.formula).toBeUndefined()
     expect(result.B2?.rawValue).toBeUndefined()
     expect(result.B3).toEqual({ value: 'public', rawValue: 'public' })
@@ -293,11 +293,11 @@ describe('read_cells projects a withheld cell on the streaming path too', () => 
 
 describe('the prompt that explains the placeholders', () => {
   it('names the labels actually in play', () => {
-    const text = placeholderInstruction(['客户电话', '客户电话', '身份证号'])
-    expect(text).toContain('- {{客户电话}}')
-    expect(text).toContain('- {{身份证号}}')
+    const text = placeholderInstruction(['client phone', 'client phone', 'ID number'])
+    expect(text).toContain('- {{client phone}}')
+    expect(text).toContain('- {{ID number}}')
     // Listed once each: a duplicate reads as two different placeholders.
-    expect(text.match(/- \{\{客户电话\}\}/g)).toHaveLength(1)
+    expect(text.match(/- \{\{client phone\}\}/g)).toHaveLength(1)
   })
 
   it('warns about the two ways a model could recover a withheld value', () => {
@@ -306,5 +306,15 @@ describe('the prompt that explains the placeholders', () => {
     expect(text).toContain('left out of every statistic')
     // Search: an empty result must not read as "not in the workbook".
     expect(text).toContain('absent from `find_cells` results')
+  })
+
+  it('keeps its own wording, worked example included, in a Latin script', () => {
+    // The reader's labels may be in any script, but this instruction ships to
+    // every model in every language, and a worked example written in one
+    // script teaches that script's conventions rather than the rule. With no
+    // labels passed, every character in here is ours to keep Latin.
+    const text = placeholderInstruction([])
+    expect(text).not.toMatch(/\p{Script=Han}/u)
+    expect(text).toContain('call {{client phone}}')
   })
 })

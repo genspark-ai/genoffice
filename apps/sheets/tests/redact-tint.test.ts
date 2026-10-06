@@ -85,9 +85,9 @@ describe('building the mark', () => {
     // tint and can never put the reader's colour back, and nothing looks wrong
     // until the mark is cleared.
     const { range, state } = fakeRange('#FFEE00')
-    const mark = buildMark({ getRange: () => range } as never, 'B2:B2', '客户电话', BOUNDS)
+    const mark = buildMark({ getRange: () => range } as never, 'B2:B2', 'client phone', BOUNDS)
     expect(mark.previousFill).toBe('#FFEE00')
-    expect(mark.label).toBe('客户电话')
+    expect(mark.label).toBe('client phone')
     expect(state.fill).toBe(MARK_FILL)
   })
 

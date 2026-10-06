@@ -28,7 +28,7 @@ const INDEX: RedactionIndex = buildRedactionIndex(
   [
     {
       sheetName: 'Customers',
-      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+      marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
     },
   ],
   SHEETS,
@@ -45,10 +45,10 @@ describe('a write that reaches a withheld cell is refused', () => {
   it('names the cell and the label, so the model can tell the user what it hit', () => {
     const refusal = guard([{ op: 'set_cell', sheetId: 'sh1', address: 'B2', value: 'x' }])
     expect(refusal).not.toBeNull()
-    expect(refusal?.label).toBe('客户电话')
+    expect(refusal?.label).toBe('client phone')
     expect(refusal?.where).toBe('Customers!B2')
     // The label reaches the model in the same {{…}} form every other app uses.
-    expect(refusal?.reason).toContain('{{客户电话}}')
+    expect(refusal?.reason).toContain('{{client phone}}')
     expect(refusal?.reason).toContain('Customers!B2')
   })
 
@@ -221,7 +221,7 @@ describe('propose_operations refuses the batch before anything is applied', () =
     )
     expect(propose).not.toHaveBeenCalled()
     expect((result as { isError?: boolean }).isError).toBe(true)
-    expect((result as { output: string }).output).toContain('{{客户电话}}')
+    expect((result as { output: string }).output).toContain('{{client phone}}')
     expect((result as { output: string }).output).toContain('all-or-nothing')
   })
 

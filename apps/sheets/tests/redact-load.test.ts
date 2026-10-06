@@ -32,7 +32,7 @@ const SHEETS = [
   { id: 'sh2', name: 'Orders' },
 ]
 
-const MARK = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }
+const MARK = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }
 
 const PART = JSON.stringify({ version: 1, sheets: [{ name: 'Customers', marks: [MARK] }] })
 
@@ -157,7 +157,7 @@ describe('what the renderer installs for each answer', () => {
       SHEETS,
     )
     expect(session.error).toBeNull()
-    expect(session.index.labelAt('sh1', 1, 1)).toBe('客户电话')
+    expect(session.index.labelAt('sh1', 1, 1)).toBe('client phone')
     expect(session.index.labelAt('sh2', 1, 1)).toBeNull()
   })
 

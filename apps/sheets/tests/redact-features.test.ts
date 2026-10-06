@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildRedactionIndex } from '../src/renderer/ai/redact'
 import { readSheetFeatures, type WorkbookReadContext } from '../src/renderer/ai/workbook-readers'
 
-const NOTE_TEXT = '客户电话 13800138000'
+const NOTE_TEXT = 'client phone 13800138000'
 const DV_LITERAL = '13800138000'
 
 type RangeStub = {
@@ -85,7 +85,7 @@ function ctxWith(options: { withheld: boolean }): WorkbookReadContext {
                     endRow: 9,
                     startColumn: 1,
                     endColumn: 1,
-                    label: '客户电话',
+                    label: 'client phone',
                   },
                 ],
               },
@@ -101,7 +101,7 @@ describe('read_sheet_features does not leak a withheld value through a side door
   it('replaces a note anchored on a withheld cell with the placeholder', () => {
     const output = readSheetFeatures(ctxWith({ withheld: true }))
     expect(output).not.toContain(NOTE_TEXT)
-    expect(output).toContain('- B2: {{客户电话}}')
+    expect(output).toContain('- B2: {{client phone}}')
   })
 
   it('leaves a note on a cell that is not withheld alone', () => {

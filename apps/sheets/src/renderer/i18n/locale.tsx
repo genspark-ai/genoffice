@@ -8,6 +8,17 @@ const translate = createI18n(strings)
 export type StringKey = keyof typeof strings.zh
 export type TFunc = (key: StringKey, params?: Params) => string
 
+/**
+ * Explicit-language translator, for callers that must not follow `moduleLang`:
+ * a Univer locale pack is built for one language at a time and has to stay on
+ * that language even while the app-level module language is elsewhere — the
+ * runtime boots with the English pack whatever the app language is.
+ */
+export const translateFor =
+  (lang: Lang): TFunc =>
+  (key, params) =>
+    translate(lang, key, params)
+
 // mirror for non-React modules (edit-journal, lazy-plan, AI tools …);
 // set before first render and on every language switch
 let moduleLang: Lang = 'zh'

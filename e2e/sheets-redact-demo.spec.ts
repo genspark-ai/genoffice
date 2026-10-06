@@ -116,9 +116,9 @@ test.describe('sheets: withhold a cell from the model', () => {
       const dialog = page.locator('.redact-dialog')
       await expect(dialog).toBeVisible()
       const input = dialog.locator('input')
-      await input.fill('客户电话')
+      await input.fill('client phone')
       // the literal the model will read, shown before committing
-      await expect(dialog.locator('.redact-dialog-preview')).toHaveText('{{客户电话}}')
+      await expect(dialog.locator('.redact-dialog-preview')).toHaveText('{{client phone}}')
       await page.screenshot({ path: screenshotPath('sheets-redact-2-dialog') })
       await dialog.locator('.btn-primary').click()
       await expect(dialog).toHaveCount(0)
@@ -130,7 +130,7 @@ test.describe('sheets: withhold a cell from the model', () => {
       // the mark is in the package…
       expect(partListed(workbook), `${REDACTION_PART} is missing from the saved file`).toBe(true)
       const part = partText(workbook)
-      expect(part).toContain('客户电话')
+      expect(part).toContain('client phone')
       // …and it is declared, so the part is really part of the package
       // The brackets are a glob to both the shell and unzip, so the part name
       // is escaped before it reaches either.
@@ -179,7 +179,7 @@ test.describe('sheets: withhold a cell from the model', () => {
       await page.getByText(MENU_LABEL, { exact: true }).click({ timeout: 15_000 })
       const dialog = page.locator('.redact-dialog')
       await expect(dialog).toBeVisible()
-      await dialog.locator('input').fill('客户电话')
+      await dialog.locator('input').fill('client phone')
       await dialog.locator('.btn-primary').click()
       await saveViaMenu(launched.app, workbook)
     } finally {

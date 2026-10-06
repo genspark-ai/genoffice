@@ -14,7 +14,7 @@ import {
  * outright, so a field added to the mark and forgotten here does not degrade —
  * it refuses every save, and the mark silently never reaches the file.
  */
-const MARK = { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0, label: '客户电话' }
+const MARK = { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0, label: 'client phone' }
 
 describe('the save boundary keeps the displaced fill', () => {
   it('accepts a mark carrying previousFill', () => {

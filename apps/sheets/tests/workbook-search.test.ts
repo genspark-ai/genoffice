@@ -411,7 +411,9 @@ describe('find_cells treats a withheld cell as absent', () => {
           [
             {
               sheetName: 'Customers',
-              marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+              marks: [
+                { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' },
+              ],
             },
           ],
           [{ id: 'sh1', name: 'Customers' }],
@@ -445,7 +447,7 @@ describe('find_cells on a streaming workbook treats a withheld cell as absent', 
       [
         {
           sheetName: 'Data',
-          marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: '客户电话' }],
+          marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
         },
       ],
       [{ id: 'sh1', name: 'Data' }],
