@@ -37,15 +37,36 @@ O documento novo abre sem título; o ficheiro no disco só é criado no primeiro
 
 ## Atalhos frequentes
 
-| Ação              | macOS | Windows / Linux |
-| ----------------- | ----- | --------------- |
-| Novo documento    | ⌘N    | ctrl+N          |
-| Abrir             | ⌘O    | ctrl+O          |
-| Salvar            | ⌘S    | ctrl+S          |
-| Fechar guia       | ⌘W    | ctrl+W          |
-| Abrir este manual | F1    | F1              |
+| Ação                       | macOS | Windows / Linux |
+| -------------------------- | ----- | --------------- |
+| Novo documento             | ⌘N    | ctrl+N          |
+| Abrir                      | ⌘O    | ctrl+O          |
+| Salvar                     | ⌘S    | ctrl+S          |
+| Fechar guia                | ⌘W    | ctrl+W          |
+| Abrir este manual          | F1    | F1              |
+| Recolher a Faixa de Opções | ⌥⌘R   | Ctrl+F1         |
 
-Os atalhos dentro de cada editor (pincel de formatação, pesquisar e substituir, operações de tabela, ...) estão nos respetivos capítulos; o Docs traz ainda uma janela de atalhos de teclado pesquisável (consulte o seu capítulo).
+**Recolher a Faixa de Opções** funciona em todos os editores. A linha de guias mantém-se e a faixa de comandos por baixo desaparece; a guia selecionada serve também de controlo de recolha, pelo que enquanto a faixa estiver recolhida não há nenhuma guia selecionada e premir qualquer uma das guias traz a faixa de volta. Um duplo clique numa guia faz o mesmo. O sentido em que a deixou é guardado editor a editor.
+
+Os atalhos dentro de cada editor (pincel de formatação, pesquisar e substituir, operações de tabela, ...) estão nos respetivos capítulos; o Docs traz ainda uma janela de atalhos de teclado pesquisável (**⌘/**) (consulte o seu capítulo).
+
+## Os atalhos Option+Command
+
+Option+Command é a camada que o Word reserva para saltos estruturados, e o GenOffice preenche-a da mesma forma. Tudo o que se segue é próprio do Docs:
+
+| Atalho (macOS)  | O que faz              | Windows / Linux    |
+| --------------- | ---------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3 | Título 1 / 2 / 3       | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0             | Normal                 | Ctrl+Alt+0         |
+| ⌥⌘M             | Parágrafo              | Ctrl+Alt+M         |
+| ⌥⌘A             | Novo Comentário        | Ctrl+Alt+A         |
+| ⌥⌘F             | Inserir Nota de Rodapé | Ctrl+Alt+F         |
+| ⌥⌘E             | Inserir Nota de Fim    | Ctrl+Alt+D         |
+| ⌥⌘G             | Ir para                | Ctrl+G             |
+
+Dois deles mudam no Windows, pela mesma razão que leva o Word a separá-los. **O macOS tem o ⌥⌘D** — mostra e oculta o Dock —, por isso a nota de fim é ⌥⌘E no Mac e Ctrl+Alt+D em qualquer outro lado. E **Ir para** dispensa o Alt: Ctrl+G, ao passo que o atalho do Mac o traz consigo.
+
+Isso deixa o ⌥⌘D livre para o GenOffice usar no macOS, se um comando futuro precisar dele.
 
 ## Para onde ir a seguir
 

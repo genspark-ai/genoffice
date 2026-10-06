@@ -44,8 +44,29 @@ Dokumen baru terbuka tanpa nama; file di disk baru dibuat saat disimpan pertama 
 | Simpan           | ⌘S    | ctrl+S          |
 | Tutup tab        | ⌘W    | ctrl+W          |
 | Buka panduan ini | F1    | F1              |
+| Ciutkan Pita     | ⌥⌘R   | Ctrl+F1         |
 
-Pintasan di dalam tiap editor (penyalin format, cari dan ganti, operasi tabel, ...) ada di bab masing-masing; Docs juga menyediakan dialog pintasan papan tikik yang bisa dicari (lihat babnya).
+**Ciutkan Pita** berfungsi di setiap editor. Baris tab tetap ada dan pita perintah di bawahnya tersembunyi; tab yang sedang dipilih sekaligus menjadi kendali pencetakan, sehingga selama pita terlipat tidak ada tab yang dipilih dan menekan tab mana pun mengembalikan pita itu. Klik ganda pada tab melakukan hal yang sama. Cara Anda meninggalkannya diingat per editor.
+
+Pintasan di dalam tiap editor (penyalin format, cari dan ganti, operasi tabel, ...) ada di bab masing-masing; Docs juga menyediakan dialog pintasan papan tikik yang bisa dicari (**⌘/**) (lihat babnya).
+
+## Pintasan Option+Command
+
+Option+Command adalah lapisan yang dicadangkan Word untuk lompatan terstruktur, dan GenOffice mengisinya dengan cara yang sama. Semua yang berikut ini milik Docs sendiri:
+
+| Pintasan (macOS) | Fungsinya              | Windows / Linux    |
+| ---------------- | ---------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3  | Judul 1 / 2 / 3        | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0              | Normal                 | Ctrl+Alt+0         |
+| ⌥⌘M              | Paragraf               | Ctrl+Alt+M         |
+| ⌥⌘A              | Komentar Baru          | Ctrl+Alt+A         |
+| ⌥⌘F              | Sisipkan Catatan Kaki  | Ctrl+Alt+F         |
+| ⌥⌘E              | Sisipkan Catatan Akhir | Ctrl+Alt+D         |
+| ⌥⌘G              | Pergi ke               | Ctrl+G             |
+
+Dua di antaranya berpindah di Windows, karena alasan yang sama seperti saat Word memisahkannya. **macOS memiliki ⌥⌘D** — ia menampilkan dan menyembunyikan Dock — sehingga catatan akhir memakai ⌥⌘E di Mac dan Ctrl+Alt+D di tempat lain. Dan **Pergi ke** melepas Alt: Ctrl+G, sedangkan pintasan di Mac tetap membawanya.
+
+Dengan begitu ⌥⌘D tetap bebas untuk dipakai GenOffice di macOS, bila suatu perintah memutuskan membutuhkannya.
 
 ## Ke mana selanjutnya
 

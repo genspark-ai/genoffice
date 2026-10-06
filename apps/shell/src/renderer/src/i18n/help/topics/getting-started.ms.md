@@ -44,8 +44,29 @@ Dokumen baharu dibuka tanpa tajuk; fail pada cakera hanya dicipta semasa simpana
 | Simpan          | ⌘S    | ctrl+S          |
 | Tutup tab       | ⌘W    | ctrl+W          |
 | Buka manual ini | F1    | F1              |
+| Runtuhkan Reben | ⌥⌘R   | Ctrl+F1         |
 
-Pintasan dalam setiap editor (berus format, cari & ganti, operasi jadual, ...) diterangkan dalam bab masing-masing; Docs turut menyediakan dialog pintasan papan kekunci yang boleh dicari (lihat babnya).
+**Menutupkan reben** berfungsi dalam setiap editor. Baris tab kekal ada dan jalur arahan di bawahnya hilang; tab yang dipilih sekali gus menjadi kawalan lipatan, jadi selagi reben terlipat tiada tab dipilih dan menekan mana-mana tab akan mengembalikan jalur itu. Klik dua kali pada tab melakukan perkara yang sama. Cara anda meninggalkannya diingati bagi setiap editor.
+
+Pintasan dalam setiap editor (berus format, cari & ganti, operasi jadual, ...) diterangkan dalam bab masing-masing; Docs turut menyediakan dialog pintasan papan kekunci yang boleh dicari (**⌘/**) (lihat babnya).
+
+## Pintasan Option+Command
+
+Option+Command ialah lapisan yang dikhaskan Word untuk lompatan berstruktur, dan GenOffice mengisinya dengan cara yang sama. Semua yang berikut ialah milik Docs:
+
+| Pintasan (macOS) | Apa yang ia lakukan  | Windows / Linux    |
+| ---------------- | -------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3  | Tajuk 1 / 2 / 3      | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0              | Normal               | Ctrl+Alt+0         |
+| ⌥⌘M              | Perenggan            | Ctrl+Alt+M         |
+| ⌥⌘A              | Komen Baharu         | Ctrl+Alt+A         |
+| ⌥⌘F              | Sisipkan Nota Kaki   | Ctrl+Alt+F         |
+| ⌥⌘E              | Sisipkan Nota Hujung | Ctrl+Alt+D         |
+| ⌥⌘G              | Pergi ke             | Ctrl+G             |
+
+Dua daripada bertukar pada Windows, atas sebab yang sama seperti yang membuat Word memisahkannya. **macOS memiliki ⌥⌘D** — ia memaparkan dan menyembunyikan Dock — jadi nota hujung ialah ⌥⌘E pada Mac dan Ctrl+Alt+D di tempat lain. Dan **Pergi ke** melepaskan Alt: Ctrl+G, manakala pintasan pada Mac membawanya sekali.
+
+Maka ⌥⌘D kekal bebas untuk GenOffice gunakan pada macOS, jika ada perintah pada masa depan yang memerlukannya.
 
 ## Ke mana seterusnya
 

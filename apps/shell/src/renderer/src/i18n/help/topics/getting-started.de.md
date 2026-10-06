@@ -44,8 +44,29 @@ Ein neues Dokument öffnet sich ohne Namen; die Datei auf dem Datenträger entst
 | Speichern              | ⌘S    | ctrl+S          |
 | Tab schließen          | ⌘W    | ctrl+W          |
 | Dieses Handbuch öffnen | F1    | F1              |
+| Menüband reduzieren    | ⌥⌘R   | Ctrl+F1         |
 
-Tastenkürzel innerhalb der einzelnen Editoren (Format übertragen, Suchen und Ersetzen, Tabellenbefehle, …) stehen in den jeweiligen Kapiteln; Docs bringt zusätzlich einen durchsuchbaren Dialog für Tastenkombinationen mit (siehe sein Kapitel).
+**Das Reduzieren des Menübands** funktioniert in jedem Editor. Die Registerreihen bleibt stehen, und das Befehlsband darunter wird ausgeblendet; die ausgewählte Registerkarte dient zugleich als Reduzierungsschalter – solange das Menüband reduziert ist, ist keine Registerkarte ausgewählt, und ein Klick auf eine beliebige Karte holt das Band zurück. Ein Doppelklick auf eine Registerkarte tut dasselbe. Wie Sie es zuletzt hatten, wird pro Editor gemerkt.
+
+Tastenkürzel innerhalb der einzelnen Editoren (Format übertragen, Suchen und Ersetzen, Tabellenbefehle, …) stehen in den jeweiligen Kapiteln; Docs bringt zusätzlich einen durchsuchbaren Dialog für Tastenkombinationen (**⌘/**) mit (siehe sein Kapitel).
+
+## Die Tastenkürzel mit Option+Befehl
+
+Option+Befehl ist die Ebene, die Word für strukturierte Sprünge reserviert, und GenOffice füllt sie auf dieselbe Weise. Alle folgenden gehören Docs:
+
+| Tastenkombination (macOS) | Wirkung               | Windows / Linux    |
+| ------------------------- | --------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3           | Überschrift 1 / 2 / 3 | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0                       | Standard              | Ctrl+Alt+0         |
+| ⌥⌘M                       | Absatz                | Ctrl+Alt+M         |
+| ⌥⌘A                       | Neuer Kommentar       | Ctrl+Alt+A         |
+| ⌥⌘F                       | Fußnote einfügen      | Ctrl+Alt+F         |
+| ⌥⌘E                       | Endnote einfügen      | Ctrl+Alt+D         |
+| ⌥⌘G                       | Gehe zu               | Ctrl+G             |
+
+Zwei davon rücken unter Windows weiter, aus demselben Grund, aus dem Word sie trennt. **macOS hat sich ⌥⌘D gesichert** – sie blendet das Dock ein und aus –, deshalb ist die Endnote auf dem Mac ⌥⌘E und überall sonst Ctrl+Alt+D. Und **Gehe zu** lässt die Alt-Taste weg: Ctrl+G, wo die Mac-Tastenkombination sie mitschleppt.
+
+Damit bleibt ⌥⌘D auf macOS frei, falls GenOffice ihn irgendwann für einen neuen Befehl braucht.
 
 ## Wie Sie weiterfahren
 

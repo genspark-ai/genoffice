@@ -44,8 +44,29 @@ Nowy dokument otwiera się bez tytułu; plik na dysku powstaje dopiero przy pier
 | Zapisz                | ⌘S    | ctrl+S          |
 | Zamknij kartę         | ⌘W    | ctrl+W          |
 | Otwórz ten podręcznik | F1    | F1              |
+| Zwiń Wstążkę          | ⌥⌘R   | Ctrl+F1         |
 
-Skróty używane wewnątrz każdego edytora (malarz formatów, znajdź i zamień, operacje na tabelach, ...) opisano w odpowiednich rozdziałach; Docs dodatkowo udostępnia wyszukiwalne okno skrótów klawiaturowych (patrz jego rozdział).
+**Zwinięcie wstążki** działa w każdym edytorze. Wiersz kart pozostaje na miejscu, a pasek poleceń pod nim znika; wybrana karta jest zarazem przyciskiem zwijania, więc dopóki wstążka jest zwinięta, żadna karta nie jest wybrana, a naciśnięcie dowolnej karty przywraca pasek. Podwójne kliknięcie karty robi dokładnie to samo. Sposób, w jaki ją zostawili, jest zapamiętywany osobno dla każdego edytora.
+
+Skróty używane wewnątrz każdego edytora (malarz formatów, znajdź i zamień, operacje na tabelach, ...) opisano w odpowiednich rozdziałach; Docs dodatkowo udostępnia wyszukiwalne okno skrótów klawiaturowych (**⌘/**) (patrz jego rozdział).
+
+## Skróty Option+Command
+
+Option+Command to warstwa, którą Word rezerwuje na strukturyzowane skoki, a GenOffice wypełnia ją w ten sam sposób. Wszystkie poniższe należą do samego Docs:
+
+| Skrót (macOS)   | Co robi               | Windows / Linux    |
+| --------------- | --------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3 | Nagłówek 1 / 2 / 3    | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0             | Normalny              | Ctrl+Alt+0         |
+| ⌥⌘M             | Akapit                | Ctrl+Alt+M         |
+| ⌥⌘A             | Nowy komentarz        | Ctrl+Alt+A         |
+| ⌥⌘F             | Wstaw przypis dolny   | Ctrl+Alt+F         |
+| ⌥⌘E             | Wstaw przypis końcowy | Ctrl+Alt+D         |
+| ⌥⌘G             | Przejdź do            | Ctrl+G             |
+
+Dwa z nich działają inaczej w Windows, z tego samego powodu, dla którego Word je rozdziela. **macOS zajmuje ⌥⌘D** — pokazuje i ukrywa Dock —, więc przypis końcowy to ⌥⌘E na Macu, a wszędzie indziej Ctrl+Alt+D. A **Przejdź do** rezygnuje z Alt: Ctrl+G, tam gdzie skrót na Macu zabiera go ze sobą.
+
+To zostawia ⌥⌘D wolny dla GenOffice na macOS, gdyby jakieś przyszłe polecenie go potrzebowało.
 
 ## Co dalej
 

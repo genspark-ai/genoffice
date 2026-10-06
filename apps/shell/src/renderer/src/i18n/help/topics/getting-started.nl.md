@@ -44,8 +44,29 @@ Een nieuw document opent zonder titel; het bestand op schijf wordt pas aangemaak
 | Opslaan                 | ⌘S    | ctrl+S          |
 | Tabblad sluiten         | ⌘W    | ctrl+W          |
 | Deze handleiding openen | F1    | F1              |
+| Het lint samenvouwen    | ⌥⌘R   | Ctrl+F1         |
 
-Sneltoetsen binnen elke editor (opmaakpenseel, zoeken en vervangen, tabelbewerkingen, ...) staan in de bijbehorende hoofdstukken; Docs heeft bovendien een doorzoekbaar dialoogvenster met sneltoetsen (zie dat hoofdstuk).
+**Het lint samenvouwen** werkt in elke editor. De tabbalk blijft staan en de opdrachtbalk eronder verdwijnt; het geselecteerde tabblad dient tegelijk als het besturingselement om het lint te vouwen, dus zolang het lint samengevouwen is, is er geen tabblad geselecteerd en drukken op een willekeurig tabblad brengt de balk terug. Een dubbelklik op een tabblad doet hetzelfde. Hoe u het hebt gelaten, wordt per editor onthouden.
+
+Sneltoetsen binnen elke editor (opmaakpenseel, zoeken en vervangen, tabelbewerkingen, ...) staan in de bijbehorende hoofdstukken; Docs heeft bovendien een doorzoekbaar dialoogvenster met sneltoetsen (**⌘/**) (zie dat hoofdstuk).
+
+## De Option+Command-sneltoetsen
+
+Option+Command is de laag die Word reserveert voor gestructureerde sprongen, en GenOffice vult die op dezelfde manier. Al het volgende is van Docs zelf:
+
+| Sneltoets (macOS) | Wat het doet      | Windows / Linux    |
+| ----------------- | ----------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3   | Kop 1 / 2 / 3     | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0               | Standaard         | Ctrl+Alt+0         |
+| ⌥⌘M               | Alinea            | Ctrl+Alt+M         |
+| ⌥⌘A               | Nieuwe opmerking  | Ctrl+Alt+A         |
+| ⌥⌘F               | Voetnoot invoegen | Ctrl+Alt+F         |
+| ⌥⌘E               | Eindnoot invoegen | Ctrl+Alt+D         |
+| ⌥⌘G               | Ga naar           | Ctrl+G             |
+
+Twee daarvan veranderen op Windows, om dezelfde reden waarom Word ze opsplitst. **macOS bezet ⌥⌘D** — die toont en verbergt het Dock —, waardoor de eindnoot ⌥⌘E is op de Mac en Ctrl+Alt+D overal elders. En **Ga naar** laat Alt vallen: Ctrl+G, waar de Mac-sneltoets hem wel meeneemt.
+
+Daarmee blijft ⌥⌘D vrij voor GenOffice om op macOS te gebruiken, als een toekomstige opdracht hem nodig heeft.
 
 ## Waar nu heen
 

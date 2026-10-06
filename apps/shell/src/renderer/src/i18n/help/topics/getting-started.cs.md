@@ -44,8 +44,29 @@ Nový dokument se otevře bez názvu; soubor na disku vznikne až při prvním u
 | Uložit                | ⌘S    | ctrl+S          |
 | Zavřít kartu          | ⌘W    | ctrl+W          |
 | Otevřít tuto příručku | F1    | F1              |
+| Sbalit pás karet      | ⌥⌘R   | Ctrl+F1         |
 
-Zkratky uvnitř jednotlivých editorů (formátovací štětec, najít a nahradit, práce s tabulkami, ...) najdete v příslušných kapitolách; Docs navíc nabízí prohledávatelný dialog klávesových zkratek (viz jeho kapitola).
+**Sbalení pásu karet** funguje v každém editoru. Řádek karet zůstane na místě a pás příkazů pod ním se skryje; vybraná karta zároveň slouží jako ovládací prvek sbalení, takže dokud je pás karet sbalený, není vybraná žádná karta a stiskem libovolné karty se pás znovu ukáže. Dvojklik na kartu udělá totéž. Způsob, jakým jste to nechali, se pamatuje pro každý editor zvlášť.
+
+Zkratky uvnitř jednotlivých editorů (formátovací štětec, najít a nahradit, práce s tabulkami, ...) najdete v příslušných kapitolách; Docs navíc nabízí prohledávatelný dialog klávesových zkratek (**⌘/**) (viz jeho kapitola).
+
+## Zkratky s kombinací Option+Command
+
+Option+Command je vrstva, kterou Word vyhrazuje pro strukturované skoky, a GenOffice ji vyplňuje stejným způsobem. Všechno následující patří Docs:
+
+| Zkratka (macOS) | Co dělá                   | Windows / Linux    |
+| --------------- | ------------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3 | Nadpis 1 / 2 / 3          | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0             | Normální                  | Ctrl+Alt+0         |
+| ⌥⌘M             | Odstavec                  | Ctrl+Alt+M         |
+| ⌥⌘A             | Nový komentář             | Ctrl+Alt+A         |
+| ⌥⌘F             | Vložit poznámku pod čarou | Ctrl+Alt+F         |
+| ⌥⌘E             | Vložit vysvětlivku        | Ctrl+Alt+D         |
+| ⌥⌘G             | Přejít na                 | Ctrl+G             |
+
+Dva z nich se na Windows mění, ze stejného důvodu, pro který je Word rozděluje. **macOS si vzal ⌥⌘D** — zobrazuje a skrývá Dock —, takže vysvětlivka je na Macu ⌥⌘E a jinde Ctrl+Alt+D. A **Přejít na** Alt zahazuje: Ctrl+G, zatímco zkratka na Macu ho nese s sebou.
+
+Tím pádem zůstává ⌥⌘D volný, aby ho GenOffice na macOS mohla použít, pokud ho některý budoucí příkaz potřebuje.
 
 ## Kam dál
 

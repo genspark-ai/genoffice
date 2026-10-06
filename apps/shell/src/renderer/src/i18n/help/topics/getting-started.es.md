@@ -44,8 +44,29 @@ Un documento nuevo se abre sin título; el archivo en el disco solo se crea al g
 | Guardar           | ⌘S    | ctrl+S          |
 | Cerrar pestaña    | ⌘W    | ctrl+W          |
 | Abrir este manual | F1    | F1              |
+| Contraer la cinta | ⌥⌘R   | Ctrl+F1         |
 
-Los atajos dentro de cada editor (copiar formato, buscar y reemplazar, operaciones de tabla, …) están en sus capítulos; Docs incluye además un cuadro de diálogo de atajos de teclado en el que se puede buscar (véase su capítulo).
+**Contraer la cinta de opciones** funciona en todos los editores. La fila de pestañas permanece y la banda de comandos que hay debajo se oculta; la pestaña seleccionada hace doble función como control de contracción, de modo que mientras la cinta está contraída no hay ninguna pestaña seleccionada y pulsar cualquier pestaña vuelve a mostrar la banda. Hacer doble clic en una pestaña hace lo mismo. La forma en que la dejó se recuerda editor por editor.
+
+Los atajos dentro de cada editor (copiar formato, buscar y reemplazar, operaciones de tabla, …) están en sus capítulos; Docs incluye además un cuadro de diálogo de atajos de teclado en el que se puede buscar (**⌘/**) (véase su capítulo).
+
+## Los atajos Option+Comando
+
+Option+Comando es la capa que Word reserva para los saltos estructurados, y GenOffice la rellena igual. Todo lo siguiente es propio de Docs:
+
+| Atajo (macOS)   | Qué hace               | Windows / Linux    |
+| --------------- | ---------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3 | Título 1 / 2 / 3       | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0             | Normal                 | Ctrl+Alt+0         |
+| ⌥⌘M             | Párrafo                | Ctrl+Alt+M         |
+| ⌥⌘A             | Nuevo comentario       | Ctrl+Alt+A         |
+| ⌥⌘F             | Insertar nota al pie   | Ctrl+Alt+F         |
+| ⌥⌘E             | Insertar nota al final | Ctrl+Alt+D         |
+| ⌥⌘G             | Ir a                   | Ctrl+G             |
+
+Dos de ellos cambian en Windows, por la misma razón que hace que Word los separe. **macOS es dueño de ⌥⌘D** — muestra y oculta el Dock —, así que la nota al final es ⌥⌘E en el Mac y Ctrl+Alt+D en cualquier otro sitio. Y **Ir a** se quita el Alt: Ctrl+G, donde la combinación del Mac sí lo lleva.
+
+Eso deja ⌥⌘D libre para que GenOffice lo use en macOS si algún comando futuro lo necesita.
 
 ## Adónde ir después
 

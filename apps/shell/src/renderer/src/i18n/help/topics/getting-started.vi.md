@@ -37,15 +37,36 @@ Tài liệu mới mở ra chưa có tiêu đề; tập tin trên đĩa chỉ đ�
 
 ## Phím tắt thường dùng
 
-| Thao tác      | macOS | Windows / Linux |
-| ------------- | ----- | --------------- |
-| Tài liệu mới  | ⌘N    | ctrl+N          |
-| Mở            | ⌘O    | ctrl+O          |
-| Lưu           | ⌘S    | ctrl+S          |
-| Đóng thẻ      | ⌘W    | ctrl+W          |
-| Mở sổ tay này | F1    | F1              |
+| Thao tác       | macOS | Windows / Linux |
+| -------------- | ----- | --------------- |
+| Tài liệu mới   | ⌘N    | ctrl+N          |
+| Mở             | ⌘O    | ctrl+O          |
+| Lưu            | ⌘S    | ctrl+S          |
+| Đóng thẻ       | ⌘W    | ctrl+W          |
+| Mở sổ tay này  | F1    | F1              |
+| Thu gọn Ribbon | ⌥⌘R   | Ctrl+F1         |
 
-Các phím tắt bên trong từng trình soạn thảo (công cụ định dạng, tìm và thay thế, thao tác bảng, ...) nằm trong chương tương ứng; Docs còn có hộp thoại phím tắt bàn phím có thể tìm kiếm (xem chương của nó).
+**Thu gọn Ribbon** hoạt động trong mọi trình soạn thảo. Hàng thẻ vẫn còn nguyên, còn dải lệnh bên dưới sẽ ẩn đi; thẻ đang chọn kiêm luôn là nút thu gọn, nên khi Ribbon còn thu gọn thì không thẻ nào được chọn, và bấm thẻ bất kỳ sẽ đưa dải lệnh trở lại. Bấm đúp vào một thẻ cũng cho kết quả tương tự. Trạng thái bạn để lại được ghi nhớ riêng cho từng trình soạn thảo.
+
+Các phím tắt bên trong từng trình soạn thảo (công cụ định dạng, tìm và thay thế, thao tác bảng, ...) nằm trong chương tương ứng; Docs còn có hộp thoại phím tắt bàn phím có thể tìm kiếm (**⌘/**) (xem chương của nó).
+
+## Các phím tắt Option+Command
+
+Option+Command là lớp mà Word dành riêng cho các bước nhảy có cấu trúc, và GenOffice lấp đầy lớp đó theo đúng cách. Tất cả những gì dưới đây đều là của riêng Docs:
+
+| Phím tắt (macOS) | Tác dụng                     | Windows / Linux    |
+| ---------------- | ---------------------------- | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3  | Tiêu đề 1 / 2 / 3            | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0              | Bình thường                  | Ctrl+Alt+0         |
+| ⌥⌘M              | Đoạn văn                     | Ctrl+Alt+M         |
+| ⌥⌘A              | Nhận xét mới                 | Ctrl+Alt+A         |
+| ⌥⌘F              | Chèn chú thích cuối trang    | Ctrl+Alt+F         |
+| ⌥⌘E              | Chèn chú thích cuối tài liệu | Ctrl+Alt+D         |
+| ⌥⌘G              | Đi tới                       | Ctrl+G             |
+
+Trong đó hai phím đổi trên Windows, vì lý do mà Word cũng tách chúng ra. **macOS đã giữ ⌥⌘D** — dùng để hiện và ẩn Dock — nên chèn chú thích cuối tài liệu là ⌥⌘E trên Mac và Ctrl+Alt+D ở mọi nơi khác. Còn **Đi tới** thì bỏ Alt: Ctrl+G, trong khi phím tắt bên Mac vẫn mang theo Alt.
+
+Như vậy ⌥⌘D vẫn còn trống để GenOffice dùng trên macOS, nếu một lệnh nào trong tương lai cần đến nó.
 
 ## Nên đọc tiếp ở đâu
 

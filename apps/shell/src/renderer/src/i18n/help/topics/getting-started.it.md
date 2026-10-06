@@ -37,15 +37,36 @@ Un nuovo documento si apre senza titolo; il file su disco viene creato solo al p
 
 ## Scorciatoie comuni
 
-| Azione              | macOS | Windows / Linux |
-| ------------------- | ----- | --------------- |
-| Nuovo documento     | ⌘N    | ctrl+N          |
-| Apri                | ⌘O    | ctrl+O          |
-| Salva               | ⌘S    | ctrl+S          |
-| Chiudi scheda       | ⌘W    | ctrl+W          |
-| Apri questo manuale | F1    | F1              |
+| Azione                        | macOS | Windows / Linux |
+| ----------------------------- | ----- | --------------- |
+| Nuovo documento               | ⌘N    | ctrl+N          |
+| Apri                          | ⌘O    | ctrl+O          |
+| Salva                         | ⌘S    | ctrl+S          |
+| Chiudi scheda                 | ⌘W    | ctrl+W          |
+| Apri questo manuale           | F1    | F1              |
+| Riduci la barra multifunzione | ⌥⌘R   | Ctrl+F1         |
 
-Le scorciatoie interne a ogni editor (pennello di formattazione, trova e sostituisci, operazioni sulle tabelle, ...) si trovano nei rispettivi capitoli; Docs dispone inoltre di una finestra di dialogo ricercabile con tutte le scorciatoie da tastiera (vedi il suo capitolo).
+**Ridurre la barra multifunzione** funziona in ogni editor. La riga di schede resta al suo posto e la banda dei comandi sottostante viene nascosta; la scheda selezionata fa anche da controllo di riduzione, quindi mentre la barra multifunzione è ridotta nessuna scheda è selezionata e premere una scheda qualsiasi riporta la banda. Un doppio clic su una scheda fa lo stesso. Il modo in cui l'ha lasciata viene ricordato per ogni editor.
+
+Le scorciatoie interne a ogni editor (pennello di formattazione, trova e sostituisci, operazioni sulle tabelle, ...) si trovano nei rispettivi capitoli; Docs dispone inoltre di una finestra di dialogo ricercabile con tutte le scorciatoie da tastiera (**⌘/**) (vedi il suo capitolo).
+
+## Le scorciatoie Option+Comando
+
+Option+Comando è il livello che Word riserva ai salti strutturati, e GenOffice lo riempie allo stesso modo. Tutte le seguenti sono di Docs:
+
+| Scorciatoia (macOS) | A cosa serve                   | Windows / Linux    |
+| ------------------- | ------------------------------ | ------------------ |
+| ⌥⌘1 / ⌥⌘2 / ⌥⌘3     | Titolo 1 / 2 / 3               | Ctrl+Alt+1 / 2 / 3 |
+| ⌥⌘0                 | Normale                        | Ctrl+Alt+0         |
+| ⌥⌘M                 | Paragrafo                      | Ctrl+Alt+M         |
+| ⌥⌘A                 | Nuovo commento                 | Ctrl+Alt+A         |
+| ⌥⌘F                 | Inserisci nota a piè di pagina | Ctrl+Alt+F         |
+| ⌥⌘E                 | Inserisci nota di chiusura     | Ctrl+Alt+D         |
+| ⌥⌘G                 | Vai a                          | Ctrl+G             |
+
+Due di esse cambiano su Windows, per la stessa ragione per cui Word le separa. **macOS si è preso ⌥⌘D** — mostra e nasconde il Dock —, quindi la nota di chiusura è ⌥⌘E sul Mac e Ctrl+Alt+D ovunque altrove. E **Vai a** perde il tasto Alt: Ctrl+G, mentre la scorciatoia del Mac lo porta con sé.
+
+Così ⌥⌘D resta libero perché GenOffice lo usi su macOS, se un futuro comando lo vorrà.
 
 ## Dove andare poi
 
