@@ -55,19 +55,19 @@ function selectText(editor: Editor, needle: string) {
 
 describe('the agent context is the redacted view', () => {
   it('never contains a withheld number', () => {
-    const editor = makeEditor('请拨打 13800138000 确认订单')
+    const editor = makeEditor('call 13800138000 to confirm the order')
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     expect(buildDocContext(editor)).not.toContain(SECRET)
   })
 
   it('tells the agent the placeholder is there', () => {
-    const editor = makeEditor('请拨打 13800138000 确认订单')
+    const editor = makeEditor('call 13800138000 to confirm the order')
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const context = buildDocContext(editor)
-    expect(context).toContain('客户电话')
-    expect(context).toContain('{{客户电话}}')
+    expect(context).toContain('client phone')
+    expect(context).toContain('{{client phone}}')
   })
 
   it('is untouched for a document with nothing withheld', () => {
@@ -76,23 +76,23 @@ describe('the agent context is the redacted view', () => {
   })
 
   it('withholds a number sitting in a list', () => {
-    const editor = makeEditor('- 联系电话 13800138000')
+    const editor = makeEditor('- contact phone 13800138000')
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     expect(buildDocContext(editor)).not.toContain(SECRET)
   })
 
   it('withholds an address in a nested block', () => {
-    const editor = makeEditor('> 寄到 上海市浦东新区 100 号')
-    selectText(editor, '上海市浦东新区')
-    editor.commands.setRedaction('收货地址')
-    expect(buildDocContext(editor)).not.toContain('上海市浦东新区')
+    const editor = makeEditor('> ship to Pudong New Area, Shanghai 100')
+    selectText(editor, 'Pudong New Area, Shanghai')
+    editor.commands.setRedaction('shipping address')
+    expect(buildDocContext(editor)).not.toContain('Pudong New Area, Shanghai')
   })
 
   it('the save path still has the real text, so the reader keeps their data', () => {
-    const editor = makeEditor('请拨打 13800138000 确认订单')
+    const editor = makeEditor('call 13800138000 to confirm the order')
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     expect(editor.getMarkdown()).toContain(SECRET)
   })
 })

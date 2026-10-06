@@ -60,43 +60,43 @@ function selectText(editor: Editor, needle: string) {
 describe('marking a span keeps the reader’s text', () => {
   let editor: Editor
   beforeEach(() => {
-    editor = makeEditor('请拨打 13800138000 确认订单')
+    editor = makeEditor('call 13800138000 to confirm the order')
   })
 
   it('leaves the real number in the document', () => {
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     // the whole point: nothing of the reader's own data was thrown away
     expect(editor.state.doc.textContent).toContain('13800138000')
   })
 
   it('shows the model a marker instead of the number', () => {
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
-    expect(toModelView(editor)).toContain('{{客户电话}}')
+    editor.commands.setRedaction('client phone')
+    expect(toModelView(editor)).toContain('{{client phone}}')
     expect(toModelView(editor)).not.toContain('13800138000')
   })
 
   it('keeps the surrounding sentence intact', () => {
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
-    expect(toMd(editor)).toContain('请拨打')
-    expect(toMd(editor)).toContain('确认订单')
+    editor.commands.setRedaction('client phone')
+    expect(toMd(editor)).toContain('call ')
+    expect(toMd(editor)).toContain('confirm the order')
   })
 
   it('marks exactly the selection, not a character more or less', () => {
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     // a leaked or clipped digit would show up as a stray number here
     expect(toMd(editor)).not.toMatch(/1380013800[^0]/)
-    expect(editor.state.doc.textContent).toBe('请拨打 13800138000 确认订单')
+    expect(editor.state.doc.textContent).toBe('call 13800138000 to confirm the order')
   })
 
   it('unmarking brings the text back and leaves it alone', () => {
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     editor.commands.unsetRedaction()
-    expect(editor.state.doc.textContent).toBe('请拨打 13800138000 确认订单')
+    expect(editor.state.doc.textContent).toBe('call 13800138000 to confirm the order')
     expect(toMd(editor)).not.toContain('{{')
   })
 
@@ -108,26 +108,26 @@ describe('marking a span keeps the reader’s text', () => {
 
 describe('two spans in one document', () => {
   it('each becomes its own marker', () => {
-    const editor = makeEditor('拨打 13800138000 或寄到 上海市浦东新区')
+    const editor = makeEditor('call 13800138000 or ship to Pudong New Area, Shanghai')
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
-    selectText(editor, '上海市浦东新区')
-    editor.commands.setRedaction('收货地址')
+    editor.commands.setRedaction('client phone')
+    selectText(editor, 'Pudong New Area, Shanghai')
+    editor.commands.setRedaction('shipping address')
     const md = toModelView(editor)
-    expect(md).toContain('{{客户电话}}')
-    expect(md).toContain('{{收货地址}}')
+    expect(md).toContain('{{client phone}}')
+    expect(md).toContain('{{shipping address}}')
     expect(md).not.toContain('13800138000')
-    expect(editor.state.doc.textContent).toContain('上海市浦东新区')
+    expect(editor.state.doc.textContent).toContain('Pudong New Area, Shanghai')
   })
 })
 
 describe('what the model is told', () => {
   it('lists the markers this document actually has', () => {
-    const text = placeholderInstruction(['客户电话', '收货地址', '客户电话'])
-    expect(text).toContain('- {{客户电话}}')
-    expect(text).toContain('- {{收货地址}}')
+    const text = placeholderInstruction(['client phone', 'shipping address', 'client phone'])
+    expect(text).toContain('- {{client phone}}')
+    expect(text).toContain('- {{shipping address}}')
     // a repeated label is one entry, not two
-    expect(text.split('\n').filter((l) => l === '- {{客户电话}}')).toHaveLength(1)
+    expect(text.split('\n').filter((l) => l === '- {{client phone}}')).toHaveLength(1)
   })
 
   it('says not to split, merge, rename or drop one', () => {
@@ -140,14 +140,18 @@ describe('what the model is told', () => {
 })
 
 describe('the write guard still applies to a span', () => {
-  const before = '请拨打 {{客户电话}} 确认订单'
+  const before = 'call {{client phone}} to confirm the order'
 
   it('accepts a reply that keeps the marker', () => {
-    expect(checkPlaceholders(before, '请在今天之前拨打 {{客户电话}} 以确认订单。')).toEqual([])
+    expect(
+      checkPlaceholders(before, 'please call {{client phone}} before the end of today.'),
+    ).toEqual([])
   })
 
   it('rejects a reply that splits the marker across a line break', () => {
-    expect(checkPlaceholders(before, '请拨打 {{客户\n电话}} 确认订单').length).toBeGreaterThan(0)
+    expect(
+      checkPlaceholders(before, 'call {{client\nphone}} to confirm the order').length,
+    ).toBeGreaterThan(0)
   })
 
   it('rejects a reply that interleaves two markers', () => {
@@ -187,9 +191,9 @@ describe('collectPlaceholders', () => {
 
 describe('the two views of the document never cross', () => {
   it('the file keeps the real text; only the model view is redacted', () => {
-    const editor = makeEditor('请拨打 13800138000 确认订单')
+    const editor = makeEditor('call 13800138000 to confirm the order')
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
 
     // what a save writes
     const onDisk = editor.getMarkdown()
@@ -197,17 +201,17 @@ describe('the two views of the document never cross', () => {
     const toModel = toModelView(editor)
 
     expect(onDisk).toContain('13800138000')
-    expect(onDisk).not.toContain('{{客户电话}}')
+    expect(onDisk).not.toContain('{{client phone}}')
     expect(toModel).not.toContain('13800138000')
-    expect(toModel).toContain('{{客户电话}}')
+    expect(toModel).toContain('{{client phone}}')
   })
 
   it('redactJson is not reachable from the save path', () => {
     // a guard against someone "simplifying" the save to reuse the model view:
     // the one thing that must never happen is the secret reaching the file
-    const editor = makeEditor('凭 310101199001011234 入场')
+    const editor = makeEditor('show 310101199001011234 to enter')
     selectText(editor, '310101199001011234')
-    editor.commands.setRedaction('证件号')
+    editor.commands.setRedaction('ID number')
     expect(editor.getMarkdown()).toContain('310101199001011234')
   })
 })

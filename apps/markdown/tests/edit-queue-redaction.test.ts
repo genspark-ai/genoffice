@@ -54,7 +54,7 @@ function withhold(editor: Editor): void {
       TextSelection.create(editor.state.doc, start, start + SECRET.length),
     ),
   )
-  editor.commands.setRedaction('客户电话')
+  editor.commands.setRedaction('client phone')
 }
 
 function anchorOverTheMarkedRun(editor: Editor): void {
@@ -84,7 +84,7 @@ describe('a queued edit over a withheld span', () => {
     // the target has to exist, or the assertion below would pass on nothing
     expect(r.target).not.toBeNull()
     expect(r.target!.excerpt).not.toContain(SECRET)
-    expect(r.target!.excerpt).toContain('{{客户电话}}')
+    expect(r.target!.excerpt).toContain('{{client phone}}')
   })
 
   it('leaves an ordinary anchor reading the real text', () => {

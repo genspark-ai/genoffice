@@ -71,31 +71,31 @@ function labelsIn(editor: Editor): string[] {
 
 describe('a withheld span survives the file', () => {
   it('writes the reader’s words inside a marked span', () => {
-    const editor = makeEditor(`请拨打 ${SECRET} 确认订单`)
+    const editor = makeEditor(`please call ${SECRET} confirm the order`)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const saved = editor.getMarkdown()
     expect(saved).toContain(SECRET)
     expect(saved).toContain('data-redaction')
-    expect(saved).toContain('data-label="客户电话"')
+    expect(saved).toContain('data-label="client phone"')
   })
 
   it('comes back marked when the file is reopened', () => {
-    const editor = makeEditor(`请拨打 ${SECRET} 确认订单`)
+    const editor = makeEditor(`please call ${SECRET} confirm the order`)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
 
     const reopened = makeEditor(editor.getMarkdown())
     expect(redactCount(reopened)).toBe(1)
-    expect(labelsIn(reopened)).toEqual(['客户电话'])
+    expect(labelsIn(reopened)).toEqual(['client phone'])
   })
 
   it('round-trips byte for byte over a second save', () => {
     // the strongest statement available: opening and saving again changes
     // nothing, so the representation is stable rather than merely readable
-    const editor = makeEditor(`请拨打 ${SECRET} 确认订单`)
+    const editor = makeEditor(`please call ${SECRET} confirm the order`)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const first = editor.getMarkdown()
 
     const reopened = makeEditor(first)
@@ -103,30 +103,32 @@ describe('a withheld span survives the file', () => {
   })
 
   it('keeps the words, so the reader still has their data', () => {
-    const editor = makeEditor(`请拨打 ${SECRET} 确认订单`)
+    const editor = makeEditor(`please call ${SECRET} confirm the order`)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const reopened = makeEditor(editor.getMarkdown())
-    expect(reopened.state.doc.textContent).toBe(`请拨打 ${SECRET} 确认订单`)
+    expect(reopened.state.doc.textContent).toBe(`please call ${SECRET} confirm the order`)
   })
 
   it('restores several spans, each with its own label', () => {
-    const editor = makeEditor('拨打 13800138000 或寄到 上海市浦东新区')
+    const editor = makeEditor('call 13800138000 or ship to Pudong New Area, Shanghai')
     selectText(editor, '13800138000')
-    editor.commands.setRedaction('客户电话')
-    selectText(editor, '上海市浦东新区')
-    editor.commands.setRedaction('收货地址')
+    editor.commands.setRedaction('client phone')
+    selectText(editor, 'Pudong New Area, Shanghai')
+    editor.commands.setRedaction('shipping address')
 
     const reopened = makeEditor(editor.getMarkdown())
     expect(redactCount(reopened)).toBe(2)
-    expect(labelsIn(reopened).sort()).toEqual(['客户电话', '收货地址'])
-    expect(reopened.state.doc.textContent).toBe('拨打 13800138000 或寄到 上海市浦东新区')
+    expect(labelsIn(reopened).sort()).toEqual(['client phone', 'shipping address'])
+    expect(reopened.state.doc.textContent).toBe(
+      'call 13800138000 or ship to Pudong New Area, Shanghai',
+    )
   })
 
   it('recovers a span written by hand, attributes in any order', () => {
-    const reopened = makeEditor('A <span data-label="电话" data-redaction>13800138000</span> B')
+    const reopened = makeEditor('A <span data-label="phone" data-redaction>13800138000</span> B')
     expect(redactCount(reopened)).toBe(1)
-    expect(labelsIn(reopened)).toEqual(['电话'])
+    expect(labelsIn(reopened)).toEqual(['phone'])
   })
 
   it('falls back to a neutral label when the attribute is missing', () => {
@@ -142,8 +144,8 @@ describe('a withheld span survives the file', () => {
 
   it('survives a span that sits at the very start or end of a line', () => {
     for (const src of [
-      '<span data-redaction data-label="首">head</span> tail',
-      'lead <span data-redaction data-label="尾">tail</span>',
+      '<span data-redaction data-label="head">head</span> tail',
+      'lead <span data-redaction data-label="tail">tail</span>',
     ]) {
       const reopened = makeEditor(src)
       expect(redactCount(reopened), src).toBe(1)
@@ -153,10 +155,10 @@ describe('a withheld span survives the file', () => {
   it('survives a span that spans two text runs', () => {
     // bold inside the span splits it in the token stream
     const reopened = makeEditor(
-      '<span data-redaction data-label="混排">plain **bold** plain</span>',
+      '<span data-redaction data-label="mixed">plain **bold** plain</span>',
     )
     expect(redactCount(reopened)).toBe(1)
-    expect(labelsIn(reopened)).toEqual(['混排'])
+    expect(labelsIn(reopened)).toEqual(['mixed'])
   })
 
   it('does not resurrect a closed-but-unopened span', () => {
@@ -165,12 +167,12 @@ describe('a withheld span survives the file', () => {
   })
 
   it('keeps working after the span is removed', () => {
-    const editor = makeEditor(`请拨打 ${SECRET} 确认订单`)
+    const editor = makeEditor(`please call ${SECRET} confirm the order`)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     editor.commands.unsetRedaction()
     const reopened = makeEditor(editor.getMarkdown())
     expect(redactCount(reopened)).toBe(0)
-    expect(reopened.getMarkdown()).toBe(`请拨打 ${SECRET} 确认订单`)
+    expect(reopened.getMarkdown()).toBe(`please call ${SECRET} confirm the order`)
   })
 })

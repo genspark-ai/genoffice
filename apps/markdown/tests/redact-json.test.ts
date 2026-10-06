@@ -24,19 +24,19 @@ function dump(value: unknown): string {
 describe('redactJson — what the model is shown', () => {
   it('replaces the withheld text with its marker', () => {
     const out = redactJson(
-      doc([para([text('请拨打 '), marked(SECRET, '客户电话'), text(' 确认')])]),
+      doc([para([text('please call '), marked(SECRET, 'client phone'), text(' confirm')])]),
     )
     expect(dump(out)).not.toContain(SECRET)
-    expect(dump(out)).toContain('{{客户电话}}')
+    expect(dump(out)).toContain('{{client phone}}')
   })
 
   it('keeps the prose around it', () => {
     const out = redactJson(
-      doc([para([text('请拨打 '), marked(SECRET, '客户电话'), text(' 确认')])]),
+      doc([para([text('please call '), marked(SECRET, 'client phone'), text(' confirm')])]),
     )
     const flat = dump(out)
-    expect(flat).toContain('请拨打')
-    expect(flat).toContain('确认')
+    expect(flat).toContain('please call')
+    expect(flat).toContain('confirm')
   })
 
   it('leaves an unmarked document byte-identical', () => {
@@ -48,38 +48,40 @@ describe('redactJson — what the model is shown', () => {
     const out = redactJson(
       doc([
         para([
-          text('拨打 '),
-          marked('13800138000', '客户电话'),
-          text(' 或寄到 '),
-          marked('上海市浦东新区', '收货地址'),
+          text('call '),
+          marked('13800138000', 'client phone'),
+          text('  or ship to '),
+          marked('Pudong New Area, Shanghai', 'shipping address'),
         ]),
       ]),
     )
     const flat = dump(out)
-    expect(flat).toContain('{{客户电话}}')
-    expect(flat).toContain('{{收货地址}}')
+    expect(flat).toContain('{{client phone}}')
+    expect(flat).toContain('{{shipping address}}')
     expect(flat).not.toContain('13800138000')
-    expect(flat).not.toContain('上海市浦东新区')
+    expect(flat).not.toContain('Pudong New Area, Shanghai')
   })
 
   it('handles a span split across several text nodes', () => {
     // the mark can land on more than one node; every piece has to go
     const out = redactJson(
-      doc([para([text('凭 '), marked('身份证', '证件'), text('号 '), marked('310101', '号码')])]),
+      doc([
+        para([text('see '), marked('passport', 'doc'), text(' no. '), marked('310101', 'number')]),
+      ]),
     )
     const flat = dump(out)
-    expect(flat).toContain('{{证件}}')
-    expect(flat).toContain('{{号码}}')
+    expect(flat).toContain('{{doc}}')
+    expect(flat).toContain('{{number}}')
     expect(flat).not.toContain('310101')
   })
 
   it('removes only the withholding mark, keeping the reader’s other marks', () => {
     const boldMarked = text(SECRET, [
-      { type: 'redaction', attrs: { label: '客户电话' } },
+      { type: 'redaction', attrs: { label: 'client phone' } },
       { type: 'bold' },
     ])
     const flat = dump(redactJson(doc([para([boldMarked])])))
-    expect(flat).toContain('{{客户电话}}')
+    expect(flat).toContain('{{client phone}}')
     // the reader bolded their own placeholder, so the marker stays bold; what
     // must not survive is the mark that told us to withhold the text
     expect(flat).toContain('"bold"')
@@ -96,15 +98,15 @@ describe('redactJson — what the model is shown', () => {
       doc([
         {
           type: 'bulletList',
-          content: [{ type: 'listItem', content: [para([marked(SECRET, '电话')])] }],
+          content: [{ type: 'listItem', content: [para([marked(SECRET, 'phone')])] }],
         },
-        { type: 'blockquote', content: [para([marked('a@b.com', '邮箱')])] },
+        { type: 'blockquote', content: [para([marked('a@b.com', 'email')])] },
         {
           type: 'table',
           content: [
             {
               type: 'tableRow',
-              content: [{ type: 'tableCell', content: [para([marked('x', '密')])] }],
+              content: [{ type: 'tableCell', content: [para([marked('x', 'pin')])] }],
             },
           ],
         },
@@ -113,9 +115,9 @@ describe('redactJson — what the model is shown', () => {
     const flat = dump(out)
     expect(flat).not.toContain(SECRET)
     expect(flat).not.toContain('a@b.com')
-    expect(flat).toContain('{{电话}}')
-    expect(flat).toContain('{{邮箱}}')
-    expect(flat).toContain('{{密}}')
+    expect(flat).toContain('{{phone}}')
+    expect(flat).toContain('{{email}}')
+    expect(flat).toContain('{{pin}}')
   })
 
   it('passes through shapes it does not know rather than throwing', () => {
@@ -126,7 +128,7 @@ describe('redactJson — what the model is shown', () => {
   })
 
   it('does not mutate the document it was given', () => {
-    const source = doc([para([marked(SECRET, '客户电话')])])
+    const source = doc([para([marked(SECRET, 'client phone')])])
     const before = dump(source)
     redactJson(source)
     expect(dump(source)).toBe(before)
@@ -136,8 +138,8 @@ describe('redactJson — what the model is shown', () => {
 describe('redactLabels — what the instruction lists', () => {
   it('collects one label per span', () => {
     expect(
-      redactLabels(doc([para([marked('a', '电话'), text(' x '), marked('b', '地址')])])),
-    ).toEqual(['电话', '地址'])
+      redactLabels(doc([para([marked('a', 'phone'), text(' x '), marked('b', 'address')])])),
+    ).toEqual(['phone', 'address'])
   })
 
   it('returns nothing for a document with no spans', () => {
@@ -151,15 +153,17 @@ describe('modelTextOf — the text the model is handed', () => {
     // useless: it looks like the document was damaged
     // named `out`, not `text`: a local would shadow the text() builder above
     const out = modelTextOf(
-      doc([para([text('请拨打 '), marked(SECRET, '客户电话'), text(' 确认')])]) as never,
+      doc([
+        para([text('please call '), marked(SECRET, 'client phone'), text(' to confirm')]),
+      ]) as never,
     )
-    expect(out).toBe('请拨打 {{客户电话}} 确认')
+    expect(out).toBe('please call {{client phone}} to confirm')
   })
 
   it('never contains the secret', () => {
-    const out = modelTextOf(doc([para([marked(SECRET, '电话')])]) as never)
+    const out = modelTextOf(doc([para([marked(SECRET, 'phone')])]) as never)
     expect(out).not.toContain(SECRET)
-    expect(out).toContain('{{电话}}')
+    expect(out).toContain('{{phone}}')
   })
 
   it('joins a block’s children without inventing characters', () => {
@@ -175,8 +179,8 @@ describe('modelTextOf — the text the model is handed', () => {
 describe('redactLabelsOf', () => {
   it('lists each withheld label', () => {
     expect(
-      redactLabelsOf(doc([para([marked('a', '电话'), marked('b', '地址')])]) as never),
-    ).toEqual(['电话', '地址'])
+      redactLabelsOf(doc([para([marked('a', 'phone'), marked('b', 'address')])]) as never),
+    ).toEqual(['phone', 'address'])
   })
 
   it('falls back to a neutral label for a blank one', () => {
