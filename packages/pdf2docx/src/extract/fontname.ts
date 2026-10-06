@@ -27,6 +27,37 @@ const splitCamel = (s: string): string => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2
 /** brand words that are camelCase INSIDE the real family name — re-join after splitting */
 const COMPOUND_FIXUPS: Array<[RegExp, string]> = [[/\bPing Fang\b/g, 'PingFang']]
 
+/**
+ * CJK system families whose PostScript name IS the installed family name —
+ * splitting it unresolves the name and Word substitutes a different face
+ * ('DFKai-SB' → 'DFKai SB', 'PMingLiU' → 'PMing Li U', 'SimSun' → 'Sim Sun';
+ * issue #1890). The hyphen/comma style-suffix convention does not apply to
+ * these either: there the suffix is part of the family ('DFKai-SB',
+ * 'MingLiU-ExtB'), not a style declaration.
+ */
+const VERBATIM_FAMILY_PS_NAMES = new Set([
+  // Traditional Chinese (Windows)
+  'DFKai-SB',
+  'KaiU',
+  'PMingLiU',
+  'PMingLiU-ExtB',
+  'MingLiU',
+  'MingLiU-ExtB',
+  'MingLiU_HKSCS',
+  // Simplified Chinese (Windows), incl. the XP-era GB2312 faces
+  'SimSun',
+  'SimSun-ExtB',
+  'NSimSun',
+  'SimHei',
+  'FangSong',
+  'FangSong_GB2312',
+  'KaiTi',
+  'KaiTi_GB2312',
+  'DengXian',
+  'YouYuan',
+  'LiSu',
+])
+
 const segmentTokens = (segment: string): string[] =>
   splitCamel(segment)
     .split(' ')
@@ -90,6 +121,8 @@ export function stripTrailingStyleWords(family: string): string {
 export function familyFromPsName(psName: string): string {
   const name = psName.replace(SUBSET_PREFIX, '').trim()
   if (!name || name.includes(' ')) return name
+  // these names are the family verbatim — no splitting, no suffix surgery
+  if (VERBATIM_FAMILY_PS_NAMES.has(name)) return name
   // suffix segments that are pure style modifiers get dropped
   // (NotoSansSC-Regular, Arial-BoldMT, Helvetica,Bold)
   const [base = '', ...suffixes] = name.split(/[-,]/)

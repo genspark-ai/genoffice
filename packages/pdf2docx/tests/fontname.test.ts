@@ -40,6 +40,19 @@ describe('familyFromPsName', () => {
     expect(familyFromPsName('PingFangSC-Semibold')).toBe('PingFang SC')
   })
 
+  it('passes CJK system families whose PS name is the family verbatim (#1890)', () => {
+    // splitting these unresolves the name and Word substitutes another face
+    expect(familyFromPsName('DFKai-SB')).toBe('DFKai-SB')
+    expect(familyFromPsName('PMingLiU')).toBe('PMingLiU')
+    expect(familyFromPsName('MingLiU-ExtB')).toBe('MingLiU-ExtB')
+    expect(familyFromPsName('MingLiU_HKSCS')).toBe('MingLiU_HKSCS')
+    expect(familyFromPsName('SimSun')).toBe('SimSun')
+    expect(familyFromPsName('NSimSun')).toBe('NSimSun')
+    expect(familyFromPsName('SimHei')).toBe('SimHei')
+    expect(familyFromPsName('KaiTi_GB2312')).toBe('KaiTi_GB2312')
+    expect(familyFromPsName('ABCDEF+DFKai-SB')).toBe('DFKai-SB')
+  })
+
   it('passes names that already contain spaces through untouched', () => {
     expect(familyFromPsName('Noto Sans SC')).toBe('Noto Sans SC')
     expect(familyFromPsName('PingFang SC')).toBe('PingFang SC')
