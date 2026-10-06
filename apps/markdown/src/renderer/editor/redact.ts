@@ -19,6 +19,11 @@
  *   it again restores the same document with the span still marked.
  */
 
+import {
+  redactTextBetween as sharedRedactTextBetween,
+  type WithheldNode,
+} from '@genoffice/agent-core/redact-range'
+
 /** The form the model sees. Braces are what make a marker recognisable in a
  *  reply; a label containing them would be ambiguous, so they are stripped. */
 const OPEN = '{{'
@@ -236,6 +241,20 @@ export function modelTextOf(node: ProseNode): string {
   return out
 }
 
+/**
+ * The text of a range, as the model may read it.
+ *
+ * A thin wrapper over the shared walker, so the options are stated once here
+ * rather than at every call site. Docs has the same wrapper over the same code,
+ * which is the point of it living in a package rather than in five editors.
+ */
+export function redactTextBetween(node: ProseNode, from: number, to: number): string {
+  return sharedRedactTextBetween(node as unknown as WithheldNode, from, to, {
+    markName: REDACT_MARK,
+    marker: placeholderSource,
+  })
+}
+
 /** The marker this node stands for, or null when it is not withheld. */
 export function redactionLabelOf(node: ProseNode): string | null {
   if (!isWithheld(node)) return null
@@ -271,7 +290,7 @@ interface ProseMark {
   type?: string | { name?: string }
   attrs?: Record<string, unknown>
 }
-interface ProseNode {
+export interface ProseNode {
   type?: string | { name: string }
   text?: string
   marks?: ProseMark[]

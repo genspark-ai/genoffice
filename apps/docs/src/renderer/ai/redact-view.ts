@@ -1,3 +1,8 @@
+import {
+  redactTextBetween as redactRangeTextBetween,
+  type WithheldMark,
+  type WithheldNode,
+} from '@genoffice/agent-core/redact-range'
 import { REDACT_MARK, placeholderSource } from './redact'
 
 /**
@@ -11,18 +16,9 @@ import { REDACT_MARK, placeholderSource } from './redact'
  * passes through, because a throw here would be a silent leak — the caller's
  * fallback would be the unredacted text.
  */
-export interface RedactableMark {
-  type?: string | { name?: string }
-  attrs?: Record<string, unknown>
-}
-export interface RedactableNode {
-  type?: string | { name?: string }
-  text?: string
-  /** a picture's src and inlined dataUrl live here — what must not travel */
-  attrs?: Record<string, unknown>
-  marks?: RedactableMark[]
-  content?: RedactableNode[]
-}
+/** the shared shape, not a second one */
+export type RedactableNode = WithheldNode
+export type RedactableMark = WithheldMark
 
 /**
  * TipTap serialises a mark's `type` as its schema object rather than the
@@ -77,27 +73,11 @@ export function modelTextOf(node: RedactableNode): string {
 }
 
 /**
- * A node's size in ProseMirror's counting, which is what a selection offset
- * means: one token for the opening, the content, one for the closing.
- */
-function nodeSize(n: RedactableNode): number {
-  if (typeof n.text === 'string') return n.text.length
-  if (isPicture(n)) return 1
-  if (!Array.isArray(n.content)) return 1
-  return 2 + n.content.reduce((sum, c) => sum + nodeSize(c), 0)
-}
-
-/**
- * The text of a document *range*, as the model may read it.
+ * The text of a range, as the model may read it.
  *
- * The whole-document case above is the easy one; a selection is where a leak
- * hides, because the context sent for a partial selection quotes the span back
- * — and the span is exactly what the reader withheld. Offsets are
- * ProseMirror's, so a caller passes its own `textBetween` range straight in.
- *
- * A withheld span overlapping the range contributes its marker once, not the
- * slice that fell inside: the words are gone either way, and a fragment of a
- * marker would be worse than none — it reads as a typo the model should fix.
+ * A thin wrapper over the shared walker so the options are stated once for
+ * docs — the mark name, the marker, and the picture rule all live here rather
+ * than at every call site.
  */
 export function redactTextBetween(
   node: RedactableNode,
@@ -105,69 +85,12 @@ export function redactTextBetween(
   to: number,
   blockSeparator = '\n',
 ): string {
-  if (to <= from) return ''
-  const blocks = node.content
-  if (!Array.isArray(blocks)) return ''
-  const out: string[] = []
-  // a top-level block's position: 0, then the size of the one before it
-  let blockPos = 0
-  // A separator only belongs between two blocks the range actually spans: a
-  // range that starts at a block boundary gets no leading one, and one that
-  // stops inside a block gets no trailing one. `textBetween` does the same, so
-  // the preview reads identically to the text it replaces.
-  let contributed = false
-  blocks.forEach((block, i) => {
-    if (i > 0 && contributed && blockPos < to) out.push(blockSeparator)
-    const before = out.length
-    // a block's inline content starts one past the block itself
-    if (blockPos + 1 < to) walkInline(block, blockPos + 1, from, to, out)
-    contributed = out.length > before
-    blockPos += nodeSize(block)
+  return redactRangeTextBetween(node, from, to, {
+    markName: REDACT_MARK,
+    marker: placeholderSource,
+    blockSeparator,
+    isLeaf: (n) => isPicture(n as RedactableNode),
   })
-  return out.join('')
-}
-
-/** the inline children of one block, whose content starts at `contentStart` */
-function walkInline(
-  block: RedactableNode,
-  contentStart: number,
-  from: number,
-  to: number,
-  out: string[],
-): void {
-  if (isWithheld(block)) {
-    out.push(placeholderSource(labelOf(block)))
-    return
-  }
-  const children = block.content
-  if (!Array.isArray(children)) {
-    if (typeof block.text === 'string' && contentStart < to) {
-      const start = contentStart
-      out.push(block.text.slice(Math.max(0, from - start), Math.min(block.text.length, to - start)))
-    }
-    return
-  }
-  // a text child at `pos` occupies [pos, pos + len): its own position is the
-  // first character, not one before it
-  let pos = contentStart
-  for (const child of children) {
-    const start = pos
-    if (isWithheld(child)) {
-      // the span, not the words
-      if (start < to && start + nodeSize(child) > from) out.push(placeholderSource(labelOf(child)))
-    } else if (isPicture(child)) {
-      if (start < to) out.push(' ')
-    } else if (typeof child.text === 'string') {
-      if (start + child.text.length > from && start < to) {
-        out.push(
-          child.text.slice(Math.max(0, from - start), Math.min(child.text.length, to - start)),
-        )
-      }
-    } else {
-      walkInline(child, start, from, to, out)
-    }
-    pos = start + nodeSize(child)
-  }
 }
 
 /** The same document with spans replaced, for callers that need the nodes. */

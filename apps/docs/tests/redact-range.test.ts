@@ -136,10 +136,9 @@ describe('a range with nothing withheld reads as ProseMirror reads it', () => {
     const doc = json(editor)
     const end = editor.state.doc.content.size
     for (let from = 1; from <= end; from++) {
-      expect(
-        redactTextBetween(doc, from, end).replace(/\s+/g, ''),
-        `from ${from}`,
-      ).toBe(editor.state.doc.textContent.slice(from - 1).replace(/\s+/g, ''))
+      expect(redactTextBetween(doc, from, end).replace(/\s+/g, ''), `from ${from}`).toBe(
+        editor.state.doc.textContent.slice(from - 1).replace(/\s+/g, ''),
+      )
     }
   })
 
@@ -363,17 +362,21 @@ describe('the echo a replacement sends back', () => {
     )
   }
 
-  const run = (editor: Editor) =>
-    executeTool(
+  /** the tool is synchronous for this input; a promise would be a silent no-op here */
+  const run = (editor: Editor): string => {
+    const out = executeTool(
       editor,
       { id: 't', name: 'replace_selection', input: { html: 'redacted' } },
       NUM_IDS,
     )
+    if (out instanceof Promise) throw new Error('replace_selection should be sync')
+    return String(out.output ?? '')
+  }
 
   it('quotes the marker when the selection covers the whole span', () => {
     const editor = marked()
     selectSpan(editor, SECRET.length)
-    const out = String(run(editor).output ?? '')
+    const out = run(editor)
     expect(out).toContain('{{客户电话}}')
     expect(out).not.toContain(SECRET)
   })
@@ -384,7 +387,7 @@ describe('the echo a replacement sends back', () => {
     // echo is what goes back to the model
     const editor = marked()
     selectSpan(editor, 3)
-    const out = String(run(editor).output ?? '')
+    const out = run(editor)
     expect(out).toContain('{{客户电话}}')
     expect(out).not.toContain(SECRET)
   })
@@ -393,10 +396,13 @@ describe('the echo a replacement sends back', () => {
     // the filter has to be a no-op on ordinary text, not a blanking
     const editor = marked()
     editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 1, 6)))
-    const out = String(
-      executeTool(editor, { id: 't', name: 'replace_selection', input: { html: 'Ring' } }, NUM_IDS)
-        .output ?? '',
+    const plain = executeTool(
+      editor,
+      { id: 't', name: 'replace_selection', input: { html: 'Ring' } },
+      NUM_IDS,
     )
+    if (plain instanceof Promise) throw new Error('replace_selection should be sync')
+    const out = String(plain.output ?? '')
     expect(out).toContain('Call ')
   })
 })
