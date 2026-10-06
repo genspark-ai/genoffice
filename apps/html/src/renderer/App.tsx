@@ -16,7 +16,12 @@ import {
 } from '@genoffice/electron-utils/headless-export'
 import { useI18n } from './i18n/locale'
 import { parseDocText, serializeDocText, type Envelope } from './document/envelope'
-import { SourceEditor, type CursorInfo, type SourceEditorHandle } from './source/SourceEditor'
+import {
+  SourceEditor,
+  type CursorInfo,
+  type SourceRange,
+  type SourceEditorHandle,
+} from './source/SourceEditor'
 import { PreviewFrame, type PreviewFrameHandle } from './preview/PreviewFrame'
 import { instrumentForPreview } from './preview/instrument'
 import type { ComputedSnapshot, ElementRect, FromInspector } from './preview/inspector-protocol'
@@ -40,6 +45,8 @@ import {
 } from './components/Ribbon'
 import { CropDialog, CutoutDialog, type ImageDialogLabels } from '@genoffice/ui'
 import { FloatToolbar } from './components/FloatToolbar'
+import { RedactDialog } from './components/RedactDialog'
+import { redactClearPlan, redactMarkPlan, type RedactPlan } from './document/redact-edit'
 import {
   insertOp,
   insertPresetHtml,
@@ -196,6 +203,8 @@ export default function App() {
     src: string
     image: string
   } | null>(null)
+  /** the range awaiting a label, with the selection text it was opened on */
+  const [redactDialog, setRedactDialog] = useState<(SourceRange & { seed: string }) | null>(null)
 
   const editorRef = useRef<SourceEditorHandle>(null)
   const previewRef = useRef<PreviewFrameHandle>(null)
@@ -524,6 +533,72 @@ export default function App() {
     },
     [applyOps, getMap, flushPending, pushPreview],
   )
+
+  /**
+   * Land a redaction plan. The marks the op vocabulary can express go through
+   * `runManual`, so they are validated, journaled and undoable like any toolbar
+   * edit; the one insertion that no op can address (the comment in front of a
+   * `<script>` literal) is spliced through the same patch primitive and the same
+   * commit path, one step earlier in the pipeline.
+   */
+  const applyRedaction = useCallback(
+    (plan: RedactPlan | null): boolean => {
+      if (!plan) return false
+      if (plan.ops.length > 0) return runManual(plan.ops, 'keep')
+      if (plan.patches.length === 0) return false
+      // pending style pokes land first: they move the offsets the plan was built on
+      flushPending()
+      const base = textRef.current
+      editorRef.current?.applyPatches(plan.patches, false)
+      commitText(applyPatches(base, plan.patches), true)
+      return true
+    },
+    [commitText, flushPending, runManual],
+  )
+
+  /**
+   * The source pane's "hide this from the model" command.
+   *
+   * An already-marked region is taken off rather than labelled again, which is
+   * what makes coming back to a mark undo it. The seed is collapsed to one line
+   * because a selection can cross lines and the label goes into a single-line
+   * field — and because a label is meant to name the span, not quote it. The raw
+   * selection is kept alongside it: a mark may only be written over the exact text
+   * the reader was looking at when they opened the dialog.
+   */
+  const onRedactSelection = useCallback(
+    (range: SourceRange) => {
+      flushPending()
+      const base = textRef.current
+      const clear = redactClearPlan(base, getMap(), range.from, range.to)
+      if (clear) {
+        applyRedaction(clear)
+        return
+      }
+      setRedactDialog({ ...range, seed: range.text.replace(/\s+/g, ' ').trim() })
+    },
+    [applyRedaction, flushPending, getMap],
+  )
+
+  /** the label is in: write the mark, unless the range moved out from under the dialog */
+  const confirmRedaction = useCallback(
+    (label: string) => {
+      const range = redactDialog
+      setRedactDialog(null)
+      if (!range) return
+      flushPending()
+      const base = textRef.current
+      if (base.slice(range.from, range.to) !== range.text) return
+      applyRedaction(redactMarkPlan(base, getMap(), range.from, range.to, label))
+      editorRef.current?.focus()
+    },
+    [applyRedaction, flushPending, getMap, redactDialog],
+  )
+
+  const cancelRedaction = useCallback(() => {
+    setRedactDialog(null)
+    editorRef.current?.focus()
+  }, [])
 
   // ── selection model: one current element shared by the preview, the source pane, the toolbar and the AI ──
 
@@ -1653,6 +1728,7 @@ export default function App() {
                 onChange={onEditorChange}
                 onCursor={onCursor}
                 onBeforeReplace={flushPending}
+                onRedact={onRedactSelection}
               />
             </div>
           </div>
@@ -1739,6 +1815,13 @@ export default function App() {
           onSendNow={askSendNow}
           onRemove={() => askMode.kind === 'edit' && queueRemove(askMode.qid)}
           queueFull={editQueue.length >= EDIT_QUEUE_MAX}
+        />
+      )}
+      {redactDialog && (
+        <RedactDialog
+          seed={redactDialog.seed}
+          onSubmit={confirmRedaction}
+          onCancel={cancelRedaction}
         />
       )}
       {pictureDialog?.kind === 'cutout' && (
