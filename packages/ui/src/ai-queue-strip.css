@@ -52,6 +52,36 @@
   color: var(--color-text-primary);
 }
 
+/* holds the queue where it is; pressed = held */
+.ai-queue-pause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.ai-queue-pause:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-pause[aria-pressed='true'] {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-hint {
+  margin-right: auto;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
 .ai-queue-items {
   display: flex;
   flex-direction: column;

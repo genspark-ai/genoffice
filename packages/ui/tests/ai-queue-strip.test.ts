@@ -86,6 +86,45 @@ it('shows the collapsed count, expands to editable rows, and wires every action'
   expect(onClear).toHaveBeenCalledTimes(1)
 })
 
+it('gives the queue a pause button that flips to resume and shows the held state', () => {
+  const onTogglePause = vi.fn()
+  const items = [
+    { id: 'q1', text: 'first' },
+    { id: 'q2', text: 'second' },
+  ]
+  const renderAt = (paused: boolean) =>
+    act(() =>
+      root.render(
+        createElement(AiQueueStrip, {
+          items,
+          labels,
+          paused,
+          onTogglePause,
+          onUpdate: () => {},
+          onRemove: () => {},
+          onClear: () => {},
+        }),
+      ),
+    )
+  renderAt(false)
+  const pause = host.querySelector<HTMLButtonElement>('.ai-queue-pause')!
+  expect(pause.getAttribute('aria-pressed')).toBe('false')
+  expect(pause.getAttribute('aria-label')).toBe(labels.pauseTitle)
+  expect(host.querySelector('.ai-queue-hint')).toBeNull()
+  act(() => pause.click())
+  expect(onTogglePause).toHaveBeenCalledTimes(1)
+
+  renderAt(true)
+  const resume = host.querySelector<HTMLButtonElement>('.ai-queue-pause')!
+  expect(resume.getAttribute('aria-pressed')).toBe('true')
+  expect(resume.getAttribute('aria-label')).toBe(labels.resumeTitle)
+  expect(host.querySelector('.ai-queue-hint')!.textContent).toBe(labels.pausedHint)
+  expect(host.querySelector('.ai-queue-strip')!.getAttribute('data-paused')).toBe('true')
+  // both messages are still there: pausing holds them, it does not drop them
+  act(() => host.querySelector<HTMLButtonElement>('.ai-queue-toggle')!.click())
+  expect(host.querySelectorAll('.ai-queue-item')).toHaveLength(2)
+})
+
 it('localizes the strip labels', () => {
   act(() =>
     root.render(

@@ -799,6 +799,8 @@ export function AiPanel({
               onUpdate={msgQueue.update}
               onRemove={msgQueue.remove}
               onClear={msgQueue.clear}
+              paused={msgQueue.paused}
+              onTogglePause={msgQueue.togglePaused}
             />
           }
           onQueue={enqueueDraft}

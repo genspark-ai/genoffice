@@ -2409,6 +2409,8 @@ export function AiPanel({
               onUpdate={msgQueue.update}
               onRemove={msgQueue.remove}
               onClear={msgQueue.clear}
+              paused={msgQueue.paused}
+              onTogglePause={msgQueue.togglePaused}
             />
             {attachments.length > 0 && (
               <div className="ai-attachments" onScroll={onAttachmentsScroll}>

@@ -90,3 +90,22 @@ export function IconChevronDown(props: IconProps) {
     </Svg>
   )
 }
+
+/** two bars: hold the queue where it is */
+export function IconPause(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 4v8" />
+      <path d="M10 4v8" />
+    </Svg>
+  )
+}
+
+/** triangle: let the queue run again */
+export function IconPlay(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5.5 3.5l7 4.5-7 4.5z" strokeLinejoin="round" />
+    </Svg>
+  )
+}

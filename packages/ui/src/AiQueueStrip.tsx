@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { IconBroom, IconChevronDown, IconPencil, IconTrash } from './icons'
+import { IconBroom, IconChevronDown, IconPause, IconPencil, IconPlay, IconTrash } from './icons'
 import type { AiQueueStripLabels } from './strings-ai-queue'
 
 /**
@@ -7,16 +7,25 @@ import type { AiQueueStripLabels } from './strings-ai-queue'
  * "N queued" row that expands to one editable row per message, plus a clear-all
  * button. Rendered inside the composer's input box; the app's CSS themes it
  * like the rest of the `.ai-input-box` family.
+ *
+ * Pausing holds the queue: the run in flight still finishes, but nothing after
+ * it starts until the gate is opened again, so a message can be edited without
+ * the next one slipping out.
  */
 export function AiQueueStrip({
   items,
   labels,
+  paused = false,
+  onTogglePause,
   onUpdate,
   onRemove,
   onClear,
 }: {
   readonly items: ReadonlyArray<{ readonly id: string; readonly text: string }>
   readonly labels: AiQueueStripLabels
+  /** queue gate closed: nothing after the current run starts on its own */
+  readonly paused?: boolean
+  readonly onTogglePause?: () => void
   readonly onUpdate: (id: string, text: string) => void
   readonly onRemove: (id: string) => void
   readonly onClear: () => void
@@ -40,7 +49,7 @@ export function AiQueueStrip({
   }
 
   return (
-    <div className="ai-queue-strip">
+    <div className="ai-queue-strip" data-paused={paused ? 'true' : undefined}>
       <div className="ai-queue-head">
         <button
           type="button"
@@ -51,6 +60,19 @@ export function AiQueueStrip({
           <IconChevronDown size={12} />
           {labels.queuedCount(items.length)}
         </button>
+        {paused && <span className="ai-queue-hint">{labels.pausedHint}</span>}
+        {onTogglePause && (
+          <button
+            type="button"
+            className="ai-queue-pause"
+            onClick={onTogglePause}
+            aria-pressed={paused}
+            data-tip={paused ? labels.resumeTitle : labels.pauseTitle}
+            aria-label={paused ? labels.resumeTitle : labels.pauseTitle}
+          >
+            {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
+          </button>
+        )}
         <button
           type="button"
           className="ai-queue-clear"

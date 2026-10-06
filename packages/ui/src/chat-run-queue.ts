@@ -12,6 +12,9 @@ import { useEffect, useRef, useState } from 'react'
  * - settling a run always pumps the next message, including after a stop or
  *   an error (a failed bubble keeps its retry action) — stopping everything
  *   for good is the strip's clear button;
+ * - `paused` closes the gate: the run in flight finishes, but nothing after it
+ *   starts until it is opened again. Queued messages stay editable the whole
+ *   time, so editing one can never set the next one off;
  * - a `resetKey` change (new chat) wipes the queue; a panel that remounts per
  *   document loses it with the unmount instead;
  * - the queue lives in memory only, same footing as the composer draft.
@@ -25,12 +28,17 @@ export interface QueuedChatMessage<M> {
 
 export interface ChatRunQueue<M> {
   readonly queued: readonly QueuedChatMessage<M>[]
+  /** the run in flight still finishes, but nothing after it starts while this is true */
+  readonly paused: boolean
   /** queue a typed draft; called while the panel is busy (the composer routes Enter here) */
   enqueue: (text: string, meta: M) => void
   /** edit a queued message's text in place (attachments/scope stay as queued) */
   update: (id: string, text: string) => void
   remove: (id: string) => void
   clear: () => void
+  /** close or open the gate; opening it starts the next message straight away if idle */
+  setPaused: (paused: boolean) => void
+  togglePaused: () => void
 }
 
 export function useChatRunQueue<M>(args: {
@@ -45,10 +53,12 @@ export function useChatRunQueue<M>(args: {
 }): ChatRunQueue<M> {
   const { busy, submit, resetKey } = args
   const [queued, setQueued] = useState<QueuedChatMessage<M>[]>([])
+  const [paused, setPausedState] = useState(false)
   // the pump reads the queue synchronously (clear and pump can land in one commit)
   const queuedRef = useRef(queued)
   const busyRef = useRef(busy)
   const submitRef = useRef(submit)
+  const pausedRef = useRef(paused)
   const nextIdRef = useRef(0)
 
   const setAll = (next: QueuedChatMessage<M>[]) => {
@@ -57,12 +67,19 @@ export function useChatRunQueue<M>(args: {
   }
 
   const tryPump = () => {
-    if (busyRef.current) return
+    if (busyRef.current || pausedRef.current) return
     const next = queuedRef.current[0]
     if (!next) return
     if (submitRef.current(next.text, next.meta)) setAll(queuedRef.current.slice(1))
   }
   const tryPumpRef = useRef(tryPump)
+
+  /** opening the gate has to be able to start a run in the same tick, so the ref leads */
+  const setPaused = (next: boolean) => {
+    pausedRef.current = next
+    setPausedState(next)
+    if (!next) tryPump()
+  }
 
   useEffect(() => {
     submitRef.current = submit
@@ -78,11 +95,11 @@ export function useChatRunQueue<M>(args: {
   useEffect(() => {
     // only when a queued message is waiting and the panel is idle: covers
     // panels whose run start was refused (a QC pass, a stale guard) and will
-    // not see another busy transition on its own
-    if (busy || queued.length === 0) return
+    // not see another busy transition on its own. A paused queue needs no timer.
+    if (busy || paused || queued.length === 0) return
     const timer = window.setInterval(() => tryPumpRef.current(), 400)
     return () => window.clearInterval(timer)
-  }, [busy, queued.length])
+  }, [busy, paused, queued.length])
 
   useEffect(() => {
     if (resetKey === undefined) return
@@ -92,6 +109,9 @@ export function useChatRunQueue<M>(args: {
 
   return {
     queued,
+    paused,
+    setPaused,
+    togglePaused: () => setPaused(!pausedRef.current),
     enqueue: (text, meta) => {
       const trimmed = text.trim()
       if (!trimmed) return

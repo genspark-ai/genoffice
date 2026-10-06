@@ -164,6 +164,74 @@ it('edits, removes, and clears queued messages', () => {
   expect(latest.queued).toHaveLength(0)
 })
 
+it('holds several queued messages while paused and runs them once resumed', () => {
+  const submitted: string[] = []
+  let busy = true
+  const renderAt = () =>
+    render({
+      busy,
+      submit: (text) => {
+        submitted.push(text)
+        return true
+      },
+    })
+  renderAt()
+  act(() => {
+    latest.enqueue('first', undefined)
+    latest.enqueue('second', undefined)
+  })
+  expect(latest.queued.map((m) => m.text)).toEqual(['first', 'second'])
+  act(() => latest.setPaused(true))
+  expect(latest.paused).toBe(true)
+  // the run in flight settles: a paused queue does not start the next one
+  busy = false
+  renderAt()
+  expect(submitted).toEqual([])
+  expect(latest.queued).toHaveLength(2)
+  // resuming opens the gate and the panel is idle, so the head starts at once
+  act(() => latest.setPaused(false))
+  expect(submitted).toEqual(['first'])
+  expect(latest.queued.map((m) => m.text)).toEqual(['second'])
+})
+
+it('never starts a message while paused, not even after an edit or a retry tick', () => {
+  vi.useFakeTimers()
+  try {
+    const submitted: string[] = []
+    render({
+      busy: false,
+      submit: (text) => {
+        submitted.push(text)
+        return true
+      },
+    })
+    // pause first: on an idle panel, enqueueing would start the message at once
+    act(() => latest.setPaused(true))
+    act(() => {
+      latest.enqueue('one', undefined)
+      latest.enqueue('two', undefined)
+    })
+    expect(latest.queued).toHaveLength(2)
+    // the retry net is down while paused: no timer can slip a message out
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(submitted).toEqual([])
+    // editing one queued message must not set the other off
+    act(() => latest.update('q2', 'two!'))
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(submitted).toEqual([])
+    expect(latest.queued.map((m) => m.text)).toEqual(['one', 'two!'])
+    act(() => latest.togglePaused())
+    expect(submitted).toEqual(['one'])
+    expect(latest.queued.map((m) => m.text)).toEqual(['two!'])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('wipes the queue when the reset key changes', () => {
   render({ busy: true, submit: () => true, resetKey: 'doc-1' })
   act(() => {

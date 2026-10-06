@@ -7,6 +7,12 @@ export interface AiQueueStripLabels {
   clearTitle: string
   editTitle: string
   removeTitle: string
+  /** hold the queue: the run in flight finishes, nothing after it starts */
+  pauseTitle: string
+  /** let the queue run again */
+  resumeTitle: string
+  /** strip hint while the gate is closed */
+  pausedHint: string
   /** composer placeholder while a reply runs and Enter queues instead of sending */
   queuePlaceholder: string
 }
@@ -17,6 +23,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: '清空排队消息',
     editTitle: '编辑排队消息',
     removeTitle: '移除排队消息',
+    pauseTitle: '暂停排队',
+    resumeTitle: '继续排队',
+    pausedHint: '已暂停',
     queuePlaceholder: 'Enter 排队 · Esc 停止',
   },
   en: {
@@ -24,6 +33,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Clear queued messages',
     editTitle: 'Edit queued message',
     removeTitle: 'Remove queued message',
+    pauseTitle: 'Pause the queue',
+    resumeTitle: 'Resume the queue',
+    pausedHint: 'Paused',
     queuePlaceholder: 'Enter to queue · Esc to stop',
   },
   ja: {
@@ -31,6 +43,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: '待機中のメッセージを削除',
     editTitle: '待機中のメッセージを編集',
     removeTitle: '待機中のメッセージを取り除く',
+    pauseTitle: '待機を一時停止',
+    resumeTitle: '待機を再開',
+    pausedHint: '一時停止中',
     queuePlaceholder: 'Enter で待機 · Esc で停止',
   },
   ko: {
@@ -38,6 +53,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: '대기 중인 메시지 비우기',
     editTitle: '대기 중인 메시지 편집',
     removeTitle: '대기 중인 메시지 제거',
+    pauseTitle: '대기 일시 정지',
+    resumeTitle: '대기 재개',
+    pausedHint: '일시 정지됨',
     queuePlaceholder: 'Enter 대기 · Esc 중지',
   },
   fr: {
@@ -45,6 +63,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Vider les messages en attente',
     editTitle: 'Modifier le message en attente',
     removeTitle: 'Retirer le message en attente',
+    pauseTitle: 'Suspendre la file',
+    resumeTitle: 'Reprendre la file',
+    pausedHint: 'En pause',
     queuePlaceholder: 'Entrée pour mettre en attente · Échap pour arrêter',
   },
   de: {
@@ -52,6 +73,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Warteschlange leeren',
     editTitle: 'Nachricht in Warteschlange bearbeiten',
     removeTitle: 'Nachricht aus Warteschlange entfernen',
+    pauseTitle: 'Warteschlange anhalten',
+    resumeTitle: 'Warteschlange fortsetzen',
+    pausedHint: 'Angehalten',
     queuePlaceholder: 'Enter zum Einreihen · Esc zum Stoppen',
   },
   es: {
@@ -59,6 +83,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Vaciar mensajes en cola',
     editTitle: 'Editar mensaje en cola',
     removeTitle: 'Quitar mensaje en cola',
+    pauseTitle: 'Pausar la cola',
+    resumeTitle: 'Reanudar la cola',
+    pausedHint: 'En pausa',
     queuePlaceholder: 'Entrada para encolar · Esc para detener',
   },
   th: {
@@ -66,6 +93,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'ล้างข้อความที่รออยู่',
     editTitle: 'แก้ไขข้อความที่รออยู่',
     removeTitle: 'นำข้อความที่รออยู่ออก',
+    pauseTitle: 'หยุดคิวชั่วคราว',
+    resumeTitle: 'ดำเนินคิวต่อ',
+    pausedHint: 'หยุดชั่วคราว',
     queuePlaceholder: 'Enter เพื่อจัดคิว · Esc เพื่อหยุด',
   },
   id: {
@@ -73,6 +103,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Kosongkan pesan yang mengantre',
     editTitle: 'Edit pesan yang mengantre',
     removeTitle: 'Hapus pesan yang mengantre',
+    pauseTitle: 'Jeda antrean',
+    resumeTitle: 'Lanjutkan antrean',
+    pausedHint: 'Dijeda',
     queuePlaceholder: 'Enter untuk mengantre · Esc untuk berhenti',
   },
   ru: {
@@ -80,6 +113,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Очистить очередь сообщений',
     editTitle: 'Изменить сообщение в очереди',
     removeTitle: 'Убрать сообщение из очереди',
+    pauseTitle: 'Приостановить очередь',
+    resumeTitle: 'Возобновить очередь',
+    pausedHint: 'Приостановлено',
     queuePlaceholder: 'Enter — в очередь · Esc — остановить',
   },
   ar: {
@@ -87,6 +123,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'إفراغ الرسائل المنتظرة',
     editTitle: 'تعديل الرسالة المنتظرة',
     removeTitle: 'إزالة الرسالة المنتظرة',
+    pauseTitle: 'إيقاف الانتظار مؤقتًا',
+    resumeTitle: 'متابعة الانتظار',
+    pausedHint: 'موقوف مؤقتًا',
     queuePlaceholder: 'Enter للانتظار · Esc للإيقاف',
   },
   pt: {
@@ -94,6 +133,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Limpar mensagens na fila',
     editTitle: 'Editar mensagem na fila',
     removeTitle: 'Remover mensagem da fila',
+    pauseTitle: 'Pausar a fila',
+    resumeTitle: 'Retomar a fila',
+    pausedHint: 'Em pausa',
     queuePlaceholder: 'Enter para enfileirar · Esc para parar',
   },
   it: {
@@ -101,6 +143,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Svuota i messaggi in coda',
     editTitle: 'Modifica il messaggio in coda',
     removeTitle: 'Rimuovi il messaggio in coda',
+    pauseTitle: 'Metti in pausa la coda',
+    resumeTitle: 'Riprendi la coda',
+    pausedHint: 'In pausa',
     queuePlaceholder: 'Invio per accodare · Esc per fermare',
   },
   pl: {
@@ -108,6 +153,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Wyczyść wiadomości w kolejce',
     editTitle: 'Edytuj wiadomość w kolejce',
     removeTitle: 'Usuń wiadomość z kolejki',
+    pauseTitle: 'Wstrzymaj kolejkę',
+    resumeTitle: 'Wznów kolejkę',
+    pausedHint: 'Wstrzymana',
     queuePlaceholder: 'Enter, aby zakolejkować · Esc, aby zatrzymać',
   },
   cs: {
@@ -115,6 +163,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Vymazat zprávy ve frontě',
     editTitle: 'Upravit zprávu ve frontě',
     removeTitle: 'Odebrat zprávu z fronty',
+    pauseTitle: 'Pozastavit frontu',
+    resumeTitle: 'Obnovit frontu',
+    pausedHint: 'Pozastaveno',
     queuePlaceholder: 'Enter zařadí · Esc zastaví',
   },
   nl: {
@@ -122,6 +173,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Wachtrij leegmaken',
     editTitle: 'Bericht in wachtrij bewerken',
     removeTitle: 'Bericht uit wachtrij verwijderen',
+    pauseTitle: 'Wachtrij pauzeren',
+    resumeTitle: 'Wachtrij hervatten',
+    pausedHint: 'Gepauzeerd',
     queuePlaceholder: 'Enter om te wachtrijken · Esc om te stoppen',
   },
   ms: {
@@ -129,6 +183,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Kosongkan mesej dalam baris gilir',
     editTitle: 'Edit mesej dalam baris gilir',
     removeTitle: 'Buang mesej dalam baris gilir',
+    pauseTitle: 'Jeda barisan',
+    resumeTitle: 'Sambung barisan',
+    pausedHint: 'Dijeda',
     queuePlaceholder: 'Enter untuk baris gilir · Esc untuk berhenti',
   },
   he: {
@@ -136,6 +193,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'נקה הודעות בתור',
     editTitle: 'ערוך הודעה בתור',
     removeTitle: 'הסר הודעה מהתור',
+    pauseTitle: 'השהה את התור',
+    resumeTitle: 'חדש את התור',
+    pausedHint: 'מושהה',
     queuePlaceholder: 'Enter לתור · Esc לעצירה',
   },
   hi: {
@@ -143,6 +203,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'कतार में संदेश साफ़ करें',
     editTitle: 'कतार में संदेश संपादित करें',
     removeTitle: 'कतार में संदेश हटाएँ',
+    pauseTitle: 'कतार रोकें',
+    resumeTitle: 'कतार फिर शुरू करें',
+    pausedHint: 'रोका गया',
     queuePlaceholder: 'कतार के लिए Enter · रोकने के लिए Esc',
   },
   'zh-TW': {
@@ -150,6 +213,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: '清空排隊訊息',
     editTitle: '編輯排隊訊息',
     removeTitle: '移除排隊訊息',
+    pauseTitle: '暫停排隊',
+    resumeTitle: '繼續排隊',
+    pausedHint: '已暫停',
     queuePlaceholder: 'Enter 排隊 · Esc 停止',
   },
   vi: {
@@ -157,6 +223,9 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     clearTitle: 'Xoá các tin nhắn đang chờ',
     editTitle: 'Sửa tin nhắn đang chờ',
     removeTitle: 'Bỏ tin nhắn đang chờ',
+    pauseTitle: 'Tạm dừng hàng đợi',
+    resumeTitle: 'Tiếp tục hàng đợi',
+    pausedHint: 'Đã tạm dừng',
     queuePlaceholder: 'Enter để xếp hàng · Esc để dừng',
   },
 }
