@@ -5595,6 +5595,7 @@ registerHomeIpc()
 registerIntegrationsIpc({
   settingsPath: APP_SETTINGS_PATH,
   window: () => shellWindow,
+  defaultSaveDir,
   cliDir: app.isPackaged
     ? join(process.resourcesPath, 'cli')
     : join(APPS_ROOT, '..', 'packages', 'cli', 'bin'),

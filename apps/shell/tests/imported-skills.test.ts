@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   agentSkillDirs,
   findSkills,
+  importSkill,
+  isKnownSkillPath,
+  knownSkillRoots,
   readSkillBody,
   skillsRoot,
   usableSkills,
@@ -144,5 +147,131 @@ describe('skillsRoot / readSkillBody', () => {
     const [skill] = usableSkills(save)
     expect(readSkillBody(skill.path)).toBe('Step one.\nStep two.\n')
     cleanup()
+  })
+})
+
+describe('importSkill', () => {
+  it('copies the whole skill folder, not just SKILL.md', () => {
+    const { save, home, cleanup } = scaffold({}, { 'pptx-builder': SKILL('pptx', 'Build a pptx') })
+    const src = join(home, '.agents', 'skills', 'pptx-builder')
+    // the reference files a skill ships alongside its instructions
+    mkdirSync(join(src, 'reference'), { recursive: true })
+    writeFileSync(join(src, 'reference', 'layout.md'), 'grid rules')
+    writeFileSync(join(src, 'notes.md'), 'side notes')
+
+    const imported = importSkill(join(src, 'SKILL.md'), save)
+    expect(imported).toMatchObject({ name: 'pptx-builder', source: 'genoffice' })
+    expect(imported.agent).toBeUndefined()
+    const dest = join(save, 'skills', 'pptx-builder')
+    expect(existsSync(join(dest, 'reference', 'layout.md'))).toBe(true)
+    expect(existsSync(join(dest, 'notes.md'))).toBe(true)
+    // and the copy is now one of ours, not a candidate
+    expect(usableSkills(save).map((s) => s.name)).toEqual(['pptx-builder'])
+    cleanup()
+  })
+
+  it('classifies what it imported, and reads the file that landed', () => {
+    const { save, home, cleanup } = scaffold({}, { x: SKILL('x', 'Turn a pdf into html') })
+    const src = join(home, '.agents', 'skills', 'x')
+    const imported = importSkill(join(src, 'SKILL.md'), save)
+    expect(imported.relevance.relevant).toBe(true)
+    expect(readSkillBody(imported.path)).toBe('Do the thing.\n')
+    cleanup()
+  })
+
+  it('refuses to overwrite a skill already in our folder, and leaves it alone', () => {
+    const { save, home, cleanup } = scaffold(
+      { shared: SKILL('shared', 'Mine', 'mine wins') },
+      { shared: SKILL('shared', 'Theirs', 'theirs loses') },
+    )
+    const src = join(home, '.agents', 'skills', 'shared')
+    expect(() => importSkill(join(src, 'SKILL.md'), save)).toThrow('already there')
+    expect(readSkillBody(join(save, 'skills', 'shared', 'SKILL.md'))).toBe('mine wins\n')
+    cleanup()
+  })
+
+  it('names the folder after the directory it came from', () => {
+    const { save, home, cleanup } = scaffold(
+      {},
+      { 'pdf-tools': SKILL('different-name', 'A pdf thing') },
+    )
+    const src = join(home, '.agents', 'skills', 'pdf-tools')
+    // frontmatter says one thing, the folder says another; the folder wins,
+    // because the folder is what skillsRoot is keyed on
+    expect(importSkill(join(src, 'SKILL.md'), save).name).toBe('pdf-tools')
+    cleanup()
+  })
+})
+
+describe('isKnownSkillPath', () => {
+  it('accepts every path the scan hands out, ours and the agents', () => {
+    const { save, home, cleanup } = scaffold(
+      { mine: SKILL('mine', 'A docx thing') },
+      { theirs: SKILL('theirs', 'A pdf thing') },
+    )
+    const roots = knownSkillRoots(save, {}, home)
+    const found = findSkills(save, {}, home)
+    expect(found).toHaveLength(2)
+    for (const skill of found) {
+      expect(isKnownSkillPath(skill.path, roots)).toBe(true)
+    }
+    cleanup()
+  })
+
+  it('rejects a file outside every skills root', () => {
+    expect(isKnownSkillPath('/etc/passwd', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/Users/me/.ssh/id_rsa', ['/save/skills'])).toBe(false)
+  })
+
+  it('rejects another file sitting beside a SKILL.md', () => {
+    // the guard is the file name as much as the directory: a skills folder can
+    // legitimately hold reference files, and those are not skills
+    expect(isKnownSkillPath('/save/skills/mine/notes.md', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/save/skills/mine/scripts/evil.sh', ['/save/skills'])).toBe(false)
+  })
+
+  it('rejects a SKILL.md reached by climbing out of a skills root', () => {
+    expect(isKnownSkillPath('/save/skills/../../.ssh/SKILL.md', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/save/skills/../../../../../../etc/SKILL.md', ['/save/skills'])).toBe(
+      false,
+    )
+  })
+
+  it('accepts a climb that lands back inside the root: it is the same skill', () => {
+    // the traversal test above is only about leaving; one that comes back is
+    // just an awkward spelling of a real path
+    expect(isKnownSkillPath('/save/skills/../skills/x/SKILL.md', ['/save/skills'])).toBe(true)
+    expect(isKnownSkillPath('/save/skills/a/../b/SKILL.md', ['/save/skills'])).toBe(true)
+  })
+
+  it('rejects a root that merely starts with the same characters', () => {
+    expect(isKnownSkillPath('/save/skills-backup/x/SKILL.md', ['/save/skills'])).toBe(false)
+  })
+
+  it('rejects a skills folder with the same last component but a different parent', () => {
+    // matching on the folder name alone would read any 'skills' directory on
+    // the machine, which is exactly the leak this guard exists to close
+    expect(isKnownSkillPath('/elsewhere/skills/mine/SKILL.md', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/Users/me/.claude/skills/mine/SKILL.md', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/private/tmp/agent/skills/x/SKILL.md', ['/save/skills'])).toBe(false)
+  })
+
+  it('rejects anything that is not an absolute path', () => {
+    for (const bad of ['', 'skills/mine/SKILL.md', undefined, null, 42, {}]) {
+      expect(isKnownSkillPath(bad, ['/save/skills'])).toBe(false)
+    }
+  })
+
+  it('normalizes the incoming path, so an equivalent spelling is the same skill', () => {
+    expect(isKnownSkillPath('/save/./skills/mine/SKILL.md', ['/save/skills'])).toBe(true)
+    expect(isKnownSkillPath('/save/skills-backup/../skills/mine/SKILL.md', ['/save/skills'])).toBe(
+      true,
+    )
+  })
+
+  it('resolves the roots it compares against', () => {
+    // a root with a trailing slash or a dot segment is still the same root
+    const path = '/save/skills/mine/SKILL.md'
+    expect(isKnownSkillPath(path, ['/save/./skills/'])).toBe(true)
   })
 })

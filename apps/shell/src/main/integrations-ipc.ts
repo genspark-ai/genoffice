@@ -17,6 +17,13 @@ import {
 import { inspectCliLink } from '@genoffice/cli/install'
 import { readAppSettings, writeAppSetting } from './app-settings'
 import { isEphemeralInstall } from './cli-link'
+import {
+  findSkills,
+  importSkill,
+  isKnownSkillPath,
+  knownSkillRoots,
+  readSkillBody,
+} from './imported-skills'
 import { isInstallableSkillDir } from './skill-target'
 import {
   INTEGRATIONS_CHANNELS,
@@ -24,11 +31,14 @@ import {
   type IntegrationsStatus,
   type SkillInstallState,
 } from '../shared/integrations-api'
+import type { FoundSkill } from '../shared/found-skill'
 
 export interface IntegrationsDeps {
   settingsPath: () => string
   /** the shell window dialogs attach to */
   window: () => BrowserWindow | null
+  /** where new documents go; skills the user chose live in `<that>/skills/` */
+  defaultSaveDir: () => string
   /** directory holding genoffice / genoffice.cmd and, packaged, skills/genoffice/SKILL.md */
   cliDir: string
   /** skills/genoffice/SKILL.md (repo file in dev, Resources/cli/skills/... packaged) */
@@ -133,6 +143,29 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
 
   ipcMain.handle(INTEGRATIONS_CHANNELS.copyText, (_e, text: string): void => {
     if (typeof text === 'string') clipboard.writeText(text)
+  })
+
+  // reading a third-party skill: list what this machine has, then read one body.
+  // Listing copies nothing and runs nothing — it is a menu, not an import.
+  ipcMain.handle(INTEGRATIONS_CHANNELS.listSkills, (): FoundSkill[] =>
+    findSkills(deps.defaultSaveDir()),
+  )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.skillBody, (_e, path: string): string => {
+    // the path came from the renderer, so it is only a file we just listed
+    if (!isKnownSkillPath(path, knownSkillRoots(deps.defaultSaveDir()))) {
+      throw new Error('unknown skill')
+    }
+    return readSkillBody(path)
+  })
+
+  // the one write: a person pressed Import. Same guard as the read, because a
+  // copy is as much an escape as a read if the source is chosen by the renderer
+  ipcMain.handle(INTEGRATIONS_CHANNELS.importSkill, (_e, path: string): FoundSkill => {
+    if (!isKnownSkillPath(path, knownSkillRoots(deps.defaultSaveDir()))) {
+      throw new Error('unknown skill')
+    }
+    return importSkill(path, deps.defaultSaveDir())
   })
 }
 

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import { classifySkill, parseSkillFrontmatter, type SkillRelevance } from '@genoffice/agent-core'
+import { classifySkill, parseSkillFrontmatter } from '@genoffice/agent-core'
+import type { FoundSkill } from '../shared/found-skill'
 
 /**
  * Finding the skills a user already has, so GenOffice can offer the ones worth
@@ -21,19 +22,7 @@ import { classifySkill, parseSkillFrontmatter, type SkillRelevance } from '@geno
  */
 
 /** one SKILL.md we found, with everything the palette needs to show it */
-export interface FoundSkill {
-  /** the directory name, which is what `skills/<name>/` is keyed on */
-  name: string
-  description: string
-  /** absolute path of the SKILL.md, read when the user picks it */
-  path: string
-  /** where it came from: our own folder, or an agent's directory */
-  source: 'genoffice' | 'agent'
-  /** the agent whose directory it came from, when source is 'agent' */
-  agent?: string
-  /** whether it talks about a format GenOffice opens, and on what */
-  relevance: SkillRelevance
-}
+export type { FoundSkill }
 
 /** the folder under the save directory that holds skills we may use */
 export function skillsRoot(defaultSaveDir: string): string {
@@ -148,4 +137,87 @@ export function usableSkills(defaultSaveDir: string): FoundSkill[] {
 export function readSkillBody(path: string): string {
   const fm = parseSkillFrontmatter(readFileSync(path, 'utf8'))
   return fm?.body ?? ''
+}
+
+/**
+ * Put a skill the user picked into our own folder, so it is ours to use.
+ *
+ * This is the only write here, and it happens when a person clicks Import —
+ * nothing on this path copies itself just because it was scanned.
+ *
+ * The whole directory goes rather than the SKILL.md alone: a skill routinely
+ * ships reference tables, templates and helper scripts next to its
+ * instructions, and half of one reads as a working skill while failing at the
+ * step that needed the missing file.
+ *
+ * The name is taken from the path, never from the caller. Two sources for one
+ * destination is how a folder ends up named after something other than what is
+ * inside it.
+ *
+ * Refuses rather than overwrites when the name is taken: a same-named skill in
+ * our folder is the one the user put there, and silently replacing it with
+ * `.claude`'s copy is the shadowing rule above, just with the winner flipped.
+ */
+export function importSkill(skillPath: string, defaultSaveDir: string): FoundSkill {
+  const name = basename(dirname(skillPath))
+  const dest = join(skillsRoot(defaultSaveDir), name)
+  if (existsSync(dest)) throw new Error('a skill of that name is already there')
+  cpSync(dirname(skillPath), dest, { recursive: true })
+  // re-read at the destination rather than trusting the copy: this is the record
+  // the UI will show as installed, and it should describe the file now on disk
+  const fm = parseSkillFrontmatter(readFileSync(join(dest, 'SKILL.md'), 'utf8'))
+  if (!fm) throw new Error('the skill could not be read back')
+  return {
+    name,
+    description: fm.description,
+    path: join(dest, 'SKILL.md'),
+    source: 'genoffice',
+    relevance: classifySkill(fm.name, fm.description),
+  }
+}
+
+/**
+ * Every directory the scan above reads, ours first.
+ *
+ * Exported so the IPC can name the roots a renderer is allowed to ask about
+ * rather than keeping a second list that can drift from this one.
+ */
+export function knownSkillRoots(
+  defaultSaveDir: string,
+  env?: NodeJS.ProcessEnv,
+  home?: string,
+): string[] {
+  return [skillsRoot(defaultSaveDir), ...agentSkillDirs(env, home).map((a) => a.dir)]
+}
+
+/**
+ * Whether a path is one of the SKILL.md files the scan can hand out.
+ *
+ * `readSkillBody` takes a path from the renderer, so on its own it reads any
+ * file on disk and hands back its contents. This is the guard that stops that:
+ * the name must be SKILL.md and its directory's directory must be one of the
+ * roots — the exact shape `readDir` builds above, so what can be read and what
+ * was listed are the same set.
+ *
+ * The boundary is that exact equality. An escaping path is caught either way:
+ * `dirname` only strips one component and never collapses `..`, so
+ * `/save/skills/../../.ssh/SKILL.md` keeps its `..` in the grandparent and
+ * cannot match a normalized root. Resolving first is what settles a path that
+ * climbs out and back in — `/save/skills/../skills/x/SKILL.md` is read as
+ * `/save/skills/x/SKILL.md`, the skill it always meant — so the widening stays
+ * within the root.
+ *
+ * Symlinks are deliberately not resolved. The listing follows them (it stats
+ * through them), so a linked SKILL.md is one this process already offered to
+ * read; resolving here would make listed skills unreadable while stopping
+ * nothing a user who can write into their own skills directory could not
+ * already do.
+ */
+export function isKnownSkillPath(path: unknown, roots: Iterable<string>): path is string {
+  if (typeof path !== 'string' || path === '' || !isAbsolute(path)) return false
+  const file = resolve(path)
+  if (basename(file) !== 'SKILL.md') return false
+  const root = dirname(dirname(file))
+  for (const known of roots) if (resolve(known) === root) return true
+  return false
 }
