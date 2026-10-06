@@ -15,6 +15,8 @@ export const ko = {
   ribbonTabReview: '검토',
   ribbonCollapse: '리본 축소',
   ribbonExpand: '리본 확장',
+  ribbonCompact: '간단 리본(아이콘만)',
+  ribbonExpandFull: '리본 확장',
   ribbonTabView: '보기',
   ribbonTabTableDesign: '테이블 디자인',
   ribbonTabTableLayout: '테이블 레이아웃',

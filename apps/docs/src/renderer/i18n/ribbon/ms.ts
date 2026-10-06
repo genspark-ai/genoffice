@@ -14,6 +14,8 @@ export const ms = {
   ribbonTabReview: 'Semakan',
   ribbonCollapse: 'Runtuhkan Reben',
   ribbonExpand: 'Kembangkan Reben',
+  ribbonCompact: 'Reben Padat (ikon sahaja)',
+  ribbonExpandFull: 'Kembangkan Reben',
   ribbonTabView: 'Pandangan',
   ribbonTabTableDesign: 'Reka Bentuk Jadual',
   ribbonTabTableLayout: 'Tataletak Jadual',

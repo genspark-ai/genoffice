@@ -14,6 +14,8 @@ export const zh = {
   ribbonTabReview: '审阅',
   ribbonCollapse: '折叠功能区',
   ribbonExpand: '展开功能区',
+  ribbonCompact: '紧凑功能区（仅图标）',
+  ribbonExpandFull: '展开功能区',
   ribbonTabView: '视图',
   ribbonTabTableDesign: '表格设计',
   ribbonTabTableLayout: '表格布局',

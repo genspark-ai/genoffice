@@ -719,6 +719,82 @@ html.genoffice-popover-open .ribbon-tabs {
   margin: 0 -4px;
 }
 
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops to icon-only on a shorter band. The three defences above
+ * (nowrap on .rb-big, flex-shrink: 0 on .ribbon-group, overflow-x: scroll on
+ * .ribbon-body) all still apply — icon-only narrows the buttons, so a narrow
+ * window packs more of them in before the row overflows.
+ */
+.ribbon-compact .ribbon-body {
+  /* same fixed-height contract as the full band, only shorter: switching tabs
+     (including the auto-jump to Table Layout) must still never resize the row */
+  height: 38px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+}
+
+.ribbon-compact .rb-big {
+  /* the label is the only thing taller than the icon; dropping the column gap
+     and the vertical padding brings the button to the band's content box */
+  padding: 3px 5px;
+}
+
+.ribbon-compact .rb-big-icon {
+  min-height: 28px;
+  flex: none;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name and break the
+ * getByRole('button', { name }) selectors across the e2e suite. */
+.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* the icon row is the whole button now, so let the hover/open paint cover it */
+.ribbon-compact .rb-big .rb-big-icon {
+  align-self: stretch;
+  padding: 3px 4px;
+  margin: 0 -3px;
+}
+
+/* Groups and separators centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 3px;
+}
+
+/* The table ribbon groups its tools in .table-tool-group (min-width 66px), not
+ * .ribbon-group — without this they keep the full-band inset and the band ends
+ * up wider than the content it holds. */
+.ribbon-compact .table-tool-group {
+  min-width: 0;
+  padding: 2px 4px;
+}
+
+/* Split buttons stack a caret beside the icon; without the label row the pair
+ * needs to sit on one line. */
+.ribbon-compact .rb-caret-svg {
+  margin-left: 2px;
+}
+
+/* The table tabs stack two rows of controls (font block, cell size grid), which
+ * cannot compress to 38px. Let that content scroll inside the band instead of
+ * overflowing it and pushing the document down — the band itself keeps its
+ * fixed height, so switching to a table tab still never resizes the row. */
+.ribbon-compact .table-ribbon-body {
+  overflow-y: auto;
+}
+
 /* the dropdown chevron sits beside the icon (top row), not the label */
 .rb-caret-svg {
   flex-shrink: 0;
