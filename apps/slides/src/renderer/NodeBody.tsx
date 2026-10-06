@@ -267,6 +267,7 @@ export const NodeBody = React.memo(function NodeBody({
           {'stroke' in strokeProps && outline({ ...strokeProps, fillEnabled: false })}
           {picShadowOv && !picShadowOv.under ? picShadowImg : null}
           {pic.media && <MediaBadge kind={pic.media} w={box.w} h={box.h} />}
+          {pic.redact && <RedactFrame label={pic.redact} w={box.w} h={box.h} />}
         </>
       )
     }
@@ -288,6 +289,7 @@ export const NodeBody = React.memo(function NodeBody({
         {image}
         {picShadowOv && !picShadowOv.under ? picShadowImg : null}
         {pic.media && <MediaBadge kind={pic.media} w={box.w} h={box.h} />}
+        {pic.redact && <RedactFrame label={pic.redact} w={box.w} h={box.h} />}
       </>
     )
   }
@@ -1139,6 +1141,57 @@ function MediaBadge({ kind, w, h }: { kind: 'video' | 'audio'; w: number; h: num
           fill="#ffffff"
         />
       )}
+    </Group>
+  )
+}
+
+/**
+ * A shape withheld from the model: a dashed frame plus the reader's own label in the
+ * corner. Drawn the way MediaBadge is — a `listening={false}` group over the node — so
+ * it rides along in thumbnails and group children without a second code path, and
+ * without covering the picture: the reader still has to see what they chose to hide.
+ */
+function RedactFrame({ label, w, h }: { label: string; w: number; h: number }) {
+  const pad = 2
+  const fontSize = Math.max(9, Math.min(13, Math.min(w, h) * 0.12))
+  const chipH = fontSize * 1.9
+  // The label is the reader's own, so it is shown as they wrote it (capped: a long one
+  // would swallow the picture it is standing on)
+  const text = `{{${label.length > 22 ? `${label.slice(0, 22)}…` : label}}}`
+  return (
+    <Group listening={false}>
+      <Rect
+        x={-pad}
+        y={-pad}
+        width={w + pad * 2}
+        height={h + pad * 2}
+        stroke="rgba(0,0,0,0.55)"
+        strokeWidth={1.5}
+        dash={[6, 4]}
+        cornerRadius={3}
+        listening={false}
+      />
+      <Rect
+        x={0}
+        y={0}
+        width={Math.min(w, fontSize * 0.62 * text.length + 8)}
+        height={chipH}
+        fill="rgba(0,0,0,0.55)"
+        cornerRadius={3}
+        listening={false}
+      />
+      <Text
+        text={text}
+        x={4}
+        y={chipH / 2}
+        width={w - 8}
+        height={fontSize}
+        align="left"
+        fontSize={fontSize}
+        fill="#ffffff"
+        ellipsis
+        listening={false}
+      />
     </Group>
   )
 }

@@ -15,6 +15,7 @@ import * as showActions from './show-actions'
 import * as arrangeActions from './arrange-actions'
 import * as insertActions from './insert-actions'
 import * as pictureEditActions from './picture-edit-actions'
+import * as redactActions from './redact-actions'
 import * as styleActions from './style-actions'
 import * as tableActions from './table-actions'
 import { TABLE_SHADING_COLORS } from './components/table-shading-colors'
@@ -265,6 +266,14 @@ export function buildCtxItems(ctx: ActionCtx): Array<CtxItem | null> {
             null,
           ]),
       { label: t('appCtxHyperlink'), onClick: onSel(() => void insertActions.openLinkDialog(ctx)) },
+      {
+        // Withhold the selection from the model. Disabled on a bare caret, like Cut/Copy above:
+        // there is nothing there to hide, but the row stays so the menu does not reflow.
+        // A selection that is already withheld clears the mark instead of asking again.
+        label: t('redactMenuLabel'),
+        disabled: ctxMenu.collapsed,
+        onClick: onSel(() => redactActions.openTextRedaction(ctx)),
+      },
       {
         label: t('appCtxSelectAll'),
         hint: '⌘A',
@@ -539,6 +548,15 @@ export function buildCtxItems(ctx: ActionCtx): Array<CtxItem | null> {
                 } as CtxItem,
               ]
             : []),
+          // A picture, a video or an audio clip has no runs to mark, so it is withheld through
+          // the setRedaction op. Disabled on a multi-selection, like Bring to Front above: the
+          // op addresses one element, and marking only the right-clicked one of several would
+          // withhold less than the reader asked for. The row stays so the menu does not reflow.
+          {
+            label: t('redactMenuLabel'),
+            disabled: !single,
+            onClick: () => void redactActions.toggleElementRedaction(ctx, ctxMenu.targetId),
+          } as CtxItem,
         ]
       : []),
     ...(defaultStyle
