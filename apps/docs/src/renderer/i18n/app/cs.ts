@@ -350,6 +350,7 @@ export const cs = {
   redactDialogPlaceholder: 'Název zástupného symbolu, např. telefon zákazníka',
   redactCancel: 'Zrušit',
   redactInsert: 'Skrýt',
+  redactShowLabel: 'Znovu zobrazit výběr AI',
   appLangEnglish: 'angličtina',
   appLangSimplifiedChinese: 'zjednodušená čínština',
   appLangJapanese: 'japonština',

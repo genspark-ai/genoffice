@@ -370,6 +370,7 @@ export const ja = {
   redactDialogPlaceholder: 'プレースホルダー名（例：顧客電話）',
   redactCancel: 'キャンセル',
   redactInsert: '隠す',
+  redactShowLabel: '選択範囲をAIにもう一度見せる',
   appLangEnglish: '英語',
   appLangSimplifiedChinese: '簡体字中国語',
   appLangJapanese: '日本語',

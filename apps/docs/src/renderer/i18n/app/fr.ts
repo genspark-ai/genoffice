@@ -360,6 +360,7 @@ export const fr = {
   redactDialogPlaceholder: 'Nom du placeholder, ex. : téléphone du client',
   redactCancel: 'Annuler',
   redactInsert: 'Masquer',
+  redactShowLabel: 'Réafficher la sélection à l’IA',
   appLangEnglish: 'anglais',
   appLangSimplifiedChinese: 'chinois simplifié',
   appLangJapanese: 'japonais',

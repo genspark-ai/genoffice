@@ -47,6 +47,7 @@ import { spellcheckEnabled } from '../spellcheck-pref'
 import { applySpellingSuggestion } from '../editor/spell-replace'
 import { linkRangeAt, linkTarget, removeLink } from '../editor/link-actions'
 import { fieldRangeAt, toggleFieldCodes, type FieldRange } from '../editor/field-codes'
+import { hasRedactionIn } from '../editor/redaction'
 import type { SpellLanguages } from '../../shared/ipc'
 import { TRANSLATE_LANGS, appLangKey } from './translate-langs'
 
@@ -97,6 +98,8 @@ interface EditorContextMenuProps {
   onOpenLink?: (href: string) => void
   /** Ask for a label, then withhold the selection from the model */
   onRedact?: () => void
+  /** Stop withholding a selection that already carries the mark, keeping the text */
+  onUnredact?: () => void
   /** Word's table dialogs (Split Cells… / Insert Cells… / Delete Cells… / Table Properties…) */
   onTableDialog?: (kind: TableDialogKind) => void
   /** section content width the AutoFit / Distribute commands fit the grid into */
@@ -145,6 +148,7 @@ export function EditorContextMenu({
   onEditField,
   onOpenLink,
   onRedact,
+  onUnredact,
   onTableDialog,
   sectionContentWidthPx = 624,
   onRespell,
@@ -227,6 +231,11 @@ export function EditorContextMenu({
   const field = fieldRangeAt(editor.state, clickPos)
   const canComment = hasSelection || wordRangeAtCaret(editor) !== null
   const canEdit = editor.isEditable
+  // Whether stopping the withholding is an option here. Decided from the live
+  // selection rather than from a list kept alongside the document, so it cannot
+  // drift from the marks the editor is actually carrying. A bare caret answers
+  // false on its own, so no selection test is needed here either.
+  const isRedactedSelection = hasRedactionIn(editor, from, to)
   const selectedText = hasSelection ? editor.state.doc.textBetween(from, to, ' ').trim() : ''
   // Synonyms targets a word / short phrase, not long selections
   const synonymText = selectedText.length > 0 && selectedText.length <= 20 ? selectedText : ''
@@ -691,6 +700,17 @@ export function EditorContextMenu({
         item(t('redactMenuLabel'), {
           disabled: !canEdit || !hasSelection,
           onClick: run(onRedact),
+        })}
+      {/* The other half of the item above, and its mirror: offered only when the
+          selection really carries the mark. Without this the sole way to stop
+          withholding a span was to delete the words, which loses the reader's
+          own text to undo a decision they made in the editor. Same reason as
+          the item beside it for no AI badge — this one only moves a mark. */}
+      {onUnredact &&
+        isRedactedSelection &&
+        item(t('redactShowLabel'), {
+          disabled: !canEdit,
+          onClick: run(onUnredact),
         })}
       {isFloating && (
         <>

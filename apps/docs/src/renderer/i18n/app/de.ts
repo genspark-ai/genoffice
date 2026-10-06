@@ -362,6 +362,7 @@ export const de = {
   redactDialogPlaceholder: 'Name des Platzhalters, z. B. Telefonnummer des Kunden',
   redactCancel: 'Abbrechen',
   redactInsert: 'Verbergen',
+  redactShowLabel: 'Auswahl der KI wieder anzeigen',
   appLangEnglish: 'Englisch',
   appLangSimplifiedChinese: 'Chinesisch (vereinfacht)',
   appLangJapanese: 'Japanisch',

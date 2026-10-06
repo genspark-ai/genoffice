@@ -370,6 +370,7 @@ export const ko = {
   redactDialogPlaceholder: '자리표시자 이름, 예: 고객 전화',
   redactCancel: '취소',
   redactInsert: '숨기기',
+  redactShowLabel: '선택 영역을 AI에 다시 표시',
   appLangEnglish: '영어',
   appLangSimplifiedChinese: '중국어 간체',
   appLangJapanese: '일본어',

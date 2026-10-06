@@ -345,6 +345,7 @@ export const en = {
   redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
   redactCancel: 'Cancel',
   redactInsert: 'Hide',
+  redactShowLabel: 'Show the selection to AI again',
   appLangEnglish: 'English',
   appLangSimplifiedChinese: 'Simplified Chinese',
   appLangJapanese: 'Japanese',

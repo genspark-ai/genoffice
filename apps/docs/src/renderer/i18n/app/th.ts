@@ -348,6 +348,7 @@ export const th = {
   redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
   redactCancel: 'ยกเลิก',
   redactInsert: 'ซ่อน',
+  redactShowLabel: 'แสดงส่วนที่เลือกให้ AI เห็นอีกครั้ง',
   appLangEnglish: 'ภาษาอังกฤษ',
   appLangSimplifiedChinese: 'ภาษาจีนตัวย่อ',
   appLangJapanese: 'ภาษาญี่ปุ่น',

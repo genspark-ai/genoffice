@@ -7,6 +7,7 @@ import { act } from 'react'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { hasRedactionIn } from '../src/renderer/editor/redaction'
 import { LocaleProvider, setModuleLang } from '../src/renderer/i18n/locale'
 import { EditorContextMenu } from '../src/renderer/components/ContextMenu'
 import { RedactDialog } from '../src/renderer/editor/RedactDialog'
@@ -21,6 +22,7 @@ import { modelTextOf, redactionCount } from '../src/renderer/ai/redact-view'
  */
 
 const LABEL = 'Hide the selection from AI'
+const SHOW_LABEL = 'Show the selection to AI again'
 
 function createEditor(): Editor {
   return new Editor({
@@ -43,6 +45,12 @@ function select(editor: Editor, from: number, to: number) {
   editor.view.dispatch(
     editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to)),
   )
+}
+
+/** Put the redaction mark over a stretch of the fixture, as the menu would. */
+function withhold(editor: Editor, from: number, to: number) {
+  select(editor, from, to)
+  editor.commands.setRedaction('client phone')
 }
 
 function render(element: React.ReactElement): { container: HTMLElement; unmount: () => void } {
@@ -74,6 +82,7 @@ function menuProps(editor: Editor, overrides: Record<string, unknown> = {}) {
     onSaveImageAs: noop,
     onAiPreset: noop,
     onRedact: noop,
+    onUnredact: noop,
     ...overrides,
   }
 }
@@ -266,6 +275,105 @@ describe('EditorContextMenu — the withholding item', () => {
   })
 })
 
+describe('hasRedactionIn — is there something to stop withholding here', () => {
+  it('sees a range that lies wholly inside a withheld span', () => {
+    const editor = createEditor()
+    withhold(editor, 10, 16) // "client"
+    expect(hasRedactionIn(editor, 11, 14)).toBe(true)
+    editor.destroy()
+  })
+
+  it('sees a range that only clips the edge of a span', () => {
+    // `unsetRedaction` clears the whole selection, so a partial selection is
+    // still a reason to offer the entry rather than a reason to hide it
+    const editor = createEditor()
+    withhold(editor, 10, 16)
+    expect(hasRedactionIn(editor, 5, 12)).toBe(true)
+    editor.destroy()
+  })
+
+  it('reports plain text as withheld by nothing', () => {
+    const editor = createEditor()
+    expect(hasRedactionIn(editor, 10, 16)).toBe(false)
+    editor.destroy()
+  })
+
+  it('reports an empty range as nothing, so a bare caret is not an offer', () => {
+    // the mark is `inclusive: false`, so a caret inside the span carries no
+    // mark of its own and clearing "here" would be a control that does nothing
+    const editor = createEditor()
+    withhold(editor, 10, 16)
+    expect(hasRedactionIn(editor, 12, 12)).toBe(false)
+    editor.destroy()
+  })
+})
+
+describe('EditorContextMenu — the un-hide item', () => {
+  it('appears on a withheld selection, right under the hide item', () => {
+    const editor = createEditor()
+    withhold(editor, 10, 16)
+    select(editor, 10, 16)
+    const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+    const names = [...container.querySelectorAll('.ctx-label')].map((el) => el.textContent)
+    expect(names.indexOf(SHOW_LABEL)).toBe(names.indexOf(LABEL) + 1)
+    unmount()
+    editor.destroy()
+  })
+
+  it('routes to onUnredact and closes the menu, like every other item', () => {
+    const editor = createEditor()
+    withhold(editor, 10, 16)
+    select(editor, 10, 16)
+    const onUnredact = vi.fn()
+    const onClose = vi.fn()
+    const { container, unmount } = render(
+      createElement(EditorContextMenu, menuProps(editor, { onUnredact, onClose })),
+    )
+    const entry = item(container, SHOW_LABEL)!
+    expect(entry).toBeTruthy()
+    expect(entry.disabled).toBe(false)
+    act(() => entry.click())
+    expect(onUnredact).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalled()
+    unmount()
+    editor.destroy()
+  })
+
+  it('is not offered on plain text, where there is nothing to undo', () => {
+    // the whole point of asking first: a reader right-clicking ordinary prose
+    // should not be handed a control that silently does nothing
+    const editor = createEditor()
+    select(editor, 1, 5)
+    const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+    expect(item(container, SHOW_LABEL)).toBeUndefined()
+    unmount()
+    editor.destroy()
+  })
+
+  it('is not offered with no selection, even inside a withheld span', () => {
+    // the mark is `inclusive: false`, so a caret dropped into the span carries
+    // no mark of its own: offering the entry there would be a control that
+    // clears nothing. The reader selects the words, as they did to hide them.
+    const editor = createEditor()
+    withhold(editor, 10, 16)
+    select(editor, 12, 12)
+    const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+    expect(item(container, SHOW_LABEL)).toBeUndefined()
+    unmount()
+    editor.destroy()
+  })
+
+  it('carries no AI badge, for the same reason the hide item does not', () => {
+    const editor = createEditor()
+    withhold(editor, 10, 16)
+    select(editor, 10, 16)
+    const { container, unmount } = render(createElement(EditorContextMenu, menuProps(editor)))
+    expect(item(container, SHOW_LABEL)!.querySelector('.copilot-badge')).toBeNull()
+    unmount()
+    editor.destroy()
+  })
+})
+
 describe('the redaction styles', () => {
   // jsdom never applies the stylesheet, so nothing above can catch a class
   // that was never written or a colour that ignores the theme.
@@ -319,6 +427,8 @@ describe('the item and the dialog together', () => {
           if (from === to) return
           setTarget({ from, to, seed: editor.state.doc.textBetween(from, to, ' ').trim() })
         },
+        // the App.tsx wiring, trimmed: the command reads the selection itself
+        onUnredact: () => editor.commands.unsetRedaction(),
       }),
       target &&
         createElement(RedactDialog, {
@@ -383,6 +493,29 @@ describe('the item and the dialog together', () => {
     expect(redactionCount(editor.getJSON() as never)).toBe(0)
     expect(editor.state.doc.textContent).toBe('call the client about the order')
     expect(editor.getHTML()).not.toContain('redact-span')
+    unmount()
+    editor.destroy()
+  })
+
+  it('gives the reader their words back, which is the point of the whole pair', () => {
+    // before this existed, the only way to stop withholding was to delete the
+    // text — losing the reader's own data to undo a decision made in the editor
+    const editor = createEditor()
+    withhold(editor, 10, 16) // "client"
+    select(editor, 10, 16)
+    const { container, unmount } = render(createElement(Harness, { editor }))
+    expect(redactionCount(editor.getJSON() as never)).toBe(1)
+
+    act(() => item(container, SHOW_LABEL)!.click())
+
+    // the mark is gone from the document and from the file's view of it
+    expect(redactionCount(editor.getJSON() as never)).toBe(0)
+    expect(editor.getHTML()).not.toContain('redact-span')
+    // and the words were never touched: this is a mark, not a replacement
+    expect(editor.state.doc.textContent).toBe('call the client about the order')
+    // the model's view is the reader's text again
+    expect(modelTextOf(editor.getJSON() as never)).toBe('call the client about the order')
+
     unmount()
     editor.destroy()
   })

@@ -348,6 +348,7 @@ export const vi = {
   redactDialogPlaceholder: 'Tên placeholder, ví dụ: số điện thoại khách hàng',
   redactCancel: 'Hủy',
   redactInsert: 'Ẩn',
+  redactShowLabel: 'Hiển thị lại phần đã chọn cho AI',
   appLangEnglish: 'Tiếng Anh',
   appLangSimplifiedChinese: 'Tiếng Trung giản thể',
   appLangJapanese: 'Tiếng Nhật',

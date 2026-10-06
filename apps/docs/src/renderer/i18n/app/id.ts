@@ -352,6 +352,7 @@ export const id = {
   redactDialogPlaceholder: 'Nama placeholder, mis. telepon pelanggan',
   redactCancel: 'Batal',
   redactInsert: 'Sembunyikan',
+  redactShowLabel: 'Tampilkan pilihan kepada AI lagi',
   appLangEnglish: 'bahasa Inggris',
   appLangSimplifiedChinese: 'bahasa Tionghoa Sederhana',
   appLangJapanese: 'bahasa Jepang',

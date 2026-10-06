@@ -354,6 +354,7 @@ export const ms = {
   redactDialogPlaceholder: 'Nama placeholder, cth. telefon pelanggan',
   redactCancel: 'Batal',
   redactInsert: 'Sembunyikan',
+  redactShowLabel: 'Tunjukkan pilihan kepada AI sekali lagi',
   appLangEnglish: 'Bahasa Inggeris',
   appLangSimplifiedChinese: 'Bahasa Cina Ringkas',
   appLangJapanese: 'Bahasa Jepun',

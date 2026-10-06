@@ -1,4 +1,4 @@
-import { Mark } from '@tiptap/core'
+import { Mark, type Editor } from '@tiptap/core'
 import { REDACT_EL } from '@genoffice/docx-engine'
 import { REDACT_MARK } from '../ai/redact'
 
@@ -111,6 +111,29 @@ export const DocRedaction = Mark.create({
     }
   },
 })
+
+/**
+ * Whether any part of a range carries the redaction mark.
+ *
+ * The un-hide entry needs this before it can be offered: a reader who hid a
+ * span weeks ago and no longer remembers where would otherwise have no way back
+ * short of deleting the words, which is the state this branch exists to undo.
+ *
+ * Overlap is the test, not equality, because a selection that clips the edge of
+ * a hidden span is still part of one — and `unsetRedaction` clears the whole
+ * selection, so offering the entry on a partial selection does what it says.
+ *
+ * A bare caret answers false, and that needs no guard here: a range with
+ * `from === to` holds no marked text, so ProseMirror reports false whatever the
+ * document carries. That is the behaviour the menu relies on — the reader has
+ * to select the words, as they did to hide them, and an entry point that
+ * appeared under a collapsed caret would clear nothing.
+ */
+export function hasRedactionIn(editor: Editor, from: number, to: number): boolean {
+  const type = editor.state.schema.marks[REDACT_MARK]
+  if (!type) return false
+  return editor.state.doc.rangeHasMark(from, to, type)
+}
 
 function escapeXmlAttr(value: string): string {
   return value
