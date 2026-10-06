@@ -23,7 +23,8 @@
     "@genoffice/zip-gate": "*",
     "fast-xml-parser": "^5.3.4",
     "jszip": "^3.10.1",
-    "utif2": "^4.1.0"
+    "utif2": "^4.1.0",
+    "@genoffice/agent-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

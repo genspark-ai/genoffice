@@ -346,6 +346,14 @@ export const ru = {
   appAiBadgeTip: 'Использует ИИ',
   appTranslate: 'Перевод',
   appTranslateTo: 'Перевести на {lang}',
+  redactMenuLabel: 'Скрыть выделение от ИИ',
+  redactDialogDesc:
+    'Слова остаются в документе и в файле, а модель видит только метку. Дайте ей имя, чтобы было понятно, что она обозначает.',
+  redactDialogScope:
+    'Это касается только ИИ в этом приложении. CLI, инструменты MCP и экспорт без интерфейса читают файл напрямую и по-прежнему видят эти слова.',
+  redactDialogPlaceholder: 'Имя метки, напр. телефон клиента',
+  redactCancel: 'Отмена',
+  redactInsert: 'Скрыть',
   appLangEnglish: 'английский',
   appLangSimplifiedChinese: 'китайский (упрощенное письмо)',
   appLangJapanese: 'японский',

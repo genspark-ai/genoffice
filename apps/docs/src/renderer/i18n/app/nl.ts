@@ -352,6 +352,14 @@ export const nl = {
   appAiBadgeTip: 'Gebruikt AI',
   appTranslate: 'Vertalen',
   appTranslateTo: 'Vertalen naar {lang}',
+  redactMenuLabel: 'Selectie verbergen voor de AI',
+  redactDialogDesc:
+    'De woorden blijven in het document en het bestand; het model ziet alleen de placeholder. Geef hem een naam.',
+  redactDialogScope:
+    'Verbergen geldt alleen voor de AI in deze app. De CLI, MCP-tools en de export zonder venster lezen het bestand rechtstreeks en zien deze woorden nog steeds.',
+  redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
+  redactCancel: 'Annuleren',
+  redactInsert: 'Verbergen',
   appLangEnglish: 'Engels',
   appLangSimplifiedChinese: 'Vereenvoudigd Chinees',
   appLangJapanese: 'Japans',

@@ -352,6 +352,14 @@ export const fr = {
   appAiBadgeTip: "Utilise l'IA",
   appTranslate: 'Traduire',
   appTranslateTo: 'Traduire en {lang}',
+  redactMenuLabel: 'Masquer la sélection à l’IA',
+  redactDialogDesc:
+    'Les mots restent dans le document et dans le fichier ; le modèle ne voit que le marqueur ci-dessous. Donnez-lui un nom pour qu’il sache ce qu’il désigne.',
+  redactDialogScope:
+    'Le masquage ne concerne que l’IA de cette application. La CLI, les outils MCP et l’exportation sans interface lisent le fichier directement et voient toujours ces mots.',
+  redactDialogPlaceholder: 'Nom du placeholder, ex. : téléphone du client',
+  redactCancel: 'Annuler',
+  redactInsert: 'Masquer',
   appLangEnglish: 'anglais',
   appLangSimplifiedChinese: 'chinois simplifié',
   appLangJapanese: 'japonais',

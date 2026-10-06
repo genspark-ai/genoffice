@@ -14,6 +14,7 @@ import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-fo
 import { TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import { redactNode, redactTextBetween, type RedactableNode } from './redact-view'
 import { opSignatures } from './ops'
 import { pageSetupContextLines, type AiSectionState } from './page-setup'
 import { listRevisionEntries } from './revision-ops'
@@ -385,7 +386,11 @@ export function serializeRangeToHtml(
   endIndex: number,
   sel?: { from: number; to: number } | null,
 ): string {
-  const json = editor.getJSON() as PmNode
+  // The model's view, not the document's: a withheld span's words must
+  // not travel in the HTML this produces. `redactNode` is total, so a
+  // shape it does not recognise still comes through rather than
+  // throwing and falling back to the unredacted text.
+  const json = redactNode(editor.getJSON() as RedactableNode) as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
   let listBuffer: { kind: string; items: string[] } | null = null
@@ -770,8 +775,10 @@ export function buildDocContext(
         SELECTION_MAX_CHARS,
       )
     : ''
+  // `textBetween` would read the words; the context quotes the selection back
+  // to the model, so it has to be the projected read
   const selectedText = partial
-    ? editor.state.doc.textBetween(partial.from, partial.to, '\n', ' ')
+    ? redactTextBetween(editor.getJSON() as RedactableNode, partial.from, partial.to)
     : ''
   const selectionLines = partial
     ? [
