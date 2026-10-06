@@ -70,6 +70,46 @@ const NO_HAN = new Set([
  */
 const IDS = topicIdsFrom(readFileSync(REGISTRY, 'utf-8'))
 
+/**
+ * The script a language actually writes in.
+ *
+ * A file in one of these that contains none of its own script is a copy of
+ * something else, whatever its heading and bullet counts say. Structure is
+ * cheap to match and proves nothing: an untranslated file matches English
+ * perfectly, because it *is* English.
+ */
+const SCRIPTS: Record<string, RegExp> = {
+  zh: /[\u4e00-\u9fff]/,
+  'zh-TW': /[\u4e00-\u9fff]/,
+  ja: /[\u3040-\u30ff\u4e00-\u9fff]/,
+  ko: /[\uac00-\ud7af]/,
+  ru: /[\u0400-\u04ff]/,
+  ar: /[\u0600-\u06ff]/,
+  he: /[\u0590-\u05ff]/,
+  th: /[\u0e00-\u0e7f]/,
+  hi: /[\u0900-\u097f]/,
+}
+
+/** the longest run of text the two files share, ignoring whitespace and code */
+function longestSharedRun(a: string, b: string): number {
+  const norm = (t: string) =>
+    t
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const sa = norm(a)
+  const sb = norm(b)
+  const [short, long] = sa.length < sb.length ? [sa, sb] : [sb, sa]
+  let best = 0
+  for (let i = 0; i < short.length && best < 120; i++) {
+    if (short[i] === ' ') continue
+    let j = 0
+    while (i + j < short.length && j < 120 && short[i + j] === long[i + j]) j++
+    if (j > best) best = j
+  }
+  return best
+}
+
 const read = (id: string, lang: string): string | null => {
   try {
     return readFileSync(join(TOPICS, `${id}.${lang}.md`), 'utf8')
@@ -131,6 +171,13 @@ for (const lang of LANGS) {
     // language edition for writing its own language correctly
     if (/\bTODO\b|\bLorem\b|\bTBD\b|\[translate/.test(text)) {
       content.push(`${id}: placeholder text`)
+    }
+    const script = SCRIPTS[lang]
+    if (script && !script.test(text)) {
+      content.push(`${id}: no ${lang} script anywhere — the file is not translated`)
+    }
+    if (lang !== SOURCE && longestSharedRun(text, src) >= 120) {
+      content.push(`${id}: a long run is identical to English — not translated`)
     }
     if (text.trim().length < src.trim().length * 0.35) {
       content.push(`${id}: suspiciously short (${text.trim().length} vs ${src.trim().length})`)
