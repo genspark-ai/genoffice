@@ -73,9 +73,9 @@ describe('the withheld-span marker in OOXML', () => {
   })
 
   it('reads the label back off the parse tree', () => {
-    const xml = `<a:r>${setRedactExt(RPR, '客户电话')}<a:t>13800138000</a:t></a:r>`
+    const xml = `<a:r>${setRedactExt(RPR, 'client phone')}<a:t>13800138000</a:t></a:r>`
     const run = parser.parse(xml)['a:r']
-    expect(readRedactLabel(run['a:rPr'])).toBe('客户电话')
+    expect(readRedactLabel(run['a:rPr'])).toBe('client phone')
   })
 
   it('reads a label written through a self-closing rPr too', () => {
@@ -95,7 +95,7 @@ describe('the withheld-span marker in OOXML', () => {
   })
 
   it('round-trips: write, parse, re-write, and the label is stable', () => {
-    const first = setRedactExt(RPR, '客户电话')
+    const first = setRedactExt(RPR, 'client phone')
     const label = readRedactLabel(parser.parse(`<a:r>${first}</a:r>`)['a:r']['a:rPr'])
     const second = setRedactExt(first, label!)
     expect(second).toBe(first)

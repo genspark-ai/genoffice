@@ -27,14 +27,16 @@ import {
 const SIGNED_URL = 'https://cdn.example.com/clip.mp4?sig=abc123&expires=1893456000'
 
 describe('the write guard', () => {
-  const before = '请拨打 {{客户电话}} 确认订单'
+  const before = 'call {{client phone}} to confirm the order'
 
   it('accepts a reply that keeps every marker', () => {
-    expect(checkPlaceholders(before, '请在今天之前拨打 {{客户电话}} 以确认订单。')).toEqual([])
+    expect(
+      checkPlaceholders(before, 'please call {{client phone}} before the end of today.'),
+    ).toEqual([])
   })
 
   it('rejects a split across a line break', () => {
-    expect(checkPlaceholders(before, '请拨打 {{客户\n电话}} 确认').length).toBeGreaterThan(0)
+    expect(checkPlaceholders(before, 'call {{client\nphone}} to confirm').length).toBeGreaterThan(0)
   })
 
   it('rejects an interleaving, which an atom could never have prevented', () => {
@@ -82,17 +84,17 @@ describe('labels', () => {
   it('recognises a whole marker but not partial text', () => {
     expect(isWholePlaceholder('{{a}}')).toBe(true)
     expect(isWholePlaceholder('call {{a}}')).toBe(false)
-    expect(readPlaceholderLabel('{{客户电话}}')).toBe('客户电话')
+    expect(readPlaceholderLabel('{{client phone}}')).toBe('client phone')
     expect(readPlaceholderLabel('call {{a}}')).toBeNull()
   })
 })
 
 describe('the model instruction', () => {
   it('lists each marker this deck has, once', () => {
-    const text2 = placeholderInstruction(['电话', '地址', '电话'])
-    expect(text2).toContain('- {{电话}}')
-    expect(text2).toContain('- {{地址}}')
-    expect(text2.split('\n').filter((l) => l === '- {{电话}}')).toHaveLength(1)
+    const text2 = placeholderInstruction(['phone', 'address', 'phone'])
+    expect(text2).toContain('- {{phone}}')
+    expect(text2).toContain('- {{address}}')
+    expect(text2.split('\n').filter((l) => l === '- {{phone}}')).toHaveLength(1)
   })
 
   it('forbids each way a marker gets damaged', () => {
@@ -126,7 +128,7 @@ describe('collectPlaceholders', () => {
 const withheldVideo: MediaNodeLike = {
   type: 'picture',
   name: 'Quarterly review',
-  redact: '客户会议录像',
+  redact: 'customer meeting recording',
   media: { kind: 'video', target: SIGNED_URL, external: true },
   transform: { x: 100, y: 200, w: 1920000, h: 1080000 },
   durationMs: 1_845_000,
@@ -138,7 +140,7 @@ const withheldVideo: MediaNodeLike = {
 const withheldPicture: MediaNodeLike = {
   type: 'picture',
   name: 'Passport scan',
-  redact: '证件照',
+  redact: 'ID photo',
   mediaRef: 'ppt/media/image3.png',
   dataUrl: 'data:image/png;base64,AAAA',
   transform: { x: 0, y: 0, w: 914400, h: 914400 },
@@ -154,14 +156,14 @@ const plainVideo: MediaNodeLike = {
 const withheldAudio: MediaNodeLike = {
   type: 'picture',
   name: 'Voicemail',
-  redact: '客户语音留言',
+  redact: 'customer voice message',
   media: { kind: 'audio', target: SIGNED_URL, external: true },
 }
 
 describe('isWithheldMedia / mediaLabelOf', () => {
   it('recognises a withheld node and reads its label', () => {
     expect(isWithheldMedia(withheldVideo)).toBe(true)
-    expect(mediaLabelOf(withheldVideo)).toBe('客户会议录像')
+    expect(mediaLabelOf(withheldVideo)).toBe('customer meeting recording')
   })
 
   it('reports no mark on a plain media node', () => {
@@ -211,15 +213,15 @@ describe('mediaModelView — a withheld node', () => {
   it('gives the model the label and a marker, and nothing else', () => {
     expect(mediaModelView(withheldVideo)).toEqual({
       kind: 'video',
-      label: '客户会议录像',
-      placeholder: '{{客户会议录像}}',
+      label: 'customer meeting recording',
+      placeholder: '{{customer meeting recording}}',
     })
   })
 
   it('withholds a picture the same way, since it has no text either', () => {
     const view = mediaModelView(withheldPicture)
     expect(view.kind).toBe('picture')
-    expect(view.placeholder).toBe('{{证件照}}')
+    expect(view.placeholder).toBe('{{ID photo}}')
     const flat = JSON.stringify(view)
     expect(flat).not.toContain('image3.png')
     expect(flat).not.toContain('base64')
@@ -228,7 +230,7 @@ describe('mediaModelView — a withheld node', () => {
   it('withholds audio, whose target is a link just as often', () => {
     const view = mediaModelView(withheldAudio)
     expect(view.kind).toBe('audio')
-    expect(view.placeholder).toBe('{{客户语音留言}}')
+    expect(view.placeholder).toBe('{{customer voice message}}')
     expect(view.target).toBeUndefined()
   })
 

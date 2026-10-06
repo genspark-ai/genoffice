@@ -12,7 +12,7 @@ import type { PictureRenderNode, RenderSlide, ShapeRenderNode } from '@genoffice
  * one is gone from it.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const SECRET = '13800138000'
 /** the section heading placeholderInstruction emits; the base slides prompt
  *  already says "placeholder" about layout slots, so assertions anchor here */
@@ -84,13 +84,13 @@ describe('the model is told what the placeholders mean', () => {
   it('names a span withheld in the text', () => {
     const p = promptFor([deck(shape([glyph(`Call ${SECRET}`, LABEL)]))])
     expect(p).toContain(HEADER)
-    expect(p).toContain('{{客户电话}}')
+    expect(p).toContain('{{client phone}}')
     expect(p).toContain('placeholder')
   })
 
   it('names a withheld picture', () => {
-    const p = promptFor([deck(picture('公司 logo') as unknown as ShapeRenderNode)])
-    expect(p).toContain('{{公司 logo}}')
+    const p = promptFor([deck(picture('company logo') as unknown as ShapeRenderNode)])
+    expect(p).toContain('{{company logo}}')
   })
 
   it('gathers spans from every page, not just the current one', () => {
@@ -134,7 +134,7 @@ describe('the model is told what the placeholders mean', () => {
     const p = promptFor([deck(shape([glyph('x', LABEL)]))])
     expect(p.length).toBeGreaterThan(0)
     expect(p).toContain(HEADER)
-    expect(p).toContain('{{客户电话}}')
+    expect(p).toContain('{{client phone}}')
   })
 
   it('is rebuilt per request, so a mark applied now is in the next prompt', () => {

@@ -9,7 +9,7 @@ import { setRedactExt } from '@genoffice/pptx-engine'
  * on the node, not a substitution.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const SECRET = '13800138000'
 
 const SP = (rPr: string, text: string) =>

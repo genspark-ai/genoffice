@@ -17,10 +17,10 @@ import { placeholderInstruction } from '../src/renderer/ai/redact'
  * visible.
  */
 
-const LABELS = ['客户电话', 'API key', '客户电话', '合同金额', '  ', 'a{b}c']
+const LABELS = ['client phone', 'API key', 'client phone', 'contract value', '  ', 'a{b}c']
 
 const EXPECTED =
-  '## Private placeholders\nThis presentation contains {{...}} placeholders. Each stands in for something the reader has deliberately withheld from you; you cannot see what is inside, and that is the point.\n\nTreat every placeholder as one indivisible object:\n- Copy it character for character — same letters, same order, same spacing.\n- Never split it across a line break or put a space inside it.\n- Never merge two into one, never split one into several, never reorder them.\n- Never rename, translate, re-case, expand or shorten it.\n- Never drop one, and never add a placeholder that was not already there.\n\nWrite the prose around them as if each stood for the words it replaces, so "call {{客户电话}}" reads as a natural instruction to phone someone.\nIf a request needs what a placeholder hides, write around it rather than guessing.\nA placeholder may stand in for withheld media: a picture, a video or an audio clip. Treat it as content you were not given and write around it — you cannot open it, fetch it, or infer anything from how long or how large it is.\n\nThe placeholders in this presentation:\n- {{客户电话}}\n- {{API key}}\n- {{合同金额}}\n- {{private}}\n- {{abc}}'
+  '## Private placeholders\nThis presentation contains {{...}} placeholders. Each stands in for something the reader has deliberately withheld from you; you cannot see what is inside, and that is the point.\n\nTreat every placeholder as one indivisible object:\n- Copy it character for character — same letters, same order, same spacing.\n- Never split it across a line break or put a space inside it.\n- Never merge two into one, never split one into several, never reorder them.\n- Never rename, translate, re-case, expand or shorten it.\n- Never drop one, and never add a placeholder that was not already there.\n\nWrite the prose around them as if each stood for the words it replaces, so "call {{client phone}}" reads as a natural instruction to phone someone.\nIf a request needs what a placeholder hides, write around it rather than guessing.\nA placeholder may stand in for withheld media: a picture, a video or an audio clip. Treat it as content you were not given and write around it — you cannot open it, fetch it, or infer anything from how long or how large it is.\n\nThe placeholders in this presentation:\n- {{client phone}}\n- {{API key}}\n- {{contract value}}\n- {{private}}\n- {{abc}}'
 
 describe('the placeholder prompt', () => {
   it('is exactly what this editor has always sent', () => {
@@ -30,5 +30,15 @@ describe('the placeholder prompt', () => {
   it('and for an empty label set', () => {
     expect(placeholderInstruction([])).toBe(placeholderInstruction([]).replace(EXPECTED, EXPECTED))
     expect(placeholderInstruction([])).toContain('## Private placeholders')
+  })
+
+  it('keeps its own wording, worked example included, in a Latin script', () => {
+    // The reader's labels may be in any script, but this instruction ships to
+    // every model in every language, and a worked example written in one
+    // script teaches that script's conventions rather than the rule. With no
+    // labels passed, every character in here is ours to keep Latin.
+    const text = placeholderInstruction([])
+    expect(text).not.toMatch(/\p{Script=Han}/u)
+    expect(text).toContain('call {{client phone}}')
   })
 })

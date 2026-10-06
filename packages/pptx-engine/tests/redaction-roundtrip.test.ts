@@ -20,7 +20,7 @@ import type { Slide, TextElement, TextRun } from '../src/types'
  * would not know about the mark, and would (correctly) clear it.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const SECRET = '13800138000'
 
 const slideWith = (bodyShapes: string) =>
@@ -128,12 +128,12 @@ describe('a withheld run, through the real parser', () => {
   })
 
   it('two runs in one shape keep their own labels', () => {
-    const first = setRedactExt(RPR, '客户电话')
-    const second = setRedactExt(RPR, '合同金额')
+    const first = setRedactExt(RPR, 'client phone')
+    const second = setRedactExt(RPR, 'contract value')
     const { shape } = load(run(first, 'A') + run(second, 'B'))
     const out = rebuildTxBody(shape, shapeXml(shape))
-    expect(out).toContain('label="客户电话"')
-    expect(out).toContain('label="合同金额"')
+    expect(out).toContain('label="client phone"')
+    expect(out).toContain('label="contract value"')
     expect(out).toContain('<a:t>A</a:t>')
     expect(out).toContain('<a:t>B</a:t>')
   })

@@ -69,7 +69,10 @@ describe('a range of a document with nothing withheld', () => {
 })
 
 describe('a range with a withheld span in it', () => {
-  const marked = doc([[t('Call '), t(SECRET, '客户电话'), t(' about the invoice')], [t('Second')]])
+  const marked = doc([
+    [t('Call '), t(SECRET, 'client phone'), t(' about the invoice')],
+    [t('Second')],
+  ])
 
   it('never returns the words', () => {
     const end = 2 + marked.content!.reduce((sum, b) => sum + sizeOf(b), 0)
@@ -80,7 +83,7 @@ describe('a range with a withheld span in it', () => {
 
   it('stands the whole marker in, even for a range that clips the span', () => {
     const out = redactTextBetween(marked, 7, 10, options)
-    expect(out).toContain('{{客户电话}}')
+    expect(out).toContain('{{client phone}}')
     expect(out).not.toMatch(/\{\{[^}]*$/)
     expect(out).not.toMatch(/^[^{]*\}\}/)
   })

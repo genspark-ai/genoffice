@@ -13,7 +13,7 @@ import { redactGuardFor } from '../src/renderer/ai/redact-guard'
  * "refused" one and says which distinction is being drawn.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const SECRET = '13800138000'
 const MARKED = setRedactExt('<a:rPr lang="en-US"/>', LABEL)
 const RPR = '<a:rPr lang="en-US"/>'
@@ -118,7 +118,7 @@ describe('an op that would rewrite withheld words', () => {
 
   it('refuses replacing a withheld picture', () => {
     const slide = deck(
-      SP(2, '3000000', run(RPR, 't')) + PIC(3, setRedactExt(PIC_SP_PR, '公司 logo')),
+      SP(2, '3000000', run(RPR, 't')) + PIC(3, setRedactExt(PIC_SP_PR, 'company logo')),
     )
     const id = idOf(slide[0], (n) => n.type === 'picture')!
     expect(

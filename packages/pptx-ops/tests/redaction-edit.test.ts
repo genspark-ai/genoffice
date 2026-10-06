@@ -10,7 +10,7 @@ import type { Slide, TextElement } from '@genoffice/pptx-engine'
  * clears it, a string withholds under that name. The words stay in the file.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const SECRET = '13800138000'
 
 const slideWith = (body: string) =>

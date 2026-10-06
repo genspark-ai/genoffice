@@ -24,7 +24,7 @@ const withheld = {
           {
             runs: [
               { text: 'Call ' },
-              { text: '13800138000', redact: '客户电话' },
+              { text: '13800138000', redact: 'client phone' },
               { text: ' now' },
             ],
           },

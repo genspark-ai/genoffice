@@ -16,7 +16,7 @@ import type { PictureElement, Slide, TextElement } from '../src/types'
  * In both cases the words stay and the file still opens.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 
 const slideWith = (body: string) =>
   '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld>' +

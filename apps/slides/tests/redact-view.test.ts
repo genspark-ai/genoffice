@@ -22,7 +22,7 @@ import { describeNode, promptLabel } from '../src/renderer/ai/edit-queue'
  *   screen) still show the real words, because they are the owner.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const SECRET = '13800138000'
 
 const SP = (runs: string, cx = 3000000) =>
@@ -161,17 +161,17 @@ describe('media withheld from the model', () => {
     '<a:prstGeom prst="rect"/></p:spPr>'
 
   it('a withheld picture reads as its marker', () => {
-    const slide = render(SP(run(RPR, 'text')) + PIC(setRedactExt(SP_PR, '公司 logo')))
+    const slide = render(SP(run(RPR, 'text')) + PIC(setRedactExt(SP_PR, 'company logo')))
     const pic = slide.nodes.find((n) => n.type === 'picture')!
-    expect(mediaLineForModel(pic)).toBe('{{公司 logo}}')
+    expect(mediaLineForModel(pic)).toBe('{{company logo}}')
   })
 
   it('the element inventory shows a withheld picture as its marker', () => {
     // textForModel is what nodeText feeds, so read_slide / formatSlideDump /
     // slide-qc and the prompt descriptor all pick this up from one place
-    const slide = render(SP(run(RPR, 'text')) + PIC(setRedactExt(SP_PR, '公司 logo')))
+    const slide = render(SP(run(RPR, 'text')) + PIC(setRedactExt(SP_PR, 'company logo')))
     const pic = slide.nodes.find((n) => n.type === 'picture')!
-    expect(textForModel(pic)).toBe('{{公司 logo}}')
+    expect(textForModel(pic)).toBe('{{company logo}}')
     // the reader's view stays empty: a picture has no text to show
     expect(textForModel(pic, true)).toBe('')
   })
@@ -183,9 +183,11 @@ describe('media withheld from the model', () => {
   })
 
   it('the labels for the prompt come from both text and media', () => {
-    const slide = render(SP(run(MARKED, `Call ${SECRET}`)) + PIC(setRedactExt(SP_PR, '公司 logo')))
+    const slide = render(
+      SP(run(MARKED, `Call ${SECRET}`)) + PIC(setRedactExt(SP_PR, 'company logo')),
+    )
     expect(redactLabelsOf(slide)).toContain(LABEL)
-    expect(redactLabelsOf(slide)).toContain('公司 logo')
+    expect(redactLabelsOf(slide)).toContain('company logo')
     expect(redactionCount(slide)).toBe(2)
   })
 
