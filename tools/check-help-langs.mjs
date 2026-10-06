@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * Check the manual's language coverage: `npx tsx tools/check-help-langs.ts`
+ * Check the manual's language coverage: `npm run check:help-langs`
  *
- * Four workers write these files in parallel, one per language, and the
+ * Plain node, not tsx, so CI can run it after `npm ci` without fetching a
+ * runner — which is the same reason the other repository checks are `.mjs`.
+ *
+ * Several workers write these files in parallel, one per language, and the
  * failure this guards is the one nobody notices by eye: a language that is
  * quietly a copy of another, or an article that lost a section, or a `help://`
  * link whose target got translated and now resolves to nothing.
@@ -14,10 +17,12 @@
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { LANGS as I18N_LANGS } from '../packages/i18n/src/index'
+import { fileURLToPath } from 'node:url'
 
-const TOPICS = resolve(__dirname, '../apps/shell/src/renderer/src/i18n/help/topics')
+const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
+const TOPICS = join(ROOT, 'apps/shell/src/renderer/src/i18n/help/topics')
 const REGISTRY = join(TOPICS, '..', 'help-registry.ts')
+const I18N = join(ROOT, 'packages/i18n/src/index.ts')
 
 /**
  * The topic ids, read out of the registry source.
@@ -27,21 +32,42 @@ const REGISTRY = join(TOPICS, '..', 'help-registry.ts')
  * second hand-kept list, and a registry that stops looking like this fails
  * loudly rather than quietly checking fewer articles than the app has.
  */
-function topicIdsFrom(source: string): string[] {
+function topicIdsFrom(source) {
   const array = source.slice(source.indexOf('export const HELP_TOPICS'))
   if (!array) throw new Error('HELP_TOPICS not found in the registry')
-  const ids = [...array.matchAll(/^\s*id: '([a-z0-9-]+)',$/gm)].map((m) => m[1]!)
+  const ids = [...array.matchAll(/^\s*id: '([a-z0-9-]+)',$/gm)].map((m) => m[1])
   if (ids.length === 0) throw new Error('no topic ids parsed out of HELP_TOPICS')
   return ids
 }
-const SOURCE = 'en'
 
 /**
- * The languages the manual has to ship, read from the i18n package rather
- * than listed here: a hand-kept copy of the 21 codes is a 21-code list that
- * goes stale the day a language is added, and the failure is silent.
+ * The languages the manual has to ship, read from the i18n package rather than
+ * listed here: a hand-kept copy of the 21 codes is a 21-code list that goes
+ * stale the day a language is added, and the failure is silent.
+ *
+ * `@genoffice/i18n` exports its TypeScript source, so node cannot import it
+ * either — same reason as the ids above. Read as text, and fail loudly rather
+ * than quietly checking fewer languages than the app ships.
  */
-const LANGS = I18N_LANGS as readonly string[]
+function langsFrom(source) {
+  const decl = source.indexOf('export const LANGS')
+  if (decl < 0) throw new Error('LANGS not found in the i18n package')
+  // start after the `= [`, not after the declaration: the type annotation is
+  // `readonly Lang[]`, whose own `]` would otherwise bound the slice to nothing
+  const open = source.indexOf('[', source.indexOf('=', decl))
+  const end = source.indexOf(']', open)
+  if (open < 0 || end < 0) throw new Error('unterminated LANGS array in the i18n package')
+  // everything after it is other tables (HTML_LANGS, MAC_KEY_NAMES, …) full of
+  // quoted strings, and an unbounded match would check hundreds of "languages"
+  // that do not exist
+  const langs = [...source.slice(open, end).matchAll(/'([a-zA-Z-]+)'/g)].map((m) => m[1])
+  if (langs.length === 0) throw new Error('no languages parsed out of LANGS')
+  return langs
+}
+
+const SOURCE = 'en'
+const IDS = topicIdsFrom(readFileSync(REGISTRY, 'utf-8'))
+const LANGS = langsFrom(readFileSync(I18N, 'utf-8'))
 
 /** Latin- or Cyrillic-script languages: any Han character in one of these is a
  *  worker that pasted the Chinese source instead of translating it. */
@@ -64,13 +90,6 @@ const NO_HAN = new Set([
 ])
 
 /**
- * The topics, from the registry the app itself reads. A second list here
- * meant a new article had to be registered twice, and the checker would call
- * its own files orphans.
- */
-const IDS = topicIdsFrom(readFileSync(REGISTRY, 'utf-8'))
-
-/**
  * The script a language actually writes in.
  *
  * A file in one of these that contains none of its own script is a copy of
@@ -78,16 +97,16 @@ const IDS = topicIdsFrom(readFileSync(REGISTRY, 'utf-8'))
  * cheap to match and proves nothing: an untranslated file matches English
  * perfectly, because it *is* English.
  */
-const SCRIPTS: Record<string, RegExp> = {
-  zh: /[\u4e00-\u9fff]/,
-  'zh-TW': /[\u4e00-\u9fff]/,
-  ja: /[\u3040-\u30ff\u4e00-\u9fff]/,
-  ko: /[\uac00-\ud7af]/,
-  ru: /[\u0400-\u04ff]/,
-  ar: /[\u0600-\u06ff]/,
-  he: /[\u0590-\u05ff]/,
-  th: /[\u0e00-\u0e7f]/,
-  hi: /[\u0900-\u097f]/,
+const SCRIPTS = {
+  zh: /[一-鿿]/,
+  'zh-TW': /[一-鿿]/,
+  ja: /[぀-ヿ一-鿿]/,
+  ko: /[가-힯]/,
+  ru: /[Ѐ-ӿ]/,
+  ar: /[؀-ۿ]/,
+  he: /[֐-׿]/,
+  th: /[฀-๿]/,
+  hi: /[ऀ-ॿ]/,
 }
 
 /**
@@ -101,8 +120,8 @@ const SCRIPTS: Record<string, RegExp> = {
  * separator row. What this is meant to catch is prose, so only prose is
  * compared.
  */
-function longestSharedRun(a: string, b: string): number {
-  const norm = (t: string) =>
+function longestSharedRun(a, b) {
+  const norm = (t) =>
     t
       .replace(/```[\s\S]*?```/g, ' ')
       .replace(/^\s*\|.*$/gm, ' ')
@@ -110,7 +129,8 @@ function longestSharedRun(a: string, b: string): number {
       .trim()
   const sa = norm(a)
   const sb = norm(b)
-  const [short, long] = sa.length < sb.length ? [sa, sb] : [sb, sa]
+  const short = sa.length < sb.length ? sa : sb
+  const long = sa.length < sb.length ? sb : sa
   let best = 0
   for (let i = 0; i < short.length && best < 120; i++) {
     if (short[i] === ' ') continue
@@ -121,7 +141,7 @@ function longestSharedRun(a: string, b: string): number {
   return best
 }
 
-const read = (id: string, lang: string): string | null => {
+const read = (id, lang) => {
   try {
     return readFileSync(join(TOPICS, `${id}.${lang}.md`), 'utf8')
   } catch {
@@ -129,19 +149,18 @@ const read = (id: string, lang: string): string | null => {
   }
 }
 
-const headings = (t: string): number => (t.match(/^#{1,6} /gm) ?? []).length
-const tableRows = (t: string): number => (t.match(/^\|/gm) ?? []).length
-const images = (t: string): string[] =>
-  [...t.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]!).sort()
-const links = (t: string): string[] =>
-  [...new Set([...t.matchAll(/\]\((help:\/\/[^)]+)\)/g)].map((m) => m[1]!))].sort()
-const codeFences = (t: string): number => (t.match(/^```/gm) ?? []).length
-const bullets = (t: string): number => (t.match(/^\s*[-*] /gm) ?? []).length
-const numbered = (t: string): number => (t.match(/^\s*\d+\. /gm) ?? []).length
+const headings = (t) => (t.match(/^#{1,6} /gm) ?? []).length
+const tableRows = (t) => (t.match(/^\|/gm) ?? []).length
+const images = (t) => [...t.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]).sort()
+const links = (t) =>
+  [...new Set([...t.matchAll(/\]\((help:\/\/[^)]+)\)/g)].map((m) => m[1]))].sort()
+const codeFences = (t) => (t.match(/^```/gm) ?? []).length
+const bullets = (t) => (t.match(/^\s*[-*] /gm) ?? []).length
+const numbered = (t) => (t.match(/^\s*\d+\. /gm) ?? []).length
 const HAN = /[一-鿿]/
 
 let problems = 0
-const fail = (msg: string): void => {
+const fail = (msg) => {
   problems++
   console.log(`  FAIL  ${msg}`)
 }
@@ -149,16 +168,16 @@ const fail = (msg: string): void => {
 console.log(`manual: ${IDS.length} topics x ${LANGS.length} languages\n`)
 
 for (const lang of LANGS) {
-  const missing: string[] = []
-  const structural: string[] = []
-  const content: string[] = []
+  const missing = []
+  const structural = []
+  const content = []
   for (const id of IDS) {
     const text = read(id, lang)
     if (text === null) {
       missing.push(id)
       continue
     }
-    const src = read(id, SOURCE)!
+    const src = read(id, SOURCE)
     if (headings(text) !== headings(src)) {
       structural.push(`${id}: ${headings(text)} headings vs ${headings(src)}`)
     }
@@ -213,7 +232,7 @@ for (const f of readdirSync(TOPICS)) {
 
 console.log(
   problems === 0
-    ? '\nall 21 languages complete and structurally identical to English'
+    ? `\nall ${LANGS.length} languages complete and structurally identical to English`
     : `\n${problems} problems`,
 )
 process.exit(problems === 0 ? 0 : 1)

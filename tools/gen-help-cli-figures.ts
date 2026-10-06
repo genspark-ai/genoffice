@@ -294,8 +294,15 @@ async function shootInstall(): Promise<void> {
     await about.waitFor({ state: 'visible', timeout: 20_000 })
     await about.click()
     await page.waitForTimeout(1200)
-    await page.screenshot({ path: join(OUT_DIR, 'install.en.png') })
-    process.stdout.write('wrote install.en.png\n')
+    // Raw CDP, not `page.screenshot()`: the Electron screenshot path ignores
+    // the device-scale override set above, so this figure came out 1360x850
+    // while its siblings are 2720 wide. Same fix as gen-help-screenshots.ts.
+    const { data } = await cdp.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+    })
+    writeFileSync(join(OUT_DIR, 'install.en.png'), Buffer.from(data, 'base64'))
+    process.stdout.write('wrote install.en.png (2720x1700 @2x)\n')
   } finally {
     await app?.close().catch(() => {})
     rmSync(root, { recursive: true, force: true })

@@ -24,7 +24,13 @@
  * which is also the state every CI run and every user without a Genspark account
  * is in. Nothing of the developer's own session is read or written.
  */
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import {
+  _electron as electron,
+  type CDPSession,
+  type ElectronApplication,
+  type Page,
+  type Rect,
+} from '@playwright/test'
 import { createRequire } from 'node:module'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -148,7 +154,7 @@ async function launch(scratch: Scratch, lang: string): Promise<ElectronApplicati
  * setViewportSize alone is CSS pixels, and a half-resolution figure goes soft
  * on every retina display the manual is read on.
  */
-async function frame(page: Page): Promise<void> {
+async function frame(page: Page): Promise<CDPSession> {
   await page.setViewportSize({ width: 1360, height: 850 })
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -158,6 +164,32 @@ async function frame(page: Page): Promise<void> {
     mobile: false,
   })
   await page.waitForTimeout(600)
+  return cdp
+}
+
+/**
+ * Capture through CDP rather than `page.screenshot()`.
+ *
+ * Playwright's Electron screenshot ignores the device-scale override set above:
+ * inside the page `devicePixelRatio` reports 2 and the PNG is still 1360x850, so
+ * every figure this script produced was half resolution while its own comment
+ * claimed 2720x1700. Measured on this build — plain, `scale: 'css'` and
+ * `scale: 'device'` all returned the identical byte count, and a raw
+ * `Page.captureScreenshot` returned more than twice it. So the scale factor is
+ * set by the override and honoured only on the raw path.
+ */
+async function capture(page: Page, cdp: CDPSession, clip?: Rect): Promise<Buffer> {
+  const { data } = await cdp.send('Page.captureScreenshot', {
+    format: 'png',
+    fromSurface: true,
+    ...(clip ? { clip: { ...clip, scale: 1 } } : {}),
+  })
+  return Buffer.from(data, 'base64')
+}
+
+async function shoot(page: Page, cdp: CDPSession, name: string, lang: string): Promise<void> {
+  await writeFileSync(join(OUT_DIR, `${name}.${lang}.png`), await capture(page, cdp))
+  process.stdout.write(`wrote ${name}.${lang}.png\n`)
 }
 
 /** Dismiss the star prompt: it is a promo overlay, not part of the screen the
@@ -169,12 +201,6 @@ async function dismissStarPrompt(page: Page): Promise<void> {
   await page.waitForTimeout(300)
 }
 
-async function shoot(page: Page, name: string, lang: string): Promise<void> {
-  const file = join(OUT_DIR, `${name}.${lang}.png`)
-  await page.screenshot({ path: file })
-  process.stdout.write(`wrote ${name}.${lang}.png\n`)
-}
-
 async function main(): Promise<void> {
   mkdirSync(OUT_DIR, { recursive: true })
   for (const lang of TARGET_LANGS) {
@@ -183,7 +209,7 @@ async function main(): Promise<void> {
     try {
       app = await launch(scratch, lang)
       const page = app.windows()[0] ?? (await app.firstWindow())
-      await frame(page)
+      const cdp = await frame(page)
 
       await dismissStarPrompt(page)
 
@@ -217,7 +243,7 @@ async function main(): Promise<void> {
       }
 
       // 1. the Home screen, signed out, listing the sample files
-      await shoot(page, 'home-screen', lang)
+      await shoot(page, cdp, 'home-screen', lang)
 
       // 2. the same list with a file's own menu open — the surface the
       //    file-operations topic is about
@@ -228,7 +254,7 @@ async function main(): Promise<void> {
       const fileRow = rows.filter({ hasText: 'doc.docx' }).first()
       await fileRow.locator('.recent-actions .more-btn').click()
       await page.locator('.ctx-menu, .row-menu, [role="menu"]').first().waitFor({ timeout: 10_000 })
-      await shoot(page, 'file-ops', lang)
+      await shoot(page, cdp, 'file-ops', lang)
       await page.keyboard.press('Escape')
       await page.waitForTimeout(300)
 
@@ -247,7 +273,7 @@ async function main(): Promise<void> {
         if (!(await item.count())) throw new Error(`settings pane not found: ${name}`)
         await item.first().click()
         await page.waitForTimeout(500)
-        await shoot(page, shot, lang)
+        await shoot(page, cdp, shot, lang)
       }
       // Every shipped UI language's own label for the pane, taken from
       // `setSecGeneral` / `setSecIntegrations` in strings.ts. Matching three of
@@ -262,6 +288,42 @@ async function main(): Promise<void> {
         /集成|Integrations|Tích hợp|連携|연동|Intégrations|Integrationen|Integraciones|การเชื่อมต่อ|Integrasi|Интеграции|التكاملات|Integrações|Integrazioni|Integracje|Integrace|Integraties|שילובים|इंटीग्रेशन|整合/,
         'settings-integrations',
       )
+      await page.keyboard.press('Escape').catch(() => {})
+
+      // 4. the Slides ribbon, cropped to the band — the fonts topic's figure.
+      //    It was hand-captured twice, at two different moments, and the two
+      //    language editions ended up showing different things: English a whole
+      //    window, Chinese a ribbon strip. Two files with one caption must show
+      //    one subject, so both come from here.
+      //
+      //    `[data-ribbon-body]` is the shared markup contract every ribbon in
+      //    the suite carries (`packages/ui/src/ribbon-collapse.tsx` documents
+      //    it), so one selector crops all six editors rather than a per-app
+      //    class that only exists in one of them.
+      await page.locator('.account-btn').waitFor({ state: 'visible', timeout: 15_000 })
+      const deckRow = page.locator('.recent-row').filter({ hasText: 'deck.pptx' }).first()
+      const slidesWindow = app.waitForEvent('window')
+      await deckRow.dblclick()
+      const slides = await slidesWindow
+      await slides.waitForLoadState('domcontentloaded')
+      await slides
+        .locator('[data-ribbon-body]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 45_000 })
+      const band = await slides.locator('[data-ribbon-body]').first().boundingBox()
+      if (!band || band.width < 200)
+        throw new Error(`ribbon band not measurable: ${JSON.stringify(band)}`)
+      const slidesCdp = await frame(slides)
+      await writeFileSync(
+        join(OUT_DIR, `fonts.${lang}.png`),
+        await capture(slides, slidesCdp, {
+          x: band.x,
+          y: band.y,
+          width: band.width,
+          height: band.height,
+        }),
+      )
+      process.stdout.write(`wrote fonts.${lang}.png\n`)
     } finally {
       await app?.close().catch(() => {})
       scratch.dispose()
