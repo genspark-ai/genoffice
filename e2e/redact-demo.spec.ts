@@ -14,7 +14,7 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } fr
  */
 
 const SECRET = '13800138000'
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const POLL = { timeout: 20_000 }
 
 /** the tiptap instance both editors hang off their root element */

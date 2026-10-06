@@ -63,7 +63,7 @@ async function open(withMark: boolean): Promise<Editor> {
         TextSelection.create(editor.state.doc, start, start + SECRET.length),
       ),
     )
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
   }
   return editor
 }
@@ -178,9 +178,9 @@ describe('a range with a withheld span in it', () => {
     // a range that starts inside the secret and ends well before it finishes
     for (let from = 1; from < end; from++) {
       const text = redactTextBetween(doc, from, Math.min(from + 4, end))
-      if (!text.includes('客户')) continue
+      if (!text.includes('customer')) continue
       // a fragment of the marker would read as a typo the model should repair
-      expect(text).toContain('{{客户电话}}')
+      expect(text).toContain('{{client phone}}')
       // a marker that opens and never closes, or closes without opening: a
       // fragment the model would read as a typo to repair
       expect(text).not.toMatch(/\{\{[^}]*$/)
@@ -225,14 +225,14 @@ describe('what a selection sends to the model', () => {
     selectSecret(editor)
     const context = buildDocContext(editor)
     expect(context).not.toContain(SECRET)
-    expect(context).toContain('{{客户电话}}')
+    expect(context).toContain('{{client phone}}')
   })
 
   it('serialises the range with the marker too', async () => {
     const editor = await open(true)
     const html = serializeRangeToHtml(editor, 0, 1)
     expect(html).not.toContain(SECRET)
-    expect(html).toContain('{{客户电话}}')
+    expect(html).toContain('{{client phone}}')
   })
 
   it('leaves an unmarked document exactly as it was', async () => {
@@ -273,7 +273,7 @@ describe('the paths that repeat the document to the model', () => {
                 text: SECRET,
                 marks: [
                   { type: 'ins', attrs: author },
-                  { type: REDACT_MARK, attrs: { label: '客户电话' } },
+                  { type: REDACT_MARK, attrs: { label: 'client phone' } },
                 ],
               },
             ],
@@ -289,7 +289,7 @@ describe('the paths that repeat the document to the model', () => {
     for (const entry of entries) {
       expect(String(entry.text ?? ''), entry.id).not.toContain(SECRET)
     }
-    expect(entries.some((e) => String(e.text ?? '').includes('{{客户电话}}'))).toBe(true)
+    expect(entries.some((e) => String(e.text ?? '').includes('{{client phone}}'))).toBe(true)
   })
 
   it('a queued edit labels its anchor with the marker', async () => {
@@ -316,7 +316,7 @@ describe('the paths that repeat the document to the model', () => {
     // the target has to exist, or the assertion below would pass on nothing
     expect(resolved.target).not.toBeNull()
     expect(String(resolved.target?.excerpt ?? '')).not.toContain(SECRET)
-    expect(String(resolved.target?.excerpt ?? '')).toContain('{{客户电话}}')
+    expect(String(resolved.target?.excerpt ?? '')).toContain('{{client phone}}')
   })
 })
 
@@ -338,7 +338,7 @@ describe('the echo a replacement sends back', () => {
               {
                 type: 'text',
                 text: SECRET,
-                marks: [{ type: REDACT_MARK, attrs: { label: '客户电话' } }],
+                marks: [{ type: REDACT_MARK, attrs: { label: 'client phone' } }],
               },
               { type: 'text', text: ' now' },
             ],
@@ -377,7 +377,7 @@ describe('the echo a replacement sends back', () => {
     const editor = marked()
     selectSpan(editor, SECRET.length)
     const out = run(editor)
-    expect(out).toContain('{{客户电话}}')
+    expect(out).toContain('{{client phone}}')
     expect(out).not.toContain(SECRET)
   })
 
@@ -388,7 +388,7 @@ describe('the echo a replacement sends back', () => {
     const editor = marked()
     selectSpan(editor, 3)
     const out = run(editor)
-    expect(out).toContain('{{客户电话}}')
+    expect(out).toContain('{{client phone}}')
     expect(out).not.toContain(SECRET)
   })
 

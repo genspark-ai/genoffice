@@ -68,14 +68,14 @@ describe('liveText redacts for a model', () => {
   it('replaces the withheld words with the marker', async () => {
     const editor = await open([{ runs: [{ text: `Call ${SECRET} now` }] }])
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
-    expect(liveText(firstBlock(editor))).toBe('Call {{客户电话}} now')
+    editor.commands.setRedaction('client phone')
+    expect(liveText(firstBlock(editor))).toBe('Call {{client phone}} now')
   })
 
   it('never returns the secret to a model', async () => {
     const editor = await open([{ runs: [{ text: `Call ${SECRET} now` }] }])
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     expect(liveText(firstBlock(editor))).not.toContain(SECRET)
   })
 
@@ -98,7 +98,7 @@ describe('liveText redacts for a model', () => {
     // document that differs from what they can see on the page
     const editor = await open([{ runs: [{ text: `Call ${SECRET} now` }] }])
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     expect(liveText(firstBlock(editor), true)).toBe(`Call ${SECRET} now`)
   })
 })

@@ -98,7 +98,7 @@ describe('a saved file is XML a word processor can open', () => {
     const from = await makeDocx('<w:r><w:t>Call 13800138000 now</w:t></w:r>')
     const editor = await open(from)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const parsed = await parseDocx(from)
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const saved = await saveDocx(parsed, plan.saveBlocks)
@@ -130,13 +130,13 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx(
       '<w:r><w:t xml:space="preserve">Call </w:t></w:r>' +
         '<w:r><w:rPr><w:bdr w:val="single" w:sz="6" w:color="6B4FC0"/>' +
-        '<go:redact w:label="客户电话"/></w:rPr><w:t>13800138000</w:t></w:r>' +
+        '<go:redact w:label="client phone"/></w:rPr><w:t>13800138000</w:t></w:r>' +
         '<w:r><w:t xml:space="preserve"> now</w:t></w:r>',
     )
     const editor = await open(docx)
     // the border arrives as a docTextStyle mark; the custom element in the
     // run's rPr is what makes it ours, and it carries the label back
-    expect(redactionMarks(editor).map((a) => a.label)).toEqual(['客户电话'])
+    expect(redactionMarks(editor).map((a) => a.label)).toEqual(['client phone'])
     expect(editor.state.doc.textContent).toContain(SECRET)
   })
 
@@ -155,11 +155,11 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx('<w:r><w:t xml:space="preserve">Call 13800138000 now</w:t></w:r>')
     const editor = await open(docx)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('收货地址')
+    editor.commands.setRedaction('shipping address')
 
     const out = await save(editor, docx)
     const reopened = await open(out)
-    expect(redactionMarks(reopened).map((a) => a.label)).toEqual(['收货地址'])
+    expect(redactionMarks(reopened).map((a) => a.label)).toEqual(['shipping address'])
     expect(reopened.state.doc.textContent).toContain(SECRET)
   })
 
@@ -167,7 +167,7 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx('<w:r><w:t xml:space="preserve">Call 13800138000 now</w:t></w:r>')
     const editor = await open(docx)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
 
     const out = await save(editor, docx)
     const reparsed = await parseDocx(out)
@@ -181,7 +181,7 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx('<w:r><w:t xml:space="preserve">Call 13800138000 now</w:t></w:r>')
     const editor = await open(docx)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     expect(editor.state.doc.textContent).toContain(SECRET)
 
     const out = await save(editor, docx)
@@ -195,14 +195,14 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx('<w:r><w:t xml:space="preserve">Call 13800138000 now</w:t></w:r>')
     const editor = await open(docx)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const out = await save(editor, docx)
     const reparsed = await parseDocx(out)
     const run = (reparsed.blocks[0]?.runs ?? []).find((r) => r.text === SECRET)
     expect(run?.bdr).toMatchObject({ val: 'single', sz: 6, color: '6B4FC0' })
     // and the mark survives a second round trip with the border still there
     const again = await open(out)
-    expect(redactionMarks(again).map((a) => a.label)).toEqual(['客户电话'])
+    expect(redactionMarks(again).map((a) => a.label)).toEqual(['client phone'])
     expect(again.state.doc.textContent).toContain(SECRET)
   })
 
@@ -210,7 +210,7 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx('<w:r><w:t xml:space="preserve">Call 13800138000 now</w:t></w:r>')
     const editor = await open(docx)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     const out = await save(editor, docx)
     const reparsed = await parseDocx(out)
     const run = (reparsed.blocks[0]?.runs ?? []).find((r) => r.text === SECRET)
@@ -228,7 +228,7 @@ describe('a withheld span survives the .docx', () => {
     const docx = await makeDocx('<w:r><w:t xml:space="preserve">Call 13800138000 now</w:t></w:r>')
     const editor = await open(docx)
     selectText(editor, SECRET)
-    editor.commands.setRedaction('客户电话')
+    editor.commands.setRedaction('client phone')
     editor.commands.unsetRedaction()
     expect(redactionMarks(editor)).toEqual([])
     expect(editor.state.doc.textContent).toContain(SECRET)
@@ -252,7 +252,7 @@ describe('the label never breaks the file', () => {
     const docx = await makeDocx(`<w:r><w:t xml:space="preserve">${long}</w:t></w:r>`)
     const editor = await open(docx)
     selectText(editor, 'dolor')
-    editor.commands.setRedaction('关键词')
+    editor.commands.setRedaction('keyword')
     const out = await save(editor, docx)
     const reparsed = await parseDocx(out)
     expect(JSON.stringify(reparsed.blocks[0]?.runs)).toContain('dolor')
