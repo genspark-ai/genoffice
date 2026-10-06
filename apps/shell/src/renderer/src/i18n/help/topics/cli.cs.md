@@ -17,22 +17,23 @@ Systémy macOS a Windows jej dodávají uvnitř balíčku aplikace. Chcete-li je
 
 ## Příkazy, které stojí za to znát
 
-| Příkaz            | Co dělá                                                                                                                                                                                                    |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open`            | Otevře dokument v aplikaci; aplikaci spustí, pokud neběží.                                                                                                                                                 |
-| `convert`         | Převádí mezi formáty pomocí vlastních enginů aplikace.                                                                                                                                                     |
-| `create`          | Vytvoří dokument ze strukturovaného obsahu.                                                                                                                                                                |
-| `render`          | Jeden PNG na stránku, tak jak jej vykreslí vykreslovač.                                                                                                                                                    |
-| `pdf`             | Čte textovou vrstvu PDF stránku po stránce, bez procesu aplikace.                                                                                                                                          |
-| `info`            | Metadata a souhrn struktury dokumentu.                                                                                                                                                                     |
-| `search`          | Vyhledávání na webu nebo v obrázcích pomocí poskytovatele nastaveného v aplikaci.                                                                                                                          |
-| `image` / `media` | Vygeneruje obrázek, nebo popíše soubor obrázku, videa či zvuku a umožní na něj dotazy.                                                                                                                     |
-| `merge`           | Vyplní zástupné značky `{{key}}` v šabloně `.docx`, `.pptx` nebo `.xlsx`.                                                                                                                                  |
-| `capabilities`    | Označí, které cloudové funkce jsou na tomto počítači nastavené.                                                                                                                                            |
-| `guide`           | Referenční příručka op a návrhové průvodce, vygenerované ze stejných definic, proti kterým executor validuje — takže se nemůže rozejít s tím, co přijímá `apply`. `--json` ji vrátí se schématem každé op. |
-| `install-cli`     | Umístí `genoffice` do `PATH`.                                                                                                                                                                              |
-| `skill`           | Vypíše programové agenty nalezené na tomto počítači a nainstaluje do nich nebo v nich aktualizuje dovednost GenOffice.                                                                                     |
-| `mcp`             | Vystaví každý příkaz jako nástroj Model Context Protocol. Viz **Připojení programového agenta**.                                                                                                           |
+| Příkaz            | Co dělá                                                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Otevře dokument v aplikaci; aplikaci spustí, pokud neběží.                                                                                                                                                    |
+| `selection`       | Co uživatel právě vybral v tomto souboru, zatímco aplikace běží — ukazatel na „tady“ / „tenhle“. Vrací rozsah bloků, rozsah v listu, prvky snímku nebo stránku podle toho, v jakém editoru se soubor nachází. |
+| `convert`         | Převádí mezi formáty pomocí vlastních enginů aplikace.                                                                                                                                                        |
+| `create`          | Vytvoří dokument ze strukturovaného obsahu.                                                                                                                                                                   |
+| `render`          | Jeden PNG na stránku, tak jak jej vykreslí vykreslovač.                                                                                                                                                       |
+| `pdf`             | Čte textovou vrstvu PDF stránku po stránce, bez procesu aplikace.                                                                                                                                             |
+| `info`            | Metadata a souhrn struktury dokumentu.                                                                                                                                                                        |
+| `search`          | Vyhledávání na webu nebo v obrázcích pomocí poskytovatele nastaveného v aplikaci.                                                                                                                             |
+| `image` / `media` | Vygeneruje obrázek, nebo popíše soubor obrázku, videa či zvuku a umožní na něj dotazy.                                                                                                                        |
+| `merge`           | Vyplní zástupné značky `{{key}}` v šabloně `.docx`, `.pptx` nebo `.xlsx`.                                                                                                                                     |
+| `capabilities`    | Označí, které cloudové funkce jsou na tomto počítači nastavené.                                                                                                                                               |
+| `guide`           | Referenční příručka op a návrhové průvodce, vygenerované ze stejných definic, proti kterým executor validuje — takže se nemůže rozejít s tím, co přijímá `apply`. `--json` ji vrátí se schématem každé op.    |
+| `install-cli`     | Umístí `genoffice` do `PATH`.                                                                                                                                                                                 |
+| `skill`           | Vypíše programové agenty nalezené na tomto počítači a nainstaluje do nich nebo v nich aktualizuje dovednost GenOffice.                                                                                        |
+| `mcp`             | Vystaví každý příkaz jako nástroj Model Context Protocol. Viz **Připojení programového agenta**.                                                                                                              |
 
 ## Úpravy: Docs, Sheets, Slides
 

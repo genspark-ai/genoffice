@@ -17,22 +17,23 @@ macOS and Windows ship it inside the app bundle. To use it by name, run `genoffi
 
 ## The commands worth knowing
 
-| Command           | What it does                                                                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open`            | Open a document in the app; starts the app if it is not running.                                                                                                                                  |
-| `convert`         | Convert between formats using the app's own engines.                                                                                                                                              |
-| `create`          | Create a document from structured content.                                                                                                                                                        |
-| `render`          | One PNG per page, as the renderer lays it out.                                                                                                                                                    |
-| `pdf`             | Read a PDF's text layer page by page, with no app process.                                                                                                                                        |
-| `info`            | Metadata and a structure summary of a document.                                                                                                                                                   |
-| `search`          | Web or image search through the provider configured in the app.                                                                                                                                   |
-| `image` / `media` | Generate an image, or describe and ask questions about an image, video or audio file.                                                                                                             |
-| `merge`           | Fill `{{key}}` placeholders in a `.docx`, `.pptx` or `.xlsx` template.                                                                                                                            |
-| `capabilities`    | Report which cloud features are configured on this machine.                                                                                                                                       |
-| `guide`           | The op reference and design guides, generated from the same definitions the executor validates against — so it cannot drift from what `apply` accepts. `--json` returns it with each op's schema. |
-| `install-cli`     | Put `genoffice` on the `PATH`.                                                                                                                                                                    |
-| `skill`           | List the coding agents found on this machine and install or update the GenOffice skill in them.                                                                                                   |
-| `mcp`             | Serve every command as a Model Context Protocol tool. See **Connecting a coding agent**.                                                                                                          |
+| Command           | What it does                                                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`            | Open a document in the app; starts the app if it is not running.                                                                                                                                                    |
+| `selection`       | What the user has selected in that file right now, while the app is running — the pointer for "this one" / "here". Returns a block range, a sheet range, slide elements or a page, whichever editor the file is in. |
+| `convert`         | Convert between formats using the app's own engines.                                                                                                                                                                |
+| `create`          | Create a document from structured content.                                                                                                                                                                          |
+| `render`          | One PNG per page, as the renderer lays it out.                                                                                                                                                                      |
+| `pdf`             | Read a PDF's text layer page by page, with no app process.                                                                                                                                                          |
+| `info`            | Metadata and a structure summary of a document.                                                                                                                                                                     |
+| `search`          | Web or image search through the provider configured in the app.                                                                                                                                                     |
+| `image` / `media` | Generate an image, or describe and ask questions about an image, video or audio file.                                                                                                                               |
+| `merge`           | Fill `{{key}}` placeholders in a `.docx`, `.pptx` or `.xlsx` template.                                                                                                                                              |
+| `capabilities`    | Report which cloud features are configured on this machine.                                                                                                                                                         |
+| `guide`           | The op reference and design guides, generated from the same definitions the executor validates against — so it cannot drift from what `apply` accepts. `--json` returns it with each op's schema.                   |
+| `install-cli`     | Put `genoffice` on the `PATH`.                                                                                                                                                                                      |
+| `skill`           | List the coding agents found on this machine and install or update the GenOffice skill in them.                                                                                                                     |
+| `mcp`             | Serve every command as a Model Context Protocol tool. See **Connecting a coding agent**.                                                                                                                            |
 
 ## Editing: docs, sheets, slides
 
