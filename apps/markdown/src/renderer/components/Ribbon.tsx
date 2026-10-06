@@ -25,6 +25,7 @@ import {
   IconRedo,
   IconSave,
   IconSearch,
+  IconSourceCode,
   IconSpellcheck,
   IconTable,
   IconTaskList,
@@ -44,6 +45,10 @@ interface Props {
   onInsertImage: () => void
   frontmatterOpen: boolean
   onToggleFrontmatter: () => void
+  /** the source view replaces the document canvas, so editor-shaped commands go dead */
+  /** this PR's markdown source view — NOT the .txt/.json `sourceMode` */
+  sourceViewOpen: boolean
+  onToggleSource: () => void
   outlineOpen: boolean
   onToggleOutline: () => void
   hasOutline: boolean
@@ -174,6 +179,8 @@ export function Ribbon({
   onInsertImage,
   frontmatterOpen,
   onToggleFrontmatter,
+  sourceViewOpen,
+  onToggleSource,
   outlineOpen,
   onToggleOutline,
   hasOutline,
@@ -230,7 +237,10 @@ export function Ribbon({
     inside: () => [linkAnchorRef.current],
   })
 
-  const off = disabled || !editor || !state
+  // In the source view the canvas is a textarea: formatting acts on a selection
+  // the user cannot see, and undo/focus would yank them out of the pane, so the
+  // editor-shaped commands stand down. Saving and the source toggle stay live.
+  const off = disabled || sourceMode || sourceViewOpen || !editor || !state
 
   const openLink = () => {
     if (!editor) return
@@ -274,7 +284,7 @@ export function Ribbon({
           className="qa-btn"
           data-tip={t('save')}
           aria-label={t('save')}
-          disabled={off || !dirty}
+          disabled={disabled || !dirty}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onSave}
         >
@@ -524,6 +534,24 @@ export function Ribbon({
 
         <div className="ribbon-group">
           <div className="ribbon-group-items">
+            {/*
+              The markdown source view is the PR's own mode, distinct from
+              `sourceMode` (a .txt/.json edited as source). Both hide the
+              block-formatting buttons: there is no block document to format in
+              either case.
+            */}
+            {/* A .txt/.json is already source text, so there is nothing for
+                this toggle to switch to; it is a markdown control. */}
+            {!sourceMode && (
+              <IconBtn
+                title={t('sourceView')}
+                active={sourceViewOpen}
+                disabled={disabled}
+                onClick={onToggleSource}
+              >
+                <IconSourceCode size={ICON} />
+              </IconBtn>
+            )}
             {!sourceMode && (
               <IconBtn
                 title={t('fmProperties')}
