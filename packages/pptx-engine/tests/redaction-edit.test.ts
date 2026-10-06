@@ -84,7 +84,7 @@ describe('withholding a picture', () => {
     setElementRedaction(s, picOf(s).id, 'second')
     const xml = picOf(s).anchor.originalXml
     expect(xml.match(/go:redact/g)).toHaveLength(1)
-    expect(xml).toContain('w:label="second"')
+    expect(xml).toContain('label="second"')
   })
 
   it('refuses an id that is not a picture', () => {

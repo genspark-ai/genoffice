@@ -31,8 +31,11 @@ describe('the withheld-span marker in OOXML', () => {
     expect(out).toContain('lang="en-US"')
     expect(out).toContain('sz="1800"')
     expect(out).toContain('<a:latin typeface="Calibri"/>')
-    expect(out).toContain(`<a:ext uri="${REDACT_EXT_URI}">`)
-    expect(out).toContain('w:label="client phone"')
+    // the extension carries our namespace declaration, so the prefix its child
+    // uses resolves; see redaction-xml-strict.test.ts for the parse that
+    // actually depends on it
+    expect(out).toContain(`<a:ext uri="${REDACT_EXT_URI}" xmlns:`)
+    expect(out).toContain('label="client phone"')
   })
 
   it('gives a self-closing rPr the paired form the mark needs', () => {
@@ -48,7 +51,7 @@ describe('the withheld-span marker in OOXML', () => {
   it('works on a picture nvPr, which is where a media mark lives', () => {
     const out = setRedactExt(NVPR, 'training recording')
     expect(out).toContain('picLocks')
-    expect(out).toContain('w:label="training recording"')
+    expect(out).toContain('label="training recording"')
     expect(out).toContain('</p:cNvPicPr>')
   })
 
@@ -56,7 +59,7 @@ describe('the withheld-span marker in OOXML', () => {
     const once = setRedactExt(RPR, 'first label')
     const twice = setRedactExt(once, 'second label')
     expect(twice.match(/go:redact/g)).toHaveLength(1)
-    expect(twice).toContain('w:label="second label"')
+    expect(twice).toContain('label="second label"')
     expect(twice).not.toContain('first label')
   })
 
@@ -87,7 +90,7 @@ describe('the withheld-span marker in OOXML', () => {
 
   it('ignores another extension in the same list', () => {
     const foreign =
-      '<a:rPr><a:extLst><a:ext uri="{SOMEONE-ELSE}"><go:redact w:label="decoy"/></a:ext></a:extLst></a:rPr>'
+      '<a:rPr><a:extLst><a:ext uri="{SOMEONE-ELSE}"><go:redact label="decoy"/></a:ext></a:extLst></a:rPr>'
     expect(readRedactLabel(parser.parse(foreign)['a:rPr'])).toBeUndefined()
   })
 
@@ -122,14 +125,14 @@ describe('the withheld-span marker in OOXML', () => {
     expect(out).toContain('&lt;b&gt;')
     expect(out).toContain('&amp;')
     expect(out).toContain('&quot;c&quot;')
-    expect(out).not.toMatch(/w:label="a<b>/)
+    expect(out).not.toMatch(/label="a<b>/)
   })
 
   it('the element is well-formed enough for a re-parse', () => {
     const out = setRedactExt(RPR, 'client phone')
     expect(() => parser.parse(out)).not.toThrow()
     const node = parser.parse(`<a:r>${out}</a:r>`)['a:r']
-    expect(node['a:rPr']['a:extLst']['a:ext']['go:redact']['@_w:label']).toBe('client phone')
+    expect(node['a:rPr']['a:extLst']['a:ext']['go:redact']['@_label']).toBe('client phone')
   })
 
   it('keeps a stable uri, since a round-tripped deck has to land on the same value', () => {

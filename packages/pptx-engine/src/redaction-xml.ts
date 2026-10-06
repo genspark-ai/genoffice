@@ -28,7 +28,7 @@
  *
  * ## Where it lives
  *
- * `<a:extLst><a:ext uri="…"><go:redact w:label="…"/></a:ext></a:extLst>` inside
+ * `<a:extLst><a:ext uri="…"><go:redact label="…"/></a:ext></a:extLst>` inside
  * the run's `<a:rPr>`, or inside the element's `nvPr` for a picture. `a:extLst`
  * is the OOXML extension list — the schema's own slot for things it does not
  * know — so PowerPoint round-trips the file without noticing, and fast-xml-parser
@@ -49,11 +49,37 @@ import { asXmlNode, escapeXmlAttr, xmlArray, type XmlNode } from './xml-utils'
  */
 export const REDACT_EXT_URI = '{9F1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D}'
 
-const REDACT_EL = 'go:redact'
+/**
+ * The namespace the label lives in, and the prefix bound to it.
+ *
+ * An undeclared prefix is a parse error, not a warning: PowerPoint offers to
+ * repair the deck and repair drops the run carrying the mark, which hands the
+ * span back to the model on the next open.
+ *
+ * Defined here rather than in the docx carrier because `docx-engine` depends on
+ * this package and not the other way round, so this is the one place both can
+ * reach without either reaching sideways.
+ */
+export const REDACT_NS = 'https://genspark.ai/genoffice/redaction/2026'
+export const REDACT_PREFIX = 'go'
+export const REDACT_EL = `${REDACT_PREFIX}:redact`
 
-/** The whole extension node, for splicing into an `<a:extLst>`. */
+/**
+ * The whole extension node, for splicing into an `<a:extLst>`.
+ *
+ * The namespace is declared on the `a:ext` itself rather than on the part root:
+ * `a:extLst` is OOXML's own extension point, and a consumer is required to skip
+ * content in an `<a:ext>` whose `uri` it does not know, so no `mc:Ignorable` is
+ * needed — only that the prefix resolves.
+ */
 export function redactExtXml(label: string): string {
-  return `<a:ext uri="${REDACT_EXT_URI}"><${REDACT_EL} w:label="${escapeXmlAttr(label)}"/></a:ext>`
+  // `label` is deliberately unprefixed. A prefixed attribute lives in that
+  // prefix's namespace, and this part is DrawingML: a `w:label` here would be a
+  // second unbound prefix, the same parse error as the element's own.
+  return (
+    `<a:ext uri="${REDACT_EXT_URI}" xmlns:${REDACT_PREFIX}="${REDACT_NS}">` +
+    `<${REDACT_EL} label="${escapeXmlAttr(label)}"/></a:ext>`
+  )
 }
 
 /** True when the fragment already carries our mark. */
@@ -93,7 +119,7 @@ function ourExt(extLst: unknown): XmlNode | null {
 export function readRedactLabel(node: unknown): string | undefined {
   const ext = ourExt(asXmlNode(node)['a:extLst'])
   if (!ext) return undefined
-  const label = asXmlNode(ext[REDACT_EL])['@_w:label']
+  const label = asXmlNode(ext[REDACT_EL])['@_label']
   return typeof label === 'string' && label !== '' ? label : undefined
 }
 

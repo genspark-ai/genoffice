@@ -1,3 +1,5 @@
+// one definition, in the package both carriers can reach
+export { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/pptx-engine'
 export * from './types'
 export {
   deobfuscateOdttf,

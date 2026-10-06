@@ -1,4 +1,5 @@
 import { Mark } from '@tiptap/core'
+import { REDACT_EL } from '@genoffice/docx-engine'
 import { REDACT_MARK } from '../ai/redact'
 
 declare module '@tiptap/core' {
@@ -86,7 +87,7 @@ export const DocRedaction = Mark.create({
               this.type.create({
                 label: clean,
                 // the label has to live in the file, not only in the editor
-                rawRPr: `<w:rPr><w:bdr w:val="${BDR.val}" w:sz="${BDR.sz}" w:color="${BDR.color}"/><go:redact w:label="${escapeXmlAttr(clean)}"/></w:rPr>`,
+                rawRPr: `<w:rPr><w:bdr w:val="${BDR.val}" w:sz="${BDR.sz}" w:color="${BDR.color}"/><${REDACT_EL} w:label="${escapeXmlAttr(clean)}"/></w:rPr>`,
               }),
             )
             dispatch(tr)

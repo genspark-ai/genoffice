@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { parseDocx, saveDocx } from '@genoffice/docx-engine'
+import JSZip from 'jszip'
+import { parseDocx, saveDocx, REDACT_NS, REDACT_PREFIX } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
@@ -78,6 +79,51 @@ function redactionMarks(editor: Editor): Array<Record<string, unknown>> {
   })
   return out
 }
+
+/**
+ * The saved part has to be well-formed XML.
+ *
+ * The label rides in an element in a namespace of ours, and an undeclared prefix
+ * is not a warning — it is a parse error. Word and LibreOffice both offer to
+ * repair the file, and repair drops the run that carried the mark, so the span
+ * silently becomes readable by a model again on the next open.
+ *
+ * A namespace-aware parser is the only check that sees it. The project's own
+ * reader is lenient, which is why every round-trip test in this file passed
+ * against a file no word processor would open.
+ */
+describe('a saved file is XML a word processor can open', () => {
+  /** save a document with one marked span and hand back its document part */
+  async function saveWithMark(): Promise<string> {
+    const from = await makeDocx('<w:r><w:t>Call 13800138000 now</w:t></w:r>')
+    const editor = await open(from)
+    selectText(editor, SECRET)
+    editor.commands.setRedaction('客户电话')
+    const parsed = await parseDocx(from)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    return JSZip.loadAsync(saved).then((zip) => zip.file('word/document.xml')!.async('string'))
+  }
+
+  it('parses with a namespace-aware parser', async () => {
+    const doc = new DOMParser().parseFromString(await saveWithMark(), 'application/xml')
+    expect(doc.querySelector('parsererror')).toBeNull()
+  })
+
+  it('declares the namespace on the root, and marks it ignorable', async () => {
+    const xml = await saveWithMark()
+    expect(xml).toContain(`xmlns:${REDACT_PREFIX}=`)
+    // Declared and listed as ignorable is the pair OOXML wants: a strict
+    // consumer then skips the marker instead of calling the run a violation.
+    expect(xml).toMatch(new RegExp(`mc:Ignorable="[^"]*\\b${REDACT_PREFIX}\\b`))
+  })
+
+  it('still carries the label where a reader can find it', async () => {
+    const doc = new DOMParser().parseFromString(await saveWithMark(), 'application/xml')
+    const marker = doc.getElementsByTagNameNS(REDACT_NS, 'redact')
+    expect(marker.length).toBe(1)
+  })
+})
 
 describe('a withheld span survives the .docx', () => {
   it('recovers from a file that already carries the mark', async () => {
