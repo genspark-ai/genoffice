@@ -3,8 +3,9 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Editor } from '@tiptap/core'
 import { buildExtensions } from '../src/renderer/editor/extensions'
-import { Redaction } from '../src/renderer/editor/Redaction'
+import { hasRedactionIn, Redaction } from '../src/renderer/editor/Redaction'
 import { RedactMenu } from '../src/renderer/components/RedactMenu'
+import { t } from '../src/renderer/i18n/locale'
 
 /**
  * The menu item has to survive its own dismissal.
@@ -49,8 +50,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/** select the number the way a user's drag would */
-function selectSecret(): void {
+/** where the number starts, found by walking the doc like a search would */
+function secretFrom(): number {
   let from = -1
   editor!.state.doc.descendants((node, pos) => {
     if (from >= 0 || !node.isText) return
@@ -58,6 +59,12 @@ function selectSecret(): void {
     if (at !== -1) from = pos + at
   })
   expect(from).toBeGreaterThan(0)
+  return from
+}
+
+/** select the number the way a user's drag would */
+function selectSecret(): void {
+  const from = secretFrom()
   act(() => {
     editor!.commands.setTextSelection({ from, to: from + SECRET.length })
   })
@@ -72,6 +79,44 @@ const rightClick = () =>
 
 /** the window listener is attached on the next tick after the menu opens */
 const nextTick = () => new Promise((r) => setTimeout(r, 5))
+
+/**
+ * Labels are read through the app's own translator rather than pasted in, so
+ * this file carries no translated text of its own to drift out of step.
+ */
+const HIDE_LABEL = t('redactMenuLabel')
+const SHOW_LABEL = t('redactShowLabel')
+
+const menuItems = () => [...document.querySelectorAll<HTMLButtonElement>('.redact-menu-item')]
+
+const menuItem = (label: string) =>
+  menuItems().find((b) => b.textContent === label) as HTMLButtonElement | undefined
+
+/** put the redaction mark over the number, the way the menu would */
+function withholdSecret(): void {
+  selectSecret()
+  act(() => {
+    editor!.commands.setRedaction('client phone')
+  })
+}
+
+/** every character currently carrying the redaction mark */
+function markedText(): string {
+  let marked = ''
+  editor!.state.doc.descendants((node) => {
+    if (node.isText && node.marks.some((m) => m.type.name === 'redaction'))
+      marked += node.text ?? ''
+  })
+  return marked
+}
+
+/** the real sequence a click produces: mousedown, then click */
+function choose(item: HTMLButtonElement): void {
+  act(() => {
+    item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+}
 
 describe('the right-click menu that withholds a selection', () => {
   it('stays out of the way with no selection, leaving the browser menu alone', () => {
@@ -152,5 +197,79 @@ describe('the right-click menu that withholds a selection', () => {
         marked += node.text ?? ''
     })
     expect(marked).toBe(SECRET)
+  })
+})
+
+describe('hasRedactionIn — is there something to stop withholding here', () => {
+  it('sees a range that lies wholly inside a withheld span', () => {
+    withholdSecret()
+    expect(hasRedactionIn(editor!, secretFrom() + 1, secretFrom() + 4)).toBe(true)
+  })
+
+  it('sees a range that only clips the edge of a span', () => {
+    // `unsetRedaction` clears the whole selection, so a partial selection is
+    // still a reason to offer the entry rather than a reason to hide it
+    withholdSecret()
+    expect(hasRedactionIn(editor!, secretFrom() - 4, secretFrom() + 2)).toBe(true)
+  })
+
+  it('reports plain text as withheld by nothing', () => {
+    selectSecret()
+    expect(hasRedactionIn(editor!, secretFrom(), secretFrom() + SECRET.length)).toBe(false)
+  })
+
+  it('reports an empty range as nothing, so a bare caret is not an offer', () => {
+    // the mark is `inclusive: false`, so a caret inside the span carries no
+    // mark of its own and clearing "here" would be a control that does nothing
+    withholdSecret()
+    expect(hasRedactionIn(editor!, secretFrom() + 2, secretFrom() + 2)).toBe(false)
+  })
+})
+
+describe('the right-click menu that stops withholding a selection', () => {
+  it('adds the mirror item under the hide item, and only on a withheld span', () => {
+    selectSecret()
+    rightClick()
+    // plain prose gets the one item that has something to do
+    expect(menuItems().length).toBe(1)
+    expect(menuItem(HIDE_LABEL)).toBeTruthy()
+    expect(menuItem(SHOW_LABEL)).toBeUndefined()
+
+    withholdSecret()
+    rightClick()
+    expect(menuItems().length).toBe(2)
+    expect(menuItem(SHOW_LABEL)).toBeTruthy()
+    // right below the item it mirrors, so the pair reads as a pair
+    const names = menuItems().map((b) => b.textContent)
+    expect(names.indexOf(SHOW_LABEL)).toBe(names.indexOf(HIDE_LABEL) + 1)
+  })
+
+  it('gives the words back when chosen, which is the point of the pair', async () => {
+    // before this existed, the only way to stop withholding was to delete the
+    // text — losing the reader's own data to undo a decision made in the editor
+    withholdSecret()
+    expect(markedText()).toBe(SECRET)
+    rightClick()
+    const entry = menuItem(SHOW_LABEL)!
+    expect(entry).toBeTruthy()
+    await nextTick()
+
+    choose(entry)
+
+    // the mark is gone, and the words were never touched: this is a mark
+    // over the real text, never a replacement for it
+    expect(markedText()).toBe('')
+    expect(editor!.state.doc.textContent).toContain(SECRET)
+    // no dialog either: there was no label to ask about
+    expect(document.querySelector('.redact-dialog')).toBeNull()
+  })
+
+  it('never appears with no selection, where the browser menu is left alone', () => {
+    withholdSecret()
+    act(() => editor!.commands.focus('end'))
+    rightClick()
+    expect(document.querySelector('.redact-menu')).toBeNull()
+    // and nothing was cleared behind the reader's back
+    expect(markedText()).toBe(SECRET)
   })
 })

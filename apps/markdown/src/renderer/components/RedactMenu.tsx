@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useI18n } from '../i18n/locale'
+import { hasRedactionIn } from '../editor/Redaction'
 import { RedactDialog } from '../editor/RedactDialog'
 
 interface Props {
@@ -42,6 +43,15 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
   const [seed, setSeed] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  /**
+   * Whether the selection the menu was opened over already carries the mark.
+   *
+   * Read once when the menu opens, alongside the seed, because the selection
+   * can move while the menu is up and the item has to describe the click the
+   * reader made. A bare caret never gets here — the handler returns before this
+   * point — so the answer is always about a real selection.
+   */
+  const [isRedacted, setIsRedacted] = useState(false)
 
   useEffect(() => {
     if (!editor) return
@@ -53,6 +63,7 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
       event.preventDefault()
       const { from, to } = editor.state.selection
       setSeed(editor.state.doc.textBetween(from, to, ' ').trim().slice(0, 24))
+      setIsRedacted(hasRedactionIn(editor, from, to))
       setPoint({ x: event.clientX, y: event.clientY })
     }
     dom.addEventListener('contextmenu', onContextMenu)
@@ -114,6 +125,24 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
           >
             {t('redactMenuLabel')}
           </button>
+          {/* The mirror of the item above, and the other half of the pair:
+              offered only when the selection really carries the mark. Without
+              it the sole way to stop withholding a span was to delete the
+              words, which loses the reader's own text to undo a decision they
+              made in the editor. No dialog — the words were never replaced, so
+              there is no label to ask about and nothing to confirm. */}
+          {isRedacted && (
+            <button
+              type="button"
+              className="redact-menu-item"
+              onClick={() => {
+                setPoint(null)
+                editor!.chain().focus().unsetRedaction().run()
+              }}
+            >
+              {t('redactShowLabel')}
+            </button>
+          )}
         </div>
       )}
       {dialogOpen && editor && !onSourceSubmit && (
