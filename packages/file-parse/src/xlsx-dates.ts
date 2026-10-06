@@ -49,12 +49,27 @@ export function builtinDateFormat(numFmtId: number): DateFormatParts | null {
   return BUILTIN.get(numFmtId) ?? null
 }
 
+function firstFormatSection(code: string): string {
+  let quoted = false
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i]
+    if (char === '\\' || (!quoted && (char === '_' || char === '*'))) {
+      i++ // The next character is literal, even when it is a semicolon or quote.
+    } else if (char === '"') {
+      quoted = !quoted
+    } else if (char === ';' && !quoted) {
+      return code.slice(0, i)
+    }
+  }
+  return code
+}
+
 /**
  * Classify a custom formatCode. Only the first section (positive numbers) decides; quoted
  * literals, escaped characters, fill/skip tokens and colour/locale conditions are not tokens.
  */
 export function classifyFormatCode(code: string): DateFormatParts | null {
-  const section = code.split(';')[0] ?? ''
+  const section = firstFormatSection(code)
   if (/general/i.test(section) && !/[ydhs]/i.test(section.replace(/general/gi, ''))) return null
   let elapsed = false
   let elapsedMinutes = false
