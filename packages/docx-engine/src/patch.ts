@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/agent-core/redact-range'
 import {
   applyImageWrap,
   generateParagraphXml,
@@ -1583,6 +1584,26 @@ export async function saveDocx(
     newDocumentXml = newDocumentXml.replace(
       /<w:document /,
       '<w:document xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
+    )
+  }
+
+  // The same for the "withheld from the model" marker. An undeclared prefix is
+  // not a warning, it is a parse error: Word and LibreOffice both offer to
+  // repair the file and drop the run that carried it, which loses the reader's
+  // mark and hands the span back to the model on the next open.
+  //
+  // `mc:Ignorable` is the mechanism OOXML provides for exactly this — an
+  // element in a namespace the consumer does not know is skipped rather than
+  // treated as a schema violation, so the label rides along without the
+  // border's run failing a strict validator.
+  if (
+    newDocumentXml.includes(`<${REDACT_EL}`) &&
+    !new RegExp(`<w:document[^>]*xmlns:${REDACT_PREFIX}=`).test(newDocumentXml)
+  ) {
+    newDocumentXml = newDocumentXml.replace(
+      /<w:document /,
+      '<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+        `xmlns:${REDACT_PREFIX}="${REDACT_NS}" mc:Ignorable="${REDACT_PREFIX}" `,
     )
   }
 

@@ -12997,3 +12997,42 @@ tr > .page-gap-cut {
     outline-offset: -1px;
   }
 }
+
+/* ---- withheld spans: text kept in the document, hidden from the model ----
+   An underline rather than a fill, because every other decoration here is
+   either a fill (search hits) or a style (bold, highlight), and the reader has
+   to be able to tell at a glance that this one means "the model cannot see
+   this". The ink is the app accent, so the mark follows the theme instead of
+   carrying a colour of its own. */
+.redact-span {
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+.redact-span.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+.redact-desc {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* the marker the model will see, shown before anything is committed */
+.redact-preview {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, var(--ui-cjk), monospace;
+  font-size: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 2px;
+  padding: 4px 6px;
+  margin-bottom: 14px;
+  word-break: break-all;
+}

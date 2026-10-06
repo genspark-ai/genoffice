@@ -334,6 +334,14 @@ export const he = {
   appAiBadgeTip: 'משתמש ב-AI',
   appTranslate: 'תרגום',
   appTranslateTo: 'תרגום ל{lang}',
+  redactMenuLabel: 'הסתרת הבחירה מהמודל',
+  redactDialogDesc:
+    'המילים נשארות במסמך ובקובץ; המודל רואה רק את הסימון. תן לו שם כדי שיהיה ברור מה הוא מייצג.',
+  redactDialogScope:
+    'ההסתרה חלה רק על המודל באפליקציה הזו. CLI, כלי MCP וייצוא ללא ממשק קוראים את הקובץ ישירות ועדיין רואים את המילות האלה.',
+  redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
+  redactCancel: 'ביטול',
+  redactInsert: 'הסתר',
   appLangEnglish: 'אנגלית',
   appLangSimplifiedChinese: 'סינית פשוטה',
   appLangJapanese: 'יפנית',

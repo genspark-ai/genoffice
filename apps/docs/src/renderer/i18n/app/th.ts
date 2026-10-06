@@ -340,6 +340,14 @@ export const th = {
   appAiBadgeTip: 'ใช้ AI',
   appTranslate: 'แปล',
   appTranslateTo: 'แปลเป็น{lang}',
+  redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
+  redactDialogDesc:
+    'ข้อความยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
+  redactDialogScope:
+    'การซ่อนครอบคลุมเฉพาะ AI ในแอปนี้ CLI เครื่องมือ MCP และการส่งออกแบบไม่มีหน้าต่างอ่านไฟล์โดยตรง และยังเห็นคำเหล่านี้อยู่',
+  redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
+  redactCancel: 'ยกเลิก',
+  redactInsert: 'ซ่อน',
   appLangEnglish: 'ภาษาอังกฤษ',
   appLangSimplifiedChinese: 'ภาษาจีนตัวย่อ',
   appLangJapanese: 'ภาษาญี่ปุ่น',
