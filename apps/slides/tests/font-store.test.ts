@@ -5,15 +5,7 @@ import { createHash } from 'node:crypto'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBlankPptx, openPptx } from '@genoffice/pptx-engine'
 
-/**
- * The slides side of the font store: the adapter, not the store.
- *
- * The download discipline — checksums, the in-flight join, the local install —
- * belongs to @genoffice/electron-utils and is tested there against a synthetic
- * family. What cannot be covered from there is what only this app knows: where
- * the mirror URL comes from, and which catalog families a deck actually asks
- * for.
- */
+// The adapter, not the store: download discipline lives in @genoffice/electron-utils and is tested there, while the mirror URL's origin and the deck's font asks are only knowable here.
 
 const storeDir = mkdtempSync(join(tmpdir(), 'slides-font-store-'))
 const fontCdnBaseUrl = 'https://fonts.example.test/v1'
@@ -44,24 +36,10 @@ import {
 } from '../src/main/font-store'
 import { net } from 'electron'
 
-/**
- * The catalog as it stood when this file loaded.
- *
- * FONT_CATALOG is a module-level array, so a download test that re-pins a row's
- * sha256 to make its fake bytes verify silently replaces the real hashes for
- * every later test in the run — and the corruption is invisible, because the
- * replacements are themselves valid hex. Snapshotting at import and comparing
- * after the last test is the only check that actually catches it: a guard
- * written as a test *inside* the suite passes as long as no earlier test has
- * corrupted anything yet.
- */
+// FONT_CATALOG is module-level and shared, so a test that re-pins a row's sha256 corrupts every later test invisibly; a guard written inside the suite passes until something corrupts it first.
 const CATALOG_AT_IMPORT = JSON.stringify(FONT_CATALOG)
 
-/**
- * Add one file's fake bytes to the mirror this test pretends to have, and return
- * the hash the catalog would pin. Accumulates, so a family of several cuts is
- * served by one call rather than each call replacing the last.
- */
+/** Serves one file's fake bytes, accumulating so a multi-cut family needs one call. */
 const payloads = new Map<string, string>()
 function serve(entry: { file: string; style: string }): string {
   const body = `sfnt-bytes-${entry.style}`
@@ -103,8 +81,7 @@ describe('the catalog rows this app hands its ribbon', () => {
       expect(styles).toContain('bold')
       for (const f of fam.files) {
         expect(f.file).toMatch(/\.ttf$/)
-        // no per-file endpoint: the mirror is one base URL, so a catalog that
-        // grew per-file URLs would be a second place to get the base wrong
+        // no per-file endpoint: the mirror is one base URL, so per-file URLs would be a second place to get it wrong
         expect(f).not.toHaveProperty('url')
         expect(f.sha256).toMatch(/^[0-9a-f]{64}$/)
         expect(f.bytes).toBeGreaterThan(10_000)
@@ -129,8 +106,7 @@ describe('the catalog rows this app hands its ribbon', () => {
   })
 
   it('offers only families whose files are published', () => {
-    // The CJK serif families land before the CDN carries their files: until the
-    // mirror publishes them, a picker row would offer a download that 404s.
+    // the CJK serifs land before the CDN carries their files: until then a picker row would offer a download that 404s
     const unpublished = FONT_CATALOG.filter((f) => f.published === false)
     expect(unpublished.length).toBeGreaterThan(0)
     const offered = new Set(listFontCatalog().map((e) => e.family))
@@ -210,8 +186,7 @@ describe('downloadFontFamily, through this app env', () => {
   })
 
   it('a second call joins the in-flight download instead of resolving early', async () => {
-    // driven through a family of our own: re-pinning a real row's hashes to
-    // make fake bytes verify would edit the catalog for every later test
+    // driven through a family of our own: re-pinning a real row's hashes to make fake bytes verify would edit the catalog
     const entry = {
       family: 'Test Join Family',
       script: 'latin' as const,
@@ -230,8 +205,7 @@ describe('downloadFontFamily, through this app env', () => {
     const second = downloadCatalogEntry(entry)
     let secondDone = false
     void second.then(() => (secondDone = true))
-    // with the in-flight map deleted, `second` is a second fetch that also has
-    // not resolved — but it would be *counted*, which is what this asserts
+    // with the in-flight map deleted, `second` is a second fetch that also has not resolved — but it would be *counted*
     await new Promise((r) => setTimeout(r, 20))
     expect(secondDone).toBe(false)
     expect(vi.mocked(net.fetch).mock.calls.length).toBe(1)

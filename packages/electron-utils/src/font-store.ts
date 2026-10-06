@@ -17,19 +17,7 @@ export interface FontStoreEnv {
   readonly fetchBytes: (url: string) => Promise<{ ok: boolean; status: number; bytes: Uint8Array }>
   /** the host's own view of whether a family is already usable */
   readonly isFamilyAvailable: (family: string) => boolean
-  /**
-   * The family names inside a font file, read from its `name` table.
-   *
-   * Injected rather than imported: the implementation lives in the slides
-   * font registry, which is tied to the pptx engine, and a store that guessed
-   * from the filename would register the wrong index key.
-   *
-   * Optional because only the hosts that *offer* "install a font file…" need
-   * it. docs has no such affordance, and requiring the field there would mean
-   * writing a filename-guessing stub for a call that never happens — the exact
-   * mistake this injection exists to prevent. Omitted means the host has no
-   * local install, and `installLocalFontFiles` then installs nothing.
-   */
+  /** Injected, not imported: the name-table reader lives in the pptx-tied slides registry, and only hosts offering a local install have one. */
   readonly fontFileFamilies?: (path: string) => readonly string[]
 }
 
@@ -37,7 +25,6 @@ export interface CatalogEntry {
   readonly family: string
   readonly script: CatalogFamily['script']
   readonly license: CatalogFamily['license']
-  /** true when the host already has this family */
   readonly installed: boolean
   /** total download size, so a UI can say what it is about to fetch */
   readonly bytes: number
@@ -50,17 +37,11 @@ function isPublished(family: CatalogFamily): boolean {
   return family.published !== false
 }
 
-/** What fetching this family costs, in bytes. */
 export function familyDownloadBytes(family: CatalogFamily): number {
   return family.files.reduce((total, file) => total + file.bytes, 0)
 }
 
-/**
- * The rows an app may offer, and what each would cost.
- *
- * Empty when the build ships no mirror: an app showing a download affordance
- * that cannot work is worse than showing none.
- */
+/** Empty when the build ships no mirror: an affordance that cannot work is worse than none. */
 export function listCatalog(env: FontStoreEnv): CatalogEntry[] {
   if (!env.cdnBaseUrl) return []
   return FONT_CATALOG.filter(isPublished).map((family) => ({
@@ -83,15 +64,7 @@ async function fetchVerified(env: FontStoreEnv, url: string, sha256: string): Pr
   return response.bytes
 }
 
-/**
- * Fetch every style of a catalog family into the store.
- *
- * Takes the entry rather than a family name so a caller — or a test — can drive
- * a synthetic family. The shared catalog is generated data with pinned hashes;
- * a test that re-pinned a hash on a live entry to make its fake bytes verify
- * edits the real catalog, and the test that would notice only checks hash
- * *shape*.
- */
+/** Takes the catalog entry so a test can drive a synthetic family rather than re-pinning generated hashes. */
 export function downloadFontFamily(env: FontStoreEnv, family: string): Promise<void> {
   const entry = FONT_CATALOG.find((f) => f.family === family)
   if (!entry || !isPublished(entry)) {
@@ -100,14 +73,7 @@ export function downloadFontFamily(env: FontStoreEnv, family: string): Promise<v
   return downloadCatalogEntry(env, entry)
 }
 
-/**
- * Fetch every style of `entry` into the store.
- *
- * Verifies every file against the pinned sha256 before it is written, so a
- * truncated or swapped artifact cannot end up registered as a font. Two callers
- * asking for the same family join one request; a file already fetched is not
- * fetched again.
- */
+/** Verifies every file against its pinned sha256 before writing, so a swapped artifact cannot be registered as a font. */
 export function downloadCatalogEntry(env: FontStoreEnv, entry: CatalogFamily): Promise<void> {
   if (!env.cdnBaseUrl) return Promise.reject(new Error('font downloads are unavailable'))
   const existing = inFlight.get(entry.family)
@@ -126,34 +92,7 @@ export function downloadCatalogEntry(env: FontStoreEnv, entry: CatalogFamily): P
   return run
 }
 
-/**
- * True when every file of a catalog family is already in `dir`.
- *
- * Takes the dir rather than the whole env because the two questions a host asks
- * are not the same: this one is about bytes on disk, while `isFamilyAvailable`
- * is about what the host can already render. A host whose renderer owns that
- * answer (docs: FontFace registration) still needs this to tell "already
- * fetched" from "never fetched", and building a throwaway env just to ask would
- * be noise.
- */
-export function familyDownloadedIn(dir: string, family: string): boolean {
-  const entry = FONT_CATALOG.find((f) => f.family === family)
-  if (!entry) return false
-  return entry.files.every((file) => existsSync(join(dir, file.file)))
-}
-
-/** True when the file is already fetched, whatever the host calls "installed". */
-export function familyDownloaded(env: FontStoreEnv, family: string): boolean {
-  return familyDownloadedIn(env.dir, family)
-}
-
-/**
- * Copy user-picked font files into the store, renamed to their family so the
- * filename-keyed index can find them. Returns the families that landed.
- *
- * Empty for a host that injects no name-table reader: it has no local install
- * to offer, so it is handed files by nothing and installs nothing.
- */
+/** Returns [] when the host injects no name-table reader, because it has no local install to offer. */
 export function installLocalFontFiles(env: FontStoreEnv, paths: readonly string[]): string[] {
   const readFamilies = env.fontFileFamilies
   if (!readFamilies) return []
@@ -174,8 +113,7 @@ export function installLocalFontFiles(env: FontStoreEnv, paths: readonly string[
       basename(path)
         .match(/\.(ttc|otc|otf)$/i)?.[1]
         ?.toLowerCase() ?? 'ttf'
-    // Family-derived name = registry index key; the suffix keeps distinct
-    // style files of one family apart.
+    // Family-derived name is the registry index key; the suffix keeps one family's style files apart.
     const styleTag = /bold\s*italic/i.test(basename(path))
       ? '-BoldItalic'
       : /bold/i.test(basename(path))

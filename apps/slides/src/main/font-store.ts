@@ -9,6 +9,7 @@ import {
   installLocalFontFiles as installIntoStore,
   listCatalog,
   normalizeCdnBaseUrl,
+  type CatalogEntry,
   type FontStoreEnv,
 } from '@genoffice/electron-utils/font-store'
 import { FONT_CATALOG, type CatalogFamily } from '@genoffice/electron-utils/font-catalog'
@@ -68,17 +69,8 @@ function storeEnv(): FontStoreEnv {
   }
 }
 
-export interface FontCatalogEntry {
-  family: string
-  script: CatalogFamily['script']
-  license: CatalogFamily['license']
-  installed: boolean
-  /** total download size, so a picker can say what a fetch costs before starting one */
-  bytes: number
-}
-
 /** Rows whose files are live on the CDN: the only ones the pickers may offer. */
-export function listFontCatalog(): FontCatalogEntry[] {
+export function listFontCatalog(): CatalogEntry[] {
   return listCatalog(storeEnv())
 }
 

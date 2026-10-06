@@ -13,7 +13,6 @@
     "./color-picker.css": "./src/color-picker.css",
     "./dropdown.css": "./src/dropdown.css",
     "./find-panel.css": "./src/find-panel.css",
-    "./font-catalog": "./src/font-catalog.ts",
     "./fonts/*": "./src/fonts/*",
     "./image-dialogs.css": "./src/image-dialogs.css",
     "./image-viewer.css": "./src/image-viewer.css",
