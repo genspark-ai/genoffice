@@ -29,7 +29,7 @@ Con el botón derecho en una pestaña: **Abrir en una ventana nueva** — dispon
 
 ## La lista de todas las pestañas
 
-Cuando las pestañas desbordan, el ▾ del extremo derecho de la barra abre la lista completa (un menú nativo, nunca tapado por el área de contenido); elija con las flechas.
+Cuando las pestañas desbordan, el pequeño icono de la barra de pestañas en el extremo derecho abre la lista completa (un menú nativo, nunca tapado por el área de contenido); elija con las flechas.
 
 ## La barra de herramientas de cada editor
 
@@ -42,4 +42,4 @@ Cada pestaña de editor tiene una barra de herramientas arriba (la disposición 
 
 ## La pestaña Inicio
 
-La pestaña Inicio de la izquierda no se puede cerrar; para volver desde cualquier editor, haga clic en ella o use Archivo ▸ Inicio.
+La pestaña Inicio de la izquierda no se puede cerrar; para volver desde cualquier editor, haga clic en ella o use Archivo ▸ **Volver al inicio**.

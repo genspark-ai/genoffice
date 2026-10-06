@@ -17,12 +17,11 @@ Rules: the extension is preserved automatically; illegal characters, trailing do
 
 ## Delete
 
-- Home **⋯ ▸ Delete**: moves the file to the **system trash**, restorable from the OS.
-- A deleted toast with an undo appears for a few seconds — undo puts the file back where it was.
+- Home **⋯ ▸ Delete**: asks which files, then moves them to the **system trash**, where the OS can restore them. GenOffice keeps no undo of its own for this — recovery is the trash's job, not a toast's.
 
 ## Duplicate
 
-**⋯ ▸ Duplicate** creates <name> copy in the same folder and opens it as a new tab; collisions append a counter automatically.
+**⋯ ▸ Duplicate** creates <name> copy in the same folder; collisions append a counter automatically. The copy is added to **Recent** rather than opened for you, so it is one click away instead of in front of you.
 
 ## Save and Save As
 

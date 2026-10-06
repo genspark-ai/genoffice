@@ -6,21 +6,30 @@ O ecrã Início é a página inicial do GenOffice: uma barra de navegação à e
 
 ## Navegação na barra lateral
 
-- **Recentes**: os arquivos que você abriu recentemente, agrupados por período (esta semana / este mês / anteriores).
+- **Recentes**: os arquivos que você abriu recentemente. Cada linha traz o momento — hoje, ontem ou a data.
 - **Favoritos**: os arquivos que você marcou com uma estrela. Passe o cursor sobre a linha do arquivo e clique na estrela para adicioná-lo ou removê-lo.
+- **Guia do Usuário**: abre este manual.
 - **Genspark Projects**: depois de entrar na sua conta Genspark, mostra os projetos que você criou com o Genspark AI na web; clique em um deles para continuar editando no navegador. Há pesquisa, ordenação por data, atualização e carregar mais.
-- **Pastas**: fixe diretórios usados com frequência na barra lateral (Adicionar pasta…) e salte até eles como quem usa marcadores. Raízes indisponíveis aparecem como indisponíveis e podem ser removidas da lista.
-- **Lixeira**: aponta para a lixeira do sistema — os arquivos excluídos vão para lá e podem ser restaurados pelo sistema operacional.
+- **Pastas**: os diretórios que adiciona à barra lateral com **Adicionar pasta…**, ou que arrasta até lá a partir do gestor de ficheiros. Cada um torna-se uma raiz que pode abrir, onde criar subpastas, renomear e remover; a que ficar indisponível aparece como indisponível e pode ser retirada da lista. **Nova pasta** cria outra.
+
+Não há aqui nenhuma entrada Lixeira. Os arquivos excluídos vão para a lixeira do sistema, e restaurá-los é assunto do sistema operacional.
 
 ## A lista de arquivos
 
 Cada linha mostra um ícone, o nome do arquivo, a data de modificação e mais. O **menu ⋯** da linha oferece:
 
+- **Abrir**, e **Mostrar na pasta** para localizar o ficheiro no seu gestor de ficheiros.
+- **Copiar caminho**.
+- **Mover para pasta…**: abre um seletor de pastas e move mesmo o ficheiro; se o destino já tiver um ficheiro com esse nome, pode ignorar, substituir ou renomear.
 - **Renomear**: no próprio local, com a extensão preservada automaticamente.
-- **Adicionar aos favoritos / Remover dos favoritos**
+- **Adicionar aos favoritos / Remover dos favoritos** — os favoritos sobrevivem aos reinícios e acompanham o ficheiro quando o renomeia.
 - **Duplicar**: cria uma cópia na mesma pasta.
-- **Excluir**: move o arquivo para a lixeira do sistema — não é uma exclusão definitiva.
-- **Mostrar na pasta**: localiza o arquivo no seu gestor de ficheiros.
+- **Excluir**: move o ficheiro para a lixeira do sistema — não é uma exclusão definitiva.
+- **Remover da lista**, na vista **Recentes** de nível superior, para eliminar uma entrada sem tocar no ficheiro.
+
+### Vários ficheiros ao mesmo tempo
+
+Marque a caixa de uma linha, ou faça ⌘/ctrl-clique, para construir uma seleção; a caixa do cabeçalho seleciona tudo o que está listado de momento, e uma barra acima da lista indica (**{n} selecionados**) quantos estão selecionados e oferece **Mover para pasta…** e **Excluir arquivos** para todo o conjunto. Também pode arrastar uma seleção múltipla para uma pasta na barra lateral.
 
 ## Pesquisa
 

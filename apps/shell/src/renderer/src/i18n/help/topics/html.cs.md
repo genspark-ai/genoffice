@@ -22,6 +22,13 @@ Klikněte na libovolný prvek v náhledu a nad ním se objeví pruh nástrojů:
 - **Operace s prvkem** (s vybraným prvkem v inspektoru náhledu): odstranit, duplikovat, posunout nahoru a dolů.
 - **Tlačítko AI**: otevře panel AI; můžete se rovnou zeptat na vybraný prvek.
 
+## Export
+
+Nabídka Soubor, všechno místní a všechno se ptá, kam výsledek uložit:
+
+- **Exportovat jako Word…** a **Exportovat jako PDF…** zapíšou skutečný .docx nebo .pdf.
+- **Exportovat jako samostatné HTML…** zapíše jeden .html s vloženými obrázky. Nepřepíše soubor, který máte právě otevřený, a řekne vám, kolik obrázků se mu nepodařilo vložit.
+
 ## Vložit kostru
 
 Pro prázdnou stránku **Vložit ▸ Vložit kostru** zapíše minimální dokument ve standardním režimu:
@@ -30,7 +37,7 @@ Pro prázdnou stránku **Vložit ▸ Vložit kostru** zapíše minimální dokum
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Meta viewport je záměrně vynecháno: tento dokument se vykresluje v panelu na
 
 `lang` sleduje jazyk uživatelského rozhraní aplikace, takže kostru, kterou vložíte, je ta, na kterou jsou vaše nástroje již nastaveny. Potom ji můžete libovolně upravovat.
 
-Položka se zobrazuje pouze v režimu úprav a pouze dokud je dokument prázdný — jakmile je tu obsah, není kam kostru *vložit*.
-
+Položka se zobrazuje pouze v režimu úprav a pouze dokud je dokument prázdný — jakmile je tu obsah, není kam kostru _vložit_.

@@ -52,7 +52,9 @@ Skróty używane wewnątrz każdego edytora (malarz formatów, znajdź i zamień
 
 ## Skróty Option+Command
 
-Option+Command to warstwa, którą Word rezerwuje na strukturyzowane skoki, a GenOffice wypełnia ją w ten sam sposób. Wszystkie poniższe należą do samego Docs:
+Option+Command to warstwa, którą Word rezerwuje na strukturyzowane skoki, a GenOffice wypełnia ją w ten sam sposób. Docs zajmuje większość z nich, Sheets dwa własne na potrzeby zgodności z Excelem, a jeden skrót działa wszędzie.
+
+**Docs**
 
 | Skrót (macOS)   | Co robi               | Windows / Linux    |
 | --------------- | --------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command to warstwa, którą Word rezerwuje na strukturyzowane skoki, a Ge
 | ⌥⌘G             | Przejdź do            | Ctrl+G             |
 
 Dwa z nich działają inaczej w Windows, z tego samego powodu, dla którego Word je rozdziela. **macOS zajmuje ⌥⌘D** — pokazuje i ukrywa Dock —, więc przypis końcowy to ⌥⌘E na Macu, a wszędzie indziej Ctrl+Alt+D. A **Przejdź do** rezygnuje z Alt: Ctrl+G, tam gdzie skrót na Macu zabiera go ze sobą.
+
+**Sheets**, gdy siatka ma fokus
+
+| Skrót (macOS) | Co robi              | Windows / Linux |
+| ------------- | -------------------- | --------------- |
+| ⌥⌘0           | Krawędzie zewnętrzne | Ctrl+Shift+7    |
+| ⌥⌘−           | Brak krawędzi        | Ctrl+Shift+−    |
+
+Windows to nie przepisanie pary z Maca. Excel na Macu daje Sheets **oba** — ⌘⇧7 i ⌥⌘0 to dwa klawisze do tych samych krawędzi zewnętrznych —, więc w Windows polecenie zachowuje przypisane już miejsce Ctrl+Shift, a warstwa Option po prostu nie ma.
+
+Zwróć uwagę, że **⌥⌘0 oznacza Normalny w Docs, a Krawędzie zewnętrzne w Sheets**. Nigdy nie pojawiają się w tym samym edytorze, więc w praktyce nic się nie koliduje, ale ⌥⌘0 jest już zajęty i niedostępny jako skrót globalny.
+
+**Każdy edytor**: **⌥⌘R / Ctrl+F1** zwija wstążkę, jak opisano powyżej.
 
 To zostawia ⌥⌘D wolny dla GenOffice na macOS, gdyby jakieś przyszłe polecenie go potrzebowało.
 

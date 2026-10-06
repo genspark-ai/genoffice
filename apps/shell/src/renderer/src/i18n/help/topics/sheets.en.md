@@ -13,12 +13,17 @@ Sheets is the Excel-like editor; calculation runs in a separate Rust engine proc
 ## Ribbon tabs
 
 - **Home**: font, fill, borders, number formats (currency/percent/thousands, decimal up/down), alignment, merge, row/column insert and size, conditional formatting, format-as-table, cell styles, clipboard & format painter, sort & filter.
-- **Insert**: shapes, icons, symbols, equation, screenshot and more.
+- **Insert**: pictures, shapes, text boxes, links, comments, checkbox, header/footer, symbols, equations; **nine chart types** (column, bar, line, area, pie, scatter, radar, doughnut, and column+line combo) plus **Recommended Charts**, which ranks types for the selection and previews them; **PivotChart** from the cell you are in; **Sparklines** (line, column, win/loss); **Slicer** and **Timeline** for filtering a PivotTable.
+  - Charts, PivotCharts and sparklines are real objects in the saved workbook.
+  - **Slicer** and **Timeline** are session controls: the filtering they do is saved and Excel shows the same filtered PivotTable, but the slicer button itself is not part of the file.
 - **Page Layout**: theme colors & fonts, print gridlines/headings toggles, page-break preview.
 - **Formulas**: AutoSum and function insert, define names (also from selection), trace precedents/dependents, the Watch Window, recalculate sheet/workbook.
 - **Data**: sort & filter (incl. advanced filter, clear filter), text-to-columns, merge workbooks, refresh all.
-- **Review**: browse comments (show, previous/next), translate.
-- **View**: gridlines & headings toggles, zoom, Normal / page-break preview.
+- **Review**: browse comments (show, previous/next), translate, and a **Protection** group — **Protect Sheet**, **Protect Workbook** and **Allow Edit Ranges**.
+  - Protection is written into the .xlsx and there is no password on what this app applies, so the same button becomes **Unprotect …** and undoes it. Protection from another program that _does_ carry a password cannot be removed from here.
+  - The two protect buttons apply immediately — there is no dialog to cancel, only a status-bar note that it will be written on save.
+  - **Allow Edit Ranges** marks the cells that stay editable while the rest of the sheet is locked.
+- **View**: gridlines, formula bar, headings and cross-highlight toggles; zoom; **Normal** and **Page Break Preview**. Gridlines and headings are saved with the sheet; cross-highlight is a preference of your own.
 - **Chart Design**: appears with a chart selected — chart type, styles and colors, edit the data range.
 
 The Data tab, button by button (left to right in the picture):
@@ -86,6 +91,8 @@ The Formulas tab, button by button:
 ## AI
 
 - The side AI panel: select a range and instruct in plain language (reformat, generate data, write formulas).
+- Attach files to a prompt with the 📎 button, or drag them onto the panel; they travel with the question and images come back as thumbnails.
+- An answer can cite a cell — click the reference and the grid jumps there.
 - AI edits can be rolled back from the panel.
 
 ## Saving and export

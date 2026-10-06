@@ -30,7 +30,7 @@ Référence :
 
 ## Outils de dessin (Annoter)
 
-Six outils : **Dessin, Rectangle, Ellipse, Flèche, Note**, plus le **Caviarder une zone** sur l’onglet Édition.
+Six outils : **Dessin, Rectangle, Ellipse, Flèche, Note**, plus le **Caviarder une zone** sur l’onglet Annoter.
 
 - Chaque outil est un interrupteur : cliquez pour l’armer ; **il se désarme dès qu’une forme est placée** (cliquez de nouveau sur l’outil pour continuer) ; cliquer sur l’outil armé le désarme aussi.
 - Le dessin suit l’épaisseur du trait ; rectangle/ellipse/flèche se tracent au glissement ; les couleurs viennent de la palette de dessin.
@@ -68,14 +68,17 @@ Six outils : **Dessin, Rectangle, Ellipse, Flèche, Note**, plus le **Caviarder 
 ## Opérations sur les pages (Pages)
 
 - **Rotation / suppression / réorganisation** : faites glisser les vignettes pour réorganiser ; la suppression demande confirmation.
+- **Importer des pages** : faites venir des pages depuis un autre PDF. **Insérer une page vierge** ajoute une page vide.
+- **Remplacer les pages** échange une plage contre des pages venant d’ailleurs ; **Rogner les pages** rogne les bords, avec une option pour l’appliquer à toutes les pages.
+- **Taille de page** redimensionne toutes les pages à un même format de papier ; **Inverser l’ordre** retourne le document de bout en bout.
 - **Extraire des pages** : exportez les pages sélectionnées dans un nouveau PDF.
-- **Diviser** : par plages, en plusieurs fichiers.
-- **Fusionner** : ajoute d’autres PDF. Les tailles sont additionnées **avant** toute lecture et **tout total supérieur à 1 Gio est refusé** avec une erreur lisible (cela garde la mémoire bornée).
+- **Diviser le PDF** : deux formes — par plages en plusieurs fichiers, ou chaque page découpée en une grille de pages plus petites.
+- **Fusionner des PDF** : deux formes — ajouter d’autres PDF, ou réunir plusieurs pages sur une même feuille. Les tailles sont additionnées **avant** toute lecture et **tout total supérieur à 1 Gio est refusé** avec une erreur lisible (cela garde la mémoire bornée).
 - Les changements au niveau des pages sont réécrits à l’enregistrement suivant ; Enregistrer sous laisse l’original intact.
 
 ## Export et impression
 
-- **PDF en Word** : conversion locale en .docx.
+- **Exporter en Word… / PowerPoint… / Excel…** dans le menu Fichier, ou les trois mêmes depuis **Convertir le PDF** dans le ruban — tout est local, sans téléversement. Le .pptx donne une diapositive par page et le .xlsx une feuille de calcul par page. Chacun demande où l’enregistrer.
 - **Imprimer** : l’ordre et les rotations courants via la boîte de dialogue du système ; plages de pages prises en charge.
 
 ## Enregistrement

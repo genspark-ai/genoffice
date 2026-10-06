@@ -52,7 +52,9 @@ Các phím tắt bên trong từng trình soạn thảo (công cụ định dạ
 
 ## Các phím tắt Option+Command
 
-Option+Command là lớp mà Word dành riêng cho các bước nhảy có cấu trúc, và GenOffice lấp đầy lớp đó theo đúng cách. Tất cả những gì dưới đây đều là của riêng Docs:
+Option+Command là lớp mà Word dành riêng cho các bước nhảy có cấu trúc, và GenOffice lấp đầy lớp đó theo đúng cách. Docs chiếm phần lớn, Sheets chiếm hai phím riêng để tương đương với Excel, và có một tổ hợp dùng được ở mọi nơi.
+
+**Docs**
 
 | Phím tắt (macOS) | Tác dụng                     | Windows / Linux    |
 | ---------------- | ---------------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command là lớp mà Word dành riêng cho các bước nhảy có cấu
 | ⌥⌘G              | Đi tới                       | Ctrl+G             |
 
 Trong đó hai phím đổi trên Windows, vì lý do mà Word cũng tách chúng ra. **macOS đã giữ ⌥⌘D** — dùng để hiện và ẩn Dock — nên chèn chú thích cuối tài liệu là ⌥⌘E trên Mac và Ctrl+Alt+D ở mọi nơi khác. Còn **Đi tới** thì bỏ Alt: Ctrl+G, trong khi phím tắt bên Mac vẫn mang theo Alt.
+
+**Sheets**, khi lưới đang có tiêu điểm
+
+| Phím tắt (macOS) | Tác dụng   | Windows / Linux |
+| ---------------- | ---------- | --------------- |
+| ⌥⌘0              | Viền ngoài | Ctrl+Shift+7    |
+| ⌥⌘−              | Không viền | Ctrl+Shift+−    |
+
+Windows không phải bản viết lại của cặp phím trên Mac. Excel cho Mac trao cho Sheets **cả hai**: ⌘⇧7 và ⌥⌘0 là hai phím cho cùng một kiểu viền ngoài, nên trên Windows lệnh này vẫn giữ chỗ Ctrl+Shift vốn đã có, còn lớp Option đơn giản là không có.
+
+Lưu ý rằng **⌥⌘0 nghĩa là Bình thường trong Docs và Viền ngoài trong Sheets**. Chúng không bao giờ xuất hiện trong cùng một trình soạn thảo, nên khi dùng không có gì xung đột, nhưng ⌥⌘0 đã bị chiếm và không dùng được làm phím tắt toàn cục.
+
+**Mọi trình soạn thảo**: **⌥⌘R / Ctrl+F1** thu gọn Ribbon, như đã mô tả ở trên.
 
 Như vậy ⌥⌘D vẫn còn trống để GenOffice dùng trên macOS, nếu một lệnh nào trong tương lai cần đến nó.
 

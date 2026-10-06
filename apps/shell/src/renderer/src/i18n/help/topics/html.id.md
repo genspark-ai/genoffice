@@ -22,6 +22,13 @@ Klik elemen apa pun di pratinjau dan sebuah bilah alat melayang di atasnya:
 - **Tindakan elemen** (dengan elemen dipilih di inspektur pratinjau): hapus, duplikat, naikkan/turunkan.
 - **Tombol AI**: membuka panel AI; tanyakan apa pun tentang elemen yang dipilih.
 
+## Ekspor
+
+Menu File, semuanya lokal dan semuanya menanyakan tempat untuk menaruh hasilnya:
+
+- **Ekspor sebagai Word…** dan **Ekspor sebagai PDF…** menulis .docx atau .pdf yang sungguhan.
+- **Ekspor sebagai HTML satu file…** menulis satu .html dengan gambar tertanam di dalamnya. File ini tidak akan menimpa file yang sedang Anda buka, dan memberi tahu berapa gambar yang tidak bisa ditanam.
+
 ## Sisipkan kerangka
 
 Untuk halaman kosong, **Sisipkan ▸ Sisipkan kerangka** menulis dokumen minimal dalam mode standar:
@@ -30,7 +37,7 @@ Untuk halaman kosong, **Sisipkan ▸ Sisipkan kerangka** menulis dokumen minimal
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Tag meta viewport sengaja tidak disertakan: ini dirender di panel desktop, tanpa
 
 `lang` mengikuti bahasa antarmuka aplikasi, jadi kerangka yang Anda sisipkan adalah kerangka yang sudah disiapkan untuk perkakas Anda. Suntinglah sesuka hati setelahnya.
 
-Butir ini hanya muncul dalam mode sunting, dan hanya selama dokumennya masih kosong — begitu ada isi, tidak ada lagi yang bisa disisipkan kerangka *ke dalam*.
-
+Butir ini hanya muncul dalam mode sunting, dan hanya selama dokumennya masih kosong — begitu ada isi, tidak ada lagi yang bisa disisipkan kerangka _ke dalam_.

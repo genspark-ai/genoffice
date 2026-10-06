@@ -29,7 +29,9 @@ Coba: pilih kotak teks judul ▸ tab Animasi ▸ pilih efek masuk ▸ **Pratinja
 
 - **Peragaan Slide**: presentasi dari awal atau dari slide saat ini, plus pengaturan presentasi.
 - **Tinjau**: **komentar baru** pada slide saat ini (ditulis ke dalam pptx, terlihat di PowerPoint).
-- **Tampilan**: **Normal** (thumbnail + kanvas), **Kerangka** (telusuri dan lompat berdasarkan teks), **Pengurut Slide** (ikhtisar kisi, klik dua kali untuk mengedit), **Tampilan Baca** (layar penuh, satu halaman demi satu; Esc untuk keluar).
+- **Tampilan**: **Normal** (thumbnail + kanvas), **Kerangka** (telusuri dan lompat berdasarkan teks), **Pengurut Slide** (ikhtisar kisi, klik dua kali untuk mengedit), **Tampilan Baca** (layar penuh, satu halaman demi satu; Esc untuk keluar); ditambah **Master Slide**, **Tampilan Penyaji**, **Peragaan Slide Kustom** dan **Sembunyikan Slide**, serta sakelar untuk **Penggaris**, **Garis Kisi**, **Panduan**, **Catatan** dan **Panel Gambar Mini**. Perbesar/perkecil/100 % dan **Paskan ke Jendela** juga ada di sini.
+  - Sakelar tersebut berlaku per sesi — kembali ke nilai baku saat Anda membuka kembali aplikasi. Pengecualiannya adalah yang tidak ingin Anda kehilangan: posisi **panduan** disimpan bersama dek, dan panel gambar mini mengingat lebarnya.
+  - **Peragaan Slide Kustom** memilih slide mana yang diputar oleh sesi kiosk, dan disimpan bersama dek.
 
 ## Menu klik kanan
 

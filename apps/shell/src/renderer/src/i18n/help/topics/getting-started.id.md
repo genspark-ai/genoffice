@@ -52,7 +52,9 @@ Pintasan di dalam tiap editor (penyalin format, cari dan ganti, operasi tabel, .
 
 ## Pintasan Option+Command
 
-Option+Command adalah lapisan yang dicadangkan Word untuk lompatan terstruktur, dan GenOffice mengisinya dengan cara yang sama. Semua yang berikut ini milik Docs sendiri:
+Option+Command adalah lapisan yang dicadangkan Word untuk lompatan terstruktur, dan GenOffice mengisinya dengan cara yang sama. Docs mengambil sebagian besarnya, Sheets mengambil dua miliknya sendiri demi kesetaraan dengan Excel, dan satu pintasan berlaku di mana-mana.
+
+**Docs**
 
 | Pintasan (macOS) | Fungsinya              | Windows / Linux    |
 | ---------------- | ---------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command adalah lapisan yang dicadangkan Word untuk lompatan terstruktur, 
 | ⌥⌘G              | Pergi ke               | Ctrl+G             |
 
 Dua di antaranya berpindah di Windows, karena alasan yang sama seperti saat Word memisahkannya. **macOS memiliki ⌥⌘D** — ia menampilkan dan menyembunyikan Dock — sehingga catatan akhir memakai ⌥⌘E di Mac dan Ctrl+Alt+D di tempat lain. Dan **Pergi ke** melepas Alt: Ctrl+G, sedangkan pintasan di Mac tetap membawanya.
+
+**Sheets**, selagi kisi memiliki fokus
+
+| Pintasan (macOS) | Fungsinya   | Windows / Linux |
+| ---------------- | ----------- | --------------- |
+| ⌥⌘0              | Batas luar  | Ctrl+Shift+7    |
+| ⌥⌘−              | Tanpa batas | Ctrl+Shift+−    |
+
+Windows bukan tulis ulang pasangan Mac. Excel for Mac memberi Sheets **keduanya** — ⌘⇧7 dan ⌥⌘0 adalah dua tombol untuk batas luar yang sama — sehingga di Windows perintah itu tetap memakai slot Ctrl+Shift yang memang sudah dimilikinya, dan lapisan Option memang tidak ada.
+
+Perhatikan bahwa **⌥⌘0 berarti Normal di Docs dan Batas luar di Sheets**. Keduanya tidak pernah muncul di editor yang sama, jadi tidak ada benturan dalam pemakaian, tetapi ⌥⌘0 sudah terpakai dan tidak tersedia sebagai pintasan global.
+
+**Setiap editor**: **⌥⌘R / Ctrl+F1** melipat pita, seperti yang dijelaskan di atas.
 
 Dengan begitu ⌥⌘D tetap bebas untuk dipakai GenOffice di macOS, bila suatu perintah memutuskan membutuhkannya.
 

@@ -31,7 +31,7 @@ Butiran yang perlu diketahui:
 
 ## Alat lukis (Anotasi)
 
-Enam alat disediakan: **dakwat, segi empat, elips, anak panah, dan nota**, serta **kotak redact** pada tab Edit.
+Enam alat disediakan: **dakwat, segi empat, elips, anak panah, dan nota**, serta **kotak redact** pada tab Anotasi.
 
 - Setiap alat berfungsi sebagai suis. Klik untuk mengaktifkannya, dan ia akan **mematikan dirinya sendiri sebaik sahaja satu bentuk diletakkan**. Klik semula pada alat itu untuk meneruskan secara berturutan, dan klik pada alat yang sedang aktif akan mematikannya.
 - Dakwat mengikut lebar garisan, segi empat, elips dan anak panah dilukis dengan menyeret, dan warna diambil daripada palet lukis.
@@ -70,14 +70,17 @@ Enam alat disediakan: **dakwat, segi empat, elips, anak panah, dan nota**, serta
 ## Operasi halaman (Halaman)
 
 - **Putar, padam, atau susun semula**: seret lakaran kenit untuk menyusun semula, dan pemadaman memerlukan pengesahan.
+- **Import halaman**: seret halaman daripada PDF lain ke dalam dokumen. **Sisipkan halaman kosong** menambah satu halaman kosong.
+- **Ganti halaman** menukar satu julat dengan halaman dari tempat lain, manakala **Pangkas halaman** memotong tepinya, dengan pilihan untuk menerapkannya kepada semua halaman.
+- **Saiz halaman** menskalakan semula setiap halaman kepada satu saiz kertas yang sama, dan **Terbalikkan susunan** membalikkan dokumen dari hujung ke hujung.
 - **Kekalkan halaman**: eksport halaman yang dipilih ke PDF baharu.
-- **Pisah**: menjadi beberapa fail mengikut julat.
-- **Gabung**: menambahkan PDF lain. Saiz akan dikira **sebelum** apa-apa yang lain dibaca, dan jumlah melebihi 1 GiB akan ditolak dengan ralat yang jelas, bagi memastikan penggunaan memori kekal terhad.
+- **Pisah PDF**: ada dua bentuk — pecahkan mengikut julat menjadi beberapa fail, atau potong setiap halaman menjadi grid halaman yang lebih kecil.
+- **Gabung PDF**: ada dua bentuk — tambah PDF lain, atau gabungkan beberapa halaman ke atas satu helaian. Saiz akan dikira **sebelum** apa-apa yang lain dibaca, dan jumlah melebihi 1 GiB akan ditolak dengan ralat yang jelas, bagi memastikan penggunaan memori kekal terhad.
 - Perubahan peringkat halaman ditulis semula semasa simpanan seterusnya, dan pilihan Simpan Sebagai membiarkan fail asal tidak berubah.
 
 ## Eksport dan cetakan
 
-- **Eksport sebagai Word** menukar PDF itu kepada fail .docx melalui penukaran setempat, dengan susun atur yang kompleks dipulihkan insofar mungkin.
+- **Eksport sebagai Word… / PowerPoint… / Excel…** dalam menu Fail, atau ketiga-tiganya daripada **Tukar PDF** pada reben — semuanya setempat, tiada muat naik. Fail .pptx keluar dengan satu slaid bagi setiap halaman dan fail .xlsx dengan satu lembar kerja bagi setiap halaman. Setiap satu akan bertanya di mana untuk disimpan.
 - **Cetak** menggunakan susunan halaman dan putaran semasa melalui dialog sistem, dan julat halaman disokong.
 
 ## Simpanan

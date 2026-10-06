@@ -22,6 +22,13 @@ Kliknij dowolny element w podglądzie, a nad nim pojawi się pasek narzędzi:
 - **Operacje na elemencie** (z elementem zaznaczonym w inspektorze podglądu): usuń, zduplikuj, przesuń w górę/w dół.
 - **Przycisk AI**: otwiera panel AI; możesz pytać o zaznaczony element.
 
+## Eksportowanie
+
+Menu Plik — wszystko lokalne i wszystko pyta, gdzie umieścić wynik:
+
+- **Eksportuj jako Word…** i **Eksportuj jako PDF…** zapisują prawdziwy plik .docx lub .pdf.
+- **Eksportuj jako pojedynczy plik HTML…** zapisuje jeden .html z osadzonymi obrazami. Nie nadpisuje pliku, który masz teraz otwarty, i mówi, ile obrazów nie udało się osadzić.
+
 ## Wstaw szkielet
 
 Dla pustej strony **Wstaw ▸ Wstaw szkielet** zapisuje minimalny dokument w trybie standardowym:
@@ -30,7 +37,7 @@ Dla pustej strony **Wstaw ▸ Wstaw szkielet** zapisuje minimalny dokument w try
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Meta viewport celowo nie ma: to renderuje się w panelu pulpitu bez mobilnego vi
 
 `lang` podąża za językiem interfejsu aplikacji, więc wstawiany szkielet jest tym, pod który twoje narzędzia są już skonfigurowane. Potem możesz go swobodnie edytować.
 
-Ta pozycja pojawia się tylko w trybie edycji i tylko, gdy dokument jest pusty — gdy jest treść, nie ma czegoś, *w co* wstawić szkielet.
-
+Ta pozycja pojawia się tylko w trybie edycji i tylko, gdy dokument jest pusty — gdy jest treść, nie ma czegoś, _w co_ wstawić szkielet.

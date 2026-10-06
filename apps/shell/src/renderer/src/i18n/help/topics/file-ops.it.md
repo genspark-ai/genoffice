@@ -17,12 +17,11 @@ Regole: l'estensione viene conservata automaticamente; i caratteri non ammessi, 
 
 ## Eliminazione
 
-- **⋯ ▸ Elimina** su Home: sposta il file nel **cestino di sistema**, ripristinabile dal sistema operativo.
-- Dopo l'eliminazione compare per qualche secondo un avviso con la possibilità di annullare — annullare rimette il file al suo posto.
+- **⋯ ▸ Elimina** su Home: chiede quali file, poi li sposta nel **cestino di sistema**, dove il sistema operativo può recuperarli. GenOffice non mantiene un annulla tutto suo per questo — il recupero è compito del cestino, non di un avviso.
 
 ## Duplicazione
 
-**⋯ ▸ Duplica** crea una copia di <name> nella stessa cartella e la apre in una nuova scheda; in caso di nome duplicato viene aggiunto automaticamente un contatore.
+**⋯ ▸ Duplica** crea una copia di <name> nella stessa cartella; in caso di nome duplicato viene aggiunto automaticamente un contatore. La copia finisce nei **Recenti** invece di essere aperta: a un clic di distanza invece che davanti a te.
 
 ## Salva e Salva con nome
 

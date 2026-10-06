@@ -29,7 +29,9 @@ Try it: select the title text box ▸ Animations tab ▸ pick an entrance effect
 
 - **Slide Show**: present from the start or the current slide, plus show settings.
 - **Review**: **new comment** on the current slide (written into the pptx, visible in PowerPoint).
-- **View**: **Normal** (thumbnails + canvas), **Outline** (browse and jump by text), **Slide Sorter** (grid overview, double-click to edit), **Reading** (full-screen, page by page; Esc exits).
+- **View**: **Normal** (thumbnails + canvas), **Outline** (browse and jump by text), **Slide Sorter** (grid overview, double-click to edit), **Reading** (full-screen, page by page; Esc exits); plus **Slide Master**, **Presenter View**, **Custom Show**, **Hide Slide**, and toggles for **Ruler**, **Gridlines**, **Guides**, **Notes** and the **Thumbnail Pane**. Zoom in/out/100% and **Fit Window** live here too.
+  - Those toggles are per session — they come back on their default when you reopen the app. The exceptions are the ones you would not want to lose: **guide positions** are saved with the deck, and the thumbnail pane remembers its width.
+  - **Custom Show** picks which slides a kiosk run plays, and is saved with the deck.
 
 ## Right-click menus
 

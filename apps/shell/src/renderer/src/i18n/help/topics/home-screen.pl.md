@@ -6,21 +6,30 @@ Strona główna to punkt wyjścia GenOffice: pasek nawigacyjny po lewej, listy p
 
 ## Nawigacja na pasku bocznym
 
-- **Ostatnie**: pliki, które ostatnio otwierałeś, pogrupowane według czasu (w tym tygodniu / w tym miesiącu / wcześniej).
+- **Ostatnie**: pliki, które ostatnio otwierałeś. Każdy wiersz ma na sobie czas — dzisiaj, wczoraj albo datę.
 - **Ulubione**: pliki oznaczone gwiazdką. Najedź na wiersz pliku i kliknij gwiazdkę, aby dodać lub usunąć plik.
+- **Podręcznik użytkownika**: otwiera ten podręcznik.
 - **Genspark Projects**: po zalogowaniu na konto Genspark pokazuje projekty utworzone w sieci za pomocą Genspark AI; kliknięcie projektu otwiera go w przeglądarce do dalszej edycji. Dostępne są wyszukiwanie, sortowanie według czasu, odświeżanie i wczytanie kolejnych.
-- **Foldery**: przypnij często używane katalogi do paska bocznego (Dodaj folder…) i przechodź do nich jak do zakładek. Niedostępne katalogi są oznaczane jako niedostępne i można je usunąć z listy.
-- **Kosz**: wskazuje kosz systemowy — usunięte pliki trafiają tam i można je przywrócić z systemu operacyjnego.
+- **Foldery**: katalogi dodane do paska bocznego przyciskiem **Dodaj folder…** albo przeciągnięte tam z menedżera plików. Każdy staje się katalogiem głównym, który można otworzyć, utworzyć w nim podfoldery, zmienić jego nazwę i usunąć; ten, który przestanie być dostępny, jest oznaczany jako niedostępny i można go zdjąć z listy. **Nowy folder** tworzy kolejny.
+
+Nie ma tu pozycji Kosz. Usunięte pliki trafiają do kosza systemowego, a ich przywrócenie to zadanie systemu operacyjnego.
 
 ## Lista plików
 
 Każdy wiersz pokazuje ikonę, nazwę pliku, czas modyfikacji i inne dane. **⋯ menu** w wierszu oferuje:
 
+- **Otwórz**, a także **Pokaż w folderze**, aby zlokalizować plik w menedżerze plików.
+- **Kopiuj ścieżkę**.
+- **Przenieś do folderu…**: otwiera wybór folderu i naprawdę przenosi plik; jeśli w miejscu docelowym jest już plik o tej nazwie, możesz go pominąć, nadpisać albo zmienić jego nazwę.
 - **Zmień nazwę**: zmiana w miejscu, rozszerzenie zachowywane automatycznie.
-- **Dodaj do ulubionych / Usuń z ulubionych**
+- **Dodaj do ulubionych / Usuń z ulubionych** — gwiazdki pozostają po restarcie i towarzyszą plikowi także po jego przemianowaniu.
 - **Utwórz kopię**: tworzy kopię w tym samym folderze.
 - **Usuń**: przenosi plik do kosza systemowego — to nie jest trwałe usunięcie.
-- **Pokaż w folderze**: lokalizuje plik w menedżerze plików.
+- **Usuń z listy**, w głównym widoku **Ostatnie**, aby zniknęła pozycja bez ruszania pliku.
+
+### Wiele plików naraz
+
+Zaznacz pole wyboru w wierszu lub kliknij ⌘/ctrl, aby zbudować zaznaczenie; pole w nagłówku zaznacza wszystko, co jest teraz na liście, a pasek nad listą podaje (**Wybrano: {n}**), ile plików jest zaznaczonych, i oferuje **Przenieś do folderu…** oraz **Usuń pliki** dla całego zestawu. Zaznaczenie wielokrotne możesz też przeciągnąć na folder w pasku bocznym.
 
 ## Wyszukiwanie
 

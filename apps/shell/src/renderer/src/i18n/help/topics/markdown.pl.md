@@ -31,6 +31,14 @@ Trzy szybkie przykłady:
 - **Tabela**: kliknij **Wstaw tabelę** ▸ przeciągnij, aby wybrać liczbę wierszy i kolumn ▸ wpisz zawartość komórek; podgląd renderuje ją natychmiast.
 - **Lista zadań**: zaznacz kilka wierszy ▸ kliknij **Lista zadań** ▸ każdy wiersz staje się `- [ ]`, w podglądzie pokazywany jako pola wyboru.
 
+## Eksportowanie
+
+Menu Plik — wszystko lokalne i wszystko pyta, gdzie umieścić wynik:
+
+- **Eksportuj jako Word…** i **Eksportuj jako PDF…** zapisują prawdziwy plik .docx lub .pdf.
+- **Eksportuj jako obrazy…** zapisuje po jednym PNG na stronę w katalogu, który wybierzesz.
+- **Konwertuj i otwórz w Docs** konwertuje do .docx i otwiera go we wbudowanej karcie Docs tutaj w aplikacji — to nie jest przekazanie czegokolwiek do chmury, a przekonwertowana kopia leży w folderze pamięci podręcznej, który jest czyszczony po około tygodniu.
+
 ## Widok źródła
 
 Wstążka zawiera przełącznik **Źródło** (z lokalizacją razem z aplikacją). Włącz go, a edytor zostanie zastąpiony surowym Markdownem: dokładnie ten tekst, który zapisuje zapisywanie, nic nie jest ładniejsze, nic nie jest normalizowane w tle.
@@ -38,5 +46,4 @@ Wstążka zawiera przełącznik **Źródło** (z lokalizacją razem z aplikacją
 - **Edycja wierna bajtom.** Zapis z widoku źródła daje te same bajty co zapis z edytora — BOM, CRLF i obecność końcowego znaku nowej linii zostają zachowane.
 - **To ten sam dokument.** Przełączaj się swobodnie; źródło to własny tekst edytora, a nie kopia wymagająca scalenia.
 - **Pasek narzędzi formatowania je niedostępny** podczas jej otwarcia, bo większość tych przycisków wstawia konstrukcje edytora, które mają sens tylko po wyrenderowaniu. Wraca po zamknięciu widoku.
-- **Pliki JSON i inne w trybie źródłowym** otwierają się tutaj bezpośrednio: nie ma czego renderować, więc źródło *jest* dokumentem.
-
+- **Pliki JSON i inne w trybie źródłowym** otwierają się tutaj bezpośrednio: nie ma czego renderować, więc źródło _jest_ dokumentem.

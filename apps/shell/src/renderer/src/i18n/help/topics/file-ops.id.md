@@ -17,12 +17,11 @@ Aturannya: ekstensi dipertahankan otomatis; karakter terlarang, titik di akhir, 
 
 ## Menghapus
 
-- **⋯ ▸ Hapus** di Beranda: memindahkan file ke **tempat sampah sistem**, dan dapat dipulihkan dari sistem operasi.
-- Setelah penghapusan muncul pemberitahuan dengan aksi undo selama beberapa detik — undo mengembalikan file ke tempat semula.
+- **⋯ ▸ Hapus** di Beranda: menanyakan file mana, lalu memindahkannya ke **tempat sampah sistem**, tempat sistem operasi dapat memulihkannya. GenOffice tidak menyimpan undo sendiri untuk ini — pemulihan adalah urusan tempat sampah, bukan notifikasi.
 
 ## Duplikat
 
-**⋯ ▸ Duplikat** membuat salinan <nama> di folder yang sama dan membukanya sebagai tab baru; bila nama bertabrakan, angka ditambahkan otomatis.
+**⋯ ▸ Duplikat** membuat salinan <nama> di folder yang sama; bila nama bertabrakan, angka ditambahkan otomatis. Salinan masuk ke **Terbaru** alih-alih langsung dibuka — satu klik lagi, bukan tepat di depan Anda.
 
 ## Simpan dan Simpan Sebagai
 

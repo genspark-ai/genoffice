@@ -17,12 +17,11 @@ Regels: de extensie blijft automatisch behouden; ongeldige tekens, afsluitende p
 
 ## Verwijderen
 
-- **⋯ ▸ Verwijderen** op Start: verplaatst het bestand naar de **prullenbak van het systeem**, te herstellen vanuit het besturingssysteem.
-- Na het verwijderen verschijnt enkele seconden een melding met ongedaan maken — ongedaan maken zet het bestand terug waar het was.
+- **⋯ ▸ Verwijderen** op Start: vraagt welke bestanden, verplaatst ze daarna naar de **prullenbak van het systeem**, waar het besturingssysteem ze kan herstellen. GenOffice bewaart hiervoor zelf geen ongedaan maken — herstel is de taak van de prullenbak, niet van een melding.
 
 ## Dupliceren
 
-**⋯ ▸ Dupliceren** maakt een kopie van <naam> in dezelfde map en opent die als nieuw tabblad; bij een botsing wordt automatisch een teller toegevoegd.
+**⋯ ▸ Dupliceren** maakt een kopie van <naam> in dezelfde map; bij een botsing wordt automatisch een teller toegevoegd. De kopie komt in **Recent** terecht in plaats van voor jou te worden geopend — één klik verderop, niet pal voor je neus.
 
 ## Opslaan en Opslaan als
 

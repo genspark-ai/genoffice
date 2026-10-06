@@ -31,6 +31,14 @@ Tres ejemplos rápidos:
 - **Tabla**: haga clic en **Insertar tabla** ▸ arrastre el número de filas y columnas ▸ escriba en las celdas; la vista previa lo renderiza de inmediato.
 - **Lista de tareas**: seleccione unas líneas ▸ haga clic en **Lista de tareas** ▸ cada línea pasa a ser `- [ ]` y se representa como casillas de verificación en la vista previa.
 
+## Exportar
+
+Menú Archivo, todo local y todo pregunta dónde poner el resultado:
+
+- **Exportar como Word…** y **Exportar como PDF…** escriben un .docx o .pdf de verdad.
+- **Exportar como imágenes…** escribe un PNG por página en la carpeta que elija.
+- **Convertir y abrir en Docs** convierte a .docx y lo abre en la pestaña Docs integrada aquí en la app: no es un traspaso a nada en la nube, y la copia convertida vive en una carpeta de caché que se limpia al cabo de una semana aproximadamente.
+
 ## Vista de código fuente
 
 La cinta de opciones lleva un conmutador **Código fuente** (localizado junto con la aplicación). Al activarlo, el editor se sustituye por el Markdown en crudo: exactamente el texto que escribe un guardado, nada embellecido, nada normalizado por debajo de usted.
@@ -38,5 +46,4 @@ La cinta de opciones lleva un conmutador **Código fuente** (localizado junto co
 - **La edición es fiel byte a byte.** Un guardado desde la vista de código fuente produce los mismos bytes que un guardado desde el editor: el BOM, los CRLF y la presencia de un salto de línea final se conservan.
 - **Es el mismo documento.** Alterne entre el editor y la fuente tantas veces como quiera; la fuente es el propio texto del editor, no una copia que haya que combinar.
 - **La barra de herramientas de formato no está disponible** mientras esta vista está abierta, porque la mayoría de esos botones insertan construcciones del editor que solo tienen sentido en la parte renderizada. Vuelve a aparecer cuando cierra la vista.
-- **Los archivos JSON y otros archivos en modo fuente** se abren aquí directamente: no hay nada que renderizar, así que la fuente *es* el documento.
-
+- **Los archivos JSON y otros archivos en modo fuente** se abren aquí directamente: no hay nada que renderizar, así que la fuente _es_ el documento.

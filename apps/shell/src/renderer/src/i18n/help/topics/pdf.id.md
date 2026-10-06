@@ -30,7 +30,7 @@ Catatan:
 
 ## Alat gambar (Anotasi)
 
-Enam alat: **Gambar, Persegi, Elips, Panah, Catatan**, ditambah **Redaksi area** pada tab Edit.
+Enam alat: **Gambar, Persegi, Elips, Panah, Catatan**, ditambah **Redaksi area** pada tab Anotasi.
 
 - Tiap alat adalah sakelar: klik untuk mengaktifkan; **alatnya menonaktifkan diri sendiri begitu sebuah bentuk ditempatkan** (klik lagi alatnya untuk melanjutkan); mengklik alat yang aktif juga menonaktifkannya.
 - Ik mengikuti lebar goresan; persegi/elips/panah digambar dengan menyeret; warna diambil dari palet gambar.
@@ -68,14 +68,17 @@ Enam alat: **Gambar, Persegi, Elips, Panah, Catatan**, ditambah **Redaksi area**
 ## Operasi halaman (Halaman)
 
 - **Putar / Hapus halaman / Ubah urutan**: seret gambar mini untuk mengubah urutan; penghapusan meminta konfirmasi.
+- **Impor halaman**: tarik halaman dari PDF lain ke dalam dokumen. **Sisipkan halaman kosong** menambahkan satu halaman kosong.
+- **Ganti halaman** menukar sebuah rentang dengan halaman dari tempat lain; **Pangkas halaman** memotong tepinya, dengan opsi menerapkannya ke semua halaman.
+- **Ukuran halaman** menskalakan ulang setiap halaman ke satu ukuran kertas; **Balik urutan** membalik dokumen dari ujung ke ujung.
 - **Ekstrak halaman ini**: ekspor halaman yang dipilih ke PDF baru.
-- **Pisahkan PDF**: pecah menurut rentang menjadi beberapa file.
-- **Gabungkan PDF**: tambahkan PDF lain. Ukuran dijumlahkan **sebelum** apa pun dibaca, dan total yang melebihi **1 GiB akan ditolak** dengan pesan yang bisa dibaca (menjaga pemakaian memori tetap terkendali).
+- **Pisahkan PDF**: ada dua bentuk — memecah menurut rentang menjadi beberapa file, atau memotong setiap halaman menjadi kisi halaman yang lebih kecil.
+- **Gabungkan PDF**: ada dua bentuk — menambahkan PDF lain, atau menggabungkan beberapa halaman ke satu lembar. Ukuran dijumlahkan **sebelum** apa pun dibaca, dan total yang melebihi **1 GiB akan ditolak** dengan pesan yang bisa dibaca (menjaga pemakaian memori tetap terkendali).
 - Perubahan tingkat halaman ditulis kembali pada penyimpanan berikutnya; Simpan Sebagai membiarkan dokumen asli tidak tersentuh.
 
 ## Ekspor dan pencetakan
 
-- **PDF ke Word**: konversi lokal ke .docx.
+- **Ekspor sebagai Word… / PowerPoint… / Excel…** di menu File, atau ketiganya dari **Konversi PDF** pada pita — semuanya lokal, tanpa unggahan. .pptx keluar dengan satu slide per halaman dan .xlsx dengan satu lembar kerja per halaman. Masing-masing menanyakan tempat penyimpanan.
 - **Cetak**: urutan dan rotasi saat ini melalui dialog sistem; rentang halaman didukung.
 
 ## Menyimpan

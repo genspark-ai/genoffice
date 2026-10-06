@@ -17,6 +17,26 @@ Konfigurasi model mempunyai babnya sendiri; dalam **Media & Carian AI** anda men
 
 Tiga pilihan ialah Cerah, Gelap, dan Ikut Sistem. Mod Ikut Sistem mengikut rupa sistem pengendalian, dan editor akan mengubah warnanya mengikut tema itu tanpa kelip.
 
+## Umum
+
+- **Hantar statistik penggunaan tanpa nama** — diaktifkan secara lalai. Menggunakan Google Analytics 4 dan menghantar IP awam serta metadata pengangkutan anda; kandungan dokumen dan nama fail tidak pernah dikumpulkan, dan setiap peristiwa hanya membawa satu jenis seperti "membuka .docx". Anda boleh mematikannya di sini pada bila-bila masa.
+- **Kedudukan bar sisi AI** (kiri atau kanan), **Saiz teks panel AI** dan **Semakan ejaan dalam sembang AI**.
+- **Buka panel AI dalam dokumen baharu** — dimatikan, dokumen baharu bermula dengan panel tertutup, sekali klik sahaja.
+- **Simpan automatik semua dokumen** membolehkan AutoSave secara lalai dalam setiap editor; anda masih boleh mematikannya untuk satu tetingkap sahaja.
+- **Lokasi simpanan** dengan butang **Tukar**, dan **Apl lalai untuk dokumen Office** untuk menuntut .docx / .xlsx / .pptx bagi GenOffice.
+
+## Media & Carian AI
+
+Ia bukan suis — setiap keupayaan memilih pembekal yang menyediakannya, dan kunci serta URL asas setiap pembekal dimasukkan sekali sahaja lalu dikongsi bersama:
+
+- **Carian web**, **Penjanaan imej**, **Analisis imej** dan **Analisis video**, setiap satu dengan pembekal, model, kunci dan URL asas.
+- **Carian fail tempatan** dijalankan pada mesin ini. Di bawahnya terdapat **Susunan semula Jev** yang **dimatikan secara lalai**. Hidupkannya dan petikan 20 hasil tempatan teratas — sehingga 1,200 aksara daripada setiap dokumen, berserta nama fail dan folder — dihantar ke model Jev TypeSafe untuk disusun semula mengikut kaitan. Jika ia dimatikan, tiada apa-apa meninggalkan peranti.
+
+## Perihal
+
+- **Versi**, pautan GitHub projek dan butang **Beri Bintang di GitHub**.
+- **Saluran Kemas Kini**: Stabil atau Beta. Menukarnya berkuat kuasa serta-merta dan akan menyemak kemas kini; ia tidak akan menurunkan pemasangan Beta kembali ke Stabil.
+
 ## Penetapan sebagai aplikasi lalai
 
 Tetapan boleh mendaftar GenOffice sebagai aplikasi yang mengendalikan fail .docx, .xlsx, .pptx, .pdf, dan yang lain. Pendaftaran ini dilakukan pada peringkat sistem, dan pengesahan diperlukan apabila diminta.

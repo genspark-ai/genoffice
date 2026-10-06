@@ -29,7 +29,7 @@ Ein Rechtsklick auf einen Tab bietet **„In neuem Fenster öffnen“** — bei 
 
 ## Die Liste aller Tabs
 
-Wenn die Tabs überlaufen, öffnet das ▾ am rechten Ende der Leiste die vollständige Liste (ein natives Menü, das nie vom Inhaltsbereich verdeckt wird); auswählen mit den Pfeiltasten.
+Wenn die Tabs überlaufen, öffnet das kleine Symbol der Tableiste am rechten Ende die vollständige Liste (ein natives Menü, das nie vom Inhaltsbereich verdeckt wird); auswählen mit den Pfeiltasten.
 
 ## Die Werkzeugleiste in jedem Editor
 
@@ -42,4 +42,4 @@ Jeder Editor-Tab hat oben eine Werkzeugleiste (die genaue Anordnung variiert je 
 
 ## Der Start-Tab
 
-Der Start-Tab ganz links lässt sich nicht schließen; um aus einem beliebigen Editor zurückzukehren, klicken Sie darauf oder verwenden Sie Datei ▸ Startseite.
+Der Start-Tab ganz links lässt sich nicht schließen; um aus einem beliebigen Editor zurückzukehren, klicken Sie darauf oder verwenden Sie Datei ▸ **Zurück zur Startseite**.

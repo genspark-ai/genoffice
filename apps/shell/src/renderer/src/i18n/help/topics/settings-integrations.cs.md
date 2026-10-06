@@ -17,6 +17,26 @@ Konfigurace modelů má vlastní kapitolu; v části **AI média a vyhledáván�
 
 Světlý / Tmavý / Podle systému. Volba Podle systému sleduje vzhled operačního systému a editory se přeoblekují současně bez blikání.
 
+## Obecné
+
+- **Odesílat anonymní statistiky používání** — ve výchozím stavu zapnuto. Používá Google Analytics 4 a odesílá vaši veřejnou IP adresu a přenosová metadata; obsah dokumentů ani názvy souborů se nikdy neshromažďují a každá událost nese jen typ, například „otevřen soubor .docx“. Kdykoli to zde vypnete.
+- **Pozice postranního panelu AI** (vlevo nebo vpravo), **Velikost textu panelu AI** a **Kontrola pravopisu v chatu AI**.
+- **Otevírat panel AI v nových dokumentech** — vypnuto, nový dokument začíná se složeným panelem, na jedno kliknutí.
+- **Automaticky ukládat všechny dokumenty** zapne ve výchozím stavu automatické ukládání v každém editoru; pro jedno okno ho můžete i nadále vypnout.
+- **Umístění pro ukládání** s tlačítkem **Změnit** a **Výchozí aplikace pro dokumenty Office**, aby GenOffice přebíral .docx / .xlsx / .pptx.
+
+## AI média a vyhledávání
+
+Nejsou to přepínače — každá schopnost si vybere dodavatele, který ji poskytuje, a klíč i základní URL dodavatele se zadávají jednou a sdílejí se:
+
+- **Webové vyhledávání**, **Generování obrázků**, **Analýza obrázků** a **Analýza videí**, každá s poskytovatelem, modelem, klíčem a základní URL.
+- **Hledání místních souborů** běží na tomto počítači. Pod ním je **Přeřazení Jev**, které je **ve výchozím stavu vypnuté**. Zapnete-li ho, výňatky 20 nejlepších místních výsledků — až 1 200 znaků z každého dokumentu plus názvy souborů a složek — se odešlou modelu Jev od TypeSafe a přeřadí se podle relevance. Když je vypnuté, ze zařízení nic neodejde.
+
+## O aplikaci
+
+- **Verze**, odkaz na projekt na GitHubu a tlačítko **Dát hvězdičku na GitHubu**.
+- **Kanál aktualizací**: Stabilní nebo Beta. Změna se projeví ihned a vyvolá kontrolu aktualizace; instalaci z kanálu Beta nevrátí zpět na Stabilní.
+
 ## Přiřazení jako výchozí aplikace
 
 Nastavení může zaregistrovat GenOffice jako aplikaci pro soubory .docx / .xlsx / .pptx / .pdf a podobné (registrace výchozí aplikace na úrovni systému; potvrzení, když o něj systém požádá).

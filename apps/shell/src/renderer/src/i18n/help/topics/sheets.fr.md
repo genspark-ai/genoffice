@@ -13,12 +13,17 @@ Sheets est l’éditeur de tableurs analogue à Excel ; le calcul s’exécute d
 ## Onglets du ruban
 
 - **Accueil** : police, remplissage, bordures, formats de nombre (devise/pourcentage/milliers, décimales à la hausse ou à la baisse), alignement, fusion, insertion et dimension des lignes et colonnes, mise en forme conditionnelle, mise sous forme de tableau, styles de cellule, presse-papiers et copier la mise en forme, trier et filtrer.
-- **Insertion** : formes, icônes, symboles, équation, capture d’écran et plus encore.
+- **Insertion** : images, formes, zones de texte, liens, commentaires, case à cocher, en-tête et pied de page, symboles, équations ; **neuf types de graphiques** (histogramme, barres, courbes, aires, secteurs, nuage de points, radar, anneau, et histogramme + courbe) plus **Graphiques recommandés**, qui classe les types pour la sélection et les présente en aperçu ; **Graphique croisé dynamique** depuis la cellule où vous vous trouvez ; **Graphiques sparkline** (ligne, colonne, gain/perte) ; **Segment** et **Chronologie** pour filtrer un tableau croisé dynamique.
+  - Les graphiques, les graphiques croisés dynamiques et les graphiques sparkline sont de véritables objets dans le classeur enregistré.
+  - **Segment** et **Chronologie** sont des commandes de session : le filtrage qu’elles effectuent est enregistré et Excel affiche le même tableau croisé dynamique filtré, mais le bouton de segment lui-même ne fait pas partie du fichier.
 - **Mise en page** : couleurs et polices du thème, interrupteurs d’impression du quadrillage et des en-têtes, aperçu des sauts de page.
 - **Formules** : Somme automatique et insertion de fonction, définir les noms (aussi depuis la sélection), repérer les antécédents et les dépendants, Fenêtre Espion, recalculer la feuille ou le classeur.
 - **Données** : trier et filtrer (y compris filtre avancé, effacer le filtre), convertir, fusionner des classeurs, tout actualiser.
-- **Révision** : parcourir les commentaires (afficher, précédent/suivant), traduire.
-- **Affichage** : interrupteurs quadrillage et en-têtes, zoom, Normal / Aperçu des sauts de page.
+- **Révision** : parcourir les commentaires (afficher, précédent/suivant), traduire, et un groupe **Protection** — **Protéger la feuille**, **Protéger le classeur** et **Permettre la modification des plages**.
+  - La protection est écrite dans le .xlsx et ce que cette application applique ne porte aucun mot de passe : le même bouton devient **Ôter la protection…** et l’annule. Une protection provenant d’un autre programme qui _porte_ un mot de passe ne peut pas être retirée d’ici.
+  - Les deux boutons de protection s’appliquent immédiatement — aucune boîte de dialogue à annuler, seulement une note dans la barre d’état indiquant que l’écriture aura lieu à l’enregistrement.
+  - **Permettre la modification des plages** marque les cellules qui restent modifiables pendant que le reste de la feuille est verrouillé.
+- **Affichage** : interrupteurs quadrillage, **barre de formule**, en-têtes et surlignage de la ligne et de la colonne actives ; zoom ; **Normal** et **Aperçu des sauts de page**. Le quadrillage et les en-têtes sont enregistrés avec la feuille ; le surlignage est une préférence qui vous est propre.
 - **Création de graphique** : apparaît lorsqu’un graphique est sélectionné — type de graphique, styles et couleurs, modification de la plage de données.
 
 L’onglet Données, bouton par bouton (de gauche à droite sur l’image) :
@@ -86,6 +91,8 @@ L’onglet Formules, bouton par bouton :
 ## IA
 
 - Le panneau IA latéral : sélectionnez une plage et donnez votre instruction en langage naturel (reformater, générer des données, écrire des formules).
+- Joignez des fichiers à une invite avec le bouton 📎, ou faites-les glisser sur le panneau ; ils accompagnent la question et les images reviennent sous forme de vignettes.
+- Une réponse peut citer une cellule — cliquez sur la référence et la grille s’y rend.
 - Les modifications de l’IA peuvent être annulées depuis le panneau.
 
 ## Enregistrement et export

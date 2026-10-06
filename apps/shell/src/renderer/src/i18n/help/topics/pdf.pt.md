@@ -30,7 +30,7 @@ A ter em conta:
 
 ## Ferramentas de desenho (Anotar)
 
-Seis ferramentas: **Desenho livre, Retângulo, Elipse, Seta, Nota**, mais a **Censurar área** no separador Editar.
+Seis ferramentas: **Desenho livre, Retângulo, Elipse, Seta, Nota**, mais a **Censurar área** no separador Anotar.
 
 - Cada ferramenta é um interruptor: clique para a armar; **ela desarma-se assim que uma forma é colocada** (clique outra vez na ferramenta para continuar); clicar na ferramenta armada também a desarma.
 - O traço segue a espessura do pincel; o retângulo, a elipse e a seta desenham-se arrastando; as cores vêm da paleta de desenho.
@@ -68,14 +68,17 @@ Seis ferramentas: **Desenho livre, Retângulo, Elipse, Seta, Nota**, mais a **Ce
 ## Operações de página (Páginas)
 
 - **Girar / Excluir página / Reordenar**: arraste as miniaturas para reordenar; a exclusão pede confirmação.
+- **Importar páginas**: traga páginas de outro PDF para o documento. **Inserir página em branco** adiciona uma página vazia.
+- **Substituir páginas** troca um intervalo por páginas oriundas de outro documento; **Recortar páginas** apara as margens, com a opção de aplicar a todas as páginas.
+- **Tamanho da página** redimensiona todas as páginas para um único tamanho de papel; **Inverter ordem** inverte o documento de trás para a frente.
 - **Extrair página**: exporta as páginas selecionadas para um PDF novo.
-- **Dividir PDF**: divide por intervalos em vários ficheiros.
-- **Mesclar PDF**: acrescenta outros PDFs. Os tamanhos são somados **antes** de se ler seja o que for, e um total **acima de 1 GiB é recusado** com uma mensagem legível (para manter a memória limitada).
+- **Dividir PDF**: duas formas — dividir por intervalos em vários ficheiros, ou cortar cada página numa grelha de páginas mais pequenas.
+- **Mesclar PDF**: duas formas — acrescentar outros PDFs, ou combinar várias páginas numa só folha. Os tamanhos são somados **antes** de se ler seja o que for, e um total **acima de 1 GiB é recusado** com uma mensagem legível (para manter a memória limitada).
 - As alterações ao nível da página são gravadas no salvamento seguinte; Salvar Como deixa o original intacto.
 
 ## Exportar e imprimir
 
-- **PDF para Word**: conversão local para .docx.
+- **Exportar como Word… / PowerPoint… / Excel…** no menu Arquivo, ou os mesmos três a partir de **Converter PDF** no friso — tudo local, sem envio. O .pptx sai com um diapositivo por página e o .xlsx com uma folha de cálculo por página. Cada um pergunta onde guardar.
 - **Imprimir**: a ordem e as rotações atuais através da caixa de diálogo do sistema; são suportados intervalos de páginas.
 
 ## Salvar

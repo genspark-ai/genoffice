@@ -30,7 +30,7 @@ Reference:
 
 ## Drawing tools (Annotate)
 
-Six tools: **ink, rectangle, ellipse, arrow, note**, plus the **redaction box** on the Edit tab.
+Six tools: **ink, rectangle, ellipse, arrow, note**, plus the **redaction box** on the Annotate tab.
 
 - Each tool is a toggle: click to arm; **it disarms itself once a shape lands** (click the tool again to keep going); clicking the armed tool also disarms.
 - Ink follows the stroke width; rectangle/ellipse/arrow are dragged out; colors come from the drawing palette.
@@ -68,14 +68,17 @@ Six tools: **ink, rectangle, ellipse, arrow, note**, plus the **redaction box** 
 ## Page operations (Page)
 
 - **Rotate / delete / reorder**: drag thumbnails to reorder; deletion confirms.
+- **Import pages**: pull pages in from another PDF. **Insert blank page** adds an empty one.
+- **Replace pages** swaps a range for pages from elsewhere; **Crop pages** trims, with an option to apply to all.
+- **Page size** rescales every page to one paper size; **Reverse order** flips the document end to end.
 - **Extract pages**: export selected pages into a new PDF.
-- **Split**: by ranges into several files.
-- **Merge**: append other PDFs. Sizes are summed **before** anything is read and anything over **1 GiB total is refused** with a readable error (keeps memory bounded).
+- **Split**: two shapes of it — by ranges into several files, or each page cut into a grid of smaller pages.
+- **Merge**: two shapes of it — append other PDFs, or combine several pages onto one sheet. Sizes are summed **before** anything is read and anything over **1 GiB total is refused** with a readable error (keeps memory bounded).
 - Page-level changes write back on the next save; Save As leaves the original untouched.
 
 ## Export and print
 
-- **Convert to Word**: local conversion to .docx.
+- **Export as Word… / PowerPoint… / Excel…** in the File menu, or the same three from **PDF Converter** on the ribbon — all local, no upload. The .pptx comes out one slide per page and the .xlsx one worksheet per page. Each asks where to save it.
 - **Print**: current order and rotations through the system dialog; page ranges supported.
 
 ## Saving

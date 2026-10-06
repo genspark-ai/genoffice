@@ -52,7 +52,9 @@ Zkratky uvnitř jednotlivých editorů (formátovací štětec, najít a nahradi
 
 ## Zkratky s kombinací Option+Command
 
-Option+Command je vrstva, kterou Word vyhrazuje pro strukturované skoky, a GenOffice ji vyplňuje stejným způsobem. Všechno následující patří Docs:
+Option+Command je vrstva, kterou Word vyhrazuje pro strukturované skoky, a GenOffice ji vyplňuje stejným způsobem. Docs zabere většinu z nich, Sheets si bere dva vlastní pro shodu s Excelem a jedna zkratka funguje všude.
+
+**Docs**
 
 | Zkratka (macOS) | Co dělá                   | Windows / Linux    |
 | --------------- | ------------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command je vrstva, kterou Word vyhrazuje pro strukturované skoky, a GenO
 | ⌥⌘G             | Přejít na                 | Ctrl+G             |
 
 Dva z nich se na Windows mění, ze stejného důvodu, pro který je Word rozděluje. **macOS si vzal ⌥⌘D** — zobrazuje a skrývá Dock —, takže vysvětlivka je na Macu ⌥⌘E a jinde Ctrl+Alt+D. A **Přejít na** Alt zahazuje: Ctrl+G, zatímco zkratka na Macu ho nese s sebou.
+
+**Sheets**, když má mřížka fokus
+
+| Zkratka (macOS) | Co dělá           | Windows / Linux |
+| --------------- | ----------------- | --------------- |
+| ⌥⌘0             | Vnější ohraničení | Ctrl+Shift+7    |
+| ⌥⌘−             | Bez ohraničení    | Ctrl+Shift+−    |
+
+Windows není přepisem dvojice z Macu. Excel pro Mac dává Sheets **oba** — ⌘⇧7 a ⌥⌘0 jsou dvě klávesy pro stejné vnější ohraničení — takže si příkaz na Windows ponechá pozici Ctrl+Shift, kterou už měl, a vrstva Option jednoduše chybí.
+
+Všimněte si, že **⌥⌘0 znamená Normální v Docs a Vnější ohraničení v Sheets**. Obě tyto funkce se nikdy neobjeví ve stejném editoru, takže se v praxi nic nepotká, ale ⌥⌘0 je obsazená a není k dispozici jako globální zkratka.
+
+**Každý editor**: **⌥⌘R / Ctrl+F1** sbalí pás karet, jak je popsáno výše.
 
 Tím pádem zůstává ⌥⌘D volný, aby ho GenOffice na macOS mohla použít, pokud ho některý budoucí příkaz potřebuje.
 

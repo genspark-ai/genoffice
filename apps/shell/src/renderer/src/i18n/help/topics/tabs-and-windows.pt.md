@@ -29,7 +29,7 @@ Clique com o botão direito numa guia para **Abrir em nova janela** — disponí
 
 ## A lista de todas as guias
 
-Quando as guias não cabem na barra, o ▾ no extremo direito abre a lista completa (um menu do sistema, nunca tapado pela área de conteúdo); escolha com as setas.
+Quando as guias não cabem na barra, o pequeno ícone da barra de guias no extremo direito abre a lista completa (um menu do sistema, nunca tapado pela área de conteúdo); escolha com as setas.
 
 ## A barra de ferramentas de cada editor
 
@@ -42,4 +42,4 @@ Cada guia de editor tem uma barra de ferramentas no topo (a disposição exata v
 
 ## A guia Início
 
-A guia Início mais à esquerda não pode ser fechada; para voltar de qualquer editor, clique nela ou use Arquivo ▸ Início.
+A guia Início mais à esquerda não pode ser fechada; para voltar de qualquer editor, clique nela ou use Arquivo ▸ **Voltar ao início**.

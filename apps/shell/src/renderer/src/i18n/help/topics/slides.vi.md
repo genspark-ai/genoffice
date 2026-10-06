@@ -29,7 +29,9 @@ Thử xem: chọn hộp văn bản tiêu đề ▸ thẻ Hoạt hình ▸ chọn
 
 - **Trình chiếu**: trình chiếu từ đầu hoặc từ trang chiếu hiện tại, cùng cài đặt trình chiếu.
 - **Xem lại**: **nhận xét mới** trên trang chiếu hiện tại (được ghi vào tệp pptx và hiện trong PowerPoint).
-- **Chế độ xem**: **Bình thường** (hình thu nhỏ + canvas), **Chế độ xem dàn bài** (duyệt và nhảy theo nội dung chữ), **Bộ sắp xếp trang chiếu** (lưới nhìn tổng quan, nhấp đúp để sửa), **Chế độ xem đọc** (toàn màn hình, từng trang; Esc để thoát).
+- **Chế độ xem**: **Bình thường** (hình thu nhỏ + canvas), **Chế độ xem dàn bài** (duyệt và nhảy theo nội dung chữ), **Bộ sắp xếp trang chiếu** (lưới nhìn tổng quan, nhấp đúp để sửa), **Chế độ xem đọc** (toàn màn hình, từng trang; Esc để thoát); thêm nữa là **Trang chiếu cái**, **Chế độ xem của diễn giả**, **Trình chiếu tùy chỉnh** và **Ẩn trang chiếu**, cùng các nút bật/tắt cho **Thước kẻ**, **Đường lưới**, **Đường căn hướng dẫn**, **Ghi chú** và **Ngăn hình thu nhỏ**. Phóng to/thu nhỏ/100 % và **Vừa với cửa sổ** cũng nằm ở đây.
+  - Các nút bật/tắt đó chỉ giữ trong một phiên làm việc — chúng trở lại giá trị mặc định khi bạn mở lại ứng dụng. Ngoại lệ là những thứ bạn không muốn mất: vị trí **đường căn hướng dẫn** được lưu cùng bộ trang chiếu, còn ngăn hình thu nhỏ ghi nhớ chiều rộng của nó.
+  - **Trình chiếu tùy chỉnh** chọn những trang chiếu mà một lần chạy kiểu kiosk sẽ phát, và được lưu cùng bộ trang chiếu.
 
 ## Menu chuột phải
 

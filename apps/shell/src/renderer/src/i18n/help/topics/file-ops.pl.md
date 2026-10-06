@@ -17,12 +17,11 @@ Zasady: rozszerzenie jest zachowywane automatycznie; niedozwolone znaki, kropki 
 
 ## Usuwanie
 
-- **⋯ ▸ Usuń** na stronie głównej: przenosi plik do **kosza systemowego**, skąd można go przywrócić z systemu operacyjnego.
-- Po usunięciu na kilka sekund pojawia się powiadomienie z możliwością cofnięcia — cofnięcie przywraca plik dokładnie tam, gdzie był.
+- **⋯ ▸ Usuń** na stronie głównej: pyta, które pliki, a następnie przenosi je do **kosza systemowego**, skąd system operacyjny może je przywrócić. GenOffice nie trzyma własnego cofnięcia — przywracanie to zadanie kosza, nie komunikatu.
 
 ## Duplikowanie
 
-**⋯ ▸ Utwórz kopię** tworzy kopię pliku <nazwa> w tym samym folderze i otwiera ją w nowej karcie; przy kolizji nazw automatycznie dopisywany jest licznik.
+**⋯ ▸ Utwórz kopię** tworzy kopię pliku <nazwa> w tym samym folderze; przy kolizji nazw automatycznie dopisywany jest licznik. Kopia trafia do **Ostatnie**, zamiast otworzyć się sama — jeden klik dalej, a nie przed nosem.
 
 ## Zapisz i Zapisz jako
 

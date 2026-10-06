@@ -29,7 +29,7 @@ Right-click a tab for **Open in New Window** — offered on every document tab t
 
 ## The all-tabs list
 
-When tabs overflow, the ▾ at the right end of the strip opens the full list (a native menu, never covered by the content area); pick with the arrow keys.
+When tabs overflow, the small tab-bar icon at the right end of the strip opens the full list (a native menu, never covered by the content area); pick with the arrow keys.
 
 ## The toolbar row inside every editor
 
@@ -42,4 +42,4 @@ Each editor tab has a toolbar row at the top (exact layout varies a little per e
 
 ## The Home tab
 
-The leftmost Home tab cannot be closed; to get back from any editor, click it or use File ▸ Home.
+The leftmost Home tab cannot be closed; to get back from any editor, click it or use File ▸ **Back to Home**.

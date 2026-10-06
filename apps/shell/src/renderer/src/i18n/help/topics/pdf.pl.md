@@ -30,7 +30,7 @@ Oczekiwane działanie:
 
 ## Narzędzia rysowania (Adnotacje)
 
-Sześć narzędzi: **tusz, prostokąt, elipsa, strzałka, notatka**, a ponadto **ramka zaciemniania** w karcie Edycja.
+Sześć narzędzi: **tusz, prostokąt, elipsa, strzałka, notatka**, a ponadto **ramka zaciemniania** w karcie Adnotacje.
 
 - Każde narzędzie jest przełącznikiem: kliknij, aby je włączyć; **wyłącza się samo, gdy tylko zostanie umieszczona figura** (aby kontynuować, kliknij narzędzie ponownie); kliknięcie już włączonego narzędzia również je wyłącza.
 - Tusz podąża za grubością pociągnięcia; prostokąt, elipsę i strzałkę rysuje się przez przeciągnięcie; kolory pochodzą z palety rysowania.
@@ -68,14 +68,17 @@ Sześć narzędzi: **tusz, prostokąt, elipsa, strzałka, notatka**, a ponadto *
 ## Operacje na stronach (Strony)
 
 - **Obróć / usuń / zmień kolejność**: przeciągaj miniatury, aby zmienić kolejność; usuwanie wymaga potwierdzenia.
+- **Importuj strony**: wciągnij strony z innego pliku PDF. **Wstaw pustą stronę** dodaje pustą stronę.
+- **Zamień strony** podmienia cały zakres na strony skąd indziej; **Przytnij strony** przycina krawędzie, z opcją zastosowania tego do wszystkich stron.
+- **Rozmiar strony** skaluje wszystkie strony do jednego rozmiaru papieru; **Odwróć kolejność** odwraca dokument od końca do początku.
 - **Wyodrębnij strony**: eksportuje wybrane strony do nowego pliku PDF.
-- **Podziel**: według zakresów na kilka plików.
-- **Scal**: dołącza inne pliki PDF. Rozmiary są sumowane **zanim cokolwiek zostanie odczytane**, a łączna wartość powyżej **1 GiB jest odrzucana** z czytelnym komunikatem błędu (aby ograniczyć zużycie pamięci).
+- **Podziel PDF**: dwie postacie — podział według zakresów na kilka plików albo pocięcie każdej strony na siatkę mniejszych stron.
+- **Scal PDF**: dwie postacie — dołączenie innych plików PDF albo połączenie kilku stron na jednym arkuszu. Rozmiary są sumowane **zanim cokolwiek zostanie odczytane**, a łączna wartość powyżej **1 GiB jest odrzucana** z czytelnym komunikatem błędu (aby ograniczyć zużycie pamięci).
 - Zmiany na poziomie strony są zapisywane przy następnym zapisie; Zapisz jako… pozostawia oryginał nietknięty.
 
 ## Eksport i drukowanie
 
-- **Eksportuj jako Word…**: lokalna konwersja do .docx.
+- **Eksportuj jako Word… / PowerPoint… / Excel…** w menu Plik albo te same trzy z **Konwertuj PDF** na wstążce — wszystko lokalnie, bez wysyłania na serwer. Plik .pptx wychodzi ze slajdem na stronę, a .xlsx z arkuszem na stronę. Każdy z nich pyta, gdzie zapisać.
 - **Drukuj**: bieżąca kolejność i obroty przez okno systemowe; obsługiwane są zakresy stron.
 
 ## Zapisywanie

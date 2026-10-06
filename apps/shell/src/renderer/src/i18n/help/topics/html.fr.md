@@ -22,6 +22,13 @@ Cliquez sur n’importe quel élément dans l’aperçu et une barre d’outils 
 - **Actions sur l’élément** (avec un élément sélectionné dans l’inspecteur d’aperçu) : supprimer, dupliquer, monter/descendre.
 - **Bouton IA** : ouvre le panneau IA ; demandez directement au sujet de l’élément sélectionné.
 
+## Exportation
+
+Menu Fichier, tout est local et tout demande où mettre le résultat :
+
+- **Exporter en Word…** et **Exporter en PDF…** écrivent un vrai .docx ou .pdf.
+- **Exporter en HTML (fichier unique)…** écrit un seul .html avec les images incorporées. Il n’écrasera pas le fichier que vous avez ouvert et il indique combien d’images il n’a pas pu incorporer.
+
 ## Insérer un squelette
 
 Pour une page vide, **Insertion ▸ Insérer un squelette** écrit un document minimal en mode standards :
@@ -30,7 +37,7 @@ Pour une page vide, **Insertion ▸ Insérer un squelette** écrit un document m
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ La balise meta de viewport est volontairement absente : ceci se rend dans un vol
 
 Le `lang` suit la langue d’interface de l’application : le squelette que vous insérez est donc celui pour lequel votre outillage est déjà configuré. Modifiez-le librement ensuite.
 
-L’élément n’apparaît qu’en mode édition, et seulement tant que le document est vide — dès qu’il y a du contenu, il n’y a plus rien *dans quoi* insérer un squelette.
-
+L’élément n’apparaît qu’en mode édition, et seulement tant que le document est vide — dès qu’il y a du contenu, il n’y a plus rien _dans quoi_ insérer un squelette.

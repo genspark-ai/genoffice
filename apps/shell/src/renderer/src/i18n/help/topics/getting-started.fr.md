@@ -52,7 +52,9 @@ Les raccourcis propres à chaque éditeur (copier la mise en forme, rechercher e
 
 ## Les raccourcis Option+Commande
 
-Option+Commande est la couche que Word réserve aux sauts structurés, et GenOffice la remplit de la même façon. Tout ce qui suit appartient à Docs :
+Option+Commande est la couche que Word réserve aux sauts structurés, et GenOffice la remplit de la même façon. Docs en prend l'essentiel, Sheets en prend deux à lui pour la parité avec Excel ; un raccourci fonctionne partout.
+
+**Docs**
 
 | Raccourci (macOS) | Effet                           | Windows / Linux    |
 | ----------------- | ------------------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Commande est la couche que Word réserve aux sauts structurés, et GenOff
 | ⌥⌘G               | Atteindre                       | Ctrl+G             |
 
 Deux d'entre eux changent sur Windows, pour la même raison qui fait que Word les sépare. **macOS possède ⌥⌘D** — il affiche et masque le Dock —, si bien que la note de fin est ⌥⌘E sur le Mac et Ctrl+Alt+D partout ailleurs. Et **Atteindre** laisse tomber l'Alt : Ctrl+G, là où le raccourci du Mac le conserve.
+
+**Sheets**, quand la grille a le focus
+
+| Raccourci (macOS) | Effet                | Windows / Linux |
+| ----------------- | -------------------- | --------------- |
+| ⌥⌘0               | Bordures extérieures | Ctrl+Shift+7    |
+| ⌥⌘−               | Aucune bordure       | Ctrl+Shift+−    |
+
+Windows n'est pas une réécriture de la paire Mac. Excel pour Mac donne à Sheets **les deux** : ⌘⇧7 et ⌥⌘0 sont deux touches pour les mêmes bordures extérieures, si bien que sur Windows la commande garde la case Ctrl+Shift qu'elle avait déjà, et la couche Option est simplement absente.
+
+Remarquez que **⌥⌘0 signifie Normal dans Docs et Bordures extérieures dans Sheets**. Les deux n'apparaissent jamais dans le même éditeur, donc rien ne se percute à l'usage, mais ⌥⌘0 est déjà pris et n'est pas disponible comme raccourci global.
+
+**Tous les éditeurs** : **⌥⌘R / Ctrl+F1** réduit le ruban, comme décrit plus haut.
 
 Cela laisse ⌥⌘D libre pour que GenOffice l'utilise sur macOS si une future commande en a besoin.
 

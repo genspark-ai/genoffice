@@ -17,6 +17,26 @@ Die Modellkonfiguration hat einen eigenen Artikel; unter **KI-Medien & Suche** s
 
 Hell / Dunkel / System folgen. „System folgen“ richtet sich nach dem Erscheinungsbild des Betriebssystems, und die Editoren wechseln synchron die Darstellung, ohne zu flackern.
 
+## Allgemein
+
+- **Anonyme Nutzungsstatistiken senden** — standardmäßig aktiviert. Verwendet Google Analytics 4 und sendet Ihre öffentliche IP-Adresse und Transportmetadaten; Dokumentinhalte und Dateinamen werden nie erhoben, und jedes Ereignis trägt nur einen Typ wie „eine .docx geöffnet“. Sie können das hier jederzeit abschalten.
+- **Position der KI-Seitenleiste** (links oder rechts), **Textgröße im KI-Bereich** und **Rechtschreibprüfung im KI-Chat**.
+- **KI-Panel in neuen Dokumenten öffnen** — aus, ein neues Dokument startet mit eingeklapptem Panel, einen Klick entfernt.
+- **Alle Dokumente automatisch speichern** schaltet AutoSave in jedem Editor standardmäßig ein; für ein einzelnes Fenster können Sie es weiterhin abschalten.
+- **Speicherort** mit der Schaltfläche **Ändern** und **Standard-App für Office-Dokumente**, um .docx / .xlsx / .pptx für GenOffice zu beanspruchen.
+
+## KI-Medien & Suche
+
+Keine Schalter — jede Fähigkeit wählt den Anbieter, der sie bedient, und Schlüssel und Basis-URL eines Anbieters werden einmal eingetragen und gemeinsam genutzt:
+
+- **Websuche**, **Bildgenerierung**, **Bildanalyse** und **Videoanalyse**, jede mit Anbieter, Modell, Schlüssel und Basis-URL.
+- **Lokale Dateisuche** läuft auf diesem Rechner. Darunter ist **Jev-Neusortierung**, die **standardmäßig aus** ist. Schalten Sie sie ein, werden die Auszüge der 20 besten lokalen Treffer — bis zu 1.200 Zeichen je Dokument, dazu die Datei- und Ordnernamen — an das Jev-Modell von TypeSafe gesendet und nach Relevanz neu sortiert. Ist sie aus, verlässt nichts dieses Gerät.
+
+## Über
+
+- **Version**, der GitHub-Link des Projekts und eine Schaltfläche **Auf GitHub Stern geben**.
+- **Update-Kanal**: Stabil oder Beta. Eine Änderung wirkt sofort und prüft auf ein Update; eine Beta-Installation wird nicht auf Stabil zurückgestuft.
+
 ## Standard-App-Zuordnungen
 
 Die Einstellungen können GenOffice als Programm für .docx / .xlsx / .pptx / .pdf und verwandte Formate hinterlegen (Registrierung als Standard-App auf Plattformebene; bestätigen Sie, wenn Sie dazu aufgefordert werden).

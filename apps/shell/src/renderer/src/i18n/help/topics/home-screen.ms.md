@@ -6,21 +6,30 @@ Laman Utama ialah halaman permulaan GenOffice: bar navigasi di kiri, senarai fai
 
 ## Navigasi bar sisi
 
-- **Terkini**: fail yang baru dibuka oleh anda, dikelompokkan mengikut masa (minggu ini / bulan ini / lebih awal).
+- **Terkini**: fail yang baru dibuka oleh anda. Setiap baris dicap dengan waktunya — hari ini, semalam atau tarikh.
 - **Berbintang**: fail yang anda tandakan dengan bintang. Halakan kursor ke baris fail dan klik bintang untuk menambah atau membuangnya.
+- **Panduan Pengguna**: membuka manual ini.
 - **Genspark Projects**: selepas anda log masuk ke akaun Genspark, ia memaparkan projek yang anda cipta di web dengan Genspark AI. Klik satu untuk menyuntingnya terus dalam pelayar. Carian, isihan mengikut masa, muat semula dan muat lagi disokong.
-- **Folder**: pin folder yang kerap digunakan ke bar sisi melalui Tambah folder, kemudian lompat ke sana seperti penanda buku. Lokasi yang tidak tersedia ditandakan sebagai tidak tersedia dan boleh dibuang daripada senarai.
-- **Tong sampah**: menuju ke tong sampah sistem. Fail yang dipadam akan ke sana dan boleh dipulihkan daripada sistem pengendalian.
+- **Folder**: direktori yang anda tambah ke bar sisi dengan **Tambah folder…**, atau yang anda seret masuk daripada pengurus fail. Setiap satu menjadi lokasi yang boleh dibuka, boleh dicipta subdirektori di dalamnya, boleh dinamakan semula dan boleh dibuang; lokasi yang menjadi luar talian ditandakan sebagai tidak tersedia dan boleh dibuang daripada senarai. **Folder baharu** mencipta satu lagi.
+
+Tiada entri Tong sampah di sini. Fail yang dipadam akan masuk ke tong sampah sistem, dan memulihkannya ialah urusan sistem pengendalian.
 
 ## Senarai fail
 
 Setiap baris memaparkan ikon, nama fail, masa diubah suai dan maklumat lain. **⋯ menu** pada baris itu menawarkan:
 
+- **Buka**, dan **Tunjukkan dalam folder** untuk mengesahkan lokasi fail dalam pengurus fail anda.
+- **Salin laluan**.
+- **Pindah ke folder…**: membuka pemilih folder dan benar-benar memindahkan fail; jika di destino sudah ada fail dengan nama yang sama, anda boleh melangkau, menimpa atau menukar namanya.
 - **Namakan semula**: menamakan semula terus di tempat, dengan sambungan dikekalkan secara automatik.
-- **Tambah bintang / Buang bintang**
+- **Tambah bintang / Buang bintang** — bintang kekal selepas aplikasi ditutup dan mengikut fail apabila anda menamakannya semula.
 - **Buat salinan**: mencipta salinan dalam folder yang sama.
 - **Padam**: memindahkan fail ke tong sampah sistem. Ini bukan pemadaman kekal.
-- **Tunjukkan dalam folder**: memaparkan fail dalam pengurus fail anda.
+- **Alih keluar daripada senarai**, pada paparan **Terkini** peringkat atas, untuk membuang satu entri tanpa menyentuh fail itu sendiri.
+
+### Beberapa fail sekali gus
+
+Tandakan kotak pada satu baris, atau ⌘/ctrl-klik, untuk membina satu pilihan; kotak di pengepala memilih segala yang kini disenaraikan, dan satu bar di atas senarai melaporkan berapa yang dipilih (**{n} dipilih**) bersama **Pindah ke folder…** dan **Padam fail** untuk keseluruhan kumpulan. Anda juga boleh menyeret pilihan berbilang ke mana-mana folder pada bar sisi.
 
 ## Carian
 

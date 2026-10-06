@@ -6,21 +6,30 @@ Die Startseite ist GenOffices Startseite: eine Navigationsleiste links, Dateilis
 
 ## Navigation in der Seitenleiste
 
-- **Zuletzt verwendet**: die zuletzt geöffneten Dateien, nach Zeit gruppiert (diese Woche / diesen Monat / früher).
+- **Zuletzt verwendet**: die zuletzt geöffneten Dateien. Jede Zeile trägt ihren Zeitpunkt — heute, gestern oder das Datum.
 - **Favoriten**: die von Ihnen mit einem Stern versehenen Dateien. Fahren Sie über eine Dateizeile und klicken Sie auf den Stern, um sie hinzuzufügen oder zu entfernen.
+- **Benutzerhandbuch**: öffnet dieses Handbuch.
 - **Genspark Projects**: nach der Anmeldung an Ihrem Genspark-Konto werden die im Web mit Genspark AI erstellten Projekte angezeigt; klicken Sie auf eines, um die Bearbeitung im Browser fortzusetzen. Suche, Sortierung nach Zeit, Aktualisierung und Nachladen werden unterstützt.
-- **Ordner**: Hängen Sie häufig verwendete Verzeichnisse an die Seitenleiste an (Ordner hinzufügen…) und springen Sie wie über Lesezeichen dorthin. Nicht verfügbare Stammverzeichnisse werden als nicht verfügbar angezeigt und lassen sich aus der Liste entfernen.
-- **Papierkorb**: verweist auf den Papierkorb des Systems — gelöschte Dateien landen dort und lassen sich über das Betriebssystem wiederherstellen.
+- **Ordner**: Verzeichnisse, die Sie mit **Ordner hinzufügen…** zur Seitenleiste hinzufügen oder aus dem Dateimanager dorthin ziehen. Jedes wird zu einem Stammverzeichnis, das Sie öffnen, mit Unterordnern füllen, umbenennen und daraus entfernen können; geht eines offline, wird es als nicht verfügbar angezeigt und lässt sich aus der Liste nehmen. **Neuer Ordner** legt ein weiteres an.
+
+Hier gibt es keinen Eintrag für den Papierkorb. Gelöschte Dateien landen im Papierkorb des Systems, und sie wiederherzustellen ist Sache des Betriebssystems.
 
 ## Die Dateiliste
 
 Jede Zeile zeigt ein Symbol, den Dateinamen, die Änderungszeit und mehr. Das **⋯-Menü** der Zeile bietet:
 
+- **Öffnen** und **Im Ordner anzeigen**, um die Datei im Dateimanager zu finden.
+- **Pfad kopieren**.
+- **In Ordner verschieben…**: öffnet eine Ordnerauswahl und verschiebt die Datei tatsächlich; ist am Ziel schon eine Datei gleichen Namens, können Sie überspringen, überschreiben oder umbenennen.
 - **Umbenennen**: direkt an Ort und Stelle, die Dateiendung bleibt automatisch erhalten.
-- **Zu Favoriten hinzufügen / Aus Favoriten entfernen**
+- **Zu Favoriten hinzufügen / Aus Favoriten entfernen** — Sterne bleiben über Neustarts hinweg erhalten und wandern mit der Datei mit, wenn Sie sie umbenennen.
 - **Duplizieren**: erstellt eine Kopie im selben Ordner.
 - **Löschen**: verschiebt die Datei in den Papierkorb des Systems — kein endgültiges Löschen.
-- **Im Ordner anzeigen**: macht die Datei im Dateimanager ausfindig.
+- **Aus Liste entfernen**, in der Ansicht „Zuletzt verwendet“, um einen Eintrag zu streichen, ohne die Datei anzufassen.
+
+### Mehrere Dateien auf einmal
+
+Haken Sie das Kontrollkästchen einer Zeile an oder klicken Sie mit ⌘/Strg, um eine Auswahl zusammenzustellen; das Kontrollkästchen in der Kopfzeile wählt alles aus, was gerade aufgeführt ist, und eine Leiste über der Liste meldet (**{n} ausgewählt**), wie viele ausgewählt sind, und bietet **In Ordner verschieben…** sowie **Dateien löschen** für die ganze Auswahl. Sie können eine Mehrfachauswahl auch auf einen Ordner in der Seitenleiste ziehen.
 
 ## Suche
 

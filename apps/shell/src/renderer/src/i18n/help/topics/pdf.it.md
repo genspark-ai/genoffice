@@ -30,7 +30,7 @@ Per sapere cosa aspettarti:
 
 ## Strumenti di disegno (Annota)
 
-Sei strumenti: **inchiostro, rettangolo, ellisse, freccia, nota**, più il **riquadro di oscuramento** nella scheda Modifica.
+Sei strumenti: **inchiostro, rettangolo, ellisse, freccia, nota**, più il **riquadro di oscuramento** nella scheda Annota.
 
 - Ogni strumento è un interruttore: fai clic per attivarlo; **si disattiva da solo una volta posizionata una forma** (per continuare, fai clic di nuovo sullo strumento); fare clic sullo strumento già attivo lo disattiva comunque.
 - L'inchiostro segue lo spessore del tratto; rettangolo, ellisse e freccia si trascinano; i colori vengono dalla tavolozza di disegno.
@@ -68,14 +68,17 @@ Sei strumenti: **inchiostro, rettangolo, ellisse, freccia, nota**, più il **riq
 ## Operazioni sulle pagine (Pagine)
 
 - **Ruota / elimina / riordina**: trascina le miniature per riordinarle; l'eliminazione chiede conferma.
+- **Importa pagine**: porta pagine da un altro PDF nel documento. **Inserisci pagina vuota** aggiunge una pagina vuota.
+- **Sostituisci pagine** scambia un intervallo con pagine provenienti da altrove; **Ritaglia pagine** ritaglia i bordi, con l'opzione di applicarlo a tutte le pagine.
+- **Dimensioni pagina** ridimensiona ogni pagina a un unico formato carta; **Inverti ordine** capovolge il documento da fine a inizio.
 - **Estrai pagine**: esporta le pagine selezionate in un nuovo PDF.
-- **Dividi**: per intervalli, in più file.
-- **Unisci**: aggiunge altri PDF. Le dimensioni sono sommate **prima** che venga letto qualsiasi contenuto e un totale oltre **1 GiB viene rifiutato** con un errore leggibile (per mantenere limitata la memoria).
+- **Dividi PDF**: due forme — dividere per intervalli in più file, oppure ritagliare ogni pagina in una griglia di pagine più piccole.
+- **Unisci PDF**: due forme — aggiungere altri PDF, oppure combinare più pagine su un unico foglio. Le dimensioni sono sommate **prima** che venga letto qualsiasi contenuto e un totale oltre **1 GiB viene rifiutato** con un errore leggibile (per mantenere limitata la memoria).
 - Le modifiche a livello di pagina vengono riscritte al salvataggio successivo; Salva con nome… lascia intatto l'originale.
 
 ## Esportazione e stampa
 
-- **Esporta come Word…**: conversione locale in .docx.
+- **Esporta come Word… / PowerPoint… / Excel…** nel menu File, oppure le stesse tre da **Converti PDF** nella barra multifunzione — tutto in locale, senza caricamenti. Il .pptx esce con una diapositiva per pagina e il .xlsx con un foglio di lavoro per pagina. Ognuno chiede dove salvare.
 - **Stampa**: ordine e rotazioni correnti tramite la finestra di sistema; sono supportati gli intervalli di pagine.
 
 ## Salvataggio

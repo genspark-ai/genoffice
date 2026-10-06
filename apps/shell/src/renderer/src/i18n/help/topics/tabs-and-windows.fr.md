@@ -29,7 +29,7 @@ Un clic droit sur un onglet propose **Ouvrir dans une nouvelle fenêtre** — di
 
 ## La liste de tous les onglets
 
-Quand les onglets débordent, le ▾ à l’extrémité droite de la barre ouvre la liste complète (un menu natif, jamais masqué par la zone de contenu) ; choisissez avec les flèches.
+Quand les onglets débordent, la petite icône de la barre d’onglets à l’extrémité droite ouvre la liste complète (un menu natif, jamais masqué par la zone de contenu) ; choisissez avec les flèches.
 
 ## La barre d’outils de chaque éditeur
 
@@ -42,4 +42,4 @@ Chaque onglet d’éditeur a une barre d’outils en haut (la disposition exacte
 
 ## L’onglet Accueil
 
-L’onglet Accueil le plus à gauche ne peut pas être fermé ; pour revenir d’un éditeur, cliquez dessus ou utilisez Fichier ▸ Accueil.
+L’onglet Accueil le plus à gauche ne peut pas être fermé ; pour revenir d’un éditeur, cliquez dessus ou utilisez Fichier ▸ **Retour à l’accueil**.

@@ -17,12 +17,11 @@ Quy tắc: phần mở rộng được giữ tự động; ký tự không hợp
 
 ## Xóa
 
-- **⋯ ▸ Xóa** ở Trang chủ: chuyển tập tin vào **thùng rác hệ thống**, khôi phục được từ hệ điều hành.
-- Sau khi xóa, một thông báo có nút hoàn tác xuất hiện trong vài giây — hoàn tác đưa tập tin về đúng chỗ cũ.
+- **⋯ ▸ Xóa** ở Trang chủ: hỏi những tập tin nào, rồi chuyển chúng vào **thùng rác hệ thống**, nơi hệ điều hành có thể khôi phục. GenOffice không giữ thao tác hoàn tác riêng cho việc này — khôi phục là việc của thùng rác, không phải của thông báo.
 
 ## Nhân bản
 
-**⋯ ▸ Tạo bản sao** tạo một bản `<name> bản sao` trong cùng thư mục và mở nó thành thẻ mới; khi trùng tên, một số thứ tự được thêm vào tự động.
+**⋯ ▸ Tạo bản sao** tạo một bản `<name> bản sao` trong cùng thư mục; khi trùng tên, một số thứ tự được thêm vào tự động. Bản sao được thêm vào **Gần đây** thay vì mở sẵn cho bạn — cách một cú nhấp, chứ không nằm ngay trước mặt.
 
 ## Lưu và Lưu dưới dạng
 

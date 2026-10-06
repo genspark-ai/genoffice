@@ -29,7 +29,7 @@ Klik kanan pada tab untuk **Buka dalam Tetingkap Baharu** — disediakan pada se
 
 ## Senarai semua tab
 
-Apabila tab melebihi ruang, tanda ▾ pada hujung kanan baris tab akan membuka senarai penuh. Ia ialah menu natif yang tidak pernah dilindungi oleh kawasan kandungan, dan anda boleh memilih dengan kekunci anak panah.
+Apabila tab melebihi ruang, ikon baris tab yang kecil pada hujung kanan baris tab akan membuka senarai penuh. Ia ialah menu natif yang tidak pernah dilindungi oleh kawasan kandungan, dan anda boleh memilih dengan kekunci anak panah.
 
 ## Bar alat dalam setiap editor
 
@@ -42,4 +42,4 @@ Setiap tab editor mempunyai bar alat di bahagian atas, dan susun aturnya berbeza
 
 ## Tab Laman Utama
 
-Tab Laman Utama, paling kiri, tidak boleh ditutup. Untuk kembali ke sana dari mana-mana editor, klik tab itu atau gunakan Fail ▸ Laman Utama.
+Tab Laman Utama, paling kiri, tidak boleh ditutup. Untuk kembali ke sana dari mana-mana editor, klik tab itu atau gunakan Fail ▸ **Kembali ke Laman Utama**.

@@ -17,12 +17,11 @@ Peraturannya ialah seperti berikut. Sambungan dikekalkan secara automatik. Aksar
 
 ## Memadam
 
-- **⋯ ▸ Padam** pada Laman Utama akan memindahkan fail ke **tong sampah sistem**, dan ia boleh dipulihkan daripada sistem pengendalian.
-- Selepas memadam, akan muncul notis yang membolehkan pembatalan selama beberapa saat. Membatalkan tindakan itu akan mengembalikan fail ke tempat asalnya.
+- **⋯ ▸ Padam** pada Laman Utama akan bertanya fail yang mana, kemudian memindahkan fail tersebut ke **tong sampah sistem**, yang boleh dipulihkan daripada sistem pengendalian. GenOffice tiada menyimpan undur sendiri untuk ini — pemulihan ialah tugas tong sampah, bukan notis.
 
 ## Membuat salinan
 
-**⋯ ▸ Buat salinan** mencipta salinan bagi <nama> dalam folder yang sama dan membukanya sebagai tab baharu. Jika nama itu sudah digunakan, nombor akan ditambah secara automatik.
+**⋯ ▸ Buat salinan** mencipta salinan bagi <nama> dalam folder yang sama. Jika nama itu sudah digunakan, nombor akan ditambah secara automatik. Salinan itu ditambah ke **Terkini** dan bukan dibuka untuk anda — satu klik sahaja, bukan di hadapan mata.
 
 ## Simpan dan Simpan Sebagai
 

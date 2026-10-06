@@ -29,7 +29,9 @@ Probeer het: selecteer het tekstvak met de titel ▸ tabblad Animaties ▸ kies 
 
 - **Diavoorstelling**: presenteren vanaf het begin of vanaf de huidige dia, plus weergave-instellingen.
 - **Controleren**: **nieuwe opmerking** op de huidige dia (wordt in het.pptx geschreven en is in PowerPoint zichtbaar).
-- **Beeld**: **Normaal** (miniaturen en tekenvlak), **Overzichtsweergave** (bladeren en springen op tekst), **Diasorteerder** (rasteroverzicht, dubbelklik om te bewerken), **Leesweergave** (volledig scherm, pagina per pagina; Esc sluit af).
+- **Beeld**: **Normaal** (miniaturen en tekenvlak), **Overzichtsweergave** (bladeren en springen op tekst), **Diasorteerder** (rasteroverzicht, dubbelklik om te bewerken), **Leesweergave** (volledig scherm, pagina per pagina; Esc sluit af); daarnaast **Diamodel**, **Weergave voor presentator**, **Aangepaste diavoorstelling** en **Dia verbergen**, plus schakelaars voor **Liniaal**, **Rasterlijnen**, **Hulplijnen**, **Notities** en het **Miniaturenvenster**. Inzoomen/uitzoomen/100 % en **Aan venster aanpassen** staan hier ook.
+  - Die schakelaars gelden per sessie — ze staan weer op hun standaardwaarde zodra je de app heropent. De uitzonderingen zijn degene die je niet kwijt zou willen zijn: de posities van de **hulplijnen** worden met de presentatie opgeslagen, en het miniaturenvenster onthoudt zijn breedte.
+  - **Aangepaste diavoorstelling** bepaalt welke dia's een kioskrun afspeelt, en wordt met de presentatie opgeslagen.
 
 ## Contextmenu's
 

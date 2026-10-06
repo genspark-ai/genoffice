@@ -30,7 +30,7 @@ Referenz:
 
 ## Zeichnungswerkzeuge (Anmerken)
 
-Sechs Werkzeuge: **Freihand, Rechteck, Ellipse, Pfeil, Notiz** sowie **Bereich schwärzen** auf dem Tab „Bearbeiten“.
+Sechs Werkzeuge: **Freihand, Rechteck, Ellipse, Pfeil, Notiz** sowie **Bereich schwärzen** auf dem Tab „Anmerken“.
 
 - Jedes Werkzeug ist ein Umschalter: Klicken Sie, um es zu aktivieren; **es deaktiviert sich, sobald eine Form platziert ist** (für weitere Formen erneut anklicken); ein Klick auf das aktive Werkzeug deaktiviert es ebenfalls.
 - Freihand folgt der Strichstärke; Rechteck/Ellipse/Pfeil werden durch Ziehen aufgezogen; die Farben kommen aus der Zeichnungspalette.
@@ -68,14 +68,17 @@ Sechs Werkzeuge: **Freihand, Rechteck, Ellipse, Pfeil, Notiz** sowie **Bereich s
 ## Seitenvorgänge (Seiten)
 
 - **Drehen / löschen / neu anordnen**: Ziehen Sie Miniaturen zum Umsortieren; beim Löschen wird nachgefragt.
+- **Seiten importieren**: ziehen Sie Seiten aus einem anderen PDF herein. **Leere Seite einfügen** fügt eine leere Seite hinzu.
+- **Seiten ersetzen** tauscht einen Bereich gegen Seiten aus einer anderen Datei; **Seiten zuschneiden** beschneidet, mit der Option, das auf alle Seiten anzuwenden.
+- **Seitengröße** skaliert alle Seiten auf ein einziges Papierformat; **Reihenfolge umkehren** dreht das Dokument von hinten nach vorne.
 - **Seite extrahieren**: ausgewählte Seiten in ein neues PDF exportieren.
-- **Aufteilen**: nach Bereichen in mehrere Dateien aufteilen.
-- **Zusammenführen**: hängt weitere PDFs an. Die Größen werden summiert, **bevor** irgendetwas gelesen wird, und **alles über 1 GiB insgesamt wird mit einer lesbaren Fehlermeldung abgelehnt** (so bleibt der Speicher begrenzt).
+- **PDF aufteilen**: zwei Varianten — nach Bereichen in mehrere Dateien aufteilen oder jede Seite in ein Raster kleinerer Seiten schneiden.
+- **PDF zusammenführen**: zwei Varianten — weitere PDFs anhängen oder mehrere Seiten auf ein Blatt legen. Die Größen werden summiert, **bevor** irgendetwas gelesen wird, und **alles über 1 GiB insgesamt wird mit einer lesbaren Fehlermeldung abgelehnt** (so bleibt der Speicher begrenzt).
 - Änderungen auf Seitenebene werden beim nächsten Speichern zurückgeschrieben; „Speichern unter“ lässt das Original unberührt.
 
 ## Export und Druck
 
-- **PDF in Word**: lokale Konvertierung nach .docx.
+- **Als Word exportieren… / PowerPoint… / Excel…** im Menü Datei, oder dieselben drei über **PDF umwandeln** im Menüband — alles lokal, kein Upload. Die .pptx kommt mit einem Foliensatz pro Seite heraus, die .xlsx mit einem Arbeitsblatt pro Seite. Jede fragt nach dem Speicherort.
 - **Druck**: aktuelle Reihenfolge und Drehungen über den Systemdialog; Seitenbereiche werden unterstützt.
 
 ## Speichern

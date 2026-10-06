@@ -17,6 +17,26 @@ La configuración de modelos tiene su propio artículo; en **Medios de IA y bús
 
 Claro / Oscuro / Seguir el sistema. «Seguir el sistema» sigue la apariencia del sistema operativo, y los editores cambian de aspecto en sincronía sin parpadeos.
 
+## General
+
+- **Enviar estadísticas de uso anónimas** — activado de forma predeterminada. Usa Google Analytics 4 y envía tu IP pública y metadatos de transporte; nunca se recopilan los contenidos de los documentos ni los nombres de archivo, y cada evento lleva solo un tipo como «se abrió un .docx». Puedes desactivarlo aquí en cualquier momento.
+- **Posición de la barra lateral de IA** (izquierda o derecha), **Tamaño del texto del panel de IA** y **Corrección ortográfica en el chat de IA**.
+- **Abrir el panel de IA en documentos nuevos** — desactivado, un documento nuevo empieza con el panel plegado, a un clic de distancia.
+- **Guardar automáticamente todos los documentos** activa el guardado automático de forma predeterminada en todos los editores; todavía puedes desactivarlo para una ventana.
+- **Ubicación de guardado** con un botón **Cambiar** y **App predeterminada para documentos de Office** para reclamar .docx / .xlsx / .pptx para GenOffice.
+
+## Medios de IA y búsqueda
+
+No son conmutadores: cada capacidad elige el proveedor que la sirve, y la clave y la URL base de un proveedor se introducen una vez y se comparten:
+
+- **Búsqueda web**, **Generación de imágenes**, **Análisis de imágenes** y **Análisis de vídeo**, cada una con un proveedor, un modelo, una clave y una URL base.
+- **Búsqueda de archivos locales** se ejecuta en este equipo. Debajo está **Reordenación con Jev**, que está **desactivada de forma predeterminada**. Si la activas, los extractos de los 20 mejores resultados locales — hasta 1.200 caracteres de cada documento, más los nombres de archivo y carpeta — se envían al modelo Jev de TypeSafe para reordenarlos por relevancia. Con ella desactivada, nada sale del dispositivo.
+
+## Acerca de
+
+- **Versión**, el enlace del proyecto en GitHub y un botón **Dar una estrella en GitHub**.
+- **Canal de actualización**: Estable o Beta. Cambiarlo surte efecto de inmediato y busca una actualización; no bajará una instalación Beta a Estable.
+
 ## Aplicaciones predeterminadas
 
 La configuración puede registrar GenOffice como programa predeterminado para .docx / .xlsx / .pptx / .pdf y formatos similares (registro de aplicación predeterminada a nivel de plataforma; confirme cuando se le pida).

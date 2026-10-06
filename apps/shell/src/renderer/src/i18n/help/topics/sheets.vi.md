@@ -13,12 +13,17 @@ Sheets là trình soạn thảo giống Excel; việc tính toán chạy trong m
 ## Các thẻ trên dải ruy-bâng
 
 - **Trang đầu**: phông chữ, tô màu, viền, định dạng số (tiền tệ/phần trăm/hàng nghìn, tăng giảm số thập phân), căn chỉnh, gộp, chèn hàng/cột và đổi kích thước, định dạng có điều kiện, định dạng dưới dạng bảng, kiểu ô, bảng tạm và công cụ định dạng, sắp xếp & lọc.
-- **Chèn**: hình dạng, biểu tượng, ký hiệu, phương trình, ảnh chụp màn hình và hơn thế.
+- **Chèn**: hình ảnh, hình dạng, hộp văn bản, liên kết, nhận xét, hộp kiểm tra, đầu trang & chân trang, ký hiệu, phương trình; **chín loại biểu đồ** (cột, thanh, đường, vùng, tròn, phân tán, radar, vành khuyên, và kết hợp cột + đường) cùng **Biểu đồ đề xuất**, vốn xếp hạng các loại theo vùng đang chọn và cho xem trước; **PivotChart** tạo từ ô bạn đang đứng; **Biểu đồ mini (Sparklines)** (đường, cột, thắng/thua); **Slicer** và **Timeline** để lọc một PivotTable.
+  - Biểu đồ, biểu đồ pivot và biểu đồ mini là các đối tượng thật trong sổ làm việc đã lưu.
+  - **Slicer** và **Timeline** là điều khiển theo phiên: thao tác lọc của chúng được lưu lại và Excel hiển thị đúng PivotTable đã lọc đó, nhưng bản thân nút slicer không nằm trong tệp.
 - **Bố trí Trang**: màu và phông chủ đề, công tắc in đường lưới/tiêu đề, xem trước ngắt trang.
 - **Công thức**: Tính tổng tự động và chèn hàm, đặt tên (kể cả từ vùng chọn), dò ô tiền nhiệm/ô phụ thuộc, cửa sổ theo dõi, tính toán lại trang tính/sổ làm việc.
 - **Dữ liệu**: sắp xếp & lọc (gồm bộ lọc nâng cao, xóa bộ lọc), chuyển văn bản thành cột, hợp nhất sổ làm việc, làm mới tất cả.
-- **Xem lại**: duyệt nhận xét (hiện, trước/sau), dịch.
-- **Xem**: công tắc đường lưới và tiêu đề, thu phóng, chế độ xem bình thường / xem trước ngắt trang.
+- **Xem lại**: duyệt nhận xét (hiện, trước/sau), dịch và nhóm **Bảo vệ** — **Bảo vệ trang tính**, **Bảo vệ sổ làm việc** và **Cho phép chỉnh sửa các vùng**.
+  - Bảo vệ được ghi vào tệp .xlsx và những gì ứng dụng này áp dụng không có mật khẩu, nên cùng nút đó thành **Bỏ bảo vệ…** và hoàn tác lại. Bảo vệ đến từ chương trình khác _thực sự_ có mật khẩu thì không thể gỡ khỏi đây.
+  - Hai nút bảo vệ có hiệu lực ngay — không có hộp thoại nào để hủy, chỉ có ghi chú trên thanh trạng thái rằng nó sẽ được ghi khi lưu.
+  - **Cho phép chỉnh sửa các vùng** đánh dấu những ô vẫn chỉnh sửa được trong khi phần còn lại của trang tính bị khóa.
+- **Xem**: công tắc đường lưới, **thanh công thức**, tiêu đề và làm nổi bật hàng & cột hiện hoạt; thu phóng; **Bình thường** và **Xem trước ngắt trang**. Đường lưới và tiêu đề được lưu cùng trang tính; làm nổi bật là tùy chọn riêng của bạn.
 - **Thiết kế Biểu đồ**: xuất hiện khi đang chọn một biểu đồ — loại biểu đồ, kiểu và màu, chỉnh sửa vùng dữ liệu.
 
 Thẻ "Dữ liệu", từng nút (theo ảnh, từ trái sang phải):
@@ -86,6 +91,8 @@ Thẻ "Công thức", từng nút:
 ## AI
 
 - Bảng AI bên cạnh: chọn một vùng rồi ra lệnh bằng ngôn ngữ tự nhiên (đổi định dạng, tạo dữ liệu, viết công thức).
+- Gắn tệp vào câu lệnh bằng nút 📎, hoặc kéo tệp thả vào bảng; chúng đi cùng câu hỏi và ảnh trở về dưới dạng hình thu nhỏ.
+- Một câu trả lời có thể trích dẫn một ô — bấm vào tham chiếu là lưới nhảy tới ô đó.
 - Có thể quay lui các thay đổi của AI ngay trên bảng này.
 
 ## Lưu và xuất

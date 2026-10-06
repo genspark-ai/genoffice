@@ -17,12 +17,11 @@ Regeln: Die Dateiendung bleibt automatisch erhalten; unzulässige Zeichen, Punkt
 
 ## Löschen
 
-- **⋯ ▸ Löschen** auf der Startseite: verschiebt die Datei in den **Papierkorb des Systems**, von dort über das Betriebssystem wiederherstellbar.
-- Nach dem Löschen erscheint kurz eine Meldung mit Rückgängig-Funktion — rückgängig legt die Datei an ihren alten Platz zurück.
+- **⋯ ▸ Löschen** auf der Startseite: fragt ab, welche Dateien, und verschiebt sie in den **Papierkorb des Systems**, von dort über das Betriebssystem wiederherstellbar. GenOffice führt dafür kein eigenes Rückgängig — die Wiederherstellung ist Sache des Papierkorbs, nicht einer Meldung.
 
 ## Duplizieren
 
-**⋯ ▸ Duplizieren** erstellt im selben Ordner eine Kopie namens <name> copy und öffnet sie in einem neuen Tab; bei Namensgleichheit wird automatisch ein Zähler angehängt.
+**⋯ ▸ Duplizieren** erstellt im selben Ordner eine Kopie namens <name> copy; bei Namensgleichheit wird automatisch ein Zähler angehängt. Die Kopie landet in **Zuletzt verwendet**, statt geöffnet zu werden — sie ist einen Klick entfernt, nicht vor Ihnen aufgeschlagen.
 
 ## Speichern und Speichern unter
 

@@ -22,6 +22,13 @@ Klik op een willekeurig element in het voorbeeld en er verschijnt een werkbalk b
 - **Elementacties** (met een element geselecteerd in de voorbeeldinspecteur): verwijderen, dupliceren, omhoog/omlaag verplaatsen.
 - **AI-knop**: opent het AI-paneel; stel je vraag direct over het geselecteerde element.
 
+## Exporteren
+
+Menu Bestand, alles lokaal en alles vraagt waar het resultaat heen moet:
+
+- **Exporteren als Word…** en **Exporteren als PDF…** schrijven een echte .docx of .pdf.
+- **Exporteren als één HTML-bestand…** schrijft één .html met de afbeeldingen erin ingesloten. Het overschrijft niet het bestand dat u nu open hebt en het meldt hoeveel afbeeldingen het niet kon insluiten.
+
 ## Skeleton invoegen
 
 Voor een lege pagina schrijft **Invoegen ▸ Skeleton invoegen** een minimaal document in de standaardmodus:
@@ -30,7 +37,7 @@ Voor een lege pagina schrijft **Invoegen ▸ Skeleton invoegen** een minimaal do
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Een viewport-meta is bewust weggelaten: dit tekent zich af in een bureaubladpane
 
 De `lang` volgt de taal van de gebruikersinterface van de app, dus het skeleton dat je invoegt is degene waar je gereedschap al op is ingesteld. Daarna kun je het vrij bewerken.
 
-De optie verschijnt alleen in de bewerkingsmodus, en alleen zolang het document leeg is — zodra er inhoud is, is er niets meer om een skeleton *in* in te voegen.
-
+De optie verschijnt alleen in de bewerkingsmodus, en alleen zolang het document leeg is — zodra er inhoud is, is er niets meer om een skeleton _in_ in te voegen.

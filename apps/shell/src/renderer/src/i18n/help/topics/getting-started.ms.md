@@ -52,7 +52,9 @@ Pintasan dalam setiap editor (berus format, cari & ganti, operasi jadual, ...) d
 
 ## Pintasan Option+Command
 
-Option+Command ialah lapisan yang dikhaskan Word untuk lompatan berstruktur, dan GenOffice mengisinya dengan cara yang sama. Semua yang berikut ialah milik Docs:
+Option+Command ialah lapisan yang dikhaskan Word untuk lompatan berstruktur, dan GenOffice mengisinya dengan cara yang sama. Docs mengambil majoritinya, Sheets mengambil dua miliknya sendiri demi kesetaraan dengan Excel, dan satu pintasan berfungsi di mana-mana sahaja.
+
+**Docs**
 
 | Pintasan (macOS) | Apa yang ia lakukan  | Windows / Linux    |
 | ---------------- | -------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command ialah lapisan yang dikhaskan Word untuk lompatan berstruktur, dan
 | ⌥⌘G              | Pergi ke             | Ctrl+G             |
 
 Dua daripada bertukar pada Windows, atas sebab yang sama seperti yang membuat Word memisahkannya. **macOS memiliki ⌥⌘D** — ia memaparkan dan menyembunyikan Dock — jadi nota hujung ialah ⌥⌘E pada Mac dan Ctrl+Alt+D di tempat lain. Dan **Pergi ke** melepaskan Alt: Ctrl+G, manakala pintasan pada Mac membawanya sekali.
+
+**Sheets**, semasa grid mempunyai fokus
+
+| Pintasan (macOS) | Apa yang ia lakukan | Windows / Linux |
+| ---------------- | ------------------- | --------------- |
+| ⌥⌘0              | Sempadan luar       | Ctrl+Shift+7    |
+| ⌥⌘−              | Tiada sempadan      | Ctrl+Shift+−    |
+
+Windows bukan tulisan semula pasangan Mac. Excel untuk Mac memberi Sheets **keduanya** — ⌘⇧7 dan ⌥⌘0 ialah dua kekunci untuk sempadan luar yang sama — jadi pada Windows arahan itu mengekalkan slot Ctrl+Shift yang memang sudah dimilikinya, manakala lapisan Option itu sahaja tiada.
+
+Perhatikan bahawa **⌥⌘0 bermaksud Normal dalam Docs dan Sempadan luar dalam Sheets**. Keduanya tidak pernah muncul dalam editor yang sama, jadi tiada pertikaian dalam penggunaan, tetapi ⌥⌘0 sudah terpakai dan tidak tersedia sebagai pintasan global.
+
+**Setiap editor**: **⌥⌘R / Ctrl+F1** menutupkan reben, seperti yang diterangkan di atas.
 
 Maka ⌥⌘D kekal bebas untuk GenOffice gunakan pada macOS, jika ada perintah pada masa depan yang memerlukannya.
 

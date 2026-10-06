@@ -29,7 +29,9 @@ Vyzkoušejte: vyberte textové pole názvu ▸ karta Animace ▸ zvolte vstupní
 
 - **Prezentace**: spuštění od začátku nebo od aktuálního snímku a nastavení prezentace.
 - **Revize**: **nový komentář** k aktuálnímu snímku (zapíše se do souboru.pptx a uvidíte jej v PowerPointu).
-- **Zobrazení**: **Normální** (miniatury a plátno), **Zobrazení osnovy** (prohlížení a přeskakování podle textu), **Řazení snímků** (mřížkový přehled, dvojklik otevře úpravy), **Zobrazení pro čtení** (celá obrazovka, stránka po stránce; Esc ukončí).
+- **Zobrazení**: **Normální** (miniatury a plátno), **Zobrazení osnovy** (prohlížení a přeskakování podle textu), **Řazení snímků** (mřížkový přehled, dvojklik otevře úpravy), **Zobrazení pro čtení** (celá obrazovka, stránka po stránce; Esc ukončí); navíc **Předloha snímků**, **Zobrazení prezentujícího**, **Vlastní prezentace** a **Skrýt snímek** a přepínače **Pravítko**, **Mřížka**, **Vodítka**, **Poznámky** a **Podokno miniatur**. Oddálit/přiblížit/100 % a **Přizpůsobit oknu** jsou tady také.
+  - Tyto přepínače platí pro jednu relaci — po opětovném otevření aplikace se vrátí na výchozí hodnotu. Výjimkou jsou ty, o které byste nechtěli přijít: pozice **vodicích čar** se ukládají s prezentací a podokno miniatur si pamatuje svou šířku.
+  - **Vlastní prezentace** určuje, které snímky přehraje běh v režimu kiosku, a ukládá se s prezentací.
 
 ## Kontextové nabídky
 

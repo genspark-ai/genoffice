@@ -4,18 +4,22 @@ Docs je textový procesor podobný Wordu: čte a zapisuje skutečné soubory .do
 
 ## Pásek
 
-Karty: **Domů / Vložení / Rozložení / Návrh / Odkazy / Revize / Zobrazení**, navíc kontextové karty pro vybraný objekt (Návrh tabulky, Formát obrázku).
+Karty: **Domů / Vložení / Kreslení / Rozložení / Návrh / Odkazy / Revize / Zobrazení**, navíc kontextové karty pro vybraný objekt (Návrh tabulky a rozložení, Formát obrázku, Záhlaví a patka).
 
-- **Domů**: schránka; písmo (včetně velikostí CJK a zvýrazňovacích znaků); odstavec (zarovnání/odsazení/řádkování/seznamy); styly (Nadpis 1-6/Normální/Citace, upravitelné).
-- **Vložení**: zalomení stránky a oddílu, tabulky (také rychlé tabulky), obrázky, tvary, hypertextové odkazy, záhlaví a patka, čísla stránek, datum, textová pole.
+- **Domů**: schránka; písmo (včetně velikostí CJK a zvýrazňovacích znaků) s **Vymazat veškeré formátování** a přepínačem **Zobrazit/skrýt formátovací značky**; odstavec (zarovnání/odsazení/řádkování/seznamy) plus **Definovat novou odrážku / Definovat nový formát čísla / Víceúrovňový seznam**, které uloží vaše vlastní styly seznamů do dokumentu; styly (Nadpis 1-6/Normální/Citace, upravitelné); **Podokno stylů** zobrazí úplný seznam.
+- **Vložení**: zalomení stránky a oddílu; tabulky (mřížka řádků × sloupců, nebo **Vložit tabulku…** pro přesnou velikost); obrázky, tvary, textová pole; **Titulní strana** a **Prázdná stránka** z připravené galerie; **Graf**; **Iniciála**; **WordArt**; pole (datum, čas, číslo stránky, celkem stránek, název souboru); odkazy, **Záložka** a křížové odkazy; komentáře; záhlaví a zápatí a čísla stránek; symboly a rovnice.
+  - **Graf** vloží skutečný grafický objekt s vlastními daty — sloupcový, spojnicový nebo výsečový — a nikoli obrázek. Příkaz _Upravit data_ ve Wordu otevře čísla, která jsou za ním.
+- **Kreslení**: inkoust na stránce, ve skupině **Nástroje kreslení** — **Vybrat** se vrátí k úpravě textu, pak **Pero**, **Zvýrazňovač** a **Guma** (jedno kliknutí nebo jedno přetření odstraní celou stopu). Vedle nich je **Styl pera** / **Styl zvýrazňovače** jeden ovládací prvek s barevnými vzorky a řadou šířek; jeho popisek sleduje aktivní nástroj. Inkoust se ukládá do dokumentu jako poznámka plovoucí nad textem, takže přežije uložení i znovu otevření, a **Vymazat vše** v další skupině ho odstraní celý.
 - **Rozložení**: okraje, orientace a velikost papíru, sloupce, odsazení a mezery odstavců.
 - **Návrh**: motivy, sady barev, vodoznak, rámeček stránky.
 - **Odkazy**: obsah (s možností aktualizace), poznámky pod čarou a v textu, popisky, křížové reference.
 
   ![Karta Odkazy](img/docs-references.png)
 
-- **Revize**: kontrola pravopisu, komentáře, sledování změn (zobrazení Všechny změny/Jednoduché značení), počítání slov.
-- **Zobrazení**: pravítko, mřížka, podokno procházení, přiblížení a prohledávatelný dialog **klávesových zkratek**.
+- **Revize**: **Editor** prověří celý dokument — pravopis, gramatiku i interpunkci; **Přeložit**; kontrolu pravopisu; komentáře (**Vyřešit komentáře pomocí AI** zpracuje ty otevřené); sledování změn se zobrazeními Všechny značky / Jednoduché značky, přijetí/odmítnutí a **Souhrn revizí od AI**; počítání slov; **Porovnat** s jiným souborem; **Zamknout dokument**.
+- **Zobrazení**: pět způsobů, jak se na soubor podívat — **Rozložení při tisku**, **Rozložení webové stránky**, **Osnova**, **Režim čtení** a **Náhled stránky**; oddálit/přiblížit/100 %/šířka stránky/jedna stránka; **Panel AI**; **Tmavý režim**; pravítko, mřížka a navigační podokno; **Nová karta**, **Rozdělit** a **Přepnout karty**; prohledávatelný dialog **klávesových zkratek**.
+  - **Tmavý režim** ztmaví stránku a plátno kolem ní, nikoli ale pás — je to Wordovo rozdělení mezi tmavou plochu úprav a tmavé okno. Volba se pamatuje a v každém případě má přednost před motivem aplikace.
+  - **Rozdělit** otevře pod ním druhé podokno, které se posouvá nezávisle a zrcadlí první; zavřete ho křížkem × na jeho okraji.
 
 ## Podokno procházení
 
@@ -31,11 +35,11 @@ procházitelný.
 - **Sbalit vše / Rozbalit vše** sbalí nebo rozbalí všechno
   najednou. U dlouhé zprávy je to rozdíl mezi čitelnou osnovou a zdí textu.
 - **Zobrazit úrovně nadpisů** filtruje strom na hloubky, které vás zajímají, takže
-  *Zobrazit nadpis 1* vám nechá obsah, který opravdu projdete očima.
+  _Zobrazit nadpis 1_ vám nechá obsah, který opravdu projdete očima.
 - **Zvýšit úroveň / Snížit úroveň** změní úroveň nadpisu a spolu s ní i úroveň, kterou
   zdědí každý nadpis pod ním — tak se kapitola stane oddílem.
 - **Nový nadpis před / za** vloží jeden na místo kurzoru, aniž byste panel opouštěli.
-- **Odstranit** smaže nadpis *i vše pod ním* — a právě tohle je ta položka, se kterou
+- **Odstranit** smaže nadpis _i vše pod ním_ — a právě tohle je ta položka, se kterou
   je třeba dávat pozor: maže podstrom, ne řádek.
 - **Vybrat nadpis a obsah** označí od nadpisu až do konce jeho podstromu, připraveno k
   úpravě celé části.

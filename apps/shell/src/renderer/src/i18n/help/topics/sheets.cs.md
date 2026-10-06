@@ -13,12 +13,17 @@ Sheets je editor podobný Excelu; výpočty zajišťuje samostatný proces s eng
 ## Karty pásku
 
 - **Domů**: písmo, výplň, rámečky, číselné formáty (měna/procenta/tisíce, zvýšení a snížení desetinných míst), zarovnání, sloučení, vkládání a velikost řádků a sloupců, podmíněné formátování, formátovat jako tabulka, styly buněk, schránka a formátovací štětec, řazení a filtrování.
-- **Vložení**: tvary, ikony, symboly, rovnice, snímky obrazovky a další.
+- **Vložení**: obrázky, tvary, textová pole, odkazy, komentáře, zaškrtávací pole, záhlaví a zápatí, symboly, rovnice; **devět typů grafů** (sloupcový, pruhový, spojnicový, plošný, výsečový, bodový, paprskový, prstencový a kombinovaný sloupcový + spojnicový) plus **Doporučené grafy**, které typy pro výběr seřadí a zobrazí v náhledu; **Kontingenční graf** z buňky, ve které právě stojíte; **Minigrafy** (spojnicový, sloupcový, vítěz/prohra); **Průřez** a **Časová osa** pro filtrování kontingenční tabulky.
+  - Grafy, kontingenční grafy a minigrafy jsou skutečné objekty v uloženém sešitě.
+  - **Průřez** a **Časová osa** jsou ovládací prvky platné pro danou relaci: filtrování, které provedou, se uloží a Excel zobrazí stejně filtrovanou kontingenční tabulku, ale samotné tlačítko průřezu není součástí souboru.
 - **Rozložení stránky**: barvy a písma motivu, přepínače tisku mřížky a záhlaví, náhled zalomení stránek.
 - **Vzorce**: automatický součet a vkládání funkcí, definice názvů (také z výběru), sledování předchůzců a závislostí, sledovací okno, přepočítání listu nebo sešitu.
 - **Data**: řazení a filtrování (včetně pokročilého filtru a zrušení filtru), text do sloupců, sloučení sešitů, aktualizovat vše.
-- **Revize**: procházení komentářů (zobrazit, předchozí/ další), přeložit.
-- **Zobrazení**: přepínače mřížky a záhlaví, přiblížení, zobrazení Normální / náhled zalomení stránek.
+- **Revize**: procházení komentářů (zobrazit, předchozí/ další), přeložit a skupina **Zámek** — **Zamknout list**, **Zamknout sešit** a **Povolit úpravy oblastí**.
+  - Ochrana se zapisuje do souboru .xlsx a na to, co tato aplikace použije, není žádné heslo, takže se stejné tlačítko změní na **Odemknout…** a ochranu zruší. Ochranu z jiného programu, která _skutečně_ heslo má, tu odstranit nelze.
+  - Obě tlačítka pro zamčení se provedou ihned — není tu žádný dialog, který byste mohli zrušit, jen poznámka ve stavovém řádku, že se to zapíše při uložení.
+  - **Povolit úpravy oblastí** označuje buňky, které zůstanou upravitelné, zatímco zbytek listu je zamčený.
+- **Zobrazení**: přepínače mřížky, **řádku vzorců**, záhlaví a zvýraznění aktivního řádku a sloupce; přiblížení; **Normálně** a **Zobrazit konce stránek**. Mřížka a záhlaví se ukládají s listem; zvýraznění je vaše vlastní předvolba.
 - **Návrh grafu**: zobrazí se po výběru grafu — typ grafu, styly a barvy, úprava rozsahu dat.
 
 Karta Data, tlačítko po tlačítku (zleva doprava na obrázku):
@@ -86,6 +91,8 @@ Karta Vzorce, tlačítko po tlačítku:
 ## AI
 
 - Postranní panel AI: vyberte oblast a zadejte pokud v přirozeném jazyce (přeformátovat, vygenerovat data, napsat vzorce).
+- K dotazu přiložil soubory pomocí tlačítka 📎 nebo je přetáhněte na panel; putují s dotazem a obrázky se vrátí jako náhledy.
+- Odpověď může odkázat na buňku — kliknutím na odkaz se mřížka přesune na ni.
 - Změny provedené AI lze z panelu vrátit zpět.
 
 ## Ukládání a export

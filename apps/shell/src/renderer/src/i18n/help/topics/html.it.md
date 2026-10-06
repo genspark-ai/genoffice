@@ -22,6 +22,13 @@ Fai clic su un qualsiasi elemento nell'anteprima e sopra di esso compare una bar
 - **Azioni sull'elemento** (con un elemento selezionato nell'ispettore dell'anteprima): elimina, duplica, sposta su/sposta giù.
 - **Pulsante AI**: apre il pannello IA; puoi fare domande direttamente sull'elemento selezionato.
 
+## Esportazione
+
+Menu File, tutto locale e tutto chiede dove mettere il risultato:
+
+- **Esporta come Word…** e **Esporta come PDF…** scrivono un vero .docx o .pdf.
+- **Esporta come HTML a file singolo…** scrive un unico .html con le immagini incorporate. Non sovrascriverà il file che avete aperto e vi dice quante immagini non è riuscito a incorporare.
+
 ## Inserisci scheletro
 
 Per una pagina vuota, **Inserisci ▸ Inserisci scheletro** scrive un documento minimo in modalità standard:
@@ -30,7 +37,7 @@ Per una pagina vuota, **Inserisci ▸ Inserisci scheletro** scrive un documento 
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Un meta viewport è deliberatamente assente: questo documento viene renderizzato
 
 Il `lang` segue la lingua dell'interfaccia dell'app, così lo scheletro che inserisci è quello per cui il tuo tooling è già configurato. Poi puoi modificarlo liberamente.
 
-La voce compare solo in modalità modifica e solo mentre il documento è vuoto — quando c'è contenuto, non c'è nulla *in cui* inserire uno scheletro.
-
+La voce compare solo in modalità modifica e solo mentre il documento è vuoto — quando c'è contenuto, non c'è nulla _in cui_ inserire uno scheletro.

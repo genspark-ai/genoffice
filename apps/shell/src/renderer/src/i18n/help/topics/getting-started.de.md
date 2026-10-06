@@ -52,7 +52,9 @@ Tastenkürzel innerhalb der einzelnen Editoren (Format übertragen, Suchen und E
 
 ## Die Tastenkürzel mit Option+Befehl
 
-Option+Befehl ist die Ebene, die Word für strukturierte Sprünge reserviert, und GenOffice füllt sie auf dieselbe Weise. Alle folgenden gehören Docs:
+Option+Befehl ist die Ebene, die Word für strukturierte Sprünge reserviert, und GenOffice füllt sie auf dieselbe Weise. Docs nimmt den größten Teil davon, Sheets zwei eigene für die Excel-Parität; eine Kombination funktioniert überall.
+
+**Docs**
 
 | Tastenkombination (macOS) | Wirkung               | Windows / Linux    |
 | ------------------------- | --------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Befehl ist die Ebene, die Word für strukturierte Sprünge reserviert, un
 | ⌥⌘G                       | Gehe zu               | Ctrl+G             |
 
 Zwei davon rücken unter Windows weiter, aus demselben Grund, aus dem Word sie trennt. **macOS hat sich ⌥⌘D gesichert** – sie blendet das Dock ein und aus –, deshalb ist die Endnote auf dem Mac ⌥⌘E und überall sonst Ctrl+Alt+D. Und **Gehe zu** lässt die Alt-Taste weg: Ctrl+G, wo die Mac-Tastenkombination sie mitschleppt.
+
+**Sheets**, solange das Raster den Fokus hat
+
+| Tastenkombination (macOS) | Wirkung             | Windows / Linux |
+| ------------------------- | ------------------- | --------------- |
+| ⌥⌘0                       | Äußere Rahmenlinien | Ctrl+Shift+7    |
+| ⌥⌘−                       | Kein Rahmen         | Ctrl+Shift+−    |
+
+Windows ist keine Neuschreibung des Mac-Paars. Excel für Mac gibt Sheets **beide** — ⌘⇧7 und ⌥⌘0 sind zwei Tasten für dieselben äußeren Rahmenlinien —, also behält der Befehl unter Windows den Ctrl+Shift-Platz, den er ohnehin schon hatte, und die Option-Ebene fehlt einfach.
+
+Beachten Sie, dass **⌥⌘0 in Docs „Standard" und in Sheets „Äußere Rahmenlinien" bedeutet**. Beide tauchen nie im selben Editor auf, es kollidiert also nichts im Alltag, aber ⌥⌘0 ist vergeben und nicht als globale Tastenkombination verfügbar.
+
+**Jeder Editor**: **⌥⌘R / Ctrl+F1** klappt das Menüband zu, wie oben beschrieben.
 
 Damit bleibt ⌥⌘D auf macOS frei, falls GenOffice ihn irgendwann für einen neuen Befehl braucht.
 

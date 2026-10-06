@@ -6,21 +6,30 @@ Inicio es la página de arranque de GenOffice: una barra de navegación a la izq
 
 ## Navegación en la barra lateral
 
-- **Recientes**: los archivos que abrió recientemente, agrupados por fecha (esta semana / este mes / anteriores).
+- **Recientes**: los archivos que abrió recientemente. Cada fila lleva su momento: hoy, ayer o la fecha.
 - **Destacados**: los archivos que marcó como destacados. Pase el cursor por una fila y haga clic en la estrella para añadirlos o quitarlos.
+- **Guía del usuario**: abre este manual.
 - **Genspark Projects**: tras iniciar sesión en su cuenta de Genspark, muestra los proyectos que creó con Genspark AI en la web; haga clic en uno para seguir editando en el navegador. Admite búsqueda, ordenación por fecha, actualización y cargar más.
-- **Carpetas**: ancle directorios frecuentes en la barra lateral (Añadir carpeta…) y salté a ellos como si fueran marcadores. Las raíces no disponibles se muestran como no disponibles y se pueden quitar de la lista.
-- **Papelera**: apunta a la papelera del sistema; los archivos borrados acaban allí y el sistema operativo permite restaurarlos.
+- **Carpetas**: los directorios que añade a la barra lateral con **Añadir carpeta…**, o que arrastra hasta ella desde el explorador de archivos. Cada uno se convierte en una raíz que puede abrir, en la que crear subcarpetas, renombrar y quitar; la que se quede sin conexión se muestra como no disponible y se puede quitar de la lista. **Nueva carpeta** crea otra.
+
+Aquí no hay ninguna entrada Papelera. Los archivos borrados van a la papelera del sistema, y restaurarlos es asunto del sistema operativo.
 
 ## La lista de archivos
 
 Cada fila muestra un icono, el nombre del archivo, la fecha de modificación y más. El **menú ⋯** de la fila ofrece:
 
+- **Abrir**, y **Mostrar en la carpeta** para localizar el archivo en el explorador de archivos.
+- **Copiar ruta**.
+- **Mover a carpeta…**: abre un selector de carpeta y mueve realmente el archivo; si el destino ya tiene un archivo con ese nombre, puede omitir, sobrescribir o renombrar.
 - **Cambiar nombre**: en el sitio, la extensión se conserva automáticamente.
-- **Destacar / Quitar de destacados**
+- **Destacar / Quitar de destacados** — los destacados persisten entre reinicios y siguen al archivo cuando lo renombra.
 - **Duplicar**: crea una copia en la misma carpeta.
 - **Eliminar**: mueve el archivo a la papelera del sistema; no es una eliminación definitiva.
-- **Mostrar en la carpeta**: localiza el archivo en el explorador de archivos.
+- **Quitar de la lista**, en la vista **Recientes** de primer nivel, para quitar una entrada sin tocar el archivo.
+
+### Varios archivos a la vez
+
+Marque la casilla de una fila, o haga ⌘/ctrl-clic, para ir formando una selección; la casilla de la cabecera selecciona todo lo que aparece en ese momento, y una barra sobre la lista indica (**{n} seleccionados**) cuántos están seleccionados y ofrece **Mover a carpeta…** y **Eliminar archivos** para todo el conjunto. También puede arrastrar una selección múltiple sobre una carpeta de la barra lateral.
 
 ## Búsqueda
 

@@ -29,7 +29,9 @@ Essayez: sélectionnez la zone de texte du titre ▸ onglet Animations ▸ chois
 
 - **Diaporama**: présenter depuis le début ou depuis la diapositive courante, plus les paramètres de présentation.
 - **Révision**: **nouveau commentaire** sur la diapositive courante (écrit dans le pptx, visible dans PowerPoint).
-- **Affichage**: **Normal** (miniatures + canevas), **Mode Plan** (parcourir et sauter par le texte), **Trieuse de diapositives** (vue d’ensemble en grille, double-clic pour éditer), **Mode Lecture** (plein écran, diapositive par diapositive; Échap pour quitter).
+- **Affichage**: **Normal** (miniatures + canevas), **Mode Plan** (parcourir et sauter par le texte), **Trieuse de diapositives** (vue d’ensemble en grille, double-clic pour éditer), **Mode Lecture** (plein écran, diapositive par diapositive; Échap pour quitter) ; en plus **Masque des diapositives**, **Mode Présentateur**, **Diaporama personnalisé** et **Masquer la diapositive**, ainsi que des cases pour **Règle**, **Quadrillage**, **Repères**, **Notes** et le **Volet Miniatures**. Zoom avant/arrière/100 % et **Ajuster à la fenêtre** se trouvent ici aussi.
+  - Ces cases durent le temps d’une session — elles reviennent à leur valeur par défaut quand vous rouvrez l’application. Les exceptions sont celles que vous ne voudriez pas perdre : les positions des **repères** sont enregistrées avec la présentation, et le volet Miniatures retient sa largeur.
+  - **Diaporama personnalisé** choisit les diapositives qu’une exhibition en kiosque joue, et il est enregistré avec la présentation.
 
 ## Menus contextuels
 

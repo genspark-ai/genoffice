@@ -29,7 +29,9 @@ Prova: seleziona la casella di testo del titolo ▸ scheda Animazioni ▸ scegli
 
 - **Presentazione**: presentare dall'inizio o dalla diapositiva corrente, più le impostazioni della presentazione.
 - **Revisione**: **nuovo commento** sulla diapositiva corrente (scritto nel file.pptx, visibile in PowerPoint).
-- **Visualizza**: **Normale** (miniatura + telaio), **Visualizzazione Struttura** (sfoglia e salta in base al testo), **Sequenza Diapositive** (panoramica a griglia, doppio clic per modificare), **Visualizzazione di Lettura** (a schermo intero, pagina per pagina; Esc per uscire).
+- **Visualizza**: **Normale** (miniatura + telaio), **Visualizzazione Struttura** (sfoglia e salta in base al testo), **Sequenza Diapositive** (panoramica a griglia, doppio clic per modificare), **Visualizzazione di Lettura** (a schermo intero, pagina per pagina; Esc per uscire); in più **Schema Diapositiva**, **Visualizzazione Relatore**, **Presentazione Personalizzata** e **Nascondi Diapositiva**, e interruttori per **Righello**, **Griglia**, **Guide**, **Note** e il **Riquadro Miniature**. Riduci/ingrandisci/100 % e **Adatta alla Finestra** si trovano qui.
+  - Questi interruttori valgono per la sessione: tornano al valore predefinito quando riapri l'app. Le eccezioni sono quelle che non vorresti perdere: le posizioni delle **guide** vengono salvate con la presentazione, e il riquadro Miniature ricorda la sua larghezza.
+  - **Presentazione Personalizzata** sceglie quali diapositive riproduce una sessione chiosco, e viene salvata con la presentazione.
 
 ## Menu contestuali
 

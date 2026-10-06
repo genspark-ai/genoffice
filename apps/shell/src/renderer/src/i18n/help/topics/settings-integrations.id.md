@@ -17,6 +17,26 @@ Konfigurasi model punya bab tersendiri; di **Media & Pencarian AI** Anda menyala
 
 Terang / Gelap / Ikuti Sistem. Mode Ikuti Sistem mengikuti tampilan sistem operasi, dan para editor mengganti tema senada tanpa berkedip.
 
+## Umum
+
+- **Kirim statistik penggunaan anonim** — aktif secara default. Menggunakan Google Analytics 4 dan mengirim IP publik serta metadata transport Anda; isi dokumen dan nama file tidak pernah dikumpulkan, dan setiap peristiwa hanya membawa jenis seperti "membuka .docx". Anda bisa mematikannya di sini kapan saja.
+- **Posisi bilah samping AI** (kiri atau kanan), **Ukuran teks panel AI** dan **Pemeriksaan ejaan di obrolan AI**.
+- **Buka panel AI di dokumen baru** — nonaktif, dokumen baru dimulai dengan panel tertutup, sekali klik lagi.
+- **Simpan otomatis semua dokumen** menyalakan AutoSave secara default di setiap editor; Anda tetap bisa mematikannya untuk satu jendela.
+- **Lokasi penyimpanan** dengan tombol **Ubah**, dan **Aplikasi default untuk dokumen Office** untuk mengambil alih .docx / .xlsx / .pptx bagi GenOffice.
+
+## Media & Pencarian AI
+
+Bukan sakelar — setiap kemampuan memilih vendor yang melayaninya, dan kunci serta URL dasar sebuah vendor cukup diisi sekali lalu dipakai bersama:
+
+- **Pencarian web**, **Pembuatan gambar**, **Analisis gambar** dan **Analisis video**, masing-masing dengan satu provider, satu model, satu kunci, dan satu URL dasar.
+- **Pencarian file lokal** berjalan di mesin ini. Di bawahnya ada **Peringkat ulang Jev** yang **nonaktif secara bawaan**. Aktifkan dan kutipan 20 hasil lokal teratas — hingga 1.200 karakter dari tiap dokumen, ditambah nama file dan foldernya — dikirim ke model Jev dari TypeSafe untuk diurutkan ulang berdasarkan relevansi. Saat nonaktif, tidak ada yang meninggalkan perangkat.
+
+## Tentang
+
+- **Versi**, tautan GitHub proyek, dan tombol **Beri Bintang di GitHub**.
+- **Saluran Pembaruan**: Stabil atau Beta. Mengubahnya langsung berlaku dan memeriksa pembaruan; ini tidak akan menurunkan instalasi Beta kembali ke Stabil.
+
 ## Pengikatan aplikasi predefinida
 
 Pengaturan dapat mendaftarkan GenOffice sebagai aplikasi penangan .docx / .xlsx / .pptx / .pdf dan sejenisnya (pendaftaran aplikasi predefinida tingkat sistem; konfirmasi saat diminta).

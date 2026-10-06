@@ -4,18 +4,22 @@ Docs è il processore di testi simile a Word: legge e scrive veri file .docx con
 
 ## La barra multifunzione
 
-Le schede: **Home / Inserisci / Layout / Progettazione / Riferimenti / Revisione / Visualizza**, più le schede contestuali che compaiono per l'oggetto selezionato (Progettazione tabella, Formato immagine).
+Le schede: **Home / Inserisci / Disegno / Layout / Progettazione / Riferimenti / Revisione / Visualizza**, più le schede contestuali che compaiono per l'oggetto selezionato (Progettazione tabella e layout, Formato immagine, Intestazione e piè di pagina).
 
-- **Home**: appunti; carattere (incluse dimensioni CJK e segni di enfasi); paragrafo (allineamento/rientro/interlinea/elenchi); stili (Titolo 1-6/Normale/Citazione, modificabili).
-- **Inserisci**: interruzioni di pagina e di sezione, tabelle (incluse le tabelle rapide), immagini, forme, collegamenti ipertestuali, intestazione e piè di pagina, numeri di pagina, data, caselle di testo.
+- **Home**: appunti; carattere (incluse dimensioni CJK e segni di enfasi) con **Cancella tutta la formattazione** e un interruttore per **Mostra/nascondi segni di formattazione**; paragrafo (allineamento/rientro/interlinea/elenchi) più **Definisci nuovo punto elenco / Definisci nuovo formato numero / Elenco a più livelli**, che salvano nel documento i tuoi propri stili di elenco; stili (Titolo 1-6/Normale/Citazione, modificabili) con un **Riquadro Stili** per l'elenco completo.
+- **Inserisci**: interruzioni di pagina e di sezione; tabelle (una griglia righe × colonne, oppure **Inserisci tabella…** per una dimensione esatta); immagini, forme, caselle di testo; **Frontespizio** e **Pagina vuota** da una galleria predefinita; **Grafico**; **Capolettera**; **WordArt**; campi (data, ora, numero di pagina, pagine totali, nome file); collegamenti ipertestuali, **Segnalibro** e riferimenti incrociati; commenti; intestazione e piè di pagina e numeri di pagina; simboli ed equazioni.
+  - **Grafico** inserisce un vero oggetto grafico con i propri dati — a barre, a linee o a torta — e non un'immagine. _Modifica dati_ di Word apre i numeri che ci sono dietro.
+- **Disegno**: inchiostro sulla pagina, nel gruppo **Strumenti di disegno** — **Seleziona** torna alla modifica del testo, poi **Penna**, **Evidenziatore** e **Gomma** (un clic o un passaggio di mano cancella l'intero tratto). Accanto, **Stile penna** / **Stile evidenziatore** è un solo controllo con campioni di colore e una fila di spessori; la sua etichetta segue lo strumento attivo. L'inchiostro viene salvato nel documento come annotazione che fluttua sopra il testo, quindi sopravvive al salvataggio e alla riapertura, e **Cancella tutto** nel gruppo successivo lo rimuove del tutto.
 - **Layout**: margini, orientamento e formato carta, colonne, rientri e spaziature dei paragrafi.
 - **Progettazione**: temi, set di colori, filigrana, bordi di pagina.
 - **Riferimenti**: indice (aggiornabile), note a piè di pagina e di fine documento, didascalie, riferimenti incrociati.
 
   ![La scheda Riferimenti](img/docs-references.png)
 
-- **Revisione**: controllo ortografico, commenti, revisioni (viste Tutte le modifiche/Revisioni semplici), conteggio delle parole.
-- **Visualizza**: righello, linee della griglia, riquadro di navigazione, zoom e la finestra di dialogo ricercabile delle **scorciatoie da tastiera**.
+- **Revisione**: **Editor** controlla l'intero documento per ortografia, grammatica e punteggiatura; **Traduci**; controllo ortografico; commenti (**Commenti con IA** lavora quelli aperti); revisioni con le viste Tutte le modifiche/Revisioni semplici, accetta/rifiuta e **Riepilogo revisioni IA**; conteggio delle parole; **Confronta** con un altro file; **Proteggi documento**.
+- **Visualizza**: cinque modi per guardare il file — **Layout di stampa**, **Layout Web**, **Struttura**, **Modalità di lettura** e **Anteprima pagine**; riduci/ingrandisci/100 %/larghezza pagina/una pagina; **Pannello IA**; **Modalità scura**; righello, griglia e riquadro di spostamento; **Nuova scheda**, **Dividi** e **Cambia scheda**; la finestra di dialogo ricercabile delle **scorciatoie da tastiera**.
+  - **Modalità scura** scurisce la pagina e la tela intorno, mai il nastro: è la divisione di Word fra una superficie di modifica scura e una finestra scura. La scelta viene ricordata e in ogni caso prevail sull'aspetto dell'app.
+  - **Dividi** apre un secondo riquadro sotto che scorre in modo indipendente e rispecchia il primo; chiudilo con la × sul suo bordo.
 
 ## Il riquadro di navigazione
 
@@ -33,13 +37,13 @@ per piegarlo o riorganizzarlo, non solo per spostarti:
   tutto in un colpo solo. Su un rapporto lungo è la differenza tra una struttura
   leggibile e un muro di testo.
 - **Mostra livelli titolo** filtra l'albero alle profondità che ti interessano, così
-  *Mostra titolo 1* ti lascia un indice che puoi davvero scorrere.
+  _Mostra titolo 1_ ti lascia un indice che puoi davvero scorrere.
 - **Alza di livello / Abbassa di livello** cambiano il livello del titolo e, con esso,
   il livello che ogni titolo sottostante eredita: è così che un capitolo diventa una
   sezione.
 - **Nuovo titolo prima / dopo** ne inserisce uno nella posizione del cursore, senza
   uscire dal pannello.
-- **Elimina** rimuove il titolo *e tutto ciò che c'è sotto*, ed è quello a cui fare
+- **Elimina** rimuove il titolo _e tutto ciò che c'è sotto_, ed è quello a cui fare
   attenzione: elimina un sottoalbero, non una riga.
 - **Seleziona titolo e contenuto** seleziona dal titolo fino alla fine del suo
   sottoalbero, pronto per modificare l'intera sezione.

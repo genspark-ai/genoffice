@@ -22,6 +22,13 @@ Nhấp vào bất kỳ phần tử nào trong bản xem trước, một thanh c�
 - **Thao tác phần tử** (khi chọn một phần tử trong trình kiểm tra xem trước): xóa, nhân bản, di chuyển lên/dưới.
 - **Nút AI**: mở bảng AI; có thể hỏi trực tiếp về phần tử đang chọn.
 
+## Xuất
+
+Trình đơn Tệp, tất cả đều cục bộ và đều hỏi lưu kết quả ở đâu:
+
+- **Xuất dưới dạng Word…** và **Xuất dưới dạng PDF…** ghi ra tệp .docx hoặc .pdf thật.
+- **Xuất dưới dạng HTML một tệp…** ghi ra một tệp .html duy nhất có nhúng hình ảnh bên trong. Nó không ghi đè tệp bạn đang mở và cho biết có bao nhiêu hình ảnh không nhúng được.
+
 ## Chèn khung xương
 
 Với một trang trắng, **Chèn ▸ Chèn khung xương** sẽ ghi ra một tài liệu tối giản ở chế độ tiêu chuẩn:
@@ -30,7 +37,7 @@ Với một trang trắng, **Chèn ▸ Chèn khung xương** sẽ ghi ra một t
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,4 +54,4 @@ Thẻ viewport cố ý vắng mặt: nội dung này kết xuất trong một kh
 
 `lang` bám theo ngôn ngữ giao diện của ứng dụng, nên khung xương bạn chèn vào chính là khung mà công cụ của bạn đã được thiết lập cho. Sau đó cứ tùy ý mà sửa.
 
-Mục này chỉ hiện ở chế độ chỉnh sửa, và chỉ khi tài liệu còn trống — đã có nội dung thì không còn gì để chèn khung xương *vào* nữa.
+Mục này chỉ hiện ở chế độ chỉnh sửa, và chỉ khi tài liệu còn trống — đã có nội dung thì không còn gì để chèn khung xương _vào_ nữa.

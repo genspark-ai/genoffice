@@ -29,7 +29,9 @@ Experimente: selecione a caixa de texto do título ▸ separador Animações ▸
 
 - **Apresentação de Slides**: apresentar do início ou do slide atual, além das definições da apresentação.
 - **Revisão**: **novo comentário** no slide atual (gravado no pptx e visível no PowerPoint).
-- **Exibir**: **Normal** (miniaturas + tela), **Estrutura** (navegar e saltar pelo texto), **Classificação de Slides** (visão em grelha, clique duplo para editar), **Modo de Exibição de Leitura** (ecrã inteiro, página a página; Esc sai).
+- **Exibir**: **Normal** (miniaturas + tela), **Estrutura** (navegar e saltar pelo texto), **Classificação de Slides** (visão em grelha, clique duplo para editar), **Modo de Exibição de Leitura** (ecrã inteiro, página a página; Esc sai); além disso **Slide Mestre**, **Modo de Exibição do Apresentador**, **Apresentação Personalizada** e **Ocultar Slide**, e interruptores para **Régua**, **Linhas de Grade**, **Guias**, **Anotações** e o **Painel de Miniaturas**. Reduzir/ampliar/100 % e **Ajustar à Janela** também ficam aqui.
+  - Esses interruptores são por sessão — voltam ao valor predefinido quando reabre a aplicação. As exceções são as que não quereria perder: as posições das **guias** são guardadas com a apresentação, e o painel de miniaturas recorda a sua largura.
+  - **Apresentação Personalizada** escolhe que slides uma sessão de quiosque reproduz, e é guardada com a apresentação.
 
 ## Menus de contexto
 

@@ -29,7 +29,9 @@ Ausprobieren: Titelfeld auswählen ▸ Tab „Animationen“ ▸ Eingangseffekt 
 
 - **Bildschirmpräsentation**: von Anfang an oder ab der aktuellen Folie präsentieren, dazu Präsentationseinstellungen.
 - **Überprüfen**: **neuer Kommentar** auf der aktuellen Folie (wird in die pptx geschrieben und ist in PowerPoint sichtbar).
-- **Ansicht**: **Normal** (Miniaturen und Arbeitsfläche), **Gliederungsansicht** (über den Text blättern und springen), **Foliensortierung** (Rasterübersicht, Doppelklick zum Bearbeiten), **Leseansicht** (vollbild, Blatt für Blatt; Esc beendet).
+- **Ansicht**: **Normal** (Miniaturen und Arbeitsfläche), **Gliederungsansicht** (über den Text blättern und springen), **Foliensortierung** (Rasterübersicht, Doppelklick zum Bearbeiten), **Leseansicht** (vollbild, Blatt für Blatt; Esc beendet); außerdem **Folienmaster**, **Referentenansicht**, **Benutzerdefinierte Bildschirmpräsentation** und **Folie ausblenden** sowie Schalter für **Lineal**, **Gitternetzlinien**, **Führungslinien**, **Notizen** und den **Miniaturansichtsbereich**. Verkleinern/Vergrößern/100 % und **An Fenster anpassen** liegen ebenfalls hier.
+  - Diese Schalter gelten pro Sitzung — beim nächsten Start der App stehen sie wieder auf ihrem Standardwert. Die Ausnahmen sind die, die Sie nicht verlieren wollen: Die Positionen der **Führungslinien** werden mit der Präsentation gespeichert, und der Miniaturansichtsbereich merkt sich seine Breite.
+  - **Benutzerdefinierte Bildschirmpräsentation** legt fest, welche Folien ein Kiosk-Lauf abspielt, und wird mit der Präsentation gespeichert.
 
 ## Rechtsklick-Menüs
 

@@ -52,7 +52,9 @@ Le scorciatoie interne a ogni editor (pennello di formattazione, trova e sostitu
 
 ## Le scorciatoie Option+Comando
 
-Option+Comando è il livello che Word riserva ai salti strutturati, e GenOffice lo riempie allo stesso modo. Tutte le seguenti sono di Docs:
+Option+Comando è il livello che Word riserva ai salti strutturati, e GenOffice lo riempie allo stesso modo. Docs ne prende la maggior parte, Sheets ne prende due di sue per la parità con Excel; una scorciatoia vale ovunque.
+
+**Docs**
 
 | Scorciatoia (macOS) | A cosa serve                   | Windows / Linux    |
 | ------------------- | ------------------------------ | ------------------ |
@@ -65,6 +67,19 @@ Option+Comando è il livello che Word riserva ai salti strutturati, e GenOffice 
 | ⌥⌘G                 | Vai a                          | Ctrl+G             |
 
 Due di esse cambiano su Windows, per la stessa ragione per cui Word le separa. **macOS si è preso ⌥⌘D** — mostra e nasconde il Dock —, quindi la nota di chiusura è ⌥⌘E sul Mac e Ctrl+Alt+D ovunque altrove. E **Vai a** perde il tasto Alt: Ctrl+G, mentre la scorciatoia del Mac lo porta con sé.
+
+**Sheets**, mentre la griglia ha il focus
+
+| Scorciatoia (macOS) | A cosa serve  | Windows / Linux |
+| ------------------- | ------------- | --------------- |
+| ⌥⌘0                 | Bordi esterni | Ctrl+Shift+7    |
+| ⌥⌘−                 | Nessun bordo  | Ctrl+Shift+−    |
+
+Windows non è una riscrittura della coppia del Mac. Excel per Mac dà a Sheets **entrambe** — ⌘⇧7 e ⌥⌘0 sono due tasti per gli stessi bordi esterni —, quindi su Windows il comando conserva lo slot Ctrl+Shift che aveva già e il livello Option è semplicemente assente.
+
+Attenzione: **⌥⌘0 significa Normale in Docs e Bordi esterni in Sheets**. Non compaiono mai nello stesso editor, quindi in uso non collide nulla, ma ⌥⌘0 è già impegnato e non è disponibile come scorciatoia globale.
+
+**Ogni editor**: **⌥⌘R / Ctrl+F1** riduce la barra multifunzione, come descritto sopra.
 
 Così ⌥⌘D resta libero perché GenOffice lo usi su macOS, se un futuro comando lo vorrà.
 

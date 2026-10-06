@@ -13,12 +13,17 @@ Sheets to edytor podobny do Excela; obliczenia obsługuje osobny proces silnika 
 ## Karty wstążki
 
 - **Narzędzia główne**: czcionka, wypełnienie, obramowania, formaty liczbowe (waluta/procent/separator tysięcy, zwiększanie i zmniejszanie miejsc po przecinku), wyrównanie, scalanie, wstawianie wierszy i kolumn oraz ich rozmiary, formatowanie warunkowe, formatuj jako tabela, style komórek, schowek i malarz formatów, sortowanie i filtr.
-- **Wstawianie**: kształty, ikony, symbole, równania, zrzuty ekranu i inne.
+- **Wstawianie**: obrazy, kształty, pola tekstowe, hiperłącza, komentarze, pole wyboru, nagłówek i stopka, symbole, równania; **dziewięć typów wykresów** (kolumnowy, słupkowy, liniowy, warstwowy, kołowy, punktowy, radarowy, pierścieniowy oraz kombinowany kolumnowo-liniowy) plus **Polecane wykresy**, które układają typy dla zaznaczenia i pokazują ich podgląd; **Wykres przestawny** z komórki, w której Pan/Pani jest; **Wykresy przebiegu w czasie** (liniowy, kolumnowy, zwycięzca/przegrana); **Fragmentator** i **Oś czasu** do filtrowania tabeli przestawnej.
+  - Wykresy, wykresy przestawne i wykresy przebiegu w czasie są rzeczywistymi obiektami w zapisanym skoroszycie.
+  - **Fragmentator** i **Oś czasu** to elementy sterujące sesji: filtrowanie, które wykonują, jest zapisywane, a Excel pokazuje tę samą przefiltrowaną tabelę przestawną, ale sam przycisk fragmentatora nie jest częścią pliku.
 - **Układ strony**: kolory i czcionki motywu, przełączniki drukowania linii siatki i nagłówków, podgląd podziału na strony.
 - **Formuły**: Suma automatyczna i wstawianie funkcji, definiowanie nazw (także z zaznaczenia), śledzenie poprzedników i zależności, okno obserwacji, przeliczanie arkusza lub skoroszytu.
 - **Dane**: sortowanie i filtrowanie (także filtr zaawansowany i wyczyszczenie filtra), tekst na kolumny, scalanie skoroszytów, odśwież wszystko.
-- **Recenzja**: przeglądanie komentarzy (pokaż, poprzedni/następny), tłumaczenie.
-- **Widok**: przełączniki linii siatki i nagłówków, powiększenie, widok Normalny / podgląd podziału na strony.
+- **Recenzja**: przeglądanie komentarzy (pokaż, poprzedni/następny), tłumaczenie oraz grupa **Ochrona** — **Chroń arkusz**, **Chroń skoroszyt** i **Zezwalaj na edytowanie zakresów**.
+  - Ochrona jest zapisywana w pliku .xlsx, a to, co nakłada ta aplikacja, nie ma hasła, więc ten sam przycisk zmienia się w **Nie chroń…** i cofa ją. Ochrony nałożonej przez inny program, który _ma_ hasło, nie da się stąd usunąć.
+  - Oba przyciski ochrony działają natychmiast — nie ma okna dialogowego, które można by anulować, tylko uwaga na pasku stanu, że zostanie zapisane przy zapisie.
+  - **Zezwalaj na edytowanie zakresów** zaznacza komórki, które pozostają edytowalne, podczas gdy reszta arkusza jest zablokowana.
+- **Widok**: przełączniki linii siatki, **pasku formuły**, nagłówków i wyróżniania aktywnego wiersza i kolumny; powiększenie; **Normalny** i **Podgląd podziału na strony**. Linie siatki i nagłówki są zapisywane wraz z arkuszem; wyróżnianie to własne ustawienie.
 - **Projekt wykresu**: pojawia się po zaznaczeniu wykresu — typ wykresu, style i kolory, edycja zakresu danych.
 
 Karta Dane, przycisk po przycisku (od lewej do prawej na obrazku):
@@ -86,6 +91,8 @@ Karta Formuły, przycisk po przycisku:
 ## AI
 
 - Boczny panel AI: zaznacz zakres i wydaj polecenie w zwykłym języku (zmień formatowanie, wygeneruj dane, napisz formuły).
+- Dołącz pliki do polecenia przyciskiem 📎 albo przeciągnij je na panel; towarzyszą pytaniu, a obrazy wracają jako miniatury.
+- Odpowiedź może wskazać komórkę — kliknięcie odwołania przenosi siatkę w to miejsce.
 - Zmiany wprowadzone przez AI można cofnąć z panelu.
 
 ## Zapisywanie i eksport

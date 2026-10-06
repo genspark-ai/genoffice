@@ -29,7 +29,7 @@ Nhấp chuột phải vào một thẻ để có **Mở trong cửa sổ mới**
 
 ## Danh sách tất cả các thẻ
 
-Khi thẻ tràn ra ngoài, dấu ▾ ở cuối bên phải của dải thẻ mở danh sách đầy đủ (một menu gốc, không bao giờ bị vùng nội dung che khuất); chọn bằng phím mũi tên.
+Khi thẻ tràn ra ngoài, biểu tượng dải thẻ nhỏ ở cuối bên phải của dải thẻ mở danh sách đầy đủ (một menu gốc, không bao giờ bị vùng nội dung che khuất); chọn bằng phím mũi tên.
 
 ## Dải công cụ bên trong mỗi trình soạn thảo
 
@@ -42,4 +42,4 @@ Mỗi thẻ trình soạn thảo có một dải công cụ ở trên (bố cụ
 
 ## Thẻ Trang chủ
 
-Thẻ Trang chủ ngoài cùng bên trái không thể đóng; muốn quay về từ bất kỳ trình soạn thảo nào, hãy nhấp vào nó hoặc dùng File ▸ Trang chủ.
+Thẻ Trang chủ ngoài cùng bên trái không thể đóng; muốn quay về từ bất kỳ trình soạn thảo nào, hãy nhấp vào nó hoặc dùng File ▸ **Quay lại Trang chủ**.

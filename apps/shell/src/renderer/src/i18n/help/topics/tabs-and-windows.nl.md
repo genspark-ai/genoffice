@@ -29,7 +29,7 @@ Rechtermuisklik op een tabblad voor **Openen in nieuw venster** — aangeboden o
 
 ## De lijst met alle tabbladen
 
-Als de tabbladen niet allemaal passen, opent de ▾ aan het rechtereinde de volledige lijst (een systeemmenu, nooit afgedekt door het inhoudsgebied); kies met de pijltoetsen.
+Als de tabbladen niet allemaal passen, opent het kleine tabbalkenpictogram aan het rechtereinde de volledige lijst (een systeemmenu, nooit afgedekt door het inhoudsgebied); kies met de pijltoetsen.
 
 ## De werkbalk in elke editor
 
@@ -42,4 +42,4 @@ Elk editortabblad heeft bovenaan een werkbalk (de precieze indeling verschilt li
 
 ## Het Start-tabblad
 
-Het meest linkse Start-tabblad kan niet worden gesloten; klik erop of gebruik Bestand ▸ Start om vanuit een willekeurige editor terug te keren.
+Het meest linkse Start-tabblad kan niet worden gesloten; klik erop of gebruik Bestand ▸ **Terug naar start** om vanuit een willekeurige editor terug te keren.

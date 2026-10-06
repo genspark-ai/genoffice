@@ -17,6 +17,26 @@ Việc cấu hình mô hình có bài riêng; trong **Phương tiện AI & Tìm 
 
 Sáng / Tối / Theo hệ thống. Khi chọn Theo hệ thống, giao diện bám theo vẻ ngoài của hệ điều hành, và vùng trình soạn thảo đổi màu đồng bộ mà không nhấp nháy.
 
+## Chung
+
+- **Gửi số liệu thống kê sử dụng ẩn danh** — được bật theo mặc định. Sử dụng Google Analytics 4 và gửi địa chỉ IP công khai cùng siêu dữ liệu truyền tải của bạn; nội dung tài liệu và tên tệp không bao giờ bị thu thập, và mỗi sự kiện chỉ mang một loại như "đã mở một tệp .docx". Bạn có thể tắt ở đây bất cứ lúc nào.
+- **Vị trí thanh bên AI** (trái hoặc phải), **Cỡ chữ bảng điều khiển AI** và **Kiểm tra chính tả trong trò chuyện AI**.
+- **Mở bảng AI trong tài liệu mới** — tắt, tài liệu mới sẽ bắt đầu với bảng AI đã thu gọn, chỉ một cú nhấp là mở ra.
+- **Tự động lưu tất cả tài liệu** bật AutoSave theo mặc định trong mọi trình soạn thảo; bạn vẫn có thể tắt nó cho một cửa sổ.
+- **Vị trí lữu** kèm nút **Thay đổi**, và **Ứng dụng mặc định cho tài liệu Office** để nhận .docx / .xlsx / .pptx về cho GenOffice.
+
+## Phương tiện AI & Tìm kiếm
+
+Đây không phải công tắc bật/tắt — mỗi khả năng sẽ chọn nhà cung cấp phục vụ nó, và khóa cùng URL cơ sở của nhà cung cấp chỉ nhập một lần rồi dùng chung:
+
+- **Tìm kiếm web**, **Tạo hình ảnh**, **Phân tích hình ảnh** và **Phân tích video**, mỗi mục có nhà cung cấp, mô hình, khóa và URL cơ sở.
+- **Tìm kiếm tệp cục bộ** chạy trên máy này. Bên dưới là **Sắp xếp lại kết quả tìm kiếm Jev**, **tắt theo mặc định**. Bật lên, đoạn trích của 20 kết quả cục bộ hàng đầu — tối đa 1.200 ký tự cho mỗi tài liệu, cộng thêm tên tệp và tên thư mục — sẽ được gửi tới mô hình Jev của TypeSafe để sắp xếp lại theo mức độ liên quan. Khi tắt, không có gì rời khỏi thiết bị.
+
+## Giới thiệu
+
+- **Phiên bản**, liên kết GitHub của dự án và nút **Gắn sao trên GitHub**.
+- **Kênh cập nhật**: Ổn định hoặc Beta. Đổi kênh sẽ có hiệu lực ngay và kiểm tra bản cập nhật; nó sẽ không hạ bản cài đặt Beta về lại Ổn định.
+
 ## Đăng ký ứng dụng mặc định
 
 Cài đặt có thể đăng ký GenOffice làm ứng dụng xử lý .docx / .xlsx / .pptx / .pdf và các định dạng liên quan (đăng ký ứng dụng mặc định ở cấp nền tảng; xác nhận khi được hỏi).

@@ -17,6 +17,26 @@ A configuração dos modelos tem o seu próprio artigo; em **Mídia e busca de I
 
 Claro / Escuro / Seguir o Sistema. O modo Seguir o Sistema acompanha o aspeto do sistema operativo, e os editores mudam de aspeto em sincronia sem cintilação.
 
+## Geral
+
+- **Enviar estatísticas de uso anônimas** — ativado por predefinição. Usa o Google Analytics 4 e envia o seu IP público e metadados de transporte; o conteúdo dos documentos e os nomes de ficheiros nunca são recolhidos, e cada evento transporta apenas um tipo como «aberto um .docx». Pode desativá-lo aqui a qualquer momento.
+- **Posição da barra lateral de IA** (esquerda ou direita), **Tamanho do texto do painel de IA** e **Verificação ortográfica no chat de IA**.
+- **Abrir o painel de IA em novos documentos** — desativado, um novo documento começa com o painel recolhido, a um clique de distância.
+- **Salvar automaticamente todos os documentos** ativa a gravação automática por predefinição em todos os editores; continua a poder desativá-la para uma janela.
+- **Local de salvamento** com o botão **Alterar** e **App padrão para documentos do Office** para reservar .docx / .xlsx / .pptx ao GenOffice.
+
+## Mídia e busca de IA
+
+Não são interruptores — cada capacidade escolhe o fornecedor que a serve, e a chave e o URL base de um fornecedor são introduzidos uma vez e partilhados:
+
+- **Busca na web**, **Geração de imagens**, **Análise de imagens** e **Análise de vídeo**, cada uma com um fornecedor, um modelo, uma chave e um URL base.
+- **Pesquisa de arquivos locais** é executada nesta máquina. Por baixo dela está a **Reordenação com Jev**, **desativada por predefinição**. Ative-a e os excertos dos 20 melhores resultados locais — até 1200 caracteres de cada documento, mais os nomes dos ficheiros e das pastas — são enviados para o modelo Jev da TypeSafe e reordenados por relevância. Com ela desativada, nada sai do dispositivo.
+
+## Sobre
+
+- **Versão**, a ligação do projeto ao GitHub e um botão **Dar uma estrela no GitHub**.
+- **Canal de atualização**: Estável ou Beta. Alterá-lo tem efeito imediato e verifica se existe uma atualização; não reverte uma instalação Beta para Estável.
+
 ## Associações de aplicações predefinidas
 
 As Configurações podem registar o GenOffice como a aplicação que abre ficheiros .docx / .xlsx / .pptx / .pdf e semelhantes (registo de aplicação predefinida ao nível do sistema; confirme quando for solicitado).

@@ -31,6 +31,14 @@ Tiga contoh pantas:
 - **Jadual**: klik **Sisip jadual**, seret untuk memilih bilangan baris dan lajur, kemudian taip ke dalam sel. Pratonton akan memaparkannya serta-merta.
 - **Senarai tugasan**: pilih beberapa baris, klik **Senarai tugasan**, dan setiap baris akan menjadi `- [ ]` yang dipaparkan sebagai kotak semak dalam pratonton.
 
+## Eksport
+
+Menu Fail, semuanya setempat dan semuanya akan bertanya di mana hasilnya perlu disimpan:
+
+- **Eksport sebagai Word…** dan **Eksport sebagai PDF…** menulis .docx atau .pdf yang sebenar.
+- **Eksport sebagai imej…** menulis satu PNG bagi setiap halaman ke dalam folder yang anda pilih.
+- **Tukar dan buka dalam Docs** menukar kepada .docx dan membukanya dalam tab Docs terbina dalam di dalam aplikasi ini — ia bukan serah kepada apa-apa dalam awan, dan salinan yang ditukar tinggal dalam folder cache yang dibersihkan selepas kira-kira seminggu.
+
 ## Paparan sumber
 
 Reben itu membawa togol **Sumber** (dilocalkan bersama aplikasi). Hidupkan ia, dan editor akan digantikan oleh Markdown asal: betul-betul teks yang ditulis oleh sesuatu simpanan, tiada yang dicantikkan, dan tiada apa-apa yang dinormalkan di bawah anda.
@@ -38,5 +46,4 @@ Reben itu membawa togol **Sumber** (dilocalkan bersama aplikasi). Hidupkan ia, d
 - **Penyuntingan mengekalkan setiap bait dengan tepat.** Simpanan daripada paparan sumber menghasilkan bait yang sama seperti simpanan daripada editor — BOM, CRLF dan kehadiran baris akhir kosong semuanya kekal.
 - **Ia dokumen yang sama.** Anda boleh bergantian antara paparan ini dan editor dengan bebas; sumber itu ialah teks editor itu sendiri, bukan salinan yang perlu digabungkan.
 - **Bar alat pemformatan tidak tersedia** semasa ia terbuka, kerana kebanyakan butang itu memasukkan konstruksi editor yang hanya bermakna pada sisi yang dipaparkan. Ia kembali apabila anda menutup paparan tersebut.
-- **Fail JSON dan fail mod sumber yang lain** dibuka di sini secara langsung: tiada apa-apa untuk dipaparkan, jadi sumber itu *ialah* dokumennya.
-
+- **Fail JSON dan fail mod sumber yang lain** dibuka di sini secara langsung: tiada apa-apa untuk dipaparkan, jadi sumber itu _ialah_ dokumennya.

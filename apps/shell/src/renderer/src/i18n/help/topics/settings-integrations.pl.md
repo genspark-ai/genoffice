@@ -17,6 +17,26 @@ Konfiguracja modeli ma własny artykuł; w sekcji **Media i wyszukiwanie AI** w�
 
 Jasny / Ciemny / Zgodnie z systemem. Opcja Zgodnie z systemem podąża za wyglądem systemu operacyjnego, a edytory zmieniają wygląd synchronicznie, bez migotania.
 
+## Ogólne
+
+- **Wysyłaj anonimowe statystyki użytkowania** — domyślnie włączone. Korzysta z Google Analytics 4 i wysyła publiczny adres IP i metadane transportowe; treść dokumentów ani nazwy plików nigdy nie są zbierane, a każde zdarzenie niesie tylko typ, na przykład „otwarto .docx”. W każdej chwili można je tu wyłączyć.
+- **Położenie panelu bocznego AI** (po lewej lub po prawej), **Rozmiar tekstu panelu AI** i **Sprawdzanie pisowni w czacie AI**.
+- **Otwieraj panel AI w nowych dokumentach** — wyłączone, nowy dokument zaczyna się ze zwiniętym panelem, jedno kliknięcie stąd.
+- **Automatycznie zapisuj wszystkie dokumenty** włącza AutoSave domyślnie w każdym edytorze; nadal można je wyłączyć dla jednego okna.
+- **Lokalizacja zapisu** z przyciskiem **Zmień** oraz **Domyślna aplikacja dla dokumentów Office**, aby przejąć .docx / .xlsx / .pptx dla GenOffice.
+
+## Media i wyszukiwanie AI
+
+To nie są przełączniki — każda możliwość wybiera dostawcę, który ją obsługuje, a klucz i bazowy adres URL dostawcy wpisuje się raz i są wspólne:
+
+- **Wyszukiwanie w sieci**, **Generowanie obrazów**, **Analiza obrazów** i **Analiza wideo**, każda z dostawcą, modelem, kluczem i bazowym adresem URL.
+- **Wyszukiwanie plików lokalnych** działa na tej maszynie. Pod nim jest **Ponowne sortowanie Jev**, domyślnie **wyłączone**. Po włączeniu fragmenty 20 najlepszych wyników lokalnych — do 1200 znaków z każdego dokumentu plus nazwy plików i folderów — trafiają do modelu Jev firmy TypeSafe i są sortowane według trafności. Gdy jest wyłączone, nic nie opuszcza urządzenia.
+
+## O aplikacji
+
+- **Wersja**, link do projektu na GitHubie i przycisk **Gwiazdka na GitHubie**.
+- **Kanał aktualizacji**: Stabilny lub Beta. Zmiana działa natychmiast i sprawdza, czy jest aktualizacja; nie cofnie instalacji Beta do kanału Stabilnego.
+
 ## Powiązanie z aplikacją domyślną
 
 Ustawienia mogą zarejestrować GenOffice jako obsługę plików .docx / .xlsx / .pptx / .pdf i podobnych (rejestracja aplikacji domyślnej na poziomie systemu; potwierdzenie, gdy aplikacja o to poprosi).

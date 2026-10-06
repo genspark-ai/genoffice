@@ -30,7 +30,7 @@ Co očekávat:
 
 ## Nástroje kreslení (Anotace)
 
-Šest nástrojů: **tuš, obdélník, elipsa, šipka, poznámka**, navíc **začerňovací rameček** na kartě Úpravy.
+Šest nástrojů: **tuš, obdélník, elipsa, šipka, poznámka**, navíc **začerňovací rameček** na kartě Anotace.
 
 - Každý nástroj je přepínač: kliknutím jej zapnete; **sám se vypne, jakmile je umístěna figura** (chcete-li pokračovat, klikněte na nástroj znovu); kliknutí na již zapnutý nástroj jej rovněž vypne.
 - Tuš sleduje šířku tahu; obdélník, elipsa a šipka se táhnou; barvy pocházejí z kreslicí palety.
@@ -68,14 +68,17 @@ Co očekávat:
 ## Operace se stránkami (Stránky)
 
 - **Otočit / odstranit / přesunout**: tažením miniatur měníte pořadí; odstranění vyžaduje potvrzení.
+- **Importovat stránky**: přeneste stránky z jiného souboru PDF. **Vložit prázdnou stránku** přidá prázdnou stránku.
+- **Nahradit stránky** nahradí celý rozsah stránkami odjinud; **Oříznout stránky** zkrátí okraje, s možností použít to na všechny stránky.
+- **Velikost stránky** přepočítá všechny stránky na jediný rozměr papíru; **Obrátit pořadí** otočí dokument od konce k začátku.
 - **Vyjmout stránky**: exportuje vybrané stránky do nového souboru PDF.
-- **Rozdělit**: podle rozsahů na několik souborů.
-- **Sloučit**: připojí další soubory PDF. Velikosti se sčítají **ještě před načtením čehokoli** a soubor o celkové velikosti nad **1 GiB je odmítnut** se srozumitelnou chybou (kvůli omezení paměti).
+- **Rozdělit PDF**: má dvě podoby — rozdělení podle rozsahů na několik souborů nebo rozřezání každé stránky na mřížku menších stránek.
+- **Sloučit PDF**: má dvě podoby — připojení dalších souborů PDF nebo spojení několika stránek na jeden list. Velikosti se sčítají **ještě před načtením čehokoli** a soubor o celkové velikosti nad **1 GiB je odmítnut** se srozumitelnou chybou (kvůli omezení paměti).
 - Změny na úrovni stránek se zapíší zpět při příštím uložení; Uložit jako… ponechá originál nedotčený.
 
 ## Export a tisk
 
-- **Exportovat jako Word…**: místní převod do .docx.
+- **Exportovat jako Word… / PowerPoint… / Excel…** v nabídce Soubor, nebo ty stejné tři z **Převodník PDF** na pásku karet — vše lokálně, bez nahrávání. Ze souboru .pptx vyjde jeden snímek na stránku a ze souboru .xlsx jeden list na stránku. U každého se zeptá, kam uložit.
 - **Tisk**: aktuální pořadí a otočení přes systémový dialog; podporuje rozsahy stránek.
 
 ## Ukládání

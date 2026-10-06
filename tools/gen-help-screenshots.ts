@@ -32,13 +32,16 @@ import {
   type Rect,
 } from '@playwright/test'
 import { createRequire } from 'node:module'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { buildBlankDocx } from '../packages/docx-engine/src/blank'
 import { createBlankPptx } from '../packages/pptx-engine/src/blank'
 import { buildSheetsFixture } from '../apps/sheets/tests/fixture-builder'
+
+/** A fixed moment for the sample files' mtime: see makeScratch. */
+const SAMPLE_MTIME = new Date('2024-03-14T10:24:00')
 
 const REPO = resolve(__dirname, '..')
 const SHELL_DIR = join(REPO, 'apps/shell')
@@ -102,6 +105,15 @@ async function makeScratch(): Promise<Scratch> {
   writeFileSync(join(samples, 'book.xlsx'), await buildSheetsFixture())
   writeFileSync(join(samples, 'sample.pdf'), minimalPdf())
   writeFileSync(join(samples, 'notes.md'), '# Sample\n\nA markdown note.\n')
+
+  // Pin the samples' modification time. The file list shows a Modified column,
+  // so without this the committed Home and file-ops figures carry the wall
+  // clock of the moment they were captured — "Today · 07:49 PM" in a figure
+  // that is supposed to be forever — and every regeneration churns the bytes
+  // for a difference no reader should ever see.
+  for (const name of ['doc.docx', 'deck.pptx', 'book.xlsx', 'sample.pdf', 'notes.md']) {
+    utimesSync(join(samples, name), SAMPLE_MTIME, SAMPLE_MTIME)
+  }
 
   // folderRoots is a plain list of absolute paths, so the sidebar tree can be
   // seeded without driving the native folder picker.
@@ -253,7 +265,20 @@ async function main(): Promise<void> {
       // is a folder menu (rename/move/delete *folder*)
       const fileRow = rows.filter({ hasText: 'doc.docx' }).first()
       await fileRow.locator('.recent-actions .more-btn').click()
-      await page.locator('.ctx-menu, .row-menu, [role="menu"]').first().waitFor({ timeout: 10_000 })
+      const rowMenu = page.locator('.ctx-menu, .row-menu, [role="menu"]').first()
+      await rowMenu.waitFor({ timeout: 10_000 })
+      // The menu fades in. Waiting only for it to exist catches it mid-fade, so
+      // the figure shows the rows behind it through a translucent panel and
+      // the bytes move with the animation rather than with the content.
+      await rowMenu.evaluate((el) => {
+        const done = getComputedStyle(el).opacity
+        if (done === '1') return
+        return new Promise<void>((resolve) => {
+          el.addEventListener('transitionend', () => resolve(), { once: true })
+          setTimeout(resolve, 2000)
+        })
+      })
+      await page.waitForTimeout(200)
       await shoot(page, cdp, 'file-ops', lang)
       await page.keyboard.press('Escape')
       await page.waitForTimeout(300)

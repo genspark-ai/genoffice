@@ -29,7 +29,7 @@ Fai clic destro su una scheda per **Apri in una nuova finestra** — disponibile
 
 ## L'elenco di tutte le schede
 
-Quando le schede non entrano tutte nella barra, il ▾ all'estremità destra apre l'elenco completo (un menu nativo, mai coperto dall'area di contenuto); seleziona con i tasti freccia.
+Quando le schede non entrano tutte nella barra, la piccola icona della barra delle schede all'estremità destra apre l'elenco completo (un menu nativo, mai coperto dall'area di contenuto); seleziona con i tasti freccia.
 
 ## La barra degli strumenti dentro ogni editor
 
@@ -42,4 +42,4 @@ Ogni scheda di editor ha in alto una riga di strumenti (la disposizione esatta v
 
 ## La scheda Home
 
-La scheda Home, all'estrema sinistra, non può essere chiusa; per tornarci da un qualsiasi editor, cliccala oppure usa File ▸ Home.
+La scheda Home, all'estrema sinistra, non può essere chiusa; per tornarci da un qualsiasi editor, cliccala oppure usa File ▸ **Torna alla Home**.

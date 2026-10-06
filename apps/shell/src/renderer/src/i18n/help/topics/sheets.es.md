@@ -13,12 +13,17 @@ Sheets es el editor de hojas de cálculo similar a Excel; el cálculo se ejecuta
 ## Pestañas de la cinta de opciones
 
 - **Inicio**: fuente, relleno, bordes, formatos de número (moneda/porcentual/miles, aumentar o disminuir decimales), alineación, combinar, insertar filas/columnas y su tamaño, formato condicional, dar formato como tabla, estilos de celda, portapapeles y copiar formato, ordenar y filtrar.
-- **Insertar**: formas, iconos, símbolos, ecuación, captura de pantalla y más.
+- **Insertar**: imágenes, formas, cuadros de texto, vínculos, comentarios, casilla, encabezado y pie de página, símbolos, ecuaciones; **nueve tipos de gráfico** (columnas, barras, líneas, áreas, circular, dispersión, radial, anillo y columnas + líneas) además de **Gráficos recomendados**, que ordena los tipos para la selección y los muestra en vista previa; **Gráfico dinámico** desde la celda en la que esté; **Minigráficos** (líneas, columnas, gana/pierde); **Segmentación de datos** y **Escala de tiempo** para filtrar una tabla dinámica.
+  - Los gráficos, los gráficos dinámicos y los minigráficos son objetos reales del libro guardado.
+  - **Segmentación de datos** y **Escala de tiempo** son controles de sesión: el filtrado que hacen se guarda y Excel muestra la misma tabla dinámica filtrada, pero el propio botón de segmentación no forma parte del archivo.
 - **Disposición de página**: colores y fuentes del tema, interruptores para imprimir líneas de la cuadrícula y encabezados, vista previa de salto de página.
 - **Fórmulas**: Autosuma e inserción de funciones, definir nombres (también desde la selección), rastrear precedentes y dependientes, ventana Inspección, recalcular hoja o libro.
 - **Datos**: ordenar y filtrar (incluido el filtro avanzado y borrar el filtro), texto en columnas, combinar libros, actualizar todo.
-- **Revisar**: explorar comentarios (mostrar, anterior/siguiente), traducir.
-- **Vista**: interruptores de cuadrícula y encabezados, zoom, Normal / vista previa de salto de página.
+- **Revisar**: explorar comentarios (mostrar, anterior/siguiente), traducir y un grupo **Proteger** — **Proteger hoja**, **Proteger libro** y **Permitir editar rangos**.
+  - La protección se escribe en el .xlsx y lo que aplica esta aplicación no lleva contraseña, así que el mismo botón pasa a ser **Desproteger…** y la deshace. La protección procedente de otro programa que _sí_ lleva contraseña no se puede quitar desde aquí.
+  - Los dos botones de proteger se aplican de inmediato: no hay ningún cuadro de diálogo que cancelar, solo una nota en la barra de estado indicando que se escribirá al guardar.
+  - **Permitir editar rangos** marca las celdas que siguen siendo editables mientras el resto de la hoja queda bloqueada.
+- **Vista**: interruptores de cuadrícula, **barra de fórmulas**, encabezados y resaltado de fila y columna activas; zoom; **Normal** y **Vista previa de salto de página**. Las líneas de cuadrícula y los encabezados se guardan con la hoja; el resaltado es una preferencia tuya.
 - **Diseño de gráfico**: aparece cuando hay un gráfico seleccionado: tipo de gráfico, estilos y colores, edición del rango de datos.
 
 La pestaña Datos, botón por botón (de izquierda a derecha en la imagen):
@@ -86,6 +91,8 @@ La pestaña Fórmulas, botón por botón:
 ## IA
 
 - El panel de IA lateral: seleccione un rango e indíquelo en lenguaje natural (reformatear, generar datos, escribir fórmulas).
+- Adjunta archivos a un mensaje con el botón 📎 o arrástralos hasta el panel; viajan con la pregunta y las imágenes vuelven como miniaturas.
+- Una respuesta puede citar una celda: haz clic en la referencia y la cuadrícula saltará allí.
 - Las ediciones de la IA se pueden revertir desde el panel.
 
 ## Guardar y exportar

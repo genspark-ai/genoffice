@@ -4,18 +4,22 @@ Docs est le processeur de texte analogue à Word : il lit et écrit de vrais .do
 
 ## Le ruban
 
-Onglets : **Accueil / Insertion / Mise en page / Création / Références / Révision / Affichage**, plus des onglets contextuels pour l’objet sélectionné (Création de tableau, images).
+Onglets : **Accueil / Insertion / Dessin / Mise en page / Création / Références / Révision / Affichage**, plus des onglets contextuels pour l’objet sélectionné (Création de tableau et mise en page, Format de l’image, en-tête et pied de page).
 
-- **Accueil** : presse-papiers ; police (y compris tailles et signes d’emphase est-asiatiques) ; paragraphe (alignement/retrait/interligne/listes) ; styles (Titre 1-6/Normal/Citation, modifiables).
-- **Insertion** : sauts de page et de section, tableaux (y compris dessinés et rapides), images, formes, hyperliens, en-tête et pied de page, numéro de page, date, zones de texte.
+- **Accueil** : presse-papiers ; police (y compris tailles et signes d’emphase est-asiatiques) avec **Effacer toute la mise en forme** et une case à cocher pour **Afficher/masquer les marques de mise en forme** ; paragraphe (alignement/retrait/interligne/listes) plus **Définir une nouvelle puce / Définir un nouveau format de numérotation / Liste à plusieurs niveaux**, qui enregistrent vos propres styles de liste dans le document ; styles (Titre 1-6/Normal/Citation, modifiables) avec un **Volet Styles** pour la liste complète.
+- **Insertion** : sauts de page et de section ; tableaux (une grille lignes × colonnes, ou **Insérer un tableau…** pour une taille exacte) ; images, formes, zones de texte ; **Page de garde** et **Page vierge** issues d’une galerie prédéfinie ; **Graphique** ; **Lettrine** ; **WordArt** ; champs (date, heure, numéro de page, nombre total de pages, nom de fichier) ; hyperliens, **Signet** et renvois ; commentaires ; en-tête et pied de page et numéros de page ; symboles et équations.
+  - **Graphique** insère un véritable objet graphique avec ses propres données — en barres, en courbes ou en secteurs — et non une image. _Modifier les données_ de Word ouvre les chiffres qui sont derrière.
+- **Dessin** : encre sur la page, dans le groupe **Outils de dessin** — **Sélectionner** revient à l’édition du texte, puis **Stylet**, **Surligneur** et **Gomme** (un clic ou un balayage supprime tout le trait). À côté, **Style de stylet** / **Style de surligneur** est une seule commande qui contient des pastilles de couleur et une rangée d’épaisseurs ; son libellé suit l’outil actif. L’encre est enregistrée dans le document comme une annotation flottant au-dessus du texte, elle survit donc à l’enregistrement et à la réouverture, et **Tout effacer** dans le groupe suivant la supprime entièrement.
 - **Mise en page** : marges, orientation et format du papier, colonnes, retraits et espacements de paragraphe.
 - **Création** : thèmes, jeux de couleurs, filigrane, bordures de page.
 - **Références** : table des matières (actualisable), notes de bas de page et notes de fin, légendes, renvois.
 
   ![L’onglet Références](img/docs-references.png)
 
-- **Révision** : vérification orthographique, commentaires, suivi des modifications (vues Toutes les marques / Marques simples), comptage des mots.
-- **Affichage** : règle, quadrillage, volet de navigation, zoom, et la boîte de dialogue de **raccourcis clavier** consultable.
+- **Révision** : **Éditeur** relit tout le document — orthographe, grammaire et ponctuation ; **Traduire** ; vérification orthographique ; commentaires (**Commentaires par IA** traite ceux qui sont ouverts) ; suivi des modifications avec les vues Toutes les marques / Marques simples, accepter/refuser, et **Résumé IA des révisions** ; comptage des mots ; **Comparer** avec un autre fichier ; **Protéger le document**.
+- **Affichage** : cinq façons de regarder le fichier — **Page**, **Web**, **Plan**, **Mode Lecture** et **Aperçu des pages** ; zoom arrière/avant/100 %/largeur de la page/une page ; **Volet IA** ; **Mode sombre** ; règle, quadrillage et volet de navigation ; **Nouvel onglet**, **Fractionner** et **Changer d'onglet** ; la boîte de dialogue de **raccourcis clavier** consultable.
+  - **Mode sombre** assombrit la page et le canevas autour d’elle, jamais le ruban — la séparation de Word entre une surface d’édition sombre et une fenêtre sombre. Le choix est mémorisé et l’emporte sur le thème de l’application dans tous les cas.
+  - **Fractionner** ouvre un second volet en dessous qui défile indépendamment et reflète le premier ; fermez-le avec le × sur son bord.
 
 ## Le volet de navigation
 
@@ -25,10 +29,10 @@ Onglets : **Accueil / Insertion / Mise en page / Création / Références / Rév
 
 - **Réduire / Développer** sur un titre replie toute sa sous-arborescence — le chapitre disparaît, son texte reste dans le document.
 - **Tout réduire / Tout développer** replie ou déploie l’ensemble d’un seul coup. Sur un long rapport, c’est la différence entre un plan lisible et un mur de texte.
-- **Afficher les niveaux de titre** filtre l’arborescence sur les profondeurs qui vous intéressent, si bien que *Afficher le titre 1* vous laisse une table des matières que vous pouvez réellement parcourir.
+- **Afficher les niveaux de titre** filtre l’arborescence sur les profondeurs qui vous intéressent, si bien que _Afficher le titre 1_ vous laisse une table des matières que vous pouvez réellement parcourir.
 - **Promouvoir / Abaisser** changent le niveau du titre, et avec lui le niveau qu’héritent tous les titres en dessous — comme un chapitre qui devient une section.
 - **Nouveau titre avant / après** en insère un à l’emplacement du curseur, sans quitter le volet.
-- **Supprimer** retire le titre *et tout ce qu’il contient* : c’est celui-là auquel il faut faire attention, il supprime une sous-arborescence, pas une ligne.
+- **Supprimer** retire le titre _et tout ce qu’il contient_ : c’est celui-là auquel il faut faire attention, il supprime une sous-arborescence, pas une ligne.
 - **Sélectionner le titre et le contenu** sélectionne du titre jusqu’à la fin de sa sous-arborescence, prêt pour une édition de section entière.
 
 ## Menu contextuel

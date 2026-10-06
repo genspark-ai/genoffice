@@ -52,7 +52,9 @@ Sneltoetsen binnen elke editor (opmaakpenseel, zoeken en vervangen, tabelbewerki
 
 ## De Option+Command-sneltoetsen
 
-Option+Command is de laag die Word reserveert voor gestructureerde sprongen, en GenOffice vult die op dezelfde manier. Al het volgende is van Docs zelf:
+Option+Command is de laag die Word reserveert voor gestructureerde sprongen, en GenOffice vult die op dezelfde manier. Docs neemt daar het grootste deel van in, Sheets neemt er twee van zichzelf om met Excel gelijk te lopen; één sneltoets werkt overal.
+
+**Docs**
 
 | Sneltoets (macOS) | Wat het doet      | Windows / Linux    |
 | ----------------- | ----------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command is de laag die Word reserveert voor gestructureerde sprongen, en 
 | ⌥⌘G               | Ga naar           | Ctrl+G             |
 
 Twee daarvan veranderen op Windows, om dezelfde reden waarom Word ze opsplitst. **macOS bezet ⌥⌘D** — die toont en verbergt het Dock —, waardoor de eindnoot ⌥⌘E is op de Mac en Ctrl+Alt+D overal elders. En **Ga naar** laat Alt vallen: Ctrl+G, waar de Mac-sneltoets hem wel meeneemt.
+
+**Sheets**, zolang het raster de focus heeft
+
+| Sneltoets (macOS) | Wat het doet | Windows / Linux |
+| ----------------- | ------------ | --------------- |
+| ⌥⌘0               | Buitenranden | Ctrl+Shift+7    |
+| ⌥⌘−               | Geen rand    | Ctrl+Shift+−    |
+
+Windows is geen herschrijving van het Mac-paar. Excel voor Mac geeft Sheets **allebei** — ⌘⇧7 en ⌥⌘0 zijn twee toetsen voor dezelfde buitenranden —, dus op Windows houdt de opdracht de Ctrl+Shift-plek die het al had, en de Option-laag is er simpelweg niet.
+
+Let op: **⌥⌘0 betekent Standaard in Docs en Buitenranden in Sheets**. Ze komen nooit in dezelfde editor voor, dus in gebruik botst er niets, maar ⌥⌘0 is al bezet en is niet beschikbaar als globale sneltoets.
+
+**Elke editor**: **⌥⌘R / Ctrl+F1** vouwt het lint samen, zoals hierboven beschreven.
 
 Daarmee blijft ⌥⌘D vrij voor GenOffice om op macOS te gebruiken, als een toekomstige opdracht hem nodig heeft.
 

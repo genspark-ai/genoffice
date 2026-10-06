@@ -17,6 +17,26 @@ La configuration des modèles a son propre article ; dans **Médias IA et recher
 
 Clair / Sombre / Suivre le système. Suivre le système suit l’apparence de l’OS, et les éditeurs changent de apparence en même temps sans clignotement.
 
+## Général
+
+- **Envoyer des statistiques d'utilisation anonymes** — activé par défaut. Utilise Google Analytics 4 et envoie votre adresse IP publique et les métadonnées de transport ; le contenu des documents et les noms de fichiers ne sont jamais collectés, et chaque événement ne porte qu'un type comme « ouverture d'un .docx ». Vous pouvez le désactiver ici à tout moment.
+- **Position de la barre latérale IA** (à gauche ou à droite), **Taille du texte du panneau IA** et **Correction orthographique dans le chat IA**.
+- **Ouvrir le panneau IA dans les nouveaux documents** — désactivé, un nouveau document démarre avec le panneau replié, à un clic de là.
+- **Enregistrer automatiquement tous les documents** active l'enregistrement automatique par défaut dans tous les éditeurs ; vous pouvez toujours le désactiver pour une fenêtre.
+- **Emplacement d'enregistrement** avec un bouton **Modifier** et **Application par défaut pour les documents Office** pour attribuer .docx / .xlsx / .pptx à GenOffice.
+
+## Médias IA et recherche
+
+Ce ne sont pas des interrupteurs : chaque capacité choisit le fournisseur qui la sert, et la clé et l'URL de base d'un fournisseur sont saisies une seule fois et partagées :
+
+- **Recherche web**, **Génération d'images**, **Analyse d'images** et **Analyse vidéo**, chacune avec un fournisseur, un modèle, une clé et une URL de base.
+- **Recherche de fichiers locaux** s'exécute sur cette machine. Dessous se trouve le **Reclassement Jev**, **désactivé par défaut**. Activez-le et les extraits des 20 meilleurs résultats locaux — jusqu'à 1 200 caractères par document, plus les noms de fichiers et de dossiers — sont envoyés au modèle Jev de TypeSafe pour être réordonnés par pertinence. Désactivé, rien ne quitte l'appareil.
+
+## À propos
+
+- **Version**, le lien GitHub du projet et un bouton **Mettre une étoile sur GitHub**.
+- **Canal de mise à jour** : Stable ou Bêta. Une modification prend effet immédiatement et déclenche une recherche de mise à jour ; elle ne rétrograde pas une installation Bêta vers Stable.
+
 ## Associations d’applications par défaut
 
 Les paramètres peuvent enregistrer GenOffice comme gestionnaire de .docx / .xlsx / .pptx / .pdf et formats similaires (enregistrement d’application par défaut au niveau de la plateforme ; confirmez lorsque l’on vous le demande).

@@ -22,6 +22,13 @@ Haga clic en cualquier elemento de la vista previa y una barra de herramientas f
 - **Acciones de elemento** (con un elemento seleccionado en el inspector de la vista previa): eliminar, duplicar, subir/bajar.
 - **Botón de IA**: abre el panel de IA; pregunte directamente sobre el elemento seleccionado.
 
+## Exportar
+
+Menú Archivo, todo local y todo pregunta dónde poner el resultado:
+
+- **Exportar como Word…** y **Exportar como PDF…** escriben un .docx o .pdf de verdad.
+- **Exportar como HTML de archivo único…** escribe un único .html con las imágenes incrustadas. No sobrescribirá el archivo que tengas abierto ahora y te dice cuántas imágenes no pudo incrustar.
+
 ## Insertar esqueleto
 
 Para una página en blanco, **Insertar ▸ Insertar esqueleto** escribe un documento mínimo en modo estándar:
@@ -30,7 +37,7 @@ Para una página en blanco, **Insertar ▸ Insertar esqueleto** escribe un docum
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -48,4 +55,3 @@ La etiqueta meta de viewport se omite a propósito: esto se renderiza en un pane
 El `lang` sigue el idioma de la interfaz de la aplicación, así que el esqueleto que inserte es aquel para el que sus herramientas ya están configuradas. Edítelo libremente después.
 
 El elemento solo aparece en modo edición, y solo mientras el documento esté vacío: una vez que hay contenido, no hay nada en lo que insertar un esqueleto.
-

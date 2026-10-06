@@ -13,12 +13,17 @@ Sheets è l'editor simile a Excel; il calcolo avviene in un processo separato, u
 ## Le schede della barra multifunzione
 
 - **Home**: carattere, riempimento, bordi, formati numerici (valuta/percentuale/migliaia, aumento e riduzione dei decimali), allineamento, unione, inserimento e dimensione di righe e colonne, formattazione condizionale, formatta come tabella, stili delle celle, appunti e pennello di formattazione, ordinamento e filtro.
-- **Inserisci**: forme, icone, simboli, equazioni, schermate e altro.
+- **Inserisci**: immagini, forme, caselle di testo, collegamenti, commenti, casella di spunta, Intestazione e piè di pagina, simboli, equazioni; **nove tipi di grafico** (istogramma, barre, linee, aree, torta, dispersione, radar, anello e istogramma + linee) più **Grafici consigliati**, che ordina i tipi per la selezione e ne mostra l'anteprima; **Grafico pivot** dalla cella in cui ti trovi; **Grafici sparkline** (linea, colonna, vittoria/sconfitta); **Filtro dati** e **Sequenza temporale** per filtrare una tabella pivot.
+  - Grafici, grafici pivot e grafici sparkline sono oggetti reali nella cartella di lavoro salvata.
+  - **Filtro dati** e **Sequenza temporale** sono controlli di sessione: il filtro che applicano viene salvato ed Excel mostra la stessa tabella pivot filtrata, ma il pulsante del filtro dati stesso non fa parte del file.
 - **Layout di pagina**: colori e caratteri del tema, interruttori per linee della griglia e intestazioni in stampa, anteprima delle interruzioni di pagina.
 - **Formule**: Somma automatica e inserimento delle funzioni, definizione dei nomi (anche dalla selezione), traccia dei precendenti e dei dipendenti, Finestra di controllo, ricalcolo del foglio o della cartella di lavoro.
 - **Dati**: ordinamento e filtro (compreso il filtro avanzato e la cancellazione del filtro), da testo a colonne, unione di cartelle di lavoro, aggiorna tutto.
-- **Revisione**: sfoglia i commenti (mostra, precedente/successivo), traduci.
-- **Visualizza**: interruttori per linee della griglia e intestazioni, zoom, visualizzazione Normale / anteprima delle interruzioni di pagina.
+- **Revisione**: sfoglia i commenti (mostra, precedente/successivo), traduci e un gruppo **Proteggi** — **Proteggi foglio**, **Proteggi cartella di lavoro** e **Consenti modifica intervalli**.
+  - La protezione viene scritta nel .xlsx e su ciò che questa applicazione applica non c'è alcuna password, quindi lo stesso pulsante diventa **Rimuovi protezione…** e la annulla. La protezione proveniente da un altro programma che _ha davvero_ una password non può essere rimossa da qui.
+  - I due pulsanti di protezione si applicano subito — non c'è alcuna finestra da annullare, solo una nota nella barra di stato che verrà scritta al salvataggio.
+  - **Consenti modifica intervalli** contrassegna le celle che restano modificabili mentre il resto del foglio è bloccato.
+- **Visualizza**: interruttori per linee della griglia, **barra delle formule**, intestazioni ed evidenziazione di riga e colonna attive; zoom; **Normale** e **Anteprima interruzioni di pagina**. Griglia e intestazioni vengono salvate con il foglio; l'evidenziazione è una preferenza personale.
 - **Struttura grafico**: compare con un grafico selezionato — tipo di grafico, stili e colori, modifica dell'intervallo di dati.
 
 La scheda Dati, pulsante per pulsante (da sinistra a destra nell'immagine):
@@ -86,6 +91,8 @@ La scheda Formule, pulsante per pulsante:
 ## IA
 
 - Il pannello IA laterale: seleziona un intervallo e dai istruzioni in linguaggio naturale (riformattare, generare dati, scrivere formule).
+- Allega dei file a una richiesta con il pulsante 📎, oppure trascinali sul pannello; viaggiano con la domanda e le immagini tornano come miniature.
+- Una risposta può citare una cella: fai clic sul riferimento e la griglia ci salta.
 - Le modifiche dell'IA si possono annullare dal pannello.
 
 ## Salvataggio ed esportazione

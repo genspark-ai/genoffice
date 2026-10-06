@@ -4,18 +4,22 @@ Docs ist der Word-ähnliche Textprozessor: Er liest und schreibt echte .docx mit
 
 ## Das Menüband
 
-Tabs: **Start / Einfügen / Layout / Entwurf / Referenzen / Überprüfen / Ansicht**, dazu kontextbezogene Tabs für das ausgewählte Objekt (Tabellenentwurf, Bilder).
+Tabs: **Start / Einfügen / Zeichnen / Layout / Entwurf / Referenzen / Überprüfen / Ansicht**, dazu kontextbezogene Tabs für das ausgewählte Objekt (Tabellenentwurf und -layout, Bilder, Kopf- und Fußzeile).
 
-- **Start**: Zwischenablage; Schriftart (einschließlich ostasiatischer Schriftgrade und Hervorhebungszeichen); Absatz (Ausrichtung/Einzug/Abstand/Listen); Formatvorlagen (Überschrift 1-6/Standard/Zitat, änderbar).
-- **Einfügen**: Seiten- und Abschnittswechsel, Tabellen (einschließlich gezeichneter und Schnelltabellen), Bilder, Formen, Hyperlinks, Kopf- und Fußzeile, Seitenzahl, Datum, Textfelder.
+- **Start**: Zwischenablage; Schriftart (einschließlich ostasiatischer Schriftgrade und Hervorhebungszeichen) mit **Alle Formatierungen löschen** und einem **Formatierungszeichen ein-/ausblenden**-Schalter; Absatz (Ausrichtung/Einzug/Abstand/Listen) plus **Neues Aufzählungszeichen definieren / Neues Zahlenformat definieren / Liste mit mehreren Ebenen**, die Ihre eigenen Listenformate im Dokument speichern; Formatvorlagen (Überschrift 1-6/Standard/Zitat, änderbar) mit einem **Formatvorlagenbereich** für die vollständige Liste.
+- **Einfügen**: Seiten- und Abschnittswechsel; Tabellen (Raster aus Zeilen × Spalten oder **Tabelle einfügen…** für eine genaue Größe); Bilder, Formen, Textfelder; **Deckblatt** und **Leere Seite** aus einer vorgefertigten Galerie; **Diagramm**; **Initiale**; **WordArt**; Felder (Datum, Uhrzeit, Seitenzahl, Gesamtseitenzahl, Dateiname); Hyperlinks, **Textmarke** und Querverweise; Kommentare; Kopf- und Fußzeile und Seitenzahlen; Symbole und Formeln.
+  - **Diagramm** fügt ein echtes Diagrammobjekt mit eigenen Daten ein — Balken, Linie oder Kreis — und kein Bild. Words _Daten bearbeiten_ öffnet die Zahlen dahinter.
+- **Zeichnen**: Freihand auf der Seite, in der Gruppe **Zeichentools** — **Auswählen** führt zurück zur Texteingabe, dann **Stift**, **Textmarker** und **Radierer** (ein Klick oder eine Wischbewegung entfernt den ganzen Strich). Daneben ist **Stiftstil** / **Textmarkerstil** ein einziger Regler mit Farbfeldern und einer Reihe von Breiten; seine Beschriftung richtet sich nach dem gerade aktiven Werkzeug. Die Tinte wird als Anmerkung über dem Text im Dokument gespeichert, übersteht also das Speichern und Wiederöffnen, und **Alles löschen** in der nächsten Gruppe entfernt sie vollständig.
 - **Layout**: Seitenränder, Ausrichtung und Papierformat, Spalten, Absatzeinzüge und Abstände.
 - **Entwurf**: Designs, Farbsätze, Wasserzeichen, Seitenrahmen.
 - **Referenzen**: Inhaltsverzeichnis (aktualisierbar), Fuß- und Endnoten, Beschriftungen, Querverweise.
 
   ![Der Tab Referenzen](img/docs-references.png)
 
-- **Überprüfen**: Rechtschreibprüfung, Kommentare, Änderungen nachverfolgen (Ansichten „Alle Markups“ / „Einfaches Markup“), Wörter zählen.
-- **Ansicht**: Lineal, Gitternetzlinien, Navigationsbereich, Zoom und der durchsuchbare Dialog für **Tastenkombinationen**.
+- **Überprüfen**: **Editor** prüft das ganze Dokument auf Rechtschreibung, Grammatik und Zeichensetzung; **Übersetzen**; Rechtschreibprüfung; Kommentare (**KI-Kommentare** arbeitet die offenen durch); Änderungen nachverfolgen mit den Ansichten „Alle Markups“ / „Einfaches Markup“, Annehmen/Ablehnen und **KI-Änderungsübersicht**; Wörter zählen; **Vergleichen** mit einer anderen Datei; **Dokument schützen**.
+- **Ansicht**: fünf Wege, die Datei anzusehen — **Drucklayout**, **Weblayout**, **Gliederung**, **Lesemodus** und **Seitenvorschau**; Verkleinern/Vergrößern/100 %/Seitenbreite/Eine Seite; **KI-Bereich**; **Dunkler Modus**; Lineal, Gitternetzlinien und der Navigationsbereich; **Neue Registerkarte**, **Teilen** und **Registerkarte wechseln**; der durchsuchbare Dialog für **Tastenkombinationen**.
+  - **Dunkler Modus** dunkelt die Seite und die Arbeitsfläche um sie herum ab, niemals das Menüband — Words Trennung zwischen dunkler Bearbeitungsfläche und dunklem Fenster. Die Wahl wird gemerkt und gewinnt in jedem Fall über das App-Design.
+  - **Teilen** öffnet darunter einen zweiten Bereich, der unabhängig scrollt und den ersten spiegelt; schließen Sie ihn mit dem × an seinem Rand.
 
 ## Der Navigationsbereich
 
@@ -25,10 +29,10 @@ Tabs: **Start / Einfügen / Layout / Entwurf / Referenzen / Überprüfen / Ansic
 
 - **Reduzieren / Erweitern** an einer Überschrift klappt deren gesamten Teilbaum ein bzw. aus — das Kapitel verschwindet, sein Text bleibt im Dokument.
 - **Alle reduzieren / Alle erweitern** klappt alles auf einmal ein bzw. aus. Bei einem langen Bericht ist das der Unterschied zwischen einer lesbaren Gliederung und einer Wand aus Text.
-- **Überschriftenebenen anzeigen** filtert den Baum auf die Ebenen, die Sie interessieren, sodass *Überschrift 1 anzeigen* Ihnen ein Inhaltsverzeichnis übrig lässt, das Sie wirklich überfliegen können.
+- **Überschriftenebenen anzeigen** filtert den Baum auf die Ebenen, die Sie interessieren, sodass _Überschrift 1 anzeigen_ Ihnen ein Inhaltsverzeichnis übrig lässt, das Sie wirklich überfliegen können.
 - **Höher stufen / Tiefer stufen** ändern die Ebene der Überschrift und damit auch die Ebene, die alle Überschriften darunter erben — so wie aus einem Kapitel ein Abschnitt wird.
 - **Neue Überschrift davor / danach** fügt eine an der Cursorposition ein, ohne den Bereich zu verlassen.
-- **Löschen** entfernt die Überschrift *und alles darunter* — darauf ist zu achten: Es löscht einen Teilbaum, keine Zeile.
+- **Löschen** entfernt die Überschrift _und alles darunter_ — darauf ist zu achten: Es löscht einen Teilbaum, keine Zeile.
 - **Überschrift und Inhalt auswählen** markiert von der Überschrift bis zum Ende ihres Teilbaums, bereit für eine Bearbeitung des ganzen Abschnitts.
 
 ## Rechtsklick-Menü

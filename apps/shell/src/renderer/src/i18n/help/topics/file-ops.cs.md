@@ -17,12 +17,11 @@ Pravidla: přípona se zachovává automaticky; nepovolené znaky, tečky na kon
 
 ## Odstranění
 
-- **⋯ ▸ Odstranit** na domovské stránce: přesune soubor do **systémového koše**, odkud jej lze obnovit z operačního systému.
-- Po odstranění se na několik sekund zobrazí oznámení s možností vzít zpět — vrácení vrátí soubor přesně tam, kde byl.
+- **⋯ ▸ Odstranit** na domovské stránce: zeptá se, které soubory, a přesune je do **systémového koše**, odkud je může obnovit operační systém. GenOffice si pro tuto věc nepřidržuje vlastní zpět — obnova je v kompetenci koše, ne oznámení.
 
 ## Duplikování
 
-**⋯ ▸ Duplikovat** vytvoří ve stejné složce kopii souboru <jméno> a otevře ji v nové kartě; při kolizi názvů se automaticky připojí číslo.
+**⋯ ▸ Duplikovat** vytvoří ve stejné složce kopii souboru <jméno>; při kolizi názvů se automaticky připojí číslo. Kopie přibude do **Nedávné** místo toho, aby se sama otevřela — je na jeden klik od vás, ne před vámi.
 
 ## Uložit a Uložit jako
 

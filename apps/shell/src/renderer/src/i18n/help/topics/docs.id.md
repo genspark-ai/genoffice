@@ -4,18 +4,22 @@ Docs adalah pengolah kata mirip Word: membaca dan menulis .docx asli dengan peno
 
 ## Pita
 
-Tab: **Beranda / Sisipkan / Tata Letak / Desain / Referensi / Tinjau / Tampilan**, ditambah tab kontekstual untuk objek yang dipilih (desain tabel, gambar).
+Tab: **Beranda / Sisipkan / Gambar / Tata Letak / Desain / Referensi / Tinjau / Tampilan**, ditambah tab kontekstual untuk objek yang dipilih (desain dan tata letak tabel, gambar, header/footer).
 
-- **Beranda**: papan klip; font (termasuk ukuran CJK dan tanda penekanan); paragraf (perataan/indens/spasi/daftar); gaya (Judul 1-6/Normal/Kutipan, dapat diubah).
-- **Sisipkan**: pemisah halaman/seksi, tabel (termasuk tabel cepat), gambar, bentuk, hyperlink, header/footer, nomor halaman, tanggal, kotak teks.
+- **Beranda**: papan klip; font (termasuk ukuran CJK dan tanda penekanan) dengan **Hapus Semua Pemformatan** dan sakelar untuk **Tampilkan/sembunyikan tanda pemformatan**; paragraf (perataan/indens/spasi/daftar) ditambah **Tentukan butir baru / Tentukan format nomor baru / Daftar Multitingkat**, yang menyimpan gaya daftar Anda sendiri ke dalam dokumen; gaya (Judul 1-6/Normal/Kutipan, dapat diubah) dengan **Panel Gaya** untuk daftar lengkap.
+- **Sisipkan**: pemisah halaman/seksi; tabel (kisi baris × kolom, atau **Sisipkan Tabel…** untuk ukuran pasti); gambar, bentuk, kotak teks; **Halaman Sampul** dan **Halaman Kosong** dari galeri siap pakai; **Bagan**; **Drop Cap**; **WordArt**; field (tanggal, waktu, nomor halaman, jumlah halaman, nama file); tautan, **Bookmark** dan referensi silang; komentar; header/footer dan nomor halaman; simbol dan persamaan.
+  - **Bagan** menyisipkan objek bagan sungguhan dengan datanya sendiri — batang, garis, atau lingkaran — bukan gambar. _Edit Data_ di Word membuka angka di baliknya.
+- **Gambar**: tinta di atas halaman, dalam grup **Alat Menggambar** — **Pilih** kembali ke pengeditan teks, lalu **Pena**, **Stabilo** dan **Penghapus** (satu klik atau satu usapan menghapus seluruh goresan). Di sebelahnya, **Gaya Pena** / **Gaya Stabilo** adalah satu kendali yang memuat contoh warna dan sebaris lebar; labelnya mengikuti alat yang sedang aktif. Tinta disimpan di dalam dokumen sebagai anotasi yang melayang di atas teks, jadi ia bertahan setelah disimpan dan dibuka kembali, dan **Hapus Semua** di grup berikutnya menghapusnya seluruhnya.
 - **Tata Letak**: margin, orientasi dan ukuran kertas, kolom, indentasi dan spasi paragraf.
 - **Desain**: tema, set warna, tanda air, batas halaman.
 - **Referensi**: daftar isi (dapat diperbarui), catatan kaki/akhir, keterangan, referensi silang.
 
   ![Tab Referensi](img/docs-references.png)
 
-- **Tinjau**: pemeriksaan ejaan, komentar, lacak perubahan (tampilan Semua/Sederhana), jumlah kata.
-- **Tampilan**: penggaris, garis kisi, panel navigasi, zoom, dan **dialog pintasan papan tikik** yang bisa dicari.
+- **Tinjau**: **Editor** memeriksa seluruh dokumen untuk ejaan, tata bahasa, dan tanda baca; **Terjemahkan**; pemeriksaan ejaan; komentar (**Komentar dengan AI** mengerjakan yang masih terbuka); lacak perubahan dengan tampilan Semua Markup / Markup Sederhana, terima/tolak, dan **Ringkasan revisi AI**; jumlah kata; **Bandingkan** dengan berkas lain; **Proteksi Dokumen**.
+- **Tampilan**: lima cara melihat berkas — **Tata Letak Cetak**, **Tata Letak Web**, **Kerangka**, **Mode Baca** dan **Pratinjau Halaman**; perkecil/perbesar/100 %/lebar halaman/satu halaman; **Panel AI**; **Mode Gelap**; penggaris, garis kisi, dan panel navigasi; **Tab Baru**, **Pisahkan** dan **Beralih Tab**; **dialog pintasan papan tikik** yang bisa dicari.
+  - **Mode Gelap** menggelapkan halaman dan kanvas di sekitarnya, tidak pernah pita — pemisahan ala Word antara permukaan penyuntingan gelap dan jendela gelap. Pilihan ini diingat, dan dalam segala hal menang di atas tema aplikasi.
+  - **Pisahkan** membuka panel kedua di bawah yang menggulir secara mandiri dan mencerminkan yang pertama; tutup dengan × pada tepinya.
 
 ## Panel navigasi
 
@@ -25,10 +29,10 @@ Tab: **Beranda / Sisipkan / Tata Letak / Desain / Referensi / Tinjau / Tampilan*
 
 - **Ciutkan / Perluas** pada sebuah judul melipat seluruh subpohonnya — babnya menghilang, teksnya tetap ada di dokumen.
 - **Ciutkan semua / Perluas semua** melipat atau membuka seluruhnya sekaligus. Pada laporan panjang, inilah beda antara kerangka yang terbaca dan dinding teks.
-- **Tampilkan tingkat judul** menyaring pohon ke kedalaman yang Anda pedulikan, sehingga *Tampilkan judul 1* menyisakan daftar isi yang benar-benar bisa dipindai.
+- **Tampilkan tingkat judul** menyaring pohon ke kedalaman yang Anda pedulikan, sehingga _Tampilkan judul 1_ menyisakan daftar isi yang benar-benar bisa dipindai.
 - **Naikkan tingkat / Turunkan tingkat** mengubah tingkat judul itu, beserta tingkat yang diwarisi setiap judul di bawahnya — begini sebuah bab menjadi seksi.
 - **Judul baru sebelum / Judul baru sesudah** menyisipkan satu di posisi kursor, tanpa meninggalkan panel.
-- **Hapus** menghapus judul *dan segala isinya*, dan inilah yang perlu diwaspadai: ini penghapusan subpohon, bukan penghapusan satu baris.
+- **Hapus** menghapus judul _dan segala isinya_, dan inilah yang perlu diwaspadai: ini penghapusan subpohon, bukan penghapusan satu baris.
 - **Pilih judul dan isi** memilih dari judul sampai akhir subpohonnya, siap untuk mengedit seluruh seksi.
 
 ## Menu klik kanan

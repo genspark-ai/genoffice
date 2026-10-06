@@ -17,6 +17,26 @@ AI model configuration has its own article; **AI Media & Search** is where you t
 
 Light / Dark / System. System follows the OS appearance, and the editors re-skin in sync without flashing.
 
+## General
+
+- **Send anonymous usage statistics** — on by default. It uses Google Analytics 4 and sends your public IP address and transport metadata; document contents and file names are never collected, and every event carries only a type like "opened a .docx". Turn it off here at any time.
+- **AI sidebar position** (left or right), **AI panel text size**, and **Spell check in AI chat**.
+- **Open the AI panel in new documents** — off, a new document starts with the panel collapsed and one click away.
+- **Auto-save all documents** turns AutoSave on by default in every editor; you can still switch it off for one window.
+- **Save Location** with a **Change** button, and **Default app for Office documents** to claim .docx / .xlsx / .pptx for GenOffice.
+
+## AI Media & Search
+
+Not switches — each capability picks the vendor that serves it, and a vendor's key and base URL are entered once and shared:
+
+- **Web search**, **Image generation**, **Image analysis** and **Video analysis**, each with a provider, a model, a key and a base URL.
+- **Local file search** runs on this machine. Under it, **Jev search reranking** is **off by default**. Switch it on and the excerpts of the top 20 local hits — up to 1,200 characters of each document, plus the file and folder names — are sent to TypeSafe's Jev model to be reordered by relevance. With it off, nothing leaves the device.
+
+## About
+
+- **Version**, the project's GitHub link and a **Star on GitHub** button.
+- **Update Channel**: Stable or Beta. Changing it takes effect at once and checks for an update; it will not downgrade a Beta install back to Stable.
+
 ## Default app bindings
 
 Settings can register GenOffice as the handler for .docx / .xlsx / .pptx / .pdf and friends (platform-level default-app registration; confirm when prompted).

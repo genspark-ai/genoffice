@@ -30,7 +30,7 @@ Lưu ý:
 
 ## Công cụ vẽ (Chú thích)
 
-Sáu công cụ: **Vẽ, Hình chữ nhật, Hình elip, Mũi tên, Ghi chú**, cộng với **hộp che nội dung** ở thẻ Chỉnh sửa.
+Sáu công cụ: **Vẽ, Hình chữ nhật, Hình elip, Mũi tên, Ghi chú**, cộng với **hộp che nội dung** ở thẻ Chú thích.
 
 - Mỗi công cụ đều là một nút bật/tắt: nhấp để trang bị; **nó tự ngắm sau khi một hình được đặt xuống** (nhấp lại vào công cụ nếu muốn vẽ tiếp); nhấp vào công cụ đang bật cũng để tắt.
 - Nét vẽ bám theo độ rộng bút; hình chữ nhật/elip/mũi tên được kéo ra; màu lấy từ bảng màu vẽ.
@@ -67,15 +67,18 @@ Sáu công cụ: **Vẽ, Hình chữ nhật, Hình elip, Mũi tên, Ghi chú**, 
 
 ## Thao tác trang (Trang)
 
-- **Xoay / xóa / sắp xếp lại**: kéo hình thu nhổ để đổi thứ tự; xóa sẽ hỏi xác nhận.
+- **Xoay / xóa / sắp xếp lại**: kéo hình thu nhỏ để đổi thứ tự; xóa sẽ hỏi xác nhận.
+- **Nhập trang**: kéo các trang từ một tệp PDF khác vào tài liệu. **Chèn trang trắng** thêm một trang trắng.
+- **Thay thế trang** thay cả một đoạn bằng các trang từ nơi khác; **Cắt xén trang** cắt bỏ phần thừa, với tùy chọn áp dụng cho tất cả các trang.
+- **Kích thước trang** đưa mọi trang về cùng một khổ giấy; **Đảo thứ tự** lật ngược tài liệu từ cuối về đầu.
 - **Trích xuất trang**: xuất các trang đã chọn ra một tệp PDF mới.
-- **Tách**: tách thành nhiều tệp theo các khoảng.
-- **Gộp PDF**: nối thêm các PDF khác. Kích thước được cộng lại **trước khi bất kỳ nội dung nào được đọc**, và **tổng trên 1 GiB sẽ bị từ chối** kèm thông báo dễ hiểu (để giữ mức dùng bộ nhớ có kiểm soát).
+- **Tách PDF**: có hai dạng — tách thành nhiều tệp theo từng đoạn, hoặc cắt mỗi trang thành lưới các trang nhỏ hơn.
+- **Gộp PDF**: có hai dạng — nối thêm các PDF khác, hoặc gộp nhiều trang lên cùng một tờ. Kích thước được cộng lại **trước khi bất kỳ nội dung nào được đọc**, và **tổng trên 1 GiB sẽ bị từ chối** kèm thông báo dễ hiểu (để giữ mức dùng bộ nhớ có kiểm soát).
 - Thay đổi ở mức trang được ghi lại ở lần lưu tiếp theo; Lưu dưới dạng giữ nguyên tệp gốc.
 
 ## Xuất và in
 
-- **Chuyển sang Word**: chuyển đổi tại máy sang .docx.
+- **Xuất dưới dạng Word… / PowerPoint… / Excel…** trong menu Tệp, hoặc lấy đúng ba mục đó từ **Chuyển đổi PDF** trên dải ruy-bâng — tất cả đều tại máy, không tải lên. Tệp .pptx ra một slide mỗi trang và tệp .xlsx ra một bảng tính mỗi trang. Mỗi mục đều hỏi lưu ở đâu.
 - **In**: qua hộp thoại hệ thống, theo thứ tự trang và góc xoay hiện tại; có thể chọn phạm vi trang.
 
 ## Lưu

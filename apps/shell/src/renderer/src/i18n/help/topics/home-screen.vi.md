@@ -6,21 +6,30 @@ Trang chủ là trang khởi đầu của GenOffice: thanh điều hướng bên
 
 ## Điều hướng trên thanh bên
 
-- **Gần đây**: các tập tin bạn đã mở gần đây, nhóm theo thời gian (tuần này / đầu tháng này / trước đó).
+- **Gần đây**: các tập tin bạn đã mở gần đây. Mỗi hàng đều đóng dấu thời điểm — hôm nay, hôm qua hoặc ngày.
 - **Đã gắn sao**: các tập tin bạn đã gắn sao. Rê chuột lên một hàng tập tin rồi nhấp vào ngôi sao để thêm hoặc bỏ.
+- **Hướng dẫn sử dụng**: mở sổ tay này.
 - **Genspark Projects**: sau khi đăng nhập tài khoản Genspark, mục này hiển thị các dự án bạn đã tạo bằng Genspark AI trên web; nhấp vào một dự án để tiếp tục chỉnh sửa trong trình duyệt. Có hỗ trợ tìm kiếm, sắp xếp theo thời gian, làm mới và tải thêm.
-- **Thư mục**: ghim các thư mục dùng thường xuyên vào thanh bên (Thêm thư mục…) rồi nhảy tới chúng như bookmark. Các gốc không khả dụng hiển thị là không khả dụng và có thể xóa khỏi danh sách.
-- **Thùng rác**: trỏ tới thùng rác của hệ thống — các tập tin đã xóa nằm ở đó và có thể khôi phục từ hệ điều hành.
+- **Thư mục**: các thư mục bạn thêm vào thanh bên bằng **Thêm thư mục…**, hoặc kéo vào đó từ trình quản lý tập tin. Mỗi thư mục trở thành một gốc mà bạn có thể mở, tạo thư mục con bên trong, đổi tên và gỡ bỏ; thư mục nào mất kết nối sẽ hiển thị là không khả dụng và có thể gỡ khỏi danh sách. **Thư mục mới** tạo thêm một thư mục nữa.
+
+Ở đây không có mục Thùng rác. Các tập tin đã xóa đi vào thùng rác của hệ thống, và việc khôi phục là của hệ điều hành.
 
 ## Danh sách tập tin
 
 Mỗi hàng hiển thị biểu tượng, tên tập tin, thời gian sửa đổi và các thông tin khác. **Menu ⋯** của hàng cung cấp:
 
+- **Mở**, và **Hiển thị trong thư mục** để xác định vị trí tập tin trong trình quản lý tập tin của bạn.
+- **Sao chép đường dẫn**.
+- **Di chuyển vào thư mục…**: mở hộp chọn thư mục và thực sự chuyển tập tin đi; nếu nơi đến đã có tập tin trùng tên, bạn có thể bỏ qua, ghi đè hoặc đổi tên.
 - **Đổi tên**: tại chỗ, phần mở rộng được giữ tự động.
-- **Gắn sao / Bỏ gắn sao**
+- **Gắn sao / Bỏ gắn sao** — dấu sao vẫn còn sau khi khởi động lại và đi theo tập tin khi bạn đổi tên nó.
 - **Tạo bản sao**: tạo một bản sao trong cùng thư mục.
 - **Xóa**: chuyển tập tin vào thùng rác hệ thống — không xóa vĩnh viễn.
-- **Hiển thị trong thư mục**: định vị tập tin trong trình quản lý tập tin của bạn.
+- **Xóa khỏi danh sách**, trong mục **Gần đây** cấp cao nhất, để gỡ một mục mà không đụng tới tập tin.
+
+### Nhiều tập tin cùng lúc
+
+Chọn ô tick của một hàng, hoặc nhấp ⌘/ctrl, để tạo một vùng chọn; ô tick ở tiêu đề chọn tất cả những gì đang được liệt kê, và một thanh phía trên danh sách cho biết đã chọn bao nhiêu (**Đã chọn {n}**) kèm **Di chuyển vào thư mục…** và **Xóa tệp** cho toàn bộ nhóm. Bạn cũng có thể kéo một vùng chọn nhiều vào một thư mục trên thanh bên.
 
 ## Tìm kiếm
 

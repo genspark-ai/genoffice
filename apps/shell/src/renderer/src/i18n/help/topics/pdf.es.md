@@ -30,7 +30,7 @@ Referencia:
 
 ## Herramientas de dibujo (Anotar)
 
-Seis herramientas: **Dibujar, Rectángulo, Elipse, Flecha, Nota**, más **Censurar área** en la pestaña Editar.
+Seis herramientas: **Dibujar, Rectángulo, Elipse, Flecha, Nota**, más **Censurar área** en la pestaña Anotar.
 
 - Cada herramienta es un conmutador: pulse para activarla; **se desactiva sola en cuanto se coloca una forma** (vuelva a pulsar la herramienta para seguir); pulsar la herramienta activa también la desactiva.
 - El dibujo libre sigue el grosor del trazo; rectángulo/elipse/flecha se trazan arrastrando; los colores salen de la paleta de dibujo.
@@ -68,14 +68,17 @@ Seis herramientas: **Dibujar, Rectángulo, Elipse, Flecha, Nota**, más **Censur
 ## Operaciones de página (Páginas)
 
 - **Girar / eliminar / reordenar**: arrastre las miniaturas para reordenar; la eliminación pide confirmación.
+- **Importar páginas**: arrastre páginas desde otro PDF. **Insertar página en blanco** añade una página vacía.
+- **Reemplazar páginas** cambia un intervalo por páginas de otro documento; **Recortar páginas** recorta los bordes, con una opción para aplicarlo a todas las páginas.
+- **Tamaño de página** reescala todas las páginas a un mismo tamaño de papel; **Invertir orden** da la vuelta al documento de principio a fin.
 - **Extraer página**: exporte las páginas seleccionadas a un PDF nuevo.
-- **Dividir**: por intervalos, en varios archivos.
-- **Combinar**: añade otros PDF. Los tamaños se suman **antes** de leer nada y **todo lo que supere 1 GiB en total se rechaza** con un error legible (así la memoria queda acotada).
+- **Dividir PDF**: dos variantes — por intervalos en varios archivos, o cortar cada página en una cuadrícula de páginas más pequeñas.
+- **Combinar PDF**: dos variantes — añadir otros PDF, o combinar varias páginas en una misma hoja. Los tamaños se suman **antes** de leer nada y **todo lo que supere 1 GiB en total se rechaza** con un error legible (así la memoria queda acotada).
 - Los cambios a nivel de página se vuelven a escribir en el siguiente guardado; Guardar como deja el original intacto.
 
 ## Exportación e impresión
 
-- **PDF a Word**: conversión local a .docx.
+- **Exportar como Word… / PowerPoint… / Excel…** en el menú Archivo, o los mismos tres desde **Convertir PDF** en la cinta — todo local, sin subir nada. El .pptx sale con una diapositiva por página y el .xlsx con una hoja de cálculo por página. Cada uno pregunta dónde guardarlo.
 - **Imprimir**: el orden y las rotaciones actuales a través del cuadro de diálogo del sistema; admite intervalos de páginas.
 
 ## Guardar

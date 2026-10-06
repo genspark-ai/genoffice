@@ -13,12 +13,17 @@ O Sheets é o editor parecido com o Excel; os cálculos correm num processo sepa
 ## Separadores do friso
 
 - **Página Inicial**: fonte, preenchimento, bordas, formatos de número (moeda/percentagem/milhares, aumentar/diminuir decimais), alinhamento, merger, inserir linhas/colunas e dimensioná-las, formatação condicional, formatar como tabela, estilos de célula, área de transferência e pincel de formatação, classificar e filtrar.
-- **Inserir**: formas, ícones, símbolos, equação, captura de ecrã e mais.
+- **Inserir**: imagens, formas, caixas de texto, ligações, comentários, caixa de verificação, Cabeçalho e Rodapé, símbolos, equações; **nove tipos de gráfico** (colunas, barras, linhas, área, pizza, dispersão, radar, rosca e combinação de colunas + linhas), além de **Gráficos Recomendados**, que ordena os tipos para a seleção e mostra a pré-visualização; **Gráfico Dinâmico** a partir da célula onde está; **Minigráficos** (linhas, colunas, vitória/derrota); **Segmentação de Dados** e **Linha do Tempo** para filtrar uma Tabela Dinâmica.
+  - Os gráficos, os gráficos dinâmicos e os minigráficos são objetos reais no livro guardado.
+  - **Segmentação de Dados** e **Linha do Tempo** são controlos de sessão: a filtragem que fazem é guardada e o Excel mostra a mesma tabela dinâmica filtrada, mas o próprio botão de segmentação não faz parte do ficheiro.
 - **Layout da Página**: cores e fontes do tema, interruptores de linhas de grade e títulos ao imprimir, visualização de quebra de página.
 - **Fórmulas**: AutoSoma e inserção de funções, definir nomes (também a partir da seleção), rastrear precedentes/dependentes, janela de inspeção, recalcular folha/livro.
 - **Dados**: classificar e filtrar (incluindo filtro avançado e limpar o filtro), texto para colunas, mesclar pastas de trabalho, atualizar tudo.
-- **Revisão**: navegar pelos comentários (mostrar, anterior/seguinte), traduzir.
-- **Exibir**: interruptores de linhas de grade e títulos, zoom, visualização normal e de quebra de página.
+- **Revisão**: navegar pelos comentários (mostrar, anterior/seguinte), traduzir e um grupo **Proteção** — **Proteger Planilha**, **Proteger Pasta de Trabalho** e **Permitir Edição de Intervalos**.
+  - A proteção é escrita no .xlsx e o que esta aplicação aplica não tem palavra-passe, por isso o mesmo botão passa a **Desproteger…** e anula-a. A proteção vinda de outro programa que _tem mesmo_ palavra-passe não pode ser removida daqui.
+  - Os dois botões de proteção aplicam-se de imediato — não há nenhuma caixa de diálogo para cancelar, apenas uma nota na barra de estado a indicar que será escrito ao guardar.
+  - **Permitir Edição de Intervalos** marca as células que continuam editáveis enquanto o resto da folha fica bloqueada.
+- **Exibir**: interruptores de linhas de grade, **Barra de Fórmulas**, títulos e realce da linha e coluna ativas; zoom; **Normal** e **Visualização de Quebra de Página**. As linhas de grade e os títulos são guardados com a folha; o realce é uma preferência sua.
 - **Design do Gráfico**: aparece com um gráfico selecionado — tipo de gráfico, estilos e cores, editar o intervalo de dados.
 
 O separador Dados, botão a botão (da esquerda para a direita na figura):
@@ -86,6 +91,8 @@ O separador Fórmulas, botão a botão:
 ## IA
 
 - O painel de IA lateral: selecione um intervalo e dê instruções em linguagem corrente (reformatar, gerar dados, escrever fórmulas).
+- Anexe ficheiros a um pedido com o botão 📎, ou arraste-os para o painel; acompanham a questão e as imagens voltam como miniaturas.
+- Uma resposta pode citar uma célula — clique na referência e a grelha salta para lá.
 - As alterações feitas pela IA podem ser revertidas a partir do painel.
 
 ## Salvar e exportar

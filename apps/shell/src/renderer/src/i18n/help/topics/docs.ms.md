@@ -4,18 +4,22 @@ Docs ialah pemproses teks yang menyerupai Word. Ia membaca dan menulis fail .doc
 
 ## Reben
 
-Tab: **Laman Utama / Sisip / Tataletak / Reka Bentuk / Rujukan / Semakan / Pandangan**, bersama tab kontekstual untuk objek yang dipilih (Reka Bentuk Jadual, Format Gambar).
+Tab: **Laman Utama / Sisip / Lukis / Tataletak / Reka Bentuk / Rujukan / Semakan / Pandangan**, bersama tab kontekstual untuk objek yang dipilih (Reka Bentuk dan Tataletak Jadual, Format Gambar, Pengepala dan Pengaki).
 
-- **Laman Utama**: papan keratan; fon (termasuk saiz CJK dan tanda penekanan); perenggan (penjajaran / indentasi / jarak / senarai); gaya (Tajuk 1-6 / Biasa / Kutipan, boleh diubah suai).
-- **Sisip**: pemisah halaman dan seksyen, jadual (termasuk jadual pantas), imej, bentuk, hiperpautan, pengepala dan pengaki, nombor halaman, tarikh, kotak teks.
+- **Laman Utama**: papan keratan; fon (termasuk saiz CJK dan tanda penekanan) dengan **Kosongkan Semua Pemformatan** dan suis untuk **Tunjukkan/sembunyikan tanda pemformatan**; perenggan (penjajaran / indentasi / jarak / senarai) serta **Takrifkan bulet baharu / Takrifkan format nombor baharu / Senarai Berbilang Aras**, yang menyimpan gaya senarai anda sendiri ke dalam dokumen; gaya (Tajuk 1-6 / Biasa / Kutipan, boleh diubah suai) dengan **Anak Tetingkap Gaya** untuk senarai penuh.
+- **Sisip**: pemisah halaman dan seksyen; jadual (grid baris × lajur, atau **Sisip Jadual…** untuk saiz tepat); imej, bentuk, kotak teks; **Halaman Kulit** dan **Halaman Kosong** daripada galeri pratetapkan; **Carta**; **Huruf Jatuh**; **WordArt**; medan (tarikh, masa, nombor halaman, jumlah halaman, nama fail); pautan, **Penanda Buku** dan rujukan silang; komen; pengepala dan pengaki serta nombor halaman; simbol dan persamaan.
+  - **Carta** menyisipkan objek carta sebenar dengan datanya sendiri — bar, garis atau pir — bukan gambar. _Sunting Data_ dalam Word membuka angka di sebaliknya.
+- **Lukis**: dakwat di atas halaman, dalam kumpulan **Alat Lukisan** — **Pilih** kembali kepada penyuntingan teks, kemudian **Pen**, **Penyerlah** dan **Pemadam** (satu klik atau satu sapuan membuang keseluruhan strok). Di sebelahnya, **Gaya Pen** / **Gaya Penyerlah** ialah satu kawalan yang mengandungi contoh warna dan satu baris lebar; labelnya mengikut alat yang aktif. Dakwat disimpan dalam dokumen sebagai anotasi yang terapung di atas teks, jadi ia kekal selepas menyimpan dan membuka semula, dan **Kosongkan Semua** dalam kumpulan seterusnya membuangnya sepenuhnya.
 - **Tataletak**: margin, orientasi dan saiz kertas, lajur, indentasi dan jarak perenggan.
 - **Reka Bentuk**: tema, set warna, tera air, sempadan halaman.
 - **Rujukan**: kandungan (boleh dikemas kini), nota kaki dan nota hujung, sarikat, rujukan silang.
 
   ![Tab Rujukan](img/docs-references.png)
 
-- **Semakan**: pemeriksaan ejaan, komen,Jejak perubahan (paparan Semua/ Tanda ringkas), kiraan perkataan.
-- **Pandangan**: pembaris, garisan grid, panel navigasi, zum, dan dialog pintasan papan kekunci yang boleh dicari.
+- **Semakan**: **Editor** menyemak keseluruhan dokumen dari segi ejaan, tatabahasa dan tanda baca; **Terjemah**; pemeriksaan ejaan; komen (**Komen dengan AI** mengendalikan yang masih terbuka); jejak perubahan dengan paparan Semua Penandaan / Penandaan Ringkas, terima/tolak, dan **Ringkasan semakan AI**; kiraan perkataan; **Banding** dengan fail lain; **Lindungi Dokumen**.
+- **PANDANGAN**: lima cara untuk melihat fail — **Tataletak Cetakan**, **Tataletak Web**, **Rangka**, **Mod Baca** dan **Pratonton Halaman**; zum keluar/masuk/100 %/lebar halaman/satu halaman; **Panel AI**; **Mod Gelap**; pembaris, garisan grid dan anak tetingkap navigasi; **Tab Baharu**, **Pisah** dan **Tukar Tab**; dialog pintasan papan kekunci yang boleh dicari.
+  - **Mod Gelap** mengegelapkan halaman dan kanvas di sekelilingnya, tetapi tidak pernah ribbon — pemisahan Word antara permukaan penyuntingan gelap dan tingkap gelap. Pilihan ini diingat, dan dalam apa jua keadaan ia mendahului tema aplikasi.
+  - **Pisah** membuka anak tetingkap kedua di bawah yang menatal secara bebas dan mencerminkan yang pertama; tutup dengan × pada tepinya.
 
 ## Panel navigasi
 
@@ -32,12 +36,12 @@ navigate melalui rangka itu kekal boleh dinavigasi.
   mengembangkan semuanya sekali gus. Pada laporan yang panjang, ini bezanya antara
   rangka yang boleh dibaca dan dinding teks.
 - **Tunjukkan tahap tajuk** menapis pokok itu kepada kedalaman yang anda pedulikan, jadi
-  *Tunjukkan tajuk 1* meninggalkan anda dengan kandungan yang benar-benar boleh diimbas.
+  _Tunjukkan tajuk 1_ meninggalkan anda dengan kandungan yang benar-benar boleh diimbas.
 - **Naikkan tahap / Turunkan tahap** menukar tahap tajuk itu, sekali dengan tahap yang
   diwarisi oleh setiap tajuk di bawahnya — begitu sesebab menjadi seksyen.
 - **Tajuk baharu sebelum / selepas** memasukkan satu pada kedudukan kursor, tanpa
   meninggalkan panel.
-- **Padam** membuang tajuk itu *dan segala yang ada di bawahnya* — dan inilah yang perlu
+- **Padam** membuang tajuk itu _dan segala yang ada di bawahnya_ — dan inilah yang perlu
   diberi perhatian: ia memadamkan subpohon, bukan satu baris.
 - **Pilih tajuk dan kandungan** memilih dari tajuk itu hingga ke hujung subpohonnya,
   sedia untuk menyunting keseluruhan seksyen.

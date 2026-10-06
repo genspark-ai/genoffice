@@ -29,7 +29,7 @@ Kliknutím pravým tlačítkem na kartu získáte **Otevřít v novém okně** �
 
 ## Seznam všech karet
 
-Když se karty nevejdou, ▾ na pravém konci pruhu otevře úplný seznam (nativní nabídka, kterou obsahová plocha nikdy nezakryje); vyberte šipkami.
+Když se karty nevejdou, malá ikona pruhu karet na pravém konci otevře úplný seznam (nativní nabídka, kterou obsahová plocha nikdy nezakryje); vyberte šipkami.
 
 ## Pruh nástrojů v každém editoru
 
@@ -42,4 +42,4 @@ Každá karta editoru má nahoře pruh nástrojů (přesné rozvržení se mezi 
 
 ## Karta Domů
 
-Karta Domů, úplně vlevo, nelze zavřít; chcete-li se z libovolného editoru vrátit, klikněte na ni nebo použijte Soubor ▸ Domů.
+Karta Domů, úplně vlevo, nelze zavřít; chcete-li se z libovolného editoru vrátit, klikněte na ni nebo použijte Soubor ▸ **Zpět na domovskou stránku**.

@@ -27,7 +27,9 @@ Baris tab bermula pada Laman Utama dalam macOS, manakala Windows turut menambah 
 
 - **Tayangan Slaid**: mulakan persembahan dari awal atau dari slaid semasa, bersama tetapan pertunjukan.
 - **Semakan**: **komen baharu** pada slaid semasa. Ia ditulis ke dalam fail.pptx dan kelihatan dalam PowerPoint.
-- **PANDANGAN**: **Normal** dengan lakaran kenit dan kanvas, **PANDANGAN Rangka** untuk menyemak dan melompat mengikut teks, **Pengisih Slaid** untuk gambaran keseluruhan dalam grid, dan **PANDANGAN Baca** untuk paparan skrin penuh halaman demi halaman. Tekan Esc untuk keluar.
+- **PANDANGAN**: **Normal** dengan lakaran kenit dan kanvas, **PANDANGAN Rangka** untuk menyemak dan melompat mengikut teks, **Pengisih Slaid** untuk gambaran keseluruhan dalam grid, dan **PANDANGAN Baca** untuk paparan skrin penuh halaman demi halaman. Tekan Esc untuk keluar. Sertanya **Induk Slaid**, **PANDANGAN Penyampai**, **Tayangan Slaid Tersuai** dan **Sembunyikan Slaid**, serta suis untuk **Pembaris**, **Garis Grid**, **Panduan**, **Nota** dan **Anak Tetingkap Imej Kecil**. Zum masuk/keluar/100 % dan **Muat ke Tetingkap** juga berada di sini.
+  - Suis tersebut bersifat setiap sesi — ia kembali kepada nilai lalaiannya apabila anda membuka semula aplikasi. Pengekualiannya ialah yang anda tidak mahu kehilangan: kedudukan **panduan** disimpan bersama dek, dan anak tetingkap imej kecil menyimpan lebarnya.
+  - **Tayangan Slaid Tersuai** memilih slaid yang dimainkan oleh larian kiosk, dan ia disimpan bersama dek.
 
 ## Menu konteks
 

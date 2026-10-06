@@ -6,21 +6,30 @@ Accueil est la page de démarrage de GenOffice : une barre de navigation à gauc
 
 ## Navigation dans la barre latérale
 
-- **Récents** : les fichiers ouverts récemment, regroupés par période (cette semaine / ce mois-ci / plus tôt).
+- **Récents** : les fichiers que vous avez ouverts récemment. Chaque ligne est datée — aujourd’hui, hier ou la date.
 - **Favoris** : les fichiers que vous avez mis en favori. Survolez une ligne et cliquez sur l’étoile pour l’ajouter ou le retirer.
+- **Guide de l’utilisateur** : ouvre ce manuel.
 - **Genspark Projects** : après connexion à votre compte Genspark, affiche les projets que vous avez créés avec Genspark AI sur le web ; cliquez sur l’un pour continuer à modifier dans le navigateur. Recherche, tri par date, actualisation et chargement de davantage d’éléments sont pris en charge.
-- **Dossiers** : épinglez les répertoires fréquents dans la barre latérale (Ajouter un dossier…) et accédez-y comme à des favoris. Une racine indisponible est signalée comme telle et peut être retirée de la liste.
-- **Corbeille** : pointe vers la corbeille du système — les fichiers supprimés s’y retrouvent et peuvent être restaurés depuis l’OS.
+- **Dossiers** : les répertoires que vous ajoutez à la barre latérale avec **Ajouter un dossier…**, ou que vous y faites glisser depuis le gestionnaire de fichiers. Chacun devient une racine que vous pouvez ouvrir, dans laquelle créer des sous-dossiers, renommer et retirer ; une racine qui devient indisponible est signalée comme telle et peut être retirée de la liste. **Nouveau dossier** en crée un autre.
+
+Il n’y a pas d’entrée Corbeille ici. Les fichiers supprimés vont dans la corbeille du système, et les restaurer relève de l’OS.
 
 ## La liste des fichiers
 
 Chaque ligne affiche une icône, le nom du fichier, la date de modification et autres informations. Le **menu ⋯** de la ligne propose :
 
+- **Ouvrir**, et **Afficher dans le dossier** pour localiser le fichier dans votre gestionnaire de fichiers.
+- **Copier le chemin**.
+- **Déplacer vers un dossier…** : ouvre un sélecteur de dossier et déplace réellement le fichier ; si la destination contient déjà un fichier de ce nom, vous pouvez ignorer, écraser ou renommer.
 - **Renommer** : sur place, l’extension est conservée automatiquement.
-- **Ajouter aux favoris / Retirer des favoris**
+- **Ajouter aux favoris / Retirer des favoris** — les favoris survivent aux redémarrages et suivent le fichier quand vous le renommez.
 - **Dupliquer** : crée une copie dans le même dossier.
 - **Supprimer** : déplace le fichier vers la corbeille du système — ce n’est pas une suppression définitive.
-- **Afficher dans le dossier** : localise le fichier dans votre gestionnaire de fichiers.
+- **Retirer de la liste**, dans la vue **Récents** de premier niveau, pour faire disparaître une entrée sans toucher au fichier.
+
+### Plusieurs fichiers à la fois
+
+Cochez la case d’une ligne, ou faites ⌘/ctrl-clic, pour composer une sélection ; la case d’en-tête sélectionne tout ce qui est actuellement listé, et une barre au-dessus de la liste indique (**{n} sélectionné(s)**) combien sont sélectionnés et offre **Déplacer vers un dossier…** ainsi que **Supprimer les fichiers** pour l’ensemble. Vous pouvez aussi faire glisser une multi-sélection sur un dossier de la barre latérale.
 
 ## Recherche
 

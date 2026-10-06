@@ -17,12 +17,11 @@ As regras: a extensão é preservada automaticamente; caracteres proibidos, pont
 
 ## Excluir
 
-- **⋯ ▸ Excluir** no Início: move o arquivo para a **lixeira do sistema**, de onde pode ser restaurado pelo sistema operacional.
-- Após a exclusão aparece um aviso com opção de desfazer durante alguns segundos — desfazer devolve o arquivo ao lugar onde estava.
+- **⋯ ▸ Excluir** no Início: pergunta quais os ficheiros e depois move-os para a **lixeira do sistema**, onde o sistema operacional os pode restaurar. O GenOffice não guarda nenhum desfazer próprio para isto — a recuperação é responsabilidade da lixeira, não de um aviso.
 
 ## Duplicar
 
-**⋯ ▸ Duplicar** cria uma cópia de <nome> na mesma pasta e abre-a numa guia nova; se houver colisão de nome, um contador é acrescentado automaticamente.
+**⋯ ▸ Duplicar** cria uma cópia de <nome> na mesma pasta; se houver colisão de nome, um contador é acrescentado automaticamente. A cópia entra nos **Recentes** em vez de ser aberta por si — a um clique de distância, não à sua frente.
 
 ## Salvar e Salvar Como
 

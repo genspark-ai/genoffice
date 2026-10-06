@@ -29,7 +29,9 @@ Spróbuj: zaznacz ramkę tekstową tytułu ▸ karta Animacje ▸ wybierz efekt 
 
 - **Pokaz slajdów**: rozpocznij od początku lub od bieżącego slajdu, a także ustawienia pokazu.
 - **Recenzja**: **nowy komentarz** do bieżącego slajdu (zapisywany w pliku.pptx, widoczny w PowerPoincie).
-- **Widok**: **Normalny** (miniatury i obszar roboczy), **Widok konspektu** (przeglądanie i przechodzenie według tekstu), **Sortowanie slajdów** (przegląd w siatce, kliknięcie dwukrotnie przechodzi do edycji), **Widok do czytania** (pełny ekran, strona po stronie; Esc wychodzi).
+- **Widok**: **Normalny** (miniatury i obszar roboczy), **Widok konspektu** (przeglądanie i przechodzenie według tekstu), **Sortowanie slajdów** (przegląd w siatce, kliknięcie dwukrotnie przechodzi do edycji), **Widok do czytania** (pełny ekran, strona po stronie; Esc wychodzi); ponadto **Wzorzec slajdów**, **Widok prezentera**, **Pokaz niestandardowy** i **Ukryj slajd** oraz przełączniki **Linijka**, **Linie siatki**, **Prowadnice**, **Notatki** i **Okienko miniatur**. Powiększ/pomniejsz/100 % i **Dopasuj do okna** również znajdują się tutaj.
+  - Te przełączniki są sesyjne — powracają do wartości domyślnej po ponownym otwarciu aplikacji. Wyjątkami są te, których nie chciałbyś stracić: położenia **prowadnic** są zapisywane wraz z prezentacją, a okienko miniatur pamięta swoją szerokość.
+  - **Pokaz niestandardowy** wybiera slajdy odtwarzane w trybie kioskowym i jest zapisywany wraz z prezentacją.
 
 ## Menu kontekstowe
 

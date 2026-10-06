@@ -22,6 +22,13 @@ Klicken Sie in der Vorschau auf ein beliebiges Element, und eine Werkzeugleiste 
 - **Elementaktionen** (wenn im Vorschau-Inspektor ein Element ausgewählt ist): löschen, duplizieren, nach oben/nach unten verschieben.
 - **KI-Schaltfläche**: öffnet den KI-Bereich; fragen Sie direkt zum ausgewählten Element.
 
+## Exportieren
+
+Menü Datei, alles lokal und alles fragt nach, wohin das Ergebnis soll:
+
+- **Als Word exportieren…** und **Als PDF exportieren…** schreiben eine echte .docx bzw. .pdf.
+- **Als Einzeldatei-HTML exportieren…** schreibt eine einzelne .html mit eingebetteten Bildern. Sie überschreibt nicht die Datei, die Sie gerade geöffnet haben, und meldet, wie viele Bilder sie nicht einbetten konnte.
+
 ## Gerüst einfügen
 
 Für eine leere Seite schreibt **Einfügen ▸ Gerüst einfügen** ein minimales Dokument im Standardmodus:
@@ -30,7 +37,7 @@ Für eine leere Seite schreibt **Einfügen ▸ Gerüst einfügen** ein minimales
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Die Viewport-Meta-Angabe fehlt bewusst: Sie wird in einer Desktop-Fläche gerend
 
 Das `lang` folgt der Oberflächensprache der App; das eingefügte Gerüst ist also das, für das Ihre Werkzeuge bereits eingerichtet sind. Bearbeiten Sie es danach frei.
 
-Der Eintrag erscheint nur im Bearbeitungsmodus und nur, solange das Dokument leer ist — sobald Inhalt da ist, gibt es nichts mehr, *worein* ein Gerüst einzufügen wäre.
-
+Der Eintrag erscheint nur im Bearbeitungsmodus und nur, solange das Dokument leer ist — sobald Inhalt da ist, gibt es nichts mehr, _worein_ ein Gerüst einzufügen wäre.

@@ -22,6 +22,13 @@ Click any element in the preview and a toolbar floats above it:
 - **Element actions** (with an element selected in the preview inspector): delete, duplicate, move up/down.
 - **AI button**: opens the AI panel; ask about the selected element directly.
 
+## Exporting
+
+File menu, all local and all asking where to put the result:
+
+- **Export as Word…** and **Export as PDF…** write a real .docx or .pdf.
+- **Export as Single-File HTML…** writes one .html with the images embedded in it. It will not overwrite the file you currently have open, and it tells you how many images it could not embed.
+
 ## Insert skeleton
 
 For a blank page, **Insert ▸ Insert skeleton** writes a minimal standards-mode document:
@@ -30,7 +37,7 @@ For a blank page, **Insert ▸ Insert skeleton** writes a minimal standards-mode
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,4 +54,4 @@ A viewport meta is deliberately absent: this renders in a desktop pane with no m
 
 The `lang` follows the app's UI language, so the skeleton you insert is the one your tooling is already set up for. Edit it freely afterwards.
 
-The item only appears in edit mode, and only while the document is empty — there is nothing to insert a skeleton *into* once there is content.
+The item only appears in edit mode, and only while the document is empty — there is nothing to insert a skeleton _into_ once there is content.

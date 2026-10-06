@@ -17,12 +17,11 @@ Règles : l’extension est conservée automatiquement ; les caractères interdi
 
 ## Supprimer
 
-- **⋯ ▸ Supprimer** sur l’accueil : déplace le fichier vers la **corbeille du système**, restaurable depuis l’OS.
-- Une notification de suppression avec annulation apparaît pendant quelques secondes — annuler remet le fichier à sa place.
+- **⋯ ▸ Supprimer** sur l’accueil : demande quels fichiers, puis les déplace vers la **corbeille du système**, où l’OS peut les restaurer. GenOffice ne conserve aucune annulation propre pour cela — la récupération relève de la corbeille, pas d’une notification.
 
 ## Dupliquer
 
-**⋯ ▸ Dupliquer** crée une copie nommée « <name> copy » dans le même dossier et l’ouvre dans un nouvel onglet ; les collisions reçoivent automatiquement un compteur.
+**⋯ ▸ Dupliquer** crée une copie nommée « <name> copy » dans le même dossier ; les collisions reçoivent automatiquement un compteur. La copie rejoint les **Récents** au lieu de s’ouvrir : à un clic de vous, pas devant vous.
 
 ## Enregistrer et Enregistrer sous
 

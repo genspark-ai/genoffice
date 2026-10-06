@@ -22,6 +22,13 @@ Klik pada mana-mana elemen dalam pratonton, dan satu bar alat akan muncul di ata
 - **Tindakan elemen** apabila elemen dipilih dalam pemeriksa pratonton: memadam, menyalin, dan memindahkan ke atas atau ke bawah.
 - **Butang AI** membuka panel AI, dan anda boleh bertanya tentang elemen yang dipilih secara terus.
 
+## Eksport
+
+Menu Fail, semuanya setempat dan semuanya akan bertanya di mana hasilnya perlu disimpan:
+
+- **Eksport sebagai Word…** dan **Eksport sebagai PDF…** menulis .docx atau .pdf yang sebenar.
+- **Eksport sebagai HTML fail tunggal…** menulis satu .html dengan imej dibbenamkan di dalamnya. Ia tidak akan menimpa fail yang sedang anda buka, dan memberitahu anda berapa imej yang tidak dapat dibbenamkan.
+
 ## Sisip kerangka
 
 Bagi halaman kosong, **Sisip ▸ Sisip kerangka** menulis dokumen minimum dalam mod piawaian:
@@ -30,7 +37,7 @@ Bagi halaman kosong, **Sisip ▸ Sisip kerangka** menulis dokumen minimum dalam 
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title></title>
   </head>
   <body></body>
@@ -47,5 +54,4 @@ Meta viewport sengaja tidak disertakan: ini dipaparkan dalam panel desktop tanpa
 
 `lang` mengikut bahasa antara muka aplikasi, jadi kerangka yang anda sisip ialah kerangka yang alat anda sudah pun disediakan untuknya. Anda boleh menyuntingnya dengan bebas selepas itu.
 
-Baris item itu hanya muncul dalam mod suntingan, dan hanya semasa dokumen itu kosong — tiada apa-apa untuk disisipkan kerangka *ke dalam* sebaik sahaja ada kandungan.
-
+Baris item itu hanya muncul dalam mod suntingan, dan hanya semasa dokumen itu kosong — tiada apa-apa untuk disisipkan kerangka _ke dalam_ sebaik sahaja ada kandungan.

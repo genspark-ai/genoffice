@@ -52,7 +52,9 @@ Los atajos dentro de cada editor (copiar formato, buscar y reemplazar, operacion
 
 ## Los atajos Option+Comando
 
-Option+Comando es la capa que Word reserva para los saltos estructurados, y GenOffice la rellena igual. Todo lo siguiente es propio de Docs:
+Option+Comando es la capa que Word reserva para los saltos estructurados, y GenOffice la rellena igual. Docs se queda con la mayor parte; Sheets toma dos de las suyas propias para la paridad con Excel; un atajo funciona en todas partes.
+
+**Docs**
 
 | Atajo (macOS)   | Qué hace               | Windows / Linux    |
 | --------------- | ---------------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Comando es la capa que Word reserva para los saltos estructurados, y GenO
 | ⌥⌘G             | Ir a                   | Ctrl+G             |
 
 Dos de ellos cambian en Windows, por la misma razón que hace que Word los separe. **macOS es dueño de ⌥⌘D** — muestra y oculta el Dock —, así que la nota al final es ⌥⌘E en el Mac y Ctrl+Alt+D en cualquier otro sitio. Y **Ir a** se quita el Alt: Ctrl+G, donde la combinación del Mac sí lo lleva.
+
+**Sheets**, con la cuadrícula enfocada
+
+| Atajo (macOS) | Qué hace        | Windows / Linux |
+| ------------- | --------------- | --------------- |
+| ⌥⌘0           | Bordes externos | Ctrl+Shift+7    |
+| ⌥⌘−           | Sin borde       | Ctrl+Shift+−    |
+
+Windows no es una reescritura del par del Mac. Excel para Mac le da a Sheets **ambos**: ⌘⇧7 y ⌥⌘0 son dos teclas para los mismos bordes externos, así que en Windows el comando conserva la ranura Ctrl+Shift que ya tenía y la capa Option simplemente no está.
+
+Fíjate en que **⌥⌘0 significa Normal en Docs y Bordes externos en Sheets**. Nunca aparecen en el mismo editor, así que en la práctica nada colisiona, pero ⌥⌘0 está ocupado y no está disponible como atajo global.
+
+**Todos los editores**: **⌥⌘R / Ctrl+F1** contrae la cinta de opciones, tal como se ha descrito arriba.
 
 Eso deja ⌥⌘D libre para que GenOffice lo use en macOS si algún comando futuro lo necesita.
 

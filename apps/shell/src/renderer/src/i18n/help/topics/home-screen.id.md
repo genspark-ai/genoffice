@@ -6,21 +6,30 @@ Beranda adalah halaman awal GenOffice: bilah navigasi di sebelah kiri, daftar fi
 
 ## Navigasi bilah sisi
 
-- **Terbaru**: file yang baru saja Anda buka, dikelompokkan menurut waktu (minggu ini / bulan ini / sebelumnya).
+- **Terbaru**: file yang baru saja Anda buka. Setiap baris diberi cap waktu — hari ini, kemarin, atau tanggalnya.
 - **Berbintang**: file yang Anda beri bintang. Arahkan kursor ke baris file lalu klik bintang untuk menambah atau menghapusnya.
+- **Panduan Pengguna**: membuka panduan ini.
 - **Genspark Projects**: setelah masuk ke akun Genspark, menampilkan proyek yang Anda buat dengan Genspark AI di web; klik salah satunya untuk melanjutkan pengeditan di browser. Pencarian, pengurutan menurut waktu, penyegaran, dan muat lebih banyak tersedia.
-- **Folder**: sematkan direktori yang sering dipakai ke bilah sisi (Tambah folder…) lalu lompat ke sana seperti penanda. Akar yang tidak tersedia ditampilkan sebagai tidak tersedia dan dapat dihapus dari daftar.
-- **Sampah**: menunjuk ke tempat sampah sistem — file yang dihapus pindah ke sana dan dapat dipulihkan dari sistem operasi.
+- **Folder**: direktori yang Anda tambahkan ke bilah sisi dengan **Tambah folder…**, atau Anda seret ke sana dari aplikasi file. Masing-masing menjadi akar yang bisa Anda buka, buat subfolder di dalamnya, ganti namanya, dan hapus; akar yang jadi luring ditampilkan sebagai tidak tersedia dan bisa dilepas dari daftar. **Folder baru** membuat folder lagi.
+
+Tidak ada entri Sampah di sini. File yang dihapus masuk ke tempat sampah sistem, dan memulihkannya adalah urusan sistem operasi.
 
 ## Daftar file
 
 Setiap baris menampilkan ikon, nama file, waktu modifikasi, dan lainnya. **Menu ⋯** pada baris menyediakan:
 
+- **Buka**, dan **Tampilkan di folder** untuk menemukan file di aplikasi file Anda.
+- **Salin jalur**.
+- **Pindahkan ke folder…**: membuka pemilih folder dan benar-benar memindahkan file; jika di tujuan sudah ada file dengan nama yang sama, Anda bisa melewati, menimpa, atau mengganti namanya.
 - **Ganti nama**: langsung di tempat, ekstensi dipertahankan otomatis.
-- **Beri bintang / Hapus bintang**
+- **Beri bintang / Hapus bintang** — bintang bertahan setelah aplikasi ditutup dan mengikuti file ketika Anda menggantinya nama.
 - **Duplikat**: membuat salinan di folder yang sama.
 - **Hapus**: memindahkan file ke tempat sampah sistem — bukan penghapusan permanen.
-- **Tampilkan di folder**: menemukan file di aplikasi file Anda.
+- **Hapus dari daftar**, pada tampilan **Terbaru** tingkat atas, untuk membuang sebuah entri tanpa menyentuh filenya.
+
+### Beberapa file sekaligus
+
+Centang kotak pada sebuah baris, atau ⌘/ctrl-klik, untuk menyusun sebuah pilihan; kotak di header memilih semuanya yang saat ini terdaftar, dan sebuah bilah di atas daftar melaporkan berapa yang dipilih (**{n} dipilih**) dengan **Pindahkan ke folder…** dan **Hapus file** untuk seluruh rangkaian. Anda juga bisa menyeret pilihan ganda ke sebuah folder di bilah sisi.
 
 ## Pencarian
 

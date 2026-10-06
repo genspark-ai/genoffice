@@ -6,21 +6,30 @@ Domů je startovní stránka GenOffice: navigační panel vlevo, seznamy soubor�
 
 ## Navigace v postranním panelu
 
-- **Nedávné**: soubory, které jste nedávno otevřeli, seskupené podle času (tento týden / tento měsíc / dříve).
+- **Nedávné**: soubory, které jste nedávno otevřeli. Každý řádek nese svůj čas — dnes, včera nebo datum.
 - **Oblíbené**: soubory, které jste si označili hvězdičkou. Přejděte na řádek souboru a klikněte na hvězdičku, abyste jej přidali nebo odebrali.
+- **Uživatelská příručka**: otevře tuto příručku.
 - **Genspark Projects**: po přihlášení k účtu Genspark zobrazí projekty, které jste vytvořili na webu pomocí Genspark AI; kliknutím na projekt pokračujete v úpravách v prohlížeči. K dispozici je vyhledávání, řazení podle času, obnovení a načtení dalších.
-- **Složky**: připněte často používané adresáře do postranního panelu (Přidat složku…) a přeskakujte na ně jako na záložky. Nedostupné kořeny se zobrazují jako nedostupné a lze je ze seznamu odebrat.
-- **Koš**: odkazuje na systémový koš — odstraněné soubory putují tam a lze je obnovit z operačního systému.
+- **Složky**: adresáře, které do postranního panelu přidáte tlačítkem **Přidat složku…** nebo do něj přetáhnete ze správce souborů. Každý se stane kořenem, který můžete otevřít, vytvořit v něm podsložky, přejmenovat a odebrat; ten, který se stane nedostupným, se zobrazí jako nedostupný a lze ho ze seznamu sundat. **Nová složka** vytvoří další.
+
+Zde není žádná položka Koš. Odstraněné soubory putují do systémového koše a jejich obnova je věcí operačního systému.
 
 ## Seznam souborů
 
 Každý řádek zobrazuje ikonu, název souboru, čas změny a další údaje. Nabídka **⋯** na řádku obsahuje:
 
+- **Otevřít**, a dále **Zobrazit ve složce**, abyste soubor našli ve správci souborů.
+- **Kopírovat cestu**.
+- **Přesunout do složky…**: otevře výběr složky a soubor skutečně přesune; pokud je v cíli už soubor se stejným názvem, můžete přeskočit, přepsat nebo přejmenovat.
 - **Přejmenovat**: přejmenování na místě, přípona se zachová automaticky.
-- **Přidat k oblíbeným / Odebrat z oblíbených**
+- **Přidat k oblíbeným / Odebrat z oblíbených** — hvězdičky přežijou restart a sledují soubor i po jeho přejmenování.
 - **Duplikovat**: vytvoří kopii ve stejné složce.
 - **Odstranit**: přesune soubor do systémového koše — nejde o trvalé smazání.
-- **Zobrazit ve složce**: najde soubor v Průzkumníku.
+- **Odebrat ze seznamu**, v hlavním zobrazení **Nedávné**, aby položka zmizela, aniž by se souboru něco stalo.
+
+### Více souborů najednou
+
+Zaškrtněte pole u řádku nebo klepněte s ⌘/ctrl, abyste vytvořili výběr; pole v záhlaví vybere vše, co je právě vypsáno, a lišta nad seznamem hlásí (**Vybráno: {n}**), kolik je vybráno, a nabízí **Přesunout do složky…** a **Odstranit soubory** pro celou sadu. Výběr více souborů můžete také přetáhnout na složku v postranním panelu.
 
 ## Vyhledávání
 

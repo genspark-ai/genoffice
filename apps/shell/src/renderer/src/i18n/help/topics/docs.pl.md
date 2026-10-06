@@ -4,18 +4,22 @@ Docs to edytor tekstu podobny do Worda: otwiera i zapisuje prawdziwe pliki .docx
 
 ## Wstążka
 
-Karty: **Narzędzia główne / Wstawianie / Układ / Projektowanie / Odwołania / Recenzja / Widok**, a także karty kontekstowe pojawiające się dla zaznaczonego obiektu (Projekt tabeli, Formatowanie obrazu).
+Karty: **Narzędzia główne / Wstawianie / Rysowanie / Układ / Projektowanie / Odwołania / Recenzja / Widok**, a także karty kontekstowe pojawiające się dla zaznaczonego obiektu (Projekt i układ tabeli, Formatowanie obrazu, nagłówek i stopka).
 
-- **Narzędzia główne**: schowek; czcionka (w tym rozmiary CJK i znaki wyróżnienia); akapit (wyrównanie/wcięcie/odstępy/wykazy); style (Nagłówek 1-6/Normalny/Cytat, edytowalne).
-- **Wstawianie**: podziały strony i sekcji, tabele (także szybkie tabele), obrazy, kształty, hiperłącza, nagłówek i stopka, numery stron, data, ramki tekstowe.
+- **Narzędzia główne**: schowek; czcionka (w tym rozmiary CJK i znaki wyróżnienia) z **Wyczyść całe formatowanie** i przełącznikiem **Pokaż/ukryj znaki formatowania**; akapit (wyrównanie/wcięcie/odstępy/wykazy) plus **Zdefiniuj nowy punktor / Zdefiniuj nowy format numeracji / Lista wielopoziomowa**, które zapisują własne style wykazów w dokumencie; style (Nagłówek 1-6/Normalny/Cytat, edytowalne); **Okienko stylów** pokazuje pełną listę.
+- **Wstawianie**: podziały strony i sekcji; tabele (siatka wierszy × kolumn albo **Wstaw tabelę…** dla dokładnego rozmiaru); obrazy, kształty, ramki tekstowe; **Strona tytułowa** i **Pusta strona** z galerii gotowych wzorów; **Wykres**; **Inicjał**; **WordArt**; pola (data, godzina, numer strony, łączna liczba stron, nazwa pliku); hiperłącza, **Zakładka** i odsyłacze; komentarze; nagłówek i stopka oraz numery stron; symbole i równania.
+  - **Wykres** wstawia prawdziwy obiekt wykresu z własnymi danymi — słupkowym, liniowym lub kołowym — a nie obraz. _Edytuj dane_ w programie Word otwiera liczby, które są pod nim.
+- **Rysowanie**: tusz na stronie, w grupie **Narzędzia do rysowania** — **Zaznacz** wraca do edycji tekstu, a następnie **Pióro**, **Zakreślacz** i **Gumka** (jedno kliknięcie albo przesunięcie usuwa cały ślad). Obok nich **Styl pióra** / **Styl zakreślacza** to jeden element sterujący, który zawiera próbki kolorów i rząd grubości; jego etykieta podąża za aktywnym narzędziem. Tusz jest zapisywany w dokumencie jako adnotacja unosząca się nad tekstem, więc przetrwa zapisanie i ponowne otwarcie, a **Wyczyść wszystko** w następnej grupie usuwa go w całości.
 - **Układ**: marginesy, orientacja i rozmiar papieru, kolumny, wcięcia i odstępy akapitów.
 - **Projektowanie**: motywy, zestawy kolorów, znak wodny, obramowanie strony.
 - **Odwołania**: spis treści (z możliwością aktualizacji), przypisy dolne i końcowe, podpisy, odsyłacze.
 
   ![Karta Odwołania](img/docs-references.png)
 
-- **Recenzja**: sprawdzanie pisowni, komentarze, śledzenie zmian (widok Wszystkie zmiany/Proste oznaczenia), licznik słów.
-- **Widok**: linijka, linie siatki, okno nawigacji, powiększenie oraz wyszukiwalne okno **skrótów klawiaturowych**.
+- **Recenzja**: **Edytor** sprawdza cały dokument pod kątem pisowni, gramatyki i interpunkcji; **Przetłumacz**; sprawdzanie pisowni; komentarze (**Komentarze z AI** opracowuje nierozwiązane); śledzenie zmian z widokami Cała adiustacja / Prosta adiustacja, akceptowanie/odrzucanie oraz **Podsumowanie zmian AI**; licznik słów; **Porównaj** z innym plikiem; **Chroń dokument**.
+- **Widok**: pięć sposobów patrzenia na plik — **Układ wydruku**, **Układ sieci Web**, **Konspekt**, **Tryb czytania** i **Podgląd stron**; pomniejsz/powiększ/100 %/szerokość strony/jedna strona; **Panel AI**; **Tryb ciemny**; linijka, linie siatki i okienko nawigacji; **Nowa karta**, **Podziel** i **Przełącz karty**; wyszukiwalne okno **skrótów klawiaturowych**.
+  - **Tryb ciemny** przyciemnia stronę i płótno wokół niej, nigdy wstążkę — podział programu Word między ciemną powierzchnią edycji a ciemnym oknem. Wybór jest zapamiętywany i w każdym przypadku ma pierwszeństwo przed motywem aplikacji.
+  - **Podziel** otwiera poniżej drugie okienko, które przewija się niezależnie i odwzorowuje pierwsze; zamknij je krzyżykiem × na jego krawędzi.
 
 ## Okno nawigacji
 
@@ -32,12 +36,12 @@ zwinąć go lub zmienić jego strukturę, a nie tylko nawigować:
 - **Zwiń wszystko / Rozwiń wszystko** zwijają lub rozwijają wszystko
   naraz. W długim raporcie to różnica między czytelnym konspektem a ścianą tekstu.
 - **Pokaż poziomy nagłówków** filtruje drzewo do poziomów, które Cię interesują, więc
-  *Pokaż nagłówek 1* zostawia Ci spis treści, który faktycznie da się przejrzeć.
+  _Pokaż nagłówek 1_ zostawia Ci spis treści, który faktycznie da się przejrzeć.
 - **Podnieś poziom / Obniż poziom** zmieniają poziom nagłówka, a wraz z nim poziom,
   który dziedziczy każdy nagłówek poniżej: tak rozdział staje się sekcją.
 - **Nowy nagłówek przed / po** wstawia nowy nagłówek w miejscu kursora, bez opuszczania
   panelu.
-- **Usuń** kasuje nagłówek *wraz ze wszystkim, co jest pod nim* — i to jest ta operacja,
+- **Usuń** kasuje nagłówek _wraz ze wszystkim, co jest pod nim_ — i to jest ta operacja,
   na którą trzeba uważać: usuwa poddrzewo, a nie wiersz.
 - **Zaznacz nagłówek i zawartość** zaznacza od nagłówka do końca jego poddrzewa,
   gotowe do edycji całej sekcji.

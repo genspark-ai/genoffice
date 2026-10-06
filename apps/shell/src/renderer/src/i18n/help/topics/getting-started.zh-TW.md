@@ -52,7 +52,9 @@ GenOffice 是一套完全在你電腦上運作的辦公套件：單一視窗、�
 
 ## Option+Command 這一組快速鍵
 
-Option+Command 是 Word 留給結構化跳轉的層級，GenOffice 也用同樣的方式填滿。以下全部是 Docs 自己的快速鍵：
+Option+Command 是 Word 留給結構化跳轉的層級，GenOffice 也用同樣的方式填滿。其中大部分歸 Docs，Sheets 也另外有兩個自己的快速鍵，用來對齊 Excel；另外還有一個組合在所有編輯器裡都能用。
+
+**Docs**
 
 | 快速鍵（macOS） | 作用           | Windows / Linux    |
 | --------------- | -------------- | ------------------ |
@@ -65,6 +67,19 @@ Option+Command 是 Word 留給結構化跳轉的層級，GenOffice 也用同樣�
 | ⌥⌘G             | 到             | Ctrl+G             |
 
 其中兩個在 Windows 上會變，理由跟 Word 把它們拆開一樣。**macOS 佔用了 ⌥⌘D**——它用來顯示與隱藏 Dock——所以章節附註在 Mac 上是 ⌥⌘E，在其他地方則是 Ctrl+Alt+D。而**到**則省掉 Alt：Mac 上的組合鍵帶著 Alt，Windows 上只要 Ctrl+G 就好。
+
+**Sheets**（格線取得焦點時）
+
+| 快速鍵（macOS） | 作用   | Windows / Linux |
+| --------------- | ------ | --------------- |
+| ⌥⌘0             | 外框線 | Ctrl+Shift+7    |
+| ⌥⌘−             | 無框線 | Ctrl+Shift+−    |
+
+Windows 並不是把 Mac 上那兩個組合改寫一次。Excel for Mac 給 Sheets **兩種都有**——⌘⇧7 和 ⌥⌘0 是同一個外框線的兩個按鍵——所以在 Windows 上這個指令保留它本來就有的 Ctrl+Shift 位置，而 Option 那一層乾脆就不存在。
+
+注意 **⌥⌘0 在 Docs 裡是「內文」，在 Sheets 裡是「外框線」**。兩者不會出現在同一個編輯器裡，所以實際使用不會衝突；但 ⌥⌘0 已經被佔用，不能再當成全域快速鍵。
+
+**所有編輯器**：**⌥⌘R / Ctrl+F1** 依上文所述摺疊功能區。
 
 這樣一來，macOS 上的 ⌥⌘D 就空著留給 GenOffice，將來哪個指令想用，就可以直接拿去用。
 

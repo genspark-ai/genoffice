@@ -13,12 +13,17 @@ Sheets ist der Excel-ähnliche Editor; die Berechnung läuft in einem separaten 
 ## Tabs im Menüband
 
 - **Start**: Schriftart, Füllung, Rahmen, Zahlenformate (Währung/Prozent/Tausendertrennzeichen, Dezimalstellen hinzufügen/entfernen), Ausrichtung, Verbinden, Zeilen-/Spalten einfügen und Größe, bedingte Formatierung, Als Tabelle formatieren, Zellformate, Zwischenablage und Format übertragen, Sortieren und Filtern.
-- **Einfügen**: Formen, Symbole, Zeichen, Gleichung, Bildschirmfoto und mehr.
+- **Einfügen**: Bilder, Formen, Textfelder, Links, Kommentare, Kontrollkästchen, Kopf- und Fußzeile, Symbole, Gleichungen; **neun Diagrammtypen** (Säule, Balken, Linie, Fläche, Kreis, Punkt (XY), Netz, Ring und Säulen + Linien) plus **Empfohlene Diagramme**, die die Typen für die Auswahl rangiert und in der Vorschau zeigt; **PivotChart** aus der Zelle, in der Sie stehen; **Sparklines** (Linie, Säule, Gewinn/Verlust); **Datenschnitt** und **Zeitachse** zum Filtern einer PivotTable.
+  - Diagramme, PivotCharts und Sparklines sind echte Objekte in der gespeicherten Arbeitsmappe.
+  - **Datenschnitt** und **Zeitachse** sind Bedienelemente der Sitzung: Die Filterung, die sie vornehmen, wird gespeichert und Excel zeigt dieselbe gefilterte PivotTable, der Datenschnitt-Knopf selbst ist aber nicht Teil der Datei.
 - **Seitenlayout**: Designfarben und -schriften, Schalter zum Drucken von Gitternetzlinien und Überschriften, Umbruchvorschau.
 - **Formeln**: AutoSumme und Funktionseinfügung, Namen definieren (auch aus der Auswahl), Spur zum Vorgänger/Nachfolger, Überwachungsfenster, Blatt/Arbeitsmappe neu berechnen.
 - **Daten**: Sortieren und Filtern (einschließlich erweiterter Filter, Filter löschen), Text in Spalten, Arbeitsmappen zusammenführen, alle aktualisieren.
-- **Überprüfen**: Kommentare durchsehen (anzeigen, vorheriger/nächster), übersetzen.
-- **Ansicht**: Schalter für Gitternetzlinien und Überschriften, Zoom, Normal/Umbruchvorschau.
+- **Überprüfen**: Kommentare durchsehen (anzeigen, vorheriger/nächster), übersetzen und die Gruppe **Schützen** — **Blatt schützen**, **Arbeitsmappe schützen** und **Bereiche zur Bearbeitung freigeben**.
+  - Der Schutz wird in die .xlsx geschrieben, und auf das, was diese App anwendet, gibt es kein Passwort; derselbe Knopf wird damit zu **Schutz aufheben…** und macht es rückgängig. Ein Schutz aus einem anderen Programm, der _tatsächlich_ ein Passwort hat, lässt sich von hier nicht entfernen.
+  - Die beiden Schutzknöpfe wirken sofort — es gibt keinen Dialog zum Abbrechen, nur einen Hinweis in der Statusleiste, dass es beim Speichern geschrieben wird.
+  - **Bereiche zur Bearbeitung freigeben** markiert die Zellen, die bearbeitbar bleiben, während der Rest des Blatts gesperrt ist.
+- **Ansicht**: Schalter für Gitternetzlinien, **Bearbeitungsleiste**, Überschriften und zum Hervorheben der aktiven Zeile und Spalte; Zoom; **Normal** und **Umbruchvorschau**. Gitternetzlinien und Überschriften werden mit dem Blatt gespeichert; die Hervorhebung ist eine eigene Einstellung.
 - **Diagrammentwurf**: erscheint, wenn ein Diagramm ausgewählt ist — Diagrammtyp, Stile und Farben, Datenbereich bearbeiten.
 
 Der Tab „Daten“, Knopf für Knopf (im Bild von links nach rechts):
@@ -86,6 +91,8 @@ Der Tab „Formeln“, Knopf für Knopf:
 ## KI
 
 - Der KI-Bereich seitlich: Bereich auswählen und in normaler Sprache anweisen (umformatieren, Daten erzeugen, Formeln schreiben).
+- Mit der Schaltfläche 📎 hängen Sie Dateien an eine Eingabe an, oder ziehen Sie sie auf den Bereich; sie reisen mit der Frage mit, und Bilder kommen als Miniaturansichten zurück.
+- Eine Antwort kann auf eine Zelle verweisen — ein Klick auf den Verweis springt im Raster dorthin.
 - Änderungen der KI lassen sich im Bereich zurückrollen.
 
 ## Speichern und exportieren

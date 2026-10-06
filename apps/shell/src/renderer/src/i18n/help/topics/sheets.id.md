@@ -13,12 +13,17 @@ Sheets adalah editor mirip Excel; perhitungan dijalankan di proses mesin Rust te
 ## Tab pita
 
 - **Beranda**: font, isian, batas, format angka (mata uang/persen/koma, tambah/kurangi desimal), perataan, penggabungan, penyisipan baris/kolom dan ukurannya, pemformatan bersyarat, format sebagai tabel, gaya sel, papan klip & penyalin format, urutkan & filter.
-- **Sisipkan**: bentuk, ikon, simbol, persamaan, cuplikan layar, dan lain-lain.
+- **Sisipkan**: gambar, bentuk, Kotak Teks, tautan, komentar, kotak centang, Header & Footer, simbol, persamaan; **sembilan jenis bagan** (kolom, batang, garis, area, pai, sebar, radar, donat, dan kombinasi kolom + garis) ditambah **Bagan yang Direkomendasikan**, yang mengurutkan jenis untuk pilihan tersebut dan menampilkan pratinjaunya; **PivotChart** dari sel tempat Anda berada; **Grafik mini** (garis, kolom, menang/kalah); **Pemotong** dan **Garis Waktu** untuk memfilter tabel Pivot.
+  - Bagan, bagan pivot, dan grafik mini adalah objek nyata di dalam buku kerja yang disimpan.
+  - **Pemotong** dan **Garis Waktu** adalah kendali sesi: penyaringan yang mereka lakukan tersimpan dan Excel menampilkan tabel pivot tersaring yang sama, tetapi tombol pemotong itu sendiri bukan bagian dari berkas.
 - **Tata Letak Halaman**: warna & font tema, tombol garis kisi/heading cetak, pratinjau hentian halaman.
 - **Rumus**: JumlahOtomatis dan sisipkan fungsi, menentukan nama (juga dari pilihan), lacak presedan/dependen, jendela pemantauan, menghitung ulang lembar/buku kerja.
 - **Data**: urutkan & filter (termasuk filter lanjutan, hapus filter), teks ke kolom, gabungkan buku kerja, refresh semua.
-- **Tinjau**: telusuri komentar (tampilkan, sebelumnya/berikutnya), terjemahkan.
-- **Tampilan**: tombol garis kisi & heading, zoom, pratinjau normal / hentian halaman.
+- **Tinjau**: telusuri komentar (tampilkan, sebelumnya/berikutnya), terjemahkan, dan grup **Proteksi** — **Proteksi Lembar**, **Proteksi Buku Kerja** dan **Izinkan Edit Rentang**.
+  - Proteksi ditulis ke dalam .xlsx dan tidak ada kata sandi pada apa yang diterapkan aplikasi ini, sehingga tombol yang sama menjadi **Buka Proteksi…** dan membatalkannya. Proteksi dari program lain yang _benar-benar_ membawa kata sandi tidak dapat dihapus dari sini.
+  - Kedua tombol proteksi langsung berlaku — tidak ada dialog untuk dibatalkan, hanya catatan di bilah status bahwa perubahan itu akan ditulis saat disimpan.
+  - **Izinkan Edit Rentang** menandai sel yang tetap dapat disunting sementara sisa lembar terkunci.
+- **Tampilan**: tombol garis kisi, **Bilah Rumus**, judul, dan penyorotan baris & kolom aktif; zoom; **Normal** dan **Pratinjau Hentian Halaman**. Garis kisi dan judul disimpan bersama lembar; penyorotan adalah preferensi Anda sendiri.
 - **Desain Bagan**: muncul saat bagan dipilih — jenis bagan, gaya dan warna, sunting rentang data.
 
 Tab Data, tombol demi tombol (dari kiri ke kanan pada gambar):
@@ -86,6 +91,8 @@ Tab Rumus, tombol demi tombol:
 ## AI
 
 - Panel AI di samping: pilih satu rentang lalu beri instruksi dengan bahasa biasa (format ulang, buat data, tulis rumus).
+- Lampirkan berkas ke sebuah prompt dengan tombol 📎, atau seret ke panel; berkas ikut bersama pertanyaan dan gambar kembali sebagai thumbnail.
+- Sebuah jawaban dapat mengutip sel — klik rujukan itu dan kisi akan melompat ke sana.
 - Perubahan dari AI dapat dikembalikan dari panel.
 
 ## Menyimpan dan mengekspor

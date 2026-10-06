@@ -29,7 +29,7 @@ Kliknij prawym przyciskiem kartę, aby otworzyć: **Otwórz w nowym oknie** — 
 
 ## Lista wszystkich kart
 
-Gdy kart jest więcej, niż mieści się na pasku, ▾ na prawym końcu otwiera pełną listę (menu natywne, nigdy niezasłonięte przez obszar zawartości); wybierz strzałkami.
+Gdy kart jest więcej, niż mieści się na pasku, mała ikona paska kart na prawym końcu otwiera pełną listę (menu natywne, nigdy niezasłonięte przez obszar zawartości); wybierz strzałkami.
 
 ## Pasek narzędzi w każdym edytorze
 
@@ -42,4 +42,4 @@ Każda karta edytora ma u góry pasek narzędzi (dokładny układ różni się n
 
 ## Karta strony głównej
 
-Karta strony głównej, najbardziej z lewej, nie można zamknąć; aby wrócić do niej z dowolnego edytora, kliknij ją lub użyj Plik ▸ Strona główna.
+Karta strony głównej, najbardziej z lewej, nie można zamknąć; aby wrócić do niej z dowolnego edytora, kliknij ją lub użyj Plik ▸ **Wróć do strony głównej**.

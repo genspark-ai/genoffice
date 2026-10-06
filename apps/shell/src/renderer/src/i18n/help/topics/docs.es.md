@@ -4,18 +4,22 @@ Docs es el procesador de texto similar a Word: lee y escribe .docx reales con un
 
 ## La cinta de opciones
 
-Pestañas: **Inicio / Insertar / Disposición / Diseño / Referencias / Revisar / Vista**, más pestañas contextuales para el objeto seleccionado (Diseño de tabla, imágenes).
+Pestañas: **Inicio / Insertar / Dibujar / Disposición / Diseño / Referencias / Revisar / Vista**, más pestañas contextuales para el objeto seleccionado (Diseño y disposición de tabla, imágenes, encabezado y pie de página).
 
-- **Inicio**: portapapeles; fuente (incluidos tamaños y signos de énfasis de Asia oriental); párrafo (alineación/sangría/interlineado/listas); estilos (Título 1-6/Normal/Cita, modificables).
-- **Insertar**: saltos de página y de sección, tablas (incluidas las dibujadas y las rápidas), imágenes, formas, hipervínculos, encabezado y pie de página, número de página, fecha, cuadros de texto.
+- **Inicio**: portapapeles; fuente (incluidos tamaños y signos de énfasis de Asia oriental) con **Borrar todo el formato** y un conmutador para **Mostrar u ocultar marcas de formato**; párrafo (alineación/sangría/interlineado/listas) más **Definir nueva viñeta / Definir nuevo formato de número / Lista multinivel**, que guardan sus propios estilos de lista en el documento; estilos (Título 1-6/Normal/Cita, modificables) con un **Panel de estilos** para la lista completa.
+- **Insertar**: saltos de página y de sección; tablas (una cuadrícula de filas × columnas, o **Insertar tabla…** para un tamaño exacto); imágenes, formas, cuadros de texto; **Portada** y **Página en blanco** de una galería predefinida; **Gráfico**; **Letra capital**; **WordArt**; campos (fecha, hora, número de página, total de páginas, nombre de archivo); hipervínculos, **Marcador** y referencias cruzadas; comentarios; encabezado y pie de página y números de página; símbolos y ecuaciones.
+  - **Gráfico** inserta un objeto de gráfico real con sus propios datos — de barras, de líneas o circular — y no una imagen. _Editar datos_ de Word abre los números que hay detrás.
+- **Dibujar**: tinta sobre la página, en el grupo **Herramientas de dibujo** — **Seleccionar** vuelve a la edición de texto, y luego **Lápiz**, **Marcador de resaltado** y **Borrador** (un clic o un barrido elimina todo el trazo). Junto a ellos, **Estilo de lápiz** / **Estilo de marcador de resaltado** es un solo control con muestras de color y una fila de grosores; su etiqueta sigue a la herramienta que esté activa. La tinta se guarda en el documento como una anotación que flota sobre el texto, así que sobrevive a guardar y reabrir, y **Borrar todo** en el grupo siguiente la elimina por completo.
 - **Disposición**: márgenes, orientación y tamaño del papel, columnas, sangrías y espaciado de párrafo.
 - **Diseño**: temas, conjuntos de colores, marca de agua, bordes de página.
 - **Referencias**: tabla de contenido (actualizable), notas al pie y notas al final, títulos, referencias cruzadas.
 
   ![La pestaña Referencias](img/docs-references.png)
 
-- **Revisar**: corrección ortográfica, comentarios, control de cambios (vistas Todas las revisiones / Revisiones simples), contar palabras.
-- **Vista**: regla, líneas de la cuadrícula, panel de navegación, zoom y el cuadro de diálogo de **atajos de teclado** en el que se puede buscar.
+- **Revisar**: **Editor** revisa la ortografía, la gramática y la puntuación de todo el documento; **Traducir**; corrección ortográfica; comentarios (**Comentarios con IA** trabaja los que están abiertos); control de cambios con las vistas Todas las revisiones / Revisiones simples, aceptar/rechazar y **Resumen IA de revisiones**; contar palabras; **Comparar** con otro archivo; **Proteger documento**.
+- **Vista**: cinco maneras de mirar el archivo — **Diseño de impresión**, **Diseño web**, **Esquema**, **Modo de lectura** y **Vista previa de páginas**; alejar/acercar/100 %/ancho de página/una página; **Panel de IA**; **Modo oscuro**; regla, líneas de la cuadrícula y el panel de navegación; **Nueva pestaña**, **Dividir** y **Cambiar de pestaña**; el cuadro de diálogo de **atajos de teclado** en el que se puede buscar.
+  - **Modo oscuro** oscurece la página y el lienzo que la rodea, nunca la cinta — la división de Word entre una superficie de edición oscura y una ventana oscura. La elección se recuerda y gana sobre el tema de la aplicación en cualquier caso.
+  - **Dividir** abre un segundo panel debajo que se desplaza de forma independiente y refleja el primero; ciérralo con la × de su borde.
 
 ## El panel de navegación
 
@@ -25,10 +29,10 @@ Pestañas: **Inicio / Insertar / Disposición / Diseño / Referencias / Revisar 
 
 - **Contraer / Expandir** en un título pliega todo su subárbol: el capítulo desaparece, su texto sigue en el documento.
 - **Contraer todo / Expandir todo** pliega o despliega todo de una vez. En un informe largo esa es la diferencia entre una estructura legible y un muro de texto.
-- **Mostrar niveles de título** filtra el árbol a las profundidades que le interesan, así que *Mostrar título 1* le deja una tabla de contenido que puede recorrer de verdad.
+- **Mostrar niveles de título** filtra el árbol a las profundidades que le interesan, así que _Mostrar título 1_ le deja una tabla de contenido que puede recorrer de verdad.
 - **Aumentar nivel / Disminuir nivel** cambian el nivel del título, y con él el nivel que heredan todos los títulos que están debajo: así un capítulo se convierte en una sección.
 - **Nuevo título antes / después** inserta uno en la posición del cursor, sin salir del panel.
-- **Eliminar** quita el título *y todo lo que hay debajo*, que es el único con el que hay que tener cuidado: borra un subárbol, no una línea.
+- **Eliminar** quita el título _y todo lo que hay debajo_, que es el único con el que hay que tener cuidado: borra un subárbol, no una línea.
 - **Seleccionar título y contenido** selecciona desde el título hasta el final de su subárbol, listo para editar una sección entera.
 
 ## Menú contextual

@@ -29,7 +29,9 @@ Pruébelo: seleccione el cuadro de texto del título ▸ pestaña Animaciones �
 
 - **Presentación con diapositivas**: presentar desde el principio o desde la diapositiva actual, más los ajustes de presentación.
 - **Revisar**: **nuevo comentario** en la diapositiva actual (se escribe en el pptx y es visible en PowerPoint).
-- **Vista**: **Normal** (miniaturas y lienzo), **Vista Esquema** (recorrer y saltar por el texto), **Clasificador de diapositivas** (vista general en cuadrícula, doble clic para editar), **Vista de lectura** (pantalla completa, diapositiva a diapositiva; Esc para salir).
+- **Vista**: **Normal** (miniaturas y lienzo), **Vista Esquema** (recorrer y saltar por el texto), **Clasificador de diapositivas** (vista general en cuadrícula, doble clic para editar), **Vista de lectura** (pantalla completa, diapositiva a diapositiva; Esc para salir); además **Patrón de diapositivas**, **Vista Moderador**, **Presentación personalizada** y **Ocultar diapositiva**, y conmutadores para **Regla**, **Líneas de cuadrícula**, **Guías**, **Notas** y el **Panel de miniaturas**. Acercar/alejar/100 % y **Ajustar a la ventana** también están aquí.
+  - Esos conmutadores son por sesión — vuelven a su valor predeterminado al reabrir la aplicación. Las excepciones son las que no querrías perder: las posiciones de las **guías** se guardan con la presentación, y el panel de miniaturas recuerda su ancho.
+  - **Presentación personalizada** elige qué diapositivas reproduce una ejecución en modo quiosco, y se guarda con la presentación.
 
 ## Menús contextuales
 

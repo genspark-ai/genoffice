@@ -4,18 +4,22 @@ O Docs é o processador de texto parecido com o Word: lê e escreve .docx a sér
 
 ## O friso
 
-Separadores: **Página Inicial / Inserir / Layout / Design / Referências / Revisão / Exibir**, mais separadores contextuais para o objeto selecionado (design da tabela, imagens).
+Separadores: **Página Inicial / Inserir / Desenhar / Layout / Design / Referências / Revisão / Exibir**, mais separadores contextuais para o objeto selecionado (design e layout da tabela, imagens, cabeçalho e rodapé).
 
-- **Página Inicial**: área de transferência; fonte (incluindo tamanhos CJK e marcas de ênfase); parágrafo (alinhamento/recuo/espaçamento/listas); estilos (Título 1-6/Normal/Citação, modificáveis).
-- **Inserir**: quebras de página e de secção, tabelas (incluindo tabelas rápidas), imagens, formas, hiperligações, cabeçalho e rodapé, número de página, data, caixas de texto.
+- **Página Inicial**: área de transferência; fonte (incluindo tamanhos CJK e marcas de ênfase) com **Limpar Toda a Formatação** e um interruptor para **Mostrar/ocultar marcas de formatação**; parágrafo (alinhamento/recuo/espaçamento/listas) mais **Definir novo marcador / Definir novo formato de número / Lista de Vários Níveis**, que guardam os seus próprios estilos de lista no documento; estilos (Título 1-6/Normal/Citação, modificáveis) com um **Painel de Estilos** para a lista completa.
+- **Inserir**: quebras de página e de secção; tabelas (uma grelha de linhas × colunas, ou **Inserir Tabela…** para um tamanho exato); imagens, formas, caixas de texto; **Folha de Rosto** e **Página em Branco** a partir de uma galeria predefinida; **Gráfico**; **Letra Capitular**; **WordArt**; campos (data, hora, número de página, total de páginas, nome do arquivo); hiperligações, **Indicador** e referências cruzadas; comentários; cabeçalho e rodapé e números de página; símbolos e equações.
+  - **Gráfico** insere um verdadeiro objeto de gráfico com os seus próprios dados — de barras, de linhas ou circular — e não uma imagem. _Editar dados_ do Word abre os números que estão por trás.
+- **Desenhar**: tinta sobre a página, no grupo **Ferramentas de Desenho** — **Selecionar** volta à edição de texto, depois **Caneta**, **Marca-Texto** e **Borracha** (um clique ou um gesto apaga o traço inteiro). Ao lado, **Estilo da Caneta** / **Estilo do Marca-Texto** é um único controlo com amostras de cor e uma fila de espessuras; o respetivo rótulo segue a ferramenta ativa. A tinta é guardada no documento como uma anotação que flutua por cima do texto, por isso sobrevive a guardar e reabrir, e **Limpar Tudo**, no grupo seguinte, remove-a toda.
 - **Layout**: margens, orientação e tamanho do papel, colunas, recuos e espaçamento dos parágrafos.
 - **Design**: temas, conjuntos de cores, marca de água, bordas da página.
 - **Referências**: sumário (atualizável), notas de rodapé e de fim, legendas, referências cruzadas.
 
   ![O separador Referências](img/docs-references.png)
 
-- **Revisão**: verificação ortográfica, comentários, controlar alterações ( vistas Todas/Simples), contagem de palavras.
-- **Exibir**: régua, linhas de grade, painel de navegação, zoom e a janela pesquisável de **atalhos de teclado**.
+- **Revisão**: **Editor** revê a ortografia, a gramática e a pontuação de todo o documento; **Traduzir**; verificação ortográfica; comentários (**Comentários com IA** trata os que estão abertos); controlar alterações com as vistas Toda a Marcação / Marcação Simples, aceitar/rejeitar e **Resumo de revisões com IA**; contagem de palavras; **Comparar** com outro ficheiro; **Proteger Documento**.
+- **Exibir**: cinco formas de ver o ficheiro — **Layout de Impressão**, **Layout da Web**, **Estrutura de Tópicos**, **Modo de Leitura** e **Visualização de Páginas**; reduzir/ampliar/100 %/largura da página/uma página; **Painel de IA**; **Modo Escuro**; régua, linhas de grade e o painel de navegação; **Nova Guia**, **Dividir** e **Alternar Guias**; a janela pesquisável de **atalhos de teclado**.
+  - O **Modo Escuro** escurece a página e a tela à volta dela, nunca o friso — a divisão do Word entre uma superfície de edição escura e uma janela escura. A escolha fica guardada e, em qualquer caso, prevalece sobre o tema da aplicação.
+  - **Dividir** abre um segundo painel por baixo, que desliza de forma independente e espelha o primeiro; feche-o com o × no seu limite.
 
 ## O painel de navegação
 
@@ -25,10 +29,10 @@ Separadores: **Página Inicial / Inserir / Layout / Design / Referências / Revi
 
 - **Recolher / Expandir** num título dobra toda a sua subárvore — o capítulo desaparece, o texto dele continua no documento.
 - **Recolher tudo / Expandir tudo** dobra ou desdobra tudo de uma vez. Num relatório longo é a diferença entre uma estrutura legível e uma parede de texto.
-- **Mostrar níveis de título** filtra a árvore até às profundidades que lhe interessam, deixando-lhe com *Mostrar título 1* um índice que se consegue mesmo folhear.
+- **Mostrar níveis de título** filtra a árvore até às profundidades que lhe interessam, deixando-lhe com _Mostrar título 1_ um índice que se consegue mesmo folhear.
 - **Promover / Rebaixar** mudam o nível do título, e com ele o nível que todos os títulos abaixo herdam — é assim que um capítulo passa a secção.
 - **Novo título antes / Novo título depois** inserem um no ponto de inserção, sem sair do painel.
-- **Excluir** remove o título *e tudo o que está por baixo dele*, e é este o item a ter cuidado: é uma eliminação de subárvore, não uma eliminação de linha.
+- **Excluir** remove o título _e tudo o que está por baixo dele_, e é este o item a ter cuidado: é uma eliminação de subárvore, não uma eliminação de linha.
 - **Selecionar título e conteúdo** seleciona do título até ao fim da sua subárvore, pronto para uma edição de toda a secção.
 
 ## Menu de contexto

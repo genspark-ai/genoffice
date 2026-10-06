@@ -52,7 +52,9 @@ Shortcuts inside each editor (format painter, find & replace, table ops, ...) ar
 
 ## The Option+Command chords
 
-Option+Command is the layer Word reserves for structured jumps, and GenOffice fills it the same way. All of these are Docs' own:
+Option+Command is the layer Word reserves for structured jumps, and GenOffice fills it the same way. Docs takes most of it; Sheets takes two of its own for Excel parity; one chord works everywhere.
+
+**Docs**
 
 | Chord (macOS)   | What it does       | Windows / Linux    |
 | --------------- | ------------------ | ------------------ |
@@ -65,6 +67,19 @@ Option+Command is the layer Word reserves for structured jumps, and GenOffice fi
 | ⌥⌘G             | Go To              | Ctrl+G             |
 
 Two of these move on Windows, for the same reason Word splits them. **macOS owns ⌥⌘D** — it shows and hides the Dock — so endnote is ⌥⌘E on the Mac and Ctrl+Alt+D everywhere else. And **Go To** drops the Alt: Ctrl+G, where the Mac chord carries it.
+
+**Sheets**, while the grid has focus
+
+| Chord (macOS) | What it does    | Windows / Linux |
+| ------------- | --------------- | --------------- |
+| ⌥⌘0           | Outside borders | Ctrl+Shift+7    |
+| ⌥⌘−           | No border       | Ctrl+Shift+−    |
+
+Windows is not a rewrite of the Mac pair. Excel for Mac gives Sheets **both** — ⌘⇧7 and ⌥⌘0 are two keys for the same outside border — so on Windows the command keeps the Ctrl+Shift slot it already had and the Option layer is simply absent.
+
+Note that **⌥⌘0 means Normal in Docs and Outside borders in Sheets**. They never appear in the same editor, so nothing collides in use, but ⌥⌘0 is spoken for and is not available as a global chord.
+
+**Every editor**: **⌥⌘R / Ctrl+F1** folds the ribbon, as described above.
 
 That leaves ⌥⌘D free for GenOffice to use on macOS, if a future command wants it.
 

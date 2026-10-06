@@ -29,7 +29,7 @@ Klik kanan sebuah tab untuk **Buka di Jendela Baru** — tersedia pada setiap ta
 
 ## Daftar Semua tab
 
-Ketika tab melebihi bilah, tanda ▾ di ujung kanan bilah membuka daftar lengkap (menu native, tidak pernah tertutup area konten); pilih dengan tombol panah.
+Ketika tab melebihi bilah, ikon bilah tab kecil di ujung kanan bilah membuka daftar lengkap (menu native, tidak pernah tertutup area konten); pilih dengan tombol panah.
 
 ## Baris alat di dalam setiap editor
 
@@ -42,4 +42,4 @@ Setiap tab editor punya satu baris alat di bagian atas (tata letaknya sedikit be
 
 ## Tab Beranda
 
-Tab Beranda paling kiri tidak bisa ditutup; untuk kembali dari editor mana pun, klik tab itu atau gunakan File ▸ Beranda.
+Tab Beranda paling kiri tidak bisa ditutup; untuk kembali dari editor mana pun, klik tab itu atau gunakan File ▸ **Kembali ke Beranda**.

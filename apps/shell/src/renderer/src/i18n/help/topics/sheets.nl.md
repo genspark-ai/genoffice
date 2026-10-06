@@ -13,12 +13,17 @@ Sheets is de Excel-achtige editor; de berekeningen draaien in een apart proces m
 ## Linttabs
 
 - **Start**: lettertype, opvulling, randen, getalnotaties (valuta/procent/duizendtallen, decimalen omhoog/omlaag), uitlijning, samenvoegen, rijen en kolommen invoegen en hun grootte, voorwaardelijke opmaak, opmaken als tabel, celstijlen, klembord en opmaakpenseel, sorteren en filteren.
-- **Invoegen**: vormen, pictogrammen, symbolen, vergelijkingen, schermafbeeldingen en meer.
+- **Invoegen**: afbeeldingen, vormen, tekstvakken, koppelingen, opmerkingen, selectievakje, koptekst en voettekst, symbolen, vergelijkingen; **neven grafiektypen** (kolom, staaf, lijn, vlak, cirkel, spreiding, radar, ring, en kolom + lijn) plus **Aanbevolen grafieken**, die de typen voor de selectie rangschikt en in het voorbeeld toont; **Draaigrafiek** vanuit de cel waarin u staat; **Sparklines** (lijn, kolom, winst/verlies); **Slicer** en **Tijdlijn** om een draaitabel te filteren.
+  - Grafieken, draaigrafieken en sparklines zijn echte objecten in de opgeslagen werkmap.
+  - **Slicer** en **Tijdlijn** zijn sessiebesturingen: de filtering die ze uitvoeren wordt opgeslagen en Excel toont dezelfde gefilterde draaitabel, maar de slicerknop zelf maakt geen deel uit van het bestand.
 - **Pagina-indeling**: themakleuren en -lettertypen, schakelaars voor het afdrukken van rasterlijnen en koppen, voorbeeld van pagina-einden.
 - **Formules**: Autosom en functies invoegen, namen definiëren (ook vanuit een selectie), voorwaarden en gevolgen traceren, controlevenster, werkblad of werkmap opnieuw berekenen.
 - **Gegevens**: sorteren en filteren (inclusief geavanceerd filter en filter wissen), tekst naar kolommen, werkmap samenvoegen, alles vernieuwen.
-- **Controleren**: opmerkingen doorbladeren (tonen, vorige/volgende), vertalen.
-- **Beeld**: schakelaars voor rasterlijnen en koppen, zoom, normaal beeld / voorbeeld van pagina-einden.
+- **Controleren**: opmerkingen doorbladeren (tonen, vorige/volgende), vertalen en de groep **Beveiligen** — **Blad beveiligen**, **Werkmap beveiligen** en **Bewerken van bereiken toestaan**.
+  - De beveiliging wordt in de .xlsx geschreven en op wat deze app toepast zit geen wachtwoord, dus dezelfde knop wordt **Beveiliging opheffen…** en maakt het ongedaan. Beveiliging uit een ander programma dat _wél_ een wachtwoord heeft, kan hier niet worden verwijderd.
+  - De twee beveiligingsknoppen werken meteen — er is geen dialoog om te annuleren, alleen een aantekening in de statusbalk dat het bij het opslaan wordt weggeschreven.
+  - **Bewerken van bereiken toestaan** markeert de cellen die bewerkbaar blijven terwijl de rest van het blad vergrendeld is.
+- **Beeld**: schakelaars voor rasterlijnen, **Formulebalk**, koppen en het markeren van de actieve rij en kolom; zoom; **Normaal** en **Pagina-eindevoorbeeld**. Rasterlijnen en koppen worden met het werkblad opgeslagen; het markeren is een eigen voorkeur.
 - **Grafiekontwerp**: verschijnt als er een grafiek geselecteerd is — grafiektype, stijlen en kleuren, gegevensbereik bewerken.
 
 Het tabblad Gegevens, knop voor knop (van links naar rechts op de afbeelding):
@@ -86,6 +91,8 @@ Het tabblad Formules, knop voor knop:
 ## AI
 
 - Het AI-paneel aan de zijkant: selecteer een bereik en geef instructies in gewone taal (opnieuw opmaken, gegevens genereren, formules schrijven).
+- Voeg bestanden toe aan een prompt met de 📎-knop, of sleep ze op het paneel; ze reizen mee met de vraag en afbeeldingen komen terug als miniaturen.
+- Een antwoord kan naar een cel verwijzen — klik op de verwijzing en het raster springt er naartoe.
 - AI-wijzigingen kun je vanuit het paneel terugdraaien.
 
 ## Opslaan en exporteren

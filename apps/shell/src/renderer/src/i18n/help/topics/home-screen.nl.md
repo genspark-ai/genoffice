@@ -6,21 +6,30 @@ Start is de beginpagina van GenOffice: een navigatiebalk links, bestandslijsten 
 
 ## Navigatie in de zijbalk
 
-- **Recent**: bestanden die je onlangs hebt geopend, gegroepeerd op tijd (deze week / deze maand / eerder).
+- **Recent**: bestanden die je onlangs hebt geopend. Elke rij draagt zijn moment — vandaag, gisteren of de datum.
 - **Favorieten**: bestanden die je hebt gemarkeerd. Beweeg over een bestandsrij en klik op de ster om het toe te voegen of te verwijderen.
+- **Gebruikershandleiding**: opent deze handleiding.
 - **Genspark Projects**: na het aanmelden bij je Genspark-account zie je de projecten die je op het web met Genspark AI hebt gemaakt; klik er een aan om in de browser verder te bewerken. Zoeken, sorteren op tijd, vernieuwen en meer laden worden ondersteund.
-- **Mappen**: zet veelgebruikte mappen vast in de zijbalk (Map toevoegen…) en spring er direct heen als naar bladwijzers. Niet-beschikbare locaties worden als niet beschikbaar getoond en kunnen uit de lijst worden verwijderd.
-- **Prullenbak**: verwijst naar de prullenbak van het systeem — verwijderde bestanden belanden daar en kunnen vanuit het besturingssysteem worden hersteld.
+- **Mappen**: de mappen die je met **Map toevoegen…** aan de zijbalk toevoegt, of er vanuit je bestandsverkenner naartoe sleep. Elke map wordt een hoofdmap die je kunt openen, er submappen in kunt aanmaken, hernoemen en verwijderen; een map die offline gaat wordt als niet beschikbaar getoond en kan van de lijst worden gehaald. **Nieuwe map** maakt er nog een.
+
+Er is hier geen Prullenbak-item. Verwijderde bestanden belanden in de prullenbak van het systeem, en ze herstellen is zaak van het besturingssysteem.
 
 ## De bestandslijst
 
 Elke rij toont een pictogram, de bestandsnaam, de wijzigingstijd en meer. Het **⋯-menu** in de rij biedt:
 
+- **Openen**, en **Tonen in map** om het bestand in je bestandsverkenner te vinden.
+- **Pad kopiëren**.
+- **Verplaatsen naar map…**: opent een mapkiezer en verplaatst het bestand echt; staat er op de bestemming al een bestand met dezelfde naam, dan kunt u overslaan, overschrijven of hernoemen.
 - **Naam wijzigen**: ter plekke hernoemen, de extensie blijft automatisch behouden.
-- **Aan favorieten toevoegen / Uit favorieten verwijderen**
+- **Aan favorieten toevoegen / Uit favorieten verwijderen** — favorieten blijven over een herstart heen staan en volgen het bestand als je het hernoemt.
 - **Dupliceren**: maakt een kopie in dezelfde map.
 - **Verwijderen**: verplaatst het bestand naar de prullenbak van het systeem — dit is geen definitieve verwijdering.
-- **Tonen in map**: lokaliseert het bestand in je bestandsverkenner.
+- **Uit lijst verwijderen**, in het bovenste **Recent**-overzicht, om een item te laten verdwijnen zonder het bestand aan te raken.
+
+### Meerdere bestanden tegelijk
+
+Vink het vakje bij een rij aan, of ⌘/ctrl-klik, om een selectie op te bouwen; het vakje in de kop selecteert alles wat er op dit moment staat, en een balk boven de lijst meldt (**{n} geselecteerd**) hoeveel er geselecteerd zijn en biedt **Verplaatsen naar map…** en **Bestanden verwijderen** voor de hele set. Je kunt een meervoudige selectie ook naar een map in de zijbalk slepen.
 
 ## Zoeken
 

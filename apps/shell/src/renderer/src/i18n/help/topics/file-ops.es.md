@@ -17,12 +17,11 @@ Reglas: la extensión se conserva automáticamente; los caracteres no permitidos
 
 ## Eliminar
 
-- **⋯ ▸ Eliminar** en Inicio: mueve el archivo a la **papelera del sistema**, desde donde el sistema operativo permite restaurarlo.
-- Tras eliminar aparece unos segundos una notificación con deshacer; deshacer devuelve el archivo a su sitio.
+- **⋯ ▸ Eliminar** en Inicio: pregunta qué archivos y luego los mueve a la **papelera del sistema**, desde donde el sistema operativo puede restaurarlos. GenOffice no guarda ningún deshacer propio para esto — la recuperación es cosa de la papelera, no de una notificación.
 
 ## Duplicar
 
-**⋯ ▸ Duplicar** crea una copia llamada <name> copy en la misma carpeta y la abre en una pestaña nueva; si el nombre ya existe, se añade un contador automáticamente.
+**⋯ ▸ Duplicar** crea una copia llamada <name> copy en la misma carpeta; si el nombre ya existe, se añade un contador automáticamente. La copia se añade a **Recientes** en lugar de abrirse: queda a un clic, no delante de ti.
 
 ## Guardar y Guardar como
 
