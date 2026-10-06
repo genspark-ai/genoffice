@@ -31,6 +31,8 @@ const INLINE_RE = new RegExp(
 )
 const LINK_RE = new RegExp(`^\\[([^\\]]+)\\]\\((${HREF})\\)$`)
 const IMG_RE = new RegExp(`^!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
+/** a whole line that is nothing but an image, the manual's figure syntax */
+const IMG_LINE_RE = new RegExp(`^\\s*!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
 
 function renderInline(text: string, nav?: MarkdownNav, images?: MarkdownImage): ReactNode[] {
   const out: ReactNode[] = []
@@ -157,9 +159,11 @@ function parseBlocks(text: string): MdBlock[] {
       flush()
       continue
     }
-    // Standalone image line: ![alt](href) — rendered as an <img> when the host
-    // passes images.resolve and it resolves, otherwise ignored
-    const img = new RegExp(`^\\s*!\\[([^\\]]*)\\]\\((${HREF})\\)$`).exec(line)
+    // Standalone image line: ![alt](href) — the manual's figure syntax, and a
+    // thing an AI reply can contain on its own. It is a *block* only when the
+    // host can resolve it; see the render side, which falls back to the literal
+    // text rather than dropping the line.
+    const img = IMG_LINE_RE.exec(line)
     if (img) {
       flush()
       blocks.push({ kind: 'img', alt: img[1] ?? '', href: img[2] ?? '' })
@@ -249,7 +253,11 @@ export function Markdown({
         }
         if (b.kind === 'img') {
           const src = images?.resolve?.(b.href)
-          if (!src) return null
+          // No resolver, or one that misses: render the line as written. Six of
+          // the AI panels pass no resolver at all, and swallowing a line
+          // because a host cannot draw it loses whatever the model actually
+          // said there.
+          if (!src) return <p key={i}>{`![${b.alt}](${b.href})`}</p>
           return <img key={i} className="ai-md-img" src={src} alt={b.alt} loading="lazy" />
         }
         if (b.kind === 'ul' || b.kind === 'ol') {

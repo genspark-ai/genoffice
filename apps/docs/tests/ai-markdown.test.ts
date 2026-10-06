@@ -143,9 +143,10 @@ describe('AI bubble markdown: images', () => {
     expect(html).toContain('[docs](help:d)')
   })
 
-  it('drops a standalone image line nothing can resolve', () => {
-    // the other path, and it is older than the inline one: a lone figure line
-    // with no resolver behind it is noise, not prose to show the reader
-    expect(render('![only](help:x)')).not.toContain('![only]')
+  it('keeps a standalone image line a host cannot resolve', () => {
+    // Six of the AI panels pass no resolver, and an AI reply can put a figure
+    // on a line of its own. Swallowing the line loses what the model actually
+    // said, so the literal text stands in for the picture.
+    expect(render('![only](help:x)')).toContain('![only](help:x)')
   })
 })
