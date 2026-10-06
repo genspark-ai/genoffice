@@ -143,3 +143,22 @@
   background: var(--hover);
   color: var(--color-text-primary);
 }
+
+/* reordering: hold a row to pick it up, Alt+arrows for keyboards */
+.ai-queue-item {
+  cursor: grab;
+}
+
+.ai-queue-item:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
+.ai-queue-items.ai-queue-dragging,
+.ai-queue-items.ai-queue-dragging .ai-queue-item {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.ai-queue-item[data-dragging='true'] {
+  opacity: 0.55;
+}

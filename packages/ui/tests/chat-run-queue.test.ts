@@ -232,6 +232,40 @@ it('never starts a message while paused, not even after an edit or a retry tick'
   }
 })
 
+it('reorders queued messages and clamps out-of-range targets', () => {
+  render({ busy: true, submit: () => true })
+  act(() => {
+    latest.enqueue('one', undefined)
+    latest.enqueue('two', undefined)
+    latest.enqueue('three', undefined)
+  })
+  act(() => latest.move('q3', 0))
+  expect(latest.queued.map((m) => m.text)).toEqual(['three', 'one', 'two'])
+  act(() => latest.move('q3', 2))
+  expect(latest.queued.map((m) => m.text)).toEqual(['one', 'two', 'three'])
+  // clamping keeps the message in the queue instead of dropping it
+  act(() => latest.move('q1', 99))
+  expect(latest.queued.map((m) => m.text)).toEqual(['two', 'three', 'one'])
+  act(() => latest.move('q1', -5))
+  expect(latest.queued.map((m) => m.text)).toEqual(['one', 'two', 'three'])
+  // unknown ids are a no-op
+  act(() => latest.move('nope', 0))
+  expect(latest.queued.map((m) => m.text)).toEqual(['one', 'two', 'three'])
+})
+
+it('keeps the meta with the message when it is moved', () => {
+  render({ busy: true, submit: () => true })
+  act(() => {
+    latest.enqueue('first', 'meta-1')
+    latest.enqueue('second', 'meta-2')
+  })
+  act(() => latest.move('q2', 0))
+  expect(latest.queued.map((m) => [m.text, m.meta])).toEqual([
+    ['second', 'meta-2'],
+    ['first', 'meta-1'],
+  ])
+})
+
 it('wipes the queue when the reset key changes', () => {
   render({ busy: true, submit: () => true, resetKey: 'doc-1' })
   act(() => {

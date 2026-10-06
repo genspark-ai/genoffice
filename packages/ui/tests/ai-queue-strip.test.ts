@@ -125,6 +125,135 @@ it('gives the queue a pause button that flips to resume and shows the held state
   expect(host.querySelectorAll('.ai-queue-item')).toHaveLength(2)
 })
 
+/** jsdom lays everything out at 0: give the rows the heights the drag maths reads */
+function stubRowRects(rows: ArrayLike<Element>) {
+  Array.from(rows).forEach((el, i) => {
+    el.getBoundingClientRect = () =>
+      ({
+        top: i * 20,
+        bottom: i * 20 + 20,
+        height: 20,
+        left: 0,
+        right: 100,
+        width: 100,
+        x: 0,
+        y: i * 20,
+      }) as DOMRect
+  })
+}
+
+function renderStrip(props: Partial<Parameters<typeof AiQueueStrip>[0]> = {}) {
+  const onMove = vi.fn()
+  const items = [
+    { id: 'q1', text: 'first' },
+    { id: 'q2', text: 'second' },
+    { id: 'q3', text: 'third' },
+  ]
+  act(() =>
+    root.render(
+      createElement(AiQueueStrip, {
+        items,
+        labels,
+        onUpdate: () => {},
+        onMove,
+        onRemove: () => {},
+        onClear: () => {},
+        ...props,
+      }),
+    ),
+  )
+  act(() => host.querySelector<HTMLButtonElement>('.ai-queue-toggle')!.click())
+  stubRowRects(host.querySelectorAll('li.ai-queue-item'))
+  return { onMove }
+}
+
+it('picks a row up on a long press and drops it where the pointer is', () => {
+  vi.useFakeTimers()
+  try {
+    const { onMove } = renderStrip()
+    const rows = host.querySelectorAll<HTMLLIElement>('li.ai-queue-item')
+    act(() => {
+      rows[2]!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientY: 50 }))
+    })
+    // still held: the press has not become a drag yet
+    act(() => {
+      vi.advanceTimersByTime(120)
+    })
+    expect(host.querySelector('li[data-dragging]')).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    expect(host.querySelector('li[data-dragging]')!.textContent).toContain('third')
+    // dragged over the first row
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientY: 5 }))
+    })
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointerup'))
+    })
+    expect(onMove).toHaveBeenCalledWith('q3', 0)
+    expect(host.querySelector('li[data-dragging]')).toBeNull()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('does not start a drag for a click or a scroll', () => {
+  vi.useFakeTimers()
+  try {
+    const { onMove } = renderStrip()
+    const rows = host.querySelectorAll<HTMLLIElement>('li.ai-queue-item')
+    // a short press: released before the hold completes
+    act(() => {
+      rows[0]!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientY: 10 }))
+    })
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointerup'))
+    })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(onMove).not.toHaveBeenCalled()
+
+    // a press that moves before the hold completes is a scroll, not a drag
+    act(() => {
+      rows[1]!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientY: 30 }))
+    })
+    act(() => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientY: 60 }))
+    })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(host.querySelector('li[data-dragging]')).toBeNull()
+    expect(onMove).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('moves a row with Alt+arrow keys for keyboards that cannot drag', () => {
+  const { onMove } = renderStrip()
+  const rows = host.querySelectorAll<HTMLLIElement>('li.ai-queue-item')
+  act(() => {
+    rows[2]!.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, bubbles: true }),
+    )
+  })
+  expect(onMove).toHaveBeenCalledWith('q3', 1)
+  act(() => {
+    rows[0]!.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'ArrowDown', altKey: true, bubbles: true }),
+    )
+  })
+  expect(onMove).toHaveBeenLastCalledWith('q1', 1)
+  // plain arrows stay with the list
+  act(() => {
+    rows[0]!.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+  })
+  expect(onMove).toHaveBeenCalledTimes(2)
+})
+
 it('localizes the strip labels', () => {
   act(() =>
     root.render(

@@ -34,6 +34,8 @@ export interface ChatRunQueue<M> {
   enqueue: (text: string, meta: M) => void
   /** edit a queued message's text in place (attachments/scope stay as queued) */
   update: (id: string, text: string) => void
+  /** move a queued message to another position; out-of-range targets clamp to the ends */
+  move: (id: string, toIndex: number) => void
   remove: (id: string) => void
   clear: () => void
   /** close or open the gate; opening it starts the next message straight away if idle */
@@ -125,6 +127,15 @@ export function useChatRunQueue<M>(args: {
       const trimmed = text.trim()
       if (!trimmed) return
       setAll(queuedRef.current.map((m) => (m.id === id ? { ...m, text: trimmed } : m)))
+    },
+    move: (id, toIndex) => {
+      const from = queuedRef.current.findIndex((m) => m.id === id)
+      if (from < 0) return
+      const to = Math.max(0, Math.min(queuedRef.current.length - 1, toIndex))
+      if (to === from) return
+      const next = queuedRef.current.slice()
+      next.splice(to, 0, ...next.splice(from, 1))
+      setAll(next)
     },
     remove: (id) => {
       setAll(queuedRef.current.filter((m) => m.id !== id))

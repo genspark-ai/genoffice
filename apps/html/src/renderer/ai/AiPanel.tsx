@@ -1543,6 +1543,7 @@ export function AiPanel({
               onClear={msgQueue.clear}
               paused={msgQueue.paused}
               onTogglePause={msgQueue.togglePaused}
+              onMove={msgQueue.move}
             />
           }
           onQueue={enqueueDraft}

@@ -13,6 +13,8 @@ export interface AiQueueStripLabels {
   resumeTitle: string
   /** strip hint while the gate is closed */
   pausedHint: string
+  /** row tooltip: press and drag to change the order (Alt+arrows for keyboards) */
+  moveTitle: string
   /** composer placeholder while a reply runs and Enter queues instead of sending */
   queuePlaceholder: string
 }
@@ -26,6 +28,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: '暂停排队',
     resumeTitle: '继续排队',
     pausedHint: '已暂停',
+    moveTitle: '拖动调整顺序（或 Alt+↑/↓）',
     queuePlaceholder: 'Enter 排队 · Esc 停止',
   },
   en: {
@@ -36,6 +39,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Pause the queue',
     resumeTitle: 'Resume the queue',
     pausedHint: 'Paused',
+    moveTitle: 'Drag to reorder (or Alt+↑/↓)',
     queuePlaceholder: 'Enter to queue · Esc to stop',
   },
   ja: {
@@ -46,6 +50,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: '待機を一時停止',
     resumeTitle: '待機を再開',
     pausedHint: '一時停止中',
+    moveTitle: 'ドラッグで並べ替え（または Alt+↑/↓）',
     queuePlaceholder: 'Enter で待機 · Esc で停止',
   },
   ko: {
@@ -56,6 +61,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: '대기 일시 정지',
     resumeTitle: '대기 재개',
     pausedHint: '일시 정지됨',
+    moveTitle: '끌어서 순서 변경 (또는 Alt+↑/↓)',
     queuePlaceholder: 'Enter 대기 · Esc 중지',
   },
   fr: {
@@ -66,6 +72,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Suspendre la file',
     resumeTitle: 'Reprendre la file',
     pausedHint: 'En pause',
+    moveTitle: 'Glisser pour réorganiser (ou Alt+↑/↓)',
     queuePlaceholder: 'Entrée pour mettre en attente · Échap pour arrêter',
   },
   de: {
@@ -76,6 +83,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Warteschlange anhalten',
     resumeTitle: 'Warteschlange fortsetzen',
     pausedHint: 'Angehalten',
+    moveTitle: 'Zum Sortieren ziehen (oder Alt+↑/↓)',
     queuePlaceholder: 'Enter zum Einreihen · Esc zum Stoppen',
   },
   es: {
@@ -86,6 +94,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Pausar la cola',
     resumeTitle: 'Reanudar la cola',
     pausedHint: 'En pausa',
+    moveTitle: 'Arrastra para reordenar (o Alt+↑/↓)',
     queuePlaceholder: 'Entrada para encolar · Esc para detener',
   },
   th: {
@@ -96,6 +105,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'หยุดคิวชั่วคราว',
     resumeTitle: 'ดำเนินคิวต่อ',
     pausedHint: 'หยุดชั่วคราว',
+    moveTitle: 'ลากเพื่อจัดลำดับใหม่ (หรือ Alt+↑/↓)',
     queuePlaceholder: 'Enter เพื่อจัดคิว · Esc เพื่อหยุด',
   },
   id: {
@@ -106,6 +116,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Jeda antrean',
     resumeTitle: 'Lanjutkan antrean',
     pausedHint: 'Dijeda',
+    moveTitle: 'Geser untuk mengubah urutan (atau Alt+↑/↓)',
     queuePlaceholder: 'Enter untuk mengantre · Esc untuk berhenti',
   },
   ru: {
@@ -116,6 +127,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Приостановить очередь',
     resumeTitle: 'Возобновить очередь',
     pausedHint: 'Приостановлено',
+    moveTitle: 'Перетащите, чтобы изменить порядок (или Alt+↑/↓)',
     queuePlaceholder: 'Enter — в очередь · Esc — остановить',
   },
   ar: {
@@ -126,6 +138,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'إيقاف الانتظار مؤقتًا',
     resumeTitle: 'متابعة الانتظار',
     pausedHint: 'موقوف مؤقتًا',
+    moveTitle: 'اسحب لإعادة الترتيب (أو Alt+↑/↓)',
     queuePlaceholder: 'Enter للانتظار · Esc للإيقاف',
   },
   pt: {
@@ -136,6 +149,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Pausar a fila',
     resumeTitle: 'Retomar a fila',
     pausedHint: 'Em pausa',
+    moveTitle: 'Arraste para reordenar (ou Alt+↑/↓)',
     queuePlaceholder: 'Enter para enfileirar · Esc para parar',
   },
   it: {
@@ -146,6 +160,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Metti in pausa la coda',
     resumeTitle: 'Riprendi la coda',
     pausedHint: 'In pausa',
+    moveTitle: 'Trascina per riordinare (o Alt+↑/↓)',
     queuePlaceholder: 'Invio per accodare · Esc per fermare',
   },
   pl: {
@@ -156,6 +171,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Wstrzymaj kolejkę',
     resumeTitle: 'Wznów kolejkę',
     pausedHint: 'Wstrzymana',
+    moveTitle: 'Przeciągnij, aby zmienić kolejność (lub Alt+↑/↓)',
     queuePlaceholder: 'Enter, aby zakolejkować · Esc, aby zatrzymać',
   },
   cs: {
@@ -166,6 +182,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Pozastavit frontu',
     resumeTitle: 'Obnovit frontu',
     pausedHint: 'Pozastaveno',
+    moveTitle: 'Přetáhněte pro změnu pořadí (nebo Alt+↑/↓)',
     queuePlaceholder: 'Enter zařadí · Esc zastaví',
   },
   nl: {
@@ -176,6 +193,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Wachtrij pauzeren',
     resumeTitle: 'Wachtrij hervatten',
     pausedHint: 'Gepauzeerd',
+    moveTitle: 'Sleep om te herschikken (of Alt+↑/↓)',
     queuePlaceholder: 'Enter om te wachtrijken · Esc om te stoppen',
   },
   ms: {
@@ -186,6 +204,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Jeda barisan',
     resumeTitle: 'Sambung barisan',
     pausedHint: 'Dijeda',
+    moveTitle: 'Seret untuk susun semula (atau Alt+↑/↓)',
     queuePlaceholder: 'Enter untuk baris gilir · Esc untuk berhenti',
   },
   he: {
@@ -196,6 +215,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'השהה את התור',
     resumeTitle: 'חדש את התור',
     pausedHint: 'מושהה',
+    moveTitle: 'גרור כדי לסדר מחדש (או Alt+↑/↓)',
     queuePlaceholder: 'Enter לתור · Esc לעצירה',
   },
   hi: {
@@ -206,6 +226,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'कतार रोकें',
     resumeTitle: 'कतार फिर शुरू करें',
     pausedHint: 'रोका गया',
+    moveTitle: 'क्रम बदलने के लिए खींचें (या Alt+↑/↓)',
     queuePlaceholder: 'कतार के लिए Enter · रोकने के लिए Esc',
   },
   'zh-TW': {
@@ -216,6 +237,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: '暫停排隊',
     resumeTitle: '繼續排隊',
     pausedHint: '已暫停',
+    moveTitle: '拖曳調整順序（或 Alt+↑/↓）',
     queuePlaceholder: 'Enter 排隊 · Esc 停止',
   },
   vi: {
@@ -226,6 +248,7 @@ export const AI_QUEUE_LABELS: Record<Lang, AiQueueStripLabels> = {
     pauseTitle: 'Tạm dừng hàng đợi',
     resumeTitle: 'Tiếp tục hàng đợi',
     pausedHint: 'Đã tạm dừng',
+    moveTitle: 'Kéo để đổi thứ tự (hoặc Alt+↑/↓)',
     queuePlaceholder: 'Enter để xếp hàng · Esc để dừng',
   },
 }

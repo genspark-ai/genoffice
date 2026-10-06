@@ -752,6 +752,7 @@ export function AiChatPanel({
               onClear={msgQueue.clear}
               paused={msgQueue.paused}
               onTogglePause={msgQueue.togglePaused}
+              onMove={msgQueue.move}
             />
           }
           onQueue={enqueueDraft}
