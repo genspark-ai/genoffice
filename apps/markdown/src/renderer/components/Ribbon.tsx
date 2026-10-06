@@ -26,6 +26,7 @@ import {
   IconRedo,
   IconSave,
   IconSearch,
+  IconEyeOff,
   IconSourceCode,
   IconSpellcheck,
   IconTable,
@@ -67,6 +68,9 @@ interface Props {
   sourceMode?: boolean
   /** source mode: history lives in CodeMirror, not the TipTap editor */
   sourceHistory?: { canUndo: boolean; canRedo: boolean; undo(): void; redo(): void }
+  /** withheld spans: right-click a selection to hide it from the model */
+  redactEnabled: boolean
+  onToggleRedact: (on: boolean) => void
 }
 
 type BlockStyle = 'paragraph' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'quote' | 'codeBlock'
@@ -196,6 +200,8 @@ export function Ribbon({
   onAiPreset,
   sourceMode = false,
   sourceHistory,
+  redactEnabled,
+  onToggleRedact,
 }: Props) {
   const { t } = useI18n()
   const collapse = useRibbonCollapse('mdapp.ribbonCollapsed', {
@@ -584,6 +590,14 @@ export function Ribbon({
               onClick={onToggleSpellcheck}
             >
               <IconSpellcheck size={ICON} />
+            </IconBtn>
+            <IconBtn
+              title={t('redactEnable')}
+              active={redactEnabled}
+              disabled={disabled}
+              onClick={() => onToggleRedact(!redactEnabled)}
+            >
+              <IconEyeOff size={ICON} />
             </IconBtn>
           </div>
         </div>

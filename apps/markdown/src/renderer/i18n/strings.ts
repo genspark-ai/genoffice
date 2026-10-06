@@ -1,6 +1,18 @@
 export const strings = {
   zh: {
     renameNeedsSave: '先保存或放弃改动，再改文件后缀',
+    redactSourceNotJson: '此文件不是合法的 JSON，无法承载标记。',
+    redactSourceNoRoot: '此文档没有根对象来承载标记。',
+    redactSourceNoValue: '请在文档中选中一个值来遮蔽。',
+    redactMenuLabel: '把选中的内容对 AI 隐藏',
+    redactDialogDesc:
+      '这段文字会留在文档和文件里，AI 读到的却是下面的标记。给它起个名字，AI 才知道它是什么。',
+    redactDialogScope:
+      '这只针对本应用的 AI。命令行、MCP 工具和无界面导出会直接读取文件，仍然看得到这些文字。',
+    redactDialogPlaceholder: '占位名称，例如：客户电话',
+    redactCancel: '取消',
+    redactInsert: '隐藏',
+    redactEnable: '选中文字后右键，即可对 AI 隐藏。',
     appExportingImages: '正在导出图片…',
     appExportImagesProgress: '正在导出 {count} 张图片…',
     appExportImagesDone: '已导出 {count} 张图片到 {dir}',
@@ -226,6 +238,18 @@ export const strings = {
   },
   en: {
     renameNeedsSave: 'Save or discard your changes before changing the extension',
+    redactSourceNotJson: 'This file is not valid JSON, so it cannot carry a mark.',
+    redactSourceNoRoot: 'This document has no root object to hold the mark.',
+    redactSourceNoValue: 'Select a value inside the document to withhold it.',
+    redactMenuLabel: 'Hide the selection from AI',
+    redactDialogDesc:
+      'The words stay in the document and in the file; the model sees the placeholder below instead. Name it so the model knows what it stands for.',
+    redactDialogScope:
+      "Hiding covers this app's AI. The CLI, MCP tools and headless export read the file directly, and they still see these words.",
+    redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
+    redactCancel: 'Cancel',
+    redactInsert: 'Hide',
+    redactEnable: 'Right-click a selection to hide it from the model.',
     appExportingImages: 'Exporting images…',
     appExportImagesProgress: 'Exporting {count} images…',
     appExportImagesDone: 'Exported {count} images to {dir}',
@@ -458,6 +482,18 @@ export const strings = {
   },
   vi: {
     renameNeedsSave: 'Hãy lưu hoặc hủy thay đổi trước khi đổi phần mở rộng',
+    redactSourceNotJson: 'Tệp này không phải JSON hợp lệ nên không thể mang dấu đánh dấu.',
+    redactSourceNoRoot: 'Tài liệu này không có đối tượng gốc để chứa dấu đánh dấu.',
+    redactSourceNoValue: 'Hãy chọn một giá trị trong tài liệu để ẩn đi.',
+    redactMenuLabel: 'Ẩn phần đã chọn khỏi AI',
+    redactDialogDesc:
+      'Văn bản vẫn còn trong tài liệu và tệp; mô hình chỉ thấy placeholder bên dưới. Đặt tên để mô hình biết nó đại diện cho điều gì.',
+    redactDialogScope:
+      'Ẩn giấu chỉ áp dụng cho AI trong ứng dụng này. Dòng lệnh, các công cụ MCP và bản xuất không có cửa sổ đều đọc thẳng tệp, nên chúng vẫn thấy những từ này.',
+    redactDialogPlaceholder: 'Tên placeholder, ví dụ: số điện thoại khách hàng',
+    redactCancel: 'Hủy',
+    redactInsert: 'Ẩn',
+    redactEnable: 'Nhấp chuột phải vào phần đã chọn để ẩn khỏi mô hình.',
     appExportingImages: 'Đang xuất hình ảnh…',
     appExportImagesProgress: 'Đang xuất {count} hình ảnh…',
     appExportImagesDone: 'Đã xuất {count} hình ảnh sang {dir}',
@@ -688,6 +724,18 @@ export const strings = {
   },
   ja: {
     renameNeedsSave: '拡張子を変更する前に変更を保存または破棄してください',
+    redactSourceNotJson: 'このファイルは有効な JSON ではないため、マークを持てません。',
+    redactSourceNoRoot: 'このドキュメントにはマークを格納するルートオブジェクトがありません。',
+    redactSourceNoValue: '文書内の値を選択してから非表示にしてください。',
+    redactMenuLabel: '選択範囲をAIから隠す',
+    redactDialogDesc:
+      '文章はドキュメントとファイルに残り、AI には下のマーカーしか見えません。名前をつけると、何を表すかAIが理解できます。',
+    redactDialogScope:
+      '非表示の範囲はこのアプリのAIだけです。コマンドライン、MCPツール、GUIなしのエクスポートはファイルを直接読み込むため、これらの文字はまだ見えています。',
+    redactDialogPlaceholder: 'プレースホルダー名（例：顧客電話）',
+    redactCancel: 'キャンセル',
+    redactInsert: '隠す',
+    redactEnable: '選択範囲を右クリックしてAIから隠します。',
     appExportingImages: '画像をエクスポート中…',
     appExportImagesProgress: '{count} 枚の画像をエクスポート中…',
     appExportImagesDone: '{count} 枚の画像を {dir} にエクスポートしました',
@@ -918,6 +966,18 @@ export const strings = {
   },
   ko: {
     renameNeedsSave: '확장자를 바꾸기 전에 변경 사항을 저장하거나 버리세요',
+    redactSourceNotJson: '이 파일은 올바른 JSON이 아니므로 마크를 저장할 수 없습니다.',
+    redactSourceNoRoot: '이 문서에는 마크를 담을 루트 객체가 없습니다.',
+    redactSourceNoValue: '문서 안의 값을 선택한 뒤 숨겨 주세요.',
+    redactMenuLabel: '선택한 부분을 AI에서 숨기기',
+    redactDialogDesc:
+      '문서는 그대로 두고 AI에게는 아래 자리표시자만 보냅니다. 이름을 붙이면 AI가 무엇을 뜻하는지 알 수 있습니다.',
+    redactDialogScope:
+      '가리기는 이 앱의 AI에만 적용됩니다. 명령줄, MCP 도구, 창 없는 내보내기는 파일을 직접 읽으므로 이 단어들은 여전히 보입니다.',
+    redactDialogPlaceholder: '자리표시자 이름, 예: 고객 전화',
+    redactCancel: '취소',
+    redactInsert: '숨기기',
+    redactEnable: '선택한 부분을 오른쪽 클릭해 AI에서 숨깁니다.',
     appExportingImages: '이미지 내보내는 중…',
     appExportImagesProgress: '이미지 {count}장 내보내는 중…',
     appExportImagesDone: '이미지 {count}장을 {dir}에 내보냈습니다',
@@ -1149,6 +1209,18 @@ export const strings = {
   },
   fr: {
     renameNeedsSave: "Enregistrez ou annulez vos modifications avant de changer l'extension",
+    redactSourceNotJson: "Ce fichier n'est pas du JSON valide : il ne peut pas porter de marque.",
+    redactSourceNoRoot: "Ce document n'a pas d'objet racine où placer la marque.",
+    redactSourceNoValue: 'Sélectionnez une valeur dans le document pour la masquer.',
+    redactMenuLabel: 'Masquer la sélection à l’IA',
+    redactDialogDesc:
+      'Les mots restent dans le document et dans le fichier ; le modèle ne voit que le marqueur ci-dessous. Donnez-lui un nom pour qu’il sache ce qu’il désigne.',
+    redactDialogScope:
+      'Le masquage concerne l’IA de cette application. La ligne de commande, les outils MCP et l’export sans interface lisent le fichier directement et voient toujours ces mots.',
+    redactDialogPlaceholder: 'Nom du placeholder, ex. : téléphone du client',
+    redactCancel: 'Annuler',
+    redactInsert: 'Masquer',
+    redactEnable: 'Clic droit sur une sélection pour la masquer au modèle.',
     appExportingImages: 'Exportation des images…',
     appExportImagesProgress: 'Exportation de {count} images…',
     appExportImagesDone: '{count} images exportées vers {dir}',
@@ -1386,6 +1458,18 @@ export const strings = {
   de: {
     renameNeedsSave:
       'Speichern oder verwerfen Sie Ihre Änderungen, bevor Sie die Erweiterung ändern',
+    redactSourceNotJson: 'Diese Datei ist kein gültiges JSON und kann keine Markierung tragen.',
+    redactSourceNoRoot: 'Diesem Dokument fehlt ein Wurzelobjekt für die Markierung.',
+    redactSourceNoValue: 'Wähle einen Wert im Dokument aus, um ihn auszublenden.',
+    redactMenuLabel: 'Auswahl vor der KI verbergen',
+    redactDialogDesc:
+      'Die Wörter bleiben im Dokument und in der Datei; das Modell sieht nur den Platzhalter. Geben Sie ihm einen Namen.',
+    redactDialogScope:
+      'Das Ausblenden gilt für die KI in dieser Anwendung. Die Kommandozeile, die MCP-Werkzeuge und der Headless-Export lesen die Datei direkt und sehen diese Wörter weiterhin.',
+    redactDialogPlaceholder: 'Name des Platzhalters, z. B. Telefonnummer des Kunden',
+    redactCancel: 'Abbrechen',
+    redactInsert: 'Verbergen',
+    redactEnable: 'Rechtsklick auf eine Auswahl, um sie vor dem Modell zu verbergen.',
     appExportingImages: 'Bilder werden exportiert…',
     appExportImagesProgress: '{count} Bilder werden exportiert…',
     appExportImagesDone: '{count} Bilder nach {dir} exportiert',
@@ -1621,6 +1705,18 @@ export const strings = {
   },
   es: {
     renameNeedsSave: 'Guarda o descarta los cambios antes de cambiar la extensión',
+    redactSourceNotJson: 'Este archivo no es JSON válido, así que no puede llevar una marca.',
+    redactSourceNoRoot: 'Este documento no tiene un objeto raíz donde guardar la marca.',
+    redactSourceNoValue: 'Selecciona un valor del documento para ocultarlo.',
+    redactMenuLabel: 'Ocultar la selección a la IA',
+    redactDialogDesc:
+      'Las palabras siguen en el documento y en el archivo; el modelo solo ve el marcador. Ponle un nombre para que sepa qué representa.',
+    redactDialogScope:
+      'Ocultar afecta a la IA de esta aplicación. La línea de comandos, las herramientas MCP y la exportación sin interfaz leen el archivo directamente y siguen viendo estas palabras.',
+    redactDialogPlaceholder: 'Nombre del marcador, p. ej.: teléfono del cliente',
+    redactCancel: 'Cancelar',
+    redactInsert: 'Ocultar',
+    redactEnable: 'Clic derecho en una selección para ocultarla al modelo.',
     appExportingImages: 'Exportando imágenes…',
     appExportImagesProgress: 'Exportando {count} imágenes…',
     appExportImagesDone: 'Se exportaron {count} imágenes a {dir}',
@@ -1857,6 +1953,18 @@ export const strings = {
   },
   th: {
     renameNeedsSave: 'บันทึกหรือยกเลิกการเปลี่ยนแปลงก่อนเปลี่ยนนามสกุลไฟล์',
+    redactSourceNotJson: 'ไฟล์นี้ไม่ใช่ JSON ที่ถูกต้อง จึงรองรับเครื่องหมายไม่ได้',
+    redactSourceNoRoot: 'เอกสารนี้ไม่มีอ็อบเจกต์รากที่จะเก็บเครื่องหมาย',
+    redactSourceNoValue: 'เลือกค่าในเอกสารเพื่อซ่อนไว้',
+    redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
+    redactDialogDesc:
+      'ข้อความยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
+    redactDialogScope:
+      'การซ่อนครอบคลุมเฉพาะ AI ในแอปนี้ บรรทัดคำสั่ง เครื่องมือ MCP และการส่งออกแบบไม่มีหน้าต่างจะอ่านไฟล์โดยตรง และยังเห็นคำเหล่านี้อยู่',
+    redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
+    redactCancel: 'ยกเลิก',
+    redactInsert: 'ซ่อน',
+    redactEnable: 'คลิกขวาที่ข้อความที่เลือกเพื่อซ่อนจาก AI',
     appExportingImages: 'กำลังส่งออกรูปภาพ…',
     appExportImagesProgress: 'กำลังส่งออกรูปภาพ {count} รูป…',
     appExportImagesDone: 'ส่งออกรูปภาพ {count} รูปไปยัง {dir} แล้ว',
@@ -2085,6 +2193,18 @@ export const strings = {
   },
   id: {
     renameNeedsSave: 'Simpan atau batalkan perubahan Anda sebelum mengubah ekstensi',
+    redactSourceNotJson: 'Berkas ini bukan JSON yang valid, jadi tidak dapat membawa tanda.',
+    redactSourceNoRoot: 'Dokumen ini tidak punya objek akar untuk menyimpan tanda.',
+    redactSourceNoValue: 'Pilih nilai di dalam dokumen untuk menyembunyikannya.',
+    redactMenuLabel: 'Sembunyikan pilihan dari AI',
+    redactDialogDesc:
+      'Kata-kata tetap ada di dokumen dan berkas; model hanya melihat placeholder di bawah. Beri nama agar model tahu apa yang diwakili.',
+    redactDialogScope:
+      'Penyembunyian ini berlaku untuk AI di aplikasi ini. Baris perintah, alat MCP, dan ekspor tanpa antarmuka membaca file secara langsung, sehingga kata-kata ini tetap terlihat olehnya.',
+    redactDialogPlaceholder: 'Nama placeholder, mis. telepon pelanggan',
+    redactCancel: 'Batal',
+    redactInsert: 'Sembunyikan',
+    redactEnable: 'Klik kanan pada teks yang dipilih untuk menyembunyikannya dari model.',
     appExportingImages: 'Mengekspor gambar…',
     appExportImagesProgress: 'Mengekspor {count} gambar…',
     appExportImagesDone: '{count} gambar diekspor ke {dir}',
@@ -2316,6 +2436,18 @@ export const strings = {
   },
   ru: {
     renameNeedsSave: 'Сохраните или отмените изменения перед сменой расширения',
+    redactSourceNotJson: 'Это не корректный JSON, он не может нести метку.',
+    redactSourceNoRoot: 'У документа нет корневого объекта для метки.',
+    redactSourceNoValue: 'Выберите значение в документе, чтобы скрыть его.',
+    redactMenuLabel: 'Скрыть выделение от ИИ',
+    redactDialogDesc:
+      'Слова остаются в документе и в файле, а модель видит только метку. Дайте ей имя, чтобы было понятно, что она обозначает.',
+    redactDialogScope:
+      'Скрытие относится только к ИИ в этом приложении. Командная строка, инструменты MCP и экспорт без интерфейса читают файл напрямую и по-прежнему видят эти слова.',
+    redactDialogPlaceholder: 'Имя метки, напр. телефон клиента',
+    redactCancel: 'Отмена',
+    redactInsert: 'Скрыть',
+    redactEnable: 'Правый клик по выделению скрывает его от модели.',
     appExportingImages: 'Экспорт изображений…',
     appExportImagesProgress: 'Экспорт {count} изображений…',
     appExportImagesDone: 'Экспортировано {count} изображений в {dir}',
@@ -2548,6 +2680,18 @@ export const strings = {
   },
   ar: {
     renameNeedsSave: 'احفظ تغييراتك أو تجاهلها قبل تغيير الامتداد',
+    redactSourceNotJson: 'هذا الملف ليس JSON صالحًا، لذا لا يمكنه حمل علامة.',
+    redactSourceNoRoot: 'لا يحتوي هذا المستند على كائن جذر يحمل العلامة.',
+    redactSourceNoValue: 'اختر قيمة داخل المستند لإخفائها.',
+    redactMenuLabel: 'إخفاء التحديد عن الذكاء الاصطناعي',
+    redactDialogDesc:
+      'تبقى الكلمات في المستند وفي الملف؛ يرى النموذج العلامة أدناه. سمِّها ليعرف ما تمثّله.',
+    redactDialogScope:
+      'يشمل الإخفاء ذكاء هذا التطبيق فقط. يقرأ سطر الأوامر وأدوات MCP والتصدير بدون واجهة الملف مباشرةً، وما زالت هذه الكلمات ظاهرة لها.',
+    redactDialogPlaceholder: 'اسم العنصر، مثال: هاتف العميل',
+    redactCancel: 'إلغاء',
+    redactInsert: 'إخفاء',
+    redactEnable: 'انقر بزر الفأرة الأيمن على النص المحدد لإخفائه عن النموذج.',
     appExportingImages: 'جارٍ تصدير الصور…',
     appExportImagesProgress: 'جارٍ تصدير {count} صورة…',
     appExportImagesDone: 'تم تصدير {count} صورة إلى {dir}',
@@ -2776,6 +2920,18 @@ export const strings = {
   },
   pt: {
     renameNeedsSave: 'Salve ou descarte as alterações antes de mudar a extensão',
+    redactSourceNotJson: 'Este ficheiro não é JSON válido, por isso não pode ter uma marca.',
+    redactSourceNoRoot: 'Este documento não tem um objeto raiz onde colocar a marca.',
+    redactSourceNoValue: 'Selecione um valor no documento para o ocultar.',
+    redactMenuLabel: 'Ocultar a seleção da IA',
+    redactDialogDesc:
+      'As palavras continuam no documento e no arquivo; o modelo vê apenas o marcador. Dê-lhe um nome para que saiba o que representa.',
+    redactDialogScope:
+      'Ocultar aplica-se apenas à IA deste aplicativo. A linha de comando, as ferramentas MCP e a exportação sem interface leem o arquivo diretamente e ainda veem estas palavras.',
+    redactDialogPlaceholder: 'Nome do marcador, ex.: telefone do cliente',
+    redactCancel: 'Cancelar',
+    redactInsert: 'Ocultar',
+    redactEnable: 'Clique com o botão direito numa seleção para ocultá-la do modelo.',
     appExportingImages: 'Exportando imagens…',
     appExportImagesProgress: 'Exportando {count} imagens…',
     appExportImagesDone: '{count} imagens exportadas para {dir}',
@@ -3010,6 +3166,18 @@ export const strings = {
   },
   it: {
     renameNeedsSave: "Salva o annulla le modifiche prima di cambiare l'estensione",
+    redactSourceNotJson: 'Questo file non è JSON valido, quindi non può portare un segno.',
+    redactSourceNoRoot: 'Questo documento non ha un oggetto radice in cui mettere il segno.',
+    redactSourceNoValue: 'Seleziona un valore nel documento per nasconderlo.',
+    redactMenuLabel: 'Nascondi la selezione all’IA',
+    redactDialogDesc:
+      'Le parole restano nel documento e nel file; il modello vede solo il segnaposto. Dai un nome perché sappia cosa rappresenta.',
+    redactDialogScope:
+      'La mascheratura riguarda l’IA di questa app. La riga di comando, gli strumenti MCP e l’esportazione senza interfaccia leggono il file direttamente e vedono ancora queste parole.',
+    redactDialogPlaceholder: 'Nome del segnaposto, es. telefono del cliente',
+    redactCancel: 'Annulla',
+    redactInsert: 'Nascondi',
+    redactEnable: 'Clic destro su una selezione per nasconderla al modello.',
     appExportingImages: 'Esportazione delle immagini…',
     appExportImagesProgress: 'Esportazione di {count} immagini…',
     appExportImagesDone: '{count} immagini esportate in {dir}',
@@ -3244,6 +3412,18 @@ export const strings = {
   },
   pl: {
     renameNeedsSave: 'Zapisz lub odrzuć zmiany przed zmianą rozszerzenia',
+    redactSourceNotJson: 'Ten plik to niepoprawny JSON, więc nie może nieść znacznika.',
+    redactSourceNoRoot: 'Ten dokument nie ma obiektu głównego, w którym zmieściłby się znacznik.',
+    redactSourceNoValue: 'Zaznacz wartość w dokumencie, aby ją ukryć.',
+    redactMenuLabel: 'Ukryj zaznaczenie przed AI',
+    redactDialogDesc:
+      'Słowa zostają w dokumencie i w pliku; model widzi tylko symbol. Nadaj mu nazwę, by wiedział, co oznacza.',
+    redactDialogScope:
+      'Ukrywanie dotyczy tylko AI w tej aplikacji. Wiersz poleceń, narzędzia MCP i eksport bez okienka czytają plik bezpośrednio i nadal widzą te słowa.',
+    redactDialogPlaceholder: 'Nazwa symbolu, np. telefon klienta',
+    redactCancel: 'Anuluj',
+    redactInsert: 'Ukryj',
+    redactEnable: 'Kliknij prawym na zaznaczeniu, aby ukryć je przed modelem.',
     appExportingImages: 'Eksportowanie obrazów…',
     appExportImagesProgress: 'Eksportowanie {count} obrazów…',
     appExportImagesDone: 'Wyeksportowano {count} obrazów do {dir}',
@@ -3476,6 +3656,18 @@ export const strings = {
   },
   cs: {
     renameNeedsSave: 'Před změnou přípony uložte nebo zrušte změny',
+    redactSourceNotJson: 'Tento soubor není platný JSON, takže nemůže nést označení.',
+    redactSourceNoRoot: 'Tento dokument nemá kořenový objekt, kam by se označení uložilo.',
+    redactSourceNoValue: 'Vyberte hodnotu v dokumentu, kterou chcete skrýt.',
+    redactMenuLabel: 'Skrýt výběr před AI',
+    redactDialogDesc:
+      'Slova zůstanou v dokumentu i v souboru; model uvidí jen zástupný symbol. Pojmenujte ho, aby věděl, co zastupuje.',
+    redactDialogScope:
+      'Skrytí se týká AI v této aplikaci. Nástroj příkazové řádky, nástroje MCP a export bez rozhraní čtou soubor přímo, a tyto texty tedy stále vidí.',
+    redactDialogPlaceholder: 'Název zástupného symbolu, např. telefon zákazníka',
+    redactCancel: 'Zrušit',
+    redactInsert: 'Skrýt',
+    redactEnable: 'Pravým klikem na výběr jej skryjete před modelem.',
     appExportingImages: 'Exportují se obrázky…',
     appExportImagesProgress: 'Exportuje se {count} obrázků…',
     appExportImagesDone: 'Exportováno {count} obrázků do {dir}',
@@ -3707,6 +3899,18 @@ export const strings = {
   },
   nl: {
     renameNeedsSave: 'Sla uw wijzigingen op of verwerp ze voordat u de extensie wijzigt',
+    redactSourceNotJson: 'Dit bestand is geen geldige JSON en kan dus geen markering dragen.',
+    redactSourceNoRoot: 'Dit document heeft geen wortelobject om de markering in te bewaren.',
+    redactSourceNoValue: 'Selecteer een waarde in het document om die te verbergen.',
+    redactMenuLabel: 'Selectie verbergen voor de AI',
+    redactDialogDesc:
+      'De woorden blijven in het document en het bestand; het model ziet alleen de placeholder. Geef hem een naam.',
+    redactDialogScope:
+      'Verbergen geldt voor de AI in deze app. De opdrachtregel, de MCP-tools en de export zonder venster lezen het bestand rechtstreeks en zien deze woorden nog steeds.',
+    redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
+    redactCancel: 'Annuleren',
+    redactInsert: 'Verbergen',
+    redactEnable: 'Rechtsklik op een selectie om die voor het model te verbergen.',
     appExportingImages: 'Afbeeldingen exporteren…',
     appExportImagesProgress: '{count} afbeeldingen exporteren…',
     appExportImagesDone: '{count} afbeeldingen geëxporteerd naar {dir}',
@@ -3940,6 +4144,18 @@ export const strings = {
   },
   ms: {
     renameNeedsSave: 'Simpan atau buang perubahan anda sebelum menukar sambungan',
+    redactSourceNotJson: 'Fail ini bukan JSON yang sah, jadi ia tidak boleh membawa tanda.',
+    redactSourceNoRoot: 'Dokumen ini tiada objek akar untuk menyimpan tanda.',
+    redactSourceNoValue: 'Pilih nilai dalam dokumen untuk menyembunyikannya.',
+    redactMenuLabel: 'Sembunyikan pilihan daripada AI',
+    redactDialogDesc:
+      'Perkataan kekal dalam dokumen dan fail; model hanya melihat placeholder di bawah. Beri nama supaya model tahu apa yang diwakili.',
+    redactDialogScope:
+      'Penyembunyian ini hanya untuk AI dalam aplikasi ini. Baris arahan, alat MCP dan eksport tanpa antara muka membaca fail secara terus, jadi perkataan ini masih kelihatan kepada mereka.',
+    redactDialogPlaceholder: 'Nama placeholder, cth. telefon pelanggan',
+    redactCancel: 'Batal',
+    redactInsert: 'Sembunyikan',
+    redactEnable: 'Klik kanan pada teks yang dipilih untuk menyembunyikannya daripada model.',
     appExportingImages: 'Mengeksport imej…',
     appExportImagesProgress: 'Mengeksport {count} imej…',
     appExportImagesDone: '{count} imej dieksport ke {dir}',
@@ -4171,6 +4387,18 @@ export const strings = {
   },
   he: {
     renameNeedsSave: 'שמור או בטל את השינויים לפני שינוי הסיומת',
+    redactSourceNotJson: 'הקובץ אינו JSON תקין, ולכן אינו יכול לשאת סימון.',
+    redactSourceNoRoot: 'למסמך אין אובייקט שורש שיכיל את הסימון.',
+    redactSourceNoValue: 'בחר ערך בתוך המסמך כדי להסתיר אותו.',
+    redactMenuLabel: 'הסתרת הבחירה מהמודל',
+    redactDialogDesc:
+      'המילים נשארות במסמך ובקובץ; המודל רואה רק את הסימון. תן לו שם כדי שיהיה ברור מה הוא מייצג.',
+    redactDialogScope:
+      'ההסתרה חלה על הבינה המלאכותית של היישום הזה. שורת הפקודה, כלי ה-MCP והייצוא ללא ממשק קוראים את הקובץ ישירות ועדיין רואים את המילים האלה.',
+    redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
+    redactCancel: 'ביטול',
+    redactInsert: 'הסתר',
+    redactEnable: 'לחיצה ימנית על טקסט נבחר מסתיר אותו מהמודל.',
     appExportingImages: 'מייצא תמונות…',
     appExportImagesProgress: 'מייצא {count} תמונות…',
     appExportImagesDone: '{count} תמונות יוצאו אל {dir}',
@@ -4397,6 +4625,18 @@ export const strings = {
   },
   hi: {
     renameNeedsSave: 'एक्सटेंशन बदलने से पहले अपने बदलाव सहेजें या छोड़ें',
+    redactSourceNotJson: 'यह फ़ाइल मान्य JSON नहीं है, इसलिए यह चिह्न नहीं रख सकती।',
+    redactSourceNoRoot: 'इस दस्तावेज़ में चिह्न रखने के लिए कोई रूट ऑब्जेक्ट नहीं है।',
+    redactSourceNoValue: 'दस्तावेज़ में से कोई मान छिपाने के लिए चुनें।',
+    redactMenuLabel: 'चयन को AI से छिपाएँ',
+    redactDialogDesc:
+      'शब्द दस्तावेज़ और फ़ाइल में बने रहते हैं; मॉडल को केवल नीचे वाला प्लेसहोल्डर दिखता है। नाम दें ताकि उसे पता चले कि यह किसका स्थान है।',
+    redactDialogScope:
+      'यह छिपाना इस ऐप के AI पर लागू होता है। कमांड लाइन, MCP टूल और बिना विंडो वाला एक्सपोर्ट फ़ाइल को सीधे पढ़ते हैं, इसलिए उन्हें ये शब्द फिर भी दिखते हैं।',
+    redactDialogPlaceholder: 'प्लेसहोल्डर का नाम, जैसे ग्राहक का फ़ोन',
+    redactCancel: 'रद्द करें',
+    redactInsert: 'छिपाएँ',
+    redactEnable: 'चयनित पाठ पर राइट-क्लिक करके इसे मॉडल से छिपाएँ।',
     appExportingImages: 'छवियाँ निर्यात की जा रही हैं…',
     appExportImagesProgress: '{count} छवियाँ निर्यात की जा रही हैं…',
     appExportImagesDone: '{count} छवियाँ {dir} में निर्यात की गईं',
@@ -4628,6 +4868,18 @@ export const strings = {
   },
   'zh-TW': {
     renameNeedsSave: '先儲存或捨棄變更，再更改副檔名',
+    redactSourceNotJson: '此檔案不是合法的 JSON，無法承載標記。',
+    redactSourceNoRoot: '此文件沒有根物件來承載標記。',
+    redactSourceNoValue: '請在文件中選取一個值來遮蔽。',
+    redactMenuLabel: '把選中的內容對 AI 隱藏',
+    redactDialogDesc:
+      '這段文字會留在文件裡，AI 讀到的卻是下面的標記。給它起個名字，AI 才知道它是什麼。',
+    redactDialogScope:
+      '這只針對本應用的 AI。命令列、MCP 工具和無介面匯出會直接讀取檔案，仍然看得到這些文字。',
+    redactDialogPlaceholder: '佔位名稱，例如：客戶電話',
+    redactCancel: '取消',
+    redactInsert: '隱藏',
+    redactEnable: '選中文字後右鍵，即可對 AI 隱藏。',
     appExportingImages: '正在匯出圖片…',
     appExportImagesProgress: '正在匯出 {count} 張圖片…',
     appExportImagesDone: '已匯出 {count} 張圖片到 {dir}',
