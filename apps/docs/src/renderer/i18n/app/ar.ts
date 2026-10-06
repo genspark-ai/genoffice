@@ -345,6 +345,7 @@ export const ar = {
   redactDialogPlaceholder: 'اسم العنصر، مثال: هاتف العميل',
   redactCancel: 'إلغاء',
   redactInsert: 'إخفاء',
+  redactShowLabel: 'إظهار التحديد للذكاء الاصطناعي مرة أخرى',
   appLangEnglish: 'الإنجليزية',
   appLangSimplifiedChinese: 'الصينية المبسطة',
   appLangJapanese: 'اليابانية',

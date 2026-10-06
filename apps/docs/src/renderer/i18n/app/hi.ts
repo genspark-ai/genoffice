@@ -350,6 +350,7 @@ export const hi = {
   redactDialogPlaceholder: 'प्लेसहोल्डर का नाम, जैसे ग्राहक का फ़ोन',
   redactCancel: 'रद्द करें',
   redactInsert: 'छिपाएँ',
+  redactShowLabel: 'चयन को AI को फिर से दिखाएँ',
   appLangEnglish: 'अंग्रेज़ी',
   appLangSimplifiedChinese: 'सरलीकृत चीनी',
   appLangJapanese: 'जापानी',

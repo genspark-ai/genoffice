@@ -358,6 +358,7 @@ export const zh = {
   redactDialogPlaceholder: '占位名称，例如：客户电话',
   redactCancel: '取消',
   redactInsert: '隐藏',
+  redactShowLabel: '把选中的内容重新对 AI 显示',
   appLangEnglish: '英文',
   appLangSimplifiedChinese: '简体中文',
   appLangJapanese: '日文',

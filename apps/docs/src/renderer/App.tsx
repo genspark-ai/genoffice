@@ -2856,6 +2856,21 @@ export function App() {
       seed: editor.state.doc.textBetween(from, to, ' ').trim().slice(0, 24),
     })
   }, [editor])
+
+  /**
+   * Stop withholding whatever the selection carries.
+   *
+   * The command reads the selection itself and clears the mark across it, so
+   * the same selection the menu decided on is the one that gets cleaned: the
+   * menu closes before this runs, but closing a menu does not move a caret.
+   * No dialog, because there is nothing to ask — the words were never replaced,
+   * so there is no label to revise and nothing to confirm.
+   */
+  const clearRedaction = useCallback(() => {
+    if (!editor) return
+    editor.commands.unsetRedaction()
+  }, [editor])
+
   const submitNewComment = useCallback(
     (text: string) => submitNewCommentImpl(reviewCtxRef.current, text),
     [],
@@ -7765,6 +7780,7 @@ export function App() {
           onLink={() => setShowLinkModal(true)}
           onNewComment={startNewComment}
           onRedact={startRedaction}
+          onUnredact={clearRedaction}
           onViewImage={setViewImage}
           onSaveImageAs={saveImageAs}
           onAiPreset={(text) => {

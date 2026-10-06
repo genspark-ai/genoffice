@@ -356,6 +356,7 @@ export const es = {
   redactDialogPlaceholder: 'Nombre del marcador, p. ej.: teléfono del cliente',
   redactCancel: 'Cancelar',
   redactInsert: 'Ocultar',
+  redactShowLabel: 'Volver a mostrar la selección a la IA',
   appLangEnglish: 'inglés',
   appLangSimplifiedChinese: 'chino simplificado',
   appLangJapanese: 'japonés',

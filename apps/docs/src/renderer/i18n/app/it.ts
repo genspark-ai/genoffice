@@ -356,6 +356,7 @@ export const it = {
   redactDialogPlaceholder: 'Nome del segnaposto, es. telefono del cliente',
   redactCancel: 'Annulla',
   redactInsert: 'Nascondi',
+  redactShowLabel: 'Mostra di nuovo la selezione all’IA',
   appLangEnglish: 'Inglese',
   appLangSimplifiedChinese: 'Cinese semplificato',
   appLangJapanese: 'Giapponese',

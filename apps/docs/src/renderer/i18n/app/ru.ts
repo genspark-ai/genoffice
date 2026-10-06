@@ -354,6 +354,7 @@ export const ru = {
   redactDialogPlaceholder: 'Имя метки, напр. телефон клиента',
   redactCancel: 'Отмена',
   redactInsert: 'Скрыть',
+  redactShowLabel: 'Снова показать выделение ИИ',
   appLangEnglish: 'английский',
   appLangSimplifiedChinese: 'китайский (упрощенное письмо)',
   appLangJapanese: 'японский',

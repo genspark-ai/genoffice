@@ -351,6 +351,7 @@ export const pt = {
   redactDialogPlaceholder: 'Nome do marcador, ex.: telefone do cliente',
   redactCancel: 'Cancelar',
   redactInsert: 'Ocultar',
+  redactShowLabel: 'Mostrar a seleção à IA novamente',
   appLangEnglish: 'Inglês',
   appLangSimplifiedChinese: 'Chinês simplificado',
   appLangJapanese: 'Japonês',

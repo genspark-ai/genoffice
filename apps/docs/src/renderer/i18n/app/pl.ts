@@ -355,6 +355,7 @@ export const pl = {
   redactDialogPlaceholder: 'Nazwa symbolu, np. telefon klienta',
   redactCancel: 'Anuluj',
   redactInsert: 'Ukryj',
+  redactShowLabel: 'Pokaż zaznaczenie AI ponownie',
   appLangEnglish: 'angielski',
   appLangSimplifiedChinese: 'chiński uproszczony',
   appLangJapanese: 'japoński',

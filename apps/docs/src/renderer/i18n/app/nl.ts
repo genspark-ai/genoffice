@@ -360,6 +360,7 @@ export const nl = {
   redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
   redactCancel: 'Annuleren',
   redactInsert: 'Verbergen',
+  redactShowLabel: 'Selectie opnieuw aan de AI tonen',
   appLangEnglish: 'Engels',
   appLangSimplifiedChinese: 'Vereenvoudigd Chinees',
   appLangJapanese: 'Japans',

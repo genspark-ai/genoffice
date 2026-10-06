@@ -342,6 +342,7 @@ export const he = {
   redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
   redactCancel: 'ביטול',
   redactInsert: 'הסתר',
+  redactShowLabel: 'הצגת הבחירה למודל שוב',
   appLangEnglish: 'אנגלית',
   appLangSimplifiedChinese: 'סינית פשוטה',
   appLangJapanese: 'יפנית',
