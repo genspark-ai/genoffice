@@ -3092,9 +3092,20 @@ function withUserGuide(): void {
   }
   const submenu = help.submenu
   if (!submenu || submenu.items.some((i) => i.accelerator === 'F1')) return
-  const [item, separator] = Menu.buildFromTemplate([userGuide, { type: 'separator' }]).items
-  submenu.insert(0, item!)
-  submenu.insert(1, separator!)
+  // A separator survives a template only *between* two real items — Electron
+  // drops one at either end, so `[userGuide, separator]` builds a single item
+  // and the destructure below used to hand `undefined` to `insert`, which threw
+  // "Invalid item" and took the main process down on the next tab switch. The
+  // third entry is filler, discarded; the type check is what stops this from
+  // silently regressing if Electron's rule ever changes again.
+  const [item, separator] = Menu.buildFromTemplate([
+    userGuide,
+    { type: 'separator' },
+    { role: 'undo' },
+  ]).items
+  if (!item) return
+  submenu.insert(0, item)
+  if (separator?.type === 'separator') submenu.insert(1, separator)
 }
 
 function applyMenuFor(kind: TabKind): void {
