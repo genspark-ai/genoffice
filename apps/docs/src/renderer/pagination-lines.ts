@@ -803,6 +803,29 @@ const PARA_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, .doc-li'
  *  per cell (Word breaks between any two lines), rejecting cuts that would cross a
  *  line box in another cell. Also reports the lowest content-band bottom and, for
  *  multi-cell rows, each cell's own line geometry (per-cell Word-style splitting). */
+/** Page-break offsets inside a row, relative to the row top (px, unscaled).
+ *
+ *  A break is what DocHardBreak renders for `w:br w:type="page"`, and nothing
+ *  else in the pagination engine looks for it — so this is the only place the
+ *  author's explicit page turn can reach the layout. jsdom does no layout, so
+ *  this stays a pure function over rects and is exercised directly. */
+export function forcedCutYs(
+  breaks: ReadonlyArray<{ rect: DOMRect }>,
+  elTop: number,
+  rowTop: number,
+  gapAbove: (top: number) => number,
+  zoomFactor: number,
+): number[] {
+  const out: number[] = []
+  for (const { rect } of breaks) {
+    // rect.top rather than offsetTop: a collapsed <br> has no height but still
+    // reports a position, and offsetTop lives in the offsetParent's coordinate
+    // space, which is not the one elTop is measured in.
+    out.push((rect.top - elTop - gapAbove(rect.top)) / zoomFactor - rowTop)
+  }
+  return out
+}
+
 function rowCutYs(
   tr: Element,
   rowTop: number,
@@ -816,6 +839,16 @@ function rowCutYs(
   const cellBands: Array<Array<[number, number]>> = []
   const paraBands: Array<Array<[number, number]>> = []
   const cellBoxes: RowCellBox[] = []
+  // Explicit page breaks the author typed inside this row. Measured, not
+  // inferred: br.doc-page-br is what DocHardBreak renders, and an author who
+  // pressed the break expects a page to turn even mid-line.
+  const forcedCuts = forcedCutYs(
+    [...tr.querySelectorAll('br.doc-page-br')].map((br) => ({ rect: br.getBoundingClientRect() })),
+    elTop,
+    rowTop,
+    gapAbove,
+    zoomFactor,
+  )
   // exact-height clip boxes and vertical text are not line-splittable content
   let cellsOk =
     cells.length >= 2 && !tr.querySelector(':scope > * > .cell-clip, :scope > * > .cell-vert')
@@ -899,7 +932,7 @@ function rowCutYs(
     0,
   )
   return {
-    cuts: cellCutYs(cellBands, rowHeight, paraBands),
+    cuts: cellCutYs(cellBands, rowHeight, paraBands, forcedCuts),
     contentBottom,
     ...(cellsOk && cellBoxes.some((c) => c.lines.length > 0) ? { cells: cellBoxes } : {}),
   }
@@ -991,11 +1024,20 @@ function clusterLineBands(bands: Array<[number, number]>): Array<[number, number
  *  tolerance for sub-pixel jitter). paraBands (per-paragraph line bands across
  *  all cells) add Word's widow/orphan rule to in-row breaks: a cut through a
  *  paragraph must leave at least two of its lines on each side, else the whole
- *  row pushes (Word pushes a row whose 2-line cell would split, prod100r4/32+47). */
+ *  row pushes (Word pushes a row whose 2-line cell would split, prod100r4/32+47).
+ *
+ *  forcedCuts are explicit page breaks the author typed (br.doc-page-br), as
+ *  offsets from the row top. They are honoured whatever the heuristics say:
+ *  a break is an instruction, not a suggestion, and it is the only thing that
+ *  makes the page actually turn — the marker renders either way. They are
+ *  exempt from the line-safety and widow/orphan filters for the same reason,
+ *  because Word honours them mid-line too. Only the row-edge clamp applies, so
+ *  a break at y=0 or at the very bottom is not a cut. */
 export function cellCutYs(
   cellBands: Array<Array<[number, number]>>,
   rowHeight: number,
   paraBands?: Array<Array<[number, number]>>,
+  forcedCuts: readonly number[] = [],
 ): number[] {
   const cellLines = cellBands.map(clusterLineBands)
   const paraLines = (paraBands ?? []).map(clusterLineBands)
@@ -1024,7 +1066,18 @@ export function cellCutYs(
     if (cuts.length > 0 && y - cuts[cuts.length - 1] < 1) continue
     cuts.push(y)
   }
-  return cuts
+  const forced = [...forcedCuts].sort((a, b) => a - b)
+  for (let i = 0; i < forced.length; i++) {
+    const y = forced[i]
+    // row edges only: a break there has no page above or below to separate
+    if (y <= 2 || y >= rowHeight - 2) continue
+    // de-duplicate against the previous *break*, not the previous cut: a break
+    // landing 1px from another break is still one break, and comparing against a
+    // heuristic cut would drop it for being near a line boundary instead
+    if (i > 0 && y - forced[i - 1] < 1) continue
+    cuts.push(y)
+  }
+  return cuts.sort((a, b) => a - b).filter((y, i, all) => i === 0 || y - all[i - 1] >= 1)
 }
 
 /**
