@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
 import {
   app,
@@ -3100,10 +3100,20 @@ export function registerSheetsIpc(): void {
     // An export can land on a CSV session's own source file — refresh that
     // session's guard digest so its next Save doesn't mistake this write for
     // an external change.
+    //
+    // resolve() on both sides, not `===`: macOS and Windows are
+    // case-insensitive by default, and the dialog plus the extension-append both
+    // produce a spelling that need not match the one the session was opened
+    // with. A byte-equal compare misses those, the digest is then left stale,
+    // and the guard below — which hashes content and so is case-immune by
+    // construction — refuses the next ⌘S as an external change to a file the
+    // user never touched. `main/index.ts` answers the same question with
+    // resolve() for the same reason.
     const writtenSha = await sha256File(targetPath).catch(() => undefined)
     if (writtenSha !== undefined) {
+      const target = resolve(targetPath)
       for (const [sessionId, session] of entry.sessions) {
-        if (session.csvSourcePath === targetPath) {
+        if (session.csvSourcePath !== undefined && resolve(session.csvSourcePath) === target) {
           entry.sessions.set(sessionId, { ...session, csvSourceSha: writtenSha })
         }
       }
