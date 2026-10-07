@@ -19,6 +19,7 @@ import {
   type IRange,
   type IStyleData,
   IUndoRedoService,
+  IUniverInstanceService,
   LifecycleStages,
   RANGE_TYPE,
   VerticalAlign,
@@ -186,6 +187,21 @@ function clearUnitUndoHistory(runtime: UniverRuntime, unitId: string): void {
     .get<{ clearUndoRedo(unitId: string): void }>(IUndoRedoService)
     .clearUndoRedo(unitId)
 }
+/**
+ * createWorkbook does not focus what it created, and the disposeUnit above
+ * reset the focused unit to null (its _tryResetFocusOnRemoval) when the
+ * replaced workbook was the focused one — a workbook loaded into an
+ * already-mounted view (the prewarmed spare) then sits with NO focused unit.
+ * The stale FOCUSING_* context bits keep shortcut-gated keys (Enter, arrows)
+ * alive, so the damage hides: the cell editor's character-key routing and
+ * ILayoutService.focus() (which early-returns on a null focused unit) are
+ * dead, and typing into the adopted view stops opening the editor until
+ * something else happens to focus the unit (a canvas click does).
+ */
+function focusCreatedUnit(runtime: UniverRuntime, unitId: string): void {
+  runtime.univer.__getInjector().get(IUniverInstanceService).focusUnit(unitId)
+}
+
 export const MINIMUM_SHEET_COLUMN_COUNT = 26
 
 export function syncUniver(runtime: UniverRuntime | null, snapshot: WorkbookSnapshot): void {
@@ -279,6 +295,7 @@ function loadSnapshotIntoUniverInner(
       }),
     ),
   })
+  focusCreatedUnit(runtime, workbookId)
 
   // Replay demo-mode formatting and layout after the rebuild (snapshot is
   // the source of truth; cellData above carries only values/formulas).
@@ -493,6 +510,7 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
       }),
     ),
   })
+  focusCreatedUnit(runtime, `file-${file.sha256}`)
   // Excel opens on workbookView/@activeTab; Univer defaults to the first
   // visible sheet. Skip hidden targets (stale activeTab in the file).
   const activeMeta = [file.sheets[file.activeTab], ...file.sheets].find(

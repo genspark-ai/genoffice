@@ -4049,6 +4049,21 @@ export function App({
       ;(window as unknown as Record<string, unknown>).__genofficeDebug = {
         univerAPI: univerRef.current?.univerAPI,
         findReplaceService: univerRef.current?.univer.__getInjector().get(IFindReplaceService),
+        // ground truth for typing-into-the-adopted-spare failures: the
+        // shortcut gate is these context bits plus the focused unit, and a
+        // null focusedUnit is exactly the state where character keys die
+        // while Enter/arrows keep working
+        focusContext: () => {
+          const injector = univerRef.current?.univer.__getInjector()
+          const active = document.activeElement as HTMLElement | null
+          return {
+            focusedUnitId:
+              injector?.get(IUniverInstanceService).getFocusedUnit()?.getUnitId() ?? null,
+            activeWorkbookId: univerRef.current?.univerAPI.getActiveWorkbook()?.getId() ?? null,
+            activeUComp: active?.dataset?.uComp ?? null,
+            docHasFocus: document.hasFocus(),
+          }
+        },
       }
     }
     setRevision(0)

@@ -19,19 +19,25 @@ const XLSX = resolve(__dirname, '../apps/sheets/fixtures/generated/compatibility
 
 /** the Home-list click that precedes an open leaves keyboard focus on chrome */
 async function openFromHome(app: ElectronApplication, home: Page, file: string): Promise<void> {
-  await app.evaluate(({ app: electronApp, BrowserWindow }) => {
-    electronApp.focus({ steal: true })
-    const win = BrowserWindow.getAllWindows()[0]
-    win.focus()
-    win.webContents.focus()
-  })
-  // Native window activation is asynchronous (especially between app launches).
+  // Native window activation is asynchronous (especially between app
+  // launches), and a steal can be outright denied when the runner's own
+  // terminal holds OS focus — keep asking until the window reports both
+  // itself and its webContents focused.
   await expect
-    .poll(() =>
-      app.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0]
-        return win.isFocused() && win.webContents.isFocused()
-      }),
+    .poll(
+      async () => {
+        await app.evaluate(({ app: electronApp, BrowserWindow }) => {
+          electronApp.focus({ steal: true })
+          const win = BrowserWindow.getAllWindows()[0]
+          win.focus()
+          win.webContents.focus()
+        })
+        return app.evaluate(({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows()[0]
+          return win.isFocused() && win.webContents.isFocused()
+        })
+      },
+      { timeout: 30_000 },
     )
     .toBe(true)
   await home.evaluate(
@@ -309,6 +315,14 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
         await sheets.keyboard.type('4242') // real keydowns for every character
       }
       const afterInsert = await domState(sheets)
+      const focusCtx = await sheets.evaluate(() => {
+        const api = (
+          window as unknown as {
+            __genofficeDebug?: { focusContext?: () => Record<string, unknown> }
+          }
+        ).__genofficeDebug
+        return api?.focusContext?.() ?? null
+      })
       await sheets.keyboard.press('Enter')
       const afterEnter = await domState(sheets)
       // A bare Expected/Received says nothing about which layer dropped the
@@ -323,7 +337,8 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
           `${JSON.stringify(afterInsert.activeClass)}, ` +
           `connected: ${JSON.stringify(afterInsert.activeIsConnected)}); ` +
           `active range: ${JSON.stringify(await activeRangeNotation(sheets))}; ` +
-          `aria-busy: ${JSON.stringify(afterEnter.ariaBusy)}`,
+          `aria-busy: ${JSON.stringify(afterEnter.ariaBusy)}; ` +
+          `focus context: ${JSON.stringify(focusCtx)}`,
       )
       try {
         await expect.poll(() => cellA1Value(sheets), { timeout: 4_000 }).toBe(4242)
