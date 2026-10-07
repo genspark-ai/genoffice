@@ -159,9 +159,11 @@ export function parseSkillFrontmatter(source: string): SkillFrontmatter | null {
     const line = raw.replace(/\s+$/, '')
     if (!line.trim() || line.trimStart().startsWith('#')) continue
     const kv = /^([A-Za-z0-9_.-]+):[ \t]*(.*)$/.exec(line)
+    // both groups always match when the test succeeds; the assertions say so to
+    // a compiler checking indexed access, without changing what runs
     if (kv) {
-      lastKey = kv[1]
-      flat[lastKey] = unquote(kv[2].trim())
+      lastKey = kv[1]!
+      flat[lastKey] = unquote(kv[2]!.trim())
     } else if (lastKey && /^[ \t]/.test(raw)) {
       // a YAML continuation line; keep it on the same value
       flat[lastKey] = `${flat[lastKey]} ${line.trim()}`.trim()
