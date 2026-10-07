@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 
 use super::*;
+use crate::archive::MAX_EXTRACTED_ENTRY_BYTES;
 
 pub(crate) fn decode_uri_path(value: &str) -> Result<String, SidecarError> {
     let bytes = value.as_bytes();
@@ -72,14 +73,24 @@ pub(crate) fn zip_entry<'a>(
     archive.by_name(resolved.as_deref().unwrap_or(name))
 }
 
+/// Reads a zip entry as a string under the same metered limit `read_media`
+/// applies (see `copy_entry_bounded` for why a declared size alone bounds
+/// nothing): one byte past the smaller of the claim and the cap is read, and a
+/// part that inflates past that is refused rather than materialised in full.
+///
+/// This is the path nearly every workbook part arrives through, so an uncapped
+/// read here undoes the work #781 did for media and `@genoffice/zip-gate` does
+/// for the docx and pptx hosts.
 pub(crate) fn read_zip_string(
     archive: &mut ZipArchive<File>,
     path: &str,
 ) -> Result<String, SidecarError> {
     let mut entry = zip_entry(archive, path)?;
-    let mut value = String::new();
-    entry.read_to_string(&mut value)?;
-    Ok(value)
+    let declared = entry.size();
+    let mut out: Vec<u8> = Vec::new();
+    copy_entry_bounded(&mut entry, declared, MAX_EXTRACTED_ENTRY_BYTES, &mut out)?;
+    String::from_utf8(out)
+        .map_err(|_| SidecarError::Workbook(format!("{path} is not valid UTF-8.")))
 }
 
 /// Copies a zip entry, refusing to deliver more than the smaller of the size it
