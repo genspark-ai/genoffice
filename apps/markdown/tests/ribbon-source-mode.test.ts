@@ -88,9 +88,11 @@ describe('Ribbon source mode', () => {
     const markdown = counts(renderRibbon(false))
     expect(markdown.styleDropdown).toBe(1)
     expect(source.styleDropdown).toBe(0)
-    // 14 block-formatting controls plus this PR's markdown-only source-view
-    // toggle, which a .txt/.json has no use for and therefore does not show.
-    expect(markdown.iconButtons).toBe(15)
+    // 14 block-formatting controls, plus this PR's markdown-only source-view
+    // toggle, which a .txt/.json has no use for and therefore does not show,
+    // plus the image-host button, which is not a formatting control and so
+    // renders in either mode.
+    expect(markdown.iconButtons).toBe(16)
     // source mode keeps exactly one: the spellcheck toggle
     expect(source.iconButtons).toBe(1)
   })
@@ -126,7 +128,7 @@ describe('Ribbon source mode', () => {
   it('shows the formatting controls again for a markdown file', () => {
     const { styleDropdown, iconButtons } = counts(renderRibbon(false))
     expect(styleDropdown).toBe(1)
-    // the same 15: the source-view toggle is present here and absent above
-    expect(iconButtons).toBe(15)
+    // the same 16: the source-view toggle is present here and absent above
+    expect(iconButtons).toBe(16)
   })
 })
