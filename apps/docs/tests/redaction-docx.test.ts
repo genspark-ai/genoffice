@@ -123,6 +123,31 @@ describe('a saved file is XML a word processor can open', () => {
     const marker = doc.getElementsByTagNameNS(REDACT_NS, 'redact')
     expect(marker.length).toBe(1)
   })
+
+  it('a Word-like root that already declares xmlns:mc keeps one declaration and extends mc:Ignorable', async () => {
+    // every real Word file carries xmlns:mc and an mc:Ignorable list on the
+    // root: re-declaring mc there is a duplicate attribute, the file stops
+    // being well-formed and Word offers to repair it
+    const from = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>Call 13800138000 now</w:t></w:r></w:p>',
+      docRootExtraAttrs:
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+        'xmlns:w14="urn:ignore" mc:Ignorable="w14"',
+    })
+    const editor = await open(from)
+    selectText(editor, SECRET)
+    editor.commands.setRedaction('client phone')
+    const parsed = await parseDocx(from)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await JSZip.loadAsync(saved).then((zip) =>
+      zip.file('word/document.xml')!.async('string'),
+    )
+    const doc = new DOMParser().parseFromString(xml, 'application/xml')
+    expect(doc.querySelector('parsererror')).toBeNull()
+    expect(xml.match(/xmlns:mc=/g)?.length).toBe(1)
+    expect(xml).toMatch(/mc:Ignorable="[^"]*\bgo\b/)
+  })
 })
 
 describe('a withheld span survives the .docx', () => {
