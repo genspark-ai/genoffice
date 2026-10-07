@@ -113,15 +113,17 @@ export function redactTextBetween(
   }
   const size = (n: WithheldNode) => withheldNodeSize(n, resolved.isLeaf)
   const out: string[] = []
-  let contributed = false
   // a top-level block's position: 0, then the size of the one before it
   let blockPos = 0
-  blocks.forEach((block, i) => {
-    if (i > 0 && contributed && blockPos < to) out.push(blockSeparator)
-    const before = out.length
+  blocks.forEach((block) => {
+    // one separator per block boundary the range strictly crosses — the rule
+    // textBetween itself applies. Counting boundaries rather than
+    // contributions keeps an empty paragraph between two selected ones
+    // costing its line break, and keeps a boundary the range only touches
+    // (at `from` or at `to`) costing nothing.
+    if (blockPos > from && blockPos < to) out.push(blockSeparator)
     // a block's inline content starts one past the block itself
     if (blockPos + 1 < to) walkInline(block, blockPos + 1, from, to, out, resolved, size)
-    contributed = out.length > before
     blockPos += size(block)
   })
   return out.join('')
@@ -138,8 +140,12 @@ function walkInline(
   size: (n: WithheldNode) => number,
 ): void {
   const { markName, marker, leafText, isLeaf } = options
+  // this node's own extent starts one before its content (its open token)
+  const selfStart = contentStart - 1
   if ((block.marks ?? []).some((m: WithheldMark) => markNameOf(m, markName))) {
-    out.push(marker(labelOf(block, markName)))
+    // the whole marker, but only when the marked node itself overlaps the
+    // range — a marked node the selection never reaches contributes nothing
+    if (selfStart < to && selfStart + size(block) > from) out.push(marker(labelOf(block, markName)))
     return
   }
   const children = block.content
@@ -162,7 +168,8 @@ function walkInline(
     if ((child.marks ?? []).some((m: WithheldMark) => markNameOf(m, markName))) {
       if (start < to && start + size(child) > from) out.push(marker(labelOf(child, markName)))
     } else if (isLeaf(child)) {
-      if (start < to) out.push(leafText)
+      // a leaf the range never reaches contributes nothing, same as text
+      if (start < to && start + size(child) > from) out.push(leafText)
     } else if (typeof child.text === 'string') {
       if (start + child.text.length > from && start < to) {
         out.push(
@@ -170,7 +177,8 @@ function walkInline(
         )
       }
     } else {
-      walkInline(child, start, from, to, out, options, size)
+      // a container's open token sits at `start`; its content starts one past it
+      walkInline(child, start + 1, from, to, out, options, size)
     }
     pos = start + size(child)
   }
