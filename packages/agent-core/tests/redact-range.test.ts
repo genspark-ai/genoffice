@@ -104,3 +104,75 @@ describe('leaves it alone', () => {
     expect(redactTextBetween({ type: 'doc' }, 1, 9, options)).toBe('')
   })
 })
+
+describe('a range the withheld content sits outside', () => {
+  it('a leaf before the selection contributes nothing', () => {
+    const d: WithheldNode = {
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [{ type: 'image' }, { type: 'text', text: 'XY' }],
+        },
+      ],
+    }
+    const isLeaf = (n: WithheldNode) => n.type === 'image'
+    // content starts at 1: image occupies [1,2), 'XY' at [2,4)
+    expect(redactTextBetween(d, 2, 4, { ...options, isLeaf, leafText: '\u00b7' })).toBe('XY')
+    expect(redactTextBetween(d, 1, 4, { ...options, isLeaf, leafText: '\u00b7' })).toBe('\u00b7XY')
+  })
+
+  it('a marked block the selection never reaches contributes no marker', () => {
+    // defensive shape: the mark on the block node itself, selection in block 1
+    const d: WithheldNode = {
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          marks: [{ type: MARK, attrs: { label: 'secret' } }],
+          content: [t('AAAA')],
+        },
+        { type: 'docParagraph', content: [t('B')] },
+      ],
+    }
+    // block 0 occupies [0,6), block 1 content at 7
+    expect(redactTextBetween(d, 7, 8, options)).toBe('B')
+    expect(redactTextBetween(d, 1, 3, options)).toBe('{{secret}}')
+  })
+
+  it('an empty paragraph between two selected ones still costs its line break', () => {
+    const d: WithheldNode = {
+      type: 'doc',
+      content: [
+        { type: 'docParagraph', content: [t('One')] },
+        { type: 'docParagraph', content: [] },
+        { type: 'docParagraph', content: [t('Two')] },
+      ],
+    }
+    // block sizes: 5, 2, 5 — 'One' at [1,4), 'Two' at [8,11)
+    expect(redactTextBetween(d, 1, 11, options)).toBe('One\n\nTwo')
+  })
+})
+
+describe('a range inside a nested inline container', () => {
+  it('reads the characters at their own offsets, not one earlier', () => {
+    const d: WithheldNode = {
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            { type: 'text', text: 'AB' },
+            { type: 'bold', content: [{ type: 'text', text: 'cd' }] },
+            { type: 'text', text: 'EF' },
+          ],
+        },
+      ],
+    }
+    // content starts at 1: 'AB' [1,3), bold open 3, 'cd' [4,6), close 6, 'EF' [7,9)
+    expect(redactTextBetween(d, 4, 6, options)).toBe('cd')
+    expect(redactTextBetween(d, 1, 9, options)).toBe('ABcdEF')
+    // a range clipping only the second character still slices the right one
+    expect(redactTextBetween(d, 5, 6, options)).toBe('d')
+  })
+})
