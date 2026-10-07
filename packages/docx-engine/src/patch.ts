@@ -1596,15 +1596,37 @@ export async function saveDocx(
   // element in a namespace the consumer does not know is skipped rather than
   // treated as a schema violation, so the label rides along without the
   // border's run failing a strict validator.
+  //
+  // A root that already declares `xmlns:mc` (every Word-saved file does) must
+  // not get a second one: a duplicate attribute is the same parse error this
+  // block exists to prevent. Its existing Ignorable list is extended instead.
   if (
     newDocumentXml.includes(`<${REDACT_EL}`) &&
     !new RegExp(`<w:document[^>]*xmlns:${REDACT_PREFIX}=`).test(newDocumentXml)
   ) {
-    newDocumentXml = newDocumentXml.replace(
-      /<w:document /,
-      '<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
-        `xmlns:${REDACT_PREFIX}="${REDACT_NS}" mc:Ignorable="${REDACT_PREFIX}" `,
-    )
+    const root = /<w:document\b[^>]*>/.exec(newDocumentXml)?.[0]
+    if (root) {
+      let next = root
+      if (!/xmlns:mc=/.test(next)) {
+        next = next.replace(
+          '<w:document',
+          '<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+        )
+      }
+      next = next.replace('<w:document', `<w:document xmlns:${REDACT_PREFIX}="${REDACT_NS}"`)
+      const ignorable = /mc:Ignorable="([^"]*)"/.exec(next)
+      if (ignorable) {
+        if (!new RegExp(`\\b${REDACT_PREFIX}\\b`).test(ignorable[1] ?? '')) {
+          next = next.replace(
+            /mc:Ignorable="[^"]*"/,
+            `mc:Ignorable="${(ignorable[1] ?? '').trim()} ${REDACT_PREFIX}"`,
+          )
+        }
+      } else {
+        next = next.replace('<w:document', `<w:document mc:Ignorable="${REDACT_PREFIX}"`)
+      }
+      newDocumentXml = newDocumentXml.replace(root, next)
+    }
   }
 
   if (options.pageColor !== undefined) {
