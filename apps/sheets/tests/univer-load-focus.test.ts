@@ -65,7 +65,7 @@ describe('a workbook load leaves its unit focused', () => {
     // the prewarmed spare boots with the placeholder demo workbook
     loadSnapshotIntoUniver(
       runtime,
-      { sheets: [{ id: 'sheet-1', name: 'Sheet1', cells: {} }] },
+      { revision: 0, sheets: [{ id: 'sheet-1', name: 'Sheet1', cells: {} }] },
       'new-workbook',
       'Untitled',
     )
@@ -81,13 +81,13 @@ describe('a workbook load leaves its unit focused', () => {
     const runtime = bootRealUniver()
     loadSnapshotIntoUniver(
       runtime,
-      { sheets: [{ id: 'sheet-1', name: 'Sheet1', cells: {} }] },
+      { revision: 0, sheets: [{ id: 'sheet-1', name: 'Sheet1', cells: {} }] },
       'new-workbook',
       'Untitled',
     )
     loadSnapshotIntoUniver(
       runtime,
-      { sheets: [{ id: 'sheet-1', name: 'Sheet2', cells: {} }] },
+      { revision: 0, sheets: [{ id: 'sheet-1', name: 'Sheet2', cells: {} }] },
       'new-workbook',
       'Untitled',
     )
