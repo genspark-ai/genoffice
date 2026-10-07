@@ -156,7 +156,8 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     indentRight: format?.indentRight ?? null,
     indentFirstLine: format?.indentFirstLine ?? null,
     // only the paragraph's OWN character unit becomes direct formatting — a
-    // style-chain "2 字符" shows through and must not be copied onto the pPr
+    // a character-unit indent inherited from the style chain shows through and
+    // must not be copied onto the pPr as direct formatting
     indentFirstLineChars: format?.directCharIndents?.firstLine ?? null,
     spaceBefore: format?.spaceBefore ?? null,
     spaceAfter: format?.spaceAfter ?? null,

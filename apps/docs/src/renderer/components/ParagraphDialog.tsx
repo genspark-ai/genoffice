@@ -91,7 +91,7 @@ function outlineLevelOf(editor: Editor): { level: number; editable: boolean } {
 }
 
 /** East Asian text at the selection: the Special By field then opens in Word's
- *  character unit, whose default pick is 2 字符 (issue #1892) */
+ *  character unit, whose default pick is two characters (issue #1892) */
 function selectionHasCjkText(editor: Editor): boolean {
   const { from, to, empty } = editor.state.selection
   const text = empty
@@ -142,7 +142,7 @@ export function ParagraphDialog({
   const [special, setSpecial] = useState(() => {
     const s = specialFromFirstLine(attrs.indentFirstLine, attrs.indentFirstLineChars)
     // a paragraph with no special indent yet opens the By field in character
-    // units on East Asian text, so the default pick is Word's 2 字符
+    // units on East Asian text, so the default pick is Word's two characters
     if (s.special === 'none' && selectionHasCjkText(editor)) return { ...s, unit: 'chars' as const }
     return s
   })

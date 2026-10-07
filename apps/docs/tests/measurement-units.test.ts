@@ -340,7 +340,7 @@ describe('Paragraph dialog Special indents', () => {
       indentFirstLine: -360,
       indentFirstLineChars: null,
     })
-    // unit switches seed their defaults; a character-unit pick of (none) seeds 2 字符
+    // unit switches seed their defaults; a character-unit pick of (none) seeds two
     expect(pickByUnit({ special: 'none', by: 0 }, 'chars')).toEqual({
       special: 'none',
       by: 200,

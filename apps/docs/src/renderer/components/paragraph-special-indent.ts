@@ -3,7 +3,7 @@
 export type SpecialIndent = 'none' | 'firstLine' | 'hanging'
 
 /** unit of the "By" field: an absolute length, or Word's character unit for
- * East Asian text (w:firstLineChars — "first line: 2 字符", issue #1892) */
+ * East Asian text (w:firstLineChars, hundredths of a character, issue #1892) */
 export type SpecialByUnit = 'cm' | 'chars'
 
 export interface SpecialState {
@@ -18,7 +18,7 @@ export interface SpecialState {
 /** Word's default "By" when switching from (none): 0.5" */
 export const DEFAULT_SPECIAL_BY = 720
 
-/** Word's default character-unit "By" for East Asian text: 2 字符 */
+/** Word's default character-unit "By" for East Asian text: two characters */
 export const DEFAULT_SPECIAL_BY_CHARS = 200
 
 export function specialFromFirstLine(firstLine: unknown, firstLineChars?: unknown): SpecialState {
@@ -70,7 +70,7 @@ export function pickSpecial(prev: SpecialState, special: SpecialIndent): Special
   }
 }
 
-/** Switching the By unit seeds the unit's default (2 字符 / 0.5") */
+/** Switching the By unit seeds the unit's default (2 characters / 0.5") */
 export function pickByUnit(prev: SpecialState, unit: SpecialByUnit): SpecialState {
   if (unit === 'chars')
     return { special: prev.special, by: DEFAULT_SPECIAL_BY_CHARS, unit: 'chars' }

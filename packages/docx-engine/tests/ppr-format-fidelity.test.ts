@@ -201,7 +201,7 @@ describe('pattern shading display blend', () => {
 })
 
 describe('character-unit first-line indents (#1892)', () => {
-  // Word's output for "first line: 2 字符" in a 10.5pt Normal style
+  // Word's output for a two-character first line in a 10.5pt Normal style
   const CHARS_RAW = '<w:pPr><w:ind w:firstLineChars="200" w:firstLine="420"/></w:pPr>'
   const PARSED: ParaFormat = { indentFirstLine: 420, charIndents: { firstLine: 200 } }
 
