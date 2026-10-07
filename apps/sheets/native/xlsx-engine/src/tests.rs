@@ -4730,3 +4730,55 @@ fn an_uncancelled_open_completes_and_keeps_its_cache_directory() {
     sessions.close(&metadata.session_id).unwrap();
     assert!(!cache.exists());
 }
+
+/// A workbook part that lies about its size inflates fully on the XML read path.
+///
+/// `read_media` is capped by `copy_entry_bounded`, and the docx/pptx hosts run
+/// `@genoffice/zip-gate` before opening at all — but `read_zip_string` is a
+/// plain `read_to_string`, and it is how nearly every workbook part is loaded.
+/// `validate_entries` checks the entry *count* and the paths, never the bytes.
+/// A workbook therefore gets a full unbounded allocation out of one crafted
+/// entry, where every other ingest path in the product refuses it
+/// (genoffice#781, genoffice#1386).
+#[test]
+fn rejects_xml_entry_that_inflates_past_its_declared_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bomb.xlsx");
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+        writer.write_all(&vec![b'A'; 4 * 1024 * 1024]).unwrap();
+        writer.finish().unwrap();
+    }
+    forge_declared_size(&path, "xl/worksheets/sheet1.xml", 12);
+
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let result = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml");
+    assert!(
+        result.is_err(),
+        "an entry declaring 12 bytes inflated to 4 MiB and was read anyway"
+    );
+}
+
+/// The same entry read honestly must still succeed: the cap is on the payload,
+/// not on legitimate parts.
+#[test]
+fn reads_xml_entry_that_matches_its_declaration() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ok.xlsx");
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+        writer
+            .write_all(br#"<worksheet><sheetData><row r="1"/></sheetData></worksheet>"#)
+            .unwrap();
+        writer.finish().unwrap();
+    }
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let value = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml").unwrap();
+    assert!(value.contains("sheetData"));
+}
