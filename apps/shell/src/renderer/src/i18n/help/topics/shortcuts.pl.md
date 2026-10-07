@@ -15,6 +15,9 @@ Każdy edytor ma własne przypisania klawiszy i tylko kilka z nich działa wszę
 - **F1 otwiera ten podręcznik**, a nie arkusz skrótów. Należy do menu aplikacji, więc działa z poziomu Word, Sheets, Slides, PDF czy karty Home.
 - **Przełącznik wstążki to `Ctrl+F1`, albo `⌥⌘R` na macOS.** Samo `F1` nic nie robi — F1 to podręcznik, a klawisz wstążki celowo go nie współdzieli. `Ctrl+F1` jest akceptowany także na macOS, ale `⌥⌘R` to klawisz używany przez Office dla Maca.
 - **Arkusz Skrótów klawiszowych należy wyłącznie do Worda** (`⌘/`). Wypisuje dokładnie tabelę Worda poniżej. Żaden inny edytor go nie ma.
+
+![Arkusz Skrótów klawiszowych w Wordzie: czynność po lewej, skrót po prawej, pogrupowane według Plik, Edycja, Formatowanie tekstu, Formatowanie akapitu, Wstawianie, Sprawdzanie i narzędzia, Widok](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` i `⌘P` są zaimplementowane osobno w każdym edytorze** i nie gedragen się dokładnie tak samo. `⌘P` w Wordzie najpierw tworzy podgląd wydruku, tak aby jedna wydrukowana strona odpowiadała jednej stronie na ekranie; w PDF otwiera okno drukowania PDF; Sheets i Slides znów mają własne.
 - **Reszta jest zależna od aplikacji.** Gdy aktywna jest karta Word, `⌘B` to pogrubienie Worda. Gdy aktywny jest Slides, `⌘B` to pogrubienie Slides, a menu, do którego należy, nie jest tym, do którego jesteś przyzwyczajony. Tam, gdzie przypisanie działa tylko z zaznaczeniem lub w określonym panelu, kolumna Czynność to zaznacza.
 

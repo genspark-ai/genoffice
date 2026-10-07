@@ -15,6 +15,9 @@ Každý editor má vlastní přiřazení kláves a funguje všude jen několik z
 - **F1 otevírá tuto příručku**, ne list zkratek. Patří do menu aplikace, takže funguje z Wordu, Sheets, Slides, PDF i panelu Home.
 - **Přepínač pásu je `Ctrl+F1`, nebo `⌥⌘R` na macOS.** Samotné `F1` nic neudělá — F1 je příručka a klávesa pásu ji záměrně nesdílí. `Ctrl+F1` se na macOS také přijímá, ale `⌥⌘R` je klávesa, kterou používá Office pro Mac.
 - **List Klávesové zkratky existuje jen ve Wordu** (`⌘/`). Vypisuje přesně tabulku Wordu níže. Jiný editor ho nemá.
+
+![List Klávesové zkratky ve Wordu: akce vlevo, klávesová zkratka vpravo, seskupeno podle Soubor, Úpravy, Formátování textu, Formátování odstavce, Vkládání, Kontrola a nástroje, Zobrazení](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` a `⌘P` jsou v každém editoru implementované samostatně** a nechovají se úplně stejně. `⌘P` ve Wordu nejdřív sestaví náhled tisku, aby jeden vytištěný list odpovídal jedné stránce na obrazovce; v PDF otevře tiskové dialogové okno PDF; Sheets a Slides mají zase vlastní.
 - **Zbytek je per aplikace.** Když je aktivní panel Wordu, `⌘B` je tučné písmo Wordu. Když je aktivní Slides, `⌘B` je tučné písmo Slides a menu, do kterého patří, není to, na které jste zvyklí. Tam, kde přiřazení funguje jen s výběrem nebo v konkrétním podokně, uvádí to sloupec Akce.
 

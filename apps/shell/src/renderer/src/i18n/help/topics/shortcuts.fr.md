@@ -15,6 +15,9 @@ Chaque éditeur a ses propres combinaisons de touches, et seules quelques-unes f
 - **F1 ouvre ce manuel**, pas la feuille des raccourcis. Cette touche appartient au menu de l’application : elle fonctionne donc aussi bien depuis Word, Sheets, Slides, PDF ou l’onglet Home.
 - **Le bouton du ruban est `Ctrl+F1`, ou `⌥⌘R` sur macOS.** Appuyer sur `F1` seul ne fait rien — F1 est le manuel, et la touche du ruban ne partage volontairement pas ce code. `Ctrl+F1` est acceptée sur macOS également, mais `⌥⌘R` est la touche qu’utilise Office pour Mac.
 - **La feuille des raccourcis clavier appartient au seul Word** (`⌘/`). Elle reprend exactement la table Word ci-dessous. Aucun autre éditeur n’en possède.
+
+![La feuille des raccourcis clavier propre à Word : l’action à gauche, le raccourci à droite, regroupés par Fichier, Édition, Mise en forme du texte, Mise en forme du paragraphe, Insertion, Révision et outils, Affichage](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` et `⌘P` sont implémentés séparément derrière chaque éditeur**, et ils ne se comportent pas tout à fait de la même façon. Le `⌘P` de Word met d’abord en page un aperçu d’impression, afin qu’une feuille imprimée corresponde exactement à une page à l’écran ; celui de PDF ouvre la boîte de dialogue d’impression PDF ; Sheets et Slides ont de nouveau les leurs.
 - **Le reste est propre à chaque application.** Lorsque l’onglet Word est actif, `⌘B` correspond au Gras de Word. Lorsque Slides est actif, `⌘B` correspond au Gras de Slides, et le menu auquel il appartient n’est pas celui auquel vous êtes habitué. Lorsqu’une combinaison ne se déclenche qu’avec une sélection, ou dans un volet particulier, la colonne Action l’indique.
 

@@ -15,6 +15,9 @@ Every editor has its own key bindings, and only a few of them work everywhere. T
 - **F1 opens this manual**, not the shortcut sheet. It belongs to the application menu, so it works from Word, Sheets, Slides, PDF or the Home tab alike.
 - **The ribbon toggle is `Ctrl+F1`, or `⌥⌘R` on macOS.** Pressing bare `F1` does nothing — F1 is the manual, and the ribbon key deliberately does not share it. `Ctrl+F1` is accepted on macOS as well, though `⌥⌘R` is the key Office for Mac uses.
 - **The Keyboard Shortcuts sheet is Word's alone** (`⌘/`). It lists exactly the Word table below. No other editor has one.
+
+![Word's own Keyboard Shortcuts sheet: the action on the left, the chord on the right, grouped by File, Edit, Text, Paragraph, Insert, Review and View](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` and `⌘P` are implemented separately behind each editor**, and they do not quite behave alike. Word's `⌘P` first lays out a print preview so one printed sheet equals one on-screen page; PDF's opens the PDF print dialog; Sheets and Slides have their own again.
 - **The rest is per-application.** When the Word tab is active, `⌘B` is Word's Bold. When Slides is active, `⌘B` is Slides' Bold, and the menu it belongs to is not the one you are used to. Where a binding only fires with something selected, or in a particular pane, the Action column says so.
 

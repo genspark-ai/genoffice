@@ -15,6 +15,9 @@ Cada editor tiene sus propias combinaciones de teclas, y solo unas cuantas funci
 - **F1 abre este manual**, no la hoja de atajos. La tecla pertenece al menú de la aplicación, así que funciona igual desde Word, Sheets, Slides, PDF o la pestaña Home.
 - **El conmutador de la cinta es `Ctrl+F1`, o `⌥⌘R` en macOS.** Pulsar `F1` a secas no hace nada — F1 es el manual, y la tecla de la cinta deliberadamente no la comparte. `Ctrl+F1` también se acepta en macOS, aunque `⌥⌘R` es la tecla que usa Office para Mac.
 - **La hoja de atajos de teclado es solo de Word** (`⌘/`). Contiene exactamente la tabla de Word de abajo. Ningún otro editor tiene una.
+
+![La hoja de atajos de teclado propia de Word: la acción a la izquierda, el atajo a la derecha, agrupados por Archivo, Edición, Formato de texto, Formato de párrafo, Insertar, Revisión y herramientas, Vista](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` y `⌘P` están implementados por separado detrás de cada editor**, y no se comportan del todo igual. El `⌘P` de Word monta primero una vista previa de impresión, de modo que una hoja impresa equivalga exactamente a una página en pantalla; el de PDF abre el cuadro de diálogo de impresión de PDF; Sheets y Slides tienen los suyos otra vez.
 - **El resto es por aplicación.** Cuando la pestaña de Word está activa, `⌘B` es la Negrita de Word. Cuando está la de Slides, `⌘B` es la Negrita de Slides, y el menú al que pertenece no es el de siempre. Cuando una combinación solo se dispara con algo seleccionado, o en un panel concreto, la columna Acción lo indica.
 

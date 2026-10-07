@@ -15,6 +15,9 @@ Setiap editor mempunyai pengikatan kekunci sendiri, dan hanya sebahagian kecil d
 - **F1 membuka manual ini**, bukan helaian pintasan. Kekunci itu milik menu aplikasi, jadi ia berfungsi dari Word, Sheets, Slides, PDF mahupun tab Laman Utama.
 - **Kekunci suis reben ialah `Ctrl+F1`, atau `⌥⌘R` pada macOS.** Menekan `F1` kosong tidak melakukan apa-apa — F1 ialah manualnya, dan kekunci reben sengaja tidak berkongsi denyut itu. `Ctrl+F1` juga diterima pada macOS, walaupun `⌥⌘R` ialah kekunci yang digunakan oleh Office for Mac.
 - **Helaian Pintasan Papan Kekunci milik Word sahaja** (`⌘/`). Ia menyenaraikan tepat jadual Word di bawah ini. Tiada editor lain mempunyai helaian seperti itu.
+
+![Helaian Pintasan Papan Kekunci milik Word sahaja: tindakan di sebelah kiri, pintasan kekunci di sebelah kanan, dikumpulkan mengikut kumpulan Fail, Edit, Pemformatan Teks, Pemformatan Perenggan, Sisip, Semakan & Alat, dan Paparan](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` dan `⌘P` dilaksanakan secara berasingan di sebalik setiap editor**, dan mereka tidak berperlakuan sama. `⌘P` milik Word menyusun pratonton cetakan dahulu supaya satu helaian bercetak sama dengan satu halaman pada skrin; milik PDF membuka dialog cetakan PDF; Sheets dan Slides mempunyai milik masing-masing pula.
 - **Selebarnya mengikut aplikasi.** Apabila tab Word aktif, `⌘B` ialah Tebal milik Word. Apabila Slides aktif, `⌘B` ialah Tebal milik Slides, dan menu tempatnya tinggal bukan menu yang anda biasa gunakan. Di mana sesuatu pengikatan hanya dicetuskan apabila ada sesuatu yang dipilih, atau di panel tertentu, lajur Tindakan akan menyatakannya.
 

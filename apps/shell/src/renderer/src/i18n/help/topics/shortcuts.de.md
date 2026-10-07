@@ -15,6 +15,9 @@ Jeder Editor hat eigene Tastenbelegungen, und nur wenige davon funktionieren üb
 - **F1 öffnet dieses Handbuch**, nicht die Kürzel-Tabelle. Die Taste gehört zum Anwendungsmenü und funktioniert daher aus Word, Sheets, Slides, PDF oder dem Tab Home gleichermaßen.
 - **Der Umschalter für das Menüband ist `Ctrl+F1`, auf macOS `⌥⌘R`.** Ein bloßer Druck auf `F1` bewirkt nichts — F1 ist das Handbuch, und die Menüband-Taste teilt sich diese Belegung bewusst nicht. `Ctrl+F1` wird auch auf macOS akzeptiert, aber `⌥⌘R` ist die Taste, die Office für Mac verwendet.
 - **Die Tastenkürzel-Tabelle gehört allein zu Word** (`⌘/`). Sie listet genau die Word-Tabelle weiter unten auf. Kein anderer Editor hat eine.
+
+![Die Tastenkürzel-Tabelle von Word selbst: die Aktion links, die Tastenkombination rechts, gruppiert nach Datei, Bearbeiten, Textformatierung, Absatzformatierung, Einfügen, Überprüfen und Werkzeuge, Ansicht](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` und `⌘P` sind hinter jedem Editor getrennt implementiert**, und sie verhalten sich nicht ganz gleich. Words `⌘P` erzeugt zuerst eine Druckvorschau, damit ein bedrucktes Blatt genau einer Bildschirmseite entspricht; das von PDF öffnet den PDF-Druckdialog; Sheets und Slides haben wiederum eigene.
 - **Der Rest gilt pro Anwendung.** Ist der Word-Tab aktiv, ist `⌘B` Words Fett. Ist Slides aktiv, ist `⌘B` Slides’ Fett, und das Menü, zu dem es gehört, ist nicht das gewohnte. Wo eine Belegung nur mit einer Auswahl oder in einem bestimmten Bereich auslöst, steht das in der Spalte Aktion.
 

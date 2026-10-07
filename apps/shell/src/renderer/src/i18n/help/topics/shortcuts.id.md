@@ -15,6 +15,9 @@ Setiap editor punya pengikatan tombol sendiri, dan hanya sebagian yang berlaku d
 - **F1 membuka manual ini**, bukan lembar pintasan. Tombol itu milik menu aplikasi, jadi ia berlaku dari Word, Sheets, Slides, PDF, maupun tab Beranda.
 - **Tombol pita adalah `Ctrl+F1`, atau `⌥⌘R` di macOS.** Menekan `F1` polos tidak melakukan apa pun — F1 adalah manualnya, dan tombol pita sengaja tidak berbagi kunci dengan F1. `Ctrl+F1` juga diterima di macOS, meski `⌥⌘R` adalah tombol yang dipakai Office for Mac.
 - **Lembar Pintasan Papan Ketik hanya milik Word** (`⌘/`). Isinya persis tabel Word di bawah ini. Tidak ada editor lain yang memilikinya.
+
+![Lembar Pintasan Papan Ketik milik Word sendiri: tindakan di sebelah kiri, kombinasi tombol di sebelah kanan, dikelompokkan menurut Berkas, Edit, Format Teks, Format Paragraf, Sisipkan, Tinjau & Alat, dan Tampilan](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S`, dan `⌘P` diimplementasikan terpisah di balik tiap editor**, dan perilakunya tidak sepenuhnya sama. `⌘P` milik Word menyusun pratinjau cetak lebih dulu sehingga satu lembar cetak sama dengan satu halaman di layar; milik PDF membuka dialog cetak PDF; Sheets dan Slides punya versinya sendiri lagi.
 - **Selebihnya bersifat per-aplikasi.** Saat tab Word aktif, `⌘B` adalah Tebal milik Word. Saat Slides aktif, `⌘B` adalah Tebal milik Slides, dan menu tempatnya tinggal bukan menu yang biasa Anda pakai. Wherever sebuah pengikatan hanya aktif dengan ada sesuatu yang terpilih, atau di panel tertentu, kolom Tindakan mengatakannya.
 

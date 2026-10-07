@@ -15,6 +15,9 @@ Ogni editor ha le proprie combinazioni di tasti, e solo poche funzionano ovunque
 - **F1 apre questo manuale**, non il foglio delle scorciatoie. Il tasto appartiene al menu dell’applicazione, quindi funziona allo stesso modo da Word, Sheets, Slides, PDF o dalla scheda Home.
 - **L’interruttore del nastro è `Ctrl+F1`, oppure `⌥⌘R` su macOS.** Premere `F1` da solo non fa nulla — F1 è il manuale, e il tasto del nastro non condivide deliberatamente quella combinazione. `Ctrl+F1` è accettata anche su macOS, ma `⌥⌘R` è il tasto che usa Office per Mac.
 - **Il foglio delle scorciatoie da tastiera appartiene solo a Word** (`⌘/`). Elenca esattamente la tabella di Word qui sotto. Nessun altro editor ne ha uno.
+
+![Il foglio delle scorciatoie da tastiera di Word stesso: l’azione a sinistra, la scorciatoia a destra, raggruppati per File, Modifica, Formattazione del testo, Formattazione del paragrafo, Inserimento, Revisione e strumenti, Vista](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` e `⌘P` sono implementati separatamente dietro ogni editor**, e non si comportano del tutto allo stesso modo. Il `⌘P` di Word impagina prima un’anteprima di stampa, così che un foglio stampato corrisponda esattamente a una pagina a schermo; quello di PDF apre la finestra di stampa PDF; Sheets e Slides hanno di nuovo le proprie.
 - **Il resto vale per singola applicazione.** Quando la scheda di Word è attiva, `⌘B` è il Grassetto di Word. Quando è attiva Slides, `⌘B` è il Grassetto di Slides, e il menu a cui appartiene non è quello a cui sei abituato. Dove una combinazione si attiva solo con qualcosa selezionato, o in un pannello preciso, la colonna Azione lo dice.
 

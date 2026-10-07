@@ -15,6 +15,9 @@ Mỗi trình soạn thảo có tổ hợp phím riêng, và chỉ vài tổ hợ
 - **F1 mở sổ tay này**, không phải bảng phím tắt. Nó thuộc về menu ứng dụng, nên hoạt động như nhau kể cả từ Word, Sheets, Slides, PDF hay thẻ Trang chủ.
 - **Phím bật/tắt Ribbon là `Ctrl+F1`, hoặc `⌥⌘R` trên macOS.** Nhấn `F1` trần không làm gì — F1 là sổ tay, còn phím của Ribbon cố ý không dùng chung với nó. `Ctrl+F1` cũng được chấp nhận trên macOS, dù `⌥⌘R` mới là phím mà Office for Mac dùng.
 - **Bảng Phím tắt là của riêng Word** (`⌘/`). Nó liệt kê đúng bảng Word ở dưới đây. Không trình soạn thảo nào khác có bảng đó.
+
+![Bảng Phím tắt của riêng Word: hành động ở bên trái, tổ hợp phím ở bên phải, chia theo nhóm Tệp, Chỉnh sửa, Định dạng văn bản, Định dạng đoạn văn, Chèn, Rà soát và công cụ, Xem](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` và `⌘P` được hiện thực riêng biệt sau mỗi trình soạn thảo**, và chúng không hành xử giống hệt nhau. `⌘P` của Word trước tiên dàn trang xem trước khi in, để một trang in ra đúng bằng một trang trên màn hình; của PDF thì mở hộp thoại in PDF; Sheets và Slides lại có bản riêng.
 - **Phần còn lại thuộc về từng ứng dụng.** Khi thẻ Word đang hoạt động, `⌘B` là Đậm của Word. Khi Slides đang hoạt động, `⌘B` là Đậm của Slides, và menu chứa nó không phải menu bạn quen. Ở những chỗ tổ hợp phím chỉ chạy khi có vùng được chọn, hoặc trong một khung bên cạnh cụ thể, cột Hành động sẽ nói rõ.
 

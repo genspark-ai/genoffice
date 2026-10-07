@@ -15,6 +15,9 @@ Elke editor heeft een eigen toetsenindeling en slechts een paar werken overal. D
 - **F1 opent deze handleiding**, niet het sneltoetsenblad. De toets hoort bij het toepassingsmenu en werkt dus vanuit Word, Sheets, Slides, PDF of het tabblad Home.
 - **De linttoets is `Ctrl+F1`, of `⌥⌘R` op macOS.** Een kale `F1` doet niets — F1 is de handleiding, en de linttoets deelt die toets bewust niet. `Ctrl+F1` werkt ook op macOS, maar `⌥⌘R` is de toets die Office voor Mac gebruikt.
 - **Het blad Sneltoetsen bestaat alleen in Word** (`⌘/`). Het toont precies de Word-tabel hieronder. Geen enkele andere editor heeft er een.
+
+![Het blad Sneltoetsen van Word zelf: de actie links, de sneltoets rechts, gegroepeerd per Bestand, Bewerken, Tekstopmaak, Alinea-opmaak, Invoegen, Controleren en hulpmiddelen, Weergave](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` en `⌘P` zijn per editor apart geïmplementeerd** en gedragen zich niet helemaal gelijk. De `⌘P` van Word maakt eerst een afdrukvoorbeeld zodat één afgedrukt vel één schermpagina is; die van PDF opent het afdrukdialoogvenster van PDF; Sheets en Slides hebben weer hun eigen.
 - **De rest is per toepassing.** Bij een actief Word-tabblad is `⌘B` de vette tekst van Word. Bij een actief Slides is `⌘B` de vette tekst van Slides, en hoort het bij een menu dat je niet gewend bent. Waar een binding alleen werkt met een selectie of in een bepaald paneel, staat dat in de kolom Actie.
 

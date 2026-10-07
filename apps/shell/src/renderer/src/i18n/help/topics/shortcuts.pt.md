@@ -15,6 +15,9 @@ Cada editor tem as suas próprias combinações de teclas, e apenas algumas func
 - **F1 abre este manual**, não a folha de atalhos. A tecla pertence ao menu da aplicação, por isso funciona igualmente a partir de Word, Sheets, Slides, PDF ou do separador Home.
 - **O interruptor do friso é `Ctrl+F1`, ou `⌥⌘R` no macOS.** Premir `F1` sozinho não faz nada — F1 é o manual, e a tecla do friso deliberadamente não partilha essa combinação. `Ctrl+F1` também é aceite no macOS, mas `⌥⌘R` é a tecla que o Office para Mac usa.
 - **A folha de atalhos de teclado é só do Word** (`⌘/`). Lista exatamente a tabela do Word abaixo. Nenhum outro editor tem uma.
+
+![A folha de atalhos de teclado do próprio Word: a ação à esquerda, o atalho à direita, agrupados por Ficheiro, Edição, Formatação de texto, Formatação de parágrafo, Inserir, Revisão e ferramentas, Vista](img/word-shortcuts.png)
+
 - **`⌘O`, `⌘S` e `⌘P` estão implementados à parte por trás de cada editor**, e não se comportam exatamente da mesma forma. O `⌘P` do Word dispõe primeiro uma pré-visualização de impressão, de modo que uma folha impressa corresponda exatamente a uma página no ecrã; o do PDF abre a caixa de diálogo de impressão de PDF; o Sheets e o Slides têm novamente as suas.
 - **O resto é por aplicação.** Quando o separador do Word está ativo, `⌘B` é o Negrito do Word. Quando está o do Slides, `⌘B` é o Negrito do Slides, e o menu a que pertence não é aquele a que está habituado. Sempre que uma combinação só dispara com algo selecionado, ou num painel concreto, a coluna Ação indica-o.
 
