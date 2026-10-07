@@ -155,6 +155,9 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     indentLeft: format?.indentLeft ?? null,
     indentRight: format?.indentRight ?? null,
     indentFirstLine: format?.indentFirstLine ?? null,
+    // only the paragraph's OWN character unit becomes direct formatting — a
+    // style-chain "2 字符" shows through and must not be copied onto the pPr
+    indentFirstLineChars: format?.directCharIndents?.firstLine ?? null,
     spaceBefore: format?.spaceBefore ?? null,
     spaceAfter: format?.spaceAfter ?? null,
     spaceBeforeAuto: format?.spaceBeforeAuto ?? null,
@@ -2970,6 +2973,11 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.indentRight != null) format.indentRight = Number(node.attrs.indentRight)
   if (node.attrs?.indentFirstLine != null)
     format.indentFirstLine = Number(node.attrs.indentFirstLine)
+  // the character-unit special indent rides along its twips twin and is written
+  // as w:firstLineChars next to it (Word prefers the character unit on reload)
+  const firstLineChars = Number(node.attrs?.indentFirstLineChars)
+  if (Number.isFinite(firstLineChars) && firstLineChars > 0)
+    format.charIndents = { ...format.charIndents, firstLine: firstLineChars }
   if (node.attrs?.spaceBefore != null) format.spaceBefore = Number(node.attrs.spaceBefore)
   if (node.attrs?.spaceAfter != null) format.spaceAfter = Number(node.attrs.spaceAfter)
   if (node.attrs?.spaceBeforeAuto != null)
@@ -3494,6 +3502,9 @@ function normalizedFormat(format: ParaFormat | undefined): unknown {
     format.indentLeft ?? null,
     format.indentRight ?? null,
     format.indentFirstLine ?? null,
+    // a character-unit special indent differs from its twips twin alone: the
+    // raw-pPr reuse must notice a chars edit (or its removal) and re-merge
+    format.charIndents?.firstLine ?? null,
     format.spaceBefore ?? null,
     format.spaceAfter ?? null,
     format.pageBreakBefore ?? false,

@@ -473,6 +473,7 @@ export const ja = {
   appParaSpecialFirstLine: '字下げ',
   appParaSpecialHanging: 'ぶら下げ',
   appParaBy: '幅',
+  appParaUnitChars: '文字',
   // Equations
   appInsertEquation: '数式の挿入',
   appLatexPlaceholder: '例: x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',

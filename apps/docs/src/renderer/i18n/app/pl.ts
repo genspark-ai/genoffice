@@ -456,6 +456,7 @@ export const pl = {
   appParaSpecialFirstLine: 'Pierwszy wiersz',
   appParaSpecialHanging: 'Wysunięcie',
   appParaBy: 'Co',
+  appParaUnitChars: 'znaki',
   appInsertEquation: 'Wstaw równanie',
   appLatexPlaceholder: 'np. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Wpisz LaTeX, aby zobaczyć podgląd',

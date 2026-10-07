@@ -455,6 +455,7 @@ export const ms = {
   appParaSpecialFirstLine: 'Baris pertama',
   appParaSpecialHanging: 'Gantung',
   appParaBy: 'Sebanyak',
+  appParaUnitChars: 'aksara',
   appInsertEquation: 'Sisipkan Persamaan',
   appLatexPlaceholder: 'cth. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Taip LaTeX untuk melihat pratonton',

@@ -5,13 +5,17 @@ import { Dropdown } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
 import { setSelectionAlign } from '../editor/direction'
+import { effectiveSizeHalfPoints } from '../editor/text-style-resolve'
+import { textHasCjk } from '../line-metrics'
 import { runUiOps } from '../ai/ops'
 import { useModalKeys } from './modal-keys'
 import { LengthInput } from './LengthInput'
 import {
-  firstLineFromSpecial,
+  pickByUnit,
   pickSpecial,
   specialFromFirstLine,
+  specialIndentAttrs,
+  type SpecialByUnit,
   type SpecialIndent,
 } from './paragraph-special-indent'
 import {
@@ -86,6 +90,16 @@ function outlineLevelOf(editor: Editor): { level: number; editable: boolean } {
   return { level, editable: a.outlineOnly === true }
 }
 
+/** East Asian text at the selection: the Special By field then opens in Word's
+ *  character unit, whose default pick is 2 字符 (issue #1892) */
+function selectionHasCjkText(editor: Editor): boolean {
+  const { from, to, empty } = editor.state.selection
+  const text = empty
+    ? (editor.state.doc.resolve(from).parent.textContent ?? '')
+    : editor.state.doc.textBetween(from, to, ' ', ' ')
+  return textHasCjk(text.slice(0, 4000))
+}
+
 export function ParagraphDialog({
   editor,
   onClose,
@@ -125,7 +139,13 @@ export function ParagraphDialog({
   const twipsToPt = (v: unknown) => Math.round((Number(v) || 0) * PT_PER_TWIP)
   const [indentLeft, setIndentLeft] = useState(Number(attrs.indentLeft) || 0)
   const [indentRight, setIndentRight] = useState(Number(attrs.indentRight) || 0)
-  const [special, setSpecial] = useState(() => specialFromFirstLine(attrs.indentFirstLine))
+  const [special, setSpecial] = useState(() => {
+    const s = specialFromFirstLine(attrs.indentFirstLine, attrs.indentFirstLineChars)
+    // a paragraph with no special indent yet opens the By field in character
+    // units on East Asian text, so the default pick is Word's 2 字符
+    if (s.special === 'none' && selectionHasCjkText(editor)) return { ...s, unit: 'chars' as const }
+    return s
+  })
   const [spaceBefore, setSpaceBefore] = useState(twipsToPt(attrs.spaceBefore))
   const [spaceAfter, setSpaceAfter] = useState(twipsToPt(attrs.spaceAfter))
 
@@ -139,6 +159,9 @@ export function ParagraphDialog({
     // align goes through setSelectionAlign so each paragraph resolves the
     // visual value against its own direction (null = start side)
     setSelectionAlign(editor, align)
+    // the character-unit By resolves its twips twin against the effective font
+    // size at the selection (w:firstLineChars semantics: the first run's size)
+    const charUnitTwips = (effectiveSizeHalfPoints(editor, styles) ?? 20) * 10
     // only touched checkboxes become direct pPr: an untouched one keeps showing the style through
     const changed: Record<string, unknown> = {}
     for (const k of [...FLAG_KEYS, 'contextualSpacing'] as const)
@@ -149,7 +172,7 @@ export function ParagraphDialog({
       ...spacing,
       indentLeft: indentLeft !== 0 ? indentLeft : null,
       indentRight: indentRight !== 0 ? indentRight : null,
-      indentFirstLine: firstLineFromSpecial(special),
+      ...specialIndentAttrs(special, charUnitTwips),
       spaceBefore: ptToTwips(spaceBefore),
       spaceAfter: ptToTwips(spaceAfter),
       ...changed,
@@ -332,14 +355,44 @@ export function ParagraphDialog({
               <label>
                 {t('appParaBy')}
                 <span className="para-num">
-                  <LengthInput
-                    value={special.special === 'none' ? null : special.by}
-                    min={0}
-                    max={pageWidth}
-                    disabled={special.special === 'none'}
-                    ariaLabel={t('appParaBy')}
-                    live
-                    onCommit={(twips) => setSpecial((prev) => ({ ...prev, by: twips ?? 0 }))}
+                  {special.unit === 'chars' ? (
+                    <input
+                      type="number"
+                      min={0.01}
+                      max={100}
+                      step={0.5}
+                      disabled={special.special === 'none'}
+                      aria-label={t('appParaBy')}
+                      value={special.by / 100}
+                      onChange={(e) =>
+                        setSpecial((p) => ({
+                          ...p,
+                          by: Math.round(
+                            Math.min(100, Math.max(0, Number(e.target.value) || 0)) * 100,
+                          ),
+                        }))
+                      }
+                    />
+                  ) : (
+                    <LengthInput
+                      value={special.special === 'none' ? null : special.by}
+                      min={0}
+                      max={pageWidth}
+                      disabled={special.special === 'none'}
+                      ariaLabel={t('appParaBy')}
+                      live
+                      onCommit={(twips) => setSpecial((prev) => ({ ...prev, by: twips ?? 0 }))}
+                    />
+                  )}
+                  <Dropdown
+                    value={special.unit === 'chars' ? 'chars' : 'cm'}
+                    ariaLabel={t('appParaUnitChars')}
+                    disabled={special.special !== 'firstLine'}
+                    options={[
+                      { value: 'cm', label: 'cm' },
+                      { value: 'chars', label: t('appParaUnitChars') },
+                    ]}
+                    onPick={(u) => setSpecial((prev) => pickByUnit(prev, u as SpecialByUnit))}
                   />
                 </span>
               </label>

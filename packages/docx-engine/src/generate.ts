@@ -1378,6 +1378,11 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   // explicit w:left="0" must be written back: it cancels a numbering-level indent
   if (format.indentLeft !== undefined) indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
   if (format.indentRight !== undefined) indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
+  // a character-unit special indent rides along its twips twin (Word writes
+  // both; the *Chars attribute wins and rescales with the first run's size —
+  // CJK "first line: 2 characters", issue #1892)
+  if (format.charIndents?.firstLine)
+    indAttrs.push(`w:firstLineChars="${Math.round(format.charIndents.firstLine)}"`)
   if (format.indentFirstLine !== undefined) {
     if (format.indentFirstLine >= 0)
       indAttrs.push(`w:firstLine="${Math.round(format.indentFirstLine)}"`)
@@ -1651,19 +1656,24 @@ function sameIndent(a: ParaFormat, b: ParaFormat): boolean {
 
 /**
  * Cancel attributes for the character-unit indents a paragraph was laid out
- * with. A rebuilt w:ind carries twips only, and Word keeps preferring a
- * `*Chars` from the style chain over a twips twin (probed) — so an indent edit
- * on a paragraph in a CJK "first line 2 characters" style must write the
- * explicit `w:firstLineChars="0"` Word itself writes for pt indents, or the
- * style's character indent supersedes the edit on reload.
+ * with but the new format no longer carries. A rebuilt w:ind carries twips,
+ * and Word keeps preferring a `*Chars` from the style chain over a twips twin
+ * (probed) — so dropping a character indent must write the explicit
+ * `w:firstLineChars="0"` Word itself writes for pt indents, or the style's
+ * character indent supersedes the edit on reload. Components the new format
+ * still carries are re-emitted in the rebuilt w:ind (the character unit edits
+ * in place) and must NOT be cancelled.
  */
-function charIndentCancelAttrs(chars: CharIndents | undefined): string[] {
-  if (!chars) return []
+function charIndentCancelAttrs(original: CharIndents, format: ParaFormat | undefined): string[] {
+  const kept = format?.charIndents
   const out: string[] = []
-  if (chars.left) out.push('w:leftChars="0"')
-  if (chars.right) out.push('w:rightChars="0"')
-  if (chars.hanging) out.push('w:hangingChars="0"')
-  else if (chars.firstLine) out.push('w:firstLineChars="0"')
+  if (original.left && !kept?.left) out.push('w:leftChars="0"')
+  if (original.right && !kept?.right) out.push('w:rightChars="0"')
+  // firstLineChars and hangingChars are one component (the special indent):
+  // a new character special replaces the old one outright — no cancel
+  if ((original.hanging || original.firstLine) && !kept?.hanging && !kept?.firstLine) {
+    out.push(original.hanging ? 'w:hangingChars="0"' : 'w:firstLineChars="0"')
+  }
   return out
 }
 
@@ -1752,17 +1762,21 @@ export function mergePPrFormat(
   const open = /^<w:pPr(?: [^>]*)?>/.exec(rawPPr)?.[0]
   const fresh = formatPPrChildren(format)
   // an indent edit on a paragraph laid out with character-unit indents: the
-  // twips-only rebuild also cancels them (`w:firstLineChars="0"`…), or Word — and
-  // this parser — would keep resolving the character indent over the new value
+  // twips-only rebuild also cancels the components the edit drops
+  // (`w:firstLineChars="0"`…), or Word — and this parser — would keep
+  // resolving the character indent over the new value; components the new
+  // format still carries are re-emitted (with their *Chars attribute) instead
   if (original?.charIndents && !sameIndent(original, format ?? {})) {
-    const cancel = charIndentCancelAttrs(original.charIndents)
-    const at = fresh.findIndex((c) => c.name === 'w:ind')
-    const xml =
-      at === -1
-        ? `<w:ind ${cancel.join(' ')}/>`
-        : fresh[at].xml.replace(/\/>$/, ` ${cancel.join(' ')}/>`)
-    if (at === -1) fresh.push({ name: 'w:ind', xml })
-    else fresh[at] = { name: 'w:ind', xml }
+    const cancel = charIndentCancelAttrs(original.charIndents, format)
+    if (cancel.length > 0) {
+      const at = fresh.findIndex((c) => c.name === 'w:ind')
+      const xml =
+        at === -1
+          ? `<w:ind ${cancel.join(' ')}/>`
+          : fresh[at].xml.replace(/\/>$/, ` ${cancel.join(' ')}/>`)
+      if (at === -1) fresh.push({ name: 'w:ind', xml })
+      else fresh[at] = { name: 'w:ind', xml }
+    }
   }
   if (!open) {
     // '<w:pPr/>' or unrecognized: rebuild from the format model alone, in schema order

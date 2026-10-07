@@ -455,6 +455,7 @@ export const ru = {
   appParaSpecialFirstLine: 'Отступ',
   appParaSpecialHanging: 'Выступ',
   appParaBy: 'На',
+  appParaUnitChars: 'символов',
   appInsertEquation: 'Вставить уравнение',
   appLatexPlaceholder: 'например, x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Введите LaTeX, чтобы увидеть предварительный просмотр',

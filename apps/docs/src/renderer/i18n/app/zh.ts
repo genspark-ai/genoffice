@@ -461,6 +461,7 @@ export const zh = {
   appParaSpecialFirstLine: '首行缩进',
   appParaSpecialHanging: '悬挂缩进',
   appParaBy: '缩进值',
+  appParaUnitChars: '字符',
   // Equations
   appInsertEquation: '插入公式',
   appLatexPlaceholder: '例如 x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',

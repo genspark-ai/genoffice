@@ -443,6 +443,7 @@ export const he = {
   appParaSpecialFirstLine: 'שורה ראשונה',
   appParaSpecialHanging: 'תלויה',
   appParaBy: 'ב-',
+  appParaUnitChars: 'תווים',
   appInsertEquation: 'הוספת משוואה',
   appLatexPlaceholder: 'לדוגמה x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'הקלידו LaTeX לתצוגה מקדימה',

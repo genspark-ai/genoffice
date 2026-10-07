@@ -39,12 +39,12 @@ function para(pPr: string, runs: string): string {
   return `<w:p><w:pPr>${pPr}</w:pPr>${runs}</w:p>`
 }
 
-/** parsed paragraph formats, without the `charIndents` marker (asserted separately) */
+/** parsed paragraph formats, without the `charIndents`/`directCharIndents` markers (asserted separately) */
 async function formats(bodyXml: string, styles = stylesXml()) {
   const doc = await parseDocx(await buildDocx({ bodyXml, stylesXml: styles }))
   return doc.blocks.map((b) => {
     if (!b.format) return b.format
-    const { charIndents: _chars, ...rest } = b.format
+    const { charIndents: _chars, directCharIndents: _directChars, ...rest } = b.format
     return Object.keys(rest).length > 0 ? rest : undefined
   })
 }
@@ -409,8 +409,13 @@ describe('character-unit indents: saving', () => {
     })
     const doc = await parseDocx(bytes)
     const block = doc.blocks[0]
-    // the marker tells the save path which character indents an edit has to cancel
-    expect(block.format).toEqual({ indentFirstLine: 480, charIndents: { firstLine: 200 } })
+    // the marker tells the save path which character indents an edit has to cancel;
+    // the paragraph's own w:ind chars are also flagged as direct (editor mirror)
+    expect(block.format).toEqual({
+      indentFirstLine: 480,
+      charIndents: { firstLine: 200 },
+      directCharIndents: { firstLine: 200 },
+    })
     // the editor centers the paragraph: only w:jc is rebuilt, w:ind stays character-based
     const merged = mergePPrFormat(
       block.rawPPr!,
@@ -489,6 +494,7 @@ describe('character-unit indents: saving', () => {
       indentLeft: 1320,
       indentFirstLine: -480,
       charIndents: { left: 400, hanging: 200 },
+      directCharIndents: { left: 400, hanging: 200 },
     })
     expect(mergePPrFormat(hanging.rawPPr!, { indentLeft: 720 }, hanging.format)).toBe(
       '<w:pPr><w:ind w:left="720" w:leftChars="0" w:hangingChars="0"/></w:pPr>',

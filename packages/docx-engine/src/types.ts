@@ -440,6 +440,12 @@ export interface ParaFormat {
    *  writes the matching `*Chars="0"` for them (mergePPrFormat), or Word keeps
    *  preferring the character indent over the new twips value on reload. */
   charIndents?: CharIndents
+  /** the character-unit indents the paragraph's OWN w:ind declares (style-chain
+   *  chars excluded, explicit zeros included). The editor maps these to its
+   *  direct-formatting model and the save path writes them back as `*Chars`
+   *  attributes; an indent the style chain alone provides must not become
+   *  direct formatting (issue #1892). */
+  directCharIndents?: CharIndents
   /** space above the paragraph in twips (w:spacing w:before) */
   spaceBefore?: number
   /** space below the paragraph in twips (w:spacing w:after) */

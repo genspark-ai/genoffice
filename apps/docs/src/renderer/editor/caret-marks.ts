@@ -63,6 +63,7 @@ export const PARA_FORMAT_ATTRS = [
   'indentLeft',
   'indentRight',
   'indentFirstLine',
+  'indentFirstLineChars',
   'spaceBefore',
   'spaceAfter',
   'spaceBeforeAuto',

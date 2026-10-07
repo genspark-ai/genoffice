@@ -457,6 +457,7 @@ export const es = {
   appParaSpecialFirstLine: 'Primera línea',
   appParaSpecialHanging: 'Francesa',
   appParaBy: 'En',
+  appParaUnitChars: 'Caracteres',
   appInsertEquation: 'Insertar ecuación',
   appLatexPlaceholder: 'p. ej., x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Escriba LaTeX para ver una vista previa',

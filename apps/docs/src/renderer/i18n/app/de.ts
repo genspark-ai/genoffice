@@ -463,6 +463,7 @@ export const de = {
   appParaSpecialFirstLine: 'Erste Zeile',
   appParaSpecialHanging: 'Hängend',
   appParaBy: 'Um',
+  appParaUnitChars: 'Zeichen',
   appInsertEquation: 'Formel einfügen',
   appLatexPlaceholder: 'z. B. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'LaTeX eingeben, um eine Vorschau anzuzeigen',

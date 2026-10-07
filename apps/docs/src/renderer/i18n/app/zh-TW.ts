@@ -439,6 +439,7 @@ export const zhTW = {
   appParaSpecialFirstLine: '第一行',
   appParaSpecialHanging: '凸排',
   appParaBy: '位移點數',
+  appParaUnitChars: '字元',
   appInsertEquation: '插入方程式',
   appLatexPlaceholder: '例如 x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: '輸入 LaTeX 查看預覽',
