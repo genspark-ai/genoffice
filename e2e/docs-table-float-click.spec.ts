@@ -97,13 +97,21 @@ test.describe('docs floating table click', () => {
       const box = (await nameCell.boundingBox())!
       // the empty top band of the cell, well away from the glyphs
       await page.mouse.click(box.x + box.width / 2, box.y + 6)
-      const path = await page.evaluate(() => {
-        const $from = (window as unknown as AidocsWindow).__aidocs!.editor!.state.selection.$from
-        const names: string[] = []
-        for (let d = $from.depth; d >= 0; d--) names.push($from.node(d).type.name)
-        return names
-      })
-      expect(path).toContain('docTableCell')
+      // The pagination decorations rebuild table nodes right after a click,
+      // so the PM selection reaches the cell a beat late: reading it the
+      // moment the click returns can still see the pre-click paragraph
+      // (reproduced 100% on CI and locally). Poll until the caret is home.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const $from = (window as unknown as AidocsWindow).__aidocs!.editor!.state.selection
+              .$from
+            const names: string[] = []
+            for (let d = $from.depth; d >= 0; d--) names.push($from.node(d).type.name)
+            return names
+          }),
+        )
+        .toContain('docTableCell')
       await page.keyboard.type('Z')
       await expect(nameCell).toHaveText(/Z/)
     } finally {
