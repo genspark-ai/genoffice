@@ -865,8 +865,11 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
           const spec: BriefPlanSpec = {
             mode,
             notes: str(call.input.notes),
+            // the brief writer is the model: it reads the projection, not the source
             page:
-              mode === 'restyle' || mode === 'extract' ? text.slice(0, PAGE_HEAD_CHARS) : undefined,
+              mode === 'restyle' || mode === 'extract'
+                ? buildProjection(text, map).view.slice(0, PAGE_HEAD_CHARS)
+                : undefined,
           }
           return planBrief(spec, currentSignal).then(async (drafted) => {
             if (!drafted.ok)

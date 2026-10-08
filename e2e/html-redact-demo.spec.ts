@@ -17,7 +17,7 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } fr
  * the model's view of it is the placeholder and nothing else.
  */
 
-const LABEL = '客户电话'
+const LABEL = 'client phone'
 const TEXT_SECRET = '13800138000'
 const ATTR_SECRET = 'sk-ATTR-1111'
 const SCRIPT_SECRET = 'sk-SCRIPT-2222'

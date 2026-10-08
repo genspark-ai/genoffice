@@ -35,6 +35,7 @@ import {
   resolveQueueItem,
   type EditQueueItem,
 } from './ai/edit-queue'
+import { buildProjection } from './ai/redact'
 import { Breadcrumb, type NodeState } from './components/Breadcrumb'
 import {
   Ribbon,
@@ -642,7 +643,7 @@ export default function App() {
     // one pin per element; several queued edits on the same element share it and list their ordinals
     const bySid = new Map<number, string[]>()
     items.forEach((item, i) => {
-      const target = map && resolveQueueItem(src, map, item).target
+      const target = map && resolveQueueItem(buildProjection(src, map), map, item).target
       if (target) bySid.set(target.sid, [...(bySid.get(target.sid) ?? []), String(i + 1)])
     })
     const marks = [...bySid].map(([sid, ordinals]) => ({ sid, label: ordinals.join('·') }))
@@ -673,7 +674,11 @@ export default function App() {
           const map = getMap()
           // a shared pin opens the most recent edit on that element; the others stay reachable from the queue card
           const item = editQueueRef.current
-            .filter((q) => resolveQueueItem(textRef.current, map, q).target?.sid === msg.sid)
+            .filter(
+              (q) =>
+                resolveQueueItem(buildProjection(textRef.current, map), map, q).target?.sid ===
+                msg.sid,
+            )
             .at(-1)
           if (!item) return
           selectSid(item.sid, { reveal: true })
@@ -988,7 +993,8 @@ export default function App() {
     return {
       sid: selectedEntry.sid,
       tag: selectedEntry.tag,
-      excerpt: excerptOf(text, selectedEntry),
+      // user-facing popover: the raw source text, unlike the queue's model-facing excerpt
+      excerpt: sourceText(text, selectedEntry).trim() || `<${selectedEntry.tag}>`,
       start: selectedEntry.range[0],
     }
   }, [selectedEntry, text])
@@ -1014,7 +1020,7 @@ export default function App() {
     setEditQueue((prev) => prev.filter((q) => !qids.includes(q.qid)))
   const queueFocus = (qid: string) => {
     const item = editQueue.find((q) => q.qid === qid)
-    const target = item && resolveQueueItem(text, getMap(), item).target
+    const target = item && resolveQueueItem(buildProjection(text, getMap()), getMap(), item).target
     if (target) selectSid(target.sid, { reveal: true })
   }
   const askSendNow = (instruction: string) => {

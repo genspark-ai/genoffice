@@ -57,6 +57,7 @@ import {
   resolveQueue,
   type EditQueueItem,
 } from './edit-queue'
+import { buildProjection } from './redact'
 
 /** [chip label, composer prefill]: blank page → design something new; page with content → rework it */
 const GENERATE_STARTERS = [
@@ -946,7 +947,9 @@ export function AiPanel({
   /** one run for the whole queue; every item is consumed up front, failures go through retry */
   const sendQueue = (): void => {
     const access = depsRef.current.access
-    const entries = liveItems(resolveQueue(access.getText(), access.getMap(), editQueue))
+    const entries = liveItems(
+      resolveQueue(buildProjection(access.getText(), access.getMap()), access.getMap(), editQueue),
+    )
     if (entries.length === 0) {
       onQueueClear()
       return
