@@ -60,7 +60,6 @@ interface Props {
    * cannot serve here: it hangs off `editor.view.dom`, and this surface is
    * mounted *instead* of that editor, so the listener would never fire.
    */
-  onSelectionRequest?: (text: string) => void
 }
 
 /** Colors come from the app's own tokens so the source view follows the light/dark theme */
@@ -121,7 +120,7 @@ function extensionsFor(mode: Props['mode']) {
 }
 
 export const PlainTextEditor = forwardRef<PlainTextEditorHandle, Props>(function PlainTextEditor(
-  { initialText, mode, onChange, className, spellcheck, onSelectionRequest },
+  { initialText, mode, onChange, className, spellcheck },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -130,8 +129,6 @@ export const PlainTextEditor = forwardRef<PlainTextEditorHandle, Props>(function
   const findTargetRef = useRef<FindTarget | null>(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
-  const selectionRequestRef = useRef(onSelectionRequest)
-  selectionRequestRef.current = onSelectionRequest
 
   useEffect(() => {
     const host = hostRef.current
@@ -147,23 +144,6 @@ export const PlainTextEditor = forwardRef<PlainTextEditorHandle, Props>(function
         extensions: [
           ...extensionsFor(mode),
           spellCompartment.of(EditorView.contentAttributes.of({ spellcheck: String(spellcheck) })),
-          // Right-click over a selection is the same gesture the block
-          // editor's menu offers, so it goes to the same dialog. Suppressing
-          // the browser menu is the editor's call, not this handler's: a
-          // right-click with nothing selected must leave the browser's menu
-          // alone, and only the editor knows the selection.
-          EditorView.domEventHandlers({
-            contextmenu: (event, view) => {
-              const onRequest = selectionRequestRef.current
-              if (!onRequest) return false
-              const { from, to } = view.state.selection.main
-              if (from === to) return false
-              const selected = view.state.sliceDoc(from, to)
-              if (!selected.trim()) return false
-              onRequest(selected)
-              return true
-            },
-          }),
           EditorView.updateListener.of((update) => {
             // the load dispatch must not read back as a user edit
             if (update.transactions.some((tr) => tr.annotation(Loaded))) return

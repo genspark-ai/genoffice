@@ -12,7 +12,6 @@ interface Props {
    * plain-text formats carry their mark in the file rather than in a
    * ProseMirror mark, so the same dialog has to hand off somewhere else.
    */
-  onSourceSubmit?: (label: string, seed: string) => void
 }
 
 /**
@@ -24,7 +23,6 @@ interface Props {
  */
 export interface RedactMenuHandle {
   /** open the dialog for a selection made in the source-text surface */
-  openForSource(selection: string): void
 }
 
 /**
@@ -36,7 +34,7 @@ export interface RedactMenuHandle {
  * resulting marker before anything is committed.
  */
 export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMenu(
-  { editor, enabled, onSourceSubmit },
+  { editor, enabled },
   ref,
 ) {
   const { t } = useI18n()
@@ -72,13 +70,7 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
 
   // The source surface has no menu of its own to route through: its right-click
   // replaces the browser menu, so the dialog is the one confirmation step.
-  useImperativeHandle(ref, () => ({
-    openForSource(selection: string) {
-      setPoint(null)
-      setSeed(selection.slice(0, 24))
-      setDialogOpen(true)
-    },
-  }))
+  useImperativeHandle(ref, () => ({}))
 
   useEffect(() => {
     if (!point) return
@@ -145,23 +137,13 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
           )}
         </div>
       )}
-      {dialogOpen && editor && !onSourceSubmit && (
+      {dialogOpen && editor && (
         <RedactDialog
           seed={seed}
           onCancel={() => setDialogOpen(false)}
           onSubmit={(label) => {
             setDialogOpen(false)
             editor.chain().focus().setRedaction(label).run()
-          }}
-        />
-      )}
-      {dialogOpen && onSourceSubmit && (
-        <RedactDialog
-          seed={seed}
-          onCancel={() => setDialogOpen(false)}
-          onSubmit={(label) => {
-            setDialogOpen(false)
-            onSourceSubmit(label, seed)
           }}
         />
       )}

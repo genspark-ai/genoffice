@@ -1,9 +1,6 @@
 export const strings = {
   zh: {
     renameNeedsSave: '先保存或放弃改动，再改文件后缀',
-    redactSourceNotJson: '此文件不是合法的 JSON，无法承载标记。',
-    redactSourceNoRoot: '此文档没有根对象来承载标记。',
-    redactSourceNoValue: '请在文档中选中一个值来遮蔽。',
     redactMenuLabel: '把选中的内容对 AI 隐藏',
     redactDialogDesc:
       '这段文字会留在文档和文件里，AI 读到的却是下面的标记。给它起个名字，AI 才知道它是什么。',
@@ -239,9 +236,6 @@ export const strings = {
   },
   en: {
     renameNeedsSave: 'Save or discard your changes before changing the extension',
-    redactSourceNotJson: 'This file is not valid JSON, so it cannot carry a mark.',
-    redactSourceNoRoot: 'This document has no root object to hold the mark.',
-    redactSourceNoValue: 'Select a value inside the document to withhold it.',
     redactMenuLabel: 'Hide the selection from AI',
     redactDialogDesc:
       'The words stay in the document and in the file; the model sees the placeholder below instead. Name it so the model knows what it stands for.',
@@ -484,9 +478,6 @@ export const strings = {
   },
   vi: {
     renameNeedsSave: 'Hãy lưu hoặc hủy thay đổi trước khi đổi phần mở rộng',
-    redactSourceNotJson: 'Tệp này không phải JSON hợp lệ nên không thể mang dấu đánh dấu.',
-    redactSourceNoRoot: 'Tài liệu này không có đối tượng gốc để chứa dấu đánh dấu.',
-    redactSourceNoValue: 'Hãy chọn một giá trị trong tài liệu để ẩn đi.',
     redactMenuLabel: 'Ẩn phần đã chọn khỏi AI',
     redactDialogDesc:
       'Văn bản vẫn còn trong tài liệu và tệp; mô hình chỉ thấy placeholder bên dưới. Đặt tên để mô hình biết nó đại diện cho điều gì.',
@@ -727,9 +718,6 @@ export const strings = {
   },
   ja: {
     renameNeedsSave: '拡張子を変更する前に変更を保存または破棄してください',
-    redactSourceNotJson: 'このファイルは有効な JSON ではないため、マークを持てません。',
-    redactSourceNoRoot: 'このドキュメントにはマークを格納するルートオブジェクトがありません。',
-    redactSourceNoValue: '文書内の値を選択してから非表示にしてください。',
     redactMenuLabel: '選択範囲をAIから隠す',
     redactDialogDesc:
       '文章はドキュメントとファイルに残り、AI には下のマーカーしか見えません。名前をつけると、何を表すかAIが理解できます。',
@@ -970,9 +958,6 @@ export const strings = {
   },
   ko: {
     renameNeedsSave: '확장자를 바꾸기 전에 변경 사항을 저장하거나 버리세요',
-    redactSourceNotJson: '이 파일은 올바른 JSON이 아니므로 마크를 저장할 수 없습니다.',
-    redactSourceNoRoot: '이 문서에는 마크를 담을 루트 객체가 없습니다.',
-    redactSourceNoValue: '문서 안의 값을 선택한 뒤 숨겨 주세요.',
     redactMenuLabel: '선택한 부분을 AI에서 숨기기',
     redactDialogDesc:
       '문서는 그대로 두고 AI에게는 아래 자리표시자만 보냅니다. 이름을 붙이면 AI가 무엇을 뜻하는지 알 수 있습니다.',
@@ -1214,9 +1199,6 @@ export const strings = {
   },
   fr: {
     renameNeedsSave: "Enregistrez ou annulez vos modifications avant de changer l'extension",
-    redactSourceNotJson: "Ce fichier n'est pas du JSON valide : il ne peut pas porter de marque.",
-    redactSourceNoRoot: "Ce document n'a pas d'objet racine où placer la marque.",
-    redactSourceNoValue: 'Sélectionnez une valeur dans le document pour la masquer.',
     redactMenuLabel: 'Masquer la sélection à l’IA',
     redactDialogDesc:
       'Les mots restent dans le document et dans le fichier ; le modèle ne voit que le marqueur ci-dessous. Donnez-lui un nom pour qu’il sache ce qu’il désigne.',
@@ -1464,9 +1446,6 @@ export const strings = {
   de: {
     renameNeedsSave:
       'Speichern oder verwerfen Sie Ihre Änderungen, bevor Sie die Erweiterung ändern',
-    redactSourceNotJson: 'Diese Datei ist kein gültiges JSON und kann keine Markierung tragen.',
-    redactSourceNoRoot: 'Diesem Dokument fehlt ein Wurzelobjekt für die Markierung.',
-    redactSourceNoValue: 'Wähle einen Wert im Dokument aus, um ihn auszublenden.',
     redactMenuLabel: 'Auswahl vor der KI verbergen',
     redactDialogDesc:
       'Die Wörter bleiben im Dokument und in der Datei; das Modell sieht nur den Platzhalter. Geben Sie ihm einen Namen.',
@@ -1712,9 +1691,6 @@ export const strings = {
   },
   es: {
     renameNeedsSave: 'Guarda o descarta los cambios antes de cambiar la extensión',
-    redactSourceNotJson: 'Este archivo no es JSON válido, así que no puede llevar una marca.',
-    redactSourceNoRoot: 'Este documento no tiene un objeto raíz donde guardar la marca.',
-    redactSourceNoValue: 'Selecciona un valor del documento para ocultarlo.',
     redactMenuLabel: 'Ocultar la selección a la IA',
     redactDialogDesc:
       'Las palabras siguen en el documento y en el archivo; el modelo solo ve el marcador. Ponle un nombre para que sepa qué representa.',
@@ -1961,9 +1937,6 @@ export const strings = {
   },
   th: {
     renameNeedsSave: 'บันทึกหรือยกเลิกการเปลี่ยนแปลงก่อนเปลี่ยนนามสกุลไฟล์',
-    redactSourceNotJson: 'ไฟล์นี้ไม่ใช่ JSON ที่ถูกต้อง จึงรองรับเครื่องหมายไม่ได้',
-    redactSourceNoRoot: 'เอกสารนี้ไม่มีอ็อบเจกต์รากที่จะเก็บเครื่องหมาย',
-    redactSourceNoValue: 'เลือกค่าในเอกสารเพื่อซ่อนไว้',
     redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
     redactDialogDesc:
       'ข้อความยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
@@ -2202,9 +2175,6 @@ export const strings = {
   },
   id: {
     renameNeedsSave: 'Simpan atau batalkan perubahan Anda sebelum mengubah ekstensi',
-    redactSourceNotJson: 'Berkas ini bukan JSON yang valid, jadi tidak dapat membawa tanda.',
-    redactSourceNoRoot: 'Dokumen ini tidak punya objek akar untuk menyimpan tanda.',
-    redactSourceNoValue: 'Pilih nilai di dalam dokumen untuk menyembunyikannya.',
     redactMenuLabel: 'Sembunyikan pilihan dari AI',
     redactDialogDesc:
       'Kata-kata tetap ada di dokumen dan berkas; model hanya melihat placeholder di bawah. Beri nama agar model tahu apa yang diwakili.',
@@ -2446,9 +2416,6 @@ export const strings = {
   },
   ru: {
     renameNeedsSave: 'Сохраните или отмените изменения перед сменой расширения',
-    redactSourceNotJson: 'Это не корректный JSON, он не может нести метку.',
-    redactSourceNoRoot: 'У документа нет корневого объекта для метки.',
-    redactSourceNoValue: 'Выберите значение в документе, чтобы скрыть его.',
     redactMenuLabel: 'Скрыть выделение от ИИ',
     redactDialogDesc:
       'Слова остаются в документе и в файле, а модель видит только метку. Дайте ей имя, чтобы было понятно, что она обозначает.',
@@ -2691,9 +2658,6 @@ export const strings = {
   },
   ar: {
     renameNeedsSave: 'احفظ تغييراتك أو تجاهلها قبل تغيير الامتداد',
-    redactSourceNotJson: 'هذا الملف ليس JSON صالحًا، لذا لا يمكنه حمل علامة.',
-    redactSourceNoRoot: 'لا يحتوي هذا المستند على كائن جذر يحمل العلامة.',
-    redactSourceNoValue: 'اختر قيمة داخل المستند لإخفائها.',
     redactMenuLabel: 'إخفاء التحديد عن الذكاء الاصطناعي',
     redactDialogDesc:
       'تبقى الكلمات في المستند وفي الملف؛ يرى النموذج العلامة أدناه. سمِّها ليعرف ما تمثّله.',
@@ -2932,9 +2896,6 @@ export const strings = {
   },
   pt: {
     renameNeedsSave: 'Salve ou descarte as alterações antes de mudar a extensão',
-    redactSourceNotJson: 'Este ficheiro não é JSON válido, por isso não pode ter uma marca.',
-    redactSourceNoRoot: 'Este documento não tem um objeto raiz onde colocar a marca.',
-    redactSourceNoValue: 'Selecione um valor no documento para o ocultar.',
     redactMenuLabel: 'Ocultar a seleção da IA',
     redactDialogDesc:
       'As palavras continuam no documento e no arquivo; o modelo vê apenas o marcador. Dê-lhe um nome para que saiba o que representa.',
@@ -3179,9 +3140,6 @@ export const strings = {
   },
   it: {
     renameNeedsSave: "Salva o annulla le modifiche prima di cambiare l'estensione",
-    redactSourceNotJson: 'Questo file non è JSON valido, quindi non può portare un segno.',
-    redactSourceNoRoot: 'Questo documento non ha un oggetto radice in cui mettere il segno.',
-    redactSourceNoValue: 'Seleziona un valore nel documento per nasconderlo.',
     redactMenuLabel: 'Nascondi la selezione all’IA',
     redactDialogDesc:
       'Le parole restano nel documento e nel file; il modello vede solo il segnaposto. Dai un nome perché sappia cosa rappresenta.',
@@ -3426,9 +3384,6 @@ export const strings = {
   },
   pl: {
     renameNeedsSave: 'Zapisz lub odrzuć zmiany przed zmianą rozszerzenia',
-    redactSourceNotJson: 'Ten plik to niepoprawny JSON, więc nie może nieść znacznika.',
-    redactSourceNoRoot: 'Ten dokument nie ma obiektu głównego, w którym zmieściłby się znacznik.',
-    redactSourceNoValue: 'Zaznacz wartość w dokumencie, aby ją ukryć.',
     redactMenuLabel: 'Ukryj zaznaczenie przed AI',
     redactDialogDesc:
       'Słowa zostają w dokumencie i w pliku; model widzi tylko symbol. Nadaj mu nazwę, by wiedział, co oznacza.',
@@ -3671,9 +3626,6 @@ export const strings = {
   },
   cs: {
     renameNeedsSave: 'Před změnou přípony uložte nebo zrušte změny',
-    redactSourceNotJson: 'Tento soubor není platný JSON, takže nemůže nést označení.',
-    redactSourceNoRoot: 'Tento dokument nemá kořenový objekt, kam by se označení uložilo.',
-    redactSourceNoValue: 'Vyberte hodnotu v dokumentu, kterou chcete skrýt.',
     redactMenuLabel: 'Skrýt výběr před AI',
     redactDialogDesc:
       'Slova zůstanou v dokumentu i v souboru; model uvidí jen zástupný symbol. Pojmenujte ho, aby věděl, co zastupuje.',
@@ -3915,9 +3867,6 @@ export const strings = {
   },
   nl: {
     renameNeedsSave: 'Sla uw wijzigingen op of verwerp ze voordat u de extensie wijzigt',
-    redactSourceNotJson: 'Dit bestand is geen geldige JSON en kan dus geen markering dragen.',
-    redactSourceNoRoot: 'Dit document heeft geen wortelobject om de markering in te bewaren.',
-    redactSourceNoValue: 'Selecteer een waarde in het document om die te verbergen.',
     redactMenuLabel: 'Selectie verbergen voor de AI',
     redactDialogDesc:
       'De woorden blijven in het document en het bestand; het model ziet alleen de placeholder. Geef hem een naam.',
@@ -4161,9 +4110,6 @@ export const strings = {
   },
   ms: {
     renameNeedsSave: 'Simpan atau buang perubahan anda sebelum menukar sambungan',
-    redactSourceNotJson: 'Fail ini bukan JSON yang sah, jadi ia tidak boleh membawa tanda.',
-    redactSourceNoRoot: 'Dokumen ini tiada objek akar untuk menyimpan tanda.',
-    redactSourceNoValue: 'Pilih nilai dalam dokumen untuk menyembunyikannya.',
     redactMenuLabel: 'Sembunyikan pilihan daripada AI',
     redactDialogDesc:
       'Perkataan kekal dalam dokumen dan fail; model hanya melihat placeholder di bawah. Beri nama supaya model tahu apa yang diwakili.',
@@ -4405,9 +4351,6 @@ export const strings = {
   },
   he: {
     renameNeedsSave: 'שמור או בטל את השינויים לפני שינוי הסיומת',
-    redactSourceNotJson: 'הקובץ אינו JSON תקין, ולכן אינו יכול לשאת סימון.',
-    redactSourceNoRoot: 'למסמך אין אובייקט שורש שיכיל את הסימון.',
-    redactSourceNoValue: 'בחר ערך בתוך המסמך כדי להסתיר אותו.',
     redactMenuLabel: 'הסתרת הבחירה מהמודל',
     redactDialogDesc:
       'המילים נשארות במסמך ובקובץ; המודל רואה רק את הסימון. תן לו שם כדי שיהיה ברור מה הוא מייצג.',
@@ -4644,9 +4587,6 @@ export const strings = {
   },
   hi: {
     renameNeedsSave: 'एक्सटेंशन बदलने से पहले अपने बदलाव सहेजें या छोड़ें',
-    redactSourceNotJson: 'यह फ़ाइल मान्य JSON नहीं है, इसलिए यह चिह्न नहीं रख सकती।',
-    redactSourceNoRoot: 'इस दस्तावेज़ में चिह्न रखने के लिए कोई रूट ऑब्जेक्ट नहीं है।',
-    redactSourceNoValue: 'दस्तावेज़ में से कोई मान छिपाने के लिए चुनें।',
     redactMenuLabel: 'चयन को AI से छिपाएँ',
     redactDialogDesc:
       'शब्द दस्तावेज़ और फ़ाइल में बने रहते हैं; मॉडल को केवल नीचे वाला प्लेसहोल्डर दिखता है। नाम दें ताकि उसे पता चले कि यह किसका स्थान है।',
@@ -4888,9 +4828,6 @@ export const strings = {
   },
   'zh-TW': {
     renameNeedsSave: '先儲存或捨棄變更，再更改副檔名',
-    redactSourceNotJson: '此檔案不是合法的 JSON，無法承載標記。',
-    redactSourceNoRoot: '此文件沒有根物件來承載標記。',
-    redactSourceNoValue: '請在文件中選取一個值來遮蔽。',
     redactMenuLabel: '把選中的內容對 AI 隱藏',
     redactDialogDesc:
       '這段文字會留在文件裡，AI 讀到的卻是下面的標記。給它起個名字，AI 才知道它是什麼。',

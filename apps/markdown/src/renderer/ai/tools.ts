@@ -1,4 +1,4 @@
-import { modelTextOf, redactJson } from '../editor/redact'
+import { modelTextOf, redactJson, redactTextBetween } from '../editor/redact'
 import type { Editor, JSONContent } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { AgentToolCall, AgentToolDef, ToolExecution } from '@genoffice/agent-core'
@@ -86,8 +86,10 @@ function serializeBlocks(editor: Editor, from: number, to: number): string {
 function selectionMarkdown(editor: Editor): string {
   const { from, to } = editor.state.selection
   if (from === to) return ''
-  // same reason as blockPreview — the selection is document text going out
-  const text = modelTextOf(editor.state.doc.toJSON() as never).slice(from, to)
+  // same reason as blockPreview — the selection is document text going out —
+  // and the offsets are ProseMirror's: a flat string sliced with them
+  // misquotes every selection after the first block
+  const text = redactTextBetween(editor.getJSON() as never, from, to)
   return text.length > SELECTION_MAX_CHARS ? `${text.slice(0, SELECTION_MAX_CHARS)}…` : text
 }
 

@@ -44,12 +44,6 @@ import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
 import { ImageHostDialog } from './components/ImageHostDialog'
 import { RedactMenu, type RedactMenuHandle } from './components/RedactMenu'
-import {
-  jsonCanHoldMarks,
-  markJsonPath,
-  markPlainRange,
-  jsonPathAtLine,
-} from './editor/redact-plain'
 import { OutlinePane } from './components/OutlinePane'
 import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
@@ -152,59 +146,7 @@ export default function App() {
   // bumped on every CodeMirror doc change so the ribbon's undo/redo state re-renders
   const [sourceRev, setSourceRev] = useState(0)
   const redactMenuRef = useRef<RedactMenuHandle | null>(null)
-  /** the source-text selection a right-click is about, held so the mark lands on it */
-  const sourceSelectionRef = useRef<{ from: number; to: number; text: string } | null>(null)
 
-  /**
-   * Write the mark into the source-text buffer, in the form that format can
-   * carry. A `.json` gets a root key rather than a comment: `//` is illegal
-   * there, and a comment would leave the reader with a file no parser can read
-   * — a far worse outcome than a secret staying visible.
-   */
-  const submitSourceRedaction = useCallback(
-    (label: string, seed: string) => {
-      const selection = sourceSelectionRef.current
-      sourceSelectionRef.current = null
-      if (!selection) return
-      const current = sourceTextRef.current
-      if (textMode === 'json') {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(current)
-        } catch {
-          showToast(t('redactSourceNotJson'), 'error')
-          return
-        }
-        if (!jsonCanHoldMarks(parsed)) {
-          showToast(t('redactSourceNoRoot'), 'error')
-          return
-        }
-        // A mark is placed by the path the selection starts on. A selection
-        // inside a nested value is more than the dialog can express, so it
-        // marks the key that starts on that line.
-        const segments = jsonPathAtLine(parsed, current, selection.from)
-        if (!segments) {
-          showToast(t('redactSourceNoValue'), 'error')
-          return
-        }
-        const result = markJsonPath(parsed, segments, label)
-        if (!result.ok) {
-          showToast(result.reason, 'error')
-          return
-        }
-        const next = `${JSON.stringify(result.json, null, 2)}\n`
-        sourceTextRef.current = next
-        sourceRef.current?.setDoc(next)
-        markDirty()
-        return
-      }
-      const next = markPlainRange(current, selection.from, selection.to, label || seed)
-      sourceTextRef.current = next
-      sourceRef.current?.setDoc(next)
-      markDirty()
-    },
-    [textMode],
-  )
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const exportingImagesRef = useRef(false)
@@ -1236,20 +1178,6 @@ export default function App() {
                   setSourceRev((n) => n + 1)
                   markDirty()
                 }}
-                onSelectionRequest={(text) => {
-                  if (!redactEnabled) return
-                  // The selection travels as text, not offsets: a CodeMirror
-                  // selection is re-resolved against the document on submit,
-                  // and holding a stale offset across a keystroke would put
-                  // the mark on the wrong line.
-                  const at = sourceTextRef.current.indexOf(text)
-                  sourceSelectionRef.current = {
-                    from: at >= 0 ? at : 0,
-                    to: at >= 0 ? at + text.length : 0,
-                    text,
-                  }
-                  redactMenuRef.current?.openForSource(text)
-                }}
               />
             </div>
           ) : (
@@ -1321,12 +1249,7 @@ export default function App() {
       {!sourceMode && (
         <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
       )}
-      <RedactMenu
-        ref={redactMenuRef}
-        editor={editor}
-        enabled={redactEnabled}
-        onSourceSubmit={sourceMode ? submitSourceRedaction : undefined}
-      />
+      <RedactMenu ref={redactMenuRef} editor={editor} enabled={redactEnabled} />
       <ToastHost />
       {imageHostOpen && (
         <ImageHostDialog onClose={() => setImageHostOpen(false)} onSaved={() => {}} />
