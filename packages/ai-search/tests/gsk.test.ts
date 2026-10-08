@@ -203,6 +203,9 @@ describe('parseGskWebSearch', () => {
     const raw = { data: { organic_results: [{ title: 'A', link: long, snippet: 's' }] } }
     const r = parseGskWebSearch(raw, 5)
     expect(r.results[0]!.url).toBe(long)
+    const huge = `https://a.com/${'x'.repeat(20_000)}`
+    const r2 = parseGskWebSearch({ data: { organic_results: [{ link: huge }] } }, 5)
+    expect(r2.results[0]!.url).toHaveLength(8_192)
   })
 
   it('clamps maxResults and truncates long fields', () => {
@@ -656,17 +659,12 @@ describe('gskSlideGenerate cancellation and timeout', () => {
 
     const already = AbortSignal.abort()
     expect(already.aborted).toBe(true)
-    // An abort listener added after the event fired is never invoked, so without an
-    // explicit check the internal controller is never aborted and the request runs
-    // to the full timeout — a billed slide_generate plus its artifact download.
     await expect(gskSlideGenerate({ brief: 'x', signal: already })).rejects.toThrow(/abort/i)
     expect(called).toBe(0)
   })
 
   it('surfaces its own deadline as AiTimeoutError, not a bare abort', async () => {
     process.env.GSK_API_KEY = 'test-key'
-    // never settles: the call must end on the watchdog deadline, and must be typed so
-    // the apps can map it to errorCode 'timeout' and show the localized message
     let sawAbort = false
     globalThis.fetch = vi.fn(
       (_url: unknown, init?: { signal?: AbortSignal }) =>
@@ -688,7 +686,6 @@ describe('gskSlideGenerate cancellation and timeout', () => {
     vi.useRealTimers()
 
     expect(sawAbort).toBe(true)
-    // AiTimeoutError, not a DOMException AbortError: the apps branch on this type
     expect(err).toBeInstanceOf(AiTimeoutError)
     expect((err as Error).message).toMatch(/timed out/i)
   })

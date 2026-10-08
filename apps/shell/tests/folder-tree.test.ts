@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   createFolder,
@@ -362,5 +362,26 @@ describe('helpers', () => {
   it('describeRoot reports a path blocked by a file as unusable', () => {
     const blocked = touch('blocked')
     expect(describeRoot(blocked).usable).toBe(false)
+  })
+})
+
+describe('filesystem roots', () => {
+  const fsRoot = parse(tmpdir()).root
+
+  it('treats descendants as inside a root that already ends with a separator', () => {
+    expect(isInsideRoot(fsRoot, fsRoot)).toBe(true)
+    expect(isInsideRoot(fsRoot, tmpdir())).toBe(true)
+
+    expect(pathsUnder(fsRoot, [fsRoot, tmpdir()])).toEqual([tmpdir()])
+
+    expect(isSelfOrDescendant(fsRoot, tmpdir())).toBe(true)
+  })
+
+  it('rebases descendants from a filesystem root without doubling the separator', () => {
+    const destination = join(root, 'rebased')
+
+    expect(rebasePath(tmpdir(), fsRoot, destination)).toBe(
+      join(destination, relative(fsRoot, tmpdir())),
+    )
   })
 })

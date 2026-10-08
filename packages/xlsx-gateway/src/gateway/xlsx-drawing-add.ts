@@ -63,19 +63,52 @@ export interface ChartAdd {
     | undefined
   readonly gapWidthPct?: number | undefined
   readonly holeSizePct?: number | undefined
+  readonly altText?: string | undefined
+  readonly editAs?: 'twoCell' | 'oneCell' | 'absolute' | undefined
 }
 
-export interface ShapeAdd {
+/// Anchor-level properties a session visual carries into the file:
+/// rotation/flip on a:xfrm, descr/hlinkClick on cNvPr, editAs on the anchor.
+export interface VisualAddProperties {
+  readonly rotation?: number | undefined
+  readonly flipH?: boolean | undefined
+  readonly flipV?: boolean | undefined
+  /// a:xfrm ext in EMU; written when the shape is rotated so the reload can
+  /// restore the true frame from the rotated anchor bounds.
+  readonly frameSize?: { readonly width: number; readonly height: number } | undefined
+  readonly altText?: string | undefined
+  readonly hyperlink?: string | undefined
+  readonly editAs?: 'twoCell' | 'oneCell' | 'absolute' | undefined
+}
+
+export interface ShapeAdd extends VisualAddProperties {
   readonly shapeType: string
   readonly fillColor?: string | undefined
+  /// `#rrggbb` outline, "none" for an explicit no-line; absent keeps the
+  /// default (gray hairline on text boxes, no outline on other shapes).
+  readonly lineColor?: string | undefined
   readonly text?: string | undefined
   readonly isTextBox?: boolean | undefined
 }
 
-export interface ImageAdd {
+export interface ImageAdd extends VisualAddProperties {
   readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
   readonly base64: string
+  /// a:alphaModFix amt as 0..1; absent or 1 writes none.
+  readonly opacity?: number | undefined
+  /// a:srcRect as 0..1 fractions cut from each source edge.
+  readonly crop?:
+    | {
+        readonly left: number
+        readonly top: number
+        readonly right: number
+        readonly bottom: number
+      }
+    | undefined
 }
+
+const HYPERLINK_REL_TYPE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
 
 export interface VisualAddition {
   readonly worksheetPath: string
@@ -128,12 +161,24 @@ export async function applyVisualAdditions(
         relativeTarget(drawing.path, chartPath),
       )
       touchedEntries.add(relsPathFor(drawing.path))
-      await appendAnchor(pkg, drawing.path, addition.anchor, (shapeId) =>
-        chartFrameXml(shapeId, chartRelId),
+      const chart = addition.chart
+      await appendAnchor(
+        pkg,
+        drawing.path,
+        addition.anchor,
+        (shapeId) => chartFrameXml(shapeId, chartRelId, chart),
+        chart.editAs,
       )
     } else if (addition.shape) {
       const shape = addition.shape
-      await appendAnchor(pkg, drawing.path, addition.anchor, (shapeId) => shapeXml(shapeId, shape))
+      const linkRelId = await hyperlinkRelationship(pkg, drawing.path, shape, touchedEntries)
+      await appendAnchor(
+        pkg,
+        drawing.path,
+        addition.anchor,
+        (shapeId) => shapeXml(shapeId, shape, linkRelId),
+        shape.editAs,
+      )
     } else if (addition.image) {
       const image = addition.image
       const extension = IMAGE_EXTENSIONS[image.mediaType]
@@ -148,8 +193,13 @@ export async function applyVisualAdditions(
         relativeTarget(drawing.path, mediaPath),
       )
       touchedEntries.add(relsPathFor(drawing.path))
-      await appendAnchor(pkg, drawing.path, addition.anchor, (shapeId) =>
-        pictureXml(shapeId, imageRelId),
+      const linkRelId = await hyperlinkRelationship(pkg, drawing.path, image, touchedEntries)
+      await appendAnchor(
+        pkg,
+        drawing.path,
+        addition.anchor,
+        (shapeId) => pictureXml(shapeId, imageRelId, image, linkRelId),
+        image.editAs,
       )
     } else {
       throw new VisualAddError('A visual addition carries exactly one of chart, shape, or image.')
@@ -227,11 +277,61 @@ async function insertWorksheetDrawingElement(
   touchedEntries.add(worksheetPath)
 }
 
+async function hyperlinkRelationship(
+  pkg: MutablePackage,
+  drawingPath: string,
+  properties: VisualAddProperties,
+  touchedEntries: Set<string>,
+): Promise<string | undefined> {
+  if (!properties.hyperlink) return undefined
+  const relsPath = relsPathFor(drawingPath)
+  const id = await appendRelationship(
+    pkg,
+    relsPath,
+    HYPERLINK_REL_TYPE,
+    properties.hyperlink,
+    'External',
+  )
+  touchedEntries.add(relsPath)
+  return id
+}
+
+function cNvPrXml(
+  shapeId: number,
+  name: string,
+  properties: VisualAddProperties,
+  linkRelId: string | undefined,
+): string {
+  const descr = properties.altText ? ` descr="${escapeXmlAttribute(properties.altText)}"` : ''
+  const open = `<xdr:cNvPr id="${shapeId}" name="${escapeXmlAttribute(name)}"${descr}`
+  if (linkRelId === undefined) return `${open}/>`
+  return (
+    `${open}>` +
+    '<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+    ` r:id="${escapeXmlAttribute(linkRelId)}"/>` +
+    '</xdr:cNvPr>'
+  )
+}
+
+function xfrmXml(properties: VisualAddProperties): string {
+  const rot = Math.round((properties.rotation ?? 0) * 60_000)
+  const normalized = ((rot % 21_600_000) + 21_600_000) % 21_600_000
+  const attributes =
+    (normalized === 0 ? '' : ` rot="${normalized}"`) +
+    (properties.flipH ? ' flipH="1"' : '') +
+    (properties.flipV ? ' flipV="1"' : '')
+  const ext = properties.frameSize
+    ? `<a:ext cx="${Math.round(properties.frameSize.width)}" cy="${Math.round(properties.frameSize.height)}"/>`
+    : '<a:ext cx="0" cy="0"/>'
+  return `<a:xfrm${attributes}><a:off x="0" y="0"/>${ext}</a:xfrm>`
+}
+
 async function appendAnchor(
   pkg: MutablePackage,
   drawingPath: string,
   anchor: DrawingAnchor,
   buildInner: (shapeId: number) => string,
+  editAs?: 'twoCell' | 'oneCell' | 'absolute',
 ): Promise<void> {
   let xml = await pkg.readText(drawingPath)
   // Other producers write the wsDr root with any prefix and self-close it
@@ -256,8 +356,9 @@ async function appendAnchor(
   const marker = (row: number, column: number, rowOffset: number, columnOffset: number) =>
     `<xdr:col>${column}</xdr:col><xdr:colOff>${columnOffset}</xdr:colOff>` +
     `<xdr:row>${row}</xdr:row><xdr:rowOff>${rowOffset}</xdr:rowOff>`
+  const editAsAttribute = editAs && editAs !== 'twoCell' ? ` editAs="${editAs}"` : ''
   const element =
-    `<xdr:twoCellAnchor${namespaceFix}>` +
+    `<xdr:twoCellAnchor${editAsAttribute}${namespaceFix}>` +
     `<xdr:from>${marker(anchor.fromRow, anchor.fromColumn, anchor.fromRowOffset, anchor.fromColumnOffset)}</xdr:from>` +
     `<xdr:to>${marker(anchor.toRow, anchor.toColumn, anchor.toRowOffset, anchor.toColumnOffset)}</xdr:to>` +
     buildInner(nextShapeId(xml)) +
@@ -266,11 +367,11 @@ async function appendAnchor(
   pkg.write(drawingPath, xml.slice(0, closeAt) + element + xml.slice(closeAt))
 }
 
-function chartFrameXml(shapeId: number, chartRelId: string): string {
+function chartFrameXml(shapeId: number, chartRelId: string, chart: ChartAdd): string {
   return (
     '<xdr:graphicFrame macro="">' +
     '<xdr:nvGraphicFramePr>' +
-    `<xdr:cNvPr id="${shapeId}" name="Chart ${shapeId}"/>` +
+    cNvPrXml(shapeId, `Chart ${shapeId}`, { altText: chart.altText }, undefined) +
     '<xdr:cNvGraphicFramePr/>' +
     '</xdr:nvGraphicFramePr>' +
     '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>' +
@@ -285,34 +386,54 @@ function chartFrameXml(shapeId: number, chartRelId: string): string {
   )
 }
 
-function pictureXml(shapeId: number, imageRelId: string): string {
+function pictureXml(
+  shapeId: number,
+  imageRelId: string,
+  image: ImageAdd,
+  linkRelId: string | undefined,
+): string {
   return (
     '<xdr:pic>' +
     '<xdr:nvPicPr>' +
-    `<xdr:cNvPr id="${shapeId}" name="Picture ${shapeId}"/>` +
+    cNvPrXml(shapeId, `Picture ${shapeId}`, image, linkRelId) +
     '<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr>' +
     '</xdr:nvPicPr>' +
     '<xdr:blipFill>' +
     '<a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
-    ` r:embed="${escapeXmlAttribute(imageRelId)}"/>` +
+    ` r:embed="${escapeXmlAttribute(imageRelId)}"` +
+    (image.opacity !== undefined && image.opacity < 1
+      ? `><a:alphaModFix amt="${Math.round(image.opacity * 100_000)}"/></a:blip>`
+      : '/>') +
+    srcRectXml(image.crop) +
     '<a:stretch><a:fillRect/></a:stretch>' +
     '</xdr:blipFill>' +
     '<xdr:spPr>' +
-    '<a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm>' +
+    xfrmXml(image) +
     '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
     '</xdr:spPr>' +
     '</xdr:pic>'
   )
 }
 
-function shapeXml(shapeId: number, shape: ShapeAdd): string {
+function srcRectXml(crop: ImageAdd['crop']): string {
+  if (!crop) return ''
+  const sides = (['l', 't', 'r', 'b'] as const).map((side, at) => {
+    const value = [crop.left, crop.top, crop.right, crop.bottom][at]!
+    const amount = Math.round(value * 100_000)
+    return amount === 0 ? '' : ` ${side}="${amount}"`
+  })
+  return sides.every((side) => side === '') ? '' : `<a:srcRect${sides.join('')}/>`
+}
+
+function shapeXml(shapeId: number, shape: ShapeAdd, linkRelId: string | undefined): string {
   const name = shape.isTextBox ? `TextBox ${shapeId}` : `Shape ${shapeId}`
-  const fill = shape.fillColor
-    ? `<a:solidFill><a:srgbClr val="${shape.fillColor.slice(1).toUpperCase()}"/></a:solidFill>`
-    : '<a:noFill/>'
-  const outline = shape.isTextBox
-    ? '<a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln>'
-    : ''
+  const fill = solidFillXml(shape.fillColor ?? 'none')
+  const outline =
+    shape.lineColor !== undefined
+      ? outlineXml(shape.lineColor)
+      : shape.isTextBox
+        ? outlineXml('#808080')
+        : ''
   const body =
     shape.text !== undefined || shape.isTextBox
       ? '<xdr:txBody><a:bodyPr wrap="square" rtlCol="0"/><a:lstStyle/>' +
@@ -321,11 +442,11 @@ function shapeXml(shapeId: number, shape: ShapeAdd): string {
   return (
     '<xdr:sp macro="" textlink="">' +
     '<xdr:nvSpPr>' +
-    `<xdr:cNvPr id="${shapeId}" name="${escapeXmlAttribute(name)}"/>` +
+    cNvPrXml(shapeId, name, shape, linkRelId) +
     `<xdr:cNvSpPr${shape.isTextBox ? ' txBox="1"' : ''}/>` +
     '</xdr:nvSpPr>' +
     '<xdr:spPr>' +
-    '<a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm>' +
+    xfrmXml(shape) +
     `<a:prstGeom prst="${escapeXmlAttribute(shape.shapeType)}"><a:avLst/></a:prstGeom>` +
     fill +
     outline +
@@ -333,6 +454,16 @@ function shapeXml(shapeId: number, shape: ShapeAdd): string {
     body +
     '</xdr:sp>'
   )
+}
+
+export function solidFillXml(color: string): string {
+  return color === 'none'
+    ? '<a:noFill/>'
+    : `<a:solidFill><a:srgbClr val="${color.slice(1).toUpperCase()}"/></a:solidFill>`
+}
+
+export function outlineXml(color: string): string {
+  return `<a:ln w="9525">${solidFillXml(color)}</a:ln>`
 }
 
 function nextShapeId(drawingXml: string): number {
@@ -748,8 +879,8 @@ function matchRelationship(relsXml: string, type: string): { id: string; target:
   for (const match of relsXml.matchAll(/<Relationship\b[^>]*\/?>(?:<\/Relationship>)?/g)) {
     const tag = match[0]
     if (!tag.includes(`Type="${type}"`)) continue
-    const id = /\bId="([^"]+)"/.exec(tag)?.[1]
-    const target = /\bTarget="([^"]+)"/.exec(tag)?.[1]
+    const id = /\bId=(["'])([^"']+)\1/.exec(tag)?.[2]
+    const target = /\bTarget=(["'])([^"']+)\1/.exec(tag)?.[2]
     if (id && target) return { id, target }
   }
   return null
@@ -800,6 +931,7 @@ export async function appendRelationship(
   relsPath: string,
   type: string,
   target: string,
+  targetMode?: 'External',
 ): Promise<string> {
   const exists = await pkg.has(relsPath)
   const xml = exists
@@ -810,7 +942,7 @@ export async function appendRelationship(
   const id = nextFreeRelationshipId(xml)
   const element =
     `<Relationship Id="${id}" Type="${escapeXmlAttribute(type)}" ` +
-    `Target="${escapeXmlAttribute(target)}"/>`
+    `Target="${escapeXmlAttribute(target)}"${targetMode ? ` TargetMode="${targetMode}"` : ''}/>`
   const closeAt = xml.lastIndexOf('</Relationships>')
   if (closeAt < 0) throw new VisualAddError(`${relsPath} is not a relationships part.`)
   const patched = xml.slice(0, closeAt) + element + xml.slice(closeAt)

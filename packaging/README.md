@@ -1,8 +1,8 @@
-# Linux packaging: Flatpak and NixOS
+# Linux packaging: Flatpak, NixOS and Docker
 
 The release pipeline publishes AppImage, deb and rpm artifacts (see
-`apps/shell/electron-builder.cjs`). This directory adds two community-maintained
-routes requested in genoffice#1858. Both wrap the published release artifacts —
+`apps/shell/electron-builder.cjs`). This directory adds community-maintained
+routes requested in genoffice#1858. All wrap the published release artifacts —
 they do not rebuild the Electron/Rust source tree — so they track the official
 binaries bit for bit.
 
@@ -61,3 +61,8 @@ Known caveat: the nix store is mounted `nosuid`, so Chromium can abort with
 when the AppImage's `chrome-sandbox` is present but not setuid. In that case
 launch with `genoffice --no-sandbox` (the flag passes through the wrapper); the
 Flatpak route keeps the real sandbox via Zypak instead.
+
+## Docker
+
+`docker/` builds a headless image for batch PDF conversion; see
+`docker/README.md`.

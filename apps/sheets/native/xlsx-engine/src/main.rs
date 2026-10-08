@@ -10,6 +10,7 @@ use serde_json::Value;
 use xlsx_sidecar::archive::{
     EntryContent, archive_manifest, read_entries_to_dir, save_archive, scan_entries_for_text,
 };
+use xlsx_sidecar::find::FindCellsRequest;
 use xlsx_sidecar::recalc::{RecalcCache, RecalcEdit, RecalcRead, recalc_cells};
 use xlsx_sidecar::{CellRange, SidecarError, WorkbookSessions};
 
@@ -52,12 +53,21 @@ enum Command {
         #[serde(rename = "sheetId")]
         sheet_id: String,
     },
+    FindCells(FindCellsRequest),
+    ReadRowOutline {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "sheetId")]
+        sheet_id: String,
+    },
     Cancel {
         #[serde(rename = "targetRequestId")]
         target_request_id: String,
     },
     #[serde(rename_all = "camelCase")]
-    ArchiveManifest { path: PathBuf },
+    ArchiveManifest {
+        path: PathBuf,
+    },
     #[serde(rename_all = "camelCase")]
     ReadEntries {
         path: PathBuf,
@@ -71,7 +81,10 @@ enum Command {
         needle: String,
     },
     #[serde(rename_all = "camelCase")]
-    ConvertWorkbook { path: PathBuf, target_path: PathBuf },
+    ConvertWorkbook {
+        path: PathBuf,
+        target_path: PathBuf,
+    },
     #[serde(rename_all = "camelCase")]
     SaveArchive {
         source_path: PathBuf,
@@ -563,6 +576,15 @@ fn handle_request(
         } => sessions
             .read_formula_cells(&session_id, &sheet_id)
             .and_then(to_json_value),
+        Command::FindCells(request) => sessions
+            .find_cells(&request, &in_flight.flag())
+            .and_then(to_json_value),
+        Command::ReadRowOutline {
+            session_id,
+            sheet_id,
+        } => sessions
+            .read_row_outline(&session_id, &sheet_id)
+            .and_then(to_json_value),
         // Normally intercepted out of band by the reader thread; through this
         // path (tests) it still marks the target for the skip check above.
         Command::Cancel { target_request_id } => {
@@ -835,7 +857,10 @@ mod tests {
             &output,
         )
         .unwrap();
-        assert!(!response.ok, "the in-flight open ran after its cancel landed");
+        assert!(
+            !response.ok,
+            "the in-flight open ran after its cancel landed"
+        );
         assert_eq!(response.error.unwrap().code, "cancelled");
         // Nothing to clean up: no metadata means no session id, so the host
         // can neither read-range nor close what the open would have left.
@@ -862,7 +887,10 @@ mod tests {
             &output,
         )
         .unwrap();
-        assert!(queued.ok, "a cancel for an id that already replied must not skip it");
+        assert!(
+            queued.ok,
+            "a cancel for an id that already replied must not skip it"
+        );
     }
 
     /// A queued purge for a path evicts its resident model at the next run.

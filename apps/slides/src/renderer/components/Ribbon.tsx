@@ -192,12 +192,25 @@ const themeDisplayName = (tp: SlideThemePreset, t: (key: StringKey) => string): 
 const TRANSLATE_TARGETS: StringKey[] = [
   'ribbonLangEnglish',
   'ribbonLangSimplifiedChinese',
-  'ribbonLangTraditionalChinese',
   'ribbonLangJapanese',
   'ribbonLangKorean',
   'ribbonLangFrench',
   'ribbonLangGerman',
   'ribbonLangSpanish',
+  'ribbonLangThai',
+  'ribbonLangIndonesian',
+  'ribbonLangRussian',
+  'ribbonLangArabic',
+  'ribbonLangPortuguese',
+  'ribbonLangItalian',
+  'ribbonLangPolish',
+  'ribbonLangCzech',
+  'ribbonLangDutch',
+  'ribbonLangMalay',
+  'ribbonLangHebrew',
+  'ribbonLangHindi',
+  'ribbonLangTraditionalChinese',
+  'ribbonLangVietnamese',
 ]
 
 /** One-time "AI rewrites the whole document" acknowledgement */

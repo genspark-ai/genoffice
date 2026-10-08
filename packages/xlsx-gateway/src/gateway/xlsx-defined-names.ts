@@ -29,8 +29,6 @@ const CELL_REF_PATTERN = /^(?:[A-Za-z]{1,3}[0-9]+|[Rr][0-9]*[Cc][0-9]*)$/
 
 export function applyDefinedNamesState(workbookXml: string, state: DefinedNamesState): string {
   const preserved = new Set(state.preserveNames)
-  // A name may repeat across scopes: resolve each preserved name to the
-  // scopes it occupies in the file so same-name entries elsewhere pass.
   const preservedKeys = new Set<string>()
   for (const match of workbookXml.matchAll(/<definedName\b[^>]*>/g)) {
     const name = /\bname="([^"]*)"/.exec(match[0])?.[1]
@@ -41,7 +39,6 @@ export function applyDefinedNamesState(workbookXml: string, state: DefinedNamesS
   const seen = new Set<string>()
   for (const entry of state.names) {
     validateName(entry.name)
-    // Same name may repeat across different scopes, never within one.
     const key = `${entry.name}\u0000${entry.sheetIndex ?? -1}`
     if (preservedKeys.has(key)) {
       throw new DefinedNameError(
@@ -105,15 +102,20 @@ export function applyDefinedNamesState(workbookXml: string, state: DefinedNamesS
   return `${xml.slice(0, at)}<definedNames>${additions}</definedNames>${xml.slice(at)}`
 }
 
+/** Shared by table names, which follow the same rules (minus the `_xlnm` reservation). */
+export function isValidDefinedName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    name.length <= 255 &&
+    NAME_PATTERN.test(name) &&
+    !CELL_REF_PATTERN.test(name) &&
+    name.toLowerCase() !== 'true' &&
+    name.toLowerCase() !== 'false'
+  )
+}
+
 function validateName(name: string): void {
-  if (
-    name.length === 0 ||
-    name.length > 255 ||
-    !NAME_PATTERN.test(name) ||
-    CELL_REF_PATTERN.test(name) ||
-    name.toLowerCase() === 'true' ||
-    name.toLowerCase() === 'false'
-  ) {
+  if (!isValidDefinedName(name)) {
     throw new DefinedNameError(`"${name}" is not a valid defined name.`)
   }
   if (name.startsWith('_xlnm')) {

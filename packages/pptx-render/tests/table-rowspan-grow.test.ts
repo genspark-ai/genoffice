@@ -47,5 +47,9 @@ describe('table rowSpan growth', () => {
     expect(layout.contentHeight + layout.insets.t + layout.insets.b).toBeLessThanOrEqual(
       cell.h + 0.01,
     )
+    const [y0, y1, y2] = node.gridY as number[]
+    const rowHeights = [y1! - y0!, y2! - y1!]
+    expect(rowHeights[0]).toBeGreaterThan((238125 * 1280) / deck.size.cx)
+    expect(rowHeights[0]).toBeCloseTo(rowHeights[1]!, 6)
   }, 30000)
 })

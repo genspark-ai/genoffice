@@ -1,6 +1,22 @@
 import { getSystemShortDate } from '@genoffice/xlsx-gateway/shared/short-date'
 import { DEFAULT_NUMFMT_OPTIONS, numfmtPattern, type NumfmtOptions } from './numfmt-dialog'
 import { numberFormatLabel } from './selection-format'
+import type { StringKey } from './i18n/locale'
+
+// display only — option values keep the English label as the command identity
+export const NUMBER_FORMAT_LABEL: Record<string, StringKey> = {
+  General: 'dlgFcNumGeneral',
+  Number: 'dlgFcNumNumber',
+  Currency: 'dlgFcNumCurrency',
+  Accounting: 'appNumFmtAccounting',
+  'Short Date': 'appNumFmtShortDate',
+  'Long Date': 'appNumFmtLongDate',
+  Time: 'dlgFcNumTime',
+  Percentage: 'dlgFcNumPercent',
+  Fraction: 'appNumFmtFraction',
+  Scientific: 'dlgFcNumScientific',
+  Text: 'dlgFcNumText',
+}
 
 const pattern = (overrides: Partial<NumfmtOptions>): string =>
   numfmtPattern({ ...DEFAULT_NUMFMT_OPTIONS, ...overrides })

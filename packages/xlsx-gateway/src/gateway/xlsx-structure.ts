@@ -5,10 +5,7 @@
 /// safely throws — the save must fail closed rather than corrupt references.
 
 import type { WorkbookStyleEdit } from '../shared/edit-schemas'
-
-/// Excel grid bounds, mirrored from gateway/xlsx-gateway.ts: importing them
-/// would close a cycle, and this file already needs the row count to clamp.
-const MAX_GRID_ROWS = 1_048_576
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
 
 export type StructuralOp =
   | {
@@ -55,6 +52,13 @@ export type StructuralOp =
       readonly end: number
       readonly level: number
       readonly collapsed?: boolean
+    }
+  /// sheetPr/outlinePr summary placement; true is the schema default and
+  /// drops the attribute.
+  | {
+      readonly kind: 'set-outline-pr'
+      readonly summaryBelow: boolean
+      readonly summaryRight: boolean
     }
 
 export type AxisAttributeOp = Extract<StructuralOp, { start: number }>
@@ -181,6 +185,10 @@ export function applyStructuralOps(
           : applyColAttributeOp(xml, op, resolveColStyle)
       continue
     }
+    if ('summaryBelow' in op) {
+      xml = applyOutlinePr(xml, op)
+      continue
+    }
     if (!('index' in op)) {
       xml = applyMergeOp(xml, op)
       continue
@@ -257,6 +265,52 @@ function shiftVmlAnchorValues(values: readonly number[], ops: readonly RowColumn
     }
   }
   return next
+}
+
+const SHEET_PR_PATTERN = /<sheetPr\b[^>]*\/>|<sheetPr\b[^>]*>[\s\S]*?<\/sheetPr>/
+const OUTLINE_PR_PATTERN = /<outlinePr\b[^>]*\/>|<outlinePr\b[^>]*>[\s\S]*?<\/outlinePr>/
+
+export function applyOutlinePr(
+  xml: string,
+  op: Extract<StructuralOp, { summaryBelow: boolean }>,
+): string {
+  const attributes =
+    (op.summaryBelow ? '' : ' summaryBelow="0"') + (op.summaryRight ? '' : ' summaryRight="0"')
+  const existing = SHEET_PR_PATTERN.exec(xml)
+  const sheetPr = existing?.[0]
+  const current = sheetPr === undefined ? undefined : OUTLINE_PR_PATTERN.exec(sheetPr)?.[0]
+  // Other outlinePr attributes (applyStyles, showOutlineSymbols) stay verbatim.
+  const kept = (current ?? '')
+    .replace(/^<outlinePr\b|\/?>$|<\/outlinePr>$/g, '')
+    .replace(/\s+summary(?:Below|Right)="[^"]*"/g, '')
+    .replace(/>.*$/s, '')
+    .trim()
+  const element =
+    kept === '' && attributes === '' ? '' : `<outlinePr${kept ? ` ${kept}` : ''}${attributes}/>`
+  if (sheetPr === undefined) {
+    if (element === '') return xml
+    return xml.replace(
+      /(<worksheet\b[^>]*>)/,
+      (_full, open: string) => `${open}<sheetPr>${element}</sheetPr>`,
+    )
+  }
+  let next: string
+  if (current !== undefined) {
+    next = sheetPr.replace(OUTLINE_PR_PATTERN, () => element)
+  } else if (element === '') {
+    next = sheetPr
+  } else if (sheetPr.endsWith('/>')) {
+    next = `${sheetPr.slice(0, -2)}>${element}</sheetPr>`
+  } else {
+    // Schema order: tabColor, outlinePr, pageSetUpPr.
+    const pageSetUp = /<pageSetUpPr\b/.exec(sheetPr)
+    next = pageSetUp
+      ? `${sheetPr.slice(0, pageSetUp.index)}${element}${sheetPr.slice(pageSetUp.index)}`
+      : sheetPr.replace(/<\/sheetPr>$/, `${element}</sheetPr>`)
+  }
+  const emptied = /^<sheetPr\b([^>]*)>\s*<\/sheetPr>$/.exec(next)
+  if (emptied && emptied[1]!.trim() === '') next = ''
+  return xml.replace(SHEET_PR_PATTERN, () => next)
 }
 
 /// Excel sizes the outline gutter from sheetFormatPr's outlineLevelRow/Col;
@@ -746,7 +800,7 @@ export function shiftTablePart(
   let xml = tableXml
   const records: TableColumnInsertion[] = []
   for (const op of ops) {
-    if ('start' in op) continue
+    if ('start' in op || 'summaryBelow' in op) continue
     const table = parseTablePart(xml)
     if ('range' in op) {
       if (op.kind === 'merge-cells' && areasOverlap(op.range, table)) {
@@ -1672,9 +1726,6 @@ function shiftReferenceToken(token: string, shift: Shift, axis: Axis): string | 
   )
 }
 
-const SHARED_MAX_ROW = 1_048_576
-const SHARED_MAX_COLUMN = 16_384
-
 /// Shared-formula expansion (OOXML 18.3.1.40): the master's relative
 /// references shift by the follower's (row, column) offset; `$`-anchored
 /// components stay put. Null when a shifted reference leaves the sheet.
@@ -1713,12 +1764,12 @@ function translateSharedToken(token: string, rowDelta: number, columnDelta: numb
       const column = translateOrdinal(
         lettersToColumn(cell[2] ?? 'A'),
         cell[1] === '$' ? 0 : columnDelta,
-        SHARED_MAX_COLUMN - 1,
+        MAX_GRID_COLUMNS - 1,
       )
       const row = translateOrdinal(
         Number(cell[4]) - 1,
         cell[3] === '$' ? 0 : rowDelta,
-        SHARED_MAX_ROW - 1,
+        MAX_GRID_ROWS - 1,
       )
       if (column === null || row === null) return null
       return `${cell[1]}${columnToLetters(column)}${cell[3]}${row + 1}`
@@ -1728,7 +1779,7 @@ function translateSharedToken(token: string, rowDelta: number, columnDelta: numb
       const column = translateOrdinal(
         lettersToColumn(wholeColumn[2] ?? 'A'),
         wholeColumn[1] === '$' ? 0 : columnDelta,
-        SHARED_MAX_COLUMN - 1,
+        MAX_GRID_COLUMNS - 1,
       )
       if (column === null) return null
       return `${wholeColumn[1]}${columnToLetters(column)}`
@@ -1738,7 +1789,7 @@ function translateSharedToken(token: string, rowDelta: number, columnDelta: numb
       const row = translateOrdinal(
         Number(wholeRow[2]) - 1,
         wholeRow[1] === '$' ? 0 : rowDelta,
-        SHARED_MAX_ROW - 1,
+        MAX_GRID_ROWS - 1,
       )
       if (row === null) return null
       return `${wholeRow[1]}${row + 1}`

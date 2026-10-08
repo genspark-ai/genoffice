@@ -175,3 +175,63 @@ describe('syncFloatShifts with in-table gaps', () => {
     expect(box.style.getPropertyValue('--page-float-dy')).toBe('100.0px')
   })
 })
+
+describe('syncAnchorBands lifts the next anchor picture into the band', () => {
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect
+  /** wrapper of three behind-text photos: a side-by-side pair from 4px and a third at 402px on the left */
+  const gridWrapper = (): HTMLElement => {
+    const el = document.createElement('div')
+    el.className = 'doc-protected doc-protected-textboxes doc-protected-floating'
+    el.dataset.band = '777'
+    el.dataset.bands = '402:777 4:378 4:378'
+    el.style.minHeight = '777px'
+    el.getBoundingClientRect = () => rect(0, 0, 717, 777)
+    const strut = document.createElement('div')
+    strut.className = 'doc-anchor-strut'
+    strut.getBoundingClientRect = () => rect(0, 0, 717, 15)
+    el.appendChild(strut)
+    for (const [x, y, h] of [
+      [0, 402, 375],
+      [369, 4, 374],
+      [0, 4, 374],
+    ]) {
+      const box = document.createElement('div')
+      box.className = 'doc-textbox'
+      box.getBoundingClientRect = () => rect(x, y, 350, h)
+      el.appendChild(box)
+    }
+    return el
+  }
+  const floatImage = (): HTMLElement => {
+    const el = document.createElement('div')
+    el.className = 'doc-protected img-wrap-tight-right'
+    el.style.marginTop = '3.3px'
+    return el
+  }
+
+  it('hangs the picture one line below where the previous anchor line lands', () => {
+    const pm = document.createElement('div')
+    const w = gridWrapper()
+    const f = floatImage()
+    pm.append(w, f)
+    syncAnchorBands(pm, 1)
+    // the wrapper's line is blocked on both sides until 378, lands at 390 (26 x 15);
+    // the next paragraph starts at 405: margin 3.3 - (777 - 405)
+    expect(f.style.marginTop).toBe('-368.7px')
+    expect(f.dataset.anchorLiftBase).toBe('3.3')
+    syncAnchorBands(pm, 1)
+    expect(f.style.marginTop).toBe('-368.7px')
+  })
+
+  it('leaves a picture whose anchor line falls below the band alone', () => {
+    const pm = document.createElement('div')
+    const w = gridWrapper()
+    w.dataset.band = '380'
+    w.style.minHeight = '380px'
+    const f = floatImage()
+    pm.append(w, f)
+    syncAnchorBands(pm, 1)
+    expect(f.style.marginTop).toBe('3.3px')
+  })
+})

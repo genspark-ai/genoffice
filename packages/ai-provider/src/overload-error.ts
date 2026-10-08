@@ -24,9 +24,7 @@ const OVERLOADED_PATTERN = new RegExp(
 // misreport them as a transient capacity problem.
 const CREDITS_PATTERN = /credit|pricing/i
 
-// The exhausted-balance wording specifically. A body that merely says "credits"
-// alongside a rate limit ("credits per minute exceeded") is a rate limit, so the
-// exemption keys on the exhausted/insufficient phrasing, not on the word alone.
+// "credits per minute exceeded" is a rate limit; only the exhausted/insufficient wording is billing.
 const CREDITS_EXHAUSTED_PATTERN =
   /(credits?[^\n]{0,40}(exhausted|insufficient)|(exhausted|insufficient)[^\n]{0,40}credits?)/i
 
@@ -35,9 +33,6 @@ const HTTP_STATUS_PATTERN = /\bHTTP (429|503|529)\b/i
 
 function matches(text: string): boolean {
   if (!OVERLOADED_PATTERN.test(text)) return false
-  // The exhausted/insufficient wording wins over the status marker: credits are only
-  // typed on the HTTP 200 JSON path, so a non-2xx credits body is a billing notice,
-  // and "service busy, retry" is the wrong advice for it.
   if (CREDITS_EXHAUSTED_PATTERN.test(text)) return false
   if (CREDITS_PATTERN.test(text) && !HTTP_STATUS_PATTERN.test(text)) return false
   return true

@@ -13,8 +13,9 @@ const BULLET_GLYPHS: Record<string, string> = {
 
 const DEFAULT_BULLETS = ['•', '◦', '▪', '•', '◦', '▪', '•', '◦', '▪']
 
-function toLetters(value: number): string {
+function toLetters(rawValue: number): string {
   // Word: 1..26 -> A..Z, 27 -> AA (repeated same letter, not positional notation)
+  const value = Math.max(1, rawValue)
   const n = ((value - 1) % 26) + 1
   const repeat = Math.floor((value - 1) / 26) + 1
   return String.fromCharCode(64 + n).repeat(repeat)
@@ -331,12 +332,58 @@ export interface ListMarkerInfo {
   value?: number
 }
 
-/** text-font substitutes draw solid round bullets smaller than the Word symbol glyph
- *  (glyph-box ratios: Symbol bullet 0.29em vs Arial 0.25em; Wingdings circle 0.58em vs Arial 0.43em) */
-const SUBSTITUTE_BULLET_SCALE: Record<string, number> = { '•': 1.25, '●': 1.35 }
+/** Word symbol bullets with no glyph on this platform: Liberation Sans' U+25CF through a
+ *  size-adjusted alias (fonts.css) carrying the Word face's ink size and line metrics */
+const SUBSTITUTE_BULLETS: Record<string, BulletSubstitute> = {
+  '\u2022': { glyph: '\u25cf', face: 'Symbol Bullet GO' },
+  '\u25cf': { glyph: '\u25cf', face: 'Wingdings Bullet GO' },
+}
 
-export function bulletMarkerScale(glyph: string): number {
-  return SUBSTITUTE_BULLET_SCALE[glyph] ?? 1
+export interface BulletSubstitute {
+  glyph: string
+  face: string
+}
+
+export function substituteBullet(glyph: string): BulletSubstitute | null {
+  return SUBSTITUTE_BULLETS[glyph] ?? null
+}
+
+export const SEGOE_UI_SYMBOL_RE = /^segoe ui symbol$/
+
+/** Bullet glyphs none of Word's common Latin text faces carry (DFonts cmaps: Calibri,
+ *  Arial, Times New Roman, Cambria, Aptos, Verdana, Tahoma): Word draws them in Segoe UI Symbol */
+const SEGOE_FALLBACK_GLYPHS = new Set([
+  '\u25b8',
+  '\u25b9',
+  '\u25c6',
+  '\u25c7',
+  '\u27a2',
+  '\u27a4',
+  '\u2714',
+  '\u2726',
+  '\u2756',
+  '\u2605',
+  '\u2606',
+  '\u2794',
+])
+
+/** glyphs only some of those faces lack -> the faces known to lack them */
+const PARTIAL_FALLBACK: Array<[RegExp, string]> = [
+  [/calibri|arial|times|cambria|verdana|tahoma/, '\u2713\u2610\u2611'],
+  [/calibri|cambria|aptos|verdana/, '\u2023\u25a0\u25ba\u25b2\u25bc\u2043'],
+  [/cambria/, '\u25aa\u25ab\u25a1\u25cf\u25e6'],
+]
+
+/** the face Word substitutes when a text-font marker glyph is missing from its face */
+export function markerFallbackFace(glyph: string, face: string): string | null {
+  const cps = [...glyph]
+  if (cps.length !== 1) return null
+  const f = face.trim().toLowerCase()
+  if (SEGOE_UI_SYMBOL_RE.test(f) || isSymbolFont(face)) return null
+  if (SEGOE_FALLBACK_GLYPHS.has(cps[0])) return 'Segoe UI Symbol'
+  return PARTIAL_FALLBACK.some(([re, set]) => re.test(f) && set.includes(cps[0]))
+    ? 'Segoe UI Symbol'
+    : null
 }
 
 function bulletInfo(text: string, level: NumberingLevel): ListMarkerInfo {

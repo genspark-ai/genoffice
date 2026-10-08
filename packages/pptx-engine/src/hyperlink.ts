@@ -18,6 +18,7 @@ import { relsPathFor, resolveTarget } from './zip'
 import { cleanupSupersededSlideResources } from './resource-cleanup'
 import { materializeSlide, patchedElementXml, patchSlideXml, type OpenedPptx } from './index'
 import { namedActionAttr, namedActionOf, type NamedAction } from './named-action'
+import { unescapeXml } from './notes'
 
 const HYPERLINK_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
@@ -58,6 +59,12 @@ function appendRel(
   return rid
 }
 
+function tooltipOf(tag: string | undefined): string | undefined {
+  if (!tag) return undefined
+  const raw = /\btooltip=(?:"([^"]*)"|'([^']*)')/.exec(tag)?.slice(1, 3).find(Boolean)
+  return raw === undefined ? undefined : unescapeXml(raw)
+}
+
 /** Strip the hlinkClick inside the element XML's first cNvPr (keeping other children). */
 function stripHlink(xml: string): string {
   return xml.replace(/<a:hlinkClick\b[^>]*\/>|<a:hlinkClick\b[^>]*>[\s\S]*?<\/a:hlinkClick>/, '')
@@ -80,11 +87,14 @@ export function setElementLink(
   if (!el) return null
 
   const previousXml = patchSlideXml(slide)
-  let xml = stripHlink(patchedElementXml(el))
+  const existingXml = patchedElementXml(el)
+  let xml = stripHlink(existingXml)
 
   if (target) {
     let hlink: string
-    const tip = target.tooltip ? ` tooltip="${escapeXmlAttr(target.tooltip)}"` : ''
+    // The UI edits the target only; keep PowerPoint's ScreenTip unless the caller sets one
+    const tooltip = target.tooltip ?? tooltipOf(/<a:hlinkClick\b[^>]*>/.exec(existingXml)?.[0])
+    const tip = tooltip ? ` tooltip="${escapeXmlAttr(tooltip)}"` : ''
     if (target.kind === 'url') {
       const rid = appendRel(opened, slide, HYPERLINK_REL_TYPE, target.url, true)
       hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="${rid}"${tip}/>`
@@ -200,14 +210,15 @@ export function getRunLinks(
   const out: Array<{ elementId: string; paraIndex: number; runIndex: number; target: LinkTarget }> =
     []
   const rels = opened.archive.readRels(slide.path)
-  const resolve = (rid: string): LinkTarget | null => {
+  const resolve = (rid: string, tooltip?: string): LinkTarget | null => {
     const rel = rels.get(rid)
     if (!rel) return null
-    if (rel.type === HYPERLINK_REL_TYPE) return { kind: 'url', url: rel.target }
+    const tip = tooltip ? { tooltip } : {}
+    if (rel.type === HYPERLINK_REL_TYPE) return { kind: 'url', url: rel.target, ...tip }
     if (rel.type === SLIDE_REL_TYPE) {
       const abs = resolveTarget(slide.path, rel.target)
       const idx = opened.deck.slides.findIndex((s) => s.path === abs)
-      if (idx >= 0) return { kind: 'slide', slideIndex: idx }
+      if (idx >= 0) return { kind: 'slide', slideIndex: idx, ...tip }
     }
     return null
   }
@@ -221,10 +232,14 @@ export function getRunLinks(
       el.text.paragraphs.forEach((p, paraIndex) => {
         p.runs.forEach((run, runIndex) => {
           const action = namedActionOf(run.hyperlinkAction)
-          const target = action
-            ? { kind: 'action' as const, action }
+          const target: LinkTarget | null = action
+            ? {
+                kind: 'action',
+                action,
+                ...(run.hyperlinkTooltip ? { tooltip: run.hyperlinkTooltip } : {}),
+              }
             : run.hyperlinkRId
-              ? resolve(run.hyperlinkRId)
+              ? resolve(run.hyperlinkRId, run.hyperlinkTooltip)
               : null
           if (target) out.push({ elementId: el.id, paraIndex, runIndex, target })
         })
@@ -239,7 +254,7 @@ export function getRunLinks(
 function resolveLinkInXml(opened: OpenedPptx, slide: Slide, xml: string): LinkTarget | null {
   const tag = /<a:hlinkClick\b[^>]*>/.exec(xml)?.[0]
   if (!tag) return null
-  const tooltip = /\btooltip=(?:"([^"]*)"|'([^']*)')/.exec(tag)?.slice(1, 3).find(Boolean)
+  const tooltip = tooltipOf(tag)
   const tip = tooltip ? { tooltip } : {}
   const action = namedActionOf(
     /\baction=(?:"([^"]*)"|'([^']*)')/.exec(tag)?.slice(1, 3).find(Boolean),

@@ -321,12 +321,7 @@ import {
 import extractWorkerPath from './file-index/extract-worker?modulePath'
 import { FileIndexer } from './file-index/indexer'
 import { FileIndexStore } from './file-index/store'
-import {
-  jevEndpointOf,
-  normalizeFileSearchSettings,
-  probeJev,
-  SearchReranker,
-} from './file-index/rerank'
+import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import { installShellCloseGuard } from './window-close-guard'
@@ -2955,7 +2950,6 @@ function trackedFilesUnder(dir: string): string[] {
   ])
 }
 
-/** stat that tolerates races: the answer is only advisory for the delete gate */
 function statMaybeFile(path: string): { isFile: () => boolean } | null {
   try {
     return statSync(path)
@@ -2964,7 +2958,6 @@ function statMaybeFile(path: string): { isFile: () => boolean } | null {
   }
 }
 
-/** the union trackedFilesUnder uses, as a membership check for the file IPCs */
 function fileTargetSources(): FileTargetSources {
   return {
     insideAnyRoot: (p) => insideAnyRoot(p),
@@ -3832,20 +3825,16 @@ function registerHomeIpc(): void {
       const next = normalizeFileSearchSettings({
         ...current,
         ...p,
-        jevKeys: { ...current.jevKeys, ...(p.jevKeys ?? {}) },
+        keys: { ...current.keys, ...(p.keys ?? {}) },
       })
       writeAppSetting(APP_SETTINGS_PATH(), 'fileSearch', next)
       return next
     },
   )
 
-  ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) => {
-    const { endpoint, apiKey } = (input && typeof input === 'object' ? input : {}) as {
-      endpoint?: unknown
-      apiKey?: unknown
-    }
-    return probeJev(jevEndpointOf(endpoint), typeof apiKey === 'string' ? apiKey : '')
-  })
+  ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) =>
+    probeDecision(normalizeFileSearchSettings(input)),
+  )
 
   // Starred files sort by mtime, which requires stat-ing them all first; they are hand-picked and few, so this is fine
   ipcMain.handle(HOME_CHANNELS.starred, (_event, query: unknown): RecentPage => {
@@ -3945,14 +3934,8 @@ function registerHomeIpc(): void {
       // with the localized gate instead of renaming to a different
       // name than requested.
       if (!isValidRawRenameName(newName)) return { ok: false, error: tm('errBadName') }
-      // A legal name in an extension nothing routes to turns an openable file
-      // into an unopenable one — "note.md" → "note.xyz" renames cleanly and
-      // then cannot be opened. Same-app renames ("note.md" → "note.markdown")
-      // stay legal.
-      if (typeof path === 'string' && !renameStaysInApp(path, newName.trim()))
+      if (!renameStaysInApp(path, newName.trim()))
         return { ok: false, error: tm('errBadExtension') }
-      // only paths the UI could have shown: a compromised renderer must not
-      // rename arbitrary files outside every tracked source
       if (!isUserVisibleFile(path, fileTargetSources()))
         return { ok: false, error: tm('errBadArgs') }
       const name = newName.trim()
@@ -3996,8 +3979,9 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.deleteFiles, async (_event, paths: unknown) => {
     const targets = fileTargetSources()
+    // a missing path still passes so the ghost recent/star entry gets cleaned up
     const list = stringPaths(paths).filter(
-      (p) => isUserVisibleFile(p, targets) && statMaybeFile(p)?.isFile() === true,
+      (p) => isUserVisibleFile(p, targets) && statMaybeFile(p)?.isFile() !== false,
     )
     for (const p of list) {
       try {
@@ -5589,6 +5573,16 @@ app.on('second-instance', (_event, argv, _cwd, additionalData) => {
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
 registerAiIpc()
+ipcMain.handle('ai:open-model-settings', () => {
+  const win = shellWindow
+  if (!win || win.isDestroyed()) return
+  // the request may come from a detached window or while the shell is minimized
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  tabManager?.openHomeTab()
+  win.webContents.send(HOME_CHANNELS.openSettings, { section: 'aiModel' })
+})
 registerProjectIpc()
 registerDocsIpc()
 registerHomeIpc()

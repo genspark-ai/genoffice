@@ -22,6 +22,7 @@ import {
   recordWorkbookProtection,
   recordSheetDuplicate,
   recordSheetHidden,
+  recordSheetTabColor,
   recordSheetInsert,
   recordSheetOrderChange,
   recordSheetRemove,
@@ -571,6 +572,11 @@ describe('style conversion', () => {
   })
 
   it('maps text rotation and double underline both ways', () => {
+    expect(toNeutralStyle({ va: 3 })).toEqual({ vertAlign: 'superscript' })
+    expect(toNeutralStyle({ va: 2 })).toEqual({ vertAlign: 'subscript' })
+    expect(toNeutralStyle({ va: null })).toEqual({ vertAlign: null })
+    expect(fromNeutralStyle({ vertAlign: 'subscript' })).toEqual({ va: 2 })
+    expect(fromNeutralStyle({ vertAlign: null })).toEqual({ va: null })
     expect(toNeutralStyle({ tr: { a: 45 } })).toEqual({ textRotation: 45 })
     expect(toNeutralStyle({ tr: { a: -45 } })).toEqual({ textRotation: 135 })
     expect(toNeutralStyle({ tr: { a: 0, v: 1 } })).toEqual({ textRotation: 255 })
@@ -957,6 +963,34 @@ describe('sheet visibility and order journal', () => {
       { kind: 'set-sheet-hidden', sheetId: 'sheet-2', hidden: true },
       { kind: 'reorder-sheets' },
     ])
+  })
+
+  it('journals tab colors normalized to #RRGGBB and drops a revert', () => {
+    const journal = createEditJournal()
+    recordSheetTabColor(journal, 'sheet-1', '#92d050', null)
+    expect(journalSize(journal)).toBe(1)
+    expect(toSaveSheetOps(journal)).toEqual([
+      { kind: 'set-sheet-tab-color', sheetId: 'sheet-1', color: '#92D050' },
+    ])
+    recordSheetTabColor(journal, 'sheet-1', undefined, null)
+    expect(journalSize(journal)).toBe(0)
+    recordSheetTabColor(journal, 'sheet-2', '', '#FF0000')
+    expect(toSaveSheetOps(journal)).toEqual([
+      { kind: 'set-sheet-tab-color', sheetId: 'sheet-2', color: null },
+    ])
+    recordSheetTabColor(journal, 'sheet-2', 'ff0000', '#FF0000')
+    expect(journalSize(journal)).toBe(0)
+  })
+
+  it('copies a pending tab color onto a duplicate of the sheet', () => {
+    const journal = createEditJournal()
+    recordSheetTabColor(journal, 'sheet-1', '#92D050', null)
+    recordSheetDuplicate(journal, 'u-copy', 'Copy', 'sheet-1')
+    expect(toSaveSheetOps(journal)).toContainEqual({
+      kind: 'set-sheet-tab-color',
+      sheetId: 'u-copy',
+      color: '#92D050',
+    })
   })
 })
 

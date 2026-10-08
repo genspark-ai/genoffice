@@ -89,6 +89,9 @@ export const CJK_FAMILY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   メイリオ: ['Meiryo'],
   游ゴシック: ['Yu Gothic'],
   游明朝: ['Yu Mincho'],
+  'ＭＳ ゴシック': ['MS Gothic'],
+  'ＭＳ 明朝': ['MS Mincho'],
+  'Hiragino Mincho ProN': ['Hiragino Mincho', 'ヒラギノ明朝 ProN'],
   // Korean
   '맑은 고딕': ['Malgun Gothic'],
   바탕: ['Batang'],

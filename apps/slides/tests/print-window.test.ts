@@ -73,7 +73,7 @@ describe('slide print window', () => {
     failed.failLoad = true
     expect(await printSlidesHtml('<html/>', failed)).toEqual({
       ok: false,
-      error: 'Error: load failed',
+      error: 'load failed',
     })
     expect(failed.destroyed).toBe(true)
     expect(existsSync(dirname(failed.loadedPath!))).toBe(false)

@@ -3,6 +3,7 @@ import type { HeaderFooter, HfPartInfo, SectionInfo, StyleInfo } from '@genoffic
 import { hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from '../src/renderer/hf-phantom'
 import { resolveHf, type HfKind, type HfSectionState } from '../src/renderer/hf-sections'
 import { estimateHfHeight, lineHeightFactor } from '../src/renderer/line-metrics'
+import { effectiveBottomPx, effectiveTopPx } from '../src/renderer/pagination-sections'
 import type { HfView } from '../src/renderer/doc-state'
 
 // Normal = Georgia 13 / line 300 / after 120; Header basedOn Normal with after 0 / line 240
@@ -146,7 +147,16 @@ describe('page background header phantom', () => {
     expect(parasOf(inherited.value)).toHaveLength(2)
   })
 
-  it('not for a section with its own header part, never for footers', () => {
+  it('a part-less footer gets one empty Footer-style line', () => {
+    const st = state([section(5, { default: 'h1' }), section(9)])
+    expect(parasOf(layout(st, 0, 'footer').value)).toEqual([spec.footerLine])
+    expect(parasOf(layout(st, 1, 'footer').value)).toEqual([spec.footerLine])
+    expect(spec.footerLine).toMatchObject({ runs: [], emptyRunSizeHalfPoints: 26 })
+    const plain = hfLayoutResolved('footer', resolveHf(st, 0, 'footer', 'default'), null)
+    expect(plain.value).toBeNull()
+  })
+
+  it('not for a section with its own header part, never for explicit footer parts', () => {
     const st = state([
       section(5, { default: 'h1' }, { default: 'f1' }),
       section(9, { default: 'h2' }),
@@ -177,5 +187,77 @@ describe('page background header phantom', () => {
     expect(((withPhantom - plain) * 72) / 96).toBeCloseTo(phantomPt, 1)
     // Georgia 13 x 1.25 + 6pt after = 24.5pt, the header dist 36 + line 9.7 lands the body at 70.1
     expect(phantomPt).toBeCloseTo(24.5, 0)
+  })
+})
+
+// docDefaults pPrDefault/pBdr none space=30/31 with no header/footer part and a
+// page background: Word's header of two empty inheriting paragraphs and footer
+// of one form padded border groups that push the body window inward
+describe('page background phantom lines inherit the docDefaults pBdr padding', () => {
+  const pad = { t: 30, b: 30, l: 31, r: 31 }
+  const borderSides = {
+    t: { none: true as const, spacePt: 30 },
+    b: { none: true as const, spacePt: 30 },
+    l: { none: true as const, spacePt: 31 },
+    r: { none: true as const, spacePt: 31 },
+  }
+  const bare = new Map<string, StyleInfo>([
+    ['Normal', { styleId: 'Normal', name: 'Normal', type: 'paragraph', isDefault: true }],
+  ])
+  const dd = { sizeHalfPoints: 22, asciiFont: 'Calibri', lineSpacing: 1, borderSides }
+  const padded = hfPhantomSpec({ styles: bare, docDefaults: dd })
+  const { borderSides: _unused, ...ddPlain } = dd
+  const unpadded = hfPhantomSpec({ styles: bare, docDefaults: ddPlain })
+  // Letter, 1in margins, header/footer distance 0.5in
+  const settings = {
+    pageWidth: 12240,
+    pageHeight: 15840,
+    orientation: 'portrait' as const,
+    marginTop: 1440,
+    marginRight: 1440,
+    marginBottom: 1440,
+    marginLeft: 1440,
+    headerDist: 720,
+    footerDist: 720,
+    pageBorder: false,
+    columns: 1,
+  } as SectionInfo['settings']
+  const w = ((12240 - 2 * 1440) / 1440) * 96
+  const pt = (px: number) => (px * 72) / 96
+
+  it('every materialised paragraph carries the inherited none-side padding', () => {
+    expect(padded.normal.borderPad).toEqual(pad)
+    expect(padded.headerLine.borderPad).toEqual(pad)
+    expect(padded.footerLine.borderPad).toEqual(pad)
+    expect(padded.normal.borders).toBeUndefined()
+    // a Header style resetting the sides to space 0 cancels the padding
+    const zero = new Map(bare)
+    zero.set('Header', {
+      styleId: 'Header',
+      name: 'header',
+      type: 'paragraph',
+      display: { borderSides: { t: null, b: null, l: null, r: null } },
+    })
+    expect(hfPhantomSpec({ styles: zero, docDefaults: dd }).headerLine.borderPad).toBeUndefined()
+  })
+
+  it('header block = 30 + two lines + 30 (one group), footer block = 30 + line + 30', () => {
+    const line = 11 * lineHeightFactor('Calibri')
+    const header = estimateHfHeight(hfWithPhantom(null, padded), w)
+    expect(pt(header)).toBeCloseTo(60 + 2 * line, 1)
+    const footer = estimateHfHeight({ text: '', paras: [padded.footerLine] }, w)
+    expect(pt(footer)).toBeCloseTo(60 + line, 1)
+    // no padding: the same two lines only
+    expect(pt(estimateHfHeight(hfWithPhantom(null, unpadded), w))).toBeCloseTo(2 * line, 1)
+  })
+
+  it('pushes the body top to headerDist + block and the bottom to footerDist + block', () => {
+    const line = 11 * lineHeightFactor('Calibri')
+    const header = estimateHfHeight(hfWithPhantom(null, padded), w)
+    const footer = estimateHfHeight({ text: '', paras: [padded.footerLine] }, w)
+    expect(pt(effectiveTopPx(settings, header))).toBeCloseTo(36 + 60 + 2 * line, 1)
+    expect(pt(effectiveBottomPx(settings, footer))).toBeCloseTo(36 + 60 + line, 1)
+    const unpaddedHeader = estimateHfHeight(hfWithPhantom(null, unpadded), w)
+    expect(pt(effectiveTopPx(settings, unpaddedHeader))).toBe(72)
   })
 })

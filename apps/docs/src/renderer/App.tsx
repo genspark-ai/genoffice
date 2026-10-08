@@ -107,7 +107,7 @@ import {
 } from './editor/hf-editor'
 import type { HfAction, HfEditingInfo } from './components/ribbon-hf-tab'
 import { hfCommitTarget, hfLinked, resolveHf, withHfLink, type HfSectionState } from './hf-sections'
-import { hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
+import { hfFooterLine, hfLayoutResolved, hfPhantomSpec, hfWithPhantom } from './hf-phantom'
 import { textColorValue } from './editor/text-color'
 import { textOutlineCssValue } from './editor/text-outline'
 import { AiAskPopover } from './components/AiAskPopover'
@@ -125,7 +125,7 @@ import { HeaderFooterArea } from './components/HeaderFooterArea'
 import { PageFootnotes, PageEndnotes } from './components/PageNoteAreas'
 import { noteMarkText, type NoteKind } from './note-format'
 import { PaginationPreview } from './components/PaginationPreview'
-import { paraPaginationMeta } from './editor/para-flags'
+import { paraPaginationMeta, tableWidowOff } from './editor/para-flags'
 import { PrintDialog } from './components/PrintDialog'
 import {
   appendEndnotesBlock,
@@ -197,6 +197,7 @@ import {
   setFloatVShifts,
   setOversizeClips,
   setPageGaps,
+  rowFillsSig,
   setRowFills,
   syncAnchorBands,
   syncCutOverlays,
@@ -343,7 +344,7 @@ import {
   revisionDisplayState,
 } from './editor/extensions'
 import { setDkColor } from './editor/dark-page'
-import { readDarkPagePref, writeDarkPagePref } from './dark-page-pref'
+import { resolveDarkPage, writeDarkPagePref } from './dark-page-pref'
 import { useDocThemeIsDark, useUiThemeIsDark } from './ui-theme'
 import { type InkAnnotation, type InkTool } from './editor/ink'
 import { InkOverlay } from './components/InkOverlay'
@@ -791,24 +792,26 @@ export function App() {
   const [zoom, setZoom] = useState(100)
   const scrollContainerRef = useRef<HTMLElement>(null)
   // Word-style dark page (editor/dark-page.ts): the shell's document-page-theme
-  // setting (#1811) decides by default — 'follow' rides the UI theme,
-  // 'light'/'dark' pin the paper; View ▸ Dark Mode remains the docs-specific
-  // choice (dark-page-pref.ts) and wins over the setting once the user has
-  // flipped it
+  // setting (genoffice#1811) decides which theme the page follows; a light
+  // page theme never shows a dark page, in the dark one it is on by default
+  // until the user switches it off, and that choice sticks (dark-page-pref.ts)
   const themeDark = useUiThemeIsDark()
   const docThemeDark = useDocThemeIsDark()
-  const [darkPage, setDarkPage] = useState(() => readDarkPagePref() ?? docThemeDark)
+  const [darkPage, setDarkPage] = useState(() => resolveDarkPage(docThemeDark))
   useEffect(() => {
-    if (readDarkPagePref() === null) setDarkPage(docThemeDark)
+    setDarkPage(resolveDarkPage(docThemeDark))
   }, [docThemeDark])
   // for toggle-by-one in the menu path, whose closure is not re-created per render
   const darkPageRef = useRef(darkPage)
   darkPageRef.current = darkPage
   /** View ▸ Dark Mode (menu and ribbon): remember the choice, then apply it */
-  const updateDarkPage = useCallback((next: boolean) => {
-    writeDarkPagePref(next)
-    setDarkPage(next)
-  }, [])
+  const updateDarkPage = useCallback(
+    (next: boolean) => {
+      if (docThemeDark) writeDarkPagePref(next)
+      setDarkPage(next)
+    },
+    [docThemeDark],
+  )
   const [section, setSection] = useState<SectionSettings | null>(null)
   /** All sections (readSections): pagination/preview use per-section geometry; layout edits apply to the cursor's section */
   const [sections, setSections] = useState<SectionInfo[]>([])
@@ -1513,7 +1516,9 @@ export function App() {
 
   useEffect(() => {
     void window.desktop.getRecentFiles().then(setRecent)
-    void window.desktop.getAiSettings().then(setSettings)
+    const loadSettings = () => void window.desktop.getAiSettings().then(setSettings)
+    loadSettings()
+    return window.desktop.onAiSettingsChanged?.(loadSettings)
   }, [])
 
   useEffect(() => {
@@ -3069,12 +3074,29 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [footnotes, endnotes, noteStyleOf])
 
-  // display number of a note: the engine's body-order numbering (numStart / eachSect
-  // applied); notes added in this session are not in the map and count by list position
+  // the numbers the body shows right now: inserting or deleting a note renumbers
+  // its in-text marks in document order, and the note areas must say the same
+  const noteMarkNumbers = useMemo(() => {
+    const out = new Map<string, number>()
+    editorRef.current?.state.doc.descendants((node) => {
+      if (node.type.name !== 'docNoteRef') return true
+      const key = `${node.attrs.kind}:${node.attrs.id}`
+      if (!out.has(key)) out.set(key, Number(node.attrs.num))
+      return false
+    })
+    return out
+    // the lists change whenever marks are added or removed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [footnotes, endnotes, doc])
+
+  // display number of a note: the mark in the body, else the engine's body-order
+  // numbering (numStart / eachSect applied), else the list position
   const noteNo = useCallback(
     (kind: 'footnote' | 'endnote', id: string, index: number): number =>
-      doc?.parsed.noteNumbers?.[`${kind}:${id}`] ?? index + 1,
-    [doc],
+      noteMarkNumbers.get(`${kind}:${id}`) ??
+      doc?.parsed.noteNumbers?.[`${kind}:${id}`] ??
+      index + 1,
+    [noteMarkNumbers, doc],
   )
 
   // page-bottom heights (px) reserved for footnote references inside a block, one per
@@ -3130,9 +3152,9 @@ export function App() {
     if (!section) return { headerPx: 0, footerPx: 0 }
     const contentW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
     const h = hfLayoutResolved('header', hfResolveAt(0, 'header', 'default'), hfPhantom)
-    const f = hfResolveAt(0, 'footer', 'default')
+    const f = hfLayoutResolved('footer', hfResolveAt(0, 'footer', 'default'), hfPhantom)
     const hFirst = hfLayoutResolved('header', hfResolveAt(0, 'header', 'first'), hfPhantom)
-    const fFirst = hfResolveAt(0, 'footer', 'first')
+    const fFirst = hfLayoutResolved('footer', hfResolveAt(0, 'footer', 'first'), hfPhantom)
     return {
       headerPx: hfReservedHeightPx('header', h.value, contentW, h.images, hfHeaderGeom(section)),
       footerPx: hfReservedHeightPx('footer', f.value, contentW, f.images),
@@ -3256,15 +3278,23 @@ export function App() {
           [...xml.matchAll(/<w:pStyle w:val="([^"]+)"/g)].some((m) => styleKeepNext(m[1]))
         const modern = (doc?.parsed.compatibilityMode ?? 0) >= 15
         if (!flagged && fnExtra === 0 && !modern) return undefined
+        const cellWidowOff =
+          modern &&
+          tableWidowOff(
+            xml,
+            defaultParaStyle?.display?.widowControl ?? doc?.parsed.docDefaults?.widowControl,
+            (id) => doc?.parsed.styles.get(id)?.display?.widowControl,
+          )
         return {
           ...(flagged ? { tableRowFlags: tableRowFlags(xml, styleKeepNext) } : {}),
           ...(modern ? { modernTableHeaders: true } : {}),
+          ...(cellWidowOff ? { cellWidowOff: true } : {}),
           ...(fnExtra > 0 ? { footnoteExtraPx: fnExtra, footnoteBands: fnBands } : {}),
         }
       }
       const styleDisplay = (b.styleId ? doc?.parsed.styles.get(b.styleId) : defaultParaStyle)
         ?.display
-      const flags = paraPaginationMeta(b.format, styleDisplay)
+      const flags = paraPaginationMeta(b.format, styleDisplay, doc?.parsed.docDefaults)
       const fnBands = footnoteBandsOf(b)
       const fnExtra = fnBands.reduce((s, band) => s + band.heightPx, 0)
       if (!flags && fnExtra === 0) return undefined
@@ -3514,6 +3544,7 @@ export function App() {
     let slices: PageSlice[] = []
     let timer: number | null = null
     let suppressSig = ''
+    let rowFillSig = ''
     // passes a pass schedules for itself (widths / suppression applied late);
     // a document whose column widths never settle must not paginate forever
     let followUps = 0
@@ -3578,6 +3609,7 @@ export function App() {
      *  disables the carry — a same-height edit would otherwise keep stale
      *  line boxes that the height gate cannot see */
     let lastPassChildCount = 0
+    let carriedSamples = 0
     /** first top-level index a transaction touched since the last pass; null once a trigger needs the whole document */
     let dirtyFrom: number | null = null
     let resumePasses = 0
@@ -3767,7 +3799,7 @@ export function App() {
         const { blocks, totalHeight, floats, sectBreaks } = measureBlocks(pm, origin, factor)
         if (hasVertical)
           for (const b of blocks) if (b.el && !b.floated) b.inlineExtraPx = blockInlineExtraPx(b.el)
-        carryStreamedSamples(blocks, lastBlocks, {
+        carriedSamples += carryStreamedSamples(blocks, lastBlocks, {
           pending: isPhasedContentPending(),
           dirty,
           lastPassChildCount,
@@ -4765,6 +4797,12 @@ export function App() {
           suppressSig = sig
           followUp('suppress')
         }
+        // a fill just applied to a split row changed the table height under the slices
+        const fSig = rowFillsSig(rowFills)
+        if (fSig !== rowFillSig) {
+          rowFillSig = fSig
+          followUp('rowFills')
+        }
         // freshly applied wrap widths (section widths, unequal column widths,
         // vertical-text line lengths) change line breaks: one follow-up remeasure with them in the DOM
         const wSig = [...secWSpecs, ...colSpecs, ...vertSpecs]
@@ -4815,6 +4853,7 @@ export function App() {
           slices,
           fastPasses,
           fastReject,
+          carriedSamples,
           resumePasses,
           resumeReject,
           resumePage,
@@ -7586,10 +7625,12 @@ export function App() {
           colMode={viewMode === 'print' ? colMode : 'none'}
           hf={{
             header: hfPhantom ? hfWithPhantom(header, hfPhantom, doc.parsed.headerImages) : header,
-            footer,
+            footer: hfPhantom ? hfFooterLine(footer, hfPhantom) : footer,
             ...hfVariants,
             ...(hfPhantom
               ? {
+                  footerFirst: hfFooterLine(hfVariants.footerFirst, hfPhantom),
+                  footerEven: hfFooterLine(hfVariants.footerEven, hfPhantom),
                   headerFirst: hfWithPhantom(
                     hfVariants.headerFirst,
                     hfPhantom,
