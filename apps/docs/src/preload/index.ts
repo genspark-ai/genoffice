@@ -211,6 +211,7 @@ const api: DesktopApi = {
   readAttachmentImage: (path: string) => ipcRenderer.invoke('files:read-image', path),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   openNewTab: (openPath?: string | null) => ipcRenderer.invoke('win:new', openPath ?? null),
+  openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   listDocsTabs: () => ipcRenderer.invoke('win:list'),
   focusDocsTab: (id: string) => ipcRenderer.invoke('win:focus', id),
   onAiStream: (handler: (chunk: AiStreamChunk) => void) => {
