@@ -1,4 +1,15 @@
 /* Queued-messages strip above the AI composer (see AiQueueStrip.tsx) */
+
+/*
+ * Every rule is anchored on .ai-queue-strip. Written unqualified, these names
+ * also matched the queued-edits panel that the Docs, HTML, Markdown and Slides
+ * stylesheets style under the same `.ai-queue-*` names — and their sheet loads
+ * after this one in every renderer entry, so the strip rendered one way in
+ * Sheets and PDF and another way in the other four apps, while our own rules
+ * reached into a component this sheet has nothing to do with. Scoping closes
+ * both directions; keep new rules under the root, because a bare
+ * `.ai-queue-head` here is a cross-component edit, not a local one.
+ */
 .ai-queue-strip {
   display: flex;
   flex-direction: column;
@@ -8,14 +19,17 @@
   background: var(--color-bg-subtle);
 }
 
-.ai-queue-head {
+.ai-queue-strip .ai-queue-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* declared rather than absent: the apps style a `.ai-queue-head` too, and a
+     padding they set would otherwise reach this element by name alone */
+  padding: 0;
   gap: 6px;
 }
 
-.ai-queue-toggle {
+.ai-queue-strip .ai-queue-toggle {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -29,12 +43,12 @@
   cursor: pointer;
 }
 
-.ai-queue-toggle:hover {
+.ai-queue-strip .ai-queue-toggle:hover {
   background: var(--hover);
   color: var(--color-text-primary);
 }
 
-.ai-queue-clear {
+.ai-queue-strip .ai-queue-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -47,13 +61,12 @@
   cursor: pointer;
 }
 
-.ai-queue-clear:hover {
+.ai-queue-strip .ai-queue-clear:hover {
   background: var(--hover);
   color: var(--color-text-primary);
-}
+} /* holds the queue where it is; pressed = held */
 
-/* holds the queue where it is; pressed = held */
-.ai-queue-pause {
+.ai-queue-strip .ai-queue-pause {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -66,23 +79,25 @@
   cursor: pointer;
 }
 
-.ai-queue-pause:hover {
+.ai-queue-strip .ai-queue-pause:hover {
   background: var(--hover);
   color: var(--color-text-primary);
 }
 
-.ai-queue-pause[aria-pressed='true'] {
+.ai-queue-strip .ai-queue-pause[aria-pressed='true'] {
   background: var(--hover);
   color: var(--color-text-primary);
 }
 
-.ai-queue-hint {
+.ai-queue-strip .ai-queue-hint {
   margin-right: auto;
   font-size: var(--text-caption);
   color: var(--color-text-secondary);
+  /* as above: the apps' `.ai-queue-hint` carries a padding of its own */
+  padding: 0;
 }
 
-.ai-queue-items {
+.ai-queue-strip .ai-queue-items {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -93,13 +108,13 @@
   overflow-y: auto;
 }
 
-.ai-queue-item {
+.ai-queue-strip .ai-queue-item {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.ai-queue-text {
+.ai-queue-strip .ai-queue-text {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -109,7 +124,7 @@
   color: var(--color-text-secondary);
 }
 
-.ai-queue-edit {
+.ai-queue-strip .ai-queue-edit {
   flex: 1;
   min-width: 0;
   padding: 2px 6px;
@@ -120,12 +135,12 @@
   font-size: var(--text-caption);
 }
 
-.ai-queue-edit:focus {
+.ai-queue-strip .ai-queue-edit:focus {
   outline: none;
   border-color: var(--border-strong);
 }
 
-.ai-queue-action {
+.ai-queue-strip .ai-queue-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -139,26 +154,25 @@
   cursor: pointer;
 }
 
-.ai-queue-action:hover {
+.ai-queue-strip .ai-queue-action:hover {
   background: var(--hover);
   color: var(--color-text-primary);
-}
+} /* reordering: hold a row to pick it up, Alt+arrows for keyboards */
 
-/* reordering: hold a row to pick it up, Alt+arrows for keyboards */
-.ai-queue-item {
+.ai-queue-strip .ai-queue-item {
   cursor: grab;
 }
 
-.ai-queue-item:focus-visible {
+.ai-queue-strip .ai-queue-item:focus-visible {
   outline: 1px solid var(--accent);
 }
 
-.ai-queue-items.ai-queue-dragging,
-.ai-queue-items.ai-queue-dragging .ai-queue-item {
+.ai-queue-strip .ai-queue-items.ai-queue-dragging,
+.ai-queue-strip .ai-queue-items.ai-queue-dragging .ai-queue-item {
   cursor: grabbing;
   user-select: none;
 }
 
-.ai-queue-item[data-dragging='true'] {
+.ai-queue-strip .ai-queue-item[data-dragging='true'] {
   opacity: 0.55;
 }

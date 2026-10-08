@@ -1,4 +1,7 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -267,4 +270,42 @@ it('localizes the strip labels', () => {
     ),
   )
   expect(host.querySelector('.ai-queue-toggle')!.textContent).toContain('1 条排队中')
+})
+
+/**
+ * A cascade guard, asserted on the text because jsdom cannot see it: this
+ * stylesheet used to write `.ai-queue-head`, `.ai-queue-hint` and
+ * `.ai-queue-text` unqualified, and the Docs, HTML, Markdown and Slides
+ * `styles.css` files already style those three names for the queued *edits*
+ * panel. The cascade then ran both ways — our rules restyled their panel, and
+ * their sheet (loaded last by every renderer entry) overrode ours, so the same
+ * strip rendered differently per app. No render test can observe that, since
+ * none of them load an app stylesheet.
+ */
+const STRIP_CSS = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../src/ai-queue-strip.css'),
+  'utf8',
+)
+
+const selectorsIn = (css: string) =>
+  css
+    .replace(/\/\*[\s\S]*?\*\//g, '') // a comment above a rule is not part of it
+    .split('{')
+    .slice(0, -1)
+    .flatMap((block) => block.split(',').map((s) => s.trim().split('\n').pop()!.trim()))
+
+it('scopes every rule to the strip, so it cannot reach another component', () => {
+  const selectors = selectorsIn(STRIP_CSS)
+  // vacuous-pass guard: the parse has to see the rules that are there
+  expect(selectors.length).toBeGreaterThanOrEqual(22)
+  const escaped = selectors.filter((s) => !s.startsWith('.ai-queue-strip'))
+  expect(escaped).toEqual([])
+})
+
+it('does not redefine a class the editors already style', () => {
+  // the three names that collided; scoped, they can only match inside the strip
+  for (const contested of ['.ai-queue-head', '.ai-queue-hint', '.ai-queue-text']) {
+    const bare = selectorsIn(STRIP_CSS).filter((s) => s === contested)
+    expect(bare, `${contested} must not be selectable outside .ai-queue-strip`).toEqual([])
+  }
 })
