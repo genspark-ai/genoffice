@@ -56,7 +56,7 @@ export const vi = {
     'Chổi sao chép định dạng (nhấp để sao chép và áp dụng định dạng; ⌘⇧C sao chép định dạng / ⌘⇧V dán định dạng)',
   ribbonGroupSlides: 'Trang chiếu',
   ribbonNewSlide: 'Trang chiếu mới',
-  ribbonNewSlideTip: 'Tạo trang chiếu trống mới (giữ lại nền bố cục của trang hiện tại; ⌘M)',
+  ribbonNewSlideTip: 'Tạo trang chiếu trống mới (giữ lại nền bố cục của trang hiện tại; ⇧⌘M)',
   ribbonChooseLayout: 'Chọn bố cục',
   ribbonChooseLayoutNew: 'Trang chiếu mới có bố cục',
   ribbonChooseLayoutChange: 'Đổi bố cục trang chiếu hiện tại',

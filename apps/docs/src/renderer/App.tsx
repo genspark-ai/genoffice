@@ -5390,6 +5390,21 @@ export function App() {
         e.preventDefault()
         if (!getActiveSubEditor()) stepHangingIndent(editor, e.shiftKey ? -1 : 1)
       }
+      // Redo on Word's second chord (⌘Y / Ctrl+Y; the Edit menu carries ⇧⌘Z and
+      // no menu item owns this one, so the key reaches the window). Inputs and
+      // textareas keep their own history.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.code === 'KeyY' &&
+        editor &&
+        canEdit &&
+        !(e.target as HTMLElement | null)?.closest?.('input, textarea')
+      ) {
+        e.preventDefault()
+        ;(getActiveSubEditor() ?? editor)?.chain().focus().redo().run()
+      }
       // Clear paragraph formatting — Word's Ctrl+Q (⌘Q quits on macOS)
       if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyQ' && canEdit) {
         e.preventDefault()

@@ -59,7 +59,7 @@ export const id = {
   ribbonGroupSlides: 'Slide',
   ribbonNewSlide: 'Slide Baru',
   ribbonNewSlideTip:
-    'Slide kosong baru (mempertahankan latar belakang tata letak slide saat ini; ⌘M)',
+    'Slide kosong baru (mempertahankan latar belakang tata letak slide saat ini; ⇧⌘M)',
   ribbonChooseLayout: 'Pilih Tata Letak',
   ribbonChooseLayoutNew: 'Slide Baru dengan Tata Letak',
   ribbonChooseLayoutChange: 'Ubah Tata Letak Slide Saat Ini',

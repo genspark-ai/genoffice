@@ -58,7 +58,7 @@ export const ru = {
     'Формат по образцу (щёлкните, чтобы скопировать и применить формат; ⌘⇧C копировать формат / ⌘⇧V вставить формат)',
   ribbonGroupSlides: 'Слайды',
   ribbonNewSlide: 'Создать слайд',
-  ribbonNewSlideTip: 'Новый пустой слайд (наследует фон макета текущего слайда; ⌘M)',
+  ribbonNewSlideTip: 'Новый пустой слайд (наследует фон макета текущего слайда; ⇧⌘M)',
   ribbonChooseLayout: 'Выбрать макет',
   ribbonChooseLayoutNew: 'Новый слайд с макетом',
   ribbonChooseLayoutChange: 'Изменить макет текущего слайда',

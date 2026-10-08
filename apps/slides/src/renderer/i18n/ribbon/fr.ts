@@ -60,7 +60,7 @@ export const fr = {
   ribbonGroupSlides: 'Diapositives',
   ribbonNewSlide: 'Nouvelle diapositive',
   ribbonNewSlideTip:
-    "Nouvelle diapositive vide (conserve l'arrière-plan de disposition de la diapositive actuelle; ⌘M)",
+    "Nouvelle diapositive vide (conserve l'arrière-plan de disposition de la diapositive actuelle; ⇧⌘M)",
   ribbonChooseLayout: 'Choisir une disposition',
   ribbonChooseLayoutNew: 'Nouvelle diapositive avec disposition',
   ribbonChooseLayoutChange: 'Modifier la disposition de la diapositive',

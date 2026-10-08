@@ -60,7 +60,7 @@ export const es = {
   ribbonGroupSlides: 'Diapositivas',
   ribbonNewSlide: 'Nueva diapositiva',
   ribbonNewSlideTip:
-    'Nueva diapositiva en blanco (conserva el fondo del diseño de la diapositiva actual; ⌘M)',
+    'Nueva diapositiva en blanco (conserva el fondo del diseño de la diapositiva actual; ⇧⌘M)',
   ribbonChooseLayout: 'Elegir diseño',
   ribbonChooseLayoutNew: 'Nueva diapositiva con diseño',
   ribbonChooseLayoutChange: 'Cambiar diseño de la diapositiva actual',

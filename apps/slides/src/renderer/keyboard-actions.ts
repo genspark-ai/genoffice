@@ -114,16 +114,12 @@ export function handleGlobalKeydown(
     showActions.startSlideShow(ctx, false)
     return
   }
-  // PowerPoint's new-slide chord: Ctrl+M on Windows, ⇧⌘N on mac. The renderer sees ⌘M
+  // PowerPoint's new-slide chord: Ctrl+M on Windows (Ctrl+Shift+M too, so the
+  // screentip's rewritten chord is a real binding), ⇧⌘M on mac. The renderer sees ⌘M
   // before the menu accelerator (measured), so it must stay untouched there for Minimize.
   // Commits an open text edit and the notes draft first, in save()'s order.
   const mac = /mac/i.test(platform)
-  if (
-    mod &&
-    !e.altKey &&
-    ((!mac && !e.shiftKey && (e.key === 'm' || e.key === 'M')) ||
-      (mac && e.metaKey && e.shiftKey && (e.key === 'n' || e.key === 'N')))
-  ) {
+  if (mod && !e.altKey && (e.key === 'm' || e.key === 'M') && (!mac || (e.metaKey && e.shiftKey))) {
     if (e.defaultPrevented || ctx.viewMode === 'reading' || ctx.masterItems || ctx.cropTarget)
       return
     e.preventDefault()

@@ -59,7 +59,7 @@ export const ko = {
   // Home: slides
   ribbonGroupSlides: '슬라이드',
   ribbonNewSlide: '새 슬라이드',
-  ribbonNewSlideTip: '새 빈 슬라이드(현재 슬라이드의 레이아웃 배경 유지; ⌘M)',
+  ribbonNewSlideTip: '새 빈 슬라이드(현재 슬라이드의 레이아웃 배경 유지; ⇧⌘M)',
   ribbonChooseLayout: '레이아웃 선택',
   ribbonChooseLayoutNew: '레이아웃 선택 후 새 슬라이드',
   ribbonChooseLayoutChange: '현재 슬라이드 레이아웃 변경',

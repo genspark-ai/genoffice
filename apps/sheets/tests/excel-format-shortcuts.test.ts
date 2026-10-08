@@ -38,10 +38,17 @@ describe('formatShortcutCommand', () => {
   })
 
   it('accepts the Excel for Mac border variants Cmd+Opt+0 and Cmd+Opt+-', () => {
-    expect(formatShortcutCommand(key('Digit0', { metaKey: true, altKey: true }))).toBe(
+    expect(formatShortcutCommand(key('Digit0', { metaKey: true, altKey: true }), true)).toBe(
       'border:outer',
     )
-    expect(formatShortcutCommand(key('Minus', { metaKey: true, altKey: true }))).toBe('border:none')
+    expect(formatShortcutCommand(key('Minus', { metaKey: true, altKey: true }), true)).toBe(
+      'border:none',
+    )
+  })
+
+  it('ignores the mac-only border variants on Windows and Linux', () => {
+    expect(formatShortcutCommand(key('Digit0', { metaKey: true, altKey: true }))).toBeNull()
+    expect(formatShortcutCommand(key('Minus', { metaKey: true, altKey: true }))).toBeNull()
   })
 
   it('ignores other modifier combinations', () => {
