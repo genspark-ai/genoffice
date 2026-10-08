@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
+import type { RowFillPatch } from '../pagination-types'
 import { rangeSlot } from '../dom-range'
 import { autoLineMultOf } from '../line-metrics'
 import { TopLevelPositions } from './top-level-pos'
@@ -128,6 +129,18 @@ function rowGapPx(tr: Element): number {
   if (cs.borderCollapse !== 'separate') return 0
   const parts = cs.borderSpacing.split(' ')
   return parseFloat(parts[1] ?? parts[0]) || 0
+}
+
+/** Identity of a pass's applied row fills: a change re-lays out the table (the
+ *  filled tr grows), so the slices computed from the pre-fill DOM are stale and
+ *  the pass must run once more; equal signatures end the chain. */
+export function rowFillsSig(fills: readonly RowFillPatch[]): string {
+  return fills
+    .map(
+      (f) =>
+        `${Math.round(f.blockTop)}:${f.row}:${Math.round(f.targetPx)}:${Math.round(f.extraPx ?? 0)}`,
+    )
+    .join(',')
 }
 
 /** Apply/replace the split-row height patches (an empty list clears them). */
@@ -1250,6 +1263,8 @@ export function syncFloatShifts(
  * Layout-affecting, so it runs before measurement; idempotent (inputs are the
  * static data-band values and the anchor-line heights).
  */
+const SIDE_FLOAT_RE = /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/
+
 export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = false): void {
   let run: HTMLElement[] = []
   // the inputs are static band data and anchor-line heights, so the writes
@@ -1321,6 +1336,53 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
       else out.push([a, b])
     }
     return out
+  }
+  // Word hangs the next anchor paragraph's picture from that paragraph's
+  // undisplaced top: one line below where the previous anchor's own line
+  // lands once its side-wrapped boxes stop blocking it on both sides (whole
+  // line steps), not below the band (photo grid: the fourth picture beside
+  // the third on the same page)
+  const liftIntoBand = (wrapper: HTMLElement, float: HTMLElement): void => {
+    if (wrapper.dataset.bandBeside === '1' || wrapper.dataset.bandKeep === '1') return
+    const band = Math.round(parseFloat(wrapper.dataset.band ?? '0') || 0)
+    const step = lineHeightOf(wrapper)
+    if (band <= 0 || step <= 0) return
+    if (float.dataset.anchorLiftBase === undefined) {
+      float.dataset.anchorLiftBase = String(parseFloat(float.style.marginTop) || 0)
+    }
+    const base = parseFloat(float.dataset.anchorLiftBase) || 0
+    const wr = wrapper.getBoundingClientRect()
+    const rel = (r: DOMRect): [number, number, number, number] => [
+      (r.left - wr.left) / factor,
+      (r.right - wr.left) / factor,
+      (r.top - wr.top) / factor,
+      (r.bottom - wr.top) / factor,
+    ]
+    const boxes = Array.from(
+      wrapper.querySelectorAll<HTMLElement>(':scope > .doc-textbox, :scope > .doc-img-wrap'),
+    )
+      .map((b) => rel(b.getBoundingClientRect()))
+      .filter((b) => b[3] > b[2])
+    const colW = wr.width / factor
+    const blocked = (y: number): boolean => {
+      const hit = boxes
+        .filter((b) => b[2] < y + step && b[3] > y)
+        .map((b): [number, number] => [b[0], b[1]])
+      let gap = 0
+      let end = 0
+      for (const [a, b] of mergedOf(hit)) {
+        gap = Math.max(gap, a - end)
+        end = Math.max(end, b)
+      }
+      return Math.max(gap, colW - end) < 36
+    }
+    let y = 0
+    while (y < band - 0.5 && blocked(y)) y += step
+    y += step
+    const target = base - (y < band - 0.5 ? band - y : 0)
+    if (Math.abs((parseFloat(float.style.marginTop) || 0) - target) > 0.5) {
+      float.style.marginTop = `${target.toFixed(1)}px`
+    }
   }
   // a table-pushed band (data-band-beside) leaves side room: the empty
   // paragraphs between the anchor and the table lay their lines beside the
@@ -1412,6 +1474,7 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
       run.push(el)
       continue
     }
+    if (run.length === 1 && SIDE_FLOAT_RE.test(el.className)) liftIntoBand(run[0], el)
     flush()
     if (besideBand && isEmptyParagraph(el)) {
       const cs = getComputedStyle(el)

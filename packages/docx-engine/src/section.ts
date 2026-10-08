@@ -535,7 +535,9 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
   const BIDI_ELEMENT = /<w:bidi(?=[\s/>])[^>]*(?:\/>|>[\s\S]*?<\/w:bidi>)/i
   if (settings.bidi !== undefined) {
     const hasBidi = BIDI_ELEMENT.test(xml)
-    if (settings.bidi && !hasBidi) {
+    if (settings.bidi && hasBidi && !onOffTagIn(xml, 'w:bidi')) {
+      xml = xml.replace(BIDI_ELEMENT, '<w:bidi/>')
+    } else if (settings.bidi && !hasBidi) {
       if (/<w:docGrid/.test(xml)) xml = xml.replace(/(<w:docGrid)/, '<w:bidi/>$1')
       else xml = xml.replace(/<\/w:sectPr>/, '<w:bidi/></w:sectPr>')
     } else if (!settings.bidi && hasBidi) {

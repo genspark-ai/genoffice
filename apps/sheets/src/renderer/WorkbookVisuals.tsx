@@ -82,7 +82,28 @@ export interface ShapeEditChanges {
   /// whose anchor stores the rotated AABB rather than the true frame.
   readonly frameSize?: { readonly width: number; readonly height: number }
   readonly text?: string
+  /// `#rrggbb` or "none"; rewrites the shape's own spPr paint.
+  readonly fillColor?: string
+  readonly lineColor?: string
   readonly remove?: true
+  readonly rotation?: number
+  readonly flipH?: boolean
+  readonly flipV?: boolean
+  readonly altText?: string
+  readonly editAs?: 'twoCell' | 'oneCell' | 'absolute'
+  /// Empty string removes the link.
+  readonly hyperlink?: string
+}
+
+/// Right-click / Arrange commands that need app state (dialogs, clipboard,
+/// z-order across visuals) bubble to the app through one listener, keyed
+/// by the same `visual:` command vocabulary the ribbon uses.
+let visualCommandListener: ((command: string, visualId: string) => void) | null = null
+
+export function setVisualCommandListener(
+  listener: ((command: string, visualId: string) => void) | null,
+): void {
+  visualCommandListener = listener
 }
 
 export interface ShapeEditing {
@@ -574,7 +595,7 @@ function WorkbookVisual({
     )
   }
   if (visual.kind === 'image') {
-    return <ImageVisual file={file} visual={visual} />
+    return <ImageVisual file={file} visual={visual} frame={frame} />
   }
   if (visual.kind === 'ole') {
     return <OleVisual file={file} visual={visual} />
@@ -661,12 +682,24 @@ export interface VisualSelectionListener {
 /// selected. A module singleton avoids threading callbacks through every
 /// install call site; the app mirrors it for the contextual ribbon tab.
 let selectedVisualId: string | null = null
+/// Shift-click extends the selection; the primary (last clicked) stays in
+/// selectedVisualId, the others ride here for Align / Distribute.
+let extraSelectedIds: string[] = []
 const selectionSubscribers = new Set<() => void>()
 let selectionListener: VisualSelectionListener | null = null
 
-function selectVisual(visual: WorkbookVisualObject | null): void {
+function selectVisual(visual: WorkbookVisualObject | null, extend = false): void {
   const nextId = visual?.id ?? null
-  if (nextId !== selectedVisualId) {
+  const previousExtras = extraSelectedIds
+  if (extend && nextId !== null && selectedVisualId !== null && selectedVisualId !== nextId) {
+    extraSelectedIds = [
+      ...extraSelectedIds.filter((id) => id !== nextId && id !== selectedVisualId),
+      selectedVisualId,
+    ]
+  } else if (!extend || nextId === null) {
+    extraSelectedIds = []
+  }
+  if (nextId !== selectedVisualId || previousExtras !== extraSelectedIds) {
     selectedVisualId = nextId
     for (const notify of selectionSubscribers) notify()
     // Element selection never outlives its chart's selection.
@@ -679,10 +712,26 @@ function selectVisual(visual: WorkbookVisualObject | null): void {
   else selectionListener?.deselect()
 }
 
+/// Every selected visual id, primary last.
+export function selectedVisualIds(): readonly string[] {
+  return selectedVisualId === null ? [] : [...extraSelectedIds, selectedVisualId]
+}
+
+export function subscribeVisualSelection(notify: () => void): () => void {
+  selectionSubscribers.add(notify)
+  return () => selectionSubscribers.delete(notify)
+}
+
 /// Clears the selection; with `onlyId`, only when that visual is selected
 /// (deleting one visual must not deselect another).
 export function clearVisualSelection(onlyId?: string): void {
-  if (onlyId !== undefined && onlyId !== selectedVisualId) return
+  if (onlyId !== undefined && onlyId !== selectedVisualId) {
+    if (extraSelectedIds.includes(onlyId)) {
+      extraSelectedIds = extraSelectedIds.filter((id) => id !== onlyId)
+      for (const notify of selectionSubscribers) notify()
+    }
+    return
+  }
   selectVisual(null)
 }
 
@@ -732,7 +781,7 @@ function useIsSelected(visualId: string): boolean {
       selectionSubscribers.add(notify)
       return () => selectionSubscribers.delete(notify)
     },
-    () => selectedVisualId === visualId,
+    () => selectedVisualId === visualId || extraSelectedIds.includes(visualId),
   )
 }
 
@@ -876,6 +925,7 @@ function EditableShapeVisual({
   } | null>(null)
   const [textEditing, setTextEditing] = useState(false)
   const [chartEditRequest, setChartEditRequest] = useState(0)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
   // Move previews render as a clone on <body>: the Univer float container is
   // overflow-hidden and pinned to the old anchor, so translating the visual
@@ -1088,6 +1138,15 @@ function EditableShapeVisual({
         if (textEditing || event.button !== 0) return
         // Chart editor buttons/inputs keep their own interactions.
         if ((event.target as HTMLElement).closest('button, .chart-editor')) return
+        if (event.shiftKey) {
+          event.preventDefault()
+          event.stopPropagation()
+          selectVisual(visual, true)
+          event.currentTarget.focus({ preventScroll: true })
+          return
+        }
+        // A plain click collapses a multi-selection onto this object.
+        if (selectedVisualIds().length > 1) selectVisual(visual)
         const handleCorner = (event.target as HTMLElement).dataset['corner'] as
           ResizeCorner | undefined
         const mode = handleCorner ? ('resize' as const) : ('move' as const)
@@ -1108,14 +1167,31 @@ function EditableShapeVisual({
         // into view mid-drag — the sheet would shift under the pointer.
         event.currentTarget.focus({ preventScroll: true })
       }}
-      onFocus={() => selectVisual(visual)}
+      onFocus={() => {
+        if (!selectedVisualIds().includes(visual.id)) selectVisual(visual)
+      }}
+      onContextMenu={
+        isChart || textEditing
+          ? undefined
+          : (event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (!selectedVisualIds().includes(visual.id)) selectVisual(visual)
+              event.currentTarget.focus({ preventScroll: true })
+              setMenu({ x: event.clientX, y: event.clientY })
+            }
+      }
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return
         if (event.key === 'Delete' || event.key === 'Backspace') {
           event.preventDefault()
           event.stopPropagation()
-          onEdit(visual.id, { remove: true })
-          clearVisualSelection(visual.id)
+          if (selectedVisualIds().length > 1 && selectedVisualIds().includes(visual.id)) {
+            visualCommandListener?.('visual:delete', visual.id)
+          } else {
+            onEdit(visual.id, { remove: true })
+            clearVisualSelection(visual.id)
+          }
         } else if (event.key === 'Escape') {
           event.preventDefault()
           event.currentTarget.blur()
@@ -1204,12 +1280,23 @@ function EditableShapeVisual({
           openEditorSignal={chartEditRequest}
         />
       ) : visual.kind === 'image' ? (
-        <ImageVisual file={file} visual={visual} />
+        <ImageVisual file={file} visual={visual} frame={frame} />
       ) : (
         <ShapeVisual
           file={file}
           visual={textEditing ? { ...visual, text: '' } : visual}
           frame={frame}
+        />
+      )}
+      {menu && (
+        <VisualContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={visualMenuItems(visual.id, visual.kind, () => {
+            onEdit(visual.id, { remove: true })
+            clearVisualSelection(visual.id)
+          })}
         />
       )}
       {shouldShowVisualDeleteButton({ selected: isSelected, textEditing }) && (
@@ -1337,14 +1424,13 @@ function ShapeVisual({
   const type = visual.shapeType ?? ''
   const gradient = visual.fillGradient
   const customPath = visual.customPath
-  // "none" is an explicit <a:noFill/> — transparent, not the default tint.
-  // Custom geometry never gets the default tint either: a custGeom without
-  // an explicit fill is stroke-only artwork, not an inserted preset.
+  // "none" (explicit <a:noFill/>, or nothing to fill from at all) is
+  // transparent; inserted shapes always carry an explicit fill.
   const fill = gradient
     ? `url(#${gradientId})`
-    : visual.fillColor === 'none'
+    : visual.fillColor === 'none' || visual.fillColor === undefined
       ? 'transparent'
-      : (visual.fillColor ?? (customPath ? 'transparent' : '#DDEBF7'))
+      : visual.fillColor
   // A rotated shape's anchor stores its rotated bounds (Excel writes the
   // quadrant-swapped snap rect, LibreOffice the AABB) while xfrm ext keeps
   // the true unrotated frame; both center the anchor on the shape center.
@@ -1395,7 +1481,8 @@ function ShapeVisual({
       </div>
     )
   }
-  const stroke = visual.lineColor === 'none' ? 'transparent' : (visual.lineColor ?? '#00000022')
+  const stroke =
+    visual.lineColor === 'none' || visual.lineColor === undefined ? 'transparent' : visual.lineColor
   // Session text edits overwrite `text` but not `paragraphs`; a mismatch
   // means the flat text is the newer truth.
   const paragraphs =
@@ -1629,6 +1716,50 @@ function useWorkbookMediaUrl(
 function ImageVisual({
   file,
   visual,
+  frame,
+}: {
+  readonly file: VisualHost
+  readonly visual: WorkbookVisualObject
+  readonly frame?: ShapeFrame | undefined
+}): React.JSX.Element {
+  const picture = <ImagePicture file={file} visual={visual} />
+  const rotation = visual.rotation ?? 0
+  if (!rotation && !visual.flipH && !visual.flipV) return picture
+  // Same box recipe as ShapeVisual: the anchor holds the rotated AABB, the
+  // xfrm ext the true frame, both centered on the picture center.
+  const trueFrame =
+    rotation && frame && visual.frameWidth && visual.frameHeight
+      ? { width: visual.frameWidth / EMU_PER_PIXEL, height: visual.frameHeight / EMU_PER_PIXEL }
+      : undefined
+  const transforms: string[] = []
+  if (rotation) transforms.push(`rotate(${rotation}deg)`)
+  if (visual.flipH || visual.flipV) {
+    transforms.push(`scale(${visual.flipH ? -1 : 1}, ${visual.flipV ? -1 : 1})`)
+  }
+  // cq units keep the inner box proportional to the float container so it
+  // tracks zoom and live resizes (same recipe as ShapeVisual).
+  const size =
+    trueFrame && frame
+      ? {
+          width: `${(trueFrame.width / frame.width) * 100}cqw`,
+          height: `${(trueFrame.height / frame.height) * 100}cqh`,
+        }
+      : { width: '100cqw', height: '100cqh' }
+  return (
+    <div className="xlsx-image-rotated">
+      <div
+        className="xlsx-image-rotated-inner"
+        style={{ ...size, transform: ['translate(-50%, -50%)', ...transforms].join(' ') }}
+      >
+        {picture}
+      </div>
+    </div>
+  )
+}
+
+function ImagePicture({
+  file,
+  visual,
 }: {
   readonly file: VisualHost
   readonly visual: WorkbookVisualObject
@@ -1654,7 +1785,7 @@ function ImageVisual({
       <span className="xlsx-image-crop">
         <img
           src={source}
-          alt={visual.name ?? t('appWorkbookImageAlt')}
+          alt={visual.altText ?? visual.name ?? t('appWorkbookImageAlt')}
           style={{
             width: `${100 / visibleWidth}%`,
             height: `${100 / visibleHeight}%`,
@@ -1670,7 +1801,7 @@ function ImageVisual({
     <img
       className="xlsx-image"
       src={source}
-      alt={visual.name ?? t('appWorkbookImageAlt')}
+      alt={visual.altText ?? visual.name ?? t('appWorkbookImageAlt')}
       style={opacity}
     />
   )
@@ -2225,7 +2356,7 @@ function ChartVisual({
           )}
       </div>
       {menu && chartEditing && (
-        <ChartContextMenu
+        <VisualContextMenu
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
@@ -2249,7 +2380,9 @@ function ChartVisual({
                   },
                 ]
               : []),
-            ...(onRemove ? [{ label: t('appDeleteChart'), action: onRemove }] : []),
+            ...(onRemove
+              ? ['separator' as const, ...visualMenuItems(visualId, 'chart', onRemove)]
+              : []),
           ]}
         />
       )}
@@ -2257,7 +2390,58 @@ function ChartVisual({
   )
 }
 
-function ChartContextMenu({
+export type VisualMenuItem =
+  | 'separator'
+  | {
+      readonly label: string
+      readonly action?: () => void
+      readonly children?: readonly { readonly label: string; readonly action: () => void }[]
+      readonly disabled?: boolean
+    }
+
+/// Excel for Mac's picture/shape menu, minus entries with no model here
+/// (Assign Macro, Crop, Format Picture…).
+function visualMenuItems(
+  visualId: string,
+  kind: WorkbookVisualObject['kind'],
+  onDelete: () => void,
+): VisualMenuItem[] {
+  const command = (name: string) => () => visualCommandListener?.(name, visualId)
+  const isChart = kind === 'chart'
+  return [
+    ...(isChart
+      ? []
+      : [
+          { label: t('appVisualCut'), action: command('visual:cut') },
+          { label: t('appVisualCopy'), action: command('visual:copy') },
+          { label: t('appVisualPaste'), action: command('visual:paste') },
+          'separator' as const,
+        ]),
+    { label: t('appVisualEditAltText'), action: command('visual:alt-text') },
+    'separator',
+    {
+      label: t('appVisualBringToFront'),
+      children: [
+        { label: t('appVisualBringToFront'), action: command('visual:z:front') },
+        { label: t('appVisualBringForward'), action: command('visual:z:forward') },
+      ],
+    },
+    {
+      label: t('appVisualSendToBack'),
+      children: [
+        { label: t('appVisualSendToBack'), action: command('visual:z:back') },
+        { label: t('appVisualSendBackward'), action: command('visual:z:backward') },
+      ],
+    },
+    'separator',
+    { label: t('appVisualSizeProperties'), action: command('visual:size') },
+    ...(isChart ? [] : [{ label: t('appVisualHyperlink'), action: command('visual:hyperlink') }]),
+    'separator',
+    { label: t(isChart ? 'appDeleteChart' : 'appVisualDelete'), action: onDelete },
+  ]
+}
+
+function VisualContextMenu({
   x,
   y,
   items,
@@ -2265,10 +2449,11 @@ function ChartContextMenu({
 }: {
   readonly x: number
   readonly y: number
-  readonly items: readonly { label: string; action: () => void }[]
+  readonly items: readonly VisualMenuItem[]
   readonly onClose: () => void
 }): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
+  const [openSubmenu, setOpenSubmenu] = useState<number | null>(null)
   // Outside press / window blur / shell chrome press — the shared dismissal
   // (the click-through backdrop below stays as belt and braces). The menu is
   // portaled to the body, so the inside guard must be its own element.
@@ -2297,18 +2482,60 @@ function ChartContextMenu({
           top: Math.min(y, window.innerHeight - items.length * 32 - 12),
         }}
       >
-        {items.map((item) => (
-          <button
-            key={item.label}
-            onClick={(event) => {
-              event.stopPropagation()
-              item.action()
-              onClose()
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+        {items.map((item, index) =>
+          item === 'separator' ? (
+            <hr key={index} className="chart-menu-separator" />
+          ) : item.children ? (
+            <div
+              key={item.label}
+              className={`chart-menu-sub${openSubmenu === index ? ' open' : ''}`}
+              onMouseEnter={() => setOpenSubmenu(index)}
+            >
+              <button
+                aria-haspopup="menu"
+                aria-expanded={openSubmenu === index}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setOpenSubmenu(index)
+                }}
+              >
+                {item.label}
+                <span className="chart-menu-caret" aria-hidden="true">
+                  ▸
+                </span>
+              </button>
+              {openSubmenu === index && (
+                <div className="chart-menu chart-menu-child" role="menu">
+                  {item.children.map((child) => (
+                    <button
+                      key={child.label}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        child.action()
+                        onClose()
+                      }}
+                    >
+                      {child.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              key={item.label}
+              disabled={item.disabled}
+              onMouseEnter={() => setOpenSubmenu(null)}
+              onClick={(event) => {
+                event.stopPropagation()
+                item.action?.()
+                onClose()
+              }}
+            >
+              {item.label}
+            </button>
+          ),
+        )}
       </div>
     </div>,
     document.body,
@@ -2821,6 +3048,8 @@ export function BarChart({
       )
   const span = bounds.max - bounds.min
   const norm = (value: number): number => Math.max(0, Math.min(1, (value - bounds.min) / span))
+  // Bars grow from the zero line, not the plot floor, once the axis dips below 0.
+  const zero = norm(0)
   // Stacked segments share the category slot; each value scales against the
   // axis maximum (percentStacked normalizes per category first).
   const segment = (seriesIndex: number, index: number): number => {
@@ -2941,18 +3170,20 @@ export function BarChart({
       // fill only helps while the label still sits on its own bar.
       const centered = isStacked || dataLabelPosition === 'center'
       const inside = centered || dataLabelPosition === 'inside-end'
-      const width = (isStacked ? segment(seriesIndex, index) : norm(value)) * plotWidth
-      const start = plotLeft + (isStacked ? stackBase(seriesIndex, index) * plotWidth : 0)
+      const width = (isStacked ? segment(seriesIndex, index) : norm(value) - zero) * plotWidth
+      const start = plotLeft + (isStacked ? stackBase(seriesIndex, index) : zero) * plotWidth
+      const below = width < 0
       const x = centered
         ? start + width / 2
         : dataLabelPosition === 'inside-end'
-          ? start - 4 + width
-          : start + 6 + width
+          ? start + width + (below ? 4 : -4)
+          : start + width + (below ? -6 : 6)
+      const anchor = (dataLabelPosition === 'inside-end') !== below ? 'end' : 'start'
       return (
         <text
           x={x + dx}
           y={y + dy}
-          textAnchor={centered ? 'middle' : dataLabelPosition === 'inside-end' ? 'end' : 'start'}
+          textAnchor={centered ? 'middle' : anchor}
           className="data-label"
           {...(inside && !isStacked && dx === 0 && dy === 0 ? { fill: '#fff' } : {})}
           style={labelTextStyle(dataLabelStyle)}
@@ -3015,15 +3246,15 @@ export function BarChart({
               {seriesList.map((series, seriesIndex) => {
                 const share = isStacked
                   ? segment(seriesIndex, index)
-                  : norm(series.values[index] ?? bounds.min)
-                const x = plotLeft + (isStacked ? cursor * plotWidth : 0)
+                  : norm(series.values[index] ?? 0) - zero
+                const x = plotLeft + (isStacked ? cursor : Math.min(zero, zero + share)) * plotWidth
                 if (isStacked) cursor += share
                 return (
                   <rect
                     key={seriesIndex}
                     x={x}
                     y={groupTop(index) + (isStacked ? 0 : barHeight * seriesSlot(seriesIndex))}
-                    width={share * plotWidth}
+                    width={Math.abs(share) * plotWidth}
                     height={barHeight}
                     fill={seriesColor(series, seriesIndex)}
                     {...barStroke(seriesIndex, index)}
@@ -3214,9 +3445,9 @@ export function BarChart({
             {seriesList.map((series, seriesIndex) => {
               const share = isStacked
                 ? segment(seriesIndex, index)
-                : norm(series.values[index] ?? bounds.min)
-              const height = share * 240
-              const y = 280 - (isStacked ? (cursor + share) * 240 : height)
+                : norm(series.values[index] ?? 0) - zero
+              const height = Math.abs(share) * 240
+              const y = 280 - (isStacked ? cursor + share : Math.max(zero, zero + share)) * 240
               if (isStacked) cursor += share
               return (
                 <rect
@@ -3238,14 +3469,16 @@ export function BarChart({
                 isStacked || dataLabelPosition === 'center' || dataLabelPosition === 'inside-end'
               const share = isStacked
                 ? segment(seriesIndex, index)
-                : norm(series.values[index] ?? bounds.min)
+                : norm(series.values[index] ?? 0) - zero
+              const below = share < 0
+              const barEnd = 280 - (isStacked ? 0 : zero + share) * 240
               const y = isStacked
                 ? 283 - (stackBase(seriesIndex, index) + share / 2) * 240
                 : dataLabelPosition === 'center'
-                  ? 283 - share * 120
+                  ? barEnd + 3 + share * 120
                   : dataLabelPosition === 'inside-end'
-                    ? 292 - share * 240
-                    : 272 - share * 240
+                    ? barEnd + (below ? -4 : 12)
+                    : barEnd + (below ? 12 : -8)
               const x =
                 groupLeft(index) +
                 (isStacked ? 0 : barWidth * seriesSlot(seriesIndex)) +
@@ -3803,9 +4036,7 @@ export function formatAxisValue(value: number, numberFormat: string | undefined)
     }
   }
   if (numberFormat?.includes('%')) return `${Math.round(value * 100)}%`
-  // Excel prints full numbers on value axes (no M/B abbreviation), and the
-  // data labels of the same series go through numfmt and print them in full
-  // too — abbreviating here made the axis disagree with its own labels.
+  // Excel prints full numbers on value axes; abbreviating disagreed with the data labels.
   const clean = Number(value.toPrecision(12))
   return clean.toLocaleString('en-US', { maximumFractionDigits: 4 })
 }
@@ -4335,13 +4566,14 @@ function AreaChart({
         }
         const points = linePoints(series.values, bounds.max, bounds.min)
         const lastX = 60 + (Math.max(0, series.values.length - 1) / count) * 500
+        const baseY = 280 - Math.max(0, Math.min(1, -bounds.min / (axisSpan || 1))) * 240
         return (
           <g
             key={seriesIndex}
             onClick={selectSeries ? (event) => selectSeries(event, seriesIndex) : undefined}
           >
             <polygon
-              points={`60,280 ${points} ${lastX},280`}
+              points={`60,${baseY} ${points} ${lastX},${baseY}`}
               fill={seriesColor(series, seriesIndex)}
               opacity="0.35"
             />

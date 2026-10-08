@@ -123,6 +123,18 @@ describe('typing on the streaming tail of a phased open', () => {
     expect(editor.state.doc.childCount).toBe(TAIL_DOC)
   })
 
+  it('keeps the held character through an insert at the document start', () => {
+    const editor = createEditor()
+    const chunks = startStreamingOpen(editor, TAIL_DOC)
+    const mounted = editor.state.doc.childCount
+    editor.commands.setTextSelection(endOfBlock(editor, mounted - 1))
+    type(editor, 'Z')
+    // from = 0 like a remount, but it only grows the document
+    editor.view.dispatch(editor.state.tr.insert(0, editor.schema.nodes.docParagraph.create()))
+    while (chunks.length) chunks.shift()!()
+    expect(editor.state.doc.child(mounted).textContent).toBe(`block ${mounted - 1}Z`)
+  })
+
   it('inserts a keystroke in a mounted block immediately, without holding it', () => {
     const editor = createEditor()
     const chunks = startStreamingOpen(editor, TAIL_DOC)

@@ -1,6 +1,7 @@
 import { FunctionType, type IFunctionInfo } from '@univerjs/engine-formula'
 import { IDescriptionService } from '@univerjs/sheets-formula'
 
+import { parseSyntaxParams, type ParamInfo } from './function-arguments'
 import type { UniverRuntime } from './univer-state'
 
 /// One Insert Function row. `category` is a stable English id, displayed
@@ -12,6 +13,7 @@ export interface FunctionSpec {
   readonly syntax: string
   readonly abstract: string
   readonly description: string
+  readonly params: readonly ParamInfo[]
 }
 
 /// Excel's Insert Function category order.
@@ -79,7 +81,7 @@ export function readLiveFunctionInfos(runtime: UniverRuntime): IFunctionInfo[] {
  */
 export function buildFunctionCatalog(
   live: readonly IFunctionInfo[],
-  fallback: readonly FunctionSpec[] = [],
+  fallback: readonly Omit<FunctionSpec, 'params'>[] = [],
 ): FunctionSpec[] {
   const byName = new Map<string, FunctionSpec>()
   for (const info of live) {
@@ -92,10 +94,18 @@ export function buildFunctionCatalog(
       syntax: functionSyntax({ ...info, functionName: name }),
       abstract: info.abstract,
       description: info.description,
+      params: info.functionParameter.map((param) => ({
+        name: param.name,
+        detail: param.detail,
+        require: param.require === 1,
+        repeat: param.repeat === 1,
+      })),
     })
   }
   for (const spec of fallback) {
-    if (!byName.has(spec.name)) byName.set(spec.name, spec)
+    if (!byName.has(spec.name)) {
+      byName.set(spec.name, { ...spec, params: parseSyntaxParams(spec.syntax) })
+    }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
 }

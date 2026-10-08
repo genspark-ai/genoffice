@@ -3155,7 +3155,10 @@ html.genoffice-popover-open .ribbon-tabs {
 
 /* ---- design canvas: floating toolbar + style panel over the preview ---- */
 
+/* the preview stays ltr under an RTL UI — the chrome mirrors, the content does not */
+
 .preview-stage {
+  direction: ltr;
   position: relative;
   flex: 1;
   min-height: 0;

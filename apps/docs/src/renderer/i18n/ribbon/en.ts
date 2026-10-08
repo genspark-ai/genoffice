@@ -14,6 +14,7 @@ export const en = {
   ribbonTabReview: 'Review',
   ribbonCollapse: 'Collapse the Ribbon',
   ribbonExpand: 'Expand the Ribbon',
+  ribbonCompact: 'Compact Ribbon (icons only)',
   ribbonTabView: 'View',
   ribbonTabTableDesign: 'Table Design',
   ribbonTabTableLayout: 'Table Layout',

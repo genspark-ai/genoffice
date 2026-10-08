@@ -12,6 +12,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   HeuristicMetrics,
+  runLatinFactorFaces,
+  latinRunsFactor,
   autospaceBoundaries,
   autospacePadBetween,
   isChromiumCjkSymbol,
@@ -33,14 +35,19 @@ import {
   cssRunFontFamily,
   docLatinChainCss,
   cssLeadTop,
+  fontBoxCss,
   cssLineHeight,
   krLineFactor,
+  emptyEaSlotHangulFactor,
   cjkDeclaredLineFactor,
   lineHeightFactor,
   setEmbeddedLineMetrics,
   symbolBulletLinePt,
   simsunGapLineFactor,
   paraLineFactorCss,
+  asciiOnlyCjkFace,
+  nonCjkInkRanges,
+  runsLineFactor,
   snapSpacingToGrid,
   simulateLines,
   computeLineMetrics,
@@ -154,6 +161,19 @@ describe('embedded face line boxes', () => {
     expect(lineHeightFactor('Calibri')).toBe(1.2207)
     setEmbeddedLineMetrics([])
     expect(lineHeightFactor('Fixture Serif')).toBe(1.172)
+  })
+
+  it('an embedded East Asian face keeps the Word EA factor over its hhea box', () => {
+    setEmbeddedLineMetrics([
+      { family: '\uB9D1\uC740 \uACE0\uB515', ascent: 1.0781, descent: 0.252, lineGap: 0 },
+      { family: 'Malgun Gothic', ascent: 1.0781, descent: 0.252, lineGap: 0 },
+      { family: '\uAD74\uB9BC', ascent: 0.859, descent: 0.141, lineGap: 0 },
+      { family: 'PMingLiU', ascent: 0.801, descent: 0.199, lineGap: 0.199 },
+    ])
+    expect(lineHeightFactor('\uB9D1\uC740 \uACE0\uB515')).toBe(1.7371)
+    expect(lineHeightFactor('Malgun Gothic')).toBe(1.7371)
+    expect(lineHeightFactor('\uAD74\uB9BC')).toBe(1.3029)
+    expect(lineHeightFactor('PMingLiU')).toBe(1.3029)
   })
 
   it('implausible boxes are ignored', () => {
@@ -376,6 +396,26 @@ describe('simulateLines', () => {
 
 // ─── SimSun-substitution ・/〜 line lift (Word probe 2026-08-13) ─────────────
 
+describe('ascii-only CJK face (no eastAsia slot)', () => {
+  const yahei = { font: '\u5fae\u8f6f\u96c5\u9ed1', fontAscii: '\u5fae\u8f6f\u96c5\u9ed1' }
+  it('asciiOnlyCjkFace: ascii-only CJK name yes; eastAsia declared, Latin name or EA-first no', () => {
+    expect(asciiOnlyCjkFace(yahei)).toBe(yahei.font)
+    expect(asciiOnlyCjkFace({ ...yahei, eastAsiaFont: yahei.font })).toBeNull()
+    expect(asciiOnlyCjkFace({ font: 'Calibri', fontAscii: 'Calibri' })).toBeNull()
+    expect(asciiOnlyCjkFace({ font: 'SimSun', fontAscii: 'Calibri' })).toBeNull()
+  })
+  it('nonCjkInkRanges: inked non-CJK stretches, whitespace-only gaps skipped', () => {
+    expect(nonCjkInkRanges('\u56e2\u961f 123 \u6210\u5458')).toEqual([{ from: 2, to: 7 }])
+    expect(nonCjkInkRanges('\u9677\u5165\u201c\u4e8b\u60c5')).toEqual([{ from: 2, to: 3 }])
+    expect(nonCjkInkRanges('\u56e2 \u961f ')).toEqual([])
+  })
+  it('runsLineFactor: CJK text under an ascii-only YaHei run keeps the document EA var', () => {
+    const text = '\u56e2\u961f\u5bb9\u6613'
+    expect(runsLineFactor([{ text, ...yahei }], text)).toBe('var(--doc-line-factor-cjk,1.7)')
+    expect(runsLineFactor([{ text, ...yahei, eastAsiaFont: yahei.font }], text)).toBe('1.7143')
+  })
+})
+
 describe('SimSun-substitution ・/〜 line lift', () => {
   const metrics = new HeuristicMetrics()
   const sizePt = 10.5
@@ -391,6 +431,13 @@ describe('SimSun-substitution ・/〜 line lift', () => {
     expect(simsunGapLineFactor('Batang')).toBeNull()
     expect(simsunGapLineFactor('Noto Sans KR')).toBeNull()
     expect(simsunGapLineFactor('Microsoft YaHei')).toBeNull()
+  })
+
+  it('XiaoBiaoSong takes the same gap lift as SimSun (it substitutes SimSun)', () => {
+    const xbs = '\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53'
+    expect(lineHeightFactor(xbs)).toBe(lineHeightFactor('SimSun'))
+    expect(simsunGapLineFactor(xbs)).toBe(simsunGapLineFactor('SimSun'))
+    expect(simsunGapLineFactor('FZXiaoBiaoSong-B05S')).toBe(1.7143)
   })
 
   it('a line with ・ lifts to 1.7143 × size; a plain line stays at 1.3029', () => {
@@ -558,15 +605,47 @@ describe('cssLeadTop', () => {
     expect(cssLeadTop(undefined, undefined, undefined)).toBeNull()
   })
 
-  it('exact lines keep the CSS position', () => {
-    expect(cssLeadTop('exact', 480, undefined)).toBe('0px')
+  it('exact lines take the 0.8 h baseline shift, CSS centre where the face box is unknown', () => {
+    expect(cssLeadTop('exact', 480, undefined)).toBe('var(--doc-lead-exact, 0px)')
   })
 
-  it('atLeast lines sit at the bottom of the box: half the slack over the single line, never negative', () => {
+  it('atLeast lines sit at the bottom of the box: half the slack over the single line plus the single-line leading gap', () => {
     expect(cssLeadTop('atLeast', 480, undefined)).toBe(
-      'max(0px, (24.0pt - var(--doc-line-grid, calc(var(--doc-line-factor,1.2) * 1em))) / 2)',
+      'calc(max(0px, (24.0pt - var(--doc-line-grid, calc(var(--doc-line-factor,1.2) * 1em))) / 2) + var(--doc-lead-gap, 0px))',
     )
-    expect(cssLeadTop('atLeast', 0, undefined)).toBe('0px')
+    expect(cssLeadTop('atLeast', 0, undefined)).toBe('var(--doc-lead-gap, 0px)')
+  })
+})
+
+// ─── fontBoxCss (Chromium content box of the strut face; Word probe 2026-09-30) ───
+
+describe('fontBoxCss', () => {
+  it('reports the hhea box and skew of the chain head', () => {
+    expect(fontBoxCss("'Calibri','Carlito GO','Noto Sans CJK SC',sans-serif")).toEqual([
+      '--doc-font-box:1.0000',
+      '--doc-font-skew:0.5000',
+    ])
+    expect(fontBoxCss("'Times New Roman','SimSun',serif")).toEqual([
+      '--doc-font-box:1.1074',
+      '--doc-font-skew:0.6748',
+    ])
+  })
+
+  it('only the chain head counts; an unknown named head resets an inherited box', () => {
+    expect(fontBoxCss("'Arial','Times New Roman'")[0]).toBe('--doc-font-box:1.1172')
+    expect(fontBoxCss('Georgia, serif')[0]).toBe('--doc-font-box:1.1362')
+    // a rejected head must not borrow the box of a fallback member, nor keep the parent's
+    const reset = ['--doc-font-box:initial', '--doc-font-skew:initial']
+    expect(
+      fontBoxCss("'Arial Unicode MS','Liberation Sans','Noto Sans CJK SC',sans-serif"),
+    ).toEqual(reset)
+    expect(fontBoxCss("'SimSun','Songti SC',serif")).toEqual(reset)
+    expect(fontBoxCss("'DM Sans',sans-serif")).toEqual(reset)
+  })
+
+  it('a var() head leaves the box to the cascade that resolves the chain', () => {
+    expect(fontBoxCss("var(--doc-latin-chain,'Latin Sans GO'),'SimSun',serif")).toEqual([])
+    expect(fontBoxCss('')).toEqual([])
   })
 })
 
@@ -669,10 +748,15 @@ describe('cssFontFamily', () => {
     expect(cssFontFamily('黑体')).toBe(
       "'黑体','Heiti SC','STHeiti','SimHei','PingFang SC','Noto Sans CJK SC',sans-serif",
     )
-    expect(cssFontFamily('方正小标宋_GBK')).toBe(
-      "'方正小标宋_GBK','Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif",
+    // FZ XiaoBiaoSong substitutes SimSun on Word for Mac (probe 2026-09-30)
+    expect(cssFontFamily('\u65b9\u6b63\u5c0f\u6807\u5b8b_GBK')).toBe(
+      "'\u65b9\u6b63\u5c0f\u6807\u5b8b_GBK','GenOffice SimSun Latin','GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC',serif",
     )
-    expect(cssFontFamily('方正小标宋简体')).toContain("'Microsoft YaHei'")
+    expect(cssFontFamily('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).not.toContain(
+      "'Microsoft YaHei'",
+    )
+    expect(lineHeightFactor('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).toBe(1.3029)
+    expect(lineHeightFactor('\u9ed1\u4f53')).toBe(1.3029)
     expect(cssFontFamily('华文中宋')).toBe(
       "'华文中宋','STZhongsong','Songti SC','STSong','SimSun','Noto Serif CJK SC',serif",
     )
@@ -721,7 +805,7 @@ describe('cssFontFamily', () => {
 
   it('Japanese fonts → same-script fallback chain, never falls back to Simplified Chinese', () => {
     expect(cssFontFamily('游ゴシック')).toBe(
-      "'游ゴシック','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif",
+      "'游ゴシック','Yu Gothic GO','Yu Gothic Sans GO','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif",
     )
     expect(cssFontFamily('ＭＳ Ｐ明朝')).toBe(
       "'ＭＳ Ｐ明朝','Yu Mincho','GenOffice Hiragino Mincho','GenOffice MS Mincho','Noto Serif JP',serif",
@@ -842,6 +926,21 @@ describe('cssFontFamily', () => {
     expect(monospaceAdvanceEm("'MS PGothic'")).toBeNull()
   })
 
+  it('missing Yu Mincho/Gothic declares take the Latin advance aliases ahead of the JA chain', () => {
+    expect(cssFontFamily('\u6e38\u660e\u671d')).toMatch(
+      /^'\u6e38\u660e\u671d','Yu Mincho GO','Yu Mincho Serif GO','Yu Mincho',/,
+    )
+    expect(cssFontFamily('Yu Mincho')).toMatch(/^'Yu Mincho','Yu Mincho GO','Yu Mincho Serif GO',/)
+    expect(cssFontFamily('Yu Mincho Demibold')).toContain("'Yu Mincho GO'")
+    expect(cssFontFamily('\u6e38\u660e\u671d Light')).toMatch(
+      /^'[^']+','Yu Mincho Light GO','Yu Mincho Serif GO',/,
+    )
+    expect(cssFontFamily('Yu Gothic')).toMatch(/^'Yu Gothic','Yu Gothic GO','Yu Gothic Sans GO',/)
+    expect(cssFontFamily('\u6e38\u30b4\u30b7\u30c3\u30af Light')).toContain("'Yu Gothic Light GO'")
+    expect(cssFontFamily('Yu Gothic UI')).not.toContain(' GO')
+    expect(cssFontFamily('\uFF2D\uFF33 \uFF30\u660E\u671D')).not.toContain('Yu Mincho GO')
+  })
+
   describe('SC-variant declares (Word substitutes missing East Asian fonts with a serif)', () => {
     afterEach(() => vi.restoreAllMocks())
 
@@ -955,13 +1054,21 @@ describe('cssFontFamily', () => {
       )
     })
 
-    it('Tamil declares lead the bundled Latha-metric face', () => {
+    it('Latha leads the bundled Latha-metric face; other Tamil names lay out as Vijaya', () => {
       expect(cssFontFamily('Latha')).toBe(
         "'Latha','GenOffice Tamil','InaiMathi','Tamil MN','Tamil Sangam MN',sans-serif",
       )
-      expect(cssFontFamily('Noto Sans Tamil')).toBe(
-        "'Noto Sans Tamil','GenOffice Tamil','InaiMathi','Tamil MN','Tamil Sangam MN',sans-serif",
-      )
+      expect(lineHeightFactor('Latha')).toBe(1.6686)
+      // Word for Mac renders Vijaya and missing Tamil names with cloud-font
+      // Vijaya at 1.00 (probe 2026-09-30); InaiMathi matches its advances
+      for (const f of ['Noto Sans Tamil', 'Vijaya', 'TAU-Marutham']) {
+        expect(cssFontFamily(f)).toBe(
+          f === 'Vijaya'
+            ? "'Vijaya','InaiMathi','Tamil Sangam MN','Tamil MN',sans-serif"
+            : `'${f}','Vijaya','InaiMathi','Tamil Sangam MN','Tamil MN',sans-serif`,
+        )
+        expect(lineHeightFactor(f)).toBe(1.0)
+      }
     })
   })
 })
@@ -1213,9 +1320,10 @@ describe('Korean line metrics', () => {
     // bare KaiTi ships with Office and renders real at the SimSun-class pitch (probe 2026-08-23)
     expect(lineHeightFactor('楷体')).toBe(1.3029)
     expect(lineHeightFactor('KaiTi')).toBe(1.3029)
-    // KaiTi GB2312 / FZ XiaoBiaoSong substitute to Microsoft YaHei (probe 2026-08-23)
+    // KaiTi GB2312 substitutes to Microsoft YaHei (probe 2026-08-23); FZ
+    // XiaoBiaoSong to SimSun (probe 2026-09-30)
     expect(lineHeightFactor('楷体_GB2312')).toBe(1.7143)
-    expect(lineHeightFactor('方正小标宋简体')).toBe(1.7143)
+    expect(lineHeightFactor('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).toBe(1.3029)
     // STZhongsong ships with Office and renders real (probe 2026-08-23)
     expect(lineHeightFactor('华文中宋')).toBe(1.725)
     expect(lineHeightFactor('STZhongsong')).toBe(1.725)
@@ -1261,11 +1369,12 @@ describe('Korean line metrics', () => {
     expect(cjkDeclaredLineFactor('Calibri')).toBeNull()
   })
 
-  it('Tamil faces take the Latha factor (Word probe 2026-08-13)', () => {
-    expect(lineHeightFactor('Noto Sans Tamil')).toBe(1.6686)
+  it('only Latha takes the Latha factor; other Tamil faces lay out as Vijaya (probe 2026-09-30)', () => {
     expect(lineHeightFactor('Latha')).toBe(1.6686)
-    expect(lineHeightFactor('Vijaya')).toBe(1.6686)
-    expect(lineHeightFactor('InaiMathi')).toBe(1.6686)
+    expect(lineHeightFactor('Noto Sans Tamil')).toBe(1.0)
+    expect(lineHeightFactor('Vijaya')).toBe(1.0)
+    expect(lineHeightFactor('InaiMathi')).toBe(1.0)
+    expect(lineHeightFactor('TAU-Marutham')).toBe(1.0)
   })
 
   it('textHasHangul separates Korean from other CJK', () => {
@@ -1348,6 +1457,12 @@ describe('Korean line metrics', () => {
     expect(lineHeightFactor('Poppins')).toBe(1.5)
     expect(cssFontFamily('Poppins')).toBe(
       "'Poppins','GenOffice Poppins','Noto Sans CJK SC',sans-serif",
+    )
+    // DM Sans renders real when installed (corpus 2026-09-30: 1.302 = hhea);
+    // the bundled Latin subset leads the fallback
+    expect(lineHeightFactor('DM Sans')).toBe(1.302)
+    expect(cssFontFamily('DM Sans')).toBe(
+      "'DM Sans','GenOffice DM Sans','Noto Sans CJK SC',sans-serif",
     )
   })
 
@@ -1489,6 +1604,21 @@ describe('cssFontFamily Arabic', () => {
     // M365 cloud fonts Word downloads and renders with real metrics (probe 2026-08-22)
     expect(lineHeightFactor('Simplified Arabic')).toBe(1.66)
     expect(lineHeightFactor('Traditional Arabic')).toBe(1.5)
+  })
+
+  it('Sakkal Majalla takes its per-class aliases and hhea factor (no Times head)', () => {
+    expect(cssFontFamily('Sakkal Majalla')).toBe(
+      "'Sakkal Majalla','Sakkal Majalla GO','Sakkal Majalla Latin GO','Geeza Pro','Al Bayan',serif",
+    )
+    // a run's own ascii face wins Latin letters: it splices in after the
+    // Arabic/digit alias and before the letters alias
+    const mixed = cssCsFontFamily('Sakkal Majalla', 'Times New Roman')
+    expect(mixed.indexOf("'Sakkal Majalla GO'")).toBeLessThan(mixed.indexOf("'Times New Roman'"))
+    expect(mixed.indexOf("'Times New Roman'")).toBeLessThan(
+      mixed.indexOf("'Sakkal Majalla Latin GO'"),
+    )
+    // 1810 + 1050 over 2048 (Word PDF 14 pt body paces 22.5 = 14 x 1.3965 x 1.15)
+    expect(lineHeightFactor('Sakkal Majalla')).toBe(1.3965)
   })
 
   it('missing kufi/sans-class names substitute to Times like every missing Arabic name', () => {
@@ -1749,5 +1879,43 @@ describe('hangulSpaceOffsets', () => {
     expect(hangulSpaceOffsets('A ', '', H)).toEqual([1])
     expect(hangulSpaceOffsets(' A', 'B')).toEqual([])
     expect(hangulSpaceOffsets('A ', 'B', '')).toEqual([])
+  })
+})
+
+describe('runLatinFactorFaces', () => {
+  const arabic = 'كريم حسن'
+  it('sizes a complex-script run by its cs face instead of the ascii face', () => {
+    expect(runLatinFactorFaces(arabic, 'Calibri', 'Arial')).toEqual(['Arial'])
+    expect(
+      latinRunsFactor([{ text: arabic, fontAscii: 'Calibri', csFont: 'Arial' }], 'var(--x)'),
+    ).toBe('1.15')
+  })
+  it('keeps the ascii face for Latin letters sharing the run and without a cs face', () => {
+    expect(runLatinFactorFaces(`${arabic} J1`, 'Calibri', 'Arial')).toEqual(['Arial', 'Calibri'])
+    expect(runLatinFactorFaces(arabic, 'Calibri', undefined)).toEqual(['Calibri'])
+    expect(runLatinFactorFaces('plain', 'Calibri', 'Arial')).toEqual(['Calibri'])
+  })
+})
+
+describe('hangul under an empty EA slot resolved to a non-Korean face', () => {
+  const msGothic = 'ＭＳ ゴシック'
+  it('krLineFactor: a Japanese face lays hangul at the Malgun fallback height', () => {
+    expect(krLineFactor(msGothic)).toBe(1.7371)
+    expect(krLineFactor('MS Mincho')).toBe(1.7371)
+    expect(krLineFactor('SimSun')).toBe(1.3029)
+  })
+  it('emptyEaSlotHangulFactor applies to hangul text only, never to a Korean face', () => {
+    expect(emptyEaSlotHangulFactor(msGothic, '한글')).toBe(1.7371)
+    expect(emptyEaSlotHangulFactor(msGothic, 'ひらがな')).toBeNull()
+    expect(emptyEaSlotHangulFactor('SimSun', '한글')).toBe(1.3029)
+    expect(emptyEaSlotHangulFactor('Malgun Gothic', '한글')).toBeNull()
+    expect(emptyEaSlotHangulFactor('Calibri', '한글')).toBeNull()
+  })
+  it('runsLineFactor: an empty-slot MS Gothic run with hangul takes the fallback factor', () => {
+    const text = '한글 테스트'
+    const run = { text, font: msGothic, fontAscii: 'Calibri', eaSlotEmpty: true }
+    expect(runsLineFactor([run], text)).toBe('1.7371')
+    const kana = 'ひらがな'
+    expect(runsLineFactor([{ ...run, text: kana }], kana)).toBe('var(--doc-line-factor-cjk,1.7)')
   })
 })

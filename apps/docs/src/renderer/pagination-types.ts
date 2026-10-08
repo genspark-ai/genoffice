@@ -50,6 +50,8 @@ export interface BlockBox {
    *  wrapped text beside it carries the vertical extent, so it consumes no
    *  column height itself (block boxes in normal flow stack ignoring floats) */
   floated?: boolean
+  /** float lifted above the flow position into the previous anchor's band (syncAnchorBands) */
+  lifted?: boolean
   /** w:tblpPr table (floated or currently flowed by the engine, see floatFlowed) */
   floatTable?: true
   /** floating table the engine renders in normal flow because one of its rows
@@ -105,7 +107,7 @@ export interface BlockBox {
   lineBoxes?: LineBox[]
   /** space before (px), from line-metrics output */
   spaceBeforePx?: number
-  /** first block only: leading space-before folded into height (top moved to 0) */
+  /** leading space-before folded into height (top moved up by it) */
   leadFoldPx?: number
   /** space after (px), from line-metrics output */
   spaceAfterPx?: number
@@ -151,6 +153,8 @@ export interface BlockBox {
 
   /** table block under Word 2013+ layout rules (see BlockMeta.modernTableHeaders) */
   modernTableHeaders?: boolean
+  /** table block whose cell paragraphs run without widow/orphan control */
+  cellWidowOff?: true
 }
 
 /**
@@ -577,6 +581,8 @@ export interface BlockMeta {
    *  remaining space (or would stay alone at the page bottom) pushes the table to a fresh page, and
    *  widow/orphan control applies inside split cells */
   modernTableHeaders?: boolean
+  /** table block: the document default turns widow/orphan control off and no cell paragraph turns it back on */
+  cellWidowOff?: true
   /** page-bottom height reserved for footnote refs inside the block (px): merged into the block height (consumes page capacity like Word's note area) */
   footnoteExtraPx?: number
   /** per-reference reservation heights in run order (matched to the block's

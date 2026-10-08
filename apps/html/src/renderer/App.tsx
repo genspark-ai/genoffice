@@ -1286,15 +1286,12 @@ export default function App() {
   }, [])
 
   const printingRef = useRef(false)
-  /** Shell menu Print. The gate lives in runGuardedPrint; this owns the flag and
-   * the notice, so a failure reaches the user instead of being swallowed. */
   const runPrint = useCallback(async () => {
     if (statusRef.current !== 'ready') return false
     return runGuardedPrint(
       printingRef,
       async () => {
-        // Serialize inside the gate: a throw here is a failure the user needs to
-        // see, and it must still release the flag.
+        // serialize inside the gate so a throw still releases the flag
         flushPending()
         return window.htmlApi.printHtml({
           html: serializeDocText({ text: textRef.current, envelope: envelopeRef.current }),
@@ -1429,7 +1426,7 @@ export default function App() {
       offTheme()
       window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [doSave, runExport, cycleView, zoomIn, zoomOut, flushPending, openFind])
+  }, [doSave, runExport, runPrint, cycleView, zoomIn, zoomOut, flushPending, openFind])
 
   // pinch / ctrl+wheel over the stage chrome around the frame; wheel inside the frame arrives as gx:zoom
   useEffect(() => {

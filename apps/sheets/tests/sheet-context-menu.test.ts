@@ -1,5 +1,5 @@
 /**
- * The document-level contextmenu decision (#1816): a grid right-click must
+ * The document-level contextmenu decision (genoffice#1816): a grid right-click must
  * cancel the DOM event — Univer shows its own menu and never cancels it, so
  * a surviving event lets Electron stack the native menu on top. Editable
  * surfaces keep the native edit menu; the footer strip opens our stats menu.

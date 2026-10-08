@@ -8,7 +8,8 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
-  bulletMarkerScale,
+  substituteBullet,
+  markerFallbackFace,
   computeListMarkerInfos,
   computeListMarkers,
   formatNumber,
@@ -420,14 +421,14 @@ describe('computeListMarkers', () => {
     expect(infos[4]).toEqual({ text: '1.', value: 1 })
   })
 
-  it('upscales only solid round substitute glyphs', () => {
-    expect(bulletMarkerScale('•')).toBe(1.25)
-    expect(bulletMarkerScale('●')).toBe(1.35)
-    expect(bulletMarkerScale('▪')).toBe(1)
-    expect(bulletMarkerScale('1.')).toBe(1)
+  it('routes only solid round substitute glyphs through the size-adjusted aliases', () => {
+    expect(substituteBullet('•')).toEqual({ glyph: '\u25cf', face: 'Symbol Bullet GO' })
+    expect(substituteBullet('●')).toEqual({ glyph: '\u25cf', face: 'Wingdings Bullet GO' })
+    expect(substituteBullet('▪')).toBeNull()
+    expect(substituteBullet('1.')).toBeNull()
   })
 
-  it('substitutes uncovered symbol bullets with a pinned font + scale and follows the paragraph mark size', async () => {
+  it('substitutes uncovered symbol bullets with the alias glyph at the declared size and follows the paragraph mark size', async () => {
     const numberingXml =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
       '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
@@ -451,15 +452,114 @@ describe('computeListMarkers', () => {
     editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
     const el = editor.view.dom.querySelector('.doc-li')!
     // no canvas in the test DOM → coverage probe fails → substitution path
-    expect(el.getAttribute('data-marker')).toBe('•')
+    expect(el.getAttribute('data-marker')).toBe('\u25cf')
     const style = el.getAttribute('style') ?? ''
-    expect(style).toContain("--li-marker-font: Arial,'Helvetica Neue',sans-serif")
-    expect(style).toContain('--li-marker-scale: 1.25')
+    expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
+    expect(style).not.toContain('--li-marker-scale')
     // Symbol's ascent tops the 12pt Calibri text: the bullet box carries Word's
     // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom
     expect(style).toContain('--li-marker-lh: calc(15.288pt * var(--doc-line-mult,1))')
     expect(style).toContain('--li-marker-va: bottom')
     expect(style).toContain('--li-marker-size: 12pt')
+    editor.destroy()
+  })
+
+  it('names Segoe UI Symbol for bullet glyphs the Word text face lacks', () => {
+    expect(markerFallbackFace('▸', 'Calibri')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('▸', 'Times New Roman')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('➢', 'Roboto')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('■', 'Calibri')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('■', 'Arial')).toBeNull()
+    expect(markerFallbackFace('●', 'Cambria')).toBe('Segoe UI Symbol')
+    expect(markerFallbackFace('•', 'Calibri')).toBeNull()
+    expect(markerFallbackFace('●', 'Calibri')).toBeNull()
+    expect(markerFallbackFace('▸', 'Segoe UI Symbol')).toBeNull()
+    expect(markerFallbackFace('', 'Symbol')).toBeNull()
+    expect(markerFallbackFace('1.', 'Calibri')).toBeNull()
+  })
+
+  // Word probe: Calibri 11 paragraphs, lvlText U+25B8 with no level rFonts draw the
+  // marker in Segoe UI Symbol and the first line grows 13.44 -> 14.88pt (its hhea
+  // ascent 1.0791em over Calibri's 0.952); U+2022 stays in Calibri at 13.44
+  it('lifts the first line by the Segoe UI Symbol fallback of a glyph the mark face lacks', async () => {
+    const lvl = (id: string, glyph: string, rPr = '') =>
+      `<w:abstractNum w:abstractNumId="${id}"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>` +
+      `<w:lvlText w:val="${glyph}"/>${rPr}<w:pPr><w:ind w:left="460" w:hanging="260"/></w:pPr></w:lvl></w:abstractNum>`
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      lvl('0', '▸') +
+      lvl('1', '•') +
+      lvl(
+        '2',
+        '▸',
+        '<w:rPr><w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol"/></w:rPr>',
+      ) +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>' +
+      '<w:num w:numId="3"><w:abstractNumId w:val="2"/></w:num></w:numbering>'
+    const item = (numId: string) =>
+      `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>` +
+      '<w:r><w:t>item</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml: item('1') + item('2') + item('3'),
+        numberingXml,
+        stylesXml:
+          '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+          '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/>' +
+          '<w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>',
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.storage.listNumbering.styles = parsed.styles
+    editor.storage.listNumbering.docDefaults = parsed.docDefaults
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const items = [...editor.view.dom.querySelectorAll('.doc-li')]
+    const [tri, dot, seg] = items.map((el) => el.getAttribute('style') ?? '')
+    expect(items[0].getAttribute('data-marker')).toBe('▸')
+    expect(tri).toContain("--li-marker-font: 'Segoe UI Symbol GO',")
+    expect(tri).toContain('--li-marker-size: 11pt')
+    expect(tri).toContain('--li-marker-lh: calc(14.825pt * var(--doc-line-mult,1))')
+    expect(tri).toContain('--li-marker-va: bottom')
+    expect(dot).not.toContain('--li-marker-lh')
+    expect(dot).not.toContain('Segoe')
+    expect(seg).toContain('--li-marker-font: "Segoe UI Symbol"')
+    expect(seg).not.toContain('--li-marker-lh: 0')
+    expect(seg).toContain('--li-marker-lh: calc(14.825pt * var(--doc-line-mult,1))')
+    editor.destroy()
+  })
+
+  it('pins a substitute bullet box flat when the text face is taller than the Symbol line', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\uF0B7"/><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/><w:sz w:val="20"/></w:rPr>' +
+      '</w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const rPr =
+      '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:sz w:val="24"/></w:rPr>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>${rPr}</w:pPr>` +
+          `<w:r>${rPr}<w:t>item</w:t></w:r></w:p>`,
+        numberingXml,
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const style = editor.view.dom.querySelector('.doc-li')!.getAttribute('style') ?? ''
+    // Symbol 10pt ascent + Times descent (12.65pt) stays under the 13.8pt text line
+    expect(style).toContain("--li-marker-font: 'Symbol Bullet GO'")
+    expect(style).toContain('--li-marker-lh: 0')
+    expect(style).not.toContain('--li-marker-va')
     editor.destroy()
   })
 
@@ -538,9 +638,9 @@ describe('computeListMarkers', () => {
     const styles = [...editor.view.dom.querySelectorAll('.doc-li')].map(
       (el) => el.getAttribute('style') ?? '',
     )
-    expect(styles[0]).toContain('--li-marker-lh: 0')
+    expect(styles[0]).not.toContain('--li-marker-lh')
     expect(styles[0]).not.toContain('--li-marker-va')
-    expect(styles[1]).toContain('--li-marker-lh: 0')
+    expect(styles[1]).not.toContain('--li-marker-lh')
     expect(styles[1]).not.toContain('--li-marker-va')
     // a direct auto rule overrides the style's exact one
     expect(styles[2]).toContain('--li-marker-va: bottom')
@@ -634,7 +734,7 @@ describe('list marker decorations', () => {
     editor.storage.listNumbering.defs = parsed.numbering
     editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
     const items = Array.from(editor.view.dom.querySelectorAll('.doc-li'))
-    expect(items.map((el) => el.getAttribute('data-marker'))).toEqual(Array(7).fill('•'))
+    expect(items.map((el) => el.getAttribute('data-marker'))).toEqual(Array(7).fill('\u25cf'))
     expect(items.map((el) => el.hasAttribute('data-marker-clip'))).toEqual([
       false,
       true,

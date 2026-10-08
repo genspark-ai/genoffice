@@ -1,4 +1,9 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import {
+  aiPanelWidthAtPointer,
+  AiPanelSideButton,
+  AiModelPicker,
+  type AiModelPickerBridge,
+} from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
 import { AgentLoop, composeSkills } from '@genoffice/agent-core'
@@ -262,6 +267,14 @@ export interface HtmlAiDeps {
 
 /** how often the streaming draft is pushed into the preview mirror */
 const DRAFT_PREVIEW_MS = 400
+
+const MODEL_BRIDGE: AiModelPickerBridge = {
+  getSettings: () => window.htmlApi.getAiSettings(),
+  setSettings: (settings) => window.htmlApi.setAiSettings(settings),
+  onSettingsChanged: (handler) => window.htmlApi.onAiSettingsChanged(handler),
+  gskLoggedIn: () => window.htmlApi.aiGskStatus().then((s) => !!s?.loggedIn),
+  openModelSettings: () => window.htmlApi.openAiModelSettings().catch(() => {}),
+}
 
 export function AiPanel({
   deps,
@@ -1517,15 +1530,18 @@ export function AiPanel({
           onPasteFiles={(files) => void onPasteFiles(files)}
           onPasteText={onPasteText}
           footerStart={
-            <button
-              type="button"
-              className="ai-attach-btn"
-              onClick={() => void pickAttachments()}
-              data-tip={t('aiAttachTitle')}
-              aria-label={t('aiAttachTitle')}
-            >
-              <img src={attachIcon} alt="" aria-hidden />
-            </button>
+            <>
+              <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
+              <button
+                type="button"
+                className="ai-attach-btn"
+                onClick={() => void pickAttachments()}
+                data-tip={t('aiAttachTitle')}
+                aria-label={t('aiAttachTitle')}
+              >
+                <img src={attachIcon} alt="" aria-hidden />
+              </button>
+            </>
           }
         />
       </div>

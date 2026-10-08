@@ -23,10 +23,12 @@ import type {
   SheetNoteState,
   SheetProtectedRangesState,
   SheetProtectionState,
+  SheetTabColorState,
   SheetPivotAddition,
   SheetSparklineAddition,
   SheetStructuralOps,
   SheetTableAddition,
+  SheetTableEdit,
   SheetVisualAddition,
   SheetFormulaValues,
 } from './xlsx-gateway'
@@ -96,6 +98,7 @@ export interface StreamingSaveRequest {
   readonly pageSetupStates?: readonly SheetPageSetupState[] | undefined
   readonly noteStates?: readonly SheetNoteState[] | undefined
   readonly tableAdditions?: readonly SheetTableAddition[] | undefined
+  readonly tableEdits?: readonly SheetTableEdit[] | undefined
   readonly pivotAdditions?: readonly SheetPivotAddition[] | undefined
   readonly pivotCacheRefreshPaths?: readonly string[] | undefined
   readonly pivotRefreshUpdates?: readonly PivotRefreshUpdate[] | undefined
@@ -106,6 +109,7 @@ export interface StreamingSaveRequest {
   readonly themeState?: WorkbookThemeState | null | undefined
   readonly workbookProtectionState?: { readonly lockStructure: boolean } | null | undefined
   readonly protectedRangeStates?: readonly SheetProtectedRangesState[] | undefined
+  readonly tabColorStates?: readonly SheetTabColorState[] | undefined
 }
 
 export interface StreamingSaveResult {
@@ -173,6 +177,8 @@ export async function saveWorkbookViaSidecar(
       request.workbookProtectionState ?? null,
       request.protectedRangeStates ?? [],
       request.bulkConstantFills ?? [],
+      request.tabColorStates ?? [],
+      request.tableEdits ?? [],
     )
 
     const replacements = await writePlanContents(workDir, 'replace', plan.replaced)

@@ -23,6 +23,8 @@ import {
   type OutputCell,
 } from './consolidate'
 import { isSheetRemoved, journalSize, recordStructuralOp } from './edit-journal'
+import { clearOutline, toggleOutlineGroup, type OutlineAxis } from './outline-actions'
+import { groupLevelOps, outlineGroups } from './outline-model'
 import { resolveGoToRef, type GoToNameEntry } from './goto'
 import { getLang, t } from './i18n/locale'
 import { appendSymbol } from './SymbolDialog'
@@ -430,11 +432,45 @@ export function handleCreateSubtotal(
     worksheet.insertRowsBefore(lastRowAbs + 1, 1)
     // SUBTOTAL skips the nested per-group subtotal rows inside the span.
     writeTotalRow(lastRowAbs + 1, 'Grand Total', startRow + 1, lastRowAbs)
+    recordSubtotalOutline(ctx, worksheet.getSheetId(), groups, startRow + 1, lastRowAbs)
   } catch (error: unknown) {
     return error instanceof Error ? error.message : t('appSubtotalInsertFailed')
   }
   ctx.setMessage(t('appSubtotalsInserted', { count: groups.length }))
   return null
+}
+
+/// Excel's Subtotal outlines its output: detail rows at level 2 under each
+/// group total (level 1), all under the grand total.
+function recordSubtotalOutline(
+  ctx: DataToolsContext,
+  sheetId: string,
+  groups: readonly { startAbs: number; endAbs: number }[],
+  firstDetail: number,
+  lastGroupTotal: number,
+): void {
+  const state = ctx.lazyWorkbookRef.current
+  if (!state || isSheetRemoved(state.editJournal, sheetId)) return
+  const outline = sheetOutline(state, sheetId)
+  const record = (start: number, end: number, level: number): void => {
+    for (let index = start; index <= end; index += 1) {
+      outline.rows.set(index, { level, collapsed: false })
+    }
+    recordStructuralOp(state.editJournal, sheetId, {
+      kind: 'set-rows-outline',
+      start,
+      end,
+      level,
+    })
+  }
+  record(firstDetail, lastGroupTotal, 1)
+  let shift = 0
+  for (const group of groups) {
+    record(group.startAbs + shift, group.endAbs + shift, 2)
+    shift += 1
+  }
+  outline.version += 1
+  ctx.setPendingEdits(journalSize(state.editJournal))
 }
 
 export function consolidateDefaultReference(ctx: DataToolsContext): string {
@@ -528,8 +564,8 @@ export function handleCreateConsolidate(
 /// normal hidden-rows pipeline plus a collapsed flag on the summary line.
 export function handleOutline(
   ctx: DataToolsContext,
-  action: 'group' | 'ungroup' | 'hide-detail' | 'show-detail',
-  axis: 'rows' | 'cols',
+  action: 'group' | 'ungroup' | 'hide-detail' | 'show-detail' | 'clear',
+  axisChoice: OutlineAxis | 'auto',
 ): void {
   const runtime = ctx.univerRef.current
   if (!runtime) return
@@ -547,6 +583,17 @@ export function handleOutline(
   }
   const sheetId = worksheet.getSheetId()
   if (isSheetRemoved(state.editJournal, sheetId)) return
+  if (action === 'clear') {
+    clearOutline(ctx, range.getRange())
+    return
+  }
+  // Shift+Alt+Arrow: whole columns selected mean columns, anything else rows.
+  const axis: OutlineAxis =
+    axisChoice === 'auto'
+      ? range.getHeight() >= worksheet.getMaxRows() && range.getWidth() < worksheet.getMaxColumns()
+        ? 'cols'
+        : 'rows'
+      : axisChoice
   const start = axis === 'rows' ? range.getRow() : range.getColumn()
   const end = axis === 'rows' ? start + range.getHeight() - 1 : start + range.getWidth() - 1
   const outline = sheetOutline(state, sheetId)
@@ -554,62 +601,36 @@ export function handleOutline(
   const kind = axis === 'rows' ? ('set-rows-outline' as const) : ('set-cols-outline' as const)
 
   if (action === 'hide-detail' || action === 'show-detail') {
-    // The selection is the group's detail span; the summary row/column is
-    // the next one after it (Excel's summaryBelow/summaryRight default).
-    const count = end - start + 1
-    if (action === 'hide-detail') {
-      if (axis === 'rows') worksheet.hideRows(start, count)
-      else worksheet.hideColumns(start, count)
-    } else if (axis === 'rows') {
-      worksheet.showRows(start, count)
-    } else {
-      worksheet.showColumns(start, count)
-    }
-    const summary = end + 1
+    // Excel folds the innermost group containing the selection (any group
+    // whose detail span overlaps it when the selection is the summary line).
     const collapsed = action === 'hide-detail'
-    const summaryLevel = entries.get(summary)?.level ?? 0
-    entries.set(summary, { level: summaryLevel, collapsed })
-    recordStructuralOp(state.editJournal, sheetId, {
-      kind,
-      start: summary,
-      end: summary,
-      level: summaryLevel,
-      collapsed,
-    })
-    ctx.setPendingEdits(journalSize(state.editJournal))
-    ctx.setMessage(collapsed ? t('appDetailHidden') : t('appDetailShown'))
+    const summaryAfter = axis === 'rows' ? outline.summaryBelow : outline.summaryRight
+    const groups = outlineGroups(entries, summaryAfter, () => false)
+    const group = groups
+      .filter(
+        (candidate) =>
+          (candidate.start <= end && candidate.end >= start) ||
+          (candidate.summary >= start && candidate.summary <= end),
+      )
+      .sort((left, right) => right.level - left.level)[0]
+    if (!group) {
+      ctx.setMessage(t('appOutlineSelectFirst'))
+      return
+    }
+    toggleOutlineGroup(ctx, axis, group, collapsed)
     return
   }
 
-  // Group/Ungroup shifts each contiguous run of equal levels by ±1
-  // (levels clamp to 0-7). Runs already at the boundary are skipped.
-  const delta = action === 'group' ? 1 : -1
-  const ops: { start: number; end: number; level: number }[] = []
-  let runStart = start
-  let runLevel = entries.get(start)?.level ?? 0
-  const closeRun = (runEnd: number): void => {
-    const level = Math.min(7, Math.max(0, runLevel + delta))
-    if (level !== runLevel) ops.push({ start: runStart, end: runEnd, level })
-  }
-  for (let index = start + 1; index <= end; index += 1) {
-    const level = entries.get(index)?.level ?? 0
-    if (level !== runLevel) {
-      closeRun(index - 1)
-      runStart = index
-      runLevel = level
-    }
-  }
-  closeRun(end)
+  const ops = groupLevelOps(entries, start, end, action === 'group' ? 1 : -1)
   if (ops.length === 0) {
     ctx.setMessage(action === 'group' ? t('appOutlineMaxLevel') : t('appNothingToUngroup'))
     return
   }
   for (const op of ops) {
     for (let index = op.start; index <= op.end; index += 1) {
-      entries.set(index, {
-        level: op.level,
-        collapsed: entries.get(index)?.collapsed ?? false,
-      })
+      const entry = entries.get(index)
+      if (op.level === 0 && !entry?.collapsed) entries.delete(index)
+      else entries.set(index, { ...entry, level: op.level, collapsed: entry?.collapsed ?? false })
     }
     recordStructuralOp(state.editJournal, sheetId, {
       kind,
@@ -618,6 +639,7 @@ export function handleOutline(
       level: op.level,
     })
   }
+  outline.version += 1
   ctx.setPendingEdits(journalSize(state.editJournal))
   ctx.setMessage(
     action === 'group'

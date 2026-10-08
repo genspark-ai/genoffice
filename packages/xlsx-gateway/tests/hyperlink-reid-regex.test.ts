@@ -19,10 +19,6 @@ function sheetWith(reference: string): string {
 
 describe('xlsx-hyperlink relationship reclaim', () => {
   it('does not delete unrelated relationships when the reclaimed r:id holds regex metacharacters', () => {
-    // The sheet points at a hyperlink relationship whose id is the literal
-    // string ".*" — it is the only hyperlink, so editing A1 reclaims it. An
-    // unescaped ".*" inside the built pattern spans from the first
-    // <Relationship to the last "/>", deleting the drawing and the table too.
     const patch = applyHyperlinkEdits(sheetWith('.*'), RELS, [
       { row: 0, column: 0, target: 'https://example.com/next' },
     ])

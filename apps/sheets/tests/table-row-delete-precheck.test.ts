@@ -4,14 +4,6 @@ import { precheckStructuralDeletes } from '../src/renderer/op-executor'
 import { applyAiTableRowDelete } from '../src/renderer/workbook-ops'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 
-/// An AI delete_table_row is a whole-sheet row delete underneath, so the
-/// batch precheck translates it to the same span the apply path deletes. This
-/// drives both paths and compares them, so the precheck cannot drift onto a
-/// different row base (which either false-rejects a legal batch or misses the
-/// row that ⌘S will then refuse to save).
-
-// 0-based header row of the session-added table, so the data rows the op
-// addresses are 3..9 — deliberately not row 0.
 const HEADER = 2
 
 function state(): LazyWorkbookState {
@@ -46,6 +38,7 @@ function stubFormulaOn(sheetRow: number): void {
     desktopApi: {
       readWorkbookFormulas: async () => ({
         cells: [{ row: 20, column: 5, formula: `=SUM($A$${sheetRow}:$A$${sheetRow})` }],
+        sharedGroups: [],
         truncated: false,
         indexingComplete: true,
       }),
@@ -86,8 +79,6 @@ describe('delete_table_row precheck row base', () => {
     it(`checks the rows op.row=${row} actually removes`, async () => {
       const deleted = applyRow(row)
       const firstSheetRow = deleted + 1
-      // Every row the apply path removes must be rejected, and the rows
-      // around it must pass — for op.row beyond 0 too, not just the first.
       expect(await rejects(row, 1, firstSheetRow)).toBe(true)
       expect(await rejects(row, 1, firstSheetRow - 1)).toBe(false)
       expect(await rejects(row, 1, firstSheetRow + 1)).toBe(false)

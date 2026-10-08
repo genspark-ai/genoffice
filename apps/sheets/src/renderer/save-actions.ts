@@ -7,7 +7,11 @@
  */
 import type { WorkbookFile, WorkbookFilterState } from '../shared/desktop-api'
 import {
+  carryLateJournalCells,
   isSheetRemoved,
+  journalSize,
+  snapshotJournalCells,
+  type JournalCellSnapshot,
   toSaveChartEdits,
   toSaveBulkConstantFills,
   toSaveEdits,
@@ -18,6 +22,7 @@ import {
   toSaveSparklineAdds,
   toSaveStructuralOps,
   toSaveTableAdds,
+  toSaveTableEdits,
   toSaveVisualAdds,
   toSaveVisualEdits,
 } from './edit-journal'
@@ -49,6 +54,8 @@ export interface SaveContext {
     opened: WorkbookFile,
     opts?: { continueChat?: boolean; onInitialRangeLoaded?: () => void },
   ) => void | Promise<boolean>
+  /** pending-edit badge; the reopen resets it to 0 before late edits are carried over */
+  setPendingEdits?: (count: number) => void
   /** live cell readout, for the cached values of formulas an MCP batch wrote (optional in tests) */
   readCells?: (addresses: string[], sheetId: string) => Record<string, CellState>
   /** Saving swaps the session and reinstalls the workbook, which resets the
@@ -132,12 +139,14 @@ export async function handleSave(
     return { ok: false }
   }
   const edits = toSaveEdits(state.editJournal)
+  const cellsAtSave = snapshotJournalCells(state.editJournal)
   const bulkConstantFills = toSaveBulkConstantFills(state.editJournal)
   const structuralOps = toSaveStructuralOps(state.editJournal)
   const chartEdits = toSaveChartEdits(state.editJournal)
   const visualEdits = toSaveVisualEdits(state.editJournal)
   const visualAdditions = toSaveVisualAdds(state.editJournal)
   const tableAdditions = toSaveTableAdds(state.editJournal)
+  const tableEdits = toSaveTableEdits(state.editJournal)
   const pivotAdditions = toSavePivotAdds(state.editJournal)
   const sparklineAdditions = toSaveSparklineAdds(state.editJournal)
   const sheetOps = toSaveSheetOps(state.editJournal)
@@ -155,7 +164,13 @@ export async function handleSave(
   const dvStates = collectDvStates(ctx.univerRef.current, state)
   const sheetProtections = [...state.editJournal.sheetProtection]
     .filter(([sheetId]) => !isSheetRemoved(state.editJournal, sheetId))
-    .map(([sheetId, isProtected]) => ({ sheetId, protected: isProtected }))
+    .map(([sheetId, desired]) => ({
+      sheetId,
+      protected: desired.protected,
+      allow: desired.allow,
+      password: desired.password,
+      verified: true,
+    }))
   const pageSetupStates = toSavePageSetupStates(state.editJournal)
   const noteStates = collectNoteStates(ctx.univerRef.current, state)
   const pivotCacheRefreshPaths = [...state.editJournal.pivotCacheRefresh]
@@ -223,16 +238,26 @@ export async function handleSave(
   // sheet ids are stable across saves (`sheet-<sheetId attr>`), so the
   // held ops stay addressable — ops on sheets created this session are
   // the exception and keep the explicit error.
-  const hasShifts = structuralOps.length > 0 || sheetOps.length > 0
+  const sheetStructureOps = sheetOps.filter((op) => op.kind !== 'set-sheet-tab-color')
+  const hasShifts = structuralOps.length > 0 || sheetStructureOps.length > 0
   const heldPivots = hasShifts ? pivotAdditions : []
   const heldTables = structuralOps.length > 0 ? tableAdditions : []
+  // Only resizes pin coordinates; renames and style flags ride phase one.
+  const heldTableEdits =
+    structuralOps.length > 0 ? tableEdits.filter((edit) => edit.area !== undefined) : []
+  const phaseOneTableEdits = tableEdits.filter((edit) => !heldTableEdits.includes(edit))
   const heldNames = hasShifts ? definedNamesState : null
-  const splitSave = heldPivots.length > 0 || heldTables.length > 0 || heldNames !== null
+  const splitSave =
+    heldPivots.length > 0 ||
+    heldTables.length > 0 ||
+    heldTableEdits.length > 0 ||
+    heldNames !== null
   if (splitSave) {
     const addedSheetIds = state.editJournal.sheets.added
     const strandedHeld = [
       ...heldPivots.flatMap((pivot) => [pivot.sheetId, pivot.sourceSheetId]),
       ...heldTables.map((table) => table.sheetId),
+      ...heldTableEdits.map((edit) => edit.sheetId),
     ].some((sheetId) => addedSheetIds.has(sheetId))
     if (strandedHeld) {
       if (mode !== 'recovery') {
@@ -263,6 +288,7 @@ export async function handleSave(
     visualAdditions.length +
     visualEdits.length +
     tableAdditions.length +
+    tableEdits.length +
     pivotAdditions.length +
     sparklineAdditions.length
   // A restored crash-recovery session carries its changes in the workbook
@@ -359,6 +385,7 @@ export async function handleSave(
     visualEdits,
     visualAdditions,
     tableAdditions,
+    tableEdits,
     pivotAdditions,
     sheetOps,
     sheetOrder,
@@ -411,6 +438,7 @@ export async function handleSave(
       visualEdits,
       visualAdditions,
       tableAdditions: splitSave && heldTables.length > 0 ? [] : tableAdditions,
+      tableEdits: phaseOneTableEdits,
       pivotAdditions: splitSave && heldPivots.length > 0 ? [] : pivotAdditions,
       sheetOps,
       sheetOrder,
@@ -458,12 +486,12 @@ export async function handleSave(
       // pending stash means the previous reopen has not finished its undo
       // bookkeeping, so the stack is not capturable yet either.
       stashUndoCarry(
-        sheetOps.length === 0 && !hasPendingUndoCarry()
+        sheetStructureOps.length === 0 && !hasPendingUndoCarry()
           ? captureUndoCarry(ctx.univerRef.current, result.file.sha256)
           : null,
       )
       ctx.stashViewRestore(viewAtSave)
-      if ((await ctx.openLazyWorkbook(result.file, { continueChat: true })) === false) {
+      if (!(await reopenCarryingLateEdits(ctx, state, cellsAtSave, result.file))) {
         return { ok: false }
       }
       const saved = t('appSaved')
@@ -488,6 +516,7 @@ export async function handleSave(
         visualEdits: [],
         visualAdditions: [],
         tableAdditions: heldTables,
+        tableEdits: heldTableEdits,
         pivotAdditions: heldPivots,
         sheetOps: [],
         sheetOrder: [],
@@ -511,14 +540,14 @@ export async function handleSave(
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {
         ctx.stashViewRestore(viewAtSave)
-        if ((await ctx.openLazyWorkbook(result.file, { continueChat: true })) === false) {
+        if (!(await reopenCarryingLateEdits(ctx, state, cellsAtSave, result.file))) {
           return { ok: false }
         }
         ctx.setMessage(t('appSaveSecondCanceled'))
         return { ok: false }
       }
       ctx.stashViewRestore(viewAtSave)
-      if ((await ctx.openLazyWorkbook(second.file, { continueChat: true })) === false) {
+      if (!(await reopenCarryingLateEdits(ctx, state, cellsAtSave, second.file))) {
         return { ok: false }
       }
       const saved = t('appSavedTwoPhase')
@@ -528,7 +557,7 @@ export async function handleSave(
     } catch (error: unknown) {
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       ctx.stashViewRestore(viewAtSave)
-      if ((await ctx.openLazyWorkbook(result.file, { continueChat: true })) === false) {
+      if (!(await reopenCarryingLateEdits(ctx, state, cellsAtSave, result.file))) {
         return { ok: false }
       }
       const failed = t('appSaveSecondFailed', {
@@ -548,6 +577,24 @@ export async function handleSave(
     if (!quiet) showToast(failed, 'error')
     return { ok: false, error: message || failed }
   }
+}
+
+/// Cells edited while the save IPC was in flight were not in the request;
+/// the swapped-in session must keep them pending (and show them: range
+/// installs overlay the journal) or the reopen silently drops them.
+async function reopenCarryingLateEdits(
+  ctx: SaveContext,
+  state: LazyWorkbookState,
+  cellsAtSave: JournalCellSnapshot,
+  file: WorkbookFile,
+): Promise<boolean> {
+  if ((await ctx.openLazyWorkbook(file, { continueChat: true })) === false) return false
+  const next = ctx.lazyWorkbookRef.current
+  if (!next || next === state) return true
+  if (carryLateJournalCells(state.editJournal, cellsAtSave, next.editJournal) > 0) {
+    ctx.setPendingEdits?.(journalSize(next.editJournal))
+  }
+  return true
 }
 
 /// Errors thrown by main-process handlers arrive wrapped as

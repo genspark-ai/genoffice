@@ -63,6 +63,14 @@ if [ "$XVFB" = 1 ] && [ -z "${DISPLAY:-}" ]; then
   XVFB_PID=$!
   DISPLAY=:99
   export DISPLAY
+  for _ in $(seq 1 50); do
+    [ -S /tmp/.X11-unix/X99 ] && break
+    sleep 0.1
+  done
+  if [ ! -S /tmp/.X11-unix/X99 ]; then
+    echo "batch-convert: Xvfb did not come up on :99" >&2
+    exit 1
+  fi
 fi
 RESULTS="$(mktemp -d)"
 cleanup() {

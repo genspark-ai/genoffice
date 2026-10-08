@@ -88,6 +88,12 @@ function geminiBase(config: AiMediaProviderConfig): string {
   return trimSlash(config.baseUrl || GEMINI_MEDIA_BASE_URL)
 }
 
+function geminiModelsProbeUrl(config: AiMediaProviderConfig): string {
+  const url = new URL(endpointUrl(geminiBase(config), '/models'))
+  url.searchParams.set('pageSize', '1')
+  return url.toString()
+}
+
 function bearer(config: AiMediaProviderConfig): Record<string, string> {
   return config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}
 }
@@ -589,8 +595,6 @@ async function geminiUploadFile(
   signal: AbortSignal,
 ): Promise<{ file_data: { mime_type: string; file_uri: string } }> {
   const base = geminiBase(config)
-  // the Files upload lives outside the versioned path; strip the version from
-  // the pathname (not the raw string) so a query in the base survives the strip
   const root = new URL(base)
   root.pathname = trimSlash(root.pathname).replace(/\/v1(beta)?$/, '')
   const start = await aiFetch(endpointUrl(root.toString(), '/upload/v1beta/files'), {
@@ -754,21 +758,16 @@ export async function testMediaProvider(
     const meta = metaOf(provider)
     requireBaseUrl(meta, config)
     const guard = withTimeout(signal, TEST_TIMEOUT_MS)
-    let resp: Response
-    if (provider === 'gemini') {
-      // pageSize merges with a query pinned in the base URL instead of replacing it
-      const models = new URL(endpointUrl(geminiBase(config), '/models'))
-      models.searchParams.set('pageSize', '1')
-      resp = await aiFetch(models.toString(), {
-        headers: { 'x-goog-api-key': config.apiKey },
-        signal: guard,
-      })
-    } else {
-      resp = await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
-        headers: bearer(config),
-        signal: guard,
-      })
-    }
+    const resp =
+      provider === 'gemini'
+        ? await aiFetch(geminiModelsProbeUrl(config), {
+            headers: { 'x-goog-api-key': config.apiKey },
+            signal: guard,
+          })
+        : await aiFetch(endpointUrl(openAiBase(provider, config), '/models'), {
+            headers: bearer(config),
+            signal: guard,
+          })
     if (resp.ok) return { ok: true }
     // Vendors without a model-listing endpoint answer 404/405 to a valid
     // key, so those statuses still mean the credentials are usable.

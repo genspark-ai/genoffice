@@ -93,10 +93,6 @@ describe('webSearch (Serper)', () => {
   })
 
   it('treats an unknown prefer as the default instead of throwing', async () => {
-    // `prefer` is typed, but the settings "test connection" handler passes its ipc
-    // payload through after an `as` cast, so an unknown id reaches webSearch at
-    // runtime. It becomes the first entry of the dispatch order, and a name with no
-    // backend function made that throw a TypeError out of the ipcMain handler.
     process.env.SERPER_API_KEY = 'serper-key'
     mockFetch((url) => {
       if (url === 'https://google.serper.dev/search') {
@@ -109,7 +105,6 @@ describe('webSearch (Serper)', () => {
     })
 
     const r = await webSearch('q', 5, { useGsk: false, prefer: 'bogus' as never })
-    // falls back to the default backend rather than rejecting
     expect(r.method).toBe('serper')
   })
 

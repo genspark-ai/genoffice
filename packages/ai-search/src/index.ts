@@ -49,7 +49,6 @@ export interface SearchOptions {
   prefer?: 'serper' | 'serply' | 'tavily' | 'parallel' | 'exa' | 'firecrawl'
 }
 
-/** The backends webSearch can dispatch to; anything else is not a provider id. */
 const SEARCH_BACKENDS = new Set([
   'serper',
   'serply',
@@ -69,11 +68,8 @@ function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<S
     parallelKey: o.parallelKey ?? PARALLEL_KEY(),
     exaKey: o.exaKey ?? EXA_KEY(),
     firecrawlKey: o.firecrawlKey ?? FIRECRAWL_KEY(),
-    // `prefer` reaches here from the renderer: the settings "test connection" handler
-    // passes its ipc payload through after an `as` cast, so an unknown id is possible
-    // at runtime. It becomes the first entry of the dispatch order, and a name that
-    // is not a backend has no function to call, so validate it at this choke point
-    // rather than letting the dispatch throw a TypeError out of the ipc handler.
+    // `prefer` arrives from an ipc payload cast with `as`; an unknown id would make the
+    // dispatch call a missing function.
     prefer:
       o.prefer !== undefined && SEARCH_BACKENDS.has(o.prefer) ? o.prefer : ('serper' as const),
   }
@@ -473,7 +469,7 @@ export async function imageSearch(
 
 /** Icons, buttons and avatars render as junk when a slide crops them into a
  * content frame — anything a backend reports smaller than this is dropped
- * (#1819). Entries without dimension metadata are kept (no evidence, no verdict). */
+ * (genoffice#1819). Entries without dimension metadata are kept (no evidence, no verdict). */
 export const MIN_USABLE_IMAGE_PX = 200
 
 export function filterUsableImages(images: ImageSearchResult[]): ImageSearchResult[] {

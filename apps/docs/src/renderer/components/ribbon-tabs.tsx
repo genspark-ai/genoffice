@@ -539,11 +539,12 @@ export function insertShapeAt(
   if (prst in LINE_KINDS) return insertLineAt(editor, prst, opts)
   const widthEmu = opts?.widthEmu ?? 1800000
   const heightEmu = opts?.heightEmu ?? 1080000
+  const id = Math.floor(Math.random() * 900000) + 100000
   const xml = buildShapeParagraphXml({
     prst,
     widthEmu,
     heightEmu,
-    id: Math.floor(Math.random() * 900000) + 100000,
+    id,
     // default Office blue fill + slightly darker border
     fillHex: '4472C4',
     borderHex: '2F5496',
@@ -558,6 +559,7 @@ export function insertShapeAt(
     widthPx: Math.round(widthEmu / 9525),
     heightPx: Math.round(heightEmu / 9525),
     prst,
+    shapeId: String(id),
     vAlign: 'center',
     textColor: 'FFFFFF',
     paras: [{ runs: [{ text: '' }], align: 'center' }],

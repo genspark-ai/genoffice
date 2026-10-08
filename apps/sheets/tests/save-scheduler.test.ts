@@ -9,7 +9,7 @@
  * of racing, and retries on its next 30 s wake-up.
  */
 import { describe, expect, it } from 'vitest'
-import { shouldRunSaveTick } from '../src/renderer/save-scheduler'
+import { createSaveGate, shouldRunSaveTick } from '../src/renderer/save-scheduler'
 
 function dirtyWorkbookState(overrides: Partial<Parameters<typeof shouldRunSaveTick>[0]> = {}) {
   return {
@@ -75,5 +75,43 @@ describe('shouldRunSaveTick', () => {
     expect(
       shouldRunSaveTick(dirtyWorkbookState({ kind: 'save', restoredFromRecovery: true })),
     ).toBe(true)
+  })
+})
+
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+describe('createSaveGate', () => {
+  it('runs saves one after another and reports busy until the last one settles', async () => {
+    const gate = createSaveGate()
+    const order: string[] = []
+    let releaseFirst!: () => void
+    const first = gate.run(async () => {
+      order.push('first:start')
+      await new Promise<void>((resolve) => (releaseFirst = resolve))
+      order.push('first:end')
+      return 1
+    })
+    const second = gate.run(async () => {
+      order.push('second:start')
+      return 2
+    })
+    expect(gate.busy).toBe(true)
+    await settle()
+    expect(order).toEqual(['first:start'])
+    releaseFirst()
+    expect(await first).toBe(1)
+    expect(await second).toBe(2)
+    expect(order).toEqual(['first:start', 'first:end', 'second:start'])
+    await settle()
+    expect(gate.busy).toBe(false)
+  })
+
+  it('a failed save does not block the next one and the gate reopens', async () => {
+    const gate = createSaveGate()
+    const failed = gate.run(() => Promise.reject(new Error('boom')))
+    await expect(failed).rejects.toThrow('boom')
+    expect(await gate.run(async () => 'ok')).toBe('ok')
+    await settle()
+    expect(gate.busy).toBe(false)
   })
 })
