@@ -7,7 +7,7 @@ Modely a klíče se nastavují v Nastavení (řádek účtu vlevo dole na domovs
 ![Okno Nastavení](img/settings-general.png)
 
 - **Genspark v cloudu**: přihlaste se (postup s kódem zařízení) a používejte — bez žádného nastavení.
-- **Vlastní koncové body (BYOK)**: Nastavení ▸ Model AI přijímá základní URL a klíč API pro každý protokol — kompatibilní s OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) a další. Klíče zůstávají pouze v hlavičkách požadavků — nikdy na disku, v protokolech ani v prostředí podřízených procesů.
+- **Vlastní koncové body (BYOK)**: Nastavení ▸ Model AI přijímá základní URL a klíč API pro každý protokol — kompatibilní s OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) a další. Klíče se ukládají do souboru nastavení aplikace na tomto počítači a odesílají pouze v hlavičkách požadavků.
 - Pro každou schopnost lze zvolit jiný model: chat/generování, generování obrázků, analýza obrázků.
 - **Otestovat připojení**: ověří dosažitelnost koncového bodu a viditelnost modelu před uložením.
 - Základní URL může obsahovat cestu a dotaz (ve stylu brány); cesty koncových bodů se správně připojují.

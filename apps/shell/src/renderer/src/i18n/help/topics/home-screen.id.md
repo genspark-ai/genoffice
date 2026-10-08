@@ -36,7 +36,7 @@ Centang kotak pada sebuah baris, atau ⌘/ctrl-klik, untuk menyusun sebuah pilih
 Kotak pencarian di atas mencocokkan dua hal sekaligus:
 
 - **Nama file**: penyaringan cepat berdasarkan nama.
-- **Isi file**: GenOffice mengindeks file Anda di latar belakang (teks di dalam docx/xlsx/pptx/pdf/md/html, dengan cadangan OCR untuk PDF hasil pindai), sehingga mencari teks isi pun menemukan file. Cakupan dan sakelarnya ada di pengaturan pencarian.
+- **Isi file**: GenOffice mengindeks file Anda di latar belakang (teks di dalam docx/xlsx/pptx/pdf/md/html), sehingga mencari teks isi pun menemukan file. Cakupan dan sakelarnya ada di pengaturan pencarian.
 
 ## Kartu Mulai cepat
 

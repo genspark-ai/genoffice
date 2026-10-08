@@ -8,7 +8,7 @@ Ogni editor può richiamare il pannello IA: seleziona qualcosa, dai un'istruzion
 
 - Punti d'ingresso: il **pulsante AI** nella barra multifunzione di ogni editor, **Chiedi all'IA** nei menu contestuali oppure Chiedi all'IA sulla barra di annotazione.
 - Descrivi l'attività in linguaggio naturale (riscrivi questo / trasforma questa colonna in percentuali / riorganizza l'impaginazione di questa pagina...) e premi Invio.
-- Le risposte vengono renderizzate **in streaming**; quando l'IA ha bisogno di strumenti (leggere il documento, modificarlo, eseguire uno script) li usa e prosegue fino alla fine.
+- Le risposte vengono renderizzate **in streaming**; quando l'IA ha bisogno di strumenti (leggere il documento, modificarlo) li usa e prosegue fino alla fine.
 - **Interrompi**: interrompe il turno in corso in qualsiasi momento.
 
 ## Cosa sa fare
@@ -27,4 +27,4 @@ Ogni editor può richiamare il pannello IA: seleziona qualcosa, dai un'istruzion
 ## Privacy
 
 - Le istruzioni e il contenuto del documento pertinente vengono inviati al **servizio modello che hai configurato** (Genspark ospitato o un endpoint personalizzato, capitolo successivo); senza configurazione non viene inviato nulla.
-- I file locali non vengono caricati da nessun'altra parte; le chiavi BYOK vivono solo nelle intestazioni delle richieste — mai su disco o nei registri.
+- I file locali non vengono caricati da nessun'altra parte; le chiavi BYOK sono memorizzate nel file delle impostazioni dell'app su questa macchina e inviate solo nelle intestazioni delle richieste.

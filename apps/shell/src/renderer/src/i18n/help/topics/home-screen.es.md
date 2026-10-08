@@ -36,7 +36,7 @@ Marque la casilla de una fila, o haga ⌘/ctrl-clic, para ir formando una selecc
 El cuadro de búsqueda de arriba cubre dos cosas a la vez:
 
 - **Nombres de archivo**: filtrado rápido por nombre.
-- **Contenido de los archivos**: GenOffice indexa sus archivos en segundo plano (el texto de los .docx/xlsx/pptx/pdf/md/html, con OCR como respaldo para los PDF escaneados), así que buscar en el cuerpo del texto también encuentra archivos. El ámbito y los interruptores se ajustan en los ajustes de búsqueda.
+- **Contenido de los archivos**: GenOffice indexa sus archivos en segundo plano (el texto de los .docx/xlsx/pptx/pdf/md/html), así que buscar en el cuerpo del texto también encuentra archivos. El ámbito y los interruptores se ajustan en los ajustes de búsqueda.
 
 ## Tarjetas de inicio rápido
 

@@ -7,7 +7,7 @@
 ![设置窗口](img/settings-general.png)
 
 - **Genspark 官方**：登录 Genspark 账号（设备码流程）即可用，免配置。
-- **自定义端点（BYOK）**：设置 ▸ AI 里为每家协议填 base URL 与 API key——OpenAI 兼容、Anthropic、Gemini、DeepSeek、DashScope(qwen) 等。key 只进请求头，不落盘、不进日志与子进程环境。
+- **自定义端点（BYOK）**：设置 ▸ AI 里为每家协议填 base URL 与 API key——OpenAI 兼容、Anthropic、Gemini、DeepSeek、DashScope(qwen) 等。key 存在本机的应用设置文件里，发送时只进请求头。
 - 每类能力可选不同模型：对话/生成、图像生成、图像理解（看图）。
 - **连接测试**：保存前可测试端点连通与模型可见性。
 - base URL 支持带路径与查询串（如网关地址），App 会正确拼接端点路径。

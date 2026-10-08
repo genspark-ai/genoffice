@@ -8,7 +8,7 @@ Chaque éditeur peut appeler le panneau IA: sélectionnez quelque chose, donnez 
 
 - Entrées: le **bouton IA** du ruban de chaque éditeur, **Demander à l’IA** dans les menus contextuels, ou Demander à l’IA sur la barre de marquage.
 - Décrivez la tâche en langage naturel (réécrire ceci / transformer cette colonne en pourcentages / remettre cette page en page…) et appuyez sur Entrée.
-- Les réponses sont rendues **en flux**; lorsque l’IA a besoin d’outils (lire le document, le modifier, exécuter un script), elle les exécute et continue jusqu’au bout.
+- Les réponses sont rendues **en flux**; lorsque l’IA a besoin d’outils (lire le document, le modifier), elle les exécute et continue jusqu’au bout.
 - **Arrêter**: interrompez le tour en cours à tout moment.
 
 ## Ce qu’il sait faire
@@ -27,4 +27,4 @@ Chaque éditeur peut appeler le panneau IA: sélectionnez quelque chose, donnez 
 ## Confidentialité
 
 - Les instructions et le contenu pertinent du document vont au **service de modèle que vous avez configuré** (Genspark hébergé ou un point de terminaison personnalisé, chapitre suivant); sans configuration, rien n’est envoyé.
-- Les fichiers locaux ne sont envoyés nulle part ailleurs; les clés BYOK ne vivent que dans les en-têtes de requête — jamais sur le disque ni dans les journaux.
+- Les fichiers locaux ne sont envoyés nulle part ailleurs; les clés BYOK sont stockées dans le fichier de paramètres de l'application sur cet ordinateur et envoyées uniquement dans les en-têtes de requête.

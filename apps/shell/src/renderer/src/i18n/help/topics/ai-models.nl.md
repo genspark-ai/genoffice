@@ -7,7 +7,7 @@ Modellen en sleutels stel je in Instellingen in (de accountregel linksonder op S
 ![Het venster Instellingen](img/settings-general.png)
 
 - **Genspark gehost**: meld je aan (flow met apparaatcode) en je kunt ermee aan de slag — nul configuratie.
-- **Eigen eindpunten (BYOK)**: Instellingen ▸ AI-model vraagt een basis-URL en een API-sleutel per protocol — OpenAI-compatibel, Anthropic, Gemini, DeepSeek, DashScope (qwen) en meer. Sleutels staan alleen in aanvraagheaders — nooit op schijf, in logbestanden of in de omgeving van onderliggende processen.
+- **Eigen eindpunten (BYOK)**: Instellingen ▸ AI-model vraagt een basis-URL en een API-sleutel per protocol — OpenAI-compatibel, Anthropic, Gemini, DeepSeek, DashScope (qwen) en meer. Sleutels worden opgeslagen in het instellingenbestand van de app op deze machine en alleen in aanvraagheaders verzonden.
 - Per functie kun je een ander model kiezen: chat/genereren, afbeeldingen genereren, afbeeldingsanalyse.
 - **Verbinding testen**: controleert vóór het opslaan of het eindpunt bereikbaar is en het model zichtbaar is.
 - Basis-URL's mogen een pad en een querystring bevatten (gateway-stijl); eindpuntpaden worden correct toegevoegd.

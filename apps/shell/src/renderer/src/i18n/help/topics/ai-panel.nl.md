@@ -8,7 +8,7 @@ Elke editor kan het AI-paneel oproepen: selecteer iets, geef een instructie en z
 
 - Instappen: de **AI-knop** op het lint van elke editor, **Vraag AI** in contextmenu's, of Vraag AI op de markeringsbalk.
 - Beschrijf de taak in gewone taal (herschrijf dit / maak deze kolom percentages / herbereken deze pagina...) en druk op Enter.
-- Antwoorden worden **gestreamd** weergegeven; heeft de AI gereedschap nodig (het document lezen, het bewerken, een script uitvoeren), dan voert het dat uit en gaat het door tot het klaar is.
+- Antwoorden worden **gestreamd** weergegeven; heeft de AI gereedschap nodig (het document lezen, het bewerken), dan voert het dat uit en gaat het door tot het klaar is.
 - **Stop**: onderbreek de huidige beurt op elk moment.
 
 ## Wat het kan
@@ -27,4 +27,4 @@ Elke editor kan het AI-paneel oproepen: selecteer iets, geef een instructie en z
 ## Privacy
 
 - Instructies en de relevante documentinhoud gaan naar de **modelservice die je hebt ingesteld** (Genspark gehost of een eigen eindpunt, volgend hoofdstuk); zonder instelling wordt er niets verstuurd.
-- Lokale bestanden worden nergens anders heen geüpload; BYOK-sleutels staan alleen in aanvraagheaders — nooit op schijf of in logbestanden.
+- Lokale bestanden worden nergens anders heen geüpload; BYOK-sleutels worden opgeslagen in het instellingenbestand van de app op deze machine en alleen in aanvraagheaders verzonden.

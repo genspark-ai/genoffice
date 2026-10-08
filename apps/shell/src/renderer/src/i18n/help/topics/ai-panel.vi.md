@@ -8,7 +8,7 @@ Mọi trình soạn thảo đều có thể gọi bảng AI: chọn một nội 
 
 - Các lối vào: **nút AI** trên dải ruy-bâng của từng trình soạn thảo, **Hỏi AI** trong menu ngữ cảnh, hoặc Hỏi AI trên thanh đánh dấu.
 - Mô tả công việc bằng ngôn ngữ tự nhiên (viết lại đoạn này / biến cột này thành phần trăm / bố cục lại trang này...) rồi nhấn Enter.
-- Câu trả lời hiển thị **dạng luồng**; khi AI cần công cụ (đọc tài liệu, sửa tài liệu, chạy script) thì nó thực thi và tiếp tục cho tới khi xong.
+- Câu trả lời hiển thị **dạng luồng**; khi AI cần công cụ (đọc tài liệu, sửa tài liệu) thì nó thực thi và tiếp tục cho tới khi xong.
 - **Dừng**: có thể ngắt lượt hiện tại bất cứ lúc nào.
 
 ## AI có thể làm gì
@@ -27,4 +27,4 @@ Mọi trình soạn thảo đều có thể gọi bảng AI: chọn một nội 
 ## Quyền riêng tư
 
 - Chỉ dẫn và nội dung tài liệu liên quan được gửi tới **dịch vụ mô hình mà bạn đã cấu hình** (Genspark đám mây hoặc một điểm cuối tùy chỉnh, xem chương sau); không cấu hình thì không gửi gì.
-- Tập tin cục bộ không được tải lên nơi khác; khóa BYOK chỉ nằm trong phần đầu yêu cầu — không bao giờ nằm trên đĩa hay trong nhật ký.
+- Tập tin cục bộ không được tải lên nơi khác; khóa BYOK được lưu trong tệp cài đặt của ứng dụng trên máy này và chỉ được gửi trong phần đầu yêu cầu.

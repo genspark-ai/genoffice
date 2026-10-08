@@ -36,7 +36,7 @@ Tandakan kotak pada satu baris, atau ⌘/ctrl-klik, untuk membina satu pilihan; 
 Kotak carian di atas menapis dua perkara serentak:
 
 - **Nama fail**: penapisan pantas mengikut nama.
-- **Kandungan fail**: GenOffice mengindeks fail anda di latar belakang, iaitu teks di dalam docx/xlsx/pptx/pdf/md/html, dengan OCR sebagai sandaran bagi PDF yang diimbas. Oleh itu, mencari dalam teks badan turut menemui fail. Skop dan suis ditetapkan dalam tetapan carian.
+- **Kandungan fail**: GenOffice mengindeks fail anda di latar belakang, iaitu teks di dalam docx/xlsx/pptx/pdf/md/html. Oleh itu, mencari dalam teks badan turut menemui fail. Skop dan suis ditetapkan dalam tetapan carian.
 
 ## Kad mula pantas
 

@@ -36,7 +36,7 @@ Marque a caixa de uma linha, ou faça ⌘/ctrl-clique, para construir uma seleç
 A caixa de pesquisa no topo corresponde a duas coisas ao mesmo tempo:
 
 - **Nomes de arquivos**: filtragem rápida por nome.
-- **Conteúdo dos arquivos**: o GenOffice indexa seus arquivos em segundo plano (texto dentro de docx/xlsx/pptx/pdf/md/html, com recurso a OCR para PDFs digitalizados), pelo que pesquisar no corpo do texto também encontra arquivos. O âmbito e as opções ficam nas configurações de pesquisa.
+- **Conteúdo dos arquivos**: o GenOffice indexa seus arquivos em segundo plano (texto dentro de docx/xlsx/pptx/pdf/md/html), pelo que pesquisar no corpo do texto também encontra arquivos. O âmbito e as opções ficam nas configurações de pesquisa.
 
 ## Cartões de início rápido
 

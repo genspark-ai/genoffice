@@ -36,7 +36,7 @@ Zaškrtněte pole u řádku nebo klepněte s ⌘/ctrl, abyste vytvořili výběr
 Vyhledávací pole nahoře filtruje najednou dvě věci:
 
 - **Názvy souborů**: rychlé filtrování podle názvu.
-- **Obsah souborů**: GenOffice na pozadí indexuje vaše soubory (text uvnitř docx/xlsx/pptx/pdf/md/html, u naskenovaných PDF s využitím rozpoznávání textu), takže hledáním v textu najdete i soubory. Rozsah a přepínače se nastavují v nastavení vyhledávání.
+- **Obsah souborů**: GenOffice na pozadí indexuje vaše soubory (text uvnitř docx/xlsx/pptx/pdf/md/html), takže hledáním v textu najdete i soubory. Rozsah a přepínače se nastavují v nastavení vyhledávání.
 
 ## Karty rychlého startu
 

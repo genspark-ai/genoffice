@@ -7,7 +7,7 @@ Mô hình và khóa được cấu hình trong Cài đặt (hàng tài khoản �
 ![Cửa sổ Cài đặt](img/settings-general.png)
 
 - **Genspark đám mây**: đăng nhập (luồng mã thiết bị) rồi dùng — không phải cấu hình gì.
-- **Điểm cuối tùy chỉnh (BYOK)**: Cài đặt ▸ AI nhận một URL cơ sở và một khóa API cho từng giao thức — tương thích OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) và hơn thế. Khóa chỉ nằm trong phần đầu yêu cầu — không bao giờ trên đĩa, không trong nhật ký, cũng không trong môi trường của tiến trình con.
+- **Điểm cuối tùy chỉnh (BYOK)**: Cài đặt ▸ AI nhận một URL cơ sở và một khóa API cho từng giao thức — tương thích OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) và hơn thế. Khóa được lưu trong tệp cài đặt của ứng dụng trên máy này và chỉ được gửi trong phần đầu yêu cầu.
 - Có thể chọn mô hình khác nhau cho từng năng lực: trò chuyện/tạo sinh, tạo hình ảnh, phân tích hình ảnh.
 - **Kiểm tra kết nối**: xác minh điểm cuối truy cập được và mô hình hiển thị trước khi lưu.
 - URL cơ sở có thể kèm đường dẫn và chuỗi truy vấn (kiểu cổng kết nối); các đường dẫn điểm cuối được nối thêm một cách chính xác.

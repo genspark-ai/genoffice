@@ -37,7 +37,7 @@
  *
  * ## Pass one language at a time
  *
- * `npx tsx tools/gen-help-shortcut-figure.ts zh en` writes the Chinese figure
+ * `npx tsx tools/gen-help-shortcut-figure.ts zh en` writes the CJK figure
  * and then hangs: the second launch never gets its own window. Each run does
  * use a fresh userData, so this is not the single-instance lock the argv comment
  * above is about — whatever it is, the honest workaround is one language per

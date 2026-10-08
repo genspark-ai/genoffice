@@ -27,4 +27,4 @@ Setiap editor boleh memanggil panel AI. Pilih sesuatu, berikan arahan, dan lihat
 ## Privasi
 
 - Arahan dan kandungan dokumen yang berkaitan dihantar ke **perkhidmatan model yang anda konfigurasikan**, iaitu Genspark yang dihoskan atau titik akhir tersuai. Tanpa konfigurasi, tiada apa-apa yang dihantar.
-- Fail setempat tidak dimuat naik ke tempat lain. Kunci BYOK hanya ada dalam pengepala permintaan, tidak pernah di cakera atau dalam log.
+- Fail setempat tidak dimuat naik ke tempat lain. Kunci BYOK disimpan dalam fail tetapan aplikasi pada mesin ini dan dihantar hanya dalam pengepala permintaan.

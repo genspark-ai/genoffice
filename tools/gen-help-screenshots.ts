@@ -318,7 +318,7 @@ async function main(): Promise<void> {
       // 4. the Slides ribbon, cropped to the band — the fonts topic's figure.
       //    It was hand-captured twice, at two different moments, and the two
       //    language editions ended up showing different things: English a whole
-      //    window, Chinese a ribbon strip. Two files with one caption must show
+      //    window, CJK a ribbon strip. Two files with one caption must show
       //    one subject, so both come from here.
       //
       //    `[data-ribbon-body]` is the shared markup contract every ribbon in

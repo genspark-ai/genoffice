@@ -36,7 +36,7 @@ Chọn ô tick của một hàng, hoặc nhấp ⌘/ctrl, để tạo một vùn
 Ô tìm kiếm ở trên khớp với hai thứ cùng lúc:
 
 - **Tên tập tin**: lọc nhanh theo tên.
-- **Nội dung tập tin**: GenOffice lập chỉ mục cho tập tin của bạn ở nền (văn bản bên trong docx/xlsx/pptx/pdf/md/html, có OCR dự phòng cho PDF quét), nên tìm trong phần chữ cũng ra tập tin. Phạm vi và các công tắc nằm trong cài đặt tìm kiếm.
+- **Nội dung tập tin**: GenOffice lập chỉ mục cho tập tin của bạn ở nền (văn bản bên trong docx/xlsx/pptx/pdf/md/html), nên tìm trong phần chữ cũng ra tập tin. Phạm vi và các công tắc nằm trong cài đặt tìm kiếm.
 
 ## Thẻ bắt đầu nhanh
 

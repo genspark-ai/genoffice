@@ -36,7 +36,7 @@ Zaznacz pole wyboru w wierszu lub kliknij ⌘/ctrl, aby zbudować zaznaczenie; p
 Pole wyszukiwania u góry filtruje naraz dwie rzeczy:
 
 - **Nazwy plików**: szybkie filtrowanie po nazwie.
-- **Zawartość plików**: GenOffice indeksuje Twoje pliki w tle (tekst w docx/xlsx/pptx/pdf/md/html, z rozpoznawaniem OCR dla zeskanowanych PDF), więc wyszukiwanie po treści znajduje również pliki. Zakres i przełączniki ustawia się w ustawieniach wyszukiwania.
+- **Zawartość plików**: GenOffice indeksuje Twoje pliki w tle (tekst w docx/xlsx/pptx/pdf/md/html), więc wyszukiwanie po treści znajduje również pliki. Zakres i przełączniki ustawia się w ustawieniach wyszukiwania.
 
 ## Karty szybkiego startu
 

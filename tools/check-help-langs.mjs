@@ -70,7 +70,7 @@ const IDS = topicIdsFrom(readFileSync(REGISTRY, 'utf-8'))
 const LANGS = langsFrom(readFileSync(I18N, 'utf-8'))
 
 /** Latin- or Cyrillic-script languages: any Han character in one of these is a
- *  worker that pasted the Chinese source instead of translating it. */
+ *  worker that pasted the CJK source instead of translating it. */
 const NO_HAN = new Set([
   'fr',
   'de',
@@ -98,9 +98,9 @@ const NO_HAN = new Set([
  * perfectly, because it *is* English.
  */
 const SCRIPTS = {
-  zh: /[一-鿿]/,
-  'zh-TW': /[一-鿿]/,
-  ja: /[぀-ヿ一-鿿]/,
+  zh: /[\u4E00-\u9FFF]/,
+  'zh-TW': /[\u4E00-\u9FFF]/,
+  ja: /[\u3040-\u30FF\u4E00-\u9FFF]/,
   ko: /[가-힯]/,
   ru: /[Ѐ-ӿ]/,
   ar: /[؀-ۿ]/,
@@ -157,7 +157,7 @@ const links = (t) =>
 const codeFences = (t) => (t.match(/^```/gm) ?? []).length
 const bullets = (t) => (t.match(/^\s*[-*] /gm) ?? []).length
 const numbered = (t) => (t.match(/^\s*\d+\. /gm) ?? []).length
-const HAN = /[一-鿿]/
+const HAN = /[\u4E00-\u9FFF]/
 
 let problems = 0
 const fail = (msg) => {

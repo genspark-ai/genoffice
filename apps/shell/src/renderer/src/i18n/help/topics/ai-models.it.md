@@ -7,7 +7,7 @@ Modelli e chiavi si configurano nelle impostazioni (la riga dell'account in bass
 ![La finestra Impostazioni](img/settings-general.png)
 
 - **Genspark ospitato**: effettua l'accesso (flusso con codice dispositivo) e usalo — nessuna configurazione richiesta.
-- **Endpoint personalizzati (BYOK)**: Impostazioni ▸ IA accetta un URL di base e una chiave API per ogni protocollo — compatibile con OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) e altro. Le chiavi vivono solo nelle intestazioni delle richieste — mai su disco, nei registri o nell'ambiente dei processi figli.
+- **Endpoint personalizzati (BYOK)**: Impostazioni ▸ IA accetta un URL di base e una chiave API per ogni protocollo — compatibile con OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) e altro. Le chiavi sono memorizzate nel file delle impostazioni dell'app su questa macchina e inviate solo nelle intestazioni delle richieste.
 - Puoi scegliere un modello diverso per ciascuna capacità: chat/generazione, generazione di immagini, analisi delle immagini.
 - **Prova connessione**: verifica che l'endpoint sia raggiungibile e che il modello sia visibile prima di salvare.
 - Gli URL di base possono contenere un percorso e una stringa di query (stile gateway); i percorsi degli endpoint vengono aggiunti correttamente.

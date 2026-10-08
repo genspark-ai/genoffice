@@ -8,7 +8,7 @@ Jeder Editor kann den KI-Bereich aufrufen: Etwas auswählen, eine Anweisung gebe
 
 - Einstiegspunkte: die **KI-Schaltfläche** im Menüband jedes Editors, **KI fragen** in den Kontextmenüs oder KI fragen in der Markierungsleiste.
 - Beschreiben Sie die Aufgabe in normaler Sprache (dies umformulieren / diese Spalte in Prozent umrechnen / diese Seite neu setzen …) und drücken Sie die Eingabetaste.
-- Antworten werden **gestreamt**; wenn die KI Werkzeuge braucht (Dokument lesen, bearbeiten, ein Skript ausführen), führt sie sie aus und macht weiter, bis die Aufgabe erledigt ist.
+- Antworten werden **gestreamt**; wenn die KI Werkzeuge braucht (Dokument lesen, bearbeiten), führt sie sie aus und macht weiter, bis die Aufgabe erledigt ist.
 - **Stopp**: unterbrechen Sie den laufenden Durchgang jederzeit.
 
 ## Was er kann
@@ -27,4 +27,4 @@ Jeder Editor kann den KI-Bereich aufrufen: Etwas auswählen, eine Anweisung gebe
 ## Datenschutz
 
 - Anweisungen und der betreffende Dokumentinhalt gehen an den **von Ihnen konfigurierten Modelldienst** (Genspark gehostet oder ein eigener Endpunkt, siehe nächstes Kapitel); ohne Konfiguration wird nichts gesendet.
-- Lokale Dateien werden nirgendwohin sonst hochgeladen; BYOK-Schlüssel leben nur in den Anfrage-Headern — niemals auf der Festplatte oder in Protokollen.
+- Lokale Dateien werden nirgendwohin sonst hochgeladen; BYOK-Schlüssel werden in der Einstellungsdatei der App auf diesem Rechner gespeichert und nur in den Anfrage-Headern gesendet.

@@ -8,7 +8,7 @@ Todos os editores podem chamar o painel de IA: selecione algo, dê uma instruç�
 
 - Pontos de entrada: o **botão de IA** no friso de cada editor, **Perguntar à IA** nos menus de contexto, ou Perguntar à IA na barra de marcação.
 - Descreva a tarefa por palavras normais (reescrever isto / transformar esta coluna em percentagens / refazer a disposição desta página...) e prima Enter.
-- As respostas são renderizadas **em fluxo**; quando a IA precisa de ferramentas (ler o documento, editá-lo, executar um script), executa-as e continua até terminar.
+- As respostas são renderizadas **em fluxo**; quando a IA precisa de ferramentas (ler o documento, editá-lo), executa-as e continua até terminar.
 - **Parar**: interrompe a volta em curso a qualquer momento.
 
 ## O que sabe fazer
@@ -27,4 +27,4 @@ Todos os editores podem chamar o painel de IA: selecione algo, dê uma instruç�
 ## Privacidade
 
 - As instruções e o conteúdo relevante do documento vão para **o serviço de modelo que configurou** (Genspark ou um endpoint personalizado, ver o capítulo seguinte); sem configuração, nada é enviado.
-- Os ficheiros locais não são carregados para lado nenhum; as chaves BYOK vivem apenas nos cabeçalhos das pedidos — nunca em disco nem nos registos.
+- Os ficheiros locais não são carregados para lado nenhum; as chaves BYOK ficam guardadas no ficheiro de definições da aplicação nesta máquina e são enviadas apenas nos cabeçalhos dos pedidos.

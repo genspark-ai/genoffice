@@ -36,7 +36,7 @@ Spunta la casella di una riga, o fai ⌘/ctrl-clic, per comporre una selezione; 
 La casella di ricerca in alto filtra contemporaneamente due cose:
 
 - **Nomi dei file**: filtro rapido per nome.
-- **Contenuto dei file**: GenOffice indicizza i tuoi file in background (il testo dentro docx/xlsx/pptx/pdf/md/html, con il ricorso all'OCR per i PDF scansionati), così cercando nel corpo del testo trovi file. L'ambito e le opzioni si impostano nelle impostazioni di ricerca.
+- **Contenuto dei file**: GenOffice indicizza i tuoi file in background (il testo dentro docx/xlsx/pptx/pdf/md/html), così cercando nel corpo del testo trovi file. L'ambito e le opzioni si impostano nelle impostazioni di ricerca.
 
 ## Schede di avvio rapido
 

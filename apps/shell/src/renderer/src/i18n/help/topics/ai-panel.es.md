@@ -8,7 +8,7 @@ Todos los editores pueden invocar el panel de IA: seleccione algo, dé una instr
 
 - Entradas: el **botón de IA** en la cinta de opciones de cada editor, **Pedir a la IA** en los menús contextuales, o Preguntar a la IA en la barra de marcado.
 - Describa la tarea en lenguaje natural (reescribir esto / convertir esta columna en porcentajes / rehacer el diseño de esta página…) y pulse Intro.
-- Las respuestas se renderizan **en streaming**; cuando la IA necesita herramientas (leer el documento, editarlo, ejecutar un script), las ejecuta y sigue hasta terminar.
+- Las respuestas se renderizan **en streaming**; cuando la IA necesita herramientas (leer el documento, editarlo), las ejecuta y sigue hasta terminar.
 - **Detener**: interrumpa la vuelta en curso en cualquier momento.
 
 ## Qué sabe hacer
@@ -27,4 +27,4 @@ Todos los editores pueden invocar el panel de IA: seleccione algo, dé una instr
 ## Privacidad
 
 - Las instrucciones y el contenido pertinente del documento van al **servicio de modelo que haya configurado** (Genspark alojado o un endpoint personalizado, capítulo siguiente); sin configuración, no se envía nada.
-- Los archivos locales no se suben a ningún otro sitio; las claves BYOK viven solo en las cabeceras de la petición: nunca en el disco ni en los registros.
+- Los archivos locales no se suben a ningún otro sitio; las claves BYOK se guardan en el archivo de ajustes de la aplicación en este equipo y se envían solo en las cabeceras de la petición.

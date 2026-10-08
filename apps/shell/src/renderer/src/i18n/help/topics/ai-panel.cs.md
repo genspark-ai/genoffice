@@ -8,7 +8,7 @@ Každý editor může vyvolat panel AI: vyberte něco, zadejte pokyn a sledujte 
 
 - Vstupy: **tlačítko AI** na pásku každého editoru, **Zeptat se AI** v kontextových nabídkách nebo Zeptat se AI na liště značení.
 - Popište úkol běžnými slovy (přepsat to / udělat z této sloupce procenta / přelayoutovat tuto stránku...) a stiskněte Enter.
-- Odpovědi se vykreslují **průběžně**; když AI potřebuje nástroje (přečíst dokument, upravit ho, spustit skript), použije je a pokračuje až do dokončení.
+- Odpovědi se vykreslují **průběžně**; když AI potřebuje nástroje (přečíst dokument, upravit ho), použije je a pokračuje až do dokončení.
 - **Zastavit**: kdykoli přeruší právě probíhající krok.
 
 ## Co umí
@@ -27,4 +27,4 @@ Každý editor může vyvolat panel AI: vyberte něco, zadejte pokyn a sledujte 
 ## Soukromí
 
 - Pokyny a příslušný obsah dokumentu putují do **služby modelu, kterou jste nastavili** (Genspark v cloudu nebo vlastní koncový bod, viz další kapitola); bez nastavení se nic neodesílá.
-- Místní soubory se nikam jinam neodesílají; klíče BYOK zůstávají pouze v hlavičkách požadavků — nikdy na disku ani v protokolech.
+- Místní soubory se nikam jinam neodesílají; klíče BYOK se ukládají do souboru nastavení aplikace na tomto počítači a odesílají pouze v hlavičkách požadavků.

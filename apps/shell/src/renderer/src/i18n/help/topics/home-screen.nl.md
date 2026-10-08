@@ -36,7 +36,7 @@ Vink het vakje bij een rij aan, of ⌘/ctrl-klik, om een selectie op te bouwen; 
 Het zoekvak bovenaan filtert op twee dingen tegelijk:
 
 - **Bestandsnamen**: snel filteren op naam.
-- **Bestandsinhoud**: GenOffice indexeert je bestanden op de achtergrond (de tekst in docx/xlsx/pptx/pdf/md/html, met OCR als terugval voor gescande pdf's), dus zoeken naar hoofdtekst vindt ook bestanden. Het bereik en de schakelaars staan in de zoekinstellingen.
+- **Bestandsinhoud**: GenOffice indexeert je bestanden op de achtergrond (de tekst in docx/xlsx/pptx/pdf/md/html), dus zoeken naar hoofdtekst vindt ook bestanden. Het bereik en de schakelaars staan in de zoekinstellingen.
 
 ## Snelstartkaarten
 

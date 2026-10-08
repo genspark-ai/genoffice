@@ -36,7 +36,7 @@ Cochez la case d’une ligne, ou faites ⌘/ctrl-clic, pour composer une sélect
 La zone de recherche en haut porte sur deux choses à la fois :
 
 - **Les noms de fichiers** : filtrage rapide par nom.
-- **Le contenu des fichiers** : GenOffice indexe vos fichiers en arrière-plan (le texte des .docx/xlsx/pptx/pdf/md/html, avec repli OCR pour les PDF numérisés), si bien que chercher dans le corps du texte trouve aussi des fichiers. La portée et les interrupteurs se règlent dans les paramètres de recherche.
+- **Le contenu des fichiers** : GenOffice indexe vos fichiers en arrière-plan (le texte des .docx/xlsx/pptx/pdf/md/html), si bien que chercher dans le corps du texte trouve aussi des fichiers. La portée et les interrupteurs se règlent dans les paramètres de recherche.
 
 ## Cartes de démarrage rapide
 

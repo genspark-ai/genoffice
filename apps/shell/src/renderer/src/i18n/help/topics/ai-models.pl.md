@@ -7,7 +7,7 @@ Modele i klucze konfiguruje się w ustawieniach (wiersz konta w lewym dolnym rog
 ![Okno Ustawień](img/settings-general.png)
 
 - **Genspark w chmurze**: zaloguj się (przepływ z kodem urządzenia) i korzystaj — bez żadnej konfiguracji.
-- **Własne punkty końcowe (BYOK)**: Ustawienia ▸ Model AI przyjmuje adres bazowy i klucz API dla każdego protokołu — zgodny z OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) i inne. Klucze pozostają wyłącznie w nagłówkach żądań — nigdy na dysku, w dziennikach ani w środowisku procesów potomnych.
+- **Własne punkty końcowe (BYOK)**: Ustawienia ▸ Model AI przyjmuje adres bazowy i klucz API dla każdego protokołu — zgodny z OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) i inne. Klucze są przechowywane w pliku ustawień aplikacji na tym komputerze i wysyłane wyłącznie w nagłówkach żądań.
 - Dla każdej funkcji można wybrać inny model: czat/generowanie, generowanie obrazów, analiza obrazów.
 - **Testuj połączenie**: sprawdza osiągalność punktu końcowego i widoczność modelu przed zapisaniem.
 - Adresy bazowe mogą zawierać ścieżkę i ciąg zapytania (w stylu bramy); ścieżki punktów końcowych są dokładnie doklejane.

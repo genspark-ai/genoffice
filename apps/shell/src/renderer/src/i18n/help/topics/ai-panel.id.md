@@ -8,7 +8,7 @@ Setiap editor bisa memunculkan panel AI: pilih sesuatu, beri instruksi, dan liha
 
 - Titik masuknya: **tombol AI** di pita setiap editor, **Tanya AI** di menu konteks, atau Tanya AI pada bilah anotasi.
 - Jelaskan tugas dengan bahasa sehari-hari (tulis ulang ini / jadikan kolom ini persentase / tata ulang halaman ini...) lalu tekan Enter.
-- Balasan dirender **secara bertahap**; ketika AI membutuhkan alat (membaca dokumen, mengeditnya, menjalankan skrip), AI menjalankannya dan melanjutkan sampai selesai.
+- Balasan dirender **secara bertahap**; ketika AI membutuhkan alat (membaca dokumen, mengeditnya), AI menjalankannya dan melanjutkan sampai selesai.
 - **Berhenti**: hentikan putaran yang sedang berjalan kapan saja.
 
 ## Apa yang dapat dilakukan
@@ -27,4 +27,4 @@ Setiap editor bisa memunculkan panel AI: pilih sesuatu, beri instruksi, dan liha
 ## Privasi
 
 - Instruksi dan isi dokumen yang relevan dikirim ke **layanan model yang Anda konfigurasikan** (Genspark atau endpoint kustom, lihat bab berikutnya); tanpa konfigurasi, tidak ada yang dikirim.
-- File lokal tidak diunggah ke mana pun; kunci BYOK hanya ada di header permintaan — tidak pernah di disk maupun di log.
+- File lokal tidak diunggah ke mana pun; kunci BYOK tersimpan di berkas pengaturan aplikasi pada mesin ini dan hanya dikirim di header permintaan.

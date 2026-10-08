@@ -36,7 +36,7 @@ Tick the checkbox on a row, or ⌘/ctrl-click, to build a selection; the header 
 The search box at the top matches two things at once:
 
 - **File names**: quick filtering by name.
-- **File contents**: GenOffice indexes your files in the background (text inside docx/xlsx/pptx/pdf/md/html, with OCR fallback for scanned PDFs), so searching body text finds files too. Scope and toggles live in the search settings.
+- **File contents**: GenOffice indexes your files in the background (text inside docx/xlsx/pptx/pdf/md/html), so searching body text finds files too. Scope and toggles live in the search settings.
 
 ## Quick start cards
 

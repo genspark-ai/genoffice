@@ -7,7 +7,7 @@ Models and keys are configured in Settings (the account row at the bottom left o
 ![The Settings window](img/settings-general.png)
 
 - **Genspark hosted**: sign in (device-code flow) and use it — zero configuration.
-- **Custom endpoints (BYOK)**: Settings ▸ AI takes a base URL and API key per protocol — OpenAI-compatible, Anthropic, Gemini, DeepSeek, DashScope (qwen) and more. Keys live only in request headers — never on disk, in logs or child-process env.
+- **Custom endpoints (BYOK)**: Settings ▸ AI takes a base URL and API key per protocol — OpenAI-compatible, Anthropic, Gemini, DeepSeek, DashScope (qwen) and more. Keys are stored in the app's settings file on this machine and sent only in request headers.
 - A different model can be picked per capability: chat/generation, image generation, image analysis.
 - **Connection test**: verify endpoint reachability and model visibility before saving.
 - Base URLs may carry a path and query string (gateway-style); endpoint paths are appended correctly.

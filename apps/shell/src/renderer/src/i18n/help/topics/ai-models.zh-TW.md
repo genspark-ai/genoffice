@@ -7,7 +7,7 @@
 ![設定視窗](img/settings-general.png)
 
 - **Genspark 官方**：登入（裝置碼流程）即可使用——完全免設定。
-- **自訂端點（BYOK）**：設定 ▸ AI 中可依協定填寫 Base URL 與 API 金鑰——OpenAI 相容、Anthropic、Gemini、DeepSeek、DashScope（qwen）等。金鑰只存在於請求標頭中——絕不寫入磁碟、不進日誌，也不傳給子程序環境。
+- **自訂端點（BYOK）**：設定 ▸ AI 中可依協定填寫 Base URL 與 API 金鑰——OpenAI 相容、Anthropic、Gemini、DeepSeek、DashScope（qwen）等。金鑰儲存在本機的應用程式設定檔中，傳送時只放在請求標頭裡。
 - 不同能力可以分別挑選模型：對話／生成、圖像生成、圖像分析。
 - **測試連線**：在儲存前先確認端點可連線且模型可見。
 - Base URL 可以帶上路徑與查詢字串（閘道形式）；端點路徑會正確地接在其後。

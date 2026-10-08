@@ -7,7 +7,7 @@ Os modelos e as chaves configuram-se nas Configurações (a linha da conta no ca
 ![A janela de configurações](img/settings-general.png)
 
 - **Genspark alojado**: entre (com o fluxo de código de dispositivo) e use — sem configuração nenhuma.
-- **Endpoints personalizados (BYOK)**: em Configurações ▸ Modelo de IA indicam-se a URL base e a chave de API de cada protocolo — o compatível com OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) e outros. As chaves vivem apenas nos cabeçalhos dos pedidos — nunca em disco, nos registos ou no ambiente dos processos filhos.
+- **Endpoints personalizados (BYOK)**: em Configurações ▸ Modelo de IA indicam-se a URL base e a chave de API de cada protocolo — o compatível com OpenAI, Anthropic, Gemini, DeepSeek, DashScope (qwen) e outros. As chaves ficam guardadas no ficheiro de definições da aplicação nesta máquina e são enviadas apenas nos cabeçalhos dos pedidos.
 - Pode escolher um modelo diferente para cada capacidade: conversação/geração, geração de imagens, análise de imagens.
 - **Testar conexão**: confirma que o endpoint está acessível e que o modelo está visível, antes de guardar.
 - A URL base pode trazer um caminho e uma cadeia de consulta (ao estilo de gateway); e o caminho do endpoint é acrescentado corretamente.

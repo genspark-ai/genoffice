@@ -8,7 +8,7 @@ Każdy edytor może przywołać panel AI: zaznacz coś, wydaj polecenie i obserw
 
 - Wejścia: **przycisk AI** na wstążce każdego edytora, **Zapytaj AI** w menu kontekstowych albo Zapytaj AI na pasku oznaczeń.
 - Opisz zadanie zwykłymi słowami (przepisz to / zamień tę kolumnę na procenty / ułóż tę stronę od nowa...) i naciśnij Enter.
-- Odpowiedzi są renderowane **strumieniowo**; gdy AI potrzebuje narzędzi (odczytać dokument, go zmienić, uruchomić skrypt), wykonuje je i kontynuuje aż do końca.
+- Odpowiedzi są renderowane **strumieniowo**; gdy AI potrzebuje narzędzi (odczytać dokument, go zmienić), wykonuje je i kontynuuje aż do końca.
 - **Zatrzymaj**: w każdej chwili przerywa bieżącą turę.
 
 ## Co potrafi
@@ -27,4 +27,4 @@ Każdy edytor może przywołać panel AI: zaznacz coś, wydaj polecenie i obserw
 ## Prywatność
 
 - Polecenia i odpowiednia treść dokumentu trafiają do **usługi modelu, którą skonfigurowałeś** (Genspark w chmurze lub własny punkt końcowy, następny rozdział); bez konfiguracji nic nie jest wysyłane.
-- Pliki lokalne nie są nigdzie indziej przesyłane; klucze BYK pozostają wyłącznie w nagłówkach żądań — nigdy na dysku ani w dziennikach.
+- Pliki lokalne nie są nigdzie indziej przesyłane; klucze BYK są przechowywane w pliku ustawień aplikacji na tym komputerze i wysyłane wyłącznie w nagłówkach żądań.

@@ -8,7 +8,7 @@ Every editor can summon the AI panel: select something, give an instruction, wat
 
 - Entries: the **AI button** in each editor's ribbon, **Ask AI** in context menus, or Ask AI on the markup bar.
 - Describe the task in plain language (rewrite this / make this column percentages / re-layout this page...) and press Enter.
-- Replies render **streamed**; when the AI needs tools (read the document, edit it, run a script) it executes and continues until done.
+- Replies render **streamed**; when the AI needs tools (read the document, edit it) it executes and continues until done.
 - **Stop**: interrupt the current turn at any time.
 
 ## What it can do
@@ -27,4 +27,4 @@ Every editor can summon the AI panel: select something, give an instruction, wat
 ## Privacy
 
 - Instructions and the relevant document content go to the **model service you configured** (Genspark hosted or a custom endpoint, next chapter); no configuration, no sending.
-- Local files are uploaded nowhere else; BYOK keys live only in request headers — never on disk or in logs.
+- Local files are uploaded nowhere else; BYOK keys are stored in the app's settings file on this machine and sent only in request headers.
