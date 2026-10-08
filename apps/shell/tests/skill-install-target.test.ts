@@ -143,10 +143,10 @@ describe('integrations:list-skills', () => {
   const ours = (name: string) => plant(join(userData, 'skills'), name)
   const agents = (name: string) => plant(join(fakeHome, '.agents', 'skills'), name)
 
-  it('offers a skill under the save directory, and copies nothing', () => {
+  it('offers a skill under the save directory, and copies nothing', async () => {
     const path = ours('pdf-to-html')
     const before = readdirSync(join(userData, 'skills')).sort()
-    const found = invoke(INTEGRATIONS_CHANNELS.listSkills) as { path: string }[]
+    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as { path: string }[]
     const skill = found.find((s) => s.path === path)
     expect(skill).toMatchObject({ name: 'pdf-to-html', source: 'genoffice' })
     expect(skill.relevance.relevant).toBe(true)
@@ -154,9 +154,9 @@ describe('integrations:list-skills', () => {
     expect(readdirSync(join(userData, 'skills')).sort()).toEqual(before)
   })
 
-  it('offers an agent skill as a candidate, without importing it', () => {
+  it('offers an agent skill as a candidate, without importing it', async () => {
     const path = agents('pptx-builder')
-    const found = invoke(INTEGRATIONS_CHANNELS.listSkills) as {
+    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as {
       path: string
       source: string
       agent?: string
@@ -197,7 +197,7 @@ describe('integrations:list-skills', () => {
 })
 
 describe('integrations:import-skill', () => {
-  it('copies a picked candidate into our folder, and reports it as ours', () => {
+  it('copies a picked candidate into our folder, and reports it as ours', async () => {
     const src = join(fakeHome, '.agents', 'skills', 'pptx-builder')
     mkdirSync(src, { recursive: true })
     writeFileSync(
@@ -211,7 +211,7 @@ describe('integrations:import-skill', () => {
     expect(existsSync(join(userData, 'skills', 'pptx-builder', 'grid.md'))).toBe(true)
 
     // and on the next listing it is ours, not a candidate
-    const found = invoke(INTEGRATIONS_CHANNELS.listSkills) as {
+    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as {
       name: string
       source: string
     }[]

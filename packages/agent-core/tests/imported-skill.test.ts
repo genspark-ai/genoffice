@@ -130,7 +130,18 @@ describe('classifySkill', () => {
     // the list is the feature's contract with the user: a skill about any of
     // these survives the filter. Deleting one token from the table must fail
     // here, so the list cannot rot into a subset.
-    for (const ext of ['docx', 'xlsx', 'pptx', 'pdf', 'markdown', 'html', 'csv', 'doc', 'xls', 'ppt']) {
+    for (const ext of [
+      'docx',
+      'xlsx',
+      'pptx',
+      'pdf',
+      'markdown',
+      'html',
+      'csv',
+      'doc',
+      'xls',
+      'ppt',
+    ]) {
       const out = classifySkill('a-skill', `Convert files to ${ext}`)
       expect(out.relevant, `${ext} should keep the skill`).toBe(true)
       expect(out.matched, `${ext} should be reported as the match`).toContain(ext)

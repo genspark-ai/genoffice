@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, readdirSync, statSync, type Dirent } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -193,7 +193,7 @@ function inspectSkillDir(dir: string): void {
   const stack: string[] = [dir]
   while (stack.length > 0) {
     const cur = stack.pop()!
-    let entries: ReturnType<typeof readdirSync>
+    let entries: Dirent[]
     try {
       entries = readdirSync(cur, { withFileTypes: true })
     } catch {
@@ -208,7 +208,7 @@ function inspectSkillDir(dir: string): void {
         stack.push(full)
         continue
       }
-      let size = 0
+      let size: number
       try {
         size = statSync(full).size
       } catch {

@@ -41,6 +41,7 @@ import { DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { waitForFullContent } from '../phased-content'
 import { currentDocGeneration } from '../file-actions'
 import { createFilesSkill } from './files-skill'
+import { createSkillsSkill } from './skills-skill'
 import { boundChatHistory } from './chat-retention'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
@@ -753,7 +754,7 @@ export function AiPanel({
     loopRef.current = new AgentLoop<PmNode>({
       transport: transportRef.current,
       systemSuffix: aiLangDirective,
-      skill: composeSkills('docs+files', '', [
+      skill: composeSkills('docs+files+skills', '', [
         createDocsSkill(
           () => editorRef.current,
           numIds,
@@ -770,6 +771,7 @@ export function AiPanel({
           () => mediaAnalysisAvailable(settingsRef.current, gskLoggedInRef.current),
         ),
         createFilesSkill(availableAttachments),
+        createSkillsSkill(),
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {
