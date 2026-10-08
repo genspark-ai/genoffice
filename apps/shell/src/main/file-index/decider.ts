@@ -6,14 +6,14 @@
  *
  * The wire protocol is TypeSafe's `/v1/systemone` (state + questions → typed
  * answers with probabilities), which the hosted Jev API, the open /v1/systemone
- * servers (Kev, Von, Rizzo Flow, AFM-D/ollaya) and Perplexity's Decisions API
- * all speak; Cloudflare's Workers AI uses the same request body behind its own
- * account-scoped URL and a `{ result }` envelope. OpenRouter hosts Jev behind a
- * routing envelope with provider pinning.
+ * servers (Kev, Von, Rizzo Flow, AFM-D/ollaya), Perplexity's Decisions API and
+ * Liquid AI's d1 endpoint all speak; Cloudflare's Workers AI uses the same
+ * request body behind its own account-scoped URL and a `{ result }` envelope.
+ * OpenRouter hosts Jev behind a routing envelope with provider pinning.
  */
 
 export type DecisionEndpoint =
-  'openrouter' | 'direct' | 'perplexity' | 'cloudflare' | 'kev' | 'rizzo' | 'custom'
+  'openrouter' | 'direct' | 'perplexity' | 'liquid' | 'cloudflare' | 'kev' | 'rizzo' | 'custom'
 
 export interface DecisionCallOptions {
   endpoint: DecisionEndpoint
@@ -42,6 +42,7 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
   openrouter: { url: 'https://openrouter.ai/api/alpha/decisions', model: 'typesafe/jev-1.13' },
   direct: { url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.13.0' },
   perplexity: { url: 'https://api.perplexity.ai/v1/decisions', model: 'pplx-decider-v1-27b' },
+  liquid: { url: 'https://api.liquid.ai/decisions/v1/systemone', model: 'd1' },
   cloudflare: { url: '', model: '@cf/cloudflare/clef' },
   kev: { url: KEV_URL, model: 'kev-latest', local: true },
   rizzo: { url: RIZZO_URL, model: 'rizzo-latest', local: true },
