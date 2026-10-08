@@ -88,7 +88,7 @@ describe('Ribbon source mode', () => {
     const markdown = counts(renderRibbon(false))
     expect(markdown.styleDropdown).toBe(1)
     expect(source.styleDropdown).toBe(0)
-// 14 block-formatting controls, plus this PR's withhold toggle, plus the
+    // 14 block-formatting controls, plus this PR's withhold toggle, plus the
     // markdown-only source-view toggle (absent for a .txt/.json, which has no
     // use for it), plus the image-host button, which is not a formatting
     // control and so renders in either mode.
