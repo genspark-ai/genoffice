@@ -136,15 +136,9 @@ const BINDINGS: readonly Binding[] = [
     gate: 'sheet',
     action: command('filter-toggle'),
   },
-  // Excel's standard filter chord; also gives mac the ⇧⌘L its screentip names
-  {
-    code: 'KeyL',
-    chord: { mod: true, shift: true },
-    gate: 'sheet',
-    action: command('filter-toggle'),
-  },
   // AutoSum beyond the mac-only ⇧⌘T: Ctrl+Shift+T on Windows/Linux, where
-  // Univer's own QuickSum already owns Alt+=
+  // Univer's own QuickSum already owns Alt+=. The filter's Ctrl/⌘+Shift+L is
+  // Univer's own SmartToggleFilterShortcut, so no row here for it.
   {
     code: 'KeyT',
     chord: { mod: true, shift: true },

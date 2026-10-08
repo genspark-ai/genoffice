@@ -45,6 +45,9 @@ import {
   type RibbonTabCtx,
 } from './ribbon-shared'
 
+/** The New Slide screentip shows the platform's real chord: ⇧⌘N on mac, Ctrl+M elsewhere. */
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+
 const ZOOM_LABEL = {
   summary: 'ribbonZoomSummary',
   section: 'ribbonZoomSection',
@@ -102,6 +105,7 @@ export function RibbonInsertTab({ rb }: { rb: RibbonTabCtx }) {
             disabled={!hasDoc}
             onClick={onAddSlide}
             data-tip={platformShortcuts(t('ribbonNewSlideTip'))}
+            data-tip-kbd={IS_MAC ? '⇧⌘N' : 'Ctrl+M'}
           >
             <span className="rb-big-icon">
               <span className="rb-split-main">

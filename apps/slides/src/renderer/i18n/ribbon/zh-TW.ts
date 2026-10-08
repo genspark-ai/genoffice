@@ -52,7 +52,7 @@ export const zhTW = {
   ribbonBrushTipDefault: '複製格式（按一下複製並套用格式；⌘⇧C 複製格式 / ⌘⇧V 貼上格式）',
   ribbonGroupSlides: '投影片',
   ribbonNewSlide: '新增投影片',
-  ribbonNewSlideTip: '新增空白投影片（沿用目前頁版面配置背景；⇧⌘M）',
+  ribbonNewSlideTip: '新增空白投影片（沿用目前頁版面配置背景）',
   ribbonChooseLayout: '選擇版面配置',
   ribbonChooseLayoutNew: '選擇版面配置新增投影片',
   ribbonChooseLayoutChange: '變更目前投影片版面配置',

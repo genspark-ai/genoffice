@@ -118,10 +118,9 @@ describe('resolveGlobalShortcut routing', () => {
     expect(resolveGlobalShortcut(keyEvent('KeyF', ctrlShift), MAC)).toBeNull()
   })
 
-  it('binds filter and AutoSum cross-platform on the Excel chords', () => {
-    expect(resolveGlobalShortcut(keyEvent('KeyL', ctrlShift), GRID)).toEqual(cmd('filter-toggle'))
-    expect(resolveGlobalShortcut(keyEvent('KeyL', metaShift), MAC)).toEqual(cmd('filter-toggle'))
-    expect(resolveGlobalShortcut(keyEvent('KeyL'), GRID)).toBeNull()
+  it('binds AutoSum cross-platform; the filter Ctrl/⌘+Shift+L chord belongs to Univer', () => {
+    expect(resolveGlobalShortcut(keyEvent('KeyL', ctrlShift), GRID)).toBeNull()
+    expect(resolveGlobalShortcut(keyEvent('KeyL', metaShift), MAC)).toBeNull()
     expect(resolveGlobalShortcut(keyEvent('KeyT', ctrlShift), GRID)).toEqual(cmd('autofn:SUM'))
     expect(resolveGlobalShortcut(keyEvent('KeyT', metaShift), MAC)).toEqual(cmd('autofn:SUM'))
   })

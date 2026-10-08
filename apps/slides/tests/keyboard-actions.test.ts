@@ -568,9 +568,9 @@ describe('new slide shortcut', () => {
 
   const flush = () => new Promise((r) => setTimeout(r, 0))
 
-  it('adds a slide once with Shift+Command+M on macOS', async () => {
+  it('adds a slide once with Shift+Command+N on macOS', async () => {
     const ctx = makeCtx()
-    const e = keydown('M', { shiftKey: true })
+    const e = keydown('N', { shiftKey: true })
     handleGlobalKeydown(ctx, e, 'MacIntel')
     await flush()
     expect(e.defaultPrevented).toBe(true)
@@ -594,17 +594,14 @@ describe('new slide shortcut', () => {
     expect(slideActions.addSlide).toHaveBeenCalledTimes(1)
   })
 
-  it('takes Ctrl+Shift+M on Windows, and N is a trigger nowhere', async () => {
-    const winShift = keydown('m', { metaKey: false, ctrlKey: true, shiftKey: true })
-    handleGlobalKeydown(makeCtx(), winShift, 'Win32')
-    const winN = keydown('N', { metaKey: false, ctrlKey: true, shiftKey: true })
-    handleGlobalKeydown(makeCtx(), winN, 'Win32')
-    const macN = keydown('N', { shiftKey: true })
-    handleGlobalKeydown(makeCtx(), macN, 'MacIntel')
+  it('also takes Shift+Command+N on macOS but not on Windows', async () => {
+    const mac = keydown('N', { shiftKey: true })
+    handleGlobalKeydown(makeCtx(), mac, 'MacIntel')
+    const win = keydown('N', { metaKey: false, ctrlKey: true, shiftKey: true })
+    handleGlobalKeydown(makeCtx(), win, 'Win32')
     await flush()
-    expect(winShift.defaultPrevented).toBe(true)
-    expect(winN.defaultPrevented).toBe(false)
-    expect(macN.defaultPrevented).toBe(false)
+    expect(mac.defaultPrevented).toBe(true)
+    expect(win.defaultPrevented).toBe(false)
     expect(slideActions.addSlide).toHaveBeenCalledTimes(1)
   })
 
@@ -614,7 +611,7 @@ describe('new slide shortcut', () => {
     document.body.appendChild(box)
     box.focus()
     const ctx = makeCtx({ editing: { sourceId: 't1' } })
-    const e = keydown('M', { shiftKey: true })
+    const e = keydown('N', { shiftKey: true })
     handleGlobalKeydown(ctx, e, 'MacIntel')
     await flush()
     expect(e.defaultPrevented).toBe(true)
@@ -638,7 +635,7 @@ describe('new slide shortcut', () => {
     vi.mocked(slideActions.addSlide).mockImplementationOnce(async () => {
       order.push('slide')
     })
-    const e = keydown('M', { shiftKey: true })
+    const e = keydown('N', { shiftKey: true })
     handleGlobalKeydown(ctx, e, 'MacIntel')
     await flush()
     expect(e.defaultPrevented).toBe(true)
@@ -655,11 +652,11 @@ describe('new slide shortcut', () => {
     expect(slideActions.addSlide).not.toHaveBeenCalled()
   })
 
-  it('ignores Alt+M and master view, and Control+Shift+M on mac', async () => {
+  it('ignores Shift+M, Alt+M and master view', async () => {
     const ctrl = { metaKey: false, ctrlKey: true }
+    handleGlobalKeydown(makeCtx(), keydown('M', { ...ctrl, shiftKey: true }), 'Win32')
     handleGlobalKeydown(makeCtx(), keydown('m', { ...ctrl, altKey: true }), 'Win32')
     handleGlobalKeydown(makeCtx({ masterItems: [] }), keydown('m', ctrl), 'Win32')
-    handleGlobalKeydown(makeCtx(), keydown('M', { ...ctrl, shiftKey: true }), 'MacIntel')
     await flush()
     expect(slideActions.addSlide).not.toHaveBeenCalled()
   })
