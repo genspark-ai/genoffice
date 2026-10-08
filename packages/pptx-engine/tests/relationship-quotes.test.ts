@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addElement,
+  addPicture,
   addSlideComment,
   addMedia,
   createBlankPptx,
@@ -16,6 +17,10 @@ import { relsPathFor } from '../src/zip'
 
 const OFF = { x: 914400, y: 914400, cx: 3657600, cy: 2057400 }
 const MP4 = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70])
+const DEFAULT_TAGS = (ct: string, ext: string) =>
+  [...ct.matchAll(/<Default\b[^>]*\/?>/g)]
+    .map((m) => m[0])
+    .filter((tag) => new RegExp(`\\bExtension\\s*=\\s*["']${ext}["']`).test(tag))
 
 /** Rewrite every Id="rIdN" in a rels part with single quotes. */
 const singleQuoteIds = (xml: string): string => xml.replace(/="(rId\d+)"/g, "='$1'")
@@ -100,6 +105,26 @@ describe('quote-agnostic relationship and content-type lookup', () => {
       .filter((tag) => /\bExtension\s*=\s*["']mp4["']/.test(tag))
     // A second Default for mp4 is what OPC forbids
     expect(mp4Defaults).toEqual([existing])
+  })
+
+  it('addPicture matches a Default extension whatever the attribute order', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const ctPath = '[Content_Types].xml'
+    const existing = '<Default ContentType="image/gif" Extension="gif"/>'
+    const ct = opened.archive.readText(ctPath)!
+    expect(DEFAULT_TAGS(ct, 'gif')).toEqual([])
+    opened.archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${existing}</Types>`),
+        'utf8',
+      ),
+    )
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0])
+    expect(
+      addPicture(opened, opened.deck.slides[0]!, { bytes: gif, ext: 'gif', offset: OFF }),
+    ).toBeTruthy()
+    expect(DEFAULT_TAGS(opened.archive.readText(ctPath)!, 'gif')).toEqual([existing])
   })
 })
 

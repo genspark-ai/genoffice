@@ -488,7 +488,7 @@ class AutoNumCounter {
     for (let l = from; l < this.counts.length; l++) this.counts[l] = 0
     if (b?.type !== 'number') return undefined
     const scheme = b.numType ?? 'arabicPeriod'
-    const start = b.startAt ?? 1
+    const start = Math.max(1, b.startAt ?? 1) || 1
     const running = this.counts[lvl] && this.schemes[lvl] === scheme && start === this.starts[lvl]
     const n = running ? this.counts[lvl]! + 1 : start
     if (!running) this.starts[lvl] = start

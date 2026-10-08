@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { decodeDataUrl, isSavableImageUrl, suggestImageFileName } from '../src/index'
+import { MAX_REMOTE_IMAGE_BYTES } from '../src/remote-image'
 
 describe('isSavableImageUrl', () => {
   it('accepts data, http(s) and app asset schemes', () => {
@@ -67,6 +68,14 @@ describe('decodeDataUrl', () => {
     expect(decodeDataUrl(url)).toBeNull()
     const elapsed = performance.now() - started
     expect(elapsed).toBeLessThan(1_000)
+  })
+
+  it('refuses payloads past the remote image budget before decoding', () => {
+    const url =
+      'data:image/png;base64,' + 'A'.repeat(Math.ceil((MAX_REMOTE_IMAGE_BYTES * 4) / 3) + 4)
+    const started = performance.now()
+    expect(decodeDataUrl(url)).toBeNull()
+    expect(performance.now() - started).toBeLessThan(1_000)
   })
 
   it('requires an exact ;base64 parameter, not a substring match', () => {

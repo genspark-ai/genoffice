@@ -16,7 +16,7 @@ import {
 
 // Nanum Myeongjo (the other Korean serif) is not a built-in candidate: it ships in the
 // downloadable catalog, so the pickers surface it as a catalog row with a download marker
-// (apps/slides/src/main/font-catalog.ts, covered by apps/slides/tests/font-store.test.ts).
+// (@genoffice/electron-utils/font-catalog, covered by packages/electron-utils/tests/font-store.test.ts).
 
 /** every spelling the alias table knows for a family, its own name first */
 function spellingsOf(family: string): readonly string[] {
@@ -42,6 +42,14 @@ function localizedSpellingOf(english: string): string {
 }
 
 describe('partitionFontFamilies', () => {
+  it('keeps MS Gothic / MS Mincho / Hiragino Mincho under the names ja machines report', () => {
+    const { builtin } = partitionFontFamilies(
+      ['MS Gothic', 'MS Mincho', 'Hiragino Mincho', 'Meiryo'],
+      [localizedSpellingOf('MS Gothic'), localizedSpellingOf('MS Mincho'), 'Hiragino Mincho ProN'],
+    )
+    expect(builtin).toEqual(['MS Gothic', 'MS Mincho', 'Hiragino Mincho'])
+  })
+
   it('keeps a localized candidate the machine reports under its English name', () => {
     // a Windows outside the CJK locales: SimSun is enumerated, the localized name is not
     const songti = candidateFor('SimSun')
@@ -103,6 +111,11 @@ describe('partitionFontFamilies', () => {
     )
     expect(builtin).toContain('Noto Serif SC')
     expect(system).not.toContain('Noto Serif SC')
+  })
+
+  it('keeps every candidate while enumeration is pending, even with catalog installs', () => {
+    const { builtin } = partitionFontFamilies(['Calibri', 'Noto Serif SC'], [], ['Noto Serif SC'])
+    expect(builtin).toEqual(['Calibri', 'Noto Serif SC'])
   })
 
   it('lists the machine families that are not candidates under system, in order', () => {

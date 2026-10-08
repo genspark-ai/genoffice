@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearOpenDocuments, publishOpenDocuments } from '../src/main/open-documents'
 
 describe('open-documents registry', () => {
@@ -18,9 +18,16 @@ describe('open-documents registry', () => {
     clearOpenDocuments(path)
   })
 
-  it('never throws when the directory is missing', () => {
-    expect(() =>
-      publishOpenDocuments('/nonexistent-dir/x/open-documents.json', ['/a']),
-    ).not.toThrow()
+  it('reports a failed write once per distinct error instead of swallowing it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const missing = '/nonexistent-dir/x/open-documents.json'
+    expect(publishOpenDocuments(missing, ['/a'])).toBe(false)
+    expect(publishOpenDocuments(missing, ['/b'])).toBe(false)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0]?.[1]).toMatch(/ENOENT/)
+    const ok = join(mkdtempSync(join(tmpdir(), 'open-docs-')), 'open-documents.json')
+    expect(publishOpenDocuments(ok, ['/a'])).toBe(true)
   })
+
+  afterEach(() => vi.restoreAllMocks())
 })

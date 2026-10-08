@@ -30,13 +30,15 @@ export function touchedNeedsRecompute(
   touched: Set<number>,
   mapped: DecorationSet,
   needsRecompute: (node: PmNode) => boolean,
+  changed?: (before: PmNode, after: PmNode) => boolean,
 ): boolean {
   for (const offset of touched) {
     const child = tr.doc.childAfter(offset)
     if (!child.node) return true
-    if (needsRecompute(child.node)) return true
     const before = tr.before.maybeChild(child.index)
-    if (before && needsRecompute(before)) return true
+    if (before && changed) {
+      if (changed(before, child.node)) return true
+    } else if (needsRecompute(child.node) || (before && needsRecompute(before))) return true
     if (mapped.find(offset, offset + child.node.nodeSize).length > 0) return true
   }
   return false
@@ -65,6 +67,8 @@ export interface BlockDecorationSpec {
   build: (doc: PmNode) => Decoration[]
   /** a touched block whose current content forces a rebuild */
   needsRecompute: (node: PmNode) => boolean
+  /** with both sides of a touched block at hand, decides the rebuild instead of needsRecompute */
+  changed?: (before: PmNode, after: PmNode) => boolean
   /** inputs outside the document (display modes): a change rebuilds on the next transaction */
   signature?: () => string
 }
@@ -88,7 +92,8 @@ export function blockDecorationPlugin(spec: BlockDecorationSpec): Plugin<BlockDe
         const touched = localEditBlocks(tr)
         if (!touched) return compute(tr.doc)
         const mapped = old.set.map(tr.mapping, tr.doc)
-        if (touchedNeedsRecompute(tr, touched, mapped, spec.needsRecompute)) return compute(tr.doc)
+        if (touchedNeedsRecompute(tr, touched, mapped, spec.needsRecompute, spec.changed))
+          return compute(tr.doc)
         return { set: mapped, sig }
       },
     },

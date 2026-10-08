@@ -6,7 +6,7 @@
  * grid context menu from a window-level listener and never cancels the DOM
  * event, so a surviving event reaches Electron's webContents
  * 'context-menu' handler and the native edit menu stacks on top of it
- * (#1816). Cancelling the event suppresses the native menu entirely, which
+ * (genoffice#1816). Cancelling the event suppresses the native menu entirely, which
  * is exactly how renderer-drawn menus elsewhere stay exclusive (see
  * electron-utils' context-menu.ts). Editable surfaces (formula bar, the
  * in-cell editor) keep the native cut/copy/paste menu — Univer shows nothing

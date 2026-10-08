@@ -35,3 +35,41 @@ test('keeps bookmarks on table cells, cards and color bars', async () => {
     assert.match(xml, new RegExp(`w:name="${bookmarkName(id)}"`), `missing bookmark ${id}`)
   }
 })
+
+test('carries a card bookmark into a nested table and through the flattened card paths', async () => {
+  const table = {
+    type: 'table',
+    colWidths: [400],
+    rows: [{ cells: [{ runs: [{ text: 'Nested' }] }] }],
+  }
+  const tall = {
+    type: 'card',
+    allowSplit: true,
+    heightPx: 900,
+    shading: 'F5F5F5',
+    children: [
+      { type: 'para', runs: [{ text: 'A' }], style: {} },
+      { type: 'para', runs: [{ text: 'B' }], style: {} },
+    ],
+    bookmarks: ['flat-anchor'],
+  }
+  const deep = (children) => ({ type: 'card', children })
+  const xml = await documentXml([
+    { type: 'card', children: [table], bookmarks: ['nested-table-anchor'] },
+    tall,
+    deep([
+      deep([
+        deep([
+          {
+            type: 'card',
+            children: [{ type: 'para', runs: [{ text: 'D' }], style: {} }],
+            bookmarks: ['deep-anchor'],
+          },
+        ]),
+      ]),
+    ]),
+  ])
+  for (const id of ['nested-table-anchor', 'flat-anchor', 'deep-anchor']) {
+    assert.match(xml, new RegExp(`w:name="${bookmarkName(id)}"`), `missing bookmark ${id}`)
+  }
+})

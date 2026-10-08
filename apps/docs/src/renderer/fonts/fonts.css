@@ -374,6 +374,110 @@
   font-style: normal;
   font-display: block;
 }
+/* Sakkal Majalla (M365 cloud face Word renders real) is a compact naskh
+ * with a narrow Latin. Class scales are shaped widths of a 64k-char Arabic
+ * report in the cloud cuts vs the stand-in (harfbuzz over the real files,
+ * 2026-09-30): Arabic letters 0.8055 of the Noto Naskh subset (bold cut
+ * 0.841; registered weight-normal so Blink synthesizes bold), Arabic-Indic
+ * digits 0.9396, and vs Liberation Sans/Helvetica: ASCII digits 0.7287,
+ * space 0.545, punctuation 0.6667, letters 0.67, dashes 0.9113, other Latin-1
+ * and general punctuation symbols 0.66 (they would otherwise fall to Al Bayan,
+ * whose 1.5 em box stretches the line). Weight-normal only: Blink
+ * serves one weight group per family, so a bold group without the Arabic
+ * ranges would send bold Arabic past the alias to Geeza Pro; bold runs are
+ * synthesized and keep the regular ratios (bold cuts run 4-12% wider).
+ * Letters sit in a second family so a run's own ascii face still wins them
+ * (chain splice in line-metrics.ts). Every face pins the Word hhea box
+ * 1810/1050 over 2048. */
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 80.55%;
+  unicode-range:
+    U+0600-065F, U+066A-06EF, U+06FA-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: url('./NotoNaskhArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 93.96%;
+  unicode-range: U+0660-0669, U+06F0-06F9;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 72.87%;
+  unicode-range: U+0030-0039;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 54.5%;
+  unicode-range: U+0020, U+00A0;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 66.67%;
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 91.13%;
+  unicode-range: U+2010-2015;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 66%;
+  unicode-range: U+00A1-00BF, U+00D7, U+00F7, U+2016-2027, U+2212, U+2248, U+2260-2265;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Sakkal Majalla Latin GO';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 67%;
+  unicode-range: U+0041-005A, U+0061-007A;
+  ascent-override: 88.38%;
+  descent-override: 51.27%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
 /* Documents declaring Noto Naskh/Sans Arabic by name resolve to the bundled
  * subsets, which run ~13% wider than Word's rendering of those faces; kept
  * separate from the 90% TA alias (different calibration source). */
@@ -1012,6 +1116,45 @@
   font-display: block;
 }
 
+/* Word's Symbol / Wingdings bullets when the face is missing (macOS Symbol.ttf has
+ * no F0xx cmap): Liberation Sans' U+25CF (0.43em) scaled to the Word glyph's ink
+ * (Symbol bullet 0.357em, Wingdings circle 0.579em). The overrides keep the Word
+ * face's total (Symbol 1.2251em, Wingdings 1.1098em) and split it so the glyph
+ * baseline sits 0.36em above the bottom of the bullet box, where Chromium puts the
+ * Calibri/Carlito text baseline (0.25em descent + half of the 0.22em leading);
+ * Chromium applies the overrides after size-adjust, hence the rescaled values. */
+@font-face {
+  font-family: 'Symbol Bullet GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 83%;
+  ascent-override: 107.2%;
+  descent-override: 40.4%;
+  line-gap-override: 0%;
+  font-display: block;
+}
+/* Segoe UI Symbol, Word's fallback for a bullet glyph the paragraph face lacks
+ * (U+25B8 and friends): ships only inside Office, so the ink comes from the real
+ * face where installed, else Apple Symbols. The overrides carry its 1.3301em
+ * line (hhea 1.0791 / 0.2510) split at the same 0.36em baseline as above. */
+@font-face {
+  font-family: 'Segoe UI Symbol GO';
+  src:
+    local('Segoe UI Symbol'), local('SegoeUISymbol'), local('Apple Symbols'), local('AppleSymbols');
+  ascent-override: 97.9%;
+  descent-override: 35.1%;
+  line-gap-override: 0%;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Wingdings Bullet GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 134.5%;
+  ascent-override: 57.9%;
+  descent-override: 24.6%;
+  line-gap-override: 0%;
+  font-display: block;
+}
+
 /* Aptos (M365 default body face since 2023): Word renders the real font, but
  * it ships only inside Office, so Chromium never resolves it and the chain
  * fell to Carlito — 5% narrower per line, one line short per paragraph (SAS
@@ -1126,6 +1269,118 @@
   font-style: italic;
   font-display: block;
 }
+/* Aptos punctuation off the letter scale by more than a line's worth over a
+ * rule of them (Word DFonts hmtx vs Carlito): _ and the en dash 0.46em, ! / \
+ * 0.29-0.39em, | 0.27em; the same advance in every weight. */
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
+  size-adjust: 92.4%;
+  unicode-range: U+005F, U+2013;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
+  size-adjust: 92.4%;
+  unicode-range: U+005F, U+2013;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
+  size-adjust: 92.4%;
+  unicode-range: U+005F, U+2013;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
+  size-adjust: 92.4%;
+  unicode-range: U+005F, U+2013;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
+  size-adjust: 89%;
+  unicode-range: U+0021, U+002F, U+005C;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
+  size-adjust: 89%;
+  unicode-range: U+0021, U+002F, U+005C;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
+  size-adjust: 89%;
+  unicode-range: U+0021, U+002F, U+005C;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
+  size-adjust: 89%;
+  unicode-range: U+0021, U+002F, U+005C;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
+  size-adjust: 57.5%;
+  unicode-range: U+007C;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
+  size-adjust: 57.5%;
+  unicode-range: U+007C;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
+  size-adjust: 57.5%;
+  unicode-range: U+007C;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Aptos GO';
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
+  size-adjust: 57.5%;
+  unicode-range: U+007C;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+
 @font-face {
   font-family: 'Aptos Display GO';
   src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
@@ -1256,6 +1511,26 @@
 @font-face {
   font-family: 'GenOffice Poppins';
   src: url('./GenOfficePoppins-Bold-subset.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+
+/* DM Sans (Google Fonts) renders real in Word when installed (corpus
+ * 2026-09-30: PDF embeds DMSans-Regular/Bold = the 1.200 statics, line factor
+ * 1.302). The Helvetica class runs ~7% narrower and 1.15-spaced, so the real
+ * Latin subset is bundled (tools/build-dm-sans-font.py). A locally installed
+ * DM Sans still precedes this face in the chain. */
+@font-face {
+  font-family: 'GenOffice DM Sans';
+  src: url('./GenOfficeDMSans-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice DM Sans';
+  src: url('./GenOfficeDMSans-Bold-subset.woff2') format('woff2');
   font-weight: bold;
   font-style: normal;
   font-display: block;
@@ -1579,6 +1854,445 @@
   unicode-range: U+00A8, U+00B0, U+00B4;
   size-adjust: 166.667%;
   font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+/* Yu Mincho / Yu Gothic: Office-private on macOS (Word lays out with its own
+   yumin.ttf / YuGoth*.ttc; advances read from those faces 2026-09-30, weighted
+   over a trilingual EN/JP/ID body). Apple's downloadable YuMincho/YuGothic cuts
+   share the design, so they lead: Yu Gothic Regular/Bold equal the Apple
+   Medium/Bold advances outright, Yu Mincho Demibold equals the Apple Demibold,
+   and Yu Mincho Regular differs per class (space 0.260 em vs 0.333). Where the
+   Apple cuts are absent the Liberation faces stand in with class scales.
+   Line geometry pinned to the Word faces' hhea (0.88 / 0.222) in every tier. */
+@font-face {
+  font-family: 'Yu Mincho GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 101.86%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 99.51%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0030-0039;
+  size-adjust: 108.4%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 108.11%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0020;
+  size-adjust: 78.01%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho GO';
+  src: local('YuMin-Demibold'), local('YuMincho Demibold');
+  unicode-range: U+0020-007E, U+00A0-00FF;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Light GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 97.44%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Light GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 96.19%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Light GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0030-0039;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Light GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 93.21%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Light GO';
+  src: local('YuMin-Medium'), local('YuMincho Medium');
+  unicode-range: U+0020;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Light GO';
+  src: local('YuMin-Demibold'), local('YuMincho Demibold');
+  unicode-range: U+0020-007E, U+00A0-00FF;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 109.65%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 109.73%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+0030-0039;
+  size-adjust: 108.4%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 118.69%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Regular.ttf') format('truetype');
+  unicode-range: U+0020;
+  size-adjust: 103.91%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Bold.ttf') format('truetype');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 102.36%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Bold.ttf') format('truetype');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 107.04%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Bold.ttf') format('truetype');
+  unicode-range: U+0030-0039;
+  size-adjust: 104.39%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Bold.ttf') format('truetype');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 105.87%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Mincho Serif GO';
+  src: url('./LiberationSerif-Bold.ttf') format('truetype');
+  unicode-range: U+0020;
+  size-adjust: 133.2%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic GO';
+  src: local('YuGo-Medium'), local('YuGothic Medium');
+  unicode-range: U+0020-007E, U+00A0-00FF;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic GO';
+  src: local('YuGo-Bold'), local('YuGothic Bold');
+  unicode-range: U+0020-007E, U+00A0-00FF;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Light GO';
+  src: local('YuGo-Medium'), local('YuGothic Medium');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 91.97%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Light GO';
+  src: local('YuGo-Medium'), local('YuGothic Medium');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 95.26%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Light GO';
+  src: local('YuGo-Medium'), local('YuGothic Medium');
+  unicode-range: U+0030-0039;
+  size-adjust: 96.6%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Light GO';
+  src: local('YuGo-Medium'), local('YuGothic Medium');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 88.66%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Light GO';
+  src: local('YuGo-Medium'), local('YuGothic Medium');
+  unicode-range: U+0020;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Light GO';
+  src: local('YuGo-Bold'), local('YuGothic Bold');
+  unicode-range: U+0020-007E, U+00A0-00FF;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Regular.ttf') format('truetype');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 104.62%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Regular.ttf') format('truetype');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 100.55%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Regular.ttf') format('truetype');
+  unicode-range: U+0030-0039;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Regular.ttf') format('truetype');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 113.27%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Regular.ttf') format('truetype');
+  unicode-range: U+0020;
+  size-adjust: 102.64%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Bold.ttf') format('truetype');
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  size-adjust: 102.2%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Bold.ttf') format('truetype');
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  size-adjust: 103.79%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Bold.ttf') format('truetype');
+  unicode-range: U+0030-0039;
+  size-adjust: 103.07%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Bold.ttf') format('truetype');
+  unicode-range: U+0021-002F, U+003A-0040, U+005B-0060, U+007B-007E;
+  size-adjust: 110.96%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Yu Gothic Sans GO';
+  src: url('./LiberationSans-Bold.ttf') format('truetype');
+  unicode-range: U+0020;
+  size-adjust: 102.64%;
+  ascent-override: 88%;
+  descent-override: 22.2%;
+  font-weight: bold;
   font-style: normal;
   font-display: block;
 }

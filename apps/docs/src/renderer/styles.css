@@ -719,6 +719,82 @@ html.genoffice-popover-open .ribbon-tabs {
   margin: 0 -4px;
 }
 
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops to icon-only on a shorter band. The three defences above
+ * (nowrap on .rb-big, flex-shrink: 0 on .ribbon-group, overflow-x: scroll on
+ * .ribbon-body) all still apply — icon-only narrows the buttons, so a narrow
+ * window packs more of them in before the row overflows.
+ */
+.ribbon-compact .ribbon-body {
+  /* same fixed-height contract as the full band, only shorter: switching tabs
+     (including the auto-jump to Table Layout) must still never resize the row */
+  height: 38px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+}
+
+.ribbon-compact .rb-big {
+  /* the label is the only thing taller than the icon; dropping the column gap
+     and the vertical padding brings the button to the band's content box */
+  padding: 3px 5px;
+}
+
+.ribbon-compact .rb-big-icon {
+  min-height: 28px;
+  flex: none;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name and break the
+ * getByRole('button', { name }) selectors across the e2e suite. */
+.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* the icon row is the whole button now, so let the hover/open paint cover it */
+.ribbon-compact .rb-big .rb-big-icon {
+  align-self: stretch;
+  padding: 3px 4px;
+  margin: 0 -3px;
+}
+
+/* Groups and separators centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 3px;
+}
+
+/* The table ribbon groups its tools in .table-tool-group (min-width 66px), not
+ * .ribbon-group — without this they keep the full-band inset and the band ends
+ * up wider than the content it holds. */
+.ribbon-compact .table-tool-group {
+  min-width: 0;
+  padding: 2px 4px;
+}
+
+/* Split buttons stack a caret beside the icon; without the label row the pair
+ * needs to sit on one line. */
+.ribbon-compact .rb-caret-svg {
+  margin-left: 2px;
+}
+
+/* The table tabs stack two rows of controls (font block, cell size grid), which
+ * cannot compress to 38px. Let that content scroll inside the band instead of
+ * overflowing it and pushing the document down — the band itself keeps its
+ * fixed height, so switching to a table tab still never resizes the row. */
+.ribbon-compact .table-ribbon-body {
+  overflow-y: auto;
+}
+
 /* the dropdown chevron sits beside the icon (top row), not the label */
 .rb-caret-svg {
   flex-shrink: 0;
@@ -2402,7 +2478,10 @@ th.cell-rev-del {
   background: var(--canvas);
 }
 
+/* the document stays ltr under an RTL UI — the chrome mirrors, the content does not */
+
 .editor-scroll {
+  direction: ltr;
   flex: 1;
   overflow-y: auto;
   /* classic (non-overlay) scrollbars change clientWidth as they come and go,
@@ -2945,6 +3024,24 @@ th.cell-rev-del {
   pointer-events: none;
 }
 
+/* inline picture on a text-paragraph run (logo after a tab): sits on the line's
+   baseline like Word; a positioned tab segment holding one is out of flow, so
+   the strut reserves its height and the segment starts at the line top */
+.page-hf-run-img {
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.page-hf-tab-strut {
+  display: inline-block;
+  width: 0;
+}
+
+.page-hf-tabseg-img {
+  top: 0;
+}
+
 /* logo and other images in the part (display-only, excluded from text editing) */
 .page-hf-images {
   display: flex;
@@ -3418,8 +3515,10 @@ th.cell-rev-del {
 
 .rev-display-none .doc-del,
 .rev-display-none .has-move-from,
+.rev-display-none .doc-para-del-collapse,
 .rev-display-simple .doc-del,
-.rev-display-simple .has-move-from {
+.rev-display-simple .has-move-from,
+.rev-display-simple .doc-para-del-collapse {
   display: none;
 }
 
@@ -3505,6 +3604,28 @@ th.cell-rev-del {
 
 .rev-balloon .has-ppr-change::after {
   content: none;
+}
+
+/* every inline child deleted, mark live: Word keeps the paragraph as one empty
+   line — the strut is that line, so the trailing break after a deleted hard
+   break must not add a second one. Placed after the has-ppr-change::after
+   overrides: same specificity, later wins */
+.rev-display-none .doc-para-content-del::after,
+.rev-display-simple .doc-para-content-del::after,
+.rev-balloon .doc-para-content-del::after {
+  content: '\200b';
+  /* the pPrChange badge shares ::after; its chip must not paint on the strut */
+  margin-left: 0;
+  font-size: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.rev-display-none .doc-para-content-del > br.ProseMirror-trailingBreak,
+.rev-display-simple .doc-para-content-del > br.ProseMirror-trailingBreak,
+.rev-balloon .doc-para-content-del > br.ProseMirror-trailingBreak {
+  display: none;
 }
 
 /* Compare result pane */
@@ -4161,6 +4282,15 @@ th.cell-rev-del {
 
   :where(.page-dark) [style*='--dk-bg:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
     background-color: var(--dk-bg) !important;
+  }
+
+  /* the widened shading box (--pbdr-fill shadow) follows the remapped fill */
+  :where(.page-dark) [style*='--dk-bg:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
+    --pbdr-fill: var(--dk-bg) !important;
+  }
+
+  :where(.page-dark) [style*='--dk-bgi:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
+    background-image: var(--dk-bgi) !important;
   }
 
   :where(.page-dark) [style*='--dk-b-t:']:where(:not(.doc-textbox-filled, .doc-textbox-filled *)) {
@@ -4930,9 +5060,9 @@ th.cell-rev-del {
   /* glyphs lead the box whatever the paragraph alignment: Word's tab follows the marker */
   text-align: start;
   font-family: var(--li-marker-font, inherit);
-  font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
-  /* --li-marker-lh: 0 for scaled substitute glyphs; an oversized level w:sz sets the
-     marker's natural height (Word does not grid-snap the number like a run) */
+  font-size: var(--li-marker-size, 1em);
+  /* an oversized level w:sz sets the marker's natural height (Word does not
+     grid-snap the number like a run) */
   line-height: var(--li-marker-lh, inherit);
   vertical-align: var(--li-marker-va, baseline);
   /* w:lvl rPr color; the --dk-li-mc twin recolors it on the dark page */
@@ -5874,7 +6004,7 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   margin-inline-start: calc(-1 * var(--li-hang, 0));
   text-indent: 0;
   font-family: var(--li-marker-font, inherit);
-  font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
+  font-size: var(--li-marker-size, 1em);
   line-height: var(--li-marker-lh, inherit);
   vertical-align: var(--li-marker-va, baseline);
   color: var(--li-marker-color, inherit);
@@ -5905,7 +6035,7 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   margin-inline-start: calc(-1 * var(--li-hang, var(--style-li-hang, 0)));
   text-indent: 0;
   font-family: var(--li-marker-font, inherit);
-  font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
+  font-size: var(--li-marker-size, 1em);
   line-height: var(--li-marker-lh, inherit);
   vertical-align: var(--li-marker-va, baseline);
   color: var(--li-marker-color, inherit);
@@ -5962,20 +6092,41 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   );
 }
 
+/* Cell paragraph mixing declared faces (extensions paraMixedFaceClass): a run whose
+   face box is shorter than the strut's, centred in the inherited line-height, would
+   lift the line by (asc - box/2) of the two faces (Times in Sakkal Majalla: 0.15em);
+   its own line box makes the union max ascent + max descent like Word. Never grid-
+   snapped: cells are off the typed grid, and in adjustLineHeightInTable cells the
+   strut's snapped line still exceeds this shorter box and carries the snap. */
+.doc-table
+  :is(td, th)
+  .doc-mixed-face:not(.doc-lh-fixed)
+  span[style*='--doc-run-lh']:not([style*='vertical-align']) {
+  line-height: calc(var(--doc-run-lh) * 1em * var(--doc-line-mult, 1));
+}
+
 /* behind text at full opacity (Word); the page's stacking context keeps it above the paper */
 .doc-inline-img--behind {
   z-index: -1;
 }
 
-/* Word puts the whole (m-1) x single extra of an auto multiple below the glyphs
-   and bottom-aligns atLeast lines (--doc-lead-top), a typed grid centres like CSS;
-   display-only, the line box keeps its height (pagination-measure subtracts top) */
+/* Word puts the whole (m-1) x single extra of an auto multiple below the glyphs,
+   rests the descent on the single line's bottom (--doc-lead-gap: the face's
+   leading sits above, Chromium centres it), bottom-aligns atLeast lines
+   (--doc-lead-top) and puts an exact baseline at 0.8 h (--doc-lead-exact); a
+   typed grid centres like CSS; display-only, the line box keeps its height
+   (pagination-measure subtracts top) */
 .doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-li, .doc-textbox-para, .doc-protected-field) {
+  --doc-lead-gap: calc(
+    (1 - var(--doc-lead-grid, 0)) *
+      (var(--doc-line-factor, 1.2) - var(--doc-font-box, var(--doc-line-factor, 1.2))) * 1em / 2
+  );
+  --doc-lead-exact: calc(0.3 * var(--doc-lh-cap) - var(--doc-font-skew) * 1em / 2);
   --doc-lead-shift: var(
     --doc-lead-top,
     calc(
       (1 - var(--doc-lead-grid, 0)) * (1 - var(--doc-line-mult, 1)) * var(--doc-line-factor, 1.2) *
-        1em / 2
+        1em / 2 + var(--doc-lead-gap)
     )
   );
   position: relative;
@@ -6384,6 +6535,9 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   display: inline-block;
   font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', serif;
   font-size: 16px;
+  /* maths runs carry their own formatting: the paragraph style's bold/italic must not leak in */
+  font-weight: normal;
+  font-style: normal;
   cursor: move;
   user-select: none;
   -webkit-user-select: none;
@@ -6405,9 +6559,25 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   display: none;
 }
 
-/* display equations (oMathPara-style) are centered; inline fallbacks keep flow */
+/* display equations (oMathPara-style) are centered; inline fallbacks keep flow.
+   Paragraph-height box like .doc-protected-field: the chip border/padding/margin
+   added ~15pt per equation over Word; document CSS supplies the real spacing */
 .doc-protected-formula-display {
   text-align: center;
+  border: none;
+  outline: 1px dashed transparent;
+  outline-offset: -1px;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+.doc-protected-formula-display:hover {
+  outline-color: var(--border-strong);
+}
+
+.ProseMirror-focused .doc-protected-formula-display.ProseMirror-selectednode {
+  border: none;
 }
 
 /* embedded charts: SVG preview + editable data sheet.
@@ -6682,9 +6852,17 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   line-height: 0;
 }
 
-/* the document CSS gives .doc-img-para its paragraph margins and line-height; only the margins apply */
+/* the document CSS gives .doc-img-para its paragraph margins and line-height;
+   the line itself is the picture extent plus, under an auto multiple, the
+   (m - 1) x single-line extra Word adds below the picture (typed-grid docs
+   pad to whole cells instead, doc-style-css); a style-level exact/atLeast
+   rule (--doc-line-fixed) pins the multiple to 1 like a direct one */
 .doc-protected[data-doc-protected='image'].doc-img-para {
   line-height: 0;
+  --doc-pic-mult: calc(1 + (var(--doc-line-mult, 1) - 1) * (1 - var(--doc-line-fixed, 0)));
+  --doc-pic-extra: calc((var(--doc-pic-mult) - 1) * var(--doc-line-factor, 1.2) * 1em);
+  padding-top: var(--doc-pic-effect-t, 0px);
+  padding-bottom: calc(var(--doc-pic-effect-b, 0px) + var(--doc-pic-extra));
 }
 
 .doc-protected[data-doc-protected='image'] .doc-img-wrap > img,
@@ -6692,8 +6870,15 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   vertical-align: bottom;
 }
 
+/* leading spaces/tabs share the picture line when they fit (bottom-aligned so
+   they add nothing below it); an overwide picture wraps under them (pre-wrap:
+   pre would forbid the break) and the text keeps a full line of its own (Word) */
 .doc-image-leading-space {
-  white-space: pre;
+  white-space: pre-wrap;
+  vertical-align: bottom;
+  line-height: calc(
+    var(--doc-line-factor, 1.2) * 1em * var(--doc-pic-mult, var(--doc-line-mult, 1))
+  );
 }
 
 /* float anchors are zero-height wrappers: an outline there would paint a
@@ -6895,10 +7080,17 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   text-align: center;
 }
 
-/* floating tables (w:tblpPr): text flows around the free side */
+/* floating tables (w:tblpPr): text flows around the free side. Paragraphs are
+   positioned (lead shift) and so paint over floats; lift the table above the
+   following paragraph's full-width box or clicks on its cells land there */
 .doc-table.doc-table-float-left {
   float: left;
   margin: 2px 12px 6px 0;
+}
+
+.doc-page :is(.doc-table-float-left, .doc-table-float-right):not(.doc-table-float-flow) {
+  position: relative;
+  z-index: 1;
 }
 
 .doc-table.doc-table-float-right {
@@ -6909,6 +7101,14 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 /* floating table with an over-page row: the engine flows it so the row page-breaks */
 .doc-table.doc-table-float-flow {
   float: none;
+}
+
+/* Word keeps the space-after above and the space-before below a floating table
+   (no collapse across the float); float-table-spacing.ts carries the sum */
+.doc-page
+  :is(.doc-table-float-left, .doc-table-float-right):not(.doc-table-float-flow)
+  + .doc-after-tblp {
+  margin-top: var(--tblp-sp-before) !important;
 }
 
 /* split floating table: the anchor paragraph starts beside the last portion.

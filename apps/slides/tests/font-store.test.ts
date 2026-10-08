@@ -1,10 +1,13 @@
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { createHash } from 'node:crypto'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBlankPptx, openPptx } from '@genoffice/pptx-engine'
 
-const storeDir = mkdtempSync(join(tmpdir(), 'font-store-'))
+// The adapter, not the store: download discipline lives in @genoffice/electron-utils and is tested there, while the mirror URL's origin and the deck's font asks are only knowable here.
+
+const storeDir = mkdtempSync(join(tmpdir(), 'slides-font-store-'))
 const fontCdnBaseUrl = 'https://fonts.example.test/v1'
 
 vi.mock('electron', () => ({
@@ -22,8 +25,9 @@ vi.mock('../src/main/fonts', () => ({
   setUserFontDir: vi.fn(),
 }))
 
-import { FONT_CATALOG } from '../src/main/font-catalog'
 import {
+  FONT_CATALOG,
+  downloadCatalogEntry,
   downloadFontFamily,
   extractFontCdnBaseUrl,
   installLocalFontFiles,
@@ -31,16 +35,44 @@ import {
   missingCatalogFonts,
 } from '../src/main/font-store'
 import { net } from 'electron'
-import { createHash } from 'node:crypto'
+
+// FONT_CATALOG is module-level and shared, so a test that re-pins a row's sha256 corrupts every later test invisibly; a guard written inside the suite passes until something corrupts it first.
+const CATALOG_AT_IMPORT = JSON.stringify(FONT_CATALOG)
+
+/** Serves one file's fake bytes, accumulating so a multi-cut family needs one call. */
+const payloads = new Map<string, string>()
+function serve(entry: { file: string; style: string }): string {
+  const body = `sfnt-bytes-${entry.style}`
+  payloads.set(entry.file, body)
+  vi.mocked(net.fetch).mockImplementation(async (url: unknown) => {
+    const wanted = String(url).split('/').pop() ?? ''
+    const hit = payloads.get(decodeURIComponent(wanted))
+    return hit
+      ? new Response(new Uint8Array(Buffer.from(hit)), { status: 200 })
+      : new Response(new Uint8Array(0), { status: 404 })
+  })
+  return createHash('sha256').update(Buffer.from(body)).digest('hex')
+}
 
 beforeEach(() => {
   availability.clear()
+  payloads.clear()
   vi.stubEnv('GENOFFICE_FONT_CDN_URL', fontCdnBaseUrl)
   vi.mocked(net.fetch).mockReset()
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  rmSync(join(storeDir, 'fonts'), { recursive: true, force: true })
+})
+afterAll(() => {
+  expect(
+    JSON.stringify(FONT_CATALOG),
+    'a test re-pinned a live catalog entry; drive a synthetic family via downloadCatalogEntry instead',
+  ).toBe(CATALOG_AT_IMPORT)
+  rmSync(storeDir, { recursive: true, force: true })
+})
 
-describe('font catalog', () => {
+describe('the catalog rows this app hands its ribbon', () => {
   it('every family ships regular+bold files with pinned hashes but no endpoint', () => {
     expect(FONT_CATALOG.length).toBeGreaterThanOrEqual(15)
     for (const fam of FONT_CATALOG) {
@@ -49,6 +81,7 @@ describe('font catalog', () => {
       expect(styles).toContain('bold')
       for (const f of fam.files) {
         expect(f.file).toMatch(/\.ttf$/)
+        // no per-file endpoint: the mirror is one base URL, so per-file URLs would be a second place to get it wrong
         expect(f).not.toHaveProperty('url')
         expect(f.sha256).toMatch(/^[0-9a-f]{64}$/)
         expect(f.bytes).toBeGreaterThan(10_000)
@@ -63,14 +96,17 @@ describe('font catalog', () => {
     expect(list.find((e) => e.family === 'Montserrat')?.installed).toBe(false)
   })
 
+  it('prices every row, so the ribbon can say what a pick would fetch', () => {
+    for (const entry of listFontCatalog()) expect(entry.bytes).toBeGreaterThan(10_000)
+  })
+
   it('hides the downloadable catalog when no CDN URL is configured', () => {
     vi.stubEnv('GENOFFICE_FONT_CDN_URL', '')
     expect(listFontCatalog()).toEqual([])
   })
 
   it('offers only families whose files are published', () => {
-    // The CJK serif families land before the CDN carries their files: until the mirror
-    // publishes them, a picker row would offer a download that 404s.
+    // the CJK serifs land before the CDN carries their files: until then a picker row would offer a download that 404s
     const unpublished = FONT_CATALOG.filter((f) => f.published === false)
     expect(unpublished.length).toBeGreaterThan(0)
     const offered = new Set(listFontCatalog().map((e) => e.family))
@@ -84,62 +120,59 @@ describe('font catalog', () => {
     await expect(downloadFontFamily(family)).rejects.toThrow(/not in catalog/)
     expect(net.fetch).not.toHaveBeenCalled()
   })
+})
 
-  it('extracts and validates the packaged CDN URL', () => {
+describe('extractFontCdnBaseUrl', () => {
+  it('reads and normalises the packaged mirror URL', () => {
     expect(
       extractFontCdnBaseUrl({
         genofficeFontCdn: { baseUrl: ' https://fonts.example.test/v1/ ' },
       }),
     ).toBe(fontCdnBaseUrl)
-    expect(
-      extractFontCdnBaseUrl({ genofficeFontCdn: { baseUrl: 'http://fonts.example.test/v1' } }),
-    ).toBeNull()
-    expect(
-      extractFontCdnBaseUrl({
-        genofficeFontCdn: { baseUrl: 'https://user@fonts.example.test/v1' },
-      }),
-    ).toBeNull()
-    expect(
-      extractFontCdnBaseUrl({
-        genofficeFontCdn: { baseUrl: 'https://fonts.example.test/v1?token=secret' },
-      }),
-    ).toBeNull()
+  })
+
+  it.each([
+    ['plain http', 'http://fonts.example.test/v1'],
+    ['credentials in the URL', 'https://user@fonts.example.test/v1'],
+    [
+      'a query string, which is where a signed-URL token would leak',
+      'https://fonts.example.test/v1?token=secret',
+    ],
+    ['no font section at all', { name: 'slides' }],
+    ['nothing', null],
+  ])('refuses %s', (_label, pkg) => {
+    expect(extractFontCdnBaseUrl(pkg)).toBeNull()
   })
 })
 
-describe('downloadFontFamily', () => {
+describe('downloadFontFamily, through this app env', () => {
   it('verifies the checksum and writes files into the store', async () => {
-    const fam = FONT_CATALOG[0]!
-    const payloads = new Map(
-      fam.files.map((f) => {
-        const buf = Buffer.from(`sfnt-bytes-${f.style}`)
-        const url = new URL(encodeURIComponent(f.file), `${fontCdnBaseUrl}/`).toString()
-        return [url, buf] as const
-      }),
-    )
-    // Re-pin hashes to the fake payloads for the test
-    for (const f of fam.files) {
-      const url = new URL(encodeURIComponent(f.file), `${fontCdnBaseUrl}/`).toString()
-      f.sha256 = createHash('sha256').update(payloads.get(url)!).digest('hex')
+    const entry = {
+      family: 'Test Download Family',
+      script: 'latin' as const,
+      license: 'OFL-1.1' as const,
+      files: (['regular', 'bold'] as const).map((style) => ({
+        style,
+        file: `TestDownload-${style}.ttf`,
+        sha256: '',
+        bytes: 0,
+      })),
     }
-    vi.mocked(net.fetch).mockImplementation(async (url: unknown) => {
-      const buf = payloads.get(String(url))!
-      return new Response(new Uint8Array(buf), { status: 200 })
-    })
-    await downloadFontFamily(fam.family)
-    for (const f of fam.files) {
-      const p = join(storeDir, 'fonts', f.file)
-      expect(existsSync(p)).toBe(true)
-      expect(readFileSync(p).toString()).toContain('sfnt-bytes')
+    for (const file of entry.files) file.sha256 = serve(file)
+    await downloadCatalogEntry(entry)
+    for (const file of entry.files) {
+      const path = join(storeDir, 'fonts', file.file)
+      expect(existsSync(path), file.file).toBe(true)
+      expect(readFileSync(path).toString()).toContain('sfnt-bytes')
     }
   })
 
-  it('rejects a checksum mismatch', async () => {
-    const fam = FONT_CATALOG[1]!
+  it('rejects a checksum mismatch from the mirror', async () => {
+    const family = FONT_CATALOG[1]!
     vi.mocked(net.fetch).mockResolvedValue(
       new Response(new Uint8Array(Buffer.from('tampered')), { status: 200 }),
     )
-    await expect(downloadFontFamily(fam.family)).rejects.toThrow(/checksum/)
+    await expect(downloadFontFamily(family.family)).rejects.toThrow(/checksum/)
   })
 
   it('rejects unknown families', async () => {
@@ -150,6 +183,35 @@ describe('downloadFontFamily', () => {
     vi.stubEnv('GENOFFICE_FONT_CDN_URL', '')
     await expect(downloadFontFamily(FONT_CATALOG[0]!.family)).rejects.toThrow(/unavailable/)
     expect(net.fetch).not.toHaveBeenCalled()
+  })
+
+  it('a second call joins the in-flight download instead of resolving early', async () => {
+    // driven through a family of our own: re-pinning a real row's hashes to make fake bytes verify would edit the catalog
+    const entry = {
+      family: 'Test Join Family',
+      script: 'latin' as const,
+      license: 'OFL-1.1' as const,
+      files: [{ style: 'regular' as const, file: 'TestJoin-regular.ttf', sha256: '', bytes: 0 }],
+    }
+    const payload = Buffer.from('slow-bytes')
+    entry.files[0]!.sha256 = createHash('sha256').update(payload).digest('hex')
+    let releaseFetch: (() => void) | null = null
+    const gate = new Promise<void>((res) => (releaseFetch = res))
+    vi.mocked(net.fetch).mockImplementation(async () => {
+      await gate
+      return new Response(new Uint8Array(payload), { status: 200 })
+    })
+    const first = downloadCatalogEntry(entry)
+    const second = downloadCatalogEntry(entry)
+    let secondDone = false
+    void second.then(() => (secondDone = true))
+    // with the in-flight map deleted, `second` is a second fetch that also has not resolved — but it would be *counted*
+    await new Promise((r) => setTimeout(r, 20))
+    expect(secondDone).toBe(false)
+    expect(vi.mocked(net.fetch).mock.calls.length).toBe(1)
+    releaseFetch!()
+    await Promise.all([first, second])
+    expect(secondDone).toBe(true)
   })
 })
 
@@ -185,33 +247,11 @@ describe('missingCatalogFonts', () => {
       },
     )
     availability.set('Montserrat', true)
+    // Arial is not in the catalog, so it is nobody's download to offer
     const missing = missingCatalogFonts({ deck } as never)
     expect(missing).toEqual(['Poppins', 'Rubik'])
 
     vi.stubEnv('GENOFFICE_FONT_CDN_URL', '')
     expect(missingCatalogFonts({ deck } as never)).toEqual([])
-  })
-})
-
-describe('concurrent downloads', () => {
-  it('a second call joins the in-flight download instead of resolving early', async () => {
-    const fam = FONT_CATALOG[2]!
-    let releaseFetch: (() => void) | null = null
-    const gate = new Promise<void>((res) => (releaseFetch = res))
-    const payload = Buffer.from('slow-bytes')
-    for (const f of fam.files) f.sha256 = createHash('sha256').update(payload).digest('hex')
-    vi.mocked(net.fetch).mockImplementation(async () => {
-      await gate
-      return new Response(new Uint8Array(payload), { status: 200 })
-    })
-    const first = downloadFontFamily(fam.family)
-    const second = downloadFontFamily(fam.family)
-    let secondDone = false
-    void second.then(() => (secondDone = true))
-    await new Promise((r) => setTimeout(r, 20))
-    expect(secondDone).toBe(false)
-    releaseFetch!()
-    await Promise.all([first, second])
-    expect(secondDone).toBe(true)
   })
 })

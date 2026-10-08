@@ -1,4 +1,9 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import {
+  aiPanelWidthAtPointer,
+  AiPanelSideButton,
+  AiModelPicker,
+  type AiModelPickerBridge,
+} from '@genoffice/ui'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   AgentLoop,
@@ -350,6 +355,14 @@ function clampPanelWidth(w: number): number {
   // shell lays it out), so never let the ceiling drop below the minimum
   const max = Math.max(PANEL_WIDTH_MIN, Math.min(720, Math.round(window.innerWidth * 0.6)))
   return Math.min(Math.max(w, PANEL_WIDTH_MIN), max)
+}
+
+const MODEL_BRIDGE: AiModelPickerBridge = {
+  getSettings: () => window.slidesApi.getAiSettings(),
+  setSettings: (settings) => window.slidesApi.setAiSettings(settings),
+  onSettingsChanged: (handler) => window.slidesApi.onAiSettingsChanged(handler),
+  gskLoggedIn: () => window.slidesApi.aiGskStatus().then((s) => !!s?.loggedIn),
+  openModelSettings: () => window.slidesApi.openAiModelSettings().catch(() => {}),
 }
 
 export function AiPanel({
@@ -1106,6 +1119,8 @@ export function AiPanel({
       // Cloud single-page generation (gsk slide_generate): the cloud service owns HTML writing +
       // pptx conversion; the deck-level style/outline stay local.
       generatePageCloud: async (args) => {
+        // a stop that already fired must not start (and bill) another page
+        if (args.signal?.aborted) return { ok: false, error: tGlobal('aiErrStopped') }
         // Forward the panel's stop signal: the main process aborts the in-flight
         // cloud request instead of letting it run (and bill) to completion
         const cancelCloud = () => void window.slidesApi.cloudPageCancel().catch(() => {})
@@ -2444,6 +2459,7 @@ export function AiPanel({
               rows={1}
             />
             <div className="ai-input-footer">
+              <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
               <button
                 className="ai-attach-btn"
                 onClick={pickAttachments}

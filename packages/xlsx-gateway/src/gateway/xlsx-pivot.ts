@@ -6,6 +6,11 @@
 import type { PivotFilterDef } from '../domain/pivot-filters'
 import { parsePivotFormula } from '../domain/pivot-formula'
 import { isValidGrouping, type PivotFieldGrouping } from '../domain/pivot-grouping'
+import {
+  isPivotAggregation,
+  isPivotShowDataAs,
+  type PivotShowDataAs,
+} from '../domain/pivot-value-modes'
 
 export class PivotParseError extends Error {}
 
@@ -46,9 +51,7 @@ export interface PivotLayoutLine {
   readonly dataField: number
 }
 
-/// "Show values as" modes that support refresh (subset of the ECMA-376
-/// dataField@showDataAs enum): percent of grand total / row total / column total.
-export type PivotShowDataAs = 'percentOfTotal' | 'percentOfRow' | 'percentOfCol'
+export type { PivotShowDataAs } from '../domain/pivot-value-modes'
 
 export interface PivotDataField {
   readonly name: string
@@ -86,18 +89,6 @@ export interface PivotDefinition {
   /// reasons this pivot cannot be recomputed; empty = refresh supported.
   readonly unsupported: readonly string[]
 }
-
-const SUPPORTED_SUBTOTALS = new Set([
-  'sum',
-  'count',
-  'countNums',
-  'average',
-  'max',
-  'min',
-  'product',
-])
-
-const SUPPORTED_SHOW_DATA_AS = new Set<string>(['percentOfTotal', 'percentOfRow', 'percentOfCol'])
 
 function attr(element: string, name: string): string | null {
   const found = new RegExp(` ${name}="([^"]*)"`).exec(element)
@@ -312,7 +303,7 @@ export function parsePivotDefinition(
     // display modes only record an unsupported reason, and the mode itself is not
     // carried over (the IPC schema only accepts supported enum values).
     const showDataAs = attr(fieldXml, 'showDataAs')
-    if (showDataAs !== null && showDataAs !== 'normal' && !SUPPORTED_SHOW_DATA_AS.has(showDataAs)) {
+    if (showDataAs !== null && showDataAs !== 'normal' && !isPivotShowDataAs(showDataAs)) {
       unsupported.push(`"show values as" mode "${showDataAs}" does not support recompute`)
     }
     const field = Number(attr(fieldXml, 'fld') ?? '0')
@@ -320,7 +311,7 @@ export function parsePivotDefinition(
       name: decodeEntities(attr(fieldXml, 'name') ?? ''),
       field,
       subtotal: attr(fieldXml, 'subtotal') ?? 'sum',
-      ...(showDataAs !== null && SUPPORTED_SHOW_DATA_AS.has(showDataAs)
+      ...(showDataAs !== null && isPivotShowDataAs(showDataAs)
         ? { showDataAs: showDataAs as PivotShowDataAs }
         : {}),
       // Data fields pointing at a calculated field carry the formula; refresh
@@ -329,7 +320,7 @@ export function parsePivotDefinition(
     }
   })
   for (const dataField of dataFields) {
-    if (!SUPPORTED_SUBTOTALS.has(dataField.subtotal)) {
+    if (!isPivotAggregation(dataField.subtotal)) {
       unsupported.push(`aggregation "${dataField.subtotal}" does not support recompute`)
     }
   }

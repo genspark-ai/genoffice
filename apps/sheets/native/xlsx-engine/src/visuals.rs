@@ -9,6 +9,7 @@ use serde::Serialize;
 use zip::ZipArchive;
 
 use crate::SidecarError;
+use crate::types::{ThreadInfo, ThreadReplyInfo};
 use crate::xml_util::copy_entry_bounded;
 
 mod charts;
@@ -40,6 +41,9 @@ pub struct CellStyle {
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
+    /// font <vertAlign val>: "superscript" | "subscript"; absent for baseline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vert_align: Option<String>,
     pub wrap_text: bool,
     /// alignment/@shrinkToFit — Excel scales the font down to fit the column
     /// instead of clipping. Omitted when false to keep payloads small.
@@ -87,6 +91,12 @@ pub struct CellStyle {
     pub border_diagonal: Option<BorderEdge>,
     pub diagonal_up: bool,
     pub diagonal_down: bool,
+    /// protection/@locked — Some(false) only when the xf unlocks the cell.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked: Option<bool>,
+    /// protection/@hidden — Some(true) only when the xf hides the formula.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<bool>,
     /// Table-style dxf inner grid edges (<horizontal>/<vertical>) — consumed
     /// by the custom table palette only, never serialized per cell.
     #[serde(skip)]
@@ -117,6 +127,7 @@ impl CellStyle {
             || self.italic != default.italic
             || self.underline != default.underline
             || self.strikethrough != default.strikethrough
+            || self.vert_align != default.vert_align
             || self.font_color != default.font_color
             || self.horizontal_alignment != default.horizontal_alignment
             || self.vertical_alignment != default.vertical_alignment
@@ -124,6 +135,8 @@ impl CellStyle {
             || self.text_rotation != default.text_rotation
             || self.wrap_text != default.wrap_text
             || self.shrink_to_fit != default.shrink_to_fit
+            || self.locked != default.locked
+            || self.hidden != default.hidden
     }
 }
 
@@ -547,6 +560,15 @@ pub struct VisualObject {
     pub drawing_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drawing_index: Option<usize>,
+    /// xdr:cNvPr/@descr — the object's alt text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt_text: Option<String>,
+    /// twoCellAnchor/@editAs (twoCell when absent); None for other anchor kinds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_as: Option<String>,
+    /// cNvPr/a:hlinkClick target resolved through the drawing rels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hyperlink: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -602,6 +624,7 @@ pub(crate) struct FontStyle {
     italic: bool,
     underline: bool,
     strikethrough: bool,
+    vert_align: Option<String>,
     color: Option<String>,
     color_theme: Option<usize>,
     color_tint: Option<f64>,
@@ -927,6 +950,9 @@ pub fn read_visual_objects(
                 // rewrites — so it stays read-only and round-trips untouched.
                 drawing_path: None,
                 drawing_index: None,
+                alt_text: None,
+                edit_as: None,
+                hyperlink: None,
             };
             match slot {
                 Some(at) => visuals[at] = visual,
@@ -1255,8 +1281,6 @@ pub fn read_media(
     let media_type = media_type_for_path(media_path)
         .ok_or_else(|| SidecarError::Workbook("Unsupported embedded image type.".into()))?;
     let mut bytes = Vec::with_capacity(declared as usize);
-    // The cap above reads only the declaration; the copy is what keeps a part
-    // that under-declares from delivering its whole payload.
     copy_entry_bounded(&mut entry, declared, MAX_MEDIA_BYTES, &mut bytes)?;
     Ok(MediaResult {
         media_type: media_type.to_owned(),
@@ -1427,7 +1451,7 @@ pub fn read_pivot_tables(
 pub fn read_comments(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
-) -> Result<Vec<(String, String, String)>, SidecarError> {
+) -> Result<Vec<(String, String, String, Option<ThreadInfo>)>, SidecarError> {
     let relationships = read_relationships(archive, worksheet_path)?;
     let Some(comments_relationship) = relationships
         .values()
@@ -1438,6 +1462,16 @@ pub fn read_comments(
     let comments_path = resolve_part_target(worksheet_path, &comments_relationship.target)?;
     let Some(xml) = read_optional_xml(archive, &comments_path)? else {
         return Ok(Vec::new());
+    };
+    let threads = match relationships
+        .values()
+        .find(|relationship| relationship.relationship_type.ends_with("/threadedComment"))
+    {
+        Some(relationship) => {
+            let path = resolve_part_target(worksheet_path, &relationship.target)?;
+            read_threaded_comments(archive, &path)?
+        }
+        None => HashMap::new(),
     };
     let document = parse_document(&xml, &comments_path)?;
     let authors = document
@@ -1455,6 +1489,13 @@ pub fn read_comments(
         .filter(|node| node.has_tag_name("comment"))
         .filter_map(|comment| {
             let reference = comment.attribute("ref")?.to_owned();
+            if let Some(thread) = threads.get(&reference) {
+                let body = std::iter::once(thread.text.as_str())
+                    .chain(thread.replies.iter().map(|reply| reply.text.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                return Some((reference, thread.author.clone(), body, Some(thread.clone())));
+            }
             let author = comment
                 .attribute("authorId")
                 .and_then(|id| id.parse::<usize>().ok())
@@ -1466,7 +1507,90 @@ pub fn read_comments(
                 .filter(|node| node.has_tag_name("t"))
                 .filter_map(|node| node.text())
                 .collect::<String>();
-            Some((reference, author, text))
+            Some((reference, author, text, None))
+        })
+        .collect())
+}
+
+/// Modern (threaded) comments per cell. The legacy comments part only
+/// mirrors them with Excel's "[Threaded comment]" boilerplate, so the thread
+/// part is what the viewer shows. Replies (entries with a parentId) attach
+/// to their cell's root in document order.
+fn read_threaded_comments(
+    archive: &mut ZipArchive<File>,
+    path: &str,
+) -> Result<HashMap<String, ThreadInfo>, SidecarError> {
+    let Some(xml) = read_optional_xml(archive, path)? else {
+        return Ok(HashMap::new());
+    };
+    let persons = read_persons(archive)?;
+    let document = parse_document(&xml, path)?;
+    let mut threads: HashMap<String, ThreadInfo> = HashMap::new();
+    for node in document
+        .descendants()
+        .filter(|node| node.has_tag_name("threadedComment"))
+    {
+        let Some(reference) = node.attribute("ref") else {
+            continue;
+        };
+        let text = node
+            .children()
+            .find(|child| child.has_tag_name("text"))
+            .and_then(|child| child.text())
+            .unwrap_or_default()
+            .to_owned();
+        let person_id = node.attribute("personId").unwrap_or_default().to_owned();
+        let author = persons.get(&person_id).cloned().unwrap_or_default();
+        let id = node.attribute("id").unwrap_or_default().to_owned();
+        let d_t = node.attribute("dT").unwrap_or_default().to_owned();
+        let is_reply = node.attribute("parentId").is_some();
+        match threads.get_mut(reference) {
+            Some(thread) if is_reply => thread.replies.push(ThreadReplyInfo {
+                id,
+                person_id,
+                author,
+                d_t,
+                text,
+            }),
+            Some(_) => {}
+            None => {
+                threads.insert(
+                    reference.to_owned(),
+                    ThreadInfo {
+                        id,
+                        person_id,
+                        author,
+                        d_t,
+                        done: node.attribute("done") == Some("1"),
+                        text,
+                        replies: Vec::new(),
+                    },
+                );
+            }
+        }
+    }
+    Ok(threads)
+}
+
+fn read_persons(archive: &mut ZipArchive<File>) -> Result<HashMap<String, String>, SidecarError> {
+    let path = read_relationships(archive, "xl/workbook.xml")?
+        .values()
+        .find(|relationship| relationship.relationship_type.ends_with("/person"))
+        .map(|relationship| resolve_part_target("xl/workbook.xml", &relationship.target))
+        .transpose()?
+        .unwrap_or_else(|| "xl/persons/person.xml".to_owned());
+    let Some(xml) = read_optional_xml(archive, &path)? else {
+        return Ok(HashMap::new());
+    };
+    let document = parse_document(&xml, &path)?;
+    Ok(document
+        .descendants()
+        .filter(|node| node.has_tag_name("person"))
+        .filter_map(|node| {
+            Some((
+                node.attribute("id")?.to_owned(),
+                node.attribute("displayName")?.to_owned(),
+            ))
         })
         .collect())
 }

@@ -328,7 +328,10 @@ export const INSERT_TEXT_BOX_TOOL: AgentToolDef = {
         type: ['string', 'null'],
         description: '"#RRGGBB" outline (default black); null = no outline',
       },
-      fontSize: { type: 'number', description: 'text size in points' },
+      fontSize: {
+        type: ['number', 'string'],
+        description: 'text size in points (a bare number, or a length like "12pt")',
+      },
       align: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
       bold: { type: 'boolean' },
       color: { type: 'string', description: '"#RRGGBB" text color' },

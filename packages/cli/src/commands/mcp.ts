@@ -141,11 +141,7 @@ async function serve(args: Parameters<CommandDef['run']>[0], ctx: CommandContext
     )
   }
   const hostFlag = flagString(args, 'host')
-  // `--host ""` — the same unset-variable accident --token guards against —
-  // is worse here: an empty string skips the `?? '127.0.0.1'` fallback in
-  // http.ts, fails the LOOPBACK_HOSTS check (it has('') is false, disabling
-  // the DNS-rebinding guard) and ends up as listen(port, ''), i.e. every
-  // interface. Fail closed with a usage error instead.
+  // an empty host skips the loopback default and binds every interface
   if (hostFlag !== undefined && hostFlag.trim() === '') {
     throw new CliError(
       EXIT.usage,

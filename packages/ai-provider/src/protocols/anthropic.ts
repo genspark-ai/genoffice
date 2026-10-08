@@ -194,20 +194,16 @@ async function anthropicTurn(
   const completedTools: AgentToolCall[] = []
   let stopReason: string | undefined
   let emitted = false
-  for await (const payload of sseDataEvents(response.body, onBytes)) {
-    // A truncated frame or a non-JSON keep-alive from a proxy should skip
-    // that event, not kill the entire AI turn with a parser error.
-    let event
-    try {
-      event = JSON.parse(payload) as {
-        type?: string
-        index?: number
-        content_block?: { type?: string; id?: string; name?: string }
-        delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string }
-        error?: { message?: string } | string
-      }
-    } catch {
-      continue
+  for await (const sse of sseDataEvents(response.body, onBytes)) {
+    // A truncated frame or a non-JSON keep-alive from a proxy skips that event
+    // rather than killing the turn.
+    if (sse.json === undefined) continue
+    const event = sse.json as {
+      type?: string
+      index?: number
+      content_block?: { type?: string; id?: string; name?: string }
+      delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string }
+      error?: { message?: string } | string
     }
     if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
       const toolIndex = event.index ?? 0

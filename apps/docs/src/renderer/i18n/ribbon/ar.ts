@@ -14,6 +14,7 @@ export const ar = {
   ribbonTabReview: 'مراجعة',
   ribbonCollapse: 'طي الشريط',
   ribbonExpand: 'توسيع الشريط',
+  ribbonCompact: 'شريط مضغوط (أيقونات فقط)',
   ribbonTabView: 'عرض',
   ribbonTabTableDesign: 'تصميم الجدول',
   ribbonTabTableLayout: 'تخطيط الجدول',

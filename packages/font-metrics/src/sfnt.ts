@@ -234,6 +234,7 @@ export const styleTokens = (ps: string): string[] =>
   ).map((t) => (t === 'oblique' ? 'italic' : t === 'demi' ? 'demibold' : t))
 
 const REGULARISH = ['regular', 'medium', 'w3', 'w4']
+const BOLDISH = ['bold', 'semibold', 'demibold', 'extrabold']
 
 /**
  * Token-level style score of a face against wanted tokens, not substring: a
@@ -248,7 +249,16 @@ export function styleScore(face: FaceRef, want: string[]): number {
   const have = styleTokens(face.style)
   const wanted = want.length > 0 ? want : REGULARISH
   const hits = want.filter((t) => have.includes(t)).length
-  const extras = have.filter((t) => !wanted.includes(t)).length
+  // A heavier-than-regular want with no exact face still prefers a neighbouring
+  // weight (Demibold want -> Bold face) over falling all the way back to Regular.
+  const nearWeight =
+    want.some((t) => BOLDISH.includes(t) && !have.includes(t)) &&
+    have.some((t) => BOLDISH.includes(t) && !want.includes(t))
+      ? 1
+      : 0
+  const extras = have.filter(
+    (t) => !wanted.includes(t) && !(nearWeight && BOLDISH.includes(t)),
+  ).length
   const regularBonus = want.length === 0 && have.some((t) => REGULARISH.includes(t)) ? 1 : 0
-  return hits * 4 - extras + regularBonus
+  return hits * 4 + nearWeight * 2 - extras + regularBonus
 }

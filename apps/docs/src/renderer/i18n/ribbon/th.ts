@@ -14,6 +14,7 @@ export const th = {
   ribbonTabReview: 'รีวิว',
   ribbonCollapse: 'ยุบ Ribbon',
   ribbonExpand: 'ขยาย Ribbon',
+  ribbonCompact: 'Ribbon แบบกระชับ (ไอคอนเท่านั้น)',
   ribbonTabView: 'มุมมอง',
   ribbonTabTableDesign: 'การออกแบบตาราง',
   ribbonTabTableLayout: 'เค้าโครงตาราง',

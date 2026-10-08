@@ -515,11 +515,17 @@ export function createDetachedEditorWindow(options: {
     if (promptInFlight) return
     promptInFlight = true
     void (async () => {
-      // a denied close vetoes any quit that was in flight: the sheets close
-      // guard must prompt again on later closes instead of silently proceeding
-      if (await confirmDetachedClose(rec)) tearDown()
-      else resetSheetsShuttingDown()
-      promptInFlight = false
+      try {
+        // a denied close vetoes any quit that was in flight: the sheets close
+        // guard must prompt again on later closes instead of silently proceeding
+        if (await confirmDetachedClose(rec)) tearDown()
+        else resetSheetsShuttingDown()
+      } catch (err) {
+        console.error('[shell] detached window close prompt failed:', err)
+        resetSheetsShuttingDown()
+      } finally {
+        promptInFlight = false
+      }
     })()
   })
   win.on('closed', () => {

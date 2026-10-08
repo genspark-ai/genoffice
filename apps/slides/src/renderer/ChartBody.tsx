@@ -153,6 +153,7 @@ export function ChartBody({
           y={l.y}
           text={l.text}
           fontSize={l.fontSizePx}
+          direction="ltr"
           fontFamily={l.fontFamily ? displayFontFamily(l.fontFamily) : CHART_FONT}
           fill={l.color}
           fontStyle={[l.italic && 'italic', l.bold && 'bold'].filter(Boolean).join(' ') || 'normal'}

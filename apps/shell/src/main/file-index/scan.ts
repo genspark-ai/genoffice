@@ -8,10 +8,33 @@ export interface ScannedFile {
   sizeBytes: number
 }
 
-/** every supported, visible file under `root` with the stat fields the index keys on */
-export function scanFiles(root: string): ScannedFile[] {
+export interface ScanResult {
+  files: ScannedFile[]
+  /** the walk hit a budget, so `files` is not the full set under the root */
+  truncated: boolean
+}
+
+export const SCAN_MAX_DEPTH = 32
+export const SCAN_MAX_FILES = 200_000
+
+/**
+ * Every supported, visible file under `root` with the stat fields the index keys
+ * on. Symlinked directories are not followed (a Dirent reports them as
+ * symlinks, not directories), and the walk is bounded by depth and file count.
+ */
+export function scanFiles(
+  root: string,
+  limits: { maxDepth?: number; maxFiles?: number } = {},
+): ScanResult {
+  const maxDepth = limits.maxDepth ?? SCAN_MAX_DEPTH
+  const maxFiles = limits.maxFiles ?? SCAN_MAX_FILES
   const out: ScannedFile[] = []
-  const walk = (dir: string) => {
+  let truncated = false
+  const walk = (dir: string, depth: number) => {
+    if (depth > maxDepth) {
+      truncated = true
+      return
+    }
     let dirents: import('node:fs').Dirent[]
     try {
       dirents = readdirSync(dir, { withFileTypes: true })
@@ -19,9 +42,13 @@ export function scanFiles(root: string): ScannedFile[] {
       return
     }
     for (const ent of dirents) {
+      if (out.length >= maxFiles) {
+        truncated = true
+        return
+      }
       const path = join(dir, ent.name)
       if (ent.isDirectory()) {
-        if (!isHiddenEntry(dir, ent.name, true)) walk(path)
+        if (!isHiddenEntry(dir, ent.name, true)) walk(path, depth + 1)
       } else if (
         ent.isFile() &&
         isSupportedTreeFile(ent.name) &&
@@ -32,8 +59,8 @@ export function scanFiles(root: string): ScannedFile[] {
       }
     }
   }
-  walk(root)
-  return out
+  walk(root, 0)
+  return { files: out, truncated }
 }
 
 export function statOrNull(path: string): ScannedFile | null {

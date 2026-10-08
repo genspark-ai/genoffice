@@ -14,6 +14,7 @@
  * this app would refuse to open is never stored in the first place.
  */
 import { safeExternalUrl } from '@genoffice/electron-utils/safe-external-url'
+import { PERSISTABLE_IMAGE_URL } from './persistable-image'
 
 /// Protocol allowlist for a link target, matching the open-external gate.
 const LINK_PROTOCOLS = ['http:', 'https:', 'mailto:'] as const
@@ -79,6 +80,9 @@ function cleanAttributes(el: Element): void {
     if (!URL_ATTRIBUTES.has(attr)) continue
     const url = value.trim()
     if (isFragment(url) || safeExternalUrl(url, { allowedProtocols: LINK_PROTOCOLS })) continue
+    // an inline picture is the one data: URL the image node persists; a data:
+    // document behind a link or any other attribute stays out
+    if (attr === 'src' && el.tagName === 'IMG' && PERSISTABLE_IMAGE_URL.test(url)) continue
     el.removeAttribute(name)
   }
   for (const child of Array.from(el.children)) cleanAttributes(child)

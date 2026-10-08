@@ -14,6 +14,7 @@ export const id = {
   ribbonTabReview: 'Tinjau',
   ribbonCollapse: 'Ciutkan Pita',
   ribbonExpand: 'Perluas Pita',
+  ribbonCompact: 'Pita Ringkas (hanya ikon)',
   ribbonTabView: 'Tampilan',
   ribbonTabTableDesign: 'Desain Tabel',
   ribbonTabTableLayout: 'Tata Letak Tabel',

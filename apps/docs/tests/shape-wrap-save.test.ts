@@ -135,6 +135,31 @@ describe('shape wrap and stacking survive save', () => {
     editor.destroy()
   })
 
+  it('converts an inserted shape to inline', async () => {
+    const { editor, parsed } = await openShapeDoc('<w:p><w:r><w:t>Body text</w:t></w:r></w:p>')
+    insertShapeAt(editor, 'rect')
+    selectShape(editor)
+    setFloatingWrap(editor, null)
+    const saved = await saveShape(editor, parsed)
+    expect(await documentXml(saved)).toContain('<wp:inline')
+    expect(await documentXml(saved)).not.toContain('<wp:anchor')
+    editor.destroy()
+  })
+
+  it('keeps a moved loaded shape inline', async () => {
+    const { editor, parsed } = await openShapeDoc()
+    selectShape(editor)
+    editor.commands.updateAttributes('docProtected', {
+      imageOffsetXEmu: 600000,
+      imageOffsetYEmu: 100000,
+    })
+    setFloatingWrap(editor, null)
+    const saved = await saveShape(editor, parsed)
+    expect(await documentXml(saved)).toContain('<wp:inline')
+    expect(await documentXml(saved)).not.toContain('<wp:anchor')
+    editor.destroy()
+  })
+
   it('keeps the rank when a loaded shape is dragged', async () => {
     const { editor, parsed } = await openShapeDoc()
     selectShape(editor)
@@ -174,10 +199,8 @@ describe('shape wrap and stacking survive save', () => {
   it('targets the selected shape in a two-shape paragraph', async () => {
     // a textless first shape is the drawing boxDrawingSegments skips: ordinal
     // targeting would wrap the texted second shape instead
-    const withId = (xml: string, id: number): string =>
-      xml.replace('<wps:cNvSpPr/>', `<wps:cNvPr id="${id}"/><wps:cNvSpPr/>`)
-    const textless = withId(buildShapeParagraphXml({ prst: 'rect', withTextbox: false }), 7)
-    const texted = withId(buildShapeParagraphXml({ prst: 'rect', withTextbox: true }), 8)
+    const textless = buildShapeParagraphXml({ prst: 'rect', withTextbox: false, id: 7 })
+    const texted = buildShapeParagraphXml({ prst: 'rect', withTextbox: true, id: 8 })
     const bodyXml =
       textless.slice(0, textless.indexOf('</w:p>')) +
       texted.slice(texted.indexOf('<w:p>') + '<w:p>'.length)

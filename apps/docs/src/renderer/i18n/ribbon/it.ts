@@ -14,6 +14,7 @@ export const it = {
   ribbonTabReview: 'Revisione',
   ribbonCollapse: 'Riduci a icona la barra multifunzione',
   ribbonExpand: 'Espandi la barra multifunzione',
+  ribbonCompact: 'Barra multifunzione compatta (solo icone)',
   ribbonTabView: 'Visualizza',
   ribbonTabTableDesign: 'Progettazione tabella',
   ribbonTabTableLayout: 'Layout tabella',

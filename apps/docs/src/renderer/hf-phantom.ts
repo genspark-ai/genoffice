@@ -3,16 +3,20 @@
  * the default paragraph style after the header content of section 1 (every
  * variant) and of later sections inheriting it; never footers, never a section
  * with its own header part; a part-less section 1 gets an empty Header-style
- * line first. Layout-only: appended to the values the push-down measure and
- * the page strips consume, never to the editable or saved state.
+ * line first and a part-less footer one empty Footer-style line. Every one of
+ * them inherits its style chain's pBdr (docDefaults `none space` pads the
+ * strip like any paragraph). Layout-only: appended to the values the
+ * push-down measure and the page strips consume, never to the editable or
+ * saved state.
  */
-import type {
-  DocDefaults,
-  HeaderFooter,
-  HfImage,
-  HfParagraph,
-  StyleDisplay,
-  StyleInfo,
+import {
+  mergeStyleBorders,
+  type DocDefaults,
+  type HeaderFooter,
+  type HfImage,
+  type HfParagraph,
+  type StyleDisplay,
+  type StyleInfo,
 } from '@genoffice/docx-engine'
 import { hfParasOf } from './editor/hf-text'
 import type { HfKind, HfResolved } from './hf-sections'
@@ -20,6 +24,7 @@ import type { HfKind, HfResolved } from './hf-sections'
 export interface HfPhantomSpec {
   normal: HfParagraph
   headerLine: HfParagraph
+  footerLine: HfParagraph
 }
 
 interface StyleSource {
@@ -29,8 +34,10 @@ interface StyleSource {
 
 function blankPara(d: StyleDisplay | undefined, dd: DocDefaults | undefined): HfParagraph {
   const line = d?.lineRule || d?.lineSpacing || d?.lineRawTwips ? d : dd
+  const borderSides = d?.borderSides ?? dd?.borderSides
   return {
     runs: [],
+    ...(borderSides ? mergeStyleBorders(borderSides, undefined) : {}),
     align: 'left',
     // no size anywhere: Word's built-in default is 10pt
     emptyRunSizeHalfPoints: d?.sizeHalfPoints ?? dd?.sizeHalfPoints ?? 20,
@@ -49,16 +56,24 @@ function blankPara(d: StyleDisplay | undefined, dd: DocDefaults | undefined): Hf
 export function hfPhantomSpec(parsed: StyleSource): HfPhantomSpec {
   let normal: StyleInfo | undefined
   let header: StyleInfo | undefined
+  let footer: StyleInfo | undefined
   for (const s of parsed.styles.values()) {
     if (s.type !== 'paragraph') continue
     if (s.isDefault) normal = s
     else if (s.styleId === 'Header' || /^header$/i.test(s.name)) header = s
+    else if (s.styleId === 'Footer' || /^footer$/i.test(s.name)) footer = s
   }
   const dd = parsed.docDefaults
   return {
     normal: blankPara(normal?.display, dd),
     headerLine: blankPara(header?.display ?? normal?.display, dd),
+    footerLine: blankPara(footer?.display ?? normal?.display, dd),
   }
+}
+
+/** a part-less footer: Word lays out one empty Footer-style paragraph */
+export function hfFooterLine(value: HeaderFooter | null, spec: HfPhantomSpec): HeaderFooter {
+  return value ?? { text: '', paras: [spec.footerLine] }
 }
 
 /** `value` with the phantom paragraph appended (null = a section 1 without a header part) */
@@ -86,7 +101,8 @@ export function hfLayoutResolved(
   resolved: HfResolved,
   spec: HfPhantomSpec | null,
 ): HfResolved {
-  if (!spec || kind !== 'header') return resolved
+  if (!spec) return resolved
+  if (kind === 'footer') return { ...resolved, value: hfFooterLine(resolved.value, spec) }
   if (resolved.value && resolved.owner !== 0) return resolved
   return { ...resolved, value: hfWithPhantom(resolved.value, spec, resolved.images) }
 }

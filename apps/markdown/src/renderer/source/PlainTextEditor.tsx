@@ -166,9 +166,14 @@ export const PlainTextEditor = forwardRef<PlainTextEditorHandle, Props>(function
   }, [mode])
 
   useEffect(() => {
-    spellRef.current?.reconfigure(
-      EditorView.contentAttributes.of({ spellcheck: String(spellcheck) }),
-    )
+    const view = viewRef.current
+    const compartment = spellRef.current
+    if (!view || !compartment) return
+    view.dispatch({
+      effects: compartment.reconfigure(
+        EditorView.contentAttributes.of({ spellcheck: String(spellcheck) }),
+      ),
+    })
   }, [spellcheck])
 
   useImperativeHandle(ref, () => ({

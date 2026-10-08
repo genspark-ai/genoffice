@@ -10,6 +10,7 @@ import {
   cssAutoLineMult,
   cssCsFontFamily,
   hangulSpaceOffsets,
+  hangulSpaceWideningOn,
   cssFontFamily,
   cssRunFontFamily,
   cssGridLineBase,
@@ -32,7 +33,14 @@ import {
 } from '../line-metrics'
 import { custGeomBackgroundCss, shapeBackgroundCss, shapeTextInsetsPx } from './shape-svg'
 import { pictureTransformFns, quarterTurnInsetPx, quarterTurnMarginCss } from './image-rotation'
-import { DK_SIDE, dkBackground, dkBorder, dkColor, type DkBorderSide } from './dark-page'
+import {
+  DK_SIDE,
+  dkBackground,
+  dkBackgroundImage,
+  dkBorder,
+  dkColor,
+  type DkBorderSide,
+} from './dark-page'
 import { hfCellGeometry, hfCellParaStyle, hfRowStyle } from './hf-dom'
 import { INLINE_RULE_CLASS, inlineRuleDecls } from './inline-rule'
 import { fillInk } from './shading-ink'
@@ -84,8 +92,15 @@ import {
   tableBordersCss,
   tableRowEatCss,
 } from './extensions'
-import { cellClipTwips, cellSpacingGridSharesTwips, collapsedCellBw, inferredBidi } from './convert'
-import { cellPadPx } from './border-metrics'
+import {
+  cellClipTwips,
+  cellSpacingBorderPx,
+  cellSpacingGridSharesTwips,
+  collapsedCellBw,
+  holdsDeclaredWidth,
+  inferredBidi,
+} from './convert'
+import { cellDiagonalCss, cellPadPx } from './border-metrics'
 
 // Word: links and TOC entries jump on modifier+click only
 const jumpHint = () =>
@@ -213,9 +228,12 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
 }
 
 export function renderFormulaSpec(formula: FormulaDisplay): DomSpec {
+  const size: Record<string, string> = formula.sizeHalfPoints
+    ? { style: `font-size:${formula.sizeHalfPoints / 2}pt` }
+    : {}
   const tokenStrip: DomSpec = [
     'span',
-    { class: 'doc-formula' + (formula.mathml ? ' doc-formula-has-math' : '') },
+    { class: 'doc-formula' + (formula.mathml ? ' doc-formula-has-math' : ''), ...size },
     ...formula.tokens.map((token, index): DomSpec => [
       'span',
       {
@@ -232,7 +250,7 @@ export function renderFormulaSpec(formula: FormulaDisplay): DomSpec {
   return [
     'span',
     { class: 'doc-formula-wrap' },
-    ['span', { class: 'doc-formula-math', contenteditable: 'false' }],
+    ['span', { class: 'doc-formula-math', contenteditable: 'false', ...size }],
     tokenStrip,
   ]
 }
@@ -1803,8 +1821,10 @@ function padSegments(
       wraps.push([cut, cut + codePointLengthAt(text, cut), AUTOSPACE_PAD_ATTRS])
     }
   }
-  for (const i of hangulSpaceOffsets(text, neighbours.prev, neighbours.next)) {
-    wraps.push([i, i + 1, HANGUL_SPACE_ATTRS])
+  if (hangulSpaceWideningOn()) {
+    for (const i of hangulSpaceOffsets(text, neighbours.prev, neighbours.next)) {
+      wraps.push([i, i + 1, HANGUL_SPACE_ATTRS])
+    }
   }
   if (wraps.length === 0) return [text]
   wraps.sort((a, b) => a[0] - b[0])
@@ -1955,6 +1975,7 @@ function textboxRowSpec(para: TextboxParaDisplay): DomSpec {
     for (const [side, css] of Object.entries(geom.borders)) {
       decls.push(dkBorder(side as DkBorderSide, css))
     }
+    if (geom.diagonals) decls.push(dkBackgroundImage(geom.diagonals))
     const lines = (cell.paras.length > 0 ? cell.paras : [[]]).map((runs, k): DomSpec => {
       const attrs: Record<string, string> = { class: 'page-hf-cell-para' }
       const style = styleText(hfCellParaStyle(cell.paraProps?.[k]))
@@ -2249,6 +2270,13 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
             ? `${css};--cell-bw-${DK_SIDE[side]}:${bw}px`
             : `${css};${bdDeltaCss(side, cell.borders?.[side])}`
         }),
+        (() => {
+          const layers = (['tl2br', 'tr2bl'] as const)
+            .map((d) => cellDiagonalCss(cell.borders?.[d], d))
+            .filter((v): v is string => v !== null)
+            .join(',')
+          return layers ? `background-image:${layers};${dkBackgroundImage(layers)}` : ''
+        })(),
         ...(['top', 'left', 'bottom', 'right'] as const).map((side) =>
           cell.cellMarTwips?.[side] !== undefined
             ? `--doc-cell-pad-${DK_SIDE[side]}:${cellPadPx(cell.cellMarTwips[side]!)}`
@@ -2349,9 +2377,12 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
   const spacingShares = model.cellSpacingTwips
     ? cellSpacingGridSharesTwips(model.colWidthsTwips?.length ?? 1, model.cellSpacingTwips)
     : null
+  const spacingBorders = model.cellSpacingTwips
+    ? cellSpacingBorderPx(model.colWidthsTwips?.length ?? 1, model.borders)
+    : null
   const colPx = !model.widthPct
     ? model.colWidthsTwips?.map((w, i) =>
-        Math.max(1, Math.round((w - (spacingShares?.[i] ?? 0)) / 15)),
+        Math.max(1, Math.round((w - (spacingShares?.[i] ?? 0)) / 15) + (spacingBorders?.[i] ?? 0)),
       )
     : undefined
   if (colPx) {
@@ -2394,7 +2425,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
         ? Math.round(((colPx.length + 1) * 2 * model.cellSpacingTwips) / 15)
         : outerBorderPx(model.borders ?? null, modelEdgeBorders(model)))
     // w:tblLayout fixed holds the declared widths even past the paper edge (see DocTable.renderHTML)
-    if (!nested && model.fixedLayout) {
+    if (!nested && (model.fixedLayout || holdsDeclaredWidth(model))) {
       widthExpr = `${widthPx}px`
       tableStyles.push(`width:${widthExpr}`, 'max-width:none')
       if (model.align === 'center')
@@ -2434,7 +2465,12 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
     )
   }
   if (model.fill) tableStyles.push(`background-color:#${model.fill}`)
-  tableStyles.push(...tableBordersCss((model.borders as TableBordersAttr | undefined) ?? null))
+  // a borderless nested table must not inherit the host table's --doc-b-* lines
+  tableStyles.push(
+    ...tableBordersCss(
+      (model.borders as TableBordersAttr | undefined) ?? (nested ? ({} as TableBordersAttr) : null),
+    ),
+  )
   tableStyles.push(
     ...tableRowEatCss(
       (model.borders as TableBordersAttr | undefined) ?? null,

@@ -871,7 +871,6 @@ export async function saveDocx(
     relsXml: string
     base64: string
   }> = []
-  let chartDocPrId = 8000
   const embedChart = async (
     chart: NewChart,
     extentPx?: { w: number; h: number },
@@ -904,7 +903,7 @@ export async function saveDocx(
       base64: wbBase64,
     })
 
-    const docPrId = chartDocPrId++
+    const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const cx = extentPx ? Math.max(1, Math.round(extentPx.w * 9525)) : 5486400
     const cy = extentPx ? Math.max(1, Math.round(extentPx.h * 9525)) : 3200400
     return (
@@ -2104,8 +2103,16 @@ function headerFooterPartXml(
     if (open && closeIdx >= 0) {
       const openIdx = originalXml.indexOf(open)
       const children = splitXmlChildren(originalXml.slice(openIdx + open.length, closeIdx))
+      // a text paragraph whose pictures are all inline blips is fully modelled
+      // (the parser keeps them on its runs), so it is regenerated like any text
+      const isModelledPictures = (xml: string) =>
+        /<w:t[\s>]/.test(xml) &&
+        !/<w:pict[\s>]|<w:object[\s>]|<wp:anchor[\s>]/.test(xml) &&
+        (xml.match(/<w:drawing[\s>][\s\S]*?<\/w:drawing>/g) ?? []).every(
+          (d) => d.includes('<wp:inline') && d.includes('<a:blip'),
+        )
       const isProtectedPara = (xml: string) =>
-        /<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/.test(xml)
+        /<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/.test(xml) && !isModelledPictures(xml)
       const isTextPara = (c: { name: string; xml: string }) =>
         c.name === 'w:p' && !isWatermarkChild(c) && !isProtectedPara(c.xml)
       if (children.some((c) => !isTextPara(c))) {
