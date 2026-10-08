@@ -60,4 +60,15 @@ describe('the marker is XML a presentation can open', () => {
     const doc = parseStrictly(asSlide(setRedactExt(RPR, 'client phone')))
     expect(doc.getElementsByTagNameNS(REDACT_NS, 'redact').length).toBe(1)
   })
+
+  it('appends the extLst where the schema wants it: last child of the properties', () => {
+    // CT_TextCharacterProperties and CT_ShapeProperties both close with
+    // extLst; one spliced in before a:latin is well-formed and still fails a
+    // strict validator
+    const out = setRedactExt(RPR, 'client phone')
+    expect(out.indexOf('<a:extLst')).toBeGreaterThan(out.indexOf('<a:latin'))
+    const doc = parseStrictly(asSlide(out))
+    const rPr = doc.getElementsByTagName('a:rPr')[0]!
+    expect(rPr.lastElementChild!.tagName).toBe('a:extLst')
+  })
 })

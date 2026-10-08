@@ -119,7 +119,7 @@ const OUR_EXT_RE = new RegExp(
 )
 
 /** An `<a:extLst>` left holding nothing, either form. */
-const EMPTY_EXTLST_RE = /<a:extLst\b[^>]*?\/>|<a:extLst\b[^>]*>([\s\s]*?)<\/a:extLst>/g
+const EMPTY_EXTLST_RE = /<a:extLst\b[^>]*?\/>|<a:extLst\b[^>]*>([\s\S]*?)<\/a:extLst>/g
 
 /** Remove our extension from a raw `<a:rPr>` / `nvPr` string, leaving everything else. */
 export function stripRedactExt(xml: string): string {
@@ -139,7 +139,7 @@ export function stripRedactExt(xml: string): string {
  */
 function collapseEmptyProps(xml: string): string {
   return xml.replace(
-    /<([\w:]+)\b([^>]*?)>([\s\s]*?)<\/\1>/g,
+    /<([\w:]+)\b([^>]*?)>([\s\S]*?)<\/\1>/g,
     (all, tag: string, attrs: string, inner: string) =>
       inner.trim() ? all : `<${tag}${attrs.replace(/\s+$/, '')}/>`,
   )
@@ -183,7 +183,9 @@ export function setRedactExt(propsXml: string, label: string): string {
 /** Replace our extension inside an existing `<a:extLst>`, or add one to the inner XML. */
 function spliceExtLst(inner: string, ext: string): string {
   const list = /<a:extLst\b[^>]*?(?:\/>|>[\s\S]*?<\/a:extLst>)/.exec(inner)
-  if (!list) return `<a:extLst>${ext}</a:extLst>${inner}`
+  // extLst is the last child both schemas allow here — prepending it before
+  // a:solidFill/a:latin/a:xfrm is a strict-validation failure
+  if (!list) return `${inner}<a:extLst>${ext}</a:extLst>`
   const kept = list[0].replace(OUR_EXT_RE, '')
   // our own extension goes last so a re-apply replaces rather than appends
   const next = kept.includes('</a:extLst>')
