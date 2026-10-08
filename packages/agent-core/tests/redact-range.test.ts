@@ -22,8 +22,11 @@ const options = { markName: MARK, marker: (label: string) => `{{${label}}}` }
 function sizeOf(node: WithheldNode): number {
   if (typeof node.text === 'string') return node.text.length
   if (node.type === 'docInlineImage' || node.type === 'image') return 1
-  if (!Array.isArray(node.content)) return 1
-  return 2 + node.content.reduce((sum, c) => sum + sizeOf(c), 0)
+  // an empty container serialises without `content` and still costs two
+  return (
+    2 +
+    (Array.isArray(node.content) ? node.content.reduce((sum, c) => sum + sizeOf(c), 0) : 0)
+  )
 }
 
 const doc = (paragraphs: WithheldNode[][]): WithheldNode => ({
@@ -69,7 +72,10 @@ describe('a range of a document with nothing withheld', () => {
 })
 
 describe('a range with a withheld span in it', () => {
-  const marked = doc([[t('Call '), t(SECRET, '客户电话'), t(' about the invoice')], [t('Second')]])
+  const marked = doc([
+    [t('Call '), t(SECRET, 'client phone'), t(' about the invoice')],
+    [t('Second')],
+  ])
 
   it('never returns the words', () => {
     const end = 2 + marked.content!.reduce((sum, b) => sum + sizeOf(b), 0)
@@ -80,7 +86,7 @@ describe('a range with a withheld span in it', () => {
 
   it('stands the whole marker in, even for a range that clips the span', () => {
     const out = redactTextBetween(marked, 7, 10, options)
-    expect(out).toContain('{{客户电话}}')
+    expect(out).toContain('{{client phone}}')
     expect(out).not.toMatch(/\{\{[^}]*$/)
     expect(out).not.toMatch(/^[^{]*\}\}/)
   })
@@ -90,6 +96,27 @@ describe('a range with a withheld span in it', () => {
     expect(out).toContain('Call ')
     expect(out).toContain('about the invoice')
     expect(out).toContain('Second')
+  })
+
+  it('keeps offsets right across an empty paragraph above the selection', () => {
+    // ProseMirror serialises an empty paragraph without `content`, but it
+    // still costs its two tokens: counting it as an atom shifted every offset
+    // after it by one, so the quoted selection came back a slice short
+    // ('Call ' read as 'all ', 'now' as 'ow').
+    const withEmpty: WithheldNode = {
+      type: 'doc',
+      content: [
+        { type: 'docParagraph' },
+        { type: 'docParagraph', content: [t('Call '), t(SECRET, 'client phone'), t(' now')] },
+      ],
+    }
+    // the empty paragraph costs [0,2); the block's own token is 2, its inline
+    // content starts at 3: 'Call ' at [3,8), the span at [8,19), ' now' after
+    expect(redactTextBetween(withEmpty, 3, 8, options)).toBe('Call ')
+    expect(redactTextBetween(withEmpty, 20, 23, options)).toBe('now')
+    expect(redactTextBetween(withEmpty, 3, 23, options)).toBe(
+      'Call {{client phone}} now',
+    )
   })
 })
 

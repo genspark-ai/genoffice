@@ -62,9 +62,9 @@ function press(h: Harness, key: string): KeyboardEvent {
 
 describe('the label field of a withhold dialog', () => {
   it('offers the seed as a starting label', () => {
-    const h = render('客户电话')
-    expect(h.latest!.value).toBe('客户电话')
-    expect(h.latest!.label).toBe('客户电话')
+    const h = render('client phone')
+    expect(h.latest!.value).toBe('client phone')
+    expect(h.latest!.label).toBe('client phone')
   })
 
   it('previews the marker the model will see, as the reader types', () => {

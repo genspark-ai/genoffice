@@ -72,8 +72,16 @@ function labelOf(node: WithheldNode, wanted: string): string {
 export function withheldNodeSize(node: WithheldNode, isLeaf: (n: WithheldNode) => boolean): number {
   if (typeof node.text === 'string') return node.text.length
   if (isLeaf(node)) return 1
-  if (!Array.isArray(node.content)) return 1
-  return 2 + node.content.reduce((sum, child) => sum + withheldNodeSize(child, isLeaf), 0)
+  // ProseMirror omits `content` when a node has none, and an empty container
+  // (an empty paragraph above the selection, i.e. most Word files) still costs
+  // its open and close tokens — two, not the one an atom costs. Counting it as
+  // an atom shifted every following offset by one.
+  return (
+    2 +
+    (Array.isArray(node.content)
+      ? node.content.reduce((sum, child) => sum + withheldNodeSize(child, isLeaf), 0)
+      : 0)
+  )
 }
 
 /**
