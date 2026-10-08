@@ -65,6 +65,12 @@ export function modelHasFixedSampling(model: string): boolean {
 export function modelLacksVision(model: string): boolean {
   // MiniMax-M2.7 remains text-only when MiniMax-M3 enables provider vision.
   if (/(^|\/)minimax-m2\.7($|-)/i.test(model)) return true
+  // Atlas Cloud serves these text-only (GET api.atlascloud.ai/v1/models gives
+  // them input_modalities ["text"]), including MiniMax M3, which takes images
+  // on MiniMax's own API. Matched on the full namespaced id so the direct
+  // GLM and MiniMax providers keep their own behaviour. Its Kimi, Qwen and
+  // GLM-5.3-Flash ids do take images and fall through.
+  if (/^(?:zai-org\/glm-5\.3|minimaxai\/minimax-m(?:3|2\.5))$/i.test(model)) return true
   return (
     /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model) ||
     /(^|\/)(?:ling-(?:3\.0-flash(?!-vl)|3\.0-tiny|2\.6-1t|2\.6-flash)|ring-2\.6-1t|longcat-2\.0(?:$|-))/i.test(
@@ -344,6 +350,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     // one chat-completions endpoint for every model; the model id picks the lab
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.cheaperinference.com/v1'),
+  },
+  atlascloud: {
+    meta: metaOf('atlascloud'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every lab; the namespaced model id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.atlascloud.ai/v1'),
   },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),

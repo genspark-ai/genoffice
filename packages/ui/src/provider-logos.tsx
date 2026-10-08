@@ -8,7 +8,8 @@ import type { AiProviderId } from '@genoffice/ai-provider/browser'
 // generic icon for the "custom" endpoint.
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
-// (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, OpenCode,
+// (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas
+// Cloud, OpenCode,
 // Genspark, Custom) use currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -242,6 +243,12 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M9.107 2.786H15.429V8.839H9.589a3.213 3.213 0 0 0 0.321 6.375H15.214L9.434 20.994A9.107 9.107 0 1 1 9.107 2.786Z" />
       <path d="M22.179 3.429H22.607a1.286 1.286 0 0 1 1.286 1.286V19.714a1.393 1.393 0 0 1 -1.393 1.393H17.464V8.143Z" />
+    </svg>
+  ),
+  // Atlas Cloud's mark (atlascloud.ai/logo.svg): an outlined "A" peak
+  atlascloud: (
+    <svg viewBox="0 0 27 26" fill="currentColor" aria-hidden="true">
+      <path d="M13.4447 0L0 25.9887C6.22692 23.5227 11.249 23.1623 15.7643 23.3763L13.7037 18.8159C12.8029 18.7258 10.1905 18.7258 8.9519 19.0523L13.4447 9.06451C13.4447 9.06451 20.2009 23.7366 20.2121 23.7366C21.5183 23.9393 24.9977 25.1104 26.8895 25.9887L13.4447 0Z" />
     </svg>
   ),
   'opencode-zen': opencodeLogo,

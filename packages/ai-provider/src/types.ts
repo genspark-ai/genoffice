@@ -23,6 +23,7 @@ export type AiProviderId =
   | 'requesty'
   | 'opper'
   | 'cheaperinference'
+  | 'atlascloud'
   | 'opencode-zen'
   | 'opencode-go'
   | 'custom'
