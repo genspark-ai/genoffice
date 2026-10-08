@@ -1,4 +1,5 @@
-import { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFile, readdir } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { classifySkill, parseSkillFrontmatter } from '@genoffice/agent-core'
@@ -76,21 +77,28 @@ export function agentSkillDirs(
  * when the file cannot be read — a permission error on one skill must not hide
  * the other nineteen, so each is read independently and a failure is just an
  * absence.
+ *
+ * Async on purpose: this runs on the main process while a window is open, and
+ * the nine directories it walks (ours plus every coding agent's) must not
+ * block the event loop the panes render from.
  */
-function readDir(root: string, source: FoundSkill['source'], agent?: string): FoundSkill[] {
+async function readDir(
+  root: string,
+  source: FoundSkill['source'],
+  agent?: string,
+): Promise<FoundSkill[]> {
   let entries: string[]
   try {
-    entries = readdirSync(root)
+    entries = await readdir(root)
   } catch {
     return []
   }
   const out: FoundSkill[] = []
   for (const name of entries.sort()) {
     const path = join(root, name, 'SKILL.md')
-    if (!existsSync(path)) continue
     let text: string
     try {
-      text = readFileSync(path, 'utf8')
+      text = await readFile(path, 'utf8')
     } catch {
       continue
     }
@@ -117,16 +125,22 @@ function readDir(root: string, source: FoundSkill['source'], agent?: string): Fo
  * allowed to shadow it. Among the agents' own, the first directory to offer a
  * name wins, which is what makes the `~/.agents` ordering above mean something.
  */
-export function findSkills(
+export async function findSkills(
   userDataDir: string,
   env?: NodeJS.ProcessEnv,
   home?: string,
-): FoundSkill[] {
-  const ours = readDir(skillsRoot(userDataDir), 'genoffice')
+): Promise<FoundSkill[]> {
+  const ours = await readDir(skillsRoot(userDataDir), 'genoffice')
   const seen = new Set(ours.map((s) => s.name))
   const fromAgents: FoundSkill[] = []
-  for (const { agent, dir } of agentSkillDirs(env, home)) {
-    for (const skill of readDir(dir, 'agent', agent)) {
+  const scanned = await Promise.all(
+    agentSkillDirs(env, home).map(async ({ agent, dir }) => ({
+      agent,
+      skills: await readDir(dir, 'agent', agent),
+    })),
+  )
+  for (const { skills } of scanned) {
+    for (const skill of skills) {
       if (seen.has(skill.name)) continue
       seen.add(skill.name)
       fromAgents.push(skill)
@@ -136,7 +150,7 @@ export function findSkills(
 }
 
 /** the skills a user may actually run: the ones they chose to put in our folder */
-export function usableSkills(userDataDir: string): FoundSkill[] {
+export async function usableSkills(userDataDir: string): Promise<FoundSkill[]> {
   return readDir(skillsRoot(userDataDir), 'genoffice')
 }
 
@@ -164,11 +178,55 @@ export function readSkillBody(path: string): string {
  * Refuses rather than overwrites when the name is taken: a same-named skill in
  * our folder is the one the user put there, and silently replacing it with
  * `.claude`'s copy is the shadowing rule above, just with the winner flipped.
+ *
+ * The directory is inspected before the copy. A symlink is refused rather than
+ * dereferenced: `cpSync` without `dereference` would carry the link across and
+ * the imported skill would keep reaching back into whatever it points at, while
+ * dereferencing would copy in arbitrarily much data from anywhere on disk the
+ * link fancies. The same walk bounds the copy — a "skill" that is secretly a
+ * dataset is refused outright instead of being metered after the fact.
  */
+const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+
+function inspectSkillDir(dir: string): void {
+  let total = 0
+  const stack: string[] = [dir]
+  while (stack.length > 0) {
+    const cur = stack.pop()!
+    let entries: ReturnType<typeof readdirSync>
+    try {
+      entries = readdirSync(cur, { withFileTypes: true })
+    } catch {
+      throw new Error('the skill directory could not be read')
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) {
+        throw new Error('the skill contains a symlink, and imports refuse those')
+      }
+      const full = join(cur, entry.name)
+      if (entry.isDirectory()) {
+        stack.push(full)
+        continue
+      }
+      let size = 0
+      try {
+        size = statSync(full).size
+      } catch {
+        throw new Error('the skill directory could not be read')
+      }
+      total += size
+      if (total > MAX_IMPORT_BYTES) {
+        throw new Error('the skill is larger than the 10 MB import cap')
+      }
+    }
+  }
+}
+
 export function importSkill(skillPath: string, userDataDir: string): FoundSkill {
   const name = basename(dirname(skillPath))
   const dest = join(skillsRoot(userDataDir), name)
   if (existsSync(dest)) throw new Error('a skill of that name is already there')
+  inspectSkillDir(dirname(skillPath))
   cpSync(dirname(skillPath), dest, { recursive: true })
   // re-read at the destination rather than trusting the copy: this is the record
   // the UI will show as installed, and it should describe the file now on disk

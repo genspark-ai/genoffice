@@ -43,6 +43,13 @@ export interface SkillFrontmatter {
  * Word report" names the product, and neither mentions the other's spelling.
  * Conversion skills are covered by construction: "pdf to html" matches both
  * tokens, so a format-pair skill is never the one that gets filtered out.
+ *
+ * Deliberately absent: words generic enough to describe almost any skill
+ * ("office", "document", "report", "letter", "cv", "md"). When nearly every
+ * skill matched, the relevance flag carried no information; a skill about
+ * Git also "documents things", and `md` fires on any prose skill that
+ * mentions Markdown in passing. The remaining tokens name a file type or a
+ * product, which is the signal the pane is trying to show.
  */
 export const SKILL_FORMAT_TOKENS: readonly string[] = [
   // extensions
@@ -55,7 +62,6 @@ export const SKILL_FORMAT_TOKENS: readonly string[] = [
   'pptx',
   'ppt',
   'pdf',
-  'md',
   'markdown',
   'html',
   'htm',
@@ -68,9 +74,7 @@ export const SKILL_FORMAT_TOKENS: readonly string[] = [
   'word',
   'excel',
   'powerpoint',
-  'office',
   // what the user calls them
-  'document',
   'spreadsheet',
   'workbook',
   'presentation',
@@ -79,11 +83,8 @@ export const SKILL_FORMAT_TOKENS: readonly string[] = [
   'slides',
   'handout',
   'brochure',
-  'report',
   'invoice',
-  'letter',
   'resume',
-  'cv',
   'memo',
   'newsletter',
 ]

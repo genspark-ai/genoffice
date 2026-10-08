@@ -145,7 +145,7 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
 
   // reading a third-party skill: list what this machine has, then read one body.
   // Listing copies nothing and runs nothing — it is a menu, not an import.
-  ipcMain.handle(INTEGRATIONS_CHANNELS.listSkills, (): FoundSkill[] =>
+  ipcMain.handle(INTEGRATIONS_CHANNELS.listSkills, async (): Promise<FoundSkill[]> =>
     findSkills(app.getPath('userData')),
   )
 

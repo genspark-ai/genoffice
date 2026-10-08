@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -38,17 +45,17 @@ const SKILL = (name: string, description: string, body = 'Do the thing.') =>
 const SHARED_BODY = SKILL('shared', 'Write a docx')
 
 describe('findSkills', () => {
-  it('returns nothing when there is no skills folder and no agent home', () => {
+  it('returns nothing when there is no skills folder and no agent home', async () => {
     const { save, home, cleanup } = scaffold()
     // home is passed explicitly on purpose: this machine really does have a
     // populated ~/.agents/skills, and a bare findSkills() would read it
-    expect(findSkills(save, {}, home)).toEqual([])
+    expect(await findSkills(save, {}, home)).toEqual([])
     cleanup()
   })
 
-  it('reads a skill we put in our own folder, and does not mark it as an agent one', () => {
+  it('reads a skill we put in our own folder, and does not mark it as an agent one', async () => {
     const { save, cleanup } = scaffold({ 'my-skill': SKILL('my-skill', 'Make a docx report') })
-    const [skill] = usableSkills(save)
+    const [skill] = await usableSkills(save)
     expect(skill.name).toBe('my-skill')
     expect(skill.source).toBe('genoffice')
     expect(skill.agent).toBeUndefined()
@@ -56,61 +63,61 @@ describe('findSkills', () => {
     cleanup()
   })
 
-  it('offers an agent skill as a candidate rather than as usable', () => {
+  it('offers an agent skill as a candidate rather than as usable', async () => {
     const { save, home, cleanup } = scaffold(
       {},
       { 'pptx-builder': SKILL('pptx-builder', 'Build a pptx') },
     )
-    const all = findSkills(save, {}, home)
+    const all = await findSkills(save, {}, home)
     expect(all).toHaveLength(1)
     expect(all[0].source).toBe('agent')
     expect(all[0].agent).toBe('agents')
     // ours-only: nothing was imported by merely looking
-    expect(usableSkills(save)).toEqual([])
+    expect(await usableSkills(save)).toEqual([])
     cleanup()
   })
 
-  it('keeps our copy when an agent directory has the same name', () => {
+  it('keeps our copy when an agent directory has the same name', async () => {
     const { save, home, cleanup } = scaffold({ shared: SHARED_BODY }, { shared: SHARED_BODY })
-    const all = findSkills(save, {}, home)
+    const all = await findSkills(save, {}, home)
     expect(all).toHaveLength(1)
     expect(all[0].source).toBe('genoffice')
     cleanup()
   })
 
-  it('classifies a skill that is about deployment as not relevant, without hiding it', () => {
+  it('classifies a skill that is about deployment as not relevant, without hiding it', async () => {
     const { save, home, cleanup } = scaffold(
       {},
       { deploy: SKILL('deploy', 'Roll back a Kubernetes release') },
     )
-    const [skill] = findSkills(save, {}, home)
+    const [skill] = await findSkills(save, {}, home)
     expect(skill.relevance.relevant).toBe(false)
     cleanup()
   })
 
-  it('skips a directory with no SKILL.md and one whose frontmatter is unusable', () => {
+  it('skips a directory with no SKILL.md and one whose frontmatter is unusable', async () => {
     const { save, cleanup } = scaffold({ good: SKILL('good', 'Convert pdf to html') })
     mkdirSync(join(save, 'skills', 'empty'), { recursive: true })
     mkdirSync(join(save, 'skills', 'broken'), { recursive: true })
     writeFileSync(join(save, 'skills', 'broken', 'SKILL.md'), 'no frontmatter here\n')
     mkdirSync(join(save, 'skills', 'noname'), { recursive: true })
     writeFileSync(join(save, 'skills', 'noname', 'SKILL.md'), '---\ndescription: x\n---\n\nbody\n')
-    expect(usableSkills(save).map((s) => s.name)).toEqual(['good'])
+    expect((await usableSkills(save)).map((s) => s.name)).toEqual(['good'])
     cleanup()
   })
 
-  it('reads the home from the argument, not the real one', () => {
+  it('reads the home from the argument, not the real one', async () => {
     const { save, home, cleanup } = scaffold({}, { x: SKILL('x', 'A pdf thing') })
     // a home with nothing in it must not reach the developer's real ~/.claude
-    expect(findSkills(save, {}, join(home, 'nowhere'))).toEqual([])
+    expect(await findSkills(save, {}, join(home, 'nowhere'))).toEqual([])
     cleanup()
   })
 
-  it('survives an unreadable directory by skipping it', () => {
+  it('survives an unreadable directory by skipping it', async () => {
     const { save, home, cleanup } = scaffold({}, { a: SKILL('a', 'docx') })
     mkdirSync(join(home, '.agents', 'skills', 'not-a-dir'), { recursive: true })
     writeFileSync(join(home, '.agents', 'skills', 'not-a-dir', 'SKILL.md'), SKILL('b', 'xlsx'))
-    expect(() => findSkills(save, {}, home)).not.toThrow()
+    await expect(findSkills(save, {}, home)).resolves.toHaveLength(2)
     cleanup()
   })
 })
@@ -144,16 +151,16 @@ describe('skillsRoot / readSkillBody', () => {
     expect(skillsRoot('/app/userData')).toBe(join('/app/userData', 'skills'))
   })
 
-  it('returns the body with the frontmatter stripped', () => {
+  it('returns the body with the frontmatter stripped', async () => {
     const { save, cleanup } = scaffold({ s: SKILL('s', 'A docx thing', 'Step one.\nStep two.') })
-    const [skill] = usableSkills(save)
+    const [skill] = await usableSkills(save)
     expect(readSkillBody(skill.path)).toBe('Step one.\nStep two.\n')
     cleanup()
   })
 })
 
 describe('importSkill', () => {
-  it('copies the whole skill folder, not just SKILL.md', () => {
+  it('copies the whole skill folder, not just SKILL.md', async () => {
     const { save, home, cleanup } = scaffold({}, { 'pptx-builder': SKILL('pptx', 'Build a pptx') })
     const src = join(home, '.agents', 'skills', 'pptx-builder')
     // the reference files a skill ships alongside its instructions
@@ -168,7 +175,7 @@ describe('importSkill', () => {
     expect(existsSync(join(dest, 'reference', 'layout.md'))).toBe(true)
     expect(existsSync(join(dest, 'notes.md'))).toBe(true)
     // and the copy is now one of ours, not a candidate
-    expect(usableSkills(save).map((s) => s.name)).toEqual(['pptx-builder'])
+    expect((await usableSkills(save)).map((s) => s.name)).toEqual(['pptx-builder'])
     cleanup()
   })
 
@@ -192,6 +199,26 @@ describe('importSkill', () => {
     cleanup()
   })
 
+  it('refuses a skill that ships a symlink instead of copying the reach-through', () => {
+    const { save, home, cleanup } = scaffold({}, { linked: SKILL('linked', 'A docx thing') })
+    const src = join(home, '.agents', 'skills', 'linked')
+    writeFileSync(join(src, 'outside.md'), 'somewhere else')
+    symlinkSync(join(src, 'outside.md'), join(src, 'reference.md'))
+    expect(() => importSkill(join(src, 'SKILL.md'), save)).toThrow('symlink')
+    expect(existsSync(join(save, 'skills', 'linked'))).toBe(false)
+    cleanup()
+  })
+
+  it('refuses a skill over the import size cap', () => {
+    const { save, home, cleanup } = scaffold({}, { heavy: SKILL('heavy', 'A docx thing') })
+    const src = join(home, '.agents', 'skills', 'heavy')
+    mkdirSync(join(src, 'corpus'), { recursive: true })
+    writeFileSync(join(src, 'corpus', 'big.bin'), Buffer.alloc(11 * 1024 * 1024, 0))
+    expect(() => importSkill(join(src, 'SKILL.md'), save)).toThrow('import cap')
+    expect(existsSync(join(save, 'skills', 'heavy'))).toBe(false)
+    cleanup()
+  })
+
   it('names the folder after the directory it came from', () => {
     const { save, home, cleanup } = scaffold(
       {},
@@ -206,13 +233,13 @@ describe('importSkill', () => {
 })
 
 describe('isKnownSkillPath', () => {
-  it('accepts every path the scan hands out, ours and the agents', () => {
+  it('accepts every path the scan hands out, ours and the agents', async () => {
     const { save, home, cleanup } = scaffold(
       { mine: SKILL('mine', 'A docx thing') },
       { theirs: SKILL('theirs', 'A pdf thing') },
     )
     const roots = knownSkillRoots(save, {}, home)
-    const found = findSkills(save, {}, home)
+    const found = await findSkills(save, {}, home)
     expect(found).toHaveLength(2)
     for (const skill of found) {
       expect(isKnownSkillPath(skill.path, roots)).toBe(true)

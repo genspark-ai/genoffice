@@ -130,15 +130,28 @@ describe('classifySkill', () => {
     // the list is the feature's contract with the user: a skill about any of
     // these survives the filter. Deleting one token from the table must fail
     // here, so the list cannot rot into a subset.
-    for (const ext of ['docx', 'xlsx', 'pptx', 'pdf', 'md', 'html', 'csv', 'doc', 'xls', 'ppt']) {
+    for (const ext of ['docx', 'xlsx', 'pptx', 'pdf', 'markdown', 'html', 'csv', 'doc', 'xls', 'ppt']) {
       const out = classifySkill('a-skill', `Convert files to ${ext}`)
       expect(out.relevant, `${ext} should keep the skill`).toBe(true)
       expect(out.matched, `${ext} should be reported as the match`).toContain(ext)
     }
   })
 
-  it('keeps a skill that only says markdown', () => {
-    expect(classifySkill('md-tidy', 'Normalise a Markdown file').matched).toContain('md')
+  it('keeps a skill that only says markdown, and reports the word it matched', () => {
+    // `md` left the table on purpose: as a token it fires on almost any prose
+    // skill, which flattened the relevance flag into noise. The full word
+    // still matches, which is what a Markdown skill actually says.
+    expect(classifySkill('md-tidy', 'Normalise a Markdown file').matched).toEqual(['markdown'])
+  })
+
+  it('no longer fires on the generic words the tokens used to share', () => {
+    // office / document / report / letter / cv described nearly every skill,
+    // so a Git skill "documented things" and every letter template was
+    // "relevant"; the flag is for file formats, not for prose about prose
+    expect(classifySkill('git-flow', 'Document your release process in a report').relevant).toBe(
+      false,
+    )
+    expect(classifySkill('cover-letter', 'Write a job application letter').relevant).toBe(false)
   })
 
   it('has no duplicate or empty entries in the token list', () => {
