@@ -12,6 +12,8 @@ export type {
   ToolExecution,
 } from './types'
 export { composeSkills } from './skill'
+export { createKnowledgeBaseSkill, formatKbSize } from './knowledge-base-skill'
+export type { KnowledgeBaseDeps, KbFileInfo, KbSearchHit, KbReadPage } from './knowledge-base-skill'
 export type { AgentSkill, ExecutedToolCall } from './skill'
 export {
   AgentLoop,
