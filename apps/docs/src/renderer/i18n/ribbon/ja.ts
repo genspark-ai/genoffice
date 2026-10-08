@@ -16,7 +16,6 @@ export const ja = {
   ribbonCollapse: 'リボンを折りたたむ',
   ribbonExpand: 'リボンを展開する',
   ribbonCompact: 'コンパクトリボン（アイコンのみ）',
-  ribbonExpandFull: 'リボンを展開する',
   ribbonTabView: '表示',
   ribbonTabTableDesign: 'テーブル デザイン',
   ribbonTabTableLayout: 'テーブル レイアウト',

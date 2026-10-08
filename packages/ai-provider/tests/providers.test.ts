@@ -209,6 +209,12 @@ describe('resolveAiSettings', () => {
       defaultAiSettings(),
     )
     expect(gpt.providers.genspark.model).toBe('gpt-5.6-terra')
+
+    const glm = resolveAiSettings(
+      { providers: { glm: { apiKey: '', model: 'glm-5-turbo' } } as never },
+      defaultAiSettings(),
+    )
+    expect(glm.providers.glm.model).toBe('glm-5.3-flash')
   })
 
   it('leaves a still-supported model id alone', () => {

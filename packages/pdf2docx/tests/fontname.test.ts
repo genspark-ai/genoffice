@@ -40,7 +40,7 @@ describe('familyFromPsName', () => {
     expect(familyFromPsName('PingFangSC-Semibold')).toBe('PingFang SC')
   })
 
-  it('passes CJK system families whose PS name is the family verbatim (#1890)', () => {
+  it('passes CJK system families whose PS name is the family verbatim (genoffice#1890)', () => {
     // splitting these unresolves the name and Word substitutes another face
     expect(familyFromPsName('DFKai-SB')).toBe('DFKai-SB')
     expect(familyFromPsName('PMingLiU')).toBe('PMingLiU')

@@ -156,63 +156,70 @@ export async function* sseLines(
  */
 export const MAX_TOOL_JSON_CHARS = 512_000
 
+export interface SseDataEvent {
+  raw: string
+  /** Parsed JSON body, undefined for a non-JSON payload such as `[DONE]` or a keep-alive. */
+  json: unknown
+}
+
 /**
  * Frames the `data:` payloads of an SSE stream into whole events.
  *
- * Two shapes have to work. A server may split one JSON body across several
- * `data:` lines, in which case those lines are a single event and are joined
- * with a newline - reading a line at a time dropped such a body, because every
- * fragment failed JSON.parse and the caller's `catch { continue }` skipped it
- * with no diagnostic. And a server may instead frame each event as one `data:`
- * line closed by a single newline, with no blank line at all; waiting only for
- * a blank line merges a whole run of those into one unparseable payload and
- * buries the `[DONE]` terminator inside it.
- *
- * So a `data:` value that is already whole JSON is dispatched on its own, and
- * only values that are fragments are held back and joined. A payload still
- * pending when the stream ends is delivered, the way sseLines delivers a final
- * line that has no newline.
+ * A server may split one JSON body across several `data:` lines (one event, joined
+ * with a newline), or close every event with a single newline and no blank line at
+ * all. So a value that already parses as JSON is dispatched on its own and only
+ * fragments are held back and joined. The parsed body rides along so callers do
+ * not parse twice. `[DONE]` counts as whole: holding it back as a fragment left a
+ * newline-only stream that keeps its socket open waiting forever.
  */
 export async function* sseDataEvents(
   body: NodeJS.ReadableStream | ReadableStream<Uint8Array>,
   onBytes?: () => void,
-): AsyncGenerator<string> {
+): AsyncGenerator<SseDataEvent> {
   let parts: string[] = []
+  const flush = (): SseDataEvent | undefined => {
+    if (!parts.length) return undefined
+    const raw = parts.join('\n')
+    parts = []
+    return { raw, json: parseJson(raw) }
+  }
   for await (const line of sseLines(body, onBytes)) {
     if (!line.startsWith('data:')) {
-      if (parts.length) {
-        yield parts.join('\n')
-        parts = []
-      }
+      const held = flush()
+      if (held) yield held
       continue
     }
-    const value = line.slice(5).trim()
-    if (!value) continue
-    // `[DONE]` is not JSON, so a JSON test alone would hold it as a fragment until
-    // the next non-data line or EOF. A newline-only stream whose server keeps the
-    // socket open after `[DONE]` then never terminates: the loop waits on data that
-    // never comes. Treating it as a whole payload also stops a non-JSON keep-alive
-    // from being glued onto the terminator (`data: ping\ndata: [DONE]`).
-    if (value === '[DONE]' || parseWholeJson(value) !== undefined) {
-      // A whole payload is an event in its own right, whatever the server used
-      // as its separator.
-      if (parts.length) {
-        yield parts.join('\n')
-        parts = []
-      }
-      yield value
+    const raw = line.slice(5).trim()
+    if (!raw) continue
+    const json = parseJson(raw)
+    if (raw === '[DONE]' || json !== undefined) {
+      const held = flush()
+      if (held) yield held
+      yield { raw, json }
       continue
     }
-    parts.push(value)
+    // Only a JSON opener starts a fragment; anything else alone is a keep-alive.
+    if (!parts.length && !/^[[{]/.test(raw)) {
+      yield { raw, json }
+      continue
+    }
+    parts.push(raw)
+    // Dispatch as soon as the joined fragments form a body, so a later keep-alive
+    // is not glued onto it.
+    const joined = parts.join('\n')
+    const whole = parseJson(joined)
+    if (whole !== undefined) {
+      parts = []
+      yield { raw: joined, json: whole }
+    }
   }
-  if (parts.length) yield parts.join('\n')
+  const held = flush()
+  if (held) yield held
 }
 
-/** A complete JSON value parses; a fragment of one does not. The parsed value is
- *  returned too, so a caller that needs the object does not have to parse twice. */
-function parseWholeJson(value: string): { parsed: unknown } | undefined {
+function parseJson(value: string): unknown {
   try {
-    return { parsed: JSON.parse(value) }
+    return JSON.parse(value) as unknown
   } catch {
     return undefined
   }

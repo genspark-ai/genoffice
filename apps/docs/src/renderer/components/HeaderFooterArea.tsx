@@ -18,16 +18,19 @@ import {
   hfDeclaredStrutPt,
   hfLeadIndentCss,
   hfRowStyle,
+  hfSegHasImage,
   hfSegLeftCss,
   hfTabLeadNeedsStrut,
+  hfTabSegImageHeightPx,
   hfTabLines,
   hfTabOverflowPx,
   hfBoxAnchorEl,
   hfTextBoxClass,
   hfTextBoxStyle,
   hfUsesLegacyHash,
-  paraBorderCss,
-  paraBorderPadding,
+  hfBorderMergeFlags,
+  hfParaBorderStyle,
+  type ParaBorderMergeFlags,
   type HfStripGeom,
   type HfTabLayout,
   hfParaLineHeightCss,
@@ -78,7 +81,7 @@ function runStyle(run: Run): React.CSSProperties {
 }
 
 /** document content colors (w:shd / w:pBdr) plus their dark-page twins; mirrors makeGapHfEl */
-function paraStyle(para: HfParagraph): React.CSSProperties {
+function paraStyle(para: HfParagraph, merge?: ParaBorderMergeFlags): React.CSSProperties {
   const style: React.CSSProperties = {}
   const lh = hfParaLineHeightCss(para)
   if (lh) style.lineHeight = lh
@@ -97,16 +100,8 @@ function paraStyle(para: HfParagraph): React.CSSProperties {
     style.backgroundColor = `#${shdBg}`
     Object.assign(style, dkStyleProps({ background: `#${shdBg}` }))
   } else if (para.shadingClear) style.backgroundColor = 'transparent'
-  if (para.borders) {
-    const line = (side: 't' | 'b' | 'l' | 'r') => paraBorderCss(para.borderLines?.[side])
-    const borders: Partial<Record<'t' | 'b' | 'l' | 'r', string>> = {}
-    if (para.borders.includes('t')) style.borderTop = borders.t = line('t')
-    if (para.borders.includes('b')) style.borderBottom = borders.b = line('b')
-    if (para.borders.includes('l')) style.borderLeft = borders.l = line('l')
-    if (para.borders.includes('r')) style.borderRight = borders.r = line('r')
-    Object.assign(style, dkStyleProps({ borders }))
-    Object.assign(style, paraBorderPadding(para.borders, para.borderLines))
-  }
+  const bs = hfParaBorderStyle(para, merge)
+  Object.assign(style, bs.style, dkStyleProps({ borders: bs.borders }))
   return style
 }
 
@@ -287,6 +282,34 @@ function HfContent({
     ...(spacing[i].top ? { marginTop: `${spacing[i].top}px` } : {}),
     ...(spacing[i].bottom ? { marginBottom: `${spacing[i].bottom}px` } : {}),
   })
+  const runSpans = (runs: Run[], imgClass: string) =>
+    runs.map((run, l) => (
+      <span key={l} style={runStyle(run)}>
+        {run.image?.rule && (
+          <span
+            className={INLINE_RULE_CLASS}
+            style={inlineRuleStyle({
+              ...run.image.rule,
+              sizeHalfPoints: run.sizeHalfPoints,
+            })}
+          />
+        )}
+        {run.image && !run.image.rule && (
+          <img
+            className={imgClass}
+            src={run.image.dataUrl}
+            alt=""
+            draggable={false}
+            style={{
+              ...(run.image.widthPx ? { width: run.image.widthPx } : {}),
+              ...(run.image.heightPx ? { height: run.image.heightPx } : {}),
+            }}
+          />
+        )}
+        {display(run.text)}
+      </span>
+    ))
+  const mergeFlags = hfBorderMergeFlags(paras)
   const renderPara = (para: HfParagraph, i: number) =>
     para.cells ? (
       // layout-table row: read-only flex columns (excluded from text editing)
@@ -297,33 +320,7 @@ function HfContent({
       >
         {para.cells.map((cell, j) => {
           const geom = hfCellGeometry(cell)
-          const spans = (runs: Run[]) =>
-            runs.map((run, l) => (
-              <span key={l} style={runStyle(run)}>
-                {run.image?.rule && (
-                  <span
-                    className={INLINE_RULE_CLASS}
-                    style={inlineRuleStyle({
-                      ...run.image.rule,
-                      sizeHalfPoints: run.sizeHalfPoints,
-                    })}
-                  />
-                )}
-                {run.image && !run.image.rule && (
-                  <img
-                    className="page-hf-cell-img"
-                    src={run.image.dataUrl}
-                    alt=""
-                    draggable={false}
-                    style={{
-                      ...(run.image.widthPx ? { width: run.image.widthPx } : {}),
-                      ...(run.image.heightPx ? { height: run.image.heightPx } : {}),
-                    }}
-                  />
-                )}
-                {display(run.text)}
-              </span>
-            ))
+          const spans = (runs: Run[]) => runSpans(runs, 'page-hf-cell-img')
           return (
             <div
               key={j}
@@ -334,6 +331,7 @@ function HfContent({
                 ...(cell.fill ? { backgroundColor: `#${cell.fill}` } : {}),
                 ...dkStyleProps({
                   ...(cell.fill ? { background: `#${cell.fill}` } : {}),
+                  backgroundImage: geom.diagonals,
                   borders: geom.borders,
                 }),
               }}
@@ -394,7 +392,7 @@ function HfContent({
               key={i}
               className={`page-hf-para${para.frameXAlign ? ' page-hf-frame' : ''}`}
               style={{
-                ...paraStyle(para),
+                ...paraStyle(para, mergeFlags[i]),
                 ...margins(i),
                 ...(para.runs.length === 0 && para.emptyRunSizeHalfPoints
                   ? { fontSize: `${para.emptyRunSizeHalfPoints / 2}pt` }
@@ -402,11 +400,7 @@ function HfContent({
               }}
             >
               {para.runs.length === 0 ? ' ' : null}
-              {para.runs.map((run, j) => (
-                <span key={j} style={runStyle(run)}>
-                  {display(run.text)}
-                </span>
-              ))}
+              {runSpans(para.runs, 'page-hf-run-img')}
             </div>
           )
         }
@@ -419,25 +413,21 @@ function HfContent({
             ...(leadIndent ? { textIndent: leadIndent } : {}),
           }
         }
+        const segImgH = (tabbed: HfTabLayout) => hfTabSegImageHeightPx(tabbed)
         const lineContent = (tabbed: HfTabLayout) => (
           <>
             {hfTabLeadNeedsStrut(tabbed) ? '\u200b' : null}
-            {tabbed.lead.map((run, j) => (
-              <span key={j} style={runStyle(run)}>
-                {display(run.text)}
-              </span>
-            ))}
+            {segImgH(tabbed) > 0 ? (
+              <span className="page-hf-tab-strut" style={{ height: segImgH(tabbed) }} />
+            ) : null}
+            {runSpans(tabbed.lead, 'page-hf-run-img')}
             {tabbed.segments.map((seg, k) => (
               <span
                 key={`t${k}`}
-                className={`page-hf-tabseg page-hf-tabseg-${seg.anchor}`}
+                className={`page-hf-tabseg page-hf-tabseg-${seg.anchor}${hfSegHasImage(seg) ? ' page-hf-tabseg-img' : ''}`}
                 style={{ left: hfSegLeftCss(seg, tabbed) }}
               >
-                {seg.runs.map((run, j) => (
-                  <span key={j} style={runStyle(run)}>
-                    {display(run.text)}
-                  </span>
-                ))}
+                {runSpans(seg.runs, 'page-hf-run-img')}
               </span>
             ))}
           </>
@@ -448,7 +438,11 @@ function HfContent({
             <div
               key={i}
               className={`page-hf-para page-hf-tabbed${frame}`}
-              style={{ ...paraStyle(para), ...margins(i), ...lineStyle(tabLines[0]) }}
+              style={{
+                ...paraStyle(para, mergeFlags[i]),
+                ...margins(i),
+                ...lineStyle(tabLines[0]),
+              }}
             >
               {lineContent(tabLines[0])}
             </div>
@@ -460,7 +454,7 @@ function HfContent({
           <div
             key={i}
             className={`page-hf-para${frame}`}
-            style={{ ...paraStyle(para), ...margins(i) }}
+            style={{ ...paraStyle(para, mergeFlags[i]), ...margins(i) }}
           >
             {tabLines.map((tabbed, m) => (
               <div key={m} className="page-hf-tabbed" style={lineStyle(tabbed)}>

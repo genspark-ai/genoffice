@@ -7,6 +7,8 @@ export interface DateFormatParts {
   elapsed: boolean
   /** which elapsed token leads the format; only meaningful when elapsed is true */
   elapsedUnit?: 'h' | 'm' | 's'
+  /** false when a leading [h] has no minute token (bare [h] renders whole hours) */
+  elapsedMinutes?: boolean
 }
 
 const DATE_ONLY: DateFormatParts = { date: true, time: false, seconds: false, elapsed: false }
@@ -106,6 +108,7 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
     seconds: hasS,
     elapsed: elapsed && !date,
     elapsedUnit: elapsed && !date ? elapsedUnit : undefined,
+    elapsedMinutes: elapsed && !date && elapsedUnit === 'h' ? minuteM : undefined,
   }
 }
 
@@ -135,9 +138,10 @@ export function formatSerial(
     }
     if (parts.elapsedUnit === 's') return String(total)
     const h = Math.floor(total / 3600)
+    if (parts.elapsedMinutes === false) return String(h)
     const m = Math.floor((total % 3600) / 60)
-    const s = total % 60
-    return `${h}:${pad(m)}:${pad(s)}`
+    if (!parts.seconds) return `${h}:${pad(m)}`
+    return `${h}:${pad(m)}:${pad(total % 60)}`
   }
   if (serial < 0) return null
   let days = Math.floor(serial)

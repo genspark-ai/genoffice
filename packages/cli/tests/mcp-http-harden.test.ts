@@ -238,8 +238,6 @@ describe('mcp http loopback Host guard', () => {
   })
 
   it('refuses a request with no Host header instead of 500ing', async () => {
-    // An HTTP/1.0 client may omit Host entirely; the guard must still answer
-    // 403, not let a URL parse error escape as a 500.
     const res = await rawRequest(handle.port, 'GET /nope HTTP/1.0\r\n\r\n')
     expect(res).toMatch(/^HTTP\/1\.1 403 /)
     expect(res).toContain('host not allowed')
@@ -255,8 +253,7 @@ describe('mcp http loopback Host guard', () => {
   })
 
   it('refuses the other authorities new URL() rejects, none of them 500', async () => {
-    // A non-numeric port, a bare '::1', an unterminated bracket and an
-    // IPv4-mapped form all throw inside new URL(); the guard must absorb them.
+    // every one of these throws inside new URL()
     for (const authority of ['127.0.0.1:abc', '::1', '[::1', '::ffff:127.0.0.1']) {
       const res = await rawRequest(
         handle.port,

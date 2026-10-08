@@ -29,6 +29,23 @@ export function hfParasOf(value: HeaderFooter, images?: HfImage[] | null): HfPar
   return [{ align: 'center', runs }]
 }
 
+/** Pictures are not editable: they leave the text runs and return to the
+ *  same side of the text they came from (a logo before the title stays first). */
+export function hfPictureRuns(runs: Run[]): { leading: Run[]; text: Run[]; trailing: Run[] } {
+  const leading: Run[] = []
+  const text: Run[] = []
+  const trailing: Run[] = []
+  for (const run of runs) {
+    if (run.image) {
+      ;(text.length > 0 ? trailing : leading).push({ ...run, text: '' })
+      if (run.text === '') continue
+    }
+    const { image: _image, ...rest } = run
+    text.push(rest)
+  }
+  return { leading, text, trailing }
+}
+
 /** editable text of the part: one line per text paragraph, field sentinels as tokens */
 export function hfEditText(value: HeaderFooter): string {
   return hfParasOf(value)
@@ -57,8 +74,12 @@ export function applyHfText(value: HeaderFooter | null, text: string): HeaderFoo
     textParas.length > 0 ? textParas : [{ align: 'center', runs: [] }]
   const edited: HfParagraph[] = lines.map((line, i) => {
     const template = templates[Math.min(i, templates.length - 1)]
-    const style = template.runs[0] ?? {}
-    return { ...template, runs: line === '' ? [] : [{ ...style, text: line }] }
+    const { leading, text: textRuns, trailing } = hfPictureRuns(template.runs)
+    const style = textRuns[0] ?? {}
+    return {
+      ...template,
+      runs: [...leading, ...(line === '' ? [] : [{ ...style, text: line }]), ...trailing],
+    }
   })
   const nextParas: HfParagraph[] = []
   let ei = 0

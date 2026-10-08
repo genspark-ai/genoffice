@@ -922,6 +922,8 @@ function registerMarkdownIpc(): void {
     async (_e, config: unknown): Promise<ImageHostConfig | null> => {
       // null clears the host: pastes return to the local-assets behaviour
       const normalized = normalizeImageHostConfig(config)
+      // an incomplete form is rejected without touching the stored host
+      if (normalized === null && config !== null) return null
       let file: Record<string, unknown>
       try {
         file = JSON.parse(await readFile(imageHostConfigPath(), 'utf8'))

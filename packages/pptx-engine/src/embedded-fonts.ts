@@ -145,6 +145,7 @@ export function sfntCmapLookup(sfnt: Uint8Array): ((cp: number) => boolean) | nu
         const starts = ends + segCount * 2 + 2
         const deltas = starts + segCount * 2
         const rangeOffsets = deltas + segCount * 2
+        if (!inBounds(rangeOffsets, segCount * 2)) continue
         lookups.push((cp) => {
           if (cp > 0xffff) return false
           for (let k = 0; k < segCount; k++) {
@@ -164,6 +165,7 @@ export function sfntCmapLookup(sfnt: Uint8Array): ((cp: number) => boolean) | nu
         })
       } else if (format === 12) {
         const nGroups = dv.getUint32(sub + 12, false)
+        if (!inBounds(sub + 16, nGroups * 12)) continue
         lookups.push((cp) => {
           for (let k = 0; k < nGroups; k++) {
             const g = sub + 16 + k * 12

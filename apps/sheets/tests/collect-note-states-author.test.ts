@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { threadStore } from '../src/renderer/threaded-comments'
 import { collectNoteStates } from '../src/renderer/univer-sync'
 import type { LazyWorkbookState, UniverRuntime } from '../src/renderer/univer-state'
 
@@ -8,6 +9,15 @@ interface Comment {
   column: number
   author: string
   text: string
+  thread?: {
+    id: string
+    personId: string
+    author: string
+    dT: string
+    done: boolean
+    text: string
+    replies: never[]
+  }
 }
 
 const encodeNoteText = (author: string, text: string): string =>
@@ -28,9 +38,6 @@ function harness(comments: Comment[], live: { row: number; col: number; note: st
 
 describe('collectNoteStates author marker', () => {
   it('keeps a note that was authored this session whole', () => {
-    // Neither the AI set_note op nor the note editor writes an "Author:\n"
-    // marker, so an author-less note whose first line ends in a colon used to be
-    // read as author="Status" and lost that line on save.
     const authored = { row: 0, col: 0, note: 'Status:\nOn track' }
     const { runtime, state } = harness(
       [{ row: 0, column: 0, author: '', text: authored.note }],
@@ -57,9 +64,6 @@ describe('collectNoteStates author marker', () => {
   })
 
   it('keeps the author of a session-edited note and does not fold it into the text', () => {
-    // The note editor rewrites the note string in place, so an authored note the
-    // user edited still starts with "Author:\n". Taking the note whole would
-    // fold "Dana:" into the text and lose the author column permanently.
     const comment = { row: 1, column: 2, author: 'Dana', text: 'original' }
     const live = { row: 1, col: 2, note: 'Dana:\nedited this session' }
     const { runtime, state } = harness([comment], [live])
@@ -76,5 +80,69 @@ describe('collectNoteStates author marker', () => {
     const { runtime, state } = harness([comment], [live])
     const [sheet] = collectNoteStates(runtime, state)
     expect(sheet?.notes).toEqual([{ row: 1, column: 2, author: '', text: 'Status:\nOn track' }])
+  })
+})
+
+describe('collectNoteStates threaded comments', () => {
+  const thread = {
+    id: '{R1}',
+    personId: '{P1}',
+    author: 'Ada',
+    dT: '2024-01-01T00:00:00.00',
+    done: false,
+    text: 'Root',
+    replies: [] as never[],
+  }
+
+  it('emits store threads next to the live notes and skips a note on a threaded cell', () => {
+    const comment = { row: 0, column: 0, author: 'Ada', text: 'Root', thread }
+    const { runtime, state } = harness(
+      [comment],
+      [
+        { row: 0, col: 0, note: 'stale' },
+        { row: 2, col: 2, note: 'plain' },
+      ],
+    )
+    threadStore.load({ sheets: [{ id: 'sheet1', comments: [comment] }] } as never)
+    threadStore.setAuthor('Grace')
+    threadStore.reply('sheet1', 0, 0, 'Second')
+    const [sheet] = collectNoteStates(runtime, state)
+    expect(sheet?.notes).toEqual([
+      { row: 2, column: 2, author: '', text: 'plain' },
+      {
+        row: 0,
+        column: 0,
+        author: 'Ada',
+        text: 'Root',
+        thread: {
+          id: '{R1}',
+          personId: '{P1}',
+          author: 'Ada',
+          dT: '2024-01-01T00:00:00.00',
+          done: false,
+          replies: [expect.objectContaining({ author: 'Grace', text: 'Second' })],
+        },
+      },
+    ])
+  })
+
+  it('marks a plain note on a cell the file had a thread on as converted (thread: null)', () => {
+    const comment = { row: 0, column: 0, author: 'Ada', text: 'Root', thread }
+    const { runtime, state } = harness([comment], [{ row: 0, col: 0, note: 'Ada:\nRoot' }])
+    threadStore.load({ sheets: [] } as never)
+    const [sheet] = collectNoteStates(runtime, state)
+    expect(sheet?.notes).toEqual([{ row: 0, column: 0, author: 'Ada', text: 'Root', thread: null }])
+  })
+
+  it('splits the author off a note converted from a thread created this session', () => {
+    const { runtime, state } = harness([], [{ row: 4, col: 4, note: 'Grace:\nfresh thread' }])
+    threadStore.load({ sheets: [] } as never)
+    threadStore.setAuthor('Grace')
+    threadStore.add('sheet1', 4, 4, 'fresh thread')
+    threadStore.convertToNote('sheet1', 4, 4)
+    const [sheet] = collectNoteStates(runtime, state)
+    expect(sheet?.notes).toEqual([
+      { row: 4, column: 4, author: 'Grace', text: 'fresh thread', thread: null },
+    ])
   })
 })

@@ -16,7 +16,7 @@ afterEach(() => {
 })
 
 /**
- * @param sourceMode the .txt/.json "this file is source text" flag from #1848
+ * @param sourceMode the .txt/.json "this file is source text" flag from genoffice#1848
  * @param sourceViewOpen this PR's markdown source view, kept a separate flag
  *   because the two mean different things and can never both be on
  */
@@ -123,6 +123,20 @@ describe('Ribbon source mode', () => {
     // nothing was removed: the reader's ribbon does not jump on toggle, and
     // the controls come back enabled when the view closes
     expect(counts(open).iconButtons).toBe(counts(plain).iconButtons)
+  })
+
+  it('keeps Save As live in both modes and Find live only outside the source view', () => {
+    const quick = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.ribbon-tabs .qa-btn'))
+    const [, saveAsPlain, , , findPlain] = quick(renderRibbon(false))
+    const [, saveAsSource, , , findSource] = quick(renderRibbon(true))
+    const [, saveAsView, , , findView] = quick(renderRibbon(false, true))
+    expect(saveAsPlain!.disabled).toBe(false)
+    expect(saveAsSource!.disabled).toBe(false)
+    expect(saveAsView!.disabled).toBe(false)
+    expect(findPlain!.disabled).toBe(false)
+    expect(findSource!.disabled).toBe(false)
+    expect(findView!.disabled).toBe(true)
   })
 
   it('shows the formatting controls again for a markdown file', () => {

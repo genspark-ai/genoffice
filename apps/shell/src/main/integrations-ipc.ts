@@ -42,16 +42,14 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
   const bundled = (): BundledSkill => bundledSkillFrom(readFileSync(deps.skillPath))
   const ledger = (): SkillLedger => ledgerFromSettings(readAppSettings(deps.settingsPath()))
   const saveLedger = (l: SkillLedger) => writeAppSetting(deps.settingsPath(), LEDGER_KEY, l)
-  /** every directory the main process vouched for as a skill install target */
+  // the only non-agent directory installSkill may write to is the one the user just picked
+  let pickedSkillDir: string | null = null
   const vouchedSkillDirs = (): string[] => [
     ...detectAgents().map((a) => a.skillsDir),
     ...(pickedSkillDir ? [pickedSkillDir] : []),
   ]
   const stateOf = (skillsDir: string): SkillInstallState =>
     readInstallState(skillsDir, bundled(), ledger())
-  // the last folder the open dialog handed out; the only non-agent directory
-  // installSkill may write to, so a renderer cannot send an arbitrary path
-  let pickedSkillDir: string | null = null
 
   ipcMain.handle(INTEGRATIONS_CHANNELS.status, (): IntegrationsStatus => {
     const skill = bundled()
@@ -75,8 +73,6 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
     (_e, target: { agentId?: AgentId; dir?: string }): SkillInstallState => {
       const skillsDir = target.dir ?? agentTarget(target.agentId!)?.skillsDir
       if (!skillsDir) throw new Error('unknown skill target')
-      // a renderer-supplied dir is only the folder the user picked; every other
-      // write is rooted in an agent target resolved here
       if (target.dir && !isInstallableSkillDir(skillsDir, vouchedSkillDirs())) {
         throw new Error('unknown skill target')
       }

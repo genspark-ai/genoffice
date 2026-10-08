@@ -9,10 +9,11 @@ import type {
   AiSettings,
   CodexModelCatalog,
 } from '@genoffice/ai-provider'
-import type { UpdateChannel } from './update-api'
+import type { UpdateChannel, UpdateUiState } from './update-api'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
+
 export type UiLanguage =
   | 'zh'
   | 'en'
@@ -40,7 +41,7 @@ export type UiLanguage =
 export type UiTheme = 'light' | 'dark' | 'system'
 
 /**
- * Document page theme preference (#1811): what the editors' canvas/paper does
+ * Document page theme preference (genoffice#1811): what the editors' canvas/paper does
  * relative to the UI theme. 'follow' reproduces the previous single-theme
  * behavior; 'light'/'dark' pin the paper regardless of the UI theme.
  */
@@ -179,8 +180,6 @@ export interface DefaultAppStatus {
   manualOnly: boolean
 }
 
-import type { UpdateUiState } from './update-api'
-
 export interface HomeApi {
   /** unified recents across document types, newest first (paged) */
   recents(query?: RecentQuery): Promise<RecentPage>
@@ -262,6 +261,8 @@ export interface HomeApi {
   accountLogin(): Promise<boolean>
   /** progress events for the login started via accountLogin; returns an unsubscribe */
   onAccountLogin(handler: (ev: AccountLoginEvent) => void): () => void
+  /** a tab asked for the settings modal (composer model chip → AI Model section) */
+  onOpenSettings(handler: (target: { section: string }) => void): () => void
   /** re-open the pending login auth URL in the default browser (rescue when auto-open failed) */
   openLoginUrl(): Promise<void>
   /** log out (clears the saved API key; the login state is shared globally with the gsk CLI) */
@@ -281,7 +282,7 @@ export interface HomeApi {
   getTheme(): Promise<UiTheme>
   /** switch + persist the UI theme; broadcasts 'app:theme-changed' to all web contents */
   setTheme(theme: UiTheme): Promise<void>
-  /** current document page theme preference (#1811, persisted in userData/app-settings.json) */
+  /** current document page theme preference (genoffice#1811, persisted in userData/app-settings.json) */
   getDocumentTheme(): Promise<DocTheme>
   /** switch + persist the document page theme; broadcasts 'app:document-theme-changed' to all web contents */
   setDocumentTheme(theme: DocTheme): Promise<void>
@@ -345,8 +346,10 @@ export interface HomeApi {
   openCloudProject(projectUrl: string): Promise<void>
   /** AI settings (userData/ai-settings.json, shared by every editor); the genspark key never appears here */
   getAiSettings(): Promise<AiSettings>
-  /** persist AI settings; open editors pick the change up on their next settings read */
+  /** persist AI settings; every renderer gets ai:settings-changed and re-reads */
   setAiSettings(settings: AiSettings): Promise<void>
+  /** ai-settings.json was rewritten by any renderer (composer model chip, another window) */
+  onAiSettingsChanged(handler: () => void): () => void
   /** provider catalog with each fixed endpoint's default base URL (empty for genspark/custom) */
   getAiProviders(): AiCatalogEntry[]
   /** live Codex model catalog discovered through the current or overridden app-server */
@@ -537,6 +540,7 @@ export const HOME_CHANNELS = {
   accountStatus: 'home:account-status',
   accountLogin: 'home:account-login',
   accountLoginEvent: 'home:account-login-event',
+  openSettings: 'home:open-settings',
   accountLoginOpenUrl: 'home:account-login-open-url',
   accountLogout: 'home:account-logout',
   getAppVersion: 'home:get-app-version',

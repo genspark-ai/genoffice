@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
 /**
- * Settings → General → "Open the AI panel in new documents" (#1589), the way the
+ * Settings → General → "Open the AI panel in new documents" (genoffice#1589), the way the
  * reporter hit it: flip the toggle in the UI, restart, then start a *new*
  * document from the Home screen. Pre-seeding app-settings.json is not the same
  * thing — it skips the write, and the write is half of what is being reported.

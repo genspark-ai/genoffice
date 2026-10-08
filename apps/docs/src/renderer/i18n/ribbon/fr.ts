@@ -15,7 +15,6 @@ export const fr = {
   ribbonCollapse: 'Réduire le ruban',
   ribbonExpand: 'Développer le ruban',
   ribbonCompact: 'Ruban compact (icônes uniquement)',
-  ribbonExpandFull: 'Développer le ruban',
   ribbonTabView: 'Affichage',
   ribbonTabTableDesign: 'Création de tableau',
   ribbonTabTableLayout: 'Disposition du tableau',

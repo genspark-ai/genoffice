@@ -69,6 +69,11 @@ pub fn read_styles(
         .and_then(|xf| numeric_attribute(xf, "fontId"))
         .and_then(|index| fonts.get(index))
         .and_then(|font| font.family.clone());
+    let style_xfs = document
+        .descendants()
+        .find(|node| node.has_tag_name("cellStyleXfs"))
+        .map(|node| mc_children(node, "xf"))
+        .unwrap_or_default();
     let styles = cell_xfs
         .map(|node| {
             mc_children(node, "xf")
@@ -96,6 +101,27 @@ pub fn read_styles(
                             })
                     });
                     let alignment = xf.children().find(|child| child.has_tag_name("alignment"));
+                    // Without applyProtection the xf inherits its named
+                    // style's (cellStyleXfs) protection, as Excel does.
+                    let protection_owner = if xf
+                        .attribute("applyProtection")
+                        .is_some_and(|value| value == "1" || value == "true")
+                    {
+                        Some(xf)
+                    } else {
+                        style_xfs
+                            .get(numeric_attribute(xf, "xfId").unwrap_or(0))
+                            .copied()
+                    };
+                    let protection_attr = |name: &str| {
+                        protection_owner
+                            .and_then(|owner| {
+                                owner
+                                    .children()
+                                    .find(|child| child.has_tag_name("protection"))
+                            })
+                            .and_then(|node| node.attribute(name))
+                    };
                     // Excel resolves scheme fonts against the theme; the
                     // literal <name val> is only a cached copy.
                     let font_family = match (font.scheme.as_deref(), theme_fonts) {
@@ -110,6 +136,7 @@ pub fn read_styles(
                         italic: font.italic,
                         underline: font.underline,
                         strikethrough: font.strikethrough,
+                        vert_align: font.vert_align,
                         wrap_text: alignment
                             .and_then(|node| node.attribute("wrapText"))
                             .is_some_and(|value| value == "1" || value == "true"),
@@ -145,6 +172,12 @@ pub fn read_styles(
                         border_diagonal: border.diagonal,
                         diagonal_up: border.diagonal_up,
                         diagonal_down: border.diagonal_down,
+                        locked: protection_attr("locked")
+                            .filter(|value| *value == "0" || *value == "false")
+                            .map(|_| false),
+                        hidden: protection_attr("hidden")
+                            .filter(|value| *value == "1" || *value == "true")
+                            .map(|_| true),
                         border_inner_horizontal: None,
                         border_inner_vertical: None,
                     }
@@ -162,11 +195,19 @@ pub fn read_styles(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let styles = if styles.is_empty() {
+    let mut styles = if styles.is_empty() {
         vec![CellStyle::default()]
     } else {
         styles
     };
+    // An unlocked Normal style flips the default: locked xfs must then say so.
+    if styles[0].locked == Some(false) {
+        for style in styles.iter_mut().skip(1) {
+            if style.locked.is_none() {
+                style.locked = Some(true);
+            }
+        }
+    }
     Ok((styles, dxfs, normal_font_name))
 }
 
@@ -215,6 +256,7 @@ pub(crate) fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         italic: font.italic,
         underline: font.underline,
         strikethrough: font.strikethrough,
+        vert_align: font.vert_align,
         wrap_text: false,
         shrink_to_fit: false,
         font_color: font.color,
@@ -236,6 +278,8 @@ pub(crate) fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         border_diagonal: border.diagonal,
         diagonal_up: border.diagonal_up,
         diagonal_down: border.diagonal_down,
+        locked: None,
+        hidden: None,
         border_inner_horizontal: border.horizontal,
         border_inner_vertical: border.vertical,
     }
@@ -275,6 +319,12 @@ pub(crate) fn parse_font(font: Node<'_, '_>, colors: &ColorContext) -> FontStyle
             .children()
             .find(|node| node.has_tag_name("strike"))
             .is_some_and(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
+        vert_align: font
+            .children()
+            .find(|node| node.has_tag_name("vertAlign"))
+            .and_then(|node| node.attribute("val"))
+            .filter(|value| *value == "superscript" || *value == "subscript")
+            .map(ToOwned::to_owned),
         color,
         color_theme,
         color_tint,

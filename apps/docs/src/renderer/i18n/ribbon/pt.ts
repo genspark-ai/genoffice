@@ -15,7 +15,6 @@ export const pt = {
   ribbonCollapse: 'Recolher a Faixa de Opções',
   ribbonExpand: 'Expandir a Faixa de Opções',
   ribbonCompact: 'Faixa compacta (somente ícones)',
-  ribbonExpandFull: 'Expandir a Faixa de Opções',
   ribbonTabView: 'Exibir',
   ribbonTabTableDesign: 'Design da Tabela',
   ribbonTabTableLayout: 'Layout da Tabela',

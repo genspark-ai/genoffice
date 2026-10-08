@@ -150,6 +150,23 @@ describe('decodeCsvBuffer', () => {
   it('decodes UTF-16LE without a BOM from the NUL pattern', () => {
     expect(decodeCsvBuffer(utf16leBytes('a,b'))).toBe('a,b')
   })
+
+  it('decodes BOM-less UTF-16 CJK-only text in either byte order', () => {
+    const text = Array(6)
+      .fill(
+        '\u59d3\u540d\u90e8\u95e8\u804c\u4f4d\u5de5\u53f7\u5907\u6ce8\u90ae\u7bb1\u7535\u8bdd\u5730',
+      )
+      .join('\n')
+    const le = utf16leBytes(text)
+    const be = new Uint8Array(le.length)
+    for (let i = 0; i < le.length; i += 2) {
+      be[i] = le[i + 1]!
+      be[i + 1] = le[i]!
+    }
+    expect(decodeCsvBuffer(le)).toBe(text)
+    expect(decodeCsvBuffer(be)).toBe(text)
+    expect(decodeCsvBuffer(le, 'gb18030')).toBe(text)
+  })
 })
 
 describe('parseCsv row/col caps', () => {

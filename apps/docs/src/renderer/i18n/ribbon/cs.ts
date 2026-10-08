@@ -15,7 +15,6 @@ export const cs = {
   ribbonCollapse: 'Sbalit pás karet',
   ribbonExpand: 'Rozbalit pás karet',
   ribbonCompact: 'Kompaktní pás karet (pouze ikony)',
-  ribbonExpandFull: 'Rozbalit pás karet',
   ribbonTabView: 'Zobrazení',
   ribbonTabTableDesign: 'Návrh tabulky',
   ribbonTabTableLayout: 'Rozložení tabulky',

@@ -68,7 +68,7 @@ describe('FileIndexer wedged-worker recovery', () => {
       { timeout: 5_000, interval: 25 },
     )
     expect(store.listAll().get(notesPath())?.status).toBe('ok')
-    // error rows are retried on every scan; the retry must not wedge either
+    // an unchanged error row is not re-queued; the rescan itself must not wedge
     await indexer.scan()
     await vi.waitFor(
       () => {

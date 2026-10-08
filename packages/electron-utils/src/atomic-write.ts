@@ -65,15 +65,10 @@ function syncFileBestEffortSync(path: string): void {
 }
 
 /**
- * Same-dir temp file, best-effort fsync, then rename, so neither a crash
- * mid-write nor a power loss right after the rename can leave the target
- * truncated. Rename-over-existing fails transiently on Windows under
- * Defender/indexer locks (retry with backoff), and permanently on network
- * mounts — a gvfs SMB share refuses it with EEXIST, outside the retry set,
- * which made every Docs/Sheets save fail where a plain write succeeded
- * (#1877). Either way the save publishes through an in-place fallback write:
- * losing atomicity for that one save beats failing a save the previous plain
- * writeFileSync would have completed.
+ * Same-dir temp file, best-effort fsync, then rename. Rename-over-existing fails
+ * transiently on Windows (Defender/indexer locks: retry) and permanently on some
+ * network mounts (gvfs SMB refuses with EEXIST, genoffice#1877); either way the
+ * save falls back to an in-place write rather than failing.
  */
 export async function atomicWriteFile(filePath: string, data: Buffer): Promise<void> {
   const tmp = tempPathBeside(filePath)
@@ -88,7 +83,7 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
     await renameWithRetry(tmp, filePath)
     return
   } catch {
-    // any publish failure lands on the in-place fallback below
+    // fall through to the in-place write
   }
   // Keep the completed temp until the fallback lands: if that write fails
   // or the process dies, the new bytes still exist somewhere on disk.
@@ -96,9 +91,6 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   await unlink(tmp).catch(() => {})
 }
 
-/** Publish a completed temp file over the target, retrying the transient
- *  Windows rename locks; any other failure propagates to the caller, whose
- *  in-place fallback publishes the save without the atomic replace. */
 async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -111,15 +103,7 @@ async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
   }
 }
 
-/**
- * Same temp-file, best-effort fsync and rename sequence as atomicWriteFile, for
- * a copy of an existing file. The copy itself stays in the kernel, so a
- * multi-hundred-MB PDF is never read into memory; only the flush and the
- * publish are shared, so the shell does not need a second implementation.
- * A refused publish — transient Windows lock or a network mount that does not
- * rename over existing files — falls back to an in-place copy, like
- * atomicWriteFile.
- */
+/** copyFile stays in the kernel, so a multi-hundred-MB file is never read into RAM */
 export async function atomicCopyFile(source: string, filePath: string): Promise<void> {
   const tmp = tempPathBeside(filePath)
   try {
@@ -133,7 +117,7 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
     await renameWithRetry(tmp, filePath)
     return
   } catch {
-    // any publish failure lands on the in-place fallback below
+    // fall through to the in-place write
   }
   // Keep the completed temp until the fallback lands, as atomicWriteFile does.
   await copyFile(source, filePath)

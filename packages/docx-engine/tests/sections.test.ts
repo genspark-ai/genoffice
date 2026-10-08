@@ -275,7 +275,11 @@ describe('readSections enumerates all sections', () => {
       .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
     const saved = await saveDocx(parsed, visible, {
       sectionHf: [
-        { lastBlockIndex: sections[0].lastBlockIndex, kind: 'header', hf: { text: '第一节页眉' } },
+        {
+          lastBlockIndex: sections[0].lastBlockIndex,
+          kind: 'header',
+          hf: { text: '\u7b2c\u4e00\u8282\u9875\u7709' },
+        },
       ],
     })
     const zip = await (await import('jszip')).default.loadAsync(saved)
@@ -368,7 +372,11 @@ describe('sectionHf per-section headers/footers', () => {
 
     const saved = await saveDocx(parsed, visibleBlocks(parsed), {
       sectionHf: [
-        { lastBlockIndex: sections[0].lastBlockIndex, kind: 'header', hf: { text: '第一节页眉' } },
+        {
+          lastBlockIndex: sections[0].lastBlockIndex,
+          kind: 'header',
+          hf: { text: '\u7b2c\u4e00\u8282\u9875\u7709' },
+        },
       ],
     })
     const reparsed = await parseDocx(saved)
@@ -427,14 +435,14 @@ describe('sectionHf per-section headers/footers', () => {
     // reference read as absent and a second footerReference was written
     const FTR =
       '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      '<w:p><w:r><w:t>旧页脚</w:t></w:r></w:p></w:ftr>'
+      '<w:p><w:r><w:t>\u65e7\u9875\u811a</w:t></w:r></w:p></w:ftr>'
     const bytes = await buildDocx({
       bodyXml:
-        P('第一节') +
+        P('\u7b2c\u4e00\u8282') +
         sectBreakPara({
           extra: '<w:footerReference w:type="default" r:id="rId61"></w:footerReference>',
         }) +
-        P('第二节'),
+        P('\u7b2c\u4e8c\u8282'),
       extraRels:
         '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
       extraParts: [
@@ -451,11 +459,15 @@ describe('sectionHf per-section headers/footers', () => {
 
     const saved = await saveDocx(parsed, visibleBlocks(parsed), {
       sectionHf: [
-        { lastBlockIndex: sections[0].lastBlockIndex, kind: 'footer', hf: { text: '新页脚' } },
+        {
+          lastBlockIndex: sections[0].lastBlockIndex,
+          kind: 'footer',
+          hf: { text: '\u65b0\u9875\u811a' },
+        },
       ],
     })
     const zip = await (await import('jszip')).default.loadAsync(saved)
-    expect(await zip.file('word/footer1.xml')!.async('string')).toContain('新页脚')
+    expect(await zip.file('word/footer1.xml')!.async('string')).toContain('\u65b0\u9875\u811a')
     expect(zip.file('word/footer2.xml')).toBeNull()
     const docXml = await zip.file('word/document.xml')!.async('string')
     expect(docXml.match(/<w:footerReference/g)).toHaveLength(1)
@@ -714,6 +726,15 @@ describe('column widths + section bidi (P3 pdf2docx support)', () => {
     expect(kept).toContain('<w:bidi/>')
     const removed = applySectionSettings(withBidi, { ...base, bidi: false })
     expect(removed).not.toContain('<w:bidi/>')
+  })
+
+  it('bidi: true over an explicit w:val="0" turns the section RTL', async () => {
+    const { sectionSettingsFromXml } = await import('../src/index')
+    const off = BASE.replace('</w:sectPr>', '<w:bidi w:val="0"/></w:sectPr>')
+    const base = sectionSettingsFromXml(BASE)
+    const out = applySectionSettings(off, { ...base, bidi: true })
+    expect(out.match(/<w:bidi/g)).toHaveLength(1)
+    expect(sectionSettingsFromXml(out).bidi).toBe(true)
   })
 
   it('NewImage posOffsetEmu positions a floating image numerically', async () => {

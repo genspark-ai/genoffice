@@ -70,7 +70,7 @@ describe('sigV4', () => {
       headers,
       Buffer.from(''),
       {
-        accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+        accessKeyId: 'AKIAIOSFODNN7EXAMPLE', // public-hygiene: fixture
         secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
         region: 'us-east-1',
         service: 's3',
@@ -78,7 +78,7 @@ describe('sigV4', () => {
       '20130524T000000Z',
     )
     expect(authorization).toContain(
-      'Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request',
+      'Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request', // public-hygiene: fixture
     )
     expect(authorization).toContain('SignedHeaders=host;range;x-amz-content-sha256;x-amz-date')
     expect(authorization).toContain(
@@ -157,7 +157,7 @@ describe('uploadImageToHost — S3', () => {
 describe('uploadImageToHost — SM.MS and GitHub', () => {
   const now = new Date('2026-09-30T08:09:00Z')
 
-  it('posts the file with the bearer token and reads data.url', async () => {
+  it('posts the file with the raw API token and reads data.url', async () => {
     let seen = ''
     const result = await uploadImageToHost(
       { kind: 'smms', token: 'tok' },
@@ -173,7 +173,8 @@ describe('uploadImageToHost — SM.MS and GitHub', () => {
     )
     expect(result).toEqual({ ok: true, url: 'https://i.smms.app/x.gif' })
     expect(seen).toContain('https://smms.app/api/v2/upload')
-    expect(seen).toContain('Bearer tok')
+    expect(seen).toContain('tok')
+    expect(seen).not.toContain('Bearer')
   })
 
   it('an SM.MS rejection carries the host message', async () => {

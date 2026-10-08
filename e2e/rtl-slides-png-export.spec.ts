@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 
 /**
- * An RTL UI must not re-author a deck that gets exported (#1861).
+ * An RTL UI must not re-author a deck that gets exported (genoffice#1861).
  *
  * The six document surfaces pin `direction: ltr`, but Konva hosts in Slides sit
  * outside the pinned ones: the thumbnail stages in `.slide-list`, the slideshow,

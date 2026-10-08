@@ -57,12 +57,21 @@ export const TOGGLE_GRIDLINES_MUTATION = 'sheet.mutation.toggle-gridlines'
 export const SET_ZOOM_OPERATION = 'sheet.operation.set-zoom-ratio'
 export const SET_ZOOM_COMMAND = 'sheet.command.set-zoom-ratio'
 export const OPEN_FILTER_PANEL_OPERATION = 'sheet.operation.open-filter-panel'
-/// Full-preload offer cap: loading every cell into the Univer model costs
-/// renderer memory, and formula-dense sheets recalculate on install — a
-/// formula-heavy 480k-cell book blocked the renderer for minutes in testing,
-/// and sheet metadata carries no formula count to gate on. Above this the
-/// filter dialog explains instead of offering.
-export const FULL_LOAD_MAX_CELLS = 250_000
+/// Full-preload offer cap, in stored cells (see load-budget.ts): loading
+/// every cell into the Univer model costs renderer memory. Measured on a
+/// synthetic value-mode book (10 columns, numbers / shared strings / styled
+/// cells): 1M stored cells load in ~4.5 s and settle near 280 MB of JS heap
+/// (800 MB renderer RSS). Above this the filter dialog explains instead of
+/// offering.
+export const FULL_LOAD_MAX_CELLS = 1_000_000
+/// Bounding-box ceiling for the same offer: block installs write a dense
+/// matrix over the box, so a sparse sheet's empty area still costs about
+/// 55 B of heap per cell (249k stored cells in a 20M box: 11 s, 1.1 GB JS
+/// heap; a 280M box ran out of memory).
+export const FULL_LOAD_MAX_GRID_CELLS = 10_000_000
+/// Largest range a sort / move snapshot journals cell by cell; the gate
+/// refuses bigger ones up front instead of letting the save drop them.
+export const REORDER_JOURNAL_MAX_CELLS = 200_000
 // Undoing a numfmt set emits the remove mutation; only the ribbon echo cares.
 export const REMOVE_NUMFMT_MUTATION = 'sheet.mutation.remove.numfmt'
 // Row/column inserts/removals and merges are journaled and replayed at save
@@ -180,6 +189,7 @@ export const SHEET_LIFECYCLE_MUTATIONS = new Set([
   'sheet.mutation.set-worksheet-name',
   'sheet.mutation.set-worksheet-order',
   'sheet.mutation.set-worksheet-hidden',
+  'sheet.mutation.set-tab-color',
 ])
 // Whole-row moves persist as a journaled move op (the save relocates the
 // <row> elements, so heights and hidden flags travel for free); column moves

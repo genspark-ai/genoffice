@@ -31,7 +31,7 @@ import {
   updateVisualAdd,
 } from './edit-journal'
 import { t } from './i18n/locale'
-import { findPivotAtSelection, type PivotActionContext } from './pivot-actions'
+import { filePivotAtSelection, type PivotActionContext } from './pivot-actions'
 import {
   fitPictureFrame,
   pictureFileProblem,
@@ -310,15 +310,8 @@ export async function handleInsertPivotChart(
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const worksheet = workbook?.getActiveSheet()
   if (!workbook || !worksheet) return
-  const found = findPivotAtSelection(ctx.pivotContext())
-  if (!found) {
-    ctx.setMessage(t('appCursorNotInPivot'))
-    return
-  }
-  if (!found.definition) {
-    ctx.setMessage(t('appPivotDefNotLoaded'))
-    return
-  }
+  const found = filePivotAtSelection(ctx.pivotContext())
+  if (!found) return
   if (isSheetRemoved(state.editJournal, found.sheetId)) return
   const bounds = parseRange(found.pivot.outputRef)
   let outputValues: (string | number | boolean | null | undefined)[][]

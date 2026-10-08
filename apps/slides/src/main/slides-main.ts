@@ -1756,20 +1756,22 @@ export function registerSlidesIpc(): void {
 
   ipcMain.handle('slides:cloud-gen-status', () => ({ enabled: cloudSlideEnabled() }))
 
-  // In-flight cloud generations of this window. Stop in the AI panel aborts
-  // every one of them — generation is sequential per panel, so a global-for-
-  // this-window cancel cannot hit an unrelated request.
-  const cloudPageAborts = new Set<AbortController>()
+  // In-flight cloud generations keyed by the requesting window: stop in one
+  // panel aborts all of that window's pages (a deck batch shares one stop
+  // signal) and none of another window's
+  const cloudPageAborts = new Map<number, Set<AbortController>>()
 
-  ipcMain.handle('slides:cloud-page-cancel', () => {
-    for (const c of cloudPageAborts) c.abort()
-    cloudPageAborts.clear()
+  ipcMain.handle('slides:cloud-page-cancel', (e) => {
+    const aborts = cloudPageAborts.get(e.sender.id)
+    if (!aborts) return
+    for (const c of aborts) c.abort()
+    cloudPageAborts.delete(e.sender.id)
   })
 
   ipcMain.handle(
     'slides:cloud-page-generate',
     async (
-      _e,
+      e,
       op: {
         brief: string
         title?: string
@@ -1790,7 +1792,9 @@ export function registerSlidesIpc(): void {
         // Stop must reach the cloud request: without this the generation keeps
         // running (and billing) after the user pressed stop
         const abort = new AbortController()
-        cloudPageAborts.add(abort)
+        const windowAborts = cloudPageAborts.get(e.sender.id) ?? new Set<AbortController>()
+        windowAborts.add(abort)
+        cloudPageAborts.set(e.sender.id, windowAborts)
         let bytes: Uint8Array
         let model: string
         try {
@@ -1806,7 +1810,8 @@ export function registerSlidesIpc(): void {
             signal: abort.signal,
           }))
         } finally {
-          cloudPageAborts.delete(abort)
+          windowAborts.delete(abort)
+          if (windowAborts.size === 0) cloudPageAborts.delete(e.sender.id)
         }
         console.log(
           `[cloud-slide] page generated: tier=${tier} model=${model} bytes=${bytes.length} ms=${Date.now() - started}`,

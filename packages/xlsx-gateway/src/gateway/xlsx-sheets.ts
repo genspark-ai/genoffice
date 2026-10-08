@@ -264,6 +264,7 @@ export interface SheetElement {
   readonly xml: string
   readonly name: string
   readonly hidden: boolean
+  readonly veryHidden: boolean
   readonly relationshipId: string | undefined
 }
 
@@ -280,6 +281,7 @@ export function parseSheetElements(workbookXml: string): SheetElement[] {
       xml,
       name: decodeAttribute(name),
       hidden: state === 'hidden' || state === 'veryHidden',
+      veryHidden: state === 'veryHidden',
       // The relationships namespace is conventionally bound to "r", but any
       // prefix is legal — fall back to whatever prefix the producer chose.
       relationshipId:
@@ -299,18 +301,18 @@ export function maxSheetIdInWorkbook(workbookXml: string): number {
   return max
 }
 
-export function maxRelationshipId(relationshipsXml: string): number {
-  let max = 0
-  for (const match of relationshipsXml.matchAll(/\bId="rId([0-9]+)"/g)) {
-    max = Math.max(max, Number(match[1]))
-  }
-  return max
-}
-
 /// Relationship ids are read quote-agnostically, for the same reason as
 /// pptx-engine's maxRelationshipIdNumber: a .rels part that spells its ids
 /// with single quotes still holds them, so no id may be handed out twice.
 const RELATIONSHIP_ID = /\bId\s*=\s*(["'])rId(\d+)\1/g
+
+export function maxRelationshipId(relationshipsXml: string): number {
+  let max = 0
+  for (const match of relationshipsXml.matchAll(RELATIONSHIP_ID)) {
+    max = Math.max(max, Number(match[2]))
+  }
+  return max
+}
 
 function relationshipIds(relationshipsXml: string): Set<string> {
   return new Set([...relationshipsXml.matchAll(RELATIONSHIP_ID)].map((match) => `rId${match[2]}`))
@@ -423,9 +425,11 @@ export function applySheetPlanToWorkbookXml(
   return additions.length > 0 ? ensureRelationshipNamespace(result) : result
 }
 
-/// Toggles a `<sheet>` element's state attribute. Unhiding also clears
-/// veryHidden — the only way a user reaches such a sheet is on purpose.
+/// Toggles a `<sheet>` element's state attribute. A veryHidden sheet stays
+/// veryHidden when re-hidden; unhiding clears either state (the renderer
+/// never emits that for veryHidden, so only an explicit op reaches here).
 function setSheetStateAttribute(sheetXml: string, hidden: boolean): string {
+  if (hidden && /\sstate="veryHidden"/.test(sheetXml)) return sheetXml
   const withoutState = sheetXml.replace(/\s+state="[^"]*"/, '')
   if (!hidden) return withoutState
   return withoutState.replace(/^<sheet\b/, '<sheet state="hidden"')

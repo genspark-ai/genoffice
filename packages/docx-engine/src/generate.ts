@@ -3537,6 +3537,7 @@ export function buildShapeParagraphXml(opts: {
 
   const wsp =
     `<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">` +
+    `<wps:cNvPr id="${id}" name="${opts.prst} ${id}"/>` +
     `<wps:cNvSpPr/>` +
     spPr +
     style +

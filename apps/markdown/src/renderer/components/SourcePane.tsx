@@ -5,23 +5,11 @@ interface Props {
   /** the exact file text: frontmatter block plus body, as a save would write it */
   value: string
   onChange: (value: string) => void
-  /**
-   * The pane can only go stale while it sits unfocused, so the caller re-syncs
-   * on either edge. Focusing it therefore refreshes before the user can read.
-   */
+  /** fired on both focus edges so the caller can flush and re-sync */
   onFocusChange: () => void
 }
 
-/**
- * Raw Markdown surface for the source view: a plain textarea over the exact
- * file text, so constructs the editor has no node for — footnote definitions,
- * reference-style links, raw HTML, comments — can be hand-edited in place.
- *
- * Deliberately a bare textarea: no syntax highlighting, no line numbers and no
- * custom undo stack. Native undo covers the pane while it has focus, and every
- * keystroke is handed straight to the editor, so the pane is never a draft the
- * editor has not seen.
- */
+/** Raw Markdown surface: a bare textarea (native undo, no highlighting) over the exact file text. */
 export function SourcePane({ value, onChange, onFocusChange }: Props) {
   const { t } = useI18n()
   const ref = useRef<HTMLTextAreaElement>(null)
