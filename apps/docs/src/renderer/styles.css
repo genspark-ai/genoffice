@@ -13013,6 +13013,16 @@ tr > .page-gap-cut {
   cursor: pointer;
 }
 
+/* the marker is a screen affordance; the printed page shows the plain run */
+@media print {
+  .redact-span {
+    border: none;
+    background: none;
+    color: inherit;
+    padding: 0;
+  }
+}
+
 .redact-span.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
 }

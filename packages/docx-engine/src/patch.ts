@@ -1625,6 +1625,11 @@ export async function saveDocx(
       } else {
         next = next.replace('<w:document', `<w:document mc:Ignorable="${REDACT_PREFIX}"`)
       }
+      // a Word re-save drops every element whose namespace it does not process
+      // unless the root asks for it to be preserved verbatim
+      if (!/mc:PreserveElements=/.test(next)) {
+        next = next.replace('<w:document', `<w:document mc:PreserveElements="${REDACT_EL}"`)
+      }
       newDocumentXml = newDocumentXml.replace(root, next)
     }
   }

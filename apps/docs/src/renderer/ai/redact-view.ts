@@ -56,6 +56,25 @@ function isPicture(node: RedactableNode): boolean {
   return name === 'docInlineImage' || name === 'image'
 }
 
+/** nodes ProseMirror counts as a single token: their JSON carries no content */
+const ATOM_TYPES = new Set([
+  'hardBreak',
+  'docNoteRef',
+  'docXeMark',
+  'docRuby',
+  'docInlineImage',
+  'docInlineMath',
+  'docCellBoxes',
+  'docNestedTable',
+  'docProtected',
+])
+
+/** The model-facing text of one node: a withheld span reads as its placeholder. */
+export function projectedNodeText(node: RedactableNode): string {
+  if (isWithheld(node)) return placeholderSource(labelOf(node))
+  return typeof node.text === 'string' ? node.text : ''
+}
+
 /** The text of a document as the model may read it. */
 export function modelTextOf(node: RedactableNode): string {
   if (isWithheld(node)) return placeholderSource(labelOf(node))
@@ -89,7 +108,9 @@ export function redactTextBetween(
     markName: REDACT_MARK,
     marker: placeholderSource,
     blockSeparator,
-    isLeaf: (n) => isPicture(n as RedactableNode),
+    // an atom not listed here would serialise without `content` and read as
+    // an empty container, so the set has to name every one the schema has
+    isLeaf: (n) => ATOM_TYPES.has(nameOf(n as RedactableNode) ?? ''),
   })
 }
 
