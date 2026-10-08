@@ -31,6 +31,12 @@ export const PDF_CHANNELS = {
   convertOffice: 'pdf:convert-office',
   createDocument: 'pdf:create-document',
   generateImage: 'pdf:generate-image',
+  listDigitalSignatures: 'pdf:list-digital-signatures',
+  pickCertificate: 'pdf:pick-certificate',
+  listSystemCertificates: 'pdf:list-system-certificates',
+  releaseCertificate: 'pdf:release-certificate',
+  inspectCertificate: 'pdf:inspect-certificate',
+  signWithCertificate: 'pdf:sign-with-certificate',
   listSignatures: 'pdf:list-signatures',
   addSignature: 'pdf:add-signature',
   removeSignature: 'pdf:remove-signature',
@@ -69,6 +75,137 @@ export type SignatureData =
       image: string
       width: number
       height: number
+    }
+
+/** One X.509 certificate, flattened for display */
+export interface CertificateInfo {
+  /** Subject common name, falling back to the whole subject when no CN is present */
+  commonName: string
+  /** Full subject, one RDN per line ("CN=…") */
+  subject: string
+  issuerCommonName: string
+  issuer: string
+  /** Hex, upper case, no separators */
+  serialNumber: string
+  /** ISO 8601 */
+  validFrom: string
+  validTo: string
+  /** SHA-256 fingerprint, "AA:BB:…" */
+  fingerprint: string
+  /** e.g. "RSA 2048", "EC prime256v1" */
+  keyAlgorithm: string
+  selfSigned: boolean
+}
+
+export type PdfSignatureProblem =
+  /** The signed bytes no longer match the signature: the document was altered */
+  | 'digest-mismatch'
+  | 'signature-invalid'
+  | 'malformed'
+  | 'unsupported-algorithm'
+  | 'signer-certificate-missing'
+  /** Bytes were appended after the signed revision (later edits or signatures) */
+  | 'document-changed-after-signing'
+  | 'self-signed'
+  | 'untrusted-issuer'
+  | 'certificate-expired'
+  | 'certificate-not-yet-valid'
+
+/** One signature field that carries a value, as read from the file (not trusting the file's own claims) */
+export interface PdfSignatureInfo {
+  fieldName: string
+  /** Zero-based page of the signature widget; -1 when it has none */
+  pageIndex: number
+  kind: 'signature' | 'timestamp'
+  /** Derived from `problems`: invalid (altered or unreadable) > warning (weakened) > valid (intact; trust problems stay listed as notes) */
+  status: 'valid' | 'warning' | 'invalid'
+  problems: PdfSignatureProblem[]
+  subFilter: string
+  signerName?: string
+  reason?: string
+  location?: string
+  contactInfo?: string
+  /** ISO 8601; the signed signingTime attribute when present, else the unverified /M entry */
+  signingTime?: string
+  /** Whether `signingTime` comes from the signature itself */
+  signingTimeSigned: boolean
+  digestAlgorithm?: string
+  /** True when the signature covers every byte of the file */
+  coversWholeDocument: boolean
+  /** DocMDP level (1 no changes, 2 form fill + signing, 3 plus annotations) of a certifying signature */
+  certifiedLevel?: 1 | 2 | 3
+  signer?: CertificateInfo
+  /** Signer first, then each issuer found in the signature; the last entry may be a root */
+  chain: CertificateInfo[]
+  /** Whether the chain ends at a root in the operating-system / Mozilla trust store */
+  trusted: boolean
+}
+
+export type CertificateErrorCode =
+  | 'cert-password'
+  | 'cert-invalid'
+  | 'cert-unsupported-key'
+  | 'cert-no-key'
+  /** The system store holds the key but will not hand it over */
+  | 'cert-not-exportable'
+  | 'cert-store-locked'
+  | 'cert-store-tool-missing'
+
+/** A signing identity found in the operating system's certificate store */
+export interface SystemCertificateInfo {
+  /** Opaque id for this view; pass it where a picked certificate file's id goes */
+  certId: string
+  label: string
+  commonName: string
+  issuerCommonName: string
+  /** ISO 8601 */
+  validTo: string
+  expired: boolean
+}
+
+export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked'
+
+export interface ListSystemCertificatesResult {
+  certs: SystemCertificateInfo[]
+  issues: SystemStoreIssue[]
+}
+
+export type InspectCertificateResult =
+  | { ok: true; signer: CertificateInfo; chain: CertificateInfo[] }
+  | { ok: false; error: CertificateErrorCode }
+
+export type SignaturePosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'center'
+
+export interface SignWithCertificateRequest {
+  path: string
+  /** Opaque id returned by pickCertificate for this view */
+  certId: string
+  password: string
+  reason?: string
+  location?: string
+  contactInfo?: string
+  /** Makes this a certifying signature (DocMDP); only valid for a document with no signatures yet */
+  certifyLevel?: 1 | 2 | 3
+  /** Visible signature box; omitted = invisible signature */
+  visible?: {
+    pageIndex: number
+    position: SignaturePosition
+    /** Box size in PDF points */
+    width: number
+    height: number
+    /** base64 PNG of the box contents, drawn by the renderer (any script or font) */
+    png: string
+  }
+}
+
+export type SignWithCertificateResult =
+  | { ok: true; path: string }
+  | { ok: false; cancelled: true }
+  | {
+      ok: false
+      cancelled?: false
+      error: CertificateErrorCode | 'pdf-encrypted' | 'sign-failed'
+      message?: string
     }
 
 /** A reusable signature persisted in userData (shared across documents, WPS-style) */
@@ -766,6 +903,22 @@ export interface PdfApi {
     url?: string
     error?: string
   }>
+  /** Read and verify the digital (certificate) signatures embedded in a granted PDF */
+  listDigitalSignatures(path: string): Promise<PdfSignatureInfo[]>
+  /** Open the OS file picker for a PKCS#12 certificate (.p12/.pfx); the file is referenced by the returned opaque id */
+  pickCertificate(): Promise<{ certId: string; fileName: string } | null>
+  /** Decrypt the picked certificate with its password and describe the signer (nothing is signed) */
+  /** Signing identities in the OS certificate store (NSS on Linux, personal store on Windows, keychain on macOS) */
+  listSystemCertificates(storePassword?: string): Promise<ListSystemCertificatesResult>
+  /** Forget a certificate id and any key material the main process still holds for it */
+  releaseCertificate(certId: string): void
+  inspectCertificate(
+    certId: string,
+    password: string,
+    storePassword?: string,
+  ): Promise<InspectCertificateResult>
+  /** Sign the granted PDF with the picked certificate; asks for a destination, never modifies the source, and re-points this view at the signed copy */
+  signWithCertificate(request: SignWithCertificateRequest): Promise<SignWithCertificateResult>
   /** Saved signatures reusable across documents (persisted in userData), newest first */
   listSavedSignatures(): Promise<SavedSignature[]>
   /** Persist a signature for reuse; returns the updated list (capped, deduplicated) */

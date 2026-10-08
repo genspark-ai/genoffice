@@ -10,6 +10,7 @@
   --pdf-error-border: rgb(192 57 43 / 45%);
   --pdf-error-bg-hover: rgb(192 57 43 / 8%);
   --pdf-ok: #217346;
+  --pdf-sig-warn: #a05a00;
   --pdf-thumb-border-hover: #a8a6a4;
   --pdf-prop-bg: rgb(0 0 0 / 3%);
   --pdf-focus-ring: rgb(35 36 37 / 20%);
@@ -90,6 +91,7 @@
   --pdf-error-border: rgb(229 115 115 / 50%);
   --pdf-error-bg-hover: rgb(229 115 115 / 12%);
   --pdf-ok: #58b380;
+  --pdf-sig-warn: #e0a94f;
   --pdf-thumb-border-hover: #777;
   --pdf-prop-bg: rgb(255 255 255 / 5%);
   --pdf-focus-ring: rgb(255 255 255 / 30%);
@@ -115,6 +117,7 @@
     --pdf-error-border: rgb(229 115 115 / 50%);
     --pdf-error-bg-hover: rgb(229 115 115 / 12%);
     --pdf-ok: #58b380;
+    --pdf-sig-warn: #e0a94f;
     --pdf-thumb-border-hover: #777;
     --pdf-prop-bg: rgb(255 255 255 / 5%);
     --pdf-focus-ring: rgb(255 255 255 / 30%);
@@ -4229,4 +4232,140 @@ button {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* ── Digital signatures: banner, panel, certificate dialog ── */
+
+.pdf-sig-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--pdf-prop-bg);
+  border-bottom: 1px solid var(--border);
+  border-inline-start: 3px solid var(--pdf-ok);
+}
+
+.pdf-sig-banner.warning {
+  border-inline-start-color: var(--pdf-sig-warn);
+}
+
+.pdf-sig-banner.invalid {
+  border-inline-start-color: var(--danger);
+}
+
+.pdf-sig-banner > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-sig-dialog {
+  min-width: 520px;
+  max-width: 640px;
+}
+
+.pdf-sig-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--pdf-ok);
+  border-radius: 8px;
+}
+
+.pdf-sig-card.warning {
+  border-inline-start-color: var(--pdf-sig-warn);
+}
+
+.pdf-sig-card.invalid {
+  border-inline-start-color: var(--danger);
+}
+
+.pdf-sig-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pdf-sig-head > strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-sig-pill {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pdf-ok);
+  border: 1px solid var(--pdf-ok);
+}
+
+.pdf-sig-pill.warning {
+  color: var(--pdf-sig-warn);
+  border-color: var(--pdf-sig-warn);
+}
+
+.pdf-sig-pill.invalid {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.pdf-sig-problems {
+  margin: 0;
+  padding-inline-start: 18px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.pdf-sig-chain {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.pdf-sig-chain > summary {
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.pdf-sig-chain .pdf-prop-table + .pdf-prop-table {
+  margin-top: 6px;
+}
+
+.pdf-cert-dialog {
+  min-width: 500px;
+}
+
+.pdf-cert-file {
+  flex: 1;
+  min-width: 0;
+  font-style: normal;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-cert-page {
+  flex: 0 0 64px;
+}
+
+.pdf-cert-error {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
 }

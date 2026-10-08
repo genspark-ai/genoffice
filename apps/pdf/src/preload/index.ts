@@ -39,6 +39,14 @@ const api: PdfApi = {
     ipcRenderer.invoke(AI_CHANNELS.imageSearch, query, maxResults),
   fetchImage: (url) => ipcRenderer.invoke(AI_CHANNELS.fetchImage, url),
   generateImage: (op) => ipcRenderer.invoke(PDF_CHANNELS.generateImage, op),
+  listDigitalSignatures: (path) => ipcRenderer.invoke(PDF_CHANNELS.listDigitalSignatures, path),
+  pickCertificate: () => ipcRenderer.invoke(PDF_CHANNELS.pickCertificate),
+  listSystemCertificates: (storePassword) =>
+    ipcRenderer.invoke(PDF_CHANNELS.listSystemCertificates, storePassword),
+  releaseCertificate: (certId) => ipcRenderer.send(PDF_CHANNELS.releaseCertificate, certId),
+  inspectCertificate: (certId, password, storePassword) =>
+    ipcRenderer.invoke(PDF_CHANNELS.inspectCertificate, certId, password, storePassword),
+  signWithCertificate: (request) => ipcRenderer.invoke(PDF_CHANNELS.signWithCertificate, request),
   listSavedSignatures: () => ipcRenderer.invoke(PDF_CHANNELS.listSignatures),
   addSavedSignature: (data) => ipcRenderer.invoke(PDF_CHANNELS.addSignature, data),
   removeSavedSignature: (id) => ipcRenderer.invoke(PDF_CHANNELS.removeSignature, id),
