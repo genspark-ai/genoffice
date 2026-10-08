@@ -23,10 +23,7 @@ function sizeOf(node: WithheldNode): number {
   if (typeof node.text === 'string') return node.text.length
   if (node.type === 'docInlineImage' || node.type === 'image') return 1
   // an empty container serialises without `content` and still costs two
-  return (
-    2 +
-    (Array.isArray(node.content) ? node.content.reduce((sum, c) => sum + sizeOf(c), 0) : 0)
-  )
+  return 2 + (Array.isArray(node.content) ? node.content.reduce((sum, c) => sum + sizeOf(c), 0) : 0)
 }
 
 const doc = (paragraphs: WithheldNode[][]): WithheldNode => ({
@@ -114,9 +111,7 @@ describe('a range with a withheld span in it', () => {
     // content starts at 3: 'Call ' at [3,8), the span at [8,19), ' now' after
     expect(redactTextBetween(withEmpty, 3, 8, options)).toBe('Call ')
     expect(redactTextBetween(withEmpty, 20, 23, options)).toBe('now')
-    expect(redactTextBetween(withEmpty, 3, 23, options)).toBe(
-      'Call {{client phone}} now',
-    )
+    expect(redactTextBetween(withEmpty, 3, 23, options)).toBe('Call {{client phone}} now')
   })
 })
 
