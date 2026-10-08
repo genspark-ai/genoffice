@@ -14,7 +14,12 @@ import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-fo
 import { TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
-import { redactNode, redactTextBetween, type RedactableNode } from './redact-view'
+import {
+  projectedNodeText,
+  redactNode,
+  redactTextBetween,
+  type RedactableNode,
+} from './redact-view'
 import { opSignatures } from './ops'
 import { pageSetupContextLines, type AiSectionState } from './page-setup'
 import { listRevisionEntries } from './revision-ops'
@@ -688,7 +693,8 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
         .split(' ')
         .filter(Boolean)) {
         const entry = found.get(id) ?? { blockIndex: index, text: '' }
-        entry.text += node.text ?? ''
+        // a comment can anchor across a withheld span; the model sees the placeholder
+        entry.text += projectedNodeText(node as unknown as RedactableNode)
         found.set(id, entry)
       }
     })
@@ -696,7 +702,13 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
       ? (block.attrs.commentStarts as string[])
       : []
     for (const id of starts) {
-      if (!found.has(id)) found.set(id, { blockIndex: index, text: block.textContent })
+      if (!found.has(id))
+        found.set(id, {
+          blockIndex: index,
+          text:
+            (redactNode(block as unknown as RedactableNode) as unknown as { textContent?: string })
+              .textContent ?? '',
+        })
     }
     index++
   })
