@@ -78,6 +78,7 @@ export const PARA_FORMAT_ATTRS = [
   'borders',
   'borderLines',
   'borderReset',
+  'borderPad',
   'tabStops',
   'emptyRunSize',
   'emptyRunFont',

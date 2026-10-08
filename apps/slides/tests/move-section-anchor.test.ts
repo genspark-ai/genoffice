@@ -54,6 +54,13 @@ describe('moveSectionDir keeps current on the same slide', () => {
     expect(ctx.setCurrent).toHaveBeenCalledWith(2)
   })
 
+  it('remaps the thumbnail selection onto the same slides', async () => {
+    const ctx = makeCtx(1)
+    ;(ctx as { selectedSlides: number[] }).selectedSlides = [1, 2]
+    await moveSectionDir(ctx, 'B', 'up')
+    expect(ctx.setSelectedSlides).toHaveBeenCalledWith([1, 3])
+  })
+
   it('re-anchors for a move down as well', async () => {
     const ctx = makeCtx(0)
     await moveSectionDir(ctx, 'B', 'down')

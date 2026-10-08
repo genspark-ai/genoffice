@@ -1245,6 +1245,33 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     expect(slices.length).toBe(1)
   })
 
+  it('consecutive zero-height pageBreakBefore carriers (floating anchor paragraphs) each own a page', () => {
+    const blocks = [
+      block(0, 100),
+      block(100, 0, { breakBefore: true }),
+      block(100, 0, { breakBefore: true }),
+      block(100, 0, { breakBefore: true }),
+    ]
+    const slices = computeSectionedSlicesF2(blocks, geoms1, 100)
+    expect(slices.length).toBe(4)
+  })
+
+  it('a next-page section after a zero-height pageBreakBefore carrier still starts its own page', () => {
+    const geoms = [
+      { contentHeight: 200, forceBreak: false },
+      { contentHeight: 200, forceBreak: true },
+    ]
+    // the carrier keeps its virtual slot; the section's first block shares the collapsed top
+    const blocks = [
+      block(0, 100, { section: 0 }),
+      block(100.05, 0, { breakBefore: true, section: 0 }),
+      block(100, 50, { section: 1 }),
+    ]
+    const slices = computeSectionedSlicesF2(blocks, geoms, 150)
+    expect(slices.map((s) => s.section)).toEqual([0, 0, 1])
+    expect(slices.length).toBe(3)
+  })
+
   it('a pending w:br plus a leading w:br are two page turns with a blank sheet between (tdf#154478)', () => {
     const blocks = [
       { ...block(0, 100), breakAfter: true },
@@ -1978,6 +2005,25 @@ describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
       [150, 230],
     ]
     expect(chain([{ height: 20, keepNext: true }, anchor], { rowSplits: [] })).toEqual(moved)
+    // pPrDefault widowControl off: the anchor demand is one line and the chain stays
+    expect(
+      computeSectionedSlicesF2(
+        [
+          { top: 0, height: 150 },
+          {
+            ...makeTableBlock(150, [{ height: 20, keepNext: true }, anchor]),
+            modernTableHeaders: true,
+            cellWidowOff: true,
+          },
+        ],
+        page,
+        230,
+        { rowSplits: [] },
+      ).map((s) => [s.start, s.end]),
+    ).toEqual([
+      [0, 200],
+      [200, 230],
+    ])
     // without a cell split path the anchor is atomic and demands its full height;
     // a declared-height anchor demands at least its (page-capped) minimum
     expect(
@@ -5230,6 +5276,38 @@ describe('row splits cut between line boxes (box-relative clips)', () => {
     expect(rules).toContainEqual({ from: 90, cell: 1, child: 0, tail: true, hide: true })
   })
 
+  it('a trailing empty paragraph is carried over, not charged as row margin on the cut fragment', () => {
+    // cell 0: 5 lines in a 100px paragraph plus a 20px empty paragraph (row 120,
+    // 3px below the last ink); 82px available. Charging the whole 23px tail on
+    // every line stopped after line 3 (57 + 23); only the 3px margin applies
+    // before the cell's last line, so line 4 (77 + 3) stays and the empty
+    // paragraph follows the last line onto the next page
+    const row: TableRowBox = {
+      height: 120,
+      contentBottom: 97,
+      cells: [
+        {
+          ...inkLines(5),
+          childBox: [
+            [0, 100],
+            [100, 120],
+          ],
+          alignDy: 0,
+          alignFrac: 0,
+        },
+        { ...inkLines(2), childBox: [[0, 40]], alignDy: 0, alignFrac: 0 },
+      ],
+    }
+    const plan = planRowSplit(row, 82, 200, () => 200, false)
+    expect(plan).toMatchObject({ lastFragment: 40, target: 122 })
+    expect(plan !== 'nofit' && plan?.rules[0]).toEqual({
+      from: 0,
+      cell: 0,
+      child: 0,
+      clipBottom: 20,
+    })
+  })
+
   it('a row under a tblHeader row continues below the repeated header from its first unseen line', () => {
     const out: SliceOutputs = { rowFills: [], rowSplits: [] }
     const slices = computeSectionedSlicesF2(
@@ -5625,5 +5703,18 @@ describe('trailing page break — phantom line', () => {
     } finally {
       host.remove()
     }
+  })
+})
+
+describe('lifted floats', () => {
+  it('a float lifted into the previous band needs only the room below the flow position', () => {
+    // 700px page; a band block fills 0-600, the lifted picture spans 300-680
+    const blocks = [block(0, 600), block(300, 380, { floated: true, lifted: true }), block(600, 50)]
+    expect(computePageSlices(blocks, 700, 650).map((s) => [s.start, s.end])).toEqual([[0, 650]])
+  })
+
+  it('an unlifted float that does not fit still turns the page', () => {
+    const blocks = [block(0, 600), block(600, 380, { floated: true }), block(600, 50)]
+    expect(computePageSlices(blocks, 700, 650).length).toBe(2)
   })
 })

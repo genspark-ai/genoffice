@@ -50,10 +50,7 @@ const pageIndex = (v: unknown, ctx: OpContext, field = 'pageIndex'): number => {
   return v
 }
 
-// `typeof n === 'number'` is not enough: NaN and Infinity are both 'number',
-// so an op carrying them (e.g. a rect computed from an OCR box that yielded
-// no coordinates) was stored, drew at zero size, and put NaN in the PDF
-// content stream. Match save-pdf.ts / redaction.ts and require finiteness.
+// NaN/Infinity from pointer math would reach the content stream; save-pdf.ts requires finiteness too.
 const rect = (v: unknown, field: string): Rect => {
   if (
     !Array.isArray(v) ||

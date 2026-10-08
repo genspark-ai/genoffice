@@ -39,6 +39,7 @@ import {
   webContents,
 } from 'electron'
 import {
+  abortOnDestroyed,
   appMenuLabels,
   buildPrintableHtml,
   configuredDefaultSaveDir,
@@ -95,7 +96,7 @@ import {
   resolveAiSettings,
   maxOutputTokensOf,
   sanitizeAiSettings,
-  validCliPath,
+  sanitizeCliPath,
   setAiUserAgent,
   setRescueFetch,
   streamForProvider,
@@ -3189,6 +3190,7 @@ export function docsFileRenamed(wc: WebContents, oldPath: string, newPath: strin
   // keep the save allowlist in sync so docs:save accepts the renamed path
   docWritablePaths.get(wc.id)?.delete(oldPath)
   allowDocWrite(wc.id, newPath)
+  rememberOpenDoc(wc.id, newPath)
   const states = docDiskStates.get(wc.id)
   const recorded = states?.get(oldPath)
   if (states && recorded) {
@@ -3301,24 +3303,13 @@ const docWritablePaths = new Map<number, Set<string>>()
 const pdfWritablePaths = new Map<number, Set<string>>()
 const tornDownWcIds = new Set<number>()
 
-/**
- * The document each renderer currently has open (set on open and on every
- * save, so a first-save/save-as keeps it current). Only the local-media
- * allowlist reads it: a tool call naming a file next to the open document is
- * the legitimate local-path case for analyze_media / generate_image. Absent for
- * an untitled document.
- */
+// per renderer, kept current on open/save/save-as/rename; only the local-media allowlist reads it
 const openDocByWc = new Map<number, string>()
 
 function rememberOpenDoc(wcId: number, filePath: string): void {
   openDocByWc.set(wcId, filePath)
 }
 
-/**
- * Local media roots for a renderer: the open document's directory plus the
- * directory docs stages pasted images in. A tool call may read a media file
- * from either, and nothing else.
- */
 function docsMediaRoots(wcId: number): string[] {
   return documentMediaRoots(openDocByWc.get(wcId), join(app.getPath('temp'), 'genoffice-pasted'))
 }
@@ -3769,6 +3760,13 @@ const SETTINGS_PATH = () => userDataPath('ai-settings.json')
 
 const activeAiStreams = new Map<string, AbortController>()
 
+/** every renderer (tabs, home) re-reads ai-settings.json — the composer chip and
+ *  the settings page edit the same file from different windows */
+function broadcastAiSettingsChanged(): void {
+  for (const wc of webContents.getAllWebContents())
+    if (!wc.isDestroyed()) wc.send('ai:settings-changed')
+}
+
 /**
  * AI settings + chat/stream proxy handlers. Split out so the shell can
  * register them exactly once for all window types (docs, sheets, home) —
@@ -3818,12 +3816,13 @@ export function registerAiIpc(): void {
       return
     }
     writeJsonAtomic(SETTINGS_PATH(), sanitized)
+    broadcastAiSettingsChanged()
   })
 
   ipcMain.handle('ai:codex-models', async (_event, cliPath: unknown) => {
     // the probe spawns the path directly, so it gets the same metacharacter and
     // existence check as the stored setting (anything else: auto-detect)
-    return listCodexModels(validCliPath(cliPath) ? cliPath.trim() : undefined)
+    return listCodexModels(sanitizeCliPath(cliPath))
   })
 
   ipcMain.handle('ai:custom-models', (_event, input: unknown) => listCustomModelsForIpc(input))
@@ -3867,6 +3866,7 @@ export function registerAiIpc(): void {
     }
     const controller = new AbortController()
     activeAiStreams.set(requestId, controller)
+    const unwatchSender = abortOnDestroyed(event.sender, controller)
     // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
     let lastPing = 0
     const ping = () => {
@@ -3909,6 +3909,7 @@ export function registerAiIpc(): void {
         })
       }
     } finally {
+      unwatchSender()
       activeAiStreams.delete(requestId)
     }
   })
@@ -4702,6 +4703,7 @@ export function registerDocsIpc(): void {
         await atomicWriteFile(result.filePath, bytes)
         if (tornDownWcIds.has(event.sender.id)) return { ok: false }
         allowDocWrite(event.sender.id, result.filePath)
+        rememberOpenDoc(event.sender.id, result.filePath)
         await rememberDiskState(event.sender.id, result.filePath, sha256Hex(bytes))
         pointLazyMediaAt(
           hashes,
@@ -4748,6 +4750,7 @@ export function registerDocsIpc(): void {
         return { ok: false }
       }
       allowDocWrite(event.sender.id, filePath)
+      rememberOpenDoc(event.sender.id, filePath)
       await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
       pointLazyMediaAt(
         hashes,

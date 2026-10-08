@@ -4,6 +4,7 @@ import {
   analyzePage,
   detectListBlocks,
   groupIntoBlocks,
+  type ListSeq,
   parseListMarker,
 } from '../src/analyze'
 import type { ExtractedPage } from '../src/extract'
@@ -250,6 +251,51 @@ describe('detectListBlocks: ordered lists', () => {
     expect(second[0]!.list).toMatchObject({ kind: 'ordered', level: 0, start: 1, style: 'dot' })
     expect(second[0]!.list!.seqId).toBe(0)
     expect(textOf(second[0]!)).toBe('the only item on the next page')
+  })
+
+  it('carries the run that ends the page, not the deepest nested one', () => {
+    const seq: ListSeq = { next: 0 }
+    blocksOf(
+      [
+        { text: '1. parent one', x: 72 },
+        { text: 'a. nested one', x: 100 },
+        { text: 'b. nested two', x: 100 },
+        { text: '2. parent two', x: 72 },
+      ],
+      seq,
+    )
+    expect(seq.lastOrdered).toMatchObject({ value: 2, style: 'dot', level: 0 })
+    const next = blocksOf([{ text: '3. parent three', x: 72 }], seq)
+    expect(next[0]!.list).toMatchObject({ kind: 'ordered', seqId: 0, start: 1 })
+  })
+
+  it('forgets the run once a page without it intervenes', () => {
+    const seq: ListSeq = { next: 0 }
+    const pageOf = (chars: PdfChar[]): ExtractedPage => ({
+      index: 0,
+      widthPt: 612,
+      heightPt: 792,
+      rotation: 0,
+      chars,
+      images: [],
+      paths: [],
+      degraded: false,
+      scanned: false,
+      hasStructTree: false,
+      vectorRegions: [],
+      badUnicodeRatio: 0,
+    })
+    const listsOf = (texts: string[]) =>
+      analyzePage(
+        pageOf(texts.flatMap((t, i) => mkText(t, 72, { y: 700 - i * 20, fontSize: 10 }).chars)),
+        { listSeq: seq },
+      ).blocks.map((b) => (b.kind === 'text' ? b.list : undefined))
+    expect(listsOf(['1. first item', '2. second item']).map((l) => l?.seqId)).toEqual([0, 0])
+    expect(listsOf(['3. carried over'])[0]).toMatchObject({ kind: 'ordered', seqId: 0 })
+    expect(seq.lastOrdered?.value).toBe(3)
+    listsOf(['A plain page of prose with no list at all'])
+    expect(seq.lastOrdered).toBeUndefined()
+    expect(listsOf(['4. heading again'])[0]).toBeUndefined()
   })
 
   it('still rejects a lone numbered line that continues nothing', () => {

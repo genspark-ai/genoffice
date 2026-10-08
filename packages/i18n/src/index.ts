@@ -213,10 +213,9 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
   return (lang: Lang, key: keyof D, params?: Params): string => {
-    // zh defines the key set, but a partial runtime dictionary (a shard that
-    // predates a new key) must degrade to the zh string or the key itself
+    // A shard that predates a key must degrade (en, then zh, then the key)
     // instead of throwing inside format()
-    const text = dicts[lang]?.[key] ?? dicts.zh[key] ?? String(key)
+    const text = dicts[lang]?.[key] ?? dicts.en[key] ?? dicts.zh[key] ?? String(key)
     return format(platformShortcuts(text), params)
   }
 }

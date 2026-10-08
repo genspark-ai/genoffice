@@ -1,7 +1,10 @@
-/// Lays the active sheet out as print HTML from the live Univer model —
-/// display strings (number formats applied), cell styles, merges, and the
-/// sheet's effective page setup (print areas, repeated title rows, gridlines,
-/// headings, header/footer). The main process turns the HTML into a PDF.
+/// Lays a sheet out as printed pages from the live Univer model — display
+/// strings (number formats applied), cell styles, merges, and the sheet's
+/// effective page setup (print areas, repeated titles, manual breaks,
+/// gridlines, headings, header/footer). Every page is an explicitly sized
+/// paper box with its header/footer inside, so the same HTML serves the
+/// preview, the system print and the PDF export, and a job may carry
+/// several sheets with different paper or orientation.
 
 import { BorderStyleTypes } from '@univerjs/core'
 import { htmlLang, type Lang } from '@genoffice/i18n'
@@ -9,6 +12,16 @@ import { columnIndex, columnLabel } from '@genoffice/xlsx-gateway/domain/cell-ad
 
 import type { WorkbookExportPdfRequest } from '../shared/desktop-api'
 import type { HeaderFooterParts } from './edit-journal'
+import { expandHeaderFooterCodes } from './print-hf-codes'
+import {
+  bodyColumns,
+  bodyRows,
+  planPrintPages,
+  type IndexSpan,
+  type PaginationInput,
+  type PrintArea,
+  type PrintPage,
+} from './print-paginate'
 import {
   fitToPageScale,
   MAX_PRINT_SCALE,
@@ -21,7 +34,7 @@ import { getLang, t } from './i18n/locale'
 
 export class PrintError extends Error {}
 
-/// A `&G` picture resolved to bytes for the print templates.
+/// A `&G` picture resolved to bytes for the print pages.
 export interface HeaderFooterPictureImage {
   readonly dataUrl: string
   readonly widthPt: number
@@ -41,15 +54,13 @@ export interface SectionPictures {
 
 type PageVariant = 'odd' | 'even' | 'first'
 
-/// Chromium lays the print body out with Calibri 11pt unless the cell says
-/// otherwise; a text row is at least one line plus the cell padding tall,
-/// which can exceed Excel's saved row height by a point or so — the
-/// fit-to-page pagination must count the printed height, not the saved one.
-const LINE_HEIGHT_FACTOR = 1.25
-const CELL_VERTICAL_PADDING_PT = 2
-const DEFAULT_FONT_SIZE_PT = 11
+/// Excel prints gridlines as hairlines.
+const GRIDLINE_PT = 0.75
 /// The row/column heading strip (8.5pt text, padding, border).
 const HEADING_ROW_HEIGHT_PT = 14
+const HEADING_COLUMN_WIDTH_PT = 24
+/// Header/footer text size before scaleWithDoc applies.
+const HEADER_FOOTER_FONT_SIZE_PT = 9
 
 /** UI-language CJK fallback for the print stack (mirrors the :lang() variables in styles.css) */
 function printCjkFonts(lang: Lang): string {
@@ -84,6 +95,8 @@ export interface PrintWorksheet {
   getLastColumn(): number
   getRowHeight(row: number): number
   getColumnWidth(column: number): number
+  /// Hidden rows/columns do not print (Excel); absent in older fakes.
+  getSheet?(): { getRowVisible(row: number): boolean; getColVisible(column: number): boolean }
   getMergedRanges(): {
     getRow(): number
     getColumn(): number
@@ -161,31 +174,96 @@ const PAPER_SIZES: Record<number, WorkbookExportPdfRequest['pageSize']> = {
   18: 'Letter',
 }
 
-const PAPER_WIDTH_INCHES: Record<string, number> = {
-  Letter: 8.5,
-  Tabloid: 11,
-  Legal: 8.5,
-  A3: 11.69,
-  A4: 8.27,
-  A5: 5.83,
+const NAMED_PAPER_INCHES: Record<string, readonly [number, number]> = {
+  Letter: [8.5, 11],
+  Tabloid: [11, 17],
+  Legal: [8.5, 14],
+  A3: [11.69, 16.54],
+  A4: [8.27, 11.69],
+  A5: [5.83, 8.27],
 }
 
-export function buildSheetPrintPayload(
+export interface PaperGeometry {
+  readonly pageSize: WorkbookExportPdfRequest['pageSize']
+  readonly landscape: boolean
+  /// Oriented paper size.
+  readonly widthIn: number
+  readonly heightIn: number
+}
+
+export function paperGeometry(
+  paperSize: number,
+  orientation: 'portrait' | 'landscape',
+): PaperGeometry {
+  const pageSize = PAPER_SIZES[paperSize] ?? 'A4'
+  const [portraitWidth, portraitHeight] =
+    typeof pageSize === 'string'
+      ? (NAMED_PAPER_INCHES[pageSize] ?? NAMED_PAPER_INCHES.A4 ?? [8.27, 11.69])
+      : [pageSize.width, pageSize.height]
+  const landscape = orientation === 'landscape'
+  return {
+    pageSize,
+    landscape,
+    widthIn: landscape ? portraitHeight : portraitWidth,
+    heightIn: landscape ? portraitWidth : portraitHeight,
+  }
+}
+
+export interface SheetPrintOptions {
+  /// Manual page breaks (0-based index of the row/column that starts a page).
+  readonly breaks?: { rowBreaks: readonly number[]; colBreaks: readonly number[] } | null
+  /// Print this A1 range instead of the sheet's print area (Excel's "Print Selection").
+  readonly selection?: string | null
+  readonly now?: Date
+}
+
+/// One laid-out page before the job-wide numbering is known.
+export interface SheetPrintPageRecord {
+  readonly body: string
+  readonly page: PrintPage
+}
+
+/// The sheet's header/footer texts by page variant (null variant = off).
+export interface SheetHeaderFooter {
+  readonly odd: HeaderFooterPair
+  readonly first: HeaderFooterPair | null
+  readonly even: HeaderFooterPair | null
+}
+
+export interface SheetPrintDocument {
+  readonly sheetName: string
+  readonly fileName: string
+  readonly paper: PaperGeometry
+  readonly margins: PrintMargins
+  /// Content scale actually applied (fit-to-page resolved).
+  readonly scale: number
+  readonly headerFooterScale: number
+  readonly pictures: HeaderFooterPictures
+  readonly headerFooter: SheetHeaderFooter
+  readonly css: string
+  readonly pages: readonly SheetPrintPageRecord[]
+  readonly now: Date
+}
+
+export function layoutSheetPrint(
   worksheet: PrintWorksheet,
   setup: EffectivePageSetup,
   fileName: string,
   sheetName: string,
   pictures: HeaderFooterPictures = new Map(),
   visuals: PrintVisualSnapshot = { visuals: [], css: '' },
-): WorkbookExportPdfRequest {
+  options: SheetPrintOptions = {},
+): SheetPrintDocument {
   const areas =
-    setup.printAreas.length > 0
-      ? setup.printAreas.map(parseArea)
-      : [usedArea(worksheet, visuals.visuals)]
-  const titles = setup.printTitles ? parseTitleRows(setup.printTitles) : null
+    options.selection !== undefined && options.selection !== null
+      ? [parseArea(options.selection)]
+      : setup.printAreas.length > 0
+        ? setup.printAreas.map(parseArea)
+        : [usedArea(worksheet, visuals.visuals)]
+  const titleRows = setup.printTitles ? parseTitleRows(setup.printTitles) : null
+  const titleColumns = setup.printTitleColumns ? parseTitleColumns(setup.printTitleColumns) : null
   const headings = setup.printHeadings
   const gridlines = setup.printGridlines
-  const rowHeaderPt = headings ? 24 : 0
 
   let totalCells = 0
   for (const area of areas) {
@@ -196,188 +274,439 @@ export function buildSheetPrintPayload(
   }
   if (totalCells > MAX_PRINT_CELLS) throw new PrintError(t('appPrintTooLarge'))
 
-  let maxContentWidthPt = 0
-  const tables: string[] = []
+  const sheet = worksheet.getSheet?.()
+  const rowHeightPt = (row: number): number =>
+    sheet && !sheet.getRowVisible(row) ? 0 : finitePt(worksheet.getRowHeight(row), 20) * 0.75
+  const columnWidthPt = (column: number): number =>
+    sheet && !sheet.getColVisible(column)
+      ? 0
+      : finitePt(worksheet.getColumnWidth(column), 64) * 0.75
+  const headingWidthPt = headings ? HEADING_COLUMN_WIDTH_PT : 0
+  const headingHeightPt = headings ? HEADING_ROW_HEIGHT_PT : 0
+  const titleRowsHeightPt = spanTotal(titleRows, rowHeightPt)
+  const titleColumnsWidthPt = spanTotal(titleColumns, columnWidthPt)
+
+  const paper = paperGeometry(setup.paperSize, setup.orientation)
+  const margins = setup.margins
+  const printableWidthPt = Math.max((paper.widthIn - margins.left - margins.right) * 72, 1)
+  const printableHeightPt = Math.max((paper.heightIn - margins.top - margins.bottom) * 72, 1)
+
+  const baseInput = {
+    areas,
+    rowHeightPt,
+    columnWidthPt,
+    titleRows,
+    titleColumns,
+    headingWidthPt,
+    headingHeightPt,
+  }
   const areaHeights: PrintAreaHeights[] = []
+  let contentWidthPt = 0
   for (const area of areas) {
+    const rows = bodyRows(area, baseInput)
+    const columns = bodyColumns(area, baseInput)
+    areaHeights.push({
+      repeatedHeightPt: headingHeightPt + titleRowsHeightPt,
+      rowHeightsPt: rows.map(rowHeightPt),
+    })
+    contentWidthPt = Math.max(
+      contentWidthPt,
+      headingWidthPt + titleColumnsWidthPt + columns.reduce((sum, c) => sum + columnWidthPt(c), 0),
+    )
+  }
+  const scale = setup.fitToPage
+    ? fitToPageScale({
+        printableWidthPt,
+        printableHeightPt,
+        fitToWidth: setup.fitToWidth,
+        fitToHeight: setup.fitToHeight,
+        contentWidthPt,
+        areas: areaHeights,
+      })
+    : clamp(setup.scale / 100, MIN_PRINT_SCALE, MAX_PRINT_SCALE)
+
+  // Excel ignores manual breaks while fit-to-page decides the scale.
+  const breaks = setup.fitToPage ? null : options.breaks
+  const plan: PaginationInput = {
+    ...baseInput,
+    rowBreaks: breaks?.rowBreaks ?? [],
+    colBreaks: breaks?.colBreaks ?? [],
+    pageWidthPt: printableWidthPt / scale,
+    pageHeightPt: printableHeightPt / scale,
+  }
+  const pages = planPrintPages(plan)
+
+  const areaData = areas.map((area) => {
     const rows = area.endRow - area.startRow + 1
     const columns = area.endColumn - area.startColumn + 1
     const grid = worksheet.getRange(area.startRow, area.startColumn, rows, columns)
-    const display = grid.getDisplayValues()
-    const raw = grid.getValues()
-    const merges = mergeMaps(worksheet, area)
-    const columnWidthsPt = Array.from(
-      { length: columns },
-      (_, offset) => finitePt(worksheet.getColumnWidth(area.startColumn + offset), 64) * 0.75,
-    )
-    maxContentWidthPt = Math.max(
-      maxContentWidthPt,
-      rowHeaderPt + columnWidthsPt.reduce((total, width) => total + width, 0),
-    )
-
-    // Left edge of each area column and top of each printed row, for the
-    // floating visuals anchored in this area.
-    const columnLeftPt: number[] = []
-    let leftPt = rowHeaderPt
-    for (const width of columnWidthsPt) {
-      columnLeftPt.push(leftPt)
-      leftPt += width
+    return {
+      area,
+      display: grid.getDisplayValues(),
+      raw: grid.getValues(),
+      // Repeated titles print with their merges even when they sit outside
+      // the print area.
+      merges: mergeMaps(worksheet, {
+        startRow: Math.min(area.startRow, titleRows?.start ?? area.startRow),
+        endRow: Math.max(area.endRow, titleRows?.end ?? area.endRow),
+        startColumn: Math.min(area.startColumn, titleColumns?.start ?? area.startColumn),
+        endColumn: Math.max(area.endColumn, titleColumns?.end ?? area.endColumn),
+      }),
+      rowOffset: offsets(bodyRows(area, plan), rowHeightPt),
+      columnOffset: offsets(bodyColumns(area, plan), columnWidthPt),
     }
-    const rowTopPt = new Map<number, number>()
-    let topPt = headings ? HEADING_ROW_HEIGHT_PT : 0
+  })
 
-    // Printed height of the row just laid out by bodyRow (saved height, or
-    // taller when a cell's text line does not fit it).
-    let printedRowHeightPt = 0
-    const bodyRow = (row: number): string => {
+  const displayAt = (data: (typeof areaData)[number], row: number, column: number): string => {
+    const { area } = data
+    if (
+      row >= area.startRow &&
+      row <= area.endRow &&
+      column >= area.startColumn &&
+      column <= area.endColumn
+    ) {
+      return data.display[row - area.startRow]?.[column - area.startColumn] ?? ''
+    }
+    return cellDisplay(worksheet, row, column)
+  }
+  const rawAt = (data: (typeof areaData)[number], row: number, column: number): unknown => {
+    const { area } = data
+    if (
+      row >= area.startRow &&
+      row <= area.endRow &&
+      column >= area.startColumn &&
+      column <= area.endColumn
+    ) {
+      return data.raw[row - area.startRow]?.[column - area.startColumn]
+    }
+    return undefined
+  }
+
+  const styleAt = (row: number, column: number): PrintCellStyle | null =>
+    worksheet.getRange(row, column).getCellStyleData()
+  /// Each shared edge has one owner: the upper/left cell paints it unless
+  /// only the lower/right neighbour declares a border there. Page edges are
+  /// painted by the cell at the edge; the heading strip supplies the outer
+  /// top/left of the first row/column.
+  interface Neighbours {
+    readonly above: number | null
+    readonly below: number | null
+    readonly leftOf: number | null
+    readonly rightOf: number | null
+  }
+  const cell = (
+    data: (typeof areaData)[number],
+    row: number,
+    column: number,
+    span: string,
+    heightPt: number,
+    near: Neighbours,
+  ): string => {
+    const style = styleAt(row, column)
+    const text = displayAt(data, row, column)
+    const align = style?.vt === 1 ? 'flex-start' : style?.vt === 2 ? 'center' : 'flex-end'
+    const custom = (r: number | null, c: number | null, edge: 't' | 'b' | 'l' | 'r'): boolean =>
+      r !== null && c !== null && styleAt(r, c)?.bd?.[edge] != null
+    const edges = {
+      top:
+        style?.bd?.t != null
+          ? near.above === null || !custom(near.above, column, 'b')
+          : gridlines && near.above === null && !headings,
+      left:
+        style?.bd?.l != null
+          ? near.leftOf === null || !custom(row, near.leftOf, 'r')
+          : gridlines && near.leftOf === null && !headings,
+      bottom: style?.bd?.b != null || (gridlines && !custom(near.below, column, 't')),
+      right: style?.bd?.r != null || (gridlines && !custom(row, near.rightOf, 'l')),
+    }
+    return (
+      `<td${span} style="${cellCss(style, rawAt(data, row, column), gridlines, edges)}">` +
+      `<div class="c" style="height:${round(heightPt)}pt;align-items:${align}"><span>${escapeHtml(text)}</span></div></td>`
+    )
+  }
+
+  const records: SheetPrintPageRecord[] = pages.map((page) => {
+    const data = areaData[page.area]
+    if (!data) throw new PrintError(t('appPrintNothing'))
+    const pageRows = bodyRows({ ...data.area, startRow: page.rowStart, endRow: page.rowEnd }, plan)
+    const pageColumns = bodyColumns(
+      { ...data.area, startColumn: page.colStart, endColumn: page.colEnd },
+      plan,
+    )
+    const titleRowList = titleRows ? spanIndices(titleRows).filter((r) => rowHeightPt(r) > 0) : []
+    const titleColumnList = titleColumns
+      ? spanIndices(titleColumns).filter((c) => columnWidthPt(c) > 0)
+      : []
+    const allColumns = [...titleColumnList, ...pageColumns]
+    const printedColumns = new Set(allColumns)
+    const printedRows = [...titleRowList, ...pageRows]
+
+    const colgroup =
+      `<colgroup>${headings ? `<col style="width:${HEADING_COLUMN_WIDTH_PT}pt">` : ''}` +
+      allColumns.map((c) => `<col style="width:${round(columnWidthPt(c))}pt">`).join('') +
+      `</colgroup>`
+
+    // Merges span within their table section: title rows stay in the head,
+    // body rows in the body; columns span every printed column.
+    const rowHtml = (row: number, sectionRows: readonly number[], position: number): string => {
+      const heightPt = rowHeightPt(row)
       const cells: string[] = []
-      let textHeightPt = 0
-      if (headings) {
-        cells.push(`<th class="hd">${row + 1}</th>`)
-      }
-      for (let column = area.startColumn; column <= area.endColumn; column += 1) {
+      if (headings) cells.push(`<th class="hd hd-left">${row + 1}</th>`)
+      const inSection = new Set(sectionRows)
+      const above = printedRows[position - 1] ?? null
+      const rowAfter = (last: number): number | null =>
+        printedRows[printedRows.indexOf(last) + 1] ?? null
+      const columnAfter = (last: number): number | null =>
+        allColumns[allColumns.indexOf(last) + 1] ?? null
+      allColumns.forEach((column, index) => {
         const key = `${row}:${column}`
-        if (merges.covered.has(key)) continue
-        const anchor = merges.anchors.get(key)
-        const span = anchor
-          ? ` rowspan="${Math.min(anchor.rows, area.endRow - row + 1)}"` +
-            ` colspan="${Math.min(anchor.columns, area.endColumn - column + 1)}"`
-          : ''
-        const inArea = row >= area.startRow && row <= area.endRow
-        const text = inArea
-          ? (display[row - area.startRow]?.[column - area.startColumn] ?? '')
-          : cellDisplay(worksheet, row, column)
-        const rawValue = inArea ? raw[row - area.startRow]?.[column - area.startColumn] : undefined
-        const style = worksheet.getRange(row, column).getCellStyleData()
-        if (text !== '' && !anchor) {
-          textHeightPt = Math.max(
-            textHeightPt,
-            (style?.fs ?? DEFAULT_FONT_SIZE_PT) * LINE_HEIGHT_FACTOR + CELL_VERTICAL_PADDING_PT,
-          )
+        const near = {
+          above,
+          below: rowAfter(row),
+          leftOf: allColumns[index - 1] ?? null,
+          rightOf: columnAfter(column),
         }
-        cells.push(
-          `<td${span} style="${cellCss(style, rawValue, gridlines)}">${escapeHtml(text)}</td>`,
-        )
-      }
-      const heightPt = Math.max(finitePt(worksheet.getRowHeight(row), 20) * 0.75, 10)
-      printedRowHeightPt = Math.max(heightPt, textHeightPt)
+        const coveredBy = data.merges.covered.get(key)
+        if (coveredBy !== undefined) {
+          const [anchorRow, anchorColumn] = coveredBy
+          if (inSection.has(anchorRow) && printedColumns.has(anchorColumn)) return
+          cells.push(cell(data, row, column, '', heightPt, near))
+          return
+        }
+        const anchor = data.merges.anchors.get(key)
+        if (anchor) {
+          const spannedRows = sectionRows.filter((r) => r >= row && r < row + anchor.rows)
+          const spannedColumns = allColumns.filter(
+            (c) => c >= column && c < column + anchor.columns,
+          )
+          const spanned = spannedRows.reduce((sum, r) => sum + rowHeightPt(r), 0)
+          const lastRow = spannedRows[spannedRows.length - 1] ?? row
+          const lastColumn = spannedColumns[spannedColumns.length - 1] ?? column
+          cells.push(
+            cell(
+              data,
+              row,
+              column,
+              ` rowspan="${spannedRows.length}" colspan="${spannedColumns.length}"`,
+              spanned,
+              { ...near, below: rowAfter(lastRow), rightOf: columnAfter(lastColumn) },
+            ),
+          )
+          return
+        }
+        cells.push(cell(data, row, column, '', heightPt, near))
+      })
       return `<tr style="height:${round(heightPt)}pt">${cells.join('')}</tr>`
     }
 
-    const headParts: string[] = []
-    let repeatedHeightPt = headings ? HEADING_ROW_HEIGHT_PT : 0
+    const headingRow: string[] = []
     if (headings) {
-      const letters = Array.from(
-        { length: columns },
-        (_, offset) => `<th class="hd">${columnLabel(area.startColumn + offset)}</th>`,
+      headingRow.push(
+        `<tr style="height:${HEADING_ROW_HEIGHT_PT}pt"><th class="hd hd-top hd-left"></th>` +
+          allColumns.map((c) => `<th class="hd hd-top">${columnLabel(c)}</th>`).join('') +
+          `</tr>`,
       )
-      headParts.push(`<tr><th class="hd"></th>${letters.join('')}</tr>`)
     }
-    if (titles) {
-      for (let row = titles.start; row <= titles.end; row += 1) {
-        headParts.push(bodyRow(row))
-        repeatedHeightPt += printedRowHeightPt
-        rowTopPt.set(row, topPt)
-        topPt += printedRowHeightPt
-      }
-    }
-
-    const bodyParts: string[] = []
-    const rowHeightsPt: number[] = []
-    for (let row = area.startRow; row <= area.endRow; row += 1) {
-      // Title rows already repeat via the table header.
-      if (titles && row >= titles.start && row <= titles.end) continue
-      bodyParts.push(bodyRow(row))
-      rowHeightsPt.push(printedRowHeightPt)
-      rowTopPt.set(row, topPt)
-      topPt += printedRowHeightPt
-    }
-    areaHeights.push({ repeatedHeightPt, rowHeightsPt })
-
-    const overlays = visuals.visuals
-      .filter(
-        (visual) =>
-          visual.fromColumn >= area.startColumn &&
-          visual.fromColumn <= area.endColumn &&
-          rowTopPt.has(visual.fromRow),
-      )
-      .map((visual) => visualOverlayHtml(visual, area.startColumn, columnLeftPt, rowTopPt))
-
-    const colgroup = `<colgroup>${headings ? `<col style="width:${rowHeaderPt}pt">` : ''}${columnWidthsPt
-      .map((width) => `<col style="width:${round(width)}pt">`)
-      .join('')}</colgroup>`
-    tables.push(
-      `<div class="area"><table>${colgroup}<thead>${headParts.join('')}</thead><tbody>${bodyParts.join('')}</tbody></table>${overlays.join('')}</div>`,
+    const head = headingRow.concat(
+      titleRowList.map((row, index) => rowHtml(row, titleRowList, index)),
     )
-  }
+    const body = pageRows.map((row, index) => rowHtml(row, pageRows, titleRowList.length + index))
 
-  const html =
-    `<!doctype html><html lang="${htmlLang(getLang())}"><head><meta charset="utf-8"><style>
-* { box-sizing: border-box; }
-body { margin: 0; font-family: Calibri, 'Helvetica Neue', Arial, ${printCjkFonts(getLang())}, sans-serif; }
-table { border-collapse: collapse; table-layout: fixed; }
-.area { position: relative; }
-.area + .area { break-before: page; }
-.pv { position: absolute; overflow: hidden; break-inside: avoid; }
-.xlsx-print-visual { display: block; width: 100%; height: 100%; }
-thead { display: table-header-group; }
-td, th { overflow: hidden; padding: 1pt 3pt; font-size: 11pt; vertical-align: bottom; }
-th.hd { background: #f1f1f1; border: 0.5pt solid #b7b7b7; color: #444;
-  font-size: 8.5pt; font-weight: 400; text-align: center; vertical-align: middle; }
-</style>${visuals.css ? `<style>${visuals.css}</style>` : ''}</head><body>` +
-    tables.join('') +
-    `</body></html>`
+    const originLeft = headingWidthPt + titleColumnsWidthPt
+    const originTop = headingHeightPt + titleRowsHeightPt
+    const bodyWidthPt = pageColumns.reduce((sum, c) => sum + columnWidthPt(c), 0)
+    const bodyHeightPt = pageRows.reduce((sum, r) => sum + rowHeightPt(r), 0)
+    const pageLeft = data.columnOffset.get(page.colStart) ?? 0
+    const pageTop = data.rowOffset.get(page.rowStart) ?? 0
+    const overlays = visuals.visuals
+      .map((visual) => {
+        const left = data.columnOffset.get(visual.fromColumn)
+        const top = data.rowOffset.get(visual.fromRow)
+        if (left === undefined || top === undefined) return ''
+        const x = left - pageLeft + finitePt(visual.offsetXPx, 0) * 0.75
+        const y = top - pageTop + finitePt(visual.offsetYPx, 0) * 0.75
+        const widthPx = finitePt(visual.widthPx, 1)
+        const heightPx = finitePt(visual.heightPx, 1)
+        if (
+          x >= bodyWidthPt ||
+          y >= bodyHeightPt ||
+          x + widthPx * 0.75 <= 0 ||
+          y + heightPx * 0.75 <= 0
+        )
+          return ''
+        return visualOverlayHtml(visual, x, y, widthPx, heightPx)
+      })
+      .join('')
+    const overlayLayer = overlays
+      ? `<div class="ov" style="left:${round(originLeft)}pt;top:${round(originTop)}pt;width:${round(bodyWidthPt)}pt;height:${round(bodyHeightPt)}pt">${overlays}</div>`
+      : ''
+    const table = `<table>${colgroup}<thead>${head.join('')}</thead><tbody>${body.join('')}</tbody></table>`
+    return { body: table + overlayLayer, page }
+  })
 
-  const margins = setup.margins
-  const pageSize = PAPER_SIZES[setup.paperSize] ?? 'A4'
-  const landscape = setup.orientation === 'landscape'
-  const now = new Date()
-  const baseName = fileName.replace(/\.pdf$/, '')
-  const scale = computeScale(setup, pageSize, landscape, margins, maxContentWidthPt, areaHeights)
-  // Excel's "scale with document" (the default) shrinks the header/footer
-  // text and pictures by the same factor as the sheet.
-  const templateScale = setup.headerFooterScaleWithDoc ? scale : 1
-  const templates = (pair: HeaderFooterPair, variant: PageVariant) => {
-    const headerTemplate = pair.header
-      ? buildHeaderFooterTemplate(
-          pair.header,
-          'header',
-          margins,
-          baseName,
-          sheetName,
-          now,
-          sectionPictures(pictures, 'header', variant),
-          templateScale,
-        )
-      : undefined
-    const footerTemplate = pair.footer
-      ? buildHeaderFooterTemplate(
-          pair.footer,
-          'footer',
-          margins,
-          baseName,
-          sheetName,
-          now,
-          sectionPictures(pictures, 'footer', variant),
-          templateScale,
-        )
-      : undefined
-    return {
-      ...(headerTemplate === undefined ? {} : { headerTemplate }),
-      ...(footerTemplate === undefined ? {} : { footerTemplate }),
-    }
-  }
   return {
+    sheetName,
     fileName,
-    html,
-    landscape,
-    pageSize,
-    margins: { top: margins.top, bottom: margins.bottom, left: margins.left, right: margins.right },
+    paper,
+    margins,
     scale,
-    ...templates({ header: setup.header, footer: setup.footer }, 'odd'),
-    ...(setup.firstPage === null ? {} : { firstPage: templates(setup.firstPage, 'first') }),
-    ...(setup.evenPages === null ? {} : { evenPages: templates(setup.evenPages, 'even') }),
+    headerFooterScale: setup.headerFooterScaleWithDoc ? scale : 1,
+    pictures,
+    headerFooter: {
+      odd: { header: setup.header, footer: setup.footer },
+      first: setup.firstPage,
+      even: setup.evenPages,
+    },
+    css: visuals.css,
+    pages: records,
+    now: options.now ?? new Date(),
   }
+}
+
+export interface AssembledPrintJob {
+  readonly html: string
+  /// Index into `documents` for each emitted page.
+  readonly pages: readonly { readonly document: number; readonly page: number }[]
+}
+
+/// The full print document: pages numbered across every sheet (&P/&N), each
+/// page a paper-sized box with its header/footer; `include` keeps a subset
+/// of the job's pages (page numbers still count the whole job, like Excel).
+export function assemblePrintHtml(
+  documents: readonly SheetPrintDocument[],
+  include?: (jobPage: number) => boolean,
+): AssembledPrintJob {
+  const total = documents.reduce((sum, document) => sum + document.pages.length, 0)
+  const paperClasses = new Map<string, string>()
+  const pageRules: string[] = []
+  const pages: string[] = []
+  const emitted: { document: number; page: number }[] = []
+  let jobPage = 0
+  documents.forEach((document, documentIndex) => {
+    const paperKey = `${document.paper.widthIn}x${document.paper.heightIn}`
+    let paperClass = paperClasses.get(paperKey)
+    if (paperClass === undefined) {
+      paperClass = `p${paperClasses.size}`
+      paperClasses.set(paperKey, paperClass)
+      pageRules.push(
+        `@page ${paperClass} { size: ${document.paper.widthIn}in ${document.paper.heightIn}in; margin: 0; }` +
+          ` .${paperClass} { page: ${paperClass}; }`,
+      )
+    }
+    document.pages.forEach((record, pageIndex) => {
+      jobPage += 1
+      if (include && !include(jobPage)) return
+      emitted.push({ document: documentIndex, page: pageIndex })
+      pages.push(
+        pageHtml(
+          document,
+          record,
+          jobPage,
+          total,
+          paperClass as string,
+          pageVariant(document.headerFooter, pageIndex, jobPage),
+        ),
+      )
+    })
+  })
+  const css = [...new Set(documents.map((document) => document.css).filter(Boolean))].join('\n')
+  const lang = getLang()
+  const html =
+    `<!doctype html><html lang="${htmlLang(lang)}"><head><meta charset="utf-8"><style>
+@page { margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; }
+body { font-family: Calibri, 'Helvetica Neue', Arial, ${printCjkFonts(lang)}, sans-serif; }
+.page { position: relative; overflow: hidden; background: #fff; break-after: page; }
+.page:last-child { break-after: auto; }
+.content { position: absolute; overflow: hidden; }
+.hf { position: absolute; display: flex; color: #000; }
+.hf span { flex: 1; min-width: 0; white-space: pre-wrap; }
+.hf img { vertical-align: bottom; }
+table { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+td, th { padding: 0; border: 0; overflow: hidden; font-size: 11pt; vertical-align: bottom; }
+td .c { display: flex; overflow: hidden; padding: 0 2pt; line-height: 1.2; }
+td .c > span { width: 100%; }
+th.hd { background: #f1f1f1; color: #444; font-size: 8.5pt; font-weight: 400;
+  text-align: center; vertical-align: middle;
+  box-shadow: inset -0.75pt 0 0 #b7b7b7, inset 0 -0.75pt 0 #b7b7b7; }
+th.hd-top { box-shadow: inset -0.75pt 0 0 #b7b7b7, inset 0 -0.75pt 0 #b7b7b7, inset 0 0.75pt 0 #b7b7b7; }
+th.hd-left { box-shadow: inset -0.75pt 0 0 #b7b7b7, inset 0 -0.75pt 0 #b7b7b7, inset 0.75pt 0 0 #b7b7b7; }
+th.hd-top.hd-left { box-shadow: inset -0.75pt 0 0 #b7b7b7, inset 0 -0.75pt 0 #b7b7b7,
+  inset 0 0.75pt 0 #b7b7b7, inset 0.75pt 0 0 #b7b7b7; }
+.ov { position: absolute; overflow: hidden; }
+.pv { position: absolute; overflow: hidden; }
+.xlsx-print-visual { display: block; width: 100%; height: 100%; }
+${pageRules.join('\n')}
+</style>${css ? `<style>${css}</style>` : ''}</head><body>` +
+    pages.join('') +
+    `</body></html>`
+  return { html, pages: emitted }
+}
+
+/// differentFirst is the sheet's first page; differentOddEven follows the
+/// job-wide page number (the one &P prints).
+export function pageVariant(
+  headerFooter: SheetHeaderFooter,
+  sheetPageIndex: number,
+  jobPage: number,
+): PageVariant {
+  if (sheetPageIndex === 0 && headerFooter.first !== null) return 'first'
+  if (jobPage % 2 === 0 && headerFooter.even !== null) return 'even'
+  return 'odd'
+}
+
+function pageHtml(
+  document: SheetPrintDocument,
+  record: SheetPrintPageRecord,
+  page: number,
+  total: number,
+  paperClass: string,
+  variant: PageVariant,
+): string {
+  const { paper, margins } = document
+  const pair =
+    variant === 'first'
+      ? (document.headerFooter.first ?? document.headerFooter.odd)
+      : variant === 'even'
+        ? (document.headerFooter.even ?? document.headerFooter.odd)
+        : document.headerFooter.odd
+  const fields = {
+    page,
+    total,
+    date: document.now,
+    fileName: document.fileName,
+    sheetName: document.sheetName,
+  }
+  const header = pair.header
+    ? headerFooterHtml(
+        pair.header,
+        'header',
+        document,
+        fields,
+        sectionPictures(document.pictures, 'header', variant),
+      )
+    : ''
+  const footer = pair.footer
+    ? headerFooterHtml(
+        pair.footer,
+        'footer',
+        document,
+        fields,
+        sectionPictures(document.pictures, 'footer', variant),
+      )
+    : ''
+  const contentWidthIn = Math.max(paper.widthIn - margins.left - margins.right, 0.01)
+  const contentHeightIn = Math.max(paper.heightIn - margins.top - margins.bottom, 0.01)
+  return (
+    `<div class="page ${paperClass}" style="width:${paper.widthIn}in;height:${paper.heightIn}in">` +
+    header +
+    `<div class="content" style="left:${round(margins.left)}in;top:${round(margins.top)}in;` +
+    `width:${round(contentWidthIn)}in;height:${round(contentHeightIn)}in">` +
+    `<div style="zoom:${round4(document.scale)};position:relative">${record.body}</div></div>` +
+    footer +
+    `</div>`
+  )
 }
 
 /// The `&G` pictures of one header or footer's three sections, for one page
@@ -400,117 +729,53 @@ export function sectionPictures(
   }
 }
 
-/// Header/footer text size before scaleWithDoc applies.
-const HEADER_FOOTER_FONT_SIZE_PT = 9
+const PICTURE_MARK = '￼'
 
-/// One left/center/right header or footer as a Chromium print template
-/// (rendered in the page's margin box; undefined when the parts are empty).
-/// `scale` is the print scale the text and pictures follow (1 when the
-/// header/footer keeps its size).
-export function buildHeaderFooterTemplate(
+/// One left/center/right header or footer inside the page: Excel offsets it
+/// from the paper edge by the header/footer margin and spans the side
+/// margins; the text and pictures follow the print scale (scaleWithDoc).
+export function headerFooterHtml(
   parts: HeaderFooterParts,
   kind: 'header' | 'footer',
-  margins: PrintMargins,
-  fileName: string,
-  sheetName: string,
-  now: Date,
+  document: Pick<SheetPrintDocument, 'margins' | 'headerFooterScale'>,
+  fields: { page: number; total: number; date: Date; fileName: string; sheetName: string },
   pictures: SectionPictures = {},
-  scale = 1,
-): string | undefined {
+): string {
   const sections = [parts.left ?? '', parts.center ?? '', parts.right ?? '']
-  if (sections.every((text) => text === '')) return undefined
+  if (sections.every((text) => text === '')) return ''
   const sectionPicture = [pictures.left, pictures.center, pictures.right]
+  const scale = document.headerFooterScale
   const rendered = sections.map((text, index) =>
-    renderHeaderFooterHtml(text, fileName, sheetName, now, sectionPicture[index], scale),
+    renderHeaderFooterSection(text, fields, sectionPicture[index], scale),
   )
-  const fontSizePt = round(HEADER_FOOTER_FONT_SIZE_PT * scale)
-  // Excel offsets the header/footer from the paper edge by its own margin.
-  const offset =
-    kind === 'header'
-      ? `padding-top:${round(margins.header)}in`
-      : `padding-bottom:${round(margins.footer)}in`
-  // Equal thirds like Excel's sections; an oversized picture or unbreakable
-  // text overflows its neighbours instead of squeezing them.
-  const spanStyle = 'flex:1;min-width:0;white-space:pre-wrap'
-  // Chromium's template document is content-box; without an inline
-  // border-box the width:100% + side padding overflows the page and
-  // shifts/clips the sections.
+  const { margins } = document
+  const edge =
+    kind === 'header' ? `top:${round(margins.header)}in` : `bottom:${round(margins.footer)}in`
   return (
-    `<div style="box-sizing:border-box;display:flex;width:100%;font-size:${fontSizePt}pt;color:#000;` +
-    `font-family:Calibri,'Helvetica Neue',Arial,sans-serif;` +
-    `padding-left:${round(margins.left)}in;padding-right:${round(margins.right)}in;${offset}">` +
-    `<span style="${spanStyle}">${rendered[0]}</span>` +
-    `<span style="${spanStyle};text-align:center">${rendered[1]}</span>` +
-    `<span style="${spanStyle};text-align:right">${rendered[2]}</span></div>`
+    `<div class="hf" style="left:${round(margins.left)}in;right:${round(margins.right)}in;${edge};` +
+    `font-size:${round(HEADER_FOOTER_FONT_SIZE_PT * scale)}pt">` +
+    `<span>${rendered[0]}</span>` +
+    `<span style="text-align:center">${rendered[1]}</span>` +
+    `<span style="text-align:right">${rendered[2]}</span></div>`
   )
 }
 
-/// Field codes → template HTML: &P/&N become Chromium's live pageNumber/
-/// totalPages spans, static codes (&D &T &F &A, && literal) resolve now,
-/// &G becomes the section's picture (nothing when the slot has none, like
-/// Excel), everything else is HTML-escaped verbatim.
-export function renderHeaderFooterHtml(
+/// Field codes resolved for this page, escaped, with `&G` replaced by the
+/// section's picture (nothing when the slot has none, like Excel).
+export function renderHeaderFooterSection(
   text: string,
-  fileName: string,
-  sheetName: string,
-  now: Date,
+  fields: { page: number; total: number; date: Date; fileName: string; sheetName: string },
   picture?: HeaderFooterPictureImage,
   scale = 1,
 ): string {
-  let html = ''
-  let literal = ''
-  const flush = (): void => {
-    html += escapeHtml(literal)
-    literal = ''
-  }
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index] ?? ''
-    if (character !== '&') {
-      literal += character
-      continue
-    }
-    const code = text[index + 1]
-    if (code === undefined) {
-      literal += '&'
-      break
-    }
-    index += 1
-    switch (code) {
-      case '&':
-        literal += '&'
-        break
-      case 'P':
-        flush()
-        html += '<span class="pageNumber"></span>'
-        break
-      case 'N':
-        flush()
-        html += '<span class="totalPages"></span>'
-        break
-      case 'D':
-        literal += now.toLocaleDateString()
-        break
-      case 'T':
-        literal += now.toLocaleTimeString()
-        break
-      case 'F':
-        literal += fileName
-        break
-      case 'A':
-        literal += sheetName
-        break
-      case 'G':
-        if (picture) {
-          flush()
-          html += pictureHtml(picture, scale)
-        }
-        break
-      default:
-        literal += `&${code}`
-    }
-  }
-  flush()
-  return html
+  const expanded = expandHeaderFooterCodes(text, {
+    ...fields,
+    picture: picture ? PICTURE_MARK : '',
+  })
+  return expanded
+    .split(PICTURE_MARK)
+    .map(escapeHtml)
+    .join(picture ? pictureHtml(picture, scale) : '')
 }
 
 /// The picture at its declared size times the print scale (points → CSS px
@@ -519,55 +784,49 @@ export function renderHeaderFooterHtml(
 function pictureHtml(picture: HeaderFooterPictureImage, scale: number): string {
   const width = round((picture.widthPt * scale * 96) / 72)
   const height = round((picture.heightPt * scale * 96) / 72)
-  return (
-    `<img src="${escapeAttribute(picture.dataUrl)}" ` +
-    `style="width:${width}px;height:${height}px;vertical-align:bottom">`
+  return `<img src="${escapeAttribute(picture.dataUrl)}" style="width:${width}px;height:${height}px">`
+}
+
+/// The export/print request for a job: the paper of the first sheet seeds
+/// the dialog, the pages carry their own size via @page rules.
+export function printRequest(
+  documents: readonly SheetPrintDocument[],
+  fileName: string,
+  include?: (jobPage: number) => boolean,
+): WorkbookExportPdfRequest {
+  const job = assemblePrintHtml(documents, include)
+  if (job.pages.length === 0) throw new PrintError(t('appPrintNothing'))
+  const first = documents[job.pages[0]?.document ?? 0] ?? documents[0]
+  const paper = first?.paper ?? paperGeometry(9, 'portrait')
+  return {
+    fileName,
+    html: job.html,
+    landscape: paper.landscape,
+    pageSize: paper.pageSize,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    scale: 1,
+  }
+}
+
+/// Single-sheet export (headless CLI path and File → Export PDF).
+export function buildSheetPrintPayload(
+  worksheet: PrintWorksheet,
+  setup: EffectivePageSetup,
+  fileName: string,
+  sheetName: string,
+  pictures: HeaderFooterPictures = new Map(),
+  visuals: PrintVisualSnapshot = { visuals: [], css: '' },
+  options: SheetPrintOptions = {},
+): WorkbookExportPdfRequest {
+  const baseName = fileName.replace(/\.pdf$/, '')
+  return printRequest(
+    [layoutSheetPrint(worksheet, setup, baseName, sheetName, pictures, visuals, options)],
+    fileName,
   )
 }
 
-/// Excel's fit-to-page only shrinks; an explicit scale applies as-is.
-function computeScale(
-  setup: EffectivePageSetup,
-  pageSize: WorkbookExportPdfRequest['pageSize'],
-  landscape: boolean,
-  margins: { left: number; right: number; top: number; bottom: number },
-  contentWidthPt: number,
-  areas: readonly PrintAreaHeights[],
-): number {
-  if (!setup.fitToPage) {
-    return clamp(setup.scale / 100, MIN_PRINT_SCALE, MAX_PRINT_SCALE)
-  }
-  const [paperWidthIn, paperHeightIn] =
-    typeof pageSize === 'string'
-      ? [PAPER_WIDTH_INCHES[pageSize] ?? 8.27, paperHeightInches(pageSize)]
-      : [pageSize.width, pageSize.height]
-  const [acrossIn, downIn] = landscape
-    ? [paperHeightIn, paperWidthIn]
-    : [paperWidthIn, paperHeightIn]
-  return fitToPageScale({
-    printableWidthPt: (acrossIn - margins.left - margins.right) * 72,
-    printableHeightPt: (downIn - margins.top - margins.bottom) * 72,
-    fitToWidth: setup.fitToWidth,
-    fitToHeight: setup.fitToHeight,
-    contentWidthPt,
-    areas,
-  })
-}
-
-function paperHeightInches(name: string): number {
-  const heights: Record<string, number> = {
-    Letter: 11,
-    Tabloid: 17,
-    Legal: 14,
-    A3: 16.54,
-    A4: 11.69,
-    A5: 8.27,
-  }
-  return heights[name] ?? 11.69
-}
-
 /// Excel's default print range covers the cells and the drawings over them.
-function usedArea(worksheet: PrintWorksheet, visuals: readonly PrintVisual[]) {
+function usedArea(worksheet: PrintWorksheet, visuals: readonly PrintVisual[]): PrintArea {
   return {
     startRow: 0,
     startColumn: 0,
@@ -581,32 +840,30 @@ function usedArea(worksheet: PrintWorksheet, visuals: readonly PrintVisual[]) {
 /// the same size stated in pt.
 function visualOverlayHtml(
   visual: PrintVisual,
-  startColumn: number,
-  columnLeftPt: readonly number[],
-  rowTopPt: ReadonlyMap<number, number>,
+  leftPt: number,
+  topPt: number,
+  widthPx: number,
+  heightPx: number,
 ): string {
-  const left =
-    (columnLeftPt[visual.fromColumn - startColumn] ?? 0) + finitePt(visual.offsetXPx, 0) * 0.75
-  const top = (rowTopPt.get(visual.fromRow) ?? 0) + finitePt(visual.offsetYPx, 0) * 0.75
-  const widthPx = finitePt(visual.widthPx, 1)
-  const heightPx = finitePt(visual.heightPx, 1)
-  const style = `left:${round(left)}pt;top:${round(top)}pt;width:${round(widthPx * 0.75)}pt;height:${round(heightPx * 0.75)}pt`
+  const style = `left:${round(leftPt)}pt;top:${round(topPt)}pt;width:${round(widthPx * 0.75)}pt;height:${round(heightPx * 0.75)}pt`
   const inner = `width:${round(widthPx)}px;height:${round(heightPx)}px`
   return `<div class="pv" style="${style}"><div style="${inner}">${visual.html}</div></div>`
 }
 
-function parseArea(area: string) {
+function parseArea(area: string): PrintArea {
   const match = /^\$?([A-Za-z]{1,3})\$?(\d{1,7}):\$?([A-Za-z]{1,3})\$?(\d{1,7})$/.exec(area)
   if (!match) throw new PrintError(t('appPrintBadArea', { area }))
+  const rows = [Number(match[2]) - 1, Number(match[4]) - 1]
+  const columns = [columnIndex(match[1] ?? 'A'), columnIndex(match[3] ?? 'A')]
   return {
-    startRow: Number(match[2]) - 1,
-    startColumn: columnIndex(match[1] ?? 'A'),
-    endRow: Number(match[4]) - 1,
-    endColumn: columnIndex(match[3] ?? 'A'),
+    startRow: Math.min(...rows),
+    endRow: Math.max(...rows),
+    startColumn: Math.min(...columns),
+    endColumn: Math.max(...columns),
   }
 }
 
-function parseTitleRows(titles: string): { start: number; end: number } {
+function parseTitleRows(titles: string): IndexSpan {
   const match = /^(\d{1,7}):(\d{1,7})$/.exec(titles)
   if (!match) throw new PrintError(t('appPrintBadTitles', { titles }))
   const start = Number(match[1]) - 1
@@ -615,12 +872,40 @@ function parseTitleRows(titles: string): { start: number; end: number } {
   return { start, end }
 }
 
-function mergeMaps(
-  worksheet: PrintWorksheet,
-  area: { startRow: number; endRow: number; startColumn: number; endColumn: number },
-) {
+function parseTitleColumns(titles: string): IndexSpan {
+  const match = /^([A-Za-z]{1,3}):([A-Za-z]{1,3})$/.exec(titles)
+  if (!match) throw new PrintError(t('appPrintBadTitles', { titles }))
+  const start = columnIndex((match[1] ?? 'A').toUpperCase())
+  const end = columnIndex((match[2] ?? 'A').toUpperCase())
+  if (end - start > 20) throw new PrintError(t('appPrintTitlesLimit'))
+  return { start, end }
+}
+
+function spanIndices(span: IndexSpan): number[] {
+  return Array.from({ length: span.end - span.start + 1 }, (_, offset) => span.start + offset)
+}
+
+function spanTotal(span: IndexSpan | null, sizeOf: (index: number) => number): number {
+  return span ? spanIndices(span).reduce((sum, index) => sum + sizeOf(index), 0) : 0
+}
+
+/// Running offset of each body row/column from the area's first one.
+function offsets(
+  indices: readonly number[],
+  sizeOf: (index: number) => number,
+): Map<number, number> {
+  const result = new Map<number, number>()
+  let position = 0
+  for (const index of indices) {
+    result.set(index, position)
+    position += sizeOf(index)
+  }
+  return result
+}
+
+function mergeMaps(worksheet: PrintWorksheet, area: PrintArea) {
   const anchors = new Map<string, { rows: number; columns: number }>()
-  const covered = new Set<string>()
+  const covered = new Map<string, readonly [number, number]>()
   for (const merge of worksheet.getMergedRanges()) {
     const row = merge.getRow()
     const column = merge.getColumn()
@@ -630,7 +915,7 @@ function mergeMaps(
     anchors.set(`${row}:${column}`, { rows: merge.getHeight(), columns: merge.getWidth() })
     for (let r = row; r < row + merge.getHeight(); r += 1) {
       for (let c = column; c < column + merge.getWidth(); c += 1) {
-        if (r !== row || c !== column) covered.add(`${r}:${c}`)
+        if (r !== row || c !== column) covered.set(`${r}:${c}`, [row, column])
       }
     }
   }
@@ -641,7 +926,15 @@ function cellDisplay(worksheet: PrintWorksheet, row: number, column: number): st
   return worksheet.getRange(row, column, 1, 1).getDisplayValues()[0]?.[0] ?? ''
 }
 
-function cellCss(style: PrintCellStyle | null, rawValue: unknown, gridlines: boolean): string {
+/// Borders paint as inset shadows (no layout share, unlike CSS borders, so
+/// the planned row heights hold); `edges` says which of the cell's four
+/// edges it owns.
+function cellCss(
+  style: PrintCellStyle | null,
+  rawValue: unknown,
+  gridlines: boolean,
+  edges: { top: boolean; bottom: boolean; left: boolean; right: boolean },
+): string {
   const rules: string[] = []
   if (style?.bl === 1) rules.push('font-weight:700')
   if (style?.it === 1) rules.push('font-style:italic')
@@ -675,25 +968,27 @@ function cellCss(style: PrintCellStyle | null, rawValue: unknown, gridlines: boo
               ? 'center'
               : 'left'
   rules.push(`text-align:${align}`)
-  if (style?.vt === 1) rules.push('vertical-align:top')
-  else if (style?.vt === 2) rules.push('vertical-align:middle')
   rules.push(style?.tb === 3 ? 'white-space:pre-wrap;word-break:break-word' : 'white-space:pre')
-  const defaultBorder = gridlines ? '0.5pt solid #c0c0c0' : 'none'
-  for (const [edge, css] of [
-    ['t', 'top'],
-    ['b', 'bottom'],
-    ['l', 'left'],
-    ['r', 'right'],
-  ]) {
-    const border = style?.bd?.[edge as 't' | 'b' | 'l' | 'r']
-    rules.push(
-      `border-${css}:${
-        border
-          ? `${printBorderWidthPt(border.s)}pt solid ${cssColor(border.cl?.rgb ?? '#000000')}`
-          : defaultBorder
-      }`,
-    )
+  const shadows: string[] = []
+  const edge = (
+    key: 't' | 'b' | 'l' | 'r',
+    draw: boolean,
+    offset: (width: number) => string,
+  ): void => {
+    const border = style?.bd?.[key]
+    if (border && draw) {
+      shadows.push(
+        `inset ${offset(printBorderWidthPt(border.s))} 0 ${cssColor(border.cl?.rgb ?? '#000000')}`,
+      )
+    } else if (gridlines && draw) {
+      shadows.push(`inset ${offset(GRIDLINE_PT)} 0 #c0c0c0`)
+    }
   }
+  edge('t', edges.top, (width) => `0 ${width}pt`)
+  edge('b', edges.bottom, (width) => `0 -${width}pt`)
+  edge('l', edges.left, (width) => `${width}pt 0`)
+  edge('r', edges.right, (width) => `-${width}pt 0`)
+  if (shadows.length > 0) rules.push(`box-shadow:${shadows.join(',')}`)
   return rules.join(';')
 }
 
@@ -715,4 +1010,8 @@ function clamp(value: number, min: number, max: number): number {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+function round4(value: number): number {
+  return Math.round(value * 10000) / 10000
 }

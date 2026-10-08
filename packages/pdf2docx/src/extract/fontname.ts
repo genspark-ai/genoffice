@@ -31,12 +31,12 @@ const COMPOUND_FIXUPS: Array<[RegExp, string]> = [[/\bPing Fang\b/g, 'PingFang']
  * CJK system families whose PostScript name IS the installed family name —
  * splitting it unresolves the name and Word substitutes a different face
  * ('DFKai-SB' → 'DFKai SB', 'PMingLiU' → 'PMing Li U', 'SimSun' → 'Sim Sun';
- * issue #1890). The hyphen/comma style-suffix convention does not apply to
+ * genoffice#1890). The hyphen/comma style-suffix convention does not apply to
  * these either: there the suffix is part of the family ('DFKai-SB',
  * 'MingLiU-ExtB'), not a style declaration.
  */
 const VERBATIM_FAMILY_PS_NAMES = new Set([
-  // Traditional Chinese (Windows)
+  // Traditional CJK (Windows)
   'DFKai-SB',
   'KaiU',
   'PMingLiU',
@@ -44,7 +44,7 @@ const VERBATIM_FAMILY_PS_NAMES = new Set([
   'MingLiU',
   'MingLiU-ExtB',
   'MingLiU_HKSCS',
-  // Simplified Chinese (Windows), incl. the XP-era GB2312 faces
+  // Simplified CJK (Windows), incl. the XP-era GB2312 faces
   'SimSun',
   'SimSun-ExtB',
   'NSimSun',

@@ -274,7 +274,7 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
     // A burst of text can still be dropped after every gate passes: the
     // editor element is focused and connected, but the adopted view's input
     // pipeline is not wired to Univer yet, so the editor stays empty and the
-    // Enter that follows only moves the cursor down (CI-only, see #1150). A
+    // Enter that follows only moves the cursor down (CI-only, genoffice#1150). A
     // user would click the cell and type again — retry exactly that, up to
     // three attempts, and keep every attempt's layer snapshot in the failure
     // message.
@@ -302,7 +302,7 @@ test('sheets: typing works when a spare view opens the next workbook', async () 
       // independently in an adopted view: the CI-only signature is keydowns
       // arriving (Enter moves the cursor) while the IME-style text-input
       // channel (insertText) drops everything — and character-key simulation
-      // can omit input events in the same view (#1151's original reason for
+      // can omit input events in the same view (genoffice#1151's original reason for
       // insertText). So every attempt alternates the channel instead of
       // repeating the one that just failed: odd attempts open the editor with
       // a real keydown and commit the rest via insertText; even attempts type

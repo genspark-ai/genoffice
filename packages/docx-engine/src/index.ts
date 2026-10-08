@@ -19,6 +19,7 @@ export { assertZipInflatesWithinLimits, assertZipWithinLimits, DOCX_ZIP_LIMITS }
 export { LAZY_MEDIA_SCHEME, isLazyMediaPart, lazyMediaUrl, parseLazyMediaUrl } from './lazy-media'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
 export { tocLevelOf } from './parse-fields'
+export { mergeStyleBorders } from './parse-props'
 export {
   saveDocx,
   findChartWorkbookPath,
@@ -168,7 +169,10 @@ export {
   toSymbolPua,
 } from './symbol-fonts'
 export {
-  bulletMarkerScale,
+  type BulletSubstitute,
+  substituteBullet,
+  markerFallbackFace,
+  SEGOE_UI_SYMBOL_RE,
   computeListMarkerInfos,
   computeListMarkers,
   computeListValues,

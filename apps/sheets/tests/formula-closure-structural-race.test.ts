@@ -31,6 +31,7 @@ function closureState(): LazyWorkbookState {
     editJournal: { structuralOps: new Map(), cells: new Map() },
     closure: { status: 'idle', pinned: new Map() },
     formulaText: new Map(),
+    sharedFormulaGroups: new Map(),
     cachedFormulaValues: new Map(),
     rowColStyleKeys: new Map(),
     hiddenFileRows: new Map(),
@@ -73,6 +74,7 @@ function stubDesktopApi(onRangeRead: (call: number) => void): void {
         truncated: false,
         indexingComplete: true,
         cells: [{ row: 0, column: 3, formula: 'A1*2' }],
+        sharedGroups: [],
       }),
       readWorkbookRange: async () => {
         rangeReads += 1

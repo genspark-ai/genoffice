@@ -17,6 +17,8 @@ export const setModuleLang = (lang: Lang): void => {
 }
 /** module-level translator — components should prefer useI18n().t so they re-render on switch */
 export const t: TFunc = (key, params) => translate(moduleLang, key, params)
+export const tFor = (lang: Lang, key: StringKey, params?: Params): string =>
+  translate(lang, key, params)
 
 const AI_LANG_DIRECTIVES: Record<Lang, string> = {
   zh: '\n\n用与用户消息相同的语言回复；无法判断用户消息的语言时，用简体中文回复。',

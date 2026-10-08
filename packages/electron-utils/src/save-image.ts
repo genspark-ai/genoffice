@@ -45,6 +45,9 @@ export function suggestImageFileName(url: string, mime: string | null | undefine
   return `image.${EXT_BY_MIME[key] ?? 'png'}`
 }
 
+/** Same byte budget as remote image downloads, checked on the encoded text before allocating. */
+const MAX_DATA_URL_PAYLOAD_CHARS = Math.ceil((MAX_REMOTE_IMAGE_BYTES * 4) / 3)
+
 export function decodeDataUrl(url: string): { bytes: Buffer; mime: string | null } | null {
   // The parameter run is `;`-prefixed and its body excludes `;`, so each
   // iteration has exactly one possible length. With `;[^,]*` instead, one
@@ -56,17 +59,19 @@ export function decodeDataUrl(url: string): { bytes: Buffer; mime: string | null
   if (!m) return null
   const mime = m[1] || null
   const payload = m[3] ?? ''
+  if (payload.length > MAX_DATA_URL_PAYLOAD_CHARS) return null
   const isBase64 = (m[2] ?? '').split(';').some((param) => param.toLowerCase() === 'base64')
   const bytes = isBase64
     ? Buffer.from(payload, 'base64')
     : Buffer.from(decodeURIComponent(payload), 'utf8')
+  if (bytes.length > MAX_REMOTE_IMAGE_BYTES) return null
   return { bytes, mime }
 }
 
 async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; mime: string | null }> {
   if (/^data:/i.test(url)) {
     const decoded = decodeDataUrl(url)
-    if (!decoded) throw new Error('malformed data URL')
+    if (!decoded) throw new Error('malformed or oversized data URL')
     return decoded
   }
   const { net } = await import('electron')

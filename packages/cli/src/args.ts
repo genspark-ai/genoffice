@@ -34,16 +34,10 @@ export function parseArgs(
     if (eq !== -1) {
       const key = arg.slice(2, eq)
       const value = arg.slice(eq + 1)
-      // A boolean flag has no value: --force=false used to store the string
-      // 'false', which flagBool() read as merely "present" — the exact
-      // overwrite the user asked not to do. Boolean flags reject =values
-      // outright; everything else keeps the raw string.
+      // --force=false used to store 'false', which flagBool read as present
       if (booleans.has(key)) {
         throw new CliError(
           EXIT.usage,
-          // The parser has no --no-<flag> negation (--no-force would store
-          // flags['no-force']=true and be silently ignored), so the message
-          // must not suggest a spelling that does nothing.
           `--${key} is a boolean flag; use --${key}, not --${key}=<value>`,
           undefined,
           { reason: 'invalid_argument' },

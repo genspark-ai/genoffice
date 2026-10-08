@@ -151,6 +151,12 @@ describe('HTML owned asset lifecycle', () => {
       '</html>',
     ].join('\n')
     await writeFile(documentPath, html, 'utf8')
+    // a DOM serializer writes the inline-style quotes as entities
+    expect(
+      extractHtmlAssetReferences(
+        `<div style="background: url(&quot;assets/e.png&quot;); mask: url(&#39;assets/f.png&#39;)"></div>`,
+      ),
+    ).toEqual(['assets/e.png', 'assets/f.png'])
 
     // What the save handler hands the GC: every source the document points at.
     const result = await reconcileOwnedAssets(documentPath, extractHtmlAssetReferences(html))

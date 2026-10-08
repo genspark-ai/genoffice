@@ -166,8 +166,16 @@ describe('declared run fonts drive the Latin factor and the paragraph face', () 
           content: runs.map((r) => ({
             type: 'text',
             text: r.text,
+            // a run declaring the face in every slot (ascii, hAnsi and eastAsia)
             ...(r.font
-              ? { marks: [{ type: 'docTextStyle', attrs: { font: r.font, fontAscii: r.font } }] }
+              ? {
+                  marks: [
+                    {
+                      type: 'docTextStyle',
+                      attrs: { font: r.font, fontAscii: r.font, eastAsiaFont: r.font },
+                    },
+                  ],
+                }
               : {}),
           })),
         },
@@ -248,6 +256,89 @@ describe('declared run fonts drive the Latin factor and the paragraph face', () 
     const p = editor.view.dom.querySelector('p') as HTMLElement
     expect(p.style.fontFamily).toBe('')
     editor.destroy()
+  })
+})
+
+describe('ascii-only CJK face: CJK lines keep the EA var, ascii-slot glyphs lift', () => {
+  const yahei = '\u5fae\u8f6f\u96c5\u9ed1'
+  const markedDoc = (text: string, attrs: Record<string, string>) =>
+    ({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [{ type: 'text', text, marks: [{ type: 'docTextStyle', attrs }] }],
+        },
+      ],
+    }) as never
+  const asciiOnlyDoc = (text: string, eastAsiaFont?: string) =>
+    markedDoc(text, { font: yahei, fontAscii: yahei, ...(eastAsiaFont ? { eastAsiaFont } : {}) })
+  const liftSpans = (editor: Editor) =>
+    Array.from(editor.view.dom.querySelectorAll('span.doc-run-lf')).map((s) => [
+      s.textContent,
+      (s as HTMLElement).style.getPropertyValue('--doc-line-factor'),
+    ])
+
+  it('a pure-CJK paragraph takes the document EA factor, not the ascii face', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: asciiOnlyDoc('\u56e2\u961f\u5bb9\u6613\u62b1\u6028\u3002'),
+    })
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-cjk,1.7)')
+    editor.destroy()
+  })
+
+  it('the same face declared in the eastAsia slot keeps its own factor', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: asciiOnlyDoc('\u56e2\u961f\u5bb9\u6613\u62b1\u6028\u3002', yahei),
+    })
+    expect(factorOf(editor)).toBe('1.7143')
+    editor.destroy()
+  })
+
+  it('digits and curly quotes drawn by the ascii face lift only their own stretch', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: asciiOnlyDoc('\u56e2\u961f 12 \u201c\u6210\u5458\u201d'),
+    })
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-latin,1.2)')
+    expect(liftSpans(editor)).toEqual([
+      ['\u56e2\u961f', 'var(--doc-line-factor-cjk,1.7)'],
+      [' 12 \u201c', '1.7143'],
+      ['\u6210\u5458', 'var(--doc-line-factor-cjk,1.7)'],
+      ['\u201d', '1.7143'],
+    ])
+    editor.destroy()
+  })
+
+  it('the SimSun gap lift follows the same slot rule', () => {
+    const simsun = '\u5b8b\u4f53'
+    const gapSpans = (editor: Editor) =>
+      Array.from(editor.view.dom.querySelectorAll('p span')).filter((s) =>
+        (s as HTMLElement).style.lineHeight.includes('1.7143'),
+      ).length
+    const asciiOnly = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: markedDoc('\u56e2\u961f\u30fb\u6210\u5458', { font: simsun, fontAscii: simsun }),
+    })
+    expect(gapSpans(asciiOnly)).toBe(0)
+    asciiOnly.destroy()
+    const eaSlot = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: markedDoc('\u56e2\u961f\u30fb\u6210\u5458', {
+        font: simsun,
+        fontAscii: simsun,
+        eastAsiaFont: simsun,
+      }),
+    })
+    expect(gapSpans(eaSlot)).toBe(1)
+    eaSlot.destroy()
   })
 })
 
@@ -450,8 +541,9 @@ describe('per-line factors in mixed-script paragraphs', () => {
       `max(var(--doc-line-factor-latin,1.2), ${lineHeightFactor('Arial')})`,
     )
     const lifted = stretches(editor)
-    // Script-font decorations may split a stretch without changing its line metrics.
-    expect(lifted.map((s) => s.textContent).join('')).toBe('수소는 결정결함결합해')
+    // Script-font decorations may split a stretch without changing its line
+    // metrics; the space between the words keeps the paragraph line box.
+    expect(lifted.map((s) => s.textContent).join('')).toBe('수소는결정결함결합해')
     for (const s of lifted) {
       expect(s.style.getPropertyValue('--doc-line-factor')).toBe('var(--doc-line-factor-kr,1.3029)')
       expect(s.style.getPropertyValue('line-height')).toBe('')

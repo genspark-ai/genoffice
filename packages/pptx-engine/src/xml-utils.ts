@@ -100,3 +100,12 @@ export function creationIdExtXml(): string {
 export function creationIdXml(): string {
   return `<a:extLst>${creationIdExtXml()}</a:extLst>`
 }
+
+const DEFAULT_TAG = /<Default\b[^>]*\/?>/g
+
+/** Any <Default> already declaring this extension, whatever its attribute order or quoting. */
+export function hasDefaultFor(ct: string, ext: string): boolean {
+  const re = new RegExp(`\\bExtension\\s*=\\s*(["'])${ext}\\1`)
+  for (const tag of ct.matchAll(DEFAULT_TAG)) if (re.test(tag[0])) return true
+  return false
+}

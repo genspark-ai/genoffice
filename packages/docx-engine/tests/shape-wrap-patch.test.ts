@@ -74,10 +74,8 @@ describe('shape wrap/rank patching', () => {
 describe('shape targeting by cNvPr id', () => {
   // a textless first shape is exactly the drawing boxDrawingSegments skips:
   // ordinal targeting would hit the second drawing, id targeting must not
-  const withId = (xml: string, id: number): string =>
-    xml.replace('<wps:cNvSpPr/>', `<wps:cNvPr id="${id}"/><wps:cNvSpPr/>`)
-  const first = withId(buildShapeParagraphXml({ prst: 'rect', withTextbox: false }), 7)
-  const second = withId(buildShapeParagraphXml({ prst: 'rect', withTextbox: true }), 8)
+  const first = buildShapeParagraphXml({ prst: 'rect', withTextbox: false, id: 7 })
+  const second = buildShapeParagraphXml({ prst: 'rect', withTextbox: true, id: 8 })
   const two =
     first.slice(0, first.indexOf('</w:p>')) + second.slice(second.indexOf('<w:p>') + '<w:p>'.length)
   const secondBody = second.slice(second.indexOf('<w:p>') + '<w:p>'.length)

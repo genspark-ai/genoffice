@@ -18,7 +18,7 @@ import type { WorkbookFile } from '../src/shared/desktop-api'
  * (Enter, arrows) alive and hide the damage: the cell editor's character-key
  * routing and ILayoutService.focus() (early return on a null focused unit)
  * are dead, so typing into the adopted view never opens the editor
- * (e2e open-focus-typing, #1150's CI-only signature).
+ * (e2e open-focus-typing, genoffice#1150's CI-only signature).
  */
 
 const FILE: WorkbookFile = {

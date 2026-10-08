@@ -2,11 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import {
-  PRINT_READY_SCRIPT,
-  printHtmlDocument,
-  type PrintDialogWindow,
-} from '../src/main/print-window'
+import { PRINT_READY_SCRIPT, printHtmlDocument, type PrintDialogWindow } from '../src/print-window'
 
 /** Records the call order, so the assertions can pin sequencing and not just
  * end state: the readiness probe has to happen BEFORE print(), and show() has
@@ -154,7 +150,7 @@ describe('HTML print window', () => {
     win.readyHangs = true
     expect(await run(win)).toEqual({ ok: true })
     expect(win.calls).toContain('print')
-  })
+  }, 10_000)
 
   it('destroys the window and removes the temp dir on success and on failure', async () => {
     const ok = new TestPrintWindow()

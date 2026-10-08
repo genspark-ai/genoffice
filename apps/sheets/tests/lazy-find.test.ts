@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IRange } from '@univerjs/core'
 import {
   FindModel,
@@ -1114,3 +1114,150 @@ function harnessLookup(harness: ReturnType<typeof facade>): (q: unknown) => Prom
   expect(typeof wrapper.find).toBe('function')
   return (q) => wrapper.find(q)
 }
+
+describe('sidecar find path', () => {
+  const sidecarPage = (
+    matches: { row: number; column: number; value?: unknown; formula?: string }[],
+    rest: Record<string, unknown> = {},
+  ) => ({
+    matches: matches.map((m) => ({
+      sheetId: 's1',
+      row: m.row,
+      column: m.column,
+      value: m.value ?? 'file needle',
+      valueText: m.value === undefined ? 'file needle' : String(m.value),
+      ...(m.formula === undefined ? {} : { formulaText: m.formula }),
+    })),
+    complete: true,
+    indexingComplete: true,
+    ...rest,
+  })
+
+  beforeEach(() => {
+    mockRead.mockReset()
+    mockEnsure.mockReset()
+    mockEnsure.mockResolvedValue(true)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('merges sidecar file hits with journal edits (shadow, overlay, window)', async () => {
+    const findWorkbookCells = vi.fn().mockResolvedValue(
+      sidecarPage([
+        { row: 5, column: 3 }, // inside the loaded window: the inner model owns it
+        { row: 200, column: 0 }, // shadowed by a journal edit that no longer matches
+        { row: 300, column: 1 }, // shadowed by a journal edit that still matches
+        { row: 400, column: 2 },
+      ]),
+    )
+    vi.stubGlobal('window', { desktopApi: { findWorkbookCells } })
+    const journal = new Map([
+      [
+        's1',
+        new Map([
+          ['200:0', { row: 200, column: 0, hasValue: true, value: 'edited away' }],
+          ['300:1', { row: 300, column: 1, hasValue: true, value: 'edited needle' }],
+          ['900:0', { row: 900, column: 0, hasValue: true, value: 'new needle' }],
+          ['950:0', { row: 950, column: 0, hasValue: false, value: null }],
+        ]),
+      ],
+    ])
+    const harness = facade(state({ journalCells: journal }))
+    const inner = new FakeInnerModel([])
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await vi.waitFor(() => expect(model.getMatches().length).toBe(3))
+    const positions = model
+      .getMatches()
+      .map((m) => (m as LazyCellMatch).range.range)
+      .map((r) => [r.startRow, r.startColumn])
+    expect(positions).toEqual([
+      [300, 1],
+      [400, 2],
+      [900, 0],
+    ])
+    expect((model.getMatches()[1] as LazyCellMatch).matchedText).toBe('file needle')
+    expect(mockRead).not.toHaveBeenCalled()
+    expect(findWorkbookCells.mock.calls[0]![0]).toMatchObject({
+      sheetId: 's1',
+      query: 'needle',
+      matchCase: false,
+      matchEntireCell: false,
+      lookIn: 'values',
+      wildcards: false,
+    })
+    expect(harness.setMessage).not.toHaveBeenCalled()
+    bridge.dispose()
+  })
+
+  it('asks the sidecar for formula text when searching formulas', async () => {
+    const findWorkbookCells = vi
+      .fn()
+      .mockResolvedValue(sidecarPage([{ row: 400, column: 2, value: 7, formula: '=NEEDLE()' }]))
+    vi.stubGlobal('window', { desktopApi: { findWorkbookCells } })
+    const harness = facade(state({}))
+    const inner = new FakeInnerModel([])
+    harness.providers.add({ find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() })
+    const bridge = installLazyFindBridge(harness)
+
+    const models = await harnessLookup(harness)(query({ findBy: 'formula', caseSensitive: true }))
+    const model = models[0]!
+    await vi.waitFor(() => expect(model.getMatches().length).toBe(1))
+    expect(findWorkbookCells.mock.calls[0]![0]).toMatchObject({
+      lookIn: 'formulas',
+      matchCase: true,
+    })
+    const hit = model.getMatches()[0] as LazyCellMatch
+    expect(hit.isFormula).toBe(true)
+    expect(hit.matchedText).toBe('=NEEDLE()')
+    bridge.dispose()
+  })
+
+  it('falls back to range paging when the sidecar rejects the command', async () => {
+    const findWorkbookCells = vi.fn().mockRejectedValue(new Error('unsupported command'))
+    vi.stubGlobal('window', { desktopApi: { findWorkbookCells } })
+    mockRead.mockResolvedValue(mapped([{ row: 500, column: 3, value: 'deep needle' }]))
+    const harness = facade(state({}))
+    const inner = new FakeInnerModel([])
+    harness.providers.add({ find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() })
+    const bridge = installLazyFindBridge(harness)
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await settle(model)
+    expect((model.getMatches()[0] as LazyCellMatch).range.range.startRow).toBe(500)
+    bridge.dispose()
+  })
+
+  it('reports the match cap instead of the scan budget', async () => {
+    const many = Array.from({ length: 100_000 }, (_, i) => ({
+      row: 10 + Math.floor(i / 8),
+      column: i % 8,
+    }))
+    const findWorkbookCells = vi.fn().mockResolvedValue(
+      sidecarPage(many, {
+        complete: false,
+        nextCursor: { sheetId: 's1', row: 99_999, column: 0 },
+      }),
+    )
+    vi.stubGlobal('window', { desktopApi: { findWorkbookCells } })
+    const harness = facade(state({ rowCount: 200_000 }))
+    const inner = new FakeInnerModel([])
+    harness.providers.add({ find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() })
+    const bridge = installLazyFindBridge(harness)
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await vi.waitFor(() => expect(harness.setMessage).toHaveBeenCalled())
+    expect(harness.setMessage.mock.calls[0]![0]).toContain('appFindMatchesCapped')
+    expect(model.getMatches().length).toBe(100_000)
+    expect(findWorkbookCells).toHaveBeenCalledTimes(1)
+    bridge.dispose()
+  })
+})

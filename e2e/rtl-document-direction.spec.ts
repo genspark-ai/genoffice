@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
 /**
- * An RTL UI must mirror the chrome, never the document (#1861).
+ * An RTL UI must mirror the chrome, never the document (genoffice#1861).
  *
  * `dir="rtl"` on <html> is inherited by everything, so an English document
  * opened under the Arabic UI was laid out — and, for the canvas editors, drawn —

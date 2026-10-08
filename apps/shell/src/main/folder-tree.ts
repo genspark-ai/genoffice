@@ -328,9 +328,7 @@ function isSameEntry(a: string, b: string): boolean {
 export function rebasePath(path: string, oldDir: string, newDir: string): string {
   const abs = resolve(path)
   const base = resolve(oldDir)
-  // a plain slice also matches a sibling that merely shares the prefix
-  // (`/w/src2/f` under `/w/src`), so require the separator boundary and leave
-  // anything that did not live under the moved folder where it was
+  // a bare prefix slice would also match a sibling like `/w/src2/f` under `/w/src`
   if (abs !== base && !abs.startsWith(withTrailingSep(base))) return path
   return join(newDir, abs.slice(base.length))
 }

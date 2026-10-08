@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { anchorBoxLift, computeSectionedSlicesF2, measureBlocks } from '../src/renderer/pagination'
+import {
+  anchorBoxLift,
+  computeSectionedSlicesF2,
+  measureBlocks,
+  pinnedFloatPage,
+} from '../src/renderer/pagination'
 import { hoistWindow, pinnedCloneCss } from '../src/renderer/components/PaginationPreview'
 
 const rectOf = (top: number, height: number) =>
@@ -175,5 +180,46 @@ describe('measureBlocks — first-block lead fold', () => {
     expect(blocks[0].top).toBe(0)
     expect(blocks[0].leadFoldPx).toBe(20)
     expect(blocks[0].height).toBe(140)
+  })
+})
+
+describe('measureBlocks — zero-height pageBreakBefore carriers', () => {
+  it('keeps each carrier and its floats on a distinct virtual slot', () => {
+    const pm = document.createElement('div')
+    const add = (tag: string, top: number, height: number, cls: string, html = '') => {
+      const el = document.createElement(tag)
+      el.className = cls
+      el.innerHTML = html
+      el.getBoundingClientRect = () => rectOf(top, height)
+      pm.appendChild(el)
+      return el
+    }
+    add('p', 0, 100, '')
+    const box = '<div class="doc-textbox">a</div>'
+    for (let i = 0; i < 3; i++) {
+      const el = add(
+        'div',
+        100,
+        0,
+        'doc-protected doc-protected-passthrough doc-protected-floating page-break-before',
+        box,
+      )
+      ;(el.firstElementChild as HTMLElement).getBoundingClientRect = () => rectOf(300, 50)
+    }
+    const { blocks, floats } = measureBlocks(pm, 0, 1)
+    expect(blocks.length).toBe(4)
+    const tops = blocks.slice(1).map((b) => b.top)
+    expect(tops[0]).toBe(100)
+    expect(tops[1]).toBeGreaterThan(tops[0])
+    expect(tops[2]).toBeGreaterThan(tops[1])
+    expect(blocks.slice(1).every((b) => b.breakBefore)).toBe(true)
+    expect(floats.map((f) => f.anchorTop)).toEqual(tops)
+    const slices = computeSectionedSlicesF2(
+      blocks,
+      [{ contentHeight: 800, forceBreak: false }],
+      100,
+    )
+    expect(slices.length).toBe(4)
+    expect(floats.map((f) => pinnedFloatPage(slices, f.anchorTop))).toEqual([1, 2, 3])
   })
 })

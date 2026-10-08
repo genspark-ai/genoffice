@@ -6,7 +6,7 @@
  * central directory's declared sizes is advisory at best: 600 MB of payload
  * declaring 300 bytes passes it, and the first genuine inflate then pays for
  * the whole payload in one allocation (measured in #759: 794 MB and 3.12 GB of
- * RSS from sub-megabyte inputs; #1102-era re-measurement agreed).
+ * RSS from sub-megabyte inputs; a later re-measurement agreed).
  *
  * `assertZipInflatesWithinLimits` inflates each part through a stream that is
  * cancelled one byte past what the part claims: an honest part completes at its

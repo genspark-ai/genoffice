@@ -217,7 +217,7 @@ async function uploadSmms(
   )
   const response = await fetchImpl('https://smms.app/api/v2/upload', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.token}` },
+    headers: { Authorization: config.token ?? '' },
     body: form,
   })
   const text = await readCapped(response).catch(() => '')

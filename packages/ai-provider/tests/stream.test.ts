@@ -86,13 +86,11 @@ describe('sseDataEvents', () => {
       },
     })
     const payloads: string[] = []
-    for await (const payload of sseDataEvents(body)) payloads.push(payload)
+    for await (const ev of sseDataEvents(body)) payloads.push(ev.raw)
     return payloads
   }
 
   it('dispatches every event when the server separates them with a single newline', async () => {
-    // No blank line anywhere in this stream. Dispatching only on a blank line
-    // merged all three into one unparseable payload, taking [DONE] with it.
     expect(await collect('data: {"a":1}\ndata: {"b":2}\ndata: [DONE]\n')).toEqual([
       '{"a":1}',
       '{"b":2}',
@@ -110,6 +108,32 @@ describe('sseDataEvents', () => {
     expect(JSON.parse(payload ?? '')).toEqual({ a: 1 })
   })
 
+  it('emits a keep-alive after a split body on its own, on a newline-only stream', async () => {
+    expect(await collect('data: {"a":\ndata: 1}\ndata: ping\ndata: {"b":2}\n')).toEqual([
+      '{"a":\n1}',
+      'ping',
+      '{"b":2}',
+    ])
+  })
+
+  it('carries the parsed body and leaves it undefined for non-JSON payloads', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode('data: {"a":\ndata: 1}\n\ndata: ping\ndata: [DONE]\n'),
+        )
+        controller.close()
+      },
+    })
+    const events = []
+    for await (const ev of sseDataEvents(body)) events.push(ev)
+    expect(events).toEqual([
+      { raw: '{"a":\n1}', json: { a: 1 } },
+      { raw: 'ping', json: undefined },
+      { raw: '[DONE]', json: undefined },
+    ])
+  })
+
   it('joins a split body even when the stream has no blank line at all', async () => {
     expect(await collect('data: {"a":\ndata: 1}')).toEqual(['{"a":\n1}'])
   })
@@ -118,22 +142,17 @@ describe('sseDataEvents', () => {
     expect(await collect('data: {"a":1}\ndata: [DONE]')).toEqual(['{"a":1}', '[DONE]'])
   })
 
-  // A newline-only stream whose server keeps the socket open after [DONE]. The
-  // generator cannot end on its own here, so this drives it the way the
-  // OpenAI-compatible loop does: break the moment the terminator arrives. Holding
-  // [DONE] back as a fragment meant that break never happened and the caller sat on
-  // an open socket until its race timeout, while main returned immediately.
+  // Server keeps the socket open after [DONE]; the consumer must be able to break out.
   it('hands [DONE] to a consumer that breaks on it, on an open stream', async () => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('data: {"a":1}\ndata: [DONE]\n'))
-        // deliberately never closed, and nothing further is ever enqueued
       },
     })
     const seen: string[] = []
-    for await (const payload of sseDataEvents(body)) {
-      seen.push(payload)
-      if (payload === '[DONE]') break
+    for await (const ev of sseDataEvents(body)) {
+      seen.push(ev.raw)
+      if (ev.raw === '[DONE]') break
     }
     expect(seen).toEqual(['{"a":1}', '[DONE]'])
   })

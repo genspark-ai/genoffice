@@ -3,6 +3,8 @@
 /// `<dataValidations>` section from it (mirroring the CF/filter recipe).
 /// Mappings are the exact inverse of the read-side install in App.tsx.
 
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
+
 export class DvEditError extends Error {}
 
 export interface DvCellArea {
@@ -99,7 +101,7 @@ function appendDvRules(
       remaining.length === areas.length
         ? entry
         : // function replacer: a surviving area's text is document-controlled and a
-          // string replacement would expand $& / $1 / $` in it (xlsx-gateway.ts:2152)
+          // a string replacement would expand $& / $1 in the surviving area
           entry.replace(/\bsqref="[^"]*"/, () => `sqref="${remaining.join(' ')}"`),
     )
   }
@@ -111,9 +113,14 @@ function appendDvRules(
   return insertBeforeTail(xml, body)
 }
 
-/** `A1:A1` and `$A$1` name the same cell as `A1`. */
+/** `A1:A1` and `$A$1` name the same cell as `A1`; `A:A` / `1:1` expand to the full grid. */
 function normalizeRef(ref: string): string {
   const [a, b] = ref.replace(/\$/g, '').split(':')
+  if (b !== undefined) {
+    if (/^[A-Z]+$/.test(a!) && /^[A-Z]+$/.test(b)) return `${a}1:${b}${MAX_GRID_ROWS}`
+    if (/^\d+$/.test(a!) && /^\d+$/.test(b))
+      return `A${a}:${columnToLetters(MAX_GRID_COLUMNS - 1)}${b}`
+  }
   return b === undefined || b === a ? a! : `${a}:${b}`
 }
 
@@ -249,10 +256,8 @@ function formulaText(type: string | undefined, raw: unknown): string | undefined
 /// Impossible calendar dates or clock times return undefined so the caller
 /// keeps the original text instead of writing a silently wrong serial; a
 /// pre-1900 year throws DvEditError, because it has no serial to write.
-/// Serials 1–59 sit one day before that linear rule, because the 1900 system
-/// counts a 29-Feb-1900 that never existed; 1900-03-01 (61) onward is already
-/// correct. The read side (formatSerial in @genoffice/file-parse) shifts back
-/// the same way in reverse, so both ends have to agree.
+/// Serials 1-59 sit one day before the linear rule (Excel's phantom 1900-02-29);
+/// formatSerial in @genoffice/file-parse reverses the same shift.
 function dateToSerial(text: string): number | undefined {
   const match =
     /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T ](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(
@@ -285,9 +290,6 @@ function dateToSerial(text: string): number | undefined {
     seconds = hourNum * 3600 + minuteNum * 60 + secondNum
   }
   const days = (Date.UTC(yearNum, monthNum - 1, dayNum) - Date.UTC(1899, 11, 30)) / 86_400_000
-  // The linear count already includes the phantom day, so 1900-01-01..1900-02-28
-  // each need one day back to land on the serial Excel stores (and that
-  // formatSerial reads back out).
   const serial = days < 61 ? days - 1 : days
   return seconds === 0 ? serial : serial + seconds / 86_400
 }
@@ -318,6 +320,16 @@ function timeToFraction(text: string): number | undefined {
 }
 
 function toRef(range: DvCellArea): string {
+  if (
+    range.startRow < 0 ||
+    range.startColumn < 0 ||
+    range.endRow < range.startRow ||
+    range.endColumn < range.startColumn ||
+    range.endRow >= MAX_GRID_ROWS ||
+    range.endColumn >= MAX_GRID_COLUMNS
+  ) {
+    throw new DvEditError('A data-validation range lies outside the worksheet grid.')
+  }
   const start = `${columnToLetters(range.startColumn)}${range.startRow + 1}`
   return range.startRow === range.endRow && range.startColumn === range.endColumn
     ? start

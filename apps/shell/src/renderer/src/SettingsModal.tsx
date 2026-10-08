@@ -69,7 +69,7 @@ const THEME_OPTIONS = [
   { value: 'dark', labelKey: 'themeDark' },
 ] as const satisfies readonly { value: UiTheme; labelKey: StringKey }[]
 
-// Document page theme (#1811): the canvas/paper preference the editors follow;
+// Document page theme (genoffice#1811): the canvas/paper preference the editors follow;
 // 'follow' keeps the pre-existing behavior of riding the UI theme
 const DOC_THEME_OPTIONS = [
   { value: 'follow', labelKey: 'docThemeFollowApp' },
@@ -310,26 +310,43 @@ function AiModelPane({ t }: { t: TFunc }) {
     )
   }, [])
 
+  // Re-read on every outside write (composer model chip) while the form has no
+  // unsaved edits; a dirty form keeps the user's draft and saves it as is.
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  /** bumped on every outside reload so a connection test that was still running reports nothing */
+  const testSeqRef = useRef(0)
   useEffect(() => {
     let alive = true
-    void window.aiOffice.getAiSettings?.().then((s) => {
-      if (!alive || !s) return
-      // The switch is disabled with genspark, so never present it stranded
-      // off. Display-only: s.provider may be the activeProvider fallback for
-      // a half-configured BYOK selection, so writing anything back here would
-      // clobber the stored choice — the main process heals a genuine legacy
-      // genspark+off file itself, judged on the raw stored provider.
-      if (s.provider === 'genspark' && s.gskToolsEnabled === false) {
-        s = { ...s, gskToolsEnabled: true }
-      }
-      setSettings(s)
-      const codex = s.providers.codex
-      if (codex) {
-        void refreshCodexModels(codex.cliPath ?? '', codex.model).catch(() => undefined)
-      }
+    const load = () => {
+      void window.aiOffice.getAiSettings?.().then((s) => {
+        if (!alive || !s) return
+        testSeqRef.current += 1
+        setTesting(false)
+        setTestResult(null)
+        setSaved(false)
+        // The switch is disabled with genspark, so never present it stranded
+        // off. Display-only: s.provider may be the activeProvider fallback for
+        // a half-configured BYOK selection, so writing anything back here would
+        // clobber the stored choice — the main process heals a genuine legacy
+        // genspark+off file itself, judged on the raw stored provider.
+        if (s.provider === 'genspark' && s.gskToolsEnabled === false) {
+          s = { ...s, gskToolsEnabled: true }
+        }
+        setSettings(s)
+        const codex = s.providers.codex
+        if (codex) {
+          void refreshCodexModels(codex.cliPath ?? '', codex.model).catch(() => undefined)
+        }
+      })
+    }
+    load()
+    const off = window.aiOffice.onAiSettingsChanged?.(() => {
+      if (!dirtyRef.current) load()
     })
     return () => {
       alive = false
+      off?.()
     }
   }, [refreshCodexModels])
 
@@ -445,20 +462,25 @@ function AiModelPane({ t }: { t: TFunc }) {
       })
   }
   const test = () => {
+    const seq = ++testSeqRef.current
     setTesting(true)
     setTestResult(null)
     window.aiOffice
       .testAiSettings?.(settings)
       .then((r) => {
+        if (seq !== testSeqRef.current) return
         setTestResult(r ?? { ok: false })
         if (r?.ok && isCodex) {
           void refreshCodexModels(config.cliPath ?? '', config.model).catch(() => undefined)
         }
       })
-      .catch((error) =>
-        setTestResult({ ok: false, error: error instanceof Error ? error.message : String(error) }),
-      )
-      .finally(() => setTesting(false))
+      .catch((error) => {
+        if (seq !== testSeqRef.current) return
+        setTestResult({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      })
+      .finally(() => {
+        if (seq === testSeqRef.current) setTesting(false)
+      })
   }
 
   return (
@@ -662,7 +684,7 @@ type TestResult = { ok: boolean; error?: string }
 
 /** Jev routes first (OpenRouter is the default), then the other decision-model servers */
 const DECISION_ENDPOINTS: { value: DecisionEndpoint; label: string }[] = [
-  { value: 'openrouter', label: 'Jev (TypeSafe)' },
+  { value: 'openrouter', label: 'Jev (OpenRouter)' },
   { value: 'direct', label: 'Jev (TypeSafe API)' },
   { value: 'perplexity', label: 'Perplexity' },
   { value: 'cloudflare', label: 'Cloudflare' },
@@ -708,16 +730,32 @@ function AiMediaPane({
     el.scrollIntoView({ block: 'start' })
   }
 
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  const testSeqRef = useRef(0)
   useEffect(() => {
     let alive = true
-    void window.aiOffice.getAiSettings?.().then((s) => {
-      if (alive && s) setSettings(s)
-    })
+    const load = () => {
+      void window.aiOffice.getAiSettings?.().then((s) => {
+        if (!alive || !s) return
+        testSeqRef.current += 1
+        setTesting(false)
+        setTestResults(null)
+        setSaved(false)
+        setSettings(s)
+      })
+    }
+    load()
     void window.aiOffice.getFileSearchSettings?.().then((v) => {
       if (alive && v) setFileSearchState(v)
     })
+    // this pane saves the whole file too: follow chip switches while clean
+    const off = window.aiOffice.onAiSettingsChanged?.(() => {
+      if (!dirtyRef.current) load()
+    })
     return () => {
       alive = false
+      off?.()
     }
   }, [])
 
@@ -777,6 +815,7 @@ function AiMediaPane({
   }
   // every block reports its own verdict; blocks sharing a vendor share that vendor's one check
   const test = async () => {
+    const seq = ++testSeqRef.current
     setTesting(true)
     setTestResults(null)
     const results: Partial<Record<TestedBlock, TestResult>> = {}
@@ -826,6 +865,7 @@ function AiMediaPane({
         }
       }),
     )
+    if (seq !== testSeqRef.current) return
     setTestResults(results)
     setTesting(false)
   }
@@ -1320,6 +1360,9 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const { lang, setLang, t } = useI18n()
   const [section, setSection] = useState<SectionId>(target?.section ?? 'account')
+  useEffect(() => {
+    if (target) setSection(target.section)
+  }, [target])
   const [theme, setTheme] = useState<UiTheme>('system')
   const [docTheme, setDocTheme] = useState<DocTheme>('follow')
   const [saveDir, setSaveDir] = useState('')

@@ -161,3 +161,36 @@ describe('containsNode', () => {
     )
   })
 })
+
+describe('touchedNeedsRecompute with a changed(before, after) hook', () => {
+  it('a text edit that keeps the compared attrs does not rebuild; an attr change does', () => {
+    const editor = createEditor([para('one'), para('two', BORDER), para('three')])
+    const sameKey = (
+      a: { attrs: Record<string, unknown> },
+      b: { attrs: Record<string, unknown> },
+    ) => a.attrs.borders !== b.attrs.borders
+    const trText = editor.state.tr.insertText('x', inside(editor, 1, 2))
+    expect(
+      touchedNeedsRecompute(
+        trText,
+        localEditBlocks(trText)!,
+        DecorationSet.empty,
+        () => true,
+        sameKey,
+      ),
+    ).toBe(false)
+    const trUnborder = editor.state.tr.setNodeMarkup(inside(editor, 1, 0), undefined, {
+      ...editor.state.doc.child(1).attrs,
+      borders: null,
+    })
+    expect(
+      touchedNeedsRecompute(
+        trUnborder,
+        localEditBlocks(trUnborder)!,
+        DecorationSet.empty,
+        () => false,
+        sameKey,
+      ),
+    ).toBe(true)
+  })
+})

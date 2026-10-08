@@ -221,6 +221,13 @@ function validateRegion(
   const accepted = new Map<ItemCand, ListInfo>()
   const em = median(items.map((i) => i.fontSize)) || 12
   const tolPt = LEVEL_X_TOL_EMS * em
+  // levels are validated one at a time, so the run that actually ends the
+  // region is the one whose last item sits lowest, not the deepest one
+  let ending: { y: number; run: NonNullable<ListSeq['lastOrdered']> } | undefined
+  const endRun = (item: ItemCand, run: NonNullable<ListSeq['lastOrdered']>): void => {
+    const y = item.lines[item.lines.length - 1]!.box.y0
+    if (ending === undefined || y < ending.y) ending = { y, run }
+  }
 
   // level clustering over marker x positions. RTL markers anchor on the right
   // edge, so a SMALLER x is a DEEPER level — the sort inverts.
@@ -326,8 +333,8 @@ function validateRegion(
             marker: item.marker.text,
           })
         }
-        const last = run[run.length - 1]!.marker.value!
-        seq.lastOrdered = { value: last, style, level, seqId, start }
+        const tail = run[run.length - 1]!
+        endRun(tail, { value: tail.marker.value!, style, level, seqId, start })
       } else if (run.length === 1) {
         // A single item is a heading (P5) unless it plainly continues the run
         // the previous page or column ended on: same style, same level, and
@@ -349,6 +356,7 @@ function validateRegion(
             style: item.marker.style,
             marker: item.marker.text,
           })
+          endRun(item, { ...prev, value: item.marker.value! })
         }
       }
       run = []
@@ -368,6 +376,7 @@ function validateRegion(
     }
     flushRun()
   }
+  if (ending !== undefined) seq.lastOrdered = ending.run
   return accepted
 }
 

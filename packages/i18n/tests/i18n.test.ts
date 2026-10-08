@@ -238,6 +238,19 @@ describe('createI18n', () => {
     expect(t('cs', 'plain')).toBe('Soubory')
     expect(t('zh-TW', 'plain')).toBe('檔案')
   })
+
+  it('falls back en -> zh -> key for a missing entry', () => {
+    const partial = createI18n({
+      zh: { a: 'zh-a', b: 'zh-b', c: 'zh-c' },
+      en: { a: 'en-a', b: 'en-b' },
+      fr: { a: 'fr-a' },
+    } as unknown as Parameters<typeof createI18n>[0])
+    expect(partial('fr', 'a')).toBe('fr-a')
+    expect(partial('fr', 'b')).toBe('en-b')
+    expect(partial('fr', 'c')).toBe('zh-c')
+    expect(partial('fr', 'd' as 'a')).toBe('d')
+    expect(partial('vi', 'a')).toBe('en-a')
+  })
 })
 
 describe('isRtlLang', () => {

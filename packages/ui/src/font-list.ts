@@ -133,7 +133,7 @@ function isPresent(family: string, known: ReadonlySet<string>): boolean {
  * either direction — a localized zh candidate on a machine that reports `SimSun`,
  * or the English-named ja candidates on a Japanese Windows that reports the
  * localized name — so a candidate is never dropped for a spelling difference.
- * When the enumeration is unavailable, denied, or still loading (`known.size === 0`)
+ * When the enumeration is unavailable, denied, or still loading (no system families)
  * every candidate is kept — offering a dead name beats hiding a real one.
  */
 export function partitionFontFamilies(
@@ -141,9 +141,11 @@ export function partitionFontFamilies(
   systemFamilies: readonly string[],
   knownAvailable: readonly string[] = [],
 ): { builtin: readonly string[]; system: readonly string[] } {
+  // only the enumeration proves anything: catalog installs alone must not
+  // turn the gate on and hide every candidate they do not cover
+  if (systemFamilies.length === 0) return { builtin: [...candidates], system: [] }
   const known = new Set(systemFamilies)
   for (const f of knownAvailable) known.add(f)
-  if (known.size === 0) return { builtin: [...candidates], system: [] }
   return {
     builtin: candidates.filter((f) => isPresent(f, known)),
     system: systemFamiliesBesidesCandidates(candidates, systemFamilies),
