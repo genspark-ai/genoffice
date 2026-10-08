@@ -315,7 +315,7 @@ describe('Paragraph dialog Special indents', () => {
     expect(pickSpecial({ special: 'hanging', by: 300 }, 'none')).toEqual({ special: 'none', by: 0 })
   })
 
-  it('character-unit By field (#1892): round-trips w:firstLineChars and seeds 2 字符', () => {
+  it('character-unit By field (#1892): round-trips w:firstLineChars and seeds 2 chars', () => {
     // a parsed character indent loads the By field in character units
     expect(specialFromFirstLine(420, 200)).toEqual({
       special: 'firstLine',

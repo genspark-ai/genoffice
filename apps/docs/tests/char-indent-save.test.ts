@@ -158,3 +158,22 @@ describe('character-unit indents: saving an indent edit', () => {
     })
   })
 })
+
+describe('character-unit indents: a document nobody edited', () => {
+  it('leaves a style-inherited paragraph byte-identical', async () => {
+    // Normal carries w:firstLineChars="200"; a pPr-less paragraph inherits it.
+    // The parsed block holds the inherited value, but the document carries no
+    // direct indent — so the save plan has to compare direct values on both
+    // sides, or the block looks edited and comes back with a frozen indent.
+    const { editor, parsed } = await openEditor()
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount, 'nothing was edited, so nothing may be regenerated').toBe(0)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const reparsed = await parseDocx(saved)
+    const xml = reparsed.internal.documentXml
+    // the paragraph is pPr-less in the source and must come back that way
+    expect(xml).toContain('<w:p><w:r><w:t>plain body paragraph</w:t></w:r></w:p>')
+    // and the style's own indent must not have been frozen onto it
+    expect(xml).not.toContain('<w:ind w:firstLine="480"/>')
+  })
+})
