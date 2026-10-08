@@ -167,6 +167,9 @@ const homeApi: HomeApi = {
   async removeRecent(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.removeRecent, paths)
   },
+  async unstarPaths(paths) {
+    await ipcRenderer.invoke(HOME_CHANNELS.unstarPaths, paths)
+  },
   async revealPath(path) {
     if (typeof path !== 'string' || !path) throw new Error('Invalid path.')
     await ipcRenderer.invoke(HOME_CHANNELS.revealPath, path)

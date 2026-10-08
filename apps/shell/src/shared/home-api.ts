@@ -216,6 +216,8 @@ export interface HomeApi {
   newPdf(opts?: NewFileOpts): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
+  /** unstar files in bulk (Starred view selection bar); the recents list and the files are untouched */
+  unstarPaths(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
   revealPath(path: string): Promise<void>
   /** rename the file on disk (same directory) and update the recent list */
@@ -506,6 +508,7 @@ export const HOME_CHANNELS = {
   starred: 'home:starred',
   statPaths: 'home:stat-paths',
   toggleStar: 'home:toggle-star',
+  unstarPaths: 'home:unstar-paths',
   openPath: 'home:open-path',
   browse: 'home:browse',
   newDoc: 'home:new-doc',

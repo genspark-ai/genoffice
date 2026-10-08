@@ -1885,6 +1885,13 @@ export function Home() {
     void window.aiOffice.removeRecent(paths).then(refresh)
   }
 
+  /** the Starred view's bulk action: drop the stars, keep the recents entries */
+  const unstarSelected = (paths: string[]) => {
+    setRowMenu(null)
+    setSelected(new Set())
+    void window.aiOffice.unstarPaths(paths).then(refresh)
+  }
+
   const deleteFiles = (paths: string[]) => {
     setRowMenu(null)
     setConfirmDelete(paths)
@@ -2626,11 +2633,18 @@ export function Home() {
                 {canDelete && (context === 'global' || editable) && (
                   <>
                     <div className="row-menu-divider" />
-                    {context === 'global' && (
-                      <button role="menuitem" onClick={() => removeRecent([entry.path])}>
-                        {t('removeFromList')}
-                      </button>
-                    )}
+                    {context === 'global' &&
+                      // same root cause as the selection bar: in the Starred
+                      // view "remove from list" must unstar, not drop recents
+                      (view === 'starred' ? (
+                        <button role="menuitem" onClick={() => unstarSelected([entry.path])}>
+                          {t('unstar')}
+                        </button>
+                      ) : (
+                        <button role="menuitem" onClick={() => removeRecent([entry.path])}>
+                          {t('removeFromList')}
+                        </button>
+                      ))}
                     {editable && (
                       <button
                         role="menuitem"
@@ -3125,9 +3139,21 @@ export function Home() {
                     {t('moveToFolder')}
                   </button>
                 )}
-                <button className="selection-action" onClick={() => removeRecent(selectedPaths)}>
-                  {t('removeFromList')}
-                </button>
+                {view === 'starred' ? (
+                  // every Starred-view row is a favorite, so the selection
+                  // action unstars; removeRecent there kept the stars and the
+                  // rows came straight back on refresh
+                  <button
+                    className="selection-action"
+                    onClick={() => unstarSelected(selectedPaths)}
+                  >
+                    {t('unstar')}
+                  </button>
+                ) : (
+                  <button className="selection-action" onClick={() => removeRecent(selectedPaths)}>
+                    {t('removeFromList')}
+                  </button>
+                )}
                 <button
                   className="selection-action danger"
                   onClick={() => deleteFiles(selectedPaths)}

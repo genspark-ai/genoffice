@@ -3921,6 +3921,14 @@ function registerHomeIpc(): void {
     removeStarredFiles(list.filter((p) => !existsSync(p)))
   })
 
+  // Bulk unstar from the Starred view: every row there is a favorite, so the
+  // selection action is "unstar", not "remove from recents" — removeRecent
+  // keeps existing files' stars on purpose, which made the Starred view's
+  // bulk removal a no-op for anything still on disk
+  ipcMain.handle(HOME_CHANNELS.unstarPaths, (_event, paths: unknown) => {
+    removeStarredFiles(stringPaths(paths))
+  })
+
   ipcMain.handle(HOME_CHANNELS.revealPath, (_event, path: unknown) => {
     if (typeof path === 'string' && existsSync(path)) shell.showItemInFolder(path)
   })
