@@ -196,7 +196,7 @@ describe('installCliLink', () => {
       join(home, '.local', 'bin'),
     ])
     expect(defaultCandidateDirs('darwin', { HOME: home, XDG_BIN_HOME: join(home, 'bin') })).toEqual(
-      ['/usr/local/bin', '/opt/homebrew/bin', join(home, 'bin'), join(home, '.local', 'bin')],
+      ['/usr/local/bin', join(home, 'bin'), join(home, '.local', 'bin')],
     )
     expect(defaultCandidateDirs('linux', { HOME: home, XDG_BIN_HOME: 'relative/bin' })).toEqual([
       '/usr/local/bin',
@@ -297,5 +297,52 @@ describe('installCliLink', () => {
     })
     expect(missing.status).toBe('missing')
     expect(missing.manual).toContain('SetEnvironmentVariable')
+  })
+})
+
+describe('the Homebrew prefix is never written uninvited (#1914)', () => {
+  it('is not a candidate, and neither is it created', () => {
+    const home = tempDir()
+    const xdg = join(home, 'bin')
+    for (const platform of ['darwin', 'linux'] as const) {
+      const dirs = defaultCandidateDirs(platform, { HOME: home, XDG_BIN_HOME: xdg })
+      expect(dirs, `${platform} must not offer a Homebrew prefix`).not.toContain(
+        '/opt/homebrew/bin',
+      )
+      expect(
+        dirs.some((d) => /homebrew/i.test(d)),
+        `${platform}: ${dirs.join()}`,
+      ).toBe(false)
+    }
+    // and the user's own directory is still there to take it
+    expect(defaultCandidateDirs('darwin', { HOME: home, XDG_BIN_HOME: xdg })).toContain(xdg)
+  })
+
+  it('leaves a Homebrew-prefix directory alone even when it is the one writable', () => {
+    // the shape that produced the report: every system dir is unwritable, and
+    // the first directory the old walk found writable was the brew prefix
+    const home = tempDir()
+    const locked = join(home, 'locked')
+    mkdirSync(locked)
+    chmodSync(locked, 0o555)
+    const launcher = join(home, 'app', 'genoffice')
+    mkdirSync(join(home, 'app'))
+    writeFileSync(launcher, '#!/bin/sh\n')
+    const userBin = join(home, '.local', 'bin')
+    try {
+      const r = installCliLink({
+        launcher,
+        platform: 'linux',
+        env: { HOME: home },
+        // stand in for the brew prefix: writable, and not one of ours
+        candidateDirs: [locked, userBin],
+      })
+      expect(r.status).toBe('linked')
+      expect(r.location).toBe(join(userBin, 'genoffice'))
+      // nothing landed anywhere but the directory we were told to consider
+      expect(existsSync(join(userBin, 'genoffice'))).toBe(true)
+    } finally {
+      chmodSync(locked, 0o755)
+    }
   })
 })

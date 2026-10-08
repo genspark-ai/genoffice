@@ -48,16 +48,27 @@ export interface InstallOutcome {
  * `/usr/local/bin` is on every login shell's PATH and on the PATH GUI apps
  * inherit, so it is the target even when it does not exist yet: a missing
  * directory is reported as unwritable (creating it needs root), not skipped.
- * `/opt/homebrew/bin` is only a fallback because shells see it solely through
- * `brew shellenv`. When neither system dir is writable the user's own bin dir
- * takes the link, so a non-admin install still gets a `genoffice` command.
+ * When it is not writable the user's own bin dir takes the link, so a
+ * non-admin install still gets a `genoffice` command.
+ *
+ * `/opt/homebrew/bin` is NOT a candidate (#1914). It is the Homebrew prefix on
+ * Apple Silicon and the classic prefix on Intel, a directory Homebrew manages
+ * and tracks itself. A third-party app writing there uninvited leaves a link
+ * brew does not know about — dangling after the app is removed, and recreated
+ * on every launch. Homebrew declined three cask PRs over exactly this.
+ *
+ * A user who wants it there anyway still can: the shell command is
+ * `ln -sf "$(dirname "$(which genoffice)")/genoffice" /opt/homebrew/bin/genoffice`,
+ * and `genoffice install-cli` re-runs the same walk. What is removed is the
+ * uninvited write, not the possibility.
  */
 export function defaultCandidateDirs(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
-  if (platform === 'darwin') return ['/usr/local/bin', '/opt/homebrew/bin', ...userBinDirs(env)]
-  if (platform === 'linux') return ['/usr/local/bin', ...userBinDirs(env)]
+  if (platform === 'darwin' || platform === 'linux') {
+    return ['/usr/local/bin', ...userBinDirs(env)]
+  }
   return []
 }
 
