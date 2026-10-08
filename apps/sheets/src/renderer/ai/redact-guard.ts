@@ -109,7 +109,10 @@ function cellOf(address: unknown): RangeBounds | null {
   try {
     const { row, column } = parseAddress(address)
     return { startRow: row, endRow: row, startColumn: column, endColumn: column }
-  } catch {
+  } catch (error) {
+    // a malformed model-supplied address is a normal refusal, but a silent
+    // swallow would also hide a genuine parse bug
+    console.debug('[redact-guard] unparsable address', address, error)
     return null
   }
 }
@@ -118,7 +121,8 @@ function rangeOf(range: unknown): RangeBounds | null {
   if (typeof range !== 'string') return null
   try {
     return parseRange(range)
-  } catch {
+  } catch (error) {
+    console.debug('[redact-guard] unparsable range', range, error)
     return null
   }
 }
@@ -170,7 +174,8 @@ function colStart(column: unknown): number {
   if (typeof column !== 'string' || column.length === 0) return 0
   try {
     return columnIndex(column)
-  } catch {
+  } catch (error) {
+    console.debug('[redact-guard] unparsable column', column, error)
     return 0
   }
 }
