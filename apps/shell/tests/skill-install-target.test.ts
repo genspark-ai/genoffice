@@ -17,7 +17,12 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
-  app: { isPackaged: false, getPath: () => tmpdir() },
+  // the skills handlers read the app's userData for their root; everything else
+  // (downloads) is not exercised here
+  app: {
+    isPackaged: false,
+    getPath: (name: string) => (name === 'userData' ? userData : tmpdir()),
+  },
   clipboard: { writeText: () => {} },
   dialog: {
     showOpenDialog: async () => h.dialogResult,
@@ -62,6 +67,9 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 }
 
 let dir = ''
+/** stands in for app.getPath('userData') — where the skills root now lives, so
+ *  that no imported SKILL.md lands among the user's documents */
+let userData = ''
 /** a fake home so the agent-directory half of the scan cannot read the real one */
 let fakeHome = ''
 let realHome: string | undefined
@@ -71,6 +79,7 @@ beforeEach(() => {
   h.installed.length = 0
   h.dialogResult = { canceled: true, filePaths: [] }
   dir = mkdtempSync(join(tmpdir(), 'genoffice-integrations-'))
+  userData = mkdtempSync(join(tmpdir(), 'genoffice-userdata-'))
   fakeHome = mkdtempSync(join(tmpdir(), 'genoffice-fakehome-'))
   realHome = process.env.HOME
   process.env.HOME = fakeHome
@@ -79,7 +88,6 @@ beforeEach(() => {
   registerIntegrationsIpc({
     settingsPath: () => join(dir, 'app-settings.json'),
     window: () => null,
-    defaultSaveDir: () => dir,
     cliDir: dir,
     skillPath: join(dir, 'SKILL.md'),
     cliPackageJson: join(dir, 'package.json'),
@@ -88,6 +96,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
+  rmSync(userData, { recursive: true, force: true })
   rmSync(fakeHome, { recursive: true, force: true })
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
@@ -131,18 +140,18 @@ describe('integrations:list-skills', () => {
     )
     return join(at, 'SKILL.md')
   }
-  const ours = (name: string) => plant(join(dir, 'skills'), name)
+  const ours = (name: string) => plant(join(userData, 'skills'), name)
   const agents = (name: string) => plant(join(fakeHome, '.agents', 'skills'), name)
 
   it('offers a skill under the save directory, and copies nothing', () => {
     const path = ours('pdf-to-html')
-    const before = readdirSync(join(dir, 'skills')).sort()
+    const before = readdirSync(join(userData, 'skills')).sort()
     const found = invoke(INTEGRATIONS_CHANNELS.listSkills) as { path: string }[]
     const skill = found.find((s) => s.path === path)
     expect(skill).toMatchObject({ name: 'pdf-to-html', source: 'genoffice' })
     expect(skill.relevance.relevant).toBe(true)
     // listing is a menu: the folder is exactly as it was afterwards
-    expect(readdirSync(join(dir, 'skills')).sort()).toEqual(before)
+    expect(readdirSync(join(userData, 'skills')).sort()).toEqual(before)
   })
 
   it('offers an agent skill as a candidate, without importing it', () => {
@@ -157,7 +166,7 @@ describe('integrations:list-skills', () => {
       agent: 'agents',
     })
     // it did not move itself into our folder just by being seen
-    expect(existsSync(join(dir, 'skills', 'pptx-builder'))).toBe(false)
+    expect(existsSync(join(userData, 'skills', 'pptx-builder'))).toBe(false)
   })
 
   it('reads the body of a skill it just offered', () => {
@@ -167,19 +176,19 @@ describe('integrations:list-skills', () => {
 
   it('refuses a path that is not one of those skills', () => {
     ours('pdf-to-html')
-    const outside = join(dir, 'secrets.txt')
+    const outside = join(userData, 'secrets.txt')
     writeFileSync(outside, 'private')
     expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, outside)).toThrow('unknown skill')
     // the same file, reached by climbing out of the skills root
     expect(() =>
-      invoke(INTEGRATIONS_CHANNELS.skillBody, join(dir, 'skills', '..', 'secrets.txt')),
+      invoke(INTEGRATIONS_CHANNELS.skillBody, join(userData, 'skills', '..', 'secrets.txt')),
     ).toThrow('unknown skill')
     expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, '/etc/passwd')).toThrow('unknown skill')
     expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, null)).toThrow('unknown skill')
   })
 
   it('refuses another file that happens to sit in a skills folder', () => {
-    const at = join(dir, 'skills', 'pdf-to-html')
+    const at = join(userData, 'skills', 'pdf-to-html')
     mkdirSync(at, { recursive: true })
     const note = join(at, 'reference.md')
     writeFileSync(note, 'a helper note')
@@ -199,7 +208,7 @@ describe('integrations:import-skill', () => {
 
     const imported = invoke(INTEGRATIONS_CHANNELS.importSkill, join(src, 'SKILL.md'))
     expect(imported).toMatchObject({ name: 'pptx-builder', source: 'genoffice' })
-    expect(existsSync(join(dir, 'skills', 'pptx-builder', 'grid.md'))).toBe(true)
+    expect(existsSync(join(userData, 'skills', 'pptx-builder', 'grid.md'))).toBe(true)
 
     // and on the next listing it is ours, not a candidate
     const found = invoke(INTEGRATIONS_CHANNELS.listSkills) as {
@@ -215,7 +224,7 @@ describe('integrations:import-skill', () => {
   })
 
   it('refuses to replace a skill already in our folder', () => {
-    const at = join(dir, 'skills', 'shared')
+    const at = join(userData, 'skills', 'shared')
     mkdirSync(at, { recursive: true })
     writeFileSync(join(at, 'SKILL.md'), '---\nname: shared\ndescription: Mine\n---\n\nmine\n')
     const src = join(fakeHome, '.agents', 'skills', 'shared')

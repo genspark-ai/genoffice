@@ -10,8 +10,8 @@ import type { FoundSkill } from '../shared/found-skill'
  *
  * Two places, and the difference matters:
  *
- * - `<default save dir>/skills/<name>/SKILL.md` is *ours*. The user put it
- *   there, so a skill found there is used without asking.
+ * - `<userData>/skills/<name>/SKILL.md` is *ours*. The user put it there, so
+ *   a skill found there is used without asking.
  * - `~/.agents/skills`, `~/.claude/skills` and friends are the coding agents'
  *   own directories. A skill found there is a *candidate*: it is shown with its
  *   description and whether it looks relevant to the formats this app opens,
@@ -24,9 +24,16 @@ import type { FoundSkill } from '../shared/found-skill'
 /** one SKILL.md we found, with everything the palette needs to show it */
 export type { FoundSkill }
 
-/** the folder under the save directory that holds skills we may use */
-export function skillsRoot(defaultSaveDir: string): string {
-  return join(defaultSaveDir, 'skills')
+/**
+ * The folder holding skills we may use.
+ *
+ * Under the app's own userData, not under the save directory: Home lists every
+ * `.md` file under the save directory as a document, so a skills folder there
+ * put every imported `SKILL.md` — and every reference file that came with it —
+ * into the user's file list, next to their actual work.
+ */
+export function skillsRoot(userDataDir: string): string {
+  return join(userDataDir, 'skills')
 }
 
 /**
@@ -111,11 +118,11 @@ function readDir(root: string, source: FoundSkill['source'], agent?: string): Fo
  * name wins, which is what makes the `~/.agents` ordering above mean something.
  */
 export function findSkills(
-  defaultSaveDir: string,
+  userDataDir: string,
   env?: NodeJS.ProcessEnv,
   home?: string,
 ): FoundSkill[] {
-  const ours = readDir(skillsRoot(defaultSaveDir), 'genoffice')
+  const ours = readDir(skillsRoot(userDataDir), 'genoffice')
   const seen = new Set(ours.map((s) => s.name))
   const fromAgents: FoundSkill[] = []
   for (const { agent, dir } of agentSkillDirs(env, home)) {
@@ -129,8 +136,8 @@ export function findSkills(
 }
 
 /** the skills a user may actually run: the ones they chose to put in our folder */
-export function usableSkills(defaultSaveDir: string): FoundSkill[] {
-  return readDir(skillsRoot(defaultSaveDir), 'genoffice')
+export function usableSkills(userDataDir: string): FoundSkill[] {
+  return readDir(skillsRoot(userDataDir), 'genoffice')
 }
 
 /** the body of a skill, for the turn that runs it */
@@ -158,9 +165,9 @@ export function readSkillBody(path: string): string {
  * our folder is the one the user put there, and silently replacing it with
  * `.claude`'s copy is the shadowing rule above, just with the winner flipped.
  */
-export function importSkill(skillPath: string, defaultSaveDir: string): FoundSkill {
+export function importSkill(skillPath: string, userDataDir: string): FoundSkill {
   const name = basename(dirname(skillPath))
-  const dest = join(skillsRoot(defaultSaveDir), name)
+  const dest = join(skillsRoot(userDataDir), name)
   if (existsSync(dest)) throw new Error('a skill of that name is already there')
   cpSync(dirname(skillPath), dest, { recursive: true })
   // re-read at the destination rather than trusting the copy: this is the record
@@ -183,11 +190,11 @@ export function importSkill(skillPath: string, defaultSaveDir: string): FoundSki
  * rather than keeping a second list that can drift from this one.
  */
 export function knownSkillRoots(
-  defaultSaveDir: string,
+  userDataDir: string,
   env?: NodeJS.ProcessEnv,
   home?: string,
 ): string[] {
-  return [skillsRoot(defaultSaveDir), ...agentSkillDirs(env, home).map((a) => a.dir)]
+  return [skillsRoot(userDataDir), ...agentSkillDirs(env, home).map((a) => a.dir)]
 }
 
 /**

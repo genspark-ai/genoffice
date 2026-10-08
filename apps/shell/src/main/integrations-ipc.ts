@@ -37,8 +37,6 @@ export interface IntegrationsDeps {
   settingsPath: () => string
   /** the shell window dialogs attach to */
   window: () => BrowserWindow | null
-  /** where new documents go; skills the user chose live in `<that>/skills/` */
-  defaultSaveDir: () => string
   /** directory holding genoffice / genoffice.cmd and, packaged, skills/genoffice/SKILL.md */
   cliDir: string
   /** skills/genoffice/SKILL.md (repo file in dev, Resources/cli/skills/... packaged) */
@@ -148,12 +146,12 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
   // reading a third-party skill: list what this machine has, then read one body.
   // Listing copies nothing and runs nothing — it is a menu, not an import.
   ipcMain.handle(INTEGRATIONS_CHANNELS.listSkills, (): FoundSkill[] =>
-    findSkills(deps.defaultSaveDir()),
+    findSkills(app.getPath('userData')),
   )
 
   ipcMain.handle(INTEGRATIONS_CHANNELS.skillBody, (_e, path: string): string => {
     // the path came from the renderer, so it is only a file we just listed
-    if (!isKnownSkillPath(path, knownSkillRoots(deps.defaultSaveDir()))) {
+    if (!isKnownSkillPath(path, knownSkillRoots(app.getPath('userData')))) {
       throw new Error('unknown skill')
     }
     return readSkillBody(path)
@@ -162,10 +160,10 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
   // the one write: a person pressed Import. Same guard as the read, because a
   // copy is as much an escape as a read if the source is chosen by the renderer
   ipcMain.handle(INTEGRATIONS_CHANNELS.importSkill, (_e, path: string): FoundSkill => {
-    if (!isKnownSkillPath(path, knownSkillRoots(deps.defaultSaveDir()))) {
+    if (!isKnownSkillPath(path, knownSkillRoots(app.getPath('userData')))) {
       throw new Error('unknown skill')
     }
-    return importSkill(path, deps.defaultSaveDir())
+    return importSkill(path, app.getPath('userData'))
   })
 }
 

@@ -138,8 +138,10 @@ describe('agentSkillDirs', () => {
 })
 
 describe('skillsRoot / readSkillBody', () => {
-  it('puts skills under the save directory', () => {
-    expect(skillsRoot('/save/dir')).toBe(join('/save/dir', 'skills'))
+  it('puts skills under userData, not where documents live', () => {
+    // Home lists every .md under the save directory as a document, so a skills
+    // folder there would show every imported SKILL.md to the user
+    expect(skillsRoot('/app/userData')).toBe(join('/app/userData', 'skills'))
   })
 
   it('returns the body with the frontmatter stripped', () => {
