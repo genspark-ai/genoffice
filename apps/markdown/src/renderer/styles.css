@@ -39,7 +39,7 @@
   --md-toast-ok: #34c759;
   /* diagrams are document content: white paper behind them in both themes */
   --md-diagram-bg: #ffffff;
-  /* preview paper under an explicit light document page (#1811) */
+  /* preview paper under an explicit light document page (genoffice#1811) */
   --md-paper-light: #ffffff;
 }
 
@@ -182,7 +182,10 @@ button {
   font-size: 14px;
 }
 
+/* the preview stays ltr under an RTL UI — the chrome mirrors, the content does not */
+
 .editor-scroll {
+  direction: ltr;
   flex: 1;
   overflow-y: auto;
   /* same canvas backdrop as the slides workspace; .doc-page follows the theme surface */
@@ -198,11 +201,48 @@ button {
   box-shadow: var(--md-page-shadow);
 }
 
-/* Document page theme (#1811): an explicit Light keeps the preview paper white
-   under the dark UI theme. Dark behaves as Follow — the preview's ink colors
-   ride the UI theme tokens, so a dark paper without the dark UI would leave
-   dark text on a dark page. */
+/* Document page theme (genoffice#1811): an explicit Light under the dark UI
+   theme re-scopes the paper's ink to the light values, so body copy, code,
+   tables and links read as on the light theme. Dark behaves as Follow. */
 html[data-doc-theme='light'] .doc-page {
+  --accent: #185abd;
+  --accent-dark: #124a9e;
+  --accent-soft: #e8f1fb;
+  --surface: #ffffff;
+  --border: #e3e6ea;
+  --border-strong: #d9d9d9;
+  --text: #242424;
+  --text-secondary: #606366;
+  --text-muted: #616870;
+  --text-primary: #232425;
+  --text-tertiary: #909499;
+  --text-dim: #605e5c;
+  --surface-subtle: #f6f7f9;
+  --bg-content: #fafafa;
+  --border-subtle: #efefef;
+  --hover: #f5f5f5;
+  --pressed: #edebe9;
+  --active-bg: #eaeaea;
+  --icon-muted: #b9bfc7;
+  --danger: #d13438;
+  --danger-bg: #fdf3f3;
+  --md-link: #0a69da;
+  --md-code-bg: #f6f8fa;
+  --md-code-inline-bg: rgb(129 139 152 / 14%);
+  --md-table-header-bg: #f6f8fa;
+  --md-ai-changed: rgb(255 213 79 / 40%);
+  --md-ai-anchor-bg: rgb(80 128 220 / 14%);
+  --md-ai-anchor-line: #5080dc;
+  --md-selection: color-mix(in srgb, var(--accent) 10%, transparent);
+  --md-text-selection: color-mix(in srgb, var(--accent) 32%, transparent);
+  --md-node-outline: color-mix(in srgb, var(--accent) 60%, transparent);
+  --md-focus-ring: rgb(35 36 37 / 20%);
+  --md-focus-ring-blue: rgb(74 141 246 / 30%);
+  --md-error: #c62828;
+  --md-error-border: rgb(198 40 40 / 45%);
+  --md-error-bg: rgb(198 40 40 / 8%);
+  color-scheme: light;
+  color: var(--text);
   background: var(--md-paper-light);
 }
 
@@ -2993,4 +3033,116 @@ div.tiptap-mathematics-render {
   flex: 1;
   min-width: 0;
   height: 100%;
+}
+
+/* Image host configuration dialog (genoffice#388). Colors come from the shared
+ * tokens (theming rules in CLAUDE.md); the two raw values live on
+ * custom-property definitions, the only place raw colors are allowed. */
+.image-host-backdrop {
+  --image-host-dim: rgb(0 0 0 / 35%);
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--image-host-dim);
+}
+
+.image-host-dialog {
+  box-sizing: border-box;
+  width: 440px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px var(--md-shadow-color);
+}
+
+.image-host-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.image-host-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.image-host-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.image-host-label {
+  flex: 0 0 128px;
+  color: var(--text-secondary);
+}
+
+.image-host-input {
+  flex: 1;
+  box-sizing: border-box;
+  height: 26px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.image-host-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.image-host-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.image-host-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.image-host-btn {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.image-host-btn:hover {
+  background: var(--hover);
+}
+
+.image-host-btn-primary {
+  --image-host-on-accent: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--image-host-on-accent);
+}
+
+.image-host-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

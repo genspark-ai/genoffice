@@ -94,3 +94,13 @@ describe('self-closing cell patching', () => {
     expect(sheet).toContain('<row r="2"><c r="A2"><v>7</v></c></row>')
   })
 })
+
+describe('cell address guard at the plan boundary', () => {
+  it('rejects addresses that are not grid cells instead of building a RegExp from them', async () => {
+    for (const address of ['A1|B1', 'A1"[^>]*', 'a1', 'XFE1', 'A0', '']) {
+      await expect(
+        applyPlanToXlsx(await fixture(), plan(address), { '1': 'Data' }),
+      ).rejects.toThrow(/Invalid cell address/)
+    }
+  })
+})

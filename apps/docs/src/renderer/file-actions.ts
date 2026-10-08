@@ -86,7 +86,7 @@ import { pruneUnreferencedNumbering } from './numbering-actions'
 import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
-import { setDocFontTable } from './line-metrics'
+import { hangulSpaceWideningFor, setDocFontTable, setHangulSpaceWidening } from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
 import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
@@ -298,6 +298,7 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
   editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
   editor.storage.cjkPunctShrink.docEastAsiaLang = parsed.docDefaults?.eastAsiaLang ?? null
+  setHangulSpaceWidening(hangulSpaceWideningFor(parsed))
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
   const lang = parsed.autoHyphenation ? parsed.docDefaults?.lang : undefined
@@ -633,12 +634,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     ctx.onWriteProtectionLoaded(null)
     ctx.setCompareResult(null)
     ctx.dirtyRef.current = false
-    // A new document answers the same question the window's first render does,
-    // rather than forcing the panel open: the setting is called "open the AI
-    // panel *in new documents*", and a hardcoded true overrode it on every
-    // draft (the opening document was the only one that respected it) (#1589).
-    // With the setting on this is the remembered state, which is what the
-    // reader last chose, so nothing changes for them.
+    // same rule as the first render, so the "open in new documents" setting holds for Cmd+N too
     ctx.setShowAi(aiPanelInitiallyOpen('aidocs.showAi'))
     ctx.setStatus(t('appNewDocCreated'))
     return true

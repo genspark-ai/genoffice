@@ -7,32 +7,102 @@
 //! cells. Absolute parts (`$`) stay put; string literals and quoted sheet
 //! names are never touched.
 
+use crate::types::{MergedRange, SharedFormulaGroup};
+
+struct Master {
+    row: usize,
+    column: usize,
+    formula: String,
+    span: Option<MergedRange>,
+    followers: Vec<(usize, usize)>,
+}
+
 /// Registry of shared-formula masters within one worksheet part, keyed by
 /// `si`. The master always precedes its followers in the part, so a single
 /// streaming pass can expand every follower.
 #[derive(Default)]
 pub struct SharedFormulas {
-    masters: std::collections::HashMap<u32, (usize, usize, String)>,
+    masters: std::collections::HashMap<u32, Master>,
 }
 
 impl SharedFormulas {
-    /// Record the master cell of group `si` (0-based row/column).
-    pub fn register(&mut self, si: u32, row: usize, column: usize, formula: &str) {
-        self.masters
-            .entry(si)
-            .or_insert_with(|| (row, column, formula.to_owned()));
+    /// Record the master cell of group `si` (0-based row/column) and the
+    /// `ref` span it declares.
+    pub fn register(
+        &mut self,
+        si: u32,
+        row: usize,
+        column: usize,
+        formula: &str,
+        span: Option<MergedRange>,
+    ) {
+        self.masters.entry(si).or_insert_with(|| Master {
+            row,
+            column,
+            formula: formula.to_owned(),
+            span,
+            followers: Vec::new(),
+        });
     }
 
     /// Expand a follower at (row, column): the master's formula with relative
     /// references shifted by the offset. None for unknown groups or when a
-    /// shifted reference would leave the sheet.
-    pub fn expand(&self, si: u32, row: usize, column: usize) -> Option<String> {
-        let (master_row, master_column, formula) = self.masters.get(&si)?;
-        translate_shared_formula(
-            formula,
-            row as i64 - *master_row as i64,
-            column as i64 - *master_column as i64,
-        )
+    /// shifted reference would leave the sheet. The follower is remembered
+    /// so `groups` can describe the group without its expanded text.
+    pub fn expand(&mut self, si: u32, row: usize, column: usize) -> Option<String> {
+        let master = self.masters.get_mut(&si)?;
+        let expanded = translate_shared_formula(
+            &master.formula,
+            row as i64 - master.row as i64,
+            column as i64 - master.column as i64,
+        )?;
+        master.followers.push((row, column));
+        Some(expanded)
+    }
+
+    /// Every group with at least one follower. A group whose followers fill
+    /// its declared `ref` span exactly (the master plus one follower per
+    /// remaining cell, all inside) is described by the span alone; anything
+    /// else lists its follower cells.
+    pub fn groups(self, format_formula: impl Fn(&str) -> String) -> Vec<SharedFormulaGroup> {
+        let mut groups: Vec<SharedFormulaGroup> = self
+            .masters
+            .into_iter()
+            .filter(|(_, master)| !master.followers.is_empty())
+            .map(|(si, master)| {
+                let span_is_exact = master.span.as_ref().is_some_and(|span| {
+                    let area = (span.end_row - span.start_row + 1)
+                        * (span.end_column - span.start_column + 1);
+                    let inside = |(row, column): &(usize, usize)| {
+                        (span.start_row..=span.end_row).contains(row)
+                            && (span.start_column..=span.end_column).contains(column)
+                    };
+                    master.followers.len() + 1 == area
+                        && inside(&(master.row, master.column))
+                        && master.followers.iter().all(inside)
+                });
+                SharedFormulaGroup {
+                    si,
+                    row: master.row,
+                    column: master.column,
+                    formula: format_formula(&master.formula),
+                    range: if span_is_exact { master.span } else { None },
+                    cells: if span_is_exact {
+                        None
+                    } else {
+                        Some(
+                            master
+                                .followers
+                                .iter()
+                                .map(|(row, column)| [*row, *column])
+                                .collect(),
+                        )
+                    },
+                }
+            })
+            .collect();
+        groups.sort_by_key(|group| group.si);
+        groups
     }
 }
 
@@ -323,7 +393,7 @@ mod tests {
     #[test]
     fn preserves_unicode_defined_names() {
         let mut shared = SharedFormulas::default();
-        shared.register(0, 0, 0, "é”€å”®é¡^M+A1");
+        shared.register(0, 0, 0, "é”€å”®é¡^M+A1", None);
 
         assert_eq!(shared.expand(0, 0, 1).as_deref(), Some("é”€å”®é¡^M+B1"));
     }
@@ -346,7 +416,7 @@ mod tests {
     #[test]
     fn registry_expands_followers_from_the_master() {
         let mut shared = SharedFormulas::default();
-        shared.register(0, 2, 4, "D3+1"); // master E3
+        shared.register(0, 2, 4, "D3+1", None); // master E3
         assert_eq!(shared.expand(0, 2, 5).as_deref(), Some("E3+1")); // F3
         assert_eq!(shared.expand(0, 2, 7).as_deref(), Some("G3+1")); // H3
         assert_eq!(shared.expand(9, 0, 0), None); // unknown group

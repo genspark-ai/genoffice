@@ -98,6 +98,7 @@ interface InjectorLike {
 
 /** Univer's scroll command: the one carrying the viewport's first row/column. */
 const SET_SCROLL_COMMAND = 'sheet.operation.set-scroll'
+const SET_ACTIVE_SHEET_OPERATION = 'sheet.operation.set-worksheet-active'
 
 /**
  * Grows the active sheet's grid as its viewport nears the edge.
@@ -204,6 +205,12 @@ export function installGridGrowth(runtime: UniverRuntime): () => void {
 
   const onCommand = runtime.univerAPI.onCommandExecuted(
     (command: { id?: string; params?: unknown }) => {
+      if (command?.id === SET_ACTIVE_SHEET_OPERATION) {
+        // The viewport position belongs to the sheet it was scrolled on.
+        lastColumn = 0
+        lastRow = 0
+        return
+      }
       if (command?.id !== SET_SCROLL_COMMAND) return
       const params = command.params as ScrollCommandParams | undefined
       if (!params) return

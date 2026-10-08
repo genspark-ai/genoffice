@@ -1072,11 +1072,12 @@ export function paraBorderSidesOf(
     if (!el) continue
     const a = attrsOf(el)
     const val = a['w:val']
+    const line: ParaBorderLine = {}
     if (val === 'none' || val === 'nil') {
-      sides[ch] = null
+      const space = parseInt(a['w:space'] ?? '', 10)
+      sides[ch] = Number.isFinite(space) && space > 0 ? { none: true, spacePt: space } : null
       continue
     }
-    const line: ParaBorderLine = {}
     const themed =
       theme && a['w:themeColor']
         ? resolveThemeColor(a['w:themeColor'], theme, a['w:themeTint'], a['w:themeShade'])
@@ -1093,18 +1094,18 @@ export function paraBorderSidesOf(
 }
 
 /** model form of the sides: drawn "tblr" subset + declared look, reset sides apart */
-export function paraBordersOf(
-  sides: ParaBorderSides,
-): Pick<ParaFormat, 'borders' | 'borderLines' | 'borderReset'> {
-  const out: Pick<ParaFormat, 'borders' | 'borderLines' | 'borderReset'> = {}
+export function paraBordersOf(sides: ParaBorderSides): ParaBorderModel {
+  const out: ParaBorderModel = {}
   let borders = ''
   let reset = ''
   const lines: NonNullable<ParaFormat['borderLines']> = {}
+  const pad: NonNullable<ParaFormat['borderPad']> = {}
   for (const ch of ['t', 'b', 'l', 'r'] as const) {
     const line = sides[ch]
     if (line === undefined) continue
-    if (line === null) {
+    if (line === null || line.none) {
       reset += ch
+      if (line?.spacePt) pad[ch] = line.spacePt
       continue
     }
     borders += ch
@@ -1114,8 +1115,14 @@ export function paraBordersOf(
   if (borders) out.borders = borders
   if (borders && Object.keys(lines).length > 0) out.borderLines = lines
   if (reset) out.borderReset = reset
+  if (Object.keys(pad).length > 0) out.borderPad = pad
   return out
 }
+
+export type ParaBorderModel = Pick<
+  ParaFormat,
+  'borders' | 'borderLines' | 'borderReset' | 'borderPad'
+>
 
 /**
  * Word merges pBdr per side: every side the direct pPr declares (drawn or reset)
@@ -1124,16 +1131,21 @@ export function paraBordersOf(
  */
 export function mergeStyleBorders(
   sides: ParaBorderSides,
-  direct: Pick<ParaFormat, 'borders' | 'borderLines' | 'borderReset'> | undefined,
-): Pick<ParaFormat, 'borders' | 'borderLines'> {
+  direct: ParaBorderModel | undefined,
+): Pick<ParaFormat, 'borders' | 'borderLines' | 'borderPad'> {
   const declared = `${direct?.borders ?? ''}${direct?.borderReset ?? ''}`
   const merged: ParaBorderSides = {}
   for (const ch of ['t', 'b', 'l', 'r'] as const) {
     if (direct?.borders?.includes(ch)) merged[ch] = direct.borderLines?.[ch] ?? {}
+    else if (direct?.borderPad?.[ch]) merged[ch] = { none: true, spacePt: direct.borderPad[ch] }
     else if (sides[ch] && !declared.includes(ch)) merged[ch] = sides[ch]
   }
-  const { borders, borderLines } = paraBordersOf(merged)
-  return { ...(borders ? { borders } : {}), ...(borderLines ? { borderLines } : {}) }
+  const { borders, borderLines, borderPad } = paraBordersOf(merged)
+  return {
+    ...(borders ? { borders } : {}),
+    ...(borderLines ? { borderLines } : {}),
+    ...(borderPad ? { borderPad } : {}),
+  }
 }
 
 /** Duplicated border containers (two w:tcBorders in one tcPr etc.): Word merges per side, later wins */

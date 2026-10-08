@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { htmlLang, type Lang } from '@genoffice/i18n'
+import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import App from './App'
 import { PresentView } from './PresentView'
 import { LocaleProvider } from './i18n/locale'
@@ -7,6 +7,7 @@ import type { UiTheme } from '../shared/ipc'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
+import '@genoffice/ui/ai-model-picker.css'
 import '@genoffice/ui/dropdown.css'
 import '@genoffice/ui/find-panel.css'
 import '@genoffice/ui/color-picker.css'
@@ -29,6 +30,7 @@ void (async () => {
     window.htmlApi.getTheme().catch(() => 'system' as const),
   ])
   document.documentElement.lang = htmlLang(lang as Lang)
+  document.documentElement.dir = htmlDir(lang)
   applyTheme(theme)
   window.htmlApi.onThemeChanged(applyTheme)
   await window.htmlApi

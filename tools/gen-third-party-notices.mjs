@@ -343,6 +343,11 @@ const FONTS = [
     'Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins).\nLatin subset with unmodified metrics and advances; renamed.',
   ],
   [
+    'GenOffice DM Sans (DM Sans derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2014-2017 Indian Type Foundry (info@indiantypefoundry.com). Copyright 2019 Google LLC.\nLatin subset with unmodified metrics and advances; renamed.',
+  ],
+  [
     'GenOffice Tamil (Noto Sans Tamil derivative)',
     'SIL OFL 1.1',
     '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',

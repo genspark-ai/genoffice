@@ -4,9 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { BarChart, formatAxisValue } from '../src/renderer/WorkbookVisuals'
 
-// Excel prints full numbers on a value axis, and the data labels of the same
-// series go through numfmt and print them in full too. The axis used to
-// abbreviate anything >= 1e6 as "1.2M" / "1.2B", so the two disagreed.
 const axisLabels = (markup: string): string[] =>
   [...markup.matchAll(/class="axis-label"[^>]*>([^<]*)</g)].map((match) => match[1] ?? '')
 

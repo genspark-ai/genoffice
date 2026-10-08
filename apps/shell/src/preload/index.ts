@@ -256,6 +256,11 @@ const homeApi: HomeApi = {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.accountLogin)
     return result === true
   },
+  onOpenSettings(handler) {
+    const listener = (_event: IpcRendererEvent, target: { section: string }) => handler(target)
+    ipcRenderer.on(HOME_CHANNELS.openSettings, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.openSettings, listener)
+  },
   onAccountLogin(handler) {
     const listener = (_event: IpcRendererEvent, ev: AccountLoginEvent) => handler(ev)
     ipcRenderer.on(HOME_CHANNELS.accountLoginEvent, listener)
@@ -474,6 +479,11 @@ const homeApi: HomeApi = {
     await ipcRenderer.invoke(HOME_CHANNELS.openCloudProject, projectUrl)
   },
   // AI settings channels are registered once by the shell's aggregated docs handlers
+  onAiSettingsChanged(handler) {
+    const listener = () => handler()
+    ipcRenderer.on('ai:settings-changed', listener)
+    return () => ipcRenderer.removeListener('ai:settings-changed', listener)
+  },
   async getAiSettings() {
     return (await ipcRenderer.invoke('ai:get-settings')) as AiSettings
   },

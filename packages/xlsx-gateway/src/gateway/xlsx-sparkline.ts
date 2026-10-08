@@ -1,7 +1,8 @@
 /// x14 sparkline writer: appends sparkline groups to a worksheet's extLst
 /// (creating extLst / the x14 ext as needed). Existing groups stay verbatim.
 
-import { parseAddress, type CellCoordinates } from '../domain/cell-address'
+import { parseAddress } from '../domain/cell-address'
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
 
 export class SparklineAddError extends Error {}
 
@@ -26,11 +27,6 @@ const X14_NS = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main'
 const XM_NS = 'http://schemas.microsoft.com/office/excel/2006/main'
 const DEFAULT_SERIES_ARGB = 'FF376092'
 const NEGATIVE_ARGB = 'FFD00000'
-// Duplicated from workbook-dsl.ts: xlsx-gateway.ts also declares these, but
-// importing them from there would be circular.
-const MAX_GRID_ROWS = 1_048_576
-const MAX_GRID_COLUMNS = 16_384
-
 function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -43,25 +39,14 @@ function toArgb(color: string | undefined): string {
   return `FF${color.slice(1).toUpperCase()}`
 }
 
-/// The host cell is written into element text, so it must be a real grid
-/// address before it reaches the worksheet — matching toArgb's discipline for
-/// the group's color attribute.
+/// Backstop for the proposal-time check in the renderer: a host past XFD or
+/// row 1048576 would make Excel repair the file.
 function toSqref(cell: string): string {
-  const bounds = parseGridCell(cell)
+  const bounds = parseAddress(cell)
   if (bounds.row + 1 > MAX_GRID_ROWS || bounds.column + 1 > MAX_GRID_COLUMNS) {
     throw new SparklineAddError(`"${cell}" is outside the worksheet grid.`)
   }
-  return escapeXml(cell)
-}
-
-/// parseAddress rejects anything that is not an upper-case A1 address; wrap its
-/// plain Error so a bad host cell fails the same way a bad color does.
-function parseGridCell(cell: string): CellCoordinates {
-  try {
-    return parseAddress(cell)
-  } catch {
-    throw new SparklineAddError(`"${cell}" is not a cell address.`)
-  }
+  return cell
 }
 
 function buildGroupXml(group: SparklineGroupAdd): string {

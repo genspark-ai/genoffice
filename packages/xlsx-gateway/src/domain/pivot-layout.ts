@@ -1,6 +1,13 @@
 import { allowedByValueFilter, matchesLabelFilter, type PivotFilterDef } from './pivot-filters'
 import { evaluatePivotFormula, parsePivotFormula } from './pivot-formula'
 import { groupValue, type PivotFieldGrouping } from './pivot-grouping'
+import {
+  defaultDataFieldCaption,
+  normalizePivotPageFields,
+  showDataAsIsPercent,
+  type PivotAggregation,
+  type PivotShowDataAs,
+} from './pivot-value-modes'
 import type { AddPivotOperation } from './workbook-dsl'
 
 export type PivotScalar = string | number | boolean | null
@@ -29,6 +36,7 @@ export type PivotLayoutErrorCode =
   | 'tooManyColLines'
   | 'tooManyRowLines'
   | 'needsValues'
+  | 'pageItemMissing'
 
 const MESSAGES: Record<PivotLayoutErrorCode, string> = {
   sourceNeedsRows: 'The pivot source needs a header row plus data rows.',
@@ -45,6 +53,7 @@ const MESSAGES: Record<PivotLayoutErrorCode, string> = {
   tooManyColLines: 'The pivot has more than 1,000 column lines.',
   tooManyRowLines: 'The pivot has more than 20,000 row lines.',
   needsValues: 'The pivot needs one values entry.',
+  pageItemMissing: 'Report filter item "{item}" is not a member of field "{label}".',
 }
 
 export class PivotLayoutError extends Error {
@@ -66,9 +75,11 @@ export interface PivotLayoutLabels {
 
 export interface PivotLayoutValue {
   fieldIndex: number
-  agg: 'sum' | 'count' | 'average' | 'max' | 'min'
+  agg: PivotAggregation
   numFmt?: string | undefined
-  showDataAs?: 'percentOfTotal' | 'percentOfRow' | 'percentOfCol' | undefined
+  showDataAs?: PivotShowDataAs | undefined
+  /** custom caption; absent = "Sum of <field>" */
+  name?: string | undefined
   formula?: string | undefined
   calcName?: string | undefined
 }
@@ -84,6 +95,10 @@ export interface PivotLayoutDefinition {
   rowFieldIndices: number[]
   columnFieldIndex?: number | undefined
   pageFieldIndices?: number[] | undefined
+  /** member lists per page field (sharedItems order), parallel to pageFieldIndices */
+  pageLevelItems?: string[][] | undefined
+  /** selected member per page field (index into pageLevelItems[p]); null = (All) */
+  pageItems?: (number | null)[] | undefined
   rowItems: string[]
   rowLevelItems: string[][]
   rowLines: PivotLayoutLine[]
@@ -113,13 +128,7 @@ export type PivotLayoutSpec = Pick<
   'rowFields' | 'columnField' | 'pageFields' | 'values' | 'groupings' | 'filters'
 >
 
-export const AGG_CAPTIONS: Record<PivotLayoutValue['agg'], string> = {
-  sum: 'Sum',
-  count: 'Count',
-  average: 'Average',
-  max: 'Max',
-  min: 'Min',
-}
+export { AGG_CAPTIONS } from './pivot-value-modes'
 
 export const PIVOT_SOURCE_ROW_LIMIT = 10_001
 export const PIVOT_SOURCE_COL_LIMIT = 200
@@ -159,7 +168,8 @@ export function buildPivotLayout(
         : [op.columnField]
   const columnFieldIndices = columnFieldsArray.map(fieldIndex)
   const colLevels = columnFieldIndices.length
-  const pageFieldIndices = (op.pageFields ?? []).map(fieldIndex)
+  const pageSpecs = normalizePivotPageFields(op.pageFields)
+  const pageFieldIndices = pageSpecs.map((page) => fieldIndex(page.field))
   const groupings = (op.groupings ?? []).map(({ field, ...rule }) => ({
     fieldIndex: fieldIndex(field),
     ...rule,
@@ -191,13 +201,26 @@ export function buildPivotLayout(
       fieldIndex: isCalc ? -1 : fieldIndex(value.field),
       agg: value.agg,
       // percent modes default to 0.00%, matching dataField numFmtId=10
-      numFmt: value.numFmt ?? (value.showDataAs !== undefined ? '0.00%' : undefined),
+      numFmt: value.numFmt ?? (showDataAsIsPercent(value.showDataAs) ? '0.00%' : undefined),
       showDataAs: value.showDataAs,
+      name: value.name?.trim() || undefined,
       ...(isCalc ? { formula: value.formula, calcName: value.field } : {}),
-      caption: `${AGG_CAPTIONS[value.agg]} of ${value.field}`,
+      caption: value.name?.trim() || defaultDataFieldCaption(value.agg, value.field),
       ast: isCalc ? parsePivotFormula(value.formula!, fieldNames) : null,
     }
   })
+  // Data-field captions must be unique; repeats get Excel's numeric suffix,
+  // carried as the explicit name so the OOXML writer agrees with the grid.
+  const seenCaptions = new Map<string, number>()
+  for (const spec of valueSpecs) {
+    const key = spec.caption.toLowerCase()
+    const seen = seenCaptions.get(key) ?? 0
+    seenCaptions.set(key, seen + 1)
+    if (seen > 0) {
+      spec.caption = `${spec.caption}${seen + 1}`
+      spec.name = spec.caption
+    }
+  }
   const calcNameKeys = valueSpecs
     .filter((spec) => spec.calcName !== undefined)
     .map((spec) => spec.calcName!.trim().toLowerCase())
@@ -213,8 +236,32 @@ export function buildPivotLayout(
   const levelSortKeys: Map<string, number | null>[] = rowFieldIndices.map(() => new Map())
   const colLevelSortKeys: Map<string, number | null>[] = columnFieldIndices.map(() => new Map())
   const joinPath = (path: readonly string[]): string => path.join('\u0000')
-  const dataRows = grid.slice(1)
-  for (const row of dataRows) {
+  const allDataRows = grid.slice(1)
+  // Page (report filter) members come from every source row; a selected item
+  // then narrows the rows the rest of the report sees, as in Excel.
+  const pageLevelItems: string[][] = pageFieldIndices.map((fieldIdx) => {
+    const items: string[] = []
+    for (const row of allDataRows) {
+      const label = String(row[fieldIdx] ?? '')
+      if (!items.includes(label)) items.push(label)
+    }
+    return items
+  })
+  const pageItems: (number | null)[] = pageSpecs.map((page, index) => {
+    if (page.item === undefined) return null
+    const at = pageLevelItems[index]!.indexOf(page.item)
+    if (at < 0)
+      throw new PivotLayoutError('pageItemMissing', { item: page.item, label: page.field })
+    return at
+  })
+  const dataRows = allDataRows.filter((row) =>
+    pageItems.every(
+      (item, index) =>
+        item === null ||
+        String(row[pageFieldIndices[index]!] ?? '') === pageLevelItems[index]![item],
+    ),
+  )
+  for (const row of allDataRows) {
     rowFieldIndices.forEach((fieldIdx, level) => {
       const { label: key, sort } = dimGroupValue(fieldIdx, row)
       if (!levelItems[level]!.includes(key)) {
@@ -280,10 +327,13 @@ export function buildPivotLayout(
     const numbers = rows
       .map((row) => numericValue(row[spec.fieldIndex] ?? null))
       .filter((value): value is number => value !== null)
+    if (spec.agg === 'countNums') return numbers.length
     if (numbers.length === 0) return null
     switch (spec.agg) {
       case 'sum':
         return numbers.reduce((total, value) => total + value, 0)
+      case 'product':
+        return numbers.reduce((total, value) => total * value, 1)
       case 'average':
         return numbers.reduce((total, value) => total + value, 0) / numbers.length
       case 'max':
@@ -412,13 +462,28 @@ export function buildPivotLayout(
     colPrefix: readonly string[],
   ): number | null => {
     if (spec.showDataAs === undefined || raw === null) return raw
-    const base =
-      spec.showDataAs === 'percentOfTotal'
-        ? aggregate(bucketRows([], []), spec)
-        : spec.showDataAs === 'percentOfRow'
-          ? aggregate(bucketRows(prefix, []), spec)
-          : aggregate(bucketRows([], colPrefix), spec)
-    return base === null || base === 0 ? null : raw / base
+    const ratio = (base: number | null): number | null =>
+      base === null || base === 0 ? null : raw / base
+    switch (spec.showDataAs) {
+      case 'percentOfTotal':
+        return ratio(aggregate(bucketRows([], []), spec))
+      case 'percentOfRow':
+        return ratio(aggregate(bucketRows(prefix, []), spec))
+      case 'percentOfCol':
+        return ratio(aggregate(bucketRows([], colPrefix), spec))
+      case 'percentOfParentRow':
+        return ratio(aggregate(bucketRows(prefix.slice(0, -1), colPrefix), spec))
+      case 'percentOfParentCol':
+        return ratio(aggregate(bucketRows(prefix, colPrefix.slice(0, -1)), spec))
+      case 'index': {
+        const grand = aggregate(bucketRows([], []), spec)
+        const rowTotal = aggregate(bucketRows(prefix, []), spec)
+        const colTotal = aggregate(bucketRows([], colPrefix), spec)
+        if (grand === null || rowTotal === null || colTotal === null) return null
+        const denominator = rowTotal * colTotal
+        return denominator === 0 ? null : (raw * grand) / denominator
+      }
+    }
   }
 
   const valueCells = (prefix: readonly string[]): (number | null)[] => {
@@ -525,7 +590,7 @@ export function buildPivotLayout(
       fieldNames,
       rowFieldIndices,
       ...(colLevels === 1 ? { columnFieldIndex: columnFieldIndices[0]! } : {}),
-      ...(pageFieldIndices.length > 0 ? { pageFieldIndices } : {}),
+      ...(pageFieldIndices.length > 0 ? { pageFieldIndices, pageLevelItems, pageItems } : {}),
       rowItems,
       rowLevelItems: levelItems,
       rowLines,
@@ -540,6 +605,7 @@ export function buildPivotLayout(
         agg: spec.agg,
         ...(spec.numFmt ? { numFmt: spec.numFmt } : {}),
         ...(spec.showDataAs ? { showDataAs: spec.showDataAs } : {}),
+        ...(spec.name !== undefined ? { name: spec.name } : {}),
         ...(spec.formula !== undefined ? { formula: spec.formula, calcName: spec.calcName! } : {}),
       })),
     },

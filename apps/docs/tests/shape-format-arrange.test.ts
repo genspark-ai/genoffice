@@ -18,6 +18,7 @@ import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { t } from '../src/renderer/i18n/locale'
 import { ribbonProps } from './helpers/ribbon-props'
+import { SHAPE_INLINE_WRAP } from '../src/renderer/editor/floating-z-order'
 
 // React's act() needs the test environment flag or it warns on every commit
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -102,7 +103,7 @@ describe('the Shape Format Arrange group', () => {
     expect(wrapperClass(editor, pos)).toContain('doc-protected-wrapside')
 
     pickDropdown(container, tipped(container, 'ribbonWrapText'), '')
-    expect(attrsOf(editor, pos).imageWrap).toBeNull()
+    expect(attrsOf(editor, pos).imageWrap).toBe(SHAPE_INLINE_WRAP)
 
     act(() => root.unmount())
     container.remove()

@@ -6,7 +6,7 @@ import JSZip from 'jszip'
 import { openPptx, savePptx, reassembleSlideXml, generateParagraphXml } from '../src/index'
 import { parseSlide } from '../src/parse'
 import { tableRowGridCols } from '../src/table-grid'
-import { parsePlaceholderMap, parseMasterTextStyles } from '../src/placeholder'
+import { parsePlaceholderMap, parseMasterTextStyles, parseLstStyleLevels } from '../src/placeholder'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -122,6 +122,50 @@ describe('fill / color-mod / background parsing', () => {
     const el = slide.elements[0] as any
     expect(el.fill.type).toBe('gradient')
     expect(el.fill.scaled).toBe(true)
+  })
+
+  it('txBox="1" with prstGeom rect is a text box, not a shape', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="TextBox 1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="en-US"/><a:t>hi</a:t></a:r></a:p></p:txBody></p:sp>'
+    const el = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    }).elements[0] as any
+    expect(el.type).toBe('text')
+    expect(el.txBox).toBe(true)
+    expect(el.presetGeometry).toBe('rect')
+  })
+
+  it('txBox="1" on a non-rect geometry stays a shape', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Oval 1"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="en-US"/><a:t>hi</a:t></a:r></a:p></p:txBody></p:sp>'
+    const el = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    }).elements[0] as any
+    expect(el.type).toBe('shape')
+  })
+
+  it('rect geometry without txBox is a shape', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Rectangle 1"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="en-US"/><a:t>hi</a:t></a:r></a:p></p:txBody></p:sp>'
+    const el = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    }).elements[0] as any
+    expect(el.type).toBe('shape')
   })
 
   it('gradFill with no a:lin/a:path defaults to a vertical ramp (PowerPoint-measured)', () => {
@@ -923,6 +967,29 @@ describe('bullet (buChar/buAutoNum/buNone) and paragraph indent parsing', () => 
       ctx: {},
     })
     expect((none.elements[0] as any).text.paragraphs[0].bullet.type).toBe('none')
+  })
+
+  it('clamps buAutoNum startAt to the spec ceiling on slides and list styles', () => {
+    const huge = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith(
+        '<a:pPr><a:buAutoNum type="romanLcPeriod" startAt="100000000000000000000"/></a:pPr>',
+      ),
+      ctx: {},
+    })
+    expect((huge.elements[0] as any).text.paragraphs[0].bullet.startAt).toBe(32767)
+    const sane = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: sldWith('<a:pPr><a:buAutoNum type="arabicPeriod" startAt="7"/></a:pPr>'),
+      ctx: {},
+    })
+    expect((sane.elements[0] as any).text.paragraphs[0].bullet.startAt).toBe(7)
+    const lst = parseLstStyleLevels({
+      'a:lvl1pPr': { 'a:buAutoNum': { '@_type': 'alphaLcPeriod', '@_startAt': '1e20' } },
+      'a:lvl2pPr': { 'a:buAutoNum': { '@_type': 'alphaLcPeriod', '@_startAt': '99999' } },
+    })
+    expect(lst?.levels[0]?.bullet?.startAt).toBeUndefined()
+    expect(lst?.levels[1]?.bullet?.startAt).toBe(32767)
   })
 
   it('buBlip picture bullet resolves the blip through the slide rels; buSzPts is absolute pt', () => {

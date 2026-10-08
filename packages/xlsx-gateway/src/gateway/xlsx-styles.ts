@@ -221,6 +221,7 @@ function hasFontDelta(delta: WorkbookStyleEdit): boolean {
     delta.underline !== undefined ||
     delta.underlineStyle !== undefined ||
     delta.strikethrough !== undefined ||
+    delta.vertAlign !== undefined ||
     delta.fontFamily !== undefined ||
     delta.fontSize !== undefined ||
     delta.fontColor !== undefined
@@ -247,6 +248,12 @@ function buildFont(baseFontXml: string, delta: WorkbookStyleEdit): string {
   }
   if (delta.strikethrough !== undefined) {
     override(/<strike\b[^>]*\/?>/g, delta.strikethrough ? '<strike/>' : '')
+  }
+  if (delta.vertAlign !== undefined) {
+    override(
+      /<vertAlign\b[^>]*\/?>/g,
+      delta.vertAlign === null ? '' : `<vertAlign val="${delta.vertAlign}"/>`,
+    )
   }
   if (delta.fontSize !== undefined) {
     override(/<sz\b[^>]*\/?>/g, `<sz val="${delta.fontSize}"/>`)

@@ -394,29 +394,8 @@ function noteAppearance(
   })
 }
 
-/**
- * The popup rectangle Word/Acrobat pair with a sticky note: a note-sized box
- * docked just outside the icon, flipped to the icon's left when the right edge
- * would run off the page. A viewer only knows where a note's text belongs
- * through /Popup, so without this there is nothing to open.
- */
-function notePopupRect(
-  page: PDFPage,
-  rect: [number, number, number, number],
-): [number, number, number, number] {
-  const [x0, y0, x1] = rect
-  const { width, height } = page.getSize()
-  const w = Math.min(200, width)
-  const h = Math.min(120, height)
-  const y = Math.max(0, Math.min(y0, height - h))
-  const right = x1 + 2
-  const x = right + w <= width ? right : Math.max(0, x0 - w - 2)
-  return [x, y, Math.min(x + w, width), y + h]
-}
-
 /** Drawing annots: hand-written AP for Ink/Square/Circle/Line; notes get an AP
- *  icon and a /Popup so other viewers (Preview, Chrome/pdf.js) can draw and open
- *  them instead of relying on viewer built-ins. */
+ *  icon so Preview (Quartz) draws them instead of nothing. */
 function addDrawing(
   pdfDoc: PDFDocument,
   page: PDFPage,
@@ -458,19 +437,6 @@ function addDrawing(
     }
     const ref = pdfDoc.context.register(annot)
     if (d.localId) noteRefs?.set(d.localId, ref)
-    // The popup is a direct child of the note, never a page /Annots entry
-    // (PDF 32000-1 12.5.5): viewers find it only through this /Popup key.
-    const popupRect = notePopupRect(page, rect)
-    const popup = pdfDoc.context.obj({
-      Type: 'Annot',
-      Subtype: 'Popup',
-      Rect: popupRect.map(num),
-      Parent: ref,
-      Open: false,
-      F: 4,
-    })
-    popup.set(PDFName.of('Contents'), PDFHexString.fromText(d.contents))
-    annot.set(PDFName.of('Popup'), popup)
     appendAnnot(pdfDoc, page, ref)
     return
   }

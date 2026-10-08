@@ -320,9 +320,6 @@ class Generator {
           const ordered = item.ordered ?? node.ordered
           const level = Math.max(0, Math.min(8, item.level || 0))
           if (level < instanceByLevel.length - 1) instanceByLevel.length = level + 1
-          // <ol style="list-style-type: disc"> still reports ordered, but the
-          // browser paints a glyph; orderedReference has no entry for it and
-          // would fall back to decimal numbers.
           const numbered = ordered && !BULLET_MARKER_TYPES.has(item.markerType)
           if (numbered && instanceByLevel[level] == null) instanceByLevel[level] = this.olInstance++
           const bulletReference =

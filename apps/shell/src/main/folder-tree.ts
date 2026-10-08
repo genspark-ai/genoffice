@@ -74,6 +74,9 @@ function realOrResolved(path: string): string {
   }
 }
 
+/** Ensure a path has a separator boundary without doubling filesystem roots. */
+const withTrailingSep = (dir: string): string => (dir.endsWith(sep) ? dir : dir + sep)
+
 /**
  * True when `path` is the root or lives under it. Existing paths compare by
  * real path (so a symlink pointing outside is rejected); a not-yet-existing
@@ -90,7 +93,7 @@ export function isInsideRoot(root: string, path: string): boolean {
     probe = parent
   }
   const real = join(realOrResolved(probe), ...missing)
-  return real === realRoot || real.startsWith(realRoot + sep)
+  return real === realRoot || real.startsWith(withTrailingSep(realRoot))
 }
 
 export function describeRoot(root: string): FolderRoot {
@@ -148,9 +151,15 @@ export function listFolder(dir: string, starredPaths: ReadonlySet<string>): Fold
 
 /** the candidates below `dir` at any depth; bookkeeping filters tracked paths instead of walking the disk */
 export function pathsUnder(dir: string, candidates: Iterable<string>): string[] {
-  const prefix = resolve(dir) + sep
+  const base = resolve(dir)
+  const prefix = withTrailingSep(base)
   const out = new Set<string>()
-  for (const path of candidates) if (resolve(path).startsWith(prefix)) out.add(path)
+  for (const path of candidates) {
+    const resolved = resolve(path)
+    if (resolved !== base && resolved.startsWith(prefix)) {
+      out.add(path)
+    }
+  }
   return [...out]
 }
 
@@ -217,7 +226,7 @@ export interface MoveOptions {
 export function isSelfOrDescendant(path: string, dir: string): boolean {
   const a = resolve(path)
   const b = resolve(dir)
-  return a === b || b.startsWith(a + sep)
+  return a === b || b.startsWith(withTrailingSep(a))
 }
 
 /**
@@ -319,10 +328,8 @@ function isSameEntry(a: string, b: string): boolean {
 export function rebasePath(path: string, oldDir: string, newDir: string): string {
   const abs = resolve(path)
   const base = resolve(oldDir)
-  // a plain slice also matches a sibling that merely shares the prefix
-  // (`/w/src2/f` under `/w/src`), so require the separator boundary and leave
-  // anything that did not live under the moved folder where it was
-  if (abs !== base && !abs.startsWith(base + sep)) return path
+  // a bare prefix slice would also match a sibling like `/w/src2/f` under `/w/src`
+  if (abs !== base && !abs.startsWith(withTrailingSep(base))) return path
   return join(newDir, abs.slice(base.length))
 }
 

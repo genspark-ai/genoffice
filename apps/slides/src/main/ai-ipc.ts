@@ -4,7 +4,7 @@
  * to avoid renderer CORS), search tools, and the slides-only ai:* channels
  * (image generation, media analysis, style templates).
  */
-import { app, ipcMain, nativeImage, net, shell } from 'electron'
+import { app, ipcMain, nativeImage, net, shell, webContents } from 'electron'
 import {
   appendFileSync,
   existsSync,
@@ -36,6 +36,7 @@ import {
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import {
+  abortOnDestroyed,
   MAX_REMOTE_IMAGE_BYTES,
   fetchRemoteImage,
   readBodyCapped,
@@ -152,6 +153,8 @@ export function registerAiIpc(): void {
       return
     }
     writeJsonAtomic(AI_SETTINGS_PATH(), sanitized)
+    for (const wc of webContents.getAllWebContents())
+      if (!wc.isDestroyed()) wc.send('ai:settings-changed')
   })
 
   ipcMain.handle('ai:log-run-failure', (_event, entry: AiRunFailure) => {
@@ -197,6 +200,7 @@ export function registerAiIpc(): void {
     }
     const controller = new AbortController()
     activeAiStreams.set(requestId, controller)
+    const unwatchSender = abortOnDestroyed(event.sender, controller)
     // wire-activity keepalive: lets the renderer's silence watchdog tell a slow turn from a dead one
     let lastPing = 0
     const ping = () => {
@@ -245,6 +249,7 @@ export function registerAiIpc(): void {
         })
       }
     } finally {
+      unwatchSender()
       activeAiStreams.delete(requestId)
     }
   })

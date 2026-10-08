@@ -11,6 +11,7 @@ import type {
   WorkbookPivotAdd,
   WorkbookStyleEdit,
   WorkbookTableAdd,
+  WorkbookTableEdit,
   WorkbookVisualAdd,
   WorkbookVisualEdit,
   WorkbookVisualObject,
@@ -22,6 +23,7 @@ import { CHART_CATEGORY_WIRE_MAX, CHART_TEXT_WIRE_MAX } from '../shared/desktop-
 import { ADDABLE_SHAPE_TYPES } from '@genoffice/xlsx-gateway/shared/shape-types'
 import { INDENT_STEP_PX } from './selection-format'
 import type { SharedFormulaResolver } from './shared-formula-journal'
+import type { SheetProtectionInfo } from './sheet-protection'
 
 /// Tracks the user's cell edits on a streamed external workbook. Streaming
 /// evicts and re-installs viewport cells, so the journal is both the save
@@ -110,6 +112,11 @@ export type StructuralJournalOp =
       readonly level: number
       readonly collapsed?: boolean
     }
+  | {
+      readonly kind: 'set-outline-pr'
+      readonly summaryBelow: boolean
+      readonly summaryRight: boolean
+    }
 
 /// Normalized sheet-level operations. Removing a sheet only marks it (its
 /// cell entries stay, so an undo that re-inserts the sheet loses nothing);
@@ -124,6 +131,9 @@ export interface SheetJournal {
   readonly renamed: Map<string, string>
   /// Sheet id → desired visibility (dropped when toggled back to original).
   readonly hidden: Map<string, boolean>
+  /// Sheet id → desired tab color (#RRGGBB, null clears); dropped when set
+  /// back to the file's color.
+  readonly tabColor: Map<string, string | null>
   /// The tab order changed; the save sends the final on-screen order.
   orderDirty: boolean
 }
@@ -146,6 +156,9 @@ export interface EditJournal {
   /// Tables created this session; the save writes each as a new xl/tables
   /// part registered on its worksheet.
   readonly tableAdds: WorkbookTableAdd[]
+  /// Table Design changes to file tables, keyed by sheet + open-time name;
+  /// successive edits to one table merge.
+  readonly tableEdits: Map<string, WorkbookTableEdit>
   /// Pivots created this session; the baked cells ride the normal cell
   /// journal, the save additionally writes native pivot parts.
   readonly pivotAdds: WorkbookPivotAdd[]
@@ -160,8 +173,9 @@ export interface EditJournal {
   readonly cfDirty: Set<string>
   /// Sheets whose data validation changed; saved like cfDirty.
   readonly dvDirty: Set<string>
-  /// Desired sheet-protection state (dropped when toggled back to original).
-  readonly sheetProtection: Map<string, boolean>
+  /// Desired sheet-protection state (dropped when unprotecting an
+  /// unprotected sheet).
+  readonly sheetProtection: Map<string, SheetProtectionInfo>
   /// Desired workbook structure-protection state (null = untouched).
   readonly workbookProtection: { desired: boolean | null }
   /// Sheets whose allow-edit-range set changed; the save snapshots the live
@@ -265,6 +279,7 @@ export function createEditJournal(): EditJournal {
     visualAdds: [],
     visualEdits: new Map(),
     tableAdds: [],
+    tableEdits: new Map(),
     pivotAdds: [],
     sparklineAdds: [],
     sheets: {
@@ -272,6 +287,7 @@ export function createEditJournal(): EditJournal {
       removed: new Set(),
       renamed: new Map(),
       hidden: new Map(),
+      tabColor: new Map(),
       orderDirty: false,
     },
     filterDirty: new Set(),
@@ -369,10 +385,10 @@ export function recordThemeFonts(
 export function recordSheetProtection(
   journal: EditJournal,
   sheetId: string,
-  desired: boolean,
-  original: boolean,
+  desired: SheetProtectionInfo,
+  original: SheetProtectionInfo | undefined,
 ): void {
-  if (desired === original) journal.sheetProtection.delete(sheetId)
+  if (!desired.protected && !(original?.protected ?? false)) journal.sheetProtection.delete(sheetId)
   else journal.sheetProtection.set(sheetId, desired)
 }
 
@@ -471,6 +487,8 @@ export function recordSheetDuplicate(
   if (sourceOps && sourceOps.length > 0) {
     journal.structuralOps.set(sheetId, [...sourceOps])
   }
+  const sourceTabColor = journal.sheets.tabColor.get(sourceSheetId)
+  if (sourceTabColor !== undefined) journal.sheets.tabColor.set(sheetId, sourceTabColor)
 }
 
 /// Walks duplicate-of-duplicate chains back to a sheet that exists in the
@@ -522,18 +540,36 @@ export function recordSheetHidden(
   else journal.sheets.hidden.set(sheetId, hidden)
 }
 
+export function normalizeTabColor(color: unknown): string | null {
+  if (typeof color !== 'string') return null
+  const hex = /^#?([0-9a-f]{6})$/i.exec(color.trim())
+  return hex ? `#${hex[1]!.toUpperCase()}` : null
+}
+
+export function recordSheetTabColor(
+  journal: EditJournal,
+  sheetId: string,
+  color: unknown,
+  originalColor: unknown,
+): void {
+  const desired = normalizeTabColor(color)
+  if (desired === normalizeTabColor(originalColor)) journal.sheets.tabColor.delete(sheetId)
+  else journal.sheets.tabColor.set(sheetId, desired)
+}
+
 export function sheetOpCount(journal: EditJournal): number {
-  const { added, removed, renamed, hidden, orderDirty } = journal.sheets
+  const { added, removed, renamed, hidden, tabColor, orderDirty } = journal.sheets
   let total = orderDirty ? 1 : 0
   for (const sheetId of added.keys()) if (!removed.has(sheetId)) total += 1
   for (const sheetId of removed) if (!added.has(sheetId)) total += 1
   for (const sheetId of renamed.keys()) if (!removed.has(sheetId)) total += 1
   for (const sheetId of hidden.keys()) if (!removed.has(sheetId)) total += 1
+  for (const sheetId of tabColor.keys()) if (!removed.has(sheetId)) total += 1
   return total
 }
 
 export function toSaveSheetOps(journal: EditJournal): WorkbookSheetOp[] {
-  const { added, removed, renamed, hidden, orderDirty } = journal.sheets
+  const { added, removed, renamed, hidden, tabColor, orderDirty } = journal.sheets
   const ops: WorkbookSheetOp[] = []
   for (const [sheetId, sheet] of added) {
     if (removed.has(sheetId)) continue
@@ -555,6 +591,9 @@ export function toSaveSheetOps(journal: EditJournal): WorkbookSheetOp[] {
   }
   for (const [sheetId, isHidden] of hidden) {
     if (!removed.has(sheetId)) ops.push({ kind: 'set-sheet-hidden', sheetId, hidden: isHidden })
+  }
+  for (const [sheetId, color] of tabColor) {
+    if (!removed.has(sheetId)) ops.push({ kind: 'set-sheet-tab-color', sheetId, color })
   }
   if (orderDirty) ops.push({ kind: 'reorder-sheets' })
   return ops
@@ -636,22 +675,50 @@ export function updateTableAdd(
   journal: EditJournal,
   sheetId: string,
   name: string,
-  patch: {
-    area?: { startRow: number; startColumn: number; endRow: number; endColumn: number }
-    columnNames?: readonly string[]
-  },
+  patch: Partial<Omit<WorkbookTableAdd, 'sheetId'>>,
 ): boolean {
   const index = journal.tableAdds.findIndex(
     (t) => t.sheetId === sheetId && t.name.toLowerCase() === name.toLowerCase(),
   )
   if (index < 0) return false
   const existing = journal.tableAdds[index]!
-  ;(journal.tableAdds as WorkbookTableAdd[])[index] = {
-    ...existing,
-    ...(patch.area !== undefined ? { area: patch.area } : {}),
-    ...(patch.columnNames !== undefined ? { columnNames: [...patch.columnNames] } : {}),
+  const next: WorkbookTableAdd = { ...existing }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue
+    ;(next as Record<string, unknown>)[key] =
+      key === 'columnNames' ? [...(value as readonly string[])] : value
   }
+  journal.tableAdds[index] = next
   return true
+}
+
+function tableEditKey(sheetId: string, tableName: string): string {
+  return `${sheetId}\u0000${tableName.toLowerCase()}`
+}
+
+/// Merges a Table Design change into the file table's pending edit; a
+/// removal collapses everything recorded before it.
+export function recordTableEdit(journal: EditJournal, edit: WorkbookTableEdit): void {
+  const key = tableEditKey(edit.sheetId, edit.tableName)
+  if (edit.remove) {
+    journal.tableEdits.set(key, { sheetId: edit.sheetId, tableName: edit.tableName, remove: true })
+    return
+  }
+  const previous = journal.tableEdits.get(key)
+  const merged: WorkbookTableEdit = { ...(previous ?? {}), ...edit }
+  journal.tableEdits.set(key, merged)
+}
+
+export function tableEditFor(
+  journal: EditJournal,
+  sheetId: string,
+  tableName: string,
+): WorkbookTableEdit | undefined {
+  return journal.tableEdits.get(tableEditKey(sheetId, tableName))
+}
+
+export function toSaveTableEdits(journal: EditJournal): WorkbookTableEdit[] {
+  return [...journal.tableEdits.values()].filter((edit) => !isSheetRemoved(journal, edit.sheetId))
 }
 
 export function recordPivotAdd(journal: EditJournal, pivot: WorkbookPivotAdd): void {
@@ -734,7 +801,18 @@ export function recordVisualAdd(journal: EditJournal, visual: WorkbookVisualObje
   journal.visualAdds.push(visual)
 }
 
-export interface VisualEditEntry {
+/// Arrange-tab properties shared by file-visual edits and session visuals.
+export interface VisualArrangeChanges {
+  readonly rotation?: number
+  readonly flipH?: boolean
+  readonly flipV?: boolean
+  readonly altText?: string
+  readonly editAs?: 'twoCell' | 'oneCell' | 'absolute'
+  /// Empty string removes the link.
+  readonly hyperlink?: string
+}
+
+export interface VisualEditEntry extends VisualArrangeChanges {
   readonly sheetId: string
   readonly drawingPath: string
   readonly drawingIndex: number
@@ -742,19 +820,51 @@ export interface VisualEditEntry {
   readonly anchor?: WorkbookVisualObject['anchor']
   /// New xfrm ext in EMU (a rotated shape resized through its AABB).
   readonly frameSize?: { readonly width: number; readonly height: number }
+  /// `#rrggbb` or "none" — the shape's spPr paint.
+  readonly fillColor?: string
+  readonly lineColor?: string
+  /// Target document position among the part's anchors (z-order).
+  readonly zIndex?: number
 }
 
-/// Records a move/resize or removal of a visual that already lives in the
-/// file. False when the visual carries no drawing locator (its part shape
-/// is one the sidecar could not pin down) — the caller shows a message.
+export interface VisualEditChanges extends VisualArrangeChanges {
+  readonly remove?: true
+  readonly anchor?: WorkbookVisualObject['anchor']
+  readonly frameSize?: { width: number; height: number }
+  readonly fillColor?: string
+  readonly lineColor?: string
+  readonly zIndex?: number
+}
+
+const ARRANGE_KEYS = [
+  'rotation',
+  'flipH',
+  'flipV',
+  'altText',
+  'editAs',
+  'hyperlink',
+] as const satisfies readonly (keyof VisualArrangeChanges)[]
+
+function mergeArrange(
+  previous: VisualArrangeChanges | undefined,
+  changes: VisualArrangeChanges,
+): VisualArrangeChanges {
+  const merged: Record<string, unknown> = {}
+  for (const key of ARRANGE_KEYS) {
+    const value = changes[key] ?? previous?.[key]
+    if (value !== undefined) merged[key] = value
+  }
+  return merged as VisualArrangeChanges
+}
+
+/// Records a move/resize, repaint, arrange property, or removal of a visual
+/// that already lives in the file. False when the visual carries no drawing
+/// locator (its part shape is one the sidecar could not pin down) — the
+/// caller shows a message.
 export function recordVisualEdit(
   journal: EditJournal,
   visual: WorkbookVisualObject,
-  changes: {
-    remove?: true
-    anchor?: WorkbookVisualObject['anchor']
-    frameSize?: { width: number; height: number }
-  },
+  changes: VisualEditChanges,
 ): boolean {
   if (visual.drawingPath === undefined || visual.drawingIndex === undefined) return false
   const previous = journal.visualEdits.get(visual.id)
@@ -762,6 +872,9 @@ export function recordVisualEdit(
   const remove = changes.remove ?? previous?.remove
   const anchor = changes.anchor ?? previous?.anchor
   const frameSize = changes.frameSize ?? previous?.frameSize
+  const fillColor = changes.fillColor ?? previous?.fillColor
+  const lineColor = changes.lineColor ?? previous?.lineColor
+  const zIndex = changes.zIndex ?? previous?.zIndex
   journal.visualEdits.set(visual.id, {
     sheetId: visual.sheetId,
     drawingPath: visual.drawingPath,
@@ -769,6 +882,14 @@ export function recordVisualEdit(
     ...(remove ? { remove: true as const } : {}),
     ...(anchor ? { anchor } : {}),
     ...(frameSize ? { frameSize } : {}),
+    ...(remove
+      ? {}
+      : {
+          ...(fillColor ? { fillColor } : {}),
+          ...(lineColor ? { lineColor } : {}),
+          ...(zIndex === undefined ? {} : { zIndex }),
+          ...mergeArrange(previous, changes),
+        }),
   })
   return true
 }
@@ -787,17 +908,44 @@ export function removeVisualAdd(journal: EditJournal, visualId: string): boolean
 export function updateVisualAdd(
   journal: EditJournal,
   visualId: string,
-  changes: { anchor?: WorkbookVisualObject['anchor']; text?: string; fillColor?: string },
+  changes: VisualArrangeChanges & {
+    anchor?: WorkbookVisualObject['anchor']
+    frameSize?: { width: number; height: number }
+    text?: string
+    fillColor?: string
+    lineColor?: string
+  },
 ): boolean {
   const index = journal.visualAdds.findIndex((visual) => visual.id === visualId)
   const current = journal.visualAdds[index]
   if (!current) return false
-  journal.visualAdds[index] = {
+  const next: WorkbookVisualObject = {
     ...current,
     ...(changes.anchor === undefined ? {} : { anchor: changes.anchor }),
+    ...(changes.frameSize === undefined
+      ? {}
+      : { frameWidth: changes.frameSize.width, frameHeight: changes.frameSize.height }),
     ...(changes.text === undefined ? {} : { text: changes.text }),
     ...(changes.fillColor === undefined ? {} : { fillColor: changes.fillColor }),
+    ...(changes.lineColor === undefined ? {} : { lineColor: changes.lineColor }),
+    ...(changes.rotation === undefined ? {} : { rotation: changes.rotation }),
+    ...(changes.flipH === undefined ? {} : { flipH: changes.flipH }),
+    ...(changes.flipV === undefined ? {} : { flipV: changes.flipV }),
+    ...(changes.altText === undefined ? {} : { altText: changes.altText }),
+    ...(changes.editAs === undefined ? {} : { editAs: changes.editAs }),
+    ...(changes.hyperlink === undefined ? {} : { hyperlink: changes.hyperlink }),
   }
+  journal.visualAdds[index] = next
+  return true
+}
+
+/// Moves a session visual within the add list (session visuals render and
+/// save after every file anchor, in list order).
+export function reorderVisualAdd(journal: EditJournal, visualId: string, to: number): boolean {
+  const from = journal.visualAdds.findIndex((visual) => visual.id === visualId)
+  if (from < 0) return false
+  const [visual] = journal.visualAdds.splice(from, 1)
+  journal.visualAdds.splice(Math.max(0, Math.min(to, journal.visualAdds.length)), 0, visual!)
   return true
 }
 
@@ -818,10 +966,39 @@ export function toSaveVisualEdits(journal: EditJournal): WorkbookVisualEdit[] {
       ...(entry.remove ? { remove: true as const } : {}),
       ...(entry.anchor ? { anchor: entry.anchor } : {}),
       ...(entry.frameSize ? { frameSize: entry.frameSize } : {}),
+      ...(entry.fillColor ? { fillColor: entry.fillColor } : {}),
+      ...(entry.lineColor ? { lineColor: entry.lineColor } : {}),
+      ...(entry.zIndex === undefined ? {} : { zIndex: entry.zIndex }),
+      ...mergeArrange(undefined, entry),
     })
   }
   return edits
 }
+
+/// Session shape/picture properties for the save request wire shape.
+function visualAddProperties(visual: WorkbookVisualObject): WorkbookVisualAddProperties {
+  return {
+    ...(visual.rotation ? { rotation: visual.rotation } : {}),
+    ...(visual.flipH ? { flipH: true } : {}),
+    ...(visual.flipV ? { flipV: true } : {}),
+    ...(visual.rotation && visual.frameWidth && visual.frameHeight
+      ? {
+          frameSize: {
+            width: Math.max(1, Math.round(visual.frameWidth)),
+            height: Math.max(1, Math.round(visual.frameHeight)),
+          },
+        }
+      : {}),
+    ...(visual.altText ? { altText: clampWireText(visual.altText, 2_000) } : {}),
+    ...(visual.hyperlink ? { hyperlink: clampWireText(visual.hyperlink, 2_048) } : {}),
+    ...(visual.editAs && visual.editAs !== 'twoCell' ? { editAs: visual.editAs } : {}),
+  }
+}
+
+type WorkbookVisualAddProperties = Pick<
+  NonNullable<WorkbookVisualAdd['shape']>,
+  'rotation' | 'flipH' | 'flipV' | 'frameSize' | 'altText' | 'hyperlink' | 'editAs'
+>
 
 /// Cell-derived text (chart caches, pivot captions) can exceed the wire
 /// schema's string caps; the save emitters truncate instead of letting the
@@ -849,7 +1026,15 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
       additions.push({
         sheetId: visual.sheetId,
         anchor: visual.anchor,
-        image: { mediaType, base64 },
+        image: {
+          mediaType,
+          base64,
+          ...(visual.opacity !== undefined && visual.opacity < 1
+            ? { opacity: visual.opacity }
+            : {}),
+          ...(visual.crop ? { crop: visual.crop } : {}),
+          ...visualAddProperties(visual),
+        },
       })
       continue
     }
@@ -861,9 +1046,13 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
         anchor: visual.anchor,
         shape: {
           shapeType,
-          ...(visual.fillColor === undefined ? {} : { fillColor: visual.fillColor }),
+          ...(visual.fillColor === undefined || visual.fillColor === 'none'
+            ? {}
+            : { fillColor: visual.fillColor }),
+          ...(visual.lineColor === undefined ? {} : { lineColor: visual.lineColor }),
           ...(visual.text === undefined ? {} : { text: clampWireText(visual.text, 1_000) }),
           ...(visual.name === 'TextBox' ? { isTextBox: true } : {}),
+          ...visualAddProperties(visual),
         },
       })
       continue
@@ -898,11 +1087,14 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
         ? { value: clampWireText(visual.chart.axisTitles.value, CHART_TEXT_WIRE_MAX) }
         : {}),
     }
+    const chartProperties = visualAddProperties(visual)
     additions.push({
       sheetId: visual.sheetId,
       anchor: visual.anchor,
       chart: {
         chartType,
+        ...(chartProperties.altText ? { altText: chartProperties.altText } : {}),
+        ...(chartProperties.editAs ? { editAs: chartProperties.editAs } : {}),
         title: clampWireText(visual.chart.title, CHART_TEXT_WIRE_MAX),
         series: visual.chart.series.map((series) => ({
           name: clampWireText(series.name, CHART_TEXT_WIRE_MAX),
@@ -1937,6 +2129,10 @@ export function toNeutralStyle(s: Record<string, unknown>): WorkbookStyleEdit | 
     }
   }
   if ('st' in s) style.strikethrough = isLineOn(s.st)
+  if ('va' in s) {
+    // BaselineOffset: 2 = SUBSCRIPT, 3 = SUPERSCRIPT; anything else is baseline.
+    style.vertAlign = s.va === 2 ? 'subscript' : s.va === 3 ? 'superscript' : null
+  }
   if (typeof s.ff === 'string' && s.ff.length > 0) {
     style.fontFamily = unescapeCssLeadingDigit(s.ff)
   }
@@ -2055,6 +2251,9 @@ export function fromNeutralStyle(style: WorkbookStyleEdit): Record<string, unkno
       : null
   }
   if (style.strikethrough !== undefined) s.st = style.strikethrough ? { s: 1 } : null
+  if (style.vertAlign !== undefined) {
+    s.va = style.vertAlign === null ? null : style.vertAlign === 'subscript' ? 2 : 3
+  }
   if (style.fontFamily !== undefined) s.ff = escapeCssLeadingDigit(style.fontFamily)
   if (style.fontSize !== undefined) s.fs = style.fontSize
   if (style.fontColor !== undefined) {
@@ -2126,6 +2325,52 @@ export function journalEntriesInRange(
   return matches
 }
 
+export interface JournalCellSnapshot {
+  readonly cells: ReadonlyMap<string, ReadonlyMap<string, JournalEntry>>
+  readonly structuralOps: ReadonlyMap<string, number>
+}
+
+export function snapshotJournalCells(journal: EditJournal): JournalCellSnapshot {
+  return {
+    cells: new Map([...journal.cells].map(([sheetId, entries]) => [sheetId, new Map(entries)])),
+    structuralOps: new Map(
+      [...journal.structuralOps].map(([sheetId, ops]) => [sheetId, ops.length]),
+    ),
+  }
+}
+
+/// Copies into `into` every cell entry of `journal` that was recorded (or
+/// merged) after `snapshot` was taken. Each merge allocates a new entry
+/// object, so identity against the snapshot is the change test. A sheet
+/// whose rows/columns shifted since the snapshot is skipped: its entries
+/// were re-keyed to coordinates the unshifted reopened file does not have,
+/// and the shift itself is not carried; sheets added this session have no
+/// part in the reopened file either.
+export function carryLateJournalCells(
+  journal: EditJournal,
+  snapshot: JournalCellSnapshot,
+  into: EditJournal,
+): number {
+  let carried = 0
+  for (const [sheetId, entries] of journal.cells) {
+    if (journal.sheets.added.has(sheetId)) continue
+    const opsBefore = snapshot.structuralOps.get(sheetId) ?? 0
+    if ((journal.structuralOps.get(sheetId)?.length ?? 0) !== opsBefore) continue
+    const before = snapshot.cells.get(sheetId)
+    for (const [key, entry] of entries) {
+      if (before?.get(key) === entry) continue
+      let target = into.cells.get(sheetId)
+      if (!target) {
+        target = new Map()
+        into.cells.set(sheetId, target)
+      }
+      target.set(key, entry)
+      carried += 1
+    }
+  }
+  return carried
+}
+
 /// Counts what a save would actually write, so entries on removed sheets
 /// don't inflate the pending-edit badge.
 export function journalSize(journal: EditJournal): number {
@@ -2138,6 +2383,9 @@ export function journalSize(journal: EditJournal): number {
   }
   for (const table of journal.tableAdds) {
     if (!isSheetRemoved(journal, table.sheetId)) total += 1
+  }
+  for (const edit of journal.tableEdits.values()) {
+    if (!isSheetRemoved(journal, edit.sheetId)) total += 1
   }
   for (const pivot of journal.pivotAdds) {
     if (!isSheetRemoved(journal, pivot.sheetId) && !isSheetRemoved(journal, pivot.sourceSheetId)) {

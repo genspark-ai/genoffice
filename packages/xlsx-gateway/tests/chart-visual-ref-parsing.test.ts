@@ -22,6 +22,12 @@ describe('splitSheetRef', () => {
     })
   })
 
+  it('accepts a whole-row ref the same way', () => {
+    expect(splitSheetRef('Data!$1:$1')).toEqual({ sheetName: 'Data', range: '1:1' })
+    expect(splitSheetRef("'My Sheet'!2:5")).toEqual({ sheetName: 'My Sheet', range: '2:5' })
+    expect(splitSheetRef('Data!$1:$A')).toBeNull()
+  })
+
   it('accepts a lowercase ref and normalises the range to the case parseRange wants', () => {
     expect(splitSheetRef('Data!$a$1')).toEqual({ sheetName: 'Data', range: 'A1' })
     expect(splitSheetRef('Data!$a$1:$b$13')).toEqual({ sheetName: 'Data', range: 'A1:B13' })
@@ -70,6 +76,10 @@ describe('renameRefSheet', () => {
     // the ref through untouched and c:f kept pointing at the old sheet name.
     expect(renameRefSheet('Data!$A:$A', 'Data', 'Renamed')).toBe("'Renamed'!$A:$A")
     expect(renameRefSheet('Data!A:C', 'Data', 'Renamed')).toBe("'Renamed'!A:C")
+  })
+
+  it('rewrites a whole-row ref', () => {
+    expect(renameRefSheet('Data!$1:$5', 'Data', 'Renamed')).toBe("'Renamed'!$1:$5")
   })
 
   it('rewrites a lowercase ref', () => {

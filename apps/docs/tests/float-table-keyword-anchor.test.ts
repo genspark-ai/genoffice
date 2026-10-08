@@ -173,3 +173,38 @@ describe('legacy cell-margin hang of a float', () => {
     expect(offset.style).not.toContain('-7.2px')
   })
 })
+
+describe('w:tblpXSpec="center" wider than the column', () => {
+  const centred = {
+    tblFloatSource: 'left',
+    tblFloatHorzAnchor: 'margin',
+    tblFloatVertAnchor: 'text',
+    tblFloatXSpec: 'center',
+    tblFloatYTwips: 635,
+    widthPx: 724,
+  }
+  const paper =
+    'calc(var(--doc-content-w,100%) + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
+
+  it('a live float keeps w:tblW, centres on the margin box and lets text fill the w:tblpY band', () => {
+    const attrs = tableAttrs({ ...centred, tblFloat: 'left' })
+    expect(attrs.style).toContain(`width:min(724px,${paper})`)
+    expect(attrs.style).toContain(
+      `margin-left:calc((var(--doc-content-w,100%) - min(724px,${paper}))/2)`,
+    )
+    expect(attrs.style).toContain('margin-top:42.3px')
+    expect(attrs.style).toContain('shape-outside:inset(42.3px 0 0 0)')
+    // a band shorter than a line keeps the plain margin
+    const thin = tableAttrs({ ...centred, tblFloat: 'left', tblFloatYTwips: 200 })
+    expect(thin.style).toContain('margin-top:13.3px')
+    expect(thin.style).not.toContain('shape-outside')
+  })
+
+  it('a flowed (suppressed) float centres the same way without a shape', () => {
+    const attrs = tableAttrs({ ...centred, tblFloat: null, tblFloatSuppressed: true })
+    expect(attrs.style).toContain(
+      `margin-left:calc((var(--doc-content-w,100%) - min(724px,${paper}))/2)`,
+    )
+    expect(attrs.style).not.toContain('shape-outside')
+  })
+})

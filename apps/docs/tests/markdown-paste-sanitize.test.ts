@@ -33,6 +33,20 @@ describe('markdownPasteHtml strips script-carrying markup', () => {
     expect(html).not.toContain('data:text/html')
   })
 
+  it('keeps an inline base64 picture the image node would persist, but not a data: link', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo='
+    const html = md(
+      `![p](${png})`,
+      '',
+      `[x](${png})`,
+      '',
+      '![s](data:image/svg+xml;base64,PHN2Zy8+)',
+    )
+    expect(html).toContain(`<img src="${png}"`)
+    expect(html).not.toContain(`href="${png}"`)
+    expect(html).not.toContain('svg+xml')
+  })
+
   it('removes raw script and iframe elements the converter passes through', () => {
     const html = md('<script>alert(1)</script>', '', '- one', '- two')
     expect(html).not.toContain('<script')

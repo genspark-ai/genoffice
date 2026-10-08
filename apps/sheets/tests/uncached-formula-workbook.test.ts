@@ -25,6 +25,7 @@ function cacheModeState(): LazyWorkbookState {
     editJournal: { structuralOps: new Map(), cells: new Map() },
     closure: { status: 'idle', pinned: new Map() },
     formulaText: new Map(),
+    sharedFormulaGroups: new Map(),
     cachedFormulaValues: new Map(),
     recalc: {
       timer: null,
@@ -49,8 +50,8 @@ function stubDesktopApi(small: FormulaCell[], truncated: FormulaCell[]): void {
     desktopApi: {
       readWorkbookFormulas: async ({ sheetId }: { sheetId: string }) =>
         sheetId === 'sheet-1'
-          ? { truncated: false, indexingComplete: true, cells: small }
-          : { truncated: true, indexingComplete: false, cells: truncated },
+          ? { truncated: false, indexingComplete: true, cells: small, sharedGroups: [] }
+          : { truncated: true, indexingComplete: false, cells: truncated, sharedGroups: [] },
     },
   }
 }

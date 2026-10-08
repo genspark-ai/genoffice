@@ -24,10 +24,15 @@ import {
   PIVOT_SOURCE_ROW_LIMIT,
   PivotLayoutError,
   pivotOutputArea,
+  type PivotArea,
   type PivotLayout,
   type PivotLayoutErrorCode,
 } from '@genoffice/xlsx-gateway/domain/pivot-layout'
-import type { WorkbookVisualObject } from '../shared/desktop-api'
+import type {
+  WorkbookPivotAdd,
+  WorkbookTableAdd,
+  WorkbookVisualObject,
+} from '../shared/desktop-api'
 import {
   recordPivotAdd,
   recordPivotCacheRefresh,
@@ -35,6 +40,9 @@ import {
   recordTableAdd,
   updateTableAdd,
 } from './edit-journal'
+import { planFileTableRegistrations } from './file-tables'
+import { optionsOfTableAdd } from './table-design'
+import { DEFAULT_TABLE_STYLE, builtinTablePalette, tableThemeJson } from './table-styles'
 import { t } from './i18n/locale'
 import type { OoXmlPivotConfig, PivotField } from './PivotDialog'
 import type { PivotDefinition } from '@genoffice/xlsx-gateway/gateway/xlsx-pivot'
@@ -54,11 +62,17 @@ export function applyAiTableAdd(
   }
   const width = bounds.endColumn - bounds.startColumn + 1
   if (width > 1_000) throw new Error(t('appTableTooWide'))
-  const name = op.name ?? nextSessionTableName(state.editJournal)
+  const fileTableNames = planFileTableRegistrations(state.file.sheets).map(
+    (table) => table.tableName,
+  )
+  const name = op.name ?? nextSessionTableName(state.editJournal, fileTableNames)
   if (
     state.editJournal.tableAdds.some((table) => table.name.toLowerCase() === name.toLowerCase())
   ) {
     throw new Error(t('appTableNameUsed', { name }))
+  }
+  if (fileTableNames.some((table) => table.toLowerCase() === name.toLowerCase())) {
+    throw new Error(t('appTableNameInFile', { name }))
   }
   for (const table of state.editJournal.tableAdds) {
     if (table.sheetId !== op.sheetId) continue
@@ -90,19 +104,7 @@ export function applyAiTableAdd(
       worksheet.getRange(bounds.startRow, bounds.startColumn + index).setValue(candidate)
     }
   }
-  // Rendering is best-effort (the facade call is async); the journal entry
-  // below is what the save writes, and the gateway re-checks conflicts.
-  void worksheet.addTable(
-    name,
-    {
-      startRow: bounds.startRow,
-      startColumn: bounds.startColumn,
-      endRow: bounds.endRow,
-      endColumn: bounds.endColumn,
-    },
-    `ai-table-${state.editJournal.tableAdds.length + 1}-${Date.now().toString(36)}`,
-  )
-  recordTableAdd(state.editJournal, {
+  const entry: WorkbookTableAdd = {
     sheetId: op.sheetId,
     area: {
       startRow: bounds.startRow,
@@ -114,7 +116,32 @@ export function applyAiTableAdd(
     columnNames,
     ...(op.style === undefined ? {} : { style: op.style }),
     bandedRows: op.bandedRows ?? true,
-  })
+  }
+  // Rendering is best-effort (the facade call is async); the journal entry
+  // is what the save writes, and the gateway re-checks conflicts.
+  const tableId = `ai-table-${state.editJournal.tableAdds.length + 1}-${Date.now().toString(36)}`
+  void Promise.resolve(worksheet.addTable(name, entry.area, tableId))
+    .then(() => applySessionTableTheme(worksheet, tableId, entry, state.file.themeColors))
+    .catch(() => undefined)
+  recordTableAdd(state.editJournal, entry)
+}
+
+/// Paints the Excel built-in style over Univer's default table theme.
+export function applySessionTableTheme(
+  worksheet: UniverWorksheet,
+  tableId: string,
+  add: WorkbookTableAdd,
+  themeColors: readonly string[] | undefined,
+): void {
+  const theme = tableThemeJson(
+    `${tableId}-${Date.now().toString(36)}`,
+    builtinTablePalette(add.style ?? DEFAULT_TABLE_STYLE, themeColors),
+    optionsOfTableAdd(add),
+  )
+  const api = worksheet as unknown as {
+    addTableTheme(id: string, theme: unknown): Promise<boolean>
+  }
+  void Promise.resolve(api.addTableTheme(tableId, theme)).catch(() => undefined)
 }
 
 /// AI add_table_row: inserts one or more rows into a session-added table.
@@ -285,23 +312,39 @@ const LAYOUT_ERROR_KEYS = {
   tooManyColLines: 'appPivotTooManyColLines',
   tooManyRowLines: 'appPivotTooManyRowLines',
   needsValues: 'appPivotNeedsValues',
+  pageItemMissing: 'appPivotPageItemMissing',
 } satisfies Record<PivotLayoutErrorCode, Parameters<typeof t>[0]>
 
+/// Rows the report-filter block occupies above the table body: one per page
+/// field plus Excel's blank separator row.
+export function pivotPageRows(pageFieldCount: number): number {
+  return pageFieldCount > 0 ? pageFieldCount + 1 : 0
+}
+
+/// Relayout of an existing pivot: a file pivot (parts rewritten on save) or a
+/// pivot created this session (its journal entry is replaced).
+export interface PivotRelayoutTarget {
+  readonly target:
+    { readonly pivotPath: string; readonly cachePath: string } | { readonly sessionName: string }
+  /// Current table body (location ref) and the report-filter rows above it.
+  readonly oldBounds: {
+    startRow: number
+    startColumn: number
+    endRow: number
+    endColumn: number
+  }
+  readonly oldPageRows: number
+}
+
+const ALL_ITEMS_CAPTION = '(All)'
+
+/// Returns the body (location) area of the written pivot.
 export function applyAiPivotAdd(
   runtime: UniverRuntime,
   state: LazyWorkbookState,
   op: AddPivotOperation,
-  relayout?: {
-    readonly pivotPath: string
-    readonly cachePath: string
-    readonly oldBounds: {
-      startRow: number
-      startColumn: number
-      endRow: number
-      endColumn: number
-    }
-  },
-): void {
+  relayout?: PivotRelayoutTarget,
+): { readonly location: PivotArea; readonly pageRows: number } {
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const sourceSheet = workbook?.getSheetBySheetId(op.sheetId)
   const targetSheetId = op.targetSheetId ?? op.sheetId
@@ -338,14 +381,37 @@ export function applyAiPivotAdd(
     }
     throw err
   }
-  const { matrix, width, height } = layout
+  const { width, height } = layout
+  // Report filters render above the body like Excel: "Field | (All)" rows and
+  // a blank separator; the location ref stays the body only.
+  const pageRows = pivotPageRows(layout.definition.pageFieldIndices?.length ?? 0)
+  const pageMatrix: (string | number | null)[][] = (layout.definition.pageFieldIndices ?? []).map(
+    (fieldIndex, page) => {
+      const item = layout.definition.pageItems?.[page] ?? null
+      const label =
+        item === null ? ALL_ITEMS_CAPTION : (layout.definition.pageLevelItems?.[page]?.[item] ?? '')
+      const line: (string | number | null)[] = new Array(width).fill(null)
+      line[0] = layout.definition.fieldNames[fieldIndex] ?? ''
+      line[1] = label
+      return line
+    },
+  )
+  if (pageRows > 0) pageMatrix.push(new Array(width).fill(null))
+  const matrix = [...pageMatrix, ...layout.matrix]
+  const blockHeight = pageRows + height
 
-  const anchor = parseAddress(op.targetCell)
+  const blockAnchor = parseAddress(op.targetCell)
+  const anchor = { row: blockAnchor.row + pageRows, column: blockAnchor.column }
   const location = pivotOutputArea(anchor, layout)
-  if (targetSheetId === op.sheetId && areasOverlap(location, source)) {
+  const block = { ...location, startRow: blockAnchor.row }
+  if (targetSheetId === op.sheetId && areasOverlap(block, source)) {
     throw new Error(t('appPivotOverlapSource'))
   }
   const targetMeta = state.file.sheets.find((sheet) => sheet.id === targetSheetId)
+  const sessionTarget =
+    relayout !== undefined && 'sessionName' in relayout.target ? relayout.target.sessionName : null
+  const fileTarget =
+    relayout !== undefined && 'pivotPath' in relayout.target ? relayout.target : null
   for (const existing of targetMeta?.pivotRanges ?? []) {
     // When editing itself, overlapping the old output area is expected.
     if (
@@ -357,18 +423,20 @@ export function applyAiPivotAdd(
     ) {
       continue
     }
-    if (areasOverlap(location, existing)) throw new Error(t('appPivotOverlapExisting'))
+    if (areasOverlap(block, existing)) throw new Error(t('appPivotOverlapExisting'))
   }
   for (const pivot of state.editJournal.pivotAdds) {
-    if (pivot.sheetId !== targetSheetId) continue
-    if (areasOverlap(location, pivot.location)) {
+    if (pivot.sheetId !== targetSheetId || pivot.name === sessionTarget) continue
+    if (areasOverlap(block, pivot.location)) {
       throw new Error(t('appPivotOverlapSession', { name: pivot.name }))
     }
   }
 
-  // When editing an existing pivot, name is just a placeholder — the saver
-  // keeps the original name from the file.
-  const name = relayout ? 'PivotEdit' : (op.name ?? nextSessionPivotName(state.editJournal))
+  // When editing a file pivot, name is just a placeholder — the saver keeps
+  // the original name from the file.
+  const name =
+    sessionTarget ??
+    (fileTarget ? 'PivotEdit' : (op.name ?? nextSessionPivotName(state.editJournal)))
   if (
     !relayout &&
     state.editJournal.pivotAdds.some((pivot) => pivot.name.toLowerCase() === name.toLowerCase())
@@ -377,7 +445,12 @@ export function applyAiPivotAdd(
   }
 
   if (relayout) {
-    const old = relayout.oldBounds
+    // The old block = report-filter rows + body; cleared and rewritten as one
+    // union so shrunken parts blank out.
+    const old = {
+      ...relayout.oldBounds,
+      startRow: relayout.oldBounds.startRow - relayout.oldPageRows,
+    }
     // Grown parts must be empty (same criteria as refresh growth); shrunken
     // parts are cleared via the union write.
     const assertEmpty = (row: number, column: number, rows: number, columns: number): void => {
@@ -393,27 +466,27 @@ export function applyAiPivotAdd(
         throw new Error(t('appPivotRelayoutOverlap'))
       }
     }
-    assertEmpty(old.endRow + 1, old.startColumn, location.endRow - old.endRow, width)
+    assertEmpty(old.endRow + 1, old.startColumn, block.endRow - old.endRow, width)
     assertEmpty(
       old.startRow,
       old.endColumn + 1,
-      Math.min(old.endRow, location.endRow) - old.startRow + 1,
-      location.endColumn - old.endColumn,
+      Math.min(old.endRow, block.endRow) - old.startRow + 1,
+      block.endColumn - old.endColumn,
     )
-    const totalRows = Math.max(height, old.endRow - old.startRow + 1)
+    const totalRows = Math.max(blockHeight, old.endRow - old.startRow + 1)
     const totalColumns = Math.max(width, old.endColumn - old.startColumn + 1)
     const padded = Array.from({ length: totalRows }, (_, rowIndex) => {
       const row = matrix[rowIndex] ?? []
       return Array.from({ length: totalColumns }, (_, colIndex) => row[colIndex] ?? null)
     })
     targetSheet
-      .getRange(anchor.row, anchor.column, totalRows, totalColumns)
+      .getRange(blockAnchor.row, blockAnchor.column, totalRows, totalColumns)
       .setValues(
         padded as unknown as Parameters<ReturnType<UniverWorksheet['getRange']>['setValues']>[0],
       )
   } else {
     targetSheet
-      .getRange(anchor.row, anchor.column, height, width)
+      .getRange(blockAnchor.row, blockAnchor.column, blockHeight, width)
       .setValues(
         matrix as unknown as Parameters<ReturnType<UniverWorksheet['getRange']>['setValues']>[0],
       )
@@ -429,7 +502,7 @@ export function applyAiPivotAdd(
     applyFormatPatchToRange(targetSheet.getRange(rangeStr), { numberFormat: format })
   }
 
-  const additionPayload: Parameters<typeof recordPivotAdd>[1] = {
+  const additionPayload: WorkbookPivotAdd = {
     sheetId: targetSheetId,
     sourceSheetId: op.sheetId,
     sourceArea: {
@@ -442,22 +515,29 @@ export function applyAiPivotAdd(
     name,
     ...layout.definition,
   }
-  if (relayout) {
+  if (sessionTarget !== null) {
+    const at = state.editJournal.pivotAdds.findIndex((pivot) => pivot.name === sessionTarget)
+    if (at < 0) throw new Error(t('appSlicerPivotStale'))
+    state.editJournal.pivotAdds.splice(at, 1, additionPayload)
+    return { location, pageRows }
+  }
+  if (fileTarget !== null && relayout) {
     const newOutputRef =
       `${columnLabel(location.startColumn)}${location.startRow + 1}` +
       `:${columnLabel(location.endColumn)}${location.endRow + 1}`
-    recordPivotCacheRefresh(state.editJournal, relayout.cachePath)
+    recordPivotCacheRefresh(state.editJournal, fileTarget.cachePath)
     recordPivotRefreshUpdate(
       state.editJournal,
-      relayout.cachePath,
+      fileTarget.cachePath,
       targetSheetId,
       newOutputRef,
       additionPayload,
     )
     // The old in-memory definition is stale: after deletion, refresh/slicers
     // are disabled for it until save-and-reopen; saving reopens the session and
-    // re-parses the newly written definition.
-    state.pivotDefinitions.delete(relayout.pivotPath)
+    // re-parses the newly written definition. The pane keeps editing from the
+    // journaled relayout payload.
+    state.pivotDefinitions.delete(fileTarget.pivotPath)
     const staleRange = targetMeta?.pivotRanges.find(
       (range) =>
         range.startRow === relayout.oldBounds.startRow &&
@@ -469,11 +549,12 @@ export function applyAiPivotAdd(
       staleRange.endRow = location.endRow
       staleRange.endColumn = location.endColumn
     }
-    const pivotMeta = targetMeta?.pivotTables.find((entry) => entry.path === relayout.pivotPath)
+    const pivotMeta = targetMeta?.pivotTables.find((entry) => entry.path === fileTarget.pivotPath)
     if (pivotMeta) pivotMeta.outputRef = newOutputRef
-    return
+    return { location, pageRows }
   }
   recordPivotAdd(state.editJournal, additionPayload)
+  return { location, pageRows }
 }
 
 export function pivotConfigToOpParts(
@@ -481,7 +562,10 @@ export function pivotConfigToOpParts(
   fields: readonly PivotField[],
 ):
   | string
-  | Pick<AddPivotOperation, 'rowFields' | 'columnField' | 'groupings' | 'filters' | 'values'> {
+  | Pick<
+      AddPivotOperation,
+      'rowFields' | 'columnField' | 'pageFields' | 'groupings' | 'filters' | 'values'
+    > {
   // Multi-level rows: mapped to field captions in the dialog's order (outer
   // first).
   const rowFieldLabels: string[] = []
@@ -498,6 +582,12 @@ export function pivotConfigToOpParts(
     const label = fields[colFieldIndex]?.label
     if (!label) return t('appInvalidColumnField')
     columnFieldLabels.push(label)
+  }
+  const pageFields: NonNullable<AddPivotOperation['pageFields']> = []
+  for (const page of config.pageFields) {
+    const label = fields[page.fieldIndex]?.label
+    if (!label) return t('appInvalidPageField')
+    pageFields.push(page.item === null ? label : { field: label, item: page.item })
   }
   // Grouping modes: field index → field caption (DSL groupings reference
   // fields by caption).
@@ -541,6 +631,7 @@ export function pivotConfigToOpParts(
           agg: 'sum' as const,
           formula: v.formula.trim(),
           ...(v.showDataAs !== undefined ? { showDataAs: v.showDataAs } : {}),
+          ...(v.name?.trim() ? { name: v.name.trim() } : {}),
         }
       }
       const label = fields[v.fieldIndex]?.label
@@ -549,6 +640,7 @@ export function pivotConfigToOpParts(
         field: label,
         agg: v.agg,
         ...(v.showDataAs !== undefined ? { showDataAs: v.showDataAs } : {}),
+        ...(v.name?.trim() ? { name: v.name.trim() } : {}),
       }
     })
   } catch (error) {
@@ -557,6 +649,7 @@ export function pivotConfigToOpParts(
   return {
     rowFields: rowFieldLabels,
     ...(columnFieldLabels.length > 0 ? { columnField: columnFieldLabels } : {}),
+    ...(pageFields.length > 0 ? { pageFields } : {}),
     ...(groupingEntries.length > 0 ? { groupings: groupingEntries } : {}),
     ...(filterOps.length > 0 ? { filters: filterOps } : {}),
     values: valueFields,

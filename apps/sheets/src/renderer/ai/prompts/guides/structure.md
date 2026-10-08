@@ -14,7 +14,7 @@
 
 ## Sheet protection
 
-`{op:"protect_sheet", sheetId, protected:true|false}` — **layout-class**, can share a batch with content/format operations (exempt from the batching discipline below). Written into the file on save (passwords not supported); password-protected sheets cannot be unprotected. The editor itself does not enforce the lock.
+`{op:"protect_sheet", sheetId, protected:true|false, password?, allow?}` — **layout-class**, can share a batch with content/format operations (exempt from the batching discipline below). Written into the file on save and enforced in the editor (locked cells refuse edits). `password` is optional plaintext: it is hashed when protecting and required to unprotect a password-protected sheet. `allow` lists what stays permitted while protected (selectLockedCells, selectUnlockedCells, formatCells, formatColumns, formatRows, insertColumns, insertRows, insertHyperlinks, deleteColumns, deleteRows, sort, autoFilter, pivotTables, objects, scenarios); unlisted flags are false except the two select flags.
 
 ## Mandatory batching discipline
 

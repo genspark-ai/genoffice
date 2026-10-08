@@ -450,10 +450,7 @@ function serializeCfvo(value: unknown, extra = ''): string {
   if (type === 'formula') {
     return `<cfvo type="formula" val="${escapeXmlAttribute(String(raw ?? '0'))}"${extra}/>`
   }
-  // A non-numeric or non-finite threshold stringifies to "NaN"/"Infinity",
-  // which Excel cannot evaluate, so the rule silently stops applying. The
-  // sibling highlight path already rejects this input; fail the same way here
-  // instead of writing an unusable threshold.
+  // CT_Cfvo/@val is xsd:string, so val="NaN" passes schema but the rule never applies.
   const numeric = Number(raw ?? 0)
   if (!Number.isFinite(numeric)) {
     throw new CfEditError(`A ${type} threshold needs a finite value.`)

@@ -33,7 +33,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.4",
-    "electron": "^43.3.0",
+    "electron": "^43.7.6",
     "electron-vite": "^5.0.0",
     "jsdom": "^28.0.0",
     "parse5": "^8.0.1",

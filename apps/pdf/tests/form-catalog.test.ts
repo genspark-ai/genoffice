@@ -195,18 +195,18 @@ describe('form catalog', () => {
     expect(hasXfaMarker(new TextEncoder().encode('<< /AcroForm 12 0 R >>'))).toBe(false)
   })
 
-  it('does not read /XFA out of content text', () => {
-    // each of these spells /XFA without a token boundary before it
-    expect(hasXfaMarker(new TextEncoder().encode('BT (/XFA forms) Tj ET'))).toBe(false)
-    expect(hasXfaMarker(new TextEncoder().encode('<</Fields[1 0 R]/XFA 5 0 R>>'))).toBe(false)
-    expect(hasXfaMarker(new TextEncoder().encode('/DR 5 0 R/XFA 6 0 R'))).toBe(false)
-    expect(hasXfaMarker(new TextEncoder().encode('/DA(/Helv 0 Tf)/XFA['))).toBe(false)
-    // at offset 0 there is no preceding byte, so this really is a bare name token
+  it('accepts /XFA after any regular byte but not as a prefix of a longer name', () => {
+    // `/` is a delimiter, so compact serializers legitimately write these
+    expect(hasXfaMarker(new TextEncoder().encode('<</Fields[1 0 R]/XFA 5 0 R>>'))).toBe(true)
+    expect(hasXfaMarker(new TextEncoder().encode('/DR 5 0 R/XFA 6 0 R'))).toBe(true)
+    expect(hasXfaMarker(new TextEncoder().encode('/DA(/Helv 0 Tf)/XFA['))).toBe(true)
+    expect(hasXfaMarker(new TextEncoder().encode('/NeedAppearances true/XFA 7 0 R'))).toBe(true)
     expect(hasXfaMarker(new TextEncoder().encode('/XFA>>'))).toBe(true)
-    // the real spellings still register
     expect(hasXfaMarker(new TextEncoder().encode('<< /XFA[<< /field 1 0 R >>] >>'))).toBe(true)
     expect(hasXfaMarker(new TextEncoder().encode('/XFA'))).toBe(true)
     expect(hasXfaMarker(new TextEncoder().encode('/XFA 5 0 R'))).toBe(true)
+    expect(hasXfaMarker(new TextEncoder().encode('<< /XFAfoo 1 >>'))).toBe(false)
+    expect(hasXfaMarker(new TextEncoder().encode('/XFAResources 1 0 R'))).toBe(false)
   })
 
   it('uses document metadata for compressed XFA and encryption flags', () => {

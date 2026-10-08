@@ -318,6 +318,7 @@ export function parseChartXml(
   } catch {
     return null
   }
+  tailPaddingLeft = MAX_TAIL_PADDING
   const date1904Node = doc['c:chartSpace']?.['c:date1904']
   const date1904Raw =
     typeof date1904Node === 'object' && date1904Node !== null
@@ -1199,9 +1200,11 @@ function formatDateSerial(serial: number, fmt: string, date1904: boolean): strin
 /** c:pt list → value array ordered by idx. */
 /** Largest point count honored: a hostile ptCount must not allocate the array. */
 const MAX_CHART_POINTS = 1_048_576
-/** How far past the last real point a declared count may pad the array (trailing
- *  empty slots in legit sparse caches; a hostile ptCount stops here). */
-const MAX_TAIL_PADDING = 1024
+/** Empty slots a chart's declared counts may add past their real points, in total.
+ *  One series may still be padded to MAX_CHART_POINTS (a chart over a mostly empty
+ *  range); 256 hostile series declaring a million each share this one budget. */
+const MAX_TAIL_PADDING = MAX_CHART_POINTS
+let tailPaddingLeft = MAX_TAIL_PADDING
 /** Largest series count honored: bounds the series spreads and per-series work. */
 const MAX_CHART_SERIES = 256
 
@@ -1209,23 +1212,16 @@ function readPoints(cache: any): Array<string | null> {
   const ptsRaw = cache?.['c:pt']
   const pts: any[] = Array.isArray(ptsRaw) ? ptsRaw : ptsRaw ? [ptsRaw] : []
   const count = cache?.['c:ptCount']?.['@_val']
-  // Allocation follows the data, not the declaration alone. Legit caches use
-  // ptCount for trailing empty slots (sparse idx, all-gap series), so the
-  // array honors the declared count — but a hostile declaration may only buy
-  // MAX_TAIL_PADDING slots past what the real points occupy. 400 series ×
-  // 1,048,576 declared held 2.3 GB of RSS; each real point now costs what its
-  // own bytes are worth.
+  // Allocation follows the data, not the declaration alone: the declared count
+  // may only pad past the real points while the chart-wide budget lasts.
   const declaredRaw = count != null ? parseInt(count, 10) : pts.length
   const declared = Number.isFinite(declaredRaw) ? Math.max(0, declaredRaw) : pts.length
   const maxIdx = pts.reduce(
     (m: number, pt: any) => Math.max(m, parseInt(pt?.['@_idx'], 10) || 0),
     -1,
   )
-  const n = Math.min(
-    Math.max(declared, maxIdx + 1),
-    maxIdx + 1 + MAX_TAIL_PADDING,
-    MAX_CHART_POINTS,
-  )
+  const n = Math.min(Math.max(declared, maxIdx + 1), maxIdx + 1 + tailPaddingLeft, MAX_CHART_POINTS)
+  tailPaddingLeft -= Math.max(0, n - (maxIdx + 1))
   const out: Array<string | null> = new Array(n).fill(null)
   for (const pt of pts) {
     const idx = parseInt(pt['@_idx'], 10) || 0

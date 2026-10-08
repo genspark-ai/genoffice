@@ -89,17 +89,13 @@ describe('sanitizeAgentPayload', () => {
     expect(sanitizeAgentPayload(input)).toBe(input)
   })
 
-  // A long unbroken [A-Za-z0-9_] run is what an unbounded `\w*` in front of the
-  // keyword alternation backtracks through, so the cost was quadratic in its length.
-  // A hex dump or a base64url token is exactly that shape, and this runs on every
-  // outgoing user message in the renderer.
+  // quadratic in the length of an unbroken alnum run before the fix
   it('stays fast on a long unbroken alphanumeric run', () => {
     const hex = 'deadbeef0123456789abcdef'.repeat(4000) // 100 KB
     const started = performance.now()
     expect(sanitizeAgentPayload(hex)).toBe(hex)
     const elapsed = performance.now() - started
-    // quadratic took ~70s here; linear is well under a second. The ceiling is loose
-    // on purpose: it is a guard against the regression, not a benchmark.
+    // loose ceiling: a regression guard, not a benchmark
     expect(elapsed).toBeLessThan(2_000)
   })
 

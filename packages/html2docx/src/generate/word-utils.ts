@@ -21,17 +21,13 @@ import {
 import { bookmarkName } from './bookmarks'
 import { mapFont } from './fonts'
 
-// Same finite >=1px floor renderImage applies: a 0/NaN inline measurement
-// would otherwise emit an invalid wp:extent (cx=0 or NaN).
+// An unloaded image measures 0, which would emit an invalid wp:extent.
 function finitePx(value) {
   if (!Number.isFinite(value)) return 1
   return Math.max(1, Math.round(value))
 }
 
-// Run text crosses the page-JavaScript boundary, so it can be absent or a
-// non-string. Every consumer below indexes or iterates it directly, which
-// turned such a run into a TypeError and killed the whole conversion. Coerce
-// once here so the content is kept instead of dropped.
+// Persisted IR may carry a non-string text; keep the content instead of throwing.
 function runText(value) {
   if (typeof value === 'string') return value
   return value == null ? '' : String(value)
@@ -176,7 +172,10 @@ function tabStopsFor(context, runs) {
     // otherwise reproduce the measured column position with a left stop.
     const stop =
       r.tabFrac != null && r.tabFrac < 0.75
-        ? { type: TabStopType.LEFT, position: Math.round(r.tabFrac * context.contentDxa) }
+        ? {
+            type: TabStopType.LEFT,
+            position: Math.max(0, Math.round(r.tabFrac * context.contentDxa)),
+          }
         : { type: TabStopType.RIGHT, position: context.contentDxa }
     const key = `${stop.type}:${stop.position}`
     if (!seen.has(key)) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDeckSpec } from '../src/slides/deck-spec'
+import { MAX_DECK_SPEC_RAW_CHARS, parseDeckSpec } from '../src/slides/deck-spec'
 import { parsePageSpec } from '../src/slides/page-spec'
 import type { OutlinePage } from '../src/slides/outline'
 import {
@@ -50,6 +50,16 @@ function stagedPage(extra: Record<string, unknown>, texts: string[], withImage =
 }
 
 describe('parseDeckSpec refusals', () => {
+  it('rejects an oversized payload before parsing it', () => {
+    const raw = `{"pages":[{"elements":[{"type":"text","text":"${'x'.repeat(MAX_DECK_SPEC_RAW_CHARS)}"}]}]}`
+    expect(parseDeckSpec(raw)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('too large'),
+    })
+    const local = parseDeckSpec(raw, { localImages: true })
+    expect(local.ok || !local.error.includes('too large')).toBe(true)
+  })
+
   it('rejects invalid JSON', () => {
     expect(parseDeckSpec('not json')).toMatchObject({
       ok: false,

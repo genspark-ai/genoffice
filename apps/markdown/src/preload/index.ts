@@ -49,6 +49,9 @@ const api: MarkdownApi = {
   saveImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImage, data),
   readImage: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.readImage, src),
   saveImageAs: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImageAs, src),
+  getImageHost: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.getImageHost),
+  setImageHost: (config) => ipcRenderer.invoke(MARKDOWN_CHANNELS.setImageHost, config),
+  uploadImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.uploadImage, data),
   onViewImage: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, src: string) => handler(src)
     ipcRenderer.on(MARKDOWN_CHANNELS.viewImage, listener)
@@ -112,6 +115,13 @@ const api: MarkdownApi = {
     return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
   },
   getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  setAiSettings: (settings) => ipcRenderer.invoke(AI_CHANNELS.setSettings, settings),
+  onAiSettingsChanged: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(AI_CHANNELS.settingsChanged, listener)
+    return () => ipcRenderer.removeListener(AI_CHANNELS.settingsChanged, listener)
+  },
+  openAiModelSettings: () => ipcRenderer.invoke(AI_CHANNELS.openModelSettings),
   aiGskStatus: () => ipcRenderer.invoke(AI_CHANNELS.gskStatus),
   aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
   aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),

@@ -1666,6 +1666,81 @@ fn blip_fill_shape_never_falls_back_to_style_fill_ref() {
     assert_eq!(visual.opacity, Some(0.25));
 }
 
+fn unit_anchor() -> DrawingAnchor {
+    DrawingAnchor {
+        from_row: 0,
+        from_column: 0,
+        from_row_offset: 0,
+        from_column_offset: 0,
+        to_row: 1,
+        to_column: 1,
+        to_row_offset: 0,
+        to_column_offset: 0,
+        explicit_to: true,
+    }
+}
+
+fn shape_paint(sp_body: &str) -> (Option<String>, Option<String>) {
+    let xml = format!(
+        r#"<xdr:wsDr {XDR}><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="2" name="s"/></xdr:nvSpPr>{sp_body}</xdr:sp></xdr:wsDr>"#
+    );
+    let document = Document::parse(&xml).unwrap();
+    let shape = document
+        .descendants()
+        .find(|node| node.has_tag_name("sp"))
+        .unwrap();
+    let visual = shape_visual(
+        shape,
+        unit_anchor(),
+        "visual-1".into(),
+        "sheet1",
+        None,
+        &theme_colors(),
+        "xl/drawings/drawing1.xml",
+        &HashMap::new(),
+        None,
+    );
+    (visual.fill_color, visual.line_color)
+}
+
+/// A shape with no spPr fill/line and no xdr:style is unfilled and unlined
+/// in Excel; it must not pick up a default tint or outline.
+#[test]
+fn shape_without_fill_or_style_is_transparent() {
+    let (fill, line) = shape_paint(
+        r#"<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr>"#,
+    );
+    assert_eq!(fill.as_deref(), Some("none"));
+    assert_eq!(line.as_deref(), Some("none"));
+}
+
+/// fillRef / lnRef idx 0 reference the theme's "no fill" slot; the schemeClr
+/// child is a placeholder, not a paint.
+#[test]
+fn style_ref_idx_zero_means_no_fill() {
+    let (fill, line) = shape_paint(
+        r#"<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr>
+           <xdr:style><a:lnRef idx="0"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef></xdr:style>"#,
+    );
+    assert_eq!(fill.as_deref(), Some("none"));
+    assert_eq!(line.as_deref(), Some("none"));
+    let (fill, line) = shape_paint(
+        r#"<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr>
+           <xdr:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef></xdr:style>"#,
+    );
+    assert_eq!(fill.as_deref(), Some("#042233"));
+    assert_eq!(line.as_deref(), Some("#042233"));
+}
+
+/// A pattFill shape reads as the blend of its two colors, like chart areas.
+#[test]
+fn shape_pattern_fill_blends_its_colors() {
+    let (fill, _) = shape_paint(
+        r#"<xdr:spPr><a:prstGeom prst="rect"/><a:pattFill prst="pct50"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></xdr:spPr>"#,
+    );
+    assert!(fill.is_some_and(|c| c != "none"));
+}
+
 /// Producers may bake a wrong rgb cache next to a theme reference
 /// (tdf113271: theme="1" rgb="FFFFFF" on black dk1 text); the theme
 /// slot wins, and rgb is the fallback when the slot cannot resolve.
@@ -1995,4 +2070,126 @@ fn axis_text_sizes_colors_and_display_units_are_read() {
     .unwrap();
     assert!(json["yAxis"].get("labelSize").is_none());
     assert!(json["yAxis"].get("displayUnit").is_none());
+}
+
+#[test]
+fn grouped_children_read_alt_text_hyperlink_and_picture_xfrm() {
+    let xml = format!(
+        r#"<xdr:wsDr {XDR} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:grpSp>
+              <xdr:nvGrpSpPr><xdr:cNvPr id="1" name="g"/></xdr:nvGrpSpPr>
+              <xdr:grpSpPr><a:xfrm>
+                <a:off x="0" y="0"/><a:ext cx="200" cy="100"/>
+                <a:chOff x="0" y="0"/><a:chExt cx="100" cy="50"/>
+              </a:xfrm></xdr:grpSpPr>
+              <xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="P" descr="Grouped logo">
+                <a:hlinkClick r:id="rId9"/></xdr:cNvPr></xdr:nvPicPr>
+                <xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill>
+                <xdr:spPr><a:xfrm rot="5400000" flipV="1"><a:off x="10" y="10"/><a:ext cx="40" cy="20"/></a:xfrm></xdr:spPr>
+              </xdr:pic>
+              <xdr:sp><xdr:nvSpPr><xdr:cNvPr id="3" name="S" descr="Grouped box"/></xdr:nvSpPr>
+                <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="10" cy="10"/></a:xfrm>
+                <a:prstGeom prst="rect"/></xdr:spPr></xdr:sp>
+            </xdr:grpSp></xdr:wsDr>"#
+    );
+    let document = Document::parse(&xml).unwrap();
+    let group = document
+        .descendants()
+        .find(|node| node.has_tag_name("grpSp"))
+        .unwrap();
+    let mut relationships = HashMap::new();
+    relationships.insert(
+        "rId1".to_owned(),
+        Relationship {
+            target: "../media/image1.png".to_owned(),
+            relationship_type: "image".to_owned(),
+        },
+    );
+    relationships.insert(
+        "rId9".to_owned(),
+        Relationship {
+            target: "https://example.com".to_owned(),
+            relationship_type: "hyperlink".to_owned(),
+        },
+    );
+    let anchor = DrawingAnchor {
+        from_row: 0,
+        from_column: 0,
+        from_row_offset: 0,
+        from_column_offset: 0,
+        to_row: 0,
+        to_column: 0,
+        to_row_offset: 0,
+        to_column_offset: 0,
+        explicit_to: false,
+    };
+    let mut visuals = Vec::new();
+    let mut counter = 0;
+    expand_group(
+        group,
+        &anchor,
+        (0.0, 0.0, 200.0, 100.0),
+        "visual-1",
+        &mut counter,
+        "sheet1",
+        &ColorContext::default(),
+        "xl/drawings/drawing1.xml",
+        &relationships,
+        &mut visuals,
+        0,
+    )
+    .unwrap();
+    assert_eq!(visuals.len(), 2);
+    let picture = &visuals[0];
+    assert_eq!(picture.kind, "image");
+    assert_eq!(picture.alt_text.as_deref(), Some("Grouped logo"));
+    assert_eq!(picture.hyperlink.as_deref(), Some("https://example.com"));
+    assert_eq!(picture.rotation, Some(90.0));
+    assert!(picture.flip_v && !picture.flip_h);
+    // Child ext 40x20 in a 2x child space scales to the group's EMU.
+    assert_eq!(picture.frame_width, Some(80.0));
+    assert_eq!(picture.frame_height, Some(40.0));
+    assert!(picture.edit_as.is_none());
+    assert_eq!(visuals[1].alt_text.as_deref(), Some("Grouped box"));
+}
+
+#[test]
+fn anchor_properties_read_edit_as_alt_text_hyperlink_and_picture_xfrm() {
+    let xml = format!(
+        r#"<xdr:wsDr {XDR} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+          <xdr:twoCellAnchor editAs="oneCell">
+            <xdr:pic><xdr:nvPicPr><xdr:cNvPr id="3" name="Picture 1" descr="A logo">
+              <a:hlinkClick r:id="rId9"/></xdr:cNvPr></xdr:nvPicPr>
+              <xdr:spPr><a:xfrm rot="5400000" flipH="1"><a:off x="0" y="0"/><a:ext cx="914400" cy="457200"/></a:xfrm></xdr:spPr>
+            </xdr:pic>
+          </xdr:twoCellAnchor>
+          <xdr:oneCellAnchor><xdr:sp><xdr:nvSpPr><xdr:cNvPr id="4" name="S"/></xdr:nvSpPr></xdr:sp></xdr:oneCellAnchor>
+        </xdr:wsDr>"#
+    );
+    let document = Document::parse(&xml).unwrap();
+    let anchors: Vec<Node<'_, '_>> = document
+        .descendants()
+        .filter(|node| node.has_tag_name("twoCellAnchor") || node.has_tag_name("oneCellAnchor"))
+        .collect();
+    let mut relationships = HashMap::new();
+    relationships.insert(
+        "rId9".to_owned(),
+        Relationship {
+            target: "https://example.com".to_owned(),
+            relationship_type: "hyperlink".to_owned(),
+        },
+    );
+    let mut picture = text_box_visual("");
+    picture.kind = "image".into();
+    apply_anchor_properties(&mut picture, anchors[0], &relationships);
+    assert_eq!(picture.edit_as.as_deref(), Some("oneCell"));
+    assert_eq!(picture.alt_text.as_deref(), Some("A logo"));
+    assert_eq!(picture.hyperlink.as_deref(), Some("https://example.com"));
+    assert_eq!(picture.rotation, Some(90.0));
+    assert!(picture.flip_h && !picture.flip_v);
+    assert_eq!(picture.frame_width, Some(914_400.0));
+    assert_eq!(picture.frame_height, Some(457_200.0));
+
+    let mut shape = text_box_visual("");
+    apply_anchor_properties(&mut shape, anchors[1], &relationships);
+    assert!(shape.edit_as.is_none() && shape.alt_text.is_none() && shape.hyperlink.is_none());
 }

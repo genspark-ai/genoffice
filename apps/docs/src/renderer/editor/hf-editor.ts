@@ -18,7 +18,7 @@ import {
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
 import { inlineToRuns, runsToInline, type PmNode } from './convert'
 import { TextboxParagraph, textboxSubExtensions } from './extensions'
-import { hfParasOf } from './hf-text'
+import { hfParasOf, hfPictureRuns } from './hf-text'
 
 export type HfFieldKind = 'PAGE' | 'NUMPAGES'
 
@@ -179,14 +179,22 @@ export function hfDocJson(value: HeaderFooter): PmNode {
       if (v !== undefined && v !== null) attrs[key] = v
     }
     if (para.tabStops?.length) attrs.tabStops = JSON.stringify(para.tabStops)
-    content.push({ type: 'docParagraph', attrs, content: fieldSplit(runsToInline(para.runs)) })
+    content.push({
+      type: 'docParagraph',
+      attrs,
+      content: fieldSplit(runsToInline(hfPictureRuns(para.runs).text)),
+    })
   })
   if (content.length === 0) content.push({ type: 'docParagraph', attrs: { hfIndex: null } })
   return { type: 'doc', content }
 }
 
 function paraFromNode(node: PmNode, template: HfParagraph): HfParagraph {
-  const para: HfParagraph = { ...template, runs: inlineToRuns(fieldJoin(node.content ?? [])) }
+  const { leading, trailing } = hfPictureRuns(template.runs)
+  const para: HfParagraph = {
+    ...template,
+    runs: [...leading, ...inlineToRuns(fieldJoin(node.content ?? [])), ...trailing],
+  }
   delete para.cells
   delete para.row
   delete para.box

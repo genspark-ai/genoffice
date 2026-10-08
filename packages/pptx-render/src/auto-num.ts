@@ -53,7 +53,9 @@ function toCjkNum(n: number): string {
  * <a:buAutoNum type> → numbered-bullet glyph (ST_TextAutonumberScheme). Circled numbers
  * only exist up to ⑳/⓴; PowerPoint falls back to plain arabic beyond that.
  */
-export function formatAutoNum(n: number, numType: string | undefined): string {
+export function formatAutoNum(rawN: number, numType: string | undefined): string {
+  // ST_TextBulletStartAtNum floors at 1; a patched startAt <= 0 would index past the CJK table
+  const n = Math.max(1, rawN) || 1
   const t = numType ?? 'arabicPeriod'
   if (t.startsWith('circleNum')) {
     if (t === 'circleNumWdBlackPlain')

@@ -82,8 +82,6 @@ describe('XlsxSidecarClient stdin error', () => {
     child.stdin.destroy(new Error('write EPIPE'))
 
     await expect(pending).rejects.toThrow(/stdin failed|EPIPE/)
-    // the client tore down cleanly: no unhandled error escapes, and the dead
-    // child is replaced on the next request
     const again = client.readRange({ sessionId: 's', sheetId: 'sheet', range })
     expect(spawnMock.mock.calls.length).toBeGreaterThan(1)
     void again.catch(() => {})

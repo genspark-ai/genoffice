@@ -12,8 +12,8 @@ import {
 import { useI18n, type StringKey } from './i18n/locale'
 import { useModalDialog } from './modal-dialog'
 
-/// Excel's Insert Function: browse/search the engine's function catalog,
-/// read the syntax, finish the formula in the dialog, apply to the active cell.
+/// Excel's Insert Function (step one): browse/search the engine's function
+/// catalog, read the syntax, hand the pick to Function Arguments.
 
 interface FallbackSpec {
   readonly name: string
@@ -293,7 +293,8 @@ const FALLBACK_CATALOG: readonly FallbackSpec[] = [
   { name: 'IRR', category: 'Financial', syntax: 'IRR(values, [guess])', descKey: 'dlgFnDescIrr' },
 ]
 
-const CATEGORY_LABELS: Record<'All' | FunctionCategory, StringKey> = {
+const CATEGORY_LABELS: Record<'Recent' | 'All' | FunctionCategory, StringKey> = {
+  Recent: 'dlgFnCatRecent',
   All: 'dlgFnCatAll',
   Financial: 'dlgFnCatFinancial',
   'Date & Time': 'dlgFnCatDateTime',
@@ -312,25 +313,13 @@ const CATEGORY_LABELS: Record<'All' | FunctionCategory, StringKey> = {
   Other: 'dlgFnCatOther',
 }
 
-export function InsertFunctionDialog({
-  targetLabel,
-  functions,
-  onApply,
-  onClose,
-  initialCategory,
-}: {
-  /// A1 label of the destination cell, for the dialog header.
-  readonly targetLabel: string
-  /// Descriptions from the running formula engine (already localized).
-  readonly functions: readonly IFunctionInfo[]
-  /// Returns an error message, or null on success.
-  readonly onApply: (formula: string) => string | null
-  readonly onClose: () => void
-  /// Category to open on (the Formulas tab's category buttons pass their own).
-  readonly initialCategory?: string
-}): React.JSX.Element {
+type CategoryId = keyof typeof CATEGORY_LABELS
+
+/// Live engine descriptions plus the app's own executors, rebuilt when the
+/// UI language changes (the fallback texts are ours to translate).
+export function useFunctionCatalog(functions: readonly IFunctionInfo[]): FunctionSpec[] {
   const { t, lang } = useI18n()
-  const catalog = useMemo(
+  return useMemo(
     () =>
       buildFunctionCatalog(
         functions,
@@ -341,34 +330,54 @@ export function InsertFunctionDialog({
       ),
     [functions, lang],
   )
-  const categories = useMemo(() => {
+}
+
+export function InsertFunctionDialog({
+  targetLabel,
+  catalog,
+  recent,
+  onPick,
+  onClose,
+  initialCategory,
+}: {
+  /// A1 label of the destination cell, for the dialog header.
+  readonly targetLabel: string
+  readonly catalog: readonly FunctionSpec[]
+  /// Most Recently Used names, newest first.
+  readonly recent: readonly string[]
+  readonly onPick: (spec: FunctionSpec) => void
+  readonly onClose: () => void
+  /// Category to open on (the Formulas tab's category buttons pass their own).
+  readonly initialCategory?: string
+}): React.JSX.Element {
+  const { t } = useI18n()
+  const categories = useMemo<CategoryId[]>(() => {
     const present = new Set(catalog.map((spec) => spec.category))
-    return ['All', ...FUNCTION_CATEGORIES.filter((name) => present.has(name))]
+    return ['Recent', 'All', ...FUNCTION_CATEGORIES.filter((name) => present.has(name))]
   }, [catalog])
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState(
-    initialCategory && categories.includes(initialCategory) ? initialCategory : 'All',
+  const [category, setCategory] = useState<CategoryId>(
+    initialCategory && (categories as string[]).includes(initialCategory)
+      ? (initialCategory as CategoryId)
+      : 'Recent',
   )
   const [picked, setPicked] = useState<FunctionSpec | null>(null)
-  const [formula, setFormula] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
   const matches = useMemo(() => {
     const needle = query.trim().toUpperCase()
-    return catalog.filter(
+    const inCategory = (spec: FunctionSpec): boolean =>
+      category === 'All' ||
+      (category === 'Recent' ? recent.includes(spec.name) : spec.category === category)
+    const list = catalog.filter(
       (spec) =>
-        (category === 'All' || spec.category === category) &&
+        (needle !== '' || inCategory(spec)) &&
         (needle === '' ||
           spec.name.includes(needle) ||
           spec.abstract.toUpperCase().includes(needle)),
     )
-  }, [catalog, query, category])
-
-  const pick = (spec: FunctionSpec): void => {
-    setPicked(spec)
-    setFormula(`=${spec.name}(${spec.syntax.endsWith('()') ? ')' : ''}`)
-    setError(null)
-  }
+    if (category !== 'Recent' || needle !== '') return list
+    return [...list].sort((a, b) => recent.indexOf(a.name) - recent.indexOf(b.name))
+  }, [catalog, query, category, recent])
 
   const modal = useModalDialog(onClose)
   return (
@@ -390,10 +399,7 @@ export function InsertFunctionDialog({
           />
           <Dropdown
             value={category}
-            options={categories.map((name) => ({
-              value: name,
-              label: t(CATEGORY_LABELS[name as 'All' | FunctionCategory]),
-            }))}
+            options={categories.map((name) => ({ value: name, label: t(CATEGORY_LABELS[name]) }))}
             onPick={setCategory}
           />
         </div>
@@ -404,9 +410,10 @@ export function InsertFunctionDialog({
               className={`fn-row${picked?.name === spec.name ? ' active' : ''}`}
               role="option"
               aria-selected={picked?.name === spec.name}
-              onClick={() => pick(spec)}
+              onClick={() => setPicked(spec)}
+              onDoubleClick={() => onPick(spec)}
             >
-              <strong>{spec.name}</strong>
+              <strong>{spec.syntax}</strong>
               <span>{spec.abstract}</span>
             </button>
           ))}
@@ -418,41 +425,16 @@ export function InsertFunctionDialog({
             {picked.description !== picked.abstract && <span>{picked.description}</span>}
           </p>
         )}
-        <label className="fn-formula">
-          {t('dlgFnFormula')}
-          <input
-            value={formula}
-            placeholder={t('dlgFnFormulaPlaceholder')}
-            onChange={(event) => setFormula(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                const failure = onApply(formula)
-                setError(failure)
-                if (failure === null) onClose()
-              }
-            }}
-          />
-        </label>
-        {error && (
-          <p className="dialog-note" role="alert">
-            {error}
-          </p>
-        )}
         <div className="dialog-actions">
           <button className="secondary" onClick={onClose}>
             {t('dlgCancel')}
           </button>
           <button
             className="primary-action"
-            disabled={formula.trim() === ''}
-            onClick={() => {
-              const failure = onApply(formula)
-              setError(failure)
-              if (failure === null) onClose()
-            }}
+            disabled={picked === null}
+            onClick={() => picked && onPick(picked)}
           >
-            {t('dlgFnInsert')}
+            {t('dlgOk')}
           </button>
         </div>
       </div>

@@ -1,12 +1,13 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { htmlLang, type Lang } from '@genoffice/i18n'
+import { htmlDir, htmlLang, type Lang } from '@genoffice/i18n'
 import { App } from './App'
 import { AudienceView } from './components/AudienceView'
 import { LocaleProvider, setModuleLang } from './i18n/locale'
 import type { UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
 import '@genoffice/ui/screentip.css'
+import '@genoffice/ui/ai-model-picker.css'
 import '@genoffice/ui/color-picker.css'
 import '@genoffice/ui/dropdown.css'
 import '@genoffice/ui/ribbon-collapse.css'
@@ -53,6 +54,7 @@ async function bootstrap(): Promise<void> {
   }
   setModuleLang(lang)
   document.documentElement.lang = htmlLang(lang)
+  document.documentElement.dir = htmlDir(lang)
   // the audience show window renders slide content only — it never themes
   if (mode !== 'audience') {
     applyTheme(theme)

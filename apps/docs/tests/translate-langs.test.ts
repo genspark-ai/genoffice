@@ -43,7 +43,6 @@ describe('translate language keys', () => {
   it('names zh-TW explicitly, which no join-then-capitalise rule could express', () => {
     expect(appLangKey('zh-TW')).toBe('appLangTraditionalChinese')
     expect(ribbonLangKey('zh-TW')).toBe('ribbonLangTraditionalChinese')
-    // and keeps Simplified Chinese distinct from it
     expect(appLangKey('zh')).toBe('appLangSimplifiedChinese')
   })
 

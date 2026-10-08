@@ -1,6 +1,7 @@
 import {
   readSections,
   tocLevelOf,
+  type ParaBorderSides,
   type ParsedDocFull,
   type StyleDisplay,
   type StyleInfo,
@@ -20,8 +21,10 @@ import {
   cssGridObjectPadExpr,
   cssGridLineMaxExpr,
   cssGridSpacingPt,
+  cssExactLineCap,
   cssLeadTop,
   cssLineHeight,
+  fontBoxCss,
   WORD_AUTO_SPACING_PT,
   isBundledFont,
   isCjkFontName,
@@ -38,7 +41,12 @@ import { DARK_PAPER_HEX, DK_SIDE, darkPageBorderCss, darkPageColor } from './edi
 import { fillInk } from './editor/shading-ink'
 import { textOutlineDecl } from './editor/text-outline'
 import { textAlignDecl } from './editor/text-effects'
-import { paraBorderCss, paraBorderPadding, paraBorderPaddingDecls } from './editor/hf-dom'
+import {
+  paraBorderCss,
+  paraBorderPadding,
+  paraBorderPaddingDecls,
+  paraBorderShadowDecls,
+} from './editor/hf-dom'
 
 /** lines laid out on list geometry: list items and the numbered stray line of a textbox anchor */
 const LIST_LINES = '.doc-li, .doc-li-stray'
@@ -297,6 +305,58 @@ function listGroupSelectors(parsed: ParsedDocFull): string[] {
   ]
 }
 
+/**
+ * Style-level paragraph shading and w:pBdr, same look as blockAttrs' direct
+ * borders (which win as inline style); explicit pPr w:shd is inline and wins too.
+ */
+function styleBorderDecls(d: StyleDisplay): { decls: string[]; darkDecls: string[] } {
+  const decls: string[] = []
+  const darkDecls: string[] = []
+  if (d.shadingFill && d.shadingFill !== 'auto') {
+    decls.push(`background-color:#${d.shadingFill}`, `--pbdr-fill:#${d.shadingFill}`)
+    darkDecls.push(
+      `background-color:${darkPageColor(d.shadingFill)}`,
+      `--pbdr-fill:${darkPageColor(d.shadingFill)}`,
+    )
+  }
+  if (d.borderSides) {
+    let drawn = ''
+    for (const side of ['top', 'bottom', 'left', 'right'] as const) {
+      const line = d.borderSides[DK_SIDE[side]]
+      if (!line || line.none) continue
+      drawn += DK_SIDE[side]
+      const css = paraBorderCss(line)
+      decls.push(`border-${side}:${css}`)
+      darkDecls.push(`border-${side}:${darkPageBorderCss(css)}`)
+    }
+    decls.push(
+      ...paraBorderPaddingDecls(paraBorderPadding(drawn, d.borderSides)),
+      ...paraBorderShadowDecls(d.borderSides),
+    )
+  }
+  return { decls, darkDecls }
+}
+
+/**
+ * Word does not pad table-cell paragraphs with the docDefaults none-side w:space
+ * (production PDFs: row pitch = cell margins + line); a style's own pBdr side keeps it.
+ */
+function cellPadResetDecls(d: StyleDisplay | undefined, dd: ParaBorderSides | undefined): string[] {
+  if (!dd) return []
+  const out: string[] = []
+  for (const [ch, prop] of [
+    ['t', 'padding-top'],
+    ['b', 'padding-bottom'],
+  ] as const) {
+    const side = dd[ch]
+    const own = d?.borderSides?.[ch]
+    if (side?.none && side.spacePt && own?.none && own.spacePt === side.spacePt) {
+      out.push(`${prop}:0`)
+    }
+  }
+  return out
+}
+
 export function docStyleCss(parsed: ParsedDocFull): string {
   const rules: string[] = []
   const listGroups = listGroupSelectors(parsed)
@@ -457,7 +517,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       baseAscii && baseEa && baseAscii !== baseEa
         ? cssDualFontFamily(baseAscii, baseEa)
         : cssFontFamily(baseEa ?? baseAscii ?? 'Calibri')
-    decls.push(`font-family:${baseFamily}`)
+    decls.push(`font-family:${baseFamily}`, ...fontBoxCss(baseFamily))
     if (baseEa) decls.push(`--doc-east-asian-font:${cssFontFamily(baseEa)}`)
     // Mixed declared/inherited-font paragraphs under a typed grid (blockAttrs
     // .doc-grid-strut): Chromium's line box unions the strut's and every inline
@@ -551,6 +611,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (docMult) decls.push(`--doc-line-mult:${docMult}`)
     const docLeadTop = cssLeadTop(lhSrc?.lineRule, lhSrc?.lineRawTwips, lhSrc?.lineSpacing)
     if (docLeadTop && docLeadTop !== 'initial') decls.push(`--doc-lead-top:${docLeadTop}`)
+    const docCap = cssExactLineCap(lhSrc?.lineRule, lhSrc?.lineRawTwips)
+    if (docCap) decls.push(`--doc-lh-cap:${docCap}`)
     if (typedGrid && lhSrc && (lhSrc.lineRule === 'exact' || lhSrc.lineRule === 'atLeast')) {
       rules.push(`${gridBlocks} span { line-height:inherit }`)
       // paragraphs that declare their own auto spacing (inline --doc-line-mult)
@@ -587,7 +649,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // declared per block so --doc-line-factor set inline on a paragraph re-evaluates
     // the line-height var (it wouldn't through inheritance)
     const blockSel =
-      '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6, .doc-page .doc-protected-field, .doc-page .doc-img-para'
+      '.doc-page p, .doc-page .doc-li, .doc-page h1, .doc-page h2, .doc-page h3, .doc-page h4, .doc-page h5, .doc-page h6, .doc-page .doc-protected-field, .doc-page .doc-protected-formula-display, .doc-page .doc-img-para'
     const beforePt =
       (normal?.spaceBeforeAuto ?? dd?.spaceBeforeAuto)
         ? WORD_AUTO_SPACING_PT
@@ -612,7 +674,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // per-style variants; scoped to unstyled items (styled ones resolve their
     // margins per style) and left un-!important so direct spacing still wins
     const unstyledBlock =
-      ':is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-img-para):not([data-style])'
+      ':is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display, .doc-img-para):not([data-style])'
     if (normal?.spaceAfterAuto ?? dd?.spaceAfterAuto) {
       liCollapse(':not([data-style])', 'after')
       rules.push(`${CELL_BLOCK}${unstyledBlock}${CELL_LAST} { margin-bottom:0 }`)
@@ -644,7 +706,32 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         decls.push(`margin-inline-end:${(normal.indentRightTwips / 20).toFixed(1)}pt`)
       if (decls.length > 0) {
         rules.push(
-          `.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-protected-field):not([data-style]) { ${decls.join(';')} }`,
+          `.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display):not([data-style]) { ${decls.join(';')} }`,
+        )
+      }
+    }
+    // Normal's w:pBdr / w:shd (docDefaults pPrDefault included) reach unstyled paragraphs the same way
+    if (normal) {
+      const sb = styleBorderDecls(normal)
+      const sels = [
+        'p',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        '.doc-protected-field',
+        '.doc-protected-formula-display',
+      ]
+        .map((s) => `.doc-page ${s}:not([data-style])`)
+        .join(', ')
+      if (sb.decls.length > 0) rules.push(`${sels} { ${sb.decls.join(';')} }`)
+      darkTwin(sels, sb.darkDecls)
+      const cell = cellPadResetDecls(normal, parsed.docDefaults?.borderSides)
+      if (cell.length > 0) {
+        rules.push(
+          `.doc-page :is(td, th) :is(p, h1, h2, h3, h4, h5, h6):not([data-style]) { ${cell.join(';')} }`,
         )
       }
     }
@@ -736,6 +823,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         if (psMult) decls.push(`--doc-line-mult:${psMult}`)
         const psLeadTop = cssLeadTop(ps?.lineRule, ps?.lineRawTwips, ps?.lineSpacing)
         if (psLeadTop) decls.push(`--doc-lead-top:${psLeadTop}`)
+        const psCap = cssExactLineCap(ps?.lineRule, ps?.lineRawTwips)
+        if (psCap) decls.push(`--doc-lh-cap:${psCap}`)
         if (ps?.lineRule === 'exact' || ps?.lineRule === 'atLeast') {
           const stretches = ['td p', 'th p', 'td .doc-li', 'th .doc-li']
             .map((c) => `${sel} ${c} .doc-run-lf`)
@@ -794,7 +883,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
           : d.fontAscii
             ? cssFontFamily(d.font)
             : cssEaOnlyFontFamily(d.font)
-      decls.push(`font-family:${styleFamily}`)
+      decls.push(`font-family:${styleFamily}`, ...fontBoxCss(styleFamily))
       if (!d.eaSlotEmpty && (d.eastAsiaFont || d.font !== d.fontAscii))
         decls.push(`--doc-east-asian-font:${cssFontFamily(d.eastAsiaFont ?? d.font)}`)
       // the strut alias tail must follow the style's own chain, not the doc base
@@ -805,9 +894,16 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       // an empty-theme-slot backfill is not a document choice and stays silent
       if (!d.eaSlotEmpty && (d.font !== d.fontAscii || isCjkFontName(d.font))) {
         decls.push(`--doc-line-factor-cjk:${lineHeightFactor(d.font)}`)
+        if (isKoreanFontName(d.font)) decls.push(`--doc-line-factor-kr:${krLineFactor(d.font)}`)
+      } else if (d.eaSlotEmpty && isCjkFontName(d.font) && !isKoreanFontName(d.font)) {
+        // hangul the themeFontLang face cannot draw takes Word's fallback face height
+        decls.push(`--doc-line-factor-kr:${krLineFactor(d.font)}`)
       }
     } else if (d.fontAscii) {
-      decls.push(`font-family:${cssFontFamily(d.fontAscii)}`)
+      decls.push(
+        `font-family:${cssFontFamily(d.fontAscii)}`,
+        ...fontBoxCss(cssFontFamily(d.fontAscii)),
+      )
       if (gridStrut) decls.push(`--doc-grid-strut-tail:${cssFontFamily(d.fontAscii)}`)
       decls.push(`--doc-latin-chain:${docLatinChainCss(d.fontAscii)}`)
     }
@@ -863,6 +959,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       ? cssLeadTop(lineSrc.lineRule, lineSrc.lineRawTwips, lineSrc.lineSpacing)
       : null
     if (styleLeadTop) decls.push(`--doc-lead-top:${styleLeadTop}`)
+    const styleCap = lineSrc ? cssExactLineCap(lineSrc.lineRule, lineSrc.lineRawTwips) : null
+    if (styleCap) decls.push(`--doc-lh-cap:${styleCap}`)
     // grid span snapping scales by the style's multiple (an explicit single
     // still overrides an inherited document multiple); the extra rule keeps
     // tallest-run snapping when the document default line is exact/atLeast
@@ -951,29 +1049,24 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       const h = d.suppressAutoHyphens ? 'manual' : 'auto'
       decls.push(`hyphens:${h}`, `-webkit-hyphens:${h}`)
     }
-    // style-level paragraph shading (explicit pPr w:shd is inline style and wins)
-    if (d.shadingFill && d.shadingFill !== 'auto') {
-      decls.push(`background-color:#${d.shadingFill}`)
-      darkDecls.push(`background-color:${darkPageColor(d.shadingFill)}`)
-    }
-    // style-level w:pBdr, same look as blockAttrs' direct borders (which win as inline style)
-    if (d.borderSides) {
-      let drawn = ''
-      for (const side of ['top', 'bottom', 'left', 'right'] as const) {
-        const line = d.borderSides[DK_SIDE[side]]
-        if (!line) continue
-        drawn += DK_SIDE[side]
-        const css = paraBorderCss(line)
-        decls.push(`border-${side}:${css}`)
-        darkDecls.push(`border-${side}:${darkPageBorderCss(css)}`)
-      }
-      decls.push(...paraBorderPaddingDecls(paraBorderPadding(drawn, d.borderSides)))
+    {
+      const sb = styleBorderDecls(d)
+      decls.push(...sb.decls)
+      darkDecls.push(...sb.darkDecls)
     }
     // the static sheet guesses italic for h4-h6 (Word's built-in defaults);
     // a real style definition without w:i means upright
     if (info.headingLevel && info.headingLevel >= 4 && !d.italic) decls.push('font-style:normal')
     if (decls.length > 0) {
       rules.push(`.doc-page [data-style="${CSS.escape(info.styleId)}"] { ${decls.join(';')} }`)
+    }
+    {
+      const cell = cellPadResetDecls(d, parsed.docDefaults?.borderSides)
+      if (cell.length > 0) {
+        rules.push(
+          `.doc-page :is(td, th) [data-style="${CSS.escape(info.styleId)}"] { ${cell.join(';')} }`,
+        )
+      }
     }
     darkTwin(`.doc-page [data-style="${CSS.escape(info.styleId)}"]`, darkDecls)
     // Word merges indents per property (direct ind > numbering level ind > style ind), never

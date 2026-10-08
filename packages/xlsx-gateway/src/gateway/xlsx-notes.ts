@@ -8,6 +8,15 @@ import { encodeXlsxEscapes } from './xlsx-escapes'
 import { resolveRelTarget } from './xlsx-drawing-add'
 import { ensureRelationshipNamespace } from './xlsx-namespace'
 import { nextFreeRelationshipId } from './xlsx-sheets'
+import {
+  parseLegacyComments,
+  syncThreadedComments,
+  THREADED_COMMENTS_REL_TYPE,
+  type LegacyCommentEntry,
+  type SheetThread,
+} from './xlsx-threaded-comments'
+
+export type { SheetThread, SheetThreadReply } from './xlsx-threaded-comments'
 
 export class NoteEditError extends Error {}
 
@@ -16,6 +25,9 @@ export interface SheetNote {
   readonly column: number
   readonly author: string
   readonly text: string
+  /// Threaded comment metadata (text is the root text); `null` turns a
+  /// threaded cell back into a plain note.
+  readonly thread?: SheetThread | null | undefined
 }
 
 interface MutableNotePackage {
@@ -74,7 +86,14 @@ async function nextFreePath(
   throw new NoteEditError('No free part name for the comments part.')
 }
 
-function buildCommentsXml(notes: readonly SheetNote[]): string {
+function cellRef(note: SheetNote): string {
+  return `${columnName(note.column)}${note.row + 1}`
+}
+
+function buildCommentsXml(
+  notes: readonly SheetNote[],
+  overrides: ReadonlyMap<string, LegacyCommentEntry>,
+): string {
   const authors: string[] = []
   const authorId = (author: string): number => {
     const existing = authors.indexOf(author)
@@ -84,10 +103,11 @@ function buildCommentsXml(notes: readonly SheetNote[]): string {
   }
   const comments = notes
     .map((note) => {
-      const ref = `${columnName(note.column)}${note.row + 1}`
+      const ref = cellRef(note)
+      const entry = overrides.get(ref) ?? note
       return (
-        `<comment ref="${ref}" authorId="${authorId(note.author)}">` +
-        `<text><t xml:space="preserve">${escapeXml(encodeXlsxEscapes(note.text))}</t></text></comment>`
+        `<comment ref="${ref}" authorId="${authorId(entry.author)}">` +
+        `<text><t xml:space="preserve">${escapeXml(encodeXlsxEscapes(entry.text))}</t></text></comment>`
       )
     })
     .join('')
@@ -173,6 +193,24 @@ function removeRel(relsXml: string, type: string): string {
   return relsXml.replace(new RegExp(`<Relationship\\b[^>]*Type="${type}"[^>]*/?>`), '')
 }
 
+async function removeContentTypeOverride(
+  pkg: MutableNotePackage,
+  partPath: string,
+  touchedEntries: Set<string>,
+): Promise<void> {
+  const contentTypes = await pkg.readText(CONTENT_TYPES_PATH)
+  const stripped = contentTypes.replace(
+    new RegExp(
+      `<Override\\b[^>]*PartName="/${partPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*/>`,
+    ),
+    '',
+  )
+  if (stripped !== contentTypes) {
+    pkg.write(CONTENT_TYPES_PATH, stripped)
+    touchedEntries.add(CONTENT_TYPES_PATH)
+  }
+}
+
 const EMPTY_RELS =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
@@ -213,22 +251,40 @@ export async function applySheetNotes(
     existingVmlTarget === null ? null : resolveRelTarget(worksheetPath, existingVmlTarget)
   let relsChanged = false
 
+  const existingLegacy =
+    existingCommentsPath !== null && (await pkg.has(existingCommentsPath))
+      ? parseLegacyComments(await pkg.readText(existingCommentsPath))
+      : new Map<string, LegacyCommentEntry>()
+  const threaded = await syncThreadedComments(
+    pkg,
+    worksheetPath,
+    relsXml,
+    new Map(notes.map((note) => [cellRef(note), note])),
+    existingLegacy,
+    touchedEntries,
+  )
+  if (threaded.relsXml !== relsXml) {
+    relsXml = threaded.relsXml
+    relsChanged = true
+  }
+  if (threaded.partRemoved && threaded.partPath !== null) {
+    relsXml = removeRel(relsXml, THREADED_COMMENTS_REL_TYPE)
+    relsChanged = true
+    await removeContentTypeOverride(pkg, threaded.partPath, touchedEntries)
+  }
+
   if (notes.length === 0) {
-    if (existingCommentsPath === null) return
+    if (existingCommentsPath === null) {
+      if (relsChanged) {
+        pkg.write(relsPath, relsXml)
+        touchedEntries.add(relsPath)
+      }
+      return
+    }
     pkg.remove(existingCommentsPath)
     touchedEntries.add(existingCommentsPath)
     relsXml = removeRel(relsXml, COMMENTS_REL_TYPE)
-    const contentTypes = await pkg.readText(CONTENT_TYPES_PATH)
-    const stripped = contentTypes.replace(
-      new RegExp(
-        `<Override\\b[^>]*PartName="/${existingCommentsPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*/>`,
-      ),
-      '',
-    )
-    if (stripped !== contentTypes) {
-      pkg.write(CONTENT_TYPES_PATH, stripped)
-      touchedEntries.add(CONTENT_TYPES_PATH)
-    }
+    await removeContentTypeOverride(pkg, existingCommentsPath, touchedEntries)
     if (existingVmlPath !== null && (await pkg.has(existingVmlPath))) {
       const remaining = stripNoteShapes(await pkg.readText(existingVmlPath))
       if (/<v:shape\b/.test(remaining)) {
@@ -258,9 +314,9 @@ export async function applySheetNotes(
     const target = `../${commentsPath.replace(/^xl\//, '')}`
     relsXml = appendRel(relsXml, rid, COMMENTS_REL_TYPE, target)
     relsChanged = true
-    pkg.add(commentsPath, buildCommentsXml(notes))
+    pkg.add(commentsPath, buildCommentsXml(notes, threaded.legacy))
   } else {
-    pkg.write(commentsPath, buildCommentsXml(notes))
+    pkg.write(commentsPath, buildCommentsXml(notes, threaded.legacy))
   }
   touchedEntries.add(commentsPath)
 

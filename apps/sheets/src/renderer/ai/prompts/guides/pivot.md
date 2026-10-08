@@ -7,25 +7,37 @@
 
 ## Creating a pivot table (add_pivot)
 
-`{op:"add_pivot", sheetId, sourceRange:"A1:F1000", targetCell:"H1", targetSheetId?, rowFields, columnField?, values:[{field, agg, showDataAs?}], name?}`
+`{op:"add_pivot", sheetId, sourceRange:"A1:F1000", targetCell:"H1", targetSheetId?, rowFields, columnField?, pageFields?, values:[{field, agg, showDataAs?, name?}], name?}`
 
 - **The first row of sourceRange must be headers** (non-empty and mutually unique); rowFields/columnField/values.field all use the header text.
 - rowFields: row dimensions, 1–8 (string or array, **outermost first**); with multiple levels, rows group hierarchically and per-level subtotal rows are added automatically. columnField: column dimension (optional, at most 1; **when columnField is given, values may only have 1 entry**).
-- values: `{field:"Amount", agg:"sum"|"count"|"average"|"max"|"min", showDataAs?}`, 1–8 entries; a values field cannot also be a row/column dimension.
-- showDataAs (value display mode, optional): `"percentOfTotal"` (% of grand total) | `"percentOfRow"` (% of row total) | `"percentOfCol"` (% of column total); displayed with the 0.00% format by default.
+- values: `{field:"Amount", agg:"sum"|"count"|"average"|"max"|"min"|"product"|"countNums", showDataAs?, name?}`, 1–8 entries; a values field cannot also be a row/column/page dimension; `name` overrides the "Sum of Amount" caption.
+- showDataAs (value display mode, optional): `"percentOfTotal"` (% of grand total) | `"percentOfRow"` (% of row total) | `"percentOfCol"` (% of column total) | `"percentOfParentRow"` | `"percentOfParentCol"` (% of the next level up) | `"index"`; percent modes display with the 0.00% format by default.
+- pageFields (report filters, optional, ≤4): header names or `{field, item}`; they render as "Field | (All)" rows above the table (plus a blank row) and a chosen `item` restricts the whole report to matching source rows.
 - targetCell: top-left of the output region, **must not overlap the source region** (put it in blank space right of the source, or use targetSheetId to place it on a summary sheet).
 - How it takes effect: on apply, aggregated results (including subtotal and Grand Total rows/columns) are written directly to the target cells and are immediately visible; on save, native pivot parts are written (refreshOnLoad), so **the file opens in Excel as a live interactive pivot table**.
 - Limits: source region ≤ 10,000 data rows × 200 columns; each row-dimension level ≤ 10,000 distinct members; the same batch cannot also do row/column insertion/deletion or sheet management on the source/target sheet (save first).
 - The output region is protected after saving (not directly editable) — don't stack set_cell on top of it.
 
 ```json
-{"op":"add_pivot","sheetId":"s1","sourceRange":"A1:D500","targetCell":"F1",
- "rowFields":["Region","Product"],"values":[{"field":"Sales","agg":"sum"},{"field":"Sales","agg":"sum","showDataAs":"percentOfTotal"}],"name":"RegionProductSummary"}
+{
+  "op": "add_pivot",
+  "sheetId": "s1",
+  "sourceRange": "A1:D500",
+  "targetCell": "F1",
+  "rowFields": ["Region", "Product"],
+  "values": [
+    { "field": "Sales", "agg": "sum" },
+    { "field": "Sales", "agg": "sum", "showDataAs": "percentOfTotal" }
+  ],
+  "name": "RegionProductSummary"
+}
 ```
 
 ## Refreshing existing pivot tables (refresh_pivot)
 
 `{op:"refresh_pivot", sheetId}` — recomputes the data areas of all pivot tables on the sheet and writes them back. Use it after the source data has changed to bring pivot results up to date.
+
 - When **new categories** appear in the source data, the layout grows automatically: new members are appended at the end of their level (with new subtotal rows for multi-level layouts) and the output region expands — but the area the growth occupies must be empty, otherwise it errors and asks you to clear it first.
 - Cases that still fail with explicit errors: renamed headers / moved data sources, calculated fields, grouped fields, value filters, and growth of compact (non-tabular) layouts. Other edge cases are in the data guide's "Pivot tables" section.
 
@@ -37,9 +49,19 @@ Compute the summary grid directly with `SUMIFS`/`COUNTIFS`/`AVERAGEIFS`:
 
 ```json
 [
- {"op":"set_range","sheetId":"s2","range":"A1:B1","values":[["Region","Sales"]]},
- {"op":"set_range","sheetId":"s2","range":"A2:A5","values":[["East"],["South"],["North"],["West"]]},
- {"op":"set_formula","sheetId":"s2","address":"B2","formula":"=SUMIFS(Sheet1!$C:$C,Sheet1!$A:$A,A2)"}
+  { "op": "set_range", "sheetId": "s2", "range": "A1:B1", "values": [["Region", "Sales"]] },
+  {
+    "op": "set_range",
+    "sheetId": "s2",
+    "range": "A2:A5",
+    "values": [["East"], ["South"], ["North"], ["West"]]
+  },
+  {
+    "op": "set_formula",
+    "sheetId": "s2",
+    "address": "B2",
+    "formula": "=SUMIFS(Sheet1!$C:$C,Sheet1!$A:$A,A2)"
+  }
 ]
 ```
 

@@ -31,6 +31,37 @@ const BODY =
   spacedPara('RIPC AI', -20) + // pure Latin
   spacedPara('정보RI', -20) // half wide, half narrow
 
+const settingsPart = (compat: string) => ({
+  ...SETTINGS_PART,
+  xml: SETTINGS_PART.xml.replace('<w:balanceSingleByteDoubleByteWidth/>', compat),
+})
+
+describe('settings.xml compat flags', () => {
+  it('surfaces useFELayout next to balanceDbcsSpacing', async () => {
+    const both = await parseDocx(
+      await buildDocx({
+        bodyXml: BODY,
+        extraParts: [settingsPart('<w:balanceSingleByteDoubleByteWidth/><w:useFELayout/>')],
+      }),
+    )
+    expect(both.balanceDbcsSpacing).toBe(true)
+    expect(both.useFELayout).toBe(true)
+    const feOnly = await parseDocx(
+      await buildDocx({ bodyXml: BODY, extraParts: [settingsPart('<w:useFELayout/>')] }),
+    )
+    expect(feOnly.balanceDbcsSpacing).toBeUndefined()
+    expect(feOnly.useFELayout).toBe(true)
+    const flagOnly = await parseDocx(
+      await buildDocx({ bodyXml: BODY, extraParts: [SETTINGS_PART] }),
+    )
+    expect(flagOnly.useFELayout).toBeUndefined()
+    const off = await parseDocx(
+      await buildDocx({ bodyXml: BODY, extraParts: [settingsPart('<w:useFELayout w:val="0"/>')] }),
+    )
+    expect(off.useFELayout).toBeUndefined()
+  })
+})
+
 describe('balanceSingleByteDoubleByteWidth character spacing', () => {
   it('doubles spacing on wide glyphs, weighted by the run mix', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY, extraParts: [SETTINGS_PART] }))

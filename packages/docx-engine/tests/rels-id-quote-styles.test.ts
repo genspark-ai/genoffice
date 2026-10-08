@@ -162,7 +162,7 @@ describe('relationship ids in either quote style', () => {
   it('keeps a single-quoted header relationship addressable when editing its text', async () => {
     const bytes = await buildDocx({
       bodyXml: BODY,
-      extraRels: `<Relationship Id="rId88" Type="${REL_BASE}/header" Target="header1.xml"/>`,
+      extraRels: `<Relationship Id='rId88' Type="${REL_BASE}/header" Target="header1.xml"/>`,
       extraParts: [
         {
           path: 'word/header1.xml',
@@ -179,6 +179,29 @@ describe('relationship ids in either quote style', () => {
     })
     expect(await zipText(saved, 'word/header1.xml')).toContain('AFTER')
     expectUniqueIds(await zipText(saved, 'word/_rels/document.xml.rels'))
+    const zip = await JSZip.loadAsync(saved)
+    expect(Object.keys(zip.files).filter((n) => /^word\/header\d+\.xml$/.test(n))).toEqual([
+      'word/header1.xml',
+    ])
+    expect((await zipText(saved, 'word/document.xml')).match(/<w:headerReference/g)).toHaveLength(1)
+  })
+
+  it('allocates an image id above an existing single-quoted one', async () => {
+    const bytes = await buildDocx({
+      bodyXml: BODY,
+      extraRels: `<Relationship Id='rId2' Type="${REL_BASE}/hyperlink" Target="${OLD_TARGET}" TargetMode="External"/>`,
+    })
+    const doc = await parseDocx(bytes)
+    const saved = await saveDocx(doc, [
+      ...originalOrder(doc),
+      {
+        kind: 'image',
+        image: { base64: TINY_PNG_BASE64, mime: 'image/png', widthPx: 100, heightPx: 60 },
+      },
+    ])
+    const relsXml = await zipText(saved, 'word/_rels/document.xml.rels')
+    expectUniqueIds(relsXml)
+    expect(relIds(relsXml)).toContain('rId3')
   })
 
   it('allocates a numbering picture-bullet id above an existing single-quoted one', async () => {
@@ -206,6 +229,19 @@ describe('relationship ids in either quote style', () => {
     )
     expect(await findChartWorkbookPath(bytes, 'word/charts/chart1.xml')).toBe(
       'word/charts/embeddings/workbook1.xlsx',
+    )
+  })
+
+  it('finds a single-quoted absolute chart workbook target written before its Type', async () => {
+    const bytes = await putPart(
+      await buildDocx({ bodyXml: BODY }),
+      'word/charts/_rels/chart1.xml.rels',
+      `${XML_DECL}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Target='/word/embeddings/workbook%201.xlsx' Id='rId1' Type='${REL_BASE}/package'/>` +
+        '</Relationships>',
+    )
+    expect(await findChartWorkbookPath(bytes, 'word/charts/chart1.xml')).toBe(
+      'word/embeddings/workbook 1.xlsx',
     )
   })
 

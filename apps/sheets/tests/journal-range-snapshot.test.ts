@@ -100,3 +100,30 @@ describe('journalRangeSnapshot', () => {
     expect(entries[1]).toMatchObject({ value: 'b', styleReset: true })
   })
 })
+
+describe('journalRangeSnapshot on a fully loaded 60k-cell value-mode sheet', () => {
+  it('journals every cell of the reversed range (300 rows x 200 columns)', () => {
+    const rows = 300
+    const columns = 200
+    // post-sort model: row r shows what used to be row (rows-1-r)
+    const cells = Array.from({ length: rows }, (_, row) =>
+      Array.from({ length: columns }, (_, column) => ({ v: (rows - 1 - row) * columns + column })),
+    )
+    const order: Record<number, number> = {}
+    for (let row = 0; row < rows; row += 1) order[row] = rows - 1 - row
+    const journal = createEditJournal()
+    const state = { editJournal: journal, formulaMode: false } as LazyWorkbookState
+    journalRangeSnapshot(
+      fakeRuntime(cells),
+      state,
+      'sheet-1',
+      { startRow: 0, endRow: rows - 1, startColumn: 0, endColumn: columns - 1 },
+      order,
+    )
+    const entries = journal.cells.get('sheet-1')!
+    expect(entries.size).toBe(rows * columns)
+    expect(entries.get('0:0')).toMatchObject({ value: (rows - 1) * columns })
+    expect(entries.get(`${rows - 1}:${columns - 1}`)).toMatchObject({ value: columns - 1 })
+    expect(entries.get('0:0')?.styleReset).toBeUndefined()
+  })
+})

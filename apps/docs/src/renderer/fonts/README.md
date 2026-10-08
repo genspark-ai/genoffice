@@ -151,6 +151,25 @@ checked in as `GenOfficePoppins-{Regular,Bold}-subset.woff2`. Renamed (no
 Reserved Font Name upstream) so a locally installed Poppins wins by chain
 order. Italic synthesizes oblique from these faces.
 
+## DM Sans (Google Fonts)
+
+| Font                             | Role                                 |
+| -------------------------------- | ------------------------------------ |
+| GenOffice DM Sans (subset woff2) | real face for DM Sans-declaring docs |
+
+Source: DM Sans 1.200 Regular/Bold statics from [google/fonts](https://github.com/google/fonts/tree/af0704e25dfad3e8999a2955cbbdfa2b28099617/ofl/dmsans)
+(SIL OFL 1.1; the current upstream is a variable font whose instances no
+longer share the 1.200 advances). Word lays a DM Sans document out with the
+installed Google Fonts face: corpus 2026-09-30 PDFs embed DMSans-Regular/Bold
+whose hmtx equals the 1.200 statics glyph for glyph (hhea = typo = win =
+992/-310/0, line box 1.302em, 9 pt body pitch 11.7), while the Helvetica-class
+fallback runs ~7% narrower per line and 1.15-spaced. Subset to Latin + Latin
+Extended + punctuation/currency, advances and vertical metrics **unmodified**
+(`tools/build-dm-sans-font.py`), checked in as
+`GenOfficeDMSans-{Regular,Bold}-subset.woff2`. Renamed (no Reserved Font Name
+of its own upstream) so a locally installed DM Sans wins by chain order.
+Italic synthesizes oblique from these faces.
+
 ## Tamil fallback
 
 | Font                    | Role                                     |

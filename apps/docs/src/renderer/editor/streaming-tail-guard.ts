@@ -42,15 +42,21 @@ interface HeldText {
 }
 
 /**
- * True when a step starts at 0, which is how a whole-document replace reaches
- * the model — a remount after a refused chunk, or a different file. Typed text
- * cannot survive one of those, and replaying it would paste it into whatever
- * document took its place.
+ * True when a step replaces the whole document — a remount after a refused
+ * chunk, or a different file. Typed text cannot survive one of those, and
+ * replaying it would paste it into whatever document took its place. An
+ * insert at the document start also has from = 0, so the step must reach the
+ * end of the document it was applied to.
  */
 function replacesWholeDocument(tr: Transaction): boolean {
-  return tr.steps.some((step) => {
-    const s = step as { from?: unknown }
-    return typeof s.from === 'number' && s.from === 0
+  return tr.steps.some((step, i) => {
+    const s = step as { from?: unknown; to?: unknown }
+    return (
+      typeof s.from === 'number' &&
+      typeof s.to === 'number' &&
+      s.from === 0 &&
+      s.to >= tr.docs[i]!.content.size
+    )
   })
 }
 

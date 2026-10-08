@@ -83,4 +83,29 @@ describe('wp:docPr ids of newly embedded pictures', () => {
     expect(ids).toHaveLength(3)
     expect(new Set(ids).size).toBe(3)
   })
+
+  it('charts draw from the same id space as pictures and existing drawings', async () => {
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: drawingParagraph('"9001"') + TEXT_PARA, withImage: true }),
+    )
+    const chart = {
+      kind: 'bar' as const,
+      categories: ['a', 'b'],
+      series: [{ name: 's', values: [1, 2] }],
+    }
+    const saved = await saveDocx(parsed, [
+      { kind: 'original', docxIndex: 0 },
+      { kind: 'original', docxIndex: 1 },
+      { kind: 'chart', chart },
+      {
+        kind: 'image',
+        image: { base64: TINY_PNG_BASE64, mime: 'image/png', widthPx: 20, heightPx: 20 },
+      },
+      { kind: 'chart', chart },
+    ])
+    const ids = docPrIds(await documentXmlOf(saved))
+    expect(ids).toHaveLength(4)
+    expect(new Set(ids).size).toBe(4)
+    expect(ids).toContain('9001')
+  })
 })

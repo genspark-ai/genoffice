@@ -126,9 +126,7 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
                     : (chunk.error ?? options.unknownErrorText()),
           )
         } else {
-          // 'type' is an unchecked string at runtime (it crosses the IPC boundary), so a
-          // main-process build that ships a chunk kind this build predates must not kill the
-          // run: ignore it and re-arm the watchdog, since wire traffic proves it is still alive.
+          // A chunk kind this build predates must not kill the run; traffic proves it is alive.
           armSilence()
         }
       })

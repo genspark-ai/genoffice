@@ -33,7 +33,12 @@ describe('carryStreamedSamples', () => {
       blockOf(els[1], 100, 80),
       blockOf(document.createElement('p'), 180, 50),
     ]
-    carryStreamedSamples(next, prev, { pending: true, dirty: 2, lastPassChildCount: 2 })
+    const carried = carryStreamedSamples(next, prev, {
+      pending: true,
+      dirty: 2,
+      lastPassChildCount: 2,
+    })
+    expect(carried).toBe(1)
     expect(next[0].lineBoxes).toEqual(prev[0].lineBoxes)
     expect(next[0].lineLeadPx).toBeUndefined()
     expect(next[1].lineLeadPx).toBe(3)
@@ -85,7 +90,10 @@ describe('carryStreamedSamples', () => {
     const carried = [{ offsetInBlock: 0, height: 12 }] as never
     const prev = [blockOf(el, 0, 100, { lineBoxes: carried })]
     const next = [blockOf(el, 0, 100)]
-    carryStreamedSamples(next, prev, { pending: true, dirty: null, lastPassChildCount: 1 })
+    // the pagination effect re-running mid-stream reaches the pass the same way
+    expect(
+      carryStreamedSamples(next, prev, { pending: true, dirty: null, lastPassChildCount: 1 }),
+    ).toBe(0)
     expect(next[0].lineBoxes).toBeUndefined()
   })
 

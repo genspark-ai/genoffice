@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+/** One catalog row, exactly as the store reports it — see the store's own type. */
+import type { CatalogEntry as FontCatalogEntry } from '@genoffice/electron-utils/font-store'
 
-export interface CatalogEntry {
-  family: string
-  script: 'latin' | 'ja' | 'ko' | 'sc' | 'tc'
-  installed: boolean
-  downloading: boolean
-}
-
-let cached: CatalogEntry[] | null = null
+let cached: FontCatalogEntry[] | null = null
 
 /**
  * Downloadable font catalog + install actions. Loaded lazily from the picker's
@@ -15,14 +10,14 @@ let cached: CatalogEntry[] | null = null
  * layouts from main via deck-changed, so callers only refresh list state here.
  */
 export function useFontCatalog(): {
-  readonly catalog: CatalogEntry[]
+  readonly catalog: FontCatalogEntry[]
   readonly busy: ReadonlySet<string>
   readonly failed: ReadonlySet<string>
   readonly load: () => void
   readonly download: (family: string) => Promise<boolean>
   readonly installLocal: () => Promise<string[]>
 } {
-  const [catalog, setCatalog] = useState<CatalogEntry[]>(cached ?? [])
+  const [catalog, setCatalog] = useState<FontCatalogEntry[]>(cached ?? [])
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set())
 

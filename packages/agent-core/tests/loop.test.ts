@@ -4,6 +4,7 @@ import {
   COMPLETED_VIA_TOOLS_TEXT,
   TOOL_ABORTED_OUTPUT,
   composeSkills,
+  coerceArgumentFields,
   invalidArgumentFields,
   missingRequiredFields,
   runtimePreamble,
@@ -1140,6 +1141,8 @@ describe('AgentLoop', () => {
     // the turn is closed, so the stream's own onDone cannot finalize it again
     expect(onDone).not.toHaveBeenCalled()
     expect(loop.messages).toHaveLength(0)
+    // the request that threw is cancelled so it cannot overlap the next run
+    expect(transport.cancels).toBe(1)
     loop.run('q again')
     await flush()
     expect(transport.requests).toHaveLength(2)
@@ -1891,6 +1894,76 @@ describe('AgentLoop compaction', () => {
     ])
   })
 
+  it('coerceArgumentFields repairs numeric strings and falls back to a declared default', () => {
+    const tool = {
+      name: 'find',
+      description: '',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pages: { type: 'integer', minimum: 1, maximum: 200 },
+          size: { type: ['number', 'string'] },
+          look_in: { type: 'string', enum: ['values', 'formulas', 'both'], default: 'both' },
+          query: { type: 'string' },
+        },
+      },
+    }
+    expect(coerceArgumentFields(tool, { pages: '20', query: 'x' })).toEqual({
+      pages: 20,
+      query: 'x',
+    })
+    expect(coerceArgumentFields(tool, { look_in: 'cells' })).toEqual({ look_in: 'both' })
+    // a unit string stays a string when the schema allows one
+    expect(coerceArgumentFields(tool, { size: '12pt' })).toEqual({ size: '12pt' })
+    // out of range is clamped like the handlers do; non-numeric is left for invalidArgumentFields
+    expect(coerceArgumentFields(tool, { pages: '0' })).toEqual({ pages: 1 })
+    expect(coerceArgumentFields(tool, { pages: 100000 })).toEqual({ pages: 200 })
+    expect(coerceArgumentFields(tool, { pages: '2.5' })).toEqual({ pages: '2.5' })
+    expect(coerceArgumentFields(tool, { pages: 'twelve' })).toEqual({ pages: 'twelve' })
+    expect(invalidArgumentFields(tool, coerceArgumentFields(tool, { pages: 'twelve' }))).toEqual([
+      '"pages" expected integer',
+    ])
+    // untouched input is returned as the same object
+    const same = { pages: 3 }
+    expect(coerceArgumentFields(tool, same)).toBe(same)
+    expect(coerceArgumentFields(undefined, same)).toBe(same)
+  })
+
+  it('the loop hands the handler the coerced arguments instead of a retry', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 'c', name: 'find', input: { pages: '20', look_in: 'cells' } })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const executed: AgentToolCall[] = []
+    const skill = makeSkill((call) => {
+      executed.push(call)
+      return { output: 'ok', summary: 'ok' }
+    })
+    skill.tools = [
+      {
+        name: 'find',
+        description: 'd',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pages: { type: 'integer' },
+            look_in: { type: 'string', enum: ['values', 'both'], default: 'both' },
+          },
+        },
+      },
+    ]
+    const loop = new AgentLoop({ transport, skill, events: { onDone: vi.fn() } })
+    loop.run('x')
+    await flush()
+    expect(executed.map((c) => c.input)).toEqual([{ pages: 20, look_in: 'both' }])
+  })
+
   it('a truncated tool call is fed back as "split the call", not as a JSON error', async () => {
     const transport = scriptedTransport([
       (cb) => {
@@ -2192,4 +2265,179 @@ describe('composeSkills', () => {
     const clean = composeSkills('y', '', [make('a', null)])
     expect(clean.verifyResponse?.('text', [])).toBeNull()
   })
+})
+
+describe('cancel during retry backoff and per-turn stream budget', () => {
+  it('a stop during the retry backoff rolls the run back instead of recording a placeholder reply', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = scriptedTransport([
+        (cb) => cb.onError('Claude returned no content (empty stream)'),
+      ])
+      const onError = vi.fn()
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError, onDone } })
+      loop.restore([
+        { role: 'user', text: 'earlier question' },
+        { role: 'assistant', text: 'earlier answer' },
+      ])
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      loop.cancel()
+      // finalizes right away, not after the backoff elapses
+      expect(onDone).toHaveBeenCalledWith({ text: '', cancelled: true, turnLimit: false })
+      expect(loop.busy).toBe(false)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(transport.requests).toHaveLength(1)
+      expect(onDone).toHaveBeenCalledTimes(1)
+      expect(onError).not.toHaveBeenCalled()
+      expect(loop.messages).toEqual([
+        { role: 'user', text: 'earlier question' },
+        { role: 'assistant', text: 'earlier answer' },
+      ])
+      expect(JSON.stringify(loop.messages)).not.toContain(COMPLETED_VIA_TOOLS_TEXT)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a stop during the backoff after committed tool turns keeps the run history', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = scriptedTransport([
+        (cb) => {
+          cb.onDelta('Editing first')
+          cb.onToolCall({ id: 't1', name: 'do_thing', input: { a: 1 } })
+          cb.onDone()
+        },
+        (cb) => cb.onError('Claude returned no content (empty stream)'),
+      ])
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onDone } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(transport.requests).toHaveLength(2)
+      loop.cancel()
+      expect(onDone).toHaveBeenCalledWith({ text: '', cancelled: true, turnLimit: false })
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(transport.requests).toHaveLength(2)
+      expect(loop.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+      expect(loop.messages.at(-1)).toEqual({ role: 'assistant', text: COMPLETED_VIA_TOOLS_TEXT })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a stop during the tool-argument-drop backoff keeps the text already shown', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = scriptedTransport([
+        (cb) => {
+          cb.onDelta('Let me plan this.')
+          cb.onError('The model stream closed while sending tool arguments (10 chars received)')
+        },
+      ])
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onDone } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      loop.cancel()
+      expect(onDone).toHaveBeenCalledWith({
+        text: 'Let me plan this.',
+        cancelled: true,
+        turnLimit: false,
+      })
+      expect(loop.messages.at(-1)).toEqual({ role: 'assistant', text: 'Let me plan this.' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a stop during the finalizing turn backoff drops the turn-limit note and reports turnLimit', async () => {
+    vi.useFakeTimers()
+    try {
+      const alwaysTool = (cb: AgentStreamCallbacks) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      }
+      const transport = scriptedTransport([
+        alwaysTool,
+        (cb) => cb.onError('Claude returned no content (empty stream)'),
+      ])
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), maxTurns: 1, events: { onDone } })
+      loop.run('x')
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(transport.requests).toHaveLength(2)
+      expect(transport.requests[1].toolCount).toBe(0)
+      loop.cancel()
+      expect(onDone).toHaveBeenCalledWith({ text: '', cancelled: true, turnLimit: true })
+      expect(
+        loop.messages.find((m) => m.role === 'user' && m.text.includes('turn limit')),
+      ).toBeUndefined()
+      expect(loop.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  function endlessTransport(
+    kind: 'onDelta' | 'onReasoning',
+  ): AgentTransport & { cancels: number; chunks: number } {
+    const chunk = 'x'.repeat(64 * 1024)
+    const transport = {
+      cancels: 0,
+      chunks: 0,
+      stream(_req: unknown, cb: AgentStreamCallbacks) {
+        let stopped = false
+        const pump = () => {
+          if (stopped) return
+          transport.chunks++
+          if (kind === 'onDelta') cb.onDelta(chunk)
+          else cb.onReasoning?.(chunk)
+          queueMicrotask(pump)
+        }
+        queueMicrotask(pump)
+        return {
+          cancel: () => {
+            stopped = true
+            transport.cancels++
+          },
+        }
+      },
+    }
+    return transport
+  }
+
+  it.each(['onDelta', 'onReasoning'] as const)(
+    'a stream that never ends (%s) is aborted once the per-turn budget is exceeded',
+    async (kind) => {
+      const transport = endlessTransport(kind)
+      const onError = vi.fn()
+      const onDone = vi.fn()
+      const onText = vi.fn()
+      const loop = new AgentLoop({
+        transport,
+        skill: makeSkill(),
+        events: { onError, onDone, onText },
+      })
+      loop.run('question')
+      for (let i = 0; i < 200 && !onError.mock.calls.length; i++) await flush()
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect(onError.mock.calls[0][0]).toMatch(/more than 2 MiB of (text|reasoning)/)
+      expect(transport.cancels).toBe(1)
+      // 2 MiB / 64 KiB = 32 chunks fill the budget; the 33rd trips it
+      expect(transport.chunks).toBe(33)
+      expect(onDone).not.toHaveBeenCalled()
+      expect(loop.busy).toBe(false)
+      expect(loop.messages).toHaveLength(0)
+      const before = transport.chunks
+      await flush()
+      await flush()
+      expect(transport.chunks).toBe(before)
+      if (kind === 'onDelta') expect(onText.mock.calls.at(-1)?.[0].length).toBe(32 * 64 * 1024)
+    },
+  )
 })

@@ -40,6 +40,13 @@ describe('header layout-table cell geometry', () => {
     expect(geom.textWidthPx).toBeCloseTo((1980 - 140) / 15, 3)
   })
 
+  it('diagonal lines paint as background layers with a dark-page twin for callers', () => {
+    const geom = hfCellGeometry({ ...pageCell, borders: { tl2br: single } })
+    expect(geom.diagonals).toContain('linear-gradient(to top right')
+    expect(geom.style.backgroundImage).toBe(geom.diagonals)
+    expect(hfCellGeometry(pageCell).diagonals).toBeUndefined()
+  })
+
   it('proportional column keeps its percentage and no padding', () => {
     const geom = hfCellGeometry({ paras: [[{ text: 'x' }]], widthPct: 40 })
     expect(geom.style).toEqual({ width: '40%' })

@@ -82,10 +82,11 @@ export function carryStreamedSamples(
   blocks: BlockBox[],
   lastBlocks: BlockBox[],
   opts: { pending: boolean; dirty: number | null; lastPassChildCount: number },
-): void {
-  if (!opts.pending || lastBlocks.length === 0) return
-  if (opts.dirty === null || opts.dirty < opts.lastPassChildCount) return
+): number {
+  if (!opts.pending || lastBlocks.length === 0) return 0
+  if (opts.dirty === null || opts.dirty < opts.lastPassChildCount) return 0
   const n = Math.min(blocks.length, lastBlocks.length)
+  let carried = 0
   for (let i = 0; i < n; i++) {
     const b = blocks[i]
     const p = lastBlocks[i]
@@ -100,7 +101,9 @@ export function carryStreamedSamples(
     if (p.lineLeadPx !== undefined) b.lineLeadPx = p.lineLeadPx
     if (p.colWraps) b.colWraps = p.colWraps
     if (p.oversizeLineH !== undefined) b.oversizeLineH = p.oversizeLineH
+    if (p.lineBoxes || p.tableRows) carried++
   }
+  return carried
 }
 
 export function sliceWithLineSplit(

@@ -321,6 +321,7 @@ fn rejects_oversized_ranges() {
         row_count: 100_000,
         column_count: 100,
         source_xml_bytes: 1024,
+        stored_cell_count: None,
         column_widths: Vec::new(),
         default_row_height: None,
         default_row_height_fixed: false,
@@ -328,12 +329,17 @@ fn rejects_oversized_ranges() {
         base_column_width: None,
         freeze: None,
         hidden: false,
+        very_hidden: false,
         tab_color: None,
         show_grid_lines: true,
         show_formulas: false,
         show_row_col_headers: true,
         right_to_left: false,
         zoom_scale: None,
+        outline_level_row: 0,
+        outline_level_col: 0,
+        outline_summary_below: true,
+        outline_summary_right: true,
         tables: Vec::new(),
         comments: Vec::new(),
         pivot_ranges: Vec::new(),
@@ -485,6 +491,7 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         row_count: 1,
         column_count: 1,
         source_xml_bytes: 1024,
+        stored_cell_count: None,
         column_widths: Vec::new(),
         default_row_height: None,
         default_row_height_fixed: false,
@@ -492,12 +499,17 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         base_column_width: None,
         freeze: None,
         hidden: false,
+        very_hidden: false,
         tab_color: None,
         show_grid_lines: true,
         show_formulas: false,
         show_row_col_headers: true,
         right_to_left: false,
         zoom_scale: None,
+        outline_level_row: 0,
+        outline_level_col: 0,
+        outline_summary_below: true,
+        outline_summary_right: true,
         tables: Vec::new(),
         comments: Vec::new(),
         pivot_ranges: Vec::new(),
@@ -861,7 +873,38 @@ fn vm_without_rich_data_parts_keeps_the_cached_error() {
     }));
 }
 
-fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
+#[test]
+fn sheet_state_maps_hidden_and_very_hidden() {
+    let sheet_xml = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>"#;
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="2"/></bookViews><sheets><sheet name="A" sheetId="1" r:id="rId1"/><sheet name="B" sheetId="2" state="hidden" r:id="rId2"/><sheet name="C" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/></Relationships>"#,
+        ),
+        ("xl/worksheets/sheet1.xml", sheet_xml),
+        ("xl/worksheets/sheet2.xml", sheet_xml),
+        ("xl/worksheets/sheet3.xml", sheet_xml),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let flags: Vec<(bool, bool)> = metadata
+        .sheets
+        .iter()
+        .map(|sheet| (sheet.hidden, sheet.very_hidden))
+        .collect();
+    assert_eq!(flags, vec![(false, false), (true, false), (true, true)]);
+    assert_eq!(metadata.active_tab, 2);
+    let json = serde_json::to_string(&metadata.sheets[2]).unwrap();
+    assert!(json.contains("\"veryHidden\":true"));
+    let json = serde_json::to_string(&metadata.sheets[1]).unwrap();
+    assert!(!json.contains("veryHidden"));
+}
+
+pub(crate) fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fixture.xlsx");
     let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
@@ -901,6 +944,132 @@ fn stale_single_cell_dimension_is_remeasured() {
     let metadata = sessions.open(&path).unwrap();
     assert_eq!(metadata.sheets[0].row_count, 3);
     assert_eq!(metadata.sheets[0].column_count, 3);
+}
+
+fn open_single_sheet(sheet_xml: &str) -> WorkbookMetadata {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        ("xl/worksheets/sheet1.xml", sheet_xml),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    sessions.open(&path).unwrap()
+}
+
+/// A few far-apart cells make a huge bounding box; the host's load gates
+/// need the stored count, not the box.
+#[test]
+fn sparse_sheet_reports_stored_cells_not_bounding_box() {
+    let metadata = open_single_sheet(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:ZZ50000"/>
+<sheetData>
+<row r="1"><c r="A1"><v>1</v></c><c r="B1" t="s"><v>0</v></c></row>
+<row r="50000"><c r="ZZ50000"><f>A1+1</f><v>2</v></c></row>
+</sheetData>
+</worksheet>"#,
+    );
+    let sheet = &metadata.sheets[0];
+    assert_eq!(sheet.row_count, 50_000);
+    assert_eq!(sheet.column_count, 702);
+    assert_eq!(sheet.stored_cell_count, Some(3));
+}
+
+/// Styled-only and inline-string cells are stored cells; empty `<c/>` and
+/// `<c></c>` placeholders without a style are not.
+#[test]
+fn stored_cell_count_includes_style_only_cells() {
+    let metadata = open_single_sheet(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:F2"/>
+<sheetData>
+<row r="1"><c r="A1" s="2"/><c r="B1"/><c r="C1" s="1"><v>3</v></c><c r="D1" t="inlineStr"><is><t>x</t></is></c><c r="E1"></c><c r="F1" s="3"></c></row>
+<row r="2"><c r="A2"><f>1+1</f></c></row>
+</sheetData>
+</worksheet>"#,
+    );
+    assert_eq!(metadata.sheets[0].stored_cell_count, Some(5));
+}
+
+/// A trusted (large) dimension still yields the real stored count — the
+/// walk only switches to count-only mode.
+#[test]
+fn trusted_dimension_still_counts_stored_cells() {
+    let mut rows = String::new();
+    for row in 1..=120 {
+        rows.push_str(&format!(
+            r#"<row r="{row}"><c r="A{row}"><v>{row}</v></c><c r="B{row}" s="1"/></row>"#
+        ));
+    }
+    let metadata = open_single_sheet(&format!(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:J1200"/>
+<sheetData>{rows}</sheetData>
+</worksheet>"#
+    ));
+    let sheet = &metadata.sheets[0];
+    assert_eq!((sheet.row_count, sheet.column_count), (1_200, 10));
+    assert_eq!(sheet.stored_cell_count, Some(240));
+}
+
+/// Counting on trusted dimensions is paid for by one workbook-wide budget:
+/// the sheet that exhausts it and every later sheet report no count.
+#[test]
+fn stored_cell_budget_is_shared_across_sheets() {
+    let sheet = |cells: usize| {
+        let row = (1..=cells)
+            .map(|column| {
+                format!(
+                    r#"<c r="{}1"><v>1</v></c>"#,
+                    (b'A' + column as u8 - 1) as char
+                )
+            })
+            .collect::<String>();
+        format!(
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:Z1000"/><sheetData><row r="1">{row}</row></sheetData></worksheet>"#
+        )
+    };
+    let (_dir, path) = open_fixture(&[
+        ("xl/worksheets/sheet1.xml", &sheet(4)),
+        ("xl/worksheets/sheet2.xml", &sheet(3)),
+        ("xl/worksheets/sheet3.xml", &sheet(2)),
+    ]);
+    let mut archive = ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let colors = ColorContext::default();
+    let mut budget = 5usize;
+    let first = read_sheet_dimensions(
+        &mut archive,
+        "xl/worksheets/sheet1.xml",
+        &colors,
+        &mut budget,
+    )
+    .unwrap();
+    assert_eq!(first.stored_cell_count, Some(4));
+    assert_eq!(budget, 1);
+    let second = read_sheet_dimensions(
+        &mut archive,
+        "xl/worksheets/sheet2.xml",
+        &colors,
+        &mut budget,
+    )
+    .unwrap();
+    assert_eq!(second.stored_cell_count, None);
+    assert_eq!((second.row_count, second.column_count), (1_000, 26));
+    assert_eq!(budget, 0);
+    let third = read_sheet_dimensions(
+        &mut archive,
+        "xl/worksheets/sheet3.xml",
+        &colors,
+        &mut budget,
+    )
+    .unwrap();
+    assert_eq!(third.stored_cell_count, None);
 }
 
 /// A malformed dimension ref degrades to "measure the sheet", not a
@@ -2879,11 +3048,203 @@ fn expands_shared_formulas_into_followers() {
     assert_eq!(formula_at(2, 6).as_deref(), Some("=F3+1")); // follower G3
     assert_eq!(formula_at(5, 4).as_deref(), Some("=SUM($A$1:B5)")); // master E6
     assert_eq!(formula_at(6, 4).as_deref(), Some("=SUM($A$1:B6)")); // follower E7
-    // The formula index (readWorkbookFormulas) sees the followers too.
+    // The formula index lists masters only; followers come as groups.
     let formulas = sessions
         .read_formula_cells(&metadata.session_id, &sheet_id)
         .unwrap();
-    assert_eq!(formulas.cells.len(), 5);
+    assert_eq!(formulas.cells.len(), 2);
+    assert_eq!(formulas.shared_groups.len(), 2);
+    let group = &formulas.shared_groups[0];
+    assert_eq!((group.si, group.row, group.column), (0, 2, 4));
+    assert_eq!(group.formula, "=D3+1");
+    let range = group.range.unwrap();
+    assert_eq!(
+        (
+            range.start_row,
+            range.end_row,
+            range.start_column,
+            range.end_column
+        ),
+        (2, 2, 4, 6)
+    );
+    assert!(group.cells.is_none());
+}
+
+/// Opens a one-sheet fixture and returns its formula index once complete.
+fn formula_index_of(sheet_xml: &str) -> (WorkbookSessions, WorkbookMetadata, FormulaCellsResult) {
+    let (dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Other" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+        ),
+        ("xl/worksheets/sheet1.xml", sheet_xml),
+        (
+            "xl/worksheets/sheet2.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>7</v></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    // The temp dir must outlive the session; leak it for the test's lifetime.
+    std::mem::forget(dir);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let sheet_id = metadata.sheets[0].id.clone();
+    let result = loop {
+        let result = sessions
+            .read_formula_cells(&metadata.session_id, &sheet_id)
+            .unwrap();
+        if result.indexing_complete {
+            break result;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    (sessions, metadata, result)
+}
+
+fn sheet_with_rows(rows: &str) -> String {
+    format!(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>"#
+    )
+}
+
+/// A shared group whose followers run across several 256-row chunks is one
+/// index entry plus one span-only group; followers never count toward the
+/// formula budget.
+#[test]
+fn shared_group_spanning_chunks_indexes_the_master_only() {
+    let mut rows = String::new();
+    for row in 1..=700 {
+        let formula = if row == 1 {
+            r#"<f t="shared" ref="B1:B700" si="0">A1*2</f>"#.to_owned()
+        } else {
+            r#"<f t="shared" si="0"/>"#.to_owned()
+        };
+        rows.push_str(&format!(
+            r#"<row r="{row}"><c r="A{row}"><v>{row}</v></c><c r="B{row}">{formula}<v>{}</v></c></row>"#,
+            row * 2
+        ));
+    }
+    let (mut sessions, metadata, result) = formula_index_of(&sheet_with_rows(&rows));
+    assert!(!result.truncated);
+    assert_eq!(result.cells.len(), 1);
+    assert_eq!(result.cells[0].formula.as_deref(), Some("=A1*2"));
+    assert_eq!(result.shared_groups.len(), 1);
+    let range = result.shared_groups[0].range.unwrap();
+    assert_eq!(
+        (
+            range.start_row,
+            range.end_row,
+            range.start_column,
+            range.end_column
+        ),
+        (0, 699, 1, 1)
+    );
+    // Chunk reads still deliver the expanded follower text.
+    let sheet_id = metadata.sheets[0].id.clone();
+    let read = sessions
+        .read_range(
+            &metadata.session_id,
+            &sheet_id,
+            &CellRange {
+                start_row: 600,
+                end_row: 600,
+                start_column: 1,
+                end_column: 1,
+            },
+        )
+        .unwrap();
+    assert_eq!(read.cells[0].formula.as_deref(), Some("=A601*2"));
+}
+
+/// Array-formula anchors stay in the index with their `ref`; a shared group
+/// nested next to them is reported separately, and a master without
+/// followers is an ordinary index entry with no group.
+#[test]
+fn array_anchors_and_lonely_masters_stay_in_the_index() {
+    let (_sessions, _metadata, result) = formula_index_of(&sheet_with_rows(
+        r#"<row r="1"><c r="A1"><f t="array" ref="A1:A3">ROW(1:3)</f><v>1</v></c><c r="C1"><f t="shared" ref="C1:C1" si="0">A1+1</f><v>2</v></c><c r="D1"><f t="shared" ref="D1:D2" si="1">C1*2</f><v>4</v></c></row>
+<row r="2"><c r="A2"><v>2</v></c><c r="D2"><f t="shared" si="1"/><v>6</v></c></row>
+<row r="3"><c r="A3"><v>3</v></c></row>"#,
+    ));
+    assert!(!result.truncated);
+    let formulas: Vec<_> = result
+        .cells
+        .iter()
+        .map(|cell| {
+            (
+                cell.row,
+                cell.column,
+                cell.formula.clone().unwrap(),
+                cell.array_ref.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        formulas,
+        vec![
+            (0, 0, "=ROW(1:3)".to_owned(), Some("A1:A3".to_owned())),
+            (0, 2, "=A1+1".to_owned(), None),
+            (0, 3, "=C1*2".to_owned(), None),
+        ]
+    );
+    assert_eq!(result.shared_groups.len(), 1);
+    assert_eq!(result.shared_groups[0].si, 1);
+}
+
+/// Cross-sheet references shift like local ones, and a span with a hole
+/// (a cell inside `ref` carrying its own formula) falls back to listing
+/// the followers explicitly.
+#[test]
+fn shared_groups_keep_cross_sheet_refs_and_list_followers_when_the_span_has_holes() {
+    let (mut sessions, metadata, result) = formula_index_of(&sheet_with_rows(
+        r#"<row r="1"><c r="B1"><f t="shared" ref="B1:B4" si="0">Other!A1+$A$1</f><v>8</v></c></row>
+<row r="2"><c r="B2"><f t="shared" si="0"/><v>8</v></c></row>
+<row r="3"><c r="B3"><f>SUM(A1:A2)</f><v>0</v></c></row>
+<row r="4"><c r="B4"><f t="shared" si="0"/><v>8</v></c></row>"#,
+    ));
+    assert_eq!(result.cells.len(), 2);
+    let group = &result.shared_groups[0];
+    assert_eq!(group.formula, "=Other!A1+$A$1");
+    assert!(group.range.is_none());
+    assert_eq!(group.cells.as_deref(), Some(&[[1, 1], [3, 1]][..]));
+    let sheet_id = metadata.sheets[0].id.clone();
+    let read = sessions
+        .read_range(
+            &metadata.session_id,
+            &sheet_id,
+            &CellRange {
+                start_row: 3,
+                end_row: 3,
+                start_column: 1,
+                end_column: 1,
+            },
+        )
+        .unwrap();
+    assert_eq!(read.cells[0].formula.as_deref(), Some("=Other!A4+$A$1"));
+}
+
+/// 100k+ followers behind a single master must not trip the formula budget.
+#[test]
+fn shared_followers_do_not_count_toward_the_formula_budget() {
+    let mut rows = String::with_capacity(8 << 20);
+    for row in 1..=100_050 {
+        let formula = if row == 1 {
+            r#"<f t="shared" ref="A1:A100050" si="0">B1</f>"#
+        } else {
+            r#"<f t="shared" si="0"/>"#
+        };
+        rows.push_str(&format!(
+            r#"<row r="{row}"><c r="A{row}">{formula}<v>1</v></c></row>"#
+        ));
+    }
+    let (_sessions, _metadata, result) = formula_index_of(&sheet_with_rows(&rows));
+    assert!(!result.truncated);
+    assert_eq!(result.cells.len(), 1);
+    assert_eq!(result.shared_groups.len(), 1);
+    assert!(result.shared_groups[0].range.is_some());
 }
 
 /// Opens a one-sheet fixture and returns its conditional rules once the
@@ -3926,12 +4287,8 @@ fn source_linked_chart_formats_resolve_in_one_pass_per_worksheet() {
     assert_eq!(seen, CHARTS.len(), "every chart visual was resolved");
 }
 
-/// Rewrites one entry's declared uncompressed size in both its local and its
-/// central header, leaving the compressed size, the CRC and the payload alone.
-/// The archive therefore stays fully readable — only the declaration becomes a
-/// lie, which is exactly the shape `zip` 4.6.1 will hand to a caller: its
-/// `find_content` limits the *input* by `compressed_size`, so the deflate
-/// stream still delivers every byte it carries.
+/// Rewrites one entry's declared uncompressed size in its local and central
+/// headers; CRC and payload stay intact so the entry still inflates fully.
 fn forge_declared_size(path: &Path, entry: &str, declared: u32) {
     const LOCAL_HEADER: u32 = 0x0403_4b50;
     const CENTRAL_HEADER: u32 = 0x0201_4b50;
@@ -3939,10 +4296,7 @@ fn forge_declared_size(path: &Path, entry: &str, declared: u32) {
     let mut patched = 0;
     for index in 0..bytes.len().saturating_sub(4) {
         let signature = u32::from_le_bytes(bytes[index..index + 4].try_into().unwrap());
-        // The declared size sits at +22 (local) and +24 (central); the name
-        // follows the fixed block, which is 30 bytes locally and 46 in the
-        // central directory. Both name the entry without parsing the deflate
-        // stream.
+        // size at +22 (local) / +24 (central); name after the 30 / 46 byte fixed block
         let (name_len_at, extra_len_at, size_at, name_at) = match signature {
             LOCAL_HEADER => (26, 28, 22, 30),
             CENTRAL_HEADER => (28, 30, 24, 46),
@@ -3962,12 +4316,6 @@ fn forge_declared_size(path: &Path, entry: &str, declared: u32) {
     fs::write(path, &bytes).unwrap();
 }
 
-/// The media cap used to consult only the central directory's declared size
-/// and then `read_to_end` the rest, so it bounded nothing: a part claiming a
-/// few bytes inflated to whatever the deflate stream carried and the whole
-/// payload landed in one allocation. `@genoffice/zip-gate` closes the same gap
-/// for the docx/pptx hosts by inflating one byte past the claim (#781); the
-/// sidecar reads the entry itself, so it has to hold the same line here.
 #[test]
 fn rejects_media_entry_that_inflates_past_its_declared_size() {
     let dir = tempfile::tempdir().unwrap();
@@ -3980,8 +4328,6 @@ fn rejects_media_entry_that_inflates_past_its_declared_size() {
         writer.write_all(&vec![b'A'; 4 * 1024 * 1024]).unwrap();
         writer.finish().unwrap();
     }
-    // 12 declared bytes for a 4 MiB entry. The CRC is untouched, so the entry
-    // itself reads back cleanly and only the size declaration understates it.
     forge_declared_size(&path, "xl/media/image1.png", 12);
 
     let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
@@ -3992,12 +4338,6 @@ fn rejects_media_entry_that_inflates_past_its_declared_size() {
     );
 }
 
-/// One malformed `<c r=>` made the whole workbook unopenable. Every other
-/// malformed field in this parser degrades rather than erroring — a stale
-/// shared-string index yields a valueless cell because reporting there once
-/// blanked the entire sheet — but the address was still propagated with `?`.
-/// A corrupt address belongs where an omitted one goes: one right of its
-/// predecessor, with its value intact.
 #[test]
 fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
     let (_dir, path) = open_fixture(&[
@@ -4044,8 +4384,6 @@ fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
         Some(CellValue::Number(number)) => number,
         other => panic!("expected a number, got {other:?}"),
     };
-    // A bad address lands one right of its predecessor, exactly as an omitted
-    // one does, and keeps its value; the well-formed neighbours are untouched.
     assert_eq!(number(value_at(0, 0)), 10.0);
     assert_eq!(number(value_at(0, 1)), 20.0);
     assert_eq!(number(value_at(0, 2)), 30.0);
@@ -4053,6 +4391,240 @@ fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
     assert_eq!(number(value_at(1, 1)), 50.0);
 }
 
+/// A threaded comment shows its real body (root text plus replies) under
+/// the person's display name, not the legacy mirror's boilerplate.
+#[test]
+fn reads_threaded_comment_body_instead_of_legacy_mirror() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2017/10/relationships/person" Target="persons/person.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/persons/person.xml",
+            r#"<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><person displayName="Ada" id="{P1}" userId="ada" providerId="None"/></personList>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>"#,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/><Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/threadedComment1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/comments1.xml",
+            r#"<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>tc={R1}</author><author>Bob</author></authors><commentList><comment ref="A1" authorId="0"><text><t>[Threaded comment] boilerplate</t></text></comment><comment ref="B2" authorId="1"><text><t>plain note</t></text></comment></commentList></comments>"#,
+        ),
+        (
+            "xl/threadedComments/threadedComment1.xml",
+            r#"<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><threadedComment ref="A1" dT="2024-05-06T07:08:09.10" personId="{P1}" id="{R1}" done="1"><text>Root text</text></threadedComment><threadedComment ref="A1" personId="{P1}" id="{R2}" parentId="{R1}"><text>Reply text</text></threadedComment></ThreadedComments>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let comments = &metadata.sheets[0].comments;
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].author, "Ada");
+    assert_eq!(comments[0].text, "Root text\n\nReply text");
+    let thread = comments[0].thread.as_ref().unwrap();
+    assert_eq!(thread.id, "{R1}");
+    assert_eq!(thread.person_id, "{P1}");
+    assert_eq!(thread.text, "Root text");
+    assert!(thread.done);
+    assert_eq!(thread.d_t, "2024-05-06T07:08:09.10");
+    assert_eq!(thread.replies.len(), 1);
+    assert_eq!(thread.replies[0].id, "{R2}");
+    assert_eq!(thread.replies[0].author, "Ada");
+    assert_eq!(thread.replies[0].text, "Reply text");
+    assert_eq!(comments[1].author, "Bob");
+    assert_eq!(comments[1].text, "plain note");
+    assert!(comments[1].thread.is_none());
+}
+
+/// Excel-parity protection surface: the sheet flags (lock-style attributes
+/// default to 1, select/objects/scenarios default to 0), the hashed password
+/// and the xf-level `protection locked="0"` unlock survive to the renderer,
+/// and an unlocked blank cell is kept so the editor knows it is editable.
+#[test]
+fn reads_sheet_protection_flags_hash_and_unlocked_styles() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/styles.xml",
+            r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="1"><font/></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="2"><xf/><xf><protection locked="0"/></xf></cellStyleXfs>
+<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf applyProtection="1"><protection locked="0"/></xf><xf applyProtection="1"><protection hidden="1"/></xf><xf><protection locked="0"/></xf><xf xfId="1"/></cellXfs>
+</styleSheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1"><v>1</v></c><c r="B1" s="1"/><c r="C1" s="2"><f>A1</f><v>1</v></c></row>
+</sheetData>
+<sheetProtection algorithmName="SHA-512" hashValue="aGFzaA==" saltValue="c2FsdA==" spinCount="100000" sheet="1" objects="1" scenarios="1" formatCells="0" sort="0" selectLockedCells="1"/>
+</worksheet>"#,
+        ),
+    ]);
+
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let sheet_id = metadata.sheets[0].id.clone();
+    assert_eq!(metadata.styles[1].locked, Some(false));
+    assert_eq!(metadata.styles[1].hidden, None);
+    assert_eq!(metadata.styles[2].locked, None);
+    assert_eq!(metadata.styles[2].hidden, Some(true));
+    // No applyProtection: the own child is ignored, the named style decides.
+    assert_eq!(metadata.styles[3].locked, None);
+    assert_eq!(metadata.styles[4].locked, Some(false));
+
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 2,
+    };
+    let result = loop {
+        let result = sessions
+            .read_range(&metadata.session_id, &sheet_id, &range)
+            .unwrap();
+        if result.indexing_complete {
+            break result;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    // The unlocked blank B1 is kept (Excel's classic input cell).
+    assert!(
+        result
+            .cells
+            .iter()
+            .any(|cell| cell.row == 0 && cell.column == 1 && cell.style_index == Some(1))
+    );
+
+    let protection = result.sheet_protection.expect("sheetProtection parsed");
+    assert!(protection.protected);
+    assert!(protection.has_password);
+    match protection.password {
+        Some(SheetPasswordHash::Hashed {
+            algorithm_name,
+            hash_value,
+            salt_value,
+            spin_count,
+        }) => {
+            assert_eq!(algorithm_name, "SHA-512");
+            assert_eq!(hash_value, "aGFzaA==");
+            assert_eq!(salt_value, "c2FsdA==");
+            assert_eq!(spin_count, 100_000);
+        }
+        other => panic!("unexpected password hash: {other:?}"),
+    }
+    let allow = protection.allow;
+    assert!(allow.format_cells);
+    assert!(allow.sort);
+    assert!(!allow.format_rows);
+    assert!(!allow.insert_rows);
+    assert!(!allow.objects);
+    assert!(!allow.scenarios);
+    assert!(!allow.select_locked_cells);
+    assert!(allow.select_unlocked_cells);
+}
+
+#[test]
+fn legacy_sheet_password_attribute_reads_as_legacy_hash() {
+    let xml = br#"<sheetProtection password="CBEB" sheet="1"/>"#;
+    let mut reader = Reader::from_reader(&xml[..]);
+    let event = reader.read_event().unwrap();
+    let Event::Empty(element) = event else {
+        panic!("expected an empty element")
+    };
+    let info = parse_sheet_protection(&reader, &element).unwrap();
+    assert!(info.protected && info.has_password);
+    assert!(
+        matches!(info.password, Some(SheetPasswordHash::Legacy { ref legacy }) if legacy == "CBEB")
+    );
+    assert!(info.allow.select_locked_cells && info.allow.objects && !info.allow.format_cells);
+}
+
+#[test]
+fn unlocked_normal_style_marks_locked_xfs_explicitly() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/styles.xml",
+            r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf applyProtection="1"><protection locked="0"/></xf><xf/><xf applyProtection="1"><protection locked="1"/></xf></cellXfs></styleSheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    assert_eq!(metadata.styles[0].locked, Some(false));
+    assert_eq!(metadata.styles[1].locked, Some(true));
+    assert_eq!(metadata.styles[2].locked, Some(true));
+}
+
+#[test]
+fn parses_cell_font_vert_align() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/styles.xml",
+            r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="4"><font><sz val="11"/></font><font><sz val="11"/><vertAlign val="superscript"/></font><font><sz val="11"/><vertAlign val="subscript"/></font><font><sz val="11"/><vertAlign val="baseline"/></font></fonts>
+<fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+<borders count="1"><border/></borders>
+<cellXfs count="4"><xf fontId="0"/><xf fontId="1"/><xf fontId="2"/><xf fontId="3"/></cellXfs>
+</styleSheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" s="1"><v>2</v></c></row></sheetData>
+</worksheet>"#,
+        ),
+    ]);
+
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    assert_eq!(metadata.styles[0].vert_align, None);
+    assert_eq!(
+        metadata.styles[1].vert_align.as_deref(),
+        Some("superscript")
+    );
+    assert_eq!(metadata.styles[2].vert_align.as_deref(), Some("subscript"));
+    assert_eq!(metadata.styles[3].vert_align, None);
+}
 
 /// A cancel already in flight when the open is dispatched must abandon it
 /// outright: the host has no session id to read-range or close against, so

@@ -11,7 +11,7 @@
 import { cNvPrIdsInXml, pruneTimingForSpids } from './animation'
 import type { EmuRect, Paragraph, PictureElement, Slide, SlideElement, TextElement } from './types'
 import { clampPosEmu, generateParagraphXml, generateXfrmXml } from './generate'
-import { creationIdXml, escapeXmlAttr, maxRelationshipIdNumber } from './xml-utils'
+import { creationIdXml, escapeXmlAttr, hasDefaultFor, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
 import type { OpenedPptx } from './index'
 import { cleanupDeletedElementResources } from './resource-cleanup'
@@ -181,9 +181,9 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
     flipH: opts.flipH === true,
     flipV: opts.flipV === true,
   })
-  // Parser convention: has txBody and no prstGeom → 'text'; textbox omits prstGeom
+  // txBox="1" + prstGeom rect is PowerPoint's own text-box shape; the parser keys on txBox
   const geom = isTextbox
-    ? ''
+    ? '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
     : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>`
   const fill = opts.fillColor ? `<a:solidFill>${srgbClrXml(opts.fillColor)}</a:solidFill>` : ''
   const ln = opts.stroke
@@ -556,7 +556,7 @@ export function addImageMediaAndRel(
   // 2) [Content_Types] Default (added the first time this extension appears)
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
-  if (ct && !new RegExp(`<Default Extension="${ext}"`).test(ct)) {
+  if (ct && !hasDefaultFor(ct, ext)) {
     const dflt = `<Default Extension="${ext}" ContentType="${mime}"/>`
     archive.entries.set(
       ctPath,

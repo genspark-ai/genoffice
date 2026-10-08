@@ -50,9 +50,6 @@ describe('atomicCopyFile', () => {
     writeFileSync(src, Buffer.from([1, 2, 3, 0, 255]))
     trace.order.length = 0
     await atomicCopyFile(src, join(dir, 'a copy.pdf'))
-    // The shell's copy was the only atomic write in the tree that published the
-    // rename without flushing first, so a power loss right after the rename could
-    // leave the copy truncated.
     expect(trace.order).toEqual(['sync', 'rename'])
   })
 

@@ -89,6 +89,34 @@ describe('validateHeadlessPaths', () => {
     expect(result).toMatchObject({ ok: false, code: 2 })
   })
 
+  it('rejects an output path that is the input file, also through a symlink', () => {
+    const fs = {
+      ...fsWith(['/docs/a.docx', '/docs', '/link/a.docx', '/link']),
+      realpath: (path: string) => path.replace(/^\/link/, '/docs'),
+    }
+    expect(
+      validateHeadlessPaths(request('/docs/a.docx', '/docs/a.docx', 'html'), fs),
+    ).toMatchObject({ ok: false, code: 1, message: expect.stringContaining('differ') })
+    expect(
+      validateHeadlessPaths(request('/docs/a.docx', '/link/a.docx', 'html'), fs),
+    ).toMatchObject({ ok: false, code: 1, message: expect.stringContaining('differ') })
+    expect(
+      validateHeadlessPaths(request('/docs/a.docx', '/link/b.docx', 'html'), fs),
+    ).toMatchObject({ ok: true, outPath: '/link/b.docx' })
+  })
+
+  it('rejects an output path that is an existing directory (exit 1)', () => {
+    const fs = {
+      exists: (path: string) => ['/docs/a.docx', '/out', '/out/a.pdf'].includes(path),
+      isFile: (path: string) => path === '/docs/a.docx',
+    }
+    expect(validateHeadlessPaths(request('/docs/a.docx', '/out/a.pdf'), fs)).toMatchObject({
+      ok: false,
+      code: 1,
+      message: expect.stringContaining('directory'),
+    })
+  })
+
   it('treats a missing output directory as a bad argument (exit 1)', () => {
     const result = validateHeadlessPaths(
       request('/docs/a.docx', '/gone/a.pdf'),
@@ -145,6 +173,34 @@ describe('runHeadlessExport', () => {
       code: 3,
       message: expect.stringContaining('/out/a.pdf'),
     })
+  })
+
+  it('fails when the exporter resolves but left a directory at the output path', async () => {
+    const { exporters } = stubExporters()
+    const present = ['/a.docx', '/out']
+    exporters.docs = async () => {
+      present.push('/out/a.pdf')
+    }
+    const outcome = await runHeadlessExport(request('/a.docx'), exporters, {
+      exists: (path) => present.includes(path),
+      isFile: (path) => path === '/a.docx',
+    })
+    expect(outcome).toMatchObject({ ok: false, code: 3 })
+  })
+
+  it('fails when the exporter resolves but the output predates the run', async () => {
+    const { exporters } = stubExporters()
+    const fs = fsWith(['/a.docx', '/out', '/out/a.pdf'])
+    const fresh = await runHeadlessExport(request('/a.docx'), exporters, {
+      ...fs,
+      mtimeMs: () => Date.now(),
+    })
+    expect(fresh).toMatchObject({ ok: true })
+    const stale = await runHeadlessExport(request('/a.docx'), exporters, {
+      ...fs,
+      mtimeMs: () => Date.now() - 60_000,
+    })
+    expect(stale).toMatchObject({ ok: false, code: 3, message: expect.stringContaining('stale') })
   })
 
   it('never reaches an exporter when the input is unusable', async () => {

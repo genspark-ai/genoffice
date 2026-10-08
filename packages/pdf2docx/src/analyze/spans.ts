@@ -9,7 +9,7 @@ import type { Rect } from '../geometry'
 import { approxEq, median, rectUnion } from '../geometry'
 import type { Dir, PdfChar, Span } from '../ir'
 import type { UnicodeScript } from '../script'
-import { isRtlScript } from '../script'
+import { isEastAsianScript, isRtlScript } from '../script'
 import type { Word } from './words'
 
 /** font sizes within this many points are the same style */
@@ -43,6 +43,18 @@ const SPACE_INK_HEALTHY_EMS = 0.18
  * gap — mild genuine compression keeps its spacing.
  */
 const ARTIFACT_TRACKING_MIN_EMS = 0.15
+/**
+ * East Asian runs carry no space evidence — there are no word spaces to
+ * probe (P14 B). Their health signal is the advance itself: every EA face
+ * advances ideographs, kana and hangul at exactly 1 em, so pairs still
+ * advancing at (near-)fullwidth are NOT squeezed and a negative tracking
+ * median is declared-width fiction. Word's PDF export of DFKai-SB forms
+ * writes /Widths the layout never used; the measured tracking reads ~−0.3 em
+ * and restoring it crushes the run once the output face (or Word's
+ * substitute) advances at its true 1 em (genoffice#1890). Genuinely compressed EA
+ * text advances under the bar and keeps its spacing.
+ */
+const EA_FULLWIDTH_MIN_EMS = 0.9
 
 // \bdemi\b: 'ITC Franklin Gothic Std Demi' is a bold-weight face; the word
 // boundary keeps 'Academi…'-style substrings out
@@ -78,6 +90,9 @@ interface OpenSpan {
   scales: number[]
   /** measured advance − font advance per adjacent pair (median → Span.charSpacingPt) */
   trackings: number[]
+  /** origin-to-origin advance of each pair whose previous char is East Asian
+   * (P14 B for space-less runs: fullwidth advances disprove squeezing) */
+  eaAdvances: number[]
   /** ink gap across each real/inferred space (P14 B: metrics-artifact evidence) */
   spaceInkGaps: number[]
   /** ink gap of each tracked intra-word pair (P15 A: italic-overhang correction) */
@@ -145,6 +160,12 @@ export function buildSpans(words: readonly Word[]): Span[] {
         metricsArtifact =
           spaceGap >= SPACE_INK_HEALTHY_EMS * em ||
           (extreme && (healthyAdvance || spaceGap - overhang >= SPACE_INK_HEALTHY_EMS * em))
+      }
+      // space-less EA runs (genoffice#1890): pairs still advancing at fullwidth prove
+      // the negative median is declared-width fiction, not visual squeezing
+      if (tracking < 0 && !metricsArtifact && open.eaAdvances.length >= 2) {
+        const em = Math.max(open.anchor.fontSize, 1)
+        if (median(open.eaAdvances) >= EA_FULLWIDTH_MIN_EMS * em) metricsArtifact = true
       }
       if (
         !metricsArtifact &&
@@ -219,6 +240,7 @@ export function buildSpans(words: readonly Word[]): Span[] {
           script: c.script,
           scales: [],
           trackings: [],
+          eaAdvances: [],
           spaceInkGaps: [],
           intraInkGaps: [],
           spaceAdvances: [],
@@ -235,6 +257,7 @@ export function buildSpans(words: readonly Word[]): Span[] {
         const nominal = prevTracked.looseBox.x1 - prevTracked.looseBox.x0
         if (advance > 0 && advance <= CHAR_SPACING_MAX_EMS * prevTracked.fontSize && nominal > 0) {
           open.trackings.push(advance - nominal)
+          if (isEastAsianScript(prevTracked.script)) open.eaAdvances.push(advance)
           if (c.box.x1 > c.box.x0 && prevTracked.box.x1 > prevTracked.box.x0) {
             open.intraInkGaps.push(c.box.x0 - prevTracked.box.x1)
           }

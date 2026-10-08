@@ -1,5 +1,5 @@
 /**
- * The template chrome skeleton (#1821): extraction from a deck's render tree
+ * The template chrome skeleton (genoffice#1821): extraction from a deck's render tree
  * (title box / brand-image slot / accent shapes / background per page role)
  * and its prompt formatting. Pure logic — fixtures are loose render nodes.
  */
@@ -118,9 +118,21 @@ describe('extractLayoutSkeleton', () => {
         children: [picNode(0, 0, 80, 80), picNode(90, 0, 80, 80)],
       },
     ])
-    const skeleton = extractLayoutSkeleton([grouped, grouped])!
-    // Four pictures per slide, two recurring boxes — the most frequent cluster wins
-    expect(skeleton.cover?.brandImage).toMatchObject({ x: 1000, y: 40, w: 80, h: 80, pages: 2 })
+    const skeleton = extractLayoutSkeleton([grouped, grouped, grouped, grouped])!
+    // Two content pages, two recurring boxes on each — the first cluster wins the tie
+    expect(skeleton.content?.brandImage).toMatchObject({ x: 1000, y: 40, w: 80, h: 80, pages: 2 })
+  })
+
+  it('counts pages per slide, so duplicates on one page do not fake recurrence', () => {
+    const cover = slide([
+      picNode(1000, 40, 80, 80),
+      picNode(1002, 42, 80, 80),
+      rectNode(0, 600, 1280, 8, '#38BDF8'),
+      rectNode(2, 602, 1280, 8, '#38BDF8'),
+    ])
+    const skeleton = extractLayoutSkeleton([cover, slide([textNode(80, 80, 800, 60, 'x', 32)])])!
+    expect(skeleton.cover?.brandImage).toBeUndefined()
+    expect(skeleton.cover?.accents).toBeUndefined()
   })
 
   it('returns null when nothing recurs', () => {

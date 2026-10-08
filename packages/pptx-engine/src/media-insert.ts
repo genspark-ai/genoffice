@@ -13,7 +13,7 @@
  */
 import { deflateSync } from 'node:zlib'
 import type { EmuRect, Slide } from './types'
-import { creationIdXml, escapeXmlAttr, maxRelationshipIdNumber } from './xml-utils'
+import { creationIdXml, escapeXmlAttr, hasDefaultFor, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
@@ -95,15 +95,6 @@ export function solidPng(w: number, h: number, rgb: [number, number, number]): B
 }
 
 // ── Shared part / rels surgery ─────────────────────────────────────────
-
-const DEFAULT_TAG = /<Default\b[^>]*\/?>/g
-
-/** Any <Default> already declaring this extension, whatever its attribute order or quoting. */
-function hasDefaultFor(ct: string, ext: string): boolean {
-  const re = new RegExp(`\\bExtension\\s*=\\s*(["'])${ext}\\1`)
-  for (const tag of ct.matchAll(DEFAULT_TAG)) if (re.test(tag[0])) return true
-  return false
-}
 
 function ensureDefaultContentType(opened: OpenedPptx, ext: string, mime: string): void {
   const ctPath = '[Content_Types].xml'

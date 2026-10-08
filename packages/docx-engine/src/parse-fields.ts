@@ -68,7 +68,7 @@ export function tagAttr(xml: string, tag: string, name: string): string | undefi
 }
 
 /** direct paragraph geometry Word applies over the style: before/after spacing and left indent */
-function directParaGeometry(
+export function directParaGeometry(
   pPr: string,
 ): Pick<FieldDisplay, 'spaceBeforeTwips' | 'spaceAfterTwips' | 'indentLeftTwips'> {
   const twips = (tag: string, name: string): number | undefined => {

@@ -7,6 +7,8 @@ export interface DateFormatParts {
   elapsed: boolean
   /** which elapsed token leads the format; only meaningful when elapsed is true */
   elapsedUnit?: 'h' | 'm' | 's'
+  /** false when a leading [h] has no minute token (bare [h] renders whole hours) */
+  elapsedMinutes?: boolean
 }
 
 const DATE_ONLY: DateFormatParts = { date: true, time: false, seconds: false, elapsed: false }
@@ -49,12 +51,27 @@ export function builtinDateFormat(numFmtId: number): DateFormatParts | null {
   return BUILTIN.get(numFmtId) ?? null
 }
 
+function firstFormatSection(code: string): string {
+  let quoted = false
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i]
+    if (char === '\\' || (!quoted && (char === '_' || char === '*'))) {
+      i++ // The next character is literal, even when it is a semicolon or quote.
+    } else if (char === '"') {
+      quoted = !quoted
+    } else if (char === ';' && !quoted) {
+      return code.slice(0, i)
+    }
+  }
+  return code
+}
+
 /**
  * Classify a custom formatCode. Only the first section (positive numbers) decides; quoted
  * literals, escaped characters, fill/skip tokens and colour/locale conditions are not tokens.
  */
 export function classifyFormatCode(code: string): DateFormatParts | null {
-  const section = code.split(';')[0] ?? ''
+  const section = firstFormatSection(code)
   if (/general/i.test(section) && !/[ydhs]/i.test(section.replace(/general/gi, ''))) return null
   let elapsed = false
   let elapsedMinutes = false
@@ -91,6 +108,7 @@ export function classifyFormatCode(code: string): DateFormatParts | null {
     seconds: hasS,
     elapsed: elapsed && !date,
     elapsedUnit: elapsed && !date ? elapsedUnit : undefined,
+    elapsedMinutes: elapsed && !date && elapsedUnit === 'h' ? minuteM : undefined,
   }
 }
 
@@ -120,9 +138,10 @@ export function formatSerial(
     }
     if (parts.elapsedUnit === 's') return String(total)
     const h = Math.floor(total / 3600)
+    if (parts.elapsedMinutes === false) return String(h)
     const m = Math.floor((total % 3600) / 60)
-    const s = total % 60
-    return `${h}:${pad(m)}:${pad(s)}`
+    if (!parts.seconds) return `${h}:${pad(m)}`
+    return `${h}:${pad(m)}:${pad(total % 60)}`
   }
   if (serial < 0) return null
   let days = Math.floor(serial)

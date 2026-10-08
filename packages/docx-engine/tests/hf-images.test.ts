@@ -620,3 +620,54 @@ describe('anchored header/footer object bands (wp:positionH/V relativeFrom)', ()
     expect(doc.headerImages!.find((i) => i.floating)!.posXPx).toBe(616)
   })
 })
+
+describe('inline picture sharing a header paragraph with text', () => {
+  const MIXED_XML = HEADER_XML.replace(
+    '<w:p><w:r><w:drawing>',
+    '<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="7074"/></w:tabs></w:pPr>' +
+      '<w:r><w:t>Brand</w:t></w:r><w:r><w:tab/></w:r><w:r><w:drawing>',
+  )
+
+  it('keeps the picture on its run after the tab instead of the part image list', async () => {
+    const doc = await parseDocx(await buildHeaderLogoDocx(MIXED_XML))
+    expect(doc.headerImages ?? []).toHaveLength(0)
+    const para = doc.headerParas![0]
+    expect(para.runs.map((r) => r.text)).toEqual(['Brand\t', ''])
+    const pic = para.runs[1].image!
+    expect(pic.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+    expect(pic.widthPx).toBe(40)
+    expect(pic.heightPx).toBe(20)
+    expect(pic.xml).toContain('<wp:inline')
+  })
+
+  it('leaves a picture-only paragraph on the part image list', async () => {
+    const doc = await parseDocx(await buildHeaderLogoDocx())
+    expect(doc.headerImages).toHaveLength(1)
+    expect(doc.headerParas!.every((p) => p.runs.every((r) => !r.image))).toBe(true)
+  })
+})
+
+describe('saving a header whose paragraph mixes text and an inline picture', () => {
+  const MIXED_XML = HEADER_XML.replace(
+    '<w:p><w:r><w:drawing>',
+    '<w:p><w:r><w:t>Brand</w:t></w:r><w:r><w:tab/></w:r><w:r><w:drawing>',
+  )
+
+  it('regenerates the paragraph once, picture included', async () => {
+    const parsed = await parseDocx(await buildHeaderLogoDocx(MIXED_XML))
+    const paras = parsed.headerParas!
+    const edited = paras.map((p, i) =>
+      i === 0 ? { ...p, runs: p.runs.map((r) => (r.text ? { ...r, text: 'Changed\t' } : r)) } : p,
+    )
+    const saved = await saveDocx(parsed, [{ kind: 'original', docxIndex: 0 }], {
+      header: { text: 'Changed', paras: edited },
+    })
+    const hdr = await (await JSZip.loadAsync(saved)).file('word/header1.xml')!.async('string')
+    expect(hdr.match(/<w:p[\s>]/g)).toHaveLength(2)
+    expect(hdr.match(/<w:drawing[\s>]/g)).toHaveLength(1)
+    expect(hdr).toContain('Changed')
+    expect(hdr).not.toContain('Brand')
+    expect(hdr.indexOf('Changed')).toBeLessThan(hdr.indexOf('<w:drawing'))
+    expect(hdr).toContain('Confidential')
+  })
+})

@@ -4,6 +4,7 @@
  * Used by both the App component (App.tsx) and the module-level sync
  * helpers (univer-sync.ts).
  */
+import type { SheetProtectionInfo } from './sheet-protection'
 import { BorderType, LocalUndoRedoService, Worksheet, type IRange } from '@univerjs/core'
 import { SheetInterceptorService } from '@univerjs/sheets'
 
@@ -14,6 +15,8 @@ import type {
 } from '../shared/desktop-api'
 import type { createUniver } from './create-univer'
 import type { EditJournal } from './edit-journal'
+import type { SharedFormulaLookup } from './shared-formula-index'
+import type { SheetOutlineState } from './outline-model'
 import { netAxisDelta } from './view-transform'
 
 export type UniverRuntime = ReturnType<typeof createUniver>
@@ -89,7 +92,7 @@ export interface LazyWorkbookState {
   /// so an already-loaded range must not satisfy the next load request.
   readonly decorationsPendingSheets: Set<string>
   /// File-side worksheet protection, known once a sheet finishes indexing.
-  readonly sheetProtections: Map<string, { protected: boolean; hasPassword: boolean }>
+  readonly sheetProtections: Map<string, SheetProtectionInfo>
   /// File-side manual page breaks (0-based index of the row/column after the
   /// break, file coordinates), known once a sheet finishes indexing.
   readonly sheetPageBreaks: Map<string, { rowBreaks: number[]; colBreaks: number[] }>
@@ -137,6 +140,12 @@ export interface LazyWorkbookState {
   /// readWorkbookFormulas, so the formula bar can show formulas even when the
   /// closure gave up and the engine never sees them. Display-only.
   readonly formulaText: Map<string, Map<string, string>>
+  /// Sheets whose formulaText overflowed and was dropped (see storeFormulaText).
+  readonly formulaTextTruncated: Set<string>
+  /// Shared-formula groups per sheet (file coordinates) from the formula
+  /// index: followers carry no text of their own there, so their formula is
+  /// derived from the master on demand.
+  readonly sharedFormulaGroups: Map<string, SharedFormulaLookup>
   /// File-cached formula results per sheet ('row:col', screen coordinates),
   /// shown in place of the engine's result when its recalculation errors
   /// (unsupported function, unresolved name). Display-only.
@@ -153,13 +162,7 @@ export interface LazyWorkbookState {
   readonly hiddenRowsCoveredThrough: Map<string, number>
   /// Known row/column outline levels per sheet (file reads + this session's
   /// group edits). Rows outside loaded ranges default to level 0.
-  readonly outline: Map<
-    string,
-    {
-      readonly rows: Map<number, { level: number; collapsed: boolean }>
-      readonly cols: Map<number, { level: number; collapsed: boolean }>
-    }
-  >
+  readonly outline: Map<string, SheetOutlineState>
   /// IronCalc fallback when closure mode is unavailable: file formula-cell
   /// keys per sheet, engine values overlaid on viewport patches, and a
   /// session kill switch after the engine rejects the workbook repeatedly.

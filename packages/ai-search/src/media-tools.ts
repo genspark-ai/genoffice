@@ -117,38 +117,19 @@ export function readAiSettingsFile(path: string): AiSettings {
 
 type Gate = { error: string } | null
 
-// ── Local media roots ───────────────────────────────────────────────
-
-/** The opt-out: no allowlist configured, so the extension check alone decides. */
+/** no allowlist configured: the extension check alone decides */
 const NO_MEDIA_ROOTS: readonly string[] = []
 
 /**
- * Directories a bare local media path may be read from, as the caller sees
- * them: the CLI passes the input file's own directory, an Electron main
- * process passes the open document's directory plus the directory it stages
- * attachments in. Undefined/empty entries are dropped, so a caller can pass an
- * optional open-document directory without branching.
- *
- * There is deliberately no default. The path arrives in a tool call, so the
- * model picks it, and a default cannot be right for every host: process.cwd()
- * refuses legitimate use from any other directory (and on a packaged macOS app
- * whose cwd is "/" it is a no-op, so the gain vanishes exactly where it
- * matters), and tmpdir() is world-readable staging. An allowlist nobody opts
- * into relocates the trust boundary instead of removing it. A caller that
- * supplies no roots gets the pre-allowlist behaviour — the extension check
- * alone — which is what {@link isLocalMediaPathAllowed} reports as "no roots".
+ * Directories a bare local media path may be read from. Deliberately no
+ * default: cwd is "/" in a packaged macOS app and tmpdir() is world-readable,
+ * so every host opts in with its own list (empty = extension check only).
  */
 export function localMediaRoots(...roots: (string | undefined | null)[]): string[] {
   return roots.filter((root): root is string => Boolean(root))
 }
 
-/**
- * The allowlist an Electron main process uses: the open document's own
- * directory (a tool call naming a file next to the document the user is
- * editing is the legitimate case) plus the directory that app stages pasted
- * and attachment media in. An untitled document has no directory, so
- * `docPath` may be undefined and only the staging directory remains.
- */
+/** The Electron allowlist: the open document's directory plus the app's attachment staging dir. */
 export function documentMediaRoots(
   docPath: string | undefined | null,
   attachmentDir: string | undefined | null,
@@ -157,14 +138,9 @@ export function documentMediaRoots(
 }
 
 /**
- * The verified real path of `ref`, or null when it is missing or resolves
- * outside `roots`. Both sides go through realpath, so a symlink planted inside
- * a root cannot walk out of it, and the containment test is on whole path
- * segments, so a sibling like /tmp/root-evil does not pass as /tmp/root.
- *
- * An empty `roots` means the caller did not opt in to confinement: the
- * extension check in {@link loadMediaReference} is then the only gate, and any
- * readable real path is returned (the pre-allowlist behaviour).
+ * Real path of `ref`, or null when missing or outside `roots`. Both sides go
+ * through realpath so a planted symlink cannot walk out, and containment is
+ * on whole segments so /tmp/root-evil does not pass as /tmp/root.
  */
 function verifiedLocalPath(ref: string, roots: readonly string[]): string | null {
   let real: string
@@ -209,10 +185,8 @@ function errorText(err: unknown): string {
 /**
  * Resolves a tool-supplied media reference to bytes: an https URL (SSRF-guarded),
  * a file:// URL from the generated-image store, or a local media file
- * (attachments). Only media extensions are read locally, and — when the caller
- * supplied `roots` — only from those directories, so the model cannot ship
- * arbitrary files to a vendor. With no roots the extension check alone applies
- * (the pre-allowlist behaviour).
+ * (attachments). Only media extensions are read locally, and only from `roots`
+ * when the caller supplied any, so the model cannot ship arbitrary files to a vendor.
  */
 export async function loadMediaReference(
   ref: string,
@@ -259,8 +233,7 @@ export async function loadMediaReference(
   const mime = MIME_BY_EXT[extname(ref).toLowerCase()]
   if (!mime) throw new Error(`Unsupported media file: ${ref} (images, video and audio only)`)
   if (!existsSync(ref)) throw new Error(`File not found: ${ref}`)
-  // resolve before the read: a symlink inside a root points wherever it likes,
-  // and readFileSync would follow it out of the allowlist
+  // resolve before the read: readFileSync would follow a symlink out of the allowlist
   const local = verifiedLocalPath(ref, roots)
   if (!local) {
     throw new Error(
@@ -278,11 +251,7 @@ export async function loadMediaReference(
 export interface MediaToolOptions {
   /** localized replacement for the default signed-out message */
   notLoggedInError?: string
-  /**
-   * Directories a bare local path in a tool call may be read from — the
-   * caller's own list, via {@link localMediaRoots}. Omitted (or empty) means
-   * the allowlist does not apply and the extension check alone decides.
-   */
+  /** directories a bare local path may be read from; omitted = extension check only */
   mediaRoots?: readonly string[]
 }
 

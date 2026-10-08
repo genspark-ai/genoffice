@@ -27,6 +27,16 @@ export interface AnimStep {
   totalMs: number
 }
 
+/** Gallery entry an item belongs to: a top wipe is the "Wipe Down" entry. */
+export function animGalleryKind(item: Pick<AnimationItem, 'effect' | 'direction'>): AnimEffectKind {
+  return item.effect === 'wipe' && item.direction === 'top' ? 'wipeDown' : item.effect
+}
+
+/** What a gallery entry writes: wipeDown is wipe with direction top (same preset bytes). */
+export function animGalleryItem(kind: AnimEffectKind): Pick<AnimationItem, 'effect' | 'direction'> {
+  return kind === 'wipeDown' ? { effect: 'wipe', direction: 'top' } : { effect: kind }
+}
+
 /** Effect category (entrance/emphasis/exit/motion path). */
 export function animClassOf(
   effect: AnimEffectKind,

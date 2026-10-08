@@ -231,21 +231,17 @@ async function geminiTurn(
   let sawFinish = false
   let emitted = false
   let toolCallCount = 0
-  for await (const payload of sseDataEvents(response.body, onBytes)) {
-    // A truncated frame or a non-JSON keep-alive from a proxy should skip
-    // that event, not kill the entire AI turn with a parser error.
-    let event
-    try {
-      event = JSON.parse(payload) as {
-        candidates?: Array<{
-          content?: { parts?: GeminiPart[] }
-          finishReason?: string
-        }>
-        promptFeedback?: { blockReason?: string }
-        error?: { message?: string } | string
-      }
-    } catch {
-      continue
+  for await (const sse of sseDataEvents(response.body, onBytes)) {
+    // A truncated frame or a non-JSON keep-alive from a proxy skips that event
+    // rather than killing the turn.
+    if (sse.json === undefined) continue
+    const event = sse.json as {
+      candidates?: Array<{
+        content?: { parts?: GeminiPart[] }
+        finishReason?: string
+      }>
+      promptFeedback?: { blockReason?: string }
+      error?: { message?: string } | string
     }
     if (event.error) throw new Error(sseErrorText(event.error, 'Gemini stream error'))
     if (event.promptFeedback?.blockReason) {

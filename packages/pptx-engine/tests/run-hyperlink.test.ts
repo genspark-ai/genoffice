@@ -307,6 +307,22 @@ describe('ensureRunLinkRels + save round-trip', () => {
     })
   })
 
+  it('getRunLinks carries the run tooltip', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const { el, pi, ri } = findTextRun(opened)
+    const run = el.text!.paragraphs[pi]!.runs[ri]!
+    run.hyperlink = 'https://tip.example/'
+    run.hyperlinkTooltip = 'Open tip'
+    delete run.hyperlinkRId
+    ensureRunLinkRels(opened, 0, el.text!.paragraphs)
+    expect(getRunLinks(opened, 0)).toContainEqual({
+      elementId: el.id,
+      paraIndex: pi,
+      runIndex: ri,
+      target: { kind: 'url', url: 'https://tip.example/', tooltip: 'Open tip' },
+    })
+  })
+
   it('prunes obsolete run hyperlink relationships on replace and clear', async () => {
     let opened = await openPptx(fx('01_standard_business.pptx'))
     let found = findTextRun(opened)

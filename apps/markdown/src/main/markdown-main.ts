@@ -51,6 +51,8 @@ import {
 } from './asset-lifecycle'
 import { createMarkdownConversionSession, writeMarkdownConversion } from './conversion-lifecycle'
 import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
+import type { ImageHostConfig } from '../shared/ipc'
+import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
   EXPORT_IMAGE_EXTS,
   EXPORT_IMAGE_MIME_BY_EXT,
@@ -896,6 +898,63 @@ function registerMarkdownIpc(): void {
         // open document's own directory is the media root
         { mediaRoots: documentMediaRoots(markdownFilePath(e.sender.id), undefined) },
       ),
+  )
+
+  // ---- image host (genoffice#388): bring-your-own storage for pasted images,
+  // with the local assets/ copy kept as the renderer's fallback ----
+  const imageHostConfigPath = (): string => join(app.getPath('userData'), 'markdown-settings.json')
+
+  const readImageHostConfig = async (): Promise<ImageHostConfig | null> => {
+    try {
+      const raw = JSON.parse(await readFile(imageHostConfigPath(), 'utf8'))
+      return normalizeImageHostConfig(raw?.imageHost ?? null)
+    } catch {
+      return null
+    }
+  }
+
+  ipcMain.handle(MARKDOWN_CHANNELS.getImageHost, async (): Promise<ImageHostConfig | null> => {
+    return readImageHostConfig()
+  })
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.setImageHost,
+    async (_e, config: unknown): Promise<ImageHostConfig | null> => {
+      // null clears the host: pastes return to the local-assets behaviour
+      const normalized = normalizeImageHostConfig(config)
+      // an incomplete form is rejected without touching the stored host
+      if (normalized === null && config !== null) return null
+      let file: Record<string, unknown>
+      try {
+        file = JSON.parse(await readFile(imageHostConfigPath(), 'utf8'))
+      } catch {
+        file = {}
+      }
+      file.imageHost = normalized
+      await atomicWriteFile(imageHostConfigPath(), Buffer.from(JSON.stringify(file, null, 2)))
+      return normalized
+    },
+  )
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.uploadImage,
+    async (
+      _e,
+      data: { base64?: unknown; ext?: unknown; name?: unknown },
+    ): Promise<{ ok: boolean; url?: string; error?: string }> => {
+      const ext = String(data?.ext ?? '').toLowerCase()
+      if (!EXPORT_IMAGE_EXTS.includes(ext)) return { ok: false, error: 'unsupported image type' }
+      if (typeof data?.base64 !== 'string' || !data.base64)
+        return { ok: false, error: 'missing image data' }
+      if (data.base64.length > Math.ceil(MAX_PASTED_IMAGE_BYTES / 3) * 4)
+        return { ok: false, error: 'image too large' }
+      const config = await readImageHostConfig()
+      if (!isImageHostUsable(config)) return { ok: false, error: 'no usable image host configured' }
+      return uploadImageToHost(config, {
+        bytes: Buffer.from(data.base64, 'base64'),
+        ext,
+      })
+    },
   )
 
   ipcMain.handle(MARKDOWN_CHANNELS.saveImageAs, async (e, src: unknown) => {

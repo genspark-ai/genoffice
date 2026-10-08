@@ -388,6 +388,14 @@ describe('text-level hyphenation detection (P21 B)', () => {
     const blocks = groupIntoBlocks([line('Vertrags\u00ad', 700), line('Partner sind', 688)])
     expect(blocks[0]!.lines[0]!.endsWithHyphen).toBe(true)
   })
+
+  it('joins a soft hyphen even when the next word would have fitted', () => {
+    const blocks = groupIntoBlocks([
+      line('Ver\u00ad', 700),
+      line('trag und weitere Bedingungen des Abschnitts', 688),
+    ])
+    expect(blocks[0]!.lines[0]!.endsWithHyphen).toBe(true)
+  })
 })
 
 describe('short-line verse runs (P21 C)', () => {

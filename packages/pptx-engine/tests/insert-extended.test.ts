@@ -588,6 +588,26 @@ describe('setElementLink / getElementLink', () => {
     })
   })
 
+  it('re-setting a link without a tooltip keeps the existing ScreenTip', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const first = setElementLink(opened, 0, el.id, {
+      kind: 'url',
+      url: 'https://example.com/one',
+      tooltip: 'Keep "A & B" <me>',
+    })!
+    const second = setElementLink(opened, 0, first.elements.at(-1)!.id, {
+      kind: 'url',
+      url: 'https://example.com/two',
+    })!
+    expect(getElementLink(opened, 0, second.elements.at(-1)!.id)).toEqual({
+      kind: 'url',
+      url: 'https://example.com/two',
+      tooltip: 'Keep "A & B" <me>',
+    })
+  })
+
   it('slide jump link resolves to target slide index', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     duplicateSlide(opened, 0) // ensure at least 2 slides

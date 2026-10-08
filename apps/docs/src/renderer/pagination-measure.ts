@@ -43,6 +43,8 @@ export function lineLeadPx(el: HTMLElement): number {
   return lh * (1 - 1 / mult)
 }
 
+const ZERO_SLOT_PX = 0.05
+
 /**
  * Per-top-level-block buckets for the whole-flow scans below: one
  * querySelectorAll per selector over the flow instead of a subtree scan per
@@ -81,6 +83,10 @@ export function measureBlocks(
   // anchor paragraph beside the last portion, so it is not a gap; its height
   // is reported on the block it precedes
   let carryApplied = 0
+  // consecutive zero-height break carriers collapse their margins onto one DOM
+  // top; each gets its own virtual slot so its page can be told apart
+  let lastZeroTop = -Infinity
+  const showDeleted = !!pm.closest('.rev-display-original')
   const breaksByBlock = bucketByBlock(pm, '.doc-field-pagebreak, .doc-page-br')
   const colBreaksByBlock = bucketByBlock(pm, '.doc-col-br')
   const gapInlinesByBlock = bucketByBlock(pm, '.page-gap-inline')
@@ -100,8 +106,15 @@ export function measureBlocks(
     // floating-anchor boxes: absolute children of a zero-height wrapper; record
     // shift-neutral virtual positions so pages can be extended to contain them
     let wrapFloatBottom: number | undefined
+    const pageBreakBefore = el.classList.contains('page-break-before')
+    let nudge = 0
+    if (rect.height <= 0 && pageBreakBefore) {
+      const raw = (rect.top - origin - gapAccum) / zoomFactor
+      if (raw <= lastZeroTop + ZERO_SLOT_PX) nudge = lastZeroTop + ZERO_SLOT_PX - raw
+      lastZeroTop = raw + nudge
+    }
     if (el.classList.contains('doc-protected-floating') || el.classList.contains('doc-img-float')) {
-      const anchorTop = (rect.top - origin - gapAccum) / zoomFactor
+      const anchorTop = (rect.top - origin - gapAccum) / zoomFactor + nudge
       const pinned = el.classList.contains('doc-protected-pagepinned')
       for (const box of Array.from(
         el.querySelectorAll(':scope > .doc-textbox, :scope > .doc-img-wrap'),
@@ -109,7 +122,7 @@ export function measureBlocks(
         const b = (box as HTMLElement).getBoundingClientRect()
         if (b.height <= 0) continue
         const applied = parseFloat((box as HTMLElement).dataset.pageFloatDy ?? '0') || 0
-        const top = (b.top - origin - (pinned ? 0 : gapAccum)) / zoomFactor - applied
+        const top = (b.top - origin - (pinned ? 0 : gapAccum)) / zoomFactor - applied + nudge
         const height = b.height / zoomFactor
         if (!pinned) wrapFloatBottom = Math.max(wrapFloatBottom ?? 0, top + height)
         floats.push({
@@ -150,19 +163,23 @@ export function measureBlocks(
     }
     // Word ignores page-type w:br inside table cells, and breaks inside a
     // textbox lay out that box's own text — neither may break the body flow
-    const breakEls = (breaksByBlock.get(el) ?? []).filter((b) => !b.closest('td, th, .doc-textbox'))
+    // a tracked-deleted break (w:del) only breaks in the Original view
+    const breakEls = (breaksByBlock.get(el) ?? []).filter(
+      (b) => !b.closest('td, th, .doc-textbox') && (showDeleted || !b.closest('.doc-del')),
+    )
     const hasBreak = breakEls.length > 0
     const colBreakEls = (colBreaksByBlock.get(el) ?? []).filter(
-      (b) => !b.closest('td, th, .doc-textbox'),
+      (b) => !b.closest('td, th, .doc-textbox') && (showDeleted || !b.closest('.doc-del')),
     )
     const hasColBreak = colBreakEls.length > 0
     // zero-height blocks are skipped, except a break carrier (e.g. a floating
-    // textbox whose anchor paragraph holds a page-type w:br) must still be seen
-    if (rect.height <= 0 && !hasBreak) continue
+    // textbox whose anchor paragraph holds a page-type w:br or pageBreakBefore)
+    // must still be seen
+    if (rect.height <= 0 && !hasBreak && !pageBreakBefore) continue
     // in-block gaps from mid-paragraph page breaks: subtract from block height and add to the gap accumulator for later blocks
     let innerGap = 0
     for (const g of gapInlinesByBlock.get(el) ?? []) innerGap += g.getBoundingClientRect().height
-    const top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor
+    const top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor + nudge
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
     // break-only paragraph: marked for dedicated placement — Word pushes it into a
@@ -240,6 +257,8 @@ export function measureBlocks(
       el.classList.contains('doc-table-float-left') ||
       el.classList.contains('doc-table-float-right')
     const floatFlowed = floatTable && el.classList.contains('doc-table-float-flow')
+    const lifted =
+      el.dataset.anchorLiftBase !== undefined && (parseFloat(el.style.marginTop) || 0) < 0
     const floated =
       /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/.test(el.className) ||
       el.classList.contains('doc-para-frame-float') ||
@@ -258,18 +277,46 @@ export function measureBlocks(
       el.tagName === 'TABLE' ||
       el.classList.contains('doc-protected-textboxes') ||
       !!tablesByBlock.get(el)?.length
-    const bandKeep = el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating')
+    // a paragraph whose own column-spanning side-wrap picture runs past the
+    // page bottom keeps its line on that page (Word draws it below the paper
+    // edge); only a paragraph with no more than one line below the picture
+    let paraFloatBottom: number | undefined
+    if (el.tagName === 'P') {
+      const img = (imgsByBlock.get(el) ?? []).find((i) =>
+        i.matches(
+          'img.doc-inline-img--wrap-square-left, img.doc-inline-img--wrap-square-right, ' +
+            'img.doc-inline-img--wrap-tight-left, img.doc-inline-img--wrap-tight-right, ' +
+            'img.doc-inline-img--wrap-through-left, img.doc-inline-img--wrap-through-right',
+        ),
+      )
+      if (img) {
+        const b = img.getBoundingClientRect()
+        const lh = parseFloat(getComputedStyle(el).lineHeight) || 0
+        if (
+          b.height > 0 &&
+          b.width >= rect.width - 36 * zoomFactor &&
+          (rect.bottom - b.bottom) / zoomFactor <= 1.6 * lh
+        ) {
+          paraFloatBottom = (b.bottom - origin - gapAccum) / zoomFactor
+        }
+      }
+    }
+    const bandKeep =
+      paraFloatBottom !== undefined ||
+      (el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating'))
+    const keepFloatBottom = wrapFloatBottom ?? paraFloatBottom
     const liftPx = parseFloat(el.dataset.tblpLift ?? '')
     blocks.push({
       top: top - relVApplied,
       height,
       domHeight: height,
       ...(floated ? { floated: true } : {}),
+      ...(floated && lifted ? { lifted: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),
       ...(floatFlowed ? { floatFlowed: true } : {}),
       ...(liftPx > 0 ? { liftPx } : {}),
       ...(bandKeep ? { bandKeep: true } : {}),
-      ...(bandKeep && wrapFloatBottom !== undefined ? { floatBottom: wrapFloatBottom } : {}),
+      ...(bandKeep && keepFloatBottom !== undefined ? { floatBottom: keepFloatBottom } : {}),
       ...(Number.isFinite(relVy) && (relVAnchor === 'page' || relVAnchor === 'margin')
         ? {
             pageRelVyPx: relVy,
@@ -283,7 +330,7 @@ export function measureBlocks(
       ...(fixedWidth
         ? { fixedWidthPx: rect.width / zoomFactor }
         : { widthPx: rect.width / zoomFactor }),
-      breakBefore: el.classList.contains('page-break-before') || leadingBreak || undefined,
+      breakBefore: pageBreakBefore || leadingBreak || undefined,
       breakBeforeBr: leadingBreak || undefined,
       ...(hasText && leadingCount > 1 ? { extraBreaksBefore: leadingCount - 1 } : {}),
       breakAfter: trailingCount > 0 || undefined,
@@ -577,6 +624,7 @@ export function applyBlockMeta(
     if (flags.widowControl === false) b.widowControl = false
     if (!meta) continue
     if (meta.modernTableHeaders) b.modernTableHeaders = true
+    if (meta.cellWidowOff) b.cellWidowOff = true
     if (meta.breakBefore) b.breakBefore = true
     if (meta.footnoteExtraPx) {
       // the reservation consumes page capacity through the block height only;

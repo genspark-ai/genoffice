@@ -674,6 +674,9 @@ export type ExportImagesResult =
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
+  setSettings: 'ai:set-settings',
+  settingsChanged: 'ai:settings-changed',
+  openModelSettings: 'ai:open-model-settings',
   gskStatus: 'ai:gsk-status',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
@@ -797,6 +800,11 @@ export interface PdfApi {
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void
   getAiSettings(): Promise<AiSettings>
+  setAiSettings(settings: AiSettings): Promise<void>
+  /** ai-settings.json was rewritten by any renderer; re-read it */
+  onAiSettingsChanged(handler: () => void): () => void
+  /** shell only: switch to Home and open Settings › AI Model (rejects in standalone) */
+  openAiModelSettings(): Promise<void>
   /** Genspark login state (gsk); gates the cloud-only generate_image tool */
   gskStatus(): Promise<{ loggedIn: boolean }>
   aiStream(request: AiStreamRequest): Promise<void>

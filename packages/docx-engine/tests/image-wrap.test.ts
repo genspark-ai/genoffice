@@ -157,6 +157,38 @@ describe('image text wrap (wp:anchor)', () => {
     expect(explicitBlock.imageLeadingImplicitSpaceCount).toBeUndefined()
   })
 
+  it('keeps the picture paragraph line rule, mark rPr and a leading tab', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:spacing w:before="100" w:line="360" w:lineRule="auto"/>' +
+        '<w:rPr><w:rFonts w:ascii="Verdana" w:hAnsi="Verdana" w:eastAsia="SimSun"/><w:sz w:val="20"/></w:rPr></w:pPr>' +
+        '<w:r><w:tab/></w:r>',
+    )
+    const block = (await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))).blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageParagraphLineTwips).toBe(360)
+    expect(block.imageParagraphLineRule).toBe('auto')
+    expect(block.imageMarkFont).toBe('Verdana')
+    expect(block.imageMarkFontEastAsia).toBe('SimSun')
+    expect(block.imageMarkSizeHalfPoints).toBe(20)
+    expect(block.imageLeadingText).toBe('\t')
+    expect(block.imageLeadingImplicitSpaceCount).toBeUndefined()
+    const paired = xml.replace('<w:tab/>', '<w:tab></w:tab>')
+    const pairedBlock = (await parseDocx(await buildDocx({ bodyXml: paired, withImage: true })))
+      .blocks[0]
+    expect(pairedBlock.imageLeadingText).toBe('\t')
+
+    const exact = xml.replace('w:line="360" w:lineRule="auto"', 'w:line="300" w:lineRule="exact"')
+    const exactBlock = (await parseDocx(await buildDocx({ bodyXml: exact, withImage: true })))
+      .blocks[0]
+    expect(exactBlock.imageParagraphLineRule).toBe('exact')
+    const plain = (
+      await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
+    ).blocks[0]
+    expect(plain.imageParagraphLineTwips).toBeUndefined()
+    expect(plain.imageMarkFont).toBeUndefined()
+  })
+
   it('converts inline -> square anchor with position and wrap elements', () => {
     const out = applyImageWrap(IMAGE_PARAGRAPH_XML, 'square-left')
     expect(out).toContain('<wp:anchor')

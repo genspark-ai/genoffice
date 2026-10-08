@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { app, dialog, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import { autoUpdater, CancellationToken } from 'electron-updater'
 import { installResumeDownload } from './update-resume'
 import type { UpdateInfo } from 'electron-updater'
 import { createI18n, getUiLang, htmlLang } from '@genoffice/i18n'
@@ -13,9 +13,11 @@ import type {
   UpdateUiStrings,
 } from '../shared/update-api'
 import {
+  clearUpdateState,
   closeUpdateWindow,
   isUpdateWindowOpen,
   pushUpdateState,
+  setUpdateParentWindow,
   showUpdateWindow,
 } from './update-window'
 
@@ -474,6 +476,8 @@ let dismissedVersion: string | null = null
 // exercisable in dev runs too
 let fakeShowAgain: (() => void) | null = null
 let manualCheckInFlight = false
+// set by initAutoUpdater; drops the download state of the channel being left
+let resetDownloadFlow: (() => void) | null = null
 
 // electron-updater feed name per user-facing channel. The platform suffix is
 // appended by electron-updater itself: 'beta' resolves to beta.yml on
@@ -518,6 +522,7 @@ function initialState(version: string): UpdateUiState {
 
 export function applyUpdateChannel(channel: UpdateChannel): void {
   if (!updaterActive) return
+  resetDownloadFlow?.()
   autoUpdater.channel = CHANNEL_FEED[channel]
   // the channel setter unconditionally flips allowDowngrade to true; force it
   // back off since a beta user switching to stable must not downgrade
@@ -593,6 +598,7 @@ export function initAutoUpdater(
 ): void {
   if (started) return
   started = true
+  setUpdateParentWindow(getWindow)
 
   // dev preview of the update window with a simulated download
   if (!app.isPackaged && process.env.GENOFFICE_FAKE_UPDATE) {
@@ -621,9 +627,6 @@ export function initAutoUpdater(
   // full-package policy: never attempt blockmap differential downloads
   // (CI does not publish .blockmap files)
   autoUpdater.disableDifferentialDownload = true
-  // Range-resumable installer downloads: a dropped connection restarts from
-  // the .part bytes instead of byte 0 (falls back to the stock download on
-  // any error placing the request — see update-resume.ts)
   installResumeDownload(autoUpdater as unknown as Parameters<typeof installResumeDownload>[0])
 
   let latestSeenVersion: string | null = null
@@ -641,6 +644,10 @@ export function initAutoUpdater(
   // "Update Now" over a download that is running or already finished
   let phase: UpdatePhase = 'available'
   let percent = 0
+  // the running download's token plus a generation stamp, so a channel switch
+  // can cancel the request and its late rejection cannot fail the next one
+  let downloadToken: CancellationToken | null = null
+  let downloadGen = 0
 
   const setPhase = (patch: { phase: UpdatePhase; percent?: number }): void => {
     phase = patch.phase
@@ -655,18 +662,42 @@ export function initAutoUpdater(
     setPhase({ phase: failedAttempts >= MANUAL_FALLBACK_AFTER ? 'manual' : 'error' })
   }
 
+  // electron-updater cannot discard a finished download, so a package from
+  // the previous channel is made stale instead: it is never installed (not on
+  // quit, not via the window) and the next channel's update-available starts
+  // the flow over from 'available'
+  resetDownloadFlow = () => {
+    if (latestSeenVersion === null) return
+    log('channel switch: dropping', latestSeenVersion, 'in phase', phase)
+    autoUpdater.autoInstallOnAppQuit = false
+    downloadToken?.cancel()
+    downloadToken = null
+    downloadGen += 1
+    latestSeenVersion = null
+    manualDownloadUrl = null
+    failedAttempts = 0
+    downloadInFlight = false
+    phase = 'available'
+    percent = 0
+    clearUpdateState()
+  }
+
   const actions = {
     onDownload: () => {
       if (phase === 'downloading' || phase === 'downloaded') return
       downloadInFlight = true
       setPhase({ phase: 'downloading', percent: 0 })
-      autoUpdater.downloadUpdate().catch((err) => {
+      const gen = ++downloadGen
+      downloadToken = new CancellationToken()
+      autoUpdater.downloadUpdate(downloadToken).catch((err) => {
+        if (gen !== downloadGen) return
         log('download failed:', err?.message ?? err)
         failDownload()
       })
     },
     onInstall: () => {
       closeUpdateWindow()
+      if (latestSeenVersion === null) return
       // let the window fully close before tearing the app down
       setImmediate(() => autoUpdater.quitAndInstall(true, true))
     },
@@ -720,11 +751,17 @@ export function initAutoUpdater(
   })
 
   autoUpdater.on('download-progress', (progress) => {
+    if (!downloadInFlight) return
     setPhase({ phase: 'downloading', percent: progress.percent })
   })
 
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    if (info.version !== latestSeenVersion) {
+      log('downloaded:', info.version, 'ignored (stale after channel switch)')
+      return
+    }
     log('downloaded:', info.version)
+    autoUpdater.autoInstallOnAppQuit = true
     downloadInFlight = false
     failedAttempts = 0
     setPhase({ phase: 'downloaded', percent: 100 })

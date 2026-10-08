@@ -194,6 +194,28 @@ describe('table additions', () => {
     ).rejects.toThrow(/overlaps merged cells/)
   })
 
+  it('writes Table Design options: totals row, no filter button, column flags', async () => {
+    const plan = await planWith([
+      tableAddition({
+        area: { startRow: 0, startColumn: 0, endRow: 4, endColumn: 1 },
+        options: { totalsRow: true, filterButton: false, firstColumn: true, bandedColumns: true },
+      }),
+    ])
+    const tableXml = plan.added.get('xl/tables/table1.xml')
+    expect(tableXml).toContain('ref="A1:B5" totalsRowCount="1" totalsRowShown="1"')
+    expect(tableXml).not.toContain('<autoFilter')
+    expect(tableXml).toContain(
+      'showFirstColumn="1" showLastColumn="0" showRowStripes="1" showColumnStripes="1"',
+    )
+  })
+
+  it('writes a headerless table without a filter', async () => {
+    const plan = await planWith([tableAddition({ options: { headerRow: false } })])
+    const tableXml = plan.added.get('xl/tables/table1.xml')
+    expect(tableXml).toContain('headerRowCount="0"')
+    expect(tableXml).not.toContain('<autoFilter')
+  })
+
   it('fails closed when the same save shifts rows on the table sheet', async () => {
     await expect(
       planWith([tableAddition()], undefined, [

@@ -65,10 +65,6 @@ function planWith(value: number): ChangePlan {
 
 describe('non-finite cell values', () => {
   it('never writes NaN or Infinity into the numeric <v> of a cell', async () => {
-    // CT_Cell/v is xsd:double, so <v>NaN</v> makes the worksheet part
-    // unparseable: Excel rejects the file and the whole save is lost to the
-    // repair prompt. A non-finite value must degrade instead of being
-    // interpolated into the numeric default type.
     for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
       const mutation = await applyPlanToXlsx(await fixture(), planWith(value), { '1': 'Data' })
       const zip = await JSZip.loadAsync(mutation.buffer)

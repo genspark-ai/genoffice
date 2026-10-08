@@ -175,6 +175,13 @@ function sfntWithHostileNumGroups(): Uint8Array {
   return out
 }
 
+/** The format-4 font of sfntCovering('H') declaring far more segments than it holds. */
+function sfntWithHostileSegCount(): Uint8Array {
+  const out = sfntCovering('H')
+  new DataView(out.buffer).setUint16(40 + 6, 0xfffe)
+  return out
+}
+
 const FONT_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/font'
 
 describe('sfntCmapLookup', () => {
@@ -194,7 +201,13 @@ describe('sfntCmapLookup', () => {
     // The callbacks run long after sfntCmapLookup's try/catch has returned, so a
     // hostile idRangeOffset/numGroups must read as "not in this subset", not throw.
     expect(sfntCmapLookup(sfntWithHostileRangeOffset())!('H'.codePointAt(0)!)).toBe(false)
-    expect(sfntCmapLookup(sfntWithHostileNumGroups())!(0x48)).toBe(false)
+    const groups = sfntCmapLookup(sfntWithHostileNumGroups())
+    expect(groups === null || groups(0x48) === false).toBe(true)
+  })
+
+  it('skips a format-4 subtable whose segCountX2 overruns the font', () => {
+    const lookup = sfntCmapLookup(sfntWithHostileSegCount())
+    expect(lookup === null || lookup(0x48) === false).toBe(true)
   })
 })
 

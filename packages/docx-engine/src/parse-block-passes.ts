@@ -16,13 +16,31 @@ import { EMU_PER_PX } from './parse-xml-text'
  * written before the drawing (`<w:p><w:r><w:br w:type="page"/></w:r><w:r>
  * <w:drawing>...`) would silently vanish while Word turns the page there.
  * Nothing visible can sit between such a break and the drawing, so the
- * paragraph-level pageBreakBefore is an equivalent model.
+ * paragraph-level pageBreakBefore is an equivalent model. Likewise a
+ * `w:pageBreakBefore` on a drawing-only or textbox paragraph must survive the
+ * protected block that swallows its pPr.
  */
+const PPR_HEAD_RE = /^<w:p(?:\s[^>]*)?>\s*<w:pPr>((?:(?!<\/w:pPr>)[\s\S])*)<\/w:pPr>/
+const PAGE_BREAK_BEFORE_RE = /<w:pageBreakBefore(?:\s+w:val="(?:1|true|on)")?\s*\/>/
+
+function hostParagraphBreaksBefore(xml: string): boolean {
+  // w:pPrChange holds the tracked-change *previous* pPr, not the live setting
+  const live = xml.replace(/<w:pPrChange[\s>][\s\S]*?<\/w:pPrChange>/g, '')
+  const pPr = PPR_HEAD_RE.exec(live)?.[1]
+  return pPr !== undefined && PAGE_BREAK_BEFORE_RE.test(pPr)
+}
+
 export function applyProtectedLeadingBreaks(blocks: Block[]): void {
   for (const b of blocks) {
-    if (b.type !== 'image' || b.format?.pageBreakBefore) continue
+    if ((b.type !== 'image' && b.type !== 'passthrough') || b.format?.pageBreakBefore) continue
     const xml = b.originalXml
-    if (!xml) continue
+    if (!xml || b.hidden || b.label === 'Section break paragraph') continue
+    // the anchor paragraph's own pPr is dropped with its runs
+    if (hostParagraphBreaksBefore(xml)) {
+      b.format = { ...b.format, pageBreakBefore: true }
+      continue
+    }
+    if (b.type !== 'image') continue
     const drawing = xml.search(/<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/)
     const head = xml.slice(0, drawing === -1 ? xml.length : drawing)
     const br = head.search(/<w:br\s[^>]*w:type=(["'])page\1/)

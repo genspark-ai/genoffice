@@ -849,4 +849,28 @@ export function assignSections(blocks: BlockBox[], sections: SectionInfo[]): voi
     block.section = s
     prev = s
   }
+  foldSectionStartSpaceBefore(blocks, sectionGeoms(sections))
+}
+
+/**
+ * Word keeps a paragraph's space-before when it opens a forced section start
+ * (unlike a paragraph that merely flowed to a page top, where the margin is
+ * folded into the previous block's space-after and dropped with it).
+ */
+export function foldSectionStartSpaceBefore(blocks: BlockBox[], geoms: SectionGeom[]): void {
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i]
+    const prev = blocks[i - 1]
+    const sec = block.section ?? 0
+    if (!block.el || sec === (prev.section ?? sec) || !geoms[sec]?.forceBreak) continue
+    const after = prev.spaceAfterPx ?? 0
+    const sb = Math.min(parseFloat(getComputedStyle(block.el).marginTop) || 0, after)
+    if (sb <= 0.5) continue
+    prev.spaceAfterPx = after - sb
+    prev.height -= sb
+    block.top -= sb
+    block.height += sb
+    block.spaceBeforePx = (block.spaceBeforePx ?? 0) + sb
+    block.leadFoldPx = (block.leadFoldPx ?? 0) + sb
+  }
 }

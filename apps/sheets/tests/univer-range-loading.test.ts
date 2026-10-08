@@ -11,9 +11,12 @@ import {
 } from '../src/renderer/univer-sync'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 
-/// loadWorkbookSkeleton clears the unit's undo history through the injector.
+/// loadWorkbookSkeleton clears the unit's undo history through the injector
+/// and re-focuses the workbook it creates (focusUnit — see univer-sync).
 const undoStub = {
-  __getInjector: () => ({ get: () => ({ clearUndoRedo: () => undefined }) }),
+  __getInjector: () => ({
+    get: () => ({ clearUndoRedo: () => undefined, focusUnit: () => undefined }),
+  }),
 }
 
 /// Shape the eviction path writes per cell (clearContent/clearFormat would

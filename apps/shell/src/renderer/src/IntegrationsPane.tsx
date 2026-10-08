@@ -174,6 +174,9 @@ export function IntegrationsPane({
     compare(status.cli.version, status.skillNeedsCli) < 0
   const anyInstalled = status.agents.some((a) => a.state.status !== 'missing')
   const launch = mcpLaunch(status.cli)
+  // a link in ~/.local/bin that the shell does not search is not "ready": show the PATH line instead of the sudo command
+  const cliOnPath = status.cli.status === 'present' && !status.cli.pathHint
+  const cliFix = status.cli.pathHint ?? status.cli.manual
 
   const examples = (
     <div className="set-intg-examples">
@@ -344,14 +347,14 @@ export function IntegrationsPane({
           <div className="set-field-desc set-intg-lead">
             {status.cli.ephemeral
               ? t('intgCliEphemeral')
-              : status.cli.status === 'present'
+              : cliOnPath
                 ? t('intgCliReady', { v: status.cli.version, path: status.cli.location ?? '' })
                 : t('intgCliNotOnPath', { v: status.cli.version })}
           </div>
-          {status.cli.status !== 'present' && status.cli.manual && !status.cli.ephemeral && (
+          {!cliOnPath && cliFix && !status.cli.ephemeral && (
             <div className="set-intg-code">
-              <code>{status.cli.manual}</code>
-              <button className="set-btn" onClick={() => copy(status.cli.manual!, 'manual')}>
+              <code>{cliFix}</code>
+              <button className="set-btn" onClick={() => copy(cliFix, 'manual')}>
                 {copied === 'manual' ? t('intgCopied') : t('intgCopy')}
               </button>
             </div>

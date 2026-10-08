@@ -22,6 +22,7 @@ import {
   paraPaginationMeta,
 } from '../src/renderer/editor/para-flags'
 import { applyBlockMeta } from '../src/renderer/pagination-measure'
+import { tableWidowOff } from '../src/renderer/editor/para-flags'
 import type { BlockBox } from '../src/renderer/pagination-types'
 
 ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
@@ -218,6 +219,14 @@ describe('review follow-ups', () => {
     expect(
       paraPaginationMeta({ pageBreakBefore: false }, { pageBreakBefore: true }),
     ).toBeUndefined()
+    // pPrDefault widowControl off is the base of every style chain
+    expect(paraPaginationMeta(undefined, undefined, { widowControl: false })).toMatchObject({
+      widowControl: false,
+      paraStyle: { widowControl: false },
+    })
+    const styleOn = paraPaginationMeta(undefined, { widowControl: true }, { widowControl: false })
+    expect(styleOn?.widowControl).toBeUndefined()
+    expect(styleOn?.paraStyle).toEqual({ widowControl: true })
     expect(paraPaginationMeta({ keepNext: true }, { widowControl: false })).toMatchObject({
       keepNext: true,
       widowControl: false,
@@ -340,5 +349,21 @@ describe('contextualSpacing round-trips like the other flags', () => {
       parsed.blocks[0].format,
     )
     expect(merged).toContain('<w:contextualSpacing/>')
+  })
+})
+
+describe('tableWidowOff', () => {
+  const styleOn = (id: string) => (id === 'Body' ? true : undefined)
+  const cell = (pPr: string) =>
+    `<w:tbl><w:tr><w:tc><w:p><w:pPr>${pPr}</w:pPr></w:p></w:tc></w:tr></w:tbl>`
+  it('follows a document-wide widowControl off', () => {
+    expect(tableWidowOff(cell(''), false, styleOn)).toBe(true)
+    expect(tableWidowOff(cell(''), undefined, styleOn)).toBe(false)
+    expect(tableWidowOff(cell(''), true, styleOn)).toBe(false)
+  })
+  it('a cell that turns widow control back on, directly or via pStyle, keeps the rule', () => {
+    expect(tableWidowOff(cell('<w:widowControl/>'), false, styleOn)).toBe(false)
+    expect(tableWidowOff(cell('<w:pStyle w:val="Body"/>'), false, styleOn)).toBe(false)
+    expect(tableWidowOff(cell('<w:pStyle w:val="Other"/>'), false, styleOn)).toBe(true)
   })
 })

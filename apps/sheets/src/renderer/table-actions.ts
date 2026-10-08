@@ -40,54 +40,56 @@ export function inferContinuousRegion(
   anchorRow: number,
   anchorColumn: number,
 ): TableRegion | null {
-  if (!cellHasValue(worksheet, anchorRow, anchorColumn)) return null
-  let startRow = anchorRow
-  let endRow = anchorRow
-  let startColumn = anchorColumn
-  let endColumn = anchorColumn
-  const lastRow = Math.max(anchorRow, worksheet.getLastRow())
-  const lastColumn = Math.max(anchorColumn, worksheet.getLastColumn())
+  const region = expandContiguousRegion(
+    (row, column) => cellHasValue(worksheet, row, column),
+    { row: anchorRow, column: anchorColumn },
+    { row: worksheet.getLastRow(), column: worksheet.getLastColumn() },
+  )
+  // Need at least header plus one data row
+  if (!region || region.endRow <= region.startRow) return null
+  return region
+}
+
+/// CurrentRegion over a value predicate; null when the anchor is empty.
+export function expandContiguousRegion(
+  hasValue: (row: number, column: number) => boolean,
+  anchor: { row: number; column: number },
+  last: { row: number; column: number },
+): TableRegion | null {
+  if (!hasValue(anchor.row, anchor.column)) return null
+  let startRow = anchor.row
+  let endRow = anchor.row
+  let startColumn = anchor.column
+  let endColumn = anchor.column
+  const lastRow = Math.max(anchor.row, last.row)
+  const lastColumn = Math.max(anchor.column, last.column)
+  const rowHasValue = (row: number): boolean => {
+    for (let c = startColumn; c <= endColumn; c += 1) if (hasValue(row, c)) return true
+    return false
+  }
+  const columnHasValue = (column: number): boolean => {
+    for (let r = startRow; r <= endRow; r += 1) if (hasValue(r, column)) return true
+    return false
+  }
   let grew = true
   while (grew) {
     grew = false
-    if (startRow > 0) {
-      for (let c = startColumn; c <= endColumn; c += 1) {
-        if (cellHasValue(worksheet, startRow - 1, c)) {
-          startRow -= 1
-          grew = true
-          break
-        }
-      }
+    if (startRow > 0 && rowHasValue(startRow - 1)) {
+      startRow -= 1
+      grew = true
     }
-    if (endRow < lastRow) {
-      for (let c = startColumn; c <= endColumn; c += 1) {
-        if (cellHasValue(worksheet, endRow + 1, c)) {
-          endRow += 1
-          grew = true
-          break
-        }
-      }
+    if (endRow < lastRow && rowHasValue(endRow + 1)) {
+      endRow += 1
+      grew = true
     }
-    if (startColumn > 0) {
-      for (let r = startRow; r <= endRow; r += 1) {
-        if (cellHasValue(worksheet, r, startColumn - 1)) {
-          startColumn -= 1
-          grew = true
-          break
-        }
-      }
+    if (startColumn > 0 && columnHasValue(startColumn - 1)) {
+      startColumn -= 1
+      grew = true
     }
-    if (endColumn < lastColumn) {
-      for (let r = startRow; r <= endRow; r += 1) {
-        if (cellHasValue(worksheet, r, endColumn + 1)) {
-          endColumn += 1
-          grew = true
-          break
-        }
-      }
+    if (endColumn < lastColumn && columnHasValue(endColumn + 1)) {
+      endColumn += 1
+      grew = true
     }
   }
-  // Need at least header plus one data row
-  if (endRow <= startRow) return null
   return { startRow, startColumn, endRow, endColumn }
 }

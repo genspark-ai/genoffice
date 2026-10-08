@@ -18,6 +18,19 @@ describe('isAiNetworkError', () => {
     expect(isAiNetworkError(new TypeError('fetch failed', { cause }))).toBe(true)
   })
 
+  it('matches the undici headers/body timeout and closed-socket family', () => {
+    for (const code of [
+      'UND_ERR_HEADERS_TIMEOUT',
+      'UND_ERR_BODY_TIMEOUT',
+      'UND_ERR_CLOSED',
+      'UND_ERR_DESTROYED',
+    ]) {
+      expect(isAiNetworkError(new Error(`Claude fetch failed: fetch failed cause=${code}`))).toBe(
+        true,
+      )
+    }
+  })
+
   it('matches Chromium net-stack errors from the net.fetch rescue path', () => {
     expect(isAiNetworkError(new Error('net::ERR_INTERNET_DISCONNECTED'))).toBe(true)
     expect(isAiNetworkError(new Error('net::ERR_PROXY_CONNECTION_FAILED'))).toBe(true)

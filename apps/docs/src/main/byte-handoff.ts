@@ -15,7 +15,7 @@ const HANDOFF_TTL_MS = 60_000
 /** a burst past this many unclaimed handoffs drops the oldest one */
 const MAX_PENDING_HANDOFFS = 8
 /** a burst past this many buffered bytes drops the oldest handoffs */
-const MAX_PENDING_HANDOFF_BYTES = 256 * 1024 * 1024
+const MAX_PENDING_HANDOFF_BYTES = 1024 * 1024 * 1024
 
 const pending = new Map<string, { bytes: Buffer; timer: ReturnType<typeof setTimeout> }>()
 let pendingBytes = 0

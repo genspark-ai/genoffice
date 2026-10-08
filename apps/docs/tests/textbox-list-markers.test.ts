@@ -96,13 +96,13 @@ describe('list markers rendered inside a textbox', () => {
       editor.view.dom.querySelectorAll<HTMLElement>('.doc-textbox .doc-textbox-para'),
     )
     expect(paras.map((p) => p.getAttribute('data-marker'))).toEqual([
-      '•',
-      '•',
+      '\u25cf',
+      '\u25cf',
       '1.',
       null,
       '',
       '1.',
-      '•',
+      '\u25cf',
     ])
 
     const [bullet, emptyBullet, plainNumber, emptyPlain, picture, oversized, oversizedBullet] =
@@ -136,9 +136,10 @@ describe('list markers rendered inside a textbox', () => {
       'calc(var(--doc-line-factor,1.2) * 1em * var(--doc-line-mult,1))',
     )
     expect(plainNumber.style.getPropertyValue('--li-marker-lh')).toBe('')
-    // a scaled substitute glyph pins --li-marker-lh:0; the oversized height still wins
-    expect(bullet.style.getPropertyValue('--li-marker-lh')).toBe('0')
-    expect(oversizedBullet.style.getPropertyValue('--li-marker-scale')).toBe('1.25')
+    // a substitute glyph draws in the size-adjusted alias at the declared size
+    expect(bullet.style.getPropertyValue('--li-marker-font')).toBe("'Symbol Bullet GO'")
+    expect(bullet.style.getPropertyValue('--li-marker-lh')).toBe('')
+    expect(oversizedBullet.style.getPropertyValue('--li-marker-scale')).toBe('')
     expect(oversizedBullet.style.getPropertyValue('--li-marker-lh')).toBe(
       'calc(var(--doc-line-factor,1.2) * 1em * var(--doc-line-mult,1))',
     )

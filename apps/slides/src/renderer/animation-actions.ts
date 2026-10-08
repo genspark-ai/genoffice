@@ -5,7 +5,7 @@
 import type { ShapeRenderNode } from '@genoffice/pptx-render'
 import type { AnimEffectKind, AnimTrigger, AnimationItem, TransitionKind } from '../shared/ipc'
 import type { ActionCtx } from './action-context'
-import { animClassOf } from './animation-play'
+import { animClassOf, animGalleryItem } from './animation-play'
 import { t } from './i18n/locale'
 
 export async function applyTransition(
@@ -45,7 +45,7 @@ export function hoverPreviewAnimation(
   const items: AnimationItem[] = ctx.selectedIds.map((id) => ({
     sourceId: id,
     targetName: '',
-    effect,
+    ...animGalleryItem(effect),
     trigger: 'onClick' as AnimTrigger,
     durationMs: animDefaultDur(effect),
     delayMs: 0,
@@ -88,7 +88,7 @@ export function applyAnimation(ctx: ActionCtx, effect: AnimEffectKind | 'none'):
           const base = {
             sourceId: id,
             targetName: '',
-            effect,
+            ...animGalleryItem(effect),
             trigger: 'onClick' as AnimTrigger,
             durationMs: animDefaultDur(effect),
             delayMs: 0,
@@ -108,7 +108,7 @@ export function addAnimation(ctx: ActionCtx, effect: AnimEffectKind): void {
     const base = {
       sourceId: id,
       targetName: '',
-      effect,
+      ...animGalleryItem(effect),
       trigger: 'onClick' as AnimTrigger,
       durationMs: animDefaultDur(effect),
       delayMs: 0,

@@ -61,7 +61,7 @@ describe('docStyleCss explicit zero indents', () => {
       ]),
     )
     expect(css).toContain(
-      '.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-protected-field):not([data-style]) { margin-inline-start:22.7pt;margin-inline-end:6.0pt }',
+      '.doc-page :is(p, h1, h2, h3, h4, h5, h6, .doc-protected-field, .doc-protected-formula-display):not([data-style]) { margin-inline-start:22.7pt;margin-inline-end:6.0pt }',
     )
     expect(css).toContain(
       '.doc-page [data-style="HDR"]:not(.doc-li, .doc-li-stray) { margin-inline-start:0.0pt }',

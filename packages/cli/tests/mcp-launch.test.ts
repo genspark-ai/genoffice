@@ -22,6 +22,21 @@ describe('mcp launch entry', () => {
     })
   })
 
+  it('uses the absolute launcher while the linked dir is still off the PATH (genoffice#1019)', () => {
+    const launcherDir = '/Applications/GenOffice.app/Contents/Resources/cli'
+    expect(mcpLaunch({ status: 'present', launcherDir })).toEqual({
+      command: 'genoffice',
+      args: ['mcp'],
+    })
+    expect(
+      mcpLaunch({
+        status: 'present',
+        launcherDir,
+        pathHint: 'export PATH="$HOME/.local/bin:$PATH"',
+      }),
+    ).toEqual({ command: `${launcherDir}/genoffice`, args: ['mcp'] })
+  })
+
   it('runs the packaged Windows app as Node on the bundle, exactly as the app snippet does', () => {
     const exists = (p: string) => p === `${WIN_DIR}\\..\\..\\GenOffice.exe`
     const fromCli = mcpLaunchFromLauncher(`${WIN_DIR}\\genoffice.cmd`, { exists })

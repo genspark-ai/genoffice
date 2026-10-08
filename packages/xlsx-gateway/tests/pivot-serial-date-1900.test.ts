@@ -4,10 +4,6 @@ import { parseDateParts } from '../src/domain/pivot-grouping'
 import { groupValue } from '../src/domain/pivot-grouping'
 import { monthKeyOf } from '../src/domain/pivot-timeline'
 
-/// Excel's 1900 date system keeps a leap day that never existed, so the serial
-/// numbering is off by one below serial 60 and serial 60 itself names
-/// 1900-02-29. A pivot date grouping that ignores this puts every January and
-/// February 1900 row in the wrong month bucket.
 describe('Excel 1900 serial dates in pivot date grouping', () => {
   it('reads serials below the phantom leap day at their true month', () => {
     // 1900-01-01 .. 1900-01-31

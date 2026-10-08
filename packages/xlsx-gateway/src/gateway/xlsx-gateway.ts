@@ -4,6 +4,7 @@ import { rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import JSZip from 'jszip'
+import { assertZipInflatesWithinLimits } from '@genoffice/zip-gate'
 
 import type {
   CellState,
@@ -31,7 +32,8 @@ import {
   resolveRelTarget,
   type ShapeAdd,
 } from './xlsx-drawing-add'
-import { applyTableAdditions, type TableArea } from './xlsx-table-add'
+import { applyTableAdditions, type TableArea, type TableStyleOptions } from './xlsx-table-add'
+import { applyTableEdits, type TableEdit } from './xlsx-table-edit'
 import type { PivotFilterDef } from '../domain/pivot-filters'
 import {
   applyPivotAdditions,
@@ -42,6 +44,7 @@ import {
 import type { SheetFilterState } from './xlsx-filter'
 import { applyFilterState } from './xlsx-filter'
 import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
+import { escapeRegExp } from './xlsx-sheets'
 import type { SheetAllocation, SheetEditPlan, SheetElement } from './xlsx-sheets'
 import {
   addWorksheetOverride,
@@ -88,7 +91,9 @@ import {
   applySheetProtection,
   applyWorkbookProtection,
   type ProtectedRangeState,
+  type SheetProtectionWrite,
 } from './xlsx-protection'
+import { applyTabColor } from './xlsx-tab-color'
 import { applyThemeState, type WorkbookThemeState } from './xlsx-theme'
 import { applySheetNotes, type SheetNote } from './xlsx-notes'
 import {
@@ -120,12 +125,16 @@ import {
 import { StylesheetEditor } from './xlsx-styles'
 
 /** Shared with the CLI's pre-open check so both layers accept the same files. */
-export const XLSX_ZIP_LIMITS = { maxParts: 10_000, maxTotalBytes: 256 * 1024 * 1024 } as const
+export const XLSX_ZIP_LIMITS = {
+  maxParts: 10_000,
+  maxPartBytes: 256 * 1024 * 1024,
+  maxTotalBytes: 256 * 1024 * 1024,
+} as const
 const MAX_ENTRY_COUNT = XLSX_ZIP_LIMITS.maxParts
 const MAX_UNCOMPRESSED_BYTES = XLSX_ZIP_LIMITS.maxTotalBytes
-/** Excel grid extent: larger addresses are unaddressable (and unopenable) in Excel */
-export const MAX_GRID_ROWS = 1_048_576
-export const MAX_GRID_COLUMNS = 16_384
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
+
+export { MAX_GRID_COLUMNS, MAX_GRID_ROWS }
 
 export interface PackageEntry {
   readonly path: string
@@ -169,9 +178,14 @@ export interface SheetDvState {
   readonly remove?: readonly DvCellArea[]
 }
 
-export interface SheetProtectionState {
+export interface SheetProtectionState extends SheetProtectionWrite {
   readonly sheetName: string
-  readonly protected: boolean
+}
+
+/// Desired tab color as #RRGGBB; null removes the element.
+export interface SheetTabColorState {
+  readonly sheetName: string
+  readonly color: string | null
 }
 
 /// Full allow-edit-range snapshot for one sheet ([] removes the element).
@@ -502,8 +516,15 @@ export async function readBasicWorkbook(buffer: Buffer): Promise<ImportedXlsx> {
     if (!name || !sheetNumber) continue
     const decodedName = decodeXmlText(name)
     const id = `sheet-${sheetNumber}`
-    const worksheetPath = await resolveWorksheetPath(zip, decodedName)
-    const worksheetXml = await zip.readText(worksheetPath)
+    let worksheetXml: string
+    try {
+      worksheetXml = await zip.readText(await resolveWorksheetPath(zip, decodedName))
+    } catch (error) {
+      // a dangling relationship or missing part drops only this sheet;
+      // malformed/escaping targets are security rejections and still abort
+      if (isMissingPartError(error)) continue
+      throw error
+    }
     sheets.push({
       id,
       name: decodedName,
@@ -556,6 +577,9 @@ export async function applyPlanToXlsx(
   for (const change of plan.cellChanges) {
     const sheetName = sheetNamesById[change.sheetId]
     if (!sheetName) throw new Error(`Missing XLSX sheet mapping for ${change.sheetId}.`)
+    if (!isGridCellAddress(change.address)) {
+      throw new Error(`Invalid cell address: ${change.address}`)
+    }
     const worksheetPath = await resolveWorksheetPath(pkg, sheetName)
     const worksheetXml = inferWorksheetAddresses(await pkg.readText(worksheetPath))
     const actualCell = parseCell(worksheetXml, change.address)
@@ -634,6 +658,11 @@ export interface SheetTableAddition {
   readonly columnNames: readonly string[]
   readonly style?: string | undefined
   readonly bandedRows: boolean
+  readonly options?: TableStyleOptions | undefined
+}
+
+export interface SheetTableEdit extends Omit<TableEdit, 'worksheetPath'> {
+  readonly sheetName: string
 }
 
 export interface SheetPivotAddition {
@@ -647,8 +676,11 @@ export interface SheetPivotAddition {
   /// Indices into fieldNames for the row dimension levels (outer → inner).
   readonly rowFieldIndices: readonly number[]
   readonly columnFieldIndex?: number | undefined
-  /// Indices into fieldNames for report-filter (page) fields.
+  /// Indices into fieldNames for report-filter (page) fields, their member
+  /// lists, and the selected member per field (see PivotAddition).
   readonly pageFieldIndices?: readonly number[] | undefined
+  readonly pageLevelItems?: readonly (readonly string[])[] | undefined
+  readonly pageItems?: readonly (number | null)[] | undefined
   /// Deduplicated members of the level-0 row field; with multiple levels this
   /// equals rowLevelItems[0].
   readonly rowItems: readonly string[]
@@ -709,6 +741,8 @@ export async function planCellEditsToXlsx(
   workbookProtectionState: { readonly lockStructure: boolean } | null = null,
   protectedRangeStates: readonly SheetProtectedRangesState[] = [],
   bulkConstantFills: readonly BulkConstantFill[] = [],
+  tabColorStates: readonly SheetTabColorState[] = [],
+  tableEdits: readonly SheetTableEdit[] = [],
 ): Promise<MutationPlan> {
   // A pending pivot pins final coordinates for its source and output; shifts
   // on either sheet, and sheet renames (worksheetSource@sheet), would desync
@@ -742,6 +776,19 @@ export async function planCellEditsToXlsx(
       )
     }
   }
+  // A resized file table pins final coordinates the same way.
+  const resizedTableSheets = new Set(
+    tableEdits.filter((edit) => edit.area !== undefined).map((edit) => edit.sheetName),
+  )
+  if (
+    resizedTableSheets.size > 0 &&
+    structuralOps.some((sheet) => sheet.ops.length > 0 && resizedTableSheets.has(sheet.sheetName))
+  ) {
+    throw new Error(
+      'A resized table cannot be saved together with row/column changes on its ' +
+        'sheet — save the table first.',
+    )
+  }
   // The defined-names snapshot carries model coordinates and file sheet
   // indices; replaying structural or sheet operations underneath it would
   // desync both. The renderer blocks the combination too.
@@ -766,6 +813,7 @@ export async function planCellEditsToXlsx(
       : await allocateAddedSheets(
           pkg,
           sheetPlan.additions.map((addition) => addition.name),
+          touchedEntries,
         )
   const additionPaths = new Map(additions.map((addition) => [addition.name, addition.path]))
   for (const [index, addition] of additions.entries()) {
@@ -806,6 +854,7 @@ export async function planCellEditsToXlsx(
     ...cfStates.map((state) => state.sheetName),
     ...dvStates.map((state) => state.sheetName),
     ...sheetProtections.map((state) => state.sheetName),
+    ...tabColorStates.map((state) => state.sheetName),
     ...pageSetupStates.map((state) => state.sheetName),
     ...protectedRangeStates.map((state) => state.sheetName),
   ])
@@ -1135,7 +1184,13 @@ export async function planCellEditsToXlsx(
   for (const state of sheetProtections) {
     const worksheetXml = worksheetXmls.get(state.sheetName)
     if (worksheetXml === undefined) continue
-    worksheetXmls.set(state.sheetName, applySheetProtection(worksheetXml, state.protected))
+    worksheetXmls.set(state.sheetName, applySheetProtection(worksheetXml, state))
+  }
+
+  for (const state of tabColorStates) {
+    const worksheetXml = worksheetXmls.get(state.sheetName)
+    if (worksheetXml === undefined) continue
+    worksheetXmls.set(state.sheetName, applyTabColor(worksheetXml, state.color))
   }
 
   // Allow-edit ranges are declarative snapshots, like filters.
@@ -1225,6 +1280,18 @@ export async function planCellEditsToXlsx(
     touchedEntries.add(cachePath)
   }
 
+  // File-table edits run first: a Convert to Range or rename must not
+  // block a new table over the same cells or with the freed name.
+  if (tableEdits.length > 0) {
+    const resolvedEdits: TableEdit[] = []
+    for (const { sheetName, ...edit } of tableEdits) {
+      resolvedEdits.push({
+        ...edit,
+        worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
+      })
+    }
+    await applyTableEdits(pkg, resolvedEdits, touchedEntries)
+  }
   // New tables also run on the flushed worksheet XML: the <tableParts>
   // element and overlap checks see the final sheet content.
   if (tableAdditions.length > 0) {
@@ -1239,6 +1306,7 @@ export async function planCellEditsToXlsx(
         columnNames: addition.columnNames,
         style: addition.style,
         bandedRows: addition.bandedRows,
+        options: addition.options,
       })
     }
     await applyTableAdditions(pkg, resolvedTables, touchedEntries)
@@ -1359,6 +1427,8 @@ export async function planCellEditsToXlsx(
         rowFieldIndices: addition.rowFieldIndices,
         columnFieldIndex: addition.columnFieldIndex,
         pageFieldIndices: addition.pageFieldIndices,
+        pageLevelItems: addition.pageLevelItems,
+        pageItems: addition.pageItems,
         rowItems: addition.rowItems,
         rowLevelItems: addition.rowLevelItems,
         rowLines: addition.rowLines,
@@ -1392,10 +1462,12 @@ export async function planCellEditsToXlsx(
 async function allocateAddedSheets(
   pkg: PackageEditor,
   names: readonly string[],
+  touchedEntries: Set<string>,
 ): Promise<SheetAllocation[]> {
   if (names.length === 0) return []
   const workbookXml = await pkg.readText('xl/workbook.xml')
-  const relationshipsXml = await pkg.readText('xl/_rels/workbook.xml.rels')
+  const relationshipsPath = 'xl/_rels/workbook.xml.rels'
+  const relationshipsXml = await pkg.readText(relationshipsPath)
   let nextPartNumber = 1
   for (const path of await pkg.paths()) {
     const match = /^xl\/worksheets\/sheet([0-9]+)\.xml$/.exec(path)
@@ -1403,12 +1475,25 @@ async function allocateAddedSheets(
   }
   const nextSheetId = maxSheetIdInWorkbook(workbookXml) + 1
   const relationshipIds = nextFreeRelationshipIds(relationshipsXml, names.length)
-  return names.map((name, index) => ({
+  const allocations = names.map((name, index) => ({
     name,
     path: `xl/worksheets/sheet${nextPartNumber + index}.xml`,
     sheetId: nextSheetId + index,
     relationshipId: relationshipIds[index]!,
   }))
+  // Written now rather than in applySheetPlanToPackage so later allocators
+  // (styles.xml, metadata.xml) see these ids as taken.
+  let updatedRelationships = relationshipsXml
+  for (const allocation of allocations) {
+    updatedRelationships = addWorksheetRelationship(
+      updatedRelationships,
+      allocation.relationshipId,
+      allocation.path.replace(/^xl\//, ''),
+    )
+  }
+  pkg.write(relationshipsPath, updatedRelationships)
+  touchedEntries.add(relationshipsPath)
+  return allocations
 }
 
 async function applySheetPlanToPackage(
@@ -1658,13 +1743,6 @@ async function applySheetPlanToPackage(
     const relationshipId = elements.find((element) => element.name === removal)?.relationshipId
     if (relationshipId) relationshipsXml = removeRelationshipById(relationshipsXml, relationshipId)
   }
-  for (const addition of additions) {
-    relationshipsXml = addWorksheetRelationship(
-      relationshipsXml,
-      addition.relationshipId,
-      addition.path.replace(/^xl\//, ''),
-    )
-  }
   if (relationshipsXml !== originalRelationships) {
     pkg.write(relationshipsPath, relationshipsXml)
     touchedEntries.add(relationshipsPath)
@@ -1825,6 +1903,8 @@ function canonicalEntryName(raw: string): string | null {
 }
 
 async function loadSafeZip(buffer: Buffer): Promise<JSZip> {
+  // Metered gate first: a forged central directory must not reach JSZip.
+  await assertZipInflatesWithinLimits(buffer, XLSX_ZIP_LIMITS)
   const zip = await JSZip.loadAsync(buffer, { checkCRC32: true })
   const paths = Object.keys(zip.files)
   if (paths.length > MAX_ENTRY_COUNT) throw new Error('Workbook contains too many ZIP entries.')
@@ -1924,6 +2004,10 @@ function findSheetElement(workbookXml: string, sheetName: string): SheetElement 
   return parseSheetElements(workbookXml).find((element) => element.name === sheetName)
 }
 
+function isMissingPartError(error: unknown): boolean {
+  return error instanceof Error && /was not found\.|Workbook is missing /.test(error.message)
+}
+
 async function resolveWorksheetPath(
   reader: Pick<EntrySource, 'readText'>,
   sheetName: string,
@@ -1960,7 +2044,9 @@ function patchCell(worksheetXml: string, address: string, cell: CellState): stri
   // Lazy trailing attributes: greedy `[^>]*` swallows the "/" of a
   // self-closing <c/>, so `/>` never matches and the match runs on to the
   // next </c>, taking the sibling cell with it.
-  const cellPattern = new RegExp(`<c\\b[^>]*?\\br="${address}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`)
+  const cellPattern = new RegExp(
+    `<c\\b[^>]*?\\br="${escapeRegExp(address)}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`,
+  )
   const replacement = serializeCell(address, cell)
   if (cellPattern.test(worksheetXml)) {
     return worksheetXml.replace(cellPattern, replacement)
@@ -2807,10 +2893,7 @@ function serializeStyledCell(
   if (typeof cell.value === 'boolean') {
     return `<c r="${address}"${style} t="b"><v>${cell.value ? 1 : 0}</v></c>`
   }
-  // A non-finite number cannot be written to the numeric default type
-  // (CT_Cell/v is xsd:double), so Excel rejects the part and the whole save is
-  // lost to the repair prompt. Degrade to a string cell, the same fallback
-  // patchFormulaCachedValue uses for a non-numeric formula result.
+  // CT_Cell/v is xsd:double; degrade like patchFormulaCachedValue does.
   if (!Number.isFinite(cell.value)) {
     return `<c r="${address}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeCellText(String(cell.value))}</t></is></c>`
   }
@@ -2904,8 +2987,6 @@ function serializeCell(address: string, cell: CellState): string {
   if (typeof cell.value === 'boolean') {
     return `<c r="${address}" t="b"><v>${cell.value ? 1 : 0}</v></c>`
   }
-  // Non-finite numbers are not valid xsd:double; degrade to a string cell
-  // rather than writing <v>NaN</v> into the numeric default type.
   if (!Number.isFinite(cell.value)) {
     return `<c r="${address}" t="inlineStr"><is><t xml:space="preserve">${escapeCellText(String(cell.value))}</t></is></c>`
   }
@@ -3049,10 +3130,6 @@ function decodeXmlText(input: string): string {
 
 function escapeXmlAttribute(input: string): string {
   return escapeXmlText(input).replaceAll('"', '&quot;').replaceAll("'", '&apos;')
-}
-
-function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function readXmlAttribute(attributes: string, name: string): string | undefined {

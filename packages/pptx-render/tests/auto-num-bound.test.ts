@@ -16,6 +16,14 @@ describe('auto-num bounds', () => {
     expect(formatAutoNum(1994, 'romanUcPeriod')).toBe('MCMXCIV.')
   })
 
+  it('clamps a startAt below 1 instead of indexing past the CJK digit table', () => {
+    expect(formatAutoNum(-1, 'ea1ChsPeriod')).toBe('\u4e00.')
+    expect(formatAutoNum(0, 'ea1ChtPlain')).toBe('\u4e00')
+    expect(formatAutoNum(-5, 'arabicDbPeriod')).toBe('\uff11.')
+    expect(formatAutoNum(0, 'arabicPeriod')).toBe('1.')
+    expect(formatAutoNum(Number.NaN, 'alphaLcPeriod')).toBe('a.')
+  })
+
   it('guards alpha the same way', () => {
     expect(formatAutoNum(1e20, 'alphaLcPeriod')).toBe('100000000000000000000.')
     expect(formatAutoNum(27, 'alphaLcPeriod')).toBe('aa.')

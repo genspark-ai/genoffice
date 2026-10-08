@@ -1,7 +1,7 @@
 /**
  * Layout skeleton: the recurring "chrome" geometry of a deck (title box, brand
  * image slot, accent shapes, background), extracted deterministically from the
- * current slides and stored inside a style template (#1821).
+ * current slides and stored inside a style template (genoffice#1821).
  *
  * A saved style template used to carry only the Style Skill text — colors and
  * fonts — so pages generated from it reinvented the layout every time and brand
@@ -197,15 +197,20 @@ function skeletonForRole(slides: RenderSlide[]): RoleSkeleton | undefined {
       : undefined
 
   // Brand image: a picture box recurring on 2+ role pages (the logo slot)
-  const pictureClusters: { boxes: SkeletonBox[]; pages: number }[] = []
-  for (const els of perSlide) {
+  const pictureClusters: { boxes: SkeletonBox[]; pages: number; lastSlide: number }[] = []
+  for (const [i, els] of perSlide.entries()) {
     for (const p of picsOf(els)) {
       const cluster = pictureClusters.find((c) => sameBox(c.boxes[0]!, p))
       if (cluster) {
-        cluster.pages++
+        if (cluster.lastSlide !== i) cluster.pages++
+        cluster.lastSlide = i
         cluster.boxes.push({ x: p.x, y: p.y, w: p.w, h: p.h })
       } else {
-        pictureClusters.push({ boxes: [{ x: p.x, y: p.y, w: p.w, h: p.h }], pages: 1 })
+        pictureClusters.push({
+          boxes: [{ x: p.x, y: p.y, w: p.w, h: p.h }],
+          pages: 1,
+          lastSlide: i,
+        })
       }
     }
   }
@@ -218,18 +223,25 @@ function skeletonForRole(slides: RenderSlide[]): RoleSkeleton | undefined {
 
   // Accents: filled shapes recurring on most role pages, not background-sized
   const canvasArea = (slides[0]!.widthPx || 1) * (slides[0]!.heightPx || 1)
-  const shapeClusters: { boxes: SkeletonBox[]; fill?: string; pages: number }[] = []
-  for (const els of perSlide) {
+  const shapeClusters: {
+    boxes: SkeletonBox[]
+    fill?: string
+    pages: number
+    lastSlide: number
+  }[] = []
+  for (const [i, els] of perSlide.entries()) {
     for (const s of accentShapes(els, canvasArea)) {
       const cluster = shapeClusters.find((c) => sameBox(c.boxes[0]!, s) && c.fill === s.fill)
       if (cluster) {
-        cluster.pages++
+        if (cluster.lastSlide !== i) cluster.pages++
+        cluster.lastSlide = i
         cluster.boxes.push({ x: s.x, y: s.y, w: s.w, h: s.h })
       } else {
         shapeClusters.push({
           boxes: [{ x: s.x, y: s.y, w: s.w, h: s.h }],
           ...(s.fill ? { fill: s.fill } : {}),
           pages: 1,
+          lastSlide: i,
         })
       }
     }

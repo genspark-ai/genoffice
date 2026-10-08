@@ -306,6 +306,7 @@ describe('expandAutofitColWidths', () => {
       rows: [[cell('No.'), cell('Type'), cell('Count'), cell('Area'), cell('Point'), cell('')]],
       colWidthsTwips: [603, 1807, 1276, 1418, 1842, 3686],
       indentTwips: -714,
+      dxaWidth: true,
     }
     expect(expandAutofitColWidths(model, 10466, 9026)).toBe(model)
     // the same grid under tblW auto compresses to the column plus the
@@ -325,10 +326,14 @@ describe('expandAutofitColWidths', () => {
       true,
     )
     expect(Math.abs(sum(legacyAuto.colWidthsTwips!) - 9956)).toBeLessThanOrEqual(2)
-    // past the paper edge the dxa width is only a preference again
+    // past the paper edge a left-aligned table still holds its widths (Word draws a
+    // 531 pt grid on a 451 pt column 8 pt past the paper edge and clips it); a
+    // centred one still compresses to the column
     const wide: TableModel = { ...model, colWidthsTwips: [603, 1807, 1276, 1418, 1842, 4600] }
-    const wideTotal = expandAutofitColWidths(wide, 10466, 9026).colWidthsTwips!
-    expect(Math.abs(sum(wideTotal) - 9740)).toBeLessThanOrEqual(2)
+    expect(expandAutofitColWidths(wide, 10466, 9026)).toBe(wide)
+    const centred: TableModel = { ...wide, indentTwips: undefined, align: 'center' }
+    const centredTotal = expandAutofitColWidths(centred, 10466, 9026).colWidthsTwips!
+    expect(Math.abs(sum(centredTotal) - 9026)).toBeLessThanOrEqual(2)
   })
 
   it('leaves a full-width pct table alone even when its indent pushes it past the column', () => {
@@ -556,6 +561,7 @@ describe('autofit expansion wiring', () => {
     )
     const [first, second] = parsed.blocks.filter((b) => b.table)
     expect(first.table!.autoLayout).toBeUndefined()
+    expect(first.table!.dxaWidth).toBe(true)
     expect(second.table!.colWidthsTwips).toEqual(grid)
     const pm = blocksToPmDoc(parsed.blocks, readSections(parsed))
     const tables = pm.content!.filter((n) => n.type === 'docTable')
@@ -588,6 +594,10 @@ describe('renderTableSpec width budget', () => {
       colWidthsTwips: [2340, 7020],
       indentTwips: 1450,
     }
+    // an explicit dxa tblW holds its width past the paper edge like a fixed layout
+    const dxa = renderTableSpec({ ...model, autoLayout: undefined, dxaWidth: true }) as Spec
+    expect(dxa[1].style).toContain('width:624px;max-width:none')
+    expect(dxa[1].style).toContain('margin-left:96.7px')
     const spec = renderTableSpec(model) as Spec
     expect(spec[1].style).toContain(
       'width:min(624px,calc(var(--doc-content-w,100%) + var(--doc-margin-right,0px) - 96.7px))',
@@ -932,6 +942,27 @@ describe('cell-spacing column boxes', () => {
       `width:${Math.round((3023 - 30) / 15)}px`,
       `width:${Math.round((1582 - 45) / 15)}px`,
     ])
+  })
+
+  it('grows each bordered column box by its drawn borders, which Word draws outside the box', () => {
+    // 335-twip number column, sz 4 borders, 15-twip margins: Word keeps "10" (12 pt in
+    // TNR 12) on one line in a 14.5 pt box; borders inside the box left 11.25 pt
+    const line = { style: 'single', szEighths: 4 }
+    const spec = renderTableSpec({
+      rows: [[cell('10'), cell('b'), cell('c'), cell('d')]],
+      colWidthsTwips: [335, 3440, 3190, 2051],
+      cellSpacingTwips: 15,
+      cellMarTwips: { top: 15, left: 15, bottom: 15, right: 15 },
+      borders: { left: line, right: line, insideV: line, top: line, bottom: line, insideH: line },
+    }) as Spec
+    const cols = (spec[2] as [string, unknown, ...Array<[string, { style: string }]>]).slice(2)
+    expect(cols.map((c) => (c as [string, { style: string }])[1].style)).toEqual([
+      `width:${Math.round((335 - 45) / 15) + 2}px`,
+      `width:${Math.round((3440 - 30) / 15) + 2}px`,
+      `width:${Math.round((3190 - 30) / 15) + 2}px`,
+      `width:${Math.round((2051 - 45) / 15) + 2}px`,
+    ])
+    expect(spec[1].style).toContain(`width:min(${19 + 227 + 211 + 134 + 8 + 10}px`)
   })
 })
 

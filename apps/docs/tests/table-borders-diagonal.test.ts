@@ -174,12 +174,28 @@ describe('setSelectionBorders: the diagonals', () => {
   })
 })
 
+describe('rendered cell', () => {
+  it('paints the diagonal as a background layer next to its dark-page twin', () => {
+    const editor = createEditor()
+    caretIn(editor, 1, 1)
+    run(editor, 'tl2br')
+    // jsdom's CSSOM drops the gradient, so read the rendered attrs, not the live DOM
+    const pos = cellPositions(editor)[1][1]
+    const spec = editor.schema.nodes.docTableCell.spec.toDOM!(editor.state.doc.nodeAt(pos)!)
+    const style = String((spec as [string, Record<string, string>])[1].style ?? '')
+    expect(style).toContain('background-image:linear-gradient(to top right')
+    expect(style).toContain('--dk-bgi:linear-gradient(to top right')
+    const twin = /--dk-bgi:([^;]+)/.exec(style)![1]
+    expect(twin).not.toContain('#FF0000')
+  })
+})
+
 describe('cellDiagonalCss', () => {
   it('aims each diagonal at the matching CSS magic corner', () => {
-    // a hard-stop band on `to bottom right` runs along the top-left to
-    // bottom-right diagonal at any aspect ratio; `to top right` is the other one
-    expect(cellDiagonalCss({ style: 'single', szEighths: 8 }, 'tl2br')).toContain('to bottom right')
-    expect(cellDiagonalCss({ style: 'single', szEighths: 8 }, 'tr2bl')).toContain('to top right')
+    // the 50% line of a corner gradient passes through the two corners it does
+    // not aim at, so `to top right` bands along top-left to bottom-right
+    expect(cellDiagonalCss({ style: 'single', szEighths: 8 }, 'tl2br')).toContain('to top right')
+    expect(cellDiagonalCss({ style: 'single', szEighths: 8 }, 'tr2bl')).toContain('to bottom right')
   })
 
   it('bands at half the drawn width on each side of the centre', () => {

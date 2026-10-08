@@ -376,7 +376,6 @@ const LOWER_LATIN = /^\p{Ll}$/u
 
 function isTextHyphenation(prev: Line, next: Line): boolean {
   const prevText = lineText(prev).trimEnd()
-  if (SOFT_HYPHEN_END.test(prevText)) return true
   if (!LATIN_THEN_HYPHEN.test(prevText)) return false
   const first = [...lineText(next).trimStart()][0]
   return first !== undefined && LOWER_LATIN.test(first) && /\p{Script=Latin}/u.test(first)
@@ -385,7 +384,9 @@ function isTextHyphenation(prev: Line, next: Line): boolean {
 function markTextHyphenation(lines: readonly Line[], wrapRight: number): Line[] {
   return lines.map((line, i) => {
     const next = lines[i + 1]
-    if (line.endsWithHyphen || !next || !isTextHyphenation(line, next)) return line
+    if (line.endsWithHyphen || !next) return line
+    if (SOFT_HYPHEN_END.test(lineText(line).trimEnd())) return { ...line, endsWithHyphen: true }
+    if (!isTextHyphenation(line, next)) return line
     // authored compound: the next line's first unit would have fitted in the
     // leftover, so nothing about space forced this break — the hyphen is real
     const leftover = wrapRight - line.box.x1

@@ -18,7 +18,13 @@ interface PendingRequest {
 
 /** Pure reads a departing consumer can abandon; skipping a queued close (or
  * save) instead would leave its side effects permanently undone. */
-const CANCELLABLE_READS = new Set(['read_range', 'read_formula_cells', 'read_media'])
+const CANCELLABLE_READS = new Set([
+  'read_range',
+  'read_formula_cells',
+  'read_row_outline',
+  'read_media',
+  'find_cells',
+])
 
 interface SidecarResponse {
   readonly version: number
@@ -85,6 +91,19 @@ export class XlsxSidecarClient {
     readonly sheetId: string
   }): Promise<unknown> {
     return this.request({ command: 'read_formula_cells', ...input })
+  }
+
+  async findCells(
+    input: Readonly<Record<string, unknown>> & { readonly sessionId: string },
+  ): Promise<unknown> {
+    return this.request({ command: 'find_cells', ...input })
+  }
+
+  async readRowOutline(input: {
+    readonly sessionId: string
+    readonly sheetId: string
+  }): Promise<unknown> {
+    return this.request({ command: 'read_row_outline', ...input })
   }
 
   async close(sessionId: string): Promise<void> {
@@ -289,12 +308,8 @@ export class XlsxSidecarClient {
       this.notifyExit()
     }
     child.once('error', teardown)
-    // A dead child (OOM-killed — killed stays false, only a Node-initiated
-    // kill sets it) still passes the !killed guards in sendCancel/request;
-    // the next stdin write then emits an EPIPE error asynchronously. Without
-    // this listener that error crashed the whole app instead of tearing the
-    // client down like any other sidecar death (the write callbacks only
-    // cover their own synchronous error argument).
+    // An externally killed child keeps `killed` false, so the next write emits
+    // an async EPIPE that would otherwise be an uncaught exception.
     child.stdin.on('error', () => {
       teardown(
         new Error(

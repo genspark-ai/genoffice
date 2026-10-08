@@ -3,7 +3,7 @@ import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssCsFontFamily, cssRunFontFamily, cssFontFamily } from '../line-metrics'
+import { cssCsFontFamily, cssRunFontFamily, cssFontFamily, lineHeightFactor } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
@@ -684,6 +684,9 @@ export const TextStyleMark = Mark.create({
             : cssRunFontFamily(ascii, ea)
         }`,
       )
+      // own-face line factor for cell paragraphs mixing faces (styles.css .doc-mixed-face)
+      const lh = Math.max(...[cs, ascii ?? ea].filter(Boolean).map((f) => lineHeightFactor(f!)))
+      styles.push(`--doc-run-lh:${lh}`)
     }
     const spacingPt = mark.attrs.charSpacingTwips ? Number(mark.attrs.charSpacingTwips) / 20 : 0
     const scaleEm = mark.attrs.charScaleEm ? Number(mark.attrs.charScaleEm) : 0

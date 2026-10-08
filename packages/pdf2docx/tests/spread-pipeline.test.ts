@@ -1,5 +1,5 @@
 /**
- * Page-scale spread regressions (PR #1433 review round 2): Math.min(...xs)
+ * Page-scale spread regressions: Math.min(...xs)
  * passes every element as a function argument and throws RangeError past V8's
  * argument limit, and a 125k-line page (CAD/map exports reach that) is enough.
  *

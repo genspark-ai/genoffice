@@ -6,11 +6,15 @@
  */
 import { readFileSync } from 'node:fs'
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Run } from '@genoffice/docx-engine'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { runSpanSpecs } from '../src/renderer/editor/protected-render'
-import { codePointLengthAt } from '../src/renderer/line-metrics'
+import {
+  codePointLengthAt,
+  hangulSpaceWideningFor,
+  setHangulSpaceWidening,
+} from '../src/renderer/line-metrics'
 
 const pads = (editor: Editor): string[] =>
   Array.from(editor.view.dom.querySelectorAll('.doc-autospace-pad'), (el) => el.textContent ?? '')
@@ -101,6 +105,29 @@ describe('hangul-space decorations', () => {
   const H = '\ud55c\uae00'
   const spaces = (editor: Editor) =>
     Array.from(editor.view.dom.querySelectorAll('.doc-hangul-space'), (el) => el.textContent)
+  beforeAll(() => setHangulSpaceWidening(true))
+  afterAll(() => setHangulSpaceWidening(false))
+
+  it('wraps nothing without balanceSingleByteDoubleByteWidth', () => {
+    setHangulSpaceWidening(false)
+    const editor = makeEditor(paragraphDoc(`${H} ${H} A B, ${H}`))
+    expect(spaces(editor)).toEqual([])
+    editor.destroy()
+    setHangulSpaceWidening(true)
+  })
+
+  it('wraps nothing when only one of balanceSingleByteDoubleByteWidth / useFELayout is set', () => {
+    for (const settings of [{ balanceDbcsSpacing: true }, { useFELayout: true }]) {
+      setHangulSpaceWidening(hangulSpaceWideningFor(settings))
+      const editor = makeEditor(paragraphDoc(`${H} abc ${H}`))
+      expect(spaces(editor)).toEqual([])
+      editor.destroy()
+    }
+    setHangulSpaceWidening(hangulSpaceWideningFor({ balanceDbcsSpacing: true, useFELayout: true }))
+    const editor = makeEditor(paragraphDoc(`${H} abc ${H}`))
+    expect(spaces(editor)).toEqual([' ', ' '])
+    editor.destroy()
+  })
 
   it('wraps only spaces with a hangul neighbour', () => {
     const editor = makeEditor(paragraphDoc(`${H} ${H} A B, ${H}`))
@@ -177,6 +204,7 @@ describe('static-render autospace pads', () => {
   })
 
   it('wraps hangul-context spaces, reading neighbours from the adjacent runs', () => {
+    setHangulSpaceWidening(true)
     const H = '\ud55c\uae00'
     expect(runSpanSpecs(run(`${H} A B`))).toEqual([
       ['span', {}, H, ['span', { class: 'doc-hangul-space' }, ' '], 'A B'],
@@ -193,6 +221,7 @@ describe('static-render autospace pads', () => {
       ],
     ])
     expect(runSpanSpecs(run('A '), undefined, false, { next: 'B' })).toEqual([['span', {}, 'A ']])
+    setHangulSpaceWidening(false)
   })
 
   it('measures astral code points as two UTF-16 units', () => {

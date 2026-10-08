@@ -4,6 +4,7 @@ import {
   structuralDeleteFormulaError,
   structuralDeleteFormulaErrorSync,
 } from '../src/renderer/plan-operations'
+import type { WorkbookSharedFormulaGroup } from '../src/shared/desktop-api'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 
 /// The save aborts when a formula references only a deleted row/column span;
@@ -36,7 +37,10 @@ const workbook = {
   ],
 }
 
-function stubFormulas(bySheet: Record<string, string[]>): void {
+function stubFormulas(
+  bySheet: Record<string, string[]>,
+  sharedGroups: Record<string, WorkbookSharedFormulaGroup[]> = {},
+): void {
   ;(globalThis as { window?: unknown }).window = {
     desktopApi: {
       readWorkbookFormulas: async ({ sheetId }: { sheetId: string }) => ({
@@ -45,6 +49,7 @@ function stubFormulas(bySheet: Record<string, string[]>): void {
           column: 0,
           formula,
         })),
+        sharedGroups: sharedGroups[sheetId] ?? [],
         truncated: false,
         indexingComplete: true,
       }),
@@ -64,6 +69,26 @@ describe('structuralDeleteFormulaError', () => {
     const error = await structuralDeleteFormulaError(state(), workbook, delD)
     expect(error).toContain('deleted columns')
     expect(error).toContain('$D$7:$D$9')
+  })
+
+  it('flags a shared-formula follower whose shifted refs sit in the deleted column', async () => {
+    // master B1 =SUM(C7:C9) is fine; the follower in C1 reads SUM(D7:D9)
+    stubFormulas(
+      { sh1: [] },
+      {
+        sh1: [
+          {
+            si: 0,
+            row: 0,
+            column: 1,
+            formula: '=SUM(C7:C9)',
+            range: { startRow: 0, endRow: 0, startColumn: 1, endColumn: 2 },
+          },
+        ],
+      },
+    )
+    const error = await structuralDeleteFormulaError(state(), workbook, delD)
+    expect(error).toContain('D7:D9')
   })
 
   it('passes formulas that merely shift or shrink', async () => {
@@ -145,6 +170,7 @@ describe('structuralDeleteFormulaError', () => {
       desktopApi: {
         readWorkbookFormulas: async () => ({
           cells: [],
+          sharedGroups: [],
           truncated: true,
           indexingComplete: true,
         }),
@@ -192,6 +218,7 @@ describe('structuralDeleteFormulaErrorSync (UI gate)', () => {
     const streamedShifted = state({
       formulaMode: false,
       formulaText: new Map([['sh1', new Map([['6:0', '=SUM($D$7:$D$9)']])]]),
+      sharedFormulaGroups: new Map(),
       editJournal: {
         cells: new Map(),
         structuralOps: new Map([['sh1', [{ kind: 'insert-rows', index: 0, count: 1 }]]]),
@@ -206,12 +233,14 @@ describe('structuralDeleteFormulaErrorSync (UI gate)', () => {
     const streamed = state({
       formulaMode: false,
       formulaText: new Map([['sh1', new Map([['6:0', '=SUM($D$7:$D$9)']])]]),
+      sharedFormulaGroups: new Map(),
     })
     expect(structuralDeleteFormulaErrorSync(streamed, wb, delD)).toContain('deleted columns')
     // a content overwrite at that cell supersedes the harvested text
     const overwritten = state({
       formulaMode: false,
       formulaText: new Map([['sh1', new Map([['6:0', '=SUM($D$7:$D$9)']])]]),
+      sharedFormulaGroups: new Map(),
       editJournal: {
         cells: new Map([
           ['sh1', new Map([['6:0', { row: 6, column: 0, hasValue: true, value: 1 }]])],

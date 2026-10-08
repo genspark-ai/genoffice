@@ -6,9 +6,10 @@
  * in never-visited rows are invisible and users conclude the data does not
  * exist (issue #113). This module wraps the built-in sheets find provider:
  * the inner model keeps handling everything inside the loaded window, while
- * the wrapper extends the session with out-of-window matches paged from the
- * underlying file via readSheetRangeMapped (journal edits included) — the
- * same approach the AI-side find takes. Focusing an out-of-window match
+ * the wrapper extends the session with out-of-window matches found in the
+ * underlying file — by the sidecar's find_cells over its chunk index (journal
+ * edits overlaid here), or paged through readSheetRangeMapped when that
+ * command is unavailable. Focusing an out-of-window match
  * activates its sheet, starts loading its range, scrolls to it, and selects
  * it, so the grid shows real data instead of an empty jump.
  */
@@ -28,6 +29,12 @@ import { FormulaDataModel } from '@univerjs/preset-sheets-core'
 import { Subject, type Subscription } from 'rxjs'
 import { FILE_READ_BATCH_CELLS, MAX_SCAN_CELLS } from './ai/workbook-search'
 import { t } from './i18n/locale'
+import {
+  MAX_FIND_MATCHES,
+  findSheetCellsInFile,
+  sidecarFindAvailable,
+  type SidecarFindQuery,
+} from './sidecar-find'
 import { installSparseFind, type SpillLookup } from './sparse-find'
 import { netAxisDelta } from './view-transform'
 import { lazySheetMeta, type LazyWorkbookState, type UniverRuntime } from './univer-state'
@@ -215,6 +222,23 @@ function makeCellMatch(
         endColumn: cell.column,
       },
     },
+  }
+}
+
+interface ScanProgress {
+  readonly collected: (ScanCell & { sheetId: string })[]
+  scannedCells: number
+  capped: boolean
+}
+
+/** Univer's dialog has no wildcard switch, so `*`/`?` stay literal. */
+export function sidecarQuery(query: IFindQuery): SidecarFindQuery {
+  return {
+    query: query.findString ?? '',
+    matchCase: query.caseSensitive === true,
+    matchEntireCell: query.matchesTheWholeCell === true,
+    lookIn: query.findBy === FindBy.FORMULA ? 'formulas' : 'values',
+    wildcards: false,
   }
 }
 
@@ -788,7 +812,7 @@ export class LazyExtendedFindModel extends FindModel {
     this.matchesUpdate$.next(this.getMatches())
   }
 
-  /** Pages the underlying file for out-of-window hits, emitting as it goes. */
+  /** Scans the underlying file for out-of-window hits, emitting as it goes. */
   private async runScan(): Promise<void> {
     const workbook = this.deps.runtime.univerAPI.getActiveWorkbook()
     if (!workbook) return
@@ -803,10 +827,11 @@ export class LazyExtendedFindModel extends FindModel {
     const sheetOrder = new Map(sheets.map((sheet, index) => [sheet.getSheetId(), index] as const))
     const comparator = extraComparator(sheetOrder, this.query.findDirection === 'column')
     const collected: (ScanCell & { sheetId: string })[] = []
-    // Budget counts scanned extent, not hits — the AI-side findInLazyWorkbook
-    // semantics. Counting hits would scan sparse multi-million-cell sheets
-    // end to end.
-    let scannedCells = 0
+    const scan: ScanProgress = { collected, scannedCells: 0, capped: false }
+    const emit = () => {
+      this.refreshExtras(collected, comparator, unitId)
+      this.emitMerged()
+    }
 
     for (const worksheet of targets) {
       const sheetId = worksheet.getSheetId()
@@ -817,69 +842,131 @@ export class LazyExtendedFindModel extends FindModel {
       const meta = lazySheetMeta(this.state, sheetId)
       // Sheets added this session live entirely in the journal.
       if (!meta || meta.rowCount <= 0 || meta.columnCount <= 0) {
-        this.refreshExtras(collected, comparator, unitId)
-        this.emitMerged()
+        emit()
         continue
       }
-      const ops = this.state.editJournal.structuralOps.get(sheetId) ?? []
-      const screenRows = Math.max(meta.rowCount + netAxisDelta(ops, 'row'), 0)
-      const screenColumns = Math.max(meta.columnCount + netAxisDelta(ops, 'column'), 0)
-      if (screenRows <= 0 || screenColumns <= 0) continue
-      const shadowed = journalShadowKeys(this.state, sheetId)
-      const batchRows = Math.max(1, Math.floor(FILE_READ_BATCH_CELLS / screenColumns))
-      for (let startRow = 0; startRow < screenRows; startRow += batchRows) {
-        if (!this.alive || !this.isLiveGeneration() || !this.stateIsCurrent()) return
-        if (this.truncated) break
-        if (scannedCells >= MAX_SCAN_CELLS) {
-          this.truncated = true
-          break
-        }
-        const endRow = Math.min(startRow + batchRows - 1, screenRows - 1)
-        let mapped
+      let viaSidecar = false
+      if (sidecarFindAvailable()) {
         try {
-          mapped = await readSheetRangeMapped(
-            this.state,
-            sheetId,
-            { startRow, endRow, startColumn: 0, endColumn: screenColumns - 1 },
-            meta,
-          )
+          await this.scanSheetViaSidecar(sheetId, scan, emit)
+          viaSidecar = true
         } catch {
-          this.truncated = true
-          break
+          /* older sidecar or rejected request: page the ranges instead */
         }
-        if (!mapped) continue
-        scannedCells += (endRow - startRow + 1) * screenColumns
-        if (
-          !mapped.raw.indexingComplete &&
-          (mapped.indexedThroughScreen === null || mapped.indexedThroughScreen < endRow)
-        ) {
-          this.truncated = true
-        }
-        for (const cell of mapped.screen.cells) {
-          if (shadowed.has(`${cell.row}:${cell.column}`)) continue
-          if (coveredByWindow(this.state, sheetId, cell.row, cell.column)) continue
-          if (!test({ value: scalarToText(cell.value), formula: cell.formula })) continue
-          collected.push({
-            row: cell.row,
-            column: cell.column,
-            value: cell.value,
-            formula: cell.formula,
-            sheetId,
-          })
-        }
-        this.refreshExtras(collected, comparator, unitId)
-        this.emitMerged()
       }
-      if (this.truncated) break
+      if (!viaSidecar) await this.scanSheetViaRanges(sheetId, meta, test, scan, emit)
+      if (!this.alive || !this.isLiveGeneration() || !this.stateIsCurrent()) return
+      if (this.truncated || scan.capped) break
     }
 
     this.refreshExtras(collected, comparator, unitId)
-    if (this.truncated && this.alive && this.isLiveGeneration()) {
-      // Report what was actually scanned — truncation can also come from a
-      // failed read or indexing lag long before the budget.
-      this.deps.setMessage(t('appFindScanTruncated', { cells: scannedCells.toLocaleString() }))
+    if (this.alive && this.isLiveGeneration()) {
+      if (scan.capped) {
+        this.deps.setMessage(
+          t('appFindMatchesCapped', { count: MAX_FIND_MATCHES.toLocaleString() }),
+        )
+      } else if (this.truncated) {
+        // Report what was actually scanned — truncation can also come from a
+        // failed read or indexing lag long before the budget.
+        this.deps.setMessage(
+          t('appFindScanTruncated', { cells: scan.scannedCells.toLocaleString() }),
+        )
+      }
     }
     this.emitMerged()
+  }
+
+  /// The sidecar matches file cells; journal-shadowed and in-window
+  /// coordinates are dropped here, where the overlay lives.
+  private async scanSheetViaSidecar(
+    sheetId: string,
+    scan: ScanProgress,
+    emit: () => void,
+  ): Promise<void> {
+    const shadowed = journalShadowKeys(this.state, sheetId)
+    const outcome = await findSheetCellsInFile(this.state, sheetId, sidecarQuery(this.query), {
+      alive: () => this.alive && this.isLiveGeneration() && this.stateIsCurrent(),
+      maxMatches: MAX_FIND_MATCHES - scan.collected.length,
+      onPage: (hits) => {
+        let kept = 0
+        for (const hit of hits) {
+          if (shadowed.has(`${hit.row}:${hit.column}`)) continue
+          if (coveredByWindow(this.state, sheetId, hit.row, hit.column)) continue
+          scan.collected.push({
+            row: hit.row,
+            column: hit.column,
+            value: hit.value,
+            formula: hit.formula,
+            sheetId,
+          })
+          kept += 1
+        }
+        emit()
+        return kept
+      },
+    })
+    if (outcome.capped) scan.capped = true
+    else if (!outcome.complete && this.alive && this.isLiveGeneration()) this.truncated = true
+  }
+
+  /** Fallback: pages the file through range reads, bounded by scanned extent. */
+  private async scanSheetViaRanges(
+    sheetId: string,
+    meta: NonNullable<ReturnType<typeof lazySheetMeta>>,
+    test: LazyCellTest,
+    scan: ScanProgress,
+    emit: () => void,
+  ): Promise<void> {
+    const ops = this.state.editJournal.structuralOps.get(sheetId) ?? []
+    const screenRows = Math.max(meta.rowCount + netAxisDelta(ops, 'row'), 0)
+    const screenColumns = Math.max(meta.columnCount + netAxisDelta(ops, 'column'), 0)
+    if (screenRows <= 0 || screenColumns <= 0) return
+    const shadowed = journalShadowKeys(this.state, sheetId)
+    const batchRows = Math.max(1, Math.floor(FILE_READ_BATCH_CELLS / screenColumns))
+    for (let startRow = 0; startRow < screenRows; startRow += batchRows) {
+      if (!this.alive || !this.isLiveGeneration() || !this.stateIsCurrent()) return
+      if (this.truncated) break
+      // Budget counts scanned extent, not hits — counting hits would scan
+      // sparse multi-million-cell sheets end to end.
+      if (scan.scannedCells >= MAX_SCAN_CELLS) {
+        this.truncated = true
+        break
+      }
+      const endRow = Math.min(startRow + batchRows - 1, screenRows - 1)
+      let mapped
+      try {
+        mapped = await readSheetRangeMapped(
+          this.state,
+          sheetId,
+          { startRow, endRow, startColumn: 0, endColumn: screenColumns - 1 },
+          meta,
+        )
+      } catch {
+        this.truncated = true
+        break
+      }
+      if (!mapped) continue
+      scan.scannedCells += (endRow - startRow + 1) * screenColumns
+      if (
+        !mapped.raw.indexingComplete &&
+        (mapped.indexedThroughScreen === null || mapped.indexedThroughScreen < endRow)
+      ) {
+        this.truncated = true
+      }
+      for (const cell of mapped.screen.cells) {
+        if (shadowed.has(`${cell.row}:${cell.column}`)) continue
+        if (coveredByWindow(this.state, sheetId, cell.row, cell.column)) continue
+        if (!test({ value: scalarToText(cell.value), formula: cell.formula })) continue
+        scan.collected.push({
+          row: cell.row,
+          column: cell.column,
+          value: cell.value,
+          formula: cell.formula,
+          sheetId,
+        })
+      }
+      emit()
+    }
   }
 
   private refreshExtras(

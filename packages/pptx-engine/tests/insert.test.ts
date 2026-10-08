@@ -37,6 +37,8 @@ describe('add/delete element', () => {
     expect(slide2.elements.length).toBe(before + 1)
     const el2: any = slide2.elements[slide2.elements.length - 1]
     expect(el2.type).toBe('text')
+    expect(el2.txBox).toBe(true)
+    expect(el2.presetGeometry).toBe('rect')
     expect(el2.transform.offset).toEqual(OFF)
     const text = el2.text.paragraphs
       .flatMap((p: any) => p.runs)

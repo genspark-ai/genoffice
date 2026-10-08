@@ -471,6 +471,7 @@ export function computeSectionedSlicesF2(
     }
     pageStart = y
     regionTop = 0
+    pagePlaced = false
     // the section's first page renders the titlePg header/footer variant, so it
     // gets its own capacity (same "first page" rule as sectionFirstPages)
     const continued = (midPageStart.get(section) ?? Infinity) < y - 0.5
@@ -738,12 +739,18 @@ export function computeSectionedSlicesF2(
   // whether the current column is empty (just changed columns or at column top)
   const colEmpty = () => usedInCol <= 0.01
   // whether the current page is entirely blank (guards forced breaks against empty pages)
-  const pageBlank = () => colIdx === 0 && regionTop <= 0.01 && usedInCol <= 0.01
+  // a zero-height break carrier (floating anchor paragraph) still owns its page
+  let pagePlaced = false
+  const pageBlank = () => colIdx === 0 && regionTop <= 0.01 && usedInCol <= 0.01 && !pagePlaced
+  // a forced section break turns the page when anything sits above it, including
+  // a carrier whose collapsed top the section's first block shares
+  const pageOccupied = () => blocks[curBi].top > pageStart || pagePlaced
   // place height h (unconditional accumulation)
   let anyContent = false
   const place = (h: number) => {
     usedInCol += h
     anyContent = true
+    pagePlaced = true
   }
 
   if (resume?.continued) midPageStart.set(resume.section, -Infinity)
@@ -777,7 +784,7 @@ export function computeSectionedSlicesF2(
       let claimed = false
       for (let s = curSection + 1; s < bSection; s++) {
         const gs = geomOf(s)
-        if (gs.forceBreak && (block.top > pageStart || emptySectionClaimsPage(s))) {
+        if (gs.forceBreak && (pageOccupied() || emptySectionClaimsPage(s))) {
           startPage(breakY(block.top), s)
           claimed = true
         }
@@ -790,7 +797,7 @@ export function computeSectionedSlicesF2(
       // (contentH only moves in startPage); a section starting on a blank page
       // that overflow opened (not one an empty section claimed, nor one already
       // holding the previous section's float) takes it over
-      if (g.forceBreak && (block.top > pageStart || emptySectionClaimsPage(bSection))) {
+      if (g.forceBreak && (pageOccupied() || emptySectionClaimsPage(bSection))) {
         startPage(breakY(block.top), bSection)
       } else if (pageBlank() && !claimed && pageFloatBottom <= 0) {
         const page = pages[pages.length - 1]
@@ -921,7 +928,18 @@ export function computeSectionedSlicesF2(
       // the table opens on the next page when not even its first row (with the
       // leading header rows) fits the remainder
       const leadH = splitRows ? floatLeadHeight(splitRows, contentH) : block.height
-      if (!fits(leadH) && !colEmpty()) advance(block.top, curSection)
+      // a float lifted into the previous anchor's band needs only the part below the flow position
+      const leadNeed =
+        block.lifted && colCount === 1
+          ? Math.max(0, block.top - pageStart + leadH - usedInCol)
+          : leadH
+      // a lifted float turns the page at its flow position, not at its lifted visual top
+      if (!fits(leadNeed) && !colEmpty()) {
+        advance(
+          block.lifted && colCount === 1 ? pageStart + regionTop + usedInCol : block.top,
+          curSection,
+        )
+      }
       // page/margin-anchored w:tblpY: shift the float to its target Y on the
       // page it lands on. Never up past content already placed (flow position
       // is the floor, like the X clamp keeping floats on the page) — except at
@@ -1427,6 +1445,17 @@ export function planRowSplit(
       : Math.min(c.lines[i][0], childTop(c, c.childOf[i]))
   const naturalH = row.height - (row.splitExtra ?? 0)
   const padB = rowBottomPad(row)
+  // empty paragraphs after a cell's last line are lines of their own (Word
+  // carries them over), not row margin: a fragment cut before a cell's last
+  // line charges only the margin below the content
+  const boxBottom = (pick: (c: RowCellBox) => number) =>
+    Math.max(0, ...cells.filter((c) => c.lines.length && c.childBox).map(pick))
+  const trailingEmpty = Math.max(
+    0,
+    boxBottom((c) => c.childBox![c.childBox!.length - 1][1]) -
+      boxBottom((c) => c.childBox![c.childOf[c.lines.length - 1]]?.[1] ?? 0),
+  )
+  const padFrag = Math.max(0, padB - trailingEmpty)
   let y = 0
   let avail = firstAvail
   let stalled = false
@@ -1439,7 +1468,8 @@ export function planRowSplit(
       // a fragment carries the row's bottom margin below its last line (Word
       // probe: 4 lines that fit with only the margin over the edge split 2+2)
       for (let i = j; i < c.lines.length; i++) {
-        if (c.lines[i][1] + dy[k] - y + padB <= avail + 0.5) fit = i + 1
+        const pad = i === c.lines.length - 1 ? padB : padFrag
+        if (c.lines[i][1] + dy[k] - y + pad <= avail + 0.5) fit = i + 1
         else break
       }
       const raw = fit
@@ -1657,6 +1687,7 @@ function _placeTable(
     return false
   }
 
+  const widow = block.modernTableHeaders === true && !block.cellWidowOff
   for (let ri = 0; ri < rows.length; ri++) {
     const row = rows[ri]
 
@@ -1686,9 +1717,7 @@ function _placeTable(
       chainUntil = k - 1
       const anchor = rows[k]
       if (anchor)
-        need +=
-          firstLegalCut(anchor, block.modernTableHeaders === true, contentH, !!onRowSplit) +
-          (anchor.notesPx ?? 0)
+        need += firstLegalCut(anchor, widow, contentH, !!onRowSplit) + (anchor.notesPx ?? 0)
       if (need <= contentH + 0.01 && !fits(need) && !pageEmpty()) {
         chargedNotes -= notes
         if (turnBeforeRow(ri, repeatH)) {
@@ -1732,7 +1761,6 @@ function _placeTable(
           newPage(rowCursor + y, curSection, repeatH, block.top)
           return remain()
         }
-        const widow = block.modernTableHeaders === true
         let plan = planRowSplit(row, remain() - notes, contentH, turn, widow)
         if (plan === 'nofit' && !pageEmpty() && !turnedForMinH) {
           if (turnBeforeRow(ri, repeatH)) {

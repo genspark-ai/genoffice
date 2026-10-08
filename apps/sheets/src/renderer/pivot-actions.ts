@@ -1,7 +1,7 @@
 /**
- * Pivot-table and slicer actions (create/edit/refresh dialogs, slicer panels).
- * Extracted from App.tsx; the App component passes a PivotActionContext built
- * fresh per call so refs and state never go stale.
+ * Pivot-table and slicer actions (create dialog, PivotTable Fields pane,
+ * refresh, slicer panels). Extracted from App.tsx; the App component passes a
+ * PivotActionContext built fresh per call so refs and state never go stale.
  */
 import { columnLabel, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
 import {
@@ -14,31 +14,57 @@ import {
   timelineSelection,
   type MonthKey,
 } from '@genoffice/xlsx-gateway/domain/pivot-timeline'
-import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
+import {
+  defaultDataFieldCaption,
+  isPivotAggregation,
+} from '@genoffice/xlsx-gateway/domain/pivot-value-modes'
+import type { WorkbookFile, WorkbookPivotAdd, WorkbookPivotDefinition } from '../shared/desktop-api'
 import { journalSize, recordPivotCacheRefresh, recordPivotRefreshUpdate } from './edit-journal'
 import { t } from './i18n/locale'
-import type { OoXmlPivotConfig, PivotEditSeed, PivotField } from './PivotDialog'
+import { isCalendarDatePattern } from './numfmt-fix'
+import type { PivotCreateRequest } from './PivotDialog'
+import {
+  defaultPivotModel,
+  modelToConfig,
+  validatePivotModel,
+  type OoXmlPivotConfig,
+  type PivotField,
+  type PivotLayoutModel,
+  type PivotValueSpec,
+} from './pivot-field-model'
 import type { SlicerMember, SlicerUiState } from './SlicerPanel'
 import type { TimelineUiState } from './TimelinePanel'
 import { resolvePivotSource } from './pivot-source'
-import type { LazyWorkbookState, UniverRuntime } from './univer-state'
+import type { LazyWorkbookState, UniverRuntime, UniverWorksheet } from './univer-state'
 import {
   applyAiPivotAdd,
   applyGrownPivotOutput,
   pivotConfigToOpParts,
+  pivotPageRows,
   readPivotSourceGrid,
+  type PivotRelayoutTarget,
 } from './workbook-ops'
 
-/// A3 editing of an existing pivot: context locked when the dialog opens, used
-/// on Apply.
+/// Editing an existing pivot from the Fields pane: context locked when the
+/// pane opens, refreshed after every apply.
 export interface PivotEditContext {
-  sourceSheetId: string
-  targetSheetId: string
-  sourceRange: string
-  pivotPath: string
-  cachePath: string
-  oldBounds: { startRow: number; startColumn: number; endRow: number; endColumn: number }
-  fields: PivotField[]
+  readonly key: string
+  readonly sourceSheetId: string
+  readonly targetSheetId: string
+  readonly sourceRange: string
+  /// Top-left of the whole block (report-filter rows included).
+  readonly targetCell: string
+  readonly fields: PivotField[]
+  relayout: PivotRelayoutTarget
+}
+
+/// What the Fields pane edits: the field list and the current layout.
+export interface PivotEditSeed {
+  readonly key: string
+  readonly fields: readonly PivotField[]
+  readonly sourceRange: string
+  readonly targetCell: string
+  readonly model: PivotLayoutModel
 }
 
 /// Non-null while the "Insert Slicer" field picker is open.
@@ -74,6 +100,20 @@ export interface PivotActionContext {
   setPendingEdits: (count: number) => void
 }
 
+type FilePivotMeta = WorkbookFile['sheets'][number]['pivotTables'][number]
+
+/// The pivot under the selection: one from the file (possibly with a pending
+/// layout edit journaled this session) or one created this session.
+export type PivotHit =
+  | {
+      readonly kind: 'file'
+      readonly sheetId: string
+      readonly pivot: FilePivotMeta
+      readonly definition: WorkbookPivotDefinition | undefined
+      readonly relayout: WorkbookPivotAdd | undefined
+    }
+  | { readonly kind: 'session'; readonly sheetId: string; readonly add: WorkbookPivotAdd }
+
 function pivotSourceValueFields(definition: WorkbookPivotDefinition): string[] {
   return definition.dataFields.flatMap(({ field }) => {
     const source = definition.fields[field]
@@ -81,37 +121,92 @@ function pivotSourceValueFields(definition: WorkbookPivotDefinition): string[] {
   })
 }
 
-export function findPivotAtSelection(ctx: PivotActionContext): {
+function activeSelection(ctx: PivotActionContext): {
   sheetId: string
-  pivot: WorkbookFile['sheets'][number]['pivotTables'][number]
-  definition: WorkbookPivotDefinition | undefined
+  startRow: number
+  startColumn: number
+  endRow: number
+  endColumn: number
 } | null {
   const runtime = ctx.univerRef.current
-  const state = ctx.lazyWorkbookRef.current
-  if (!runtime || !state) return null
+  if (!runtime) return null
   const workbook = runtime.univerAPI.getActiveWorkbook()
   const worksheet = workbook?.getActiveSheet()
   const range = workbook?.getActiveRange()
   if (!worksheet || !range) return null
-  const sheetId = worksheet.getSheetId()
-  const sheetMeta = state.file.sheets.find((sheet) => sheet.id === sheetId)
+  return {
+    sheetId: worksheet.getSheetId(),
+    startRow: range.getRow(),
+    startColumn: range.getColumn(),
+    endRow: range.getRow() + range.getHeight() - 1,
+    endColumn: range.getColumn() + range.getWidth() - 1,
+  }
+}
+
+function hitsBlock(
+  selection: NonNullable<ReturnType<typeof activeSelection>>,
+  body: { startRow: number; startColumn: number; endRow: number; endColumn: number },
+  pageRows: number,
+): boolean {
+  return (
+    selection.startRow <= body.endRow &&
+    selection.endRow >= body.startRow - pageRows &&
+    selection.startColumn <= body.endColumn &&
+    selection.endColumn >= body.startColumn
+  )
+}
+
+export function findPivotAtSelection(ctx: PivotActionContext): PivotHit | null {
+  const state = ctx.lazyWorkbookRef.current
+  const selection = activeSelection(ctx)
+  if (!state || !selection) return null
+  const sheetMeta = state.file.sheets.find((sheet) => sheet.id === selection.sheetId)
   if (!sheetMeta) return null
-  const selRow = range.getRow()
-  const selCol = range.getColumn()
-  const selEndRow = selRow + range.getHeight() - 1
-  const selEndCol = selCol + range.getWidth() - 1
   for (const pivot of sheetMeta.pivotTables) {
-    const bounds = parseRange(pivot.outputRef)
-    if (
-      selRow <= bounds.endRow &&
-      selEndRow >= bounds.startRow &&
-      selCol <= bounds.endColumn &&
-      selEndCol >= bounds.startColumn
-    ) {
-      return { sheetId, pivot, definition: state.pivotDefinitions.get(pivot.path) }
+    const definition = state.pivotDefinitions.get(pivot.path)
+    const relayout =
+      pivot.cachePath === null
+        ? undefined
+        : state.editJournal.pivotRefreshUpdates.get(pivot.cachePath)?.relayout
+    const pageCount = relayout?.pageFieldIndices?.length ?? definition?.pageFields.length ?? 0
+    if (hitsBlock(selection, parseRange(pivot.outputRef), pivotPageRows(pageCount))) {
+      return { kind: 'file', sheetId: selection.sheetId, pivot, definition, relayout }
+    }
+  }
+  for (const add of state.editJournal.pivotAdds) {
+    if (add.sheetId !== selection.sheetId) continue
+    if (hitsBlock(selection, add.location, pivotPageRows(add.pageFieldIndices?.length ?? 0))) {
+      return { kind: 'session', sheetId: selection.sheetId, add }
     }
   }
   return null
+}
+
+/// Stable identity of the pivot under the selection (drives the Fields pane).
+export function pivotSelectionKey(ctx: PivotActionContext): string | null {
+  const hit = findPivotAtSelection(ctx)
+  if (!hit) return null
+  return hit.kind === 'file' ? hit.pivot.path : `session:${hit.add.name}`
+}
+
+/// Slicers and timelines bind to a file pivot with a loaded definition; a
+/// pivot created this session qualifies after save-and-reopen. When it returns
+/// null the reason was already shown.
+export function filePivotAtSelection(ctx: PivotActionContext): {
+  sheetId: string
+  pivot: FilePivotMeta
+  definition: WorkbookPivotDefinition
+} | null {
+  const hit = findPivotAtSelection(ctx)
+  if (!hit) {
+    ctx.setMessage(t('appCursorNotInPivot'))
+    return null
+  }
+  if (hit.kind === 'session' || !hit.definition) {
+    ctx.setMessage(t('appPivotDefNotLoadedSave'))
+    return null
+  }
+  return { sheetId: hit.sheetId, pivot: hit.pivot, definition: hit.definition }
 }
 
 /// Recomputes every pivot table on the sheet from fresh source values and
@@ -210,33 +305,61 @@ export function refreshPivotTables(ctx: PivotActionContext, sheetId: string): nu
   return refreshed
 }
 
+/// Excel's "numeric field": every non-blank cell is a number and the column is
+/// not date-formatted (dates group on Rows, not in Values).
+function columnIsNumeric(
+  worksheet: UniverWorksheet,
+  startRow: number,
+  column: number,
+  rows: number,
+): boolean {
+  if (rows <= 0) return false
+  const range = worksheet.getRange(startRow, column, rows, 1)
+  const values = range.getRawValues() as unknown[][]
+  const patterns = range.getNumberFormats()
+  let seen = false
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index]?.[0]
+    if (value === null || value === undefined || value === '') continue
+    if (typeof value !== 'number') return false
+    if (isCalendarDatePattern(patterns[index]?.[0] ?? '')) return false
+    seen = true
+  }
+  return seen
+}
+
+/// Source headers of a range (the active selection by default), with Excel's
+/// numeric flag per field.
 export function pivotFieldOptions(
   ctx: PivotActionContext,
   sourceRange?: string,
-): { label: string; colIndex: number }[] {
+  worksheet?: UniverWorksheet,
+): PivotField[] {
   const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
-  const range = sourceRange
-    ? workbook?.getActiveSheet()?.getRange(sourceRange)
-    : workbook?.getActiveRange()
-  if (!range || range.getHeight() < 2) return []
+  const sheet = worksheet ?? workbook?.getActiveSheet()
+  const range = sourceRange ? sheet?.getRange(sourceRange) : workbook?.getActiveRange()
+  if (!sheet || !range || range.getHeight() < 2) return []
   const headerRow =
-    workbook
-      ?.getActiveSheet()
-      ?.getRange(range.getRow(), range.getColumn(), 1, range.getWidth())
-      .getValues()[0] ?? []
+    sheet.getRange(range.getRow(), range.getColumn(), 1, range.getWidth()).getValues()[0] ?? []
   const start = range.getColumn()
-  return headerRow.slice(0, 26).map((header, offset) => ({
+  const dataRows = range.getHeight() - 1
+  return headerRow.slice(0, 200).map((header, offset) => ({
     label:
       header === null || header === undefined || header === ''
         ? t('appColumnLabel', { col: columnLabel(start + offset) })
         : String(header),
     colIndex: start + offset,
+    numeric: columnIsNumeric(sheet, range.getRow() + 1, start + offset, dataRows),
   }))
 }
 
+/// Create PivotTable: Excel's default placement (first text field on Rows,
+/// first numeric field on Values) bakes the initial grid; the Fields pane then
+/// takes over. Returns an error message; null = success (the new pivot is
+/// selected so the pane can pick it up).
 export function handleCreatePivot(
   ctx: PivotActionContext,
-  config: OoXmlPivotConfig,
+  request: PivotCreateRequest,
 ): string | null {
   const runtime = ctx.univerRef.current
   if (!runtime) return t('appWorkbookNotReady')
@@ -246,119 +369,276 @@ export function handleCreatePivot(
   const state = ctx.lazyWorkbookRef.current
   if (!state) return t('appOpenXlsxFirst')
   const sheetId = worksheet.getSheetId()
-  const parts = pivotConfigToOpParts(config, pivotFieldOptions(ctx, config.sourceRange))
+  const fields = pivotFieldOptions(ctx, request.sourceRange)
+  const model = defaultPivotModel(fields)
+  if (validatePivotModel(model) !== null) return t('dlgPivotErrNeedValue')
+  const config = modelToConfig(model, request.sourceRange, request.targetCell)
+  const parts = pivotConfigToOpParts(config, fields)
   if (typeof parts === 'string') return parts
   try {
-    applyAiPivotAdd(runtime, state, {
+    const result = applyAiPivotAdd(runtime, state, {
       op: 'add_pivot',
       sheetId,
-      sourceRange: config.sourceRange,
-      targetCell: config.targetCell || 'A1',
+      sourceRange: request.sourceRange,
+      targetCell: request.targetCell || 'A1',
       ...parts,
     })
+    worksheet.getRange(result.location.startRow, result.location.startColumn, 1, 1).activate()
     ctx.setPendingEdits(journalSize(state.editJournal))
-    ctx.setMessage(t('appPivotCreated', { cell: config.targetCell || 'A1' }))
+    ctx.setMessage(t('appPivotCreated', { cell: request.targetCell || 'A1' }))
     return null
   } catch (e) {
     return e instanceof Error ? e.message : t('appPivotCreateFailed')
   }
 }
 
-/// A3 editing of an existing pivot: pivot under the cursor → dialog prefill
-/// context. When it returns null, the reason was already shown via setMessage.
-/// The context is also stored in a ref for Apply.
-export function pivotEditInitial(ctx: PivotActionContext): PivotEditSeed | null {
-  const state = ctx.lazyWorkbookRef.current
-  if (!state) {
-    ctx.setMessage(t('appOpenXlsxFirst'))
-    return null
+function topLeftOf(area: { startRow: number; startColumn: number }, rowsAbove: number): string {
+  return `${columnLabel(area.startColumn)}${Math.max(0, area.startRow - rowsAbove) + 1}`
+}
+
+/// Layout model of a journaled pivot (session add or pending relayout).
+function modelOfPivotAdd(add: WorkbookPivotAdd): PivotLayoutModel {
+  const columns =
+    add.columnFieldIndices ?? (add.columnFieldIndex === undefined ? [] : [add.columnFieldIndex])
+  const values: PivotValueSpec[] = add.values.map((value, index) => {
+    const filter = add.filters?.find((entry) => entry.kind === 'value' && entry.dataField === index)
+    return {
+      fieldIndex: value.fieldIndex,
+      agg: value.agg,
+      ...(value.showDataAs !== undefined ? { showDataAs: value.showDataAs } : {}),
+      ...(value.name !== undefined ? { name: value.name } : {}),
+      ...(value.formula !== undefined ? { formula: value.formula, calcName: value.calcName } : {}),
+      ...(filter !== undefined && filter.kind === 'value'
+        ? {
+            filter: {
+              op: filter.op,
+              ...(filter.count !== undefined ? { count: filter.count } : {}),
+              ...(filter.from !== undefined ? { from: filter.from } : {}),
+              ...(filter.to !== undefined ? { to: filter.to } : {}),
+            },
+          }
+        : {}),
+    }
+  })
+  const groupings: Record<number, PivotLayoutModel['groupings'][number]> = {}
+  for (const grouping of add.groupings ?? []) {
+    groupings[grouping.fieldIndex] =
+      grouping.kind === 'date'
+        ? { kind: 'date', dateUnit: grouping.dateUnit }
+        : { kind: 'range', rangeStep: grouping.rangeStep }
   }
-  const found = findPivotAtSelection(ctx)
-  if (!found) {
-    ctx.setMessage(t('appPutCursorInPivot'))
-    return null
-  }
-  const { sheetId, pivot, definition } = found
-  if (pivot.cachePath === null) {
-    ctx.setMessage(t('appPivotNoCacheDef'))
-    return null
-  }
-  if (!definition) {
-    ctx.setMessage(t('appPivotDefNotLoadedSave'))
-    return null
-  }
-  if (definition.unsupported.length > 0) {
-    ctx.setMessage(t('appPivotEditUnsupported', { reasons: definition.unsupported.join('; ') }))
-    return null
-  }
-  // MVP boundary: existing grouping/filters/report filters/calculated fields
-  // cannot be prefilled into the dialog, and a layout change would drop them —
-  // fail closed.
-  if (
-    definition.fields.some(
-      (field) => field.grouping !== undefined || field.formula !== undefined,
-    ) ||
-    definition.filters.length > 0 ||
-    definition.pageFields.length > 0
-  ) {
-    ctx.setMessage(t('appPivotEditHasFeatures'))
-    return null
-  }
-  if (definition.rowFields.some((field) => field < 0)) {
-    ctx.setMessage(t('appPivotEditValuesOnRows'))
-    return null
-  }
-  const supportedAggs = new Set(['sum', 'count', 'average', 'max', 'min'])
-  if (definition.dataFields.some((dataField) => !supportedAggs.has(dataField.subtotal))) {
-    ctx.setMessage(t('appPivotEditAggUnsupported'))
-    return null
-  }
-  const sourceSheet = state.file.sheets.find((sheet) => sheet.name === definition.sourceSheet)
-  if (
-    !sourceSheet ||
-    !ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getSheetBySheetId(sourceSheet.id)
-  ) {
-    ctx.setMessage(t('appPivotSourceSheetNotFound', { name: definition.sourceSheet }))
-    return null
-  }
-  const sourceBounds = parseRange(definition.sourceRef)
-  const bounds = parseRange(pivot.outputRef)
-  // No calculated fields (guaranteed above), so cache-field indices map
-  // one-to-one to dialog field indices.
-  const fields: PivotField[] = definition.fields.map((field, index) => ({
-    label: field.name,
-    colIndex: sourceBounds.startColumn + index,
-  }))
-  ctx.pivotEditContextRef.current = {
-    sourceSheetId: sourceSheet.id,
-    targetSheetId: sheetId,
-    sourceRange: definition.sourceRef,
-    pivotPath: pivot.path,
-    cachePath: pivot.cachePath,
-    oldBounds: {
-      startRow: bounds.startRow,
-      startColumn: bounds.startColumn,
-      endRow: bounds.endRow,
-      endColumn: bounds.endColumn,
-    },
-    fields,
+  const labelFilters: Record<number, PivotLayoutModel['labelFilters'][number]> = {}
+  for (const filter of add.filters ?? []) {
+    if (filter.kind === 'label') labelFilters[filter.field] = { op: filter.op, value: filter.value }
   }
   return {
-    fields,
-    sourceRange: definition.sourceRef,
-    initial: {
-      rowFieldIndices: definition.rowFields.filter((field) => field >= 0),
-      colFieldIndices: definition.colFields.filter((field) => field >= 0),
-      values: definition.dataFields.map((dataField) => ({
-        fieldIndex: dataField.field,
-        agg: dataField.subtotal as 'sum' | 'count' | 'average' | 'max' | 'min',
-        ...(dataField.showDataAs !== undefined ? { showDataAs: dataField.showDataAs } : {}),
+    filters: (add.pageFieldIndices ?? []).map((fieldIndex, page) => {
+      const item = add.pageItems?.[page] ?? null
+      return {
+        fieldIndex,
+        item: item === null ? null : (add.pageLevelItems?.[page]?.[item] ?? null),
+      }
+    }),
+    columns,
+    rows: [...add.rowFieldIndices],
+    values,
+    groupings,
+    labelFilters,
+  }
+}
+
+/// Layout model of a file pivot from its parsed definition. Returns a message
+/// key when the definition is outside what the pane can edit.
+function modelOfDefinition(
+  definition: WorkbookPivotDefinition,
+): { model: PivotLayoutModel; sourceFieldCount: number } | string {
+  if (definition.unsupported.length > 0) {
+    return t('appPivotEditUnsupported', { reasons: definition.unsupported.join('; ') })
+  }
+  if (definition.rowFields.some((field) => field < 0)) return t('appPivotEditValuesOnRows')
+  if (definition.dataFields.some((dataField) => !isPivotAggregation(dataField.subtotal))) {
+    return t('appPivotEditAggUnsupported')
+  }
+  const sourceFieldCount = definition.fields.filter((field) => field.formula === undefined).length
+  const memberLabel = (field: number, item: number | null): string | null => {
+    if (item === null) return null
+    const x = definition.fieldItems[field]?.[item]?.x
+    const shared =
+      x === null || x === undefined ? undefined : definition.fields[field]?.sharedItems[x]
+    return shared === undefined || shared === null ? '' : String(shared)
+  }
+  const values: PivotValueSpec[] = definition.dataFields.map((dataField, index) => {
+    const source = definition.fields[dataField.field]
+    const agg = dataField.subtotal as PivotValueSpec['agg']
+    const isCalc = source?.formula !== undefined
+    const defaultName = defaultDataFieldCaption(agg, source?.name ?? '')
+    const filter = definition.filters.find(
+      (entry) => entry.kind === 'value' && entry.dataField === index,
+    )
+    return {
+      fieldIndex: isCalc ? -1 : dataField.field,
+      agg,
+      ...(dataField.showDataAs !== undefined ? { showDataAs: dataField.showDataAs } : {}),
+      ...(dataField.name !== defaultName && !isCalc ? { name: dataField.name } : {}),
+      ...(isCalc ? { formula: source.formula, calcName: source.name } : {}),
+      ...(filter !== undefined && filter.kind === 'value'
+        ? {
+            filter: {
+              op: filter.op,
+              ...(filter.count !== undefined ? { count: filter.count } : {}),
+              ...(filter.from !== undefined ? { from: filter.from } : {}),
+              ...(filter.to !== undefined ? { to: filter.to } : {}),
+            },
+          }
+        : {}),
+    }
+  })
+  // The pane's value filter always targets the level-1 row field.
+  if (
+    definition.filters.some(
+      (filter) => filter.kind === 'value' && filter.field !== definition.rowFields[0],
+    )
+  ) {
+    return t('appPivotEditHasFeatures')
+  }
+  const groupings: Record<number, PivotLayoutModel['groupings'][number]> = {}
+  definition.fields.forEach((field, index) => {
+    if (!field.grouping) return
+    groupings[index] =
+      field.grouping.kind === 'date'
+        ? { kind: 'date', dateUnit: field.grouping.dateUnit }
+        : { kind: 'range', rangeStep: field.grouping.rangeStep }
+  })
+  const labelFilters: Record<number, PivotLayoutModel['labelFilters'][number]> = {}
+  for (const filter of definition.filters) {
+    if (filter.kind === 'label') labelFilters[filter.field] = { op: filter.op, value: filter.value }
+  }
+  return {
+    sourceFieldCount,
+    model: {
+      filters: definition.pageFields.map((page) => ({
+        fieldIndex: page.field,
+        item: memberLabel(page.field, page.item),
       })),
-      targetCell: `${columnLabel(bounds.startColumn)}${bounds.startRow + 1}`,
+      columns: definition.colFields.filter((field) => field >= 0),
+      rows: [...definition.rowFields],
+      values,
+      groupings,
+      labelFilters,
     },
   }
 }
 
+/// Seed for the Fields pane from the pivot under the cursor; locks the edit
+/// context used by every apply. When it returns null, the reason was already
+/// shown via setMessage.
+export function pivotEditInitial(ctx: PivotActionContext): PivotEditSeed | null {
+  const state = ctx.lazyWorkbookRef.current
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  if (!state || !workbook) {
+    ctx.setMessage(t('appOpenXlsxFirst'))
+    return null
+  }
+  const hit = findPivotAtSelection(ctx)
+  if (!hit) {
+    ctx.setMessage(t('appPutCursorInPivot'))
+    return null
+  }
+  const key = hit.kind === 'file' ? hit.pivot.path : `session:${hit.add.name}`
+  const add = hit.kind === 'session' ? hit.add : hit.relayout
+  let sourceSheetId: string
+  let sourceRange: string
+  let model: PivotLayoutModel
+  let bodyBounds: PivotRelayoutTarget['oldBounds']
+  let target: PivotRelayoutTarget['target']
+  let fieldNames: string[]
+  if (add !== undefined) {
+    sourceSheetId = add.sourceSheetId
+    sourceRange =
+      `${columnLabel(add.sourceArea.startColumn)}${add.sourceArea.startRow + 1}` +
+      `:${columnLabel(add.sourceArea.endColumn)}${add.sourceArea.endRow + 1}`
+    model = modelOfPivotAdd(add)
+    bodyBounds = hit.kind === 'file' ? parseRange(hit.pivot.outputRef) : { ...add.location }
+    target =
+      hit.kind === 'file'
+        ? { pivotPath: hit.pivot.path, cachePath: hit.pivot.cachePath! }
+        : { sessionName: add.name }
+    fieldNames = [...add.fieldNames]
+  } else {
+    if (hit.kind !== 'file') return null
+    if (hit.pivot.cachePath === null) {
+      ctx.setMessage(t('appPivotNoCacheDef'))
+      return null
+    }
+    const definition = hit.definition
+    if (!definition) {
+      ctx.setMessage(t('appPivotDefNotLoadedSave'))
+      return null
+    }
+    const parsed = modelOfDefinition(definition)
+    if (typeof parsed === 'string') {
+      ctx.setMessage(parsed)
+      return null
+    }
+    const sourceSheet = state.file.sheets.find((sheet) => sheet.name === definition.sourceSheet)
+    if (!sourceSheet || !workbook.getSheetBySheetId(sourceSheet.id)) {
+      ctx.setMessage(t('appPivotSourceSheetNotFound', { name: definition.sourceSheet }))
+      return null
+    }
+    sourceSheetId = sourceSheet.id
+    sourceRange = definition.sourceRef
+    model = parsed.model
+    bodyBounds = parseRange(hit.pivot.outputRef)
+    target = { pivotPath: hit.pivot.path, cachePath: hit.pivot.cachePath }
+    fieldNames = definition.fields.slice(0, parsed.sourceFieldCount).map((field) => field.name)
+  }
+  const sourceSheet = workbook.getSheetBySheetId(sourceSheetId)
+  if (!sourceSheet) {
+    ctx.setMessage(t('appPivotSourceSheetNotFound', { name: sourceSheetId }))
+    return null
+  }
+  const sampled = pivotFieldOptions(ctx, sourceRange, sourceSheet)
+  const sourceBounds = parseRange(sourceRange)
+  const fields: PivotField[] = fieldNames.map((label, index) => ({
+    label,
+    colIndex: sourceBounds.startColumn + index,
+    numeric: sampled[index]?.numeric ?? false,
+  }))
+  const oldPageRows = Math.min(bodyBounds.startRow, pivotPageRows(model.filters.length))
+  const targetCell = topLeftOf(bodyBounds, oldPageRows)
+  ctx.pivotEditContextRef.current = {
+    key,
+    sourceSheetId,
+    targetSheetId: hit.sheetId,
+    sourceRange,
+    targetCell,
+    fields,
+    relayout: { target, oldBounds: { ...bodyBounds }, oldPageRows },
+  }
+  return { key, fields, sourceRange, targetCell, model }
+}
+
+/// Distinct labels of one source field (report-filter item picker).
+export function pivotFieldMembers(ctx: PivotActionContext, fieldIndex: number): string[] {
+  const context = ctx.pivotEditContextRef.current
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const sourceSheet = context ? workbook?.getSheetBySheetId(context.sourceSheetId) : undefined
+  if (!context || !sourceSheet) return []
+  const grid = readPivotSourceGrid(
+    sourceSheet.getRange(context.sourceRange),
+    ctx.lazyWorkbookRef.current?.file.date1904 === true,
+  )
+  const members: string[] = []
+  for (const row of grid.slice(1)) {
+    const label = String(row[fieldIndex] ?? '')
+    if (!members.includes(label)) members.push(label)
+  }
+  return members
+}
+
+/// Applies a layout from the Fields pane to the pivot locked in the edit
+/// context; the context's bounds move with the result so the next apply
+/// clears the right area.
 export function handleEditPivotApply(
   ctx: PivotActionContext,
   config: OoXmlPivotConfig,
@@ -370,7 +650,7 @@ export function handleEditPivotApply(
   const parts = pivotConfigToOpParts(config, context.fields)
   if (typeof parts === 'string') return parts
   try {
-    applyAiPivotAdd(
+    const result = applyAiPivotAdd(
       runtime,
       state,
       {
@@ -380,15 +660,16 @@ export function handleEditPivotApply(
           ? {}
           : { targetSheetId: context.targetSheetId }),
         sourceRange: context.sourceRange,
-        targetCell: config.targetCell,
+        targetCell: context.targetCell,
         ...parts,
       },
-      {
-        pivotPath: context.pivotPath,
-        cachePath: context.cachePath,
-        oldBounds: context.oldBounds,
-      },
+      context.relayout,
     )
+    context.relayout = {
+      target: context.relayout.target,
+      oldBounds: { ...result.location },
+      oldPageRows: result.pageRows,
+    }
     ctx.setPendingEdits(journalSize(state.editJournal))
     ctx.setMessage(t('appPivotLayoutUpdated'))
     return null
@@ -503,15 +784,8 @@ export function handleOpenSlicerPicker(ctx: PivotActionContext): void {
     ctx.setMessage(t('appSlicerNeedsFile'))
     return
   }
-  const found = findPivotAtSelection(ctx)
-  if (!found) {
-    ctx.setMessage(t('appCursorNotInPivot'))
-    return
-  }
-  if (!found.definition) {
-    ctx.setMessage(t('appPivotDefNotLoaded'))
-    return
-  }
+  const found = filePivotAtSelection(ctx)
+  if (!found) return
   const definition = found.definition
   const taken = fieldsWithFilterPanel(ctx, found.pivot.path)
   const seen = new Set<number>()
@@ -709,15 +983,8 @@ export function handleOpenTimelinePicker(ctx: PivotActionContext): void {
     ctx.setMessage(t('appSlicerNeedsFile'))
     return
   }
-  const found = findPivotAtSelection(ctx)
-  if (!found) {
-    ctx.setMessage(t('appCursorNotInPivot'))
-    return
-  }
-  if (!found.definition) {
-    ctx.setMessage(t('appPivotDefNotLoaded'))
-    return
-  }
+  const found = filePivotAtSelection(ctx)
+  if (!found) return
   const definition = found.definition
   const taken = fieldsWithFilterPanel(ctx, found.pivot.path)
   const seen = new Set<number>()

@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core'
+import { Extension, type Editor } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
@@ -12,9 +12,15 @@ import { type TabStop } from '@genoffice/docx-engine'
  * `aiChanged` (diff highlighting for AI edits).
  */
 
-import { SearchHighlight } from './extensions'
+import { SearchHighlight, type ListNumberingStorage } from './extensions'
 import { revisionDisplayState } from './marks'
-import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
+import {
+  affectsBorderGroup,
+  borderGroupKey,
+  borderMergeFlags,
+  type ParaBorderAttrs,
+  type StyleBorderLookup,
+} from './para-border-merge'
 import { rangeSlot } from '../dom-range'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
 import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
@@ -979,29 +985,55 @@ export const EaHintQuotesExtension = Extension.create({
 
 // ---- adjacent-paragraph border merging (Word border groups) ----
 
-const paraBorderMergePluginKey = new PluginKey('paraBorderMerge')
+export const paraBorderMergePluginKey = new PluginKey('paraBorderMerge')
 
 /**
  * Word border groups (ECMA-376 §17.3.1.24): adjacent top-level paragraphs with
  * identical borders/shading draw top/bottom lines only at the group edges.
  * Display-only classes; the borders attrs still serialize unchanged on save.
  */
+/** style-level w:pBdr/w:shd the body merge compares (the strips resolve theirs in the engine) */
+const styleTableIds = new WeakMap<object, number>()
+let nextStyleTableId = 0
+function styleBorderLookup(editor: Editor): {
+  lookup: StyleBorderLookup | undefined
+  sig: string
+} {
+  const styles = (editor.storage.listNumbering as ListNumberingStorage | undefined)?.styles
+  if (!styles) return { lookup: undefined, sig: '' }
+  let id = styleTableIds.get(styles)
+  if (id == null) styleTableIds.set(styles, (id = ++nextStyleTableId))
+  let defaultId: string | null = null
+  for (const info of styles.values()) {
+    if (info.isDefault && info.type === 'paragraph') defaultId = info.styleId
+  }
+  return {
+    lookup: (styleId) => {
+      const d = styles.get(styleId ?? defaultId ?? '')?.display
+      return d ? { borderSides: d.borderSides, shadingFill: d.shadingFill } : undefined
+    },
+    sig: String(id),
+  }
+}
+
 export const ParaBorderMergeExtension = Extension.create({
   name: 'paraBorderMerge',
   addProseMirrorPlugins() {
+    const styleTable = () => styleBorderLookup(this.editor)
     return [
       blockDecorationPlugin({
         key: paraBorderMergePluginKey,
         build(doc) {
+          const { lookup } = styleTable()
           const items: ParaBorderAttrs[] = []
           const spans: Array<{ from: number; to: number }> = []
           doc.forEach((node, offset) => {
             // non-paragraph blocks (tables...) enter as border-less entries: they break adjacency
-            items.push(node.isTextblock ? (node.attrs as ParaBorderAttrs) : {})
+            items.push(node.isTextblock ? (node.attrs as ParaBorderAttrs) : { break: true })
             spans.push({ from: offset, to: offset + node.nodeSize })
           })
           const decos: Decoration[] = []
-          borderMergeFlags(items).forEach((f, i) => {
+          borderMergeFlags(items, lookup).forEach((f, i) => {
             if (!f.suppressTop && !f.suppressBottom) return
             const cls = [
               f.suppressTop ? 'pbdr-suppress-top' : '',
@@ -1015,11 +1047,18 @@ export const ParaBorderMergeExtension = Extension.create({
         },
         // a bordered block can join or leave a group; a border-less one only
         // matters when it was grouped before (then it carried a decoration)
-        needsRecompute: (node) => {
-          if (!node.isTextblock) return false
-          const a = node.attrs as ParaBorderAttrs
-          return !!(a.borders || a.borderLines || a.shadingFill || a.shadingDisplay)
+        needsRecompute: (node) =>
+          node.isTextblock &&
+          affectsBorderGroup(node.attrs as ParaBorderAttrs, styleTable().lookup),
+        // a text edit inside a style-bordered paragraph keeps its group key: no rebuild
+        changed: (before, after) => {
+          const { lookup } = styleTable()
+          const key = (n: ProseMirrorNode) =>
+            n.isTextblock ? borderGroupKey(n.attrs as ParaBorderAttrs, lookup) : ''
+          return key(before) !== key(after)
         },
+        // a reloaded style table changes which styles carry borders
+        signature: () => styleTable().sig,
       }),
     ]
   },
@@ -1162,6 +1201,27 @@ const paraMarkDelPluginKey = new PluginKey('paraMarkDel')
  * (Word joins them into the next one) keep their height — approximate, but the
  * remaining text still occupies a line either way.
  */
+/**
+ * Deletion class of a paragraph: mark deleted with nothing else live →
+ * collapse; mark live but every inline child deleted → Word keeps one empty
+ * line (`doc-para-content-del` gives the paragraph a strut once the deleted
+ * runs are hidden); null when nothing applies.
+ */
+export function paraDeletionClass(node: {
+  attrs?: Record<string, unknown>
+  childCount: number
+  forEach: (f: (child: { marks: readonly { type: { name: string } }[] }) => void) => void
+}): string | null {
+  let visible = false
+  node.forEach((child) => {
+    if (!child.marks.some((m) => m.type.name === 'del')) visible = true
+  })
+  if (node.attrs?.paraMarkDel) {
+    return visible ? 'doc-para-mark-del' : 'doc-para-mark-del doc-para-del-collapse'
+  }
+  return !visible && node.childCount > 0 ? 'doc-para-content-del' : null
+}
+
 export const ParaMarkDelExtension = Extension.create({
   name: 'paraMarkDel',
   addProseMirrorPlugins() {
@@ -1171,20 +1231,15 @@ export const ParaMarkDelExtension = Extension.create({
         build(doc) {
           const decos: Decoration[] = []
           doc.forEach((node, offset) => {
-            if (!node.attrs?.paraMarkDel) return
-            let visible = false
-            node.forEach((child) => {
-              if (!child.marks.some((m) => m.type.name === 'del')) visible = true
-            })
-            decos.push(
-              Decoration.node(offset, offset + node.nodeSize, {
-                class: visible ? 'doc-para-mark-del' : 'doc-para-mark-del doc-para-del-collapse',
-              }),
-            )
+            if (!node.isTextblock && !node.attrs?.paraMarkDel) return
+            const cls = paraDeletionClass(node)
+            if (cls) decos.push(Decoration.node(offset, offset + node.nodeSize, { class: cls }))
           })
           return decos
         },
-        needsRecompute: (node) => !!node.attrs?.paraMarkDel,
+        needsRecompute: (node) =>
+          !!node.attrs?.paraMarkDel ||
+          (node.isTextblock && node.childCount > 0 && paraDeletionClass(node) !== null),
       }),
     ]
   },

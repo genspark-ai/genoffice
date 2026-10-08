@@ -197,6 +197,13 @@ describe('offsetFormulaRefs', () => {
   it('shifts lowercase cell refs and whole-column spans on fill', () => {
     expect(offsetFormulaRefs('=sum(a1:b2)+sum($b:d)', 0, 1)).toBe('=sum(B1:C2)+sum($B:E)')
   })
+
+  it('shifts external-workbook references instead of skipping their bracket prefix', () => {
+    expect(offsetFormulaRefs("='[1]Sheet 1'!A3+A3", 1, 0)).toBe("='[1]Sheet 1'!A4+A4")
+    expect(offsetFormulaRefs('=[Book.xlsx]Sheet1!A3+Table1[@Q1]', 1, 0)).toBe(
+      '=[Book.xlsx]Sheet1!A4+Table1[@Q1]',
+    )
+  })
 })
 
 describe('shiftFormulaRefs cross-sheet', () => {

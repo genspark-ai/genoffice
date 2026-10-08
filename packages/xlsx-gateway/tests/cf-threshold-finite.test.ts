@@ -3,8 +3,6 @@ import { applyCfRules, CfEditError, type DxfSink } from '../src/gateway/xlsx-cf'
 
 const SHEET = '<worksheet><sheetData/></worksheet>'
 
-// The color-scale path only consults the sink when a rule allocates a dxf,
-// which a color scale never does, so a constant sink is enough here.
 const dxfs: DxfSink = { internDxf: () => 0 }
 
 function colorScale(stopValue: unknown): string {
@@ -29,10 +27,6 @@ function colorScale(stopValue: unknown): string {
 
 describe('CF threshold finiteness', () => {
   it('rejects a non-numeric threshold instead of writing val="NaN"', () => {
-    // CT_Cfvo/@val is xsd:string, so val="NaN" is not caught by a schema
-    // validator — Excel just cannot evaluate the threshold and the rule
-    // silently stops applying. The sibling highlight path already throws for
-    // this input; the threshold writers must fail the same way.
     expect(() => colorScale('abc')).toThrow(CfEditError)
     expect(() => colorScale('abc')).toThrow(/finite/)
     expect(() => colorScale(Number.NaN)).toThrow(CfEditError)

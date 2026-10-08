@@ -18,10 +18,11 @@ import {
   runLetterSpacingCss,
   runsLineFactor,
 } from '../line-metrics'
-import { borderCssStyle, borderDrawnPx, isDrawnBorder } from './border-metrics'
-import { setDkBackground, setDkBorder, setDkColor } from './dark-page'
+import { borderCssStyle, borderDrawnPx, cellDiagonalCss, isDrawnBorder } from './border-metrics'
+import { setDkBackground, setDkBackgroundImage, setDkBorder, setDkColor } from './dark-page'
 import { INLINE_RULE_CLASS, inlineRuleDecls } from './inline-rule'
 import { hfParasOf } from './hf-text'
+import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
 
 /**
  * Plain-DOM header/footer rendering for the canvas page gaps (M4 always-on
@@ -40,26 +41,109 @@ export type ParaBorderPadding = Partial<
   Record<'paddingTop' | 'paddingRight' | 'paddingBottom' | 'paddingLeft', string>
 >
 
+export type ParaBorderSideLines = Partial<
+  Record<
+    't' | 'b' | 'l' | 'r',
+    { color?: string; szPt?: number; spacePt?: number; none?: true } | null
+  >
+>
+
+/** the model's drawn lines plus the reset sides whose w:space still pads (borderPad) */
+export function paraBorderLinesWithPad(
+  lines?: ParaBorderSideLines | null,
+  pad?: Partial<Record<'t' | 'b' | 'l' | 'r', number>> | null,
+): ParaBorderSideLines {
+  const out: ParaBorderSideLines = { ...lines }
+  for (const ch of ['t', 'b', 'l', 'r'] as const) {
+    if (pad?.[ch]) out[ch] = { none: true, spacePt: pad[ch] }
+  }
+  return out
+}
+
 /**
- * Padding for the drawn w:pBdr sides only, as longhands so a direct side and a
- * style-level side on different edges layer per side (Word merges pBdr per
- * side). Top/bottom: the line sits w:space pt from the text and the gap is
- * part of the paragraph height; left/right keep the legacy 4px text inset.
+ * Padding for the drawn w:pBdr sides and the none sides that keep a w:space
+ * (Word pads those too), as longhands so a direct side and a style-level side
+ * on different edges layer per side (Word merges pBdr per side). Top/bottom:
+ * the line sits w:space pt from the text and the gap is part of the paragraph
+ * height; drawn left/right keep the legacy 4px text inset, none left/right
+ * only widen the shading box (paraBorderShadowDecls).
  */
-export function paraBorderPadding(
-  drawn: string,
-  lines?: Partial<Record<'t' | 'b' | 'l' | 'r', { spacePt?: number } | null>>,
-): ParaBorderPadding {
+export function paraBorderPadding(drawn: string, lines?: ParaBorderSideLines): ParaBorderPadding {
   const out: ParaBorderPadding = {}
   const v = (ch: 't' | 'b') => {
     const space = lines?.[ch]?.spacePt
     return space ? `${space}pt` : '0'
   }
-  if (drawn.includes('t')) out.paddingTop = v('t')
+  const padded = (ch: 't' | 'b') => drawn.includes(ch) || lines?.[ch]?.none === true
+  if (padded('t')) out.paddingTop = v('t')
   if (drawn.includes('r')) out.paddingRight = '4px'
-  if (drawn.includes('b')) out.paddingBottom = v('b')
+  if (padded('b')) out.paddingBottom = v('b')
   if (drawn.includes('l')) out.paddingLeft = '4px'
   return out
+}
+
+/** the shading box extended by the none-side left/right w:space; the text never moves */
+export const PARA_BORDER_SHADOW =
+  'calc(-1 * var(--pbdr-l, 0pt)) 0 0 var(--pbdr-fill), var(--pbdr-r, 0pt) 0 0 var(--pbdr-fill)'
+
+/** `--pbdr-l/r` for none left/right sides with a w:space (plus the shadow that paints them) */
+export function paraBorderShadowDecls(lines?: ParaBorderSideLines): string[] {
+  const out: string[] = []
+  for (const ch of ['l', 'r'] as const) {
+    const line = lines?.[ch]
+    if (line?.none && line.spacePt) out.push(`--pbdr-${ch}:${line.spacePt}pt`)
+  }
+  if (out.length > 0) out.push(`box-shadow:${PARA_BORDER_SHADOW}`)
+  return out
+}
+
+export type ParaBorderMergeFlags = { suppressTop: boolean; suppressBottom: boolean }
+
+/** Word border groups over the strip paragraphs (identical pBdr + shading merge; rows split) */
+export function hfBorderMergeFlags(paras: readonly HfParagraph[]): ParaBorderMergeFlags[] {
+  return borderMergeFlags(
+    paras.map((para): ParaBorderAttrs =>
+      para.cells
+        ? { break: true }
+        : {
+            borders: para.borders ?? null,
+            borderLines: para.borderLines ? JSON.stringify(para.borderLines) : null,
+            borderPad: para.borderPad ? JSON.stringify(para.borderPad) : null,
+            shadingFill: para.shadingFill ?? null,
+            shadingDisplay: para.shadingDisplay ?? null,
+          },
+    ),
+  )
+}
+
+/** border lines, padding and shading-box shadow of one strip paragraph (camelCase style) */
+export function hfParaBorderStyle(
+  para: HfParagraph,
+  flags?: ParaBorderMergeFlags,
+): { style: Record<string, string>; borders: Partial<Record<'t' | 'b' | 'l' | 'r', string>> } {
+  const style: Record<string, string> = {}
+  const borders: Partial<Record<'t' | 'b' | 'l' | 'r', string>> = {}
+  const lines = paraBorderLinesWithPad(para.borderLines, para.borderPad)
+  const drawn = (para.borders ?? '')
+    .split('')
+    .filter((ch) => !(ch === 't' && flags?.suppressTop) && !(ch === 'b' && flags?.suppressBottom))
+    .join('')
+  const prop = { t: 'borderTop', b: 'borderBottom', l: 'borderLeft', r: 'borderRight' } as const
+  for (const ch of ['t', 'b', 'l', 'r'] as const) {
+    if (drawn.includes(ch)) style[prop[ch]] = borders[ch] = paraBorderCss(lines[ch] ?? undefined)
+  }
+  const padding = paraBorderPadding(drawn, lines)
+  if (flags?.suppressTop) delete padding.paddingTop
+  if (flags?.suppressBottom) delete padding.paddingBottom
+  Object.assign(style, padding)
+  const shdBg = para.shadingDisplay ?? para.shadingFill
+  if (shdBg) style['--pbdr-fill'] = `#${shdBg}`
+  for (const decl of paraBorderShadowDecls(lines)) {
+    const i = decl.indexOf(':')
+    const k = decl.slice(0, i)
+    style[k.startsWith('--') ? k : 'boxShadow'] = decl.slice(i + 1)
+  }
+  return { style, borders }
 }
 
 const PADDING_PROP = {
@@ -95,6 +179,8 @@ const HF_CELL_MAR = { top: 0, right: 108, bottom: 0, left: 108 } as const
 export interface HfCellGeometry {
   style: Record<string, string>
   borders: Partial<Record<'t' | 'b' | 'l' | 'r', string>>
+  /** w:tl2br / w:tr2bl as background-image layers (callers add the dark-page twin) */
+  diagonals?: string
   textWidthPx?: number
 }
 
@@ -133,7 +219,17 @@ export function hfCellGeometry(cell: HfTableCell): HfCellGeometry {
     style[prop] = css
     borders[key] = css
   }
-  return { style, borders, ...(textWidthPx != null ? { textWidthPx } : {}) }
+  const diagonals = (['tl2br', 'tr2bl'] as const)
+    .map((d) => cellDiagonalCss(cell.borders?.[d], d))
+    .filter((v): v is string => v !== null)
+    .join(',')
+  if (diagonals) style.backgroundImage = diagonals
+  return {
+    style,
+    borders,
+    ...(diagonals ? { diagonals } : {}),
+    ...(textWidthPx != null ? { textWidthPx } : {}),
+  }
 }
 
 /** Layout-table row box: left offset of the table edge and the declared w:trHeight */
@@ -347,7 +443,7 @@ export function hfTabSegments(
   let rest: Run[] | undefined
   let x = (cell?.startPx ?? 0) + hfRunsWidthPx(chunks[0], display)
   for (let k = 1; k < chunks.length; k++) {
-    const runs = chunks[k].filter((r) => r.text !== '')
+    const runs = chunks[k].filter((r) => r.text !== '' || r.image)
     // w:ptab carries its own margin-relative alignment and ignores tab stops
     const ptab = para.ptabAligns?.[k - 1]
     if (ptab) {
@@ -411,7 +507,7 @@ export function hfTabSegments(
   const maxHalfPoints = Math.max(0, ...para.runs.map((r) => r.sizeHalfPoints ?? 0))
   const align = para.align
   return {
-    lead: chunks[0].filter((r) => r.text !== ''),
+    lead: chunks[0].filter((r) => r.text !== '' || r.image),
     segments,
     ...(maxHalfPoints > 0 ? { minHeightPt: (maxHalfPoints / 2) * 1.3 } : {}),
     ...(!usedPct && !cell && (align === 'center' || align === 'right')
@@ -440,8 +536,28 @@ export function hfTabLines(
   return lines.map((runs) => {
     const line = { ...para, runs, ptabAligns: para.ptabAligns?.slice(tabsBefore) }
     tabsBefore += runs.reduce((n, r) => n + r.text.split('\t').length - 1, 0)
-    return hfTabSegments(line, display) ?? { lead: runs.filter((r) => r.text !== ''), segments: [] }
+    return (
+      hfTabSegments(line, display) ?? {
+        lead: runs.filter((r) => r.text !== '' || r.image),
+        segments: [],
+      }
+    )
   })
+}
+
+/** tallest picture inside the line's positioned segments (px): out of flow, so
+ *  the line needs an in-flow strut of that height to keep the shared baseline */
+export function hfTabSegImageHeightPx(layout: HfTabLayout): number {
+  return Math.max(
+    0,
+    ...layout.segments.flatMap((s) =>
+      s.runs.map((r) => (r.image?.rule ? 0 : (r.image?.heightPx ?? 0))),
+    ),
+  )
+}
+
+export function hfSegHasImage(seg: HfTabSegment): boolean {
+  return seg.runs.some((r) => !!r.image && !r.image.rule)
 }
 
 /** How far (px) tab segments run past the text column: Word keeps a stop set
@@ -612,7 +728,12 @@ export function hfWithoutPageMarks(value: HeaderFooter): HeaderFooter {
     .map((p) =>
       p.cells
         ? p
-        : { ...p, runs: p.runs.map((r) => ({ ...r, text: strip(r.text) })).filter((r) => r.text) },
+        : {
+            ...p,
+            runs: p.runs
+              .map((r) => ({ ...r, text: strip(r.text) }))
+              .filter((r) => r.text || r.image),
+          },
     )
     // dedicated page-number paragraphs go away entirely; table rows and user-typed blank lines stay
     .filter((p, i) => p.cells != null || p.runs.length > 0 || value.paras![i].runs.length === 0)
@@ -621,7 +742,9 @@ export function hfWithoutPageMarks(value: HeaderFooter): HeaderFooter {
       [...p.runs, ...(p.cells?.flatMap((c) => c.paras.flat()) ?? [])].map((r) => r.text).join(''),
     )
     .join('')
-  if (!text) return { ...value, text: '', paras: undefined, pageNumber: false }
+  if (!text && !paras.some((p) => p.runs.some((r) => r.image))) {
+    return { ...value, text: '', paras: undefined, pageNumber: false }
+  }
   return { ...value, text, paras, pageNumber: false }
 }
 
@@ -958,6 +1081,43 @@ export function wordArtSvgMarkup(img: HfImage): string {
 
 /** <img> for a header/footer picture; an a:srcRect crop becomes an
  *  overflow-hidden window over a scaled and offset image (body-path technique) */
+/** run spans plus run pictures / rules, appended to host in run order */
+function hfRunNodes(
+  runs: Run[],
+  host: HTMLElement,
+  display: (text: string) => string,
+  imgClass: string,
+): void {
+  for (const run of runs) {
+    if (run.image?.rule) {
+      const rule = document.createElement('span')
+      rule.className = INLINE_RULE_CLASS
+      rule.style.cssText = inlineRuleDecls({
+        ...run.image.rule,
+        sizeHalfPoints: run.sizeHalfPoints,
+      }).join(';')
+      host.append(rule)
+      if (!run.text) continue
+    } else if (run.image) {
+      const im = hfImgNode(run.image)
+      im.classList.add(imgClass)
+      host.append(im)
+      if (!run.text) continue
+    }
+    const span = document.createElement('span')
+    span.textContent = display(run.text)
+    applyRunStyle(span, run)
+    host.append(span)
+  }
+}
+
+function hfTabStrutNode(heightPx: number): HTMLElement {
+  const strut = document.createElement('span')
+  strut.className = 'page-hf-tab-strut'
+  strut.style.height = `${heightPx}px`
+  return strut
+}
+
 function hfImgNode(img: {
   dataUrl: string
   widthPx?: number
@@ -1217,6 +1377,7 @@ export function makeGapHfEl(opts: {
   const paraEls: HTMLElement[] = []
   const paras = hfParasOf(value, images)
   const spacing = hfStackedSpacingPx(paras)
+  const mergeFlags = hfBorderMergeFlags(paras)
   let tabOver = 0
   for (const [index, para] of paras.entries()) {
     if (para.box?.id !== boxId) {
@@ -1263,29 +1424,9 @@ export function makeGapHfEl(opts: {
         for (const [side, css] of Object.entries(geom.borders)) {
           setDkBorder(cellEl, side as 't' | 'b' | 'l' | 'r', css)
         }
-        const spansOf = (runs: Run[], host: HTMLElement) => {
-          for (const run of runs) {
-            if (run.image?.rule) {
-              const rule = document.createElement('span')
-              rule.className = INLINE_RULE_CLASS
-              rule.style.cssText = inlineRuleDecls({
-                ...run.image.rule,
-                sizeHalfPoints: run.sizeHalfPoints,
-              }).join(';')
-              host.append(rule)
-              if (!run.text) continue
-            } else if (run.image) {
-              const im = hfImgNode(run.image)
-              im.classList.add('page-hf-cell-img')
-              host.append(im)
-              if (!run.text) continue
-            }
-            const span = document.createElement('span')
-            span.textContent = display(run.text)
-            applyRunStyle(span, run)
-            host.append(span)
-          }
-        }
+        if (geom.diagonals) setDkBackgroundImage(cellEl, geom.diagonals)
+        const spansOf = (runs: Run[], host: HTMLElement) =>
+          hfRunNodes(runs, host, display, 'page-hf-cell-img')
         // one block line per cell paragraph (Word stacks them; a lone empty
         // paragraph still reserves its line inside a shaded cell)
         const paras = cell.paras.length > 0 ? cell.paras : [[]]
@@ -1344,25 +1485,12 @@ export function makeGapHfEl(opts: {
       p.style.backgroundColor = `#${para.shadingFill}`
       setDkBackground(p, `#${para.shadingFill}`)
     }
-    if (para.borders) {
-      const line = (side: 't' | 'b' | 'l' | 'r') => paraBorderCss(para.borderLines?.[side])
-      if (para.borders.includes('t')) {
-        p.style.borderTop = line('t')
-        setDkBorder(p, 't', line('t'))
+    {
+      const bs = hfParaBorderStyle(para, mergeFlags[index])
+      assignStyle(p, bs.style)
+      for (const [side, css] of Object.entries(bs.borders)) {
+        setDkBorder(p, side as 't' | 'b' | 'l' | 'r', css)
       }
-      if (para.borders.includes('b')) {
-        p.style.borderBottom = line('b')
-        setDkBorder(p, 'b', line('b'))
-      }
-      if (para.borders.includes('l')) {
-        p.style.borderLeft = line('l')
-        setDkBorder(p, 'l', line('l'))
-      }
-      if (para.borders.includes('r')) {
-        p.style.borderRight = line('r')
-        setDkBorder(p, 'r', line('r'))
-      }
-      Object.assign(p.style, paraBorderPadding(para.borders, para.borderLines))
     }
     const tabLines = hfTabLines(para, display)
     if (tabLines) {
@@ -1379,22 +1507,15 @@ export function makeGapHfEl(opts: {
         const leadIndent = hfLeadIndentCss(tabbed)
         if (leadIndent) line.style.textIndent = leadIndent
         if (hfTabLeadNeedsStrut(tabbed)) line.append('\u200b')
-        for (const run of tabbed.lead) {
-          const span = document.createElement('span')
-          span.textContent = display(run.text)
-          applyRunStyle(span, run)
-          line.append(span)
-        }
+        const segImgH = hfTabSegImageHeightPx(tabbed)
+        if (segImgH > 0) line.append(hfTabStrutNode(segImgH))
+        hfRunNodes(tabbed.lead, line, display, 'page-hf-run-img')
         for (const seg of tabbed.segments) {
           const segEl = document.createElement('span')
           segEl.className = `page-hf-tabseg page-hf-tabseg-${seg.anchor}`
+          if (hfSegHasImage(seg)) segEl.classList.add('page-hf-tabseg-img')
           segEl.style.left = hfSegLeftCss(seg, tabbed)
-          for (const run of seg.runs) {
-            const span = document.createElement('span')
-            span.textContent = display(run.text)
-            applyRunStyle(span, run)
-            segEl.append(span)
-          }
+          hfRunNodes(seg.runs, segEl, display, 'page-hf-run-img')
           line.append(segEl)
         }
         if (!single) p.append(line)
@@ -1406,12 +1527,7 @@ export function makeGapHfEl(opts: {
       p.textContent = ' '
       if (para.emptyRunSizeHalfPoints) p.style.fontSize = `${para.emptyRunSizeHalfPoints / 2}pt`
     }
-    for (const run of para.runs) {
-      const span = document.createElement('span')
-      span.textContent = display(run.text)
-      applyRunStyle(span, run)
-      p.append(span)
-    }
+    hfRunNodes(para.runs, p, display, 'page-hf-run-img')
     host.append(p)
   }
   if (tabOver > 0) wrap.style.setProperty('--hf-tab-over', `${tabOver.toFixed(1)}px`)

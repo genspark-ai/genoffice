@@ -155,6 +155,29 @@ describe('update window — settings-facing surface', () => {
     expect(handlers.get('update:open-for-update')).toBeTypeOf('function')
   })
 
+  it('resolves the shell window through the getter, not the cached parent', async () => {
+    const mod = await loadModule()
+    mod.showUpdateWindow(parent, state('available'), actions())
+    mod.closeUpdateWindow()
+    const recreated = new FakeBrowserWindow({}) as unknown as Electron.BrowserWindow
+    mod.setUpdateParentWindow(() => recreated)
+    winOptions.length = 0
+    expect(handlers.get('update:open-for-update')!()).toBe(true)
+    expect(winOptions[0]!.parent).toBe(recreated)
+  })
+
+  it('a channel switch clears the known update and tells the About row', async () => {
+    const mod = await loadModule()
+    mod.showUpdateWindow(parent, state('downloaded'), actions())
+    sent.length = 0
+    mod.clearUpdateState()
+    expect(mod.currentUpdateUiState()).toBeNull()
+    expect(handlers.get('update:get-state')!()).toBeNull()
+    expect(handlers.get('update:open-for-update')!()).toBe(false)
+    const last = sent.filter((s) => s.channel === 'update:state-changed').at(-1)
+    expect(last?.state).toBeNull()
+  })
+
   it('exposes the freshest state for the settings row', async () => {
     const mod = await loadModule()
     expect(mod.currentUpdateUiState()).toBeNull()

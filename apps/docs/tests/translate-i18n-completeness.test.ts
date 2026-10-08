@@ -79,8 +79,7 @@ describe('no locale file is missing a language the menu offers', () => {
       keysIn(DOCS_RIBBON, 'en.ts', 'ribbonLang').length,
       keysIn(SLIDES_RIBBON, 'en.ts', 'ribbonLang').length,
     ]
-    // slides shipped one extra (Traditional Chinese) before this change; all
-    // three must land on the same number, or one menu shows a row another hides
+    // all three must land on the same number, or one menu shows a row another hides
     expect(new Set(counts).size).toBe(1)
     expect(counts[0]).toBe(TRANSLATE_LANGS.length)
   })

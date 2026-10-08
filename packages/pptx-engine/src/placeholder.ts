@@ -21,6 +21,9 @@ import { type EaScript, type Theme, eaScriptOfLang, resolveFontRef } from './the
 import { resolveColorNode } from './color'
 import { asXmlNode, decodeNumericCharRefs, xmlArray, type XmlNode } from './xml-utils'
 
+/** Spec (and PowerPoint UI) ceiling for <a:buAutoNum startAt>. */
+export const MAX_AUTO_NUM_START = 32767
+
 const phParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -328,7 +331,8 @@ function parseLvlPPr(
     const an = asXmlNode(pPr['a:buAutoNum'])
     if (an['@_type'] != null) out.bullet.numType = String(an['@_type'])
     const startAt = parseInt(String(an['@_startAt']), 10)
-    if (Number.isFinite(startAt) && startAt > 1) out.bullet.startAt = startAt
+    if (Number.isFinite(startAt) && startAt > 1)
+      out.bullet.startAt = Math.min(startAt, MAX_AUTO_NUM_START)
   } else if (pPr['a:buBlip'] !== undefined) {
     out.bullet = { type: 'blip' }
     const embed = asXmlNode(asXmlNode(pPr['a:buBlip'])['a:blip'])['@_r:embed']

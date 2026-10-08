@@ -16,6 +16,7 @@ import { insertShapeAt } from '../src/renderer/components/ribbon-tabs'
 import { blocksToPmDoc } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  SHAPE_INLINE_WRAP,
   boxWithZ,
   bringForward,
   bringToFront,
@@ -220,7 +221,7 @@ describe('shape wrap and stacking commands', () => {
     expect('bandTopPx' in box).toBe(false)
     expect('bandBottomPx' in box).toBe(false)
     expect(shapeWrapOf(box)).toBeNull()
-    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBeNull()
+    expect(editor.state.doc.nodeAt(pos)!.attrs.imageWrap).toBe(SHAPE_INLINE_WRAP)
     close(editor)
   })
 

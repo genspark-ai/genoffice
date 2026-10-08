@@ -617,6 +617,10 @@ function renderCard(generator, node, depth) {
   const cardDxa = node.widthPx
     ? Math.min(generator.avail, Math.max(240, context.pxToTwips(node.widthPx)))
     : generator.avail
+  if (node.bookmarks?.length) {
+    const carried = carryBookmarks(node.children, node.bookmarks)
+    if (carried) node = { ...node, children: carried, bookmarks: [] }
+  }
   // depth guard: deeply nested cards degrade to plain flow
   if (depth >= 3) return generator.render(node.children, depth)
   if (cardShouldFlatten(node, depth)) return renderCardFlattened(generator, node, depth)

@@ -7,6 +7,7 @@
  * Splitting is emission-side only: the IR grid, and the docx path, keep the
  * drawn 2-row truth.
  */
+import { maxOf, minOf } from '../geometry'
 import type { Line, TableBlock, TableCellBlock, TextBlock } from '../ir'
 
 /** line tops within this distance cluster into one row-start vote (pt) */
@@ -87,24 +88,35 @@ function subCell(
     blocks: [],
   }
   if (rowLines.length === 0) return base
-  const src = rowLines[0]!.src
-  const lines = rowLines.map((r) => r.line)
-  const lineBox = {
-    x0: Math.min(...lines.map((l) => l.box.x0)),
-    x1: Math.max(...lines.map((l) => l.box.x1)),
-    y0: Math.min(...lines.map((l) => l.box.y0)),
-    y1: Math.max(...lines.map((l) => l.box.y1)),
+  // one block per source block, in order: the marker and the TOC page
+  // number ride with the first/last text line of their owner so the joined
+  // sub-cell text matches the unsplit flatten
+  const groups: Array<{ src: TextBlock; lines: Line[] }> = []
+  for (const r of rowLines) {
+    const last = groups[groups.length - 1]
+    if (last && last.src === r.src) last.lines.push(r.line)
+    else groups.push({ src: r.src, lines: [r.line] })
   }
-  base.blocks = [
-    {
+  base.blocks = groups.map(({ src, lines }) => {
+    const owned = linesOf({ box: src.box, gridSpan: 1, blocks: [src] }).map((l) => l.line)
+    const hasFirst = lines.includes(owned[0]!)
+    const hasLast = lines.includes(owned[owned.length - 1]!)
+    return {
       kind: 'text',
       lines,
-      box: lineBox,
+      box: {
+        x0: minOf(lines.map((l) => l.box.x0)),
+        x1: maxOf(lines.map((l) => l.box.x1)),
+        y0: minOf(lines.map((l) => l.box.y0)),
+        y1: maxOf(lines.map((l) => l.box.y1)),
+      },
       align: src.align,
       firstLineIndentPt: 0,
       dir: src.dir,
-    },
-  ]
+      ...(hasFirst && src.list ? { list: src.list } : {}),
+      ...(hasLast && src.tocEntry ? { tocEntry: src.tocEntry } : {}),
+    }
+  })
   return base
 }
 
@@ -114,7 +126,7 @@ function splitRow(row: TableCellBlock[]): TableCellBlock[][] | null {
   const perCell = row.map(linesOf)
   const bearing = perCell.filter((l) => l.length > 0).length
   if (bearing < 2) return null
-  if (Math.max(...perCell.map((l) => l.length)) < BAND_MIN_LINES) return null
+  if (maxOf(perCell.map((l) => l.length)) < BAND_MIN_LINES) return null
   const all: CellLine[] = perCell.flatMap((ls, col) => ls.map((l) => ({ ...l, col })))
   const bounds = rowBoundaries(all, bearing)
   if (bounds.length < MIN_SPLIT_ROWS) return null
@@ -141,11 +153,8 @@ function splitRow(row: TableCellBlock[]): TableCellBlock[][] | null {
   const lead = hasLead ? 1 : 0
   const total = bounds.length + lead
   const rowY = (i: number): { y0: number; y1: number } => ({
-    y1: i === 0 ? Math.max(...row.map((c) => c.box.y1)) : bounds[i - lead]!.top,
-    y0:
-      i - lead + 1 < bounds.length
-        ? bounds[i - lead + 1]!.top
-        : Math.min(...row.map((c) => c.box.y0)),
+    y1: i === 0 ? maxOf(row.map((c) => c.box.y1)) : bounds[i - lead]!.top,
+    y0: i - lead + 1 < bounds.length ? bounds[i - lead + 1]!.top : minOf(row.map((c) => c.box.y0)),
   })
   const out: TableCellBlock[][] = []
   for (let i = 0; i < total; i++) {

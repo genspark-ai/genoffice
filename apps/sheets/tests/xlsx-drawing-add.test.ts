@@ -158,6 +158,25 @@ describe('visual additions: shapes and text boxes', () => {
     expect(drawingXml).toContain('<a:ln w="9525">')
   })
 
+  it('shapes write the requested outline, or an explicit no-line', async () => {
+    const plan = await planWith([
+      { sheetName: 'Data', anchor: ANCHOR, shape: { shapeType: 'rect', lineColor: '#123456' } },
+    ])
+    expect(plan.added.get('xl/drawings/drawing1.xml')).toContain(
+      '<a:noFill/><a:ln w="9525"><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:ln>',
+    )
+    const bare = await planWith([
+      {
+        sheetName: 'Data',
+        anchor: ANCHOR,
+        shape: { shapeType: 'rect', fillColor: '#FFFFFF', lineColor: 'none', isTextBox: true },
+      },
+    ])
+    expect(bare.added.get('xl/drawings/drawing1.xml')).toContain(
+      '<a:ln w="9525"><a:noFill/></a:ln>',
+    )
+  })
+
   it('a chart and a shape share the sheet drawing', async () => {
     const plan = await planWith([
       chartAddition(),
@@ -199,6 +218,24 @@ describe('visual additions: pictures', () => {
     const drawingRels = plan.added.get('xl/drawings/_rels/drawing1.xml.rels')
     expect(drawingRels).toContain('relationships/image')
     expect(drawingRels).toContain('Target="../media/image1.png"')
+  })
+
+  it('writes a pasted picture crop and opacity back as srcRect and alphaModFix', async () => {
+    const plan = await planWith([
+      {
+        sheetName: 'Data',
+        anchor: ANCHOR,
+        image: {
+          mediaType: 'image/png',
+          base64: PNG_BASE64,
+          opacity: 0.5,
+          crop: { left: 0.1, top: 0, right: 0.25, bottom: 0 },
+        },
+      },
+    ])
+    const drawingXml = plan.added.get('xl/drawings/drawing1.xml')
+    expect(drawingXml).toContain('<a:alphaModFix amt="50000"/></a:blip>')
+    expect(drawingXml).toContain('<a:srcRect l="10000" r="25000"/>')
   })
 
   it('does not duplicate an existing Default extension declaration', async () => {
@@ -453,5 +490,45 @@ describe('visual additions: sheets created in the same save', () => {
     )
     const workbook = await entryText(mutation.buffer, 'xl/workbook.xml')
     expect(workbook).toContain('<sheet name="Data Copy" sheetId="4" r:id="rId6"/>')
+  })
+})
+
+describe('visual additions: arrange properties', () => {
+  it('writes xfrm rotation/flip/ext, descr, editAs and an external hyperlink rel', async () => {
+    const plan = await planWith([
+      {
+        sheetName: 'Data',
+        anchor: ANCHOR,
+        shape: {
+          shapeType: 'rect',
+          rotation: 90,
+          flipH: true,
+          frameSize: { width: 914400, height: 457200 },
+          altText: 'A "note"',
+          hyperlink: 'https://example.com/?a=1&b=2',
+          editAs: 'oneCell',
+        },
+      },
+    ])
+    const drawingXml = plan.added.get('xl/drawings/drawing1.xml')!
+    expect(drawingXml).toContain('<xdr:twoCellAnchor editAs="oneCell">')
+    expect(drawingXml).toContain(
+      '<a:xfrm rot="5400000" flipH="1"><a:off x="0" y="0"/><a:ext cx="914400" cy="457200"/></a:xfrm>',
+    )
+    expect(drawingXml).toContain('descr="A &quot;note&quot;">')
+    expect(drawingXml).toMatch(/<a:hlinkClick xmlns:r="[^"]+" r:id="rId1"\/><\/xdr:cNvPr>/)
+    expect(plan.added.get('xl/drawings/_rels/drawing1.xml.rels')).toContain(
+      'Target="https://example.com/?a=1&amp;b=2" TargetMode="External"',
+    )
+  })
+
+  it('leaves the anchor and cNvPr plain when no property is set', async () => {
+    const plan = await planWith([
+      { sheetName: 'Data', anchor: ANCHOR, shape: { shapeType: 'rect', editAs: 'twoCell' } },
+    ])
+    const drawingXml = plan.added.get('xl/drawings/drawing1.xml')!
+    expect(drawingXml).toContain('<xdr:twoCellAnchor>')
+    expect(drawingXml).toContain('<a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm>')
+    expect(drawingXml).toMatch(/<xdr:cNvPr id="\d+" name="Shape \d+"\/>/)
   })
 })

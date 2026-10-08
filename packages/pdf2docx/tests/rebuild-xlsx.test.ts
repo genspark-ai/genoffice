@@ -15,7 +15,8 @@ import {
   normalizeSheetSpec,
   worksheetXml,
 } from '../src/rebuild-xlsx/workbook'
-import { ptToColumnChars, rebuildXlsx } from '../src/rebuild-xlsx/rebuild'
+import { flattenBlockText, ptToColumnChars, rebuildXlsx } from '../src/rebuild-xlsx/rebuild'
+import { splitBandRows } from '../src/rebuild-xlsx/rowsplit'
 
 const span = (text: string, over: Partial<Span> = {}): Span => ({
   text,
@@ -620,6 +621,27 @@ describe('splitBandRows via rebuildXlsx (P40)', () => {
       ],
     }
   }
+
+  it('split sub-rows keep the list marker and the TOC page number (genoffice#1380)', () => {
+    const table = bandTable(4)
+    const [refCell, descCell] = table.rows[1]! as [TableCellBlock, TableCellBlock]
+    const refBlock = refCell.blocks[0] as TextBlock
+    const descBlock = descCell.blocks[0] as TextBlock
+    refBlock.list = { kind: 'bullet', level: 0, marker: '\u2022' }
+    descBlock.tocEntry = { level: 0, pageNumber: '12' }
+    const split = splitBandRows(table)
+    expect(split.rows.length).toBeGreaterThan(2)
+    const joined = (col: number) =>
+      split.rows
+        .slice(1)
+        .map((r) => r[col]!.blocks.map(flattenBlockText).join('\n'))
+        .filter((t) => t !== '')
+        .join('\n')
+    expect(joined(0)).toBe(flattenBlockText(refBlock))
+    expect(joined(1)).toBe(flattenBlockText(descBlock))
+    expect(joined(0).startsWith('\u2022 R-0\nR-1')).toBe(true)
+    expect(joined(1).endsWith('DETAIL-3\t12')).toBe(true)
+  })
 
   it('splits a glued statement band into one row per transaction', async () => {
     const { sheets } = await rebuildXlsx([page({ blocks: [bandTable(4)] })])

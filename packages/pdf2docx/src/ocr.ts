@@ -11,7 +11,7 @@
  * failure, too little text, low confidence, empty analysis — falls back to
  * today's behavior, the full-page bitmap export.
  */
-import { analyzePage } from './analyze'
+import { analyzePage, type ListSeq } from './analyze'
 import type { ExtractedPage } from './extract'
 import type { Rect } from './geometry'
 import type { IrPage, PdfChar } from './ir'
@@ -231,6 +231,7 @@ export function tryOcrScannedPage(
   extracted: ExtractedPage,
   engine: OcrEngine,
   hiRender?: { data: Uint8Array },
+  listSeq?: ListSeq,
 ): OcrPageResult | null {
   const render = hiRender ?? extracted.render
   if (!render) return null
@@ -273,7 +274,7 @@ export function tryOcrScannedPage(
     textLost: false,
     badUnicodeRatio: 0,
   }
-  const page = analyzePage(synthetic)
+  const page = analyzePage(synthetic, { listSeq })
   if (page.scanned || page.degraded) return null
   page.ocrRecovered = true
   return { page, confidence: meanConfidence }

@@ -82,20 +82,10 @@ pub(crate) fn read_zip_string(
     Ok(value)
 }
 
-/// Copies a zip entry, refusing to deliver more than the smaller of the size it
-/// declares and the caller's cap.
-///
-/// `ZipFile::size()` is the central directory's *declared* uncompressed length,
-/// and zip 4.6.1's `find_content` bounds only the compressed input by
-/// `compressed_size`, so a part may claim twelve bytes and still inflate to
-/// whatever its deflate stream carries. A gate that reads the declaration and
-/// then copies the remainder bounds nothing: the hidden payload is materialised
-/// in full before anything notices. Reading one byte past the claim keeps the
-/// cost of a part tracking its declaration — an honest entry stops at its own
-/// length, a lying one is caught here — which is the metered limit
-/// `@genoffice/zip-gate` enforces for the docx and pptx engines (#781) and the
-/// attachment parsers (#1386). Those callers are TypeScript and cannot be
-/// called from this crate, so the same rule is enforced on the read itself.
+/// `ZipFile::size()` is only the declared length and zip bounds just the
+/// compressed input, so an entry may inflate past its claim; reading one byte
+/// past `min(declared, cap)` catches that (same rule as `@genoffice/zip-gate`,
+/// genoffice#781 / genoffice#1386).
 pub(crate) fn copy_entry_bounded<R: Read, W: Write>(
     entry: &mut R,
     declared: u64,

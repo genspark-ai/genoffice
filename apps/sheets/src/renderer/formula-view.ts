@@ -57,7 +57,10 @@ export function indexedFormulaText(
   if (!state) return undefined
   if ((state.editJournal.structuralOps.get(sheetId)?.length ?? 0) > 0) return undefined
   if (state.editJournal.cells.get(sheetId)?.has(`${row}:${column}`)) return undefined
-  return state.formulaText.get(sheetId)?.get(`${row}:${column}`)
+  return (
+    state.formulaText.get(sheetId)?.get(`${row}:${column}`) ??
+    state.sharedFormulaGroups.get(sheetId)?.textAt(row, column)
+  )
 }
 
 export function installFormulaViewInterceptor(

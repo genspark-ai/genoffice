@@ -301,17 +301,52 @@ export function recomputePivotData(
       }
       // Second-pass normalization: % of row = this row's total (row
       // predicates only); % of column = this column's total (column predicates
-      // only); % of grand total = all visible rows. Also applies to subtotal
-      // and grand-total cells.
-      const base =
-        dataField.showDataAs === 'percentOfTotal'
-          ? aggregateBase('total', dataFieldIndex, [])
-          : dataField.showDataAs === 'percentOfRow'
-            ? aggregateBase(`row${rowIndex}`, dataFieldIndex, rowPart.predicates)
-            : aggregateBase(`col${colIndex}`, dataFieldIndex, colPart.predicates)
+      // only); % of grand total = all visible rows; parent modes drop the
+      // innermost fixed level. Also applies to subtotal and grand-total cells.
       // Leave blank when the denominator is null or 0 (Excel shows #DIV/0!;
       // the recompute engine opts for blank).
-      line.push(base === null || base === 0 ? null : raw / base)
+      const ratio = (base: number | null): number | null =>
+        base === null || base === 0 ? null : raw / base
+      switch (dataField.showDataAs) {
+        case 'percentOfTotal':
+          line.push(ratio(aggregateBase('total', dataFieldIndex, [])))
+          break
+        case 'percentOfRow':
+          line.push(ratio(aggregateBase(`row${rowIndex}`, dataFieldIndex, rowPart.predicates)))
+          break
+        case 'percentOfCol':
+          line.push(ratio(aggregateBase(`col${colIndex}`, dataFieldIndex, colPart.predicates)))
+          break
+        case 'percentOfParentRow':
+          line.push(
+            ratio(
+              aggregateBase(`prow${rowIndex}:${colIndex}`, dataFieldIndex, [
+                ...rowPart.predicates.slice(0, -1),
+                ...colPart.predicates,
+              ]),
+            ),
+          )
+          break
+        case 'percentOfParentCol':
+          line.push(
+            ratio(
+              aggregateBase(`pcol${rowIndex}:${colIndex}`, dataFieldIndex, [
+                ...rowPart.predicates,
+                ...colPart.predicates.slice(0, -1),
+              ]),
+            ),
+          )
+          break
+        case 'index': {
+          const grand = aggregateBase('total', dataFieldIndex, [])
+          const rowTotal = aggregateBase(`row${rowIndex}`, dataFieldIndex, rowPart.predicates)
+          const colTotal = aggregateBase(`col${colIndex}`, dataFieldIndex, colPart.predicates)
+          const denominator =
+            rowTotal === null || colTotal === null || grand === null ? null : rowTotal * colTotal
+          line.push(denominator === null || denominator === 0 ? null : (raw * grand!) / denominator)
+          break
+        }
+      }
     })
     data.push(line)
   })

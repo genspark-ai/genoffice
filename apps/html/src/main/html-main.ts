@@ -39,13 +39,14 @@ import {
   rendererUrl,
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
+  printHtmlDocument,
+  type PrintDialogOutcome,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { parseFileToText } from '@genoffice/file-parse'
 import { convertHtmlToDocx } from '../../../../packages/html2docx/src'
 import { atomicWriteFile } from './atomic-write'
-import { printHtmlDocument, type PrintDialogOutcome } from './print-window'
 import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/drivers/electron'
 import {
   copyImageIntoOwnedAssets,
@@ -968,22 +969,9 @@ export function sendHtmlPrintRequest(contents: WebContents): void {
   contents.send(HTML_CHANNELS.printRequest)
 }
 
-/**
- * Print the document through the system dialog, in the same window
- * renderPrintPdf uses so relative assets resolve through html-asset:// exactly
- * as in the preview.
- *
- * The window keeps scripting ON, unlike the PDF export window above. Chromium
- * rejects `executeJavaScript` outright when a window is created with
- * `javascript: false` (verified against Electron 43), and the print path has
- * to run the fonts/images readiness probe — a document that loads a webfont
- * would otherwise print with fallback metrics and missing bitmaps. The cost is
- * that print and "Export as PDF" now disagree for a document that builds its
- * content with <script>: print runs those scripts, as the editor canvas and
- * the docx export already do, while the PDF export still prints the shell.
- * That is one of the two "change them together" cases this file already
- * flagged; flipping the export window is a separate call for whoever owns it.
- */
+// Scripting stays on here, unlike the PDF export window: Chromium rejects
+// executeJavaScript under `javascript: false`, and the fonts/images readiness
+// probe needs it. Print and Export-PDF therefore differ for <script>-built content.
 function printHtml(html: string, docPath: string | undefined): Promise<PrintDialogOutcome> {
   const base = docPath ? assetBaseHref(dirname(docPath)) : null
   return printHtmlDocument({

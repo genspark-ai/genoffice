@@ -1245,7 +1245,10 @@ body.vib .slide-list {
   outline: none;
 }
 
+/* the stage stays ltr under an RTL UI: Konva Text inherits this direction */
+
 .stage-wrap {
+  direction: ltr;
   flex: 1;
   overflow: auto;
   /* 48px top: headroom for the .stage-ai-bar overhanging the slide card, so it

@@ -20,4 +20,18 @@ describe('styleTokens', () => {
     const want = styleTokens('X-Bold')
     expect(styleScore(bold, want)).toBeGreaterThan(styleScore(demi, want))
   })
+
+  it('falls back from a Demibold want to Bold before Regular', () => {
+    type Face = Parameters<typeof styleScore>[0]
+    const bold: Face = { path: 'x', offset: 0, style: 'Bold' }
+    const regular: Face = { path: 'x', offset: 0, style: 'Regular' }
+    const demi: Face = { path: 'x', offset: 0, style: 'Demibold' }
+    const want = styleTokens('Foo-Demibold')
+    expect(styleScore(demi, want)).toBeGreaterThan(styleScore(bold, want))
+    expect(styleScore(bold, want)).toBeGreaterThan(styleScore(regular, want))
+    expect(styleScore(demi, styleTokens('Foo-Bold'))).toBeGreaterThan(
+      styleScore(regular, styleTokens('Foo-Bold')),
+    )
+    expect(styleScore(regular, [])).toBeGreaterThan(styleScore(bold, []))
+  })
 })

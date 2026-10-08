@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   animClassOf,
+  animGalleryItem,
+  animGalleryKind,
   animStateKey,
   buildSteps,
   computeMediaCommands,
@@ -130,6 +132,15 @@ describe('new effects (P2 additions)', () => {
 
     const alias = buildSteps([item({ sourceId: 'a', effect: 'wipeDown' })])
     expect(computeNodeStates(alias, 0, 250, H, W).get('a')!.clip!.mode).toBe('top')
+  })
+
+  it('folds the Wipe Down gallery entry into wipe + top in both directions', () => {
+    expect(animGalleryItem('wipeDown')).toEqual({ effect: 'wipe', direction: 'top' })
+    expect(animGalleryItem('wipe')).toEqual({ effect: 'wipe' })
+    expect(animGalleryKind({ effect: 'wipe', direction: 'top' })).toBe('wipeDown')
+    expect(animGalleryKind({ effect: 'wipe' })).toBe('wipe')
+    expect(animGalleryKind({ effect: 'wipe', direction: 'bottom' })).toBe('wipe')
+    expect(animGalleryKind({ effect: 'wipeDown' })).toBe('wipeDown')
   })
 
   it('bounce drops in from above and settles at 0', () => {

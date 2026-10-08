@@ -119,6 +119,10 @@ describe('non-numeric relationship ids', () => {
     expect(maxRelationshipId(workbookRels)).toBe(0)
     expect(workbookRels).not.toContain('Id="rId1"')
   })
+
+  it('maxRelationshipId reads single-quoted ids too', () => {
+    expect(maxRelationshipId("<Relationship Id='rId7' Type='t' Target='x'/>")).toBe(7)
+  })
 })
 
 describe('saving a workbook with prefixed parts', () => {

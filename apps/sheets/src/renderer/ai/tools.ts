@@ -414,6 +414,7 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
         look_in: {
           type: 'string',
           enum: ['values', 'formulas', 'both'],
+          default: 'both',
           description: 'What to match against (default both)',
         },
         sheetId: {

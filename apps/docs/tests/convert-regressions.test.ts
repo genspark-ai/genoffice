@@ -89,6 +89,7 @@ describe('runsToInline image runs', () => {
           offsetXEmu: null,
           offsetYEmu: null,
           relV: null,
+          relH: null,
           wrapDistTopEmu: null,
           wrapDistBottomEmu: null,
           wrapDistLeftEmu: null,
@@ -135,6 +136,7 @@ describe('runsToInline image runs', () => {
           offsetXEmu: null,
           offsetYEmu: null,
           relV: null,
+          relH: null,
           wrapDistTopEmu: null,
           wrapDistBottomEmu: null,
           wrapDistLeftEmu: null,
@@ -549,5 +551,82 @@ describe('paragraph direction inference (run w:rtl / RTL script, no w:bidi)', ()
     expect(plan.changedCount).toBe(0)
     expect(plan.saveBlocks[0]).toEqual({ kind: 'original', docxIndex: 0 })
     expect(pmNodeToGeneratedBlock(doc.content![0]).format?.bidi).toBeUndefined()
+  })
+})
+
+describe('protected block pageBreakBefore', () => {
+  it('carries the anchor paragraph flag onto the docProtected node', () => {
+    const block = {
+      id: 'b1',
+      docxIndex: 1,
+      type: 'image',
+      label: 'Image',
+      imageDataUrl: 'data:image/png;base64,AA==',
+      format: { pageBreakBefore: true },
+    } as unknown as Block
+    const doc = blocksToPmDoc([block])
+    expect(doc.content?.[0]?.type).toBe('docProtected')
+    expect(doc.content?.[0]?.attrs?.pageBreakBefore).toBe(true)
+  })
+})
+
+describe('centred floating table wider than the column (w:tblpXSpec="center")', () => {
+  const section: SectionInfo = {
+    settings: {
+      pageWidth: 12240,
+      pageHeight: 15840,
+      orientation: 'portrait',
+      marginTop: 1440,
+      marginRight: 1440,
+      marginBottom: 1440,
+      marginLeft: 1440,
+      pageBorder: false,
+      columns: 1,
+    },
+    startType: 'nextPage',
+    firstBlockIndex: 0,
+    lastBlockIndex: 0,
+    sectPrXml: '',
+    titlePg: false,
+    headerRefs: {},
+    footerRefs: {},
+  }
+  const block: Block = {
+    id: 'b0',
+    type: 'table',
+    docxIndex: 0,
+    originalXml: '<w:tbl/>',
+    table: {
+      rows: [
+        [{ paras: ['a'] }, { paras: ['b'] }],
+        [{ paras: ['c'] }, { paras: ['d'] }],
+      ],
+      colWidthsTwips: [4000, 6850],
+      floatSide: 'left',
+      floatPos: {
+        xTwips: 0,
+        yTwips: 635,
+        horzAnchor: 'margin',
+        vertAnchor: 'text',
+        xSpec: 'center',
+      },
+    },
+  }
+
+  it('keeps the declared width (Word centres it on the margin box, overhanging both sides)', () => {
+    const node = blocksToPmDoc([block], [section]).content![0]
+    expect(node.attrs!.widthPx).toBe(724)
+  })
+
+  it('a short table hung below its anchor stays a float so the anchor lines fill the band', () => {
+    const node = blocksToPmDoc([block], [section]).content![0]
+    expect(node.attrs!.tblFloat).toBe('left')
+    expect(node.attrs!.tblFloatSuppressed).toBe(false)
+    // without the offset the same over-wide text-anchored float still flows inline
+    const flush: Block = {
+      ...block,
+      table: { ...block.table!, floatPos: { ...block.table!.floatPos!, yTwips: 0 } },
+    }
+    expect(blocksToPmDoc([flush], [section]).content![0].attrs!.tblFloatSuppressed).toBe(true)
   })
 })

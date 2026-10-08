@@ -57,4 +57,23 @@ describe('DocTable colgroup with w:tblCellSpacing', () => {
     expect(widths).toHaveLength(4)
     widths.forEach((w, i) => expect(w).toBeCloseTo((boxes[i] / total) * 100, 1))
   })
+
+  it('adds the drawn cell borders to each column box', () => {
+    // Word draws the separate cell borders outside the cell box, so the text keeps its
+    // full margin inset: a 335-twip column with sz 4 borders still holds "10" at 12 pt
+    const twips = [335, 3440, 3190, 2051]
+    const sum = twips.reduce((a, b) => a + b, 0)
+    const line = { style: 'single', szEighths: 4 }
+    const widths = colWidths({
+      rows: [[cell('10'), cell('b'), cell('c'), cell('d')]],
+      colWidthsTwips: twips,
+      colWidthsPct: twips.map((w) => (w / sum) * 100),
+      cellSpacingTwips: 15,
+      borders: { left: line, right: line, insideV: line },
+    })
+    const boxes = [335 - 45 + 30, 3440 - 30 + 30, 3190 - 30 + 30, 2051 - 45 + 30]
+    const total = boxes.reduce((a, b) => a + b, 0)
+    expect(widths).toHaveLength(4)
+    widths.forEach((w, i) => expect(w).toBeCloseTo((boxes[i] / total) * 100, 1))
+  })
 })

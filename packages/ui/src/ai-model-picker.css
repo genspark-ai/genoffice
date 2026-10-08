@@ -1,0 +1,142 @@
+/* Composer model chip + its upward popover (AiModelPicker). Chrome tokens only;
+ * each app imports this next to its other @genoffice/ui sheets. */
+
+.ai-model-picker {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.ai-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  max-width: 200px;
+  padding: 0 7px 0 6px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-30);
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ai-model-chip:hover,
+.ai-model-chip.open {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ai-model-chip:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ai-model-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-model-chip-caret {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.gs-provider-logo {
+  flex-shrink: 0;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--text);
+}
+
+.gs-provider-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ai-model-pop {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  max-height: min(420px, 70vh);
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-8);
+  box-shadow: var(--shadow-menu);
+  font-size: 12px;
+}
+
+.ai-model-pop-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ai-model-group + .ai-model-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ai-model-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 3px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-model-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px 5px 28px;
+  border: none;
+  border-radius: var(--radius-6);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-model-item:hover,
+.ai-model-item:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+.ai-model-item.selected {
+  background: var(--accent-soft);
+}
+
+.ai-model-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-model-manage {
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-6) var(--radius-6);
+  color: var(--text-secondary);
+}

@@ -9,6 +9,7 @@ import type {
   PictureRenderNode,
   TableRenderNode,
 } from '@genoffice/pptx-render'
+import { animGalleryKind } from './animation-play'
 import { handleSlidesControl, type ControlRequest } from './control'
 import type {
   AiSettings,
@@ -148,6 +149,14 @@ import * as tableActions from './table-actions'
 import * as styleActions from './style-actions'
 import { handleGlobalKeydown, slideRailHasFocus } from './keyboard-actions'
 import { clickSelection, currentAfterHistory, normalizeSelection } from '../shared/slide-selection'
+import {
+  notesBaselineAfterFlush,
+  notesDraftIndex,
+  retargetNotesDraft,
+  startNotesDraft,
+  type LoadedNotes,
+  type NotesDraft,
+} from '../shared/notes-draft'
 import { useEscOverlay, useEscOverlayOpen } from './esc-overlay'
 import { buildCtxItems } from './context-menu-items'
 import { isMac, nextSelection } from './platform-modifiers'
@@ -553,7 +562,9 @@ export function App() {
   const [showNotes, setShowNotes] = useState(true)
   const [notesText, setNotesText] = useState('')
   /** Unsaved notes draft (flushed before page switch/save) */
-  const notesDraftRef = useRef<{ index: number; text: string } | null>(null)
+  const notesDraftRef = useRef<NotesDraft | null>(null)
+  /** Notes as last read from the document, so a draft knows what it started from */
+  const notesLoadedRef = useRef<LoadedNotes | null>(null)
   /** Notes pane height (px): default shows ~4 lines (PowerPoint-like), drag-resizable */
   const [notesHeight, setNotesHeight] = useState(100)
   const notesDragRef = useRef<{ startY: number; startH: number } | null>(null)
@@ -657,7 +668,12 @@ export function App() {
     if (!pending) return
     notesDraftRef.current = null
     const ok = await window.slidesApi.setNotes({ slideIndex: pending.index, text: pending.text })
-    if (ok) setDirty(true)
+    if (!ok) return
+    setDirty(true)
+    // read back: the document normalizes what it stores (trailing empty paragraphs), and the
+    // baseline must match what a later getNotes returns
+    const stored = await window.slidesApi.getNotes(pending.index)
+    notesLoadedRef.current = notesBaselineAfterFlush(notesLoadedRef.current, pending.index, stored)
   }, [])
 
   // Uncapped proportional fit ratio from the stage container's measured size
@@ -1251,7 +1267,9 @@ export function App() {
   )
 
   useEffect(() => {
-    void window.slidesApi.getAiSettings().then(setAiSettings)
+    const loadSettings = () => void window.slidesApi.getAiSettings().then(setAiSettings)
+    loadSettings()
+    return window.slidesApi.onAiSettingsChanged?.(loadSettings)
   }, [])
 
   // Recent files for the start screen
@@ -1516,11 +1534,25 @@ export function App() {
     setSelectedIds([])
     setEditing(null)
     setDirty(true)
-    // The deck is the new truth: drop an in-progress notes draft (same as undo) so a stale
-    // draft can't overwrite what the AI batch wrote via setNotes on the next flush, then
-    // re-fetch notes/comments, which aren't part of RenderSlide.
+    // Notes/comments aren't part of RenderSlide, so the re-fetch below reads them back. A
+    // notes draft the user is typing survives unless the batch rewrote that slide's notes
+    // (or removed the slide): park it while the stored text is compared, so the re-fetch's
+    // flush can't write a stale draft over what the batch wrote via setNotes.
+    const draft = notesDraftRef.current
     notesDraftRef.current = null
-    setAnnotationsNonce((n) => n + 1)
+    if (!draft) {
+      setAnnotationsNonce((n) => n + 1)
+      return
+    }
+    const index = notesDraftIndex(draft, all)
+    void (index < 0 ? Promise.resolve('') : window.slidesApi.getNotes(index)).then((stored) => {
+      const kept = retargetNotesDraft(draft, all, stored)
+      const typedSince = notesDraftRef.current
+      if (kept && (!typedSince || typedSince.index === draft.index)) {
+        notesDraftRef.current = typedSince ? { ...typedSince, index: kept.index } : kept
+      }
+      setAnnotationsNonce((n) => n + 1)
+    })
   }, [])
 
   const addSlide = useCallback(() => slideActions.addSlide(ctxRef.current), [])
@@ -1789,7 +1821,8 @@ export function App() {
   /** Selected shape's current animation effect (gallery highlight: first match). */
   const selectedAnimEffect = useMemo(() => {
     if (selectedIds.length === 0) return null
-    return animations.find((a) => a.sourceId === selectedIds[0])?.effect ?? null
+    const first = animations.find((a) => a.sourceId === selectedIds[0])
+    return first ? animGalleryKind(first) : null
   }, [selectedIds, animations])
 
   const toggleAnimPane = useCallback(() => {
@@ -1920,7 +1953,9 @@ export function App() {
     void flushNotes()
       .then(() => window.slidesApi.getNotes(current))
       .then((t) => {
-        if (!cancelled) setNotesText(t)
+        if (cancelled) return
+        notesLoadedRef.current = { index: current, text: t }
+        setNotesText(t)
       })
     return () => {
       cancelled = true
@@ -1930,7 +1965,13 @@ export function App() {
   const onNotesChange = useCallback(
     (text: string) => {
       setNotesText(text)
-      notesDraftRef.current = { index: current, text }
+      notesDraftRef.current = startNotesDraft(
+        notesDraftRef.current,
+        notesLoadedRef.current,
+        current,
+        text,
+        ctxRef.current.slides[current]?.partPath,
+      )
     },
     [current],
   )

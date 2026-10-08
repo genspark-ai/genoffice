@@ -5,6 +5,12 @@ import { isValidPivotFilter, type PivotFilterDef } from '../domain/pivot-filters
 import { formatPivotFormula, parsePivotFormula } from '../domain/pivot-formula'
 import { groupLabel, isValidGrouping, type PivotFieldGrouping } from '../domain/pivot-grouping'
 import {
+  defaultDataFieldCaption,
+  showDataAsIsPercent,
+  type PivotAggregation,
+  type PivotShowDataAs,
+} from '../domain/pivot-value-modes'
+import {
   allocatePartPath,
   appendRelationship,
   registerContentTypeOverride,
@@ -40,12 +46,13 @@ export type PivotAddGrouping = { readonly fieldIndex: number } & PivotFieldGroup
 export interface PivotValueSpec {
   /// Source field index; -1 for calculated fields (formula present).
   readonly fieldIndex: number
-  readonly agg: 'sum' | 'count' | 'average' | 'max' | 'min'
+  readonly agg: PivotAggregation
   /// Optional Excel number format string for this data field (e.g. "#,##0.00")
   readonly numFmt?: string | undefined
-  /// "Show values as" mode (ECMA-376 dataField@showDataAs): percent of grand
-  /// total / row / column; undefined = normal.
-  readonly showDataAs?: 'percentOfTotal' | 'percentOfRow' | 'percentOfCol' | undefined
+  /// "Show values as" mode (ECMA-376 dataField@showDataAs); undefined = normal.
+  readonly showDataAs?: PivotShowDataAs | undefined
+  /// Custom caption; undefined = "Sum of <field>".
+  readonly name?: string | undefined
   /// Calculated field: formula (references source field names, basic arithmetic)
   /// and the new field name. Written as a <cacheField formula=… databaseField="0">
   /// appended at the end of cacheFields, taking no cache records; agg is fixed to
@@ -79,6 +86,11 @@ export interface PivotAddition {
   readonly columnFieldIndex?: number | undefined
   /// Indices into fieldNames for report-filter (page) fields.
   readonly pageFieldIndices?: readonly number[] | undefined
+  /// Member lists per page field (that field's sharedItems order), parallel to
+  /// pageFieldIndices; absent = no items written (filter shows (All)).
+  readonly pageLevelItems?: readonly (readonly string[])[] | undefined
+  /// Selected member per page field (index into pageLevelItems[p]); null = (All).
+  readonly pageItems?: readonly (number | null)[] | undefined
   /// Deduplicated members of the level-0 (outermost) row field; with multiple
   /// levels this equals rowLevelItems[0].
   readonly rowItems: readonly string[]
@@ -174,22 +186,25 @@ const PIVOT_RECORDS_CONTENT_TYPE =
 const MAIN_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-/// The Excel data-field caption prefixes; must match the renderer's baked
-/// header row so the pre-refresh grid and the definition agree.
-const AGG_CAPTIONS: Record<PivotValueSpec['agg'], string> = {
-  sum: 'Sum',
-  count: 'Count',
-  average: 'Average',
-  max: 'Max',
-  min: 'Min',
-}
 /// OOXML dataField@subtotal values; sum is the default and stays implicit.
-const AGG_SUBTOTALS: Record<PivotValueSpec['agg'], string | null> = {
+const AGG_SUBTOTALS: Record<PivotAggregation, string | null> = {
   sum: null,
   count: 'count',
   average: 'average',
   max: 'max',
   min: 'min',
+  product: 'product',
+  countNums: 'countNums',
+}
+
+/// Page fields with a member list are index fields like row/column levels.
+function pageLevelItemsByField(addition: PivotAddition): Map<number, readonly string[]> {
+  const byField = new Map<number, readonly string[]>()
+  ;(addition.pageFieldIndices ?? []).forEach((fieldIdx, index) => {
+    const items = addition.pageLevelItems?.[index]
+    if (items !== undefined) byField.set(fieldIdx, items)
+  })
+  return byField
 }
 
 /// Applies every pivot addition to the package and returns the workbook XML
@@ -311,10 +326,12 @@ async function resolveSourcePath(pkg: MutablePackage, sheetName: string): Promis
   const relXml = await pkg.readText('xl/_rels/workbook.xml.rels')
   // Two-step lookup: attribute order varies by producer (openpyxl puts Target before Id)
   const relationshipXml = new RegExp(
-    `<Relationship\\b[^>]*\\bId="${relationshipId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*/?>`,
+    `<Relationship\\b[^>]*\\bId=["']${relationshipId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*/?>`,
   ).exec(relXml)?.[0]
   const relTarget =
-    relationshipXml === undefined ? undefined : /\bTarget="([^"]+)"/.exec(relationshipXml)?.[1]
+    relationshipXml === undefined
+      ? undefined
+      : /\bTarget=(["'])([^"']+)\1/.exec(relationshipXml)?.[2]
   if (!relTarget) throw new PivotAddError(`Relationship ${relationshipId} not found.`)
   const target = relTarget.replace(/^\/?xl\//, '')
   return `xl/${target.replace(/^\.\//, '')}`
@@ -403,9 +420,12 @@ function buildCacheRecordsXml(
 
   // Build sharedItems index maps for dimension fields (row levels + column levels)
   const colFieldIndices = colFieldIndicesOf(addition)
-  const dimensionFields = new Set<number>([...addition.rowFieldIndices, ...colFieldIndices])
-  // pageFields are dimension fields too but sharedItems are empty; treat as non-index fields
-  // (their records will use <s v="..."/> or <m/> like value fields)
+  const pageItemsByField = pageLevelItemsByField(addition)
+  const dimensionFields = new Set<number>([
+    ...addition.rowFieldIndices,
+    ...colFieldIndices,
+    ...pageItemsByField.keys(),
+  ])
 
   // Each row/column-level field has its own member table (independent per level
   // when multi-level); records write <x v="idx"/>.
@@ -424,6 +444,9 @@ function buildCacheRecordsXml(
   }
   registerLevelItems(addition.rowFieldIndices, rowLevelItemsOf(addition))
   registerLevelItems(colFieldIndices, colLevelItemsOf(addition))
+  for (const [fieldIdx, items] of pageItemsByField) {
+    registerLevelItems([fieldIdx], [items])
+  }
 
   // Grouped fields' member tables hold group labels: raw values are grouped by
   // the same rule before records are written.
@@ -445,7 +468,6 @@ function buildCacheRecordsXml(
           }
           return `<x v="${idx}"/>`
         }
-        // Value field (or pageField — treat as raw value)
         if (value === null || value === '') return '<m/>'
         if (typeof value === 'number') return `<n v="${value}"/>`
         const n = Number(value)
@@ -476,6 +498,18 @@ function validateAddition(addition: PivotAddition): void {
     (addition.pageFieldIndices ?? []).some((i) => !inBounds(i))
   ) {
     throw new PivotAddError(`Pivot "${addition.name}" references a field outside its source.`)
+  }
+  const pageCount = (addition.pageFieldIndices ?? []).length
+  if (
+    (addition.pageLevelItems !== undefined && addition.pageLevelItems.length !== pageCount) ||
+    (addition.pageItems !== undefined &&
+      (addition.pageItems.length !== pageCount ||
+        addition.pageItems.some(
+          (item, index) =>
+            item !== null && (item < 0 || item >= (addition.pageLevelItems?.[index]?.length ?? 0)),
+        )))
+  ) {
+    throw new PivotAddError(`Pivot "${addition.name}" has an inconsistent report filter.`)
   }
   // Calculated fields: name is required and must not collide with source fields
   // or other calculated fields (case-insensitive); the formula must parse against
@@ -636,14 +670,15 @@ export function buildCacheDefinitionXml(
   colFieldIndices.forEach((fieldIdx, level) => {
     levelItemsByField.set(fieldIdx, colLevelItemsOf(addition)[level] ?? [])
   })
+  for (const [fieldIdx, items] of pageLevelItemsByField(addition)) {
+    levelItemsByField.set(fieldIdx, items)
+  }
 
   const fields = addition.fieldNames
     .map((name, index) => {
       if (!dimensionFieldSet.has(index)) {
         return `<cacheField name="${escapeAttribute(name)}" numFmtId="0"><sharedItems/></cacheField>`
       }
-      // Determine sharedItems for this dimension field;
-      // pageField-only fields need no items (shown as filter, no sharedItems required)
       const items: readonly string[] = levelItemsByField.get(index) ?? []
       const sharedItems =
         items.length === 0
@@ -697,6 +732,7 @@ export function buildPivotTableXml(cacheId: number, addition: PivotAddition): st
   const colLevelByField = new Map<number, number>()
   colFieldIndices.forEach((fieldIdx, level) => colLevelByField.set(fieldIdx, level))
   const pageFieldSet = new Set(addition.pageFieldIndices ?? [])
+  const pageItemsByField = pageLevelItemsByField(addition)
 
   const pivotFields = addition.fieldNames
     .map((_, index) => {
@@ -722,7 +758,7 @@ export function buildPivotTableXml(cacheId: number, addition: PivotAddition): st
         return `<pivotField dataField="1" showAll="0"${tabular ? ' compact="0" outline="0"' : ''}/>`
       }
       if (pageFieldSet.has(index)) {
-        return '<pivotField axis="axisPage" showAll="0"><items count="1"><item t="default"/></items></pivotField>'
+        return axisPivotField('axisPage', (pageItemsByField.get(index) ?? []).length, tabular)
       }
       return `<pivotField showAll="0"${tabular ? ' compact="0" outline="0"' : ''}/>`
     })
@@ -747,12 +783,16 @@ export function buildPivotTableXml(cacheId: number, addition: PivotAddition): st
   // members and subtotal rows when multi-level), appending the grand-total row.
   const rowItems = buildAxisItemsXml(rowLinesOf(addition), levels, 'rowItems')
 
-  // pageFields section (report filters)
+  // pageFields section (report filters): item = selected pivotField item index.
+  const pageFieldIndices = addition.pageFieldIndices ?? []
   const pageFieldsXml =
-    (addition.pageFieldIndices ?? []).length > 0
-      ? `<pageFields count="${(addition.pageFieldIndices ?? []).length}">` +
-        (addition.pageFieldIndices ?? [])
-          .map((idx) => `<pageField fld="${idx}" hier="-1"/>`)
+    pageFieldIndices.length > 0
+      ? `<pageFields count="${pageFieldIndices.length}">` +
+        pageFieldIndices
+          .map((idx, index) => {
+            const item = addition.pageItems?.[index] ?? null
+            return `<pageField fld="${idx}"${item === null ? '' : ` item="${item}"`} hier="-1"/>`
+          })
           .join('') +
         '</pageFields>'
       : ''
@@ -786,16 +826,16 @@ export function buildPivotTableXml(cacheId: number, addition: PivotAddition): st
       const isCalc = value.formula !== undefined
       const field = isCalc ? (value.calcName ?? '') : (addition.fieldNames[value.fieldIndex] ?? '')
       const fld = isCalc ? addition.fieldNames.length + calcSpecs.indexOf(value) : value.fieldIndex
-      const caption = `${AGG_CAPTIONS[value.agg]} of ${field}`
+      const caption = value.name ?? defaultDataFieldCaption(value.agg, field)
       const subtotal = isCalc ? null : AGG_SUBTOTALS[value.agg]
       // numFmtId: 0 = General; map common patterns to standard Excel IDs.
       // Percent display modes default to 0.00% (id 10) when no format is given.
       const numFmtId = value.numFmt
         ? resolveNumFmtId(value.numFmt)
-        : value.showDataAs !== undefined
+        : showDataAsIsPercent(value.showDataAs)
           ? 10
           : 0
-      // These three percent modes reference no base field/item; baseField/baseItem
+      // None of the supported modes references a base field/item; baseField/baseItem
       // keep their defaults.
       return (
         `<dataField name="${escapeAttribute(caption)}" fld="${fld}"` +
@@ -821,8 +861,11 @@ export function buildPivotTableXml(cacheId: number, addition: PivotAddition): st
     // With multi-level columns each column level takes one header row and the
     // data area starts at row colLevels; under tabular layout each row level takes
     // one column and the data area starts at column levels.
+    // The ref covers the table body only; rowPageCount tells Excel how many
+    // report-filter rows sit above it (plus the blank separator row).
     `<location ref="${areaToRef(addition.location)}" firstHeaderRow="1" ` +
-    `firstDataRow="${Math.max(1, colLevels)}" firstDataCol="${levels}"/>` +
+    `firstDataRow="${Math.max(1, colLevels)}" firstDataCol="${levels}"` +
+    `${pageFieldIndices.length > 0 ? ` rowPageCount="${pageFieldIndices.length}" colPageCount="1"` : ''}/>` +
     `<pivotFields count="${pivotFieldCount}">${pivotFields}${calcPivotFields}</pivotFields>` +
     rowFieldsXml +
     rowItems +
@@ -946,7 +989,7 @@ function resolveNumFmtId(numFmt: string): number {
 }
 
 function axisPivotField(
-  axis: 'axisRow' | 'axisCol',
+  axis: 'axisRow' | 'axisCol' | 'axisPage',
   itemCount: number,
   tabular = false,
   hidden?: ReadonlySet<number>,

@@ -17,6 +17,7 @@ import { columnLabel, formatAddress } from '@genoffice/xlsx-gateway/domain/cell-
 import type { WorkbookOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import type { ApplyOutcome } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { SET_ROW_IS_AUTO_HEIGHT_COMMAND } from './autofit-multi-row'
+import { CELL_HIDDEN_KEY, CELL_LOCKED_KEY, effectiveSheetProtection } from './sheet-protection'
 import { fullColumnSpans, fullRowSpans } from './autofit-selection'
 import { applyFormatPainterClick } from './format-painter'
 import { nextSheetName } from './op-executor'
@@ -49,9 +50,13 @@ import {
   openAdvancedFilterDialog,
   type DataToolsContext,
 } from './data-tools-actions'
+import { handleTableDesignCommand, type TableDesignContext } from './table-design-actions'
+import { outlineSummarySettings, setOutlineSummary } from './outline-actions'
+import { handleVisualCommand, type VisualArrangeContext } from './visual-arrange-actions'
 import { dedupeRows } from './dedupe'
 import { runStreamedErrorCheck } from './error-checking'
 import {
+  hyperlinkEditAt,
   isSheetRemoved,
   journalSize,
   NO_FILL_STYLE,
@@ -74,9 +79,11 @@ import {
   handleRefreshAllPivots,
   type PivotActionContext,
 } from './pivot-actions'
-import { INDENT_STEP_PX, normalizeHexColor } from './selection-format'
+import { INDENT_STEP_PX, indentStepsOf, normalizeHexColor } from './selection-format'
 import { collectDependents, collectPrecedents, installTraceArrows } from './trace-arrows'
 import { stepFontSize } from './font-size-ladder'
+import { handleThreadedCommentCommand } from './threaded-comment-actions'
+import { threadStore } from './threaded-comments'
 import {
   absRangeRef,
   applyFormatPatchToRange,
@@ -143,6 +150,8 @@ export interface RibbonCommandContext {
   setPendingEdits: (count: number) => void
   visualContext: () => VisualActionContext
   dataToolsContext: () => DataToolsContext
+  tableDesignContext: () => TableDesignContext
+  visualArrangeContext: () => VisualArrangeContext
   pivotContext: () => PivotActionContext
   handlePageLayoutCommand: (rest: string) => void
   handleExportPdf: () => Promise<boolean>
@@ -199,6 +208,13 @@ export function parseStyleCommand(command: string): {
 }
 
 export function handleRibbonCommand(ctx: RibbonCommandContext, command: string): void {
+  if (command.startsWith('table-') && handleTableDesignCommand(ctx.tableDesignContext(), command)) {
+    return
+  }
+  if (command.startsWith('visual:')) {
+    handleVisualCommand(ctx.visualArrangeContext(), command)
+    return
+  }
   const runtime = ctx.univerRef.current
   if (!runtime) return
   if (command === 'undo' || command === 'redo') {
@@ -310,8 +326,20 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     }
     return
   }
-  if (command === 'chart-delete') {
+  if (command === 'chart-delete' || command === 'shape-delete') {
     if (ctx.selectedVisual) ctx.shapeEditRef.current(ctx.selectedVisual.id, { remove: true })
+    return
+  }
+  // Shape Format tab paints: `shape-fill:#rrggbb` / `shape-outline:none`.
+  const paint = /^shape-(fill|outline):(#[0-9A-Fa-f]{6}|none)$/.exec(command)
+  if (paint) {
+    const [, target, color] = paint as unknown as [string, 'fill' | 'outline', string]
+    if (ctx.selectedVisual) {
+      ctx.shapeEditRef.current(
+        ctx.selectedVisual.id,
+        target === 'fill' ? { fillColor: color } : { lineColor: color },
+      )
+    }
     return
   }
   // Read-only-safe commands work on imported workbooks too.
@@ -384,7 +412,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       // Same trap as the CF panel: a missing params object silently no-ops.
       void runtime.univerAPI.executeCommand('data-validation.operation.open-validation-panel', {})
       return
-    case 'sheet-protect': {
+    // Protecting goes through the shell's dialog; this is the no-password
+    // unprotect and the "nothing to protect yet" feedback.
+    case 'sheet-protect':
+    case 'sheet-unprotect': {
       const state = ctx.lazyWorkbookRef.current
       if (!state) {
         ctx.setMessage(t('appProtectionNeedsFile'))
@@ -392,11 +423,13 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       }
       const sheetId = worksheet?.getSheetId()
       if (!sheetId || isSheetRemoved(state.editJournal, sheetId)) return
-      const original = state.sheetProtections.get(sheetId)?.protected ?? false
-      const current = state.editJournal.sheetProtection.get(sheetId) ?? original
+      if (command === 'sheet-protect') {
+        ctx.setMessage(t('appProtectionNeedsIndexed'))
+        return
+      }
       void ctx.runOps(
-        [{ op: 'protect_sheet', sheetId, protected: !current }],
-        !current ? t('appProtectionWillWrite') : t('appProtectionWillRemove'),
+        [{ op: 'protect_sheet', sheetId, protected: false }],
+        t('appProtectionWillRemove'),
       )
       return
     }
@@ -424,17 +457,33 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     }
     case 'outline-group:rows':
     case 'outline-group:cols':
+    case 'outline-group:auto':
     case 'outline-ungroup:rows':
     case 'outline-ungroup:cols':
+    case 'outline-ungroup:auto':
     case 'outline-hide-detail:rows':
     case 'outline-hide-detail:cols':
     case 'outline-show-detail:rows':
-    case 'outline-show-detail:cols': {
-      const [action, axis] = command.slice('outline-'.length).split(':')
+    case 'outline-show-detail:cols':
+    case 'outline-clear': {
+      const [action, axis = 'auto'] = command.slice('outline-'.length).split(':')
       handleOutline(
         ctx.dataToolsContext(),
-        action as 'group' | 'ungroup' | 'hide-detail' | 'show-detail',
-        axis as 'rows' | 'cols',
+        action as 'group' | 'ungroup' | 'hide-detail' | 'show-detail' | 'clear',
+        axis as 'rows' | 'cols' | 'auto',
+      )
+      return
+    }
+    case 'outline-summary-below':
+    case 'outline-summary-right': {
+      const sheetId = worksheet?.getSheetId()
+      const current = outlineSummarySettings(ctx.lazyWorkbookRef.current, sheetId)
+      const below = command === 'outline-summary-below'
+      const next = below ? !current.below : !current.right
+      setOutlineSummary(ctx.dataToolsContext(), below ? { below: next } : { right: next })
+      // The toggle may not change journalSize; the message re-renders the ribbon.
+      ctx.setMessage(
+        `${next ? '✓' : '✗'} ${t(below ? 'appOutlineSummaryBelow' : 'appOutlineSummaryRight')}`,
       )
       return
     }
@@ -444,6 +493,100 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         command === 'fill-down' ? 'sheet.command.copy-down' : 'sheet.command.copy-right',
       )
       return
+    case 'fill-up':
+    case 'fill-left': {
+      // Univer ships copy-down/right only; up/left mirror them through the
+      // auto-fill command with the selection's last row/column as source.
+      const workbook = runtime.univerAPI.getActiveWorkbook()
+      const active = workbook?.getActiveRange()
+      if (!workbook || !worksheet || !active) return
+      const up = command === 'fill-up'
+      const { startRow, startColumn } = active.getRange()
+      let { endRow, endColumn } = active.getRange()
+      if (up && startRow === endRow) {
+        if (endRow + 1 >= worksheet.getMaxRows()) return
+        endRow += 1
+      } else if (!up && startColumn === endColumn) {
+        if (endColumn + 1 >= worksheet.getMaxColumns()) return
+        endColumn += 1
+      }
+      void runtime.univerAPI.executeCommand('sheet.command.auto-fill', {
+        unitId: workbook.getId(),
+        subUnitId: worksheet.getSheetId(),
+        sourceRange: {
+          startRow: up ? endRow : startRow,
+          endRow,
+          startColumn: up ? startColumn : endColumn,
+          endColumn,
+        },
+        targetRange: { startRow, endRow, startColumn, endColumn },
+        applyType: 'COPY',
+      })
+      return
+    }
+    case 'clear-comments': {
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()
+      if (!worksheet || !active) return
+      const { startRow, endRow, startColumn, endColumn } = active.getRange()
+      const notes = worksheet
+        .getNotes()
+        .filter(
+          (note) =>
+            note.row >= startRow &&
+            note.row <= endRow &&
+            note.col >= startColumn &&
+            note.col <= endColumn,
+        )
+      if (notes.length === 0) return
+      const sheetId = worksheet.getSheetId()
+      if (ctx.lazyWorkbookRef.current) {
+        void ctx.runOps(
+          notes.map((note) => ({
+            op: 'set_note' as const,
+            sheetId,
+            address: formatAddress(note.row, note.col),
+            text: null,
+          })),
+          null,
+        )
+        return
+      }
+      for (const note of notes) worksheet.getRange(note.row, note.col, 1, 1).deleteNote()
+      return
+    }
+    case 'clear-hyperlinks': {
+      const state = ctx.lazyWorkbookRef.current
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()
+      if (!state || !worksheet || !active) {
+        ctx.setMessage(t('appLinksNeedFile'))
+        return
+      }
+      const sheetId = worksheet.getSheetId()
+      const { startRow, endRow, startColumn, endColumn } = active.getRange()
+      if ((endRow - startRow + 1) * (endColumn - startColumn + 1) > 10_000) {
+        ctx.setMessage(t('appClearLinksTooLarge'))
+        return
+      }
+      const fileLinks = state.hyperlinkTargets.get(sheetId)
+      const ops: WorkbookOperation[] = []
+      for (let row = startRow; row <= endRow; row += 1) {
+        for (let column = startColumn; column <= endColumn; column += 1) {
+          const journaled = hyperlinkEditAt(state.editJournal, sheetId, row, column)
+          const target = journaled === undefined ? fileLinks?.get(`${row}:${column}`) : journaled
+          if (target) {
+            ops.push({
+              op: 'set_hyperlink',
+              sheetId,
+              address: formatAddress(row, column),
+              target: null,
+            })
+          }
+        }
+      }
+      if (ops.length === 0) return
+      void ctx.runOps(ops, t('appLinkRemoved')).then(() => ctx.refreshSelectionFormatRef.current())
+      return
+    }
     case 'clear-contents':
       void runtime.univerAPI.executeCommand('sheet.command.clear-selection-content')
       return
@@ -595,11 +738,33 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       active.setDataValidation(runtime.univerAPI.newDataValidation().requireCheckbox().build())
       return
     }
-    case 'note-open':
+    case 'comment-new':
+    case 'comment-reply':
+    case 'comment-delete':
+    case 'comment-resolve':
+    case 'comment-prev':
+    case 'comment-next':
+    case 'comments-pane-toggle':
+    case 'note-show-all':
+    case 'notes-convert':
+      handleThreadedCommentCommand(ctx, command, (fallback) => handleRibbonCommand(ctx, fallback))
+      return
+    case 'note-open': {
+      // A cell holds either a thread or a note (Excel); the save keeps the thread.
+      const active = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()
+      if (
+        worksheet &&
+        active &&
+        threadStore.get(worksheet.getSheetId(), active.getRow(), active.getColumn())
+      ) {
+        ctx.setMessage(t('appNoteCellHasThread'))
+        return
+      }
       // Opens the note editor popup at the primary selected cell; the
       // journal snapshots the sheet's notes and ⌘S writes legacy comments.
       void runtime.univerAPI.executeCommand('sheet.operation.add-note-popup')
       return
+    }
     case 'note-delete': {
       const active = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()
       if (ctx.lazyWorkbookRef.current && worksheet && active) {
@@ -1313,6 +1478,16 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         )
         break
       }
+      case 'superscript':
+      case 'subscript': {
+        // Whole-cell font vertAlign; the two are mutually exclusive, and
+        // pressing the active one returns the cell to the baseline.
+        const offset = name === 'superscript' ? 3 : 2
+        range.setValue({
+          s: { va: style.va === offset ? null : offset },
+        } as unknown as ICellData)
+        break
+      }
       case 'strike':
         range.setFontLine(
           argument
@@ -1357,6 +1532,31 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         } as unknown as ICellData)
         break
       }
+      case 'indent-step': {
+        // Ribbon buttons move every selected cell by one step relative to its
+        // own indent, so mixed levels stay mixed (Excel behavior).
+        const delta = Number(argument)
+        if (!worksheet || (delta !== 1 && delta !== -1)) return
+        const rows = range.getHeight()
+        const columns = range.getWidth()
+        if (rows * columns > 10_000) {
+          ctx.setMessage(t('appClearLinksTooLarge'))
+          return
+        }
+        const top = range.getRow()
+        const left = range.getColumn()
+        const matrix = Array.from({ length: rows }, (_, r) =>
+          Array.from({ length: columns }, (_, c) => {
+            const current = indentStepsOf(
+              worksheet.getRange(top + r, left + c, 1, 1).getCellStyleData() ?? {},
+            )
+            const steps = Math.min(250, Math.max(0, current + delta))
+            return { s: { pd: steps === 0 ? null : { l: steps * INDENT_STEP_PX } } }
+          }),
+        )
+        range.setValues(matrix as unknown as ICellData[][])
+        break
+      }
       case 'cellprot': {
         // No Univer model for cell protection — journal the neutral delta
         // directly. File-only: not rendered, not undoable.
@@ -1377,15 +1577,35 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         if (extra === 'hidden-on') delta.protectionHidden = true
         else if (extra === 'hidden-off') delta.protectionHidden = false
         if (Object.keys(delta).length === 0) return
+        const protection = effectiveSheetProtection(state, sheetId)
+        if (protection?.protected && !protection.allow.formatCells) {
+          ctx.setMessage(t('appProtectedSheetCommandBlocked'))
+          return
+        }
+        const sheet = worksheet?.getSheet()
+        const flags = {
+          ...(delta.protectionLocked === undefined
+            ? {}
+            : { [CELL_LOCKED_KEY]: delta.protectionLocked }),
+          ...(delta.protectionHidden === undefined
+            ? {}
+            : { [CELL_HIDDEN_KEY]: delta.protectionHidden }),
+        }
+        const customs: ICellData[][] = []
         for (let row = range.getRow(); row < range.getRow() + range.getHeight(); row += 1) {
+          const line: ICellData[] = []
           for (
             let column = range.getColumn();
             column < range.getColumn() + range.getWidth();
             column += 1
           ) {
             recordNeutralStyleEdit(state.editJournal, sheetId, row, column, delta)
+            line.push({ custom: { ...sheet?.getCellRaw(row, column)?.custom, ...flags } })
           }
+          customs.push(line)
         }
+        // Mirror the flags into the grid so the protection guard sees them.
+        range.setValues(customs)
         ctx.setPendingEdits(journalSize(state.editJournal))
         ctx.setMessage(t('appProtectionFlagsRecorded'))
         return

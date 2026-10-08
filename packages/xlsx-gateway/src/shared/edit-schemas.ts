@@ -121,6 +121,8 @@ export const workbookStyleEditSchema = z
     underline: z.boolean().optional(),
     underlineStyle: z.enum(['single', 'double']).optional(),
     strikethrough: z.boolean().optional(),
+    /// Whole-cell font <vertAlign>; null returns the cell to the baseline.
+    vertAlign: z.union([z.enum(['superscript', 'subscript']), z.null()]).optional(),
     fontFamily: z.string().min(1).max(128).optional(),
     fontSize: z.number().positive().max(409).optional(),
     /// null removes the explicit font color (back to the theme default).
@@ -281,6 +283,8 @@ export const workbookChartEditSchema = z
     { message: 'A chart edit needs at least one property.' },
   )
 
+export const shapePaintSchema = z.union([hexColorSchema, z.literal('none')])
+
 /// Edit to a visual that already lives in the file, located by the sidecar's
 /// (drawingPath, anchor index) pair. `remove` deletes the anchor (charts
 /// fail closed in the gateway); `anchor` rewrites its from/to markers.
@@ -299,11 +303,39 @@ export const workbookVisualEditSchema = z
       })
       .strict()
       .optional(),
+    /// Shape paint: explicit spPr solidFill / noFill ("none") replacing
+    /// whatever fill or style reference the shape had.
+    fillColor: shapePaintSchema.optional(),
+    lineColor: shapePaintSchema.optional(),
+    /// Target position among the part's surviving anchors (document order
+    /// is z-order); anchors without one keep their relative order.
+    zIndex: z.number().int().nonnegative().max(10_000).optional(),
+    /// a:xfrm rot in degrees clockwise; 0 clears the attribute.
+    rotation: z.number().finite().min(-360).max(360).optional(),
+    flipH: z.boolean().optional(),
+    flipV: z.boolean().optional(),
+    /// cNvPr descr; empty removes it.
+    altText: z.string().max(2_000).optional(),
+    editAs: z.enum(['twoCell', 'oneCell', 'absolute']).optional(),
+    /// cNvPr a:hlinkClick target; empty removes the link.
+    hyperlink: z.string().max(2_048).optional(),
   })
   .strict()
-  .refine((edit) => edit.remove === true || edit.anchor !== undefined, {
-    message: 'A visual edit needs a removal or a new anchor.',
-  })
+  .refine(
+    (edit) =>
+      edit.remove === true ||
+      edit.anchor !== undefined ||
+      edit.fillColor !== undefined ||
+      edit.lineColor !== undefined ||
+      edit.zIndex !== undefined ||
+      edit.rotation !== undefined ||
+      edit.flipH !== undefined ||
+      edit.flipV !== undefined ||
+      edit.altText !== undefined ||
+      edit.editAs !== undefined ||
+      edit.hyperlink !== undefined,
+    { message: 'A visual edit needs a removal or at least one property.' },
+  )
 
 export type WorkbookStyleEdit = z.infer<typeof workbookStyleEditSchema>
 export type WorkbookChartEdit = z.infer<typeof workbookChartEditSchema>

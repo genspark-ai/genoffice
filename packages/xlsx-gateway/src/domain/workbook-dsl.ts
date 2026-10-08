@@ -1,4 +1,14 @@
 import { z } from 'zod'
+import {
+  SHEET_PROTECTION_PERMISSIONS,
+  type SheetProtectionPermission,
+} from '../gateway/xlsx-protection'
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
+import {
+  normalizePivotPageFields,
+  PIVOT_AGGREGATIONS,
+  PIVOT_SHOW_DATA_AS,
+} from './pivot-value-modes'
 import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
 import {
   columnIndex,
@@ -16,9 +26,6 @@ import {
   THEME_SHORTHAND_PATTERN,
   THEME_SLOT_NAMES,
 } from './style-color'
-
-const MAX_GRID_ROWS = 1_048_576
-const MAX_GRID_COLUMNS = 16_384
 
 /// An address past the last grid row or column names no cell that can exist in
 /// the file: the write is accepted here and the value is gone on reopen.
@@ -256,9 +263,9 @@ const addSheetSchema = z.object({
   name: sheetNameSchema,
   /** grid rows for the new sheet (default 1000) — writes and formula spills
    * beyond the grid are rejected/truncated, so size it to the expected data */
-  rows: z.number().int().min(1).max(1_048_576).optional(),
+  rows: z.number().int().min(1).max(MAX_GRID_ROWS).optional(),
   /** grid columns for the new sheet (default 20) */
-  columns: z.number().int().min(1).max(16_384).optional(),
+  columns: z.number().int().min(1).max(MAX_GRID_COLUMNS).optional(),
 })
 
 const deleteSheetSchema = z.object({
@@ -466,24 +473,41 @@ const addPivotSchema = z.object({
     .union([z.string().min(1).max(255), z.array(z.string().min(1).max(255)).min(1).max(8)])
     .optional(),
   /**
-   * Report filter fields (pageFields) — up to 4 source headers that are
-   * placed above the pivot as filter drop-downs in the saved Excel file.
-   * The baked grid omits the filter row; Excel/LibreOffice shows them on open.
+   * Report filter fields (pageFields) — up to 4 source headers placed above the
+   * pivot as filter rows (one "Field | (All)" row each plus a blank row), like
+   * Excel. A bare header shows all items; { field, item } restricts the whole
+   * report to rows whose field equals item (the item must exist in the source).
    */
-  pageFields: z.array(z.string().min(1).max(255)).max(4).optional(),
+  pageFields: z
+    .array(
+      z.union([
+        z.string().min(1).max(255),
+        z.object({
+          field: z.string().min(1).max(255),
+          item: z.string().max(255).optional(),
+        }),
+      ]),
+    )
+    .max(4)
+    .optional(),
   values: z
     .array(
       z.object({
         field: z.string().min(1).max(255),
-        agg: z.enum(['sum', 'count', 'average', 'max', 'min']),
+        /** sum/count/average/max/min/product/countNums (count of numeric cells) */
+        agg: z.enum(PIVOT_AGGREGATIONS),
         /** Optional Excel number format string, e.g. "#,##0.00" or "0%" */
         numFmt: z.string().min(1).max(255).optional(),
         /**
-         * "Show values as" mode: percentOfTotal = percent of grand total /
-         * percentOfRow = percent of row total / percentOfCol = percent of column
-         * total; defaults to the plain aggregate value.
+         * "Show values as" mode: percentOfTotal / percentOfRow / percentOfCol
+         * divide by the grand, row, or column total; percentOfParentRow /
+         * percentOfParentCol divide by the parent level's total; index =
+         * (cell × grand total) / (row total × column total). Defaults to the
+         * plain aggregate value.
          */
-        showDataAs: z.enum(['percentOfTotal', 'percentOfRow', 'percentOfCol']).optional(),
+        showDataAs: z.enum(PIVOT_SHOW_DATA_AS).optional(),
+        /** Custom caption for the data field; default "Sum of <field>" */
+        name: z.string().min(1).max(255).optional(),
         /**
          * Calculated field: when formula is present, field is the new data field's
          * name (must not clash with source headers); the formula does basic
@@ -585,10 +609,24 @@ const setHyperlinkSchema = z.object({
   target: z.string().min(1).max(2048).nullable(),
 })
 
+const sheetProtectionAllowSchema = z
+  .object(
+    Object.fromEntries(SHEET_PROTECTION_PERMISSIONS.map((key) => [key, z.boolean()])) as Record<
+      SheetProtectionPermission,
+      z.ZodBoolean
+    >,
+  )
+  .partial()
+
+// `password` is the plaintext: hashed when protecting, checked against the
+// file's hash when unprotecting a password-protected sheet. `allow` lists
+// what stays available while protected (Excel's dialog; unlisted = false).
 const protectSheetSchema = z.object({
   op: z.literal('protect_sheet'),
   sheetId: z.string().min(1),
   protected: z.boolean(),
+  password: z.string().min(1).max(255).optional(),
+  allow: sheetProtectionAllowSchema.optional(),
 })
 
 // Creates (or replaces) the sheet's auto-filter over the range. Filter
@@ -741,9 +779,7 @@ const headerFooterPartsSchema = z.object({
   right: z.string().max(255).optional(),
 })
 
-/// Print-title spans: title rows ("1:3"), title columns ("A:B"), or both
-/// ("A:B,1:3"). A refine runs even when the pattern fails, so this must not
-/// throw on unparseable values.
+/// "1:3", "A:B" or "A:B,1:3"; the refine also runs on unparseable input, so it must not throw.
 const isValidPrintTitles = (value: string): boolean => {
   try {
     const spans = value.split(',')
@@ -1825,7 +1861,7 @@ export function expandToPrimitiveOps(
       const allDimensionFields = [
         ...rowFieldsArray,
         ...columnFieldsArray,
-        ...(operation.pageFields ?? []),
+        ...normalizePivotPageFields(operation.pageFields).map((page) => page.field),
       ]
       if (operation.values.some((value) => allDimensionFields.includes(value.field))) {
         throw new Error('A values field cannot also be a row, column, or page filter field.')
@@ -2099,7 +2135,15 @@ export function layoutOpLabel(op: LayoutOperation): string {
       return (
         `Create pivot${op.name ? ` ${op.name}` : ''} from ${op.sourceRange} ` +
         `(rows: ${rowFieldsArray.join(' > ')}${columnFieldsArray.length > 0 ? `, columns: ${columnFieldsArray.join(' > ')}` : ''}` +
-        `${op.pageFields && op.pageFields.length > 0 ? `, filters: ${op.pageFields.join(', ')}` : ''}, ` +
+        `${
+          op.pageFields && op.pageFields.length > 0
+            ? `, filters: ${normalizePivotPageFields(op.pageFields)
+                .map((page) =>
+                  page.item === undefined ? page.field : `${page.field}=${page.item}`,
+                )
+                .join(', ')}`
+            : ''
+        }, ` +
         `values: ${op.values.map((value) => `${value.agg} ${value.field}`).join(', ')}) at ${op.targetCell}`
       )
     }

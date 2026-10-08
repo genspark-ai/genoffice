@@ -95,6 +95,20 @@ export function htmlLang(lang: Lang): string {
   return HTML_LANGS[lang]
 }
 
+/** Languages whose script reads right-to-left: UI chrome flips direction for them */
+const RTL_LANGS: readonly Lang[] = ['ar', 'he']
+
+/** Whether this UI language lays out right-to-left (drives the renderers' html dir) */
+export function isRtlLang(lang: string | undefined | null): boolean {
+  return (RTL_LANGS as readonly string[]).includes(lang ?? '')
+}
+
+/** The `dir` attribute value for a UI language: every bootstrap and every locale
+ *  setter writes the same expression, so the ternary lives here once. */
+export function htmlDir(lang: string | undefined | null): 'rtl' | 'ltr' {
+  return isRtlLang(lang) ? 'rtl' : 'ltr'
+}
+
 // ---- platform-native shortcut hints ----
 // Dictionaries write shortcut hints in Mac notation (⌘S, ⇧⌘Z, ⌘+Click); on
 // Windows/Linux every translated string is rewritten to Ctrl/Alt/Shift form.
@@ -199,10 +213,9 @@ export function onUiLangChange(listener: (lang: Lang) => void): () => void {
  */
 export function createI18n<D extends Record<string, string>>(dicts: LangDicts<D>) {
   return (lang: Lang, key: keyof D, params?: Params): string => {
-    // zh defines the key set, but a partial runtime dictionary (a shard that
-    // predates a new key) must degrade to the zh string or the key itself
+    // A shard that predates a key must degrade (en, then zh, then the key)
     // instead of throwing inside format()
-    const text = dicts[lang]?.[key] ?? dicts.zh[key] ?? String(key)
+    const text = dicts[lang]?.[key] ?? dicts.en[key] ?? dicts.zh[key] ?? String(key)
     return format(platformShortcuts(text), params)
   }
 }

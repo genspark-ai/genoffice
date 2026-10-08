@@ -52,3 +52,25 @@ describe('floating textbox anchor line', () => {
     expect(childTags(spec(null))).toContainEqual(['div', 'doc-anchor-strut'])
   })
 })
+
+describe('protected block page break', () => {
+  it('emits the page-break-before class on the block wrapper', () => {
+    const [, attrs] = DocProtected.config.renderHTML!.call(
+      DocProtected as never,
+      {
+        node: {
+          attrs: {
+            blockType: 'image',
+            docxIndex: 3,
+            label: 'Image',
+            imageDataUrl: 'data:image/png;base64,AA==',
+            pageBreakBefore: true,
+          },
+        },
+        HTMLAttributes: {},
+      } as never,
+    ) as unknown as [string, Record<string, string>, ...unknown[]]
+    expect(attrs.class).toContain('page-break-before')
+    expect(attrs['data-page-break-label']).toBeTruthy()
+  })
+})

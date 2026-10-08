@@ -158,8 +158,6 @@ pub fn read_entries_to_dir(
         }
         let output_path = output_dir.join(format!("entry-{index}.bin"));
         let mut output = BufWriter::new(File::create(&output_path)?);
-        // The limit above reads only the declaration; the copy is what keeps a
-        // part that under-declares from streaming its whole payload to disk.
         copy_entry_bounded(&mut entry, declared, MAX_EXTRACTED_ENTRY_BYTES, &mut output)?;
         output.flush()?;
         extracted.push(ExtractedEntry {

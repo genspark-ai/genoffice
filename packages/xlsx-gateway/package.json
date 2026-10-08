@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "jszip": "^3.10.1",
+    "@genoffice/zip-gate": "*",
     "numfmt": "^3.2.6",
     "zod": "^4.3.6"
   },

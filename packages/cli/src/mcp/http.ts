@@ -43,18 +43,12 @@ interface Session {
 }
 
 const MAX_JSON_BYTES = 32 * 1024 * 1024
-/**
- * Concurrent MCP sessions cap. Each session owns a context and directories
- * under the temp root; a client that opens sessions without closing them
- * (crashed tabs, looping scripts) used to grow the map without bound until
- * the process died. Over the cap the oldest session is closed first (FIFO).
- */
+/** clients that never DELETE their session otherwise grow the map without bound */
 const MAX_SESSIONS = 100
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
 export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
-  // an empty-string host would bypass the loopback fallback and bind every
-  // interface; the command layer rejects it, this keeps any other caller safe
+  // '' would bypass the loopback default and bind every interface
   const host = opts.host?.trim() || '127.0.0.1'
   const files = new FileStore(
     join(tmpdir(), `genoffice-mcp-http-${process.pid}-${randomBytes(4).toString('hex')}`),
@@ -117,14 +111,14 @@ export async function startHttp(opts: HttpServeOptions): Promise<HttpHandle> {
         log(`[mcp] session ${id} closed`)
       }
     }
-    // FIFO eviction: Map preserves insertion order, so the first key is oldest
+    // Map preserves insertion order, so the first key is the oldest session
     while (sessions.size >= MAX_SESSIONS) {
       const oldest = sessions.keys().next().value as string | undefined
       if (oldest === undefined) break
       const evicted = sessions.get(oldest)
       sessions.delete(oldest)
       if (evicted) {
-        // deleting first keeps transport.onclose from double-disposing
+        // deleted first so transport.onclose does not dispose twice
         void evicted.transport.close().catch(() => {})
         disposeContext(evicted.ctx)
         log(`[mcp] session ${oldest} evicted (cap ${MAX_SESSIONS})`)
@@ -356,12 +350,7 @@ function header(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value
 }
 
-/**
- * The host a `Host` authority names, or '' when the header is absent or malformed.
- * `new URL` throws on an empty authority, on whitespace, on a non-numeric port and
- * on a bare `::1`; none of those name a loopback peer, so they must read as
- * "not allowed" rather than escape as a 500.
- */
+/** '' for an absent or malformed Host so it reads as not allowed instead of a 500 */
 function hostnameOf(hostHeader: string): string {
   try {
     return new URL(`http://${hostHeader}`).hostname

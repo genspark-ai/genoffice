@@ -364,7 +364,7 @@ export function extractIrDocument(pdf: Uint8Array, opts: ConvertOptions): IrDocu
         if (page.scanned && opts.ocr) {
           const hiRender =
             renderPageByIndexPng(m, doc, i, Math.max(opts.renderScale ?? 2, 3)) ?? undefined
-          const recovered = tryOcrScannedPage(extracted, opts.ocr, hiRender)
+          const recovered = tryOcrScannedPage(extracted, opts.ocr, hiRender, listSeq)
           if (recovered) {
             page = recovered.page
             ocrConfidence = recovered.confidence

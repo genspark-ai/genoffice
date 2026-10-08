@@ -142,7 +142,7 @@ describe('mergeSlideFromPptx content types', () => {
   /**
    * A deck whose [Content_Types].xml carries no Default for png — like the
    * html→pptx pipeline's minimal decks, where the extension of an incoming
-   * merged image is genuinely new. #1518: the added Default was spliced right
+   * merged image is genuinely new. genoffice#1518: the added Default was spliced right
    * after the XML declaration (the first '>' in the file), i.e. outside the
    * <Types> root, which makes the whole package unreadable.
    */

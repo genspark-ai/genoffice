@@ -93,9 +93,10 @@ export function installShellCloseGuard(win: BrowserWindow, manager: TabManager):
           if (!win.isDestroyed()) win.close()
         }
       } catch (err) {
-        // a throw in the prompt chain must not leave the window un-closeable;
-        // report it and release the in-flight flag below
+        // a throw aborts the close like a denial: the window stays open, so the
+        // quit that may have latched sheets as shutting down is vetoed too
         console.error('[shell] window close prompt failed:', err)
+        resetSheetsShuttingDown()
       } finally {
         closePromptInFlight = false
       }

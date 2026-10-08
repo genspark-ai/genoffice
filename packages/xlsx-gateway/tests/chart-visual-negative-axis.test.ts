@@ -10,10 +10,9 @@ describe('valueAxisScale with below-zero data', () => {
     // Renderers floor the maximum at 0, so an all-negative chart arrives as
     // dataMax 0; the minimum is what tells the axis to go down.
     const axis = valueAxisScale(0, undefined, -500)
-    expect(axis.min).toBe(-500)
+    expect(axis.min).toBe(-600)
     expect(axis.max).toBe(0)
-    expect(axis.min).toBeLessThanOrEqual(-500)
-    expect(axis.max).toBeGreaterThanOrEqual(-100)
+    expect(axis.ticks).toEqual([-600, -500, -400, -300, -200, -100, 0])
   })
 
   it('keeps every all-negative value inside the axis', () => {
@@ -32,13 +31,12 @@ describe('valueAxisScale with below-zero data', () => {
     expect(axis.max).toBe(0)
   })
 
-  it('matches scatterAxisBounds on an all-negative series', () => {
-    // scatterAxisBounds is the sibling that already handled negatives via
-    // -niceCeiling(-dataMin); the two must not drift apart.
-    const axis = valueAxisScale(0, undefined, -500)
-    const scatter = scatterAxisBounds([-500, -300, -100])
-    expect(axis.min).toBe(scatter.min)
-    expect(axis.max).toBe(scatter.max)
+  it('gives below-zero data the headroom Excel does', () => {
+    expect(valueAxisScale(0, undefined, -100).min).toBe(-120)
+    expect(valueAxisScale(300, undefined, -500)).toMatchObject({ min: -600, max: 400 })
+    // scatterAxisBounds floors at the data itself; the two scales share the
+    // same sign handling but not the headroom.
+    expect(scatterAxisBounds([-500, -300, -100]).min).toBe(-500)
   })
 
   it('scales mixed positive/negative data across zero', () => {
@@ -73,10 +71,6 @@ describe('valueAxisScale with below-zero data', () => {
     expect(axis.max).toBeGreaterThan(axis.min)
     expect(axis.min).toBeLessThanOrEqual(-5)
     expect(axis.max).toBeGreaterThanOrEqual(-5)
-    // Same shape as the sibling for the same constant input.
-    const scatter = scatterAxisBounds([-5, -5, -5])
-    expect(axis.min).toBe(scatter.min)
-    expect(axis.max).toBe(scatter.max)
   })
 
   it('keeps the flat 0..1 axis for all-zero data', () => {
@@ -96,9 +90,9 @@ describe('valueAxisScale with below-zero data', () => {
 
   it('still honours an explicit majorUnit below zero', () => {
     const axis = valueAxisScale(0, { majorUnit: 100 }, -300)
-    expect(axis.min).toBe(-300)
+    expect(axis.min).toBe(-400)
     expect(axis.max).toBe(0)
-    expect(axis.ticks).toEqual([-300, -200, -100, 0])
+    expect(axis.ticks).toEqual([-400, -300, -200, -100, 0])
   })
 
   it('does not scale to -Infinity when a caller has no values', () => {

@@ -16,8 +16,19 @@ When the data is a regular "header + homogeneous record rows" shape, prefer a Ta
 
 ```json
 [
- {"op":"set_range","sheetId":"s1","range":"A1:C1","values":[["Product","Quantity","Amount"]]},
- {"op":"add_table","sheetId":"s1","range":"A1:C20","name":"SalesDetail","style":"TableStyleMedium2"}
+  {
+    "op": "set_range",
+    "sheetId": "s1",
+    "range": "A1:C1",
+    "values": [["Product", "Quantity", "Amount"]]
+  },
+  {
+    "op": "add_table",
+    "sheetId": "s1",
+    "range": "A1:C20",
+    "name": "SalesDetail",
+    "style": "TableStyleMedium2"
+  }
 ]
 ```
 
@@ -26,9 +37,14 @@ Notes:
 - After creating the table you can extend its structure directly with `add_table_row` / `add_table_column` etc., no save needed first. But tables that came with the file (existed at open time) cannot be modified with these ops — ask the user to save and reopen.
 - Don't merge_cells inside table data; don't stack set_filter on the header row (the table has its own filter).
 
-## Structured references (not supported by the engine yet; fall back to A1 references)
+## Structured references
 
-In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the current engine's formula evaluation does not parse structured references — **always write plain A1 references** (e.g. `=SUM(C2:C20)`). Once the saved file is opened in Excel, the user can switch to structured references themselves.
+The engine evaluates Excel structured references for every table listed by get_sheet_features (file tables and tables added this session), on the same sheet or on another sheet:
+
+- `TableName[Column]`, `TableName[[ColA]:[ColB]]`, `TableName[#All]`, `TableName[#Headers]`, `TableName[#Data]`, `TableName[[#This Row],[Column]]` (only inside the table's own rows).
+- Table and column names are matched **case-sensitively** — copy them exactly as get_sheet_features lists them.
+
+Not supported (write a plain A1 range instead): the `[@Column]` / `TableName[@Column]` shorthand, sheet-qualified table names (`Sheet1!Table[Col]`), `[#Totals]` (a file table's totals row is outside the registered range), and tables that have no header row.
 
 ## Inserting/deleting rows and columns
 
@@ -37,7 +53,7 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### add_table_row — insert data rows
 
 ```json
-{"op":"add_table_row","sheetId":"s1","tableName":"SalesDetail","row":3,"count":2}
+{ "op": "add_table_row", "sheetId": "s1", "tableName": "SalesDetail", "row": 3, "count": 2 }
 ```
 
 - `row` (optional, 1-based, relative to the data area): insert position; omitted = append at the end.
@@ -47,7 +63,7 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### delete_table_row — delete data rows
 
 ```json
-{"op":"delete_table_row","sheetId":"s1","tableName":"SalesDetail","row":2,"count":1}
+{ "op": "delete_table_row", "sheetId": "s1", "tableName": "SalesDetail", "row": 2, "count": 1 }
 ```
 
 - `row` (required, 1-based): first row to delete (relative to the data area, excluding the header).
@@ -57,7 +73,14 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### add_table_column — insert columns
 
 ```json
-{"op":"add_table_column","sheetId":"s1","tableName":"SalesDetail","column":3,"columnName":"Notes","count":1}
+{
+  "op": "add_table_column",
+  "sheetId": "s1",
+  "tableName": "SalesDetail",
+  "column": 3,
+  "columnName": "Notes",
+  "count": 1
+}
 ```
 
 - `column` (optional, 1-based): insert position; omitted = append at the far right.
@@ -67,7 +90,13 @@ In Excel, in-table formulas can use `[@Column]`/`TableName[Column]`, but the cur
 ### delete_table_column — delete columns
 
 ```json
-{"op":"delete_table_column","sheetId":"s1","tableName":"SalesDetail","column":4,"count":1}
+{
+  "op": "delete_table_column",
+  "sheetId": "s1",
+  "tableName": "SalesDetail",
+  "column": 4,
+  "count": 1
+}
 ```
 
 - `column` (required, 1-based): first column to delete (relative to the table's left edge).
@@ -86,10 +115,23 @@ When the data is irregular (subtotal rows, merged multi-column headers), don't c
 
 ```json
 [
- {"op":"format_range","sheetId":"s1","range":"A1:D1","format":{"bold":true,"fillColor":"#4472C4","fontColor":"#FFFFFF"}},
- {"op":"add_conditional_format","sheetId":"s1","range":"A2:D100",
-  "rule":{"kind":"formula","formula":"=MOD(ROW(),2)=0","format":{"fillColor":"#F2F7FF"}}},
- {"op":"set_filter","sheetId":"s1","range":"A1:D100"}
+  {
+    "op": "format_range",
+    "sheetId": "s1",
+    "range": "A1:D1",
+    "format": { "bold": true, "fillColor": "#4472C4", "fontColor": "#FFFFFF" }
+  },
+  {
+    "op": "add_conditional_format",
+    "sheetId": "s1",
+    "range": "A2:D100",
+    "rule": {
+      "kind": "formula",
+      "formula": "=MOD(ROW(),2)=0",
+      "format": { "fillColor": "#F2F7FF" }
+    }
+  },
+  { "op": "set_filter", "sheetId": "s1", "range": "A1:D100" }
 ]
 ```
 

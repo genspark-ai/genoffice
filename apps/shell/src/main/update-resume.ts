@@ -1,15 +1,7 @@
-// Range-resumable installer downloads for the auto-updater (genoffice#1777):
-// electron-updater writes the installer with a fresh createWriteStream and no
-// Range header, so every retry after a dropped connection starts from byte 0 —
-// on a slow link a large NSIS/zip that keeps dying at 90% never lands.
-//
-// This wraps the updater's public httpExecutor.download: the byte-landing part
-// becomes "append to <resume>/<artifact>.part with a Range request, verify,
-// rename into the destination electron-updater expects", while everything else
-// (cache registration, signature verification, quitAndInstall) keeps running
-// stock electron-updater code. Failures are best-effort — anything the wrapper
-// cannot handle falls back to the original implementation, so an update can
-// never get *worse* because of this file.
+// Range-resumable installer downloads (genoffice#1777): electron-updater
+// restarts every retry from byte 0. This wraps httpExecutor.download so the
+// bytes land in <resume>/<artifact>.part via Range requests; anything the
+// wrapper cannot handle falls back to the stock implementation.
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
@@ -35,26 +27,11 @@ export interface DownloadExecutor {
 
 /** progress events are noisier than the stock transform; keep the UI cadence */
 const PROGRESS_INTERVAL_MS = 250
-/**
- * A wedged connection (gateway black hole) never errors the stream by itself.
- * The stock httpExecutor fails a stalled socket after 60 s; the fetch-based
- * wrapper must match that or a silent hang replaces a retryable failure.
- */
+// matches the stock httpExecutor's stalled-socket timeout
 const STALL_TIMEOUT_MS = 60_000
-/**
- * undici's fetch carries no timeout at all, so a proxy that accepts the TCP
- * connection and then never answers leaves `await fetch()` pending forever —
- * the stall watchdog below is armed only once a response exists, so it cannot
- * cover this. Bound the wait, then hand the download to the stock executor,
- * which brings electron net's own connect/response handling and proxy support.
- */
+// undici's fetch has no timeout and the stall watchdog only arms once a response exists
 const RESPONSE_TIMEOUT_MS = 30_000
 
-/**
- * Install the resumable download on an electron-updater instance by replacing
- * its httpExecutor.download (a public method on ElectronHttpExecutor). Safe to
- * call once per updater; exported for tests.
- */
 export function installResumeDownload(
   updater: { httpExecutor: DownloadExecutor },
   /** shorter stall window for tests; production uses STALL_TIMEOUT_MS */
@@ -71,32 +48,10 @@ export function installResumeDownload(
     resumeDownload(url, destination, options ?? {}, original, stallTimeoutMs, responseTimeoutMs)
 }
 
-/**
- * Where the resume state lives, and why not next to the destination.
- *
- * electron-updater downloads into `<cacheDir>/pending/temp-<artifact>`, so a
- * `.part` written beside the destination is inside `cacheDirForPendingUpdate` —
- * and that directory is emptied on the failure this file exists to survive:
- * `executeDownload`'s catch calls `removeFileIfAny()` (AppUpdater.js, electron
- * updater 6.8.9) which calls `DownloadedUpdateHelper.clear()` ->
- * `cleanCacheDirForPendingUpdate()` -> `emptyDir(cacheDirForPendingUpdate)`.
- * `getValidCachedUpdateFile()` empties the same directory on a sha512
- * mismatch. So a `.part` under `pending/` is deleted before the retry that was
- * going to read it can run, and every retry restarts at byte 0.
- *
- * The only `emptyDir` in electron-updater targets `cacheDirForPendingUpdate`
- * (the parent `cacheDir` is never emptied), so a `resume/` directory that is a
- * *sibling* of `pending/` survives every cleanup the updater performs.
- *
- * It stays inside the updater's own cache dir on purpose. `cacheDir` is
- * `join(getAppCacheDir(), updaterCacheDirName)` — `~/Library/Caches/<name>` on
- * macOS (AppAdapter.js getAppCacheDir), `LOCALAPPDATA` on Windows, `XDG_CACHE_HOME`
- * on Linux — so a `resume/` there is per-app, in a location the OS already
- * treats as purgeable, and an abandoned part is eventually reclaimed instead of
- * outliving the app. The maintainer's suggested `<cacheDir>/../resume` would
- * instead land in the *shared* `~/Library/Caches`, where every installed app's
- * updater would contend for one directory name.
- */
+// A sibling of `pending/`, not inside it: electron-updater empties
+// `cacheDirForPendingUpdate` on every download failure and sha mismatch, which
+// is exactly the failure the .part must survive. The parent cacheDir is never
+// emptied and is per-app and OS-purgeable.
 const RESUME_DIR_NAME = 'resume'
 
 interface PartPaths {
@@ -123,22 +78,11 @@ const resumePaths = (destination: string): PartPaths => {
 interface PartMeta {
   /** validator for the bytes already in the .part file: ETag, else Last-Modified */
   ifRange?: string
-  /**
-   * the artifact the .part bytes belong to. The part is keyed by file name
-   * (which carries the version) and pinned to this digest, so bytes from a
-   * redeployed or superseded artifact can never be appended to. Held in the
-   * meta rather than the file name: a base64 sha512 contains `+` and `/`, and
-   * its hex form is 128 characters — both hostile to a path segment.
-   */
+  /** pins the part to one artifact so a redeployed build is never appended to */
   sha512?: string
 }
 
-/**
- * How many bytes are already on disk and are known to belong to `sha512`.
- * Anything unproven (no meta, meta from another artifact, unreadable file)
- * restarts from byte 0 — a wrong guess would stitch two versions together,
- * which is worse than downloading again.
- */
+// anything unproven restarts from byte 0: a wrong guess would stitch two versions together
 const readPart = async (
   partPath: string,
   metaPath: string,
@@ -183,12 +127,7 @@ async function writePartMeta(metaPath: string, meta: PartMeta): Promise<void> {
   await writeFile(metaPath, JSON.stringify(meta))
 }
 
-/**
- * Drop every part in `resume/` except the one this download owns. The updater
- * downloads one artifact at a time, and each artifact version has its own file
- * name, so this is what stops the parts of superseded updates — and of updates
- * that were never completed — from accumulating for the life of the install.
- */
+// parts of superseded versions would otherwise accumulate for the life of the install
 async function pruneOtherParts(dir: string, keepBase: string): Promise<void> {
   try {
     const keep = new Set([`${keepBase}.part`, `${keepBase}.part.json`])
@@ -230,12 +169,6 @@ class RequestFailedError extends Error {
   }
 }
 
-/**
- * One request, bounded in time. A non-2xx status is *not* handled here: undici
- * ignores the Electron session proxy, so a proxy-generated 407 or a captive
- * portal's 403 arrives as a plain status code and is resolved by the caller
- * falling back to the stock executor.
- */
 async function placeRequest(
   url: URL,
   headers: Record<string, string>,
@@ -258,14 +191,8 @@ async function placeRequest(
   }
 }
 
-/**
- * One installer download, resuming the stored `.part` when the server honours
- * Range. Falls back to the stock implementation whenever this wrapper cannot
- * own the download — no checksum to validate against, a request it could not
- * place, a non-2xx/206/416 status, or an unexpected executor shape. A mid-stream
- * failure is a real download failure and is thrown with the `.part` kept for
- * the next attempt.
- */
+// A mid-stream failure is thrown with the .part kept; anything the wrapper
+// cannot own (no checksum, unplaceable request, odd status) falls back to stock.
 async function resumeDownload(
   url: URL,
   destination: string,
@@ -337,11 +264,8 @@ async function resumeDownload(
     }
   }
 
-  // Anything else that is not a body we can append or read whole is not the
-  // artifact's fault: this is where a proxy's 407 and a captive portal's 403
-  // land, because undici resolves them without Electron's session proxy. Fall
-  // back to the stock executor (electron net on the updater's own session) so a
-  // proxied user gets the pre-PR behaviour instead of a hard failure.
+  // undici ignores the Electron session proxy, so a proxy 407 / captive-portal
+  // 403 lands here; the stock executor (electron net) handles those
   if (!response.ok && response.status !== 206) {
     return fallback(url, destination, options)
   }

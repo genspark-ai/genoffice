@@ -14,7 +14,7 @@
  * rule, no zone — gutters without ink stay the column detector's business.
  */
 import type { Rect } from '../geometry'
-import { intersectArea, rectUnion } from '../geometry'
+import { intersectArea, maxOf, minOf, rectUnion } from '../geometry'
 import type { PageShapes, Stroke, TableBlock, TableCellBlock, TextBlock } from '../ir'
 import { analyzeChars } from './chars'
 import type { LineUnit } from './units'
@@ -133,7 +133,7 @@ export function buildStackCell(
     dir: 'ltr' as const,
   }))
   const cell: TableCellBlock = { box, gridSpan: 1, blocks }
-  const contentH = Math.max(...units.map((u) => u.box.y1)) - Math.min(...units.map((u) => u.box.y0))
+  const contentH = maxOf(units.map((u) => u.box.y1)) - minOf(units.map((u) => u.box.y0))
   if ((opts.allowVAlignCenter ?? true) && contentH < ZONE_VALIGN_CENTER_MAX_FILL * zoneHeight) {
     cell.vAlign = 'center'
   }
@@ -213,8 +213,8 @@ export function detectRuleSeparatedZones(
     // the stacks must overlap vertically — a rule between stacked (not
     // side-by-side) content is somebody else's decoration
     const extentOf = (side: LineUnit[]): { lo: number; hi: number } => ({
-      lo: Math.min(...side.map((u) => u.box.y0)),
-      hi: Math.max(...side.map((u) => u.box.y1)),
+      lo: minOf(side.map((u) => u.box.y0)),
+      hi: maxOf(side.map((u) => u.box.y1)),
     })
     const le = extentOf(left)
     const re = extentOf(right)

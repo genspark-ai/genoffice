@@ -1,4 +1,9 @@
-import { aiPanelWidthAtPointer, AiPanelSideButton } from '@genoffice/ui'
+import {
+  aiPanelWidthAtPointer,
+  AiPanelSideButton,
+  AiModelPicker,
+  type AiModelPickerBridge,
+} from '@genoffice/ui'
 import React, { useEffect, useRef, useState } from 'react'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
@@ -207,6 +212,14 @@ export interface AiChatMessage {
   readonly attachments?: readonly AttachmentMeta[] | undefined
   /** the range this user message targeted, frozen at send */
   readonly scope?: AiScopeQuoteData | undefined
+}
+
+const MODEL_BRIDGE: AiModelPickerBridge = {
+  getSettings: () => window.desktopApi.getAiSettings(),
+  setSettings: (settings) => window.desktopApi.setAiSettings(settings),
+  onSettingsChanged: (handler) => window.desktopApi.onAiSettingsChanged(handler),
+  gskLoggedIn: () => window.desktopApi.aiGskStatus().then((s) => !!s?.loggedIn),
+  openModelSettings: () => window.desktopApi.openAiModelSettings().catch(() => {}),
 }
 
 export function AiChatPanel({
@@ -817,14 +830,17 @@ export function AiChatPanel({
           sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
           stopIcon={<img src={sendStop} alt="" aria-hidden />}
           footerStart={
-            <button
-              className="ai-attach-btn"
-              onClick={onPickAttachments}
-              data-tip={t('aiAttachTitle')}
-              aria-label={t('aiAttachTitle')}
-            >
-              <img src={attachIcon} alt="" aria-hidden />
-            </button>
+            <>
+              <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
+              <button
+                className="ai-attach-btn"
+                onClick={onPickAttachments}
+                data-tip={t('aiAttachTitle')}
+                aria-label={t('aiAttachTitle')}
+              >
+                <img src={attachIcon} alt="" aria-hidden />
+              </button>
+            </>
           }
           textareaRef={inputRef}
           onChange={onPromptChange}

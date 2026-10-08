@@ -10,7 +10,10 @@ const CSS_PX_PER_INCH = 96
 export function printOptionsFor(request: WorkbookExportPdfRequest): WebContentsPrintOptions {
   const { margins, pageSize } = request
   return {
-    silent: false,
+    silent: request.deviceName !== undefined,
+    ...(request.deviceName === undefined ? {} : { deviceName: request.deviceName }),
+    ...(request.copies === undefined ? {} : { copies: request.copies }),
+    ...(request.collate === undefined ? {} : { collate: request.collate }),
     printBackground: true,
     landscape: request.landscape,
     pageSize:

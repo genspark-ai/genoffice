@@ -212,10 +212,15 @@ export function valueAxisScale(
   // keeps the invariant that the axis always contains the data it was given:
   // a bare valueAxisScale(-100) can only be scaled by a negative floor.
   const floor = Math.min(Number.isFinite(dataMin) ? dataMin : 0, dataMax)
-  // Below-zero data pushes the axis down to a nice floor, exactly as
-  // scatterAxisBounds does with -niceCeiling(-dataMin); non-negative data
-  // still starts at 0.
-  const min = explicit?.min ?? (floor >= 0 ? 0 : -niceCeiling(-floor))
+  // Below-zero data gets the same 5% headroom under its floor that the
+  // maximum gets above (Excel: -100 -> -120, -500 -> -600).
+  const autoMin =
+    floor >= 0
+      ? 0
+      : explicit?.majorUnit
+        ? -Math.ceil((-floor * 1.05) / explicit.majorUnit) * explicit.majorUnit
+        : -niceCeiling(-floor * 1.05)
+  const min = explicit?.min ?? autoMin
   // Data that never rises above zero tops out AT zero, not above it: Excel
   // shows no headroom over a zero baseline, and a bar/column needs that
   // baseline inside the plot to have something to stand on.
@@ -614,14 +619,14 @@ export function chartDataFromValues(
 }
 
 /// `'Sheet Name'!$B$2:$B$13` (chart `c:f` style) → sheet name + plain range.
-/// A range is a cell, a cell range, or a whole-column range (`$A:$A`) — the
-/// same three shapes the save side shifts (FORMULA_REFERENCE_PATTERN). Case
+/// A range is a cell, a cell range, a whole-column range (`$A:$A`) or a
+/// whole-row range (`$1:$1`), the shapes Excel writes into `c:f`. Case
 /// is accepted because parseAddress downstream is case-strict, so the range is
 /// normalised here. A defined name names no sheet and stays null: rewriting
 /// one would need the defined-names table, not a sheet rename.
 export function splitSheetRef(ref: string): { sheetName: string; range: string } | null {
   const match =
-    /^'?((?:[^'!]|'')+?)'?!(\$?[A-Z]{1,3}\$?[0-9]+(?::\$?[A-Z]{1,3}\$?[0-9]+)?|\$?[A-Z]{1,3}:\$?[A-Z]{1,3})$/i.exec(
+    /^'?((?:[^'!]|'')+?)'?!(\$?[A-Z]{1,3}\$?[0-9]+(?::\$?[A-Z]{1,3}\$?[0-9]+)?|\$?[A-Z]{1,3}:\$?[A-Z]{1,3}|\$?[0-9]+:\$?[0-9]+)$/i.exec(
       ref.trim(),
     )
   if (!match?.[1] || !match[2]) return null

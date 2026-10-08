@@ -4,7 +4,7 @@
  * pageMargins / printOptions / headerFooter plus the workbook-level
  * _xlnm.Print_Area / _xlnm.Print_Titles defined names).
  */
-import { columnLabel, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
+import { columnIndex, columnLabel, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
 import type { WorkbookPagePrintSettings } from '../shared/desktop-api'
 import type { HeaderFooterParts, PageSetupJournalState, StructuralJournalOp } from './edit-journal'
 import { fileRangeToScreenRange, fileToScreen } from './view-transform'
@@ -50,6 +50,9 @@ export interface EffectivePageSetup {
   readonly printAreas: readonly string[]
   /// Rows repeated at the top of every page ("1:2"), or null.
   readonly printTitles: string | null
+  /// Columns repeated at the left of every page ("A:B"), or null; file-only
+  /// (the session edits title rows).
+  readonly printTitleColumns: string | null
   /// The odd-page (default) header/footer.
   readonly header: HeaderFooterParts | null
   readonly footer: HeaderFooterParts | null
@@ -73,6 +76,28 @@ const MARGIN_PRESETS: Record<'normal' | 'wide' | 'narrow', PrintMargins> = {
 
 /// The export wire caps margins at 3in per side.
 const MAX_MARGIN_INCHES = 3
+
+/// File-space title columns → screen space (column axis only).
+function mapTitleColumnsToScreen(
+  titles: string | null,
+  ops: readonly StructuralJournalOp[],
+): string | null {
+  if (titles === null || ops.length === 0) return titles
+  const match = /^([A-Z]{1,3}):([A-Z]{1,3})$/.exec(titles)
+  if (!match) return null
+  const columns: number[] = []
+  const first = columnIndex(match[1] ?? 'A')
+  const last = columnIndex(match[2] ?? 'A')
+  for (let column = first; column <= last; column += 1) {
+    const screen = fileToScreen(ops, 'column', column)
+    if (screen !== null) columns.push(screen)
+  }
+  if (columns.length === 0) return null
+  const start = Math.min(...columns)
+  const end = Math.max(...columns)
+  if (end - start > 20) return null
+  return `${columnLabel(start)}:${columnLabel(end)}`
+}
 
 export interface FilePrintNames {
   readonly printArea?: string | undefined
@@ -201,6 +226,10 @@ export function resolveEffectivePageSetup(
     printHeadings: journal.printHeadings ?? file?.printHeadings ?? false,
     printAreas: printArea,
     printTitles,
+    printTitleColumns: mapTitleColumnsToScreen(
+      printTitleColumnsFromFormula(names?.printTitles),
+      ops,
+    ),
     header,
     footer,
     firstPage,
@@ -251,10 +280,6 @@ export function printAreasFromFormula(formula: string | undefined): string[] {
       continue
     }
     if (/^[A-Z]{1,3}[0-9]{1,7}:[A-Z]{1,3}[0-9]{1,7}$/.test(reference)) {
-      // Some writers store the corners reversed ($B$4:$A$1). The print layout
-      // reads an area positionally, so an inverted pair would make the span
-      // negative and abort the whole export; parseRange normalises it, and
-      // the rest of the app already relies on that.
       areas.push(normaliseArea(reference))
       continue
     }
@@ -277,6 +302,20 @@ export function printTitleRowsFromFormula(formula: string | undefined): string |
   return null
 }
 
+/// `'S'!$A:$B,'S'!$1:$2` → 'A:B'; row parts are skipped, spans beyond the
+/// 21-column cap are dropped.
+export function printTitleColumnsFromFormula(formula: string | undefined): string | null {
+  if (formula === undefined || formula === '') return null
+  for (const part of splitAreas(formula)) {
+    const match = /^([A-Za-z]{1,3}):([A-Za-z]{1,3})$/.exec(plainReference(part))
+    if (!match) continue
+    const start = columnIndex((match[1] ?? 'A').toUpperCase())
+    const end = columnIndex((match[2] ?? 'A').toUpperCase())
+    if (start <= end && end - start <= 20) return `${columnLabel(start)}:${columnLabel(end)}`
+  }
+  return null
+}
+
 /// Print-title rows repeat atop every page: the layout caps the span at 21 rows.
 export const MAX_PRINT_TITLE_ROWS = 21
 
@@ -291,8 +330,7 @@ export function clampTitleRows(start: number, end: number): string {
   return `${safeStart}:${Math.min(Math.max(safeEnd, safeStart), safeStart + MAX_PRINT_TITLE_ROWS - 1)}`
 }
 
-/// Swaps reversed corners back into top-left → bottom-right order, so
-/// `$B$4:$A$1` prints A1:B4 exactly like parseRange treats it.
+/// `$B$4:$A$1` → A1:B4; the print layout reads corners positionally.
 function normaliseArea(reference: string): string {
   const bounds = parseRange(reference)
   return (
@@ -301,11 +339,8 @@ function normaliseArea(reference: string): string {
   )
 }
 
-/// Excel's formatting toggles (&B bold, &I italic, &U underline, &S strike)
-/// and codes the layout cannot render (&E elapsed, &X/&Y, &Z path): they
-/// carry no text of their own, so they are dropped. Any other &X is literal
-/// user text and must survive.
-const STRIPPED_CODES = new Set(['B', 'I', 'U', 'S', 'E', 'X', 'Y', 'Z'])
+/// Formatting toggles and codes the layout cannot render; any other &X is literal text.
+const STRIPPED_CODES = new Set(['B', 'I', 'U', 'S', 'E', 'X', 'Y', 'Z', 'O', 'H'])
 
 /// Excel's encoded header/footer → left/center/right parts. Field codes the
 /// layout resolves (&P &N &D &T &F &A &G picture, && literal) stay verbatim;
@@ -366,8 +401,6 @@ export function decodeHeaderFooter(encoded: string): HeaderFooterParts | null {
       index += 2
       continue
     }
-    // An unrecognised &X is literal user text, not a code: keeping the
-    // character (and any space after the &) is what Excel prints.
     if (STRIPPED_CODES.has(code)) {
       index += 2
       continue

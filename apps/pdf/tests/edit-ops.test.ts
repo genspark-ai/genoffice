@@ -517,9 +517,6 @@ describe('bucket reduction matches whole-snapshot reduction', () => {
 })
 
 describe('edit-op geometry rejects non-finite numbers', () => {
-  // NaN and Infinity are both `typeof === 'number'`, so a `typeof` check let
-  // them through: the op was stored, the stamp drew at zero size, and NaN
-  // reached the PDF content stream on save.
   const NON_FINITE = [Number.NaN, Infinity, -Infinity]
 
   for (const bad of NON_FINITE) {

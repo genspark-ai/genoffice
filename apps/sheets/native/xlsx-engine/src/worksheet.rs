@@ -39,6 +39,7 @@ pub(crate) fn index_worksheet(
     // Shared-formula groups: the master's text expands into every follower (#165).
     let mut shared_formulas = shared_formulas::SharedFormulas::default();
     let mut cell_shared_si: Option<u32> = None;
+    let mut cell_shared_ref: Option<MergedRange> = None;
     let mut chunk_index = 0;
     let mut chunk = ChunkData::default();
     let mut pending_formulas: Vec<CellRecord> = Vec::new();
@@ -151,6 +152,12 @@ pub(crate) fn index_worksheet(
             Event::Start(element) if element.local_name().as_ref() == b"f" => {
                 in_formula = true;
                 cell_shared_si = shared_formula_si(&reader, &element)?;
+                cell_shared_ref = if cell_shared_si.is_some() {
+                    attribute_value(&reader, &element, b"ref")?
+                        .and_then(|reference| parse_range_reference(&reference))
+                } else {
+                    None
+                };
                 if let Some(builder) = cell_builder.as_mut() {
                     builder.array_ref = array_formula_ref(&reader, &element)?;
                 }
@@ -163,6 +170,7 @@ pub(crate) fn index_worksheet(
                 {
                     if let Some(formula) = shared_formulas.expand(si, builder.row, builder.column) {
                         builder.formula = formula;
+                        builder.shared_follower = true;
                     }
                 }
             }
@@ -282,9 +290,16 @@ pub(crate) fn index_worksheet(
                             shared_formulas.expand(si, builder.row, builder.column)
                         {
                             builder.formula = formula;
+                            builder.shared_follower = true;
                         }
                     } else {
-                        shared_formulas.register(si, builder.row, builder.column, &builder.formula);
+                        shared_formulas.register(
+                            si,
+                            builder.row,
+                            builder.column,
+                            &builder.formula,
+                            cell_shared_ref.take(),
+                        );
                     }
                 }
             }
@@ -317,10 +332,11 @@ pub(crate) fn index_worksheet(
                         )?;
                         chunk_index = cell_chunk;
                     }
+                    let shared_follower = builder.shared_follower;
                     if let Some(cell) =
                         builder.finish(shared_strings, styled_xfs, rich_image_cells)?
                     {
-                        if cell.formula.is_some() {
+                        if cell.formula.is_some() && !shared_follower {
                             pending_formulas.push(cell.clone());
                         }
                         chunk.cells.push(cell);
@@ -455,14 +471,7 @@ pub(crate) fn index_worksheet(
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"sheetProtection" =>
             {
-                let protected = attribute_value(&reader, &element, b"sheet")?
-                    .is_some_and(|value| value == "1" || value == "true");
-                let has_password = attribute_value(&reader, &element, b"password")?.is_some()
-                    || attribute_value(&reader, &element, b"hashValue")?.is_some();
-                sheet_protection = Some(SheetProtectionInfo {
-                    protected,
-                    has_password,
-                });
+                sheet_protection = Some(parse_sheet_protection(&reader, &element)?);
             }
             Event::Start(element) if element.local_name().as_ref() == b"customSheetViews" => {
                 in_custom_sheet_views = true;
@@ -868,6 +877,8 @@ pub(crate) fn index_worksheet(
         .map_err(|_| SidecarError::Io("Worksheet index lock was poisoned.".into()))?;
     index.merges = merges;
     index.hyperlinks = hyperlinks;
+    index.shared_formula_groups =
+        shared_formulas.groups(|formula| format!("={}", strip_future_function_markers(formula)));
     for (id, color) in x14_negative_colors {
         if let Some(rule) = x14_rule_slots
             .get(&id)
@@ -1204,6 +1215,17 @@ pub(crate) fn flush_chunk(
 ) -> Result<(), SidecarError> {
     let path = cache_directory.join(format!("sheet-{sheet_index}-chunk-{chunk_index}.json"));
     let has_data = !chunk.cells.is_empty() || !chunk.rows.is_empty();
+    let outline_rows: Vec<RowOutlineEntry> = chunk
+        .rows
+        .iter()
+        .filter(|row| row.outline_level.is_some() || row.collapsed)
+        .map(|row| RowOutlineEntry {
+            row: row.row,
+            level: row.outline_level.unwrap_or(0),
+            collapsed: row.collapsed,
+            hidden: row.hidden,
+        })
+        .collect();
     if has_data {
         let file = File::create(&path)?;
         let mut writer = BufWriter::new(file);
@@ -1219,6 +1241,7 @@ pub(crate) fn flush_chunk(
     if has_data {
         index.chunk_files.insert(chunk_index, path);
     }
+    index.outline_rows.extend(outline_rows);
     if !pending_formulas.is_empty() {
         let room = MAX_FORMULA_CELLS.saturating_sub(index.formula_cells.len());
         if pending_formulas.len() > room {
@@ -1241,6 +1264,8 @@ pub(crate) struct CellBuilder {
     raw_value: String,
     formula: String,
     array_ref: Option<String>,
+    /// Formula inherited from a shared-formula master (`<f t="shared" si/>`).
+    shared_follower: bool,
     inline_text: String,
     inline_runs: Vec<RichRun>,
     current_run: Option<RichRun>,
@@ -1253,12 +1278,8 @@ impl CellBuilder {
         fallback_row: usize,
         fallback_column: usize,
     ) -> Result<Self, SidecarError> {
-        // <c r=> is optional: an unaddressed cell sits one right of its
-        // predecessor. A malformed one is the same case in worse clothes — a
-        // corrupt address used to propagate and fail the whole workbook, while
-        // every other bad field here degrades to a valueless cell because
-        // erroring out here once blanked the entire sheet — so it takes the
-        // same position rather than costing the user their workbook.
+        // <c r=> is optional: an unaddressed cell sits one right of its predecessor.
+        // A malformed one degrades the same way instead of failing the whole open.
         let (row, column) = match attribute_value(reader, element, b"r")? {
             Some(address) => parse_address(&address).unwrap_or((fallback_row, fallback_column)),
             None => (fallback_row, fallback_column),
@@ -1272,6 +1293,7 @@ impl CellBuilder {
             raw_value: String::new(),
             formula: String::new(),
             array_ref: None,
+            shared_follower: false,
             inline_text: String::new(),
             inline_runs: Vec::new(),
             current_run: None,
@@ -1476,4 +1498,60 @@ pub(crate) fn shared_formula_si<R: std::io::BufRead>(
         return Ok(None);
     }
     Ok(attribute_value(reader, element, b"si")?.and_then(|value| value.parse::<u32>().ok()))
+}
+
+fn is_true(value: &Option<String>) -> bool {
+    value.as_deref().is_some_and(|v| v == "1" || v == "true")
+}
+
+fn is_false(value: &Option<String>) -> bool {
+    value.as_deref().is_some_and(|v| v == "0" || v == "false")
+}
+
+/// Lock-style attributes default to 1 (not allowed); objects/scenarios and
+/// the two select flags default to 0 (allowed).
+pub(crate) fn parse_sheet_protection<R: std::io::BufRead>(
+    reader: &Reader<R>,
+    element: &BytesStart<'_>,
+) -> Result<SheetProtectionInfo, SidecarError> {
+    let attr = |name: &[u8]| attribute_value(reader, element, name);
+    let allowed_unless_locked =
+        |name: &[u8]| -> Result<bool, SidecarError> { Ok(!is_true(&attr(name)?)) };
+    let locked_unless_cleared =
+        |name: &[u8]| -> Result<bool, SidecarError> { Ok(is_false(&attr(name)?)) };
+    let allow = SheetProtectionAllow {
+        select_locked_cells: allowed_unless_locked(b"selectLockedCells")?,
+        select_unlocked_cells: allowed_unless_locked(b"selectUnlockedCells")?,
+        objects: allowed_unless_locked(b"objects")?,
+        scenarios: allowed_unless_locked(b"scenarios")?,
+        format_cells: locked_unless_cleared(b"formatCells")?,
+        format_columns: locked_unless_cleared(b"formatColumns")?,
+        format_rows: locked_unless_cleared(b"formatRows")?,
+        insert_columns: locked_unless_cleared(b"insertColumns")?,
+        insert_rows: locked_unless_cleared(b"insertRows")?,
+        insert_hyperlinks: locked_unless_cleared(b"insertHyperlinks")?,
+        delete_columns: locked_unless_cleared(b"deleteColumns")?,
+        delete_rows: locked_unless_cleared(b"deleteRows")?,
+        sort: locked_unless_cleared(b"sort")?,
+        auto_filter: locked_unless_cleared(b"autoFilter")?,
+        pivot_tables: locked_unless_cleared(b"pivotTables")?,
+    };
+    let password = match (attr(b"hashValue")?, attr(b"password")?) {
+        (Some(hash_value), _) => Some(SheetPasswordHash::Hashed {
+            algorithm_name: attr(b"algorithmName")?.unwrap_or_else(|| "SHA-512".to_owned()),
+            hash_value,
+            salt_value: attr(b"saltValue")?.unwrap_or_default(),
+            spin_count: attr(b"spinCount")?
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(0),
+        }),
+        (None, Some(legacy)) => Some(SheetPasswordHash::Legacy { legacy }),
+        (None, None) => None,
+    };
+    Ok(SheetProtectionInfo {
+        protected: is_true(&attr(b"sheet")?),
+        has_password: password.is_some(),
+        allow,
+        password,
+    })
 }

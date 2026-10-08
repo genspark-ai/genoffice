@@ -8,9 +8,10 @@
  * do.) Recalc requests we issue ourselves either carry `forceCalculation`
  * (Calculate Now) or set `allowNext` (Calculate Sheet).
  */
-import { CustomCommandExecutionError, ICommandService } from '@univerjs/core'
+import { ICommandService } from '@univerjs/core'
 
 import type { UniverRuntime } from './univer-state'
+import { vetoUniverCommand } from './very-hidden-sheets'
 
 const START_MUTATION = 'formula.mutation.set-formula-calculation-start'
 
@@ -33,20 +34,7 @@ function stateFor(runtime: UniverRuntime): CalcState {
     if (command.id !== START_MUTATION || !state.manual || state.allowNext) return
     const params = command.params as { forceCalculation?: boolean } | undefined
     if (params?.forceCalculation) return
-    // Univer cleans its command-execution stack only on the success path,
-    // so a veto would strand the entry pushed for this dispatch — and every
-    // later mutation findLast-scans that stack. The hook gets the very
-    // object that was pushed; remove it by identity here, synchronously,
-    // before the throw, so the stack never holds a stranded entry for even
-    // a tick. Nested dispatches are unaffected: their cleanups also remove
-    // by identity (toDisposable(() => remove(stack, item))). (Private field
-    // by necessity; if an upgrade renames it the veto still works and only
-    // this cleanup degrades.)
-    const stack = (commandService as unknown as { _commandExecutionStack?: unknown[] })
-      ._commandExecutionStack
-    const index = stack?.indexOf(command) ?? -1
-    if (index >= 0) stack?.splice(index, 1)
-    throw new CustomCommandExecutionError('manual calculation mode')
+    vetoUniverCommand(commandService, command, 'manual calculation mode')
   })
   return state
 }
