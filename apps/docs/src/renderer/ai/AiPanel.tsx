@@ -377,6 +377,7 @@ export function AiPanel({
   // on mount and before each send so a freshly starred file is answerable
   const kbFilesRef = useRef<KbFileInfo[]>([])
   const refreshKbFiles = (): void => {
+    if (typeof window.desktop?.kbList !== 'function') return
     void window.desktop
       .kbList()
       .then((files) => {
@@ -790,12 +791,18 @@ export function AiPanel({
       systemSuffix: aiLangDirective,
       skill: composeSkills('docs+files', '', [
         // the reader's starred files; empty while the user stars nothing —
-        // buildContext then returns '' and the skill stays out of the way
-        createKnowledgeBaseSkill({
-          listFiles: () => kbFilesRef.current,
-          search: (query, limit) => window.desktop.kbSearch({ q: query, limit }),
-          read: (path, offset) => window.desktop.kbRead(path, offset),
-        }),
+        // buildContext then returns '' and the skill stays out of the way.
+        // Mounted only when the bridge carries the kb channel at all: a test
+        // mock or an older preload must not grow tools that cannot execute.
+        ...(typeof window.desktop?.kbList === 'function'
+          ? [
+              createKnowledgeBaseSkill({
+                listFiles: () => kbFilesRef.current,
+                search: (query, limit) => window.desktop.kbSearch({ q: query, limit }),
+                read: (path, offset) => window.desktop.kbRead(path, offset),
+              }),
+            ]
+          : []),
         createDocsSkill(
           () => editorRef.current,
           numIds,

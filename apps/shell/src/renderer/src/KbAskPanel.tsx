@@ -57,7 +57,13 @@ export function KbAskPanel({
   }
 
   useEffect(() => {
-    // one corpus snapshot per mount; sends refresh it again (see ask())
+    // one corpus snapshot per mount; sends refresh it again (see ask()).
+    // A bridge without the kb channel (defensive: the shell always exposes
+    // it) leaves the corpus empty, which keeps the panel on its guidance.
+    if (typeof window.aiOffice?.kbList !== 'function') {
+      setCorpusCount(0)
+      return
+    }
     void window.aiOffice
       .kbList()
       .then((files) => {
