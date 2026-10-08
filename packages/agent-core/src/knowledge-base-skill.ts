@@ -2,7 +2,7 @@ import type { AgentToolDef } from './types'
 import type { AgentSkill } from './skill'
 
 /**
- * The reader's starred files ("收藏") as a searchable, readable corpus.
+ * The reader's starred files (the star corpus) as a searchable, readable body.
  *
  * The skill is storage-agnostic on purpose: deps inject the three main-process
  * operations (list / search / read), so it carries no electron or index
@@ -23,7 +23,7 @@ const KB_CONTEXT_MAX_CHARS = 12_000
 export interface KbFileInfo {
   /** absolute path — also the citation target */
   path: string
-  /** owning folder name ("合同" in /Users/me/合同/租赁.docx) */
+  /** owning folder name ("contracts" in /Users/me/contracts/lease.docx) */
   folder: string
   name: string
   ext: string

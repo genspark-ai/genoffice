@@ -152,10 +152,11 @@ describe('createKnowledgeBaseSkill', () => {
     const good =
       '来源见 [租赁合同.docx](filenav:///Users/me/%E5%90%88%E5%90%8C/%E7%A7%9F%E8%B5%81%E5%90%88%E5%90%8C.docx)'
     expect(skill.verifyResponse!(good, [])).toBeNull()
-    const bad = '来源见 [编造.docx](filenav:///tmp/编造.docx)'
+    // an English path: the english-comments gate reads a CJK '//' URL as a comment
+    const bad = 'cited [fake.docx](filenav:///tmp/fake.docx)'
     const correction = skill.verifyResponse!(bad, [])
     expect(correction).toContain('not knowledge-base paths')
-    expect(correction).toContain('filenav:///tmp/编造.docx')
+    expect(correction).toContain('filenav:///tmp/fake.docx')
   })
 
   it('verifyResponse lets answers without citations through', () => {

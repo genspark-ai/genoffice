@@ -1,4 +1,4 @@
-/// Knowledge-base channel: the reader's starred files ("收藏") as a corpus the
+/// Knowledge-base channel: the reader's starred files (the star corpus) as
 /// AI can search and read, so an answer can cite the folder and file it came
 /// from. Lives in the shell main process because that is the one place that
 /// already holds both halves — the starred list (readStarredFiles, docs-main)
@@ -31,7 +31,7 @@ const KB_SEARCH_POOL = 200
 export interface KbFile {
   /** absolute path — also the citation target (filenav:///abs/path) */
   path: string
-  /** owning folder name, e.g. "合同" from /Users/me/合同/租赁.docx */
+  /** owning folder name ("contracts" in /Users/me/contracts/lease.docx) */
   folder: string
   /** absolute folder path */
   folderPath: string
