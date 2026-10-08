@@ -131,6 +131,13 @@ const homeApi: HomeApi = {
   async starred(query) {
     return asRecentPage(await ipcRenderer.invoke(HOME_CHANNELS.starred, query))
   },
+  async starredGroups() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.starredGroups)
+    return Array.isArray(result) ? result.filter((g): g is string => typeof g === 'string') : []
+  },
+  async setStarredGroup(paths, group) {
+    await ipcRenderer.invoke(HOME_CHANNELS.setStarredGroup, paths, group)
+  },
   async statPaths(paths) {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.statPaths, paths)
     return Array.isArray(result) ? (result as RecentEntry[]) : []

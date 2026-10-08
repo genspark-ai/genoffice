@@ -56,7 +56,7 @@ export function capStatPaths(paths: readonly string[]): string[] {
 
 export function normalizeRecentQuery(
   raw: unknown,
-): Required<Omit<RecentQuery, 'ext'>> & { ext?: string } {
+): Required<Omit<RecentQuery, 'ext' | 'group'>> & { ext?: string } {
   const query = (raw ?? {}) as RecentQuery
   // offset/limit cross the preload boundary, so an IPC caller may send "10" rather
   // than 10; without coercion every page silently restarted at the first page.

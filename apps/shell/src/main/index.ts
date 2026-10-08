@@ -122,12 +122,15 @@ import {
   docsFileRenamed,
   readRecentFiles,
   readStarredFiles,
+  readStarredGroupMap,
+  readStarredGroups,
   recordRecentFile,
   removeRecentFiles,
   removeStarredFiles,
   replaceRecentFile,
   registerAiIpc,
   registerProjectIpc,
+  setStarredGroup,
   toggleStarredFile,
   registerDocsIpc,
   exportDocsHeadless,
@@ -3841,13 +3844,31 @@ function registerHomeIpc(): void {
   // Starred files sort by mtime, which requires stat-ing them all first; they are hand-picked and few, so this is fine
   ipcMain.handle(HOME_CHANNELS.starred, (_event, query: unknown): RecentPage => {
     const { offset, limit, ext } = normalizeRecentQuery(query)
-    const all = statEntries(readStarredFiles()).sort((a, b) => b.mtimeMs - a.mtimeMs)
+    // the Starred view's group pills scope the whole query (totals included)
+    const raw = (query && typeof query === 'object' ? query : {}) as { group?: unknown }
+    const group = typeof raw.group === 'string' && raw.group ? raw.group : undefined
+    const groupOf = readStarredGroupMap()
+    const scoped = group
+      ? readStarredFiles().filter((p) => groupOf.get(p) === group)
+      : readStarredFiles()
+    const all = statEntries(scoped)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .map((entry) => {
+        const g = groupOf.get(entry.path)
+        return g ? { ...entry, group: g } : entry
+      })
     const filtered = ext ? all.filter((entry) => matchesExtFamily(entry.ext, ext)) : all
     return {
       entries: limit === 0 ? [] : filtered.slice(offset, offset + limit),
       total: filtered.length,
       totalAll: all.length,
     }
+  })
+
+  ipcMain.handle(HOME_CHANNELS.starredGroups, (): string[] => readStarredGroups())
+
+  ipcMain.handle(HOME_CHANNELS.setStarredGroup, (_event, paths: unknown, group: unknown) => {
+    setStarredGroup(stringPaths(paths), typeof group === 'string' && group ? group : null)
   })
 
   ipcMain.handle(HOME_CHANNELS.statPaths, (_event, paths: unknown): RecentEntry[] =>
