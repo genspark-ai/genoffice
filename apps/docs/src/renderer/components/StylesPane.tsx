@@ -27,6 +27,7 @@ type Show = 'recommended' | 'all'
 
 const FORMAT_FIELDS = new Set<keyof StyleFormValues>([
   'font',
+  'eastAsiaFont',
   'sizePt',
   'bold',
   'italic',
@@ -66,6 +67,7 @@ function selectionFormValues(
     type,
     basedOn: type === 'paragraph' ? (paraStyle?.styleId ?? null) : null,
     font: fs.fontLatin ?? '',
+    eastAsiaFont: fs.fontEastAsia ?? '',
     sizePt: fs.fontSizePt,
     bold: fs.bold || !!(cd.bold ?? pd.bold),
     italic: fs.italic || !!(cd.italic ?? pd.italic),
