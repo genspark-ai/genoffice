@@ -3145,6 +3145,8 @@ div.tiptap-mathematics-render {
 .image-host-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
 /* ---- withheld spans: text kept in the document, hidden from the model ----
    An underline rather than a fill, because every other decoration in this
    editor is either a fill (search hits) or a style (bold, highlight) and the

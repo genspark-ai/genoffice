@@ -145,7 +145,6 @@ export default function App() {
   const sourceMode = isSourceMode(textMode)
   // bumped on every CodeMirror doc change so the ribbon's undo/redo state re-renders
   const [sourceRev, setSourceRev] = useState(0)
-  const redactMenuRef = useRef<RedactMenuHandle | null>(null)
 
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('idle')

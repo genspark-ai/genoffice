@@ -591,14 +591,16 @@ export function Ribbon({
             >
               <IconSpellcheck size={ICON} />
             </IconBtn>
-            <IconBtn
-              title={t('redactEnable')}
-              active={redactEnabled}
-              disabled={disabled}
-              onClick={() => onToggleRedact(!redactEnabled)}
-            >
-              <IconEyeOff size={ICON} />
-            </IconBtn>
+            {!sourceMode && (
+              <IconBtn
+                title={t('redactEnable')}
+                active={redactEnabled}
+                disabled={disabled}
+                onClick={() => onToggleRedact(!redactEnabled)}
+              >
+                <IconEyeOff size={ICON} />
+              </IconBtn>
+            )}
           </div>
         </div>
       </div>

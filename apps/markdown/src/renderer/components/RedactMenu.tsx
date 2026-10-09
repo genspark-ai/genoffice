@@ -7,20 +7,8 @@ import { RedactDialog } from '../editor/RedactDialog'
 interface Props {
   editor: Editor | null
   enabled: boolean
-  /**
-   * Apply a label on the source-text surface instead of in the editor. The
-   * plain-text formats carry their mark in the file rather than in a
-   * ProseMirror mark, so the same dialog has to hand off somewhere else.
-   */
 }
 
-/**
- * Lets the source-text surface open the same dialog.
- *
- * The source editor is not the ProseMirror editor, so the right-click listener
- * below never fires for it. Rather than duplicating the dialog and its locale
- * strings in a second component, the app calls this.
- */
 /**
  * The editor's own right-click menu, carrying the one command that needs a
  * decision rather than a keystroke: withholding a selection from the model.
@@ -61,8 +49,9 @@ export function RedactMenu({ editor, enabled }: Props) {
     return () => dom.removeEventListener('contextmenu', onContextMenu)
   }, [editor, enabled])
 
-  // The source surface has no menu of its own to route through: its right-click
-  // replaces the browser menu, so the dialog is the one confirmation step.
+  // The menu is dismissed the way a context menu anywhere else is: Escape, or a
+  // click anywhere outside it. The listeners land on the next tick so the very
+  // click that opened the menu does not immediately close it.
   useEffect(() => {
     if (!point) return
     const close = () => setPoint(null)

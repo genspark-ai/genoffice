@@ -55,11 +55,6 @@ interface Props {
   onChange: (text: string) => void
   className?: string
   spellcheck: boolean
-  /**
-   * A right-click over a non-empty selection. The block editor's own menu
-   * cannot serve here: it hangs off `editor.view.dom`, and this surface is
-   * mounted *instead* of that editor, so the listener would never fire.
-   */
 }
 
 /** Colors come from the app's own tokens so the source view follows the light/dark theme */

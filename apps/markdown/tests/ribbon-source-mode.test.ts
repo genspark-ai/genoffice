@@ -143,7 +143,8 @@ describe('Ribbon source mode', () => {
   it('shows the formatting controls again for a markdown file', () => {
     const { styleDropdown, iconButtons } = counts(renderRibbon(false))
     expect(styleDropdown).toBe(1)
-    // the same 16: the source-view toggle is present here and absent above
-    expect(iconButtons).toBe(16)
+    // 17 here too: the source-view toggle is present here and absent above,
+    // the withhold toggle and the image-host button are present in both
+    expect(iconButtons).toBe(17)
   })
 })
