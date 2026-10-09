@@ -151,6 +151,8 @@ import {
 } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import { cfRuleUnsaveableReason, iconSetSaveable } from '@genoffice/xlsx-gateway/gateway/xlsx-cf'
+import type { SheetRedactionState } from '@genoffice/xlsx-gateway/gateway/xlsx-redaction'
+import { statesOnScreen } from './redact-marks-shift'
 import { installLazyFindBridge } from './lazy-find'
 import { fitsFullLoad, opensInFormulaMode, workbookCellCounts } from './load-budget'
 import { installReplaceAutoSearch } from './replace-autosearch'
@@ -261,6 +263,20 @@ import {
   readSheetFeatures as readSheetFeaturesImpl,
   type WorkbookReadContext,
 } from './ai/workbook-readers'
+import { NO_REDACTIONS, sanitizeLabel, type RedactionIndex } from './ai/redact'
+import { redactionSessionFor } from './ai/redact-load'
+import { RedactDialog } from './components/RedactDialog'
+import { installRedactMenu, type SelectionRequest } from './redact-menu'
+import { buildMark, restoreCellFill } from './redact-tint'
+import {
+  addMark,
+  clearMark,
+  hasPendingRedactionChange,
+  indexFor,
+  redactIntentFor,
+  type MarkKey,
+  type RedactDialogState,
+} from './redact-actions'
 import {
   getSourceRange as getSourceRangeImpl,
   handleCreatePivot as handleCreatePivotImpl,
@@ -375,7 +391,12 @@ import {
   type StatusBarFunc,
   type StatusBarStatsFilter,
 } from './status-bar-stats'
-import { applyUniverLocale, insertRowsBelowLocale, numberAsTextAlertLocale } from './univer-locales'
+import {
+  applyUniverLocale,
+  hideFromAiLocale,
+  insertRowsBelowLocale,
+  numberAsTextAlertLocale,
+} from './univer-locales'
 import { installRuleDetail } from './univer-rule-detail'
 import { installActiveCellDataValidationChrome } from './data-validation-dropdown'
 import { installInvalidDataMarkerSuppression } from './data-validation-marker'
@@ -538,6 +559,44 @@ export function App({
   const adapterRef = useRef(new InMemoryWorkbookAdapter(initialSnapshot))
   const univerRef = useRef<UniverRuntime | null>(null)
   const lazyWorkbookRef = useRef<LazyWorkbookState | null>(null)
+  /**
+   * The cells the reader withheld from the model, read once per open (see the
+   * `readWorkbookRedactions` call in openLazyWorkbook). A ref rather than
+   * state: the readers ask about it per cell and nothing renders from it, and
+   * the marks the user adds later replace it through the same ref.
+   */
+  const redactionIndexRef = useRef<RedactionIndex | null>(null)
+  /**
+   * The same marks, in the shape the save takes (keyed by sheet name, as the
+   * package part is). Held here so a save can carry them even when nothing
+   * else in the journal is dirty — a workbook whose only pending change is a
+   * newly withheld cell is still a workbook that must be saved.
+   */
+  const redactionStatesRef = useRef<readonly SheetRedactionState[]>([])
+  /**
+   * What the part held when this workbook was opened. A mark added or cleared
+   * since then is a pending change the edit journal never sees, and the save
+   * ticks below decide whether there is anything to write from that journal
+   * alone — so without this a workbook whose only edit is a withheld cell
+   * would never autosave, and closing the tab would drop the mark silently.
+   */
+  const loadedRedactionStatesRef = useRef<readonly SheetRedactionState[]>([])
+  /**
+   * The pending "what does this stand for?" question, or null when no dialog
+   * is open. State, not a ref: the dialog renders from it.
+   */
+  const [redactDialog, setRedactDialog] = useState<RedactDialogState | null>(null)
+  /**
+   * True when the reader's marks differ from what the file was opened with.
+   *
+   * Compares the two shapes as text: the marks are a handful of rectangles, and
+   * a stable serialization is both simpler and stricter than a field-by-field
+   * walk — a mark that moved by one row is a change, and both sides serialize
+   * in the same order, so the comparison is exact.
+   */
+  function redactionsPendingSave(): boolean {
+    return hasPendingRedactionChange(redactionStatesRef.current, loadedRedactionStatesRef.current)
+  }
   /// Univer undo/redo stack occupancy (subscribed at mount): drives the QAT button gray states
   const [univerHist, setUniverHist] = useState({ canUndo: false, canRedo: false })
   /// Set once Univer boots; mounts the app's Excel-style Find & Replace panel.
@@ -633,6 +692,7 @@ export function App({
           saveInFlight: saveGateRef.current.busy,
           hasWorkbook: true,
           journalEmpty: journalSize(state.editJournal) === 0,
+          redactionsPendingSave: redactionsPendingSave(),
           editingCell: editingCellRef.current,
           needsSaveAsNotUnsavedNew: Boolean(state.file.needsSaveAs) && !state.file.unsavedNew,
           isCsv: state.file.csvPath !== undefined,
@@ -668,6 +728,7 @@ export function App({
           saveInFlight: saveGateRef.current.busy,
           hasWorkbook: true,
           journalEmpty: journalSize(state.editJournal) === 0,
+          redactionsPendingSave: redactionsPendingSave(),
           editingCell: editingCellRef.current,
           needsSaveAsNotUnsavedNew: Boolean(state.file.needsSaveAs) && !state.file.unsavedNew,
           isCsv: state.file.csvPath !== undefined,
@@ -987,6 +1048,7 @@ export function App({
       openLazyWorkbook,
       setPendingEdits,
       readCells: (addresses, sheetId) => readCellsImpl(readContext(), addresses, sheetId),
+      redactionStates: () => redactionStatesRef.current,
       stashViewRestore: (view) => {
         viewRestoreRef.current = view
       },
@@ -1647,11 +1709,207 @@ export function App({
    * preview-then-apply path handlePlan/handleLazyPlan already exercise. */
   /** App-scope refs bundle for the extracted workbook readers (ai/workbook-readers.ts). */
   function readContext(): WorkbookReadContext {
-    return { univerRef, lazyWorkbookRef, adapterRef }
+    return { univerRef, lazyWorkbookRef, adapterRef, redactionIndexRef }
+  }
+
+  /**
+   * The index the grid, the tint and the model all read.
+   *
+   * `redactionStatesRef` holds the marks in file coordinates — where the
+   * reader put them, and where a save writes them. The grid is somewhere else
+   * after this session's row and column edits, so the index is derived by
+   * replaying the journal's structural ops rather than by moving the marks and
+   * trying to move them back on undo. The journal is already how a streamed
+   * viewport survives the same shift, and it cancels an insert/remove pair on
+   * undo, so a mark follows the grid for free and returns with ⌘Z.
+   */
+  function rebuildRedactionIndex(): void {
+    const journal = lazyWorkbookRef.current?.editJournal
+    if (!journal) return
+    const sheets = getActiveSheetInfo().sheets
+    const idByName = new Map(sheets.map((sheet) => [sheet.name, sheet.id]))
+    const onScreen = statesOnScreen(redactionStatesRef.current, (name) => {
+      const id = idByName.get(name)
+      return id === undefined ? [] : (journal.structuralOps.get(id) ?? [])
+    })
+    redactionIndexRef.current = indexFor(onScreen, sheets)
   }
 
   function getActiveSheetInfo(): ActiveSheetInfo {
     return getActiveSheetInfoImpl(readContext(), aiRunScopeRef.current)
+  }
+
+  /**
+   * Re-derive the index whenever the grid's structure changes.
+   *
+   * A row inserted above a mark leaves it covering whatever shifted down into
+   * its place, and the app looks right the whole time — the tint is drawn from
+   * the mark — so the leak only appears in the saved file, on the next open, on
+   * someone else's machine. The AI's own inserts are refused while a mark would
+   * move (`ai/redact-guard.ts`); a person inserting a row from the grid is the
+   * case no guard sees.
+   */
+  const watchStructuralEditsForMarks = (): void => {
+    const api = univerRef.current?.univerAPI
+    if (!api) return
+    api.onCommandExecuted((command: { id?: string }) => {
+      if (!command?.id || !STRUCTURAL_EDIT_COMMAND_PATTERN.test(command.id)) return
+      rebuildRedactionIndex()
+    })
+  }
+
+  /** Turn a grid right-click into either a dialog or an immediate clear. */
+  function onRedactSelection(request: SelectionRequest) {
+    const state = lazyWorkbookRef.current
+    if (!state) return
+    const workbook = univerRef.current?.univerAPI.getActiveWorkbook()
+    const sheetName = workbook?.getSheetBySheetId(request.sheetId)?.getSheetName()
+    const intent = redactIntentFor(request, redactionIndexRef.current ?? NO_REDACTIONS, (id) =>
+      workbook?.getSheetBySheetId(id)?.getSheetName(),
+    )
+    if (intent.kind === 'ignore') return
+    if (intent.kind === 'clear') {
+      // The tint was clicked on the grid, so what arrives is in screen
+      // coordinates; the store keeps file coordinates. Same translation the
+      // create path makes, so the two actually meet.
+      const clearOps = lazyWorkbookRef.current?.editJournal.structuralOps.get(request.sheetId) ?? []
+      const clearRow = screenToFile(clearOps, 'row', intent.mark.startRow)
+      const clearEndRow = screenToFile(clearOps, 'row', intent.mark.endRow)
+      const clearCol = screenToFile(clearOps, 'column', intent.mark.startColumn)
+      const clearEndCol = screenToFile(clearOps, 'column', intent.mark.endColumn)
+      // The same gesture that withheld it stops withholding it — one item, and
+      // no second string in a locale set that must not grow.
+      const marked =
+        clearRow === null || clearEndRow === null || clearCol === null || clearEndCol === null
+          ? undefined
+          : redactionStatesRef.current
+              .find((entry) => entry.sheetName === intent.sheetName)
+              ?.marks.find(
+                (mark) =>
+                  mark.startRow === clearRow &&
+                  mark.endRow === clearEndRow &&
+                  mark.startColumn === clearCol &&
+                  mark.endColumn === clearEndCol,
+              )
+      const next =
+        clearRow === null || clearEndRow === null || clearCol === null || clearEndCol === null
+          ? redactionStatesRef.current
+          : clearMark(redactionStatesRef.current, intent.sheetName, {
+              ...intent.mark,
+              startRow: clearRow,
+              endRow: clearEndRow,
+              startColumn: clearCol,
+              endColumn: clearEndCol,
+            })
+      redactionStatesRef.current = next
+      rebuildRedactionIndex()
+      // The tint is the only thing the mark ever did to the reader's own
+      // formatting, so clearing has to take it back off.
+      if (marked && workbook) {
+        try {
+          restoreCellFill(
+            univerRef.current!,
+            intent.sheetName,
+            workbook.getSheetBySheetId(request.sheetId)!.getRange(a1Of(intent.mark)) as never,
+            marked.previousFill,
+            workbook.getId(),
+          )
+        } catch {
+          // A cell the grid will not hand out (filtered out, never loaded) is
+          // not a reason to keep the mark; the mark is already gone.
+        }
+      }
+      return
+    }
+    // A single cell offers its own text as the label, so the common case is
+    // one word of typing; a range has no text and starts empty.
+    let seed = ''
+    if (request.isSingleCell) {
+      try {
+        seed =
+          (
+            workbook
+              ?.getSheetBySheetId(request.sheetId)
+              ?.getRange(`${columnLabel(request.startColumn)}${request.startRow + 1}`)
+              .getValue() as string | undefined
+          )?.slice(0, 24) ?? ''
+      } catch {
+        // An unreadable cell just means no seed offered.
+      }
+    }
+    setRedactDialog({ ...intent.dialog, seed })
+    if (sheetName === undefined) setRedactDialog(null)
+  }
+
+  /** Commit the label the reader typed. */
+  function onRedactConfirm(label: string) {
+    const pending = redactDialog
+    setRedactDialog(null)
+    if (!pending) return
+    const clean = sanitizeLabel(label)
+    if (!clean) return
+    const workbook = univerRef.current?.univerAPI.getActiveWorkbook()
+    const worksheet = workbook?.getSheetBySheetId(pending.sheetId)
+    // A mark is written into the package part, so it has to name the cell the
+    // FILE has, not the one the grid is showing: this session may have
+    // inserted rows above it that the file has never seen. `screenToFile`
+    // answers null for a row inserted this session — it has no file coordinate
+    // to write down — so the reader is told to save rather than handed a mark
+    // the save would later shift a second time.
+    const ops = lazyWorkbookRef.current?.editJournal.structuralOps.get(pending.sheetId) ?? []
+    const startRow = screenToFile(ops, 'row', pending.startRow)
+    const endRow = screenToFile(ops, 'row', pending.endRow)
+    const startColumn = screenToFile(ops, 'column', pending.startColumn)
+    const endColumn = screenToFile(ops, 'column', pending.endColumn)
+    if (startRow === null || endRow === null || startColumn === null || endColumn === null) {
+      showToast(t('redactNeedsSavedRow'), 'error')
+      return
+    }
+    const inFile = { startRow, endRow, startColumn, endColumn }
+    // buildMark reads the fill, paints the tint and returns both, so the mark
+    // cannot be assembled without the value that has to be restored later. The
+    // tint is drawn on the grid, so it takes the screen bounds.
+    let mark: MarkKey & { label: string; previousFill: string | null } = {
+      ...inFile,
+      label: clean,
+      previousFill: null,
+    }
+    try {
+      if (worksheet) {
+        mark = buildMark(worksheet, a1Of(pending), clean, {
+          startRow: pending.startRow,
+          endRow: pending.endRow,
+          startColumn: pending.startColumn,
+          endColumn: pending.endColumn,
+        })
+        // buildMark echoes the bounds it was handed; the stored copy is the
+        // file-coord one, the painted one is the screen one.
+        mark = { ...mark, ...inFile }
+      }
+    } catch {
+      // A range the grid will not hand out still gets its mark; it just goes
+      // unmarked on screen, which is the same state the reader is in anyway
+      // for a sheet that has not finished streaming.
+    }
+    const next = addMark(redactionStatesRef.current, pending.sheetName, mark)
+    redactionStatesRef.current = next
+    // Not `indexFor(next, …)`: the states are in file coordinates now, and the
+    // index the grid reads has to be the screen ones. The same replay the
+    // loaded marks go through covers this one.
+    rebuildRedactionIndex()
+  }
+
+  /** `A1:B2` for a mark's rectangle, for the range the tint is painted on. */
+  function a1Of(area: {
+    startRow: number
+    endRow: number
+    startColumn: number
+    endColumn: number
+  }): string {
+    return (
+      `${columnLabel(area.startColumn)}${area.startRow + 1}:` +
+      `${columnLabel(area.endColumn)}${area.endRow + 1}`
+    )
   }
 
   function sheetsSkillDeps(): SheetsSkillDeps {
@@ -1686,6 +1944,7 @@ export function App({
         traceWorkbookPrecedents(readContext(), sheetId, address),
       traceDependents: (sheetId, address) =>
         traceWorkbookDependents(readContext(), sheetId, address),
+      redactions: () => redactionIndexRef.current ?? NO_REDACTIONS,
       proposeOperations,
       createDocument: (request) => createAiDocument({ univerRef, lazyWorkbookRef }, request),
     }
@@ -1730,7 +1989,10 @@ export function App({
           numberAsTextAlertLocale(UniverPresetSheetsCoreEnUS),
           // last wins per namespace: feed the alert-patched pack through so
           // both sheets-ui patches survive the shallow merge
-          insertRowsBelowLocale(numberAsTextAlertLocale(UniverPresetSheetsCoreEnUS)),
+          hideFromAiLocale(
+            insertRowsBelowLocale(numberAsTextAlertLocale(UniverPresetSheetsCoreEnUS)),
+            'en',
+          ),
         ),
       },
       presets: [
@@ -1942,6 +2204,10 @@ export function App({
       },
     })
     const ctrlDragFillDisposable = installCtrlDragFill(runtime)
+    // The grid's right-click item that withholds the selected cells from the
+    // AI. Contributed to Univer's own menu rather than replacing it, so every
+    // built-in item keeps working.
+    const redactMenuDisposable = installRedactMenu(runtime, onRedactSelection)
     // A context-menu submenu re-hovered within Univer's close delay stays
     // invisible; re-trigger its positioning (genoffice#337).
     const contextSubmenuReopenDisposable = installContextSubmenuReopenFix()
@@ -3247,6 +3513,7 @@ export function App({
       arrowCollapseDisposable.dispose()
       sheetProtectionDisposable.dispose()
       ctrlDragFillDisposable.dispose()
+      redactMenuDisposable.dispose()
       contextSubmenuReopenDisposable.dispose()
       multiRowAutofitDisposable.dispose()
       cellContextMenuDisposable.dispose()
@@ -4258,6 +4525,43 @@ export function App({
     }
     lazyWorkbookRef.current = state
     void loadRowOutlines(state, lazyWorkbookRef)
+    // The cells the reader withheld, read once per open: every read tool asks
+    // about cells, so a lazy read would either cost an archive read per call or
+    // leave a window in which the model sees the real values. The next workbook
+    // starts from nothing until its own read lands, and a part that exists but
+    // cannot be read withholds everything rather than nothing — see
+    // ai/redact-load.ts.
+    redactionIndexRef.current = null
+    redactionStatesRef.current = []
+    // Reset to the same empty value the current marks hold, so the previous
+    // workbook's pending marks cannot make this one look unsaved on arrival.
+    loadedRedactionStatesRef.current = []
+    void window.desktopApi
+      .readWorkbookRedactions({ sessionId: selected.sessionId })
+      .then((result) => {
+        // A superseded session's answer must not install its marks.
+        if (lazyWorkbookRef.current !== state) return
+        const session = redactionSessionFor(result, getActiveSheetInfo().sheets, t)
+        redactionIndexRef.current = session.index
+        redactionStatesRef.current = result.status === 'ok' ? result.states : []
+        watchStructuralEditsForMarks()
+        // What the file holds is the baseline a later edit is measured against.
+        loadedRedactionStatesRef.current = redactionStatesRef.current
+        const redactionMessage = session.error ?? session.notice
+        if (redactionMessage !== null) setMessage(redactionMessage)
+      })
+      .catch((error: unknown) => {
+        if (lazyWorkbookRef.current !== state) return
+        // The read itself failed, so the marks are unknown — the same state a
+        // damaged part produces, and the same answer: withhold, and say so.
+        const reason = error instanceof Error ? error.message : String(error)
+        redactionIndexRef.current = redactionSessionFor(
+          { status: 'unreadable', error: reason },
+          [],
+          t,
+        ).index
+        setMessage(reason)
+      })
     // Pivot definitions load eagerly so refresh (a synchronous apply step)
     // never waits on IPC. Best effort: a failed parse just disables refresh.
     for (const sheet of selected.sheets) {
@@ -5104,6 +5408,14 @@ export function App({
       )}
       <ThreadedCommentsPane getRuntime={getRuntime} />
       <ThreadHoverCard hover={threadHover} />
+      {redactDialog && (
+        <RedactDialog
+          seed={redactDialog.seed}
+          rangeLabel={redactDialog.rangeLabel}
+          onSubmit={onRedactConfirm}
+          onCancel={() => setRedactDialog(null)}
+        />
+      )}
       {findReplaceService && (
         <FindReplacePanel
           service={findReplaceService}

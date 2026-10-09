@@ -1,6 +1,20 @@
 import type { zh } from './zh'
 
 export const id = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Sembunyikan pilihan dari AI',
+  redactDialogDesc:
+    'Konten yang dipilih tetap ada di dokumen dan berkas; model hanya melihat placeholder di bawah. Beri nama agar model tahu apa yang diwakili.',
+  redactDialogScope:
+    'Penyembunyian ini hanya berlaku untuk AI di aplikasi ini. CLI, alat MCP, dan ekspor tanpa antarmuka membaca berkas secara langsung, sehingga kata-kata ini tetap terlihat olehnya.',
+  redactDialogPlaceholder: 'Nama placeholder, mis. telepon pelanggan',
+  redactCancel: 'Batal',
+  redactInsert: 'Sembunyikan',
+  redactEnable: 'Klik kanan pada teks yang dipilih untuk menyembunyikannya dari model.',
+  redactNeedsSavedRow: 'Baris ini belum ada di berkas. Simpan dulu, lalu sembunyikan selnya.',
+  redactRecoveredFromNames:
+    'Aplikasi lain menulis ulang berkas ini dan membuang catatan apa yang disembunyikan. Sel yang disembunyikan dipulihkan dari nama-nama di dalam buku kerja; menyimpan akan memulihkan catatan lengkapnya.',
+
   appMergeWorkbooks: 'Gabungkan Buku Kerja',
   appMergeWorkbooksTip: 'Tambahkan sheet dari file Excel lain ke buku kerja ini',
   appMergeWorkbooksPicking: 'Pilih file yang akan digabungkan…',
