@@ -16,6 +16,13 @@ import { shiftCellArea, type StructuralOp } from './xlsx-structure'
 ///   written, and the label is the one string the model is allowed to see, so
 ///   mangling it is not an option.
 ///
+/// The defined-name *name* really is that narrow, but the formula behind it is
+/// free text, so `applyRedactionNameMirror` below writes the label there. That
+/// mirror is not the record — the part is, and stays authoritative whenever it
+/// is readable — it is what survives a reader that rebuilds the package and
+/// drops what it does not model. See its own comment for what it does and does
+/// not promise.
+///
 /// A part of our own is inert (Excel ignores a relationship type it does not
 /// know), keeps the label byte-exact, has no uniqueness constraint, and — the
 /// decisive point — is never parsed by the cell pipeline. The worksheet writer
@@ -28,6 +35,7 @@ import { shiftCellArea, type StructuralOp } from './xlsx-structure'
 /// `readArchiveEntryText` reads any entry back, so no engine API was needed.
 
 import { nextFreeRelationshipId } from './xlsx-sheets'
+import { appendDefinedNames, escapeXmlText, unescapeXml } from './xlsx-defined-names'
 
 export class RedactionError extends Error {}
 /** One withheld rectangle, in zero-based screen coordinates. */
@@ -180,32 +188,27 @@ export function serializeRedactionPart(states: readonly SheetRedactionState[]): 
   // Marks are sorted so that re-saving an unchanged workbook produces an
   // identical part: a byte-different part would show up as a touched entry on
   // every save and make "did anything change?" unanswerable.
-  const sheets = [...states]
-    .filter((state) => state.marks.length > 0)
-    .sort((left, right) =>
-      left.sheetName < right.sheetName ? -1 : left.sheetName > right.sheetName ? 1 : 0,
-    )
-    .map((state) => ({
-      name: state.sheetName,
-      marks: [...state.marks]
-        .sort(
-          (left, right) =>
-            left.startRow - right.startRow ||
-            left.startColumn - right.startColumn ||
-            left.endRow - right.endRow ||
-            left.endColumn - right.endColumn,
-        )
-        .map((mark) => ({
-          startRow: mark.startRow,
-          endRow: mark.endRow,
-          startColumn: mark.startColumn,
-          endColumn: mark.endColumn,
-          label: mark.label,
-          // omitted rather than written as null: a mark that had no fill to
-          // restore must not make every other mark's bytes differ
-          ...('previousFill' in mark ? { previousFill: mark.previousFill ?? null } : {}),
-        })),
-    }))
+  const sheets = statesInWriteOrder(states).map((state) => ({
+    name: state.sheetName,
+    marks: [...state.marks]
+      .sort(
+        (left, right) =>
+          left.startRow - right.startRow ||
+          left.startColumn - right.startColumn ||
+          left.endRow - right.endRow ||
+          left.endColumn - right.endColumn,
+      )
+      .map((mark) => ({
+        startRow: mark.startRow,
+        endRow: mark.endRow,
+        startColumn: mark.startColumn,
+        endColumn: mark.endColumn,
+        label: mark.label,
+        // omitted rather than written as null: a mark that had no fill to
+        // restore must not make every other mark's bytes differ
+        ...('previousFill' in mark ? { previousFill: mark.previousFill ?? null } : {}),
+      })),
+  }))
   return `${JSON.stringify({ version: PART_VERSION, sheets }, null, 2)}\n`
 }
 
@@ -340,4 +343,242 @@ export async function applyRedactionPart(
     pkg.write(CONTENT_TYPES_PATH, contentTypes.replace('</Types>', `${override}</Types>`))
     touchedEntries.add(CONTENT_TYPES_PATH)
   }
+}
+
+/// The mirror: the same marks, written into `<definedNames>` as well.
+///
+/// ## Why a second copy
+///
+/// The part survives Excel and GenOffice. It does not survive everything. A
+/// reader that rebuilds the package from its own model discards parts it does
+/// not model, along with their relationships and content-type overrides, and
+/// LibreOffice does exactly that: `soffice --convert-to xlsx` over a workbook
+/// with marks leaves none of the three behind.
+///
+/// A defined name is the one carrier every spreadsheet program has to keep
+/// working, because names are how print areas, data validation sources, and
+/// navigation are expressed. So the marks go there too: when the part is
+/// readable it wins and these are ignored, and when it is gone the marks are
+/// rebuilt from them.
+///
+/// ## What that buys, and what it costs
+///
+/// It buys the coordinates, which are what withhold a cell. It does not buy
+/// the sheet *name*: the sheet is recorded by position in workbook order, so a
+/// workbook reordered outside GenOffice can point a mark at the wrong table.
+/// That is the trade, and the direction it fails in is the safe one — a mark
+/// that lands on the wrong table withholds something the reader never hid,
+/// which they can undo, where a mark that is not recorded at all hands the
+/// model the values they chose to withhold.
+///
+/// Two properties keep the mirror out of the reader's way. The names are
+/// hidden, so they never appear in the Name Manager or the name box, and so
+/// `applyDefinedNamesState` leaves them alone (it preserves hidden entries
+/// verbatim). They are workbook-scoped rather than sheet-scoped, so deleting a
+/// sheet cannot renumber every `localSheetId` behind it.
+export const REDACTION_MIRROR_PREFIX = '_gxRedaction_'
+const MIRROR_VERSION = 1
+/**
+ * Excel caps a defined name's value at 255 characters, and a name over the
+ * limit is not a warning — the file is damaged. A label long enough to reach
+ * it is dropped by `fitLabel`, never by skipping the entry.
+ */
+const MIRROR_FORMULA_LIMIT = 255
+const MIRROR_TRUNCATION_MARK = '…'
+
+/** One mirrored mark. `sheet` is a position in workbook sheet order, not a name. */
+interface MirrorPayload {
+  readonly v: number
+  readonly sheet: number
+  readonly from: readonly [number, number]
+  readonly to: readonly [number, number]
+  readonly label: string
+}
+
+/**
+ * `"…"` — a formula string literal — is the one thing a defined name can hold
+ * that every spreadsheet program parses without complaint, and its text is not
+ * subject to the name grammar, which is what the label needed.
+ *
+ * Inside a formula string literal a quote is written doubled, so JSON's own
+ * quotes are doubled on the way out and folded back on the way in. JSON never
+ * emits two quotes in a row, so that folding is unambiguous.
+ */
+function mirrorFormula(payload: MirrorPayload): string {
+  return `"${JSON.stringify(payload).replaceAll('"', '""')}"`
+}
+
+function unmirrorFormula(body: string): string {
+  const text = body.trim()
+  return text.length >= 2 && text.startsWith('"') && text.endsWith('"')
+    ? text.slice(1, -1).replaceAll('""', '"')
+    : text
+}
+
+/**
+ * Trim a label until the entry fits Excel's 255-character cap.
+ *
+ * The entry is never dropped over a long label: the coordinates are what
+ * withhold the cell, and an unrecorded mark is the leak this file exists to
+ * prevent. The label only tells the model *what* was withheld, so it is the
+ * part that gives way, and it says so with a trailing ellipsis rather than
+ * passing itself off as the whole string.
+ */
+function labelFitter(payload: Omit<MirrorPayload, 'label'>): (label: string) => string {
+  const overhead = Array.from(mirrorFormula({ ...payload, label: '' })).length
+  const room = MIRROR_FORMULA_LIMIT - overhead
+  return (label) => {
+    const characters = Array.from(label)
+    if (characters.length <= room) return label
+    const kept = Math.max(0, room - 1)
+    return characters.slice(0, kept).join('') + MIRROR_TRUNCATION_MARK
+  }
+}
+
+/** The same ordering `serializeRedactionPart` uses, so the two agree mark for mark. */
+function statesInWriteOrder(states: readonly SheetRedactionState[]): SheetRedactionState[] {
+  return [...states]
+    .filter((state) => state.marks.length > 0)
+    .sort((left, right) =>
+      left.sheetName < right.sheetName ? -1 : left.sheetName > right.sheetName ? 1 : 0,
+    )
+}
+
+/**
+ * Replace every mirrored entry in `workbookXml` with one per mark in `states`.
+ *
+ * Rewriting the whole set rather than adding to it is what makes clearing the
+ * last mark work: there is nothing left behind describing a cell the reader
+ * un-hid, in the part or in here. Entries for a sheet that is not in
+ * `sheetOrder` are dropped — that sheet is gone from the file, which is the
+ * one case where its marks should not be mirrored.
+ */
+export function applyRedactionNameMirror(
+  workbookXml: string,
+  states: readonly SheetRedactionState[],
+  sheetOrder: readonly string[],
+): string {
+  const stripped = workbookXml.replace(MIRROR_ELEMENT, '')
+  const entries: string[] = []
+  for (const state of statesInWriteOrder(states)) {
+    const sheet = sheetOrder.indexOf(state.sheetName)
+    if (sheet < 0) continue
+    for (const mark of state.marks) {
+      const payload = {
+        v: MIRROR_VERSION,
+        sheet,
+        from: [mark.startRow, mark.startColumn],
+        to: [mark.endRow, mark.endColumn],
+      } as const
+      const formula = mirrorFormula({ ...payload, label: labelFitter(payload)(mark.label) })
+      entries.push(
+        `<definedName name="${REDACTION_MIRROR_PREFIX}${entries.length + 1}" hidden="1">` +
+          `${escapeXmlText(formula)}</definedName>`,
+      )
+    }
+  }
+  if (entries.length === 0) return stripped
+  return appendDefinedNames(stripped, entries.join(''))
+}
+
+const MIRROR_ELEMENT = new RegExp(
+  `<definedName\\b[^>]*\\bname="${REDACTION_MIRROR_PREFIX}\\d+"[^>]*>` +
+    `(?:[\\s\\S]*?</definedName>|)`,
+  'g',
+)
+
+/**
+ * Rebuild the marks a lost part recorded, from the mirrored defined names.
+ *
+ * Returns an empty list when the mirror is absent — that is a workbook that
+ * never withheld anything, and the common case. Anything present but not
+ * understood throws, for the reason `parseRedactionPart` throws: an unreadable
+ * record of what was withheld must never be read as "nothing was withheld".
+ */
+export function parseRedactionNameMirror(
+  workbookXml: string,
+  sheetOrder: readonly string[],
+): SheetRedactionState[] {
+  const bySheet = new Map<string, RedactionMark[]>()
+  for (const match of workbookXml.matchAll(MIRROR_ELEMENT)) {
+    const element = match[0]
+    const name = /\bname="([^"]*)"/.exec(element)?.[1] ?? '(unnamed)'
+    const body = /<definedName\b[^>]*>([\s\S]*?)<\/definedName>/.exec(element)?.[1] ?? ''
+    let payload: unknown
+    try {
+      payload = JSON.parse(unmirrorFormula(unescapeXml(body)))
+    } catch (err) {
+      throw new RedactionError(
+        `Defined name "${name}" does not hold a redaction mirror this version can read — ` +
+          `refusing to open the workbook as if nothing were withheld. (${
+            err instanceof Error ? err.message : String(err)
+          })`,
+      )
+    }
+    const mark = mirrorMarkOf(name, payload, sheetOrder)
+    const sheetName = mark[0]
+    const marks = bySheet.get(sheetName)
+    if (marks) marks.push(mark[1])
+    else bySheet.set(sheetName, [mark[1]])
+  }
+  return [...bySheet].map(([sheetName, marks]) => ({ sheetName, marks }))
+}
+
+/** `[sheetName, mark]` — the sheet comes from the payload's position, validated. */
+function mirrorMarkOf(
+  name: string,
+  payload: unknown,
+  sheetOrder: readonly string[],
+): [string, RedactionMark] {
+  const where = `Defined name "${name}"`
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new RedactionError(`${where} does not hold a redaction mirror.`)
+  }
+  const record = payload as Record<string, unknown>
+  if (record.v !== MIRROR_VERSION) {
+    throw new RedactionError(
+      `${where} holds mirror version ${JSON.stringify(record.v)}, but this version of ` +
+        `GenOffice only understands ${MIRROR_VERSION}. Refusing to open the workbook.`,
+    )
+  }
+  if (!isNonNegativeInteger(record.sheet)) {
+    throw new RedactionError(`${where} has no sheet position.`)
+  }
+  const sheetName = sheetOrder[record.sheet]
+  if (sheetName === undefined) {
+    throw new RedactionError(
+      `${where} names sheet position ${record.sheet}, but the workbook has ` +
+        `${sheetOrder.length} sheet(s) — the mirror and the file disagree about their shape.`,
+    )
+  }
+  const from = mirrorCell(record.from, `${where} "from"`)
+  const to = mirrorCell(record.to, `${where} "to"`)
+  if (to[0] < from[0] || to[1] < from[1]) {
+    throw new RedactionError(`${where} ends before it starts.`)
+  }
+  if (typeof record.label !== 'string' || record.label === '') {
+    throw new RedactionError(`${where} has no label. The label is what the model reads.`)
+  }
+  return [
+    sheetName,
+    {
+      startRow: from[0],
+      startColumn: from[1],
+      endRow: to[0],
+      endColumn: to[1],
+      label: record.label,
+    },
+  ]
+}
+
+function mirrorCell(value: unknown, where: string): [number, number] {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    !isNonNegativeInteger(value[0]) ||
+    !isNonNegativeInteger(value[1])
+  ) {
+    throw new RedactionError(`${where} is not a cell corner.`)
+  }
+  return [value[0], value[1]]
 }

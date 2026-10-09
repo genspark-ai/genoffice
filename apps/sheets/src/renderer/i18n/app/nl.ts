@@ -13,6 +13,8 @@ export const nl = {
   redactEnable: 'Rechtsklik op een selectie om die voor het model te verbergen.',
   redactNeedsSavedRow:
     'Deze rij staat nog niet in het bestand. Sla eerst op en verberg daarna de cel.',
+  redactRecoveredFromNames:
+    'Een andere app heeft dit bestand herschreven en het overzicht van wat verborgen is weggegooid. De verborgen cellen zijn teruggevonden in de namen van de werkmap; bij opslaan wordt het volledige overzicht teruggeschreven.',
 
   appMergeWorkbooks: 'Werkmappen samenvoegen',
   appMergeWorkbooksTip: 'Bladen uit andere Excel-bestanden aan deze werkmap toevoegen',

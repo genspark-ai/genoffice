@@ -13,6 +13,8 @@ export const ms = {
   redactEnable: 'Klik kanan pada teks yang dipilih untuk menyembunyikannya daripada model.',
   redactNeedsSavedRow:
     'Baris ini belum lagi dalam fail. Simpan dahulu, kemudian sembunyikan selnya.',
+  redactRecoveredFromNames:
+    'Aplikasi lain menulis semula fail ini dan membuang rekod apa yang disembunyikan. Sel yang disembunyikan itu dipulihkan daripada nama yang ada dalam buku kerja; menyimpan akan memulihkan rekod penuh.',
 
   appMergeWorkbooks: 'Gabung Buku Kerja',
   appMergeWorkbooksTip: 'Tambah helaian daripada fail Excel lain ke buku kerja ini',

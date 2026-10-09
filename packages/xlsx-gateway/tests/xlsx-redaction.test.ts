@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  REDACTION_MIRROR_PREFIX,
   REDACTION_PART_PATH,
   RedactionError,
+  applyRedactionNameMirror,
   applyRedactionPart,
+  parseRedactionNameMirror,
   parseRedactionPart,
   rekeyRedactionStates,
   serializeRedactionPart,
+  type RedactionMark,
   type RedactionPackage,
   type SheetRedactionState,
 } from '../src/gateway/xlsx-redaction'
+import { shiftDefinedNames } from '../src/gateway/xlsx-structure'
 
 const MARK = { startRow: 1, endRow: 3, startColumn: 2, endColumn: 2, label: 'client phone' }
 
@@ -337,5 +342,205 @@ describe('writing the part into the package', () => {
     return applyRedactionPart(pkg, pkg.touched, STATES).then(() => {
       expect(parseRedactionPart(pkg.files.get(REDACTION_PART_PATH) ?? '')).toEqual(STATES)
     })
+  })
+})
+
+const WORKBOOK_XML =
+  '<workbook xmlns:r="urn:r"><sheets>' +
+  '<sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Q3" sheetId="2" r:id="rId2"/>' +
+  '</sheets></workbook>'
+const SHEET_ORDER = ['Data', 'Q3']
+const DATA_STATES: SheetRedactionState[] = [
+  {
+    sheetName: 'Data',
+    marks: [
+      { startRow: 1, endRow: 3, startColumn: 2, endColumn: 2, label: 'Client Phone' },
+      { startRow: 7, endRow: 7, startColumn: 0, endColumn: 4, label: 'Payroll' },
+    ],
+  },
+]
+
+/// What a reader that rebuilds the package leaves behind: `xl/workbook.xml`
+/// and nothing else the save added. Dropping the part, its relationship, and
+/// its content-type override is the whole failure this mirror exists for.
+const AFTER_THE_PART_IS_DROPPED = (workbookXml: string): string => workbookXml
+
+/// The marks a mirror yields, failing with a readable message rather than an
+/// "undefined" three assertions later.
+function mirrorMarks(xml: string, sheetOrder: readonly string[] = SHEET_ORDER): RedactionMark[] {
+  const recovered = parseRedactionNameMirror(xml, sheetOrder).flatMap((state) => state.marks)
+  if (recovered.length === 0) throw new Error('the mirror produced no mark')
+  return recovered
+}
+
+function mirrorMark(xml: string, sheetOrder: readonly string[] = SHEET_ORDER): RedactionMark {
+  const [mark] = mirrorMarks(xml, sheetOrder)
+  if (mark === undefined) throw new Error('the mirror produced no mark')
+  return mark
+}
+
+describe('the defined-name mirror', () => {
+  it('rebuilds every mark, the label byte-exact', () => {
+    // "Client Phone" is the case a defined-name *name* cannot express — Excel's
+    // name grammar allows no space. The label rides in the formula instead.
+    const written = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    expect(parseRedactionNameMirror(written, SHEET_ORDER)).toEqual(DATA_STATES)
+  })
+
+  it('survives a reader that dropped the part — the LibreOffice case', () => {
+    // Save writes both copies. `soffice --convert-to xlsx` rebuilds the package
+    // and keeps the second, so the marks are still there on the next open.
+    const saved = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    expect(AFTER_THE_PART_IS_DROPPED(saved)).toContain(REDACTION_MIRROR_PREFIX)
+    expect(parseRedactionNameMirror(AFTER_THE_PART_IS_DROPPED(saved), SHEET_ORDER)).toEqual(
+      DATA_STATES,
+    )
+  })
+
+  it('round-trips a label with quotes, an ampersand and non-Latin text', () => {
+    // A formula string literal doubles its quotes and XML escapes five of
+    // them, so a label like this exercises three escaping layers at once.
+    const label = '雇主 "Acme & Co." 的电话 +86-13800138000'
+    const states: SheetRedactionState[] = [{ sheetName: 'Q3', marks: [{ ...MARK, label }] }]
+    const written = applyRedactionNameMirror(WORKBOOK_XML, states, SHEET_ORDER)
+    expect(mirrorMark(written, SHEET_ORDER).label).toBe(label)
+  })
+
+  it('records the sheet by position, so a rename cannot orphan a mark', () => {
+    // The accepted cost of the mirror: it names the sheet by its place in
+    // workbook order. Renaming that sheet leaves the mark exactly where it was.
+    const written = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    expect(mirrorMarks(written, ['Data renamed', 'Q3'])).toHaveLength(2)
+  })
+
+  it('writes hidden, workbook-scoped names', () => {
+    // Hidden keeps them out of the Name Manager and out of
+    // applyDefinedNamesState's rewrite; workbook-scoped keeps a deleted sheet
+    // from renumbering every localSheetId behind it.
+    const written = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    expect(written).toContain('hidden="1"')
+    expect(written).not.toContain('localSheetId')
+    expect([...written.matchAll(/name="(_gxRedaction_\d+)"/g)].map((m) => m[1])).toEqual([
+      `${REDACTION_MIRROR_PREFIX}1`,
+      `${REDACTION_MIRROR_PREFIX}2`,
+    ])
+  })
+
+  it('leaves a workbook with nothing withheld untouched', () => {
+    expect(
+      applyRedactionNameMirror(WORKBOOK_XML, [{ sheetName: 'Data', marks: [] }], SHEET_ORDER),
+    ).toBe(WORKBOOK_XML)
+  })
+
+  it("leaves the reader's own defined names alone", () => {
+    const withNames = WORKBOOK_XML.replace(
+      '</sheets>',
+      '</sheets><definedNames><definedName name="Total">Data!$C$1</definedName></definedNames>',
+    )
+    const written = applyRedactionNameMirror(withNames, DATA_STATES, SHEET_ORDER)
+    expect(written).toContain('<definedName name="Total">Data!$C$1</definedName>')
+    // ...and clearing the marks must take only ours, never theirs.
+    const cleared = applyRedactionNameMirror(
+      written,
+      [{ sheetName: 'Data', marks: [] }],
+      SHEET_ORDER,
+    )
+    expect(cleared).toContain('<definedName name="Total">Data!$C$1</definedName>')
+    expect(cleared).not.toContain(REDACTION_MIRROR_PREFIX)
+  })
+
+  it('clearing the last mark leaves nothing behind', () => {
+    // The mirror of the part's "clearing has to undo what setting did": a
+    // stale entry here would bring the span back after the reader un-hid it.
+    const written = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    expect(applyRedactionNameMirror(written, [], SHEET_ORDER)).not.toContain(
+      REDACTION_MIRROR_PREFIX,
+    )
+  })
+
+  it('re-saving an unchanged workbook produces identical bytes', () => {
+    // Otherwise every save would show the workbook as touched and "did
+    // anything change?" would stop being answerable.
+    const once = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    expect(applyRedactionNameMirror(once, DATA_STATES, SHEET_ORDER)).toBe(once)
+  })
+
+  it('keeps a mark whose label is too long for one entry, and says it was cut', () => {
+    // Excel rejects a defined name over 255 characters, so the entry cannot
+    // hold the whole label. Dropping the entry instead would drop the mark,
+    // and the mark is what withholds the cell — so the label gives way, with
+    // an ellipsis so nothing passes itself off as the whole string.
+    const label = 'x'.repeat(400)
+    const states: SheetRedactionState[] = [{ sheetName: 'Data', marks: [{ ...MARK, label }] }]
+    const written = applyRedactionNameMirror(WORKBOOK_XML, states, SHEET_ORDER)
+    const formula = /<definedName\b[^>]*>[^<]*<\/definedName>/.exec(written)?.[0] ?? ''
+    expect(Array.from(formula)).not.toHaveLength(0)
+    const mark = mirrorMark(written, SHEET_ORDER)
+    expect(mark).toMatchObject({
+      startRow: MARK.startRow,
+      startColumn: MARK.startColumn,
+      endRow: MARK.endRow,
+      endColumn: MARK.endColumn,
+    })
+    expect(mark.label.endsWith('…')).toBe(true)
+    expect(mark.label.length).toBeLessThan(label.length)
+  })
+
+  it('drops marks for a sheet the file no longer has', () => {
+    const written = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, ['Q3'])
+    expect(parseRedactionNameMirror(written, ['Q3'])).toEqual([])
+  })
+})
+
+describe('reading the mirror', () => {
+  const mirrored = (label = 'Client Phone') =>
+    applyRedactionNameMirror(
+      WORKBOOK_XML,
+      [{ sheetName: 'Data', marks: [{ ...MARK, label }] }],
+      SHEET_ORDER,
+    )
+
+  it('reads nothing as nothing withheld', () => {
+    expect(parseRedactionNameMirror(WORKBOOK_XML, SHEET_ORDER)).toEqual([])
+  })
+
+  const refused: readonly (readonly [string, string])[] = [
+    [
+      'an entry that is not the mirror at all',
+      applyRedactionNameMirror(WORKBOOK_XML, [], SHEET_ORDER).replace(
+        '</sheets>',
+        '</sheets><definedNames><definedName name="_gxRedaction_1" hidden="1">"nonsense"</definedName></definedNames>',
+      ),
+    ],
+    ['a future mirror version', mirrored().replace('{""v"":1', '{""v"":2')],
+    [
+      'a sheet position the workbook does not have',
+      applyRedactionNameMirror(
+        WORKBOOK_XML,
+        [{ sheetName: 'Data', marks: [MARK] }],
+        SHEET_ORDER,
+      ).replace('""sheet"":0', '""sheet"":9'),
+    ],
+    ['a rectangle that ends before it starts', mirrored().replace('""to"":[3,2]', '""to"":[0,0]')],
+    ['a mark with no label', mirrored().replace('""label"":""Client Phone""}', '""label"":""""}')],
+  ]
+  for (const [what, xml] of refused) {
+    it(`refuses ${what} rather than read it as nothing withheld`, () => {
+      expect(() => parseRedactionNameMirror(xml, SHEET_ORDER)).toThrow(RedactionError)
+    })
+  }
+})
+
+describe('the mirror against the defined-name rewriter', () => {
+  it('is left byte-identical by a structural edit', () => {
+    // Every save that shifts rows rewrites all definedName bodies so the
+    // reader's own names follow. The mirror is written through that pass, and
+    // it has to survive it: a mangled payload is indistinguishable from "this
+    // workbook withholds nothing" to whoever reads it next.
+    const written = applyRedactionNameMirror(WORKBOOK_XML, DATA_STATES, SHEET_ORDER)
+    const shifted = shiftDefinedNames(written, 'Data', [
+      { kind: 'insert-rows', index: 0, count: 2 },
+    ])
+    expect(shifted).toBe(written)
   })
 })

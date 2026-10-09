@@ -4541,13 +4541,14 @@ export function App({
       .then((result) => {
         // A superseded session's answer must not install its marks.
         if (lazyWorkbookRef.current !== state) return
-        const session = redactionSessionFor(result, getActiveSheetInfo().sheets)
+        const session = redactionSessionFor(result, getActiveSheetInfo().sheets, t)
         redactionIndexRef.current = session.index
         redactionStatesRef.current = result.status === 'ok' ? result.states : []
         watchStructuralEditsForMarks()
         // What the file holds is the baseline a later edit is measured against.
         loadedRedactionStatesRef.current = redactionStatesRef.current
-        if (session.error !== null) setMessage(session.error)
+        const redactionMessage = session.error ?? session.notice
+        if (redactionMessage !== null) setMessage(redactionMessage)
       })
       .catch((error: unknown) => {
         if (lazyWorkbookRef.current !== state) return
@@ -4557,6 +4558,7 @@ export function App({
         redactionIndexRef.current = redactionSessionFor(
           { status: 'unreadable', error: reason },
           [],
+          t,
         ).index
         setMessage(reason)
       })

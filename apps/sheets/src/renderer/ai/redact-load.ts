@@ -27,6 +27,7 @@ import {
   type SheetRefLike,
 } from './redact'
 import type { WorkbookRedactionsResult } from '../../shared/desktop-api'
+import type { TFunc } from '../i18n/locale'
 
 /** The label shown for a cell whose mark could not be read. */
 export const UNKNOWN_REDACTION_LABEL = 'private'
@@ -51,6 +52,14 @@ export interface RedactionSession {
   readonly index: RedactionIndex
   /** the reason to show the user, or null when the part was read or absent */
   readonly error: string | null
+  /**
+   * Something the user should know but that does not withhold anything, or
+   * null when nothing happened. The one case today: the marks came from the
+   * defined-name mirror because the package part is gone, which means the file
+   * has been through a program that rebuilds the package. Saving here puts the
+   * part back, so the reader is told rather than left guessing why.
+   */
+  readonly notice: string | null
 }
 
 /**
@@ -59,14 +68,22 @@ export interface RedactionSession {
  * The whole batch is checked before it is used, so a refusal never leaves a
  * half-applied index behind: a session gets either its real marks or nothing at
  * all to reveal.
+ *
+ * `t` is the app's translate function: the notice is product text, so it cannot
+ * be built here from an English literal.
  */
 export function redactionSessionFor(
   result: WorkbookRedactionsResult,
   sheets: readonly SheetRefLike[],
+  t: TFunc,
 ): RedactionSession {
   if (result.status === 'unreadable') {
-    return { index: WITHHELD_UNKNOWN, error: result.error }
+    return { index: WITHHELD_UNKNOWN, error: result.error, notice: null }
   }
-  if (result.status === 'absent') return { index: NO_REDACTIONS, error: null }
-  return { index: buildRedactionIndex(result.states, sheets), error: null }
+  if (result.status === 'absent') return { index: NO_REDACTIONS, error: null, notice: null }
+  return {
+    index: buildRedactionIndex(result.states, sheets),
+    error: null,
+    notice: result.source === 'mirror' ? t('redactRecoveredFromNames') : null,
+  }
 }

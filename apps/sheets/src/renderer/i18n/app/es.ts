@@ -13,6 +13,8 @@ export const es = {
   redactEnable: 'Clic derecho en una selección para ocultarla al modelo.',
   redactNeedsSavedRow:
     'Esta fila todavía no está en el archivo. Guarda primero y luego oculta la celda.',
+  redactRecoveredFromNames:
+    'Otra aplicación reescribió este archivo y descartó el registro de lo que está oculto. Las celdas ocultas se recuperaron de los nombres del libro; al guardar se restaura el registro completo.',
 
   appMergeWorkbooks: 'Combinar libros',
   appMergeWorkbooksTip: 'Añadir las hojas de otros archivos de Excel a este libro',

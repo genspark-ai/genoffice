@@ -97,6 +97,7 @@ import { applyTabColor } from './xlsx-tab-color'
 import { applyThemeState, type WorkbookThemeState } from './xlsx-theme'
 import { applySheetNotes, type SheetNote } from './xlsx-notes'
 import {
+  applyRedactionNameMirror,
   applyRedactionPart,
   rekeyRedactionStates,
   type SheetRedactionState,
@@ -1486,6 +1487,18 @@ export async function planCellEditsToXlsx(
   // Excel trusts cached formula values on open, so formulas that depend on an
   // edited cell would show stale results without a forced recalculation.
   workbookXml = ensureFullCalcOnLoad(workbookXml)
+
+  // The defined-name mirror goes in last, on the final XML: it records each
+  // sheet by its position in workbook order, so it has to be written against
+  // the sheet list this save actually produced, not the one it started from.
+  // (The part above is the record; this is only what survives a reader that
+  // rebuilds the package and drops the part — see applyRedactionNameMirror.)
+  workbookXml = applyRedactionNameMirror(
+    workbookXml,
+    rekeyed,
+    parseSheetElements(workbookXml).map((sheet) => sheet.name),
+  )
+
   if (workbookXml !== originalWorkbookXml) {
     pkg.write(workbookPath, workbookXml)
     touchedEntries.add(workbookPath)

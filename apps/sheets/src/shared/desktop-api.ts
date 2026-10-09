@@ -2372,7 +2372,16 @@ export const workbookRedactionsRequestSchema = z
  */
 export const workbookRedactionsResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('absent') }).strict(),
-  z.object({ status: z.literal('ok'), states: redactionStatesSchema }).strict(),
+  z
+    .object({
+      status: z.literal('ok'),
+      states: redactionStatesSchema,
+      /// Which copy answered — the package part, or the defined-name mirror that
+      /// stands in when a reader dropped the part. Same cells either way; the
+      /// difference is whether the workbook is intact.
+      source: z.enum(['part', 'mirror']),
+    })
+    .strict(),
   z.object({ status: z.literal('unreadable'), error: z.string().min(1).max(4_000) }).strict(),
 ])
 

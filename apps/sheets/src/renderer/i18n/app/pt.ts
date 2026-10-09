@@ -13,6 +13,8 @@ export const pt = {
   redactEnable: 'Clique com o botão direito numa seleção para ocultá-la do modelo.',
   redactNeedsSavedRow:
     'Esta linha ainda não está no ficheiro. Guarde primeiro e depois oculte a célula.',
+  redactRecoveredFromNames:
+    'Outra aplicação reescreveu este ficheiro e descartou o registo do que está oculto. As células ocultas foram recuperadas a partir dos nomes na pasta de trabalho; guardar restaura o registo completo.',
 
   appMergeWorkbooks: 'Mesclar pastas de trabalho',
   appMergeWorkbooksTip: 'Adicionar planilhas de outros arquivos do Excel a esta pasta de trabalho',

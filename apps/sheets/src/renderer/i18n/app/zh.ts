@@ -11,6 +11,8 @@ export const zh = {
   redactInsert: '隐藏',
   redactEnable: '选中文字后右键，即可对 AI 隐藏。',
   redactNeedsSavedRow: '这一行还没存进文件。请先存盘，再隐藏其中的单元格。',
+  redactRecoveredFromNames:
+    '这个文件被别的软件改写过，隐藏记录的部件被丢掉了。已从工作簿里的名称把隐藏单元格找回来；存一次盘就能恢复完整记录。',
 
   appMergeWorkbooks: '合并工作簿',
   appMergeWorkbooksTip: '将其他 Excel 文件的工作表并入当前工作簿',

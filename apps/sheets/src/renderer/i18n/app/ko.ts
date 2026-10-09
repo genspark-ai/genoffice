@@ -13,6 +13,8 @@ export const ko = {
   redactEnable: '선택한 부분을 오른쪽 클릭해 AI에서 숨깁니다.',
   redactNeedsSavedRow:
     '이 행은 아직 파일에 저장되지 않았습니다. 먼저 저장한 다음 셀을 숨겨 주세요.',
+  redactRecoveredFromNames:
+    '다른 앱이 이 파일을 다시 저장하며 숨겨진 내용을 기록한 부품이 사라졌습니다. 숨겨진 셀은 통합 문서의 이름에서 복구되었습니다. 저장하면 전체 기록이 다시 기록됩니다.',
 
   appMergeWorkbooks: '통합 문서 병합',
   appMergeWorkbooksTip: '다른 Excel 파일의 시트를 현재 통합 문서에 추가합니다',

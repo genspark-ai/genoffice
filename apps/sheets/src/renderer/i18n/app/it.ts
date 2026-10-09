@@ -12,6 +12,8 @@ export const it = {
   redactInsert: 'Nascondi',
   redactEnable: 'Clic destro su una selezione per nasconderla al modello.',
   redactNeedsSavedRow: 'Questa riga non è ancora nel file. Salva prima, poi nascondi la cella.',
+  redactRecoveredFromNames:
+    "Un'altra app ha riscritto questo file e ha perso il registro di ciò che è nascosto. Le celle nascoste sono state recuperate dai nomi del foglio di lavoro; salvando il file viene ripristinato il registro completo.",
 
   appMergeWorkbooks: 'Unisci cartelle di lavoro',
   appMergeWorkbooksTip: 'Aggiungi i fogli di altri file Excel a questa cartella di lavoro',

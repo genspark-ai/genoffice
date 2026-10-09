@@ -12,6 +12,8 @@ export const vi = {
   redactInsert: 'Ẩn',
   redactEnable: 'Nhấp chuột phải vào phần đã chọn để ẩn khỏi mô hình.',
   redactNeedsSavedRow: 'Hàng này chưa có trong tệp. Hãy lưu trước, rồi ẩn ô.',
+  redactRecoveredFromNames:
+    'Ứng dụng khác đã ghi lại tệp này và làm mất bản ghi về những ô đang ẩn. Các ô bị ẩn đã được khôi phục từ các tên trong sổ làm việc; lưu sẽ khôi phục lại toàn bộ bản ghi.',
 
   appMergeWorkbooks: 'Hợp nhất sổ làm việc',
   appMergeWorkbooksTip: 'Thêm các trang tính từ tệp Excel khác vào sổ làm việc này',

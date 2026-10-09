@@ -13,6 +13,8 @@ export const de = {
   redactEnable: 'Rechtsklick auf eine Auswahl, um sie vor dem Modell zu verbergen.',
   redactNeedsSavedRow:
     'Diese Zeile ist noch nicht in der Datei. Bitte zuerst speichern und dann die Zelle ausblenden.',
+  redactRecoveredFromNames:
+    'Eine andere App hat diese Datei neu geschrieben und den Eintrag darüber, was ausgeblendet ist, verworfen. Die ausgeblendeten Zellen wurden aus den Namen in der Arbeitsmappe wiederhergestellt; beim Speichern wird der vollständige Eintrag zurückgeschrieben.',
 
   appMergeWorkbooks: 'Arbeitsmappen zusammenführen',
   appMergeWorkbooksTip: 'Blätter aus anderen Excel-Dateien in diese Arbeitsmappe übernehmen',
