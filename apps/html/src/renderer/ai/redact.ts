@@ -261,10 +261,11 @@ export class RedactionProjection {
    * `drift[i]` is the cumulative length change once span `i`'s replacement is in
    * place, so the shift for any offset is the drift of the last span that ends
    * at or before it. An offset *inside* a span maps to that span's marker start:
-   * the withheld characters have no view position of their own.
+   * the withheld characters have no view position of their own. The span's
+   * exclusive end lands after the marker, so the exact span projects to it.
    */
   toViewOffset(rawOffset: number): number {
-    const at = this.spans.findIndex((s) => rawOffset >= s.rawFrom && rawOffset <= s.rawTo)
+    const at = this.spans.findIndex((s) => rawOffset >= s.rawFrom && rawOffset < s.rawTo)
     if (at >= 0) {
       return this.spans[at]!.rawFrom + (at === 0 ? 0 : this.drift[at - 1]!)
     }

@@ -476,6 +476,51 @@ export interface FormValueInput {
   checked?: boolean
 }
 
+export type FormFieldKind = 'text' | 'checkbox' | 'radio' | 'choice' | 'signature'
+
+/** A new AcroForm field authored in Form Design; becomes a real widget on save. PDF user space, y up. */
+export interface FormFieldInput {
+  name: string
+  kind: FormFieldKind
+  pageIndex: number
+  rect: [number, number, number, number]
+  required?: boolean
+  /** text only */
+  multiLine?: boolean
+  /** text only; 0 or absent = no limit */
+  maxLen?: number
+  /** text only; absent = auto size */
+  fontSize?: number
+  textAlignment?: 'left' | 'center' | 'right'
+  /** text: initial value; choice: selected option; checkbox/radio: initial state */
+  value?: string
+  checked?: boolean
+  /** radio only: this button's export value; buttons sharing a name form one group */
+  exportValue?: string
+  /** choice only */
+  options?: string[]
+  /** text only: Acrobat AFDate format (e.g. yyyy-mm-dd) installs date format/keystroke actions */
+  dateFormat?: string
+}
+
+/** Design-time change to an AcroForm widget already in the file, addressed by its pdf.js annotation id (object ref). */
+export interface FormWidgetEditInput {
+  widgetId: string
+  fieldName: string
+  rect?: [number, number, number, number]
+  required?: boolean
+  remove?: boolean
+}
+
+/** A blank page authored in the session. `pageIndex` is its virtual original index: the
+    document's page count plus its rank among the session's blank pages, so every other
+    pending edit can address it like a real page; the save appends it there first. */
+export interface BlankPageInput {
+  pageIndex: number
+  width: number
+  height: number
+}
+
 export interface SavePdfRequest {
   path: string
   /**
@@ -503,6 +548,12 @@ export interface SavePdfRequest {
   redactions?: RedactionInput[]
   /** Complete resulting set; omitted means preserve existing embedded metadata. */
   staticFormFills?: StaticFormFillRecord[]
+  /** Moves/flag changes/removals of existing widgets, applied before formFields */
+  formWidgetEdits?: FormWidgetEditInput[]
+  /** New AcroForm fields, created after formValues (names must not collide with existing fields) */
+  formFields?: FormFieldInput[]
+  /** Blank pages appended (in pageIndex order) before every page-addressed stage runs */
+  blankPages?: BlankPageInput[]
   /** Page rotation deltas (original page index → multiple of 90 clockwise) */
   rotations?: { pageIndex: number; delta: number }[]
   /** Pages to delete (original page indices) */

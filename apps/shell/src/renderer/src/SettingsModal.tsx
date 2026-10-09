@@ -15,7 +15,13 @@ import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   MAX_MAX_OUTPUT_TOKENS,
   MIN_MAX_OUTPUT_TOKENS,
+  activeCustomEndpoint,
   clampMaxOutputTokens,
+  customEndpointLabel,
+  newCustomEndpointId,
+  removeCustomEndpoint,
+  selectCustomEndpoint,
+  upsertCustomEndpoint,
 } from '@genoffice/ai-provider/browser'
 import type {
   AiMediaProviderId,
@@ -425,11 +431,49 @@ function AiModelPane({ t }: { t: TFunc }) {
     setSaved(false)
     setTestResult(null)
   }
+  const endpoint = meta?.needsBaseUrl ? activeCustomEndpoint(settings) : undefined
   const updateConfig = (patch: Partial<typeof config>) => {
-    setSettings({
-      ...settings,
-      providers: { ...settings.providers, [provider]: { ...config, ...patch } },
-    })
+    if (meta?.needsBaseUrl) {
+      // the slot mirrors the active endpoint, so the edit lands on the endpoint
+      const base = endpoint ?? {
+        id: newCustomEndpointId(),
+        name: '',
+        baseUrl: config.baseUrl ?? '',
+        apiKey: config.apiKey,
+        model: config.model,
+      }
+      const { cliPath: _cli, ...fields } = patch
+      setSettings(upsertCustomEndpoint(settings, { ...base, ...fields }, true))
+    } else {
+      setSettings({
+        ...settings,
+        providers: { ...settings.providers, [provider]: { ...config, ...patch } },
+      })
+    }
+    touch()
+  }
+  const addEndpoint = () => {
+    setSettings(
+      upsertCustomEndpoint(
+        settings,
+        { id: newCustomEndpointId(), name: '', baseUrl: '', apiKey: '', model: '' },
+        true,
+      ),
+    )
+    touch()
+  }
+  const renameEndpoint = (name: string) => {
+    if (!endpoint) return
+    setSettings(upsertCustomEndpoint(settings, { ...endpoint, name }))
+    touch()
+  }
+  const pickEndpoint = (id: string) => {
+    setSettings(selectCustomEndpoint(settings, id))
+    touch()
+  }
+  const deleteEndpoint = () => {
+    if (!endpoint) return
+    setSettings(removeCustomEndpoint(settings, endpoint.id))
     touch()
   }
   /** Commit the output-cap input: clamp what was typed and drop a no-op edit */
@@ -451,9 +495,15 @@ function AiModelPane({ t }: { t: TFunc }) {
     touch()
   }
   const save = () => {
+    let toSave = settings
+    if (endpoint && listedForRef.current && listedForRef.current === endpoint.baseUrl) {
+      const live = (meta?.models ?? []).filter((m) => m !== endpoint.model)
+      if (live.length > 0) toSave = upsertCustomEndpoint(settings, { ...endpoint, models: live })
+    }
     window.aiOffice
-      .setAiSettings?.(settings)
+      .setAiSettings?.(toSave)
       .then(() => {
+        setSettings(toSave)
         setDirty(false)
         setSaved(true)
       })
@@ -533,6 +583,58 @@ function AiModelPane({ t }: { t: TFunc }) {
       <div className="set-field-desc set-ai-note">
         {isGenspark ? t('setAiGensparkHint') : isCodex ? t('setAiCodexHint') : t('setAiByokNote')}
       </div>
+      {meta?.needsBaseUrl && (
+        <>
+          <div className="set-field">
+            <div className="set-field-text">
+              <div className="set-field-stack">
+                <label className="set-field-label">{t('setAiEndpoint')}</label>
+                <div className="set-field-desc">{t('setAiEndpointHint')}</div>
+              </div>
+            </div>
+            <div className="set-ai-endpoint-row">
+              {endpoint && (
+                <Dropdown
+                  className="set-dd"
+                  value={endpoint.id}
+                  ariaLabel={t('setAiEndpoint')}
+                  options={(settings.customEndpoints ?? []).map((e) => ({
+                    value: e.id,
+                    label: customEndpointLabel(e, meta.label),
+                  }))}
+                  onPick={pickEndpoint}
+                />
+              )}
+              <button className="set-btn" type="button" onClick={addEndpoint}>
+                {t('setAiEndpointAdd')}
+              </button>
+              {endpoint && (
+                <button className="set-btn" type="button" onClick={deleteEndpoint}>
+                  {t('setAiEndpointRemove')}
+                </button>
+              )}
+            </div>
+          </div>
+          {endpoint && (
+            <div className="set-field">
+              <div className="set-field-text">
+                <label className="set-field-label" htmlFor="set-ai-endpoint-name">
+                  {t('setAiEndpointName')}
+                </label>
+              </div>
+              <input
+                id="set-ai-endpoint-name"
+                className="set-input"
+                type="text"
+                value={endpoint.name}
+                placeholder={customEndpointLabel(endpoint, meta.label)}
+                spellCheck={false}
+                onChange={(e) => renameEndpoint(e.target.value)}
+              />
+            </div>
+          )}
+        </>
+      )}
       <div className="set-field">
         <div className="set-field-text">
           <label className="set-field-label">{t('setAiModelId')}</label>

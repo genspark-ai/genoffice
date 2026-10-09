@@ -16,13 +16,16 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from './registry'
-import type { AiProviderConfig, AiProviderId, AiSettings } from './types'
+import type { AiCustomEndpoint, AiProviderConfig, AiProviderId, AiSettings } from './types'
 
 const PROVIDER_IDS = Object.keys(AI_PROVIDER_ADAPTERS) as AiProviderId[]
 
 const MAX_API_KEY_LENGTH = 8192
 const MAX_MODEL_LENGTH = 256
 const MAX_CLI_PATH_LENGTH = 1024
+const MAX_ENDPOINT_ID_LENGTH = 64
+const MAX_ENDPOINT_NAME_LENGTH = 128
+const MAX_ENDPOINT_MODELS = 2000
 
 /**
  * `~` / `~/…` (`~\…` on Windows) expanded against the real home directory, so
@@ -116,6 +119,35 @@ function sanitizeMediaSettings(raw: Record<string, unknown>): AiSettings['media'
   return media
 }
 
+function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
+  if (!Array.isArray(raw)) return []
+  const out: AiCustomEndpoint[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue
+    const e = entry as Record<string, unknown>
+    const id = String(e.id ?? '')
+      .trim()
+      .slice(0, MAX_ENDPOINT_ID_LENGTH)
+    if (!id) continue
+    const config = sanitizeProviderConfig(e)
+    const models = Array.isArray(e.models)
+      ? e.models
+          .filter((m): m is string => typeof m === 'string')
+          .slice(0, MAX_ENDPOINT_MODELS)
+          .map((m) => m.slice(0, MAX_MODEL_LENGTH))
+      : undefined
+    out.push({
+      id,
+      name: String(e.name ?? '').slice(0, MAX_ENDPOINT_NAME_LENGTH),
+      baseUrl: config.baseUrl ?? '',
+      apiKey: config.apiKey,
+      model: config.model,
+      ...(models && models.length > 0 ? { models } : {}),
+    })
+  }
+  return out
+}
+
 /**
  * Returns a sanitized copy of `input`, or null when the payload is not even
  * the right shape (non-object, unknown provider). Invalid individual fields
@@ -140,6 +172,13 @@ export function sanitizeAiSettings(input: unknown): AiSettings | null {
     providers,
   }
   if (typeof raw.gskToolsEnabled === 'boolean') settings.gskToolsEnabled = raw.gskToolsEnabled
+  const customEndpoints = sanitizeCustomEndpoints(raw.customEndpoints)
+  if (customEndpoints.length > 0) {
+    settings.customEndpoints = customEndpoints
+    if (typeof raw.customEndpoint === 'string') {
+      settings.customEndpoint = raw.customEndpoint.slice(0, MAX_ENDPOINT_ID_LENGTH)
+    }
+  }
   if (
     typeof raw.maxOutputTokens === 'number' &&
     Number.isFinite(raw.maxOutputTokens) &&

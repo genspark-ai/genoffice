@@ -882,3 +882,14 @@
 .set-update-btn:hover {
   background: var(--hover);
 }
+
+.set-ai-endpoint-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.set-ai-endpoint-row .set-dd {
+  flex: 1;
+  min-width: 0;
+}

@@ -174,6 +174,21 @@ describe('legacy cell-margin hang of a float', () => {
   })
 })
 
+describe('page-anchored w:tblpY', () => {
+  it('opens the band above the shifted table to the anchor paragraph (shape on the engine shift)', () => {
+    const attrs = tableAttrs({
+      tblFloat: 'left',
+      tblFloatSource: 'left',
+      tblFloatHorzAnchor: 'margin',
+      tblFloatVertAnchor: 'page',
+      tblFloatYTwips: 2581,
+      widthPx: 586,
+    })
+    expect(attrs.style).toContain('margin-top:var(--tblp-dy,0px)')
+    expect(attrs.style).toContain('shape-outside:inset(var(--tblp-dy,0px) 0 0 0)')
+  })
+})
+
 describe('w:tblpXSpec="center" wider than the column', () => {
   const centred = {
     tblFloatSource: 'left',

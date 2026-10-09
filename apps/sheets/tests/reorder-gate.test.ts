@@ -17,7 +17,7 @@ function input(overrides: Partial<ReorderGateInput> = {}): ReorderGateInput {
     preloadComplete: true,
     preloadRunning: false,
     isAddedSheet: false,
-    cellCounts: { gridCells: 60_000, storedCells: 60_000 },
+    cellCounts: { gridCells: 60_000, storedCells: 60_000, valueCells: 60_000 },
     rangeCells: 60_000,
     rangeHasStreamedFormulas: () => false,
     ...overrides,
@@ -50,7 +50,11 @@ describe('reorderGate', () => {
       reorderGate(
         input({
           preloadComplete: false,
-          cellCounts: { gridCells: 0, storedCells: FULL_LOAD_MAX_CELLS + 1 },
+          cellCounts: {
+            gridCells: 0,
+            storedCells: FULL_LOAD_MAX_CELLS + 1,
+            valueCells: FULL_LOAD_MAX_CELLS + 1,
+          },
         }),
       ),
     ).toBe('workbookTooLarge')

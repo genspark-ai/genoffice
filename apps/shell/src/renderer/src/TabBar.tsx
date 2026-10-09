@@ -491,7 +491,18 @@ export function TabBar() {
                   Math.round(event.clientY),
                 )
               }}
+              onAuxClick={(event) => {
+                if (event.button !== 1 || !tab.closable) return
+                event.preventDefault()
+                void window.aiOfficeTabs.close(tab.id)
+              }}
               onMouseDown={(event) => {
+                // middle button: stop Chromium's autoscroll on the scrollable
+                // strip so the tab is still under the pointer at auxclick
+                if (event.button === 1) {
+                  event.preventDefault()
+                  return
+                }
                 // the strip captures the pointer for dragging, which retargets
                 // the derived dblclick to the strip; pointer events carry no
                 // click count either, so read it off the compat mousedown

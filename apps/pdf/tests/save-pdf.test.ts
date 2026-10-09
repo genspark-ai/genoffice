@@ -10,6 +10,7 @@ import {
   PDFDocument,
   PDFHexString,
   PDFName,
+  PDFString,
   PDFRawStream,
   PDFRef,
   decodePDFRawStream,
@@ -934,6 +935,235 @@ describe('applySaveRequest', () => {
 
     expect(out.getForm().getRadioGroup('user.color').getSelected()).toBe('blue')
     expect(out.getForm().getDropdown('user.country').getSelected()).toEqual(['CN'])
+  })
+
+  it('appends blank pages first so ordering, deletion and edits on them apply', async () => {
+    const bytes = await makePdf([
+      [300, 300],
+      [300, 300],
+    ])
+    const saved = await apply(
+      bytes,
+      request({
+        blankPages: [
+          { pageIndex: 2, width: 400, height: 200 },
+          { pageIndex: 3, width: 100, height: 100 },
+        ],
+        pageOrder: [2, 0, 1, 3],
+        deletedPages: [3],
+        formFields: [{ name: 'on_blank', kind: 'text', pageIndex: 2, rect: [10, 10, 110, 30] }],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    expect(out.getPageCount()).toBe(3)
+    const first = out.getPage(0)
+    expect([first.getWidth(), first.getHeight()]).toEqual([400, 200])
+    const widget = out.getForm().getTextField('on_blank').acroField.getWidgets()[0]!
+    expect(widget.P()).toBe(first.ref)
+  })
+
+  it('rejects a blank page whose index does not follow the document', async () => {
+    const bytes = await makePdf([[300, 300]])
+    await expect(
+      apply(bytes, request({ blankPages: [{ pageIndex: 5, width: 100, height: 100 }] })),
+    ).rejects.toThrow(/does not follow/)
+  })
+
+  it('creates authored text, checkbox and signature fields as real widgets', async () => {
+    const bytes = await makePdf([[300, 300]])
+    const saved = await apply(
+      bytes,
+      request({
+        formFields: [
+          {
+            name: 'full_name',
+            kind: 'text',
+            pageIndex: 0,
+            rect: [20, 200, 220, 222],
+            required: true,
+            maxLen: 40,
+            value: 'Bob',
+          },
+          {
+            name: 'agree',
+            kind: 'checkbox',
+            pageIndex: 0,
+            rect: [20, 150, 36, 166],
+            checked: true,
+          },
+          { name: 'sig', kind: 'signature', pageIndex: 0, rect: [20, 50, 170, 90], required: true },
+        ],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const form = out.getForm()
+    const name = form.getTextField('full_name')
+    expect(name.getText()).toBe('Bob')
+    expect(name.isRequired()).toBe(true)
+    expect(name.getMaxLength()).toBe(40)
+    expect(form.getCheckBox('agree').isChecked()).toBe(true)
+    expect(form.getField('sig').acroField.dict.get(PDFName.of('FT'))).toBe(PDFName.of('Sig'))
+
+    const loadingTask = getDocument({ data: saved.slice() })
+    try {
+      const annos = await (await (await loadingTask.promise).getPage(1)).getAnnotations()
+      const widgets = annos.filter((a) => a.subtype === 'Widget')
+      expect(widgets.map((a) => [a.fieldName, a.fieldType])).toEqual([
+        ['full_name', 'Tx'],
+        ['agree', 'Btn'],
+        ['sig', 'Sig'],
+      ])
+      expect(widgets[0]!.rect.map(Math.round)).toEqual([20, 200, 220, 222])
+      expect(widgets[2]!.required).toBe(true)
+    } finally {
+      await loadingTask.destroy()
+    }
+  })
+
+  it('creates radio groups, dropdowns and date fields', async () => {
+    const bytes = await makePdf([[300, 300]])
+    const saved = await apply(
+      bytes,
+      request({
+        formFields: [
+          {
+            name: 'color',
+            kind: 'radio',
+            pageIndex: 0,
+            rect: [20, 250, 34, 264],
+            exportValue: 'red',
+          },
+          {
+            name: 'color',
+            kind: 'radio',
+            pageIndex: 0,
+            rect: [60, 250, 74, 264],
+            exportValue: 'blue',
+            checked: true,
+          },
+          {
+            name: 'country',
+            kind: 'choice',
+            pageIndex: 0,
+            rect: [20, 200, 180, 222],
+            options: ['CN', 'US', ''],
+            value: 'US',
+          },
+          {
+            name: 'when',
+            kind: 'text',
+            pageIndex: 0,
+            rect: [20, 150, 130, 172],
+            dateFormat: 'dd/mm/yyyy',
+          },
+        ],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const form = out.getForm()
+    const radio = form.getRadioGroup('color')
+    expect(radio.getOptions()).toEqual(['red', 'blue'])
+    expect(radio.getSelected()).toBe('blue')
+    const dd = form.getDropdown('country')
+    expect(dd.getOptions()).toEqual(['CN', 'US'])
+    expect(dd.getSelected()).toEqual(['US'])
+    const when = form.getTextField('when')
+    const widget = when.acroField.getWidgets()[0]!
+    expect(when.acroField.dict.has(PDFName.of('AA'))).toBe(true)
+    const aa = widget.dict.lookup(PDFName.of('AA'), PDFDict)
+    const fmt = aa.lookup(PDFName.of('F'), PDFDict).lookup(PDFName.of('JS'), PDFString)
+    expect(fmt.decodeText()).toBe('AFDate_FormatEx("dd/mm/yyyy");')
+
+    // A non-radio field cannot reuse a radio group's name
+    await expect(
+      apply(
+        saved,
+        request({
+          formFields: [{ name: 'color', kind: 'text', pageIndex: 0, rect: [0, 0, 50, 20] }],
+        }),
+      ),
+    ).rejects.toThrow(/already exists/)
+  })
+
+  it('moves, re-flags and removes widgets already in the file', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    const form = doc.getForm()
+    form.createTextField('name').addToPage(page, { x: 10, y: 300, width: 100, height: 20 })
+    form.createCheckBox('agree').addToPage(page, { x: 10, y: 200, width: 14, height: 14 })
+    const multi = form.createTextField('twice')
+    multi.addToPage(page, { x: 10, y: 100, width: 50, height: 20 })
+    multi.addToPage(page, { x: 100, y: 100, width: 50, height: 20 })
+    const bytes = await doc.save({ useObjectStreams: false })
+
+    const ids = async (data: Uint8Array) => {
+      const task = getDocument({ data: data.slice() })
+      try {
+        const annos = await (await (await task.promise).getPage(1)).getAnnotations()
+        return annos
+          .filter((a) => a.subtype === 'Widget')
+          .map((a) => ({
+            id: a.id as string,
+            name: a.fieldName as string,
+            rect: a.rect as number[],
+          }))
+      } finally {
+        await task.destroy()
+      }
+    }
+    const before = await ids(bytes)
+    const nameW = before.find((w) => w.name === 'name')!
+    const agreeW = before.find((w) => w.name === 'agree')!
+    const twiceW = before.filter((w) => w.name === 'twice')
+
+    const saved = await apply(
+      bytes,
+      request({
+        formWidgetEdits: [
+          { widgetId: nameW.id, fieldName: 'name', rect: [20, 250, 220, 274], required: true },
+          { widgetId: agreeW.id, fieldName: 'agree', remove: true },
+          { widgetId: twiceW[0]!.id, fieldName: 'twice', remove: true },
+        ],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const outForm = out.getForm()
+    expect(outForm.getFieldMaybe('agree')).toBeUndefined()
+    expect(outForm.getTextField('name').isRequired()).toBe(true)
+    expect(outForm.getTextField('twice').acroField.getWidgets()).toHaveLength(1)
+    const after = await ids(saved)
+    expect(after.find((w) => w.name === 'name')!.rect.map(Math.round)).toEqual([20, 250, 220, 274])
+    expect(after.filter((w) => w.name === 'twice')).toHaveLength(1)
+    expect(after.some((w) => w.name === 'agree')).toBe(false)
+  })
+
+  it('keeps the authored rect on a rotated page and rejects duplicate names', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 400])
+    page.setRotation(degrees(90))
+    doc.getForm().createTextField('taken').addToPage(page, { x: 10, y: 10, width: 50, height: 20 })
+    const bytes = await doc.save({ useObjectStreams: false })
+
+    const saved = await apply(
+      bytes,
+      request({
+        formFields: [{ name: 'rotated', kind: 'text', pageIndex: 0, rect: [30, 100, 130, 124] }],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const widget = out.getForm().getTextField('rotated').acroField.getWidgets()[0]!
+    const r = widget.getRectangle()
+    expect([r.x, r.y, r.x + r.width, r.y + r.height].map(Math.round)).toEqual([30, 100, 130, 124])
+    expect(widget.getAppearanceCharacteristics()?.getRotation()).toBe(90)
+
+    await expect(
+      apply(
+        bytes,
+        request({
+          formFields: [{ name: 'taken', kind: 'checkbox', pageIndex: 0, rect: [0, 0, 10, 10] }],
+        }),
+      ),
+    ).rejects.toThrow(/already exists/)
   })
 
   it('falls back to NeedAppearances when form values cannot be WinAnsi-encoded', async () => {

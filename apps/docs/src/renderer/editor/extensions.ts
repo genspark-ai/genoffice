@@ -3446,6 +3446,10 @@ export const DocTable = Node.create({
         attrs['data-tblp-vanchor'] = String(vAnchor)
         if (vSpec) attrs['data-tblp-vspec'] = vSpec
         styles.push('margin-top:var(--tblp-dy,0px)')
+        // the band above the shifted table hosts the anchor paragraph's lines
+        // (Word lays body text from the page top around a page-anchored
+        // table); without the shape the float excludes its whole margin box
+        styles.push('shape-outside:inset(var(--tblp-dy,0px) 0 0 0)')
       }
       const top = pageRelV ? 0 : y + Math.max(0, px(distance.top))
       const bottom = Math.max(0, px(distance.bottom))

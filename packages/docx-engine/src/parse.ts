@@ -2697,6 +2697,7 @@ function extractTextboxes(
     if (!meta.anchored) return
     if (meta.behind) box.behind = true
     if (meta.noWrap) box.noWrap = true
+    if (meta.outsideCell) box.outsideCell = true
     if (meta.z !== undefined) box.z = meta.z
     // first-page page-anchored cover art: raw page coordinates, rendered
     // against the page box (doc-protected-pagepinned)
@@ -2724,6 +2725,7 @@ function extractTextboxes(
     if (meta.offsetXEmu !== undefined) {
       box.offsetXEmu = (box.offsetXEmu ?? 0) + meta.offsetXEmu
       if (relXAbsolute) box.pageRelX = true
+      if (meta.relH === 'page') box.pageRelXFrom = 'page'
     }
     // margin-aligned X (wp:align left/center/right) on a floating drawing (photo
     // rows): resolve against the margin box; in-flow wrapSquare boxes keep the

@@ -641,8 +641,9 @@ export default function App() {
     const src = textRef.current
     // one pin per element; several queued edits on the same element share it and list their ordinals
     const bySid = new Map<number, string[]>()
+    const proj = map && buildProjection(src, map)
     items.forEach((item, i) => {
-      const target = map && resolveQueueItem(buildProjection(src, map), map, item).target
+      const target = proj && resolveQueueItem(proj, map, item).target
       if (target) bySid.set(target.sid, [...(bySid.get(target.sid) ?? []), String(i + 1)])
     })
     const marks = [...bySid].map(([sid, ordinals]) => ({ sid, label: ordinals.join('·') }))
@@ -671,13 +672,10 @@ export default function App() {
         }
         case 'gx:markClick': {
           const map = getMap()
+          const proj = buildProjection(textRef.current, map)
           // a shared pin opens the most recent edit on that element; the others stay reachable from the queue card
           const item = editQueueRef.current
-            .filter(
-              (q) =>
-                resolveQueueItem(buildProjection(textRef.current, map), map, q).target?.sid ===
-                msg.sid,
-            )
+            .filter((q) => resolveQueueItem(proj, map, q).target?.sid === msg.sid)
             .at(-1)
           if (!item) return
           selectSid(item.sid, { reveal: true })

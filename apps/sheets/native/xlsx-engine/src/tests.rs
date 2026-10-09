@@ -322,6 +322,9 @@ fn rejects_oversized_ranges() {
         column_count: 100,
         source_xml_bytes: 1024,
         stored_cell_count: None,
+        value_cell_count: None,
+        value_row_count: None,
+        value_column_count: None,
         column_widths: Vec::new(),
         default_row_height: None,
         default_row_height_fixed: false,
@@ -492,6 +495,9 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         column_count: 1,
         source_xml_bytes: 1024,
         stored_cell_count: None,
+        value_cell_count: None,
+        value_row_count: None,
+        value_column_count: None,
         column_widths: Vec::new(),
         default_row_height: None,
         default_row_height_fixed: false,
@@ -994,7 +1000,37 @@ fn stored_cell_count_includes_style_only_cells() {
 </sheetData>
 </worksheet>"#,
     );
-    assert_eq!(metadata.sheets[0].stored_cell_count, Some(5));
+    let sheet = &metadata.sheets[0];
+    assert_eq!(sheet.stored_cell_count, Some(5));
+    assert_eq!(sheet.value_cell_count, Some(3));
+    assert_eq!(
+        (sheet.value_row_count, sheet.value_column_count),
+        (Some(2), Some(4))
+    );
+}
+
+/// Style-only blanks padding below the data and a stray formatted cell far
+/// away inflate the stored count and the box, but not the value extent.
+#[test]
+fn value_extent_ignores_style_only_cells() {
+    let metadata = open_single_sheet(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:C1048000"/>
+<sheetData>
+<row r="1"><c r="A1"><v>1</v></c><c r="B1" s="1"><v>2</v></c></row>
+<row r="2"><c r="A2" s="1"/><c r="B2" s="1"/><c r="C2" s="1"/></row>
+<row r="1048000"><c r="C1048000" s="1"/></row>
+</sheetData>
+</worksheet>"#,
+    );
+    let sheet = &metadata.sheets[0];
+    assert_eq!((sheet.row_count, sheet.column_count), (1_048_000, 3));
+    assert_eq!(sheet.stored_cell_count, Some(6));
+    assert_eq!(sheet.value_cell_count, Some(2));
+    assert_eq!(
+        (sheet.value_row_count, sheet.value_column_count),
+        (Some(1), Some(2))
+    );
 }
 
 /// A trusted (large) dimension still yields the real stored count — the
@@ -1016,6 +1052,11 @@ fn trusted_dimension_still_counts_stored_cells() {
     let sheet = &metadata.sheets[0];
     assert_eq!((sheet.row_count, sheet.column_count), (1_200, 10));
     assert_eq!(sheet.stored_cell_count, Some(240));
+    assert_eq!(sheet.value_cell_count, Some(120));
+    assert_eq!(
+        (sheet.value_row_count, sheet.value_column_count),
+        (Some(120), Some(1))
+    );
 }
 
 /// Counting on trusted dimensions is paid for by one workbook-wide budget:
@@ -1060,6 +1101,8 @@ fn stored_cell_budget_is_shared_across_sheets() {
     )
     .unwrap();
     assert_eq!(second.stored_cell_count, None);
+    assert_eq!(second.value_cell_count, None);
+    assert_eq!(second.value_extent, None);
     assert_eq!((second.row_count, second.column_count), (1_000, 26));
     assert_eq!(budget, 0);
     let third = read_sheet_dimensions(

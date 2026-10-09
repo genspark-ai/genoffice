@@ -2500,6 +2500,55 @@ th.cell-rev-del {
   margin: 0 auto;
 }
 
+/* Multiple Pages: the canvas stays one flow; the grid shows every page in a
+   slot of its own. Non-active slots are painted from canvas clones, the live
+   editor sits in the active slot behind a clip window (overflow: clip, so no
+   scrollIntoView can shift it) offset to that page's band of the flow. */
+.doc-zoom.multipage {
+  position: relative;
+}
+
+.doc-zoom.multipage .doc-live {
+  position: absolute;
+  overflow: clip;
+  background: var(--page-bg, var(--docs-paper));
+  box-shadow: var(--docs-page-shadow);
+}
+
+.doc-zoom.multipage .doc-live .doc-page {
+  box-shadow: none;
+}
+
+.mp-slot {
+  position: absolute;
+  overflow: clip;
+  user-select: none;
+  cursor: text;
+  background: var(--page-bg, var(--docs-paper));
+  box-shadow: var(--docs-page-shadow);
+}
+
+.mp-slot .mp-wrap {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
+.mp-slot .mp-page {
+  position: absolute;
+  inset: 0;
+  width: auto !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  box-shadow: none !important;
+  column-count: auto !important;
+  pointer-events: none;
+}
+
+.mp-block {
+  position: absolute;
+}
+
 /* Format painter armed: Word-style I-beam + brush cursor, but only while
    hovering the text flow (block children) — page margins and the blank area
    below the content keep their normal cursor. Fixed black/white affordance,
@@ -5858,14 +5907,33 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   max-width: none;
 }
 
-/* cell-anchored boxes share the float display-shift channel (paper-top clamp) */
+/* cell-anchored boxes share the float display-shift channel (paper-top clamp);
+   layoutInCell="0" page-positioned boxes add their cell-to-page correction */
 .doc-cell-boxes > .doc-textbox,
 .doc-cell-boxes > div {
-  translate: 0 var(--page-float-dy, 0px);
+  translate: var(--cell-page-dx, 0px) calc(var(--page-float-dy, 0px) + var(--cell-page-dy, 0px));
 }
 .pv-clip .doc-cell-boxes > .doc-textbox,
 .pv-clip .doc-cell-boxes > div {
   translate: none;
+}
+/* preview: page-positioned cell boxes draw once per owning page at page
+   coordinates (.pv-cell-page-box, PaginationPreview); the in-flow clones stay
+   for layout but never paint */
+.pv-clip .doc-cell-boxes-page > .doc-textbox[data-cell-page] {
+  visibility: hidden;
+}
+.pv-cell-page-box {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+.pv-cell-page-box > .doc-textbox {
+  left: 0 !important;
+  top: 0 !important;
+  translate: none;
+  max-width: none;
 }
 
 .pv-clip .doc-img-float > .doc-img-wrap {
