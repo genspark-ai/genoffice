@@ -356,6 +356,42 @@ describe('findWorkbookCells: lazy workbook via sidecar', () => {
     expect(sidecarFind).not.toHaveBeenCalled()
   })
 
+  it('drops a withheld cell the sidecar returns', async () => {
+    // The sidecar reads the file, so it is the one search path that never saw
+    // the index until now. `shadowed` cannot help either: it only holds cells
+    // edited this session, and a mark made weeks ago touches neither.
+    const sidecarFind = vi.fn().mockResolvedValue({
+      matches: [
+        { sheetId: 'sh1', row: 1, column: 1, value: '13800138000', valueText: '13800138000' },
+        { sheetId: 'sh1', row: 2, column: 1, value: '13800138001', valueText: '13800138001' },
+      ],
+      complete: true,
+      indexingComplete: true,
+    })
+    vi.stubGlobal('window', { desktopApi: { findWorkbookCells: sidecarFind } })
+    const ctx = {
+      ...lazyCtx(lazyState(new Map()), [DATA_SHEET]),
+      redactionIndexRef: {
+        current: buildRedactionIndex(
+          [
+            {
+              sheetName: 'Data',
+              marks: [
+                { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' },
+              ],
+            },
+          ],
+          [{ name: 'Data', id: 'sh1' }],
+        ),
+      },
+    }
+    const result = await findWorkbookCells(ctx, options({ query: '1380013800' }))
+    // B2 is withheld, B3 holds the neighbouring number and is not: if both
+    // vanished the search would be broken rather than merely quiet.
+    expect(result.matches.map((m) => m.address)).toEqual(['B3'])
+    expect(JSON.stringify(result)).not.toContain('13800138000')
+  })
+
   function findWorkbookCells_(opts: FindCellsOptions) {
     return findWorkbookCells(lazyCtx(lazyState(new Map()), [DATA_SHEET]), opts)
   }

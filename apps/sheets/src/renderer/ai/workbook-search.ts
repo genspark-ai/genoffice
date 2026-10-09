@@ -250,6 +250,11 @@ async function findInLazyWorkbook(
               let kept = 0
               for (const hit of hits) {
                 if (shadowed.has(`${hit.row}:${hit.column}`)) continue
+                // The sidecar reads the file, so `shadowed` — which only holds
+                // cells edited this session — says nothing about a cell the
+                // reader hid weeks ago. Without this the withheld value comes
+                // back through the one path that never consults the index.
+                if (redactions.labelAt(sheetId, hit.row, hit.column) !== null) continue
                 if (
                   !push({
                     sheetName,
