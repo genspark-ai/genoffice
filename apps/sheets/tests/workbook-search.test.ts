@@ -135,39 +135,6 @@ describe('findWorkbookCells: demo workbook', () => {
   })
 })
 
-function lazyCtx(state: unknown, worksheets: unknown[]): WorkbookReadContext {
-  return {
-    univerRef: {
-      current: {
-        univerAPI: {
-          getActiveWorkbook: () => ({
-            getSheets: () => worksheets,
-            getActiveSheet: () => worksheets[0],
-          }),
-        },
-      },
-    },
-    lazyWorkbookRef: { current: state },
-    adapterRef: { current: { getSnapshot: () => ({ revision: 0, sheets: [] }) } },
-  } as unknown as WorkbookReadContext
-}
-
-function lazyState(journalCells: Map<string, Map<string, unknown>>) {
-  return {
-    file: {
-      sessionId: 'session-1',
-      sheets: [{ id: 'sh1', name: 'Data', rowCount: 4, columnCount: 2 }],
-    },
-    editJournal: { cells: journalCells, structuralOps: new Map() },
-  }
-}
-
-const DATA_SHEET = {
-  getSheetId: () => 'sh1',
-  getSheetName: () => 'Data',
-  getRange: (address: string) => ({ getValue: () => (address === 'A3' ? '#DIV/0!' : null) }),
-}
-
 describe('findWorkbookCells: lazy workbook', () => {
   it('overlays journal edits and shadows the file cell underneath', async () => {
     const journal = new Map([
@@ -375,6 +342,25 @@ describe('findWorkbookCells: lazy workbook via sidecar', () => {
     vi.mocked(readSheetRangeMapped).mockResolvedValue({
       screen: {
         cells: [{ row: 0, column: 0, value: 'total' }],
+        rows: [],
+        merges: [],
+        hyperlinks: [],
+      },
+      raw: { indexingComplete: true },
+      indexedThroughScreen: 3,
+      fileEndRow: 3,
+    } as never)
+    sidecarFind.mockClear()
+    const viaRegex = await findWorkbookCells_(options({ query: 'tot+al', regex: true }))
+    expect(viaRegex.matches).toHaveLength(1)
+    expect(sidecarFind).not.toHaveBeenCalled()
+  })
+
+  function findWorkbookCells_(opts: FindCellsOptions) {
+    return findWorkbookCells(lazyCtx(lazyState(new Map()), [DATA_SHEET]), opts)
+  }
+})
+
 describe('find_cells treats a withheld cell as absent', () => {
   /**
    * The leak is not only the matched content. Reporting "Customers!B2 matches"
@@ -475,15 +461,6 @@ describe('find_cells on a streaming workbook treats a withheld cell as absent', 
       indexedThroughScreen: 3,
       fileEndRow: 3,
     } as never)
-    sidecarFind.mockClear()
-    const viaRegex = await findWorkbookCells_(options({ query: 'tot+al', regex: true }))
-    expect(viaRegex.matches).toHaveLength(1)
-    expect(sidecarFind).not.toHaveBeenCalled()
-  })
-
-  function findWorkbookCells_(opts: FindCellsOptions) {
-    return findWorkbookCells(lazyCtx(lazyState(new Map()), [DATA_SHEET]), opts)
-  }
 
     const result = await findWorkbookCells(
       lazyRedactionCtx(lazyState(new Map())),
@@ -533,3 +510,36 @@ describe('find_cells on a streaming workbook treats a withheld cell as absent', 
     expect(result.matches).toEqual([])
   })
 })
+
+function lazyCtx(state: unknown, worksheets: unknown[]): WorkbookReadContext {
+  return {
+    univerRef: {
+      current: {
+        univerAPI: {
+          getActiveWorkbook: () => ({
+            getSheets: () => worksheets,
+            getActiveSheet: () => worksheets[0],
+          }),
+        },
+      },
+    },
+    lazyWorkbookRef: { current: state },
+    adapterRef: { current: { getSnapshot: () => ({ revision: 0, sheets: [] }) } },
+  } as unknown as WorkbookReadContext
+}
+
+function lazyState(journalCells: Map<string, Map<string, unknown>>) {
+  return {
+    file: {
+      sessionId: 'session-1',
+      sheets: [{ id: 'sh1', name: 'Data', rowCount: 4, columnCount: 2 }],
+    },
+    editJournal: { cells: journalCells, structuralOps: new Map() },
+  }
+}
+
+const DATA_SHEET = {
+  getSheetId: () => 'sh1',
+  getSheetName: () => 'Data',
+  getRange: (address: string) => ({ getValue: () => (address === 'A3' ? '#DIV/0!' : null) }),
+}

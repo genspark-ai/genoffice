@@ -114,6 +114,9 @@ describe('createSaveGate', () => {
     expect(await gate.run(async () => 'ok')).toBe('ok')
     await settle()
     expect(gate.busy).toBe(false)
+  })
+})
+
 describe('a workbook whose only edit is a withheld cell still saves', () => {
   /**
    * A mark lives in a package part, not in the edit journal, so the journal

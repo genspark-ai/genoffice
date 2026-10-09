@@ -6981,6 +6981,8 @@ body > div:has([data-u-comp='find-replace-dialog']) {
 
 .visual-dialog-remove {
   align-self: flex-start;
+}
+
 /* ── Withholding cells from the model ─────────────────────────────────────
  * The dialog itself wears the app's .modal-backdrop / .modal chrome; only
  * the three pieces unique to a redaction are added here. The placeholder

@@ -760,7 +760,7 @@ export async function planCellEditsToXlsx(
   workbookProtectionState: { readonly lockStructure: boolean } | null = null,
   protectedRangeStates: readonly SheetProtectedRangesState[] = [],
   bulkConstantFills: readonly BulkConstantFill[] = [],
-tabColorStates: readonly SheetTabColorState[] = [],
+  tabColorStates: readonly SheetTabColorState[] = [],
   tableEdits: readonly SheetTableEdit[] = [],
   // Last, deliberately: every caller written against upstream's order would
   // otherwise see `tabColorStates` land here and a parsed table edit parsed as
