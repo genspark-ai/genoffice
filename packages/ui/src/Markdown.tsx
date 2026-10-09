@@ -39,7 +39,11 @@ const IMG_RE = new RegExp(`^!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
 /** a whole line that is nothing but an image, the manual's figure syntax */
 const IMG_LINE_RE = new RegExp(`^\\s*!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
 
-function renderInline(text: string, navs: readonly MarkdownNav[], images?: MarkdownImage): ReactNode[] {
+function renderInline(
+  text: string,
+  navs: readonly MarkdownNav[],
+  images?: MarkdownImage,
+): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let key = 0

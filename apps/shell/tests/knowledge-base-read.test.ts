@@ -2,7 +2,11 @@ import { closeSync, ftruncateSync, mkdtempSync, openSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { KB_READ_MAX_BYTES, readKnowledgeFilePage, readKnowledgeFileText } from '../src/main/knowledge-base'
+import {
+  KB_READ_MAX_BYTES,
+  readKnowledgeFilePage,
+  readKnowledgeFileText,
+} from '../src/main/knowledge-base'
 
 let dir: string
 
