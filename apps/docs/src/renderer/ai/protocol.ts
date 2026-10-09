@@ -15,6 +15,7 @@ import { TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
 import {
+  modelTextOf,
   projectedNodeText,
   redactNode,
   redactTextBetween,
@@ -705,9 +706,11 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
       if (!found.has(id))
         found.set(id, {
           blockIndex: index,
-          text:
-            (redactNode(block as unknown as RedactableNode) as unknown as { textContent?: string })
-              .textContent ?? '',
+          // Through `toJSON()`, never the live node. `redactNode` walks
+          // `content` as an array, and a live ProseMirror node holds a
+          // Fragment there, so the whole subtree would come back untouched and
+          // a withheld span would travel verbatim.
+          text: modelTextOf(block.toJSON() as RedactableNode),
         })
     }
     index++
