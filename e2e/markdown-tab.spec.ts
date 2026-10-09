@@ -122,18 +122,33 @@ test.describe('markdown editor', () => {
       await expect(editor.locator('h1')).toHaveText('Hello')
       await expect(editor.locator('strong')).toHaveText('bold')
 
-      // type at the end of the document, save with ⌘/Ctrl+S
+      // the shell hands focus to the view late and ProseMirror restores its
+      // start-of-doc selection on that focus; place the caret until it stays
       await editor.focus()
-      await editor.evaluate((element) => {
-        const last = element.lastElementChild
-        const selection = window.getSelection()
-        if (!last || !selection) throw new Error('Markdown editor has no final block')
-        const range = document.createRange()
-        range.selectNodeContents(last)
-        range.collapse(false)
-        selection.removeAllRanges()
-        selection.addRange(range)
-      })
+      await expect
+        .poll(async () => {
+          await editor.evaluate((element) => {
+            const last = element.lastElementChild
+            const selection = window.getSelection()
+            if (!last || !selection) throw new Error('Markdown editor has no final block')
+            const range = document.createRange()
+            range.selectNodeContents(last)
+            range.collapse(false)
+            selection.removeAllRanges()
+            selection.addRange(range)
+          })
+          await editorPage.waitForTimeout(150)
+          return editor.evaluate((element) => {
+            const selection = window.getSelection()
+            const last = element.lastElementChild
+            return Boolean(
+              selection?.isCollapsed &&
+              selection.anchorNode &&
+              last?.contains(selection.anchorNode),
+            )
+          })
+        })
+        .toBe(true)
       await editorPage.keyboard.press('Enter')
       await editorPage.keyboard.type('Appended line.')
       await editorPage.keyboard.press('ControlOrMeta+s')

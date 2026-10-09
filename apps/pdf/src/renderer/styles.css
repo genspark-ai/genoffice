@@ -39,6 +39,8 @@
   --pdf-form-text: #222;
   --pdf-form-control-border: #333;
   --pdf-form-control-mark: #111;
+  --pdf-formdesign-fill: rgb(60 120 216 / 14%);
+  --pdf-formdesign-fill-selected: rgb(60 120 216 / 24%);
   --pdf-sign-drop-bg: rgb(196 62 28 / 6%);
   --pdf-search-hit-bg: rgb(255 214 0 / 35%);
   --pdf-search-hit-cur-bg: rgb(255 150 50 / 55%);
@@ -591,6 +593,12 @@ button {
   cursor: default;
 }
 
+.thumb-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
 /* ── Markup floating bar for selected text ── */
 
 .pdf-sel-popup {
@@ -868,15 +876,15 @@ button {
   outline-offset: 1px;
 }
 
-.pdf-form-input.is-active,
-.pdf-form-select.is-active,
-.pdf-form-radio.is-active,
-.pdf-form-signature.is-active {
+.pdf-form-input.is-active:focus-within,
+.pdf-form-select.is-active:focus-within,
+.pdf-form-radio.is-active:focus-within,
+.pdf-form-signature.is-active:focus-within {
   outline: 2px solid var(--pdf-select);
   outline-offset: 1px;
 }
 
-.pdf-form-checkbox.is-active {
+.pdf-form-checkbox.is-active:focus-within {
   outline: 1px dotted var(--pdf-form-control-mark);
   outline-offset: 3px;
 }
@@ -1578,6 +1586,288 @@ button {
   top: 0;
   z-index: 5;
   overflow: visible;
+}
+
+.pdf-formdesign-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  touch-action: none;
+}
+
+.pdf-formdesign-layer.is-drawing {
+  cursor: crosshair;
+}
+
+.pdf-formdesign-field {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed var(--pdf-form-border);
+  background: var(--pdf-formdesign-fill);
+  cursor: move;
+  overflow: visible;
+}
+
+.pdf-formdesign-field.is-selected {
+  border-style: solid;
+  background: var(--pdf-formdesign-fill-selected);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pdf-formdesign-field.is-live {
+  pointer-events: none;
+}
+
+.pdf-formdesign-field.is-existing {
+  border-style: dotted;
+}
+
+.pdf-formdesign-layer.is-preview .pdf-formdesign-preview {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.pdf-formdesign-marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  background: var(--pdf-formdesign-fill);
+}
+
+.pdf-formdesign-guide {
+  position: absolute;
+  pointer-events: none;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.pdf-formdesign-guide.is-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.pdf-formdesign-guide.is-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.pdf-formdesign-field.is-signature {
+  border-style: dashed;
+}
+
+.pdf-formdesign-label {
+  position: absolute;
+  left: -1px;
+  bottom: 100%;
+  margin-bottom: 2px;
+  max-width: 320px;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 2px;
+  color: var(--surface);
+  background: var(--accent);
+  pointer-events: none;
+  user-select: none;
+  visibility: hidden;
+}
+
+.pdf-formdesign-field:hover > .pdf-formdesign-label,
+.pdf-formdesign-field.is-selected > .pdf-formdesign-label {
+  visibility: visible;
+}
+
+.pdf-formdesign-field:hover,
+.pdf-formdesign-field.is-selected {
+  z-index: 1;
+}
+
+.pdf-formdesign-field.is-live,
+.pdf-formdesign-marquee,
+.pdf-formdesign-guide {
+  z-index: 2;
+}
+
+.pdf-formdesign-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  border-radius: 1px;
+}
+
+.pdf-formdesign-handle.is-nw {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+
+.pdf-formdesign-handle.is-n,
+.pdf-formdesign-handle.is-s {
+  left: calc(50% - 4px);
+  cursor: ns-resize;
+}
+
+.pdf-formdesign-handle.is-n {
+  top: -4px;
+}
+
+.pdf-formdesign-handle.is-s {
+  bottom: -4px;
+}
+
+.pdf-formdesign-handle.is-e,
+.pdf-formdesign-handle.is-w {
+  top: calc(50% - 4px);
+  cursor: ew-resize;
+}
+
+.pdf-formdesign-handle.is-e {
+  right: -4px;
+}
+
+.pdf-formdesign-handle.is-w {
+  left: -4px;
+}
+
+.pdf-formdesign-handle.is-ne {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+
+.pdf-formdesign-handle.is-sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+
+.pdf-formdesign-handle.is-se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+.pdf-formdesign-props {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 220px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--pdf-shadow-popup);
+  font-size: 12px;
+  color: var(--text);
+  cursor: default;
+}
+
+.pdf-formdesign-props label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pdf-formdesign-props label > span {
+  color: var(--text-muted);
+}
+
+.pdf-formdesign-props textarea,
+.pdf-formdesign-props select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.pdf-formdesign-props input:not([type='checkbox']) {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.pdf-formdesign-props .pdf-formdesign-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-formdesign-props .pdf-formdesign-check > span {
+  color: var(--text);
+}
+
+.pdf-formdesign-props input:disabled {
+  color: var(--text-muted);
+}
+
+.pdf-formdesign-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.pdf-formdesign-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.pdf-formdesign-actions .pdf-formdesign-remove {
+  margin-right: auto;
+}
+
+.pdf-formdesign-actions button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pdf-formdesign-actions button:hover {
+  background: var(--hover);
+}
+
+.pdf-formdesign-actions .pdf-formdesign-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--pdf-on-accent);
+}
+
+.pdf-formdesign-remove {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pdf-formdesign-remove:hover {
+  background: var(--hover);
 }
 
 .pdf-redaction-mark {

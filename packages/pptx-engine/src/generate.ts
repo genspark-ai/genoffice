@@ -421,7 +421,7 @@ function patchRunProps(runXml: string, run: TextRun): string {
     // run. Apply or clear it when the model disagrees, otherwise clearing a mark
     // in the editor would silently keep withholding the words on disk.
     if (run.redact) {
-      if (!hasRedactExtIn(runXml)) runXml = syncRedactExt(runXml, 'a:rPr', run.redact)
+      runXml = syncRedactExt(runXml, 'a:rPr', run.redact)
     } else if (hasRedactExtIn(runXml)) {
       runXml = syncRedactExt(runXml, 'a:rPr')
     }

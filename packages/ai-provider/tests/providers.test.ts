@@ -207,7 +207,7 @@ describe('resolveAiSettings', () => {
       },
       defaultAiSettings(),
     )
-    expect(resolved.providers.genspark.model).toBe('claude-opus-4-7')
+    expect(resolved.providers.genspark.model).toBe('claude-opus-5-5')
 
     const gpt = resolveAiSettings(
       {

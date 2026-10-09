@@ -57,6 +57,7 @@ import {
   wordKerns,
 } from '../line-metrics'
 import { firstStrongDir } from './direction'
+import { splitCellBoxGroup } from './protected-render'
 import { inlineMathML } from './equation'
 import { isStraightLineKind } from './shape-svg'
 import { borderDrawnPx, borderTotalPt, collapsedEdgePx } from './border-metrics'
@@ -1175,7 +1176,9 @@ function cellContentNodes(cell: TableCell): PmNode[] {
     else boxGroups.set(at, [boxes[i]])
   }
   for (const [at, group] of boxGroups) {
-    inserts.push({ at, node: { type: 'docCellBoxes', attrs: { boxes: group } } })
+    for (const boxes of splitCellBoxGroup(group)) {
+      inserts.push({ at, node: { type: 'docCellBoxes', attrs: { boxes } } })
+    }
   }
   const content = [...paraNodes]
   inserts.sort((a, b) => a.at - b.at)

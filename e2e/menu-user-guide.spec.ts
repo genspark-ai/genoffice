@@ -7,7 +7,7 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
 /**
  * Switching editors swaps the application menu, and `withUserGuide()` puts the
- * manual's F1 item into whatever Help menu it finds (#1863).
+ * manual's F1 item into whatever Help menu it finds (genoffice#1863).
  *
  * It used to destructure two items out of a two-element template. Electron
  * drops a separator that sits at either end of a template, so that build

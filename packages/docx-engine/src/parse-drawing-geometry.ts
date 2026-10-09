@@ -202,6 +202,8 @@ export interface DrawingAnchorMeta {
   pageYEmu?: number
   /** wp:wrapTopAndBottom: body text is excluded from the drawing's vertical band */
   topBottom?: boolean
+  /** layoutInCell="0": a cell-anchored drawing positions against the page/column, not its cell */
+  outsideCell?: boolean
   anchored?: boolean
   /** wp:positionH/V relativeFrom */
   relH?: string
@@ -320,6 +322,7 @@ export function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
   const relHeight = Number(/relativeHeight\s*=\s*["'](\d+)["']/.exec(anchorTag)?.[1] ?? NaN)
   if (Number.isFinite(relHeight) && relHeight - 251658240 !== 0) meta.z = relHeight - 251658240
   if (ownXml.includes('<wp:wrapTopAndBottom')) meta.topBottom = true
+  if (/layoutInCell\s*=\s*["'](?:0|false)["']/.test(anchorTag)) meta.outsideCell = true
   return meta
 }
 

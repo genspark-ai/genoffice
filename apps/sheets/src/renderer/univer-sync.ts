@@ -5288,6 +5288,56 @@ interface PivotBand {
 /// own fill covers them); column stripes count from firstDataCol and skip
 /// the header rows. Row kinds come from the sidecar's `rowKinds`; without
 /// them the rows are plain data with the last one the grand total.
+/// Whether a block overlaps a table or pivot output range, whose banding
+/// paints blank cells and so needs the dense install even without cells.
+/// The install writes a dense matrix over its range, so a preload block is
+/// installed only over the box its cells, hyperlinks, merges and table
+/// banding span: a column of styled blanks below the data costs one column
+/// per block, not the whole block, and an empty block installs nothing.
+/// Merges count whole so the write never cuts through one.
+export function preloadInstallRange(
+  block: IRange,
+  cells: ReadonlyArray<{ readonly row: number; readonly column: number }>,
+  hyperlinks: ReadonlyArray<{ readonly row: number; readonly column: number }>,
+  merges: readonly IRange[],
+  tables: WorkbookFile['sheets'][number]['tables'],
+  pivotTables: WorkbookFile['sheets'][number]['pivotTables'],
+): IRange | null {
+  let box: IRange | null = null
+  const extend = (startRow: number, endRow: number, startColumn: number, endColumn: number) => {
+    const sr = Math.max(startRow, block.startRow)
+    const er = Math.min(endRow, block.endRow)
+    const sc = Math.max(startColumn, block.startColumn)
+    const ec = Math.min(endColumn, block.endColumn)
+    if (sr > er || sc > ec) return
+    box = box
+      ? {
+          startRow: Math.min(box.startRow, sr),
+          endRow: Math.max(box.endRow, er),
+          startColumn: Math.min(box.startColumn, sc),
+          endColumn: Math.max(box.endColumn, ec),
+        }
+      : { startRow: sr, endRow: er, startColumn: sc, endColumn: ec }
+  }
+  for (const cell of cells) extend(cell.row, cell.row, cell.column, cell.column)
+  for (const link of hyperlinks) extend(link.row, link.row, link.column, link.column)
+  for (const merge of merges) {
+    extend(merge.startRow, merge.endRow, merge.startColumn, merge.endColumn)
+  }
+  for (const table of tables) {
+    extend(table.range.startRow, table.range.endRow, table.range.startColumn, table.range.endColumn)
+  }
+  for (const pivot of pivotTables) {
+    try {
+      const area = parseRange(pivot.outputRef)
+      extend(area.startRow, area.endRow, area.startColumn, area.endColumn)
+    } catch {
+      // unparsable output ref: nothing to band
+    }
+  }
+  return box
+}
+
 export function applyPivotStyling(
   matrix: ICellData[][],
   range: IRange,
@@ -5752,25 +5802,35 @@ async function preloadEntireWorkbookInner(
       if (state.formulaMode) collectArrayFollowers(arrayFollowers, installable, ops)
       recordRowStyleKeys(state, sheetId, screen.rows)
       recordHiddenFileRows(state, sheetId, screen.rows, screenRange)
-      patchWorksheetRange(
-        worksheet,
-        undefined,
+      const installRange = preloadInstallRange(
         screenRange,
         installable,
-        state.file.styles,
         screen.hyperlinks,
+        screen.merges,
         sheet.tables,
         sheet.pivotTables,
-        sheet.freeze,
-        state.formulaMode,
-        state.editJournal,
-        state.closure.pinned.get(sheetId),
-        state.recalc.overlay.get(sheetId),
-        state.formulaMode ? arrayFollowers : undefined,
-        sheetRowColStyleKeys(state, sheetId),
-        inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
-        hiddenRowsInfo(state, sheetId),
       )
+      if (installRange) {
+        patchWorksheetRange(
+          worksheet,
+          undefined,
+          installRange,
+          installable,
+          state.file.styles,
+          screen.hyperlinks,
+          sheet.tables,
+          sheet.pivotTables,
+          sheet.freeze,
+          state.formulaMode,
+          state.editJournal,
+          state.closure.pinned.get(sheetId),
+          state.recalc.overlay.get(sheetId),
+          state.formulaMode ? arrayFollowers : undefined,
+          sheetRowColStyleKeys(state, sheetId),
+          inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
+          hiddenRowsInfo(state, sheetId),
+        )
+      }
       // Every mode needs formulaText for the formula bar (see loadRange):
       // value-mode cells install cached results with no `f` in the grid, and
       // after the preload declares full loadedRanges no later viewport load

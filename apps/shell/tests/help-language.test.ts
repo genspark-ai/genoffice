@@ -17,7 +17,7 @@ import { helpBody } from '../src/renderer/src/i18n/help/help-registry'
  * The screen used to read `document.documentElement.lang`, which is the BCP-47
  * tag (`zh-CN`, `ja-JP`), and then pick between two branches: `zh` or `en`.
  * That left 19 editions unrendered, showed English titles over whatever body
- * matched `startsWith('zh')`, and gave zh-TW readers Simplified Chinese —
+ * matched `startsWith('zh')`, and gave zh-TW readers the zh-CN edition —
  * while the files sat in the bundle the whole time and the mechanical
  * language checker counted them as present.
  *

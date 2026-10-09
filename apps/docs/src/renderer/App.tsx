@@ -206,10 +206,15 @@ import {
   syncPageSheets,
   clampCellBoxTops,
   clampCellImageTops,
+  pinCellBoxesToPage,
   pageBorderStyleOf,
   type PageGapSpec,
   LayoutBatch,
+  pageFramesFromGaps,
+  type PageFrame,
 } from './editor/pagination-gaps'
+import { MultipageGrid, snapshotCanvas, type CanvasSnapshot } from './components/MultipageGrid'
+import { layoutMultipage, multipageColumns, multipageZoomForColumns } from './multipage'
 import { setColumnLayout } from './editor/column-layout'
 import { pageMargins } from './page-margins'
 import { syncLineNumbers } from './editor/line-numbers'
@@ -791,6 +796,11 @@ export function App() {
   const [status, setStatus] = useState('')
   const [zoom, setZoom] = useState(100)
   const scrollContainerRef = useRef<HTMLElement>(null)
+  /** bumps after every pagination pass: the canvas' page gaps are in place */
+  const [layoutRev, setLayoutRev] = useState(0)
+  /** Multiple Pages grid: page index under the live editor, null while single-column */
+  const multipageActiveRef = useRef<number | null>(null)
+  const mpFramesRef = useRef<PageFrame[]>([])
   // Word-style dark page (editor/dark-page.ts): the shell's document-page-theme
   // setting (genoffice#1811) decides which theme the page follows; a light
   // page theme never shows a dark page, in the dark one it is on by default
@@ -1783,34 +1793,6 @@ export function App() {
   // shrink the overflow and clamp them before this effect gets to read them.
   const scrollPosRef = useRef({ left: 0, top: 0 })
   const prevZoomRef = useRef(zoom)
-  useLayoutEffect(() => {
-    const prevZoom = prevZoomRef.current
-    prevZoomRef.current = zoom
-    const anchor = zoomAnchorRef.current
-    zoomAnchorRef.current = null
-    const container = scrollContainerRef.current
-    const page = container?.querySelector<HTMLElement>('.doc-zoom')
-    if (!container || !page || prevZoom === zoom) return
-
-    const ratio = zoom / prevZoom
-    const vx = anchor ? anchor.vx : container.clientWidth / 2
-    const vy = anchor ? anchor.vy : container.clientHeight / 2
-    const cs = getComputedStyle(container)
-    const padLeft = parseFloat(cs.paddingLeft) || 0
-    const innerWidth = container.clientWidth - padLeft - (parseFloat(cs.paddingRight) || 0)
-    const containerRect = container.getBoundingClientRect()
-    const pageRect = page.getBoundingClientRect()
-    const pageLeft = pageRect.left - containerRect.left + container.scrollLeft
-    const pageTop = pageRect.top - containerRect.top + container.scrollTop
-    const prevPageLeft = padLeft + Math.max(0, (innerWidth - pageRect.width / ratio) / 2)
-    const prev = scrollPosRef.current
-
-    const docX = Math.max(0, prev.left + vx - prevPageLeft)
-    const docY = Math.max(0, prev.top + vy - pageTop)
-    container.scrollLeft = pageLeft + docX * ratio - vx
-    container.scrollTop = pageTop + docY * ratio - vy
-    scrollPosRef.current = { left: container.scrollLeft, top: container.scrollTop }
-  }, [zoom])
 
   // ---- protection enforcement (Review > Protect Document) ----
   const editRestriction = protection?.enforced ? protection.edit : null
@@ -2920,6 +2902,13 @@ export function App() {
       const hFit = ((scroller.clientHeight - pad) / twipsToPx(section.pageHeight)) * 100
       const textW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
       const tFit = ((scroller.clientWidth - pad) / (textW + markupExtra)) * 100
+      if (mode === 'multi') {
+        // Word: a whole page tall and as many across as fit, never fewer than two
+        const slotW = twipsToPx(section.pageWidth) + markupExtra
+        const byHeight = clampDocsZoom(Math.floor(hFit))
+        if (multipageColumns(scroller.clientWidth, slotW, byHeight) >= 2) return byHeight
+        return clampDocsZoom(Math.floor(multipageZoomForColumns(scroller.clientWidth, slotW, 2)))
+      }
       // whole page = the entire page visible, so it must fit both dimensions;
       // floor, not round: rounding up would push the page past the pane edge
       const next = mode === 'width' ? wFit : mode === 'text' ? tFit : Math.min(wFit, hFit)
@@ -2927,7 +2916,12 @@ export function App() {
     },
     [section, markupExtra],
   )
-  const zoomFit = useCallback(
+  // Word: Multiple Pages turns the side-by-side arrangement on and it stays
+  // through later zooming (a manual zoom-out alone keeps the single column);
+  // One Page / Page Width / Text Width turn it off
+  const [multipageMode, setMultipageMode] = useState(false)
+  /** fit without touching the arrangement: the resize follow-up / overflow clamp below */
+  const refitZoom = useCallback(
     (mode: ZoomFitMode) => {
       const applied = fitZoomFor(mode)
       if (applied == null) return
@@ -2935,6 +2929,13 @@ export function App() {
       setZoom(applied)
     },
     [fitZoomFor],
+  )
+  const zoomFit = useCallback(
+    (mode: ZoomFitMode) => {
+      setMultipageMode(mode === 'multi')
+      refitZoom(mode)
+    },
+    [refitZoom],
   )
 
   // On scroller size changes (window/AI-dock/nav-pane toggles): follow with a
@@ -2953,7 +2954,7 @@ export function App() {
       lastWidth = el.clientWidth
       const lf = lastFitRef.current
       if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) {
-        zoomFit(lf.mode) // fit mode: follow the container in the user's chosen fit
+        refitZoom(lf.mode) // fit mode: follow the container in the user's chosen fit
         return
       }
       // The overflow test uses the uncapped ratio: a manual zoom that still
@@ -2961,11 +2962,11 @@ export function App() {
       // A height-only change (a classic horizontal scrollbar appearing for the
       // zoomed-in page) must not clamp a zoom the user just chose.
       if (!widthChanged || zoomLiveRef.current <= raw + 0.5) return
-      zoomFit('width')
+      refitZoom('width')
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [doc, zoomFit, rawFitWidth])
+  }, [doc, refitZoom, rawFitWidth])
 
   // markup column appearing/disappearing changes the canvas width without a
   // pane resize: apply the same follow/clamp rules as the ResizeObserver above
@@ -2974,9 +2975,9 @@ export function App() {
     const raw = rawFitWidth()
     if (raw == null) return
     const lf = lastFitRef.current
-    if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) zoomFit(lf.mode)
-    else if (zoomLiveRef.current > raw + 0.5) zoomFit('width')
-  }, [doc, markupExtra, rawFitWidth, zoomFit])
+    if (lf != null && Math.abs(zoomLiveRef.current - lf.value) <= 0.5) refitZoom(lf.mode)
+    else if (zoomLiveRef.current > raw + 0.5) refitZoom('width')
+  }, [doc, markupExtra, rawFitWidth, refitZoom])
 
   // Read Mode opens at 1:1 — the same page size as the Page Preview — and the
   // user's zoom / fit mode is restored on exit (wheel zoom still works inside).
@@ -3571,7 +3572,14 @@ export function App() {
       const pmRect = pm.getBoundingClientRect()
       const scrollRect = scroller.getBoundingClientRect()
       const origin = pmRect.top + mTopPx * factor
-      const midScreen = Math.min(scrollRect.top + scrollRect.height / 2, pmRect.bottom)
+      // Multiple Pages: the active page is the one under the live window, probe its
+      // first content line instead of the viewport middle
+      const mpIdx = multipageActiveRef.current
+      const mpFrame = mpIdx == null ? null : mpFramesRef.current[mpIdx]
+      const wrapTop = pm.closest('.page-wrap')?.getBoundingClientRect().top ?? pmRect.top
+      const midScreen = mpFrame
+        ? wrapTop + (mpFrame.top + mTopPx + 1) * factor
+        : Math.min(scrollRect.top + scrollRect.height / 2, pmRect.bottom)
       // slices use gapless virtual coordinates; subtract the page-gap height above the midpoint
       // (including mid-paragraph inline gaps and repeated-header clone rows, which carry
       // page-repeat-header but not page-gap)
@@ -4757,6 +4765,7 @@ export function App() {
         // paper top by a negative anchor offset are pushed back down
         clampCellBoxTops(pm, pm.getBoundingClientRect().top, factor)
         clampCellImageTops(pm, factor)
+        pinCellBoxesToPage(pm, factor)
         stage('clampCells')
         syncCutOverlays((pm.closest('.page-wrap') as HTMLElement) ?? pm, overlayCutAnchors, factor)
         stage('cutOverlays')
@@ -4918,6 +4927,7 @@ export function App() {
         })
       }
       locate()
+      setLayoutRev((v) => v + 1)
     }
     const onUpdate = (
       fastIndex: number | null = null,
@@ -5551,6 +5561,9 @@ export function App() {
           break
         case 'zoom-whole-page':
           zoomFit('page')
+          break
+        case 'zoom-multi-page':
+          zoomFit('multi')
           break
         case 'toggle-ai':
           setShowAi((v) => !v)
@@ -6761,6 +6774,237 @@ export function App() {
     [hasDoc, hasUnsavedChanges, autoSave, editor, save, lang, histState],
   )
 
+  // ---- Multiple Pages: the grid is a function of zoom × pane width ----
+  const [paneW, setPaneW] = useState(0)
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!doc || !el) return
+    const ro = new ResizeObserver(() => setPaneW(el.clientWidth))
+    ro.observe(el)
+    setPaneW(el.clientWidth)
+    return () => ro.disconnect()
+  }, [doc])
+  const mpPaperW = canvasBox ? paperWidthPx(sections, canvasSection) : 0
+  const mpSlotW = mpPaperW + markupExtra
+  // differing paper widths keep the single column (their sheets are drawn per page)
+  const mpUniform = !sections.some((s) => pageLeftPx(s.settings, mpPaperW) > 0.5)
+  const mpCols =
+    doc && viewMode === 'print' && !readMode && mpUniform && multipageMode
+      ? multipageColumns(paneW, mpSlotW, zoom)
+      : 1
+  const mpWanted = mpCols >= 2
+  const [mpFrames, setMpFrames] = useState<PageFrame[]>([])
+  const canvasPageH = canvasBox?.height ?? 0
+  useEffect(() => {
+    if (!mpWanted) {
+      setMpFrames((prev) => (prev.length ? [] : prev))
+      return
+    }
+    const wrap = editor?.view.dom.closest<HTMLElement>('.page-wrap')
+    if (!wrap) return
+    const frames = pageFramesFromGaps(wrap, zoom / 100)
+    // the canvas ends where the content ends; the grid shows the last sheet whole
+    const last = frames[frames.length - 1]
+    if (last && last.bottom - last.top < canvasPageH) last.bottom = last.top + canvasPageH
+    setMpFrames(frames)
+  }, [doc, editor, mpWanted, zoom, layoutRev, canvasPageH])
+  const multipage = mpWanted && mpFrames.length >= 2
+  const mpLayout = useMemo(
+    () =>
+      multipage
+        ? // every slot is a full sheet: a mid-paragraph cut leaves its canvas frame a
+          // few px short of the paper, and Word's grid is equal-height
+          layoutMultipage(
+            mpFrames.map((f) => Math.max(canvasPageH, f.bottom - f.top)),
+            mpCols,
+            mpSlotW,
+          )
+        : null,
+    [multipage, mpFrames, mpCols, mpSlotW, canvasPageH],
+  )
+  const [mpActive, setMpActive] = useState(0)
+  const mpActiveIdx = Math.max(0, Math.min(mpActive, mpFrames.length - 1))
+  multipageActiveRef.current = multipage ? mpActiveIdx : null
+  mpFramesRef.current = mpFrames
+
+  const [mpSnap, setMpSnap] = useState<CanvasSnapshot | null>(null)
+  useEffect(() => {
+    if (!multipage) {
+      setMpSnap(null)
+      return
+    }
+    const wrap = editor?.view.dom.closest<HTMLElement>('.page-wrap')
+    if (!wrap) return
+    const raf = requestAnimationFrame(() => setMpSnap(snapshotCanvas(wrap, zoom / 100)))
+    return () => cancelAnimationFrame(raf)
+  }, [multipage, editor, zoom, layoutRev, mpFrames, mpActiveIdx])
+
+  /** the page under the caret, so the live window follows selection moves and page turns */
+  const mpFollowCaret = useCallback(() => {
+    if (!editor || multipageActiveRef.current == null) return
+    const frames = mpFramesRef.current
+    const wrap = editor.view.dom.closest<HTMLElement>('.page-wrap')
+    if (!wrap || frames.length === 0) return
+    let y: number
+    try {
+      y = editor.view.coordsAtPos(editor.state.selection.head).top
+    } catch {
+      return
+    }
+    const canvasY = (y - wrap.getBoundingClientRect().top) / (zoomLiveRef.current / 100)
+    let idx = 0
+    for (let i = 1; i < frames.length; i++) if (frames[i].top <= canvasY + 0.5) idx = i
+    setMpActive(idx)
+  }, [editor])
+  useEffect(() => {
+    if (!editor || !multipage) return
+    const onTr = ({ transaction }: { transaction: Transaction }) => {
+      // a typed change settles on its page after the next pagination pass
+      if (!transaction.docChanged && transaction.selectionSet) mpFollowCaret()
+    }
+    editor.on('transaction', onTr)
+    return () => {
+      editor.off('transaction', onTr)
+    }
+  }, [editor, multipage, mpFollowCaret])
+  useEffect(() => {
+    if (multipage) mpFollowCaret()
+  }, [multipage, mpFrames, mpFollowCaret])
+
+  /** a click on a painted page moves the live editor there and lands the caret under the pointer */
+  const mpPickRef = useRef<{ x: number; y: number } | null>(null)
+  const onMpPick = useCallback((index: number, x: number, y: number) => {
+    mpPickRef.current = { x, y }
+    setMpActive(index)
+  }, [])
+  useLayoutEffect(() => {
+    const pick = mpPickRef.current
+    if (!pick || !editor) return
+    mpPickRef.current = null
+    const view = editor.view
+    const wrap = view.dom.closest<HTMLElement>('.page-wrap')
+    const frames = mpFramesRef.current
+    const frame = frames[mpActiveIdx]
+    if (!wrap || !frame) return
+    const z = zoomLiveRef.current / 100
+    const wrapTop = wrap.getBoundingClientRect().top
+    const pageOf = (pos: number): number => {
+      const y = (view.coordsAtPos(pos).top - wrapTop) / z
+      let idx = 0
+      for (let i = 1; i < frames.length; i++) if (frames[i].top <= y + 0.5) idx = i
+      return idx
+    }
+    let pos = view.posAtCoords({ left: pick.x, top: pick.y })?.pos ?? null
+    if (pos != null && pageOf(pos) !== mpActiveIdx) pos = null
+    if (pos == null) {
+      // the pointer is on blank paper whose nearest caret slot is another
+      // page's: take the picked page's block nearest to the pointer instead
+      const canvasY = (pick.y - wrapTop) / z
+      let best: { el: HTMLElement; d: number; r: DOMRect } | null = null
+      for (const el of Array.from(view.dom.children) as HTMLElement[]) {
+        if (el.classList.contains('ProseMirror-widget')) continue
+        const r = el.getBoundingClientRect()
+        const top = (r.top - wrapTop) / z
+        const bottom = (r.bottom - wrapTop) / z
+        if (bottom <= frame.top || top >= frame.bottom) continue
+        const d = canvasY < top ? top - canvasY : canvasY > bottom ? canvasY - bottom : 0
+        if (!best || d < best.d) best = { el, d, r }
+      }
+      if (best) {
+        const x = Math.min(Math.max(pick.x, best.r.left + 1), best.r.right - 1)
+        const y = Math.min(Math.max(pick.y, best.r.top + 1), best.r.bottom - 1)
+        pos = view.posAtCoords({ left: x, top: y })?.pos ?? null
+      }
+    }
+    if (pos != null) {
+      const sel = TextSelection.near(view.state.doc.resolve(pos), 1)
+      view.dispatch(view.state.tr.setSelection(sel))
+    }
+    view.focus()
+  }, [mpActiveIdx, editor])
+
+  /** scroller offset of the active slot's top edge (CSS px) */
+  const mpActiveSlotTop = useCallback((): number | null => {
+    const scroller = scrollContainerRef.current
+    const grid = scroller?.querySelector<HTMLElement>('.doc-zoom')
+    const slot = mpLayout?.slots[mpActiveIdx]
+    if (!scroller || !grid || !slot) return null
+    const gridTop =
+      grid.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+    return gridTop + slot.top * (zoom / 100)
+  }, [mpLayout, mpActiveIdx, zoom])
+  // a caret-driven page turn may land on a slot outside the viewport (zoom
+  // changes keep their own anchoring below)
+  const mpSeenActiveRef = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const scroller = scrollContainerRef.current
+    const seen = mpSeenActiveRef.current
+    mpSeenActiveRef.current = multipage ? mpActiveIdx : null
+    if (!multipage || !scroller || !mpLayout || seen === mpActiveIdx) return
+    const top = mpActiveSlotTop()
+    if (top == null) return
+    const slot = mpLayout.slots[mpActiveIdx]
+    const bottom = top + slot.height * (zoom / 100)
+    const viewTop = scroller.scrollTop
+    const viewBottom = viewTop + scroller.clientHeight
+    if (bottom > viewTop && top < viewBottom) return
+    scroller.scrollTop = Math.max(0, top - 26)
+    scrollPosRef.current = { left: scroller.scrollLeft, top: scroller.scrollTop }
+  }, [multipage, mpActiveIdx, mpLayout, mpActiveSlotTop, zoom])
+
+  const multipagePrevRef = useRef({ on: false, cols: 1 })
+  useLayoutEffect(() => {
+    const prevZoom = prevZoomRef.current
+    prevZoomRef.current = zoom
+    const anchor = zoomAnchorRef.current
+    zoomAnchorRef.current = null
+    const container = scrollContainerRef.current
+    const page = container?.querySelector<HTMLElement>('.doc-zoom')
+    if (!container || !page) return
+    // the Multiple Pages grid re-flows when its column count changes: keep
+    // the active page in view instead of a point that no longer exists
+    const prevMp = multipagePrevRef.current
+    const colsNow = multipage ? mpCols : 1
+    multipagePrevRef.current = { on: multipage, cols: colsNow }
+    if (multipage !== prevMp.on || colsNow !== prevMp.cols) {
+      let top = mpActiveSlotTop()
+      if (top == null && editor) {
+        // grid collapsed: the caret's page in the single column
+        try {
+          const c = editor.view.coordsAtPos(editor.state.selection.head)
+          top = c.top - container.getBoundingClientRect().top + container.scrollTop - 120
+        } catch {
+          top = null
+        }
+      }
+      if (top != null) {
+        container.scrollTop = Math.max(0, top - 26)
+        scrollPosRef.current = { left: container.scrollLeft, top: container.scrollTop }
+      }
+      return
+    }
+    if (prevZoom === zoom) return
+
+    const ratio = zoom / prevZoom
+    const vx = anchor ? anchor.vx : container.clientWidth / 2
+    const vy = anchor ? anchor.vy : container.clientHeight / 2
+    const cs = getComputedStyle(container)
+    const padLeft = parseFloat(cs.paddingLeft) || 0
+    const innerWidth = container.clientWidth - padLeft - (parseFloat(cs.paddingRight) || 0)
+    const containerRect = container.getBoundingClientRect()
+    const pageRect = page.getBoundingClientRect()
+    const pageLeft = pageRect.left - containerRect.left + container.scrollLeft
+    const pageTop = pageRect.top - containerRect.top + container.scrollTop
+    const prevPageLeft = padLeft + Math.max(0, (innerWidth - pageRect.width / ratio) / 2)
+    const prev = scrollPosRef.current
+
+    const docX = Math.max(0, prev.left + vx - prevPageLeft)
+    const docY = Math.max(0, prev.top + vy - pageTop)
+    container.scrollLeft = pageLeft + docX * ratio - vx
+    container.scrollTop = pageTop + docY * ratio - vy
+    scrollPosRef.current = { left: container.scrollLeft, top: container.scrollTop }
+  }, [zoom, multipage, mpCols, mpActiveSlotTop, editor])
+
   if (!editor) return null
 
   // canvas geometry is anchored to the first section (stable across cursor moves);
@@ -6851,6 +7095,7 @@ export function App() {
 
   const docZoomClass = [
     'doc-zoom',
+    multipage ? 'multipage' : '',
     showMarks ? 'show-marks' : '',
     `view-${viewMode}`,
     showGrid ? 'show-grid' : '',
@@ -7073,166 +7318,210 @@ export function App() {
                     onClick={onDocClick}
                     onContextMenu={onDocContextMenu}
                     onDoubleClick={onDocDoubleClick}
-                    style={docZoomStyle}
+                    style={
+                      multipage && mpLayout
+                        ? { ...docZoomStyle, width: mpLayout.width, height: mpLayout.height }
+                        : docZoomStyle
+                    }
                   >
-                    {showRuler && rulerSection && (
-                      <Ruler
-                        section={rulerSection}
-                        editor={editor}
-                        onTabStopsChange={(stops) => {
-                          if (!editor) return
-                          setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
-                        }}
-                        onIndentsChange={(attrs) => {
-                          if (editor) setParaAttrs(editor, { ...attrs })
-                        }}
-                        onMarginsChange={({ left, right }) => {
-                          const sec = sections[activeSection]?.settings ?? section
-                          ribbonActions.onSection({
-                            ...sec,
-                            marginLeft: rulerSwap ? right : left,
-                            marginRight: rulerSwap ? left : right,
-                          })
-                        }}
+                    <div
+                      className="doc-live"
+                      style={
+                        multipage && mpLayout
+                          ? {
+                              left: mpLayout.slots[mpActiveIdx].left,
+                              top: mpLayout.slots[mpActiveIdx].top,
+                              width: mpLayout.slots[mpActiveIdx].width,
+                              height: mpLayout.slots[mpActiveIdx].height,
+                            }
+                          : undefined
+                      }
+                    >
+                      {showRuler && rulerSection && !multipage && (
+                        <Ruler
+                          section={rulerSection}
+                          editor={editor}
+                          onTabStopsChange={(stops) => {
+                            if (!editor) return
+                            setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
+                          }}
+                          onIndentsChange={(attrs) => {
+                            if (editor) setParaAttrs(editor, { ...attrs })
+                          }}
+                          onMarginsChange={({ left, right }) => {
+                            const sec = sections[activeSection]?.settings ?? section
+                            ribbonActions.onSection({
+                              ...sec,
+                              marginLeft: rulerSwap ? right : left,
+                              marginRight: rulerSwap ? left : right,
+                            })
+                          }}
+                        />
+                      )}
+                      <div
+                        className={`${mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}${hfEditing ? ' hf-editing' : ''}`}
+                        style={
+                          multipage
+                            ? {
+                                marginTop: -mpFrames[mpActiveIdx].top,
+                                clipPath: `inset(${mpFrames[mpActiveIdx].top}px 0 calc(100% - ${mpFrames[mpActiveIdx].bottom}px) 0)`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {watermark && watermarkDirty && (
+                          <div className="page-watermark" aria-hidden="true">
+                            {watermark}
+                          </div>
+                        )}
+                        {/* Boolean(): a trailing 0 (empty non-floating image list) must not render as a literal "0" text node */}
+                        {Boolean(
+                          multiHf ||
+                          headerAreaView !== 'default' ||
+                          hfAreaEditRequest?.kind === 'header' ||
+                          hfHasVisibleContent(shownHeader, hfImagesOf('header')),
+                        ) && (
+                          <HeaderFooterArea
+                            kind="header"
+                            value={shownHeader ?? { text: '' }}
+                            images={hfImagesOf('header')}
+                            readOnly={isProtected || readMode}
+                            onCommit={(next) => {
+                              const target = edgeHfTarget('header', headerAreaView)
+                              commitHfAt(0, 'header', target.variant, next, target.owner)
+                            }}
+                            pageNo={firstPageNoText}
+                            pageTotal={pageInfo.total}
+                            sectionLabel={hfSectionLabel('header', 0)}
+                            editRequest={
+                              hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
+                            }
+                            onEditingChange={(editing, handle) => {
+                              hfEditorRef.current = editing ? handle : null
+                              if (!editing) setHfAreaEditRequest(null)
+                              setHfEditing(
+                                editing
+                                  ? {
+                                      kind: 'header',
+                                      section: 0,
+                                      variant: headerAreaView,
+                                      pageIdx: 0,
+                                      owner: hfResolveAt(0, 'header', headerAreaView).owner,
+                                    }
+                                  : null,
+                              )
+                            }}
+                            style={edgeHeaderStyle}
+                            boxGeom={
+                              canvasSection && canvasBox
+                                ? {
+                                    ...hfStripGeom(canvasSection),
+                                    stripLeft: edgeHeaderStyle
+                                      ? twipsToPx(firstPageMargins!.left)
+                                      : (paperW - canvasBox.contentWidth) / 2,
+                                  }
+                                : undefined
+                            }
+                          />
+                        )}
+                        <EditorContent editor={editor} />
+                        {/* footnotes already shown per page in page gaps aren't repeated at the end (last page's footnotes still live here) */}
+                        <PageFootnotes
+                          notes={footnotes}
+                          skipIds={gapNoteIds}
+                          numberOf={(n, i) => noteNo('footnote', n.id, i)}
+                          onEdit={(id) => editNote('footnote', id)}
+                          onDelete={(id) => deleteNote('footnote', id)}
+                        />
+                        <PageEndnotes
+                          notes={endnotes}
+                          top={endnotesAreaTop}
+                          numberOf={(n, i) => noteNo('endnote', n.id, i)}
+                          onEdit={(id) => editNote('endnote', id)}
+                          onDelete={(id) => deleteNote('endnote', id)}
+                        />
+                        {Boolean(
+                          multiHf ||
+                          footerAreaView !== 'default' ||
+                          hfAreaEditRequest?.kind === 'footer' ||
+                          hfHasVisibleContent(shownFooter, hfImagesOf('footer')),
+                        ) && (
+                          <HeaderFooterArea
+                            kind="footer"
+                            value={shownFooter ?? { text: '' }}
+                            images={hfImagesOf('footer')}
+                            readOnly={isProtected || readMode}
+                            onCommit={(next) => {
+                              const target = edgeHfTarget('footer', footerAreaView)
+                              commitHfAt(
+                                lastSectionIdx,
+                                'footer',
+                                target.variant,
+                                next,
+                                target.owner,
+                              )
+                            }}
+                            pageNo={lastPageNoText}
+                            pageTotal={pageInfo.total}
+                            linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
+                            sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
+                            editRequest={
+                              hfAreaEditRequest?.kind === 'footer' ? hfAreaEditRequest.nonce : null
+                            }
+                            onEditingChange={(editing, handle) => {
+                              hfEditorRef.current = editing ? handle : null
+                              if (!editing) setHfAreaEditRequest(null)
+                              setHfEditing(
+                                editing
+                                  ? {
+                                      kind: 'footer',
+                                      section: lastSectionIdx,
+                                      variant: footerAreaView,
+                                      pageIdx: lastPageIdx,
+                                      owner: hfResolveAt(lastSectionIdx, 'footer', footerAreaView)
+                                        .owner,
+                                    }
+                                  : null,
+                              )
+                            }}
+                            style={edgeFooterStyle}
+                            boxGeom={
+                              lastSection && lastBox
+                                ? {
+                                    ...hfStripGeom(lastSection),
+                                    stripLeft: edgeFooterStyle
+                                      ? twipsToPx(lastPageMargins!.left)
+                                      : (paperW - lastBox.contentWidth) / 2,
+                                  }
+                                : undefined
+                            }
+                          />
+                        )}
+                        {(inkAnnotations.length > 0 || inkTool !== 'select') && !readMode && (
+                          <InkOverlay
+                            tool={isProtected ? 'select' : inkTool}
+                            color={inkTool === 'highlighter' ? inkHighlighter.color : inkPen.color}
+                            width={inkTool === 'highlighter' ? inkHighlighter.width : inkPen.width}
+                            zoom={zoom}
+                            annotations={inkAnnotations}
+                            onAdd={addInk}
+                            onRemove={removeInks}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    {/* after the live editor in DOM order: first-match lookups of
+                        .ProseMirror / .doc-page / .page-wrap must find the editor */}
+                    {multipage && mpLayout && (
+                      <MultipageGrid
+                        frames={mpFrames}
+                        layout={mpLayout}
+                        active={mpActiveIdx}
+                        snap={mpSnap}
+                        scroller={scrollContainerRef.current}
+                        onPick={onMpPick}
                       />
                     )}
-                    <div
-                      className={`${mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}${hfEditing ? ' hf-editing' : ''}`}
-                    >
-                      {watermark && watermarkDirty && (
-                        <div className="page-watermark" aria-hidden="true">
-                          {watermark}
-                        </div>
-                      )}
-                      {/* Boolean(): a trailing 0 (empty non-floating image list) must not render as a literal "0" text node */}
-                      {Boolean(
-                        multiHf ||
-                        headerAreaView !== 'default' ||
-                        hfAreaEditRequest?.kind === 'header' ||
-                        hfHasVisibleContent(shownHeader, hfImagesOf('header')),
-                      ) && (
-                        <HeaderFooterArea
-                          kind="header"
-                          value={shownHeader ?? { text: '' }}
-                          images={hfImagesOf('header')}
-                          readOnly={isProtected || readMode}
-                          onCommit={(next) => {
-                            const target = edgeHfTarget('header', headerAreaView)
-                            commitHfAt(0, 'header', target.variant, next, target.owner)
-                          }}
-                          pageNo={firstPageNoText}
-                          pageTotal={pageInfo.total}
-                          sectionLabel={hfSectionLabel('header', 0)}
-                          editRequest={
-                            hfAreaEditRequest?.kind === 'header' ? hfAreaEditRequest.nonce : null
-                          }
-                          onEditingChange={(editing, handle) => {
-                            hfEditorRef.current = editing ? handle : null
-                            if (!editing) setHfAreaEditRequest(null)
-                            setHfEditing(
-                              editing
-                                ? {
-                                    kind: 'header',
-                                    section: 0,
-                                    variant: headerAreaView,
-                                    pageIdx: 0,
-                                    owner: hfResolveAt(0, 'header', headerAreaView).owner,
-                                  }
-                                : null,
-                            )
-                          }}
-                          style={edgeHeaderStyle}
-                          boxGeom={
-                            canvasSection && canvasBox
-                              ? {
-                                  ...hfStripGeom(canvasSection),
-                                  stripLeft: edgeHeaderStyle
-                                    ? twipsToPx(firstPageMargins!.left)
-                                    : (paperW - canvasBox.contentWidth) / 2,
-                                }
-                              : undefined
-                          }
-                        />
-                      )}
-                      <EditorContent editor={editor} />
-                      {/* footnotes already shown per page in page gaps aren't repeated at the end (last page's footnotes still live here) */}
-                      <PageFootnotes
-                        notes={footnotes}
-                        skipIds={gapNoteIds}
-                        numberOf={(n, i) => noteNo('footnote', n.id, i)}
-                        onEdit={(id) => editNote('footnote', id)}
-                        onDelete={(id) => deleteNote('footnote', id)}
-                      />
-                      <PageEndnotes
-                        notes={endnotes}
-                        top={endnotesAreaTop}
-                        numberOf={(n, i) => noteNo('endnote', n.id, i)}
-                        onEdit={(id) => editNote('endnote', id)}
-                        onDelete={(id) => deleteNote('endnote', id)}
-                      />
-                      {Boolean(
-                        multiHf ||
-                        footerAreaView !== 'default' ||
-                        hfAreaEditRequest?.kind === 'footer' ||
-                        hfHasVisibleContent(shownFooter, hfImagesOf('footer')),
-                      ) && (
-                        <HeaderFooterArea
-                          kind="footer"
-                          value={shownFooter ?? { text: '' }}
-                          images={hfImagesOf('footer')}
-                          readOnly={isProtected || readMode}
-                          onCommit={(next) => {
-                            const target = edgeHfTarget('footer', footerAreaView)
-                            commitHfAt(lastSectionIdx, 'footer', target.variant, next, target.owner)
-                          }}
-                          pageNo={lastPageNoText}
-                          pageTotal={pageInfo.total}
-                          linked={hfLinkedAt(lastSectionIdx, 'footer', footerAreaView)}
-                          sectionLabel={hfSectionLabel('footer', lastSectionIdx)}
-                          editRequest={
-                            hfAreaEditRequest?.kind === 'footer' ? hfAreaEditRequest.nonce : null
-                          }
-                          onEditingChange={(editing, handle) => {
-                            hfEditorRef.current = editing ? handle : null
-                            if (!editing) setHfAreaEditRequest(null)
-                            setHfEditing(
-                              editing
-                                ? {
-                                    kind: 'footer',
-                                    section: lastSectionIdx,
-                                    variant: footerAreaView,
-                                    pageIdx: lastPageIdx,
-                                    owner: hfResolveAt(lastSectionIdx, 'footer', footerAreaView)
-                                      .owner,
-                                  }
-                                : null,
-                            )
-                          }}
-                          style={edgeFooterStyle}
-                          boxGeom={
-                            lastSection && lastBox
-                              ? {
-                                  ...hfStripGeom(lastSection),
-                                  stripLeft: edgeFooterStyle
-                                    ? twipsToPx(lastPageMargins!.left)
-                                    : (paperW - lastBox.contentWidth) / 2,
-                                }
-                              : undefined
-                          }
-                        />
-                      )}
-                      {(inkAnnotations.length > 0 || inkTool !== 'select') && !readMode && (
-                        <InkOverlay
-                          tool={isProtected ? 'select' : inkTool}
-                          color={inkTool === 'highlighter' ? inkHighlighter.color : inkPen.color}
-                          width={inkTool === 'highlighter' ? inkHighlighter.width : inkPen.width}
-                          zoom={zoom}
-                          annotations={inkAnnotations}
-                          onAdd={addInk}
-                          onRemove={removeInks}
-                        />
-                      )}
-                    </div>
                   </div>
                 ) : (
                   <div className="start-screen start-booting">{t('appStartOpening')}</div>
@@ -7252,7 +7541,7 @@ export function App() {
                     </button>
                   </div>
                   <div className="split-pane-scroll">
-                    <div className={docZoomClass} style={docZoomStyle}>
+                    <div className={docZoomClass.replace(' multipage', '')} style={docZoomStyle}>
                       <div className="page-wrap">
                         <div
                           className="doc-page ProseMirror split-doc"

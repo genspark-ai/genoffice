@@ -784,7 +784,7 @@ export function AiPanel({
   if (!loopRef.current) {
     // The three slides generation steps (style/planning/per-page HTML) force the high-quality model (only with the anthropic provider;
     // other providers keep the user setting, avoiding passing nonexistent model names). Chat/fine-tuning still uses the user's configured model.
-    const SLIDES_GEN_MODEL = 'claude-opus-4-7'
+    const SLIDES_GEN_MODEL = 'claude-opus-5-5'
     // Return on demand a settings copy with the generation model overridden (deep copy, doesn't pollute settingsRef).
     const settingsForGen = (): AiSettings => {
       const cur = settingsRef.current

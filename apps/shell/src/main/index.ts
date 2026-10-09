@@ -3919,9 +3919,8 @@ function registerHomeIpc(): void {
     const raw = (query && typeof query === 'object' ? query : {}) as { group?: unknown }
     const group = typeof raw.group === 'string' && raw.group ? raw.group : undefined
     const groupOf = readStarredGroupMap()
-    const scoped = group
-      ? readStarredFiles().filter((p) => groupOf.get(p) === group)
-      : readStarredFiles()
+    const paths = readStarredFiles()
+    const scoped = group ? paths.filter((p) => groupOf.get(p) === group) : paths
     const all = statEntries(scoped)
       .sort((a, b) => b.mtimeMs - a.mtimeMs)
       .map((entry) => {

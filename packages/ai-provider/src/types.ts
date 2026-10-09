@@ -43,6 +43,17 @@ export interface AiProviderConfig {
   cliPath?: string | undefined
 }
 
+/** One user-hosted OpenAI-compatible server; the active one is mirrored into `providers.custom` */
+export interface AiCustomEndpoint {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  /** ids the server advertised on the last `/models` probe, so the composer chip can list them offline */
+  models?: string[] | undefined
+}
+
 /** Live picker data returned by Codex app-server's model/list method. */
 export interface CodexModelCatalog {
   models: string[]
@@ -140,6 +151,10 @@ export interface AiSearchSettings {
 export interface AiSettings {
   provider: AiProviderId
   providers: Record<AiProviderId, AiProviderConfig>
+  /** every saved custom endpoint; absent on files written before the list existed */
+  customEndpoints?: AiCustomEndpoint[] | undefined
+  /** id of the endpoint `providers.custom` mirrors */
+  customEndpoint?: string | undefined
   /**
    * Provider for generate_image / analyze_media. Absent (pre-media settings
    * files) means Genspark, i.e. the gsk login + gskToolsEnabled gate.

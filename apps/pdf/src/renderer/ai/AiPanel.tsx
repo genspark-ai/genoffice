@@ -367,6 +367,8 @@ export function AiPanel({
       moveTextBlock: (idx, block, d) => apiRef.current.moveTextBlock(idx, block, d),
       insertText: (input) => apiRef.current.insertText(input),
       addFormMark: (idx, kind, rect) => apiRef.current.addFormMark(idx, kind, rect),
+      formWidgets: (idx) => apiRef.current.formWidgets(idx),
+      pageBoxes: (idx) => apiRef.current.pageBoxes(idx),
       textInserts: () => apiRef.current.textInserts(),
       updateTextInsert: (id, edit) => apiRef.current.updateTextInsert(id, edit),
       moveTextInsert: (id, origin) => apiRef.current.moveTextInsert(id, origin),
