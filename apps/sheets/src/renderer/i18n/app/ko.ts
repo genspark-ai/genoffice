@@ -11,6 +11,8 @@ export const ko = {
   redactCancel: '취소',
   redactInsert: '숨기기',
   redactEnable: '선택한 부분을 오른쪽 클릭해 AI에서 숨깁니다.',
+  redactNeedsSavedRow:
+    '이 행은 아직 파일에 저장되지 않았습니다. 먼저 저장한 다음 셀을 숨겨 주세요.',
 
   appMergeWorkbooks: '통합 문서 병합',
   appMergeWorkbooksTip: '다른 Excel 파일의 시트를 현재 통합 문서에 추가합니다',

@@ -1,3 +1,5 @@
+import { shiftCellArea, type StructuralOp } from './xlsx-structure'
+
 /// Withholding cell values from the model: the marks live in a custom package
 /// part, `xl/gxRedactions.json`.
 ///
@@ -219,6 +221,10 @@ export function rekeyRedactionStates(
   states: readonly SheetRedactionState[],
   renames: readonly { readonly sheetName: string; readonly newName: string }[],
   removals: readonly string[],
+  structuralOps: readonly {
+    readonly sheetName: string
+    readonly ops: readonly StructuralOp[]
+  }[] = [],
 ): SheetRedactionState[] {
   const renamed = new Map(renames.map((rename) => [rename.sheetName, rename.newName]))
   const removed = new Set(removals)
@@ -226,7 +232,19 @@ export function rekeyRedactionStates(
     .filter((state) => !removed.has(state.sheetName))
     .map((state) => {
       const newName = renamed.get(state.sheetName)
-      return newName === undefined ? state : { ...state, sheetName: newName }
+      const renamedState = newName === undefined ? state : { ...state, sheetName: newName }
+      const ops = structuralOps.find((entry) => entry.sheetName === renamedState.sheetName)?.ops
+      if (!ops || ops.length === 0) return renamedState
+      // The marks name cells the file is about to move: this same save
+      // applies the ops to the grid XML, so a rectangle left where it was
+      // would end up describing whatever shifted into its place. A mark whose
+      // row or column the ops delete goes with them — the cell it withheld is
+      // no longer there to withhold.
+      const marks = renamedState.marks.flatMap((mark) => {
+        const moved = shiftCellArea(mark, ops)
+        return moved === null ? [] : [{ ...mark, ...moved }]
+      })
+      return { ...renamedState, marks }
     })
 }
 

@@ -174,6 +174,50 @@ describe('rekeying for sheet edits done in the same save', () => {
     expect(rekeyRedactionStates(STATES, [], ['Sheet1'])).toEqual([])
   })
 
+  it('moves the marks with the rows the same save inserts', () => {
+    // The repro: mark B2, insert two rows above it, save. The grid XML the
+    // same save writes has the marked cell at row 3, so a part still saying
+    // row 1 describes whatever shifted down into its place.
+    expect(
+      rekeyRedactionStates(
+        STATES,
+        [],
+        [],
+        [{ sheetName: 'Sheet1', ops: [{ kind: 'insert-rows', index: 0, count: 2 }] }],
+      ),
+    ).toEqual([
+      {
+        sheetName: 'Sheet1',
+        marks: [{ ...MARK, startRow: MARK.startRow + 2, endRow: MARK.endRow + 2 }],
+      },
+    ])
+  })
+
+  it('drops a mark whose rows the same save deletes outright', () => {
+    // The value it withheld is gone; a rectangle clamped onto a neighbour
+    // would withhold something the reader never hid. A delete that only takes
+    // part of the rectangle keeps the part that survives.
+    expect(
+      rekeyRedactionStates(
+        STATES,
+        [],
+        [],
+        [{ sheetName: 'Sheet1', ops: [{ kind: 'remove-rows', index: 0, count: MARK.endRow + 1 }] }],
+      ),
+    ).toEqual([{ sheetName: 'Sheet1', marks: [] }])
+  })
+
+  it('leaves the marks alone for a sheet with no structural ops', () => {
+    expect(
+      rekeyRedactionStates(
+        STATES,
+        [],
+        [],
+        [{ sheetName: 'Other', ops: [{ kind: 'insert-rows', index: 0, count: 5 }] }],
+      ),
+    ).toEqual(STATES)
+  })
+
   it('leaves unrelated sheets alone', () => {
     expect(rekeyRedactionStates(STATES, [{ sheetName: 'Other', newName: 'X' }], ['Other'])).toEqual(
       STATES,

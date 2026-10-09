@@ -11,6 +11,7 @@ export const hi = {
   redactCancel: 'रद्द करें',
   redactInsert: 'छिपाएँ',
   redactEnable: 'चयनित पाठ पर राइट-क्लिक करके इसे मॉडल से छिपाएँ।',
+  redactNeedsSavedRow: 'यह पंक्ति अभी फ़ाइल में नहीं है। पहले सहेजें, फिर सेल छिपाएँ।',
 
   appMergeWorkbooks: 'वर्कबुक मर्ज करें',
   appMergeWorkbooksTip: 'अन्य Excel फ़ाइलों की शीट इस वर्कबुक में जोड़ें',

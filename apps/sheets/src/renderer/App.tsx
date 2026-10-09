@@ -1769,20 +1769,40 @@ export function App({
     )
     if (intent.kind === 'ignore') return
     if (intent.kind === 'clear') {
+      // The tint was clicked on the grid, so what arrives is in screen
+      // coordinates; the store keeps file coordinates. Same translation the
+      // create path makes, so the two actually meet.
+      const clearOps = lazyWorkbookRef.current?.editJournal.structuralOps.get(request.sheetId) ?? []
+      const clearRow = screenToFile(clearOps, 'row', intent.mark.startRow)
+      const clearEndRow = screenToFile(clearOps, 'row', intent.mark.endRow)
+      const clearCol = screenToFile(clearOps, 'column', intent.mark.startColumn)
+      const clearEndCol = screenToFile(clearOps, 'column', intent.mark.endColumn)
       // The same gesture that withheld it stops withholding it — one item, and
       // no second string in a locale set that must not grow.
-      const marked = redactionStatesRef.current
-        .find((entry) => entry.sheetName === intent.sheetName)
-        ?.marks.find(
-          (mark) =>
-            mark.startRow === intent.mark.startRow &&
-            mark.endRow === intent.mark.endRow &&
-            mark.startColumn === intent.mark.startColumn &&
-            mark.endColumn === intent.mark.endColumn,
-        )
-      const next = clearMark(redactionStatesRef.current, intent.sheetName, intent.mark)
+      const marked =
+        clearRow === null || clearEndRow === null || clearCol === null || clearEndCol === null
+          ? undefined
+          : redactionStatesRef.current
+              .find((entry) => entry.sheetName === intent.sheetName)
+              ?.marks.find(
+                (mark) =>
+                  mark.startRow === clearRow &&
+                  mark.endRow === clearEndRow &&
+                  mark.startColumn === clearCol &&
+                  mark.endColumn === clearEndCol,
+              )
+      const next =
+        clearRow === null || clearEndRow === null || clearCol === null || clearEndCol === null
+          ? redactionStatesRef.current
+          : clearMark(redactionStatesRef.current, intent.sheetName, {
+              ...intent.mark,
+              startRow: clearRow,
+              endRow: clearEndRow,
+              startColumn: clearCol,
+              endColumn: clearEndCol,
+            })
       redactionStatesRef.current = next
-      redactionIndexRef.current = indexFor(next, getActiveSheetInfo().sheets)
+      rebuildRedactionIndex()
       // The tint is the only thing the mark ever did to the reader's own
       // formatting, so clearing has to take it back off.
       if (marked && workbook) {
@@ -1830,13 +1850,27 @@ export function App({
     if (!clean) return
     const workbook = univerRef.current?.univerAPI.getActiveWorkbook()
     const worksheet = workbook?.getSheetBySheetId(pending.sheetId)
+    // A mark is written into the package part, so it has to name the cell the
+    // FILE has, not the one the grid is showing: this session may have
+    // inserted rows above it that the file has never seen. `screenToFile`
+    // answers null for a row inserted this session — it has no file coordinate
+    // to write down — so the reader is told to save rather than handed a mark
+    // the save would later shift a second time.
+    const ops = lazyWorkbookRef.current?.editJournal.structuralOps.get(pending.sheetId) ?? []
+    const startRow = screenToFile(ops, 'row', pending.startRow)
+    const endRow = screenToFile(ops, 'row', pending.endRow)
+    const startColumn = screenToFile(ops, 'column', pending.startColumn)
+    const endColumn = screenToFile(ops, 'column', pending.endColumn)
+    if (startRow === null || endRow === null || startColumn === null || endColumn === null) {
+      showToast(t('redactNeedsSavedRow'), 'error')
+      return
+    }
+    const inFile = { startRow, endRow, startColumn, endColumn }
     // buildMark reads the fill, paints the tint and returns both, so the mark
-    // cannot be assembled without the value that has to be restored later.
+    // cannot be assembled without the value that has to be restored later. The
+    // tint is drawn on the grid, so it takes the screen bounds.
     let mark: MarkKey & { label: string; previousFill: string | null } = {
-      startRow: pending.startRow,
-      endRow: pending.endRow,
-      startColumn: pending.startColumn,
-      endColumn: pending.endColumn,
+      ...inFile,
       label: clean,
       previousFill: null,
     }
@@ -1848,6 +1882,9 @@ export function App({
           startColumn: pending.startColumn,
           endColumn: pending.endColumn,
         })
+        // buildMark echoes the bounds it was handed; the stored copy is the
+        // file-coord one, the painted one is the screen one.
+        mark = { ...mark, ...inFile }
       }
     } catch {
       // A range the grid will not hand out still gets its mark; it just goes
@@ -1856,7 +1893,10 @@ export function App({
     }
     const next = addMark(redactionStatesRef.current, pending.sheetName, mark)
     redactionStatesRef.current = next
-    redactionIndexRef.current = indexFor(next, getActiveSheetInfo().sheets)
+    // Not `indexFor(next, …)`: the states are in file coordinates now, and the
+    // index the grid reads has to be the screen ones. The same replay the
+    // loaded marks go through covers this one.
+    rebuildRedactionIndex()
   }
 
   /** `A1:B2` for a mark's rectangle, for the range the tint is painted on. */

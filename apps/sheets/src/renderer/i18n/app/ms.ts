@@ -11,6 +11,8 @@ export const ms = {
   redactCancel: 'Batal',
   redactInsert: 'Sembunyikan',
   redactEnable: 'Klik kanan pada teks yang dipilih untuk menyembunyikannya daripada model.',
+  redactNeedsSavedRow:
+    'Baris ini belum lagi dalam fail. Simpan dahulu, kemudian sembunyikan selnya.',
 
   appMergeWorkbooks: 'Gabung Buku Kerja',
   appMergeWorkbooksTip: 'Tambah helaian daripada fail Excel lain ke buku kerja ini',

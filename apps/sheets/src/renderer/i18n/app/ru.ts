@@ -11,6 +11,7 @@ export const ru = {
   redactCancel: 'Отмена',
   redactInsert: 'Скрыть',
   redactEnable: 'Правый клик по выделению скрывает его от модели.',
+  redactNeedsSavedRow: 'Этой строки ещё нет в файле. Сначала сохраните, затем скройте ячейку.',
 
   appMergeWorkbooks: 'Объединить книги',
   appMergeWorkbooksTip: 'Добавить листы из других файлов Excel в эту книгу',

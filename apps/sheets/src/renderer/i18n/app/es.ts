@@ -11,6 +11,8 @@ export const es = {
   redactCancel: 'Cancelar',
   redactInsert: 'Ocultar',
   redactEnable: 'Clic derecho en una selección para ocultarla al modelo.',
+  redactNeedsSavedRow:
+    'Esta fila todavía no está en el archivo. Guarda primero y luego oculta la celda.',
 
   appMergeWorkbooks: 'Combinar libros',
   appMergeWorkbooksTip: 'Añadir las hojas de otros archivos de Excel a este libro',

@@ -11,6 +11,7 @@ export const he = {
   redactCancel: 'ביטול',
   redactInsert: 'הסתר',
   redactEnable: 'לחיצה ימנית על טקסט נבחר מסתיר אותו מהמודל.',
+  redactNeedsSavedRow: 'השורה הזו עדיין אינה בקובץ. שמור תחילה, ואז הסתר את התא.',
 
   appMergeWorkbooks: 'מיזוג חוברות עבודה',
   appMergeWorkbooksTip: 'הוספת גיליונות מקובצי Excel אחרים לחוברת העבודה הזו',

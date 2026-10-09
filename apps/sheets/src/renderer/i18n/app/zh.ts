@@ -10,6 +10,7 @@ export const zh = {
   redactCancel: '取消',
   redactInsert: '隐藏',
   redactEnable: '选中文字后右键，即可对 AI 隐藏。',
+  redactNeedsSavedRow: '这一行还没存进文件。请先存盘，再隐藏其中的单元格。',
 
   appMergeWorkbooks: '合并工作簿',
   appMergeWorkbooksTip: '将其他 Excel 文件的工作表并入当前工作簿',

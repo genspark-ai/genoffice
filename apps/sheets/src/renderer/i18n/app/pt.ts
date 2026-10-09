@@ -11,6 +11,8 @@ export const pt = {
   redactCancel: 'Cancelar',
   redactInsert: 'Ocultar',
   redactEnable: 'Clique com o botão direito numa seleção para ocultá-la do modelo.',
+  redactNeedsSavedRow:
+    'Esta linha ainda não está no ficheiro. Guarde primeiro e depois oculte a célula.',
 
   appMergeWorkbooks: 'Mesclar pastas de trabalho',
   appMergeWorkbooksTip: 'Adicionar planilhas de outros arquivos do Excel a esta pasta de trabalho',

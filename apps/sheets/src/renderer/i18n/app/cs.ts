@@ -11,6 +11,7 @@ export const cs = {
   redactCancel: 'Zrušit',
   redactInsert: 'Skrýt',
   redactEnable: 'Pravým klikem na výběr jej skryjete před modelem.',
+  redactNeedsSavedRow: 'Tento řádek zatím není v souboru. Nejprve uložte, pak buňku skryjte.',
 
   appMergeWorkbooks: 'Sloučit sešity',
   appMergeWorkbooksTip: 'Připojit listy z jiných souborů Excelu do tohoto sešitu',

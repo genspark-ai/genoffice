@@ -11,6 +11,7 @@ export const th = {
   redactCancel: 'ยกเลิก',
   redactInsert: 'ซ่อน',
   redactEnable: 'คลิกขวาที่ข้อความที่เลือกเพื่อซ่อนจาก AI',
+  redactNeedsSavedRow: 'แถวนี้ยังไม่อยู่ในไฟล์ กรุณาบันทึกก่อน แล้วจึงซ่อนเซลล์',
 
   appMergeWorkbooks: 'รวมเวิร์กบุ๊ก',
   appMergeWorkbooksTip: 'นำชีตจากไฟล์ Excel อื่นมารวมในเวิร์กบุ๊กนี้',

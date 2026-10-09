@@ -11,6 +11,7 @@ export const zhTW = {
   redactCancel: '取消',
   redactInsert: '隱藏',
   redactEnable: '選中文字後右鍵，即可對 AI 隱藏。',
+  redactNeedsSavedRow: '這一列還沒存進檔案。請先存檔，再隱藏其中的儲存格。',
 
   appMergeWorkbooks: '合併活頁簿',
   appMergeWorkbooksTip: '將其他 Excel 檔案的工作表併入目前活頁簿',

@@ -11,6 +11,8 @@ export const ja = {
   redactCancel: 'キャンセル',
   redactInsert: '隠す',
   redactEnable: '選択範囲を右クリックしてAIから隠します。',
+  redactNeedsSavedRow:
+    'この行はまだファイルに保存されていません。保存してからセルを非表示にしてください。',
 
   appMergeWorkbooks: 'ブックの結合',
   appMergeWorkbooksTip: '他の Excel ファイルのシートをこのブックに追加します',

@@ -11,6 +11,7 @@ export const en = {
   redactCancel: 'Cancel',
   redactInsert: 'Hide',
   redactEnable: 'Right-click a selection to hide it from the model.',
+  redactNeedsSavedRow: 'This row is not in the file yet. Save first, then hide a cell in it.',
 
   appMergeWorkbooks: 'Merge Workbooks',
   appMergeWorkbooksTip: 'Append sheets from other Excel files into this workbook',

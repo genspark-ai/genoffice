@@ -1046,6 +1046,7 @@ export async function planCellEditsToXlsx(
     redactionStates,
     sheetPlan?.renames ?? [],
     sheetPlan?.removals ?? [],
+    structuralOps,
   )
   await applyRedactionPart(pkg, touchedEntries, rekeyed)
 

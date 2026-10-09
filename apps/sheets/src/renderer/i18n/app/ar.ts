@@ -11,6 +11,7 @@ export const ar = {
   redactCancel: 'إلغاء',
   redactInsert: 'إخفاء',
   redactEnable: 'انقر بزر الفأرة الأيمن على النص المحدد لإخفائه عن النموذج.',
+  redactNeedsSavedRow: 'هذا الصف ليس في الملف بعد. احفظ الملف أولاً ثم أخفِ الخلية.',
 
   appMergeWorkbooks: 'دمج المصنفات',
   appMergeWorkbooksTip: 'إضافة أوراق من ملفات Excel أخرى إلى هذا المصنف',

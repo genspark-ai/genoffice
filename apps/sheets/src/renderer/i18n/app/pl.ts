@@ -11,6 +11,8 @@ export const pl = {
   redactCancel: 'Anuluj',
   redactInsert: 'Ukryj',
   redactEnable: 'Kliknij prawym na zaznaczeniu, aby ukryć je przed modelem.',
+  redactNeedsSavedRow:
+    'Ten wiersz nie jest jeszcze w pliku. Zapisz najpierw, a potem ukryj komórkę.',
 
   appMergeWorkbooks: 'Scal skoroszyty',
   appMergeWorkbooksTip: 'Dodaj arkusze z innych plików Excel do tego skoroszytu',

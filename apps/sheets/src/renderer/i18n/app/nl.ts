@@ -11,6 +11,8 @@ export const nl = {
   redactCancel: 'Annuleren',
   redactInsert: 'Verbergen',
   redactEnable: 'Rechtsklik op een selectie om die voor het model te verbergen.',
+  redactNeedsSavedRow:
+    'Deze rij staat nog niet in het bestand. Sla eerst op en verberg daarna de cel.',
 
   appMergeWorkbooks: 'Werkmappen samenvoegen',
   appMergeWorkbooksTip: 'Bladen uit andere Excel-bestanden aan deze werkmap toevoegen',

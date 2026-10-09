@@ -11,6 +11,8 @@ export const fr = {
   redactCancel: 'Annuler',
   redactInsert: 'Masquer',
   redactEnable: 'Clic droit sur une sélection pour la masquer au modèle.',
+  redactNeedsSavedRow:
+    "Cette ligne n'est pas encore dans le fichier. Enregistrez d'abord, puis masquez la cellule.",
 
   appMergeWorkbooks: 'Fusionner des classeurs',
   appMergeWorkbooksTip: "Ajouter les feuilles d'autres fichiers Excel à ce classeur",

@@ -11,6 +11,7 @@ export const it = {
   redactCancel: 'Annulla',
   redactInsert: 'Nascondi',
   redactEnable: 'Clic destro su una selezione per nasconderla al modello.',
+  redactNeedsSavedRow: 'Questa riga non è ancora nel file. Salva prima, poi nascondi la cella.',
 
   appMergeWorkbooks: 'Unisci cartelle di lavoro',
   appMergeWorkbooksTip: 'Aggiungi i fogli di altri file Excel a questa cartella di lavoro',
