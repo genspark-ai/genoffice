@@ -6,14 +6,16 @@ import {
   pivotFieldOptions,
   type PivotActionContext,
 } from '../src/renderer/pivot-actions'
-import type { OoXmlPivotConfig } from '../src/renderer/PivotDialog'
 import { applyAiPivotAdd } from '../src/renderer/workbook-ops'
 import { createEditJournal } from '../src/renderer/edit-journal'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 
 vi.mock('../src/renderer/workbook-ops', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/renderer/workbook-ops')>()),
-  applyAiPivotAdd: vi.fn(),
+  applyAiPivotAdd: vi.fn(() => ({
+    location: { startRow: 0, startColumn: 4, endRow: 3, endColumn: 5 },
+    pageRows: 0,
+  })),
 }))
 
 type TestRange = {
@@ -22,7 +24,10 @@ type TestRange = {
   getHeight(): number
   getWidth(): number
   getValues(): unknown[][]
+  getRawValues(): unknown[][]
+  getNumberFormats(): string[][]
   getValue(): unknown
+  activate(): void
 }
 
 function fixture(
@@ -43,11 +48,13 @@ function fixture(
         b.endColumn - b.startColumn + 1,
       )
     }
-    const values = () => {
-      reads.push({ row, height })
-      return Array.from({ length: height }, (_, r) =>
+    const raw = () =>
+      Array.from({ length: height }, (_, r) =>
         Array.from({ length: width }, (_, c) => cells[row + r]?.[col + c] ?? null),
       )
+    const values = () => {
+      reads.push({ row, height })
+      return raw()
     }
     return {
       getRow: () => row,
@@ -55,7 +62,10 @@ function fixture(
       getHeight: () => height,
       getWidth: () => width,
       getValues: values,
+      getRawValues: raw,
+      getNumberFormats: () => raw().map((line) => line.map(() => 'General')),
       getValue: () => values()[0]?.[0],
+      activate: () => {},
     }
   }
   let selection = getRange(1, 1)
@@ -104,9 +114,9 @@ describe('pivot source selection', () => {
     expect(source).toBe('A1:C3')
     reads.length = 0
     expect(pivotFieldOptions(ctx, source)).toEqual([
-      { label: 'Region', colIndex: 0 },
-      { label: 'Revenue', colIndex: 1 },
-      { label: 'Units', colIndex: 2 },
+      { label: 'Region', colIndex: 0, numeric: false },
+      { label: 'Revenue', colIndex: 1, numeric: true },
+      { label: 'Units', colIndex: 2, numeric: true },
     ])
     expect(reads).toEqual([{ row: 0, height: 1 }])
     // The subtotal dialog still uses the original single-cell selection.
@@ -118,8 +128,8 @@ describe('pivot source selection', () => {
     f.select('B1:C3')
     expect(getSourceRange(f.ctx)).toBe('B1:C3')
     expect(pivotFieldOptions(f.ctx, 'B1:C3')).toEqual([
-      { label: 'Revenue', colIndex: 1 },
-      { label: 'Units', colIndex: 2 },
+      { label: 'Revenue', colIndex: 1, numeric: true },
+      { label: 'Units', colIndex: 2, numeric: true },
     ])
     f.select('A1:C1')
     expect(getSourceRange(f.ctx)).toBe('A1:C1')
@@ -136,8 +146,8 @@ describe('pivot source selection', () => {
     f.select('C2')
     expect(getSourceRange(f.ctx)).toBe('B1:C2')
     expect(pivotFieldOptions(f.ctx, 'B1:C2')).toEqual([
-      { label: 'Name', colIndex: 1 },
-      { label: 'Amount', colIndex: 2 },
+      { label: 'Name', colIndex: 1, numeric: false },
+      { label: 'Amount', colIndex: 2, numeric: true },
     ])
   })
 
@@ -240,19 +250,11 @@ describe('pivot source selection', () => {
     expect(getSourceRange(f.ctx)).toBe('B2:B2')
   })
 
-  it('creates from the resolved source, not the selected data cell', () => {
+  it('creates from the resolved source with the default placement (text on Rows, first number on Values)', () => {
     const f = fixture()
-    const config: OoXmlPivotConfig = {
-      sourceRange: getSourceRange(f.ctx),
-      targetCell: 'E1',
-      rowFieldIndices: [0],
-      colFieldIndices: [],
-      groupings: [],
-      labelFilters: [],
-      valueFilters: [],
-      values: [{ fieldIndex: 1, agg: 'sum' }],
-    }
-    expect(handleCreatePivot(f.ctx, config)).toBeNull()
+    expect(
+      handleCreatePivot(f.ctx, { sourceRange: getSourceRange(f.ctx), targetCell: 'E1' }),
+    ).toBeNull()
     expect(applyAiPivotAdd).toHaveBeenLastCalledWith(
       f.ctx.univerRef.current,
       f.state,

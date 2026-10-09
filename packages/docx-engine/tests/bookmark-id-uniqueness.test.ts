@@ -2,7 +2,7 @@
  * w:bookmarkStart/@w:id is unique within the part. The id used to be a 31-bit
  * hash of the bookmark name, which both overlaps the small ids Word itself hands
  * out and collides between two new names, so a rebuilt document could hold two
- * bookmarks under one id — after which Word mis-pairs them and a cross-reference
+ * bookmarks under one id \u2014 after which Word mis-pairs them and a cross-reference
  * lands on the wrong target.
  */
 import JSZip from 'jszip'
@@ -77,12 +77,12 @@ describe('minted bookmark ids', () => {
 
   it('pairs each start with its own end, and keeps ids unique without a document', () => {
     const xml = generateParagraphXml(
-      { type: 'paragraph', bookmarks: ['章节A', '章节B'], runs: [{ text: 'x' }] },
+      { type: 'paragraph', bookmarks: ['\u7ae0\u8282A', '\u7ae0\u8282B'], runs: [{ text: 'x' }] },
       GEN_CTX,
     )
     const starts = [...xml.matchAll(/<w:bookmarkStart w:id="(\d+)" w:name="([^"]+)"\/>/g)]
     const ends = [...xml.matchAll(/<w:bookmarkEnd w:id="(\d+)"\/>/g)].map((m) => m[1])
-    expect(starts.map((m) => m[2])).toEqual(['章节A', '章节B'])
+    expect(starts.map((m) => m[2])).toEqual(['\u7ae0\u8282A', '\u7ae0\u8282B'])
     expect(ends).toEqual(starts.map((m) => m[1]))
     expect(new Set(ends).size).toBe(2)
   })

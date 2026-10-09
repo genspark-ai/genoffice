@@ -1,6 +1,16 @@
 import type { zh } from './zh'
 
 export const th = {
+  redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
+  redactDialogDesc:
+    'เนื้อหาที่เลือกยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
+  redactDialogScope:
+    'การซ่อนครอบคลุมเฉพาะ AI ในแอปนี้ CLI เครื่องมือ MCP และการส่งออกแบบไม่มีหน้าต่างอ่านไฟล์โดยตรง และยังเห็นคำเหล่านี้อยู่',
+  redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
+  redactCancel: 'ยกเลิก',
+  redactInsert: 'ซ่อน',
+  redactEnable: 'คลิกขวาที่ข้อความที่เลือกเพื่อซ่อนจาก AI',
+
   appPhPromptTitle: 'คลิกเพื่อเพิ่มชื่อเรื่อง',
   appPhPromptSubtitle: 'คลิกเพื่อเพิ่มชื่อเรื่องรอง',
   appPhPromptBody: 'คลิกเพื่อเพิ่มข้อความ',

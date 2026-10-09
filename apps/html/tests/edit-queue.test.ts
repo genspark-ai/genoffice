@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildParseMap } from '../src/renderer/document/parse-map'
+import { buildProjection } from '../src/renderer/ai/redact'
 import {
   buildQueueInstruction,
   buildQueueSummary,
@@ -35,18 +36,30 @@ const item = (qid: string, tag: string, instruction: string): EditQueueItem => (
 describe('resolveQueueItem', () => {
   it('reads the live excerpt from the source and labels textless elements by tag', () => {
     const map = buildParseMap(html, 1)
-    expect(resolveQueueItem(html, map, item('a', 'h1', 'x')).target?.excerpt).toBe(
-      'Hello & welcome',
-    )
-    expect(resolveQueueItem(html, map, item('b', 'img', 'x')).target?.excerpt).toBe('<img>')
+    expect(
+      resolveQueueItem(buildProjection(html, map), map, item('a', 'h1', 'x')).target?.excerpt,
+    ).toBe('Hello & welcome')
+    expect(
+      resolveQueueItem(buildProjection(html, map), map, item('b', 'img', 'x')).target?.excerpt,
+    ).toBe('<img>')
+  })
+
+  it('quotes the projection, so a withheld span is the placeholder, not the words', () => {
+    const marked = '<p>Call <span data-gx-redact="client phone">555-0100</span> now</p>'
+    const map = buildParseMap(marked, 1)
+    const sid = map.elements.find((e) => e.tag === 'p')!.sid
+    const q = { qid: 'a', sid, tag: 'p', capturedText: '', instruction: 'x' }
+    const excerpt = resolveQueueItem(buildProjection(marked, map), map, q).target?.excerpt
+    expect(excerpt).not.toContain('555-0100')
+    expect(excerpt).toContain('{{client phone}}')
   })
 
   it('marks an item stale when its sid is gone or now names another tag', () => {
     const map = buildParseMap(html, 1)
     const gone = { ...item('a', 'p', 'x'), sid: 999 }
-    expect(resolveQueueItem(html, map, gone).target).toBeNull()
+    expect(resolveQueueItem(buildProjection(html, map), map, gone).target).toBeNull()
     const retagged = { ...item('b', 'p', 'x'), tag: 'div' }
-    expect(resolveQueueItem(html, map, retagged).target).toBeNull()
+    expect(resolveQueueItem(buildProjection(html, map), map, retagged).target).toBeNull()
   })
 })
 
@@ -54,7 +67,10 @@ describe('buildQueueInstruction', () => {
   it('lists edits bottom-up by source position with sid, tag and excerpt', () => {
     const map = buildParseMap(html, 1)
     const entries = liveItems(
-      resolveQueue(html, map, [item('a', 'h1', 'shorten'), item('b', 'p', 'expand')]),
+      resolveQueue(buildProjection(html, map), map, [
+        item('a', 'h1', 'shorten'),
+        item('b', 'p', 'expand'),
+      ]),
     )
     const text = buildQueueInstruction(entries)
     const pIdx = text.indexOf(`1. sid=${sidOf('p')} <p> "First paragraph"`)
@@ -68,7 +84,10 @@ describe('buildQueueInstruction', () => {
   it('summarizes in queue order for the chat bubble', () => {
     const map = buildParseMap(html, 1)
     const entries = liveItems(
-      resolveQueue(html, map, [item('a', 'h1', 'shorten'), item('b', 'p', 'expand')]),
+      resolveQueue(buildProjection(html, map), map, [
+        item('a', 'h1', 'shorten'),
+        item('b', 'p', 'expand'),
+      ]),
     )
     expect(buildQueueSummary('Batch:', entries)).toBe(
       'Batch:\n1. Hello & welcome — shorten\n2. First paragraph — expand',
@@ -77,7 +96,9 @@ describe('buildQueueInstruction', () => {
 
   it('pins a send-now instruction to its element', () => {
     const map = buildParseMap(html, 1)
-    const [entry] = liveItems(resolveQueue(html, map, [item('a', 'p', 'make it bold')]))
+    const [entry] = liveItems(
+      resolveQueue(buildProjection(html, map), map, [item('a', 'p', 'make it bold')]),
+    )
     expect(buildSelectionInstruction(entry!.target, 'make it bold')).toBe(
       `Apply this to the element sid=${sidOf('p')} <p> ("First paragraph"), addressing it by sid in apply_ops:\nmake it bold`,
     )

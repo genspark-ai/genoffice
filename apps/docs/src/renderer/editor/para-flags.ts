@@ -1,4 +1,4 @@
-import type { ParaFormat, StyleDisplay } from '@genoffice/docx-engine'
+import type { DocDefaults, ParaFormat, StyleDisplay } from '@genoffice/docx-engine'
 import type { BlockMeta } from '../pagination-types'
 
 export interface DirectParaFlags {
@@ -36,14 +36,17 @@ export function directParaFlags(el: Element | undefined | null): DirectParaFlags
 export function paraPaginationMeta(
   format: ParaFormat | undefined,
   style: StyleDisplay | undefined,
+  docDefaults?: Pick<DocDefaults, 'widowControl'>,
 ): BlockMeta | undefined {
   const keepNext = format?.keepNext ?? style?.keepNext
   const keepLines = format?.keepLines ?? style?.keepLines
   const breakBefore = format?.pageBreakBefore === undefined && style?.pageBreakBefore
-  const widowOff = (format?.widowControl ?? style?.widowControl) === false
+  const styleWidow = style?.widowControl ?? docDefaults?.widowControl
+  const widowOff = (format?.widowControl ?? styleWidow) === false
   const noLineNo = format?.suppressLineNumbers ?? style?.suppressLineNumbers
   const paraStyle: DirectParaFlags = {}
   for (const key of KEYS) if (typeof style?.[key] === 'boolean') paraStyle[key] = style[key]
+  if (paraStyle.widowControl === undefined && styleWidow === false) paraStyle.widowControl = false
   if (
     !keepNext &&
     !keepLines &&
@@ -61,6 +64,20 @@ export function paraPaginationMeta(
     ...(widowOff ? { widowControl: false as const } : {}),
     paraStyle,
   }
+}
+
+/** A table's cells follow a document-wide widowControl off (Word 2013+ layout)
+ *  unless a cell paragraph turns it back on, directly or through its pStyle. */
+export function tableWidowOff(
+  xml: string,
+  docWidowControl: boolean | undefined,
+  styleWidowControl: (styleId: string) => boolean | undefined,
+): boolean {
+  if (docWidowControl !== false) return false
+  if (/<w:widowControl(\/>|\s+w:val="(1|true|on)")/.test(xml)) return false
+  for (const m of xml.matchAll(/<w:pStyle w:val="([^"]+)"/g))
+    if (styleWidowControl(m[1]) === true) return false
+  return true
 }
 
 /** Effective pagination flags of a measured block: the element's direct flags, then

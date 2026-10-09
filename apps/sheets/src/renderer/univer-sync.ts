@@ -19,10 +19,12 @@ import {
   type IRange,
   type IStyleData,
   IUndoRedoService,
+  IUniverInstanceService,
   LifecycleStages,
   RANGE_TYPE,
   VerticalAlign,
   WrapStrategy,
+  type CustomData,
 } from '@univerjs/core'
 import { IFindReplaceService } from '@univerjs/preset-sheets-find-replace'
 import type { IFilterColumn } from '@univerjs/preset-sheets-filter'
@@ -76,6 +78,7 @@ import type {
   WorkbookDvState,
   WorkbookFile,
   WorkbookFilterState,
+  WorkbookFormulaCellsResult,
   WorkbookNoteState,
   WorkbookRangeResult,
   WorkbookRichRun,
@@ -119,8 +122,9 @@ import { isPlainArithmeticFormula } from './formula-cached-fallback'
 import { degradeQuadraticFormulaCells } from './formula-cost'
 import { extractFunctionNames } from './formula-functions'
 import { DEFAULT_SHORT_DATE, setSystemShortDate } from '@genoffice/xlsx-gateway/shared/short-date'
-import { getWorkbookMdw, setWorkbookMdw } from './app-constants'
+import { getWorkbookMdw, REORDER_JOURNAL_MAX_CELLS, setWorkbookMdw } from './app-constants'
 import { excelRowPitchPx } from './autofit-line-pitch'
+import { batchWrapRowHeights, createUniverWrapMeasurer } from './wrap-row-height-batch'
 import {
   EXCEL_DIGIT_PER_PT,
   fontAvailable,
@@ -129,6 +133,12 @@ import {
 } from './numfmt-fix'
 import { t } from './i18n/locale'
 import { mapProtectedRanges } from './protected-ranges'
+import {
+  CELL_HIDDEN_KEY,
+  CELL_LOCKED_KEY,
+  effectiveSheetProtection,
+  fileSheetProtection,
+} from './sheet-protection'
 import { INDENT_STEP_PX } from './selection-format'
 import {
   fileRangeToScreenRange,
@@ -171,8 +181,11 @@ import {
   type UniverWorksheet,
   type WrapMeasureCoverage,
 } from './univer-state'
+import type { SheetOutlineState } from './outline-model'
 import { isManualCalculation } from './calc-options'
 import { noteFormulaStreamChunk, requestFullRecalcAfterStream } from './formula-stream-hold'
+import { SharedFormulaLookup, indexedFormulas } from './shared-formula-index'
+import { threadStore } from './threaded-comments'
 
 export const MINIMUM_SHEET_ROW_COUNT = 1000
 
@@ -186,6 +199,21 @@ function clearUnitUndoHistory(runtime: UniverRuntime, unitId: string): void {
     .get<{ clearUndoRedo(unitId: string): void }>(IUndoRedoService)
     .clearUndoRedo(unitId)
 }
+/**
+ * createWorkbook does not focus what it created, and the disposeUnit above
+ * reset the focused unit to null (its _tryResetFocusOnRemoval) when the
+ * replaced workbook was the focused one — a workbook loaded into an
+ * already-mounted view (the prewarmed spare) then sits with NO focused unit.
+ * The stale FOCUSING_* context bits keep shortcut-gated keys (Enter, arrows)
+ * alive, so the damage hides: the cell editor's character-key routing and
+ * ILayoutService.focus() (which early-returns on a null focused unit) are
+ * dead, and typing into the adopted view stops opening the editor until
+ * something else happens to focus the unit (a canvas click does).
+ */
+function focusCreatedUnit(runtime: UniverRuntime, unitId: string): void {
+  runtime.univer.__getInjector().get(IUniverInstanceService).focusUnit(unitId)
+}
+
 export const MINIMUM_SHEET_COLUMN_COUNT = 26
 
 export function syncUniver(runtime: UniverRuntime | null, snapshot: WorkbookSnapshot): void {
@@ -279,6 +307,7 @@ function loadSnapshotIntoUniverInner(
       }),
     ),
   })
+  focusCreatedUnit(runtime, workbookId)
 
   // Replay demo-mode formatting and layout after the rebuild (snapshot is
   // the source of truth; cellData above carries only values/formulas).
@@ -319,9 +348,13 @@ export function nextSessionPivotName(journal: EditJournal): string {
 }
 
 /// Default session table names: Table1, Table2, … skipping names the session
-/// already used. Collisions with names in the file fail closed at save time.
-export function nextSessionTableName(journal: EditJournal): string {
+/// already used and any `reserved` names (file tables).
+export function nextSessionTableName(
+  journal: EditJournal,
+  reserved: Iterable<string> = [],
+): string {
   const taken = new Set(journal.tableAdds.map((table) => table.name.toLowerCase()))
+  for (const name of reserved) taken.add(name.toLowerCase())
   let index = journal.tableAdds.length + 1
   while (taken.has(`table${index}`)) index += 1
   return `Table${index}`
@@ -493,6 +526,7 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
       }),
     ),
   })
+  focusCreatedUnit(runtime, `file-${file.sha256}`)
   // Excel opens on workbookView/@activeTab; Univer defaults to the first
   // visible sheet. Skip hidden targets (stale activeTab in the file).
   const activeMeta = [file.sheets[file.activeTab], ...file.sheets].find(
@@ -651,18 +685,17 @@ export function workbookStructureLocked(state: LazyWorkbookState | null): boolea
 }
 
 /// Shared by propose (fail early) and apply (fail closed) for protect_sheet.
+/// The password itself is checked at apply time (async hash).
 export function protectSheetGuard(
   state: LazyWorkbookState,
   sheetId: string,
   nextProtected: boolean,
+  hasPasswordInput: boolean,
 ): string | null {
   if (isSheetRemoved(state.editJournal, sheetId)) return `Unknown sheet: ${sheetId}`
-  const isAdded = state.editJournal.sheets.added.has(sheetId)
-  const file = state.sheetProtections.get(sheetId)
-  if (!file && !isAdded) {
-    return t('appProtectionNeedsIndexed')
-  }
-  if (!nextProtected && file?.hasPassword) {
+  const current = effectiveSheetProtection(state, sheetId)
+  if (!current) return t('appProtectionNeedsIndexed')
+  if (!nextProtected && current.hasPassword && !hasPasswordInput) {
     return t('appProtectedWithPassword')
   }
   return null
@@ -1134,10 +1167,8 @@ export function applyDefinedNames(
   }
 }
 
-/// How a comment's author and text are packed into the single note string
-/// Univer holds. An author-less comment is stored verbatim, with no marker -
-/// which is exactly why the marker has to be recognised by provenance and not
-/// by shape (see collectNoteStates).
+/// An author-less comment carries no marker, so the marker is recognised by
+/// provenance, not shape (see collectNoteStates).
 function encodeNoteText(author: string, text: string): string {
   return author ? `${author}:\n${text}` : text
 }
@@ -1163,6 +1194,8 @@ function applyWorkbookNotesInner(
     const worksheet = workbook.getSheetBySheetId(sheet.id)
     if (!worksheet) continue
     for (const comment of sheet.comments) {
+      // Threads are the thread store's (purple marker, task pane), not notes.
+      if (comment.thread) continue
       try {
         worksheet.getRange(comment.row, comment.column).createOrUpdateNote({
           id: `note-${sheet.id}-${comment.row}-${comment.column}`,
@@ -1185,8 +1218,11 @@ function createColumnData(
   // The snapshot grid is padded past the used range (MINIMUM_SHEET_COLUMN_COUNT);
   // a workbook-wide <col min="1" max="16384"> must keep painting the padding.
   columnCount: number,
-): Record<number, { w?: number; hd?: BooleanNumber; s?: IStyleData }> {
-  const data: Record<number, { w?: number; hd?: BooleanNumber; s?: IStyleData }> = {}
+): Record<number, { w?: number; hd?: BooleanNumber; s?: IStyleData; custom?: CustomData }> {
+  const data: Record<
+    number,
+    { w?: number; hd?: BooleanNumber; s?: IStyleData; custom?: CustomData }
+  > = {}
   for (const columnWidth of sheet.columnWidths) {
     const endColumn = Math.min(columnWidth.endColumn, columnCount - 1)
     // Outline-only <col> entries carry no width; leave the default width.
@@ -1205,7 +1241,10 @@ function createColumnData(
           ? { w: pixelWidth }
           : {}),
         ...(columnWidth.hidden ? { hd: BooleanNumber.TRUE } : {}),
-        ...(style ? { s: toUniverStyle(style) } : {}),
+        // A later styled span replaces the earlier lock flag as well.
+        ...(style
+          ? { s: toUniverStyle(style), custom: protectionCustom(style).custom ?? null }
+          : {}),
       }
     }
   }
@@ -1399,6 +1438,7 @@ export async function activateFormulaClosure(
   }
 
   const inputs: ClosureSheetInput[] = []
+  let indexedCount = 0
   for (const sheet of state.file.sheets) {
     const deadline = Date.now() + 180_000
     for (;;) {
@@ -1419,22 +1459,27 @@ export async function activateFormulaClosure(
       }
       if (result.indexingComplete) {
         storeFormulaText(state, sheet.id, result.cells)
+        const shared = storeSharedFormulaGroups(state, sheet.id, result.sharedGroups)
         recordCachedFormulaValues(state, sheet.id, result.cells)
-        inputs.push({
-          id: sheet.id,
-          name: sheet.name,
-          rowCount: sheet.rowCount,
-          columnCount: sheet.columnCount,
-          formulas: result.cells.flatMap((cell) =>
-            cell.formula ? [{ row: cell.row, column: cell.column, formula: cell.formula }] : [],
-          ),
-        })
+        // Followers are only expanded while the closure can still fit; the
+        // harvest above keeps running for the formula bar either way.
+        indexedCount += result.cells.length + shared.followerCount
+        if (indexedCount <= CLOSURE_MAX_CELLS) {
+          inputs.push({
+            id: sheet.id,
+            name: sheet.name,
+            rowCount: sheet.rowCount,
+            columnCount: sheet.columnCount,
+            formulas: indexedFormulas(result.cells, shared),
+          })
+        }
         break
       }
       if (Date.now() > deadline) return giveUp()
       await new Promise((resolve) => setTimeout(resolve, 400))
     }
   }
+  if (indexedCount > CLOSURE_MAX_CELLS) return giveUp()
   if (inputs.every((sheet) => sheet.formulas.length === 0)) return giveUp()
   const closure = computeFormulaClosure(inputs, CLOSURE_MAX_CELLS)
   if (!closure.ok) return giveUp()
@@ -1810,7 +1855,6 @@ export async function recoverSidecarSession(state: LazyWorkbookState): Promise<b
   sidecarCrashNotified = false
   if (sessionRecoveryInFlight) return sessionRecoveryInFlight
   if (sessionRecoveryAttempted.has(state)) return false
-  sessionRecoveryAttempted.add(state)
   sessionRecoveryInFlight = (async () => {
     const path = state.file.path
     // Nothing on disk to re-open (a new or imported workbook): leave the
@@ -1822,6 +1866,9 @@ export async function recoverSidecarSession(state: LazyWorkbookState): Promise<b
     // second merge input that nothing would ever close.
     const reopened = await window.desktopApi.reopenWorkbook(path)
     if (!reopened) return false
+    // Only a recovery that produced a session counts: a cancelled prompt or a
+    // transient open failure leaves the next crash signal free to retry.
+    sessionRecoveryAttempted.add(state)
     state.file = { ...state.file, sessionId: reopened.sessionId }
     for (const timer of state.retryTimers.values()) clearTimeout(timer)
     state.retryTimers.clear()
@@ -2194,6 +2241,66 @@ export async function readDemoChartRangeVector(
   return { vector, ref: absRangeRef(target.getSheetName(), range) }
 }
 
+/// File visuals with their pending edits applied: deleted ones disappear,
+/// moved ones render at their journaled anchor, arranged ones carry their
+/// new rotation/flip/alt text, and z-order follows the journaled zIndex
+/// within each drawing part (document order is z-order).
+export function projectVisualEdits(
+  visuals: readonly WorkbookVisualObject[],
+  visualEdits: ReadonlyMap<string, VisualEditEntry>,
+): WorkbookVisualObject[] {
+  const projected = visuals
+    .filter((visual) => !visualEdits.get(visual.id)?.remove)
+    .map((visual) => {
+      const edit = visualEdits.get(visual.id)
+      if (!edit) return visual
+      return {
+        ...visual,
+        ...(edit.anchor ? { anchor: edit.anchor } : {}),
+        // A solid repaint replaces a style gradient or picture fill.
+        ...(edit.fillColor
+          ? { fillColor: edit.fillColor, fillGradient: undefined, fillMediaPath: undefined }
+          : {}),
+        ...(edit.lineColor ? { lineColor: edit.lineColor } : {}),
+        // A resized rotated shape carries its new true frame; the
+        // install's AABB re-anchoring must not rebuild the old one.
+        ...(edit.frameSize
+          ? { frameWidth: edit.frameSize.width, frameHeight: edit.frameSize.height }
+          : {}),
+        ...(edit.rotation === undefined ? {} : { rotation: edit.rotation || undefined }),
+        ...(edit.flipH === undefined ? {} : { flipH: edit.flipH }),
+        ...(edit.flipV === undefined ? {} : { flipV: edit.flipV }),
+        ...(edit.altText === undefined ? {} : { altText: edit.altText }),
+        ...(edit.editAs === undefined ? {} : { editAs: edit.editAs }),
+        ...(edit.hyperlink === undefined ? {} : { hyperlink: edit.hyperlink }),
+      }
+    })
+  // Same rule as the gateway: visuals carrying a zIndex permute among their
+  // own slots within a drawing part; everything else stays where it is.
+  const key = (visual: WorkbookVisualObject): number | undefined =>
+    visualEdits.get(visual.id)?.zIndex
+  const byPart = new Map<string, number[]>()
+  projected.forEach((visual, at) => {
+    if (key(visual) === undefined) return
+    const part = visual.drawingPath ?? visual.sheetId
+    byPart.set(part, [...(byPart.get(part) ?? []), at])
+  })
+  if (byPart.size === 0) return projected
+  const result = [...projected]
+  for (const slots of byPart.values()) {
+    const sorted = slots
+      .map((at) => projected[at]!)
+      .sort(
+        (left, right) =>
+          key(left)! - key(right)! || (left.drawingIndex ?? 0) - (right.drawingIndex ?? 0),
+      )
+    slots.forEach((at, index) => {
+      result[at] = sorted[index]!
+    })
+  }
+  return result
+}
+
 /// Journal snapshot/restore for one visual, backing the undo closures.
 interface VisualJournalSnapshot {
   readonly add: WorkbookVisualObject | undefined
@@ -2450,13 +2557,25 @@ async function recalcFormulaCellKeys(
   }
   if (!result.indexingComplete) return null
   storeFormulaText(state, sheetId, result.cells)
-  // The file's cached results, for the overlay verdict and the display
-  // fallback (streamed installs never record them).
+  const shared = storeSharedFormulaGroups(state, sheetId, result.sharedGroups)
+  // The masters' file-cached results, for the overlay verdict and the
+  // display fallback; followers' values are recorded as their chunks load.
   recordCachedFormulaValues(state, sheetId, result.cells)
   const keys = new Set<number>()
   for (const cell of result.cells) keys.add(cellKey(cell.row, cell.column))
+  shared.forEachFollower((row, column) => keys.add(cellKey(row, column)))
   state.recalc.formulaCells.set(sheetId, keys)
   return keys
+}
+
+function storeSharedFormulaGroups(
+  state: LazyWorkbookState,
+  sheetId: string,
+  groups: WorkbookFormulaCellsResult['sharedGroups'],
+): SharedFormulaLookup {
+  const lookup = new SharedFormulaLookup(groups)
+  state.sharedFormulaGroups.set(sheetId, lookup)
+  return lookup
 }
 
 /// Keep the formula text around for the formula bar — the closure may
@@ -2473,7 +2592,10 @@ function storeFormulaText(
   }
   // Viewport harvesting on a million-formula sheet would grow without bound;
   // dropping the store only costs formula-bar text for long-unseen cells.
-  if (bySheet.size > 200_000) bySheet.clear()
+  if (bySheet.size > 200_000) {
+    bySheet.clear()
+    state.formulaTextTruncated.add(sheetId)
+  }
   for (const cell of cells) {
     if (cell.formula) bySheet.set(`${cell.row}:${cell.column}`, cell.formula)
   }
@@ -2537,13 +2659,15 @@ async function runFormulaRecalc(
     let unsupported = 0
     const journalCells = state.editJournal.cells.get(sheetId)
     const formulaTextBySheet = state.formulaText.get(sheetId)
+    const sharedBySheet = state.sharedFormulaGroups.get(sheetId)
     const cachedBySheet = state.cachedFormulaValues.get(sheetId)
     for (const cell of result.cells) {
       if (cell.sheetId !== sheetId || !cell.isFormula) continue
       // The user's own journaled edits stay authoritative on screen.
       if (journalCells?.has(`${cell.row}:${cell.column}`)) continue
       const key = `${cell.row}:${cell.column}`
-      const formulaText = formulaTextBySheet?.get(key)
+      const formulaText =
+        formulaTextBySheet?.get(key) ?? sharedBySheet?.textAt(cell.row, cell.column)
       if (
         recalcResultKeepsCache(
           cell.formatted,
@@ -2701,7 +2825,13 @@ async function loadFrozenColumnStrip(
       stripPatchRange,
       mapped.screen.merges,
     )
-    measureWrapAutoFitRows(worksheet, stripQualifying)
+    measureWrapRowsFromCells(worksheet, stripQualifying, {
+      cells: mapped.screen.cells,
+      styles: state.file.styles,
+      merges: mapped.screen.merges,
+      inheritedWrap: inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheet.columnWidths),
+      defaultRowHeightPx: defaultRowHeightPx(state, sheetId),
+    })
     trackPreIndexMeasuredRows(`file-${state.file.sha256}:${sheetId}`, stripQualifying)
   } catch {
     state.frozenStripKeys.delete(sheetId)
@@ -3047,6 +3177,9 @@ async function loadRange(
     // only the last batch of an over-cap read — except under structural
     // ops, where the store must stay in file coordinates.
     storeFormulaText(state, sheetId, hasStructuralOps ? result.cells : mapped.screen.cells)
+    // Shared-formula followers are absent from the formula index, so their
+    // file-cached results are only known once their chunk streams in.
+    if (!hasStructuralOps) recordCachedFormulaValues(state, sheetId, mapped.screen.cells)
     recordHyperlinks(state, sheetId, mapped.screen.hyperlinks)
     keepActiveSheet(worksheet, () => {
       applyRowProperties(runtime, worksheet, state, sheetId, mapped.screen.rows)
@@ -3085,8 +3218,19 @@ async function loadRange(
       // through Univer's own auto-height path.
       const coverage = wrapCoverage(state, sheetId)
       const freshRows = patchedRange ? wrapRowsOutsideCoverage(coverage, qualifyingCells) : []
+      const inheritedWrap = inheritedWrapLookup(
+        state.file.styles,
+        mapped.screen.rows,
+        sheetMeta.columnWidths,
+      )
       if (freshRows.length > 0) {
-        measureWrapAutoFitRows(worksheet, freshRows)
+        measureWrapRowsFromCells(worksheet, freshRows, {
+          cells: mapped.screen.cells,
+          styles: state.file.styles,
+          merges: mapped.screen.merges,
+          inheritedWrap: inheritedWrap,
+          defaultRowHeightPx: defaultRowHeightPx(state, sheetId),
+        })
         coverWrapRows(coverage, freshRows, wrapWindow.startColumn, wrapWindow.endColumn)
       }
       const sheetKey = `file-${state.file.sha256}:${sheetId}`
@@ -3114,7 +3258,18 @@ async function loadRange(
           mapped.screen.rows,
           resolveDefaultRowHeightPt(state.file, sheetMeta),
         )
-        measureWrapAutoFitRows(worksheet, stale.remeasure, false)
+        measureWrapRowsFromCells(
+          worksheet,
+          stale.remeasure,
+          {
+            cells: mapped.screen.cells,
+            styles: state.file.styles,
+            merges: mapped.screen.merges,
+            inheritedWrap: inheritedWrap,
+            defaultRowHeightPx: defaultRowHeightPx(state, sheetId),
+          },
+          false,
+        )
         await remeasureWrapRowsAcrossSheet(
           lazyWorkbookRef,
           worksheet,
@@ -3545,13 +3700,18 @@ export function applyRowProperties(
     const claimedFilterRows: number[] = []
     for (const row of rows) {
       if (row.outlineLevel !== undefined || row.collapsed) {
-        const rowsOutline = sheetOutline(state, sheetId).rows
-        // Session group edits own the entry; file reads only seed it.
-        if (!rowsOutline.has(row.row)) {
-          rowsOutline.set(row.row, {
-            level: row.outlineLevel ?? 0,
-            collapsed: row.collapsed ?? false,
-          })
+        const outline = sheetOutline(state, sheetId)
+        // Each file row seeds once; session edits own the entry afterwards.
+        if (!outline.seededRows.has(row.row)) {
+          outline.seededRows.add(row.row)
+          if (!outline.rows.has(row.row)) {
+            outline.rows.set(row.row, {
+              level: row.outlineLevel ?? 0,
+              collapsed: row.collapsed ?? false,
+              fileHidden: row.hidden,
+            })
+            outline.version += 1
+          }
         }
       }
       const key = `${row.row}:${row.height ?? ''}:${row.customHeight ?? false}:${row.hidden}:${row.styleIndex ?? ''}`
@@ -3562,7 +3722,11 @@ export function applyRowProperties(
         // carry none of their own. Model-level write; the patch that follows
         // each chunk repaints the range.
         const style = state.file.styles[row.styleIndex]
-        if (style) worksheet.getSheet().setRowStyle(row.row, toUniverStyle(style))
+        if (style) {
+          worksheet.getSheet().setRowStyle(row.row, toUniverStyle(style))
+          const custom = protectionCustom(style).custom
+          if (custom) worksheet.getSheet().getRowManager().getRowOrCreate(row.row).custom = custom
+        }
       }
       if (row.height !== undefined) {
         const px = Math.round((row.height * 96) / 72)
@@ -3685,13 +3849,18 @@ function forEachRowRun(rows: number[], apply: (start: number, count: number) => 
   if (count > 0) apply(start, count)
 }
 
-export function sheetOutline(
-  state: LazyWorkbookState,
-  sheetId: string,
-): NonNullable<ReturnType<LazyWorkbookState['outline']['get']>> {
+export function sheetOutline(state: LazyWorkbookState, sheetId: string): SheetOutlineState {
   let outline = state.outline.get(sheetId)
   if (!outline) {
-    outline = { rows: new Map(), cols: new Map() }
+    const meta = lazySheetMeta(state, sheetId)
+    outline = {
+      rows: new Map(),
+      cols: new Map(),
+      summaryBelow: meta?.outlineSummaryBelow !== false,
+      summaryRight: meta?.outlineSummaryRight !== false,
+      version: 0,
+      seededRows: new Set(),
+    }
     state.outline.set(sheetId, outline)
   }
   return outline
@@ -3810,6 +3979,10 @@ function containsRange(container: IRange, requested: IRange): boolean {
   )
 }
 
+/// Viewport harvesting on a million-formula sheet would otherwise grow
+/// without bound; past this the display fallback simply knows fewer cells.
+const CACHED_FORMULA_VALUES_MAX = 200_000
+
 /// Remembers each formula cell's file-cached value before the engine gets a
 /// chance to recalculate it, so the display fallback can restore Excel's
 /// result when that recalculation errors. Only needed where formulas are
@@ -3822,6 +3995,7 @@ function recordCachedFormulaValues(
   let cached = state.cachedFormulaValues.get(sheetId)
   for (const cell of cells) {
     if (!cell.formula || cell.value === null || cell.value === undefined) continue
+    if (cached && cached.size >= CACHED_FORMULA_VALUES_MAX) return
     if (!cached) {
       cached = new Map()
       state.cachedFormulaValues.set(sheetId, cached)
@@ -3978,6 +4152,18 @@ export function applyJournalOverlay(
     }
     if (entry.style) {
       cellRange.setValues([[{ s: fromNeutralStyle(entry.style) as IStyleData }]])
+      const flags = {
+        ...(entry.style.protectionLocked === undefined
+          ? {}
+          : { [CELL_LOCKED_KEY]: entry.style.protectionLocked }),
+        ...(entry.style.protectionHidden === undefined
+          ? {}
+          : { [CELL_HIDDEN_KEY]: entry.style.protectionHidden }),
+      }
+      if (Object.keys(flags).length > 0) {
+        const existing = worksheet.getSheet().getCellRaw(entry.row, entry.column)?.custom
+        cellRange.setValues([[{ custom: { ...existing, ...flags } }]])
+      }
     }
   }
 }
@@ -4360,10 +4546,26 @@ function wrapCoverage(state: LazyWorkbookState, sheetId: string): Map<number, Wr
 /// when the lifecycle reaches Rendered; a measure dispatched before that
 /// silently yields nothing. Loads race that stage on open, so early measures
 /// queue here and flush when the stage arrives.
+export interface WrapMeasureFromCells {
+  cells: WorkbookRangeResult['cells']
+  styles: readonly WorkbookCellStyle[]
+  merges: WorkbookRangeResult['merges'] | undefined
+  inheritedWrap: (row: number, column: number) => boolean
+  defaultRowHeightPx: number
+}
+
+export interface PendingWrapMeasure {
+  worksheet: UniverWorksheet
+  rows: readonly number[]
+  keepTaller: boolean
+  /// Set when the rows fit from a chunk payload (measureWrapRowsFromCells).
+  fromCells?: WrapMeasureFromCells
+}
+
 export const wrapMeasureGate: {
   ready: boolean
   runtime: UniverRuntime | null
-  pending: Array<{ worksheet: UniverWorksheet; rows: readonly number[]; keepTaller: boolean }>
+  pending: PendingWrapMeasure[]
   deferred: Array<() => void>
 } = { ready: false, runtime: null, pending: [], deferred: [] }
 
@@ -4381,7 +4583,11 @@ export function installWrapMeasureLifecycle(runtime: UniverRuntime): { dispose()
     // AutoHeightController) run before the queued measures.
     setTimeout(() => {
       for (const item of wrapMeasureGate.pending.splice(0)) {
-        measureWrapAutoFitRows(item.worksheet, item.rows, item.keepTaller)
+        if (item.fromCells) {
+          measureWrapRowsFromCells(item.worksheet, item.rows, item.fromCells, item.keepTaller)
+        } else {
+          measureWrapAutoFitRows(item.worksheet, item.rows, item.keepTaller)
+        }
       }
       for (const run of wrapMeasureGate.deferred.splice(0)) run()
     }, 0)
@@ -4534,6 +4740,49 @@ export function measureWrapAutoFitRows(
   if (before.size > 0) restoreTallerAutoHeights(worksheet, before)
 }
 
+/// Fits the rows from the chunk payload itself (wrap-row-height-batch) and
+/// writes every height in one mutation; rows the measurer declines (rich
+/// text, rotation) go through `measureWrapAutoFitRows`.
+export function measureWrapRowsFromCells(
+  worksheet: UniverWorksheet,
+  rows: readonly number[],
+  fromCells: WrapMeasureFromCells,
+  keepTaller = true,
+): void {
+  if (rows.length === 0) return
+  const runtime = wrapMeasureGate.runtime
+  if (!wrapMeasureGate.ready || !runtime) {
+    // Queued like the per-row measures so a stale-height reset can purge rows.
+    wrapMeasureGate.pending.push({ worksheet, rows, keepTaller, fromCells })
+    return
+  }
+  const sheet = worksheet.getSheet()
+  const current = readAutoHeights(worksheet, rows)
+  const { heights, fallbackRows } = batchWrapRowHeights(
+    {
+      ...fromCells,
+      rows,
+      columnWidthPx: (column) => sheet.getColumnWidth(column),
+      currentAutoHeight: (row) => current.get(row),
+      keepTaller,
+    },
+    createUniverWrapMeasurer(toUniverStyle),
+  )
+  if (heights.length > 0) {
+    journalSuppression.active = true
+    try {
+      runtime.univerAPI.syncExecuteCommand('sheet.mutation.set-worksheet-row-auto-height', {
+        unitId: sheet.getUnitId(),
+        subUnitId: worksheet.getSheetId(),
+        rowsAutoHeightInfo: heights,
+      })
+    } finally {
+      journalSuppression.active = false
+    }
+  }
+  measureWrapAutoFitRows(worksheet, fallbackRows, keepTaller)
+}
+
 function readAutoHeights(worksheet: UniverWorksheet, rows: readonly number[]): Map<number, number> {
   const heights = new Map<number, number>()
   // Optional chaining for unit-test worksheet doubles without a model.
@@ -4658,6 +4907,7 @@ export function patchWorksheetRangeInner(
           p: null,
           t: null,
           s: style ? toUniverStyle(style) : null,
+          ...(style ? protectionCustom(style) : {}),
         }
         if (style && rowColStyleKeys?.size) {
           overrideCells.push([cell.row - range.startRow, cell.column - range.startColumn])
@@ -4785,9 +5035,7 @@ export function patchWorksheetRangeInner(
               },
             }
           : {}),
-        ...(shrinks && typeof displayValue === 'number'
-          ? { custom: { [SHRINK_TO_FIT_KEY]: true } }
-          : {}),
+        ...installCustom(shrinks && typeof displayValue === 'number', effectiveStyle),
       }
       // Only cells with their own xf override row/col defaults.
       if (effectiveStyle && rowColStyleKeys?.size) {
@@ -5040,6 +5288,56 @@ interface PivotBand {
 /// own fill covers them); column stripes count from firstDataCol and skip
 /// the header rows. Row kinds come from the sidecar's `rowKinds`; without
 /// them the rows are plain data with the last one the grand total.
+/// Whether a block overlaps a table or pivot output range, whose banding
+/// paints blank cells and so needs the dense install even without cells.
+/// The install writes a dense matrix over its range, so a preload block is
+/// installed only over the box its cells, hyperlinks, merges and table
+/// banding span: a column of styled blanks below the data costs one column
+/// per block, not the whole block, and an empty block installs nothing.
+/// Merges count whole so the write never cuts through one.
+export function preloadInstallRange(
+  block: IRange,
+  cells: ReadonlyArray<{ readonly row: number; readonly column: number }>,
+  hyperlinks: ReadonlyArray<{ readonly row: number; readonly column: number }>,
+  merges: readonly IRange[],
+  tables: WorkbookFile['sheets'][number]['tables'],
+  pivotTables: WorkbookFile['sheets'][number]['pivotTables'],
+): IRange | null {
+  let box: IRange | null = null
+  const extend = (startRow: number, endRow: number, startColumn: number, endColumn: number) => {
+    const sr = Math.max(startRow, block.startRow)
+    const er = Math.min(endRow, block.endRow)
+    const sc = Math.max(startColumn, block.startColumn)
+    const ec = Math.min(endColumn, block.endColumn)
+    if (sr > er || sc > ec) return
+    box = box
+      ? {
+          startRow: Math.min(box.startRow, sr),
+          endRow: Math.max(box.endRow, er),
+          startColumn: Math.min(box.startColumn, sc),
+          endColumn: Math.max(box.endColumn, ec),
+        }
+      : { startRow: sr, endRow: er, startColumn: sc, endColumn: ec }
+  }
+  for (const cell of cells) extend(cell.row, cell.row, cell.column, cell.column)
+  for (const link of hyperlinks) extend(link.row, link.row, link.column, link.column)
+  for (const merge of merges) {
+    extend(merge.startRow, merge.endRow, merge.startColumn, merge.endColumn)
+  }
+  for (const table of tables) {
+    extend(table.range.startRow, table.range.endRow, table.range.startColumn, table.range.endColumn)
+  }
+  for (const pivot of pivotTables) {
+    try {
+      const area = parseRange(pivot.outputRef)
+      extend(area.startRow, area.endRow, area.startColumn, area.endColumn)
+    } catch {
+      // unparsable output ref: nothing to band
+    }
+  }
+  return box
+}
+
 export function applyPivotStyling(
   matrix: ICellData[][],
   range: IRange,
@@ -5181,8 +5479,13 @@ export function cellFontTextStyle(style: WorkbookCellStyle | undefined): IStyleD
     ...(style.italic ? { it: BooleanNumber.TRUE } : {}),
     ...(style.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
     ...(style.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
+    ...(style.vertAlign ? { va: baselineOffsetOf(style.vertAlign) } : {}),
     ...(style.fontColor ? { cl: { rgb: style.fontColor } } : {}),
   }
+}
+
+export function baselineOffsetOf(vertAlign: 'superscript' | 'subscript'): BaselineOffset {
+  return vertAlign === 'subscript' ? BaselineOffset.SUBSCRIPT : BaselineOffset.SUPERSCRIPT
 }
 
 /// The font subset of an already-composed Univer style — the rich-document
@@ -5196,6 +5499,7 @@ export function fontTextStyleOf(s: IStyleData | null | undefined): IStyleData {
     ...(s.it ? { it: s.it } : {}),
     ...(s.ul?.s ? { ul: { s: BooleanNumber.TRUE } } : {}),
     ...(s.st?.s ? { st: { s: BooleanNumber.TRUE } } : {}),
+    ...(s.va ? { va: s.va } : {}),
     ...(s.cl?.rgb ? { cl: { rgb: s.cl.rgb } } : {}),
   }
 }
@@ -5498,25 +5802,35 @@ async function preloadEntireWorkbookInner(
       if (state.formulaMode) collectArrayFollowers(arrayFollowers, installable, ops)
       recordRowStyleKeys(state, sheetId, screen.rows)
       recordHiddenFileRows(state, sheetId, screen.rows, screenRange)
-      patchWorksheetRange(
-        worksheet,
-        undefined,
+      const installRange = preloadInstallRange(
         screenRange,
         installable,
-        state.file.styles,
         screen.hyperlinks,
+        screen.merges,
         sheet.tables,
         sheet.pivotTables,
-        sheet.freeze,
-        state.formulaMode,
-        state.editJournal,
-        state.closure.pinned.get(sheetId),
-        state.recalc.overlay.get(sheetId),
-        state.formulaMode ? arrayFollowers : undefined,
-        sheetRowColStyleKeys(state, sheetId),
-        inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
-        hiddenRowsInfo(state, sheetId),
       )
+      if (installRange) {
+        patchWorksheetRange(
+          worksheet,
+          undefined,
+          installRange,
+          installable,
+          state.file.styles,
+          screen.hyperlinks,
+          sheet.tables,
+          sheet.pivotTables,
+          sheet.freeze,
+          state.formulaMode,
+          state.editJournal,
+          state.closure.pinned.get(sheetId),
+          state.recalc.overlay.get(sheetId),
+          state.formulaMode ? arrayFollowers : undefined,
+          sheetRowColStyleKeys(state, sheetId),
+          inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
+          hiddenRowsInfo(state, sheetId),
+        )
+      }
       // Every mode needs formulaText for the formula bar (see loadRange):
       // value-mode cells install cached results with no `f` in the grid, and
       // after the preload declares full loadedRanges no later viewport load
@@ -5538,7 +5852,14 @@ async function preloadEntireWorkbookInner(
         screenRange,
         screen.merges,
       )
-      measureWrapAutoFitRows(worksheet, qualifying)
+      const inheritedWrap = inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths)
+      measureWrapRowsFromCells(worksheet, qualifying, {
+        cells: screen.cells,
+        styles: state.file.styles,
+        merges: screen.merges,
+        inheritedWrap: inheritedWrap,
+        defaultRowHeightPx: defaultRowHeightPx(state, sheetId),
+      })
       const sheetKey = `file-${state.file.sha256}:${sheetId}`
       if (result.indexingComplete) {
         const qualifyingWithoutMerges = wrapAutoFitRows(
@@ -5564,7 +5885,18 @@ async function preloadEntireWorkbookInner(
           screen.rows,
           resolveDefaultRowHeightPt(state.file, sheet),
         )
-        measureWrapAutoFitRows(worksheet, stale.remeasure, false)
+        measureWrapRowsFromCells(
+          worksheet,
+          stale.remeasure,
+          {
+            cells: screen.cells,
+            styles: state.file.styles,
+            merges: screen.merges,
+            inheritedWrap: inheritedWrap,
+            defaultRowHeightPx: defaultRowHeightPx(state, sheetId),
+          },
+          false,
+        )
       } else {
         trackPreIndexMeasuredRows(sheetKey, qualifying)
       }
@@ -5620,6 +5952,40 @@ function recordHyperlinks(
   }
 }
 
+/// A sheet the viewport never visited has no file state yet, and the
+/// protection guard fails closed on it (silently cancelling scripted
+/// writes). Index it on demand; false when it did not finish in time.
+export async function ensureSheetFileState(
+  state: LazyWorkbookState,
+  sheetId: string,
+  lazyWorkbookRef: { current: LazyWorkbookState | null },
+): Promise<boolean> {
+  if (state.sheetProtections.has(sheetId) || state.editJournal.sheets.added.has(sheetId)) {
+    return true
+  }
+  if (!lazySheetMeta(state, sheetId)) return true
+  const range = { startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 }
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (lazyWorkbookRef.current !== state) return false
+    let result: WorkbookRangeResult
+    try {
+      result = await window.desktopApi.readWorkbookRange({
+        sessionId: state.file.sessionId,
+        sheetId,
+        range,
+      })
+    } catch {
+      return false
+    }
+    if (result.indexingComplete) {
+      captureSheetFileState(state, sheetId, result)
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return false
+}
+
 /// Records the sheet-wide, complete-only file state (protection, manual page
 /// breaks, allow-edit ranges) the first time a sheet finishes indexing.
 function captureSheetFileState(
@@ -5628,10 +5994,7 @@ function captureSheetFileState(
   result: WorkbookRangeResult,
 ): void {
   if (!state.sheetProtections.has(sheetId)) {
-    state.sheetProtections.set(
-      sheetId,
-      result.sheetProtection ?? { protected: false, hasPassword: false },
-    )
+    state.sheetProtections.set(sheetId, fileSheetProtection(result.sheetProtection))
   }
   if (!state.sheetPageBreaks.has(sheetId)) {
     state.sheetPageBreaks.set(sheetId, {
@@ -5943,33 +6306,56 @@ export function collectNoteStates(
     if (isSheetRemoved(state.editJournal, sheetId)) continue
     const worksheet = workbook.getSheetBySheetId(sheetId)
     if (!worksheet) continue
-    // The marker is only ever written for a comment that HAS an author, so its
-    // shape is not evidence: an author-less note whose first line happens to
-    // end in a colon ("Status:\nOn track") was read as author="Status" and lost
-    // that line. Decide by provenance instead. A note still byte-identical to
-    // the file's encoding is that file comment, so its author and text are
-    // recovered exactly; anything else was written this session (the AI
-    // set_note op and the note editor never write a marker) and is taken whole.
+    // A shape regex mistook "Status:\nOn track" for an authored note; only the
+    // file encoding ever writes the marker, so decide by the file comment.
     const fileSheet = state.file.sheets.find((sheet) => sheet.id === sheetId)
     const fromFile = new Map(
       (fileSheet?.comments ?? []).map((comment) => [`${comment.row}:${comment.column}`, comment]),
     )
-    const notes = worksheet.getNotes().map((note) => {
-      const cell = { row: note.row, column: note.col }
-      const comment = fromFile.get(`${note.row}:${note.col}`)
-      // Untouched since the load: that IS the file comment, so take it exactly.
-      if (comment && encodeNoteText(comment.author, comment.text) === note.note) {
-        return { ...cell, author: comment.author, text: comment.text }
-      }
-      // Edited in this session. The note editor rewrites the string in place, so
-      // an authored note still carries its "Author:\n" prefix and the author
-      // must not be folded into the text; split it off the known author rather
-      // than by shape, so a label like "Status:" is never mistaken for one.
-      if (comment && comment.author && note.note.startsWith(`${comment.author}:\n`)) {
-        return { ...cell, author: comment.author, text: note.note.slice(comment.author.length + 2) }
-      }
-      return { ...cell, author: '', text: note.note }
-    })
+    const threads = threadStore.sheetThreads(sheetId)
+    const threaded = new Set(threads.map((thread) => `${thread.row}:${thread.column}`))
+    const notes: WorkbookNoteState['notes'] = worksheet
+      .getNotes()
+      .filter((note) => !threaded.has(`${note.row}:${note.col}`))
+      .map((note) => {
+        const cell = { row: note.row, column: note.col }
+        const comment = fromFile.get(`${note.row}:${note.col}`)
+        // A plain note where the file (or an earlier save this session) had a
+        // thread is a Convert to Note: thread: null drops the on-disk thread.
+        const convertedAuthor = threadStore.convertedAuthor(sheetId, note.row, note.col)
+        const converted = comment?.thread || convertedAuthor !== null ? { thread: null } : {}
+        if (convertedAuthor && note.note.startsWith(`${convertedAuthor}:\n`)) {
+          return {
+            ...cell,
+            author: convertedAuthor,
+            text: note.note.slice(convertedAuthor.length + 2),
+            ...converted,
+          }
+        }
+        if (comment && encodeNoteText(comment.author, comment.text) === note.note) {
+          return { ...cell, author: comment.author, text: comment.text, ...converted }
+        }
+        // Edited in place this session: split off the known author, not by shape.
+        if (comment && comment.author && note.note.startsWith(`${comment.author}:\n`)) {
+          return {
+            ...cell,
+            author: comment.author,
+            text: note.note.slice(comment.author.length + 2),
+            ...converted,
+          }
+        }
+        return { ...cell, author: '', text: note.note, ...converted }
+      })
+    for (const thread of threads) {
+      const { row, column, text, ...rest } = thread
+      notes.push({
+        row,
+        column,
+        author: thread.author,
+        text,
+        thread: { ...rest, replies: [...rest.replies] },
+      })
+    }
     noteStates.push({ sheetId, notes })
   }
   return noteStates
@@ -6160,7 +6546,7 @@ export function journalRangeSnapshot(
   if (!workbook || !worksheet) return
   const rows = range.endRow - range.startRow + 1
   const columns = range.endColumn - range.startColumn + 1
-  if (rows <= 0 || columns <= 0 || rows * columns > 200_000) return
+  if (rows <= 0 || columns <= 0 || rows * columns > REORDER_JOURNAL_MAX_CELLS) return
   const cellDatas = worksheet
     .getRange(range.startRow, range.startColumn, rows, columns)
     .getCellDatas()
@@ -7137,6 +7523,30 @@ function applyDxfFormat(
   return styled
 }
 
+function installCustom(
+  shrink: boolean,
+  style: WorkbookCellStyle | undefined,
+): { custom?: Record<string, boolean> } {
+  const custom = {
+    ...(shrink ? { [SHRINK_TO_FIT_KEY]: true } : {}),
+    ...protectionCustom(style).custom,
+  }
+  return Object.keys(custom).length > 0 ? { custom } : {}
+}
+
+/// xf protection flags ride along in ICellData.custom (Univer has no model).
+export function protectionCustom(style: WorkbookCellStyle | undefined): {
+  custom?: Record<string, boolean>
+} {
+  if (!style || (style.locked === undefined && style.hidden !== true)) return {}
+  return {
+    custom: {
+      ...(style.locked === undefined ? {} : { [CELL_LOCKED_KEY]: style.locked }),
+      ...(style.hidden === true ? { [CELL_HIDDEN_KEY]: true } : {}),
+    },
+  }
+}
+
 export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
   const diagonal = style.borderDiagonal ? toUniverBorder(style.borderDiagonal) : undefined
   const borders = {
@@ -7154,6 +7564,7 @@ export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
     it: style.italic ? BooleanNumber.TRUE : BooleanNumber.FALSE,
     ...(style.underline ? { ul: { s: BooleanNumber.TRUE } } : {}),
     ...(style.strikethrough ? { st: { s: BooleanNumber.TRUE } } : {}),
+    ...(style.vertAlign ? { va: baselineOffsetOf(style.vertAlign) } : {}),
     // xf alignment is fully resolved in the file: an explicit non-wrap cell
     // must override a WRAP column/row style at compose time.
     // centerContinuous rides on the overflow machinery (center-continuous.ts),
@@ -7404,21 +7815,7 @@ export function queueVisualInstall(
     const fileVisuals =
       visualEdits.size === 0
         ? state.file.visuals
-        : state.file.visuals
-            .filter((visual) => !visualEdits.get(visual.id)?.remove)
-            .map((visual) => {
-              const edit = visualEdits.get(visual.id)
-              if (!edit?.anchor && !edit?.frameSize) return visual
-              return {
-                ...visual,
-                ...(edit.anchor ? { anchor: edit.anchor } : {}),
-                // A resized rotated shape carries its new true frame; the
-                // install's AABB re-anchoring must not rebuild the old one.
-                ...(edit.frameSize
-                  ? { frameWidth: edit.frameSize.width, frameHeight: edit.frameSize.height }
-                  : {}),
-              }
-            })
+        : projectVisualEdits(state.file.visuals, visualEdits)
     const file =
       addedVisuals.length > 0 || fileVisuals !== state.file.visuals
         ? { ...state.file, visuals: [...fileVisuals, ...addedVisuals] }

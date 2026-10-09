@@ -1,3 +1,4 @@
+import { MAX_GRID_COLUMNS, MAX_GRID_ROWS } from '../shared/grid-bounds'
 import { columnIndex, columnLabel } from './cell-address'
 import type { StructuralOperation } from './workbook-dsl'
 
@@ -94,7 +95,9 @@ const REF_RE =
 // must `[[#Headers],[Q1]]`. ONE capturing group around the whole alternation, so
 // every protected run lands at an odd index of a split and the existing
 // `index % 2` guard covers both kinds. One level of nesting covers [[...],[...]].
-const REWRITE_SKIP_RE = /((?:"(?:[^"]|"")*")|(?:\[(?:[^\][]|\[[^\][]*\])*\]))/
+// The lookbehind keeps external-workbook prefixes (`[1]Sheet1!A1`, `'[Book.xlsx]Sheet 1'!A1`)
+// out of the skip: they follow a quote or `=`/operator, never a table name.
+const REWRITE_SKIP_RE = /((?:"(?:[^"]|"")*")|(?:(?<=[A-Za-z0-9_.])\[(?:[^\][]|\[[^\][]*\])*\]))/
 
 function decodeQuotedSheetName(quoted: string): string {
   return quoted.replaceAll("''", "'")
@@ -111,10 +114,6 @@ export interface FormulaShiftResult {
  *        on the sheet the structural op targets (bare refs are rewritten)
  * @param opSheetName name of the op's target sheet (matches explicit prefixes)
  */
-/// Excel grid bounds — copy/fill references pushed past them become #REF!.
-const MAX_GRID_ROWS = 1_048_576
-const MAX_GRID_COLUMNS = 16_384
-
 function offsetRefPart(part: RefPart, rowDelta: number, columnDelta: number): RefPart | null {
   const row = part.rowAbs === '$' ? part.row : part.row + rowDelta
   const col = part.colAbs === '$' ? part.col : part.col + columnDelta

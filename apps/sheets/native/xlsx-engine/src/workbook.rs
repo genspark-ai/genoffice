@@ -60,15 +60,15 @@ pub(crate) fn read_sheet_declarations(
                     attribute_value(&reader, &element, b"id")?.ok_or_else(|| {
                         SidecarError::Workbook("Sheet has no relationship id.".into())
                     })?;
-                let hidden = matches!(
-                    attribute_value(&reader, &element, b"state")?.as_deref(),
-                    Some("hidden") | Some("veryHidden")
-                );
+                let state = attribute_value(&reader, &element, b"state")?;
+                let very_hidden = state.as_deref() == Some("veryHidden");
+                let hidden = very_hidden || state.as_deref() == Some("hidden");
                 sheets.push(SheetDeclaration {
                     name,
                     sheet_id,
                     relationship_id,
                     hidden,
+                    very_hidden,
                 });
             }
             Event::Eof => break,
@@ -115,6 +115,13 @@ pub(crate) fn normalize_worksheet_path(target: &str) -> Result<String, SidecarEr
 pub(crate) struct SheetDimensions {
     pub(crate) row_count: usize,
     pub(crate) column_count: usize,
+    /// `<c>` elements carrying a value, formula or style; None when the
+    /// workbook's counting budget ran out before this sheet was walked.
+    pub(crate) stored_cell_count: Option<usize>,
+    /// The subset of stored cells carrying a value or formula, and the
+    /// (rows, columns) box those cells span; None with stored_cell_count.
+    pub(crate) value_cell_count: Option<usize>,
+    pub(crate) value_extent: Option<(usize, usize)>,
     pub(crate) column_widths: Vec<ColumnWidth>,
     pub(crate) default_row_height: Option<f64>,
     pub(crate) default_row_height_fixed: bool,
@@ -127,6 +134,10 @@ pub(crate) struct SheetDimensions {
     pub(crate) show_row_col_headers: bool,
     pub(crate) right_to_left: bool,
     pub(crate) zoom_scale: Option<u16>,
+    pub(crate) outline_level_row: u8,
+    pub(crate) outline_level_col: u8,
+    pub(crate) outline_summary_below: bool,
+    pub(crate) outline_summary_right: bool,
 }
 
 /// Excel keeps a zoom per view type; the app always opens the normal view,
@@ -150,6 +161,7 @@ pub(crate) fn read_sheet_dimensions(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
     colors: &ColorContext,
+    count_budget: &mut usize,
 ) -> Result<SheetDimensions, SidecarError> {
     let entry = zip_entry(archive, worksheet_path)?;
     let mut reader = Reader::from_reader(BufReader::new(entry));
@@ -173,7 +185,19 @@ pub(crate) fn read_sheet_dimensions(
     let mut show_row_col_headers = true;
     let mut right_to_left = false;
     let mut zoom_scale = None;
-    loop {
+    let mut dimension_trusted = false;
+    let mut stored_cell_count = 0usize;
+    let mut value_cell_count = 0usize;
+    let mut value_extent = (0usize, 0usize);
+    // Some(true) once the open <c> has shown a value/formula/style.
+    let mut open_cell_stored: Option<bool> = None;
+    let mut open_cell_position = (0usize, 0usize);
+    let mut open_cell_has_value = false;
+    let mut outline_level_row = 0u8;
+    let mut outline_level_col = 0u8;
+    let mut outline_summary_below = true;
+    let mut outline_summary_right = true;
+    let counted = loop {
         match reader.read_event_into(&mut buffer)? {
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"dimension" =>
@@ -182,6 +206,18 @@ pub(crate) fn read_sheet_dimensions(
                     // A malformed ref means "no usable dimension", not a broken file.
                     dimensions = dimensions_from_reference(&reference).ok();
                 }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"outlinePr" =>
+            {
+                let flag = |name: &[u8]| -> Result<bool, SidecarError> {
+                    Ok(!matches!(
+                        attribute_value(&reader, &element, name)?.as_deref(),
+                        Some("0") | Some("false")
+                    ))
+                };
+                outline_summary_below = flag(b"summaryBelow")?;
+                outline_summary_right = flag(b"summaryRight")?;
             }
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"tabColor" =>
@@ -240,6 +276,13 @@ pub(crate) fn read_sheet_dimensions(
                 base_column_width = attribute_value(&reader, &element, b"baseColWidth")?
                     .and_then(|value| value.parse::<f64>().ok())
                     .filter(|value| *value > 0.0);
+                let level = |name: &[u8]| -> Result<u8, SidecarError> {
+                    Ok(attribute_value(&reader, &element, name)?
+                        .and_then(|value| value.parse::<u8>().ok())
+                        .map_or(0, |value| value.min(7)))
+                };
+                outline_level_row = level(b"outlineLevelRow")?;
+                outline_level_col = level(b"outlineLevelCol")?;
             }
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"pane" =>
@@ -307,7 +350,8 @@ pub(crate) fn read_sheet_dimensions(
                     // are cheap to verify — trust only refs large enough that
                     // scanning them would cost real time. A ref reaching the
                     // sheet's last column or row (A1:XFD32, Yozo) declares the
-                    // whole sheet, not the used range.
+                    // whole sheet, not the used range. A trusted ref still
+                    // walks the cells, count-only, within the counting budget.
                     && dimensions.is_some_and(|(rows, columns)| {
                         rows > 1
                             && columns > 1
@@ -315,23 +359,18 @@ pub(crate) fn read_sheet_dimensions(
                             && rows * columns >= DIMENSION_TRUST_CELLS
                     }) =>
             {
+                dimension_trusted = true;
+                if *count_budget == 0 {
+                    let (row_count, column_count) = dimensions.unwrap_or((1, 1));
+                    break (row_count, column_count, false);
+                }
+            }
+            Event::End(element)
+                if element.local_name().as_ref() == b"sheetData" && dimension_trusted =>
+            {
                 let (row_count, column_count) = dimensions.unwrap_or((1, 1));
-                return Ok(SheetDimensions {
-                    row_count,
-                    column_count,
-                    column_widths,
-                    default_row_height,
-                    default_row_height_fixed,
-                    default_column_width,
-                    base_column_width,
-                    freeze,
-                    tab_color,
-                    show_grid_lines,
-                    show_formulas,
-                    show_row_col_headers,
-                    right_to_left,
-                    zoom_scale,
-                });
+                *count_budget -= stored_cell_count;
+                break (row_count, column_count, true);
             }
             Event::Start(element) | Event::Empty(element)
                 if element.local_name().as_ref() == b"row" =>
@@ -345,12 +384,7 @@ pub(crate) fn read_sheet_dimensions(
                 next_column = 0;
                 maximum_row = maximum_row.max(current_row);
             }
-            Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"c" =>
-            {
-                // Measuring the extent must not be the one place a corrupt
-                // address closes the workbook: take the position an omitted
-                // one gets, as the cell reader does.
+            Event::Start(element) if element.local_name().as_ref() == b"c" => {
                 let (row, column) = match attribute_value(&reader, &element, b"r")? {
                     Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
                     None => (current_row, next_column),
@@ -358,6 +392,48 @@ pub(crate) fn read_sheet_dimensions(
                 next_column = column + 1;
                 maximum_row = maximum_row.max(row);
                 maximum_column = maximum_column.max(column);
+                open_cell_stored = Some(attribute_value(&reader, &element, b"s")?.is_some());
+                open_cell_position = (row, column);
+                open_cell_has_value = false;
+            }
+            Event::Empty(element) if element.local_name().as_ref() == b"c" => {
+                let (row, column) = match attribute_value(&reader, &element, b"r")? {
+                    Some(address) => parse_address(&address).unwrap_or((current_row, next_column)),
+                    None => (current_row, next_column),
+                };
+                next_column = column + 1;
+                maximum_row = maximum_row.max(row);
+                maximum_column = maximum_column.max(column);
+                if attribute_value(&reader, &element, b"s")?.is_some() {
+                    stored_cell_count += 1;
+                }
+                if dimension_trusted && stored_cell_count >= *count_budget {
+                    let (row_count, column_count) = dimensions.unwrap_or((1, 1));
+                    *count_budget = 0;
+                    break (row_count, column_count, false);
+                }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if open_cell_stored.is_some()
+                    && matches!(element.local_name().as_ref(), b"v" | b"f" | b"is") =>
+            {
+                open_cell_stored = Some(true);
+                open_cell_has_value = true;
+            }
+            Event::End(element) if element.local_name().as_ref() == b"c" => {
+                if open_cell_stored.take() == Some(true) {
+                    stored_cell_count += 1;
+                }
+                if open_cell_has_value {
+                    value_cell_count += 1;
+                    value_extent.0 = value_extent.0.max(open_cell_position.0 + 1);
+                    value_extent.1 = value_extent.1.max(open_cell_position.1 + 1);
+                }
+                if dimension_trusted && stored_cell_count >= *count_budget {
+                    let (row_count, column_count) = dimensions.unwrap_or((1, 1));
+                    *count_budget = 0;
+                    break (row_count, column_count, false);
+                }
             }
             Event::Eof => {
                 let (dim_rows, dim_columns) = dimensions.unwrap_or((0, 0));
@@ -365,30 +441,44 @@ pub(crate) fn read_sheet_dimensions(
                     declared_extent(dim_rows, SHEET_MAX_ROWS).max(maximum_row + 1),
                     declared_extent(dim_columns, SHEET_MAX_COLUMNS).max(maximum_column + 1),
                 );
-                return Ok(SheetDimensions {
-                    row_count,
-                    column_count,
-                    column_widths,
-                    default_row_height,
-                    default_row_height_fixed,
-                    default_column_width,
-                    base_column_width,
-                    freeze,
-                    tab_color,
-                    show_grid_lines,
-                    show_formulas,
-                    show_row_col_headers,
-                    right_to_left,
-                    zoom_scale,
-                });
+                break (row_count, column_count, true);
             }
             _ => {}
         }
         buffer.clear();
-    }
+    };
+    let (row_count, column_count, counted) = counted;
+    Ok(SheetDimensions {
+        row_count,
+        column_count,
+        stored_cell_count: counted.then_some(stored_cell_count),
+        value_cell_count: counted.then_some(value_cell_count),
+        value_extent: counted.then_some(value_extent),
+        column_widths,
+        default_row_height,
+        default_row_height_fixed,
+        default_column_width,
+        base_column_width,
+        freeze,
+        tab_color,
+        show_grid_lines,
+        show_formulas,
+        show_row_col_headers,
+        right_to_left,
+        zoom_scale,
+        outline_level_row,
+        outline_level_col,
+        outline_summary_below,
+        outline_summary_right,
+    })
 }
 
 pub(crate) const DIMENSION_TRUST_CELLS: usize = 10_000;
+/// Per-workbook budget for counting stored cells on trusted dimensions
+/// (under half a microsecond per cell at open). Every host gate sits below it, so a
+/// workbook that exhausts it is "too large" either way; sheets the budget
+/// never reached report no count and the host falls back to their box.
+pub(crate) const STORED_CELL_COUNT_BUDGET: usize = 2_000_000;
 pub(crate) const SHEET_MAX_ROWS: usize = 1_048_576;
 pub(crate) const SHEET_MAX_COLUMNS: usize = 16_384;
 

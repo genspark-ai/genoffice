@@ -21,6 +21,7 @@ import {
   type TextBodyPropsPatch,
   setElementEffects,
   type EffectsPatch,
+  setElementRedaction,
   setPictureOpacity,
   setShapePresetGeometry,
   setGroupChildShapePresetGeometry,
@@ -320,6 +321,33 @@ register({
       updateConnectorsForMoved(slide, [el.id])
     }
     return { op, after: op.srcRect }
+  },
+})
+
+// ── setRedaction ───────────────────────────────────────────────────────
+// Not guarded: this is how a mark is created, so refusing it would leave the
+// reader no way to withhold anything. The write guard blocks the ops that
+// *damage* a mark, not this one.
+register({
+  name: 'setRedaction',
+  validate(op, ctx) {
+    resolveElement(ctx, op)
+    if (op.label != null && typeof op.label !== 'string') {
+      throw new GuidedError(
+        'op "setRedaction" needs "label": a non-empty string, or null to stop withholding.',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide, el } = resolveElement(ctx, op)
+    const label = (op.label as string | null) ?? null
+    if (!setElementRedaction(slide, el.id, label)) {
+      throw new GuidedError(
+        `op "setRedaction": element "${el.id}" is not a picture, or it already has that state. ` +
+          `Text is withheld through the text-editing surface, which marks runs rather than the element.`,
+      )
+    }
+    return { op, after: label }
   },
 })
 

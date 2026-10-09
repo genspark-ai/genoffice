@@ -49,6 +49,7 @@ import {
   normalizeLinkTarget,
   protectSheetGuard,
 } from './univer-sync'
+import { SharedFormulaLookup, indexedFormulas, sharedFormulaText } from './shared-formula-index'
 import { CLOSURE_MAX_CELLS, type LazyWorkbookState, type UniverRuntime } from './univer-state'
 import { convertibleType } from './WorkbookVisuals'
 
@@ -366,7 +367,12 @@ export function proposeOperations(
           continue
         }
         if (operation.op === 'protect_sheet') {
-          const guard = protectSheetGuard(state, operation.sheetId, operation.protected)
+          const guard = protectSheetGuard(
+            state,
+            operation.sheetId,
+            operation.protected,
+            operation.password !== undefined,
+          )
           if (guard) return { ok: false, error: guard }
           continue
         }
@@ -1356,8 +1362,10 @@ export async function structuralDeleteFormulaError(
         return null
       }
       if (result.truncated || !result.indexingComplete) return null
-      for (const cell of result.cells) {
-        if (!cell.formula) continue
+      for (const cell of indexedFormulas(
+        result.cells,
+        new SharedFormulaLookup(result.sharedGroups),
+      )) {
         // Only a CONTENT overwrite supersedes the file's formula text — a
         // style-only journal entry leaves the formula in force.
         const entry = journalCells?.get(`${cell.row}:${cell.column}`)
@@ -1432,6 +1440,11 @@ export function structuralDeleteFormulaErrorSync(
           texts.push(text)
         }
       }
+      state.sharedFormulaGroups.get(sheetId)?.forEachFollower((row, column, group) => {
+        const entry = journalCells?.get(`${row}:${column}`)
+        if (entry && (entry.hasValue || entry.formula)) return
+        texts.push(sharedFormulaText(group, row, column))
+      })
     }
     const error = deletedSpanTextError(texts, spec, sheetId !== operation.sheetId)
     if (error) return error

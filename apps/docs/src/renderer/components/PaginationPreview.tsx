@@ -732,6 +732,42 @@ export function bodyWindowHeight(
   return Math.max(0, Math.min(slice.end - slice.start, cap) + opts.seamExtend)
 }
 
+/** layoutInCell="0" page-positioned cell box (pinCellBoxesToPage stamped its
+ *  page): the preview draws a copy at page coordinates on the owning page and
+ *  hides the in-flow clones — inside a positioned table the box could neither
+ *  escape the pv-clip window nor resolve against the page box */
+export interface CellPageBox {
+  page: number
+  offX: number
+  offY: number
+  /** X measures from the paper edge (relativeFrom="page"), else from the column start */
+  fromPaperEdge: boolean
+  fromPage: boolean
+  /** behindDoc: the overlay sinks under the page clone like the in-flow box */
+  behind: boolean
+  html: string
+}
+
+export function collectCellPageBoxes(pm: HTMLElement): CellPageBox[] {
+  const out: CellPageBox[] = []
+  for (const box of pm.querySelectorAll<HTMLElement>(
+    '.doc-cell-boxes-page > .doc-textbox[data-cell-page]',
+  )) {
+    const page = parseInt(box.dataset.pinPage ?? '', 10)
+    if (!Number.isFinite(page)) continue
+    out.push({
+      page,
+      offX: parseFloat(box.dataset.cellPageX ?? '') || 0,
+      offY: parseFloat(box.dataset.cellPageY ?? '') || 0,
+      fromPaperEdge: box.dataset.pageRelXFrom === 'page',
+      fromPage: box.dataset.pageRelFrom === 'page',
+      behind: (parseInt(box.style.zIndex, 10) || 0) < 0,
+      html: box.outerHTML,
+    })
+  }
+  return out
+}
+
 export function pinnedCloneCss(pageCount: number): string {
   const rules: string[] = []
   for (let i = 0; i < pageCount; i++) {
@@ -907,6 +943,7 @@ export function PaginationPreview({
   const [html, setHtml] = useState('')
   /** non-null = pruned-clone mode (large documents): per-page windows instead of full clones */
   const [cloneKids, setCloneKids] = useState<CloneChild[] | null>(null)
+  const [cellPageBoxes, setCellPageBoxes] = useState<CellPageBox[]>([])
   /** Live section list: a section whose break block was deleted (unsaved) merges into the next, matching the canvas */
   const [secs, setSecs] = useState<SectionInfo[]>(sections)
   /** open comment threads' anchors (clone flow coordinates), in document order */
@@ -1283,6 +1320,7 @@ export function PaginationPreview({
       // renderer OOM / "Promise was collected" during printToPDF). Past the
       // budget, snapshot per-block geometry and render pruned windows instead.
       const kidEls = Array.from(pm.children) as HTMLElement[]
+      setCellPageBoxes(collectCellPageBoxes(pm))
       if (shouldPruneClones(computed.length, kidEls.length, pm.getElementsByTagName('*').length)) {
         const metas: CloneChild[] = []
         let gapAccum = 0
@@ -1604,6 +1642,23 @@ export function PaginationPreview({
                   })
                   return <FloatHfImg key={`wm${k}`} img={img} pos={pos} />
                 })}
+                {cellPageBoxes
+                  .filter((b) => b.page === i)
+                  .map((b, k) => (
+                    <div
+                      key={`cpb${k}`}
+                      className="pv-cell-page-box"
+                      aria-hidden="true"
+                      style={{
+                        left: b.fromPaperEdge ? b.offX : mL + b.offX,
+                        top: b.fromPage ? b.offY : mTop + b.offY,
+                        // the isolated page clone renders after the overlay:
+                        // front boxes need a level above it, behind ones below
+                        zIndex: b.behind ? -1 : 1,
+                      }}
+                      dangerouslySetInnerHTML={{ __html: b.html }}
+                    />
+                  ))}
                 {(parts.footerImages ?? [])
                   .filter((img) => img.floating && !hfImageHangsOnPara(img))
                   .map((img, k) => {

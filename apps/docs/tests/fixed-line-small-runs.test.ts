@@ -64,7 +64,8 @@ describe('runs smaller than the strut never grow an exact / atLeast line', () =>
       return style
     }
     expect(paraStyle({ lineRule: 'exact', lineRawTwips: 240 })).toContain('--doc-lh-cap: 12.0pt')
-    expect(paraStyle({ lineRule: 'atLeast', lineRawTwips: 240 })).not.toContain('--doc-lh-cap')
+    // a direct atLeast resets an inherited style-level cap instead
+    expect(paraStyle({ lineRule: 'atLeast', lineRawTwips: 240 })).toContain('--doc-lh-cap: initial')
     expect(paraStyle({ lineRule: 'auto', lineRawTwips: 360 })).not.toContain('--doc-lh-cap')
   })
 

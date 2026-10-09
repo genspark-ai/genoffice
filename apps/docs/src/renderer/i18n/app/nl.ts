@@ -461,6 +461,7 @@ export const nl = {
   appParaSpecialFirstLine: 'Eerste regel',
   appParaSpecialHanging: 'Verkeerd-om',
   appParaBy: 'Met',
+  appParaUnitChars: 'tekens',
   appInsertEquation: 'Vergelijking invoegen',
   appLatexPlaceholder: 'bijv. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Typ LaTeX om een voorbeeld te zien',

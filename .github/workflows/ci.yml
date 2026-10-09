@@ -104,6 +104,13 @@ jobs:
           fi
           npm run check:skill-version
 
+      # Whole-tree, not changed-files: every one of the manual's 21 languages
+      # has to match the English article's structure. A language that quietly
+      # falls behind is exactly what no reviewer sees, and it is invisible in a
+      # diff — the change that causes it looks like an ordinary translation.
+      - name: Check manual language coverage
+        run: npm run check:help-langs
+
       # Added lines only: Han text outside locale tables, review-tool tags,
       # feedback-ledger ids, sample-corpus ids, internal PR numbers, personal
       # paths/e-mails, credentials, NUL bytes (tools/check-public-hygiene.mjs).

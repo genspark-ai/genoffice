@@ -1,3 +1,4 @@
+import { resolveCustomEndpoints } from './custom-endpoints'
 import { defaultAiMediaSettings, resolveAiMediaSettings } from './media'
 import { defaultAiSearchSettings, resolveAiSearchSettings } from './search-settings'
 import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from './types'
@@ -51,11 +52,10 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     // DeepSeek goes by the proxy's hyphenated pool id; V4.1 Flash takes images
     // (live-verified 2026-09-15). gpt-6-astra: chat, tool call and image
     // input all live-verified through the proxy 2026-09-17; claude-opus-5-5,
-    // gpt-6-sol and gpt-6-luna the same way 2026-09-24
+    // gpt-6-sol and gpt-6-luna the same way 2026-09-24. Opus 4.7/4.8 dropped
+    // 2026-10-09: 5.5 is cheaper and supersedes both.
     models: [
       'claude-opus-5-5',
-      'claude-opus-4-7',
-      'claude-opus-4-8',
       'claude-sonnet-4-6',
       'gpt-6-astra',
       'gpt-6-sol',
@@ -64,7 +64,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'gpt-5.6-luna',
       DEEPSEEK_V41_FLASH,
     ],
-    defaultModel: 'claude-opus-4-7',
+    defaultModel: 'claude-opus-5-5',
     keyPlaceholder: 'Not required - sign in to Genspark',
   },
   {
@@ -80,7 +80,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'anthropic',
     label: 'Claude',
-    // current-generation ids per platform.claude.com models overview (2026-09-24).
+    // current-generation ids per platform.claude.com models overview (2026-10-09).
     // Fable needs data retention enabled on the org, otherwise the API answers
     // model_not_available; every other id is served to any key.
     models: [
@@ -89,10 +89,8 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'claude-fable-5-1',
       'claude-opus-5',
       'claude-fable-5',
-      'claude-opus-4-8',
-      'claude-opus-4-7',
       'claude-sonnet-4-6',
-      'claude-haiku-4-5-20251001',
+      'claude-haiku-5-5',
     ],
     defaultModel: 'claude-sonnet-5',
     keyPlaceholder: 'sk-ant-api03-...',
@@ -141,10 +139,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'kimi',
     label: 'Kimi',
-    // K2.8 Preview (2026-09-11) sits between the code-tuned K2.7 and the K3
-    // flagship: 1M context and image/video input, closed weights, thinking
-    // effort low/high/max with max the default
-    models: ['kimi-k3', 'kimi-k2.8-preview'],
+    models: ['kimi-k3'],
     defaultModel: 'kimi-k3',
     keyPlaceholder: 'sk-...',
   },
@@ -207,21 +202,8 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'ling',
     label: 'Ling',
-    // Ant Group's Ling general line plus Ring, its reasoning line. Ids exactly
-    // as the `model` field's Options column lists them on
-    // https://developer.ant-ling.com/en/docs/api-reference/openai (read
-    // 2026-10-01); that page and the quickstart give the base URL, and
-    // GET https://api.ant-ling.com/v1/models answers 401 sdk_token_not_found,
-    // so the host is live and auth-gated. None of these are on the deprecation
-    // page (en/docs/models/deprecation).
-    // Ling-3.0-flash-VL is in that list and does take images, so the provider is
-    // vision-capable and modelLacksVision() holds back the five text-only ids —
-    // the same split DeepSeek V4 uses. Ling-3.1-flash (released 2026-09-29;
-    // models.dev inclusionai/ling-3.1-flash) is a real model, but this
-    // first-party endpoint does not serve it: the Options column above, re-read
-    // 2026-10-01, still lists no 3.1. Listing it would hand users a 404; the
-    // platforms that do serve it today (NanoGPT, Vercel AI Gateway) expose it
-    // as `inclusionai/ling-3.1-flash`.
+    // Ids as listed by developer.ant-ling.com (Ring = reasoning line); only
+    // Ling-3.0-flash-VL takes images, see modelLacksVision()
     models: [
       'Ling-3.0-flash',
       'Ling-3.0-flash-VL',
@@ -236,17 +218,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'spark',
     label: 'Spark',
-    // iFlytek Spark. Endpoint and id from section 1.1 (API access) of
-    // https://www.xfyun.cn/doc/spark/%E4%BA%A7%E5%93%81%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.html
-    // (read 2026-10-01), which documents chat at
-    // POST https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions alongside
-    // /v1/responses and /anthropic/v1/messages on the same host. The base below
-    // is that chat endpoint minus the path endpointUrl() appends, so the two
-    // compose back to the documented URL. The page's examples spell the key
-    // `ak-f30b1********fc84b82e86a` and the model `spark-x2.5` — lower case,
-    // the form the vendor's own request bodies use. (The page path is
-    // percent-encoded: the literal title is Chinese and CI bans Han characters
-    // in comments.)
+    // iFlytek MaaS: lower-case model id and ak- key prefix are the vendor's own spelling
     models: ['spark-x2.5'],
     defaultModel: 'spark-x2.5',
     keyPlaceholder: 'ak-...',
@@ -254,17 +226,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'longcat',
     label: 'LongCat',
-    // Meituan's LongCat line, a 1.6T/48B-active MoE for agentic coding with a
-    // 1M window. Ids exactly as the pricing pages spell them —
-    // https://longcat.chat/platform/docs/zh/pricing/longcat-2.5 and
-    // https://longcat.chat/platform/docs/zh/pricing/longcat-2.0 (read
-    // 2026-10-01). 2.5-Preview is the current preview tier and the
-    // multimodal member: the 2026-09-25 entry of
-    // https://longcat.chat/platform/docs/zh/change-log (read 2026-10-01) lists
-    // image understanding as the headline new feature, so 2.5 takes
-    // screenshots and modelLacksVision() holds 2.0 back. 2.0 stays the default:
-    // 2.5 carries a Preview suffix and a fresh config should not land on a
-    // preview tier (the same reasoning Grok keeps 4.6 over 4.7).
+    // 2.5-Preview is the multimodal tier; 2.0 stays default so a fresh config avoids a preview
     models: ['LongCat-2.5-Preview', 'LongCat-2.0'],
     defaultModel: 'LongCat-2.0',
     keyPlaceholder: 'API Key',
@@ -371,10 +333,35 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'ci_live_...',
   },
   {
+    id: 'atlascloud',
+    label: 'Atlas Cloud',
+    // Lab-namespaced ids exactly as GET api.atlascloud.ai/v1/models lists them
+    // (2026-10-08, public endpoint, no key needed); the rest of the 117-model
+    // catalog works as-is when typed in. Chat, temperature and — for the
+    // multimodal ids — data-URI image input are live-verified. The text-only
+    // ids (deepseek-v4-*, glm-5.3, both MiniMax) are listed in
+    // modelLacksVision(); Atlas Cloud serves MiniMax M3 text-only even though
+    // MiniMax's own API takes images.
+    models: [
+      'deepseek-ai/deepseek-v4-pro',
+      'deepseek-ai/deepseek-v4-flash',
+      'moonshotai/kimi-k3',
+      'moonshotai/kimi-k2.6',
+      'zai-org/glm-5.3',
+      'zai-org/glm-5.3-flash',
+      'qwen/qwen3.8-max',
+      'qwen/qwen3.5-flash',
+      'minimaxai/minimax-m3',
+      'minimaxai/minimax-m2.5',
+    ],
+    defaultModel: 'deepseek-ai/deepseek-v4-pro',
+    keyPlaceholder: 'apikey-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
-    // /zen/v1/models lists them (2026-09-24). GPT-5.x/6, Grok and Muse Spark
+    // /zen/v1/models lists them (2026-10-09). GPT-5.x/6, Grok and Muse Spark
     // are served only through the Responses API, which has no protocol here,
     // so they stay out until one exists.
     models: [
@@ -382,7 +369,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'claude-opus-5-5',
       'claude-opus-5',
       'claude-fable-5-1',
-      'claude-haiku-4-5',
+      'claude-haiku-5-5',
       'gemini-3.7-flash',
       'gemini-3.1-pro',
       'kimi-k3',
@@ -518,11 +505,15 @@ const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
   // proxy stopped serving bare gpt-5.6 (400) and removed the gemini route
   // entirely (405), verified 2026-08-31; gemini selections fall back to the
   // provider default since no gemini id is served at all
+  // 5-Turbo left the Z.ai price card late 2026-08; 5.3 Flash is the cheap tier now
+  glm: { 'glm-5-turbo': 'glm-5.3-flash' },
   genspark: {
     'gpt-5.6': 'gpt-5.6-terra',
-    'gemini-3.1-pro-preview': 'claude-opus-4-7',
-    'gemini-3-flash-preview': 'claude-opus-4-7',
-    'gemini-3.7-flash': 'claude-opus-4-7',
+    'gemini-3.1-pro-preview': 'claude-opus-5-5',
+    'gemini-3-flash-preview': 'claude-opus-5-5',
+    'gemini-3.7-flash': 'claude-opus-5-5',
+    'claude-opus-4-7': 'claude-opus-5-5',
+    'claude-opus-4-8': 'claude-opus-5-5',
   },
 }
 
@@ -614,10 +605,12 @@ export function resolveAiSettings(stored: unknown, defaults: AiSettings): AiSett
         baseUrl: str(settings.baseUrl) || 'https://api.openai.com/v1',
       }
     }
-    return defaults
+    return resolveCustomEndpoints(defaults)
   }
-  return {
+  return resolveCustomEndpoints({
     provider: settings.provider ?? defaults.provider,
+    customEndpoints: settings.customEndpoints,
+    customEndpoint: settings.customEndpoint,
     // Trim before migrating: a pasted " deepseek-reasoner " must still hit
     // the retired-id remap instead of being sent to the API verbatim.
     providers: migrateRetiredModels(
@@ -635,5 +628,5 @@ export function resolveAiSettings(stored: unknown, defaults: AiSettings): AiSett
           ),
         }
       : {}),
-  }
+  })
 }

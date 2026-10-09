@@ -1359,6 +1359,16 @@ export function IconWholePage(props: IconProps) {
   )
 }
 
+export function IconMultiPage(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.2" y="3.5" width="5.2" height="9" rx="0.5" />
+      <rect x="8.6" y="3.5" width="5.2" height="9" rx="0.5" />
+      <path d="M 3.5 6 h 2.6 M 3.5 8 h 2.6 M 9.9 6 h 2.6 M 9.9 8 h 2.6" strokeWidth="0.8" />
+    </Svg>
+  )
+}
+
 export function IconAiPanel(props: IconProps) {
   return (
     <Svg {...props}>

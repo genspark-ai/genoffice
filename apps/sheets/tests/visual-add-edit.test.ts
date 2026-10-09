@@ -8,14 +8,17 @@ import {
   recordVisualAdd,
   recordVisualEdit,
   removeVisualAdd,
+  reorderVisualAdd,
   toSaveChartEdits,
   toSaveVisualEdits,
   updateVisualAdd,
   toSaveVisualAdds,
 } from '../src/renderer/edit-journal'
+import { projectVisualEdits } from '../src/renderer/univer-sync'
 import {
   workbookChartEditSchema,
   workbookVisualAddSchema,
+  workbookVisualEditSchema,
   type WorkbookVisualObject,
 } from '../src/shared/desktop-api'
 
@@ -184,6 +187,31 @@ describe('recordVisualEdit', () => {
     ])
   })
 
+  it('records paint edits alone and merges them with a later move', () => {
+    const journal = createEditJournal()
+    const shape = { ...fileImage(), kind: 'shape' as const, shapeType: 'rect' }
+    expect(recordVisualEdit(journal, shape, { fillColor: '#ABCDEF' })).toBe(true)
+    expect(recordVisualEdit(journal, shape, { lineColor: 'none' })).toBe(true)
+    const moved = { ...shape.anchor, fromRow: 8, toRow: 12 }
+    expect(recordVisualEdit(journal, shape, { anchor: moved })).toBe(true)
+    const [edit] = toSaveVisualEdits(journal)
+    expect(edit).toEqual({
+      drawingPath: 'xl/drawings/drawing1.xml',
+      drawingIndex: 3,
+      anchor: moved,
+      fillColor: '#ABCDEF',
+      lineColor: 'none',
+    })
+    expect(workbookVisualEditSchema.safeParse(edit).success).toBe(true)
+    expect(
+      workbookVisualEditSchema.safeParse({
+        drawingPath: 'xl/drawings/drawing1.xml',
+        drawingIndex: 3,
+        lineColor: 'none',
+      }).success,
+    ).toBe(true)
+  })
+
   it('refuses visuals without a drawing locator', () => {
     const journal = createEditJournal()
     const visual = { ...fileImage(), drawingPath: undefined, drawingIndex: undefined }
@@ -196,5 +224,93 @@ describe('recordVisualEdit', () => {
     recordVisualEdit(journal, fileImage(), { remove: true })
     recordSheetRemove(journal, 'sheet-1')
     expect(toSaveVisualEdits(journal)).toEqual([])
+  })
+})
+
+describe('arrange properties', () => {
+  const fileShape = (): WorkbookVisualObject => ({
+    ...textBox(),
+    id: 'visual-2',
+    drawingPath: 'xl/drawings/drawing1.xml',
+    drawingIndex: 2,
+  })
+
+  it('merges rotation, flips, alt text, placement, link and z-order into one file edit', () => {
+    const journal = createEditJournal()
+    expect(recordVisualEdit(journal, fileShape(), { rotation: 90, flipH: true })).toBe(true)
+    expect(recordVisualEdit(journal, fileShape(), { altText: 'Logo', zIndex: 0 })).toBe(true)
+    expect(recordVisualEdit(journal, fileShape(), { editAs: 'oneCell', hyperlink: '' })).toBe(true)
+    expect(recordVisualEdit(journal, fileShape(), { rotation: 0 })).toBe(true)
+    expect(journalSize(journal)).toBe(1)
+    expect(toSaveVisualEdits(journal)).toEqual([
+      {
+        drawingPath: 'xl/drawings/drawing1.xml',
+        drawingIndex: 2,
+        zIndex: 0,
+        rotation: 0,
+        flipH: true,
+        altText: 'Logo',
+        editAs: 'oneCell',
+        hyperlink: '',
+      },
+    ])
+    expect(workbookVisualEditSchema.safeParse(toSaveVisualEdits(journal)[0]).success).toBe(true)
+    recordVisualEdit(journal, fileShape(), { remove: true })
+    expect(toSaveVisualEdits(journal)).toEqual([
+      { drawingPath: 'xl/drawings/drawing1.xml', drawingIndex: 2, remove: true },
+    ])
+  })
+
+  it('session visuals carry the properties into the add payload', () => {
+    const journal = createEditJournal()
+    recordVisualAdd(journal, textBox())
+    expect(
+      updateVisualAdd(journal, 'added-shape-abc-1', {
+        rotation: 45,
+        frameSize: { width: 914400, height: 457200 },
+        flipV: true,
+        altText: 'Note',
+        hyperlink: 'https://example.com',
+        editAs: 'absolute',
+      }),
+    ).toBe(true)
+    const [addition] = toSaveVisualAdds(journal)
+    expect(addition?.shape).toMatchObject({
+      rotation: 45,
+      frameSize: { width: 914400, height: 457200 },
+      flipV: true,
+      altText: 'Note',
+      hyperlink: 'https://example.com',
+      editAs: 'absolute',
+    })
+    expect(addition?.shape).not.toHaveProperty('flipH')
+    expect(workbookVisualAddSchema.safeParse(addition).success).toBe(true)
+  })
+
+  it('reorders session visuals within the add list', () => {
+    const journal = createEditJournal()
+    recordVisualAdd(journal, textBox())
+    recordVisualAdd(journal, { ...textBox(), id: 'added-shape-abc-2' })
+    recordVisualAdd(journal, { ...textBox(), id: 'added-shape-abc-3' })
+    expect(reorderVisualAdd(journal, 'added-shape-abc-3', 0)).toBe(true)
+    expect(journal.visualAdds.map((visual) => visual.id)).toEqual([
+      'added-shape-abc-3',
+      'added-shape-abc-1',
+      'added-shape-abc-2',
+    ])
+    expect(reorderVisualAdd(journal, 'missing', 0)).toBe(false)
+  })
+
+  it('projects edits onto file visuals and sorts a drawing part by zIndex', () => {
+    const journal = createEditJournal()
+    const a = { ...fileShape(), id: 'visual-1', drawingIndex: 0 }
+    const b = { ...fileShape(), id: 'visual-2', drawingIndex: 1 }
+    const c = { ...fileShape(), id: 'visual-3', drawingIndex: 2 }
+    recordVisualEdit(journal, a, { zIndex: 2, altText: 'first', flipH: true })
+    recordVisualEdit(journal, b, { zIndex: 0 })
+    recordVisualEdit(journal, c, { zIndex: 1, remove: true })
+    const projected = projectVisualEdits([a, b, c], journal.visualEdits)
+    expect(projected.map((visual) => visual.id)).toEqual(['visual-2', 'visual-1'])
+    expect(projected[1]).toMatchObject({ altText: 'first', flipH: true })
   })
 })

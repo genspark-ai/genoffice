@@ -128,6 +128,11 @@ export function dkBackground(css: string): string {
   return `--dk-bg:${darkPageColor(css)}`
 }
 
+/** cell diagonal lines (background-image gradients) twin */
+export function dkBackgroundImage(css: string): string {
+  return `--dk-bgi:${darkPageBorderCss(css)}`
+}
+
 export type DkBorderSide = 't' | 'r' | 'b' | 'l'
 
 /** element border twin (paragraph borders, cell borders) */
@@ -171,15 +176,21 @@ export function setDkBorder(el: HTMLElement, side: DkBorderSide, borderCss: stri
   el.style.setProperty(`--dk-b-${side}`, darkPageBorderCss(borderCss))
 }
 
+export function setDkBackgroundImage(el: HTMLElement, css: string): void {
+  el.style.setProperty('--dk-bgi', darkPageBorderCss(css))
+}
+
 /** React style-object twins (HeaderFooterArea): spread into the element style */
 export function dkStyleProps(twins: {
   color?: string
   background?: string
+  backgroundImage?: string
   borders?: Partial<Record<DkBorderSide, string>>
 }): Record<string, string> {
   const out: Record<string, string> = {}
   if (twins.color) out['--dk-c'] = darkPageColor(twins.color)
   if (twins.background) out['--dk-bg'] = darkPageColor(twins.background)
+  if (twins.backgroundImage) out['--dk-bgi'] = darkPageBorderCss(twins.backgroundImage)
   for (const [side, css] of Object.entries(twins.borders ?? {})) {
     if (css) out[`--dk-b-${side}`] = darkPageBorderCss(css)
   }

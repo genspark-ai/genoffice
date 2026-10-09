@@ -29,6 +29,13 @@ export interface RunStyle {
    *  its name looks CJK (PowerPoint picks the substitute per character script — prod_026's
    *  "ISO 45001" in a missing NanumSquare face sets in Calibri, not Malgun) */
   latinOnly?: boolean
+  /**
+   * Withheld from the model: the label is all a model ever sees in place of the
+   * run's words. Carried on the style so every token a run splits into inherits
+   * it — a run is broken into words and glyphs for layout, and the tokens are
+   * the only thing the render tree keeps afterwards.
+   */
+  redact?: string
 }
 
 export interface FontMetrics {

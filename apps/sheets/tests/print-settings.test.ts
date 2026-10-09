@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  assemblePrintHtml,
   buildSheetPrintPayload,
-  renderHeaderFooterHtml,
+  layoutSheetPrint,
+  pageVariant,
+  renderHeaderFooterSection,
   sectionPictures,
 } from '../src/renderer/print-html'
 import {
@@ -13,6 +16,7 @@ import {
   type EffectivePageSetup,
 } from '../src/renderer/print-settings'
 import type { PrintWorksheet } from '../src/renderer/print-html'
+import type { PrintVisualSnapshot } from '../src/renderer/print-visuals'
 
 describe('decodeHeaderFooter', () => {
   it('splits left/center/right sections and keeps resolvable field codes', () => {
@@ -30,6 +34,7 @@ describe('decodeHeaderFooter', () => {
     expect(decodeHeaderFooter('&C&"Broadway,Bold Italic"&12&KFF0000Big &BRed&B Title&Z')).toEqual({
       center: 'Big Red Title',
     })
+    expect(decodeHeaderFooter('&C&OOut&O &HShade&H')).toEqual({ center: 'Out Shade' })
   })
 
   it('drops the path code but keeps the file and picture codes', () => {
@@ -54,15 +59,10 @@ describe('decodeHeaderFooter', () => {
   })
 
   it('keeps the character after an unrecognised code as literal text', () => {
-    // The decoder used to advance past any &X it did not know, so the
-    // character (or the space after the &) disappeared from the printout.
     expect(decodeHeaderFooter('Tom&Jerry')).toEqual({ center: 'Tom&Jerry' })
     expect(decodeHeaderFooter('R&D')).toEqual({ center: 'R&D' })
     expect(decodeHeaderFooter('Tom & Jerry')).toEqual({ center: 'Tom & Jerry' })
     expect(decodeHeaderFooter('&L50% & up')).toEqual({ left: '50% & up' })
-    // The recognised sequences keep behaving exactly as before: && and the
-    // field codes stay verbatim, and the formatting toggles stay stripped
-    // (&B is Excel's bold toggle, so "A&B" still prints a bold "A").
     expect(decodeHeaderFooter('&LProfit && Loss')).toEqual({ left: 'Profit && Loss' })
     expect(decodeHeaderFooter('&C&P of &N in &F')).toEqual({ center: '&P of &N in &F' })
     expect(decodeHeaderFooter('&C&"Broadway,Bold"&12&KFF0000Big &BRed&B Title&Z')).toEqual({
@@ -100,9 +100,6 @@ describe('printAreasFromFormula', () => {
   })
 
   it('normalises an area whose corners are reversed', () => {
-    // parseRange treats $B$4:$A$1 as A1:B4; the print layout reads an area
-    // positionally, so passing the pair through verbatim made the export
-    // abort with "this sheet has nothing printable" instead of printing.
     expect(printAreasFromFormula("'S'!$B$4:$A$1")).toEqual(['A1:B4'])
     expect(printAreasFromFormula("'S'!$D$3:$B$9")).toEqual(['B3:D9'])
     expect(printAreasFromFormula("'S'!$B$2:$B$2")).toEqual(['B2:B2'])
@@ -316,14 +313,10 @@ describe('resolveEffectivePageSetup', () => {
   })
 
   it('prints a reversed print area instead of refusing the export', () => {
-    // The whole chain: an inverted $B$4:$A$1 in the file's Print_Area used to
-    // reach parseArea positionally, the rows < 1 guard fired, and Export PDF
-    // refused outright. It must lay out A1:B4 like parseRange resolves it.
     const setup = resolveEffectivePageSetup({}, null, { printArea: "'S'!$B$4:$A$1" })
     expect(setup.printAreas).toEqual(['A1:B4'])
     const payload = buildSheetPrintPayload(fakeWorksheet(), setup, 'Book.pdf', 'S1')
     expect(payload.html).toContain('<table>')
-    // The normalised corners select the whole A1:B4 span, not a 0-row range.
     expect(payload.html).toContain('A1')
     expect(payload.html).toContain('B3')
   })
@@ -339,30 +332,32 @@ describe('resolveEffectivePageSetup', () => {
   })
 })
 
-describe('renderHeaderFooterHtml', () => {
+describe('renderHeaderFooterSection', () => {
   const now = new Date(2026, 0, 2, 3, 4, 5)
+  const fields = { page: 3, total: 7, date: now, fileName: 'Book', sheetName: 'S1' }
 
-  it('turns &P/&N into live Chromium spans', () => {
-    expect(renderHeaderFooterHtml('Seite &P von &N', 'Book', 'S1', now)).toBe(
-      'Seite <span class="pageNumber"></span> von <span class="totalPages"></span>',
-    )
+  it('resolves page codes for the page being rendered', () => {
+    expect(renderHeaderFooterSection('Seite &P von &N', fields)).toBe('Seite 3 von 7')
   })
 
   it('resolves static codes and escapes markup', () => {
-    const html = renderHeaderFooterHtml('&A <&F> && more', 'Bud<get', 'Sh&eet', now)
+    const html = renderHeaderFooterSection('&A <&F> && more', {
+      ...fields,
+      fileName: 'Bud<get',
+      sheetName: 'Sh&eet',
+    })
     expect(html).toBe('Sh&amp;eet &lt;Bud&lt;get&gt; &amp; more')
   })
 
   it('replaces &G with the section picture at its declared size', () => {
     const picture = { dataUrl: 'data:image/png;base64,AAAA', widthPt: 72, heightPt: 36 }
-    expect(renderHeaderFooterHtml('&G Logo', 'Book', 'S1', now, picture)).toBe(
-      '<img src="data:image/png;base64,AAAA" ' +
-        'style="width:96px;height:48px;vertical-align:bottom"> Logo',
+    expect(renderHeaderFooterSection('&G Logo', fields, picture)).toBe(
+      '<img src="data:image/png;base64,AAAA" style="width:96px;height:48px"> Logo',
     )
   })
 
   it('prints nothing for &G when the slot has no picture', () => {
-    expect(renderHeaderFooterHtml('&GTitle', 'Book', 'S1', now)).toBe('Title')
+    expect(renderHeaderFooterSection('&GTitle', fields)).toBe('Title')
   })
 })
 
@@ -425,6 +420,7 @@ function payloadSetup(overrides: Partial<EffectivePageSetup>): EffectivePageSetu
     printHeadings: false,
     printAreas: [],
     printTitles: null,
+    printTitleColumns: null,
     header: null,
     footer: null,
     firstPage: null,
@@ -451,60 +447,170 @@ function tallWorksheet(rows: number): PrintWorksheet {
   }
 }
 
-describe('buildSheetPrintPayload', () => {
+const A4 = { widthIn: 8.27, heightIn: 11.69 }
+
+function layout(
+  worksheet: PrintWorksheet,
+  setup: EffectivePageSetup,
+  pictures = new Map<string, { dataUrl: string; widthPt: number; heightPt: number }>(),
+  visuals: PrintVisualSnapshot = { visuals: [], css: '' },
+  options = {},
+) {
+  return layoutSheetPrint(worksheet, setup, 'Book', 'S1', pictures, visuals, {
+    now: new Date(2026, 0, 2),
+    ...options,
+  })
+}
+
+describe('layoutSheetPrint', () => {
   it('maps common OOXML paper sizes instead of falling back to A4', () => {
-    const b4 = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ paperSize: 12 }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(b4.pageSize).toEqual({ width: 9.84, height: 13.9 })
-    const b5 = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ paperSize: 13 }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(b5.pageSize).toEqual({ width: 7.17, height: 10.12 })
-    const folio = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ paperSize: 14 }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(folio.pageSize).toEqual({ width: 8.5, height: 13 })
-    const statement = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ paperSize: 6 }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(statement.pageSize).toEqual({ width: 5.5, height: 8.5 })
+    expect(layout(fakeWorksheet(), payloadSetup({ paperSize: 12 })).paper.pageSize).toEqual({
+      width: 9.84,
+      height: 13.9,
+    })
+    expect(layout(fakeWorksheet(), payloadSetup({ paperSize: 13 })).paper.pageSize).toEqual({
+      width: 7.17,
+      height: 10.12,
+    })
+    expect(layout(fakeWorksheet(), payloadSetup({ paperSize: 14 })).paper.pageSize).toEqual({
+      width: 8.5,
+      height: 13,
+    })
+    expect(layout(fakeWorksheet(), payloadSetup({ paperSize: 6 })).paper.pageSize).toEqual({
+      width: 5.5,
+      height: 8.5,
+    })
+    const landscape = layout(fakeWorksheet(), payloadSetup({ orientation: 'landscape' })).paper
+    expect(landscape.widthIn).toBe(A4.heightIn)
+    expect(landscape.heightIn).toBe(A4.widthIn)
   })
 
   it('crops the layout to the print area', () => {
-    const payload = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ printAreas: ['A1:A2'] }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(payload.html).toContain('A1')
-    expect(payload.html).toContain('A2')
-    expect(payload.html).not.toContain('B1')
-    expect(payload.html).not.toContain('A3')
+    const html = assemblePrintHtml([
+      layout(fakeWorksheet(), payloadSetup({ printAreas: ['A1:A2'] })),
+    ]).html
+    expect(html).toContain('A1')
+    expect(html).toContain('A2')
+    expect(html).not.toContain('B1')
+    expect(html).not.toContain('A3')
   })
 
-  it('emits one page-broken table per print area', () => {
-    const payload = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ printAreas: ['A1:A1', 'B2:B2'] }),
-      'Book.pdf',
-      'S1',
+  it('prints a selection instead of the print area', () => {
+    const html = assemblePrintHtml([
+      layout(fakeWorksheet(), payloadSetup({ printAreas: ['A1:A2'] }), new Map(), undefined, {
+        selection: 'B2:B3',
+      }),
+    ]).html
+    expect(html).toContain('B2')
+    expect(html).toContain('B3')
+    expect(html).not.toContain('A1')
+  })
+
+  it('emits one page per print area', () => {
+    const document = layout(fakeWorksheet(), payloadSetup({ printAreas: ['A1:A1', 'B2:B2'] }))
+    expect(document.pages).toHaveLength(2)
+    const html = assemblePrintHtml([document]).html
+    expect(html.match(/<div class="page /g)).toHaveLength(2)
+  })
+
+  it('paginates wide sheets across columns and honours manual breaks', () => {
+    // 20 columns of 100px = 1500pt on a ~495pt wide A4 portrait page.
+    const wide: PrintWorksheet = {
+      ...fakeWorksheet(),
+      getLastColumn: () => 19,
+      getLastRow: () => 9,
+    }
+    const plain = layout(wide, payloadSetup({}))
+    expect(plain.pages.length).toBeGreaterThan(1)
+    expect(plain.pages.every((page) => page.page.colEnd - page.page.colStart < 7)).toBe(true)
+    const broken = layout(wide, payloadSetup({}), new Map(), undefined, {
+      breaks: { rowBreaks: [5], colBreaks: [] },
+    })
+    expect(broken.pages.length).toBe(plain.pages.length * 2)
+    expect(broken.pages[0]?.page.rowEnd).toBe(4)
+    expect(broken.pages[1]?.page.rowStart).toBe(5)
+  })
+
+  it('repeats title rows and columns on every page and skips hidden rows', () => {
+    const grid = Array.from({ length: 30 }, (_, r) =>
+      Array.from({ length: 3 }, (_, c) => `R${r + 1}C${c + 1}`),
     )
-    expect(payload.html.match(/<table>/g)).toHaveLength(2)
-    expect(payload.html).toContain('.area + .area { break-before: page; }')
+    const worksheet: PrintWorksheet = {
+      getLastRow: () => 29,
+      getLastColumn: () => 2,
+      getRowHeight: () => 400,
+      getColumnWidth: () => 100,
+      getSheet: () => ({ getRowVisible: (row) => row !== 2, getColVisible: () => true }),
+      getMergedRanges: () => [],
+      getRange: ((row: number, column: number, numRows?: number, numColumns?: number) => ({
+        getDisplayValues: () =>
+          grid
+            .slice(row, row + (numRows ?? 1))
+            .map((cells) => cells.slice(column, column + (numColumns ?? 1))),
+        getValues: () => [],
+        getCellStyleData: () => null,
+      })) as PrintWorksheet['getRange'],
+    }
+    const document = layout(
+      worksheet,
+      payloadSetup({ printTitles: '1:1', printTitleColumns: 'A:A', printHeadings: true }),
+    )
+    // 300pt rows on a 733pt page: two body rows per page.
+    expect(document.pages.length).toBeGreaterThan(10)
+    const html = assemblePrintHtml([document]).html
+    expect(html.match(/R1C2/g)?.length).toBe(document.pages.length)
+    expect(html.match(/R1C1/g)?.length).toBe(document.pages.length)
+    expect(html.match(/R5C1/g)?.length).toBe(1)
+    expect(html).not.toContain('R3C2')
+    expect(html).toContain('<th class="hd hd-top">B</th>')
+  })
+
+  it('gives every shared edge one owner when gridlines and custom borders meet', () => {
+    const worksheet: PrintWorksheet = {
+      ...fakeWorksheet(),
+      getRange: ((row: number, column: number, numRows?: number, numColumns?: number) => ({
+        getDisplayValues: () =>
+          usedGrid
+            .slice(row, row + (numRows ?? 1))
+            .map((cells) => cells.slice(column, column + (numColumns ?? 1))),
+        getValues: () => [],
+        getCellStyleData: () =>
+          row === 1 && column === 0 ? { bd: { t: { s: 1, cl: { rgb: '#ff0000' } } } } : null,
+      })) as PrintWorksheet['getRange'],
+    }
+    const html = assemblePrintHtml([
+      layout(worksheet, payloadSetup({ printGridlines: true, printHeadings: true })),
+    ]).html
+    const cells = [...html.matchAll(/<td style="([^"]*)">/g)].map((match) => match[1] ?? '')
+    // A1: no bottom gridline (A2 owns that edge), no top/left (heading strip owns them)
+    expect(cells[0]).toContain('inset -0.75pt 0 0 #c0c0c0')
+    expect(cells[0]).not.toContain('inset 0 -0.75pt')
+    expect(cells[0]).not.toContain('inset 0 0.75pt')
+    expect(cells[0]).not.toContain('inset 0.75pt 0')
+    // A2 paints its red top and the shared bottom/right gridlines
+    expect(cells[2]).toContain('inset 0 0.75pt 0 #ff0000')
+    expect(cells[2]).toContain('inset 0 -0.75pt 0 #c0c0c0')
+    // the heading strip owns the outer frame: top on the letter row, left on the number column
+    expect(html).toContain('<th class="hd hd-top hd-left"></th>')
+    expect(html).toContain('<th class="hd hd-top">A</th>')
+    expect(html).toContain('<th class="hd hd-left">1</th>')
+  })
+
+  it('spans merged cells inside repeated title rows', () => {
+    const worksheet: PrintWorksheet = {
+      ...tallWorksheet(40),
+      getLastColumn: () => 2,
+      getMergedRanges: () => [
+        { getRow: () => 0, getColumn: () => 0, getWidth: () => 3, getHeight: () => 1 },
+      ],
+    }
+    const html = assemblePrintHtml([layout(worksheet, payloadSetup({ printTitles: '1:1' }))]).html
+    expect(html).toContain('<thead><tr style="height:15pt"><td rowspan="1" colspan="3"')
+    // the title row merge also spans when the print area starts below it
+    const cropped = assemblePrintHtml([
+      layout(worksheet, payloadSetup({ printTitles: '1:1', printAreas: ['A5:C10'] })),
+    ]).html
+    expect(cropped).toContain('<thead><tr style="height:15pt"><td rowspan="1" colspan="3"')
   })
 
   it('places floating visuals at their anchor and widens the used range to cover them', () => {
@@ -521,39 +627,29 @@ describe('buildSheetPrintPayload', () => {
       html: '<div class="xlsx-print-visual">chart</div>',
     }
     const outside = { ...visual, id: 'v2', fromRow: 40, fromColumn: 30, toRow: 41, toColumn: 31 }
-    const payload = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ printAreas: ['A1:B3'] }),
-      'Book.pdf',
-      'S1',
-      new Map(),
-      { visuals: [visual, outside], css: '.xlsx-chart { color: black; }' },
+    const html = assemblePrintHtml([
+      layout(fakeWorksheet(), payloadSetup({ printAreas: ['A1:B3'] }), new Map(), {
+        visuals: [visual, outside],
+        css: '.xlsx-chart { color: black; }',
+      }),
+    ]).html
+    // column B starts after one 100px (75pt) column; row 2 after one 20px (15pt) row
+    expect(html).toContain(
+      '<div class="pv" style="left:82.5pt;top:18pt;width:300pt;height:150pt"><div style="width:400px;height:200px"><div class="xlsx-print-visual">chart</div></div></div>',
     )
-    // column B starts after one 100px (75pt) column; row 2 after one printed 11pt text row (15.75pt)
-    expect(payload.html).toContain(
-      '<div class="pv" style="left:82.5pt;top:18.75pt;width:300pt;height:150pt"><div style="width:400px;height:200px"><div class="xlsx-print-visual">chart</div></div></div>',
-    )
-    expect(payload.html.match(/class="pv"/g)).toHaveLength(1)
-    expect(payload.html).toContain('<style>.xlsx-chart { color: black; }</style>')
+    expect(html.match(/class="pv"/g)).toHaveLength(1)
+    expect(html).toContain('<style>.xlsx-chart { color: black; }</style>')
 
-    const widened = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({}),
-      'Book.pdf',
-      'S1',
-      new Map(),
-      {
-        visuals: [visual],
-        css: '',
-      },
-    )
+    const widened = assemblePrintHtml([
+      layout(fakeWorksheet(), payloadSetup({}), new Map(), { visuals: [visual], css: '' }),
+    ]).html
     // A:B of data, but the chart reaches column E (index 4)
-    expect(widened.html.match(/<col /g)).toHaveLength(5)
-    expect(widened.html).not.toContain('<style></style>')
+    expect(widened.match(/<col /g)).toHaveLength(5)
+    expect(widened).not.toContain('<style></style>')
   })
 
-  it('carries the page geometry and header/footer templates', () => {
-    const payload = buildSheetPrintPayload(
+  it('carries the page geometry and renders the header/footer inside the page', () => {
+    const document = layout(
       fakeWorksheet(),
       payloadSetup({
         orientation: 'landscape',
@@ -562,157 +658,153 @@ describe('buildSheetPrintPayload', () => {
         margins: { left: 0.98, right: 0.98, top: 0.98, bottom: 0.79, header: 0, footer: 0.51 },
         footer: { center: 'Seite &P von &N' },
       }),
-      'Book.pdf',
-      'S1',
     )
-    expect(payload.landscape).toBe(true)
-    expect(payload.pageSize).toBe('Letter')
-    expect(payload.scale).toBeCloseTo(0.65, 5)
-    expect(payload.margins).toEqual({ top: 0.98, bottom: 0.79, left: 0.98, right: 0.98 })
-    expect(payload.headerTemplate).toBeUndefined()
-    expect(payload.footerTemplate).toContain('<span class="pageNumber"></span>')
-    expect(payload.footerTemplate).toContain('<span class="totalPages"></span>')
-    expect(payload.footerTemplate).toContain('padding-bottom:0.51in')
-    // the template document is content-box: without an inline border-box the
-    // padded 100%-wide row overflows the page and shifts/clips the sections
-    expect(payload.footerTemplate).toContain('box-sizing:border-box')
+    expect(document.paper.landscape).toBe(true)
+    expect(document.paper.pageSize).toBe('Letter')
+    expect(document.scale).toBeCloseTo(0.65, 5)
+    const html = assemblePrintHtml([document]).html
+    expect(html).toContain('style="width:11in;height:8.5in"')
+    expect(html).toContain('left:0.98in;top:0.98in;width:9.04in;height:6.73in')
+    expect(html).toContain('zoom:0.65')
+    expect(html).toContain('bottom:0.51in')
+    expect(html).toContain('Seite 1 von 1')
+    expect(html).toContain('@page p0 { size: 11in 8.5in; margin: 0; }')
+  })
+
+  it('numbers pages across the sheets of a job and keeps &N at the job total', () => {
+    const first = layout(tallWorksheet(120), payloadSetup({ footer: { right: '&P/&N' } }))
+    const second = layout(fakeWorksheet(), payloadSetup({ footer: { right: '&P/&N' } }))
+    const job = assemblePrintHtml([first, second])
+    const total = first.pages.length + 1
+    expect(job.pages).toHaveLength(total)
+    expect(job.html).toContain(`>1/${total}<`)
+    expect(job.html).toContain(`>${total}/${total}<`)
+    const subset = assemblePrintHtml([first, second], (page) => page === total)
+    expect(subset.pages).toEqual([{ document: 1, page: 0 }])
+    expect(subset.html).not.toContain(`>1/${total}<`)
   })
 
   it('shrinks to fit the width when fit-to-page is on', () => {
     // content 150pt wide (two 100px columns at 0.75), A4 printable ~493pt
-    const payload = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ fitToPage: true, fitToWidth: 1 }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(payload.scale).toBe(1)
+    expect(layout(fakeWorksheet(), payloadSetup({ fitToPage: true, fitToWidth: 1 })).scale).toBe(1)
   })
 
-  it('shrinks to fit the height when fitToHeight is set', () => {
-    // 200 text rows: printed at ~15.75pt each (11pt line + padding) they
-    // need ~3150pt; A4 portrait leaves 733.5pt between 0.75in margins.
-    const onePage = buildSheetPrintPayload(
+  it('shrinks to fit the height when fitToHeight is set and ignores manual breaks', () => {
+    // 200 rows of 15pt need 3000pt; A4 portrait leaves 733.5pt between 0.75in margins.
+    const onePage = layout(
       tallWorksheet(200),
       payloadSetup({ fitToPage: true, fitToWidth: 0, fitToHeight: 1 }),
-      'Book.pdf',
-      'S1',
+      new Map(),
+      undefined,
+      { breaks: { rowBreaks: [50, 100], colBreaks: [] } },
     )
-    expect(onePage.scale).toBeLessThan(0.24)
+    expect(onePage.scale).toBeLessThan(0.25)
     expect(onePage.scale).toBeGreaterThan(0.2)
-    const twoPages = buildSheetPrintPayload(
+    expect(onePage.pages).toHaveLength(1)
+    const twoPages = layout(
       tallWorksheet(200),
       payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 2 }),
-      'Book.pdf',
-      'S1',
     )
     expect(twoPages.scale).toBeGreaterThan(onePage.scale)
-    expect(twoPages.scale).toBeLessThan(0.47)
+    expect(twoPages.scale).toBeLessThan(0.5)
+    expect(twoPages.pages).toHaveLength(2)
     // Width alone is satisfied at 100%; the height axis decides.
     expect(
-      buildSheetPrintPayload(
-        tallWorksheet(200),
-        payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 0 }),
-        'Book.pdf',
-        'S1',
-      ).scale,
+      layout(tallWorksheet(200), payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 0 }))
+        .scale,
     ).toBe(1)
     // The saved scale is ignored while fit-to-page is on.
     expect(
-      buildSheetPrintPayload(
+      layout(
         tallWorksheet(3),
         payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 1, scale: 50 }),
-        'Book.pdf',
-        'S1',
       ).scale,
     ).toBe(1)
   })
 
-  it('emits first/even page templates only for active variants', () => {
-    const plain = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ header: { center: 'Odd' } }),
-      'Book.pdf',
-      'S1',
-    )
-    expect(plain.firstPage).toBeUndefined()
-    expect(plain.evenPages).toBeUndefined()
+  it('uses first/even page header/footer variants only when active', () => {
+    const plain = layout(tallWorksheet(120), payloadSetup({ header: { center: 'Odd' } }))
+    expect(plain.headerFooter.first).toBeNull()
+    expect(plain.headerFooter.even).toBeNull()
 
-    const variants = buildSheetPrintPayload(
-      fakeWorksheet(),
+    const variants = layout(
+      tallWorksheet(120),
       payloadSetup({
         header: { center: 'Odd' },
         footer: { center: '&P' },
         firstPage: { header: null, footer: { right: 'First' } },
         evenPages: { header: { left: 'Even' }, footer: null },
       }),
-      'Book.pdf',
-      'S1',
     )
-    expect(variants.headerTemplate).toContain('Odd')
-    expect(variants.footerTemplate).toContain('pageNumber')
+    expect(variants.pages).toHaveLength(3)
+    expect(
+      variants.pages.map((_page, index) => pageVariant(variants.headerFooter, index, index + 1)),
+    ).toEqual(['first', 'even', 'odd'])
     // differentFirst with a blank first header: page 1 prints no header.
-    expect(variants.firstPage).toEqual({
-      footerTemplate: expect.stringContaining('First') as string,
-    })
-    expect(variants.evenPages).toEqual({
-      headerTemplate: expect.stringContaining('Even') as string,
-    })
+    expect(variants.headerFooter.first?.header).toBeNull()
+    expect(variants.headerFooter.even?.footer).toBeNull()
+    const html = assemblePrintHtml([variants]).html
+    expect(html).toContain('First')
+    expect(html).toContain('Even')
+    // A second sheet after an odd page count: its first page is job page 4
+    // (even), its second job page 5 (odd).
+    const second = layout(
+      tallWorksheet(60),
+      payloadSetup({ evenPages: { header: { left: 'Even' }, footer: null } }),
+    )
+    expect(pageVariant(second.headerFooter, 0, 4)).toBe('even')
+    expect(pageVariant(second.headerFooter, 1, 5)).toBe('odd')
   })
 
-  it('puts the &G picture of each variant into its own template', () => {
+  it('puts the &G picture of each variant into its own header', () => {
     const pictures = new Map([
       ['LH', { dataUrl: 'data:image/png;base64,ODD', widthPt: 300, heightPt: 30 }],
       ['CHFIRST', { dataUrl: 'data:image/png;base64,FIRST', widthPt: 100, heightPt: 50 }],
     ])
-    const payload = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({
-        header: { left: '&G' },
-        firstPage: { header: { center: '&G' }, footer: null },
-      }),
-      'Book.pdf',
-      'S1',
-      pictures,
-    )
-    expect(payload.headerTemplate).toContain('src="data:image/png;base64,ODD"')
-    expect(payload.headerTemplate).toContain('width:400px;height:40px')
-    expect(payload.headerTemplate).not.toContain('FIRST')
-    expect(payload.firstPage?.headerTemplate).toContain('src="data:image/png;base64,FIRST"')
-    expect(payload.firstPage?.headerTemplate).not.toContain('ODD')
+    const html = assemblePrintHtml([
+      layout(
+        tallWorksheet(120),
+        payloadSetup({
+          header: { left: '&G' },
+          firstPage: { header: { center: '&G' }, footer: null },
+        }),
+        pictures,
+      ),
+    ]).html
+    expect(html).toContain('src="data:image/png;base64,ODD"')
+    expect(html).toContain('width:400px;height:40px')
+    expect(html.indexOf('FIRST')).toBeLessThan(html.indexOf('ODD'))
   })
 
   it('scales the header/footer with the document unless scaleWithDoc is off', () => {
-    // phpss_issue.1767: scale 65, a 442.5pt x 43.5pt logo in the left header.
     const pictures = new Map([
       ['LH', { dataUrl: 'data:image/png;base64,LOGO', widthPt: 442.5, heightPt: 43.5 }],
     ])
-    const scaled = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({ scale: 65, header: { left: '&G' }, footer: { center: 'Seite &P' } }),
-      'Book.pdf',
-      'S1',
-      pictures,
-    )
+    const scaled = assemblePrintHtml([
+      layout(
+        fakeWorksheet(),
+        payloadSetup({ scale: 65, header: { left: '&G' }, footer: { center: 'Seite &P' } }),
+        pictures,
+      ),
+    ]).html
     // 442.5pt * 0.65 = 287.6pt = 383.5px; 43.5pt * 0.65 = 28.3pt = 37.7px
-    expect(scaled.headerTemplate).toContain('width:383.5px;height:37.7px')
-    expect(scaled.headerTemplate).toContain('font-size:5.85pt')
-    expect(scaled.footerTemplate).toContain('font-size:5.85pt')
+    expect(scaled).toContain('width:383.5px;height:37.7px')
+    expect(scaled).toContain('font-size:5.85pt')
 
-    const fixed = buildSheetPrintPayload(
-      fakeWorksheet(),
-      payloadSetup({
-        scale: 65,
-        header: { left: '&G' },
-        footer: { center: 'Seite &P' },
-        headerFooterScaleWithDoc: false,
-      }),
-      'Book.pdf',
-      'S1',
-      pictures,
-    )
-    expect(fixed.headerTemplate).toContain('width:590px;height:58px')
-    expect(fixed.footerTemplate).toContain('font-size:9pt')
+    const fixed = assemblePrintHtml([
+      layout(
+        fakeWorksheet(),
+        payloadSetup({
+          scale: 65,
+          header: { left: '&G' },
+          footer: { center: 'Seite &P' },
+          headerFooterScaleWithDoc: false,
+        }),
+        pictures,
+      ),
+    ]).html
+    expect(fixed).toContain('width:590px;height:58px')
+    expect(fixed).toContain('font-size:9pt')
   })
 
   it('sanitizes non-finite workbook dimensions instead of emitting NaNpt', () => {
@@ -725,5 +817,7 @@ describe('buildSheetPrintPayload', () => {
     expect(payload.html).toContain('<table>')
     expect(payload.html).not.toContain('NaN')
     expect(payload.html).not.toContain('Infinity')
+    expect(payload.margins).toEqual({ top: 0, bottom: 0, left: 0, right: 0 })
+    expect(payload.scale).toBe(1)
   })
 })

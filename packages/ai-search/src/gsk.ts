@@ -216,10 +216,8 @@ export function summarizeGskFailure(raw: unknown, fallback = 'unknown error'): s
  * never closes. String-aware, so braces and quotes inside string values do not
  * change the depth, and a block ends at its own closer rather than at the end
  * of the output (trailing log lines are left out).
- *
- * `budget` is drawn down per character so the caller can stop the scan: each
- * candidate restarts at its own offset, so without a shared budget the whole
- * recovery pass is quadratic in the number of candidate lines.
+ * `budget` is shared across candidates: each restarts at its own offset, so
+ * without it the recovery pass is quadratic in the number of candidate lines.
  */
 function jsonBlockAt(text: string, start: number, budget: ScanBudget): string | null {
   let depth = 0
@@ -245,20 +243,12 @@ function jsonBlockAt(text: string, start: number, budget: ScanBudget): string | 
   return null
 }
 
-/** Remaining characters the recovery scan may examine; drawn down by jsonBlockAt. */
 interface ScanBudget {
   chars: number
 }
 
-/**
- * Ceiling on the characters the recovery scan may examine in total, across all
- * candidate openers. A candidate is scanned from its own offset to its closer
- * or to the end of the output, so an output of N candidate lines costs O(N x
- * len) — and the output is model-controlled, bounded only by MAX_BUFFER. The
- * ceiling makes the pass a fixed amount of work instead: a normal response
- * parses on the first candidate, and even one buried behind noise needs only a
- * few scans of its own length.
- */
+// the output is model-controlled (bounded only by MAX_BUFFER), so the recovery
+// scan gets a fixed total budget across all candidate openers
 const MAX_RECOVERY_SCAN_CHARS = 4 * 1024 * 1024
 
 /**
@@ -277,7 +267,7 @@ export function parseGskOutput(stdout: string): unknown {
   let offset = 0
   const budget: ScanBudget = { chars: MAX_RECOVERY_SCAN_CHARS }
   for (const line of trimmed.split('\n')) {
-    if (budget.chars <= 0) break // scan budget spent: no candidate can be tried
+    if (budget.chars <= 0) break
     const opener = line.trimStart()[0]
     if (opener === '{' || opener === '[') {
       const block = jsonBlockAt(trimmed, offset + line.indexOf(opener), budget)
@@ -350,15 +340,16 @@ function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promis
 /** Max search results kept; longest snippet/title chars (prevents MB fields blowing context). */
 export const MAX_GSK_RESULTS = 20
 export const MAX_GSK_SNIPPET_CHARS = 2_000
+const MAX_GSK_URL_CHARS = 8_192
 
 function normalizeMaxResults(n: number): number {
   if (!Number.isFinite(n)) return 6
   return Math.min(20, Math.max(1, Math.floor(n)))
 }
 
-function clipField(v: unknown): string {
+function clipField(v: unknown, max = MAX_GSK_SNIPPET_CHARS): string {
   const s = String(v ?? '')
-  return s.length > MAX_GSK_SNIPPET_CHARS ? s.slice(0, MAX_GSK_SNIPPET_CHARS) : s
+  return s.length > max ? s.slice(0, max) : s
 }
 
 /** Parses the `gsk search` response shape data.organic_results[{title,link,snippet}] (exported for tests) */
@@ -373,7 +364,7 @@ export function parseGskWebSearch(
     const o = asRecord(item)
     return {
       title: clipField(o.title),
-      url: String(o.link ?? ''),
+      url: clipField(o.link, MAX_GSK_URL_CHARS),
       snippet: clipField(o.snippet),
     }
   })
@@ -551,16 +542,10 @@ async function toolCliPost(
 ): Promise<unknown> {
   const key = gskApiKey()
   if (!key) throw new Error('Not logged in to Genspark (gsk login)')
-  // An abort listener added after the event has already fired is never invoked, so a
-  // signal that arrived while the caller was still dispatching this tool call would
-  // never reach the internal controller and the billed POST would run to completion.
+  // A listener added to an already-aborted signal never fires; the billed POST would go out.
   if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError')
-  // Route through the shared watchdog so our own deadline surfaces as AiTimeoutError.
-  // A bare controller.abort() is indistinguishable from a user cancel, and the apps
-  // map AiTimeoutError to errorCode 'timeout' -> the localized timeout text; without
-  // it a 240s slide_generate that never answered showed a raw "operation was aborted".
+  // The shared watchdog surfaces our own deadline as AiTimeoutError instead of a bare abort.
   const watchdog = createStreamWatchdog(signal, timeoutMs, timeoutMs)
-  // guard() always disposes the watchdog timer, on both the resolve and reject path
   return watchdog.guard(async () => {
     const resp = await fetch(`${GSK_TOOL_CLI_BASE}${path}`, {
       method: 'POST',
@@ -611,12 +596,8 @@ export async function gskSlideGenerate(
   )
   const downloadUrl = dl.download_url
   if (!downloadUrl) throw new Error('file/download returned no download_url')
-  // The cloud response picks this URL, so it goes through the same SSRF gate as
-  // every other model-influenced download: a plain fetch would follow a redirect
-  // into a private address (or a cloud metadata endpoint) unchecked. The body is
-  // then read through the capped reader.
+  // the cloud response picks this URL: same SSRF gate as every other model-influenced download
   const resp = await fetchWithSsrfGuard(String(downloadUrl), {
-    // the guard has no signal of its own; the caller's abort rides on every hop
     fetchImpl: (url, init) => fetch(url, signal ? { ...init, signal } : init),
   })
   if (!resp) throw new Error('PPTX download blocked: the download URL is not a public address')

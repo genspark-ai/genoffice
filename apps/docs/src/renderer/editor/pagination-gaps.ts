@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
+import type { RowFillPatch } from '../pagination-types'
 import { rangeSlot } from '../dom-range'
 import { autoLineMultOf } from '../line-metrics'
 import { TopLevelPositions } from './top-level-pos'
@@ -128,6 +129,18 @@ function rowGapPx(tr: Element): number {
   if (cs.borderCollapse !== 'separate') return 0
   const parts = cs.borderSpacing.split(' ')
   return parseFloat(parts[1] ?? parts[0]) || 0
+}
+
+/** Identity of a pass's applied row fills: a change re-lays out the table (the
+ *  filled tr grows), so the slices computed from the pre-fill DOM are stale and
+ *  the pass must run once more; equal signatures end the chain. */
+export function rowFillsSig(fills: readonly RowFillPatch[]): string {
+  return fills
+    .map(
+      (f) =>
+        `${Math.round(f.blockTop)}:${f.row}:${Math.round(f.targetPx)}:${Math.round(f.extraPx ?? 0)}`,
+    )
+    .join(',')
 }
 
 /** Apply/replace the split-row height patches (an empty list clears them). */
@@ -1250,6 +1263,8 @@ export function syncFloatShifts(
  * Layout-affecting, so it runs before measurement; idempotent (inputs are the
  * static data-band values and the anchor-line heights).
  */
+const SIDE_FLOAT_RE = /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/
+
 export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = false): void {
   let run: HTMLElement[] = []
   // the inputs are static band data and anchor-line heights, so the writes
@@ -1321,6 +1336,53 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
       else out.push([a, b])
     }
     return out
+  }
+  // Word hangs the next anchor paragraph's picture from that paragraph's
+  // undisplaced top: one line below where the previous anchor's own line
+  // lands once its side-wrapped boxes stop blocking it on both sides (whole
+  // line steps), not below the band (photo grid: the fourth picture beside
+  // the third on the same page)
+  const liftIntoBand = (wrapper: HTMLElement, float: HTMLElement): void => {
+    if (wrapper.dataset.bandBeside === '1' || wrapper.dataset.bandKeep === '1') return
+    const band = Math.round(parseFloat(wrapper.dataset.band ?? '0') || 0)
+    const step = lineHeightOf(wrapper)
+    if (band <= 0 || step <= 0) return
+    if (float.dataset.anchorLiftBase === undefined) {
+      float.dataset.anchorLiftBase = String(parseFloat(float.style.marginTop) || 0)
+    }
+    const base = parseFloat(float.dataset.anchorLiftBase) || 0
+    const wr = wrapper.getBoundingClientRect()
+    const rel = (r: DOMRect): [number, number, number, number] => [
+      (r.left - wr.left) / factor,
+      (r.right - wr.left) / factor,
+      (r.top - wr.top) / factor,
+      (r.bottom - wr.top) / factor,
+    ]
+    const boxes = Array.from(
+      wrapper.querySelectorAll<HTMLElement>(':scope > .doc-textbox, :scope > .doc-img-wrap'),
+    )
+      .map((b) => rel(b.getBoundingClientRect()))
+      .filter((b) => b[3] > b[2])
+    const colW = wr.width / factor
+    const blocked = (y: number): boolean => {
+      const hit = boxes
+        .filter((b) => b[2] < y + step && b[3] > y)
+        .map((b): [number, number] => [b[0], b[1]])
+      let gap = 0
+      let end = 0
+      for (const [a, b] of mergedOf(hit)) {
+        gap = Math.max(gap, a - end)
+        end = Math.max(end, b)
+      }
+      return Math.max(gap, colW - end) < 36
+    }
+    let y = 0
+    while (y < band - 0.5 && blocked(y)) y += step
+    y += step
+    const target = base - (y < band - 0.5 ? band - y : 0)
+    if (Math.abs((parseFloat(float.style.marginTop) || 0) - target) > 0.5) {
+      float.style.marginTop = `${target.toFixed(1)}px`
+    }
   }
   // a table-pushed band (data-band-beside) leaves side room: the empty
   // paragraphs between the anchor and the table lay their lines beside the
@@ -1412,6 +1474,7 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
       run.push(el)
       continue
     }
+    if (run.length === 1 && SIDE_FLOAT_RE.test(el.className)) liftIntoBand(run[0], el)
     flush()
     if (besideBand && isEmptyParagraph(el)) {
       const cs = getComputedStyle(el)
@@ -1442,7 +1505,9 @@ export function syncAnchorBands(pm: HTMLElement, factor: number, modernLayout = 
  */
 export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: number): void {
   const boxes = Array.from(
-    pm.querySelectorAll<HTMLElement>('.doc-cell-boxes > .doc-textbox, .doc-cell-boxes > div'),
+    pm.querySelectorAll<HTMLElement>(
+      '.doc-cell-boxes > .doc-textbox:not([data-cell-page]), .doc-cell-boxes > div:not([data-cell-page])',
+    ),
   )
   const rects = boxes.map((box) => box.getBoundingClientRect())
   boxes.forEach((box, i) => {
@@ -1460,6 +1525,82 @@ export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: numb
       box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
       box.dataset.pageFloatDy = String(next)
     }
+  })
+}
+
+/**
+ * layoutInCell="0" boxes with a page/margin-relative offset (data-cell-page,
+ * rendered from the cell origin like every cell box): Word positions them on
+ * the anchor's page — a resume template's avatar and header bar anchored in
+ * the first cell of a page-anchored floating table sit at the paper top, not
+ * at the table. Translate each box from its cell-origin position to the page
+ * position via --cell-page-dx/dy (the preview clones the inline vars; its
+ * un-positioned strut resolves the same raw offsets against the page box) and
+ * stamp the owning page so the preview hides the ride-along copies.
+ * Idempotent: the applied shift is subtracted before measuring.
+ */
+export function pinCellBoxesToPage(pm: HTMLElement, factor: number): void {
+  const boxes = Array.from(
+    pm.querySelectorAll<HTMLElement>('.doc-cell-boxes-page > .doc-textbox[data-cell-page]'),
+  )
+  if (boxes.length === 0) return
+  const pmRect = pm.getBoundingClientRect()
+  const pmCs = getComputedStyle(pm)
+  const firstMt = parseFloat(pmCs.paddingTop) || 0
+  const firstMl = parseFloat(pmCs.paddingLeft) || 0
+  // page boundaries: a gap's bottom edge minus its top margin is the next paper top
+  const pages = Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))
+    .filter((el) => !insideFloatTable(el))
+    .map((el) => ({
+      bottom: el.getBoundingClientRect().bottom,
+      mt: parseFloat(el.style.getPropertyValue('--gap-mt')) || 0,
+      ml: parseFloat(el.style.getPropertyValue('--gap-ml')) || 0,
+    }))
+  // a narrower section's page is centered on the shared paper: its blocks carry
+  // the page's left edge as --page-cx (column-layout), which the target must add
+  const pageLeftOf = (box: HTMLElement): number => {
+    let block: HTMLElement | null = box
+    while (block && block.parentElement !== pm) block = block.parentElement
+    return block ? parseFloat(getComputedStyle(block).getPropertyValue('--page-cx')) || 0 : 0
+  }
+  const rects = boxes.map((box) => box.getBoundingClientRect())
+  boxes.forEach((box, i) => {
+    const r = rects[i]
+    if (r.height <= 0) return
+    const appliedX = parseFloat(box.dataset.cellPageDx ?? '') || 0
+    const appliedY = parseFloat(box.dataset.cellPageDy ?? '') || 0
+    const naturalTop = r.top - appliedY * factor
+    const naturalLeft = r.left - appliedX * factor
+    let paperTop = pmRect.top
+    let mt = firstMt
+    let ml = firstMl
+    let page = 0
+    for (const g of pages) {
+      if (g.bottom - g.mt * factor > naturalTop + 0.5) break
+      paperTop = g.bottom - g.mt * factor
+      mt = g.mt
+      ml = g.ml
+      page++
+    }
+    const offX = parseFloat(box.dataset.cellPageX ?? '') || 0
+    const offY = parseFloat(box.dataset.cellPageY ?? '') || 0
+    const fromPage = box.dataset.pageRelFrom === 'page'
+    const targetTop = paperTop + (fromPage ? offY : mt + offY) * factor
+    // only a paper-edge X (relativeFrom="page") skips the margin: margin-relative
+    // and column-resolved offsets measure from the column start
+    const fromPaperEdge = box.dataset.pageRelXFrom === 'page'
+    const targetLeft = pmRect.left + (pageLeftOf(box) + (fromPaperEdge ? offX : ml + offX)) * factor
+    const dy = (targetTop - naturalTop) / factor
+    const dx = (targetLeft - naturalLeft) / factor
+    if (Math.abs(dy - appliedY) > 0.5 || !box.dataset.cellPageDy) {
+      box.style.setProperty('--cell-page-dy', `${dy.toFixed(1)}px`)
+      box.dataset.cellPageDy = String(dy)
+    }
+    if (Math.abs(dx - appliedX) > 0.5 || !box.dataset.cellPageDx) {
+      box.style.setProperty('--cell-page-dx', `${dx.toFixed(1)}px`)
+      box.dataset.cellPageDx = String(dx)
+    }
+    if (box.dataset.pinPage !== String(page)) box.dataset.pinPage = String(page)
   })
 }
 

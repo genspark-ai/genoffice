@@ -1,6 +1,16 @@
 import type { zh } from './zh'
 
 export const ko = {
+  redactMenuLabel: '선택한 부분을 AI에서 숨기기',
+  redactDialogDesc:
+    '선택한 내용은 그대로 두고 AI에게는 아래 자리표시자만 보냅니다. 이름을 붙이면 AI가 무엇을 뜻하는지 알 수 있습니다.',
+  redactDialogScope:
+    '이 앱의 AI에만 적용됩니다. CLI, MCP 도구, 창 없는 내보내기는 파일을 직접 읽으므로 이 단어들은 여전히 보입니다.',
+  redactDialogPlaceholder: '자리표시자 이름, 예: 고객 전화',
+  redactCancel: '취소',
+  redactInsert: '숨기기',
+  redactEnable: '선택한 부분을 오른쪽 클릭해 AI에서 숨깁니다.',
+
   appPhPromptTitle: '제목을 추가하려면 클릭',
   appPhPromptSubtitle: '부제목을 추가하려면 클릭',
   appPhPromptBody: '텍스트를 추가하려면 클릭',

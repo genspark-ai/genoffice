@@ -30,15 +30,9 @@ const lineModel: ChartModel = {
 }
 
 describe('buildChartNode', () => {
-  /**
-   * These build 130,000-element series, which is genuine CPU work rather than
-   * an I/O wait: measured 1.8–3.9 s on an idle machine and 4.7 s with ten
-   * competing processes. vitest's default 5 s budget therefore leaves under 2x
-   * headroom, and a shared CI runner running the monorepo suite blew through it
-   * (see #1788, where it failed a docs-only PR). The sibling file
-   * `build-chart-series-bounds.test.ts` already budgets 60 s for the same
-   * 130,000-point workload; this matches it.
-   */
+  // 130,000-element series are real CPU work (up to ~5 s on a loaded CI
+  // runner), so vitest's default 5 s budget flakes; this matches the 60 s
+  // budget of build-chart-series-bounds.test.ts for the same workload
   const TIMEOUT = 60_000
 
   it(
@@ -80,18 +74,22 @@ describe('buildChartNode', () => {
     TIMEOUT,
   )
 
-  it('renders 130,000 scatter points without spreading axis values', () => {
-    const values = Array<number>(130_000).fill(10)
-    const model: ChartModel = {
-      kind: 'scatter',
-      scatterStyle: 'marker',
-      categories: [],
-      series: [{ values }],
-    }
-    expect(
-      buildChartNode('large-scatter', 'large-scatter', model, box, vp, metrics)?.markers,
-    ).toHaveLength(values.length)
-  })
+  it(
+    'renders 130,000 scatter points without spreading axis values',
+    () => {
+      const values = Array<number>(130_000).fill(10)
+      const model: ChartModel = {
+        kind: 'scatter',
+        scatterStyle: 'marker',
+        categories: [],
+        series: [{ values }],
+      }
+      expect(
+        buildChartNode('large-scatter', 'large-scatter', model, box, vp, metrics)?.markers,
+      ).toHaveLength(values.length)
+    },
+    TIMEOUT,
+  )
 
   it('builds line chart: polylines within plot, markers, gridlines, legend', () => {
     const node = buildChartNode('r_1', 'el1', lineModel, box, vp, metrics)!

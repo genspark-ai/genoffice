@@ -45,16 +45,25 @@ const updaterState = {
   allowDowngrade: false,
 }
 const checkForUpdates = vi.fn(() => Promise.resolve(null))
-const downloadUpdate = vi.fn<() => Promise<unknown>>(() => Promise.resolve([]))
+const downloadUpdate = vi.fn<(token?: FakeCancellationToken) => Promise<unknown>>(() =>
+  Promise.resolve([]),
+)
+class FakeCancellationToken {
+  cancelled = false
+  cancel(): void {
+    this.cancelled = true
+  }
+}
 const quitAndInstall = vi.fn()
 
 vi.mock('electron-updater', () => ({
+  CancellationToken: FakeCancellationToken,
   autoUpdater: {
     on: (event: string, listener: Listener) => {
       updaterState.listeners.set(event, listener)
     },
     checkForUpdates: () => checkForUpdates(),
-    downloadUpdate: () => downloadUpdate(),
+    downloadUpdate: (token?: FakeCancellationToken) => downloadUpdate(token),
     quitAndInstall: (...args: unknown[]) => quitAndInstall(...(args as [boolean, boolean])),
     set autoDownload(v: boolean) {
       updaterState.autoDownload = v
@@ -100,6 +109,8 @@ vi.mock('../src/main/update-window', () => ({
   pushUpdateState: (patch: Partial<UpdateUiState>) => pushUpdateState(patch),
   closeUpdateWindow: () => closeUpdateWindow(),
   isUpdateWindowOpen: () => false,
+  setUpdateParentWindow: () => {},
+  clearUpdateState: () => closeUpdateWindow(),
 }))
 
 const FIRST_CHECK_DELAY_MS = 15_000
@@ -324,6 +335,76 @@ describe('initAutoUpdater', () => {
     expect(updaterState.channel).toBe('latest')
     expect(updaterState.allowDowngrade).toBe(false)
     expect(checkForUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('applyUpdateChannel drops a downloaded package of the previous channel', async () => {
+    const { initAutoUpdater, applyUpdateChannel } = await loadUpdater()
+    initAutoUpdater(() => null)
+    const available = updaterState.listeners.get('update-available')!
+    available({ version: '0.2.0' })
+    lastShownActions().onDownload()
+    updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
+    expect(updaterState.autoInstallOnAppQuit).toBe(true)
+    lastShownActions().onLater()
+
+    applyUpdateChannel('beta')
+    // the stale package must not install on quit or via a stale window action
+    expect(updaterState.autoInstallOnAppQuit).toBe(false)
+    lastShownActions().onInstall()
+    vi.advanceTimersByTime(0)
+    expect(quitAndInstall).not.toHaveBeenCalled()
+
+    // the new channel's version is offered from scratch, not swallowed
+    available({ version: '0.3.0-beta.1' })
+    expect(showUpdateWindow).toHaveBeenCalledTimes(2)
+    expect(lastShownState().phase).toBe('available')
+    expect(lastShownState().version).toBe('0.3.0-beta.1')
+    lastShownActions().onDownload()
+    expect(downloadUpdate).toHaveBeenCalledTimes(2)
+    // a late completion of the old channel's download is ignored
+    updaterState.listeners.get('update-downloaded')!({ version: '0.2.0' })
+    expect(pushUpdateState).not.toHaveBeenLastCalledWith({ phase: 'downloaded', percent: 100 })
+    updaterState.listeners.get('update-downloaded')!({ version: '0.3.0-beta.1' })
+    expect(pushUpdateState).toHaveBeenLastCalledWith({ phase: 'downloaded', percent: 100 })
+    expect(updaterState.autoInstallOnAppQuit).toBe(true)
+    lastShownActions().onInstall()
+    vi.advanceTimersByTime(0)
+    expect(quitAndInstall).toHaveBeenCalledWith(true, true)
+  })
+
+  it('applyUpdateChannel cancels an in-flight download and shields the new one from its leftovers', async () => {
+    let rejectOld: (err: Error) => void = () => {}
+    downloadUpdate.mockImplementationOnce(() => new Promise((_, reject) => (rejectOld = reject)))
+    downloadUpdate.mockImplementation(() => new Promise(() => {}))
+    const { initAutoUpdater, applyUpdateChannel } = await loadUpdater()
+    initAutoUpdater(() => null)
+    const available = updaterState.listeners.get('update-available')!
+    available({ version: '0.2.0' })
+    lastShownActions().onDownload()
+    updaterState.listeners.get('download-progress')!({ percent: 37 })
+    const oldToken = downloadUpdate.mock.calls[0][0]!
+
+    applyUpdateChannel('beta')
+    expect(closeUpdateWindow).toHaveBeenCalledTimes(1)
+    expect(oldToken.cancelled).toBe(true)
+    // progress still trickling out of the dropped request is ignored
+    updaterState.listeners.get('download-progress')!({ percent: 40 })
+    expect(pushUpdateState).not.toHaveBeenCalledWith({ phase: 'downloading', percent: 40 })
+
+    available({ version: '0.3.0-beta.1' })
+    expect(showUpdateWindow).toHaveBeenCalledTimes(2)
+    expect(lastShownState().phase).toBe('available')
+    expect(lastShownState().percent).toBe(0)
+    lastShownActions().onDownload()
+    expect(downloadUpdate).toHaveBeenCalledTimes(2)
+    expect(downloadUpdate.mock.calls[1][0]).not.toBe(oldToken)
+
+    // the dropped request's late rejection must not fail the new download
+    rejectOld(new Error('cancelled'))
+    await flushAsync()
+    expect(pushUpdateState).not.toHaveBeenCalledWith({ phase: 'error' })
+    updaterState.listeners.get('download-progress')!({ percent: 5 })
+    expect(pushUpdateState).toHaveBeenLastCalledWith({ phase: 'downloading', percent: 5 })
   })
 
   it('applyUpdateChannel is a no-op before the real updater is active', async () => {

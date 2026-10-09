@@ -5,6 +5,12 @@ const EMU_PER_PX = 9525
 
 // ---- shape box-model mapping (pure, unit-tested) ----
 
+/**
+ * imageWrap mirror for a shape the user put back in line: the attr's null default
+ * also means "untouched", and a freshly inserted shape's anchor must still save.
+ */
+export const SHAPE_INLINE_WRAP = 'inline'
+
 /** The wrap mode a shape's box represents, as the Wrap Text dropdown spells it. */
 export function shapeWrapOf(box: TextboxDisplay): ImageWrap | null {
   if (box.behind) return 'behind'
@@ -97,7 +103,9 @@ export function setFloatingWrap(editor: Editor, wrap: string | null): void {
   if (boxes) {
     const mode = normalizedShapeWrap(wrap)
     if (mode === undefined) return
-    writeFirstBox(editor, withWrapFields(boxes[0], mode), { imageWrap: mode })
+    writeFirstBox(editor, withWrapFields(boxes[0], mode), {
+      imageWrap: mode ?? SHAPE_INLINE_WRAP,
+    })
     return
   }
   // an inline image drops its floating-position attrs (the existing image behaviour)

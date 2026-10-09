@@ -119,6 +119,13 @@ export const IconCompleteForm = () => (
     <path d="M8 12 L10.8 14.8 L16.5 9" />
   </Icon>
 )
+export const IconFormAiFill = () => (
+  <Icon>
+    <path d="M5 4.5 H15 L19 8.5 V19.5 H5 Z" />
+    <path d="M8 11 H13 M8 14.5 H11.5" />
+    <path d="M17 12.5 L17.7 14.3 L19.5 15 L17.7 15.7 L17 17.5 L16.3 15.7 L14.5 15 L16.3 14.3 Z" />
+  </Icon>
+)
 export const IconFormText = () => (
   <Icon>
     <path d="M5 6 H19 M12 6 V19 M8.5 19 H15.5" />
@@ -127,6 +134,71 @@ export const IconFormText = () => (
 export const IconFormCheck = () => (
   <Icon>
     <path d="M4.5 12.5 L9.5 17.5 L19.5 6.5" />
+  </Icon>
+)
+export const IconFieldText = () => (
+  <Icon>
+    <rect x="3.5" y="7" width="17" height="10" rx="1.5" />
+    <path d="M7 10.5 H12 M9.5 10.5 V14" />
+    <path d="M15.5 10 V14.5" strokeDasharray="1.2 1.6" />
+  </Icon>
+)
+export const IconFieldCheckbox = () => (
+  <Icon>
+    <rect x="5" y="5" width="14" height="14" rx="2" />
+    <path d="M8.5 12 L11 14.5 L15.5 9.5" />
+  </Icon>
+)
+export const IconFieldSignature = () => (
+  <Icon>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="1.5" strokeDasharray="2 1.6" />
+    <path d="M6.5 14.5 C8 11.5 9 9.5 9.2 8.8 C9.4 9.6 9.4 12 10.8 13.6 C11.8 14.7 13 13.6 13.6 12.8 C14 12.3 14.5 12.5 14.8 13.1 C15.2 13.9 16.2 14.3 17.5 13.5" />
+  </Icon>
+)
+export const IconFieldDate = () => (
+  <Icon>
+    <rect x="3.5" y="5.5" width="17" height="14" rx="1.5" />
+    <path d="M3.5 9.5 H20.5 M8 3.5 V7 M16 3.5 V7" />
+    <path d="M7 13 H9 M11 13 H13 M15 13 H17 M7 16 H9 M11 16 H13" />
+  </Icon>
+)
+export const IconFieldRadio = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="7.5" />
+    <circle cx="12" cy="12" r="3" fill="currentColor" />
+  </Icon>
+)
+export const IconFieldChoice = () => (
+  <Icon>
+    <rect x="3.5" y="7" width="17" height="10" rx="1.5" />
+    <path d="M7 12 H12" />
+    <path d="M15 10.5 L17 13.5 L19 10.5" />
+  </Icon>
+)
+export const IconFieldDetect = () => (
+  <Icon>
+    <path d="M4 8 V5.5 A1.5 1.5 0 0 1 5.5 4 H8 M16 4 H18.5 A1.5 1.5 0 0 1 20 5.5 V8 M20 16 V18.5 A1.5 1.5 0 0 1 18.5 20 H16 M8 20 H5.5 A1.5 1.5 0 0 1 4 18.5 V16" />
+    <rect x="7.5" y="9.5" width="9" height="5" rx="1" />
+  </Icon>
+)
+export const IconFieldArrange = () => (
+  <Icon>
+    <path d="M4 3.5 V20.5" />
+    <rect x="7" y="6" width="13" height="4.5" rx="1" />
+    <rect x="7" y="13.5" width="8" height="4.5" rx="1" />
+  </Icon>
+)
+export const IconFieldKeep = () => (
+  <Icon>
+    <rect x="3.5" y="4" width="11" height="7" rx="1.5" />
+    <rect x="9.5" y="13" width="11" height="7" rx="1.5" />
+    <path d="M17 6.5 H20.5 M18.75 4.75 V8.25" />
+  </Icon>
+)
+export const IconFieldPreview = () => (
+  <Icon>
+    <path d="M2.5 12 C5 7.5 8.3 5.5 12 5.5 C15.7 5.5 19 7.5 21.5 12 C19 16.5 15.7 18.5 12 18.5 C8.3 18.5 5 16.5 2.5 12 Z" />
+    <circle cx="12" cy="12" r="3" />
   </Icon>
 )
 export const IconFormCross = () => (

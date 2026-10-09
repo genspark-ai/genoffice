@@ -57,7 +57,7 @@ export const th = {
     'ตัวคัดวางรูปแบบ (คลิกเพื่อคัดลอกและนำรูปแบบไปใช้; ⌘⇧C คัดลอกรูปแบบ / ⌘⇧V วางรูปแบบ)',
   ribbonGroupSlides: 'สไลด์',
   ribbonNewSlide: 'สไลด์ใหม่',
-  ribbonNewSlideTip: 'สไลด์เปล่าใหม่ (ใช้พื้นหลังเค้าโครงของสไลด์ปัจจุบันต่อ; ⌘M)',
+  ribbonNewSlideTip: 'สไลด์เปล่าใหม่ (ใช้พื้นหลังเค้าโครงของสไลด์ปัจจุบันต่อ)',
   ribbonChooseLayout: 'เลือกเค้าโครง',
   ribbonChooseLayoutNew: 'สร้างภาพนิ่งใหม่ด้วยเค้าโครง',
   ribbonChooseLayoutChange: 'เปลี่ยนเค้าโครงภาพนิ่งปัจจุบัน',

@@ -112,6 +112,8 @@ function runStyle(run: TextRun, scale: number, fontScale: number): RunStyle {
     fontFamily: run.fontFamily || DEFAULT_FONT,
     ...(run.fontScriptHint != null ? { substScript: run.fontScriptHint } : {}),
     ...(run.text && !hasWideChar(run.text) ? { latinOnly: true } : {}),
+    // travels with the run so every token it splits into keeps the mark
+    ...(run.redact ? { redact: run.redact } : {}),
     fontSizePx: ptToPx(effPt, scale),
     bold: !!run.bold,
     italic: !!run.italic,
@@ -486,7 +488,7 @@ class AutoNumCounter {
     for (let l = from; l < this.counts.length; l++) this.counts[l] = 0
     if (b?.type !== 'number') return undefined
     const scheme = b.numType ?? 'arabicPeriod'
-    const start = b.startAt ?? 1
+    const start = Math.max(1, b.startAt ?? 1) || 1
     const running = this.counts[lvl] && this.schemes[lvl] === scheme && start === this.starts[lvl]
     const n = running ? this.counts[lvl]! + 1 : start
     if (!running) this.starts[lvl] = start
@@ -954,6 +956,12 @@ function buildLine(
     runs.push({
       text: tok.text,
       x,
+      // "Withheld from the model". The canvas draws the real words, so this rides
+      // along as a flag rather than substituting the text. A run that wraps puts
+      // the mark on both lines and the model reads a split placeholder — which
+      // its own write guard refuses, so the cost of a wrapped span is a refused
+      // edit, never a leak.
+      ...(tok.style.redact ? { redact: tok.style.redact } : {}),
       baselineY: 0, // filled in later from the line's ascent
       // When a missing font is substituted, draw with the substitute name so drawing and measuring use the same font file
       fontFamily: metrics.displayFamily?.(tok.style, tok.text) ?? tok.style.fontFamily,

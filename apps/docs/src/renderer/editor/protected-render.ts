@@ -10,6 +10,7 @@ import {
   cssAutoLineMult,
   cssCsFontFamily,
   hangulSpaceOffsets,
+  hangulSpaceWideningOn,
   cssFontFamily,
   cssRunFontFamily,
   cssGridLineBase,
@@ -32,7 +33,14 @@ import {
 } from '../line-metrics'
 import { custGeomBackgroundCss, shapeBackgroundCss, shapeTextInsetsPx } from './shape-svg'
 import { pictureTransformFns, quarterTurnInsetPx, quarterTurnMarginCss } from './image-rotation'
-import { DK_SIDE, dkBackground, dkBorder, dkColor, type DkBorderSide } from './dark-page'
+import {
+  DK_SIDE,
+  dkBackground,
+  dkBackgroundImage,
+  dkBorder,
+  dkColor,
+  type DkBorderSide,
+} from './dark-page'
 import { hfCellGeometry, hfCellParaStyle, hfRowStyle } from './hf-dom'
 import { INLINE_RULE_CLASS, inlineRuleDecls } from './inline-rule'
 import { fillInk } from './shading-ink'
@@ -84,8 +92,15 @@ import {
   tableBordersCss,
   tableRowEatCss,
 } from './extensions'
-import { cellClipTwips, cellSpacingGridSharesTwips, collapsedCellBw, inferredBidi } from './convert'
-import { cellPadPx } from './border-metrics'
+import {
+  cellClipTwips,
+  cellSpacingBorderPx,
+  cellSpacingGridSharesTwips,
+  collapsedCellBw,
+  holdsDeclaredWidth,
+  inferredBidi,
+} from './convert'
+import { cellDiagonalCss, cellPadPx } from './border-metrics'
 
 // Word: links and TOC entries jump on modifier+click only
 const jumpHint = () =>
@@ -213,9 +228,12 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
 }
 
 export function renderFormulaSpec(formula: FormulaDisplay): DomSpec {
+  const size: Record<string, string> = formula.sizeHalfPoints
+    ? { style: `font-size:${formula.sizeHalfPoints / 2}pt` }
+    : {}
   const tokenStrip: DomSpec = [
     'span',
-    { class: 'doc-formula' + (formula.mathml ? ' doc-formula-has-math' : '') },
+    { class: 'doc-formula' + (formula.mathml ? ' doc-formula-has-math' : ''), ...size },
     ...formula.tokens.map((token, index): DomSpec => [
       'span',
       {
@@ -232,7 +250,7 @@ export function renderFormulaSpec(formula: FormulaDisplay): DomSpec {
   return [
     'span',
     { class: 'doc-formula-wrap' },
-    ['span', { class: 'doc-formula-math', contenteditable: 'false' }],
+    ['span', { class: 'doc-formula-math', contenteditable: 'false', ...size }],
     tokenStrip,
   ]
 }
@@ -1803,8 +1821,10 @@ function padSegments(
       wraps.push([cut, cut + codePointLengthAt(text, cut), AUTOSPACE_PAD_ATTRS])
     }
   }
-  for (const i of hangulSpaceOffsets(text, neighbours.prev, neighbours.next)) {
-    wraps.push([i, i + 1, HANGUL_SPACE_ATTRS])
+  if (hangulSpaceWideningOn()) {
+    for (const i of hangulSpaceOffsets(text, neighbours.prev, neighbours.next)) {
+      wraps.push([i, i + 1, HANGUL_SPACE_ATTRS])
+    }
   }
   if (wraps.length === 0) return [text]
   wraps.sort((a, b) => a[0] - b[0])
@@ -1955,6 +1975,7 @@ function textboxRowSpec(para: TextboxParaDisplay): DomSpec {
     for (const [side, css] of Object.entries(geom.borders)) {
       decls.push(dkBorder(side as DkBorderSide, css))
     }
+    if (geom.diagonals) decls.push(dkBackgroundImage(geom.diagonals))
     const lines = (cell.paras.length > 0 ? cell.paras : [[]]).map((runs, k): DomSpec => {
       const attrs: Record<string, string> = { class: 'page-hf-cell-para' }
       const style = styleText(hfCellParaStyle(cell.paraProps?.[k]))
@@ -1981,7 +2002,17 @@ export function renderTextboxSpec(box: TextboxDisplay, opts?: { inCell?: boolean
     if (box.pageRelVFrom === 'page') boxAttrs['data-page-rel-from'] = 'page'
   }
   // page-absolute X: the column-layout counter-translate keys on this
-  if (box.floating && box.pageRelX) boxAttrs['data-page-rel-x'] = '1'
+  if (box.floating && box.pageRelX) {
+    boxAttrs['data-page-rel-x'] = '1'
+    if (box.pageRelXFrom === 'page') boxAttrs['data-page-rel-x-from'] = 'page'
+  }
+  // layoutInCell="0" page-positioned cell box: pinCellBoxesToPage lands it on
+  // the page from these raw offsets instead of the cell origin
+  if (opts?.inCell && cellBoxOnPage(box)) {
+    boxAttrs['data-cell-page'] = '1'
+    boxAttrs['data-cell-page-x'] = ((box.offsetXEmu ?? 0) / 9525).toFixed(1)
+    boxAttrs['data-cell-page-y'] = ((box.offsetYEmu ?? 0) / 9525).toFixed(1)
+  }
   // wrapNone/front/behind boxes never open pages: Word clips them at their
   // anchor's page edge (a letterhead's page-tall art box must not add a page)
   if (box.floating && !box.bandTopPx && !box.bandBottomPx && !box.wrapSide) {
@@ -2167,15 +2198,19 @@ function cellParaSpec(
  * wrapNone boxes overlay the cell without growing it */
 export function cellBoxesSpec(boxes: TextboxDisplay[]): DomSpec {
   if (boxes.length === 0) return ['div', { class: 'doc-cell-boxes' }]
+  // a page-positioned group (splitCellBoxGroup) gets its own strut: the
+  // preview un-positions it so the boxes resolve against the page box like
+  // top-level page-relative floats; Word does not grow the row for them
+  const onPage = boxes.every(cellBoxOnPage)
   let bottom = 0
   for (const b of boxes) {
-    if (b.noWrap) continue
+    if (b.noWrap || onPage) continue
     bottom = Math.max(bottom, (b.offsetYEmu ?? 0) / 9525 + (b.heightPx ?? b.minHeightPx ?? 0))
   }
   return [
     'div',
     {
-      class: 'doc-cell-boxes',
+      class: onPage ? 'doc-cell-boxes doc-cell-boxes-page' : 'doc-cell-boxes',
       contenteditable: 'false',
       style: bottom > 0 ? `height:${bottom.toFixed(1)}px` : '',
     },
@@ -2191,6 +2226,20 @@ export function cellBoxesSpec(boxes: TextboxDisplay[]): DomSpec {
       ]
     }),
   ]
+}
+
+/** one anchor paragraph's boxes split into page-positioned and in-cell struts */
+export function splitCellBoxGroup(group: TextboxDisplay[]): TextboxDisplay[][] {
+  const onPage = group.filter(cellBoxOnPage)
+  const inCell = group.filter((b) => !cellBoxOnPage(b))
+  return [onPage, inCell].filter((g) => g.length > 0)
+}
+
+/** a layoutInCell="0" box with a page/margin-relative offset: Word positions it
+ *  on the page, not in the cell (resume templates: avatar and header bar
+ *  anchored in the first cell of a page-anchored floating table) */
+export function cellBoxOnPage(box: TextboxDisplay): boolean {
+  return !!box.outsideCell && !!box.floating && !!box.pageRelV
 }
 
 /** read-only <table> DOM spec from the display model (vMerge -> rowSpan);
@@ -2249,6 +2298,13 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
             ? `${css};--cell-bw-${DK_SIDE[side]}:${bw}px`
             : `${css};${bdDeltaCss(side, cell.borders?.[side])}`
         }),
+        (() => {
+          const layers = (['tl2br', 'tr2bl'] as const)
+            .map((d) => cellDiagonalCss(cell.borders?.[d], d))
+            .filter((v): v is string => v !== null)
+            .join(',')
+          return layers ? `background-image:${layers};${dkBackgroundImage(layers)}` : ''
+        })(),
         ...(['top', 'left', 'bottom', 'right'] as const).map((side) =>
           cell.cellMarTwips?.[side] !== undefined
             ? `--doc-cell-pad-${DK_SIDE[side]}:${cellPadPx(cell.cellMarTwips[side]!)}`
@@ -2295,7 +2351,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       let ni = 0
       const boxesAt = (pi: number) => {
         const group = boxGroups.get(pi)
-        if (group) content.push(cellBoxesSpec(group))
+        if (group) for (const g of splitCellBoxGroup(group)) content.push(cellBoxesSpec(g))
       }
       paraBlocks.forEach((blk, pi) => {
         while (ni < nested.length && anchorOf(ni) <= pi)
@@ -2349,9 +2405,12 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
   const spacingShares = model.cellSpacingTwips
     ? cellSpacingGridSharesTwips(model.colWidthsTwips?.length ?? 1, model.cellSpacingTwips)
     : null
+  const spacingBorders = model.cellSpacingTwips
+    ? cellSpacingBorderPx(model.colWidthsTwips?.length ?? 1, model.borders)
+    : null
   const colPx = !model.widthPct
     ? model.colWidthsTwips?.map((w, i) =>
-        Math.max(1, Math.round((w - (spacingShares?.[i] ?? 0)) / 15)),
+        Math.max(1, Math.round((w - (spacingShares?.[i] ?? 0)) / 15) + (spacingBorders?.[i] ?? 0)),
       )
     : undefined
   if (colPx) {
@@ -2394,7 +2453,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
         ? Math.round(((colPx.length + 1) * 2 * model.cellSpacingTwips) / 15)
         : outerBorderPx(model.borders ?? null, modelEdgeBorders(model)))
     // w:tblLayout fixed holds the declared widths even past the paper edge (see DocTable.renderHTML)
-    if (!nested && model.fixedLayout) {
+    if (!nested && (model.fixedLayout || holdsDeclaredWidth(model))) {
       widthExpr = `${widthPx}px`
       tableStyles.push(`width:${widthExpr}`, 'max-width:none')
       if (model.align === 'center')
@@ -2434,7 +2493,12 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
     )
   }
   if (model.fill) tableStyles.push(`background-color:#${model.fill}`)
-  tableStyles.push(...tableBordersCss((model.borders as TableBordersAttr | undefined) ?? null))
+  // a borderless nested table must not inherit the host table's --doc-b-* lines
+  tableStyles.push(
+    ...tableBordersCss(
+      (model.borders as TableBordersAttr | undefined) ?? (nested ? ({} as TableBordersAttr) : null),
+    ),
+  )
   tableStyles.push(
     ...tableRowEatCss(
       (model.borders as TableBordersAttr | undefined) ?? null,

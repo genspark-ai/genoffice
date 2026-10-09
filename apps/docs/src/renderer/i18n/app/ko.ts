@@ -473,6 +473,7 @@ export const ko = {
   appParaSpecialFirstLine: '첫 줄',
   appParaSpecialHanging: '내어쓰기',
   appParaBy: '값',
+  appParaUnitChars: '문자',
   // Equations
   appInsertEquation: '수식 삽입',
   appLatexPlaceholder: '예: x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',

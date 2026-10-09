@@ -581,6 +581,70 @@ body.vib .home {
   box-shadow: var(--shadow-pill);
 }
 
+/* the type pills and the Starred view's group pills stack in one column so
+   both segmented controls read as separate tracks */
+.toolbar-filters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* group list inside the move-to-group modal (visual language of .picker-tree) */
+.group-picker-list {
+  margin: 14px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.group-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-picker-row:hover {
+  background: var(--bg-hover);
+}
+
+.group-picker-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* new-group name input + confirm button */
+.group-picker-new {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.group-picker-new .folder-rename-input {
+  flex: 1;
+  min-width: 0;
+  border-color: var(--border);
+}
+
+.group-picker-new .folder-rename-input:focus {
+  border-color: var(--accent);
+}
+
 .empty {
   color: var(--text-muted);
   font-size: 14px;
@@ -2170,4 +2234,28 @@ body.vib .home {
   white-space: nowrap;
   text-align: right;
   padding-top: 2px;
+}
+
+/* Extension labels like ".docx" read left-to-right even in the RTL UI */
+html[dir='rtl'] .quick-sub {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* macOS traffic lights live in the window's top-left corner; under RTL the
+   content column is the leading (left) column and scrolls, so its rows and
+   hover actions would slide under the close/minimize/zoom buttons. LTR never
+   hits this because the left sidebar occupies that corner for its full
+   height — mirror the same clearance on the content column. */
+html[dir='rtl'] body.mac .content {
+  padding-left: 76px;
+}
+
+/* Card titles are brand names (LTR runs): under the RTL UI their ellipsis
+   truncated from the wrong end ("…arkdown") and the AI chip swapped sides.
+   Isolate the title row LTR — the one Arabic title (open local files) is a
+   single RTL run and renders unchanged. */
+html[dir='rtl'] .quick-title-row {
+  direction: ltr;
+  unicode-bidi: isolate;
 }

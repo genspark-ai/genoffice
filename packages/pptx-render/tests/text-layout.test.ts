@@ -1288,6 +1288,21 @@ describe('buAutoNum startAt', () => {
     expect(runs.map((r) => r.startAt)).toEqual([3, 3, undefined])
   })
 
+  it('clamps a startAt below 1 to 1', () => {
+    const layout = layoutText({
+      body: body({ paragraphs: [para('first', -2), para('second', -2)] as any }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    })
+    const bullets = layout.lines
+      .map((l) => l.runs.find((r: any) => r.isBullet))
+      .filter(Boolean)
+      .map((r: any) => r.text)
+    expect(bullets).toEqual(['1.', '2.'])
+  })
+
   it('defaults to 1 without startAt', () => {
     const layout = layoutText({
       body: body({ paragraphs: [para('only')] as any }),

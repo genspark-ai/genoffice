@@ -923,7 +923,8 @@ describe('native editable tables', () => {
       content: blocksToPmDoc(parsed.blocks) as never,
     })
     const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
-    expect(table.getAttribute('style')).toContain('width: min(227px,')
+    // 2 x 1700 twips less the 2s gaps (227px) plus the sz 4 borders Word draws outside the boxes
+    expect(table.getAttribute('style')).toContain('width: min(231px,')
     expect(table.style.getPropertyValue('--doc-bw-share')).toBe('0')
     expect(table.style.getPropertyValue('--doc-bd-share')).toBe('1')
     editor.destroy()

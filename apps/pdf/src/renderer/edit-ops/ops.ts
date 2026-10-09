@@ -8,6 +8,8 @@
  */
 import type {
   DrawingInput,
+  FormFieldInput,
+  FormWidgetEditInput,
   FormValueInput,
   ImageEditInput,
   ImageLayer,
@@ -23,7 +25,7 @@ import type { LocalImageEdit } from '../ImageEditLayer'
 import { imageRectKey } from '../ImageEditLayer'
 import type { LocalTextEdit, LocalTextInsert } from '../text-edit-preview'
 import type { SavedNoteAnnot } from '../note-threads'
-import type { SavedMarkupAnnot, StampConfig } from '../edit-state'
+import type { LocalBlankPage, LocalFormField, SavedMarkupAnnot, StampConfig } from '../edit-state'
 import { GuidedError, register, type Op, type OpContext } from './registry'
 
 type Rect = [number, number, number, number]
@@ -50,10 +52,7 @@ const pageIndex = (v: unknown, ctx: OpContext, field = 'pageIndex'): number => {
   return v
 }
 
-// `typeof n === 'number'` is not enough: NaN and Infinity are both 'number',
-// so an op carrying them (e.g. a rect computed from an OCR box that yielded
-// no coordinates) was stored, drew at zero size, and put NaN in the PDF
-// content stream. Match save-pdf.ts / redaction.ts and require finiteness.
+// NaN/Infinity from pointer math would reach the content stream; save-pdf.ts requires finiteness too.
 const rect = (v: unknown, field: string): Rect => {
   if (
     !Array.isArray(v) ||
@@ -562,7 +561,160 @@ register({
   },
 })
 
+const FORM_FIELD_KINDS = ['text', 'checkbox', 'radio', 'choice', 'signature']
+const FIELD_NAME_MAX = 200
+
+/** Radio buttons share a name on purpose: the name may be reused only by another radio button */
+const fieldName = (v: unknown, ctx: OpContext, kind?: string): string => {
+  const name = str(v, 'field.name').trim()
+  if (!name || name.length > FIELD_NAME_MAX || /[.\\/]/.test(name))
+    throw new GuidedError(
+      'field.name must be 1-200 characters without "." "/" or "\\" (dots nest fields in PDF)',
+    )
+  if (ctx.fieldNames?.has(name) && !(kind === 'radio' && ctx.radioGroups?.has(name)))
+    throw new GuidedError(`A form field named "${name}" already exists; pick another name`)
+  return name
+}
+
+const fieldRect = (v: unknown, field: string): Rect => {
+  const r = rect(v, field)
+  if (Math.abs(r[2] - r[0]) < 1 || Math.abs(r[3] - r[1]) < 1)
+    throw new GuidedError(`${field} must be at least 1pt wide and tall`)
+  return r
+}
+
+register({
+  name: 'addFormField',
+  touches: ['formFields'],
+  additive: true,
+  validate(op, ctx) {
+    const f = obj<FormFieldInput>(op.field, 'field')
+    if (!FORM_FIELD_KINDS.includes(f.kind))
+      throw new GuidedError('field.kind must be text | checkbox | radio | choice | signature')
+    fieldName(f.name, ctx, f.kind)
+    pageIndex(f.pageIndex, ctx, 'field.pageIndex')
+    fieldRect(f.rect, 'field.rect')
+    if (f.kind === 'radio') str(f.exportValue, 'field.exportValue')
+    if (f.kind === 'choice' && (!Array.isArray(f.options) || f.options.length === 0))
+      throw new GuidedError('field.options must list at least one option for a choice field')
+  },
+  advance(op, ctx) {
+    const f = op.field as FormFieldInput
+    const name = f.name.trim()
+    return {
+      fieldNames: new Set([...(ctx.fieldNames ?? []), name]),
+      ...(f.kind === 'radio' ? { radioGroups: new Set([...(ctx.radioGroups ?? []), name]) } : {}),
+    }
+  },
+  apply(op, s) {
+    const f = op.field as FormFieldInput
+    const added: LocalFormField = { id: id(op), input: { ...f, name: f.name.trim() } }
+    return { formFields: [...s.formFields, added] }
+  },
+})
+
+register({
+  name: 'patchFormField',
+  touches: ['formFields'],
+  validate(op, ctx) {
+    id(op)
+    const patch = obj<Partial<FormFieldInput>>(op.input, 'input')
+    if ('kind' in patch || 'pageIndex' in patch)
+      throw new GuidedError('kind and pageIndex cannot be patched; remove and add the field')
+    if ('name' in patch) fieldName(patch.name, ctx, op.kind as string | undefined)
+    if ('rect' in patch) fieldRect(patch.rect, 'input.rect')
+  },
+  apply(op, s) {
+    const patch = op.input as Partial<FormFieldInput>
+    return {
+      formFields: s.formFields.map((f) =>
+        f.id === op.id
+          ? {
+              ...f,
+              input: {
+                ...f.input,
+                ...patch,
+                ...(typeof patch.name === 'string' ? { name: patch.name.trim() } : {}),
+              },
+            }
+          : f,
+      ),
+    }
+  },
+})
+
+register({
+  name: 'removeFormField',
+  touches: ['formFields'],
+  validate(op) {
+    id(op)
+  },
+  apply(op, s) {
+    return { formFields: s.formFields.filter((f) => f.id !== op.id) }
+  },
+})
+
+register({
+  name: 'editFormWidget',
+  touches: ['formWidgetEdits'],
+  validate(op) {
+    str(op.widgetId, 'widgetId')
+    str(op.fieldName, 'fieldName')
+    const patch = obj<Partial<FormWidgetEditInput>>(op.input, 'input')
+    if ('rect' in patch) fieldRect(patch.rect, 'input.rect')
+    if ('required' in patch && typeof patch.required !== 'boolean')
+      throw new GuidedError('input.required must be a boolean')
+    if ('remove' in patch && typeof patch.remove !== 'boolean')
+      throw new GuidedError('input.remove must be a boolean')
+  },
+  apply(op, s) {
+    const widgetId = op.widgetId as string
+    const patch = op.input as Partial<FormWidgetEditInput>
+    const prev = s.formWidgetEdits.get(widgetId) ?? {
+      widgetId,
+      fieldName: op.fieldName as string,
+    }
+    const next = new Map(s.formWidgetEdits)
+    next.set(widgetId, { ...prev, ...patch })
+    return { formWidgetEdits: next }
+  },
+})
+
 // ── page ──────────────────────────────────────────────────────────────
+
+register({
+  name: 'insertBlankPage',
+  touches: ['blankPages', 'order'],
+  additive: true,
+  validate(op, ctx) {
+    if (op.after !== null) pageIndex(op.after, ctx, 'after')
+    if (op.pageIndex !== ctx.pageCount)
+      throw new GuidedError(
+        `pageIndex must be the next page index (${ctx.pageCount}): blank pages are appended to the document`,
+      )
+    for (const k of ['width', 'height'] as const) {
+      if (typeof op[k] !== 'number' || !Number.isFinite(op[k]) || (op[k] as number) <= 0)
+        throw new GuidedError(`"${k}" must be a positive number of PDF points`)
+    }
+  },
+  advance(_op, ctx) {
+    return { pageCount: ctx.pageCount + 1 }
+  },
+  apply(op, s) {
+    const idx = op.pageIndex as number
+    const after = op.after as number | null
+    const blank: LocalBlankPage = {
+      id: id(op),
+      input: { pageIndex: idx, width: op.width as number, height: op.height as number },
+    }
+    const base = s.order ?? Array.from({ length: idx }, (_, i) => i)
+    const at = after === null ? 0 : base.indexOf(after) + 1
+    return {
+      blankPages: [...s.blankPages, blank],
+      order: [...base.slice(0, at), idx, ...base.slice(at)],
+    }
+  },
+})
 
 register({
   name: 'rotatePages',
@@ -601,7 +753,7 @@ register({
 
 register({
   name: 'deletePage',
-  touches: ['deleted', 'markups', 'drawings'],
+  touches: ['deleted', 'markups', 'drawings', 'formFields'],
   validate(op, ctx) {
     const p = pageIndex(op.pageIndex, ctx)
     if (ctx.pageCount - ctx.deleted.size <= 1)
@@ -616,6 +768,7 @@ register({
       deleted: new Set(s.deleted).add(p),
       markups: s.markups.filter((m) => m.pageIndex !== p),
       drawings: s.drawings.filter((d) => d.input.pageIndex !== p),
+      formFields: s.formFields.filter((f) => f.input.pageIndex !== p),
     }
   },
 })

@@ -109,17 +109,32 @@ test.describe('docs Simple Markup view', () => {
       const balloon = page.locator('.comment-balloon')
       await expect(balloon).toHaveCount(1)
       await expect(balloon).toHaveAttribute('title', /Ann/)
-      // The node exists, but an unrendered one answers null to boundingBox().
-      // Wait for the layout instead of reading the box the moment the count
-      // settles.
       await expect(balloon).toBeVisible()
-      const paperRight = await page
-        .locator('.ProseMirror')
-        .first()
-        .evaluate((el) => el.getBoundingClientRect().right)
-      const balloonBox = await balloon.boundingBox()
-      expect(balloonBox).not.toBeNull()
-      expect(balloonBox!.x + balloonBox!.width).toBeLessThanOrEqual(paperRight + 1)
+      // The balloon is a decoration widget: during the initial settle a
+      // decoration update replaces the DOM node, and every locator round-trip
+      // (toBeVisible, evaluate, boundingBox) re-resolves to whatever instance
+      // exists at that moment — so the visible check passes on one node and
+      // the box read lands on its freshly created, not-yet-laid-out
+      // replacement, which answers null. Query both rects inside ONE evaluate
+      // so no replacement can happen between them, and poll the comparison
+      // itself until the layout is real (a mid-replacement widget reports an
+      // all-zero rect). The last received string names the failure when a
+      // genuine overflow exists.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const node = document.querySelector('.comment-balloon')
+            const paper = document.querySelector('.ProseMirror')
+            if (!node || !paper) return 'missing element'
+            const b = node.getBoundingClientRect()
+            const p = paper.getBoundingClientRect()
+            if (b.width === 0 && b.height === 0) return 'widget replaced, layout pending'
+            return b.x + b.width <= p.right + 1
+              ? 'ok'
+              : `balloon right ${b.x + b.width} past paper right ${p.right}`
+          }),
+        )
+        .toBe('ok')
 
       // Markup menu in Word's order with the current view ticked
       await page.locator('.ribbon-tab', { hasText: /^Review$/ }).click()

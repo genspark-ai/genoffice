@@ -446,6 +446,7 @@ export const ar = {
   appParaSpecialFirstLine: 'السطر الأول',
   appParaSpecialHanging: 'معلق',
   appParaBy: 'بمقدار',
+  appParaUnitChars: 'أحرف',
   appInsertEquation: 'إدراج معادلة',
   appLatexPlaceholder: 'مثال: x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'اكتب LaTeX لعرض المعاينة',

@@ -19,6 +19,10 @@ import {
 } from './page-spec'
 
 export const MAX_DECK_PAGES = 60
+/** Raw LLM deck-spec budget; larger payloads are rejected before JSON.parse. */
+export const MAX_DECK_SPEC_RAW_CHARS = 2_000_000
+/** CLI spec files may inline data: URL images, so the file budget is far wider. */
+export const MAX_LOCAL_DECK_SPEC_RAW_CHARS = 64_000_000
 
 export interface DeckSpec {
   pages: PageSpec[]
@@ -40,6 +44,10 @@ export function parseDeckSpec(
   raw: string,
   opts: ParseSpecOptions = {},
 ): { ok: true; spec: DeckSpec; issues: DeckPageIssue[] } | { ok: false; error: string } {
+  const limit = opts.localImages ? MAX_LOCAL_DECK_SPEC_RAW_CHARS : MAX_DECK_SPEC_RAW_CHARS
+  if (typeof raw !== 'string' || raw.length > limit) {
+    return { ok: false, error: `deck spec too large (limit ${limit} chars)` }
+  }
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)

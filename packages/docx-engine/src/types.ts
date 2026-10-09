@@ -220,6 +220,8 @@ export interface Run {
     offsetYEmu?: number
     /** wp:positionV relativeFrom page/margin with a posOffset: offsetYEmu is a page position, not a paragraph offset */
     relV?: 'page' | 'margin'
+    /** wp:positionH relativeFrom page/margin with a posOffset: offsetXEmu measures from that edge */
+    relH?: 'page' | 'margin'
     /** wp:anchor text-wrap distances (EMU; display-only) */
     wrapDistTopEmu?: number
     wrapDistBottomEmu?: number
@@ -328,6 +330,8 @@ export interface ParaBorderLine {
   szPt?: number
   /** gap between the text and the line in pt (w:space); absent = 0 */
   spacePt?: number
+  /** w:val none/nil with a w:space: no line, but the space still pads the paragraph (Word) */
+  none?: true
 }
 
 /** per-side w:pBdr lines; null = explicit none/nil (cancels a basedOn parent's side) */
@@ -440,6 +444,12 @@ export interface ParaFormat {
    *  writes the matching `*Chars="0"` for them (mergePPrFormat), or Word keeps
    *  preferring the character indent over the new twips value on reload. */
   charIndents?: CharIndents
+  /** the character-unit indents the paragraph's OWN w:ind declares (style-chain
+   *  chars excluded, explicit zeros included). The editor maps these to its
+   *  direct-formatting model and the save path writes them back as `*Chars`
+   *  attributes; an indent the style chain alone provides must not become
+   *  direct formatting (issue #1892). */
+  directCharIndents?: CharIndents
   /** space above the paragraph in twips (w:spacing w:before) */
   spaceBefore?: number
   /** space below the paragraph in twips (w:spacing w:after) */
@@ -490,6 +500,8 @@ export interface ParaFormat {
   borderLines?: Partial<Record<'t' | 'b' | 'l' | 'r', ParaBorderLine>>
   /** sides the direct w:pBdr resets (none/nil), subset of "tblr": display-only, cancels the style's side */
   borderReset?: string
+  /** w:space (pt) of reset sides: undrawn padding, top/bottom in the flow, left/right widen the shading box (display-only) */
+  borderPad?: Partial<Record<'t' | 'b' | 'l' | 'r', number>>
   /** custom tab stops from w:tabs (non-empty overrides default 0.5in grid) */
   tabStops?: TabStop[]
   /** first-line drop cap (w:framePr w:dropCap="drop|margin") */
@@ -1027,6 +1039,14 @@ export interface FormulaDisplay {
   omml?: string
   /** LaTeX source recovered by ommlToLatex; enables full re-editing (absent = token edits only) */
   latex?: string
+  /** effective maths run size (m:r w:sz, else paragraph mark / style / defaults); absent = renderer default */
+  sizeHalfPoints?: number
+  /** m:oMathParaPr/m:jc; absent = centred like Word's default */
+  align?: 'left' | 'right' | 'center' | 'centerGroup'
+  /** direct w:spacing / w:ind of the equation paragraph (twips), as on FieldDisplay */
+  spaceBeforeTwips?: number
+  spaceAfterTwips?: number
+  indentLeftTwips?: number
 }
 
 /** One axis of an embedded chart (c:catAx / c:valAx / c:dateAx) */
@@ -1292,6 +1312,9 @@ export interface TableModel {
   layoutGrid?: boolean
   /** editable Word AutoFit mode (w:tblLayout + w:tblW) */
   autoFit?: TableAutoFitMode
+  /** explicit positive w:tblW type="dxa" without a fixed layout: Word draws a left-aligned
+   * table at its declared grid even past the paper edge */
+  dxaWidth?: boolean
   /** literal w:tblLayout type="fixed": Word keeps the declared column widths even when the
    * table runs past the paper edge (content clips there), so display must never narrow them */
   fixedLayout?: boolean
@@ -1528,6 +1551,14 @@ export interface Block {
   /** direct w:spacing before/after (twips) of an inline picture's paragraph */
   imageParagraphSpaceBefore?: number
   imageParagraphSpaceAfter?: number
+  /** direct w:spacing line rule of the picture paragraph: an auto multiple adds
+   *  (m - 1) x the mark's single line below the picture */
+  imageParagraphLineTwips?: number
+  imageParagraphLineRule?: 'auto' | 'atLeast' | 'exact'
+  /** paragraph mark rPr (rFonts ascii, eastAsia, sz): sizes that extra line */
+  imageMarkFont?: string
+  imageMarkFontEastAsia?: string
+  imageMarkSizeHalfPoints?: number
   /** wp:inline wp:effectExtent top/bottom (px): Word adds them to the picture line */
   imageEffectExtentTopPx?: number
   imageEffectExtentBottomPx?: number
@@ -1573,6 +1604,8 @@ export interface Block {
   imageOffsetYEmu?: number
   /** wp:positionV relativeFrom page/margin with a posOffset: imageOffsetYEmu is a page position */
   imageRelV?: 'page' | 'margin'
+  /** wp:positionH relativeFrom page/margin with a posOffset: imageOffsetXEmu measures from that edge */
+  imageRelH?: 'page' | 'margin'
   /** wp:anchor locked="1": moving the picture must not change its anchor paragraph */
   imageAnchorLocked?: boolean
   /** margin-relative wp:align of a floating image (Word position-gallery presets) */
@@ -1783,6 +1816,12 @@ export interface TextboxDisplay {
   /** page/margin-relative X: absolute on the page in Word — a column-translated
    *  anchor block must not drag the box sideways (the canvas undoes --col-dx) */
   pageRelX?: boolean
+  /** `page`: the X offset measures from the paper edge (margin-relative and
+   *  resolved offsets measure from the column start) */
+  pageRelXFrom?: 'page'
+  /** layoutInCell="0" on a cell-anchored drawing: Word positions it against the
+   *  page/column instead of the cell, and the row does not grow to hold it */
+  outsideCell?: boolean
   /** wrapTopAndBottom (paragraph/line-relative V): the anchor paragraph keeps
    *  flow height down to this box bottom (px) so following text resumes below */
   bandBottomPx?: number
@@ -2047,6 +2086,8 @@ export interface StyleInfo {
 /** document-wide defaults from styles.xml w:docDefaults (display-only) */
 export interface DocDefaults {
   sizeHalfPoints?: number
+  /** pPrDefault w:widowControl: false = widow/orphan protection off for the whole document */
+  widowControl?: boolean
   /** rPrDefault w:kern threshold in half-points (0 = explicitly off) */
   kernHalfPoints?: number
   /** default Latin font (rPrDefault w:rFonts w:ascii) */
@@ -2057,6 +2098,8 @@ export interface DocDefaults {
   eaSlotEmpty?: boolean
   /** eastAsiaFont was backfilled from w:lang w:eastAsia, not declared */
   eaFromLang?: boolean
+  /** default complex-script font (rPrDefault w:rFonts w:cs / w:cstheme, theme-resolved) */
+  csFont?: string
   /** bold/italic/color from rPrDefault (display-layer defaults, used by canvas CSS) */
   bold?: boolean
   italic?: boolean
@@ -2080,6 +2123,8 @@ export interface DocDefaults {
   eastAsiaLang?: string
   /** pPrDefault w:suppressAutoHyphens — every paragraph opts out of w:autoHyphenation */
   suppressAutoHyphens?: boolean
+  /** pPrDefault w:pBdr: the root of every paragraph style's border chain (display-only) */
+  borderSides?: ParaBorderSides
 }
 
 /** word/settings.xml w:documentProtection (only the editing restriction subset). */
@@ -2274,6 +2319,8 @@ export interface ParsedDoc {
   autoHyphenation?: boolean
   /** settings.xml <w:balanceSingleByteDoubleByteWidth/> — rPr w:spacing counts double on double-byte characters */
   balanceDbcsSpacing?: boolean
+  /** settings.xml w:compat <w:useFELayout/> — with balanceDbcsSpacing, hangul-context spaces widen to 0.5em */
+  useFELayout?: boolean
   /** settings.xml w:characterSpacingControl compressPunctuation* — justified CJK lines compress trailing-blank punctuation */
   compressPunctuation?: boolean
   /** settings.xml w:compat <w:adjustLineHeightInTable/> — table-cell lines snap to the typed docGrid like body lines */

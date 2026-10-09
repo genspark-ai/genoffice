@@ -33,7 +33,6 @@ import type { RevisionDisplayMode } from '../editor/revision-view'
 import { TRANSLATE_LANGS, ribbonLangKey } from './translate-langs'
 import {
   IconAccept,
-  IconAiPanel,
   IconCaret,
   IconComment,
   IconCommentNext,
@@ -64,6 +63,7 @@ import {
   IconUndo,
   IconWebLayout,
   IconWholePage,
+  IconMultiPage,
   IconZoom,
   IconZoom100,
   IconZoomIn,
@@ -130,6 +130,7 @@ const DIRECT_PARA_ATTRS: Record<string, unknown> = {
   indentLeft: null,
   indentRight: null,
   indentFirstLine: null,
+  indentFirstLineChars: null,
   spaceBefore: null,
   spaceAfter: null,
   spaceBeforeAuto: null,
@@ -539,11 +540,12 @@ export function insertShapeAt(
   if (prst in LINE_KINDS) return insertLineAt(editor, prst, opts)
   const widthEmu = opts?.widthEmu ?? 1800000
   const heightEmu = opts?.heightEmu ?? 1080000
+  const id = Math.floor(Math.random() * 900000) + 100000
   const xml = buildShapeParagraphXml({
     prst,
     widthEmu,
     heightEmu,
-    id: Math.floor(Math.random() * 900000) + 100000,
+    id,
     // default Office blue fill + slightly darker border
     fillHex: '4472C4',
     borderHex: '2F5496',
@@ -558,6 +560,7 @@ export function insertShapeAt(
     widthPx: Math.round(widthEmu / 9525),
     heightPx: Math.round(heightEmu / 9525),
     prst,
+    shapeId: String(id),
     vAlign: 'center',
     textColor: 'FFFFFF',
     paras: [{ runs: [{ text: '' }], align: 'center' }],
@@ -1271,10 +1274,8 @@ interface ViewTabProps {
   filePath: string | null
   zoom: number
   onZoom: (zoom: number) => void
-  onZoomFit: (mode: 'width' | 'page') => void
+  onZoomFit: (mode: 'width' | 'page' | 'multi') => void
   onZoomDialog: () => void
-  showAi: boolean
-  onToggleAi: () => void
   darkPage: boolean
   onDarkPage: (v: boolean) => void
   showRuler: boolean
@@ -1299,8 +1300,6 @@ export function ViewTab({
   onZoom,
   onZoomFit,
   onZoomDialog,
-  showAi,
-  onToggleAi,
   darkPage,
   onDarkPage,
   showRuler,
@@ -1470,6 +1469,17 @@ export function ViewTab({
             </span>
             <span>{t('ribbonWholePage')}</span>
           </button>
+          <button
+            className="rb-big"
+            disabled={!hasDoc}
+            data-tip={t('ribbonMultiPageTip')}
+            onClick={() => onZoomFit('multi')}
+          >
+            <span className="rb-big-icon">
+              <IconMultiPage size={BIG} />
+            </span>
+            <span>{t('ribbonMultiPage')}</span>
+          </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupZoom')}</div>
       </div>
@@ -1478,16 +1488,6 @@ export function ViewTab({
 
       <div className="ribbon-group">
         <div className="ribbon-group-items">
-          <button
-            className={`rb-big ${showAi ? 'active' : ''}`}
-            data-tip={t('ribbonAiPanelTip')}
-            onClick={onToggleAi}
-          >
-            <span className="rb-big-icon">
-              <IconAiPanel size={BIG} />
-            </span>
-            <span>{t('ribbonAiPanel')}</span>
-          </button>
           <button
             className={`rb-big ${darkPage ? 'active' : ''}`}
             data-tip={t('ribbonDarkModeTip')}

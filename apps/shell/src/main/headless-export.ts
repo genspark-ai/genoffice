@@ -8,8 +8,8 @@
  * export of its own format and reuses the very same renderer pipeline the
  * File menu uses, so GUI and CLI output cannot drift.
  */
-import { existsSync, statSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { existsSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 
 import {
   HEADLESS_EXIT,
@@ -34,12 +34,33 @@ export type HeadlessExporters = Record<
 export interface HeadlessFs {
   exists(path: string): boolean
   isFile(path: string): boolean
+  /** Canonical path (symlinks resolved); the input itself when it cannot be resolved. */
+  realpath?(path: string): string
+  mtimeMs?(path: string): number
 }
 
 const realFs: HeadlessFs = {
   exists: existsSync,
   isFile: (path) => statSync(path).isFile(),
+  realpath: (path) => {
+    try {
+      return realpathSync.native(path)
+    } catch {
+      return path
+    }
+  },
+  mtimeMs: (path) => statSync(path).mtimeMs,
 }
+
+/** The output may not exist yet, so only its directory is canonicalised. */
+function canonical(path: string, fs: HeadlessFs): string {
+  const real = fs.realpath ?? ((p: string) => p)
+  const full = fs.exists(path) ? real(path) : join(real(dirname(path)), basename(path))
+  return process.platform === 'win32' ? full.toLowerCase() : full
+}
+
+/** mtime granularity on FAT/exFAT is 2 s, so a fresh write may stamp slightly before `start`. */
+const MTIME_SLACK_MS = 2_000
 
 /** Checks a caller-supplied path pair before any window is created. */
 export function validateHeadlessPaths(
@@ -76,6 +97,20 @@ export function validateHeadlessPaths(
       message: `output directory does not exist: ${dirname(outPath)}`,
     }
   }
+  if (fs.exists(outPath) && !fs.isFile(outPath)) {
+    return {
+      ok: false,
+      code: HEADLESS_EXIT.badArgs,
+      message: `output path is a directory: ${outPath}`,
+    }
+  }
+  if (canonical(input, fs) === canonical(outPath, fs)) {
+    return {
+      ok: false,
+      code: HEADLESS_EXIT.badArgs,
+      message: `output path must differ from the input: ${outPath}`,
+    }
+  }
   return { ok: true, input, outPath, module }
 }
 
@@ -90,6 +125,7 @@ export async function runHeadlessExport(
 ): Promise<HeadlessExportOutcome> {
   const checked = validateHeadlessPaths(request, fs)
   if (!checked.ok) return checked
+  const startedAt = Date.now()
   try {
     await exporters[checked.module](checked.input, checked.outPath, request.targetFormat)
   } catch (err) {
@@ -99,11 +135,18 @@ export async function runHeadlessExport(
       message: err instanceof Error ? err.message : String(err),
     }
   }
-  if (!fs.exists(checked.outPath)) {
+  if (!fs.exists(checked.outPath) || !fs.isFile(checked.outPath)) {
     return {
       ok: false,
       code: HEADLESS_EXIT.conversionFailure,
       message: `export reported success but wrote no file at ${checked.outPath}`,
+    }
+  }
+  if (fs.mtimeMs && fs.mtimeMs(checked.outPath) < startedAt - MTIME_SLACK_MS) {
+    return {
+      ok: false,
+      code: HEADLESS_EXIT.conversionFailure,
+      message: `export reported success but left a stale file at ${checked.outPath}`,
     }
   }
   return { ok: true, input: checked.input, outPath: checked.outPath }

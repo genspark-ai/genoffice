@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { buildParseMap, type ParseMap } from '../src/renderer/document/parse-map'
 import { compileOps, type HtmlOp } from '../src/renderer/document/ops'
 import { applyPatches } from '../src/renderer/document/patch'
+import { buildProjection } from '../src/renderer/ai/redact'
 import {
   createHtmlSkillCore,
-  buildOutline,
   expandAttachmentRefs,
   findTruncatedDataUrl,
+  buildOutline,
   type HtmlDocAccess,
 } from '../src/renderer/ai/tools'
 import type { Brief } from '../src/renderer/document/brief'
@@ -87,7 +88,8 @@ describe('html skill tools', () => {
     const ctx = core.buildContext()
     expect(ctx).toContain('title: Report')
     expect(ctx).toMatch(/sid=\d+\s+h1#t\s+"Quarterly"/)
-    const outline = buildOutline(DOC, buildParseMap(DOC, 1), { depth: 4 })
+    const map = buildParseMap(DOC, 1)
+    const outline = buildOutline(buildProjection(DOC, map), map, { depth: 4 })
     expect(outline).toMatch(/L6-L9\s+sid=\d+\s+section\.kpis/)
     expect(outline).toContain('div.card  "Revenue"')
   })

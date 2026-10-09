@@ -464,6 +464,142 @@ html.genoffice-popover-open .ribbon-tabs {
   height: 100%;
 }
 
+/* ---- source context menu (withholding a selection from the model) ---- */
+
+.source-ctx {
+  position: fixed;
+  z-index: 70;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--surface);
+  box-shadow: var(--shadow-menu);
+}
+
+.source-ctx-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.source-ctx-item:hover {
+  background: var(--hover);
+}
+
+.source-ctx-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---- redact dialog ---- */
+
+.redact-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-overlay);
+}
+
+.redact-dialog {
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--shadow-modal-strong);
+}
+
+.redact-dialog-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.redact-dialog-desc {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* the marker as the model will see it, live as the label is typed */
+.redact-dialog-preview {
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-8);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.redact-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--color-bg-page);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.redact-dialog-input:focus {
+  border-color: var(--accent);
+}
+
+.redact-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.redact-dialog-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.redact-dialog-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.redact-dialog-btn.primary {
+  background: var(--color-btn-primary);
+  border-color: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+  font-weight: 600;
+}
+
+.redact-dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- status bar ---- */
 
 .status-bar {
@@ -3019,7 +3155,10 @@ html.genoffice-popover-open .ribbon-tabs {
 
 /* ---- design canvas: floating toolbar + style panel over the preview ---- */
 
+/* the preview stays ltr under an RTL UI — the chrome mirrors, the content does not */
+
 .preview-stage {
+  direction: ltr;
   position: relative;
   flex: 1;
   min-height: 0;

@@ -1245,7 +1245,10 @@ body.vib .slide-list {
   outline: none;
 }
 
+/* the stage stays ltr under an RTL UI: Konva Text inherits this direction */
+
 .stage-wrap {
+  direction: ltr;
   flex: 1;
   overflow: auto;
   /* 48px top: headroom for the .stage-ai-bar overhanging the slide card, so it
@@ -3212,6 +3215,35 @@ body.vib .slide-list {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 12px;
+}
+
+/* Explanatory sentence under a dialog heading, above its controls */
+.modal-note {
+  margin: -6px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* The `{{label}}` the model will read in place of the words, shown as it is typed */
+.redact-preview {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* A withheld run while editing: the underline the mark stands for, plus a tint so a long
+   withheld span reads as one thing. The canvas draws the underline from the model. */
+.slide-text-editor [data-redact] {
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .modal input,

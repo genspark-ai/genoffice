@@ -36,7 +36,7 @@ const THUMB_MAX_W = 200
  */
 export function snapshotPages(pm: HTMLElement, zoom: number): ThumbSnapshot | null {
   const wrap = pm.closest<HTMLElement>('.page-wrap')
-  const docZoom = wrap?.parentElement
+  const docZoom = wrap?.closest<HTMLElement>('.doc-zoom')
   if (!wrap || !docZoom || zoom <= 0) return null
   const wrapRect = wrap.getBoundingClientRect()
   if (wrapRect.width === 0) return null

@@ -22,6 +22,9 @@ const empty = (): EditSnapshot => ({
   imageEdits: [],
   stampCfg: null,
   formEdits: new Map(),
+  formFields: [],
+  formWidgetEdits: new Map(),
+  blankPages: [],
   rotations: new Map(),
   deleted: new Set(),
   order: null,
@@ -351,6 +354,43 @@ describe('page', () => {
   })
 })
 
+describe('blank pages', () => {
+  const blank = (after: number | null, pageIndex: number) => ({
+    op: 'insertBlankPage',
+    after,
+    pageIndex,
+    width: 612,
+    height: 792,
+  })
+
+  it('appends a virtual page and places it in the order', () => {
+    const { state, plan } = run(empty(), [blank(0, 3)])
+    expect(plan.failures).toEqual([])
+    expect(state.blankPages.map((b) => b.input)).toEqual([
+      { pageIndex: 3, width: 612, height: 792 },
+    ])
+    expect(state.order).toEqual([0, 3, 1, 2])
+  })
+
+  it('inserts at the front with after=null and chains indices within a batch', () => {
+    const { state } = run(empty(), [blank(null, 3), blank(2, 4)])
+    expect(state.order).toEqual([3, 0, 1, 2, 4])
+    expect(state.blankPages.map((b) => b.input.pageIndex)).toEqual([3, 4])
+  })
+
+  it('rejects a stale pageIndex and a bad size', () => {
+    expect(run(empty(), [blank(0, 5)]).plan.failures[0]!.error).toMatch(/next page index/)
+    expect(run(empty(), [{ ...blank(0, 3), width: 0 }]).plan.failures[0]!.error).toMatch(/width/)
+  })
+
+  it('can be deleted again like any page', () => {
+    const first = run(empty(), [blank(0, 3)])
+    const { state } = run(first.state, [{ op: 'deletePage', pageIndex: 3 }], ctx({ pageCount: 4 }))
+    expect(state.deleted.has(3)).toBe(true)
+    expect(state.blankPages).toHaveLength(1)
+  })
+})
+
 describe('form / document', () => {
   it('setFormValue upserts by field name', () => {
     const a = run(empty(), [
@@ -370,6 +410,134 @@ describe('form / document', () => {
     const b = run(a.state, [{ op: 'setStamps', cfg: { wm: null, hf: null } }])
     expect(b.plan.failures).toHaveLength(0)
     expect(b.state.stampCfg).toBeNull()
+  })
+})
+
+describe('form design', () => {
+  const field = (over: Record<string, unknown> = {}) => ({
+    name: 'full_name',
+    kind: 'text',
+    pageIndex: 0,
+    rect: [10, 10, 110, 30],
+    ...over,
+  })
+
+  it('applies a batch that re-points a radio default in one step', () => {
+    const a = run(empty(), [
+      {
+        op: 'addFormField',
+        field: field({ name: 'c', kind: 'radio', exportValue: 'r', checked: true }),
+      },
+      { op: 'addFormField', field: field({ name: 'c', kind: 'radio', exportValue: 'b' }) },
+    ])
+    const [r, b] = a.state.formFields.map((f) => f.id)
+    const c = run(a.state, [
+      { op: 'patchFormField', id: b, kind: 'radio', input: { checked: true } },
+      { op: 'patchFormField', id: r, kind: 'radio', input: { checked: false } },
+    ])
+    expect(c.plan.failures).toEqual([])
+    expect(c.state.formFields.map((f) => !!f.input.checked)).toEqual([false, true])
+  })
+
+  it('lets radio buttons share a group name but no one else', () => {
+    const a = run(empty(), [
+      { op: 'addFormField', field: field({ name: 'color', kind: 'radio', exportValue: 'red' }) },
+      { op: 'addFormField', field: field({ name: 'color', kind: 'radio', exportValue: 'blue' }) },
+    ])
+    expect(a.plan.failures).toEqual([])
+    expect(a.state.formFields.map((f) => f.input.exportValue)).toEqual(['red', 'blue'])
+    expect(
+      run(
+        a.state,
+        [{ op: 'addFormField', field: field({ name: 'color' }) }],
+        ctx({
+          fieldNames: new Set(['color']),
+          radioGroups: new Set(['color']),
+        }),
+      ).plan.failures[0]!.error,
+    ).toMatch(/already exists/)
+    expect(
+      run(empty(), [{ op: 'addFormField', field: field({ kind: 'radio' }) }]).plan.failures[0]!
+        .error,
+    ).toMatch(/exportValue/)
+    expect(
+      run(empty(), [{ op: 'addFormField', field: field({ kind: 'choice', options: [] }) }]).plan
+        .failures[0]!.error,
+    ).toMatch(/options/)
+  })
+
+  it('accumulates edits of an existing widget under its widget id', () => {
+    const a = run(empty(), [
+      { op: 'editFormWidget', widgetId: '12R', fieldName: 'name', input: { rect: [1, 1, 50, 20] } },
+    ])
+    expect(a.plan.failures).toEqual([])
+    const b = run(a.state, [
+      { op: 'editFormWidget', widgetId: '12R', fieldName: 'name', input: { required: true } },
+    ])
+    expect(b.state.formWidgetEdits.get('12R')).toEqual({
+      widgetId: '12R',
+      fieldName: 'name',
+      rect: [1, 1, 50, 20],
+      required: true,
+    })
+    const c = run(b.state, [
+      { op: 'editFormWidget', widgetId: '12R', fieldName: 'name', input: { remove: true } },
+    ])
+    expect(c.state.formWidgetEdits.get('12R')?.remove).toBe(true)
+    expect(
+      run(empty(), [
+        { op: 'editFormWidget', widgetId: '12R', fieldName: 'name', input: { rect: [0, 0, 0, 0] } },
+      ]).plan.failures[0]!.error,
+    ).toMatch(/at least 1pt/)
+  })
+
+  it('adds, patches and removes authored fields', () => {
+    const first = run(empty(), [{ op: 'addFormField', field: field() }])
+    const plan = first.plan
+    let state = first.state
+    expect(plan.failures).toEqual([])
+    const fid = plan.records[0]!.created![0]!
+    expect(state.formFields.map((f) => f.input.name)).toEqual(['full_name'])
+    ;({ state } = run(state, [
+      { op: 'patchFormField', id: fid, input: { rect: [20, 20, 120, 40], required: true } },
+    ]))
+    expect(state.formFields[0]!.input).toMatchObject({
+      rect: [20, 20, 120, 40],
+      required: true,
+      kind: 'text',
+    })
+    ;({ state } = run(state, [{ op: 'removeFormField', id: fid }]))
+    expect(state.formFields).toEqual([])
+  })
+
+  it('rejects colliding names, including within one batch, and bad kinds', () => {
+    const taken = ctx({ fieldNames: new Set(['agree']) })
+    expect(
+      run(empty(), [{ op: 'addFormField', field: field({ name: 'agree' }) }], taken).plan
+        .failures[0]!.error,
+    ).toMatch(/already exists/)
+    expect(
+      run(empty(), [
+        { op: 'addFormField', field: field({ name: 'x' }) },
+        { op: 'addFormField', field: field({ name: 'x', kind: 'checkbox' }) },
+      ]).plan.failures[0]!.error,
+    ).toMatch(/already exists/)
+    expect(
+      run(empty(), [{ op: 'addFormField', field: field({ kind: 'button' }) }]).plan.failures[0]!
+        .error,
+    ).toMatch(/kind/)
+    expect(
+      run(empty(), [{ op: 'addFormField', field: field({ name: 'a.b' }) }]).plan.failures[0]!.error,
+    ).toMatch(/name/)
+  })
+
+  it('drops authored fields with their deleted page', () => {
+    const { state } = run(empty(), [
+      { op: 'addFormField', field: field({ pageIndex: 1 }) },
+      { op: 'addFormField', field: field({ name: 'other', pageIndex: 2 }) },
+      { op: 'deletePage', pageIndex: 1 },
+    ])
+    expect(state.formFields.map((f) => f.input.name)).toEqual(['other'])
   })
 })
 
@@ -510,16 +678,22 @@ describe('bucket reduction matches whole-snapshot reduction', () => {
     for (const b of BUCKETS) {
       const viaBucket = reduceBucket(b, base[b], ops, base)
       expect(viaBucket).toEqual(whole[b])
-      if (!['deleted', 'markups', 'drawings', 'annotDeletes', 'noteEdits', 'formEdits'].includes(b))
-        expect(viaBucket).toBe(base[b])
+      const touched = [
+        'deleted',
+        'markups',
+        'drawings',
+        'formFields',
+        'formWidgetEdits',
+        'annotDeletes',
+        'noteEdits',
+        'formEdits',
+      ]
+      if (!touched.includes(b)) expect(viaBucket).toBe(base[b])
     }
   })
 })
 
 describe('edit-op geometry rejects non-finite numbers', () => {
-  // NaN and Infinity are both `typeof === 'number'`, so a `typeof` check let
-  // them through: the op was stored, the stamp drew at zero size, and NaN
-  // reached the PDF content stream on save.
   const NON_FINITE = [Number.NaN, Infinity, -Infinity]
 
   for (const bad of NON_FINITE) {

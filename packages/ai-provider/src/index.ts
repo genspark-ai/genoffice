@@ -34,6 +34,15 @@ export {
   resolveAiSettings,
 } from './providers'
 export {
+  activeCustomEndpoint,
+  customEndpointLabel,
+  newCustomEndpointId,
+  removeCustomEndpoint,
+  resolveCustomEndpoints,
+  selectCustomEndpoint,
+  upsertCustomEndpoint,
+} from './custom-endpoints'
+export {
   AI_MEDIA_PROVIDERS,
   GEMINI_MEDIA_BASE_URL,
   OPENAI_IMAGES_BASE_URL,
@@ -79,7 +88,7 @@ export type {
   ProviderCapabilities,
   ResolvedEndpoint,
 } from './registry'
-export { sanitizeAiSettings, validCliPath } from './ai-settings-guard'
+export { sanitizeAiSettings, sanitizeCliPath, validCliPath } from './ai-settings-guard'
 export { chatForProvider } from './chat'
 export { setAiUserAgent, setRescueFetch } from './fetch'
 export { isAiNetworkError } from './network-error'

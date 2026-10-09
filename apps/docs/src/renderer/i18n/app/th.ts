@@ -449,6 +449,7 @@ export const th = {
   appParaSpecialFirstLine: 'บรรทัดแรก',
   appParaSpecialHanging: 'ลอย',
   appParaBy: 'ระยะ',
+  appParaUnitChars: 'ตัวอักษร',
   appInsertEquation: 'แทรกสมการ',
   appLatexPlaceholder: 'เช่น x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'พิมพ์ LaTeX เพื่อดูตัวอย่าง',
