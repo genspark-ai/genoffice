@@ -68,6 +68,13 @@ export { Markdown, type MarkdownNav } from './Markdown'
 export { FILE_NAV_SCHEME, createFileNav, fileNavHref, parseFileNavHref } from './file-nav'
 export { isSymbolFontFamily } from './symbol-fonts'
 export {
+  fileNamingEnabled,
+  nameForSave,
+  setFileNamingEnabled,
+  type NameForSaveOptions,
+  type NamingTrigger,
+} from './ai-naming-client'
+export {
   BUILTIN_FONT_FAMILIES,
   fontFamiliesFor,
   partitionFontFamilies,

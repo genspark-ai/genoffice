@@ -7,6 +7,8 @@ import {
   Dropdown,
   aiPanelFontPx,
   clampAiCustomFontSize,
+  fileNamingEnabled,
+  setFileNamingEnabled,
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
 import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
@@ -1476,6 +1478,17 @@ export function SettingsModal({
   const [defaultAppBusy, setDefaultAppBusy] = useState(false)
   const [defaultAppFailed, setDefaultAppFailed] = useState(false)
   const [aiPrefs, setAiPrefs] = useState<AiPanelPrefs>(DEFAULT_AI_PANEL_PREFS)
+  /** model file naming on first save; the manual ask ignores it */
+  const [autoFileNaming, setAutoFileNaming] = useState(false)
+  useEffect(() => {
+    let alive = true
+    void fileNamingEnabled().then((on) => {
+      if (alive) setAutoFileNaming(on)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable')
   const [appVersion, setAppVersion] = useState('')
   const [githubStars, setGithubStars] = useState<number | null>(null)
@@ -1812,6 +1825,27 @@ export function SettingsModal({
                     aria-checked={aiPrefs.openInNewDocs}
                     aria-label={t('setAiOpenInNewDocs')}
                     onClick={() => updateAiPrefs({ openInNewDocs: !aiPrefs.openInNewDocs })}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
+                      <div className="set-field-label">{t('setAiAutoFileNaming')}</div>
+                      <div className="set-field-desc">{t('setAiAutoFileNamingDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={autoFileNaming}
+                    aria-label={t('setAiAutoFileNaming')}
+                    onClick={() => {
+                      const next = !autoFileNaming
+                      // optimistic, like the AI rows above; the returned value is
+                      // what the main process actually kept
+                      setAutoFileNaming(next)
+                      void setFileNamingEnabled(next)
+                    }}
                   />
                 </div>
                 {defaultApp && defaultApp.state !== 'unsupported' && (
