@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useI18n } from '../i18n/locale'
 import { hasRedactionIn } from '../editor/Redaction'
@@ -21,10 +21,6 @@ interface Props {
  * below never fires for it. Rather than duplicating the dialog and its locale
  * strings in a second component, the app calls this.
  */
-export interface RedactMenuHandle {
-  /** open the dialog for a selection made in the source-text surface */
-}
-
 /**
  * The editor's own right-click menu, carrying the one command that needs a
  * decision rather than a keystroke: withholding a selection from the model.
@@ -33,10 +29,7 @@ export interface RedactMenuHandle {
  * not one to make by accident. The dialog repeats the decision and shows the
  * resulting marker before anything is committed.
  */
-export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMenu(
-  { editor, enabled },
-  ref,
-) {
+export function RedactMenu({ editor, enabled }: Props) {
   const { t } = useI18n()
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
   const [seed, setSeed] = useState('')
@@ -70,8 +63,6 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
 
   // The source surface has no menu of its own to route through: its right-click
   // replaces the browser menu, so the dialog is the one confirmation step.
-  useImperativeHandle(ref, () => ({}))
-
   useEffect(() => {
     if (!point) return
     const close = () => setPoint(null)
@@ -149,4 +140,4 @@ export const RedactMenu = forwardRef<RedactMenuHandle, Props>(function RedactMen
       )}
     </>
   )
-})
+}

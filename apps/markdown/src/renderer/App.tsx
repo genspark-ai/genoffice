@@ -43,7 +43,7 @@ import type { SlashController, SlashMenuState } from './editor/slashCommand'
 import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
 import { ImageHostDialog } from './components/ImageHostDialog'
-import { RedactMenu, type RedactMenuHandle } from './components/RedactMenu'
+import { RedactMenu } from './components/RedactMenu'
 import { OutlinePane } from './components/OutlinePane'
 import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
@@ -1249,7 +1249,7 @@ export default function App() {
       {!sourceMode && (
         <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
       )}
-      <RedactMenu ref={redactMenuRef} editor={editor} enabled={redactEnabled} />
+      <RedactMenu editor={editor} enabled={redactEnabled} />
       <ToastHost />
       {imageHostOpen && (
         <ImageHostDialog onClose={() => setImageHostOpen(false)} onSaved={() => {}} />
