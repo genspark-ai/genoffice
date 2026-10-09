@@ -7,10 +7,13 @@ export interface CsvDigestSession {
 }
 
 /** dev+ino for a path, or undefined when it names nothing. Two spellings of one
- *  path get the same pair. */
+ *  path get the same pair. On filesystems that report no inode (Windows
+ *  FAT/exFAT report ino 0 for every file) the spelling itself is the identity
+ *  again — a wrong answer beats two different files comparing equal. */
 function fileIdentity(path: string): string | undefined {
   try {
     const st = statSync(path)
+    if (st.ino === 0) return path
     return `${st.dev}:${st.ino}`
   } catch {
     return undefined

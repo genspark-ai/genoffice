@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -29,8 +29,18 @@ describe('refreshCsvDigest', () => {
     // written once, as `Report.csv`, because the export dialog's default does
     const lower = join(dir, 'Report.csv')
     writeFileSync(lower, 'a,b\n1,2\n')
-    // opened as `Report.CSV` — the same file, a different spelling
+    // `Report.CSV` — the other spelling of the same file. A hard link where
+    // the disk needs one: CI runs on a case-sensitive filesystem, where the
+    // two spellings would be two files, while a link is one inode under two
+    // names on every OS. On a case-insensitive disk (macOS, Windows — where
+    // the bug lives) the lookup of `Report.CSV` already lands on the written
+    // `Report.csv`, so linkSync raises EEXIST and there is nothing to link.
     const upper = join(dir, 'Report.CSV')
+    try {
+      linkSync(lower, upper)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+    }
 
     const sessions = new Map<string, CsvSession>([
       ['s1', session({ csvSourcePath: upper, csvSourceSha: 'stale' })],

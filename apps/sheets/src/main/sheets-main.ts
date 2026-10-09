@@ -4660,19 +4660,6 @@ function resolveSidecarPath(): string {
   return join(app.getAppPath(), 'native', 'xlsx-engine', 'target', 'release', executable)
 }
 
-/**
- * Point every session whose CSV source is the file just written at its new
- * digest, so its next Save does not read this export as an external change.
- *
- * Matched on dev+ino rather than spelling: macOS and Windows are
- * case-insensitive by default, so a session opened as `Report.CSV` and an
- * export written to `Report.csv` name one file and compare unequal, which
- * leaves the stale digest in place. `path.resolve` does not close that gap —
- * it normalises `.`, `..` and separators, never case.
- *
- * Split out from the IPC handler so it can be tested without a workbook: the
- * export path is only reachable through Electron's dialog.
- */
 async function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256')
