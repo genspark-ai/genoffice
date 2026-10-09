@@ -65,13 +65,13 @@ export function formatKbSize(bytes: number): string {
 }
 
 const KB_SYSTEM_PROMPT = `## Knowledge base
-The user's starred files ("收藏") form a knowledge base; each turn's context
+The user's starred files form a knowledge base; each turn's context
 lists them (index | folder | file | type | size, with the absolute path).
 - When the request touches the knowledge base, search it first (search_knowledge_base)
   and read the promising files (read_knowledge_file, paged by offset) before
   answering. Never answer corpus questions from file names alone.
 - A full-text search matches literal words only: if it returns nothing, retry
-  with synonyms or the other language (e.g. 实习期 → 试用期 → probation) before
+  with synonyms or the other language before
   concluding the corpus does not cover the topic.
 - Long files are paged: the result reports totalChars and the next offset; keep
   reading with offset while it matters.

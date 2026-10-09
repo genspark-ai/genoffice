@@ -21,6 +21,11 @@ import { parseFileToText } from '@genoffice/file-parse'
  *  convention everywhere) */
 export const KB_READ_CHUNK_CHARS = 24_000
 
+/** byte cap per corpus file, aligned with the chat-attachment reader's
+ *  ATTACHMENT_MAX_BYTES: a larger file is refused before parse rather than
+ *  parsed and held in the text cache */
+export const KB_READ_MAX_BYTES = 50 * 1024 * 1024
+
 /** query cap, same as the home search box */
 const KB_QUERY_MAX_CHARS = 200
 
@@ -118,6 +123,11 @@ export async function readKnowledgeFileText(filePath: string): Promise<string> {
   const stamp = `${stat.mtimeMs}:${stat.size}`
   const cached = kbTextCache.get(filePath)
   if (cached && cached.stamp === stamp) return cached.text
+  if (stat.size > KB_READ_MAX_BYTES) {
+    throw new Error(
+      `file too large to read (${Math.round(stat.size / 1024 / 1024)}MB, cap ${KB_READ_MAX_BYTES / 1024 / 1024}MB)`,
+    )
+  }
   const parsed = await parseFileToText(filePath)
   if (!parsed.ok || parsed.kind !== 'text' || parsed.text == null) {
     throw new Error(parsed.error ?? 'unreadable file')
