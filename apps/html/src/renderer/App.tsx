@@ -31,7 +31,6 @@ import { AiAskPopover, type AnchorRect, type AskMode } from './components/AiAskP
 import {
   EDIT_QUEUE_MAX,
   buildSelectionInstruction,
-  excerptOf,
   resolveQueueItem,
   type EditQueueItem,
 } from './ai/edit-queue'
