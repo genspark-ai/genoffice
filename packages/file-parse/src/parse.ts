@@ -41,19 +41,12 @@ const TEXT_EXTS = new Set([
 ])
 
 const FATAL_UTF8_DECODER = new TextDecoder('utf-8', { fatal: true })
-// windows-1252 (a latin-1 superset) maps every byte to a character, so the
-// fallback below can never fail (full ICU, Node >= 14, like 'utf-16be' above)
+// windows-1252 maps every byte, so this fallback can never fail
 const WINDOWS_1252_DECODER = new TextDecoder('windows-1252')
 
 /**
- * Decode plain-text bytes honouring Unicode BOMs: UTF-8 (BOM stripped), UTF-16LE
- * and UTF-16BE are decoded. Bytes that are not valid UTF-8 (latin-1, GBK,
- * Shift-JIS, a stray invalid byte in otherwise-valid UTF-8, ...) fall back to a
- * windows-1252 decode instead of being rejected: callers index whatever survives
- * rather than drop the whole attachment, and a literal U+FFFD in valid UTF-8 is
- * never mistaken for a decode error (the fatal decoder tells them apart).
- * Returns null only for a BOM-declared UTF-32 file, whose declared encoding we
- * cannot decode at all.
+ * BOM-aware text decode; invalid UTF-8 falls back to windows-1252 so callers
+ * index what survives. null only for a BOM-declared UTF-32 file.
  */
 function decodeTextBytes(bytes: Buffer): string | null {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) {
@@ -131,7 +124,11 @@ export async function parseFileToText(filePath: string): Promise<ParsedFile> {
         error: `Content mismatch: .${ext} file has ${sniffed} magic bytes`,
       }
     }
-    if ((ext === 'doc' || ext === 'ppt') && sniffed !== 'ole2') {
+    // a DOCX saved under a .doc name is common enough that it parses as OOXML
+    if (
+      (ext === 'doc' && sniffed !== 'ole2' && sniffed !== 'zip') ||
+      (ext === 'ppt' && sniffed !== 'ole2')
+    ) {
       return {
         ok: false,
         kind: 'text',
@@ -140,7 +137,11 @@ export async function parseFileToText(filePath: string): Promise<ParsedFile> {
     }
     switch (ext) {
       case 'doc':
-        return { ok: true, kind: 'text', text: await docToText(bytes) }
+        return {
+          ok: true,
+          kind: 'text',
+          text: sniffed === 'zip' ? await docxToText(bytes) : await docToText(bytes),
+        }
       case 'docx':
         return { ok: true, kind: 'text', text: await docxToText(bytes) }
       case 'ppt':

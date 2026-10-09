@@ -253,7 +253,9 @@ describe('source splice', () => {
   // parses every one of them on a single shared editor. The suite-wide 20 s
   // budget is not a statement about this test — it is the same wall-clock that
   // the whole file has to share, and under parallel load this one ran past it
-  // while finishing in ~7 s on its own.
+  // while finishing in ~7 s on its own. Budget for growth rather than trimming
+  // the assertion to keep the files it exists to check; the in-app manual added
+  // 294 topic bodies, which is what pushed it over on this branch.
   it('round-trips every markdown file in the repository', { timeout: 120_000 }, () => {
     const root = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim()
     const files = execSync('git ls-files -- "*.md"', { cwd: root, encoding: 'utf8' })

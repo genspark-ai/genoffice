@@ -451,6 +451,7 @@ export const cs = {
   appParaSpecialFirstLine: 'První řádek',
   appParaSpecialHanging: 'Předsazení',
   appParaBy: 'O kolik',
+  appParaUnitChars: 'znaky',
   appInsertEquation: 'Vložit rovnici',
   appLatexPlaceholder: 'např. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Zadejte LaTeX a zobrazí se náhled',

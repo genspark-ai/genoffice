@@ -1,7 +1,21 @@
-import { chmodSync, lstatSync, mkdirSync, readlinkSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { defaultCandidateDirs, inspectCliLink, installCliLink, isOurLauncher } from '../src/install'
+import {
+  defaultCandidateDirs,
+  inspectCliLink,
+  installCliLink,
+  isOurLauncher,
+  pathHint,
+} from '../src/install'
 import { tempDir } from './helpers'
 
 describe('installCliLink', () => {
@@ -175,6 +189,68 @@ describe('installCliLink', () => {
     )
   })
 
+  it('falls back to $XDG_BIN_HOME, then ~/.local/bin, when the system dirs refuse (genoffice#1019)', () => {
+    const home = tempDir()
+    expect(defaultCandidateDirs('linux', { HOME: home })).toEqual([
+      '/usr/local/bin',
+      join(home, '.local', 'bin'),
+    ])
+    expect(defaultCandidateDirs('darwin', { HOME: home, XDG_BIN_HOME: join(home, 'bin') })).toEqual(
+      ['/usr/local/bin', join(home, 'bin'), join(home, '.local', 'bin')],
+    )
+    expect(defaultCandidateDirs('linux', { HOME: home, XDG_BIN_HOME: 'relative/bin' })).toEqual([
+      '/usr/local/bin',
+      join(home, '.local', 'bin'),
+    ])
+
+    const launcher = join(home, 'app', 'genoffice')
+    mkdirSync(join(home, 'app'))
+    writeFileSync(launcher, '#!/bin/sh\n')
+    const locked = join(home, 'locked')
+    mkdirSync(locked)
+    chmodSync(locked, 0o555)
+    const userBin = join(home, '.local', 'bin')
+    const env = { HOME: home, PATH: '/usr/bin:/bin' }
+    const dirs = [locked, userBin]
+    try {
+      if (process.getuid?.() === 0) return
+      expect(inspectCliLink({ launcher, platform: 'linux', candidateDirs: dirs, env })).toEqual({
+        status: 'missing',
+        location: join(userBin, 'genoffice'),
+        manual: expect.stringContaining('sudo'),
+        pathHint: 'export PATH="$HOME/.local/bin:$PATH"',
+      })
+      expect(existsSync(userBin)).toBe(false)
+      expect(installCliLink({ launcher, platform: 'linux', candidateDirs: dirs, env })).toEqual({
+        status: 'linked',
+        location: join(userBin, 'genoffice'),
+        pathHint: 'export PATH="$HOME/.local/bin:$PATH"',
+      })
+      expect(readlinkSync(join(userBin, 'genoffice'))).toBe(launcher)
+      const onPath = { ...env, PATH: `${userBin}/:${env.PATH}` }
+      expect(
+        installCliLink({ launcher, platform: 'linux', candidateDirs: dirs, env: onPath }),
+      ).toEqual({ status: 'present', location: join(userBin, 'genoffice') })
+      // an explicit non-user dir never gets created or a PATH hint
+      const absent = join(home, 'no-such-bin')
+      expect(installCliLink({ launcher, platform: 'linux', candidateDirs: [absent], env })).toEqual(
+        { status: 'unwritable', location: join(absent, 'genoffice'), manual: expect.any(String) },
+      )
+      expect(existsSync(absent)).toBe(false)
+    } finally {
+      chmodSync(locked, 0o755)
+    }
+  })
+
+  it('writes the PATH hint only for directories the shell does not already search', () => {
+    expect(pathHint('/home/u/.local/bin', { HOME: '/home/u', PATH: '/usr/bin' })).toBe(
+      'export PATH="$HOME/.local/bin:$PATH"',
+    )
+    expect(pathHint('/opt/bin', { HOME: '/home/u', PATH: '/usr/bin:/opt/bin' })).toBeUndefined()
+    expect(pathHint('/opt/bin', { HOME: '/home/u', PATH: '/opt/bin/' })).toBeUndefined()
+    expect(pathHint('/opt/bin', { HOME: '/home/u', PATH: '' })).toBe('export PATH="/opt/bin:$PATH"')
+  })
+
   it('edits the user PATH on Windows without expanding existing entries', () => {
     const scripts: string[] = []
     const run = (script: string) => {
@@ -221,5 +297,52 @@ describe('installCliLink', () => {
     })
     expect(missing.status).toBe('missing')
     expect(missing.manual).toContain('SetEnvironmentVariable')
+  })
+})
+
+describe('the Homebrew prefix is never written uninvited (#1914)', () => {
+  it('is not a candidate, and neither is it created', () => {
+    const home = tempDir()
+    const xdg = join(home, 'bin')
+    for (const platform of ['darwin', 'linux'] as const) {
+      const dirs = defaultCandidateDirs(platform, { HOME: home, XDG_BIN_HOME: xdg })
+      expect(dirs, `${platform} must not offer a Homebrew prefix`).not.toContain(
+        '/opt/homebrew/bin',
+      )
+      expect(
+        dirs.some((d) => /homebrew/i.test(d)),
+        `${platform}: ${dirs.join()}`,
+      ).toBe(false)
+    }
+    // and the user's own directory is still there to take it
+    expect(defaultCandidateDirs('darwin', { HOME: home, XDG_BIN_HOME: xdg })).toContain(xdg)
+  })
+
+  it('leaves a Homebrew-prefix directory alone even when it is the one writable', () => {
+    // the shape that produced the report: every system dir is unwritable, and
+    // the first directory the old walk found writable was the brew prefix
+    const home = tempDir()
+    const locked = join(home, 'locked')
+    mkdirSync(locked)
+    chmodSync(locked, 0o555)
+    const launcher = join(home, 'app', 'genoffice')
+    mkdirSync(join(home, 'app'))
+    writeFileSync(launcher, '#!/bin/sh\n')
+    const userBin = join(home, '.local', 'bin')
+    try {
+      const r = installCliLink({
+        launcher,
+        platform: 'linux',
+        env: { HOME: home },
+        // stand in for the brew prefix: writable, and not one of ours
+        candidateDirs: [locked, userBin],
+      })
+      expect(r.status).toBe('linked')
+      expect(r.location).toBe(join(userBin, 'genoffice'))
+      // nothing landed anywhere but the directory we were told to consider
+      expect(existsSync(join(userBin, 'genoffice'))).toBe(true)
+    } finally {
+      chmodSync(locked, 0o755)
+    }
   })
 })

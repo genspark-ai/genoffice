@@ -250,6 +250,107 @@ describe('applyVisualEdits', () => {
     ).rejects.toThrow(VisualEditError)
   })
 
+  describe('repaint', () => {
+    const shapeDrawing = (spPr: string, style = ''): string =>
+      '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">' +
+      `<xdr:twoCellAnchor>${marker('from', 0, 0)}${marker('to', 4, 8)}` +
+      `<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="2" name="s"/></xdr:nvSpPr><xdr:spPr>${spPr}</xdr:spPr>${style}` +
+      '<xdr:txBody><a:p><a:r><a:t>x</a:t></a:r></a:p></xdr:txBody></xdr:sp>' +
+      '<xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>'
+    const GEOM =
+      '<a:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+    const repaint = async (
+      drawing: string,
+      edit: { fillColor?: string; lineColor?: string },
+    ): Promise<string> => {
+      const entries = new Map([[PATH, drawing]])
+      await applyVisualEdits(
+        fakePackage(entries),
+        [{ drawingPath: PATH, drawingIndex: 0, ...edit }],
+        new Set(),
+      )
+      return entries.get(PATH)!
+    }
+
+    it('replaces an existing fill and leaves the outline alone', async () => {
+      const xml = await repaint(
+        shapeDrawing(
+          `${GEOM}<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill>` +
+            '<a:ln w="12700"><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></a:ln>',
+        ),
+        { fillColor: '#0000ff' },
+      )
+      expect(xml).toContain(
+        '</a:prstGeom><a:solidFill><a:srgbClr val="0000FF"/></a:solidFill>' +
+          '<a:ln w="12700"><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></a:ln></xdr:spPr>',
+      )
+      expect(xml).not.toContain('gradFill')
+    })
+
+    it('writes an explicit noFill over a style fillRef', async () => {
+      const style =
+        '<xdr:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef>' +
+        '<a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef></xdr:style>'
+      const xml = await repaint(shapeDrawing(GEOM, style), { fillColor: 'none' })
+      expect(xml).toContain('</a:prstGeom><a:noFill/></xdr:spPr>')
+      expect(xml).toContain(style)
+    })
+
+    it('swaps the outline paint but keeps its width and dash', async () => {
+      const xml = await repaint(
+        shapeDrawing(
+          `${GEOM}<a:noFill/><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill><a:prstDash val="dash"/></a:ln>`,
+        ),
+        { lineColor: '#123456' },
+      )
+      expect(xml).toContain(
+        '<a:noFill/><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="123456"/></a:solidFill><a:prstDash val="dash"/></a:ln></xdr:spPr>',
+      )
+    })
+
+    it('adds an outline where none existed and removes one with none', async () => {
+      const added = await repaint(shapeDrawing(GEOM), { lineColor: '#123456' })
+      expect(added).toContain(
+        '</a:prstGeom><a:ln w="9525"><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:ln></xdr:spPr>',
+      )
+      const removed = await repaint(shapeDrawing(`${GEOM}<a:ln w="9525"/>`), { lineColor: 'none' })
+      expect(removed).toContain('</a:prstGeom><a:ln w="9525"><a:noFill/></a:ln></xdr:spPr>')
+    })
+
+    it('re-applying the current paint is a no-op, not an error', async () => {
+      const drawing = shapeDrawing(`${GEOM}<a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill>`)
+      expect(await repaint(drawing, { fillColor: '#abcdef' })).toBe(drawing)
+    })
+
+    it('repaints and moves in one edit', async () => {
+      const entries = new Map([[PATH, shapeDrawing(GEOM)]])
+      await applyVisualEdits(
+        fakePackage(entries),
+        [{ drawingPath: PATH, drawingIndex: 0, anchor: ANCHOR, fillColor: '#ABCDEF' }],
+        new Set(),
+      )
+      const xml = entries.get(PATH)!
+      expect(xml).toContain('<a:srgbClr val="ABCDEF"/>')
+      expect(xml).toContain('<xdr:row>2</xdr:row>')
+    })
+
+    it('fails closed on pictures and group shapes', async () => {
+      await expect(
+        applyVisualEdits(
+          fakePackage(packageWithDrawing()),
+          [{ drawingPath: PATH, drawingIndex: 1, fillColor: '#ABCDEF' }],
+          new Set(),
+        ),
+      ).rejects.toThrow(VisualEditError)
+      const group =
+        '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">' +
+        `<xdr:twoCellAnchor>${marker('from', 0, 0)}${marker('to', 4, 8)}` +
+        `<xdr:grpSp><xdr:grpSpPr/><xdr:sp><xdr:spPr>${GEOM}</xdr:spPr></xdr:sp></xdr:grpSp>` +
+        '<xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>'
+      await expect(repaint(group, { fillColor: '#ABCDEF' })).rejects.toThrow(VisualEditError)
+    })
+  })
+
   it('moves a one-cell anchor by rewriting only its from marker', async () => {
     const entries = packageWithDrawing()
     await applyVisualEdits(
@@ -711,5 +812,185 @@ describe('applyVisualEdits on default-namespace (openpyxl) drawings', () => {
 
     expect(entries.has(PATH)).toBe(false)
     expect(entries.get('xl/worksheets/sheet1.xml')).not.toContain('<drawing')
+  })
+})
+
+describe('applyVisualEdits arrange properties', () => {
+  const picture =
+    `<xdr:twoCellAnchor editAs="oneCell">${marker('from', 0, 0)}${marker('to', 4, 8)}` +
+    '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Picture 1" descr="old"/></xdr:nvPicPr>' +
+    '<xdr:blipFill><a:blip r:embed="rId8"/></xdr:blipFill>' +
+    '<xdr:spPr><a:xfrm rot="600000" flipV="1"><a:off x="0" y="0"/><a:ext cx="100" cy="50"/></a:xfrm></xdr:spPr>' +
+    '</xdr:pic><xdr:clientData/></xdr:twoCellAnchor>'
+  const shape =
+    `<xdr:twoCellAnchor>${marker('from', 5, 1)}${marker('to', 9, 9)}` +
+    '<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="3" name="Shape 1"><a:hlinkClick r:id="rId5"/></xdr:cNvPr></xdr:nvSpPr>' +
+    '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm></xdr:spPr>' +
+    '</xdr:sp><xdr:clientData/></xdr:twoCellAnchor>'
+  const line =
+    `<xdr:oneCellAnchor>${marker('from', 2, 20)}<xdr:ext cx="914400" cy="914400"/>` +
+    '<xdr:cxnSp><xdr:nvCxnSpPr><xdr:cNvPr id="4" name="Line 1"/></xdr:nvCxnSpPr>' +
+    '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></a:xfrm></xdr:spPr>' +
+    '</xdr:cxnSp><xdr:clientData/></xdr:oneCellAnchor>'
+  const drawing =
+    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    `${picture}\n${shape}\n${line}</xdr:wsDr>`
+  const rels =
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>' +
+    '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example" TargetMode="External"/>' +
+    '</Relationships>'
+  const RELS_PATH = 'xl/drawings/_rels/drawing1.xml.rels'
+  const entriesWith = (): Map<string, string> =>
+    new Map([
+      [PATH, drawing],
+      [RELS_PATH, rels],
+      ['[Content_Types].xml', CONTENT_TYPES],
+    ])
+  const anchorsOf = (xml: string): string[] =>
+    [...xml.matchAll(/<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g)].map((m) => m[0])
+
+  it('reorders anchors by zIndex and keeps unlisted ones in place', async () => {
+    const entries = entriesWith()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [
+        { drawingPath: PATH, drawingIndex: 0, zIndex: 2 },
+        { drawingPath: PATH, drawingIndex: 1, zIndex: 0 },
+        { drawingPath: PATH, drawingIndex: 2, zIndex: 1 },
+      ],
+      new Set(),
+    )
+    const names = anchorsOf(entries.get(PATH)!).map((a) => /name="([^"]+)"/.exec(a)![1])
+    expect(names).toEqual(['Shape 1', 'Line 1', 'Picture 1'])
+    expect(entries.get(PATH)!.startsWith('<xdr:wsDr')).toBe(true)
+    expect(entries.get(PATH)!.endsWith('</xdr:wsDr>')).toBe(true)
+  })
+
+  it('reorders around a removal in the same part and keeps inter-anchor markup', async () => {
+    const entries = entriesWith()
+    entries.set(PATH, drawing.replace(`${shape}\n`, `${shape}<!-- keep -->\n`))
+    await applyVisualEdits(
+      fakePackage(entries),
+      [
+        { drawingPath: PATH, drawingIndex: 1, remove: true },
+        { drawingPath: PATH, drawingIndex: 0, zIndex: 1 },
+        { drawingPath: PATH, drawingIndex: 2, zIndex: 0 },
+      ],
+      new Set(),
+    )
+    const xml = entries.get(PATH)!
+    const names = anchorsOf(xml).map((a) => /name="([^"]+)"/.exec(a)![1])
+    expect(names).toEqual(['Line 1', 'Picture 1'])
+    expect(xml).toContain('<!-- keep -->')
+  })
+
+  it('only permutes anchors that carry a zIndex and never those inside mc:AlternateContent', async () => {
+    const entries = entriesWith()
+    const wrapped =
+      '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+      `<mc:Choice Requires="sle">${line.replace('Line 1', 'Slicer 1')}</mc:Choice>` +
+      `<mc:Fallback>${line.replace('Line 1', 'Fallback 1')}</mc:Fallback></mc:AlternateContent>`
+    entries.set(PATH, drawing.replace('</xdr:wsDr>', `${wrapped}</xdr:wsDr>`))
+    await applyVisualEdits(
+      fakePackage(entries),
+      [
+        { drawingPath: PATH, drawingIndex: 0, zIndex: 9 },
+        { drawingPath: PATH, drawingIndex: 2, zIndex: 0 },
+        { drawingPath: PATH, drawingIndex: 3, zIndex: 1 },
+      ],
+      new Set(),
+    )
+    const xml = entries.get(PATH)!
+    const names = anchorsOf(xml).map((a) => /name="([^"]+)"/.exec(a)![1])
+    expect(names).toEqual(['Line 1', 'Shape 1', 'Picture 1', 'Slicer 1', 'Fallback 1'])
+    expect(xml).toContain('<mc:Choice Requires="sle"><xdr:oneCellAnchor>')
+  })
+
+  it('allocates no hyperlink relationship for a removed anchor', async () => {
+    const entries = entriesWith()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 0, remove: true, hyperlink: 'https://stale.example' }],
+      new Set(),
+    )
+    expect(entries.get(RELS_PATH)).not.toContain('stale.example')
+  })
+
+  it('writes rotation and flips on the a:xfrm, clearing zero and false', async () => {
+    const entries = entriesWith()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [
+        { drawingPath: PATH, drawingIndex: 0, rotation: 0, flipV: false, flipH: true },
+        { drawingPath: PATH, drawingIndex: 2, rotation: -90 },
+      ],
+      new Set(),
+    )
+    const [pic, , ln] = anchorsOf(entries.get(PATH)!)
+    expect(pic).toContain('<a:xfrm flipH="1">')
+    expect(pic).not.toContain('rot=')
+    expect(ln).toContain('<a:xfrm rot="16200000">')
+    expect(ln).toContain('<a:ext cx="1" cy="1"/>')
+  })
+
+  it('writes and clears cNvPr descr and the anchor editAs', async () => {
+    const entries = entriesWith()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [
+        { drawingPath: PATH, drawingIndex: 0, altText: '', editAs: 'twoCell' },
+        {
+          drawingPath: PATH,
+          drawingIndex: 1,
+          altText: 'Quarterly "chart" <v2>',
+          editAs: 'absolute',
+        },
+      ],
+      new Set(),
+    )
+    const [pic, sp] = anchorsOf(entries.get(PATH)!)
+    expect(pic).toMatch(/^<xdr:twoCellAnchor>/)
+    expect(pic).toContain('<xdr:cNvPr id="2" name="Picture 1"/>')
+    expect(sp).toMatch(/^<xdr:twoCellAnchor editAs="absolute">/)
+    expect(sp).toContain('name="Shape 1" descr="Quarterly &quot;chart&quot; &lt;v2&gt;">')
+    expect(sp).toContain('<a:hlinkClick r:id="rId5"/>')
+  })
+
+  it('rejects editAs on a one-cell anchor', async () => {
+    await expect(
+      applyVisualEdits(
+        fakePackage(entriesWith()),
+        [{ drawingPath: PATH, drawingIndex: 2, editAs: 'oneCell' }],
+        new Set(),
+      ),
+    ).rejects.toBeInstanceOf(VisualEditError)
+  })
+
+  it('adds a hyperlink relationship and replaces or drops hlinkClick', async () => {
+    const entries = entriesWith()
+    const touched = new Set<string>()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [
+        { drawingPath: PATH, drawingIndex: 0, hyperlink: 'https://new.example/?a=1&b=2' },
+        { drawingPath: PATH, drawingIndex: 1, hyperlink: '' },
+      ],
+      touched,
+    )
+    const [pic, sp] = anchorsOf(entries.get(PATH)!)
+    const relId = /<a:hlinkClick[^>]*r:id="([^"]+)"/.exec(pic!)![1]
+    expect(pic).toContain('<xdr:cNvPr id="2" name="Picture 1" descr="old">')
+    expect(pic).toContain('</xdr:cNvPr>')
+    expect(sp).not.toContain('hlinkClick')
+    expect(sp).toContain('<xdr:cNvPr id="3" name="Shape 1"/>')
+    const relsXml = entries.get(RELS_PATH)!
+    expect(relsXml).toContain(
+      `Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://new.example/?a=1&amp;b=2" TargetMode="External"`,
+    )
+    expect(relsXml).not.toContain('rId5')
+    expect(touched.has(RELS_PATH)).toBe(true)
   })
 })

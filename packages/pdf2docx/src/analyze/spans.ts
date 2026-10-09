@@ -51,7 +51,7 @@ const ARTIFACT_TRACKING_MIN_EMS = 0.15
  * median is declared-width fiction. Word's PDF export of DFKai-SB forms
  * writes /Widths the layout never used; the measured tracking reads ~−0.3 em
  * and restoring it crushes the run once the output face (or Word's
- * substitute) advances at its true 1 em (#1890). Genuinely compressed EA
+ * substitute) advances at its true 1 em (genoffice#1890). Genuinely compressed EA
  * text advances under the bar and keeps its spacing.
  */
 const EA_FULLWIDTH_MIN_EMS = 0.9
@@ -161,7 +161,7 @@ export function buildSpans(words: readonly Word[]): Span[] {
           spaceGap >= SPACE_INK_HEALTHY_EMS * em ||
           (extreme && (healthyAdvance || spaceGap - overhang >= SPACE_INK_HEALTHY_EMS * em))
       }
-      // space-less EA runs (#1890): pairs still advancing at fullwidth prove
+      // space-less EA runs (genoffice#1890): pairs still advancing at fullwidth prove
       // the negative median is declared-width fiction, not visual squeezing
       if (tracking < 0 && !metricsArtifact && open.eaAdvances.length >= 2) {
         const em = Math.max(open.anchor.fontSize, 1)

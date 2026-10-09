@@ -53,6 +53,8 @@ export const IPC_CHANNELS = {
   openWorkbooksForMerge: 'workbook:open-for-merge',
   readWorkbookRange: 'workbook:read-range',
   readWorkbookFormulas: 'workbook:read-formulas',
+  /** Sidecar-side Find over the file's chunk index (streamed workbooks) */
+  findWorkbookCells: 'workbook:find-cells',
   /// The sidecar process died; every session id the renderer holds is gone.
   /// A positive crash signal, so recovery never has to infer a crash from a
   /// session guard's error text (the Save swap and closeWorkbook reject ids
@@ -61,6 +63,7 @@ export const IPC_CHANNELS = {
   /// Re-open an already-known path through the normal open path (the same
   /// pipeline selectWorkbook runs), for recovering from a sidecar crash.
   reopenWorkbook: 'workbook:reopen',
+  readWorkbookRowOutline: 'workbook:read-row-outline',
   recalcWorkbook: 'workbook:recalc',
   readWorkbookMedia: 'workbook:read-media',
   readPivotDefinition: 'workbook:read-pivot-definition',
@@ -83,14 +86,18 @@ export const IPC_CHANNELS = {
   closeSaveResult: 'workbook:close-save-result',
   exportPdf: 'workbook:export-pdf',
   printWorkbook: 'workbook:print',
+  listPrinters: 'workbook:list-printers',
   exportCsv: 'workbook:export-csv',
   csvSaveConfirm: 'workbook:csv-save-confirm',
   /** AI create_document: new standalone file in the default folder (no dialog) */
   createDocument: 'workbook:create-document',
   openExternal: 'shell:open-external',
   menuAction: 'menu:action',
+  userDisplayName: 'user:display-name',
   aiGetSettings: 'ai:get-settings',
   aiSetSettings: 'ai:set-settings',
+  aiSettingsChanged: 'ai:settings-changed',
+  aiOpenModelSettings: 'ai:open-model-settings',
   aiChat: 'ai:chat',
   aiStream: 'ai:stream',
   aiStreamCancel: 'ai:stream-cancel',

@@ -34,6 +34,7 @@ import {
   type MasterTextStyles,
   type TextStyleLevels,
   type LevelTextStyle,
+  MAX_AUTO_NUM_START,
 } from './placeholder'
 import type {
   RunStyleSource,
@@ -72,6 +73,7 @@ import {
   type TableStyleFlags,
 } from './table-style'
 import { decodeNumericCharRefs } from './xml-utils'
+import { readRedactLabel } from './redaction-xml'
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -451,14 +453,14 @@ function parseSpShape(
 
   let transform = parseXfrm(spPr['a:xfrm'])
   // Phase 2 fix: when a placeholder omits <a:xfrm>, geometry is backfilled from layout/master inheritance.
-  if (ph && !spPr['a:xfrm']) {
+  if (ph && lacksExt(spPr['a:xfrm'])) {
     const inherited = resolvePlaceholderTransform(
       ctx.layoutPlaceholders,
       ctx.masterPlaceholders,
       phType,
       phIdx,
     )
-    if (inherited) transform = inherited
+    if (inherited) transform = withInheritedExt(spPr['a:xfrm'], transform, inherited)
   }
 
   const prstGeom = spPr['a:prstGeom']
@@ -586,14 +588,18 @@ function parseSpShape(
     }
   }
 
+  // PowerPoint marks Insert > Text Box with txBox="1" and still writes prstGeom rect;
+  // a geometry-less txBody is the legacy shape of our own inserted text boxes
+  const txBox = nv?.['p:cNvSpPr']?.['@_txBox'] === '1'
+  const isTextBox = txBox && !customGeometry && (!presetGeometry || presetGeometry === 'rect')
   const el: TextElement = {
     id: uid('sp'),
-    type: txBody && !presetGeometry && !customGeometry ? 'text' : 'shape',
+    type: txBody && (isTextBox || (!presetGeometry && !customGeometry)) ? 'text' : 'shape',
     anchor,
     transform,
     // <p:ph> without a type (content placeholder) defaults to body per ECMA
     placeholder: ph ? (phType ?? 'body') : undefined,
-    ...(nv?.['p:cNvSpPr']?.['@_txBox'] === '1' ? { txBox: true } : {}),
+    ...(txBox ? { txBox: true } : {}),
     name,
     presetGeometry,
     ...(adjust ? { adjust } : {}),
@@ -1152,14 +1158,14 @@ function parsePicture(
   let transform = parseXfrm(spPr['a:xfrm'])
   // Pictures dropped into a placeholder may omit <a:xfrm> entirely; geometry comes from layout/master
   const picPh = node['p:nvPicPr']?.['p:nvPr']?.['p:ph']
-  if (picPh && !spPr['a:xfrm']) {
+  if (picPh && lacksExt(spPr['a:xfrm'])) {
     const inherited = resolvePlaceholderTransform(
       ctx.layoutPlaceholders,
       ctx.masterPlaceholders,
       picPh['@_type'],
       picPh['@_idx'] != null ? String(picPh['@_idx']) : undefined,
     )
-    if (inherited) transform = inherited
+    if (inherited) transform = withInheritedExt(spPr['a:xfrm'], transform, inherited)
   }
   const blipFill = node['p:blipFill']
   const blip = blipFill?.['a:blip']
@@ -1199,6 +1205,10 @@ function parsePicture(
   const shadow = parseShadow(spPr, ctx)
   const glow = parseGlow(spPr, ctx)
   const reflection = parseReflection(spPr)
+  // "Withheld from the model" on a picture, video or audio shape. spPr is the one
+  // legal extension slot here: p:nvPicPr admits only cNvPr + cNvPicPr, and
+  // cNvPr takes attributes alone, which the user's own alt text already uses.
+  const redact = readRedactLabel(spPr)
   // Pic's own spPr fill: PowerPoint draws it as a backdrop behind the (possibly translucent) blip
   const fill = parseFill(spPr, ctx)
   const duotone = parseDuotone(blip, ctx)
@@ -1235,6 +1245,7 @@ function parsePicture(
     transform,
     name,
     ...(descr ? { descr } : {}),
+    ...(redact ? { redact } : {}),
     mediaRef,
     ...(srcRect ? { srcRect } : {}),
     ...(blipFill && typeof blipFill === 'object' && 'a:tile' in blipFill ? { tile: true } : {}),
@@ -3273,6 +3284,19 @@ function parseXfrm(xfrm: any): Transform {
   }
 }
 
+function lacksExt(xfrm: any): boolean {
+  return !xfrm || !xfrm['a:ext']
+}
+
+/** Placeholder <a:xfrm> with <a:off> but no <a:ext>: keep the offset, size comes from the layout/master. */
+function withInheritedExt(xfrm: any, own: Transform, inherited: Transform): Transform {
+  if (!xfrm) return inherited
+  return {
+    ...own,
+    offset: { ...own.offset, cx: inherited.offset.cx, cy: inherited.offset.cy },
+  }
+}
+
 // ── Fill ─────────────────────────────────────────────────────────────
 
 /** <a:lum bright/contrast>: legacy picture brightness/contrast (attribute per-100k -> -1..1). */
@@ -3726,7 +3750,8 @@ function parseParagraph(
     bullet = { type: 'number' }
     if (pPr['a:buAutoNum']['@_type']) bullet.numType = String(pPr['a:buAutoNum']['@_type'])
     const startAt = parseInt(pPr['a:buAutoNum']['@_startAt'], 10)
-    if (Number.isFinite(startAt) && startAt > 1) bullet.startAt = startAt
+    if (Number.isFinite(startAt) && startAt > 1)
+      bullet.startAt = Math.min(startAt, MAX_AUTO_NUM_START)
   } else if (pPr['a:buBlip'] !== undefined) {
     bullet = { type: 'blip' }
     const embed = blipEmbedId(pPr['a:buBlip']?.['a:blip'])
@@ -3912,6 +3937,7 @@ function themeFontSource(ref: string | undefined): string | undefined {
 
 function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const rPr = r['a:rPr'] ?? {}
+  const redactLabel = readRedactLabel(rPr)
   const rawT = r['a:t']
   const text = decodeNumericCharRefs(
     typeof rawT === 'string'
@@ -4120,6 +4146,9 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(uAttr !== undefined && uAttr !== 'none' ? { underlineStyle: String(uAttr) } : {}),
     ...(uAttr === 'none' ? { underlineExplicitNone: true } : {}),
     ...(linkUnderline ? { underlineImplicit: true } : {}),
+    // "Withheld from the model": the label is read off our own extension in the
+    // rPr, never off the text. The words stay; only the model's view changes.
+    ...(redactLabel ? { redact: redactLabel } : {}),
     ...(hasStrike ? { strike: true, strikeStyle: String(strikeAttr) } : {}),
     ...(strikeAttr === 'noStrike' ? { strikeExplicitNone: true } : {}),
     ...(latinRaw ? { latinFont: String(latinRaw) } : {}),

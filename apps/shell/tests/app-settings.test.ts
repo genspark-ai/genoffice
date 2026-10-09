@@ -48,7 +48,7 @@ describe('readAppSettings', () => {
     expect(readAppSettings(settingsPath)).toEqual({ language: 'zh', onboardingSeen: true })
   })
 
-  it('round-trips the document page theme preference (#1811)', () => {
+  it('round-trips the document page theme preference (genoffice#1811)', () => {
     writeAppSetting(settingsPath, 'documentTheme', 'light')
     expect(readAppSettings(settingsPath).documentTheme).toBe('light')
     writeAppSetting(settingsPath, 'documentTheme', 'follow')

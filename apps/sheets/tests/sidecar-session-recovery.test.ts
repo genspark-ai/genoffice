@@ -186,6 +186,22 @@ describe('a sidecar crash no longer strands the grid on a dead session', () => {
     expect(reopenWorkbook).not.toHaveBeenCalled()
   })
 
+  it('retries after a re-open that produced no session', async () => {
+    // A cancelled prompt or a transient open failure must not use up the
+    // workbook's one automatic recovery.
+    const lazy = state()
+    noteSidecarCrash()
+    reopenWorkbook.mockResolvedValueOnce(null as never)
+    await expect(readSheetRangeMapped(lazy, 's1', RANGE, sheetMeta)).rejects.toThrow(SESSION_GONE)
+    expect(reopenWorkbook).toHaveBeenCalledTimes(1)
+
+    noteSidecarCrash()
+    const result = await readSheetRangeMapped(lazy, 's1', RANGE, sheetMeta)
+    expect(reopenWorkbook).toHaveBeenCalledTimes(2)
+    expect(result?.screen.cells).toEqual([{ row: 0, column: 0, value: 'ok' }])
+    expect(lazy.file.sessionId).toBe(FRESH)
+  })
+
   it('re-opens only once per workbook, so a second crash cannot loop', async () => {
     const lazy = state()
     noteSidecarCrash()

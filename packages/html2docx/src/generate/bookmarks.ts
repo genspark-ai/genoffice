@@ -3,8 +3,7 @@
 // (apps/html, apps/shell) must not fail on it.
 import { BookmarkEnd, BookmarkStart, bookmarkUniqueNumericIdGen } from 'docx'
 
-// Shares docx's document-wide counter so the numeric ids never collide with
-// the ones docx mints for its own Bookmark instances.
+// docx's document-wide counter, so ids never collide with its own Bookmarks.
 const nextBookmarkLinkId = bookmarkUniqueNumericIdGen()
 
 function bookmarkName(id) {
@@ -20,10 +19,7 @@ function bookmarkName(id) {
 
 function withBookmarks(children, bookmarks = []) {
   if (!bookmarks?.length) return children
-  // Sibling start/end markers around ONE copy of the content. docx only
-  // unwraps a top-level Bookmark child, so nesting one Bookmark inside
-  // another (the natural way to write this) drops the runs entirely and
-  // writes a raw arrow function into the XML.
+  // docx only unwraps a top-level Bookmark; nesting them drops the runs.
   const starts = []
   const ends = []
   for (const id of bookmarks) {
@@ -38,8 +34,6 @@ function mergeBookmarks(existing, incoming) {
   return [...new Set([...(existing || []), ...incoming])]
 }
 
-// A runs-only entry has nothing to recurse into, so the bookmark rides the
-// entry itself; the caller turns it into a paragraph-level bookmark.
 function carryInto(entry, bookmarks) {
   if (!entry || typeof entry !== 'object') return null
   if (Array.isArray(entry.children)) {
@@ -52,13 +46,8 @@ function carryInto(entry, bookmarks) {
   return null
 }
 
-/**
- * w:bookmarkStart is paragraph-scoped, so a bookmark collected on a
- * container (table cell, card, kpi cell) cannot wrap that container's
- * content. Move it onto the container's first paragraph, heading or list
- * item - the node kinds the in-page extractor anchors bookmarks to. Only
- * the path to that node is rebuilt; null means nothing was anchorable.
- */
+// w:bookmarkStart is paragraph-scoped: move a container's bookmark onto its
+// first paragraph/heading/list item. null means nothing was anchorable.
 function carryBookmarks(nodes, bookmarks) {
   if (!Array.isArray(nodes)) return null
   for (let index = 0; index < nodes.length; index++) {
@@ -71,6 +60,12 @@ function carryBookmarks(nodes, bookmarks) {
       const items = [...node.items]
       items[0] = { ...items[0], bookmarks: mergeBookmarks(items[0].bookmarks, bookmarks) }
       carried = { ...node, items }
+    } else if (node.rows?.[0]?.cells?.[0]) {
+      const { bookmarks: _, ...table } = carryTableBookmarks({
+        ...node,
+        bookmarks: mergeBookmarks(node.bookmarks, bookmarks),
+      })
+      carried = table
     } else {
       for (const key of ['children', 'cells']) {
         const kids = node[key]
@@ -94,11 +89,6 @@ function carryBookmarks(nodes, bookmarks) {
   return null
 }
 
-/**
- * A table renders as a w:tbl and cannot carry a paragraph-scoped bookmark
- * itself, so hand its bookmark to the first cell, which applies it to the
- * cell's own paragraph.
- */
 function carryTableBookmarks(node) {
   const first = node.rows?.[0]?.cells?.[0]
   if (!node.bookmarks?.length || !first) return node

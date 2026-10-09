@@ -47,6 +47,18 @@ function PdfIcon() {
   )
 }
 
+function HelpIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 240 240" fill="none" aria-hidden="true">
+      <rect width="240" height="240" rx="48" fill="#7C5CE0" />
+      <path
+        d="M120 176c-6.6 0-12-5.2-12-11.6 0-6.5 5.4-11.7 12-11.7s12 5.2 12 11.7c0 6.4-5.4 11.6-12 11.6zm-9.6-34.9c0-16.2 19.2-19.1 19.2-30.4 0-5.6-4.4-9.3-10.6-9.3-6.5 0-11 3.4-13.3 8.7-1.5 3.5-5.1 5.4-8.9 4.6l-8.7-1.8c-4.7-1-7.6-5.7-6.2-10.2C86.5 88.7 99.6 79 119.6 79c20.7 0 34.3 12.3 34.3 29.6 0 23.7-24.4 26.6-24.4 39.4 0 2.5-2.1 4.4-4.7 4.4h-10.1c-2.6 0-4.7-1.9-4.7-4.4z"
+        fill="#fff"
+      />
+    </svg>
+  )
+}
+
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 function HomeIcon() {
@@ -126,6 +138,7 @@ const KIND_ICON: Record<TabSummary['kind'], ReactElement> = {
   pdf: <PdfIcon />,
   markdown: <MarkdownIcon />,
   html: <HtmlIcon />,
+  help: <HelpIcon />,
 }
 
 /**
@@ -140,28 +153,12 @@ export function fileExtension(filePath: string): string {
   return dot > -1 ? name.slice(dot + 1) : ''
 }
 
-/**
- * True when the typed name already spells an extension.
- *
- * A trailing dot counts: "note." is a name the shell rejects outright (Windows
- * strips trailing dots, so it would land somewhere else), and this must not
- * paper over that by turning it into "note..md". A leading dot counts too, to
- * agree with fileExtension about where a name begins.
- */
+// a trailing dot counts: "note." must reach the shell's own rejection, not become "note..md"
 function hasExtension(name: string): boolean {
   return name.lastIndexOf('.') > -1
 }
 
-/**
- * The file name a tab rename actually commits.
- *
- * The input holds the whole name, extension included, because the shell owns
- * which extensions an app can open and only the shell may change one. Someone
- * who types a bare "Meeting" is not asking to drop the extension — they just
- * are not repeating it — so an extensionless name keeps the file's current one.
- * A name that does carry an extension is taken verbatim, which is what lets
- * note.md become note.txt and back.
- */
+/** An extensionless name keeps the current extension; a typed one is taken verbatim (note.md -> note.txt). */
 export function renamedFileName(currentPath: string, typedName: string): string {
   if (hasExtension(typedName)) return typedName
   const ext = fileExtension(currentPath)
@@ -190,9 +187,6 @@ export function TabBar() {
     const tab = tabsRef.current.find((tb) => tb.id === r.id)
     const value = r.value.trim()
     if (!tab?.filePath || !value) return
-    // a name typed without an extension keeps the file's current one; see
-    // renamedFileName. Compared against the resolved name so retyping the base
-    // half of the current title is a no-op rather than a pointless IPC.
     const newName = renamedFileName(tab.filePath, value)
     if (newName === tab.title) return
     void window.aiOffice.renameFile(tab.filePath, newName).then((result) => {
@@ -508,9 +502,7 @@ export function TabBar() {
                 // the input mounts and autofocuses inside this dispatch; the
                 // default mousedown focus step would blur it straight away
                 event.preventDefault()
-                // the whole name, extension included: the shell owns which
-                // extensions an app can open, so only it may change one. A
-                // name typed without an extension keeps the current one.
+                // whole name, extension included: only the shell may change an extension
                 setRenaming({ id: tab.id, value: tab.title })
               }}
               onPointerDown={(event) => {

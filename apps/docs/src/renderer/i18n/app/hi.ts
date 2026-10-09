@@ -451,6 +451,7 @@ export const hi = {
   appParaSpecialFirstLine: 'पहली पंक्ति',
   appParaSpecialHanging: 'हैंगिंग',
   appParaBy: 'द्वारा',
+  appParaUnitChars: 'वर्ण',
   appInsertEquation: 'समीकरण सम्मिलित करें',
   appLatexPlaceholder: 'जैसे x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'पूर्वावलोकन देखने के लिए LaTeX लिखें',

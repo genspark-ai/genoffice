@@ -47,8 +47,10 @@ export interface FormatShortcutKey {
 }
 
 /// Ribbon command for a keydown, or null when it is not a format shortcut.
-export function formatShortcutCommand(event: FormatShortcutKey): string | null {
-  if (event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey) {
+/// The mac border chords need `isMac`: without the gate the Windows key
+/// combined with Alt would trigger borders on Windows and Linux too.
+export function formatShortcutCommand(event: FormatShortcutKey, isMac = false): string | null {
+  if (isMac && event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey) {
     const preset = MAC_BORDER_SHORTCUTS[event.code]
     return preset ? `border:${preset}` : null
   }

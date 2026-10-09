@@ -15,7 +15,6 @@ export const ru = {
   ribbonCollapse: 'Свернуть ленту',
   ribbonExpand: 'Развернуть ленту',
   ribbonCompact: 'Компактная лента (только значки)',
-  ribbonExpandFull: 'Развернуть ленту',
   ribbonTabView: 'Вид',
   ribbonTabTableDesign: 'Конструктор таблиц',
   ribbonTabTableLayout: 'Макет таблицы',

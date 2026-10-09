@@ -32,7 +32,7 @@ test('Jev reranking lives in the AI Media & Search pane, saves with it, and repo
     // the footer names the first failing block and its provider; which one comes
     // first depends on whether this machine is signed in to Genspark
     await expect(page.locator('.set-pane-actions .set-ai-status.err')).toHaveText(
-      /^(Web search · Genspark|Local file search · TypeSafe): .+/,
+      /^(Web search · Genspark|Local file search · Jev \(TypeSafe API\)): .+/,
     )
     await page.screenshot({ path: screenshotPath('settings-media-search-test') })
 

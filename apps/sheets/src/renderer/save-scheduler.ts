@@ -1,15 +1,34 @@
 /**
- * Shared gate for the two periodic workbook savers in App.tsx: the AutoSave
- * tick ('save', every 30s and on window blur) and the crash-recovery copy
- * tick ('recovery', every 30s). They used to carry independent in-flight
- * flags, so with AutoSave on, a dirty workbook could start BOTH saves
- * concurrently; in the main process the first finisher tears the workbook
- * session down while the second is still reading, and the survivor reports
- * "Unknown workbook session." (save failed) although the file was written.
- * One gate: at most one save at a time. With AutoSave on, its real save
- * flushes the journal so the recovery tick no-ops; with AutoSave off, the
- * 30s crash-recovery guarantee is unchanged. Pure so it can be unit tested.
+ * One workbook save at a time. Two saves in flight race in the main process:
+ * the first finisher tears the workbook session down while the second is
+ * still reading, and the survivor fails with "Unknown workbook session."
+ * although the file was written. Manual saves queue behind the running one;
+ * the periodic ticks below skip and retry on their next wake-up.
  */
+export interface SaveGate {
+  readonly busy: boolean
+  run<T>(task: () => Promise<T>): Promise<T>
+}
+
+export function createSaveGate(): SaveGate {
+  let inFlight: Promise<unknown> | null = null
+  return {
+    get busy() {
+      return inFlight !== null
+    },
+    run(task) {
+      const next = (inFlight ?? Promise.resolve()).catch(() => undefined).then(task)
+      inFlight = next
+      next
+        .finally(() => {
+          if (inFlight === next) inFlight = null
+        })
+        .catch(() => undefined)
+      return next
+    },
+  }
+}
+
 export interface SaveTickState {
   /** a save of either kind is currently running */
   saveInFlight: boolean

@@ -25,15 +25,25 @@ let updateWin: BrowserWindow | null = null
 let currentState: UpdateUiState | null = null
 let actions: UpdateActions | null = null
 let ipcRegistered = false
-/** the shell window the card belongs to; also the state-changed listener */
+let parentGetter: () => BrowserWindow | null = () => null
+/** fallback when no getter was registered (tests, direct callers) */
 let lastParent: BrowserWindow | null = null
 // distinguishes programmatic close (install/quit) from the user closing the
 // window some other way (Alt+F4…), which counts as "later"
 let closingProgrammatically = false
 
+/** The shell window is recreated on macOS after close, so it is resolved per call, never cached. */
+export function setUpdateParentWindow(getter: () => BrowserWindow | null): void {
+  parentGetter = getter
+}
+
+function parentWindow(): BrowserWindow | null {
+  const win = parentGetter() ?? lastParent
+  return win && !win.isDestroyed() ? win : null
+}
+
 function broadcastState(): void {
-  if (lastParent && !lastParent.isDestroyed())
-    lastParent.webContents.send(UPDATE_CHANNELS.stateChanged, currentState)
+  parentWindow()?.webContents.send(UPDATE_CHANNELS.stateChanged, currentState)
 }
 
 /**
@@ -58,8 +68,9 @@ function registerSettingsIpc(): void {
     if (updateWin && !updateWin.isDestroyed()) {
       updateWin.show()
       updateWin.focus()
-    } else if (lastParent && !lastParent.isDestroyed()) {
-      showUpdateWindow(lastParent, currentState, actions ?? dummyActions)
+    } else {
+      const parent = parentWindow()
+      if (parent) showUpdateWindow(parent, currentState, actions ?? dummyActions)
     }
     if (currentState.phase === 'available' || currentState.phase === 'error') actions?.onDownload()
     return true
@@ -159,6 +170,13 @@ export function pushUpdateState(patch: Partial<UpdateUiState>): void {
   if (updateWin && !updateWin.isDestroyed()) {
     updateWin.webContents.send(UPDATE_CHANNELS.changed, currentState)
   }
+  broadcastState()
+}
+
+/** Forget the known update (channel switch): About stops offering it and open-for-update answers false. */
+export function clearUpdateState(): void {
+  closeUpdateWindow()
+  currentState = null
   broadcastState()
 }
 

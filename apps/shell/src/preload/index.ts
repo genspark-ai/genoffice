@@ -131,6 +131,13 @@ const homeApi: HomeApi = {
   async starred(query) {
     return asRecentPage(await ipcRenderer.invoke(HOME_CHANNELS.starred, query))
   },
+  async starredGroups() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.starredGroups)
+    return Array.isArray(result) ? result.filter((g): g is string => typeof g === 'string') : []
+  },
+  async setStarredGroup(paths, group) {
+    await ipcRenderer.invoke(HOME_CHANNELS.setStarredGroup, paths, group)
+  },
   async statPaths(paths) {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.statPaths, paths)
     return Array.isArray(result) ? (result as RecentEntry[]) : []
@@ -138,6 +145,9 @@ const homeApi: HomeApi = {
   async toggleStar(path) {
     if (typeof path !== 'string' || !path) throw new Error('Invalid path.')
     await ipcRenderer.invoke(HOME_CHANNELS.toggleStar, path)
+  },
+  async openHelp() {
+    await ipcRenderer.invoke(HOME_CHANNELS.openHelp)
   },
   async openPath(path) {
     if (typeof path !== 'string' || !path) throw new Error('Invalid path.')
@@ -166,6 +176,9 @@ const homeApi: HomeApi = {
   },
   async removeRecent(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.removeRecent, paths)
+  },
+  async unstarPaths(paths) {
+    await ipcRenderer.invoke(HOME_CHANNELS.unstarPaths, paths)
   },
   async revealPath(path) {
     if (typeof path !== 'string' || !path) throw new Error('Invalid path.')
@@ -255,6 +268,11 @@ const homeApi: HomeApi = {
   async accountLogin() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.accountLogin)
     return result === true
+  },
+  onOpenSettings(handler) {
+    const listener = (_event: IpcRendererEvent, target: { section: string }) => handler(target)
+    ipcRenderer.on(HOME_CHANNELS.openSettings, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.openSettings, listener)
   },
   onAccountLogin(handler) {
     const listener = (_event: IpcRendererEvent, ev: AccountLoginEvent) => handler(ev)
@@ -474,6 +492,11 @@ const homeApi: HomeApi = {
     await ipcRenderer.invoke(HOME_CHANNELS.openCloudProject, projectUrl)
   },
   // AI settings channels are registered once by the shell's aggregated docs handlers
+  onAiSettingsChanged(handler) {
+    const listener = () => handler()
+    ipcRenderer.on('ai:settings-changed', listener)
+    return () => ipcRenderer.removeListener('ai:settings-changed', listener)
+  },
   async getAiSettings() {
     return (await ipcRenderer.invoke('ai:get-settings')) as AiSettings
   },

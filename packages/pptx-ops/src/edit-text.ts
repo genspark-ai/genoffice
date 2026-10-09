@@ -101,6 +101,9 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
           fontSize: r.fontSize ?? oldRun?.fontSize,
           fontFamily: r.fontFamily ?? oldRun?.fontFamily,
           color: r.color ?? oldRun?.color,
+          // three states, like `link` above: absent keeps the original mark, an
+          // empty string or null clears it, a string withholds under that name
+          redact: r.redact === undefined ? oldRun?.redact : r.redact || undefined,
         }
         // Super/subscript: the editor can only express three states — super/sub/none
         // (±30/-25/0) — so detect changes by sign; a different magnitude with the same sign

@@ -58,7 +58,7 @@ export const it = {
   ribbonGroupSlides: 'Diapositive',
   ribbonNewSlide: 'Nuova Diapositiva',
   ribbonNewSlideTip:
-    'Nuova diapositiva vuota (mantiene lo sfondo del layout della diapositiva corrente; ⌘M)',
+    'Nuova diapositiva vuota (mantiene lo sfondo del layout della diapositiva corrente)',
   ribbonChooseLayout: 'Scegli Layout',
   ribbonChooseLayoutNew: 'Nuova diapositiva con layout',
   ribbonChooseLayoutChange: 'Cambia layout della diapositiva corrente',

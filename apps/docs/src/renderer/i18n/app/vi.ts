@@ -449,6 +449,7 @@ export const vi = {
   appParaSpecialFirstLine: 'Dòng đầu',
   appParaSpecialHanging: 'Treo',
   appParaBy: 'Theo',
+  appParaUnitChars: 'ký tự',
   appInsertEquation: 'Chèn công thức',
   appLatexPlaceholder: 'ví dụ: x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Nhập mã LaTeX để xem trước',

@@ -157,6 +157,28 @@ describe('missing w:start default', () => {
     )
     expect(markers).toEqual(['0.', '1.'])
   })
+
+  it('letter formats clamp a missing or zero w:start to the first letter instead of an empty marker', async () => {
+    const letters = NO_START_NUMBERING.replace('w:val="decimal"', 'w:val="lowerLetter"')
+    const li = (text: string) =>
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' +
+      `<w:r><w:t>${text}</w:t></w:r></w:p>`
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: li('a') + li('b'), numberingXml: letters }),
+    )
+    const markers = computeListMarkers(
+      [
+        { numId: '1', ilvl: 0 },
+        { numId: '1', ilvl: 0 },
+      ],
+      doc.numbering,
+    )
+    // the counter still starts at 0 (as for decimal); only the glyph is floored, like toRoman
+    expect(markers[0]).toBe('a.')
+    expect(markers.every((m) => m !== '.')).toBe(true)
+    expect(formatNumber(0, 'lowerLetter')).toBe('a')
+    expect(formatNumber(-3, 'upperLetter')).toBe('A')
+  })
 })
 
 describe('greek letter formats', () => {

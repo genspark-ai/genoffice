@@ -3,6 +3,8 @@ import { t } from '../i18n/locale'
 import type { ElementEntry, ParseMap } from '../document/parse-map'
 import type { HtmlOp, OpError } from '../document/ops'
 import { lineOf } from '../document/match'
+import { buildProjection, type RedactionProjection } from './redact'
+import { redactGuardForOps } from './redact-guard'
 import {
   briefPinEdit,
   briefSummary,
@@ -170,17 +172,22 @@ const OUTLINE_SKIP = new Set([
   'noscript',
 ])
 
-function textPreview(text: string, e: ElementEntry): string {
-  const inner = text
-    .slice(e.inner[0], e.inner[1])
+function textPreview(proj: RedactionProjection, e: ElementEntry): string {
+  const inner = proj
+    .projectRange(e.inner[0], e.inner[1])
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   return inner.length > PREVIEW_CHARS ? `${inner.slice(0, PREVIEW_CHARS)}…` : inner
 }
 
-function attrsPreview(text: string, e: ElementEntry): string {
-  const tag = text.slice(e.startTag[0], e.startTag[1])
+/**
+ * A start tag with its withheld attribute values already replaced — `src` and
+ * `href` are exactly where a key or a signed URL tends to live, and the outline
+ * prints them.
+ */
+function attrsPreview(proj: RedactionProjection, e: ElementEntry): string {
+  const tag = proj.projectRange(e.startTag[0], e.startTag[1])
   const id = /\sid\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
   const cls = /\sclass\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
   const src = /\s(?:src|href)\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1]
@@ -192,8 +199,14 @@ function attrsPreview(text: string, e: ElementEntry): string {
   return parts.join('')
 }
 
+/**
+ * The projection is required rather than optional on purpose: a call site that
+ * forgot it would print the reader's secrets into the outline, and nothing in
+ * the type would say so. Line numbers are the *view's*, because that is the text
+ * the model is shown and the numbering it will read.
+ */
 export function buildOutline(
-  text: string,
+  proj: RedactionProjection,
   map: ParseMap,
   opts: { depth?: number; fromSid?: number; maxLines?: number } = {},
 ): string {
@@ -218,13 +231,13 @@ export function buildOutline(
       skipped++
       continue
     }
-    const l1 = lineOf(text, e.range[0])
-    const l2 = lineOf(text, Math.max(e.range[0], e.range[1] - 1))
+    const l1 = lineOf(proj.view, proj.toViewOffset(e.range[0]))
+    const l2 = lineOf(proj.view, proj.toViewOffset(Math.max(e.range[0], e.range[1] - 1)))
     const where = l1 === l2 ? `L${l1}` : `L${l1}-L${l2}`
     const indent = '  '.repeat(Math.max(0, rel - 1))
-    const preview = OUTLINE_SKIP.has(e.tag) ? '' : textPreview(text, e)
+    const preview = OUTLINE_SKIP.has(e.tag) ? '' : textPreview(proj, e)
     lines.push(
-      `${where.padEnd(11)} sid=${String(e.sid).padEnd(4)} ${indent}${e.tag}${attrsPreview(text, e)}${preview ? `  "${preview}"` : ''}`,
+      `${where.padEnd(11)} sid=${String(e.sid).padEnd(4)} ${indent}${e.tag}${attrsPreview(proj, e)}${preview ? `  "${preview}"` : ''}`,
     )
   }
   if (skipped > 0)
@@ -602,23 +615,27 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
       markSeen()
       const text = access.getText()
       const map = access.getMap()
+      // one projection per read, shared by every surface below: the file
+      // preview, the outline, and the selected element
+      const proj = buildProjection(text, map)
+      const view = proj.view
       const path = access.getFilePath()
-      const title = /<title[^>]*>([^<]*)<\/title>/i.exec(text)?.[1]?.trim()
-      const lines = text.split('\n').length
+      const title = /<title[^>]*>([^<]*)<\/title>/i.exec(view)?.[1]?.trim()
+      const lines = view.split('\n').length
       const head = [
         '## Document',
-        `file: ${path ? path.replace(/^.*[/\\]/, '') : '(untitled, not saved yet)'}  (${text.length.toLocaleString()} chars, ${lines} lines, version ${access.getVersion()})`,
+        `file: ${path ? path.replace(/^.*[/\\]/, '') : '(untitled, not saved yet)'}  (${view.length.toLocaleString()} chars, ${lines} lines, version ${access.getVersion()})`,
         title ? `title: ${title}` : '',
-        text.trim()
+        view.trim()
           ? ''
           : 'The document is empty: plan_page (mode new) or write_document creates it.',
       ].filter(Boolean)
-      let outline = buildOutline(text, map, { depth: 2, maxLines: 60 })
+      let outline = buildOutline(proj, map, { depth: 2, maxLines: 60 })
       const selectedSid = access.getSelectedSid()
       const selected = selectedSid !== null ? map.bySid.get(selectedSid) : undefined
       let selection = ''
       if (selected) {
-        const source = text.slice(selected.range[0], selected.range[1])
+        const source = proj.projectRange(selected.range[0], selected.range[1])
         const clipped =
           source.length > SELECTION_MAX_CHARS
             ? `${source.slice(0, SELECTION_MAX_CHARS)}\n… (truncated; read_source sid=${selected.sid} for the rest)`
@@ -656,12 +673,21 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
               summary: t('aiToolOutline'),
             }
           }
-          const out = buildOutline(text, map, { depth, fromSid, maxLines: 400 })
+          const out = buildOutline(buildProjection(text, map), map, {
+            depth,
+            fromSid,
+            maxLines: 400,
+          })
           return { output: out || '(empty document)', summary: t('aiToolOutline') }
         }
         case 'read_source': {
           markSeen()
           const page = Number.isInteger(call.input.page) ? Math.max(0, Number(call.input.page)) : 0
+          // Line numbers the model sends address the text it was shown, which is
+          // the projection — a 40-character key shown as an 11-character marker
+          // moves every line after it. So the view is what we resolve lines
+          // against, and the raw offsets come back through the projection.
+          const proj = buildProjection(text, map)
           let from = 0
           let to = text.length
           if (Number.isInteger(call.input.sid)) {
@@ -677,16 +703,18 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
             Number.isInteger(call.input.start_line) ||
             Number.isInteger(call.input.end_line)
           ) {
-            const lines = text.split('\n')
+            const lines = proj.view.split('\n')
             const s = Math.max(1, Number(call.input.start_line) || 1)
             const e = Math.min(lines.length, Number(call.input.end_line) || lines.length)
-            from = lines.slice(0, s - 1).join('\n').length + (s > 1 ? 1 : 0)
-            to = lines.slice(0, e).join('\n').length
+            const viewFrom = lines.slice(0, s - 1).join('\n').length + (s > 1 ? 1 : 0)
+            const viewTo = lines.slice(0, e).join('\n').length
+            from = proj.toRawOffset(viewFrom)
+            to = proj.toRawOffset(viewTo)
           }
-          const slice = text.slice(from, to)
+          const slice = proj.projectRange(from, to)
           const pages = Math.max(1, Math.ceil(slice.length / READ_PAGE_CHARS))
           const chunk = slice.slice(page * READ_PAGE_CHARS, (page + 1) * READ_PAGE_CHARS)
-          const startLine = lineOf(text, from + page * READ_PAGE_CHARS)
+          const startLine = lineOf(proj.view, proj.toViewOffset(from) + page * READ_PAGE_CHARS)
           const body = numbered(chunk, startLine)
           const footer =
             pages > 1 ? `\n(page ${page + 1} of ${pages}; pass page=${page + 1} for more)` : ''
@@ -707,6 +735,21 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
             summary: t('aiToolApplyOpsFailed'),
           })
           if (stale()) return staleResult()
+          // A span withheld from the model is a mark over real characters, so an
+          // op reaching one destroys the reader's data silently. Checked before
+          // anything is compiled or applied, so a refusal changes nothing.
+          const refusal = redactGuardForOps(
+            ops,
+            buildProjection(access.getText(), access.getMap()),
+            access.getMap(),
+          )
+          if (refusal) {
+            return {
+              output: `0 of ${ops.length} ops applied — ${refusal.reason}`,
+              isError: true,
+              summary: t('aiToolApplyOpsFailed'),
+            }
+          }
           const truncatedAt = findTruncatedDataUrl(ops as HtmlOp[])
           if (truncatedAt >= 0) {
             return {
@@ -822,8 +865,11 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
           const spec: BriefPlanSpec = {
             mode,
             notes: str(call.input.notes),
+            // the brief writer is the model: it reads the projection, not the source
             page:
-              mode === 'restyle' || mode === 'extract' ? text.slice(0, PAGE_HEAD_CHARS) : undefined,
+              mode === 'restyle' || mode === 'extract'
+                ? buildProjection(text, map).view.slice(0, PAGE_HEAD_CHARS)
+                : undefined,
           }
           return planBrief(spec, currentSignal).then(async (drafted) => {
             if (!drafted.ok)
@@ -915,11 +961,17 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
   }
 }
 
-export function createHtmlSkill(access: HtmlDocAccess, systemPrompt: string): AgentSkill {
+/** A live prompt is read on every request, so it can follow the document. */
+export function createHtmlSkill(
+  access: HtmlDocAccess,
+  systemPrompt: string | { readonly systemPrompt: string },
+): AgentSkill {
   const core = createHtmlSkillCore(access)
   return {
     id: 'html',
-    systemPrompt,
+    get systemPrompt() {
+      return typeof systemPrompt === 'string' ? systemPrompt : systemPrompt.systemPrompt
+    },
     tools: AGENT_TOOLS,
     buildContext: () => core.buildContext(),
     executeTool: (call, signal) => core.executeTool(call, signal),

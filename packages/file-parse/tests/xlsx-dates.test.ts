@@ -127,6 +127,9 @@ describe('formatSerial', () => {
     expect(secs).toMatchObject({ elapsed: true, elapsedUnit: 's' })
     expect(formatSerial(0.0625, secs, false)).toBe('5400')
     expect(formatSerial(1.5, classifyFormatCode('[h]:mm:ss')!, false)).toBe('36:00:00')
+    expect(formatSerial(1.5, classifyFormatCode('[h]:mm')!, false)).toBe('36:00')
+    expect(formatSerial(1.5, classifyFormatCode('[h]')!, false)).toBe('36')
+    expect(formatSerial(1.5, classifyFormatCode('[hh]:mm')!, false)).toBe('36:00')
   })
 })
 

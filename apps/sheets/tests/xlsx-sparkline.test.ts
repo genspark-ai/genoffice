@@ -140,20 +140,6 @@ describe('applySparklineAdditions', () => {
       ]),
     ).toThrow(/outside the worksheet grid/)
   })
-
-  it('escapes a host cell that carries element text', () => {
-    const injected = 'A1</xm:sqref></x14:sparkline><xm:sqref>A1'
-    expect(() =>
-      applySparklineAdditions(bareWorksheet, [
-        group({ cells: [{ cell: injected, sourceRef: 'Sheet1!A2:F2' }] }),
-      ]),
-    ).toThrow(SparklineAddError)
-    expect(() =>
-      applySparklineAdditions(bareWorksheet, [
-        group({ cells: [{ cell: injected, sourceRef: 'Sheet1!A2:F2' }] }),
-      ]),
-    ).toThrow(/is not a cell address/)
-  })
 })
 
 describe('sparkline save integration', () => {

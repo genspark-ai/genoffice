@@ -199,3 +199,39 @@ describe('pattern shading display blend', () => {
     expect(format.shadingDisplay).toBeUndefined()
   })
 })
+
+describe('character-unit first-line indents (#1892)', () => {
+  // Word's output for a two-character first line in a 10.5pt Normal style
+  const CHARS_RAW = '<w:pPr><w:ind w:firstLineChars="200" w:firstLine="420"/></w:pPr>'
+  const PARSED: ParaFormat = { indentFirstLine: 420, charIndents: { firstLine: 200 } }
+
+  it('the writer emits the character unit next to its twips twin', () => {
+    const out = mergePPrFormat('<w:pPr/>', {
+      indentFirstLine: 420,
+      charIndents: { firstLine: 200 },
+    })
+    expect(out).toContain('w:firstLineChars="200"')
+    expect(out).toContain('w:firstLine="420"')
+  })
+
+  it('an untouched parse → merge round trip keeps the raw bytes', () => {
+    expect(mergePPrFormat(CHARS_RAW, PARSED)).toBe(CHARS_RAW)
+  })
+
+  it('editing within the character unit re-writes it instead of cancelling', () => {
+    // 200 → 240 chars: the unit still lays out, so no w:firstLineChars="0"
+    const out = mergePPrFormat(CHARS_RAW, {
+      indentFirstLine: 480,
+      charIndents: { firstLine: 240 },
+    })
+    expect(out).toContain('w:firstLineChars="240"')
+    expect(out).not.toContain('w:firstLineChars="0"')
+    expect(out).toContain('w:firstLine="480"')
+  })
+
+  it('dropping the character unit cancels it so Word keeps the absolute indent', () => {
+    const out = mergePPrFormat(CHARS_RAW, { indentFirstLine: 720 }, PARSED)
+    expect(out).toContain('w:firstLineChars="0"')
+    expect(out).toContain('w:firstLine="720"')
+  })
+})

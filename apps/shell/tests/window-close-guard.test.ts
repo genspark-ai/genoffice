@@ -226,6 +226,7 @@ describe('failure in the prompt chain', () => {
     await flush()
     expect(consoleError).toHaveBeenCalled()
     expect(win.destroyed).toBe(false)
+    expect(resetSheetsShuttingDown).toHaveBeenCalled()
     // the flag was released, so a later close prompts again instead of being
     // swallowed by the debounce
     expect(win.requestClose()).toBe(true)

@@ -63,7 +63,7 @@ import { borderDrawnPx, borderTotalPt, collapsedEdgePx } from './border-metrics'
 import { parseRunBorderAttr } from './run-border'
 import { parseTextOutlineAttr } from './text-outline'
 import { charScaleXAttr, parseGlowAttr, parseTextEffectAttr } from './text-effects'
-import { shapeWrapOf } from './floating-z-order'
+import { SHAPE_INLINE_WRAP, shapeWrapOf } from './floating-z-order'
 
 /** minimal ProseMirror JSON shapes */
 export interface PmMark {
@@ -155,6 +155,10 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     indentLeft: format?.indentLeft ?? null,
     indentRight: format?.indentRight ?? null,
     indentFirstLine: format?.indentFirstLine ?? null,
+    // only the paragraph's OWN character unit becomes direct formatting — a
+    // a character-unit indent inherited from the style chain shows through and
+    // must not be copied onto the pPr as direct formatting
+    indentFirstLineChars: format?.directCharIndents?.firstLine ?? null,
     spaceBefore: format?.spaceBefore ?? null,
     spaceAfter: format?.spaceAfter ?? null,
     spaceBeforeAuto: format?.spaceBeforeAuto ?? null,
@@ -171,6 +175,7 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     borderReset: format?.borderReset ?? null,
     borders: format?.borders ?? null,
     borderLines: format?.borderLines ? JSON.stringify(format.borderLines) : null,
+    borderPad: format?.borderPad ? JSON.stringify(format.borderPad) : null,
     tabStops: format?.tabStops ? JSON.stringify(format.tabStops) : null,
     dropCap: format?.dropCap ? JSON.stringify(format.dropCap) : null,
     frame: format?.frame ? JSON.stringify(format.frame) : null,
@@ -227,9 +232,11 @@ function sectionWidthBudget(
   return { avail, fit: fit > 0 ? fit : avail, paper }
 }
 
-/** centered tables spill both margins, so their growth bound is the paper width */
+/** centered tables (w:jc or w:tblpXSpec) spill both margins, so their growth bound is the paper width */
 function budgetAvail(model: TableModel, budget: TableWidthBudget): number {
-  return model.align === 'center' ? budget.paper : budget.avail
+  return model.align === 'center' || model.floatPos?.xSpec === 'center'
+    ? budget.paper
+    : budget.avail
 }
 
 /** Cap declared row heights (incl. nested tables); returns the input model when nothing exceeds the cap */
@@ -424,6 +431,36 @@ export function cellSpacingGridSharesTwips(colCount: number, spacingTwips: numbe
   )
 }
 
+/** drawn px of the vertical cell borders per column of a w:tblCellSpacing table: Word
+ * draws them outside the cell box (probe: centre lines 0.25 pt out), so the text keeps
+ * its full margin inset and the box grows by the border on each side */
+export function cellSpacingBorderPx(colCount: number, borders: TableModel['borders']): number[] {
+  const n = Math.max(1, colCount)
+  const inside = borderDrawnPx(borders?.insideV)
+  return Array.from(
+    { length: n },
+    (_, i) =>
+      (i === 0 ? borderDrawnPx(borders?.left) : inside) +
+      (i === n - 1 ? borderDrawnPx(borders?.right) : inside),
+  )
+}
+
+/** a left-aligned explicit dxa w:tblW without w:tblLayout fixed is drawn at its declared
+ * widths even past the paper edge (Word clips there); centred and right-aligned ones
+ * still compress to the paper */
+export function holdsDeclaredWidth(model: TableModel): boolean {
+  return (
+    model.dxaWidth === true &&
+    !model.autoLayout &&
+    !model.widthPct &&
+    !model.floatSide &&
+    !model.bidiVisual &&
+    model.align !== 'center' &&
+    model.align !== 'right' &&
+    !!model.colWidthsTwips?.length
+  )
+}
+
 /** side cell margins of a table's own cells (twips) */
 function sideMarginTwips(model: TableModel): number {
   const mar = model.cellMarTwips
@@ -573,9 +610,10 @@ export function expandAutofitColWidths(
     // border box hangs by the side cell margins - the left one is already in
     // the legacy indent shift, the right one is added here (centered tables
     // shift nothing and hang on both sides). A nested table sits inside the
-    // cell padding, so it never hangs. An explicit dxa tblW is honoured as
-    // long as the table stays on the paper (measured: landscape and portrait
-    // forms 7-22% wider than the column, negative tblInd, drawn at full width).
+    // cell padding, so it never hangs. An explicit dxa tblW is honoured
+    // (measured: landscape and portrait forms 7-22% wider than the column,
+    // negative tblInd, drawn at full width; a left-aligned 531 pt grid on a
+    // 451 pt column ran 8 pt past the paper edge, clipped, rows single-line).
     const sideMar = sideMarginTwips(model)
     const leftAligned = model.align !== 'center' && model.align !== 'right'
     const legacyHang = !legacy
@@ -585,7 +623,10 @@ export function expandAutofitColWidths(
         : sideMar
     const box = fit - (leftAligned ? (model.indentTwips ?? 0) : 0) + legacyHang
     const hang = leftAligned ? Math.min(model.indentTwips ?? 0, 0) : 0
-    const explicitDxa = !model.autoLayout && !nested && declared + hang <= budget
+    const explicitDxa =
+      !model.autoLayout &&
+      !nested &&
+      ((model.dxaWidth && leftAligned && !model.floatSide) || declared + hang <= budget)
     const kept =
       resolvedPct || nested
         ? target
@@ -672,7 +713,7 @@ function displayTable(
       options.legacyTableIndent ?? false,
       options.defaultRun,
     )
-    t = clampTableColWidths(t, budget.paper)
+    if (!holdsDeclaredWidth(t)) t = clampTableColWidths(t, budget.paper)
   }
   return t
 }
@@ -773,6 +814,7 @@ function blockToPmNode(
           blockRevision: block.blockRevision ?? null,
           blockType: block.type,
           styleId: block.styleId ?? null,
+          pageBreakBefore: block.format?.pageBreakBefore ?? false,
           label: block.label ?? block.type,
           previewText: block.previewText ?? '',
           imageDataUrl: block.imageDataUrl ?? null,
@@ -791,6 +833,11 @@ function blockToPmNode(
           imageParagraphIndentFirstLine: block.imageParagraphIndentFirstLine ?? null,
           imageParagraphSpaceBefore: block.imageParagraphSpaceBefore ?? null,
           imageParagraphSpaceAfter: block.imageParagraphSpaceAfter ?? null,
+          imageParagraphLineTwips: block.imageParagraphLineTwips ?? null,
+          imageParagraphLineRule: block.imageParagraphLineRule ?? null,
+          imageMarkFont: block.imageMarkFont ?? null,
+          imageMarkFontEastAsia: block.imageMarkFontEastAsia ?? null,
+          imageMarkSizeHalfPoints: block.imageMarkSizeHalfPoints ?? null,
           imageEffectExtentTopPx: block.imageEffectExtentTopPx ?? null,
           imageEffectExtentBottomPx: block.imageEffectExtentBottomPx ?? null,
           imageAlign: block.imageAlign ?? null,
@@ -804,6 +851,7 @@ function blockToPmNode(
           imageOffsetXEmu: block.imageOffsetXEmu ?? null,
           imageOffsetYEmu: block.imageOffsetYEmu ?? null,
           imageRelV: block.imageRelV ?? null,
+          imageRelH: block.imageRelH ?? null,
           imageAnchorLocked: block.imageAnchorLocked ?? false,
           imagePosH: block.imagePosH ?? null,
           imagePosV: block.imagePosV ?? null,
@@ -918,7 +966,7 @@ export function tableModelToPmNode(
       legacyIndent,
       defaults,
     )
-    model = clampTableColWidths(model, paperTwips ?? availTwips)
+    if (!holdsDeclaredWidth(model)) model = clampTableColWidths(model, paperTwips ?? availTwips)
   }
   const positions = model.rows.map((row) => {
     let column = 0
@@ -961,11 +1009,16 @@ export function tableModelToPmNode(
     (model.floatPos?.horzAnchor === 'page' ? 0 : floatX) +
     (model.colWidthsTwips?.reduce((a, b) => a + b, 0) ?? 0) +
     (model.floatPos?.distanceTwips?.right ?? 0)
+  // a short table hung a positive w:tblpY below its anchor keeps floating: Word
+  // fills that band with the anchor paragraph's lines, which only the float
+  // (shape-outside inset) reproduces
+  const bandFloat = (model.floatPos?.yTwips ?? 0) > 0 && minHeightTwips <= 6480
   const floatNoSideRoom =
     (model.floatPos?.vertAnchor ?? 'text') === 'text' &&
     (model.floatPos?.horzAnchor === 'page' ? floatX <= 1440 : floatX <= 720) &&
     fitTwips != null &&
-    floatSpan > fitTwips - FLOAT_SIDE_MIN_TWIPS
+    floatSpan > fitTwips - FLOAT_SIDE_MIN_TWIPS &&
+    !bandFloat
   const tblFloatSuppressed = tblFloatSource !== null && (minHeightTwips > 12960 || floatNoSideRoom)
   const tblFloat = tblFloatSuppressed ? null : tblFloatSource
   const table: PmNode = {
@@ -1006,6 +1059,7 @@ export function tableModelToPmNode(
       tblAutoFit: model.autoFit ?? (model.autoLayout ? 'contents' : 'fixed'),
       tblAutoFitEdited: false,
       tblFixedLayout: model.fixedLayout ?? false,
+      tblDxaWidth: model.dxaWidth ?? false,
       // w:tblpPr supersedes w:tblInd: a float keeps only the legacy cell-margin hang
       indentTwips:
         tblFloat && !(legacyIndent && marginHungFloat(model)) ? null : (model.indentTwips ?? null),
@@ -1478,6 +1532,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
           // recovered LaTeX makes parsed formulas re-editable; null = atom only
           latex: ommlToLatex(run.math.omml),
           text: run.text,
+          sizeHalfPoints: run.sizeHalfPoints ?? null,
         },
       })
       continue
@@ -1530,6 +1585,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
           offsetXEmu: run.image.offsetXEmu ?? null,
           offsetYEmu: run.image.offsetYEmu ?? null,
           relV: run.image.relV ?? null,
+          relH: run.image.relH ?? null,
           wrapDistTopEmu: run.image.wrapDistTopEmu ?? null,
           wrapDistBottomEmu: run.image.wrapDistBottomEmu ?? null,
           wrapDistLeftEmu: run.image.wrapDistLeftEmu ?? null,
@@ -2178,11 +2234,14 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
               xml = applyShapeZOrderAt(xml, location, change.z ?? 0)
             }
           }
-          if (textboxPositionChanged) {
+          const mirrored = node.attrs?.imageWrap as ImageWrap | typeof SHAPE_INLINE_WRAP | null
+          // an inline shape has no position: a drag that preceded the inline
+          // choice must not rebuild the anchor applyShapeWrapAt just removed
+          if (textboxPositionChanged && mirrored !== SHAPE_INLINE_WRAP) {
             const firstBox = (node.attrs?.textboxes as TextboxDisplay[] | undefined)?.[0]
             const wrap =
               (firstBox ? shapeWrapOf(firstBox) : null) ??
-              (node.attrs?.imageWrap as ImageWrap | null) ??
+              mirrored ??
               original.imageWrap ??
               'square-left'
             const rank =
@@ -2294,12 +2353,18 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           ])
         }
         // apply wrap changes for floating textboxes/shapes
-        const genWrap = node.attrs?.imageWrap as ImageWrap | null
+        const genWrap = node.attrs?.imageWrap as ImageWrap | typeof SHAPE_INLINE_WRAP | null
         const genOffsetX =
           node.attrs?.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) : undefined
         const genOffsetY =
           node.attrs?.imageOffsetYEmu != null ? Number(node.attrs.imageOffsetYEmu) : undefined
-        if (genWrap !== undefined && genWrap !== null) {
+        const genShape = {
+          shapeId: (node.attrs?.textboxes as TextboxDisplay[] | undefined)?.[0]?.shapeId,
+          boxIndex: 0,
+        }
+        if (genWrap === SHAPE_INLINE_WRAP) {
+          xml = applyShapeWrapAt(xml, genShape, null)
+        } else if (genWrap !== undefined && genWrap !== null) {
           const posOffset =
             genOffsetX !== undefined && genOffsetY !== undefined
               ? { x: genOffsetX, y: genOffsetY }
@@ -2308,10 +2373,11 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
           // wrap change keeps the anchor's own position bytes
           xml = posOffset
             ? applyImageWrap(xml, genWrap, posOffset)
-            : applyShapeWrapAt(xml, { boxIndex: 0 }, genWrap)
+            : applyShapeWrapAt(xml, genShape, genWrap)
         }
         const genZ = node.attrs?.imageZOrder != null ? Number(node.attrs.imageZOrder) : undefined
-        if (genZ !== undefined) xml = applyShapeZOrderAt(xml, { boxIndex: 0 }, genZ)
+        if (genZ !== undefined && genWrap !== SHAPE_INLINE_WRAP)
+          xml = applyShapeZOrderAt(xml, genShape, genZ)
         pushBlock({ kind: 'xml', xml })
       } else if (node.attrs?.genImage) {
         changedCount++
@@ -2970,6 +3036,23 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.indentRight != null) format.indentRight = Number(node.attrs.indentRight)
   if (node.attrs?.indentFirstLine != null)
     format.indentFirstLine = Number(node.attrs.indentFirstLine)
+  // the character-unit special indent rides along its twips twin and is written
+  // as w:firstLineChars next to it (Word prefers the character unit on reload).
+  //
+  // Two fields, because the parser's two mean different things: `charIndents`
+  // there is the EFFECTIVE value (style chain merged in) and is what generate
+  // and the cancel-attr merge read, while `directCharIndents` is only what the
+  // paragraph's own w:ind declares. nodeFormat has no style chain to consult —
+  // it reads the node's attributes — so what it sets is the direct value, and
+  // setting both keeps generate correct and gives the signature a direct value
+  // on both sides. Before this, the signature compared the effective value with
+  // the direct one, so every style-inherited paragraph looked edited and an
+  // untouched document came back carrying a frozen direct indent.
+  const firstLineChars = Number(node.attrs?.indentFirstLineChars)
+  if (Number.isFinite(firstLineChars) && firstLineChars > 0) {
+    format.charIndents = { ...format.charIndents, firstLine: firstLineChars }
+    format.directCharIndents = { ...format.directCharIndents, firstLine: firstLineChars }
+  }
   if (node.attrs?.spaceBefore != null) format.spaceBefore = Number(node.attrs.spaceBefore)
   if (node.attrs?.spaceAfter != null) format.spaceAfter = Number(node.attrs.spaceAfter)
   if (node.attrs?.spaceBeforeAuto != null)
@@ -3494,6 +3577,13 @@ function normalizedFormat(format: ParaFormat | undefined): unknown {
     format.indentLeft ?? null,
     format.indentRight ?? null,
     format.indentFirstLine ?? null,
+    // the DIRECT character-unit indent, like the line above and like
+    // nodeFormat, which reads it from the node's own attribute. Taking
+    // format.charIndents here would fold the style-inherited value in, and the
+    // two signatures would then disagree for every paragraph that inherits
+    // its indent — so an untouched document would come back with a frozen
+    // direct indent the original never had.
+    format.directCharIndents?.firstLine ?? null,
     format.spaceBefore ?? null,
     format.spaceAfter ?? null,
     format.pageBreakBefore ?? false,

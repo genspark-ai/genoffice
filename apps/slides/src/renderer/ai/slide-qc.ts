@@ -19,8 +19,30 @@ import { auditSlideLayout } from '@genoffice/pipelines/slides/layout-audit'
 import { createSlidesSkill, formatSlideDump, type DeckAccess } from './slides-skill'
 import qcVisualPrompt from './prompts/qc-visual.md?raw'
 import qcGeometryPrompt from './prompts/qc-geometry.md?raw'
+import { redactionCount } from './redact-view'
 
 /** Kill switch: localStorage 'ai-slides-qc' = '0' disables the automatic pass */
+/**
+ * Whether a rendered picture of this slide may go to the model.
+ *
+ * A screenshot is the one outbound path no text projection can reach: the
+ * renderer tints a withheld run rather than replacing it, so the words are in
+ * the bitmap. There is no mask for that — a picture has no spans to cover — so
+ * a slide that withholds anything gets no picture at all.
+ */
+export function screenshotAllowed(slide: { nodes: unknown[] }): boolean {
+  return redactionCount(slide as Parameters<typeof redactionCount>[0]) === 0
+}
+
+/**
+ * What to say instead of attaching a picture.
+ *
+ * Said rather than omitted: a model told nothing assumes it is looking at the
+ * rendering, and reasons about text it cannot see.
+ */
+export const NO_SCREENSHOT_NOTE =
+  'No image of this slide: it contains text withheld from you, and a picture is not something the withholding can cover. Work from the element inventory.'
+
 export function isQcEnabled(): boolean {
   return localStorage.getItem('ai-slides-qc') !== '0'
 }

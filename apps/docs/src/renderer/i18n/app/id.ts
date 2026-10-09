@@ -453,6 +453,7 @@ export const id = {
   appParaSpecialFirstLine: 'Baris pertama',
   appParaSpecialHanging: 'Menggantung',
   appParaBy: 'Sebesar',
+  appParaUnitChars: 'karakter',
   appInsertEquation: 'Sisipkan Persamaan',
   appLatexPlaceholder: 'mis. x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}',
   appLatexPreviewHint: 'Ketik LaTeX untuk melihat pratinjau',

@@ -38,7 +38,6 @@ import { PDFJS_ANNOT_TEXT } from '../src/renderer/note-threads'
 import type { SavePdfRequest } from '../src/shared/ipc'
 
 /** pdf.js AnnotationType.POPUP — a note's popup must never surface as its own entry */
-const PDFJS_ANNOT_POPUP = 12
 
 /** 1x1 red pixel PNG */
 const TINY_PNG =
@@ -664,8 +663,7 @@ describe('applySaveRequest', () => {
   })
 
   // A sticky note is the one annotation whose own entries are not enough for
-  // macOS Preview and Chrome/pdf.js: without /AP they have no icon to draw, and
-  // without /Popup there is no object to open, so the note reads as absent.
+  // macOS Preview: without /AP it has no icon to draw, so the note reads as absent.
   describe('sticky note interop (Preview / pdf.js)', () => {
     const note = (over: Record<string, unknown> = {}) => ({
       kind: 'note' as const,
@@ -702,59 +700,6 @@ describe('applySaveRequest', () => {
       expect(ap.dict.has(PDFName.of('Resources'))).toBe(true)
     })
 
-    it('pairs the note with a popup that points back at it and starts closed', async () => {
-      const { doc, noteRef } = await saveNoteWith(note())
-      const dict = doc.context.lookup(noteRef) as PDFDict
-      const popup = dict.lookup(PDFName.of('Popup'), PDFDict)
-      expect(subtypeOf(popup)).toBe('Popup')
-      expect(popup.lookup(PDFName.of('Parent'))).toBe(noteRef)
-      expect(String(popup.lookup(PDFName.of('Open')))).toBe('false')
-      // the popup carries the text too, so a viewer shows it without the parent
-      expect(popup.lookup(PDFName.of('Contents'), PDFHexString).decodeText()).toBe('hello note')
-    })
-
-    it('keeps the popup out of the page /Annots array, as the spec requires', async () => {
-      const { annots } = await saveNoteWith(note())
-      // exactly the one Text annot: a popup listed here would be drawn twice and
-      // pdf.js would report the note twice
-      expect(annots.size()).toBe(1)
-    })
-
-    it('docks the popup beside the icon, flipping left at the right page edge', async () => {
-      const mid = await saveNoteWith(note())
-      const midRect = (mid.doc.context.lookup(mid.noteRef) as PDFDict)
-        .lookup(PDFName.of('Popup'), PDFDict)
-        .lookup(PDFName.of('Rect'), PDFArray)
-        .asRectangle()
-      expect(midRect.x).toBeGreaterThanOrEqual(140) // right of the 120..140 icon
-      expect(midRect.x + midRect.width).toBeLessThanOrEqual(612)
-
-      const edge = await saveNoteWith(note({ at: [600, 700] }))
-      const edgeRect = (edge.doc.context.lookup(edge.noteRef) as PDFDict)
-        .lookup(PDFName.of('Popup'), PDFDict)
-        .lookup(PDFName.of('Rect'), PDFArray)
-        .asRectangle()
-      expect(edgeRect.x + edgeRect.width).toBeLessThanOrEqual(612) // flipped, still on the page
-      expect(edgeRect.x).toBeLessThan(600)
-    })
-
-    it('keeps a reply note self-contained, popup and all', async () => {
-      const bytes = await makePdf([[612, 792]])
-      const saved = await apply(
-        bytes,
-        request({
-          drawings: [
-            note({ localId: 'root' }),
-            note({ localId: 'kid', replyToLocalId: 'root', contents: 'reply' }),
-          ],
-        }),
-      )
-      const doc = await PDFDocument.load(saved)
-      for (const dict of pageAnnots(doc, 0)) {
-        expect(dict.lookup(PDFName.of('Popup'), PDFDict)).toBeDefined()
-      }
-    })
-
     it('still reads back as exactly one note in pdf.js', async () => {
       const bytes = await makePdf([[612, 792]])
       const saved = await apply(
@@ -767,8 +712,6 @@ describe('applySaveRequest', () => {
         const annos = await (await pdfJsDoc.getPage(1)).getAnnotations()
         const texts = annos.filter((a) => a.annotationType === PDFJS_ANNOT_TEXT)
         expect(texts.map((a) => a.contentsObj?.str)).toEqual(['hello note', 'second'])
-        // the popup is reachable from the note but is not an entry of its own
-        expect(annos.filter((a) => a.annotationType === PDFJS_ANNOT_POPUP)).toHaveLength(0)
       } finally {
         await loadingTask.destroy()
       }

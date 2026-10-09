@@ -40,23 +40,16 @@ export function statPathEntries(
   return paths.map((path) => toRecentEntry(path, starredPaths))
 }
 
-/**
- * How many paths one statPaths call may stat. stat is synchronous, so the
- * renderer-supplied list has to be bounded like every other recents list: the
- * page bound, which is already the largest one the UI asks for. statting an
- * unbounded list blocked the main process once it grew past a few hundred
- * entries (see pageRecentPaths).
- */
 export const STAT_PATHS_MAX = RECENT_PAGE_MAX
 
-/** statPaths crosses the IPC boundary, so the caller's list is capped before any stat. */
+/** stat is synchronous; a renderer-supplied list is bounded like every recents page */
 export function capStatPaths(paths: readonly string[]): string[] {
   return paths.slice(0, STAT_PATHS_MAX)
 }
 
 export function normalizeRecentQuery(
   raw: unknown,
-): Required<Omit<RecentQuery, 'ext'>> & { ext?: string } {
+): Required<Omit<RecentQuery, 'ext' | 'group'>> & { ext?: string } {
   const query = (raw ?? {}) as RecentQuery
   // offset/limit cross the preload boundary, so an IPC caller may send "10" rather
   // than 10; without coercion every page silently restarted at the first page.
@@ -77,7 +70,7 @@ export function normalizeRecentQuery(
 
 /** sidebar filter keys that stand for a family of extensions, not one exact ext */
 export const EXT_FAMILY: Record<string, readonly string[]> = {
-  // mirrors Home's FILTER_FAMILY and the search-side SEARCH_EXT_FAMILY
+  // mirrors Home's FILTER_FAMILY and SEARCH_EXT_FAMILY
   docx: ['docx', 'doc'],
   // delimited text belongs to the sheets family: Home's own FILTER_FAMILY and
   // the shell's open routing both treat .csv/.tsv as spreadsheets, so a
@@ -104,10 +97,7 @@ export function pageRecentPaths(
   starredPaths: ReadonlySet<string>,
 ): RecentPage {
   const { offset, limit, ext } = normalizeRecentQuery(raw)
-  // The extension filter is pure string work (extname needs no stat), so filter
-  // and count first and stat only the page being returned — statting every
-  // path of a long recents list on every page turn blocked the main process
-  // once the list grew past a few hundred entries.
+  // stat only the returned page: statting the whole list blocked main on long recents
   const filtered = ext
     ? paths.filter((p) => matchesExtFamily(extname(p).slice(1).toLowerCase(), ext))
     : paths

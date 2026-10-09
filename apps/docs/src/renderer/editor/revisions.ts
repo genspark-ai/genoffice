@@ -68,6 +68,7 @@ export const PARAGRAPH_FORMAT_FIELDS = [
   'indentLeft',
   'indentRight',
   'indentFirstLine',
+  'indentFirstLineChars',
   'spaceBefore',
   'spaceAfter',
   'pageBreakBefore',

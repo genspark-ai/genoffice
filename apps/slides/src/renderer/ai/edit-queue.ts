@@ -10,12 +10,12 @@
  * Staleness is decided at submit time rather than stored, so undo/redo of a
  * delete heals itself.
  */
+import { textForModel } from './redact-view'
 import type {
   GroupRenderNode,
   RenderNode,
   RenderNodeType,
   RenderSlide,
-  ShapeRenderNode,
   TableRenderNode,
 } from '@genoffice/pptx-render'
 import type { StringKey } from '../i18n/locale'
@@ -60,8 +60,15 @@ export interface EditQueueItem {
 /** Structured element summary; the UI localizes it, the prompt uses promptLabel */
 export interface NodeDescriptor {
   type: RenderNodeType
-  /** Trimmed first line of the element's text, when it has any */
+  /** Trimmed first line of the element's text, when it has any. The reader's own words — this is what their card shows. */
   text?: string
+  /**
+   * The same text as a model may read it, with a withheld span shown as its
+   * marker. `promptLabel` uses this, so the deck's secrets never reach the
+   * prompt while the card on their screen still shows what they actually
+   * wrote. Absent when it would equal `text`.
+   */
+  promptText?: string
   rows?: number
   cols?: number
 }
@@ -71,17 +78,14 @@ export function anchorId(node: RenderNode): string {
   return node.durableId ?? node.sourceId
 }
 
-function plainText(node: RenderNode): string {
+function plainText(node: RenderNode, forDisplay = true): string {
   if (node.type === 'shape' || node.type === 'text') {
-    return ((node as ShapeRenderNode).text?.lines ?? [])
-      .map((line) => line.runs.map((r) => r.text).join(''))
-      .join(' ')
-      .trim()
+    return textForModel(node, forDisplay).replace(/\n/g, ' ').trim()
   }
   if (node.type === 'table') {
     return (
-      (node as TableRenderNode).cells
-        .map((c) => (c.text?.lines ?? []).map((l) => l.runs.map((r) => r.text).join('')).join(' '))
+      textForModel(node, forDisplay)
+        .split('\n')
         .find((t) => t.trim().length > 0)
         ?.trim() ?? ''
     )
@@ -90,9 +94,13 @@ function plainText(node: RenderNode): string {
 }
 
 export function describeNode(node: RenderNode): NodeDescriptor {
-  const text = plainText(node).replace(/\s+/g, ' ')
+  // two views of the same element: `text` is the reader's, `promptText` is the
+  // model's. They differ only where something is withheld from a model.
+  const text = plainText(node, true).replace(/\s+/g, ' ')
+  const promptText = plainText(node, false).replace(/\s+/g, ' ')
   const desc: NodeDescriptor = { type: node.type }
   if (text) desc.text = text
+  if (promptText && promptText !== text) desc.promptText = promptText
   if (node.type === 'table') {
     // gridX/gridY are line offsets: nCols+1 and nRows+1 entries
     const table = node as TableRenderNode
@@ -114,7 +122,9 @@ export function promptLabel(desc: NodeDescriptor): string {
       : desc.type === 'text'
         ? 'text box'
         : desc.type
-  return desc.text ? `${kind}, "${truncate(desc.text, 60)}"` : kind
+  // the prompt gets the redacted view; the card on the reader's screen uses `text`
+  const forModel = desc.promptText ?? desc.text
+  return forModel ? `${kind}, "${truncate(forModel, 60)}"` : kind
 }
 
 /**

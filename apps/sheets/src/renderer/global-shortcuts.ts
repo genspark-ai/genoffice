@@ -49,6 +49,8 @@ interface Chord {
   readonly alt?: boolean
   /** Excel-for-Mac binding: Cmd on mac only */
   readonly cmdMac?: boolean
+  /** Excel-for-Mac binding: Cmd+Ctrl together, mac only */
+  readonly cmdCtrlMac?: boolean
 }
 
 interface Binding {
@@ -61,6 +63,7 @@ interface Binding {
 const command = (command: string): GlobalShortcutAction => ({ kind: 'command', command })
 const FORMAT_CELLS: GlobalShortcutAction = { kind: 'dialog', dialog: 'formatCells' }
 const GO_TO: GlobalShortcutAction = { kind: 'dialog', dialog: 'goTo' }
+const PASTE_SPECIAL = command('paste-special-open')
 
 const BINDINGS: readonly Binding[] = [
   { code: 'Digit1', chord: { mod: true }, gate: 'grid', action: FORMAT_CELLS },
@@ -74,6 +77,9 @@ const BINDINGS: readonly Binding[] = [
   },
   { code: 'KeyK', chord: { mod: true }, gate: 'grid', action: command('link-open') },
   { code: 'F2', chord: { shift: true }, gate: 'grid', action: command('note-open') },
+  // Excel: Ctrl+Shift+F2 (Windows) / Cmd+Shift+M (Mac) start a threaded comment.
+  { code: 'F2', chord: { mod: true, shift: true }, gate: 'grid', action: command('comment-new') },
+  { code: 'KeyM', chord: { mod: true, shift: true }, gate: 'grid', action: command('comment-new') },
   { code: 'F3', chord: { shift: true }, gate: 'grid', action: command('insert-function-open') },
   { code: 'F3', chord: { mod: true }, gate: 'grid', action: command('name-manager-open') },
   {
@@ -99,6 +105,8 @@ const BINDINGS: readonly Binding[] = [
     gate: 'sheet',
     action: command('paste-special:value'),
   },
+  { code: 'KeyV', chord: { mod: true, alt: true }, gate: 'sheet', action: PASTE_SPECIAL },
+  { code: 'KeyV', chord: { cmdCtrlMac: true }, gate: 'sheet', action: PASTE_SPECIAL },
   { code: 'BracketLeft', chord: { mod: true }, gate: 'sheet', action: command('trace-precedents') },
   {
     code: 'BracketRight',
@@ -110,13 +118,13 @@ const BINDINGS: readonly Binding[] = [
     code: 'ArrowRight',
     chord: { alt: true, shift: true },
     gate: 'sheet',
-    action: command('outline-group:rows'),
+    action: command('outline-group:auto'),
   },
   {
     code: 'ArrowLeft',
     chord: { alt: true, shift: true },
     gate: 'sheet',
-    action: command('outline-ungroup:rows'),
+    action: command('outline-ungroup:auto'),
   },
   {
     code: 'Period',
@@ -136,12 +144,16 @@ const BINDINGS: readonly Binding[] = [
     gate: 'sheet',
     action: command('filter-toggle'),
   },
+  // AutoSum beyond the mac-only ⇧⌘T: Ctrl+Shift+T on Windows/Linux, where
+  // Univer's own QuickSum already owns Alt+=. The filter's Ctrl/⌘+Shift+L is
+  // Univer's own SmartToggleFilterShortcut, so no row here for it.
   {
     code: 'KeyT',
-    chord: { cmdMac: true, shift: true },
+    chord: { mod: true, shift: true },
     gate: 'sheet',
     action: command('autofn:SUM'),
   },
+  { code: 'KeyT', chord: { mod: true }, gate: 'sheet', action: command('table-create-open') },
   { code: 'F9', chord: {}, gate: 'idle', action: command('calculate-now') },
   { code: 'F9', chord: { shift: true }, gate: 'idle', action: command('calculate-sheet') },
   { code: 'PageDown', chord: {}, gate: 'grid', action: command('page-row:1') },
@@ -153,6 +165,7 @@ const BINDINGS: readonly Binding[] = [
 function chordMatches(event: GlobalShortcutKeyEvent, chord: Chord, isMac: boolean): boolean {
   if (event.shiftKey !== Boolean(chord.shift) || event.altKey !== Boolean(chord.alt)) return false
   if (chord.cmdMac) return isMac && event.metaKey && !event.ctrlKey
+  if (chord.cmdCtrlMac) return isMac && event.metaKey && event.ctrlKey
   return (event.metaKey || event.ctrlKey) === Boolean(chord.mod)
 }
 
@@ -185,7 +198,7 @@ export function resolveGlobalShortcut(
   }
   // number-format / border chords (Ctrl+Shift+digit, Ctrl+Shift+&/_, mac ⌘⌥
   // borders) write to the range: same gate as the table's `sheet` rows
-  const formatCommand = formatShortcutCommand(event)
+  const formatCommand = formatShortcutCommand(event, guards.isMac)
   if (formatCommand && gateOpen('sheet', guards)) return { kind: 'command', command: formatCommand }
   return null
 }

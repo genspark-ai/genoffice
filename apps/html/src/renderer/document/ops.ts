@@ -145,6 +145,36 @@ export function decodedToRaw(raw: string, decoded: number): number {
   return Math.min(i, raw.length)
 }
 
+/**
+ * The inverse of `decodedToRaw`: where a raw source index sits in the decoded text
+ * the DOM reports.
+ *
+ * The source editor selects *raw* characters, `wrap_text` is addressed in decoded
+ * ones, and the two disagree wherever an entity is spelled out — `&amp;` is six
+ * characters in the file and one in the document. Reading a range off the wrong
+ * side of that gap does not fail, it just wraps the wrong words, so a selection
+ * that starts inside an entity snaps to that entity's end and no further.
+ */
+export function rawToDecoded(raw: string, rawIndex: number): number {
+  const finite = Number.isFinite(rawIndex) ? Number(rawIndex) : 0
+  const target = Math.max(0, Math.min(Math.floor(finite), raw.length))
+  let i = 0
+  let seen = 0
+  while (i < target) {
+    ENTITY_RE.lastIndex = i
+    const entity = ENTITY_RE.exec(raw)
+    if (entity) {
+      i += entity[0].length
+      seen += entityUnits(entity)
+      continue
+    }
+    const astral = raw.codePointAt(i)! > 0xffff
+    i += astral ? 2 : 1
+    seen += astral ? 2 : 1
+  }
+  return seen
+}
+
 /** the element's source, widened to its whole line when nothing but indentation shares that line */
 function lineChunk(
   text: string,

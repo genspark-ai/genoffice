@@ -1,0 +1,244 @@
+/* In-app manual (help tab): sidebar topics + searchable markdown body.
+   Every colour below is a token from packages/ui/src/tokens.css, so the manual
+   follows the light and dark themes like the rest of the chrome. The local
+   palette it replaces named two variables that exist nowhere, and its cards
+   were built from white alpha values — right in one theme, invisible in the
+   other. */
+
+.help-root {
+  /* aliases only: the values live in tokens.css, which owns both themes */
+  --help-bg: var(--color-bg-page);
+  --help-accent: var(--color-brand-secondary);
+  --help-accent-soft: var(--bg-hover-accent);
+  --help-glass: var(--color-bg-overlay);
+  --help-card: var(--surface);
+  --help-line-faint: var(--border-subtle);
+  --help-line-soft: var(--border);
+  --help-line: var(--border-strong);
+  --help-fill-hover: var(--bg-hover);
+  --help-fill: var(--bg-hover-strong);
+  --help-fill-soft: var(--bg-hover-subtle);
+  --help-fill-faint: var(--active-bg);
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--help-bg);
+}
+
+.help-side {
+  width: 264px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--help-line-faint);
+  background: var(--help-glass);
+}
+
+.help-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px;
+}
+
+.help-search {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--help-line);
+  border-radius: 9px;
+  background: var(--help-card);
+  color: inherit;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.help-search:focus {
+  outline: 2px solid var(--help-accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.help-hit-count {
+  font-size: 11.5px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.help-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 16px;
+}
+
+.help-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  margin: 14px 8px 4px;
+}
+
+.help-topic {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.help-topic:hover {
+  background: var(--help-fill-hover);
+}
+.help-topic.active {
+  background: var(--help-accent-soft);
+  color: var(--help-accent);
+  font-weight: 600;
+}
+
+.help-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.help-article {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 40px 44px 80px;
+  font-size: 15px;
+  line-height: 1.75;
+}
+.help-article h1 {
+  font-size: 26px;
+  line-height: 1.35;
+  margin: 0 0 6px;
+}
+.help-article h2 {
+  font-size: 19px;
+  margin: 34px 0 8px;
+}
+.help-article h3 {
+  font-size: 16px;
+  margin: 24px 0 6px;
+}
+.help-article table {
+  border-collapse: collapse;
+  font-size: 13.5px;
+  margin: 12px 0;
+}
+.help-article th,
+.help-article td {
+  border: 1px solid var(--help-line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.help-article th {
+  background: var(--help-fill-soft);
+}
+.help-article pre {
+  background: var(--help-fill-soft);
+  border: 1px solid var(--help-line-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.help-article code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--help-fill);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.help-article pre code {
+  background: none;
+  padding: 0;
+}
+.help-article blockquote {
+  margin: 10px 0;
+  padding: 2px 14px;
+  border-left: 3px solid var(--help-accent);
+  opacity: 0.85;
+}
+
+.help-missing {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* in-page table of contents */
+.help-toc {
+  margin: 14px 0 26px;
+  padding: 12px 16px;
+  border: 1px solid var(--help-line-soft);
+  border-radius: 12px;
+  background: var(--help-fill-faint);
+}
+.help-toc-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  margin-bottom: 6px;
+}
+.help-toc-item {
+  display: block;
+  border: none;
+  background: transparent;
+  color: var(--help-accent);
+  padding: 3px 0;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.help-toc-item:hover {
+  text-decoration: underline;
+}
+.help-article h2 {
+  scroll-margin-top: 24px;
+}
+
+/* Operation screenshots inside topics */
+.help-article .ai-md-img {
+  display: block;
+  max-width: 100%;
+  margin: 10px auto 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+/* Heading hierarchy inside articles: the shared renderer emits every level
+   as <p class="ai-md-h ai-md-hN">; give the manual real typographic tiers */
+.help-article .ai-md-h1 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 4px 0 6px;
+}
+.help-article .ai-md-h2 {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 26px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.help-article .ai-md-h3 {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--text-primary);
+  margin: 18px 0 8px;
+}
+.help-article .ai-md-h4,
+.help-article .ai-md-h5,
+.help-article .ai-md-h6 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 14px 0 6px;
+}

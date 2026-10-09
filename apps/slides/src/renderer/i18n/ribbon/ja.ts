@@ -59,7 +59,7 @@ export const ja = {
   // Home: slides
   ribbonGroupSlides: 'スライド',
   ribbonNewSlide: '新しいスライド',
-  ribbonNewSlideTip: '新しい空白スライド（現在のスライドのレイアウト背景を引き継ぎ；⌘M）',
+  ribbonNewSlideTip: '新しい空白スライド（現在のスライドのレイアウト背景を引き継ぎ）',
   ribbonChooseLayout: 'レイアウトの選択',
   ribbonChooseLayoutNew: 'レイアウトを選んで新規スライド',
   ribbonChooseLayoutChange: '現在のスライドのレイアウトを変更',

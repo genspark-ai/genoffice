@@ -495,9 +495,15 @@ export function populateEditorDom(
           if (run.link) span.setAttribute('href', run.link)
           if (run.bold) span.style.fontWeight = 'bold'
           if (run.italic) span.style.fontStyle = 'italic'
-          const deco = [run.underline ? 'underline' : '', run.strike ? 'line-through' : ''].filter(
-            Boolean,
-          )
+          // A withheld run is underlined whether or not the model underlines it: the mark's only
+          // visible half, and the engine's save paths rewrite `u` from the model, so a run the
+          // model does not underline would come back unmarked-looking (and, once committed that
+          // way, unreadable). The attribute is what extraction reads the mark back from.
+          if (run.redact) span.dataset.redact = run.redact
+          const deco = [
+            run.underline || run.redact ? 'underline' : '',
+            run.strike ? 'line-through' : '',
+          ].filter(Boolean)
           if (deco.length) span.style.textDecoration = deco.join(' ')
           else if (run.link) span.style.textDecoration = 'none' // suppress the UA <a> underline
           // Super/subscript: the initial DOM must restore it (otherwise extraction sends explicit 0/false and wipes the original format)
@@ -1014,7 +1020,9 @@ function cssAlign(v: string): EditParagraph['align'] | undefined {
   return undefined
 }
 
-/** Whether adjacent runs share source and format (mergeable losslessly). When both srcRun are undefined, merge newly typed text by format. */
+/** Whether adjacent runs share source and format (mergeable losslessly). When both srcRun are undefined, merge newly typed text by format.
+ * The mark is part of the format: a withheld run and its unmarked neighbour share srcRun and every
+ * visual attribute, so without this term they would merge and the words would silently come back. */
 function sameRunFormat(a: EditRun, b: EditRun): boolean {
   return (
     a.srcRun === b.srcRun &&
@@ -1026,6 +1034,7 @@ function sameRunFormat(a: EditRun, b: EditRun): boolean {
     a.fontSize === b.fontSize &&
     a.fontFamily === b.fontFamily &&
     a.color === b.color &&
+    (a.redact ?? null) === (b.redact ?? null) &&
     (a.link ? encodeLinkTarget(a.link) : '') === (b.link ? encodeLinkTarget(b.link) : '')
   )
 }
@@ -1110,6 +1119,10 @@ export function extractParagraphs(root: HTMLElement, norm: number): EditParagrap
           ...(inherited.fontFamily ? { fontFamily: inherited.fontFamily } : {}),
           ...(inherited.color ? { color: inherited.color } : {}),
           ...(inherited.srcRun != null ? { srcRun: inherited.srcRun } : {}),
+          // explicit null = not withheld (the DOM is authoritative here, exactly as for `link`):
+          // absent would mean "keep whatever the model had", so a run whose mark the reader just
+          // cleared in the editor could never actually lose it
+          redact: inherited.redact ?? null,
           link: inherited.link ?? null, // explicit null = no link (the DOM is authoritative here)
         })
       }
@@ -1172,6 +1185,11 @@ export function extractParagraphs(root: HTMLElement, norm: number): EditParagrap
     const next: Partial<EditRun> = { ...inherited }
     const sr = el.dataset ? parseInt(el.dataset.srcRun ?? '', 10) : NaN
     if (!Number.isNaN(sr)) next.srcRun = sr
+    // The withholding mark rides on the run span, read back off the element the same way
+    // bold/colour/underline are. Inherited like them, so a wrapper inside a run container
+    // (what applySelectionRedaction creates) marks the text under it without touching srcRun.
+    const redactLabel = el.dataset?.redact
+    if (redactLabel) next.redact = redactLabel
     if (el.tagName === 'A') {
       const link = decodeLinkTarget(el.getAttribute('href'))
       if (link) next.link = link
@@ -1303,6 +1321,134 @@ export function applySelectionLink(target: LinkTargetOp | null): boolean {
   if (target) document.execCommand('createLink', false, encodeLinkTarget(target))
   else document.execCommand('unlink')
   return true
+}
+
+// ── Withholding a selection from the model ────────────────────────────────
+//
+// The mark is not an op of its own on this side: a text element has no runs
+// the op surface can address, so the span is marked in the editor DOM and the
+// overlay's ordinary commit carries it (EditRun.redact → slides:edit-text →
+// applyEditParagraphs). That is also why the commit is left to the existing
+// handler — pressing away from the editor is what has always saved an edit.
+//
+// Two things must hold together, or the mark silently does nothing:
+//   - the words stay. A mark is a label over the reader's own text, never a
+//     replacement for it, so nothing here removes or rewrites a character.
+//   - the run is underlined. The engine rewrites `u` from the model on save, so
+//     a mark that went in without an underline would reopen invisible.
+
+/** Nearest element carrying the withholding mark around a node (bounded by the editor root). */
+function redactAround(node: Node | null): HTMLElement | null {
+  const el = node instanceof HTMLElement ? node : node?.parentElement
+  const holder = el?.closest('[data-redact]')
+  const root = el?.closest('[contenteditable="true"]')
+  return holder instanceof HTMLElement && root?.contains(holder) ? holder : null
+}
+
+/**
+ * The label the editor selection is already withheld under, or null when it is not
+ * withheld (nearest marked span at the selection start; the saved ribbon-handoff
+ * selection is consulted when focus has already left the editor). For echo-back, and
+ * so the menu item can offer to stop withholding instead of asking again.
+ */
+export function selectionRedaction(): string | null {
+  const sel = window.getSelection()
+  const node = sel?.rangeCount ? sel.getRangeAt(0).startContainer : savedSel?.range.startContainer
+  return redactAround(node ?? null)?.dataset.redact ?? null
+}
+
+/** The editor root a range lives in, or null when it is not inside one. */
+function editorRootOf(range: Range): HTMLElement | null {
+  const startEl =
+    range.startContainer instanceof HTMLElement
+      ? range.startContainer
+      : range.startContainer.parentElement
+  return startEl?.closest('[contenteditable="true"]') ?? null
+}
+
+/**
+ * Wrap the selected characters in a span carrying the label. The wrapper goes
+ * *inside* whatever run container already held the text, so `srcRun` still traces
+ * back to the model run and a selection covering a whole run produces one run, not
+ * two. Only a selection that lands mid-run splits a text node, and that split is the
+ * same one a partial bold already makes.
+ */
+function markRange(range: Range, label: string): boolean {
+  const root = editorRootOf(range)
+  if (!root) return false
+  // Collected before any mutation: splitting a text node invalidates a live walker.
+  const texts: Text[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const text = n as Text
+    if (!text.data.length) continue
+    if (text === range.startContainer || text === range.endContainer) continue
+    if (range.intersectsNode(text)) texts.push(text)
+  }
+  for (const endpoint of [range.startContainer, range.endContainer]) {
+    if (endpoint instanceof Text && endpoint.data.length && range.intersectsNode(endpoint)) {
+      texts.push(endpoint)
+    }
+  }
+  if (!texts.length) return false
+  for (const text of texts) {
+    const from = text === range.startContainer ? range.startOffset : 0
+    const to = text === range.endContainer ? range.endOffset : text.data.length
+    if (to <= from) continue
+    // Split the tail off first, then the head: the surviving node is exactly [from, to)
+    if (to < text.data.length) text.splitText(to)
+    let target = text
+    if (from > 0) target = target.splitText(from)
+    const span = document.createElement('span')
+    span.dataset.redact = label
+    span.style.textDecoration = 'underline'
+    target.parentNode?.insertBefore(span, target)
+    span.appendChild(target)
+  }
+  return true
+}
+
+/**
+ * Stop withholding everything the selection covers. A span this session created is
+ * unwrapped, taking its underline with it; a run container the editor itself populated
+ * keeps its trace and loses just the mark and the underline the mark forced.
+ */
+function unmarkRange(range: Range): boolean {
+  const root = editorRootOf(range)
+  if (!root) return false
+  const marked = Array.from(root.querySelectorAll<HTMLElement>('[data-redact]'))
+  let hit = false
+  for (const el of marked) {
+    if (!range.intersectsNode(el)) continue
+    hit = true
+    if (el.dataset.runContainer === 'true') {
+      delete el.dataset.redact
+      const rest = (el.style.textDecoration || '')
+        .split(/\s+/)
+        .filter((token) => token && token !== 'underline')
+      el.style.textDecoration = rest.join(' ')
+      continue
+    }
+    const parent = el.parentNode
+    if (!parent) continue
+    while (el.firstChild) parent.insertBefore(el.firstChild, el)
+    parent.removeChild(el)
+  }
+  return hit
+}
+
+/**
+ * Withhold (or stop withholding) the editor selection, restoring the saved selection
+ * first — the dialog took focus. `label` null clears. Returns false when there is no
+ * usable selection, so the caller can leave the edit session alone.
+ */
+export function applySelectionRedaction(label: string | null): boolean {
+  if (!restoreEditSelection()) return false
+  const sel = window.getSelection()
+  if (!sel?.rangeCount) return false
+  const range = sel.getRangeAt(0)
+  if (range.collapsed) return false
+  return label === null ? unmarkRange(range) : markRange(range, label)
 }
 
 /**

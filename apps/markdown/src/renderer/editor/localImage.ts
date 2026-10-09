@@ -6,6 +6,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { MAX_PASTED_IMAGE_BYTES } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { showToast } from '../components/toast-bus'
+import { getImageHostConfig } from '../imageHostCache'
 
 /** Directory of the open .md file; relative image paths resolve against it for display */
 let imageBaseDir: string | null = null
@@ -93,16 +94,34 @@ async function persistAndInsert(
   for (let i = 0; i < bytes.length; i += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   }
-  const rel = await window.markdownApi.saveImage({
-    base64: btoa(binary),
-    ext: EXT_BY_MIME[file.type]!,
-  })
+  const base64 = btoa(binary)
+  const alt = file.name.replace(/\.[a-z0-9]+$/i, '')
+  // a configured image host gets the paste first (genoffice#388); the local
+  // assets/ copy is the fallback when it is disabled or the upload fails, so
+  // the note stays self-contained even offline
+  const host = await getImageHostConfig()
+  if (host) {
+    const up = await window.markdownApi.uploadImage({
+      base64,
+      ext: EXT_BY_MIME[file.type]!,
+      name: file.name,
+    })
+    if (up.ok && up.url) {
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(pos, { type: 'image', attrs: { src: up.url, alt } })
+        .run()
+      return
+    }
+    showToast(t('imageHostFallback', { error: up.error ?? '' }), 'error')
+  }
+  const rel = await window.markdownApi.saveImage({ base64, ext: EXT_BY_MIME[file.type]! })
   // untitled documents have no assets/ directory yet — tell the user to save first
   if (!rel) {
     showToast(t('imageNeedsSavedDocument'), 'error')
     return
   }
-  const alt = file.name.replace(/\.[a-z0-9]+$/i, '')
   editor
     .chain()
     .focus()
