@@ -1404,6 +1404,7 @@ export function planRowSplit(
   contentH: number,
   turn: (placed: number, y: number) => number,
   widow = true,
+  forcedCuts: readonly number[] = row.forcedCuts ?? [],
 ): { lastFragment: number; target: number; rules: RowSplitRule[] } | 'nofit' | null {
   const cells = row.cells ?? []
   const next = cells.map(() => 0)
@@ -1433,6 +1434,8 @@ export function planRowSplit(
   for (let frag = 0; frag < 256; frag++) {
     let progressed = false
     let held = false
+    // cells whose fit the forced cut pulled back below capacity this fragment
+    const forceHit = cells.map(() => false)
     const cutIdx = cells.map((c, k) => {
       const j = next[k]
       let fit = j
@@ -1453,6 +1456,21 @@ export function planRowSplit(
         while (end < c.lines.length && c.paraOf[end] === p) end++
         if (end - fit < 2) fit = end - 2
         if (start >= j && fit - start < 2) fit = start
+      }
+      // a forced cut (a page-break-before paragraph inside a cell) splits at
+      // the first line at or below it, ahead of capacity and widow logic: the
+      // instruction demands a page there regardless of what fits. Rows wholly
+      // past the cut are left alone — they already start after it.
+      if (forcedCuts.length > 0) {
+        for (let i = j; i < c.lines.length; i++) {
+          if (forcedCuts.some((fc) => lineTop(c, i) >= fc - 0.5)) {
+            if (i > j) {
+              fit = i
+              forceHit[k] = true
+            }
+            break
+          }
+        }
       }
       if (fit > j) progressed = true
       else if (raw > j) held = true
@@ -1484,6 +1502,18 @@ export function planRowSplit(
       if (row.minHPx !== undefined) target = Math.max(target, y + Math.min(row.minHPx, contentH))
       target = Math.max(target, naturalH)
     }
+    // a forced cut ends the fragment before the page is full: the turn happens
+    // at the instruction (Word leaves the rest of the page empty), so the next
+    // fragment starts at the cut line instead of the capacity position the
+    // y += avail bookkeeping below assumes
+    let step = avail
+    if (forcedCuts.length > 0) {
+      const cutY = Math.max(
+        -Infinity,
+        ...cells.map((c, k) => (forceHit[k] ? lineTop(c, cutIdx[k]) : -Infinity)),
+      )
+      if (cutY > y) step = Math.min(avail, cutY - y)
+    }
     // this fragment's lines sit at its top (top-aligned; a middle/bottom cell
     // landing whole is aligned within the fragment); lines shown on other pages
     // are clipped off the crossing children and later children are hidden
@@ -1501,7 +1531,7 @@ export function planRowSplit(
         rules.push({ from, cell: k, child: 0, tail: true, dy: -c.alignDy })
       let d = dy[k] - c.alignDy
       if (start === 0 && end >= c.lines.length) {
-        const bottom = allDone ? target - padB : y + avail
+        const bottom = allDone ? target - padB : y + step
         d += c.alignFrac * Math.max(0, bottom - (lastBottom(c) + dy[k]))
       }
       const first = c.childOf[start]
@@ -1533,10 +1563,10 @@ export function planRowSplit(
     cells.forEach((c, k) => {
       const fit = cutIdx[k]
       next[k] = fit
-      if (fit < c.lines.length) dy[k] = y + avail - lineTop(c, fit)
+      if (fit < c.lines.length) dy[k] = y + step - lineTop(c, fit)
     })
-    y += avail
-    avail = turn(avail, y)
+    y += step
+    avail = turn(step, y)
   }
   return null
 }
@@ -1699,7 +1729,7 @@ function _placeTable(
       }
     }
 
-    if (!fits(row.height + notes)) {
+    if (!fits(row.height + notes) || (row.forcedCuts?.length ?? 0) > 0) {
       const contentEnd =
         row.contentBottom !== undefined ? Math.min(row.contentBottom, row.height) : row.height
       // in-row page break (Word default): without cantSplit and with safe cut points,
