@@ -26,8 +26,12 @@ function input(overrides: Partial<ReorderGateInput> = {}): ReorderGateInput {
 }
 
 describe('fullLoadGate', () => {
-  const fits = { gridCells: 60_000, storedCells: 60_000 }
-  const tooLarge = { gridCells: FULL_LOAD_MAX_CELLS + 1, storedCells: FULL_LOAD_MAX_CELLS + 1 }
+  const fits = { gridCells: 60_000, storedCells: 60_000, valueCells: 60_000 }
+  const tooLarge = {
+    gridCells: FULL_LOAD_MAX_CELLS + 1,
+    storedCells: FULL_LOAD_MAX_CELLS + 1,
+    valueCells: FULL_LOAD_MAX_CELLS + 1,
+  }
 
   it('offers Load all on an idle streamed workbook that fits', () => {
     expect(fullLoadGate({ formulaMode: false, preloadRunning: false, cellCounts: fits })).toBe(
