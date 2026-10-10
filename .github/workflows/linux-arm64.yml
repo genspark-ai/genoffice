@@ -1,0 +1,71 @@
+name: Linux arm64 packages
+
+# Builds the Linux installers (AppImage, deb, rpm) for arm64 on a native
+# GitHub arm64 runner. Cross-building from x64 does not work for the Rust
+# xlsx sidecar, so this runs on ubuntu-24.04-arm and packages with
+# GENOFFICE_LINUX_ARCH=arm64. Triggered manually, or when a release is
+# published (the packages are then attached to that release).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref (tag, branch or sha) to build; empty = the dispatched ref'
+        required: false
+        default: ''
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build apps (Rust sidecar is built natively for arm64)
+        run: npm run build:all
+
+      - name: Generate third-party notices
+        run: npm run notices
+
+      - name: Package Linux arm64
+        working-directory: apps/shell
+        env:
+          GENOFFICE_LINUX_ARCH: arm64
+        run: npx electron-builder --linux --arm64
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: genoffice-linux-arm64
+          path: |
+            apps/shell/release/*.AppImage
+            apps/shell/release/*.deb
+            apps/shell/release/*.rpm
+
+      - name: Attach to the published release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            apps/shell/release/*.AppImage \
+            apps/shell/release/*.deb \
+            apps/shell/release/*.rpm

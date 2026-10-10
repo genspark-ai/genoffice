@@ -26,6 +26,14 @@
  * users can still install local font files.
  */
 
+// GENOFFICE_LINUX_ARCH: comma-separated electron-builder arch list for the
+// Linux targets (default 'x64'). The arm64 workflow sets it to 'arm64' on a
+// native arm64 runner so the Rust sidecar is built for the same arch.
+const linuxArch = (process.env.GENOFFICE_LINUX_ARCH || 'x64')
+  .split(',')
+  .map((a) => a.trim())
+  .filter(Boolean)
+
 const { execFileSync } = require('node:child_process')
 const { existsSync, readFileSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
@@ -565,9 +573,9 @@ const config = {
     // README download links and the already-published linux-v0.5.149 release
     // use them.
     target: [
-      { target: 'AppImage', arch: ['x64'] },
-      { target: 'deb', arch: ['x64'] },
-      { target: 'rpm', arch: ['x64'] },
+      { target: 'AppImage', arch: linuxArch },
+      { target: 'deb', arch: linuxArch },
+      { target: 'rpm', arch: linuxArch },
     ],
     // deb control metadata; values match the manually published 0.5.149 deb
     // so apt sees the new packages as the same lineage. Homepage comes from
