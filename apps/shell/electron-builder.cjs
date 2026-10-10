@@ -492,6 +492,22 @@ const config = {
       mimeType: 'text/markdown',
     },
     {
+      ext: 'txt',
+      name: 'Text Document',
+      description: 'Text Document',
+      role: 'Editor',
+      icon: 'txt',
+      mimeType: 'text/plain',
+    },
+    {
+      ext: 'json',
+      name: 'JSON Document',
+      description: 'JSON Document',
+      role: 'Editor',
+      icon: 'json',
+      mimeType: 'application/json',
+    },
+    {
       ext: 'html',
       name: 'HTML Document',
       role: 'Editor',
