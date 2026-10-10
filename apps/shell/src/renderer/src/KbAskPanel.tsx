@@ -19,22 +19,32 @@ import { useI18n } from './locale'
  *
  * The conversation lives in memory only; it does not survive a restart (the
  * editor panels persist through project-store — wiring that here is a
- * deliberate later step, not an oversight).
+ * deliberate later step, not an oversight). An empty corpus gets an
+ * onboarding hero instead of a bare hint: the only useful move there is
+ * going to Recents and starring files, so the panel says so and offers the
+ * jump as a button.
  */
+
+/** one tool a turn used, badge-shaped; the icon follows the call name */
+interface ToolNote {
+  label: string
+  kind: 'search' | 'read'
+}
 
 interface AskMessage {
   role: 'user' | 'assistant'
   text: string
-  /** short labels of the tools this answer used, in order */
-  toolNotes: string[]
+  toolNotes: ToolNote[]
   streaming?: boolean
   isError?: boolean
 }
 
 export function KbAskPanel({
   onOpenPath,
+  onGoToRecents,
 }: {
   onOpenPath: (path: string) => void
+  onGoToRecents: () => void
 }): React.JSX.Element {
   const { t } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
@@ -95,7 +105,9 @@ export function KbAskPanel({
           patchLast((last) => ({
             toolNotes: [
               ...last.toolNotes,
-              call.name === 'search_knowledge_base' ? t('askToolSearch') : t('askToolRead'),
+              call.name === 'search_knowledge_base'
+                ? { label: t('askToolSearch'), kind: 'search' as const }
+                : { label: t('askToolRead'), kind: 'read' as const },
             ],
           })),
         onDone: () => finishLast(),
@@ -174,17 +186,49 @@ export function KbAskPanel({
 
   return (
     <div className="kb-ask">
-      <div className="kb-ask-head">
-        <h2>{t('askTitle')}</h2>
-        <p className="kb-ask-sub">
-          {corpusCount === null
-            ? ''
-            : corpusCount === 0
-              ? t('askEmptyCorpusHint')
-              : t('askCorpusCount', { n: String(corpusCount) })}
-        </p>
-      </div>
+      {corpusCount !== null && corpusCount > 0 && (
+        <div className="kb-ask-headbar">
+          <b>{t('askTitle')}</b>
+          <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
+        </div>
+      )}
       <div className="kb-ask-thread" ref={scrollRef}>
+        {messages.length === 0 && corpusCount === 0 && (
+          <div className="kb-ask-hero">
+            <div className="kb-ask-hero-icon" aria-hidden="true">
+              <IconBookOpen />
+            </div>
+            <h3>{t('askTitle')}</h3>
+            <p>{t('askHeroTagline')}</p>
+            <div className="kb-ask-steps">
+              <div className="kb-ask-step">
+                <span className="kb-ask-step-num">1</span>
+                <div>
+                  <b>{t('askStep1Title')}</b>
+                  <span>{t('askStep1Desc')}</span>
+                </div>
+              </div>
+              <div className="kb-ask-step">
+                <span className="kb-ask-step-num">2</span>
+                <div>
+                  <b>{t('askStep2Title')}</b>
+                  <span>{t('askStep2Desc')}</span>
+                </div>
+              </div>
+              <div className="kb-ask-step">
+                <span className="kb-ask-step-num">3</span>
+                <div>
+                  <b>{t('askStep3Title')}</b>
+                  <span>{t('askStep3Desc')}</span>
+                </div>
+              </div>
+            </div>
+            <button className="kb-ask-cta" type="button" onClick={onGoToRecents}>
+              <IconStar />
+              {t('askCtaRecents')}
+            </button>
+          </div>
+        )}
         {messages.length === 0 && corpusCount !== null && corpusCount > 0 && (
           <p className="kb-ask-hint">{t('askIntro')}</p>
         )}
@@ -194,7 +238,8 @@ export function KbAskPanel({
               <div className="kb-ask-tools">
                 {m.toolNotes.map((note, j) => (
                   <span key={j} className="kb-ask-tool-note">
-                    {note}
+                    {note.kind === 'search' ? <IconSearch /> : <IconFileText />}
+                    {note.label}
                     {m.streaming && j === m.toolNotes.length - 1 ? '…' : ''}
                   </span>
                 ))}
@@ -211,15 +256,28 @@ export function KbAskPanel({
             ) : null}
           </div>
         ))}
-        {busy && messages[messages.length - 1]?.text === '' && messages.length > 0 && null}
       </div>
+      {messages.length > 0 && (
+        <p className="kb-ask-nosave">
+          <IconInfo />
+          {t('askNoSave')}
+        </p>
+      )}
       {gskEmail === null && <p className="kb-ask-login">{t('askNeedsLogin')}</p>}
       <AiComposer
         value={draft}
         busy={busy}
+        iconOnly
+        sendIconEnabled={<IconArrowUp />}
         placeholder={t('askPlaceholder')}
         hintIdle={t('askHintIdle')}
         hintBusy={t('askHintBusy')}
+        footerStart={
+          <span className="ai-input-hint kb-ask-kbdhint">
+            <kbd>Enter</kbd>
+            {t('askSend')}
+          </span>
+        }
         sendLabel={t('askSend')}
         stopLabel={t('askStop')}
         ariaLabel={t('askPlaceholder')}
@@ -231,5 +289,116 @@ export function KbAskPanel({
         }}
       />
     </div>
+  )
+}
+
+/** open book for the empty-corpus hero (inline, like every Home icon) */
+function IconBookOpen(): React.JSX.Element {
+  return (
+    <svg
+      width="26"
+      height="26"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 6.8C10.2 5.4 7.9 4.7 5.5 4.7c-.4 0-.8 0-1.2.1v12.9c.4-.1.8-.1 1.2-.1 2.4 0 4.7.7 6.5 2.1 1.8-1.4 4.1-2.1 6.5-2.1.4 0 .8 0 1.2.1V4.8c-.4-.1-.8-.1-1.2-.1-2.4 0-4.7.7-6.5 2.1z" />
+      <path d="M12 6.8v12.9" />
+    </svg>
+  )
+}
+
+function IconStar(): React.JSX.Element {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3.6l2.6 5.2 5.8.9-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.7l5.8-.9z" />
+    </svg>
+  )
+}
+
+function IconInfo(): React.JSX.Element {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8.2v.01M12 11.5V16" />
+    </svg>
+  )
+}
+
+function IconSearch(): React.JSX.Element {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.8-3.8" />
+    </svg>
+  )
+}
+
+function IconFileText(): React.JSX.Element {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h6" />
+    </svg>
+  )
+}
+
+/** upward arrow for the icon-only send button (IconEnter is a return key) */
+function IconArrowUp(): React.JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 19V5" />
+      <path d="M5.5 11.5 12 5l6.5 6.5" />
+    </svg>
   )
 }

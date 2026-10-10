@@ -17,6 +17,8 @@
 
   /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
   --logo-invert: 0;
+  /* lift for the kb-ask composer box */
+  --shadow-composer: 0 1px 3px rgb(0 0 0 / 5%);
 }
 
 /* ── Dark mode overrides ─────────────────────────────────── */
@@ -33,6 +35,7 @@
   --timeline-user-text: #b0b0c0;
   --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
   --logo-invert: 1;
+  --shadow-composer: 0 1px 3px rgb(0 0 0 / 25%);
 }
 
 /* System dark: no data-theme or data-theme="system" — follow OS preference */
@@ -48,6 +51,7 @@
     --timeline-user-text: #b0b0c0;
     --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
     --logo-invert: 1;
+    --shadow-composer: 0 1px 3px rgb(0 0 0 / 25%);
   }
 }
 
@@ -2271,15 +2275,24 @@ html[dir='rtl'] .quick-title-row {
   margin: 0 auto;
   width: 100%;
 }
-.kb-ask-head h2 {
-  margin: 18px 0 2px;
-  font-size: 17px;
+
+.kb-ask-headbar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 2px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 12px;
 }
-.kb-ask-sub {
-  margin: 0 0 8px;
+.kb-ask-headbar b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.kb-ask-headbar span {
   font-size: 12px;
-  opacity: 0.6;
+  color: var(--text-tertiary);
 }
+
 .kb-ask-thread {
   flex: 1;
   min-height: 0;
@@ -2289,16 +2302,127 @@ html[dir='rtl'] .quick-title-row {
   gap: 12px;
   padding: 8px 2px;
 }
-.kb-ask-hint,
-.kb-ask-login {
+
+/* empty-corpus hero: the only useful move is starring files, so the panel
+   says so and offers the jump instead of leaving a bare hint */
+.kb-ask-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding-bottom: 8px;
+}
+.kb-ask-hero-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.kb-ask-hero h3 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 500;
+}
+.kb-ask-hero > p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  max-width: 46ch;
+  line-height: 1.6;
+}
+.kb-ask-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin: 26px 0 20px;
+}
+.kb-ask-step {
+  background: var(--surface-subtle);
+  border-radius: 12px;
+  padding: 13px 14px;
+  text-align: left;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.kb-ask-step-num {
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+.kb-ask-step b {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin: 1px 0 3px;
+}
+.kb-ask-step span {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: block;
+}
+.kb-ask-cta {
+  appearance: none;
+  border: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--accent);
+  color: var(--color-btn-primary-text);
+  border-radius: 10px;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: background var(--transition-fast, 150ms);
+}
+.kb-ask-cta:hover {
+  background: var(--accent-hover);
+}
+
+/* has corpus, nothing asked yet: one quiet centered line */
+.kb-ask-hint {
+  margin: auto 0;
+  text-align: center;
   font-size: 12.5px;
   opacity: 0.65;
-  margin: 6px 0;
 }
 .kb-ask-login {
+  margin: 0 2px 8px;
+  font-size: 12.5px;
   color: var(--text-secondary);
-  opacity: 1;
 }
+.kb-ask-nosave {
+  margin: 0 2px 8px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kb-ask-nosave svg {
+  flex-shrink: 0;
+}
+
 .kb-ask-msg {
   font-size: 13.5px;
   line-height: 1.55;
@@ -2307,9 +2431,9 @@ html[dir='rtl'] .quick-title-row {
 }
 .kb-ask-user {
   align-self: flex-end;
-  background: var(--accent-bg);
-  border-radius: 10px 10px 3px 10px;
-  padding: 7px 11px;
+  background: var(--accent-soft);
+  border-radius: 12px 12px 4px 12px;
+  padding: 8px 12px;
 }
 .kb-ask-assistant {
   align-self: flex-start;
@@ -2321,12 +2445,126 @@ html[dir='rtl'] .quick-title-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 5px;
+  margin-bottom: 7px;
 }
 .kb-ask-tool-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11.5px;
-  padding: 2px 8px;
+  color: var(--text-secondary);
+  padding: 3px 9px;
   border-radius: 99px;
-  background: var(--accent-bg);
-  opacity: 0.85;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+}
+.kb-ask-tool-note svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+/* citation links inside answers (filenav): a soft pill, click opens the file */
+.kb-ask-assistant a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12.5px;
+  background: var(--accent-soft);
+  border-radius: 5px;
+  padding: 1px 7px;
+  margin: 0 1px;
+  vertical-align: 1px;
+}
+.kb-ask-assistant a:hover {
+  text-decoration: underline;
+}
+
+/* ── AiComposer skin ──
+   The shared composer renders only structure; every app themes
+   .ai-input-box in its own CSS. Home never had a copy, which is why the
+   panel used to show a bare native textarea. */
+.ai-input-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--shadow-composer);
+  transition:
+    border-color var(--transition-fast, 150ms),
+    box-shadow var(--transition-fast, 150ms);
+}
+.ai-input-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.ai-input-box textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--text);
+  padding: 0 14px;
+  margin: 11px 0 2px;
+  min-height: 43px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.ai-input-box textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.ai-input-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 8px 12px;
+}
+.ai-input-hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  user-select: none;
+  white-space: nowrap;
+}
+.kb-ask-kbdhint kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 5px;
+  margin-right: 4px;
+}
+.ai-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 35%;
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+  cursor: pointer;
+  transition:
+    opacity var(--transition-fast, 150ms),
+    transform var(--transition-fast, 150ms);
+}
+.ai-send-btn:hover:not(:disabled) {
+  transform: scale(1.04);
+}
+.ai-send-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ai-send-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
 }
