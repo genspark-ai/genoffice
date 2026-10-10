@@ -50,7 +50,15 @@ import {
   settingsSupportVision,
 } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { AiScopeQuote, Markdown, useAiPanelPrefs, type AiScopeQuoteData } from '@genoffice/ui'
+import {
+  AiQueueStrip,
+  AI_QUEUE_LABELS,
+  AiScopeQuote,
+  Markdown,
+  useAiPanelPrefs,
+  useChatRunQueue,
+  type AiScopeQuoteData,
+} from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -398,6 +406,21 @@ export function AiPanel({
   // must honor it like the shared AiComposer does.
   const { spellcheck } = useAiPanelPrefs()
   const [busy, setBusy] = useState(false)
+  /** messages queued while a reply runs; the pump re-runs them through runWith on settle */
+  const msgQueue = useChatRunQueue<{
+    attachments: AttachmentMeta[]
+    scope: AiScopeQuoteData | undefined
+  }>({
+    busy,
+    submit: (text, meta) => {
+      // the QC pass edits the deck with busy=false: refuse and let the pump retry
+      if (qcRunningRef.current || runStartingRef.current) return false
+      const loop = loopRef.current
+      if (!loop || loop.busy) return false
+      runWith(text, text, { attachments: meta.attachments, scope: meta.scope })
+      return true
+    },
+  })
   const [chat, setChat] = useState<ChatEntry[]>([])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
@@ -1580,6 +1603,31 @@ export function AiPanel({
 
   const run = () => runWith(input.trim())
 
+  /** Enter while a reply runs: the draft joins the queue above the composer */
+  const enqueueDraft = () => {
+    const text = input.trim()
+    if (!text) return
+    // snapshot + consume the composer attachments exactly like a send does
+    const attachments = attachmentsRef.current
+    if (attachments.length > 0) {
+      const seen = new Set(sentAttachmentsRef.current.map((a) => a.path))
+      sentAttachmentsRef.current = [
+        ...sentAttachmentsRef.current,
+        ...attachments.filter((a) => !seen.has(a.path)),
+      ]
+      setAttachments([])
+      attachmentsRef.current = []
+    }
+    const scope =
+      selectedRef.current.length > 0
+        ? {
+            label: `${t('aiScopeSlide', { n: current + 1 })} · ${t('aiScopeSelection', { count: selectedRef.current.length })}`,
+          }
+        : undefined
+    msgQueue.enqueue(text, { attachments, scope })
+    setInput('')
+  }
+
   /** Image attachments read as base64, sent multimodally with this user message (≤5MB per image, max 20; isomorphic to docs) */
   const MAX_IMAGES_PER_MESSAGE = 20
   const collectImageAttachments = async (atts: AttachmentMeta[]): Promise<AgentImage[]> => {
@@ -1960,6 +2008,7 @@ export function AiPanel({
     })
 
   const newChat = () => {
+    msgQueue.clear()
     dismissClarify()
     qcAbortRef.current?.abort()
     loopRef.current?.reset()
@@ -2370,6 +2419,16 @@ export function AiPanel({
           )}
           {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
           <div className="ai-input-box">
+            <AiQueueStrip
+              items={msgQueue.queued}
+              labels={AI_QUEUE_LABELS[lang]}
+              onUpdate={msgQueue.update}
+              onRemove={msgQueue.remove}
+              onClear={msgQueue.clear}
+              paused={msgQueue.paused}
+              onTogglePause={msgQueue.togglePaused}
+              onMove={msgQueue.move}
+            />
             {attachments.length > 0 && (
               <div className="ai-attachments" onScroll={onAttachmentsScroll}>
                 {attachments.map((a) =>
@@ -2436,7 +2495,11 @@ export function AiPanel({
               spellCheck={spellcheck}
               data-slides-ai-input="true"
               data-deck-undo-ready={!busy && !inputEditedSinceRunRef.current ? 'true' : 'false'}
-              placeholder={t(deckEmpty ? 'aiInputPlaceholderGen' : 'aiInputPlaceholder')}
+              placeholder={
+                busy
+                  ? AI_QUEUE_LABELS[lang].queuePlaceholder
+                  : t(deckEmpty ? 'aiInputPlaceholderGen' : 'aiInputPlaceholder')
+              }
               onChange={(e) => {
                 inputEditedSinceRunRef.current = true
                 setInput(e.target.value)
@@ -2444,7 +2507,8 @@ export function AiPanel({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
-                  run()
+                  if (busy) enqueueDraft()
+                  else run()
                 } else if (e.key === 'Escape' && busy) {
                   e.preventDefault()
                   cancel()

@@ -530,6 +530,8 @@ export const vi = {
   appPrintFailed: 'Không thể in.',
   appPrintNeedsFullLoad:
     'In ấn cần toàn bộ sổ làm việc được tải — vui lòng đợi quá trình tải hoàn tất.',
+  appPrintWorkbookTooLarge:
+    'Sổ làm việc này quá lớn để tải đầy đủ vào bộ nhớ, nên không thể in hoặc xuất ra PDF.',
   appCsvExportNeedsFullLoad: 'Xuất CSV cần sổ làm việc được tải đầy đủ — vui lòng đợi tải xong.',
   appCsvExportTooLarge: 'Trang tính quá lớn để xuất dưới dạng CSV.',
   appCsvExportCanceled: 'Đã hủy xuất CSV.',

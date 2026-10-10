@@ -28,6 +28,9 @@ export interface BlockBox {
    *  lineBoxes offsets); the engine turns the page there and the text before
    *  stays on the current page like Word */
   innerBreaks?: number[]
+  /** a page-break-before paragraph lives inside a cell: the row data must exist
+   *  even when the table fits its page, or the instruction is invisible */
+  hasCellBreak?: boolean
   /** zero-height break carrier (floating-textbox anchor): the break survives a blank page */
   breakForce?: boolean
   /** block contains a column break (w:br type=column): force a column change after it (new page on last column) */
@@ -174,6 +177,10 @@ export interface TableRowBox {
   /** in-row safe cut points (relative to row top, px, ascending): spanning all cells without splitting any text line/image.
    *  Word allows in-row page breaks by default; without cut points or with cantSplit the row is atomic */
   cutYs?: number[]
+  /** forced in-row cut points (relative to row top, px, ascending): page breaks the
+   *  author instructed inside a cell (a page-break-before paragraph) — they turn the
+   *  page at their position regardless of what fits, unlike the content-line cutYs */
+  forcedCuts?: number[]
   /** bottom of the lowest content band (text/image rects) relative to row top (px, 0 = empty row):
    *  lets pagination clip declared-height fill below the content instead of pushing pages */
   contentBottom?: number

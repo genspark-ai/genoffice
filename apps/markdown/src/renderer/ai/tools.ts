@@ -1,3 +1,4 @@
+import { modelTextOf, redactJson, redactTextBetween } from '../editor/redact'
 import type { Editor, JSONContent } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { AgentToolCall, AgentToolDef, ToolExecution } from '@genoffice/agent-core'
@@ -50,7 +51,10 @@ function editedExternally(editor: Editor): boolean {
 // ── document skeleton / serialization helpers ──
 
 function blockPreview(node: PmNode): string {
-  const text = node.textContent.replace(/\s+/g, ' ').trim()
+  // modelTextOf, not textContent: a withheld span must not reach the preview
+  const text = modelTextOf(node.toJSON() as never)
+    .replace(/\s+/g, ' ')
+    .trim()
   return text.length > PREVIEW_CHARS ? `${text.slice(0, PREVIEW_CHARS)}…` : text
 }
 
@@ -63,19 +67,29 @@ function blockLabel(node: PmNode): string {
   return node.type.name
 }
 
-/** Serialize a range of top-level blocks back to markdown */
+/**
+ * Serialize a range of top-level blocks back to markdown, as the model sees it.
+ *
+ * Withheld spans are replaced by their markers here, on the way out, so the
+ * text under them is never serialized at all — the only place documents are
+ * turned into something that leaves the machine. Saving does not come through
+ * here; it renders the real text.
+ */
 function serializeBlocks(editor: Editor, from: number, to: number): string {
   const content: JSONContent[] = []
   editor.state.doc.forEach((node, _offset, index) => {
     if (index >= from && index <= to) content.push(node.toJSON() as JSONContent)
   })
-  return editor.markdown?.serialize({ type: 'doc', content }) ?? ''
+  return editor.markdown?.serialize(redactJson({ type: 'doc', content })) ?? ''
 }
 
 function selectionMarkdown(editor: Editor): string {
   const { from, to } = editor.state.selection
   if (from === to) return ''
-  const text = editor.state.doc.textBetween(from, to, '\n')
+  // same reason as blockPreview — the selection is document text going out —
+  // and the offsets are ProseMirror's: a flat string sliced with them
+  // misquotes every selection after the first block
+  const text = redactTextBetween(editor.getJSON() as never, from, to)
   return text.length > SELECTION_MAX_CHARS ? `${text.slice(0, SELECTION_MAX_CHARS)}…` : text
 }
 

@@ -513,6 +513,8 @@ export const th = {
   appPrintCanceled: 'ยกเลิกการพิมพ์แล้ว',
   appPrintFailed: 'ไม่สามารถพิมพ์ได้',
   appPrintNeedsFullLoad: 'การพิมพ์ต้องโหลดสมุดงานให้เสร็จก่อน โปรดรอให้การโหลดเสร็จสิ้น',
+  appPrintWorkbookTooLarge:
+    'เวิร์กบุ๊กนี้ใหญ่เกินกว่าจะโหลดเข้าหน่วยความจำได้ทั้งหมด จึงไม่สามารถพิมพ์หรือส่งออกเป็น PDF ได้',
   appCsvExportNeedsFullLoad: 'การส่งออก CSV ต้องรอให้เวิร์กบุ๊กโหลดเต็มก่อน — รอให้โหลดเสร็จ',
   appCsvExportTooLarge: 'ชีตใหญ่เกินไป ส่งออกเป็น CSV ไม่ได้',
   appCsvExportCanceled: 'ยกเลิกการส่งออก CSV แล้ว',

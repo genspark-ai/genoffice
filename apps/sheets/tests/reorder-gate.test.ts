@@ -4,6 +4,7 @@ import { FULL_LOAD_MAX_CELLS, REORDER_JOURNAL_MAX_CELLS } from '../src/renderer/
 import { createEditJournal } from '../src/renderer/edit-journal'
 import { SharedFormulaLookup } from '../src/renderer/shared-formula-index'
 import {
+  fullLoadGate,
   rangeHasStreamedFormulas,
   reorderCommandRanges,
   reorderGate,
@@ -23,6 +24,42 @@ function input(overrides: Partial<ReorderGateInput> = {}): ReorderGateInput {
     ...overrides,
   }
 }
+
+describe('fullLoadGate', () => {
+  const fits = { gridCells: 60_000, storedCells: 60_000, valueCells: 60_000 }
+  const tooLarge = {
+    gridCells: FULL_LOAD_MAX_CELLS + 1,
+    storedCells: FULL_LOAD_MAX_CELLS + 1,
+    valueCells: FULL_LOAD_MAX_CELLS + 1,
+  }
+
+  it('offers Load all on an idle streamed workbook that fits', () => {
+    expect(fullLoadGate({ formulaMode: false, preloadRunning: false, cellCounts: fits })).toBe(
+      'offerFullLoad',
+    )
+  })
+
+  it('explains instead of offering above the full-load cap', () => {
+    expect(fullLoadGate({ formulaMode: false, preloadRunning: false, cellCounts: tooLarge })).toBe(
+      'workbookTooLarge',
+    )
+  })
+
+  it('shows the in-progress notice while any preload runs, even one that Print started', () => {
+    expect(fullLoadGate({ formulaMode: false, preloadRunning: true, cellCounts: fits })).toBe(
+      'loading',
+    )
+    expect(fullLoadGate({ formulaMode: false, preloadRunning: true, cellCounts: tooLarge })).toBe(
+      'loading',
+    )
+  })
+
+  it('holds a formula-mode workbook at loading while it preloads itself at open', () => {
+    expect(fullLoadGate({ formulaMode: true, preloadRunning: false, cellCounts: fits })).toBe(
+      'loading',
+    )
+  })
+})
 
 describe('reorderGate', () => {
   it('allows a fully loaded value-mode workbook (>50k cells after Load all)', () => {

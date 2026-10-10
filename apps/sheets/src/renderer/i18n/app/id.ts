@@ -536,6 +536,8 @@ export const id = {
   appPrintFailed: 'Tidak dapat mencetak.',
   appPrintNeedsFullLoad:
     'Pencetakan memerlukan buku kerja termuat sepenuhnya — tunggu hingga pemuatan selesai.',
+  appPrintWorkbookTooLarge:
+    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori, sehingga tidak dapat dicetak atau diekspor ke PDF.',
   appCsvExportNeedsFullLoad:
     'Ekspor CSV memerlukan buku kerja termuat penuh — tunggu pemuatan selesai.',
   appCsvExportTooLarge: 'Lembar terlalu besar untuk diekspor sebagai CSV.',

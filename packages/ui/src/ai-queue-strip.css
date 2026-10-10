@@ -1,0 +1,178 @@
+/* Queued-messages strip above the AI composer (see AiQueueStrip.tsx) */
+
+/*
+ * Every rule is anchored on .ai-queue-strip. Written unqualified, these names
+ * also matched the queued-edits panel that the Docs, HTML, Markdown and Slides
+ * stylesheets style under the same `.ai-queue-*` names — and their sheet loads
+ * after this one in every renderer entry, so the strip rendered one way in
+ * Sheets and PDF and another way in the other four apps, while our own rules
+ * reached into a component this sheet has nothing to do with. Scoping closes
+ * both directions; keep new rules under the root, because a bare
+ * `.ai-queue-head` here is a cross-component edit, not a local one.
+ */
+.ai-queue-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-subtle);
+}
+
+.ai-queue-strip .ai-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* declared rather than absent: the apps style a `.ai-queue-head` too, and a
+     padding they set would otherwise reach this element by name alone */
+  padding: 0;
+  gap: 6px;
+}
+
+.ai-queue-strip .ai-queue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ai-queue-strip .ai-queue-toggle:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-strip .ai-queue-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.ai-queue-strip .ai-queue-clear:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+} /* holds the queue where it is; pressed = held */
+
+.ai-queue-strip .ai-queue-pause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.ai-queue-strip .ai-queue-pause:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-strip .ai-queue-pause[aria-pressed='true'] {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-queue-strip .ai-queue-hint {
+  margin-right: auto;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  /* as above: the apps' `.ai-queue-hint` carries a padding of its own */
+  padding: 0;
+}
+
+.ai-queue-strip .ai-queue-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ai-queue-strip .ai-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-queue-strip .ai-queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.ai-queue-strip .ai-queue-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--canvas);
+  color: var(--color-text-primary);
+  font-size: var(--text-caption);
+}
+
+.ai-queue-strip .ai-queue-edit:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.ai-queue-strip .ai-queue-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--icon-muted);
+  cursor: pointer;
+}
+
+.ai-queue-strip .ai-queue-action:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+} /* reordering: hold a row to pick it up, Alt+arrows for keyboards */
+
+.ai-queue-strip .ai-queue-item {
+  cursor: grab;
+}
+
+.ai-queue-strip .ai-queue-item:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
+.ai-queue-strip .ai-queue-items.ai-queue-dragging,
+.ai-queue-strip .ai-queue-items.ai-queue-dragging .ai-queue-item {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.ai-queue-strip .ai-queue-item[data-dragging='true'] {
+  opacity: 0.55;
+}

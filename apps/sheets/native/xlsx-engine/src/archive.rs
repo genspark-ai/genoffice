@@ -25,7 +25,7 @@ const MAX_ENTRY_COUNT: usize = 10_000;
 // 500 MiB, not 512: the host patches entries as JavaScript strings, and
 // V8's maximum string length is 536,870,888 bytes — an entry between that
 // and 512 MiB would pass a 512 MiB cap and then fail to materialize.
-const MAX_EXTRACTED_ENTRY_BYTES: u64 = 500 * 1024 * 1024;
+pub(crate) const MAX_EXTRACTED_ENTRY_BYTES: u64 = 500 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -575,6 +575,8 @@ export const es = {
   appPrintFailed: 'No se puede imprimir.',
   appPrintNeedsFullLoad:
     'Para imprimir, el libro debe estar completamente cargado; espere a que termine la carga.',
+  appPrintWorkbookTooLarge:
+    'Este libro es demasiado grande para cargarse por completo en la memoria, por lo que no se puede imprimir ni exportar a PDF.',
   appCsvExportNeedsFullLoad:
     'La exportación a CSV requiere el libro completamente cargado — espere a que termine la carga.',
   appCsvExportTooLarge: 'La hoja es demasiado grande para exportarla como CSV.',

@@ -5734,6 +5734,26 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   flex: 1;
 }
 
+/* Three stacked rows have to fit the 64px the fixed 80px band leaves after its
+   padding and the scrollbar lane: 3 × 20px + 2 × 2px. At the default 25-26px
+   the bottom row (Table Properties, Insert Cells…) was clipped. */
+.table-tool-stack-three {
+  grid-template-rows: repeat(3, 20px);
+  align-content: center;
+}
+
+.table-tool-col-three > .table-tool-grid {
+  flex: none;
+  gap: 2px 3px;
+}
+
+.table-tool-group .table-tool-stack-three .table-command-row,
+.table-tool-group .table-tool-col-three button {
+  min-height: 20px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 /* Word's split button: the left half repeats the last gallery pick, the caret opens it */
 .table-split {
   display: flex;

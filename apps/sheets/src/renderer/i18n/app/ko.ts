@@ -545,6 +545,8 @@ export const ko = {
   appPrintFailed: '인쇄할 수 없습니다.',
   appPrintNeedsFullLoad:
     '인쇄하려면 워크북이 완전히 로드되어야 합니다. 로드가 끝날 때까지 기다려 주세요.',
+  appPrintWorkbookTooLarge:
+    '이 통합 문서는 너무 커서 메모리에 완전히 불러올 수 없으므로 인쇄하거나 PDF로 내보낼 수 없습니다.',
   appCsvExportNeedsFullLoad:
     'CSV 내보내기에는 통합 문서 전체 로드가 필요합니다 — 로드가 완료될 때까지 기다리십시오.',
   appCsvExportTooLarge: '시트가 너무 커서 CSV로 내보낼 수 없습니다.',

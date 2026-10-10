@@ -1,0 +1,13 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_file_txt)">
+<path d="M48 240L192 240C218.51 240 240 218.51 240 192L240 48C240 21.4903 218.51 1.91027e-05 192 1.67852e-05L48 4.19629e-06C21.4903 1.87874e-06 1.91027e-05 21.4903 1.67852e-05 48L4.19629e-06 192C1.87874e-06 218.51 21.4903 240 48 240Z" fill="#64748B"/>
+<rect x="66" y="82" width="108" height="16" rx="8" fill="white"/>
+<rect x="66" y="116" width="76" height="16" rx="8" fill="white"/>
+<rect x="66" y="150" width="92" height="16" rx="8" fill="white"/>
+</g>
+<defs>
+<clipPath id="clip0_file_txt">
+<rect width="240" height="240" fill="white"/>
+</clipPath>
+</defs>
+</svg>

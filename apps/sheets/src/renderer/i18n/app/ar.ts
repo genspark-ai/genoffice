@@ -514,6 +514,8 @@ export const ar = {
   appPrintCanceled: 'تم إلغاء الطباعة.',
   appPrintFailed: 'يتعذر الطباعة.',
   appPrintNeedsFullLoad: 'تتطلب الطباعة تحميل المصنف بالكامل — يرجى انتظار انتهاء التحميل.',
+  appPrintWorkbookTooLarge:
+    'هذا المصنف كبير جدًا بحيث لا يمكن تحميله بالكامل في الذاكرة، لذا لا يمكن طباعته أو تصديره بصيغة PDF.',
   appCsvExportNeedsFullLoad: 'يتطلب تصدير CSV مصنفًا محمّلاً بالكامل — انتظر حتى ينتهي التحميل.',
   appCsvExportTooLarge: 'الورقة كبيرة جدًا ولا يمكن تصديرها بتنسيق CSV.',
   appCsvExportCanceled: 'أُلغي تصدير CSV.',

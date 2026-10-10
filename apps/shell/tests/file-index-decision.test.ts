@@ -89,6 +89,7 @@ describe('prepare', () => {
     expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'perplexity' })).body).model).toBe(
       'pplx-decider-v1-27b',
     )
+    expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'liquid' })).body).model).toBe('d1')
     expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'kev' })).body).model).toBe('kev-latest')
     expect(JSON.parse(prepare('q', docs, opts({ endpoint: 'rizzo' })).body).model).toBe(
       'rizzo-latest',
@@ -194,6 +195,7 @@ describe('validate', () => {
     expect(
       validate(JSON.parse(answer([2, 1]), 'pplx-decider-v1-27b'), 2, 'perplexity').scores,
     ).toEqual([2, 1])
+    expect(validate(JSON.parse(answer([1, 2]), 'd1'), 2, 'liquid').scores).toEqual([1, 2])
     expect(validate(JSON.parse(answer([1, 0]), 'whatever'), 2, 'custom').scores).toEqual([1, 0])
     expect(validate(JSON.parse(answer([1, 2]), 'kev-latest'), 2, 'kev').scores).toEqual([1, 2])
   })
@@ -239,6 +241,8 @@ describe('evaluate', () => {
     expect(calls[0]).toBe('http://127.0.0.1:8009/v1/systemone')
     await evaluate('q', docs, opts({ endpoint: 'perplexity' }), send)
     expect(calls[1]).toBe('https://api.perplexity.ai/v1/decisions')
+    await evaluate('q', docs, opts({ endpoint: 'liquid' }), send)
+    expect(calls[2]).toBe('https://api.liquid.ai/decisions/v1/systemone')
   })
 })
 

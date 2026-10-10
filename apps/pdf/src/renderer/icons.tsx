@@ -101,6 +101,21 @@ export const IconSign = () => (
     <path d="M4.75 18.6 L19.25 18.6" />
   </Icon>
 )
+/** Certificate signing: a seal with ribbon tails */
+export const IconCertSign = () => (
+  <Icon>
+    <circle cx="12" cy="9.5" r="4.5" />
+    <path d="M9.6 9.6 L11.2 11.2 L14.6 7.8" />
+    <path d="M9 13.4 L7.5 19.5 L12 17.4 L16.5 19.5 L15 13.4" />
+  </Icon>
+)
+/** Signature panel: a shield with a check mark */
+export const IconSignatures = () => (
+  <Icon>
+    <path d="M12 4 L18.5 6.4 V11.4 C18.5 15 15.9 18 12 19.6 C8.1 18 5.5 15 5.5 11.4 V6.4 Z" />
+    <path d="M9.2 11.8 L11.2 13.8 L15 9.9" />
+  </Icon>
+)
 export const IconPreviousField = () => (
   <Icon>
     <rect x="6" y="4.5" width="12" height="15" rx="1.5" />

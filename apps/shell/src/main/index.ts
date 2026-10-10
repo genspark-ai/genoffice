@@ -326,6 +326,7 @@ import extractWorkerPath from './file-index/extract-worker?modulePath'
 import { FileIndexer } from './file-index/indexer'
 import { FileIndexStore } from './file-index/store'
 import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
+import { listKnowledgeFiles, readKnowledgeFilePage, searchKnowledgeBase } from './knowledge-base'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import { installShellCloseGuard } from './window-close-guard'
@@ -371,11 +372,30 @@ import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
 // run silently quits and forwards its argv to the running installed GenOffice.
 // GENOFFICE_USER_DATA: test drivers point this at a scratch dir so an
 // automated instance can run alongside the dev instance (separate lock).
-if (!app.isPackaged)
-  app.setPath(
-    'userData',
-    process.env.GENOFFICE_USER_DATA ?? join(app.getPath('appData'), 'GenOffice Dev'),
-  )
+if (!app.isPackaged) {
+  if (process.env.GENOFFICE_USER_DATA) {
+    app.setPath('userData', process.env.GENOFFICE_USER_DATA)
+  } else {
+    // The dev profile used to live in "GenOffice Dev"; the space breaks
+    // unquoted shell expansions, rsync targets and .desktop Exec= lines, and
+    // XDG config entries are single tokens (#1817). "GenOffice-Dev" keeps the
+    // family naming of the packaged profile ("GenOffice"). The old directory
+    // moves once — it sits on the same volume as appData, so the rename is
+    // atomic, and a concurrent dev instance keeps its open file handles.
+    const appData = app.getPath('appData')
+    const devDir = join(appData, 'GenOffice-Dev')
+    const oldDevDir = join(appData, 'GenOffice Dev')
+    if (existsSync(oldDevDir) && !existsSync(devDir)) {
+      try {
+        renameSync(oldDevDir, devDir)
+      } catch {
+        // another dev instance is mid-migration or holds the directory:
+        // continuing with a fresh profile beats failing the launch
+      }
+    }
+    app.setPath('userData', devDir)
+  }
+}
 
 /**
  * `--headless-export <file> --to <format> --out <path> [--json]`: one document, no
@@ -3872,6 +3892,50 @@ function registerHomeIpc(): void {
       total: result.total,
       index: indexer.progress(),
     }
+  })
+
+  // Knowledge-base channel: the AI-side read access to the reader's starred
+  // files (docs wires these into its panel; see knowledge-base.ts). Path
+  // arguments are validated against the starred set — a corpus file is the
+  // only thing a knowledge tool may read.
+  ipcMain.handle('kb:list', (): unknown => listKnowledgeFiles(readStarredFiles()))
+
+  ipcMain.handle('kb:search', (_event, raw: unknown): unknown => {
+    const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; limit?: unknown }
+    const q = typeof query.q === 'string' ? query.q : ''
+    const limitRaw = Number(query.limit)
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.floor(limitRaw)) : 8
+    const store = fileIndexStore
+    if (!q.trim() || !store) return []
+    ensureFileIndexer()?.refreshIfStale(60_000)
+    const starred = readStarredFiles()
+    const hits = searchKnowledgeBase(
+      (qq, pool) =>
+        store.search(qq, { limit: pool }).hits.map((h) => ({
+          path: h.path,
+          name: h.name,
+          ext: h.ext,
+          snippetText: (h.snippet ?? []).map((part) => part.text).join(''),
+        })),
+      q,
+      starred,
+      Math.min(limit, 20),
+    )
+    return hits
+  })
+
+  ipcMain.handle('kb:read', async (_event, raw: unknown): Promise<unknown> => {
+    const req = (raw && typeof raw === 'object' ? raw : {}) as {
+      path?: unknown
+      offset?: unknown
+    }
+    const path = typeof req.path === 'string' ? req.path : ''
+    const offsetRaw = Number(req.offset)
+    const offset = Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0
+    if (!path || !readStarredFiles().includes(path)) {
+      throw new Error('path is not in the knowledge base')
+    }
+    return readKnowledgeFilePage(path, offset)
   })
 
   ipcMain.handle(

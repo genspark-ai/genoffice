@@ -5706,6 +5706,74 @@ describe('trailing page break — phantom line', () => {
   })
 })
 
+describe('a forced cut inside a cell (page-break-before paragraph)', () => {
+  const linesOf = (n: number, pitch: number, perPara: number, child = 0, top = 0) => ({
+    lines: Array.from({ length: n }, (_, i): [number, number] => [
+      top + i * pitch,
+      top + (i + 1) * pitch,
+    ]),
+    childOf: Array.from({ length: n }, () => child),
+    paraOf: Array.from({ length: n }, (_, i) => Math.floor(i / perPara)),
+  })
+
+  it('turns the page at the instruction even when the whole row fits', () => {
+    // the reporter's case in genoffice#1902: a layout table shorter than the
+    // page, a page-break-before paragraph mid-cell. Word starts that paragraph
+    // on the next page regardless of the row fitting — two fragments, the
+    // break at the instruction's top edge.
+    const row: TableRowBox = {
+      height: 100,
+      contentBottom: 100,
+      forcedCuts: [60],
+      cells: [{ ...linesOf(5, 20, 5), alignDy: 0, alignFrac: 0 }],
+    }
+    const pages = [200]
+    let n = -1
+    const ys: number[] = []
+    const turn = (_placed: number, y: number) => {
+      ys.push(y)
+      return pages[++n] ?? 200
+    }
+    const plan = planRowSplit(row, 200, 200, turn)
+    expect(plan !== 'nofit' && plan !== null).toBe(true)
+    // exactly one page turn, at the instruction's top edge (the rest of the
+    // page stays empty — the fragment must not run on to capacity)
+    expect(n).toBe(0)
+    expect(ys).toEqual([60])
+    if (plan !== 'nofit' && plan !== null) {
+      expect(plan.rules.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('the genoffice#1902 repro shape: an ultra-tall row splits at the cut, then by lines', () => {
+    // 92 x 22px lines over an 864px page, forced cut at 798: the fragment on
+    // the first page ends at the cut, the next page starts there and the rest
+    // splits by lines (widow rules still apply within each fragment)
+    const row: TableRowBox = {
+      height: 2026,
+      contentBottom: 2026,
+      forcedCuts: [798],
+      cells: [{ ...linesOf(92, 22, 22), alignDy: 0, alignFrac: 0 }],
+    }
+    const pages = [864]
+    let n = -1
+    const ys: number[] = []
+    const turn = (_placed: number, y: number) => {
+      ys.push(y)
+      return pages[++n] ?? 864
+    }
+    const plan = planRowSplit(row, 831, 864, turn)
+    expect(plan !== 'nofit' && plan !== null).toBe(true)
+    // the cut turns the page mid-row — AT the instruction (814, line 37's top
+    // edge), not at the 831 capacity the page had left; the rest splits by lines
+    expect(n).toBeGreaterThanOrEqual(1)
+    expect(ys[0]).toBe(814)
+    if (plan !== 'nofit' && plan !== null) {
+      expect(plan.rules.some((r) => r.from > 0)).toBe(true)
+    }
+  })
+})
+
 describe('lifted floats', () => {
   it('a float lifted into the previous band needs only the room below the flow position', () => {
     // 700px page; a band block fills 0-600, the lifted picture spans 300-680

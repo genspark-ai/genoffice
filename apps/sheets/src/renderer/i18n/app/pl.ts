@@ -559,6 +559,8 @@ export const pl = {
   appPrintFailed: 'Nie można wydrukować.',
   appPrintNeedsFullLoad:
     'Drukowanie wymaga pełnego wczytania skoroszytu — poczekaj na zakończenie wczytywania.',
+  appPrintWorkbookTooLarge:
+    'Ten skoroszyt jest zbyt duży, aby w pełni załadować go do pamięci, dlatego nie można go wydrukować ani wyeksportować do pliku PDF.',
   appCsvExportNeedsFullLoad:
     'Eksport do CSV wymaga w pełni załadowanego skoroszytu — poczekaj na zakończenie ładowania.',
   appCsvExportTooLarge: 'Arkusz jest za duży, aby wyeksportować go do CSV.',

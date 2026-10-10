@@ -474,6 +474,7 @@ export const zhTW = {
   appPrintCanceled: '列印已取消。',
   appPrintFailed: '無法列印。',
   appPrintNeedsFullLoad: '列印需要活頁簿完整載入——請等待載入完成。',
+  appPrintWorkbookTooLarge: '此活頁簿過大，無法完整載入記憶體，因此無法列印或匯出為 PDF。',
   appCsvExportNeedsFullLoad: 'CSV 匯出需要活頁簿完整載入——請等待載入完成。',
   appCsvExportTooLarge: '工作表太大,無法匯出 CSV。',
   appCsvExportCanceled: 'CSV 匯出已取消。',

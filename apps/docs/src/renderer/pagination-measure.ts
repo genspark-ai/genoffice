@@ -271,6 +271,7 @@ export function measureBlocks(
     const relVSpec = el.dataset.tblpVspec
     const relVApplied = Number.isFinite(relVy) ? parseFloat(el.dataset.tblpDy ?? '') || 0 : 0
     const emptyPara = !(el.textContent ?? '').trim() && !imgsByBlock.get(el)?.length
+    const hasCellBreak = !!el.querySelector('tr p.page-break-before')
     // non-reflowable blocks keep their rendered width in any column (tables,
     // anchored/inline textbox shapes; protected text paragraphs still reflow)
     const fixedWidth =
@@ -336,6 +337,7 @@ export function measureBlocks(
       breakAfter: trailingCount > 0 || undefined,
       ...(trailingCount > 1 ? { extraBreaksAfter: trailingCount - 1 } : {}),
       ...(innerBreaks.length > 0 ? { innerBreaks } : {}),
+      ...(hasCellBreak ? { hasCellBreak: true } : {}),
       colBreakBefore: leadingColBreak || undefined,
       colBreakAfter: (hasColBreak && !leadingColBreak) || undefined,
       breakForce: (hasBreak && rect.height <= 0) || undefined,

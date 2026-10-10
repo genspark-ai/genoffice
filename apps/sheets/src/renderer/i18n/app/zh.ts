@@ -484,6 +484,7 @@ export const zh = {
   appPrintCanceled: '打印已取消。',
   appPrintFailed: '无法打印。',
   appPrintNeedsFullLoad: '打印需要工作簿完整加载——请等待加载完成。',
+  appPrintWorkbookTooLarge: '此工作簿过大，无法完整载入内存，因此无法打印或导出为 PDF。',
   appCsvExportNeedsFullLoad: 'CSV 导出需要工作簿完整加载——请等待加载完成。',
   appCsvExportTooLarge: '工作表太大,无法导出 CSV。',
   appCsvExportCanceled: 'CSV 导出已取消。',

@@ -569,6 +569,8 @@ export const ja = {
   appPrintFailed: '印刷できません。',
   appPrintNeedsFullLoad:
     '印刷にはワークブックの完全な読み込みが必要です。読み込み完了までお待ちください。',
+  appPrintWorkbookTooLarge:
+    'このブックは大きすぎて完全に読み込めないため、印刷や PDF への書き出しはできません。',
   appCsvExportNeedsFullLoad:
     'CSV エクスポートにはブックの完全読み込みが必要です — 読み込みの完了をお待ちください。',
   appCsvExportTooLarge: 'シートが大きすぎるため、CSV をエクスポートできません。',

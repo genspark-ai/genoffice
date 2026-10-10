@@ -212,8 +212,12 @@ const api: DesktopApi = {
   readAttachment: (path: string, offset: number, maxChars: number) =>
     ipcRenderer.invoke('files:read', path, offset, maxChars),
   readAttachmentImage: (path: string) => ipcRenderer.invoke('files:read-image', path),
+  kbList: () => ipcRenderer.invoke('kb:list'),
+  kbSearch: (query: { q: string; limit?: number }) => ipcRenderer.invoke('kb:search', query),
+  kbRead: (path: string, offset: number) => ipcRenderer.invoke('kb:read', { path, offset }),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   openNewTab: (openPath?: string | null) => ipcRenderer.invoke('win:new', openPath ?? null),
+  openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   listDocsTabs: () => ipcRenderer.invoke('win:list'),
   focusDocsTab: (id: string) => ipcRenderer.invoke('win:focus', id),
   onAiStream: (handler: (chunk: AiStreamChunk) => void) => {
