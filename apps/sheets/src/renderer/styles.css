@@ -1559,11 +1559,33 @@ button.check-item:hover {
   opacity: 0.45;
 }
 
+/* Interface scale (issue #1913).
+ *
+ * Each chrome surface opts in on its own, and the workbook canvas
+ * (`.workbook-area` / `#univer-container`) is deliberately NOT on this list.
+ * That is the mechanism: the document zoom is the app's own per-app state, and
+ * the interface scale is applied to its *siblings*. They cannot compound,
+ * because nothing contains both.
+ *
+ * `zoom` rather than a window zoom for the same reason — see
+ * apps/shell/src/main/ui-scale.ts for why `webContents.setZoomFactor()` would
+ * drag the canvas along with the chrome. */
+.excel-header,
+.status-bar,
+.copilot {
+  zoom: var(--ui-scale);
+}
+
 /* AI panel on the left, spanning from the ribbon to the status bar (unified with docs);
  * its column is drag-resizable: driven by --copilot-width (updated by the AiChatPanel resizer) */
 .sheet-body {
   display: grid;
-  grid-template-columns: var(--copilot-width, 360px) minmax(0, 1fr);
+  /* The AI panel's slot has to grow with the scale as well. Its column is
+   * `--copilot-width`, and `.copilot` is `zoom`ed, so a 2x panel inside an
+   * unscaled 360px slot paints 720px of content into 360px of grid — the
+   * heading clips, the composer overlaps the model name, and both overflow
+   * into the document. */
+  grid-template-columns: calc(var(--copilot-width, 360px) * var(--ui-scale)) minmax(0, 1fr);
   min-height: 0;
   transition: grid-template-columns 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
