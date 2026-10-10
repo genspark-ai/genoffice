@@ -347,6 +347,15 @@ export const pl = {
   appAiBadgeTip: 'Używa AI',
   appTranslate: 'Przetłumacz',
   appTranslateTo: 'Przetłumacz na {lang}',
+  redactMenuLabel: 'Ukryj zaznaczenie przed AI',
+  redactDialogDesc:
+    'Słowa zostają w dokumencie i w pliku; model widzi tylko symbol. Nadaj mu nazwę, by wiedział, co oznacza.',
+  redactDialogScope:
+    'Ukrywanie dotyczy tylko AI w tej aplikacji. CLI, narzędzia MCP i eksport bez okienka czytują plik bezpośrednio i nadal widzą te słowa.',
+  redactDialogPlaceholder: 'Nazwa symbolu, np. telefon klienta',
+  redactCancel: 'Anuluj',
+  redactInsert: 'Ukryj',
+  redactShowLabel: 'Pokaż zaznaczenie AI ponownie',
   appLangEnglish: 'angielski',
   appLangSimplifiedChinese: 'chiński uproszczony',
   appLangJapanese: 'japoński',

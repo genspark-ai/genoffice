@@ -362,6 +362,15 @@ export const ko = {
   appAiBadgeTip: 'AI를 사용합니다',
   appTranslate: '번역',
   appTranslateTo: '{lang}(으)로 번역',
+  redactMenuLabel: '선택한 부분을 AI에서 숨기기',
+  redactDialogDesc:
+    '문서는 그대로 두고 AI에게는 아래 자리표시자만 보냅니다. 이름을 붙이면 AI가 무엇을 뜻하는지 알 수 있습니다.',
+  redactDialogScope:
+    '이 앱의 AI에만 적용됩니다. CLI, MCP 도구, 창 없는 내보내기는 파일을 직접 읽으므로 이 단어들은 여전히 보입니다.',
+  redactDialogPlaceholder: '자리표시자 이름, 예: 고객 전화',
+  redactCancel: '취소',
+  redactInsert: '숨기기',
+  redactShowLabel: '선택 영역을 AI에 다시 표시',
   appLangEnglish: '영어',
   appLangSimplifiedChinese: '중국어 간체',
   appLangJapanese: '일본어',

@@ -362,6 +362,15 @@ export const ja = {
   appAiBadgeTip: 'AI を使用します',
   appTranslate: '翻訳',
   appTranslateTo: '{lang}に翻訳',
+  redactMenuLabel: '選択範囲をAIから隠す',
+  redactDialogDesc:
+    '文章はドキュメントとファイルに残り、AI には下のマーカーしか見えません。名前をつけると、何を表すかAIが理解できます。',
+  redactDialogScope:
+    'これはこのアプリの AI に限られます。CLI、MCP ツール、GUI なしのエクスポートはファイルを直接読み込むため、これらの文字はまだ見えています。',
+  redactDialogPlaceholder: 'プレースホルダー名（例：顧客電話）',
+  redactCancel: 'キャンセル',
+  redactInsert: '隠す',
+  redactShowLabel: '選択範囲をAIにもう一度見せる',
   appLangEnglish: '英語',
   appLangSimplifiedChinese: '簡体字中国語',
   appLangJapanese: '日本語',

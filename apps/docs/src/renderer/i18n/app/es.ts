@@ -348,6 +348,15 @@ export const es = {
   appAiBadgeTip: 'Usa IA',
   appTranslate: 'Traducir',
   appTranslateTo: 'Traducir al {lang}',
+  redactMenuLabel: 'Ocultar la selección a la IA',
+  redactDialogDesc:
+    'Las palabras siguen en el documento y en el archivo; el modelo solo ve el marcador. Ponle un nombre para que sepa qué representa.',
+  redactDialogScope:
+    'Ocultar solo se aplica a la IA de esta aplicación. La CLI, las herramientas MCP y la exportación headless leen el archivo directamente y siguen viendo estas palabras.',
+  redactDialogPlaceholder: 'Nombre del marcador, p. ej.: teléfono del cliente',
+  redactCancel: 'Cancelar',
+  redactInsert: 'Ocultar',
+  redactShowLabel: 'Volver a mostrar la selección a la IA',
   appLangEnglish: 'inglés',
   appLangSimplifiedChinese: 'chino simplificado',
   appLangJapanese: 'japonés',

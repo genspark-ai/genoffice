@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/agent-core/redact-range'
 import {
   applyImageWrap,
   generateParagraphXml,
@@ -1584,6 +1585,53 @@ export async function saveDocx(
       /<w:document /,
       '<w:document xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
     )
+  }
+
+  // The same for the "withheld from the model" marker. An undeclared prefix is
+  // not a warning, it is a parse error: Word and LibreOffice both offer to
+  // repair the file and drop the run that carried it, which loses the reader's
+  // mark and hands the span back to the model on the next open.
+  //
+  // `mc:Ignorable` is the mechanism OOXML provides for exactly this — an
+  // element in a namespace the consumer does not know is skipped rather than
+  // treated as a schema violation, so the label rides along without the
+  // border's run failing a strict validator.
+  //
+  // A root that already declares `xmlns:mc` (every Word-saved file does) must
+  // not get a second one: a duplicate attribute is the same parse error this
+  // block exists to prevent. Its existing Ignorable list is extended instead.
+  if (
+    newDocumentXml.includes(`<${REDACT_EL}`) &&
+    !new RegExp(`<w:document[^>]*xmlns:${REDACT_PREFIX}=`).test(newDocumentXml)
+  ) {
+    const root = /<w:document\b[^>]*>/.exec(newDocumentXml)?.[0]
+    if (root) {
+      let next = root
+      if (!/xmlns:mc=/.test(next)) {
+        next = next.replace(
+          '<w:document',
+          '<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+        )
+      }
+      next = next.replace('<w:document', `<w:document xmlns:${REDACT_PREFIX}="${REDACT_NS}"`)
+      const ignorable = /mc:Ignorable="([^"]*)"/.exec(next)
+      if (ignorable) {
+        if (!new RegExp(`\\b${REDACT_PREFIX}\\b`).test(ignorable[1] ?? '')) {
+          next = next.replace(
+            /mc:Ignorable="[^"]*"/,
+            `mc:Ignorable="${(ignorable[1] ?? '').trim()} ${REDACT_PREFIX}"`,
+          )
+        }
+      } else {
+        next = next.replace('<w:document', `<w:document mc:Ignorable="${REDACT_PREFIX}"`)
+      }
+      // a Word re-save drops every element whose namespace it does not process
+      // unless the root asks for it to be preserved verbatim
+      if (!/mc:PreserveElements=/.test(next)) {
+        next = next.replace('<w:document', `<w:document mc:PreserveElements="${REDACT_EL}"`)
+      }
+      newDocumentXml = newDocumentXml.replace(root, next)
+    }
   }
 
   if (options.pageColor !== undefined) {

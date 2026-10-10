@@ -346,6 +346,15 @@ export const ms = {
   appAiBadgeTip: 'Menggunakan AI',
   appTranslate: 'Terjemah',
   appTranslateTo: 'Terjemah ke {lang}',
+  redactMenuLabel: 'Sembunyikan pilihan daripada AI',
+  redactDialogDesc:
+    'Perkataan kekal dalam dokumen dan fail; model hanya melihat placeholder di bawah. Beri nama supaya model tahu apa yang diwakili.',
+  redactDialogScope:
+    'Penyembunyian ini hanya untuk AI dalam aplikasi ini. CLI, alat MCP dan eksport tanpa antara muka membaca fail secara terus, jadi perkataan ini masih kelihatan kepada mereka.',
+  redactDialogPlaceholder: 'Nama placeholder, cth. telefon pelanggan',
+  redactCancel: 'Batal',
+  redactInsert: 'Sembunyikan',
+  redactShowLabel: 'Tunjukkan pilihan kepada AI sekali lagi',
   appLangEnglish: 'Bahasa Inggeris',
   appLangSimplifiedChinese: 'Bahasa Cina Ringkas',
   appLangJapanese: 'Bahasa Jepun',

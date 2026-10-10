@@ -1,3 +1,4 @@
+import { checkPlaceholders, placeholderSource, REDACT_MARK } from './redact'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode, Schema } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
@@ -789,6 +790,59 @@ function runSetOutlineLevel(op: Op, env: RunEnv): OpResult {
   return { op: 'setOutlineLevel', matched: matched.length, changed, skippedProtected }
 }
 
+/**
+ * The block as the model reads it — withheld spans already replaced by their
+ * markers, so a before/after comparison is in one coordinate system — together
+ * with the markers that produced, one per withheld span.
+ *
+ * The markers are returned rather than recovered from the text because a
+ * `{{...}}` in a document is not necessarily ours. A mail-merge template is
+ * full of them, and a model asked to fill one in is doing exactly what it was
+ * asked; only the markers standing in for withheld spans have to survive an
+ * edit untouched, because nothing else in the document promises that.
+ */
+function modelViewOf(node: PmDocNode): { text: string; markers: string[] } {
+  const markers: string[] = []
+  let out = ''
+  const visit = (n: PmDocNode) => {
+    const mark = n.marks.find((m) => m.type.name === REDACT_MARK)
+    if (mark) {
+      const label = mark.attrs?.label
+      const source = placeholderSource(typeof label === 'string' ? label : 'private')
+      markers.push(source)
+      out += source
+      return
+    }
+    if (n.isText) {
+      out += n.text ?? ''
+      return
+    }
+    if (n.isLeaf) return
+    n.forEach(visit)
+  }
+  node.forEach(visit)
+  return { text: out, markers }
+}
+
+/**
+ * Document ranges a withheld span covers in a block, in the same coordinates
+ * the replacements are collected in.
+ *
+ * This is what catches an edit aimed at the span itself. Placeholder spelling
+ * cannot: `find` matches the real text, so a model that never saw the words
+ * cannot name them, and an edit that did reach them is a range collision
+ * rather than a marker the model spelled wrong.
+ */
+function redactionRangesOf(node: PmDocNode, base: number): Array<{ from: number; to: number }> {
+  const out: Array<{ from: number; to: number }> = []
+  node.forEach((child, offset) => {
+    if (!child.isText || !child.text) return
+    if (!child.marks.some((m) => m.type.name === REDACT_MARK)) return
+    out.push({ from: base + offset, to: base + offset + child.text.length })
+  })
+  return out
+}
+
 function runFindReplace(op: Op, env: RunEnv): OpResult {
   const { tr, schema, ctx, sel } = env
   const find = String(op.find)
@@ -825,11 +879,71 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
     })
   }
 
-  // apply back-to-front so earlier positions stay valid
-  for (const r of [...replacements].reverse()) {
-    if (replace) tr.replaceWith(r.from, r.to, schema.text(replace, r.marks))
-    else tr.delete(r.from, r.to)
+  // A rewrite is refused only when it would actually touch a withheld span: the
+  // collected replacements are exactly the text the model is about to
+  // overwrite, so a batch that edits a different paragraph — or the words
+  // beside a marker — is left alone, while one that eats a span is stopped
+  // before anything is dispatched.
+  if (replacements.length > 0) {
+    // 1. no replacement may overlap the words the model was never shown
+    let overlaps = 0
+    for (const b of blocks) {
+      if (!touchedIndexes.has(b.index)) continue
+      for (const span of redactionRangesOf(b.node, b.pos + 1)) {
+        for (const r of replacements) {
+          if (r.from < span.to && r.to > span.from) overlaps++
+        }
+      }
+    }
+    if (overlaps > 0) {
+      throw new Error(
+        `this edit would overwrite ${overlaps} private placeholder(s) — those words are withheld from the model, so rewrite around them instead of replacing them`,
+      )
+    }
+
+    // 2. and whatever the model wrote must leave every marker it was given
+    //    standing. Both sides are the model's own view: comparing markers
+    //    against raw text would report every batch as a deletion.
+    //
+    //    A block is policed only when it actually holds a withheld span. A
+    //    block with none is the document's own text, and a `{{token}}` in it
+    //    is content to be filled in rather than a marker of ours — a mail
+    //    merge template is the normal case, and policing it is what stopped
+    //    `genoffice merge` from filling a docx at all. Where a block is
+    //    policed, the whole `{{...}}` bag has to match, so a marker cannot be
+    //    renamed, split, or shadowed by a token the model invented.
+    //
+    //    The "after" side is read off the transaction *after* applying the
+    //    replacements, rather than computed by shifting offsets. A withheld
+    //    span is longer or shorter than the marker that stands in for it, so
+    //    any arithmetic between the two coordinate systems drifts; replaying
+    //    the real steps cannot. executeOps discards the transaction when this
+    //    throws, so nothing reaches the document.
+    const before = new Map<number, { text: string; markers: string[] }>()
+    for (const b of blocks) {
+      if (touchedIndexes.has(b.index)) before.set(b.index, modelViewOf(b.node))
+    }
+
+    // the redaction mark belongs to the reader, so a rewrite never inherits it
+    for (const r of [...replacements].reverse()) {
+      const marks = r.marks.filter((m) => m.type.name !== REDACT_MARK)
+      if (replace) tr.replaceWith(r.from, r.to, schema.text(replace, marks))
+      else tr.delete(r.from, r.to)
+    }
+
+    let damaged = 0
+    for (const b of topLevelBlocks(tr.doc)) {
+      const was = before.get(b.index)
+      if (was === undefined || was.markers.length === 0) continue
+      damaged += checkPlaceholders(was.text, modelViewOf(b.node).text).length
+    }
+    if (damaged > 0) {
+      throw new Error(
+        `this edit would damage ${damaged} private placeholder(s) (dropped, renamed, split or duplicated) — reproduce each {{...}} exactly and rephrase around them instead`,
+      )
+    }
   }
+
   if (touchedIndexes.size > 0) {
     for (const b of topLevelBlocks(tr.doc)) {
       if (touchedIndexes.has(b.index)) markChanged(tr, b.pos, ctx)

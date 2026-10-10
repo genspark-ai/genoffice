@@ -342,6 +342,15 @@ export const hi = {
   appAiBadgeTip: 'AI का उपयोग करता है',
   appTranslate: 'अनुवाद करें',
   appTranslateTo: '{lang} में अनुवाद करें',
+  redactMenuLabel: 'चयन को AI से छिपाएँ',
+  redactDialogDesc:
+    'शब्द दस्तावेज़ और फ़ाइल में बने रहते हैं; मॉडल को केवल नीचे वाला प्लेसहोल्डर दिखता है। नाम दें ताकि उसे पता चले कि यह किसका स्थान है।',
+  redactDialogScope:
+    'यह छिपाना केवल इस ऐप के AI पर लागू होता है। CLI, MCP टूल और बिना इंटरफ़ेस वाला निर्यात फ़ाइल को सीधे पढ़ते हैं, इसलिए ये शब्द उन्हें अब भी दिखते हैं।',
+  redactDialogPlaceholder: 'प्लेसहोल्डर का नाम, जैसे ग्राहक का फ़ोन',
+  redactCancel: 'रद्द करें',
+  redactInsert: 'छिपाएँ',
+  redactShowLabel: 'चयन को AI को फिर से दिखाएँ',
   appLangEnglish: 'अंग्रेज़ी',
   appLangSimplifiedChinese: 'सरलीकृत चीनी',
   appLangJapanese: 'जापानी',
