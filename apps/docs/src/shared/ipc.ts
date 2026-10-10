@@ -592,6 +592,33 @@ export interface DesktopApi {
   reportCloseSaveResult(ok: boolean): void
   /** keep the native View menu's checkbox items in sync with renderer state */
   reportViewMenuState(state: { aiSidebar: boolean; darkCanvas: boolean }): void
+  /** the skills the user installed (userData/skills), for the AI panel's skills skill */
+  skillsList(): Promise<UserSkillEntry[]>
+  /** the body of one installed skill, by name — the main process resolves the path */
+  skillText(name: string): Promise<string>
+  /** run the bundled genoffice CLI; failures come back as ok:false, never a throw */
+  runCli(args: string[]): Promise<UserCliRun>
+}
+
+export interface UserSkillEntry {
+  name: string
+  description: string
+  relevant: boolean
+}
+
+export interface UserCliRun {
+  ok: boolean
+  /** process exit code, or -1 when the process never started */
+  code: number
+  json?: {
+    status: string
+    command: string | null
+    code?: number
+    summary?: string
+    message?: string
+  }
+  stdout: string
+  stderr: string
 }
 
 /** mirrors VIEW_IMAGE_CHANNEL in @genoffice/electron-utils (kept literal so the preload stays free of main-only deps) */

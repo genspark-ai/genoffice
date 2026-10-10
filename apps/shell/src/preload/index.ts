@@ -34,6 +34,7 @@ import type {
   IntegrationsStatus,
   SkillInstallState,
 } from '../shared/integrations-api'
+import type { FoundSkill } from '../shared/found-skill'
 import type { TabsApi, TabSummary } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 
@@ -626,6 +627,15 @@ const integrationsApi: IntegrationsApi = {
   },
   async copyText(text) {
     await ipcRenderer.invoke(INTEGRATIONS_CHANNELS.copyText, text)
+  },
+  async listSkills() {
+    return (await ipcRenderer.invoke(INTEGRATIONS_CHANNELS.listSkills)) as FoundSkill[]
+  },
+  async skillBody(path) {
+    return (await ipcRenderer.invoke(INTEGRATIONS_CHANNELS.skillBody, path)) as string
+  },
+  async importSkill(path) {
+    return (await ipcRenderer.invoke(INTEGRATIONS_CHANNELS.importSkill, path)) as FoundSkill
   },
 }
 contextBridge.exposeInMainWorld('aiOfficeIntegrations', integrationsApi)

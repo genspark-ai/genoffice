@@ -759,6 +759,15 @@
   color: var(--text);
 }
 
+/* a group of skill rows under one heading */
+.set-intg-list {
+  margin-top: 10px;
+}
+
+.set-intg-list + .set-intg-list {
+  margin-top: 18px;
+}
+
 .set-intg-mcp-http {
   margin-top: 8px;
 }

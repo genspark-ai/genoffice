@@ -15,6 +15,8 @@ export { composeSkills } from './skill'
 export { createKnowledgeBaseSkill, formatKbSize } from './knowledge-base-skill'
 export type { KnowledgeBaseDeps, KbFileInfo, KbSearchHit, KbReadPage } from './knowledge-base-skill'
 export type { AgentSkill, ExecutedToolCall } from './skill'
+export type { SkillFrontmatter, SkillRelevance } from './imported-skill'
+export { classifySkill, parseSkillFrontmatter, SKILL_FORMAT_TOKENS } from './imported-skill'
 export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
