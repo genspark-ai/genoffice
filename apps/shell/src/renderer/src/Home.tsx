@@ -3538,7 +3538,10 @@ export function Home() {
       {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
         renderFolderContent()
       ) : askMode ? (
-        <KbAskPanel onOpenPath={(path) => void window.aiOffice.openPath(path)} />
+        <KbAskPanel
+          onOpenPath={(path) => void window.aiOffice.openPath(path)}
+          onGoToRecents={() => changeView('recent')}
+        />
       ) : cloudMode ? (
         <CloudProjectsView />
       ) : (
