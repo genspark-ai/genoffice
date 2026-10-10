@@ -33,13 +33,13 @@ export const UI_SCALE_KEY = 'uiScale'
 /**
  * Presets offered by the View menu.
  *
- * Stops at 150%, short of the 200% #1913 asked for. `zoom` scales pixels and
- * does not reflow, so past 150% the ribbon and the status bar start clipping
- * their right-hand edge — see the screenshots in the issue. 175/200% want the
- * chrome sized in rem off the same variable rather than zoomed; that is a
- * larger change and is not what this lands.
+ * `zoom` scales pixels and does not give the layout more room, so a chrome
+ * surface that does not reflow shows fewer items at 200% rather than smaller
+ * ones — the same thing a rem/calc rewrite would do, because both scale the
+ * content inside a window that stays the same size. What differs is only which
+ * declarations have to change, not what the result looks like.
  */
-export const UI_SCALE_STEPS = [1, 1.1, 1.25, 1.5] as const
+export const UI_SCALE_STEPS = [1, 1.1, 1.25, 1.5, 1.75, 2] as const
 
 export const UI_SCALE_MIN = UI_SCALE_STEPS[0]
 export const UI_SCALE_MAX = UI_SCALE_STEPS[UI_SCALE_STEPS.length - 1]

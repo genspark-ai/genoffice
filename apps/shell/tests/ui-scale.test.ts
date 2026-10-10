@@ -34,12 +34,9 @@ describe('clampUiScale', () => {
     expect(clampUiScale(8)).toBe(UI_SCALE_MAX)
   })
 
-  it('stops at 150%', () => {
-    // Past 150% the ribbon and the status bar clip their right-hand edge: a
-    // `zoom`ed container scales pixels but does not reflow. Shipping a preset
-    // that visibly breaks the layout is worse than not offering it.
-    expect(UI_SCALE_MAX).toBe(1.5)
-    expect(UI_SCALE_STEPS).toEqual([1, 1.1, 1.25, 1.5])
+  it('offers the whole range #1913 asked for', () => {
+    expect(UI_SCALE_MAX).toBe(2)
+    expect(UI_SCALE_STEPS).toEqual([1, 1.1, 1.25, 1.5, 1.75, 2])
   })
 })
 
@@ -66,7 +63,7 @@ describe('stepUiScale', () => {
     expect(stepUiScale(1.05, -1)).toBe(1)
     // The top half, where an exact-match implementation would coincidentally
     // agree — pinned so both halves are stated, not just the one that bit.
-    expect(stepUiScale(1.3, 1)).toBe(1.5)
+    expect(stepUiScale(1.3, 1)).toBe(1.75)
     expect(stepUiScale(1.3, -1)).toBe(1.25)
   })
 })
