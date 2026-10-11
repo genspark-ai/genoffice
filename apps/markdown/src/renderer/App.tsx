@@ -10,6 +10,7 @@ import {
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
   useAutoSavePref,
+  useAiPanelPrefs,
 } from '@genoffice/ui'
 import {
   pollUntilReady,
@@ -158,6 +159,7 @@ export default function App() {
   const [fmText, setFmText] = useState('')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('mdapp.showAi'))
+  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const editQueueRef = useRef(editQueue)
@@ -1127,7 +1129,7 @@ export default function App() {
             </button>
           )}
           {/* mounted only after the file is loaded so chat history resolves against the real path */}
-          {status === 'ready' && (
+          {status === 'ready' && aiSidebarEnabled && (
             <AiPanel
               deps={aiDeps}
               filePath={filePath}

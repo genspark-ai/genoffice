@@ -9,6 +9,7 @@ import {
   useRibbonCollapse,
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
+  useAiPanelPrefs,
 } from '@genoffice/ui'
 
 import {
@@ -543,12 +544,15 @@ export function ExcelShell({
     expand: t('appRibbonExpand'),
   })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
   const [isCopilotOpen, setIsCopilotOpen] = useState(() =>
     aiPanelInitiallyOpen('ai-sheets-show-ai'),
   )
   useEffect(() => {
     rememberAiPanelOpen('ai-sheets-show-ai', isCopilotOpen)
   }, [isCopilotOpen])
+  // the "show the AI sidebar" setting off: no copilot at all, and toggles can't open it
+  const copilotOpen = isCopilotOpen && aiSidebarEnabled
   const [showFormatCells, setShowFormatCells] = useState(false)
   const [axisSizeTarget, setAxisSizeTarget] = useState<'row' | 'col' | null>(null)
   const [showLinkDialog, setShowLinkDialog] = useState(false)
@@ -818,7 +822,7 @@ export function ExcelShell({
 
   return (
     <main
-      className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}`}
+      className={`app-shell ${copilotOpen ? '' : 'copilot-collapsed'}`}
       inert={openingWorkbook}
       aria-busy={openingWorkbook}
     >
@@ -940,7 +944,7 @@ export function ExcelShell({
       {/* AI panel docks on the left, full height under the ribbon (unified with docs) */}
       <div className="sheet-body">
         <AiChatPanel
-          isOpen={isCopilotOpen}
+          isOpen={copilotOpen}
           hasContent={sheetHasContent}
           chat={chat}
           {...(historicChat !== undefined ? { historicChat } : {})}

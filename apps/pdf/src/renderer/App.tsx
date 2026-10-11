@@ -160,6 +160,7 @@ import {
   rememberAiPanelOpen,
   useDismissablePopover,
   useRibbonCollapse,
+  useAiPanelPrefs,
 } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
@@ -436,6 +437,7 @@ export default function App() {
     window.addEventListener('pointerup', onUp)
   }
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
   const [aiCollapsed, setAiCollapsed] = useState(
     () => !aiPanelInitiallyOpen('genoffice-pdf-show-ai'),
   )
@@ -8079,14 +8081,16 @@ export default function App() {
               <GensparkMark size={22} />
             </button>
           )}
-          <AiPanel
-            api={aiApi}
-            filePath={filePath}
-            preset={aiPreset}
-            onCollapse={() => setAiCollapsed(true)}
-            onRunDone={() => void autoSaveAfterAiRun()}
-            onClearSelection={() => setAiSelection(null)}
-          />
+          {aiSidebarEnabled && (
+            <AiPanel
+              api={aiApi}
+              filePath={filePath}
+              preset={aiPreset}
+              onCollapse={() => setAiCollapsed(true)}
+              onRunDone={() => void autoSaveAfterAiRun()}
+              onClearSelection={() => setAiSelection(null)}
+            />
+          )}
         </div>
         <div className="app-content">
           {digitalSignatures.length > 0 && (

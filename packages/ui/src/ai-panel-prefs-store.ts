@@ -48,6 +48,7 @@ export function aiPanelWidthAtPointer(clientX: number): number {
  * the shell prefs have been applied (the apps await them before first render).
  */
 export function aiPanelInitiallyOpen(storageKey: string): boolean {
+  if (!current.showAiSidebar) return false
   if (!current.openInNewDocs) return false
   return localStorage.getItem(storageKey) !== '0'
 }

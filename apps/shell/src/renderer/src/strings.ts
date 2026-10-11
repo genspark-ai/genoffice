@@ -218,6 +218,8 @@ export const strings = {
     setDefaultAppOpenSettings: '打开系统设置',
     setDefaultAppFailed: '设置失败，请在系统设置中手动更改。',
     setAiSpellcheckDesc: '在 AI 对话输入框中输入时标出拼写错误的单词。',
+    setAiShowSidebar: '显示 AI 侧栏',
+    setAiShowSidebarDesc: '关闭后，编辑器完全不提供 AI 侧栏：没有侧边按钮，新文档也不会打开它。',
     setAiOpenInNewDocs: '新文档中打开 AI 面板',
     setAiOpenInNewDocsDesc: '关闭后，新打开的文档默认收起 AI 面板；需要时点一下即可展开。',
     settings: '设置',
@@ -640,6 +642,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Open system settings',
     setDefaultAppFailed: 'Could not change it. Please set it in the system settings.',
     setAiSpellcheckDesc: 'Underline misspelled words while typing in the AI chat input.',
+    setAiShowSidebar: 'Show the AI sidebar',
+    setAiShowSidebarDesc:
+      'When off, the editors offer no AI sidebar at all: no side button, and new documents never open it.',
     setAiOpenInNewDocs: 'Open the AI panel in new documents',
     setAiOpenInNewDocsDesc:
       'When off, newly opened documents start with the AI panel collapsed; it is one click away when needed.',
@@ -1074,6 +1079,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Mở cài đặt hệ thống',
     setDefaultAppFailed: 'Không thể thay đổi. Vui lòng đặt trong cài đặt hệ thống.',
     setAiSpellcheckDesc: 'Gạch chân các từ sai chính tả khi nhập vào ô trò chuyện AI.',
+    setAiShowSidebar: 'Hiện thanh bên AI',
+    setAiShowSidebarDesc:
+      'Khi tắt, trình soạn thảo không cung cấp thanh bên AI: không có nút bên và tài liệu mới sẽ không mở nó.',
     setAiOpenInNewDocs: 'Mở bảng AI trong tài liệu mới',
     setAiOpenInNewDocsDesc:
       'Khi tắt, tài liệu mới mở sẽ thu gọn bảng AI; chỉ cần một lần bấm để mở lại khi cần.',
@@ -1523,6 +1531,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'システム設定を開く',
     setDefaultAppFailed: '変更できませんでした。システム設定で設定してください。',
     setAiSpellcheckDesc: 'AI チャットの入力欄で入力中にスペルミスの単語に下線を表示します。',
+    setAiShowSidebar: 'AI サイドバーを表示',
+    setAiShowSidebarDesc:
+      'オフにすると、エディターに AI サイドバーを一切表示しません。サイドボタンがなく、新規ドキュメントでも開きません。',
     setAiOpenInNewDocs: '新しいドキュメントで AI パネルを開く',
     setAiOpenInNewDocsDesc:
       'オフにすると、新しく開いたドキュメントは AI パネルを折りたたんだ状態で始まります。必要なときはワンクリックで開けます。',
@@ -1967,6 +1978,9 @@ export const strings = {
     setDefaultAppOpenSettings: '시스템 설정 열기',
     setDefaultAppFailed: '변경할 수 없습니다. 시스템 설정에서 직접 설정해 주세요.',
     setAiSpellcheckDesc: 'AI 채팅 입력란에 입력할 때 잘못된 단어에 밑줄을 표시합니다.',
+    setAiShowSidebar: 'AI 사이드바 표시',
+    setAiShowSidebarDesc:
+      '끄면 편집기에 AI 사이드바를 아예 표시하지 않습니다. 측면 버튼이 없고 새 문서에서도 열리지 않습니다.',
     setAiOpenInNewDocs: '새 문서에서 AI 패널 열기',
     setAiOpenInNewDocsDesc:
       '끄면 새로 여는 문서는 AI 패널이 접힌 상태로 시작합니다. 필요할 때 한 번 클릭하면 열립니다.',
@@ -2415,6 +2429,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Ouvrir les réglages système',
     setDefaultAppFailed: 'Modification impossible. Définissez-la dans les réglages système.',
     setAiSpellcheckDesc: 'Souligne les mots mal orthographiés pendant la saisie dans le chat IA.',
+    setAiShowSidebar: 'Afficher le panneau IA',
+    setAiShowSidebarDesc:
+      'Désactivé, les éditeurs ne proposent aucun panneau IA : ni bouton latéral, ni ouverture dans les nouveaux documents.',
     setAiOpenInNewDocs: 'Ouvrir le panneau IA dans les nouveaux documents',
     setAiOpenInNewDocsDesc:
       "Désactivé : les documents nouvellement ouverts démarrent avec le panneau IA replié ; un clic suffit pour l'afficher.",
@@ -2876,6 +2893,9 @@ export const strings = {
     setDefaultAppFailed: 'Änderung nicht möglich. Bitte in den Systemeinstellungen festlegen.',
     setAiSpellcheckDesc:
       'Unterstreicht falsch geschriebene Wörter beim Tippen im KI-Chat-Eingabefeld.',
+    setAiShowSidebar: 'KI-Seitenleiste anzeigen',
+    setAiShowSidebarDesc:
+      'Wenn aus, bieten die Editoren keine KI-Seitenleiste an: keine Seitenschaltfläche und kein Öffnen in neuen Dokumenten.',
     setAiOpenInNewDocs: 'KI-Panel in neuen Dokumenten öffnen',
     setAiOpenInNewDocsDesc:
       'Wenn aus, starten neu geöffnete Dokumente mit eingeklapptem KI-Panel; ein Klick genügt, um es zu öffnen.',
@@ -3333,6 +3353,9 @@ export const strings = {
     setDefaultAppFailed: 'No se pudo cambiar. Configúralo en los ajustes del sistema.',
     setAiSpellcheckDesc:
       'Subraya las palabras mal escritas al escribir en el cuadro del chat de IA.',
+    setAiShowSidebar: 'Mostrar el panel de IA',
+    setAiShowSidebarDesc:
+      'Desactivado, los editores no ofrecen panel de IA: sin botón lateral y los documentos nuevos no lo abren.',
     setAiOpenInNewDocs: 'Abrir el panel de IA en documentos nuevos',
     setAiOpenInNewDocsDesc:
       'Si está desactivado, los documentos recién abiertos empiezan con el panel de IA plegado; se abre con un clic cuando lo necesites.',
@@ -3777,6 +3800,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'เปิดการตั้งค่าระบบ',
     setDefaultAppFailed: 'เปลี่ยนไม่สำเร็จ โปรดตั้งค่าในการตั้งค่าระบบ',
     setAiSpellcheckDesc: 'ขีดเส้นใต้คำที่สะกดผิดขณะพิมพ์ในช่องแชท AI',
+    setAiShowSidebar: 'แสดงแถบข้าง AI',
+    setAiShowSidebarDesc:
+      'เมื่อปิด ตัวแก้ไขจะไม่มีแถบข้าง AI เลย: ไม่มีปุ่มด้านข้าง และเอกสารใหม่จะไม่เปิดให้',
     setAiOpenInNewDocs: 'เปิดแผง AI ในเอกสารใหม่',
     setAiOpenInNewDocsDesc:
       'เมื่อปิด เอกสารที่เปิดใหม่จะเริ่มโดยพับแผง AI ไว้ คลิกครั้งเดียวเพื่อเปิดเมื่อต้องการ',
@@ -4220,6 +4246,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Buka pengaturan sistem',
     setDefaultAppFailed: 'Tidak dapat mengubahnya. Atur di pengaturan sistem.',
     setAiSpellcheckDesc: 'Garis bawahi kata yang salah eja saat mengetik di kotak obrolan AI.',
+    setAiShowSidebar: 'Tampilkan bilah sisi AI',
+    setAiShowSidebarDesc:
+      'Saat nonaktif, editor tidak menawarkan bilah sisi AI sama sekali: tanpa tombol sisi, dan dokumen baru tidak membukanya.',
     setAiOpenInNewDocs: 'Buka panel AI di dokumen baru',
     setAiOpenInNewDocsDesc:
       'Jika nonaktif, dokumen yang baru dibuka dimulai dengan panel AI terlipat; cukup satu klik saat dibutuhkan.',
@@ -4666,6 +4695,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Открыть системные настройки',
     setDefaultAppFailed: 'Не удалось изменить. Задайте в системных настройках.',
     setAiSpellcheckDesc: 'Подчёркивать слова с ошибками при вводе в поле чата ИИ.',
+    setAiShowSidebar: 'Показывать панель ИИ',
+    setAiShowSidebarDesc:
+      'Когда выключено, редакторы вообще не предлагают панель ИИ: без боковой кнопки и не открывается в новых документах.',
     setAiOpenInNewDocs: 'Открывать панель ИИ в новых документах',
     setAiOpenInNewDocsDesc:
       'Если выключено, новые документы открываются со свёрнутой панелью ИИ; она доступна в один клик.',
@@ -5112,6 +5144,9 @@ export const strings = {
     setDefaultAppFailed: 'تعذّر التغيير. يرجى تعيينه من إعدادات النظام.',
     setAiSpellcheckDesc:
       'وضع خط تحت الكلمات الخاطئة إملائيًا أثناء الكتابة في حقل محادثة الذكاء الاصطناعي.',
+    setAiShowSidebar: 'إظهار الشريط الجانبي للذكاء الاصطناعي',
+    setAiShowSidebarDesc:
+      'عند الإيقاف، لا تقدم المحررات أي شريط جانبي للذكاء الاصطناعي: لا زر جانبي، ولا يُفتح في المستندات الجديدة.',
     setAiOpenInNewDocs: 'فتح لوحة الذكاء الاصطناعي في المستندات الجديدة',
     setAiOpenInNewDocsDesc:
       'عند الإيقاف، تبدأ المستندات المفتوحة حديثًا بلوحة الذكاء الاصطناعي مطوية؛ تكفي نقرة واحدة لفتحها عند الحاجة.',
@@ -5549,6 +5584,9 @@ export const strings = {
     setDefaultAppFailed: 'Não foi possível alterar. Defina nas configurações do sistema.',
     setAiSpellcheckDesc:
       'Sublinha palavras com erros ortográficos ao digitar na caixa do chat de IA.',
+    setAiShowSidebar: 'Mostrar a barra lateral de IA',
+    setAiShowSidebarDesc:
+      'Desligada, os editores não oferecem barra lateral de IA: sem botão lateral e novos documentos não a abrem.',
     setAiOpenInNewDocs: 'Abrir o painel de IA em novos documentos',
     setAiOpenInNewDocsDesc:
       'Quando desativado, os documentos recém-abertos começam com o painel de IA recolhido; basta um clique quando precisar.',
@@ -5992,6 +6030,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Apri impostazioni di sistema',
     setDefaultAppFailed: 'Impossibile modificare. Impostala nelle impostazioni di sistema.',
     setAiSpellcheckDesc: 'Sottolinea le parole errate durante la digitazione nella chat IA.',
+    setAiShowSidebar: 'Mostra il pannello IA',
+    setAiShowSidebarDesc:
+      'Quando è spento, gli editor non offrono alcun pannello IA: nessun pulsante laterale e i nuovi documenti non lo aprono.',
     setAiOpenInNewDocs: 'Apri il pannello IA nei nuovi documenti',
     setAiOpenInNewDocsDesc:
       'Se disattivato, i documenti appena aperti iniziano con il pannello IA ridotto; basta un clic quando serve.',
@@ -6433,6 +6474,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Otwórz ustawienia systemu',
     setDefaultAppFailed: 'Nie udało się zmienić. Ustaw w ustawieniach systemu.',
     setAiSpellcheckDesc: 'Podkreśla błędnie napisane słowa podczas pisania w polu czatu AI.',
+    setAiShowSidebar: 'Pokaż panel AI',
+    setAiShowSidebarDesc:
+      'Gdy wyłączone, edytory w ogóle nie oferują panelu AI: bez przycisku bocznego, a nowe dokumenty go nie otwierają.',
     setAiOpenInNewDocs: 'Otwieraj panel AI w nowych dokumentach',
     setAiOpenInNewDocsDesc:
       'Gdy wyłączone, nowo otwarte dokumenty zaczynają ze zwiniętym panelem AI; wystarczy jedno kliknięcie, gdy jest potrzebny.',
@@ -7079,6 +7123,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'Otevřít nastavení systému',
     setDefaultAppFailed: 'Změna se nezdařila. Nastavte ji v nastavení systému.',
     setAiSpellcheckDesc: 'Podtrhávat překlepy při psaní do vstupního pole chatu AI.',
+    setAiShowSidebar: 'Zobrazit AI panel',
+    setAiShowSidebarDesc:
+      'Při vypnutí editory nenabízejí žádný AI panel: bez bočního tlačítka a nové dokumenty ho neotevřou.',
     setAiOpenInNewDocs: 'Otevírat panel AI v nových dokumentech',
     setAiOpenInNewDocsDesc:
       'Když je vypnuto, nově otevřené dokumenty začínají se sbaleným panelem AI; v případě potřeby stačí jedno kliknutí.',
@@ -7308,6 +7355,9 @@ export const strings = {
     setDefaultAppFailed: 'Wijzigen is niet gelukt. Stel dit in via de systeeminstellingen.',
     setAiSpellcheckDesc:
       'Onderstreept verkeerd gespelde woorden tijdens het typen in het AI-chatveld.',
+    setAiShowSidebar: 'AI-zijbalk weergeven',
+    setAiShowSidebarDesc:
+      'Uitgeschakeld bieden de editors helemaal geen AI-zijbalk: geen zijknop en nieuwe documenten openen hem niet.',
     setAiOpenInNewDocs: 'AI-paneel openen in nieuwe documenten',
     setAiOpenInNewDocsDesc:
       'Indien uit, starten nieuw geopende documenten met een ingeklapt AI-paneel; één klik volstaat wanneer je het nodig hebt.',
@@ -7748,6 +7798,9 @@ export const strings = {
     setDefaultAppFailed: 'Tidak dapat mengubahnya. Tetapkan dalam tetapan sistem.',
     setAiSpellcheckDesc:
       'Gariskan perkataan yang salah ejaan semasa menaip dalam kotak sembang AI.',
+    setAiShowSidebar: 'Tunjuk bar sisi AI',
+    setAiShowSidebarDesc:
+      'Bila dimatikan, editor tidak menawarkan bar sisi AI langsung: tiada butang sisi dan dokumen baru tidak membukanya.',
     setAiOpenInNewDocs: 'Buka panel AI dalam dokumen baharu',
     setAiOpenInNewDocsDesc:
       'Jika dimatikan, dokumen yang baru dibuka bermula dengan panel AI dilipat; cukup satu klik apabila diperlukan.',
@@ -8186,6 +8239,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'פתיחת הגדרות המערכת',
     setDefaultAppFailed: 'לא ניתן לשנות. יש להגדיר בהגדרות המערכת.',
     setAiSpellcheckDesc: 'סימון מילים עם שגיאות כתיב בעת הקלדה בתיבת הצ׳אט של ה-AI.',
+    setAiShowSidebar: 'הצג את סרגל ה-AI',
+    setAiShowSidebarDesc:
+      'כשכבוי, העורכים אינם מציעים כלל סרגל AI: אין כפתור צד ומסמכים חדשים לא יפתחו אותו.',
     setAiOpenInNewDocs: 'פתיחת לוח ה-AI במסמכים חדשים',
     setAiOpenInNewDocsDesc:
       'כאשר כבוי, מסמכים שנפתחו זה עתה מתחילים עם לוח ה-AI מקופל; לחיצה אחת מספיקה כשצריך.',
@@ -8616,6 +8672,9 @@ export const strings = {
     setDefaultAppOpenSettings: 'सिस्टम सेटिंग खोलें',
     setDefaultAppFailed: 'बदला नहीं जा सका। कृपया सिस्टम सेटिंग में सेट करें।',
     setAiSpellcheckDesc: 'AI चैट इनपुट में टाइप करते समय गलत वर्तनी वाले शब्दों को रेखांकित करें।',
+    setAiShowSidebar: 'AI साइडबार दिखाएँ',
+    setAiShowSidebarDesc:
+      'बंद होने पर संपादक बिल्कुल AI साइडबार प्रदान नहीं करते: कोई साइड बटन नहीं, और नए दस्तावेज़ इसे नहीं खोलते।',
     setAiOpenInNewDocs: 'नए दस्तावेज़ों में AI पैनल खोलें',
     setAiOpenInNewDocsDesc:
       'बंद होने पर, नए खोले गए दस्तावेज़ AI पैनल संक्षिप्त अवस्था में शुरू होते हैं; ज़रूरत पड़ने पर एक क्लिक में खुल जाता है।',
@@ -9047,6 +9106,8 @@ export const strings = {
     setDefaultAppOpenSettings: '開啟系統設定',
     setDefaultAppFailed: '設定失敗，請在系統設定中手動更改。',
     setAiSpellcheckDesc: '在 AI 對話輸入框中輸入時標示拼錯的單字。',
+    setAiShowSidebar: '顯示 AI 側欄',
+    setAiShowSidebarDesc: '關閉後，編輯器完全不提供 AI 側欄：沒有側邊按鈕，新文件也不會開啟它。',
     setAiOpenInNewDocs: '在新文件中開啟 AI 面板',
     setAiOpenInNewDocsDesc: '關閉後，新開啟的文件預設收合 AI 面板；需要時點一下即可展開。',
     settings: '設定',
