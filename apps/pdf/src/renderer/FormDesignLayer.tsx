@@ -224,7 +224,9 @@ export function FormDesignLayer({
     }
   }, [designing])
 
-  if (!designing && fields.every((f) => f.existing)) return null
+  // Outside Form Design only the pending fields need a stand-in; saved widgets are drawn by the fill layer
+  const shown = designing ? fields : fields.filter((f) => !f.existing)
+  if (!designing && shown.length === 0) return null
 
   const layerToView = (e: ReactPointerEvent, layer: Element): [number, number] => {
     const box = layer.getBoundingClientRect()
@@ -423,7 +425,7 @@ export function FormDesignLayer({
         onContextMenu(e, null)
       }}
     >
-      {fields.map((f) => {
+      {shown.map((f) => {
         const dragged = dragBoxes?.get(f.id)
         const box = dragged ? cssBox(dragged) : pdfRectToCss(geom, f.rect, scale)
         const selected = selectedIds.has(f.id)
@@ -448,10 +450,6 @@ export function FormDesignLayer({
               onContextMenu(e, f.id)
             }}
           >
-            <span className="pdf-formdesign-label">
-              {f.name}
-              {f.required ? ' *' : ''}
-            </span>
             {single &&
               HANDLES.map((h) => (
                 <span
@@ -553,7 +551,6 @@ function PreviewControl({ field, style }: { field: DesignField; style: Box }): R
 }
 
 export interface FormFieldPropsLabels {
-  name: string
   required: string
   multiLine: string
   defaultValue: string
@@ -568,7 +565,7 @@ export interface FormFieldPropsLabels {
   dateFormat: string
 }
 
-/** Floating property card under the selected field. The name commits on blur/Enter so a half-typed name never collides. */
+/** Floating property card under the selected field. Field names are generated, not shown: users fill forms, programs read the names. */
 export function FormFieldProps({
   field,
   isNew,
@@ -580,7 +577,7 @@ export function FormFieldProps({
   onCancel,
 }: {
   field: DesignField
-  /** Just placed: the name box takes focus and Cancel removes the field again */
+  /** Just placed: Cancel removes the field again */
   isNew: boolean
   style: { left: number; top: number }
   labels: FormFieldPropsLabels
@@ -590,13 +587,26 @@ export function FormFieldProps({
   onCancel: () => void
 }): ReactElement {
   const input = field.pending?.input
-  const [name, setName] = useState(field.name)
-  // Undo/redo can change the name underneath an open card; blur must not re-apply the old draft
-  useEffect(() => setName(field.name), [field.name])
-  const commitName = () => {
-    const next = name.trim()
-    if (next === field.name) return
-    if (!onPatch({ name: next })) setName(field.name)
+  const [exportValue, setExportValue] = useState(input?.exportValue ?? '')
+  useEffect(() => setExportValue(input?.exportValue ?? ''), [input?.exportValue])
+  const commitExportValue = () => {
+    const next = exportValue.trim()
+    if (next === (input?.exportValue ?? '')) return
+    if (!onPatch({ exportValue: next })) setExportValue(input?.exportValue ?? '')
+  }
+  const [optionsText, setOptionsText] = useState((input?.options ?? []).join('\n'))
+  useEffect(() => setOptionsText((input?.options ?? []).join('\n')), [input?.options])
+  const commitOptions = () => {
+    const next = [
+      ...new Set(
+        optionsText
+          .split('\n')
+          .map((o) => o.trim())
+          .filter(Boolean),
+      ),
+    ]
+    if (next.join('\n') === (input?.options ?? []).join('\n')) return
+    if (!onPatch({ options: next })) setOptionsText((input?.options ?? []).join('\n'))
   }
   const stop = (e: { stopPropagation(): void }) => e.stopPropagation()
   return (
@@ -610,35 +620,17 @@ export function FormFieldProps({
         stop(e)
       }}
     >
-      <label>
-        <span>{labels.name}</span>
-        <input
-          value={name}
-          spellCheck={false}
-          autoFocus={isNew}
-          disabled={field.existing}
-          onFocus={(e) => isNew && e.target.select()}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={commitName}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              commitName()
-              onDone()
-            }
-          }}
-        />
-      </label>
       {field.existing && <span className="pdf-formdesign-hint">{labels.existingHint}</span>}
       {input?.kind === 'radio' && (
         <>
           <label>
             <span>{labels.exportValue}</span>
             <input
-              value={input.exportValue ?? ''}
+              value={exportValue}
               spellCheck={false}
-              onChange={(e) =>
-                onPatch({ exportValue: e.target.value }, `formField:${field.id}:exportValue`)
-              }
+              onChange={(e) => setExportValue(e.target.value)}
+              onBlur={commitExportValue}
+              onKeyDown={(e) => e.key === 'Enter' && commitExportValue()}
             />
           </label>
           <span className="pdf-formdesign-hint">{labels.radioGroupHint}</span>
@@ -648,12 +640,11 @@ export function FormFieldProps({
         <label>
           <span>{labels.options}</span>
           <textarea
-            value={(input.options ?? []).join('\n')}
+            value={optionsText}
             rows={4}
             spellCheck={false}
-            onChange={(e) =>
-              onPatch({ options: e.target.value.split('\n') }, `formField:${field.id}:options`)
-            }
+            onChange={(e) => setOptionsText(e.target.value)}
+            onBlur={commitOptions}
           />
         </label>
       )}

@@ -26,7 +26,7 @@ describe('native PKCS#12 key derivation', () => {
 
   for (const [name, make] of hashes) {
     it(`matches forge's JavaScript result for ${name}`, () => {
-      for (const password of ['', 'secret', 'pw-测试 ünï', 'x'.repeat(80)]) {
+      for (const password of ['', 'secret', 'pw-\u6d4b\u8bd5 ünï', 'x'.repeat(80)]) {
         for (const [id, iter, n, saltLength] of [
           [1, 1, 24, 8],
           [2, 7, 8, 16],

@@ -329,7 +329,9 @@ export const es = {
   appFullLoadRunning:
     'Cargando el libro completo: ordenar y filtrar estarán disponibles al terminar…',
   appFullLoadTooLarge:
-    'Este libro es demasiado grande para cargarlo por completo en memoria; ordenar y filtrar no están disponibles para este archivo.',
+    'Este libro es demasiado grande para cargarlo por completo en memoria; ordenar y mover rangos no están disponibles para este archivo. El filtrado se ejecuta directamente sobre el archivo.',
+  appLargeFilterLoading: 'Leyendo la columna de filtro desde el archivo…',
+  appLargeFilterApplying: 'Aplicando el filtro sobre el archivo…',
   appSortValueModeFormulas:
     'Este rango contiene fórmulas que no se calculan en vivo en este libro grande: ordenarlo o moverlo las guardaría como valores simples. Elija un rango sin fórmulas.',
   appSortRangeTooLarge:

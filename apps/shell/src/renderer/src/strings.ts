@@ -7,7 +7,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: '最近',
     navStarred: '收藏',
-    navUserGuide: '使用手册',
     navAsk: 'AI 问答',
     askTitle: '问知识库',
     askEmptyCorpusHint: '还没有收藏文件——先在最近或文件夹里点星收藏,AI 就能读它们。',
@@ -431,7 +430,6 @@ export const strings = {
     rootUnavailable: 'Not available',
     navRecent: 'Recent',
     navStarred: 'Starred',
-    navUserGuide: 'User Guide',
     navAsk: 'Ask AI',
     askTitle: 'Ask your knowledge base',
     askEmptyCorpusHint: 'No starred files yet — star some files first and the AI can read them.',
@@ -865,7 +863,6 @@ export const strings = {
     rootUnavailable: 'Không khả dụng',
     navRecent: 'Gần đây',
     navStarred: 'Đã gắn sao',
-    navUserGuide: 'Hướng dẫn sử dụng',
     navAsk: 'Hỏi AI',
     askTitle: 'Hỏi cơ sở tri thức của bạn',
     askEmptyCorpusHint:
@@ -1303,7 +1300,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: '最近使用',
     navStarred: 'お気に入り',
-    navUserGuide: 'ユーザーガイド',
     navAsk: 'AIに質問',
     askTitle: 'ナレッジベースに質問',
     askEmptyCorpusHint:
@@ -1753,7 +1749,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: '최근 사용',
     navStarred: '즐겨찾기',
-    navUserGuide: '사용자 가이드',
     navAsk: 'AI 질문',
     askTitle: '지식 베이스에 질문',
     askEmptyCorpusHint:
@@ -2193,7 +2188,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Récents',
     navStarred: 'Favoris',
-    navUserGuide: "Guide de l'utilisateur",
     navAsk: 'Demander à l’IA',
     askTitle: 'Interroger votre base de connaissances',
     askEmptyCorpusHint:
@@ -2650,7 +2644,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Zuletzt verwendet',
     navStarred: 'Favoriten',
-    navUserGuide: 'Benutzerhandbuch',
     navAsk: 'KI fragen',
     askTitle: 'Ihre Wissensbasis befragen',
     askEmptyCorpusHint:
@@ -3109,7 +3102,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Recientes',
     navStarred: 'Destacados',
-    navUserGuide: 'Guía del usuario',
     navAsk: 'Preguntar a la IA',
     askTitle: 'Consulta tu base de conocimientos',
     askEmptyCorpusHint:
@@ -3564,7 +3556,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'ล่าสุด',
     navStarred: 'รายการโปรด',
-    navUserGuide: 'คู่มือผู้ใช้',
     navAsk: 'ถาม AI',
     askTitle: 'ถามคลังความรู้ของคุณ',
     askEmptyCorpusHint: 'ยังไม่มีไฟล์ที่ติดดาว — ติดดาวไฟล์ก่อนเพื่อให้ AI อ่านได้',
@@ -4000,7 +3991,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Terbaru',
     navStarred: 'Berbintang',
-    navUserGuide: 'Panduan Pengguna',
     navAsk: 'Tanya AI',
     askTitle: 'Tanya basis pengetahuan anda',
     askEmptyCorpusHint:
@@ -4449,7 +4439,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'Недавние',
     navStarred: 'Избранное',
-    navUserGuide: 'Руководство пользователя',
     navAsk: 'Спросить ИИ',
     askTitle: 'Спросите базу знаний',
     askEmptyCorpusHint:
@@ -4896,7 +4885,6 @@ export const strings = {
     // Sidebar navigation
     navRecent: 'الأخيرة',
     navStarred: 'المفضلة',
-    navUserGuide: 'دليل المستخدم',
     navAsk: 'اسأل الذكاء الاصطناعي',
     askTitle: 'اسأل قاعدة معارفك',
     askEmptyCorpusHint:
@@ -5333,7 +5321,6 @@ export const strings = {
     rootUnavailable: 'Indisponível',
     navRecent: 'Recentes',
     navStarred: 'Favoritos',
-    navUserGuide: 'Guia do Usuário',
     navAsk: 'Perguntar à IA',
     askTitle: 'Consulte sua base de conhecimento',
     askEmptyCorpusHint:
@@ -5778,7 +5765,6 @@ export const strings = {
     rootUnavailable: 'Non disponibile',
     navRecent: 'Recenti',
     navStarred: 'Preferiti',
-    navUserGuide: "Guida dell'utente",
     navAsk: 'Chiedi all’IA',
     askTitle: 'Interroga la tua base di conoscenza',
     askEmptyCorpusHint:
@@ -6221,7 +6207,6 @@ export const strings = {
     rootUnavailable: 'Niedostępny',
     navRecent: 'Ostatnie',
     navStarred: 'Ulubione',
-    navUserGuide: 'Podręcznik użytkownika',
     navAsk: 'Zapytaj AI',
     askTitle: 'Zapytaj swoją bazę wiedzy',
     askEmptyCorpusHint:
@@ -6659,7 +6644,6 @@ export const strings = {
     rootUnavailable: 'Nedostupné',
     navRecent: 'Nedávné',
     navStarred: 'Oblíbené',
-    navUserGuide: 'Uživatelská příručka',
     navAsk: 'Zeptat se AI',
     askTitle: 'Ptejte se své znalostní databáze',
     askEmptyCorpusHint:
@@ -7096,7 +7080,6 @@ export const strings = {
     rootUnavailable: 'Niet beschikbaar',
     navRecent: 'Recent',
     navStarred: 'Favorieten',
-    navUserGuide: 'Gebruikershandleiding',
     navAsk: 'Vraag het de AI',
     askTitle: 'Vraag je kennisbank',
     askEmptyCorpusHint: 'Nog geen favorieten — markeer eerst bestanden zodat de AI ze kan lezen.',
@@ -7535,7 +7518,6 @@ export const strings = {
     rootUnavailable: 'Tidak tersedia',
     navRecent: 'Terkini',
     navStarred: 'Berbintang',
-    navUserGuide: 'Panduan Pengguna',
     navAsk: 'Tanya AI',
     askTitle: 'Tanya pangkalan pengetahuan anda',
     askEmptyCorpusHint:
@@ -7978,7 +7960,6 @@ export const strings = {
     rootUnavailable: 'לא זמין',
     navRecent: 'אחרונים',
     navStarred: 'מועדפים',
-    navUserGuide: 'מדריך למשתמש',
     navAsk: 'שאל את ה-AI',
     askTitle: 'שאל את בסיס הידע שלך',
     askEmptyCorpusHint:
@@ -8403,7 +8384,6 @@ export const strings = {
     rootUnavailable: 'उपलब्ध नहीं',
     navRecent: 'हाल के',
     navStarred: 'तारांकित',
-    navUserGuide: 'उपयोगकर्ता गाइड',
     navAsk: 'AI से पूछें',
     askTitle: 'अपने नॉलेज बेस से पूछें',
     askEmptyCorpusHint:
@@ -8841,7 +8821,6 @@ export const strings = {
     rootUnavailable: '無法使用',
     navRecent: '最近',
     navStarred: '收藏',
-    navUserGuide: '使用手冊',
     navAsk: 'AI 問答',
     askTitle: '問知識庫',
     askEmptyCorpusHint: '還沒有收藏檔案——先在最近或資料夾裡點星收藏,AI 就能讀取它們。',

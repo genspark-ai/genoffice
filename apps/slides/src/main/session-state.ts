@@ -68,6 +68,8 @@ export interface Session {
   metaRev?: number
   /** Transform preview gesture in progress (the first preview already pushed an undo snapshot; later previews/final commit do not) */
   transformPreview?: boolean
+  /** Redo stack as it was before the preview gesture's pushHistory cleared it; a cancel puts it back */
+  previewRedo?: HistorySnapshot[]
   /** The part currently edited in master view (exception to the fidelity rule: only that part is written back) */
   masterEdit?: { partPath: string; slide: Slide } | null
   /** A history-state notification is already queued for this session (coalesces per task) */

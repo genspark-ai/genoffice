@@ -11,6 +11,7 @@ const target = {
   value: '',
   checked: false,
   multiLine: false,
+  dateFormat: null,
   readOnly: false,
   required: false,
   maxLen: null,

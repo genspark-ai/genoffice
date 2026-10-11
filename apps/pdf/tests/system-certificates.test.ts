@@ -12,8 +12,6 @@ import {
   SystemStoreError,
   exportSystemCertificate,
   listSystemCertificates,
-  parseMacCertificates,
-  parseMacIdentities,
   parseNssKeyList,
   parseWindowsCertificates,
   runCommand,
@@ -64,17 +62,6 @@ describe('store output parsers', () => {
     ])
     expect(parseWindowsCertificates(many).map((c) => c.thumbprint)).toEqual(['A'.repeat(40)])
     expect(parseWindowsCertificates('')).toEqual([])
-  })
-
-  it('reads keychain identities and pairs certificates with their SHA-1', () => {
-    expect(
-      parseMacIdentities(
-        '  1) ' + 'AB'.repeat(20) + ' "Alice (Work)"\n     1 valid identities found\n',
-      ),
-    ).toEqual([{ sha1: 'ab'.repeat(20), name: 'Alice (Work)' }])
-    const pem = '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----'
-    const found = parseMacCertificates(`SHA-1 hash: ${'CD'.repeat(20)}\nkeychain: x\n${pem}\n`)
-    expect(found.get('cd'.repeat(20))).toBe(pem)
   })
 })
 
@@ -139,6 +126,25 @@ describe('listing and exporting with a stubbed platform', () => {
     })
     expect(new SystemStoreError('cert-store-locked').code).toBe('cert-store-locked')
   })
+
+  it('offers no system store on macOS', async () => {
+    const env: SystemStoreEnv = {
+      platform: 'darwin',
+      home: '/h',
+      run: async () => {
+        throw new Error('no tool may run')
+      },
+      now: () => new Date(),
+    }
+    expect(await listSystemCertificates(undefined, env)).toEqual({
+      certs: [],
+      issues: ['platform-unsupported'],
+    })
+    const ref = { source: 'nss' as const, dir: '/h/.pki/nssdb', nickname: 'x' }
+    await expect(exportSystemCertificate(ref, undefined, env)).rejects.toMatchObject({
+      code: 'cert-store-unsupported',
+    })
+  })
 })
 
 /** The tools print usage and exit non-zero for --help; only a missing executable matters */
@@ -152,7 +158,7 @@ describe.skipIf(!hasNss || process.platform !== 'linux')('against a real NSS dat
   const PASSWORD = 'import-pw'
 
   beforeAll(() => {
-    const made = selfSigned('测试 NSS User', new Date(Date.now() + 86_400_000))
+    const made = selfSigned('\u6d4b\u8bd5 NSS User', new Date(Date.now() + 86_400_000))
     mkdirSync(db, { recursive: true })
     const p12 = join(home, 'in.p12')
     const asn1 = forge.pkcs12.toPkcs12Asn1(made.keys.privateKey, [made.cert], PASSWORD, {
@@ -177,7 +183,7 @@ describe.skipIf(!hasNss || process.platform !== 'linux')('against a real NSS dat
     const listing = await listSystemCertificates(undefined, env())
     expect(listing.issues).toEqual([])
     expect(listing.certs).toHaveLength(1)
-    expect(listing.certs[0]!.commonName).toBe('测试 NSS User')
+    expect(listing.certs[0]!.commonName).toBe('\u6d4b\u8bd5 NSS User')
 
     const identity = await exportSystemCertificate(listing.certs[0]!.ref, undefined, env())
     const pdf = await PDFDocument.create()
@@ -185,10 +191,9 @@ describe.skipIf(!hasNss || process.platform !== 'linux')('against a real NSS dat
     const signed = await signPdf(await pdf.save(), {
       p12: identity.p12,
       password: identity.password,
-      signerSha1: identity.sha1,
     })
     const [sig] = await readPdfSignatures(signed)
-    expect(sig!.signer?.commonName).toBe('测试 NSS User')
+    expect(sig!.signer?.commonName).toBe('\u6d4b\u8bd5 NSS User')
     expect(sig!.problems).toEqual(['self-signed'])
   }, 60_000)
 

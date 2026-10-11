@@ -295,6 +295,118 @@ function ensureThirdPartyNotices() {
 }
 
 /** @type {import('electron-builder').Configuration} */
+// NSIS makes every declared ProgId the extension's default opener; for the
+// office types that is the point, for plain text and JSON it would hijack the
+// system editor, so Windows leaves those two out (mac/Linux only offer them
+// in Open With).
+const WIN_OPEN_WITH_ONLY_EXTS = new Set(['txt', 'json'])
+const FILE_ASSOCIATIONS = [
+  {
+    ext: 'docx',
+    name: 'Word Document',
+    description: 'Word Document',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  },
+  {
+    ext: 'xlsx',
+    name: 'Excel Workbook',
+    description: 'Excel Workbook',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+  {
+    ext: 'xlsm',
+    name: 'Excel Macro-Enabled Workbook',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+  },
+  {
+    ext: 'pptx',
+    name: 'PowerPoint Presentation',
+    description: 'PowerPoint Presentation',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  },
+  {
+    ext: 'xls',
+    name: 'Excel 97-2003 Workbook',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.ms-excel',
+  },
+  {
+    ext: 'csv',
+    name: 'CSV Document',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'text/csv',
+  },
+  {
+    // opens as a converted copy and saves as .xlsx (genoffice#1146)
+    ext: 'tsv',
+    name: 'TSV Document',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'text/tab-separated-values',
+  },
+  {
+    ext: 'pdf',
+    name: 'PDF Document',
+    role: 'Editor',
+    icon: 'pdf',
+    mimeType: 'application/pdf',
+  },
+  {
+    ext: 'md',
+    name: 'Markdown Document',
+    role: 'Editor',
+    icon: 'md',
+    mimeType: 'text/markdown',
+  },
+  {
+    ext: 'markdown',
+    name: 'Markdown Document',
+    role: 'Editor',
+    icon: 'md',
+    mimeType: 'text/markdown',
+  },
+  {
+    ext: 'txt',
+    name: 'Text Document',
+    description: 'Text Document',
+    role: 'Editor',
+    icon: 'txt',
+    mimeType: 'text/plain',
+  },
+  {
+    ext: 'json',
+    name: 'JSON Document',
+    description: 'JSON Document',
+    role: 'Editor',
+    icon: 'json',
+    mimeType: 'application/json',
+  },
+  {
+    ext: 'html',
+    name: 'HTML Document',
+    role: 'Editor',
+    icon: 'html',
+    mimeType: 'text/html',
+  },
+  {
+    ext: 'htm',
+    name: 'HTML Document',
+    role: 'Editor',
+    icon: 'html',
+    mimeType: 'text/html',
+  },
+]
+
 const config = {
   appId: 'com.genoffice.app',
   productName: 'GenOffice',
@@ -416,112 +528,7 @@ const config = {
   // bare GenOffice logo instead of a per-type document icon. The icns/ico
   // pairs are generated from the shell renderer's file-type tiles by
   // tools/gen-file-association-icons.mjs.
-  fileAssociations: [
-    {
-      ext: 'docx',
-      name: 'Word Document',
-      description: 'Word Document',
-      role: 'Editor',
-      icon: 'docx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    },
-    {
-      ext: 'xlsx',
-      name: 'Excel Workbook',
-      description: 'Excel Workbook',
-      role: 'Editor',
-      icon: 'xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    },
-    {
-      ext: 'xlsm',
-      name: 'Excel Macro-Enabled Workbook',
-      role: 'Editor',
-      icon: 'xlsx',
-      mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12',
-    },
-    {
-      ext: 'pptx',
-      name: 'PowerPoint Presentation',
-      description: 'PowerPoint Presentation',
-      role: 'Editor',
-      icon: 'pptx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    },
-    {
-      ext: 'xls',
-      name: 'Excel 97-2003 Workbook',
-      role: 'Editor',
-      icon: 'xlsx',
-      mimeType: 'application/vnd.ms-excel',
-    },
-    {
-      ext: 'csv',
-      name: 'CSV Document',
-      role: 'Editor',
-      icon: 'xlsx',
-      mimeType: 'text/csv',
-    },
-    {
-      // opens as a converted copy and saves as .xlsx (genoffice#1146)
-      ext: 'tsv',
-      name: 'TSV Document',
-      role: 'Editor',
-      icon: 'xlsx',
-      mimeType: 'text/tab-separated-values',
-    },
-    {
-      ext: 'pdf',
-      name: 'PDF Document',
-      role: 'Editor',
-      icon: 'pdf',
-      mimeType: 'application/pdf',
-    },
-    {
-      ext: 'md',
-      name: 'Markdown Document',
-      role: 'Editor',
-      icon: 'md',
-      mimeType: 'text/markdown',
-    },
-    {
-      ext: 'markdown',
-      name: 'Markdown Document',
-      role: 'Editor',
-      icon: 'md',
-      mimeType: 'text/markdown',
-    },
-    {
-      ext: 'txt',
-      name: 'Text Document',
-      description: 'Text Document',
-      role: 'Editor',
-      icon: 'txt',
-      mimeType: 'text/plain',
-    },
-    {
-      ext: 'json',
-      name: 'JSON Document',
-      description: 'JSON Document',
-      role: 'Editor',
-      icon: 'json',
-      mimeType: 'application/json',
-    },
-    {
-      ext: 'html',
-      name: 'HTML Document',
-      role: 'Editor',
-      icon: 'html',
-      mimeType: 'text/html',
-    },
-    {
-      ext: 'htm',
-      name: 'HTML Document',
-      role: 'Editor',
-      icon: 'html',
-      mimeType: 'text/html',
-    },
-  ],
+  fileAssociations: FILE_ASSOCIATIONS,
   npmRebuild: false,
   mac: {
     // Two separate arch packages (NOT universal): arm64 keeps the exact
@@ -555,6 +562,7 @@ const config = {
         arch: [winArch],
       },
     ],
+    fileAssociations: FILE_ASSOCIATIONS.filter((a) => !WIN_OPEN_WITH_ONLY_EXTS.has(a.ext)),
     extraResources: [
       {
         from: WIN_SIDECAR,

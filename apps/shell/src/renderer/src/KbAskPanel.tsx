@@ -8,6 +8,9 @@ import {
 import { AiComposer, AiTypingIndicator, createFileNav, Markdown } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
+import sendEnterOn from './assets/send-enter-on.png'
+import sendEnterOff from './assets/send-enter-off.png'
+import sendStop from './assets/send-stop.png'
 
 /**
  * The home screen's knowledge-base ask panel: chat with the reader's starred
@@ -46,6 +49,8 @@ export function KbAskPanel({
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** bumped by Stop: an ask still refreshing the corpus must not start its run */
+  const askSeqRef = useRef(0)
 
   const refreshSettings = (): void => {
     void window.aiOffice
@@ -141,14 +146,16 @@ export function KbAskPanel({
     setDraft('')
     setBusy(true)
     refreshSettings()
+    const seq = ++askSeqRef.current
     // freshly starred files are answerable this very turn
-    void window.aiOffice
-      .kbList()
-      .then((files) => {
-        corpusRef.current = files
-        setCorpusCount(files.length)
-      })
-      .catch(() => undefined)
+    try {
+      const files = await window.aiOffice.kbList()
+      corpusRef.current = files
+      setCorpusCount(files.length)
+    } catch {
+      // keep the mount snapshot
+    }
+    if (askSeqRef.current !== seq) return
     if (corpusRef.current.length === 0) {
       setMessages((prev) => [
         ...prev,
@@ -223,9 +230,14 @@ export function KbAskPanel({
         sendLabel={t('askSend')}
         stopLabel={t('askStop')}
         ariaLabel={t('askPlaceholder')}
+        iconOnly
+        sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
+        sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
+        stopIcon={<img src={sendStop} alt="" aria-hidden />}
         onChange={setDraft}
         onSend={() => void ask()}
         onStop={() => {
+          askSeqRef.current++
           loopRef.current?.cancel()
           finishLast()
         }}

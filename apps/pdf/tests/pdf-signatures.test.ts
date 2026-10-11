@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { inspectCertificate, signPdf, SignError } from '../src/main/pdf-sign'
 import { readPdfSignatures } from '../src/main/pdf-signatures'
 
-const PASSWORD = 'pw-测试'
+const PASSWORD = 'pw-\u6d4b\u8bd5'
 
 let p12: Uint8Array
 let otherP12: Uint8Array
@@ -54,7 +54,7 @@ function pngBox(width: number, height: number): Uint8Array {
 }
 
 beforeAll(() => {
-  p12 = makeP12('测试用户 Alice')
+  p12 = makeP12('\u6d4b\u8bd5\u7528\u6237 Alice')
   otherP12 = makeP12('Bob')
 }, 60_000)
 
@@ -64,22 +64,22 @@ describe('signing and reading back', () => {
       const signed = await signPdf(await samplePdf({ objectStreams }), {
         p12,
         password: PASSWORD,
-        reason: '审批通过',
+        reason: '\u5ba1\u6279\u901a\u8fc7',
         location: 'Hong Kong',
       })
       const sigs = await readPdfSignatures(signed)
       expect(sigs).toHaveLength(1)
       const [sig] = sigs
       expect(sig!.fieldName).toBe('Signature1')
-      expect(sig!.signer?.commonName).toBe('测试用户 Alice')
-      expect(sig!.reason).toBe('审批通过')
+      expect(sig!.signer?.commonName).toBe('\u6d4b\u8bd5\u7528\u6237 Alice')
+      expect(sig!.reason).toBe('\u5ba1\u6279\u901a\u8fc7')
       expect(sig!.location).toBe('Hong Kong')
       expect(sig!.coversWholeDocument).toBe(true)
       expect(sig!.signingTimeSigned).toBe(true)
       expect(sig!.digestAlgorithm).toBe('SHA256')
       // intact but nobody vouches for a throwaway self-signed certificate
       expect(sig!.problems).toEqual(['self-signed'])
-      expect(sig!.status).toBe('valid')
+      expect(sig!.status).toBe('untrusted')
       // the document is still a loadable PDF with both pages
       expect((await PDFDocument.load(signed)).getPageCount()).toBe(2)
     })
@@ -127,7 +127,7 @@ describe('signing and reading back', () => {
     const [sig] = await readPdfSignatures(signed)
     expect(sig!.signer?.selfSigned).toBe(true)
     expect(sig!.problems).toEqual(['self-signed'])
-    expect(sig!.status).toBe('valid')
+    expect(sig!.status).toBe('untrusted')
   })
 
   it('flags a document altered inside the signed bytes', async () => {
@@ -163,6 +163,7 @@ describe('signing and reading back', () => {
     expect(sigs[0]!.problems).toContain('document-changed-after-signing')
     expect(sigs[0]!.problems).not.toContain('digest-mismatch')
     expect(sigs[0]!.status).toBe('warning')
+    expect(sigs[1]!.status).toBe('untrusted')
     expect(sigs[1]!.coversWholeDocument).toBe(true)
     expect(sigs[1]!.signer?.commonName).toBe('Bob')
   })
@@ -230,7 +231,7 @@ describe('certificate files', () => {
     const result = inspectCertificate(p12, PASSWORD)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.signer.commonName).toBe('测试用户 Alice')
+      expect(result.signer.commonName).toBe('\u6d4b\u8bd5\u7528\u6237 Alice')
       expect(result.signer.keyAlgorithm).toBe('RSA 2048')
       expect(result.signer.selfSigned).toBe(true)
     }

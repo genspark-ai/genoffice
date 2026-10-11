@@ -1387,6 +1387,8 @@ export interface SlidesApi {
   editTransform: (op: EditTransformOp) => Promise<RenderSlide | null>
   /** Multi-selection nudge/rotate: every item commits like editTransform, all in one undo step */
   editTransformMulti: (op: EditTransformMultiOp) => Promise<RenderSlide | null>
+  /** Escape during a previewed resize: drop the gesture's preview frames and its undo snapshot */
+  cancelTransformPreview: (op: { slideIndex: number }) => Promise<RenderSlide | null>
   /** Connector endpoint drag: reposition ends and attach/detach shape anchors (stCxn/endCxn) */
   editConnectorEndpoints: (op: EditConnectorEndpointsOp) => Promise<RenderSlide | null>
   /** Batch position update (align/distribute); all items share one undo step */
