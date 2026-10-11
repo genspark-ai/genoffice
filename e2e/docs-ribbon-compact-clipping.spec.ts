@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } from './helpers'
 
+const MAC = process.platform === 'darwin'
+/** ⌥⌘K on macOS, Ctrl+Alt+K elsewhere — CI runs Linux. */
+const COMPACT_KEY = MAC ? 'Alt+Meta+KeyK' : 'Control+Alt+KeyK'
+
 /**
  * The compact ribbon must fit what it holds (#1891).
  *
@@ -40,7 +44,7 @@ test('compact ribbon fits every tab without clipping', async () => {
     // ⌥⌘K / Ctrl+Alt+K, sent the way the app receives it
     const compact = () => page.evaluate(() => !!document.querySelector('.ribbon-compact'))
     for (let i = 0; i < 3 && !(await compact()); i += 1) {
-      await page.keyboard.press('Alt+Meta+KeyK')
+      await page.keyboard.press(COMPACT_KEY)
       await page.waitForTimeout(1_500)
     }
     expect(await compact(), 'compact density did not engage').toBe(true)
@@ -63,7 +67,7 @@ test('compact ribbon fits every tab without clipping', async () => {
       // Switching tabs drops the density back to full — measure the band the
       // reader is actually in, so re-engage it before reading anything.
       if (!(await compact())) {
-        await page.keyboard.press('Alt+Meta+KeyK')
+        await page.keyboard.press(COMPACT_KEY)
         await page.waitForTimeout(1_200)
       }
       expect(await compact(), `"${tab}" left compact density off`).toBe(true)
