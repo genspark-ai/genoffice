@@ -108,6 +108,15 @@ describe('prepare', () => {
         ).body,
       ).model,
     ).toBe('clef-flash')
+    expect(
+      JSON.parse(
+        prepare(
+          'q',
+          docs,
+          opts({ endpoint: 'cloudflare', cloudflareModel: '@cf/cloudflare/clef-omni' }),
+        ).body,
+      ).model,
+    ).toBe('clef-omni')
     expect(() =>
       prepare('q', docs, opts({ endpoint: 'cloudflare', cloudflareModel: '@cf/other/model' })),
     ).toThrow('unsupported-model')
@@ -133,6 +142,15 @@ describe('endpointUrl', () => {
         }),
       ),
     ).toContain('/ai/run/@cf/cloudflare/clef-flash')
+    expect(
+      endpointUrl(
+        opts({
+          endpoint: 'cloudflare',
+          cloudflareAccountId: 'a',
+          cloudflareModel: '@cf/cloudflare/clef-omni',
+        }),
+      ),
+    ).toContain('/ai/run/@cf/cloudflare/clef-omni')
   })
 
   it('demands an account id, a custom URL, and rejects unknown shapes', () => {
@@ -413,7 +431,7 @@ describe('probeDecision', () => {
           cloudflareAccountId: 'a',
           cloudflareModel: '@cf/other/model',
         },
-        'Cloudflare only serves clef and clef-flash',
+        'Cloudflare only serves clef, clef-flash and clef-omni',
       ],
     ]
     for (const [raw, error] of cases) {
