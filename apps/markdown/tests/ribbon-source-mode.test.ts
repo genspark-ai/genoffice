@@ -131,9 +131,14 @@ describe('Ribbon source mode', () => {
   it('keeps Save As live in both modes and Find live only outside the source view', () => {
     const quick = (container: HTMLElement) =>
       Array.from(container.querySelectorAll<HTMLButtonElement>('.ribbon-tabs .qa-btn'))
-    const [, saveAsPlain, , , findPlain] = quick(renderRibbon(false))
-    const [, saveAsSource, , , findSource] = quick(renderRibbon(true))
-    const [, saveAsView, , , findView] = quick(renderRibbon(false, true))
+    // Positional, so the two skips after Save As cover "Name with AI, undo"
+    // and the next is redo. Naming the buttons instead would stop the row from
+    // being able to grow without this silently picking up a neighbour — which
+    // is exactly what it did: the count assertion above was updated for the new
+    // button and these were not, so `findPlain` had become Redo.
+    const [, saveAsPlain, , , , findPlain] = quick(renderRibbon(false))
+    const [, saveAsSource, , , , findSource] = quick(renderRibbon(true))
+    const [, saveAsView, , , , findView] = quick(renderRibbon(false, true))
     expect(saveAsPlain!.disabled).toBe(false)
     expect(saveAsSource!.disabled).toBe(false)
     expect(saveAsView!.disabled).toBe(false)
