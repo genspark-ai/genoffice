@@ -30,7 +30,7 @@ Licht / Donker / Systeem volgen. Systeem volgen volgt het uiterlijk van het best
 Geen schakelaars — elke functie kiest de leverancier die haar bedient, en de sleutel en basis-URL van een leverancier worden eenmaal ingevuld en gedeeld:
 
 - **Zoeken op het web**, **Afbeeldingen genereren**, **Afbeeldingsanalyse** en **Video-analyse**, elk met een provider, een model, een sleutel en een basis-URL.
-- **Lokale bestanden zoeken** draait op deze machine. Daaronder staat **Jev-herordening**, die **standaard uit** staat. Zet u die aan, dan worden de fragmenten van de 20 beste lokale resultaten — tot 1.200 tekens per document, plus de bestands- en mapnamen — naar het Jev-model van TypeSafe gestuurd om op relevantie te worden herschikt. Staat hij uit, dan verlaat er niets dit apparaat.
+- **Lokaal bestanden zoeken** draait op deze machine. Daaronder staat **Jev-herordenen van zoekresultaten** **standaard uit**. Zet u het aan, dan gaan de uittreksels van de top 20 lokale treffers — tot 1.200 tekens per document, plus bestands- en mapnamen — naar het beslis-eindpunt dat u kiest (Jev via OpenRouter of TypeSafe, Perplexity, Liquid AI d1, Cloudflare, een lokale motor of een eigen URL) om op relevantie te herordenen. Uit staat blijft niets het apparaat verlaten.
 
 ## Over
 

@@ -10,6 +10,7 @@ Jeder Editor hat eigene Tastenbelegungen, und nur wenige davon funktionieren üb
 | --------------------------------------------------------- | ----- | --------------- |
 | Benutzerhandbuch öffnen — funktioniert überall in der App | F1    | F1              |
 | Menüband einklappen / ausklappen — jeder Editor           | ⌥⌘R   | Ctrl+F1         |
+| Menüband kompakt — nur Docs    | ⌥⌘K  | Ctrl+Alt+K      |
 | Tastenkürzel-Tabelle öffnen — nur Word                    | ⌘/    | Ctrl+/          |
 
 - **F1 öffnet dieses Handbuch**, nicht die Kürzel-Tabelle. Die Taste gehört zum Anwendungsmenü und funktioniert daher aus Word, Sheets, Slides, PDF oder dem Tab Home gleichermaßen.

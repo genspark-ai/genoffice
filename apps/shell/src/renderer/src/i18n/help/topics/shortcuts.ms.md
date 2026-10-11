@@ -10,6 +10,7 @@ Setiap editor mempunyai pengikatan kekunci sendiri, dan hanya sebahagian kecil d
 | -------------------------------------------------------------------- | ----- | --------------- |
 | Buka Panduan Pengguna — berfungsi di mana-mana sahaja dalam aplikasi | F1    | F1              |
 | Ciutkan / Kembangkan reben — setiap editor                           | ⌥⌘R   | Ctrl+F1         |
+| Reben kompak — Docs sahaja        | ⌥⌘K  | Ctrl+Alt+K      |
 | Buka helaian Pintasan Papan Kekunci — Word sahaja                    | ⌘/    | Ctrl+/          |
 
 - **F1 membuka manual ini**, bukan helaian pintasan. Kekunci itu milik menu aplikasi, jadi ia berfungsi dari Word, Sheets, Slides, PDF mahupun tab Laman Utama.

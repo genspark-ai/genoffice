@@ -1,13 +1,13 @@
 # El editor Markdown
 
-El editor Markdown abre .md / .markdown con la experiencia de código fuente y vista previa renderizada.
+El editor Markdown abre .md / .markdown — y .txt / .json, directo a la vista de código — con código más vista previa renderizada.
 
 - **Abrir**: desde Inicio o Archivo ▸ Abrir; la línea de comandos también funciona.
 - **Editar**: edición de texto sin formato; las extensiones GFM (tablas, listas de tareas, tachado, enlaces automáticos) se renderizan en la vista previa.
 - **Vista previa**: en vivo; los recursos relativos como las imágenes se resuelven junto al documento.
 - **Guardar**: fiel byte a byte: el BOM, los CRLF y la presencia de un salto de línea final se conservan; un guardado sin cambios no reescribe el archivo.
 - **Buscar y reemplazar**: ctrl+F busca en el código fuente; Reemplazar todo lo reescribe.
-- **IA**: unos botones predefinidos permiten que el asistente reescriba, amplíe o traduzca el documento.
+- **IA**: unos botones predefinidos permiten que el asistente reescriba, amplíe o traduzca el documento. Una selección puede ocultarse a la IA (ver el capítulo del panel de IA).
 
 ## La barra de herramientas
 
@@ -24,6 +24,7 @@ Una fila de botones encima del editor (pase el cursor para ver las descripciones
 - **Propiedades**: inserta el bloque YAML front matter al principio del archivo o salta hasta él.
 - **Esquema**: saltar por la jerarquía de títulos.
 - **Ortografía**: activa o desactiva la corrección ortográfica de este documento.
+- **Ajustes de alojamiento de imágenes**: las imágenes pegadas o soltadas van primero a tu propio almacenamiento — compatible S3 (R2/OSS/COS/MinIO), SM.MS o GitHub — con la copia local en assets como respaldo.
 
 Tres ejemplos rápidos:
 
@@ -46,4 +47,4 @@ La cinta de opciones lleva un conmutador **Código fuente** (localizado junto co
 - **La edición es fiel byte a byte.** Un guardado desde la vista de código fuente produce los mismos bytes que un guardado desde el editor: el BOM, los CRLF y la presencia de un salto de línea final se conservan.
 - **Es el mismo documento.** Alterne entre el editor y la fuente tantas veces como quiera; la fuente es el propio texto del editor, no una copia que haya que combinar.
 - **La barra de herramientas de formato no está disponible** mientras esta vista está abierta, porque la mayoría de esos botones insertan construcciones del editor que solo tienen sentido en la parte renderizada. Vuelve a aparecer cuando cierra la vista.
-- **Los archivos JSON y otros archivos en modo fuente** se abren aquí directamente: no hay nada que renderizar, así que la fuente _es_ el documento.
+- **.txt y .json** se abren aquí directamente en vista de código: no hay nada que renderizar, así que el código *es* el documento.

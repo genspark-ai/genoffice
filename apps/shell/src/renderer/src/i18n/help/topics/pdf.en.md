@@ -64,6 +64,9 @@ Six tools: **ink, rectangle, ellipse, arrow, note**, plus the **redaction box** 
 - **Ink signature**: draw it; it can attach to a form signature field.
 - **Image signature**: place a picture as the signature.
 - Saved signatures can be reused.
+- **Certificate sign** (Annotate tab): sign with a certificate from the system store or a .p12/.pfx file; optionally show the signature on the page, and optionally certify the document against later changes.
+- Signing writes a **new file** (an incremental update — earlier signatures stay valid) and opens the signed copy in its place. Save first: a signature covers the file as saved on disk.
+- A banner above the document lists existing signatures; **View signatures** shows each one's validity, coverage and certificate chain. Revocation (CRL/OCSP) is not checked.
 
 ## Page operations (Page)
 

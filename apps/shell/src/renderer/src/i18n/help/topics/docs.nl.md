@@ -4,9 +4,9 @@ Docs is de Word-achtige tekstverwerker: leest en schrijft echte .docx-bestanden 
 
 ## Het lint
 
-Tabs: **Start / Invoegen / Tekenen / Indeling / Ontwerpen / Verwijzingen / Controleren / Beeld**, plus contextafhankelijke tabs voor het geselecteerde object (Tabelontwerp en indelingsindeling, Afbeeldingsopmaak, kop- en voettekst).
+Tabs: **Start / Invoegen / Tekenen / Indeling / Ontwerpen / Verwijzingen / Controleren / Beeld**, plus contextafhankelijke tabs voor het geselecteerde object (Tabelontwerp en indelingsindeling, Afbeeldingsopmaak, kop- en voettekst). De commandoband heeft in Docs een eigen dichtheid: **compact** (⌥⌘K / Ctrl+Alt+K) houdt de pictogrammen en laat de labels vallen, en de keuze wordt onthouden.
 
-- **Start**: klembord; lettertype (inclusief CJK-maten en nadruktekens) met **Alle opmaak wissen** en een schakelaar voor **Opmaakmarkeringen weergeven/verbergen**; alinea (uitlijning/inspringen/regelafstand/lijsten) plus **Nieuw opsommingsteken definiëren / Nieuwe nummernotatie definiëren / Lijst met meerdere niveaus**, die je eigen lijststijlen in het document opslaan; stijlen (Kop 1-6/Normaal/Citatie, aanpasbaar) met een **Deelvenster Stijlen** voor de volledige lijst.
+- **Start**: klembord; lettertype (inclusief CJK-maten en nadruktekens) met **Alle opmaak wissen** en een schakelaar voor **Opmaakmarkeringen weergeven/verbergen**; alinea (uitlijning/inspringen/regelafstand/lijsten) plus **Nieuw opsommingsteken definiëren / Nieuwe nummernotatie definiëren / Lijst met meerdere niveaus**, die je eigen lijststijlen in het document opslaan; stijlen (Kop 1-6/Normaal/Citatie, aanpasbaar) met een **Deelvenster Stijlen** voor de volledige lijst. Een stijl kan het Oost-Aziatische en het Latijnse lettertype apart instellen (bijvoorbeeld een CJK-lettertype plus Times New Roman); het paar overleeft de .docx-heen-en-weer.
 - **Invoegen**: pagina- en sectie-einden; tabellen (een raster van rijen × kolommen, of **Tabel invoegen…** voor een exacte afmeting); afbeeldingen, vormen, tekstvakken; **Voorblad** en **Lege pagina** uit een kant-en-klare galerij; **Grafiek**; **Decoratiehoofdletter**; **WordArt**; velden (datum, tijd, paginanummer, totaal aantal pagina's, bestandsnaam); hyperlinks, **Bladwijzer** en kruisverwijzingen; opmerkingen; kop- en voettekst en paginanummers; symbolen en vergelijkingen.
   - **Grafiek** voegt een echt grafiekobject met eigen gegevens in — staaf, lijn of cirkel — en geen afbeelding. _Gegevens bewerken_ van Word opent de cijfers erachter.
 - **Tekenen**: inkt op de pagina, in de groep **Tekenhulpmiddelen** — **Selecteren** brengt je terug bij het bewerken van tekst, daarna **Pen**, **Markeerstift** en **Gum** (een klik of een veegbeweging haalt de hele streek weg). Daarnaast is **Penstijl** / **Markeerstiftstijl** één besturingselement met kleurstaalmonsters en een rij breedtes; het label volgt het actieve gereedschap. De inkt wordt in het document bewaard als een aantekening die boven de tekst zweeft, dus overleeft hij opslaan en heropenen, en **Alles wissen** in de volgende groep haalt hem helemaal weg.
@@ -68,7 +68,7 @@ Rechtermuisklik ergens in de tekst — het menu volgt waarop je klikte. Hoofdgro
 
 - Zoeken en vervangen (ctrl+F / ctrl+H): hoofdlettergevoelig, heel woord, reguliere expressies.
 - Opmaakpenseel; onbeperkt ongedaan maken en opnieuw; plakopties.
-- Tabellen: cellen samenvoegen/splitsen, rijen en kolomen bewerken, randen en arcering, sorteren, formules.
+- Tabellen: cellen samenvoegen/splitsen, rijen en kolomen bewerken, randen en arcering, sorteren, formules. Rijen breken waar nodig over pagina's, en Ctrl+Enter in een cel slaat daar precies om — afdrukken en PDF volgen.
 - Afbeeldingen: tekstterugloop, bijsnijden, comprimeren; tekenvlak.
 
 ## CJK-typografie

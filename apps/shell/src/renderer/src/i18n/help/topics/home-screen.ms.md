@@ -7,8 +7,9 @@ Laman Utama ialah halaman permulaan GenOffice: bar navigasi di kiri, senarai fai
 ## Navigasi bar sisi
 
 - **Terkini**: fail yang baru dibuka oleh anda. Setiap baris dicap dengan waktunya — hari ini, semalam atau tarikh.
-- **Berbintang**: fail yang anda tandakan dengan bintang. Halakan kursor ke baris fail dan klik bintang untuk menambah atau membuangnya.
+- **Berbintang**: fail yang anda tandakan dengan bintang. Halakan kursor ke baris fail dan klik bintang untuk menambah atau membuangnya. **Alih ke kumpulan** dalam menu ⋯ menyusun fail berbintang ke kumpulan bernama; paparan Berbintang menapis mengikutnya.
 - **Panduan Pengguna**: membuka manual ini.
+- **Ask AI**: panel pangkalan pengetahuan — ajukan soalan dan terima jawapan yang memetik fail anda yang berbintang (lihat bawah).
 - **Genspark Projects**: selepas anda log masuk ke akaun Genspark, ia memaparkan projek yang anda cipta di web dengan Genspark AI. Klik satu untuk menyuntingnya terus dalam pelayar. Carian, isihan mengikut masa, muat semula dan muat lagi disokong.
 - **Folder**: direktori yang anda tambah ke bar sisi dengan **Tambah folder…**, atau yang anda seret masuk daripada pengurus fail. Setiap satu menjadi lokasi yang boleh dibuka, boleh dicipta subdirektori di dalamnya, boleh dinamakan semula dan boleh dibuang; lokasi yang menjadi luar talian ditandakan sebagai tidak tersedia dan boleh dibuang daripada senarai. **Folder baharu** mencipta satu lagi.
 
@@ -52,9 +53,17 @@ Apa yang setiap kad lakukan:
 - **AI Markdown** (.md): dokumen Markdown kosong dalam editor Markdown.
 - **AI HTML** (.html): laman web kosong dalam editor HTML.
 - **AI PDF** (.pdf): berbeza daripada yang lain. Ia **segera** mencipta PDF kosong satu halaman yang sebenar dalam folder sasaran, kemudian membukanya sebagai fail biasa. Editor PDF beroperasi pada fail sebenar. Kad ini sesuai untuk membuat anotasi, redact atau menambah teks, dan semasa simpanan pertama fail itu boleh dinamakan semula secara automatik berdasarkan kandungannya.
-- **Buka Fail Setempat**: pemilih fail sistem untuk Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) dan laman web (.html/.htm). Pelbagai fail boleh dipilih, dan setiap fail mendapat tabnya sendiri.
+- **Buka Fail Setempat**: pemilih fail sistem untuk Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) dan laman web (.html/.htm). Pelbagai fail boleh dipilih, dan setiap fail mendapat tabnya sendiri. Fail teks (.txt, .json) turut dibuka di sini — ia masuk ke paparan sumber penyunting Markdown.
 
 > Petua: Fail ▸ Baharu pada bar menu mencipta jenis dokumen yang sama. Pintasan ⌘N/Ctrl+N secara lalai mencipta dokumen teks. Menyeret fail ke dalam tingkap akan membukanya.
+
+## Tanya pangkalan pengetahuan anda
+
+- Bintangi fail dahulu (jenis apa pun yang aplikasi baca); kepala panel mengira korpus, dan pangkalan kosong menjemput anda membintangi sesuatu.
+- Jawapan memetik fail sumbernya; klik petikan untuk membuka fail dalam penyuntingnya.
+- Perlu log masuk Genspark. Perbualan hanya hidup dalam ingatan — menutup aplikasi mengakhirinya.
+- Carian berjalan pada indeks fail setempat, seperti carian Laman Utama; fail yang hilang gugur senyap daripada korpus.
+- Kumpulan hanya menyusun senarai Berbintang — pangkalan pengetahuan sentiasa merangkumi semua fail berbintang.
 
 ## Projek awan (Genspark Projects)
 

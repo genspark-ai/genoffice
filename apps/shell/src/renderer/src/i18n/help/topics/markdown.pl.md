@@ -1,13 +1,13 @@
 # Edytor Markdown
 
-Edytor Markdown otwiera pliki .md / .markdown w układzie źródło podgląd wyrenderowany.
+Edytor Markdown otwiera .md / .markdown — oraz .txt / .json, od razu w widoku źródła — ze źródłem i renderowanym podglądem.
 
 - **Otwórz**: ze strony głównej lub Plik ▸ Otwórz…; działa też z wiersza poleceń.
 - **Edycja**: edycja w czystym tekście; rozszerzenia GFM (tabele, listy zadań, przekreślenie, automatyczne odnośniki) są wyrenderowywane w podglądzie.
 - **Podgląd**: na żywo; zasoby względne, takie jak obrazy, rozwiązywane są obok dokumentu.
 - **Zapisywanie**: wierne bajt w bajt — znacznik BOM, znaki CRLF i obecność pustej linii na końcu są zachowywane; zapis bez zmian nie przepisuje pliku.
 - **Znajdź i zamień**: ctrl+F przeszukuje źródło; Zastąp wszystko zapisuje wynik.
-- **AI**: gotowe przyciski pozwalają asystentowi przepisać, rozbudować lub przetłumaczyć dokument.
+- **AI**: gotowe przyciski pozwalają asystentowi przepisać, rozbudować lub przetłumaczyć dokument. Zaznaczenie można ukryć przed AI (patrz rozdział o panelu AI).
 
 ## Pasek narzędzi
 
@@ -24,6 +24,7 @@ Jeden rząd przycisków nad edytorem (najedź, aby zobaczyć opisy):
 - **Właściwości**: wstawia lub przechodzi do bloku YAML front matter na początku pliku.
 - **Konspekt**: przechodzenie według hierarchii nagłówków.
 - **Sprawdzanie pisowni**: włącza lub wyłącza sprawdzanie pisowni dla tego dokumentu.
+- **Ustawienia hostingu obrazów**: wklejone i przeciągnięte obrazy najpierw trafiają do własnej pamięci — zgodnej z S3 (R2/OSS/COS/MinIO), SM.MS lub GitHub — lokalna kopia w assets zostaje jako zapas.
 
 Trzy szybkie przykłady:
 
@@ -46,4 +47,4 @@ Wstążka zawiera przełącznik **Źródło** (z lokalizacją razem z aplikacją
 - **Edycja wierna bajtom.** Zapis z widoku źródła daje te same bajty co zapis z edytora — BOM, CRLF i obecność końcowego znaku nowej linii zostają zachowane.
 - **To ten sam dokument.** Przełączaj się swobodnie; źródło to własny tekst edytora, a nie kopia wymagająca scalenia.
 - **Pasek narzędzi formatowania je niedostępny** podczas jej otwarcia, bo większość tych przycisków wstawia konstrukcje edytora, które mają sens tylko po wyrenderowaniu. Wraca po zamknięciu widoku.
-- **Pliki JSON i inne w trybie źródłowym** otwierają się tutaj bezpośrednio: nie ma czego renderować, więc źródło _jest_ dokumentem.
+- **.txt i .json** otwierają się tu od razu w widoku źródła: nie ma czego renderować, więc źródło *jest* dokumentem.

@@ -1,13 +1,13 @@
 # L'editor Markdown
 
-L'editor Markdown apre i file .md / .markdown con un'esperienza fatta di sorgente più anteprima renderizzata.
+L'editor Markdown apre .md / .markdown — e .txt / .json, dritti nella vista sorgente — con sorgente più anteprima renderizzata.
 
 - **Apri**: da Home oppure File ▸ Apri…; funziona anche dalla riga di comando.
 - **Modifica**: editing in testo semplice; le estensioni GFM (tabelle, elenchi di attività, barratura, collegamenti automatici) vengono renderizzate nell'anteprima.
 - **Anteprima**: in tempo reale; le risorse relative come le immagini si risolvono accanto al documento.
 - **Salvataggio**: fedele byte per byte — il BOM, i CRLF e la presenza di una riga finale vuota vengono preservati; un salvataggio senza modifiche non riscrive il file.
 - **Trova e sostituisci**: ctrl+F cerca nel sorgente; Sostituisci tutto scrive il risultato.
-- **IA**: i pulsanti predefiniti permettono all'assistente di riscrivere, estendere o tradurre il documento.
+- **IA**: i pulsanti predefiniti permettono all'assistente di riscrivere, estendere o tradurre il documento. Una selezione può essere nascosta all'IA (vedi il capitolo del pannello IA).
 
 ## La barra degli strumenti
 
@@ -24,6 +24,7 @@ Una riga di pulsanti sopra l'editor (passa il puntatore per le descrizioni):
 - **Proprietà**: inserisce o salta al blocco YAML front matter in cima al file.
 - **Struttura**: salta in base alla gerarchia dei titoli.
 - **Controllo ortografico**: attiva o disattiva il controllo ortografico per questo documento.
+- **Impostazioni host immagini**: le immagini incollate o trascinate vanno prima nel tuo archivio — compatibile S3 (R2/OSS/COS/MinIO), SM.MS o GitHub — con la copia locale in assets come riserva.
 
 Tre esempi rapidi:
 
@@ -46,4 +47,4 @@ La barra multifunzione contiene un interruttore **Sorgente** (localizzato con l'
 - **La modifica è fedele ai byte.** Un salvataggio dalla vista sorgente produce gli stessi byte di un salvataggio dall'editor — BOM, CRLF e la presenza di un a capo finale sopravvivono tutti.
 - **È lo stesso documento.** Passa e ripassa liberamente; il sorgente è il testo stesso dell'editor, non una copia da dover unire.
 - **La barra degli strumenti di formattazione non è disponibile** mentre è aperta, perché la maggior parte di quei pulsanti inserisce costrutti dell'editor che hanno senso solo sul lato renderizzato. Torna quando chiudi la vista.
-- **I file JSON e gli altri in modalità sorgente** si aprono direttamente qui: non c'è nulla da renderizzare, quindi il sorgente _è_ il documento.
+- **.txt e .json** si aprono qui direttamente in vista sorgente: non c'è niente da renderizzare, quindi la sorgente *è* il documento.

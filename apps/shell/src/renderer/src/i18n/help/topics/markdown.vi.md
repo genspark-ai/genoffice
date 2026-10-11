@@ -1,13 +1,13 @@
 # Trình soạn thảo Markdown
 
-Trình soạn thảo Markdown mở .md / .markdown với trải nghiệm "mã nguồn + bản xem trước đã kết xuất".
+Trình soạn Markdown mở .md / .markdown — và .txt / .json, thẳng vào chế độ mã nguồn — với mã nguồn cùng xem trước đã render.
 
 - **Mở**: từ Trang chủ hoặc File ▸ Mở; dòng lệnh cũng dùng được.
 - **Chỉnh sửa**: chỉnh sửa văn bản thuần; các mở rộng GFM (bảng, danh sách công việc, gạch ngang, liên kết tự động) hiển thị trong bản xem trước.
 - **Xem trước**: theo thời gian thực; các tài nguyên tương đối như hình ảnh được phân giải cạnh tài liệu.
 - **Lưu**: trung thành từng byte — BOM, CRLF và việc có dấu xuống dòng ở cuối hay không đều được giữ; lưu mà không sửa gì sẽ không ghi lại tệp.
 - **Tìm và thay thế**: ctrl+F tìm trong mã nguồn; Thay thế tất cả ghi lại vào tệp.
-- **AI**: các nút mẫu cho phép trợ lý viết lại, mở rộng hoặc dịch tài liệu.
+- **AI**: các nút mẫu cho phép trợ lý viết lại, mở rộng hoặc dịch tài liệu. Vùng chọn có thể ẩn khỏi AI (xem chương bảng AI).
 
 ## Thanh công cụ
 
@@ -24,6 +24,7 @@ Một hàng nút phía trên trình soạn thảo ( rê chuột để xem chú t
 - **Thuộc tính**: chèn hoặc nhảy tới khối YAML front matter ở đầu tệp.
 - **Mục lục**: nhảy theo thứ bậc tiêu đề.
 - **Chính tả**: bật/tắt kiểm tra chính tả cho tài liệu này.
+- **Cài đặt máy chủ ảnh**: ảnh dán và kéo thả đi trước vào kho của riêng bạn — tương thích S3 (R2/OSS/COS/MinIO), SM.MS hoặc GitHub — bản sao assets cục bộ giữ làm dự phòng.
 
 Ba ví dụ nhanh:
 
@@ -46,4 +47,4 @@ Trên dải ruy-bâng có công tắc **Mã nguồn** (được bản địa hó
 - **Soạn thảo trung thành từng byte.** Lưu từ chế độ mã nguồn tạo ra đúng những byte mà lưu từ trình soạn thảo tạo ra — BOM, CRLF và việc có dấu xuống dòng ở cuối đều được giữ nguyên.
 - **Đây vẫn là cùng một tài liệu.** Chuyển qua lại tùy ý; mã nguồn chính là văn bản của trình soạn thảo, không phải một bản sao phải điều hợp.
 - **Thanh định dạng không dùng được** khi chế độ xem này đang mở, vì phần lớn các nút đó chèn những cấu trúc riêng của trình soạn thảo mà chỉ có ý nghĩa ở phần đã kết xuất. Nó trở lại khi bạn đóng chế độ xem.
-- **JSON và các tệp ở chế độ mã nguồn khác** mở thẳng tại đây: không có gì để kết xuất, nên mã nguồn _chính là_ tài liệu.
+- **.txt và .json** mở ở đây thẳng trong chế độ mã nguồn: không có gì để render, nên mã nguồn *chính là* tài liệu.

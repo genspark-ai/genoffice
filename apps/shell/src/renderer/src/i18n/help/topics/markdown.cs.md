@@ -1,13 +1,13 @@
 # Editor Markdown
 
-Editor Markdown otevírá soubory .md / .markdown v režimu zdrojový text plus vykreslený náhled.
+Editor Markdown otevírá .md / .markdown — a .txt / .json, rovnou v zobrazení zdroje — se zdrojem a vykresleným náhledem.
 
 - **Otevřít**: z domovské stránky nebo Soubor ▸ Otevřít…; funguje i z příkazové řádky.
 - **Úpravy**: úpravy v čistém textu; rozšíření GFM (tabulky, kontrolní seznamy, přeškrtnutí, automatické odkazy) se vykreslují v náhledu.
 - **Náhled**: živý; relativní zdroje, například obrázky, se načítají vedle dokumentu.
 - **Ukládání**: věrné bajt po bajtu — BOM, znaky CRLF i přítomnost prázdného řádku na konci se zachovávají; uložení bez změn soubor nepřepíše.
 - **Najít a nahradit**: ctrl+F hledá ve zdroji; Nahradit vše zapíše výsledek.
-- **AI**: předvolená tlačítka nechají asistenta dokument přepsat, rozšířit nebo přeložit.
+- **AI**: předvolená tlačítka nechají asistenta dokument přepsat, rozšířit nebo přeložit. Výběr lze skrýt před AI (viz kapitola o AI panelu).
 
 ## Pruh nástrojů
 
@@ -24,6 +24,7 @@ Jeden řádek tlačítek nad editorem (nápovědy zobrazíte po najetí):
 - **Vlastnosti**: vloží nebo přeskočí na blok YAML front matter na začátku souboru.
 - **Osnova**: přeskakování podle hierarchie nadpisů.
 - **Kontrola pravopisu**: zapne nebo vypne kontrolu pravopisu pro tento dokument.
+- **Nastavení hostitele obrázků**: vložené a přetažené obrázky míří nejdřív do vlastního úložiště — kompatibilního se S3 (R2/OSS/COS/MinIO), SM.MS nebo GitHub — lokální kopie v assets zůstává jako záloha.
 
 Tři rychlé příklady:
 
@@ -46,4 +47,4 @@ Pásek obsahuje přepínač **Zdroj** (překládá se spolu s aplikací). Když 
 - **Úpravy jsou věrné bajtům.** Uložení ze zobrazení zdroje vytvoří stejné bajty jako uložení z editoru — BOM, CRLF i přítomnost koncového znaku nového řádku zůstanou zachovány.
 - **Je to stejný dokument.** Klidně mezi nimi přepínejte; zdroj je vlastní text editoru, ne kopie, kterou by bylo nutno slučovat.
 - **Pruh nástrojů pro formátování není dostupný**, dokud je zobrazení otevřené, protože většina těchto tlačítek vkládá konstrukce editoru, které dávají smysl jen na vykreslené straně. Když zobrazení zavřete, vrátí se.
-- **Soubory JSON a další v režimu zdroje** se otevírají přímo zde: není co vykreslovat, takže zdroj _je_ dokument.
+- **.txt a .json** se tu otevírají přímo v zobrazení zdroje: není co vykreslovat, takže zdroj *je* dokument.

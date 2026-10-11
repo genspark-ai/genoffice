@@ -51,6 +51,7 @@ Das Menü richtet sich danach, wo Sie rechtsklicken:
 
 - Die Karte „AI Slides“ auf der Startseite: Nennen Sie ein Thema oder eine Gliederung, und die KI baut das Deck; bei fehlgeschlagener Cloud-Generierung wird auf lokale Generierung zurückgefallen.
 - Passen Sie anschließend weiter mit dem KI-Bereich an.
+- Rechtsklick auf eine Textauswahl oder ein Bild-/Video-/Audio-Element ▸ **Auswahl vor der KI verbergen** hält sie aus dem Blick des Modells (Details im KI-Panel-Kapitel); eine Folie mit verborgenem Inhalt überspringt die automatische Screenshot-Prüfung.
 
 ## Präsentieren und exportieren
 

@@ -64,6 +64,9 @@ Sześć narzędzi: **tusz, prostokąt, elipsa, strzałka, notatka**, a ponadto *
 - **Podpis odręczny**: narysuj go; można go powiązać z polem podpisu w formularzu.
 - **Podpis obrazkowy**: umieść obraz jako podpis.
 - Zapisane podpisy można wykorzystywać ponownie.
+- **Podpis certyfikatem** (karta Adnotacje): podpisz certyfikatem z magazynu systemowego lub z pliku .p12/.pfx; opcjonalnie pokaż podpis na stronie i opcjonalnie certyfikuj dokument przed późniejszymi zmianami.
+- Podpisanie zawsze zapisuje **nowy plik** (aktualizacja przyrostowa — wcześniejsze podpisy zostają ważne) i otwiera podpisaną kopię na miejscu. Zapisz najpierw: podpis obejmuje plik taki, jaki leży na dysku.
+- Baner nad dokumentem wylicza istniejące podpisy; **Pokaż podpisy** prezentuje ważność, zakres i łańcuch certyfikatów każdego. Odwołania (CRL/OCSP) nie są sprawdzane.
 
 ## Operacje na stronach (Strony)
 

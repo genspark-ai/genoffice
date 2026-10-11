@@ -46,7 +46,7 @@ Tài liệu mới mở ra chưa có tiêu đề; tập tin trên đĩa chỉ đ�
 | Mở sổ tay này  | F1    | F1              |
 | Thu gọn Ribbon | ⌥⌘R   | Ctrl+F1         |
 
-**Thu gọn Ribbon** hoạt động trong mọi trình soạn thảo. Hàng thẻ vẫn còn nguyên, còn dải lệnh bên dưới sẽ ẩn đi; thẻ đang chọn kiêm luôn là nút thu gọn, nên khi Ribbon còn thu gọn thì không thẻ nào được chọn, và bấm thẻ bất kỳ sẽ đưa dải lệnh trở lại. Bấm đúp vào một thẻ cũng cho kết quả tương tự. Trạng thái bạn để lại được ghi nhớ riêng cho từng trình soạn thảo.
+**Thu gọn Ribbon** hoạt động trong mọi trình soạn thảo. Hàng thẻ vẫn còn nguyên, còn dải lệnh bên dưới sẽ ẩn đi; thẻ đang chọn kiêm luôn là nút thu gọn, nên khi Ribbon còn thu gọn thì không thẻ nào được chọn, và bấm thẻ bất kỳ sẽ đưa dải lệnh trở lại. Bấm đúp vào một thẻ cũng cho kết quả tương tự. Trạng thái bạn để lại được ghi nhớ riêng cho từng trình soạn thảo. Docs thêm mật độ trung gian: **⌥⌘K** / Ctrl+Alt+K nén dải chỉ còn biểu tượng, cũng được ghi nhớ như vậy.
 
 Các phím tắt bên trong từng trình soạn thảo (công cụ định dạng, tìm và thay thế, thao tác bảng, ...) nằm trong chương tương ứng; Docs còn có hộp thoại phím tắt bàn phím có thể tìm kiếm (**⌘/**) (xem chương của nó).
 

@@ -1,13 +1,13 @@
 # Editor Markdown
 
-Editor Markdown membuka fail .md dan .markdown dengan pengalaman sumber dan pratonton yang dipaparkan.
+Penyunting Markdown membuka .md / .markdown — dan .txt / .json, terus ke paparan sumber — dengan sumber dan pratonton terterjemah.
 
 - **Buka**: daripada Laman Utama atau melalui Fail ▸ Buka, dan baris arahan turut berfungsi.
 - **Sunting**: penyuntingan teks biasa. Sambungan GFM seperti jadual, senarai tugasan, teks bergaris, dan pautan automatik dipaparkan dalam pratonton.
 - **Pratonton**: dipaparkan secara langsung, dengan sumber relatif seperti imej diselesaikan berhampiran dokumen.
 - **Simpanan** mengekalkan setiap bait dengan tepat. Tanda BOM, aksara CRLF, dan kehadiran baris akhir kosong semuanya dikekalkan, dan simpanan tanpa perubahan tidak menulis semula fail.
 - **Cari dan ganti**: ctrl+F mencari dalam sumber, dan Ganti Semua menulis hasilnya ke fail.
-- **AI**: Butang tetapan awal membolehkan pembantu menulis semula, melanjutkan, atau menterjemah dokumen tersebut.
+- **AI**: Butang tetapan awal membolehkan pembantu menulis semula, melanjutkan, atau menterjemah dokumen tersebut. Pemilihan boleh disembunyikan daripada AI (lihat bab panel AI).
 
 ## Bar alat
 
@@ -24,6 +24,7 @@ Satu baris butang di atas editor (halakan penuding ke atasnya untuk melihat tool
 - **Sifat** memasukkan atau melompat ke blok YAML front matter di bahagian atas fail.
 - **Kerangka** membolehkan anda melompat mengikut hierarki tajuk.
 - **Semakan ejaan** menyalakan atau mematikan pemeriksaan ejaan bagi dokumen ini.
+- **Tetapan hos imej**: imej yang ditampal dan dijatuhkan pergi dahulu ke storan anda sendiri — serasi S3 (R2/OSS/COS/MinIO), SM.MS atau GitHub — salinan assets setempat kekal sebagai sandaran.
 
 Tiga contoh pantas:
 
@@ -46,4 +47,4 @@ Reben itu membawa togol **Sumber** (dilocalkan bersama aplikasi). Hidupkan ia, d
 - **Penyuntingan mengekalkan setiap bait dengan tepat.** Simpanan daripada paparan sumber menghasilkan bait yang sama seperti simpanan daripada editor — BOM, CRLF dan kehadiran baris akhir kosong semuanya kekal.
 - **Ia dokumen yang sama.** Anda boleh bergantian antara paparan ini dan editor dengan bebas; sumber itu ialah teks editor itu sendiri, bukan salinan yang perlu digabungkan.
 - **Bar alat pemformatan tidak tersedia** semasa ia terbuka, kerana kebanyakan butang itu memasukkan konstruksi editor yang hanya bermakna pada sisi yang dipaparkan. Ia kembali apabila anda menutup paparan tersebut.
-- **Fail JSON dan fail mod sumber yang lain** dibuka di sini secara langsung: tiada apa-apa untuk dipaparkan, jadi sumber itu _ialah_ dokumennya.
+- **.txt dan .json** dibuka di sini terus dalam paparan sumber: tiada apa untuk diterjemahkan, maka sumber itulah dokumennya.
