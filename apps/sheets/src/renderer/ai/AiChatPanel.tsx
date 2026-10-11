@@ -893,7 +893,10 @@ export function AiChatPanel({
           textareaRef={inputRef}
           onChange={onPromptChange}
           onSend={send}
-          onStop={onStop}
+          onStop={() => {
+            msgQueue.hold()
+            onStop()
+          }}
           onPasteFiles={onPasteFiles}
         />
       </div>

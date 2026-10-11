@@ -80,7 +80,16 @@ function liveFieldNames(
   if (!catalog) return []
   const alive = new Set<string>()
   for (const w of catalog.widgets) if (!edits.get(w.id)?.remove) alive.add(w.fieldName)
-  return [...catalog.fields.keys()].filter((name) => alive.has(name))
+  const names = [
+    ...[...catalog.fields.keys()].filter((name) => alive.has(name)),
+    ...catalog.otherFieldNames,
+  ]
+  // Every ancestor of a dotted name is a field group: generators and validation treat it as taken
+  const groups = names.flatMap((name) => {
+    const parts = name.split('.')
+    return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('.'))
+  })
+  return [...names, ...groups]
 }
 import {
   buildFormCatalog,
@@ -1190,7 +1199,12 @@ export default function App() {
       try {
         setFormCatalog(await buildFormCatalog(loaded))
       } catch {
-        setFormCatalog({ widgets: [], fields: new Map(), byPage: new Map() })
+        setFormCatalog({
+          widgets: [],
+          fields: new Map(),
+          byPage: new Map(),
+          otherFieldNames: new Set(),
+        })
       }
       try {
         setSavedStaticFormFills(await window.pdfApi.listStaticFormFills(path))
@@ -1383,6 +1397,10 @@ export default function App() {
           for (const [k, v] of prev) if (saved.formWidgetEdits.get(k) !== v) next.set(k, v)
           return next
         })
+        // Pending fields written by this save are gone from the design list; a selection pointing at
+        // them would keep Delete/Arrange armed with nothing to act on
+        setSelectedFormFieldIds((prev) => prev.filter((id) => !saved.formFieldIds.has(id)))
+        setFreshFormFieldId((prev) => (prev && saved.formFieldIds.has(prev) ? null : prev))
         const nextRotations = new Map<number, number>()
         for (const [oldIdx, delta] of rotationsRef.current) {
           const residual = (((delta - (saved.rotations.get(oldIdx) ?? 0)) % 360) + 360) % 360
@@ -1748,7 +1766,7 @@ export default function App() {
     })
     const byPage = new Map<number, FormWidget[]>()
     for (const w of widgets) byPage.set(w.pageIndex, [...(byPage.get(w.pageIndex) ?? []), w])
-    return { widgets, fields: formCatalog.fields, byPage }
+    return { ...formCatalog, widgets, byPage }
   }, [formCatalog, formWidgetEdits])
   const designFieldsByPage = useMemo(() => {
     const out = new Map<number, DesignField[]>()
@@ -1783,6 +1801,16 @@ export default function App() {
     return selectedFormFieldIds.flatMap((id) => all.filter((f) => f.id === id))
   }, [designFieldsByPage, selectedFormFieldIds])
   const selectedDesignField = selectedDesignFields.length === 1 ? selectedDesignFields[0]! : null
+  // A pending field with its property card open is still being authored: saves leave it out
+  // until Done, or a save landing mid-edit writes the stale version and the post-save reload
+  // drops the edits made meanwhile
+  const heldFormFieldId =
+    selectedDesignField && !selectedDesignField.existing && !formDesignPreview
+      ? selectedDesignField.id
+      : null
+  const savableFormFields = heldFormFieldId
+    ? formFields.filter((f) => f.id !== heldFormFieldId)
+    : formFields
   const selectedFormFieldIdSet = useMemo(
     () => new Set(selectedFormFieldIds),
     [selectedFormFieldIds],
@@ -1899,7 +1927,7 @@ export default function App() {
     return [...records.values()]
   }, [imageEdits, savedStaticFormFills])
 
-  const ordinaryDirty =
+  const dirtyBesidesFormFields =
     markups.length > 0 ||
     annotDeletes.length > 0 ||
     noteEdits.length > 0 ||
@@ -1909,13 +1937,14 @@ export default function App() {
     imageEdits.length > 0 ||
     stampCfg !== null ||
     formEdits.size > 0 ||
-    formFields.length > 0 ||
     blankPages.length > 0 ||
     formWidgetEdits.size > 0 ||
     rotations.size > 0 ||
     deleted.size > 0 ||
     order !== null ||
     metadata !== null
+  const ordinaryDirty = dirtyBesidesFormFields || formFields.length > 0
+  const savableDirty = dirtyBesidesFormFields || savableFormFields.length > 0
   const dirty = redactions.length > 0 || ordinaryDirty
 
   // Mirror dirty state to the main process (close-tab/close-window guard)
@@ -3599,12 +3628,14 @@ export default function App() {
 
   // ── Form Design: author new AcroForm fields (pending until saved) ──
 
+  const lastRadioGroupRef = useRef<string | null>(null)
   useEffect(() => {
     if (ribbonTab !== 'formDesign') {
       setFormDesignTool(null)
       setFormDesignPreview(false)
       setSelectedFormFieldId(null)
       setFreshFormFieldId(null)
+      lastRadioGroupRef.current = null
     }
   }, [ribbonTab])
 
@@ -3637,15 +3668,23 @@ export default function App() {
     }
   }
 
-  /** Consecutive radio buttons join the group placed last; the first one starts a new group */
+  /** Consecutive radio buttons join the group placed last; the first one starts a new group.
+   *  Done saves the button, so the group is remembered by name rather than read off the pending list */
   const nextRadio = (): Pick<FormFieldInput, 'name' | 'exportValue'> => {
-    const last = [...formFieldsRef.current].reverse().find((f) => f.input.kind === 'radio')
-    const name = last?.input.name ?? nextFieldName('radio')
-    const used = new Set(
-      formFieldsRef.current
+    const remembered = lastRadioGroupRef.current
+    const name =
+      remembered &&
+      (formCatalog?.fields.get(remembered)?.kind === 'radio' ||
+        formFieldsRef.current.some((f) => f.input.kind === 'radio' && f.input.name === remembered))
+        ? remembered
+        : nextFieldName('radio')
+    lastRadioGroupRef.current = name
+    const used = new Set([
+      ...formFieldsRef.current
         .filter((f) => f.input.kind === 'radio' && f.input.name === name)
         .map((f) => f.input.exportValue),
-    )
+      ...(formCatalog?.fields.get(name)?.options ?? []),
+    ])
     for (let n = 1; ; n++) {
       const exportValue = `option_${n}`
       if (!used.has(exportValue)) return { name, exportValue }
@@ -3685,6 +3724,23 @@ export default function App() {
   const patchFormField = (id: string, input: Partial<FormFieldInput>, coalesceKey?: string) => {
     const field = formFieldsRef.current.find((f) => f.id === id)
     const kind = field?.input.kind
+    // Changing the value or moving the button into another group must keep values unique there
+    if (kind === 'radio' && ('exportValue' in input || 'name' in input)) {
+      const next = (input.exportValue ?? field!.input.exportValue ?? '').trim()
+      const group = (input.name ?? field!.input.name).trim()
+      const taken =
+        formFieldsRef.current.some(
+          (f) =>
+            f.id !== id &&
+            f.input.kind === 'radio' &&
+            f.input.name === group &&
+            f.input.exportValue === next,
+        ) || (formCatalog?.fields.get(group)?.options ?? []).includes(next)
+      if (!next || taken) {
+        showNotice(t('formDesignExportValueTaken'))
+        return false
+      }
+    }
     const ops: Op[] = [{ op: 'patchFormField', id, kind, input }]
     // A radio group has one default: checking this button unchecks its pending siblings
     if (kind === 'radio' && input.checked) {
@@ -3699,7 +3755,16 @@ export default function App() {
       }
     }
     const plan = applyEditOps(ops, { coalesceKey })
-    if (plan.failures.length > 0) showNotice(t('formDesignNameInvalid'))
+    if (plan.failures.length > 0)
+      showNotice(
+        t(
+          'options' in input
+            ? 'formDesignOptionsEmpty'
+            : 'exportValue' in input
+              ? 'formDesignExportValueTaken'
+              : 'formDesignNameInvalid',
+        ),
+      )
     return plan.failures.length === 0
   }
 
@@ -3865,7 +3930,12 @@ export default function App() {
       rect: f.rect,
       required: f.required,
       ...(w.kind === 'text'
-        ? { multiLine: w.multiLine, maxLen: w.maxLen ?? undefined, textAlignment: w.textAlignment }
+        ? {
+            multiLine: w.multiLine,
+            maxLen: w.maxLen ?? undefined,
+            textAlignment: w.textAlignment,
+            ...(w.dateFormat ? { dateFormat: w.dateFormat } : {}),
+          }
         : {}),
       ...(w.kind === 'radio' ? { exportValue: w.buttonValue } : {}),
       ...(w.kind === 'choice'
@@ -4138,6 +4208,7 @@ export default function App() {
   const editsPayload = (
     edits: LocalTextEdit[] = textEdits,
     noteFlush?: { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] },
+    fields: LocalFormField[] = savableFormFields,
   ) => ({
     markups: markups.map(({ id: _id, ...rest }) => rest),
     annotDeletes: annotDeletes.map((d): AnnotDeleteInput => ({
@@ -4162,7 +4233,7 @@ export default function App() {
     staticFormFills,
     stamps: stampCfg ? renderStamps(stampCfg, visList) : [],
     formValues: [...formEdits.values()],
-    formFields: formFields.map((f) => f.input),
+    formFields: fields.map((f) => f.input),
     blankPages: blankPages.map((b) => b.input),
     formWidgetEdits: [...formWidgetEdits.values()],
     rotations: [...rotations].map(([pageIndex, delta]) => ({ pageIndex, delta })),
@@ -4184,9 +4255,13 @@ export default function App() {
       post-save reload has committed. Running the follow-up straight off the completion
       promise would reuse the pre-reload render's closure — dirty still true, the saved
       edits still listed — and write them onto the file a second time. */
-  const queuedSavesRef = useRef<{ autosave: boolean; resolve: (ok: boolean) => void }[]>([])
+  const queuedSavesRef = useRef<
+    { autosave: boolean; flushAll: boolean; resolve: (ok: boolean) => void }[]
+  >([])
 
-  const save = (autosave = false): Promise<boolean> => {
+  // flushAll also writes the field whose card is open: callers that treat success as
+  // "everything is in the file" (close-tab Save, flushThen) must not leave it behind
+  const save = (autosave = false, flushAll = false): Promise<boolean> => {
     if (redactionRequestInFlightRef.current) return Promise.resolve(false)
     // A save is already writing: queue behind it instead of reporting failure — the
     // close prompt's "Save" and ⌘S regularly collide with the blur-triggered autosave
@@ -4194,7 +4269,9 @@ export default function App() {
     // covers two triggers landing in the same frame, where the saveState snapshot
     // still reads 'idle' for both.
     if (saveInFlightRef.current !== null) {
-      return new Promise<boolean>((resolve) => queuedSavesRef.current.push({ autosave, resolve }))
+      return new Promise<boolean>((resolve) =>
+        queuedSavesRef.current.push({ autosave, flushAll, resolve }),
+      )
     }
     // Fold an open floating-editor draft in first: keyboard save and autosave can land
     // mid-typing, and the post-save reload closes the editor — without this the
@@ -4202,8 +4279,9 @@ export default function App() {
     const edits = commitTextDraft()
     // Same for an open comment-edit box in the notes margin
     const noteFlush = commitNoteEdit()
+    const fields = flushAll ? formFields : savableFormFields
     const anythingToSave =
-      ordinaryDirty ||
+      (flushAll ? ordinaryDirty : savableDirty) ||
       edits !== textEdits ||
       noteFlush.drawings !== drawings ||
       noteFlush.noteEdits !== noteEdits
@@ -4223,7 +4301,7 @@ export default function App() {
       imageEditIds: new Set(imageEdits.map((ie) => ie.id)),
       stampCfg,
       formEdits,
-      formFieldIds: new Set(formFields.map((f) => f.id)),
+      formFieldIds: new Set(fields.map((f) => f.id)),
       blankPageIds: new Set(blankPages.map((b) => b.id)),
       formWidgetEdits,
       rotations,
@@ -4234,7 +4312,10 @@ export default function App() {
     inFlightPageMapRef.current = snapshot.pageMap
     const run = (async (): Promise<boolean> => {
       setSaveState('saving')
-      const result = await window.pdfApi.save({ path: filePath, ...editsPayload(edits, noteFlush) })
+      const result = await window.pdfApi.save({
+        path: filePath,
+        ...editsPayload(edits, noteFlush, fields),
+      })
       if (!result.ok) {
         opFailed(result.error)
         return false
@@ -4308,7 +4389,8 @@ export default function App() {
     queuedSavesRef.current = []
     // One explicit request makes the whole drained batch explicit (autosave opt-in)
     const autosaveOnly = queued.every((q) => q.autosave)
-    void save(autosaveOnly).then((ok) => {
+    const flushAll = queued.some((q) => q.flushAll)
+    void save(autosaveOnly, flushAll).then((ok) => {
       for (const q of queued) q.resolve(ok)
     })
   })
@@ -4380,7 +4462,7 @@ export default function App() {
             imageEdits: [],
             ...(lateNoteEdits.length > 0 ? { noteEdits: lateNoteEdits } : {}),
           }
-        : editsPayload(draftEdits, noteFlush)
+        : editsPayload(draftEdits, noteFlush, formFields)
     setSaveState('saving')
     const result = await window.pdfApi.save({ path: filePath, targetPath, ...edits })
     if (!result.ok) {
@@ -4488,6 +4570,14 @@ export default function App() {
       !redactionRequestInFlightRef.current,
     () => void save(true),
   )
+
+  // Done in the field popover persists the field; runs after the render that folded in
+  // the Enter-key name commit so the save sees the patched field
+  const [formDesignDoneSave, setFormDesignDoneSave] = useState(0)
+  useEffect(() => {
+    if (formDesignDoneSave > 0) void save()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formDesignDoneSave])
 
   // ── Page operations ──
 
@@ -5823,7 +5913,7 @@ export default function App() {
       opFailed(t('redactStructureBlocked'))
       return undefined
     }
-    if (dirty && !(await save())) return undefined
+    if (dirty && !(await save(false, true))) return undefined
     return fn()
   }
 
@@ -6565,7 +6655,7 @@ export default function App() {
         window.pdfApi.sendCloseSaveResult(false)
         return
       }
-      void save().then((ok) => window.pdfApi.sendCloseSaveResult(ok))
+      void save(false, true).then((ok) => window.pdfApi.sendCloseSaveResult(ok))
     })
   })
 
@@ -8096,15 +8186,11 @@ export default function App() {
                 {t(
                   {
                     valid: 'sigBannerValid',
+                    untrusted: 'sigBannerUntrusted',
                     warning: 'sigBannerWarning',
                     invalid: 'sigBannerInvalid',
                   }[overallSignatureStatus(digitalSignatures)] as 'sigBannerValid',
                 )}
-                {overallSignatureStatus(digitalSignatures) === 'valid' &&
-                  digitalSignatures.some((sig) =>
-                    sig.problems.some((p) => p === 'self-signed' || p === 'untrusted-issuer'),
-                  ) &&
-                  ` — ${t('sigBannerUntrustedNote')}`}
               </span>
               <button className="pdf-modal-btn" onClick={() => setSignaturesDlg(true)}>
                 {t('sigBannerView')}
@@ -9451,7 +9537,6 @@ export default function App() {
                                       isNew={freshFormFieldId === f.id}
                                       style={{ left: box.left, top: box.top + box.height + 6 }}
                                       labels={{
-                                        name: t('formDesignName'),
                                         required: t('formDesignRequired'),
                                         multiLine: t('formDesignMultiLine'),
                                         defaultValue: t('formDesignDefaultValue'),
@@ -9470,6 +9555,7 @@ export default function App() {
                                       onDone={() => {
                                         setSelectedFormFieldId(null)
                                         setFreshFormFieldId(null)
+                                        setFormDesignDoneSave((n) => n + 1)
                                       }}
                                       onCancel={() => {
                                         if (!f.existing)
@@ -9528,6 +9614,8 @@ export default function App() {
                                 activeWidgetId={activeFormWidgetId}
                                 signedWidgetIds={signedFormWidgetIds}
                                 signatureLabel={t('formSignField')}
+                                dateInvalidLabel={(format) => t('formDateInvalid', { format })}
+                                datePickLabel={t('formDatePick')}
                                 registerControl={registerFormControl}
                                 onFocus={(widget) => {
                                   setActiveFormWidgetId(widget.id)

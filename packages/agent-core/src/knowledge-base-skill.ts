@@ -76,9 +76,23 @@ lists them (index | folder | file | type | size, with the absolute path).
 - Long files are paged: the result reports totalChars and the next offset; keep
   reading with offset while it matters.
 - Cite what you used: right after a statement drawn from a file, write
-  [file name](filenav:///absolute/path) — copy the path exactly from the list
-  or a search result. Cite ONLY paths that appear there; never invent one.
+  [file name](cite link) — copy the cite link exactly as the list or a search
+  result gives it (it is already encoded). Cite ONLY links that appear there;
+  never invent or edit one.
 - Say so plainly when the knowledge base does not contain the answer.`
+
+/**
+ * Same encoding as @genoffice/ui file-nav (agent-core must not depend on the
+ * renderer package): everything the inline-link grammar rejects — spaces, %,
+ * CJK, parens, Windows backslashes — is percent-encoded, slashes stay.
+ */
+export function kbCiteHref(path: string): string {
+  const encoded = encodeURIComponent(path)
+    .replace(/%2F/g, '/')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+  return FILE_NAV_SCHEME + encoded
+}
 
 export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
   const readTool: AgentToolDef = {
@@ -125,14 +139,14 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       const plain = files.map(
         (f, i) => `${i} | ${f.folder} | ${f.name} | .${f.ext} | ${formatKbSize(f.sizeBytes)}`,
       )
-      const paths = files.map((f, i) => `${i} = ${f.path}`)
-      const withPaths = `${plain.join('\n')}\n\nAbsolute paths (for citations):\n${paths.join('\n')}`
+      const paths = files.map((f, i) => `${i} = ${f.path}\n    cite: ${kbCiteHref(f.path)}`)
+      const withPaths = `${plain.join('\n')}\n\nAbsolute paths and cite links:\n${paths.join('\n')}`
       // a large corpus degrades to names only: the model searches first anyway,
       // and search results carry the real paths to cite
       const body =
         withPaths.length <= KB_CONTEXT_MAX_CHARS
           ? withPaths
-          : `${plain.join('\n')}\n\n(The corpus is large; paths come with search results.)`
+          : `${plain.join('\n')}\n\n(The corpus is large; cite links come with search results.)`
       return `Knowledge base — the user's starred files (index | folder | file | type | size):\n${body}`
     },
     executeTool: async (call) => {
@@ -149,7 +163,8 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         if (hits.length === 0)
           return { output: 'no match. Retry with synonyms or the other language.', summary: query }
         const lines = hits.map(
-          (h) => `${h.folder}/${h.name}\n  path: ${h.path}\n  snippet: ${h.snippet}`,
+          (h) =>
+            `${h.folder}/${h.name}\n  path: ${h.path}\n  cite: ${kbCiteHref(h.path)}\n  snippet: ${h.snippet}`,
         )
         return { output: lines.join('\n'), summary: `${query} → ${hits.length}` }
       }
@@ -196,7 +211,7 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       if (unknown.length === 0) return null
       return (
         `These citations are not knowledge-base paths: ${unknown.join(', ')}. ` +
-        'Cite only [file name](filenav:///absolute/path) links whose path appears verbatim in the knowledge-base list or a search result, or remove the citation.'
+        'Cite only the cite links given verbatim in the knowledge-base list or a search result, or remove the citation.'
       )
     },
   }

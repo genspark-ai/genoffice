@@ -1488,13 +1488,15 @@ export function planRowSplit(
         if (start >= j && fit - start < 2) fit = start
       }
       // a forced cut (a page-break-before paragraph inside a cell) splits at
-      // the first line at or below it, ahead of capacity and widow logic: the
-      // instruction demands a page there regardless of what fits. Rows wholly
-      // past the cut are left alone — they already start after it.
+      // the first line at or below it, ahead of the widow logic: the
+      // instruction demands a page there regardless of what fits. It only ever
+      // pulls the cut up — a break below what the page holds is reached by a
+      // later fragment, never by overflowing this one. Rows wholly past the
+      // cut are left alone — they already start after it.
       if (forcedCuts.length > 0) {
         for (let i = j; i < c.lines.length; i++) {
           if (forcedCuts.some((fc) => lineTop(c, i) >= fc - 0.5)) {
-            if (i > j) {
+            if (i > j && i <= fit) {
               fit = i
               forceHit[k] = true
             }
@@ -1817,6 +1819,9 @@ function _placeTable(
       let cuts = !row.cantSplit && !keepWhole && row.cutYs ? [...row.cutYs] : []
       let segTurns = 0
       let lastTurnPrev = 0
+      // an authored break among the cuts turns the page even when the segment
+      // would fit (a single-cell row has no cell boxes, so this is its only path)
+      const forced = !row.cantSplit && !keepWhole ? (row.forcedCuts ?? []) : []
       const placeSegments = (bounds: number[]) => {
         let prev = 0
         for (const cut of bounds) {
@@ -1824,7 +1829,8 @@ function _placeTable(
           if (seg <= 0.5) continue
           // the notes ride the first segment (the references sit in the row head)
           const need = seg + (prev === 0 ? notes : 0)
-          if (!fits(need) && !pageEmpty()) {
+          const breakHere = prev > 0 && forced.some((fc) => Math.abs(fc - prev) < 0.5)
+          if ((breakHere || !fits(need)) && !pageEmpty()) {
             newPage(rowCursor + prev, curSection, repeatH, block.top)
             segTurns++
             lastTurnPrev = prev

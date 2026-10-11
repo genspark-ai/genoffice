@@ -117,8 +117,8 @@ export interface PdfSignatureInfo {
   /** Zero-based page of the signature widget; -1 when it has none */
   pageIndex: number
   kind: 'signature' | 'timestamp'
-  /** Derived from `problems`: invalid (altered or unreadable) > warning (weakened) > valid (intact; trust problems stay listed as notes) */
-  status: 'valid' | 'warning' | 'invalid'
+  /** Derived from `problems`: invalid (altered or unreadable) > warning (weakened) > untrusted (intact, chain reaches no trusted root) > valid */
+  status: 'valid' | 'untrusted' | 'warning' | 'invalid'
   problems: PdfSignatureProblem[]
   subFilter: string
   signerName?: string
@@ -150,6 +150,8 @@ export type CertificateErrorCode =
   | 'cert-not-exportable'
   | 'cert-store-locked'
   | 'cert-store-tool-missing'
+  /** The system store is not supported on this platform (macOS for now) */
+  | 'cert-store-unsupported'
 
 /** A signing identity found in the operating system's certificate store */
 export interface SystemCertificateInfo {
@@ -163,7 +165,7 @@ export interface SystemCertificateInfo {
   expired: boolean
 }
 
-export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked'
+export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked' | 'platform-unsupported'
 
 export interface ListSystemCertificatesResult {
   certs: SystemCertificateInfo[]
@@ -181,6 +183,8 @@ export interface SignWithCertificateRequest {
   /** Opaque id returned by pickCertificate for this view */
   certId: string
   password: string
+  /** Unlocks a locked system store (NSS) when the identity has to be exported again */
+  storePassword?: string
   reason?: string
   location?: string
   contactInfo?: string
