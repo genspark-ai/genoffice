@@ -4,11 +4,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import { Redaction } from '../src/renderer/editor/Redaction'
 import { SelectiveEscapeMarkdown } from '../src/renderer/editor/markdownEscape'
-import {
-  firstSaveName,
-  modelSaveAsName,
-  noteDocumentSwapped,
-} from '../src/renderer/file-naming'
+import { firstSaveName, modelSaveAsName, noteDocumentSwapped } from '../src/renderer/file-naming'
 
 /**
  * These go through the naming functions the save path and the ribbon actually
@@ -62,7 +58,11 @@ function editorWithRedaction(): Editor {
  * window rather than replacing it: TipTap needs the DOM that lives there.
  */
 function installBridge(api: {
-  suggestFileName: (input: { content: string; trigger: string; filePath?: string | null }) => Promise<unknown>
+  suggestFileName: (input: {
+    content: string
+    trigger: string
+    filePath?: string | null
+  }) => Promise<unknown>
   getFileNamingEnabled: () => Promise<boolean>
 }): void {
   ;(window as unknown as { aiOffice: unknown }).aiOffice = api
@@ -77,7 +77,11 @@ beforeEach(() => {
   noteDocumentSwapped()
   installBridge({
     suggestFileName: async (input) => {
-      sent.push({ content: input.content, trigger: input.trigger, filePath: input.filePath ?? null })
+      sent.push({
+        content: input.content,
+        trigger: input.trigger,
+        filePath: input.filePath ?? null,
+      })
       return answer ? { ok: true, name: answer } : { ok: false, reason: 'empty-name' }
     },
     getFileNamingEnabled: async () => namingEnabled,

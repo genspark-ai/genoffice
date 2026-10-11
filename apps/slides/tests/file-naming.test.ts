@@ -65,9 +65,11 @@ let namingEnabled = true
  * rather than replacing it, so the jsdom DOM other code reads stays intact.
  */
 function installBridge(api: {
-  suggestFileName: (
-    input: { content: string; trigger: string; filePath?: string | null },
-  ) => Promise<unknown>
+  suggestFileName: (input: {
+    content: string
+    trigger: string
+    filePath?: string | null
+  }) => Promise<unknown>
   getFileNamingEnabled: () => Promise<boolean>
 }): void {
   ;(window as unknown as { aiOffice: unknown }).aiOffice = api

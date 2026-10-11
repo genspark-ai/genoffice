@@ -122,7 +122,6 @@ function applyImageRewrites(
 
 export { deriveAutoFileName } from './auto-file-name'
 
-
 export default function App() {
   const { lang, t } = useI18n()
   const [status, setStatus] = useState<LoadStatus>('loading')
