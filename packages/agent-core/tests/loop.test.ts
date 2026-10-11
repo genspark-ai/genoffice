@@ -2447,13 +2447,13 @@ describe('AgentLoop usage', () => {
     const transport = scriptedTransport([
       (cb) => {
         cb.onDelta('thinking about tools')
-        cb.onUsage({ inputTokens: 100, outputTokens: 20 })
+        cb.onUsage?.({ inputTokens: 100, outputTokens: 20 })
         cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
         cb.onDone()
       },
       (cb) => {
         cb.onDelta('final answer')
-        cb.onUsage({ inputTokens: 250, outputTokens: 35 })
+        cb.onUsage?.({ inputTokens: 250, outputTokens: 35 })
         cb.onDone()
       },
     ])
@@ -2488,7 +2488,7 @@ describe('AgentLoop usage', () => {
   it('keeps the run sum when only one side is reported', async () => {
     const transport = scriptedTransport([
       (cb) => {
-        cb.onUsage({ inputTokens: 100 })
+        cb.onUsage?.({ inputTokens: 100 })
         cb.onDone()
       },
     ])
@@ -2502,11 +2502,11 @@ describe('AgentLoop usage', () => {
   it('resets the run sum for the next run', async () => {
     const transport = scriptedTransport([
       (cb) => {
-        cb.onUsage({ inputTokens: 100, outputTokens: 10 })
+        cb.onUsage?.({ inputTokens: 100, outputTokens: 10 })
         cb.onDone()
       },
       (cb) => {
-        cb.onUsage({ inputTokens: 100, outputTokens: 10 })
+        cb.onUsage?.({ inputTokens: 100, outputTokens: 10 })
         cb.onDone()
       },
     ])
