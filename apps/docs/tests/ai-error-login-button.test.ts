@@ -95,7 +95,6 @@ beforeAll(() => {
 describe('AI error bubble sign-in button', () => {
   it('shows no sign-in button for a BYOK provider failure', async () => {
     const editor = createEditor()
-    let container: HTMLElement | null = null
     try {
       // rebuild inline so the harness stays alive until the assertions ran
       let listener: ChunkListener | null = null
@@ -122,7 +121,7 @@ describe('AI error bubble sign-in button', () => {
           onCollapse: () => {},
         }),
       )
-      container = mounted.container
+      const { container } = mounted
       const textarea = container.querySelector<HTMLTextAreaElement>('.ai-input-box textarea')!
       typeInto(textarea, 'summarize this')
       const send = container.querySelector<HTMLButtonElement>('.ai-send-btn')!
@@ -136,7 +135,6 @@ describe('AI error bubble sign-in button', () => {
       expect(container.querySelector('.ai-msg-error')).not.toBeNull()
       expect(container.querySelector('.ai-login-btn')).toBeNull()
       act(() => mounted.root.unmount())
-      container = null
     } finally {
       editor.destroy()
       delete (window as unknown as Record<string, unknown>).desktop
