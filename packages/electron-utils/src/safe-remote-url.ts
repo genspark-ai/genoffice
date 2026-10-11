@@ -39,6 +39,25 @@ const blockedAddresses = (() => {
 /** Hostname suffixes that never denote a public host. */
 const BLOCKED_HOST_SUFFIXES: readonly string[] = ['.localhost', '.local', '.internal']
 
+/**
+ * The same 198.18.0.0/15 range on its own list: VPN clients in fake-ip mode
+ * answer every DNS query with a placeholder address from here (the real
+ * resolution happens at the proxy exit), so a hostname that resolves into this
+ * range is a proxy artifact, not an intranet target. Nothing else deploys the
+ * range (RFC 2544 benchmarking), and a connection to it either rides the VPN
+ * tunnel outward — never into the LAN — or simply fails to connect.
+ */
+const fakeIpRange = (() => {
+  const list = new BlockList()
+  list.addSubnet('198.18.0.0', 15)
+  return list
+})()
+
+/** True when `ip` is a fake-ip placeholder a VPN resolver handed out for a real hostname. */
+export function isFakeIpDnsArtifact(ip: string): boolean {
+  return isIP(ip) === 4 && fakeIpRange.check(ip, 'ipv4')
+}
+
 /** True when `ip` is a literal address outside the public ranges (non-addresses count as unsafe). */
 export function isBlockedAddress(ip: string): boolean {
   const family = isIP(ip)
@@ -48,8 +67,12 @@ export function isBlockedAddress(ip: string): boolean {
 
 /**
  * True when the URL is http(s) and its host is public. Literal addresses are
- * checked directly; hostnames are resolved and every returned address must pass,
- * so a name pointing at an internal address is rejected.
+ * checked directly — a URL naming an internal address outright is refused with
+ * no exception. Hostnames are resolved and every returned address must pass,
+ * so a name pointing at an internal address is rejected; the single exception
+ * is a resolved address in the VPN fake-ip range (see `isFakeIpDnsArtifact`),
+ * which only a proxy resolver can produce for a hostname an attacker does not
+ * already control the machine's DNS for.
  *
  * This is a best-effort control, not a guarantee: DNS can change between this
  * check and the request (rebinding). Pair it with per-hop revalidation via
@@ -77,7 +100,10 @@ export async function isSafeRemoteUrl(raw: unknown): Promise<boolean> {
   if (host === 'localhost' || BLOCKED_HOST_SUFFIXES.some((s) => host.endsWith(s))) return false
   try {
     const addrs = await lookup(host, { all: true })
-    return addrs.length > 0 && addrs.every((a) => !isBlockedAddress(a.address))
+    return (
+      addrs.length > 0 &&
+      addrs.every((a) => !isBlockedAddress(a.address) || isFakeIpDnsArtifact(a.address))
+    )
   } catch {
     return false
   }
