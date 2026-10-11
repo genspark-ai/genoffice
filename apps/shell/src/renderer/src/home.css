@@ -14,6 +14,7 @@
   --timeline-user-text: #5a6170;
   /* lift for the active segment in gray-track tab pills */
   --shadow-pill: 0 1px 2px rgb(0 0 0 / 8%);
+  --shadow-composer: 0 6px 30px rgb(0 0 0 / 8%);
 
   /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
   --logo-invert: 0;
@@ -32,6 +33,7 @@
   --timeline-user-bg: #2a2a3a;
   --timeline-user-text: #b0b0c0;
   --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
   --logo-invert: 1;
 }
 
@@ -47,6 +49,7 @@
     --timeline-user-bg: #2a2a3a;
     --timeline-user-text: #b0b0c0;
     --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
     --logo-invert: 1;
   }
 }
@@ -2322,6 +2325,70 @@ html[dir='rtl'] .quick-title-row {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 5px;
+}
+.kb-ask .ai-input-box {
+  margin-top: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-16);
+  background: var(--color-bg-page);
+  box-shadow: var(--shadow-composer);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.kb-ask .ai-input-box textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: none;
+  background: none;
+  padding: 0 14px;
+  margin: 12px 0 4px;
+  font-size: 16px;
+  font-family: inherit;
+  line-height: 24px;
+  outline: none;
+  color: var(--color-text-primary);
+  min-height: 48px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.kb-ask .ai-input-box textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+.kb-ask .ai-input-footer {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 8px 10px;
+}
+.kb-ask .ai-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 35%;
+  background: transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.kb-ask .ai-send-btn img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.kb-ask .ai-send-btn:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+.kb-ask .ai-send-btn:active:not(:disabled) {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+.kb-ask .ai-send-btn:disabled {
+  cursor: default;
 }
 .kb-ask-tool-note {
   font-size: 11.5px;

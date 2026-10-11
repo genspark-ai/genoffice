@@ -466,6 +466,46 @@ describe('form design', () => {
     ).toMatch(/options/)
   })
 
+  it('rejects a name that is already a field group and empty radio/dropdown values', () => {
+    expect(
+      run(
+        empty(),
+        [{ op: 'addFormField', field: field({ name: 'a' }) }],
+        ctx({ fieldNames: new Set(['a.b']) }),
+      ).plan.failures[0]!.error,
+    ).toMatch(/field group/)
+    expect(
+      run(empty(), [{ op: 'addFormField', field: field({ kind: 'radio', exportValue: '  ' }) }])
+        .plan.failures[0]!.error,
+    ).toMatch(/exportValue/)
+    const a = run(empty(), [
+      { op: 'addFormField', field: field({ kind: 'radio', exportValue: 'x' }) },
+      {
+        op: 'addFormField',
+        field: field({ name: 'dd', kind: 'choice', options: [' CN', 'US', 'CN', ''], value: 'JP' }),
+      },
+    ])
+    expect(a.plan.failures).toEqual([])
+    expect(a.state.formFields[1]!.input.options).toEqual(['CN', 'US'])
+    expect(a.state.formFields[1]!.input.value).toBeUndefined()
+    const [radio, dd] = a.state.formFields.map((f) => f.id)
+    expect(
+      run(a.state, [{ op: 'patchFormField', id: radio, input: { exportValue: '' } }]).plan
+        .failures[0]!.error,
+    ).toMatch(/exportValue/)
+    expect(
+      run(a.state, [{ op: 'patchFormField', id: dd, input: { options: ['', ' '] } }]).plan
+        .failures[0]!.error,
+    ).toMatch(/options/)
+    const b = run(a.state, [
+      { op: 'patchFormField', id: dd, input: { value: 'US' } },
+      { op: 'patchFormField', id: dd, input: { options: ['CN', 'JP'] } },
+    ])
+    expect(b.plan.failures).toEqual([])
+    expect(b.state.formFields[1]!.input.options).toEqual(['CN', 'JP'])
+    expect(b.state.formFields[1]!.input.value).toBeUndefined()
+  })
+
   it('accumulates edits of an existing widget under its widget id', () => {
     const a = run(empty(), [
       { op: 'editFormWidget', widgetId: '12R', fieldName: 'name', input: { rect: [1, 1, 50, 20] } },

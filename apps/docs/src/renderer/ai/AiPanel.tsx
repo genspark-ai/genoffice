@@ -397,9 +397,9 @@ export function AiPanel({
   // snapshot of the starred files feeding the knowledge-base skill; refreshed
   // on mount and before each send so a freshly starred file is answerable
   const kbFilesRef = useRef<KbFileInfo[]>([])
-  const refreshKbFiles = (): void => {
-    if (typeof window.desktop?.kbList !== 'function') return
-    void window.desktop
+  const refreshKbFiles = (): Promise<void> => {
+    if (typeof window.desktop?.kbList !== 'function') return Promise.resolve()
+    return window.desktop
       .kbList()
       .then((files) => {
         kbFilesRef.current = files
@@ -429,7 +429,7 @@ export function AiPanel({
       against the live composer list. */
   const sentAttachmentsRef = useRef<AttachmentMeta[]>([])
   useEffect(() => {
-    refreshKbFiles()
+    void refreshKbFiles()
   }, [])
 
   useEffect(() => {
@@ -1145,7 +1145,7 @@ export function AiPanel({
       })
       // a phased open still streaming its tail: the context must describe the whole document
       .then(async (images) => {
-        await waitForFullContent()
+        await Promise.all([waitForFullContent(), refreshKbFiles()])
         // a newer send (after New chat) owns the panel now: leave its state alone
         if (pendingSendRef.current !== pending) return
         pendingSendRef.current = null
@@ -1160,12 +1160,12 @@ export function AiPanel({
           setBusy(false)
           return
         }
-        refreshKbFiles()
         return loop.run(instruction, images)
       })
   }
 
   const cancel = () => {
+    msgQueue.hold()
     if (pendingSendRef.current) pendingSendRef.current.aborted = true
     loopRef.current?.cancel()
   }

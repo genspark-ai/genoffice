@@ -1049,6 +1049,7 @@ export function AiPanel({
   }
 
   const stop = (): void => {
+    msgQueue.hold()
     dismissCards()
     const loop = loopRef.current
     if (loop?.busy) loop.cancel()
