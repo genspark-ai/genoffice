@@ -392,7 +392,13 @@ function tearOffOrigin(at: { x: number; y: number }, size: { width: number; heig
   const area = screen.getDisplayNearestPoint(at).workArea
   const x = Math.min(Math.max(at.x - TEAR_GRAB.dx, area.x), area.x + area.width - size.width)
   const y = Math.min(Math.max(at.y - TEAR_GRAB.dy, area.y), area.y + area.height - size.height)
-  return { x: Math.round(x), y: Math.round(y) }
+  return { x: toInt(x), y: toInt(y) }
+}
+
+// Electron rejects -0 as an int argument ("conversion failure"); Math.round
+// yields -0 for values in (-0.5, 0), e.g. a window steered to the screen edge
+function toInt(v: number): number {
+  return Math.round(v) || 0
 }
 
 export function createDetachedEditorWindow(options: {
@@ -540,7 +546,7 @@ export function createDetachedEditorWindow(options: {
 /** steer the torn-off window after the held pointer (screen coordinates) */
 export function dragTornWindow(x: number, y: number): void {
   if (!torn || torn.rec.window.isDestroyed()) return
-  torn.rec.window.setPosition(Math.round(x - torn.grabDx), Math.round(y - torn.grabDy))
+  torn.rec.window.setPosition(toInt(x - torn.grabDx), toInt(y - torn.grabDy))
 }
 
 /** the pointer was released: the torn-off window is an ordinary detached window now */

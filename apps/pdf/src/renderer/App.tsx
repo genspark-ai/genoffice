@@ -80,7 +80,16 @@ function liveFieldNames(
   if (!catalog) return []
   const alive = new Set<string>()
   for (const w of catalog.widgets) if (!edits.get(w.id)?.remove) alive.add(w.fieldName)
-  return [...catalog.fields.keys()].filter((name) => alive.has(name))
+  const names = [
+    ...[...catalog.fields.keys()].filter((name) => alive.has(name)),
+    ...catalog.otherFieldNames,
+  ]
+  // Every ancestor of a dotted name is a field group: generators and validation treat it as taken
+  const groups = names.flatMap((name) => {
+    const parts = name.split('.')
+    return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('.'))
+  })
+  return [...names, ...groups]
 }
 import {
   buildFormCatalog,
@@ -1190,7 +1199,12 @@ export default function App() {
       try {
         setFormCatalog(await buildFormCatalog(loaded))
       } catch {
-        setFormCatalog({ widgets: [], fields: new Map(), byPage: new Map() })
+        setFormCatalog({
+          widgets: [],
+          fields: new Map(),
+          byPage: new Map(),
+          otherFieldNames: new Set(),
+        })
       }
       try {
         setSavedStaticFormFills(await window.pdfApi.listStaticFormFills(path))
@@ -1383,6 +1397,10 @@ export default function App() {
           for (const [k, v] of prev) if (saved.formWidgetEdits.get(k) !== v) next.set(k, v)
           return next
         })
+        // Pending fields written by this save are gone from the design list; a selection pointing at
+        // them would keep Delete/Arrange armed with nothing to act on
+        setSelectedFormFieldIds((prev) => prev.filter((id) => !saved.formFieldIds.has(id)))
+        setFreshFormFieldId((prev) => (prev && saved.formFieldIds.has(prev) ? null : prev))
         const nextRotations = new Map<number, number>()
         for (const [oldIdx, delta] of rotationsRef.current) {
           const residual = (((delta - (saved.rotations.get(oldIdx) ?? 0)) % 360) + 360) % 360
@@ -1748,7 +1766,7 @@ export default function App() {
     })
     const byPage = new Map<number, FormWidget[]>()
     for (const w of widgets) byPage.set(w.pageIndex, [...(byPage.get(w.pageIndex) ?? []), w])
-    return { widgets, fields: formCatalog.fields, byPage }
+    return { ...formCatalog, widgets, byPage }
   }, [formCatalog, formWidgetEdits])
   const designFieldsByPage = useMemo(() => {
     const out = new Map<number, DesignField[]>()
@@ -3599,12 +3617,14 @@ export default function App() {
 
   // ── Form Design: author new AcroForm fields (pending until saved) ──
 
+  const lastRadioGroupRef = useRef<string | null>(null)
   useEffect(() => {
     if (ribbonTab !== 'formDesign') {
       setFormDesignTool(null)
       setFormDesignPreview(false)
       setSelectedFormFieldId(null)
       setFreshFormFieldId(null)
+      lastRadioGroupRef.current = null
     }
   }, [ribbonTab])
 
@@ -3637,15 +3657,23 @@ export default function App() {
     }
   }
 
-  /** Consecutive radio buttons join the group placed last; the first one starts a new group */
+  /** Consecutive radio buttons join the group placed last; the first one starts a new group.
+   *  Done saves the button, so the group is remembered by name rather than read off the pending list */
   const nextRadio = (): Pick<FormFieldInput, 'name' | 'exportValue'> => {
-    const last = [...formFieldsRef.current].reverse().find((f) => f.input.kind === 'radio')
-    const name = last?.input.name ?? nextFieldName('radio')
-    const used = new Set(
-      formFieldsRef.current
+    const remembered = lastRadioGroupRef.current
+    const name =
+      remembered &&
+      (formCatalog?.fields.get(remembered)?.kind === 'radio' ||
+        formFieldsRef.current.some((f) => f.input.kind === 'radio' && f.input.name === remembered))
+        ? remembered
+        : nextFieldName('radio')
+    lastRadioGroupRef.current = name
+    const used = new Set([
+      ...formFieldsRef.current
         .filter((f) => f.input.kind === 'radio' && f.input.name === name)
         .map((f) => f.input.exportValue),
-    )
+      ...(formCatalog?.fields.get(name)?.options ?? []),
+    ])
     for (let n = 1; ; n++) {
       const exportValue = `option_${n}`
       if (!used.has(exportValue)) return { name, exportValue }
@@ -3685,6 +3713,23 @@ export default function App() {
   const patchFormField = (id: string, input: Partial<FormFieldInput>, coalesceKey?: string) => {
     const field = formFieldsRef.current.find((f) => f.id === id)
     const kind = field?.input.kind
+    // Changing the value or moving the button into another group must keep values unique there
+    if (kind === 'radio' && ('exportValue' in input || 'name' in input)) {
+      const next = (input.exportValue ?? field!.input.exportValue ?? '').trim()
+      const group = (input.name ?? field!.input.name).trim()
+      const taken =
+        formFieldsRef.current.some(
+          (f) =>
+            f.id !== id &&
+            f.input.kind === 'radio' &&
+            f.input.name === group &&
+            f.input.exportValue === next,
+        ) || (formCatalog?.fields.get(group)?.options ?? []).includes(next)
+      if (!next || taken) {
+        showNotice(t('formDesignExportValueTaken'))
+        return false
+      }
+    }
     const ops: Op[] = [{ op: 'patchFormField', id, kind, input }]
     // A radio group has one default: checking this button unchecks its pending siblings
     if (kind === 'radio' && input.checked) {
@@ -3699,7 +3744,16 @@ export default function App() {
       }
     }
     const plan = applyEditOps(ops, { coalesceKey })
-    if (plan.failures.length > 0) showNotice(t('formDesignNameInvalid'))
+    if (plan.failures.length > 0)
+      showNotice(
+        t(
+          'options' in input
+            ? 'formDesignOptionsEmpty'
+            : 'exportValue' in input
+              ? 'formDesignExportValueTaken'
+              : 'formDesignNameInvalid',
+        ),
+      )
     return plan.failures.length === 0
   }
 
@@ -3865,7 +3919,12 @@ export default function App() {
       rect: f.rect,
       required: f.required,
       ...(w.kind === 'text'
-        ? { multiLine: w.multiLine, maxLen: w.maxLen ?? undefined, textAlignment: w.textAlignment }
+        ? {
+            multiLine: w.multiLine,
+            maxLen: w.maxLen ?? undefined,
+            textAlignment: w.textAlignment,
+            ...(w.dateFormat ? { dateFormat: w.dateFormat } : {}),
+          }
         : {}),
       ...(w.kind === 'radio' ? { exportValue: w.buttonValue } : {}),
       ...(w.kind === 'choice'
@@ -4488,6 +4547,14 @@ export default function App() {
       !redactionRequestInFlightRef.current,
     () => void save(true),
   )
+
+  // Done in the field popover persists the field; runs after the render that folded in
+  // the Enter-key name commit so the save sees the patched field
+  const [formDesignDoneSave, setFormDesignDoneSave] = useState(0)
+  useEffect(() => {
+    if (formDesignDoneSave > 0) void save()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formDesignDoneSave])
 
   // ── Page operations ──
 
@@ -8096,15 +8163,11 @@ export default function App() {
                 {t(
                   {
                     valid: 'sigBannerValid',
+                    untrusted: 'sigBannerUntrusted',
                     warning: 'sigBannerWarning',
                     invalid: 'sigBannerInvalid',
                   }[overallSignatureStatus(digitalSignatures)] as 'sigBannerValid',
                 )}
-                {overallSignatureStatus(digitalSignatures) === 'valid' &&
-                  digitalSignatures.some((sig) =>
-                    sig.problems.some((p) => p === 'self-signed' || p === 'untrusted-issuer'),
-                  ) &&
-                  ` — ${t('sigBannerUntrustedNote')}`}
               </span>
               <button className="pdf-modal-btn" onClick={() => setSignaturesDlg(true)}>
                 {t('sigBannerView')}
@@ -9451,7 +9514,6 @@ export default function App() {
                                       isNew={freshFormFieldId === f.id}
                                       style={{ left: box.left, top: box.top + box.height + 6 }}
                                       labels={{
-                                        name: t('formDesignName'),
                                         required: t('formDesignRequired'),
                                         multiLine: t('formDesignMultiLine'),
                                         defaultValue: t('formDesignDefaultValue'),
@@ -9470,6 +9532,7 @@ export default function App() {
                                       onDone={() => {
                                         setSelectedFormFieldId(null)
                                         setFreshFormFieldId(null)
+                                        setFormDesignDoneSave((n) => n + 1)
                                       }}
                                       onCancel={() => {
                                         if (!f.existing)
@@ -9528,6 +9591,8 @@ export default function App() {
                                 activeWidgetId={activeFormWidgetId}
                                 signedWidgetIds={signedFormWidgetIds}
                                 signatureLabel={t('formSignField')}
+                                dateInvalidLabel={(format) => t('formDateInvalid', { format })}
+                                datePickLabel={t('formDatePick')}
                                 registerControl={registerFormControl}
                                 onFocus={(widget) => {
                                   setActiveFormWidgetId(widget.id)

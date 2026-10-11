@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from 'react'
  * `submit`, which every panel maps onto its own runWith/send.
  *
  * Queue semantics:
- * - settling a run always pumps the next message, including after a stop or
- *   an error (a failed bubble keeps its retry action) — stopping everything
- *   for good is the strip's clear button;
+ * - settling a run pumps the next message after a finish or an error (a
+ *   failed bubble keeps its retry action); a user Stop holds the queue instead
+ *   (`hold`), so the next message runs on an explicit resume or send;
  * - `paused` closes the gate: the run in flight finishes, but nothing after it
  *   starts until it is opened again. Queued messages stay editable the whole
  *   time, so editing one can never set the next one off;
@@ -40,6 +40,8 @@ export interface ChatRunQueue<M> {
   clear: () => void
   /** close or open the gate; opening it starts the next message straight away if idle */
   setPaused: (paused: boolean) => void
+  /** a user Stop: close the gate when anything is waiting, so the settle does not fire it */
+  hold: () => void
   togglePaused: () => void
 }
 
@@ -109,11 +111,23 @@ export function useChatRunQueue<M>(args: {
     setQueued([])
   }, [resetKey])
 
+  // an emptied queue reopens the gate: a hold left behind by Stop must not
+  // swallow the next message typed while a later reply runs
+  useEffect(() => {
+    if (queued.length === 0 && pausedRef.current) {
+      pausedRef.current = false
+      setPausedState(false)
+    }
+  }, [queued.length])
+
   return {
     queued,
     paused,
     setPaused,
     togglePaused: () => setPaused(!pausedRef.current),
+    hold: () => {
+      if (queuedRef.current.length > 0) setPaused(true)
+    },
     enqueue: (text, meta) => {
       const trimmed = text.trim()
       if (!trimmed) return

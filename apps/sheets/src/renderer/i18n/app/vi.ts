@@ -305,7 +305,9 @@ export const vi = {
   appFullLoadStart: 'Tải toàn bộ',
   appFullLoadRunning: 'Đang tải toàn bộ sổ làm việc — sắp xếp và lọc sẽ mở khóa khi hoàn tất…',
   appFullLoadTooLarge:
-    'Sổ làm việc này quá lớn để tải toàn bộ vào bộ nhớ; sắp xếp và lọc không khả dụng cho tệp này.',
+    'Sổ làm việc này quá lớn để tải toàn bộ vào bộ nhớ; sắp xếp và di chuyển vùng không khả dụng cho tệp này. Bộ lọc chạy trực tiếp trên tệp.',
+  appLargeFilterLoading: 'Đang đọc cột lọc từ tệp…',
+  appLargeFilterApplying: 'Đang áp dụng bộ lọc trên tệp…',
   appSortValueModeFormulas:
     'Vùng này chứa công thức không được tính trực tiếp trong sổ làm việc lớn này — sắp xếp hoặc di chuyển sẽ lưu chúng thành giá trị thuần. Hãy chọn vùng không có công thức.',
   appSortRangeTooLarge:

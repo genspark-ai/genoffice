@@ -7,7 +7,7 @@ describe('filenav href generation', () => {
   })
 
   it('encodes spaces, parens and CJK so the markdown link regex accepts the href', () => {
-    const href = fileNavHref('/Users/王小明/报告 (final v2).docx')
+    const href = fileNavHref('/Users/\u738b\u5c0f\u660e/\u62a5\u544a (final v2).docx')
     // nothing left that the inline-link href grammar rejects: no space, no raw paren
     expect(href).not.toMatch(/[\s()]/)
     // encodeURIComponent already handles spaces/CJK; parens are encoded on top
@@ -19,7 +19,7 @@ describe('filenav href generation', () => {
   it('round-trips through parseFileNavHref exactly', () => {
     const paths = [
       '/Users/me/report.docx',
-      '/Users/王小明/报告 (final v2).docx',
+      '/Users/\u738b\u5c0f\u660e/\u62a5\u544a (final v2).docx',
       '/tmp/50%off (1).md',
       "/tmp/odd'!*.pdf",
     ]
@@ -48,8 +48,8 @@ describe('createFileNav', () => {
     const openPath = vi.fn()
     const nav = createFileNav(openPath)
     expect(nav.scheme).toBe(FILE_NAV_SCHEME)
-    nav.onNavigate(fileNavHref('/Users/me/季度报告 (2).xlsx'))
-    expect(openPath).toHaveBeenCalledWith('/Users/me/季度报告 (2).xlsx')
+    nav.onNavigate(fileNavHref('/Users/me/\u5b63\u5ea6\u62a5\u544a (2).xlsx'))
+    expect(openPath).toHaveBeenCalledWith('/Users/me/\u5b63\u5ea6\u62a5\u544a (2).xlsx')
   })
 
   it('ignores hrefs without a path or of another scheme', () => {

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PDFDocument, PDFName } from 'pdf-lib'
 import { launchShell, waitForPageWithUrl, closeAndSaveVideo } from './helpers'
 
-test('Form Design authors text, checkbox and signature fields that save as real AcroForm widgets', async () => {
+test('Form Design authors text, checkbox and signature fields that Done writes as real AcroForm widgets', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'genoffice-pdf-formdesign-'))
   const pdfPath = join(dir, 'blank.pdf')
   const blank = await PDFDocument.create()
@@ -28,22 +28,28 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     if (!box) throw new Error('page box')
     const textTool = page.getByRole('button', { name: 'Text field', exact: true })
 
-    // Click drops a default-size text field, disarms the tool and opens the card with the name focused
+    // Click drops a default-size text field, disarms the tool and opens the card; names are generated, never shown
     await textTool.click()
     await page.mouse.click(box.x + 80, box.y + 120)
     await expect(layer.locator('.pdf-formdesign-field.is-text')).toHaveCount(1)
     await expect(textTool).toHaveAttribute('aria-pressed', 'false')
     const props = pdfPage.locator('.pdf-formdesign-props')
     await expect(props).toBeVisible()
-    const nameInput = props.locator('input').first()
-    await expect(nameInput).toBeFocused()
-    await expect(nameInput).toHaveValue('text_1')
-    await nameInput.fill('full_name')
     await props.getByLabel('Required').check()
-    // Done closes the card and keeps the field
+    // Done closes the card and writes the field to the PDF: after the reload it is an existing widget
     await props.getByRole('button', { name: 'Done', exact: true }).click()
     await expect(props).toHaveCount(0)
-    await expect(layer.locator('.pdf-formdesign-field.is-text')).toContainText('full_name')
+    await expect(layer.locator('.pdf-formdesign-field.is-text.is-existing')).toHaveCount(1)
+    await expect(pdfPage.locator('.pdf-form-layer .pdf-form-input')).toHaveCount(1)
+    await expect
+      .poll(async () => {
+        const form = (await PDFDocument.load(await readFile(pdfPath))).getForm()
+        return (
+          form.getFields().some((f) => f.getName() === 'text_1') &&
+          form.getTextField('text_1').isRequired()
+        )
+      })
+      .toBe(true)
 
     // A second click on the page without a tool must not add anything
     await page.mouse.click(box.x + 300, box.y + 500)
@@ -69,23 +75,26 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     await page.mouse.click(box.x + 80, box.y + 300)
     await expect(layer.locator('.pdf-formdesign-field.is-signature')).toHaveCount(1)
     await props.getByRole('button', { name: 'Done', exact: true }).click()
-    await expect(page.locator('.form-ribbon-progress')).toContainText('3 new fields')
+    await expect(layer.locator('.pdf-formdesign-field.is-existing')).toHaveCount(3)
 
-    // Two consecutive radio buttons join one group; a dropdown gets editable options; a date field a format
+    // Two consecutive radio buttons join one group even though Done saved the first; a dropdown
+    // gets editable options; a date field a format
     const radioTool = page.getByRole('button', { name: 'Radio button', exact: true })
     await radioTool.click()
     await page.mouse.click(box.x + 300, box.y + 200)
     await props.getByRole('button', { name: 'Done', exact: true }).click()
     await radioTool.click()
     await page.mouse.click(box.x + 340, box.y + 200)
-    await expect(props.locator('input').first()).toHaveValue('radio_1')
     await expect(props.getByLabel('Option value')).toHaveValue('option_2')
     await props.getByRole('button', { name: 'Done', exact: true }).click()
     await expect(layer.locator('.pdf-formdesign-field.is-radio')).toHaveCount(2)
 
     await page.getByRole('button', { name: 'Dropdown', exact: true }).click()
     await page.mouse.click(box.x + 300, box.y + 260)
-    await props.getByLabel('Options (one per line)').fill('CN\nUS\nJP')
+    // Options commit when the box loses focus (cleaned: trimmed, no blanks, no duplicates)
+    await props.getByLabel('Options (one per line)').fill('CN\nUS\n\nJP\nUS ')
+    await props.getByLabel('Options (one per line)').blur()
+    await expect(props.getByLabel('Options (one per line)')).toHaveValue('CN\nUS\nJP')
     await props.getByLabel('Default value').selectOption('US')
     await props.getByRole('button', { name: 'Done', exact: true }).click()
 
@@ -93,9 +102,9 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     await page.mouse.click(box.x + 300, box.y + 320)
     await props.getByLabel('Date format').selectOption('dd/mm/yyyy')
     await props.getByRole('button', { name: 'Done', exact: true }).click()
-    await expect(page.locator('.form-ribbon-progress')).toContainText('7 new fields')
+    await expect(layer.locator('.pdf-formdesign-field.is-existing')).toHaveCount(7)
 
-    // Dragging a field body moves it; arrow keys nudge it
+    // Dragging a saved field body moves it; the move stays pending until the next save
     const sig = layer.locator('.pdf-formdesign-field.is-signature')
     const sigBefore = await sig.boundingBox()
     if (!sigBefore) throw new Error('sig box')
@@ -126,21 +135,9 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     await page.keyboard.press('ControlOrMeta+z')
     await expect(layer.locator('.pdf-formdesign-field')).toHaveCount(7)
 
-    // Undo under an open property card refreshes its name draft; blur must not reapply the undone name
-    await layer.getByTitle('full_name').click()
-    const nameAgain = props.locator('input').first()
-    await nameAgain.fill('renamed_twice')
-    await nameAgain.blur()
-    await expect(layer.locator('.pdf-formdesign-field.is-selected')).toContainText('renamed_twice')
-    await page.keyboard.press('ControlOrMeta+z')
-    await expect(nameAgain).toHaveValue('full_name')
-    await nameAgain.focus()
-    await nameAgain.blur()
-    await expect(layer.locator('.pdf-formdesign-field.is-selected')).toContainText('full_name')
-
     // Shift-click selects several fields (no handles), Arrange aligns them, Ctrl+D duplicates
     const sigField = layer.getByTitle('signature_1')
-    const textField = layer.getByTitle('full_name')
+    const textField = layer.getByTitle('text_1')
     await textField.click()
     await sigField.click({ modifiers: ['Shift'] })
     await expect(layer.locator('.pdf-formdesign-field.is-selected')).toHaveCount(2)
@@ -178,17 +175,10 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     await page.mouse.click(box.x + 500, box.y + 700)
     await expect(layer.locator('.pdf-formdesign-field.is-selected')).toHaveCount(0)
 
-    // Preview shows fillable stand-ins for the pending fields
-    await page.getByRole('button', { name: 'Preview', exact: true }).click()
-    await expect(pdfPage.locator('.pdf-formdesign-preview')).toHaveCount(7)
-    await page.getByRole('button', { name: 'Preview', exact: true }).click()
-    await expect(pdfPage.locator('.pdf-formdesign-preview')).toHaveCount(0)
-
     await page.screenshot({ path: join(dir, 'form-design.png') })
     await page.keyboard.press('ControlOrMeta+s')
 
-    // After the save reload the authored fields are real widgets rendered by the fill layer and
-    // stay editable in Form Design
+    // The authored fields are real widgets rendered by the fill layer and stay editable in Form Design
     await expect(pdfPage.locator('.pdf-form-layer .pdf-form-input')).toHaveCount(2)
     await expect(pdfPage.locator('.pdf-form-layer .pdf-form-checkbox')).toHaveCount(1)
     await expect(pdfPage.locator('.pdf-form-layer .pdf-form-radio')).toHaveCount(2)
@@ -206,16 +196,41 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     )
     await previewBtn.click()
 
+    // The date field rewrites other layouts into its format, rejects non-dates with an inline
+    // message and offers a calendar picker
+    await page.getByRole('button', { name: 'Fill Form', exact: true }).click()
+    const dateInput = pdfPage.locator('.pdf-form-layer .pdf-form-input[placeholder="dd/mm/yyyy"]')
+    await dateInput.click()
+    await page.keyboard.type('2026-10-05')
+    await page.keyboard.press('Enter')
+    await expect(dateInput).toHaveValue('05/10/2026')
+    await dateInput.click()
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.keyboard.type('hello')
+    await page.keyboard.press('Enter')
+    await expect(dateInput).toHaveValue('05/10/2026')
+    await expect(pdfPage.locator('.pdf-form-date-error')).toContainText('dd/mm/yyyy')
+    await expect(pdfPage.locator('.pdf-form-date-pick')).toHaveCount(1)
+    await pdfPage.locator('.pdf-form-date-native').evaluate((el: HTMLInputElement) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        el,
+        '2024-02-29',
+      )
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await expect(dateInput).toHaveValue('29/02/2024')
+    await page.getByRole('button', { name: 'Form Design', exact: true }).click()
+
     const saved = await PDFDocument.load(await readFile(pdfPath))
     const form = saved.getForm()
-    expect(form.getTextField('full_name').isRequired()).toBe(true)
-    const savedRect = form.getTextField('full_name').acroField.getWidgets()[0]!.getRectangle()
+    expect(form.getTextField('text_1').isRequired()).toBe(true)
+    const savedRect = form.getTextField('text_1').acroField.getWidgets()[0]!.getRectangle()
     expect(
       form
         .getFields()
         .map((f) => f.getName())
         .sort(),
-    ).toEqual(['checkbox_1', 'choice_1', 'date_1', 'full_name', 'radio_1', 'signature_1'])
+    ).toEqual(['checkbox_1', 'choice_1', 'date_1', 'radio_1', 'signature_1', 'text_1'])
     expect(form.getRadioGroup('radio_1').getOptions()).toEqual(['option_1', 'option_2'])
     expect(form.getDropdown('choice_1').getOptions()).toEqual(['CN', 'US', 'JP'])
     expect(form.getDropdown('choice_1').getSelected()).toEqual(['US'])
@@ -224,7 +239,7 @@ test('Form Design authors text, checkbox and signature fields that save as real 
     )
 
     // Move the saved text field and delete the saved checkbox, then save again
-    const existingText = layer.locator('.pdf-formdesign-field.is-existing[title="full_name"]')
+    const existingText = layer.locator('.pdf-formdesign-field.is-existing[title="text_1"]')
     const textBefore = await existingText.boundingBox()
     if (!textBefore) throw new Error('text box')
     await page.mouse.move(textBefore.x + textBefore.width / 2, textBefore.y + textBefore.height / 2)
@@ -237,26 +252,23 @@ test('Form Design authors text, checkbox and signature fields that save as real 
       },
     )
     await page.mouse.up()
-    await expect(props.locator('input').first()).toBeDisabled()
     await layer.locator('.pdf-formdesign-field.is-existing.is-checkbox').click()
     await page.keyboard.press('Delete')
     await expect(layer.locator('.pdf-formdesign-field')).toHaveCount(6)
     await page.keyboard.press('ControlOrMeta+s')
     await expect(pdfPage.locator('.pdf-form-layer .pdf-form-checkbox')).toHaveCount(0)
 
-    const resaved = await PDFDocument.load(await readFile(pdfPath))
-    expect(
-      resaved
+    const fieldNames = async () =>
+      (await PDFDocument.load(await readFile(pdfPath)))
         .getForm()
         .getFields()
         .map((f) => f.getName())
-        .sort(),
-    ).toEqual(['choice_1', 'date_1', 'full_name', 'radio_1', 'signature_1'])
-    const moved = resaved
-      .getForm()
-      .getTextField('full_name')
-      .acroField.getWidgets()[0]!
-      .getRectangle()
+        .sort()
+    await expect
+      .poll(fieldNames)
+      .toEqual(['choice_1', 'date_1', 'radio_1', 'signature_1', 'text_1'])
+    const resaved = await PDFDocument.load(await readFile(pdfPath))
+    const moved = resaved.getForm().getTextField('text_1').acroField.getWidgets()[0]!.getRectangle()
     expect(moved.y).toBeLessThan(savedRect.y - 50)
     expect(moved.width).toBeCloseTo(savedRect.width, 0)
     console.log(`screenshot: ${join(dir, 'form-design.png')}`)

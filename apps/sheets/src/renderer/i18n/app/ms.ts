@@ -310,7 +310,9 @@ export const ms = {
   appFullLoadRunning:
     'Memuatkan seluruh buku kerja — pengisihan dan penapisan tersedia selepas selesai…',
   appFullLoadTooLarge:
-    'Buku kerja ini terlalu besar untuk dimuatkan sepenuhnya ke ingatan; pengisihan dan penapisan tidak tersedia untuk fail ini.',
+    'Buku kerja ini terlalu besar untuk dimuatkan sepenuhnya ke memori; pengisihan dan pemindahan julat tidak tersedia untuk fail ini. Penapisan dijalankan terus pada fail.',
+  appLargeFilterLoading: 'Membaca lajur penapis daripada fail…',
+  appLargeFilterApplying: 'Menggunakan penapis pada fail…',
   appSortValueModeFormulas:
     'Julat ini mengandungi formula yang tidak dikira secara langsung dalam buku kerja besar ini — mengisih atau mengalihkannya akan menyimpannya sebagai nilai biasa. Pilih julat tanpa formula.',
   appSortRangeTooLarge:
