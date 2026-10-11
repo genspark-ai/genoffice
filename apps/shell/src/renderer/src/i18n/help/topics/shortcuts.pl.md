@@ -10,7 +10,7 @@ Każdy edytor ma własne przypisania klawiszy i tylko kilka z nich działa wszę
 | ----------------------------------------------------------- | ----- | --------------- |
 | Otwórz Podręcznik użytkownika — działa wszędzie w aplikacji | F1    | F1              |
 | Zwiń / rozwiń wstążkę — każdy edytor                        | ⌥⌘R   | Ctrl+F1         |
-| Kompaktowa wstążka — tylko Docs | ⌥⌘K  | Ctrl+Alt+K      |
+| Kompaktowa wstążka — tylko Docs                             | ⌥⌘K   | Ctrl+Alt+K      |
 | Otwórz arkusz Skrótów klawiszowych — tylko Word             | ⌘/    | Ctrl+/          |
 
 - **F1 otwiera ten podręcznik**, a nie arkusz skrótów. Należy do menu aplikacji, więc działa z poziomu Word, Sheets, Slides, PDF czy karty Home.

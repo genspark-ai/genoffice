@@ -47,4 +47,4 @@ Het lint bevat een schakelaar **Bron** (vertalen mee met de app). Zet hem aan en
 - **Bewerken is bytegetrouw.** Een opslaactie vanuit de bronweergave levert dezelfde bytes als een opslaactie vanuit de editor — BOM, CRLF en de aanwezigheid van een afsluitende newline blijven allemaal behouden.
 - **Het is hetzelfde document.** Schakel rustig heen en weer; de bron is de eigen tekst van de editor, geen kopie die je zou moeten samenvoegen.
 - **De opmaakwerkbalk is niet beschikbaar** zolang de weergave open is, omdat de meeste van die knoppen editorconstructies invoegen die alleen aan de weergegeven kant betekenis hebben. Hij komt terug zodra je de weergave sluit.
-- **.txt en .json** openen hier direct in bronweergave: er is niets te renderen, dus de bron *is* het document.
+- **.txt en .json** openen hier direct in bronweergave: er is niets te renderen, dus de bron _is_ het document.

@@ -10,7 +10,7 @@ Mỗi trình soạn thảo có tổ hợp phím riêng, và chỉ vài tổ hợ
 | --------------------------------------------------------- | ----- | --------------- |
 | Mở Hướng dẫn sử dụng — dùng được ở mọi nơi trong ứng dụng | F1    | F1              |
 | Thu gọn / mở rộng Ribbon — mọi trình soạn thảo            | ⌥⌘R   | Ctrl+F1         |
-| Ruy-băng gọn — chỉ Docs           | ⌥⌘K  | Ctrl+Alt+K      |
+| Ruy-băng gọn — chỉ Docs                                   | ⌥⌘K   | Ctrl+Alt+K      |
 | Mở bảng Phím tắt — chỉ Word                               | ⌘/    | Ctrl+/          |
 
 - **F1 mở sổ tay này**, không phải bảng phím tắt. Nó thuộc về menu ứng dụng, nên hoạt động như nhau kể cả từ Word, Sheets, Slides, PDF hay thẻ Trang chủ.

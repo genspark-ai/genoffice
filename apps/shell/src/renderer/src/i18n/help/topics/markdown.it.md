@@ -47,4 +47,4 @@ La barra multifunzione contiene un interruttore **Sorgente** (localizzato con l'
 - **La modifica è fedele ai byte.** Un salvataggio dalla vista sorgente produce gli stessi byte di un salvataggio dall'editor — BOM, CRLF e la presenza di un a capo finale sopravvivono tutti.
 - **È lo stesso documento.** Passa e ripassa liberamente; il sorgente è il testo stesso dell'editor, non una copia da dover unire.
 - **La barra degli strumenti di formattazione non è disponibile** mentre è aperta, perché la maggior parte di quei pulsanti inserisce costrutti dell'editor che hanno senso solo sul lato renderizzato. Torna quando chiudi la vista.
-- **.txt e .json** si aprono qui direttamente in vista sorgente: non c'è niente da renderizzare, quindi la sorgente *è* il documento.
+- **.txt e .json** si aprono qui direttamente in vista sorgente: non c'è niente da renderizzare, quindi la sorgente _è_ il documento.

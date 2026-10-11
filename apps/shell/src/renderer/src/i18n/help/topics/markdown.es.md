@@ -47,4 +47,4 @@ La cinta de opciones lleva un conmutador **Código fuente** (localizado junto co
 - **La edición es fiel byte a byte.** Un guardado desde la vista de código fuente produce los mismos bytes que un guardado desde el editor: el BOM, los CRLF y la presencia de un salto de línea final se conservan.
 - **Es el mismo documento.** Alterne entre el editor y la fuente tantas veces como quiera; la fuente es el propio texto del editor, no una copia que haya que combinar.
 - **La barra de herramientas de formato no está disponible** mientras esta vista está abierta, porque la mayoría de esos botones insertan construcciones del editor que solo tienen sentido en la parte renderizada. Vuelve a aparecer cuando cierra la vista.
-- **.txt y .json** se abren aquí directamente en vista de código: no hay nada que renderizar, así que el código *es* el documento.
+- **.txt y .json** se abren aquí directamente en vista de código: no hay nada que renderizar, así que el código _es_ el documento.

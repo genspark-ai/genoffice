@@ -10,7 +10,7 @@ Cada editor tem as suas próprias combinações de teclas, e apenas algumas func
 | --------------------------------------------------------- | ----- | --------------- |
 | Abrir o guia do utilizador — funciona em toda a aplicação | F1    | F1              |
 | Recolher / expandir o friso — todos os editores           | ⌥⌘R   | Ctrl+F1         |
-| Faixa compacta — só Docs        | ⌥⌘K  | Ctrl+Alt+K      |
+| Faixa compacta — só Docs                                  | ⌥⌘K   | Ctrl+Alt+K      |
 | Abrir a folha de atalhos de teclado — apenas Word         | ⌘/    | Ctrl+/          |
 
 - **F1 abre este manual**, não a folha de atalhos. A tecla pertence ao menu da aplicação, por isso funciona igualmente a partir de Word, Sheets, Slides, PDF ou do separador Home.

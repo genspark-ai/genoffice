@@ -47,4 +47,4 @@ Trên dải ruy-bâng có công tắc **Mã nguồn** (được bản địa hó
 - **Soạn thảo trung thành từng byte.** Lưu từ chế độ mã nguồn tạo ra đúng những byte mà lưu từ trình soạn thảo tạo ra — BOM, CRLF và việc có dấu xuống dòng ở cuối đều được giữ nguyên.
 - **Đây vẫn là cùng một tài liệu.** Chuyển qua lại tùy ý; mã nguồn chính là văn bản của trình soạn thảo, không phải một bản sao phải điều hợp.
 - **Thanh định dạng không dùng được** khi chế độ xem này đang mở, vì phần lớn các nút đó chèn những cấu trúc riêng của trình soạn thảo mà chỉ có ý nghĩa ở phần đã kết xuất. Nó trở lại khi bạn đóng chế độ xem.
-- **.txt và .json** mở ở đây thẳng trong chế độ mã nguồn: không có gì để render, nên mã nguồn *chính là* tài liệu.
+- **.txt và .json** mở ở đây thẳng trong chế độ mã nguồn: không có gì để render, nên mã nguồn _chính là_ tài liệu.

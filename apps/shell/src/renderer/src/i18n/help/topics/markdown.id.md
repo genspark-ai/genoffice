@@ -47,4 +47,4 @@ Pita memuat sakelar **Sumber** (ikut dilokalkan bersama aplikasi). Nyalakan, dan
 - **Penyuntingan setia byte demi byte.** Penyimpanan dari tampilan sumber menghasilkan byte yang sama dengan penyimpanan dari editor — BOM, CRLF, dan keberadaan baris baru di akhir file semuanya tetap utuh.
 - **Ini dokumen yang sama.** Berganti bolak-balik sesuka hati; sumber itu adalah teks milik editor itu sendiri, bukan salinan yang harus digabungkan.
 - **Bilah alat format tidak tersedia** selama tampilan ini terbuka, karena sebagian besar tombol itu menyisipkan konstruksi editor yang hanya bermakna di sisi hasil render. Bilah alat itu kembali begitu Anda menutup tampilan ini.
-- **.txt dan .json** terbuka di sini langsung dalam tampilan sumber: tak ada yang perlu dirender, jadi sumbernya *adalah* dokumennya.
+- **.txt dan .json** terbuka di sini langsung dalam tampilan sumber: tak ada yang perlu dirender, jadi sumbernya _adalah_ dokumennya.

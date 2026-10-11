@@ -10,7 +10,7 @@ Cada editor tiene sus propias combinaciones de teclas, y solo unas cuantas funci
 | ---------------------------------------------------------- | ----- | --------------- |
 | Abrir la guía del usuario — funciona en toda la aplicación | F1    | F1              |
 | Plegar / desplegar la cinta — todos los editores           | ⌥⌘R   | Ctrl+F1         |
-| Cinta compacta — solo Docs     | ⌥⌘K  | Ctrl+Alt+K      |
+| Cinta compacta — solo Docs                                 | ⌥⌘K   | Ctrl+Alt+K      |
 | Abrir la hoja de atajos de teclado — solo Word             | ⌘/    | Ctrl+/          |
 
 - **F1 abre este manual**, no la hoja de atajos. La tecla pertenece al menú de la aplicación, así que funciona igual desde Word, Sheets, Slides, PDF o la pestaña Home.

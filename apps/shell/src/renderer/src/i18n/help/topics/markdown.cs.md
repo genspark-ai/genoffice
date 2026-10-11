@@ -47,4 +47,4 @@ Pásek obsahuje přepínač **Zdroj** (překládá se spolu s aplikací). Když 
 - **Úpravy jsou věrné bajtům.** Uložení ze zobrazení zdroje vytvoří stejné bajty jako uložení z editoru — BOM, CRLF i přítomnost koncového znaku nového řádku zůstanou zachovány.
 - **Je to stejný dokument.** Klidně mezi nimi přepínejte; zdroj je vlastní text editoru, ne kopie, kterou by bylo nutno slučovat.
 - **Pruh nástrojů pro formátování není dostupný**, dokud je zobrazení otevřené, protože většina těchto tlačítek vkládá konstrukce editoru, které dávají smysl jen na vykreslené straně. Když zobrazení zavřete, vrátí se.
-- **.txt a .json** se tu otevírají přímo v zobrazení zdroje: není co vykreslovat, takže zdroj *je* dokument.
+- **.txt a .json** se tu otevírají přímo v zobrazení zdroje: není co vykreslovat, takže zdroj _je_ dokument.

@@ -47,4 +47,4 @@ Wstążka zawiera przełącznik **Źródło** (z lokalizacją razem z aplikacją
 - **Edycja wierna bajtom.** Zapis z widoku źródła daje te same bajty co zapis z edytora — BOM, CRLF i obecność końcowego znaku nowej linii zostają zachowane.
 - **To ten sam dokument.** Przełączaj się swobodnie; źródło to własny tekst edytora, a nie kopia wymagająca scalenia.
 - **Pasek narzędzi formatowania je niedostępny** podczas jej otwarcia, bo większość tych przycisków wstawia konstrukcje edytora, które mają sens tylko po wyrenderowaniu. Wraca po zamknięciu widoku.
-- **.txt i .json** otwierają się tu od razu w widoku źródła: nie ma czego renderować, więc źródło *jest* dokumentem.
+- **.txt i .json** otwierają się tu od razu w widoku źródła: nie ma czego renderować, więc źródło _jest_ dokumentem.
