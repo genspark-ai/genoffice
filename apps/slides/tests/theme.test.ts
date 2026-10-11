@@ -43,15 +43,17 @@ describe('patchThemeXml', () => {
     expect(out).toContain('<a:lt1><a:srgbClr val="1E1E1E"/></a:lt1>')
     expect(out).toContain('<a:accent1><a:srgbClr val="4FC3F7"/></a:accent1>')
     expect(out).toContain('<a:clrScheme name="Graphite">')
-    // Latin font replaced, East Asian kept
+    // Latin font replaced, East Asian untouched (empty slot + per-script entries survive)
     expect(out).toMatch(/<a:majorFont><a:latin typeface="Segoe UI"\/>/)
-    expect(out).toContain('<a:ea typeface="Microsoft YaHei"/>')
+    expect(out).toContain('<a:ea typeface=""')
+    expect((out.match(/<a:font script=/g) ?? []).length).toBe(8)
 
     const parsed = parseTheme(out)
     expect(parsed.colors.dk1).toBe('#F2F2F2')
     expect(parsed.colors.accent2).toBe('#FFB74D')
     expect(parsed.majorFont).toBe('Segoe UI')
-    expect(parsed.majorEaFont).toBe('Microsoft YaHei')
+    expect(parsed.majorEaFont).toBeUndefined()
+    expect(parsed.majorScriptFonts?.Hans).toBe('等线')
   })
 })
 
