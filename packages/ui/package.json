@@ -18,6 +18,7 @@
     "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
     "./ai-scope-quote.css": "./src/ai-scope-quote.css",
     "./ai-queue-strip.css": "./src/ai-queue-strip.css",
+    "./ai-usage.css": "./src/ai-usage.css",
     "./image-dialogs.css": "./src/image-dialogs.css",
     "./image-viewer.css": "./src/image-viewer.css",
     "./fonts/*": "./src/fonts/*",

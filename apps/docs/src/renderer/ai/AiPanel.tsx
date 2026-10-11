@@ -5,6 +5,9 @@ import {
   type AiModelPickerBridge,
   AiQueueStrip,
   AI_QUEUE_LABELS,
+  AiUsageChip,
+  addTokenUsage,
+  type AiTokenUsageView,
   useChatRunQueue,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
@@ -122,6 +125,8 @@ interface ChatEntry {
   attachments?: AttachmentMeta[]
   /** the selection this user message targeted, frozen at send */
   scope?: AiScopeQuoteData
+  /** tokens the provider billed for this reply, summed across its turns (absent when unreported) */
+  usage?: AiTokenUsageView
 }
 
 /** longest selection excerpt echoed on a user bubble */
@@ -606,6 +611,10 @@ export function AiPanel({
   const runToolsRef = useRef<
     Array<{ name: string; summary: string; isError?: boolean; input?: string; output?: string }>
   >([])
+  /** tokens billed so far in the in-flight run (summed across turns; usage chips read it live) */
+  const runUsageRef = useRef<AiTokenUsageView | undefined>(undefined)
+  /** tokens billed across the panel's session (the composer chip) */
+  const [sessionUsage, setSessionUsage] = useState<AiTokenUsageView | undefined>(undefined)
 
   // ── Chat-history persistence ────────────────────────────────────────────
   useEffect(() => {
@@ -890,6 +899,11 @@ export function AiPanel({
             boundChatHistory([...prev, { role: 'assistant', text: '', streaming: true }]),
           )
         },
+        onUsage: (usage) => {
+          runUsageRef.current = addTokenUsage(runUsageRef.current, usage)
+          setSessionUsage((prev) => addTokenUsage(prev, usage))
+          patchLastAssistant({ usage: runUsageRef.current })
+        },
         onDone: ({ text, cancelled, turnLimit, truncated }) => {
           // module-level t: the loop instance is created only once; the component's t goes stale with the first-render closure
           const baseText = turnLimit
@@ -1101,6 +1115,7 @@ export function AiPanel({
     lastInstructionRef.current = instruction
     runToolsRef.current = []
     runSnapshotRef.current = null
+    runUsageRef.current = undefined
     stickToBottomRef.current = true
     setChat((prev) =>
       boundChatHistory([
@@ -1499,6 +1514,11 @@ export function AiPanel({
               ) : (
                 <span dir="auto">{entry.text}</span>
               )}
+              {entry.role === 'assistant' && entry.usage && (
+                <div className="ai-message-usage">
+                  <AiUsageChip usage={entry.usage} lang={lang} />
+                </div>
+              )}
               {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
               {entry.error && (
                 <div className="ai-msg-error">{t('aiErrorPrefix', { error: entry.error })}</div>
@@ -1761,6 +1781,7 @@ export function AiPanel({
           footerStart={
             <>
               <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
+              {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
               <button
                 className="ai-attach-btn"
                 onClick={pickAttachments}

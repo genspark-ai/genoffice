@@ -2441,3 +2441,81 @@ describe('cancel during retry backoff and per-turn stream budget', () => {
     },
   )
 })
+
+describe('AgentLoop usage', () => {
+  it('forwards per-turn usage and reports the run sum on done', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onDelta('thinking about tools')
+        cb.onUsage({ inputTokens: 100, outputTokens: 20 })
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('final answer')
+        cb.onUsage({ inputTokens: 250, outputTokens: 35 })
+        cb.onDone()
+      },
+    ])
+    const perTurn: Array<{ inputTokens?: number; outputTokens?: number }> = []
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(),
+      events: { onUsage: (u) => perTurn.push(u), onDone },
+    })
+    loop.run('q')
+    await flush()
+    await flush()
+    expect(perTurn).toEqual([
+      { inputTokens: 100, outputTokens: 20 },
+      { inputTokens: 250, outputTokens: 35 },
+    ])
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onDone.mock.calls[0][0].usage).toEqual({ inputTokens: 350, outputTokens: 55 })
+  })
+
+  it('omits usage on done when the provider never reports it', async () => {
+    const transport = scriptedTransport([(cb) => cb.onDone()])
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onDone } })
+    loop.run('q')
+    await flush()
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect('usage' in onDone.mock.calls[0][0]).toBe(false)
+  })
+
+  it('keeps the run sum when only one side is reported', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onUsage({ inputTokens: 100 })
+        cb.onDone()
+      },
+    ])
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onDone } })
+    loop.run('q')
+    await flush()
+    expect(onDone.mock.calls[0][0].usage).toEqual({ inputTokens: 100 })
+  })
+
+  it('resets the run sum for the next run', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onUsage({ inputTokens: 100, outputTokens: 10 })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onUsage({ inputTokens: 100, outputTokens: 10 })
+        cb.onDone()
+      },
+    ])
+    const onDone = vi.fn()
+    const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onDone } })
+    loop.run('first')
+    await flush()
+    loop.run('second')
+    await flush()
+    expect(onDone.mock.calls[1][0].usage).toEqual({ inputTokens: 100, outputTokens: 10 })
+  })
+})

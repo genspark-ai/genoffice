@@ -14,10 +14,13 @@ import {
   AI_QUEUE_LABELS,
   AiScopeQuote,
   AiTypingIndicator,
+  AiUsageChip,
+  addTokenUsage,
   createFileNav,
   Markdown,
   useChatRunQueue,
   type AiScopeQuoteData,
+  type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
@@ -99,6 +102,8 @@ interface ChatEntry {
   tools?: ToolActivity[]
   /** the selection this user message targeted, frozen at send */
   scope?: AiScopeQuoteData
+  /** tokens the provider billed for this reply, summed across its turns (absent when unreported) */
+  usage?: AiTokenUsageView
 }
 
 /** longest selection excerpt echoed on a user bubble */
@@ -247,6 +252,10 @@ export function AiPanel({
   const runMutatedRef = useRef(false)
   /** tool activity of the whole run, for transcript persistence */
   const runToolsRef = useRef<ToolActivity[]>([])
+  /** tokens billed so far in the in-flight run (summed across turns) */
+  const runUsageRef = useRef<AiTokenUsageView | undefined>(undefined)
+  /** tokens billed across the panel's session (the composer chip) */
+  const [sessionUsage, setSessionUsage] = useState<AiTokenUsageView | undefined>(undefined)
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
   /** messages sent before resolveChat returned, flushed once the chat id is known */
   const pendingPersistRef = useRef<
@@ -443,6 +452,11 @@ export function AiPanel({
           patchLast({ streaming: false })
           setChat((prev) => [...prev, { role: 'assistant', text: '', streaming: true }])
         },
+        onUsage: (usage) => {
+          runUsageRef.current = addTokenUsage(runUsageRef.current, usage)
+          setSessionUsage((prev) => addTokenUsage(prev, usage))
+          patchLast({ usage: runUsageRef.current })
+        },
         onDone: ({ text, cancelled, turnLimit, truncated }) => {
           const base = turnLimit
             ? [text, tGlobal('aiTurnLimit')].filter(Boolean).join('\n\n')
@@ -584,6 +598,7 @@ export function AiPanel({
     runDisplayRef.current = displayText ?? instruction
     runMutatedRef.current = false
     runToolsRef.current = []
+    runUsageRef.current = undefined
     // a queue batch carries its own display text: no selection quote
     const scope =
       retryScope !== undefined
@@ -915,6 +930,11 @@ export function AiPanel({
                 )
               )}
               {hasTools && <ToolChipList tools={entry.tools!} />}
+              {entry.usage && (
+                <div className="ai-message-usage">
+                  <AiUsageChip usage={entry.usage} lang={lang} />
+                </div>
+              )}
               {showToolbar && (
                 <div className="ai-msg-toolbar">
                   <button
@@ -1090,7 +1110,12 @@ export function AiPanel({
           sendLabel={t('aiSend')}
           stopLabel={t('aiStop')}
           iconOnly
-          footerStart={<AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />}
+          footerStart={
+            <>
+              <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
+              {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
+            </>
+          }
           sendIconEnabled={<img src={sendEnterOn} alt="" aria-hidden />}
           sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
           stopIcon={<img src={sendStop} alt="" aria-hidden />}

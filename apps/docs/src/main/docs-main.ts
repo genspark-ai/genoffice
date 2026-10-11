@@ -3907,6 +3907,7 @@ export function registerAiIpc(): void {
         onStopReason: (reason) => {
           stopReason = reason
         },
+        onUsage: (usage) => send({ requestId, type: 'usage', usage }),
       })
       send({ requestId, type: 'done', stopReason })
     } catch (err) {

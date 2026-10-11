@@ -5,7 +5,15 @@ import {
   createKnowledgeBaseSkill,
   type KbFileInfo,
 } from '@genoffice/agent-core'
-import { AiComposer, AiTypingIndicator, createFileNav, Markdown } from '@genoffice/ui'
+import {
+  AiComposer,
+  AiTypingIndicator,
+  AiUsageChip,
+  addTokenUsage,
+  createFileNav,
+  Markdown,
+  type AiTokenUsageView,
+} from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
 
@@ -29,6 +37,8 @@ interface AskMessage {
   toolNotes: string[]
   streaming?: boolean
   isError?: boolean
+  /** tokens the provider billed for this answer, summed across its turns (absent when unreported) */
+  usage?: AiTokenUsageView
 }
 
 export function KbAskPanel({
@@ -36,7 +46,7 @@ export function KbAskPanel({
 }: {
   onOpenPath: (path: string) => void
 }): React.JSX.Element {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -46,6 +56,10 @@ export function KbAskPanel({
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** tokens billed so far in the in-flight answer (summed across turns) */
+  const runUsageRef = useRef<AiTokenUsageView | undefined>(undefined)
+  /** tokens billed across the panel's session (the composer chip) */
+  const [sessionUsage, setSessionUsage] = useState<AiTokenUsageView | undefined>(undefined)
 
   const refreshSettings = (): void => {
     void window.aiOffice
@@ -99,6 +113,11 @@ export function KbAskPanel({
             ],
           })),
         onDone: () => finishLast(),
+        onUsage: (usage) => {
+          runUsageRef.current = addTokenUsage(runUsageRef.current, usage)
+          setSessionUsage((prev) => addTokenUsage(prev, usage))
+          patchLast({ usage: runUsageRef.current })
+        },
         onError: (error) =>
           patchLast((last) => ({
             text: last.text || error,
@@ -141,6 +160,7 @@ export function KbAskPanel({
     setDraft('')
     setBusy(true)
     refreshSettings()
+    runUsageRef.current = undefined
     // freshly starred files are answerable this very turn
     void window.aiOffice
       .kbList()
@@ -209,6 +229,11 @@ export function KbAskPanel({
             ) : m.streaming ? (
               <AiTypingIndicator label={t('askHintBusy')} />
             ) : null}
+            {m.role === 'assistant' && m.usage && (
+              <div className="ai-message-usage">
+                <AiUsageChip usage={m.usage} lang={lang} />
+              </div>
+            )}
           </div>
         ))}
         {busy && messages[messages.length - 1]?.text === '' && messages.length > 0 && null}
@@ -223,6 +248,9 @@ export function KbAskPanel({
         sendLabel={t('askSend')}
         stopLabel={t('askStop')}
         ariaLabel={t('askPlaceholder')}
+        footerStart={
+          sessionUsage ? <AiUsageChip usage={sessionUsage} session lang={lang} /> : undefined
+        }
         onChange={setDraft}
         onSend={() => void ask()}
         onStop={() => {

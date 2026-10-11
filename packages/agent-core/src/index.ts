@@ -4,6 +4,7 @@ export type {
   AgentStreamCallbacks,
   AgentStreamHandle,
   AgentStreamRequest,
+  AgentTokenUsage,
   AgentToolCall,
   AgentToolDef,
   AgentToolResult,
