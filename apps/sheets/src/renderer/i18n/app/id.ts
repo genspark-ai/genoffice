@@ -308,7 +308,9 @@ export const id = {
   appFullLoadStart: 'Muat semua',
   appFullLoadRunning: 'Memuat seluruh buku kerja — pengurutan dan filter tersedia setelah selesai…',
   appFullLoadTooLarge:
-    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori; pengurutan dan filter tidak tersedia untuk file ini.',
+    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori; pengurutan dan pemindahan rentang tidak tersedia untuk file ini. Filter dijalankan langsung pada file.',
+  appLargeFilterLoading: 'Membaca kolom filter dari file…',
+  appLargeFilterApplying: 'Menerapkan filter pada file…',
   appSortValueModeFormulas:
     'Rentang ini berisi rumus yang tidak dihitung langsung di buku kerja besar ini — mengurutkan atau memindahkannya akan menyimpannya sebagai nilai biasa. Pilih rentang tanpa rumus.',
   appSortRangeTooLarge:

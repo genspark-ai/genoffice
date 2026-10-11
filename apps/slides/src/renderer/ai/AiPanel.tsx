@@ -1993,6 +1993,7 @@ export function AiPanel({
   }
 
   const cancel = () => {
+    msgQueue.hold()
     dismissClarify()
     qcAbortRef.current?.abort()
     loopRef.current?.cancel()

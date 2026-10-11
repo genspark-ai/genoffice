@@ -369,6 +369,98 @@ describe('track changes recording', () => {
     listEditor.destroy()
   })
 
+  // anchored paragraphs: docxIndex is cloned onto both halves of a split, so
+  // the structural differ must group anchors instead of assuming uniqueness
+  const anchored = (idx: number, ...content: JsonNode[]): JsonNode => ({
+    type: 'docParagraph',
+    attrs: { docxIndex: idx },
+    content,
+  })
+
+  it('Enter in an anchored paragraph splits it without duplicating the block', () => {
+    const editor = trackingEditor([anchored(0, text('alpha beta gamma'))])
+    editor.chain().setTextSelection(7).splitBlock().run()
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.textContent).toBe('alpha beta gamma')
+    expect(editor.state.doc.child(0).textContent).toBe('alpha ')
+    expect(editor.state.doc.child(1).textContent).toBe('beta gamma')
+    const blocks = collectRevisions(editor.state.doc).filter(
+      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
+    )
+    expect(blocks).toHaveLength(0)
+    // rejecting whatever was recorded must not lose or duplicate text
+    rejectAllRevisions(editor)
+    expect(editor.state.doc.textContent).toBe('alpha beta gamma')
+    editor.destroy()
+  })
+
+  it('joining two halves that share an anchor re-merges without a phantom deleted block', () => {
+    const editor = trackingEditor([anchored(0, text('first ')), anchored(0, text('second'))])
+    editor.chain().setTextSelection(9).joinBackward().run()
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.textContent).toBe('first second')
+    const blocks = collectRevisions(editor.state.doc).filter(
+      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
+    )
+    expect(blocks).toHaveLength(0)
+    rejectAllRevisions(editor)
+    expect(editor.state.doc.textContent).toBe('first second')
+    editor.destroy()
+  })
+
+  it('joining paragraphs with distinct anchors records no phantom deleted block', () => {
+    const editor = trackingEditor([anchored(0, text('first ')), anchored(1, text('second'))])
+    editor.chain().setTextSelection(9).joinBackward().run()
+    expect(editor.state.doc.childCount).toBe(1)
+    expect(editor.state.doc.textContent).toBe('first second')
+    const blocks = collectRevisions(editor.state.doc).filter(
+      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
+    )
+    expect(blocks).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it('deleting a paragraph whose text recurs in its neighbour is still a block deletion', () => {
+    const editor = trackingEditor([anchored(0, text('a')), anchored(1, text('banana'))])
+    editor.commands.deleteRange({ from: 0, to: 3 })
+    const blocks = collectRevisions(editor.state.doc).filter((r) => r.kind === 'blockDel')
+    expect(blocks).toHaveLength(1)
+    rejectAllRevisions(editor)
+    expect(editor.state.doc.childCount).toBe(2)
+    expect(editor.state.doc.child(0).textContent).toBe('a')
+    expect(editor.state.doc.child(1).textContent).toBe('banana')
+    editor.destroy()
+  })
+
+  it('joining an image-only paragraph records no phantom deleted block', () => {
+    const editor = trackingEditor([
+      anchored(0, text('first')),
+      anchored(1, {
+        type: 'docInlineImage',
+        attrs: { dataUrl: 'data:image/png;base64,AA==', widthPx: 10, heightPx: 10 },
+      }),
+    ])
+    editor.chain().setTextSelection(8).joinBackward().run()
+    expect(editor.state.doc.childCount).toBe(1)
+    const blocks = collectRevisions(editor.state.doc).filter(
+      (r) => r.kind === 'blockIns' || r.kind === 'blockDel',
+    )
+    expect(blocks).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it('still re-materializes a genuinely deleted anchored paragraph', () => {
+    const editor = trackingEditor([anchored(0, text('keep')), anchored(1, text('drop'))])
+    editor.commands.deleteRange({ from: 6, to: 12 })
+    // the deleted paragraph comes back as a struck-through block
+    expect(editor.state.doc.textContent).toBe('keepdrop')
+    const blocks = collectRevisions(editor.state.doc).filter((r) => r.kind === 'blockDel')
+    expect(blocks).toHaveLength(1)
+    acceptAllRevisions(editor)
+    expect(editor.state.doc.textContent).toBe('keep')
+    editor.destroy()
+  })
+
   it('tracks a whole inserted paragraph and rejects it as one block', () => {
     const editor = trackingEditor([para(text('original para'))])
     editor.commands.insertContentAt(editor.state.doc.content.size, para(text('new para')))

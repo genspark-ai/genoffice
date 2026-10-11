@@ -51,10 +51,10 @@ describe('Markdown multi-scheme navs', () => {
   it('matches each nav by its own scheme in one answer', () => {
     const gotoBlock = vi.fn()
     const openFile = vi.fn()
-    render('[第3段](docnav://block/3) cites [report.docx](filenav:///Users/me/report.docx)', [
-      createFileNav(openFile),
-      { scheme: 'docnav://', onNavigate: gotoBlock },
-    ])
+    render(
+      '[\u7b2c3\u6bb5](docnav://block/3) cites [report.docx](filenav:///Users/me/report.docx)',
+      [createFileNav(openFile), { scheme: 'docnav://', onNavigate: gotoBlock }],
+    )
     const links = Array.from(host.querySelectorAll('a.ai-md-nav'))
     expect(links).toHaveLength(2)
     click(links[0]!)
