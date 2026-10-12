@@ -2269,6 +2269,7 @@ export function App({
           event.id !== MOVE_ROWS_MUTATION &&
           event.id !== SET_FROZEN_MUTATION &&
           event.id !== TOGGLE_GRIDLINES_MUTATION &&
+          event.id !== SET_RIGHT_TO_LEFT_MUTATION &&
           event.id !== SET_ZOOM_OPERATION &&
           event.id !== SET_ZOOM_COMMAND
         ) {
