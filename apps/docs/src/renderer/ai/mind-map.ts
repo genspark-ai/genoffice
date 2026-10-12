@@ -49,7 +49,7 @@ const nodeSchema = (depth: number): Record<string, unknown> => ({
     label: {
       type: 'string',
       description:
-        'short node label (2-8 words) in the document\'s language, taken from its headings or key phrases',
+        "short node label (2-8 words) in the document's language, taken from its headings or key phrases",
     },
     block: {
       type: 'integer',
@@ -82,7 +82,7 @@ export const MIND_MAP_TOOL: AgentToolDef = {
     'Render an interactive mind map of the document (or of one focused aspect) as a diagram card in the chat. ' +
     'Call it when the user asks for a mind map / 思维导图 / 脑图 / knowledge structure / overview diagram of the document or a topic. ' +
     'Pass the entire tree in this single call: the root is the document title or the focus topic, its children are the main sections, and so on. ' +
-    'Labels must be short phrases in the document\'s own language and wording — never invent topics the document does not cover. ' +
+    "Labels must be short phrases in the document's own language and wording — never invent topics the document does not cover. " +
     'Cite the block index each node summarizes in `block` so the user can jump to the passage. ' +
     'This tool does not modify the document; after it returns, reply with one short sentence.',
   inputSchema: {
@@ -319,10 +319,7 @@ export interface MindMapLayout {
   height: number
 }
 
-function edgePath(
-  parent: { x: number; y: number },
-  child: { x: number; y: number },
-): string {
+function edgePath(parent: { x: number; y: number }, child: { x: number; y: number }): string {
   const px = parent.x + MIND_MAP_METRICS.nodeWidth
   const py = parent.y + MIND_MAP_METRICS.nodeHeight / 2
   const cx = child.x
@@ -349,9 +346,7 @@ export function layoutMindMap(
     maxDepth = Math.max(maxDepth, depth)
     const kids = node.children ?? []
     const isCollapsed = collapsed.has(id)
-    const placedKids = isCollapsed
-      ? []
-      : kids.map((kid, i) => place(kid, `${id}.${i}`, depth + 1))
+    const placedKids = isCollapsed ? [] : kids.map((kid, i) => place(kid, `${id}.${i}`, depth + 1))
     let x: number
     if (placedKids.length > 0) {
       const first = placedKids[0]
