@@ -27,6 +27,7 @@ import {
   sectionCharSpaceSpecs,
   docCharSpacePt,
   sectionColGeom,
+  sectionColumns,
   computePageSlices,
   computeSectionedSlices,
   computeSectionedSlicesF2,
@@ -4129,6 +4130,47 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
     const eq = sectionColGeom(sec({ columns: 2, colSpace: 720 }))
     expect(eq.equalWidth).toBe(true)
     expect(eq.widths).toHaveLength(2)
+  })
+
+  it('sectionColumns: a corrupt count collapses to one-column flow, not one-character columns (#1952)', () => {
+    // A4 content is ~602px wide; a count whose even share (after gaps) falls
+    // below the usable-column floor is metadata garbage — one column, full width
+    expect(sectionColumns(sec({ columns: 200 }))).toBe(1)
+    // a huge w:space starves the columns the same way
+    expect(sectionColumns(sec({ columns: 2, colSpace: 20000 }))).toBe(1)
+    // Word's own column counts stay untouched (45 columns of A4 fail the
+    // per-column floor above and are corrupt by the same rule)
+    expect(sectionColumns(sec({ columns: 2 }))).toBe(2)
+    expect(sectionColumns(sec({ columns: 3 }))).toBe(3)
+    expect(sectionColumns(sec({ columns: 4 }))).toBe(4)
+    expect(sectionColumns(sec({}))).toBe(1)
+  })
+
+  it('sectionColGeom: a cols list carrying a sub-floor width falls back to even division', () => {
+    // PDF/CNKI converters emit custom lists where one entry collapsed to a
+    // sliver; the healthy columns must not be dragged down with it
+    const s = sec(
+      { columns: 2, colSpace: 720 },
+      {
+        sectPrXml:
+          '<w:sectPr><w:cols w:num="2" w:space="720" w:equalWidth="0"><w:col w:w="120" w:space="720"/><w:col w:w="6000"/></w:cols></w:sectPr>',
+      },
+    )
+    const g = sectionColGeom(s)
+    expect(g.equalWidth).toBe(true)
+    expect(g.cols).toBe(2)
+    expect(Math.round(g.widths[0]!)).toBe(Math.round(g.widths[1]!))
+    // the real CNKI shape (both entries usable) still reads the list
+    const cnki = sec(
+      { columns: 2, colSpace: 720 },
+      {
+        sectPrXml:
+          '<w:sectPr><w:cols w:num="2" w:equalWidth="0"><w:col w:w="4905" w:space="176"/><w:col w:w="4987"/></w:cols></w:sectPr>',
+      },
+    )
+    const cg = sectionColGeom(cnki)
+    expect(cg.equalWidth).toBe(false)
+    expect(cg.widths.map(Math.round)).toEqual([327, 332])
   })
 
   it('columnLayoutSpecs: unequal columns place blocks at cumulative offsets with per-column widths', () => {
