@@ -63,8 +63,6 @@ async function unequalColsDocx(): Promise<Buffer> {
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control'
-
 test('unequal-column sections never collapse and pagination ignores zoom', async () => {
   test.setTimeout(300_000)
   const docPath = join(tmpdir(), 'genoffice-e2e-unequal-cols.docx')
