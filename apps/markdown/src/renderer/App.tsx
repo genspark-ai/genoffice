@@ -254,8 +254,13 @@ export default function App() {
       slashController: controller,
       slashItems: () =>
         buildSlashItems({ insertImage: filePathRef.current ? insertImage : undefined }),
+      wikiLink: {
+        getDocumentPath: () => filePathRef.current ?? '',
+        onOpen: (path) => void window.markdownApi.openSourcePath(path),
+        onUnresolved: (target) => showToast(t('wikiLinkUnresolved', { target }), 'error'),
+      },
     })
-  }, [insertImage])
+  }, [insertImage, t])
 
   const editor = useEditor({
     extensions,

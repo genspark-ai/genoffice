@@ -51,7 +51,8 @@ import {
 } from './asset-lifecycle'
 import { createMarkdownConversionSession, writeMarkdownConversion } from './conversion-lifecycle'
 import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
-import type { ImageHostConfig } from '../shared/ipc'
+import type { ImageHostConfig, WikiLinkResolveRequest, WikiLinkResolved } from '../shared/ipc'
+import { resolveWikiLinks } from './wiki-resolve'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
   EXPORT_IMAGE_EXTS,
@@ -761,6 +762,23 @@ function registerMarkdownIpc(): void {
     }
     return await readFile(path, 'utf8')
   })
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.resolveWikiLinks,
+    (_e, request: WikiLinkResolveRequest): Record<string, WikiLinkResolved> => {
+      const fromPath = typeof request?.fromPath === 'string' ? request.fromPath : ''
+      const targets = Array.isArray(request?.targets)
+        ? request.targets.filter((t): t is string => typeof t === 'string')
+        : []
+      const resolved = resolveWikiLinks(targets, {
+        fromPath,
+        root: configuredDefaultSaveDir(app),
+      })
+      // a Map is structured-cloneable but arrives as an empty object; ship the
+      // shape the renderer asked for
+      return Object.fromEntries(resolved)
+    },
+  )
 
   ipcMain.handle(
     MARKDOWN_CHANNELS.save,

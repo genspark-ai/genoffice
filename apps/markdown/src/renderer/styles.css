@@ -370,6 +370,24 @@ html[data-doc-theme='light'] .doc-page {
   color: var(--md-link);
 }
 
+/* Obsidian-style [[wiki links]]. A resolved one reads as an ordinary link; an
+ * unresolved one is dimmed and dashed so a typo is visible before it is
+ * clicked. The resolver's answer arrives as a decoration, never as a mark, so
+ * the document model and the block source map never see it. */
+.wiki-link {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.wiki-link:hover {
+  text-decoration-style: solid;
+}
+
+.wiki-link-unresolved {
+  color: var(--text-muted);
+}
+
 .doc-editor img {
   max-width: 100%;
   height: auto;
