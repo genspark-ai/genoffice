@@ -41,7 +41,9 @@ export const MIND_MAP_EXPORT_COLORS = {
   toggleText: '#606366',
 } as const
 
-const nodeSchema = (): Record<string, unknown> => ({
+/** Bounded recursion: the schema inlines down to the enforced depth limit; deeper
+ *  levels (which the parser trims anyway) carry a generic children description. */
+const nodeSchema = (depth: number): Record<string, unknown> => ({
   type: 'object',
   properties: {
     label: {
@@ -54,11 +56,17 @@ const nodeSchema = (): Record<string, unknown> => ({
       description:
         '0-based block index this node summarizes (from the current block list); omit when the node spans several blocks',
     },
-    children: {
-      type: 'array',
-      description: 'sub-topics; 2-5 per node reads best',
-      items: nodeSchema(),
-    },
+    children:
+      depth > 0
+        ? {
+            type: 'array',
+            description: 'sub-topics; 2-5 per node reads best',
+            items: nodeSchema(depth - 1),
+          }
+        : {
+            type: 'array',
+            description: 'sub-topics; 2-5 per node reads best',
+          },
   },
   required: ['label'],
 })
@@ -88,7 +96,7 @@ export const MIND_MAP_TOOL: AgentToolDef = {
       root: {
         type: 'object',
         description: 'the mind map tree: root node with nested children',
-        ...nodeSchema(),
+        ...nodeSchema(MIND_MAP_LIMITS.maxDepth),
       },
     },
     required: ['root'],

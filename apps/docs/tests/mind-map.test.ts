@@ -194,7 +194,8 @@ describe('layoutMindMap', () => {
 
     expect(a1.y).toBe(2 * (h + depthGap))
     expect(a2.y).toBe(a1.y)
-    expect(b.y).toBe(a1.y)
+    // B is a direct child of the root: one level up from A1/A2, level with A
+    expect(b.y).toBe(h + depthGap)
     expect(a.y).toBe(h + depthGap)
     expect(root.y).toBe(0)
 
