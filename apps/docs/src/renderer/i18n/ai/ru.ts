@@ -183,4 +183,17 @@ export const ru = {
   aiCmdImages: 'Обновлено изображений: {count}',
   aiCmdToc: 'Вставлено оглавление (элементов: {count})',
   aiCmdSkipped: ' (пропущено защищенных блоков: {count})',
+  aiStarterMindMap: 'Создать ментальную карту документа',
+  aiMindMapBtn: 'ИИ-ментальная карта',
+  aiMindMapPrompt:
+    'Создай ментальную карту этого документа, организовав основные темы и ключевые понятия по структуре разделов',
+  aiSumMindMap: 'Создать ментальную карту',
+  aiMindMapTitle: 'Ментальная карта',
+  aiMindMapNodes: '{count} узлов',
+  aiMindMapAskPrompt: 'Расскажи про «{label}» в этом документе',
+  aiMindMapJump: 'Перейти к цитируемому фрагменту',
+  aiMindMapExport: 'Экспорт PNG',
+  aiMindMapReset: 'Сбросить вид',
+  aiMindMapExpand: 'Развернуть ветку',
+  aiMindMapCollapse: 'Свернуть ветку',
 } satisfies Record<keyof typeof zh, string>

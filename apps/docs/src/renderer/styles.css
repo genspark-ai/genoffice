@@ -8004,6 +8004,171 @@ body.docs-crop-active
   margin-top: 8px;
 }
 
+/* ---- interactive mind map card (generate_mindmap) ---- */
+.ai-mindmap {
+  margin-top: 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-bg-subtle);
+}
+
+.ai-msg-assistant .ai-mindmap:first-child,
+.ai-mindmap:only-child {
+  margin-top: 0;
+}
+
+.ai-mindmap-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--surface);
+}
+
+.ai-mindmap-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.ai-mindmap-count {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.ai-mindmap-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.ai-mindmap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-mindmap-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--hover);
+}
+
+.ai-mindmap-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--docs-focus-ring);
+}
+
+.ai-mindmap-viewport {
+  position: relative;
+  height: 300px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ai-mindmap-viewport:active {
+  cursor: grabbing;
+}
+
+.ai-mindmap-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  user-select: none;
+}
+
+.ai-mindmap-edges path {
+  fill: none;
+  stroke: var(--color-border-strong);
+  stroke-width: 1.5;
+}
+
+.ai-mindmap-node {
+  cursor: pointer;
+}
+
+.ai-mindmap-node rect {
+  fill: var(--surface);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+
+.ai-mindmap-node.root rect {
+  fill: var(--color-ai-action);
+  stroke: var(--color-ai-action);
+}
+
+.ai-mindmap-node .ai-mindmap-label {
+  fill: var(--color-text-primary);
+  font-size: 12.5px;
+}
+
+.ai-mindmap-node.root .ai-mindmap-label {
+  fill: var(--color-ai-action-text);
+}
+
+.ai-mindmap-node:hover rect {
+  stroke: var(--color-ai-action);
+}
+
+.ai-mindmap-node:focus-visible {
+  outline: none;
+}
+
+.ai-mindmap-node:focus-visible rect {
+  stroke: var(--color-ai-action);
+  stroke-width: 2;
+}
+
+.ai-mindmap-badge {
+  cursor: pointer;
+}
+
+.ai-mindmap-badge rect {
+  fill: var(--color-brand-secondary);
+  stroke: none;
+}
+
+.ai-mindmap-badge text {
+  fill: var(--color-ai-action-text);
+  font-size: 10px;
+}
+
+.ai-mindmap-toggle {
+  cursor: pointer;
+}
+
+.ai-mindmap-toggle rect,
+.ai-mindmap-toggle circle {
+  fill: var(--hover);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+
+.ai-mindmap-toggle text {
+  fill: var(--color-text-secondary);
+  font-size: 10px;
+}
+
+.ai-mindmap-toggle:hover rect,
+.ai-mindmap-toggle:hover circle {
+  stroke: var(--color-ai-action);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ai-step-row,
   .ai-step-icon.running svg,
