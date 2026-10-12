@@ -38,6 +38,29 @@ function openaiSettings(apiKey = 'sk-test', imageModel = 'gpt-image-2'): AiSetti
 }
 
 describe('media settings', () => {
+  // Ark model list 2026-10-12: Seedream 5.0 is a pro/flash pair, and both
+  // 4.5 and 4.0 are flagged for retirement there. Pinned so a future edit
+  // cannot quietly put a retired ID back or drop a live one.
+  it('offers only Seedream IDs the Ark list still serves', () => {
+    const doubao = AI_MEDIA_PROVIDERS.find((p) => p.id === 'doubao')!
+    expect(doubao.imageModels).toEqual([
+      'doubao-seedream-5-0-pro-260628',
+      'doubao-seedream-5-0-flash-260915',
+      'doubao-seedream-5-0-260128',
+    ])
+    expect(doubao.defaultImageModel).toBe('doubao-seedream-5-0-pro-260628')
+  })
+
+  // the settings UI seeds imageModel from defaultImageModel and offers
+  // imageModels; a default outside its own list is a value the user cannot
+  // pick back
+  it('never defaults a provider to a model its own list does not offer', () => {
+    for (const meta of AI_MEDIA_PROVIDERS) {
+      if (!meta.imageModels.length) continue
+      expect(meta.imageModels).toContain(meta.defaultImageModel)
+    }
+  })
+
   it('defaults every provider to its default models and genspark as the active one', () => {
     const media = defaultAiMediaSettings()
     expect(media.imageProvider).toBe('genspark')
