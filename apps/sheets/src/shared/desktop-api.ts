@@ -1483,6 +1483,8 @@ export const workbookPageSetupStateSchema = z
     zoomScale: z.number().int().min(10).max(400).optional(),
     showFormulas: z.boolean().optional(),
     showHeadings: z.boolean().optional(),
+    /// sheetView/@rightToLeft — the grid is mirrored (column A at the right).
+    rightToLeft: z.boolean().optional(),
     printArea: z.union([z.string().min(1).max(255), z.null()]).optional(),
     printTitles: z.union([z.string().regex(/^\d{1,7}:\d{1,7}$/), z.null()]).optional(),
     /// Frozen pane counts; both present together, 0/0 removes the pane.

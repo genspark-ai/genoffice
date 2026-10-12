@@ -413,6 +413,8 @@ export interface PageLayoutEcho {
   readonly printHeadings?: boolean | undefined
   readonly showGridlines: boolean
   readonly showHeadings: boolean
+  /// Mirrored grid (column A at the right edge) for the active sheet.
+  readonly rightToLeft: boolean
   readonly printArea?: string | null | undefined
   readonly printTitles?: string | null | undefined
   readonly header?: HeaderFooterParts | null | undefined
@@ -3147,6 +3149,14 @@ function Ribbon({
             >
               <i className="check-box">{pageLayout.showHeadings ? '✓' : ''}</i>
               {t('appHeadings')}
+            </button>
+            <button
+              className="check-item"
+              data-tip={t('appRightToLeft')}
+              onClick={() => onCommand('toggle-right-to-left')}
+            >
+              <i className="check-box">{pageLayout.rightToLeft ? '✓' : ''}</i>
+              {t('appRightToLeft')}
             </button>
             <button
               className="check-item"

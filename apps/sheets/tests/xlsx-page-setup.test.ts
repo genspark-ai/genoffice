@@ -422,3 +422,33 @@ describe('applyPageSetupState page breaks', () => {
     expect(xml).toBe(BARE)
   })
 })
+
+describe('applyPageSetupState rightToLeft', () => {
+  it('writes rightToLeft="1" onto the sheetView and keeps the other attributes', () => {
+    const xml = applyPageSetupState(WITH_VIEW, { sheetName: 'S', rightToLeft: true })
+    expect(xml).toContain('<sheetView rightToLeft="1" workbookViewId="0"/>')
+    const headed = applyPageSetupState(
+      '<worksheet><sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews><sheetData/></worksheet>',
+      { sheetName: 'S', rightToLeft: true },
+    )
+    expect(headed).toContain('showGridLines="0"')
+    expect(headed).toContain('rightToLeft="1"')
+  })
+
+  it('drops the attribute on false and leaves a sheet without one unchanged', () => {
+    const rtl =
+      '<worksheet><sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetData/></worksheet>'
+    expect(applyPageSetupState(rtl, { sheetName: 'S', rightToLeft: false })).toBe(
+      '<worksheet><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetData/></worksheet>',
+    )
+    expect(applyPageSetupState(WITH_VIEW, { sheetName: 'S', rightToLeft: false })).toBe(WITH_VIEW)
+  })
+
+  it('creates a sheetViews section on a bare worksheet when mirrored', () => {
+    const xml = applyPageSetupState(BARE, { sheetName: 'S', rightToLeft: true })
+    expect(xml).toBe(
+      '<worksheet><sheetViews><sheetView workbookViewId="0" rightToLeft="1"/></sheetViews>' +
+        '<sheetData/></worksheet>',
+    )
+  })
+})
