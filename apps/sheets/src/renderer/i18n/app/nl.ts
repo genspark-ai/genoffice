@@ -323,7 +323,9 @@ export const nl = {
   appFullLoadRunning:
     'De hele werkmap wordt geladen — sorteren en filteren zijn beschikbaar zodra dit klaar is…',
   appFullLoadTooLarge:
-    'Deze werkmap is te groot om volledig in het geheugen te laden; sorteren en filteren zijn niet beschikbaar voor dit bestand.',
+    'Deze werkmap is te groot om volledig in het geheugen te laden; sorteren en bereiken verplaatsen zijn voor dit bestand niet beschikbaar. Filteren gebeurt rechtstreeks op het bestand.',
+  appLargeFilterLoading: 'Filterkolom wordt uit het bestand gelezen…',
+  appLargeFilterApplying: 'Filter wordt op het bestand toegepast…',
   appSortValueModeFormulas:
     'Dit bereik bevat formules die in deze grote werkmap niet live worden berekend — sorteren of verplaatsen zou ze als gewone waarden opslaan. Kies een bereik zonder formules.',
   appSortRangeTooLarge:

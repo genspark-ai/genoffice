@@ -30,7 +30,7 @@ Clair / Sombre / Suivre le système. Suivre le système suit l’apparence de l�
 Ce ne sont pas des interrupteurs : chaque capacité choisit le fournisseur qui la sert, et la clé et l'URL de base d'un fournisseur sont saisies une seule fois et partagées :
 
 - **Recherche web**, **Génération d'images**, **Analyse d'images** et **Analyse vidéo**, chacune avec un fournisseur, un modèle, une clé et une URL de base.
-- **Recherche de fichiers locaux** s'exécute sur cette machine. Dessous se trouve le **Reclassement Jev**, **désactivé par défaut**. Activez-le et les extraits des 20 meilleurs résultats locaux — jusqu'à 1 200 caractères par document, plus les noms de fichiers et de dossiers — sont envoyés au modèle Jev de TypeSafe pour être réordonnés par pertinence. Désactivé, rien ne quitte l'appareil.
+- La **recherche de fichiers locale** tourne sur cette machine. En dessous, le **reranking de recherche Jev** est **désactivé par défaut**. Activez-le et les extraits des 20 premiers résultats locaux — jusqu'à 1 200 caractères par document, plus noms de fichiers et de dossiers — partent vers le point de terminaison de décision choisi (Jev via OpenRouter ou TypeSafe, Perplexity, Liquid AI d1, Cloudflare, un moteur local ou une URL personnalisée) pour être réordonnés par pertinence. Désactivé, rien ne quitte l'appareil.
 
 ## À propos
 

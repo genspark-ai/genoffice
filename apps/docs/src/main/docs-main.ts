@@ -112,6 +112,8 @@ import { listCodexModels, shutdownCodexAppServers } from '@genoffice/ai-provider
 import { listCustomModelsForIpc } from '@genoffice/ai-provider/custom-models'
 import {
   ensureGenofficeLogin,
+  noteGskCallFailure,
+  setGenofficeLoginOpener,
   gskApiKey,
   generateImageTool,
   testSearchProvider,
@@ -3822,6 +3824,9 @@ export function registerAiIpc(): void {
     },
   )
 
+  // a 401 on the gsk key opens the device-code login once (genoffice-auth recovery)
+  setGenofficeLoginOpener((url) => void shell.openExternal(url))
+
   ipcMain.handle('ai:gsk-login', () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
@@ -3866,8 +3871,11 @@ export function registerAiIpc(): void {
     const provider = settings.provider
     let config = settings.providers?.[provider]
     // the genspark key never enters the settings file; requests take it from the gsk login state
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
@@ -3907,12 +3915,15 @@ export function registerAiIpc(): void {
         onStopReason: (reason) => {
           stopReason = reason
         },
+        onUsage: (usage) => send({ requestId, type: 'usage', usage }),
       })
       send({ requestId, type: 'done', stopReason })
     } catch (err) {
       if (controller.signal.aborted) {
         send({ requestId, type: 'done' })
       } else {
+        // an expired/revoked key drops to signed-out so the inline sign-in button shows
+        noteGskCallFailure(gskKey, err)
         send({
           requestId,
           type: 'error',
@@ -4056,8 +4067,11 @@ export function registerAiIpc(): void {
     const { system, user } = request
     const provider = settings.provider
     let config = settings.providers?.[provider]
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
     if (!config || (provider !== 'codex' && !config.apiKey)) {
       return {
@@ -4073,8 +4087,10 @@ export function registerAiIpc(): void {
       if (!result.ok && isAiOverloadedError(result.error)) {
         return { ok: false, error: tm('errAiBusy') }
       }
+      if (!result.ok) noteGskCallFailure(gskKey, result.error)
       return result
     } catch (err) {
+      noteGskCallFailure(gskKey, err)
       return { ok: false, error: isAiOverloadedError(err) ? tm('errAiBusy') : String(err) }
     }
   })
@@ -6107,19 +6123,21 @@ export function startDocsStandalone(): void {
   if (process.env.AI_OFFICE_USER_DATA) app.setPath('userData', process.env.AI_OFFICE_USER_DATA)
   else if (isDev) {
     // "GenOffice Docs Dev" carried a space, against the XDG one-token
-    // convention (#1817); move the old profile once, as the shell does.
+    // convention (genoffice#1817); move the old profile once, as the shell does.
     const appData = app.getPath('appData')
     const devDir = join(appData, 'GenOffice-Docs-Dev')
     const oldDevDir = join(appData, 'GenOffice Docs Dev')
+    let userData = devDir
     if (existsSync(oldDevDir) && !existsSync(devDir)) {
       try {
         renameSync(oldDevDir, devDir)
       } catch {
-        // another dev instance is mid-migration or holds the directory:
-        // continuing with a fresh profile beats failing the launch
+        // another dev instance holds the directory: keep using the old one so
+        // the profile is not lost and the move is retried on the next launch
+        userData = oldDevDir
       }
     }
-    app.setPath('userData', devDir)
+    app.setPath('userData', userData)
   }
 
   const hasSingleInstanceLock = app.requestSingleInstanceLock()

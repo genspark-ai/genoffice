@@ -7,8 +7,9 @@ O ecrã Início é a página inicial do GenOffice: uma barra de navegação à e
 ## Navegação na barra lateral
 
 - **Recentes**: os arquivos que você abriu recentemente. Cada linha traz o momento — hoje, ontem ou a data.
-- **Favoritos**: os arquivos que você marcou com uma estrela. Passe o cursor sobre a linha do arquivo e clique na estrela para adicioná-lo ou removê-lo.
+- **Favoritos**: os arquivos que você marcou com uma estrela. Passe o cursor sobre a linha do arquivo e clique na estrela para adicioná-lo ou removê-lo. **Mover para grupo** no menu ⋯ organiza os favoritos em grupos nomeados; a visualização Favoritos filtra por eles.
 - **Guia do Usuário**: abre este manual.
+- **Ask AI**: o painel de base de conhecimento — pergunte e receba respostas citadas dos seus arquivos favoritados (veja abaixo).
 - **Genspark Projects**: depois de entrar na sua conta Genspark, mostra os projetos que você criou com o Genspark AI na web; clique em um deles para continuar editando no navegador. Há pesquisa, ordenação por data, atualização e carregar mais.
 - **Pastas**: os diretórios que adiciona à barra lateral com **Adicionar pasta…**, ou que arrasta até lá a partir do gestor de ficheiros. Cada um torna-se uma raiz que pode abrir, onde criar subpastas, renomear e remover; a que ficar indisponível aparece como indisponível e pode ser retirada da lista. **Nova pasta** cria outra.
 
@@ -52,9 +53,17 @@ O que faz cada cartão:
 - **AI Markdown** (.md): um documento Markdown em branco no editor Markdown.
 - **AI HTML** (.html): uma página web em branco no editor HTML.
 - **AI PDF** (.pdf): diferente dos restantes — cria **imediatamente** um PDF em branco verdadeiro de uma página na pasta de destino e abre-o como um ficheiro normal (o editor de PDF trabalha sobre ficheiros reais). Bom para anotar, ocultar partes do documento ou acrescentar texto; o arquivo pode ser renomeado automaticamente a partir do conteúdo no primeiro salvamento.
-- **Abrir arquivo local**: um seletor de arquivos do sistema para Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) e páginas web (.html/.htm). É possível selecionar vários; cada arquivo recebe a sua própria guia.
+- **Abrir arquivo local**: um seletor de arquivos do sistema para Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) e páginas web (.html/.htm). É possível selecionar vários; cada arquivo recebe a sua própria guia. Arquivos de texto (.txt, .json) também abrem aqui — entram na visão de código do editor Markdown.
 
 > Dica: Arquivo ▸ Novo na barra de menus cria os mesmos tipos de documento (⌘N/Ctrl+N usa por omissão um documento de texto); arrastar um arquivo para a janela abre-o.
+
+## Pergunte à sua base de conhecimento
+
+- Favorite arquivos primeiro (qualquer tipo que o app leia); o cabeçalho do painel conta o conjunto, e uma base vazia pede que você favorite algo.
+- As respostas citam os arquivos de origem; clique numa citação para abrir o arquivo no editor dele.
+- Existe entrar com a conta Genspark. A conversa vive só na memória — fechar o app a encerra.
+- A busca roda no índice local de arquivos, como a do Início; arquivos desaparecidos saem do conjunto em silêncio.
+- Grupos organizam só a lista de Favoritos — a base de conhecimento sempre abrange todos os arquivos favoritados.
 
 ## Projetos na nuvem (Genspark Projects)
 

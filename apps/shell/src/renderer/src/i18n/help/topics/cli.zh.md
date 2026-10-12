@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## 取得命令
 
-macOS 和 Windows 上它位于应用包内。想直接按名字调用，先运行一次 `genoffice install-cli`：它会把包内的二进制文件软链接到 `/usr/local/bin`，Windows 上则链接到你的用户 `PATH`。
+macOS 和 Windows 上它位于应用包内。想直接按名字调用，先运行一次 `genoffice install-cli`：它把包内的二进制链接到你 PATH 上的某个目录——macOS 上优先 `/usr/local/bin`（但绝不会写进 Homebrew 自己的目录），否则用你的用户 bin——Windows 上则链接到你的用户 `PATH`。
 
 ## 值得记住的命令
 

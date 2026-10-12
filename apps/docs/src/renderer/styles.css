@@ -727,21 +727,34 @@ html.genoffice-popover-open .ribbon-tabs {
  * window packs more of them in before the row overflows.
  */
 .ribbon-compact .ribbon-body {
-  /* same fixed-height contract as the full band, only shorter: switching tabs
-     (including the auto-jump to Table Layout) must still never resize the row */
-  height: 38px;
+  /* Same fixed-height contract as the full band, only shorter: switching tabs
+     (including the auto-jump to Table Layout) must still never resize the row.
+     38px was measured holding 51px of content — the font and size pickers
+     stacked, style cards at 62px, split carets under their buttons — and
+     `overflow-y: hidden` sliced the difference off instead of scrolling it,
+     which is how the font picker ended up cut through the middle. Every tab
+     has been measured since; 45px is the smallest that holds all eight with
+     nothing clipped. */
+  height: 45px;
   padding-top: 5px;
   padding-bottom: 1px;
 }
 
 .ribbon-compact .rb-big {
-  /* the label is the only thing taller than the icon; dropping the column gap
-     and the vertical padding brings the button to the band's content box */
-  padding: 3px 5px;
+  /* The label is taken out of flow entirely (below), so the only things still
+     adding height are the icon, the column gap and the vertical padding. The
+     gap was never dropped here even though the comment claimed it was: the
+     button came out 40px tall inside a 38px band, and `overflow-y: hidden` on
+     `.ribbon-body` sliced the bottom off it — the font and size pickers were
+     cut in half and every icon row lost its lower edge. */
+  gap: 0;
+  padding: 2px 5px;
 }
 
 .ribbon-compact .rb-big-icon {
-  min-height: 28px;
+  /* 28px of icon, plus this block's own 3px top and bottom padding, was 34px
+     before the group's borders were counted. */
+  min-height: 22px;
   flex: none;
 }
 
@@ -764,8 +777,11 @@ html.genoffice-popover-open .ribbon-tabs {
 /* the icon row is the whole button now, so let the hover/open paint cover it */
 .ribbon-compact .rb-big .rb-big-icon {
   align-self: stretch;
-  padding: 3px 4px;
-  margin: 0 -3px;
+  /* This padding, not the icon, is what put every button at 38px inside a
+     33px band: the glyph is ~26px and 3px of padding on each side took it to
+     32, which plus the button's own padding is a slice off every icon row. */
+  padding: 1px 3px;
+  margin: 0 -2px;
 }
 
 /* Groups and separators centre on the shorter band. */
@@ -776,6 +792,79 @@ html.genoffice-popover-open .ribbon-tabs {
 /* The table ribbon groups its tools in .table-tool-group (min-width 66px), not
  * .ribbon-group — without this they keep the full-band inset and the band ends
  * up wider than the content it holds. */
+/* These three were never compact-styled, and they are what overflowed: the
+ * style gallery's cards are a fixed 62px tall with a 62px box to match, and the
+ * font group is a column that grows to whatever its two pickers need. Measured
+ * in the compact band they came out at 62-64px starting at top:-13 — taller
+ * than the 38px band, so `overflow-y: hidden` sliced the font and size pickers
+ * in half and cut the top off every style card. The band was never too short;
+ * these were never made shorter. */
+.ribbon-compact .style-card {
+  width: 46px;
+  height: 30px;
+}
+
+/* Every control the compact band has to hold was measured, not guessed: with
+ * 38px of button and a 33px content box, *every* tab clipped by at least 5px.
+ * These are the ones that needed more than the icon padding above. */
+.ribbon-compact .style-gallery-more {
+  /* 62px, matching the full-height cards it sits beside — but the cards are
+     30px in compact mode now, and this one was left behind. */
+  height: 30px;
+}
+
+/* Split buttons (Paste Special, font colour, ...) stack a caret under the
+ * button: `.rb-big-split` is a column, so 32 + 17 = 49px and the caret alone
+ * accounts for 17px of the 51px group that was overflowing Home. Compact puts
+ * the caret beside the button, where it was always meant to be. */
+.ribbon-compact .rb-big-split {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.ribbon-compact .rb-big-split-caret {
+  margin: 0 0 0 2px;
+  padding: 1px 2px;
+}
+
+/* `.rb-col` is the same shape as `.rb-font-group`: a column of controls that
+ * fits a 38px band only by going side by side. Home and Insert both carry one. */
+.ribbon-compact .rb-col {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Ink: swatches (16px) stacked over widths (22px) with a 4px gap is 42px. */
+.ribbon-compact .ink-settings {
+  flex-direction: row;
+  gap: 8px;
+}
+
+/* Page Layout: two columns each stacking two controls, 28 + 5 + 28 = 61px. */
+.ribbon-compact .layout-para {
+  gap: 6px;
+}
+
+.ribbon-compact .layout-col {
+  flex-direction: row;
+  gap: 4px;
+}
+
+/* The font and size pickers are two 28px controls stacked in a column, so the
+ * group is 28 + 4 + 28 = 60px before padding — taller than the 38px band on
+ * its own, and the reason the font picker was cut through the middle. Side by
+ * side they are 28px, which is what every compact ribbon does anyway. */
+.ribbon-compact .rb-font-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+}
+
+.ribbon-compact .style-gallery {
+  height: 30px;
+}
+
 .ribbon-compact .table-tool-group {
   min-width: 0;
   padding: 2px 4px;

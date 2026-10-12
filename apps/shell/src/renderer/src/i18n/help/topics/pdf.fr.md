@@ -64,6 +64,9 @@ Six outils : **Dessin, Rectangle, Ellipse, Flèche, Note**, plus le **Caviarder 
 - **Signature manuscrite** : dessinez-la ; elle peut être liée à un champ de signature de formulaire.
 - **Signature image** : placez une image comme signature.
 - Les signatures enregistrées peuvent être réutilisées.
+- **Signature par certificat** (onglet Annoter) : signez avec un certificat du magasin système ou d'un fichier .p12/.pfx ; affichez ou non la signature sur la page, et certifiez ou non le document contre des changements ultérieurs.
+- Signer écrit toujours un **nouveau fichier** (mise à jour incrémentale — les signatures antérieures restent valides) et ouvre la copie signée à sa place. Enregistrez d'abord : une signature couvre le fichier tel qu'enregistré sur disque.
+- Une bannière au-dessus du document liste les signatures existantes ; **Afficher les signatures** montre validité, couverture et chaîne de certificats de chacune. La révocation (CRL/OCSP) n'est pas vérifiée.
 
 ## Opérations sur les pages (Pages)
 

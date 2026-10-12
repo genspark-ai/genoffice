@@ -7,6 +7,7 @@ The HTML editor opens .html / .htm with two modes: **preview** (the rendered pag
 - **Source mode**: edit the HTML; ctrl+F find, Replace All saves the rewritten markup.
 - **Saving**: byte-faithful (BOM/CRLF/trailing newline preserved); unmodified saves do not rewrite.
 - **Zoom**: ctrl+wheel / pinch scales the preview; ctrl+Z inside the preview undoes the last edit.
+- **Hide from AI**: in source mode, right-click a selection — element contents, attribute values, script strings — and the model sees a placeholder instead; the rendered page never changes (details in the AI panel chapter).
 
 ## The toolbar
 

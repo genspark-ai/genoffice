@@ -10,6 +10,7 @@ Setiap editor punya pengikatan tombol sendiri, dan hanya sebagian yang berlaku d
 | ---------------------------------------------------------------- | ----- | --------------- |
 | Buka Panduan Pengguna — bisa dipakai di mana saja dalam aplikasi | F1    | F1              |
 | Ciutkan / perluas pita — setiap editor                           | ⌥⌘R   | Ctrl+F1         |
+| Pita kompak — hanya Docs                                         | ⌥⌘K   | Ctrl+Alt+K      |
 | Buka lembar Pintasan Papan Ketik — hanya Word                    | ⌘/    | Ctrl+/          |
 
 - **F1 membuka manual ini**, bukan lembar pintasan. Tombol itu milik menu aplikasi, jadi ia berlaku dari Word, Sheets, Slides, PDF, maupun tab Beranda.

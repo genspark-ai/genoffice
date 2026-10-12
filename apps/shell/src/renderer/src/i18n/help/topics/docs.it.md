@@ -4,9 +4,9 @@ Docs è il processore di testi simile a Word: legge e scrive veri file .docx con
 
 ## La barra multifunzione
 
-Le schede: **Home / Inserisci / Disegno / Layout / Progettazione / Riferimenti / Revisione / Visualizza**, più le schede contestuali che compaiono per l'oggetto selezionato (Progettazione tabella e layout, Formato immagine, Intestazione e piè di pagina).
+Le schede: **Home / Inserisci / Disegno / Layout / Progettazione / Riferimenti / Revisione / Visualizza**, più le schede contestuali che compaiono per l'oggetto selezionato (Progettazione tabella e layout, Formato immagine, Intestazione e piè di pagina). La barra dei comandi ha una densità sua in Docs: **compatta** (⌥⌘K / Ctrl+Alt+K) tiene le icone e via le etichette, e la scelta viene ricordata.
 
-- **Home**: appunti; carattere (incluse dimensioni CJK e segni di enfasi) con **Cancella tutta la formattazione** e un interruttore per **Mostra/nascondi segni di formattazione**; paragrafo (allineamento/rientro/interlinea/elenchi) più **Definisci nuovo punto elenco / Definisci nuovo formato numero / Elenco a più livelli**, che salvano nel documento i tuoi propri stili di elenco; stili (Titolo 1-6/Normale/Citazione, modificabili) con un **Riquadro Stili** per l'elenco completo.
+- **Home**: appunti; carattere (incluse dimensioni CJK e segni di enfasi) con **Cancella tutta la formattazione** e un interruttore per **Mostra/nascondi segni di formattazione**; paragrafo (allineamento/rientro/interlinea/elenchi) più **Definisci nuovo punto elenco / Definisci nuovo formato numero / Elenco a più livelli**, che salvano nel documento i tuoi propri stili di elenco; stili (Titolo 1-6/Normale/Citazione, modificabili) con un **Riquadro Stili** per l'elenco completo. Uno stile può impostare separatamente il font dell'Asia orientale e quello latino (un font CJK più Times New Roman, ad esempio); la coppia sopravvive al round-trip .docx.
 - **Inserisci**: interruzioni di pagina e di sezione; tabelle (una griglia righe × colonne, oppure **Inserisci tabella…** per una dimensione esatta); immagini, forme, caselle di testo; **Frontespizio** e **Pagina vuota** da una galleria predefinita; **Grafico**; **Capolettera**; **WordArt**; campi (data, ora, numero di pagina, pagine totali, nome file); collegamenti ipertestuali, **Segnalibro** e riferimenti incrociati; commenti; intestazione e piè di pagina e numeri di pagina; simboli ed equazioni.
   - **Grafico** inserisce un vero oggetto grafico con i propri dati — a barre, a linee o a torta — e non un'immagine. _Modifica dati_ di Word apre i numeri che ci sono dietro.
 - **Disegno**: inchiostro sulla pagina, nel gruppo **Strumenti di disegno** — **Seleziona** torna alla modifica del testo, poi **Penna**, **Evidenziatore** e **Gomma** (un clic o un passaggio di mano cancella l'intero tratto). Accanto, **Stile penna** / **Stile evidenziatore** è un solo controllo con campioni di colore e una fila di spessori; la sua etichetta segue lo strumento attivo. L'inchiostro viene salvato nel documento come annotazione che fluttua sopra il testo, quindi sopravvive al salvataggio e alla riapertura, e **Cancella tutto** nel gruppo successivo lo rimuove del tutto.
@@ -68,7 +68,7 @@ Fai clic destro ovunque nel corpo del testo — il menu si adatta all'elemento s
 
 - Trova e sostituisci (ctrl+F / ctrl+H): distinzione maiuscole/minuscole, corrispondenza parola intera, espressioni regolari.
 - Pennello di formattazione; annulla/ripeti illimitato; opzioni di incolla.
-- Tabelle: unire/dividere celle, operazioni su righe e colonne, bordi e sfondi, ordinamento, formule.
+- Tabelle: unire/dividere celle, operazioni su righe e colonne, bordi e sfondi, ordinamento, formule. Le righe si spezzano tra pagine quando serve, e Ctrl+Invio dentro una cella gira la pagina proprio lì — stampa e PDF fanno lo stesso.
 - Immagini: circondatura del testo, ritaglio, compressione; tela di disegno.
 
 ## Tipografia CJK

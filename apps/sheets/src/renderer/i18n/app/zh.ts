@@ -272,7 +272,10 @@ export const zh = {
     '此工作簿较大，目前以流式方式仅加载了部分数据。排序、筛选和移动区域需要完整数据才能给出正确结果。要现在完整加载整个工作簿吗？',
   appFullLoadStart: '完整加载',
   appFullLoadRunning: '正在完整加载工作簿，完成后即可排序和筛选……',
-  appFullLoadTooLarge: '此工作簿过大，无法完整载入内存，排序和筛选在此文件上暂不可用。',
+  appFullLoadTooLarge:
+    '此工作簿过大，无法完整载入内存，排序和移动区域在此文件上暂不可用；筛选可直接在文件上进行。',
+  appLargeFilterLoading: '正在从文件读取筛选列……',
+  appLargeFilterApplying: '正在对文件应用筛选……',
   appSortValueModeFormulas:
     '所选区域含有公式，而此大型工作簿中公式不是实时计算的——排序或移动会把它们保存为纯数值。请选择不含公式的区域。',
   appSortRangeTooLarge: '所选区域过大，无法一次排序或移动，请减少选中的单元格。',

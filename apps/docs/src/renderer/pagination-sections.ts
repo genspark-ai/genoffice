@@ -127,9 +127,24 @@ export function docCharSpacePt(sections: SectionInfo[]): number | null {
   return v !== 0 ? v : null
 }
 
-/** Column count of a section (w:cols w:num; covers equal and explicit-width columns) */
+/** Nothing Word produces is narrower than this; smaller "columns" are the
+ *  degenerate state of corrupt cols metadata, not a layout (#1952). */
+const MIN_USABLE_COL_PX = 36
+
+/** Column count of a section (w:cols w:num; covers equal and explicit-width columns).
+ *  A count that would divide the content width below `MIN_USABLE_COL_PX` per
+ *  column (or past Word's 45-column ceiling) is corrupt metadata: rendering it
+ *  collapses every column to one-or-two characters beside a blank page (the
+ *  catastrophic shape reported in #1952) — one-column flow is the fallback. */
 export function sectionColumns(s: SectionInfo): number {
-  return Math.max(1, s.settings.columns ?? 1)
+  const num = Math.max(1, s.settings.columns ?? 1)
+  if (num === 1) return 1
+  const set = s.settings
+  const contentW = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
+  const gapPx = twipsToPx(set.colSpace ?? 720)
+  const even = (contentW - gapPx * (num - 1)) / num
+  if (num > 45 || even < MIN_USABLE_COL_PX) return 1
+  return num
 }
 
 /** Section column geometry (px). Equal-width columns divide evenly per w:cols
@@ -160,7 +175,9 @@ export function sectionColGeom(s: SectionInfo): {
       w: twipsToPx(parseInt(/w:w="(\d+)"/.exec(m[1])?.[1] ?? '0', 10)),
       space: twipsToPx(parseInt(/w:space="(\d+)"/.exec(m[1])?.[1] ?? '0', 10)),
     }))
-    if (list.length === cols && list.every((c) => c.w > 0)) {
+    // a list entry below the usable floor (CNKI/PDF-converter output sometimes
+    // carries one) must not drag the real columns down with it
+    if (list.length === cols && list.every((c) => c.w >= MIN_USABLE_COL_PX)) {
       equalWidth = false
       widths = list.map((c) => c.w)
       gaps = list.slice(0, -1).map((c) => c.space)

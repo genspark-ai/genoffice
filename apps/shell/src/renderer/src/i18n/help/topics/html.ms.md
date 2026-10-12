@@ -7,6 +7,7 @@ Editor HTML membuka fail .html dan .htm dengan dua mod: **pratonton** untuk hala
 - **Mod sumber**: menyunting HTML secara langsung, dengan ctrl+F untuk mencari dan Ganti Semua untuk menyimpan penanda yang ditulis semula.
 - **Simpanan** mengekalkan setiap bait dengan tepat, termasuk BOM, CRLF, dan baris akhir. Simpanan tanpa perubahan tidak menulis semula fail.
 - **Zum**: ctrl dan roda tetikus, atau mencubit dengan dua jari, akan menukar skala pratonton, dan ctrl+Z di dalam pratonton membatalkan suntingan terakhir.
+- **Sembunyi daripada AI**: dalam mod sumber, klik kanan pada pemilihan — kandungan elemen, nilai atribut, rentetan skrip — dan model nampak pemegang tempat; halaman terterjemah tidak pernah berubah (butiran dalam bab panel AI).
 
 ## Bar alat
 

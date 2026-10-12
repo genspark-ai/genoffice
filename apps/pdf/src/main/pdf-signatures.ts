@@ -388,16 +388,16 @@ const statusOf = (problems: PdfSignatureProblem[]): PdfSignatureInfo['status'] =
   ) {
     return 'invalid'
   }
-  // Who the signer is (self-signed, unknown issuer) is a note, not a failure: the signature is
-  // still cryptographically intact, so it counts as valid. Only things that weaken what the
-  // signature proves — later changes, an out-of-date certificate, an unchecked algorithm — warn.
   const weakens: PdfSignatureProblem[] = [
     'document-changed-after-signing',
     'certificate-expired',
     'certificate-not-yet-valid',
     'unsupported-algorithm',
   ]
-  return problems.some((p) => weakens.includes(p)) ? 'warning' : 'valid'
+  if (problems.some((p) => weakens.includes(p))) return 'warning'
+  return problems.some((p) => p === 'self-signed' || p === 'untrusted-issuer')
+    ? 'untrusted'
+    : 'valid'
 }
 
 function verifyOne(bytes: Buffer, field: FieldWithValue, pageIndex: number): PdfSignatureInfo {

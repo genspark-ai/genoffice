@@ -7,8 +7,9 @@ Start is de beginpagina van GenOffice: een navigatiebalk links, bestandslijsten 
 ## Navigatie in de zijbalk
 
 - **Recent**: bestanden die je onlangs hebt geopend. Elke rij draagt zijn moment — vandaag, gisteren of de datum.
-- **Favorieten**: bestanden die je hebt gemarkeerd. Beweeg over een bestandsrij en klik op de ster om het toe te voegen of te verwijderen.
+- **Favorieten**: bestanden die je hebt gemarkeerd. Beweeg over een bestandsrij en klik op de ster om het toe te voegen of te verwijderen. **Naar groep verplaatsen** in het ⋯-menu sorteert bestanden met ster in genoemde groepen; de Sterren-weergave filtert erop.
 - **Gebruikershandleiding**: opent deze handleiding.
+- **Ask AI**: het kennisbank-paneel — stel vragen en krijg antwoorden met citaten uit uw bestanden met ster (zie beneden).
 - **Genspark Projects**: na het aanmelden bij je Genspark-account zie je de projecten die je op het web met Genspark AI hebt gemaakt; klik er een aan om in de browser verder te bewerken. Zoeken, sorteren op tijd, vernieuwen en meer laden worden ondersteund.
 - **Mappen**: de mappen die je met **Map toevoegen…** aan de zijbalk toevoegt, of er vanuit je bestandsverkenner naartoe sleep. Elke map wordt een hoofdmap die je kunt openen, er submappen in kunt aanmaken, hernoemen en verwijderen; een map die offline gaat wordt als niet beschikbaar getoond en kan van de lijst worden gehaald. **Nieuwe map** maakt er nog een.
 
@@ -52,9 +53,17 @@ Wat elke kaart doet:
 - **AI Markdown** (.md): een leeg Markdown-document in de Markdown-editor.
 - **AI HTML** (.html): een lege webpagina in de HTML-editor.
 - **AI PDF** (.pdf): anders dan de rest — maakt **onmiddellijk** een echt leeg pdf-bestand van één pagina in de doelmap en opent het als gewoon bestand (de pdf-editor werkt met echte bestanden). Handig om aantekeningen te maken, gebieden zwart te maken of tekst toe te voegen; bij de eerste keer opslaan kan het bestand automatisch op basis van de inhoud worden hernoemd.
-- **Lokaal bestand openen**: een systeemkiezer voor Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), pdf, Markdown (.md/.markdown) en webpagina's (.html/.htm). Je kunt meerdere bestanden selecteren; elk bestand krijgt een eigen tabblad.
+- **Lokaal bestand openen**: een systeemkiezer voor Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), pdf, Markdown (.md/.markdown) en webpagina's (.html/.htm). Je kunt meerdere bestanden selecteren; elk bestand krijgt een eigen tabblad. Tekstbestanden (.txt, .json) openen hier ook — ze landen in de bronweergave van de Markdown-editor.
 
 > Tip: Bestand ▸ Nieuw in de menubalk maakt dezelfde soort documenten (⌘N/Ctrl+N maakt standaard een tekstdocument); een bestand naar het venster slepen opent het.
+
+## Vraag het uw kennisbank
+
+- Zet eerst een ster bij bestanden (elk type dat de app leest); de kop van het paneel telt het corpus, en een lege kennisbank vraagt u eerst een ster te zetten.
+- Antwoorden citeren de bronbestanden; klik op een citaat om het bestand in zijn editor te openen.
+- Vereist aanmelding bij Genspark. Het gesprek leeft alleen in het geheugen — de app sluiten beëindigt het.
+- Zoeken draait op de lokale bestandsindex, zoals bij Start; verdwenen bestanden vallen geruisloos uit het corpus.
+- Groepen organiseren alleen de Sterren-lijst — de kennisbank beslaat altijd alle bestanden met ster.
 
 ## Cloudprojecten (Genspark Projects)
 

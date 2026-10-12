@@ -30,7 +30,7 @@ Sáng / Tối / Theo hệ thống. Khi chọn Theo hệ thống, giao diện bá
 Đây không phải công tắc bật/tắt — mỗi khả năng sẽ chọn nhà cung cấp phục vụ nó, và khóa cùng URL cơ sở của nhà cung cấp chỉ nhập một lần rồi dùng chung:
 
 - **Tìm kiếm web**, **Tạo hình ảnh**, **Phân tích hình ảnh** và **Phân tích video**, mỗi mục có nhà cung cấp, mô hình, khóa và URL cơ sở.
-- **Tìm kiếm tệp cục bộ** chạy trên máy này. Bên dưới là **Sắp xếp lại kết quả tìm kiếm Jev**, **tắt theo mặc định**. Bật lên, đoạn trích của 20 kết quả cục bộ hàng đầu — tối đa 1.200 ký tự cho mỗi tài liệu, cộng thêm tên tệp và tên thư mục — sẽ được gửi tới mô hình Jev của TypeSafe để sắp xếp lại theo mức độ liên quan. Khi tắt, không có gì rời khỏi thiết bị.
+- **Tìm tệp cục bộ** chạy trên máy này. Bên dưới, **xếp hạng lại tìm kiếm Jev** **tắt mặc định**. Bật lên, các trích đoạn của 20 kết quả cục bộ đầu — tới 1.200 ký tự mỗi tài liệu, cộng tên tệp và thư mục — đi tới điểm cuối quyết định bạn chọn (Jev qua OpenRouter hay TypeSafe, Perplexity, Liquid AI d1, Cloudflare, engine cục bộ hoặc URL tùy chỉnh) để xếp lại theo mức liên quan. Tắt thì không gì rời thiết bị.
 
 ## Giới thiệu
 

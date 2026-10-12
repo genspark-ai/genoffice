@@ -99,12 +99,17 @@ export const AI_MEDIA_PROVIDERS: AiMediaProviderMeta[] = [
     keyPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
     defaultBaseUrl: ARK_BASE_URL,
     imageProtocol: 'openai-images',
+    // per the Ark model list 2026-10-12: Seedream 5.0 split into a pro cut
+    // (layer split, interactive editing, 14-language text) and a flash cut
+    // (same feature set, cheaper and faster), so 5.0 is no longer one model.
+    // The 4.5 and 4.0 IDs are both flagged for retirement there and come out.
+    // 5-0-260128 stays — only its lite alias is on the way out.
     imageModels: [
+      'doubao-seedream-5-0-pro-260628',
+      'doubao-seedream-5-0-flash-260915',
       'doubao-seedream-5-0-260128',
-      'doubao-seedream-4-5-251128',
-      'doubao-seedream-4-0-250828',
     ],
-    defaultImageModel: 'doubao-seedream-5-0-260128',
+    defaultImageModel: 'doubao-seedream-5-0-pro-260628',
     analysisProtocol: 'openai-chat',
     analysisModels: ['doubao-seed-2-1-pro-260628', 'doubao-seed-2-1-turbo-260628'],
     defaultAnalysisModel: 'doubao-seed-2-1-pro-260628',

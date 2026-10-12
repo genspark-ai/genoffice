@@ -869,8 +869,50 @@ button {
 }
 
 .pdf-form-input.is-required-empty,
+.pdf-form-input.is-invalid,
 .pdf-form-select.is-required-empty .gs-dd-btn {
   border-color: var(--pdf-error);
+}
+
+.pdf-form-date-pick {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pdf-form-date-pick:hover {
+  color: var(--pdf-select);
+}
+
+.pdf-form-date-pick svg {
+  width: 70%;
+  height: 70%;
+}
+
+.pdf-form-date-native {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pdf-form-date-error {
+  position: absolute;
+  z-index: 2;
+  padding: 2px 6px;
+  border: 1px solid var(--pdf-error);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--pdf-error);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: var(--shadow-menu);
 }
 
 .pdf-form-checkbox.is-required-empty,
@@ -1662,31 +1704,6 @@ button {
   border-style: dashed;
 }
 
-.pdf-formdesign-label {
-  position: absolute;
-  left: -1px;
-  bottom: 100%;
-  margin-bottom: 2px;
-  max-width: 320px;
-  padding: 0 4px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 10px;
-  line-height: 14px;
-  border-radius: 2px;
-  color: var(--surface);
-  background: var(--accent);
-  pointer-events: none;
-  user-select: none;
-  visibility: hidden;
-}
-
-.pdf-formdesign-field:hover > .pdf-formdesign-label,
-.pdf-formdesign-field.is-selected > .pdf-formdesign-label {
-  visibility: visible;
-}
-
 .pdf-formdesign-field:hover,
 .pdf-formdesign-field.is-selected {
   z-index: 1;
@@ -1766,7 +1783,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 220px;
+  width: max-content;
+  min-width: 220px;
+  max-width: 320px;
   padding: 8px 10px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1839,7 +1858,8 @@ button {
 
 .pdf-formdesign-actions button {
   height: 24px;
-  padding: 0 10px;
+  padding: 0 8px;
+  white-space: nowrap;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface);
@@ -4543,7 +4563,8 @@ button {
   border-inline-start: 3px solid var(--pdf-ok);
 }
 
-.pdf-sig-banner.warning {
+.pdf-sig-banner.warning,
+.pdf-sig-banner.untrusted {
   border-inline-start-color: var(--pdf-sig-warn);
 }
 
@@ -4574,7 +4595,8 @@ button {
   border-radius: 8px;
 }
 
-.pdf-sig-card.warning {
+.pdf-sig-card.warning,
+.pdf-sig-card.untrusted {
   border-inline-start-color: var(--pdf-sig-warn);
 }
 
@@ -4607,7 +4629,8 @@ button {
   border: 1px solid var(--pdf-ok);
 }
 
-.pdf-sig-pill.warning {
+.pdf-sig-pill.warning,
+.pdf-sig-pill.untrusted {
   color: var(--pdf-sig-warn);
   border-color: var(--pdf-sig-warn);
 }

@@ -9,16 +9,18 @@ import { describeCertificate } from './pdf-signatures'
 
 /**
  * Certificates that live in the operating system's own stores (the NSS database Chrome and
- * Firefox use on Linux, the Windows personal store, the macOS keychain). Private keys cannot be
- * read in place, so a chosen identity is exported through the platform's own tool into a
- * PKCS#12 that is protected by a random one-time password and kept in memory only; the signer
- * then treats it like any other .p12. Keys the store refuses to export are not supported.
+ * Firefox use on Linux, the Windows personal store). Private keys cannot be read in place, so a
+ * chosen identity is exported through the platform's own tool into a PKCS#12 that is protected
+ * by a random one-time password and kept in memory only; the signer then treats it like any
+ * other .p12. Keys the store refuses to export are not supported.
+ *
+ * macOS is not offered: `security export` can only dump every identity of a keychain, prompts
+ * per key and fails on any non-exportable one. The follow-up is a per-identity SecItemExport
+ * path (native addon); until then Mac users sign from a .p12/.pfx file.
  */
 
 export type SystemCertificateRef =
-  | { source: 'nss'; dir: string; nickname: string }
-  | { source: 'windows'; thumbprint: string }
-  | { source: 'macos'; sha1: string }
+  { source: 'nss'; dir: string; nickname: string } | { source: 'windows'; thumbprint: string }
 
 export interface SystemCertificate {
   ref: SystemCertificateRef
@@ -31,7 +33,7 @@ export interface SystemCertificate {
 }
 
 /** Why part of a store could not be read, so the UI can say what to do about it */
-export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked'
+export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked' | 'platform-unsupported'
 
 export interface SystemCertificateListing {
   certs: SystemCertificate[]
@@ -41,8 +43,6 @@ export interface SystemCertificateListing {
 export interface ExportedIdentity {
   p12: Uint8Array
   password: string
-  /** Lower-case SHA-1 of the wanted certificate, when the export holds more than one identity */
-  sha1?: string
 }
 
 export class SystemStoreError extends Error {
@@ -340,87 +340,15 @@ async function exportWindows(
   })
 }
 
-// ── macOS: keychain ──────────────────────────────────────────────────────────
-
-/** `security find-identity -v` lines: `  1) <SHA-1> "name"` */
-export function parseMacIdentities(output: string): { sha1: string; name: string }[] {
-  const out: { sha1: string; name: string }[] = []
-  for (const line of output.split('\n')) {
-    const match = /^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"(.*)"/.exec(line)
-    if (match) out.push({ sha1: match[1]!.toLowerCase(), name: match[2]! })
-  }
-  return out
-}
-
-/** `security find-certificate -a -Z -p`: a `SHA-1 hash:` line precedes each PEM block */
-export function parseMacCertificates(output: string): Map<string, string> {
-  const byHash = new Map<string, string>()
-  const pattern =
-    /SHA-1 hash:\s*([0-9A-Fa-f]{40})[\s\S]*?(-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----)/g
-  for (const match of output.matchAll(pattern)) byHash.set(match[1]!.toLowerCase(), match[2]!)
-  return byHash
-}
-
-async function listMac(env: SystemStoreEnv): Promise<SystemCertificateListing> {
-  const out: SystemCertificateListing = { certs: [], issues: [] }
-  const identities = await env.run('security', ['find-identity', '-v'])
-  if (identities.code !== 0) return out
-  const pems = parseMacCertificates(
-    (await env.run('security', ['find-certificate', '-a', '-Z', '-p'])).stdout,
-  )
-  for (const identity of parseMacIdentities(identities.stdout)) {
-    const pem = pems.get(identity.sha1)
-    if (!pem) continue
-    try {
-      const cert = new X509Certificate(pem)
-      if (cert.publicKey.asymmetricKeyType !== 'rsa') continue
-      out.certs.push(
-        toListed({ source: 'macos', sha1: identity.sha1 }, identity.name, cert, env.now()),
-      )
-    } catch {
-      /* skip */
-    }
-  }
-  return out
-}
-
-async function exportMac(
-  env: SystemStoreEnv,
-  ref: Extract<SystemCertificateRef, { source: 'macos' }>,
-): Promise<ExportedIdentity> {
-  const password = newPassword()
-  return withPrivateDir(async (scratch) => {
-    const out = join(scratch, 'identities.p12')
-    // `security` can only export every identity of a keychain; the signer picks ours by SHA-1
-    const result = await env.run('security', [
-      'export',
-      '-t',
-      'identities',
-      '-f',
-      'pkcs12',
-      '-P',
-      password,
-      '-o',
-      out,
-    ])
-    if (result.missing) throw new SystemStoreError('cert-store-tool-missing')
-    if (result.code !== 0) throw new SystemStoreError('cert-not-exportable')
-    return { p12: new Uint8Array(await readFile(out)), password, sha1: ref.sha1 }
-  })
-}
-
 // ── entry points ─────────────────────────────────────────────────────────────
 
 export async function listSystemCertificates(
   storePassword?: string,
   env: SystemStoreEnv = defaultEnv(),
 ): Promise<SystemCertificateListing> {
+  if (env.platform === 'darwin') return { certs: [], issues: ['platform-unsupported'] }
   const listing =
-    env.platform === 'win32'
-      ? await listWindows(env)
-      : env.platform === 'darwin'
-        ? await listMac(env)
-        : await listNss(env, storePassword)
+    env.platform === 'win32' ? await listWindows(env) : await listNss(env, storePassword)
   listing.certs.sort(
     (a, b) => Number(a.expired) - Number(b.expired) || a.label.localeCompare(b.label),
   )
@@ -432,12 +360,11 @@ export async function exportSystemCertificate(
   storePassword?: string,
   env: SystemStoreEnv = defaultEnv(),
 ): Promise<ExportedIdentity> {
+  if (env.platform === 'darwin') throw new SystemStoreError('cert-store-unsupported')
   switch (ref.source) {
     case 'nss':
       return exportNss(env, ref, storePassword)
     case 'windows':
       return exportWindows(env, ref)
-    case 'macos':
-      return exportMac(env, ref)
   }
 }

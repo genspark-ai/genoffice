@@ -377,22 +377,24 @@ if (!app.isPackaged) {
   } else {
     // The dev profile used to live in "GenOffice Dev"; the space breaks
     // unquoted shell expansions, rsync targets and .desktop Exec= lines, and
-    // XDG config entries are single tokens (#1817). "GenOffice-Dev" keeps the
+    // XDG config entries are single tokens (genoffice#1817). "GenOffice-Dev" keeps the
     // family naming of the packaged profile ("GenOffice"). The old directory
     // moves once — it sits on the same volume as appData, so the rename is
     // atomic, and a concurrent dev instance keeps its open file handles.
     const appData = app.getPath('appData')
     const devDir = join(appData, 'GenOffice-Dev')
     const oldDevDir = join(appData, 'GenOffice Dev')
+    let userData = devDir
     if (existsSync(oldDevDir) && !existsSync(devDir)) {
       try {
         renameSync(oldDevDir, devDir)
       } catch {
-        // another dev instance is mid-migration or holds the directory:
-        // continuing with a fresh profile beats failing the launch
+        // another dev instance holds the directory: keep using the old one so
+        // the profile is not lost and the move is retried on the next launch
+        userData = oldDevDir
       }
     }
-    app.setPath('userData', devDir)
+    app.setPath('userData', userData)
   }
 }
 
@@ -3823,9 +3825,9 @@ function registerHomeIpc(): void {
     if (!loadGenofficeAuth()) return { loggedIn: false }
     await proxyBootstrap
     const info = await gskLoginInfo()
-    return info
-      ? { loggedIn: true, email: info.email, creditBalance: info.creditBalance }
-      : { loggedIn: true }
+    if (info) return { loggedIn: true, email: info.email, creditBalance: info.creditBalance }
+    // login-info answering 401 drops an expired key: report signed-out right away
+    return { loggedIn: !!loadGenofficeAuth() }
   })
 
   // login progress is streamed to the requesting renderer; the auth URL is
@@ -5271,7 +5273,7 @@ async function exportPdfAsDocxLocal(): Promise<void> {
   }
   exportingPdfDocx = true
   try {
-    if (!(await flushPdfSave(tab.webContents))) return
+    if (!(await flushPdfSave(tab.webContents, true))) return
     const picked = await showSaveDialogWithMemory(dialog, host, {
       defaultPath: tab.filePath.replace(/\.pdf$/i, '.docx'),
       filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
@@ -5411,7 +5413,7 @@ async function exportPdfAsPptxLocal(): Promise<void> {
   }
   exportingPdfDocx = true
   try {
-    if (!(await flushPdfSave(tab.webContents))) return
+    if (!(await flushPdfSave(tab.webContents, true))) return
     const picked = await showSaveDialogWithMemory(dialog, host, {
       defaultPath: tab.filePath.replace(/\.pdf$/i, '.pptx'),
       filters: [{ name: tm('filterPpt'), extensions: ['pptx'] }],
@@ -5522,7 +5524,7 @@ async function exportPdfAsXlsxLocal(): Promise<void> {
   }
   exportingPdfDocx = true
   try {
-    if (!(await flushPdfSave(tab.webContents))) return
+    if (!(await flushPdfSave(tab.webContents, true))) return
     const picked = await showSaveDialogWithMemory(dialog, host, {
       defaultPath: tab.filePath.replace(/\.pdf$/i, '.xlsx'),
       filters: [{ name: tm('filterExcel'), extensions: ['xlsx'] }],

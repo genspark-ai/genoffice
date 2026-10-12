@@ -156,7 +156,7 @@ export interface FileSearchSettings {
   customModel: string
   /** `cloudflare` endpoint only: Workers AI account id */
   cloudflareAccountId: string
-  /** `cloudflare` endpoint only: Workers AI model path, e.g. @cf/cloudflare/clef */
+  /** `cloudflare` endpoint only: Workers AI model path, e.g. @cf/cloudflare/clef or @cf/cloudflare/clef-omni */
   cloudflareModel: string
 }
 

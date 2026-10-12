@@ -7,8 +7,9 @@ Home è la pagina iniziale di GenOffice: una barra di navigazione a sinistra, el
 ## Navigazione laterale
 
 - **Recenti**: i file che hai aperto di recente. Ogni riga è datata — oggi, ieri o la data.
-- **Preferiti**: i file che hai messo tra i preferiti. Passa il puntatore su una riga di file e fai clic sulla stella per aggiungerlo o rimuoverlo.
+- **Preferiti**: i file che hai messo tra i preferiti. Passa il puntatore su una riga di file e fai clic sulla stella per aggiungerlo o rimuoverlo. **Sposta nel gruppo** nel menu ⋯ ordina i preferiti in gruppi con nome; la vista Preferiti filtra per gruppo.
 - **Guida dell’utente**: apre questa guida.
+- **Ask AI**: il pannello della base di conoscenza — poni domande e ottieni risposte citate dai tuoi file preferiti (vedi sotto).
 - **Genspark Projects**: dopo aver effettuato l'accesso al tuo account Genspark, mostra i progetti che hai creato sul web con Genspark AI; fai clic su uno per continuare a modificarlo nel browser. Sono disponibili ricerca, ordinamento per data, aggiornamento e caricamento di altri elementi.
 - **Cartelle**: le directory che aggiungi alla barra laterale con **Aggiungi cartella…**, oppure che ci trascini dal gestore di file. Ognuna diventa una radice che puoi aprire, riempire di sottocartelle, rinominare e rimuovere; una radice che va offline viene mostrata come non disponibile e può essere tolta dall'elenco. **Nuova cartella** ne crea un'altra.
 
@@ -52,9 +53,17 @@ Cosa fa ogni scheda:
 - **AI Markdown** (.md): un documento Markdown vuoto nell'editor Markdown.
 - **AI HTML** (.html): una pagina web vuota nell'editor HTML.
 - **AI PDF** (.pdf): diverso dagli altri — crea **immediatamente** un vero PDF vuoto di una sola pagina nella cartella di destinazione e lo apre come file normale (l'editor PDF lavora su file reali). Utile per annotare, oscurare o aggiungere testo; al primo salvataggio il file può essere rinominato automaticamente in base al suo contenuto.
-- **Apri file locale**: un selettore di file di sistema per Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) e pagine web (.html/.htm). È possibile selezionare più file; ogni file ottiene la propria scheda.
+- **Apri file locale**: un selettore di file di sistema per Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) e pagine web (.html/.htm). È possibile selezionare più file; ogni file ottiene la propria scheda. Anche i file di testo (.txt, .json) si aprono da qui — atterrano nella vista sorgente dell'editor Markdown.
 
 > Suggerimento: File ▸ Nuovo nella barra dei menu crea gli stessi tipi di documento (⌘N/Ctrl+N crea per impostazione predefinita un documento di testo); trascinando un file nella finestra lo si apre.
+
+## Chiedi alla tua base di conoscenza
+
+- Preferisci prima dei file (qualsiasi tipo che l'app legga); l'intestazione del pannello conta il corpus, e una base vuota ti invita a preferire qualcosa.
+- Le risposte citano i file di provenienza; clicca una citazione per aprire il file nel suo editor.
+- Richiede l'accesso a Genspark. La conversazione vive solo in memoria — chiudere l'app la termina.
+- La ricerca gira sull'indice locale dei file, come quella della Home; i file spariti escono dal corpus in silenzio.
+- I gruppi ordinano solo l'elenco Preferiti — la base di conoscenza abbraccia sempre tutti i file preferiti.
 
 ## Progetti cloud (Genspark Projects)
 
