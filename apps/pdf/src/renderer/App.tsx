@@ -8163,33 +8163,33 @@ export default function App() {
           if (f) void onImageFilePicked(f)
         }}
       />
-        <div className="app-main">
-          {/* dock wrapper animates the width between panel and rail (docs-style 180ms ease);
+      <div className="app-main">
+        {/* dock wrapper animates the width between panel and rail (docs-style 180ms ease);
               the panel stays mounted while collapsed so the chat history survives */}
-          <div
-            className={`ai-dock${aiCollapsed ? ' collapsed' : ''}${
-              !aiSidebarEnabled && aiCollapsed ? ' ai-dock-off' : ''
-            }`}
-          >
-            {aiCollapsed && aiSidebarEnabled && (
-              <button
-                className="ai-rail"
-                data-tip={t('aiOpenAssistant')}
-                aria-label={t('aiOpenAssistant')}
-                onClick={() => setAiCollapsed(false)}
-              >
-                <GensparkMark size={22} />
-              </button>
-            )}
-            <AiPanel
-              api={aiApi}
-              filePath={filePath}
-              preset={aiPreset}
-              onCollapse={() => setAiCollapsed(true)}
-              onRunDone={() => void autoSaveAfterAiRun()}
-              onClearSelection={() => setAiSelection(null)}
-            />
-          </div>
+        <div
+          className={`ai-dock${aiCollapsed ? ' collapsed' : ''}${
+            !aiSidebarEnabled && aiCollapsed ? ' ai-dock-off' : ''
+          }`}
+        >
+          {aiCollapsed && aiSidebarEnabled && (
+            <button
+              className="ai-rail"
+              data-tip={t('aiOpenAssistant')}
+              aria-label={t('aiOpenAssistant')}
+              onClick={() => setAiCollapsed(false)}
+            >
+              <GensparkMark size={22} />
+            </button>
+          )}
+          <AiPanel
+            api={aiApi}
+            filePath={filePath}
+            preset={aiPreset}
+            onCollapse={() => setAiCollapsed(true)}
+            onRunDone={() => void autoSaveAfterAiRun()}
+            onClearSelection={() => setAiSelection(null)}
+          />
+        </div>
         <div className="app-content">
           {digitalSignatures.length > 0 && (
             <div className={`pdf-sig-banner ${overallSignatureStatus(digitalSignatures)}`}>
