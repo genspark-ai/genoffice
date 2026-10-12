@@ -13,7 +13,7 @@
 import { lookup } from 'node:dns/promises'
 import type { LookupAddress, LookupOptions } from 'node:dns'
 import { BlockList, isIP } from 'node:net'
-import { Agent, fetch as undiciFetch, type Dispatcher } from 'undici'
+import { Agent, fetch as undiciFetch, getGlobalDispatcher, type Dispatcher } from 'undici'
 
 /**
  * Non-public address ranges. BlockList does the range math and maps
@@ -168,7 +168,11 @@ export async function isSafeRemoteUrl(raw: unknown): Promise<boolean> {
 type PinnedLookup = (
   hostname: string,
   options: LookupOptions,
-  callback: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[]) => void,
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    address: string | LookupAddress[],
+    family?: number,
+  ) => void,
 ) => void
 
 /**
@@ -178,7 +182,7 @@ type PinnedLookup = (
  * must never be asked about a host that was not validated.
  */
 export function pinnedLookup(target: SafeRemoteTarget): PinnedLookup {
-  return (hostname, _options, callback) => {
+  return (hostname, options, callback) => {
     if (normalizeHost(hostname) !== target.hostname) {
       const err: NodeJS.ErrnoException = new Error(
         `ssrf guard: refusing to connect to unvalidated host ${hostname}`,
@@ -187,7 +191,18 @@ export function pinnedLookup(target: SafeRemoteTarget): PinnedLookup {
       callback(err, '')
       return
     }
-    callback(null, target.addresses)
+    // net.connect only passes all:true on the happy-eyeballs path; the
+    // single-address path expects (err, address, family) and would reject an
+    // array with ERR_INVALID_IP_ADDRESS.
+    if (options.all) {
+      callback(null, target.addresses)
+      return
+    }
+    const pick =
+      (options.family !== undefined
+        ? target.addresses.find((a) => a.family === options.family)
+        : undefined) ?? target.addresses[0]
+    callback(null, pick.address, pick.family)
   }
 }
 
@@ -200,6 +215,31 @@ export interface FetchWithSsrfGuardOptions {
 }
 
 /**
+ * Own symbols that only undici's proxy dispatchers carry (every copy of the
+ * library, npm or Node's bundled one, derives them from the same source):
+ * a plain Agent — the default global dispatcher, and the one Node's bundled
+ * copy wraps for its own slot — has none of these. Detection is duck-typed
+ * on symbol descriptions rather than `instanceof`, because the global
+ * dispatcher slot is shared through a registered symbol across all copies,
+ * so the object in it may belong to a different copy's class hierarchy.
+ */
+const PROXY_DISPATCHER_SYMBOLS: ReadonlySet<string> = new Set([
+  'proxy agent options',
+  'proxy client',
+  'proxy agent',
+  'proxy headers',
+  'tunnel proxy',
+])
+
+function globalDispatcherRoutesThroughProxy(): boolean {
+  const d: unknown = getGlobalDispatcher()
+  if (d === null || typeof d !== 'object') return false
+  return Object.getOwnPropertySymbols(d).some((s) =>
+    PROXY_DISPATCHER_SYMBOLS.has(s.description ?? ''),
+  )
+}
+
+/**
  * fetch() that validates the target before every hop and binds the connection
  * to the validated addresses, following redirects manually. Returns null when
  * any hop fails validation, a redirect lacks a usable Location, or the hop
@@ -207,9 +247,11 @@ export interface FetchWithSsrfGuardOptions {
  *
  * Hostname hops connect through a per-hop undici Agent whose lookup answers
  * with the validated address list (TLS keeps the URL hostname for SNI and
- * certificate verification); literal-IP URLs need no pinning. A `fetchImpl`
- * injected for tests receives the dispatcher in the init but owns its
- * transport, so binding is a production-path guarantee.
+ * certificate verification); literal-IP URLs need no pinning. When a forward
+ * proxy is installed globally, the hop rides it instead — the proxy resolves,
+ * so pinning is impossible — and the guard degrades to per-hop validation.
+ * A `fetchImpl` injected for tests receives the dispatcher in the init but
+ * owns its transport, so binding is a production-path guarantee.
  */
 export async function fetchWithSsrfGuard(
   rawUrl: string,
@@ -228,7 +270,13 @@ export async function fetchWithSsrfGuard(
     // headers stays absent rather than explicitly undefined (exactOptionalPropertyTypes)
     const init: Record<string, unknown> = { ...(headers ? { headers } : {}), redirect: 'manual' }
     let dispatcher: Dispatcher | undefined
-    if (!target.literal) {
+    if (!target.literal && !globalDispatcherRoutesThroughProxy()) {
+      // A forward proxy resolves at its own exit, so pinning is neither
+      // possible (the proxy owns the connection) nor meaningful — when the
+      // shell has installed one via setGlobalDispatcher, let the hop ride it
+      // instead of dialing the validated address directly and breaking
+      // proxied users. Behind a proxy the gate therefore degrades to its
+      // per-hop validation; rebinding is then the proxy's to prevent.
       dispatcher = new Agent({ connect: { lookup: pinnedLookup(target) } })
       init.dispatcher = dispatcher
     }
@@ -240,6 +288,14 @@ export async function fetchWithSsrfGuard(
       if (resp.status < 300 || resp.status >= 400) return resp
       const location = resp.headers.get('location')
       if (!location) return null
+      // The redirect hop's body is never read; cancel it so the socket — a
+      // keep-alive global-dispatcher socket especially — returns to its pool
+      // now instead of lingering until the keep-alive timeout.
+      try {
+        await resp.body?.cancel()
+      } catch {
+        // a locked or already-consumed body has nowhere to drain to
+      }
       try {
         current = new URL(location, current).toString()
       } catch {

@@ -187,16 +187,28 @@ describe('pinnedLookup', () => {
     ],
   }
 
-  it('answers with exactly the validated addresses, ignoring the OS resolver', () => {
+  it('answers the single-address shape net.connect expects without all:true', () => {
     const cb = vi.fn()
     pinnedLookup(target)('cdn.example', {}, cb)
+    expect(cb).toHaveBeenCalledWith(null, '198.18.1.66', 4)
+  })
+
+  it('honors the connect-time family hint on the single-address path', () => {
+    const cb = vi.fn()
+    pinnedLookup(target)('cdn.example', { family: 6 }, cb)
+    expect(cb).toHaveBeenCalledWith(null, '2001:db8::1', 6)
+  })
+
+  it('answers the happy-eyeballs array shape under all:true', () => {
+    const cb = vi.fn()
+    pinnedLookup(target)('cdn.example', { all: true }, cb)
     expect(cb).toHaveBeenCalledWith(null, target.addresses)
   })
 
   it('normalizes case, brackets and trailing dots before comparing the host', () => {
     const cb = vi.fn()
     pinnedLookup(target)('CDN.EXAMPLE.', {}, cb)
-    expect(cb).toHaveBeenCalledWith(null, target.addresses)
+    expect(cb).toHaveBeenCalledWith(null, '198.18.1.66', 4)
   })
 
   it('fails closed on a hostname that was not validated', () => {
@@ -306,6 +318,41 @@ describe('fetchWithSsrfGuard', () => {
     const fetchImpl = vi.fn().mockResolvedValue(final)
     await fetchWithSsrfGuard('https://8.8.8.8/x.png', { fetchImpl })
     expect((fetchImpl.mock.calls[0][1] as { dispatcher?: unknown }).dispatcher).toBeUndefined()
+  })
+
+  it('skips pinning when a forward proxy owns the global dispatcher', async () => {
+    const undici = await import('undici')
+    const prior = undici.getGlobalDispatcher()
+    undici.setGlobalDispatcher(new undici.ProxyAgent('http://127.0.0.1:9'))
+    try {
+      dnsResult('198.18.1.66')
+      const final = new Response('ok', { status: 200 })
+      const fetchImpl = vi.fn().mockResolvedValue(final)
+      await fetchWithSsrfGuard('https://www.alamy.com/x.png', { fetchImpl })
+      // the hop rides the proxy; the gate's per-hop validation still ran above
+      expect((fetchImpl.mock.calls[0][1] as { dispatcher?: unknown }).dispatcher).toBeUndefined()
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    } finally {
+      undici.setGlobalDispatcher(prior)
+    }
+  })
+
+  it('still pins when the global slot holds a foreign plain dispatcher', async () => {
+    const undici = await import('undici')
+    const prior = undici.getGlobalDispatcher()
+    // Node's bundled undici materializes its own wrapper into the shared
+    // slot once anything touches global fetch/Response — it is not a proxy,
+    // so binding must survive it (duck-typed symbol detection, no instanceof)
+    undici.setGlobalDispatcher({ dispatch: () => {} } as never)
+    try {
+      dnsResult('198.18.1.66')
+      const final = new Response('ok', { status: 200 })
+      const fetchImpl = vi.fn().mockResolvedValue(final)
+      await fetchWithSsrfGuard('https://www.alamy.com/x.png', { fetchImpl })
+      expect((fetchImpl.mock.calls[0][1] as { dispatcher?: unknown }).dispatcher).toBeDefined()
+    } finally {
+      undici.setGlobalDispatcher(prior)
+    }
   })
 
   it('refuses a redirect onto a literal fake-ip address', async () => {
