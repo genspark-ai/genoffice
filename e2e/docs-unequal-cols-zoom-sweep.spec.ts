@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import JSZip from 'jszip'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
@@ -28,6 +27,19 @@ function cjkParagraphs(count: number, chars: number): string {
     { length: count },
     (_, i) => `<w:p><w:r><w:t>第${i + 1}段 ${body}</w:t></w:r></w:p>`,
   ).join('')
+}
+
+/** The docs URL can load with no editor mounted (the renderer birth race
+ *  tracked upstream): a reload re-runs the bootstrap and recovers. */
+async function awaitDocsEditor(page: import('@playwright/test').Page): Promise<void> {
+  const editor = page.locator('.ProseMirror').first()
+  try {
+    await editor.waitFor({ timeout: 45_000 })
+    return
+  } catch {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await editor.waitFor({ timeout: 90_000 })
+  }
 }
 
 async function unequalColsDocx(): Promise<Buffer> {
@@ -65,18 +77,21 @@ async function unequalColsDocx(): Promise<Buffer> {
 
 test('unequal-column sections never collapse and pagination ignores zoom', async () => {
   test.setTimeout(300_000)
-  const docPath = join(tmpdir(), 'genoffice-e2e-unequal-cols.docx')
+  const artifacts = join(__dirname, 'artifacts')
+  mkdirSync(artifacts, { recursive: true })
+  const docPath = join(artifacts, 'unequal-cols-fixture.docx')
   writeFileSync(docPath, await unequalColsDocx())
   const launched = await launchShell({
     onboardingSeen: true,
     openFile: docPath,
     videoDir: 'docs-unequal-cols-zoom-sweep',
   })
-  const { page, app } = launched
+  const { app } = launched
   try {
-    await waitForPageWithUrl(app, '://docs/')
-    const editor = page.locator('.ProseMirror').first()
-    await editor.waitFor({ timeout: 120_000 })
+    // the docs editor lives in its own window/view: address THAT page,
+    // not launchShell's first window (which stays on Home)
+    const page = await waitForPageWithUrl(app, '://docs/')
+    await awaitDocsEditor(page)
     await page.waitForTimeout(2500)
 
     // collapse signature, normalized by zoom: a paragraph rendered as a
@@ -171,7 +186,9 @@ test('a corrupt w:cols count flows as one full-width column, not character slive
     '<w:sectPr><w:type w:val="continuous"/><w:cols w:num="200" w:space="720"/>' +
     '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>' +
     '</w:body></w:document>'
-  const docPath = join(tmpdir(), 'genoffice-e2e-corrupt-cols.docx')
+  const artifacts = join(__dirname, 'artifacts')
+  mkdirSync(artifacts, { recursive: true })
+  const docPath = join(artifacts, 'corrupt-cols-fixture.docx')
   const zip = new JSZip()
   zip.file(
     '[Content_Types].xml',
@@ -188,11 +205,12 @@ test('a corrupt w:cols count flows as one full-width column, not character slive
     openFile: docPath,
     videoDir: 'docs-unequal-cols-zoom-sweep',
   })
-  const { page, app } = launched
+  const { app } = launched
   try {
-    await waitForPageWithUrl(app, '://docs/')
-    const editor = page.locator('.ProseMirror').first()
-    await editor.waitFor({ timeout: 120_000 })
+    // the docs editor lives in its own window/view: address THAT page,
+    // not launchShell's first window (which stays on Home)
+    const page = await waitForPageWithUrl(app, '://docs/')
+    await awaitDocsEditor(page)
     await page.waitForTimeout(2500)
     const hits = await page.evaluate(() => {
       const zoomFactor =
