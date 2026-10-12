@@ -188,7 +188,17 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
             data-tip={t('aiMindMapReset')}
             aria-label={t('aiMindMapReset')}
           >
-            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg
+              viewBox="0 0 20 20"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
               <path d="M3.5 10a6.5 6.5 0 1 1 1.9 4.6" />
               <path d="M3.5 13.5v-3.5H7" />
             </svg>
@@ -200,7 +210,17 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
             data-tip={t('aiMindMapExport')}
             aria-label={t('aiMindMapExport')}
           >
-            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <svg
+              viewBox="0 0 20 20"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
               <path d="M10 3v8m0 0 3-3m-3 3-3-3" />
               <path d="M4 13v2a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 16 15v-2" />
             </svg>
@@ -281,7 +301,14 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
                         }
                       }}
                     >
-                      <rect x={10} y={H / 2 - 8} width={22} height={16} rx={8} data-export="badge" />
+                      <rect
+                        x={10}
+                        y={H / 2 - 8}
+                        width={22}
+                        height={16}
+                        rx={8}
+                        data-export="badge"
+                      />
                       <text
                         x={21}
                         y={H / 2}

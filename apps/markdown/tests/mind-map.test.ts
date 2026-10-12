@@ -149,10 +149,7 @@ describe('labelUnits / wrapLabel', () => {
   })
 
   it('wraps latin labels at word boundaries', () => {
-    expect(wrapLabel('Task Management Automation', 16)).toEqual([
-      'Task Management',
-      'Automation',
-    ])
+    expect(wrapLabel('Task Management Automation', 16)).toEqual(['Task Management', 'Automation'])
   })
 
   it('keeps short labels on one line', () => {
