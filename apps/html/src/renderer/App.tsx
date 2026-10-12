@@ -1587,8 +1587,12 @@ export default function App() {
       />
 
       <div className="app-main">
-        <div className={`ai-dock${aiOpen ? '' : ' collapsed'}`}>
-          {!aiOpen && (
+        <div
+          className={`ai-dock${aiOpen ? '' : ' collapsed'}${
+            !aiSidebarEnabled && !aiOpen ? ' ai-dock-off' : ''
+          }`}
+        >
+          {!aiOpen && aiSidebarEnabled && (
             <button
               className="ai-rail"
               data-tip={t('aiOpenAssistant')}
@@ -1599,20 +1603,18 @@ export default function App() {
             </button>
           )}
           {/* stays mounted while collapsed: an in-flight run, its snapshots and the loop context survive */}
-          {aiSidebarEnabled && (
-            <AiPanel
-              deps={aiDeps}
-              filePath={path}
-              preset={aiPreset}
-              editQueue={editQueue}
-              onQueueEditInstruction={queueUpdate}
-              onQueueRemove={queueRemove}
-              onQueueClear={() => setEditQueue([])}
-              onQueueFocus={queueFocus}
-              onQueueConsume={queueConsume}
-              onCollapse={() => setAiOpen(false)}
-            />
-          )}
+          <AiPanel
+            deps={aiDeps}
+            filePath={path}
+            preset={aiPreset}
+            editQueue={editQueue}
+            onQueueEditInstruction={queueUpdate}
+            onQueueRemove={queueRemove}
+            onQueueClear={() => setEditQueue([])}
+            onQueueFocus={queueFocus}
+            onQueueConsume={queueConsume}
+            onCollapse={() => setAiOpen(false)}
+          />
         </div>
         <div className="app-content">
           {findTarget && (

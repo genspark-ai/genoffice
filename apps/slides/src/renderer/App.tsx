@@ -477,7 +477,17 @@ export function App() {
     window.slidesApi.setAutoSavePref?.(autoSave)
   }, [autoSave])
   const [showAi, setShowAi] = useState(() => aiPanelInitiallyOpen('ai-slides-show-ai'))
+  // Settings › "show the AI sidebar" off hides the panel and its rail (Word's
+  // Copilot-pane model): an explicit Ask-AI action still opens the panel for
+  // this deck, and closing it returns to hidden. The dock stays mounted.
   const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
+  const [aiOpenedExplicitly, setAiOpenedExplicitly] = useState(false)
+  const prevShowAiRef = useRef(showAi)
+  useEffect(() => {
+    if (showAi && !prevShowAiRef.current) setAiOpenedExplicitly(true)
+    prevShowAiRef.current = showAi
+  }, [showAi])
+  const aiDockOpen = showAi && (aiSidebarEnabled || aiOpenedExplicitly)
   const [showFormat, setShowFormat] = useState(false)
   const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
@@ -3519,8 +3529,12 @@ export function App() {
       />
 
       <div className="app-main">
-        {slide && viewMode !== 'reading' && viewMode !== 'sorter' && aiSidebarEnabled && (
-          <div className={`ai-dock${showAi && aiSettings ? '' : ' collapsed'}`}>
+        {slide && viewMode !== 'reading' && viewMode !== 'sorter' && (
+          <div
+            className={`ai-dock${aiDockOpen && aiSettings ? '' : ' collapsed'}${
+              !aiSidebarEnabled && !aiDockOpen ? ' ai-dock-off' : ''
+            }`}
+          >
             {/* always mounted once settings load: collapse must not drop state or in-flight runs */}
             {aiSettings ? (
               <AiPanel
@@ -3535,7 +3549,7 @@ export function App() {
                 fitWidthPx={FIT_WIDTH}
                 settings={aiSettings}
                 preset={aiPreset}
-                open={showAi}
+                open={aiDockOpen}
                 onExpand={toggleAi}
                 onCollapse={toggleAi}
                 onUndo={() => void undo()}
@@ -3558,7 +3572,7 @@ export function App() {
                   setEditQueue((prev) => prev.filter((it) => !keys.includes(it.key)))
                 }
               />
-            ) : (
+            ) : aiSidebarEnabled ? (
               <button
                 className="ai-rail"
                 onClick={toggleAi}
@@ -3567,7 +3581,7 @@ export function App() {
               >
                 <GensparkMark size={22} />
               </button>
-            )}
+            ) : null}
           </div>
         )}
         <div className="app-content">

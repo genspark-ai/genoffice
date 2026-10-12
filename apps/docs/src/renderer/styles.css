@@ -12547,6 +12547,11 @@ tr > .page-gap-cut {
   width: 34px;
 }
 
+/* "show the AI sidebar" off and panel closed: no rail, no sliver */
+.ai-dock.collapsed.ai-dock-off {
+  width: 0;
+}
+
 /* while dragging the resizer, follow the pointer without easing */
 .ai-dock:has(.ai-panel-resizing) {
   transition: none;

@@ -1117,8 +1117,12 @@ export default function App() {
       />
       {status === 'loading' && <div className="center-note">{t('loading')}</div>}
       <div className="app-main" style={status === 'ready' ? undefined : { display: 'none' }}>
-        <div className={`ai-dock${aiOpen ? '' : ' collapsed'}`}>
-          {!aiOpen && (
+        <div
+          className={`ai-dock${aiOpen ? '' : ' collapsed'}${
+            !aiSidebarEnabled && !aiOpen ? ' ai-dock-off' : ''
+          }`}
+        >
+          {!aiOpen && aiSidebarEnabled && (
             <button
               className="ai-rail"
               data-tip={t('aiOpenAssistant')}
@@ -1129,7 +1133,7 @@ export default function App() {
             </button>
           )}
           {/* mounted only after the file is loaded so chat history resolves against the real path */}
-          {status === 'ready' && aiSidebarEnabled && (
+          {status === 'ready' && (
             <AiPanel
               deps={aiDeps}
               filePath={filePath}

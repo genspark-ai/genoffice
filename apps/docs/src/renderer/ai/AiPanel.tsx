@@ -309,6 +309,8 @@ interface AiPanelProps {
   preset?: { text: string; nonce: number; autoRun?: boolean } | null
   /** false shows only the collapsed rail; the component stays mounted so panel state survives */
   open?: boolean
+  /** true suppresses even the collapsed rail (the "show the AI sidebar" setting is off) */
+  hideRail?: boolean
   /** expand from the collapsed rail */
   onExpand?: () => void
   /** collapse the panel to the sidebar rail */
@@ -352,6 +354,7 @@ export function AiPanel({
   numIdFallback,
   preset,
   open = true,
+  hideRail = false,
   onExpand,
   onCollapse,
   filePath,
@@ -1339,6 +1342,8 @@ export function AiPanel({
 
   // collapsed: rail only — after all hooks, so the instance and its state survive
   if (!open) {
+    // the sidebar setting is off: nothing to show until an explicit AI action opens the panel
+    if (hideRail) return null
     return (
       <button
         className="ai-rail"

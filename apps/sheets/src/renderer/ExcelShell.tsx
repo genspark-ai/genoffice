@@ -551,8 +551,9 @@ export function ExcelShell({
   useEffect(() => {
     rememberAiPanelOpen('ai-sheets-show-ai', isCopilotOpen)
   }, [isCopilotOpen])
-  // the "show the AI sidebar" setting off: no copilot at all, and toggles can't open it
-  const copilotOpen = isCopilotOpen && aiSidebarEnabled
+  // the "show the AI sidebar" setting off hides the copilot rail (soft hide):
+  // an explicit AI action (ribbon run, toggle) still opens the panel, and
+  // closing it returns to hidden — no dead affordances, no invisible runs
   const [showFormatCells, setShowFormatCells] = useState(false)
   const [axisSizeTarget, setAxisSizeTarget] = useState<'row' | 'col' | null>(null)
   const [showLinkDialog, setShowLinkDialog] = useState(false)
@@ -822,7 +823,7 @@ export function ExcelShell({
 
   return (
     <main
-      className={`app-shell ${copilotOpen ? '' : 'copilot-collapsed'}`}
+      className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}`}
       inert={openingWorkbook}
       aria-busy={openingWorkbook}
     >
@@ -944,7 +945,8 @@ export function ExcelShell({
       {/* AI panel docks on the left, full height under the ribbon (unified with docs) */}
       <div className="sheet-body">
         <AiChatPanel
-          isOpen={copilotOpen}
+          isOpen={isCopilotOpen}
+          hideRail={!aiSidebarEnabled}
           hasContent={sheetHasContent}
           chat={chat}
           {...(historicChat !== undefined ? { historicChat } : {})}
