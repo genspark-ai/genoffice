@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { lookup } from 'node:dns/promises'
+import { Agent } from 'undici'
 import {
   fetchWithSsrfGuard,
   isBlockedAddress,
   isFakeIpDnsArtifact,
   isSafeRemoteUrl,
+  pinnedLookup,
+  resolveSafeRemoteTarget,
+  type SafeRemoteTarget,
 } from '../src/safe-remote-url'
 
 // hostname checks resolve through node:dns/promises; tests stub it so VPN
@@ -81,6 +85,7 @@ describe('isSafeRemoteUrl', () => {
     'http://[::1]/x.png',
     'http://[::ffff:127.0.0.1]/x.png',
     'http://10.0.0.1/x.png',
+    'http://198.18.9.9/x.png', // fake-ip range as a URL literal is still refused
   ])('rejects literal internal target %s', async (url) => {
     await expect(isSafeRemoteUrl(url)).resolves.toBe(false)
   })
@@ -125,22 +130,81 @@ describe('isSafeRemoteUrl', () => {
     await expect(isSafeRemoteUrl('https://www.alamy.com/x.png')).resolves.toBe(true)
   })
 
-  it('still rejects the fake-ip range written as a URL literal', async () => {
-    await expect(isSafeRemoteUrl('http://198.18.1.66/x.png')).resolves.toBe(false)
-  })
-
-  it.each([
-    ['169.254.169.254'], // cloud metadata via a name is still an SSRF attempt
-    ['10.0.0.7'],
-    ['192.168.1.50'],
-  ])('still rejects a hostname resolving into %s', async (address) => {
-    dnsResult(address)
-    await expect(isSafeRemoteUrl('https://internal.example/x.png')).resolves.toBe(false)
-  })
+  it.each([['169.254.169.254'], ['10.0.0.7'], ['192.168.1.50']])(
+    'still rejects a hostname resolving into %s',
+    async (address) => {
+      dnsResult(address)
+      await expect(isSafeRemoteUrl('https://internal.example/x.png')).resolves.toBe(false)
+    },
+  )
 
   it('rejects a name whose answers mix fake-ip with a real internal address', async () => {
     dnsResult('198.18.1.66', '192.168.1.50')
     await expect(isSafeRemoteUrl('https://mixed.example/x.png')).resolves.toBe(false)
+  })
+})
+
+describe('resolveSafeRemoteTarget', () => {
+  it('hands back the validated addresses so a connection can bind to them', async () => {
+    dnsResult('93.184.216.34', '93.184.216.35')
+    const target = await resolveSafeRemoteTarget('https://www.example.com/x.png')
+    expect(target).toMatchObject({
+      url: 'https://www.example.com/x.png',
+      hostname: 'www.example.com',
+      literal: false,
+      addresses: [
+        { address: '93.184.216.34', family: 4 },
+        { address: '93.184.216.35', family: 4 },
+      ],
+    })
+  })
+
+  it('marks literal targets and carries the literal itself as the address', async () => {
+    const target = await resolveSafeRemoteTarget('https://8.8.8.8/x.png')
+    expect(target).toMatchObject({
+      hostname: '8.8.8.8',
+      literal: true,
+      addresses: [{ address: '8.8.8.8', family: 4 }],
+    })
+    expect(vi.mocked(lookup)).not.toHaveBeenCalled()
+  })
+
+  it('carries fake-ip answers as valid targets (the connection rides the tunnel)', async () => {
+    dnsResult('198.18.1.66')
+    const target = await resolveSafeRemoteTarget('https://www.alamy.com/x.png')
+    expect(target?.addresses).toEqual([{ address: '198.18.1.66', family: 4 }])
+  })
+})
+
+describe('pinnedLookup', () => {
+  const target: SafeRemoteTarget = {
+    url: 'https://cdn.example/x.png',
+    hostname: 'cdn.example',
+    literal: false,
+    addresses: [
+      { address: '198.18.1.66', family: 4 },
+      { address: '2001:db8::1', family: 6 },
+    ],
+  }
+
+  it('answers with exactly the validated addresses, ignoring the OS resolver', () => {
+    const cb = vi.fn()
+    pinnedLookup(target)('cdn.example', {}, cb)
+    expect(cb).toHaveBeenCalledWith(null, target.addresses)
+  })
+
+  it('normalizes case, brackets and trailing dots before comparing the host', () => {
+    const cb = vi.fn()
+    pinnedLookup(target)('CDN.EXAMPLE.', {}, cb)
+    expect(cb).toHaveBeenCalledWith(null, target.addresses)
+  })
+
+  it('fails closed on a hostname that was not validated', () => {
+    const cb = vi.fn()
+    pinnedLookup(target)('evil.example', {}, cb)
+    expect(cb).toHaveBeenCalledTimes(1)
+    expect(cb.mock.calls[0][0]).toBeInstanceOf(Error)
+    expect(cb.mock.calls[0][1]).toBe('')
   })
 })
 
@@ -228,13 +292,20 @@ describe('fetchWithSsrfGuard', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('fetches through a fake-ip answer and the connection rides the VPN tunnel', async () => {
+  it('pins hostname hops with a dispatcher bound to the validated addresses', async () => {
     dnsResult('198.18.1.66')
     const final = new Response('ok', { status: 200 })
     const fetchImpl = vi.fn().mockResolvedValue(final)
-    const out = await fetchWithSsrfGuard('https://www.alamy.com/x.png', { fetchImpl })
-    expect(out).toBe(final)
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    await fetchWithSsrfGuard('https://www.alamy.com/x.png', { fetchImpl })
+    const dispatcher = (fetchImpl.mock.calls[0][1] as { dispatcher?: unknown }).dispatcher
+    expect(dispatcher).toBeInstanceOf(Agent)
+  })
+
+  it('sends literal-IP hops without a dispatcher (nothing to pin)', async () => {
+    const final = new Response('ok', { status: 200 })
+    const fetchImpl = vi.fn().mockResolvedValue(final)
+    await fetchWithSsrfGuard('https://8.8.8.8/x.png', { fetchImpl })
+    expect((fetchImpl.mock.calls[0][1] as { dispatcher?: unknown }).dispatcher).toBeUndefined()
   })
 
   it('refuses a redirect onto a literal fake-ip address', async () => {
