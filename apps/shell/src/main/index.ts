@@ -3219,9 +3219,73 @@ function applyMenuFor(kind: TabKind): void {
       buildHomeMenu()
   }
   withUserGuide()
+  withViewMenu()
 }
 
-/// Interface scale (#1913). Read once at boot, then replaced by the View menu.
+/**
+ * The View › interface-scale items, shared by the home menu and every editor
+ * tab. CmdOrCtrl+Alt (not Shift): Shift+= is Sheets insert-cells and Docs
+ * superscript, and the View menu now exists on editor tabs too, where those
+ * accelerators are taken.
+ */
+function uiScaleMenuItems(): MenuItemConstructorOptions[] {
+  return [
+    {
+      label: tm('menuUiZoomIn'),
+      accelerator: 'CmdOrCtrl+Alt+=',
+      click: () => changeUiScale(APP_SETTINGS_PATH(), 1),
+    },
+    {
+      label: tm('menuUiZoomOut'),
+      accelerator: 'CmdOrCtrl+Alt+-',
+      click: () => changeUiScale(APP_SETTINGS_PATH(), -1),
+    },
+    { type: 'separator' },
+    {
+      label: tm('menuUiZoomReset'),
+      accelerator: 'CmdOrCtrl+Alt+0',
+      click: () => changeUiScale(APP_SETTINGS_PATH(), 0),
+    },
+  ]
+}
+
+function viewMenuTemplate(): MenuItemConstructorOptions {
+  return { label: tm('menuView'), submenu: uiScaleMenuItems() }
+}
+
+/**
+ * Interface-scale items in the View menu of every tab kind. Editor menus are
+ * built in the editor apps (docs/sheets/slides) or by the three shell-owned
+ * builders, so rather than teaching seven menu builders about the scale, the
+ * current menu is post-processed here — the same shape as withUserGuide below.
+ * An existing View menu (docs, slides: document zoom) gains the items after a
+ * separator; the rest get a fresh View menu inserted before the Help menu that
+ * withUserGuide has just guaranteed.
+ */
+function withViewMenu(): void {
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return
+  const hasScale = menu.items.some((item) =>
+    item.submenu?.items.some((i) => i.accelerator === 'CmdOrCtrl+Alt+='),
+  )
+  if (hasScale) return
+  const view = menu.items.find((item) => item.label === tm('menuView'))
+  if (view?.submenu) {
+    // build the separator together with the items: Electron drops a separator
+    // that sits alone in a template
+    for (const item of Menu.buildFromTemplate([{ type: 'separator' }, ...uiScaleMenuItems()])
+      .items) {
+      view.submenu.append(item)
+    }
+    return
+  }
+  const viewItem = Menu.buildFromTemplate([viewMenuTemplate()]).items[0]!
+  const helpIdx = menu.items.findIndex((item) => item.role === 'help')
+  if (helpIdx === -1) menu.append(viewItem)
+  else menu.insert(helpIdx, viewItem)
+}
+
+/// Interface scale (genoffice#1913). Read once at boot, then replaced by the View menu.
 let currentUiScale = 1
 
 /**
@@ -3324,7 +3388,7 @@ function createShellWindow(): void {
   // document back. The strip reports the insertion slot for each preview
   // (lastDockIndex); the slot is consumed by the dock that follows.
   setDockHost({
-    band: () => dockBandFor(win),
+    band: () => dockBandFor(win, currentUiScale),
     preview: (x) => {
       if (!win.isDestroyed())
         win.webContents.send(TABS_CHANNELS.dockPreview, x === null ? null : { x })
@@ -4965,27 +5029,7 @@ function buildHomeMenu(): void {
         { role: 'close', label: tm('menuClose') },
       ],
     },
-    {
-      label: tm('menuView'),
-      submenu: [
-        {
-          label: tm('menuUiZoomIn'),
-          accelerator: 'CmdOrCtrl+Shift+=',
-          click: () => changeUiScale(APP_SETTINGS_PATH(), 1),
-        },
-        {
-          label: tm('menuUiZoomOut'),
-          accelerator: 'CmdOrCtrl+Shift+-',
-          click: () => changeUiScale(APP_SETTINGS_PATH(), -1),
-        },
-        { type: 'separator' },
-        {
-          label: tm('menuUiZoomReset'),
-          accelerator: 'CmdOrCtrl+Shift+0',
-          click: () => changeUiScale(APP_SETTINGS_PATH(), 0),
-        },
-      ],
-    },
+    viewMenuTemplate(),
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
     windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
     {

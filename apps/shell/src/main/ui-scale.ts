@@ -1,5 +1,5 @@
 /**
- * Interface scale (issue #1913) — the user's "make the UI bigger" preference.
+ * Interface scale (issue genoffice#1913) — the user's "make the UI bigger" preference.
  *
  * ## Why a CSS variable and not `webContents.setZoomFactor()`
  *
@@ -19,9 +19,14 @@
  * ## What this costs, honestly
  *
  * `zoom` on a container is not the same as re-sizing the chrome in `rem`. It
- * scales the pixels, so a scaled-up ribbon needs proportionally more room and
- * the window's minimum size should scale with it. That is a known rough edge,
- * not something this hides.
+ * scales the pixels, so a scaled-up surface needs proportionally more room and
+ * shows fewer items inside a window that stays the same size. Surfaces that do
+ * not reflow clip instead of shrinking: at 175/200% the ribbon fits fewer items
+ * and scrolls, the AI panel scrolls vertically, and Univer's formula bar and
+ * sheet tabs keep rendering at 100%. Until those reflow, the presets stop at
+ * 150% — the largest step every surface holds without clipping — and the higher
+ * steps (plus Docs/Slides/PDF/Markdown/HTML chrome, which follow in a part 2)
+ * wait for that work rather than shipping a setting that breaks the layout.
  */
 import { webContents } from 'electron'
 
@@ -33,13 +38,12 @@ export const UI_SCALE_KEY = 'uiScale'
 /**
  * Presets offered by the View menu.
  *
- * `zoom` scales pixels and does not give the layout more room, so a chrome
- * surface that does not reflow shows fewer items at 200% rather than smaller
- * ones — the same thing a rem/calc rewrite would do, because both scale the
- * content inside a window that stays the same size. What differs is only which
- * declarations have to change, not what the result looks like.
+ * Capped at 150% on purpose: `zoom` scales pixels without giving the layout
+ * more room, and past 150% surfaces that do not reflow (the ribbon, the AI
+ * panel, Univer's formula bar and sheet tabs) clip instead of shrinking. The
+ * higher steps land with the chrome reflow, not before it.
  */
-export const UI_SCALE_STEPS = [1, 1.1, 1.25, 1.5, 1.75, 2] as const
+export const UI_SCALE_STEPS = [1, 1.1, 1.25, 1.5] as const
 
 export const UI_SCALE_MIN = UI_SCALE_STEPS[0]
 export const UI_SCALE_MAX = UI_SCALE_STEPS[UI_SCALE_STEPS.length - 1]

@@ -107,7 +107,7 @@ export class TabManager {
     /** localized placeholder title for a tab that has no file yet */
     private readonly untitledTitleFor?: (kind: TabKind) => string,
     /**
-     * The live interface scale (#1913). A getter rather than a value so a change
+     * The live interface scale (genoffice#1913). A getter rather than a value so a change
      * made from the View menu reaches the next layout without rebuilding this.
      */
     private readonly uiScale: () => number = () => 1,
