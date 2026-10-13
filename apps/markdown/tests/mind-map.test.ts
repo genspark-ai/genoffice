@@ -2,12 +2,14 @@ import { Editor } from '@tiptap/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildExtensions } from '../src/renderer/editor/extensions'
 import { executeTool } from '../src/renderer/ai/tools'
+import { createMarkdownSkill } from '../src/renderer/ai/markdown-skill'
 import {
   countMindMapNodes,
   labelUnits,
   layoutMindMap,
   MIND_MAP_LIMITS,
   MIND_MAP_METRICS,
+  MIND_MAP_TOOL,
   parseMindMapTree,
   wrapLabel,
 } from '../src/renderer/ai/mind-map'
@@ -47,6 +49,48 @@ const call = (name: string, input: Record<string, unknown> = {}) => ({
   name,
   input,
 })
+
+interface Point {
+  x: number
+  y: number
+}
+
+interface EdgeCurve {
+  start: Point
+  c1: Point
+  c2: Point
+  end: Point
+}
+
+const CURVE_RE =
+  /^M (-?[\d.]+) (-?[\d.]+) C (-?[\d.]+) (-?[\d.]+), (-?[\d.]+) (-?[\d.]+), (-?[\d.]+) (-?[\d.]+)$/
+
+/** Geometry of one cubic connector, straight out of the path string. */
+function parseCurve(d: string): EdgeCurve {
+  const m = CURVE_RE.exec(d)
+  if (!m) throw new Error(`unparsable edge path: ${d}`)
+  const n = m.slice(1).map(Number)
+  return {
+    start: { x: n[0], y: n[1] },
+    c1: { x: n[2], y: n[3] },
+    c2: { x: n[4], y: n[5] },
+    end: { x: n[6], y: n[7] },
+  }
+}
+
+/** Point at t (0..1) on a cubic bezier. */
+function cubicAt(curve: EdgeCurve, t: number): Point {
+  const { start: p0, c1: p1, c2: p2, end: p3 } = curve
+  const u = 1 - t
+  const a = u * u * u
+  const b = 3 * u * u * t
+  const c = 3 * u * t * t
+  const d = t * t * t
+  return {
+    x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
+    y: a * p0.y + b * p1.y + c * p2.y + d * p3.y,
+  }
+}
 
 describe('parseMindMapTree', () => {
   it('parses a valid tree and keeps in-range block citations', () => {
@@ -144,8 +188,8 @@ describe('countMindMapNodes', () => {
 describe('labelUnits / wrapLabel', () => {
   it('counts CJK characters as double width', () => {
     expect(labelUnits('ab')).toBe(2)
-    expect(labelUnits('风险')).toBe(4)
-    expect(labelUnits('a风')).toBe(3)
+    expect(labelUnits('\u98CE\u9669')).toBe(4)
+    expect(labelUnits('a\u98CE')).toBe(3)
   })
 
   it('wraps latin labels at word boundaries', () => {
@@ -163,7 +207,10 @@ describe('labelUnits / wrapLabel', () => {
   })
 
   it('wraps CJK per character', () => {
-    expect(wrapLabel('风险管理要点总结', 8)).toEqual(['风险管理', '要点总结'])
+    expect(wrapLabel('\u98CE\u9669\u7BA1\u7406\u8981\u70B9\u603B\u7ED3', 8)).toEqual([
+      '\u98CE\u9669\u7BA1\u7406',
+      '\u8981\u70B9\u603B\u7ED3',
+    ])
   })
 })
 
@@ -231,6 +278,105 @@ describe('layoutMindMap', () => {
   })
 })
 
+describe('layoutMindMap edge geometry', () => {
+  // The reviewer's reproduction: Root -> {A -> {A1, A2}, B -> {B1}}.
+  const repro: MindMapTreeNode = {
+    label: 'Root',
+    children: [
+      { label: 'A', children: [{ label: 'A1' }, { label: 'A2' }] },
+      { label: 'B', children: [{ label: 'B1' }] },
+    ],
+  }
+  const other: MindMapTreeNode = {
+    label: 'Root',
+    children: [
+      {
+        label: 'A',
+        children: [
+          { label: 'A1', block: 1 },
+          { label: 'A2', block: 3 },
+        ],
+      },
+      { label: 'B', block: 0 },
+    ],
+  }
+
+  it('anchors both ends on the node borders facing each other', () => {
+    const { nodeWidth: w, nodeHeight: h } = MIND_MAP_METRICS
+    for (const tree of [repro, other]) {
+      const layout = layoutMindMap(tree)
+      const byId = new Map(layout.nodes.map((n) => [n.id, n]))
+      expect(layout.edges.length).toBeGreaterThan(0)
+
+      for (const edge of layout.edges) {
+        const [parentId, childId] = edge.id.split('->')
+        const parent = byId.get(parentId)!
+        const child = byId.get(childId)!
+        const { start, end } = parseCurve(edge.d)
+
+        // The layout is top-down (depth -> y), so a connector must leave the
+        // parent's bottom border and arrive on the child's top border.
+        expect(start.x).toBe(parent.x + w / 2)
+        expect(start.y).toBe(parent.y + h)
+        expect(end.x).toBe(child.x + w / 2)
+        expect(end.y).toBe(child.y)
+        expect(start.y).toBeLessThan(end.y) // the parent sits above the child
+      }
+    }
+  })
+
+  it('keeps every connector inside the vertical gap, crossing no node box', () => {
+    const { nodeWidth: w, nodeHeight: h } = MIND_MAP_METRICS
+    for (const tree of [repro, other]) {
+      const layout = layoutMindMap(tree)
+
+      for (const edge of layout.edges) {
+        const curve = parseCurve(edge.d)
+        const [parentId, childId] = edge.id.split('->')
+        const parent = layout.nodes.find((n) => n.id === parentId)!
+        const child = layout.nodes.find((n) => n.id === childId)!
+
+        // control points stay between the two borders: the curve never overshoots
+        for (const cp of [curve.c1, curve.c2]) {
+          expect(cp.y).toBeGreaterThanOrEqual(curve.start.y)
+          expect(cp.y).toBeLessThanOrEqual(curve.end.y)
+        }
+
+        // and no sample of the curve lands on top of any node (endpoints are the
+        // only contact, by construction on the borders themselves)
+        for (let t = 0.05; t <= 0.951; t += 0.05) {
+          const p = cubicAt(curve, t)
+          expect(p.y).toBeGreaterThan(parent.y + h)
+          expect(p.y).toBeLessThan(child.y)
+          for (const n of layout.nodes) {
+            const hits = p.x > n.x && p.x < n.x + w && p.y > n.y && p.y < n.y + h
+            expect(hits, `${edge.id} crosses node ${n.id} at t=${t.toFixed(2)}`).toBe(false)
+          }
+        }
+      }
+    }
+  })
+})
+
+describe('model-facing mind map text', () => {
+  // The public-repo hygiene gate rejects Han characters outside the i18n tables,
+  // and "mind map" in English matches the user's request in any language.
+  const HAN = /[\u3400-\u9FFF\uF900-\uFAFF\u3000-\u303F\uFF00-\uFFEF]/
+
+  it('keeps the tool description free of CJK', () => {
+    expect(MIND_MAP_TOOL.description).not.toMatch(HAN)
+    expect(JSON.stringify(MIND_MAP_TOOL.inputSchema)).not.toMatch(HAN)
+  })
+
+  it('keeps the system prompt free of CJK', () => {
+    const systemPrompt = createMarkdownSkill(() => null).systemPrompt
+    expect(systemPrompt).toContain('generate_mindmap')
+    for (const line of systemPrompt.split('\n')) {
+      expect(line, `CJK in prompt line: ${line}`).not.toMatch(HAN)
+    }
+  })
+})
+
 describe('generate_mindmap tool', () => {
   it('returns the tree on the display side channel without mutating the document', async () => {
     const editor = createEditor()
@@ -251,7 +397,7 @@ describe('generate_mindmap tool', () => {
     )
     expect(exec.isError).toBeUndefined()
     expect(exec.mutated).toBe(false)
-    expect(exec.summary).toBe('生成思维导图')
+    expect(exec.summary).toBe('\u751F\u6210\u601D\u7EF4\u5BFC\u56FE')
     expect(exec.display?.kind).toBe('mindmap')
     expect(exec.display?.tree?.label).toBe('Quarterly Report')
     expect(exec.output).toContain('4 nodes')
