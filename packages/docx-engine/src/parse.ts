@@ -4106,7 +4106,19 @@ function extractRuns(
       const id = attrsOf(noteRefNode)['w:id']
       if (id) {
         const num = ctx.noteNumbers.get(`${kind}:${id}`)
-        pushRun({ text: String(num ?? '*'), noteRef: { kind, id } }, rev)
+        // the marker's rPr rides along verbatim (rStyle FootnoteReference, the
+        // fonts, the size): the run skips buildRun, so without this the
+        // properties exist nowhere and any edit to the paragraph restyles the
+        // marker to a bare superscript
+        const markerRPr = findChild(node, 'w:rPr')
+        pushRun(
+          {
+            text: String(num ?? '*'),
+            noteRef: { kind, id },
+            ...(markerRPr ? { rawRPr: serializeXNode(markerRPr) } : {}),
+          },
+          rev,
+        )
         return
       }
     }
