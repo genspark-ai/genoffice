@@ -11,20 +11,21 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import { modelTextOf, redactionCount } from '../src/renderer/ai/redact-view'
 
 /**
- * Why the right-click item is offered for text only.
- *
- * These are characterisation tests: they pin down what the mark does to a
- * picture, so the decision to leave pictures out of the menu has a reason
- * behind it rather than a shrug. They are the empirical result of asking
- * whether a picture can be withheld, and they must keep passing.
+ * What the withhold mark does to a picture.
  *
  * A picture alone in a paragraph is a *block* node (docProtected), and marks do
- * not apply to block nodes. A picture beside text, or in a table cell, is an
- * inline atom, and there the mark does stick and the model view is right — but
- * the .docx save path builds an image run from the node's attributes and never
- * looks at the node's marks, so the mark is dropped on save and the load path
- * never rebuilds it. Text takes neither of these detours: the mark rides the
- * run's rPr in both directions, which is what makes it safe to offer.
+ * not apply to block nodes — addMark is accepted and does nothing. A picture
+ * beside text, or in a table cell, is an inline atom, and there the mark
+ * sticks: the model view reads the marker, and since the mainline let inline
+ * atoms carry marks, the .docx round trip keeps it too — the save writes the
+ * run's rPr from the node's marks (bdr + our element) and the load path lifts
+ * the label back out of the raw rPr, exactly the route text takes.
+ *
+ * The right-click entry still offers the item for text only: it is built on
+ * the text selection, and "withhold this photo" needs its own affordance (a
+ * label on a thing the reader cannot partially select) before it is worth
+ * offering. What these tests pin is that the plumbing would not silently drop
+ * or corrupt a mark if one got there.
  */
 
 const editors = new Set<Editor>()
@@ -84,7 +85,7 @@ async function roundTrip(editor: Editor, parsed: Awaited<ReturnType<typeof open>
   return reloaded
 }
 
-describe('a picture cannot be withheld, and the reason is the docx round trip', () => {
+describe('a picture and the withhold mark — what sticks, what round-trips', () => {
   it('a picture alone in a paragraph is a block node, and blocks take no marks', async () => {
     const { editor } = await open(BLOCK_XML)
     expect(findNode(editor, 'docInlineImage').node).toBeNull()
@@ -111,9 +112,10 @@ describe('a picture cannot be withheld, and the reason is the docx round trip', 
     expect(JSON.stringify(modelTextOf(editor.getJSON() as never))).not.toContain('base64')
   })
 
-  it('but the mark on an inline picture is dropped by the save', async () => {
-    // This is the reason the menu offers the item for text only. The decision
-    // looks right in the editor and is gone after one save, with no warning.
+  it('a withheld inline picture survives the save', async () => {
+    // the save writes the mark's element into the picture run's rPr and the
+    // load lifts it back out — the same route text takes, so nothing is lost
+    // or corrupted if a marked picture reaches the file
     const { editor, parsed } = await open(INLINE_XML)
     const { pos } = findNode(editor, 'docInlineImage')
     editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
@@ -121,19 +123,19 @@ describe('a picture cannot be withheld, and the reason is the docx round trip', 
     expect(redactionCount(editor.getJSON() as never)).toBe(1)
 
     const reloaded = await roundTrip(editor, parsed)
-    expect(markNames(findNode(reloaded, 'docInlineImage').node)).toEqual([])
-    expect(redactionCount(reloaded.getJSON() as never)).toBe(0)
+    expect(markNames(findNode(reloaded, 'docInlineImage').node)).toContain('redaction')
+    expect(redactionCount(reloaded.getJSON() as never)).toBe(1)
   })
 
-  it('and the load path does not rebuild the mark either', async () => {
-    // the mirror image of the save gap: a file that really does carry the
-    // element on a picture run comes back with the mark missing
+  it('and the load path rebuilds the mark from the file\'s element', async () => {
+    // a file that really does carry the element on a picture run comes back
+    // withholding the picture, not showing it to the model
     const { editor } = await open(INLINE_REDACT_XML)
     const { node } = findNode(editor, 'docInlineImage')
-    // the raw rPr is kept on the node, so the bytes survive; the mark is not rebuilt
+    // the raw rPr is kept on the node, so the bytes survive
     expect(String(node.attrs.rawRPr ?? '')).toContain('go:redact')
-    expect(markNames(node)).toEqual([])
-    expect(redactionCount(editor.getJSON() as never)).toBe(0)
+    expect(markNames(node)).toContain('redaction')
+    expect(redactionCount(editor.getJSON() as never)).toBe(1)
   })
 
   it('the same treatment on text round trips, which is what makes it safe to offer', async () => {
