@@ -1,4 +1,4 @@
-import { Mark, Extension, mergeAttributes } from '@tiptap/core'
+import { Mark, Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
@@ -27,6 +27,108 @@ export function wikilinkStart(src: string): number {
   return -1
 }
 
+/**
+ * A `[[...]]` literal and the text it covers.
+ *
+ * The literal is read from the text, not from the mark's attributes: the text
+ * IS the link (that is what `parseMarkdown` puts there), so it is what an edit
+ * changes, what the save writes and what has to be resolved. Attributes are
+ * written once while parsing and keep answering for the pre-edit target.
+ */
+interface WikiSpan {
+  /** the link as written, brackets included: `[[Note|Alias]]` */
+  raw: string
+  /** document positions the literal covers */
+  from: number
+  to: number
+}
+
+/** the `[[...]]` literals in `text`, in order; one run can spell several */
+function wikiLiterals(text: string): { start: number; end: number; raw: string }[] {
+  const out: { start: number; end: number; raw: string }[] = []
+  for (let at = 0; at < text.length;) {
+    const match = WIKI_LINK_RE.exec(text.slice(at))
+    if (!match) break
+    out.push({ start: at, end: at + match[0].length, raw: match[0] })
+    at += match[0].length
+  }
+  return out
+}
+
+const isWikiText = (node: PmNode | null | undefined): boolean =>
+  !!node?.isText && node.marks.some((mark) => mark.type.name === 'wikiLink')
+
+/**
+ * Every link in the document, with the positions it covers.
+ *
+ * The siblings under one mark are gathered before the run is read, because a
+ * literal can be spread over several text nodes — an inline mark inside the
+ * brackets (`[[Note *x*]]`) splits it, and an edit can leave the mark wider
+ * than the link (`[[Note]]X`) or wider than any link at all (`[[Note` after the
+ * closing brackets are deleted). What makes a link is the brackets, not the
+ * extent of the mark.
+ */
+function wikiSpans(doc: PmNode): WikiSpan[] {
+  const spans: WikiSpan[] = []
+  const walked = new Set<PmNode>()
+  doc.descendants((node, pos, parent, index) => {
+    if (!parent || !isWikiText(node) || walked.has(node)) return
+    const kids: PmNode[] = []
+    parent.forEach((child) => kids.push(child))
+    let first = index
+    while (first > 0 && isWikiText(kids[first - 1])) first--
+    let runStart = pos
+    for (let i = index; i > first; i--) runStart -= kids[i]!.nodeSize
+    let text = ''
+    for (let i = first; i < kids.length && isWikiText(kids[i]); i++) {
+      walked.add(kids[i]!)
+      text += kids[i]!.text ?? ''
+    }
+    for (const link of wikiLiterals(text)) {
+      // a literal split by an inline mark covers several nodes; one the edit
+      // extended past its brackets covers part of a single node
+      let cursor = runStart
+      for (let i = first; i < kids.length; i++) {
+        const end = cursor + kids[i]!.nodeSize
+        const from = Math.max(cursor, runStart + link.start)
+        const to = Math.min(end, runStart + link.end)
+        if (to > from) spans.push({ raw: link.raw, from, to })
+        cursor = end
+        if (cursor >= runStart + link.end) break
+      }
+    }
+  })
+  return spans
+}
+
+/** every distinct wiki target in the document, in document order */
+export function collectWikiTargets(doc: PmNode): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const span of wikiSpans(doc)) {
+    if (seen.has(span.raw)) continue
+    seen.add(span.raw)
+    out.push(span.raw)
+  }
+  return out
+}
+
+/**
+ * Where a `#fragment` lands in a note: inside the heading it names, or null
+ * when the note has no such heading. A `#^block` ref needs block ids, which
+ * this schema does not carry yet, so it opens the note without a position.
+ */
+export function wikiFragmentPosition(doc: PmNode, fragment: string): number | null {
+  const want = fragment.trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!want) return null
+  let found: number | null = null
+  doc.descendants((node, pos) => {
+    if (found !== null || node.type.name !== 'heading') return
+    if (node.textContent.replace(/\s+/g, ' ').trim().toLowerCase() === want) found = pos + 1
+  })
+  return found
+}
+
 export interface WikiLinkOptions {
   /** absolute path of the open document; '' while it is untitled */
   getDocumentPath(): string
@@ -45,24 +147,16 @@ interface WikiState {
 
 const EMPTY: WikiState = { decorations: DecorationSet.empty, answers: {} }
 
-/** every distinct wiki target in the document, in document order */
-export function collectWikiTargets(doc: PmNode): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  doc.descendants((node) => {
-    if (!node.isText) return
-    for (const mark of node.marks) {
-      if (mark.type.name !== 'wikiLink') continue
-      const raw = mark.attrs.raw as string
-      if (typeof raw !== 'string' || raw === '' || seen.has(raw)) continue
-      seen.add(raw)
-      out.push(raw)
-    }
-  })
-  return out
-}
-
 const key = new PluginKey<WikiState>('wikiLinkResolve')
+
+/**
+ * The text under a wiki mark. The serializer asks for the opening and closing
+ * wrapper by rendering the mark against a placeholder node — a plain object
+ * carrying `content`, not a real ProseMirror node — so both shapes are read.
+ */
+function markedText(node: any): string {
+  return node.textContent ?? node.content?.[0]?.text ?? ''
+}
 
 /**
  * Resolution lives in plugin state, not on the mark: a mark attribute is
@@ -85,38 +179,39 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
     const options = this.options
     let timer: ReturnType<typeof setTimeout> | undefined
     let generation = 0
+    /** what the last resolution asked for; a pause that asks the same thing again is not a new question */
+    let asked = ''
 
     const resolveNow = async (view: EditorView) => {
       const targets = collectWikiTargets(view.state.doc)
       if (targets.length === 0) {
+        asked = ''
         if (view.isDestroyed) return
         view.dispatch(view.state.tr.setMeta(key, { decorations: DecorationSet.empty, answers: {} }))
         return
       }
+      const fromPath = options.getDocumentPath()
+      const question = `${fromPath}\u0000${targets.join('\u0000')}`
+      // the walk it triggers can read twenty thousand entries; typing prose
+      // around an unresolved link changes no target, so it asks nothing
+      if (question === asked) return
       const mine = ++generation
       let answers: Record<string, WikiLinkResolved>
       try {
-        answers = await options.resolve(options.getDocumentPath(), targets)
+        answers = await options.resolve(fromPath, targets)
       } catch {
         return // an unavailable resolver must not break editing
       }
       // a later keystroke started a newer resolution; its answer is the current one
       if (mine !== generation || view.isDestroyed) return
+      asked = question
 
-      const decorations: Decoration[] = []
-      view.state.doc.descendants((node, pos) => {
-        if (!node.isText) return
-        for (const mark of node.marks) {
-          if (mark.type.name !== 'wikiLink') continue
-          const raw = mark.attrs.raw as string
-          decorations.push(
-            Decoration.inline(pos, pos + node.nodeSize, {
-              class: answers[raw]?.found ? 'wiki-link-resolved' : 'wiki-link-unresolved',
-              'data-wiki-target': raw,
-            }),
-          )
-        }
-      })
+      const decorations = wikiSpans(view.state.doc).map((span) =>
+        Decoration.inline(span.from, span.to, {
+          class: answers[span.raw]?.found ? 'wiki-link-resolved' : 'wiki-link-unresolved',
+          'data-wiki-target': span.raw,
+        }),
+      )
       view.dispatch(
         view.state.tr.setMeta(key, {
           decorations: DecorationSet.create(view.state.doc, decorations),
@@ -142,6 +237,9 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
         props: {
           decorations: (state) => (key.getState(state) ?? EMPTY).decorations,
           handleClick: (view, _pos, event) => {
+            // a plain click only places the caret, so link text stays editable;
+            // the modifier is what leaves the document, as with `openOnClick: false` elsewhere
+            if (!event.metaKey && !event.ctrlKey) return false
             const el = (event.target as HTMLElement | null)?.closest<HTMLElement>(
               '[data-wiki-target]',
             )
@@ -175,14 +273,6 @@ export const WikiLink = Mark.create({
   // same bracket, and ProseMirror derives mark ranks from this order
   priority: 1100,
 
-  addAttributes() {
-    return {
-      raw: { default: '' },
-      target: { default: '' },
-      alias: { default: null as string | null },
-    }
-  },
-
   markdownTokenizer: {
     name: 'wikiLink',
     level: 'inline',
@@ -190,34 +280,27 @@ export const WikiLink = Mark.create({
     tokenize: (src: string) => {
       const match = WIKI_LINK_RE.exec(src)
       if (!match) return undefined
-      return { type: 'wikiLink', raw: match[0], target: match[1].trim(), alias: match[2] ?? null }
+      // the literal is the token; there is nothing else to carry, because the
+      // text it becomes is the link (see `wikiSpans`)
+      return { type: 'wikiLink', raw: match[0] }
     },
   },
 
   parseMarkdown: (token: Record<string, unknown>, helpers: any) =>
-    helpers.applyMark(
-      'wikiLink',
-      helpers.parseInline([{ type: 'text', text: String(token.raw) }]),
-      {
-        raw: String(token.raw),
-        target: String(token.target),
-        alias: token.alias as string | null,
-      },
-    ),
+    helpers.applyMark('wikiLink', helpers.parseInline([{ type: 'text', text: String(token.raw) }])),
 
-  renderMarkdown: (node: any) => {
-    const alias = node.attrs.alias as string | null
-    return `[[${node.attrs.target}${alias ? `|${alias}` : ''}]]`
-  },
+  /**
+   * The marked text verbatim. A mark is serialized as an opening and a closing
+   * wrapper around the text it covers, both taken from this renderMarkdown
+   * against a placeholder; the literal never appears in that placeholder, so
+   * the wrapper is empty and the text is written out as it stands — which is
+   * what makes an edit inside or after a link survive the save.
+   */
+  renderMarkdown: (node: any) => markedText(node),
 
-  renderHTML({ HTMLAttributes }: { HTMLAttributes: Record<string, string> }) {
-    return [
-      'a',
-      mergeAttributes(
-        { class: 'wiki-link', 'data-wiki-target': HTMLAttributes.raw },
-        HTMLAttributes,
-      ),
-      0,
-    ]
+  renderHTML() {
+    // no target here: what a link points at is an answer from the resolver,
+    // and it arrives as a decoration once the target set is resolved
+    return ['a', { class: 'wiki-link' }, 0]
   },
 })

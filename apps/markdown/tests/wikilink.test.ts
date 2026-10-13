@@ -7,7 +7,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { buildExtensions } from '../src/renderer/editor/extensions'
-import { collectWikiTargets, wikilinkStart } from '../src/renderer/editor/wikilink'
+import {
+  collectWikiTargets,
+  wikilinkStart,
+  wikiFragmentPosition,
+} from '../src/renderer/editor/wikilink'
 import { parseDocText } from '../src/renderer/markdown/docText'
 import { buildSourceMap, spliceMarkdown } from '../src/renderer/markdown/sourceSplice'
 import type { WikiLinkResolved } from '../src/shared/ipc'
@@ -34,6 +38,7 @@ function open(
     onUnresolved?: (target: string) => void
     answers?: Record<string, WikiLinkResolved>
     documentPath?: string
+    resolve?: (from: string, targets: string[]) => Promise<Record<string, WikiLinkResolved>>
   } = {},
 ) {
   const editor = new Editor({
@@ -44,13 +49,15 @@ function open(
         getDocumentPath: () => wiki.documentPath ?? '/notes/Index.md',
         onOpen: wiki.onOpen ?? (() => {}),
         onUnresolved: wiki.onUnresolved ?? (() => {}),
-        resolve: async (_from, targets) => {
-          const out: Record<string, WikiLinkResolved> = {}
-          for (const t of targets) {
-            out[t] = wiki.answers?.[t] ?? { path: '', fragment: '', found: false }
-          }
-          return out
-        },
+        resolve:
+          wiki.resolve ??
+          (async (_from, targets) => {
+            const out: Record<string, WikiLinkResolved> = {}
+            for (const t of targets) {
+              out[t] = wiki.answers?.[t] ?? { path: '', fragment: '', found: false }
+            }
+            return out
+          }),
       },
     }),
     content: '',
@@ -74,14 +81,19 @@ const settled = () => new Promise((r) => setTimeout(r, 200))
  * behaviour, so it is invoked the way the editor would: on the element the
  * user actually pressed.
  */
-function clickWikiLink(editor: Editor, raw: string): boolean {
+function clickWikiLink(editor: Editor, raw: string, modifier = true): boolean {
   const el = editor.view.dom.querySelector(
     `[data-wiki-target="${CSS.escape(raw)}"]`,
   ) as HTMLElement | null
   if (!el) throw new Error(`no link rendered for ${raw}`)
+  const event = {
+    target: el,
+    metaKey: modifier,
+    ctrlKey: false,
+  } as unknown as MouseEvent
   let handled = false
   editor.view.someProp('handleClick', (f) => {
-    handled = f(editor.view, 0, { target: el } as unknown as MouseEvent) === true
+    handled = f(editor.view, 0, event) === true
     return handled
   })
   return handled
@@ -136,6 +148,130 @@ describe('syntax', () => {
   })
 })
 
+describe('editing', () => {
+  /**
+   * The bytes a save writes. The source map is built when the file is opened,
+   * the way App builds it, so an edit goes through the real splice path rather
+   * than a plain re-serialization of the whole document.
+   */
+  function saver(source: string) {
+    const { editor, envelope } = open(source)
+    const map = buildSourceMap(editor, editor.state.doc, envelope.body)
+    expect(map, 'the splice save path needs a source map').not.toBeNull()
+    return { editor, save: () => spliceMarkdown(editor, editor.state.doc, map!) }
+  }
+
+  /** where a keystroke lands when the cursor sits just after `needle` */
+  function after(editor: Editor, needle: string): number {
+    return editor.state.doc.textContent.indexOf(needle) + needle.length + 1
+  }
+
+  it('keeps a character typed inside a link', () => {
+    const { editor, save } = saver('See [[Note]] here.')
+    editor.view.dispatch(editor.state.tr.insertText('s', after(editor, 'Note')))
+    expect(editor.state.doc.textContent).toBe('See [[Notes]] here.')
+    expect(save()).toBe('See [[Notes]] here.')
+  })
+
+  it('keeps a character typed right after a link', () => {
+    const { editor, save } = saver('See [[Note]] here.')
+    editor.view.dispatch(editor.state.tr.insertText('X', after(editor, ']]')))
+    expect(editor.state.doc.textContent).toBe('See [[Note]]X here.')
+    expect(save()).toBe('See [[Note]]X here.')
+  })
+
+  it('keeps a link the edit broke open', () => {
+    const { editor, save } = saver('See [[Note]] here.')
+    // `e]]`: what is left is ordinary text, and that is what must be written
+    editor.view.dispatch(editor.state.tr.delete(after(editor, 'Not'), after(editor, ']]')))
+    expect(editor.state.doc.textContent).toBe('See [[Not here.')
+    expect(save()).toBe('See [[Not here.')
+  })
+
+  it('keeps an alias the edit changed', () => {
+    const { editor, save } = saver('See [[Note|Display]] here.')
+    editor.view.dispatch(editor.state.tr.insertText('!', after(editor, 'Display')))
+    expect(save()).toBe('See [[Note|Display!]] here.')
+  })
+
+  it('resolves the link as the text spells it now, not as it was parsed', async () => {
+    const resolve = vi.fn(async (_from: string, targets: string[]) => {
+      const out: Record<string, WikiLinkResolved> = {}
+      for (const t of targets) out[t] = { path: '', fragment: '', found: false }
+      return out
+    })
+    const { editor } = open('[[Alpha]]', { resolve })
+    await settled()
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['[[Alpha]]'])
+    editor.view.dispatch(editor.state.tr.insertText('b', after(editor, 'Alpha')))
+    await settled()
+    // the target is the text the user sees, so the edit follows the link
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['[[Alphab]]'])
+  })
+
+  it('resolves two adjacent links as two links, not one run', () => {
+    const { editor } = open('[[Alpha]][[Beta]]')
+    expect(collectWikiTargets(editor.state.doc)).toEqual(['[[Alpha]]', '[[Beta]]'])
+  })
+
+  it('resolves a link split by an inline mark inside its brackets', () => {
+    const { editor } = open('[[Note *emphasis*]]')
+    expect(collectWikiTargets(editor.state.doc)).toEqual(['[[Note *emphasis*]]'])
+  })
+
+  it('stops resolving a link once the edit takes its brackets away', async () => {
+    const { editor } = open('See [[Note]] here.', { answers: ANSWERS })
+    expect(collectWikiTargets(editor.state.doc)).toEqual(['[[Note]]'])
+    editor.view.dispatch(editor.state.tr.delete(after(editor, 'Not'), after(editor, ']]')))
+    expect(collectWikiTargets(editor.state.doc)).toEqual([])
+    await settled()
+    // nothing carries the old target any more, so there is nothing to activate
+    expect(editor.view.dom.querySelector('[data-wiki-target]')).toBeNull()
+  })
+})
+
+describe('activation', () => {
+  it('a plain click only places the caret; the modifier is what opens', async () => {
+    const onOpen = vi.fn()
+    const { editor } = open('[[Alpha]]', { onOpen, answers: ANSWERS })
+    await settled()
+    expect(clickWikiLink(editor, '[[Alpha]]', false)).toBe(false)
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(clickWikiLink(editor, '[[Alpha]]', true)).toBe(true)
+    expect(onOpen).toHaveBeenCalledWith('/notes/Alpha.md', '')
+  })
+
+  it("a plain click outside a link is not the wiki handler's business", () => {
+    const { editor } = open('See [[Alpha]].')
+    let handled = false
+    editor.view.someProp('handleClick', (f) => {
+      handled = f(editor.view, 0, { target: editor.view.dom, metaKey: true } as MouseEvent) === true
+      return handled
+    })
+    expect(handled).toBe(false)
+  })
+})
+
+describe('fragments', () => {
+  it('finds the heading a #fragment names', () => {
+    const { editor } = open('# Title\n\nIntro.\n\n## Some Heading\n\nBody.\n')
+    const pos = wikiFragmentPosition(editor.state.doc, 'Some Heading')
+    expect(pos).not.toBeNull()
+    expect(editor.state.doc.resolve(pos!).parent.textContent).toBe('Some Heading')
+  })
+
+  it('matches a heading whatever its case and spacing', () => {
+    const { editor } = open('## Setup   Steps\n')
+    expect(wikiFragmentPosition(editor.state.doc, 'setup steps')).not.toBeNull()
+  })
+
+  it('has no position for a heading the note does not have', () => {
+    const { editor } = open('## Setup\n')
+    expect(wikiFragmentPosition(editor.state.doc, 'Nowhere')).toBeNull()
+    expect(wikiFragmentPosition(editor.state.doc, '')).toBeNull()
+  })
+})
+
 describe('resolution', () => {
   it('marks a resolved link and leaves an unresolved one dimmed', async () => {
     const { editor } = open('See [[Alpha]] and [[Nowhere]].', { answers: ANSWERS })
@@ -178,6 +314,24 @@ describe('resolution', () => {
     const before = editor.state.doc.toJSON()
     await settled()
     expect(editor.state.doc.toJSON()).toEqual(before)
+  })
+
+  it('does not walk the vault again while the target set is unchanged', async () => {
+    const resolve = vi.fn(async () => ({}))
+    const { editor } = open('See [[Nowhere]] and some prose.', { resolve })
+    await settled()
+    expect(resolve).toHaveBeenCalledTimes(1)
+    // typing prose around an unresolved link asks the same question again; the
+    // walk it triggers can read twenty thousand entries, so it is skipped
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' and more')
+    await settled()
+    expect(resolve).toHaveBeenCalledTimes(1)
+    // a link the edit changed is a new question
+    const inside = editor.state.doc.textContent.indexOf('Nowhere') + 'Nowhere'.length + 1
+    editor.view.dispatch(editor.state.tr.insertText('s', inside))
+    await settled()
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['[[Nowheres]]'])
+    expect(resolve).toHaveBeenCalledTimes(2)
   })
 
   it('a resolver that throws leaves the editor working', async () => {

@@ -14,7 +14,7 @@
  * for the caller to apply after opening.
  */
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 
 /** a filesystem the resolver walks; injectable so tests drive a real temp tree */
 export interface WikiFs {
@@ -87,6 +87,22 @@ export interface ResolvedLink {
   found: boolean
 }
 
+/**
+ * Whether a target may be joined onto a directory at all.
+ *
+ * A link is written by whoever shares the note and opened on the reader's
+ * machine, so a target that climbs up with `..` — or names an absolute path —
+ * would reach any file they have, at any extension, by relative path. The
+ * walk only ever joins a name it read out of a directory listing onto that
+ * same tree, which is why the check belongs here, on the one place a caller
+ * supplied name is turned into a path.
+ */
+function escapesVault(name: string): boolean {
+  if (name === '') return true
+  if (isAbsolute(name)) return true
+  return name.split(/[\\/]/).some((segment) => segment === '..')
+}
+
 /** the candidates a bare name can stand for, in the order they are tried */
 function candidatePaths(dir: string, name: string): string[] {
   if (extname(name)) return [join(dir, name)]
@@ -131,6 +147,8 @@ export function resolveWikiLinks(
       out.set(raw, { path: options.fromPath, fragment, found: options.fromPath !== '' })
       continue
     }
+    // refused before it reaches the filesystem, so it reports unresolved
+    if (escapesVault(name)) continue
     pending.push({ raw, name, fragment })
   }
   if (pending.length === 0) return out

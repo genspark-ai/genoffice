@@ -148,3 +148,51 @@ describe('resolveWikiLinks', () => {
     expect(map.get('Alpha')).toEqual({ path: join(root, 'Alpha.md'), fragment: '', found: true })
   })
 })
+
+describe('staying inside the vault', () => {
+  // the reader's disk is not the resolver's business: a shared note must not be
+  // able to name a file outside the root by walking up with `..`
+  const outside = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wikioutside-'))
+    writeFileSync(join(dir, 'outside.txt'), '# outside\n')
+    writeFileSync(join(dir, 'budget.xlsx'), '# budget\n')
+    return dir
+  }
+
+  it('refuses a target that climbs out with ..', () => {
+    const dir = outside()
+    try {
+      const doc = join(dir, 'vault', 'sub', 'doc.md')
+      mkdirSync(join(dir, 'vault', 'sub'), { recursive: true })
+      writeFileSync(doc, '# doc\n')
+      const vault = join(dir, 'vault')
+      for (const target of ['../../outside', '../../budget.xlsx']) {
+        const map = resolveWikiLinks([target], { fromPath: doc, root: vault }, nodeFs())
+        expect(map.get(target), `${target} must not resolve`).toEqual({
+          path: '',
+          fragment: '',
+          found: false,
+        })
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a target that climbs out with a backslash or an absolute path', () => {
+    const doc = join(root, 'sub', 'note.md')
+    for (const target of ['..\\..\\Alpha', '/etc/passwd', 'sub/../../Alpha', '....//Alpha']) {
+      const map = resolve([target], doc)
+      expect(map.get(target)?.found, `${target} must not resolve`).toBe(false)
+    }
+  })
+
+  it('still resolves a plain relative name inside the document directory', () => {
+    const map = resolve(['sub/Alpha'], join(root, 'note.md'))
+    expect(map.get('sub/Alpha')).toEqual({
+      path: join(root, 'sub', 'Alpha.md'),
+      fragment: '',
+      found: true,
+    })
+  })
+})
