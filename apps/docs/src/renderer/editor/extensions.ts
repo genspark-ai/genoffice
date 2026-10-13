@@ -1,4 +1,5 @@
 import { ScriptFonts } from './script-fonts'
+import { BookmarkTargets } from './bookmark-targets'
 import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
@@ -770,7 +771,10 @@ function blockAttrs(
   if (clip) attrs['data-para'] = clip
   // per-document style CSS (generated from styles.xml) targets this attribute
   if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
-  // bookmark jump targets ([data-bookmarks~="name"]; names cannot contain spaces)
+  // bookmark names ([data-bookmarks~="name"]; names cannot contain spaces).
+  // The DOM id targets a fragment link resolves against — and what Chromium's
+  // printToPDF turns into GoTo annotations — come from the BookmarkTargets
+  // widget anchors (bookmark-targets.ts), one zero-size <a id> per name.
   if (Array.isArray(node.attrs.bookmarks) && node.attrs.bookmarks.length > 0) {
     attrs['data-bookmarks'] = (node.attrs.bookmarks as string[]).join(' ')
   }
@@ -6767,6 +6771,7 @@ export const AutoLinkOnDelimiter = Extension.create({
 export const editorExtensions = [
   StreamingTailGuardExtension,
   ScriptFonts,
+  BookmarkTargets,
   DocDocument,
   DocText,
   DocHardBreak,
