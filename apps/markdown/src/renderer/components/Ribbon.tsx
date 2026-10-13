@@ -10,6 +10,7 @@ import {
   useRibbonCollapse,
 } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
+import { MARKDOWN_THEME_IDS, type MarkdownTheme } from '../../shared/markdown-theme'
 import type { StringKey } from '../i18n/locale'
 import { GensparkMark } from '../ai/AiPanel'
 import { uiOp, type BlockType, type ListKind, type StylableMark } from '../editor/ops'
@@ -32,6 +33,7 @@ import {
   IconTable,
   IconTaskList,
   IconUndo,
+  IconPalette,
 } from './icons'
 
 interface Props {
@@ -57,6 +59,8 @@ interface Props {
   hasOutline: boolean
   spellcheck: boolean
   onToggleSpellcheck: () => void
+  mdTheme: MarkdownTheme
+  onMarkdownTheme: (theme: MarkdownTheme) => void
   aiOpen: boolean
   onToggleAi: () => void
   onAiPreset: (instruction: string) => void
@@ -146,6 +150,69 @@ function AiFeatureIcon({ kind }: { kind: 'summarize' | 'polish' | 'tidy' }) {
   )
 }
 
+const MARKDOWN_THEME_LABELS: Record<Exclude<MarkdownTheme, 'default'>, string> = {
+  'notion-light': 'Notion Light',
+  'notion-dark': 'Notion Dark',
+  'drake-dark': 'Drake Dark',
+  blubook: 'Blubook',
+  nord: 'Nord',
+  newsprint: 'Newsprint',
+}
+
+/** Paper theme picker: a ribbon button with a small theme list. Selecting a
+ *  theme persists through the caller and re-scopes the paper via
+ *  data-markdown-theme (see markdown-themes.css). */
+function ThemePicker({
+  mdTheme,
+  disabled,
+  onPick,
+}: {
+  mdTheme: MarkdownTheme
+  disabled?: boolean
+  onPick: (theme: MarkdownTheme) => void
+}) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  useDismissablePopover(open, () => setOpen(false), {
+    inside: () => [wrapRef.current],
+  })
+  return (
+    <div className="md-theme-wrap" ref={wrapRef}>
+      <IconBtn
+        title={t('mdThemeTitle')}
+        active={open}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <IconPalette size={18} />
+      </IconBtn>
+      {open && (
+        <div className="md-theme-menu" role="menu" aria-label={t('mdThemeTitle')}>
+          {(
+            ['default', ...MARKDOWN_THEME_IDS.filter((id) => id !== 'default')] as MarkdownTheme[]
+          ).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={mdTheme === id}
+              className={`md-theme-item${mdTheme === id ? ' on' : ''}`}
+              onClick={() => {
+                setOpen(false)
+                if (id !== mdTheme) onPick(id)
+              }}
+            >
+              {id === 'default' ? t('mdThemeDefault') : MARKDOWN_THEME_LABELS[id]}
+              {mdTheme === id && <span className="md-theme-check">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function IconBtn({
   title,
   active,
@@ -195,6 +262,8 @@ export function Ribbon({
   hasOutline,
   spellcheck,
   onToggleSpellcheck,
+  mdTheme,
+  onMarkdownTheme,
   aiOpen,
   onToggleAi,
   onAiPreset,
@@ -583,6 +652,7 @@ export function Ribbon({
                 <IconOutlineView size={ICON} />
               </IconBtn>
             )}
+            <ThemePicker mdTheme={mdTheme} disabled={disabled} onPick={onMarkdownTheme} />
             <IconBtn
               title={t('spellcheck')}
               active={spellcheck}

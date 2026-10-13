@@ -3293,3 +3293,53 @@ div.tiptap-mathematics-render {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---- document paper theme picker (ribbon) ---- */
+
+.md-theme-wrap {
+  position: relative;
+}
+
+.md-theme-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 190px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--md-page-shadow);
+}
+
+.md-theme-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.md-theme-item:hover {
+  background: var(--surface-subtle);
+}
+
+.md-theme-item.on {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.md-theme-check {
+  font-size: 12px;
+}

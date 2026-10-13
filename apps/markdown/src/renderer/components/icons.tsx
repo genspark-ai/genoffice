@@ -208,3 +208,15 @@ export function IconCloudUpload(props: IconProps) {
     </Svg>
   )
 }
+
+export function IconPalette(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 1.8A6.2 6.2 0 0 0 1.8 8c0 3.4 2.8 5.4 5.2 5.4 1.2 0 1.9-.7 1.9-1.6 0-.8-.6-1.2-.6-2 0-.9.7-1.6 1.7-1.6h1.4c2 0 3.8-1.5 3.8-3.6C14.2 3 11.4 1.8 8 1.8Z" />
+      <circle cx="4.6" cy="6.4" r="0.45" fill="currentColor" stroke="none" />
+      <circle cx="7.4" cy="4.4" r="0.45" fill="currentColor" stroke="none" />
+      <circle cx="10.6" cy="4.8" r="0.45" fill="currentColor" stroke="none" />
+      <circle cx="4.9" cy="9.6" r="0.45" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
