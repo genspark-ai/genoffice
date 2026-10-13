@@ -163,6 +163,39 @@ describe('convertOdtToDocx', () => {
     expect(document).toContain('<w:drawing>')
   })
 
+  it('does not blame the first table for an image a paragraph already emitted', async () => {
+    // The paragraph's inline image is collected in the shared walk context; a
+    // table cell only has its own images to account for, so a leftover from
+    // the paragraph above would be counted as dropped here.
+    const body =
+      '<text:p>with <draw:frame svg:x="0cm" svg:y="0cm" svg:width="2cm" svg:height="2cm"><draw:image xlink:href="Pictures/red.png"/></draw:frame> inline</text:p>' +
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell><text:p>left</text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const zip = new JSZip()
+    zip.file('content.xml', contentXml(body))
+    zip.file('Pictures/red.png', PNG_BASE64, { base64: true })
+    const result = await convertOdtToDocx(await zip.generateAsync({ type: 'uint8array' }))
+    // the image really is in the package, so nothing was dropped
+    expect(await docxHasMedia(result.docx, '.png')).toBe(true)
+    expect(result.dropped).not.toContainEqual(expect.objectContaining({ what: 'images' }))
+    // and the table is still imported
+    expect((await readDocxEntry(result.docx, 'word/document.xml')) ?? '').toContain('<w:tbl>')
+  })
+
+  it('still counts an image a table cell cannot hold', async () => {
+    const body =
+      '<table:table table:name="T">' +
+      '<table:table-row><table:table-cell><text:p><draw:frame svg:x="0cm" svg:y="0cm" svg:width="2cm" svg:height="2cm"><draw:image xlink:href="Pictures/red.png"/></draw:frame></text:p></table:table-cell></table:table-row>' +
+      '</table:table>'
+    const zip = new JSZip()
+    zip.file('content.xml', contentXml(body))
+    zip.file('Pictures/red.png', PNG_BASE64, { base64: true })
+    const result = await convertOdtToDocx(await zip.generateAsync({ type: 'uint8array' }))
+    expect(result.dropped).toContainEqual({ what: 'images', count: 1 })
+    expect(await docxHasMedia(result.docx, '.png')).toBe(false)
+  })
+
   it('counts constructs it cannot represent instead of guessing', async () => {
     const body =
       '<text:p>keep <text:note text:id="n1" text:note-class="footnote"><text:note-body><text:p>lost</text:p></text:note-body></text:note></text:p>' +

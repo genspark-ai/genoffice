@@ -26,7 +26,7 @@ import {
   type SectionSettings,
 } from '../../docx-engine/src/index'
 import { intrinsicImageSize } from './images'
-import { childElements, loadOdfPackage, odfBody, type OdfPackage } from './odf'
+import { OdfConvertError, childElements, loadOdfPackage, odfBody, type OdfPackage } from './odf'
 import { OdfStyles } from './styles'
 import {
   Drops,
@@ -40,12 +40,9 @@ import {
 import { emuToTwips, sniffImageMime } from './units'
 import { XNode, attr, firstChild, nodeChildren, nodeName } from './xml'
 
-export class OdfConvertError extends Error {
-  constructor(public readonly code: 'unreadable' | 'not-a-text-document' | 'not-a-presentation') {
-    super(code)
-    this.name = 'OdfConvertError'
-  }
-}
+// The error class lives with the package loader, which both converters reach
+// for; re-exported here so the public entry point is unchanged.
+export { OdfConvertError }
 
 export interface OdtToDocxResult {
   docx: Uint8Array
@@ -228,6 +225,9 @@ export async function convertOdtToDocx(odt: Uint8Array): Promise<OdtToDocxResult
     const imagesBefore = walkCtx.images.length
     const runs = runsFromParagraph(node, walkCtx)
     const inlineImages = walkCtx.images.slice(imagesBefore)
+    // these belong to this paragraph alone; leaving them behind would have the
+    // next table cell report them as its own dropped images
+    walkCtx.images.length = imagesBefore
     const block: GeneratedBlock = { type: base.type, runs: runs.map((run) => toDocxRun(run, true)) }
     if (base.type === 'heading') block.level = base.level
     const format = paraFormat(walkCtx.styles, attr(node, 'text:style-name'))
