@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/core'
+import type { MindMapTreeNode } from '@genoffice/agent-core'
 import { describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { executeTool } from '../src/renderer/ai/tools'
