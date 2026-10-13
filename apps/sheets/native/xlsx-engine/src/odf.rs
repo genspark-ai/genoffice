@@ -1,12 +1,12 @@
 //! ODF (`of:`) formula translation for the legacy import path.
 //!
 //! calamine hands back an `.ods` formula in the ODF prefix dialect, whose
-//! references (`[.A1]`, `[Sheet.B2]`) and argument separator (`;`) are not
-//! OOXML tokens. Writing them into `<f>` verbatim yields a workbook Excel
-//! offers to repair and no engine can recalc, so references are rewritten into
-//! A1 semantics here. Any construct this translator cannot prove correct gives
-//! up rather than guess: the caller then keeps the cell's cached result, which
-//! is what ODF stores beside the formula anyway.
+//! references (`[.A1]`, `[Sheet.B2]`, `[$'My Sheet'.B2]`) and argument
+//! separator (`;`) are not OOXML tokens. Writing them into `<f>` verbatim yields
+//! a workbook Excel offers to repair and no engine can recalc, so references
+//! are rewritten into A1 semantics here. Any construct this translator cannot
+//! prove correct gives up rather than guess: the caller then keeps the cell's
+//! cached result, which is what ODF stores beside the formula anyway.
 
 /// Translate one formula. `None` means "no safe OOXML counterpart" and the
 /// caller must drop the formula and keep the value. A formula that is not in
@@ -127,12 +127,45 @@ fn read_reference(chars: &[char], open: usize) -> Option<(String, usize)> {
 /// name is only usable when what follows it still parses as a reference.
 fn split_reference(part: &str) -> Option<(Option<String>, String)> {
     let dot = part.rfind('.')?;
-    let name = &part[..dot];
-    let sheet = match name {
-        "" => None,
-        _ => Some(quoted_sheet_name(name)?),
-    };
+    let sheet = sheet_name(&part[..dot])?;
     Some((sheet, cell_reference(&part[dot + 1..])?))
+}
+
+/// The sheet token of a reference: an optional absolute-sheet `$`, then either
+/// a bare name or a `'`-quoted one whose embedded quotes are doubled.
+///
+/// The `$` and the quotes are ODF addressing syntax, not part of the name:
+/// LibreOffice writes every other-sheet reference in that absolute form
+/// (`[$Other.A1]`, `[$'My Sheet'.A1]`), and passing either through unstripped
+/// yields an A1 reference to a sheet that does not exist. Quoting that survives
+/// is re-decided by `quoted_sheet_name`, since the name may still need it.
+fn sheet_name(token: &str) -> Option<Option<String>> {
+    let bare = token.strip_prefix('$').unwrap_or(token);
+    if bare.is_empty() {
+        // `[.A1]` — the self sheet, which A1 leaves unqualified.
+        return Some(None);
+    }
+    let name = match bare.strip_prefix('\'') {
+        None => bare.to_string(),
+        Some(quoted) => {
+            let body = quoted.strip_suffix('\'')?;
+            // Every quote inside a quoted name belongs to a `''` pair; a lone
+            // one means this was never a quoted name.
+            let mut name = String::with_capacity(body.len());
+            let mut rest = body;
+            while let Some(at) = rest.find('\'') {
+                name.push_str(&rest[..at]);
+                if !rest[at..].starts_with("''") {
+                    return None;
+                }
+                name.push('\'');
+                rest = &rest[at + 2..];
+            }
+            name.push_str(rest);
+            name
+        }
+    };
+    Some(Some(quoted_sheet_name(&name)?))
 }
 
 /// `A1`, `$A$1`, `A$1`, a whole column (`A`) or a whole row (`1`).
@@ -264,6 +297,38 @@ mod tests {
             translated("SUM([Data.A1:Data.B2])").as_deref(),
             Some("SUM(Data!A1:B2)")
         );
+    }
+
+    // LibreOffice writes every other-sheet reference in the absolute-sheet
+    // form: the `$` and the apostrophes are addressing syntax the A1 dialect
+    // spells differently, and keeping them produces references to sheets that
+    // do not exist.
+    #[test]
+    fn unwraps_absolute_and_quoted_sheet_names() {
+        assert_eq!(translated("[$Other.A1]*2").as_deref(), Some("Other!A1*2"));
+        assert_eq!(
+            translated("[$'My Sheet'.A1]+1").as_deref(),
+            Some("'My Sheet'!A1+1")
+        );
+        assert_eq!(
+            translated("SUM([$Data.A1:$Data.B2])").as_deref(),
+            Some("SUM(Data!A1:B2)")
+        );
+        // the `$` marks the sheet only; cell-level absolute markers survive
+        assert_eq!(
+            translated("SUM([$Data.$A$1:$Data.$B$2])").as_deref(),
+            Some("SUM(Data!$A$1:$B$2)")
+        );
+        // a quoted name that escapes an embedded quote
+        assert_eq!(
+            translated("[$'Bob''s data'.A1]").as_deref(),
+            Some("'Bob''s data'!A1")
+        );
+        // an unterminated or unescaped quote is not a name this can prove
+        assert_eq!(translated("[$'My Sheet.A1]"), None);
+        assert_eq!(translated("[$'My'Sheet'.A1]"), None);
+        // a `$` that is not a sheet marker still reaches the cell reader
+        assert_eq!(translated("[$A$3]"), None);
     }
 
     #[test]

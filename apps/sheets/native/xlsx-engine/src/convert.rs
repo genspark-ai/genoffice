@@ -428,6 +428,37 @@ mod tests {
         assert!(workbook.contains(r#"<sheet name="Other" sheetId="2" r:id="rId2"/>"#));
     }
 
+    // A workbook saved by LibreOffice itself, committed rather than generated
+    // because CI has no LibreOffice. Regenerate with
+    /// `soffice --headless --convert-to ods --outdir <dir> <repo>/apps/sheets/native/xlsx-engine/tests/fixtures/cross-sheet-references.fods`
+    /// from the committed `.fods` source next to it.
+    ///
+    /// It pins the dialect a real save produces: every other-sheet reference is
+    /// absolute-sheet and apostrophe-quoted (`[$Other.A1]`, `[$'My Sheet'.A1]`,
+    /// `SUM([$Data.A1:$Data.B2])`), which a hand-written fixture never produces.
+    #[test]
+    fn converts_a_libreoffice_saved_workbook_with_absolute_sheet_references() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/cross-sheet-references.ods");
+        let target = dir.path().join("converted.xlsx");
+
+        let result = convert_to_xlsx(&source, &target).unwrap();
+        assert_eq!(result.sheets, 4);
+
+        let sheet = read_entry(&target, "xl/worksheets/sheet1.xml");
+        assert!(sheet.contains(r#"<c r="C1"><f>Other!A1*2</f><v>200</v></c>"#));
+        assert!(sheet.contains(r#"<c r="D1"><f>'My Sheet'!A1+1</f><v>11</v></c>"#));
+        assert!(sheet.contains(r#"<c r="E1"><f>SUM(Data!A1:B2)</f><v>30</v></c>"#));
+        assert!(sheet.contains(r#"<c r="F1"><f>SUM(Data!$A$1:$B$2)</f><v>30</v></c>"#));
+        // the self-sheet form LibreOffice shares with every other ODF writer
+        assert!(sheet.contains(r#"<c r="G1"><f>SUM(A1:B1)</f><v>15</v></c>"#));
+        // no reference keeps ODF's `$` sheet marker or its doubled quoting
+        assert!(!sheet.contains("'$"), "{sheet}");
+        let workbook = read_entry(&target, "xl/workbook.xml");
+        assert!(workbook.contains(r#"<sheet name="My Sheet""#));
+    }
+
     /// A minimal ODF spreadsheet: the `mimetype` entry first, then a
     /// `content.xml` kept free of inter-element whitespace, which the ODF
     /// reader treats as cell text.
