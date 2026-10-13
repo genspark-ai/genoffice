@@ -202,6 +202,14 @@ export function pinnedLookup(target: SafeRemoteTarget): PinnedLookup {
       (options.family !== undefined
         ? target.addresses.find((a) => a.family === options.family)
         : undefined) ?? target.addresses[0]
+    if (!pick) {
+      // unreachable: resolveSafeRemoteTarget never returns an empty list, but
+      // a pinned lookup must never answer "connect anywhere" instead
+      const err: NodeJS.ErrnoException = new Error('ssrf guard: no validated address to pin')
+      err.code = 'ESSRFHOST'
+      callback(err, '')
+      return
+    }
     callback(null, pick.address, pick.family)
   }
 }
