@@ -748,8 +748,10 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
       if (!found.has(id))
         found.set(id, {
           blockIndex: index,
-          // the live node's `content` is a Fragment, so `redactNode` would pass
-          // it through untouched; the JSON shape is what the walker reads
+          // Through `toJSON()`, never the live node. `redactNode` walks
+          // `content` as an array, and a live ProseMirror node holds a
+          // Fragment there, so the whole subtree would come back untouched and
+          // a withheld span would travel verbatim.
           text: modelTextOf(block.toJSON() as RedactableNode),
         })
     }

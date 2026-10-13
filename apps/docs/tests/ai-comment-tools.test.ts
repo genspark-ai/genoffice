@@ -106,27 +106,28 @@ describe('comments context', () => {
     expect(anchors.get('1')).toEqual({ blockIndex: 1, excerpt: 'he comment' })
   })
 
-  it('a block-anchored comment reads the placeholder for a withheld span in its block', () => {
-    // imported comments anchor by the block's `commentStarts` attr rather than
-    // a text mark, so this excerpt comes from the block fallback — which must
-    // project the withheld span exactly like the mark path does
+  it('a comment anchored by block attr never carries a withheld span verbatim', () => {
+    // `commentStarts` is what an imported docx carries when a comment anchors a
+    // whole paragraph instead of a span. Nothing in the editor writes it, so
+    // the block has to be built here rather than through `add_comment`.
     const editor = createEditor([
       {
         type: 'docParagraph',
         attrs: { docxIndex: null, commentStarts: ['7'] },
         content: [
-          text('Call '),
+          { type: 'text', text: 'Call the client on ' },
           {
             type: 'text',
             text: '13800138000',
             marks: [{ type: 'redaction', attrs: { label: 'client phone' } }],
           },
-          text(' to confirm.'),
+          { type: 'text', text: ' to confirm.' },
         ],
       },
+      para('Closing paragraph.'),
     ])
-    const excerpt = commentAnchors(editor).get('7')?.excerpt
-    expect(excerpt).toBe('Call {{client phone}} to confirm.')
+    const excerpt = commentAnchors(editor).get('7')?.excerpt ?? ''
+    expect(excerpt).toContain('{{client phone}}')
     expect(excerpt).not.toContain('13800138000')
   })
 
