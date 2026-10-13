@@ -3047,10 +3047,22 @@ div.tiptap-mathematics-render {
   background: var(--surface);
 }
 
-.source-editor > .cm-editor {
+/* CodeMirror mounts into a host div that PlainTextEditor renders above it, so
+ * the flex item of this row is that div. A `>` selector aimed at .cm-editor
+ * selects nothing here, leaving the host on the flex default of shrink-to-fit:
+ * a .txt/.json pane then showed a narrow strip of editor beside empty canvas
+ * (genoffice#1969). */
+.source-editor > * {
   flex: 1;
   min-width: 0;
   height: 100%;
+}
+
+/* the host is the flex item, but the scroller inside it still has to be
+ * allowed to shrink, or a long line sets the pane's minimum width */
+.source-editor .cm-editor,
+.source-editor .cm-scroller {
+  min-width: 0;
 }
 
 /* Image host configuration dialog (genoffice#388). Colors come from the shared

@@ -1099,6 +1099,9 @@ export const ko = {
   appHeadings: '머리글',
   appHeadingsHidden: '머리글을 숨겼습니다.',
   appHeadingsShown: '머리글을 표시했습니다.',
+  appRightToLeft: '오른쪽에서 왼쪽',
+  appRightToLeftOn: '눈금 방향: 오른쪽에서 왼쪽.',
+  appRightToLeftOff: '눈금 방향: 왼쪽에서 오른쪽.',
   appPrintHeadingsTitle: '행/열 머리글 인쇄',
   // Formulas tab
   appGroupFunctionLibrary: '함수 라이브러리',

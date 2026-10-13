@@ -143,7 +143,7 @@ impl RecalcCache {
 /// and on macOS temp files those differ (/var vs /private/var) — a raw key
 /// would make the close/save purge miss the resident model.
 fn cache_key(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    crate::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 pub fn recalc_cells(
