@@ -2685,6 +2685,24 @@ th.cell-rev-del {
   display: block;
 }
 
+/* While an IME composition is live (prosemirror-view sets this class on the
+   editor root), the span under the caret inherits its pre-edit string — a
+   pinyin sequence that must resolve Latin glyphs through the document's
+   Latin chain (Word's per-script behavior), not the EA face's half-width
+   Latin. The EA slot stays last so Han typed in the same span still renders
+   in the EA face. Scoped to compositions on purpose: the span's rendered
+   declaration stays EA-primary (its inline style from script-fonts.ts), so
+   the inline box and the strut share one half-leading geometry and no line
+   moves while nobody is typing — only the line under the caret may reflow,
+   and the decoration rebuild settles it when the composition ends. */
+.ProseMirror-composing .doc-east-asian-font {
+  /* !important is what lets a stylesheet rule out-shout the decoration's
+     inline font-family while typing; the moment the class drops, the inline
+     EA-primary declaration is the whole story again */
+  font-family:
+    var(--doc-latin-chain, 'Latin Sans GO'), var(--doc-east-asian-font, inherit) !important;
+}
+
 /* ---- Word basics: marks / columns / page border / header-footer / nav / ruler ---- */
 
 /* ¶ editing marks (front-end only) */

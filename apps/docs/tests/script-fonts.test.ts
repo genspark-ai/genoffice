@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
+import { scriptFontHtml } from '../src/renderer/editor/script-fonts'
 
 const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((e) => e.destroy()))
@@ -46,5 +47,37 @@ describe('ScriptFonts decorations', () => {
     editor.commands.selectAll()
     editor.commands.insertContent('\u65b0 new')
     expect(decorated(editor)).toEqual(['\u65b0'])
+  })
+})
+
+describe('ScriptFonts spans stay East-Asian-primary', () => {
+  /**
+   * The decoration span's first available font is what Chromium uses to place
+   * the inline box, and the typed-grid strut is built on the spans sharing the
+   * EA-primary half-leading geometry — so the rendered declaration must stay
+   * `var(--doc-east-asian-font, inherit)` in both emitters. The IME pre-edit
+   * fix is scoped to compositions in styles.css
+   * (`.ProseMirror-composing .doc-east-asian-font`), which leaves every line
+   * nobody is typing on byte-identical. jsdom resolves neither var() nor font
+   * fallback, so the declaration itself is the invariant under test.
+   */
+  const spanFamily = (editor: Editor): string =>
+    (editor.view.dom.querySelector('.doc-east-asian-font') as HTMLElement).style.fontFamily
+
+  const htmlSpanFamily = (html: string): string => {
+    const out = document.createElement('div')
+    out.innerHTML = scriptFontHtml(html)
+    return (out.querySelector('.doc-east-asian-font') as HTMLElement).style.fontFamily
+  }
+
+  it('keeps the decoration on the East Asian chain', () => {
+    const editor = open(['\u90fd\u4f1a'])
+    expect(spanFamily(editor)).toBe('var(--doc-east-asian-font, inherit)')
+  })
+
+  it('keeps the serialized-HTML span on the East Asian chain too (no composition in a read-only pane)', () => {
+    expect(htmlSpanFamily('<p><span>\u90fd\u4f1a</span></p>')).toBe(
+      'var(--doc-east-asian-font, inherit)',
+    )
   })
 })
