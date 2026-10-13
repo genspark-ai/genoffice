@@ -111,3 +111,4 @@ export {
   type PrintDocumentOptions,
 } from './print-window'
 export { abortOnDestroyed, type DestroyableSender } from './abort-on-destroyed'
+export { recoveryCopyDiskNewer } from './recovery-copy'

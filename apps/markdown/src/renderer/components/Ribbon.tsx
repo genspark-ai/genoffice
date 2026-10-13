@@ -661,7 +661,11 @@ export function Ribbon({
                 <IconOutlineView size={ICON} />
               </IconBtn>
             )}
-            <ThemePicker mdTheme={mdTheme} disabled={disabled} onPick={onMarkdownTheme} />
+            <ThemePicker
+              mdTheme={mdTheme}
+              disabled={disabled || sourceMode || sourceViewOpen}
+              onPick={onMarkdownTheme}
+            />
             <IconBtn
               title={t('spellcheck')}
               active={spellcheck}

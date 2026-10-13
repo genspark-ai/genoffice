@@ -6,6 +6,7 @@ import type {
   ImageWrap,
   ParaFormat,
   ParaFrame,
+  RevisionInfo,
   Run,
   TabStop,
   TableCell,
@@ -28,6 +29,8 @@ export interface GenerateContext {
    * keeps them unique among themselves but is not coordinated with a part.
    */
   allocateBookmarkId?: (name: string) => number
+  /** Mint w:id for a tracked change that has none; document-wide so two edited paragraphs never share ids */
+  allocateRevisionId?: () => string
 }
 
 const EMU_PER_PX = 9525
@@ -1870,7 +1873,8 @@ function revisionPPrChangeXml(changeJson: string): string | null {
   const attrs =
     ` w:id="${escapeXmlAttr(String(change.id ?? '0'))}"` +
     ` w:author="${escapeXmlAttr(String(change.author ?? ''))}"` +
-    (change.date ? ` w:date="${escapeXmlAttr(String(change.date))}"` : '')
+    (change.date ? ` w:date="${escapeXmlAttr(String(change.date))}"` : '') +
+    (change.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(String(change.dateUtc))}"` : '')
   return `<w:pPrChange${attrs}><w:pPr>${children.map((child) => child.xml).join('')}</w:pPr></w:pPrChange>`
 }
 
@@ -2563,7 +2567,7 @@ export function generateIndexFieldXml(terms: string[]): string[] {
 }
 
 function generateRunsXml(runs: Run[], ctx: GenerateContext): string {
-  return runsXml(runs, ctx.allocateHyperlinkRel)
+  return runsXml(runs, ctx.allocateHyperlinkRel, ctx.allocateRevisionId)
 }
 
 /** OOXML runs without relationship allocation (header/footer parts, ...) */
@@ -2576,7 +2580,11 @@ export function inlineRunsXml(runs: Run[]): string {
  * pass null where no relationship allocation is possible (textbox patches) —
  * links without an existing rId then degrade to plain runs.
  */
-function runsXml(runs: Run[], allocate: ((href: string) => string) | null): string {
+function runsXml(
+  runs: Run[],
+  allocate: ((href: string) => string) | null,
+  allocateRevisionId?: () => string,
+): string {
   // comment ranges: re-emit start/end/reference markers around the first..last
   // run each id covers, so editing a commented paragraph keeps its comments
   const firstOf = new Map<string, number>()
@@ -2660,17 +2668,29 @@ function runsXml(runs: Run[], allocate: ((href: string) => string) | null): stri
       ? JSON.stringify([
           r.ins?.author ?? null,
           r.ins?.date ?? null,
+          r.ins?.dateUtc ?? null,
           r.ins?.id ?? null,
           r.del?.author ?? null,
           r.del?.date ?? null,
+          r.del?.dateUtc ?? null,
           r.del?.id ?? null,
         ])
       : ''
   let revSeq = 9001
-  const revAttrs = (info: { author: string; date?: string; id?: string }) =>
-    ` w:id="${escapeXmlAttr(info.id ?? String(revSeq++))}"` +
+  const mintRevisionId = allocateRevisionId ?? (() => String(revSeq++))
+  // a later edit splitting one w:ins in two leaves both halves with the stored id
+  const emittedIds = new Set<string>()
+  const revisionId = (info: RevisionInfo) => {
+    let id = info.id && !emittedIds.has(info.id) ? info.id : mintRevisionId()
+    while (emittedIds.has(id)) id = mintRevisionId()
+    emittedIds.add(id)
+    return id
+  }
+  const revAttrs = (info: RevisionInfo) =>
+    ` w:id="${escapeXmlAttr(revisionId(info))}"` +
     ` w:author="${escapeXmlAttr(info.author)}"` +
-    (info.date ? ` w:date="${escapeXmlAttr(info.date)}"` : '')
+    (info.date ? ` w:date="${escapeXmlAttr(info.date)}"` : '') +
+    (info.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(info.dateUtc)}"` : '')
 
   let g = 0
   while (g < runs.length) {
@@ -3024,7 +3044,8 @@ function revisionRPrChangeXml(run: Run): string | null {
   const attrs =
     ` w:id="${escapeXmlAttr(change.id ?? '0')}"` +
     ` w:author="${escapeXmlAttr(change.author)}"` +
-    (change.date ? ` w:date="${escapeXmlAttr(change.date)}"` : '')
+    (change.date ? ` w:date="${escapeXmlAttr(change.date)}"` : '') +
+    (change.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(change.dateUtc)}"` : '')
   return `<w:rPrChange${attrs}><w:rPr>${props.join('')}</w:rPr></w:rPrChange>`
 }
 

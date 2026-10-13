@@ -927,7 +927,8 @@ export function computeSectionedSlicesF2(
           : undefined
       // the table opens on the next page when not even its first row (with the
       // leading header rows) fits the remainder
-      const leadH = splitRows ? floatLeadHeight(splitRows, contentH) : block.height
+      const leadH =
+        splitRows && !block.floatPushWhole ? floatLeadHeight(splitRows, contentH) : block.height
       // a float lifted into the previous anchor's band needs only the part below the flow position
       const leadNeed =
         block.lifted && colCount === 1
@@ -1048,6 +1049,23 @@ export function computeSectionedSlicesF2(
       continue
     }
 
+    // a section's closing paragraph that holds nothing but anchored drawings
+    // stays on its page when its mark line no longer fits: Word lets the line
+    // overflow the bottom margin and opens the next page with the next section
+    // (probe 2026-10-13; a plain anchor-only paragraph still moves whole, and
+    // one with text or an inline picture opens a page of its own)
+    if (block.anchorOnly && colIdx === colCount - 1 && !colEmpty()) {
+      const sec = block.section ?? curSection
+      const nextSec = blocks[bi + 1]?.section
+      const closesSection = nextSec !== undefined && nextSec > sec && geomOf(sec + 1).forceBreak
+      const textH = block.height - (block.spaceAfterPx ?? 0) - (block.lineLeadPx ?? 0)
+      if (closesSection && !fits(textH)) {
+        place(Math.min(block.height, Math.max(capColH() - usedInCol, 0)))
+        queueBreakAfter(block)
+        continue
+      }
+    }
+
     // a lifted table (negative text-relative w:tblpY) starts above the previous
     // block's bottom, so hand the overlap back: the column is charged only the
     // flow the table really advances. At the top of a page whose start lies
@@ -1066,6 +1084,25 @@ export function computeSectionedSlicesF2(
         const hang = pageStart - block.top
         place(-Math.min(hang, geomOf(curSection).topPx ?? hang))
       }
+    }
+
+    // a text-anchored floating table flowed inline still turns the page whole
+    // when it does not fit the rest of it (Word; it then splits from the fresh
+    // page like any table)
+    if (block.floatPushWhole && !colEmpty() && !fits(block.height)) startPage(block.top, curSection)
+
+    // side-wrapped drawings hanging from an anchor paragraph: Word pulls a
+    // drawing that would pass the body bottom up to end there, and turns the
+    // page before the anchor when the drawing is taller than the room left
+    if (
+      block.floatKeepWhole &&
+      block.floatBottom !== undefined &&
+      block.floatMaxH !== undefined &&
+      !colEmpty() &&
+      !fits(block.floatBottom - block.top) &&
+      !fits(block.floatMaxH)
+    ) {
+      startPage(block.top, curSection)
     }
 
     // ── Tables: row-level page breaking ────────────────────────────────────
@@ -1198,7 +1235,12 @@ export function computeSectionedSlicesF2(
           anchorNeedH = anchorBlock.height - (anchorBlock.spaceAfterPx ?? 0)
         else if (anchorBlock.tableRows?.length) {
           const head = anchorBlock.tableRows[0]
-          anchorNeedH = head.height + (head.notesPx ?? 0)
+          anchorNeedH = tableOpenDemand(
+            anchorBlock,
+            anchorBlock.tableRows,
+            freshColH(),
+            !!out?.rowSplits,
+          )
           // the head row's notes open the page's footnote area: the table will
           // charge that separator strip, so the chain must demand it too
           if (head.notesPx && !pageNoteSepPx) anchorNeedH += FOOTNOTE_SEPARATOR_H
@@ -1629,6 +1671,31 @@ function firstLegalCut(
     cut = Math.max(cut, c.lines[keep - 1][1])
   }
   return Math.max(Math.min(cut + rowBottomPad(row), row.height), minH)
+}
+
+/** height a table demands to open on the current page, as _placeTable will
+ *  judge it: its first row, or under Word 2013+ layout the whole tblHeader
+ *  block plus the first legal fragment of the first body row (the header is
+ *  never left alone at a page bottom, so a keepNext chain anchored by the
+ *  table must demand the same stack or it stays behind when the table turns) */
+function tableOpenDemand(
+  block: BlockBox,
+  rows: TableRowBox[],
+  contentH: number,
+  cellSplit: boolean,
+): number {
+  const first = rows[0]
+  const firstH = first.height + (first.notesPx ?? 0)
+  if (!block.modernTableHeaders || !first.isHeader) return firstH
+  let h = 0
+  let i = 0
+  for (; i < rows.length && rows[i].isHeader; i++) h += rows[i].height + (rows[i].notesPx ?? 0)
+  if (h > contentH + 0.01) return firstH
+  while (i < rows.length && rows[i].vMergeContinue) i++
+  const body = rows[i]
+  if (!body) return h
+  const widow = !block.cellWidowOff
+  return h + firstLegalCut(body, widow, contentH, cellSplit) + (body.notesPx ?? 0)
 }
 
 /** height a floating table needs on its first page: the leading header rows

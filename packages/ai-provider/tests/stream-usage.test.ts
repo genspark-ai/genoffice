@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentToolCall } from '@genoffice/agent-core'
 import { streamForProvider } from '../src/stream'
+import { resetUsageRejectedGateways } from '../src/protocols/openai-compatible'
 import type { AiTokenUsage } from '../src/types'
 import { errorResponse, jsonResponse, okResponse, sseStream } from './test-utils'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  resetUsageRejectedGateways()
 })
 
 function collector() {
@@ -81,7 +83,7 @@ describe('openai-compatible usage', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(errorResponse(400, 'Unknown parameter: stream_options'))
-      .mockResolvedValue(
+      .mockImplementation(async () =>
         okResponse(
           sseStream(['data: {"choices":[{"delta":{"content":"ok"}}]}', 'data: [DONE]', '']),
         ),
@@ -96,6 +98,15 @@ describe('openai-compatible usage', () => {
     >
     expect(secondBody.stream_options).toBeUndefined()
     expect(c.deltas.join('')).toBe('ok')
+
+    // the rejection is remembered: the next turn skips the field and the retry
+    await run('openai', collector())
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const thirdBody = JSON.parse((fetchMock.mock.calls[2]![1] as { body: string }).body) as Record<
+      string,
+      unknown
+    >
+    expect(thirdBody.stream_options).toBeUndefined()
   })
 
   it('reports usage from a non-streaming JSON body', async () => {
@@ -135,6 +146,27 @@ describe('anthropic usage', () => {
     await run('anthropic', c)
     expect(c.deltas.join('')).toBe('hi')
     expect(c.usages).toEqual([{ inputTokens: 100, outputTokens: 42 }])
+  })
+
+  it('counts cached prompt tokens as input', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          okResponse(
+            sseStream([
+              'data: {"type":"message_start","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":900,"cache_creation_input_tokens":95,"output_tokens":1}}}',
+              'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}',
+              'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}',
+              '',
+            ]),
+          ),
+        ),
+    )
+    const c = collector()
+    await run('anthropic', c)
+    expect(c.usages).toEqual([{ inputTokens: 1000, outputTokens: 7 }])
   })
 })
 

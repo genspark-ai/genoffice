@@ -160,6 +160,9 @@ const homeApi: HomeApi = {
   async kbRead(path, offset) {
     return ipcRenderer.invoke('kb:read', { path, offset })
   },
+  async kbCreateDocument(request) {
+    return ipcRenderer.invoke('kb:create-document', request)
+  },
   async aiGetSettings() {
     return ipcRenderer.invoke('ai:get-settings')
   },

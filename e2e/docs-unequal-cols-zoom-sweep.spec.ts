@@ -19,13 +19,13 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 const SENTENCE =
-  '本文采用小波阈值消噪，采取阈值以下全部置零、阈值以上保留原始值和阈值的差值的消噪策略。'
+  '\u672c\u6587\u91c7\u7528\u5c0f\u6ce2\u9608\u503c\u6d88\u566a\uff0c\u91c7\u53d6\u9608\u503c\u4ee5\u4e0b\u5168\u90e8\u7f6e\u96f6\u3001\u9608\u503c\u4ee5\u4e0a\u4fdd\u7559\u539f\u59cb\u503c\u548c\u9608\u503c\u7684\u5dee\u503c\u7684\u6d88\u566a\u7b56\u7565\u3002'
 
 function cjkParagraphs(count: number, chars: number): string {
   const body = SENTENCE.repeat(Math.ceil(chars / SENTENCE.length)).slice(0, chars)
   return Array.from(
     { length: count },
-    (_, i) => `<w:p><w:r><w:t>第${i + 1}段 ${body}</w:t></w:r></w:p>`,
+    (_, i) => `<w:p><w:r><w:t>\u7b2c${i + 1}\u6bb5 ${body}</w:t></w:r></w:p>`,
   ).join('')
 }
 

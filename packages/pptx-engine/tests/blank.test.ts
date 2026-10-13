@@ -24,12 +24,12 @@ describe('createBlankPptx', () => {
     const theme = parseTheme(opened.archive.readText('ppt/theme/theme1.xml')!)
     expect(theme.majorEaFont).toBeUndefined()
     expect(theme.minorEaFont).toBeUndefined()
-    expect(resolveFontRef('+mj-ea', theme, 'sc')).toBe('等线')
-    expect(resolveFontRef('+mj-ea', theme, 'tc')).toBe('新細明體')
+    expect(resolveFontRef('+mj-ea', theme, 'sc')).toBe('\u7b49\u7ebf')
+    expect(resolveFontRef('+mj-ea', theme, 'tc')).toBe('\u65b0\u7d30\u660e\u9ad4')
     expect(resolveFontRef('+mj-ea', theme, 'ja')).toBe('ＭＳ ゴシック')
     expect(resolveFontRef('+mj-ea', theme, 'ko')).toBe('맑은 고딕')
     expect(resolveFontRef('+mn-ea', theme, 'ja')).toBe('ＭＳ Ｐゴシック')
-    expect(resolveFontRef('+mn-ea', theme, 'sc')).toBe('等线')
+    expect(resolveFontRef('+mn-ea', theme, 'sc')).toBe('\u7b49\u7ebf')
   })
 
   it('supports the full edit pipeline: add element + add slide + save round-trip', async () => {

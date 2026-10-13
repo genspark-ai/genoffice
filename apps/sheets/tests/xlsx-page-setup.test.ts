@@ -166,6 +166,22 @@ describe('buildHeaderFooterXml', () => {
         '</headerFooter>',
     )
   })
+
+  it('writes a stray ampersand as the && literal code and keeps real codes', () => {
+    expect(buildHeaderFooterXml({ center: 'R & D' }, null)).toBe(
+      '<headerFooter><oddHeader>&amp;CR &amp;&amp; D</oddHeader></headerFooter>',
+    )
+    expect(
+      buildHeaderFooterXml(
+        { left: 'A && B &', right: 'Tom&Jerry &P/&N &[Page] &"Arial,Bold"&12x' },
+        null,
+      ),
+    ).toBe(
+      '<headerFooter><oddHeader>&amp;LA &amp;&amp; B &amp;&amp;' +
+        '&amp;RTom&amp;&amp;Jerry &amp;P/&amp;N &amp;[Page] &amp;&quot;Arial,Bold&quot;&amp;12x</oddHeader>' +
+        '</headerFooter>',
+    )
+  })
 })
 
 describe('applyPageSetupState headerFooter', () => {
@@ -200,7 +216,9 @@ describe('applyPageSetupState headerFooter', () => {
       sheetName: 'S',
       header: { left: "Revenue $'000", right: 'Ref $& $1 $$' },
     })
-    expect(patched).toContain("<oddHeader>&amp;LRevenue $'000&amp;RRef $&amp; $1 $$</oddHeader>")
+    expect(patched).toContain(
+      "<oddHeader>&amp;LRevenue $'000&amp;RRef $&amp;&amp; $1 $$</oddHeader>",
+    )
     expect(patched).not.toContain('Old')
   })
 

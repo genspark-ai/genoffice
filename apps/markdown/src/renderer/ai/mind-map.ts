@@ -344,7 +344,8 @@ export function layoutMindMap(
 ): MindMapLayout {
   const nodes: MindMapLayoutNode[] = []
   const edges: MindMapLayoutEdge[] = []
-  let nextX = 0
+  const { padding } = MIND_MAP_METRICS
+  let nextX = padding
   let maxDepth = 0
 
   const place = (node: MindMapTreeNode, id: string, depth: number): MindMapLayoutNode => {
@@ -368,7 +369,7 @@ export function layoutMindMap(
       block: node.block,
       depth,
       x,
-      y: depth * (MIND_MAP_METRICS.nodeHeight + MIND_MAP_METRICS.depthGap),
+      y: depth * (MIND_MAP_METRICS.nodeHeight + MIND_MAP_METRICS.depthGap) + padding,
       hasChildren: kids.length > 0,
       childCount: kids.length,
       descendants: countMindMapNodes(node) - 1,
@@ -382,11 +383,11 @@ export function layoutMindMap(
   }
 
   place(root, '0', 0)
-  const { nodeWidth: w, nodeHeight: h, depthGap, siblingGap, padding } = MIND_MAP_METRICS
+  const { nodeWidth: w, nodeHeight: h, depthGap, siblingGap } = MIND_MAP_METRICS
   return {
     nodes,
     edges,
-    width: Math.max(w, nextX - siblingGap) + padding * 2,
+    width: Math.max(w, nextX - siblingGap - padding) + padding * 2,
     height: (maxDepth + 1) * (h + depthGap) - depthGap + padding * 2,
   }
 }

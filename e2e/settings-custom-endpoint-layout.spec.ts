@@ -7,7 +7,7 @@ import { closeAndSaveVideo, launchShell, screenshotPath } from './helpers'
 
 const locales = [
   { lang: 'en', settings: 'Settings', pane: 'AI Model' },
-  { lang: 'zh', settings: '设置', pane: 'AI 模型' },
+  { lang: 'zh', settings: '\u8bbe\u7f6e', pane: 'AI \u6a21\u578b' },
   { lang: 'de', settings: 'Einstellungen', pane: 'KI-Modell' },
 ] as const
 

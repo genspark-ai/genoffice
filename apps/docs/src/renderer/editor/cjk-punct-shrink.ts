@@ -44,7 +44,12 @@ import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-
  *   only when everything before it fits, on the same alignments compression
  *   applies to (justified under compat 15, every alignment under legacy).
  *   Under compressPunctuation that trailing stop is compressed to half width
- *   instead, even when it is the line's only compressible glyph.
+ *   instead, even when it is the line's only compressible glyph. When even
+ *   that does not fit, the stop still hangs at the margin provided the body
+ *   before it fits once the line's own closers give up at most half a glyph
+ *   in total (Yu Mincho 10.5pt probes 2026-10-13: 1.4pt and 4.5pt over one
+ *   comma accepted, 7.3pt over two commas and 12.4pt over one declined -> the
+ *   next line starts with the kana + stop).
  * - All of it is gated on the run's effective w:lang w:eastAsia (run rPr >
  *   character style > paragraph style chain > docDefaults; the paragraph mark
  *   does not count): under en-US / ko-KR Word neither hangs nor compresses
@@ -165,6 +170,8 @@ interface MeasuredShrink {
   /** paragraph base letter-spacing (px, docGrid charSpace): the decoration's
    *  own letter-spacing replaces the inherited value, so it must fold it in */
   baseLs: number
+  /** the glyph hangs at zero advance (a trailing stop at the margin) */
+  hang?: boolean
 }
 
 export interface ShrinkLineChars {
@@ -184,6 +191,10 @@ export interface ShrinkLineChars {
   candPunctCount: number
   /** the chain drags a kinsoku-close character that cannot start a line */
   forced: boolean
+  /** natural advance of the line's last glyph when it already hangs (decorated) */
+  hungWidth?: number | null
+  /** the chain ends with a stop / closing bracket that may hang */
+  candEndsWithStop?: boolean
 }
 
 export interface HangLineChars {
@@ -208,6 +219,26 @@ export function decideCjkHang(line: HangLineChars): 'keep' | 'pull' | null {
   return line.natural + body <= line.avail + NOISE ? 'pull' : null
 }
 
+/**
+ * Word's hang rule under compressPunctuation, tried once decideCjkShrinks
+ * declined: the chain's trailing stop hangs at zero advance when the body
+ * before it fits after the line's own closers (the hung stop excluded) give
+ * up at most half a glyph in total. Returns the per-closer compression (0 =
+ * hang only) or null.
+ */
+export function decideCjkHangUnderCompression(line: ShrinkLineChars): number | null {
+  const hung = line.hungWidth != null
+  const body = hung
+    ? line.natural - line.hungWidth!
+    : line.natural + line.candWidths.slice(0, -1).reduce((s, w) => s + w, 0)
+  if (!hung && (!line.candEndsWithStop || line.candWidths.length === 0)) return null
+  const deficit = body - line.avail
+  if (deficit <= NOISE) return 0
+  const pool = line.punctCount - (hung ? 1 : 0)
+  if (pool <= 0 || line.avgPunctW <= 0 || deficit > FORCED_CAP * line.avgPunctW) return null
+  return (deficit + SHRINK_EPS) / pool
+}
+
 /** The glyphs a decided amount lands on: the line's own punctuation (closers
  *  and openers) when it has a closer to compress, otherwise the pulled chain's
  *  stops alone — decideCjkShrinks sized the amount for exactly those. */
@@ -225,6 +256,9 @@ export function shrinkTargets<T>(line: ShrinkLineChars, own: T[], cand: T[]): T[
  */
 export function decideCjkShrinks(lines: ShrinkLineChars[]): Array<number | null> {
   return lines.map((line) => {
+    // a hung stop is decideCjkHangUnderCompression's keep state: its natural
+    // width is not line overflow
+    if (line.hungWidth != null) return null
     if (line.avgPunctW <= 0) return null
     const overflow = line.natural - line.avail
     if (line.punctCount === 0) {
@@ -507,10 +541,12 @@ class CjkPunctShrinkView {
 
     if (shrinks.length === 0 && (!old || old === DecorationSet.empty)) return
     const decos = shrinks.map((s) =>
-      Decoration.inline(s.from, s.from + 1, {
-        class: 'doc-cjkshrink',
-        style: shrinkStyle(s.ch, s.perChar, s.baseLs),
-      }),
+      Decoration.inline(
+        s.from,
+        s.from + 1,
+        { class: 'doc-cjkshrink', style: shrinkStyle(s.ch, s.perChar, s.baseLs) },
+        { hang: s.hang === true },
+      ),
     )
     view.dispatch(
       view.state.tr.setMeta(cjkPunctShrinkPluginKey, decos).setMeta('addToHistory', false),
@@ -659,6 +695,8 @@ class CjkPunctShrinkView {
 
     const active = cjkPunctShrinkPluginKey.getState(view.state)
     const decorated = (c: CharBox) => (active?.find(c.from, c.from + 1).length ?? 0) > 0
+    const hungDecorated = (c: CharBox) =>
+      (active?.find(c.from, c.from + 1) ?? []).some((d) => d.spec.hang === true)
     const punctBoxesPerLine: CharBox[][] = []
     const candPunctBoxesPerLine: CharBox[][] = []
     const hangModels: HangLineChars[] = []
@@ -711,7 +749,10 @@ class CjkPunctShrinkView {
       // amount — measure those against the paragraph content box instead
       const ragged = !justified || k === lines.length - 1 || brBetween
       const avail = ragged ? contentW - (k === 0 ? textIndent : 0) : (right - left) / zoom
-      const last = line[line.length - 1]
+      // a hung stop keeps its trailing spaces on the line: look past them
+      let lastIx = line.length - 1
+      while (lastIx > 0 && line[lastIx].ch === ' ') lastIx--
+      const last = line[lastIx]
       hangModels.push({
         natural,
         avail,
@@ -729,6 +770,8 @@ class CjkPunctShrinkView {
         candWidths: k === lines.length - 1 ? [] : candWidths,
         candPunctCount: candPunctBoxes.length,
         forced,
+        hungWidth: isClose(last) && hungDecorated(last) ? last.width : null,
+        candEndsWithStop: candLast !== null && isClose(candLast),
       }
     })
 
@@ -737,22 +780,54 @@ class CjkPunctShrinkView {
       lines.forEach((line, k) => {
         const decision = decideCjkHang(hangModels[k])
         if (decision === null) return
+        let lastIx = line.length - 1
+        while (lastIx > 0 && line[lastIx].ch === ' ') lastIx--
         const stop =
-          decision === 'keep'
-            ? line[line.length - 1]
-            : lines[k + 1][hangModels[k].candWidths.length - 1]
-        out.push({ from: stop.from, ch: stop.ch, perChar: stop.width, baseLs })
+          decision === 'keep' ? line[lastIx] : lines[k + 1][hangModels[k].candWidths.length - 1]
+        out.push({ from: stop.from, ch: stop.ch, perChar: stop.width, baseLs, hang: true })
       })
       return out
     }
     const decisions = decideCjkShrinks(lineModels)
+    // a stop hung from line k is also a closer on line k+1: one decoration only
+    const hungFrom = new Set<number>()
     for (let k = 0; k < decisions.length; k++) {
       const perGlyph = decisions[k]
-      if (perGlyph === null) continue
+      const lm = lineModels[k]
+      // a compression emitted last round that did not pull its chain (own
+      // closers decorated, line still short, chain still on the next line):
+      // Chromium's breaker rejected the marginal fit, so hang instead
+      const pullFailed =
+        lm.natural - lm.avail <= NOISE &&
+        lm.candWidths.length > 0 &&
+        punctBoxesPerLine[k].some((c) => isClose(c) && decorated(c))
+      const own = perGlyph === null || pullFailed ? decideCjkHangUnderCompression(lm) : null
+      if (own !== null || perGlyph === null) {
+        if (own === null) continue
+        const line = lines[k]
+        const hung = lineModels[k].hungWidth != null
+        let lastIx = line.length - 1
+        while (lastIx > 0 && line[lastIx].ch === ' ') lastIx--
+        const stop = hung ? line[lastIx] : lines[k + 1][lineModels[k].candWidths.length - 1]
+        if (!hungFrom.has(stop.from)) {
+          hungFrom.add(stop.from)
+          out.push({ from: stop.from, ch: stop.ch, perChar: stop.width, baseLs, hang: true })
+        }
+        const perChar = Math.round(own * 100) / 100
+        if (perChar > 0) {
+          for (const c of punctBoxesPerLine[k]) {
+            if (isClose(c) && !hungFrom.has(c.from))
+              out.push({ from: c.from, ch: c.ch, perChar, baseLs })
+          }
+        }
+        continue
+      }
       const perChar = Math.round(perGlyph * 100) / 100
       if (perChar <= 0) continue
       const boxes = shrinkTargets(lineModels[k], punctBoxesPerLine[k], candPunctBoxesPerLine[k])
-      for (const c of boxes) out.push({ from: c.from, ch: c.ch, perChar, baseLs })
+      for (const c of boxes) {
+        if (!hungFrom.has(c.from)) out.push({ from: c.from, ch: c.ch, perChar, baseLs })
+      }
     }
     return out
   }

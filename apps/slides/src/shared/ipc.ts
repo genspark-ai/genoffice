@@ -169,7 +169,7 @@ export interface ApplyTxnResult {
   plan?: string[]
   failures?: Array<{ index: number; error: string }>
   /** compact journal echo: op name, target, ids minted by additive ops */
-  records?: Array<{ op: string; target?: string; created?: string[] }>
+  records?: Array<{ op: string; target?: string; created?: string[]; note?: string }>
   /** full deck after a mutation (a transaction may touch any slide) */
   slides?: RenderSlide[]
 }
@@ -1634,7 +1634,7 @@ export interface SlidesApi {
   /** Apply an edit script's collected primitives as ONE atomic op transaction (the executor rolls back on any failure); returns the rebuilt slide or a guided error */
   applyEditScript: (
     op: ApplyEditScriptOp,
-  ) => Promise<{ slide: RenderSlide } | { error: string } | null>
+  ) => Promise<{ slide: RenderSlide; notes?: string[] } | { error: string } | null>
   /** AI batch surface: apply raw ops as one transaction (atomic/per_op, dry-run supported) */
   applyTxn: (op: ApplyTxnOp) => Promise<ApplyTxnResult | null>
   /** Roll the deck back to an AI rollback point; returns the restored full RenderSlide array, null when the id is unknown */

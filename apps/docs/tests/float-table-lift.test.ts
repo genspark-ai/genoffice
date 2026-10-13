@@ -77,6 +77,63 @@ describe('suppressed text-anchored float with a negative w:tblpY', () => {
   })
 })
 
+describe('suppressed float keeps its w:tblpX', () => {
+  it('page-anchored X measures from the paper edge (may reach into the left margin)', () => {
+    const [, attrs] = tableSpec({
+      ...suppressedFloat,
+      tblFloatHorzAnchor: 'page',
+      tblFloatXTwips: 1103,
+    })
+    expect(attrs.style).toContain('margin-left:calc(73.5px - var(--doc-margin-left,0px))')
+  })
+
+  it('margin-anchored X is a plain indent; xSpec, a live float and a zero X are untouched', () => {
+    expect(tableSpec({ ...suppressedFloat, tblFloatXTwips: 300 })[1].style).toContain(
+      'margin-left:20.0px',
+    )
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatHorzAnchor: null, tblFloatXTwips: 300 })[1].style,
+    ).toContain('margin-left:20.0px')
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatXTwips: 300, tblFloatXSpec: 'center' })[1].style ??
+        '',
+    ).not.toContain('margin-left:20.0px')
+    expect(tableSpec({ ...suppressedFloat, tblFloatXTwips: 0 })[1].style ?? '').not.toContain(
+      'margin-left',
+    )
+    expect(
+      tableSpec({
+        ...suppressedFloat,
+        tblFloat: 'left',
+        tblFloatSuppressed: false,
+        tblFloatXTwips: 300,
+      })[1].style,
+    ).not.toContain('margin-left:20.0px')
+  })
+})
+
+describe('w:noWrap under a fixed table layout', () => {
+  const nowrapCell = { type: 'docTableCell', attrs: { noWrap: true }, content: [cell.content[0]] }
+  const cellStyle = (tableAttrs: Record<string, unknown>): string => {
+    const table = editor.schema.nodeFromJSON({
+      type: 'docTable',
+      attrs: tableAttrs,
+      content: [{ type: 'docTableRow', content: [nowrapCell] }],
+    })
+    const spec = editor.schema.nodes.docTableCell.spec.toDOM!(table.child(0).child(0)) as [
+      string,
+      Record<string, string>,
+    ]
+    return spec[1].style ?? ''
+  }
+
+  it('the cell defers to the table-level fallback, which a fixed layout sets to normal', () => {
+    expect(cellStyle({})).toContain('white-space:var(--doc-cell-nowrap,nowrap)')
+    expect(tableSpec({ tblFixedLayout: true })[1].style).toContain('--doc-cell-nowrap:normal')
+    expect(tableSpec({})[1].style ?? '').not.toContain('--doc-cell-nowrap')
+  })
+})
+
 function flow() {
   const pm = document.createElement('div')
   const add = (tag: string, top: number, height: number, html: string) => {

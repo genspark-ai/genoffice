@@ -159,6 +159,13 @@ export interface OpenAiRequestOptions {
   idleTimeoutMs?: number | undefined
 }
 
+const usageRejectedGateways = new Set<string>()
+
+/** test hook */
+export function resetUsageRejectedGateways(): void {
+  usageRejectedGateways.clear()
+}
+
 export async function streamOpenAiCompatible(
   baseUrl: string,
   config: AiProviderConfig,
@@ -173,12 +180,14 @@ export async function streamOpenAiCompatible(
   return wd.guard(() =>
     openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, {
       ...options,
-      requestUsage: true,
+      requestUsage: !usageRejectedGateways.has(baseUrl),
     }).catch((e) => {
       // Some gateways reject the (spec) stream_options field outright; a 400 that
-      // names it is retried once without it — those providers simply never report usage.
+      // names it is retried once without it, and the gateway is remembered so
+      // later turns skip the extra round trip — those providers never report usage.
       if (!/HTTP 4\d\d:[\s\S]*stream_options/i.test(e instanceof Error ? e.message : String(e)))
         throw e
+      usageRejectedGateways.add(baseUrl)
       return openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, {
         ...options,
         requestUsage: false,

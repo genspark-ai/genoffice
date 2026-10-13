@@ -533,6 +533,10 @@ export function fillLineBoxes(
       !(i > 0 && blocks[i - 1].keepNext && !block.keepNext)
     )
       continue
+    if (block.lineLeadPx === undefined) {
+      block.lineLeadPx = lineLeadPx(block.el)
+      if (block.lineLeadPx > 0.5) changed = true
+    }
     // a protected image block is atomic like a shape: the tiny lead line its
     // anchor marker / leading spaces form is not a page-break point (cutting
     // there left a sliver strip of a page-crossing photo behind). Over-page
@@ -579,10 +583,6 @@ export function fillLineBoxes(
         changed = true
       }
       continue
-    }
-    if (block.lineLeadPx === undefined) {
-      block.lineLeadPx = lineLeadPx(block.el)
-      if (block.lineLeadPx > 0.5) changed = true
     }
     // synthesized over-page cuts below mutate the list, so cached entries are copied out
     let boundaries: number[]

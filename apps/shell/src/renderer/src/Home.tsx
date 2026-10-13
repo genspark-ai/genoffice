@@ -82,7 +82,7 @@ const TREE_STATE_KEY = 'home.folderTree'
  * Width of the viewport that `position: fixed` elements anchor to. The layout
  * engine owns this coordinate system, so documentElement's client rect is the
  * value to compute menu offsets from; window.innerWidth can disagree on scaled
- * Linux desktops, which pushed row menus past the window's left edge (#1946).
+ * Linux desktops, which pushed row menus past the window's left edge (genoffice#1946).
  */
 function fixedViewportWidth(): number {
   return document.documentElement.clientWidth

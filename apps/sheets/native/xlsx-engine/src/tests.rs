@@ -4805,6 +4805,39 @@ fn rejects_xml_entry_that_inflates_past_its_declared_size() {
     );
 }
 
+/// An honestly declared metadata part still has a ceiling: a highly
+/// compressible `xl/workbook.xml` far past `MAX_METADATA_PART_BYTES` is refused
+/// before it is materialised (genoffice#1002).
+#[test]
+fn rejects_oversized_metadata_part_that_declares_its_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big-workbook.xlsx");
+    let size = crate::xml_util::MAX_METADATA_PART_BYTES as usize + 1;
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/workbook.xml", options).unwrap();
+        writer.write_all(b"<workbook>").unwrap();
+        let chunk = vec![b' '; 1 << 20];
+        let mut written = 0;
+        while written < size {
+            writer.write_all(&chunk).unwrap();
+            written += chunk.len();
+        }
+        writer.write_all(b"</workbook>").unwrap();
+        writer.finish().unwrap();
+    }
+    assert!(std::fs::metadata(&path).unwrap().len() < 1024 * 1024);
+
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let error = crate::xml_util::read_zip_string(&mut archive, "xl/workbook.xml").unwrap_err();
+    assert!(
+        error.to_string().contains("metadata part limit"),
+        "unexpected error: {error}"
+    );
+}
+
 /// The same entry read honestly must still succeed: the cap is on the payload,
 /// not on legitimate parts.
 #[test]

@@ -71,7 +71,7 @@ function emitAnthropicJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       input?: Record<string, unknown>
     }>
     stop_reason?: string
-    usage?: { input_tokens?: unknown; output_tokens?: unknown }
+    usage?: AnthropicUsage
     error?: { message?: string } | string
   }
   try {
@@ -110,14 +110,23 @@ function emitAnthropicJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     cb.onUsage?.(jsonUsage)
 }
 
+interface AnthropicUsage {
+  input_tokens?: unknown
+  output_tokens?: unknown
+  cache_read_input_tokens?: unknown
+  cache_creation_input_tokens?: unknown
+}
+
 /** Merge an Anthropic usage object into an accumulator (input arrives on message_start,
  * the running output total on message_delta; stream events and JSON bodies share the shape). */
-function mergeAnthropicUsage(
-  target: AiTokenUsage,
-  usage: { input_tokens?: unknown; output_tokens?: unknown } | undefined,
-): void {
+function mergeAnthropicUsage(target: AiTokenUsage, usage: AnthropicUsage | undefined): void {
   if (!usage) return
-  const input = usageCount(usage.input_tokens)
+  // input_tokens excludes the cached prefix; the billed input is all three together
+  const fresh = usageCount(usage.input_tokens)
+  const cached =
+    (usageCount(usage.cache_read_input_tokens) ?? 0) +
+    (usageCount(usage.cache_creation_input_tokens) ?? 0)
+  const input = fresh === undefined ? (cached > 0 ? cached : undefined) : fresh + cached
   const output = usageCount(usage.output_tokens)
   if (input !== undefined) target.inputTokens = input
   if (output !== undefined) target.outputTokens = output
@@ -237,8 +246,8 @@ async function anthropicTurn(
       index?: number
       content_block?: { type?: string; id?: string; name?: string }
       delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string }
-      message?: { usage?: { input_tokens?: unknown; output_tokens?: unknown } }
-      usage?: { input_tokens?: unknown; output_tokens?: unknown }
+      message?: { usage?: AnthropicUsage }
+      usage?: AnthropicUsage
       error?: { message?: string } | string
     }
     if (event.type === 'message_start') {

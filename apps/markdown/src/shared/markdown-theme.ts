@@ -31,9 +31,3 @@ export function normalizeMarkdownTheme(value: unknown): MarkdownTheme {
     ? (String(value) as MarkdownTheme)
     : 'default'
 }
-
-/** Dark themes flip the paper regardless of the light/dark document theme.
- *  Blubook stays light: its signature is a light paper with deep-blue code fences. */
-export function isMarkdownThemeDark(theme: MarkdownTheme): boolean {
-  return theme === 'notion-dark' || theme === 'drake-dark' || theme === 'nord'
-}

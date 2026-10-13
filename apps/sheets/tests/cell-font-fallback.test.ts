@@ -6,6 +6,7 @@ import {
   registerTextDingbatsFace,
   rewriteScopedFamilies,
   withSansSerifFallback,
+  richRunFamilies,
   workbookFontFamilies,
 } from '../src/renderer/cell-font-fallback'
 
@@ -560,6 +561,28 @@ describe('registerCellFontAliases', () => {
     expect(sources).toHaveLength(lookedUp)
   })
 
+  it('a second caller waits for the load the first one started', async () => {
+    let settle!: () => void
+    const pending = new Promise<void>((resolve) => (settle = resolve))
+    vi.stubGlobal(
+      'FontFace',
+      class {
+        load() {
+          return pending
+        }
+      },
+    )
+    vi.stubGlobal('document', { fonts: { add() {} } })
+    const first = registerCellFontAliases(['Garamond'])
+    let secondDone = false
+    const second = registerCellFontAliases(['Garamond']).then(() => (secondDone = true))
+    await Promise.resolve()
+    expect(secondDone).toBe(false)
+    settle()
+    await Promise.all([first, second])
+    expect(secondDone).toBe(true)
+  })
+
   it('starts with the dingbats face only: no system font is looked up for nothing', async () => {
     const sources = stubFontFaces()
     await registerTextDingbatsFace()
@@ -588,5 +611,24 @@ describe('workbookFontFamilies', () => {
       '游ゴシック',
       'ＭＳ Ｐゴシック',
     ])
+  })
+
+  it('splits comma lists, strips quotes and includes conditional-format fonts', () => {
+    const families = workbookFontFamilies({
+      styles: [{ fontFamily: '"Yu Mincho", Meiryo' }, { fontFamily: ' Calibri ,Calibri' }],
+      dxfStyles: [{ fontFamily: 'Segoe UI' }, {}],
+    } as unknown as Parameters<typeof workbookFontFamilies>[0])
+    expect([...families]).toEqual(['Yu Mincho', 'Meiryo', 'Calibri', 'Segoe UI'])
+  })
+})
+
+describe('richRunFamilies', () => {
+  it('collects the families rich-text runs name, split like cell fonts', () => {
+    const families = richRunFamilies([
+      { rich: [{ family: 'Yu Mincho' }, { family: '"Segoe UI",Arial' }, {}] },
+      {},
+      { rich: [{ family: 'Yu Mincho' }] },
+    ])
+    expect([...families]).toEqual(['Yu Mincho', 'Segoe UI', 'Arial'])
   })
 })

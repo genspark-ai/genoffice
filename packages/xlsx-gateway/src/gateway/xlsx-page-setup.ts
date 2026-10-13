@@ -218,6 +218,13 @@ function setFrozenPane(xml: string, rows: number, columns: number): string {
   return result.slice(0, at) + pane + result.slice(at)
 }
 
+/// A lone `&` that does not start an Excel code (`&&` literal, section,
+/// field, formatting, font size, font spec, `&[Page]` named code) is written
+/// as `&&`, the way Excel's own dialog does; anything else stays verbatim.
+function escapeStrayAmpersands(text: string): string {
+  return text.replace(/&&|&(?![LCRPNDTFAGBIUSEXYZOHK0-9"[])/gi, '&&')
+}
+
 /// Left/center/right → Excel's `&L..&C..&R..` code string, empty sections
 /// omitted; the caller XML-escapes the result.
 function encodeHeaderFooterSections(parts: HeaderFooterParts): string {
@@ -228,7 +235,7 @@ function encodeHeaderFooterSections(parts: HeaderFooterParts): string {
   ]
   return sections
     .filter(([, text]) => text !== undefined && text !== '')
-    .map(([marker, text]) => marker + (text ?? ''))
+    .map(([marker, text]) => marker + escapeStrayAmpersands(text ?? ''))
     .join('')
 }
 

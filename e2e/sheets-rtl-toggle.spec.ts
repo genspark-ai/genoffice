@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl, screenshotPath } from './helpers'
 
 /**
- * The View tab's Right-to-Left toggle (#1963): the checkbox flips the active
+ * The View tab's Right-to-Left toggle (genoffice#1963): the checkbox flips the active
  * sheet's grid direction live (sheetView/@rightToLeft through Univer's own
  * command, mirrored by rtl-grid-mirror) and the echo follows the active
  * sheet's journal + live config. Persistence rides the save pipeline

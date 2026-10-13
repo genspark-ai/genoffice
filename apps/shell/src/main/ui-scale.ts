@@ -66,10 +66,11 @@ export function clampUiScale(scale: number): number {
 
 /** The next preset above / below `scale`, clamped at the ends. */
 export function stepUiScale(scale: number, direction: 1 | -1): number {
-  const index = UI_SCALE_STEPS.findIndex((step) => step >= scale - 1e-9)
-  const from = index === -1 ? UI_SCALE_STEPS.length - 1 : index
-  const next = UI_SCALE_STEPS[Math.min(UI_SCALE_STEPS.length - 1, Math.max(0, from + direction))]
-  return next ?? UI_SCALE_MIN
+  const next =
+    direction === 1
+      ? UI_SCALE_STEPS.find((step) => step > scale + 1e-9)
+      : UI_SCALE_STEPS.filter((step) => step < scale - 1e-9).at(-1)
+  return next ?? clampUiScale(scale)
 }
 
 /**

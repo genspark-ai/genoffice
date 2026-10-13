@@ -16,6 +16,17 @@ export type {
 export { composeSkills } from './skill'
 export { createKnowledgeBaseSkill, formatKbSize } from './knowledge-base-skill'
 export type { KnowledgeBaseDeps, KbFileInfo, KbSearchHit, KbReadPage } from './knowledge-base-skill'
+export {
+  createDocumentSkill,
+  CREATE_DOCUMENT_MAX_CHARS,
+  CREATE_DOCUMENT_TOOL,
+} from './create-document-skill'
+export type {
+  CreateDocumentDeps,
+  CreateDocumentFormat,
+  CreateDocumentRequest,
+  CreateDocumentSkill,
+} from './create-document-skill'
 export type { AgentSkill, ExecutedToolCall } from './skill'
 export {
   AgentLoop,

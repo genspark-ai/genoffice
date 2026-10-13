@@ -8,7 +8,6 @@ Home is GenOffice's start page: a navigation sidebar on the left, file lists and
 
 - **Recent**: files you opened recently. Each row is stamped with when — today, yesterday, or the date.
 - **Starred**: files you starred. Hover a file row and click the star to add or remove it. The ⋯ menu's **Move to group** sorts starred files into named groups; the Starred view filters by them.
-- **User Guide**: opens this manual.
 - **Ask AI**: the knowledge-base panel — ask questions and get answers cited from your starred files (see below).
 - **Genspark Projects**: after signing in to your Genspark account, shows the projects you created with Genspark AI on the web; click one to continue editing in the browser. Search, sort by time, refresh and load-more are supported.
 - **Folders**: directories you add to the sidebar with **Add folder…**, or drag in from the file manager. Each becomes a root you can open, create subfolders in, rename and remove; one that goes offline shows as unavailable and can be taken off the list. **New folder** makes another one.

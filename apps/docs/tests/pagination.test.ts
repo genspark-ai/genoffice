@@ -388,6 +388,38 @@ describe('multi-section slicing', () => {
     ])
   })
 
+  it('an anchor-only paragraph closing a next-page section stays on its page when its line no longer fits', () => {
+    const geoms = [
+      { contentHeight: 600, forceBreak: false },
+      { contentHeight: 600, forceBreak: true },
+    ]
+    const closing = (extra?: Partial<BlockBox>) => [
+      block(0, 580, { section: 0 }),
+      block(580, 50, { section: 0, anchorOnly: true, ...extra }),
+      block(630, 20, { section: 1 }),
+    ]
+    expect(computeSectionedSlicesF2(closing(), geoms, 650)).toEqual([
+      { start: 0, end: 630, section: 0 },
+      { start: 630, end: 650, section: 1 },
+    ])
+    // the same paragraph with text moves to a page of its own (Word)
+    expect(computeSectionedSlicesF2(closing({ anchorOnly: undefined }), geoms, 650)).toEqual([
+      { start: 0, end: 580, section: 0 },
+      { start: 580, end: 630, section: 0 },
+      { start: 630, end: 650, section: 1 },
+    ])
+    // not a section end: a plain anchor-only paragraph moves whole
+    const plain = [
+      block(0, 580, { section: 0 }),
+      block(580, 50, { section: 0, anchorOnly: true }),
+      block(630, 20, { section: 0 }),
+    ]
+    expect(computeSectionedSlicesF2(plain, [geoms[0]], 650)).toEqual([
+      { start: 0, end: 580, section: 0 },
+      { start: 580, end: 650, section: 0 },
+    ])
+  })
+
   it('continuous section does not force a page break', () => {
     const geoms = [
       { contentHeight: 800, forceBreak: false },
@@ -2502,6 +2534,36 @@ describe('computeSectionedSlicesF2 — keepNext chain anchored by a table', () =
     // whole-table anchor height would push heading + table to page 2 (start 80)
     expect(slices.map((slice) => slice.start)).toEqual([0, 190])
   })
+
+  it('Word 2013+ layout: the heading demands the header block plus the first body row', () => {
+    // heading (20) + header row (30) fit the 200px page by 20px, but the table
+    // itself turns the page because the header may not stay alone at the page
+    // bottom; the heading must move with it instead of staying orphaned
+    const filler = block(0, 130)
+    const heading = block(130, 20, { keepNext: true })
+    const rows: TableRowBox[] = [
+      { height: 30, isHeader: true, contentBottom: 0 },
+      { height: 90, contentBottom: 0 },
+      { height: 90, contentBottom: 0 },
+    ]
+    const table = block(150, 210, { tableRows: rows, modernTableHeaders: true })
+    const slices = computeSectionedSlicesF2([filler, heading, table], geoms1, 360)
+    expect(slices.map((slice) => slice.start)).toEqual([0, 130, 270])
+  })
+
+  it('legacy layout keeps demanding only the first row', () => {
+    const filler = block(0, 130)
+    const heading = block(130, 20, { keepNext: true })
+    const rows: TableRowBox[] = [
+      { height: 30, isHeader: true, contentBottom: 0 },
+      { height: 90, contentBottom: 0 },
+      { height: 90, contentBottom: 0 },
+    ]
+    const table = block(150, 210, { tableRows: rows })
+    const slices = computeSectionedSlicesF2([filler, heading, table], geoms1, 360)
+    expect(slices[0].start).toBe(0)
+    expect(slices[1].start).toBe(180)
+  })
 })
 
 describe('fillLineBoxes — keepNext chain anchors', () => {
@@ -3208,20 +3270,38 @@ describe('tableHeaderFlags', () => {
     ])
   })
 
-  it('tableRowFlags: a keepNext paragraph in any cell (direct or via pStyle) marks the row keepNext', () => {
+  it('tableRowFlags: a keepNext FIRST paragraph of the FIRST cell (direct or via pStyle) marks the row keepNext', () => {
     const xml =
       '<w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/></w:pPr></w:p></w:tc><w:tc><w:p/></w:tc></w:tr>' +
       '<w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr></w:p></w:tc></w:tr>' +
       '<w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Heading2"/><w:keepNext w:val="0"/></w:pPr></w:p></w:tc></w:tr>' +
-      '<w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr></w:p></w:tc></w:tr></w:tbl>'
+      '<w:tr><w:tc><w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr></w:p></w:tc></w:tr>' +
+      // keepNext on a later paragraph of the cell (icon card: picture, keepNext title,
+      // body) or in a later cell does not chain the row (Word probe 2026-10-13)
+      '<w:tr><w:tc><w:p><w:r><w:t>pic</w:t></w:r></w:p><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>t</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr></w:p></w:tc></w:tr>' +
+      '<w:tr><w:tc><w:p/></w:tc><w:tc><w:p><w:pPr><w:keepNext/></w:pPr></w:p><w:p/></w:tc></w:tr>' +
+      // self-closing empty first paragraph followed by a keepNext one: still not the first
+      '<w:tr><w:tc><w:p w:rsidR="00A1"/><w:p><w:pPr><w:keepNext/></w:pPr></w:p></w:tc></w:tr></w:tbl>'
     const keep = (id: string) => id === 'Heading2'
     expect(tableRowFlags(xml, keep).map((f) => f.keepNext ?? false)).toEqual([
       true,
       true,
       false,
       false,
+      false,
+      false,
+      false,
     ])
-    expect(tableRowFlags(xml).map((f) => f.keepNext ?? false)).toEqual([true, false, false, false])
+    expect(tableRowFlags(xml).map((f) => f.keepNext ?? false)).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ])
   })
 
   it('tableRowFlags parses atLeast trHeight into minHPx (exact/auto-only rows excluded)', () => {
@@ -4019,6 +4099,54 @@ describe('computeSectionedSlicesF2 — multi-column flow', () => {
       [0, 160],
       [160, 220],
     ])
+  })
+
+  it('columnLayoutSpecs: a block landing in a gutter-sized column wraps at the widest column', () => {
+    const els = Array.from({ length: 3 }, () => document.createElement('p'))
+    // body paragraph indents (w:ind) that leave the gutter column one glyph wide
+    els[1].style.marginLeft = '25.4px'
+    els[1].style.marginRight = '8.5px'
+    const blocks: BlockBox[] = [
+      { ...lineBlock(0, [20]), section: 0, el: els[0] },
+      { ...lineBlock(20, [20]), section: 0, el: els[1] },
+      { ...lineBlock(40, [20]), section: 0, el: els[2] },
+    ]
+    const slices: PageSlice[] = [
+      {
+        start: 0,
+        end: 60,
+        section: 0,
+        physHeight: 70,
+        regions: [
+          {
+            top: 0,
+            height: 20,
+            section: 0,
+            columns: [
+              { start: 0, end: 20 },
+              { start: 20, end: 40 },
+              { start: 40, end: 60 },
+            ],
+          },
+        ],
+      },
+    ]
+    // cols 3574 / 1131 / 5280 twips: the middle one is a formula-number gutter
+    const secs = [
+      sec(
+        { columns: 3 },
+        {
+          sectPrXml:
+            '<w:sectPr><w:cols w:num="3" w:equalWidth="0"><w:col w:w="3574" w:space="40"/><w:col w:w="1131" w:space="43"/><w:col w:w="5280"/></w:cols></w:sectPr>',
+        },
+      ),
+    ]
+    const specs = columnLayoutSpecs(blocks, slices, secs)
+    const g = sectionColGeom(secs[0])
+    expect(specs[0].widthPx).toBeCloseTo(g.widths[0], 3)
+    expect(specs[1].widthPx).toBeCloseTo(g.widths[2] - 25.4 - 8.5, 3)
+    expect(specs[1].dx).toBeCloseTo(g.widths[0] + g.gaps[0], 3)
+    expect(specs[2].widthPx).toBeCloseTo(g.widths[2], 3)
   })
 
   it('columnLayoutSpecs: width + per-column constant translate, later regions pull up', () => {
@@ -5629,6 +5757,23 @@ describe('page-bottom fit: the last line needs only its single-spacing extent (l
     try {
       expect(lineLeadPx(el)).toBeCloseTo(10, 5)
       el.classList.add('doc-lh-fixed')
+      expect(lineLeadPx(el)).toBe(0)
+    } finally {
+      el.remove()
+    }
+  })
+
+  it('lineLeadPx of a picture paragraph is its bottom padding past the effectExtent', () => {
+    const el = document.createElement('div')
+    el.className = 'doc-protected doc-img-para'
+    el.style.lineHeight = '0px'
+    el.style.paddingBottom = '20px'
+    el.style.setProperty('--doc-line-mult', '2')
+    el.style.setProperty('--doc-pic-effect-b', '0.5px')
+    document.body.appendChild(el)
+    try {
+      expect(lineLeadPx(el)).toBeCloseTo(19.5, 5)
+      el.style.setProperty('--doc-line-mult', '1')
       expect(lineLeadPx(el)).toBe(0)
     } finally {
       el.remove()

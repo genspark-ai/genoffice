@@ -68,6 +68,7 @@ import type {
   NewInkImage,
   NoteInfo,
   ParsedDoc,
+  RevisionInfo,
   SdtShell,
   SectionSettings,
   SourceInfo,
@@ -359,7 +360,7 @@ export type SaveBlock = (
   | { kind: 'chart'; chart: NewChart; extentPx?: { w: number; h: number } }
 ) & {
   /** Top-level tracked insertion/deletion wrapper. */
-  revision?: { kind: 'ins' | 'del'; author: string; date?: string; id?: string }
+  revision?: { kind: 'ins' | 'del' } & RevisionInfo
 }
 
 export interface SaveOptions {
@@ -755,6 +756,7 @@ export async function saveDocx(
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
     allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
+    allocateRevisionId: nextRevisionIdAllocator(documentXml),
   }
 
   const newMedia: Array<{ path: string; base64: string }> = []
@@ -1512,7 +1514,8 @@ export async function saveDocx(
       const attrs =
         ` w:id="${escapeXmlAttr(revision.id ?? '0')}"` +
         ` w:author="${escapeXmlAttr(revision.author)}"` +
-        (revision.date ? ` w:date="${escapeXmlAttr(revision.date)}"` : '')
+        (revision.date ? ` w:date="${escapeXmlAttr(revision.date)}"` : '') +
+        (revision.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(revision.dateUtc)}"` : '')
       xml = `<w:${revision.kind}${attrs}>${xml}</w:${revision.kind}>`
     }
     if (fbDocxIndex !== undefined && fb.kind !== 'original') {
@@ -1583,6 +1586,16 @@ export async function saveDocx(
     newDocumentXml = newDocumentXml.replace(
       /<w:document /,
       '<w:document xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
+    )
+  }
+
+  if (
+    newDocumentXml.includes(' w16du:dateUtc=') &&
+    !/<w:document[^>]*xmlns:w16du=/.test(newDocumentXml)
+  ) {
+    newDocumentXml = newDocumentXml.replace(
+      /<w:document /,
+      '<w:document xmlns:w16du="http://schemas.microsoft.com/office/word/2023/wordml/word16du" ',
     )
   }
 
@@ -2567,6 +2580,14 @@ function maxDocPrId(documentXml: string): number {
 function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
   let next = maxBookmarkId(documentXml) + 1
   return () => next++
+}
+
+/** revision w:id is unique across every annotation in the part, so start above all existing ids */
+function nextRevisionIdAllocator(documentXml: string): () => string {
+  let next = 9001
+  for (const m of documentXml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/g))
+    next = Math.max(next, parseInt(m[1], 10) + 1)
+  return () => String(next++)
 }
 
 /** Highest w:bookmarkStart/@w:id in the document, 0 when it holds no bookmark. */

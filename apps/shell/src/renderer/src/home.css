@@ -19,7 +19,6 @@
   /* genoffice-logo.svg is pure black-and-white; dark themes flip it to 1 */
   --logo-invert: 0;
   /* lift for the kb-ask composer box */
-  --shadow-composer: 0 1px 3px rgb(0 0 0 / 5%);
 }
 
 /* ── Dark mode overrides ─────────────────────────────────── */
@@ -37,7 +36,6 @@
   --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
   --shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
   --logo-invert: 1;
-  --shadow-composer: 0 1px 3px rgb(0 0 0 / 25%);
 }
 
 /* System dark: no data-theme or data-theme="system" — follow OS preference */
@@ -54,7 +52,6 @@
     --shadow-pill: 0 1px 2px rgb(0 0 0 / 40%);
     --shadow-composer: 0 6px 30px rgb(0 0 0 / 30%);
     --logo-invert: 1;
-    --shadow-composer: 0 1px 3px rgb(0 0 0 / 25%);
   }
 }
 
@@ -2528,6 +2525,51 @@ html[dir='rtl'] .quick-title-row {
 .kb-ask-tool-note svg {
   color: var(--text-tertiary);
   flex-shrink: 0;
+}
+.kb-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.kb-ask-action {
+  appearance: none;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+}
+.kb-ask-action:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.kb-ask-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.kb-ask-action svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.kb-ask-action-saved {
+  color: var(--accent);
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+}
+.kb-ask-action-saved svg {
+  color: var(--accent);
+}
+.kb-ask-action-error {
+  font-size: 11.5px;
+  color: var(--danger);
 }
 /* citation links inside answers (filenav): a soft pill, click opens the file */
 .kb-ask-assistant a {
