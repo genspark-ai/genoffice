@@ -143,6 +143,7 @@ import { unplayableAudioCodec } from './mp4-audio-sniff'
 import { audioFrame, videoFrame, videoSize, type Point, type Size } from './video-size'
 import { AUDIO_EXTS, VIDEO_EXTS } from '../shared/media-kinds'
 import { baseName } from '../shared/base-name'
+import { OPENABLE_DECK_EXTENSIONS, deckExtension } from '../shared/deck-open-formats'
 import type {
   AddChartOp,
   AddCommentOp,
@@ -769,7 +770,7 @@ async function maybeRecoverBytes(
  * cancels the open.
  */
 async function preparePresentationForOpen(filePath: string): Promise<string | null> {
-  const extension = filePath.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? ''
+  const extension = deckExtension(filePath)
   if (extension !== 'odp' && extension !== 'otp') return filePath
   const parent = dialogParent()
   const options = {
@@ -1433,7 +1434,7 @@ export function registerSlidesIpc(): void {
     const parent = dialogParent()
     const options = {
       properties: ['openFile' as const],
-      filters: [{ name: 'PowerPoint', extensions: ['pptx', 'ppt', 'odp'] }],
+      filters: [{ name: 'PowerPoint', extensions: [...OPENABLE_DECK_EXTENSIONS] }],
     }
     const r = await showOpenDialogWithMemory(dialog, parent, options)
     if (r.canceled || !r.filePaths[0]) return null

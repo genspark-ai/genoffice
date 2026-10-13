@@ -142,7 +142,11 @@ import type {
 } from '../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { ClickClaims } from '../shared/context-menu-claims'
-import { findOpenableDocPath } from '../shared/open-file'
+import {
+  OPENABLE_DOC_EXTENSIONS,
+  findOpenableDocPath,
+  isOpenableDocPath,
+} from '../shared/open-file'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
 import {
   adoptLazyMediaHashes,
@@ -3199,8 +3203,8 @@ async function opensAsPasswordPrompt(filePath: string, wcId: number): Promise<bo
 
 export function openExternalDocx(filePath: string | null): void {
   if (!filePath) return
-  // .odt joins the flow as an import (converted .docx copy), like the shell route
-  if (!/\.docx$/i.test(filePath) && !/\.odt$/i.test(filePath)) return
+  // .odt/.ott join the flow as an import (converted .docx copy), like the shell route
+  if (!isOpenableDocPath(filePath)) return
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow
   if (!rendererReady || !win) {
     pendingOpenPath = filePath
@@ -4464,7 +4468,7 @@ export function registerDocsIpc(): void {
   ipcMain.handle('docs:open', async (event) => {
     const result = await openDialog(event, {
       title: tm('dlgOpenDoc'),
-      filters: [{ name: tm('filterWord'), extensions: ['docx', 'odt'] }],
+      filters: [{ name: tm('filterWord'), extensions: [...OPENABLE_DOC_EXTENSIONS] }],
       properties: ['openFile'],
     })
     if (result.canceled || result.filePaths.length === 0) return null
