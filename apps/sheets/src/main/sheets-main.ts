@@ -59,6 +59,7 @@ import {
   registerRendererScheme,
   rendererUrl,
   writeJsonAtomic,
+  recoveryCopyDiskNewer,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang, type Lang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
@@ -75,6 +76,7 @@ import {
   resolveAiSettings,
   setAiUserAgent,
   setRescueFetch,
+  resolveProfileCredential,
   streamForProvider,
   type AiProviderId,
   type AiSettings,
@@ -209,6 +211,7 @@ const tMain = createI18n({
     errImgBadType: '该文件不是 PNG/JPEG/GIF 图片。',
     errDiskChanged: '工作簿在打开后被磁盘上的改动覆盖——请改用另存为。',
     autosaveFoundTitle: '发现自动恢复版本',
+    autosaveDiskNewer: '注意：此恢复副本保存后，磁盘上的文件又被修改过。恢复将替换这些较新的更改。',
     autosaveFoundBody:
       '上次会话有未保存的更改。要恢复自动保存的版本吗?恢复后,保存将直接覆盖原文件。',
     autosaveRestore: '恢复',
@@ -271,6 +274,8 @@ const tMain = createI18n({
     errImgBadType: 'The file is not a PNG/JPEG/GIF image.',
     errDiskChanged: 'The workbook changed on disk after it was opened — use Save As instead.',
     autosaveFoundTitle: 'Recovered version found',
+    autosaveDiskNewer:
+      'Note: the file on disk was modified after this recovery copy was saved. Restoring replaces those newer changes.',
     autosaveFoundBody:
       'There are unsaved changes from your last session. Restore the autosaved version? Saving after a restore overwrites the original file.',
     autosaveRestore: 'Restore',
@@ -336,6 +341,8 @@ const tMain = createI18n({
     errImgBadType: 'Tệp không phải là hình ảnh PNG/JPEG/GIF.',
     errDiskChanged: 'Sổ làm việc đã thay đổi trên đĩa sau khi mở — hãy sử dụng Lưu dưới dạng.',
     autosaveFoundTitle: 'Tìm thấy phiên bản khôi phục',
+    autosaveDiskNewer:
+      'Lưu ý: tệp trên đĩa đã được sửa đổi sau khi bản sao khôi phục này được lưu. Khôi phục sẽ thay thế những thay đổi mới hơn đó.',
     autosaveFoundBody:
       'Có những thay đổi chưa được lưu từ phiên làm việc trước của bạn. Khôi phục phiên bản đã lưu tự động? Việc lưu sau khi khôi phục sẽ ghi đè lên tệp gốc.',
     autosaveRestore: 'Khôi phục',
@@ -403,6 +410,8 @@ const tMain = createI18n({
     errDiskChanged:
       'ブックを開いた後にディスク上で変更されています — 名前を付けて保存を使用してください。',
     autosaveFoundTitle: '自動回復バージョンがあります',
+    autosaveDiskNewer:
+      '注意: この回復コピーの保存後にディスク上のファイルが変更されています。復元するとその新しい変更は置き換えられます。',
     autosaveFoundBody:
       '前回のセッションに未保存の変更があります。自動保存版を復元しますか?復元後に保存すると、元のファイルは上書きされます。',
     autosaveRestore: '復元',
@@ -470,6 +479,8 @@ const tMain = createI18n({
     errDiskChanged:
       '통합 문서가 열린 후 디스크에서 변경되었습니다. 다른 이름으로 저장을 사용하세요.',
     autosaveFoundTitle: '자동 복구 버전 발견',
+    autosaveDiskNewer:
+      '참고: 이 복구 사본이 저장된 후 디스크의 파일이 수정되었습니다. 복원하면 그 최신 변경 내용이 대체됩니다.',
     autosaveFoundBody:
       '마지막 세션에 저장되지 않은 변경 내용이 있습니다. 자동 저장 버전을 복원할까요? 복원 후 저장하면 원본 파일을 덮어씁니다.',
     autosaveRestore: '복원',
@@ -537,6 +548,8 @@ const tMain = createI18n({
     errDiskChanged:
       'Le classeur a été modifié sur le disque après son ouverture — utilisez Enregistrer sous.',
     autosaveFoundTitle: 'Version récupérée trouvée',
+    autosaveDiskNewer:
+      'Remarque : le fichier sur le disque a été modifié après l’enregistrement de cette copie de récupération. La restauration remplacera ces modifications plus récentes.',
     autosaveFoundBody:
       "Des modifications non enregistrées existent. Restaurer la version auto-enregistrée ? Après restauration, l'enregistrement remplacera le fichier d'origine.",
     autosaveRestore: 'Restaurer',
@@ -605,6 +618,8 @@ const tMain = createI18n({
     errDiskChanged:
       'Die Arbeitsmappe wurde nach dem Öffnen auf dem Datenträger geändert — verwenden Sie stattdessen „Speichern unter“.',
     autosaveFoundTitle: 'Wiederhergestellte Version gefunden',
+    autosaveDiskNewer:
+      'Hinweis: Die Datei auf dem Datenträger wurde nach dem Speichern dieser Wiederherstellungskopie geändert. Beim Wiederherstellen werden diese neueren Änderungen ersetzt.',
     autosaveFoundBody:
       'Es gibt ungespeicherte Änderungen. Automatisch gespeicherte Version wiederherstellen? Nach der Wiederherstellung überschreibt Speichern die Originaldatei.',
     autosaveRestore: 'Wiederherstellen',
@@ -672,6 +687,8 @@ const tMain = createI18n({
     errImgBadType: 'El archivo no es una imagen PNG/JPEG/GIF.',
     errDiskChanged: 'El libro cambió en el disco después de abrirse; usa Guardar como en su lugar.',
     autosaveFoundTitle: 'Se encontró una versión recuperada',
+    autosaveDiskNewer:
+      'Nota: el archivo en disco se modificó después de guardar esta copia de recuperación. Restaurar reemplazará esos cambios más recientes.',
     autosaveFoundBody:
       'Hay cambios sin guardar de la última sesión. ¿Restaurar la versión autoguardada? Tras restaurar, guardar sobrescribirá el archivo original.',
     autosaveRestore: 'Restaurar',
@@ -738,6 +755,8 @@ const tMain = createI18n({
     errImgBadType: 'ไฟล์นี้ไม่ใช่รูปภาพ PNG/JPEG/GIF',
     errDiskChanged: 'เวิร์กบุ๊กถูกเปลี่ยนแปลงบนดิสก์หลังจากเปิด — โปรดใช้บันทึกเป็นแทน',
     autosaveFoundTitle: 'พบเวอร์ชันกู้คืนอัตโนมัติ',
+    autosaveDiskNewer:
+      'หมายเหตุ: ไฟล์บนดิสก์ถูกแก้ไขหลังจากบันทึกสำเนากู้คืนนี้ การกู้คืนจะแทนที่การเปลี่ยนแปลงที่ใหม่กว่าเหล่านั้น',
     autosaveFoundBody:
       'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึกจากครั้งก่อน ต้องการกู้คืนหรือไม่? หลังกู้คืน การบันทึกจะเขียนทับไฟล์ต้นฉบับ',
     autosaveRestore: 'กู้คืน',
@@ -802,6 +821,8 @@ const tMain = createI18n({
     errImgBadType: 'File ini bukan gambar PNG/JPEG/GIF.',
     errDiskChanged: 'Buku kerja berubah di disk setelah dibuka — gunakan Simpan Sebagai.',
     autosaveFoundTitle: 'Versi pemulihan ditemukan',
+    autosaveDiskNewer:
+      'Catatan: file di disk diubah setelah salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baru tersebut.',
     autosaveFoundBody:
       'Ada perubahan yang belum disimpan dari sesi terakhir. Pulihkan versi tersimpan otomatis? Setelah dipulihkan, menyimpan akan menimpa file asli.',
     autosaveRestore: 'Pulihkan',
@@ -868,6 +889,8 @@ const tMain = createI18n({
     errImgBadType: 'Этот файл не является изображением PNG/JPEG/GIF.',
     errDiskChanged: 'Книга была изменена на диске после открытия — используйте «Сохранить как».',
     autosaveFoundTitle: 'Найдена восстановленная версия',
+    autosaveDiskNewer:
+      'Внимание: файл на диске был изменён после сохранения этой копии восстановления. Восстановление заменит эти более новые изменения.',
     autosaveFoundBody:
       'Есть несохранённые изменения из прошлого сеанса. Восстановить автосохранённую версию? После восстановления сохранение перезапишет исходный файл.',
     autosaveRestore: 'Восстановить',
@@ -933,6 +956,8 @@ const tMain = createI18n({
     errImgBadType: 'هذا الملف ليس صورة PNG/JPEG/GIF.',
     errDiskChanged: 'تم تغيير المصنف على القرص بعد فتحه — استخدم «حفظ باسم» بدلاً من ذلك.',
     autosaveFoundTitle: 'تم العثور على نسخة مستردة',
+    autosaveDiskNewer:
+      'ملاحظة: تم تعديل الملف على القرص بعد حفظ نسخة الاسترداد هذه. ستؤدي الاستعادة إلى استبدال تلك التغييرات الأحدث.',
     autosaveFoundBody:
       'توجد تغييرات غير محفوظة من الجلسة الأخيرة. هل تريد استعادة النسخة المحفوظة تلقائيًا؟ بعد الاستعادة، سيؤدي الحفظ إلى استبدال الملف الأصلي.',
     autosaveRestore: 'استعادة',
@@ -997,6 +1022,8 @@ const tMain = createI18n({
     errImgBadType: 'O arquivo não é uma imagem PNG/JPEG/GIF.',
     errDiskChanged: 'A pasta de trabalho foi alterada no disco após ser aberta — use Salvar Como.',
     autosaveFoundTitle: 'Versão recuperada encontrada',
+    autosaveDiskNewer:
+      'Nota: o arquivo no disco foi modificado depois que esta cópia de recuperação foi salva. Restaurar substituirá essas alterações mais recentes.',
     autosaveFoundBody:
       'Há alterações não salvas da sua última sessão. Restaurar a versão salva automaticamente? Após restaurar, salvar sobrescreverá o arquivo original.',
     autosaveRestore: 'Restaurar',
@@ -1064,6 +1091,8 @@ const tMain = createI18n({
     errDiskChanged:
       "La cartella di lavoro è stata modificata sul disco dopo l'apertura — usa Salva con nome.",
     autosaveFoundTitle: 'Trovata versione recuperata',
+    autosaveDiskNewer:
+      'Nota: il file su disco è stato modificato dopo il salvataggio di questa copia di ripristino. Il ripristino sostituirà tali modifiche più recenti.',
     autosaveFoundBody:
       "Ci sono modifiche non salvate dall'ultima sessione. Ripristinare la versione salvata automaticamente? Dopo il ripristino, il salvataggio sovrascriverà il file originale.",
     autosaveRestore: 'Ripristina',
@@ -1130,6 +1159,8 @@ const tMain = createI18n({
     errImgBadType: 'Plik nie jest obrazem PNG/JPEG/GIF.',
     errDiskChanged: 'Skoroszyt został zmieniony na dysku po otwarciu — użyj polecenia Zapisz jako.',
     autosaveFoundTitle: 'Znaleziono odzyskaną wersję',
+    autosaveDiskNewer:
+      'Uwaga: plik na dysku został zmodyfikowany po zapisaniu tej kopii odzyskiwania. Przywrócenie zastąpi te nowsze zmiany.',
     autosaveFoundBody:
       'Istnieją niezapisane zmiany z ostatniej sesji. Przywrócić wersję zapisaną automatycznie? Po przywróceniu zapisanie nadpisze oryginalny plik.',
     autosaveRestore: 'Przywróć',
@@ -1196,6 +1227,8 @@ const tMain = createI18n({
     errImgBadType: 'Soubor není obrázek PNG/JPEG/GIF.',
     errDiskChanged: 'Sešit byl po otevření změněn na disku — použijte místo toho Uložit jako.',
     autosaveFoundTitle: 'Nalezena obnovená verze',
+    autosaveDiskNewer:
+      'Poznámka: soubor na disku byl změněn po uložení této kopie pro obnovení. Obnovení tyto novější změny nahradí.',
     autosaveFoundBody:
       'Z poslední relace existují neuložené změny. Obnovit automaticky uloženou verzi? Uložení po obnovení přepíše původní soubor.',
     autosaveRestore: 'Obnovit',
@@ -1263,6 +1296,8 @@ const tMain = createI18n({
     errDiskChanged:
       'De werkmap is op de schijf gewijzigd nadat deze was geopend — gebruik Opslaan als.',
     autosaveFoundTitle: 'Herstelde versie gevonden',
+    autosaveDiskNewer:
+      'Let op: het bestand op schijf is gewijzigd nadat deze herstelkopie is opgeslagen. Herstellen vervangt die nieuwere wijzigingen.',
     autosaveFoundBody:
       'Er zijn niet-opgeslagen wijzigingen van uw laatste sessie. De automatisch opgeslagen versie herstellen? Na herstel overschrijft opslaan het originele bestand.',
     autosaveRestore: 'Herstellen',
@@ -1328,6 +1363,8 @@ const tMain = createI18n({
     errImgBadType: 'Fail ini bukan imej PNG/JPEG/GIF.',
     errDiskChanged: 'Buku kerja telah diubah pada cakera selepas dibuka — gunakan Simpan Sebagai.',
     autosaveFoundTitle: 'Versi pulihan ditemui',
+    autosaveDiskNewer:
+      'Nota: fail pada cakera telah diubah suai selepas salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baharu itu.',
     autosaveFoundBody:
       'Terdapat perubahan yang belum disimpan daripada sesi terakhir anda. Pulihkan versi yang disimpan secara automatik? Selepas pemulihan, menyimpan akan menulis ganti fail asal.',
     autosaveRestore: 'Pulihkan',
@@ -1393,6 +1430,8 @@ const tMain = createI18n({
     errImgBadType: 'הקובץ אינו תמונת PNG/JPEG/GIF.',
     errDiskChanged: 'חוברת העבודה השתנתה בדיסק לאחר פתיחתה — השתמש בשמירה בשם.',
     autosaveFoundTitle: 'נמצאה גרסה משוחזרת',
+    autosaveDiskNewer:
+      'שים לב: הקובץ בדיסק שונה לאחר שמירת עותק השחזור הזה. שחזור יחליף את השינויים החדשים יותר.',
     autosaveFoundBody:
       'קיימים שינויים שלא נשמרו מהפעלה הקודמת. לשחזר את הגרסה שנשמרה אוטומטית? לאחר השחזור, שמירה תדרוס את הקובץ המקורי.',
     autosaveRestore: 'שחזר',
@@ -1457,6 +1496,8 @@ const tMain = createI18n({
     errDiskChanged:
       'खोले जाने के बाद कार्यपुस्तिका डिस्क पर बदल गई — इसके बजाय इस रूप में सहेजें का उपयोग करें।',
     autosaveFoundTitle: 'पुनर्प्राप्त संस्करण मिला',
+    autosaveDiskNewer:
+      'ध्यान दें: यह पुनर्प्राप्ति प्रति सहेजे जाने के बाद डिस्क पर फ़ाइल में बदलाव किया गया है। पुनर्स्थापित करने पर वे नए बदलाव बदल दिए जाएँगे।',
     autosaveFoundBody:
       'आपके पिछले सत्र से सहेजे नहीं गए परिवर्तन हैं। स्वतः सहेजा गया संस्करण पुनर्स्थापित करें? पुनर्स्थापना के बाद, सहेजने पर मूल फ़ाइल अधिलेखित हो जाएगी।',
     autosaveRestore: 'पुनर्स्थापित करें',
@@ -1521,6 +1562,7 @@ const tMain = createI18n({
     errImgBadType: '該檔案不是 PNG/JPEG/GIF 圖片。',
     errDiskChanged: '活頁簿在開啟後被磁碟上的變更覆蓋——請改用另存新檔。',
     autosaveFoundTitle: '發現自動復原版本',
+    autosaveDiskNewer: '注意：此復原副本儲存後，磁碟上的檔案又被修改過。復原將取代這些較新的變更。',
     autosaveFoundBody:
       '上次工作階段有未儲存的變更。要復原自動儲存的版本嗎?復原後,儲存將直接覆寫原檔案。',
     autosaveRestore: '復原',
@@ -2093,6 +2135,7 @@ function promptRecoveryRestore(
   contents: WebContents,
   filePath: string,
   recoveryPath: string,
+  onDisk = true,
 ): Promise<RecoveryChoice> {
   return new Promise((resolve) => {
     let savedAtMs = Date.now()
@@ -2111,7 +2154,7 @@ function promptRecoveryRestore(
     contents.once('destroyed', onDestroyed)
     contents.send(IPC_CHANNELS.recoveryPrompt, {
       title: tm('autosaveFoundTitle'),
-      body: tm('autosaveFoundBody'),
+      body: recoveryPromptBody(filePath, recoveryPath, onDisk),
       restoreLabel: tm('autosaveRestore'),
       discardLabel: tm('autosaveDiscard'),
       fileName: basename(filePath),
@@ -2122,7 +2165,10 @@ function promptRecoveryRestore(
 
 /** Native message-box fallback for the rare open with no live renderer to draw the prompt. */
 async function promptRecoveryRestoreNative(
+  filePath: string,
+  recoveryPath: string,
   parent?: BrowserWindow | undefined,
+  onDisk = true,
 ): Promise<RecoveryChoice> {
   const options = {
     type: 'question' as const,
@@ -2130,7 +2176,7 @@ async function promptRecoveryRestoreNative(
     defaultId: 0,
     cancelId: 1,
     message: tm('autosaveFoundTitle'),
-    detail: tm('autosaveFoundBody'),
+    detail: recoveryPromptBody(filePath, recoveryPath, onDisk),
   }
   const answer = parent
     ? await dialog.showMessageBox(parent, options)
@@ -2138,18 +2184,27 @@ async function promptRecoveryRestoreNative(
   return answer.response === 0 ? 'restore' : 'discard'
 }
 
-/** Recovery copy newer than the file itself, i.e. unsaved work from a lost session. */
+/** Recovery copy left by a lost session. A newer original does not discard it (the copy
+ * may hold the only pre-crash edits): the prompt just says the disk file is newer. */
 function pendingRecoveryFor(filePath: string): string | null {
   const copy = recoveryPathFor(filePath)
   try {
-    if (!existsSync(copy)) return null
-    if (statSync(copy).mtimeMs <= statSync(filePath).mtimeMs) {
-      unlinkSync(copy)
-      return null
-    }
-    return copy
+    return existsSync(copy) ? copy : null
   } catch {
     return null
+  }
+}
+
+function recoveryPromptBody(filePath: string, recoveryPath: string, onDisk: boolean): string {
+  const body = tm('autosaveFoundBody')
+  // an unsaved workbook's would-be name is not the file restore writes to
+  if (!onDisk) return body
+  try {
+    return recoveryCopyDiskNewer(statSync(recoveryPath).mtimeMs, statSync(filePath).mtimeMs)
+      ? `${body}\n\n${tm('autosaveDiskNewer')}`
+      : body
+  } catch {
+    return body
   }
 }
 
@@ -3768,6 +3823,8 @@ export function registerSheetsAiIpc(): void {
       gskKey = gskApiKey()
       config = { ...config, apiKey: gskKey }
     }
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
     if (!config || (provider !== 'codex' && !config.apiKey)) {
       return {
         ok: false,
@@ -3806,6 +3863,8 @@ export function registerSheetsAiIpc(): void {
       gskKey = gskApiKey()
       config = { ...config, apiKey: gskKey }
     }
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
@@ -4581,8 +4640,8 @@ async function prepareWorkbookForOpen(
     if (recovery) {
       const choice =
         contents && !contents.isDestroyed()
-          ? await promptRecoveryRestore(contents, unsavedNew.suggestSaveAs, recovery)
-          : await promptRecoveryRestoreNative(parent)
+          ? await promptRecoveryRestore(contents, unsavedNew.suggestSaveAs, recovery, false)
+          : await promptRecoveryRestoreNative(unsavedNew.suggestSaveAs, recovery, parent, false)
       // the copy is what the recovery writer keeps overwriting, so the session
       // streams from the backing file, not from the copy
       if (choice === 'restore') {
@@ -4616,7 +4675,7 @@ async function prepareWorkbookForOpen(
       const choice =
         contents && !contents.isDestroyed()
           ? await promptRecoveryRestore(contents, path, recovery)
-          : await promptRecoveryRestoreNative(parent)
+          : await promptRecoveryRestoreNative(path, recovery, parent)
       if (choice === 'restore') return { openPath: recovery, restoreTarget: path }
       if (choice === 'discard') clearWorkbookRecovery(path)
     }

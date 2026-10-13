@@ -8,7 +8,6 @@ O ecrã Início é a página inicial do GenOffice: uma barra de navegação à e
 
 - **Recentes**: os arquivos que você abriu recentemente. Cada linha traz o momento — hoje, ontem ou a data.
 - **Favoritos**: os arquivos que você marcou com uma estrela. Passe o cursor sobre a linha do arquivo e clique na estrela para adicioná-lo ou removê-lo. **Mover para grupo** no menu ⋯ organiza os favoritos em grupos nomeados; a visualização Favoritos filtra por eles.
-- **Guia do Usuário**: abre este manual.
 - **Ask AI**: o painel de base de conhecimento — pergunte e receba respostas citadas dos seus arquivos favoritados (veja abaixo).
 - **Genspark Projects**: depois de entrar na sua conta Genspark, mostra os projetos que você criou com o Genspark AI na web; clique em um deles para continuar editando no navegador. Há pesquisa, ordenação por data, atualização e carregar mais.
 - **Pastas**: os diretórios que adiciona à barra lateral com **Adicionar pasta…**, ou que arrasta até lá a partir do gestor de ficheiros. Cada um torna-se uma raiz que pode abrir, onde criar subpastas, renomear e remover; a que ficar indisponível aparece como indisponível e pode ser retirada da lista. **Nova pasta** cria outra.

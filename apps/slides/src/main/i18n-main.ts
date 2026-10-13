@@ -26,6 +26,7 @@ export const tMain = createI18n({
     filterAll: '所有文件',
     untitledDeck: '未命名演示文稿',
     autosaveFoundTitle: '发现自动恢复版本',
+    autosaveDiskNewer: '注意：此恢复副本保存后，磁盘上的文件又被修改过。恢复将替换这些较新的更改。',
     autosaveFoundBody: '上次会话有未保存的更改。要恢复自动保存的版本吗?',
     autosaveRestore: '恢复',
     autosaveDiscard: '放弃',
@@ -141,6 +142,8 @@ export const tMain = createI18n({
     filterAll: 'All Files',
     untitledDeck: 'Untitled Presentation',
     autosaveFoundTitle: 'Recovered version found',
+    autosaveDiskNewer:
+      'Note: the file on disk was modified after this recovery copy was saved. Restoring replaces those newer changes.',
     autosaveFoundBody:
       'There are unsaved changes from your last session. Restore the autosaved version?',
     autosaveRestore: 'Restore',
@@ -258,6 +261,8 @@ export const tMain = createI18n({
     filterAll: 'Tất cả các tệp',
     untitledDeck: 'Bản trình bày chưa có tiêu đề',
     autosaveFoundTitle: 'Tìm thấy phiên bản khôi phục',
+    autosaveDiskNewer:
+      'Lưu ý: tệp trên đĩa đã được sửa đổi sau khi bản sao khôi phục này được lưu. Khôi phục sẽ thay thế những thay đổi mới hơn đó.',
     autosaveFoundBody:
       'Có những thay đổi chưa được lưu từ phiên làm việc trước của bạn. Khôi phục phiên bản đã lưu tự động?',
     autosaveRestore: 'Khôi phục',
@@ -380,6 +385,8 @@ export const tMain = createI18n({
     filterAll: 'すべてのファイル',
     untitledDeck: '無題のプレゼンテーション',
     autosaveFoundTitle: '自動回復バージョンがあります',
+    autosaveDiskNewer:
+      '注意: この回復コピーの保存後にディスク上のファイルが変更されています。復元するとその新しい変更は置き換えられます。',
     autosaveFoundBody: '前回のセッションに未保存の変更があります。自動保存版を復元しますか?',
     autosaveRestore: '復元',
     autosaveDiscard: '破棄',
@@ -502,6 +509,8 @@ export const tMain = createI18n({
     filterAll: '모든 파일',
     untitledDeck: '제목 없는 프레젠테이션',
     autosaveFoundTitle: '자동 복구 버전 발견',
+    autosaveDiskNewer:
+      '참고: 이 복구 사본이 저장된 후 디스크의 파일이 수정되었습니다. 복원하면 그 최신 변경 내용이 대체됩니다.',
     autosaveFoundBody:
       '마지막 세션에 저장되지 않은 변경 내용이 있습니다. 자동 저장 버전을 복원할까요?',
     autosaveRestore: '복원',
@@ -621,6 +630,8 @@ export const tMain = createI18n({
     filterAll: 'Tous les fichiers',
     untitledDeck: 'Présentation sans titre',
     autosaveFoundTitle: 'Version récupérée trouvée',
+    autosaveDiskNewer:
+      'Remarque : le fichier sur le disque a été modifié après l’enregistrement de cette copie de récupération. La restauration remplacera ces modifications plus récentes.',
     autosaveFoundBody:
       'Des modifications non enregistrées existent. Restaurer la version auto-enregistrée ?',
     autosaveRestore: 'Restaurer',
@@ -746,6 +757,8 @@ export const tMain = createI18n({
     filterAll: 'Alle Dateien',
     untitledDeck: 'Unbenannte Präsentation',
     autosaveFoundTitle: 'Wiederhergestellte Version gefunden',
+    autosaveDiskNewer:
+      'Hinweis: Die Datei auf dem Datenträger wurde nach dem Speichern dieser Wiederherstellungskopie geändert. Beim Wiederherstellen werden diese neueren Änderungen ersetzt.',
     autosaveFoundBody:
       'Es gibt ungespeicherte Änderungen. Automatisch gespeicherte Version wiederherstellen?',
     autosaveRestore: 'Wiederherstellen',
@@ -870,6 +883,8 @@ export const tMain = createI18n({
     filterAll: 'Todos los archivos',
     untitledDeck: 'Presentación sin título',
     autosaveFoundTitle: 'Se encontró una versión recuperada',
+    autosaveDiskNewer:
+      'Nota: el archivo en disco se modificó después de guardar esta copia de recuperación. Restaurar reemplazará esos cambios más recientes.',
     autosaveFoundBody:
       'Hay cambios sin guardar de la última sesión. ¿Restaurar la versión autoguardada?',
     autosaveRestore: 'Restaurar',
@@ -993,6 +1008,8 @@ export const tMain = createI18n({
     filterAll: 'ไฟล์ทั้งหมด',
     untitledDeck: 'งานนำเสนอที่ไม่มีชื่อ',
     autosaveFoundTitle: 'พบเวอร์ชันกู้คืนอัตโนมัติ',
+    autosaveDiskNewer:
+      'หมายเหตุ: ไฟล์บนดิสก์ถูกแก้ไขหลังจากบันทึกสำเนากู้คืนนี้ การกู้คืนจะแทนที่การเปลี่ยนแปลงที่ใหม่กว่าเหล่านั้น',
     autosaveFoundBody: 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึกจากครั้งก่อน ต้องการกู้คืนหรือไม่?',
     autosaveRestore: 'กู้คืน',
     autosaveDiscard: 'ละทิ้ง',
@@ -1110,6 +1127,8 @@ export const tMain = createI18n({
     filterAll: 'Semua File',
     untitledDeck: 'Presentasi Tanpa Judul',
     autosaveFoundTitle: 'Versi pemulihan ditemukan',
+    autosaveDiskNewer:
+      'Catatan: file di disk diubah setelah salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baru tersebut.',
     autosaveFoundBody:
       'Ada perubahan yang belum disimpan dari sesi terakhir. Pulihkan versi tersimpan otomatis?',
     autosaveRestore: 'Pulihkan',
@@ -1231,6 +1250,8 @@ export const tMain = createI18n({
     filterAll: 'Все файлы',
     untitledDeck: 'Презентация без названия',
     autosaveFoundTitle: 'Найдена восстановленная версия',
+    autosaveDiskNewer:
+      'Внимание: файл на диске был изменён после сохранения этой копии восстановления. Восстановление заменит эти более новые изменения.',
     autosaveFoundBody:
       'Есть несохранённые изменения из прошлого сеанса. Восстановить автосохранённую версию?',
     autosaveRestore: 'Восстановить',
@@ -1353,6 +1374,8 @@ export const tMain = createI18n({
     filterAll: 'كل الملفات',
     untitledDeck: 'عرض تقديمي بلا عنوان',
     autosaveFoundTitle: 'تم العثور على نسخة مستردة',
+    autosaveDiskNewer:
+      'ملاحظة: تم تعديل الملف على القرص بعد حفظ نسخة الاسترداد هذه. ستؤدي الاستعادة إلى استبدال تلك التغييرات الأحدث.',
     autosaveFoundBody:
       'توجد تغييرات غير محفوظة من الجلسة الأخيرة. هل تريد استعادة النسخة المحفوظة تلقائيًا؟',
     autosaveRestore: 'استعادة',
@@ -1471,6 +1494,8 @@ export const tMain = createI18n({
     filterAll: 'Todos os Arquivos',
     untitledDeck: 'Apresentação sem Título',
     autosaveFoundTitle: 'Versão recuperada encontrada',
+    autosaveDiskNewer:
+      'Nota: o arquivo no disco foi modificado depois que esta cópia de recuperação foi salva. Restaurar substituirá essas alterações mais recentes.',
     autosaveFoundBody:
       'Há alterações não salvas da sua última sessão. Restaurar a versão salva automaticamente?',
     autosaveRestore: 'Restaurar',
@@ -1593,6 +1618,8 @@ export const tMain = createI18n({
     filterAll: 'Tutti i file',
     untitledDeck: 'Presentazione senza titolo',
     autosaveFoundTitle: 'Trovata versione recuperata',
+    autosaveDiskNewer:
+      'Nota: il file su disco è stato modificato dopo il salvataggio di questa copia di ripristino. Il ripristino sostituirà tali modifiche più recenti.',
     autosaveFoundBody:
       "Ci sono modifiche non salvate dall'ultima sessione. Ripristinare la versione salvata automaticamente?",
     autosaveRestore: 'Ripristina',
@@ -1718,6 +1745,8 @@ export const tMain = createI18n({
     filterAll: 'Wszystkie pliki',
     untitledDeck: 'Prezentacja bez tytułu',
     autosaveFoundTitle: 'Znaleziono odzyskaną wersję',
+    autosaveDiskNewer:
+      'Uwaga: plik na dysku został zmodyfikowany po zapisaniu tej kopii odzyskiwania. Przywrócenie zastąpi te nowsze zmiany.',
     autosaveFoundBody:
       'Istnieją niezapisane zmiany z ostatniej sesji. Przywrócić wersję zapisaną automatycznie?',
     autosaveRestore: 'Przywróć',
@@ -1840,6 +1869,8 @@ export const tMain = createI18n({
     filterAll: 'Všechny soubory',
     untitledDeck: 'Prezentace bez názvu',
     autosaveFoundTitle: 'Nalezena obnovená verze',
+    autosaveDiskNewer:
+      'Poznámka: soubor na disku byl změněn po uložení této kopie pro obnovení. Obnovení tyto novější změny nahradí.',
     autosaveFoundBody:
       'Z poslední relace existují neuložené změny. Obnovit automaticky uloženou verzi?',
     autosaveRestore: 'Obnovit',
@@ -1960,6 +1991,8 @@ export const tMain = createI18n({
     filterAll: 'Alle bestanden',
     untitledDeck: 'Naamloze presentatie',
     autosaveFoundTitle: 'Herstelde versie gevonden',
+    autosaveDiskNewer:
+      'Let op: het bestand op schijf is gewijzigd nadat deze herstelkopie is opgeslagen. Herstellen vervangt die nieuwere wijzigingen.',
     autosaveFoundBody:
       'Er zijn niet-opgeslagen wijzigingen van uw laatste sessie. De automatisch opgeslagen versie herstellen?',
     autosaveRestore: 'Herstellen',
@@ -2082,6 +2115,8 @@ export const tMain = createI18n({
     filterAll: 'Semua Fail',
     untitledDeck: 'Persembahan Tanpa Tajuk',
     autosaveFoundTitle: 'Versi pulihan ditemui',
+    autosaveDiskNewer:
+      'Nota: fail pada cakera telah diubah suai selepas salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baharu itu.',
     autosaveFoundBody:
       'Terdapat perubahan yang belum disimpan daripada sesi terakhir anda. Pulihkan versi yang disimpan secara automatik?',
     autosaveRestore: 'Pulihkan',
@@ -2203,6 +2238,8 @@ export const tMain = createI18n({
     filterAll: 'כל הקבצים',
     untitledDeck: 'מצגת ללא שם',
     autosaveFoundTitle: 'נמצאה גרסה משוחזרת',
+    autosaveDiskNewer:
+      'שים לב: הקובץ בדיסק שונה לאחר שמירת עותק השחזור הזה. שחזור יחליף את השינויים החדשים יותר.',
     autosaveFoundBody: 'קיימים שינויים שלא נשמרו מהפעלה הקודמת. לשחזר את הגרסה שנשמרה אוטומטית?',
     autosaveRestore: 'שחזר',
     autosaveDiscard: 'התעלם',
@@ -2318,6 +2355,8 @@ export const tMain = createI18n({
     filterAll: 'सभी फ़ाइलें',
     untitledDeck: 'बिना शीर्षक प्रस्तुति',
     autosaveFoundTitle: 'पुनर्प्राप्त संस्करण मिला',
+    autosaveDiskNewer:
+      'ध्यान दें: यह पुनर्प्राप्ति प्रति सहेजे जाने के बाद डिस्क पर फ़ाइल में बदलाव किया गया है। पुनर्स्थापित करने पर वे नए बदलाव बदल दिए जाएँगे।',
     autosaveFoundBody:
       'आपके पिछले सत्र से सहेजे नहीं गए परिवर्तन हैं। स्वतः सहेजा गया संस्करण पुनर्स्थापित करें?',
     autosaveRestore: 'पुनर्स्थापित करें',
@@ -2438,6 +2477,7 @@ export const tMain = createI18n({
     filterAll: '所有檔案',
     untitledDeck: '未命名簡報',
     autosaveFoundTitle: '發現自動復原版本',
+    autosaveDiskNewer: '注意：此復原副本儲存後，磁碟上的檔案又被修改過。復原將取代這些較新的變更。',
     autosaveFoundBody: '上次工作階段有未儲存的變更。要復原自動儲存的版本嗎?',
     autosaveRestore: '復原',
     autosaveDiscard: '放棄',

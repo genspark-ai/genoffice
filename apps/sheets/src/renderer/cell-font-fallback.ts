@@ -11,6 +11,7 @@
  * names always fall to sans, matching Excel's substitution.
  */
 
+import type { WorkbookFile } from '../shared/desktop-api'
 import carlitoBoldUrl from '@genoffice/ui/fonts/Carlito-Bold.ttf?url'
 import carlitoRegularUrl from '@genoffice/ui/fonts/Carlito-Regular.ttf?url'
 
@@ -646,9 +647,22 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
   thaiAlias('TH Sarabun New', ['TH Sarabun New', 'THSarabunNew'], SARABUN_METRICS),
 ]
 
-const ALIAS_FAMILY_NAMES: ReadonlySet<string> = new Set(
-  CELL_FONT_ALIASES.map((alias) => alias.family.toLowerCase()),
+const ALIASES_BY_FAMILY: ReadonlyMap<string, CellFontAlias> = new Map(
+  CELL_FONT_ALIASES.map((alias) => [alias.family.toLowerCase(), alias]),
 )
+const ALIAS_FAMILY_NAMES: ReadonlySet<string> = new Set(ALIASES_BY_FAMILY.keys())
+
+/// Font strings already checked for alias families nobody registered yet.
+const checkedFonts = new Set<string>()
+
+/// A family first met on the canvas (a rich-text run, a font picked after the
+/// workbook opened) loads now; text measured before the load keeps the
+/// fallback metrics until its next layout.
+function registerFamiliesOf(font: string): void {
+  if (checkedFonts.has(font)) return
+  checkedFonts.add(font)
+  void registerCellFontAliases(font.split(',').map(segmentFamily))
+}
 
 function patchFontSetter(proto: object): void {
   const desc = Object.getOwnPropertyDescriptor(proto, 'font')
@@ -657,7 +671,9 @@ function patchFontSetter(proto: object): void {
   Object.defineProperty(proto, 'font', {
     ...desc,
     set(value: string) {
-      nativeSet.call(this, withSansSerifFallback(rewriteScopedFamilies(String(value))))
+      const font = String(value)
+      registerFamiliesOf(font)
+      nativeSet.call(this, withSansSerifFallback(rewriteScopedFamilies(font)))
     },
   })
 }
@@ -732,18 +748,26 @@ function registerAlias(alias: CellFontAlias, loads: Promise<unknown>[]): void {
     )
 }
 
-/// Register + load alias faces before the first skeleton: canvas fillText
-/// never triggers lazy @font-face loads, and Univer measures only once.
-export function registerCellFontAliases(): Promise<unknown> {
-  const loads: Promise<unknown>[] = []
-  const gated: Promise<unknown>[] = []
-  addFace(
-    TEXT_DINGBATS_FAMILY,
-    TEXT_DINGBATS_SOURCES,
-    { weight: '400', unicodeRange: TEXT_DINGBATS_RANGE },
-    loads,
-  )
-  for (const alias of CELL_FONT_ALIASES) {
+const registeredAliases = new Map<string, Promise<unknown>>()
+
+/// Register + load the alias faces of these families, once each, before the
+/// skeleton that measures them: canvas fillText never triggers lazy
+/// @font-face loads, and Univer measures only once. Only the families in
+/// use: on macOS, a local() lookup of a font the system installs on demand
+/// (Yu Mincho, PingFang SC, Kaiti…) asks the user to download it.
+export function registerCellFontAliases(families: Iterable<string>): Promise<unknown> {
+  const all: Promise<unknown>[] = []
+  for (const name of families) {
+    const key = name.trim().replace(/^@/, '').toLowerCase()
+    const alias = ALIASES_BY_FAMILY.get(key)
+    if (!alias) continue
+    const inFlight = registeredAliases.get(key)
+    if (inFlight) {
+      all.push(inFlight)
+      continue
+    }
+    const loads: Promise<unknown>[] = []
+    const gated: Promise<unknown>[] = []
     if (alias.skipIfLocal) {
       gated.push(
         genuineLocalExists(alias.skipIfLocal).then((genuine) => {
@@ -761,6 +785,70 @@ export function registerCellFontAliases(): Promise<unknown> {
     } else {
       registerAlias(alias, loads)
     }
+    const load = Promise.all([...loads, ...gated])
+    registeredAliases.set(key, load)
+    all.push(load)
   }
-  return Promise.all([...loads, ...gated])
+  return Promise.all(all)
+}
+
+/// Local faces resolve in milliseconds; the timeout only keeps a broken
+/// bundle, or a font the system asks the user to download, from holding the
+/// grid back.
+const CELL_FONT_LOAD_TIMEOUT_MS = 3000
+
+export function untilCellFontsLoaded(loads: Promise<unknown>): Promise<unknown> {
+  return Promise.race([
+    loads,
+    new Promise((resolve) => setTimeout(resolve, CELL_FONT_LOAD_TIMEOUT_MS)),
+  ])
+}
+
+/// The monochrome dingbats face every cell font chain ends with (see
+/// EMOJI_FALLBACK); its sources are installed with the system.
+export function registerTextDingbatsFace(): Promise<unknown> {
+  const loads: Promise<unknown>[] = []
+  addFace(
+    TEXT_DINGBATS_FAMILY,
+    TEXT_DINGBATS_SOURCES,
+    { weight: '400', unicodeRange: TEXT_DINGBATS_RANGE },
+    loads,
+  )
+  return Promise.all(loads)
+}
+
+/// A cell font can carry a comma list ("A,B"), quoted names included.
+function addFamilies(families: Set<string>, value: string | undefined): void {
+  for (const segment of value?.split(',') ?? []) {
+    const family = segment
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .trim()
+    if (family) families.add(family)
+  }
+}
+
+/// Every family a workbook names before its cells load: the cell and
+/// conditional-format styles, the theme's scheme fonts, and the Normal font's
+/// cached name.
+export function workbookFontFamilies(
+  file: Pick<WorkbookFile, 'styles' | 'dxfStyles' | 'themeFonts' | 'normalFontName'>,
+): Set<string> {
+  const families = new Set<string>()
+  for (const style of file.styles ?? []) addFamilies(families, style.fontFamily)
+  for (const style of file.dxfStyles ?? []) addFamilies(families, style.fontFamily)
+  const theme = file.themeFonts
+  for (const family of [theme?.major, theme?.minor, theme?.minorEa, file.normalFontName])
+    addFamilies(families, family)
+  return families
+}
+
+/// Families named only by rich-text runs: they live in the cell data, not in
+/// a cellXf, so each loaded range registers them before it is installed.
+export function richRunFamilies(
+  cells: Iterable<{ rich?: readonly { family?: string | undefined }[] | undefined }>,
+): Set<string> {
+  const families = new Set<string>()
+  for (const cell of cells) for (const run of cell.rich ?? []) addFamilies(families, run.family)
+  return families
 }

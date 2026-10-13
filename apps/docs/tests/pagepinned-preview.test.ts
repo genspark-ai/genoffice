@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   hoistPaperClamp,
   hoistSlotOf,
+  stripLeadingTranslate,
   pinnedCloneCss,
 } from '../src/renderer/components/PaginationPreview'
 
@@ -106,6 +107,10 @@ describe('hoistSlotOf', () => {
     expect(
       hoistSlotOf(box('position: absolute; left: 50%; top: 5.8px; transform: translateX(-50%);')),
     ).toBe('center')
+    // paper-edge X (relativeFrom="page") pictures render the margin as a calc()
+    expect(
+      hoistSlotOf(box('position:absolute;left:calc(447.3px - var(--doc-margin-left,0px));top:2px')),
+    ).toBe('left')
     expect(hoistSlotOf(box('position:absolute;right:0;top:2px'))).toBe('right')
     expect(hoistSlotOf(box('position:absolute;right:0px;top:2px'))).toBe('right')
     expect(hoistSlotOf(box('position:absolute;right:20px;top:2px'))).toBeNull()
@@ -139,5 +144,17 @@ describe('banded picture width', () => {
       )
     expect(rule).not.toBeNull()
     expect(rule![1]).toMatch(/max-width:\s*none/)
+  })
+})
+
+describe('stripLeadingTranslate', () => {
+  it('drops the anchor translate, nested calc() included, and keeps rotation/flip', () => {
+    expect(
+      stripLeadingTranslate(
+        'translate(calc(447.4px - var(--doc-margin-left,0px) - var(--page-rel-x-undo,0px)), 0.0px) rotate(90deg) scaleX(-1)',
+      ),
+    ).toBe('rotate(90deg) scaleX(-1)')
+    expect(stripLeadingTranslate('translate(96.0px, 0.0px)')).toBe('')
+    expect(stripLeadingTranslate('rotate(90deg)')).toBe('rotate(90deg)')
   })
 })

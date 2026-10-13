@@ -8,7 +8,6 @@ Domů je startovní stránka GenOffice: navigační panel vlevo, seznamy soubor�
 
 - **Nedávné**: soubory, které jste nedávno otevřeli. Každý řádek nese svůj čas — dnes, včera nebo datum.
 - **Oblíbené**: soubory, které jste si označili hvězdičkou. Přejděte na řádek souboru a klikněte na hvězdičku, abyste jej přidali nebo odebrali. **Přesunout do skupiny** v nabídce ⋯ třídí soubory s hvězdičkou do pojmenovaných skupin; zobrazení S hvězdičkou se podle nich filtruje.
-- **Uživatelská příručka**: otevře tuto příručku.
 - **Ask AI**: panel znalostní báze — ptejte se a dostávejte odpovědi s citacemi z vašich souborů s hvězdičkou (viz níže).
 - **Genspark Projects**: po přihlášení k účtu Genspark zobrazí projekty, které jste vytvořili na webu pomocí Genspark AI; kliknutím na projekt pokračujete v úpravách v prohlížeči. K dispozici je vyhledávání, řazení podle času, obnovení a načtení dalších.
 - **Složky**: adresáře, které do postranního panelu přidáte tlačítkem **Přidat složku…** nebo do něj přetáhnete ze správce souborů. Každý se stane kořenem, který můžete otevřít, vytvořit v něm podsložky, přejmenovat a odebrat; ten, který se stane nedostupným, se zobrazí jako nedostupný a lze ho ze seznamu sundat. **Nová složka** vytvoří další.

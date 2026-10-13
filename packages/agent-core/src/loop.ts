@@ -806,6 +806,7 @@ export class AgentLoop<TSnapshot = unknown> {
   cancel(): void {
     if (!this.running) return
     this.cancelled = true
+    this.turnUsage = null
     // abort lets long tools mid-execution (internal LLM loops etc.) stop promptly
     this.abortController?.abort()
     // Waiting out a retry backoff: finalize here. A run that already committed
@@ -877,6 +878,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.handle?.cancel()
     this.handle = null
     this.running = false
+    this.turnUsage = null
     this.rollbackFailedRun()
     try {
       this.options.events?.onError?.(message)

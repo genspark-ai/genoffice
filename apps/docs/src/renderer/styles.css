@@ -117,6 +117,7 @@
   --docs-paper-mark: #2b7cd3;
   --docs-paper-grid: rgb(43 124 211 / 13%);
   --docs-paper-hf-line: #d0d0d0;
+  --docs-paper-crop-mark: #b4b4b4;
   --docs-paper-chip-bg: #fafafa;
   --docs-paper-select-bg: #e8f1fb;
   --docs-paper-stripe: #f0f0f0;
@@ -2685,6 +2686,26 @@ th.cell-rev-del {
   display: block;
 }
 
+/* While an IME composition is live — the ScriptFonts plugin's compositionstart
+   handler sets this class on the editor root, which is also the .doc-page
+   element that defines --doc-latin-chain; prosemirror-view itself does not —
+   the span under the caret inherits its pre-edit string, a
+   pinyin sequence that must resolve Latin glyphs through the document's
+   Latin chain (Word's per-script behavior), not the EA face's half-width
+   Latin. The EA slot stays last so Han typed in the same span still renders
+   in the EA face. Scoped to compositions on purpose: the span's rendered
+   declaration stays EA-primary (its inline style from script-fonts.ts), so
+   the inline box and the strut share one half-leading geometry and no line
+   moves while nobody is typing — only the line under the caret may reflow,
+   and the decoration rebuild settles it when the composition ends. */
+.ProseMirror-composing .doc-east-asian-font {
+  /* !important is what lets a stylesheet rule out-shout the decoration's
+     inline font-family while typing; the moment the class drops, the inline
+     EA-primary declaration is the whole story again */
+  font-family:
+    var(--doc-latin-chain, 'Latin Sans GO'), var(--doc-east-asian-font, inherit) !important;
+}
+
 /* ---- Word basics: marks / columns / page border / header-footer / nav / ruler ---- */
 
 /* ¶ editing marks (front-end only) */
@@ -2768,6 +2789,12 @@ th.cell-rev-del {
    keep it — inline wins — a rare combination accepted as-is. */
 .editor-scroll .doc-page:not(.measuring-columns) .doc-col-block [data-page-rel-x='1'] {
   transform: translateX(calc(-1 * var(--col-dx, 0px)));
+}
+/* run-anchored pictures carry their offset in an inline transform: the undo
+   rides a variable that transform reads instead — the measured correction
+   (pinPageRelXPictures: column shift + anchor indent) or the bare column shift */
+.editor-scroll .doc-page:not(.measuring-columns) img[data-page-rel-x='1'] {
+  --page-rel-x-undo: var(--page-rel-x-pin, var(--col-dx, 0px));
 }
 
 /* sectPr w:textDirection sections (verticalTextSpecs): blocks are measured as
@@ -3270,14 +3297,121 @@ th.cell-rev-del {
 
 .page-hf-header {
   top: var(--header-dist, 48px);
-  border-bottom: 1px dashed var(--docs-paper-hf-line);
+  border-bottom: 1px dashed transparent;
   padding-bottom: 2px;
 }
 
 .page-hf-footer {
   bottom: var(--footer-dist, 48px);
-  border-top: 1px dashed var(--docs-paper-hf-line);
+  border-top: 1px dashed transparent;
   padding-top: 2px;
+}
+
+/* Word's print layout: the header/footer boundary shows only while editing it,
+   and strips at rest are drawn washed out (per child: an opacity on the strip
+   itself would trap behindDoc boxes in its stacking context) */
+.page-hf-header.page-hf-editing,
+.page-hf-footer.page-hf-editing {
+  border-color: var(--docs-paper-hf-line);
+}
+
+.page-hf:not(.page-hf-editing) > :not(.page-hf-tags) {
+  opacity: 0.5;
+}
+
+/* Word/WPS crop marks: an L at each text-boundary corner, arms running out into
+   the margins. Inner boundaries sit in the page gaps (--gap-* are the adjacent
+   pages' margins), the first page's top and the last page's bottom on the wrap */
+.page-gap:not(.page-gap-inline)::after,
+.page-wrap:not(.paper-mixed)::before,
+.page-wrap:not(.paper-mixed)::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  --cm: var(--docs-paper-crop-mark);
+  --cm-len: 16px;
+  background-repeat: no-repeat;
+}
+
+.page-gap:not(.page-gap-inline)::after {
+  inset: 0;
+  background-image:
+    linear-gradient(var(--cm), var(--cm)), linear-gradient(var(--cm), var(--cm)),
+    linear-gradient(var(--cm), var(--cm)), linear-gradient(var(--cm), var(--cm)),
+    linear-gradient(var(--cm), var(--cm)), linear-gradient(var(--cm), var(--cm)),
+    linear-gradient(var(--cm), var(--cm)), linear-gradient(var(--cm), var(--cm));
+  /* arms never cross the paper edge into the gray band */
+  --cm-down: min(var(--cm-len), var(--gap-mb, 96px));
+  --cm-up: min(var(--cm-len), var(--gap-mt, 96px));
+  background-size:
+    var(--cm-len) 1px,
+    1px var(--cm-down),
+    var(--cm-len) 1px,
+    1px var(--cm-down),
+    var(--cm-len) 1px,
+    1px var(--cm-up),
+    var(--cm-len) 1px,
+    1px var(--cm-up);
+  background-position:
+    /* previous page bottom corners: arms down and outward from the boundary */
+    calc(var(--gap-ml, 96px) - var(--cm-len)) 0,
+    var(--gap-ml, 96px) 0,
+    calc(100% - var(--gap-mr, 96px) + var(--cm-len)) 0,
+    calc(100% - var(--gap-mr, 96px)) 0,
+    /* next page top corners (the gap ends at its text boundary): arms up and outward */
+    calc(var(--gap-ml, 96px) - var(--cm-len)) 100%,
+    var(--gap-ml, 96px) 100%,
+    calc(100% - var(--gap-mr, 96px) + var(--cm-len)) 100%,
+    calc(100% - var(--gap-mr, 96px)) 100%;
+}
+
+.page-wrap:not(.paper-mixed)::before,
+.page-wrap:not(.paper-mixed)::after {
+  left: calc((100% - var(--markup-w, 0px) - var(--page-w, 816px)) / 2);
+  width: var(--page-w, 816px);
+  /* above the paper's background (::before would otherwise paint under it) */
+  z-index: 1;
+  background-image:
+    linear-gradient(var(--cm), var(--cm)), linear-gradient(var(--cm), var(--cm)),
+    linear-gradient(var(--cm), var(--cm)), linear-gradient(var(--cm), var(--cm));
+  background-size:
+    var(--cm-len) 1px,
+    1px var(--cm-len),
+    var(--cm-len) 1px,
+    1px var(--cm-len);
+}
+
+/* first page top corners: the box ends at the top text boundary (clipped to the margin) */
+.page-wrap:not(.paper-mixed)::before {
+  --cm-h: min(var(--cm-len), var(--page-mt, 96px));
+  top: calc(var(--page-mt, 96px) - var(--cm-h));
+  height: var(--cm-h);
+  background-position:
+    calc(var(--page-ml, 96px) - var(--cm-len)) 100%,
+    var(--page-ml, 96px) 0,
+    calc(100% - var(--page-mr, 96px) + var(--cm-len)) 100%,
+    calc(100% - var(--page-mr, 96px)) 0;
+}
+
+/* last page bottom corners: the box starts at the bottom text boundary */
+.page-wrap:not(.paper-mixed)::after {
+  --cm-h: min(var(--cm-len), var(--page-mb, 96px));
+  bottom: calc(var(--page-mb, 96px) - var(--cm-h));
+  height: var(--cm-h);
+  background-position:
+    calc(var(--page-ml, 96px) - var(--cm-len)) 0,
+    var(--page-ml, 96px) 0,
+    calc(100% - var(--page-mr, 96px) + var(--cm-len)) 0,
+    calc(100% - var(--page-mr, 96px)) 0;
+}
+
+/* preview/export clones carry full ink (selector outranks the washout above) */
+.pv-page .page-hf:not(.page-hf-editing) > :not(.page-hf-tags) {
+  opacity: 1;
+}
+
+.pv-clip .page-gap::after {
+  display: none;
 }
 
 /* navigation pane */
@@ -4360,6 +4494,7 @@ th.cell-rev-del {
     --docs-paper-mark: #468edb;
     --docs-paper-grid: rgb(70 142 219 / 13%);
     --docs-paper-hf-line: #474747;
+    --docs-paper-crop-mark: #606060;
     --docs-paper-chip-bg: #222222;
     --docs-paper-select-bg: #222a32;
     --docs-paper-stripe: #2b2b2b;
@@ -5437,6 +5572,12 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
      set --doc-row-grid 0 inline; reset here so nested tables do not inherit them */
   --doc-row-eat: 0px;
   --doc-row-grid: 1;
+  /* fixed-layout tables set normal inline (w:noWrap ignored); a nested table decides for itself */
+  --doc-cell-nowrap: nowrap;
+  /* row-wide cell padding is set per tr; a nested table must fall back to its
+     own --doc-cell-pad-* instead of inheriting the host row's */
+  --doc-row-pad-t: initial;
+  --doc-row-pad-b: initial;
 }
 
 .doc-table.doc-table-autofit-contents,
@@ -5479,6 +5620,17 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   margin: 0 !important;
 }
 
+/* w:hideMark: Word leaves the end-of-cell mark out of the row height, so a cell
+   holding nothing but one empty paragraph collapses to its margins (or trHeight) */
+.doc-table td[data-hide-mark] > .doc-p-empty:only-child,
+.doc-table th[data-hide-mark] > .doc-p-empty:only-child {
+  height: 0;
+  min-height: 0;
+  line-height: 0;
+  padding: 0;
+  margin: 0 !important;
+}
+
 /* Word ignores page-type w:br inside table cells; a visible line break here
    inflates every cell that carries one (HWP-exported TOC/decor tables) */
 .doc-table td .doc-page-br,
@@ -5500,9 +5652,11 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   --cell-bw-r: var(--doc-bw-v, 0px);
   --cell-bd-t: var(--doc-bd-h, 0px);
   --cell-bd-b: var(--doc-bd-h, 0px);
-  padding: var(--doc-cell-pad-t, 0px)
+  /* top/bottom are row-wide: Word pads every cell with the row's largest tcMar
+     (tr --doc-row-pad-*, extensions rowPadVarsCss; probe 2026-10-13) */
+  padding: var(--doc-row-pad-t, var(--doc-cell-pad-t, 0px))
     max(0px, calc(var(--doc-cell-pad-r, 7.2px) - var(--cell-bw-r) * var(--doc-bw-share, 0.5)))
-    var(--doc-cell-pad-b, 0px)
+    var(--doc-row-pad-b, var(--doc-cell-pad-b, 0px))
     max(0px, calc(var(--doc-cell-pad-l, 7.2px) - var(--cell-bw-l) * var(--doc-bw-share, 0.5)));
   vertical-align: top;
   /* Word breaks a token wider than the cell character-by-character rather
@@ -6044,6 +6198,11 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   translate: none;
   max-width: none;
 }
+/* run pictures with a page-relative X draw as page overlays (PageRelXPicture);
+   the clone copies stay for layout but never paint */
+.pv-clip img[data-pv-overlaid='1'] {
+  visibility: hidden;
+}
 
 .pv-clip .doc-img-float > .doc-img-wrap {
   translate: none;
@@ -6237,6 +6396,18 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   max-width: 100%;
 }
 
+/* picture-only paragraph (extensions isPictureOnlyContent): the line is the
+   picture extent, no strut or descent below it; an auto multiple adds its
+   (m - 1) x single line under the picture like Word (cf. .doc-img-para) */
+.doc-page .doc-p-pic:not(.doc-lh-fixed) {
+  line-height: 0;
+  padding-bottom: calc((var(--doc-line-mult, 1) - 1) * var(--doc-line-factor, 1.2) * 1em);
+}
+
+.doc-page .doc-p-pic .doc-inline-img {
+  vertical-align: bottom;
+}
+
 /* floating (wp:anchor) run pictures: zero-size marker at the run, the picture
    overlays without consuming flow space. The hosting paragraph is the
    positioning origin — wp:posOffset measures from the column / paragraph top
@@ -6280,6 +6451,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   .doc-mixed-face:not(.doc-lh-fixed)
   span[style*='--doc-run-lh']:not([style*='vertical-align']) {
   line-height: calc(var(--doc-run-lh) * 1em * var(--doc-line-mult, 1));
+}
+
+/* Mixed Latin + complex-script paragraph (extensions paraCsMixedClass): Word sizes
+   the line by the tallest face (Calibri 1.22 over Arial Arabic 1.15); Chromium
+   centres the Arial span's box in the inherited line-height and the union runs
+   1.31em. The strut already carries the tallest factor, so cs spans give up their
+   own box; a superscript/subscript span keeps its box (own size and offset). */
+.doc-page .doc-cs-mixed span[data-cs]:not([style*='vertical-align']),
+.doc-table
+  :is(td, th)
+  .doc-cs-mixed:not(.doc-lh-fixed)
+  span[data-cs][style*='--doc-run-lh']:not([style*='vertical-align']) {
+  line-height: 0;
 }
 
 /* behind text at full opacity (Word); the page's stacking context keeps it above the paper */
@@ -6342,6 +6526,27 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .doc-inline-img--wrap-topBottom {
   display: block;
   margin: 2px auto;
+}
+
+/* wrap-obstacle mode (syncWrapObstacles): the paragraph's lines take the
+   measured gap through its padding, while its own side-wrapped run pictures
+   stay at their anchor offsets as overlays (Word allowOverlap) instead of
+   floating down the padding; the inline float margins must not add */
+[data-obs-mode='1'] {
+  position: relative;
+}
+[data-obs-mode='1'] img.doc-inline-img--wrap-square-left,
+[data-obs-mode='1'] img.doc-inline-img--wrap-tight-left,
+[data-obs-mode='1'] img.doc-inline-img--wrap-through-left,
+[data-obs-mode='1'] img.doc-inline-img--wrap-square-right,
+[data-obs-mode='1'] img.doc-inline-img--wrap-tight-right,
+[data-obs-mode='1'] img.doc-inline-img--wrap-through-right {
+  position: absolute;
+  float: none;
+  margin: 0 !important;
+  left: var(--obs-left, auto);
+  right: var(--obs-right, auto);
+  top: var(--obs-top, 0px);
 }
 
 /* invisible drawing paragraph: Word still lays out its (empty) line */
@@ -6486,6 +6691,13 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
    inline with !important) */
 .doc-inline-rule + .ProseMirror-separator,
 .doc-inline-rule + .ProseMirror-separator + .ProseMirror-trailingBreak {
+  display: none !important;
+}
+
+/* ProseMirror 1.42 puts a separator image in front of an atom that opens a
+   textblock; inline before the block-level rule it would open a text line of
+   its own above the rule (one extra line per rule, cumulative page drift) */
+.ProseMirror-separator:has(+ .doc-inline-rule) {
   display: none !important;
 }
 
@@ -6900,6 +7112,12 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   border: none;
 }
 
+/* a floating anchor wrapper's selected border would push every block below
+   it by 2px and turn a knife-edge page bottom (the outline stays) */
+.ProseMirror-focused .doc-protected.doc-protected-floating.ProseMirror-selectednode {
+  border: none;
+}
+
 .doc-protected-label {
   display: inline-block;
   font-size: 11px;
@@ -7045,6 +7263,13 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .doc-protected[data-doc-protected='image'] .doc-img-wrap > img,
 .doc-protected[data-doc-protected='image'] .doc-img-crop-viewport > img {
   vertical-align: bottom;
+}
+
+/* Word never shrinks an in-line picture to the column: a wp:extent wider than
+   the text width runs into the right margin at full size */
+.doc-page .doc-img-para > .doc-img-wrap,
+.doc-page .doc-img-para > .doc-img-wrap > .doc-protected-img {
+  max-width: none;
 }
 
 /* leading spaces/tabs share the picture line when they fit (bottom-aligned so
@@ -10123,6 +10348,57 @@ body.docs-crop-active
   border-color: var(--danger);
 }
 
+.print-options .print-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 0 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.print-options .print-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.print-options .print-field span {
+  flex: 1;
+}
+
+.print-options .print-field .print-select {
+  flex: 1.6;
+  width: auto;
+  margin: 0;
+}
+
+.print-options .print-copies {
+  width: 64px;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.print-options .print-select:disabled,
+.print-options .print-copies:disabled,
+.print-options .print-radio input:disabled {
+  opacity: 0.55;
+}
+
 .print-page-count {
   margin-top: auto;
   padding: 2px 2px 0;
@@ -10648,6 +10924,16 @@ body.docs-crop-active
   .page-hf-header,
   .page-hf-footer {
     border-color: transparent !important;
+  }
+
+  .page-hf > * {
+    opacity: 1 !important;
+  }
+
+  .page-gap::after,
+  .page-wrap::before,
+  .page-wrap::after {
+    display: none !important;
   }
 
   .page-wrap.has-markup-area {

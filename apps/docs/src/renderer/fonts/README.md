@@ -78,7 +78,9 @@ would shift line breaks ~8% vs Word), serif digits → 0.596em and space →
 0.333em (measured Batang values), sans Basic Latin (U+0020-007E, U+00A0) →
 measured Malgun Gothic advances (space 0.352em, digits 0.551em; Noto's 0.224em
 space alone drifted Korean sans line breaks ~3%/line —
-`tools/normalize-kr-sans-hmtx.py`, asserted by `tests/kr-font-metrics.test.ts`).
+`tools/normalize-kr-sans-hmtx.py`, asserted by `tests/kr-font-metrics.test.ts`);
+the CJK brackets U+3008-3011/3014-3015/300C-300F and U+203B are proportional
+in Malgun (0.49-0.60em) and take its advances too.
 The printable Latin outlines are also horizontally transformed to the measured
 ink widths and side bearings of Batang/Malgun
 (`tools/normalize-kr-latin-metrics.py`,

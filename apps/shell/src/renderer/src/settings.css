@@ -541,6 +541,36 @@
   color: var(--text-tertiary, var(--text-secondary));
 }
 
+/* multi-line variant for header / model-declaration blobs; same chrome as .set-input */
+.set-input-multiline {
+  flex-shrink: 0;
+  width: 46%;
+  min-width: 200px;
+  min-height: 56px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--surface);
+  resize: vertical;
+}
+
+.set-input-multiline:focus {
+  outline: none;
+  border-color: var(--accent, var(--text-primary));
+}
+
+.set-input-multiline::placeholder {
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.set-input-multiline.set-input-invalid {
+  border-color: var(--danger, var(--accent, var(--text-primary)));
+}
+
 .set-ai-note {
   padding: 8px 0 2px;
   line-height: 1.5;
@@ -892,4 +922,134 @@
 .set-ai-endpoint-row .set-dd {
   flex: 1;
   min-width: 0;
+}
+
+/* ── custom endpoint profile pane ── */
+
+.set-ai-profile-field,
+.set-ai-profile-blob {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.set-ai-profile-field .set-field-text,
+.set-ai-profile-blob .set-field-text {
+  flex: initial;
+}
+
+.set-ai-profile-blob .set-input-multiline {
+  width: 100%;
+  min-width: 0;
+}
+
+.set-ai-profile-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.set-ai-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.set-ai-profile-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.set-ai-profile-tri {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.set-ai-profile-tri-btn {
+  padding: 4px 10px;
+  border: none;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.set-ai-profile-tri-btn + .set-ai-profile-tri-btn {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.set-ai-profile-tri-btn:hover {
+  background: var(--hover);
+}
+
+.set-ai-profile-tri-btn.is-active {
+  background: var(--accent-soft, var(--hover));
+  color: var(--text-primary);
+}
+
+/* The shell supports a 720px window; leave room for translated labels and
+   endpoint actions when the settings sidebar consumes most of that width. */
+@media (max-width: 900px) {
+  .set-pane-ai-model {
+    scroll-padding-top: 100px;
+  }
+
+  .set-pane-ai-model .set-pane-head,
+  .set-pane-ai-model .set-pane-actions {
+    flex-wrap: wrap;
+  }
+
+  .set-pane-ai-model .set-pane-actions {
+    flex-basis: 100%;
+  }
+
+  .set-pane-ai-model .set-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .set-pane-ai-model .set-field-text {
+    flex: initial;
+  }
+
+  .set-pane-ai-model .set-field-label {
+    flex-shrink: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .set-pane-ai-model .set-input,
+  .set-pane-ai-model .set-input-multiline {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .set-pane-ai-model .set-num-input {
+    width: 64px;
+    align-self: flex-end;
+  }
+
+  .set-pane-ai-model .set-dd {
+    align-self: flex-end;
+    max-width: 100%;
+  }
+
+  .set-pane-ai-model .set-ai-endpoint-row {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .set-pane-ai-model .set-ai-endpoint-row .set-dd {
+    flex: 1 1 100%;
+  }
 }

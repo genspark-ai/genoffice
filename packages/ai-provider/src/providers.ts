@@ -1,3 +1,4 @@
+import { normalizeCustomProfile } from './custom-profile'
 import { resolveCustomEndpoints } from './custom-endpoints'
 import { defaultAiMediaSettings, resolveAiMediaSettings } from './media'
 import { defaultAiSearchSettings, resolveAiSearchSettings } from './search-settings'
@@ -567,12 +568,16 @@ function trimConfigs(providers: Record<string, unknown>): AiSettings['providers'
   const trimmed: Record<string, unknown> = {}
   for (const [id, config] of Object.entries(providers)) {
     if (!isRecord(config)) continue
+    // A stored profile is user data like the rest: normalizeCustomProfile
+    // bounds and drops what it cannot honor (an absent/empty one stays absent).
+    const profile = normalizeCustomProfile(config.profile)
     trimmed[id] = {
       ...config,
       apiKey: str(config.apiKey),
       model: str(config.model),
       ...(config.baseUrl !== undefined ? { baseUrl: str(config.baseUrl) } : {}),
       ...(config.cliPath !== undefined ? { cliPath: str(config.cliPath) } : {}),
+      ...(profile ? { profile } : {}),
     }
   }
   return trimmed as AiSettings['providers']

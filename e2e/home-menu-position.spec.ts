@@ -8,7 +8,7 @@ import { launchShell, closeAndSaveVideo } from './helpers'
  * Row menus (the ⋯ button on folder rows) are position:fixed and anchor via
  * inline top/right computed from getBoundingClientRect against the layout
  * viewport. On scaled Linux desktops window.innerWidth can disagree with that
- * viewport and pushed the menus past the window's left edge (#1946); these
+ * viewport and pushed the menus past the window's left edge (genoffice#1946); these
  * assertions pin the menu next to its button and inside the window on every
  * platform.
  */

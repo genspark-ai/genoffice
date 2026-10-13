@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeCustomProfile } from '@genoffice/ai-provider/browser'
 
 import {
   HEADER_FOOTER_PICTURE_POSITION,
@@ -1483,6 +1484,8 @@ export const workbookPageSetupStateSchema = z
     zoomScale: z.number().int().min(10).max(400).optional(),
     showFormulas: z.boolean().optional(),
     showHeadings: z.boolean().optional(),
+    /// sheetView/@rightToLeft — the grid is mirrored (column A at the right).
+    rightToLeft: z.boolean().optional(),
     printArea: z.union([z.string().min(1).max(255), z.null()]).optional(),
     printTitles: z.union([z.string().regex(/^\d{1,7}:\d{1,7}$/), z.null()]).optional(),
     /// Frozen pane counts; both present together, 0/0 removes the pane.
@@ -2487,12 +2490,48 @@ export type WorkbookConditionalRule = z.infer<typeof conditionalRuleSchema>
 // site, which has every known provider key once merged through
 // resolveAiSettings/defaultAiSettings. ----
 
+const aiCustomCompatSchema = z
+  .object({
+    omitTemperature: z.boolean().optional(),
+    echoReasoning: z.boolean().optional(),
+    vision: z.boolean().optional(),
+    useMaxCompletionTokens: z.boolean().optional(),
+  })
+  .strict()
+
+const aiCustomModelProfileSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    alias: z.string().optional(),
+    name: z.string().optional(),
+    ...aiCustomCompatSchema.shape,
+    maxTokens: z.number().int().positive().optional(),
+    contextWindow: z.number().int().positive().optional(),
+  })
+  .strict()
+
+// Keep IPC fields explicit, then use the canonical normalizer for header
+// legality and profile size bounds, just like the other apps' settings gate.
+const aiCustomProfileSchema = z
+  .object({
+    api: z.enum(['openai-compatible', 'anthropic', 'gemini']).optional(),
+    apiKeyEnv: z.string().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    idleTimeoutMs: z.number().int().positive().optional(),
+    compat: aiCustomCompatSchema.optional(),
+    bodyExtras: z.record(z.string(), z.unknown()).optional(),
+    modelProfiles: z.array(aiCustomModelProfileSchema).optional(),
+    probedProfiles: z.array(aiCustomModelProfileSchema).optional(),
+  })
+  .strict()
+
 const aiProviderConfigSchema = z
   .object({
     apiKey: z.string(),
     model: z.string(),
     baseUrl: z.string().optional(),
     cliPath: z.string().optional(),
+    profile: aiCustomProfileSchema.transform(normalizeCustomProfile).optional(),
   })
   .strict()
 
@@ -2513,8 +2552,18 @@ const aiCustomEndpointSchema = z
     apiKey: z.string(),
     model: z.string(),
     models: z.array(z.string()).optional(),
+    ...aiCustomProfileSchema.shape,
   })
   .strict()
+  .transform(({ id, name, baseUrl, apiKey, model, models, ...profile }) => ({
+    id,
+    name,
+    baseUrl,
+    apiKey,
+    model,
+    ...(models !== undefined ? { models } : {}),
+    ...normalizeCustomProfile(profile),
+  }))
 
 export const aiSettingsInputSchema = z
   .object({

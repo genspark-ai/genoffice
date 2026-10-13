@@ -62,10 +62,12 @@ describe('run-level anchors (paragraph with text)', () => {
     editor.destroy()
   })
 
-  it('paragraph-relative overlays keep the plain offset and no re-pin marker', async () => {
+  it('paragraph-relative overlays measure from above the spacing-before and carry no re-pin marker', async () => {
     const editor = await open(`<w:p>${anchor('paragraph', '<wp:wrapNone/>', '0')}${TEXT}</w:p>`)
     const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img')!
-    expect(img.getAttribute('style')).toContain('translate(0.0px, 148.8px)')
+    expect(img.getAttribute('style')).toContain(
+      'translate(0.0px, calc(148.8px - var(--anchor-before,0px)))',
+    )
     expect(img.dataset.pageRelV).toBeUndefined()
     editor.destroy()
   })

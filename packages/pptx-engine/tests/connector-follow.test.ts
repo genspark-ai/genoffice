@@ -50,6 +50,30 @@ describe('connector following', () => {
     expect(cxn.transform.flipV).toBe(true)
   })
 
+  it('a rotated target snaps to the rotated side (90deg rect: left midpoint lands on the visual top)', () => {
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
+    const s3 = slide.elements.find((e) => e.name === 'S3')!
+    s3.transform.offset = { x: 4000, y: 2000, cx: 1000, cy: 600 }
+    s3.transform.rot = 90 * 60000
+    updateConnectorsForMoved(slide, [s3.id])
+    const cxn = slide.elements.find((e) => e.connection)!
+    // centre (4500, 2300); left midpoint offset (-500, 0) rotates to (0, -500)
+    expect(cxn.transform.offset).toEqual({ x: 1000, y: 300, cx: 3500, cy: 1500 })
+    expect(cxn.transform.flipH).toBe(false)
+    expect(cxn.transform.flipV).toBe(false)
+  })
+
+  it('flipH on the target mirrors the site to the opposite edge', () => {
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
+    const s3 = slide.elements.find((e) => e.name === 'S3')!
+    s3.transform.offset = { x: 4000, y: 2000, cx: 1000, cy: 600 }
+    s3.transform.flipH = true
+    updateConnectorsForMoved(slide, [s3.id])
+    const cxn = slide.elements.find((e) => e.connection)!
+    // idx 1 (left) mirrored → right edge midpoint (5000, 2300)
+    expect(cxn.transform.offset).toEqual({ x: 1000, y: 300, cx: 4000, cy: 2000 })
+  })
+
   it('moving an unattached element does not affect connectors', () => {
     const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
     const cxnBefore = JSON.stringify(slide.elements.find((e) => e.connection)!.transform)

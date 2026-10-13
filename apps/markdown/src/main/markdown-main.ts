@@ -50,6 +50,7 @@ import {
   writeImageIntoOwnedAssets,
 } from './asset-lifecycle'
 import { createMarkdownConversionSession, writeMarkdownConversion } from './conversion-lifecycle'
+import { normalizeMarkdownTheme, type MarkdownTheme } from '../shared/markdown-theme'
 import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
 import type { ImageHostConfig } from '../shared/ipc'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
@@ -931,6 +932,32 @@ function registerMarkdownIpc(): void {
         file = {}
       }
       file.imageHost = normalized
+      await atomicWriteFile(imageHostConfigPath(), Buffer.from(JSON.stringify(file, null, 2)))
+      return normalized
+    },
+  )
+
+  // ---- document paper theme (rendered via data-markdown-theme) ----
+  ipcMain.handle(MARKDOWN_CHANNELS.getMarkdownTheme, async (): Promise<MarkdownTheme> => {
+    try {
+      const raw = JSON.parse(await readFile(imageHostConfigPath(), 'utf8'))
+      return normalizeMarkdownTheme(raw?.markdownTheme)
+    } catch {
+      return 'default'
+    }
+  })
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.setMarkdownTheme,
+    async (_e, theme: unknown): Promise<MarkdownTheme> => {
+      const normalized = normalizeMarkdownTheme(theme)
+      let file: Record<string, unknown>
+      try {
+        file = JSON.parse(await readFile(imageHostConfigPath(), 'utf8'))
+      } catch {
+        file = {}
+      }
+      file.markdownTheme = normalized
       await atomicWriteFile(imageHostConfigPath(), Buffer.from(JSON.stringify(file, null, 2)))
       return normalized
     },

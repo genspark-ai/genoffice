@@ -151,6 +151,19 @@ export interface OpenAiRequestOptions {
   useMaxCompletionTokens?: boolean | undefined
   /** vendor-specific fields merged into the request body (e.g. DeepSeek's `thinking`) */
   bodyExtras?: Record<string, unknown> | undefined
+  /** echo `reasoning_content` back on assistant turns; absent = the shipped family heuristic */
+  echoReasoning?: boolean | undefined
+  /** static headers a user-hosted endpoint needs (merged last, so they win) */
+  headers?: Record<string, string> | undefined
+  /** stream idle budget override for slow local servers */
+  idleTimeoutMs?: number | undefined
+}
+
+const usageRejectedGateways = new Set<string>()
+
+/** test hook */
+export function resetUsageRejectedGateways(): void {
+  usageRejectedGateways.clear()
 }
 
 export async function streamOpenAiCompatible(
@@ -163,16 +176,18 @@ export async function streamOpenAiCompatible(
   cb: StreamCallbacks,
   options: OpenAiRequestOptions = {},
 ): Promise<void> {
-  const wd = createStreamWatchdog(cb.signal)
+  const wd = createStreamWatchdog(cb.signal, undefined, options.idleTimeoutMs)
   return wd.guard(() =>
     openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, {
       ...options,
-      requestUsage: true,
+      requestUsage: !usageRejectedGateways.has(baseUrl),
     }).catch((e) => {
       // Some gateways reject the (spec) stream_options field outright; a 400 that
-      // names it is retried once without it — those providers simply never report usage.
+      // names it is retried once without it, and the gateway is remembered so
+      // later turns skip the extra round trip — those providers never report usage.
       if (!/HTTP 4\d\d:[\s\S]*stream_options/i.test(e instanceof Error ? e.message : String(e)))
         throw e
+      usageRejectedGateways.add(baseUrl)
       return openAiCompatibleTurn(baseUrl, config, system, messages, tools, maxTokens, cb, wd, {
         ...options,
         requestUsage: false,
@@ -204,13 +219,20 @@ async function openAiCompatibleTurn(
       ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       ...gensparkAttributionHeaders(baseUrl),
       ...opencodeSessionHeaders(baseUrl, cb.sessionId),
+      // user-hosted endpoints may route on static headers; merged last so a
+      // deliberate profile header beats an inferred one
+      ...options.headers,
     },
     body: JSON.stringify({
       model: config.model,
       ...(options.useMaxCompletionTokens
         ? { max_completion_tokens: maxTokens }
         : { max_tokens: maxTokens }),
-      messages: openAiMessages(system, messages, modelEchoesReasoning(config.model)),
+      messages: openAiMessages(
+        system,
+        messages,
+        options.echoReasoning ?? modelEchoesReasoning(config.model),
+      ),
       ...(tools.length > 0
         ? {
             tools: tools.map((t) => ({
@@ -401,6 +423,7 @@ export async function chatOpenAiCompatible(
       ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       ...gensparkAttributionHeaders(baseUrl),
       ...opencodeSessionHeaders(baseUrl),
+      ...options.headers,
     },
     body: JSON.stringify({
       model: config.model,

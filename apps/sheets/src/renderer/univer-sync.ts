@@ -184,6 +184,11 @@ import {
 } from './univer-state'
 import type { SheetOutlineState } from './outline-model'
 import { isManualCalculation } from './calc-options'
+import {
+  registerCellFontAliases,
+  richRunFamilies,
+  untilCellFontsLoaded,
+} from './cell-font-fallback'
 import { noteFormulaStreamChunk, requestFullRecalcAfterStream } from './formula-stream-hold'
 import { SharedFormulaLookup, indexedFormulas } from './shared-formula-index'
 import { threadStore } from './threaded-comments'
@@ -3138,6 +3143,13 @@ async function loadRange(
     const mapped = await readSheetRangeMapped(state, sheetId, range, sheetMeta)
     if (lazyWorkbookRef.current !== state || state.loadingKeys.get(sheetId) !== requestKey) {
       return
+    }
+    const richFamilies = mapped ? richRunFamilies(mapped.screen.cells) : null
+    if (richFamilies?.size) {
+      await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
+      if (lazyWorkbookRef.current !== state || state.loadingKeys.get(sheetId) !== requestKey) {
+        return
+      }
     }
     if (!mapped) {
       // The whole range is journal-owned (inserted this session): nothing

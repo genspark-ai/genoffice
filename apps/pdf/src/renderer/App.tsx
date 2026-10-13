@@ -7431,6 +7431,10 @@ export default function App() {
                           {t('convertToExcel')}
                         </button>
                         <button onClick={() => void convertTo('pptx')}>{t('convertToPpt')}</button>
+                        <button onClick={() => void convertTo('md')}>
+                          {t('convertToMarkdown')}
+                        </button>
+                        <button onClick={() => void convertTo('html')}>{t('convertToHtml')}</button>
                       </div>
                     )}
                   </div>

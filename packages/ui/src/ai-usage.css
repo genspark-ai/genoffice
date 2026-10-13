@@ -12,6 +12,7 @@
   font-variant-numeric: tabular-nums;
   user-select: none;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* sits on its own quiet line under the reply text */

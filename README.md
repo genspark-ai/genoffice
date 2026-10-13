@@ -52,6 +52,9 @@ file, makes the change, and shows you exactly what it touched.
   HTML files from a local SQLite index, CJK included. Optionally, the top hits
   are reranked by **[TypeSafe Jev](https://typesafe.ai/)**, the System One
   judgment model, so the file that answers your question comes first.
+- **Ask your files, with sources.** Star a set of documents and **Ask AI** on
+  the home screen answers questions across them, citing the file behind every
+  claim so you can open it and check.
 - **Your keys or none.** Sign in with Genspark and skip keys, or bring your own
   key for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax,
   Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud, or any OpenAI-compatible endpoint, local
@@ -68,8 +71,9 @@ details and requirements in [Download](#download).
 
 ## Demo
 
-Six apps, one AI panel, a file search reranked by TypeSafe Jev, and a
-command line for your coding agent. Every
+Six apps, one AI panel, a file search reranked by TypeSafe Jev, an Ask AI
+that answers from your starred files with sources, and a command line for
+your coding agent. Every
 screenshot is the real app on macOS, with the AI driven from the prompt you
 can read in the panel.
 
@@ -193,7 +197,21 @@ that score; if the call fails or times out, the local order stays.
 </tr>
 </table>
 
-### 8 · CLI — your coding agent drives GenOffice, on your machine
+### 8 · Ask AI — your starred files, answered with sources
+
+Star the files you work with and the home screen's **Ask AI** treats them as
+a knowledge base. Ask a question in plain language; the agent searches the
+starred files, reads the ones it needs and answers with a citation after
+every claim. Click a citation and the file opens in the right app.
+
+<img src="docs/assets/readme/home-ask-ai-motion.webp" alt="Screen recording of GenOffice Ask AI: the question quick summary, what drove our Q3 growth and how did Asia-Pacific perform, is typed on the home screen; the agent reads two starred files and answers with the Aurora X1 launch and the Asia-Pacific expansion, each claim followed by a citation chip naming the quarterly report or the regional sales workbook; a click on the workbook chip opens it in Sheets with the Asia-Pacific row highlighted" width="100%">
+
+Ask AI searches the same on-device full-text index as
+[Search](#7--search--find-the-file-that-answers-the-question-with-typesafe-jev)
+and reads files in pages, so the model only sees the hits and the passages it
+asked for, through the provider you chose.
+
+### 9 · CLI — your coding agent drives GenOffice, on your machine
 
 GenOffice ships a `genoffice` command line and an agent skill. Install the
 skill and Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode or
@@ -213,7 +231,7 @@ same engines as the apps, without opening a window.
 </tr>
 </table>
 
-### 9 · MCP — the same tools over the Model Context Protocol
+### 10 · MCP — the same tools over the Model Context Protocol
 
 Every `genoffice` command is also an MCP tool. Claude Code, Claude Desktop,
 Cursor and any other MCP client can start `genoffice mcp` themselves, with no
@@ -253,6 +271,8 @@ document in a visible editor tab while you watch.
 - **Search that finds the answer, not the keyword.** Full-text search over
   every document in your folders, indexed on-device, with optional reranking
   by TypeSafe Jev, the System One judgment model.
+- **Ask AI across your files.** Star the files that matter and ask questions
+  in plain language; every answer cites the file it came from, one click away.
 - **Scriptable.** A `genoffice` command line, an agent skill and an MCP server
   put every engine at the service of Claude Code, Claude Desktop, Codex, Cursor
   and other agents, still on-device.
@@ -321,7 +341,7 @@ check its own work.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place

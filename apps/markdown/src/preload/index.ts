@@ -5,6 +5,7 @@ import type { AiStreamChunk } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import { AI_CHANNELS, MARKDOWN_CHANNELS } from '../shared/ipc'
+import { normalizeMarkdownTheme, type MarkdownTheme } from '../shared/markdown-theme'
 import type {
   AutoSaveDefault,
   DocTheme,
@@ -50,6 +51,14 @@ const api: MarkdownApi = {
   saveImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImage, data),
   readImage: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.readImage, src),
   saveImageAs: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImageAs, src),
+  getMarkdownTheme: async () => {
+    const result: unknown = await ipcRenderer.invoke(MARKDOWN_CHANNELS.getMarkdownTheme)
+    return normalizeMarkdownTheme(result)
+  },
+  setMarkdownTheme: async (theme: MarkdownTheme) => {
+    const result: unknown = await ipcRenderer.invoke(MARKDOWN_CHANNELS.setMarkdownTheme, theme)
+    return normalizeMarkdownTheme(result)
+  },
   getImageHost: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.getImageHost),
   setImageHost: (config) => ipcRenderer.invoke(MARKDOWN_CHANNELS.setImageHost, config),
   uploadImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.uploadImage, data),

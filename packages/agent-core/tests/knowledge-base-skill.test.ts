@@ -186,3 +186,25 @@ describe('createKnowledgeBaseSkill', () => {
     ).toBeNull()
   })
 })
+
+describe('createKnowledgeBaseSkill with no starred files', () => {
+  it('answers both tools without calling the backend', async () => {
+    const deps = makeDeps()
+    const skill = createKnowledgeBaseSkill({ ...deps, listFiles: () => [] })
+    const searched = await skill.executeTool!({
+      id: '1',
+      name: 'search_knowledge_base',
+      input: { query: 'x' },
+    })
+    expect(searched).toMatchObject({ isError: true })
+    expect(searched.output).toContain('empty')
+    const read = await skill.executeTool!({
+      id: '2',
+      name: 'read_knowledge_file',
+      input: { index: 0 },
+    })
+    expect(read.output).toContain('empty')
+    expect(deps.searches).toEqual([])
+    expect(deps.reads).toEqual([])
+  })
+})

@@ -54,15 +54,30 @@ export type AgentMessage =
   | { role: 'tool'; results: AgentToolResult[] }
 
 /**
+ * One node of a mind map tree (NotebookLM-style interactive diagram). `block`
+ * optionally cites a document block index the node summarizes; the UI turns it
+ * into a jump link. Labels are short phrases, not sentences.
+ */
+export interface MindMapTreeNode {
+  label: string
+  /** 0-based document block index this node draws on (optional) */
+  block?: number
+  children?: MindMapTreeNode[]
+}
+
+/**
  * Side-channel display data: UI-only, never merged into messages sent to the LLM.
- * kind='images' → image grid; kind='links' → link list; kind='text' → extra text.
+ * kind='images' → image grid; kind='links' → link list; kind='text' → extra text;
+ * kind='mindmap' → interactive mind map rendered from `tree`.
  */
 export interface ToolDisplay {
-  kind: 'images' | 'links' | 'text'
+  kind: 'images' | 'links' | 'text' | 'mindmap'
   /** entry list for images / links modes */
   items?: Array<{ url: string; title?: string; thumb?: string }>
   /** extra text for text mode */
   text?: string
+  /** mind map root for the mindmap kind */
+  tree?: MindMapTreeNode
 }
 
 /** outcome of one tool execution */

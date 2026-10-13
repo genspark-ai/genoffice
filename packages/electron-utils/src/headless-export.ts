@@ -17,18 +17,18 @@
 export type HeadlessExportModule = 'docs' | 'sheets' | 'slides' | 'markdown' | 'html'
 
 /** Conversion targets the headless entry accepts; see HEADLESS_TARGETS for which module renders which. */
-export type HeadlessExportFormat = 'pdf' | 'docx' | 'html'
+export type HeadlessExportFormat = 'pdf' | 'docx' | 'html' | 'md'
 
 /** Targets each editor module can render without a dialog. */
 export const HEADLESS_TARGETS: Record<HeadlessExportModule, readonly HeadlessExportFormat[]> = {
-  docs: ['pdf', 'html'],
+  docs: ['pdf', 'html', 'md'],
   sheets: ['pdf'],
   slides: ['pdf'],
   markdown: ['pdf'],
   html: ['pdf', 'docx'],
 }
 
-const ALL_TARGETS: readonly HeadlessExportFormat[] = ['pdf', 'docx', 'html']
+const ALL_TARGETS: readonly HeadlessExportFormat[] = ['pdf', 'docx', 'html', 'md']
 
 /** What a hidden renderer window is asked to produce. */
 export interface HeadlessExportTarget {

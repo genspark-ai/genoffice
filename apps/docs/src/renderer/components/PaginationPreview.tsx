@@ -599,10 +599,24 @@ export function hoistPaperClamp(dy: number, topPx: number, boxOffsets: number[])
   return top < 0 ? dy - top : dy
 }
 
+/** anchor-relative boxes the hoist re-pins. A wrapper mixing page-relative V
+ *  boxes with anchor-relative ones passes neither the all-page-relative nor the
+ *  spill gate and stays inside the pv-clip, which cut every box at the flow end
+ *  (a page holding only that anchor line exported blank): un-position it and
+ *  hoist the anchor-relative boxes whether or not they spill. */
+export function hoistPlan(wfs: FloatBox[]): { boxes: FloatBox[]; mixed: boolean } | null {
+  if (wfs.some((f) => f.pinned)) return null
+  const boxes = wfs.filter((f) => !f.pageRelV)
+  if (boxes.length === 0) return null
+  return { boxes, mixed: boxes.length < wfs.length }
+}
+
 /** horizontal slot of a floating box's inline position (hoist CSS corrects each slot from column to page) */
 export function hoistSlotOf(f: { el: HTMLElement }): 'left' | 'center' | 'right' | null {
   const st = f.el.getAttribute('style') ?? ''
-  if (/(?:^|;)\s*left:\s*-?[\d.]+px/.test(st)) return 'left'
+  // a paper-edge X renders as calc(<px> - var(--doc-margin-left)), a column X
+  // clamped onto the paper as clamp(<floor>, <px>, <cap>): both are left slots
+  if (/(?:^|;)\s*left:\s*(?:calc\(|clamp\([^,]*,\s*)?-?[\d.]+px/.test(st)) return 'left'
   if (/(?:^|;)\s*left:\s*50%/.test(st)) return 'center'
   if (/(?:^|;)\s*right:\s*0(?:px)?\s*(?:;|$)/.test(st)) return 'right'
   return null
@@ -766,6 +780,42 @@ export function collectCellPageBoxes(pm: HTMLElement): CellPageBox[] {
     })
   }
   return out
+}
+
+/** run-anchored front/behind picture with a page/margin-relative X, drawn once
+ *  per owning page at page coordinates (the column clone would clip it) */
+export interface PageRelXPicture {
+  page: number
+  offX: number
+  fromPaperEdge: boolean
+  /** content-area Y of the picture top on its page (unclamped; the render pins it to the paper) */
+  topY: number
+  behind: boolean
+  html: string
+}
+
+/** the inline transform's leading translate(...) (anchor offset, may nest calc()) */
+export function stripLeadingTranslate(transform: string): string {
+  const m = /^\s*translate\(/.exec(transform)
+  if (!m) return transform
+  let depth = 0
+  for (let i = m[0].length - 1; i < transform.length; i++) {
+    if (transform[i] === '(') depth++
+    else if (transform[i] === ')' && --depth === 0) return transform.slice(i + 1).trim()
+  }
+  return ''
+}
+
+export function pageRelXPictureHtml(img: HTMLElement): string {
+  const copy = img.cloneNode(false) as HTMLElement
+  // the overlay sits at the page position: drop the anchor offset, keep rotation/flip
+  const xf = stripLeadingTranslate(copy.style.transform)
+  if (xf) copy.style.transform = xf
+  else copy.style.removeProperty('transform')
+  copy.style.left = '0px'
+  copy.style.top = '0px'
+  delete copy.dataset.pvOverlaid
+  return copy.outerHTML
 }
 
 export function pinnedCloneCss(pageCount: number): string {
@@ -944,6 +994,7 @@ export function PaginationPreview({
   /** non-null = pruned-clone mode (large documents): per-page windows instead of full clones */
   const [cloneKids, setCloneKids] = useState<CloneChild[] | null>(null)
   const [cellPageBoxes, setCellPageBoxes] = useState<CellPageBox[]>([])
+  const [relXPictures, setRelXPictures] = useState<PageRelXPicture[]>([])
   /** Live section list: a section whose break block was deleted (unsaved) merges into the next, matching the canvas */
   const [secs, setSecs] = useState<SectionInfo[]>(sections)
   /** open comment threads' anchors (clone flow coordinates), in document order */
@@ -1221,9 +1272,12 @@ export function PaginationPreview({
         )
         // static siblings (an inline drawing sharing the paragraph) neither
         // need the shared containing block nor ride the page-margin translate:
-        // only absolutely positioned siblings gate the un-positioning
-        const absBoxes = boxes.filter((b) =>
-          /position:\s*absolute/.test(b.getAttribute('style') ?? ''),
+        // only absolutely positioned siblings gate the un-positioning; zero-height
+        // ones (degenerate guide lines) are invisible and not measured as floats
+        const absBoxes = boxes.filter(
+          (b) =>
+            /position:\s*absolute/.test(b.getAttribute('style') ?? '') &&
+            b.getBoundingClientRect().height > 0,
         )
         if (absBoxes.length > 0 && absBoxes.every((b) => b.dataset.pageRelV === '1')) {
           wrap.dataset.pvPagerel = '1'
@@ -1252,6 +1306,29 @@ export function PaginationPreview({
           ? effectiveTopPx(live[section].settings, first)
           : (liveGeoms[section]?.topPx ?? 0)
       }
+      // run-anchored pictures with a page-relative X: the anchor paragraph
+      // keeps its position (and lead shift) in the clone; the picture itself
+      // draws once per owning page as a page overlay, every clone copy hidden
+      const relXPics: PageRelXPicture[] = []
+      for (const f of floats) {
+        if (!f.el.matches('.doc-inline-img-anchor > img[data-page-rel-x]') || f.pageRelV) continue
+        delete f.el.dataset.pvOverlaid
+        const pg = pinnedFloatPage(computed, f.anchorTop)
+        const slice = computed[pg]
+        if (!slice || slice.repeatHeader) continue
+        const win = hoistWindow(slice, f.anchorTop)
+        if (!win) continue
+        f.el.dataset.pvOverlaid = '1'
+        relXPics.push({
+          page: pg,
+          offX: parseFloat(f.el.dataset.pageRelXPx ?? '') || 0,
+          fromPaperEdge: f.el.dataset.pageRelXFrom === 'page',
+          topY: win.dy + f.top - f.anchorTop,
+          behind: f.el.classList.contains('doc-inline-img--behind'),
+          html: pageRelXPictureHtml(f.el),
+        })
+      }
+      setRelXPictures(relXPics)
       const wrapFloats = new Map<HTMLElement, FloatBox[]>()
       for (const f of floats) {
         const wrap = f.el.closest<HTMLElement>('.doc-protected-floating, .doc-img-float')
@@ -1260,11 +1337,13 @@ export function PaginationPreview({
         if (list) list.push(f)
         else wrapFloats.set(wrap, [f])
       }
-      for (const [wrap, wfs] of wrapFloats) {
+      for (const [wrap, all] of wrapFloats) {
         // pinned / page-relative wrappers already position against the page
         if (wrap.dataset.pvPagerel === '1' || wrap.classList.contains('doc-protected-pagepinned'))
           continue
-        if (!wfs.every((f) => !f.pinned && !f.pageRelV)) continue
+        const plan = hoistPlan(all)
+        if (!plan) continue
+        const { boxes: wfs, mixed } = plan
         // the hoist CSS re-pins against the page box, so each slot (left px,
         // left:50%, right:0) gets its own column-to-page correction
         const slot = hoistSlotOf(wfs[0])
@@ -1280,10 +1359,11 @@ export function PaginationPreview({
         const pageRelX = wfs.every((f) => f.el.dataset.pageRelX === '1')
         if (win.multiCol && !pageRelX) continue
         const spills = wfs.some((f) => f.top + f.height > win.end + 1 || f.top < win.start - 1)
-        if (!spills && !win.multiCol) continue
+        if (!spills && !win.multiCol && !mixed) continue
         wrap.dataset.pvHoist = '1'
         wrap.dataset.pvHoistSlot = slot
         wrap.dataset.pinPage = String(pg)
+        if (mixed) wrap.dataset.pvPagerel = '1'
         const dy = hoistPaperClamp(
           win.dy,
           hoistPageTopPx(pg, slice.section),
@@ -1659,6 +1739,23 @@ export function PaginationPreview({
                       dangerouslySetInnerHTML={{ __html: b.html }}
                     />
                   ))}
+                {relXPictures
+                  .filter((b) => b.page === i)
+                  .map((b, k) => (
+                    <div
+                      key={`rxp${k}`}
+                      className="pv-cell-page-box"
+                      aria-hidden="true"
+                      style={{
+                        left: b.fromPaperEdge ? b.offX : mL + b.offX,
+                        // paragraph-relative Y rides the body window's vAlign shift;
+                        // Word keeps the picture on the paper (hoistPaperClamp)
+                        top: Math.max(0, mTop + (slice.regions ? 0 : vOffset) + b.topY),
+                        zIndex: b.behind ? -1 : 1,
+                      }}
+                      dangerouslySetInnerHTML={{ __html: b.html }}
+                    />
+                  ))}
                 {(parts.footerImages ?? [])
                   .filter((img) => img.floating && !hfImageHangsOnPara(img))
                   .map((img, k) => {
@@ -1816,6 +1913,7 @@ export function PaginationPreview({
                                 >
                                   <div
                                     className="doc-page pv-content"
+                                    data-pv-body=""
                                     dangerouslySetInnerHTML={{
                                       __html: cloneKids
                                         ? prunedCloneHtml(
@@ -1867,6 +1965,7 @@ export function PaginationPreview({
                     >
                       <div
                         className="doc-page pv-content"
+                        data-pv-body=""
                         dangerouslySetInnerHTML={{
                           __html: cloneKids
                             ? prunedCloneHtml(

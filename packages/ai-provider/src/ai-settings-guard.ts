@@ -15,8 +15,15 @@ import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+import { normalizeCustomProfile } from './custom-profile'
 import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from './registry'
-import type { AiCustomEndpoint, AiProviderConfig, AiProviderId, AiSettings } from './types'
+import type {
+  AiCustomEndpoint,
+  AiCustomProfile,
+  AiProviderConfig,
+  AiProviderId,
+  AiSettings,
+} from './types'
 
 const PROVIDER_IDS = Object.keys(AI_PROVIDER_ADAPTERS) as AiProviderId[]
 
@@ -86,6 +93,10 @@ function sanitizeProviderConfig(input: unknown): AiProviderConfig {
   }
   const cliPath = sanitizeCliPath(raw.cliPath)
   if (cliPath !== undefined) config.cliPath = cliPath
+  // A custom slot may carry a nested profile; normalizeCustomProfile bounds every
+  // field (protocol, headers via the HTTP-legality gate, sizes) and drops the rest.
+  const profile = normalizeCustomProfile(raw.profile)
+  if (profile !== undefined) config.profile = profile
   return config
 }
 
@@ -136,14 +147,35 @@ function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
           .slice(0, MAX_ENDPOINT_MODELS)
           .map((m) => m.slice(0, MAX_MODEL_LENGTH))
       : undefined
-    out.push({
+    // A stored entry carries its profile flat (api/headers/compat/… beside the
+    // identity fields); the nested `profile` form is normalized too, so a
+    // hand-edited file in either shape survives the gate.
+    const flat = normalizeCustomProfile(e) ?? {}
+    const nested: AiCustomProfile = config.profile ?? {}
+    const profile: AiCustomProfile = { ...flat, ...nested }
+    const endpoint: AiCustomEndpoint = {
       id,
       name: String(e.name ?? '').slice(0, MAX_ENDPOINT_NAME_LENGTH),
       baseUrl: config.baseUrl ?? '',
       apiKey: config.apiKey,
       model: config.model,
       ...(models && models.length > 0 ? { models } : {}),
-    })
+    }
+    for (const key of [
+      'api',
+      'apiKeyEnv',
+      'headers',
+      'idleTimeoutMs',
+      'compat',
+      'bodyExtras',
+      'modelProfiles',
+      'probedProfiles',
+    ] as const) {
+      if (profile[key] !== undefined) {
+        ;(endpoint as unknown as Record<string, unknown>)[key] = profile[key]
+      }
+    }
+    out.push(endpoint)
   }
   return out
 }

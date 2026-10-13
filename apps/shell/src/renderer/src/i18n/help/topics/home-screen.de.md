@@ -8,7 +8,6 @@ Die Startseite ist GenOffices Startseite: eine Navigationsleiste links, Dateilis
 
 - **Zuletzt verwendet**: die zuletzt geöffneten Dateien. Jede Zeile trägt ihren Zeitpunkt — heute, gestern oder das Datum.
 - **Favoriten**: die von Ihnen mit einem Stern versehenen Dateien. Fahren Sie über eine Dateizeile und klicken Sie auf den Stern, um sie hinzuzufügen oder zu entfernen. **In Gruppe verschieben** im ⋯-Menü sortiert markierte Dateien in benannte Gruppen; die Markierungs-Ansicht filtert danach.
-- **Benutzerhandbuch**: öffnet dieses Handbuch.
 - **Ask AI**: das Wissensbasis-Panel — stellen Sie Fragen und erhalten Sie Antworten mit Quellen aus Ihren markierten Dateien (siehe unten).
 - **Genspark Projects**: nach der Anmeldung an Ihrem Genspark-Konto werden die im Web mit Genspark AI erstellten Projekte angezeigt; klicken Sie auf eines, um die Bearbeitung im Browser fortzusetzen. Suche, Sortierung nach Zeit, Aktualisierung und Nachladen werden unterstützt.
 - **Ordner**: Verzeichnisse, die Sie mit **Ordner hinzufügen…** zur Seitenleiste hinzufügen oder aus dem Dateimanager dorthin ziehen. Jedes wird zu einem Stammverzeichnis, das Sie öffnen, mit Unterordnern füllen, umbenennen und daraus entfernen können; geht eines offline, wird es als nicht verfügbar angezeigt und lässt sich aus der Liste nehmen. **Neuer Ordner** legt ein weiteres an.

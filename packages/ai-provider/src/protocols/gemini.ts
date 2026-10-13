@@ -162,6 +162,10 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
 /** Per-endpoint request shaping resolved from the provider registry. */
 export interface GeminiRequestOptions {
   omitTemperature?: boolean | undefined
+  /** static headers a user-hosted Gemini-shaped endpoint needs (merged last, so they win) */
+  headers?: Record<string, string> | undefined
+  /** stream idle budget override for slow local servers */
+  idleTimeoutMs?: number | undefined
 }
 
 export async function streamGemini(
@@ -174,7 +178,7 @@ export async function streamGemini(
   baseUrl = GEMINI_BASE_URL,
   options: GeminiRequestOptions = {},
 ): Promise<void> {
-  const wd = createStreamWatchdog(cb.signal)
+  const wd = createStreamWatchdog(cb.signal, undefined, options.idleTimeoutMs)
   return wd.guard(() =>
     geminiTurn(config, system, messages, tools, maxTokens, cb, baseUrl, wd, options),
   )
@@ -204,6 +208,7 @@ async function geminiTurn(
       'x-goog-api-key': config.apiKey,
       ...gensparkAttributionHeaders(baseUrl),
       ...opencodeSessionHeaders(baseUrl, cb.sessionId),
+      ...options.headers,
     },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
@@ -320,6 +325,7 @@ export async function chatGemini(
       'x-goog-api-key': config.apiKey,
       ...gensparkAttributionHeaders(baseUrl),
       ...opencodeSessionHeaders(baseUrl),
+      ...options.headers,
     },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },

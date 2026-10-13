@@ -247,6 +247,8 @@ export interface PageSetupJournalState {
   showFormulas?: boolean
   /// sheetView/@showRowColHeaders: row/column heading strips.
   showHeadings?: boolean
+  /// sheetView/@rightToLeft: the grid is mirrored (column A at the right).
+  rightToLeft?: boolean
   /// A1 range to print, or null to clear the print area.
   printArea?: string | null
   /// Rows repeated at the top of every page ("1:2"), or null to clear.

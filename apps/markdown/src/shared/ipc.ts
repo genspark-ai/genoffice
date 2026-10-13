@@ -28,6 +28,8 @@ export const MARKDOWN_CHANNELS = {
   saveImageAs: 'markdown:save-image-as',
   getImageHost: 'markdown:get-image-host',
   setImageHost: 'markdown:set-image-host',
+  getMarkdownTheme: 'markdown:get-theme',
+  setMarkdownTheme: 'markdown:set-theme',
   uploadImage: 'markdown:upload-image',
   viewImage: 'genoffice:view-image',
   exportRequest: 'markdown:export-request',
@@ -201,6 +203,7 @@ export interface ImageData {
 }
 
 /** API exposed by preload to the renderer (window.markdownApi) */
+import type { MarkdownTheme } from './markdown-theme'
 export interface MarkdownApi {
   /** Take the md path pending for this view (queued at tab creation); null = new untitled document */
   consumePending(): Promise<string | null>
@@ -251,6 +254,9 @@ export interface MarkdownApi {
    * saved. Pasted/dropped images upload here first and fall back to the
    * local `assets/` copy when the upload fails or the host is disabled.
    */
+  /** Paper theme for the editor (default = the light/dark document theme) */
+  getMarkdownTheme(): Promise<MarkdownTheme>
+  setMarkdownTheme(theme: MarkdownTheme): Promise<MarkdownTheme>
   getImageHost(): Promise<ImageHostConfig | null>
   /** Validate and persist the image host configuration; returns null on invalid input */
   setImageHost(config: ImageHostConfig | null): Promise<ImageHostConfig | null>

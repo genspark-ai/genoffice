@@ -8,7 +8,6 @@ Laman Utama ialah halaman permulaan GenOffice: bar navigasi di kiri, senarai fai
 
 - **Terkini**: fail yang baru dibuka oleh anda. Setiap baris dicap dengan waktunya — hari ini, semalam atau tarikh.
 - **Berbintang**: fail yang anda tandakan dengan bintang. Halakan kursor ke baris fail dan klik bintang untuk menambah atau membuangnya. **Alih ke kumpulan** dalam menu ⋯ menyusun fail berbintang ke kumpulan bernama; paparan Berbintang menapis mengikutnya.
-- **Panduan Pengguna**: membuka manual ini.
 - **Ask AI**: panel pangkalan pengetahuan — ajukan soalan dan terima jawapan yang memetik fail anda yang berbintang (lihat bawah).
 - **Genspark Projects**: selepas anda log masuk ke akaun Genspark, ia memaparkan projek yang anda cipta di web dengan Genspark AI. Klik satu untuk menyuntingnya terus dalam pelayar. Carian, isihan mengikut masa, muat semula dan muat lagi disokong.
 - **Folder**: direktori yang anda tambah ke bar sisi dengan **Tambah folder…**, atau yang anda seret masuk daripada pengurus fail. Setiap satu menjadi lokasi yang boleh dibuka, boleh dicipta subdirektori di dalamnya, boleh dinamakan semula dan boleh dibuang; lokasi yang menjadi luar talian ditandakan sebagai tidak tersedia dan boleh dibuang daripada senarai. **Folder baharu** mencipta satu lagi.

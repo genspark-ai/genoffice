@@ -1016,6 +1016,9 @@ export const zh = {
   appHeadings: '标题',
   appHeadingsHidden: '行列标题已隐藏。',
   appHeadingsShown: '行列标题已显示。',
+  appRightToLeft: '从右到左',
+  appRightToLeftOn: '网格方向：从右到左。',
+  appRightToLeftOff: '网格方向：从左到右。',
   appPrintHeadingsTitle: '打印行号列标',
   // Formulas tab
   appGroupFunctionLibrary: '函数库',

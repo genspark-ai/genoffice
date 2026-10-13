@@ -219,7 +219,7 @@ export interface SavedSignature {
   data: SignatureData
 }
 
-export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx'
+export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx' | 'md' | 'html'
 
 /** target file type of the AI create_document tool (mirrors the docs app's contract) */
 export type CreateDocumentType = 'docx' | 'pdf' | 'md' | 'html'
