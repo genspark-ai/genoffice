@@ -252,6 +252,10 @@ export default function App() {
   const jumpToWikiFragment = useCallback((path: string): void => {
     const current = editorRef.current
     if (!current) return
+    // The browser test harness stubs markdownApi without the Electron-only
+    // wiki channels; a missing API here means nothing to jump to, not a
+    // failed load.
+    if (typeof window.markdownApi.takeWikiFragment !== 'function') return
     void window.markdownApi.takeWikiFragment(path).then((fragment) => {
       if (!fragment || filePathRef.current !== path) return
       const pos = wikiFragmentPosition(current.state.doc, fragment)
