@@ -2685,8 +2685,10 @@ th.cell-rev-del {
   display: block;
 }
 
-/* While an IME composition is live (prosemirror-view sets this class on the
-   editor root), the span under the caret inherits its pre-edit string — a
+/* While an IME composition is live — the ScriptFonts plugin's compositionstart
+   handler sets this class on the editor root, which is also the .doc-page
+   element that defines --doc-latin-chain; prosemirror-view itself does not —
+   the span under the caret inherits its pre-edit string, a
    pinyin sequence that must resolve Latin glyphs through the document's
    Latin chain (Word's per-script behavior), not the EA face's half-width
    Latin. The EA slot stays last so Han typed in the same span still renders

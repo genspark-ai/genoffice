@@ -81,3 +81,43 @@ describe('ScriptFonts spans stay East-Asian-primary', () => {
     )
   })
 })
+
+describe('ScriptFonts marks the composition window', () => {
+  /**
+   * styles.css switches the span to the Latin chain only while
+   * `.ProseMirror-composing` sits on the editor root. prosemirror-view never
+   * sets that class (it toggles `input.composing` and nothing else), so the
+   * editor has to, from the composition events. These dispatch the events
+   * rather than touching classList: the plumbing is the thing under test.
+   */
+  const COMPOSING = 'ProseMirror-composing'
+
+  const composing = (editor: Editor): boolean => editor.view.dom.classList.contains(COMPOSING)
+
+  const fire = (editor: Editor, type: 'compositionstart' | 'compositionend'): void => {
+    editor.view.dom.dispatchEvent(new CompositionEvent(type, { bubbles: true, data: '' }))
+  }
+
+  it('adds the class on compositionstart and drops it on compositionend', () => {
+    const editor = open(['\u90fd\u4f1a'])
+    expect(composing(editor)).toBe(false)
+    fire(editor, 'compositionstart')
+    expect(composing(editor)).toBe(true)
+    // our handlers return false, so prosemirror-view still flips its own flag —
+    // swallowing the event would break view.composing everywhere else
+    expect(editor.view.composing).toBe(true)
+    fire(editor, 'compositionend')
+    expect(composing(editor)).toBe(false)
+    expect(editor.view.composing).toBe(false)
+  })
+
+  it('drops the class when the editor is destroyed mid-composition', () => {
+    const editor = open(['\u90fd\u4f1a'])
+    fire(editor, 'compositionstart')
+    expect(composing(editor)).toBe(true)
+    const dom = editor.view.dom
+    editors.splice(editors.indexOf(editor), 1) // already destroyed; skip the afterEach
+    editor.destroy()
+    expect(dom.classList.contains(COMPOSING)).toBe(false)
+  })
+})

@@ -14,9 +14,14 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
  * EA-primary, so the rendered line geometry must equal main's byte-for-byte;
  * only a live composition may reflow the line under the caret. This spec
  * measures per-line box heights in the real editor and pins: default == a
- * composition-class round-trip, default == main simulated (our rule
- * overridden by the EA-primary declaration main's spans carried, class
- * forced), and reports the composing-line delta the rule may cause.
+ * composition round-trip, default == main simulated (our rule
+ * overridden by the EA-primary declaration main's spans carried, composition
+ * live), and reports the composing-line delta the rule may cause.
+ *
+ * Compositions are driven by dispatching real compositionstart/compositionend
+ * events, never by touching classList: the measurement must go through the
+ * ScriptFonts plumbing that puts .ProseMirror-composing on the editor root,
+ * or it would pass with that plumbing missing.
  *
  * The EA face is picked at runtime: a probe session checks Word's CJK faces
  * with the same canvas width trick line-metrics' isFontAvailable uses, and
@@ -26,7 +31,7 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 const HAN_TEXT =
-  '在系统工程实践中，可靠性指标需要贯穿设计、研制、试验与服役的全寿命周期，并通过分阶段评审持续验证其有效性。'
+  '\u5728\u7cfb\u7edf\u5de5\u7a0b\u5b9e\u8df5\u4e2d\uff0c\u53ef\u9760\u6027\u6307\u6807\u9700\u8981\u8d2f\u7a7f\u8bbe\u8ba1\u3001\u7814\u5236\u3001\u8bd5\u9a8c\u4e0e\u670d\u5f79\u7684\u5168\u5bff\u547d\u5468\u671f\uff0c\u5e76\u901a\u8fc7\u5206\u9636\u6bb5\u8bc4\u5ba1\u6301\u7eed\u9a8c\u8bc1\u5176\u6709\u6548\u6027\u3002'
 
 /** Word-bundled CJK faces, most-missing-first on a plain macOS/Linux box */
 const EA_FACE_CANDIDATES = [
@@ -87,7 +92,7 @@ async function firstMissingEaFace(page: import('@playwright/test').Page): Promis
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d')
       if (!ctx) return null
-      const sample = '한글あア中文abcWXYmm123'
+      const sample = '\ud55c\uae00\u3042\u30a2\u4e2d\u6587abcWXYmm123'
       const widthWith = (family: string) => {
         ctx.font = `32px ${family}`
         return ctx.measureText(sample).width
@@ -179,6 +184,28 @@ test('the composing font rule leaves rendered lines byte-identical and reports i
       a.spans === b.spans &&
       a.spanFamily === b.spanFamily
 
+    /**
+     * Open or close a real composition on the editor root and report whether
+     * .ProseMirror-composing came out the other side. The event is all this
+     * touches: the ScriptFonts plugin owns the class, so this is the only way
+     * to measure (or prove) that the plumbing works.
+     */
+    const setComposing = (
+      page: import('@playwright/test').Page,
+      on: boolean,
+    ): Promise<boolean | null> =>
+      page.evaluate((composing) => {
+        const dom = document.querySelector('.ProseMirror')
+        if (!dom) return null
+        dom.dispatchEvent(
+          new CompositionEvent(composing ? 'compositionstart' : 'compositionend', {
+            bubbles: true,
+            data: '',
+          }),
+        )
+        return dom.classList.contains('ProseMirror-composing')
+      }, on)
+
     /** first read that agrees with its predecessor (fonts/pagination settled) */
     const settledRead = async (applyState: () => Promise<void>): Promise<Read> => {
       let previous: Read | null = null
@@ -209,12 +236,11 @@ test('the composing font rule leaves rendered lines byte-identical and reports i
     // the decorations must exist for the scenario to mean anything
     expect(rendered.spans).toBeGreaterThan(0)
 
-    // with the composing class forced, our rule applies: measure the delta
-    // the rule may cause while typing (reviewer: confined to the composition)
+    // a live composition puts .ProseMirror-composing on the editor root, which
+    // is what makes our rule apply; measure the delta it may cause while typing
+    // (reviewer: confined to the composition)
     const composing = await settledRead(async () => {
-      await page.evaluate(() => {
-        document.querySelector('.ProseMirror')?.classList.add('ProseMirror-composing')
-      })
+      expect(await setComposing(page, true)).toBe(true)
     })
     const delta = composing.lines.map((h, i) => Math.round((h - rendered.lines[i]) * 100) / 100)
     const paraDelta = Math.round((composing.paraH - rendered.paraH) * 100) / 100
@@ -226,16 +252,14 @@ test('the composing font rule leaves rendered lines byte-identical and reports i
       description: `${face}: composing-class paragraph ${composing.paraH} px (delta ${paraDelta}px), family ${composing.spanFamily}`,
     })
 
-    // a composition class round-trip restores the rendered geometry exactly
+    // a composition round-trip restores the rendered geometry exactly
     const restored = await settledRead(async () => {
-      await page.evaluate(() =>
-        document.querySelector('.ProseMirror')?.classList.remove('ProseMirror-composing'),
-      )
+      expect(await setComposing(page, false)).toBe(false)
     })
     expect(sameRead(restored, rendered)).toBe(true)
 
-    // main simulated: force the composing class, but override our rule with
-    // the EA-primary declaration main's spans carried — the geometry must be
+    // main simulated: a live composition, but our rule overridden by the
+    // EA-primary declaration main's spans carried — the geometry must be
     // indistinguishable from the default read
     const mainSimulated = await settledRead(async () => {
       await page.evaluate(() => {
@@ -247,8 +271,8 @@ test('the composing font rule leaves rendered lines byte-identical and reports i
         style.textContent =
           '.ProseMirror-composing .doc-east-asian-font { font-family: var(--doc-east-asian-font, inherit) !important }'
         document.head.append(style)
-        document.querySelector('.ProseMirror')?.classList.add('ProseMirror-composing')
       })
+      expect(await setComposing(page, true)).toBe(true)
     })
     expect(sameRead(mainSimulated, rendered)).toBe(true)
   } finally {
