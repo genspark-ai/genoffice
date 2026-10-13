@@ -136,6 +136,9 @@ import {
   type RenderSlide,
   type RenderTextLayout,
 } from '@genoffice/pptx-render'
+// From its own electron-utils subpath rather than the package barrel: the
+// barrel drags Electron-only modules into headless bundles.
+import { atomicWriteFile } from '@genoffice/electron-utils/atomic-write'
 import { DEFAULT_PICTURE_DPI, pictureFrame } from './picture-frame'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
 import { cfbKind, isCfbHeader } from './cfb-sniff'
@@ -798,7 +801,9 @@ async function preparePresentationForOpen(filePath: string): Promise<string | nu
   if (r.canceled || !r.filePath) return null
   try {
     const result = await convertOdpToPptx(new Uint8Array(await readFile(filePath)))
-    await writeFile(r.filePath, result.pptx)
+    // atomic like the Docs and shell copies: a plain write leaves a truncated
+    // .pptx where the user expects a deck if the process dies mid-write
+    await atomicWriteFile(r.filePath, Buffer.from(result.pptx))
   } catch {
     const errorOptions = {
       type: 'error' as const,
