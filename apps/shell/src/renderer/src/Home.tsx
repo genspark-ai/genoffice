@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
+import { KbAskPanel } from './KbAskPanel'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
@@ -76,6 +77,16 @@ const DRAG_PATHS_MIME = 'application/x-genoffice-paths'
 const DRAG_EXPAND_DELAY_MS = 600
 /** expanded folders survive a home reload; the selection is per session */
 const TREE_STATE_KEY = 'home.folderTree'
+
+/**
+ * Width of the viewport that `position: fixed` elements anchor to. The layout
+ * engine owns this coordinate system, so documentElement's client rect is the
+ * value to compute menu offsets from; window.innerWidth can disagree on scaled
+ * Linux desktops, which pushed row menus past the window's left edge (genoffice#1946).
+ */
+function fixedViewportWidth(): number {
+  return document.documentElement.clientWidth
+}
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]
@@ -675,6 +686,102 @@ function ConflictPrompt({ names, onChoose }: ConflictPromptProps) {
           </button>
           <button className="btn btn-danger" onClick={() => onChoose('replace')}>
             {t('conflictReplace')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Starred-group picker ─────────────────────────────────
+
+interface GroupPickerProps {
+  /** existing group names (a group exists while it has at least one file) */
+  groups: readonly string[]
+  count: number
+  onCancel: () => void
+  /** put the files into an existing group */
+  onPick: (group: string) => void
+  /** create a group named `name` and put the files into it */
+  onCreate: (name: string) => void
+  /** take the files out of their group (back to the unfiltered list) */
+  onRemove: () => void
+}
+
+/** Modal moving starred files into a named group. Deliberately minimal: no
+ *  group rename/delete — a group is just a label its entries carry, and it
+ *  vanishes when its last member leaves (via this dialog's remove action,
+ *  an unstar, or a deleted file). */
+function GroupPicker({ groups, count, onCancel, onPick, onCreate, onRemove }: GroupPickerProps) {
+  const { t } = useI18n()
+  const [name, setName] = useState('')
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onCancel])
+
+  const create = () => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setName('')
+    onCreate(trimmed)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('moveToGroupTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3>{t('moveToGroupTitle')}</h3>
+        <p>{t('selectedCount', { n: count })}</p>
+        {groups.length > 0 && (
+          <ul className="group-picker-list">
+            {groups.map((group) => (
+              <li key={group}>
+                <button
+                  className="group-picker-row"
+                  onClick={() => {
+                    setName('')
+                    onPick(group)
+                  }}
+                >
+                  <FolderIcon size={16} />
+                  <span className="group-picker-name">{group}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="group-picker-new">
+          <input
+            className="folder-rename-input"
+            placeholder={t('groupNamePlaceholder')}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.nativeEvent.isComposing) return
+              if (e.key === 'Enter') create()
+            }}
+          />
+          <button className="btn btn-secondary" disabled={!name.trim()} onClick={create}>
+            {t('newGroup')}
+          </button>
+        </div>
+        <div className="modal-buttons">
+          <button className="btn btn-secondary" onClick={onRemove}>
+            {t('removeFromGroup')}
+          </button>
+          <button className="btn btn-secondary" autoFocus onClick={onCancel}>
+            {t('cancel')}
           </button>
         </div>
       </div>
@@ -1406,7 +1513,16 @@ export function Home() {
   const [view, setView] = useState<'recent' | 'starred'>('recent')
   // Genspark web projects take over the content area (like a selected folder)
   const [cloudMode, setCloudMode] = useState(false)
+  // the knowledge-base ask panel takes over the content area the same way
+  const [askMode, setAskMode] = useState(false)
   const [filter, setFilter] = useState('all')
+  // ── Starred groups (named buckets the Starred view can filter on) ──
+  // groups that currently have at least one starred file (drives the pills)
+  const [starredGroups, setStarredGroups] = useState<string[]>([])
+  // the group pill filtering the Starred list; null shows every group
+  const [groupFilter, setGroupFilter] = useState<string | null>(null)
+  // starred rows being moved to a group (GroupPicker modal)
+  const [groupPicker, setGroupPicker] = useState<string[] | null>(null)
   // ── File search (names + indexed content); active while the box has text ──
   const [searchQuery, setSearchQuery] = useState('')
   const [searchPage, setSearchPage] = useState<FileSearchPage | null>(null)
@@ -1572,10 +1688,13 @@ export function Home() {
   const reload = (keepCount: boolean) => {
     const seq = ++requestSeq.current
     const ext = filter === 'all' ? undefined : filter
+    // the group pills only scope the Starred view's own list; the sidebar
+    // counters and the other view stay group-agnostic
+    const group = view === 'starred' && groupFilter ? groupFilter : undefined
     const limit = keepCount ? Math.max(entriesLen.current, PAGE_SIZE) : PAGE_SIZE
     const primary = view === 'recent' ? window.aiOffice.recents : window.aiOffice.starred
     const secondary = view === 'recent' ? window.aiOffice.starred : window.aiOffice.recents
-    void primary({ offset: 0, limit, ext }).then((page) => {
+    void primary({ offset: 0, limit, ext, group }).then((page) => {
       if (seq !== requestSeq.current) return
       setEntries(page.entries)
       setListTotal(page.total)
@@ -1594,6 +1713,14 @@ export function Home() {
           : { ...prev, recent: visiblePageCount(page) },
       )
     })
+    // the group pills live on the renderer, so their list rides along with
+    // every reload; a vanished group (last file unstarred/ungrouped) clears
+    // the filter instead of showing a silently empty list
+    void window.aiOffice.starredGroups().then((groups) => {
+      if (seq !== requestSeq.current) return
+      setStarredGroups(groups)
+      setGroupFilter((cur) => (cur && !groups.includes(cur) ? null : cur))
+    })
   }
   const reloadRef = useRef(reload)
   reloadRef.current = reload
@@ -1609,7 +1736,7 @@ export function Home() {
 
   useEffect(() => {
     reloadRef.current(false)
-  }, [view, filter])
+  }, [view, filter, groupFilter])
 
   const q = searchQuery.trim()
   useEffect(() => {
@@ -1828,8 +1955,10 @@ export function Home() {
     setView(next)
     setSelectedFolder(null)
     setCloudMode(false)
+    setAskMode(false)
     setSelected(new Set())
     setRowMenu(null)
+    setGroupFilter(null)
   }
 
   const changeFilter = (key: string) => {
@@ -1838,9 +1967,16 @@ export function Home() {
     setRowMenu(null)
   }
 
+  const changeGroupFilter = (group: string | null) => {
+    setGroupFilter(group)
+    setSelected(new Set())
+    setRowMenu(null)
+  }
+
   const selectFolder = (dir: string) => {
     setSelectedFolder(dir)
     setCloudMode(false)
+    setAskMode(false)
     setSelected(new Set())
     setRowMenu(null)
     setFolderMenu(null)
@@ -1890,6 +2026,21 @@ export function Home() {
     setRowMenu(null)
     setSelected(new Set())
     void window.aiOffice.removeRecent(paths).then(refresh)
+  }
+
+  /** the Starred view's bulk action: drop the stars, keep the recents entries */
+  const unstarSelected = (paths: string[]) => {
+    setRowMenu(null)
+    setSelected(new Set())
+    void window.aiOffice.unstarPaths(paths).then(refresh)
+  }
+
+  /** put rows into a group (null = out of their group); the pills list and
+   *  the filtered list come back with the refresh */
+  const assignGroup = (paths: string[], group: string | null) => {
+    setGroupPicker(null)
+    setRowMenu(null)
+    void window.aiOffice.setStarredGroup(paths, group).then(refresh)
   }
 
   const deleteFiles = (paths: string[]) => {
@@ -2221,7 +2372,7 @@ export function Home() {
             path: entry.path,
             where: 'tree',
             top: rect.bottom + 4,
-            right: window.innerWidth - rect.right,
+            right: fixedViewportWidth() - rect.right,
           })
         }}
       >
@@ -2351,7 +2502,7 @@ export function Home() {
               path: entry.path,
               where: 'tree',
               top: e.clientY + 2,
-              right: window.innerWidth - e.clientX,
+              right: fixedViewportWidth() - e.clientX,
             })
           }}
           draggable={!isRoot && !isRenaming}
@@ -2630,14 +2781,35 @@ export function Home() {
                     </button>
                   </>
                 )}
+                {entry.starred && (
+                  <>
+                    <div className="row-menu-divider" />
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setRowMenu(null)
+                        setGroupPicker([entry.path])
+                      }}
+                    >
+                      {t('moveToGroup')}
+                    </button>
+                  </>
+                )}
                 {canDelete && (context === 'global' || editable) && (
                   <>
                     <div className="row-menu-divider" />
-                    {context === 'global' && (
-                      <button role="menuitem" onClick={() => removeRecent([entry.path])}>
-                        {t('removeFromList')}
-                      </button>
-                    )}
+                    {context === 'global' &&
+                      // same root cause as the selection bar: in the Starred
+                      // view "remove from list" must unstar, not drop recents
+                      (view === 'starred' ? (
+                        <button role="menuitem" onClick={() => unstarSelected([entry.path])}>
+                          {t('unstar')}
+                        </button>
+                      ) : (
+                        <button role="menuitem" onClick={() => removeRecent([entry.path])}>
+                          {t('removeFromList')}
+                        </button>
+                      ))}
                     {editable && (
                       <button
                         role="menuitem"
@@ -2687,7 +2859,7 @@ export function Home() {
               path: entry.path,
               where: 'table',
               top: e.clientY + 2,
-              right: window.innerWidth - e.clientX,
+              right: fixedViewportWidth() - e.clientX,
             })
           }}
         >
@@ -2739,7 +2911,7 @@ export function Home() {
                   path: entry.path,
                   where: 'table',
                   top: rect.bottom + 4,
-                  right: window.innerWidth - rect.right,
+                  right: fixedViewportWidth() - rect.right,
                 })
               }}
             >
@@ -3132,9 +3304,21 @@ export function Home() {
                     {t('moveToFolder')}
                   </button>
                 )}
-                <button className="selection-action" onClick={() => removeRecent(selectedPaths)}>
-                  {t('removeFromList')}
-                </button>
+                {view === 'starred' ? (
+                  // every Starred-view row is a favorite, so the selection
+                  // action unstars; removeRecent there kept the stars and the
+                  // rows came straight back on refresh
+                  <button
+                    className="selection-action"
+                    onClick={() => unstarSelected(selectedPaths)}
+                  >
+                    {t('unstar')}
+                  </button>
+                ) : (
+                  <button className="selection-action" onClick={() => removeRecent(selectedPaths)}>
+                    {t('removeFromList')}
+                  </button>
+                )}
                 <button
                   className="selection-action danger"
                   onClick={() => deleteFiles(selectedPaths)}
@@ -3146,16 +3330,39 @@ export function Home() {
                 </button>
               </div>
             ) : (
-              <div className="filter-pills" role="tablist" aria-label={t('filterAria')}>
-                {FILTERS.map((f) => (
-                  <button
-                    key={f.key}
-                    className={`filter-pill${filter === f.key ? ' active' : ''}`}
-                    onClick={() => changeFilter(f.key)}
-                  >
-                    {t(f.label)}
-                  </button>
-                ))}
+              <div className="toolbar-filters">
+                <div className="filter-pills" role="tablist" aria-label={t('filterAria')}>
+                  {FILTERS.map((f) => (
+                    <button
+                      key={f.key}
+                      className={`filter-pill${filter === f.key ? ' active' : ''}`}
+                      onClick={() => changeFilter(f.key)}
+                    >
+                      {t(f.label)}
+                    </button>
+                  ))}
+                </div>
+                {view === 'starred' && starredGroups.length > 0 && (
+                  // the group pills refine the Starred view further; the type
+                  // pills above them keep working on the group-scoped list
+                  <div className="filter-pills" role="tablist" aria-label={t('groupFilterAria')}>
+                    <button
+                      className={`filter-pill${groupFilter === null ? ' active' : ''}`}
+                      onClick={() => changeGroupFilter(null)}
+                    >
+                      {t('filterAll')}
+                    </button>
+                    {starredGroups.map((g) => (
+                      <button
+                        key={g}
+                        className={`filter-pill${groupFilter === g ? ' active' : ''}`}
+                        onClick={() => changeGroupFilter(g)}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div className="file-search-group">
@@ -3265,11 +3472,38 @@ export function Home() {
             <span className="nav-label">{t('navStarred')}</span>
             <span className="nav-count">{navCounts.starred}</span>
           </button>
+          <button
+            className={`nav-item${askMode && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            onClick={() => {
+              setAskMode(true)
+              setSelectedFolder(null)
+              setCloudMode(false)
+              setSelected(new Set())
+              setRowMenu(null)
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M14 10.5c0 .9-.7 1.6-1.6 1.6H5.4L2 14.5V3.6C2 2.7 2.7 2 3.6 2h8.8c.9 0 1.6.7 1.6 1.6z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M5 6.2h6M5 8.6h4"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="nav-label">{t('navAsk')}</span>
+          </button>
           {loggedIn && (
             <button
               className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}
               onClick={() => {
                 setCloudMode(true)
+                setAskMode(false)
                 setSelectedFolder(null)
                 setSelected(new Set())
                 setRowMenu(null)
@@ -3313,6 +3547,11 @@ export function Home() {
       </aside>
       {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
         renderFolderContent()
+      ) : askMode ? (
+        <KbAskPanel
+          onOpenPath={(path) => void window.aiOffice.openPath(path)}
+          onGoToRecents={() => changeView('recent')}
+        />
       ) : cloudMode ? (
         <CloudProjectsView />
       ) : (
@@ -3428,6 +3667,17 @@ export function Home() {
           count={movePicker.length}
           onCancel={() => setMovePicker(null)}
           onPick={(dir) => void doMove(movePicker, dir, 'ask')}
+        />
+      )}
+
+      {groupPicker && (
+        <GroupPicker
+          groups={starredGroups}
+          count={groupPicker.length}
+          onCancel={() => setGroupPicker(null)}
+          onPick={(group) => assignGroup(groupPicker, group)}
+          onCreate={(name) => assignGroup(groupPicker, name)}
+          onRemove={() => assignGroup(groupPicker, null)}
         />
       )}
 

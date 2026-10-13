@@ -23,6 +23,7 @@ export type AiProviderId =
   | 'requesty'
   | 'opper'
   | 'cheaperinference'
+  | 'atlascloud'
   | 'opencode-zen'
   | 'opencode-go'
   | 'custom'
@@ -40,12 +41,115 @@ export interface AiProviderConfig {
   baseUrl?: string | undefined
   /** optional Codex CLI override; empty means auto-detect the current authenticated install */
   cliPath?: string | undefined
+  /** the declarative profile of the active user-hosted endpoint (custom only) */
+  profile?: AiCustomProfile | undefined
+}
+
+/**
+ * Wire protocols a user-hosted endpoint can speak. The three the package
+ * already implements, so a self-hosted gateway that ships an Anthropic- or
+ * Gemini-shaped route becomes reachable without any code change.
+ */
+export type AiCustomProtocol = 'openai-compatible' | 'anthropic' | 'gemini'
+
+/**
+ * Vendor quirks an endpoint can declare instead of leaving the built-in
+ * model-name heuristics to guess. Absent means "fall through to the
+ * heuristic", so an endpoint that says nothing behaves exactly as before.
+ */
+export interface AiCustomCompat {
+  /** the endpoint 400s on a temperature field (fixed-sampling models behind a proxy) */
+  omitTemperature?: boolean | undefined
+  /** the endpoint wants `reasoning_content` echoed back on assistant tool turns */
+  echoReasoning?: boolean | undefined
+  /** false declares a text-only endpoint so screenshots are never sent to it */
+  vision?: boolean | undefined
+  /** send the output cap as `max_completion_tokens` (OpenAI renamed field) */
+  useMaxCompletionTokens?: boolean | undefined
+}
+
+/**
+ * One model declared by the user for their endpoint, so a vendor's newest
+ * release — which no shipped heuristic knows yet — carries real facts instead
+ * of a guess. Fields left unset fall through to the endpoint compat, then the
+ * heuristics; `alias` maps the listed id to the spelling the wire expects.
+ */
+export interface AiCustomModelProfile {
+  id: string
+  /** the id to put on the wire when the endpoint spells this model differently */
+  alias?: string | undefined
+  /** display name for the picker (a vendor's marketing spelling of the id) */
+  name?: string | undefined
+  /** declared capabilities; absent = inherit the endpoint compat, then heuristics */
+  vision?: boolean | undefined
+  omitTemperature?: boolean | undefined
+  echoReasoning?: boolean | undefined
+  useMaxCompletionTokens?: boolean | undefined
+  /** this model's per-turn output ceiling; a server 400s anything above it */
+  maxTokens?: number | undefined
+  /** the model's context window, when the endpoint publishes one */
+  contextWindow?: number | undefined
+}
+
+/**
+ * The declarative half of a custom endpoint. It mirrors into
+ * `providers.custom.profile` so the protocol layer reads one config object,
+ * and it is what makes a self-hosted or regional gateway fully describable
+ * without touching code: protocol, headers, credential indirection, timeouts,
+ * vendor switches, and a per-model capability list.
+ */
+export interface AiCustomProfile {
+  /** wire protocol; absent means 'openai-compatible' (the pre-profile shape) */
+  api?: AiCustomProtocol | undefined
+  /**
+   * Name of an environment variable the main process resolves to the key at
+   * request time. Lets a settings file carry no secret, so it can be synced or
+   * shared; an inline `apiKey` always wins.
+   */
+  apiKeyEnv?: string | undefined
+  /** static request headers (tenant ids, gateway routing keys) */
+  headers?: Record<string, string> | undefined
+  /** stream idle budget for slow local servers (quantized models take minutes to first token) */
+  idleTimeoutMs?: number | undefined
+  /** endpoint-wide vendor switches, overridden per model by `modelProfiles` */
+  compat?: AiCustomCompat | undefined
+  /** vendor-specific fields merged into the request body (vLLM `chat_template_kwargs`, …) */
+  bodyExtras?: Record<string, unknown> | undefined
+  /** per-model declarations, matched to the configured id on request */
+  modelProfiles?: AiCustomModelProfile[] | undefined
+  /**
+   * Capability facts the last `/models` probe observed, kept beside the id list
+   * as a cache. They answer for a model the user has not declared — the whole
+   * point, since a gateway knows things no shipped heuristic does — and they
+   * are replaced wholesale by the next probe, so a model the server stops
+   * serving stops being described. The user's `modelProfiles` always outrank
+   * them.
+   */
+  probedProfiles?: AiCustomModelProfile[] | undefined
+}
+
+/** The profile fields, spread flat so a hand-edited settings file stays readable */
+export interface AiCustomEndpoint extends AiCustomProfile {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  /** ids the server advertised on the last `/models` probe, so the composer chip can list them offline */
+  models?: string[] | undefined
 }
 
 /** Live picker data returned by Codex app-server's model/list method. */
 export interface CodexModelCatalog {
   models: string[]
   defaultModel: string
+  /**
+   * Capability declarations derived from a custom endpoint's own `/models`
+   * metadata (vision, output ceiling, context window). Absent for Codex and
+   * for endpoints whose listing carries no such fields — the settings pane
+   * folds them into the endpoint's model declarations on save.
+   */
+  profiles?: AiCustomModelProfile[] | undefined
 }
 
 export interface AiProviderMeta {
@@ -139,6 +243,10 @@ export interface AiSearchSettings {
 export interface AiSettings {
   provider: AiProviderId
   providers: Record<AiProviderId, AiProviderConfig>
+  /** every saved custom endpoint; absent on files written before the list existed */
+  customEndpoints?: AiCustomEndpoint[] | undefined
+  /** id of the endpoint `providers.custom` mirrors */
+  customEndpoint?: string | undefined
   /**
    * Provider for generate_image / analyze_media. Absent (pre-media settings
    * files) means Genspark, i.e. the gsk login + gskToolsEnabled gate.
@@ -194,11 +302,19 @@ export interface AiStreamRequest {
   maxTokens?: number
 }
 
+/** Token usage a provider reported for one model turn. Both fields are best-effort:
+ * some providers (and the Genspark proxy) never report usage, and consumers must
+ * treat an absent figure as "unknown", never as zero. */
+export interface AiTokenUsage {
+  inputTokens?: number
+  outputTokens?: number
+}
+
 export interface AiStreamChunk {
   requestId: string
   /** 'ping' = wire-level keepalive so the renderer can tell a live stream from a dead one;
    * 'reasoning' = model thinking delta (text carries it), stored for interleaved-thinking echo */
-  type: 'delta' | 'reasoning' | 'tool-call' | 'done' | 'error' | 'ping'
+  type: 'delta' | 'reasoning' | 'tool-call' | 'usage' | 'done' | 'error' | 'ping'
   text?: string
   /** complete parsed tool call (emitted once its arguments finish streaming) */
   toolCall?: AgentToolCall
@@ -207,4 +323,6 @@ export interface AiStreamChunk {
   errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded'
   /** normalized stop reason carried on 'done' ('max_tokens' = output cut off by the token limit) */
   stopReason?: string
+  /** tokens the provider billed for this turn, carried on 'usage' (always sent before 'done') */
+  usage?: AiTokenUsage
 }

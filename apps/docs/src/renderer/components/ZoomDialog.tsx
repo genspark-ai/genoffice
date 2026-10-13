@@ -78,6 +78,7 @@ export function ZoomDialog({ zoom, fitValue, onApply, onClose }: ZoomDialogProps
             {radio('text', t('ribbonZoomTextWidth'))}
             {radio(75, '75%')}
             {radio('page', t('ribbonWholePage'))}
+            {radio('multi', t('ribbonMultiPage'))}
           </div>
         </fieldset>
         <label className="zoom-dialog-percent">

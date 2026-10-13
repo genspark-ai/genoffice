@@ -272,7 +272,10 @@ export const zh = {
     '此工作簿较大，目前以流式方式仅加载了部分数据。排序、筛选和移动区域需要完整数据才能给出正确结果。要现在完整加载整个工作簿吗？',
   appFullLoadStart: '完整加载',
   appFullLoadRunning: '正在完整加载工作簿，完成后即可排序和筛选……',
-  appFullLoadTooLarge: '此工作簿过大，无法完整载入内存，排序和筛选在此文件上暂不可用。',
+  appFullLoadTooLarge:
+    '此工作簿过大，无法完整载入内存，排序和移动区域在此文件上暂不可用；筛选可直接在文件上进行。',
+  appLargeFilterLoading: '正在从文件读取筛选列……',
+  appLargeFilterApplying: '正在对文件应用筛选……',
   appSortValueModeFormulas:
     '所选区域含有公式，而此大型工作簿中公式不是实时计算的——排序或移动会把它们保存为纯数值。请选择不含公式的区域。',
   appSortRangeTooLarge: '所选区域过大，无法一次排序或移动，请减少选中的单元格。',
@@ -484,6 +487,7 @@ export const zh = {
   appPrintCanceled: '打印已取消。',
   appPrintFailed: '无法打印。',
   appPrintNeedsFullLoad: '打印需要工作簿完整加载——请等待加载完成。',
+  appPrintWorkbookTooLarge: '此工作簿过大，无法完整载入内存，因此无法打印或导出为 PDF。',
   appCsvExportNeedsFullLoad: 'CSV 导出需要工作簿完整加载——请等待加载完成。',
   appCsvExportTooLarge: '工作表太大,无法导出 CSV。',
   appCsvExportCanceled: 'CSV 导出已取消。',
@@ -1012,6 +1016,9 @@ export const zh = {
   appHeadings: '标题',
   appHeadingsHidden: '行列标题已隐藏。',
   appHeadingsShown: '行列标题已显示。',
+  appRightToLeft: '从右到左',
+  appRightToLeftOn: '网格方向：从右到左。',
+  appRightToLeftOff: '网格方向：从左到右。',
   appPrintHeadingsTitle: '打印行号列标',
   // Formulas tab
   appGroupFunctionLibrary: '函数库',

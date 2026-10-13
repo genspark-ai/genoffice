@@ -20,16 +20,27 @@ export interface ReorderGateInput {
   readonly rangeHasStreamedFormulas: () => boolean
 }
 
+export type FullLoadGateVerdict = 'loading' | 'offerFullLoad' | 'workbookTooLarge'
+
+/// What an action that needs the complete data gets while the workbook is
+/// still streamed: formula-mode books preload themselves at open, and any
+/// running preload (the Load-all prompt, Print / PDF export, headless export)
+/// shows the in-progress notice instead of a second offer; otherwise the
+/// offer, or the explanation when the book is over the load budget.
+export function fullLoadGate(
+  input: Pick<ReorderGateInput, 'formulaMode' | 'preloadRunning' | 'cellCounts'>,
+): FullLoadGateVerdict {
+  if (input.preloadRunning || input.formulaMode) return 'loading'
+  return fitsFullLoad(input.cellCounts) ? 'offerFullLoad' : 'workbookTooLarge'
+}
+
 /// Sort / move-range / shift / split-text rewrite model content, so every
 /// cell they touch must be resident. After Full Load that holds in both
 /// modes; value mode additionally keeps formulas sidecar-only, so moving
 /// such a cell would save its cached result as a constant.
 export function reorderGate(input: ReorderGateInput): ReorderGateVerdict {
   if (input.isAddedSheet) return 'allow'
-  if (!input.preloadComplete) {
-    if (input.preloadRunning || input.formulaMode) return 'loading'
-    return fitsFullLoad(input.cellCounts) ? 'offerFullLoad' : 'workbookTooLarge'
-  }
+  if (!input.preloadComplete) return fullLoadGate(input)
   if (input.rangeCells > REORDER_JOURNAL_MAX_CELLS) return 'rangeTooLarge'
   if (!input.formulaMode && input.rangeHasStreamedFormulas()) return 'valueModeFormulas'
   return 'allow'

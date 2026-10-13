@@ -302,7 +302,9 @@ export const en = {
   appFullLoadRunning:
     'Loading the entire workbook — sorting and filtering unlock when it finishes…',
   appFullLoadTooLarge:
-    'This workbook is too large to load fully into memory; sorting and filtering are unavailable for this file.',
+    'This workbook is too large to load fully into memory; sorting and moving ranges are unavailable for this file. Filtering runs directly on the file.',
+  appLargeFilterLoading: 'Reading the filter column from the file…',
+  appLargeFilterApplying: 'Applying the filter on the file…',
   appSortValueModeFormulas:
     'This range contains formulas that are not live in this large workbook — sorting or moving it would save them as plain values. Pick a range without formulas.',
   appSortRangeTooLarge: 'This range is too large to sort or move in one step — select fewer cells.',
@@ -520,6 +522,8 @@ export const en = {
   appPrintFailed: 'Unable to print.',
   appPrintNeedsFullLoad:
     'Printing needs the whole workbook loaded — please wait for loading to finish.',
+  appPrintWorkbookTooLarge:
+    'This workbook is too large to load fully into memory, so it cannot be printed or exported to PDF.',
   appCsvExportNeedsFullLoad:
     'CSV export needs the fully loaded workbook — wait for loading to finish.',
   appCsvExportTooLarge: 'The sheet is too large to export as CSV.',
@@ -1054,6 +1058,9 @@ export const en = {
   appHeadings: 'Headings',
   appHeadingsHidden: 'Headings hidden.',
   appHeadingsShown: 'Headings shown.',
+  appRightToLeft: 'Right-to-Left',
+  appRightToLeftOn: 'Grid direction: right-to-left.',
+  appRightToLeftOff: 'Grid direction: left-to-right.',
   appPrintHeadingsTitle: 'Print row and column headings',
   appGroupFunctionLibrary: 'Function Library',
   appInsertFunction: 'Insert Function',

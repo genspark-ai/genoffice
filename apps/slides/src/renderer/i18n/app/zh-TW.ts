@@ -1,6 +1,16 @@
 import type { zh } from './zh'
 
 export const zhTW = {
+  redactMenuLabel: '把選中的內容對 AI 隱藏',
+  redactDialogDesc:
+    '選取的內容會留在文件裡，AI 讀到的卻是下面的標記。給它起個名字，AI 才知道它是什麼。',
+  redactDialogScope:
+    '這只針對本應用的 AI。命令列、MCP 工具和無介面匯出會直接讀取文件，仍然看得到這些文字。',
+  redactDialogPlaceholder: '佔位名稱，例如：客戶電話',
+  redactCancel: '取消',
+  redactInsert: '隱藏',
+  redactEnable: '選中文字後右鍵，即可對 AI 隱藏。',
+
   appPhPromptTitle: '按一下此處新增標題',
   appPhPromptSubtitle: '按一下此處新增副標題',
   appPhPromptBody: '按一下此處新增文字',

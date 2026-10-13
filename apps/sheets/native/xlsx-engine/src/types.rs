@@ -72,6 +72,15 @@ pub struct SheetMetadata {
     /// once the workbook's STORED_CELL_COUNT_BUDGET is spent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stored_cell_count: Option<usize>,
+    /// Stored cells with a value or formula — what sorting and filtering
+    /// need resident; style-only blanks are the remainder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_cell_count: Option<usize>,
+    /// Rows and columns spanned by the value cells (1-based extents).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_row_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_column_count: Option<usize>,
     pub column_widths: Vec<ColumnWidth>,
     pub default_row_height: Option<f64>,
     /// sheetFormatPr/@customHeight: the default row height is user-fixed, so

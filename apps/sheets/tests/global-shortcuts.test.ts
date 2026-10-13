@@ -121,12 +121,17 @@ describe('resolveGlobalShortcut routing', () => {
     ).toBeNull()
   })
 
-  it('binds the Excel-for-Mac Cmd variants on mac only', () => {
+  it('binds the Excel-for-Mac Cmd variant of the filter on mac only', () => {
     expect(resolveGlobalShortcut(keyEvent('KeyF', metaShift), MAC)).toEqual(cmd('filter-toggle'))
-    expect(resolveGlobalShortcut(keyEvent('KeyT', metaShift), MAC)).toEqual(cmd('autofn:SUM'))
     expect(resolveGlobalShortcut(keyEvent('KeyF', ctrlShift), GRID)).toBeNull()
-    expect(resolveGlobalShortcut(keyEvent('KeyT', ctrlShift), GRID)).toBeNull()
     expect(resolveGlobalShortcut(keyEvent('KeyF', ctrlShift), MAC)).toBeNull()
+  })
+
+  it('binds AutoSum cross-platform; the filter Ctrl/⌘+Shift+L chord belongs to Univer', () => {
+    expect(resolveGlobalShortcut(keyEvent('KeyL', ctrlShift), GRID)).toBeNull()
+    expect(resolveGlobalShortcut(keyEvent('KeyL', metaShift), MAC)).toBeNull()
+    expect(resolveGlobalShortcut(keyEvent('KeyT', ctrlShift), GRID)).toEqual(cmd('autofn:SUM'))
+    expect(resolveGlobalShortcut(keyEvent('KeyT', metaShift), MAC)).toEqual(cmd('autofn:SUM'))
   })
 
   it('leaves unrelated keys to the rest of the app', () => {
@@ -208,5 +213,14 @@ describe('number-format and border shortcuts', () => {
     expect(resolveGlobalShortcut(percent, { ...GRID, gridTarget: false })).toBeNull()
     expect(resolveGlobalShortcut(percent, { ...GRID, cellEditing: true })).toBeNull()
     expect(resolveGlobalShortcut(outline, { ...GRID, modalOpen: true })).toBeNull()
+  })
+
+  it('keep the mac-only border chords off Windows and Linux', () => {
+    const macBorder = keyEvent('Digit0', { metaKey: true, altKey: true })
+    expect(resolveGlobalShortcut(macBorder, MAC)).toEqual({
+      kind: 'command',
+      command: 'border:outer',
+    })
+    expect(resolveGlobalShortcut(macBorder, GRID)).toBeNull()
   })
 })

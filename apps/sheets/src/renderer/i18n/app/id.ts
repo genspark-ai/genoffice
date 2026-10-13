@@ -308,7 +308,9 @@ export const id = {
   appFullLoadStart: 'Muat semua',
   appFullLoadRunning: 'Memuat seluruh buku kerja — pengurutan dan filter tersedia setelah selesai…',
   appFullLoadTooLarge:
-    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori; pengurutan dan filter tidak tersedia untuk file ini.',
+    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori; pengurutan dan pemindahan rentang tidak tersedia untuk file ini. Filter dijalankan langsung pada file.',
+  appLargeFilterLoading: 'Membaca kolom filter dari file…',
+  appLargeFilterApplying: 'Menerapkan filter pada file…',
   appSortValueModeFormulas:
     'Rentang ini berisi rumus yang tidak dihitung langsung di buku kerja besar ini — mengurutkan atau memindahkannya akan menyimpannya sebagai nilai biasa. Pilih rentang tanpa rumus.',
   appSortRangeTooLarge:
@@ -536,6 +538,8 @@ export const id = {
   appPrintFailed: 'Tidak dapat mencetak.',
   appPrintNeedsFullLoad:
     'Pencetakan memerlukan buku kerja termuat sepenuhnya — tunggu hingga pemuatan selesai.',
+  appPrintWorkbookTooLarge:
+    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori, sehingga tidak dapat dicetak atau diekspor ke PDF.',
   appCsvExportNeedsFullLoad:
     'Ekspor CSV memerlukan buku kerja termuat penuh — tunggu pemuatan selesai.',
   appCsvExportTooLarge: 'Lembar terlalu besar untuk diekspor sebagai CSV.',
@@ -1075,6 +1079,9 @@ export const id = {
   appHeadings: 'Judul',
   appHeadingsHidden: 'Judul disembunyikan.',
   appHeadingsShown: 'Judul ditampilkan.',
+  appRightToLeft: 'Dari kanan ke kiri',
+  appRightToLeftOn: 'Arah kisi: dari kanan ke kiri.',
+  appRightToLeftOff: 'Arah kisi: dari kiri ke kanan.',
   appPrintHeadingsTitle: 'Cetak judul baris dan kolom',
   appGroupFunctionLibrary: 'Pustaka Fungsi',
   appInsertFunction: 'Sisipkan Fungsi',

@@ -82,6 +82,15 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds Atlas Cloud with lab-namespaced model ids', () => {
+    const atlas = AI_PROVIDERS.find((provider) => provider.id === 'atlascloud')!
+    expect(atlas.models).toContain(atlas.defaultModel)
+    expect(atlas.needsBaseUrl).toBeUndefined()
+    for (const model of atlas.models) {
+      expect(model).toMatch(/^[a-z0-9-]+\/[A-Za-z0-9._-]+$/)
+    }
+  })
+
   it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
     const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
     expect(ci.models).toContain(ci.defaultModel)
@@ -198,7 +207,7 @@ describe('resolveAiSettings', () => {
       },
       defaultAiSettings(),
     )
-    expect(resolved.providers.genspark.model).toBe('claude-opus-4-7')
+    expect(resolved.providers.genspark.model).toBe('claude-opus-5-5')
 
     const gpt = resolveAiSettings(
       {

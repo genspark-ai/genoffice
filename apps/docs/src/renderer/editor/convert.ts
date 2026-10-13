@@ -57,6 +57,7 @@ import {
   wordKerns,
 } from '../line-metrics'
 import { firstStrongDir } from './direction'
+import { splitCellBoxGroup } from './protected-render'
 import { inlineMathML } from './equation'
 import { isStraightLineKind } from './shape-svg'
 import { borderDrawnPx, borderTotalPt, collapsedEdgePx } from './border-metrics'
@@ -169,6 +170,10 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     indentLeft: format?.indentLeft ?? null,
     indentRight: format?.indentRight ?? null,
     indentFirstLine: format?.indentFirstLine ?? null,
+    // only the paragraph's OWN character unit becomes direct formatting — a
+    // a character-unit indent inherited from the style chain shows through and
+    // must not be copied onto the pPr as direct formatting
+    indentFirstLineChars: format?.directCharIndents?.firstLine ?? null,
     spaceBefore: format?.spaceBefore ?? null,
     spaceAfter: format?.spaceAfter ?? null,
     spaceBeforeAuto: format?.spaceBeforeAuto ?? null,
@@ -1112,6 +1117,7 @@ export function tableModelToPmNode(
               cellMar: cell.cellMarTwips ?? null,
               textDirection: cell.textDirection ?? null,
               noWrap: cell.noWrap ?? null,
+              hideMark: cell.hideMark ?? false,
               tcPrEdited: false,
               fill: cell.fill ?? null,
               color: cell.styleColor ?? null,
@@ -1185,7 +1191,9 @@ function cellContentNodes(cell: TableCell): PmNode[] {
     else boxGroups.set(at, [boxes[i]])
   }
   for (const [at, group] of boxGroups) {
-    inserts.push({ at, node: { type: 'docCellBoxes', attrs: { boxes: group } } })
+    for (const boxes of splitCellBoxGroup(group)) {
+      inserts.push({ at, node: { type: 'docCellBoxes', attrs: { boxes } } })
+    }
   }
   const content = [...paraNodes]
   inserts.sort((a, b) => a.at - b.at)
@@ -1533,9 +1541,12 @@ export function pmTableToModel(table: PmNode): TableModel {
 export function runsToInline(runs: Run[]): PmNode[] {
   const nodes: PmNode[] = []
   for (const run of runs) {
+    const marks = runMarks(run)
+    const atomMarks = marks.length > 0 ? { marks } : {}
     if (run.math) {
       nodes.push({
         type: 'docInlineMath',
+        ...atomMarks,
         attrs: {
           omml: run.math.omml,
           mathml: inlineMathML(run.math.omml),
@@ -1550,6 +1561,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
     if (run.ruby) {
       nodes.push({
         type: 'docRuby',
+        ...atomMarks,
         attrs: { base: run.text, rt: run.ruby.rt, xml: run.ruby.xml },
       })
       continue
@@ -1557,6 +1569,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
     if (run.noteRef) {
       nodes.push({
         type: 'docNoteRef',
+        ...atomMarks,
         attrs: {
           kind: run.noteRef.kind,
           id: run.noteRef.id,
@@ -1565,7 +1578,6 @@ export function runsToInline(runs: Run[]): PmNode[] {
       })
       continue
     }
-    const marks = runMarks(run)
     // \n = soft line break, \f = in-paragraph page break, \v = column break, \u001e = text wrapping break
     const breakMarks = marks.length > 0 ? { marks } : {}
     // eslint-disable-next-line no-control-regex
@@ -1586,6 +1598,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
     if (run.image) {
       nodes.push({
         type: 'docInlineImage',
+        ...atomMarks,
         attrs: {
           dataUrl: run.image.dataUrl,
           widthPx: run.image.widthPx ?? null,
@@ -1616,7 +1629,7 @@ export function runsToInline(runs: Run[]): PmNode[] {
       })
     }
     if (run.xeTerm !== undefined) {
-      nodes.push({ type: 'docXeMark', attrs: { term: run.xeTerm } })
+      nodes.push({ type: 'docXeMark', ...atomMarks, attrs: { term: run.xeTerm } })
     }
   }
   markLeadRule(nodes)
@@ -1686,13 +1699,23 @@ function runMarks(run: Run): PmMark[] {
   if (run.ins) {
     marks.push({
       type: 'ins',
-      attrs: { author: run.ins.author, date: run.ins.date ?? null, id: run.ins.id ?? null },
+      attrs: {
+        author: run.ins.author,
+        date: run.ins.date ?? null,
+        dateUtc: run.ins.dateUtc ?? null,
+        id: run.ins.id ?? null,
+      },
     })
   }
   if (run.del) {
     marks.push({
       type: 'del',
-      attrs: { author: run.del.author, date: run.del.date ?? null, id: run.del.id ?? null },
+      attrs: {
+        author: run.del.author,
+        date: run.del.date ?? null,
+        dateUtc: run.del.dateUtc ?? null,
+        id: run.del.id ?? null,
+      },
     })
   }
   if (run.rPrChange) {
@@ -1701,6 +1724,7 @@ function runMarks(run: Run): PmMark[] {
       attrs: {
         author: run.rPrChange.author,
         date: run.rPrChange.date ?? null,
+        dateUtc: run.rPrChange.dateUtc ?? null,
         id: run.rPrChange.id ?? null,
         old: run.rPrChange.old ?? null,
       },
@@ -3059,6 +3083,23 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.indentRight != null) format.indentRight = Number(node.attrs.indentRight)
   if (node.attrs?.indentFirstLine != null)
     format.indentFirstLine = Number(node.attrs.indentFirstLine)
+  // the character-unit special indent rides along its twips twin and is written
+  // as w:firstLineChars next to it (Word prefers the character unit on reload).
+  //
+  // Two fields, because the parser's two mean different things: `charIndents`
+  // there is the EFFECTIVE value (style chain merged in) and is what generate
+  // and the cancel-attr merge read, while `directCharIndents` is only what the
+  // paragraph's own w:ind declares. nodeFormat has no style chain to consult —
+  // it reads the node's attributes — so what it sets is the direct value, and
+  // setting both keeps generate correct and gives the signature a direct value
+  // on both sides. Before this, the signature compared the effective value with
+  // the direct one, so every style-inherited paragraph looked edited and an
+  // untouched document came back carrying a frozen direct indent.
+  const firstLineChars = Number(node.attrs?.indentFirstLineChars)
+  if (Number.isFinite(firstLineChars) && firstLineChars > 0) {
+    format.charIndents = { ...format.charIndents, firstLine: firstLineChars }
+    format.directCharIndents = { ...format.directCharIndents, firstLine: firstLineChars }
+  }
   if (node.attrs?.spaceBefore != null) format.spaceBefore = Number(node.attrs.spaceBefore)
   if (node.attrs?.spaceAfter != null) format.spaceAfter = Number(node.attrs.spaceAfter)
   if (node.attrs?.spaceBeforeAuto != null)
@@ -3247,6 +3288,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     }
     if (node.type === 'docNoteRef') {
       runs.push({
+        ...atomBase(node),
         text: String(node.attrs?.num ?? 1),
         noteRef: {
           kind: (node.attrs?.kind as 'footnote' | 'endnote') ?? 'footnote',
@@ -3256,21 +3298,24 @@ export function inlineToRuns(content: PmNode[]): Run[] {
       continue
     }
     if (node.type === 'docXeMark') {
-      runs.push({ text: '', xeTerm: String(node.attrs?.term ?? '') })
+      runs.push({ ...atomBase(node), text: '', xeTerm: String(node.attrs?.term ?? '') })
       continue
     }
     if (node.type === 'docInlineMath') {
       const omml = String(node.attrs?.omml ?? '')
-      if (omml) runs.push({ text: String(node.attrs?.text ?? ''), math: { omml } })
+      if (omml)
+        runs.push({ ...atomBase(node), text: String(node.attrs?.text ?? ''), math: { omml } })
       continue
     }
     if (node.type === 'docRuby') {
       const base = String(node.attrs?.base ?? '')
       const xml = String(node.attrs?.xml ?? '')
       if (base) {
-        runs.push(
-          xml ? { text: base, ruby: { rt: String(node.attrs?.rt ?? ''), xml } } : { text: base },
-        )
+        runs.push({
+          ...atomBase(node),
+          text: base,
+          ...(xml ? { ruby: { rt: String(node.attrs?.rt ?? ''), xml } } : {}),
+        })
       }
       continue
     }
@@ -3280,6 +3325,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
       const rule = node.attrs?.rule as NonNullable<Run['image']>['rule'] | null | undefined
       if ((dataUrl || rule) && xml) {
         runs.push({
+          ...atomBase(node),
           text: '',
           ...(node.attrs?.rawRPr ? { rawRPr: String(node.attrs.rawRPr) } : {}),
           image: {
@@ -3318,6 +3364,13 @@ function symRuns(run: Run): Run[] {
   if (run.text === glyph) return [run]
   const { sym, ...plain } = run
   return [...run.text].map((ch) => ({ ...plain, text: ch, ...(ch === glyph ? { sym } : {}) }))
+}
+
+/** an atom's marks carry its revision / comment / character style; dropping them lost the w:ins wrapper */
+function atomBase(node: PmNode): Partial<Run> {
+  if (!node.marks?.length) return {}
+  const { text: _text, ...rest } = runFromMarks('', node.marks)
+  return rest
 }
 
 function runFromMarks(text: string, marks: PmMark[]): Run {
@@ -3377,6 +3430,7 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
     } else if (mark.type === 'ins' || mark.type === 'del') {
       const info: NonNullable<Run['ins']> = { author: String(mark.attrs?.author ?? '') }
       if (mark.attrs?.date) info.date = String(mark.attrs.date)
+      if (mark.attrs?.dateUtc) info.dateUtc = String(mark.attrs.dateUtc)
       if (mark.attrs?.id) info.id = String(mark.attrs.id)
       if (mark.type === 'ins') run.ins = info
       else run.del = info
@@ -3430,6 +3484,7 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       run.rPrChange = {
         author: String(mark.attrs?.author ?? ''),
         ...(mark.attrs?.date ? { date: String(mark.attrs.date) } : {}),
+        ...(mark.attrs?.dateUtc ? { dateUtc: String(mark.attrs.dateUtc) } : {}),
         ...(mark.attrs?.id ? { id: String(mark.attrs.id) } : {}),
         ...(mark.attrs?.old ? { old: mark.attrs.old as NonNullable<Run['rPrChange']>['old'] } : {}),
       }
@@ -3520,9 +3575,11 @@ function revisionKey(run: Run): string | null {
   return JSON.stringify([
     run.ins?.author ?? null,
     run.ins?.date ?? null,
+    run.ins?.dateUtc ?? null,
     run.ins?.id ?? null,
     run.del?.author ?? null,
     run.del?.date ?? null,
+    run.del?.dateUtc ?? null,
     run.del?.id ?? null,
   ])
 }
@@ -3591,6 +3648,13 @@ function normalizedFormat(format: ParaFormat | undefined): unknown {
     format.indentLeft ?? null,
     format.indentRight ?? null,
     format.indentFirstLine ?? null,
+    // the DIRECT character-unit indent, like the line above and like
+    // nodeFormat, which reads it from the node's own attribute. Taking
+    // format.charIndents here would fold the style-inherited value in, and the
+    // two signatures would then disagree for every paragraph that inherits
+    // its indent — so an untouched document would come back with a frozen
+    // direct indent the original never had.
+    format.directCharIndents?.firstLine ?? null,
     format.spaceBefore ?? null,
     format.spaceAfter ?? null,
     format.pageBreakBefore ?? false,

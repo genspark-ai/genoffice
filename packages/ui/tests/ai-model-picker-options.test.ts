@@ -69,3 +69,57 @@ describe('CLI vendors', () => {
     ])
   })
 })
+
+describe('custom endpoints', () => {
+  const settings = () => ({
+    ...defaultAiSettings(),
+    customEndpoints: [
+      {
+        id: 'a',
+        name: 'Ollama',
+        baseUrl: 'http://localhost:11434/v1',
+        apiKey: '',
+        model: 'llama3',
+      },
+      {
+        id: 'b',
+        name: '',
+        baseUrl: 'https://gw.example.com/v1',
+        apiKey: 'k',
+        model: 'gpt-x',
+        models: ['gpt-y'],
+      },
+      { id: 'c', name: 'Empty', baseUrl: '', apiKey: '', model: 'm' },
+    ],
+    customEndpoint: 'a',
+  })
+
+  it('lists one group per configured endpoint with its cached models', () => {
+    const groups = aiModelPickerGroups(settings(), false)
+    expect(groups).toEqual([
+      { id: 'custom', endpoint: 'a', label: 'Ollama', models: ['llama3'] },
+      { id: 'custom', endpoint: 'b', label: 'gw.example.com', models: ['gpt-x', 'gpt-y'] },
+    ])
+  })
+
+  it('picking a model on another endpoint activates that endpoint', () => {
+    const start = { ...settings(), provider: 'custom' as const }
+    expect(aiModelPickerSelection(start)).toEqual({
+      provider: 'custom',
+      endpoint: 'a',
+      model: 'llama3',
+    })
+    const next = withAiModelSelection(start, { provider: 'custom', endpoint: 'b', model: 'gpt-y' })
+    expect(aiModelPickerSelection(next)).toEqual({
+      provider: 'custom',
+      endpoint: 'b',
+      model: 'gpt-y',
+    })
+    expect(next.providers.custom).toEqual({
+      apiKey: 'k',
+      model: 'gpt-y',
+      baseUrl: 'https://gw.example.com/v1',
+    })
+    expect(next.customEndpoints!.find((e) => e.id === 'a')!.model).toBe('llama3')
+  })
+})

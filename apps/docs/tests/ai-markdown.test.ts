@@ -78,3 +78,75 @@ describe('AI bubble markdown: fenced code', () => {
     expect(html).toContain('line one\nline two')
   })
 })
+
+describe('AI bubble markdown: images', () => {
+  const withImages = (text: string, resolve?: (href: string) => string | undefined): string =>
+    renderToStaticMarkup(createElement(Markdown, { text, images: { resolve } }))
+
+  it('renders a standalone image line through the resolver', () => {
+    const html = withImages('![the ribbon](help:ribbon)', (h) => `blob:${h}`)
+    expect(html).toContain('<img class="ai-md-img" src="blob:help:ribbon" alt="the ribbon"')
+  })
+
+  it('renders an image sharing a line with prose', () => {
+    // the case that was dropped: parseBlocks only ever made a *whole* line an
+    // image block, so anything with text around it fell through to the inline
+    // pass, which had no image case and printed the source
+    const html = withImages(
+      'Click the tab, then ![the ribbon](help:ribbon) appears.',
+      (h) => `blob:${h}`,
+    )
+    expect(html).toContain('src="blob:help:ribbon"')
+    expect(html).toContain('Click the tab, then')
+    expect(html).toContain('appears.')
+  })
+
+  it('renders an image inside a list step', () => {
+    // the escaped hyphen is what a nested list looks like in the source, and
+    // it is a backslash in a JS string: '\-' would be a useless escape
+    const html = withImages('- open ![settings](help:s)\\ open the dialog', (h) => `blob:${h}`)
+    expect(html).toContain('src="blob:help:s')
+  })
+
+  it('renders an image in a table cell', () => {
+    const html = withImages(
+      ['| UI | Where |', '|:--|--:|', '| ![a](help:a) | x |'].join('\n'),
+      (h) => `blob:${h}`,
+    )
+    expect(html).toContain('src="blob:help:a')
+  })
+
+  it('leaves an inline image as literal text when no resolver is passed', () => {
+    // every chat panel passes no resolver, and this is what they rendered
+    // before: the source text, untouched
+    const html = render('Click then ![a](help:a) appears.')
+    expect(html).not.toContain('<img')
+    expect(html).toContain('![a](help:a)')
+  })
+
+  it('leaves an inline image as literal text when the resolver declines the href', () => {
+    const html = withImages('Click then ![a](help:a) appears.', () => undefined)
+    expect(html).not.toContain('<img')
+    expect(html).toContain('![a](help:a)')
+  })
+
+  it('does not leave a stray bang in front of an image it rendered', () => {
+    // ![a](b) also matches the link branch from its '['; the image
+    // alternative has to win, or the output reads "!<img>"
+    const html = withImages('see ![a](help:z) here', (h) => `blob:${h}`)
+    expect(html).not.toContain('!<img')
+    expect(html).not.toContain('![a]')
+  })
+
+  it('keeps links rendering as before', () => {
+    const html = withImages('see [docs](help:d) now', (h) => `blob:${h}`)
+    expect(html).toContain('[docs](help:d)')
+  })
+
+  it('keeps a standalone image line a host cannot resolve', () => {
+    // Six of the AI panels pass no resolver, and an AI reply can put a figure
+    // on a line of its own. Swallowing the line loses what the model actually
+    // said, so the literal text stands in for the picture.
+    expect(render('![only](help:x)')).toContain('![only](help:x)')
+  })
+})

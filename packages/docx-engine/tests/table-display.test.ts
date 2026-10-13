@@ -115,6 +115,18 @@ describe('table display model', () => {
     expect(table.rows[0][1].textDirection).toBe('btLr')
   })
 
+  it('parses w:hideMark on the cell', async () => {
+    const xml =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="76"/></w:tblGrid><w:tr>' +
+      '<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/><w:hideMark/></w:tcPr><w:p/></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const row = doc.blocks[0].table!.rows[0]
+    expect(row[0].hideMark).toBe(true)
+    expect(row[1].hideMark).toBeUndefined()
+  })
+
   it('merges legacy w:hMerge continue cells into the restart cell', async () => {
     const xml =
       '<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>' +

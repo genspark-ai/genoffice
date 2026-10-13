@@ -6,6 +6,19 @@
  * palettes) never live here and never reference these tokens. */
 
 :root {
+  /* Interface scale (issue #1913).
+   *
+   * `zoom` on a *chrome* container, never on the document container. That is
+   * the whole point: a window-level `webContents.setZoomFactor()` would also
+   * scale the canvas, so a document already at 150% would land at 150% x 150%
+   * and the user would watch the interface follow the document zoom — the very
+   * complaint #1913 is about. Scaling the chrome container and leaving the
+   * canvas as a sibling means the two never meet.
+   *
+   * The main process overwrites this value on every renderer from
+   * `app-settings.json` (`uiScale`); 1 is "no scaling". */
+  --ui-scale: 1;
+
   /* chrome */
   --surface: #ffffff;
   --surface-subtle: #f6f7f9;

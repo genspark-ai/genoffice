@@ -18,6 +18,9 @@ import {
 } from './layout-skeleton'
 import { t } from '../i18n/locale'
 import systemPrompt from './prompts/system.md?raw'
+import { placeholderInstruction } from './redact'
+import { textForModel, redactLabelsOf } from './redact-view'
+import { redactGuardFor } from './redact-guard'
 
 /**
  * Slides capability as an AgentSkill: deck outline context + three tools (read structure /
@@ -306,7 +309,7 @@ const TOOLS: AgentToolDef[] = [
       "- setBox(id, {x?,y?,w?,h?,rotation?}): set an element's target box, pass only fields to change\n" +
       '- moveBy(id, dx, dy): relative move (left = negative dx, up = negative dy)\n' +
       '- resizeBy(id, dw, dh): relative resize\n' +
-      '- setText(id, textOrParagraphs): replace text entirely; pass a string (split into paragraphs by \\n) or a paragraph array (same format as apply_ops setText paragraphs)\n' +
+      '- setText(id, textOrParagraphs): replace text entirely; pass a string (split into paragraphs by \\n) or a paragraph array (same format as apply_ops setText paragraphs). Plain runs/strings inherit the original size, color and font — do not add fontSize/color/fontFamily unless the user asked to restyle\n' +
       '- setStyle(id, {fontSize?,color?,bold?,italic?,underline?,align?,fontFamily?}): change style without changing text, pass only fields to change\n' +
       "- setFill(id, colorOrNone): solid fill '#RRGGBB' or 'none'\n" +
       '- setStroke(id, {color?,widthPt?} | null): stroke; pass null to remove\n' +
@@ -734,7 +737,7 @@ const TOOLS: AgentToolDef[] = [
     description:
       '[Canonical edit surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). This is THE tool for every edit without a dedicated tool (fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, table cells, structure and styling, page background, speaker notes, page delete/move/duplicate, transitions, sections, theme) and for multi-page or many-element batches; a single op is a perfectly fine batch. For one-page layout math prefer execute_slide_script.\n' +
       'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +
-      'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt.\n' +
+      'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt. setText on an existing element: runs with only `text` inherit the original run formatting (size, color, font) — leave fontSize/color/fontFamily out unless the user asked to change the style.\n' +
       'Full op reference (the same executor every editing surface uses), one signature per op; ? marks optional fields:\n' +
       opSignatureIndex() +
       '\naddChart additionally takes dataSource:"user"|"document"|"search"|"sample" (figure provenance, checked before the batch runs; "search" needs a web_search in this conversation).' +
@@ -849,27 +852,16 @@ function targetError(
 /** Element info shared by outline/read_slide/edit scripts (includes absolute geometry; locked = layout decoration, read-only). */
 type NodeInfo = LayoutScriptElement
 
-function nodeText(n: RenderNode): string {
-  if (n.type === 'shape' || n.type === 'text') {
-    return ((n as ShapeRenderNode).text?.lines ?? [])
-      .map((line) => line.runs.map((r) => r.text).join(''))
-      .join('\n')
-  }
-  if (n.type === 'table') {
-    // Tables join cell text row by row (tab-separated) so the AI can read table content
-    const byRow = new Map<number, string[]>()
-    for (const c of n.cells) {
-      const t = (c.text?.lines ?? []).map((l) => l.runs.map((r) => r.text).join('')).join(' ')
-      const row = byRow.get(c.y) ?? []
-      row.push(t)
-      byRow.set(c.y, row)
-    }
-    return [...byRow.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, r]) => r.join('\t'))
-      .join('\n')
-  }
-  return ''
+/**
+ * The element's text as the model reads it.
+ *
+ * Delegates to `textForModel`, which substitutes a withheld span for its marker.
+ * `forDisplay` defaults to false, so this whole file gets the redacted view
+ * without having to know withholding exists; the reader's own find-and-replace
+ * asks for the raw words explicitly.
+ */
+function nodeText(n: RenderNode, forDisplay = false): string {
+  return textForModel(n, forDisplay)
 }
 
 /** Max font size of the text (pt, converted back from px); returns undefined when there is no text. */
@@ -1084,13 +1076,32 @@ function mediaToolsOffNote(hidden: Set<string>): string {
 
 export function createSlidesSkill(access: DeckAccess): AgentSkill {
   // The HTML pipeline was already used in this conversation → later calls without an explicit mode default to append.
+  /**
+   * Every label withheld anywhere in the deck, in first-seen order.
+   *
+   * Read from the render tree the tools already use, so the instruction and the
+   * text the model is shown cannot disagree about what is withheld.
+   */
+  function deckRedactLabels(access: DeckAccess): string[] {
+    const seen = new Set<string>()
+    for (const slide of access.getSlides()) {
+      for (const label of redactLabelsOf(slide)) seen.add(label)
+    }
+    return [...seen]
+  }
+
   // Safety net for when the AI ignores the "pass all pages at once" constraint: separate calls no longer overwrite each other (P0-1).
   const state: SkillState = { htmlGenerated: false }
   return {
     id: 'slides',
     // live like tools: the off-note overrides the prose that still mentions the hidden tools
     get systemPrompt() {
-      return systemPrompt + mediaToolsOffNote(hiddenMediaTools(access))
+      // spans the reader withheld are named here, from the live deck, so the
+      // model can see the marker exists and write around it. A deck with none
+      // pays nothing and is not told to look for markers that are not there.
+      const labels = deckRedactLabels(access)
+      const redact = labels.length > 0 ? `\n\n${placeholderInstruction(labels)}` : ''
+      return systemPrompt + mediaToolsOffNote(hiddenMediaTools(access)) + redact
     },
     // live view: the predicates are re-read before every model request
     get tools() {
@@ -1330,6 +1341,14 @@ function preflightOps(
     }
     const op = { ...(raw as Record<string, unknown>) }
     const name = op.op as string
+    // A span withheld from the model is a mark over real words, so an edit that
+    // rewrites or drops those words costs the reader data they chose to keep.
+    // Checked here, before anything is dispatched — apply_ops is atomic, so a
+    // refusal leaves the deck exactly as it was.
+    const guard = redactGuardFor(op, slides)
+    if (guard) {
+      return fail(t('aiFailApplyOps'), `ops[${i}] ${name}: ${guard.reason}`)
+    }
     if (SCRATCH_GUARDED_OPS.has(name)) {
       const blocked = blockScratchBuild(
         name === 'addSmartArt' ? 'smartart' : 'element',
@@ -1450,8 +1469,9 @@ async function executeTool(
       if (counts.fill > 0) parts.push(`fill ${counts.fill} item(s)`)
       if (counts.stroke > 0) parts.push(`stroke ${counts.stroke} item(s)`)
       const issues = auditSlideLayout(applied.slide)
+      const notesStr = applied.notes?.length ? `\nNote:\n${applied.notes.join('\n')}` : ''
       return {
-        output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${formatAudit(issues)}`,
+        output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${notesStr}${formatAudit(issues)}`,
         mutated: true,
         summary: t('aiSumScript', { n: idx + 1, count: r.ops.length + r.edits.length }),
       }
@@ -2562,10 +2582,14 @@ async function executeTool(
       const doneStr = (r.records ?? [])
         .map((rec) => `${rec.op}${rec.target ? ` @${rec.target}` : ''}`)
         .join(', ')
+      const notes = (r.records ?? [])
+        .filter((rec) => rec.note)
+        .map((rec) => `${rec.target ?? rec.op}: ${rec.note}`)
       return {
         output:
           `Applied ${r.records?.length ?? 0} op(s): ${doneStr}.` +
           (created.length ? ` New element ids: ${created.join(', ')}.` : '') +
+          (notes.length ? `\nNote:\n${notes.join('\n')}` : '') +
           (failLines ? `\nSkipped (per_op):\n${failLines}` : '') +
           (pre.sampleData ? SAMPLE_DATA_NOTE : '') +
           auditTouchedPages(r.records, r.slides!),

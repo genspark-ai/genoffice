@@ -6,6 +6,7 @@ import type {
   ImageWrap,
   ParaFormat,
   ParaFrame,
+  RevisionInfo,
   Run,
   TabStop,
   TableCell,
@@ -28,6 +29,8 @@ export interface GenerateContext {
    * keeps them unique among themselves but is not coordinated with a part.
    */
   allocateBookmarkId?: (name: string) => number
+  /** Mint w:id for a tracked change that has none; document-wide so two edited paragraphs never share ids */
+  allocateRevisionId?: () => string
 }
 
 const EMU_PER_PX = 9525
@@ -1378,6 +1381,11 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   // explicit w:left="0" must be written back: it cancels a numbering-level indent
   if (format.indentLeft !== undefined) indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
   if (format.indentRight !== undefined) indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
+  // a character-unit special indent rides along its twips twin (Word writes
+  // both; the *Chars attribute wins and rescales with the first run's size —
+  // CJK "first line: 2 characters", issue #1892)
+  if (format.charIndents?.firstLine)
+    indAttrs.push(`w:firstLineChars="${Math.round(format.charIndents.firstLine)}"`)
   if (format.indentFirstLine !== undefined) {
     if (format.indentFirstLine >= 0)
       indAttrs.push(`w:firstLine="${Math.round(format.indentFirstLine)}"`)
@@ -1651,19 +1659,24 @@ function sameIndent(a: ParaFormat, b: ParaFormat): boolean {
 
 /**
  * Cancel attributes for the character-unit indents a paragraph was laid out
- * with. A rebuilt w:ind carries twips only, and Word keeps preferring a
- * `*Chars` from the style chain over a twips twin (probed) — so an indent edit
- * on a paragraph in a CJK "first line 2 characters" style must write the
- * explicit `w:firstLineChars="0"` Word itself writes for pt indents, or the
- * style's character indent supersedes the edit on reload.
+ * with but the new format no longer carries. A rebuilt w:ind carries twips,
+ * and Word keeps preferring a `*Chars` from the style chain over a twips twin
+ * (probed) — so dropping a character indent must write the explicit
+ * `w:firstLineChars="0"` Word itself writes for pt indents, or the style's
+ * character indent supersedes the edit on reload. Components the new format
+ * still carries are re-emitted in the rebuilt w:ind (the character unit edits
+ * in place) and must NOT be cancelled.
  */
-function charIndentCancelAttrs(chars: CharIndents | undefined): string[] {
-  if (!chars) return []
+function charIndentCancelAttrs(original: CharIndents, format: ParaFormat | undefined): string[] {
+  const kept = format?.charIndents
   const out: string[] = []
-  if (chars.left) out.push('w:leftChars="0"')
-  if (chars.right) out.push('w:rightChars="0"')
-  if (chars.hanging) out.push('w:hangingChars="0"')
-  else if (chars.firstLine) out.push('w:firstLineChars="0"')
+  if (original.left && !kept?.left) out.push('w:leftChars="0"')
+  if (original.right && !kept?.right) out.push('w:rightChars="0"')
+  // firstLineChars and hangingChars are one component (the special indent):
+  // a new character special replaces the old one outright — no cancel
+  if ((original.hanging || original.firstLine) && !kept?.hanging && !kept?.firstLine) {
+    out.push(original.hanging ? 'w:hangingChars="0"' : 'w:firstLineChars="0"')
+  }
   return out
 }
 
@@ -1752,17 +1765,21 @@ export function mergePPrFormat(
   const open = /^<w:pPr(?: [^>]*)?>/.exec(rawPPr)?.[0]
   const fresh = formatPPrChildren(format)
   // an indent edit on a paragraph laid out with character-unit indents: the
-  // twips-only rebuild also cancels them (`w:firstLineChars="0"`…), or Word — and
-  // this parser — would keep resolving the character indent over the new value
+  // twips-only rebuild also cancels the components the edit drops
+  // (`w:firstLineChars="0"`…), or Word — and this parser — would keep
+  // resolving the character indent over the new value; components the new
+  // format still carries are re-emitted (with their *Chars attribute) instead
   if (original?.charIndents && !sameIndent(original, format ?? {})) {
-    const cancel = charIndentCancelAttrs(original.charIndents)
-    const at = fresh.findIndex((c) => c.name === 'w:ind')
-    const xml =
-      at === -1
-        ? `<w:ind ${cancel.join(' ')}/>`
-        : fresh[at].xml.replace(/\/>$/, ` ${cancel.join(' ')}/>`)
-    if (at === -1) fresh.push({ name: 'w:ind', xml })
-    else fresh[at] = { name: 'w:ind', xml }
+    const cancel = charIndentCancelAttrs(original.charIndents, format)
+    if (cancel.length > 0) {
+      const at = fresh.findIndex((c) => c.name === 'w:ind')
+      const xml =
+        at === -1
+          ? `<w:ind ${cancel.join(' ')}/>`
+          : fresh[at].xml.replace(/\/>$/, ` ${cancel.join(' ')}/>`)
+      if (at === -1) fresh.push({ name: 'w:ind', xml })
+      else fresh[at] = { name: 'w:ind', xml }
+    }
   }
   if (!open) {
     // '<w:pPr/>' or unrecognized: rebuild from the format model alone, in schema order
@@ -1856,7 +1873,8 @@ function revisionPPrChangeXml(changeJson: string): string | null {
   const attrs =
     ` w:id="${escapeXmlAttr(String(change.id ?? '0'))}"` +
     ` w:author="${escapeXmlAttr(String(change.author ?? ''))}"` +
-    (change.date ? ` w:date="${escapeXmlAttr(String(change.date))}"` : '')
+    (change.date ? ` w:date="${escapeXmlAttr(String(change.date))}"` : '') +
+    (change.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(String(change.dateUtc))}"` : '')
   return `<w:pPrChange${attrs}><w:pPr>${children.map((child) => child.xml).join('')}</w:pPr></w:pPrChange>`
 }
 
@@ -2549,7 +2567,7 @@ export function generateIndexFieldXml(terms: string[]): string[] {
 }
 
 function generateRunsXml(runs: Run[], ctx: GenerateContext): string {
-  return runsXml(runs, ctx.allocateHyperlinkRel)
+  return runsXml(runs, ctx.allocateHyperlinkRel, ctx.allocateRevisionId)
 }
 
 /** OOXML runs without relationship allocation (header/footer parts, ...) */
@@ -2562,7 +2580,11 @@ export function inlineRunsXml(runs: Run[]): string {
  * pass null where no relationship allocation is possible (textbox patches) —
  * links without an existing rId then degrade to plain runs.
  */
-function runsXml(runs: Run[], allocate: ((href: string) => string) | null): string {
+function runsXml(
+  runs: Run[],
+  allocate: ((href: string) => string) | null,
+  allocateRevisionId?: () => string,
+): string {
   // comment ranges: re-emit start/end/reference markers around the first..last
   // run each id covers, so editing a commented paragraph keeps its comments
   const firstOf = new Map<string, number>()
@@ -2646,17 +2668,29 @@ function runsXml(runs: Run[], allocate: ((href: string) => string) | null): stri
       ? JSON.stringify([
           r.ins?.author ?? null,
           r.ins?.date ?? null,
+          r.ins?.dateUtc ?? null,
           r.ins?.id ?? null,
           r.del?.author ?? null,
           r.del?.date ?? null,
+          r.del?.dateUtc ?? null,
           r.del?.id ?? null,
         ])
       : ''
   let revSeq = 9001
-  const revAttrs = (info: { author: string; date?: string; id?: string }) =>
-    ` w:id="${escapeXmlAttr(info.id ?? String(revSeq++))}"` +
+  const mintRevisionId = allocateRevisionId ?? (() => String(revSeq++))
+  // a later edit splitting one w:ins in two leaves both halves with the stored id
+  const emittedIds = new Set<string>()
+  const revisionId = (info: RevisionInfo) => {
+    let id = info.id && !emittedIds.has(info.id) ? info.id : mintRevisionId()
+    while (emittedIds.has(id)) id = mintRevisionId()
+    emittedIds.add(id)
+    return id
+  }
+  const revAttrs = (info: RevisionInfo) =>
+    ` w:id="${escapeXmlAttr(revisionId(info))}"` +
     ` w:author="${escapeXmlAttr(info.author)}"` +
-    (info.date ? ` w:date="${escapeXmlAttr(info.date)}"` : '')
+    (info.date ? ` w:date="${escapeXmlAttr(info.date)}"` : '') +
+    (info.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(info.dateUtc)}"` : '')
 
   let g = 0
   while (g < runs.length) {
@@ -3010,7 +3044,8 @@ function revisionRPrChangeXml(run: Run): string | null {
   const attrs =
     ` w:id="${escapeXmlAttr(change.id ?? '0')}"` +
     ` w:author="${escapeXmlAttr(change.author)}"` +
-    (change.date ? ` w:date="${escapeXmlAttr(change.date)}"` : '')
+    (change.date ? ` w:date="${escapeXmlAttr(change.date)}"` : '') +
+    (change.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(change.dateUtc)}"` : '')
   return `<w:rPrChange${attrs}><w:rPr>${props.join('')}</w:rPr></w:rPrChange>`
 }
 

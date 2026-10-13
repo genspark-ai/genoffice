@@ -23,4 +23,4 @@ export function nextDocsZoom(
   return Math.round(notchStep(zoom / 100, dir, DOCS_ZOOM_MIN / 100, DOCS_ZOOM_MAX / 100) * 100)
 }
 
-export type ZoomFitMode = 'width' | 'text' | 'page'
+export type ZoomFitMode = 'width' | 'text' | 'page' | 'multi'

@@ -253,8 +253,15 @@ function wrapInlineText(raw: string, marks: PmMark[]): string {
   return text
 }
 
-function inlineAtomToHtml(node: PmNode): string {
+/** Export hook: maps a picture's source to the `src` the restricted HTML should carry; null drops it. */
+export type ImageSrcMapper = (src: string) => string | null
+
+function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper): string {
   if (node.type === 'hardBreak') return '<br>'
+  if (node.type === 'docInlineImage') {
+    const src = image && !node.attrs?.rule ? image(String(node.attrs?.dataUrl ?? '')) : null
+    return src ? `<img src="${escapeHtml(src)}">` : ''
+  }
   if (node.type === 'docInlineMath') {
     // editor-created formulas round-trip as LaTeX; parsed-from-docx ones
     // degrade to the flat token strip (structure lost if the model rewrites)
@@ -276,7 +283,11 @@ export interface InlineSelection {
  * delimited by <sel>…</sel> (text nodes split at the boundaries). Every inline
  * node other than text is an atom, so it occupies exactly one position.
  */
-function inlineToHtml(content: PmNode[] | undefined, sel?: InlineSelection): string {
+function inlineToHtml(
+  content: PmNode[] | undefined,
+  sel?: InlineSelection,
+  image?: ImageSrcMapper,
+): string {
   if (!content) return ''
   let html = ''
   let pos = 0
@@ -312,7 +323,7 @@ function inlineToHtml(content: PmNode[] | undefined, sel?: InlineSelection): str
       continue
     }
     boundary(pos)
-    if (!deleted) html += inlineAtomToHtml(node)
+    if (!deleted) html += inlineAtomToHtml(node, image)
     pos += 1
   }
   boundary(pos)
@@ -369,12 +380,42 @@ function isQuoteParagraph(node: PmNode): boolean {
 
 /** table block -> restricted <table> HTML so the model can read and rewrite it */
 function tableToHtml(table: TableModel): string {
-  const headerRow =
-    table.rows.length > 1 && table.rows[0].every((c) => c.bold || c.fill !== undefined)
+  const headerRow = isHeaderRowTable(table)
   const rows = table.rows.map((row, r) => {
     const tag = headerRow && r === 0 ? 'th' : 'td'
     const cells = row
       .map((cell) => `<${tag}>${cell.paras.map(escapeHtml).join('<br>')}</${tag}>`)
+      .join('')
+    return `<tr>${cells}</tr>`
+  })
+  return `<table>${rows.join('')}</table>`
+}
+
+function isHeaderRowTable(table: TableModel): boolean {
+  return table.rows.length > 1 && table.rows[0].every((c) => c.bold || c.fill !== undefined)
+}
+
+/**
+ * Export variant: cells keep their inline pictures (the table model is text
+ * only). The grid comes from the model so merged cells keep their columns;
+ * each non-continuation entry maps to the row's next physical cell node.
+ */
+function tableToHtmlWithImages(node: PmNode, image: ImageSrcMapper): string {
+  const model = pmTableToModel(node)
+  const headerRow = isHeaderRowTable(model)
+  const rows = model.rows.map((row, r) => {
+    const tag = headerRow && r === 0 ? 'th' : 'td'
+    const physical = node.content?.[r]?.content ?? []
+    let next = 0
+    const cells = row
+      .map((entry) => {
+        if (entry.vMerge === 'continue') return `<${tag}></${tag}>`
+        const cell = physical[next++]
+        const paras = (cell?.content ?? [])
+          .filter((n) => n.type === 'docParagraph' || n.type === 'docListItem')
+          .map((n) => inlineToHtml(n.content, undefined, image))
+        return `<${tag}>${paras.join('<br>')}</${tag}>`
+      })
       .join('')
     return `<tr>${cells}</tr>`
   })
@@ -391,6 +432,7 @@ export function serializeRangeToHtml(
   startIndex: number,
   endIndex: number,
   sel?: { from: number; to: number } | null,
+  image?: ImageSrcMapper,
 ): string {
   // The model's view, not the document's: a withheld span's words must
   // not travel in the HTML this produces. `redactNode` is total, so a
@@ -426,26 +468,26 @@ export function serializeRangeToHtml(
     if (node.type === 'docHeading') {
       flushList()
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6)
-      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i))}</h${level}>`)
+      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i), image)}</h${level}>`)
     } else if (node.type === 'docListItem') {
       const kind = (node.attrs?.kind as string) ?? 'bullet'
       if (!listBuffer || listBuffer.kind !== kind) {
         flushList()
         listBuffer = { kind, items: [] }
       }
-      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i))}</li>`)
+      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i), image)}</li>`)
     } else if (node.type === 'docParagraph') {
       flushList()
       if (isCodeParagraph(node)) {
         parts.push(`<pre>${codeToHtml(node.content, inlineSel(i))}</pre>`)
       } else if (isQuoteParagraph(node)) {
-        parts.push(`<blockquote>${inlineToHtml(node.content, inlineSel(i))}</blockquote>`)
+        parts.push(`<blockquote>${inlineToHtml(node.content, inlineSel(i), image)}</blockquote>`)
       } else {
-        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i))}</p>`)
+        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i), image)}</p>`)
       }
     } else if (node.type === 'docTable') {
       flushList()
-      parts.push(tableToHtml(pmTableToModel(node)))
+      parts.push(image ? tableToHtmlWithImages(node, image) : tableToHtml(pmTableToModel(node)))
     } else {
       flushList()
       const formula = node.attrs?.formulaDisplay as { tokens?: string[]; latex?: string } | null

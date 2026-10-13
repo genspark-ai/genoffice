@@ -9,15 +9,21 @@ import {
   PDFName,
   PDFNumber,
   PDFOptionList,
+  PDFRadioGroup,
   PDFRef,
+  PDFSignature,
   PDFString,
+  TextAlignment,
   degrees,
   rgb,
 } from 'pdf-lib'
 import type { PDFPage } from 'pdf-lib'
 import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
 import type {
+  BlankPageInput,
   DrawingInput,
+  FormFieldInput,
+  FormWidgetEditInput,
   FormValueInput,
   ImageEditFailure,
   MarkupInput,
@@ -535,6 +541,211 @@ function applyFormValues(pdfDoc: PDFDocument, values: FormValueInput[]): void {
   }
 }
 
+const FIELD_BORDER = rgb(0.45, 0.45, 0.45)
+const FIELD_BORDER_WIDTH = 1
+
+/** The box pdf-lib's addToPage pads by the border and rotates about (x, y), chosen so the final /Rect equals `rect` on a page rotated by `rot`. */
+function widgetBox(
+  rect: FormFieldInput['rect'],
+  rot: number,
+): { x: number; y: number; width: number; height: number } {
+  const x1 = Math.min(rect[0], rect[2])
+  const y1 = Math.min(rect[1], rect[3])
+  const w = Math.abs(rect[2] - rect[0])
+  const h = Math.abs(rect[3] - rect[1])
+  const bw = FIELD_BORDER_WIDTH
+  const b = bw / 2
+  switch (((rot % 360) + 360) % 360) {
+    case 90:
+      return { x: x1 + w - b, y: y1 + b, width: h - bw, height: w - bw }
+    case 180:
+      return { x: x1 + w - b, y: y1 + h - b, width: w - bw, height: h - bw }
+    case 270:
+      return { x: x1 + b, y: y1 + h - b, width: h - bw, height: w - bw }
+    default:
+      return { x: x1 + b, y: y1 + b, width: w - bw, height: h - bw }
+  }
+}
+
+function addSignatureField(pdfDoc: PDFDocument, page: PDFPage, f: FormFieldInput): void {
+  const form = pdfDoc.getForm()
+  const rect = [
+    Math.min(f.rect[0], f.rect[2]),
+    Math.min(f.rect[1], f.rect[3]),
+    Math.max(f.rect[0], f.rect[2]),
+    Math.max(f.rect[1], f.rect[3]),
+  ]
+  const dict = pdfDoc.context.obj({
+    Type: 'Annot',
+    Subtype: 'Widget',
+    FT: 'Sig',
+    T: PDFHexString.fromText(f.name),
+    Ff: f.required ? 2 : 0,
+    F: 4,
+    Rect: rect.map(num),
+    P: page.ref,
+    MK: { BC: [0.45, 0.45, 0.45] },
+  })
+  const ref = pdfDoc.context.register(dict)
+  form.acroForm.addField(ref)
+  appendAnnot(pdfDoc, page, ref)
+}
+
+const ALIGNMENT = {
+  left: TextAlignment.Left,
+  center: TextAlignment.Center,
+  right: TextAlignment.Right,
+} as const
+
+/** Acrobat's AFDate_* viewer scripts: format on display, validate on keystroke (what WPS/Acrobat write for date fields) */
+function installDateActions(pdfDoc: PDFDocument, widget: PDFDict, format: string): void {
+  const fmt = format.replace(/["\\]/g, '')
+  const js = (code: string) => pdfDoc.context.obj({ S: 'JavaScript', JS: PDFString.of(code) })
+  widget.set(
+    PDFName.of('AA'),
+    pdfDoc.context.obj({
+      F: js(`AFDate_FormatEx("${fmt}");`),
+      K: js(`AFDate_KeystrokeEx("${fmt}");`),
+    }),
+  )
+}
+
+/** Create the authored AcroForm fields as real widgets; pages are addressed by index after rotations. */
+export function applyFormFields(pdfDoc: PDFDocument, fields: FormFieldInput[]): void {
+  const form = pdfDoc.getForm()
+  const pages = pdfDoc.getPages()
+  for (const f of fields) {
+    const page = pages[f.pageIndex]
+    if (!page) continue
+    const existing = f.name ? form.getFieldMaybe(f.name) : undefined
+    if (!f.name || (existing && !(f.kind === 'radio' && existing instanceof PDFRadioGroup))) {
+      throw new Error(`A form field named "${f.name}" already exists`)
+    }
+    if (!existing && form.getFields().some((x) => x.getName().startsWith(`${f.name}.`))) {
+      throw new Error(`A form field group named "${f.name}" already exists`)
+    }
+    if (f.kind === 'signature') {
+      addSignatureField(pdfDoc, page, f)
+      continue
+    }
+    const rot = page.getRotation().angle
+    const box = widgetBox(f.rect, rot)
+    const common = {
+      ...box,
+      borderWidth: FIELD_BORDER_WIDTH,
+      borderColor: FIELD_BORDER,
+      backgroundColor: undefined,
+      rotate: degrees(rot),
+    }
+    if (f.kind === 'checkbox') {
+      const cb = form.createCheckBox(f.name)
+      if (f.required) cb.enableRequired()
+      cb.addToPage(page, common)
+      if (f.checked) cb.check()
+      continue
+    }
+    if (f.kind === 'radio') {
+      const group = existing instanceof PDFRadioGroup ? existing : form.createRadioGroup(f.name)
+      if (f.required) group.enableRequired()
+      const option = f.exportValue || `option_${group.getOptions().length + 1}`
+      group.addOptionToPage(option, page, common)
+      if (f.checked) group.select(option)
+      continue
+    }
+    if (f.kind === 'choice') {
+      const dd = form.createDropdown(f.name)
+      if (f.required) dd.enableRequired()
+      const options = (f.options ?? []).map((o) => o.trim()).filter(Boolean)
+      dd.addOptions(options)
+      if (f.value && options.includes(f.value)) dd.select(f.value)
+      dd.addToPage(page, common)
+      continue
+    }
+    const tf = form.createTextField(f.name)
+    if (f.required) tf.enableRequired()
+    if (f.multiLine) tf.enableMultiline()
+    if (f.maxLen && f.maxLen > 0) tf.setMaxLength(Math.floor(f.maxLen))
+    tf.setAlignment(ALIGNMENT[f.textAlignment ?? 'left'])
+    tf.addToPage(page, common)
+    // Value and size after placement: addToPage draws the appearance eagerly with Helvetica, which
+    // throws on non-WinAnsi text; set afterwards they only mark the field dirty for refreshFieldAppearances
+    if (f.value) tf.setText(f.value)
+    if (f.fontSize && f.fontSize > 0) tf.setFontSize(f.fontSize)
+    if (f.dateFormat) {
+      // pdf-lib keeps field and widget as separate objects; viewers look for /AA on either
+      installDateActions(pdfDoc, tf.acroField.dict, f.dateFormat)
+      const widget = tf.acroField.getWidgets().at(-1)
+      if (widget) installDateActions(pdfDoc, widget.dict, f.dateFormat)
+    }
+  }
+}
+
+/** pdf.js widget ids are the annotation's object ref: "12R" or "12R3" */
+function widgetRef(id: string): PDFRef | null {
+  const m = /^(\d+)R(\d*)$/.exec(id)
+  return m ? PDFRef.of(Number(m[1]), m[2] ? Number(m[2]) : 0) : null
+}
+
+function detachAnnot(pdfDoc: PDFDocument, ref: PDFRef): void {
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray)
+    if (!annots) continue
+    for (let i = annots.size() - 1; i >= 0; i--) {
+      if (annots.get(i) === ref) annots.remove(i)
+    }
+  }
+}
+
+/** Move, re-flag or remove widgets that already exist in the file (Form Design on a saved form). */
+export function applyFormWidgetEdits(pdfDoc: PDFDocument, edits: FormWidgetEditInput[]): void {
+  const form = pdfDoc.getForm()
+  for (const e of edits) {
+    const field = form.getFieldMaybe(e.fieldName)
+    const widgets = field?.acroField.getWidgets() ?? []
+    const ref = widgetRef(e.widgetId)
+    const byRef = ref ? pdfDoc.context.lookupMaybe(ref, PDFDict) : undefined
+    // Earlier pdfium rewrites in the same save can renumber objects: the id must still resolve to one
+    // of this field's widgets, else fall back to its only widget, else leave the file alone
+    const found = widgets.findIndex((w) => w.dict === byRef)
+    const idx = found >= 0 ? found : widgets.length === 1 ? 0 : -1
+    if (!field || idx < 0) {
+      console.warn(
+        `[pdf] form widget edit skipped: ${e.widgetId} is not a widget of "${e.fieldName}"`,
+      )
+      continue
+    }
+    const dict = widgets[idx]!.dict
+    const kids = field.acroField.Kids()
+    const annotRef = kids && kids.size() > 0 ? (kids.get(idx) as PDFRef) : field.ref
+    if (e.remove) {
+      if (widgets.length <= 1) {
+        form.removeField(field)
+      } else {
+        field.acroField.removeWidget(idx)
+        detachAnnot(pdfDoc, annotRef)
+      }
+      continue
+    }
+    if (e.rect) {
+      const r = [
+        Math.min(e.rect[0], e.rect[2]),
+        Math.min(e.rect[1], e.rect[3]),
+        Math.max(e.rect[0], e.rect[2]),
+        Math.max(e.rect[1], e.rect[3]),
+      ]
+      dict.set(PDFName.of('Rect'), pdfDoc.context.obj(r.map(num)))
+      // A resized appearance stream would be stretched into the new box; regenerate it on save
+      if (!(field instanceof PDFSignature)) {
+        ;(field as unknown as { markAsDirty(): void }).markAsDirty()
+      }
+    }
+    if (e.required !== undefined) {
+      if (e.required) field.enableRequired()
+      else field.disableRequired()
+    }
+  }
+}
+
 /** Extract the given pages (original indices) into bytes of a new PDF */
 export async function extractPagesBytes(bytes: Uint8Array, pages: number[]): Promise<Uint8Array> {
   const src = await PDFDocument.load(bytes, { updateMetadata: false })
@@ -991,6 +1202,21 @@ export interface AppliedSaveRequest {
   skippedImageEdits: ImageEditFailure[]
 }
 
+async function appendBlankPages(bytes: Uint8Array, blanks: BlankPageInput[]): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false })
+  for (const blank of [...blanks].sort((a, b) => a.pageIndex - b.pageIndex)) {
+    if (blank.pageIndex !== doc.getPageCount()) {
+      throw new Error(
+        `Blank page index ${blank.pageIndex} does not follow the document (${doc.getPageCount()} pages)`,
+      )
+    }
+    if (!(blank.width > 0) || !(blank.height > 0))
+      throw new Error('Blank page needs a positive size')
+    doc.addPage([blank.width, blank.height])
+  }
+  return doc.save({ useObjectStreams: false })
+}
+
 /** Apply markups + form values + page ops, returning new bytes. Original objects are not reordered (pdf-lib keeps untouched objects). */
 export async function applySaveRequest(
   bytes: Uint8Array,
@@ -1004,6 +1230,11 @@ export async function applySaveRequest(
     // rewrites (text/image edits) may renumber objects
     const { applyAnnotDeletes } = await import('./annot-delete')
     bytes = await applyAnnotDeletes(bytes, request.annotDeletes)
+  }
+  if (request.blankPages && request.blankPages.length > 0) {
+    // Blank pages exist before any stage that addresses pages, so edits made on them
+    // in the session (text, drawings, fields) land like on any other page
+    bytes = await appendBlankPages(bytes, request.blankPages)
   }
   if (request.textEdits && request.textEdits.length > 0) {
     // Content-stream rewrite must land before pdf-lib touches the bytes: everything
@@ -1038,6 +1269,12 @@ export async function applySaveRequest(
   for (const r of request.rotations ?? []) {
     const page = pages[r.pageIndex]
     if (page) page.setRotation(degrees((page.getRotation().angle + r.delta) % 360))
+  }
+  if (request.formWidgetEdits && request.formWidgetEdits.length > 0) {
+    applyFormWidgetEdits(pdfDoc, request.formWidgetEdits)
+  }
+  if (request.formFields && request.formFields.length > 0) {
+    applyFormFields(pdfDoc, request.formFields)
   }
   for (const m of request.markups) {
     const page = pages[m.pageIndex]
@@ -1117,27 +1354,37 @@ export async function applySaveRequest(
         PDFHexString.fromText(JSON.stringify(staticFormFills)),
       )
   }
-  try {
-    let saved = await pdfDoc.save({ useObjectStreams: false })
-    // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the
-    // reachable cleaned object graph; no subsequent pdf-lib pass can revive old streams.
-    if (request.redactions?.length) saved = await redactPdf(saved, request.redactions)
-    return {
-      bytes: saved,
-      skippedTextEdits,
-      skippedTextInserts,
-      skippedImageEdits,
-    }
-  } catch (err) {
-    // Form values beyond WinAnsi (e.g. CJK) make pdf-lib's appearance generation fail:
-    // skip it and set NeedAppearances so viewers rebuild them (Acrobat/pdfjs both support this)
-    if (request.formValues.length === 0 || request.redactions?.length) throw err
-    pdfDoc.getForm().acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
-    return {
-      bytes: await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false }),
-      skippedTextEdits,
-      skippedTextInserts,
-      skippedImageEdits,
+  refreshFieldAppearances(pdfDoc)
+  let saved = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false })
+  // Redaction is the final serializer. EmbedPDF's full SaveAsCopy writes only the
+  // reachable cleaned object graph; no subsequent pdf-lib pass can revive old streams.
+  if (request.redactions?.length) saved = await redactPdf(saved, request.redactions)
+  return {
+    bytes: saved,
+    skippedTextEdits,
+    skippedTextInserts,
+    skippedImageEdits,
+  }
+}
+
+/**
+ * pdf-lib's save-time appearance pass aborts on the first field whose text Helvetica cannot encode
+ * (CJK values), leaving every other dirty field without /AP. Regenerate per field instead and
+ * only set NeedAppearances for the ones that fail, so viewers rebuild those alone.
+ */
+function refreshFieldAppearances(pdfDoc: PDFDocument): void {
+  if (!pdfDoc.catalog.has(PDFName.of('AcroForm'))) return
+  const form = pdfDoc.getForm()
+  const font = form.getDefaultFont()
+  let needAppearances = false
+  for (const field of form.getFields()) {
+    if (!field.needsAppearancesUpdate()) continue
+    // Same per-type dispatch pdf-lib's own save pass uses (check boxes and radios ignore the font)
+    try {
+      field.defaultUpdateAppearances(font)
+    } catch {
+      needAppearances = true
     }
   }
+  if (needAppearances) form.acroForm.dict.set(PDFName.of('NeedAppearances'), PDFBool.True)
 }

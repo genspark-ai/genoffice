@@ -322,6 +322,9 @@ fn rejects_oversized_ranges() {
         column_count: 100,
         source_xml_bytes: 1024,
         stored_cell_count: None,
+        value_cell_count: None,
+        value_row_count: None,
+        value_column_count: None,
         column_widths: Vec::new(),
         default_row_height: None,
         default_row_height_fixed: false,
@@ -492,6 +495,9 @@ fn omits_empty_sparklines_field_from_metadata_json() {
         column_count: 1,
         source_xml_bytes: 1024,
         stored_cell_count: None,
+        value_cell_count: None,
+        value_row_count: None,
+        value_column_count: None,
         column_widths: Vec::new(),
         default_row_height: None,
         default_row_height_fixed: false,
@@ -994,7 +1000,37 @@ fn stored_cell_count_includes_style_only_cells() {
 </sheetData>
 </worksheet>"#,
     );
-    assert_eq!(metadata.sheets[0].stored_cell_count, Some(5));
+    let sheet = &metadata.sheets[0];
+    assert_eq!(sheet.stored_cell_count, Some(5));
+    assert_eq!(sheet.value_cell_count, Some(3));
+    assert_eq!(
+        (sheet.value_row_count, sheet.value_column_count),
+        (Some(2), Some(4))
+    );
+}
+
+/// Style-only blanks padding below the data and a stray formatted cell far
+/// away inflate the stored count and the box, but not the value extent.
+#[test]
+fn value_extent_ignores_style_only_cells() {
+    let metadata = open_single_sheet(
+        r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:C1048000"/>
+<sheetData>
+<row r="1"><c r="A1"><v>1</v></c><c r="B1" s="1"><v>2</v></c></row>
+<row r="2"><c r="A2" s="1"/><c r="B2" s="1"/><c r="C2" s="1"/></row>
+<row r="1048000"><c r="C1048000" s="1"/></row>
+</sheetData>
+</worksheet>"#,
+    );
+    let sheet = &metadata.sheets[0];
+    assert_eq!((sheet.row_count, sheet.column_count), (1_048_000, 3));
+    assert_eq!(sheet.stored_cell_count, Some(6));
+    assert_eq!(sheet.value_cell_count, Some(2));
+    assert_eq!(
+        (sheet.value_row_count, sheet.value_column_count),
+        (Some(1), Some(2))
+    );
 }
 
 /// A trusted (large) dimension still yields the real stored count — the
@@ -1016,6 +1052,11 @@ fn trusted_dimension_still_counts_stored_cells() {
     let sheet = &metadata.sheets[0];
     assert_eq!((sheet.row_count, sheet.column_count), (1_200, 10));
     assert_eq!(sheet.stored_cell_count, Some(240));
+    assert_eq!(sheet.value_cell_count, Some(120));
+    assert_eq!(
+        (sheet.value_row_count, sheet.value_column_count),
+        (Some(120), Some(1))
+    );
 }
 
 /// Counting on trusted dimensions is paid for by one workbook-wide budget:
@@ -1060,6 +1101,8 @@ fn stored_cell_budget_is_shared_across_sheets() {
     )
     .unwrap();
     assert_eq!(second.stored_cell_count, None);
+    assert_eq!(second.value_cell_count, None);
+    assert_eq!(second.value_extent, None);
     assert_eq!((second.row_count, second.column_count), (1_000, 26));
     assert_eq!(budget, 0);
     let third = read_sheet_dimensions(
@@ -4729,4 +4772,89 @@ fn an_uncancelled_open_completes_and_keeps_its_cache_directory() {
     // Close still reclaims it.
     sessions.close(&metadata.session_id).unwrap();
     assert!(!cache.exists());
+}
+
+/// A workbook part that lies about its size inflates fully on the XML read path.
+///
+/// `read_media` is capped by `copy_entry_bounded`, and the docx/pptx hosts run
+/// `@genoffice/zip-gate` before opening at all — but `read_zip_string` is a
+/// plain `read_to_string`, and it is how nearly every workbook part is loaded.
+/// `validate_entries` checks the entry *count* and the paths, never the bytes.
+/// A workbook therefore gets a full unbounded allocation out of one crafted
+/// entry, where every other ingest path in the product refuses it
+/// (genoffice#781, genoffice#1386).
+#[test]
+fn rejects_xml_entry_that_inflates_past_its_declared_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bomb.xlsx");
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+        writer.write_all(&vec![b'A'; 4 * 1024 * 1024]).unwrap();
+        writer.finish().unwrap();
+    }
+    forge_declared_size(&path, "xl/worksheets/sheet1.xml", 12);
+
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let result = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml");
+    assert!(
+        result.is_err(),
+        "an entry declaring 12 bytes inflated to 4 MiB and was read anyway"
+    );
+}
+
+/// An honestly declared metadata part still has a ceiling: a highly
+/// compressible `xl/workbook.xml` far past `MAX_METADATA_PART_BYTES` is refused
+/// before it is materialised (genoffice#1002).
+#[test]
+fn rejects_oversized_metadata_part_that_declares_its_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big-workbook.xlsx");
+    let size = crate::xml_util::MAX_METADATA_PART_BYTES as usize + 1;
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/workbook.xml", options).unwrap();
+        writer.write_all(b"<workbook>").unwrap();
+        let chunk = vec![b' '; 1 << 20];
+        let mut written = 0;
+        while written < size {
+            writer.write_all(&chunk).unwrap();
+            written += chunk.len();
+        }
+        writer.write_all(b"</workbook>").unwrap();
+        writer.finish().unwrap();
+    }
+    assert!(std::fs::metadata(&path).unwrap().len() < 1024 * 1024);
+
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let error = crate::xml_util::read_zip_string(&mut archive, "xl/workbook.xml").unwrap_err();
+    assert!(
+        error.to_string().contains("metadata part limit"),
+        "unexpected error: {error}"
+    );
+}
+
+/// The same entry read honestly must still succeed: the cap is on the payload,
+/// not on legitimate parts.
+#[test]
+fn reads_xml_entry_that_matches_its_declaration() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ok.xlsx");
+    {
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        writer.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+        writer
+            .write_all(br#"<worksheet><sheetData><row r="1"/></sheetData></worksheet>"#)
+            .unwrap();
+        writer.finish().unwrap();
+    }
+    let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+    let value = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml").unwrap();
+    assert!(value.contains("sheetData"));
 }

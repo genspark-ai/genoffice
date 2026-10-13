@@ -205,6 +205,13 @@ export interface GlyphRun {
   rotate270?: boolean
   /** Bullet glyph (non-body content injected by layout; text editors should skip it) */
   isBullet?: boolean
+  /**
+   * Withheld from the model: this run's words are marked, and `text` still holds
+   * them — the canvas draws the real thing, only the model's view substitutes the
+   * label. Set from the engine's `TextRun.redact`; layout splits a run into tokens,
+   * so every token of a marked run carries the same label.
+   */
+  redact?: string
   /** Numbered bullet: its buAutoNum scheme (ribbon highlight / toggle semantics) */
   numType?: string
   /** Numbered bullet: the paragraph's explicit startAt (editing preview counts from it) */
@@ -334,6 +341,15 @@ export interface ShapeRenderNode extends RenderNodeBase {
 
 export interface PictureRenderNode extends RenderNodeBase {
   type: 'picture'
+  /**
+   * Withheld from the model. A picture, a video or an audio clip has no words to
+   * redact: the point is that the model is not handed a reference it could fetch.
+   * Note the render tree carries only `media`'s *kind* — `PictureRenderNode.media`
+   * is `'video' | 'audio'`, never the target — so an external `r:link` URL does
+   * not reach this layer at all. This flag is what keeps it from reaching the
+   * model view.
+   */
+  redact?: string
   dataUrl?: string
   /** Opaque backdrop behind the image (OLE previews render on a white canvas; metafiles are often transparent) */
   bgColor?: string

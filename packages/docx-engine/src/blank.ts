@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { PPR_CHILD_ORDER } from './generate'
 import type { NumberingLevel } from './types'
 
 /**
@@ -305,9 +306,19 @@ export function mergeLevelXml(existing: string, l: CustomNumberingLevel, ilvl: n
   pPr.set('w:ind', `<w:ind w:left="${Math.round(l.indentLeft)}" w:hanging="${hanging}"/>`)
   if (l.tabStop !== undefined)
     pPr.set('w:tabs', `<w:tabs><w:tab w:val="num" w:pos="${Math.round(l.tabStop)}"/></w:tabs>`)
-  const pPrOrder = ['w:tabs', 'w:ind']
+  // CT_PPrGeneral sequence, the same table generate.ts and style-upsert.ts
+  // assemble and merge with. A w:lvl's pPr can carry any paragraph child a
+  // producer saw fit to write (w:spacing, w:keepNext, w:jc, …), so the full
+  // order matters, not just the two children this function writes. Anything
+  // unlisted sorts last rather than first — indexOf returns -1, which would
+  // hoist it to the front of w:pPr and, since Word validates the child order
+  // strictly, make the saved document unreadable.
+  const rank = (tag: string): number => {
+    const i = PPR_CHILD_ORDER.indexOf(tag)
+    return i < 0 ? PPR_CHILD_ORDER.length : i
+  }
   const pPrXml = [...pPr.entries()]
-    .sort((a, b) => pPrOrder.indexOf(a[0]) - pPrOrder.indexOf(b[0]))
+    .sort((a, b) => rank(a[0]) - rank(b[0]))
     .map(([, xml]) => xml)
     .join('')
   set('w:pPr', `<w:pPr>${pPrXml}</w:pPr>`)

@@ -12,6 +12,8 @@ export interface RevisionInfo {
   author: string
   /** ISO timestamp from w:date */
   date?: string
+  /** w16du:dateUtc, the UTC twin of w:date written by Word 2023+ */
+  dateUtc?: string
   /** original w:id, kept so an edited paragraph re-emits stable ids */
   id?: string
 }
@@ -219,7 +221,7 @@ export interface Run {
     offsetXEmu?: number
     offsetYEmu?: number
     /** wp:positionV relativeFrom page/margin with a posOffset: offsetYEmu is a page position, not a paragraph offset */
-    relV?: 'page' | 'margin'
+    relV?: 'page' | 'margin' | 'line'
     /** wp:positionH relativeFrom page/margin with a posOffset: offsetXEmu measures from that edge */
     relH?: 'page' | 'margin'
     /** wp:anchor text-wrap distances (EMU; display-only) */
@@ -444,6 +446,12 @@ export interface ParaFormat {
    *  writes the matching `*Chars="0"` for them (mergePPrFormat), or Word keeps
    *  preferring the character indent over the new twips value on reload. */
   charIndents?: CharIndents
+  /** the character-unit indents the paragraph's OWN w:ind declares (style-chain
+   *  chars excluded, explicit zeros included). The editor maps these to its
+   *  direct-formatting model and the save path writes them back as `*Chars`
+   *  attributes; an indent the style chain alone provides must not become
+   *  direct formatting (issue #1892). */
+  directCharIndents?: CharIndents
   /** space above the paragraph in twips (w:spacing w:before) */
   spaceBefore?: number
   /** space below the paragraph in twips (w:spacing w:after) */
@@ -1264,6 +1272,8 @@ export interface TableCell {
   textDirection?: 'tbRl' | 'btLr' | 'lrTb'
   /** w:noWrap: the cell never wraps its text */
   noWrap?: boolean
+  /** w:hideMark: the end-of-cell mark does not count toward the row height */
+  hideMark?: boolean
   /** the editor changed textDirection / cellMarTwips / noWrap: regeneration writes them
    *  from the model instead of keeping the rawTcPr bytes */
   tcPrEdited?: boolean
@@ -1597,7 +1607,7 @@ export interface Block {
   imageOffsetXEmu?: number
   imageOffsetYEmu?: number
   /** wp:positionV relativeFrom page/margin with a posOffset: imageOffsetYEmu is a page position */
-  imageRelV?: 'page' | 'margin'
+  imageRelV?: 'page' | 'margin' | 'line'
   /** wp:positionH relativeFrom page/margin with a posOffset: imageOffsetXEmu measures from that edge */
   imageRelH?: 'page' | 'margin'
   /** wp:anchor locked="1": moving the picture must not change its anchor paragraph */
@@ -1671,6 +1681,7 @@ export interface Block {
   pPrChangeInfo?: {
     author: string
     date?: string
+    dateUtc?: string
     id?: string
     old?: ParaFormat & {
       type?: 'docParagraph' | 'docHeading' | 'docListItem'
@@ -1684,7 +1695,7 @@ export interface Block {
   /** Top-level block insertion/deletion wrapper (w:ins/w:del around w:p or w:tbl). */
   blockRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** Tracked deletion of the paragraph mark (w:pPr/w:rPr/w:del): Word joins the paragraph into the next one. */
-  paraMarkDel?: { author: string; date?: string; id?: string }
+  paraMarkDel?: { author: string; date?: string; dateUtc?: string; id?: string }
 }
 
 /** numbering marker of a textbox paragraph, resolved at parse time (display only) */
@@ -1810,6 +1821,12 @@ export interface TextboxDisplay {
   /** page/margin-relative X: absolute on the page in Word — a column-translated
    *  anchor block must not drag the box sideways (the canvas undoes --col-dx) */
   pageRelX?: boolean
+  /** `page`: the X offset measures from the paper edge (margin-relative and
+   *  resolved offsets measure from the column start) */
+  pageRelXFrom?: 'page'
+  /** layoutInCell="0" on a cell-anchored drawing: Word positions it against the
+   *  page/column instead of the cell, and the row does not grow to hold it */
+  outsideCell?: boolean
   /** wrapTopAndBottom (paragraph/line-relative V): the anchor paragraph keeps
    *  flow height down to this box bottom (px) so following text resumes below */
   bandBottomPx?: number
@@ -1824,6 +1841,9 @@ export interface TextboxDisplay {
   bandOverflow?: boolean
   /** wrapSquare/Tight/Through anchor: text may flow beside the box, a table cannot */
   wrapSides?: boolean
+  /** wp:anchor distL/distR/distT/distB of a side-wrapped floating box (px): the
+   *  renderer's obstacle pass widens the wrap rectangle by them */
+  wrapDistPx?: { l: number; r: number; t: number; b: number }
   /** in-column wrapSquare box: the renderer floats it on this side so body
    *  text flows beside it like Word; wrapEdgePx is the box's distance from
    *  that column edge (negative when it protrudes), wrapGapPx the text clearance */
@@ -2315,6 +2335,8 @@ export interface ParsedDoc {
   adjustLineHeightInTable?: boolean
   /** settings.xml w:compat <w:doNotUseIndentAsNumberingTabStop/> — the tab after a list marker runs to the next tab stop, never to the hanging indent */
   indentNotNumberingTabStop?: boolean
+  /** settings.xml w:compat <w:doNotExpandShiftReturn/> — a justified line ending in a line break stays ragged (Word's default stretches it) */
+  doNotExpandShiftReturn?: boolean
   /** settings.xml w:defaultTabStop in twips (absent = Word's 720); 0 = zero-width default tabs */
   defaultTabStopTwips?: number
   /** first-page header/footer parts (w:type="first"), null when absent */

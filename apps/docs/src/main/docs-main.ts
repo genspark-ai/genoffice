@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -67,6 +68,7 @@ import {
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
   writeJsonAtomic,
+  recoveryCopyDiskNewer,
 } from '@genoffice/electron-utils'
 import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
@@ -99,6 +101,7 @@ import {
   sanitizeCliPath,
   setAiUserAgent,
   setRescueFetch,
+  resolveProfileCredential,
   streamForProvider,
   type AiChatRequest,
   type AiSettings,
@@ -108,9 +111,12 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { listCodexModels, shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
+import { startAiTrace } from '@genoffice/ai-provider/trace'
 import { listCustomModelsForIpc } from '@genoffice/ai-provider/custom-models'
 import {
   ensureGenofficeLogin,
+  noteGskCallFailure,
+  setGenofficeLoginOpener,
   gskApiKey,
   generateImageTool,
   testSearchProvider,
@@ -136,10 +142,10 @@ import type {
   OpenDocxResult,
   SpellLanguages,
 } from '../shared/ipc'
-import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
+import { ATTACHMENT_IMAGE_EXTS, MARKDOWN_MEDIA_DIR_TOKEN, type MarkdownImage } from '../shared/ipc'
 import { ClickClaims } from '../shared/context-menu-claims'
 import { findDocxPath } from '../shared/open-file'
-import { atomicWriteFile, looksLikeZip } from './atomic-write'
+import { atomicWriteFile } from './atomic-write'
 import {
   adoptLazyMediaHashes,
   forgetLazyMediaOwner,
@@ -171,7 +177,18 @@ import {
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { copyImageDisplaySize, validCopyImageDataUrl } from './copy-image-guard'
-import { printScaleOption, validPrintGeometry } from './print-args'
+import { printJobOptions, printScaleOption, validPrintGeometry } from './print-args'
+import { addPdfInternalLinks } from './pdf-links'
+import {
+  assignStarredGroup,
+  dropStarredItems,
+  readStarredItems,
+  renameStarredItem,
+  starredGroupMap,
+  starredGroupNames,
+  toggleStarredItem,
+  writeStarredItems,
+} from './starred-files'
 import { initDocsAutoUpdater } from './updater'
 import { registerZoteroIpc, teardownZoteroIpc } from './zotero-ipc'
 
@@ -195,6 +212,7 @@ const tMain = createI18n({
     closeNoReplyDetail: '仍要关闭吗?未保存的更改将丢失。',
     btnCloseAnyway: '仍要关闭',
     autosaveFoundTitle: '发现自动恢复版本',
+    autosaveDiskNewer: '注意：此恢复副本保存后，磁盘上的文件又被修改过。恢复将替换这些较新的更改。',
     autosaveFoundBody: '上次会话有未保存的更改。要恢复自动保存的版本吗?',
     autosaveRestore: '恢复',
     autosaveDiscard: '放弃',
@@ -210,6 +228,7 @@ const tMain = createI18n({
     filterAll: '所有文件',
     dlgExportPdf: '导出为 PDF',
     dlgExportHtml: '导出为 HTML',
+    dlgExportMarkdown: '导出为 Markdown',
     dlgPickExportDir: '选择导出目录',
     errUnsupportedExt: '暂不支持 .{ext} 类型',
     errNotFile: '不是文件',
@@ -236,6 +255,7 @@ const tMain = createI18n({
     menuPageSetup: '页面设置…',
     menuExportPdf: '导出为 PDF…',
     menuExportHtml: '导出为 HTML…',
+    menuExportMarkdown: '导出为 Markdown…',
     menuExportImages: '导出为图片…',
     menuPrint: '打印…',
     menuEdit: '编辑',
@@ -255,6 +275,7 @@ const tMain = createI18n({
     menuZoom100: '实际大小 (100%)',
     menuPageWidth: '页宽',
     menuWholePage: '整页',
+    menuMultiPage: '多页',
     menuAiSidebar: 'AI 侧栏',
     menuDarkMode: '深色模式',
     menuFullscreen: '进入全屏',
@@ -313,7 +334,6 @@ const tMain = createI18n({
     menuWindow: '窗口',
     menuHelp: '帮助',
     menuShortcuts: '键盘快捷键',
-    menuDocsHelp: 'GenOffice Docs 帮助',
   },
   en: {
     dlgOpenDoc: 'Open Document',
@@ -325,6 +345,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Close anyway? Unsaved changes will be lost.',
     btnCloseAnyway: 'Close Anyway',
     autosaveFoundTitle: 'Recovered version found',
+    autosaveDiskNewer:
+      'Note: the file on disk was modified after this recovery copy was saved. Restoring replaces those newer changes.',
     autosaveFoundBody:
       'There are unsaved changes from your last session. Restore the autosaved version?',
     autosaveRestore: 'Restore',
@@ -341,6 +363,7 @@ const tMain = createI18n({
     filterAll: 'All Files',
     dlgExportPdf: 'Export as PDF',
     dlgExportHtml: 'Export as HTML',
+    dlgExportMarkdown: 'Export as Markdown',
     dlgPickExportDir: 'Choose Export Folder',
     errUnsupportedExt: '.{ext} files are not supported',
     errNotFile: 'not a file',
@@ -368,6 +391,7 @@ const tMain = createI18n({
     menuPageSetup: 'Page Setup…',
     menuExportPdf: 'Export as PDF…',
     menuExportHtml: 'Export as HTML…',
+    menuExportMarkdown: 'Export as Markdown…',
     menuExportImages: 'Export as Images…',
     menuPrint: 'Print…',
     menuEdit: 'Edit',
@@ -387,6 +411,7 @@ const tMain = createI18n({
     menuZoom100: 'Actual Size (100%)',
     menuPageWidth: 'Page Width',
     menuWholePage: 'Whole Page',
+    menuMultiPage: 'Multiple Pages',
     menuAiSidebar: 'AI Sidebar',
     menuDarkMode: 'Dark Mode',
     menuFullscreen: 'Enter Full Screen',
@@ -445,7 +470,6 @@ const tMain = createI18n({
     menuWindow: 'Window',
     menuHelp: 'Help',
     menuShortcuts: 'Keyboard Shortcuts',
-    menuDocsHelp: 'GenOffice Docs Help',
   },
   vi: {
     dlgOpenDoc: 'Mở tài liệu',
@@ -457,6 +481,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Vẫn đóng? Các thay đổi chưa lưu sẽ bị mất.',
     btnCloseAnyway: 'Vẫn đóng',
     autosaveFoundTitle: 'Tìm thấy phiên bản khôi phục',
+    autosaveDiskNewer:
+      'Lưu ý: tệp trên đĩa đã được sửa đổi sau khi bản sao khôi phục này được lưu. Khôi phục sẽ thay thế những thay đổi mới hơn đó.',
     autosaveFoundBody:
       'Có những thay đổi chưa được lưu từ phiên làm việc trước của bạn. Khôi phục phiên bản đã lưu tự động?',
     autosaveRestore: 'Khôi phục',
@@ -473,6 +499,7 @@ const tMain = createI18n({
     filterAll: 'Tất cả các tệp',
     dlgExportPdf: 'Xuất dưới dạng PDF',
     dlgExportHtml: 'Xuất dưới dạng HTML',
+    dlgExportMarkdown: 'Xuất dưới dạng Markdown',
     dlgPickExportDir: 'Chọn thư mục xuất',
     errUnsupportedExt: 'Tệp .{ext} không được hỗ trợ',
     errNotFile: 'không phải là tệp',
@@ -501,6 +528,7 @@ const tMain = createI18n({
     menuPageSetup: 'Thiết lập trang…',
     menuExportPdf: 'Xuất dưới dạng PDF…',
     menuExportHtml: 'Xuất dưới dạng HTML…',
+    menuExportMarkdown: 'Xuất dưới dạng Markdown…',
     menuExportImages: 'Xuất dưới dạng hình ảnh…',
     menuPrint: 'In…',
     menuEdit: 'Chỉnh sửa',
@@ -520,6 +548,7 @@ const tMain = createI18n({
     menuZoom100: 'Kích thước thực tế (100%)',
     menuPageWidth: 'Chiều rộng trang',
     menuWholePage: 'Toàn bộ trang',
+    menuMultiPage: 'Nhiều trang',
     menuAiSidebar: 'Thanh bên AI',
     menuDarkMode: 'Chế độ tối',
     menuFullscreen: 'Vào chế độ toàn màn hình',
@@ -578,7 +607,6 @@ const tMain = createI18n({
     menuWindow: 'Cửa sổ',
     menuHelp: 'Trợ giúp',
     menuShortcuts: 'Phím tắt bàn phím',
-    menuDocsHelp: 'Trợ giúp GenOffice Docs',
   },
   ja: {
     dlgOpenDoc: '文書を開く',
@@ -590,6 +618,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'それでも閉じますか?未保存の変更は失われます。',
     btnCloseAnyway: '閉じる',
     autosaveFoundTitle: '自動回復バージョンがあります',
+    autosaveDiskNewer:
+      '注意: この回復コピーの保存後にディスク上のファイルが変更されています。復元するとその新しい変更は置き換えられます。',
     autosaveFoundBody: '前回のセッションに未保存の変更があります。自動保存版を復元しますか?',
     autosaveRestore: '復元',
     autosaveDiscard: '破棄',
@@ -605,6 +635,7 @@ const tMain = createI18n({
     filterAll: 'すべてのファイル',
     dlgExportPdf: 'PDF としてエクスポート',
     dlgExportHtml: 'HTML としてエクスポート',
+    dlgExportMarkdown: 'Markdown としてエクスポート',
     dlgPickExportDir: 'エクスポート先フォルダーの選択',
     errUnsupportedExt: '.{ext} 形式には対応していません',
     errNotFile: 'ファイルではありません',
@@ -633,6 +664,7 @@ const tMain = createI18n({
     menuPageSetup: 'ページ設定…',
     menuExportPdf: 'PDF としてエクスポート…',
     menuExportHtml: 'HTML としてエクスポート…',
+    menuExportMarkdown: 'Markdown としてエクスポート…',
     menuExportImages: '画像としてエクスポート…',
     menuPrint: '印刷…',
     menuEdit: '編集',
@@ -652,6 +684,7 @@ const tMain = createI18n({
     menuZoom100: '実際のサイズ (100%)',
     menuPageWidth: 'ページ幅',
     menuWholePage: 'ページ全体',
+    menuMultiPage: '複数ページ',
     menuAiSidebar: 'AI サイドバー',
     menuDarkMode: 'ダークモード',
     menuFullscreen: 'フルスクリーンにする',
@@ -710,7 +743,6 @@ const tMain = createI18n({
     menuWindow: 'ウィンドウ',
     menuHelp: 'ヘルプ',
     menuShortcuts: 'キーボードショートカット',
-    menuDocsHelp: 'GenOffice Docs ヘルプ',
   },
   ko: {
     dlgOpenDoc: '문서 열기',
@@ -722,6 +754,8 @@ const tMain = createI18n({
     closeNoReplyDetail: '그래도 닫을까요? 저장하지 않은 변경 사항은 사라집니다.',
     btnCloseAnyway: '닫기',
     autosaveFoundTitle: '자동 복구 버전 발견',
+    autosaveDiskNewer:
+      '참고: 이 복구 사본이 저장된 후 디스크의 파일이 수정되었습니다. 복원하면 그 최신 변경 내용이 대체됩니다.',
     autosaveFoundBody:
       '마지막 세션에 저장되지 않은 변경 내용이 있습니다. 자동 저장 버전을 복원할까요?',
     autosaveRestore: '복원',
@@ -738,6 +772,7 @@ const tMain = createI18n({
     filterAll: '모든 파일',
     dlgExportPdf: 'PDF로 내보내기',
     dlgExportHtml: 'HTML로 내보내기',
+    dlgExportMarkdown: 'Markdown로 내보내기',
     dlgPickExportDir: '내보낼 폴더 선택',
     errUnsupportedExt: '.{ext} 형식은 지원되지 않습니다',
     errNotFile: '파일이 아닙니다',
@@ -766,6 +801,7 @@ const tMain = createI18n({
     menuPageSetup: '페이지 설정…',
     menuExportPdf: 'PDF로 내보내기…',
     menuExportHtml: 'HTML로 내보내기…',
+    menuExportMarkdown: 'Markdown로 내보내기…',
     menuExportImages: '이미지로 내보내기…',
     menuPrint: '인쇄…',
     menuEdit: '편집',
@@ -785,6 +821,7 @@ const tMain = createI18n({
     menuZoom100: '실제 크기(100%)',
     menuPageWidth: '페이지 너비',
     menuWholePage: '전체 페이지',
+    menuMultiPage: '여러 페이지',
     menuAiSidebar: 'AI 사이드바',
     menuDarkMode: '다크 모드',
     menuFullscreen: '전체 화면 시작',
@@ -843,7 +880,6 @@ const tMain = createI18n({
     menuWindow: '창',
     menuHelp: '도움말',
     menuShortcuts: '키보드 바로 가기',
-    menuDocsHelp: 'GenOffice Docs 도움말',
   },
   fr: {
     dlgOpenDoc: 'Ouvrir un document',
@@ -856,6 +892,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Fermer quand même ? Les modifications non enregistrées seront perdues.',
     btnCloseAnyway: 'Fermer quand même',
     autosaveFoundTitle: 'Version récupérée trouvée',
+    autosaveDiskNewer:
+      'Remarque : le fichier sur le disque a été modifié après l’enregistrement de cette copie de récupération. La restauration remplacera ces modifications plus récentes.',
     autosaveFoundBody:
       'Des modifications non enregistrées existent. Restaurer la version auto-enregistrée ?',
     autosaveRestore: 'Restaurer',
@@ -872,6 +910,7 @@ const tMain = createI18n({
     filterAll: 'Tous les fichiers',
     dlgExportPdf: 'Exporter au format PDF',
     dlgExportHtml: 'Exporter au format HTML',
+    dlgExportMarkdown: 'Exporter au format Markdown',
     dlgPickExportDir: "Choisir le dossier d'exportation",
     errUnsupportedExt: 'les fichiers .{ext} ne sont pas pris en charge',
     errNotFile: "n'est pas un fichier",
@@ -900,6 +939,7 @@ const tMain = createI18n({
     menuPageSetup: 'Mise en page…',
     menuExportPdf: 'Exporter au format PDF…',
     menuExportHtml: 'Exporter au format HTML…',
+    menuExportMarkdown: 'Exporter au format Markdown…',
     menuExportImages: 'Exporter en images…',
     menuPrint: 'Imprimer…',
     menuEdit: 'Édition',
@@ -919,6 +959,7 @@ const tMain = createI18n({
     menuZoom100: 'Taille réelle (100 %)',
     menuPageWidth: 'Largeur de page',
     menuWholePage: 'Page entière',
+    menuMultiPage: 'Plusieurs pages',
     menuAiSidebar: 'Volet IA',
     menuDarkMode: 'Mode sombre',
     menuFullscreen: 'Activer le mode plein écran',
@@ -977,7 +1018,6 @@ const tMain = createI18n({
     menuWindow: 'Fenêtre',
     menuHelp: 'Aide',
     menuShortcuts: 'Raccourcis clavier',
-    menuDocsHelp: 'Aide GenOffice Docs',
   },
   de: {
     dlgOpenDoc: 'Dokument öffnen',
@@ -990,6 +1030,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Trotzdem schließen? Ungespeicherte Änderungen gehen verloren.',
     btnCloseAnyway: 'Trotzdem schließen',
     autosaveFoundTitle: 'Wiederhergestellte Version gefunden',
+    autosaveDiskNewer:
+      'Hinweis: Die Datei auf dem Datenträger wurde nach dem Speichern dieser Wiederherstellungskopie geändert. Beim Wiederherstellen werden diese neueren Änderungen ersetzt.',
     autosaveFoundBody:
       'Es gibt ungespeicherte Änderungen. Automatisch gespeicherte Version wiederherstellen?',
     autosaveRestore: 'Wiederherstellen',
@@ -1006,6 +1048,7 @@ const tMain = createI18n({
     filterAll: 'Alle Dateien',
     dlgExportPdf: 'Als PDF exportieren',
     dlgExportHtml: 'Als HTML exportieren',
+    dlgExportMarkdown: 'Als Markdown exportieren',
     dlgPickExportDir: 'Exportordner auswählen',
     errUnsupportedExt: '.{ext}-Dateien werden nicht unterstützt',
     errNotFile: 'keine Datei',
@@ -1034,6 +1077,7 @@ const tMain = createI18n({
     menuPageSetup: 'Seite einrichten…',
     menuExportPdf: 'Als PDF exportieren…',
     menuExportHtml: 'Als HTML exportieren…',
+    menuExportMarkdown: 'Als Markdown exportieren…',
     menuExportImages: 'Als Bilder exportieren…',
     menuPrint: 'Drucken…',
     menuEdit: 'Bearbeiten',
@@ -1053,6 +1097,7 @@ const tMain = createI18n({
     menuZoom100: 'Originalgröße (100 %)',
     menuPageWidth: 'Seitenbreite',
     menuWholePage: 'Ganze Seite',
+    menuMultiPage: 'Mehrere Seiten',
     menuAiSidebar: 'KI-Seitenleiste',
     menuDarkMode: 'Dunkelmodus',
     menuFullscreen: 'Vollbild ein',
@@ -1111,7 +1156,6 @@ const tMain = createI18n({
     menuWindow: 'Fenster',
     menuHelp: 'Hilfe',
     menuShortcuts: 'Tastenkombinationen',
-    menuDocsHelp: 'GenOffice Docs-Hilfe',
   },
   es: {
     dlgOpenDoc: 'Abrir documento',
@@ -1123,6 +1167,8 @@ const tMain = createI18n({
     closeNoReplyDetail: '¿Cerrar de todos modos? Los cambios sin guardar se perderán.',
     btnCloseAnyway: 'Cerrar de todos modos',
     autosaveFoundTitle: 'Se encontró una versión recuperada',
+    autosaveDiskNewer:
+      'Nota: el archivo en disco se modificó después de guardar esta copia de recuperación. Restaurar reemplazará esos cambios más recientes.',
     autosaveFoundBody:
       'Hay cambios sin guardar de la última sesión. ¿Restaurar la versión autoguardada?',
     autosaveRestore: 'Restaurar',
@@ -1139,6 +1185,7 @@ const tMain = createI18n({
     filterAll: 'Todos los archivos',
     dlgExportPdf: 'Exportar como PDF',
     dlgExportHtml: 'Exportar como HTML',
+    dlgExportMarkdown: 'Exportar como Markdown',
     dlgPickExportDir: 'Elegir carpeta de exportación',
     errUnsupportedExt: 'los archivos .{ext} no son compatibles',
     errNotFile: 'no es un archivo',
@@ -1168,6 +1215,7 @@ const tMain = createI18n({
     menuPageSetup: 'Configurar página…',
     menuExportPdf: 'Exportar como PDF…',
     menuExportHtml: 'Exportar como HTML…',
+    menuExportMarkdown: 'Exportar como Markdown…',
     menuExportImages: 'Exportar como imágenes…',
     menuPrint: 'Imprimir…',
     menuEdit: 'Edición',
@@ -1187,6 +1235,7 @@ const tMain = createI18n({
     menuZoom100: 'Tamaño real (100 %)',
     menuPageWidth: 'Ancho de página',
     menuWholePage: 'Página completa',
+    menuMultiPage: 'Varias páginas',
     menuAiSidebar: 'Barra lateral de IA',
     menuDarkMode: 'Modo oscuro',
     menuFullscreen: 'Usar pantalla completa',
@@ -1245,7 +1294,6 @@ const tMain = createI18n({
     menuWindow: 'Ventana',
     menuHelp: 'Ayuda',
     menuShortcuts: 'Atajos de teclado',
-    menuDocsHelp: 'Ayuda de GenOffice Docs',
   },
   th: {
     dlgOpenDoc: 'เปิดเอกสาร',
@@ -1257,6 +1305,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'ปิดต่อไปหรือไม่ การเปลี่ยนแปลงที่ยังไม่ได้บันทึกจะหายไป',
     btnCloseAnyway: 'ปิดต่อไป',
     autosaveFoundTitle: 'พบเวอร์ชันกู้คืนอัตโนมัติ',
+    autosaveDiskNewer:
+      'หมายเหตุ: ไฟล์บนดิสก์ถูกแก้ไขหลังจากบันทึกสำเนากู้คืนนี้ การกู้คืนจะแทนที่การเปลี่ยนแปลงที่ใหม่กว่าเหล่านั้น',
     autosaveFoundBody: 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึกจากครั้งก่อน ต้องการกู้คืนหรือไม่?',
     autosaveRestore: 'กู้คืน',
     autosaveDiscard: 'ละทิ้ง',
@@ -1272,6 +1322,7 @@ const tMain = createI18n({
     filterAll: 'ไฟล์ทั้งหมด',
     dlgExportPdf: 'ส่งออกเป็น PDF',
     dlgExportHtml: 'ส่งออกเป็น HTML',
+    dlgExportMarkdown: 'ส่งออกเป็น Markdown',
     dlgPickExportDir: 'เลือกโฟลเดอร์ส่งออก',
     errUnsupportedExt: 'ไม่รองรับไฟล์ .{ext}',
     errNotFile: 'ไม่ใช่ไฟล์',
@@ -1300,6 +1351,7 @@ const tMain = createI18n({
     menuPageSetup: 'ตั้งค่าหน้ากระดาษ…',
     menuExportPdf: 'ส่งออกเป็น PDF…',
     menuExportHtml: 'ส่งออกเป็น HTML…',
+    menuExportMarkdown: 'ส่งออกเป็น Markdown…',
     menuExportImages: 'ส่งออกเป็นรูปภาพ…',
     menuPrint: 'พิมพ์…',
     menuEdit: 'แก้ไข',
@@ -1319,6 +1371,7 @@ const tMain = createI18n({
     menuZoom100: 'ขนาดจริง (100%)',
     menuPageWidth: 'ความกว้างของหน้า',
     menuWholePage: 'ทั้งหน้า',
+    menuMultiPage: 'หลายหน้า',
     menuAiSidebar: 'แถบข้าง AI',
     menuDarkMode: 'โหมดมืด',
     menuFullscreen: 'เข้าสู่โหมดเต็มหน้าจอ',
@@ -1377,7 +1430,6 @@ const tMain = createI18n({
     menuWindow: 'หน้าต่าง',
     menuHelp: 'วิธีใช้',
     menuShortcuts: 'แป้นพิมพ์ลัด',
-    menuDocsHelp: 'วิธีใช้ GenOffice Docs',
   },
   id: {
     dlgOpenDoc: 'Buka Dokumen',
@@ -1389,6 +1441,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Tetap tutup? Perubahan yang belum disimpan akan hilang.',
     btnCloseAnyway: 'Tetap Tutup',
     autosaveFoundTitle: 'Versi pemulihan ditemukan',
+    autosaveDiskNewer:
+      'Catatan: file di disk diubah setelah salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baru tersebut.',
     autosaveFoundBody:
       'Ada perubahan yang belum disimpan dari sesi terakhir. Pulihkan versi tersimpan otomatis?',
     autosaveRestore: 'Pulihkan',
@@ -1405,6 +1459,7 @@ const tMain = createI18n({
     filterAll: 'Semua File',
     dlgExportPdf: 'Ekspor sebagai PDF',
     dlgExportHtml: 'Ekspor sebagai HTML',
+    dlgExportMarkdown: 'Ekspor sebagai Markdown',
     dlgPickExportDir: 'Pilih Folder Ekspor',
     errUnsupportedExt: 'file .{ext} tidak didukung',
     errNotFile: 'bukan file',
@@ -1432,6 +1487,7 @@ const tMain = createI18n({
     menuPageSetup: 'Penyetelan Halaman…',
     menuExportPdf: 'Ekspor sebagai PDF…',
     menuExportHtml: 'Ekspor sebagai HTML…',
+    menuExportMarkdown: 'Ekspor sebagai Markdown…',
     menuExportImages: 'Ekspor sebagai gambar…',
     menuPrint: 'Cetak…',
     menuEdit: 'Edit',
@@ -1451,6 +1507,7 @@ const tMain = createI18n({
     menuZoom100: 'Ukuran Sebenarnya (100%)',
     menuPageWidth: 'Lebar Halaman',
     menuWholePage: 'Seluruh Halaman',
+    menuMultiPage: 'Beberapa halaman',
     menuAiSidebar: 'Bilah Samping AI',
     menuDarkMode: 'Mode Gelap',
     menuFullscreen: 'Masuk Layar Penuh',
@@ -1509,7 +1566,6 @@ const tMain = createI18n({
     menuWindow: 'Jendela',
     menuHelp: 'Bantuan',
     menuShortcuts: 'Pintasan Papan Ketik',
-    menuDocsHelp: 'Bantuan GenOffice Docs',
   },
   ru: {
     dlgOpenDoc: 'Открыть документ',
@@ -1521,6 +1577,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Всё равно закрыть? Несохранённые изменения будут потеряны.',
     btnCloseAnyway: 'Закрыть всё равно',
     autosaveFoundTitle: 'Найдена восстановленная версия',
+    autosaveDiskNewer:
+      'Внимание: файл на диске был изменён после сохранения этой копии восстановления. Восстановление заменит эти более новые изменения.',
     autosaveFoundBody:
       'Есть несохранённые изменения из прошлого сеанса. Восстановить автосохранённую версию?',
     autosaveRestore: 'Восстановить',
@@ -1537,6 +1595,7 @@ const tMain = createI18n({
     filterAll: 'Все файлы',
     dlgExportPdf: 'Экспорт в PDF',
     dlgExportHtml: 'Экспорт в HTML',
+    dlgExportMarkdown: 'Экспорт в Markdown',
     dlgPickExportDir: 'Выбор папки для экспорта',
     errUnsupportedExt: 'файлы .{ext} не поддерживаются',
     errNotFile: 'не является файлом',
@@ -1565,6 +1624,7 @@ const tMain = createI18n({
     menuPageSetup: 'Параметры страницы…',
     menuExportPdf: 'Экспорт в PDF…',
     menuExportHtml: 'Экспорт в HTML…',
+    menuExportMarkdown: 'Экспорт в Markdown…',
     menuExportImages: 'Экспорт в изображения…',
     menuPrint: 'Печать…',
     menuEdit: 'Правка',
@@ -1584,6 +1644,7 @@ const tMain = createI18n({
     menuZoom100: 'Фактический размер (100%)',
     menuPageWidth: 'По ширине страницы',
     menuWholePage: 'Страница целиком',
+    menuMultiPage: 'Несколько страниц',
     menuAiSidebar: 'Боковая панель ИИ',
     menuDarkMode: 'Темный режим',
     menuFullscreen: 'Перейти в полноэкранный режим',
@@ -1642,7 +1703,6 @@ const tMain = createI18n({
     menuWindow: 'Окно',
     menuHelp: 'Справка',
     menuShortcuts: 'Сочетания клавиш',
-    menuDocsHelp: 'Справка GenOffice Docs',
   },
   ar: {
     dlgOpenDoc: 'فتح مستند',
@@ -1654,6 +1714,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'هل تريد الإغلاق رغم ذلك؟ ستفقد التغييرات غير المحفوظة.',
     btnCloseAnyway: 'إغلاق على أي حال',
     autosaveFoundTitle: 'تم العثور على نسخة مستردة',
+    autosaveDiskNewer:
+      'ملاحظة: تم تعديل الملف على القرص بعد حفظ نسخة الاسترداد هذه. ستؤدي الاستعادة إلى استبدال تلك التغييرات الأحدث.',
     autosaveFoundBody:
       'توجد تغييرات غير محفوظة من الجلسة الأخيرة. هل تريد استعادة النسخة المحفوظة تلقائيًا؟',
     autosaveRestore: 'استعادة',
@@ -1670,6 +1732,7 @@ const tMain = createI18n({
     filterAll: 'كل الملفات',
     dlgExportPdf: 'تصدير بتنسيق PDF',
     dlgExportHtml: 'تصدير بتنسيق HTML',
+    dlgExportMarkdown: 'تصدير بتنسيق Markdown',
     dlgPickExportDir: 'اختيار مجلد التصدير',
     errUnsupportedExt: 'ملفات .{ext} غير مدعومة',
     errNotFile: 'ليس ملفًا',
@@ -1698,6 +1761,7 @@ const tMain = createI18n({
     menuPageSetup: 'إعداد الصفحة…',
     menuExportPdf: 'تصدير بتنسيق PDF…',
     menuExportHtml: 'تصدير بتنسيق HTML…',
+    menuExportMarkdown: 'تصدير بتنسيق Markdown…',
     menuExportImages: 'تصدير كصور…',
     menuPrint: 'طباعة…',
     menuEdit: 'تحرير',
@@ -1717,6 +1781,7 @@ const tMain = createI18n({
     menuZoom100: 'الحجم الفعلي (100%)',
     menuPageWidth: 'عرض الصفحة',
     menuWholePage: 'صفحة كاملة',
+    menuMultiPage: 'صفحات متعددة',
     menuAiSidebar: 'الشريط الجانبي للذكاء الاصطناعي',
     menuDarkMode: 'الوضع الداكن',
     menuFullscreen: 'الدخول إلى ملء الشاشة',
@@ -1775,7 +1840,6 @@ const tMain = createI18n({
     menuWindow: 'نافذة',
     menuHelp: 'تعليمات',
     menuShortcuts: 'اختصارات لوحة المفاتيح',
-    menuDocsHelp: 'تعليمات GenOffice Docs',
   },
   pt: {
     dlgOpenDoc: 'Abrir Documento',
@@ -1787,6 +1851,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Fechar mesmo assim? As alterações não salvas serão perdidas.',
     btnCloseAnyway: 'Fechar mesmo assim',
     autosaveFoundTitle: 'Versão recuperada encontrada',
+    autosaveDiskNewer:
+      'Nota: o arquivo no disco foi modificado depois que esta cópia de recuperação foi salva. Restaurar substituirá essas alterações mais recentes.',
     autosaveFoundBody:
       'Há alterações não salvas da sua última sessão. Restaurar a versão salva automaticamente?',
     autosaveRestore: 'Restaurar',
@@ -1803,6 +1869,7 @@ const tMain = createI18n({
     filterAll: 'Todos os Arquivos',
     dlgExportPdf: 'Exportar como PDF',
     dlgExportHtml: 'Exportar como HTML',
+    dlgExportMarkdown: 'Exportar como Markdown',
     dlgPickExportDir: 'Escolher Pasta de Exportação',
     errUnsupportedExt: 'arquivos .{ext} não são suportados',
     errNotFile: 'não é um arquivo',
@@ -1831,6 +1898,7 @@ const tMain = createI18n({
     menuPageSetup: 'Configurar Página…',
     menuExportPdf: 'Exportar como PDF…',
     menuExportHtml: 'Exportar como HTML…',
+    menuExportMarkdown: 'Exportar como Markdown…',
     menuExportImages: 'Exportar como imagens…',
     menuPrint: 'Imprimir…',
     menuEdit: 'Editar',
@@ -1850,6 +1918,7 @@ const tMain = createI18n({
     menuZoom100: 'Tamanho Real (100%)',
     menuPageWidth: 'Largura da Página',
     menuWholePage: 'Página Inteira',
+    menuMultiPage: 'Várias páginas',
     menuAiSidebar: 'Barra Lateral de IA',
     menuDarkMode: 'Modo Escuro',
     menuFullscreen: 'Entrar em Tela Cheia',
@@ -1908,7 +1977,6 @@ const tMain = createI18n({
     menuWindow: 'Janela',
     menuHelp: 'Ajuda',
     menuShortcuts: 'Atalhos de Teclado',
-    menuDocsHelp: 'Ajuda do GenOffice Docs',
   },
   it: {
     dlgOpenDoc: 'Apri documento',
@@ -1920,6 +1988,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Chiudere comunque? Le modifiche non salvate andranno perse.',
     btnCloseAnyway: 'Chiudi comunque',
     autosaveFoundTitle: 'Trovata versione recuperata',
+    autosaveDiskNewer:
+      'Nota: il file su disco è stato modificato dopo il salvataggio di questa copia di ripristino. Il ripristino sostituirà tali modifiche più recenti.',
     autosaveFoundBody:
       "Ci sono modifiche non salvate dall'ultima sessione. Ripristinare la versione salvata automaticamente?",
     autosaveRestore: 'Ripristina',
@@ -1936,6 +2006,7 @@ const tMain = createI18n({
     filterAll: 'Tutti i file',
     dlgExportPdf: 'Esporta come PDF',
     dlgExportHtml: 'Esporta come HTML',
+    dlgExportMarkdown: 'Esporta come Markdown',
     dlgPickExportDir: 'Scegli la cartella di esportazione',
     errUnsupportedExt: 'i file .{ext} non sono supportati',
     errNotFile: 'non è un file',
@@ -1964,6 +2035,7 @@ const tMain = createI18n({
     menuPageSetup: 'Imposta pagina…',
     menuExportPdf: 'Esporta come PDF…',
     menuExportHtml: 'Esporta come HTML…',
+    menuExportMarkdown: 'Esporta come Markdown…',
     menuExportImages: 'Esporta come immagini…',
     menuPrint: 'Stampa…',
     menuEdit: 'Modifica',
@@ -1983,6 +2055,7 @@ const tMain = createI18n({
     menuZoom100: 'Dimensioni effettive (100%)',
     menuPageWidth: 'Larghezza pagina',
     menuWholePage: 'Pagina intera',
+    menuMultiPage: 'Più pagine',
     menuAiSidebar: 'Barra laterale IA',
     menuDarkMode: 'Modalità scura',
     menuFullscreen: 'Attiva schermo intero',
@@ -2041,7 +2114,6 @@ const tMain = createI18n({
     menuWindow: 'Finestra',
     menuHelp: 'Aiuto',
     menuShortcuts: 'Scelte rapide da tastiera',
-    menuDocsHelp: 'Guida di GenOffice Docs',
   },
   pl: {
     dlgOpenDoc: 'Otwórz dokument',
@@ -2053,6 +2125,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Zamknąć mimo to? Niezapisane zmiany zostaną utracone.',
     btnCloseAnyway: 'Zamknij mimo to',
     autosaveFoundTitle: 'Znaleziono odzyskaną wersję',
+    autosaveDiskNewer:
+      'Uwaga: plik na dysku został zmodyfikowany po zapisaniu tej kopii odzyskiwania. Przywrócenie zastąpi te nowsze zmiany.',
     autosaveFoundBody:
       'Istnieją niezapisane zmiany z ostatniej sesji. Przywrócić wersję zapisaną automatycznie?',
     autosaveRestore: 'Przywróć',
@@ -2069,6 +2143,7 @@ const tMain = createI18n({
     filterAll: 'Wszystkie pliki',
     dlgExportPdf: 'Eksportuj jako PDF',
     dlgExportHtml: 'Eksportuj jako HTML',
+    dlgExportMarkdown: 'Eksportuj jako Markdown',
     dlgPickExportDir: 'Wybierz folder eksportu',
     errUnsupportedExt: 'pliki .{ext} nie są obsługiwane',
     errNotFile: 'to nie jest plik',
@@ -2097,6 +2172,7 @@ const tMain = createI18n({
     menuPageSetup: 'Ustawienia strony…',
     menuExportPdf: 'Eksportuj jako PDF…',
     menuExportHtml: 'Eksportuj jako HTML…',
+    menuExportMarkdown: 'Eksportuj jako Markdown…',
     menuExportImages: 'Eksportuj jako obrazy…',
     menuPrint: 'Drukuj…',
     menuEdit: 'Edycja',
@@ -2116,6 +2192,7 @@ const tMain = createI18n({
     menuZoom100: 'Rzeczywisty rozmiar (100%)',
     menuPageWidth: 'Szerokość strony',
     menuWholePage: 'Cała strona',
+    menuMultiPage: 'Wiele stron',
     menuAiSidebar: 'Pasek boczny AI',
     menuDarkMode: 'Tryb ciemny',
     menuFullscreen: 'Przejdź do pełnego ekranu',
@@ -2174,7 +2251,6 @@ const tMain = createI18n({
     menuWindow: 'Okno',
     menuHelp: 'Pomoc',
     menuShortcuts: 'Skróty klawiaturowe',
-    menuDocsHelp: 'Pomoc GenOffice Docs',
   },
   cs: {
     dlgOpenDoc: 'Otevřít dokument',
@@ -2186,6 +2262,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Přesto zavřít? Neuložené změny budou ztraceny.',
     btnCloseAnyway: 'Přesto zavřít',
     autosaveFoundTitle: 'Nalezena obnovená verze',
+    autosaveDiskNewer:
+      'Poznámka: soubor na disku byl změněn po uložení této kopie pro obnovení. Obnovení tyto novější změny nahradí.',
     autosaveFoundBody:
       'Z poslední relace existují neuložené změny. Obnovit automaticky uloženou verzi?',
     autosaveRestore: 'Obnovit',
@@ -2202,6 +2280,7 @@ const tMain = createI18n({
     filterAll: 'Všechny soubory',
     dlgExportPdf: 'Exportovat jako PDF',
     dlgExportHtml: 'Exportovat jako HTML',
+    dlgExportMarkdown: 'Exportovat jako Markdown',
     dlgPickExportDir: 'Zvolte složku pro export',
     errUnsupportedExt: 'soubory .{ext} nejsou podporovány',
     errNotFile: 'není soubor',
@@ -2230,6 +2309,7 @@ const tMain = createI18n({
     menuPageSetup: 'Vzhled stránky…',
     menuExportPdf: 'Exportovat jako PDF…',
     menuExportHtml: 'Exportovat jako HTML…',
+    menuExportMarkdown: 'Exportovat jako Markdown…',
     menuExportImages: 'Exportovat jako obrázky…',
     menuPrint: 'Tisk…',
     menuEdit: 'Úpravy',
@@ -2249,6 +2329,7 @@ const tMain = createI18n({
     menuZoom100: 'Skutečná velikost (100 %)',
     menuPageWidth: 'Šířka stránky',
     menuWholePage: 'Celá stránka',
+    menuMultiPage: 'Více stránek',
     menuAiSidebar: 'Boční panel AI',
     menuDarkMode: 'Tmavý režim',
     menuFullscreen: 'Přejít na celou obrazovku',
@@ -2307,7 +2388,6 @@ const tMain = createI18n({
     menuWindow: 'Okno',
     menuHelp: 'Nápověda',
     menuShortcuts: 'Klávesové zkratky',
-    menuDocsHelp: 'Nápověda GenOffice Docs',
   },
   nl: {
     dlgOpenDoc: 'Document openen',
@@ -2319,6 +2399,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Toch sluiten? Niet-opgeslagen wijzigingen gaan verloren.',
     btnCloseAnyway: 'Toch sluiten',
     autosaveFoundTitle: 'Herstelde versie gevonden',
+    autosaveDiskNewer:
+      'Let op: het bestand op schijf is gewijzigd nadat deze herstelkopie is opgeslagen. Herstellen vervangt die nieuwere wijzigingen.',
     autosaveFoundBody:
       'Er zijn niet-opgeslagen wijzigingen van uw laatste sessie. De automatisch opgeslagen versie herstellen?',
     autosaveRestore: 'Herstellen',
@@ -2335,6 +2417,7 @@ const tMain = createI18n({
     filterAll: 'Alle bestanden',
     dlgExportPdf: 'Exporteren als PDF',
     dlgExportHtml: 'Exporteren als HTML',
+    dlgExportMarkdown: 'Exporteren als Markdown',
     dlgPickExportDir: 'Exportmap kiezen',
     errUnsupportedExt: '.{ext}-bestanden worden niet ondersteund',
     errNotFile: 'geen bestand',
@@ -2363,6 +2446,7 @@ const tMain = createI18n({
     menuPageSetup: 'Pagina-instelling…',
     menuExportPdf: 'Exporteren als PDF…',
     menuExportHtml: 'Exporteren als HTML…',
+    menuExportMarkdown: 'Exporteren als Markdown…',
     menuExportImages: 'Exporteren als afbeeldingen…',
     menuPrint: 'Afdrukken…',
     menuEdit: 'Bewerken',
@@ -2382,6 +2466,7 @@ const tMain = createI18n({
     menuZoom100: 'Ware grootte (100%)',
     menuPageWidth: 'Paginabreedte',
     menuWholePage: 'Hele pagina',
+    menuMultiPage: "Meerdere pagina's",
     menuAiSidebar: 'AI-zijbalk',
     menuDarkMode: 'Donkere modus',
     menuFullscreen: 'Schermvullende weergave',
@@ -2440,7 +2525,6 @@ const tMain = createI18n({
     menuWindow: 'Venster',
     menuHelp: 'Help',
     menuShortcuts: 'Sneltoetsen',
-    menuDocsHelp: 'GenOffice Docs Help',
   },
   ms: {
     dlgOpenDoc: 'Buka Dokumen',
@@ -2452,6 +2536,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'Tutup juga? Perubahan yang belum disimpan akan hilang.',
     btnCloseAnyway: 'Tutup Juga',
     autosaveFoundTitle: 'Versi pulihan ditemui',
+    autosaveDiskNewer:
+      'Nota: fail pada cakera telah diubah suai selepas salinan pemulihan ini disimpan. Memulihkan akan menggantikan perubahan yang lebih baharu itu.',
     autosaveFoundBody:
       'Terdapat perubahan yang belum disimpan daripada sesi terakhir anda. Pulihkan versi yang disimpan secara automatik?',
     autosaveRestore: 'Pulihkan',
@@ -2468,6 +2554,7 @@ const tMain = createI18n({
     filterAll: 'Semua Fail',
     dlgExportPdf: 'Eksport sebagai PDF',
     dlgExportHtml: 'Eksport sebagai HTML',
+    dlgExportMarkdown: 'Eksport sebagai Markdown',
     dlgPickExportDir: 'Pilih Folder Eksport',
     errUnsupportedExt: 'fail .{ext} tidak disokong',
     errNotFile: 'bukan fail',
@@ -2496,6 +2583,7 @@ const tMain = createI18n({
     menuPageSetup: 'Persediaan Halaman…',
     menuExportPdf: 'Eksport sebagai PDF…',
     menuExportHtml: 'Eksport sebagai HTML…',
+    menuExportMarkdown: 'Eksport sebagai Markdown…',
     menuExportImages: 'Eksport sebagai imej…',
     menuPrint: 'Cetak…',
     menuEdit: 'Edit',
@@ -2515,6 +2603,7 @@ const tMain = createI18n({
     menuZoom100: 'Saiz Sebenar (100%)',
     menuPageWidth: 'Lebar Halaman',
     menuWholePage: 'Seluruh Halaman',
+    menuMultiPage: 'Beberapa halaman',
     menuAiSidebar: 'Bar Sisi AI',
     menuDarkMode: 'Mod Gelap',
     menuFullscreen: 'Masuk Skrin Penuh',
@@ -2573,7 +2662,6 @@ const tMain = createI18n({
     menuWindow: 'Tetingkap',
     menuHelp: 'Bantuan',
     menuShortcuts: 'Pintasan Papan Kekunci',
-    menuDocsHelp: 'Bantuan GenOffice Docs',
   },
   he: {
     dlgOpenDoc: 'פתיחת מסמך',
@@ -2585,6 +2673,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'לסגור בכל זאת? שינויים שלא נשמרו יאבדו.',
     btnCloseAnyway: 'סגור בכל זאת',
     autosaveFoundTitle: 'נמצאה גרסה משוחזרת',
+    autosaveDiskNewer:
+      'שים לב: הקובץ בדיסק שונה לאחר שמירת עותק השחזור הזה. שחזור יחליף את השינויים החדשים יותר.',
     autosaveFoundBody: 'קיימים שינויים שלא נשמרו מהפעלה הקודמת. לשחזר את הגרסה שנשמרה אוטומטית?',
     autosaveRestore: 'שחזר',
     autosaveDiscard: 'התעלם',
@@ -2600,6 +2690,7 @@ const tMain = createI18n({
     filterAll: 'כל הקבצים',
     dlgExportPdf: 'ייצוא כ-PDF',
     dlgExportHtml: 'ייצוא כ-HTML',
+    dlgExportMarkdown: 'ייצוא כ-Markdown',
     dlgPickExportDir: 'בחירת תיקיית ייצוא',
     errUnsupportedExt: 'קובצי .{ext} אינם נתמכים',
     errNotFile: 'אינו קובץ',
@@ -2627,6 +2718,7 @@ const tMain = createI18n({
     menuPageSetup: 'הגדרת עמוד…',
     menuExportPdf: 'ייצוא כ-PDF…',
     menuExportHtml: 'ייצוא כ-HTML…',
+    menuExportMarkdown: 'ייצוא כ-Markdown…',
     menuExportImages: 'ייצוא כתמונות…',
     menuPrint: 'הדפסה…',
     menuEdit: 'עריכה',
@@ -2646,6 +2738,7 @@ const tMain = createI18n({
     menuZoom100: 'גודל אמיתי (100%)',
     menuPageWidth: 'רוחב עמוד',
     menuWholePage: 'עמוד שלם',
+    menuMultiPage: 'עמודים מרובים',
     menuAiSidebar: 'סרגל צד AI',
     menuDarkMode: 'מצב כהה',
     menuFullscreen: 'מעבר למסך מלא',
@@ -2704,7 +2797,6 @@ const tMain = createI18n({
     menuWindow: 'חלון',
     menuHelp: 'עזרה',
     menuShortcuts: 'קיצורי מקלדת',
-    menuDocsHelp: 'עזרה של GenOffice Docs',
   },
   hi: {
     dlgOpenDoc: 'दस्तावेज़ खोलें',
@@ -2716,6 +2808,8 @@ const tMain = createI18n({
     closeNoReplyDetail: 'फिर भी बंद करें? सहेजे न गए बदलाव खो जाएँगे।',
     btnCloseAnyway: 'फिर भी बंद करें',
     autosaveFoundTitle: 'पुनर्प्राप्त संस्करण मिला',
+    autosaveDiskNewer:
+      'ध्यान दें: यह पुनर्प्राप्ति प्रति सहेजे जाने के बाद डिस्क पर फ़ाइल में बदलाव किया गया है। पुनर्स्थापित करने पर वे नए बदलाव बदल दिए जाएँगे।',
     autosaveFoundBody:
       'आपके पिछले सत्र से सहेजे नहीं गए परिवर्तन हैं। स्वतः सहेजा गया संस्करण पुनर्स्थापित करें?',
     autosaveRestore: 'पुनर्स्थापित करें',
@@ -2732,6 +2826,7 @@ const tMain = createI18n({
     filterAll: 'सभी फ़ाइलें',
     dlgExportPdf: 'PDF के रूप में निर्यात करें',
     dlgExportHtml: 'HTML के रूप में निर्यात करें',
+    dlgExportMarkdown: 'Markdown के रूप में निर्यात करें',
     dlgPickExportDir: 'निर्यात फ़ोल्डर चुनें',
     errUnsupportedExt: '.{ext} फ़ाइलें समर्थित नहीं हैं',
     errNotFile: 'फ़ाइल नहीं है',
@@ -2760,6 +2855,7 @@ const tMain = createI18n({
     menuPageSetup: 'पृष्ठ सेटअप…',
     menuExportPdf: 'PDF के रूप में निर्यात करें…',
     menuExportHtml: 'HTML के रूप में निर्यात करें…',
+    menuExportMarkdown: 'Markdown के रूप में निर्यात करें…',
     menuExportImages: 'छवियों के रूप में निर्यात…',
     menuPrint: 'प्रिंट करें…',
     menuEdit: 'संपादन',
@@ -2779,6 +2875,7 @@ const tMain = createI18n({
     menuZoom100: 'वास्तविक आकार (100%)',
     menuPageWidth: 'पृष्ठ चौड़ाई',
     menuWholePage: 'पूरा पृष्ठ',
+    menuMultiPage: 'एकाधिक पृष्ठ',
     menuAiSidebar: 'AI साइडबार',
     menuDarkMode: 'डार्क मोड',
     menuFullscreen: 'पूर्ण स्क्रीन में जाएँ',
@@ -2837,7 +2934,6 @@ const tMain = createI18n({
     menuWindow: 'विंडो',
     menuHelp: 'सहायता',
     menuShortcuts: 'कीबोर्ड शॉर्टकट',
-    menuDocsHelp: 'GenOffice Docs सहायता',
   },
   'zh-TW': {
     dlgOpenDoc: '開啟文件',
@@ -2849,6 +2945,7 @@ const tMain = createI18n({
     closeNoReplyDetail: '仍要關閉嗎?未儲存的變更將遺失。',
     btnCloseAnyway: '仍要關閉',
     autosaveFoundTitle: '發現自動復原版本',
+    autosaveDiskNewer: '注意：此復原副本儲存後，磁碟上的檔案又被修改過。復原將取代這些較新的變更。',
     autosaveFoundBody: '上次工作階段有未儲存的變更。要復原自動儲存的版本嗎?',
     autosaveRestore: '復原',
     autosaveDiscard: '放棄',
@@ -2864,6 +2961,7 @@ const tMain = createI18n({
     filterAll: '所有檔案',
     dlgExportPdf: '匯出為 PDF',
     dlgExportHtml: '匯出為 HTML',
+    dlgExportMarkdown: '匯出為 Markdown',
     dlgPickExportDir: '選擇匯出目錄',
     errUnsupportedExt: '暫不支援 .{ext} 類型',
     errNotFile: '不是檔案',
@@ -2890,6 +2988,7 @@ const tMain = createI18n({
     menuPageSetup: '版面設定…',
     menuExportPdf: '匯出為 PDF…',
     menuExportHtml: '匯出為 HTML…',
+    menuExportMarkdown: '匯出為 Markdown…',
     menuExportImages: '匯出為圖片…',
     menuPrint: '列印…',
     menuEdit: '編輯',
@@ -2909,6 +3008,7 @@ const tMain = createI18n({
     menuZoom100: '實際大小 (100%)',
     menuPageWidth: '頁面寬度',
     menuWholePage: '整頁',
+    menuMultiPage: '多頁',
     menuAiSidebar: 'AI 側邊欄',
     menuDarkMode: '深色模式',
     menuFullscreen: '進入全螢幕',
@@ -2967,7 +3067,6 @@ const tMain = createI18n({
     menuWindow: '視窗',
     menuHelp: '說明',
     menuShortcuts: '鍵盤快速鍵',
-    menuDocsHelp: 'GenOffice Docs 說明',
   },
 })
 const tm = (key: Parameters<typeof tMain>[1], params?: Parameters<typeof tMain>[2]) =>
@@ -3211,17 +3310,14 @@ export function replaceRecentFile(oldPath: string, newPath: string): void {
     RECENT_PATH(),
     recent.map((p) => (p === oldPath ? newPath : p)),
   )
-  const starred = readJson<string[]>(STARRED_PATH(), [])
-  if (starred.includes(oldPath)) {
-    writeJsonAtomic(
-      STARRED_PATH(),
-      starred.map((p) => (p === oldPath ? newPath : p)),
-    )
-  }
+  const renamed = renameStarredItem(readStarredItems(STARRED_PATH()), oldPath, newPath)
+  if (renamed) writeStarredItems(STARRED_PATH(), renamed)
   buildDocsMenu()
 }
 
 // ---- starred files (home screen favorites) ----
+// the store lives in starred-files.ts (pure, unit-tested); legacy flat
+// string[] files migrate to the versioned shape on the first write
 
 const STARRED_PATH = () => userDataPath('starred.json')
 
@@ -3229,25 +3325,37 @@ const STARRED_PATH = () => userDataPath('starred.json')
  *  unavailable starred file must keep its star and its Starred-view row —
  *  filtering here also desynced the star state shown on recents rows (r158) */
 export function readStarredFiles(): string[] {
-  return readJson<string[]>(STARRED_PATH(), [])
+  return readStarredItems(STARRED_PATH()).map((item) => item.path)
 }
 
 export function toggleStarredFile(filePath: string): void {
-  const starred = readJson<string[]>(STARRED_PATH(), [])
-  const next = starred.includes(filePath)
-    ? starred.filter((p) => p !== filePath)
-    : [...starred, filePath]
-  writeJsonAtomic(STARRED_PATH(), next)
+  writeStarredItems(STARRED_PATH(), toggleStarredItem(readStarredItems(STARRED_PATH()), filePath))
 }
 
-/** Bulk unstar (in-app delete, or removing an unavailable entry from the
- *  recents list): the star must not outlive the row it pointed at (r158) */
+/** Bulk unstar (in-app delete, bulk unfollow from the Starred view, or
+ *  removing an unavailable entry from the recents list): the star must not
+ *  outlive the row it pointed at (r158) */
 export function removeStarredFiles(filePaths: string[]): void {
-  const drop = new Set(filePaths)
-  if (drop.size === 0) return
-  const starred = readJson<string[]>(STARRED_PATH(), [])
-  const next = starred.filter((p) => !drop.has(p))
-  if (next.length !== starred.length) writeJsonAtomic(STARRED_PATH(), next)
+  const next = dropStarredItems(readStarredItems(STARRED_PATH()), filePaths)
+  if (next) writeStarredItems(STARRED_PATH(), next)
+}
+
+/** put each starred path into `group` (null = back to ungrouped). Groups have
+ *  no separate list: a group exists while an entry carries its name, so
+ *  creating one is assigning its first file and emptying one is implicit. */
+export function setStarredGroup(filePaths: string[], group: string | null): void {
+  const next = assignStarredGroup(readStarredItems(STARRED_PATH()), filePaths, group)
+  if (next) writeStarredItems(STARRED_PATH(), next)
+}
+
+/** group names that currently have at least one starred file, first-seen order */
+export function readStarredGroups(): string[] {
+  return starredGroupNames(readStarredItems(STARRED_PATH()))
+}
+
+/** starred path → its group (ungrouped paths absent); feeds the home IPC entries */
+export function readStarredGroupMap(): Map<string, string> {
+  return starredGroupMap(readStarredItems(STARRED_PATH()))
 }
 
 // ---- original archive (pass-through base: original file archived by content hash) ----
@@ -3469,23 +3577,18 @@ interface MaybeRecoveredDocBytes {
   recovered: boolean
 }
 
-/** On open, if a recovery copy newer than the original exists, ask whether to restore
- * (still points at the original path; only save persists it). */
+/** On open, if a recovery copy exists, ask whether to restore (still points at the
+ * original path; only save persists it). A newer original does not discard the copy:
+ * it may hold the only pre-crash edits, so the prompt just says the disk file is newer. */
 async function maybeRecoverDocBytes(
   filePath: string,
   original: Buffer,
 ): Promise<MaybeRecoveredDocBytes> {
   const asPath = recoveryPathFor(filePath)
+  let diskNewer: boolean
   try {
     if (!existsSync(asPath)) return { bytes: original, recovered: false }
-    if (statSync(asPath).mtimeMs <= statSync(filePath).mtimeMs) {
-      // a crashed partial write bumps mtime yet corrupts the file — keep the copy
-      // then (an encrypted original is a CFB container, not a zip: intact too)
-      if (looksLikeZip(original) || isEncryptedDocx(original)) {
-        unlinkSync(asPath)
-        return { bytes: original, recovered: false }
-      }
-    }
+    diskNewer = recoveryCopyDiskNewer(statSync(asPath).mtimeMs, statSync(filePath).mtimeMs)
   } catch {
     return { bytes: original, recovered: false }
   }
@@ -3495,7 +3598,9 @@ async function maybeRecoverDocBytes(
     defaultId: 0,
     cancelId: 1,
     message: tm('autosaveFoundTitle'),
-    detail: tm('autosaveFoundBody'),
+    detail: diskNewer
+      ? `${tm('autosaveFoundBody')}\n\n${tm('autosaveDiskNewer')}`
+      : tm('autosaveFoundBody'),
   }
   const parent = BrowserWindow.getFocusedWindow() ?? mainWindow
   const r =
@@ -3802,6 +3907,9 @@ export function registerAiIpc(): void {
     },
   )
 
+  // a 401 on the gsk key opens the device-code login once (genoffice-auth recovery)
+  setGenofficeLoginOpener((url) => void shell.openExternal(url))
+
   ipcMain.handle('ai:gsk-login', () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
@@ -3846,9 +3954,14 @@ export function registerAiIpc(): void {
     const provider = settings.provider
     let config = settings.providers?.[provider]
     // the genspark key never enters the settings file; requests take it from the gsk login state
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
@@ -3875,24 +3988,55 @@ export function registerAiIpc(): void {
       lastPing = now
       send({ requestId, type: 'ping' })
     }
+    const trace = startAiTrace({
+      requestId,
+      sessionId: request.sessionId,
+      source: event.sender.getURL(),
+      provider,
+      model: config.model,
+      maxTokens,
+      system,
+      messages,
+      tools,
+    })
     try {
       let stopReason: string | undefined
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
         ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onReasoningDelta: (text) => send({ requestId, type: 'reasoning', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onDelta: (text) => {
+          trace?.onDelta(text)
+          send({ requestId, type: 'delta', text })
+        },
+        onReasoningDelta: (text) => {
+          trace?.onReasoningDelta(text)
+          send({ requestId, type: 'reasoning', text })
+        },
+        onToolCall: (toolCall) => {
+          trace?.onToolCall(toolCall)
+          send({ requestId, type: 'tool-call', toolCall })
+        },
         onActivity: ping,
         onStopReason: (reason) => {
           stopReason = reason
+          trace?.onStopReason(reason)
+        },
+        onUsage: (usage) => {
+          trace?.onUsage(usage)
+          send({ requestId, type: 'usage', usage })
         },
       })
+      trace?.finish()
       send({ requestId, type: 'done', stopReason })
     } catch (err) {
+      trace?.finish(
+        controller.signal.aborted ? 'aborted' : err instanceof Error ? err.message : String(err),
+      )
       if (controller.signal.aborted) {
         send({ requestId, type: 'done' })
       } else {
+        // an expired/revoked key drops to signed-out so the inline sign-in button shows
+        noteGskCallFailure(gskKey, err)
         send({
           requestId,
           type: 'error',
@@ -4036,9 +4180,14 @@ export function registerAiIpc(): void {
     const { system, user } = request
     const provider = settings.provider
     let config = settings.providers?.[provider]
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
     if (!config || (provider !== 'codex' && !config.apiKey)) {
       return {
         ok: false,
@@ -4053,8 +4202,10 @@ export function registerAiIpc(): void {
       if (!result.ok && isAiOverloadedError(result.error)) {
         return { ok: false, error: tm('errAiBusy') }
       }
+      if (!result.ok) noteGskCallFailure(gskKey, result.error)
       return result
     } catch (err) {
+      noteGskCallFailure(gskKey, err)
       return { ok: false, error: isAiOverloadedError(err) ? tm('errAiBusy') : String(err) }
     }
   })
@@ -4996,18 +5147,30 @@ export function registerDocsIpc(): void {
   // renderer print scale (inverse of the preview's print zoom, see print-zoom.ts)
   // Infinity passes a `> 0` check, so require finiteness before handing it to Chromium.
   const pdfScale = (scale?: number) => printScaleOption(scale)
+  const withInternalLinks = async (data: Buffer, links: unknown): Promise<Buffer> => {
+    if (!Array.isArray(links) || links.length === 0) return data
+    const { PDFDocument } = await import('pdf-lib')
+    const pdf = await PDFDocument.load(data)
+    if (addPdfInternalLinks(pdf, links) === 0) return data
+    return Buffer.from(await pdf.save())
+  }
   const printScale = (scale?: number) =>
     typeof scale === 'number' && Number.isFinite(scale) && scale > 0 && scale !== 1
       ? { scaleFactor: Math.round(scale * 100) }
       : {}
 
-  ipcMain.handle('docs:print', async (event, scale?: number) => {
+  ipcMain.handle('docs:printers', async (event) => {
+    const printers = await event.sender.getPrintersAsync()
+    return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
+  })
+
+  ipcMain.handle('docs:print', async (event, scale?: number, job?: unknown) => {
     // print the calling tab's own content; zero margins — the docx page padding provides them.
-    // Resolves when the system dialog is dismissed; the print dialog stays open on cancel
-    // (ok=false without error) and surfaces real failures.
+    // Resolves when the system dialog is dismissed (or the silent job is queued); the print
+    // dialog stays open on cancel (ok=false without error) and surfaces real failures.
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
       event.sender.print(
-        { margins: { marginType: 'none' }, ...printScale(scale) },
+        { margins: { marginType: 'none' }, ...printScale(scale), ...printJobOptions(job) },
         (success, failureReason) => {
           resolve({
             ok: success,
@@ -5027,6 +5190,7 @@ export function registerDocsIpc(): void {
       pageHeightTwips: number,
       outPath?: string,
       scale?: number,
+      links?: unknown,
     ) => {
       // Renderer-supplied page geometry reaches Chromium printToPDF verbatim:
       // reject non-finite/out-of-range sizes (0.1in..50in) and scales (0.1..5),
@@ -5051,7 +5215,7 @@ export function registerDocsIpc(): void {
         allowPdfWrite(event.sender.id, filePath)
       }
       try {
-        const data = await event.sender.printToPDF({
+        const printed = await event.sender.printToPDF({
           printBackground: true,
           // custom pageSize is in inches; the docx page padding provides the margins
           pageSize: {
@@ -5061,6 +5225,7 @@ export function registerDocsIpc(): void {
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
           ...pdfScale(scale),
         })
+        const data = await withInternalLinks(printed, links)
         await atomicWriteFile(filePath, data)
         if (!isImageExportTemp(event.sender.id, filePath)) openGeneratedFile(filePath)
         return { ok: true, path: filePath }
@@ -5167,6 +5332,49 @@ export function registerDocsIpc(): void {
     },
   )
 
+  ipcMain.handle(
+    'docs:export-markdown',
+    async (
+      event,
+      defaultName: string,
+      markdown: string,
+      images: MarkdownImage[],
+      outPath?: string,
+    ) => {
+      if (typeof markdown !== 'string' || !markdown) return { ok: false, error: 'empty document' }
+      if (!Array.isArray(images)) return { ok: false, error: 'bad image list' }
+      let filePath = outPath ?? null
+      if (filePath && !canPdfWrite(event.sender.id, filePath)) {
+        return { ok: false, error: 'export target is not an authorized path' }
+      }
+      if (!filePath) {
+        const result = await saveDialog(event, {
+          title: tm('dlgExportMarkdown'),
+          defaultPath: defaultName.replace(/\.docx$/i, '') + '.md',
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: false }
+        filePath = result.filePath
+        allowPdfWrite(event.sender.id, filePath)
+      }
+      try {
+        const written = await writeMarkdownMedia(filePath, images)
+        // the Markdown destination was escaped before the swap: parentheses must not survive it
+        const mediaDir = encodeURIComponent(
+          basename(filePath).replace(/\.md$/i, '') + '_files',
+        ).replace(/[()]/g, (c) => (c === '(' ? '%28' : '%29'))
+        await atomicWriteFile(
+          filePath,
+          Buffer.from(markdown.split(`${MARKDOWN_MEDIA_DIR_TOKEN}/`).join(`${mediaDir}/`), 'utf8'),
+        )
+        openGeneratedFile(filePath)
+        return { ok: true, path: filePath, imagesDropped: images.length - written }
+      } catch (err) {
+        return { ok: false, error: String(err), path: filePath }
+      }
+    },
+  )
+
   // mixed paper-size export: the renderer prints group by group per size (other pages hidden via CSS); this produces one group's bytes
   ipcMain.handle(
     'docs:print-pdf-buffer',
@@ -5196,7 +5404,13 @@ export function registerDocsIpc(): void {
   // merge grouped PDF fragments into one file in page order (pdf-lib)
   ipcMain.handle(
     'docs:save-merged-pdf',
-    async (event, defaultName: string, base64Parts: string[], outPath?: string) => {
+    async (
+      event,
+      defaultName: string,
+      base64Parts: string[],
+      outPath?: string,
+      links?: unknown,
+    ) => {
       let filePath = outPath ?? null
       if (filePath && !canPdfWrite(event.sender.id, filePath)) {
         return { ok: false, error: 'export target is not an authorized path' }
@@ -5219,6 +5433,7 @@ export function registerDocsIpc(): void {
           const pages = await merged.copyPages(part, part.getPageIndices())
           for (const page of pages) merged.addPage(page)
         }
+        if (Array.isArray(links) && links.length > 0) addPdfInternalLinks(merged, links)
         await atomicWriteFile(filePath, Buffer.from(await merged.save()))
         if (!isImageExportTemp(event.sender.id, filePath)) openGeneratedFile(filePath)
         return { ok: true, path: filePath }
@@ -5281,6 +5496,30 @@ export function setDocsShellHooks(hooks: DocsShellHooks | null): void {
 /** After writing an exported/AI-generated file: open it in the right tab
  * (shell) or reveal it in the folder (standalone). Tab-opening failure must
  * not report the write itself as failed — the file is already persisted. */
+/**
+ * Pictures of a Markdown export land in `<file>_files/` next to it, like a
+ * browser's "save page" folder. Returns how many were written; unreadable
+ * sources are skipped and the reference in the Markdown dangles.
+ */
+async function writeMarkdownMedia(mdPath: string, images: MarkdownImage[]): Promise<number> {
+  if (images.length === 0) return 0
+  const dir = join(dirname(mdPath), basename(mdPath).replace(/\.md$/i, '') + '_files')
+  let written = 0
+  for (const img of images) {
+    if (typeof img?.name !== 'string' || !/^image\d+\.\w+$/.test(img.name)) continue
+    if (typeof img.src !== 'string') continue
+    const data = /^data:image\/[\w.+-]+;base64,(.*)$/s.exec(img.src)
+    const body = data
+      ? Buffer.from(data[1], 'base64')
+      : ((await readLazyMedia(img.src).catch(() => null))?.body ?? null)
+    if (!body || body.length === 0) continue
+    if (written === 0) await mkdir(dir, { recursive: true })
+    await atomicWriteFile(join(dir, img.name), body)
+    written++
+  }
+  return written
+}
+
 function openGeneratedFile(path: string): void {
   // Headless export has no tab strip and no user: revealing the file in Finder
   // would be the only visible effect of a run that must stay silent.
@@ -5470,6 +5709,7 @@ export function buildDocsMenu(): void {
         { label: tm('menuPageSetup'), click: () => sendCommand('page-setup') },
         { label: tm('menuExportPdf'), click: () => sendCommand('export-pdf') },
         { label: tm('menuExportHtml'), click: () => sendCommand('export-html') },
+        { label: tm('menuExportMarkdown'), click: () => sendCommand('export-markdown') },
         { label: tm('menuExportImages'), click: () => sendCommand('export-images') },
         {
           label: tm('menuPrint'),
@@ -5536,6 +5776,7 @@ export function buildDocsMenu(): void {
             })),
             { label: tm('menuPageWidth'), click: () => sendCommand('zoom-page-width') },
             { label: tm('menuWholePage'), click: () => sendCommand('zoom-whole-page') },
+            { label: tm('menuMultiPage'), click: () => sendCommand('zoom-multi-page') },
           ],
         },
         { type: 'separator' },
@@ -5714,8 +5955,6 @@ export function buildDocsMenu(): void {
           accelerator: 'CmdOrCtrl+/',
           click: () => sendCommand('shortcuts'),
         },
-        { type: 'separator' },
-        { label: tm('menuDocsHelp'), enabled: false },
         { type: 'separator' },
         checkUpdatesMenuItem(appMenuLabels(getUiLang())),
         aboutMenuItem(appMenuLabels(getUiLang())),
@@ -6086,7 +6325,24 @@ export function startDocsStandalone(): void {
   // AI_OFFICE_USER_DATA: E2E/screenshot runs isolate userData (and the
   // single-instance lock) so parallel automation sessions don't evict each other
   if (process.env.AI_OFFICE_USER_DATA) app.setPath('userData', process.env.AI_OFFICE_USER_DATA)
-  else if (isDev) app.setPath('userData', join(app.getPath('appData'), 'GenOffice Docs Dev'))
+  else if (isDev) {
+    // "GenOffice Docs Dev" carried a space, against the XDG one-token
+    // convention (genoffice#1817); move the old profile once, as the shell does.
+    const appData = app.getPath('appData')
+    const devDir = join(appData, 'GenOffice-Docs-Dev')
+    const oldDevDir = join(appData, 'GenOffice Docs Dev')
+    let userData = devDir
+    if (existsSync(oldDevDir) && !existsSync(devDir)) {
+      try {
+        renameSync(oldDevDir, devDir)
+      } catch {
+        // another dev instance holds the directory: keep using the old one so
+        // the profile is not lost and the move is retried on the next launch
+        userData = oldDevDir
+      }
+    }
+    app.setPath('userData', userData)
+  }
 
   const hasSingleInstanceLock = app.requestSingleInstanceLock()
   if (!hasSingleInstanceLock) {

@@ -18,8 +18,10 @@ import { ParagraphDialog } from '../src/renderer/components/ParagraphDialog'
 import { rulerTicks } from '../src/renderer/components/Ruler'
 import {
   firstLineFromSpecial,
+  pickByUnit,
   pickSpecial,
   specialFromFirstLine,
+  specialIndentAttrs,
 } from '../src/renderer/components/paragraph-special-indent'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { LocaleProvider, setModuleLang } from '../src/renderer/i18n/locale'
@@ -311,6 +313,53 @@ describe('Paragraph dialog Special indents', () => {
       by: 300,
     })
     expect(pickSpecial({ special: 'hanging', by: 300 }, 'none')).toEqual({ special: 'none', by: 0 })
+  })
+
+  it('character-unit By field (#1892): round-trips w:firstLineChars and seeds 2 chars', () => {
+    // a parsed character indent loads the By field in character units
+    expect(specialFromFirstLine(420, 200)).toEqual({
+      special: 'firstLine',
+      by: 200,
+      unit: 'chars',
+    })
+    // applying it resolves the twips twin against the char unit (240 tw = 12pt)
+    expect(specialIndentAttrs({ special: 'firstLine', by: 200, unit: 'chars' }, 240)).toEqual({
+      indentFirstLine: 480,
+      indentFirstLineChars: 200,
+    })
+    // an absolute By writes twips and clears the character unit
+    expect(specialIndentAttrs({ special: 'firstLine', by: 720 }, 240)).toEqual({
+      indentFirstLine: 720,
+      indentFirstLineChars: null,
+    })
+    expect(specialIndentAttrs({ special: 'none', by: 0, unit: 'chars' }, 240)).toEqual({
+      indentFirstLine: null,
+      indentFirstLineChars: null,
+    })
+    expect(specialIndentAttrs({ special: 'hanging', by: 360 }, 240)).toEqual({
+      indentFirstLine: -360,
+      indentFirstLineChars: null,
+    })
+    // unit switches seed their defaults; a character-unit pick of (none) seeds two
+    expect(pickByUnit({ special: 'none', by: 0 }, 'chars')).toEqual({
+      special: 'none',
+      by: 200,
+      unit: 'chars',
+    })
+    expect(pickByUnit({ special: 'firstLine', by: 200, unit: 'chars' }, 'cm')).toEqual({
+      special: 'firstLine',
+      by: 720,
+    })
+    expect(pickSpecial({ special: 'none', by: 0, unit: 'chars' }, 'firstLine')).toEqual({
+      special: 'firstLine',
+      by: 200,
+      unit: 'chars',
+    })
+    // hanging has no character unit: the pick falls back to the absolute default
+    expect(pickSpecial({ special: 'none', by: 0, unit: 'chars' }, 'hanging')).toEqual({
+      special: 'hanging',
+      by: 720,
+    })
   })
 
   it('writes a hanging indent and a negative left indent through the dialog', () => {

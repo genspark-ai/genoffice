@@ -4,6 +4,7 @@ import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { executeTool } from '../src/renderer/ai/tools'
+import { runUiOps } from '../src/renderer/ai/ops'
 
 /**
  * Indent edits on paragraphs laid out with character-unit indents
@@ -26,7 +27,10 @@ const BODY =
   // pPr-less: the style's indent alone
   '<w:p><w:r><w:t>plain body paragraph</w:t></w:r></w:p>' +
   // raw pPr without w:ind
-  '<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>justified body paragraph</w:t></w:r></w:p>'
+  '<w:p><w:pPr><w:jc w:val="both"/></w:pPr><w:r><w:t>justified body paragraph</w:t></w:r></w:p>' +
+  // the paragraph's own character-unit indent (12pt text: 2 chars = 480 twips)
+  '<w:p><w:pPr><w:ind w:firstLineChars="200" w:firstLine="480"/></w:pPr>' +
+  '<w:r><w:t>direct two-character paragraph</w:t></w:r></w:p>'
 const NUM_IDS = { bullet: null, ordered: null }
 
 const editors: Editor[] = []
@@ -127,5 +131,49 @@ describe('character-unit indents: saving an indent edit', () => {
       indentFirstLine: 480,
       charIndents: { firstLine: 200 },
     })
+  })
+
+  it('the dialog’s character-unit edit rewrites w:firstLineChars and survives a reload', async () => {
+    const { editor, parsed } = await openEditor()
+    // the Paragraph dialog applies the char unit with its resolved twips twin
+    // (3 chars at 12pt = 720 twips) through the UI op setParagraphAttrs
+    runUiOps(editor, [
+      {
+        op: 'setParagraphAttrs',
+        target: { blockIndexes: [2] },
+        attrs: { indentFirstLineChars: 300, indentFirstLine: 720 },
+      },
+    ])
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.internal.documentXml).toContain(
+      '<w:ind w:firstLineChars="300" w:firstLine="720"/>',
+    )
+    expect(reparsed.blocks[2].format).toMatchObject({
+      indentFirstLine: 720,
+      charIndents: { firstLine: 300 },
+      directCharIndents: { firstLine: 300 },
+    })
+  })
+})
+
+describe('character-unit indents: a document nobody edited', () => {
+  it('leaves a style-inherited paragraph byte-identical', async () => {
+    // Normal carries w:firstLineChars="200"; a pPr-less paragraph inherits it.
+    // The parsed block holds the inherited value, but the document carries no
+    // direct indent — so the save plan has to compare direct values on both
+    // sides, or the block looks edited and comes back with a frozen indent.
+    const { editor, parsed } = await openEditor()
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount, 'nothing was edited, so nothing may be regenerated').toBe(0)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const reparsed = await parseDocx(saved)
+    const xml = reparsed.internal.documentXml
+    // the paragraph is pPr-less in the source and must come back that way
+    expect(xml).toContain('<w:p><w:r><w:t>plain body paragraph</w:t></w:r></w:p>')
+    // and the style's own indent must not have been frozen onto it
+    expect(xml).not.toContain('<w:ind w:firstLine="480"/>')
   })
 })

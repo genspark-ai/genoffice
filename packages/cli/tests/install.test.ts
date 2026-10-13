@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   defaultCandidateDirs,
+  homebrewBinDirs,
   inspectCliLink,
   installCliLink,
   isOurLauncher,
@@ -196,7 +197,7 @@ describe('installCliLink', () => {
       join(home, '.local', 'bin'),
     ])
     expect(defaultCandidateDirs('darwin', { HOME: home, XDG_BIN_HOME: join(home, 'bin') })).toEqual(
-      ['/usr/local/bin', '/opt/homebrew/bin', join(home, 'bin'), join(home, '.local', 'bin')],
+      ['/usr/local/bin', join(home, 'bin'), join(home, '.local', 'bin')],
     )
     expect(defaultCandidateDirs('linux', { HOME: home, XDG_BIN_HOME: 'relative/bin' })).toEqual([
       '/usr/local/bin',
@@ -297,5 +298,86 @@ describe('installCliLink', () => {
     })
     expect(missing.status).toBe('missing')
     expect(missing.manual).toContain('SetEnvironmentVariable')
+  })
+})
+
+describe('the Homebrew prefix is never written uninvited (genoffice#1914)', () => {
+  const none = () => false
+
+  it('never offers /opt/homebrew/bin, and keeps the user directory', () => {
+    const home = tempDir()
+    const xdg = join(home, 'bin')
+    for (const platform of ['darwin', 'linux'] as const) {
+      const dirs = defaultCandidateDirs(platform, { HOME: home, XDG_BIN_HOME: xdg }, none)
+      expect(
+        dirs.some((d) => /homebrew/i.test(d)),
+        `${platform}: ${dirs.join()}`,
+      ).toBe(false)
+      expect(dirs).toContain(xdg)
+    }
+  })
+
+  it('drops /usr/local/bin when it is a classic Intel Homebrew prefix, by env or by bin/brew', () => {
+    const home = tempDir()
+    const env = { HOME: home }
+    expect(defaultCandidateDirs('darwin', env, none)[0]).toBe('/usr/local/bin')
+    expect(
+      defaultCandidateDirs('darwin', { ...env, HOMEBREW_PREFIX: '/usr/local/' }, none),
+    ).toEqual([join(home, '.local', 'bin')])
+    const intelBrew = (p: string) => p === '/usr/local/bin/brew'
+    expect(defaultCandidateDirs('darwin', env, intelBrew)).toEqual([join(home, '.local', 'bin')])
+    // Apple Silicon brew lives in /opt/homebrew: /usr/local/bin is still fine
+    const armBrew = (p: string) => p === '/opt/homebrew/bin/brew'
+    expect(defaultCandidateDirs('darwin', env, armBrew)[0]).toBe('/usr/local/bin')
+    expect(homebrewBinDirs('darwin', env, armBrew)).toEqual(['/opt/homebrew/bin'])
+    expect(defaultCandidateDirs('linux', { ...env, HOMEBREW_PREFIX: 'relative' }, none)[0]).toBe(
+      '/usr/local/bin',
+    )
+  })
+
+  it('does not break the unwritable report when the only system dir was the brew prefix', () => {
+    const home = tempDir()
+    const launcher = join(home, 'app', 'genoffice')
+    mkdirSync(join(home, 'app'))
+    writeFileSync(launcher, '#!/bin/sh\n')
+    const r = installCliLink({
+      launcher,
+      platform: 'darwin',
+      env: { HOME: home, HOMEBREW_PREFIX: '/usr/local' },
+      candidateDirs: defaultCandidateDirs(
+        'darwin',
+        { HOME: home, HOMEBREW_PREFIX: '/usr/local' },
+        none,
+      ),
+    })
+    expect(r.status).toBe('linked')
+    expect(r.location).toBe(join(home, '.local', 'bin', 'genoffice'))
+  })
+  it('leaves a Homebrew-prefix directory alone even when it is the one writable', () => {
+    // the shape that produced the report: every system dir is unwritable, and
+    // the first directory the old walk found writable was the brew prefix
+    const home = tempDir()
+    const locked = join(home, 'locked')
+    mkdirSync(locked)
+    chmodSync(locked, 0o555)
+    const launcher = join(home, 'app', 'genoffice')
+    mkdirSync(join(home, 'app'))
+    writeFileSync(launcher, '#!/bin/sh\n')
+    const userBin = join(home, '.local', 'bin')
+    try {
+      const r = installCliLink({
+        launcher,
+        platform: 'linux',
+        env: { HOME: home },
+        // stand in for the brew prefix: writable, and not one of ours
+        candidateDirs: [locked, userBin],
+      })
+      expect(r.status).toBe('linked')
+      expect(r.location).toBe(join(userBin, 'genoffice'))
+      // nothing landed anywhere but the directory we were told to consider
+      expect(existsSync(join(userBin, 'genoffice'))).toBe(true)
+    } finally {
+      chmodSync(locked, 0o755)
+    }
   })
 })

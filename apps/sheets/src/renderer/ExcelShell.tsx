@@ -9,6 +9,7 @@ import {
   useRibbonCollapse,
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
+  type AiTokenUsageView,
 } from '@genoffice/ui'
 
 import {
@@ -237,6 +238,8 @@ interface ExcelShellProps {
   readonly sheetHasContent: boolean
   /// true while the real LLM agent is running (composer disabled meanwhile).
   readonly aiBusy: boolean
+  /** tokens billed across the session, shown beside the composer */
+  readonly sessionUsage?: AiTokenUsageView
   readonly chat: readonly AiChatMessage[]
   readonly historicChat?: readonly AiChatMessage[]
   /// Chat attachments (chips + 📎 button + drag-and-drop), same structure as the
@@ -413,6 +416,8 @@ export interface PageLayoutEcho {
   readonly printHeadings?: boolean | undefined
   readonly showGridlines: boolean
   readonly showHeadings: boolean
+  /// Mirrored grid (column A at the right edge) for the active sheet.
+  readonly rightToLeft: boolean
   readonly printArea?: string | null | undefined
   readonly printTitles?: string | null | undefined
   readonly header?: HeaderFooterParts | null | undefined
@@ -448,6 +453,7 @@ export function ExcelShell({
   formatPainterActive,
   sheetHasContent,
   aiBusy,
+  sessionUsage,
   chat,
   historicChat,
   attachments,
@@ -953,8 +959,14 @@ export function ExcelShell({
           prompt={prompt}
           preview={preview}
           aiBusy={aiBusy}
+          sessionUsage={sessionUsage}
           onPromptChange={onPromptChange}
           onSend={onSend}
+          onSendQueued={(text, atts) => {
+            if (aiBusy) return false
+            onSend(text, atts)
+            return true
+          }}
           onStop={onStop}
           onNewChat={onNewChat}
           onUndo={onUndo}
@@ -2985,7 +2997,7 @@ function Ribbon({
           <RibbonButton
             large
             label={t('appFilter')}
-            detail={t('appFilterToggleDetail')}
+            detail={platformShortcuts(t('appFilterToggleDetail'))}
             symbol="▽"
             onClick={() => onCommand('filter-toggle')}
           />
@@ -3142,6 +3154,14 @@ function Ribbon({
             >
               <i className="check-box">{pageLayout.showHeadings ? '✓' : ''}</i>
               {t('appHeadings')}
+            </button>
+            <button
+              className="check-item"
+              data-tip={t('appRightToLeft')}
+              onClick={() => onCommand('toggle-right-to-left')}
+            >
+              <i className="check-box">{pageLayout.rightToLeft ? '✓' : ''}</i>
+              {t('appRightToLeft')}
             </button>
             <button
               className="check-item"

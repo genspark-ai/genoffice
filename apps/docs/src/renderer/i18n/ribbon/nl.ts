@@ -831,9 +831,9 @@ export const nl = {
   ribbonPageWidthTip: 'Zoomen zodat de paginabreedte overeenkomt met de vensterbreedte',
   ribbonWholePage: 'Eén pagina',
   ribbonWholePageTip: 'Zoomen zodat de hele pagina in het venster past',
+  ribbonMultiPage: "Meerdere pagina's",
+  ribbonMultiPageTip: "Uitzoomen zodat meerdere pagina's naast elkaar staan",
   ribbonGroupZoom: 'Zoomen',
-  ribbonAiPanel: 'AI-deelvenster',
-  ribbonAiPanelTip: 'Het AI-deelvenster weergeven/verbergen',
   ribbonDarkMode: 'Donkere modus',
   ribbonDarkModeTip:
     'Het bewerkingsgebied in donkere kleuren weergeven zonder het document te wijzigen',

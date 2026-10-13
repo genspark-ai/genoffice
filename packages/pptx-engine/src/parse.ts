@@ -73,6 +73,7 @@ import {
   type TableStyleFlags,
 } from './table-style'
 import { decodeNumericCharRefs } from './xml-utils'
+import { readRedactLabel } from './redaction-xml'
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -1204,6 +1205,10 @@ function parsePicture(
   const shadow = parseShadow(spPr, ctx)
   const glow = parseGlow(spPr, ctx)
   const reflection = parseReflection(spPr)
+  // "Withheld from the model" on a picture, video or audio shape. spPr is the one
+  // legal extension slot here: p:nvPicPr admits only cNvPr + cNvPicPr, and
+  // cNvPr takes attributes alone, which the user's own alt text already uses.
+  const redact = readRedactLabel(spPr)
   // Pic's own spPr fill: PowerPoint draws it as a backdrop behind the (possibly translucent) blip
   const fill = parseFill(spPr, ctx)
   const duotone = parseDuotone(blip, ctx)
@@ -1240,6 +1245,7 @@ function parsePicture(
     transform,
     name,
     ...(descr ? { descr } : {}),
+    ...(redact ? { redact } : {}),
     mediaRef,
     ...(srcRect ? { srcRect } : {}),
     ...(blipFill && typeof blipFill === 'object' && 'a:tile' in blipFill ? { tile: true } : {}),
@@ -3931,6 +3937,7 @@ function themeFontSource(ref: string | undefined): string | undefined {
 
 function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const rPr = r['a:rPr'] ?? {}
+  const redactLabel = readRedactLabel(rPr)
   const rawT = r['a:t']
   const text = decodeNumericCharRefs(
     typeof rawT === 'string'
@@ -4139,6 +4146,9 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(uAttr !== undefined && uAttr !== 'none' ? { underlineStyle: String(uAttr) } : {}),
     ...(uAttr === 'none' ? { underlineExplicitNone: true } : {}),
     ...(linkUnderline ? { underlineImplicit: true } : {}),
+    // "Withheld from the model": the label is read off our own extension in the
+    // rPr, never off the text. The words stay; only the model's view changes.
+    ...(redactLabel ? { redact: redactLabel } : {}),
     ...(hasStrike ? { strike: true, strikeStyle: String(strikeAttr) } : {}),
     ...(strikeAttr === 'noStrike' ? { strikeExplicitNone: true } : {}),
     ...(latinRaw ? { latinFont: String(latinRaw) } : {}),

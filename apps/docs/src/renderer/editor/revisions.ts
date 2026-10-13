@@ -68,6 +68,7 @@ export const PARAGRAPH_FORMAT_FIELDS = [
   'indentLeft',
   'indentRight',
   'indentFirstLine',
+  'indentFirstLineChars',
   'spaceBefore',
   'spaceAfter',
   'pageBreakBefore',
@@ -804,30 +805,68 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
           const fullMapping = new Mapping(
             tracked.flatMap((transaction) => transaction.steps.map((step) => step.getMap())),
           )
-          const oldAnchors = new Map<number, { node: PmNode; pos: number }>()
-          oldState.doc.nodesBetween(oldFrom, oldTo, (node, pos) => {
-            const index = node.attrs?.docxIndex
-            if (typeof index === 'number') oldAnchors.set(index, { node, pos })
-            return false
-          })
-          const newAnchors = new Map<number, { node: PmNode; pos: number }>()
-          newState.doc.nodesBetween(newFrom, newTo, (node, pos) => {
-            const index = node.attrs?.docxIndex
-            if (typeof index === 'number') newAnchors.set(index, { node, pos })
-            return false
-          })
+          // docxIndex anchors are NOT unique identifiers: ProseMirror's split
+          // clones the attrs onto both halves, so every Enter mints a second
+          // block with the same index. Collapsing them into single-slot Maps
+          // misread a plain paragraph split as a block MOVE (the old position
+          // no longer equals the surviving slot's position) and re-materialized
+          // the whole original paragraph as a deleted block — a full visual
+          // duplicate whose Reject corrupted the document. Group the anchors
+          // instead and match the k-th old occurrence to the k-th new one.
+          const groupAnchors = (doc: PmNode, from: number, to: number) => {
+            const groups = new Map<number, Array<{ node: PmNode; pos: number }>>()
+            doc.nodesBetween(from, to, (node, pos) => {
+              const index = node.attrs?.docxIndex
+              if (typeof index === 'number') {
+                const group = groups.get(index)
+                if (group) group.push({ node, pos })
+                else groups.set(index, [{ node, pos }])
+              }
+              return false
+            })
+            return groups
+          }
+          const oldAnchors = groupAnchors(oldState.doc, oldFrom, oldTo)
+          const newAnchors = groupAnchors(newState.doc, newFrom, newTo)
+          /**
+           * A paragraph JOIN keeps the block's content and only drops the
+           * paragraph mark: its old content range maps onto an identical,
+           * contiguous range inside one surviving textblock. A whole-block
+           * deletion maps that range to a single point instead.
+           */
+          const survivesInsideTextblock = (node: PmNode, oldPos: number): boolean => {
+            if (node.content.size === 0) return false
+            const from = fullMapping.map(oldPos + 1, 1)
+            const to = fullMapping.map(oldPos + 1 + node.content.size, -1)
+            if (to - from !== node.content.size) return false
+            const $from = newState.doc.resolve(from)
+            return (
+              $from.parent.isTextblock &&
+              $from.sameParent(newState.doc.resolve(to)) &&
+              newState.doc.slice(from, to).content.eq(node.content)
+            )
+          }
           const matchedNewPositions = new Set<number>()
           const movedNewPositions = new Set<number>()
           const deletedBlocks: Array<{ node: PmNode; pos: number }> = []
+          const oldOrdinals = new Map<number, number>()
           oldState.doc.nodesBetween(oldFrom, oldTo, (before, oldPos) => {
             const index = before.attrs?.docxIndex
             if (typeof index === 'number') {
-              const match = newAnchors.get(index)
+              const group = newAnchors.get(index) ?? []
+              const ordinal = oldOrdinals.get(index) ?? 0
+              oldOrdinals.set(index, ordinal + 1)
+              const match = group[ordinal]
               if (match) {
                 matchedNewPositions.add(match.pos)
                 const mapped = fullMapping.map(oldPos, -1)
                 if (
                   mapped !== match.pos &&
+                  // only a 1:1 anchor at a new position is a move — with
+                  // duplicated anchors (a split's halves) the position
+                  // mismatch is the split itself, not a relocation
+                  (oldAnchors.get(index)?.length ?? 0) === 1 &&
+                  group.length === 1 &&
                   (before.attrs?.blockRevision as { kind?: string } | null)?.kind !== 'ins'
                 ) {
                   deletedBlocks.push({ node: before, pos: mapped })
@@ -836,7 +875,12 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
               } else if (
                 (before.attrs?.blockRevision as { kind?: string } | null)?.kind !== 'ins'
               ) {
-                deletedBlocks.push({ node: before, pos: fullMapping.map(oldPos, -1) })
+                // No block left for this occurrence. After a paragraph JOIN
+                // the content lives on inside a surviving textblock; re-inserting
+                // it as a deleted block would show it twice and rejecting the
+                // phantom would corrupt the document.
+                if (!survivesInsideTextblock(before, oldPos))
+                  deletedBlocks.push({ node: before, pos: fullMapping.map(oldPos, -1) })
               }
               return false
             }
@@ -886,8 +930,10 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
 
           // Native table row commands preserve the table anchor. Record the
           // single contiguous row span they insert/delete using trPr revisions.
-          for (const [index, oldTable] of oldAnchors) {
-            const nextTable = newAnchors.get(index)
+          for (const [index, oldGroup] of oldAnchors) {
+            // tables never split under Enter, so a table anchor group is 1:1
+            const oldTable = oldGroup[0]!
+            const nextTable = newAnchors.get(index)?.[0]
             if (oldTable.node.type.name !== 'docTable' || nextTable?.node.type.name !== 'docTable')
               continue
             const oldRows = Array.from({ length: oldTable.node.childCount }, (_, i) =>

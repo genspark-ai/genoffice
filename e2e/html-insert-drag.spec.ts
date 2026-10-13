@@ -9,7 +9,7 @@ test.describe('html editor: insert, resize, drag', () => {
     const dir = await mkdtemp(join(tmpdir(), 'genoffice-html-'))
     const htmlPath = join(dir, 'layout.html')
     const source =
-      '<!doctype html>\n<html>\n<body>\n<section class="hero">\n  <h1 id="title">Hello</h1>\n  <p class="lead">First line.</p>\n  <p class="note">Second line.</p>\n</section>\n</body>\n</html>\n'
+      '<!doctype html>\n<html>\n<body>\n<section class="hero">\n  <h1 id="title">Hello</h1>\n  <p class="lead">First line.</p>\n  <p class="note">Second\n    line.</p>\n</section>\n</body>\n</html>\n'
     await writeFile(htmlPath, source)
 
     const launched = await launchShell({
@@ -31,7 +31,7 @@ test.describe('html editor: insert, resize, drag', () => {
       await expect(content).toContainText(/<\/section>\s*<p>Type your text here\.<\/p>\s*<\/body>/)
       const fresh = frame.locator('body > p')
       await expect(fresh).toHaveText('Type your text here.')
-      await expect(fresh).toHaveAttribute('contenteditable', 'plaintext-only')
+      await expect(fresh).toHaveAttribute('contenteditable', 'true')
       await expect(editorPage.locator('.crumb.current')).toHaveText('p')
       await frame.locator('body').press('Escape')
       // the split view halves the stage: park the style panel so it does not sit over the page
@@ -67,6 +67,21 @@ test.describe('html editor: insert, resize, drag', () => {
       expect(Math.abs(written - (startWidth - 60))).toBeLessThanOrEqual(2)
       await editorPage.screenshot({ path: screenshotPath('html-resize') })
 
+      // a single click on text edits in place; the source's newline and indentation stay collapsed
+      const note = frame.locator('p.note')
+      const restHeight = await note.evaluate((el) => el.getBoundingClientRect().height)
+      await note.click({ position: { x: 12, y: 8 } })
+      await expect(note).toHaveAttribute('contenteditable', 'true')
+      expect(await note.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe('normal')
+      expect(await note.evaluate((el) => el.getBoundingClientRect().height)).toBe(restHeight)
+      // Enter stays plain text: no <br>/<div> lands in the run
+      await editorPage.keyboard.press('End')
+      await editorPage.keyboard.press('Enter')
+      await editorPage.keyboard.type('more')
+      expect(await note.evaluate((el) => el.children.length)).toBe(0)
+      await frame.locator('body').press('Escape')
+      await expect(content).toContainText(/<p class="note">Second\s+line\. more<\/p>/)
+
       // drag: grab the grip beside the selection and drop the note above the lead paragraph
       await expect(frame.locator('p.lead')).toHaveAttribute('style', /width/)
       await frame.locator('p.note').click()
@@ -82,7 +97,7 @@ test.describe('html editor: insert, resize, drag', () => {
       await expect(frame.locator('[data-gx-inspector-drop]')).toBeVisible()
       await editorPage.mouse.up()
       await expect(content).toContainText(
-        /<p class="note">Second line\.<\/p>\s*<p class="lead" style="width:/,
+        /<p class="note">Second\s+line\. more<\/p>\s*<p class="lead" style="width:/,
       )
       await expect(frame.locator('section.hero > p').first()).toHaveClass('note')
       await expect(editorPage.locator('.crumb.current')).toHaveText('p.note')

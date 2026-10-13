@@ -94,6 +94,7 @@ import { CommentsPane } from './components/CommentsPane'
 import { AnimationPane } from './components/AnimationPane'
 import { AnimPreviewOverlay } from './components/AnimatedSlide'
 import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/InsertDialogs'
+import { RedactDialog } from './components/RedactDialog'
 import { ZoomDialog } from './components/ZoomDialog'
 import { CutoutDialog } from './components/CutoutDialog'
 import {
@@ -124,6 +125,7 @@ import type {
   EditingState,
   HfDialogState,
   LinkDialogState,
+  RedactDialogState,
   SlideShowState,
   EditPointsState,
   UngroupedSet,
@@ -144,6 +146,7 @@ import * as slideActions from './slide-actions'
 import * as zoomActions from './zoom-actions'
 import { groupSections } from './section-groups'
 import * as pictureEditActions from './picture-edit-actions'
+import * as redactActions from './redact-actions'
 import * as arrangeActions from './arrange-actions'
 import * as tableActions from './table-actions'
 import * as styleActions from './style-actions'
@@ -602,6 +605,7 @@ export function App() {
   const [annotationsNonce, setAnnotationsNonce] = useState(0)
   // ── Insert tab extensions: dialogs + screen recording ──────────────────────
   const [linkDialog, setLinkDialog] = useState<LinkDialogState | null>(null)
+  const [redactDialog, setRedactDialog] = useState<RedactDialogState | null>(null)
   const [hfDialog, setHfDialog] = useState<HfDialogState | null>(null)
   const [eqDialogOpen, setEqDialogOpen] = useState(false)
   const [zoomDialog, setZoomDialog] = useState<zoomActions.ZoomMode | null>(null)
@@ -1671,6 +1675,10 @@ export function App() {
     (target: LinkTargetOp | null) => insertActions.applyLink(ctxRef.current, target),
     [],
   )
+  const applyRedaction = useCallback(
+    (label: string | null) => redactActions.applyRedaction(ctxRef.current, label),
+    [],
+  )
   const insertZooms = useCallback((mode: zoomActions.ZoomMode, keys: number[]) => {
     setZoomDialog(null)
     if (mode === 'summary') return zoomActions.insertSummaryZoom(ctxRef.current, keys)
@@ -2581,6 +2589,42 @@ export function App() {
     [current],
   )
 
+  const onTransformMulti = useCallback(
+    async (
+      items: Array<{
+        sourceId: string
+        groupId?: string
+        box: { x: number; y: number; w: number; h: number; rotationDeg: number }
+      }>,
+    ) => {
+      const updated = await window.slidesApi.editTransformMulti({
+        slideIndex: current,
+        fitWidthPx: FIT_WIDTH,
+        items: items.map((it) => ({
+          sourceId: it.sourceId,
+          ...(it.groupId ? { groupId: it.groupId } : {}),
+          xPx: it.box.x,
+          yPx: it.box.y,
+          wPx: it.box.w,
+          hPx: it.box.h,
+          rotationDeg: it.box.rotationDeg,
+        })),
+      })
+      if (updated) {
+        setSlides((s) => s.map((sl, i) => (i === current ? updated : sl)))
+        setDirty(true)
+      }
+    },
+    [current],
+  )
+
+  const onTransformCancel = useCallback(async () => {
+    const updated = await window.slidesApi.cancelTransformPreview({ slideIndex: current })
+    if (updated) setSlides((s) => s.map((sl, i) => (i === current ? updated : sl)))
+    // Preview frames marked the deck dirty; the rollback may have made it clean again
+    void window.slidesApi.isDirty().then(setDirty)
+  }, [current])
+
   // Yellow adjust-handle drag: throttled preview commits keep the geometry live,
   // the release commit is never dropped (edit-transform gesture undo semantics)
   const adjustLastSent = useRef(0)
@@ -3081,6 +3125,8 @@ export function App() {
     commitEditPoints,
     linkDialog,
     setLinkDialog,
+    redactDialog,
+    setRedactDialog,
     setHfDialog,
     setEqDialogOpen,
     setChartDataDialogInit,
@@ -3102,6 +3148,7 @@ export function App() {
     setRecording,
     editingActiveRef,
     applySlide,
+    applyDeck,
     flushNotes,
     findNodeCtx,
     groupIdOf,
@@ -4006,7 +4053,9 @@ export function App() {
                               onOpenContextTab={openContextTab}
                               onContextMenu={onCanvasContextMenu}
                               onMarqueeSelect={setSelectedIds}
-                              onDuplicateTo={(id, dx, dy) => void duplicateSelected([id], dx, dy)}
+                              onDuplicateTo={(ids, dx, dy) => void duplicateSelected(ids, dx, dy)}
+                              onTransformMulti={onTransformMulti}
+                              onTransformCancel={onTransformCancel}
                               images={images}
                               zoom={zoom}
                               enteredGroupId={enteredGroupId}
@@ -4446,6 +4495,13 @@ export function App() {
           currentSlide={current}
           onApply={(target) => void applyLink(target)}
           onClose={() => setLinkDialog(null)}
+        />
+      )}
+      {redactDialog && (
+        <RedactDialog
+          seed={redactDialog.seed}
+          onSubmit={(label) => void applyRedaction(label)}
+          onCancel={() => setRedactDialog(null)}
         />
       )}
       {hfDialog && (

@@ -368,10 +368,64 @@ describe('SimSun-substitution ・/〜 line lift decorations', () => {
     })
     const spans = liftSpans(editor)
     expect(spans.map((s) => s.textContent)).toEqual(['・', '〜'])
+    // no own spacing: the inherited (style / docDefaults) multiple scales the lift
     expect(spans[0].style.lineHeight).toBe(
-      'round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.004), var(--doc-grid-pitch,0.0001px))',
+      'max(calc(var(--doc-grid-pitch,0.0001px) * var(--doc-line-mult,1)), calc(round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.004), var(--doc-grid-pitch,0.0001px)) * var(--doc-grid-single-mult,var(--doc-line-mult,1))))',
     )
     editor.destroy()
+    const single = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: gapDoc('\u9805\u76ee\u30fb\u5185\u5bb9', 'Noto Sans CJK JP', {
+        lineRule: 'auto',
+        lineRawTwips: 240,
+      }),
+    })
+    expect(liftSpans(single)[0].style.lineHeight).toBe(
+      'round(up, calc(1.7143 * 1em - var(--doc-grid-pitch,0.0001px) * 0.004), var(--doc-grid-pitch,0.0001px))',
+    )
+    single.destroy()
+  })
+
+  it('lifts runs without their own font through the inherited style face', () => {
+    const styledDoc = (styleId: string) =>
+      ({
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { styleId },
+            content: [{ type: 'text', text: '\u9805\u76ee\u30fb\u5185\u5bb9' }],
+          },
+        ],
+      }) as never
+    const style = (styleId: string, extra: Record<string, unknown>) =>
+      [styleId, { styleId, name: styleId, type: 'paragraph', ...extra }] as const
+    const open = (styles: ReadonlyArray<readonly [string, object]>, styleId: string) => {
+      const editor = new Editor({
+        element: document.createElement('div'),
+        extensions: editorExtensions,
+      })
+      editor.storage.listNumbering.styles = new Map(styles) as never
+      editor.commands.setContent(styledDoc(styleId))
+      return editor
+    }
+    const normal = style('Normal', {
+      isDefault: true,
+      display: { font: 'Noto Sans CJK JP', fontAscii: 'Noto Sans CJK JP' },
+    })
+    const body = style('Body', { basedOn: 'Normal', display: {} })
+    for (const styleId of ['Normal', 'Body', 'Missing']) {
+      const editor = open([normal, body], styleId)
+      expect(liftSpans(editor).map((s) => s.textContent)).toEqual(['\u30fb'])
+      editor.destroy()
+    }
+    const yahei = open(
+      [style('Normal', { isDefault: true, display: { font: 'Microsoft YaHei' } })],
+      'Normal',
+    )
+    expect(liftSpans(yahei)).toEqual([])
+    yahei.destroy()
   })
 
   it('scales the lift by an explicit line-spacing multiple', () => {

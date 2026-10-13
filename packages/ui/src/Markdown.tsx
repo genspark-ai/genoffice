@@ -6,9 +6,9 @@ import { Fragment, type ReactNode } from 'react'
  * Tolerates partial (streaming) input — anything unrecognized renders as
  * plain text.
  *
- * Markdown links stay literal text unless the host passes `nav` and the href
- * carries its scheme — then they become in-app navigation links. External
- * URLs never turn into clickable links here.
+ * Markdown links stay literal text unless the host passes a nav (single `nav`
+ * prop or a `navs` list) whose scheme the href carries — then they become
+ * in-app navigation links. External URLs never turn into clickable links here.
  */
 
 export interface MarkdownNav {
@@ -17,16 +17,33 @@ export interface MarkdownNav {
   onNavigate: (href: string) => void
 }
 
+export interface MarkdownImage {
+  /** Resolve an image href from `![alt](href)`; return undefined to skip the image */
+  resolve?: (href: string) => string | undefined
+}
+
+/** first nav whose scheme prefixes href; undefined keeps the link dead text */
+function matchNav(navs: readonly MarkdownNav[], href: string): MarkdownNav | undefined {
+  return navs.find((n) => href.startsWith(n.scheme))
+}
+
 // Hrefs may carry one level of balanced parens (sheet names like `Data (2)`
 // arrive as sheetnav://Data%20(2)!B2), so the href cannot simply stop at ')'.
 const HREF = /(?:[^\s()]|\([^\s()]*\))+/.source
 const INLINE_RE = new RegExp(
-  `(\`[^\`\\n]+\`|\\*\\*[^*\\n]+?\\*\\*|\\*[^*\\n]+?\\*|\\[[^\\]\\n]+\\]\\(${HREF}\\))`,
+  `(\`[^\`\\n]+\`|\\*\\*[^*\\n]+?\\*\\*|\\*[^*\\n]+?\\*|!\\[[^\\]\\n]*\\]\\(${HREF}\\)|\\[[^\\]\\n]+\\]\\(${HREF}\\))`,
   'g',
 )
 const LINK_RE = new RegExp(`^\\[([^\\]]+)\\]\\((${HREF})\\)$`)
+const IMG_RE = new RegExp(`^!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
+/** a whole line that is nothing but an image, the manual's figure syntax */
+const IMG_LINE_RE = new RegExp(`^\\s*!\\[([^\\]]*)\\]\\((${HREF})\\)$`)
 
-function renderInline(text: string, nav?: MarkdownNav): ReactNode[] {
+function renderInline(
+  text: string,
+  navs: readonly MarkdownNav[],
+  images?: MarkdownImage,
+): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let key = 0
@@ -36,10 +53,25 @@ function renderInline(text: string, nav?: MarkdownNav): ReactNode[] {
     const tok = m[0] ?? ''
     if (tok.startsWith('`')) out.push(<code key={key++}>{tok.slice(1, -1)}</code>)
     else if (tok.startsWith('**')) out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>)
-    else if (tok.startsWith('[')) {
+    else if (tok.startsWith('![')) {
+      // An image sharing a line with prose, a list step or a table cell — not
+      // just a line of its own. parseBlocks only ever made a *whole* line an
+      // image block, so anything with text around it reached this pass, and
+      // this pass had no image case and printed the source. Without a resolver
+      // — every chat panel passes none — the literal stands, which is exactly
+      // what those panels rendered before.
+      const img = IMG_RE.exec(tok)
+      const src = img ? images?.resolve?.(img[2] ?? '') : undefined
+      if (img && src) {
+        out.push(
+          <img key={key++} className="ai-md-img" src={src} alt={img[1] ?? ''} loading="lazy" />,
+        )
+      } else out.push(tok)
+    } else if (tok.startsWith('[')) {
       const link = LINK_RE.exec(tok)
       const href = link?.[2] ?? ''
-      if (link && nav && href.startsWith(nav.scheme)) {
+      const hit = link ? matchNav(navs, href) : undefined
+      if (link && hit) {
         out.push(
           <a
             key={key++}
@@ -47,7 +79,7 @@ function renderInline(text: string, nav?: MarkdownNav): ReactNode[] {
             href={href}
             onClick={(e) => {
               e.preventDefault()
-              nav.onNavigate(href)
+              hit.onNavigate(href)
             }}
           >
             {link[1]}
@@ -69,9 +101,10 @@ type MdBlock =
   | { kind: 'p'; lines: string[] }
   | { kind: 'ul'; items: string[] }
   | { kind: 'ol'; items: string[] }
-  | { kind: 'h'; text: string }
+  | { kind: 'h'; text: string; level: number }
   | { kind: 'table'; align: CellAlign[]; head: string[]; rows: string[][] }
   | { kind: 'code'; lines: string[] }
+  | { kind: 'img'; alt: string; href: string }
 
 const FENCE_RE = /^\s*(`{3,}|~{3,})/
 const DELIM_CELL_RE = /^\s*:?-+:?\s*$/
@@ -136,6 +169,16 @@ function parseBlocks(text: string): MdBlock[] {
       flush()
       continue
     }
+    // Standalone image line: ![alt](href) — the manual's figure syntax, and a
+    // thing an AI reply can contain on its own. It is a *block* only when the
+    // host can resolve it; see the render side, which falls back to the literal
+    // text rather than dropping the line.
+    const img = IMG_LINE_RE.exec(line)
+    if (img) {
+      flush()
+      blocks.push({ kind: 'img', alt: img[1] ?? '', href: img[2] ?? '' })
+      continue
+    }
     if (FENCE_RE.test(line)) {
       flush()
       cur = { kind: 'code', lines: [] }
@@ -163,10 +206,10 @@ function parseBlocks(text: string): MdBlock[] {
         }
       }
     }
-    const h = /^#{1,6}\s+(.*)$/.exec(line)
+    const h = /^(#{1,6})\s+(.*)$/.exec(line)
     if (h) {
       flush()
-      blocks.push({ kind: 'h', text: h[1] ?? '' })
+      blocks.push({ kind: 'h', text: h[2] ?? '', level: (h[1] ?? '#').length })
       continue
     }
     const ul = /^\s*[-*•]\s+(.*)$/.exec(line)
@@ -197,19 +240,43 @@ function parseBlocks(text: string): MdBlock[] {
   return blocks
 }
 
-export function Markdown({ text, nav }: { text: string; nav?: MarkdownNav }): React.JSX.Element {
+export function Markdown({
+  text,
+  nav,
+  navs,
+  images,
+}: {
+  text: string
+  nav?: MarkdownNav
+  navs?: readonly MarkdownNav[]
+  images?: MarkdownImage
+}): React.JSX.Element {
+  // the legacy single nav rides along with the newer list; first scheme
+  // match wins, and hosts never pass overlapping schemes anyway
+  const navList: readonly MarkdownNav[] = nav ? [nav, ...(navs ?? [])] : (navs ?? [])
   return (
     <div className="ai-md">
       {parseBlocks(text).map((b, i) => {
         if (b.kind === 'h') {
+          // level class lets hosts scale heading sizes (chat keeps them equal;
+          // the manual styles h2/h3 distinctly)
           return (
-            <p key={i} className="ai-md-h">
-              {renderInline(b.text, nav)}
+            <p key={i} className={`ai-md-h ai-md-h${b.level}`}>
+              {renderInline(b.text, navList, images)}
             </p>
           )
         }
+        if (b.kind === 'img') {
+          const src = images?.resolve?.(b.href)
+          // No resolver, or one that misses: render the line as written. Six of
+          // the AI panels pass no resolver at all, and swallowing a line
+          // because a host cannot draw it loses whatever the model actually
+          // said there.
+          if (!src) return <p key={i}>{`![${b.alt}](${b.href})`}</p>
+          return <img key={i} className="ai-md-img" src={src} alt={b.alt} loading="lazy" />
+        }
         if (b.kind === 'ul' || b.kind === 'ol') {
-          const items = b.items.map((it, j) => <li key={j}>{renderInline(it, nav)}</li>)
+          const items = b.items.map((it, j) => <li key={j}>{renderInline(it, navList, images)}</li>)
           return b.kind === 'ul' ? <ul key={i}>{items}</ul> : <ol key={i}>{items}</ol>
         }
         if (b.kind === 'code') {
@@ -229,7 +296,7 @@ export function Markdown({ text, nav }: { text: string; nav?: MarkdownNav }): Re
                   <tr>
                     {b.head.map((c, j) => (
                       <th key={j} style={cellStyle(j)}>
-                        {renderInline(c, nav)}
+                        {renderInline(c, navList, images)}
                       </th>
                     ))}
                   </tr>
@@ -239,7 +306,7 @@ export function Markdown({ text, nav }: { text: string; nav?: MarkdownNav }): Re
                     <tr key={r}>
                       {row.map((c, j) => (
                         <td key={j} style={cellStyle(j)}>
-                          {renderInline(c, nav)}
+                          {renderInline(c, navList, images)}
                         </td>
                       ))}
                     </tr>
@@ -254,7 +321,7 @@ export function Markdown({ text, nav }: { text: string; nav?: MarkdownNav }): Re
             {b.lines.map((ln, j) => (
               <Fragment key={j}>
                 {j > 0 && <br />}
-                {renderInline(ln, nav)}
+                {renderInline(ln, navList, images)}
               </Fragment>
             ))}
           </p>

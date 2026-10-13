@@ -14,6 +14,7 @@ import {
   truncate,
   type EditQueueItem,
 } from './edit-queue'
+import { buildProjection } from './redact'
 
 interface Props {
   items: EditQueueItem[]
@@ -51,7 +52,7 @@ export function EditQueueCard({
 
   if (items.length === 0) return null
   const folded = manualFold ?? items.length >= AUTO_COLLAPSE_FROM
-  const resolved = items.map((item) => resolveQueueItem(text, map, item))
+  const resolved = items.map((item) => resolveQueueItem(buildProjection(text, map), map, item))
   const liveCount = resolved.filter((r) => r.target !== null).length
 
   return (

@@ -55,7 +55,7 @@ export function renderStaticFormText(
   })
 }
 
-export const STATIC_FORM_MARK_SIZE = 22
+export const STATIC_FORM_MARK_SIZE = 12
 
 /** Vector-painted check/cross bitmap, inserted through the existing movable image pipeline. */
 export function renderStaticFormMark(

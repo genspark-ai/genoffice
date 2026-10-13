@@ -96,6 +96,7 @@ const HF_PARA_KEYS = [
   'indentLeft',
   'indentRight',
   'indentFirstLine',
+  'indentFirstLineChars',
   'spaceBefore',
   'spaceAfter',
   'spaceBeforeAuto',

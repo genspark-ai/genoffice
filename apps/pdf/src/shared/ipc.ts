@@ -31,6 +31,12 @@ export const PDF_CHANNELS = {
   convertOffice: 'pdf:convert-office',
   createDocument: 'pdf:create-document',
   generateImage: 'pdf:generate-image',
+  listDigitalSignatures: 'pdf:list-digital-signatures',
+  pickCertificate: 'pdf:pick-certificate',
+  listSystemCertificates: 'pdf:list-system-certificates',
+  releaseCertificate: 'pdf:release-certificate',
+  inspectCertificate: 'pdf:inspect-certificate',
+  signWithCertificate: 'pdf:sign-with-certificate',
   listSignatures: 'pdf:list-signatures',
   addSignature: 'pdf:add-signature',
   removeSignature: 'pdf:remove-signature',
@@ -71,6 +77,141 @@ export type SignatureData =
       height: number
     }
 
+/** One X.509 certificate, flattened for display */
+export interface CertificateInfo {
+  /** Subject common name, falling back to the whole subject when no CN is present */
+  commonName: string
+  /** Full subject, one RDN per line ("CN=…") */
+  subject: string
+  issuerCommonName: string
+  issuer: string
+  /** Hex, upper case, no separators */
+  serialNumber: string
+  /** ISO 8601 */
+  validFrom: string
+  validTo: string
+  /** SHA-256 fingerprint, "AA:BB:…" */
+  fingerprint: string
+  /** e.g. "RSA 2048", "EC prime256v1" */
+  keyAlgorithm: string
+  selfSigned: boolean
+}
+
+export type PdfSignatureProblem =
+  /** The signed bytes no longer match the signature: the document was altered */
+  | 'digest-mismatch'
+  | 'signature-invalid'
+  | 'malformed'
+  | 'unsupported-algorithm'
+  | 'signer-certificate-missing'
+  /** Bytes were appended after the signed revision (later edits or signatures) */
+  | 'document-changed-after-signing'
+  | 'self-signed'
+  | 'untrusted-issuer'
+  | 'certificate-expired'
+  | 'certificate-not-yet-valid'
+
+/** One signature field that carries a value, as read from the file (not trusting the file's own claims) */
+export interface PdfSignatureInfo {
+  fieldName: string
+  /** Zero-based page of the signature widget; -1 when it has none */
+  pageIndex: number
+  kind: 'signature' | 'timestamp'
+  /** Derived from `problems`: invalid (altered or unreadable) > warning (weakened) > untrusted (intact, chain reaches no trusted root) > valid */
+  status: 'valid' | 'untrusted' | 'warning' | 'invalid'
+  problems: PdfSignatureProblem[]
+  subFilter: string
+  signerName?: string
+  reason?: string
+  location?: string
+  contactInfo?: string
+  /** ISO 8601; the signed signingTime attribute when present, else the unverified /M entry */
+  signingTime?: string
+  /** Whether `signingTime` comes from the signature itself */
+  signingTimeSigned: boolean
+  digestAlgorithm?: string
+  /** True when the signature covers every byte of the file */
+  coversWholeDocument: boolean
+  /** DocMDP level (1 no changes, 2 form fill + signing, 3 plus annotations) of a certifying signature */
+  certifiedLevel?: 1 | 2 | 3
+  signer?: CertificateInfo
+  /** Signer first, then each issuer found in the signature; the last entry may be a root */
+  chain: CertificateInfo[]
+  /** Whether the chain ends at a root in the operating-system / Mozilla trust store */
+  trusted: boolean
+}
+
+export type CertificateErrorCode =
+  | 'cert-password'
+  | 'cert-invalid'
+  | 'cert-unsupported-key'
+  | 'cert-no-key'
+  /** The system store holds the key but will not hand it over */
+  | 'cert-not-exportable'
+  | 'cert-store-locked'
+  | 'cert-store-tool-missing'
+  /** The system store is not supported on this platform (macOS for now) */
+  | 'cert-store-unsupported'
+
+/** A signing identity found in the operating system's certificate store */
+export interface SystemCertificateInfo {
+  /** Opaque id for this view; pass it where a picked certificate file's id goes */
+  certId: string
+  label: string
+  commonName: string
+  issuerCommonName: string
+  /** ISO 8601 */
+  validTo: string
+  expired: boolean
+}
+
+export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked' | 'platform-unsupported'
+
+export interface ListSystemCertificatesResult {
+  certs: SystemCertificateInfo[]
+  issues: SystemStoreIssue[]
+}
+
+export type InspectCertificateResult =
+  | { ok: true; signer: CertificateInfo; chain: CertificateInfo[] }
+  | { ok: false; error: CertificateErrorCode }
+
+export type SignaturePosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'center'
+
+export interface SignWithCertificateRequest {
+  path: string
+  /** Opaque id returned by pickCertificate for this view */
+  certId: string
+  password: string
+  /** Unlocks a locked system store (NSS) when the identity has to be exported again */
+  storePassword?: string
+  reason?: string
+  location?: string
+  contactInfo?: string
+  /** Makes this a certifying signature (DocMDP); only valid for a document with no signatures yet */
+  certifyLevel?: 1 | 2 | 3
+  /** Visible signature box; omitted = invisible signature */
+  visible?: {
+    pageIndex: number
+    position: SignaturePosition
+    /** Box size in PDF points */
+    width: number
+    height: number
+    /** base64 PNG of the box contents, drawn by the renderer (any script or font) */
+    png: string
+  }
+}
+
+export type SignWithCertificateResult =
+  | { ok: true; path: string }
+  | { ok: false; cancelled: true }
+  | {
+      ok: false
+      cancelled?: false
+      error: CertificateErrorCode | 'pdf-encrypted' | 'sign-failed'
+      message?: string
+    }
+
 /** A reusable signature persisted in userData (shared across documents, WPS-style) */
 export interface SavedSignature {
   id: string
@@ -78,7 +219,7 @@ export interface SavedSignature {
   data: SignatureData
 }
 
-export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx'
+export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx' | 'md' | 'html'
 
 /** target file type of the AI create_document tool (mirrors the docs app's contract) */
 export type CreateDocumentType = 'docx' | 'pdf' | 'md' | 'html'
@@ -476,6 +617,51 @@ export interface FormValueInput {
   checked?: boolean
 }
 
+export type FormFieldKind = 'text' | 'checkbox' | 'radio' | 'choice' | 'signature'
+
+/** A new AcroForm field authored in Form Design; becomes a real widget on save. PDF user space, y up. */
+export interface FormFieldInput {
+  name: string
+  kind: FormFieldKind
+  pageIndex: number
+  rect: [number, number, number, number]
+  required?: boolean
+  /** text only */
+  multiLine?: boolean
+  /** text only; 0 or absent = no limit */
+  maxLen?: number
+  /** text only; absent = auto size */
+  fontSize?: number
+  textAlignment?: 'left' | 'center' | 'right'
+  /** text: initial value; choice: selected option; checkbox/radio: initial state */
+  value?: string
+  checked?: boolean
+  /** radio only: this button's export value; buttons sharing a name form one group */
+  exportValue?: string
+  /** choice only */
+  options?: string[]
+  /** text only: Acrobat AFDate format (e.g. yyyy-mm-dd) installs date format/keystroke actions */
+  dateFormat?: string
+}
+
+/** Design-time change to an AcroForm widget already in the file, addressed by its pdf.js annotation id (object ref). */
+export interface FormWidgetEditInput {
+  widgetId: string
+  fieldName: string
+  rect?: [number, number, number, number]
+  required?: boolean
+  remove?: boolean
+}
+
+/** A blank page authored in the session. `pageIndex` is its virtual original index: the
+    document's page count plus its rank among the session's blank pages, so every other
+    pending edit can address it like a real page; the save appends it there first. */
+export interface BlankPageInput {
+  pageIndex: number
+  width: number
+  height: number
+}
+
 export interface SavePdfRequest {
   path: string
   /**
@@ -503,6 +689,12 @@ export interface SavePdfRequest {
   redactions?: RedactionInput[]
   /** Complete resulting set; omitted means preserve existing embedded metadata. */
   staticFormFills?: StaticFormFillRecord[]
+  /** Moves/flag changes/removals of existing widgets, applied before formFields */
+  formWidgetEdits?: FormWidgetEditInput[]
+  /** New AcroForm fields, created after formValues (names must not collide with existing fields) */
+  formFields?: FormFieldInput[]
+  /** Blank pages appended (in pageIndex order) before every page-addressed stage runs */
+  blankPages?: BlankPageInput[]
   /** Page rotation deltas (original page index → multiple of 90 clockwise) */
   rotations?: { pageIndex: number; delta: number }[]
   /** Pages to delete (original page indices) */
@@ -703,6 +895,8 @@ export interface ImageSearchResponse {
 export interface PdfApi {
   /** Take the pdf path pending for this view (queued at tab creation); null if none */
   consumePending(): Promise<string | null>
+  /** open any shell-routed document path (an AI answer's filenav citation) */
+  openSourcePath(path: string): Promise<void>
   /** Read pdf bytes. Only paths granted to this view are allowed */
   readFile(path: string): Promise<ArrayBuffer>
   /** Write markups/form values/page ops back to the original file (pdf-lib, content streams untouched); path grants same as readFile. With targetPath set (Save As), the original is only read and the result goes to targetPath */
@@ -766,6 +960,22 @@ export interface PdfApi {
     url?: string
     error?: string
   }>
+  /** Read and verify the digital (certificate) signatures embedded in a granted PDF */
+  listDigitalSignatures(path: string): Promise<PdfSignatureInfo[]>
+  /** Open the OS file picker for a PKCS#12 certificate (.p12/.pfx); the file is referenced by the returned opaque id */
+  pickCertificate(): Promise<{ certId: string; fileName: string } | null>
+  /** Decrypt the picked certificate with its password and describe the signer (nothing is signed) */
+  /** Signing identities in the OS certificate store (NSS on Linux, personal store on Windows, keychain on macOS) */
+  listSystemCertificates(storePassword?: string): Promise<ListSystemCertificatesResult>
+  /** Forget a certificate id and any key material the main process still holds for it */
+  releaseCertificate(certId: string): void
+  inspectCertificate(
+    certId: string,
+    password: string,
+    storePassword?: string,
+  ): Promise<InspectCertificateResult>
+  /** Sign the granted PDF with the picked certificate; asks for a destination, never modifies the source, and re-points this view at the signed copy */
+  signWithCertificate(request: SignWithCertificateRequest): Promise<SignWithCertificateResult>
   /** Saved signatures reusable across documents (persisted in userData), newest first */
   listSavedSignatures(): Promise<SavedSignature[]>
   /** Persist a signature for reuse; returns the updated list (capped, deduplicated) */
@@ -776,8 +986,9 @@ export interface PdfApi {
   getUsername(): Promise<string>
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void
-  /** Main process picked "Save" in the close prompt → renderer saves and replies via sendCloseSaveResult */
-  onCloseSaveRequest(handler: () => void): () => void
+  /** Main process asks for a save (close prompt, menu Save, export flows) and waits for sendCloseSaveResult.
+   *  flushAll: success must mean everything on screen is in the file, including the form field whose card is open */
+  onCloseSaveRequest(handler: (opts: { flushAll: boolean }) => void): () => void
   sendCloseSaveResult(ok: boolean): void
   /** Shell menu Save As → renderer writes pending edits to targetPath only (original untouched) and replies via sendSaveAsResult */
   onSaveAsRequest(handler: (targetPath: string) => void): () => void

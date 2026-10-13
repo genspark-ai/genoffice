@@ -71,6 +71,39 @@ export type {
   AgentToolResult,
 } from '@genoffice/agent-core'
 
+// ---- PDF export ----
+
+/**
+ * In-document link to stamp into an exported PDF as a GoTo annotation. All
+ * coordinates are fractions of the page box (top-left origin) so the main
+ * process can scale them to whatever page size Chromium produced.
+ */
+export interface PdfInternalLink {
+  page: number
+  x: number
+  y: number
+  w: number
+  h: number
+  toPage: number
+  toY: number
+}
+
+// ---- Markdown export ----
+
+export interface MarkdownImage {
+  /** file name inside the media folder */
+  name: string
+  /** data: URL or lazy docx-media URL the main process resolves */
+  src: string
+}
+
+/**
+ * Folder token the Markdown references pictures under; the writer swaps it
+ * for the real `<file>_files` folder once the save path is known. User text
+ * can never spell it: `_` is escaped on the way out.
+ */
+export const MARKDOWN_MEDIA_DIR_TOKEN = '__genoffice_media__'
+
 // ---- chat attachments (local files fed to the agent via tools) ----
 
 /** Image attachment extensions: no text extraction; read as base64 on send and passed to the model as a multimodal image with the user message */
@@ -133,6 +166,7 @@ export type MenuCommand =
   | 'zoom-set'
   | 'zoom-page-width'
   | 'zoom-whole-page'
+  | 'zoom-multi-page'
   | 'toggle-ai'
   | 'toggle-dark'
   | 'insert-table'
@@ -157,6 +191,7 @@ export type MenuCommand =
   | 'print'
   | 'export-pdf'
   | 'export-html'
+  | 'export-markdown'
   | 'export-images'
   | 'word-count'
   | 'autocorrect-options'
@@ -293,6 +328,21 @@ export interface SpellLanguages {
   active: string[]
   /** empty on macOS: the OS checker picks the language itself */
   available: string[]
+}
+
+export type PrintDuplex = 'simplex' | 'longEdge' | 'shortEdge'
+
+/** job options from the in-app print dialog; deviceName null = system dialog, '' = OS default printer */
+export interface PrintJobOptions {
+  deviceName: string | null
+  copies?: number
+  collate?: boolean
+  duplex?: PrintDuplex
+}
+
+export interface PrinterInfo {
+  name: string
+  displayName: string
 }
 
 export interface DesktopApi {
@@ -445,9 +495,13 @@ export interface DesktopApi {
   onAiSettingsChanged(handler: () => void): () => void
   /** shell only: switch to Home and open Settings › AI Model (rejects in standalone) */
   openAiModelSettings(): Promise<void>
-  /** system print dialog for the current window; ok=false without error = canceled.
-   *  scale: print scale inverting the preview's print zoom (print-zoom.ts) */
-  print(scale?: number): Promise<{ ok: boolean; error?: string }>
+  /** print the current window; ok=false without error = canceled.
+   *  scale: print scale inverting the preview's print zoom (print-zoom.ts).
+   *  job: printer/copies/duplex from the in-app dialog; a named printer ('' = OS
+   *  default) prints silently, null or omitted opens the system dialog */
+  print(scale?: number, job?: PrintJobOptions): Promise<{ ok: boolean; error?: string }>
+  /** installed printers for the in-app print dialog */
+  listPrinters(): Promise<PrinterInfo[]>
   /** render the document to PDF and ask where to save; size in twips.
    *  outPath is only honored when a previous export dialog chose that exact path */
   exportPdf(
@@ -456,12 +510,19 @@ export interface DesktopApi {
     pageHeightTwips: number,
     outPath?: string,
     scale?: number,
+    links?: PdfInternalLink[],
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   exportHtml(
     defaultName: string,
     html: string,
     outPath?: string,
   ): Promise<{ ok: boolean; path?: string; error?: string }>
+  exportMarkdown(
+    defaultName: string,
+    markdown: string,
+    images: MarkdownImage[],
+    outPath?: string,
+  ): Promise<{ ok: boolean; path?: string; error?: string; imagesDropped?: number }>
   /** Mixed paper-size export: produce a set of PDF bytes (base64) at given sizes per the current print layout */
   printPdfBuffer(
     pageWidthTwips: number,
@@ -474,6 +535,7 @@ export interface DesktopApi {
     defaultName: string,
     base64Parts: string[],
     outPath?: string,
+    links?: PdfInternalLink[],
   ): Promise<{ ok: boolean; path?: string; error?: string }>
   /** Export as images: the folder picker plus a pre-authorized temp PDF path the
    *  regular PDF export writes to silently (no reveal, no open) */
@@ -548,10 +610,34 @@ export interface DesktopApi {
   readAttachment(path: string, offset: number, maxChars: number): Promise<AttachmentReadResult>
   /** read an image attachment as base64 for multimodal input (≤5MB) */
   readAttachmentImage(path: string): Promise<AttachmentImageResult>
+  /** the reader's starred files as the AI's knowledge base */
+  kbList(): Promise<
+    Array<{
+      path: string
+      folder: string
+      folderPath: string
+      name: string
+      ext: string
+      sizeBytes: number
+    }>
+  >
+  /** full-text search over the starred set; q capped like the home search box */
+  kbSearch(query: {
+    q: string
+    limit?: number
+  }): Promise<Array<{ path: string; name: string; ext: string; folder: string; snippet: string }>>
+  /** one page of a starred file's parsed text (path must be in kbList) */
+  kbRead(
+    path: string,
+    offset: number,
+  ): Promise<{ text: string; totalChars: number; offset: number }>
+
   /** absolute path of a File dropped onto the window (Electron webUtils) */
   getPathForFile(file: File): string
   /** View → New Tab: open another docs tab, optionally loading the same document */
   openNewTab(openPath?: string | null): Promise<void>
+  /** open any shell-routed document path (an AI answer's filenav citation) */
+  openSourcePath(path: string): Promise<void>
   /** all open docs tabs, for View → Switch Tab */
   listDocsTabs(): Promise<DocsTabInfo[]>
   focusDocsTab(id: string): Promise<void>

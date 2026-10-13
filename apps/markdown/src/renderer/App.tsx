@@ -42,7 +42,9 @@ import { buildSlashItems } from './editor/slashCommand'
 import type { SlashController, SlashMenuState } from './editor/slashCommand'
 import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
+import type { MarkdownTheme } from '../shared/markdown-theme'
 import { ImageHostDialog } from './components/ImageHostDialog'
+import { RedactMenu } from './components/RedactMenu'
 import { OutlinePane } from './components/OutlinePane'
 import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
@@ -144,6 +146,7 @@ export default function App() {
   const sourceMode = isSourceMode(textMode)
   // bumped on every CodeMirror doc change so the ribbon's undo/redo state re-renders
   const [sourceRev, setSourceRev] = useState(0)
+
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const exportingImagesRef = useRef(false)
@@ -176,6 +179,26 @@ export default function App() {
   const syncSourceFromEditorRef = useRef<() => void>(() => {})
   const [spellcheck, setSpellcheck] = useState(
     () => localStorage.getItem('mdapp.spellcheck') !== '0',
+  )
+  // paper theme (markdown-themes.css scopes the palette on data-markdown-theme)
+  const [mdTheme, setMdTheme] = useState<MarkdownTheme>('default')
+  useEffect(() => {
+    window.markdownApi
+      .getMarkdownTheme?.()
+      .then(setMdTheme)
+      .catch(() => {})
+  }, [])
+  const pickMarkdownTheme = (theme: MarkdownTheme): void => {
+    setMdTheme(theme)
+    // the boot path sets this once; live picks re-scope it here
+    if (theme === 'default') document.documentElement.removeAttribute('data-markdown-theme')
+    else document.documentElement.setAttribute('data-markdown-theme', theme)
+    window.markdownApi.setMarkdownTheme(theme).catch(() => {})
+  }
+  // off by default: it takes over the editor's right-click menu, and a reader
+  // should opt into that rather than discover it
+  const [redactEnabled, setRedactEnabled] = useState(
+    () => localStorage.getItem('mdapp.redact') === '1',
   )
   const [viewImage, setViewImage] = useState<string | null>(null)
   useEffect(() => {
@@ -879,7 +902,8 @@ export default function App() {
         event.preventDefault()
         openFind(false)
       } else if (key === 'h' && !event.shiftKey) {
-        // Word's replace shortcut; macOS Cmd+H is the system hide role and never reaches here
+        // Word's replace shortcut: Ctrl+H on Windows/Linux, Control+H on macOS —
+        // its ⌘H belongs to the system Hide role, so the menu keeps that key
         event.preventDefault()
         openFind(true)
       } else if (key === 'e' && !event.shiftKey) {
@@ -1080,6 +1104,8 @@ export default function App() {
         autoSave={autoSave}
         onToggleAutoSave={setAutoSave}
         imageEnabled={Boolean(filePath)}
+        mdTheme={mdTheme}
+        onMarkdownTheme={pickMarkdownTheme}
         onInsertImage={insertImage}
         onImageHost={() => setImageHostOpen(true)}
         frontmatterOpen={fmOpen}
@@ -1098,6 +1124,11 @@ export default function App() {
         onAiPreset={(text) => {
           setAiOpen(true)
           setAiPreset((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }))
+        }}
+        redactEnabled={redactEnabled}
+        onToggleRedact={(on) => {
+          setRedactEnabled(on)
+          localStorage.setItem('mdapp.redact', on ? '1' : '0')
         }}
       />
       {status === 'loading' && <div className="center-note">{t('loading')}</div>}
@@ -1235,6 +1266,7 @@ export default function App() {
       {!sourceMode && (
         <SlashMenu ref={slashMenuRef} state={slashState} onDismiss={() => setSlashState(null)} />
       )}
+      <RedactMenu editor={editor} enabled={redactEnabled} />
       <ToastHost />
       {imageHostOpen && (
         <ImageHostDialog onClose={() => setImageHostOpen(false)} onSaved={() => {}} />

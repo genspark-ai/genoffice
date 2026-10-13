@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const en = {
+  redactMenuLabel: 'Hide the selection from AI',
+  redactDialogDesc:
+    'The words stay in the document and in the file; the model sees the placeholder below instead. Name it so the model knows what it stands for.',
+  redactDialogScope:
+    "Hiding covers this app's AI. The CLI, MCP tools and headless export read the file directly, and they still see these words.",
+  redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
+  redactCancel: 'Cancel',
+  redactInsert: 'Hide',
+
   loading: 'Loading…',
   loadFailed: 'Could not open the file',
   untitled: 'Untitled',

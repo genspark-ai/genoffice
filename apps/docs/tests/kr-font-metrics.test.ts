@@ -85,6 +85,29 @@ describe('GenOffice Sans KR (Malgun-normalized)', () => {
   it('fullwidth forms keep the 1.0em CJK advance', () => {
     expect(advanceEm(sans, 0x3000)).toBe(1)
     expect(advanceEm(sans, 0xff10)).toBe(1)
+    expect(advanceEm(sans, 0x3001)).toBe(1)
+    expect(advanceEm(sans, 0x3002)).toBe(1)
+  })
+
+  it('CJK brackets and the reference mark take Malgun proportional advances', () => {
+    const expected: Record<number, number> = {
+      0x300c: 0.571,
+      0x300d: 0.571,
+      0x300e: 0.517,
+      0x300f: 0.517,
+      0x3008: 0.542,
+      0x3009: 0.542,
+      0x300a: 0.596,
+      0x300b: 0.596,
+      0x3010: 0.518,
+      0x3011: 0.518,
+      0x3014: 0.488,
+      0x3015: 0.488,
+      0x203b: 0.8,
+    }
+    for (const [cp, adv] of Object.entries(expected)) {
+      expect(advanceEm(sans, Number(cp)), `U+${Number(cp).toString(16)}`).toBeCloseTo(adv, 3)
+    }
   })
 })
 

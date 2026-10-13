@@ -15,14 +15,24 @@ import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+import { normalizeCustomProfile } from './custom-profile'
 import { AI_PROVIDER_ADAPTERS, normalizeBaseUrl } from './registry'
-import type { AiProviderConfig, AiProviderId, AiSettings } from './types'
+import type {
+  AiCustomEndpoint,
+  AiCustomProfile,
+  AiProviderConfig,
+  AiProviderId,
+  AiSettings,
+} from './types'
 
 const PROVIDER_IDS = Object.keys(AI_PROVIDER_ADAPTERS) as AiProviderId[]
 
 const MAX_API_KEY_LENGTH = 8192
 const MAX_MODEL_LENGTH = 256
 const MAX_CLI_PATH_LENGTH = 1024
+const MAX_ENDPOINT_ID_LENGTH = 64
+const MAX_ENDPOINT_NAME_LENGTH = 128
+const MAX_ENDPOINT_MODELS = 2000
 
 /**
  * `~` / `~/…` (`~\…` on Windows) expanded against the real home directory, so
@@ -83,6 +93,10 @@ function sanitizeProviderConfig(input: unknown): AiProviderConfig {
   }
   const cliPath = sanitizeCliPath(raw.cliPath)
   if (cliPath !== undefined) config.cliPath = cliPath
+  // A custom slot may carry a nested profile; normalizeCustomProfile bounds every
+  // field (protocol, headers via the HTTP-legality gate, sizes) and drops the rest.
+  const profile = normalizeCustomProfile(raw.profile)
+  if (profile !== undefined) config.profile = profile
   return config
 }
 
@@ -116,6 +130,56 @@ function sanitizeMediaSettings(raw: Record<string, unknown>): AiSettings['media'
   return media
 }
 
+function sanitizeCustomEndpoints(raw: unknown): AiCustomEndpoint[] {
+  if (!Array.isArray(raw)) return []
+  const out: AiCustomEndpoint[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue
+    const e = entry as Record<string, unknown>
+    const id = String(e.id ?? '')
+      .trim()
+      .slice(0, MAX_ENDPOINT_ID_LENGTH)
+    if (!id) continue
+    const config = sanitizeProviderConfig(e)
+    const models = Array.isArray(e.models)
+      ? e.models
+          .filter((m): m is string => typeof m === 'string')
+          .slice(0, MAX_ENDPOINT_MODELS)
+          .map((m) => m.slice(0, MAX_MODEL_LENGTH))
+      : undefined
+    // A stored entry carries its profile flat (api/headers/compat/… beside the
+    // identity fields); the nested `profile` form is normalized too, so a
+    // hand-edited file in either shape survives the gate.
+    const flat = normalizeCustomProfile(e) ?? {}
+    const nested: AiCustomProfile = config.profile ?? {}
+    const profile: AiCustomProfile = { ...flat, ...nested }
+    const endpoint: AiCustomEndpoint = {
+      id,
+      name: String(e.name ?? '').slice(0, MAX_ENDPOINT_NAME_LENGTH),
+      baseUrl: config.baseUrl ?? '',
+      apiKey: config.apiKey,
+      model: config.model,
+      ...(models && models.length > 0 ? { models } : {}),
+    }
+    for (const key of [
+      'api',
+      'apiKeyEnv',
+      'headers',
+      'idleTimeoutMs',
+      'compat',
+      'bodyExtras',
+      'modelProfiles',
+      'probedProfiles',
+    ] as const) {
+      if (profile[key] !== undefined) {
+        ;(endpoint as unknown as Record<string, unknown>)[key] = profile[key]
+      }
+    }
+    out.push(endpoint)
+  }
+  return out
+}
+
 /**
  * Returns a sanitized copy of `input`, or null when the payload is not even
  * the right shape (non-object, unknown provider). Invalid individual fields
@@ -140,6 +204,13 @@ export function sanitizeAiSettings(input: unknown): AiSettings | null {
     providers,
   }
   if (typeof raw.gskToolsEnabled === 'boolean') settings.gskToolsEnabled = raw.gskToolsEnabled
+  const customEndpoints = sanitizeCustomEndpoints(raw.customEndpoints)
+  if (customEndpoints.length > 0) {
+    settings.customEndpoints = customEndpoints
+    if (typeof raw.customEndpoint === 'string') {
+      settings.customEndpoint = raw.customEndpoint.slice(0, MAX_ENDPOINT_ID_LENGTH)
+    }
+  }
   if (
     typeof raw.maxOutputTokens === 'number' &&
     Number.isFinite(raw.maxOutputTokens) &&

@@ -1,6 +1,16 @@
 import type { zh } from './zh'
 
 export const fr = {
+  redactMenuLabel: 'Masquer la sélection à l’IA',
+  redactDialogDesc:
+    'La sélection reste dans le document et dans le fichier ; le modèle ne voit que le marqueur ci-dessous. Donnez-lui un nom pour qu’il sache ce qu’il désigne.',
+  redactDialogScope:
+    'Le masquage ne concerne que l’IA de cette application. La CLI, les outils MCP et l’exportation sans interface lisent le fichier directement et voient toujours ces mots.',
+  redactDialogPlaceholder: 'Nom du placeholder, ex. : téléphone du client',
+  redactCancel: 'Annuler',
+  redactInsert: 'Masquer',
+  redactEnable: 'Clic droit sur une sélection pour la masquer au modèle.',
+
   appPhPromptTitle: 'Cliquez pour ajouter un titre',
   appPhPromptSubtitle: 'Cliquez pour ajouter un sous-titre',
   appPhPromptBody: 'Cliquez pour ajouter du texte',

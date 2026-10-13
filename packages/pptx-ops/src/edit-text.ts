@@ -101,6 +101,9 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
           fontSize: r.fontSize ?? oldRun?.fontSize,
           fontFamily: r.fontFamily ?? oldRun?.fontFamily,
           color: r.color ?? oldRun?.color,
+          // three states, like `link` above: absent keeps the original mark, an
+          // empty string or null clears it, a string withholds under that name
+          redact: r.redact === undefined ? oldRun?.redact : r.redact || undefined,
         }
         // Super/subscript: the editor can only express three states — super/sub/none
         // (±30/-25/0) — so detect changes by sign; a different magnitude with the same sign
@@ -268,4 +271,26 @@ export function levelsChanged(oldParas: Paragraph[], edited: EditParagraph[]): b
     const oldPara = templateParagraph(oldParas, p, pi)
     return p.level !== (oldPara?.level ?? 0)
   })
+}
+
+/**
+ * Note for the model when a rewrite of an existing body carried explicit font sizes that
+ * changed the box's size set ("15 → 14"). Inherited sizes (no fontSize on the request)
+ * never drift, so the note only fires on a size the caller actually asked for.
+ */
+export function fontSizeDriftNote(
+  oldParas: Paragraph[],
+  edited: EditParagraph[],
+  newParas: Paragraph[],
+): string | undefined {
+  if (!edited.some((p) => p.runs.some((r) => r.fontSize != null))) return undefined
+  const sizes = (paras: Paragraph[]) =>
+    [...new Set(paras.flatMap((p) => p.runs.filter((r) => r.text).map((r) => r.fontSize)))]
+      .filter((v): v is number => typeof v === 'number')
+      .sort((a, b) => a - b)
+  const before = sizes(oldParas)
+  const after = sizes(newParas)
+  if (before.length === 0 || before.join() === after.join()) return undefined
+  const fmt = (v: number[]) => v.map((n) => `${n}pt`).join('/')
+  return `font size changed ${fmt(before)} → ${fmt(after)}; if the user did not ask to resize the text, resend setText with runs that carry only "text" so the original size is kept`
 }

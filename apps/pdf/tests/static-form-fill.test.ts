@@ -83,8 +83,8 @@ describe('static form fill bitmaps', () => {
     const cross = renderStaticFormMark('cross')
     const crossContext = contexts.at(-1)
 
-    expect(check).toMatchObject({ image: 'STATICFILL', width: 22, height: 22 })
-    expect(cross).toMatchObject({ image: 'STATICFILL', width: 22, height: 22 })
+    expect(check).toMatchObject({ image: 'STATICFILL', width: 12, height: 12 })
+    expect(cross).toMatchObject({ image: 'STATICFILL', width: 12, height: 12 })
     expect(checkContext).toMatchObject({ moves: 1, lines: 2 })
     expect(crossContext).toMatchObject({ moves: 2, lines: 2 })
   })

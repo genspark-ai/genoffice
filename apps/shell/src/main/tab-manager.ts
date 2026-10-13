@@ -1,7 +1,7 @@
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { realpathSync } from 'node:fs'
-import { BrowserWindow } from 'electron'
-import type { Rectangle, WebContents, WebContentsView } from 'electron'
+import { BrowserWindow, shell, WebContentsView } from 'electron'
+import type { Rectangle, WebContents } from 'electron'
 
 import {
   createDocsView,
@@ -45,8 +45,9 @@ import {
   setActiveSlidesWebContents,
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
+import { rendererUrl, safeExternalUrl } from '@genoffice/electron-utils'
 import type { DocumentTabKind, OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
-import { TAB_STRIP_HEIGHT } from '../shared/tab-drag-geometry'
+import { tabStripHeight } from '../shared/tab-drag-geometry'
 
 /** a tab lifted out of the strip with its live view: what "Open in New Window",
  *  tear-off and dock hand back and forth between the shell and a detached window */
@@ -105,6 +106,11 @@ export class TabManager {
     private readonly applyMenuFor: (kind: TabKind) => void,
     /** localized placeholder title for a tab that has no file yet */
     private readonly untitledTitleFor?: (kind: TabKind) => string,
+    /**
+     * The live interface scale (genoffice#1913). A getter rather than a value so a change
+     * made from the View menu reaches the next layout without rebuilding this.
+     */
+    private readonly uiScale: () => number = () => 1,
   ) {
     // Layout once synchronously for macOS/Windows (bounds are already correct),
     // then once more on the next tick. On Linux/X11, `resize` fires before the
@@ -169,7 +175,11 @@ export class TabManager {
     if (active?.view && this.bleedWcIds.has(active.view.webContents.id)) {
       return { x: 0, y: 0, width, height }
     }
-    return { x: 0, y: TAB_STRIP_HEIGHT, width, height: Math.max(0, height - TAB_STRIP_HEIGHT) }
+    // The strip is `zoom`ed by the interface scale, so its rendered height
+    // grows with it — positioning the view at the unscaled constant would paint
+    // the document underneath a taller tab strip.
+    const strip = tabStripHeight(this.uiScale())
+    return { x: 0, y: strip, width, height: Math.max(0, height - strip) }
   }
 
   /** Grow/restore a tab view over the tab strip on request (slides show fullscreen) */
@@ -273,6 +283,27 @@ export class TabManager {
 
   openHomeTab(): void {
     this.activateTab(HOME_ID)
+  }
+
+  /** The in-app user manual (issue #1520): a closable tab showing the shell
+      renderer's help mode — the same bundle, branched on ?mode=help, so no
+      second renderer build is needed. */
+  openHelpTab(): string {
+    // F1 again, or the Help menu while the manual is already open, focuses it
+    // instead of stacking a second copy: the tab is closable (only Home is
+    // not), so "press F1 again" is an ordinary thing to do
+    const existing = this.tabs.find((t) => t.kind === 'help')
+    if (existing) {
+      this.activateTab(existing.id)
+      return existing.id
+    }
+    const view = createHelpView()
+    const id = `t${this.nextId++}`
+    this.shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    this.tabs.push({ id, kind: 'help', view, title: this.untitled('help', 'GenOffice Help') })
+    this.activateTab(id)
+    return id
   }
 
   openDocsTab(
@@ -807,4 +838,28 @@ export function canonicalPath(path: string | undefined): string | undefined {
   } catch {
     return path
   }
+}
+
+/** The manual shares the shell's renderer bundle and preload: the view is just
+    the shell renderer at ?mode=help. Dev serves it from the dev server, the
+    packaged app from the `help` scheme root registered in shell main. */
+function createHelpView(): WebContentsView {
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    const target = safeExternalUrl(url)
+    if (target) void shell.openExternal(target)
+    return { action: 'deny' }
+  })
+  void view.webContents.loadURL(
+    rendererUrl(process.env.ELECTRON_RENDERER_URL, 'help', { mode: 'help' }),
+  )
+  return view
 }

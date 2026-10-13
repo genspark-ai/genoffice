@@ -300,7 +300,9 @@ export const ar = {
   appFullLoadStart: 'تحميل الكل',
   appFullLoadRunning: 'جارٍ تحميل المصنف بالكامل — سيتوفر الفرز والتصفية عند الانتهاء…',
   appFullLoadTooLarge:
-    'هذا المصنف كبير جدًا بحيث لا يمكن تحميله بالكامل في الذاكرة؛ الفرز والتصفية غير متاحين لهذا الملف.',
+    'هذا المصنف كبير جدًا بحيث لا يمكن تحميله بالكامل في الذاكرة؛ الفرز ونقل النطاقات غير متاحين لهذا الملف. تعمل التصفية مباشرة على الملف.',
+  appLargeFilterLoading: 'جارٍ قراءة عمود التصفية من الملف…',
+  appLargeFilterApplying: 'جارٍ تطبيق التصفية على الملف…',
   appSortValueModeFormulas:
     'يحتوي هذا النطاق على صيغ لا تُحسب مباشرةً في هذا المصنف الكبير — سيؤدي فرزه أو نقله إلى حفظها كقيم عادية. اختر نطاقًا بدون صيغ.',
   appSortRangeTooLarge:
@@ -514,6 +516,8 @@ export const ar = {
   appPrintCanceled: 'تم إلغاء الطباعة.',
   appPrintFailed: 'يتعذر الطباعة.',
   appPrintNeedsFullLoad: 'تتطلب الطباعة تحميل المصنف بالكامل — يرجى انتظار انتهاء التحميل.',
+  appPrintWorkbookTooLarge:
+    'هذا المصنف كبير جدًا بحيث لا يمكن تحميله بالكامل في الذاكرة، لذا لا يمكن طباعته أو تصديره بصيغة PDF.',
   appCsvExportNeedsFullLoad: 'يتطلب تصدير CSV مصنفًا محمّلاً بالكامل — انتظر حتى ينتهي التحميل.',
   appCsvExportTooLarge: 'الورقة كبيرة جدًا ولا يمكن تصديرها بتنسيق CSV.',
   appCsvExportCanceled: 'أُلغي تصدير CSV.',
@@ -1042,6 +1046,9 @@ export const ar = {
   appHeadings: 'العناوين',
   appHeadingsHidden: 'تم إخفاء العناوين.',
   appHeadingsShown: 'تم إظهار العناوين.',
+  appRightToLeft: 'من اليمين إلى اليسار',
+  appRightToLeftOn: 'اتجاه الشبكة: من اليمين إلى اليسار.',
+  appRightToLeftOff: 'اتجاه الشبكة: من اليسار إلى اليمين.',
   appPrintHeadingsTitle: 'طباعة رؤوس الصفوف والأعمدة',
   appGroupFunctionLibrary: 'مكتبة الدالات',
   appInsertFunction: 'إدراج دالة',

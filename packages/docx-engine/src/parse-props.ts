@@ -932,7 +932,7 @@ function sameStyle(a: Run, b: Run): boolean {
 
 function sameRevision(a: RevisionInfo | undefined, b: RevisionInfo | undefined): boolean {
   if (!a || !b) return !a === !b
-  return a.author === b.author && a.date === b.date && a.id === b.id
+  return a.author === b.author && a.date === b.date && a.dateUtc === b.dateUtc && a.id === b.id
 }
 
 /** ST_Shd pct values that are not the literal digits in the name */

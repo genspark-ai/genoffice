@@ -324,7 +324,9 @@ export const pl = {
   appFullLoadRunning:
     'Trwa pełne wczytywanie skoroszytu — sortowanie i filtrowanie będą dostępne po zakończeniu…',
   appFullLoadTooLarge:
-    'Ten skoroszyt jest zbyt duży, aby w pełni zmieścić się w pamięci; sortowanie i filtrowanie są niedostępne dla tego pliku.',
+    'Ten skoroszyt jest zbyt duży, aby w całości załadować go do pamięci; sortowanie i przenoszenie zakresów są niedostępne dla tego pliku. Filtrowanie działa bezpośrednio na pliku.',
+  appLargeFilterLoading: 'Odczyt kolumny filtru z pliku…',
+  appLargeFilterApplying: 'Stosowanie filtru do pliku…',
   appSortValueModeFormulas:
     'Ten zakres zawiera formuły, które w tym dużym skoroszycie nie są obliczane na żywo — sortowanie lub przeniesienie zapisałoby je jako zwykłe wartości. Wybierz zakres bez formuł.',
   appSortRangeTooLarge:
@@ -559,6 +561,8 @@ export const pl = {
   appPrintFailed: 'Nie można wydrukować.',
   appPrintNeedsFullLoad:
     'Drukowanie wymaga pełnego wczytania skoroszytu — poczekaj na zakończenie wczytywania.',
+  appPrintWorkbookTooLarge:
+    'Ten skoroszyt jest zbyt duży, aby w pełni załadować go do pamięci, dlatego nie można go wydrukować ani wyeksportować do pliku PDF.',
   appCsvExportNeedsFullLoad:
     'Eksport do CSV wymaga w pełni załadowanego skoroszytu — poczekaj na zakończenie ładowania.',
   appCsvExportTooLarge: 'Arkusz jest za duży, aby wyeksportować go do CSV.',
@@ -1101,6 +1105,9 @@ export const pl = {
   appHeadings: 'Nagłówki',
   appHeadingsHidden: 'Nagłówki ukryte.',
   appHeadingsShown: 'Nagłówki widoczne.',
+  appRightToLeft: 'Od prawej do lewej',
+  appRightToLeftOn: 'Kierunek siatki: od prawej do lewej.',
+  appRightToLeftOff: 'Kierunek siatki: od lewej do prawej.',
   appPrintHeadingsTitle: 'Drukuj nagłówki wierszy i kolumn',
   appGroupFunctionLibrary: 'Biblioteka funkcji',
   appInsertFunction: 'Wstaw funkcję',

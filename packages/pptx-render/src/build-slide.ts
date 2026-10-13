@@ -598,6 +598,7 @@ function buildPicture(
     ...(el.opacity != null ? { opacity: el.opacity } : {}),
     ...(el.softEdge ? { softEdgePx: emuToPx(el.softEdge, vp.scale) } : {}),
     ...(el.media ? { media: el.media.kind } : {}),
+    ...(el.redact ? { redact: el.redact } : {}),
     ...(el.name ? { name: el.name } : {}),
     ...(el.descr ? { descr: el.descr } : {}),
     ...(el.fill && el.fill.type !== 'none' ? { fill: resolveFill(el.fill, vp, media) } : {}),

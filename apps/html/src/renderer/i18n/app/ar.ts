@@ -1,6 +1,15 @@
 import type { zh } from './zh'
 
 export const ar = {
+  redactMenuLabel: 'إخفاء التحديد عن الذكاء الاصطناعي',
+  redactDialogDesc:
+    'تبقى الكلمات في المستند وفي الملف؛ يرى النموذج العلامة أدناه. سمِّها ليعرف ما تمثّله.',
+  redactDialogScope:
+    'الإخفاء يشمل الذكاء الاصطناعي في هذا التطبيق فقط. أما CLI وأدوات MCP والتصدير بدون واجهة فيقرأون الملف مباشرة، وما زالوا يرون هذه الكلمات.',
+  redactDialogPlaceholder: 'اسم العنصر، مثال: هاتف العميل',
+  redactCancel: 'إلغاء',
+  redactInsert: 'إخفاء',
+
   loading: 'جارٍ التحميل…',
   loadFailed: 'تعذر فتح الملف',
   untitled: 'بدون عنوان',

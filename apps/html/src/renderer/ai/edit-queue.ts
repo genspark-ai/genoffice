@@ -1,4 +1,5 @@
-import { sourceText, type ElementEntry, type ParseMap } from '../document/parse-map'
+import { type ElementEntry, type ParseMap } from '../document/parse-map'
+import type { RedactionProjection } from './redact'
 
 /**
  * Element-scoped AI edit queue (slides/docs parity): the user annotates
@@ -42,14 +43,29 @@ export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text
 }
 
+/** sourceText's collapsing, applied to the projection: it keeps entities and inline tags */
+function projectedExcerpt(proj: RedactionProjection, entry: ElementEntry): string {
+  return proj
+    .projectRange(entry.inner[0], entry.inner[1])
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** collapsed text content, or the tag when the element carries none (img, hr, empty div) */
-export function excerptOf(text: string, entry: ElementEntry): string {
-  const content = sourceText(text, entry).trim()
+export function excerptOf(proj: RedactionProjection, entry: ElementEntry): string {
+  // the projection, not the source: a queued edit's excerpt is quoted back to
+  // the model with the instruction, and a withheld word would ride along
+  const content = projectedExcerpt(proj, entry)
   return content || `<${entry.tag}>`
 }
 
 export function resolveQueueItem(
-  text: string,
+  proj: RedactionProjection,
   map: ParseMap,
   item: EditQueueItem,
 ): ResolvedQueueItem {
@@ -60,18 +76,18 @@ export function resolveQueueItem(
     target: {
       sid: entry.sid,
       tag: entry.tag,
-      excerpt: excerptOf(text, entry),
+      excerpt: excerptOf(proj, entry),
       start: entry.range[0],
     },
   }
 }
 
 export function resolveQueue(
-  text: string,
+  proj: RedactionProjection,
   map: ParseMap,
   items: EditQueueItem[],
 ): ResolvedQueueItem[] {
-  return items.map((item) => resolveQueueItem(text, map, item))
+  return items.map((item) => resolveQueueItem(proj, map, item))
 }
 
 export function liveItems(resolved: ResolvedQueueItem[]): LiveQueueItem[] {

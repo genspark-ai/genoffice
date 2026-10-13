@@ -58,6 +58,7 @@ import { fetchDocBytes } from './doc-bytes'
 import { parseDocxOffThread } from './parse-off-thread'
 import { PHASED_APPEND } from './editor/streaming-tail-guard'
 import { docTextLength, docWeight, openTierFor } from './large-document'
+import { documentToMarkdown } from './export-markdown'
 import { blocksHaveRevisions } from './editor/revision-view'
 import { docStyleCss } from './doc-style-css'
 import { setNoteNumFmts } from './note-format'
@@ -89,14 +90,20 @@ import { checkMissingFonts, collectDocFonts } from './font-check'
 import { hangulSpaceWideningFor, setDocFontTable, setHangulSpaceWidening } from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
 import { defaultEastAsiaFontFor } from './font-list'
-import { hasPrintableHeaderFooter } from './pagination'
 import { clearPrintZoom, setPrintZoom } from './print-zoom'
+import { collectPdfInternalLinks } from './pdf-internal-links'
+import type { PdfInternalLink } from '../shared/ipc'
 import { showToast } from './components/toast-bus'
 import { buildStandaloneHtml } from './html-export'
 import { aiPanelInitiallyOpen } from '@genoffice/ui'
 
 /** An export waiting for the pagination preview to mount; resolve settles the caller's exportPdf promise. */
-export type PendingPdfExport = { outPath?: string; resolve: (ok: boolean) => void }
+export type PendingPdfExport = {
+  outPath?: string
+  resolve: (ok: boolean) => void
+  /** the export opened the preview itself and closes it once the PDF is written */
+  closePreview: boolean
+}
 
 /** The App state the file actions need; built fresh per call. */
 export interface FileActionContext {
@@ -294,6 +301,9 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   // Word 2013+ justified lines pull words up by shrinking spaces; legacy
   // compatibility modes (and new blank docs) never do
   editor.storage.justifyShrink.enabled = (parsed.compatibilityMode ?? 0) >= 15
+  // Word stretches a justified line that ends in a line break (w:br / w:cr)
+  // unless the document opts out with doNotExpandShiftReturn
+  editor.storage.justifyShrink.expandBreakLines = parsed.doNotExpandShiftReturn !== true
   editor.storage.cjkPunctShrink.enabled = parsed.compressPunctuation === true
   editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
   editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
@@ -1235,7 +1245,8 @@ async function printGroupsMerged(
   pvPages: HTMLElement[],
   groups: PrintGroup[],
   scale: number,
-  outPath?: string,
+  outPath: string | undefined,
+  links: PdfInternalLink[],
 ): Promise<boolean> {
   const parts: string[] = []
   // every printToPDF flips the whole document between print and screen media;
@@ -1271,7 +1282,7 @@ async function printGroupsMerged(
     appRoot?.classList.remove('pv-exporting')
     pvPages.forEach((page) => page.classList.remove('pv-print-skip', 'pv-print-tail'))
   }
-  const result = await window.desktop.saveMergedPdf(fileName, parts, outPath)
+  const result = await window.desktop.saveMergedPdf(fileName, parts, outPath, links)
   const mixed = groups.some((g) => g.w !== groups[0].w || g.h !== groups[0].h)
   ctx.setStatus(
     result.ok
@@ -1288,9 +1299,8 @@ async function printGroupsMerged(
 /** Park the export until the preview mounts; the App effect re-runs it and settles the promise. */
 function deferExportToPreview(ctx: FileActionContext, outPath?: string): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    const prev = ctx.pendingMixedExportRef.current
-    if (prev) prev.resolve(false)
-    ctx.pendingMixedExportRef.current = { outPath, resolve }
+    const closePreview = !document.querySelector('.pagination-preview')
+    ctx.pendingMixedExportRef.current = { outPath, resolve, closePreview }
     ctx.setShowPagePreview(true)
     ctx.bumpPendingExportTick()
   })
@@ -1298,9 +1308,10 @@ function deferExportToPreview(ctx: FileActionContext, outPath?: string): Promise
 
 // Concurrent exports would trample each other's pv-print-skip classes and
 // interleave print jobs; while one is printing, further calls report busy.
-// A parked deferral must not hold the flag (its resume call has to get
-// through), so the defer paths return without await: the finally runs at
-// return time and the flag clears while the export is parked.
+// A parked deferral cannot hold the flag (its resume call has to get
+// through), so the defer path returns without await and the flag clears
+// while the export is parked; the pending ref keeps the export exclusive
+// in the meantime, and the resume call claims (clears) it before re-entering.
 let printJobActive = false
 
 /** Resolves true only when a PDF was written to disk. */
@@ -1308,7 +1319,7 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
   const { doc } = ctx
   if (!doc) return false
   await waitForFullContent()
-  if (printJobActive) {
+  if (printJobActive || ctx.pendingMixedExportRef.current) {
     ctx.setStatus(t('appExportingPdf'))
     return false
   }
@@ -1320,6 +1331,8 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
     // with pdf-lib; each page keeps its section's paper size
     const pvPages = [...document.querySelectorAll('.pv-page')] as HTMLElement[]
     if (pvPages.length > 0) {
+      // measured before the print zoom: fractions of each page box
+      const links = collectPdfInternalLinks(pvPages, doc.parsed.blocks)
       const scale = setPrintZoom()
       const pxToTwips = (px: number) => Math.round((px / 96) * 1440)
       let groups: PrintGroup[] = []
@@ -1337,12 +1350,12 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
       const PRINT_CHUNK = 10
       if (pvPages.length > PRINT_CHUNK) groups = chunkPrintGroups(groups, PRINT_CHUNK)
       if (groups.length > 1) {
-        return await printGroupsMerged(ctx, doc.fileName, pvPages, groups, scale, outPath)
+        return await printGroupsMerged(ctx, doc.fileName, pvPages, groups, scale, outPath, links)
       }
       // preview open but uniform paper: single export at the preview size
       const g = groups[0]
       if (g) {
-        const result = await window.desktop.exportPdf(doc.fileName, g.w, g.h, outPath, scale)
+        const result = await window.desktop.exportPdf(doc.fileName, g.w, g.h, outPath, scale, links)
         if (result.ok) {
           ctx.setStatus(t('appExportedPdf', { path: result.path ?? '' }))
           return true
@@ -1363,68 +1376,27 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
             chunkPrintGroups([g], PRINT_CHUNK / 2),
             scale,
             retryPath,
+            links,
           )
         }
         ctx.setStatus(t('appExportPdfFailed', { error: result.error }))
         return false
       }
     }
-    // preview closed: mixed paper auto-opens the preview and uses the merge path; uniform paper exports directly
-    const sizeKey = (w: number, h: number) => `${w}x${h}`
-    const counts = new Map<string, { w: number; h: number; n: number }>()
-    const list =
-      ctx.sections.length > 0
+    // Preview closed: open it and export its per-page sheets. Printing the
+    // edit canvas directly hands Chromium one padded box to auto-paginate, so
+    // only the first sheet gets a top margin, the bottom margin is ignored and
+    // the trailing padding spills onto a blank last page.
+    const sizes = new Set(
+      (ctx.sections.length > 0
         ? ctx.sections.map((sec) => sec.settings)
         : ctx.section
           ? [ctx.section]
           : []
-    for (const st of list) {
-      const key = sizeKey(st.pageWidth, st.pageHeight)
-      const cur = counts.get(key) ?? { w: st.pageWidth, h: st.pageHeight, n: 0 }
-      cur.n += 1
-      counts.set(key, cur)
-    }
-    // headers/footers exist once on the edit canvas (not once per page), so direct
-    // print would show them on the last page only — force the preview-merge path too
-    const mixedPaper = counts.size > 1
-    // direct print pads every page by the odd-page margins: mirrored even pages need the per-page sheets
-    if (
-      mixedPaper ||
-      ctx.mirrorMargins ||
-      hasPrintableHeaderFooter({
-        edited: [
-          ctx.header,
-          ctx.footer,
-          ...(ctx.titlePg ? [ctx.hfVariants.headerFirst, ctx.hfVariants.footerFirst] : []),
-          ...(ctx.evenOddHf ? [ctx.hfVariants.headerEven, ctx.hfVariants.footerEven] : []),
-          ...Object.values(ctx.sectionHfEdits),
-        ],
-        sections: ctx.sections,
-        hfParts: doc.parsed.hfParts ?? undefined,
-        evenOddHf: ctx.evenOddHf,
-      })
-    ) {
-      if (mixedPaper) ctx.setStatus(t('appMixedExportOpening'))
-      return deferExportToPreview(ctx, outPath)
-    }
-    const major = [...counts.values()][0]
-    const result = await window.desktop.exportPdf(
-      doc.fileName,
-      major?.w ?? ctx.section?.pageWidth ?? 12240,
-      major?.h ?? ctx.section?.pageHeight ?? 15840,
-      outPath,
+      ).map((st) => `${st.pageWidth}x${st.pageHeight}`),
     )
-    if (result.ok) {
-      ctx.setStatus(t('appExportedPdf', { path: result.path ?? '' }))
-      return true
-    }
-    if (!result.error) {
-      ctx.setStatus(t('appExportPdfCanceled'))
-      return false
-    }
-    // direct print of a heavy canvas failed: reroute through the preview so the
-    // retry can print in chunks; the failed attempt already authorized result.path
-    return deferExportToPreview(ctx, outPath ?? result.path)
+    if (sizes.size > 1) ctx.setStatus(t('appMixedExportOpening'))
+    return deferExportToPreview(ctx, outPath)
   } finally {
     clearPrintZoom()
     printJobActive = false
@@ -1536,6 +1508,26 @@ export async function exportHtml(ctx: FileActionContext, outPath?: string): Prom
       : result.error
         ? t('appExportHtmlFailed', { error: result.error })
         : t('appExportHtmlCanceled'),
+  )
+  return result.ok
+}
+
+/** Resolves true only when a Markdown file was written to disk. */
+export async function exportMarkdown(ctx: FileActionContext, outPath?: string): Promise<boolean> {
+  const { doc, editor } = ctx
+  if (!doc || !editor) return false
+  await waitForFullContent()
+  ctx.setStatus(t('appExportingMarkdown'))
+  const { markdown, images } = documentToMarkdown(editor)
+  const result = await window.desktop.exportMarkdown(doc.fileName, markdown, images, outPath)
+  const dropped = result.imagesDropped ?? 0
+  ctx.setStatus(
+    result.ok
+      ? t('appExportedMarkdown', { path: result.path ?? '' }) +
+          (dropped > 0 ? ` ${t('appExportMarkdownImagesDropped', { count: dropped })}` : '')
+      : result.error
+        ? t('appExportMarkdownFailed', { error: result.error })
+        : t('appExportMarkdownCanceled'),
   )
   return result.ok
 }

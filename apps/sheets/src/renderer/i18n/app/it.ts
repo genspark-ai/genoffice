@@ -332,7 +332,9 @@ export const it = {
   appFullLoadRunning:
     'Caricamento della cartella completa in corso: ordinamento e filtri saranno disponibili al termine…',
   appFullLoadTooLarge:
-    'Questa cartella di lavoro è troppo grande per essere caricata completamente in memoria; ordinamento e filtri non sono disponibili per questo file.',
+    'Questa cartella di lavoro è troppo grande per essere caricata completamente in memoria; ordinamento e spostamento di intervalli non sono disponibili per questo file. Il filtro viene eseguito direttamente sul file.',
+  appLargeFilterLoading: 'Lettura della colonna del filtro dal file…',
+  appLargeFilterApplying: 'Applicazione del filtro sul file…',
   appSortValueModeFormulas:
     'Questo intervallo contiene formule che in questa cartella di grandi dimensioni non vengono calcolate in tempo reale: ordinarlo o spostarlo le salverebbe come semplici valori. Scegliere un intervallo senza formule.',
   appSortRangeTooLarge:
@@ -570,6 +572,8 @@ export const it = {
   appPrintFailed: 'Impossibile stampare.',
   appPrintNeedsFullLoad:
     'La stampa richiede il caricamento completo della cartella di lavoro: attendere il termine del caricamento.',
+  appPrintWorkbookTooLarge:
+    'Questa cartella di lavoro è troppo grande per essere caricata interamente in memoria, quindi non può essere stampata né esportata in PDF.',
   appCsvExportNeedsFullLoad:
     "L'esportazione in CSV richiede la cartella di lavoro completamente caricata — attendi la fine del caricamento.",
   appCsvExportTooLarge: 'Il foglio è troppo grande per essere esportato come CSV.',
@@ -1113,6 +1117,9 @@ export const it = {
   appHeadings: 'Intestazioni',
   appHeadingsHidden: 'Intestazioni nascoste.',
   appHeadingsShown: 'Intestazioni mostrate.',
+  appRightToLeft: 'Da destra a sinistra',
+  appRightToLeftOn: 'Direzione della griglia: da destra a sinistra.',
+  appRightToLeftOff: 'Direzione della griglia: da sinistra a destra.',
   appPrintHeadingsTitle: 'Stampa le intestazioni di riga e colonna',
   appGroupFunctionLibrary: 'Libreria di funzioni',
   appInsertFunction: 'Inserisci funzione',

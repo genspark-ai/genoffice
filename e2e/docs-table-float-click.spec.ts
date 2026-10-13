@@ -94,16 +94,27 @@ test.describe('docs floating table click', () => {
       await expect(table).toBeVisible()
       const nameCell = table.locator('tr').nth(1).locator('td, th').nth(0)
       await nameCell.scrollIntoViewIfNeeded()
-      const box = (await nameCell.boundingBox())!
-      // the empty top band of the cell, well away from the glyphs
-      await page.mouse.click(box.x + box.width / 2, box.y + 6)
-      const path = await page.evaluate(() => {
-        const $from = (window as unknown as AidocsWindow).__aidocs!.editor!.state.selection.$from
-        const names: string[] = []
-        for (let d = $from.depth; d >= 0; d--) names.push($from.node(d).type.name)
-        return names
-      })
-      expect(path).toContain('docTableCell')
+      const selectionPath = () =>
+        page.evaluate(() => {
+          const $from = (window as unknown as AidocsWindow).__aidocs!.editor!.state.selection.$from
+          const names: string[] = []
+          for (let d = $from.depth; d >= 0; d--) names.push($from.node(d).type.name)
+          return names
+        })
+      // pagination keeps shifting the float for a few frames after first paint;
+      // re-measure and click until the caret lands in the cell
+      await expect
+        .poll(
+          async () => {
+            const box = (await nameCell.boundingBox())!
+            // the empty top band of the cell, well away from the glyphs
+            await page.mouse.click(box.x + box.width / 2, box.y + 6)
+            await page.waitForTimeout(150)
+            return selectionPath()
+          },
+          { timeout: 20_000, intervals: [300, 600, 1000] },
+        )
+        .toContain('docTableCell')
       await page.keyboard.type('Z')
       await expect(nameCell).toHaveText(/Z/)
     } finally {

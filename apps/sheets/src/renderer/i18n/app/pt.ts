@@ -330,7 +330,9 @@ export const pt = {
   appFullLoadRunning:
     'Carregando toda a pasta de trabalho — classificar e filtrar ficarão disponíveis ao concluir…',
   appFullLoadTooLarge:
-    'Esta pasta de trabalho é grande demais para ser totalmente carregada na memória; classificar e filtrar não estão disponíveis para este arquivo.',
+    'Esta pasta de trabalho é grande demais para ser carregada por completo na memória; ordenar e mover intervalos não estão disponíveis para este arquivo. A filtragem é executada diretamente no arquivo.',
+  appLargeFilterLoading: 'Lendo a coluna do filtro a partir do arquivo…',
+  appLargeFilterApplying: 'Aplicando o filtro no arquivo…',
   appSortValueModeFormulas:
     'Este intervalo contém fórmulas que não são calculadas ao vivo nesta pasta grande — classificá-lo ou movê-lo as salvaria como valores simples. Escolha um intervalo sem fórmulas.',
   appSortRangeTooLarge:
@@ -573,6 +575,8 @@ export const pt = {
   appPrintFailed: 'Não foi possível imprimir.',
   appPrintNeedsFullLoad:
     'A impressão requer que a pasta de trabalho esteja totalmente carregada; aguarde o fim do carregamento.',
+  appPrintWorkbookTooLarge:
+    'Esta pasta de trabalho é grande demais para ser carregada por completo na memória, por isso não pode ser impressa nem exportada para PDF.',
   appCsvExportNeedsFullLoad:
     'A exportação de CSV requer a pasta de trabalho totalmente carregada — aguarde o carregamento terminar.',
   appCsvExportTooLarge: 'A planilha é grande demais para exportar como CSV.',
@@ -1113,6 +1117,9 @@ export const pt = {
   appHeadings: 'Títulos',
   appHeadingsHidden: 'Cabeçalhos ocultos.',
   appHeadingsShown: 'Cabeçalhos exibidos.',
+  appRightToLeft: 'Da direita para a esquerda',
+  appRightToLeftOn: 'Direção da grade: da direita para a esquerda.',
+  appRightToLeftOff: 'Direção da grade: da esquerda para a direita.',
   appPrintHeadingsTitle: 'Imprimir títulos de linha e coluna',
   appGroupFunctionLibrary: 'Biblioteca de Funções',
   appInsertFunction: 'Inserir Função',

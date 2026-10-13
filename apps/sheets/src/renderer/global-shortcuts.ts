@@ -144,9 +144,12 @@ const BINDINGS: readonly Binding[] = [
     gate: 'sheet',
     action: command('filter-toggle'),
   },
+  // AutoSum beyond the mac-only ⇧⌘T: Ctrl+Shift+T on Windows/Linux, where
+  // Univer's own QuickSum already owns Alt+=. The filter's Ctrl/⌘+Shift+L is
+  // Univer's own SmartToggleFilterShortcut, so no row here for it.
   {
     code: 'KeyT',
-    chord: { cmdMac: true, shift: true },
+    chord: { mod: true, shift: true },
     gate: 'sheet',
     action: command('autofn:SUM'),
   },
@@ -195,7 +198,7 @@ export function resolveGlobalShortcut(
   }
   // number-format / border chords (Ctrl+Shift+digit, Ctrl+Shift+&/_, mac ⌘⌥
   // borders) write to the range: same gate as the table's `sheet` rows
-  const formatCommand = formatShortcutCommand(event)
+  const formatCommand = formatShortcutCommand(event, guards.isMac)
   if (formatCommand && gateOpen('sheet', guards)) return { kind: 'command', command: formatCommand }
   return null
 }

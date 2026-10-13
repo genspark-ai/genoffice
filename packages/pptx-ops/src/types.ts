@@ -24,6 +24,14 @@ export interface EditRun {
   /** Run hyperlink. undefined = keep the original run's link (programmatic paths that can't
    * express links); null = explicitly none (the editor DOM is authoritative, link removed) */
   link?: LinkTargetOp | null
+  /**
+   * Withheld from the model: the label is all a model ever sees in place of this
+   * run's words, which stay in the deck. undefined = keep the original run's mark,
+   * null = stop withholding (the editor DOM is authoritative), a string = withhold
+   * under that name — the same three-state shape as `link`, because a run that
+   * stops being withheld is a deliberate act and cannot be left to "absent".
+   */
+  redact?: string | null
 }
 
 /** One paragraph (with alignment). */

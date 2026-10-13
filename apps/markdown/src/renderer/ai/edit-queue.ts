@@ -2,6 +2,8 @@ import type { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection, type Selection } from '@tiptap/pm/state'
 import { queueAnchorRange } from '../editor/aiQueueAnchors'
 import { blockIndexRange } from '../editor/ops'
+import { redactTextBetween } from '../editor/redact'
+import type { ProseNode } from '../editor/redact'
 
 /**
  * Selection-scoped AI edit queue (docs parity): the user annotates passages
@@ -38,8 +40,9 @@ export function resolveQueueItem(editor: Editor, item: EditQueueItem): ResolvedQ
   const range = queueAnchorRange(editor.state, item.qid)
   if (!range) return { item, target: null }
   const indexes = blockIndexRange(editor.state.doc, range.from, range.to)
-  const text = editor.state.doc
-    .textBetween(range.from, range.to, '\n', ' ')
+  // the excerpt labels a queued edit, and the label is shown to the model; an
+  // anchor that covered a withheld span would carry the words along
+  const text = redactTextBetween(editor.getJSON() as ProseNode, range.from, range.to)
     .replace(/\s+/g, ' ')
     .trim()
   // a textless anchor (image/table node selection) is still a live target —

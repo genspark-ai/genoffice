@@ -1,4 +1,9 @@
 export type {
+  AiCustomCompat,
+  AiCustomEndpoint,
+  AiCustomModelProfile,
+  AiCustomProfile,
+  AiCustomProtocol,
   AiChatRequest,
   AiChatResponse,
   AiMediaProviderConfig,
@@ -17,6 +22,7 @@ export type {
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  AiTokenUsage,
   GenSparkAccountStatus,
   LegacyAiSettings,
 } from './types'
@@ -33,6 +39,24 @@ export {
   maxOutputTokensOf,
   resolveAiSettings,
 } from './providers'
+export {
+  activeCustomEndpoint,
+  customEndpointLabel,
+  newCustomEndpointId,
+  removeCustomEndpoint,
+  resolveCustomEndpoints,
+  selectCustomEndpoint,
+  upsertCustomEndpoint,
+} from './custom-endpoints'
+export {
+  AI_CUSTOM_PROTOCOLS,
+  declaredModelProfile,
+  normalizeCustomProfile,
+  resolveCustomProfile,
+} from './custom-profile'
+export type { ResolvedCustomProfile } from './custom-profile'
+export { resolveProfileCredential } from './credential-env'
+export type { EnvLookup } from './credential-env'
 export {
   AI_MEDIA_PROVIDERS,
   GEMINI_MEDIA_BASE_URL,

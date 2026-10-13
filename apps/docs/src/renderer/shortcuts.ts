@@ -120,7 +120,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     labelSuffix: ' 2.0',
     keys: '⌘2',
   },
-  // ⌘M is macOS' Minimize accelerator, so indenting is on ⌃M there too
+  // ⌘M is macOS' Minimize accelerator, so the indent chord is Control+M there
+  // (Windows/Linux: plain Ctrl+M)
   { id: 'indent', group: 'para', labelKey: 'ribbonIncreaseIndent', keys: '⌃M', win: 'Ctrl+M' },
   {
     id: 'outdent',
