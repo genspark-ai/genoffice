@@ -23,7 +23,7 @@ import {
   rememberAiPanelOpen,
   createZoomWheelClassifier,
   useAutoSavePref,
-  useAiPanelPrefs,
+  useAiSidebarEnabled,
 } from '@genoffice/ui'
 import { wordRangeAtCaret } from './editor/comments'
 import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
@@ -788,15 +788,8 @@ export function App() {
   // treats the Copilot pane: an explicit Ask-AI action (ribbon, context menu,
   // shortcut, preset) still opens the panel for this document, and closing it
   // returns to hidden. The dock stays mounted either way, so panel state and
-  // in-flight runs survive.
-  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
-  const [aiOpenedExplicitly, setAiOpenedExplicitly] = useState(false)
-  const prevShowAiRef = useRef(showAi)
-  useEffect(() => {
-    if (showAi && !prevShowAiRef.current) setAiOpenedExplicitly(true)
-    prevShowAiRef.current = showAi
-  }, [showAi])
-  const aiDockOpen = showAi && (aiSidebarEnabled || aiOpenedExplicitly)
+  // in-flight runs survive; the hook closes it when the switch itself goes off.
+  const aiSidebarEnabled = useAiSidebarEnabled(setShowAi)
   const [spellcheck, setSpellcheck] = useState(spellcheckEnabled)
   const [largeDocSpellOff, setLargeDocSpellOff] = useState(false)
   const spellcheckActive = spellcheck && !largeDocSpellOff
@@ -7225,8 +7218,8 @@ export function App() {
       <div className="app-main">
         {doc && (
           <div
-            className={`ai-dock${aiDockOpen ? '' : ' collapsed'}${
-              !aiSidebarEnabled && !aiDockOpen ? ' ai-dock-off' : ''
+            className={`ai-dock${showAi ? '' : ' collapsed'}${
+              !aiSidebarEnabled && !showAi ? ' ai-dock-off' : ''
             }`}
           >
             {/* always mounted: collapse must not drop state or in-flight runs */}
@@ -7240,7 +7233,7 @@ export function App() {
                 doc.isBlank ? { bullet: BLANK_BULLET_NUM_ID, ordered: BLANK_ORDERED_NUM_ID } : null
               }
               preset={aiPreset}
-              open={aiDockOpen}
+              open={showAi}
               hideRail={!aiSidebarEnabled}
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}

@@ -10,7 +10,7 @@ import {
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
   useAutoSavePref,
-  useAiPanelPrefs,
+  useAiSidebarEnabled,
 } from '@genoffice/ui'
 import {
   pollUntilReady,
@@ -159,7 +159,8 @@ export default function App() {
   const [fmText, setFmText] = useState('')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('mdapp.showAi'))
-  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
+  // the sidebar switch is a soft hide; it closes the panel when it turns off
+  const aiSidebarEnabled = useAiSidebarEnabled(setAiOpen)
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const editQueueRef = useRef(editQueue)

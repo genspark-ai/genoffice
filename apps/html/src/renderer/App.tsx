@@ -9,7 +9,7 @@ import {
   type FindTarget,
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
-  useAiPanelPrefs,
+  useAiSidebarEnabled,
 } from '@genoffice/ui'
 import {
   pollUntilReady,
@@ -147,7 +147,8 @@ export default function App() {
   const [draftHtml, setDraftHtml] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: false, redo: false })
   const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('htmlapp.showAi'))
-  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
+  // the sidebar switch is a soft hide; it closes the panel when it turns off
+  const aiSidebarEnabled = useAiSidebarEnabled(setAiOpen)
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const [askMode, setAskMode] = useState<AskMode | null>(null)

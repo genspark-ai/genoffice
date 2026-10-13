@@ -9,7 +9,7 @@ import {
   useRibbonCollapse,
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
-  useAiPanelPrefs,
+  useAiSidebarEnabled,
   type AiTokenUsageView,
 } from '@genoffice/ui'
 
@@ -548,10 +548,11 @@ export function ExcelShell({
     expand: t('appRibbonExpand'),
   })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
-  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
   const [isCopilotOpen, setIsCopilotOpen] = useState(() =>
     aiPanelInitiallyOpen('ai-sheets-show-ai'),
   )
+  // the sidebar switch is a soft hide; it closes the panel when it turns off
+  const aiSidebarEnabled = useAiSidebarEnabled(setIsCopilotOpen)
   useEffect(() => {
     rememberAiPanelOpen('ai-sheets-show-ai', isCopilotOpen)
   }, [isCopilotOpen])

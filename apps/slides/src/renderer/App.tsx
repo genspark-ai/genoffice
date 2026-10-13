@@ -105,7 +105,7 @@ import {
   type WordArtPreset,
   aiPanelInitiallyOpen,
   rememberAiPanelOpen,
-  useAiPanelPrefs,
+  useAiSidebarEnabled,
 } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
@@ -479,15 +479,9 @@ export function App() {
   const [showAi, setShowAi] = useState(() => aiPanelInitiallyOpen('ai-slides-show-ai'))
   // Settings › "show the AI sidebar" off hides the panel and its rail (Word's
   // Copilot-pane model): an explicit Ask-AI action still opens the panel for
-  // this deck, and closing it returns to hidden. The dock stays mounted.
-  const aiSidebarEnabled = useAiPanelPrefs().showAiSidebar
-  const [aiOpenedExplicitly, setAiOpenedExplicitly] = useState(false)
-  const prevShowAiRef = useRef(showAi)
-  useEffect(() => {
-    if (showAi && !prevShowAiRef.current) setAiOpenedExplicitly(true)
-    prevShowAiRef.current = showAi
-  }, [showAi])
-  const aiDockOpen = showAi && (aiSidebarEnabled || aiOpenedExplicitly)
+  // this deck, and closing it returns to hidden. The dock stays mounted; the
+  // hook closes it when the switch itself goes off.
+  const aiSidebarEnabled = useAiSidebarEnabled(setShowAi)
   const [showFormat, setShowFormat] = useState(false)
   const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
@@ -3567,8 +3561,8 @@ export function App() {
       <div className="app-main">
         {slide && viewMode !== 'reading' && viewMode !== 'sorter' && (
           <div
-            className={`ai-dock${aiDockOpen && aiSettings ? '' : ' collapsed'}${
-              !aiSidebarEnabled && !aiDockOpen ? ' ai-dock-off' : ''
+            className={`ai-dock${showAi && aiSettings ? '' : ' collapsed'}${
+              !aiSidebarEnabled && !showAi ? ' ai-dock-off' : ''
             }`}
           >
             {/* always mounted once settings load: collapse must not drop state or in-flight runs */}
@@ -3585,7 +3579,7 @@ export function App() {
                 fitWidthPx={FIT_WIDTH}
                 settings={aiSettings}
                 preset={aiPreset}
-                open={aiDockOpen}
+                open={showAi}
                 onExpand={toggleAi}
                 onCollapse={toggleAi}
                 onUndo={() => void undo()}

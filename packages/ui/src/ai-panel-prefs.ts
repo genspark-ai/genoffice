@@ -22,8 +22,11 @@ export interface AiPanelPrefs {
   readonly spellcheck: boolean
   /** Off: every new document opens with the panel collapsed, ignoring the remembered state */
   readonly openInNewDocs: boolean
-  /** Off: the AI sidebar is not offered at all — no rail button, no panel,
-   * and new documents never open it (for users who want a plain editor) */
+  /** Off: the panel and its rail button are hidden and new documents never open
+   * it, the way Word treats the Copilot pane — an explicit Ask-AI action (ribbon,
+   * context menu, shortcut) still opens the panel for the current document, and
+   * turning the switch off closes one that was already open (for users who want
+   * a plain editor without a broken Ask-AI) */
   readonly showAiSidebar: boolean
 }
 
