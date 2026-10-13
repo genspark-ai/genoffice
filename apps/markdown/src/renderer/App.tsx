@@ -184,7 +184,7 @@ export default function App() {
   const [mdTheme, setMdTheme] = useState<MarkdownTheme>('default')
   useEffect(() => {
     window.markdownApi
-      .getMarkdownTheme()
+      .getMarkdownTheme?.()
       .then(setMdTheme)
       .catch(() => {})
   }, [])

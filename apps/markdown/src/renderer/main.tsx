@@ -45,7 +45,7 @@ void (async () => {
     window.markdownApi.getLanguage().catch(() => 'zh' as const),
     window.markdownApi.getTheme().catch(() => 'system' as const),
     window.markdownApi.getDocumentTheme?.().catch(() => 'follow' as const),
-    window.markdownApi.getMarkdownTheme().catch(() => 'default' as const),
+    window.markdownApi.getMarkdownTheme?.().catch(() => 'default' as const),
   ])
   document.documentElement.lang = htmlLang(lang as Lang)
   document.documentElement.dir = htmlDir(lang)
