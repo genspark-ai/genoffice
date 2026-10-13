@@ -5248,14 +5248,11 @@ export function registerDocsIpc(): void {
         allowPdfWrite(event.sender.id, filePath)
       }
       try {
-        const { PDFDocument } = await import('pdf-lib')
-        const merged = await PDFDocument.create()
-        for (const b64 of base64Parts) {
-          const part = await PDFDocument.load(Buffer.from(b64, 'base64'))
-          const pages = await merged.copyPages(part, part.getPageIndices())
-          for (const page of pages) merged.addPage(page)
-        }
-        await atomicWriteFile(filePath, Buffer.from(await merged.save()))
+        // copyPages drops the catalog's named destinations, which would leave
+        // every TOC / cross-reference link in the merged file unresolvable
+        const { mergePdfParts } = await import('./pdf-merge')
+        const parts = base64Parts.map((b64) => new Uint8Array(Buffer.from(b64, 'base64')))
+        await atomicWriteFile(filePath, Buffer.from(await mergePdfParts(parts)))
         if (!isImageExportTemp(event.sender.id, filePath)) openGeneratedFile(filePath)
         return { ok: true, path: filePath }
       } catch (err) {

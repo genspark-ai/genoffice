@@ -91,6 +91,7 @@ import { adoptEmbeddedFonts } from './embedded-fonts'
 import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
 import { clearPrintZoom, setPrintZoom } from './print-zoom'
+import { assignPreviewBookmarkTargets } from './pdf-bookmark-targets'
 import { showToast } from './components/toast-bus'
 import { buildStandaloneHtml } from './html-export'
 import { aiPanelInitiallyOpen } from '@genoffice/ui'
@@ -1320,6 +1321,11 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
     // with pdf-lib; each page keeps its section's paper size
     const pvPages = [...document.querySelectorAll('.pv-page')] as HTMLElement[]
     if (pvPages.length > 0) {
+      assignPreviewBookmarkTargets()
+      // the preview prints one full-document clone per page, so each bookmark
+      // name is duplicated once per page and the print stylesheet hides the
+      // editor canvas ahead of them: leave the name's id on a single copy, the
+      // one on the page that owns it, or Chromium drops the /Dests entry
       const scale = setPrintZoom()
       const pxToTwips = (px: number) => Math.round((px / 96) * 1440)
       let groups: PrintGroup[] = []

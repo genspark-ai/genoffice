@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import type {
   CommentInfo,
   HeaderFooter,
@@ -54,6 +54,7 @@ import {
 import { pageMargins } from '../page-margins'
 import { cssFontFamily, hfHeaderGeom, FOOTNOTE_SEPARATOR_H } from '../line-metrics'
 import { syncPreviewLineNumbers } from '../editor/line-numbers'
+import { assignPreviewBookmarkTargets } from '../pdf-bookmark-targets'
 import type { EditorView } from '@tiptap/pm/view'
 import {
   anchorPointFor,
@@ -1387,6 +1388,18 @@ export function PaginationPreview({
     const root = document.querySelector<HTMLElement>('.pv-scroll')
     if (root) syncPreviewLineNumbers(root, secs, blockMetaOf)
   }, [secs, blockMetaOf, slices, commentSpots, revSpots])
+
+  // Each sheet clones the whole document, so every bookmark name arrives here once
+  // per page and the print stylesheet hides the editor canvas ahead of all of
+  // them: Chromium then resolves href="#name" against the first match, which has
+  // no layout box, and the exported PDF carries the link but no destination.
+  // Re-derive the single owning id after every commit — React rewrites each
+  // clone's innerHTML from the cached page HTML, so an assignment made once
+  // (at export) is gone by the time the print job runs. Layout effect, not a
+  // passive one: nothing may observe the clones between the commit and this.
+  useLayoutEffect(() => {
+    assignPreviewBookmarkTargets()
+  })
 
   const multiSection = secs.length > 1
   const commentById = useMemo(() => new Map((comments ?? []).map((c) => [c.id, c])), [comments])

@@ -11,12 +11,30 @@ import { touchedTopLevelBlocks } from './touched-blocks'
 // annotation, so each bookmark name gets a zero-size anchor widget at the
 // start of its block: nothing in the document model moves (copying, undo and
 // the DOCX save patch never see it), and no line box gains content.
+//
+// Both attrs count. The parser splits Word's internal names into hiddenBookmarks
+// so the bookmark manager ignores them, but a generated TOC links to exactly
+// those — reading bookmarks alone leaves a TOC document with no anchors at all.
+//
+// data-bookmark keeps the name once the export moves the id onto the one page
+// clone that prints it (see pdf-bookmark-targets.ts); id alone would not survive
+// a second export.
+
+/** Both bookmark attrs, user-visible names first, in document order. */
+function bookmarkNamesOf(node: PmNode): string[] {
+  const names: string[] = []
+  for (const attr of ['bookmarks', 'hiddenBookmarks'] as const) {
+    const value = node.attrs?.[attr] as string[] | null | undefined
+    if (Array.isArray(value)) names.push(...value)
+  }
+  return names
+}
 
 function decorationsIn(doc: PmNode, from: number, to: number): Decoration[] {
   const widgets: Decoration[] = []
   doc.nodesBetween(from, to, (node, pos) => {
-    const names = node.attrs.bookmarks as string[] | null
-    if (!Array.isArray(names) || names.length === 0 || !node.isTextblock) return
+    const names = bookmarkNamesOf(node)
+    if (names.length === 0 || !node.isTextblock) return
     for (const name of names) {
       widgets.push(
         Decoration.widget(
@@ -24,7 +42,8 @@ function decorationsIn(doc: PmNode, from: number, to: number): Decoration[] {
           () => {
             const anchor = document.createElement('a')
             anchor.className = 'doc-bookmark-target'
-            anchor.setAttribute('id', name)
+            anchor.dataset.bookmark = name
+            anchor.id = name
             return anchor
           },
           // before the caret/anything else at the same position, so a link
