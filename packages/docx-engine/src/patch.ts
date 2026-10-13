@@ -1617,17 +1617,29 @@ export async function saveDocx(
       const ignorable = /mc:Ignorable="([^"]*)"/.exec(next)
       if (ignorable) {
         if (!new RegExp(`\\b${REDACT_PREFIX}\\b`).test(ignorable[1] ?? '')) {
+          const existing = (ignorable[1] ?? '').trim()
           next = next.replace(
             /mc:Ignorable="[^"]*"/,
-            `mc:Ignorable="${(ignorable[1] ?? '').trim()} ${REDACT_PREFIX}"`,
+            `mc:Ignorable="${existing ? `${existing} ${REDACT_PREFIX}` : REDACT_PREFIX}"`,
           )
         }
       } else {
         next = next.replace('<w:document', `<w:document mc:Ignorable="${REDACT_PREFIX}"`)
       }
       // a Word re-save drops every element whose namespace it does not process
-      // unless the root asks for it to be preserved verbatim
-      if (!/mc:PreserveElements=/.test(next)) {
+      // unless the root asks for it to be preserved verbatim — and a root that
+      // already preserves other elements needs ours added to that list, the
+      // same way the Ignorable list above is extended
+      const preserve = /mc:PreserveElements="([^"]*)"/.exec(next)
+      if (preserve) {
+        if (!new RegExp(`\\b${REDACT_EL}\\b`).test(preserve[1] ?? '')) {
+          const existing = (preserve[1] ?? '').trim()
+          next = next.replace(
+            /mc:PreserveElements="[^"]*"/,
+            `mc:PreserveElements="${existing ? `${existing} ${REDACT_EL}` : REDACT_EL}"`,
+          )
+        }
+      } else {
         next = next.replace('<w:document', `<w:document mc:PreserveElements="${REDACT_EL}"`)
       }
       newDocumentXml = newDocumentXml.replace(root, next)

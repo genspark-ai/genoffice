@@ -148,6 +148,27 @@ describe('a saved file is XML a word processor can open', () => {
     expect(xml.match(/xmlns:mc=/g)?.length).toBe(1)
     expect(xml).toMatch(/mc:Ignorable="[^"]*\bgo\b/)
   })
+
+  it('a root that already preserves elements gets ours added to that list', async () => {
+    // dropping the existing list would un-preserve the other suite's elements
+    // on the next Word re-save; the mark must join, not replace
+    const from = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>Call 13800138000 now</w:t></w:r></w:p>',
+      docRootExtraAttrs:
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
+        'xmlns:w14="urn:ignore" mc:Ignorable="w14" mc:PreserveElements="w14:plc"',
+    })
+    const editor = await open(from)
+    selectText(editor, SECRET)
+    editor.commands.setRedaction('client phone')
+    const parsed = await parseDocx(from)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const xml = await JSZip.loadAsync(saved).then((zip) =>
+      zip.file('word/document.xml')!.async('string'),
+    )
+    expect(xml).toMatch(/mc:PreserveElements="w14:plc go:redact"/)
+  })
 })
 
 describe('a withheld span survives the .docx', () => {

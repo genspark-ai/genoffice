@@ -9,6 +9,7 @@ import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, streamText, type AgentImage } from '@genoffice/agent-core'
 import { redactTextBetween, type RedactableNode } from './redact-view'
+import { hasRedactionIn } from '../editor/redaction'
 import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -926,15 +927,22 @@ export function AiPanel({
     }
   }, [editor])
 
-  // scope chip data, recomputed per render (the scope tick above keeps it fresh)
+  // scope chip data, recomputed per render (the scope tick above keeps it fresh).
+  // The full-document getJSON only runs when the range actually holds a
+  // withheld span; without one the projection is the plain selection text, and
+  // serialising a 40k-paragraph doc per render is real money for nothing.
   const liveSelection = editor.state.selection
   const selectionText = liveSelection.empty
     ? ''
-    : redactTextBetween(
-        editor.getJSON() as RedactableNode,
-        liveSelection.from,
-        liveSelection.to,
-        '\n',
+    : (
+        hasRedactionIn(editor, liveSelection.from, liveSelection.to)
+          ? redactTextBetween(
+              editor.getJSON() as RedactableNode,
+              liveSelection.from,
+              liveSelection.to,
+              '\n',
+            )
+          : editor.state.doc.textBetween(liveSelection.from, liveSelection.to, '\n')
       )
         .replace(/\s+/g, ' ')
         .trim()

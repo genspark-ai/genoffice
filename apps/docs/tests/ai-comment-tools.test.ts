@@ -106,6 +106,30 @@ describe('comments context', () => {
     expect(anchors.get('1')).toEqual({ blockIndex: 1, excerpt: 'he comment' })
   })
 
+  it('a block-anchored comment reads the placeholder for a withheld span in its block', () => {
+    // imported comments anchor by the block's `commentStarts` attr rather than
+    // a text mark, so this excerpt comes from the block fallback — which must
+    // project the withheld span exactly like the mark path does
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: null, commentStarts: ['7'] },
+        content: [
+          text('Call '),
+          {
+            type: 'text',
+            text: '13800138000',
+            marks: [{ type: 'redaction', attrs: { label: 'client phone' } }],
+          },
+          text(' to confirm.'),
+        ],
+      },
+    ])
+    const excerpt = commentAnchors(editor).get('7')?.excerpt
+    expect(excerpt).toBe('Call {{client phone}} to confirm.')
+    expect(excerpt).not.toContain('13800138000')
+  })
+
   it('unresolved threads ride along in the per-turn context, resolved ones drop out', () => {
     const { editor, comments } = setup()
     const context = buildDocContext(editor, undefined, comments)
