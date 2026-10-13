@@ -120,7 +120,9 @@ test('the composing font rule leaves rendered lines byte-identical and reports i
   // activates, exactly as on a machine without the document's fonts. Home
   // has no '://home/' URL — launchShell's own page IS the Home window.
   const probe = await launchShell({ onboardingSeen: true, videoDir: 'docs-cjk-compose-probe' })
-  let eaFace: string | null = null
+  // no initialiser: the try either assigns it or throws, so an initial `null`
+  // could never be read (no-useless-assignment)
+  let eaFace: string | null
   try {
     await probe.page.waitForTimeout(1500)
     eaFace = await firstMissingEaFace(probe.page)
