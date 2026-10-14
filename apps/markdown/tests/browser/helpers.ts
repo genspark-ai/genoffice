@@ -34,6 +34,8 @@ export async function openSource(
         onAiPanelPrefsChanged: () => off,
         consumePending: async () => '/fixtures/polish.md',
         readFile: async () => text,
+        rememberWikiFragment: async () => {},
+        takeWikiFragment: async () => '',
         consumeHeadlessExport: async () => null,
         headlessExportDone: () => {},
         setDirty: () => {},
