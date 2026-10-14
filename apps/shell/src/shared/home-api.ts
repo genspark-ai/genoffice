@@ -12,7 +12,19 @@ import type {
   CodexModelCatalog,
 } from '@genoffice/ai-provider'
 import type { UpdateChannel, UpdateUiState } from './update-api'
-import type { KbFileInfo, KbReadPage, KbSearchHit } from '@genoffice/agent-core'
+import type { KbFileInfo, KbReadPage, KbSearchHit, KbSourceInfo } from '@genoffice/agent-core'
+import type {
+  FeatureDraft,
+  FeaturePatch,
+  FeatureRecord,
+  ReadDocumentResult,
+  HookActivity,
+  KnowledgeEntry,
+  PackDescription,
+  ScriptApplyResult,
+  ScriptRunOutcome,
+  SlotViewMountRequest,
+} from './feature-channels'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
@@ -212,6 +224,12 @@ export interface HomeApi {
   // ---- knowledge-base ask panel: the reader's starred corpus, askable ----
   /** the starred corpus as the AI's knowledge base */
   kbList(): Promise<KbFileInfo[]>
+  /** the sources behind the corpus (the Ask panel's Sources section) */
+  kbSources(): Promise<KbSourceInfo[]>
+  /** enable or disable one registered source; the starred corpus stays on */
+  kbSetSourceEnabled(id: string, enabled: boolean): Promise<KbSourceInfo[]>
+  /** schedule a reindex of the corpus; the progress comes back with the sources */
+  kbReindex(): Promise<{ indexed: number; pending: number; scanning: boolean }>
   /** full-text search over the corpus */
   kbSearch(query: { q: string; limit?: number }): Promise<KbSearchHit[]>
   /** one page of a corpus file's parsed text (path must be in kbList) */
@@ -381,6 +399,69 @@ export interface HomeApi {
   setAiSettings(settings: AiSettings): Promise<void>
   /** ai-settings.json was rewritten by any renderer (composer model chip, another window) */
   onAiSettingsChanged(handler: () => void): () => void
+  // ---- mod assistant: one streamed model turn, and the feature registry ----
+  /** one streamed model turn over the shared ai:stream handler */
+  aiStream(request: AiStreamRequest): Promise<void>
+  aiStreamCancel(requestId: string): Promise<void>
+  /** subscribe to stream chunks; returns unsubscribe */
+  onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
+  /** every feature the registry holds, oldest first */
+  featuresList(): Promise<FeatureRecord[]>
+  /** one feature in full; null when no such id */
+  featuresGet(id: string): Promise<FeatureRecord | null>
+  /** record a new feature; nothing executes it yet */
+  featuresCreate(draft: FeatureDraft): Promise<FeatureRecord>
+  /** change the fields given; null when no such id */
+  featuresUpdate(id: string, patch: FeaturePatch): Promise<FeatureRecord | null>
+  /** delete one feature; false when there was nothing to delete */
+  featuresDelete(id: string): Promise<boolean>
+  /** parsed text of one document file; read-only, documents only */
+  featuresReadDocument(path: string): Promise<ReadDocumentResult>
+  /**
+   * Run a script feature read-only against one document. Resolves with the plan;
+   * nothing is written.
+   */
+  featuresRun(
+    id: string,
+    request: { path: string; input?: Record<string, unknown>; timeoutMs?: number },
+  ): Promise<ScriptRunOutcome>
+  /** Write every installed feature out as a shareable file. Null when cancelled. */
+  featuresPackExport(): Promise<string | null>
+  /** Pick a pack and describe what it declares; nothing is installed yet. */
+  featuresPackPreview(): Promise<{
+    path: string | null
+    description?: PackDescription
+    errors?: string[]
+  }>
+  /** Install a pack that was previewed. Existing features are not replaced. */
+  featuresPackInstall(
+    path: string,
+    options?: { replace?: boolean },
+  ): Promise<{ installed: string[]; replaced: string[]; skipped: string[] }>
+  /**
+   * What the hooks have done recently, newest last. Read-only: a hook cannot
+   * change anything, so this is a record, not a control.
+   */
+  featuresHookActivity(): Promise<HookActivity[]>
+  /**
+   * Apply a script feature to one document. The main process still checks both
+   * gates: the caller's explicit confirm, and that no editor has the file open.
+   */
+  featuresApply(
+    id: string,
+    request: {
+      path: string
+      confirm: boolean
+      input?: Record<string, unknown>
+      timeoutMs?: number
+    },
+  ): Promise<ScriptApplyResult>
+  /**
+   * Say where a native view slot is, so the shell can mount a real view there.
+   * An empty address unmounts; the shell decides whether the address is allowed.
+   */
+  featuresViewMount(request: SlotViewMountRequest): Promise<boolean>
+  featuresViewUnmount(id: string): Promise<boolean>
   /** provider catalog with each fixed endpoint's default base URL (empty for genspark/custom) */
   getAiProviders(): AiCatalogEntry[]
   /** live Codex model catalog discovered through the current or overridden app-server */

@@ -7,6 +7,7 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mj
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import { AiAskPopover, type AskAnchorRect } from './AiAskPopover'
 import {
   createSavedAnnotCountsLoader,
@@ -443,6 +444,11 @@ export default function App() {
     rememberAiPanelOpen('genoffice-pdf-show-ai', !aiCollapsed)
   }, [aiCollapsed])
   /** One-shot prompt pushed by the ribbon AI buttons; the panel auto-runs it (docs preset pattern) */
+  /** a slot's press hands its prompt to this editor's own assistant */
+  const askFromSlot = useCallback((prompt: string): void => {
+    setAiCollapsed(false)
+    setAiPreset({ text: prompt, nonce: Date.now() })
+  }, [])
   const [aiPreset, setAiPreset] = useState<{ text: string; nonce: number } | null>(null)
   const [ribbonTab, setRibbonTab] = useState<RibbonTab>('home')
   const [spread, setSpread] = useState<1 | 2>(1)
@@ -8069,6 +8075,8 @@ export default function App() {
         {/* dock wrapper animates the width between panel and rail (docs-style 180ms ease);
             the panel stays mounted while collapsed so the chat history survives */}
         <div className={`ai-dock${aiCollapsed ? ' collapsed' : ''}`}>
+          {/* features a mod added to this editor's own dock */}
+          <EditorSlots place="editor.side" onAsk={askFromSlot} />
           {aiCollapsed && (
             <button
               className="ai-rail"

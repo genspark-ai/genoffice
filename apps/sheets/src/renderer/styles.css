@@ -1561,6 +1561,12 @@ button.check-item:hover {
 
 /* AI panel on the left, spanning from the ribbon to the status bar (unified with docs);
  * its column is drag-resizable: driven by --copilot-width (updated by the AiChatPanel resizer) */
+/* a mod rail gets its own column, and only while one is drawn: the sheet body is
+   otherwise exactly the two columns it has always been */
+.sheet-body:has(> .slot-place--editor-side) {
+  grid-template-columns: auto var(--copilot-width, 360px) minmax(0, 1fr);
+}
+
 .sheet-body {
   display: grid;
   grid-template-columns: var(--copilot-width, 360px) minmax(0, 1fr);

@@ -8,6 +8,8 @@
 :root {
   /* chrome */
   --surface: #ffffff;
+  /* text on an accent fill: buttons, chips, badges */
+  --on-accent: #ffffff;
   --surface-subtle: #f6f7f9;
   --chrome-bg: #ffffff;
   --canvas: #e6e6e6;
@@ -84,6 +86,7 @@
 
 [data-theme='dark'] {
   --surface: #1e1e1e;
+  --on-accent: #ffffff;
   --surface-subtle: #2a2a2a;
   --chrome-bg: #252525;
   --canvas: #2b2b2b;
@@ -143,6 +146,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']):not([data-theme='dark']) {
     --surface: #1e1e1e;
+    --on-accent: #ffffff;
     --surface-subtle: #2a2a2a;
     --chrome-bg: #252525;
     --canvas: #2b2b2b;

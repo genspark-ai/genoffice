@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
 import { KbAskPanel } from './KbAskPanel'
@@ -32,6 +32,12 @@ import { SettingsModal } from './SettingsModal'
 import type { SettingsTarget } from './SettingsModal'
 import { skillUpdateDue } from './IntegrationsPane'
 import { onFilesChanged } from './file-events'
+import { ModsAssistant } from './ModsAssistant'
+import { SlotHost, SlotPanel, type SlotActions } from './slots/SlotView'
+import { refreshFeatures, useFeatures } from './slots/features-state'
+import { OverlayLayer } from './slots/OverlayLayer'
+import { CommandPalette } from './CommandPalette'
+import { requestAssistant } from './slots/assistant-bridge'
 
 declare global {
   interface Window {
@@ -1505,6 +1511,73 @@ export function Home() {
   const [cloudMode, setCloudMode] = useState(false)
   // the knowledge-base ask panel takes over the content area the same way
   const [askMode, setAskMode] = useState(false)
+  // the mod assistant takes over the content area the same way
+  const [modsMode, setModsMode] = useState(false)
+  // a feature's own home.panel takes over the content area too
+  const [slotPanelId, setSlotPanelId] = useState<string | null>(null)
+  // every drawn slot reads this registry; refresh once per Home mount
+  useEffect(() => {
+    void refreshFeatures()
+  }, [])
+  // an overlay needs a positioned content area to sit over; without one the
+  // content area keeps the layout it has always had
+  const drawnFeatures = useFeatures()
+  const hasOverlay = drawnFeatures.some((feature) => feature.slot?.at === 'home.overlay')
+  // the commands the user's features registered, for the palette
+  const modCommands = useMemo(
+    () => drawnFeatures.filter((feature) => feature.command),
+    [drawnFeatures],
+  )
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+  /** what a drawn element may do; nothing here touches a document */
+  const slotActions = useMemo<SlotActions>(
+    () => ({
+      open: (path: string): void => {
+        void window.aiOffice.openPath(path)
+      },
+      ask: (prompt: string): void => {
+        requestAssistant(prompt)
+        setAskMode(false)
+        setSlotPanelId(null)
+        setSelectedFolder(null)
+        setCloudMode(false)
+        setModsMode(true)
+      },
+      panel: (id: string): void => {
+        setSlotPanelId(id)
+        setSelectedFolder(null)
+        setCloudMode(false)
+        setModsMode(false)
+      },
+      // a file-list slot names a source; the shell reads it and hands back rows
+      listSource: async (source: string, limit: number) => {
+        const query = { limit }
+        const page =
+          source === 'starred-files'
+            ? await window.aiOffice.starred(query)
+            : await window.aiOffice.recents(query)
+        return page.entries.map((entry) => ({ path: entry.path, name: entry.name }))
+      },
+      // a view slot reports where it is; the shell mounts a real view there
+      mountView: (request): void => {
+        void window.aiOffice.featuresViewMount(request)
+      },
+      unmountView: (id: string): void => {
+        void window.aiOffice.featuresViewUnmount(id)
+      },
+    }),
+    [],
+  )
   const [filter, setFilter] = useState('all')
   // ── Starred groups (named buckets the Starred view can filter on) ──
   // groups that currently have at least one starred file (drives the pills)
@@ -1946,6 +2019,8 @@ export function Home() {
     setSelectedFolder(null)
     setCloudMode(false)
     setAskMode(false)
+    setModsMode(false)
+    setSlotPanelId(null)
     setSelected(new Set())
     setRowMenu(null)
     setGroupFilter(null)
@@ -1967,6 +2042,8 @@ export function Home() {
     setSelectedFolder(dir)
     setCloudMode(false)
     setAskMode(false)
+    setModsMode(false)
+    setSlotPanelId(null)
     setSelected(new Set())
     setRowMenu(null)
     setFolderMenu(null)
@@ -2281,6 +2358,7 @@ export function Home() {
             </span>
           </button>
         ))}
+        <SlotHost place="home.card" actions={slotActions} />
         <button
           className="quick-card"
           onClick={() => void window.aiOffice.browse()}
@@ -3153,7 +3231,12 @@ export function Home() {
     const total = folderSubfolders.length + folderFiles.length
     const sortedFiles = fileSort === 'oldest' ? [...folderFiles].reverse() : folderFiles
     return (
-      <main className="content">
+      <main className={'content' + (hasOverlay ? ' content--overlay' : '')}>
+        {hasOverlay ? (
+          <div className="slot-overlay-host">
+            <OverlayLayer />
+          </div>
+        ) : null}
         <section className="quick-start" aria-label={t('secQuickStart')}>
           <div className="section-head">
             <span className="section-label">{t('secQuickStart')}</span>
@@ -3268,7 +3351,12 @@ export function Home() {
     const cjk = lang === 'zh' || lang === 'zh-TW' || lang === 'ja'
     const greeting = `${t(greetKey)}${accountName ? (cjk ? '，' : ', ') + accountName : ''}${cjk ? '。' : '. '}`
     return (
-      <main className="content">
+      <main className={'content' + (hasOverlay ? ' content--overlay' : '')}>
+        {hasOverlay ? (
+          <div className="slot-overlay-host">
+            <OverlayLayer />
+          </div>
+        ) : null}
         <section className="quick-start" aria-label={t('secQuickStart')}>
           <div className="home-hero">
             <h1 className="hero-title">
@@ -3426,6 +3514,13 @@ export function Home() {
 
   return (
     <div className="home">
+      {paletteOpen ? (
+        <CommandPalette
+          commands={modCommands}
+          actions={slotActions}
+          onClose={() => setPaletteOpen(false)}
+        />
+      ) : null}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
@@ -3475,10 +3570,14 @@ export function Home() {
             </svg>
             <span className="nav-label">{t('navUserGuide')}</span>
           </button>
+          {/* the knowledge-base ask panel (upstream) and the feature assistant (this work)
+             are two entries: each one closes the other's mode */}
           <button
             className={`nav-item${askMode && !selectedFolder && !cloudMode ? ' active' : ''}`}
             onClick={() => {
               setAskMode(true)
+              setModsMode(false)
+              setSlotPanelId(null)
               setSelectedFolder(null)
               setCloudMode(false)
               setSelected(new Set())
@@ -3501,12 +3600,37 @@ export function Home() {
             </svg>
             <span className="nav-label">{t('navAsk')}</span>
           </button>
+          <button
+            className={`nav-item${modsMode && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            onClick={() => {
+              setModsMode(true)
+              setAskMode(false)
+              setSlotPanelId(null)
+              setSelectedFolder(null)
+              setCloudMode(false)
+              setSelected(new Set())
+              setRowMenu(null)
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M8 2.2 9.5 5.6l3.7.4-2.8 2.5.8 3.6L8 10.4l-3.2 1.7.8-3.6L2.8 6l3.7-.4z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="nav-label">{t('navMods')}</span>
+          </button>
+          <SlotHost place="home.sidebar" actions={slotActions} />
           {loggedIn && (
             <button
               className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}
               onClick={() => {
                 setCloudMode(true)
                 setAskMode(false)
+                setModsMode(false)
+                setSlotPanelId(null)
                 setSelectedFolder(null)
                 setSelected(new Set())
                 setRowMenu(null)
@@ -3551,7 +3675,26 @@ export function Home() {
       {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
         renderFolderContent()
       ) : askMode ? (
-        <KbAskPanel onOpenPath={(path) => void window.aiOffice.openPath(path)} />
+        <KbAskPanel
+          onOpenPath={(path) => void window.aiOffice.openPath(path)}
+          onOpenMods={() => {
+            setAskMode(false)
+            setModsMode(true)
+          }}
+        />
+      ) : slotPanelId ? (
+        <SlotPanel
+          featureId={slotPanelId}
+          actions={slotActions}
+          onClose={() => setSlotPanelId(null)}
+        />
+      ) : modsMode ? (
+        <ModsAssistant
+          onOpenAsk={() => {
+            setModsMode(false)
+            setAskMode(true)
+          }}
+        />
       ) : cloudMode ? (
         <CloudProjectsView />
       ) : (

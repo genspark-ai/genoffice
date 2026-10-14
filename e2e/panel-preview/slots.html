@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>slot gallery</title>
+    <link rel="stylesheet" href="./out/slots.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg-content);
+      }
+      #root {
+        display: flex;
+        height: 100%;
+      }
+      .gallery {
+        display: grid;
+        grid-template-columns: 240px 300px minmax(0, 1fr);
+        gap: 20px;
+        width: 100%;
+        padding: 24px;
+      }
+      .gallery-col {
+        min-width: 0;
+      }
+      .gallery-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .gallery-cards {
+        display: flex;
+        flex-direction: column;
+      }
+      .gallery-panel {
+        display: flex;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="./out/slots.js"></script>
+  </body>
+</html>

@@ -28,6 +28,19 @@ import type {
   FileSearchSettings,
 } from '../shared/home-api'
 import { HOME_CHANNELS } from '../shared/home-api'
+import {
+  FEATURE_CHANNELS,
+  FEATURE_VIEW_CHANNELS,
+  type FeatureDraft,
+  type FeaturePatch,
+  type FeatureRecord,
+  type HookActivity,
+  type PackDescription,
+  type ReadDocumentResult,
+  type ScriptApplyResult,
+  type ScriptRunOutcome,
+  type SlotViewMountRequest,
+} from '../shared/feature-channels'
 import { INTEGRATIONS_CHANNELS } from '../shared/integrations-api'
 import type {
   IntegrationsApi,
@@ -159,6 +172,15 @@ const homeApi: HomeApi = {
   },
   async kbRead(path, offset) {
     return ipcRenderer.invoke('kb:read', { path, offset })
+  },
+  async kbSources() {
+    return ipcRenderer.invoke('kb:sources')
+  },
+  async kbSetSourceEnabled(id, enabled) {
+    return ipcRenderer.invoke('kb:source-set-enabled', { id, enabled })
+  },
+  async kbReindex() {
+    return ipcRenderer.invoke('kb:reindex')
   },
   async aiGetSettings() {
     return ipcRenderer.invoke('ai:get-settings')
@@ -530,6 +552,64 @@ const homeApi: HomeApi = {
   },
   async setAiSettings(settings) {
     await ipcRenderer.invoke('ai:set-settings', settings)
+  },
+  // the feature registry: the mod assistant's own store, one file per feature
+  featuresList() {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.list) as Promise<FeatureRecord[]>
+  },
+  featuresGet(id: string) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.get, { id }) as Promise<FeatureRecord | null>
+  },
+  featuresCreate(draft: FeatureDraft) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.create, draft) as Promise<FeatureRecord>
+  },
+  featuresUpdate(id: string, patch: FeaturePatch) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.update, {
+      id,
+      ...patch,
+    }) as Promise<FeatureRecord | null>
+  },
+  featuresDelete(id: string) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.delete, { id }) as Promise<boolean>
+  },
+  featuresReadDocument(path: string) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.readDocument, {
+      path,
+    }) as Promise<ReadDocumentResult>
+  },
+  featuresPackExport() {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.packExport) as Promise<string | null>
+  },
+  featuresPackPreview() {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.packPreview) as Promise<{
+      path: string | null
+      description?: PackDescription
+      errors?: string[]
+    }>
+  },
+  featuresPackInstall(path, options) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.packInstall, {
+      path,
+      ...options,
+    }) as Promise<{ installed: string[]; replaced: string[]; skipped: string[] }>
+  },
+  featuresHookActivity() {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.hookActivity) as Promise<HookActivity[]>
+  },
+  featuresRun(id, request) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.run, { id, ...request }) as Promise<ScriptRunOutcome>
+  },
+  featuresApply(id, request) {
+    return ipcRenderer.invoke(FEATURE_CHANNELS.apply, {
+      id,
+      ...request,
+    }) as Promise<ScriptApplyResult>
+  },
+  featuresViewMount(request) {
+    return ipcRenderer.invoke(FEATURE_VIEW_CHANNELS.mount, request) as Promise<boolean>
+  },
+  featuresViewUnmount(id) {
+    return ipcRenderer.invoke(FEATURE_VIEW_CHANNELS.unmount, { id }) as Promise<boolean>
   },
   getAiProviders() {
     return AI_PROVIDERS.map((meta) => {

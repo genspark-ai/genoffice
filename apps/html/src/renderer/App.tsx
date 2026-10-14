@@ -27,6 +27,7 @@ import { instrumentForPreview } from './preview/instrument'
 import type { ComputedSnapshot, ElementRect, FromInspector } from './preview/inspector-protocol'
 import inspectorSource from './preview/inspector.js?raw'
 import { AiPanel, GensparkMark, type AiPreset, type HtmlAiDeps } from './ai/AiPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import { AiAskPopover, type AnchorRect, type AskMode } from './components/AiAskPopover'
 import {
   EDIT_QUEUE_MAX,
@@ -146,6 +147,11 @@ export default function App() {
   const [draftHtml, setDraftHtml] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: false, redo: false })
   const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('htmlapp.showAi'))
+  /** a slot's press hands its prompt to this editor's own assistant */
+  const askFromSlot = useCallback((prompt: string): void => {
+    setAiOpen(true)
+    setAiPreset({ text: prompt, nonce: Date.now() })
+  }, [])
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const [askMode, setAskMode] = useState<AskMode | null>(null)
@@ -1586,6 +1592,8 @@ export default function App() {
 
       <div className="app-main">
         <div className={`ai-dock${aiOpen ? '' : ' collapsed'}`}>
+          {/* features a mod added to this editor's own dock */}
+          <EditorSlots place="editor.side" onAsk={askFromSlot} />
           {!aiOpen && (
             <button
               className="ai-rail"

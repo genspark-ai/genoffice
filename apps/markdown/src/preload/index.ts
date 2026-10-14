@@ -5,6 +5,7 @@ import type { AiStreamChunk } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import { AI_CHANNELS, MARKDOWN_CHANNELS } from '../shared/ipc'
+import { normalizeMarkdownTheme, type MarkdownTheme } from '../shared/markdown-theme'
 import type {
   AutoSaveDefault,
   DocTheme,
@@ -15,6 +16,16 @@ import type {
 } from '../shared/ipc'
 
 const api: MarkdownApi = {
+  // the shell's feature registry, read-only: the editor draws the slots it holds
+  featuresList: () => ipcRenderer.invoke('features:list'),
+  // read-only: the assistant may see what a script would do, never write
+  featuresRun: (id: string, request: unknown) =>
+    ipcRenderer.invoke('features:run', { id, ...(request as Record<string, unknown>) }),
+  // the knowledge base: the corpus of sources the shell main assembles (starred
+  // files plus every source a knowledge feature registered)
+  kbList: () => ipcRenderer.invoke('kb:list'),
+  kbSearch: (query: { q: string; limit?: number }) => ipcRenderer.invoke('kb:search', query),
+  kbRead: (path: string, offset: number) => ipcRenderer.invoke('kb:read', { path, offset }),
   consumePending: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.consumePending),
   openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   consumeHeadlessExport: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.consumeHeadlessExport),
@@ -50,6 +61,14 @@ const api: MarkdownApi = {
   saveImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImage, data),
   readImage: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.readImage, src),
   saveImageAs: (src) => ipcRenderer.invoke(MARKDOWN_CHANNELS.saveImageAs, src),
+  getMarkdownTheme: async () => {
+    const result: unknown = await ipcRenderer.invoke(MARKDOWN_CHANNELS.getMarkdownTheme)
+    return normalizeMarkdownTheme(result)
+  },
+  setMarkdownTheme: async (theme: MarkdownTheme) => {
+    const result: unknown = await ipcRenderer.invoke(MARKDOWN_CHANNELS.setMarkdownTheme, theme)
+    return normalizeMarkdownTheme(result)
+  },
   getImageHost: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.getImageHost),
   setImageHost: (config) => ipcRenderer.invoke(MARKDOWN_CHANNELS.setImageHost, config),
   uploadImage: (data) => ipcRenderer.invoke(MARKDOWN_CHANNELS.uploadImage, data),

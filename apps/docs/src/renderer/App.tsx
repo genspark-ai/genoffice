@@ -93,6 +93,7 @@ import type { AiDocContent, AiSettings, MenuCommand, OpenDocxResult } from '../s
 import { AI_PROVIDERS } from '../shared/ipc'
 import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, AI_REVISION_AUTHOR } from './ai/AiPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import type { AiCommentsAccess, AiDocExtras, AiHeaderFooterAccess } from './ai/tools'
 import type { AiStyleInfo } from './ai/style-ops'
 import { applyResolvedPageSetup, describeSection, type AiPageSetupAccess } from './ai/page-setup'
@@ -1053,6 +1054,11 @@ export function App() {
     nonce: number
     autoRun?: boolean
   } | null>(null)
+  /** a slot's press hands its prompt to the editor's own assistant */
+  const askFromSlot = useCallback((prompt: string): void => {
+    setShowAi(true)
+    setAiPreset({ text: prompt, nonce: Date.now(), autoRun: true })
+  }, [])
   // selection-scoped AI edit queue (anchors live as editor decorations)
   const [editQueue, setEditQueue] = useState<DocsEditQueueItem[]>([])
   const editQueueRef = useRef(editQueue)
@@ -7211,6 +7217,8 @@ export function App() {
       <div className="app-main">
         {doc && (
           <div className={`ai-dock${showAi ? '' : ' collapsed'}`}>
+            {/* features a mod added to this editor's own dock */}
+            <EditorSlots place="editor.side" onAsk={askFromSlot} />
             {/* always mounted: collapse must not drop state or in-flight runs */}
             <AiPanel
               key={aiPanelKey}

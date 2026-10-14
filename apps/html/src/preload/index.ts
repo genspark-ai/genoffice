@@ -8,6 +8,16 @@ import { AI_CHANNELS, HTML_CHANNELS } from '../shared/ipc'
 import type { AutoSaveDefault, ExportFormat, HtmlApi, SaveMode, UiTheme } from '../shared/ipc'
 
 const api: HtmlApi = {
+  // the shell's feature registry, read-only: the editor draws the slots it holds
+  featuresList: () => ipcRenderer.invoke('features:list'),
+  // read-only: the assistant may see what a script would do, never write
+  featuresRun: (id: string, request: unknown) =>
+    ipcRenderer.invoke('features:run', { id, ...(request as Record<string, unknown>) }),
+  // the knowledge base: the corpus of sources the shell main assembles (starred
+  // files plus every source a knowledge feature registered)
+  kbList: () => ipcRenderer.invoke('kb:list'),
+  kbSearch: (query: { q: string; limit?: number }) => ipcRenderer.invoke('kb:search', query),
+  kbRead: (path: string, offset: number) => ipcRenderer.invoke('kb:read', { path, offset }),
   consumePending: () => ipcRenderer.invoke(HTML_CHANNELS.consumePending),
   openSourcePath: (path: string) => ipcRenderer.invoke('home:open-path', path),
   consumeHeadlessExport: () => ipcRenderer.invoke(HTML_CHANNELS.consumeHeadlessExport),

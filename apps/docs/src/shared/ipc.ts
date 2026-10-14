@@ -1,3 +1,5 @@
+import type { FeatureRecord, KnowledgeEntry, ScriptRunOutcome } from '@genoffice/agent-core'
+
 export interface OpenFileResult {
   path: string
   name: string
@@ -297,6 +299,25 @@ export interface SpellLanguages {
 }
 
 export interface DesktopApi {
+  /**
+   * The feature registry the shell keeps, read-only: the editor binds the shared
+   * slot renderer to it. Same channel the shell's own panels use.
+   */
+  featuresList(): Promise<FeatureRecord[]>
+  /**
+   * Run a script feature read-only against one document. There is deliberately no
+   * apply on this bridge: writing stays the user's decision in the feature panel.
+   */
+  featuresRun(
+    id: string,
+    request: { path: string; input?: Record<string, unknown>; timeoutMs?: number },
+  ): Promise<ScriptRunOutcome>
+  /** what a knowledge source offers, and one entry of it: read-only */
+  featuresKnowledgeList(id: string): Promise<KnowledgeEntry[]>
+  featuresKnowledgeRead(
+    id: string,
+    entry: string,
+  ): Promise<{ name: string; text: string; chars: number }>
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
   /** OS regional-settings locale (BCP 47); Word derives the new-document paper size from it */
@@ -558,9 +579,11 @@ export interface DesktopApi {
       name: string
       ext: string
       sizeBytes: number
+      sourceId?: string
+      sourceLabel?: string
     }>
   >
-  /** full-text search over the starred set; q capped like the home search box */
+  /** full-text search over the enabled corpus; q capped like the home search box */
   kbSearch(query: {
     q: string
     limit?: number
