@@ -239,6 +239,7 @@ export const th = {
   appPageOf: 'หน้า {current} จาก {total}',
   appWordCountTitle: 'นับจำนวนคำ',
   appWordCountN: '{n} คำ',
+  appWordCountSelection: 'เลือกแล้ว {selected} / {total} คำ',
   appTrackChangesOn: 'ติดตามการเปลี่ยนแปลง: เปิด',
   appTrackChangesOff: 'ติดตามการเปลี่ยนแปลง: ปิด',
   appAcTitle: 'ตัวเลือกการแก้ไขอัตโนมัติ',

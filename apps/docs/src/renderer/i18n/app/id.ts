@@ -243,6 +243,7 @@ export const id = {
   appPageOf: 'Halaman {current} dari {total}',
   appWordCountTitle: 'Jumlah Kata',
   appWordCountN: '{n} kata',
+  appWordCountSelection: 'Dipilih {selected} / {total} kata',
   appTrackChangesOn: 'Lacak Perubahan: Aktif',
   appTrackChangesOff: 'Lacak Perubahan: Nonaktif',
   appAcTitle: 'Opsi Koreksi Otomatis',

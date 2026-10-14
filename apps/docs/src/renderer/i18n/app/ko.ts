@@ -257,6 +257,7 @@ export const ko = {
   appPageOf: '{current}/{total} 페이지',
   appWordCountTitle: '단어 개수',
   appWordCountN: '단어 {n}개',
+  appWordCountSelection: '선택됨 {selected} / {total}자',
   appTrackChangesOn: '변경 내용 추적: 켜짐',
   appTrackChangesOff: '변경 내용 추적: 꺼짐',
   appAcTitle: '자동 고침 옵션',

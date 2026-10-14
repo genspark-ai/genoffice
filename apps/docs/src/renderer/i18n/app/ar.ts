@@ -236,6 +236,7 @@ export const ar = {
   appPageOf: 'الصفحة {current} من {total}',
   appWordCountTitle: 'عدد الكلمات',
   appWordCountN: '{n} كلمة',
+  appWordCountSelection: 'المحدد {selected} / {total} كلمة',
   appTrackChangesOn: 'تعقب التغييرات: تشغيل',
   appTrackChangesOff: 'تعقب التغييرات: إيقاف',
   appAcTitle: 'خيارات التصحيح التلقائي',

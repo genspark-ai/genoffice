@@ -247,6 +247,7 @@ export const es = {
   appPageOf: 'Página {current} de {total}',
   appWordCountTitle: 'Contar palabras',
   appWordCountN: '{n} palabras',
+  appWordCountSelection: '{selected} de {total} palabras seleccionadas',
   appTrackChangesOn: 'Control de cambios: activado',
   appTrackChangesOff: 'Control de cambios: desactivado',
   appAcTitle: 'Opciones de autocorrección',

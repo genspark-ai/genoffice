@@ -251,6 +251,7 @@ export const nl = {
   appPageOf: 'Pagina {current} van {total}',
   appWordCountTitle: 'Aantal woorden',
   appWordCountN: '{n} woorden',
+  appWordCountSelection: '{selected} van {total} woorden geselecteerd',
   appTrackChangesOn: 'Wijzigingen bijhouden: aan',
   appTrackChangesOff: 'Wijzigingen bijhouden: uit',
   appAcTitle: 'AutoCorrectie-opties',

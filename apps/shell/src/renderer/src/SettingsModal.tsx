@@ -2051,6 +2051,21 @@ export function SettingsModal({
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">
+                      <div className="set-field-label">{t('setAiShowSidebar')}</div>
+                      <div className="set-field-desc">{t('setAiShowSidebarDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={aiPrefs.showAiSidebar}
+                    aria-label={t('setAiShowSidebar')}
+                    onClick={() => updateAiPrefs({ showAiSidebar: !aiPrefs.showAiSidebar })}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
                       <div className="set-field-label">{t('setAiOpenInNewDocs')}</div>
                       <div className="set-field-desc">{t('setAiOpenInNewDocsDesc')}</div>
                     </div>

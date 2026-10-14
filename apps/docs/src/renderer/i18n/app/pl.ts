@@ -246,6 +246,7 @@ export const pl = {
   appPageOf: 'Strona {current} z {total}',
   appWordCountTitle: 'Statystyka wyrazów',
   appWordCountN: 'Wyrazów: {n}',
+  appWordCountSelection: 'Zaznaczono {selected} z {total} wyrazów',
   appTrackChangesOn: 'Śledź zmiany: wł.',
   appTrackChangesOff: 'Śledź zmiany: wył.',
   appAcTitle: 'Opcje Autokorekty',

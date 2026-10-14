@@ -245,6 +245,7 @@ export const zh = {
   appPageOf: '第 {current} 页,共 {total} 页',
   appWordCountTitle: '字数统计',
   appWordCountN: '{n} 个字',
+  appWordCountSelection: '已选 {selected} / {total} 个字',
   appTrackChangesOn: '修订:开',
   appTrackChangesOff: '修订:关',
   appAcTitle: '自动更正选项',

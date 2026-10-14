@@ -229,6 +229,7 @@ export const zhTW = {
   appPageOf: '第 {current} 頁,共 {total} 頁',
   appWordCountTitle: '字數統計',
   appWordCountN: '{n} 個字',
+  appWordCountSelection: '已選 {selected} / {total} 個字',
   appTrackChangesOn: '追蹤修訂:開',
   appTrackChangesOff: '追蹤修訂:關',
   appAcTitle: '自動校正選項',
