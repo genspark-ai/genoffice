@@ -150,6 +150,7 @@ import {
 import {
   IMAGE_RUN_CHILDREN,
   JC_ALIGN,
+  MERGEFIELD_INSTR_RE,
   SIMPLE_INLINE_FIELD_RE,
   ZOTERO_INLINE_FIELD_RE,
   activeCharIndents,
@@ -4032,6 +4033,21 @@ function extractRuns(
           } else if (ZOTERO_INLINE_FIELD_RE.test(fieldInstr)) {
             if (zoteroField) pushZoteroCachedRuns(zoteroField.part, rev)
             else pushZoteroCachedRuns('single', rev)
+          } else if (MERGEFIELD_INSTR_RE.test(fieldInstr)) {
+            // Mail merge: Word fills the result in from a data source, so an
+            // unmerged main document caches nothing. Show the guillemet
+            // placeholder Word uses instead of an empty run; the value is not
+            // dirtied because only the merge itself can supply it.
+            const merge = MERGEFIELD_INSTR_RE.exec(fieldInstr)!
+            pushRun(
+              {
+                ...resultFormat(),
+                text: fieldCached || `«${merge[1] ?? merge[2]}»`,
+                instrField: fieldInstr.trim(),
+                ...(fieldDirty ? { fldDirty: true } : {}),
+              },
+              rev,
+            )
           } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
             // an unformatted result run would drop to the paragraph default size
             pushRun(
@@ -4048,11 +4064,12 @@ function extractRuns(
             const eq = eqField(fieldInstr)!
             pushRun({ ...resultFormat(), text: eq.text, math: { omml: eq.omml } }, rev)
           } else if (fieldCachedRuns.length > 0) {
-            // any other field (HYPERLINK with switches, MERGEFIELD mail-merge
-            // labels...): the cached result is still the visible text — keep it
-            // as plain runs. Body paragraphs with these fields stay on the
-            // passthrough path (onlyXeFields rejects them), so this only feeds
-            // display-only contexts such as table cells and textbox content.
+            // any other field (HYPERLINK with switches, ASK / FILLIN, the
+            // mail-merge control fields NEXT / SKIPIF...): the cached result is
+            // still the visible text — keep it as plain runs. Body paragraphs
+            // with these fields stay on the passthrough path (onlyXeFields
+            // rejects them), so this only feeds display-only contexts such as
+            // table cells and textbox content.
             for (const cached of fieldCachedRuns) pushRun(cached, rev)
           }
           fieldInstr = ''
@@ -4163,7 +4180,8 @@ function extractRuns(
     const instr = decodeNumericCharRefs(String(attrsOf(node)['w:instr'] ?? ''))
     const xe = XE_INSTR_RE.exec(instr)
     const ref = REF_INSTR_RE.exec(instr)
-    if (!xe && !ref && !SIMPLE_INLINE_FIELD_RE.test(instr)) {
+    const merge = MERGEFIELD_INSTR_RE.exec(instr)
+    if (!xe && !ref && !merge && !SIMPLE_INLINE_FIELD_RE.test(instr)) {
       walk(childrenOf(node), link, rev)
       return
     }
@@ -4184,6 +4202,17 @@ function extractRuns(
           text: text || name,
           refField: name,
           refInstr: ` ${instr.trim()} `,
+          ...(dirty ? { fldDirty: true } : {}),
+          ...(link ? { link } : {}),
+        },
+        rev,
+      )
+    } else if (merge) {
+      pushRun(
+        {
+          ...format,
+          text: text || `«${merge[1] ?? merge[2]}»`,
+          instrField: instr.trim(),
           ...(dirty ? { fldDirty: true } : {}),
           ...(link ? { link } : {}),
         },
