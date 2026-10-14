@@ -704,6 +704,7 @@ export const pl = {
   appTabReview: 'Recenzja',
   appRibbonCollapse: 'Zwiń Wstążkę',
   appRibbonExpand: 'Rozwiń Wstążkę',
+  appRibbonCompact: 'Zwinięta Wstążka (tylko ikony)',
   appTabView: 'Widok',
   appTabAi: 'AI',
   appTabChartDesign: 'Projekt wykresu',

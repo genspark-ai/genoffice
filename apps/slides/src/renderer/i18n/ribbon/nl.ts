@@ -15,6 +15,7 @@ export const nl = {
   ribbonTabReview: 'Controleren',
   ribbonCollapse: 'Het lint samenvouwen',
   ribbonExpand: 'Het lint uitvouwen',
+  ribbonCompact: 'Compact lint (alleen pictogrammen)',
   ribbonTabView: 'Beeld',
   ribbonTabTableDesign: 'Tabelontwerp',
   ribbonTabChartDesign: 'Grafiekontwerp',

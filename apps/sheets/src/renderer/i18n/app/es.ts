@@ -720,6 +720,7 @@ export const es = {
   appTabReview: 'Revisar',
   appRibbonCollapse: 'Contraer la cinta de opciones',
   appRibbonExpand: 'Expandir la cinta de opciones',
+  appRibbonCompact: 'Cinta compacta (solo iconos)',
   appTabView: 'Vista',
   appTabAi: 'IA',
   appTabChartDesign: 'Diseño de gráfico',

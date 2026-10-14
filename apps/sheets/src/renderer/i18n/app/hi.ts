@@ -679,6 +679,7 @@ export const hi = {
   appTabReview: 'समीक्षा',
   appRibbonCollapse: 'रिबन संक्षिप्त करें',
   appRibbonExpand: 'रिबन विस्तृत करें',
+  appRibbonCompact: 'कॉम्पैक्ट रिबन (केवल आइकन)',
   appTabView: 'दृश्य',
   appTabAi: 'AI',
   appTabChartDesign: 'चार्ट डिज़ाइन',

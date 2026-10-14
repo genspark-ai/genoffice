@@ -679,6 +679,7 @@ export const ms = {
   appTabReview: 'Semakan',
   appRibbonCollapse: 'Runtuhkan Reben',
   appRibbonExpand: 'Kembangkan Reben',
+  appRibbonCompact: 'Reben Padat (ikon sahaja)',
   appTabView: 'Pandangan',
   appTabAi: 'AI',
   appTabChartDesign: 'Reka Bentuk Carta',

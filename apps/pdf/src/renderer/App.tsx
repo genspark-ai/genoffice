@@ -368,6 +368,9 @@ export default function App() {
   const collapse = useRibbonCollapse('genoffice-pdf-ribbon-collapsed', {
     collapse: t('ribbonCollapse'),
     expand: t('ribbonExpand'),
+    // ⌥⌘K / Ctrl+Alt+K: the icon-only middle density (docs parity, see #362)
+    compact: t('ribbonCompact'),
+    expandFull: t('ribbonExpand'),
   })
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
   const [filePath, setFilePath] = useState('')
@@ -6982,7 +6985,7 @@ export default function App() {
                 <span className="rb-color-bar" style={{ background: cssRgb(highlightColor) }} />
               </span>
             </span>
-            {t('highlight')}
+            <span>{t('highlight')}</span>
           </button>
           <button
             className={`rb-highlight-caret${highlightColorOpen ? ' active' : ''}`}
@@ -7011,7 +7014,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconUnderline />
           </span>
-          {t('underline')}
+          <span>{t('underline')}</span>
         </button>
         <button
           className="rb-big"
@@ -7022,7 +7025,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconStrike />
           </span>
-          {t('strikeout')}
+          <span>{t('strikeout')}</span>
         </button>
       </div>
     </div>
@@ -7072,7 +7075,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconFitWidth />
           </span>
-          {t('fitWidth')}
+          <span>{t('fitWidth')}</span>
         </button>
         <button
           className="rb-big"
@@ -7084,7 +7087,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconFitPage />
           </span>
-          {t('fitPage')}
+          <span>{t('fitPage')}</span>
         </button>
       </div>
     </div>
@@ -7099,7 +7102,7 @@ export default function App() {
       <span className="rb-big-icon">
         <IconSearch />
       </span>
-      {t('search')}
+      <span>{t('search')}</span>
     </button>
   )
 
@@ -7121,7 +7124,7 @@ export default function App() {
       <span className="rb-big-icon">
         <IconEditText />
       </span>
-      {t('editText')}
+      <span>{t('editText')}</span>
     </button>
   )
 
@@ -7152,7 +7155,7 @@ export default function App() {
       <span className="rb-big-icon">
         <IconFormText />
       </span>
-      {t('insertText')}
+      <span>{t('insertText')}</span>
     </button>
   )
 
@@ -7228,7 +7231,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconThumbs />
           </span>
-          {t('thumbs')}
+          <span>{t('thumbs')}</span>
         </button>
         <button
           className={`rb-big${sidebar === 'outline' ? ' active' : ''}`}
@@ -7238,7 +7241,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconOutline />
           </span>
-          {t('outline')}
+          <span>{t('outline')}</span>
         </button>
         {searchBtn}
         <button
@@ -7247,7 +7250,7 @@ export default function App() {
           onClick={() => setSpread((v) => (v === 1 ? 2 : 1))}
         >
           <span className="rb-big-icon">{spread === 2 ? <IconSinglePage /> : <IconSpread />}</span>
-          {spread === 2 ? t('singlePage') : t('twoPage')}
+          <span>{spread === 2 ? t('singlePage') : t('twoPage')}</span>
         </button>
         <button
           className={`rb-big${nightMode ? ' active' : ''}`}
@@ -7257,7 +7260,7 @@ export default function App() {
           <span className="rb-big-icon">
             <IconNight />
           </span>
-          {t('nightMode')}
+          <span>{t('nightMode')}</span>
         </button>
       </div>
     </div>
@@ -7427,7 +7430,7 @@ export default function App() {
                         <IconConvertPdf />
                         <RbCaret />
                       </span>
-                      {t('convertPdf')}
+                      <span>{t('convertPdf')}</span>
                     </button>
                     {convertOpen && (
                       <div className="rb-drop rb-menu">
@@ -7460,7 +7463,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconPrint />
                     </span>
-                    {printing ? t('printPreparing') : t('print')}
+                    <span>{printing ? t('printPreparing') : t('print')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -7471,7 +7474,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconExportImg />
                     </span>
-                    {exporting ? t('exporting') : t('exportImages')}
+                    <span>{exporting ? t('exporting') : t('exportImages')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -7481,7 +7484,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconProps />
                     </span>
-                    {t('props')}
+                    <span>{t('props')}</span>
                   </button>
                 </div>
               </div>
@@ -7541,7 +7544,7 @@ export default function App() {
                       <span className="rb-big-icon">
                         <DrawIcon />
                       </span>
-                      {t(key)}
+                      <span>{t(key)}</span>
                     </button>
                   ))}
                   <button
@@ -7558,7 +7561,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconRect />
                     </span>
-                    {t('redact')}
+                    <span>{t('redact')}</span>
                   </button>
                   {redactions.length > 0 && (
                     <>
@@ -7590,7 +7593,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconSign />
                     </span>
-                    {t('sign')}
+                    <span>{t('sign')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -7601,7 +7604,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconCertSign />
                     </span>
-                    {t('certSign')}
+                    <span>{t('certSign')}</span>
                   </button>
                   {digitalSignatures.length > 0 && (
                     <button
@@ -7612,7 +7615,7 @@ export default function App() {
                       <span className="rb-big-icon">
                         <IconSignatures />
                       </span>
-                      {t('sigPanel')}
+                      <span>{t('sigPanel')}</span>
                     </button>
                   )}
                   <div ref={drawColorWrapRef} className="rb-drop-wrap">
@@ -7632,7 +7635,7 @@ export default function App() {
                         </span>
                         <RbCaret />
                       </span>
-                      {t('drawColor')}
+                      <span>{t('drawColor')}</span>
                     </button>
                     {colorOpen && (
                       <ColorPickerPopover
@@ -7662,7 +7665,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconInsertImage />
                     </span>
-                    {t('insertImage')}
+                    <span>{t('insertImage')}</span>
                   </button>
                   <button
                     className={`rb-big${editImageMode ? ' active' : ''}`}
@@ -7681,7 +7684,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconEditImage />
                     </span>
-                    {t('editImage')}
+                    <span>{t('editImage')}</span>
                   </button>
                 </div>
               </div>
@@ -7697,7 +7700,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconWatermark />
                     </span>
-                    {t('watermark')}
+                    <span>{t('watermark')}</span>
                   </button>
                 </div>
               </div>
@@ -7734,7 +7737,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconFormText />
                     </span>
-                    {t('formAddText')}
+                    <span>{t('formAddText')}</span>
                   </button>
                   <button
                     className={`rb-big${pendingStaticFill === 'check' ? ' active' : ''}`}
@@ -7745,7 +7748,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconFormCheck />
                     </span>
-                    {t('formAddCheck')}
+                    <span>{t('formAddCheck')}</span>
                   </button>
                   <button
                     className={`rb-big${pendingStaticFill === 'cross' ? ' active' : ''}`}
@@ -7756,7 +7759,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconFormCross />
                     </span>
-                    {t('formAddCross')}
+                    <span>{t('formAddCross')}</span>
                   </button>
                 </div>
               </div>
@@ -7773,7 +7776,7 @@ export default function App() {
                         <span className="rb-big-icon">
                           <IconPreviousField />
                         </span>
-                        {t('formPreviousField')}
+                        <span>{t('formPreviousField')}</span>
                       </button>
                       <button
                         className="rb-big"
@@ -7783,7 +7786,7 @@ export default function App() {
                         <span className="rb-big-icon">
                           <IconNextField />
                         </span>
-                        {t('formNextField')}
+                        <span>{t('formNextField')}</span>
                       </button>
                       <span className="form-ribbon-progress">
                         {t('formFieldProgress', {
@@ -7814,7 +7817,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconSign />
                     </span>
-                    {t('sign')}
+                    <span>{t('sign')}</span>
                   </button>
                   <button
                     className={`rb-big${imagePick && !pendingStaticFill ? ' active' : ''}`}
@@ -7825,7 +7828,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconInsertImage />
                     </span>
-                    {t('insertImage')}
+                    <span>{t('insertImage')}</span>
                   </button>
                 </div>
               </div>
@@ -7836,7 +7839,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconCompleteForm />
                     </span>
-                    {t('formComplete')}
+                    <span>{t('formComplete')}</span>
                   </button>
                 </div>
               </div>
@@ -7877,7 +7880,7 @@ export default function App() {
                       <span className="rb-big-icon">
                         <FieldIcon />
                       </span>
-                      {t(labelKey)}
+                      <span>{t(labelKey)}</span>
                     </button>
                   ))}
                 </div>
@@ -7895,7 +7898,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconFieldKeep />
                     </span>
-                    {t('formDesignKeepTool')}
+                    <span>{t('formDesignKeepTool')}</span>
                   </button>
                   <button
                     className={`rb-big${formDesignPreview ? ' active' : ''}`}
@@ -7912,7 +7915,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconFieldPreview />
                     </span>
-                    {t('formDesignPreview')}
+                    <span>{t('formDesignPreview')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -7923,7 +7926,9 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconFieldDetect />
                     </span>
-                    {detectingFields ? t('formDesignDetecting') : t('formDesignDetect')}
+                    <span>
+                      {detectingFields ? t('formDesignDetecting') : t('formDesignDetect')}
+                    </span>
                   </button>
                   <div className="rb-drop-wrap" ref={arrangeWrapRef}>
                     <button
@@ -7936,7 +7941,7 @@ export default function App() {
                         <IconFieldArrange />
                         <RbCaret />
                       </span>
-                      {t('formDesignArrange')}
+                      <span>{t('formDesignArrange')}</span>
                     </button>
                     {arrangeOpen && (
                       <div className="rb-drop rb-menu">
@@ -7964,7 +7969,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconTrash />
                     </span>
-                    {t('formDesignDelete')}
+                    <span>{t('formDesignDelete')}</span>
                   </button>
                   <span className="form-ribbon-progress">
                     {formDesignPreview
@@ -7993,7 +7998,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconRotateL />
                     </span>
-                    {t('rotateLeft')}
+                    <span>{t('rotateLeft')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8003,7 +8008,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconRotateR />
                     </span>
-                    {t('rotateRight')}
+                    <span>{t('rotateRight')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8013,7 +8018,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconRotateAll />
                     </span>
-                    {t('rotateAllPages')}
+                    <span>{t('rotateAllPages')}</span>
                   </button>
                 </div>
               </div>
@@ -8028,7 +8033,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconDeletePage />
                     </span>
-                    {t('deletePage')}
+                    <span>{t('deletePage')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8038,7 +8043,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconExtract />
                     </span>
-                    {t('extractPage')}
+                    <span>{t('extractPage')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8048,7 +8053,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconInsertPdf />
                     </span>
-                    {t('insertPdf')}
+                    <span>{t('insertPdf')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8058,7 +8063,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconInsertBlank />
                     </span>
-                    {t('insertBlankPage')}
+                    <span>{t('insertBlankPage')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8068,7 +8073,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconReplacePages />
                     </span>
-                    {t('replacePages')}
+                    <span>{t('replacePages')}</span>
                   </button>
                 </div>
               </div>
@@ -8083,7 +8088,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconCropPages />
                     </span>
-                    {t('cropPages')}
+                    <span>{t('cropPages')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8093,7 +8098,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconPageSize />
                     </span>
-                    {t('pageSize')}
+                    <span>{t('pageSize')}</span>
                   </button>
                 </div>
               </div>
@@ -8108,7 +8113,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconReverse />
                     </span>
-                    {t('reversePages')}
+                    <span>{t('reversePages')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8118,13 +8123,13 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconSplitPdf />
                     </span>
-                    {t('splitPdf')}
+                    <span>{t('splitPdf')}</span>
                   </button>
                   <button className="rb-big" disabled={readOnly} onClick={() => void mergePdf()}>
                     <span className="rb-big-icon">
                       <IconMergePdf />
                     </span>
-                    {t('mergePdf')}
+                    <span>{t('mergePdf')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8134,7 +8139,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconMergePages />
                     </span>
-                    {t('mergePages')}
+                    <span>{t('mergePages')}</span>
                   </button>
                   <button
                     className="rb-big"
@@ -8144,7 +8149,7 @@ export default function App() {
                     <span className="rb-big-icon">
                       <IconSplitPages />
                     </span>
-                    {t('splitPages')}
+                    <span>{t('splitPages')}</span>
                   </button>
                 </div>
               </div>

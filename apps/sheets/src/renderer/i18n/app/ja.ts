@@ -715,6 +715,7 @@ export const ja = {
   appTabReview: '校閲',
   appRibbonCollapse: 'リボンを折りたたむ',
   appRibbonExpand: 'リボンを展開する',
+  appRibbonCompact: 'コンパクトリボン（アイコンのみ）',
   appTabView: '表示',
   appTabAi: 'AI',
   appTabChartDesign: 'グラフのデザイン',
