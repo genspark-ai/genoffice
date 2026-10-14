@@ -862,11 +862,14 @@ html.genoffice-popover-open .ribbon-tabs {
  * Small icon-beside-label rows keep their labels, like the docs compact band.
  */
 .ribbon-compact .ribbon {
-  /* One px taller than the docs/slides/pdf band: this header's rows sit on
-     * .5px offsets, and against the 5px classic scrollbar lane Chromium
-     * rounds the scrolled content to 41px where a 45px band offers 40 — the
-     * extra pixel clears the rounding without moving anything else */
-  height: 46px;
+  /* Two px taller than the docs/slides/pdf band. This header's rows sit on
+     * .5px offsets, and against the 5px classic scrollbar lane Chromium rounds
+     * the scrolled content up: a 45px band offered 40, a 46px band measured
+     * 41 on macOS but still read scrollHeight 43 on Linux, where the Review
+     * tab's letterform glyphs (🧮 文 🗨) sit on font-metric fractions no other
+     * tab hits. 48px gives the rounded content room without moving anything
+     * inside the band. */
+  height: 48px;
   padding-top: 5px;
   padding-bottom: 1px;
 }
