@@ -150,7 +150,7 @@ import {
   findOpenableDocPath,
   isOpenableDocPath,
 } from '../shared/open-file'
-import { atomicWriteFile, looksLikeZip } from './atomic-write'
+import { atomicWriteFile } from './atomic-write'
 import {
   adoptLazyMediaHashes,
   forgetLazyMediaOwner,
