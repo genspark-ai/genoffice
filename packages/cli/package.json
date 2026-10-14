@@ -10,7 +10,9 @@
     "./install": "./src/install.ts",
     "./agent-skills": "./src/agent-skills.ts",
     "./mcp-launch": "./src/mcp-launch.ts",
-    "./control-protocol": "./src/control-protocol.ts"
+    "./control-protocol": "./src/control-protocol.ts",
+    "./headless-docs": "./src/headless-docs.ts",
+    "./headless-formats": "./src/headless-formats.ts"
   },
   "bin": {
     "genoffice": "./bin/genoffice"
