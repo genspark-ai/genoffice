@@ -38,11 +38,19 @@ import { boundOrderedList, boundTable, boundTaskList } from './boundedTokenizers
 import { WikiLink, WikiLinkResolve } from './wikilink'
 import type { WikiLinkOptions } from './wikilink'
 import type { SlashController, SlashItem } from './slashCommand'
+import { WikiSuggest } from './wikiSuggest'
+import type { WikiSuggestController } from './wikiSuggest'
+import { WikiEmbed } from './wikiEmbed'
 import { t } from '../i18n/locale'
 
 export interface BuildExtensionsOptions {
   slashController: SlashController
   slashItems: () => SlashItem[]
+  /**
+   * The `[[` suggester. Omitted in tests and headless paths: the plugin then
+   * runs with no menu sink, so nothing intercepts the keys around a `[[`.
+   */
+  wikiSuggestController?: WikiSuggestController
   /**
    * Wiki-link navigation. Omitted in tests and headless paths: the resolver is
    * then left on its default, which reports every link unresolved rather than
@@ -133,7 +141,9 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
     // links open externally via main-process guard
     ImageAwareLink.configure({ openOnClick: false }),
     WikiLink,
+    WikiEmbed,
     WikiLinkResolve.configure(options.wikiLink ?? {}),
+    WikiSuggest.configure({ controller: options.wikiSuggestController }),
     BlockDragHandle,
     BlockKeymap,
     AiHighlight,

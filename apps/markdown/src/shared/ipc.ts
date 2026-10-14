@@ -18,6 +18,8 @@ export const MARKDOWN_CHANNELS = {
   rememberWikiFragment: 'markdown:remember-wiki-fragment',
   /** take the fragment remembered for a path, '' when there is none */
   takeWikiFragment: 'markdown:take-wiki-fragment',
+  /** list the vault's notes for the `[[` suggester, breadth-first from the root */
+  listWikiNotes: 'markdown:list-wiki-notes',
   save: 'markdown:save',
   saveRequest: 'markdown:save-request',
   saveRequestAck: 'markdown:save-request-ack',
@@ -71,6 +73,18 @@ export interface WikiLinkResolved {
   /** the `#Heading` / `#^block` part, '' when there was none */
   fragment: string
   found: boolean
+}
+
+/** one vault note offered by the `[[` suggester, in the resolver's own order */
+export interface WikiNoteEntry {
+  /** absolute path, the shape `resolveWikiLinks` answers with */
+  path: string
+  /** file name with extension, as `[[Figure 1.png]]` addresses it */
+  file: string
+  /** stem without extension, as a bare `[[Figure 1]]` addresses it */
+  name: string
+  /** path relative to the walk root, shown under the name in the menu */
+  relPath: string
 }
 
 export type UiTheme = 'light' | 'dark' | 'system'
@@ -245,6 +259,12 @@ export interface MarkdownApi {
   rememberWikiFragment(path: string, fragment: string): Promise<void>
   /** Take the fragment remembered for `path`; '' when there is none (it is consumed) */
   takeWikiFragment(path: string): Promise<string>
+  /**
+   * List the vault's notes for the `[[` suggester: the resolution root walked
+   * breadth-first (the order the resolver matches in), capped so a huge
+   * library cannot stall the popup.
+   */
+  listWikiNotes(): Promise<WikiNoteEntry[]>
   /** Headless export mode: the PDF path this hidden renderer must export to, null in normal use */
   consumeHeadlessExport(): Promise<string | null>
   /** Headless export mode: report the export outcome so the main process can quit */

@@ -4,6 +4,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { WikiLinkResolved } from '../../shared/ipc'
+import { collectWikiEmbedTargets, embedWidth, isImagePath, wikiEmbedSpans } from './wikiEmbed'
+import { resolveImageSrc } from './localImage'
 
 /**
  * `[[target]]`, `[[target|alias]]`, `[[target#heading]]`, `[[target#^blockid]]`.
@@ -183,7 +185,12 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
     let asked = ''
 
     const resolveNow = async (view: EditorView) => {
-      const targets = collectWikiTargets(view.state.doc)
+      // one batch answers links and embeds: an embed is the same lookup with
+      // the `!` folded away, and both halves pay for a single traversal
+      const targets = [
+        ...collectWikiTargets(view.state.doc),
+        ...collectWikiEmbedTargets(view.state.doc),
+      ]
       if (targets.length === 0) {
         asked = ''
         if (view.isDestroyed) return
@@ -206,15 +213,52 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
       if (mine !== generation || view.isDestroyed) return
       asked = question
 
-      const decorations = wikiSpans(view.state.doc).map((span) =>
+      const linkDecorations = wikiSpans(view.state.doc).map((span) =>
         Decoration.inline(span.from, span.to, {
           class: answers[span.raw]?.found ? 'wiki-link-resolved' : 'wiki-link-unresolved',
           'data-wiki-target': span.raw,
         }),
       )
+      const embedDecorations: Decoration[] = []
+      for (const span of wikiEmbedSpans(view.state.doc)) {
+        const answer = answers[span.inner]
+        const found = answer?.found === true
+        // a resolved picture swaps the literal for the image itself, so the
+        // node also carries the class that hides its own text
+        const picture = found && isImagePath(answer!.path)
+        embedDecorations.push(
+          Decoration.node(span.from, span.to, {
+            class: `${found ? 'wiki-embed-resolved' : 'wiki-embed-unresolved'}${
+              picture ? ' wiki-embed-image' : ''
+            }`,
+            'data-wiki-target': span.inner,
+            'data-wiki-embed': '1',
+          }),
+        )
+        if (picture) {
+          const width = embedWidth(`![[${span.inner}]]`)
+          embedDecorations.push(
+            Decoration.widget(
+              span.to,
+              () => {
+                const img = document.createElement('img')
+                img.className = 'wiki-embed-img'
+                img.src = resolveImageSrc(answer!.path)
+                img.alt = span.inner
+                if (width !== null) img.style.width = `${width}px`
+                return img
+              },
+              { side: 10 },
+            ),
+          )
+        }
+      }
       view.dispatch(
         view.state.tr.setMeta(key, {
-          decorations: DecorationSet.create(view.state.doc, decorations),
+          decorations: DecorationSet.create(view.state.doc, [
+            ...linkDecorations,
+            ...embedDecorations,
+          ]),
           answers,
         }),
       )
@@ -237,13 +281,15 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
         props: {
           decorations: (state) => (key.getState(state) ?? EMPTY).decorations,
           handleClick: (view, _pos, event) => {
-            // a plain click only places the caret, so link text stays editable;
-            // the modifier is what leaves the document, as with `openOnClick: false` elsewhere
-            if (!event.metaKey && !event.ctrlKey) return false
             const el = (event.target as HTMLElement | null)?.closest<HTMLElement>(
               '[data-wiki-target]',
             )
             if (!el) return false
+            // a link's text stays editable, so the modifier is what leaves the
+            // document (as with `openOnClick: false` elsewhere); an embed has no
+            // text to edit, so a plain click is what opens it
+            const embed = el.getAttribute('data-wiki-embed') === '1'
+            if (!embed && !event.metaKey && !event.ctrlKey) return false
             const raw = el.getAttribute('data-wiki-target') ?? ''
             const answer = (key.getState(view.state) ?? EMPTY).answers[raw]
             if (answer?.found) options.onOpen(answer.path, answer.fragment)
