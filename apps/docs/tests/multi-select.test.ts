@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
@@ -12,6 +12,18 @@ import {
  * Selection holds one {from, to}, so the added ranges live in plugin state and
  * are painted as decorations; the live selection stays the one the core owns.
  */
+
+// A dispatched mousedown walks the editor's whole hit-test chain — the
+// float-image probe (caretRangeFromPoint, elementsFromPoint) and then
+// ProseMirror's own posAtCoords (elementFromPoint) — and jsdom implements
+// none of the three (the renderer is Chromium-only). The stubs read as "no
+// glyph, no floating picture, no point", which is how a click on padding
+// falls through; the tests set the selection explicitly before clicking.
+beforeAll(() => {
+  document.caretRangeFromPoint = () => null
+  document.elementsFromPoint = () => []
+  document.elementFromPoint = () => null
+})
 
 const para = (t: string) => ({
   type: 'docParagraph',
