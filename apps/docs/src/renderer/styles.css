@@ -8738,6 +8738,13 @@ body.docs-crop-active
   cursor: pointer;
 }
 
+/* a non-contiguous range added with ctrl/cmd+click (#2013): painted as a
+   decoration, never as document data, so it survives without editing anything */
+.doc-multi-range {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 2px;
+}
+
 /* floating Ask-AI entry that follows the text selection */
 .ai-ask-trigger {
   position: fixed;
