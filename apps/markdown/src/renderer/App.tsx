@@ -42,6 +42,8 @@ import { buildSlashItems } from './editor/slashCommand'
 import type { SlashController, SlashMenuState } from './editor/slashCommand'
 import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
+import type { MarkdownTheme } from '../shared/markdown-theme'
+import { applyMarkdownTheme } from './mods/EditorSlots'
 import { ImageHostDialog } from './components/ImageHostDialog'
 import { RedactMenu } from './components/RedactMenu'
 import { OutlinePane } from './components/OutlinePane'
@@ -53,6 +55,7 @@ import { TableMenu } from './components/TableMenu'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { AiAskPopover } from './components/AiAskPopover'
 import { AiPanel, GensparkMark, type AiPreset, type MarkdownAiDeps } from './ai/AiPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type EditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/aiQueueAnchors'
 import { DOCX_MAX_IMAGE_PX, exportDocxBytes } from './export/docxExport'
@@ -158,6 +161,11 @@ export default function App() {
   const [fmText, setFmText] = useState('')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('mdapp.showAi'))
+  /** a slot's press hands its prompt to this editor's own assistant */
+  const askFromSlot = useCallback((prompt: string): void => {
+    setAiOpen(true)
+    setAiPreset({ text: prompt, nonce: Date.now() })
+  }, [])
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const editQueueRef = useRef(editQueue)
@@ -179,6 +187,21 @@ export default function App() {
   const [spellcheck, setSpellcheck] = useState(
     () => localStorage.getItem('mdapp.spellcheck') !== '0',
   )
+  // paper theme (markdown-themes.css scopes the palette on data-markdown-theme)
+  const [mdTheme, setMdTheme] = useState<MarkdownTheme>('default')
+  useEffect(() => {
+    window.markdownApi
+      .getMarkdownTheme?.()
+      .then(setMdTheme)
+      .catch(() => {})
+  }, [])
+  const pickMarkdownTheme = (theme: MarkdownTheme): void => {
+    setMdTheme(theme)
+    // the boot path applies once; live picks re-scope through the one writer,
+    // which also re-applies the mod appearance when the pick returns to default
+    applyMarkdownTheme(theme)
+    window.markdownApi.setMarkdownTheme(theme).catch(() => {})
+  }
   // off by default: it takes over the editor's right-click menu, and a reader
   // should opt into that rather than discover it
   const [redactEnabled, setRedactEnabled] = useState(
@@ -1088,6 +1111,8 @@ export default function App() {
         autoSave={autoSave}
         onToggleAutoSave={setAutoSave}
         imageEnabled={Boolean(filePath)}
+        mdTheme={mdTheme}
+        onMarkdownTheme={pickMarkdownTheme}
         onInsertImage={insertImage}
         onImageHost={() => setImageHostOpen(true)}
         frontmatterOpen={fmOpen}
@@ -1116,6 +1141,8 @@ export default function App() {
       {status === 'loading' && <div className="center-note">{t('loading')}</div>}
       <div className="app-main" style={status === 'ready' ? undefined : { display: 'none' }}>
         <div className={`ai-dock${aiOpen ? '' : ' collapsed'}`}>
+          {/* features a mod added to this editor's own dock */}
+          <EditorSlots place="editor.side" onAsk={askFromSlot} mdTheme={mdTheme} />
           {!aiOpen && (
             <button
               className="ai-rail"
