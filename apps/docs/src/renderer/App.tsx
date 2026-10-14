@@ -118,6 +118,7 @@ import {
   countWords,
   documentTextForWordCount,
   nonAsianWordCount,
+  selectedWordCount,
 } from './word-count'
 import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
@@ -5188,8 +5189,22 @@ export function App() {
   // (Word refreshes its count on idle too). A trailing throttle, not a
   // debounce: the streamed tail of a phased open would keep resetting one
   const [wordCount, setWordCount] = useState(0)
+  // Word's "selected/total" pair; 0 means no selection, so the bar falls back
+  // to the plain total. Cheap enough (a text range, not a document walk) to
+  // follow the selection directly rather than ride the throttle above.
+  const [selectionWordCount, setSelectionWordCount] = useState(0)
   // the ribbon's revision badge walks every block too: same pacing
   const [revisionCount, setRevisionCount] = useState(0)
+  useEffect(() => {
+    if (!editor) return
+    const refreshSelection = () =>
+      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+    refreshSelection()
+    editor.on('selectionUpdate', refreshSelection)
+    return () => {
+      editor.off('selectionUpdate', refreshSelection)
+    }
+  }, [editor])
   useEffect(() => {
     if (!editor) return
     let timer = 0
@@ -5197,6 +5212,7 @@ export function App() {
       timer = 0
       setWordCount(wordCountOfDoc(editor.state.doc))
       setRevisionCount(doc ? revisionCountOfDoc(editor.state.doc) : 0)
+      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
     }
     const onUpdate = () => {
       if (!timer) timer = window.setTimeout(refresh, WORD_COUNT_THROTTLE_MS)
@@ -7702,7 +7718,12 @@ export function App() {
                     data-tip={t('appWordCountTitle')}
                     onClick={openStats}
                   >
-                    {t('appWordCountN', { n: wordCount })}
+                    {selectionWordCount > 0
+                      ? t('appWordCountSelection', {
+                          selected: selectionWordCount,
+                          total: wordCount,
+                        })
+                      : t('appWordCountN', { n: wordCount })}
                   </button>
                   <button
                     className={`status-item status-btn status-track${trackChanges ? ' on' : ''}`}

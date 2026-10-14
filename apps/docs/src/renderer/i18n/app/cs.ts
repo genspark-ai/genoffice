@@ -241,6 +241,7 @@ export const cs = {
   appPageOf: 'Stránka {current} z {total}',
   appWordCountTitle: 'Počet slov',
   appWordCountN: 'Slov: {n}',
+  appWordCountSelection: 'Vybráno {selected} z {total} slov',
   appTrackChangesOn: 'Sledování změn: zapnuto',
   appTrackChangesOff: 'Sledování změn: vypnuto',
   appAcTitle: 'Možnosti automatických oprav',

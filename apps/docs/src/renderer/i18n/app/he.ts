@@ -233,6 +233,7 @@ export const he = {
   appPageOf: 'עמוד {current} מתוך {total}',
   appWordCountTitle: 'ספירת מילים',
   appWordCountN: '{n} מילים',
+  appWordCountSelection: 'נבחרו {selected} מתוך {total} מילים',
   appTrackChangesOn: 'עקוב אחר שינויים: פועל',
   appTrackChangesOff: 'עקוב אחר שינויים: כבוי',
   appAcTitle: 'אפשרויות תיקון אוטומטי',

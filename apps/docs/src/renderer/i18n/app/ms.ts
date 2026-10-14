@@ -245,6 +245,7 @@ export const ms = {
   appPageOf: 'Halaman {current} daripada {total}',
   appWordCountTitle: 'Kiraan Perkataan',
   appWordCountN: '{n} perkataan',
+  appWordCountSelection: 'Dipilih {selected} / {total} perkataan',
   appTrackChangesOn: 'Jejak Perubahan: Hidup',
   appTrackChangesOff: 'Jejak Perubahan: Mati',
   appAcTitle: 'Pilihan AutoBetul',

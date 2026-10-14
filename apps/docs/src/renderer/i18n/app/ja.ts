@@ -257,6 +257,7 @@ export const ja = {
   appPageOf: '{current} / {total} ページ',
   appWordCountTitle: '文字カウント',
   appWordCountN: '{n} 文字',
+  appWordCountSelection: '選択中 {selected} / {total} 文字',
   appTrackChangesOn: '変更履歴の記録: オン',
   appTrackChangesOff: '変更履歴の記録: オフ',
   appAcTitle: 'オートコレクトのオプション',
