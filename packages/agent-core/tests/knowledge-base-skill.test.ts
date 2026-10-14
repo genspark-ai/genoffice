@@ -163,4 +163,105 @@ describe('createKnowledgeBaseSkill', () => {
     const skill = createKnowledgeBaseSkill(makeDeps())
     expect(skill.verifyResponse!('知识库里没有相关内容。', [])).toBeNull()
   })
+
+  it('search reports the coverage: sources searched, documents, and the skipped ones', async () => {
+    const deps = makeDeps()
+    deps.sources = () => [
+      { id: 'starred', kind: 'starred', label: 'starred', enabled: true, documents: 2 },
+      {
+        id: 'std',
+        kind: 'folder',
+        label: 'House style',
+        path: '/Users/me/standards',
+        enabled: true,
+        documents: 31,
+      },
+      {
+        id: 'off',
+        kind: 'folder',
+        label: 'Archive',
+        path: '/Users/me/archive',
+        enabled: false,
+        documents: 0,
+      },
+      {
+        id: 'gone',
+        kind: 'folder',
+        label: 'Imported',
+        path: '/nope/missing',
+        enabled: true,
+        missing: true,
+        documents: 0,
+      },
+    ]
+    const skill = createKnowledgeBaseSkill(deps)
+    const result = await skill.executeTool!({
+      id: 't6',
+      name: 'search_knowledge_base',
+      input: { query: '试用期' },
+    })
+    expect(result.output).toContain('Searched 2 source(s), 33 document(s); 1 hit(s).')
+    expect(result.output).toContain(
+      'Not searched: Archive (disabled), Imported (needs attention: path missing).',
+    )
+  })
+
+  it('a names-only source is named as not searched, with its reason', async () => {
+    const deps = makeDeps()
+    deps.sources = () => [
+      { id: 'starred', kind: 'starred', label: 'starred', enabled: true, documents: 2 },
+      {
+        id: 'big',
+        kind: 'folder',
+        label: 'Archive',
+        path: '/Users/me/archive',
+        enabled: true,
+        index: 'names',
+        documents: 500,
+      },
+    ]
+    const skill = createKnowledgeBaseSkill(deps)
+    const result = await skill.executeTool!({
+      id: 't8',
+      name: 'search_knowledge_base',
+      input: { query: '试用期' },
+    })
+    expect(result.output).toContain('Searched 1 source(s), 2 document(s)')
+    expect(result.output).toContain('Not searched: Archive (file names only, not indexed).')
+  })
+
+  it('without a source registry the search output stays as it was', async () => {
+    const skill = createKnowledgeBaseSkill(makeDeps())
+    const result = await skill.executeTool!({
+      id: 't7',
+      name: 'search_knowledge_base',
+      input: { query: '试用期' },
+    })
+    expect(result.output).not.toContain('Searched')
+  })
+
+  it('the context names the sources and groups each file under its source', () => {
+    const deps = makeDeps()
+    const sourced = CORPUS.map((file, i) => ({
+      ...file,
+      sourceId: i === 0 ? 'std' : 'starred',
+      sourceLabel: i === 0 ? 'House style' : 'starred',
+    }))
+    deps.listFiles = () => sourced
+    deps.sources = () => [
+      { id: 'starred', kind: 'starred', label: 'starred', enabled: true, documents: 1 },
+      {
+        id: 'std',
+        kind: 'folder',
+        label: 'House style',
+        path: '/Users/me/standards',
+        enabled: true,
+        documents: 1,
+      },
+    ]
+    const context = createKnowledgeBaseSkill(deps).buildContext!()
+    expect(context).toContain('sources: starred (1 file(s)), House style (1 file(s))')
+    expect(context).toContain('0 | House style | 合同 | 租赁合同.docx | .docx | 2KB')
+    expect(context).toContain('1 | starred | 工作 | employee handbook.pdf | .pdf | 700.0MB')
+  })
 })

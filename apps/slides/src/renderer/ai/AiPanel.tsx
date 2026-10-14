@@ -6,12 +6,16 @@ import {
 } from '@genoffice/ui'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
+  createKnowledgeBaseSkill,
   AgentLoop,
   composeSkills,
+  createModsSkill,
   IPC_STREAM_SILENCE_TIMEOUT_MS,
   type AgentImage,
   type ToolDisplay,
+  type KbFileInfo,
 } from '@genoffice/agent-core'
+import { currentEditorFeatures } from '../mods/EditorSlots'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import {
   cloudToolsEnabled,
@@ -803,6 +807,21 @@ export function AiPanel({
     )
   }
 
+  // the knowledge base's files (the shell main assembles the corpus of sources);
+  // refreshed on mount, so a new source or star is answerable next send
+  const kbFilesRef = useRef<KbFileInfo[]>([])
+  const refreshKbFiles = (): void => {
+    if (typeof window.slidesApi?.kbList !== 'function') return
+    void window.slidesApi
+      .kbList()
+      .then((files) => {
+        kbFilesRef.current = files
+      })
+      .catch(() => undefined)
+  }
+  useEffect(() => {
+    refreshKbFiles()
+  }, [])
   const loopRef = useRef<AgentLoop | null>(null)
   if (!loopRef.current) {
     // The three slides generation steps (style/planning/per-page HTML) force the high-quality model (only with the anthropic provider;
@@ -1410,6 +1429,24 @@ export function AiPanel({
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
         createFilesSkill(availableAttachments, (path) => readAttachmentPathsRef.current.add(path)),
+        // the mod features the user added: the assistant may plan with them, and
+        // the writing half stays with the user in the feature panel
+        // the knowledge base: the user's starred files plus the sources their
+        // knowledge features registered; search and page reads go through the base
+        ...(typeof window.slidesApi?.kbList === 'function'
+          ? [
+              createKnowledgeBaseSkill({
+                listFiles: () => kbFilesRef.current,
+                search: (query, limit) => window.slidesApi.kbSearch({ q: query, limit }),
+                read: (path, offset) => window.slidesApi.kbRead(path, offset),
+              }),
+            ]
+          : []),
+        createModsSkill({
+          snapshot: currentEditorFeatures,
+          list: () => window.slidesApi.featuresList(),
+          dryRun: (id, request) => window.slidesApi.featuresRun(id, request),
+        }),
       ]),
       events: {
         onText: (text) => {

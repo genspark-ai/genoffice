@@ -6,7 +6,15 @@ import {
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
-import { AgentLoop, composeSkills, streamText } from '@genoffice/agent-core'
+import {
+  createKnowledgeBaseSkill,
+  AgentLoop,
+  composeSkills,
+  createModsSkill,
+  streamText,
+  type KbFileInfo,
+} from '@genoffice/agent-core'
+import { currentEditorFeatures } from '../mods/EditorSlots'
 import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
 import {
   AiComposer,
@@ -382,6 +390,21 @@ export function AiPanel({
   )
 
   // The loop is built once; every mutable value goes through a ref getter
+  // the knowledge base's files (the shell main assembles the corpus of sources);
+  // refreshed on mount, so a new source or star is answerable next send
+  const kbFilesRef = useRef<KbFileInfo[]>([])
+  const refreshKbFiles = (): void => {
+    if (typeof window.markdownApi?.kbList !== 'function') return
+    void window.markdownApi
+      .kbList()
+      .then((files) => {
+        kbFilesRef.current = files
+      })
+      .catch(() => undefined)
+  }
+  useEffect(() => {
+    refreshKbFiles()
+  }, [])
   const loopRef = useRef<AgentLoop<DocSnapshot> | null>(null)
   if (!loopRef.current) {
     loopRef.current = new AgentLoop<DocSnapshot>({
@@ -399,6 +422,24 @@ export function AiPanel({
           }),
         ),
         createSearchSkill(),
+        // the mod features the user added: the assistant may plan with them, and
+        // the writing half stays with the user in the feature panel
+        // the knowledge base: the user's starred files plus the sources their
+        // knowledge features registered; search and page reads go through the base
+        ...(typeof window.markdownApi?.kbList === 'function'
+          ? [
+              createKnowledgeBaseSkill({
+                listFiles: () => kbFilesRef.current,
+                search: (query, limit) => window.markdownApi.kbSearch({ q: query, limit }),
+                read: (path, offset) => window.markdownApi.kbRead(path, offset),
+              }),
+            ]
+          : []),
+        createModsSkill({
+          snapshot: currentEditorFeatures,
+          list: () => window.markdownApi.featuresList(),
+          dryRun: (id, request) => window.markdownApi.featuresRun(id, request),
+        }),
       ]),
       captureSnapshot: () => depsRef.current.getSnapshot(),
       systemSuffix: () => aiLangDirective(langRef.current),

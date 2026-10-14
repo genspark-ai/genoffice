@@ -3,19 +3,24 @@ import {
   AgentLoop,
   createIpcTransport,
   createKnowledgeBaseSkill,
+  formatKbSize,
   type KbFileInfo,
+  type KbSourceInfo,
 } from '@genoffice/agent-core'
 import { AiComposer, AiTypingIndicator, createFileNav, Markdown } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
 
 /**
- * The home screen's knowledge-base ask panel: chat with the reader's starred
- * corpus without opening a document. First app-side consumer of the shell's
- * kb:* gateway — the loop, streaming and rendering reuse what every editor's
- * AI panel uses (AgentLoop + createIpcTransport + Markdown with a filenav
- * nav), so answers cite the folder and file they came from and clicking a
- * citation opens that file in the app that owns it.
+ * The home screen's knowledge-base ask panel: chat with the corpus of sources —
+ * the reader's starred files plus the folders and files registered by knowledge
+ * features — without opening a document. The Sources section shows what the
+ * corpus is made of and toggles a registered source on or off (the corpus, the
+ * controls and the index live in the shell main; see knowledge-base.ts). The
+ * loop, streaming and rendering reuse what every editor's AI panel uses
+ * (AgentLoop + createIpcTransport + Markdown with a filenav nav), so answers
+ * cite the folder and file they came from and clicking a citation opens that
+ * file in the app that owns it.
  *
  * The conversation lives in memory only; it does not survive a restart (the
  * editor panels persist through project-store — wiring that here is a
@@ -33,16 +38,23 @@ interface AskMessage {
 
 export function KbAskPanel({
   onOpenPath,
+  onOpenMods,
 }: {
   onOpenPath: (path: string) => void
+  /** open the feature assistant: that is where a source is added (a knowledge feature) */
+  onOpenMods?: () => void
 }): React.JSX.Element {
   const { t } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [corpusCount, setCorpusCount] = useState<number | null>(null)
+  const [sources, setSources] = useState<KbSourceInfo[] | null>(null)
+  const [sourcesOpen, setSourcesOpen] = useState(false)
+  const [reindexing, setReindexing] = useState(false)
   const [gskEmail, setGskEmail] = useState<string | null>(null)
   const corpusRef = useRef<KbFileInfo[]>([])
+  const sourcesRef = useRef<KbSourceInfo[]>([])
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -56,6 +68,27 @@ export function KbAskPanel({
       .catch(() => undefined)
   }
 
+  const refreshCorpus = (): void => {
+    void window.aiOffice
+      .kbList()
+      .then((files) => {
+        corpusRef.current = files
+        setCorpusCount(files.length)
+      })
+      .catch(() => setCorpusCount(0))
+  }
+
+  const refreshSources = (): void => {
+    if (typeof window.aiOffice?.kbSources !== 'function') return
+    void window.aiOffice
+      .kbSources()
+      .then((next) => {
+        sourcesRef.current = next
+        setSources(next)
+      })
+      .catch(() => undefined)
+  }
+
   useEffect(() => {
     // one corpus snapshot per mount; sends refresh it again (see ask()).
     // A bridge without the kb channel (defensive: the shell always exposes
@@ -64,13 +97,8 @@ export function KbAskPanel({
       setCorpusCount(0)
       return
     }
-    void window.aiOffice
-      .kbList()
-      .then((files) => {
-        corpusRef.current = files
-        setCorpusCount(files.length)
-      })
-      .catch(() => setCorpusCount(0))
+    refreshCorpus()
+    refreshSources()
     refreshSettings()
     void window.aiOffice
       .aiGskStatus()
@@ -86,6 +114,7 @@ export function KbAskPanel({
       }),
       skill: createKnowledgeBaseSkill({
         listFiles: () => corpusRef.current,
+        sources: () => sourcesRef.current,
         search: (query, limit) => window.aiOffice.kbSearch({ q: query, limit }),
         read: (path, offset) => window.aiOffice.kbRead(path, offset),
       }),
@@ -141,14 +170,9 @@ export function KbAskPanel({
     setDraft('')
     setBusy(true)
     refreshSettings()
-    // freshly starred files are answerable this very turn
-    void window.aiOffice
-      .kbList()
-      .then((files) => {
-        corpusRef.current = files
-        setCorpusCount(files.length)
-      })
-      .catch(() => undefined)
+    // freshly starred files and freshly registered sources are answerable this turn
+    refreshCorpus()
+    refreshSources()
     if (corpusRef.current.length === 0) {
       setMessages((prev) => [
         ...prev,
@@ -170,6 +194,32 @@ export function KbAskPanel({
     }
   }
 
+  const setSourceEnabled = (id: string, enabled: boolean): void => {
+    void window.aiOffice
+      .kbSetSourceEnabled(id, enabled)
+      .then((next) => {
+        sourcesRef.current = next
+        setSources(next)
+        refreshCorpus()
+      })
+      .catch(() => undefined)
+  }
+
+  const reindex = (): void => {
+    setReindexing(true)
+    void window.aiOffice
+      .kbReindex()
+      .catch(() => undefined)
+      .then(() => {
+        // the scan is debounced in the main process; a beat later the counts move
+        window.setTimeout(() => {
+          setReindexing(false)
+          refreshSources()
+          refreshCorpus()
+        }, 1500)
+      })
+  }
+
   const fileNav = createFileNav((path) => onOpenPath(path))
 
   return (
@@ -184,6 +234,61 @@ export function KbAskPanel({
               : t('askCorpusCount', { n: String(corpusCount) })}
         </p>
       </div>
+      {sources !== null && sources.length > 0 ? (
+        <div className="kb-ask-sources">
+          <button
+            type="button"
+            className="kb-ask-sources-toggle"
+            onClick={() => setSourcesOpen((open) => !open)}
+          >
+            {t('askSources')} ({sources.length})
+            <span className="kb-ask-sources-caret">{sourcesOpen ? '▾' : '▸'}</span>
+          </button>
+          {sourcesOpen ? (
+            <>
+              <ul className="kb-ask-sources-list">
+                {sources.map((source) => (
+                  <li key={source.id} className="kb-ask-source">
+                    <span className="kb-ask-source-kind">{source.kind}</span>
+                    <span className="kb-ask-source-label">{source.label}</span>
+                    <span className="kb-ask-source-count">
+                      {source.missing
+                        ? t('askSourceMissing')
+                        : t('askSourceDocs', {
+                            n: String(source.documents),
+                            size: formatKbSize(source.bytes ?? 0),
+                          })}
+                    </span>
+                    {source.missing ? null : source.id === 'starred' ? null : (
+                      <button
+                        type="button"
+                        className={'kb-ask-source-toggle' + (source.enabled ? '' : ' is-off')}
+                        onClick={() => setSourceEnabled(source.id, !source.enabled)}
+                      >
+                        {source.enabled ? t('askSourceEnabled') : t('askSourceDisabled')}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <div className="kb-ask-sources-actions">
+                <button type="button" className="kb-ask-source-toggle" onClick={reindex}>
+                  {reindexing ? t('askReindexing') : t('askReindex')}
+                </button>
+                {onOpenMods ? (
+                  <button
+                    type="button"
+                    className="kb-ask-source-toggle"
+                    onClick={() => onOpenMods()}
+                  >
+                    {t('askAddSource')}
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <div className="kb-ask-thread" ref={scrollRef}>
         {messages.length === 0 && corpusCount !== null && corpusCount > 0 && (
           <p className="kb-ask-hint">{t('askIntro')}</p>
