@@ -4,9 +4,9 @@ Docs ialah pemproses teks yang menyerupai Word. Ia membaca dan menulis fail .doc
 
 ## Reben
 
-Tab: **Laman Utama / Sisip / Lukis / Tataletak / Reka Bentuk / Rujukan / Semakan / Pandangan**, bersama tab kontekstual untuk objek yang dipilih (Reka Bentuk dan Tataletak Jadual, Format Gambar, Pengepala dan Pengaki).
+Tab: **Laman Utama / Sisip / Lukis / Tataletak / Reka Bentuk / Rujukan / Semakan / Pandangan**, bersama tab kontekstual untuk objek yang dipilih (Reka Bentuk dan Tataletak Jadual, Format Gambar, Pengepala dan Pengaki). Jalur perintah ada ketumpatannya sendiri dalam Docs: **kompak** (⌥⌘K / Ctrl+Alt+K) mengekalkan ikon dan menggugurkan label, dan pilihannya diingati.
 
-- **Laman Utama**: papan keratan; fon (termasuk saiz CJK dan tanda penekanan) dengan **Kosongkan Semua Pemformatan** dan suis untuk **Tunjukkan/sembunyikan tanda pemformatan**; perenggan (penjajaran / indentasi / jarak / senarai) serta **Takrifkan bulet baharu / Takrifkan format nombor baharu / Senarai Berbilang Aras**, yang menyimpan gaya senarai anda sendiri ke dalam dokumen; gaya (Tajuk 1-6 / Biasa / Kutipan, boleh diubah suai) dengan **Anak Tetingkap Gaya** untuk senarai penuh.
+- **Laman Utama**: papan keratan; fon (termasuk saiz CJK dan tanda penekanan) dengan **Kosongkan Semua Pemformatan** dan suis untuk **Tunjukkan/sembunyikan tanda pemformatan**; perenggan (penjajaran / indentasi / jarak / senarai) serta **Takrifkan bulet baharu / Takrifkan format nombor baharu / Senarai Berbilang Aras**, yang menyimpan gaya senarai anda sendiri ke dalam dokumen; gaya (Tajuk 1-6 / Biasa / Kutipan, boleh diubah suai) dengan **Anak Tetingkap Gaya** untuk senarai penuh. Gaya boleh menetapkan fon Asia Timur dan fon Latin secara berasingan (contohnya fon CJK bersama Times New Roman); pasangannya kekal melalui pusingan .docx.
 - **Sisip**: pemisah halaman dan seksyen; jadual (grid baris × lajur, atau **Sisip Jadual…** untuk saiz tepat); imej, bentuk, kotak teks; **Halaman Kulit** dan **Halaman Kosong** daripada galeri pratetapkan; **Carta**; **Huruf Jatuh**; **WordArt**; medan (tarikh, masa, nombor halaman, jumlah halaman, nama fail); pautan, **Penanda Buku** dan rujukan silang; komen; pengepala dan pengaki serta nombor halaman; simbol dan persamaan.
   - **Carta** menyisipkan objek carta sebenar dengan datanya sendiri — bar, garis atau pir — bukan gambar. _Sunting Data_ dalam Word membuka angka di sebaliknya.
 - **Lukis**: dakwat di atas halaman, dalam kumpulan **Alat Lukisan** — **Pilih** kembali kepada penyuntingan teks, kemudian **Pen**, **Penyerlah** dan **Pemadam** (satu klik atau satu sapuan membuang keseluruhan strok). Di sebelahnya, **Gaya Pen** / **Gaya Penyerlah** ialah satu kawalan yang mengandungi contoh warna dan satu baris lebar; labelnya mengikut alat yang aktif. Dakwat disimpan dalam dokumen sebagai anotasi yang terapung di atas teks, jadi ia kekal selepas menyimpan dan membuka semula, dan **Kosongkan Semua** dalam kumpulan seterusnya membuangnya sepenuhnya.
@@ -66,7 +66,7 @@ Klik kanan di mana-mana bahagian teks, dan menu akan mengikut apa yang anda klik
 
 - Cari dan ganti (ctrl+F / ctrl+H): sensitiviti huruf besar, perkataan penuh, ungkapan biasa.
 - Berus format; buat asal / buat semula yang mendalam; pilihan tampal.
-- Jadual: gabung / pisah sel, operasi baris dan lajur, sempadan dan lorekan, isih, formula.
+- Jadual: gabung / pisah sel, operasi baris dan lajur, sempadan dan lorekan, isih, formula. Baris terbelah merentas halaman bila perlu, dan Ctrl+Enter dalam sel mengubah halaman tepat di situ — cetak dan PDF turut begitu.
 - Imej: balut teks, potong, mampatkan; kanvas lukis.
 
 ## Tipografi CJK

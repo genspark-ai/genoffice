@@ -310,7 +310,9 @@ export const cs = {
   appFullLoadStart: 'Načíst vše',
   appFullLoadRunning: 'Načítá se celý sešit — řazení a filtrování se odemknou po dokončení…',
   appFullLoadTooLarge:
-    'Tento sešit je příliš velký na úplné načtení do paměti; řazení a filtrování nejsou pro tento soubor k dispozici.',
+    'Tento sešit je příliš velký na úplné načtení do paměti; řazení a přesouvání oblastí nejsou pro tento soubor k dispozici. Filtrování běží přímo nad souborem.',
+  appLargeFilterLoading: 'Čtení sloupce filtru ze souboru…',
+  appLargeFilterApplying: 'Použití filtru na soubor…',
   appSortValueModeFormulas:
     'Tato oblast obsahuje vzorce, které se v tomto velkém sešitu nepočítají živě — řazení nebo přesun by je uložily jako prosté hodnoty. Vyberte oblast bez vzorců.',
   appSortRangeTooLarge:
@@ -1078,6 +1080,9 @@ export const cs = {
   appHeadings: 'Záhlaví',
   appHeadingsHidden: 'Záhlaví skryta.',
   appHeadingsShown: 'Záhlaví zobrazena.',
+  appRightToLeft: 'Zprava doleva',
+  appRightToLeftOn: 'Směr mřížky: zprava doleva.',
+  appRightToLeftOff: 'Směr mřížky: zleva doprava.',
   appPrintHeadingsTitle: 'Tisknout záhlaví řádků a sloupců',
   appGroupFunctionLibrary: 'Knihovna funkcí',
   appInsertFunction: 'Vložit funkci',

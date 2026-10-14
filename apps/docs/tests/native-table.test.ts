@@ -829,15 +829,19 @@ describe('native editable tables', () => {
     // makes the row 33.12pt in Word, exact rows keep the bare 22pt
     const mar = { top: 100, bottom: 100 }
     const noLine = { top: { style: 'nil' }, bottom: { style: 'nil' } }
-    expect(rowHeightCss(440, [noLine], [mar])).toBe('height:calc(29.3px + 13.33px)')
+    expect(rowHeightCss(440, [noLine], [mar])).toBe('height:calc(29.3px + 6.67px + 6.67px)')
     expect(rowHeightCss(440, [noLine], [mar], 'exact')).toBe('height:29.3px')
     // a cell with no w:tcMar falls back to the table default
     expect(rowHeightCss(440, [noLine, noLine], [mar, null])).toBe(
-      `height:calc(29.3px + max(13.33px, ${PAD}))`,
+      'height:calc(29.3px + max(6.67px, var(--doc-cell-pad-t,0px)) + max(6.67px, var(--doc-cell-pad-b,0px)))',
     )
     // one declared side only: the other falls back
     expect(rowHeightCss(440, [noLine], [{ top: 100 }])).toBe(
       'height:calc(29.3px + 6.67px + var(--doc-cell-pad-b,0px))',
+    )
+    // the row takes the largest margin per side across its cells (Word probe 2026-10-13)
+    expect(rowHeightCss(440, [noLine, noLine], [mar, { top: 240, bottom: 60 }])).toBe(
+      'height:calc(29.3px + 16.00px + 6.67px)',
     )
   })
 
@@ -947,5 +951,69 @@ describe('native editable tables', () => {
     expect(clip).toBeTruthy()
     expect(clip.style.height).toBe('0px')
     editor.destroy()
+  })
+})
+
+describe('row-wide vertical cell margins (Word probe 2026-10-13)', () => {
+  async function open(xml: string): Promise<Editor> {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    return new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+  }
+  const tcMar = (top: number, bottom: number) =>
+    `<w:tcMar><w:top w:w="${top}" w:type="dxa"/><w:bottom w:w="${bottom}" w:type="dxa"/></w:tcMar>`
+  const cellXml = (tcPr: string, body: string) =>
+    `<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/>${tcPr}</w:tcPr>${body}</w:tc>`
+  const PIC =
+    '<w:r><w:drawing><wp:inline><wp:extent cx="247650" cy="247650"/>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+
+  it('pads every cell with the largest top and bottom margin of its row', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
+      `<w:tr>${cellXml(tcMar(100, 100), '<w:p><w:r><w:t>two</w:t></w:r></w:p>')}` +
+      `${cellXml(tcMar(240, 60), '<w:p><w:r><w:t>b</w:t></w:r></w:p>')}</w:tr>` +
+      `<w:tr>${cellXml(tcMar(100, 100), '<w:p/>')}${cellXml('', '<w:p/>')}</w:tr>` +
+      `<w:tr>${cellXml('', '<w:p/>')}${cellXml('', '<w:p/>')}</w:tr></w:tbl>`
+    const editor = await open(xml)
+    const [r1, r2, r3] = [...editor.view.dom.querySelectorAll('tr')] as HTMLElement[]
+    expect(r1.style.getPropertyValue('--doc-row-pad-t')).toBe('16.00px')
+    expect(r1.style.getPropertyValue('--doc-row-pad-b')).toBe('6.67px')
+    // a cell without the side counts with the table default
+    expect(r2.style.getPropertyValue('--doc-row-pad-t')).toBe(
+      'max(6.67px, var(--doc-cell-pad-t,0px))',
+    )
+    expect(r3.style.getPropertyValue('--doc-row-pad-t')).toBe('')
+    for (const td of editor.view.dom.querySelectorAll('td') as NodeListOf<HTMLElement>) {
+      expect(td.style.getPropertyValue('--doc-cell-pad-t')).toBe('')
+      expect(td.style.getPropertyValue('--doc-cell-pad-b')).toBe('')
+    }
+    const css = readFileSync(resolve(__dirname, '../src/renderer/styles.css'), 'utf8')
+    expect(css).toContain('padding: var(--doc-row-pad-t, var(--doc-cell-pad-t, 0px))')
+    // nested tables must not inherit the host row's padding vars
+    expect(css).toMatch(
+      /\.doc-table \{[^}]*--doc-row-pad-t: initial;[^}]*--doc-row-pad-b: initial;/s,
+    )
+  })
+
+  it('sizes a picture-only cell paragraph by the picture alone', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
+      `<w:tr>${cellXml(tcMar(40, 40), `<w:p><w:pPr><w:spacing w:line="276" w:lineRule="auto"/></w:pPr>${PIC}</w:p>`)}` +
+      `${cellXml(tcMar(40, 40), `<w:p>${PIC}<w:r><w:t>caption</w:t></w:r></w:p>`)}</w:tr></w:tbl>`
+    const editor = await open(xml)
+    const [picOnly, withText] = [...editor.view.dom.querySelectorAll('td p')] as HTMLElement[]
+    expect(picOnly.classList.contains('doc-p-pic')).toBe(true)
+    // the auto multiple becomes the .doc-p-pic padding, not a strut
+    expect(picOnly.style.lineHeight).toBe('')
+    expect(picOnly.style.getPropertyValue('--doc-line-mult')).toBe('1.15')
+    expect(withText.classList.contains('doc-p-pic')).toBe(false)
   })
 })

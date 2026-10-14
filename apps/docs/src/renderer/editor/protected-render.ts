@@ -88,6 +88,7 @@ import {
   preventProtectedLineBreak,
   protectedText,
   rowHeightCss,
+  rowPadVarsCss,
   rtlStartMarginCss,
   tableBordersCss,
   tableRowEatCss,
@@ -2018,6 +2019,12 @@ export function renderTextboxSpec(box: TextboxDisplay, opts?: { inCell?: boolean
   if (box.floating && !box.bandTopPx && !box.bandBottomPx && !box.wrapSide) {
     boxAttrs['data-no-spill'] = '1'
   }
+  // side-wrapped floating box: a page obstacle for every later line (syncWrapObstacles)
+  if (box.floating && box.wrapSides) {
+    boxAttrs['data-wrap-side'] = '1'
+    const d = box.wrapDistPx
+    if (d) boxAttrs['data-wrap-dist'] = `${d.l} ${d.r} ${d.t} ${d.b}`
+  }
 
   const paras: DomSpec[] = box.paras.map((para) => {
     if (para.cells) return textboxRowSpec(para)
@@ -2305,7 +2312,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
             .join(',')
           return layers ? `background-image:${layers};${dkBackgroundImage(layers)}` : ''
         })(),
-        ...(['top', 'left', 'bottom', 'right'] as const).map((side) =>
+        ...(['left', 'right'] as const).map((side) =>
           cell.cellMarTwips?.[side] !== undefined
             ? `--doc-cell-pad-${DK_SIDE[side]}:${cellPadPx(cell.cellMarTwips[side]!)}`
             : '',
@@ -2321,6 +2328,7 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       }
       // not in-flow evidence for the .cell-vert switch (same as tableCellHtml)
       if (cell.gridGap) tdAttrs['data-grid-gap'] = '1'
+      if (cell.hideMark) tdAttrs['data-hide-mark'] = '1'
       if (cell.colSpan && cell.colSpan > 1) tdAttrs.colspan = String(cell.colSpan)
       if (rowSpan > 1) tdAttrs.rowspan = String(rowSpan)
       const paraBlocks: DomSpec[] = cell.richParas?.length
@@ -2388,16 +2396,20 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       }
     })
     const trAttrs: Record<string, string> = {}
+    const inFlow = row.filter((cell) => !cell.gridGap)
+    const trStyles = rowPadVarsCss(inFlow.map((cell) => cell.cellMarTwips))
     const rh = model.rowHeightsTwips?.[ri]
     if (rh) {
-      const inFlow = row.filter((cell) => !cell.gridGap)
-      trAttrs.style = rowHeightCss(
-        rh,
-        inFlow.map((cell) => cell.borders),
-        inFlow.map((cell) => cell.cellMarTwips),
-        model.rowHeightRules?.[ri] ?? null,
+      trStyles.push(
+        rowHeightCss(
+          rh,
+          inFlow.map((cell) => cell.borders),
+          inFlow.map((cell) => cell.cellMarTwips),
+          model.rowHeightRules?.[ri] ?? null,
+        ),
       )
     }
+    if (trStyles.length > 0) trAttrs.style = trStyles.join(';')
     return ['tr', trAttrs, ...tds]
   })
 

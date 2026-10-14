@@ -64,6 +64,9 @@ Sechs Werkzeuge: **Freihand, Rechteck, Ellipse, Pfeil, Notiz** sowie **Bereich s
 - **Handschriftliche Signatur**: zeichnen Sie sie; sie kann einem Signaturfeld eines Formulars zugeordnet werden.
 - **Bildsignatur**: setzen Sie ein Bild als Signatur ab.
 - Gespeicherte Signaturen lassen sich wiederverwenden.
+- **Zertifikatssignatur** (Annotate-Register): signieren mit einem Zertifikat aus dem Systemspeicher oder einer .p12/.pfx-Datei; optional die Signatur auf der Seite zeigen und optional das Dokument gegen spätere Änderungen zertifizieren.
+- Das Signieren schreibt immer eine **neue Datei** (inkrementelles Update — frühere Signaturen bleiben gültig) und öffnet die signierte Kopie an Ort und Stelle. Zuerst speichern: Eine Signatur deckt die Datei ab, wie sie auf der Festplatte steht.
+- Ein Banner über dem Dokument listet bestehende Signaturen; **Signaturen anzeigen** zeigt Gültigkeit, Abdeckung und Zertifikatskette jeder einzelnen. Sperrprüfung (CRL/OCSP) findet nicht statt.
 
 ## Seitenvorgänge (Seiten)
 

@@ -4,9 +4,9 @@ Docs ist der Word-ähnliche Textprozessor: Er liest und schreibt echte .docx mit
 
 ## Das Menüband
 
-Tabs: **Start / Einfügen / Zeichnen / Layout / Entwurf / Referenzen / Überprüfen / Ansicht**, dazu kontextbezogene Tabs für das ausgewählte Objekt (Tabellenentwurf und -layout, Bilder, Kopf- und Fußzeile).
+Tabs: **Start / Einfügen / Zeichnen / Layout / Entwurf / Referenzen / Überprüfen / Ansicht**, dazu kontextbezogene Tabs für das ausgewählte Objekt (Tabellenentwurf und -layout, Bilder, Kopf- und Fußzeile). Das Band hat in Docs eine eigene Dichte: **Kompakt** (⌥⌘K / Ctrl+Alt+K) lässt nur die Icons und wirft die Beschriftungen weg; die Wahl wird gemerkt.
 
-- **Start**: Zwischenablage; Schriftart (einschließlich ostasiatischer Schriftgrade und Hervorhebungszeichen) mit **Alle Formatierungen löschen** und einem **Formatierungszeichen ein-/ausblenden**-Schalter; Absatz (Ausrichtung/Einzug/Abstand/Listen) plus **Neues Aufzählungszeichen definieren / Neues Zahlenformat definieren / Liste mit mehreren Ebenen**, die Ihre eigenen Listenformate im Dokument speichern; Formatvorlagen (Überschrift 1-6/Standard/Zitat, änderbar) mit einem **Formatvorlagenbereich** für die vollständige Liste.
+- **Start**: Zwischenablage; Schriftart (einschließlich ostasiatischer Schriftgrade und Hervorhebungszeichen) mit **Alle Formatierungen löschen** und einem **Formatierungszeichen ein-/ausblenden**-Schalter; Absatz (Ausrichtung/Einzug/Abstand/Listen) plus **Neues Aufzählungszeichen definieren / Neues Zahlenformat definieren / Liste mit mehreren Ebenen**, die Ihre eigenen Listenformate im Dokument speichern; Formatvorlagen (Überschrift 1-6/Standard/Zitat, änderbar) mit einem **Formatvorlagenbereich** für die vollständige Liste. Eine Formatvorlage kann die ostasiatische und die lateinische Schrift getrennt setzen (etwa ein CJK-Schriftschnitt plus Times New Roman); das Paar übersteht den .docx-Rundlauf.
 - **Einfügen**: Seiten- und Abschnittswechsel; Tabellen (Raster aus Zeilen × Spalten oder **Tabelle einfügen…** für eine genaue Größe); Bilder, Formen, Textfelder; **Deckblatt** und **Leere Seite** aus einer vorgefertigten Galerie; **Diagramm**; **Initiale**; **WordArt**; Felder (Datum, Uhrzeit, Seitenzahl, Gesamtseitenzahl, Dateiname); Hyperlinks, **Textmarke** und Querverweise; Kommentare; Kopf- und Fußzeile und Seitenzahlen; Symbole und Formeln.
   - **Diagramm** fügt ein echtes Diagrammobjekt mit eigenen Daten ein — Balken, Linie oder Kreis — und kein Bild. Words _Daten bearbeiten_ öffnet die Zahlen dahinter.
 - **Zeichnen**: Freihand auf der Seite, in der Gruppe **Zeichentools** — **Auswählen** führt zurück zur Texteingabe, dann **Stift**, **Textmarker** und **Radierer** (ein Klick oder eine Wischbewegung entfernt den ganzen Strich). Daneben ist **Stiftstil** / **Textmarkerstil** ein einziger Regler mit Farbfeldern und einer Reihe von Breiten; seine Beschriftung richtet sich nach dem gerade aktiven Werkzeug. Die Tinte wird als Anmerkung über dem Text im Dokument gespeichert, übersteht also das Speichern und Wiederöffnen, und **Alles löschen** in der nächsten Gruppe entfernt sie vollständig.
@@ -55,7 +55,7 @@ Rechtsklicken Sie irgendwo im Text — das Menü richtet sich nach dem, was Sie 
 
 - Suchen und Ersetzen (ctrl+F / ctrl+H): Groß-/Kleinschreibung, ganzes Wort, reguläre Ausdrücke.
 - Format übertragen; mehrstufiges Rückgängig/Wiederholen; Einfügeoptionen.
-- Tabellen: Zellen verbinden/teilen, Zeilen-/Spaltenbefehle, Rahmen und Schattierung, Sortieren, Formeln.
+- Tabellen: Zellen verbinden/teilen, Zeilen-/Spaltenbefehle, Rahmen und Schattierung, Sortieren, Formeln. Zeilen brechen nötigenfalls über Seiten, und Ctrl+Enter in einer Zelle blättert genau dort um — Druck und PDF genauso.
 - Bilder: Textumbruch, Zuschneiden, Komprimieren; Zeichenfläche.
 
 ## Ostasiatische Typografie

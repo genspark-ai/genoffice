@@ -184,4 +184,17 @@ export const id = {
   aiCmdImages: '{count} gambar diperbarui',
   aiCmdToc: 'Daftar isi disisipkan ({count} entri)',
   aiCmdSkipped: ' ({count} blok terlindungi dilewati)',
+  aiStarterMindMap: 'Buat peta pikiran dari dokumen ini',
+  aiMindMapBtn: 'Peta Pikiran AI',
+  aiMindMapPrompt:
+    'Buat peta pikiran dari dokumen ini, susun topik utama dan konsep kunci menurut struktur bagiannya',
+  aiSumMindMap: 'Buat peta pikiran',
+  aiMindMapTitle: 'Peta pikiran',
+  aiMindMapNodes: '{count} node',
+  aiMindMapAskPrompt: 'Jelaskan tentang "{label}" dalam dokumen ini',
+  aiMindMapJump: 'Lompat ke bagian yang dikutip',
+  aiMindMapExport: 'Ekspor PNG',
+  aiMindMapReset: 'Setel ulang tampilan',
+  aiMindMapExpand: 'Bentangkan cabang',
+  aiMindMapCollapse: 'Lipat cabang',
 } satisfies Record<keyof typeof zh, string>

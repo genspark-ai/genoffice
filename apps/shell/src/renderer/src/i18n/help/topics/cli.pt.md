@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## Obter o comando
 
-macOS e Windows incluem-no dentro do pacote da aplicação. Para o usar pelo nome, execute `genoffice install-cli` uma vez: cria uma ligação simbólica para o binário incluído em `/usr/local/bin`, ou no `PATH` do seu utilizador no Windows.
+macOS e Windows o trazem dentro do pacote do app. Para chamá-lo pelo nome, rode uma vez `genoffice install-cli`: ele liga o binário do pacote num diretório do seu PATH — no macOS `/usr/local/bin` quando não for um prefixo do Homebrew (os diretórios do Homebrew nunca são tocados), senão o seu bin de usuário — ou no seu `PATH` de usuário no Windows.
 
 ## Os comandos que vale a pena conhecer
 

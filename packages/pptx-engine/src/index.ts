@@ -2369,26 +2369,38 @@ export function connectionSiteForSide(el: SlideElement, side: ConnectionSide): n
   return (prst === 'ellipse' ? ELLIPSE_SIDES : RECT_SIDES)[side]
 }
 
-/** Connection point index → shape edge midpoint (edge sites of the preset geometry, else center). */
-function connectionPoint(el: SlideElement, idx: number): { x: number; y: number } {
-  const o = el.transform.offset
+/** Connection site index → unit-box point (edge sites of the preset geometry, else center). */
+function connectionSiteLocal(el: SlideElement, idx: number): { u: number; v: number } {
   const prst = el.type === 'shape' || el.type === 'picture' ? el.presetGeometry : undefined
   const sides = prst === 'ellipse' ? ELLIPSE_SIDES : RECT_SIDES
-  if (idx === sides.top) return { x: o.x + o.cx / 2, y: o.y }
-  if (idx === sides.left) return { x: o.x, y: o.y + o.cy / 2 }
-  if (idx === sides.bottom) return { x: o.x + o.cx / 2, y: o.y + o.cy }
-  if (idx === sides.right) return { x: o.x + o.cx, y: o.y + o.cy / 2 }
+  if (idx === sides.top) return { u: 0.5, v: 0 }
+  if (idx === sides.left) return { u: 0, v: 0.5 }
+  if (idx === sides.bottom) return { u: 0.5, v: 1 }
+  if (idx === sides.right) return { u: 1, v: 0.5 }
   if (prst === 'ellipse' && idx >= 1 && idx <= 7) {
     // odd ellipse sites are the 45-degree points: inset (1 - 1/sqrt2)/2 of each extent
     const k = 0.1464
     const left = idx === 1 || idx === 3
     const top = idx === 1 || idx === 7
-    return {
-      x: o.x + (left ? o.cx * k : o.cx * (1 - k)),
-      y: o.y + (top ? o.cy * k : o.cy * (1 - k)),
-    }
+    return { u: left ? k : 1 - k, v: top ? k : 1 - k }
   }
-  return { x: o.x + o.cx / 2, y: o.y + o.cy / 2 }
+  return { u: 0.5, v: 0.5 }
+}
+
+/** Connection point in slide space: site mirrored by the shape flips, then rotated about the box centre. */
+function connectionPoint(el: SlideElement, idx: number): { x: number; y: number } {
+  const t = el.transform
+  const o = t.offset
+  const site = connectionSiteLocal(el, idx)
+  const dx = ((t.flipH ? 1 - site.u : site.u) - 0.5) * o.cx
+  const dy = ((t.flipV ? 1 - site.v : site.v) - 0.5) * o.cy
+  const cxx = o.x + o.cx / 2
+  const cyy = o.y + o.cy / 2
+  const rad = ((t.rot ?? 0) / 60000) * (Math.PI / 180)
+  if (rad === 0) return { x: cxx + dx, y: cyy + dy }
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  return { x: cxx + dx * cos - dy * sin, y: cyy + dx * sin + dy * cos }
 }
 
 /**

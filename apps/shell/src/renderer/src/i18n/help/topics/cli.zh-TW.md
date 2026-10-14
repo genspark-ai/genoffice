@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## 取得命令
 
-macOS 與 Windows 上它位於應用程式套件內。想直接以名稱呼叫，先執行一次 `genoffice install-cli`：它會把套件內的二進位檔建立符號連結到 `/usr/local/bin`，Windows 上則連結到你的使用者 `PATH`。
+macOS 和 Windows 上它位於應用程式套件內。想直接按名稱呼叫，先執行一次 `genoffice install-cli`：它把套件內的二進位檔連結到你 PATH 上的某個目錄——macOS 上優先 `/usr/local/bin`（但絕不會寫進 Homebrew 自己的目錄），否則用你的使用者 bin——Windows 上則連結到你的使用者 `PATH`。
 
 ## 值得記住的命令
 

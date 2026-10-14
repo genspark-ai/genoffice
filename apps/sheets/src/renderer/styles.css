@@ -1559,11 +1559,33 @@ button.check-item:hover {
   opacity: 0.45;
 }
 
+/* Interface scale (issue #1913).
+ *
+ * Each chrome surface opts in on its own, and the workbook canvas
+ * (`.workbook-area` / `#univer-container`) is deliberately NOT on this list.
+ * That is the mechanism: the document zoom is the app's own per-app state, and
+ * the interface scale is applied to its *siblings*. They cannot compound,
+ * because nothing contains both.
+ *
+ * `zoom` rather than a window zoom for the same reason — see
+ * apps/shell/src/main/ui-scale.ts for why `webContents.setZoomFactor()` would
+ * drag the canvas along with the chrome. */
+.excel-header,
+.status-bar,
+.copilot {
+  zoom: var(--ui-scale);
+}
+
 /* AI panel on the left, spanning from the ribbon to the status bar (unified with docs);
  * its column is drag-resizable: driven by --copilot-width (updated by the AiChatPanel resizer) */
 .sheet-body {
   display: grid;
-  grid-template-columns: var(--copilot-width, 360px) minmax(0, 1fr);
+  /* The AI panel's slot has to grow with the scale as well. Its column is
+   * `--copilot-width`, and `.copilot` is `zoom`ed, so a 2x panel inside an
+   * unscaled 360px slot paints 720px of content into 360px of grid — the
+   * heading clips, the composer overlaps the model name, and both overflow
+   * into the document. */
+  grid-template-columns: calc(var(--copilot-width, 360px) * var(--ui-scale)) minmax(0, 1fr);
   min-height: 0;
   transition: grid-template-columns 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1573,6 +1595,13 @@ button.check-item:hover {
   display: grid;
   /* workbook / status bar */
   grid-template-rows: minmax(0, 1fr) auto;
+  /* The implicit column defaults to `min-width: auto`, i.e. its content's
+   * min-content width — and the Univer canvas is far wider than the window.
+   * So the column grew past the window, and the status bar, sharing it, ran off
+   * the right edge with the zoom controls past the frame. Invisible at 100%
+   * because nothing else pushes that column; a large interface scale makes the
+   * sheet's own chrome demand the width it no longer has. */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
@@ -1580,6 +1609,9 @@ button.check-item:hover {
 .workbook-area {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Same reason as `.sheet-main`: the canvas's intrinsic width must not become
+   * this grid's minimum. */
+  min-width: 0;
   min-height: 0;
   position: relative;
 }
@@ -1650,21 +1682,33 @@ button.check-item:hover {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* The message is the part that gives way at a large interface scale: it is
+   * prose with a natural end, so an ellipsis reads as "more of this" rather
+   * than as a control that vanished. `min-width: 0` is what lets a flex item
+   * shrink past its content at all. */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .status-msg {
+  display: block;
+  min-width: 0;
   opacity: 0.85;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-right {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* The zoom slider and the sheet counters stay whole. With both sides pinned
+   * the bar ran past the window edge at 200% with the zoom percentage half
+   * off-screen, which is why `.status-left` above is allowed to shrink. */
   flex-shrink: 0;
 }
 

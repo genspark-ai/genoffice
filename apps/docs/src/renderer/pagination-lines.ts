@@ -533,6 +533,10 @@ export function fillLineBoxes(
       !(i > 0 && blocks[i - 1].keepNext && !block.keepNext)
     )
       continue
+    if (block.lineLeadPx === undefined) {
+      block.lineLeadPx = lineLeadPx(block.el)
+      if (block.lineLeadPx > 0.5) changed = true
+    }
     // a protected image block is atomic like a shape: the tiny lead line its
     // anchor marker / leading spaces form is not a page-break point (cutting
     // there left a sliver strip of a page-crossing photo behind). Over-page
@@ -579,10 +583,6 @@ export function fillLineBoxes(
         changed = true
       }
       continue
-    }
-    if (block.lineLeadPx === undefined) {
-      block.lineLeadPx = lineLeadPx(block.el)
-      if (block.lineLeadPx > 0.5) changed = true
     }
     // synthesized over-page cuts below mutate the list, so cached entries are copied out
     let boundaries: number[]
@@ -961,12 +961,15 @@ function rowCutYs(
   )
   // forced cuts travel separately from the content-line candidates: a forced
   // cut must turn the page even when the whole row fits, which the placement
-  // gate would skip, and per-cell line splitting must not double-cut at it
+  // gate would skip, and per-cell line splitting must not double-cut at it.
+  // A row without cell boxes (single cell, exact-height cells) splits on the
+  // cut list alone, so there the breaks have to ride along with it.
+  const hasCells = cellsOk && cellBoxes.some((c) => c.lines.length > 0)
   return {
-    cuts: cellCutYs(cellBands, rowHeight, paraBands),
+    cuts: cellCutYs(cellBands, rowHeight, paraBands, hasCells ? [] : forcedCuts),
     ...(forcedCuts.length > 0 ? { forcedCuts } : {}),
     contentBottom,
-    ...(cellsOk && cellBoxes.some((c) => c.lines.length > 0) ? { cells: cellBoxes } : {}),
+    ...(hasCells ? { cells: cellBoxes } : {}),
   }
 }
 
@@ -1056,7 +1059,7 @@ function clusterLineBands(bands: Array<[number, number]>): Array<[number, number
  *  tolerance for sub-pixel jitter). paraBands (per-paragraph line bands across
  *  all cells) add Word's widow/orphan rule to in-row breaks: a cut through a
  *  paragraph must leave at least two of its lines on each side, else the whole
- *  row pushes (Word pushes a row whose 2-line cell would split, prod100r4/32+47).
+ *  row pushes (Word pushes a row whose 2-line cell would split; corpus probe 2026-09).
  *
  *  forcedCuts are explicit page breaks the author typed (br.doc-page-br), as
  *  offsets from the row top. They are honoured whatever the heuristics say:

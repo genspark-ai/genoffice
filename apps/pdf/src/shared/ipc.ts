@@ -117,8 +117,8 @@ export interface PdfSignatureInfo {
   /** Zero-based page of the signature widget; -1 when it has none */
   pageIndex: number
   kind: 'signature' | 'timestamp'
-  /** Derived from `problems`: invalid (altered or unreadable) > warning (weakened) > valid (intact; trust problems stay listed as notes) */
-  status: 'valid' | 'warning' | 'invalid'
+  /** Derived from `problems`: invalid (altered or unreadable) > warning (weakened) > untrusted (intact, chain reaches no trusted root) > valid */
+  status: 'valid' | 'untrusted' | 'warning' | 'invalid'
   problems: PdfSignatureProblem[]
   subFilter: string
   signerName?: string
@@ -150,6 +150,8 @@ export type CertificateErrorCode =
   | 'cert-not-exportable'
   | 'cert-store-locked'
   | 'cert-store-tool-missing'
+  /** The system store is not supported on this platform (macOS for now) */
+  | 'cert-store-unsupported'
 
 /** A signing identity found in the operating system's certificate store */
 export interface SystemCertificateInfo {
@@ -163,7 +165,7 @@ export interface SystemCertificateInfo {
   expired: boolean
 }
 
-export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked'
+export type SystemStoreIssue = 'nss-tools-missing' | 'store-locked' | 'platform-unsupported'
 
 export interface ListSystemCertificatesResult {
   certs: SystemCertificateInfo[]
@@ -181,6 +183,8 @@ export interface SignWithCertificateRequest {
   /** Opaque id returned by pickCertificate for this view */
   certId: string
   password: string
+  /** Unlocks a locked system store (NSS) when the identity has to be exported again */
+  storePassword?: string
   reason?: string
   location?: string
   contactInfo?: string
@@ -215,7 +219,7 @@ export interface SavedSignature {
   data: SignatureData
 }
 
-export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx'
+export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx' | 'md' | 'html'
 
 /** target file type of the AI create_document tool (mirrors the docs app's contract) */
 export type CreateDocumentType = 'docx' | 'pdf' | 'md' | 'html'
@@ -982,8 +986,9 @@ export interface PdfApi {
   getUsername(): Promise<string>
   /** Mirror unsaved-changes state to the main process; drives the save prompt before closing a tab/window */
   setDirty(dirty: boolean): void
-  /** Main process picked "Save" in the close prompt → renderer saves and replies via sendCloseSaveResult */
-  onCloseSaveRequest(handler: () => void): () => void
+  /** Main process asks for a save (close prompt, menu Save, export flows) and waits for sendCloseSaveResult.
+   *  flushAll: success must mean everything on screen is in the file, including the form field whose card is open */
+  onCloseSaveRequest(handler: (opts: { flushAll: boolean }) => void): () => void
   sendCloseSaveResult(ok: boolean): void
   /** Shell menu Save As → renderer writes pending edits to targetPath only (original untouched) and replies via sendSaveAsResult */
   onSaveAsRequest(handler: (targetPath: string) => void): () => void

@@ -113,6 +113,38 @@ describe('fontAttrsFromFamilyChain', () => {
     expect(fontAttrsFromFamilyChain('Calibri')).toEqual({ font: 'Calibri', fontAscii: 'Calibri' })
     expect(fontAttrsFromFamilyChain(undefined)).toEqual({})
   })
+
+  // what follows reaches the file verbatim: generate.ts writes run.fontAscii
+  // straight into w:rFonts/@w:ascii and @w:hAnsi with no sanitising pass
+  it('lets the first real family win when a web paste leads with vendor keywords', () => {
+    // the stack GitHub serves, copied out of Safari
+    expect(
+      fontAttrsFromFamilyChain('-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial'),
+    ).toEqual({ font: 'Segoe UI', fontAscii: 'Segoe UI' })
+  })
+
+  it('yields no font attrs when nothing but CSS-only keywords survives', () => {
+    // nothing usable left: the run must stay font-less so it inherits, not pin
+    // an unresolvable name
+    expect(fontAttrsFromFamilyChain('-apple-system, BlinkMacSystemFont, system-ui')).toEqual({})
+  })
+
+  it('skips every CSS-only system keyword, not just the vendor ones', () => {
+    for (const kw of [
+      'math',
+      'ui-serif',
+      'ui-sans-serif',
+      'ui-monospace',
+      'ui-rounded',
+      '-apple-system',
+      'BlinkMacSystemFont',
+    ]) {
+      expect(fontAttrsFromFamilyChain(`${kw}, Arial`)).toEqual({
+        font: 'Arial',
+        fontAscii: 'Arial',
+      })
+    }
+  })
 })
 
 describe('complex-script (w:cs) render chain', () => {

@@ -239,6 +239,26 @@ describe('certificate signing handlers', () => {
       expect(pickSave).not.toHaveBeenCalled()
     })
 
+    it('unlocks the store again when a released identity has to be re-exported for signing', async () => {
+      const s = await setup()
+      vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })
+      vi.mocked(exportSystemCertificate).mockClear()
+      vi.mocked(exportSystemCertificate).mockImplementation(async (_ref, storePassword) => {
+        if (storePassword !== 'store-pw') throw new SystemStoreError('cert-store-locked')
+        return { p12: new Uint8Array(p12), password: PASSWORD }
+      })
+      const { certs } = await s.call(PDF_CHANNELS.listSystemCertificates, 'store-pw')
+      expect(
+        await s.call(PDF_CHANNELS.inspectCertificate, certs[0].certId, '', 'store-pw'),
+      ).toMatchObject({ ok: true })
+      s.call(PDF_CHANNELS.releaseCertificate, certs[0].certId)
+      pickSave.mockResolvedValue({ canceled: false, filePath: s.signedCopy })
+      expect(
+        await s.sign({ certId: certs[0].certId, password: '', storePassword: 'store-pw' }),
+      ).toEqual({ ok: true, path: s.signedCopy })
+      expect(exportSystemCertificate).toHaveBeenCalledTimes(2)
+    })
+
     it('forgets ids from an earlier listing when the store is listed again', async () => {
       const s = await setup()
       vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })

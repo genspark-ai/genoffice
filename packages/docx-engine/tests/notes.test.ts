@@ -106,9 +106,57 @@ describe('footnotes / endnotes', () => {
     expect(p.type).toBe('paragraph')
     expect(p.runs).toEqual([
       { text: '正文' },
-      { text: '1', noteRef: { kind: 'footnote', id: '2' } },
+      {
+        text: '1',
+        noteRef: { kind: 'footnote', id: '2' },
+        rawRPr: '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>',
+      },
       { text: '继续' },
     ])
+  })
+
+  it('an edit to the paragraph keeps the reference run its own rPr', async () => {
+    // genoffice#2005: the paragraph is rebuilt because one of its runs changed,
+    // and the marker run used to come out as a bare superscript — the
+    // FootnoteReference style, the fonts, the colour and the size all gone.
+    // The rPr parsed off the marker must ride the rebuild verbatim.
+    const STYLED_REF_P =
+      '<w:p><w:r><w:t xml:space="preserve">The court held so. </w:t></w:r>' +
+      '<w:r><w:t>.</w:t></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/>' +
+      '<w:rFonts w:ascii="Palatino Linotype" w:hAnsi="Palatino Linotype"/>' +
+      '<w:color w:val="000000"/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr>' +
+      '<w:footnoteReference w:id="2"/></w:r></w:p>'
+    const bytes = await buildDocx({
+      bodyXml: STYLED_REF_P,
+      extraRels: FOOTNOTES_REL,
+      extraParts: [
+        {
+          path: 'word/footnotes.xml',
+          xml: FOOTNOTES_XML,
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
+        },
+      ],
+    })
+    const doc = await parseDocx(bytes)
+    const p = doc.blocks[0]
+    const runs = p.runs ?? []
+    const refRun = runs.find((r) => r.noteRef)
+    expect(refRun?.rawRPr).toContain('w:rStyle w:val="FootnoteReference"')
+    // now rebuild the paragraph: the first run's text changes, the marker must not
+    runs[0] = { ...runs[0], text: 'The court held that. ' }
+    const out = await saveDocx(doc, [
+      { kind: 'generated', block: { type: 'paragraph', runs } },
+    ])
+    const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    const at = xml.indexOf('<w:footnoteReference')
+    const refRunXml = xml.slice(xml.lastIndexOf('<w:r>', at), xml.indexOf('</w:r>', at) + 6)
+    expect(refRunXml).toContain('<w:footnoteReference')
+    expect(refRunXml).toContain('<w:rStyle w:val="FootnoteReference"/>')
+    expect(refRunXml).toContain('w:ascii="Palatino Linotype"')
+    expect(refRunXml).toContain('<w:color w:val="000000"/>')
+    expect(refRunXml).toContain('<w:sz w:val="26"/>')
   })
 
   it('adding a note keeps the untouched rich footnote entry byte-identical (surgical rebuild)', async () => {
@@ -186,7 +234,11 @@ describe('footnotes / endnotes', () => {
     const last = reparsed.blocks.filter((b) => !b.hidden).at(-1)!
     expect(last.runs).toEqual([
       { text: '新段落' },
-      { text: '2', noteRef: { kind: 'footnote', id: '3' } },
+      {
+        text: '2',
+        noteRef: { kind: 'footnote', id: '3' },
+        rawRPr: '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>',
+      },
     ])
   })
 
@@ -219,7 +271,11 @@ describe('footnotes / endnotes', () => {
     expect(reparsed.endnotes).toEqual([{ id: '2', text: '尾注内容' }])
     expect(reparsed.blocks[0].runs).toEqual([
       { text: '正文' },
-      { text: '1', noteRef: { kind: 'endnote', id: '2' } },
+      {
+        text: '1',
+        noteRef: { kind: 'endnote', id: '2' },
+        rawRPr: '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>',
+      },
     ])
   })
 })

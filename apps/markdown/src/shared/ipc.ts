@@ -13,6 +13,11 @@ export const MAX_PASTED_IMAGE_BYTES = 50 * 1024 * 1024
 export const MARKDOWN_CHANNELS = {
   consumePending: 'markdown:consume-pending',
   readFile: 'markdown:read-file',
+  resolveWikiLinks: 'markdown:resolve-wiki-links',
+  /** remember the `#fragment` of a wiki link, so the note opens on its heading */
+  rememberWikiFragment: 'markdown:remember-wiki-fragment',
+  /** take the fragment remembered for a path, '' when there is none */
+  takeWikiFragment: 'markdown:take-wiki-fragment',
   save: 'markdown:save',
   saveRequest: 'markdown:save-request',
   saveRequestAck: 'markdown:save-request-ack',
@@ -28,6 +33,8 @@ export const MARKDOWN_CHANNELS = {
   saveImageAs: 'markdown:save-image-as',
   getImageHost: 'markdown:get-image-host',
   setImageHost: 'markdown:set-image-host',
+  getMarkdownTheme: 'markdown:get-theme',
+  setMarkdownTheme: 'markdown:set-theme',
   uploadImage: 'markdown:upload-image',
   viewImage: 'genoffice:view-image',
   exportRequest: 'markdown:export-request',
@@ -51,6 +58,20 @@ export const MARKDOWN_CHANNELS = {
   getAiPanelPrefs: 'app:get-ai-panel-prefs',
   aiPanelPrefsChanged: 'app:ai-panel-prefs-changed',
 } as const
+
+/** the raw text between `[[ ]]`, verbatim, as the editor holds it */
+export interface WikiLinkResolveRequest {
+  /** absolute path of the document holding the links; '' when untitled */
+  fromPath: string
+  targets: string[]
+}
+export interface WikiLinkResolved {
+  /** absolute path, '' when unresolved (or a same-file link on an untitled doc) */
+  path: string
+  /** the `#Heading` / `#^block` part, '' when there was none */
+  fragment: string
+  found: boolean
+}
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -201,11 +222,29 @@ export interface ImageData {
 }
 
 /** API exposed by preload to the renderer (window.markdownApi) */
+import type { MarkdownTheme } from './markdown-theme'
 export interface MarkdownApi {
   /** Take the md path pending for this view (queued at tab creation); null = new untitled document */
   consumePending(): Promise<string | null>
   /** open any shell-routed document path (an AI answer's filenav citation) */
   openSourcePath(path: string): Promise<void>
+  /**
+   * Resolve every `[[target]]` in this document to a file. One walk for the
+   * whole batch: a fifty-link document would otherwise pay fifty root
+   * traversals, and the renderer needs the answer for the unresolved ones too
+   * (to mark them), not just the one that was clicked.
+   */
+  resolveWikiLinks(request: WikiLinkResolveRequest): Promise<Record<string, WikiLinkResolved>>
+  /**
+   * Remember where a wiki link pointed before asking the shell to open the
+   * note. The shell activates an open tab without waking its renderer, so the
+   * `#fragment` cannot ride on the open request itself; whichever renderer
+   * loads the path takes it with {@link takeWikiFragment} and lands on the
+   * heading. An empty fragment clears any earlier one for that path.
+   */
+  rememberWikiFragment(path: string, fragment: string): Promise<void>
+  /** Take the fragment remembered for `path`; '' when there is none (it is consumed) */
+  takeWikiFragment(path: string): Promise<string>
   /** Headless export mode: the PDF path this hidden renderer must export to, null in normal use */
   consumeHeadlessExport(): Promise<string | null>
   /** Headless export mode: report the export outcome so the main process can quit */
@@ -251,6 +290,9 @@ export interface MarkdownApi {
    * saved. Pasted/dropped images upload here first and fall back to the
    * local `assets/` copy when the upload fails or the host is disabled.
    */
+  /** Paper theme for the editor (default = the light/dark document theme) */
+  getMarkdownTheme(): Promise<MarkdownTheme>
+  setMarkdownTheme(theme: MarkdownTheme): Promise<MarkdownTheme>
   getImageHost(): Promise<ImageHostConfig | null>
   /** Validate and persist the image host configuration; returns null on invalid input */
   setImageHost(config: ImageHostConfig | null): Promise<ImageHostConfig | null>

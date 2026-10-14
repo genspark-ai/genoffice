@@ -324,7 +324,9 @@ export const pl = {
   appFullLoadRunning:
     'Trwa pełne wczytywanie skoroszytu — sortowanie i filtrowanie będą dostępne po zakończeniu…',
   appFullLoadTooLarge:
-    'Ten skoroszyt jest zbyt duży, aby w pełni zmieścić się w pamięci; sortowanie i filtrowanie są niedostępne dla tego pliku.',
+    'Ten skoroszyt jest zbyt duży, aby w całości załadować go do pamięci; sortowanie i przenoszenie zakresów są niedostępne dla tego pliku. Filtrowanie działa bezpośrednio na pliku.',
+  appLargeFilterLoading: 'Odczyt kolumny filtru z pliku…',
+  appLargeFilterApplying: 'Stosowanie filtru do pliku…',
   appSortValueModeFormulas:
     'Ten zakres zawiera formuły, które w tym dużym skoroszycie nie są obliczane na żywo — sortowanie lub przeniesienie zapisałoby je jako zwykłe wartości. Wybierz zakres bez formuł.',
   appSortRangeTooLarge:
@@ -1103,6 +1105,9 @@ export const pl = {
   appHeadings: 'Nagłówki',
   appHeadingsHidden: 'Nagłówki ukryte.',
   appHeadingsShown: 'Nagłówki widoczne.',
+  appRightToLeft: 'Od prawej do lewej',
+  appRightToLeftOn: 'Kierunek siatki: od prawej do lewej.',
+  appRightToLeftOff: 'Kierunek siatki: od lewej do prawej.',
   appPrintHeadingsTitle: 'Drukuj nagłówki wierszy i kolumn',
   appGroupFunctionLibrary: 'Biblioteka funkcji',
   appInsertFunction: 'Wstaw funkcję',

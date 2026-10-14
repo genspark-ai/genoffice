@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## קבלת הפקודה
 
-‏macOS ו-Windows מגיעים עמה בתוך חבילת האפליקציה. כדי להשתמש בה לפי השם, הריצו פעם אחת `genoffice install-cli`: היא יוצרת קישור סמבולי לקובץ ההפעלה המצורף אל `/usr/local/bin`, או אל `PATH` של המשתמש שלכם ב-Windows.
+ב-macOS וב-Windows הפקודה מגיעה בתוך חבילת האפליקציה. כדי לקרוא לה בשם, הריצו פעם אחת `genoffice install-cli`: היא מקשרת את הבינארי מהחבילה לספרייה ב-PATH שלכם — ב-macOS אל ‎/usr/local/bin‎ כשזו לא קידומת Homebrew ‏(ספריות Homebrew עצמן לא נוגעות לעולם), אחרת אל ספריית ה-bin של המשתמש — או ב-Windows אל `PATH` המשתמש.
 
 ## הפקודות שכדאי להכיר
 

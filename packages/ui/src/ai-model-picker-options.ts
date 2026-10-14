@@ -35,7 +35,17 @@ export function aiModelPickerGroups(input: AiSettings, gskLoggedIn: boolean): Ai
     if (meta.id === 'custom') {
       for (const ep of settings.customEndpoints ?? []) {
         if (!ep.baseUrl || !ep.model) continue
-        const models = [ep.model, ...(ep.models ?? []).filter((m) => m !== ep.model)]
+        // Declared models come before a server probe's answer: a profile entry
+        // is the user's own list, which outranks what the server advertised
+        // (a server that no longer serves an id the user pinned keeps it
+        // selectable). The configured model is pinned to the top, as before.
+        const ids = [ep.model, ...(ep.modelProfiles ?? []).map((m) => m.id), ...(ep.models ?? [])]
+        const seen = new Set<string>()
+        const models = ids.filter((m) => {
+          if (!m || seen.has(m)) return false
+          seen.add(m)
+          return true
+        })
         groups.push({
           id: meta.id,
           endpoint: ep.id,

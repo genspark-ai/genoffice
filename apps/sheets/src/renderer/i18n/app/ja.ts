@@ -323,7 +323,9 @@ export const ja = {
   appFullLoadStart: 'すべて読み込む',
   appFullLoadRunning: 'ブック全体を読み込んでいます。完了すると並べ替えとフィルターが使用できます…',
   appFullLoadTooLarge:
-    'このブックは大きすぎるため完全に読み込めません。このファイルでは並べ替えとフィルターを使用できません。',
+    'このブックは大きすぎるため完全に読み込めません。このファイルでは並べ替えと範囲の移動を使用できません。フィルターはファイル上で直接実行されます。',
+  appLargeFilterLoading: 'ファイルからフィルター列を読み込んでいます…',
+  appLargeFilterApplying: 'ファイルにフィルターを適用しています…',
   appSortValueModeFormulas:
     '選択範囲に数式が含まれていますが、この大きなブックでは数式はライブ計算されません。並べ替えや移動を行うと数式が値として保存されます。数式を含まない範囲を選択してください。',
   appSortRangeTooLarge:
@@ -1122,6 +1124,9 @@ export const ja = {
   appHeadings: '見出し',
   appHeadingsHidden: '見出しを非表示にしました。',
   appHeadingsShown: '見出しを表示しました。',
+  appRightToLeft: '右から左',
+  appRightToLeftOn: 'グリッドの方向: 右から左。',
+  appRightToLeftOff: 'グリッドの方向: 左から右。',
   appPrintHeadingsTitle: '行列番号を印刷',
   // Formulas tab
   appGroupFunctionLibrary: '関数ライブラリ',

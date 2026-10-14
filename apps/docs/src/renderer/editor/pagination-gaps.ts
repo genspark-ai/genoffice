@@ -1604,6 +1604,86 @@ export function pinCellBoxesToPage(pm: HTMLElement, factor: number): void {
   })
 }
 
+/**
+ * Run-anchored front/behind pictures with a page/margin-relative X
+ * (data-page-rel-x): Word measures the offset from the paper edge or the body
+ * left, but the picture renders from its anchor paragraph's box — one column
+ * shift and one paragraph indent away from that origin. Measure the landing
+ * and store the correction in --page-rel-x-pin (the canvas rule folds it into
+ * the inline transform; preview clones ignore it and keep the column maths).
+ * Idempotent: the applied undo is added back before measuring.
+ */
+export function pinPageRelXPictures(pm: HTMLElement, factor: number): void {
+  const imgs = Array.from(
+    pm.querySelectorAll<HTMLElement>(
+      '.doc-anchor-origin .doc-inline-img-anchor > img[data-page-rel-x]',
+    ),
+  ).filter((img) => !img.closest('td'))
+  if (imgs.length === 0) return
+  const pmRect = pm.getBoundingClientRect()
+  const pmCs = getComputedStyle(pm)
+  const firstMl = parseFloat(pmCs.paddingLeft) || 0
+  const pages = Array.from(pm.querySelectorAll<HTMLElement>('.page-gap'))
+    .filter((el) => !insideFloatTable(el))
+    .map((el) => ({
+      bottom: el.getBoundingClientRect().bottom,
+      mt: parseFloat(el.style.getPropertyValue('--gap-mt')) || 0,
+      ml: parseFloat(el.style.getPropertyValue('--gap-ml')) || 0,
+    }))
+  const pageLeftOf = (img: HTMLElement): number => {
+    let block: HTMLElement | null = img
+    while (block && block.parentElement !== pm) block = block.parentElement
+    return block ? parseFloat(getComputedStyle(block).getPropertyValue('--page-cx')) || 0 : 0
+  }
+  const measured = imgs.map((img) => {
+    const r = img.getBoundingClientRect()
+    const undo = parseFloat(getComputedStyle(img).getPropertyValue('--page-rel-x-undo')) || 0
+    return { left: r.left + undo * factor, top: r.top, height: r.height, pageLeft: pageLeftOf(img) }
+  })
+  imgs.forEach((img, i) => {
+    const m = measured[i]
+    if (m.height <= 0) return
+    let ml = firstMl
+    for (const g of pages) {
+      if (g.bottom - g.mt * factor > m.top + 0.5) break
+      ml = g.ml
+    }
+    const offX = parseFloat(img.dataset.pageRelXPx ?? '') || 0
+    const fromPaperEdge = img.dataset.pageRelXFrom === 'page'
+    const targetLeft = pmRect.left + (m.pageLeft + (fromPaperEdge ? offX : ml + offX)) * factor
+    const pin = (m.left - targetLeft) / factor
+    if (
+      Math.abs(pin - (parseFloat(img.dataset.pageRelXPin ?? '') || 0)) > 0.5 ||
+      !img.dataset.pageRelXPin
+    ) {
+      img.style.setProperty('--page-rel-x-pin', `${pin.toFixed(1)}px`)
+      img.dataset.pageRelXPin = String(pin)
+    }
+  })
+}
+
+/**
+ * Run-anchored front/behind pictures with a paragraph-relative Y: Word measures
+ * wp:posOffset from the paragraph top including w:spacing before, but the host
+ * paragraph's margin-top sits outside the positioning box, so the picture lands
+ * one spacing-before too low. Hand the host's resolved margin to the picture
+ * (direct, style-level, grid-snapped or contextual spacing all resolve here).
+ */
+export function pinParagraphRelVPictures(pm: HTMLElement): void {
+  const imgs = pm.querySelectorAll<HTMLElement>(
+    '.doc-anchor-origin .doc-inline-img-anchor > img:not([data-page-rel-v])',
+  )
+  for (const img of imgs) {
+    const host = img.closest<HTMLElement>('.doc-anchor-origin')
+    if (!host) continue
+    const before = Math.max(0, parseFloat(getComputedStyle(host).marginTop) || 0)
+    const prev = parseFloat(img.style.getPropertyValue('--anchor-before')) || 0
+    if (Math.abs(before - prev) > 0.1) {
+      img.style.setProperty('--anchor-before', `${before.toFixed(1)}px`)
+    }
+  }
+}
+
 /** Word confines a layoutInCell picture to its cell: a negative anchor offset
  *  lifting it past the cell top is pushed back down (--cell-lift margin term). */
 export function clampCellImageTops(pm: HTMLElement, factor: number): void {

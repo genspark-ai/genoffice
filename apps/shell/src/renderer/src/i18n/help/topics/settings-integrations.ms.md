@@ -30,7 +30,7 @@ Tiga pilihan ialah Cerah, Gelap, dan Ikut Sistem. Mod Ikut Sistem mengikut rupa 
 Ia bukan suis — setiap keupayaan memilih pembekal yang menyediakannya, dan kunci serta URL asas setiap pembekal dimasukkan sekali sahaja lalu dikongsi bersama:
 
 - **Carian web**, **Penjanaan imej**, **Analisis imej** dan **Analisis video**, setiap satu dengan pembekal, model, kunci dan URL asas.
-- **Carian fail tempatan** dijalankan pada mesin ini. Di bawahnya terdapat **Susunan semula Jev** yang **dimatikan secara lalai**. Hidupkannya dan petikan 20 hasil tempatan teratas — sehingga 1,200 aksara daripada setiap dokumen, berserta nama fail dan folder — dihantar ke model Jev TypeSafe untuk disusun semula mengikut kaitan. Jika ia dimatikan, tiada apa-apa meninggalkan peranti.
+- **Carian fail setempat** berjalan pada mesin ini. Di bawahnya, **penyusunan semula carian Jev** **mati secara lalai**. Apabila dihidupkan, petikan 20 hitungan setempat teratas — sehingga 1,200 aksara setiap dokumen, bersama nama fail dan folder — pergi ke titik akhir keputusan pilihan anda (Jev melalui OpenRouter atau TypeSafe, Perplexity, Liquid AI d1, Cloudflare, enjin setempat atau URL tersuai) untuk disusun semula mengikut kaitan. Apabila mati, tiada apa meninggalkan peranti.
 
 ## Perihal
 

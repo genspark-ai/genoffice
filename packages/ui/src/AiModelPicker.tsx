@@ -128,7 +128,7 @@ export function AiModelPicker({
         onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
-        data-tip={strings.title}
+        data-tip={`${strings.title}: ${chipText}`}
         aria-label={`${strings.title}: ${chipText}`}
       >
         {currentUsable && current && <ProviderLogo id={current.provider} />}

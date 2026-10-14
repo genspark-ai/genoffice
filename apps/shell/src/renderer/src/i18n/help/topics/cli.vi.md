@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## Lấy lệnh
 
-macOS và Windows đặt nó bên trong gói ứng dụng. Muốn gọi theo tên, hãy chạy `genoffice install-cli` một lần: lệnh này tạo liên kết tượng trỏ tới tệp nhị phân đi kèm trong `/usr/local/bin`, hoặc trong `PATH` của người dùng trên Windows.
+macOS và Windows kèm nó trong bó ứng dụng. Để gọi bằng tên, chạy một lần `genoffice install-cli`: nó liên kết tệp nhị phân trong bó vào một thư mục trên PATH của bạn — trên macOS là `/usr/local/bin` khi đó không phải tiền tố Homebrew (thư mục của Homebrew không bao giờ bị động vào), không thì vào bin của người dùng — hoặc trên Windows vào `PATH` người dùng của bạn.
 
 ## Những lệnh đáng biết
 

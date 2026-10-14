@@ -51,6 +51,7 @@ The menu follows where you right-click:
 
 - Home's AI Slides card: give a topic or outline and the AI builds the deck; cloud generation falls back to local generation on failure.
 - Keep adjusting with the AI panel afterwards.
+- Right-click a text selection or a picture/video/audio element ▸ **Hide the selection from AI** to keep it out of the model's eyes (details in the AI panel chapter); a slide with hidden content skips the automatic screenshot check.
 
 ## Present and export
 

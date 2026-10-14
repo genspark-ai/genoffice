@@ -1,5 +1,7 @@
 export const strings = {
   zh: {
+    mdThemeTitle: '文档主题',
+    mdThemeDefault: '默认（跟随文档主题）',
     renameNeedsSave: '先保存或放弃改动，再改文件后缀',
     redactMenuLabel: '把选中的内容对 AI 隐藏',
     redactDialogDesc:
@@ -121,6 +123,7 @@ export const strings = {
     redo: '重做',
     save: '保存 (⌘S)',
     saveAs: '另存为…',
+    wikiLinkUnresolved: '找不到 {target} 对应的文件',
     autoSave: '自动保存',
     findPlaceholder: '查找',
     replacePlaceholder: '替换为',
@@ -203,6 +206,19 @@ export const strings = {
     aiQuickDraft: '帮我写一篇文档',
     aiQuickDraftPrompt: '请帮我撰写一篇文档，主题是：',
     aiQuickPolish: '润色全文',
+    aiQuickMindMap: '为这篇文档生成思维导图',
+    aiQuickMindMapPrompt: '为这篇文档生成思维导图,按文档结构组织主要主题和关键概念',
+    aiMindMapBtn: 'AI 思维导图',
+    aiMindMapPrompt: '为这篇文档生成思维导图,按文档的章节结构组织主要主题和关键概念',
+    aiToolMindMap: '生成思维导图',
+    aiMindMapTitle: '思维导图',
+    aiMindMapNodes: '{count} 个节点',
+    aiMindMapAskPrompt: '介绍一下文档中关于「{label}」的内容',
+    aiMindMapJump: '跳转到对应段落',
+    aiMindMapExport: '导出 PNG',
+    aiMindMapReset: '重置视图',
+    aiMindMapExpand: '展开分支',
+    aiMindMapCollapse: '折叠分支',
     aiQuickPolishPrompt: '请润色全文：修正语病、统一措辞、提升可读性，保持原意与结构不变。',
     aiComposerPlaceholder: '让 AI 撰写或修改文档…',
     aiHintIdle: 'Enter 发送，Shift+Enter 换行',
@@ -235,6 +251,8 @@ export const strings = {
     zoomOut: '缩小',
   },
   en: {
+    mdThemeTitle: 'Document theme',
+    mdThemeDefault: 'Default (follow the document theme)',
     renameNeedsSave: 'Save or discard your changes before changing the extension',
     redactMenuLabel: 'Hide the selection from AI',
     redactDialogDesc:
@@ -361,6 +379,7 @@ export const strings = {
     redo: 'Redo',
     save: 'Save (⌘S)',
     saveAs: 'Save As…',
+    wikiLinkUnresolved: 'No file matches {target}',
     autoSave: 'AutoSave',
     findPlaceholder: 'Find',
     replacePlaceholder: 'Replace with',
@@ -444,6 +463,21 @@ export const strings = {
     aiQuickDraft: 'Draft a document for me',
     aiQuickDraftPrompt: 'Please draft a document for me on the topic of: ',
     aiQuickPolish: 'Polish the document',
+    aiQuickMindMap: 'Generate a mind map of this document',
+    aiQuickMindMapPrompt:
+      'Generate a mind map of this document, organizing the main topics and key concepts by its structure',
+    aiMindMapBtn: 'AI Mind Map',
+    aiMindMapPrompt:
+      'Generate a mind map of this document, organizing the main topics and key concepts by its section structure',
+    aiToolMindMap: 'Generate mind map',
+    aiMindMapTitle: 'Mind map',
+    aiMindMapNodes: '{count} nodes',
+    aiMindMapAskPrompt: 'Tell me about "{label}" in this document',
+    aiMindMapJump: 'Jump to the cited block',
+    aiMindMapExport: 'Export PNG',
+    aiMindMapReset: 'Reset view',
+    aiMindMapExpand: 'Expand branch',
+    aiMindMapCollapse: 'Collapse branch',
     aiQuickPolishPrompt:
       'Polish the whole document: fix grammar, unify wording, improve readability; keep the meaning and structure unchanged.',
     aiComposerPlaceholder: 'Ask AI to write or edit the document…',
@@ -477,6 +511,8 @@ export const strings = {
     zoomOut: 'Zoom out',
   },
   vi: {
+    mdThemeTitle: 'Chủ đề tài liệu',
+    mdThemeDefault: 'Mặc định (theo chủ đề tài liệu)',
     renameNeedsSave: 'Hãy lưu hoặc hủy thay đổi trước khi đổi phần mở rộng',
     redactMenuLabel: 'Ẩn phần đã chọn khỏi AI',
     redactDialogDesc:
@@ -602,6 +638,7 @@ export const strings = {
     redo: 'Làm lại',
     save: 'Lưu (⌘S)',
     saveAs: 'Lưu dưới dạng…',
+    wikiLinkUnresolved: 'Không tìm thấy tệp nào khớp với {target}',
     autoSave: 'Tự động lưu',
     findPlaceholder: 'Tìm kiếm',
     replacePlaceholder: 'Thay thế bằng',
@@ -684,6 +721,21 @@ export const strings = {
     aiQuickDraft: 'Soạn thảo tài liệu cho tôi',
     aiQuickDraftPrompt: 'Vui lòng soạn thảo cho tôi một tài liệu về chủ đề: ',
     aiQuickPolish: 'Trau chuốt tài liệu',
+    aiQuickMindMap: 'Tạo bản đồ tư duy cho tài liệu này',
+    aiQuickMindMapPrompt:
+      'Tạo bản đồ tư duy cho tài liệu này, sắp xếp các chủ đề chính và khái niệm then chốt theo cấu trúc tài liệu',
+    aiMindMapBtn: 'Bản đồ tư duy AI',
+    aiMindMapPrompt:
+      'Tạo bản đồ tư duy cho tài liệu này, sắp xếp các chủ đề chính và khái niệm then chốt theo cấu trúc các phần',
+    aiToolMindMap: 'Tạo bản đồ tư duy',
+    aiMindMapTitle: 'Bản đồ tư duy',
+    aiMindMapNodes: '{count} nút',
+    aiMindMapAskPrompt: 'Hãy giới thiệu về "{label}" trong tài liệu này',
+    aiMindMapJump: 'Đến đoạn được trích dẫn',
+    aiMindMapExport: 'Xuất PNG',
+    aiMindMapReset: 'Đặt lại khung nhìn',
+    aiMindMapExpand: 'Mở rộng nhánh',
+    aiMindMapCollapse: 'Thu gọn nhánh',
     aiQuickPolishPrompt:
       'Trau chuốt toàn bộ tài liệu: sửa ngữ pháp, đồng nhất từ ngữ, cải thiện khả năng đọc; giữ nguyên ý nghĩa và cấu trúc.',
     aiComposerPlaceholder: 'Yêu cầu AI viết hoặc chỉnh sửa tài liệu…',
@@ -717,6 +769,8 @@ export const strings = {
     zoomOut: 'Thu nhỏ',
   },
   ja: {
+    mdThemeTitle: 'ドキュメントテーマ',
+    mdThemeDefault: 'デフォルト（ドキュメントテーマに従う）',
     renameNeedsSave: '拡張子を変更する前に変更を保存または破棄してください',
     redactMenuLabel: '選択範囲をAIから隠す',
     redactDialogDesc:
@@ -841,6 +895,7 @@ export const strings = {
     redo: 'やり直す',
     save: '上書き保存 (⌘S)',
     saveAs: '名前を付けて保存…',
+    wikiLinkUnresolved: '{target} に一致するファイルが見つかりません',
     autoSave: '自動保存',
     findPlaceholder: '検索',
     replacePlaceholder: '置換後の文字列',
@@ -924,6 +979,21 @@ export const strings = {
     aiQuickDraft: '文書を作成して',
     aiQuickDraftPrompt: '次のテーマで文書を作成してください：',
     aiQuickPolish: '文章全体を推敲',
+    aiQuickMindMap: 'このドキュメントのマインドマップを生成',
+    aiQuickMindMapPrompt:
+      'このドキュメントのマインドマップを生成し、構成に沿って主要トピックとキーワードを整理してください',
+    aiMindMapBtn: 'AI マインドマップ',
+    aiMindMapPrompt:
+      'このドキュメントのマインドマップを生成し、章構成に沿って主要トピックとキーワードを整理してください',
+    aiToolMindMap: 'マインドマップを生成',
+    aiMindMapTitle: 'マインドマップ',
+    aiMindMapNodes: '{count} ノード',
+    aiMindMapAskPrompt: 'このドキュメントの「{label}」について教えて',
+    aiMindMapJump: '該当段落へジャンプ',
+    aiMindMapExport: 'PNG で書き出す',
+    aiMindMapReset: '表示をリセット',
+    aiMindMapExpand: 'ブランチを展開',
+    aiMindMapCollapse: 'ブランチを折りたたむ',
     aiQuickPolishPrompt:
       '文書全体を推敲してください。文法を修正し、表現を統一し、読みやすくしてください。意味と構成は変えないでください。',
     aiComposerPlaceholder: 'AI に執筆・編集を依頼…',
@@ -957,6 +1027,8 @@ export const strings = {
     zoomOut: '縮小',
   },
   ko: {
+    mdThemeTitle: '문서 테마',
+    mdThemeDefault: '기본값(문서 테마 따르기)',
     renameNeedsSave: '확장자를 바꾸기 전에 변경 사항을 저장하거나 버리세요',
     redactMenuLabel: '선택한 부분을 AI에서 숨기기',
     redactDialogDesc:
@@ -1082,6 +1154,7 @@ export const strings = {
     redo: '다시 실행',
     save: '저장 (⌘S)',
     saveAs: '다른 이름으로 저장…',
+    wikiLinkUnresolved: '{target}과(와) 일치하는 파일을 찾을 수 없습니다',
     autoSave: '자동 저장',
     findPlaceholder: '찾기',
     replacePlaceholder: '바꿀 내용',
@@ -1165,6 +1238,21 @@ export const strings = {
     aiQuickDraft: '문서 작성해 줘',
     aiQuickDraftPrompt: '다음 주제로 문서를 작성해 주세요: ',
     aiQuickPolish: '문서 다듬기',
+    aiQuickMindMap: '이 문서의 마인드맵 생성',
+    aiQuickMindMapPrompt:
+      '이 문서의 마인드맵을 생성하고, 구성에 따라 주요 주제와 핵심 개념을 정리해 주세요',
+    aiMindMapBtn: 'AI 마인드맵',
+    aiMindMapPrompt:
+      '이 문서의 마인드맵을 생성하고, 장 구조에 따라 주요 주제와 핵심 개념을 정리해 주세요',
+    aiToolMindMap: '마인드맵 생성',
+    aiMindMapTitle: '마인드맵',
+    aiMindMapNodes: '노드 {count}개',
+    aiMindMapAskPrompt: '이 문서에서 「{label}」에 대해 설명해 주세요',
+    aiMindMapJump: '해당 단락으로 이동',
+    aiMindMapExport: 'PNG 내보내기',
+    aiMindMapReset: '보기 초기화',
+    aiMindMapExpand: '가지 펼치기',
+    aiMindMapCollapse: '가지 접기',
     aiQuickPolishPrompt:
       '문서 전체를 다듬어 주세요: 문법 수정, 표현 통일, 가독성 향상. 의미와 구조는 유지하세요.',
     aiComposerPlaceholder: 'AI에게 작성·수정을 요청하세요…',
@@ -1198,6 +1286,8 @@ export const strings = {
     zoomOut: '축소',
   },
   fr: {
+    mdThemeTitle: 'Thème du document',
+    mdThemeDefault: 'Par défaut (suivre le thème du document)',
     renameNeedsSave: "Enregistrez ou annulez vos modifications avant de changer l'extension",
     redactMenuLabel: 'Masquer la sélection à l’IA',
     redactDialogDesc:
@@ -1325,6 +1415,7 @@ export const strings = {
     redo: 'Rétablir',
     save: 'Enregistrer (⌘S)',
     saveAs: 'Enregistrer sous…',
+    wikiLinkUnresolved: 'Aucun fichier ne correspond à {target}',
     autoSave: 'Enregistrement automatique',
     findPlaceholder: 'Rechercher',
     replacePlaceholder: 'Remplacer par',
@@ -1409,6 +1500,21 @@ export const strings = {
     aiQuickDraft: 'Rédige un document',
     aiQuickDraftPrompt: 'Rédige un document sur le sujet : ',
     aiQuickPolish: 'Peaufiner le document',
+    aiQuickMindMap: 'Générer une carte mentale de ce document',
+    aiQuickMindMapPrompt:
+      'Génère une carte mentale de ce document en organisant les thèmes principaux et les concepts clés selon sa structure',
+    aiMindMapBtn: 'Carte mentale IA',
+    aiMindMapPrompt:
+      'Génère une carte mentale de ce document en organisant les thèmes principaux et les concepts clés selon sa structure de sections',
+    aiToolMindMap: 'Générer la carte mentale',
+    aiMindMapTitle: 'Carte mentale',
+    aiMindMapNodes: '{count} nœuds',
+    aiMindMapAskPrompt: 'Parle-moi de « {label} » dans ce document',
+    aiMindMapJump: 'Aller au passage cité',
+    aiMindMapExport: 'Exporter en PNG',
+    aiMindMapReset: 'Réinitialiser la vue',
+    aiMindMapExpand: 'Déplier la branche',
+    aiMindMapCollapse: 'Replier la branche',
     aiQuickPolishPrompt:
       'Peaufine tout le document : corrige la grammaire, unifie la formulation, améliore la lisibilité ; sans changer le sens ni la structure.',
     aiComposerPlaceholder: "Demandez à l'IA d'écrire ou de modifier…",
@@ -1444,6 +1550,8 @@ export const strings = {
     zoomOut: 'Zoom arrière',
   },
   de: {
+    mdThemeTitle: 'Dokumentthema',
+    mdThemeDefault: 'Standard (dem Dokumentthema folgen)',
     renameNeedsSave:
       'Speichern oder verwerfen Sie Ihre Änderungen, bevor Sie die Erweiterung ändern',
     redactMenuLabel: 'Auswahl vor der KI verbergen',
@@ -1572,6 +1680,7 @@ export const strings = {
     redo: 'Wiederholen',
     save: 'Speichern (⌘S)',
     saveAs: 'Speichern unter…',
+    wikiLinkUnresolved: 'Keine Datei entspricht {target}',
     autoSave: 'Automatisches Speichern',
     findPlaceholder: 'Suchen',
     replacePlaceholder: 'Ersetzen durch',
@@ -1656,6 +1765,21 @@ export const strings = {
     aiQuickDraft: 'Entwirf ein Dokument',
     aiQuickDraftPrompt: 'Bitte entwirf ein Dokument zum Thema: ',
     aiQuickPolish: 'Dokument überarbeiten',
+    aiQuickMindMap: 'Mindmap zu diesem Dokument erstellen',
+    aiQuickMindMapPrompt:
+      'Erstelle eine Mindmap zu diesem Dokument und ordne die Hauptthemen und Schlüsselkonzepte nach seiner Struktur',
+    aiMindMapBtn: 'KI-Mindmap',
+    aiMindMapPrompt:
+      'Erstelle eine Mindmap zu diesem Dokument und ordne die Hauptthemen und Schlüsselkonzepte nach seiner Abschnittsstruktur',
+    aiToolMindMap: 'Mindmap erstellen',
+    aiMindMapTitle: 'Mindmap',
+    aiMindMapNodes: '{count} Knoten',
+    aiMindMapAskPrompt: 'Erzähl mir über „{label}“ in diesem Dokument',
+    aiMindMapJump: 'Zur zitierten Stelle springen',
+    aiMindMapExport: 'PNG exportieren',
+    aiMindMapReset: 'Ansicht zurücksetzen',
+    aiMindMapExpand: 'Zweig ausklappen',
+    aiMindMapCollapse: 'Zweig einklappen',
     aiQuickPolishPrompt:
       'Überarbeite das ganze Dokument: Grammatik korrigieren, Formulierungen vereinheitlichen, Lesbarkeit verbessern; Bedeutung und Struktur beibehalten.',
     aiComposerPlaceholder: 'KI schreiben oder bearbeiten lassen…',
@@ -1690,6 +1814,8 @@ export const strings = {
     zoomOut: 'Verkleinern',
   },
   es: {
+    mdThemeTitle: 'Tema del documento',
+    mdThemeDefault: 'Predeterminado (seguir el tema del documento)',
     renameNeedsSave: 'Guarda o descarta los cambios antes de cambiar la extensión',
     redactMenuLabel: 'Ocultar la selección a la IA',
     redactDialogDesc:
@@ -1817,6 +1943,7 @@ export const strings = {
     redo: 'Rehacer',
     save: 'Guardar (⌘S)',
     saveAs: 'Guardar como…',
+    wikiLinkUnresolved: 'Ningún archivo coincide con {target}',
     autoSave: 'Autoguardado',
     findPlaceholder: 'Buscar',
     replacePlaceholder: 'Reemplazar con',
@@ -1901,6 +2028,21 @@ export const strings = {
     aiQuickDraft: 'Redacta un documento',
     aiQuickDraftPrompt: 'Redacta un documento sobre el tema: ',
     aiQuickPolish: 'Pulir el documento',
+    aiQuickMindMap: 'Generar un mapa mental de este documento',
+    aiQuickMindMapPrompt:
+      'Genera un mapa mental de este documento y organiza los temas principales y conceptos clave según su estructura',
+    aiMindMapBtn: 'Mapa mental IA',
+    aiMindMapPrompt:
+      'Genera un mapa mental de este documento y organiza los temas principales y conceptos clave según su estructura de secciones',
+    aiToolMindMap: 'Generar mapa mental',
+    aiMindMapTitle: 'Mapa mental',
+    aiMindMapNodes: '{count} nodos',
+    aiMindMapAskPrompt: 'Háblame de «{label}» en este documento',
+    aiMindMapJump: 'Ir al pasaje citado',
+    aiMindMapExport: 'Exportar PNG',
+    aiMindMapReset: 'Restablecer vista',
+    aiMindMapExpand: 'Expandir rama',
+    aiMindMapCollapse: 'Contraer rama',
     aiQuickPolishPrompt:
       'Pule todo el documento: corrige la gramática, unifica la redacción y mejora la legibilidad; mantén el significado y la estructura.',
     aiComposerPlaceholder: 'Pide a la IA escribir o editar…',
@@ -1936,6 +2078,8 @@ export const strings = {
     zoomOut: 'Alejar',
   },
   th: {
+    mdThemeTitle: 'ธีมเอกสาร',
+    mdThemeDefault: 'ค่าเริ่มต้น (ตามธีมเอกสาร)',
     renameNeedsSave: 'บันทึกหรือยกเลิกการเปลี่ยนแปลงก่อนเปลี่ยนนามสกุลไฟล์',
     redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
     redactDialogDesc:
@@ -2058,6 +2202,7 @@ export const strings = {
     redo: 'ทำซ้ำ',
     save: 'บันทึก (⌘S)',
     saveAs: 'บันทึกเป็น…',
+    wikiLinkUnresolved: 'ไม่พบไฟล์ที่ตรงกับ {target}',
     autoSave: 'บันทึกอัตโนมัติ',
     findPlaceholder: 'ค้นหา',
     replacePlaceholder: 'แทนที่ด้วย',
@@ -2141,6 +2286,21 @@ export const strings = {
     aiQuickDraft: 'ร่างเอกสารให้ฉัน',
     aiQuickDraftPrompt: 'โปรดร่างเอกสารในหัวข้อ: ',
     aiQuickPolish: 'ขัดเกลาเอกสาร',
+    aiQuickMindMap: 'สร้างแผนที่ความคิดของเอกสารนี้',
+    aiQuickMindMapPrompt:
+      'สร้างแผนที่ความคิดของเอกสารนี้ โดยจัดเรียงหัวข้อหลักและแนวคิดสำคัญตามโครงสร้างของเอกสาร',
+    aiMindMapBtn: 'แผนที่ความคิด AI',
+    aiMindMapPrompt:
+      'สร้างแผนที่ความคิดของเอกสารนี้ โดยจัดเรียงหัวข้อหลักและแนวคิดสำคัญตามโครงสร้างส่วนต่างๆ',
+    aiToolMindMap: 'สร้างแผนที่ความคิด',
+    aiMindMapTitle: 'แผนที่ความคิด',
+    aiMindMapNodes: '{count} โหนด',
+    aiMindMapAskPrompt: 'บอกฉันเกี่ยวกับ「{label}」ในเอกสารนี้',
+    aiMindMapJump: 'ไปยังย่อหน้าที่อ้างอิง',
+    aiMindMapExport: 'ส่งออก PNG',
+    aiMindMapReset: 'รีเซ็ตมุมมอง',
+    aiMindMapExpand: 'ขยายสาขา',
+    aiMindMapCollapse: 'ย่อสาขา',
     aiQuickPolishPrompt:
       'ขัดเกลาทั้งเอกสาร: แก้ไวยากรณ์ ปรับคำให้สอดคล้อง เพิ่มความอ่านง่าย โดยคงความหมายและโครงสร้างเดิม',
     aiComposerPlaceholder: 'ให้ AI เขียนหรือแก้ไขเอกสาร…',
@@ -2174,6 +2334,8 @@ export const strings = {
     zoomOut: 'ย่อ',
   },
   id: {
+    mdThemeTitle: 'Tema dokumen',
+    mdThemeDefault: 'Bawaan (ikuti tema dokumen)',
     renameNeedsSave: 'Simpan atau batalkan perubahan Anda sebelum mengubah ekstensi',
     redactMenuLabel: 'Sembunyikan pilihan dari AI',
     redactDialogDesc:
@@ -2299,6 +2461,7 @@ export const strings = {
     redo: 'Ulangi',
     save: 'Simpan (⌘S)',
     saveAs: 'Simpan Sebagai…',
+    wikiLinkUnresolved: 'Tidak ada file yang cocok dengan {target}',
     autoSave: 'Simpan Otomatis',
     findPlaceholder: 'Temukan',
     replacePlaceholder: 'Ganti dengan',
@@ -2382,6 +2545,21 @@ export const strings = {
     aiQuickDraft: 'Buatkan dokumen',
     aiQuickDraftPrompt: 'Tolong buat dokumen dengan topik: ',
     aiQuickPolish: 'Perhalus dokumen',
+    aiQuickMindMap: 'Buat peta pikiran dari dokumen ini',
+    aiQuickMindMapPrompt:
+      'Buat peta pikiran dari dokumen ini, susun topik utama dan konsep kunci menurut strukturnya',
+    aiMindMapBtn: 'Peta Pikiran AI',
+    aiMindMapPrompt:
+      'Buat peta pikiran dari dokumen ini, susun topik utama dan konsep kunci menurut struktur bagiannya',
+    aiToolMindMap: 'Buat peta pikiran',
+    aiMindMapTitle: 'Peta pikiran',
+    aiMindMapNodes: '{count} node',
+    aiMindMapAskPrompt: 'Jelaskan tentang "{label}" dalam dokumen ini',
+    aiMindMapJump: 'Lompat ke bagian yang dikutip',
+    aiMindMapExport: 'Ekspor PNG',
+    aiMindMapReset: 'Setel ulang tampilan',
+    aiMindMapExpand: 'Bentangkan cabang',
+    aiMindMapCollapse: 'Lipat cabang',
     aiQuickPolishPrompt:
       'Perhalus seluruh dokumen: perbaiki tata bahasa, satukan gaya, tingkatkan keterbacaan; pertahankan makna dan struktur.',
     aiComposerPlaceholder: 'Minta AI menulis atau mengedit…',
@@ -2415,6 +2593,8 @@ export const strings = {
     zoomOut: 'Perkecil',
   },
   ru: {
+    mdThemeTitle: 'Тема документа',
+    mdThemeDefault: 'По умолчанию (как тема документа)',
     renameNeedsSave: 'Сохраните или отмените изменения перед сменой расширения',
     redactMenuLabel: 'Скрыть выделение от ИИ',
     redactDialogDesc:
@@ -2541,6 +2721,7 @@ export const strings = {
     redo: 'Повторить',
     save: 'Сохранить (⌘S)',
     saveAs: 'Сохранить как…',
+    wikiLinkUnresolved: 'Нет файла, соответствующего {target}',
     autoSave: 'Автосохранение',
     findPlaceholder: 'Найти',
     replacePlaceholder: 'Заменить на',
@@ -2624,6 +2805,21 @@ export const strings = {
     aiQuickDraft: 'Составь документ',
     aiQuickDraftPrompt: 'Составь документ на тему: ',
     aiQuickPolish: 'Отшлифовать документ',
+    aiQuickMindMap: 'Создать ментальную карту документа',
+    aiQuickMindMapPrompt:
+      'Создай ментальную карту этого документа, организовав основные темы и ключевые понятия по его структуре',
+    aiMindMapBtn: 'ИИ-ментальная карта',
+    aiMindMapPrompt:
+      'Создай ментальную карту этого документа, организовав основные темы и ключевые понятия по структуре разделов',
+    aiToolMindMap: 'Создать ментальную карту',
+    aiMindMapTitle: 'Ментальная карта',
+    aiMindMapNodes: '{count} узлов',
+    aiMindMapAskPrompt: 'Расскажи про «{label}» в этом документе',
+    aiMindMapJump: 'Перейти к цитируемому фрагменту',
+    aiMindMapExport: 'Экспорт PNG',
+    aiMindMapReset: 'Сбросить вид',
+    aiMindMapExpand: 'Развернуть ветку',
+    aiMindMapCollapse: 'Свернуть ветку',
     aiQuickPolishPrompt:
       'Отшлифуй весь документ: исправь грамматику, унифицируй формулировки, улучши читабельность; сохрани смысл и структуру.',
     aiComposerPlaceholder: 'Попросите ИИ написать или изменить…',
@@ -2657,6 +2853,8 @@ export const strings = {
     zoomOut: 'Уменьшить',
   },
   ar: {
+    mdThemeTitle: 'سمة المستند',
+    mdThemeDefault: 'الافتراضي (اتباع سمة المستند)',
     renameNeedsSave: 'احفظ تغييراتك أو تجاهلها قبل تغيير الامتداد',
     redactMenuLabel: 'إخفاء التحديد عن الذكاء الاصطناعي',
     redactDialogDesc:
@@ -2779,6 +2977,7 @@ export const strings = {
     redo: 'إعادة',
     save: 'حفظ (⌘S)',
     saveAs: 'حفظ باسم…',
+    wikiLinkUnresolved: 'لا يوجد ملف يطابق {target}',
     autoSave: 'حفظ تلقائي',
     findPlaceholder: 'بحث',
     replacePlaceholder: 'استبدال بـ',
@@ -2862,6 +3061,21 @@ export const strings = {
     aiQuickDraft: 'اكتب لي مستنداً',
     aiQuickDraftPrompt: 'يرجى كتابة مستند حول موضوع: ',
     aiQuickPolish: 'تحسين صياغة المستند',
+    aiQuickMindMap: 'إنشاء خريطة ذهنية لهذا المستند',
+    aiQuickMindMapPrompt:
+      'أنشئ خريطة ذهنية لهذا المستند، ونظّم المواضيع الرئيسية والمفاهيم الأساسية وفق بنيته',
+    aiMindMapBtn: 'خريطة ذهنية بالذكاء الاصطناعي',
+    aiMindMapPrompt:
+      'أنشئ خريطة ذهنية لهذا المستند، ونظّم المواضيع الرئيسية والمفاهيم الأساسية وفق بنية أقسامه',
+    aiToolMindMap: 'إنشاء خريطة ذهنية',
+    aiMindMapTitle: 'خريطة ذهنية',
+    aiMindMapNodes: '{count} عقد',
+    aiMindMapAskPrompt: 'حدثني عن «{label}» في هذا المستند',
+    aiMindMapJump: 'الانتقال إلى المقطع المشار إليه',
+    aiMindMapExport: 'تصدير PNG',
+    aiMindMapReset: 'إعادة ضبط العرض',
+    aiMindMapExpand: 'توسيع الفرع',
+    aiMindMapCollapse: 'طي الفرع',
     aiQuickPolishPrompt:
       'حسّن صياغة المستند كاملاً: صحح القواعد ووحّد الأسلوب وحسّن سهولة القراءة مع الحفاظ على المعنى والبنية.',
     aiComposerPlaceholder: 'اطلب من الذكاء الاصطناعي الكتابة أو التعديل…',
@@ -2895,6 +3109,8 @@ export const strings = {
     zoomOut: 'تصغير',
   },
   pt: {
+    mdThemeTitle: 'Tema do documento',
+    mdThemeDefault: 'Padrão (seguir o tema do documento)',
     renameNeedsSave: 'Salve ou descarte as alterações antes de mudar a extensão',
     redactMenuLabel: 'Ocultar a seleção da IA',
     redactDialogDesc:
@@ -3022,6 +3238,7 @@ export const strings = {
     redo: 'Refazer',
     save: 'Salvar (⌘S)',
     saveAs: 'Salvar Como…',
+    wikiLinkUnresolved: 'Nenhum arquivo corresponde a {target}',
     autoSave: 'Salvamento automático',
     findPlaceholder: 'Localizar',
     replacePlaceholder: 'Substituir por',
@@ -3106,6 +3323,21 @@ export const strings = {
     aiQuickDraft: 'Redija um documento',
     aiQuickDraftPrompt: 'Redija um documento sobre o tema: ',
     aiQuickPolish: 'Aprimorar o documento',
+    aiQuickMindMap: 'Gerar um mapa mental deste documento',
+    aiQuickMindMapPrompt:
+      'Gere um mapa mental deste documento, organizando os temas principais e conceitos-chave pela sua estrutura',
+    aiMindMapBtn: 'Mapa mental IA',
+    aiMindMapPrompt:
+      'Gere um mapa mental deste documento, organizando os temas principais e conceitos-chave pela estrutura de seções',
+    aiToolMindMap: 'Gerar mapa mental',
+    aiMindMapTitle: 'Mapa mental',
+    aiMindMapNodes: '{count} nós',
+    aiMindMapAskPrompt: 'Fale sobre "{label}" neste documento',
+    aiMindMapJump: 'Ir para o trecho citado',
+    aiMindMapExport: 'Exportar PNG',
+    aiMindMapReset: 'Redefinir visualização',
+    aiMindMapExpand: 'Expandir ramo',
+    aiMindMapCollapse: 'Recolher ramo',
     aiQuickPolishPrompt:
       'Aprimore todo o documento: corrija a gramática, unifique a redação, melhore a legibilidade; mantenha o sentido e a estrutura.',
     aiComposerPlaceholder: 'Peça à IA para escrever ou editar…',
@@ -3139,6 +3371,8 @@ export const strings = {
     zoomOut: 'Reduzir',
   },
   it: {
+    mdThemeTitle: 'Tema del documento',
+    mdThemeDefault: 'Predefinito (segui il tema del documento)',
     renameNeedsSave: "Salva o annulla le modifiche prima di cambiare l'estensione",
     redactMenuLabel: 'Nascondi la selezione all’IA',
     redactDialogDesc:
@@ -3266,6 +3500,7 @@ export const strings = {
     redo: 'Ripeti',
     save: 'Salva (⌘S)',
     saveAs: 'Salva con nome…',
+    wikiLinkUnresolved: 'Nessun file corrisponde a {target}',
     autoSave: 'Salvataggio automatico',
     findPlaceholder: 'Trova',
     replacePlaceholder: 'Sostituisci con',
@@ -3349,6 +3584,21 @@ export const strings = {
     aiQuickDraft: 'Scrivi un documento',
     aiQuickDraftPrompt: 'Scrivi un documento sul tema: ',
     aiQuickPolish: 'Rifinisci il documento',
+    aiQuickMindMap: 'Genera una mappa mentale di questo documento',
+    aiQuickMindMapPrompt:
+      'Genera una mappa mentale di questo documento, organizzando i temi principali e i concetti chiave secondo la sua struttura',
+    aiMindMapBtn: 'Mappa mentale IA',
+    aiMindMapPrompt:
+      'Genera una mappa mentale di questo documento, organizzando i temi principali e i concetti chiave secondo la struttura delle sezioni',
+    aiToolMindMap: 'Genera mappa mentale',
+    aiMindMapTitle: 'Mappa mentale',
+    aiMindMapNodes: '{count} nodi',
+    aiMindMapAskPrompt: 'Parlami di "{label}" in questo documento',
+    aiMindMapJump: 'Vai al passaggio citato',
+    aiMindMapExport: 'Esporta PNG',
+    aiMindMapReset: 'Reimposta vista',
+    aiMindMapExpand: 'Espandi ramo',
+    aiMindMapCollapse: 'Comprimi ramo',
     aiQuickPolishPrompt:
       'Rifinisci tutto il documento: correggi la grammatica, uniforma il lessico, migliora la leggibilità; mantieni senso e struttura.',
     aiComposerPlaceholder: "Chiedi all'IA di scrivere o modificare…",
@@ -3383,6 +3633,8 @@ export const strings = {
     zoomOut: 'Riduci',
   },
   pl: {
+    mdThemeTitle: 'Motyw dokumentu',
+    mdThemeDefault: 'Domyślnie (zgodnie z motywem dokumentu)',
     renameNeedsSave: 'Zapisz lub odrzuć zmiany przed zmianą rozszerzenia',
     redactMenuLabel: 'Ukryj zaznaczenie przed AI',
     redactDialogDesc:
@@ -3509,6 +3761,7 @@ export const strings = {
     redo: 'Ponów',
     save: 'Zapisz (⌘S)',
     saveAs: 'Zapisz jako…',
+    wikiLinkUnresolved: 'Żaden plik nie pasuje do {target}',
     autoSave: 'Autozapis',
     findPlaceholder: 'Znajdź',
     replacePlaceholder: 'Zamień na',
@@ -3592,6 +3845,21 @@ export const strings = {
     aiQuickDraft: 'Napisz dokument',
     aiQuickDraftPrompt: 'Napisz dokument na temat: ',
     aiQuickPolish: 'Dopracuj dokument',
+    aiQuickMindMap: 'Wygeneruj mapę myśli tego dokumentu',
+    aiQuickMindMapPrompt:
+      'Wygeneruj mapę myśli tego dokumentu, porządkując główne tematy i kluczowe pojęcia według jego struktury',
+    aiMindMapBtn: 'Mapa myśli AI',
+    aiMindMapPrompt:
+      'Wygeneruj mapę myśli tego dokumentu, porządkując główne tematy i kluczowe pojęcia według struktury sekcji',
+    aiToolMindMap: 'Generuj mapę myśli',
+    aiMindMapTitle: 'Mapa myśli',
+    aiMindMapNodes: '{count} węzłów',
+    aiMindMapAskPrompt: 'Opowiedz o „{label}” w tym dokumencie',
+    aiMindMapJump: 'Przejdź do cytowanego fragmentu',
+    aiMindMapExport: 'Eksportuj PNG',
+    aiMindMapReset: 'Resetuj widok',
+    aiMindMapExpand: 'Rozwiń gałąź',
+    aiMindMapCollapse: 'Zwiń gałąź',
     aiQuickPolishPrompt:
       'Dopracuj cały dokument: popraw gramatykę, ujednolić styl, zwiększ czytelność; zachowaj sens i strukturę.',
     aiComposerPlaceholder: 'Poproś AI o napisanie lub edycję…',
@@ -3625,6 +3893,8 @@ export const strings = {
     zoomOut: 'Pomniejsz',
   },
   cs: {
+    mdThemeTitle: 'Motiv dokumentu',
+    mdThemeDefault: 'Výchozí (podle motivu dokumentu)',
     renameNeedsSave: 'Před změnou přípony uložte nebo zrušte změny',
     redactMenuLabel: 'Skrýt výběr před AI',
     redactDialogDesc:
@@ -3750,6 +4020,7 @@ export const strings = {
     redo: 'Znovu',
     save: 'Uložit (⌘S)',
     saveAs: 'Uložit jako…',
+    wikiLinkUnresolved: 'Žádný soubor neodpovídá {target}',
     autoSave: 'Automatické ukládání',
     ribbonCollapse: 'Sbalit pás karet',
     ribbonExpand: 'Rozbalit pás karet',
@@ -3819,6 +4090,21 @@ export const strings = {
     aiQuickDraft: 'Napsat návrh dokumentu',
     aiQuickDraftPrompt: 'Napiš mi prosím návrh dokumentu na téma: ',
     aiQuickPolish: 'Vylepšit dokument',
+    aiQuickMindMap: 'Vytvořit myšlenkovou mapu tohoto dokumentu',
+    aiQuickMindMapPrompt:
+      'Vytvoř myšlenkovou mapu tohoto dokumentu a uspořádej hlavní témata a klíčové pojmy podle jeho struktury',
+    aiMindMapBtn: 'Myšlenková mapa AI',
+    aiMindMapPrompt:
+      'Vytvoř myšlenkovou mapu tohoto dokumentu a uspořádej hlavní témata a klíčové pojmy podle struktury sekcí',
+    aiToolMindMap: 'Vytvořit myšlenkovou mapu',
+    aiMindMapTitle: 'Myšlenková mapa',
+    aiMindMapNodes: '{count} uzlů',
+    aiMindMapAskPrompt: 'Pověz mi o „{label}“ v tomto dokumentu',
+    aiMindMapJump: 'Přejít na citovanou pasáž',
+    aiMindMapExport: 'Exportovat PNG',
+    aiMindMapReset: 'Obnovit zobrazení',
+    aiMindMapExpand: 'Rozbalit větev',
+    aiMindMapCollapse: 'Sbalit větev',
     aiQuickPolishPrompt:
       'Vylepši celý dokument: oprav gramatiku, sjednoť terminologii, zlepši čitelnost; zachovej význam a strukturu.',
     aiComposerPlaceholder: 'Požádejte AI o napsání nebo úpravu dokumentu…',
@@ -3866,6 +4152,8 @@ export const strings = {
     mermaidError: 'Chyba syntaxe diagramu',
   },
   nl: {
+    mdThemeTitle: 'Documentthema',
+    mdThemeDefault: 'Standaard (documentthema volgen)',
     renameNeedsSave: 'Sla uw wijzigingen op of verwerp ze voordat u de extensie wijzigt',
     redactMenuLabel: 'Selectie verbergen voor de AI',
     redactDialogDesc:
@@ -3993,6 +4281,7 @@ export const strings = {
     redo: 'Opnieuw',
     save: 'Opslaan (⌘S)',
     saveAs: 'Opslaan als…',
+    wikiLinkUnresolved: 'Geen bestand komt overeen met {target}',
     autoSave: 'Automatisch opslaan',
     findPlaceholder: 'Zoeken',
     replacePlaceholder: 'Vervangen door',
@@ -4076,6 +4365,21 @@ export const strings = {
     aiQuickDraft: 'Stel een document op',
     aiQuickDraftPrompt: 'Stel een document op over het onderwerp: ',
     aiQuickPolish: 'Document verfijnen',
+    aiQuickMindMap: 'Maak een mindmap van dit document',
+    aiQuickMindMapPrompt:
+      'Maak een mindmap van dit document en orden de hoofdonderwerpen en kernconcepten naar zijn structuur',
+    aiMindMapBtn: 'AI-mindmap',
+    aiMindMapPrompt:
+      'Maak een mindmap van dit document en orden de hoofdonderwerpen en kernconcepten naar de sectiestructuur',
+    aiToolMindMap: 'Mindmap maken',
+    aiMindMapTitle: 'Mindmap',
+    aiMindMapNodes: '{count} knooppunten',
+    aiMindMapAskPrompt: 'Vertel me over "{label}" in dit document',
+    aiMindMapJump: 'Ga naar het geciteerde fragment',
+    aiMindMapExport: 'PNG exporteren',
+    aiMindMapReset: 'Weergave opnieuw instellen',
+    aiMindMapExpand: 'Tak uitklappen',
+    aiMindMapCollapse: 'Tak inklappen',
     aiQuickPolishPrompt:
       'Verfijn het hele document: corrigeer grammatica, maak formuleringen consistent, verbeter leesbaarheid; behoud betekenis en structuur.',
     aiComposerPlaceholder: 'Vraag AI te schrijven of bewerken…',
@@ -4109,6 +4413,8 @@ export const strings = {
     zoomOut: 'Uitzoomen',
   },
   ms: {
+    mdThemeTitle: 'Tema dokumen',
+    mdThemeDefault: 'Lalai (ikut tema dokumen)',
     renameNeedsSave: 'Simpan atau buang perubahan anda sebelum menukar sambungan',
     redactMenuLabel: 'Sembunyikan pilihan daripada AI',
     redactDialogDesc:
@@ -4234,6 +4540,7 @@ export const strings = {
     redo: 'Buat semula',
     save: 'Simpan (⌘S)',
     saveAs: 'Simpan Sebagai…',
+    wikiLinkUnresolved: 'Tiada fail sepadan dengan {target}',
     autoSave: 'Autosimpan',
     findPlaceholder: 'Cari',
     replacePlaceholder: 'Ganti dengan',
@@ -4317,6 +4624,21 @@ export const strings = {
     aiQuickDraft: 'Draf dokumen untuk saya',
     aiQuickDraftPrompt: 'Sila draf dokumen bertopik: ',
     aiQuickPolish: 'Perhalusi dokumen',
+    aiQuickMindMap: 'Jana peta minda dokumen ini',
+    aiQuickMindMapPrompt:
+      'Jana peta minda dokumen ini, susun topik utama dan konsep utama mengikut strukturnya',
+    aiMindMapBtn: 'Peta Minda AI',
+    aiMindMapPrompt:
+      'Jana peta minda dokumen ini, susun topik utama dan konsep utama mengikut struktur bahagiannya',
+    aiToolMindMap: 'Jana peta minda',
+    aiMindMapTitle: 'Peta minda',
+    aiMindMapNodes: '{count} nod',
+    aiMindMapAskPrompt: 'Terangkan tentang "{label}" dalam dokumen ini',
+    aiMindMapJump: 'Lompat ke petik yang dirujuk',
+    aiMindMapExport: 'Eksport PNG',
+    aiMindMapReset: 'Set semula pandangan',
+    aiMindMapExpand: 'Kembangkan cabang',
+    aiMindMapCollapse: 'Lipat cabang',
     aiQuickPolishPrompt:
       'Perhalusi seluruh dokumen: betulkan tatabahasa, seragamkan gaya, tingkatkan kebolehbacaan; kekalkan makna dan struktur.',
     aiComposerPlaceholder: 'Minta AI menulis atau menyunting…',
@@ -4350,6 +4672,8 @@ export const strings = {
     zoomOut: 'Zum keluar',
   },
   he: {
+    mdThemeTitle: 'ערכת נושא של המסמך',
+    mdThemeDefault: 'ברירת מחדל (בהתאם לערכת המסמך)',
     renameNeedsSave: 'שמור או בטל את השינויים לפני שינוי הסיומת',
     redactMenuLabel: 'הסתרת הבחירה מהמודל',
     redactDialogDesc:
@@ -4471,6 +4795,7 @@ export const strings = {
     redo: 'בצע שוב',
     save: 'שמירה (⌘S)',
     saveAs: 'שמירה בשם…',
+    wikiLinkUnresolved: 'אין קובץ שתואם ל-{target}',
     autoSave: 'שמירה אוטומטית',
     findPlaceholder: 'חיפוש',
     replacePlaceholder: 'החלפה ב',
@@ -4553,6 +4878,21 @@ export const strings = {
     aiQuickDraft: 'נסחו עבורי מסמך',
     aiQuickDraftPrompt: 'נסחו מסמך בנושא: ',
     aiQuickPolish: 'שפרו את המסמך',
+    aiQuickMindMap: 'צור מפת חשיבה של המסמך הזה',
+    aiQuickMindMapPrompt:
+      'צור מפת חשיבה של המסמך הזה וארגן את הנושאים המרכזיים והמושגים המפתח לפי המבנה שלו',
+    aiMindMapBtn: 'מפת חשיבה AI',
+    aiMindMapPrompt:
+      'צור מפת חשיבה של המסמך הזה וארגן את הנושאים המרכזיים והמושגים המפתח לפי מבח הסעיפים',
+    aiToolMindMap: 'יצירת מפת חשיבה',
+    aiMindMapTitle: 'מפת חשיבה',
+    aiMindMapNodes: '{count} צמתים',
+    aiMindMapAskPrompt: 'ספר לי על «{label}» במסמך הזה',
+    aiMindMapJump: 'מעבר לקטע המצוטט',
+    aiMindMapExport: 'ייצוא PNG',
+    aiMindMapReset: 'איפוס תצוגה',
+    aiMindMapExpand: 'הרחב ענף',
+    aiMindMapCollapse: 'כווץ ענף',
     aiQuickPolishPrompt:
       'שפרו את כל המסמך: תקנו דקדוק, אחדו ניסוחים ושפרו קריאות; שמרו על המשמעות והמבנה.',
     aiComposerPlaceholder: 'בקשו מה-AI לכתוב או לערוך…',
@@ -4586,6 +4926,8 @@ export const strings = {
     zoomOut: 'הקטנה',
   },
   hi: {
+    mdThemeTitle: 'दस्तावेज़ थीम',
+    mdThemeDefault: 'डिफ़ॉल्ट (दस्तावेज़ थीम का पालन करें)',
     renameNeedsSave: 'एक्सटेंशन बदलने से पहले अपने बदलाव सहेजें या छोड़ें',
     redactMenuLabel: 'चयन को AI से छिपाएँ',
     redactDialogDesc:
@@ -4711,6 +5053,7 @@ export const strings = {
     redo: 'फिर से करें',
     save: 'सहेजें (⌘S)',
     saveAs: 'इस रूप में सहेजें…',
+    wikiLinkUnresolved: '{target} से मेल खाता कोई फ़ाइल नहीं मिली',
     autoSave: 'स्वतः सहेजना',
     findPlaceholder: 'खोजें',
     replacePlaceholder: 'इससे बदलें',
@@ -4794,6 +5137,21 @@ export const strings = {
     aiQuickDraft: 'मेरे लिए दस्तावेज़ लिखें',
     aiQuickDraftPrompt: 'कृपया इस विषय पर दस्तावेज़ लिखें: ',
     aiQuickPolish: 'दस्तावेज़ को निखारें',
+    aiQuickMindMap: 'इस दस्तावेज़ का माइंड मैप बनाएँ',
+    aiQuickMindMapPrompt:
+      'इस दस्तावेज़ का माइंड मैप बनाएँ और मुख्य विषयों तथा प्रमुख अवधारणाओं को उसकी संरचना के अनुसार व्यवस्थित करें',
+    aiMindMapBtn: 'AI माइंड मैप',
+    aiMindMapPrompt:
+      'इस दस्तावेज़ का माइंड मैप बनाएँ और मुख्य विषयों तथा प्रमुख अवधारणाओं को अनुभाग संरचना के अनुसार व्यवस्थित करें',
+    aiToolMindMap: 'माइंड मैप बनाएँ',
+    aiMindMapTitle: 'माइंड मैप',
+    aiMindMapNodes: '{count} नोड',
+    aiMindMapAskPrompt: 'इस दस्तावेज़ में «{label}» के बारे में बताएँ',
+    aiMindMapJump: 'उद्धृत अनुच्छेद पर जाएँ',
+    aiMindMapExport: 'PNG निर्यात करें',
+    aiMindMapReset: 'दृश्य रीसेट करें',
+    aiMindMapExpand: 'शाखा खोलें',
+    aiMindMapCollapse: 'शाखा समेटें',
     aiQuickPolishPrompt:
       'पूरे दस्तावेज़ को निखारें: व्याकरण सुधारें, शब्दावली एकरूप करें, पठनीयता बढ़ाएँ; अर्थ और संरचना न बदलें।',
     aiComposerPlaceholder: 'AI से लिखने या संपादित करने को कहें…',
@@ -4827,6 +5185,8 @@ export const strings = {
     zoomOut: 'ज़ूम आउट',
   },
   'zh-TW': {
+    mdThemeTitle: '文件主題',
+    mdThemeDefault: '預設（跟隨文件主題）',
     renameNeedsSave: '先儲存或捨棄變更，再更改副檔名',
     redactMenuLabel: '把選中的內容對 AI 隱藏',
     redactDialogDesc:
@@ -4948,6 +5308,7 @@ export const strings = {
     redo: '重做',
     save: '儲存 (⌘S)',
     saveAs: '另存新檔…',
+    wikiLinkUnresolved: '找不到 {target} 對應的檔案',
     autoSave: '自動儲存',
     findPlaceholder: '尋找',
     replacePlaceholder: '取代為',
@@ -5030,6 +5391,19 @@ export const strings = {
     aiQuickDraft: '幫我寫一份文件',
     aiQuickDraftPrompt: '請幫我撰寫一份文件，主題是：',
     aiQuickPolish: '潤飾全文',
+    aiQuickMindMap: '為這份文件產生心智圖',
+    aiQuickMindMapPrompt: '為這份文件產生心智圖,依文件結構組織主要主題與關鍵概念',
+    aiMindMapBtn: 'AI 心智圖',
+    aiMindMapPrompt: '為這份文件產生心智圖,依文件的章節結構組織主要主題與關鍵概念',
+    aiToolMindMap: '產生心智圖',
+    aiMindMapTitle: '心智圖',
+    aiMindMapNodes: '{count} 個節點',
+    aiMindMapAskPrompt: '介紹一下文件中關於「{label}」的內容',
+    aiMindMapJump: '跳至對應段落',
+    aiMindMapExport: '匯出 PNG',
+    aiMindMapReset: '重設檢視',
+    aiMindMapExpand: '展開分支',
+    aiMindMapCollapse: '收合分支',
     aiQuickPolishPrompt: '請潤飾全文：修正語病、統一措辭、提升可讀性，保持原意與結構不變。',
     aiComposerPlaceholder: '讓 AI 撰寫或修改文件…',
     aiHintIdle: 'Enter 傳送，Shift+Enter 換行',

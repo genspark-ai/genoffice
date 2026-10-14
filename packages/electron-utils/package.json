@@ -30,6 +30,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "parse5": "^8.0.1"
+    "parse5": "^8.0.1",
+    "undici": "^6.29.0"
   }
 }

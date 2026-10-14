@@ -7,8 +7,8 @@ Home is GenOffice's start page: a navigation sidebar on the left, file lists and
 ## Sidebar navigation
 
 - **Recent**: files you opened recently. Each row is stamped with when — today, yesterday, or the date.
-- **Starred**: files you starred. Hover a file row and click the star to add or remove it.
-- **User Guide**: opens this manual.
+- **Starred**: files you starred. Hover a file row and click the star to add or remove it. The ⋯ menu's **Move to group** sorts starred files into named groups; the Starred view filters by them.
+- **Ask AI**: the knowledge-base panel — ask questions and get answers cited from your starred files (see below).
 - **Genspark Projects**: after signing in to your Genspark account, shows the projects you created with Genspark AI on the web; click one to continue editing in the browser. Search, sort by time, refresh and load-more are supported.
 - **Folders**: directories you add to the sidebar with **Add folder…**, or drag in from the file manager. Each becomes a root you can open, create subfolders in, rename and remove; one that goes offline shows as unavailable and can be taken off the list. **New folder** makes another one.
 
@@ -52,9 +52,17 @@ What each card does:
 - **AI Markdown** (.md): a blank Markdown document in the Markdown editor.
 - **AI HTML** (.html): a blank web page in the HTML editor.
 - **AI PDF** (.pdf): different from the rest — it **immediately** creates a real blank single-page PDF in the target folder and opens it as a regular file (the PDF editor works on real files). Good for annotating, redacting or adding text; the file can be renamed automatically from its content on first save.
-- **Open local files**: a system file picker for Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) and web pages (.html/.htm). Multi-select works; each file gets its own tab.
+- **Open local files**: a system file picker for Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown) and web pages (.html/.htm). Multi-select works; each file gets its own tab. Plain-text files (.txt, .json) open here too — they land in the Markdown editor's source view.
 
 > Tip: File ▸ New in the menu bar creates the same document types (⌘N/Ctrl+N defaults to a text document); dragging a file into the window opens it.
+
+## Ask your knowledge base
+
+- Star files first (any type the app reads); the panel header counts the corpus, and an empty knowledge base tells you to go star something.
+- Answers cite the files they came from; click a citation to open the file in its editor.
+- Requires signing in to Genspark. The conversation lives in memory only — closing the app ends it.
+- Search runs on the local file index, like Home search; files that have disappeared quietly drop out of the corpus.
+- Groups organise the Starred list only — the knowledge base always spans every starred file.
 
 ## Cloud projects (Genspark Projects)
 

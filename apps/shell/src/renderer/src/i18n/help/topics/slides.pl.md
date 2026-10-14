@@ -51,6 +51,7 @@ Menu zależy od miejsca, w którym klikniesz prawym przyciskiem:
 
 - Karta AI Slides na stronie głównej: podaj temat lub konspekt, a AI zbuduje prezentację; gdy generowanie w chmurze się nie powiedzie, następuje powrót do generowania lokalnego.
 - Dalej możesz dopracowywać materiał panelem AI.
+- Prawy przycisk na zaznaczeniu tekstu lub elemencie obraz/wideo/audio ▸ **Ukryj zaznaczenie przed AI** chowa go przed oczami modelu (szczegóły w rozdziale o panelu AI); slajd z ukrytą treścią pomija automatyczne sprawdzanie zrzutem.
 
 ## Pokaz i eksport
 

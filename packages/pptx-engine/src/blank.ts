@@ -128,8 +128,16 @@ const THEME1 =
   '<a:folHlink><a:srgbClr val="954F72"/></a:folHlink>' +
   '</a:clrScheme>' +
   '<a:fontScheme name="Office">' +
-  '<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface=""/></a:majorFont>' +
-  '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface=""/></a:minorFont>' +
+  // Empty <a:ea/> + per-script entries — the convention the theme reader itself documents
+  // (theme.ts resolveFontRef): a pinned family is unresolvable off Windows and unreachable
+  // for the life of the file, while these are the per-script faces PowerPoint's own blank
+  // Office theme ships, with renderer display stacks and metrics aliases for each.
+  '<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/>' +
+  '<a:font script="Jpan" typeface="ＭＳ ゴシック"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="等线"/><a:font script="Hant" typeface="新細明體"/>' +
+  '</a:majorFont>' +
+  '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/>' +
+  '<a:font script="Jpan" typeface="ＭＳ Ｐゴシック"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="等线"/><a:font script="Hant" typeface="新細明體"/>' +
+  '</a:minorFont>' +
   '</a:fontScheme>' +
   `<a:fmtScheme name="Office">${fillStyles}${lnStyles}${effectStyles}${bgFillStyles}</a:fmtScheme>` +
   '</a:themeElements></a:theme>'

@@ -182,4 +182,17 @@ export const th = {
   aiCmdImages: 'อัปเดตรูปภาพ {count} รูปแล้ว',
   aiCmdToc: 'แทรกสารบัญแล้ว ({count} รายการ)',
   aiCmdSkipped: ' (ข้ามบล็อกที่ได้รับการป้องกัน {count} บล็อก)',
+  aiStarterMindMap: 'สร้างแผนที่ความคิดของเอกสารนี้',
+  aiMindMapBtn: 'แผนที่ความคิด AI',
+  aiMindMapPrompt:
+    'สร้างแผนที่ความคิดของเอกสารนี้ โดยจัดเรียงหัวข้อหลักและแนวคิดสำคัญตามโครงสร้างส่วนต่างๆ',
+  aiSumMindMap: 'สร้างแผนที่ความคิด',
+  aiMindMapTitle: 'แผนที่ความคิด',
+  aiMindMapNodes: '{count} โหนด',
+  aiMindMapAskPrompt: 'บอกฉันเกี่ยวกับ「{label}」ในเอกสารนี้',
+  aiMindMapJump: 'ไปยังย่อหน้าที่อ้างอิง',
+  aiMindMapExport: 'ส่งออก PNG',
+  aiMindMapReset: 'รีเซ็ตมุมมอง',
+  aiMindMapExpand: 'ขยายสาขา',
+  aiMindMapCollapse: 'ย่อสาขา',
 } satisfies Record<keyof typeof zh, string>

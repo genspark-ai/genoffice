@@ -280,3 +280,33 @@ it('ignores blank drafts', () => {
   act(() => latest.enqueue('   ', undefined))
   expect(latest.queued).toHaveLength(0)
 })
+
+it('a Stop holds the queue: the settle does not start the next message until resumed', () => {
+  const submitted: string[] = []
+  const submit = (text: string) => {
+    submitted.push(text)
+    return true
+  }
+  render({ busy: true, submit })
+  act(() => latest.enqueue('next', undefined))
+  // the user stops the run in flight; the panel calls hold() before cancelling
+  act(() => latest.hold())
+  expect(latest.paused).toBe(true)
+  render({ busy: false, submit })
+  expect(submitted).toEqual([])
+  expect(latest.queued.map((m) => m.text)).toEqual(['next'])
+  act(() => latest.setPaused(false))
+  expect(submitted).toEqual(['next'])
+})
+
+it('a Stop with nothing queued does not close the gate, and an emptied queue reopens it', () => {
+  const submit = () => true
+  render({ busy: true, submit })
+  act(() => latest.hold())
+  expect(latest.paused).toBe(false)
+  act(() => latest.enqueue('a', undefined))
+  act(() => latest.hold())
+  expect(latest.paused).toBe(true)
+  act(() => latest.clear())
+  expect(latest.paused).toBe(false)
+})

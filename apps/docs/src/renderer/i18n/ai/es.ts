@@ -189,4 +189,17 @@ export const es = {
   aiCmdImages: '{count} imagen(es) actualizada(s)',
   aiCmdToc: 'Tabla de contenido insertada ({count} entradas)',
   aiCmdSkipped: ' ({count} bloque(s) protegido(s) omitido(s))',
+  aiStarterMindMap: 'Generar un mapa mental de este documento',
+  aiMindMapBtn: 'Mapa mental IA',
+  aiMindMapPrompt:
+    'Genera un mapa mental de este documento y organiza los temas principales y conceptos clave según su estructura de secciones',
+  aiSumMindMap: 'Generar mapa mental',
+  aiMindMapTitle: 'Mapa mental',
+  aiMindMapNodes: '{count} nodos',
+  aiMindMapAskPrompt: 'Háblame de «{label}» en este documento',
+  aiMindMapJump: 'Ir al pasaje citado',
+  aiMindMapExport: 'Exportar PNG',
+  aiMindMapReset: 'Restablecer vista',
+  aiMindMapExpand: 'Expandir rama',
+  aiMindMapCollapse: 'Contraer rama',
 } satisfies Record<keyof typeof zh, string>
