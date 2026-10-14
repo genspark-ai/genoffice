@@ -29,6 +29,8 @@ import {
   IconSearch,
   IconEyeOff,
   IconSourceCode,
+  IconBacklinks,
+  IconGraph,
   IconSpellcheck,
   IconTable,
   IconTaskList,
@@ -57,6 +59,9 @@ interface Props {
   outlineOpen: boolean
   onToggleOutline: () => void
   hasOutline: boolean
+  backlinksOpen: boolean
+  onToggleBacklinks: () => void
+  onOpenGraph: () => void
   spellcheck: boolean
   onToggleSpellcheck: () => void
   mdTheme: MarkdownTheme
@@ -268,6 +273,9 @@ export function Ribbon({
   outlineOpen,
   onToggleOutline,
   hasOutline,
+  backlinksOpen,
+  onToggleBacklinks,
+  onOpenGraph,
   spellcheck,
   onToggleSpellcheck,
   mdTheme,
@@ -666,6 +674,21 @@ export function Ribbon({
               disabled={disabled || sourceMode || sourceViewOpen}
               onPick={onMarkdownTheme}
             />
+            {!sourceMode && (
+              <IconBtn
+                title={t('backlinks')}
+                active={backlinksOpen}
+                disabled={disabled}
+                onClick={onToggleBacklinks}
+              >
+                <IconBacklinks size={ICON} />
+              </IconBtn>
+            )}
+            {!sourceMode && (
+              <IconBtn title={t('graph')} disabled={disabled} onClick={onOpenGraph}>
+                <IconGraph size={ICON} />
+              </IconBtn>
+            )}
             <IconBtn
               title={t('spellcheck')}
               active={spellcheck}

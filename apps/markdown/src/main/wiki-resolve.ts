@@ -28,7 +28,7 @@ export interface WikiFs {
 }
 
 /** directories never entered: version control, dependency trees, app sandboxes */
-const SKIP_DIRS = new Set([
+export const SKIP_DIRS = new Set([
   '.git',
   '.obsidian',
   '.trash',
@@ -43,7 +43,7 @@ const SKIP_DIRS = new Set([
 const NOTE_EXTS = ['.md', '.markdown', '.txt']
 
 /** how deep below the root a link may reach; a walk past this is not a note */
-const MAX_DEPTH = 6
+export const MAX_DEPTH = 6
 
 /** entries under one walk step, so a huge library cannot stall the UI */
 const MAX_ENTRIES = 20000

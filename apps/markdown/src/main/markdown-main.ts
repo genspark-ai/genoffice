@@ -52,8 +52,15 @@ import {
 import { createMarkdownConversionSession, writeMarkdownConversion } from './conversion-lifecycle'
 import { normalizeMarkdownTheme, type MarkdownTheme } from '../shared/markdown-theme'
 import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
-import type { ImageHostConfig, WikiLinkResolveRequest, WikiLinkResolved } from '../shared/ipc'
+import type {
+  ImageHostConfig,
+  WikiBacklink,
+  WikiGraph,
+  WikiLinkResolveRequest,
+  WikiLinkResolved,
+} from '../shared/ipc'
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
+import { nodeVaultFs, wikiBacklinks, wikiGraph } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
@@ -791,6 +798,18 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.takeWikiFragment, (_e, path: unknown): string =>
     typeof path === 'string' ? takeWikiFragment(path) : '',
+  )
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.wikiBacklinks,
+    (_e, path: unknown): WikiBacklink[] =>
+      typeof path === 'string'
+        ? wikiBacklinks(configuredDefaultSaveDir(app), path, nodeVaultFs())
+        : [],
+  )
+
+  ipcMain.handle(MARKDOWN_CHANNELS.wikiGraph, (): WikiGraph =>
+    wikiGraph(configuredDefaultSaveDir(app), nodeVaultFs()),
   )
 
   ipcMain.handle(
