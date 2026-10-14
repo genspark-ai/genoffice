@@ -251,6 +251,7 @@ export const fr = {
   appPageOf: 'Page {current} sur {total}',
   appWordCountTitle: 'Statistiques',
   appWordCountN: '{n} mots',
+  appWordCountSelection: '{selected} mots sur {total} sélectionnés',
   appTrackChangesOn: 'Suivi des modifications : activé',
   appTrackChangesOff: 'Suivi des modifications : désactivé',
   appAcTitle: 'Options de correction automatique',

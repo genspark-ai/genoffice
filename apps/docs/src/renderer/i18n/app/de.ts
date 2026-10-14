@@ -253,6 +253,7 @@ export const de = {
   appPageOf: 'Seite {current} von {total}',
   appWordCountTitle: 'Wörter zählen',
   appWordCountN: '{n} Wörter',
+  appWordCountSelection: '{selected} von {total} Wörtern ausgewählt',
   appTrackChangesOn: 'Änderungen nachverfolgen: Ein',
   appTrackChangesOff: 'Änderungen nachverfolgen: Aus',
   appAcTitle: 'AutoKorrektur-Optionen',

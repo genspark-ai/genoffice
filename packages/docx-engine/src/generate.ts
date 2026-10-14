@@ -2756,10 +2756,13 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   }
   if (run.noteRef) {
     const tag = run.noteRef.kind === 'footnote' ? 'w:footnoteReference' : 'w:endnoteReference'
-    return (
-      '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr>' +
-      `<${tag} w:id="${escapeXmlAttr(run.noteRef.id)}"/></w:r>`
-    )
+    // a marker parsed from the file keeps its own rPr bytes verbatim — rStyle,
+    // fonts, size — whatever else in the paragraph the save rebuilds (the
+    // marker is an atom no text op can target, so there is nothing to merge).
+    // A marker the app minted has no rPr and keeps the superscript it has
+    // always carried.
+    const markerRPr = run.rawRPr ?? '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>'
+    return `<w:r>${markerRPr}<${tag} w:id="${escapeXmlAttr(run.noteRef.id)}"/></w:r>`
   }
   if (run.refField !== undefined) {
     // cross-reference: full REF field, run text is the cached display result;

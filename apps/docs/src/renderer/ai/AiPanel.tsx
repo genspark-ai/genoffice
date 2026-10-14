@@ -20,6 +20,7 @@ import {
   streamText,
   type AgentImage,
   type KbFileInfo,
+  type MindMapTreeNode,
 } from '@genoffice/agent-core'
 import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
@@ -37,6 +38,7 @@ import {
 import type { AiPageSetupAccess } from './page-setup'
 import type { AiNotesAccess } from './note-ops'
 import { createDocsSkill } from './docs-skill'
+import { MindMapCard } from './MindMapCard'
 import {
   buildDocWriterRequest,
   countFragmentBlocks,
@@ -119,6 +121,9 @@ interface ChatEntry {
   loginRequired?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
+  /** interactive mind map from generate_mindmap's side-channel display (session-only;
+   * the persisted transcript keeps the tool call, so a reopened file can regenerate) */
+  mindmap?: MindMapTreeNode
   /** document state before this turn's first edit — rendered as an inline roll-back action */
   snapshot?: PmNode
   /** attachments consumed from the composer by this user message (read-only echo chips) */
@@ -144,6 +149,7 @@ const EDIT_STARTER_PROMPTS: StringKey[] = [
   'aiStarterPolishAll',
   'aiStarterContinue',
   'aiStarterFillTemplate',
+  'aiStarterMindMap',
 ]
 
 /** resizable panel width: persisted, clamped so neither pane collapses */
@@ -314,6 +320,8 @@ interface AiPanelProps {
   preset?: { text: string; nonce: number; autoRun?: boolean } | null
   /** false shows only the collapsed rail; the component stays mounted so panel state survives */
   open?: boolean
+  /** true suppresses even the collapsed rail (the "show the AI sidebar" setting is off) */
+  hideRail?: boolean
   /** expand from the collapsed rail */
   onExpand?: () => void
   /** collapse the panel to the sidebar rail */
@@ -357,6 +365,7 @@ export function AiPanel({
   numIdFallback,
   preset,
   open = true,
+  hideRail = false,
   onExpand,
   onCollapse,
   filePath,
@@ -865,6 +874,9 @@ export function AiPanel({
             // tracking on: revisions stay pending, handled in the Review tab
             if (!trackChangesRef.current) clearAiHighlights(true)
           }
+          // mind maps ride the UI-only display side channel onto the message
+          const display = execution.display
+          const mindmap = display?.kind === 'mindmap' ? display.tree : undefined
           runToolsRef.current.push({
             name: call.name,
             summary: execution.summary,
@@ -890,6 +902,7 @@ export function AiPanel({
                     : undefined,
                 },
               ],
+              ...(mindmap ? { mindmap } : {}),
             }
           })
         },
@@ -1357,6 +1370,8 @@ export function AiPanel({
 
   // collapsed: rail only — after all hooks, so the instance and its state survive
   if (!open) {
+    // the sidebar setting is off: nothing to show until an explicit AI action opens the panel
+    if (hideRail) return null
     return (
       <button
         className="ai-rail"
@@ -1523,6 +1538,16 @@ export function AiPanel({
                 </div>
               )}
               {entry.tools && entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
+              {entry.mindmap && (
+                <MindMapCard
+                  tree={entry.mindmap}
+                  onAsk={(label) => {
+                    setInput(t('aiMindMapAskPrompt', { label }))
+                    inputRef.current?.focus()
+                  }}
+                  onJumpBlock={(index) => navigateToBlock(editorRef.current, index)}
+                />
+              )}
               {entry.error && (
                 <div className="ai-msg-error">{t('aiErrorPrefix', { error: entry.error })}</div>
               )}

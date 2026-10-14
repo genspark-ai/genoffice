@@ -1144,6 +1144,9 @@ export const DocNoteRef = Node.create({
       kind: { default: 'footnote' as 'footnote' | 'endnote' },
       id: { default: '' },
       num: { default: 1 },
+      // the marker run's own rPr bytes, so a styled reference survives a save
+      // that rebuilds its paragraph (same bargain as the inline image's attr)
+      rawRPr: { default: null as string | null, rendered: false },
     }
   },
   parseHTML() {

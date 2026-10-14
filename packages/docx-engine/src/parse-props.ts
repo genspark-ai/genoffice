@@ -358,6 +358,14 @@ export function ptabDisplayStops(pNode: XNode): import('./types').TabStop[] {
 export const SIMPLE_INLINE_FIELD_RE =
   /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILENAME|AUTHOR|PAGEREF|PAGE)\b/
 
+/**
+ * Mail-merge fields. Word resolves the result from a data source when the user
+ * merges, so an unmerged main document usually caches nothing and the display
+ * text falls back to the guillemet placeholder. The name is captured quoted
+ * (a column header may contain spaces) or bare; switches follow it.
+ */
+export const MERGEFIELD_INSTR_RE = /^\s*MERGEFIELD\s+(?:"([^"]*)"|(\S+))/
+
 /** every fldChar closes inside the paragraph: a stray end (the last TOC entry
  *  carries the TOC field's end) or an unclosed begin must stay byte-preserved */
 export function fieldCharsBalanced(xml: string): boolean {
@@ -406,7 +414,12 @@ export function onlyXeFields(xml: string): boolean {
   if (!fieldCharsBalanced(xml)) return false
   const simpleOk = simple.every((raw) => {
     const text = decodeEntities(raw!)
-    return /^\s*XE[\s"]/.test(text) || /^\s*REF\s/.test(text) || SIMPLE_INLINE_FIELD_RE.test(text)
+    return (
+      /^\s*XE[\s"]/.test(text) ||
+      /^\s*REF\s/.test(text) ||
+      SIMPLE_INLINE_FIELD_RE.test(text) ||
+      MERGEFIELD_INSTR_RE.test(text)
+    )
   })
   if (!simpleOk) return false
   let checkboxInstrs = 0
@@ -421,6 +434,7 @@ export function onlyXeFields(xml: string): boolean {
       /^\s*REF\s/.test(text) ||
       ZOTERO_INLINE_FIELD_RE.test(text) ||
       SIMPLE_INLINE_FIELD_RE.test(text) ||
+      MERGEFIELD_INSTR_RE.test(text) ||
       convertibleHyperlink(text) !== null
     )
   })

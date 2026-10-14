@@ -241,6 +241,7 @@ export const hi = {
   appPageOf: 'पृष्ठ {current}, कुल {total}',
   appWordCountTitle: 'शब्द गणना',
   appWordCountN: '{n} शब्द',
+  appWordCountSelection: '{total} में से {selected} शब्द चयनित',
   appTrackChangesOn: 'परिवर्तन ट्रैक करें: चालू',
   appTrackChangesOff: 'परिवर्तन ट्रैक करें: बंद',
   appAcTitle: 'स्वतः सुधार विकल्प',

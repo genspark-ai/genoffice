@@ -179,4 +179,17 @@ export const ar = {
   aiCmdImages: 'تم تحديث {count} صورة',
   aiCmdToc: 'تم إدراج جدول محتويات ({count} إدخالًا)',
   aiCmdSkipped: ' (تم تخطي {count} كتلة محمية)',
+  aiStarterMindMap: 'إنشاء خريطة ذهنية لهذا المستند',
+  aiMindMapBtn: 'خريطة ذهنية بالذكاء الاصطناعي',
+  aiMindMapPrompt:
+    'أنشئ خريطة ذهنية لهذا المستند، ونظّم المواضيع الرئيسية والمفاهيم الأساسية وفق بنية أقسامه',
+  aiSumMindMap: 'إنشاء خريطة ذهنية',
+  aiMindMapTitle: 'خريطة ذهنية',
+  aiMindMapNodes: '{count} عقد',
+  aiMindMapAskPrompt: 'حدثني عن «{label}» في هذا المستند',
+  aiMindMapJump: 'الانتقال إلى المقطع المشار إليه',
+  aiMindMapExport: 'تصدير PNG',
+  aiMindMapReset: 'إعادة ضبط العرض',
+  aiMindMapExpand: 'توسيع الفرع',
+  aiMindMapCollapse: 'طي الفرع',
 } satisfies Record<keyof typeof zh, string>

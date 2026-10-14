@@ -23,6 +23,7 @@ import {
   rememberAiPanelOpen,
   createZoomWheelClassifier,
   useAutoSavePref,
+  useAiSidebarEnabled,
 } from '@genoffice/ui'
 import { wordRangeAtCaret } from './editor/comments'
 import { setFieldInstr, toggleAllFieldCodes, type FieldRange } from './editor/field-codes'
@@ -118,6 +119,7 @@ import {
   countWords,
   documentTextForWordCount,
   nonAsianWordCount,
+  selectedWordCount,
 } from './word-count'
 import { CommentsPanel } from './components/CommentsPanel'
 import { EquationModal } from './components/EquationModal'
@@ -788,6 +790,12 @@ export function App() {
   const [_recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<AiSettings>(DEFAULT_SETTINGS)
   const [showAi, setShowAi] = useState(() => aiPanelInitiallyOpen('aidocs.showAi'))
+  // Settings › "show the AI sidebar" off hides the panel and its rail the way Word
+  // treats the Copilot pane: an explicit Ask-AI action (ribbon, context menu,
+  // shortcut, preset) still opens the panel for this document, and closing it
+  // returns to hidden. The dock stays mounted either way, so panel state and
+  // in-flight runs survive; the hook closes it when the switch itself goes off.
+  const aiSidebarEnabled = useAiSidebarEnabled(setShowAi)
   const [spellcheck, setSpellcheck] = useState(spellcheckEnabled)
   const [largeDocSpellOff, setLargeDocSpellOff] = useState(false)
   const spellcheckActive = spellcheck && !largeDocSpellOff
@@ -5188,8 +5196,22 @@ export function App() {
   // (Word refreshes its count on idle too). A trailing throttle, not a
   // debounce: the streamed tail of a phased open would keep resetting one
   const [wordCount, setWordCount] = useState(0)
+  // Word's "selected/total" pair; 0 means no selection, so the bar falls back
+  // to the plain total. Cheap enough (a text range, not a document walk) to
+  // follow the selection directly rather than ride the throttle above.
+  const [selectionWordCount, setSelectionWordCount] = useState(0)
   // the ribbon's revision badge walks every block too: same pacing
   const [revisionCount, setRevisionCount] = useState(0)
+  useEffect(() => {
+    if (!editor) return
+    const refreshSelection = () =>
+      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
+    refreshSelection()
+    editor.on('selectionUpdate', refreshSelection)
+    return () => {
+      editor.off('selectionUpdate', refreshSelection)
+    }
+  }, [editor])
   useEffect(() => {
     if (!editor) return
     let timer = 0
@@ -5197,6 +5219,7 @@ export function App() {
       timer = 0
       setWordCount(wordCountOfDoc(editor.state.doc))
       setRevisionCount(doc ? revisionCountOfDoc(editor.state.doc) : 0)
+      setSelectionWordCount(selectedWordCount(editor.state.doc, editor.state.selection))
     }
     const onUpdate = () => {
       if (!timer) timer = window.setTimeout(refresh, WORD_COUNT_THROTTLE_MS)
@@ -7298,7 +7321,11 @@ export function App() {
 
       <div className="app-main">
         {doc && (
-          <div className={`ai-dock${showAi ? '' : ' collapsed'}`}>
+          <div
+            className={`ai-dock${showAi ? '' : ' collapsed'}${
+              !aiSidebarEnabled && !showAi ? ' ai-dock-off' : ''
+            }`}
+          >
             {/* always mounted: collapse must not drop state or in-flight runs */}
             <AiPanel
               key={aiPanelKey}
@@ -7311,6 +7338,7 @@ export function App() {
               }
               preset={aiPreset}
               open={showAi}
+              hideRail={!aiSidebarEnabled}
               onExpand={() => setShowAi(true)}
               onCollapse={() => setShowAi(false)}
               filePath={doc?.filePath ?? null}
@@ -7702,7 +7730,12 @@ export function App() {
                     data-tip={t('appWordCountTitle')}
                     onClick={openStats}
                   >
-                    {t('appWordCountN', { n: wordCount })}
+                    {selectionWordCount > 0
+                      ? t('appWordCountSelection', {
+                          selected: selectionWordCount,
+                          total: wordCount,
+                        })
+                      : t('appWordCountN', { n: wordCount })}
                   </button>
                   <button
                     className={`status-item status-btn status-track${trackChanges ? ' on' : ''}`}

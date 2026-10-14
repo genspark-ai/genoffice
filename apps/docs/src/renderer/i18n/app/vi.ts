@@ -239,6 +239,7 @@ export const vi = {
   appPageOf: 'Trang {current} / {total}',
   appWordCountTitle: 'Thống kê từ',
   appWordCountN: '{n} từ',
+  appWordCountSelection: 'Đã chọn {selected} / {total} từ',
   appTrackChangesOn: 'Theo dõi thay đổi: Bật',
   appTrackChangesOff: 'Theo dõi thay đổi: Tắt',
   appAcTitle: 'Tùy chọn tự sửa lỗi',

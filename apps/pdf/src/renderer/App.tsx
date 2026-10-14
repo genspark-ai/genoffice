@@ -169,6 +169,7 @@ import {
   rememberAiPanelOpen,
   useDismissablePopover,
   useRibbonCollapse,
+  useAiSidebarEnabled,
 } from '@genoffice/ui'
 import { useI18n } from './i18n/locale'
 import { useAutosave } from './useAutosave'
@@ -448,6 +449,10 @@ export default function App() {
   const [aiCollapsed, setAiCollapsed] = useState(
     () => !aiPanelInitiallyOpen('genoffice-pdf-show-ai'),
   )
+  /** the panel setter in the "true = visible" sense the sidebar hook expects */
+  const setAiOpen = useCallback((open: boolean) => setAiCollapsed(!open), [])
+  // the sidebar switch is a soft hide; it closes the panel when it turns off
+  const aiSidebarEnabled = useAiSidebarEnabled(setAiOpen)
   useEffect(() => {
     rememberAiPanelOpen('genoffice-pdf-show-ai', !aiCollapsed)
   }, [aiCollapsed])
@@ -8167,9 +8172,13 @@ export default function App() {
       />
       <div className="app-main">
         {/* dock wrapper animates the width between panel and rail (docs-style 180ms ease);
-            the panel stays mounted while collapsed so the chat history survives */}
-        <div className={`ai-dock${aiCollapsed ? ' collapsed' : ''}`}>
-          {aiCollapsed && (
+              the panel stays mounted while collapsed so the chat history survives */}
+        <div
+          className={`ai-dock${aiCollapsed ? ' collapsed' : ''}${
+            !aiSidebarEnabled && aiCollapsed ? ' ai-dock-off' : ''
+          }`}
+        >
+          {aiCollapsed && aiSidebarEnabled && (
             <button
               className="ai-rail"
               data-tip={t('aiOpenAssistant')}
