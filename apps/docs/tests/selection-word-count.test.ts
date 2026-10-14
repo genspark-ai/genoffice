@@ -51,7 +51,7 @@ describe('selectedWordCount', () => {
 
   it('counts the selection with the same Word rule as the total', () => {
     const editor = createEditor([para('思维导图已经提交')])
-    // select "思维导图" (4 asian chars, one by one)
+    // select the first 4 asian chars (counted one by one)
     editor.commands.setTextSelection({ from: 1, to: 5 })
     expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(4)
   })
