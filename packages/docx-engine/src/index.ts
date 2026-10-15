@@ -17,6 +17,22 @@ export {
   type ParseExtras,
   type ParseOptions,
 } from './parse'
+export {
+  compareOperands,
+  conditionHolds,
+  controlEffect,
+  ifBranch,
+  mergeBlockTree,
+  mergeDataFromRows,
+  mergeFieldName,
+  mergeRecords,
+  placeholderText,
+  splitInstruction,
+  valueOf,
+  type ControlEffect,
+  type MergeData,
+  type MergeRecord,
+} from './mail-merge'
 export { assertZipInflatesWithinLimits, assertZipWithinLimits, DOCX_ZIP_LIMITS } from './zip-load'
 export { LAZY_MEDIA_SCHEME, isLazyMediaPart, lazyMediaUrl, parseLazyMediaUrl } from './lazy-media'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
