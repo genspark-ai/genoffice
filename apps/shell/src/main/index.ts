@@ -18,10 +18,12 @@ import {
   BrowserWindow,
   Menu,
   app,
+  clipboard,
   dialog,
   ipcMain,
   nativeImage,
   nativeTheme,
+  screen,
   session,
   shell,
   webContents,
@@ -74,6 +76,10 @@ import {
   checkUpdatesMenuItem,
   setUpdateCheckInvoker,
   installRendererProtocol,
+  AUTHOR_NAME_KEY,
+  readAuthorNameSetting,
+  sanitizeAuthorName,
+  systemAuthorName,
 } from '@genoffice/electron-utils'
 import {
   readAppSettings,
@@ -267,6 +273,7 @@ import {
 import type {
   AccountLoginEvent,
   AutoSaveDefault,
+  AuthorNameSetting,
   FolderListing,
   FolderRoot,
   MoveConflictPolicy,
@@ -346,6 +353,10 @@ import { createFileViaCli } from './mcp/headless-cli'
 import { sanitizeFileBase } from './mcp/tools/document-tools'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
+import { tabMenuTemplate, type TabMenuActions, isProgramFile } from './tab-menu'
+import { runTabDocumentAction, type TabDocumentAction } from './tab-document-actions'
+import { duplicateDocumentFile } from './tab-duplicate'
+import { closeTabsInOrder, createRecentlyClosedTracker } from './tab-lifecycle'
 import { installShellCloseGuard } from './window-close-guard'
 import {
   activateDetached,
@@ -772,6 +783,22 @@ async function fetchGithubStars(): Promise<number | null> {
 
 const tMain = createI18n({
   zh: {
+    menuTabSave: '保存',
+    menuTabSaveAs: '另存为…',
+    menuTabPrint: '打印…',
+    menuTabRename: '重命名',
+    menuTabDuplicate: '创建副本（复制已保存的文件）',
+    menuTabSplitBeside: '左右分屏',
+    menuTabCopyPath: '复制路径',
+    menuTabCopyName: '复制文件名',
+    menuTabReveal: '在文件夹中显示',
+    menuTabOpenDefault: '使用默认应用打开',
+    menuTabMoveLeft: '向左移动',
+    menuTabMoveRight: '向右移动',
+    menuTabCloseOthers: '关闭其他标签页',
+    menuTabCloseRight: '关闭右侧标签页',
+    menuTabCloseAll: '关闭所有标签页',
+    menuTabReopen: '重新打开关闭的标签页',
     dlgAddFolderRoot: '添加文件夹到首页',
     watchdogTitle: '文档占用资源过高',
     watchdogBody:
@@ -874,6 +901,22 @@ const tMain = createI18n({
     errSaveDirUnusable: '所选文件夹不可写，无法用作默认保存位置',
   },
   en: {
+    menuTabSave: 'Save',
+    menuTabSaveAs: 'Save As…',
+    menuTabPrint: 'Print…',
+    menuTabRename: 'Rename',
+    menuTabDuplicate: 'Duplicate (copy the saved file)',
+    menuTabSplitBeside: 'Split side by side',
+    menuTabCopyPath: 'Copy path',
+    menuTabCopyName: 'Copy file name',
+    menuTabReveal: 'Show in folder',
+    menuTabOpenDefault: 'Open with the default app',
+    menuTabMoveLeft: 'Move left',
+    menuTabMoveRight: 'Move right',
+    menuTabCloseOthers: 'Close other tabs',
+    menuTabCloseRight: 'Close tabs to the right',
+    menuTabCloseAll: 'Close all tabs',
+    menuTabReopen: 'Reopen closed tab',
     dlgAddFolderRoot: 'Add Folder to Home',
     watchdogTitle: 'Document is using too many resources',
     watchdogBody:
@@ -986,6 +1029,22 @@ const tMain = createI18n({
       'The selected folder is not writable and cannot be used as the default save location',
   },
   vi: {
+    menuTabSave: 'Lưu',
+    menuTabSaveAs: 'Lưu thành…',
+    menuTabPrint: 'In…',
+    menuTabRename: 'Đổi tên',
+    menuTabDuplicate: 'Nhân bản (sao chép file đã lưu)',
+    menuTabSplitBeside: 'Chia đôi màn hình',
+    menuTabCopyPath: 'Sao chép đường dẫn',
+    menuTabCopyName: 'Sao chép tên file',
+    menuTabReveal: 'Mở thư mục chứa file',
+    menuTabOpenDefault: 'Mở bằng ứng dụng mặc định',
+    menuTabMoveLeft: 'Dời sang trái',
+    menuTabMoveRight: 'Dời sang phải',
+    menuTabCloseOthers: 'Đóng các thẻ khác',
+    menuTabCloseRight: 'Đóng các thẻ bên phải',
+    menuTabCloseAll: 'Đóng tất cả các thẻ',
+    menuTabReopen: 'Mở lại thẻ vừa đóng',
     dlgAddFolderRoot: 'Thêm thư mục vào Trang chủ',
     watchdogTitle: 'Tài liệu đang dùng quá nhiều tài nguyên',
     watchdogBody:
@@ -1098,6 +1157,22 @@ const tMain = createI18n({
     errSaveDirUnusable: 'Thư mục đã chọn không thể ghi và không thể dùng làm vị trí lưu mặc định',
   },
   ja: {
+    menuTabSave: '保存',
+    menuTabSaveAs: '名前を付けて保存…',
+    menuTabPrint: '印刷…',
+    menuTabRename: '名前を変更',
+    menuTabDuplicate: '複製（保存済みファイルのコピー）',
+    menuTabSplitBeside: '左右に分割',
+    menuTabCopyPath: 'パスをコピー',
+    menuTabCopyName: 'ファイル名をコピー',
+    menuTabReveal: 'フォルダーで表示',
+    menuTabOpenDefault: '既定のアプリで開く',
+    menuTabMoveLeft: '左へ移動',
+    menuTabMoveRight: '右へ移動',
+    menuTabCloseOthers: '他のタブを閉じる',
+    menuTabCloseRight: '右側のタブを閉じる',
+    menuTabCloseAll: 'すべてのタブを閉じる',
+    menuTabReopen: '閉じたタブを再度開く',
     dlgAddFolderRoot: 'フォルダーをホームに追加',
     watchdogTitle: 'ドキュメントのリソース使用量が過大です',
     watchdogBody:
@@ -1210,6 +1285,22 @@ const tMain = createI18n({
       '選択したフォルダーは書き込みできないため、既定の保存先として使用できません',
   },
   ko: {
+    menuTabSave: '저장',
+    menuTabSaveAs: '다른 이름으로 저장…',
+    menuTabPrint: '인쇄…',
+    menuTabRename: '이름 바꾸기',
+    menuTabDuplicate: '복제(저장된 파일 복사)',
+    menuTabSplitBeside: '나란히 분할',
+    menuTabCopyPath: '경로 복사',
+    menuTabCopyName: '파일 이름 복사',
+    menuTabReveal: '폴더에서 표시',
+    menuTabOpenDefault: '기본 앱으로 열기',
+    menuTabMoveLeft: '왼쪽으로 이동',
+    menuTabMoveRight: '오른쪽으로 이동',
+    menuTabCloseOthers: '다른 탭 닫기',
+    menuTabCloseRight: '오른쪽 탭 닫기',
+    menuTabCloseAll: '모든 탭 닫기',
+    menuTabReopen: '닫힌 탭 다시 열기',
     dlgAddFolderRoot: '홈에 폴더 추가',
     watchdogTitle: '문서가 리소스를 과도하게 사용하고 있습니다',
     watchdogBody:
@@ -1321,6 +1412,22 @@ const tMain = createI18n({
     errSaveDirUnusable: '선택한 폴더에 쓸 수 없어 기본 저장 위치로 사용할 수 없습니다',
   },
   fr: {
+    menuTabSave: 'Enregistrer',
+    menuTabSaveAs: 'Enregistrer sous…',
+    menuTabPrint: 'Imprimer…',
+    menuTabRename: 'Renommer',
+    menuTabDuplicate: 'Dupliquer (copier le fichier enregistré)',
+    menuTabSplitBeside: 'Afficher côte à côte',
+    menuTabCopyPath: 'Copier le chemin',
+    menuTabCopyName: 'Copier le nom du fichier',
+    menuTabReveal: 'Afficher dans le dossier',
+    menuTabOpenDefault: "Ouvrir avec l'application par défaut",
+    menuTabMoveLeft: 'Déplacer vers la gauche',
+    menuTabMoveRight: 'Déplacer vers la droite',
+    menuTabCloseOthers: 'Fermer les autres onglets',
+    menuTabCloseRight: 'Fermer les onglets à droite',
+    menuTabCloseAll: 'Fermer tous les onglets',
+    menuTabReopen: "Rouvrir l'onglet fermé",
     dlgAddFolderRoot: "Ajouter un dossier à l'accueil",
     watchdogTitle: 'Le document consomme trop de ressources',
     watchdogBody:
@@ -1434,6 +1541,22 @@ const tMain = createI18n({
       "Le dossier sélectionné n'est pas accessible en écriture et ne peut pas servir d'emplacement d'enregistrement par défaut",
   },
   de: {
+    menuTabSave: 'Speichern',
+    menuTabSaveAs: 'Speichern unter…',
+    menuTabPrint: 'Drucken…',
+    menuTabRename: 'Umbenennen',
+    menuTabDuplicate: 'Duplizieren (gespeicherte Datei kopieren)',
+    menuTabSplitBeside: 'Nebeneinander teilen',
+    menuTabCopyPath: 'Pfad kopieren',
+    menuTabCopyName: 'Dateinamen kopieren',
+    menuTabReveal: 'Im Ordner anzeigen',
+    menuTabOpenDefault: 'Mit Standard-App öffnen',
+    menuTabMoveLeft: 'Nach links verschieben',
+    menuTabMoveRight: 'Nach rechts verschieben',
+    menuTabCloseOthers: 'Andere Tabs schließen',
+    menuTabCloseRight: 'Rechts liegende Tabs schließen',
+    menuTabCloseAll: 'Alle Tabs schließen',
+    menuTabReopen: 'Geschlossenen Tab wieder öffnen',
     dlgAddFolderRoot: 'Ordner zur Startseite hinzufügen',
     watchdogTitle: 'Dokument beansprucht zu viele Ressourcen',
     watchdogBody:
@@ -1548,6 +1671,22 @@ const tMain = createI18n({
       'Der ausgewählte Ordner ist nicht beschreibbar und kann nicht als Standard-Speicherort verwendet werden',
   },
   es: {
+    menuTabSave: 'Guardar',
+    menuTabSaveAs: 'Guardar como…',
+    menuTabPrint: 'Imprimir…',
+    menuTabRename: 'Cambiar nombre',
+    menuTabDuplicate: 'Duplicar (copiar archivo guardado)',
+    menuTabSplitBeside: 'Dividir en paralelo',
+    menuTabCopyPath: 'Copiar ruta',
+    menuTabCopyName: 'Copiar nombre de archivo',
+    menuTabReveal: 'Mostrar en la carpeta',
+    menuTabOpenDefault: 'Abrir con la aplicación predeterminada',
+    menuTabMoveLeft: 'Mover a la izquierda',
+    menuTabMoveRight: 'Mover a la derecha',
+    menuTabCloseOthers: 'Cerrar las demás pestañas',
+    menuTabCloseRight: 'Cerrar pestañas a la derecha',
+    menuTabCloseAll: 'Cerrar todas las pestañas',
+    menuTabReopen: 'Reabrir pestaña cerrada',
     dlgAddFolderRoot: 'Añadir carpeta al inicio',
     watchdogTitle: 'El documento consume demasiados recursos',
     watchdogBody:
@@ -1661,6 +1800,22 @@ const tMain = createI18n({
       'La carpeta seleccionada no admite escritura y no puede usarse como ubicación de guardado predeterminada',
   },
   th: {
+    menuTabSave: 'บันทึก',
+    menuTabSaveAs: 'บันทึกเป็น…',
+    menuTabPrint: 'พิมพ์…',
+    menuTabRename: 'เปลี่ยนชื่อ',
+    menuTabDuplicate: 'ทำสำเนา (คัดลอกไฟล์ที่บันทึกไว้)',
+    menuTabSplitBeside: 'แบ่งหน้าต่างเคียงข้างกัน',
+    menuTabCopyPath: 'คัดลอกเส้นทาง',
+    menuTabCopyName: 'คัดลอกชื่อไฟล์',
+    menuTabReveal: 'แสดงในโฟลเดอร์',
+    menuTabOpenDefault: 'เปิดด้วยแอปเริ่มต้น',
+    menuTabMoveLeft: 'ย้ายไปทางซ้าย',
+    menuTabMoveRight: 'ย้ายไปทางขวา',
+    menuTabCloseOthers: 'ปิดแท็บอื่น',
+    menuTabCloseRight: 'ปิดแท็บทางขวา',
+    menuTabCloseAll: 'ปิดแท็บทั้งหมด',
+    menuTabReopen: 'เปิดแท็บที่ปิดไปอีกครั้ง',
     dlgAddFolderRoot: 'เพิ่มโฟลเดอร์ไปยังหน้าแรก',
     watchdogTitle: 'เอกสารใช้ทรัพยากรมากเกินไป',
     watchdogBody:
@@ -1770,6 +1925,22 @@ const tMain = createI18n({
     errSaveDirUnusable: 'โฟลเดอร์ที่เลือกไม่สามารถเขียนได้ จึงใช้เป็นตำแหน่งบันทึกเริ่มต้นไม่ได้',
   },
   id: {
+    menuTabSave: 'Simpan',
+    menuTabSaveAs: 'Simpan sebagai…',
+    menuTabPrint: 'Cetak…',
+    menuTabRename: 'Ganti nama',
+    menuTabDuplicate: 'Duplikat (salin berkas tersimpan)',
+    menuTabSplitBeside: 'Bagi berdampingan',
+    menuTabCopyPath: 'Salin lokasi',
+    menuTabCopyName: 'Salin nama berkas',
+    menuTabReveal: 'Tampilkan di folder',
+    menuTabOpenDefault: 'Buka dengan aplikasi default',
+    menuTabMoveLeft: 'Pindah ke kiri',
+    menuTabMoveRight: 'Pindah ke kanan',
+    menuTabCloseOthers: 'Tutup tab lain',
+    menuTabCloseRight: 'Tutup tab di kanan',
+    menuTabCloseAll: 'Tutup semua tab',
+    menuTabReopen: 'Buka kembali tab tertutup',
     dlgAddFolderRoot: 'Tambahkan Folder ke Beranda',
     watchdogTitle: 'Dokumen menggunakan terlalu banyak sumber daya',
     watchdogBody:
@@ -1883,6 +2054,22 @@ const tMain = createI18n({
       'Folder yang dipilih tidak dapat ditulis dan tidak bisa digunakan sebagai lokasi penyimpanan default',
   },
   ru: {
+    menuTabSave: 'Сохранить',
+    menuTabSaveAs: 'Сохранить как…',
+    menuTabPrint: 'Печать…',
+    menuTabRename: 'Переименовать',
+    menuTabDuplicate: 'Создать копию (сохранённый файл)',
+    menuTabSplitBeside: 'Разделить экран',
+    menuTabCopyPath: 'Копировать путь',
+    menuTabCopyName: 'Копировать имя файла',
+    menuTabReveal: 'Показать в папке',
+    menuTabOpenDefault: 'Открыть в приложении по умолчанию',
+    menuTabMoveLeft: 'Переместить влево',
+    menuTabMoveRight: 'Переместить вправо',
+    menuTabCloseOthers: 'Закрыть другие вкладки',
+    menuTabCloseRight: 'Закрыть вкладки справа',
+    menuTabCloseAll: 'Закрыть все вкладки',
+    menuTabReopen: 'Открыть закрытую вкладку',
     dlgAddFolderRoot: 'Добавить папку на главную',
     watchdogTitle: 'Документ потребляет слишком много ресурсов',
     watchdogBody:
@@ -1996,6 +2183,22 @@ const tMain = createI18n({
       'Выбранная папка недоступна для записи и не может использоваться как папка сохранения по умолчанию',
   },
   ar: {
+    menuTabSave: 'حفظ',
+    menuTabSaveAs: 'حفظ باسم…',
+    menuTabPrint: 'طباعة…',
+    menuTabRename: 'تغيير الاسم',
+    menuTabDuplicate: 'تكرار (نسخ الملف المحفوظ)',
+    menuTabSplitBeside: 'تقسيم جنبًا إلى جنب',
+    menuTabCopyPath: 'نسخ المسار',
+    menuTabCopyName: 'نسخ اسم الملف',
+    menuTabReveal: 'إظهار في المجلد',
+    menuTabOpenDefault: 'فتح بالتطبيق الافتراضي',
+    menuTabMoveLeft: 'نقل إلى اليسار',
+    menuTabMoveRight: 'نقل إلى اليمين',
+    menuTabCloseOthers: 'إغلاق علامات التبويب الأخرى',
+    menuTabCloseRight: 'إغلاق علامات التبويب على اليمين',
+    menuTabCloseAll: 'إغلاق جميع علامات التبويب',
+    menuTabReopen: 'إعادة فتح علامة التبويب المغلقة',
     dlgAddFolderRoot: 'إضافة مجلد إلى الصفحة الرئيسية',
     watchdogTitle: 'المستند يستهلك موارد كثيرة جدًا',
     watchdogBody:
@@ -2105,6 +2308,22 @@ const tMain = createI18n({
     errSaveDirUnusable: 'المجلد المحدد غير قابل للكتابة ولا يمكن استخدامه كموقع حفظ افتراضي',
   },
   pt: {
+    menuTabSave: 'Salvar',
+    menuTabSaveAs: 'Salvar como…',
+    menuTabPrint: 'Imprimir…',
+    menuTabRename: 'Renomear',
+    menuTabDuplicate: 'Duplicar (copiar arquivo salvo)',
+    menuTabSplitBeside: 'Dividir lado a lado',
+    menuTabCopyPath: 'Copiar caminho',
+    menuTabCopyName: 'Copiar nome do arquivo',
+    menuTabReveal: 'Mostrar na pasta',
+    menuTabOpenDefault: 'Abrir com aplicativo padrão',
+    menuTabMoveLeft: 'Mover para a esquerda',
+    menuTabMoveRight: 'Mover para a direita',
+    menuTabCloseOthers: 'Fechar outras abas',
+    menuTabCloseRight: 'Fechar abas à direita',
+    menuTabCloseAll: 'Fechar todas as abas',
+    menuTabReopen: 'Reabrir aba fechada',
     dlgAddFolderRoot: 'Adicionar pasta à página inicial',
     watchdogTitle: 'O documento está a consumir demasiados recursos',
     watchdogBody:
@@ -2218,6 +2437,22 @@ const tMain = createI18n({
       'A pasta selecionada não permite gravação e não pode ser usada como local de salvamento padrão',
   },
   it: {
+    menuTabSave: 'Salva',
+    menuTabSaveAs: 'Salva con nome…',
+    menuTabPrint: 'Stampa…',
+    menuTabRename: 'Rinomina',
+    menuTabDuplicate: 'Duplica (copia il file salvato)',
+    menuTabSplitBeside: 'Affianca',
+    menuTabCopyPath: 'Copia percorso',
+    menuTabCopyName: 'Copia nome file',
+    menuTabReveal: 'Mostra nella cartella',
+    menuTabOpenDefault: "Apri con l'applicazione predefinita",
+    menuTabMoveLeft: 'Sposta a sinistra',
+    menuTabMoveRight: 'Sposta a destra',
+    menuTabCloseOthers: 'Chiudi altre schede',
+    menuTabCloseRight: 'Chiudi schede a destra',
+    menuTabCloseAll: 'Chiudi tutte le schede',
+    menuTabReopen: 'Riapri scheda chiusa',
     dlgAddFolderRoot: 'Aggiungi cartella alla Home',
     watchdogTitle: 'Il documento sta usando troppe risorse',
     watchdogBody:
@@ -2331,6 +2566,22 @@ const tMain = createI18n({
       'La cartella selezionata non è scrivibile e non può essere usata come posizione di salvataggio predefinita',
   },
   pl: {
+    menuTabSave: 'Zapisz',
+    menuTabSaveAs: 'Zapisz jako…',
+    menuTabPrint: 'Drukuj…',
+    menuTabRename: 'Zmień nazwę',
+    menuTabDuplicate: 'Powiel (skopiuj zapisany plik)',
+    menuTabSplitBeside: 'Podziel obok siebie',
+    menuTabCopyPath: 'Kopiuj ścieżkę',
+    menuTabCopyName: 'Kopiuj nazwę pliku',
+    menuTabReveal: 'Pokaż w folderze',
+    menuTabOpenDefault: 'Otwórz w domyślnej aplikacji',
+    menuTabMoveLeft: 'Przesuń w lewo',
+    menuTabMoveRight: 'Przesuń w prawo',
+    menuTabCloseOthers: 'Zamknij inne karty',
+    menuTabCloseRight: 'Zamknij karty po prawej',
+    menuTabCloseAll: 'Zamknij wszystkie karty',
+    menuTabReopen: 'Otwórz ponownie zamkniętą kartę',
     dlgAddFolderRoot: 'Dodaj folder do strony głównej',
     watchdogTitle: 'Dokument zużywa zbyt dużo zasobów',
     watchdogBody:
@@ -2444,6 +2695,22 @@ const tMain = createI18n({
       'Wybrany folder nie pozwala na zapis i nie może być domyślną lokalizacją zapisu',
   },
   cs: {
+    menuTabSave: 'Uložit',
+    menuTabSaveAs: 'Uložit jako…',
+    menuTabPrint: 'Tisk…',
+    menuTabRename: 'Přejmenovat',
+    menuTabDuplicate: 'Duplikovat (zkopírovat uložený soubor)',
+    menuTabSplitBeside: 'Rozdělit vedle sebe',
+    menuTabCopyPath: 'Kopírovat cestu',
+    menuTabCopyName: 'Kopírovat název souboru',
+    menuTabReveal: 'Zobrazit ve složce',
+    menuTabOpenDefault: 'Otevřít ve výchozí aplikaci',
+    menuTabMoveLeft: 'Přesunout vlevo',
+    menuTabMoveRight: 'Přesunout vpravo',
+    menuTabCloseOthers: 'Zavřít ostatní karty',
+    menuTabCloseRight: 'Zavřít karty vpravo',
+    menuTabCloseAll: 'Zavřít všechny karty',
+    menuTabReopen: 'Znovu otevřít zavřenou kartu',
     dlgAddFolderRoot: 'Přidat složku na domovskou stránku',
     watchdogTitle: 'Dokument spotřebovává příliš mnoho prostředků',
     watchdogBody:
@@ -2555,6 +2822,22 @@ const tMain = createI18n({
       'Do vybrané složky nelze zapisovat a nelze ji použít jako výchozí umístění pro ukládání',
   },
   nl: {
+    menuTabSave: 'Opslaan',
+    menuTabSaveAs: 'Opslaan als…',
+    menuTabPrint: 'Afdrukken…',
+    menuTabRename: 'Naam wijzigen',
+    menuTabDuplicate: 'Dupliceren (opgeslagen bestand kopiëren)',
+    menuTabSplitBeside: 'Naast elkaar splitsen',
+    menuTabCopyPath: 'Pad kopiëren',
+    menuTabCopyName: 'Bestandsnaam kopiëren',
+    menuTabReveal: 'Weergeven in map',
+    menuTabOpenDefault: 'Openen met standaardapp',
+    menuTabMoveLeft: 'Naar links verplaatsen',
+    menuTabMoveRight: 'Naar rechts verplaatsen',
+    menuTabCloseOthers: 'Andere tabbladen sluiten',
+    menuTabCloseRight: 'Tabbladen rechts sluiten',
+    menuTabCloseAll: 'Alle tabbladen sluiten',
+    menuTabReopen: 'Gesloten tabblad opnieuw openen',
     dlgAddFolderRoot: 'Map toevoegen aan startpagina',
     watchdogTitle: 'Document gebruikt te veel systeembronnen',
     watchdogBody:
@@ -2668,6 +2951,22 @@ const tMain = createI18n({
       'De geselecteerde map is niet beschrijfbaar en kan niet als standaard opslaglocatie worden gebruikt',
   },
   ms: {
+    menuTabSave: 'Simpan',
+    menuTabSaveAs: 'Simpan sebagai…',
+    menuTabPrint: 'Cetak…',
+    menuTabRename: 'Namakan semula',
+    menuTabDuplicate: 'Duplikasi (salin fail yang disimpan)',
+    menuTabSplitBeside: 'Pisahkan bersebelahan',
+    menuTabCopyPath: 'Salin laluan',
+    menuTabCopyName: 'Salin nama fail',
+    menuTabReveal: 'Tunjukkan dalam folder',
+    menuTabOpenDefault: 'Buka dengan aplikasi lalai',
+    menuTabMoveLeft: 'Alih ke kiri',
+    menuTabMoveRight: 'Alih ke kanan',
+    menuTabCloseOthers: 'Tutup tab lain',
+    menuTabCloseRight: 'Tutup tab di sebelah kanan',
+    menuTabCloseAll: 'Tutup semua tab',
+    menuTabReopen: 'Buka semula tab yang ditutup',
     dlgAddFolderRoot: 'Tambah Folder ke Laman Utama',
     watchdogTitle: 'Dokumen menggunakan terlalu banyak sumber',
     watchdogBody:
@@ -2780,6 +3079,22 @@ const tMain = createI18n({
       'Folder yang dipilih tidak boleh ditulis dan tidak dapat digunakan sebagai lokasi simpanan lalai',
   },
   he: {
+    menuTabSave: 'שמירה',
+    menuTabSaveAs: 'שמירה בשם…',
+    menuTabPrint: 'הדפסה…',
+    menuTabRename: 'שינוי שם',
+    menuTabDuplicate: 'שכפול (העתקת הקובץ השמור)',
+    menuTabSplitBeside: 'פיצול זה לצד זה',
+    menuTabCopyPath: 'העתקת נתיב',
+    menuTabCopyName: 'העתקת שם קובץ',
+    menuTabReveal: 'הצגה בתיקייה',
+    menuTabOpenDefault: 'פתיחה ביישום ברירת המחדל',
+    menuTabMoveLeft: 'העברה שמאלה',
+    menuTabMoveRight: 'העברה ימינה',
+    menuTabCloseOthers: 'סגירת הכרטיסיות האחרות',
+    menuTabCloseRight: 'סגירת הכרטיסיות מימין',
+    menuTabCloseAll: 'סגירת כל הכרטיסיות',
+    menuTabReopen: 'פתיחה מחדש של הכרטיסייה שנסגרה',
     dlgAddFolderRoot: 'הוספת תיקייה לדף הבית',
     watchdogTitle: 'המסמך צורך יותר מדי משאבים',
     watchdogBody:
@@ -2889,6 +3204,22 @@ const tMain = createI18n({
       'התיקייה שנבחרה אינה ניתנת לכתיבה ולא ניתן להשתמש בה כמיקום שמירה כברירת מחדל',
   },
   hi: {
+    menuTabSave: 'सहेजें',
+    menuTabSaveAs: 'इस रूप में सहेजें…',
+    menuTabPrint: 'प्रिंट करें…',
+    menuTabRename: 'नाम बदलें',
+    menuTabDuplicate: 'प्रतिलिपि बनाएँ (सहेजी गई फ़ाइल की कॉपी)',
+    menuTabSplitBeside: 'अगल-बगल विभाजित करें',
+    menuTabCopyPath: 'पथ कॉपी करें',
+    menuTabCopyName: 'फ़ाइल का नाम कॉपी करें',
+    menuTabReveal: 'फ़ोल्डर में दिखाएँ',
+    menuTabOpenDefault: 'डिफ़ॉल्ट ऐप से खोलें',
+    menuTabMoveLeft: 'बाईं ओर ले जाएँ',
+    menuTabMoveRight: 'दाईं ओर ले जाएँ',
+    menuTabCloseOthers: 'अन्य टैब बंद करें',
+    menuTabCloseRight: 'दाईं ओर के टैब बंद करें',
+    menuTabCloseAll: 'सभी टैब बंद करें',
+    menuTabReopen: 'बंद किया गया टैब फिर से खोलें',
     dlgAddFolderRoot: 'होम में फ़ोल्डर जोड़ें',
     watchdogTitle: 'दस्तावेज़ बहुत अधिक संसाधन ले रहा है',
     watchdogBody:
@@ -3002,6 +3333,22 @@ const tMain = createI18n({
       'चयनित फ़ोल्डर में लिखा नहीं जा सकता, इसलिए इसे डिफ़ॉल्ट सहेजने के स्थान के रूप में उपयोग नहीं किया जा सकता',
   },
   'zh-TW': {
+    menuTabSave: '儲存',
+    menuTabSaveAs: '另存新檔…',
+    menuTabPrint: '列印…',
+    menuTabRename: '重新命名',
+    menuTabDuplicate: '建立複本（複製已儲存的檔案）',
+    menuTabSplitBeside: '並排顯示',
+    menuTabCopyPath: '複製路徑',
+    menuTabCopyName: '複製檔案名稱',
+    menuTabReveal: '在資料夾中顯示',
+    menuTabOpenDefault: '使用預設應用程式開啟',
+    menuTabMoveLeft: '向左移動',
+    menuTabMoveRight: '向右移動',
+    menuTabCloseOthers: '關閉其他分頁',
+    menuTabCloseRight: '關閉右側分頁',
+    menuTabCloseAll: '關閉所有分頁',
+    menuTabReopen: '重新開啟已關閉的分頁',
     dlgAddFolderRoot: '將資料夾加入首頁',
     watchdogTitle: '文件佔用資源過高',
     watchdogBody:
@@ -3297,9 +3644,9 @@ function ensureFileIndexer(): FileIndexer | null {
 }
 
 const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
-  docx: ['docx', 'doc'],
-  xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv'],
-  pptx: ['pptx', 'ppt'],
+  docx: ['docx', 'doc', 'odt', 'ott'],
+  xlsx: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],
+  pptx: ['pptx', 'ppt', 'odp', 'otp'],
   md: ['md', 'markdown', 'txt', 'json'],
   html: ['html', 'htm'],
 }
@@ -3561,6 +3908,7 @@ function createShellWindow(): void {
     () => currentUiScale,
   )
   tabManager = manager
+  manager.setClosedListener((closed) => recentlyClosed.push(closed))
 
   // Docking: a detached window dragged over this window's tab strip hands its
   // document back. The strip reports the insertion slot for each preview
@@ -3755,8 +4103,13 @@ const OPEN_DIALOG_EXTENSIONS = [
   'xls',
   'csv',
   'tsv',
+  'ods',
+  'ots',
   'pptx',
   'ppt',
+  'odt',
+  'odp',
+  'otp',
   'pdf',
   'md',
   'markdown',
@@ -4389,9 +4742,12 @@ function registerHomeIpc(): void {
       title: tm('dlgOpenTitle'),
       filters: [
         { name: tm('filterSupported'), extensions: OPEN_DIALOG_EXTENSIONS },
-        { name: tm('filterWord'), extensions: ['docx', 'doc'] },
-        { name: tm('filterExcel'), extensions: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv'] },
-        { name: tm('filterPpt'), extensions: ['pptx', 'ppt'] },
+        { name: tm('filterWord'), extensions: ['docx', 'doc', 'odt', 'ott'] },
+        {
+          name: tm('filterExcel'),
+          extensions: ['xlsx', 'xlsm', 'xls', 'csv', 'tsv', 'ods', 'ots'],
+        },
+        { name: tm('filterPpt'), extensions: ['pptx', 'ppt', 'odp', 'otp'] },
         { name: tm('filterPdf'), extensions: ['pdf'] },
         { name: tm('filterMarkdown'), extensions: ['md', 'markdown', 'txt', 'json'] },
         { name: tm('filterHtml'), extensions: ['html', 'htm'] },
@@ -4488,21 +4844,7 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.duplicateFile, async (_event, path: unknown) => {
     if (typeof path !== 'string' || !existsSync(path)) return
     if (!isUserVisibleFile(path, fileTargetSources())) return
-    const ext = extname(path)
-    const base = basename(path, ext)
-    const dir = dirname(path)
-    for (let i = 1; ; i++) {
-      const target = join(dir, `${base} ${tm('copySuffix')}${i === 1 ? '' : ` ${i}`}${ext}`)
-      if (existsSync(target)) continue
-      try {
-        await atomicCopyFile(path, target)
-      } catch (err) {
-        showErrorDialog(shellWindow, tm('errDuplicateFailed'), err)
-        return
-      }
-      recordRecentFile(target)
-      return
-    }
+    await duplicateFile(path)
   })
 
   ipcMain.handle(HOME_CHANNELS.deleteFiles, async (_event, paths: unknown) => {
@@ -4596,6 +4938,28 @@ function registerHomeIpc(): void {
     writeAppSetting(APP_SETTINGS_PATH(), 'documentTheme', theme)
     // the native theme is untouched — only the editors' canvas/paper follows this
     for (const wc of webContents.getAllWebContents()) wc.send('app:document-theme-changed', theme)
+  })
+
+  // comment / tracked-change author (Word: Options → General → User name);
+  // the editor mains resolve the same key via configuredAuthorName
+  const authorNameSetting = (): AuthorNameSetting => ({
+    value: readAuthorNameSetting(APP_SETTINGS_PATH()),
+    fallback: systemAuthorName(),
+  })
+  ipcMain.handle(HOME_CHANNELS.getAuthorName, (): AuthorNameSetting => authorNameSetting())
+  ipcMain.handle('app:get-author-name', (): string => {
+    const { value, fallback } = authorNameSetting()
+    return value || fallback
+  })
+  ipcMain.handle(HOME_CHANNELS.setAuthorName, (_event, raw: unknown): AuthorNameSetting => {
+    const value = sanitizeAuthorName(raw)
+    if (value !== readAuthorNameSetting(APP_SETTINGS_PATH())) {
+      writeAppSetting(APP_SETTINGS_PATH(), AUTHOR_NAME_KEY, value)
+      const effective = value || systemAuthorName()
+      for (const wc of webContents.getAllWebContents())
+        wc.send('app:author-name-changed', effective)
+    }
+    return authorNameSetting()
   })
 
   ipcMain.handle(HOME_CHANNELS.getAutoSaveDefault, (): AutoSaveDefault => currentAutoSaveDefault())
@@ -5089,6 +5453,94 @@ function activeHtmlTarget() {
   return activeEditorTarget('html', () => tabManager?.activeHtmlTab())
 }
 
+/** files of tabs that were closed, newest last, so "Reopen closed tab" can bring them back */
+const recentlyClosed = createRecentlyClosedTracker()
+
+function duplicateFile(path: string): Promise<string | undefined> {
+  return duplicateDocumentFile(path, {
+    copySuffix: tm('copySuffix'),
+    recordRecentFile,
+    onError: (error) => showErrorDialog(shellWindow, tm('errDuplicateFailed'), error),
+  })
+}
+
+/** The shell's side of every entry of the tab menu (see tab-menu.ts for what is offered). */
+function tabMenuActions(): TabMenuActions {
+  const documentAction = (id: string, action: TabDocumentAction) => {
+    if (!tabManager) return
+    runTabDocumentAction(
+      {
+        tabs: tabManager,
+        savePdf: (contents) => {
+          void flushPdfSave(contents)
+        },
+        savePdfAs: (target) => {
+          void savePdfAs(target)
+        },
+        printPdf: sendPdfPrintRequest,
+        saveMarkdown: (contents, mode) => {
+          void requestMarkdownSave(contents, mode)
+        },
+        printMarkdown: sendMarkdownPrintRequest,
+        saveHtml: (contents, mode) => {
+          void requestHtmlSave(contents, mode)
+        },
+        printHtml: sendHtmlPrintRequest,
+      },
+      id,
+      action,
+    )
+  }
+  return {
+    save: (id) => documentAction(id, 'save'),
+    saveAs: (id) => documentAction(id, 'saveAs'),
+    print: (id) => documentAction(id, 'print'),
+    openInNewWindow: (id) => detachTabToWindow(id),
+    // two windows side by side, each on its own half of the screen the tab is on
+    splitBeside: (id) => {
+      if (!tabManager || !shellWindow) return
+      const record = tabManager.detachTab(id)
+      if (!record) return
+      const win = createDetachedEditorWindow({ ...record, applyMenuFor })
+      const area = screen.getDisplayMatching(shellWindow.getBounds()).workArea
+      const half = Math.floor(area.width / 2)
+      if (shellWindow.isMaximized()) shellWindow.unmaximize()
+      const tile = () => {
+        if (!shellWindow || shellWindow.isDestroyed()) return
+        shellWindow.setBounds({ x: area.x, y: area.y, width: half, height: area.height })
+      }
+      // leaving fullscreen is asynchronous (macOS animates it) and restores the
+      // pre-fullscreen bounds on completion, which would undo an immediate tile
+      if (shellWindow.isFullScreen()) {
+        shellWindow.once('leave-full-screen', tile)
+        shellWindow.setFullScreen(false)
+      } else {
+        tile()
+      }
+      win.setBounds({ x: area.x + half, y: area.y, width: area.width - half, height: area.height })
+      win.focus()
+    },
+    rename: (id) => {
+      if (shellWindow && !shellWindow.isDestroyed())
+        shellWindow.webContents.send(TABS_CHANNELS.startRename, id)
+    },
+    duplicate: (path) => {
+      void duplicateFile(path).then((target) => {
+        if (target) openDocumentPath(target)
+      })
+    },
+    copyText: (text) => clipboard.writeText(text),
+    reveal: (path) => shell.showItemInFolder(path),
+    openDefault: (path) => {
+      // a document tab is a document, never a program; keep it that way for a renamed one
+      if (!isProgramFile(path)) void shell.openPath(path)
+    },
+    move: (id, toIndex) => tabManager?.reorderTab(id, toIndex),
+    closeTabs: (ids) => void (tabManager && closeTabsInOrder(tabManager, ids)),
+    reopenClosed: () => recentlyClosed.reopenNext(openDocumentPath, existsSync),
+  }
+}
+
 function registerTabsIpc(): void {
   ipcMain.on(TABS_CHANNELS.chromePressed, (event) => broadcastChromePressed(event.sender))
   ipcMain.handle(TABS_CHANNELS.list, () => tabManager?.list() ?? [])
@@ -5160,20 +5612,14 @@ function registerTabsIpc(): void {
     if (!tabManager || !shellWindow || typeof id !== 'string') return
     const tab = tabManager.list().find((t) => t.id === id)
     if (!tab || tab.kind === 'home') return
-    const template: MenuItemConstructorOptions[] = []
-    // every document tab except a chrome-free Present tab (a live preview of
-    // another tab's document — it has nothing of its own to move)
-    if (tabManager.canDetachTab(id)) {
-      template.push({
-        label: tm('menuOpenInNewWindow'),
-        click: () => detachTabToWindow(id),
-      })
-      template.push({ type: 'separator' })
-    }
-    template.push({
-      label: tm('menuClose'),
-      enabled: tab.closable,
-      click: () => void tabManager?.closeTab(id),
+    const template = tabMenuTemplate({
+      tab,
+      tabs: tabManager.list(),
+      canDetach: tabManager.canDetachTab(id),
+      fileExists: !!tab.filePath && existsSync(tab.filePath),
+      canReopen: recentlyClosed.getEntries().length > 0,
+      tm,
+      actions: tabMenuActions(),
     })
     Menu.buildFromTemplate(template).popup({
       window: shellWindow,
@@ -5577,8 +6023,7 @@ function buildHtmlMenu(): void {
     waiter/target grant or clears its autosave pause early */
 let savingPdfAs = false
 
-async function savePdfAs(): Promise<void> {
-  const tab = activePdfTarget()
+async function savePdfAs(tab = activePdfTarget()): Promise<void> {
   const host = pdfHostWindow(tab)
   if (!tab?.filePath || !host || savingPdfAs) return
   savingPdfAs = true

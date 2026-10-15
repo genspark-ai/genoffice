@@ -72,3 +72,25 @@ describe('checkMissingFonts', () => {
     ])
   })
 })
+
+describe('collectDocFonts', () => {
+  it('reports table cell runs, nested tables and the styles Latin slot', () => {
+    const cell = (font: string, nested?: object) => ({
+      paras: [''],
+      richParas: [{ runs: [{ text: 'x', fontAscii: font }] }],
+      ...(nested ? { nestedTables: [nested] } : {}),
+    })
+    const parsed = {
+      blocks: [
+        { type: 'table', table: { rows: [[cell('Cambria', { rows: [[cell('Georgia')]] })]] } },
+      ],
+      styles: new Map([['T', { display: { font: 'Noto Sans CJK SC', fontAscii: 'Calibri' } }]]),
+    } as never
+    expect(collectDocFonts(parsed).sort()).toEqual([
+      'Calibri',
+      'Cambria',
+      'Georgia',
+      'Noto Sans CJK SC',
+    ])
+  })
+})

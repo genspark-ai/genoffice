@@ -42,6 +42,29 @@ describe('MERGEFIELD', () => {
     ])
   })
 
+  it('keeps the enclosing hyperlink on a merge field inside w:hyperlink', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:hyperlink r:id="rId20">' +
+          mergeFieldParagraph('MERGEFIELD Email', '«Email»').slice(
+            '<w:p>'.length,
+            -'</w:p>'.length,
+          ) +
+          '</w:hyperlink></w:p>',
+        extraRels:
+          '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:a@b.test" TargetMode="External"/>',
+      }),
+    )
+    expect(doc.blocks[0].runs).toEqual([
+      {
+        text: '«Email»',
+        instrField: 'MERGEFIELD Email',
+        link: { href: 'mailto:a@b.test', rId: 'rId20' },
+      },
+    ])
+  })
+
   it('shows the guillemet placeholder when Word cached no result yet', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: mergeFieldParagraph('MERGEFIELD CustomerName', null) }),
@@ -107,6 +130,45 @@ describe('MERGEFIELD', () => {
     expect(doc.blocks[0].runs).toEqual([
       { text: '«CustomerName»', instrField: 'MERGEFIELD CustomerName' },
     ])
+  })
+
+  it('keeps the link when the field sits inside a w:hyperlink', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:hyperlink w:anchor="offer" w:history="1">' +
+          '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+          '<w:r><w:instrText xml:space="preserve"> MERGEFIELD OfferLabel </w:instrText></w:r>' +
+          '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+          '<w:r><w:t>See the offer</w:t></w:r>' +
+          '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+          '</w:hyperlink></w:p>',
+      }),
+    )
+    expect(doc.blocks[0].runs?.[0]).toMatchObject({
+      text: 'See the offer',
+      instrField: 'MERGEFIELD OfferLabel',
+      link: { href: '#offer' },
+    })
+
+    const out = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          runs: [
+            {
+              text: 'See the offer',
+              instrField: 'MERGEFIELD OfferLabel',
+              link: { href: '#offer' },
+            },
+          ],
+        },
+      },
+    ])
+    const xml = await documentXmlOf(out)
+    expect(xml).toContain('<w:hyperlink w:anchor="offer"')
+    expect(xml).toContain('MERGEFIELD OfferLabel')
   })
 
   it('writes the field back so Word still sees a mail-merge field after a round-trip', async () => {

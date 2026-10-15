@@ -63,6 +63,9 @@ export interface ChartSeries {
     pct?: boolean
     sizePt?: number
     color?: string
+    /** <c:tx><c:rich> literal label text (replaces the composed series/category/value text) */
+    text?: string
+    bold?: boolean
     /** Point dLbl spPr box colors; null = explicit a:noFill (clears the series box) */
     fill?: string | null
     border?: string | null
@@ -125,6 +128,8 @@ export interface ChartAxisStyle {
   /** <c:numFmt formatCode>: source-linked data labels format numbers with this (omitted for "General") */
   numFmt?: string
   lineColor?: string
+  /** <c:spPr><a:ln><a:noFill/>: the axis line is not drawn (labels/ticks unaffected) */
+  lineHidden?: boolean
   gridColor?: string
   /** gridColor is the fallback (no explicit spPr color); the render layer picks the real default by hasStylePart */
   gridColorAuto?: boolean
@@ -173,6 +178,8 @@ export interface ChartModel {
   /** Legend text size (pt) from c:legend/c:txPr default run properties */
   legendPt?: number
   legendBold?: boolean
+  /** Legend txPr defRPr solid fill (legend text color; absent = axis label color) */
+  legendColor?: string
   /** <c:legend><c:overlay val="1"/>: the legend floats over the plot, reserving no space */
   legendOverlay?: boolean
   /** Series indices in PowerPoint's legend display order with c:legendEntry deletions applied
@@ -510,10 +517,22 @@ export function parseChartXml(
           if (!Number.isFinite(idx)) return null
           if (d['c:delete']?.['@_val'] === '1') return { idx, hidden: true }
           const flag = (k: string) => d[k]?.['@_val'] === '1'
-          if (!['c:showVal', 'c:showCatName', 'c:showSerName', 'c:showPercent'].some((k) => k in d))
+          // A rich-text label is authored text: PowerPoint shows it verbatim, styled by its first run
+          const rich = d['c:tx']?.['c:rich']
+          const richText = rich ? collectText(rich) : undefined
+          if (
+            richText == null &&
+            !['c:showVal', 'c:showCatName', 'c:showSerName', 'c:showPercent'].some((k) => k in d)
+          )
             return null
           const dP = d['c:txPr']?.['a:p']
-          const rPr = (Array.isArray(dP) ? dP[0] : dP)?.['a:pPr']?.['a:defRPr']
+          const rP = rich?.['a:p']
+          const rP0 = Array.isArray(rP) ? rP[0] : rP
+          const rR0 = Array.isArray(rP0?.['a:r']) ? rP0['a:r'][0] : rP0?.['a:r']
+          const rPr =
+            rR0?.['a:rPr'] ??
+            rP0?.['a:pPr']?.['a:defRPr'] ??
+            (Array.isArray(dP) ? dP[0] : dP)?.['a:pPr']?.['a:defRPr']
           const sz = parseInt(rPr?.['@_sz'], 10)
           const color = resolveColorNode(rPr?.['a:solidFill'], theme)
           const box = labelBox(d['c:spPr'], theme)
@@ -523,6 +542,7 @@ export function parseChartXml(
             cat: flag('c:showCatName'),
             ser: flag('c:showSerName'),
             pct: flag('c:showPercent'),
+            ...(richText != null ? { text: richText, bold: rPr?.['@_b'] === '1' } : {}),
             ...(Number.isFinite(sz) && sz > 0 ? { sizePt: sz / 100 } : {}),
             ...(color ? { color } : {}),
             ...box,
@@ -538,7 +558,9 @@ export function parseChartXml(
           ['c:showVal', 'c:showPercent', 'c:showCatName', 'c:showSerName'].some(
             (k) => serDl[k]?.['@_val'] === '1',
           )
-        if (overrides.some((o) => !o.hidden && (o.val || o.cat || o.ser || o.pct))) {
+        if (
+          overrides.some((o) => !o.hidden && (o.val || o.cat || o.ser || o.pct || o.text != null))
+        ) {
           s.dataLabels = true
           if (!serShowsAny) s.dLblOnlyPoints = true
         }
@@ -775,6 +797,8 @@ export function parseChartXml(
     const legSz = parseInt(legRPr?.['@_sz'], 10)
     if (Number.isFinite(legSz) && legSz > 0) model.legendPt = legSz / 100
     if (legRPr?.['@_b'] === '1') model.legendBold = true
+    const legColor = resolveColorNode(legRPr?.['a:solidFill'], theme)
+    if (legColor) model.legendColor = legColor
     const legPPr = (Array.isArray(legP) ? legP[0] : legP)?.['a:pPr']
     if (legPPr?.['@_rtl'] === '1') model.legendRtl = true
     // PowerPoint lists entries per plot group; a stacked group next to a side legend runs
@@ -1306,6 +1330,8 @@ function parseAxis(ax: any, theme?: Theme): ChartAxisStyle | undefined {
   if (typeof numFmt === 'string' && numFmt && numFmt !== 'General') out.numFmt = numFmt
   const lineColor = resolveColorNode(ax['c:spPr']?.['a:ln']?.['a:solidFill'], theme)
   if (lineColor) out.lineColor = lineColor
+  const axLn = ax['c:spPr']?.['a:ln']
+  if (axLn && typeof axLn === 'object' && 'a:noFill' in axLn) out.lineHidden = true
   // A self-closing <c:majorGridlines/> (no spPr) parses to an empty string; still counts as having gridlines
   const grid = ax['c:majorGridlines']
   if (grid !== undefined) {

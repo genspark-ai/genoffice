@@ -904,6 +904,165 @@ button {
   height: 10px;
 }
 
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), docs parity, see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops to icon-only on a shorter band. The band keeps the HARD-fixed
+ * height contract (switching tabs never resizes the row) and the horizontal
+ * scroll, so a narrow window still scrolls instead of wrapping.
+ */
+.ribbon-compact .ribbon-body {
+  /* same fixed-height contract as the full band, only shorter (docs measured
+     45px as the smallest that holds its tabs unclipped; slides' tallest
+     compact content is the 28px font combos, so it fits the same band) */
+  height: 45px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+}
+
+.ribbon-compact .rb-big {
+  /* the label is taken out of flow entirely (below), so the button is just
+     the icon row plus its padding */
+  gap: 0;
+  padding: 2px 5px;
+}
+
+.ribbon-compact .rb-big-icon {
+  min-height: 22px;
+  flex: none;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name. */
+.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* the icon row is the whole button now, so let the hover/open paint cover it */
+.ribbon-compact .rb-big .rb-big-icon {
+  align-self: stretch;
+  padding: 1px 3px;
+  margin: 0 -2px;
+}
+
+/* Split buttons (paste dropdown, color pickers) paint their hover in two
+ * inner zones that stretch to the icon row — the extra padding above would
+ * stack on the zones' own, putting the pair 4px over every plain button. */
+.ribbon-compact .rb-split .rb-big-icon {
+  padding: 0;
+}
+
+.ribbon-compact .rb-split .rb-split-main,
+.ribbon-compact .rb-split .rb-caret-hit {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+/* Groups centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 3px;
+}
+
+/* `.rb-col` stacks rows that cannot fit a short band side by side — the font
+ * group's two 28px combo rows, the zoom stack, the clipboard mini-column —
+ * exactly the docs treatment of .rb-col/.rb-font-group. */
+.ribbon-compact .rb-col {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* the slides group's stacked rows pair with the big New Slide button; in
+ * compact there is no pairing height to track anymore */
+.ribbon-compact .rb-slides-col {
+  align-items: center;
+  align-self: auto;
+  justify-content: center;
+  padding: 0;
+}
+
+/* Draw tab: the pen tray's pens hang from the tray top with 56px glyphs —
+ * twice the compact band. Smaller glyphs, less hang; the held pen stays the
+ * one fully visible. */
+.ribbon-compact .pen-tray {
+  align-self: center;
+  height: 36px;
+}
+
+.ribbon-compact .pen-btn svg {
+  width: 34px;
+  height: 34px;
+}
+
+.ribbon-compact .pen-btn {
+  transform: translateY(-7px);
+}
+
+.ribbon-compact .pen-btn:hover:not(:disabled) {
+  transform: translateY(-4px);
+}
+
+/* Ink settings stack swatches over widths (42px); side by side like the
+ * docs compact band. */
+.ribbon-compact .ink-settings {
+  flex-direction: row;
+  gap: 8px;
+}
+
+/* Animations' Timing block stacks three 22px rows (trigger / duration /
+ * delay = 70px); side by side like the docs compact band. */
+.ribbon-compact .rb-anim-timing {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* View tab's Show group is a 3-row checkbox grid (68px); compact flattens it
+ * to one row and lets the band's horizontal scroll carry the width. */
+.ribbon-compact .rb-check-grid {
+  grid-template-rows: none;
+  column-gap: 10px;
+}
+
+/* Design tab theme cards: 62px preview cards shrink like the docs style
+ * gallery — the name line goes away and the swatch row carries the card. */
+.ribbon-compact .theme-card {
+  width: 46px;
+  height: 30px;
+  padding: 2px 4px;
+}
+
+.ribbon-compact .theme-card-aa {
+  font-size: 12px;
+}
+
+.ribbon-compact .theme-card-dot {
+  width: 6px;
+  height: 6px;
+}
+
+/* same visually-hidden treatment as the rb-big labels: the name stays in the
+ * accessibility tree (the card's data-tip is the translated theme name) */
+.ribbon-compact .theme-card-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .rb-small {
   display: flex;
   align-items: center;

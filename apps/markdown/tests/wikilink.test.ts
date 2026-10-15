@@ -25,10 +25,10 @@ afterEach(() => {
 })
 
 const ANSWERS: Record<string, WikiLinkResolved> = {
-  '[[Alpha]]': { path: '/notes/Alpha.md', fragment: '', found: true },
-  '[[Beta|Bee]]': { path: '/notes/Beta.md', fragment: '', found: true },
-  '[[Gamma#Section]]': { path: '/notes/Gamma.md', fragment: 'Section', found: true },
-  '[[Nowhere]]': { path: '', fragment: '', found: false },
+  Alpha: { path: '/notes/Alpha.md', fragment: '', found: true },
+  Beta: { path: '/notes/Beta.md', fragment: '', found: true },
+  'Gamma#Section': { path: '/notes/Gamma.md', fragment: 'Section', found: true },
+  Nowhere: { path: '', fragment: '', found: false },
 }
 
 function open(
@@ -126,6 +126,13 @@ describe('syntax', () => {
     expect(out).toBe(src)
   })
 
+  it('writes a literal * or _ inside a link back unescaped on a full re-serialize', () => {
+    const src = 'See [[Note *em*|a_b]] now.'
+    const { editor } = open(src)
+    expect(editor.getMarkdown()).toBe(src)
+    expect(editor.view.dom.querySelector('.wiki-link em')).toBeNull()
+  })
+
   it('leaves a standard markdown link to the link mark', () => {
     const { editor } = open('A [label](https://example.com) link.')
     const names: string[] = []
@@ -202,11 +209,26 @@ describe('editing', () => {
     })
     const { editor } = open('[[Alpha]]', { resolve })
     await settled()
-    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['[[Alpha]]'])
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['Alpha'])
     editor.view.dispatch(editor.state.tr.insertText('b', after(editor, 'Alpha')))
     await settled()
     // the target is the text the user sees, so the edit follows the link
-    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['[[Alphab]]'])
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['Alphab'])
+  })
+
+  it('asks the resolver for file names, not literals, and keys the answers back', async () => {
+    const resolve = vi.fn(async (_from: string, targets: string[]) => {
+      const out: Record<string, WikiLinkResolved> = {}
+      for (const t of targets) out[t] = ANSWERS[t] ?? { path: '', fragment: '', found: false }
+      return out
+    })
+    const { editor } = open('[[Alpha]] [[Beta|Bee]] [[Gamma#Section]] [[Alpha|Again]]', { resolve })
+    await settled()
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['Alpha', 'Beta', 'Gamma#Section'])
+    const resolved = [...editor.view.dom.querySelectorAll('.wiki-link-resolved')].map((el) =>
+      el.getAttribute('data-wiki-target'),
+    )
+    expect(resolved).toEqual(['[[Alpha]]', '[[Beta|Bee]]', '[[Gamma#Section]]', '[[Alpha|Again]]'])
   })
 
   it('resolves two adjacent links as two links, not one run', () => {
@@ -330,7 +352,7 @@ describe('resolution', () => {
     const inside = editor.state.doc.textContent.indexOf('Nowhere') + 'Nowhere'.length + 1
     editor.view.dispatch(editor.state.tr.insertText('s', inside))
     await settled()
-    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['[[Nowheres]]'])
+    expect(resolve).toHaveBeenLastCalledWith('/notes/Index.md', ['Nowheres'])
     expect(resolve).toHaveBeenCalledTimes(2)
   })
 

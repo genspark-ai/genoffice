@@ -15,6 +15,7 @@ export const pl = {
   ribbonTabReview: 'Recenzja',
   ribbonCollapse: 'Zwiń Wstążkę',
   ribbonExpand: 'Rozwiń Wstążkę',
+  ribbonCompact: 'Zwinięta Wstążka (tylko ikony)',
   ribbonTabView: 'Widok',
   ribbonTabTableDesign: 'Projekt tabeli',
   ribbonTabChartDesign: 'Projekt wykresu',

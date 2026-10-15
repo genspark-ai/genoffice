@@ -15,6 +15,7 @@ a drifted side bearing still gets translated into place.
 Usage: python3 tools/scale-kr-sans-latin-ink.py [woff2-path] [malgun-path]
 """
 
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -25,6 +26,16 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 
 DEFAULT = "apps/docs/src/renderer/fonts/GenOfficeSansKR-Regular-subset.woff2"
+
+
+def malgun_advances() -> dict[int, int]:
+    spec = importlib.util.spec_from_file_location(
+        "normalize_kr_sans_hmtx", Path(__file__).with_name("normalize-kr-sans-hmtx.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module.MALGUN_ADVANCES
 MALGUN = "/Applications/Microsoft Word.app/Contents/Resources/DFonts/malgun.ttf"
 
 
@@ -48,12 +59,10 @@ def main() -> None:
     charstrings = td.CharStrings
     glyph_set = font.getGlyphSet()
 
-    # the proportional CJK brackets normalize-kr-sans-hmtx.py narrows: their
-    # full-width Noto outlines must move into the Malgun advance too
-    cjk = [0x300C, 0x300D, 0x300E, 0x300F, 0x3008, 0x3009, 0x300A, 0x300B,
-           0x3010, 0x3011, 0x3014, 0x3015, 0x203B]
+    # only glyphs whose advance normalize-kr-sans-hmtx.py rewrote: an outline
+    # fitted to Malgun's ink under a Noto advance would no longer match it
     scaled = skipped = 0
-    for cp in [*range(0x21, 0x7F), *cjk]:
+    for cp in sorted(cp for cp in malgun_advances() if cp >= 0x21):
         name = cmap.get(cp)
         m_name = m_cmap.get(cp)
         if name is None or m_name is None:

@@ -94,11 +94,11 @@ describe('buildChartNode', () => {
   it('builds line chart: polylines within plot, markers, gridlines, legend', () => {
     const node = buildChartNode('r_1', 'el1', lineModel, box, vp, metrics)!
     expect(node.type).toBe('chart')
-    expect(node.polylines).toHaveLength(2)
-    expect(node.markers.length).toBe(8)
+    // 2 series polylines + 2 legend line keys (with their markers)
+    expect(node.polylines).toHaveLength(4)
+    expect(node.markers.length).toBe(10)
     expect(node.gridLines.length).toBeGreaterThan(2)
-    // Legend: 2 swatches + at least 2 texts (more with tick/category labels)
-    expect(node.swatches).toHaveLength(2)
+    expect(node.swatches).toHaveLength(0)
     // All polyline points are inside the chart box
     for (const p of node.polylines) {
       for (let i = 0; i < p.points.length; i += 2) {
@@ -174,11 +174,13 @@ describe('buildChartNode', () => {
     // The bar series yields only 3 bars (not 6), the line series yields 1 polyline
     expect(node.bars).toHaveLength(3)
     expect(node.bars.every((b) => b.color === '#4472C4')).toBe(true)
-    expect(node.polylines).toHaveLength(1)
+    // series polyline + the line series' legend key
+    expect(node.polylines).toHaveLength(2)
     expect(node.polylines[0]!.color).toBe('#ED7D31')
     expect(node.polylines[0]!.points).toHaveLength(6)
-    // The legend includes both series
-    expect(node.swatches).toHaveLength(2)
+    // The legend includes both series: bar swatch + line key
+    expect(node.swatches).toHaveLength(1)
+    expect(node.polylines[1]!.points).toHaveLength(4)
   })
 
   it('combo dual axis: line maps to the right secondary value-axis range, right axis line and tick labels drawn', () => {

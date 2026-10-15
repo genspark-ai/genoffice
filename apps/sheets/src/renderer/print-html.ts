@@ -540,7 +540,12 @@ export function layoutSheetPrint(
     const overlayLayer = overlays
       ? `<div class="ov" style="left:${round(originLeft)}pt;top:${round(originTop)}pt;width:${round(bodyWidthPt)}pt;height:${round(bodyHeightPt)}pt">${overlays}</div>`
       : ''
-    const table = `<table>${colgroup}<thead>${head.join('')}</thead><tbody>${body.join('')}</tbody></table>`
+    // table-layout:fixed is ignored while the table's width is auto (CSS 2.1
+    // §17.5.2): without an explicit width Chromium falls back to content-based
+    // auto layout and the colgroup's saved column widths are lost (text-bearing
+    // columns inflate, empty ones shrink). The width is the colgroup sum.
+    const tableWidthPt = round(originLeft + bodyWidthPt)
+    const table = `<table style="width:${tableWidthPt}pt">${colgroup}<thead>${head.join('')}</thead><tbody>${body.join('')}</tbody></table>`
     return { body: table + overlayLayer, page }
   })
 

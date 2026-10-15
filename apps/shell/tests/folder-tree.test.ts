@@ -116,6 +116,23 @@ describe('listFolder', () => {
         .sort(),
     ).toEqual(['data.json', 'notes.md', 'notes.txt'])
   })
+
+  /**
+   * The ODF imports come in a document / template pair per app. Half a pair
+   * in TREE_FILE_EXTENSIONS means the open dialog offers a file the folder
+   * pane refuses to show, for one app only.
+   */
+  it('lists both halves of every ODF import pair', () => {
+    for (const extension of ['odt', 'ott', 'ods', 'ots', 'odp', 'otp']) {
+      touch(`doc.${extension}`)
+    }
+
+    expect(
+      listFolder(root, new Set())
+        .files.map((f) => f.name)
+        .sort(),
+    ).toEqual(['doc.odp', 'doc.ods', 'doc.odt', 'doc.otp', 'doc.ots', 'doc.ott'])
+  })
 })
 
 describe('isInsideRoot', () => {

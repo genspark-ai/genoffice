@@ -58,11 +58,14 @@ export function MindMapCard({ tree, onAsk, onJumpBlock }: MindMapCardProps) {
     fitView()
   }, [tree, fitView])
 
-  // wheel zoom around the cursor; non-passive so the panel does not scroll
+  // Ctrl/Cmd+wheel zooms around the cursor (Chromium reports a trackpad pinch
+  // as ctrl+wheel) — the same gesture the editor canvas uses. A plain wheel is
+  // left alone so the chat panel still scrolls past the card; panning is drag.
   useEffect(() => {
     const vp = viewportRef.current
     if (!vp) return
     const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       const rect = vp.getBoundingClientRect()
       const ox = e.clientX - rect.left

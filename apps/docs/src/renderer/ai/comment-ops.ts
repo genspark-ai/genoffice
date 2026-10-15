@@ -126,7 +126,8 @@ export function resolveCommentAnchor(editor: Editor, input: CommentAnchorInput):
     return {
       from: runs[0]!.pos,
       to: last.pos + (last.textEnd - last.textStart),
-      excerpt: liveText(anchorBlock.node),
+      // a person reads this: a comment preview must show the real words
+      excerpt: liveText(anchorBlock.node, true),
     }
   }
   if (typeof input.text !== 'string') return { error: 'text must be a string' }

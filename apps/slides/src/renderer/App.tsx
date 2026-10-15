@@ -3580,6 +3580,7 @@ export function App() {
                 settings={aiSettings}
                 preset={aiPreset}
                 open={showAi}
+                hideRail={!aiSidebarEnabled}
                 onExpand={toggleAi}
                 onCollapse={toggleAi}
                 onUndo={() => void undo()}

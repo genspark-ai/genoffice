@@ -154,7 +154,8 @@ import {
   SIMPLE_INLINE_FIELD_RE,
   ZOTERO_INLINE_FIELD_RE,
   activeCharIndents,
-  autoSpaceOf,
+  autoSpaceFlagsOf,
+  autoSpaceMode,
   bookmarkNamesOf,
   cellMarginsOf,
   charIndentsOf,
@@ -3435,7 +3436,12 @@ function inheritStyleBreakFlags(
 ): ParaFormat | undefined {
   const d = style?.display
   let out = format
-  if (out?.autoSpace === undefined && d?.autoSpace === false) out = { ...out, autoSpace: false }
+  // the two switches merge per attribute, so a style's DN off survives a paragraph's own DE
+  const autoSpace = autoSpaceMode(
+    out?.autoSpaceDE ?? d?.autoSpaceDE,
+    out?.autoSpaceDN ?? d?.autoSpaceDN,
+  )
+  if (autoSpace !== undefined && autoSpace !== out?.autoSpace) out = { ...out, autoSpace }
   if (out?.wordWrap === undefined && d?.wordWrap === false) out = { ...out, wordWrap: false }
   if (out?.overflowPunct === undefined && d?.overflowPunct === false) {
     out = { ...out, overflowPunct: false }
@@ -3633,8 +3639,11 @@ function extractParaFormat(
     const ctx = onOffOf(pPr, 'w:contextualSpacing')
     if (ctx !== undefined) format.contextualSpacing = ctx
   }
-  const autoSpace = autoSpaceOf(pPr)
-  if (autoSpace !== undefined) format.autoSpace = autoSpace
+  const autoSpace = autoSpaceFlagsOf(pPr)
+  if (autoSpace.de !== undefined) format.autoSpaceDE = autoSpace.de
+  if (autoSpace.dn !== undefined) format.autoSpaceDN = autoSpace.dn
+  const autoSpaceAll = autoSpaceMode(autoSpace.de, autoSpace.dn)
+  if (autoSpaceAll !== undefined) format.autoSpace = autoSpaceAll
   const wordWrap = onOffOf(pPr, 'w:wordWrap')
   if (wordWrap !== undefined) format.wordWrap = wordWrap
   const overflowPunct = onOffOf(pPr, 'w:overflowPunct')
@@ -3975,6 +3984,7 @@ function extractRuns(
       } else if (type === 'end') {
         fieldDepth = Math.max(0, fieldDepth - 1)
         if (fieldDepth === 0) {
+          let merge: RegExpExecArray | null
           const xe = XE_INSTR_RE.exec(fieldInstr)
           const ref = REF_INSTR_RE.exec(fieldInstr)
           const hyper = convertibleHyperlink(fieldInstr)
@@ -4033,18 +4043,18 @@ function extractRuns(
           } else if (ZOTERO_INLINE_FIELD_RE.test(fieldInstr)) {
             if (zoteroField) pushZoteroCachedRuns(zoteroField.part, rev)
             else pushZoteroCachedRuns('single', rev)
-          } else if (MERGEFIELD_INSTR_RE.test(fieldInstr)) {
+          } else if ((merge = MERGEFIELD_INSTR_RE.exec(fieldInstr))) {
             // Mail merge: Word fills the result in from a data source, so an
             // unmerged main document caches nothing. Show the guillemet
             // placeholder Word uses instead of an empty run; the value is not
             // dirtied because only the merge itself can supply it.
-            const merge = MERGEFIELD_INSTR_RE.exec(fieldInstr)!
             pushRun(
               {
                 ...resultFormat(),
                 text: fieldCached || `«${merge[1] ?? merge[2]}»`,
                 instrField: fieldInstr.trim(),
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(link ? { link } : {}),
               },
               rev,
             )

@@ -35,7 +35,7 @@ export async function extractText(path: string): Promise<Extracted> {
         text: stripMarkup(await readFile(path, 'utf-8')).slice(0, MAX_BODY_CHARS),
       }
     }
-    const parsed = await parseFileToText(path)
+    const parsed = await parseFileToText(path, { maxChars: MAX_BODY_CHARS })
     if (parsed.kind === 'unsupported') return { kind: 'name-only' }
     if (!parsed.ok || parsed.kind !== 'text')
       return { kind: 'error', error: parsed.error ?? 'parse failed' }

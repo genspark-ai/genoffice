@@ -43,6 +43,22 @@ export interface Rect {
   height: number
 }
 
+/**
+ * A client rect the OS has actually settled on: finite coordinates, positive
+ * size. A minimized or mid-restore window can report a degenerate content
+ * rect; applying one would blank the views it is meant to fit.
+ */
+export function isSettledRect(rect: Rect): boolean {
+  return (
+    Number.isFinite(rect.x) &&
+    Number.isFinite(rect.y) &&
+    Number.isFinite(rect.width) &&
+    Number.isFinite(rect.height) &&
+    rect.width > 0 &&
+    rect.height > 0
+  )
+}
+
 /** true when `y` is more than `slack` px outside the [top, bottom] band */
 export function isBeyondBand(y: number, top: number, bottom: number, slack: number): boolean {
   return y < top - slack || y > bottom + slack

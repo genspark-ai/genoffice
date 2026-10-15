@@ -11,6 +11,8 @@ function section(text: string, start: string, end: string): string {
 const newSheetTab = section(source, 'async function newSheetTab', 'function surfaceNewTabError')
 const newPdfTab = section(source, 'async function newPdfTab', 'function startQueuedWorkbookNudge')
 const duplicateFile = section(source, 'HOME_CHANNELS.duplicateFile', 'HOME_CHANNELS.deleteFiles')
+const sharedDuplicate = readFileSync(join(__dirname, '../src/main/tab-duplicate.ts'), 'utf8')
+const duplicateWrapper = section(source, 'function duplicateFile(', 'function tabMenuActions')
 const mcpBlankSheet = section(
   source,
   'async function openBlankSheetsTabForMcp',
@@ -35,23 +37,26 @@ describe('Home file creation is atomic', () => {
   })
 
   it('publishes a duplicate through a temporary file', () => {
-    expect(duplicateFile).toContain('await atomicCopyFile(path, target)')
-    expect(duplicateFile).not.toMatch(/copyFileSync\(path, target\)/)
+    expect(duplicateFile).toContain('await duplicateFile(path)')
+    expect(sharedDuplicate).toContain('await atomicCopyFile(path, target)')
+    expect(sharedDuplicate).not.toMatch(/copyFileSync\(path, target\)/)
     // a kernel copy, never the whole file through renderer-visible memory
-    expect(duplicateFile).not.toMatch(/readFileSync\(path\)/)
+    expect(sharedDuplicate).not.toMatch(/readFileSync\(path\)/)
   })
 })
 
 describe('Home duplicate error handling', () => {
   it('localizes a failed duplicate instead of letting the raw error escape', () => {
-    expect(duplicateFile).toContain('showErrorDialog(shellWindow, tm(')
-    expect(duplicateFile).toMatch(/catch \(err\) \{[\s\S]*?return/)
+    expect(duplicateWrapper).toContain(
+      "showErrorDialog(shellWindow, tm('errDuplicateFailed'), error)",
+    )
+    expect(sharedDuplicate).toMatch(/catch \(error\) \{[\s\S]*?deps.onError\(error\)[\s\S]*?return/)
   })
 
   it('does not record a recent for a duplicate that was never written', () => {
-    const write = duplicateFile.indexOf('await atomicCopyFile(path, target)')
-    const catchBlock = duplicateFile.indexOf('catch (err)')
-    const record = duplicateFile.indexOf('recordRecentFile(target)')
+    const write = sharedDuplicate.indexOf('await atomicCopyFile(path, target)')
+    const catchBlock = sharedDuplicate.indexOf('catch (error)')
+    const record = sharedDuplicate.indexOf('deps.recordRecentFile(target)')
     expect(catchBlock).toBeGreaterThan(write)
     expect(record).toBeGreaterThan(catchBlock)
   })
