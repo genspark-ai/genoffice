@@ -67,6 +67,17 @@ describe('autospace pad decorations', () => {
     editor.destroy()
   })
 
+  it('with only autoSpaceDE off the digit seams keep a full-width pad and the native gap goes', () => {
+    const editor = makeEditor(paragraphDoc('BIM\u7b4912\u500b', { autoSpace: 'digits' }))
+    expect(pads(editor)).toEqual(['1', '\u500b'])
+    const padEls = editor.view.dom.querySelectorAll('.doc-autospace-pad-full')
+    expect(padEls).toHaveLength(2)
+    expect(editor.view.dom.querySelector('p')!.getAttribute('style')).toMatch(
+      /text-autospace:\s*no-autospace/,
+    )
+    editor.destroy()
+  })
+
   it('pads across styled-run boundaries', () => {
     const editor = makeEditor({
       type: 'doc',

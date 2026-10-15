@@ -866,7 +866,7 @@ html.genoffice-popover-open .ribbon-tabs {
      * .5px offsets, and against the 5px classic scrollbar lane Chromium rounds
      * the scrolled content up: a 45px band offered 40, a 46px band measured
      * 41 on macOS but still read scrollHeight 43 on Linux, where the Review
-     * tab's letterform glyphs (🧮 文 🗨) sit on font-metric fractions no other
+     * tab's letterform glyphs (🧮 U+6587 🗨) sit on font-metric fractions no other
      * tab hits. 48px gives the rounded content room without moving anything
      * inside the band. */
   height: 48px;
@@ -1923,6 +1923,11 @@ button.check-item:hover {
 
 .app-shell.copilot-collapsed .sheet-body {
   grid-template-columns: 34px minmax(0, 1fr);
+}
+
+/* sidebar setting off: the rail is not mounted, so the sheet takes the whole row */
+.app-shell.copilot-off .sheet-body {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sheet-main {

@@ -18,6 +18,8 @@ import { clearParagraphFormatting, setParaAttrs } from '../src/renderer/componen
 import { runUiOps } from '../src/renderer/ai/ops'
 import {
   directParaFlags,
+  imageParaPaginationMeta,
+  paraFlagsFromXml,
   effectiveParaFlags,
   paraPaginationMeta,
 } from '../src/renderer/editor/para-flags'
@@ -184,6 +186,34 @@ describe('live pagination reads the edited flags off the element', () => {
     applyBlockMeta([block], () => ({ keepNext: true, keepLines: true }))
     expect(block.keepNext).toBeUndefined()
     expect(block.keepLines).toBe(true)
+    expect(block.widowControl).toBe(false)
+  })
+
+  it('a picture-only paragraph (image block, no data-para) keeps the keepNext of its own pPr', () => {
+    const xml =
+      '<w:p w:rsidR="00000001"><w:pPr><w:keepNext/><w:pStyle w:val="Caption"/><w:widowControl w:val="0"/></w:pPr><w:r><w:drawing/></w:r></w:p>'
+    expect(paraFlagsFromXml(xml)).toEqual({
+      format: { keepNext: true, widowControl: false },
+      styleId: 'Caption',
+    })
+    expect(paraFlagsFromXml('<w:p><w:r><w:drawing/></w:r></w:p>')).toEqual({})
+    expect(
+      paraFlagsFromXml(
+        '<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="1"><w:pPr><w:keepNext/></w:pPr></w:pPrChange></w:pPr><w:r><w:drawing/></w:r></w:p>',
+      ),
+    ).toEqual({ format: {} })
+    const meta = imageParaPaginationMeta(xml, () => ({ keepLines: true }))
+    expect(meta).toEqual({
+      keepNext: true,
+      keepLines: true,
+      widowControl: false,
+      paraStyle: { keepLines: true, keepNext: true, widowControl: false },
+    })
+    const el = document.createElement('div')
+    el.className = 'doc-protected doc-protected-image doc-img-para'
+    const block = { top: 0, height: 300, el, docxIndex: 0 } as BlockBox
+    applyBlockMeta([block], () => meta)
+    expect(block.keepNext).toBe(true)
     expect(block.widowControl).toBe(false)
   })
 

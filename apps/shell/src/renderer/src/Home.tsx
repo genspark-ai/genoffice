@@ -55,9 +55,15 @@ const GREET_ASK_KEYS = [
 
 const FILE_ICONS: Record<string, string> = {
   docx: iconDocx,
+  odt: iconDocx,
+  ott: iconDocx,
   xlsx: iconXlsx,
   xlsm: iconXlsx,
+  ods: iconXlsx,
+  ots: iconXlsx,
   pptx: iconPptx,
+  odp: iconPptx,
+  otp: iconPptx,
   pdf: iconPdf,
   md: iconMd,
   markdown: iconMd,

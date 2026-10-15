@@ -851,10 +851,10 @@ function modelViewOf(node: PmDocNode): { text: string; markers: string[] } {
  */
 function redactionRangesOf(node: PmDocNode, base: number): Array<{ from: number; to: number }> {
   const out: Array<{ from: number; to: number }> = []
-  node.forEach((child, offset) => {
+  node.descendants((child, pos) => {
     if (!child.isText || !child.text) return
     if (!child.marks.some((m) => m.type.name === REDACT_MARK)) return
-    out.push({ from: base + offset, to: base + offset + child.text.length })
+    out.push({ from: base + pos, to: base + pos + child.text.length })
   })
   return out
 }

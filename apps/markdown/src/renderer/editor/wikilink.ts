@@ -101,7 +101,12 @@ function wikiSpans(doc: PmNode): WikiSpan[] {
   return spans
 }
 
-/** every distinct wiki target in the document, in document order */
+/** the file part of a link as written: `[[Note|Alias]]` -> `Note`, `[[Note#H]]` -> `Note#H` */
+export function wikiTargetOf(raw: string): string {
+  return WIKI_LINK_RE.exec(raw)?.[1]?.trim() ?? raw
+}
+
+/** every distinct wiki link in the document as written, in document order */
 export function collectWikiTargets(doc: PmNode): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -183,28 +188,35 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
     let asked = ''
 
     const resolveNow = async (view: EditorView) => {
-      const targets = collectWikiTargets(view.state.doc)
-      if (targets.length === 0) {
+      const raws = collectWikiTargets(view.state.doc)
+      if (raws.length === 0) {
         asked = ''
         if (view.isDestroyed) return
         view.dispatch(view.state.tr.setMeta(key, { decorations: DecorationSet.empty, answers: {} }))
         return
       }
       const fromPath = options.getDocumentPath()
-      const question = `${fromPath}\u0000${targets.join('\u0000')}`
+      const question = `${fromPath}\u0000${raws.join('\u0000')}`
       // the walk it triggers can read twenty thousand entries; typing prose
       // around an unresolved link changes no target, so it asks nothing
       if (question === asked) return
       const mine = ++generation
-      let answers: Record<string, WikiLinkResolved>
+      // the resolver takes file names; the answers are keyed back by the literal
+      const targets = [...new Set(raws.map(wikiTargetOf))]
+      let resolved: Record<string, WikiLinkResolved>
       try {
-        answers = await options.resolve(fromPath, targets)
+        resolved = await options.resolve(fromPath, targets)
       } catch {
         return // an unavailable resolver must not break editing
       }
       // a later keystroke started a newer resolution; its answer is the current one
       if (mine !== generation || view.isDestroyed) return
       asked = question
+      const answers: Record<string, WikiLinkResolved> = {}
+      for (const raw of raws) {
+        const answer = resolved[wikiTargetOf(raw)]
+        if (answer) answers[raw] = answer
+      }
 
       const decorations = wikiSpans(view.state.doc).map((span) =>
         Decoration.inline(span.from, span.to, {

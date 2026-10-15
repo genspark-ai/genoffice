@@ -4,13 +4,8 @@ import { NodeSelection } from '@tiptap/pm/state'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { selectedWordCount } from '../src/renderer/word-count'
 
-/**
- * Status-bar word count. Word shows "selected/total" while a selection
- * exists and the plain total once the caret collapses again. GenOffice only
- * reported the total, so the selected figure was reachable from the AI panel
- * alone — a user who hides that panel (Settings > AI sidebar, #1951) had no
- * way to see it at all.
- */
+// Word shows "selected/total" while a selection exists and the plain total
+// once the caret collapses again.
 
 interface JsonNode {
   type: string
@@ -44,27 +39,30 @@ function createEditor(content: JsonNode[]): Editor {
 
 describe('selectedWordCount', () => {
   it('is 0 for a collapsed caret, so the status bar shows the plain total', () => {
-    const editor = createEditor([para('思维导图已经提交')])
+    const editor = createEditor([para('\u601d\u7ef4\u5bfc\u56fe\u5df2\u7ecf\u63d0\u4ea4')])
     editor.commands.setTextSelection(3)
     expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(0)
   })
 
   it('counts the selection with the same Word rule as the total', () => {
-    const editor = createEditor([para('思维导图已经提交')])
+    const editor = createEditor([para('\u601d\u7ef4\u5bfc\u56fe\u5df2\u7ecf\u63d0\u4ea4')])
     // select the first 4 asian chars (counted one by one)
     editor.commands.setTextSelection({ from: 1, to: 5 })
     expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(4)
   })
 
   it('counts a mixed CJK/latin selection the way the dialog would', () => {
-    const editor = createEditor([para('GenOffice 思维导图')])
+    const editor = createEditor([para('GenOffice \u601d\u7ef4\u5bfc\u56fe')])
     // the whole paragraph: "GenOffice" as 1 word + 4 asian chars
     editor.commands.setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 })
     expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(5)
   })
 
   it('sums a selection that spans several paragraphs', () => {
-    const editor = createEditor([para('思维导图'), para('已经合并')])
+    const editor = createEditor([
+      para('\u601d\u7ef4\u5bfc\u56fe'),
+      para('\u5df2\u7ecf\u5408\u5e76'),
+    ])
     // the whole document: both paragraphs, 4 + 4 asian chars
     editor.commands.setTextSelection({
       from: 1,

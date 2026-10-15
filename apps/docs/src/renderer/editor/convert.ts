@@ -21,6 +21,8 @@ import {
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
+  inlinePictureDrawingXml,
+  NEW_PICTURE_TOKEN_PREFIX,
   symbolGlyph,
   symbolPuaChar,
   type Block,
@@ -45,6 +47,7 @@ import {
   type TextboxDisplay,
   type TextboxParaPatch,
   type TextboxParasPatchSet,
+  type AutoSpace,
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { symbolFontCovers } from '../font-check'
@@ -1270,7 +1273,9 @@ function inlineFormattingSignature(content: PmNode[] | undefined): string[] {
               .map((mark) => [mark.type, mark.attrs ?? null]),
           )
         : node.type
-    if (styles[styles.length - 1] !== style) styles.push(style)
+    // a picture adds no text, so one placed next to another must count on its own
+    const atom = node.type === 'docInlineImage'
+    if (atom || styles[styles.length - 1] !== style) styles.push(style)
   }
   return styles
 }
@@ -1845,6 +1850,8 @@ export interface SavePlan {
   /** count of original blocks removed */
   deletedCount: number
   totalOriginal: number
+  /** cell pictures inserted by the editor, for SaveOptions.newPictures */
+  newPictures: Record<string, { base64: string; mime: NewImage['mime'] }>
 }
 
 const ZOTERO_FIELD_INSTR_RE = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i
@@ -1991,6 +1998,9 @@ export function normalizeZoteroFieldParts(doc: PmNode): PmNode {
 }
 
 export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): SavePlan {
+  newPictures.clear()
+  newPictureSeq = 0
+  newPictureTokenOf = new WeakMap()
   const doc = normalizeZoteroFieldParts(inputDoc)
   const originalByIndex = new Map<number, Block>()
   for (const block of originalBlocks) {
@@ -2603,6 +2613,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
     saveBlocks,
     chartPatches,
     saveBlockIndexByDocx,
+    newPictures: Object.fromEntries(newPictures),
     changedCount,
     deletedCount,
     totalOriginal: originalByIndex.size,
@@ -3113,7 +3124,7 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
     if (node.attrs?.[key] != null) format[key] = node.attrs[key] as boolean
   if (node.attrs?.pageBreakBefore) format.pageBreakBefore = true
   if (node.attrs?.bidi) format.bidi = true
-  if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as boolean
+  if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as AutoSpace
   if (node.attrs?.wordWrap != null) format.wordWrap = node.attrs.wordWrap as boolean
   if (node.attrs?.overflowPunct != null) {
     format.overflowPunct = node.attrs.overflowPunct as boolean
@@ -3262,6 +3273,41 @@ function nodeBookmarks(
   return Array.isArray(value) && value.length > 0 ? value : undefined
 }
 
+/** pictures the editor placed in cells this save: placeholder token -> bytes (see SaveOptions.newPictures) */
+const newPictures = new Map<string, { base64: string; mime: NewImage['mime'] }>()
+let newPictureSeq = 0
+// the same node is converted more than once per save (signatures, text, save)
+let newPictureTokenOf = new WeakMap<PmNode, string>()
+
+function newPictureBytes(dataUrl: string): { base64: string; mime: NewImage['mime'] } | null {
+  const m = /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/s.exec(dataUrl)
+  return m ? { base64: m[2], mime: m[1] as NewImage['mime'] } : null
+}
+
+/** a cell picture inserted by the editor has bytes but no drawing yet: emit one
+ *  around a placeholder the save resolves once the media part exists */
+function newPictureXml(node: PmNode): string {
+  const widthPx = Number(node.attrs?.widthPx)
+  const heightPx = Number(node.attrs?.heightPx)
+  const bytes = newPictureBytes(String(node.attrs?.dataUrl ?? ''))
+  if (!bytes || !(widthPx > 0) || !(heightPx > 0)) return ''
+  let token = newPictureTokenOf.get(node)
+  if (!token) {
+    token = `${NEW_PICTURE_TOKEN_PREFIX}${++newPictureSeq}`
+    newPictureTokenOf.set(node, token)
+  }
+  newPictures.set(token, bytes)
+  return inlinePictureDrawingXml({
+    rId: token,
+    docPrId: token,
+    widthPx,
+    heightPx,
+    rotDeg: node.attrs?.rotDeg ? Number(node.attrs.rotDeg) : undefined,
+    flipH: !!node.attrs?.flipH,
+    flipV: !!node.attrs?.flipV,
+  })
+}
+
 export function inlineToRuns(content: PmNode[]): Run[] {
   const runs: Run[] = []
   for (const node of content) {
@@ -3324,8 +3370,8 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     }
     if (node.type === 'docInlineImage') {
       const dataUrl = String(node.attrs?.dataUrl ?? '')
-      const xml = String(node.attrs?.xml ?? '')
       const rule = node.attrs?.rule as NonNullable<Run['image']>['rule'] | null | undefined
+      const xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
       if ((dataUrl || rule) && xml) {
         runs.push({
           ...atomBase(node),

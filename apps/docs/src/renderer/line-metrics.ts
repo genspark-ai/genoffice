@@ -676,6 +676,7 @@ export const BUNDLED_FONTS = new Set([
   'Aptos GO',
   'Aptos Display GO',
   'Century Gothic GO',
+  'Cambria Math GO',
   'Caladea',
   'Liberation Serif',
   'Liberation Sans',
@@ -744,19 +745,62 @@ const GENERIC_FAMILIES = new Set([
 export function unloadedBundledPrimary(chain: string): string | null {
   const fonts = typeof document === 'undefined' ? undefined : document.fonts
   if (!fonts?.check) return null
+  const family = bundledPrimary(chain)
+  if (!family) return null
+  try {
+    return fonts.check(`16px "${family}"`) ? null : family
+  } catch {
+    return null
+  }
+}
+
+/** bundled web face a chain resolves to before any installed family or generic */
+function bundledPrimary(chain: string): string | null {
   for (const raw of chain.split(',')) {
     const family = raw.trim().replace(/^["']|["']$/g, '')
     if (!family || GENERIC_FAMILIES.has(family.toLowerCase())) return null
-    if (isBundledFont(family)) {
-      try {
-        return fonts.check(`16px "${family}"`) ? null : family
-      } catch {
-        return null
-      }
-    }
+    if (isBundledFont(family)) return family
     if (isFontAvailable(family)) return null
   }
   return null
+}
+
+const FACE_VARIANTS = ['', 'bold ', 'italic ', 'bold italic ']
+
+/**
+ * Load the bundled stand-in cuts the document's families chain to before the
+ * first layout pass. Canvas measures the system fallback while a web face is
+ * still loading, and the autofit table pass sizes columns from those advances
+ * once: Arial Bold runs ~15% wider than Carlito, so a Calibri table's saved
+ * Word grid grew its short-word columns and wrapped the long ones. A face that
+ * never loads must not hold the open.
+ */
+export async function loadBundledStandIns(
+  families: Iterable<string>,
+  timeoutMs = 3000,
+): Promise<void> {
+  const fonts = typeof document === 'undefined' ? undefined : document.fonts
+  if (!fonts?.check || !fonts.load) return
+  const loads: Promise<unknown>[] = []
+  const seen = new Set<string>()
+  for (const family of families) {
+    const face = bundledPrimary(cssFontFamily(family))
+    if (!face || seen.has(face)) continue
+    seen.add(face)
+    for (const variant of FACE_VARIANTS) {
+      const spec = `${variant}16px "${face}"`
+      try {
+        if (!fonts.check(spec)) loads.push(fonts.load(spec).catch(() => undefined))
+      } catch {
+        /* no FontFaceSet loader */
+      }
+    }
+  }
+  if (loads.length === 0) return
+  await Promise.race([
+    Promise.all(loads),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ])
 }
 
 const metricsPendingFaces = new Set<string>()
@@ -937,7 +981,9 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // 'GenOffice Box Drawing' (fonts.css): U+2500 rules would otherwise fall to
   // the fullwidth CJK subset and overflow the column
   const BOX = 'GenOffice Box Drawing'
-  if (f.includes('calibri')) return `${chain(font, 'Carlito GO', CJK_SANS)},sans-serif`
+  // 'Calibri Arabic GO' (fonts.css): Calibri's own Arabic; Carlito has none
+  if (f.includes('calibri'))
+    return `${chain(font, 'Carlito GO', 'Calibri Arabic GO', CJK_SANS)},sans-serif`
   // Aptos (M365 cloud face, never installed locally): line metrics equal
   // Calibri's (Word probe 2026-08-22) but its advances do not, so the
   // size-adjusted Carlito aliases in fonts.css stand in (probe 2026-09-03).
@@ -953,9 +999,13 @@ export function cssFontFamily(font: string, followAltName = true): string {
         : 'Aptos GO'
     return `${chain(font, alias, 'GenOffice PUA Blank', CJK_SANS)},sans-serif`
   }
+  // Cambria Math text runs lay out with Cambria's advances in Word (fonts.css
+  // alias); only the symbols need a math face
+  if (f.includes('cambria') && f.includes('math'))
+    return `${chain(font, 'Cambria Math GO', 'STIX Two Math', 'Caladea', 'Liberation Serif', BOX, CJK_SERIF)},serif`
   // math faces would fall to the unknown-name sans fallback; STIX Two Math ships with macOS,
   // and on Windows the declared name resolves natively
-  if ((f.includes('cambria') && f.includes('math')) || /stix.*math|latin modern math/.test(f))
+  if (/stix.*math|latin modern math/.test(f))
     return `${chain(font, 'STIX Two Math', 'Caladea', 'Liberation Serif', BOX, CJK_SERIF)},serif`
   if (f.includes('cambria')) return `${chain(font, 'Caladea', BOX, CJK_SERIF)},serif`
   if (f.includes('times')) return `${chain(font, 'Liberation Serif', BOX, CJK_SERIF)},serif`
@@ -1106,15 +1156,15 @@ export function cssFontFamily(font: string, followAltName = true): string {
             ? ['Naskh Digits GO', 'Noto Naskh Arabic TNR']
             : sakkal
               ? ['Sakkal Majalla GO', 'Sakkal Majalla Latin GO']
-              : [
-                  compact
-                    ? compact === 'traditional'
-                      ? 'Noto Naskh Arabic TA'
-                      : 'Noto Naskh Arabic SA'
-                    : scaled
-                      ? 'Noto Naskh Arabic W'
-                      : 'Noto Naskh Arabic',
-                ]),
+              : compact
+                ? [
+                    compact === 'traditional' ? 'Noto Naskh Arabic TA' : 'Noto Naskh Arabic SA',
+                    // the subsets carry no ASCII brackets and neither does
+                    // Geeza Pro, so they fell to Al Bayan (30% wider, 1.5 em
+                    // box); both cloud faces draw them at Times widths
+                    'Times Punct GO',
+                  ]
+                : [scaled ? 'Noto Naskh Arabic W' : 'Noto Naskh Arabic']),
           'Geeza Pro',
           'Al Bayan',
         ]
@@ -1906,7 +1956,10 @@ function isHangul(cp: number): boolean {
 // .doc-autospace-pad span whose start margin supplies the other 1/8em. Pads
 // only go between a directly adjacent CJK letter and a Latin letter/digit —
 // never next to spaces or punctuation — matching where Chromium applies its
-// native gap.
+// native gap. Chromium cannot switch letters and digits separately (no
+// ideograph-alpha / ideograph-numeric), so when only one of w:autoSpaceDE/DN
+// is off the native gap goes off and the pad carries the whole 1/4em
+// (.doc-autospace-pad-full).
 
 /** Han/kana/hangul letters; CJK punctuation and full/halfwidth forms get no gap */
 function isCjkAutospaceSide(cp: number): boolean {
@@ -1924,11 +1977,27 @@ function isLatinAlnum(cp: number): boolean {
   return cp >= 0xc0 && cp <= 0x24f && cp !== 0xd7 && cp !== 0xf7
 }
 
-export function needsAutospacePad(prevCp: number, nextCp: number): boolean {
-  return (
-    (isCjkAutospaceSide(prevCp) && isLatinAlnum(nextCp)) ||
-    (isLatinAlnum(prevCp) && isCjkAutospaceSide(nextCp))
-  )
+/** which CJK-Latin gaps a paragraph gets (docx-engine AutoSpace): true = both kinds,
+ *  'latin' = letters only (w:autoSpaceDN off), 'digits' = digits only (w:autoSpaceDE off) */
+export type AutospaceMode = true | 'latin' | 'digits'
+
+function isDigit(cp: number): boolean {
+  return cp >= 0x30 && cp <= 0x39
+}
+
+export function needsAutospacePad(
+  prevCp: number,
+  nextCp: number,
+  mode: AutospaceMode = true,
+): boolean {
+  const latin =
+    isCjkAutospaceSide(prevCp) && isLatinAlnum(nextCp)
+      ? nextCp
+      : isLatinAlnum(prevCp) && isCjkAutospaceSide(nextCp)
+        ? prevCp
+        : -1
+  if (latin < 0) return false
+  return mode === true || (mode === 'digits') === isDigit(latin)
 }
 
 function lastCodePoint(text: string): number {
@@ -1940,9 +2009,24 @@ function lastCodePoint(text: string): number {
 }
 
 /** pad between two adjacent stretches of text (last char of prev vs first of next) */
-export function autospacePadBetween(prev: string, next: string): boolean {
+export function autospacePadBetween(
+  prev: string,
+  next: string,
+  mode: AutospaceMode = true,
+): boolean {
   if (!prev || !next) return false
-  return needsAutospacePad(lastCodePoint(prev), next.codePointAt(0)!)
+  return needsAutospacePad(lastCodePoint(prev), next.codePointAt(0)!, mode)
+}
+
+/** the renderer's pad mode for a paragraph's autoSpace attribute; null = pads off */
+export function autospaceMode(autoSpace: unknown): AutospaceMode | null {
+  if (autoSpace === false) return null
+  return autoSpace === 'latin' || autoSpace === 'digits' ? autoSpace : true
+}
+
+/** pad span class: the full gap when the native text-autospace is switched off */
+export function autospacePadClass(mode: AutospaceMode): string {
+  return mode === true ? 'doc-autospace-pad' : 'doc-autospace-pad doc-autospace-pad-full'
 }
 
 /** UTF-16 length of the code point starting at offset */
@@ -1951,12 +2035,12 @@ export function codePointLengthAt(text: string, offset: number): number {
 }
 
 /** UTF-16 offsets inside text where a pad belongs (between offset-1 and offset) */
-export function autospaceBoundaries(text: string): number[] {
+export function autospaceBoundaries(text: string, mode: AutospaceMode = true): number[] {
   const out: number[] = []
   let prev = -1
   for (let i = 0; i < text.length;) {
     const cp = text.codePointAt(i)!
-    if (prev >= 0 && needsAutospacePad(prev, cp)) out.push(i)
+    if (prev >= 0 && needsAutospacePad(prev, cp, mode)) out.push(i)
     prev = cp
     i += cp > 0xffff ? 2 : 1
   }

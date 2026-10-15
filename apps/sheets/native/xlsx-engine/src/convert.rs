@@ -266,7 +266,11 @@ fn unsigned_number(text: &str) -> Option<f64> {
 fn days_in_month(year: i64, month: i64) -> u32 {
     const LENGTHS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let leap = month == 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
-    if leap { 29 } else { LENGTHS[(month - 1) as usize] }
+    if leap {
+        29
+    } else {
+        LENGTHS[(month - 1) as usize]
+    }
 }
 
 /// Days from the civil calendar epoch 1970-01-01 (Howard Hinnant's algorithm).
@@ -274,8 +278,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let shifted = if month <= 2 { year - 1 } else { year };
     let era = if shifted >= 0 { shifted } else { shifted - 399 } / 400;
     let year_of_era = shifted - era * 400;
-    let day_of_year =
-        (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     era * 146_097 + day_of_era - 719_468
 }
@@ -439,8 +442,8 @@ mod tests {
     #[test]
     fn converts_a_libreoffice_saved_workbook_with_absolute_sheet_references() {
         let dir = tempfile::tempdir().unwrap();
-        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/cross-sheet-references.ods");
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cross-sheet-references.ods");
         let target = dir.path().join("converted.xlsx");
 
         let result = convert_to_xlsx(&source, &target).unwrap();
@@ -512,7 +515,10 @@ mod tests {
                 "100",
             ),
             "</table:table-row><table:table-row>",
-            &cell(r#"office:value-type="date" office:date-value="2026-03-05""#, "2026-03-05"),
+            &cell(
+                r#"office:value-type="date" office:date-value="2026-03-05""#,
+                "2026-03-05",
+            ),
             "</table:table-row></table:table>",
         ]
         .join("");
@@ -532,7 +538,10 @@ mod tests {
             writer.write_all(body.as_bytes()).unwrap();
         };
         add("mimetype", mimetype);
-        add("META-INF/manifest.xml", r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>"#);
+        add(
+            "META-INF/manifest.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>"#,
+        );
         add("content.xml", &content);
         writer.finish().unwrap();
     }

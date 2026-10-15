@@ -42,6 +42,29 @@ describe('MERGEFIELD', () => {
     ])
   })
 
+  it('keeps the enclosing hyperlink on a merge field inside w:hyperlink', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:hyperlink r:id="rId20">' +
+          mergeFieldParagraph('MERGEFIELD Email', '«Email»').slice(
+            '<w:p>'.length,
+            -'</w:p>'.length,
+          ) +
+          '</w:hyperlink></w:p>',
+        extraRels:
+          '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:a@b.test" TargetMode="External"/>',
+      }),
+    )
+    expect(doc.blocks[0].runs).toEqual([
+      {
+        text: '«Email»',
+        instrField: 'MERGEFIELD Email',
+        link: { href: 'mailto:a@b.test', rId: 'rId20' },
+      },
+    ])
+  })
+
   it('shows the guillemet placeholder when Word cached no result yet', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: mergeFieldParagraph('MERGEFIELD CustomerName', null) }),

@@ -6,6 +6,8 @@ import {
   inlineRunsXml,
   mergePPrFormat,
   splitXmlChildren,
+  inlinePictureDrawingXml,
+  NEW_PICTURE_TOKEN_PREFIX,
 } from './generate'
 import {
   NOTE_CONTENT_TYPE,
@@ -367,6 +369,9 @@ export type SaveBlock = (
 export interface SaveOptions {
   /** save timestamp (ISO), written to docProps/core.xml dcterms:modified; default = now */
   savedAt?: string
+  /** bytes of pictures the editor placed inside existing paragraphs (table cells),
+   *  keyed by the placeholder token their drawing XML carries (NEW_PICTURE_TOKEN_PREFIX) */
+  newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
   /** Zotero document preferences; written as Word-compatible 255-character custom-property chunks */
   zoteroDocumentData?: string
   /** replace the trailing w:sectPr with this XML before the field-level options below apply (headless editors that keep the sectPr itself) */
@@ -564,8 +569,6 @@ const IMAGE_EXT: Record<NewImage['mime'], string> = {
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
 }
-
-const EMU_PER_PX = 9525
 
 /**
  * Given the original docx bytes and a chart part path (e.g.
@@ -813,17 +816,6 @@ export async function saveDocx(
   }
   const embedImage = (image: NewImage): string => {
     const rId = embedImageMedia(image)
-    const cx = Math.max(1, Math.round(image.widthPx * EMU_PER_PX))
-    const cy = Math.max(1, Math.round(image.heightPx * EMU_PER_PX))
-    // Word lays the drawing out against the unrotated wp:extent plus
-    // wp:effectExtent: a rotated non-square picture needs the bounding-box
-    // overflow recorded there (same math as patchImageParagraphXml)
-    const rot = image.rotDeg ? ((Math.round(image.rotDeg) % 360) + 360) % 360 : 0
-    const rad = (rot * Math.PI) / 180
-    const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
-    const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
-    const eeX = Math.max(0, Math.round((bw - cx) / 2))
-    const eeY = Math.max(0, Math.round((bh - cy) / 2))
     // dedup means imageSeq does not advance for repeated bytes — docPr ids need their own counter
     const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const ps = image.paraSpacing
@@ -838,23 +830,38 @@ export async function saveDocx(
     const spacing = spacingAttrs.length > 0 ? `<w:spacing ${spacingAttrs.join(' ')}/>` : ''
     const jc = image.align && image.align !== 'left' ? `<w:jc w:val="${image.align}"/>` : ''
     const pPr = spacing || jc ? `<w:pPr>${spacing}${jc}</w:pPr>` : ''
-    const xml =
-      `<w:p>${pPr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
-      `<wp:extent cx="${cx}" cy="${cy}"/>` +
-      `<wp:effectExtent l="${eeX}" t="${eeY}" r="${eeX}" b="${eeY}"/>` +
-      `<wp:docPr id="${docPrId}" name="Picture ${docPrId}"${image.altText ? ` descr="${escapeXmlAttr(image.altText)}"` : ''}/>` +
-      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
-      '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-      '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-      `<pic:nvPicPr><pic:cNvPr id="${docPrId}" name="Picture ${docPrId}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-      `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-      `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${image.flipH ? ' flipH="1"' : ''}${image.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
-      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
-      '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    const drawing = inlinePictureDrawingXml({ ...image, rId, docPrId })
+    const xml = `<w:p>${pPr}<w:r>${drawing}</w:r></w:p>`
     return image.wrap
       ? applyImageWrap(xml, image.wrap, image.posOffsetEmu, undefined, image.zOrder)
       : xml
   }
+  /** Pictures the editor inserted into existing paragraphs (table cells) carry
+   *  a placeholder token for r:embed and the docPr id; land their bytes and
+   *  swap in the real ids. Two drawings never share a token, so the docPr id
+   *  minted per token stays unique. */
+  const resolveNewPictures = (xml: string): string => {
+    const pictures = options.newPictures
+    if (!pictures || !xml.includes(NEW_PICTURE_TOKEN_PREFIX)) return xml
+    const docPrIdOf = (token: string): number => {
+      let id = newPictureDocPrIds.get(token)
+      if (id === undefined) {
+        id = DOCPR_ID_BASE + ++docPrSeq
+        newPictureDocPrIds.set(token, id)
+      }
+      return id
+    }
+    return xml.replace(
+      new RegExp(`(r:embed|id|name)="(Picture )?(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)"`, 'g'),
+      (whole, attr: string, prefix: string | undefined, token: string) => {
+        const picture = pictures[token]
+        if (!picture) return whole
+        if (attr === 'r:embed') return `r:embed="${embedImageMedia(picture)}"`
+        return `${attr}="${prefix ?? ''}${docPrIdOf(token)}"`
+      },
+    )
+  }
+  const newPictureDocPrIds = new Map<string, number>()
   /** the pictures' runs collected into the first picture's holder paragraph */
   const embedImages = (images: NewImage[]): string => {
     const paras = images.map(embedImage)
@@ -1493,6 +1500,7 @@ export async function saveDocx(
     } else {
       xml = embedImage(fb.image)
     }
+    xml = resolveNewPictures(xml)
     // Inject newly created per-section header/footer references into the section's sectPr
     // (the reference must be the first sectPr child)
     const refTags = fbDocxIndex !== undefined ? sectionRefTags.get(fbDocxIndex) : undefined

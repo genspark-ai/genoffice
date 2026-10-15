@@ -621,10 +621,9 @@ describe('cssLeadTop', () => {
 
 describe('fontBoxCss', () => {
   it('reports the hhea box and skew of the chain head', () => {
-    expect(fontBoxCss("'Calibri','Carlito GO','Noto Sans CJK SC',sans-serif")).toEqual([
-      '--doc-font-box:1.0000',
-      '--doc-font-skew:0.5000',
-    ])
+    expect(
+      fontBoxCss("'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif"),
+    ).toEqual(['--doc-font-box:1.0000', '--doc-font-skew:0.5000'])
     expect(fontBoxCss("'Times New Roman','SimSun',serif")).toEqual([
       '--doc-font-box:1.1074',
       '--doc-font-skew:0.6748',
@@ -715,7 +714,12 @@ function stubCanvas(availableFamilies: string[]) {
 
 describe('cssFontFamily', () => {
   it('common Word fonts → metric-compatible fallback + CJK safety net', () => {
-    expect(cssFontFamily('Calibri')).toBe("'Calibri','Carlito GO','Noto Sans CJK SC',sans-serif")
+    expect(cssFontFamily('Calibri')).toBe(
+      "'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif",
+    )
+    expect(cssFontFamily('Calibri Light')).toBe(
+      "'Calibri Light','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif",
+    )
     expect(cssFontFamily('Times New Roman')).toBe(
       "'Times New Roman','Liberation Serif','GenOffice Box Drawing','Noto Serif CJK SC',serif",
     )
@@ -1540,6 +1544,12 @@ describe('autospaceBoundaries', () => {
     expect(autospaceBoundaries('표 1에서')).toEqual([3])
   })
 
+  it('pads only the letter or only the digit seams when one switch is off', () => {
+    expect(autospaceBoundaries('\u6f22A1\u6f222B', 'latin')).toEqual([1])
+    expect(autospaceBoundaries('\u6f22A1\u6f222B', 'digits')).toEqual([3, 4])
+    expect(autospaceBoundaries('BIM\u7b4912', 'digits')).toEqual([4])
+  })
+
   it('needs direct adjacency: spaces and punctuation get no pad', () => {
     expect(autospaceBoundaries('ペン 12')).toEqual([])
     expect(autospaceBoundaries('ペン、12')).toEqual([])
@@ -1590,13 +1600,13 @@ describe('cssFontFamily Arabic', () => {
 
   it('Traditional/Simplified Arabic map to the size-adjusted alias (no Times head)', () => {
     expect(cssFontFamily('Traditional Arabic')).toBe(
-      "'Traditional Arabic','Noto Naskh Arabic TA','Geeza Pro','Al Bayan',serif",
+      "'Traditional Arabic','Noto Naskh Arabic TA','Times Punct GO','Geeza Pro','Al Bayan',serif",
     )
     expect(cssFontFamily('Traditional Arabic')).not.toContain("'Times New Roman'")
     // Simplified Arabic is a different cut (0.924 vs 0.800 of the Noto subset,
     // shaped over the cloud files 2026-09-11) and gets its own alias
     expect(cssFontFamily('Simplified Arabic')).toBe(
-      "'Simplified Arabic','Noto Naskh Arabic SA','Geeza Pro','Al Bayan',serif",
+      "'Simplified Arabic','Noto Naskh Arabic SA','Times Punct GO','Geeza Pro','Al Bayan',serif",
     )
     // other missing naskh-class names take the TNR calibration, not TA/SA
     expect(cssFontFamily('Amiri')).not.toMatch(/Noto Naskh Arabic (TA|SA)/)
@@ -1667,7 +1677,7 @@ describe('cssFontFamily Arabic', () => {
 
   it('does not capture CJK or Latin families', () => {
     expect(cssFontFamily('SimSun')).not.toContain('Arabic')
-    expect(cssFontFamily('Calibri')).not.toContain('Arabic')
+    expect(cssFontFamily('Calibri')).not.toMatch(/noto naskh|geeza/i)
     expect(cssFontFamily('Batang')).not.toContain('Arabic')
     expect(cssFontFamily('SomeCustomFont')).not.toContain('Arabic')
     expect(cssFontFamily('Bahnschrift')).not.toContain('Arabic')
@@ -1697,9 +1707,15 @@ describe('textHasComplexScript', () => {
 })
 
 describe('cssCsFontFamily', () => {
+  it('cs="Calibri" keeps Arabic in the Calibri alias instead of the Geeza Pro system fallback', () => {
+    const chain = cssCsFontFamily('Calibri', 'Calibri', 'Calibri')
+    expect(chain).toBe("'Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif")
+    expect(chain).not.toMatch(/geeza/i)
+  })
+
   it('cs chain leads; punct alias then subset, ascii chain wins Latin letters, Times backstops', () => {
     expect(cssCsFontFamily('Arabic Typesetting', 'Calibri', 'Calibri')).toBe(
-      "'Arabic Typesetting','Naskh Digits GO','Times Punct GO','Noto Naskh Arabic TNR','Calibri','Carlito GO','Noto Sans CJK SC','Times New Roman','Liberation Serif','Geeza Pro','Al Bayan',sans-serif",
+      "'Arabic Typesetting','Naskh Digits GO','Times Punct GO','Noto Naskh Arabic TNR','Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC','Times New Roman','Liberation Serif','Geeza Pro','Al Bayan',sans-serif",
     )
   })
 

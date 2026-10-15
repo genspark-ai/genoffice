@@ -178,6 +178,23 @@ describe('applyLiftTops', () => {
     expect(slices[1].liftTop).toBeUndefined()
   })
 
+  it('opens the clip for a page-anchored float whose applied shift hangs above the page start', () => {
+    const el = document.createElement('table')
+    el.dataset.tblpDy = '-80'
+    const blocks: BlockBox[] = [
+      { top: 0, height: 20 },
+      { top: 900, height: 20, emptyPara: true },
+      { top: 920, height: 300, el, floated: true, pageRelVyPx: 0, pageRelVAnchor: 'page' },
+    ]
+    const slices: PageSlice[] = [
+      { start: 0, end: 900, section: 0 },
+      { start: 900, end: 1300, section: 0 },
+    ]
+    applyLiftTops(slices, blocks)
+    expect(slices[0].liftTop).toBeUndefined()
+    expect(slices[1].liftTop).toBeCloseTo(60)
+  })
+
   it("opens the clip for a lifted table that is the page's first block", () => {
     const blocks: BlockBox[] = [{ top: -70, height: 140, liftPx: 70 }]
     const slices: PageSlice[] = [{ start: 0, end: 900, section: 0 }]
