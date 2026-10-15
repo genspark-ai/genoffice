@@ -127,7 +127,7 @@ describe('a picture and the withhold mark — what sticks, what round-trips', ()
     expect(redactionCount(reloaded.getJSON() as never)).toBe(1)
   })
 
-  it('and the load path rebuilds the mark from the file\'s element', async () => {
+  it("and the load path rebuilds the mark from the file's element", async () => {
     // a file that really does carry the element on a picture run comes back
     // withholding the picture, not showing it to the model
     const { editor } = await open(INLINE_REDACT_XML)
