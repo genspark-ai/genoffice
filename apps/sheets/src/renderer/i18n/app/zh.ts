@@ -608,6 +608,7 @@ export const zh = {
   appTabReview: '审阅',
   appRibbonCollapse: '折叠功能区',
   appRibbonExpand: '展开功能区',
+  appRibbonCompact: '紧凑功能区（仅图标）',
   appTabView: '视图',
   appTabAi: 'AI',
   appTabChartDesign: '图表设计',

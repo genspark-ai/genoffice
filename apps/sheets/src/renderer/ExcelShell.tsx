@@ -549,6 +549,9 @@ export function ExcelShell({
   const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed', {
     collapse: t('appRibbonCollapse'),
     expand: t('appRibbonExpand'),
+    // ⌥⌘K / Ctrl+Alt+K: the icon-only middle density (docs parity, see #362)
+    compact: t('appRibbonCompact'),
+    expandFull: t('appRibbonExpand'),
   })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [isCopilotOpen, setIsCopilotOpen] = useState(() =>

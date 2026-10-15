@@ -355,6 +355,51 @@ const FILE_ASSOCIATIONS = [
     mimeType: 'text/tab-separated-values',
   },
   {
+    // import-only: opens as a converted .xlsx copy, GenOffice never writes ODF
+    ext: 'ods',
+    name: 'OpenDocument Spreadsheet',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet',
+  },
+  {
+    ext: 'ots',
+    name: 'OpenDocument Spreadsheet Template',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet-template',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes ODF
+    ext: 'odt',
+    name: 'OpenDocument Text',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.oasis.opendocument.text',
+  },
+  {
+    ext: 'ott',
+    name: 'OpenDocument Text Template',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.oasis.opendocument.text-template',
+  },
+  {
+    // import-only: opens as a converted .pptx copy, GenOffice never writes ODF
+    ext: 'odp',
+    name: 'OpenDocument Presentation',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.oasis.opendocument.presentation',
+  },
+  {
+    ext: 'otp',
+    name: 'OpenDocument Presentation Template',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.oasis.opendocument.presentation-template',
+  },
+  {
     ext: 'pdf',
     name: 'PDF Document',
     role: 'Editor',

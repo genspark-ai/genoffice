@@ -717,6 +717,7 @@ export const pt = {
   appTabReview: 'Revisão',
   appRibbonCollapse: 'Recolher a Faixa de Opções',
   appRibbonExpand: 'Expandir a Faixa de Opções',
+  appRibbonCompact: 'Faixa compacta (somente ícones)',
   appTabView: 'Exibir',
   appTabAi: 'IA',
   appTabChartDesign: 'Design do Gráfico',

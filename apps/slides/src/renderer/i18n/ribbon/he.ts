@@ -15,6 +15,7 @@ export const he = {
   ribbonTabReview: 'סקירה',
   ribbonCollapse: 'כווץ את רצועת הכלים',
   ribbonExpand: 'הרחב את רצועת הכלים',
+  ribbonCompact: 'רצועת כלים מצומצמת (סמלים בלבד)',
   ribbonTabView: 'תצוגה',
   ribbonTabTableDesign: 'עיצוב טבלה',
   ribbonTabChartDesign: 'עיצוב תרשים',

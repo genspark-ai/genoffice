@@ -741,6 +741,7 @@ export const fr = {
   appTabReview: 'Révision',
   appRibbonCollapse: 'Réduire le ruban',
   appRibbonExpand: 'Développer le ruban',
+  appRibbonCompact: 'Ruban compact (icônes uniquement)',
   appTabView: 'Affichage',
   appTabAi: 'IA',
   appTabChartDesign: 'Création de graphique',

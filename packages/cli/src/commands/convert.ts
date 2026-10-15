@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { PdfLoadError } from '@genoffice/pdf2docx'
 import { flagBool, flagString, type ParsedArgs } from '../args'
 import { csvToXlsx, sheetNameFromStem } from '../formats/csv'
+import { convertOdp, convertOdt } from '../formats/odf'
 import { convertPdf, type PdfTarget } from '../formats/pdf'
 import { convertLegacyWorkbook, sheetToCsv } from '../formats/xlsx'
 import { exportViaApp, type AppExportTarget } from '../formats/app-export'
@@ -20,6 +21,11 @@ const NODE_ROUTES: Record<string, readonly string[]> = {
   xls: ['xlsx'],
   xlsb: ['xlsx'],
   ods: ['xlsx'],
+  ots: ['xlsx'],
+  odt: ['docx'],
+  ott: ['docx'],
+  odp: ['pptx'],
+  otp: ['pptx'],
   md: ['docx', 'html'],
   markdown: ['docx', 'html'],
   docx: ['md'],
@@ -172,6 +178,14 @@ async function run(
     return { bytes: Buffer.from('\ufeff' + csv, 'utf-8'), detail }
   }
   if (to === 'md') return docxToMarkdown(readInput(input), ctx)
+  if (from === 'odt' || from === 'ott') {
+    const r = await convertOdt(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
+  if (from === 'odp' || from === 'otp') {
+    const r = await convertOdp(readInput(input))
+    return { bytes: r.bytes, detail: r.detail }
+  }
   const r = await convertLegacyWorkbook(input, output)
   return { detail: { sheets: r.sheets, cells: r.cells } }
 }

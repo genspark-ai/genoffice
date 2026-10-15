@@ -1401,6 +1401,9 @@ export function Ribbon({
   const collapse = useRibbonCollapse('ai-slides-ribbon-collapsed', {
     collapse: t('ribbonCollapse'),
     expand: t('ribbonExpand'),
+    // ⌥⌘K / Ctrl+Alt+K: the icon-only middle density (docs parity, see #362)
+    compact: t('ribbonCompact'),
+    expandFull: t('ribbonExpand'),
   })
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const inlineWidthsRef = useRef(new Map<string, number>())
