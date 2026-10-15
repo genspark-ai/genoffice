@@ -3,7 +3,6 @@ import {
   AgentLoop,
   createFeaturesSkill,
   createIpcTransport,
-  type FeatureRecord,
   type FeatureRegistryDeps,
 } from '@genoffice/agent-core'
 import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'

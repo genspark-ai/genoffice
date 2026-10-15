@@ -33,7 +33,7 @@ function feature(id: string, knowledge: FeatureRecord['knowledge']): FeatureReco
   }
 }
 
-function readerFor(sources: readonly KbSource[]) {
+function readerFor(_sources: readonly KbSource[]) {
   return {
     readEntries: (source: KbSource) => {
       if (!source.path) return []
@@ -229,7 +229,7 @@ describe('searchKnowledgeBase', () => {
       { path: '/elsewhere/b.md', name: 'b.md', ext: 'md', snippetText: 'alpha' },
       { path: '/corpus/c.md', name: 'c.md', ext: 'md', snippetText: 'alpha gamma' },
     ]
-    const hits = searchKnowledgeBase((q) => index, 'alpha', ['/corpus/a.md', '/corpus/c.md'], 8)
+    const hits = searchKnowledgeBase(() => index, 'alpha', ['/corpus/a.md', '/corpus/c.md'], 8)
     expect(hits.map((hit) => hit.path)).toEqual(['/corpus/a.md', '/corpus/c.md'])
   })
 })

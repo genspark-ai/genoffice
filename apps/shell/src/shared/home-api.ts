@@ -20,7 +20,6 @@ import type {
   FeatureRecord,
   ReadDocumentResult,
   HookActivity,
-  KnowledgeEntry,
   PackDescription,
   ScriptApplyResult,
   ScriptRunOutcome,

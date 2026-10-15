@@ -13,7 +13,6 @@ import {
   type FeatureCommand,
   type FeatureHook,
   type FeatureKnowledge,
-  type KnowledgeEntry,
   type SlotDeclaration,
   type ScriptRunOutcome,
 } from '@genoffice/agent-core'

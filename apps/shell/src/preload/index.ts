@@ -39,7 +39,6 @@ import {
   type ReadDocumentResult,
   type ScriptApplyResult,
   type ScriptRunOutcome,
-  type SlotViewMountRequest,
 } from '../shared/feature-channels'
 import { INTEGRATIONS_CHANNELS } from '../shared/integrations-api'
 import type {
