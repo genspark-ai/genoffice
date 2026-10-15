@@ -81,7 +81,8 @@ export function refreshEditorFeatures(): Promise<void> {
   const run = bridge
     .featuresList()
     .then((list) => {
-      cache = list
+      // a stub or an older host may answer null; the registry stays a list
+      cache = Array.isArray(list) ? list : []
       // the editor effect below re-applies the paper theme on this change
       emit()
     })
