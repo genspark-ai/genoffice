@@ -1166,6 +1166,104 @@ describe('applySaveRequest', () => {
     ).rejects.toThrow(/already exists/)
   })
 
+  it('keeps appearances for every other new field when one default value is not WinAnsi', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([300, 300])
+    const bytes = await doc.save({ useObjectStreams: false })
+
+    const saved = await apply(
+      bytes,
+      request({
+        formFields: [
+          {
+            name: 'cjk',
+            kind: 'text',
+            pageIndex: 0,
+            rect: [20, 200, 220, 224],
+            value: '\u5f20\u4e09',
+          },
+          { name: 'ok', kind: 'text', pageIndex: 0, rect: [20, 160, 220, 184], value: 'plain' },
+          { name: 'box', kind: 'checkbox', pageIndex: 0, rect: [20, 100, 34, 114], checked: true },
+        ],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const form = out.getForm()
+    expect(form.getTextField('cjk').getText()).toBe('\u5f20\u4e09')
+    expect(String(form.acroForm.dict.get(PDFName.of('NeedAppearances')))).toBe('true')
+    const ap = (name: string) =>
+      form.getField(name).acroField.getWidgets()[0]!.dict.lookupMaybe(PDFName.of('AP'), PDFDict)
+    expect(ap('box')?.has(PDFName.of('N'))).toBe(true)
+    expect(ap('ok')?.has(PDFName.of('N'))).toBe(true)
+    expect(form.getCheckBox('box').isChecked()).toBe(true)
+
+    // Without an unencodable value every appearance regenerates and the flag is not set
+    const clean = await PDFDocument.load(
+      await apply(
+        bytes,
+        request({
+          formFields: [
+            {
+              name: 'box',
+              kind: 'checkbox',
+              pageIndex: 0,
+              rect: [20, 100, 34, 114],
+              checked: true,
+            },
+            { name: 'ok', kind: 'text', pageIndex: 0, rect: [20, 160, 220, 184], value: 'plain' },
+          ],
+        }),
+      ),
+    )
+    expect(clean.getForm().acroForm.dict.has(PDFName.of('NeedAppearances'))).toBe(false)
+    expect(clean.getForm().getCheckBox('box').isChecked()).toBe(true)
+  })
+
+  it('rejects a new field named like an existing field group', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 300])
+    doc.getForm().createTextField('a.b').addToPage(page, { x: 20, y: 200, width: 100, height: 20 })
+    const bytes = await doc.save({ useObjectStreams: false })
+    await expect(
+      apply(
+        bytes,
+        request({
+          formFields: [{ name: 'a', kind: 'text', pageIndex: 0, rect: [20, 100, 120, 124] }],
+        }),
+      ),
+    ).rejects.toThrow(/group named "a"/)
+  })
+
+  it('ignores a widget edit whose object id no longer points at a widget of that field', async () => {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([300, 300])
+    const form = doc.getForm()
+    form.createTextField('one').addToPage(page, { x: 20, y: 200, width: 100, height: 20 })
+    const two = form.createTextField('two')
+    two.addToPage(page, { x: 20, y: 150, width: 100, height: 20 })
+    two.addToPage(page, { x: 20, y: 100, width: 100, height: 20 })
+    const bytes = await doc.save({ useObjectStreams: false })
+    const pageRef = `${page.ref.objectNumber}R`
+
+    const saved = await apply(
+      bytes,
+      request({
+        formWidgetEdits: [
+          // single-widget field: a stale id still resolves to its only widget
+          { widgetId: pageRef, fieldName: 'one', rect: [40, 40, 140, 64] },
+          // two widgets: ambiguous, must not touch the page dict or remove anything
+          { widgetId: pageRef, fieldName: 'two', remove: true },
+        ],
+      }),
+    )
+    const out = await PDFDocument.load(saved)
+    const r = out.getForm().getTextField('one').acroField.getWidgets()[0]!.getRectangle()
+    expect([r.x, r.y, r.x + r.width, r.y + r.height].map(Math.round)).toEqual([40, 40, 140, 64])
+    expect(out.getForm().getTextField('two').acroField.getWidgets()).toHaveLength(2)
+    expect(out.getPage(0).node.has(PDFName.of('Rect'))).toBe(false)
+    expect(out.getPage(0).getSize()).toEqual({ width: 300, height: 300 })
+  })
+
   it('falls back to NeedAppearances when form values cannot be WinAnsi-encoded', async () => {
     const doc = await PDFDocument.create()
     const page = doc.addPage([300, 300])

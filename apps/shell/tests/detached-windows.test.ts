@@ -325,6 +325,13 @@ describe('tear-off', () => {
     detached.dragTornWindow(560, 340)
     expect(win.setPosition).toHaveBeenLastCalledWith(x0 + 60, y0 + 40)
 
+    // steered to the screen edge: a (-0.5, 0) offset must not reach Electron as -0
+    detached.dragTornWindow(500 - x0 - 0.25, 300 - y0 - 0.25)
+    const [ex, ey] = win.setPosition.mock.lastCall as [number, number]
+    expect(Object.is(ex, -0)).toBe(false)
+    expect(Object.is(ey, -0)).toBe(false)
+    expect([ex, ey]).toEqual([0, 0])
+
     detached.endTornDrag()
     expect(win.focus).toHaveBeenCalled()
     expect(view.webContents.focus).toHaveBeenCalled()

@@ -217,9 +217,11 @@ export interface DrawingAnchorMeta {
   /** wp:extent (drawing size) */
   extentXEmu?: number
   extentYEmu?: number
-  /** wp:anchor distL/distR: text clearance beside a side-wrapped drawing */
+  /** wp:anchor distL/distR/distT/distB: text clearance around a side-wrapped drawing */
   distLEmu?: number
   distREmu?: number
+  distTEmu?: number
+  distBEmu?: number
   /** relativeHeight − Word's 251658240 base: paint order among overlapping anchors */
   z?: number
 }
@@ -279,7 +281,7 @@ export function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
   }
   meta.offsetXEmu = posOf('H')
   meta.offsetYEmu = posOf('V')
-  for (const side of ['L', 'R'] as const) {
+  for (const side of ['L', 'R', 'T', 'B'] as const) {
     const v = parseInt(
       new RegExp(`\\bdist${side}\\s*=\\s*["'](\\d+)["']`).exec(anchorTag)?.[1] ?? '',
       10,

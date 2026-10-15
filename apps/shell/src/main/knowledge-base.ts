@@ -322,3 +322,50 @@ export async function readKnowledgeFilePage(filePath: string, offset: number): P
     offset: start,
   }
 }
+
+// ---- create_document: the ask panel's one write path ----
+
+export type KbCreateFormat = 'md' | 'docx'
+
+export interface KbCreateRequest {
+  title: string
+  format: KbCreateFormat
+  content: string
+}
+
+/** keep in step with CREATE_DOCUMENT_MAX_CHARS in agent-core */
+export const KB_CREATE_MAX_CHARS = 2_000_000
+
+/** validate the renderer's payload; throws a plain message for the panel */
+export function parseKbCreateRequest(raw: unknown): KbCreateRequest {
+  const req = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const format = req.format
+  if (format !== 'md' && format !== 'docx') throw new Error('format must be "md" or "docx"')
+  const content = typeof req.content === 'string' ? req.content : ''
+  if (!content.trim()) throw new Error('content must not be empty')
+  if (content.length > KB_CREATE_MAX_CHARS) throw new Error('content is too long')
+  return { title: typeof req.title === 'string' ? req.title : '', format, content }
+}
+
+export interface KbCreateDeps {
+  /** folder new files land in */
+  dir: () => string
+  /** `${sanitized title}${ext}` → first free absolute path in dir */
+  uniquePath: (dir: string, fileName: string) => string
+  sanitizeBase: (title: string) => string
+  writeText: (path: string, text: string) => Promise<void>
+  /** markdown → .docx at `out` (the bundled CLI) */
+  markdownToDocx: (markdown: string, out: string) => Promise<void>
+  recordRecent: (path: string) => void
+}
+
+export async function createKnowledgeDocument(
+  deps: KbCreateDeps,
+  req: KbCreateRequest,
+): Promise<{ path: string }> {
+  const path = deps.uniquePath(deps.dir(), `${deps.sanitizeBase(req.title)}.${req.format}`)
+  if (req.format === 'md') await deps.writeText(path, req.content)
+  else await deps.markdownToDocx(req.content, path)
+  deps.recordRecent(path)
+  return { path }
+}

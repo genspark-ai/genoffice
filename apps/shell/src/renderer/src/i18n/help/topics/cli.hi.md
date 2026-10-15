@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## कमांड पाना
 
-macOS और Windows इसे ऐप बंडल के भीतर भेजते हैं। नाम से उपयोग करने के लिए एक बार `genoffice install-cli` चलाएँ: यह बंडल में मौजूद बाइनरी का सिमलिंक `/usr/local/bin` में, या Windows पर आपके उपयोगकर्ता `PATH` में बना देती है।
+macOS और Windows इसे ऐप बंडल में देते हैं। नाम से चलाने के लिए एक बार `genoffice install-cli` चलाएँ: यह बंडल की बाइनरी को आपके PATH की किसी डायरेक्टरी में लिंक करता है — macOS पर `/usr/local/bin`, जब वह Homebrew प्रीफ़िक्स न हो (Homebrew की अपनी डायरेक्टरियों को कभी नहीं छुआ जाता), वरना आपके यूज़र bin में — या Windows पर आपके यूज़र `PATH` में।
 
 ## जानने योग्य कमांड
 

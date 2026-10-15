@@ -51,8 +51,9 @@ export function builtinDateFormat(numFmtId: number): DateFormatParts | null {
   return BUILTIN.get(numFmtId) ?? null
 }
 
-function firstFormatSection(code: string): string {
+function firstFormatSectionTokens(code: string): string {
   let quoted = false
+  let tokens = ''
   for (let i = 0; i < code.length; i++) {
     const char = code[i]
     if (char === '\\' || (!quoted && (char === '_' || char === '*'))) {
@@ -60,10 +61,12 @@ function firstFormatSection(code: string): string {
     } else if (char === '"') {
       quoted = !quoted
     } else if (char === ';' && !quoted) {
-      return code.slice(0, i)
+      return tokens
+    } else if (!quoted) {
+      tokens += char
     }
   }
-  return code
+  return tokens
 }
 
 /**
@@ -71,15 +74,12 @@ function firstFormatSection(code: string): string {
  * literals, escaped characters, fill/skip tokens and colour/locale conditions are not tokens.
  */
 export function classifyFormatCode(code: string): DateFormatParts | null {
-  const section = firstFormatSection(code)
+  const section = firstFormatSectionTokens(code)
   if (/general/i.test(section) && !/[ydhs]/i.test(section.replace(/general/gi, ''))) return null
   let elapsed = false
   let elapsedMinutes = false
   let elapsedUnit: 'h' | 'm' | 's' | undefined
   const stripped = section
-    .replace(/"[^"]*"/g, '')
-    .replace(/\\./g, '')
-    .replace(/[_*]./g, '')
     // elapsed [h] / [mm] / [ss] keep their letter so the minute adjacency rule below still sees them
     .replace(/\[(h+|m+|s+)\]/gi, (_all, token: string) => {
       elapsed = true

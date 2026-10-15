@@ -312,7 +312,9 @@ export const ko = {
   appFullLoadRunning:
     '통합 문서 전체를 로드하는 중입니다. 완료되면 정렬과 필터를 사용할 수 있습니다…',
   appFullLoadTooLarge:
-    '이 통합 문서는 너무 커서 메모리에 전부 로드할 수 없습니다. 이 파일에서는 정렬과 필터를 사용할 수 없습니다.',
+    '이 통합 문서는 너무 커서 메모리에 전부 로드할 수 없습니다. 이 파일에서는 정렬과 범위 이동을 사용할 수 없습니다. 필터는 파일에서 직접 실행됩니다.',
+  appLargeFilterLoading: '파일에서 필터 열을 읽는 중…',
+  appLargeFilterApplying: '파일에 필터를 적용하는 중…',
   appSortValueModeFormulas:
     '선택한 범위에 수식이 있지만 이 큰 통합 문서에서는 수식이 실시간으로 계산되지 않습니다. 정렬하거나 이동하면 수식이 값으로 저장됩니다. 수식이 없는 범위를 선택하세요.',
   appSortRangeTooLarge:
@@ -1097,6 +1099,9 @@ export const ko = {
   appHeadings: '머리글',
   appHeadingsHidden: '머리글을 숨겼습니다.',
   appHeadingsShown: '머리글을 표시했습니다.',
+  appRightToLeft: '오른쪽에서 왼쪽',
+  appRightToLeftOn: '눈금 방향: 오른쪽에서 왼쪽.',
+  appRightToLeftOff: '눈금 방향: 왼쪽에서 오른쪽.',
   appPrintHeadingsTitle: '행/열 머리글 인쇄',
   // Formulas tab
   appGroupFunctionLibrary: '함수 라이브러리',

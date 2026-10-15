@@ -1,13 +1,13 @@
 # O editor Markdown
 
-O editor Markdown abre .md / .markdown com a experiência de fonte + pré-visualização renderizada.
+O editor Markdown abre .md / .markdown — e .txt / .json, direto na visão de código — com código mais prévia renderizada.
 
 - **Abrir**: a partir do Início ou de Arquivo ▸ Abrir…; também funciona a partir da linha de comandos.
 - **Editar**: edição de texto simples; as extensões GFM (tabelas, listas de tarefas, rasurado, ligações automáticas) são renderizadas na pré-visualização.
 - **Pré-visualização**: em tempo real; os recursos relativos, como imagens, são resolvidos ao lado do documento.
 - **Salvar**: fiel byte a byte — o BOM, o CRLF e a presença de uma quebra de linha no fim do ficheiro são preservados; um salvamento sem alterações não reescreve o ficheiro.
 - **Pesquisar e substituir**: o ctrl+F pesquisa no código; Substituir grava o resultado de volta.
-- **IA**: botões prontos deixam o assistente reescrever, desenvolver ou traduzir o documento.
+- **IA**: botões prontos deixam o assistente reescrever, desenvolver ou traduzir o documento. Uma seleção pode ser ocultada da IA (veja o capítulo do painel de IA).
 
 ## A barra de ferramentas
 
@@ -24,6 +24,7 @@ Uma fila de botões por cima do editor (passe o cursor para ver as dicas):
 - **Propriedades**: insere ou salta para o bloco YAML front matter no topo do ficheiro.
 - **Estrutura**: salta pela hierarquia de títulos.
 - **Ortografia**: liga ou desliga a verificação ortográfica deste documento.
+- **Configurações de hospedagem de imagens**: imagens coladas ou arrastadas vão primeiro para o seu próprio armazenamento — compatível com S3 (R2/OSS/COS/MinIO), SM.MS ou GitHub — com a cópia local em assets como reserva.
 
 Três exemplos rápidos:
 
@@ -46,4 +47,4 @@ O friso traz um interruptor **Código-fonte** (localizado com a aplicação). Li
 - **A edição é fiel byte a byte.** Uma gravação a partir da vista de código-fonte produz exatamente os mesmos bytes que uma gravação a partir do editor — o BOM, o CRLF e a presença de uma quebra de linha no fim sobrevivem todos.
 - **É o mesmo documento.** Alterne para um lado e para o outro à vontade; a fonte é o próprio texto do editor, não uma cópia que seja preciso fundir.
 - **A barra de formatação fica indisponível** enquanto a vista está aberta, porque a maioria desses botões insere construções do editor que só têm significado do lado renderizado. Reaparece quando fecha a vista.
-- **Ficheiros JSON e outros ficheiros em modo de código-fonte** abrem aqui diretamente: não há nada para renderizar, por isso a fonte _é_ o documento.
+- **.txt e .json** abrem aqui diretamente na visão de código: não há nada a renderizar, então o código _é_ o documento.

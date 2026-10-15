@@ -2,6 +2,16 @@
  * corners + concave "feet" merging into the content area below.
  * Metrics copied from Chrome (macOS, light): 40px strip, 34px tabs that
  * shrink from 240px but never stretch, "+" hugging the last tab. */
+/* Interface scale (issue #1913).
+ *
+ * The shell window is its own webContents and the six editors are
+ * WebContentsViews painted beside it, never inside it — so zooming the shell's
+ * frame cannot reach a document canvas. That is the whole reason this is a
+ * `--ui-scale` variable and not a window zoom: see src/main/ui-scale.ts. */
+.app-frame {
+  zoom: var(--ui-scale);
+}
+
 .tab-bar {
   --tabstrip-bg: #ebebeb;
   --tabstrip-text: #454746;

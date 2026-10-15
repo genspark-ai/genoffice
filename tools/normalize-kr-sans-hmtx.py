@@ -4,9 +4,10 @@
 Word substitutes missing Korean sans families with Malgun Gothic; the bundled
 subset (Noto Sans CJK KR) ships hangul already normalized to 1.0em but keeps
 Noto's Latin metrics (space 0.224em vs Malgun 0.352em, digits 0.555 vs 0.551),
-so line breaks drift from Word. Rewrites hmtx advances for U+0020-007E and
-U+00A0 to Malgun's values (measured from malgun.ttf 6.68, 2048upm, scaled to
-1000upm); outlines are untouched. Idempotent.
+so line breaks drift from Word. Rewrites hmtx advances for U+0020-007E,
+U+00A0 and the proportional CJK brackets to Malgun's values (measured from
+malgun.ttf 6.68, 2048upm, scaled to 1000upm); outlines are untouched
+(scale-kr-sans-latin-ink.py moves them into the new advances). Idempotent.
 
 Usage: python3 tools/normalize-kr-sans-hmtx.py [woff2-path]
 """
@@ -36,6 +37,11 @@ MALGUN_ADVANCES = {
     0x6E: 578, 0x6F: 599, 0x70: 601, 0x71: 602, 0x72: 354, 0x73: 433,
     0x74: 345, 0x75: 578, 0x76: 487, 0x77: 736, 0x78: 465, 0x79: 493,
     0x7A: 462, 0x7B: 305, 0x7C: 239, 0x7D: 305, 0x7E: 701, 0xA0: 352,
+    # CJK brackets and the reference mark are proportional in Malgun (Noto
+    # keeps them full-width): a law title in corner brackets wraps a line early
+    0x300C: 571, 0x300D: 571, 0x300E: 517, 0x300F: 517, 0x3008: 542,
+    0x3009: 542, 0x300A: 596, 0x300B: 596, 0x3010: 518, 0x3011: 518,
+    0x3014: 488, 0x3015: 488, 0x203B: 800,
 }
 
 

@@ -24,7 +24,7 @@ test('markdown theme picker applies, persists and restarts', async () => {
   const docPath = join(dir, 'theme-probe.md')
   writeFileSync(
     docPath,
-    '# Theme probe\n\n一段中文正文，用于观察纸面与墨色。\n\n```js\nconst x = 1\n```\n',
+    '# Theme probe\n\n\u4e00\u6bb5\u4e2d\u6587\u6b63\u6587\uff0c\u7528\u4e8e\u89c2\u5bdf\u7eb8\u9762\u4e0e\u58a8\u8272\u3002\n\n```js\nconst x = 1\n```\n',
   )
   const launched = await launchShell({
     onboardingSeen: true,
@@ -32,6 +32,7 @@ test('markdown theme picker applies, persists and restarts', async () => {
     videoDir: 'markdown-theme-picker',
   })
   const { app } = launched
+  let closed = false
   try {
     const page = await waitForPageWithUrl(app, '://markdown/')
     await awaitDocsEditor(page)
@@ -58,6 +59,7 @@ test('markdown theme picker applies, persists and restarts', async () => {
 
     // a real restart: close this instance, then boot again on the same
     // userDataDir (a second live instance would just be forwarded to this one)
+    closed = true
     await closeAndSaveVideo(launched, 'markdown-theme-picker')
     const relaunch = await launchShell({
       onboardingSeen: true,
@@ -77,8 +79,7 @@ test('markdown theme picker applies, persists and restarts', async () => {
     } finally {
       await closeAndSaveVideo(relaunch, 'markdown-theme-picker')
     }
-  } catch (err) {
-    // the happy path closed its own instance; only failures still hold one
-    if (err instanceof Error && err.message.includes('app.process')) throw err
+  } finally {
+    if (!closed) await closeAndSaveVideo(launched, 'markdown-theme-picker')
   }
 })

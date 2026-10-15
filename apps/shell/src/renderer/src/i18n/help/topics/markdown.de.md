@@ -1,13 +1,13 @@
 # Der Markdown-Editor
 
-Der Markdown-Editor öffnet .md / .markdown mit Quelltext und gerenderter Vorschau nebeneinander.
+Der Markdown-Editor öffnet .md / .markdown — und .txt / .json, direkt in der Quelltextansicht — mit Quelltext plus gerenderter Vorschau.
 
 - **Öffnen**: über die Startseite oder Datei ▸ Öffnen; auch die Kommandozeile funktioniert.
 - **Bearbeiten**: Bearbeitung als reiner Text; GFM-Erweiterungen (Tabellen, Aufgabenlisten, Durchgestrichen, automatische Links) werden in der Vorschau gerendert.
 - **Vorschau**: in Echtzeit; relative Ressourcen wie Bilder werden neben dem Dokument aufgelöst.
 - **Speichern**: bytegetreu — BOM, CRLF und das Vorhandensein eines abschließenden Zeilenumbruchs bleiben erhalten; ein Speichern ohne Änderung schreibt die Datei nicht neu.
 - **Suchen und Ersetzen**: Strg+F durchsucht den Quelltext; „Alle ersetzen“ schreibt zurück.
-- **KI**: Voreinstellungs-Schaltflächen lassen den Assistenten das Dokument umformulieren, ausbauen oder übersetzen.
+- **KI**: Voreinstellungs-Schaltflächen lassen den Assistenten das Dokument umformulieren, ausbauen oder übersetzen. Eine Auswahl lässt sich vor der KI verbergen (siehe Kapitel zum KI-Panel).
 
 ## Die Werkzeugleiste
 
@@ -24,6 +24,7 @@ Eine Zeile Schaltflächen über dem Editor (zum Tooltip mit der Maus darüberfah
 - **Eigenschaften**: fügt den YAML-Front-Matter-Block am Dateianfang ein oder springt dorthin.
 - **Gliederung**: springt nach Überschriftenhierarchie.
 - **Rechtschreibung**: schaltet die Rechtschreibprüfung für dieses Dokument um.
+- **Bildhost-Einstellungen**: eingefügte und gezogene Bilder gehen zuerst in Ihren eigenen Speicher — S3-kompatibel (R2/OSS/COS/MinIO), SM.MS oder GitHub — die lokale assets-Kopie bleibt als Rückfallebene.
 
 Drei schnelle Beispiele:
 
@@ -46,4 +47,4 @@ Die Werkzeugleiste trägt einen Schalter **Quelltext** (wie die App lokalisiert)
 - **Bearbeiten ist bytegetreu.** Ein Speichern aus der Quelltextansicht erzeugt dieselben Bytes wie ein Speichern aus dem Editor — BOM, CRLF und ein abschließender Zeilenumbruch bleiben alle erhalten.
 - **Es ist dasselbe Dokument.** Wechseln Sie frei hin und her; der Quelltext ist der Text des Editors selbst, keine Kopie, die zusammengeführt werden müsste.
 - **Die Formatierungsleiste steht nicht zur Verfügung**, solange die Ansicht offen ist, weil die meisten dieser Schaltflächen Editor-Strukturen einfügen, die auf der gerenderten Seite erst einen Sinn ergeben. Sie ist wieder da, wenn Sie die Ansicht schließen.
-- **JSON und andere Dateien im Quelltextmodus** öffnen sich hier direkt: Es gibt nichts zu rendern, also _ist_ der Quelltext das Dokument.
+- **.txt und .json** öffnen hier direkt in der Quelltextansicht: Es gibt nichts zu rendern, also ist der Quelltext das Dokument.

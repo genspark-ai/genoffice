@@ -4,9 +4,9 @@ Docs es el procesador de texto similar a Word: lee y escribe .docx reales con un
 
 ## La cinta de opciones
 
-Pestañas: **Inicio / Insertar / Dibujar / Disposición / Diseño / Referencias / Revisar / Vista**, más pestañas contextuales para el objeto seleccionado (Diseño y disposición de tabla, imágenes, encabezado y pie de página).
+Pestañas: **Inicio / Insertar / Dibujar / Disposición / Diseño / Referencias / Revisar / Vista**, más pestañas contextuales para el objeto seleccionado (Diseño y disposición de tabla, imágenes, encabezado y pie de página). La banda de comandos tiene una densidad propia en Docs: **compacta** (⌥⌘K / Ctrl+Alt+K) deja los iconos y quita las etiquetas, y la elección se recuerda.
 
-- **Inicio**: portapapeles; fuente (incluidos tamaños y signos de énfasis de Asia oriental) con **Borrar todo el formato** y un conmutador para **Mostrar u ocultar marcas de formato**; párrafo (alineación/sangría/interlineado/listas) más **Definir nueva viñeta / Definir nuevo formato de número / Lista multinivel**, que guardan sus propios estilos de lista en el documento; estilos (Título 1-6/Normal/Cita, modificables) con un **Panel de estilos** para la lista completa.
+- **Inicio**: portapapeles; fuente (incluidos tamaños y signos de énfasis de Asia oriental) con **Borrar todo el formato** y un conmutador para **Mostrar u ocultar marcas de formato**; párrafo (alineación/sangría/interlineado/listas) más **Definir nueva viñeta / Definir nuevo formato de número / Lista multinivel**, que guardan sus propios estilos de lista en el documento; estilos (Título 1-6/Normal/Cita, modificables) con un **Panel de estilos** para la lista completa. Un estilo puede fijar por separado la fuente de Asia oriental y la latina (una fuente CJK más Times New Roman, por ejemplo); la pareja sobrevive al round-trip .docx.
 - **Insertar**: saltos de página y de sección; tablas (una cuadrícula de filas × columnas, o **Insertar tabla…** para un tamaño exacto); imágenes, formas, cuadros de texto; **Portada** y **Página en blanco** de una galería predefinida; **Gráfico**; **Letra capital**; **WordArt**; campos (fecha, hora, número de página, total de páginas, nombre de archivo); hipervínculos, **Marcador** y referencias cruzadas; comentarios; encabezado y pie de página y números de página; símbolos y ecuaciones.
   - **Gráfico** inserta un objeto de gráfico real con sus propios datos — de barras, de líneas o circular — y no una imagen. _Editar datos_ de Word abre los números que hay detrás.
 - **Dibujar**: tinta sobre la página, en el grupo **Herramientas de dibujo** — **Seleccionar** vuelve a la edición de texto, y luego **Lápiz**, **Marcador de resaltado** y **Borrador** (un clic o un barrido elimina todo el trazo). Junto a ellos, **Estilo de lápiz** / **Estilo de marcador de resaltado** es un solo control con muestras de color y una fila de grosores; su etiqueta sigue a la herramienta que esté activa. La tinta se guarda en el documento como una anotación que flota sobre el texto, así que sobrevive a guardar y reabrir, y **Borrar todo** en el grupo siguiente la elimina por completo.
@@ -55,7 +55,7 @@ Haga clic derecho en cualquier parte del cuerpo: el menú se ajusta a lo que ha 
 
 - Buscar y reemplazar (ctrl+F / ctrl+H): distinguir mayúsculas y minúsculas, palabras completas, expresiones regulares.
 - Copiar formato; deshacer/rehacer en varios niveles; opciones de pegado.
-- Tablas: combinar/dividir celdas, operaciones de filas y columnas, bordes y sombreado, ordenar, fórmulas.
+- Tablas: combinar/dividir celdas, operaciones de filas y columnas, bordes y sombreado, ordenar, fórmulas. Las filas se parten entre páginas cuando hace falta, y Ctrl+Enter dentro de una celda pasa la página justo ahí — impresión y PDF igual.
 - Imágenes: ajustar texto, recortar, comprimir; lienzo de dibujo.
 
 ## Tipografía de Asia oriental

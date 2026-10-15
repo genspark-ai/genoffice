@@ -4,10 +4,12 @@ export type {
   AgentStreamCallbacks,
   AgentStreamHandle,
   AgentStreamRequest,
+  AgentTokenUsage,
   AgentToolCall,
   AgentToolDef,
   AgentToolResult,
   AgentTransport,
+  MindMapTreeNode,
   ToolDisplay,
   ToolExecution,
 } from './types'
@@ -20,6 +22,17 @@ export type {
   KbSearchHit,
   KbSourceInfo,
 } from './knowledge-base-skill'
+export {
+  createDocumentSkill,
+  CREATE_DOCUMENT_MAX_CHARS,
+  CREATE_DOCUMENT_TOOL,
+} from './create-document-skill'
+export type {
+  CreateDocumentDeps,
+  CreateDocumentFormat,
+  CreateDocumentRequest,
+  CreateDocumentSkill,
+} from './create-document-skill'
 export type { AgentSkill, ExecutedToolCall } from './skill'
 export { createFeaturesSkill } from './features-skill'
 export { createModsSkill } from './mods-skill'

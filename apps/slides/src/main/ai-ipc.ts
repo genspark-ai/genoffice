@@ -27,6 +27,7 @@ import {
   sanitizeAiSettings,
   setAiUserAgent,
   setRescueFetch,
+  resolveProfileCredential,
   streamForProvider,
   type AiSettings,
   type AiStreamChunk,
@@ -35,6 +36,7 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
+import { startAiTrace } from '@genoffice/ai-provider/trace'
 import {
   abortOnDestroyed,
   MAX_REMOTE_IMAGE_BYTES,
@@ -46,6 +48,8 @@ import {
   webSearchTool,
   imageSearchTool,
   ensureGenofficeLogin,
+  noteGskCallFailure,
+  setGenofficeLoginOpener,
   gskApiKey,
   generateImageTool,
   analyzeMediaTool,
@@ -54,6 +58,7 @@ import {
   hasGskAuth,
 } from '@genoffice/ai-search'
 import { addPicture, editPictureSrcRect, replacePictureBytes } from '@genoffice/pptx-engine'
+import { rasterImageExt } from './media-mime'
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { coverCropFractions } from '@genoffice/pipelines/slides'
 import type { AiRunFailure } from '../shared/ipc'
@@ -139,6 +144,9 @@ export function registerAiIpc(): void {
     },
   )
 
+  // a 401 on the gsk key opens the device-code login once (genoffice-auth recovery)
+  setGenofficeLoginOpener((url) => void shell.openExternal(url))
+
   ipcMain.handle('ai:gsk-login', () => {
     ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
@@ -180,9 +188,14 @@ export function registerAiIpc(): void {
     const provider = settings.provider
     let config = settings.providers?.[provider]
     // The genspark key never enters the settings file; it is fetched from the gsk login state per request
+    // set only when the gsk key was injected: a 401 then means that key expired
+    let gskKey = ''
     if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
+      gskKey = gskApiKey()
+      config = { ...config, apiKey: gskKey }
     }
+    // a custom endpoint may name an environment variable instead of storing a key
+    config = config ? resolveProfileCredential(config) : config
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
@@ -209,28 +222,59 @@ export function registerAiIpc(): void {
       lastPing = now
       send({ requestId, type: 'ping' })
     }
+    const trace = startAiTrace({
+      requestId,
+      sessionId: request.sessionId,
+      source: event.sender.getURL(),
+      provider,
+      model: config.model,
+      maxTokens,
+      system,
+      messages,
+      tools,
+    })
     try {
       let stopReason: string | undefined
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
         ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
-        onDelta: (text) => send({ requestId, type: 'delta', text }),
-        onReasoningDelta: (text) => send({ requestId, type: 'reasoning', text }),
-        onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onDelta: (text) => {
+          trace?.onDelta(text)
+          send({ requestId, type: 'delta', text })
+        },
+        onReasoningDelta: (text) => {
+          trace?.onReasoningDelta(text)
+          send({ requestId, type: 'reasoning', text })
+        },
+        onToolCall: (toolCall) => {
+          trace?.onToolCall(toolCall)
+          send({ requestId, type: 'tool-call', toolCall })
+        },
         onActivity: ping,
         onStopReason: (reason) => {
           stopReason = reason
+          trace?.onStopReason(reason)
+        },
+        onUsage: (usage) => {
+          trace?.onUsage(usage)
+          send({ requestId, type: 'usage', usage })
         },
       })
+      trace?.finish()
       send(
         stopReason === undefined
           ? { requestId, type: 'done' }
           : { requestId, type: 'done', stopReason },
       )
     } catch (err) {
+      trace?.finish(
+        controller.signal.aborted ? 'aborted' : err instanceof Error ? err.message : String(err),
+      )
       if (controller.signal.aborted) {
         send({ requestId, type: 'done' })
       } else {
+        // an expired/revoked key drops to signed-out so the inline sign-in button shows
+        noteGskCallFailure(gskKey, err)
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`[ai-stream] ${requestId} (${provider}/${config.model}) failed:`, msg)
         send({
@@ -395,8 +439,11 @@ export function registerSlidesOnlyAiIpc(): void {
           const resp = await fetchRemoteImage(String(op.url))
           if (!resp || !resp.ok) return null
           buf = Buffer.from(await readBodyCapped(resp, MAX_REMOTE_IMAGE_BYTES))
-          const ct = resp.headers.get('content-type') ?? ''
-          ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : 'jpg'
+          // magic bytes decide: a header-informed extension would happily store
+          // an HTML error page (or an attacker "image") as a .jpg in the deck
+          const kind = rasterImageExt(buf)
+          if (!kind) return null
+          ext = kind
         }
         const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96
         const scale = op.fitWidthPx / baseWidthPx
@@ -468,8 +515,9 @@ export function registerSlidesOnlyAiIpc(): void {
           const resp = await fetchRemoteImage(String(op.url))
           if (!resp || !resp.ok) return null
           buf = Buffer.from(await readBodyCapped(resp, MAX_REMOTE_IMAGE_BYTES))
-          const ct = resp.headers.get('content-type') ?? ''
-          ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : 'jpg'
+          const kind = rasterImageExt(buf)
+          if (!kind) return null
+          ext = kind
         }
         pushHistory(session)
         const ok = replacePictureBytes(

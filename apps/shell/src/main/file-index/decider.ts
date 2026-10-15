@@ -48,8 +48,8 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
   rizzo: { url: RIZZO_URL, model: 'rizzo-latest', local: true },
 }
 
-/** Workers AI takes the model in the URL path but only `clef` / `clef-flash` in the body. */
-const CLOUDFLARE_BODY_MODEL = /^(clef|clef-flash)$/
+/** Workers AI takes the model in the URL path but only the bare Clef ids in the body. */
+const CLOUDFLARE_BODY_MODEL = /^(clef|clef-flash|clef-omni)$/
 /** a custom base URL may only be https, or http on this machine: the body carries local file text */
 const LOOPBACK_HOST = /^(127\.\d+\.\d+\.\d+|\[?::1\]?|localhost)(:\d+)?$/i
 

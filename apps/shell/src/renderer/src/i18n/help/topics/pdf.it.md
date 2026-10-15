@@ -64,6 +64,9 @@ Sei strumenti: **inchiostro, rettangolo, ellisse, freccia, nota**, più il **riq
 - **Firma a inchiostro**: disegnala; può essere collegata a un campo firma di un modulo.
 - **Firma come immagine**: posiziona un'immagine come firma.
 - Le firme salvate si possono riutilizzare.
+- **Firma con certificato** (scheda Annota): firma con un certificato dall'archivio di sistema o da un file .p12/.pfx; mostra facoltativamente la firma sulla pagina e certifica facoltativamente il documento contro modifiche successive.
+- Firmare scrive sempre un **nuovo file** (aggiornamento incrementale — le firme precedenti restano valide) e apre la copia firmata al suo posto. Salva prima: una firma copre il file così come è su disco.
+- Un banner sopra il documento elenca le firme esistenti; **Visualizza firme** mostra validità, copertura e catena di certificati di ciascuna. La revoca (CRL/OCSP) non è verificata.
 
 ## Operazioni sulle pagine (Pagine)
 

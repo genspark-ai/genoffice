@@ -16,6 +16,7 @@ use zip::ZipArchive;
 pub mod archive;
 pub mod convert;
 pub mod find;
+pub mod protocol;
 pub mod recalc;
 mod richdata;
 mod shared_formulas;
@@ -151,6 +152,38 @@ impl Drop for CacheDirectory {
     }
 }
 
+/// Whether this build can run work on background threads. WebAssembly
+/// without threads (wasm32-wasip1, a browser without cross-origin isolation)
+/// and the `single-thread` feature run the same work inline: a sheet is
+/// indexed completely the first time it is read, and a recalc answers before
+/// the next request is read.
+pub const THREADS: bool = !cfg!(any(
+    feature = "single-thread",
+    all(target_family = "wasm", not(target_feature = "atomics"))
+));
+
+/// `std::env::temp_dir` panics on WASI, which has no notion of one: there the
+/// host maps a directory and names it in `TMPDIR` (`/tmp` when unset).
+fn temp_dir() -> PathBuf {
+    if cfg!(target_os = "wasi") {
+        std::env::var_os("TMPDIR").map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
+    } else {
+        std::env::temp_dir()
+    }
+}
+
+/// `Path::canonicalize`, which WASI does not support: there the host hands over absolute
+/// paths in a sandbox without symlinks or a working directory, so the path is already
+/// canonical and only has to exist.
+pub(crate) fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
+    if cfg!(target_os = "wasi") {
+        fs::metadata(path)?;
+        Ok(path.to_path_buf())
+    } else {
+        path.canonicalize()
+    }
+}
+
 /// Creates the cache directory an open needs. This is the one boundary where
 /// the open touches the filesystem, so it is the one abort that happens after
 /// the directory exists: returning here drops the guard, which reclaims it,
@@ -159,7 +192,7 @@ fn create_cache_directory(
     session_id: &str,
     cancelled: &AtomicBool,
 ) -> Result<CacheDirectory, SidecarError> {
-    let path = std::env::temp_dir().join(format!("genspark-ai-excel-{session_id}"));
+    let path = temp_dir().join(format!("genspark-ai-excel-{session_id}"));
     let directory = CacheDirectory::create(path)?;
     if cancelled.load(Ordering::Acquire) {
         return Err(SidecarError::cancelled());
@@ -205,7 +238,7 @@ impl WorkbookSessions {
         if cancelled.load(Ordering::Acquire) {
             return Err(SidecarError::cancelled());
         }
-        let canonical_path = path.canonicalize()?;
+        let canonical_path = canonicalize(path)?;
         let file = File::open(&canonical_path)?;
         let mut archive = ZipArchive::new(file)?;
         archive::validate_entries(&mut archive)?;
@@ -612,7 +645,7 @@ impl WorkbookSession {
 
     fn ensure_parser(&mut self, sheet_index: usize) -> Result<(), SidecarError> {
         let runtime = &mut self.runtimes[sheet_index];
-        if runtime.handle.is_some() {
+        if runtime.started {
             return Ok(());
         }
         let path = self.path.clone();
@@ -632,31 +665,38 @@ impl WorkbookSession {
                 .collect(),
         );
         let cancelled = Arc::clone(&self.cancelled);
-        let handle = thread::Builder::new()
-            .name(format!("xlsx-index-{sheet_index}"))
-            .spawn(move || {
-                let result = index_worksheet(
-                    &path,
-                    &worksheet_path,
-                    sheet_index,
-                    &cache_directory,
-                    &shared_strings,
-                    &styled_xfs,
-                    &color_context,
-                    &rich_image_cells,
-                    &state,
-                    &cancelled,
-                );
-                let (lock, condition) = &*state;
-                if let Ok(mut index) = lock.lock() {
-                    match result {
-                        Ok(()) => index.complete = true,
-                        Err(error) => index.error = Some(error.to_string()),
-                    }
-                    condition.notify_all();
+        let index = move || {
+            let result = index_worksheet(
+                &path,
+                &worksheet_path,
+                sheet_index,
+                &cache_directory,
+                &shared_strings,
+                &styled_xfs,
+                &color_context,
+                &rich_image_cells,
+                &state,
+                &cancelled,
+            );
+            let (lock, condition) = &*state;
+            if let Ok(mut index) = lock.lock() {
+                match result {
+                    Ok(()) => index.complete = true,
+                    Err(error) => index.error = Some(error.to_string()),
                 }
-            })?;
-        runtime.handle = Some(handle);
+                condition.notify_all();
+            }
+        };
+        if THREADS {
+            runtime.handle = Some(
+                thread::Builder::new()
+                    .name(format!("xlsx-index-{sheet_index}"))
+                    .spawn(index)?,
+            );
+        } else {
+            index();
+        }
+        runtime.started = true;
         Ok(())
     }
 
@@ -874,6 +914,8 @@ impl WorkbookSession {
 struct SheetRuntime {
     worksheet_path: String,
     state: Arc<(Mutex<SheetIndex>, Condvar)>,
+    /// Indexing has begun, on a thread or inline.
+    started: bool,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -882,6 +924,7 @@ impl SheetRuntime {
         Self {
             worksheet_path,
             state: Arc::new((Mutex::new(SheetIndex::default()), Condvar::new())),
+            started: false,
             handle: None,
         }
     }

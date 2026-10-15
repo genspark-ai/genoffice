@@ -12,6 +12,8 @@ import {
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, resolve } from 'node:path'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import {
   BrowserWindow,
   Menu,
@@ -27,6 +29,13 @@ import {
 import type { MenuItemConstructorOptions, NativeImage, WebContents } from 'electron'
 import { atomicCopyFile, atomicWriteFile } from './atomic-write'
 import { tabStripOverlay } from './title-bar-overlay'
+import {
+  applyUiScaleTo,
+  applyUiScaleToAll,
+  changeUiScale,
+  onUiScaleChanged,
+  readUiScale,
+} from './ui-scale'
 import menuDocxIcon1x from './assets/menu-docx.png?asset'
 import menuDocxIcon2x from './assets/menu-docx@2x.png?asset'
 import menuXlsxIcon1x from './assets/menu-xlsx.png?asset'
@@ -330,9 +339,11 @@ import { FileIndexStore } from './file-index/store'
 import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
 import {
   assembleCorpus,
+  createKnowledgeDocument,
   indexableCorpusPaths,
   KB_STARRED_SOURCE_ID,
   listKnowledgeFiles,
+  parseKbCreateRequest,
   readKnowledgeFilePage,
   searchKnowledgeBase,
   sourcesFromFeatures,
@@ -340,6 +351,8 @@ import {
 } from './knowledge-base'
 import { listKnowledgeEntries, pathForEntry } from './feature-knowledge-host'
 import { listFeatures } from './feature-store'
+import { createFileViaCli } from './mcp/headless-cli'
+import { sanitizeFileBase } from './mcp/tools/document-tools'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import { installShellCloseGuard } from './window-close-guard'
@@ -380,6 +393,17 @@ import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
  * apps/sheets/out), so build those before running the shell.
  */
 
+// When the launcher (the CLI's export spawn, a terminal, a script) has gone away,
+// the inherited stdio pipes are closed and the next console.* or Node warning
+// write fails with EPIPE. Node's console drops its error listener before the
+// async failure fires, so without a persistent one Electron shows an
+// "Uncaught Exception: write EPIPE" dialog on quit.
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EPIPE') throw err
+  })
+}
+
 // ANY unpacked run (`npm run shell`, `npm run dev`, `npx electron .`) must not
 // share the installed app's userData or single-instance lock — otherwise a dev
 // run silently quits and forwards its argv to the running installed GenOffice.
@@ -391,22 +415,24 @@ if (!app.isPackaged) {
   } else {
     // The dev profile used to live in "GenOffice Dev"; the space breaks
     // unquoted shell expansions, rsync targets and .desktop Exec= lines, and
-    // XDG config entries are single tokens (#1817). "GenOffice-Dev" keeps the
+    // XDG config entries are single tokens (genoffice#1817). "GenOffice-Dev" keeps the
     // family naming of the packaged profile ("GenOffice"). The old directory
     // moves once — it sits on the same volume as appData, so the rename is
     // atomic, and a concurrent dev instance keeps its open file handles.
     const appData = app.getPath('appData')
     const devDir = join(appData, 'GenOffice-Dev')
     const oldDevDir = join(appData, 'GenOffice Dev')
+    let userData = devDir
     if (existsSync(oldDevDir) && !existsSync(devDir)) {
       try {
         renameSync(oldDevDir, devDir)
       } catch {
-        // another dev instance is mid-migration or holds the directory:
-        // continuing with a fresh profile beats failing the launch
+        // another dev instance holds the directory: keep using the old one so
+        // the profile is not lost and the move is retried on the next launch
+        userData = oldDevDir
       }
     }
-    app.setPath('userData', devDir)
+    app.setPath('userData', userData)
   }
 }
 
@@ -447,6 +473,18 @@ const SLIDES_OUT = app.isPackaged
 const PDF_OUT = app.isPackaged
   ? join(process.resourcesPath, 'modules', 'pdf')
   : join(APPS_ROOT, 'pdf', 'out')
+let cliRunner: ReturnType<typeof createCliRunner> | null = null
+/** the bundled genoffice CLI on the app's own Node runtime (MCP headless tools, Ask AI create_document) */
+function bundledCliRunner(): ReturnType<typeof createCliRunner> {
+  cliRunner ??= createCliRunner({
+    executable: process.execPath,
+    entry: app.isPackaged
+      ? join(process.resourcesPath, 'cli', 'genoffice.cjs')
+      : join(APPS_ROOT, '..', 'packages', 'cli', 'dist', 'genoffice.cjs'),
+  })
+  return cliRunner
+}
+
 const MARKDOWN_OUT = app.isPackaged
   ? join(process.resourcesPath, 'modules', 'markdown')
   : join(APPS_ROOT, 'markdown', 'out')
@@ -630,6 +668,7 @@ function currentAiPanelPrefs(): AiPanelPrefs {
     customFontSize: saved.aiPanelCustomFontSize,
     spellcheck: saved.aiPanelSpellcheck,
     openInNewDocs: saved.aiPanelOpenInNewDocs,
+    showAiSidebar: saved.aiPanelShowSidebar,
   })
   return cachedAiPanelPrefs
 }
@@ -795,6 +834,10 @@ const tMain = createI18n({
     menuSaveAs: '另存为…',
     menuClose: '关闭',
     menuEdit: '编辑',
+    menuView: '视图',
+    menuUiZoomIn: '界面放大',
+    menuUiZoomOut: '界面缩小',
+    menuUiZoomReset: '界面缩放重置为 100%',
     menuWindow: '窗口',
     menuHome: '首页',
     backToHome: '返回首页',
@@ -823,6 +866,7 @@ const tMain = createI18n({
     menuExportDocx: '导出为 Word…',
     btnCancel: '取消',
     pdfDocxFailedMsg: '导出为 Word 失败',
+    pdfConvertFailedMsg: '导出为 Markdown / HTML 失败',
     pdfDocxBusyMsg: '正在转换中，请等待当前导出完成。',
     menuExportPptx: '导出为 PPT…',
     pdfPptxFailedMsg: '导出为 PPT 失败',
@@ -835,6 +879,9 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedMsg: '部分页面未转换为单元格',
     pdfXlsxLocalSkippedDetail: '第 {pages} 页无法转换为单元格，对应工作表中已写入提示行。',
     pdfDocxLocalScannedMsg: '检测到扫描件',
+    pdfMdLocalMissingMsg: 'Markdown 中缺少部分内容',
+    pdfMdLocalScannedDetail: '未能识别出可编辑的文本，Markdown 文件没有可用内容。',
+    pdfMdLocalDroppedDetail: '第 {pages} 页无法可靠重建，Markdown 不含图片，该页内容已缺失。',
     pdfDocxLocalScannedDetail: '本地转换已按图片保真导出各页，未能识别出可编辑的文本。',
     pdfDocxLocalDegradedMsg: '部分页面已按图片导出',
     pdfDocxLocalDegradedDetail: '第 {pages} 页版面无法可靠重建，已按整页图片保真导出。',
@@ -866,6 +913,10 @@ const tMain = createI18n({
     errFolderRootUnusable: 'The selected folder cannot be read',
     menuFile: 'File',
     menuSectionNew: 'New',
+    menuView: 'View',
+    menuUiZoomIn: 'Interface Zoom In',
+    menuUiZoomOut: 'Interface Zoom Out',
+    menuUiZoomReset: 'Reset Interface Zoom',
     menuOpenInNewWindow: 'Open in New Window',
     menuNewDoc: 'AI Docs',
     menuNewSheet: 'AI Sheets',
@@ -917,6 +968,7 @@ const tMain = createI18n({
     menuExportDocx: 'Export as Word…',
     btnCancel: 'Cancel',
     pdfDocxFailedMsg: 'Export as Word failed',
+    pdfConvertFailedMsg: 'Export as Markdown / HTML failed',
     pdfDocxBusyMsg: 'A Word export is already in progress. Please wait for it to finish.',
     menuExportPptx: 'Export as PowerPoint…',
     pdfPptxFailedMsg: 'Export as PowerPoint failed',
@@ -932,6 +984,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Pages {pages} could not be converted to cells; their worksheets carry a notice row instead.',
     pdfDocxLocalScannedMsg: 'Scanned document detected',
+    pdfMdLocalMissingMsg: 'Some content is missing from the Markdown',
+    pdfMdLocalScannedDetail:
+      'No editable text could be recognized, so the Markdown file has no usable content.',
+    pdfMdLocalDroppedDetail:
+      'Page(s) {pages} could not be reliably reconstructed; Markdown cannot carry images, so their content is missing.',
     pdfDocxLocalScannedDetail:
       'The pages were exported as images to preserve their appearance; no editable text could be recognized.',
     pdfDocxLocalDegradedMsg: 'Some pages were exported as images',
@@ -991,6 +1048,10 @@ const tMain = createI18n({
     menuSaveAs: 'Lưu dưới dạng…',
     menuClose: 'Đóng',
     menuEdit: 'Chỉnh sửa',
+    menuView: 'Xem',
+    menuUiZoomIn: 'Phóng to giao diện',
+    menuUiZoomOut: 'Thu nhỏ giao diện',
+    menuUiZoomReset: 'Đặt lại mức phóng giao diện về 100%',
     menuWindow: 'Cửa sổ',
     menuHome: 'Trang chủ',
     backToHome: 'Quay lại Trang chủ',
@@ -1019,6 +1080,7 @@ const tMain = createI18n({
     menuExportDocx: 'Xuất dưới dạng Word…',
     btnCancel: 'Hủy',
     pdfDocxFailedMsg: 'Xuất dưới dạng Word thất bại',
+    pdfConvertFailedMsg: 'Xuất dưới dạng Markdown / HTML thất bại',
     pdfDocxBusyMsg: 'Một tác vụ xuất Word đang được tiến hành. Vui lòng đợi tác vụ hoàn tất.',
     menuExportPptx: 'Xuất dưới dạng PowerPoint…',
     pdfPptxFailedMsg: 'Xuất dưới dạng PowerPoint thất bại',
@@ -1034,6 +1096,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Các trang {pages} không thể chuyển đổi thành ô; thay vào đó bảng tính của chúng có một hàng thông báo.',
     pdfDocxLocalScannedMsg: 'Phát hiện tài liệu quét',
+    pdfMdLocalMissingMsg: 'Markdown thiếu một phần nội dung',
+    pdfMdLocalScannedDetail:
+      'Không nhận dạng được văn bản có thể chỉnh sửa, tệp Markdown không có nội dung sử dụng được.',
+    pdfMdLocalDroppedDetail:
+      'Trang {pages} không thể tái dựng đáng tin cậy; Markdown không chứa được hình ảnh nên nội dung các trang này bị thiếu.',
     pdfDocxLocalScannedDetail:
       'Các trang được xuất dưới dạng hình ảnh để bảo toàn giao diện; không nhận dạng được văn bản có thể chỉnh sửa.',
     pdfDocxLocalDegradedMsg: 'Một số trang được xuất dưới dạng hình ảnh',
@@ -1093,6 +1160,10 @@ const tMain = createI18n({
     menuSaveAs: '名前を付けて保存…',
     menuClose: '閉じる',
     menuEdit: '編集',
+    menuView: '表示',
+    menuUiZoomIn: 'UI を拡大',
+    menuUiZoomOut: 'UI を縮小',
+    menuUiZoomReset: 'UI の拡大率を 100% にリセット',
     menuWindow: 'ウィンドウ',
     menuHome: 'ホーム',
     backToHome: 'ホームに戻る',
@@ -1121,6 +1192,7 @@ const tMain = createI18n({
     menuExportDocx: 'Word として書き出す…',
     btnCancel: 'キャンセル',
     pdfDocxFailedMsg: 'Word への書き出しに失敗しました',
+    pdfConvertFailedMsg: 'Markdown / HTML への書き出しに失敗しました',
     pdfDocxBusyMsg: 'Word への書き出しが進行中です。完了までお待ちください。',
     menuExportPptx: 'PowerPoint として書き出す…',
     pdfPptxFailedMsg: 'PowerPoint への書き出しに失敗しました',
@@ -1136,6 +1208,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'ページ {pages} はセルに変換できなかったため、対応するワークシートに通知行を書き込みました。',
     pdfDocxLocalScannedMsg: 'スキャン文書を検出しました',
+    pdfMdLocalMissingMsg: 'Markdown に一部の内容が含まれていません',
+    pdfMdLocalScannedDetail:
+      '編集可能なテキストを認識できなかったため、Markdown ファイルに利用できる内容がありません。',
+    pdfMdLocalDroppedDetail:
+      'ページ {pages} はレイアウトを確実に再構築できませんでした。Markdown は画像を保持できないため、これらのページの内容は含まれていません。',
     pdfDocxLocalScannedDetail:
       '見た目を保つため各ページを画像として書き出しました。編集可能なテキストは認識できませんでした。',
     pdfDocxLocalDegradedMsg: '一部のページを画像として書き出しました',
@@ -1195,6 +1272,10 @@ const tMain = createI18n({
     menuSaveAs: '다른 이름으로 저장…',
     menuClose: '닫기',
     menuEdit: '편집',
+    menuView: '보기',
+    menuUiZoomIn: 'UI 확대',
+    menuUiZoomOut: 'UI 축소',
+    menuUiZoomReset: 'UI 배율을 100%로 다시 설정',
     menuWindow: '창',
     menuHome: '홈',
     backToHome: '홈으로 돌아가기',
@@ -1223,6 +1304,7 @@ const tMain = createI18n({
     menuExportDocx: 'Word로 내보내기…',
     btnCancel: '취소',
     pdfDocxFailedMsg: 'Word로 내보내기 실패',
+    pdfConvertFailedMsg: 'Markdown / HTML로 내보내기 실패',
     pdfDocxBusyMsg: 'Word 내보내기가 이미 진행 중입니다. 완료될 때까지 기다려 주세요.',
     menuExportPptx: 'PowerPoint로 내보내기…',
     pdfPptxFailedMsg: 'PowerPoint 내보내기 실패',
@@ -1238,6 +1320,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       '{pages} 페이지는 셀로 변환할 수 없어 해당 워크시트에 알림 행을 기록했습니다.',
     pdfDocxLocalScannedMsg: '스캔 문서가 감지되었습니다',
+    pdfMdLocalMissingMsg: 'Markdown에 일부 내용이 빠져 있습니다',
+    pdfMdLocalScannedDetail:
+      '편집 가능한 텍스트를 인식하지 못해 Markdown 파일에 사용할 수 있는 내용이 없습니다.',
+    pdfMdLocalDroppedDetail:
+      '{pages} 페이지는 레이아웃을 안정적으로 재구성할 수 없었습니다. Markdown은 이미지를 담을 수 없어 해당 페이지의 내용이 빠져 있습니다.',
     pdfDocxLocalScannedDetail:
       '모양을 유지하기 위해 각 페이지를 이미지로 내보냈습니다. 편집 가능한 텍스트를 인식할 수 없었습니다.',
     pdfDocxLocalDegradedMsg: '일부 페이지가 이미지로 내보내졌습니다',
@@ -1296,6 +1383,10 @@ const tMain = createI18n({
     menuSaveAs: 'Enregistrer sous…',
     menuClose: 'Fermer',
     menuEdit: 'Édition',
+    menuView: 'Affichage',
+    menuUiZoomIn: "Agrandir l'interface",
+    menuUiZoomOut: "Réduire l'interface",
+    menuUiZoomReset: "Réinitialiser le zoom de l'interface à 100%",
     menuWindow: 'Fenêtre',
     menuHome: 'Accueil',
     backToHome: "Retour à l'accueil",
@@ -1324,6 +1415,7 @@ const tMain = createI18n({
     menuExportDocx: 'Exporter en Word…',
     btnCancel: 'Annuler',
     pdfDocxFailedMsg: "Échec de l'export en Word",
+    pdfConvertFailedMsg: "Échec de l'export en Markdown / HTML",
     pdfDocxBusyMsg: "Un export en Word est déjà en cours. Veuillez attendre qu'il se termine.",
     menuExportPptx: 'Exporter en PowerPoint…',
     pdfPptxFailedMsg: "Échec de l'exportation en PowerPoint",
@@ -1339,6 +1431,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       "Les pages {pages} n'ont pas pu être converties en cellules ; leurs feuilles contiennent une ligne d'avertissement.",
     pdfDocxLocalScannedMsg: 'Document numérisé détecté',
+    pdfMdLocalMissingMsg: 'Une partie du contenu manque dans le Markdown',
+    pdfMdLocalScannedDetail:
+      "Aucun texte modifiable n'a pu être reconnu ; le fichier Markdown ne contient aucun contenu exploitable.",
+    pdfMdLocalDroppedDetail:
+      "La ou les pages {pages} n'ont pas pu être reconstruites de façon fiable ; le Markdown ne peut pas contenir d'images, leur contenu est donc absent.",
     pdfDocxLocalScannedDetail:
       "Les pages ont été exportées sous forme d'images pour préserver leur apparence ; aucun texte modifiable n'a pu être reconnu.",
     pdfDocxLocalDegradedMsg: 'Certaines pages ont été exportées en images',
@@ -1399,6 +1496,10 @@ const tMain = createI18n({
     menuSaveAs: 'Speichern unter…',
     menuClose: 'Schließen',
     menuEdit: 'Bearbeiten',
+    menuView: 'Ansicht',
+    menuUiZoomIn: 'Oberfläche vergrößern',
+    menuUiZoomOut: 'Oberfläche verkleinern',
+    menuUiZoomReset: 'Zoom der Oberfläche auf 100% zurücksetzen',
     menuWindow: 'Fenster',
     menuHome: 'Startseite',
     backToHome: 'Zurück zur Startseite',
@@ -1428,6 +1529,7 @@ const tMain = createI18n({
     menuExportDocx: 'Als Word exportieren…',
     btnCancel: 'Abbrechen',
     pdfDocxFailedMsg: 'Word-Export fehlgeschlagen',
+    pdfConvertFailedMsg: 'Markdown / HTML-Export fehlgeschlagen',
     pdfDocxBusyMsg: 'Ein Word-Export läuft bereits. Bitte warten Sie, bis er abgeschlossen ist.',
     menuExportPptx: 'Als PowerPoint exportieren…',
     pdfPptxFailedMsg: 'Export als PowerPoint fehlgeschlagen',
@@ -1443,6 +1545,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Die Seiten {pages} konnten nicht in Zellen umgewandelt werden; ihre Arbeitsblätter enthalten stattdessen eine Hinweiszeile.',
     pdfDocxLocalScannedMsg: 'Gescanntes Dokument erkannt',
+    pdfMdLocalMissingMsg: 'Im Markdown fehlt ein Teil des Inhalts',
+    pdfMdLocalScannedDetail:
+      'Es konnte kein bearbeitbarer Text erkannt werden, die Markdown-Datei enthält keinen verwertbaren Inhalt.',
+    pdfMdLocalDroppedDetail:
+      'Seite(n) {pages} konnten nicht zuverlässig rekonstruiert werden; Markdown kann keine Bilder enthalten, daher fehlt ihr Inhalt.',
     pdfDocxLocalScannedDetail:
       'Die Seiten wurden als Bilder exportiert, um ihr Aussehen zu erhalten. Es konnte kein bearbeitbarer Text erkannt werden.',
     pdfDocxLocalDegradedMsg: 'Einige Seiten wurden als Bilder exportiert',
@@ -1503,6 +1610,10 @@ const tMain = createI18n({
     menuSaveAs: 'Guardar como…',
     menuClose: 'Cerrar',
     menuEdit: 'Edición',
+    menuView: 'Ver',
+    menuUiZoomIn: 'Agrandar la interfaz',
+    menuUiZoomOut: 'Reducir la interfaz',
+    menuUiZoomReset: 'Restablecer el zoom de la interfaz al 100%',
     menuWindow: 'Ventana',
     menuHome: 'Inicio',
     backToHome: 'Volver al inicio',
@@ -1531,6 +1642,7 @@ const tMain = createI18n({
     menuExportDocx: 'Exportar como Word…',
     btnCancel: 'Cancelar',
     pdfDocxFailedMsg: 'Error al exportar como Word',
+    pdfConvertFailedMsg: 'Error al exportar como Markdown / HTML',
     pdfDocxBusyMsg: 'Ya hay una exportación a Word en curso. Espera a que termine.',
     menuExportPptx: 'Exportar como PowerPoint…',
     pdfPptxFailedMsg: 'Error al exportar como PowerPoint',
@@ -1546,6 +1658,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Las páginas {pages} no se pudieron convertir en celdas; sus hojas incluyen una fila de aviso.',
     pdfDocxLocalScannedMsg: 'Documento escaneado detectado',
+    pdfMdLocalMissingMsg: 'Falta parte del contenido en el Markdown',
+    pdfMdLocalScannedDetail:
+      'No se pudo reconocer texto editable, por lo que el archivo Markdown no tiene contenido utilizable.',
+    pdfMdLocalDroppedDetail:
+      'La(s) página(s) {pages} no se pudieron reconstruir de forma fiable; Markdown no admite imágenes, así que su contenido falta.',
     pdfDocxLocalScannedDetail:
       'Las páginas se exportaron como imágenes para conservar su aspecto. No se pudo reconocer texto editable.',
     pdfDocxLocalDegradedMsg: 'Algunas páginas se exportaron como imágenes',
@@ -1606,6 +1723,10 @@ const tMain = createI18n({
     menuSaveAs: 'บันทึกเป็น…',
     menuClose: 'ปิด',
     menuEdit: 'แก้ไข',
+    menuView: 'มุมมอง',
+    menuUiZoomIn: 'ขยายส่วนติดต่อผู้ใช้',
+    menuUiZoomOut: 'ย่อส่วนติดต่อผู้ใช้',
+    menuUiZoomReset: 'รีเซ็ตสเกลส่วนติดต่อผู้ใช้เป็น 100%',
     menuWindow: 'หน้าต่าง',
     menuHome: 'หน้าแรก',
     backToHome: 'กลับไปหน้าแรก',
@@ -1634,6 +1755,7 @@ const tMain = createI18n({
     menuExportDocx: 'ส่งออกเป็น Word…',
     btnCancel: 'ยกเลิก',
     pdfDocxFailedMsg: 'ส่งออกเป็น Word ไม่สำเร็จ',
+    pdfConvertFailedMsg: 'ส่งออกเป็น Markdown / HTML ไม่สำเร็จ',
     pdfDocxBusyMsg: 'กำลังส่งออกเป็น Word อยู่ โปรดรอให้เสร็จสิ้นก่อน',
     menuExportPptx: 'ส่งออกเป็น PowerPoint…',
     pdfPptxFailedMsg: 'การส่งออกเป็น PowerPoint ล้มเหลว',
@@ -1648,6 +1770,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'หน้า {pages} ไม่สามารถแปลงเป็นเซลล์ได้ เวิร์กชีตของหน้าดังกล่าวมีแถวแจ้งเตือนแทน',
     pdfDocxLocalScannedMsg: 'ตรวจพบเอกสารสแกน',
+    pdfMdLocalMissingMsg: 'เนื้อหาบางส่วนหายไปจาก Markdown',
+    pdfMdLocalScannedDetail:
+      'ไม่สามารถรู้จำข้อความที่แก้ไขได้ ไฟล์ Markdown จึงไม่มีเนื้อหาที่ใช้งานได้',
+    pdfMdLocalDroppedDetail:
+      'หน้า {pages} ไม่สามารถสร้างเค้าโครงใหม่ได้อย่างน่าเชื่อถือ Markdown ไม่รองรับรูปภาพ เนื้อหาของหน้าเหล่านี้จึงหายไป',
     pdfDocxLocalScannedDetail:
       'ส่งออกแต่ละหน้าเป็นรูปภาพเพื่อคงรูปลักษณ์เดิม ไม่สามารถจดจำข้อความที่แก้ไขได้',
     pdfDocxLocalDegradedMsg: 'บางหน้าถูกส่งออกเป็นรูปภาพ',
@@ -1705,6 +1832,10 @@ const tMain = createI18n({
     menuSaveAs: 'Simpan Sebagai…',
     menuClose: 'Tutup',
     menuEdit: 'Edit',
+    menuView: 'Tampilan',
+    menuUiZoomIn: 'Perbesar Antarmuka',
+    menuUiZoomOut: 'Perkecil Antarmuka',
+    menuUiZoomReset: 'Atur Ulang Skala Antarmuka ke 100%',
     menuWindow: 'Jendela',
     menuHome: 'Beranda',
     backToHome: 'Kembali ke Beranda',
@@ -1733,6 +1864,7 @@ const tMain = createI18n({
     menuExportDocx: 'Ekspor sebagai Word…',
     btnCancel: 'Batal',
     pdfDocxFailedMsg: 'Gagal mengekspor sebagai Word',
+    pdfConvertFailedMsg: 'Gagal mengekspor sebagai Markdown / HTML',
     pdfDocxBusyMsg: 'Ekspor ke Word sedang berlangsung. Harap tunggu hingga selesai.',
     menuExportPptx: 'Ekspor sebagai PowerPoint…',
     pdfPptxFailedMsg: 'Gagal mengekspor sebagai PowerPoint',
@@ -1748,6 +1880,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Halaman {pages} tidak dapat diubah menjadi sel; lembar kerjanya berisi baris pemberitahuan.',
     pdfDocxLocalScannedMsg: 'Dokumen hasil pindaian terdeteksi',
+    pdfMdLocalMissingMsg: 'Sebagian konten hilang dari Markdown',
+    pdfMdLocalScannedDetail:
+      'Tidak ada teks yang dapat diedit yang dikenali, sehingga file Markdown tidak memiliki konten yang dapat digunakan.',
+    pdfMdLocalDroppedDetail:
+      'Halaman {pages} tidak dapat direkonstruksi dengan andal; Markdown tidak dapat memuat gambar, sehingga kontennya hilang.',
     pdfDocxLocalScannedDetail:
       'Halaman diekspor sebagai gambar untuk mempertahankan tampilannya. Tidak ada teks yang dapat diedit yang berhasil dikenali.',
     pdfDocxLocalDegradedMsg: 'Beberapa halaman diekspor sebagai gambar',
@@ -1808,6 +1945,10 @@ const tMain = createI18n({
     menuSaveAs: 'Сохранить как…',
     menuClose: 'Закрыть',
     menuEdit: 'Правка',
+    menuView: 'Вид',
+    menuUiZoomIn: 'Увеличить интерфейс',
+    menuUiZoomOut: 'Уменьшить интерфейс',
+    menuUiZoomReset: 'Сбросить масштаб интерфейса к 100%',
     menuWindow: 'Окно',
     menuHome: 'Главная',
     backToHome: 'Вернуться на главную',
@@ -1836,6 +1977,7 @@ const tMain = createI18n({
     menuExportDocx: 'Экспортировать в Word…',
     btnCancel: 'Отмена',
     pdfDocxFailedMsg: 'Не удалось экспортировать в Word',
+    pdfConvertFailedMsg: 'Не удалось экспортировать в Markdown / HTML',
     pdfDocxBusyMsg: 'Экспорт в Word уже выполняется. Дождитесь его завершения.',
     menuExportPptx: 'Экспортировать в PowerPoint…',
     pdfPptxFailedMsg: 'Не удалось экспортировать в PowerPoint',
@@ -1851,6 +1993,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Страницы {pages} не удалось преобразовать в ячейки; на их листах добавлена строка с уведомлением.',
     pdfDocxLocalScannedMsg: 'Обнаружен отсканированный документ',
+    pdfMdLocalMissingMsg: 'В Markdown отсутствует часть содержимого',
+    pdfMdLocalScannedDetail:
+      'Редактируемый текст распознать не удалось, поэтому файл Markdown не содержит полезного содержимого.',
+    pdfMdLocalDroppedDetail:
+      'Страницы {pages} не удалось надёжно восстановить; Markdown не может содержать изображения, поэтому их содержимое отсутствует.',
     pdfDocxLocalScannedDetail:
       'Страницы экспортированы как изображения, чтобы сохранить их вид. Редактируемый текст распознать не удалось.',
     pdfDocxLocalDegradedMsg: 'Некоторые страницы экспортированы как изображения',
@@ -1911,6 +2058,10 @@ const tMain = createI18n({
     menuSaveAs: 'حفظ باسم…',
     menuClose: 'إغلاق',
     menuEdit: 'تحرير',
+    menuView: 'عرض',
+    menuUiZoomIn: 'تكبير واجهة المستخدم',
+    menuUiZoomOut: 'تصغير واجهة المستخدم',
+    menuUiZoomReset: 'إعادة تعيين مقياس الواجهة إلى 100%',
     menuWindow: 'نافذة',
     menuHome: 'الصفحة الرئيسية',
     backToHome: 'العودة إلى الصفحة الرئيسية',
@@ -1939,6 +2090,7 @@ const tMain = createI18n({
     menuExportDocx: 'تصدير كملف Word…',
     btnCancel: 'إلغاء',
     pdfDocxFailedMsg: 'فشل التصدير كملف Word',
+    pdfConvertFailedMsg: 'فشل التصدير كملف Markdown / HTML',
     pdfDocxBusyMsg: 'يجري حاليًا تصدير إلى Word. يُرجى الانتظار حتى يكتمل.',
     menuExportPptx: 'تصدير كملف PowerPoint…',
     pdfPptxFailedMsg: 'فشل التصدير كملف PowerPoint',
@@ -1953,6 +2105,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'تعذر تحويل الصفحات {pages} إلى خلايا؛ تحتوي أوراقها على صف تنبيه بدلاً من ذلك.',
     pdfDocxLocalScannedMsg: 'تم اكتشاف مستند ممسوح ضوئيًا',
+    pdfMdLocalMissingMsg: 'بعض المحتوى مفقود من ملف Markdown',
+    pdfMdLocalScannedDetail:
+      'تعذر التعرف على نص قابل للتحرير، لذا لا يحتوي ملف Markdown على محتوى قابل للاستخدام.',
+    pdfMdLocalDroppedDetail:
+      'تعذر إعادة بناء الصفحة (الصفحات) {pages} بشكل موثوق؛ لا يمكن لـ Markdown حمل الصور، لذا محتواها مفقود.',
     pdfDocxLocalScannedDetail:
       'تم تصدير الصفحات كصور للحفاظ على مظهرها. لم يتم التعرف على أي نص قابل للتحرير.',
     pdfDocxLocalDegradedMsg: 'تم تصدير بعض الصفحات كصور',
@@ -2010,6 +2167,10 @@ const tMain = createI18n({
     menuSaveAs: 'Salvar Como…',
     menuClose: 'Fechar',
     menuEdit: 'Editar',
+    menuView: 'Exibir',
+    menuUiZoomIn: 'Aumentar a interface',
+    menuUiZoomOut: 'Diminuir a interface',
+    menuUiZoomReset: 'Redefinir a escala da interface para 100%',
     menuWindow: 'Janela',
     menuHome: 'Início',
     backToHome: 'Voltar ao início',
@@ -2038,6 +2199,7 @@ const tMain = createI18n({
     menuExportDocx: 'Exportar como Word…',
     btnCancel: 'Cancelar',
     pdfDocxFailedMsg: 'Falha ao exportar como Word',
+    pdfConvertFailedMsg: 'Falha ao exportar como Markdown / HTML',
     pdfDocxBusyMsg: 'Já há uma exportação para Word em andamento. Aguarde a conclusão.',
     menuExportPptx: 'Exportar como PowerPoint…',
     pdfPptxFailedMsg: 'Falha ao exportar como PowerPoint',
@@ -2053,6 +2215,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'As páginas {pages} não puderam ser convertidas em células; suas planilhas contêm uma linha de aviso.',
     pdfDocxLocalScannedMsg: 'Documento digitalizado detectado',
+    pdfMdLocalMissingMsg: 'Falta parte do conteúdo no Markdown',
+    pdfMdLocalScannedDetail:
+      'Nenhum texto editável pôde ser reconhecido, por isso o arquivo Markdown não tem conteúdo utilizável.',
+    pdfMdLocalDroppedDetail:
+      'A(s) página(s) {pages} não puderam ser reconstruídas com confiança; o Markdown não comporta imagens, então o conteúdo delas está ausente.',
     pdfDocxLocalScannedDetail:
       'As páginas foram exportadas como imagens para preservar a aparência. Não foi possível reconhecer texto editável.',
     pdfDocxLocalDegradedMsg: 'Algumas páginas foram exportadas como imagens',
@@ -2113,6 +2280,10 @@ const tMain = createI18n({
     menuSaveAs: 'Salva con nome…',
     menuClose: 'Chiudi',
     menuEdit: 'Modifica',
+    menuView: 'Visualizza',
+    menuUiZoomIn: 'Ingrandisci interfaccia',
+    menuUiZoomOut: 'Riduci interfaccia',
+    menuUiZoomReset: "Reimposta la scala dell'interfaccia al 100%",
     menuWindow: 'Finestra',
     menuHome: 'Home',
     backToHome: 'Torna alla Home',
@@ -2141,6 +2312,7 @@ const tMain = createI18n({
     menuExportDocx: 'Esporta come Word…',
     btnCancel: 'Annulla',
     pdfDocxFailedMsg: 'Esportazione in Word non riuscita',
+    pdfConvertFailedMsg: 'Esportazione in Markdown / HTML non riuscita',
     pdfDocxBusyMsg: "Un'esportazione in Word è già in corso. Attendi il completamento.",
     menuExportPptx: 'Esporta come PowerPoint…',
     pdfPptxFailedMsg: 'Esportazione come PowerPoint non riuscita',
@@ -2156,6 +2328,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Le pagine {pages} non hanno potuto essere convertite in celle; i loro fogli contengono una riga di avviso.',
     pdfDocxLocalScannedMsg: 'Rilevato documento scansionato',
+    pdfMdLocalMissingMsg: 'Nel Markdown manca parte del contenuto',
+    pdfMdLocalScannedDetail:
+      'Non è stato riconosciuto testo modificabile, quindi il file Markdown non ha contenuto utilizzabile.',
+    pdfMdLocalDroppedDetail:
+      'Le pagine {pages} non sono state ricostruite in modo affidabile; il Markdown non può contenere immagini, quindi il loro contenuto manca.',
     pdfDocxLocalScannedDetail:
       "Le pagine sono state esportate come immagini per preservarne l'aspetto. Non è stato possibile riconoscere testo modificabile.",
     pdfDocxLocalDegradedMsg: 'Alcune pagine sono state esportate come immagini',
@@ -2216,6 +2393,10 @@ const tMain = createI18n({
     menuSaveAs: 'Zapisz jako…',
     menuClose: 'Zamknij',
     menuEdit: 'Edycja',
+    menuView: 'Widok',
+    menuUiZoomIn: 'Powiększ interfejs',
+    menuUiZoomOut: 'Pomniejsz interfejs',
+    menuUiZoomReset: 'Resetuj skalę interfejsu do 100%',
     menuWindow: 'Okno',
     menuHome: 'Strona główna',
     backToHome: 'Wróć do strony głównej',
@@ -2244,6 +2425,7 @@ const tMain = createI18n({
     menuExportDocx: 'Eksportuj jako Word…',
     btnCancel: 'Anuluj',
     pdfDocxFailedMsg: 'Eksport do formatu Word nie powiódł się',
+    pdfConvertFailedMsg: 'Eksport do formatu Markdown / HTML nie powiódł się',
     pdfDocxBusyMsg: 'Eksport do formatu Word już trwa. Poczekaj na jego zakończenie.',
     menuExportPptx: 'Eksportuj jako PowerPoint…',
     pdfPptxFailedMsg: 'Eksport jako PowerPoint nie powiódł się',
@@ -2259,6 +2441,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Stron {pages} nie udało się przekształcić w komórki; ich arkusze zawierają wiersz z informacją.',
     pdfDocxLocalScannedMsg: 'Wykryto zeskanowany dokument',
+    pdfMdLocalMissingMsg: 'W pliku Markdown brakuje części treści',
+    pdfMdLocalScannedDetail:
+      'Nie rozpoznano edytowalnego tekstu, więc plik Markdown nie zawiera użytecznej treści.',
+    pdfMdLocalDroppedDetail:
+      'Stron {pages} nie udało się wiarygodnie odtworzyć; Markdown nie może zawierać obrazów, więc ich treści brakuje.',
     pdfDocxLocalScannedDetail:
       'Strony zostały wyeksportowane jako obrazy, aby zachować ich wygląd. Nie udało się rozpoznać edytowalnego tekstu.',
     pdfDocxLocalDegradedMsg: 'Niektóre strony wyeksportowano jako obrazy',
@@ -2319,6 +2506,10 @@ const tMain = createI18n({
     menuSaveAs: 'Uložit jako…',
     menuClose: 'Zavřít',
     menuEdit: 'Úpravy',
+    menuView: 'Zobrazení',
+    menuUiZoomIn: 'Zvětšit rozhraní',
+    menuUiZoomOut: 'Zmenšit rozhraní',
+    menuUiZoomReset: 'Obnovit měřítko rozhraní na 100%',
     menuWindow: 'Okno',
     menuHome: 'Domů',
     backToHome: 'Zpět na domovskou stránku',
@@ -2347,6 +2538,7 @@ const tMain = createI18n({
     menuExportDocx: 'Exportovat jako Word…',
     btnCancel: 'Zrušit',
     pdfDocxFailedMsg: 'Export do Wordu se nezdařil',
+    pdfConvertFailedMsg: 'Export do Markdown / HTMLu se nezdařil',
     pdfDocxBusyMsg: 'Export do Wordu už probíhá. Počkejte, až se dokončí.',
     menuExportPptx: 'Exportovat jako PowerPoint…',
     pdfPptxFailedMsg: 'Export do PowerPointu se nezdařil',
@@ -2362,6 +2554,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Stránky {pages} nebylo možné převést na buňky; jejich listy místo toho obsahují řádek s upozorněním.',
     pdfDocxLocalScannedMsg: 'Zjištěn naskenovaný dokument',
+    pdfMdLocalMissingMsg: 'V Markdownu chybí část obsahu',
+    pdfMdLocalScannedDetail:
+      'Nepodařilo se rozpoznat upravitelný text, soubor Markdown proto neobsahuje použitelný obsah.',
+    pdfMdLocalDroppedDetail:
+      'Stránky {pages} se nepodařilo spolehlivě rekonstruovat; Markdown nemůže obsahovat obrázky, takže jejich obsah chybí.',
     pdfDocxLocalScannedDetail:
       'Stránky byly exportovány jako obrázky, aby se zachoval jejich vzhled; nepodařilo se rozpoznat žádný upravitelný text.',
     pdfDocxLocalDegradedMsg: 'Některé stránky byly exportovány jako obrázky',
@@ -2420,6 +2617,10 @@ const tMain = createI18n({
     menuSaveAs: 'Opslaan als…',
     menuClose: 'Sluiten',
     menuEdit: 'Bewerken',
+    menuView: 'Beeld',
+    menuUiZoomIn: 'Interface vergroten',
+    menuUiZoomOut: 'Interface verkleinen',
+    menuUiZoomReset: 'Interfaceschaal herstellen naar 100%',
     menuWindow: 'Venster',
     menuHome: 'Start',
     backToHome: 'Terug naar start',
@@ -2448,6 +2649,7 @@ const tMain = createI18n({
     menuExportDocx: 'Exporteren als Word…',
     btnCancel: 'Annuleren',
     pdfDocxFailedMsg: 'Exporteren als Word mislukt',
+    pdfConvertFailedMsg: 'Exporteren als Markdown / HTML mislukt',
     pdfDocxBusyMsg: 'Er is al een Word-export bezig. Wacht tot deze is voltooid.',
     menuExportPptx: 'Exporteren als PowerPoint…',
     pdfPptxFailedMsg: 'Exporteren als PowerPoint mislukt',
@@ -2463,6 +2665,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       "Pagina's {pages} konden niet naar cellen worden omgezet; hun werkbladen bevatten een meldingsrij.",
     pdfDocxLocalScannedMsg: 'Gescand document gedetecteerd',
+    pdfMdLocalMissingMsg: 'Een deel van de inhoud ontbreekt in de Markdown',
+    pdfMdLocalScannedDetail:
+      'Er is geen bewerkbare tekst herkend, dus het Markdown-bestand bevat geen bruikbare inhoud.',
+    pdfMdLocalDroppedDetail:
+      "Pagina('s) {pages} konden niet betrouwbaar worden gereconstrueerd; Markdown kan geen afbeeldingen bevatten, dus hun inhoud ontbreekt.",
     pdfDocxLocalScannedDetail:
       "De pagina's zijn als afbeeldingen geëxporteerd om hun uiterlijk te behouden. Er kon geen bewerkbare tekst worden herkend.",
     pdfDocxLocalDegradedMsg: "Sommige pagina's zijn als afbeeldingen geëxporteerd",
@@ -2523,6 +2730,10 @@ const tMain = createI18n({
     menuSaveAs: 'Simpan Sebagai…',
     menuClose: 'Tutup',
     menuEdit: 'Edit',
+    menuView: 'Lihat',
+    menuUiZoomIn: 'Besarkan Antara Muka',
+    menuUiZoomOut: 'Kecilkan Antara Muka',
+    menuUiZoomReset: 'Set semula Skala Antara Muka kepada 100%',
     menuWindow: 'Tetingkap',
     menuHome: 'Laman Utama',
     backToHome: 'Kembali ke Laman Utama',
@@ -2551,6 +2762,7 @@ const tMain = createI18n({
     menuExportDocx: 'Eksport sebagai Word…',
     btnCancel: 'Batal',
     pdfDocxFailedMsg: 'Gagal mengeksport sebagai Word',
+    pdfConvertFailedMsg: 'Gagal mengeksport sebagai Markdown / HTML',
     pdfDocxBusyMsg: 'Eksport ke Word sedang dijalankan. Sila tunggu sehingga selesai.',
     menuExportPptx: 'Eksport sebagai PowerPoint…',
     pdfPptxFailedMsg: 'Eksport sebagai PowerPoint gagal',
@@ -2566,6 +2778,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'Halaman {pages} tidak dapat ditukar kepada sel; helaiannya mengandungi baris makluman.',
     pdfDocxLocalScannedMsg: 'Dokumen imbasan dikesan',
+    pdfMdLocalMissingMsg: 'Sebahagian kandungan tiada dalam Markdown',
+    pdfMdLocalScannedDetail:
+      'Tiada teks boleh edit yang dapat dikenal pasti, jadi fail Markdown tidak mempunyai kandungan yang boleh digunakan.',
+    pdfMdLocalDroppedDetail:
+      'Halaman {pages} tidak dapat dibina semula dengan boleh dipercayai; Markdown tidak boleh memuatkan imej, jadi kandungannya tiada.',
     pdfDocxLocalScannedDetail:
       'Halaman dieksport sebagai imej untuk mengekalkan rupanya. Tiada teks boleh edit yang dapat dikenali.',
     pdfDocxLocalDegradedMsg: 'Sesetengah halaman dieksport sebagai imej',
@@ -2625,6 +2842,10 @@ const tMain = createI18n({
     menuSaveAs: 'שמירה בשם…',
     menuClose: 'סגירה',
     menuEdit: 'עריכה',
+    menuView: 'תצוגה',
+    menuUiZoomIn: 'הגדלת ממשק',
+    menuUiZoomOut: 'הקטנת ממשק',
+    menuUiZoomReset: 'איפוס מקנה המידה של הממשק ל־100%',
     menuWindow: 'חלון',
     menuHome: 'דף הבית',
     backToHome: 'חזרה לדף הבית',
@@ -2653,6 +2874,7 @@ const tMain = createI18n({
     menuExportDocx: 'ייצוא כ-Word…',
     btnCancel: 'ביטול',
     pdfDocxFailedMsg: 'הייצוא כ-Word נכשל',
+    pdfConvertFailedMsg: 'הייצוא כ-Markdown / HTML נכשל',
     pdfDocxBusyMsg: 'ייצוא ל-Word כבר מתבצע. נא להמתין לסיומו.',
     menuExportPptx: 'ייצוא כ-PowerPoint…',
     pdfPptxFailedMsg: 'הייצוא כ-PowerPoint נכשל',
@@ -2667,6 +2889,10 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'לא ניתן היה להמיר את העמודים {pages} לתאים; בגיליונות שלהם נוספה שורת הודעה.',
     pdfDocxLocalScannedMsg: 'זוהה מסמך סרוק',
+    pdfMdLocalMissingMsg: 'חלק מהתוכן חסר ב-Markdown',
+    pdfMdLocalScannedDetail: 'לא זוהה טקסט הניתן לעריכה, ולכן בקובץ ה-Markdown אין תוכן שימושי.',
+    pdfMdLocalDroppedDetail:
+      'לא ניתן היה לשחזר באופן אמין את עמוד(ים) {pages}; Markdown אינו יכול להכיל תמונות, ולכן תוכנם חסר.',
     pdfDocxLocalScannedDetail:
       'העמודים יוצאו כתמונות כדי לשמר את המראה. לא ניתן היה לזהות טקסט הניתן לעריכה.',
     pdfDocxLocalDegradedMsg: 'חלק מהעמודים יוצאו כתמונות',
@@ -2725,6 +2951,10 @@ const tMain = createI18n({
     menuSaveAs: 'इस रूप में सहेजें…',
     menuClose: 'बंद करें',
     menuEdit: 'संपादन',
+    menuView: 'दृश्य',
+    menuUiZoomIn: 'इंटरफ़ेस बड़ा करें',
+    menuUiZoomOut: 'इंटरफ़ेस छोटा करें',
+    menuUiZoomReset: 'इंटरफ़ेस स्केल को 100% पर रीसेट करें',
     menuWindow: 'विंडो',
     menuHome: 'होम',
     backToHome: 'होम पर वापस जाएँ',
@@ -2753,6 +2983,7 @@ const tMain = createI18n({
     menuExportDocx: 'Word के रूप में निर्यात करें…',
     btnCancel: 'रद्द करें',
     pdfDocxFailedMsg: 'Word के रूप में निर्यात विफल रहा',
+    pdfConvertFailedMsg: 'Markdown / HTML के रूप में निर्यात विफल रहा',
     pdfDocxBusyMsg: 'Word के रूप में निर्यात पहले से चल रहा है। कृपया पूरा होने तक प्रतीक्षा करें।',
     menuExportPptx: 'PowerPoint के रूप में निर्यात करें…',
     pdfPptxFailedMsg: 'PowerPoint के रूप में निर्यात विफल रहा',
@@ -2768,6 +2999,11 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedDetail:
       'पेज {pages} सेल में परिवर्तित नहीं किए जा सके; उनकी वर्कशीट में एक सूचना पंक्ति जोड़ी गई है।',
     pdfDocxLocalScannedMsg: 'स्कैन किया गया दस्तावेज़ मिला',
+    pdfMdLocalMissingMsg: 'Markdown में कुछ सामग्री गायब है',
+    pdfMdLocalScannedDetail:
+      'कोई संपादन योग्य पाठ पहचाना नहीं जा सका, इसलिए Markdown फ़ाइल में उपयोगी सामग्री नहीं है।',
+    pdfMdLocalDroppedDetail:
+      'पृष्ठ {pages} को विश्वसनीय रूप से पुनर्निर्मित नहीं किया जा सका; Markdown में छवियाँ नहीं रखी जा सकतीं, इसलिए उनकी सामग्री गायब है।',
     pdfDocxLocalScannedDetail:
       'पृष्ठों का स्वरूप बनाए रखने के लिए उन्हें छवियों के रूप में निर्यात किया गया। संपादन योग्य टेक्स्ट को पहचाना नहीं जा सका।',
     pdfDocxLocalDegradedMsg: 'कुछ पृष्ठ छवियों के रूप में निर्यात किए गए',
@@ -2828,6 +3064,10 @@ const tMain = createI18n({
     menuSaveAs: '另存新檔…',
     menuClose: '關閉',
     menuEdit: '編輯',
+    menuView: '檢視',
+    menuUiZoomIn: '放大介面',
+    menuUiZoomOut: '縮小介面',
+    menuUiZoomReset: '將介面縮放重設為 100%',
     menuWindow: '視窗',
     menuHome: '首頁',
     backToHome: '返回首頁',
@@ -2856,6 +3096,7 @@ const tMain = createI18n({
     menuExportDocx: '匯出為 Word…',
     btnCancel: '取消',
     pdfDocxFailedMsg: '匯出為 Word 失敗',
+    pdfConvertFailedMsg: '匯出為 Markdown / HTML 失敗',
     pdfDocxBusyMsg: '正在轉換中，請等待目前的匯出完成。',
     menuExportPptx: '匯出為 PPT…',
     pdfPptxFailedMsg: '匯出為 PPT 失敗',
@@ -2868,6 +3109,9 @@ const tMain = createI18n({
     pdfXlsxLocalSkippedMsg: '部分頁面未轉換為儲存格',
     pdfXlsxLocalSkippedDetail: '第 {pages} 頁無法轉換為儲存格，對應工作表中已寫入提示列。',
     pdfDocxLocalScannedMsg: '偵測到掃描文件',
+    pdfMdLocalMissingMsg: 'Markdown 中缺少部分內容',
+    pdfMdLocalScannedDetail: '未能辨識出可編輯的文字，Markdown 檔案沒有可用內容。',
+    pdfMdLocalDroppedDetail: '第 {pages} 頁無法可靠重建，Markdown 不含圖片，該頁內容已缺失。',
     pdfDocxLocalScannedDetail: '本機轉換已將各頁以圖片方式保真匯出，未能辨識出可編輯的文字。',
     pdfDocxLocalDegradedMsg: '部分頁面已以圖片匯出',
     pdfDocxLocalDegradedDetail: '第 {pages} 頁的版面無法可靠重建，已以整頁圖片保真匯出。',
@@ -3232,11 +3476,102 @@ function applyMenuFor(kind: TabKind): void {
       buildHomeMenu()
   }
   withUserGuide()
+  withViewMenu()
+}
+
+/**
+ * The View › interface-scale items, shared by the home menu and every editor
+ * tab. CmdOrCtrl+Alt (not Shift): Shift+= is Sheets insert-cells and Docs
+ * superscript, and the View menu now exists on editor tabs too, where those
+ * accelerators are taken.
+ */
+function uiScaleMenuItems(): MenuItemConstructorOptions[] {
+  return [
+    {
+      label: tm('menuUiZoomIn'),
+      accelerator: 'CmdOrCtrl+Alt+=',
+      click: () => changeUiScale(APP_SETTINGS_PATH(), 1),
+    },
+    {
+      label: tm('menuUiZoomOut'),
+      accelerator: 'CmdOrCtrl+Alt+-',
+      click: () => changeUiScale(APP_SETTINGS_PATH(), -1),
+    },
+    { type: 'separator' },
+    {
+      label: tm('menuUiZoomReset'),
+      accelerator: 'CmdOrCtrl+Alt+0',
+      click: () => changeUiScale(APP_SETTINGS_PATH(), 0),
+    },
+  ]
+}
+
+function viewMenuTemplate(): MenuItemConstructorOptions {
+  return { label: tm('menuView'), submenu: uiScaleMenuItems() }
+}
+
+/**
+ * Interface-scale items in the View menu of every tab kind. Editor menus are
+ * built in the editor apps (docs/sheets/slides) or by the three shell-owned
+ * builders, so rather than teaching seven menu builders about the scale, the
+ * current menu is post-processed here — the same shape as withUserGuide below.
+ * An existing View menu (docs, slides: document zoom) gains the items after a
+ * separator; the rest get a fresh View menu inserted before the Help menu that
+ * withUserGuide has just guaranteed.
+ */
+function withViewMenu(): void {
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return
+  const hasScale = menu.items.some((item) =>
+    item.submenu?.items.some((i) => i.accelerator === 'CmdOrCtrl+Alt+='),
+  )
+  if (hasScale) return
+  const view = menu.items.find((item) => item.label === tm('menuView'))
+  if (view?.submenu) {
+    // build the separator together with the items: Electron drops a separator
+    // that sits alone in a template
+    for (const item of Menu.buildFromTemplate([{ type: 'separator' }, ...uiScaleMenuItems()])
+      .items) {
+      view.submenu.append(item)
+    }
+    return
+  }
+  const viewItem = Menu.buildFromTemplate([viewMenuTemplate()]).items[0]!
+  const helpIdx = menu.items.findIndex((item) => item.role === 'help')
+  if (helpIdx === -1) menu.append(viewItem)
+  else menu.insert(helpIdx, viewItem)
+}
+
+/// Interface scale (genoffice#1913). Read once at boot, then replaced by the View menu.
+let currentUiScale = 1
+
+/**
+ * Stamp the stored interface scale into every renderer — now, and for any
+ * window created later.
+ *
+ * `web-contents-created` is the hook that covers all three window kinds at
+ * once: the shell window, every tab's WebContentsView, and a detached editor
+ * window. Each gets it on `did-finish-load`, because a stylesheet inserted
+ * before the document exists is thrown away.
+ */
+function installUiScale(): void {
+  currentUiScale = readUiScale(APP_SETTINGS_PATH())
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('did-finish-load', () => applyUiScaleTo(contents, currentUiScale))
+  })
+  applyUiScaleToAll(currentUiScale)
+  // A scale change moves the tab strip, so the editor views below it have to
+  // move too — and the Windows/Linux caption band is sized from it.
+  onUiScaleChanged((scale) => {
+    currentUiScale = scale
+    tabManager?.layout()
+    refreshTitleBarOverlay()
+  })
 }
 
 function refreshTitleBarOverlay(): void {
   if (process.platform === 'darwin' || !shellWindow || shellWindow.isDestroyed()) return
-  shellWindow.setTitleBarOverlay(tabStripOverlay(nativeTheme.shouldUseDarkColors))
+  shellWindow.setTitleBarOverlay(tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale))
 }
 
 function createShellWindow(): void {
@@ -3255,7 +3590,7 @@ function createShellWindow(): void {
           // stays registered for its accelerators and opens from the strip's
           // menu button (Alt still reveals the native bar where one exists)
           titleBarStyle: 'hidden' as const,
-          titleBarOverlay: tabStripOverlay(nativeTheme.shouldUseDarkColors),
+          titleBarOverlay: tabStripOverlay(nativeTheme.shouldUseDarkColors, currentUiScale),
           autoHideMenuBar: true,
         }),
     webPreferences: {
@@ -3301,6 +3636,8 @@ function createShellWindow(): void {
               : kind === 'html'
                 ? tm('untitledHtml')
                 : tm('untitledSheet'),
+    // the tab strip is interface chrome, so its height follows the scale
+    () => currentUiScale,
   )
   tabManager = manager
 
@@ -3308,7 +3645,7 @@ function createShellWindow(): void {
   // document back. The strip reports the insertion slot for each preview
   // (lastDockIndex); the slot is consumed by the dock that follows.
   setDockHost({
-    band: () => dockBandFor(win),
+    band: () => dockBandFor(win, currentUiScale),
     preview: (x) => {
       if (!win.isDestroyed())
         win.webContents.send(TABS_CHANNELS.dockPreview, x === null ? null : { x })
@@ -3906,9 +4243,9 @@ function registerHomeIpc(): void {
     if (!loadGenofficeAuth()) return { loggedIn: false }
     await proxyBootstrap
     const info = await gskLoginInfo()
-    return info
-      ? { loggedIn: true, email: info.email, creditBalance: info.creditBalance }
-      : { loggedIn: true }
+    if (info) return { loggedIn: true, email: info.email, creditBalance: info.creditBalance }
+    // login-info answering 401 drops an expired key: report signed-out right away
+    return { loggedIn: !!loadGenofficeAuth() }
   })
 
   // login progress is streamed to the requesting renderer; the auth URL is
@@ -4047,6 +4384,27 @@ function registerHomeIpc(): void {
       throw new Error('path is not in the knowledge base')
     }
     return readKnowledgeFilePage(path, offset)
+  })
+
+  ipcMain.handle('kb:create-document', async (_event, raw: unknown): Promise<unknown> => {
+    const req = parseKbCreateRequest(raw)
+    return createKnowledgeDocument(
+      {
+        dir: defaultSaveDir,
+        uniquePath: uniquePathIn,
+        sanitizeBase: sanitizeFileBase,
+        writeText: (path, text) => atomicWriteFile(path, Buffer.from(text, 'utf8')),
+        markdownToDocx: async (markdown, out) => {
+          await createFileViaCli(bundledCliRunner(), {
+            type: 'docx',
+            input: { name: 'content.md', content: markdown },
+            out,
+          })
+        },
+        recordRecent: recordRecentFile,
+      },
+      req,
+    )
   })
 
   ipcMain.handle(
@@ -4431,6 +4789,7 @@ function registerHomeIpc(): void {
       customFontSize: 'customFontSize' in raw ? raw.customFontSize : prev.customFontSize,
       spellcheck: 'spellcheck' in raw ? raw.spellcheck : prev.spellcheck,
       openInNewDocs: 'openInNewDocs' in raw ? raw.openInNewDocs : prev.openInNewDocs,
+      showAiSidebar: 'showAiSidebar' in raw ? raw.showAiSidebar : prev.showAiSidebar,
     })
     if (sameAiPanelPrefs(next, prev)) return prev
     cachedAiPanelPrefs = next
@@ -4440,6 +4799,7 @@ function registerHomeIpc(): void {
       aiPanelCustomFontSize: next.customFontSize,
       aiPanelSpellcheck: next.spellcheck,
       aiPanelOpenInNewDocs: next.openInNewDocs,
+      aiPanelShowSidebar: next.showAiSidebar,
     })
     for (const wc of webContents.getAllWebContents()) wc.send('app:ai-panel-prefs-changed', next)
     return next
@@ -5021,6 +5381,7 @@ function buildHomeMenu(): void {
         { role: 'close', label: tm('menuClose') },
       ],
     },
+    viewMenuTemplate(),
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
     windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
     {
@@ -5367,7 +5728,7 @@ let exportingPdfDocx = false
  * edits, pick the destination, convert in-process via PDFium wasm, write the
  * file and open it in a Docs tab. No login, no credits.
  */
-async function exportPdfAsDocxLocal(): Promise<void> {
+async function exportPdfAsDocxLocal(format: 'docx' | 'md' | 'html' = 'docx'): Promise<void> {
   const tab = activePdfTarget()
   const host = pdfHostWindow(tab)
   if (!tab?.filePath || !host) return
@@ -5380,20 +5741,32 @@ async function exportPdfAsDocxLocal(): Promise<void> {
   }
   exportingPdfDocx = true
   try {
-    if (!(await flushPdfSave(tab.webContents))) return
+    if (!(await flushPdfSave(tab.webContents, true))) return
     const picked = await showSaveDialogWithMemory(dialog, host, {
-      defaultPath: tab.filePath.replace(/\.pdf$/i, '.docx'),
-      filters: [{ name: tm('filterWord'), extensions: ['docx'] }],
+      defaultPath: tab.filePath.replace(/\.pdf$/i, `.${format}`),
+      filters: [
+        format === 'docx'
+          ? { name: tm('filterWord'), extensions: ['docx'] }
+          : format === 'md'
+            ? { name: 'Markdown', extensions: ['md'] }
+            : { name: tm('filterHtml'), extensions: ['html'] },
+      ],
     })
     if (picked.canceled || !picked.filePath) return
     // If the destination is already open in a docs tab, close it first (its
     // normal unsaved-changes guard applies) so the converted file opens fresh
     // instead of leaving a stale tab whose next save would clobber the result.
-    const staleTabId = tabManager?.findDocsTabByPath(picked.filePath)
+    const findStaleTab = () =>
+      format === 'docx'
+        ? tabManager?.findDocsTabByPath(picked.filePath)
+        : format === 'md'
+          ? tabManager?.findMarkdownTabByPath(picked.filePath)
+          : tabManager?.findHtmlTabByPath(picked.filePath)
+    const staleTabId = findStaleTab()
     if (staleTabId) {
       await tabManager?.closeTab(staleTabId)
       tabManager?.activateTab(tab.id)
-      if (tabManager?.findDocsTabByPath(picked.filePath)) return
+      if (findStaleTab()) return
     }
     host.setProgressBar(2)
     // encrypted PDFs prompt for the password (P23), looping on wrong entries;
@@ -5427,7 +5800,8 @@ async function exportPdfAsDocxLocal(): Promise<void> {
       },
     )
     if (result === null) return
-    await atomicWriteFile(picked.filePath, result.docx)
+    if (format === 'docx') await atomicWriteFile(picked.filePath, result.docx)
+    else await exportDocxBytesHeadless(result.docx, picked.filePath, format, basename(pdfPath))
 
     // degrade transparency (plan §7.6 dual-track split): whole scan → say so
     // once; individual image-fallback pages → name them;
@@ -5437,28 +5811,41 @@ async function exportPdfAsDocxLocal(): Promise<void> {
     const imagePages = result.pageResults
       .filter((r) => r.status !== 'ok' && r.status !== 'ocr')
       .map((r) => r.page)
-    if (result.scannedDocument) {
+    // Markdown cannot carry the image fallback, so for it those pages are
+    // missing rather than "exported as images"; HTML keeps them like Word
+    const imagesLost = format === 'md'
+    // scannedDocument means "mostly scanned"; for Markdown only a document
+    // where every page is an unrecognized scan is really empty (degraded
+    // pages had text, so even a fully degraded file is reported page by page)
+    const nothingLeft = imagesLost
+      ? result.pageResults.every((r) => r.status === 'scanned')
+      : result.scannedDocument
+    if (nothingLeft) {
       await dialog.showMessageBox(host, {
         type: 'info',
-        message: tm('pdfDocxLocalScannedMsg'),
-        detail: tm('pdfDocxLocalScannedDetail'),
+        message: tm(imagesLost ? 'pdfMdLocalMissingMsg' : 'pdfDocxLocalScannedMsg'),
+        detail: tm(imagesLost ? 'pdfMdLocalScannedDetail' : 'pdfDocxLocalScannedDetail'),
       })
     } else if (imagePages.length > 0 && ocrPages.length > 0) {
       // mixed documents surface BOTH facts in one dialog: which pages shipped
       // as images and which carry machine-read text the user should proofread
       await dialog.showMessageBox(host, {
         type: 'info',
-        message: tm('pdfDocxLocalDegradedMsg'),
+        message: tm(imagesLost ? 'pdfMdLocalMissingMsg' : 'pdfDocxLocalDegradedMsg'),
         detail:
-          tm('pdfDocxLocalDegradedDetail', { pages: imagePages.join(', ') }) +
+          tm(imagesLost ? 'pdfMdLocalDroppedDetail' : 'pdfDocxLocalDegradedDetail', {
+            pages: imagePages.join(', '),
+          }) +
           '\n\n' +
           tm('pdfDocxLocalOcrDetail', { pages: ocrPages.join(', ') }),
       })
     } else if (imagePages.length > 0) {
       await dialog.showMessageBox(host, {
         type: 'info',
-        message: tm('pdfDocxLocalDegradedMsg'),
-        detail: tm('pdfDocxLocalDegradedDetail', { pages: imagePages.join(', ') }),
+        message: tm(imagesLost ? 'pdfMdLocalMissingMsg' : 'pdfDocxLocalDegradedMsg'),
+        detail: tm(imagesLost ? 'pdfMdLocalDroppedDetail' : 'pdfDocxLocalDegradedDetail', {
+          pages: imagePages.join(', '),
+        }),
       })
     } else if (ocrPages.length > 0) {
       await dialog.showMessageBox(host, {
@@ -5487,7 +5874,7 @@ async function exportPdfAsDocxLocal(): Promise<void> {
             : String(err)
       void dialog.showMessageBox(host, {
         type: 'error',
-        message: tm('pdfDocxFailedMsg'),
+        message: tm(format === 'docx' ? 'pdfDocxFailedMsg' : 'pdfConvertFailedMsg'),
         detail,
       })
     }
@@ -5497,6 +5884,26 @@ async function exportPdfAsDocxLocal(): Promise<void> {
     closePdfPasswordDialog()
     exportingPdfDocx = false
     if (host && !host.isDestroyed()) host.setProgressBar(-1)
+  }
+}
+
+/**
+ * Markdown / HTML come out of the Word reconstruction: the in-memory .docx
+ * is parked in a temp dir and the hidden Docs exporter serializes it.
+ */
+async function exportDocxBytesHeadless(
+  docx: Uint8Array,
+  outPath: string,
+  format: 'md' | 'html',
+  sourceName: string,
+): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'genoffice-pdf-convert-'))
+  try {
+    const docxPath = join(dir, sourceName.replace(/\.pdf$/i, '') + '.docx')
+    await atomicWriteFile(docxPath, docx)
+    await exportDocsHeadless(docxPath, outPath, format)
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
   }
 }
 
@@ -5520,7 +5927,7 @@ async function exportPdfAsPptxLocal(): Promise<void> {
   }
   exportingPdfDocx = true
   try {
-    if (!(await flushPdfSave(tab.webContents))) return
+    if (!(await flushPdfSave(tab.webContents, true))) return
     const picked = await showSaveDialogWithMemory(dialog, host, {
       defaultPath: tab.filePath.replace(/\.pdf$/i, '.pptx'),
       filters: [{ name: tm('filterPpt'), extensions: ['pptx'] }],
@@ -5631,7 +6038,7 @@ async function exportPdfAsXlsxLocal(): Promise<void> {
   }
   exportingPdfDocx = true
   try {
-    if (!(await flushPdfSave(tab.webContents))) return
+    if (!(await flushPdfSave(tab.webContents, true))) return
     const picked = await showSaveDialogWithMemory(dialog, host, {
       defaultPath: tab.filePath.replace(/\.pdf$/i, '.xlsx'),
       filters: [{ name: tm('filterExcel'), extensions: ['xlsx'] }],
@@ -5727,7 +6134,7 @@ async function exportPdfAsXlsxLocal(): Promise<void> {
 ipcMain.handle(PDF_CHANNELS.convertOffice, async (e, format: unknown) => {
   // only the active pdf tab may trigger a conversion (its file is the source)
   if (activePdfTarget()?.webContents.id !== e.sender.id) return
-  if (format === 'docx') await exportPdfAsDocxLocal()
+  if (format === 'docx' || format === 'md' || format === 'html') await exportPdfAsDocxLocal(format)
   else if (format === 'xlsx') await exportPdfAsXlsxLocal()
   else if (format === 'pptx') await exportPdfAsPptxLocal()
 })
@@ -6108,12 +6515,7 @@ app.whenReady().then(async () => {
     // the headless create_*/read_* tools delegate to the bundled genoffice CLI
     // (the same engines, no second implementation); it runs on the app's own
     // Node runtime via ELECTRON_RUN_AS_NODE
-    cliRunner: createCliRunner({
-      executable: process.execPath,
-      entry: app.isPackaged
-        ? join(process.resourcesPath, 'cli', 'genoffice.cjs')
-        : join(APPS_ROOT, '..', 'packages', 'cli', 'dist', 'genoffice.cjs'),
-    }),
+    cliRunner: bundledCliRunner(),
     // lets the content tools take a `document` argument (tab id or path) and edit
     // a tab the *user* has open, with no create_session involved
     resolveTarget: createOpenTargetResolver({
@@ -6137,6 +6539,7 @@ app.whenReady().then(async () => {
   void startMcpFromSettings(currentMcpSettings()).catch((error) => {
     console.error('[mcp] failed to start on boot:', error)
   })
+  installUiScale()
   createShellWindow()
   // deferred to ready: labels need currentLang(), which reads app.getLocale()
   installBackToHomeItems()

@@ -22,8 +22,13 @@ import {
   removeCustomEndpoint,
   selectCustomEndpoint,
   upsertCustomEndpoint,
+  AI_CUSTOM_PROTOCOLS,
 } from '@genoffice/ai-provider/browser'
 import type {
+  AiCustomCompat,
+  AiCustomEndpoint,
+  AiCustomModelProfile,
+  AiCustomProtocol,
   AiMediaProviderId,
   AiMediaProviderMeta,
   AiMediaSettings,
@@ -367,6 +372,10 @@ function AiModelPane({ t }: { t: TFunc }) {
   const endpointConfig = settings ? settings.providers[settings.provider] : undefined
   const endpointBaseUrl = (endpointConfig?.baseUrl ?? '').trim()
   const endpointApiKey = endpointConfig?.apiKey ?? ''
+  // The probe speaks the endpoint's declared protocol: an Anthropic- or
+  // Gemini-shaped gateway answers a different route, and the list it returns
+  // is the only model source the picker has.
+  const endpointApi = endpointConfig?.profile?.api
   // The stored model decides where the pin goes below, but changing it must not
   // send another request, so it is read when the reply lands rather than keyed on.
   const selectedModelRef = useRef('')
@@ -375,6 +384,8 @@ function AiModelPane({ t }: { t: TFunc }) {
   })
   /** the address that produced the list currently folded in; '' when none is */
   const listedForRef = useRef('')
+  /** the capability declarations that probe answered with, for the save merge */
+  const probedProfilesRef = useRef<AiCustomModelProfile[] | undefined>(undefined)
 
   useEffect(() => {
     if (!endpointProvider) return
@@ -383,13 +394,14 @@ function AiModelPane({ t }: { t: TFunc }) {
     // the free-text box is the honest thing to show while the answer is unknown.
     if (listedForRef.current && listedForRef.current !== endpointBaseUrl) {
       listedForRef.current = ''
+      probedProfilesRef.current = undefined
       setCatalog(foldModels(endpointProvider, []))
     }
     if (!endpointBaseUrl || !window.aiOffice.getCustomModels) return
     let cancelled = false
     const timer = setTimeout(() => {
       void window.aiOffice
-        .getCustomModels(endpointBaseUrl, endpointApiKey)
+        .getCustomModels(endpointBaseUrl, endpointApiKey, endpointApi)
         .then((live) => {
           // A server that will not answer leaves the current list alone: a blip
           // must not wipe a picker mid-use.
@@ -402,6 +414,7 @@ function AiModelPane({ t }: { t: TFunc }) {
           const models =
             selected && !live.models.includes(selected) ? [selected, ...live.models] : live.models
           listedForRef.current = endpointBaseUrl
+          probedProfilesRef.current = live.profiles
           setCatalog(foldModels(endpointProvider, models))
         })
         .catch(() => undefined)
@@ -412,7 +425,7 @@ function AiModelPane({ t }: { t: TFunc }) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [endpointProvider, endpointBaseUrl, endpointApiKey])
+  }, [endpointProvider, endpointBaseUrl, endpointApiKey, endpointApi])
 
   if (!settings) return null
   const provider = settings.provider
@@ -432,6 +445,29 @@ function AiModelPane({ t }: { t: TFunc }) {
     setTestResult(null)
   }
   const endpoint = meta?.needsBaseUrl ? activeCustomEndpoint(settings) : undefined
+  /** Patch the active endpoint's declarative profile (protocol, headers, timeouts, switches). */
+  const updateEndpointProfile = (patch: Partial<AiCustomEndpoint>) => {
+    if (!endpoint) return
+    setSettings(upsertCustomEndpoint(settings, { ...endpoint, ...patch }))
+    touch()
+  }
+  /** Remove a key from the endpoint entirely, so the shipped heuristic answers again. */
+  const clearEndpointProfileKey = (
+    key: 'compat' | 'modelProfiles' | 'apiKeyEnv' | 'idleTimeoutMs',
+  ) => {
+    if (!endpoint) return
+    const next = { ...endpoint }
+    delete next[key]
+    setSettings(upsertCustomEndpoint(settings, next))
+    touch()
+  }
+  const endpointCompat = endpoint?.compat ?? {}
+  /** The tri-state image-input control: undefined keeps the shipped heuristic. */
+  const endpointVision = endpointCompat.vision
+  const headersText = Object.entries(endpoint?.headers ?? {})
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n')
+  const modelsText = JSON.stringify(endpoint?.modelProfiles ?? [], null, 2)
   const updateConfig = (patch: Partial<typeof config>) => {
     if (meta?.needsBaseUrl) {
       // the slot mirrors the active endpoint, so the edit lands on the endpoint
@@ -498,7 +534,16 @@ function AiModelPane({ t }: { t: TFunc }) {
     let toSave = settings
     if (endpoint && listedForRef.current && listedForRef.current === endpoint.baseUrl) {
       const live = (meta?.models ?? []).filter((m) => m !== endpoint.model)
-      if (live.length > 0) toSave = upsertCustomEndpoint(settings, { ...endpoint, models: live })
+      // The probe's capability facts refresh the cache beside the id list —
+      // never the user's declarations, which stay exactly as typed. A model
+      // the server stops serving stops being described on the next probe.
+      const probed = probedProfilesRef.current
+      const { models: _models, probedProfiles: _probedProfiles, ...declarations } = endpoint
+      toSave = upsertCustomEndpoint(settings, {
+        ...declarations,
+        ...(live.length > 0 ? { models: live } : {}),
+        ...(probed && probed.length > 0 ? { probedProfiles: probed } : {}),
+      })
     }
     window.aiOffice
       .setAiSettings?.(toSave)
@@ -727,6 +772,210 @@ function AiModelPane({ t }: { t: TFunc }) {
               onChange={(e) => updateConfig({ baseUrl: e.target.value.trim() })}
             />
           </div>
+
+          {endpoint && (
+            <>
+              <div className="set-field">
+                <div className="set-field-text">
+                  <div className="set-field-stack">
+                    <label className="set-field-label">{t('setAiApiProtocol')}</label>
+                    <div className="set-field-desc">{t('setAiApiProtocolHint')}</div>
+                  </div>
+                </div>
+                <Dropdown
+                  className="set-dd"
+                  value={endpoint.api ?? 'openai-compatible'}
+                  ariaLabel={t('setAiApiProtocol')}
+                  options={AI_CUSTOM_PROTOCOLS.map((api) => ({
+                    value: api,
+                    label: t(PROTOCOL_LABEL_KEYS[api]),
+                  }))}
+                  onPick={(api) => updateEndpointProfile({ api: api as AiCustomProtocol })}
+                />
+              </div>
+              <div className="set-field set-ai-profile-field">
+                <div className="set-field-text">
+                  <div className="set-field-stack">
+                    <label className="set-field-label">{t('setAiCompatTitle')}</label>
+                    <div className="set-field-desc">{t('setAiCompatEchoHint')}</div>
+                  </div>
+                </div>
+                <div className="set-ai-profile-switches">
+                  <ProfileSwitch
+                    label={t('setAiCompatOmitTemp')}
+                    value={endpointCompat.omitTemperature}
+                    onChange={(on) =>
+                      updateEndpointProfile({
+                        compat: applySwitch(endpointCompat, 'omitTemperature', on),
+                      })
+                    }
+                    texts={{
+                      on: t('setAiSwitchOn'),
+                      off: t('setAiSwitchOff'),
+                      auto: t('setAiSwitchAuto'),
+                    }}
+                  />
+                  <ProfileSwitch
+                    label={t('setAiCompatEchoReasoning')}
+                    value={endpointCompat.echoReasoning}
+                    onChange={(on) =>
+                      updateEndpointProfile({
+                        compat: applySwitch(endpointCompat, 'echoReasoning', on),
+                      })
+                    }
+                    texts={{
+                      on: t('setAiSwitchOn'),
+                      off: t('setAiSwitchOff'),
+                      auto: t('setAiSwitchAuto'),
+                    }}
+                  />
+                  <ProfileSwitch
+                    label={t('setAiCompatMaxCompletion')}
+                    value={endpointCompat.useMaxCompletionTokens}
+                    onChange={(on) =>
+                      updateEndpointProfile({
+                        compat: applySwitch(endpointCompat, 'useMaxCompletionTokens', on),
+                      })
+                    }
+                    texts={{
+                      on: t('setAiSwitchOn'),
+                      off: t('setAiSwitchOff'),
+                      auto: t('setAiSwitchAuto'),
+                    }}
+                  />
+                  <div className="set-ai-profile-row">
+                    <span className="set-ai-profile-label">{t('setAiCompatVision')}</span>
+                    <Dropdown
+                      className="set-dd"
+                      value={endpointVision === undefined ? 'auto' : endpointVision ? 'yes' : 'no'}
+                      ariaLabel={t('setAiCompatVision')}
+                      options={[
+                        { value: 'auto', label: t('setAiCompatVisionAuto') },
+                        { value: 'yes', label: t('setAiCompatVisionYes') },
+                        { value: 'no', label: t('setAiCompatVisionNo') },
+                      ]}
+                      onPick={(v) =>
+                        updateEndpointProfile({
+                          compat: applySwitch(
+                            endpointCompat,
+                            'vision',
+                            v === 'auto' ? undefined : v === 'yes',
+                          ),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+              <ProfileBlobField
+                fieldId="set-ai-endpoint-headers"
+                label={t('setAiEndpointHeaders')}
+                hint={t('setAiEndpointHeadersHint')}
+                bad={t('setAiEndpointHeadersBad')}
+                text={headersText}
+                placeholder={'X-Tenant: office'}
+                multiline
+                onCommit={(text) => {
+                  const headers = parseHeaderLines(text)
+                  if (!headers) return false
+                  updateEndpointProfile({ headers })
+                  return true
+                }}
+              />
+              <div className="set-field">
+                <div className="set-field-text">
+                  <div className="set-field-stack">
+                    <label className="set-field-label" htmlFor="set-ai-endpoint-idle">
+                      {t('setAiEndpointIdleTimeout')}
+                    </label>
+                    <div className="set-field-desc">{t('setAiEndpointIdleTimeoutHint')}</div>
+                  </div>
+                </div>
+                <input
+                  id="set-ai-endpoint-idle"
+                  className="set-input set-num-input"
+                  type="number"
+                  min={1}
+                  max={600}
+                  step={10}
+                  value={
+                    endpoint.idleTimeoutMs === undefined
+                      ? ''
+                      : Math.round(endpoint.idleTimeoutMs / 1000)
+                  }
+                  placeholder="180"
+                  onChange={(e) => {
+                    const raw = e.target.value.trim()
+                    if (!raw) {
+                      clearEndpointProfileKey('idleTimeoutMs')
+                      return
+                    }
+                    const seconds = Number.parseInt(raw, 10)
+                    if (!Number.isFinite(seconds)) return
+                    updateEndpointProfile({
+                      idleTimeoutMs: Math.max(1, Math.min(600, seconds)) * 1000,
+                    })
+                  }}
+                />
+              </div>
+              <div className="set-field">
+                <div className="set-field-text">
+                  <div className="set-field-stack">
+                    <label className="set-field-label" htmlFor="set-ai-endpoint-key-env">
+                      {t('setAiEndpointKeyEnv')}
+                    </label>
+                    <div className="set-field-desc">{t('setAiEndpointKeyEnvHint')}</div>
+                  </div>
+                </div>
+                <input
+                  id="set-ai-endpoint-key-env"
+                  className="set-input"
+                  type="text"
+                  value={endpoint.apiKeyEnv ?? ''}
+                  placeholder="GW_API_KEY"
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(e) => {
+                    const name = e.target.value.trim()
+                    if (!name) {
+                      clearEndpointProfileKey('apiKeyEnv')
+                      return
+                    }
+                    updateEndpointProfile({ apiKeyEnv: name })
+                  }}
+                />
+              </div>
+              <ProfileBlobField
+                fieldId="set-ai-endpoint-models"
+                label={t('setAiEndpointModels')}
+                hint={
+                  probedProfilesRef.current?.length
+                    ? t('setAiEndpointModelsProbed')
+                    : t('setAiEndpointModelsHint')
+                }
+                bad={t('setAiEndpointModelsBad')}
+                text={modelsText}
+                placeholder={MODEL_DECLARATION_PLACEHOLDER}
+                multiline
+                onCommit={(text) => {
+                  if (!text.trim()) {
+                    clearEndpointProfileKey('modelProfiles')
+                    return true
+                  }
+                  try {
+                    const parsed = JSON.parse(text)
+                    if (!Array.isArray(parsed)) return false
+                    updateEndpointProfile({
+                      modelProfiles: parsed as AiCustomEndpoint['modelProfiles'],
+                    })
+                    return true
+                  } catch {
+                    return false
+                  }
+                }}
+              />
+            </>
+          )}
         </>
       ) : null}
       <div className="set-field">
@@ -1637,7 +1886,7 @@ export function SettingsModal({
               </button>
             ))}
           </nav>
-          <div className="set-pane">
+          <div className={'set-pane' + (section === 'aiModel' ? ' set-pane-ai-model' : '')}>
             {section === 'account' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAccount')}</h3>
@@ -1802,6 +2051,21 @@ export function SettingsModal({
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">
+                      <div className="set-field-label">{t('setAiShowSidebar')}</div>
+                      <div className="set-field-desc">{t('setAiShowSidebarDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={aiPrefs.showAiSidebar}
+                    aria-label={t('setAiShowSidebar')}
+                    onClick={() => updateAiPrefs({ showAiSidebar: !aiPrefs.showAiSidebar })}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
                       <div className="set-field-label">{t('setAiOpenInNewDocs')}</div>
                       <div className="set-field-desc">{t('setAiOpenInNewDocsDesc')}</div>
                     </div>
@@ -1957,6 +2221,182 @@ export function SettingsModal({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Friendly label per declared protocol; the wire ids stay the stored value. */
+const PROTOCOL_LABEL_KEYS: Record<AiCustomProtocol, StringKey> = {
+  'openai-compatible': 'setAiApiOpenai',
+  anthropic: 'setAiApiAnthropic',
+  gemini: 'setAiApiGemini',
+}
+
+/** Placeholder for the model-declaration blob: one entry per declared capability. */
+const MODEL_DECLARATION_PLACEHOLDER = ['{', '  "id": "m",', '  "vision": true', '}'].join('\n')
+
+/** Apply one endpoint compat switch: undefined clears it so the heuristic answers again. */
+function applySwitch<K extends keyof AiCustomCompat>(
+  compat: AiCustomCompat,
+  key: K,
+  value: boolean | undefined,
+): AiCustomCompat {
+  if (value === undefined) {
+    if (!(key in compat)) return compat
+    const next = { ...compat }
+    delete next[key]
+    return next
+  }
+  return { ...compat, [key]: value }
+}
+
+/** Parse the header textarea: one "Name: Value" per line; false when a line is malformed. */
+function parseHeaderLines(text: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    const at = line.indexOf(':')
+    if (at <= 0) return undefined
+    const name = line.slice(0, at).trim()
+    const value = line.slice(at + 1).trim()
+    if (!name || !value) return undefined
+    out[name] = value
+  }
+  return out
+}
+
+/** A tri-state switch: off = never, on = always, unset (middle) = the shipped heuristic. */
+function ProfileSwitch({
+  label,
+  value,
+  onChange,
+  texts,
+}: {
+  label: string
+  value: boolean | undefined
+  onChange: (value: boolean | undefined) => void
+  texts: { on: string; off: string; auto: string }
+}) {
+  return (
+    <div className="set-ai-profile-row">
+      <span className="set-ai-profile-label">{label}</span>
+      {/* one radio group per switch: three buttons without the group role is
+          three unrelated toggles to a screen reader */}
+      <div className="set-ai-profile-tri" role="radiogroup" aria-label={label}>
+        {(
+          [
+            { option: false, text: texts.off },
+            { option: undefined, text: texts.auto },
+            { option: true, text: texts.on },
+          ] as const
+        ).map(({ option, text }) => (
+          <button
+            key={text}
+            type="button"
+            className={'set-ai-profile-tri-btn' + (value === option ? ' is-active' : '')}
+            role="radio"
+            aria-checked={value === option}
+            onClick={() => onChange(option)}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A free-text blob (headers / model declarations) committed on blur: the draft
+ * lives in component state so a partially typed JSON is never written, and a
+ * rejected parse keeps the red border plus the reason until the next edit.
+ */
+function ProfileBlobField({
+  fieldId,
+  label,
+  hint,
+  bad,
+  text,
+  placeholder,
+  multiline,
+  onCommit,
+}: {
+  fieldId: string
+  label: string
+  hint: string
+  bad: string
+  text: string
+  placeholder: string
+  multiline?: boolean
+  onCommit: (text: string) => boolean
+}) {
+  const [draft, setDraft] = useState(text)
+  const [invalid, setInvalid] = useState(false)
+  const lastCommitted = useRef(text)
+  // A settings change from elsewhere (another window, a saved reload) replaces
+  // the draft; our own commit updates lastCommitted so the effect stays quiet.
+  useEffect(() => {
+    if (text === lastCommitted.current) return
+    lastCommitted.current = text
+    setDraft(text)
+    setInvalid(false)
+  }, [text])
+  return (
+    <div className={'set-field' + (multiline ? ' set-ai-profile-blob' : '')}>
+      <div className="set-field-text">
+        <div className="set-field-stack">
+          <label className="set-field-label" htmlFor={fieldId}>
+            {label}
+          </label>
+          <div className="set-field-desc">{invalid ? bad : hint}</div>
+        </div>
+      </div>
+      {multiline ? (
+        <textarea
+          id={fieldId}
+          className={'set-input-multiline' + (invalid ? ' set-input-invalid' : '')}
+          value={draft}
+          rows={4}
+          spellCheck={false}
+          placeholder={placeholder}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setInvalid(false)
+          }}
+          onBlur={() => {
+            if (draft === lastCommitted.current) return
+            if (onCommit(draft)) {
+              lastCommitted.current = draft
+              setInvalid(false)
+            } else {
+              setInvalid(true)
+            }
+          }}
+        />
+      ) : (
+        <input
+          id={fieldId}
+          className={'set-input' + (invalid ? ' set-input-invalid' : '')}
+          type="text"
+          value={draft}
+          spellCheck={false}
+          placeholder={placeholder}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setInvalid(false)
+          }}
+          onBlur={() => {
+            if (draft === lastCommitted.current) return
+            if (onCommit(draft)) {
+              lastCommitted.current = draft
+              setInvalid(false)
+            } else {
+              setInvalid(true)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

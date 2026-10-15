@@ -166,6 +166,7 @@ import {
   type SparklineGroupState,
 } from './WorkbookVisuals'
 import { VISUAL_UNDO_COMMAND_ID } from './undo-carry'
+import { largeFilterHiddenRows, largeFilterOwnsSpan } from './large-filter-state'
 import {
   BORDER_COMMAND_TYPES,
   CLOSURE_MAX_CELLS,
@@ -183,6 +184,11 @@ import {
 } from './univer-state'
 import type { SheetOutlineState } from './outline-model'
 import { isManualCalculation } from './calc-options'
+import {
+  registerCellFontAliases,
+  richRunFamilies,
+  untilCellFontsLoaded,
+} from './cell-font-fallback'
 import { noteFormulaStreamChunk, requestFullRecalcAfterStream } from './formula-stream-hold'
 import { SharedFormulaLookup, indexedFormulas } from './shared-formula-index'
 import { threadStore } from './threaded-comments'
@@ -1331,6 +1337,7 @@ export async function loadVisibleRange(
     screenRowCount,
     screenColumnCount,
   )
+  const generation = bumpViewportGeneration(state, sheetId)
   await loadRange(runtime, lazyWorkbookRef, worksheet, range, setMessage)
   await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, range)
   await extendWindowPastHiddenRows(
@@ -1340,10 +1347,71 @@ export async function loadVisibleRange(
     range,
     setMessage,
     screenRowCount,
+    generation,
   )
 }
 
-const HIDDEN_ROW_EXTEND_CELL_CAP = 2_000_000
+/// Every viewport load supersedes the previous one for its sheet: a scroll
+/// burst must not leave several hidden-row extensions racing, each seeing the
+/// others' loadedRanges as "not mine" and doubling to the cap.
+const viewportGenerations = new WeakMap<LazyWorkbookState, Map<string, number>>()
+
+function bumpViewportGeneration(state: LazyWorkbookState, sheetId: string): number {
+  let perSheet = viewportGenerations.get(state)
+  if (!perSheet) {
+    perSheet = new Map()
+    viewportGenerations.set(state, perSheet)
+  }
+  const next = (perSheet.get(sheetId) ?? 0) + 1
+  perSheet.set(sheetId, next)
+  return next
+}
+
+function viewportGenerationIs(
+  state: LazyWorkbookState,
+  sheetId: string,
+  generation: number,
+): boolean {
+  return viewportGenerations.get(state)?.get(sheetId) === generation
+}
+
+/// Doubling steps install the whole window into Univer, so the cap is a
+/// residency budget, not a read budget: 300k cells (~100 MB) covers a
+/// 12-column sheet hiding 99% of 25k rows.
+const HIDDEN_ROW_EXTEND_CELL_CAP = 300_000
+
+export interface HiddenRowWindowInput {
+  readonly window: IRange
+  readonly hidden: ReadonlySet<number>
+  readonly loaded: IRange | undefined
+  readonly targetVisibleRows: number
+  readonly screenRowCount: number
+  readonly cellCap: number
+}
+
+/// The next (doubled) window to load, or null when the current one already
+/// shows enough visible rows, hit the sheet end or the cap, or when the
+/// loaded range no longer starts at this window (another load took over —
+/// counting against it would understate visible rows forever).
+export function nextHiddenRowWindow(input: HiddenRowWindowInput): IRange | null {
+  const { window, hidden, loaded, targetVisibleRows, screenRowCount, cellCap } = input
+  if (window.endRow >= screenRowCount - 1) return null
+  if (!loaded || loaded.startRow > window.startRow || loaded.endRow < window.startRow) return null
+  const knownEnd = Math.min(window.endRow, loaded.endRow)
+  let visibleRows = 0
+  for (let row = window.startRow; row <= knownEnd; row += 1) {
+    if (!hidden.has(row)) visibleRows += 1
+  }
+  if (visibleRows >= targetVisibleRows) return null
+  const columnSpan = window.endColumn - window.startColumn + 1
+  const maxEndRow = Math.min(
+    screenRowCount - 1,
+    window.startRow + Math.floor(cellCap / columnSpan) - 1,
+  )
+  const nextEnd = Math.min(maxEndRow, window.endRow + (window.endRow - window.startRow + 1))
+  if (nextEnd <= window.endRow) return null
+  return { ...window, endRow: nextEnd }
+}
 
 /// A filtered sheet can hide nearly every physical row, so a physical-row
 /// buffer covers almost no visible rows — and collapsing them fires no scroll
@@ -1357,43 +1425,41 @@ async function extendWindowPastHiddenRows(
   range: IRange,
   setMessage: (message: string) => void,
   screenRowCount: number,
+  generation: number,
 ): Promise<void> {
   const state = lazyWorkbookRef.current
   if (!state) return
   const sheetId = worksheet.getSheetId()
   const sheet = lazySheetMeta(state, sheetId)
   if (!sheet) return
+  const current = () =>
+    lazyWorkbookRef.current === state && viewportGenerationIs(state, sheetId, generation)
   // Row properties stream in with indexing: right after open the hidden set
   // can still be empty even though the sheet is full of hidden rows.
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (lazyWorkbookRef.current !== state) return
+    if (!current()) return
+    if (largeFilterOwnsSpan(state, sheetId)) break
     if ((state.hiddenFileRows.get(sheetId)?.size ?? 0) > 0) break
     if (!state.decorationsPendingSheets.has(sheetId)) return
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   const targetVisibleRows = range.endRow - range.startRow + 1
   let window = range
-  while (lazyWorkbookRef.current === state && window.endRow < screenRowCount - 1) {
-    const hidden = state.hiddenFileRows.get(sheetId)
+  while (current()) {
+    const hidden = largeFilterHiddenRows(state, sheetId) ?? state.hiddenFileRows.get(sheetId)
     if (!hidden || hidden.size === 0) return
-    const loadedEnd = state.loadedRanges.get(sheetId)?.endRow ?? -1
-    const knownEnd = Math.min(window.endRow, loadedEnd)
-    let visibleRows = 0
-    for (let row = window.startRow; row <= knownEnd; row += 1) {
-      if (!hidden.has(row)) visibleRows += 1
-    }
-    if (visibleRows >= targetVisibleRows) return
-    // Budget by the column span the window actually loads, and clamp the
-    // doubling to the remaining budget instead of aborting under it.
-    const columnSpan = window.endColumn - window.startColumn + 1
-    const maxEndRow = Math.min(
-      screenRowCount - 1,
-      window.startRow + Math.floor(HIDDEN_ROW_EXTEND_CELL_CAP / columnSpan) - 1,
-    )
-    const nextEnd = Math.min(maxEndRow, window.endRow + (window.endRow - window.startRow + 1))
-    if (nextEnd <= window.endRow) return
-    window = { ...window, endRow: nextEnd }
+    const next = nextHiddenRowWindow({
+      window,
+      hidden,
+      loaded: state.loadedRanges.get(sheetId),
+      targetVisibleRows,
+      screenRowCount,
+      cellCap: HIDDEN_ROW_EXTEND_CELL_CAP,
+    })
+    if (!next) return
+    window = next
     await loadRange(runtime, lazyWorkbookRef, worksheet, window, setMessage)
+    if (!current()) return
     await loadFrozenColumnStrip(lazyWorkbookRef, worksheet, sheet, window)
   }
 }
@@ -3078,6 +3144,13 @@ async function loadRange(
     if (lazyWorkbookRef.current !== state || state.loadingKeys.get(sheetId) !== requestKey) {
       return
     }
+    const richFamilies = mapped ? richRunFamilies(mapped.screen.cells) : null
+    if (richFamilies?.size) {
+      await untilCellFontsLoaded(registerCellFontAliases(richFamilies))
+      if (lazyWorkbookRef.current !== state || state.loadingKeys.get(sheetId) !== requestKey) {
+        return
+      }
+    }
     if (!mapped) {
       // The whole range is journal-owned (inserted this session): nothing
       // streams into it, but cells written there may have been evicted by an
@@ -3747,7 +3820,9 @@ export function applyRowProperties(
       if (row.hidden) {
         const span = state.restoredFilterSpans.get(sheetId)
         if (span && row.row >= span.startRow && row.row <= span.endRow) {
-          claimedFilterRows.push(row.row)
+          // An evaluated large filter owns the span: its hidden set already
+          // decided these rows, so the file flag must not re-hide them.
+          if (!largeFilterOwnsSpan(state, sheetId)) claimedFilterRows.push(row.row)
         } else {
           hiddenRows.push(row.row)
         }

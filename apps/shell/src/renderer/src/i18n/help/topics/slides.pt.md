@@ -51,6 +51,7 @@ O menu depende de onde clicou com o botão direito:
 
 - O cartão AI Slides no Início: dê um tema ou um esquema e a IA monta a apresentação inteira; se a geração na nuvem falhar, o sistema recorre à geração local.
 - Continue a ajustar com o painel de IA depois disso.
+- Clique direito numa seleção de texto ou num elemento imagem/vídeo/áudio ▸ **Ocultar a seleção da IA** tira-o da vista do modelo (detalhes no capítulo do painel de IA); um slide com conteúdo oculto pula a checagem automática por captura.
 
 ## Apresentar e exportar
 

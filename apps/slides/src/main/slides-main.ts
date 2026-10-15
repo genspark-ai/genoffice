@@ -48,6 +48,7 @@ import {
   rendererUrl,
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
+  recoveryCopyDiskNewer,
 } from '@genoffice/electron-utils'
 import {
   resolveGroupChildId,
@@ -724,18 +725,17 @@ export function discardSlidesRecovery(contents: WebContents): void {
   dropUntitledRecovery(contents.id)
 }
 
-/** On open, if a recovery copy newer than the original exists, ask whether to restore (still points at the original path; only save persists it). */
+/** On open, if a recovery copy exists, ask whether to restore (still points at the original path; only save persists it).
+ * A newer original does not discard the copy — it may hold the only pre-crash edits — the prompt just says the disk file is newer. */
 async function maybeRecoverBytes(
   path: string,
   original: Uint8Array,
 ): Promise<{ bytes: Uint8Array; recovered: boolean }> {
   const asPath = autosavePathFor(path)
+  let diskNewer: boolean
   try {
     const [asStat, origStat] = await Promise.all([stat(asPath), stat(path)])
-    if (asStat.mtimeMs <= origStat.mtimeMs) {
-      await rm(asPath, { force: true })
-      return { bytes: original, recovered: false }
-    }
+    diskNewer = recoveryCopyDiskNewer(asStat.mtimeMs, origStat.mtimeMs)
   } catch {
     return { bytes: original, recovered: false }
   }
@@ -746,7 +746,9 @@ async function maybeRecoverBytes(
     defaultId: 0,
     cancelId: 1,
     message: tm('autosaveFoundTitle'),
-    detail: tm('autosaveFoundBody'),
+    detail: diskNewer
+      ? `${tm('autosaveFoundBody')}\n\n${tm('autosaveDiskNewer')}`
+      : tm('autosaveFoundBody'),
   }
   const r = parent
     ? await dialog.showMessageBox(parent, options)
@@ -1081,6 +1083,7 @@ export function applySessionTxn(session: Session, req: ApplyTxnOp): ApplyTxnResu
         ? { target: `${rec.op.target.slide}${rec.op.target.el ? `/${rec.op.target.el}` : ''}` }
         : {}),
       ...(rec.created ? { created: rec.created } : {}),
+      ...(opNote(rec) ? { note: opNote(rec) } : {}),
     })),
     ...(r.failures?.length ? { failures: compact(r.failures) } : {}),
     slides: buildAllRenderSlides(session.opened, session.fitWidthPx),
@@ -1150,6 +1153,8 @@ function nowrapContentWidth(text: RenderTextLayout): number {
  * Triggered only by text edits (resize gestures do not write: the layout cap locks the stored
  * value, and writing back during a gesture would ratchet one way); top-level elements only.
  */
+const opNote = (rec: { after?: unknown }) => (rec.after as { note?: string } | undefined)?.note
+
 function syncAutofitScale(
   session: Session,
   slideIndex: number,
@@ -1612,12 +1617,14 @@ export function registerSlidesIpc(): void {
     let pushed = false
     if (op.preview) {
       if (!session.transformPreview) {
+        session.previewRedo = session.redoStack
         pushHistory(session)
         pushed = true
         session.transformPreview = true
       }
     } else if (session.transformPreview) {
       session.transformPreview = false
+      session.previewRedo = undefined
     } else {
       pushHistory(session)
       pushed = true
@@ -1633,10 +1640,29 @@ export function registerSlidesIpc(): void {
       // flag would make later frames skip pushHistory and cost the commit its undo step.
       if (pushed) {
         session.undoStack.pop()
-        if (op.preview) session.transformPreview = false
+        if (op.preview) {
+          session.transformPreview = false
+          if (session.previewRedo) session.redoStack = session.previewRedo
+          session.previewRedo = undefined
+        }
       }
       return null
     }
+    return rebuildSlide(session, op.slideIndex)
+  })
+
+  // Escape mid-resize: the preview frames live in the model and their undo snapshot is the
+  // pre-gesture state, so restoring that snapshot and dropping it leaves no trace of the gesture
+  ipcMain.handle('slides:cancel-transform-preview', (e, op: { slideIndex: number }) => {
+    const session = sessions.get(e.sender.id)
+    if (!session || !session.transformPreview) return null
+    session.transformPreview = false
+    const snap = session.undoStack.pop()
+    if (snap) restoreSnapshot(session, snap)
+    if (session.previewRedo) session.redoStack = session.previewRedo
+    session.previewRedo = undefined
+    scheduleHistoryNotify(session)
+    scheduleDeckBroadcast(session)
     return rebuildSlide(session, op.slideIndex)
   })
 
@@ -1733,9 +1759,12 @@ export function registerSlidesIpc(): void {
       return { error: r.failures?.[0]?.error ?? 'the transaction could not be applied' }
     }
     let rendered = rebuildSlide(session, op.slideIndex)
+    const notes: string[] = []
     for (const rec of r.records ?? []) {
       const o = rec.op
       const id = o.target?.el
+      const note = opNote(rec)
+      if (note) notes.push(`${id ?? o.op}: ${note}`)
       if (!id || o.group || !rendered) continue
       if (o.op === 'setText') {
         // Level changes rematerialized inside the op; autofit would fight the reparse
@@ -1747,7 +1776,7 @@ export function registerSlidesIpc(): void {
         rendered = syncAutofitScale(session, op.slideIndex, id, rendered)
       }
     }
-    return rendered ? { slide: rendered } : null
+    return rendered ? { slide: rendered, ...(notes.length ? { notes } : {}) } : null
   })
   // ── Cloud single-page generation (gsk slide_generate): brief → cloud HTML+conversion → one-slide
   // pptx saved to a temp file. Returns a marker string that slides:land-generated-pages redeems for

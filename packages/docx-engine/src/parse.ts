@@ -150,6 +150,7 @@ import {
 import {
   IMAGE_RUN_CHILDREN,
   JC_ALIGN,
+  MERGEFIELD_INSTR_RE,
   SIMPLE_INLINE_FIELD_RE,
   ZOTERO_INLINE_FIELD_RE,
   activeCharIndents,
@@ -837,6 +838,7 @@ async function buildBlock(
         kind: el.name === 'w:ins' ? 'ins' : 'del',
         author: revisionAttrs['w:author'] ?? '',
         ...(revisionAttrs['w:date'] ? { date: revisionAttrs['w:date'] } : {}),
+        ...(revisionAttrs['w16du:dateUtc'] ? { dateUtc: revisionAttrs['w16du:dateUtc'] } : {}),
         ...(revisionAttrs['w:id'] ? { id: revisionAttrs['w:id'] } : {}),
       }
       return inner
@@ -977,7 +979,13 @@ async function buildBlock(
   ) {
     const image = await extractImage(detect, ctx)
     if (image) {
-      return { ...base, type: 'image', label: 'Image', imageDataUrl: image, ...imageMeta(detect) }
+      return {
+        ...base,
+        type: 'image',
+        label: 'Image',
+        imageDataUrl: image,
+        ...imageMeta(detect, ctx),
+      }
     }
   }
   const fieldPassthrough = (): Block => {
@@ -1276,7 +1284,7 @@ async function buildBlock(
             type: 'image',
             label: 'Image',
             imageDataUrl: fbImage,
-            ...imageMeta(xml),
+            ...imageMeta(xml, ctx),
           }
         }
       }
@@ -1411,7 +1419,7 @@ async function buildBlock(
         // the single-image block keeps only the first blip and drops the other
         // photos with their anchor offsets, so take the photo-box route below
         if (!hasWsp && anchoredDrawings <= 1) {
-          const meta = imageMeta(detect)
+          const meta = imageMeta(detect, ctx)
           const sect = ctx.sectionAt?.(el.start)
           if (
             (ctx.floatTableAhead &&
@@ -1489,7 +1497,7 @@ async function buildBlock(
         )
       const stray =
         strayText !== '' || inlineRunPics ? strayParaRuns(detect, ctx, inlineRunPics) : null
-      const meta = imageMeta(detect)
+      const meta = imageMeta(detect, ctx)
       // Word sizes the anchor paragraph's own line by its paragraph mark, so an
       // empty spacer paragraph (w:sz 2-6 carrying only a divider rule) keeps
       // its 1-3pt line instead of a default-size strut; a side-wrapped anchor
@@ -1529,7 +1537,13 @@ async function buildBlock(
     // wps paragraph whose shapes all turned out invisible: fall back to the
     // plain image block the pre-shape path would have produced
     if (image) {
-      return { ...base, type: 'image', label: 'Image', imageDataUrl: image, ...imageMeta(detect) }
+      return {
+        ...base,
+        type: 'image',
+        label: 'Image',
+        imageDataUrl: image,
+        ...imageMeta(detect, ctx),
+      }
     }
     // Picture whose media cannot be shown (rel missing / pointing at a
     // non-media part, or metafile conversion failed): empty frame at the
@@ -1544,7 +1558,7 @@ async function buildBlock(
         label: 'Image',
         brokenImage: true,
         ...(alt ? { previewText: decodeEntities(alt) } : {}),
-        ...imageMeta(detect),
+        ...imageMeta(detect, ctx),
       }
     }
     if (isInvisibleEmptyShape(detect)) {
@@ -2051,6 +2065,7 @@ function buildTextParagraph(
       const attrs = attrsOf(pPrChangeEl)
       pPrChangeInfo = { author: attrs['w:author'] ?? '' }
       if (attrs['w:date']) pPrChangeInfo.date = attrs['w:date']
+      if (attrs['w16du:dateUtc']) pPrChangeInfo.dateUtc = attrs['w16du:dateUtc']
       if (attrs['w:id']) pPrChangeInfo.id = attrs['w:id']
       const oldPPr = findChild(pPrChangeEl, 'w:pPr')
       if (oldPPr) {
@@ -2092,6 +2107,7 @@ function buildTextParagraph(
       const a = attrsOf(delEl)
       paraMarkDel = { author: a['w:author'] ?? '' }
       if (a['w:date']) paraMarkDel.date = a['w:date']
+      if (a['w16du:dateUtc']) paraMarkDel.dateUtc = a['w16du:dateUtc']
       if (a['w:id']) paraMarkDel.id = a['w:id']
     }
   }
@@ -2799,7 +2815,19 @@ function extractTextboxes(
       box.floating = true
     }
     if (meta.noWrap || multiDrawing) box.floating = true
-    if (!meta.noWrap && !meta.topBottom) box.wrapSides = true
+    if (!meta.noWrap && !meta.topBottom) {
+      box.wrapSides = true
+      if (box.floating) {
+        const d = (v: number | undefined, dflt: number) =>
+          Math.round(((v ?? dflt) / EMU_PER_PX) * 10) / 10
+        box.wrapDistPx = {
+          l: d(meta.distLEmu, DEFAULT_WRAP_DIST_EMU),
+          r: d(meta.distREmu, DEFAULT_WRAP_DIST_EMU),
+          t: d(meta.distTEmu, 0),
+          b: d(meta.distBEmu, 0),
+        }
+      }
+    }
     // in-column wrapSquare box: Word flows the body text beside it (from the
     // anchor paragraph on) instead of stacking it into the flow — a CSS float
     // on the side with less room, when the other side keeps a usable column
@@ -4005,6 +4033,21 @@ function extractRuns(
           } else if (ZOTERO_INLINE_FIELD_RE.test(fieldInstr)) {
             if (zoteroField) pushZoteroCachedRuns(zoteroField.part, rev)
             else pushZoteroCachedRuns('single', rev)
+          } else if (MERGEFIELD_INSTR_RE.test(fieldInstr)) {
+            // Mail merge: Word fills the result in from a data source, so an
+            // unmerged main document caches nothing. Show the guillemet
+            // placeholder Word uses instead of an empty run; the value is not
+            // dirtied because only the merge itself can supply it.
+            const merge = MERGEFIELD_INSTR_RE.exec(fieldInstr)!
+            pushRun(
+              {
+                ...resultFormat(),
+                text: fieldCached || `«${merge[1] ?? merge[2]}»`,
+                instrField: fieldInstr.trim(),
+                ...(fieldDirty ? { fldDirty: true } : {}),
+              },
+              rev,
+            )
           } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
             // an unformatted result run would drop to the paragraph default size
             pushRun(
@@ -4021,11 +4064,12 @@ function extractRuns(
             const eq = eqField(fieldInstr)!
             pushRun({ ...resultFormat(), text: eq.text, math: { omml: eq.omml } }, rev)
           } else if (fieldCachedRuns.length > 0) {
-            // any other field (HYPERLINK with switches, MERGEFIELD mail-merge
-            // labels...): the cached result is still the visible text — keep it
-            // as plain runs. Body paragraphs with these fields stay on the
-            // passthrough path (onlyXeFields rejects them), so this only feeds
-            // display-only contexts such as table cells and textbox content.
+            // any other field (HYPERLINK with switches, ASK / FILLIN, the
+            // mail-merge control fields NEXT / SKIPIF...): the cached result is
+            // still the visible text — keep it as plain runs. Body paragraphs
+            // with these fields stay on the passthrough path (onlyXeFields
+            // rejects them), so this only feeds display-only contexts such as
+            // table cells and textbox content.
             for (const cached of fieldCachedRuns) pushRun(cached, rev)
           }
           fieldInstr = ''
@@ -4079,7 +4123,19 @@ function extractRuns(
       const id = attrsOf(noteRefNode)['w:id']
       if (id) {
         const num = ctx.noteNumbers.get(`${kind}:${id}`)
-        pushRun({ text: String(num ?? '*'), noteRef: { kind, id } }, rev)
+        // the marker's rPr rides along verbatim (rStyle FootnoteReference, the
+        // fonts, the size): the run skips buildRun, so without this the
+        // properties exist nowhere and any edit to the paragraph restyles the
+        // marker to a bare superscript
+        const markerRPr = findChild(node, 'w:rPr')
+        pushRun(
+          {
+            text: String(num ?? '*'),
+            noteRef: { kind, id },
+            ...(markerRPr ? { rawRPr: serializeXNode(markerRPr) } : {}),
+          },
+          rev,
+        )
         return
       }
     }
@@ -4136,7 +4192,8 @@ function extractRuns(
     const instr = decodeNumericCharRefs(String(attrsOf(node)['w:instr'] ?? ''))
     const xe = XE_INSTR_RE.exec(instr)
     const ref = REF_INSTR_RE.exec(instr)
-    if (!xe && !ref && !SIMPLE_INLINE_FIELD_RE.test(instr)) {
+    const merge = MERGEFIELD_INSTR_RE.exec(instr)
+    if (!xe && !ref && !merge && !SIMPLE_INLINE_FIELD_RE.test(instr)) {
       walk(childrenOf(node), link, rev)
       return
     }
@@ -4157,6 +4214,17 @@ function extractRuns(
           text: text || name,
           refField: name,
           refInstr: ` ${instr.trim()} `,
+          ...(dirty ? { fldDirty: true } : {}),
+          ...(link ? { link } : {}),
+        },
+        rev,
+      )
+    } else if (merge) {
+      pushRun(
+        {
+          ...format,
+          text: text || `«${merge[1] ?? merge[2]}»`,
+          instrField: instr.trim(),
           ...(dirty ? { fldDirty: true } : {}),
           ...(link ? { link } : {}),
         },
@@ -4188,6 +4256,7 @@ function extractRuns(
         const attrs = attrsOf(node)
         const info: RevisionInfo = { author: attrs['w:author'] ?? '' }
         if (attrs['w:date']) info.date = attrs['w:date']
+        if (attrs['w16du:dateUtc']) info.dateUtc = attrs['w16du:dateUtc']
         if (attrs['w:id']) info.id = attrs['w:id']
         const next: RevCtx = name === 'w:ins' ? { ...rev, ins: info } : { ...rev, del: info }
         walk(childrenOf(node), link, next)
@@ -4197,6 +4266,7 @@ function extractRuns(
         const attrs = attrsOf(node)
         const info: RevisionInfo = { author: attrs['w:author'] ?? '' }
         if (attrs['w:date']) info.date = attrs['w:date']
+        if (attrs['w16du:dateUtc']) info.dateUtc = attrs['w16du:dateUtc']
         if (attrs['w:id']) info.id = attrs['w:id']
         const next: RevCtx = name === 'w:moveFrom' ? { ...rev, del: info } : { ...rev, ins: info }
         walk(childrenOf(node), link, next)
@@ -4585,6 +4655,7 @@ function buildRun(
       run.rPrChange = {
         author: a['w:author'] ?? '',
         ...(a['w:date'] ? { date: a['w:date'] } : {}),
+        ...(a['w16du:dateUtc'] ? { dateUtc: a['w16du:dateUtc'] } : {}),
         ...(a['w:id'] ? { id: a['w:id'] } : {}),
         ...(Object.keys(old).length > 0 ? { old } : {}),
       }
@@ -5144,6 +5215,7 @@ function rowRevisionOf(trPr: XNode): ({ kind: 'ins' | 'del' } & RevisionInfo) | 
       kind,
       author: a['w:author'] ?? '',
       ...(a['w:date'] ? { date: a['w:date'] } : {}),
+      ...(a['w16du:dateUtc'] ? { dateUtc: a['w16du:dateUtc'] } : {}),
       ...(a['w:id'] ? { id: a['w:id'] } : {}),
     }
   }
@@ -5325,6 +5397,7 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number, docOffset?: nu
     if (dir === 'tbRl' || dir === 'tbRlV') cell.textDirection = 'tbRl'
     else if (dir === 'btLr' || dir === 'btLrV') cell.textDirection = 'btLr'
     if (boolProp(tcPr, 'w:noWrap')) cell.noWrap = true
+    if (boolProp(tcPr, 'w:hideMark')) cell.hideMark = true
     const hMerge = findChild(tcPr, 'w:hMerge')
     if (hMerge) cell.hMerge = attrsOf(hMerge)['w:val'] === 'restart' ? 'restart' : 'continue'
     const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
@@ -5337,6 +5410,7 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number, docOffset?: nu
         kind,
         author: a['w:author'] ?? '',
         ...(a['w:date'] ? { date: a['w:date'] } : {}),
+        ...(a['w16du:dateUtc'] ? { dateUtc: a['w16du:dateUtc'] } : {}),
         ...(a['w:id'] ? { id: a['w:id'] } : {}),
       }
       break
@@ -6031,6 +6105,7 @@ async function parseLayoutSettings(zip: JSZip): Promise<{
   compressPunctuation?: boolean
   adjustLineHeightInTable?: boolean
   indentNotNumberingTabStop?: boolean
+  doNotExpandShiftReturn?: boolean
 }> {
   const file = zip.file('word/settings.xml')
   if (!file) return {}
@@ -6047,6 +6122,7 @@ async function parseLayoutSettings(zip: JSZip): Promise<{
     ...(xmlFlagOn(xml, 'w:doNotUseIndentAsNumberingTabStop')
       ? { indentNotNumberingTabStop: true }
       : {}),
+    ...(xmlFlagOn(xml, 'w:doNotExpandShiftReturn') ? { doNotExpandShiftReturn: true } : {}),
   }
 }
 
@@ -7133,7 +7209,7 @@ function picTransformOf(xml: string): { rotDeg?: number; flipH?: boolean; flipV?
   return out
 }
 
-function imageMeta(xml: string): ImageMeta {
+function imageMeta(xml: string, ctx?: BuildContext): ImageMeta {
   const meta: ImageMeta = {}
   const drawingAt = xml.search(/<w:(?:drawing|pict)[\s>]/)
   if (drawingAt >= 0 && /^<w:p[\s>]/.test(xml)) {
@@ -7192,16 +7268,53 @@ function imageMeta(xml: string): ImageMeta {
       const rule = /\bw:lineRule="(\w+)"/.exec(spacing ?? '')?.[1]
       meta.imageParagraphLineRule = rule === 'exact' || rule === 'atLeast' ? rule : 'auto'
     }
+    // the (m - 1) x single extra under an auto-multiple picture line follows the
+    // drawing run's face and size (inherited through the paragraph style), not
+    // the paragraph mark's: a Calibri 12 mark over a Book Antiqua 10 style adds
+    // 12.1 pt, not 14.65 (Word, two-picture pages)
+    const runStart = leadingXml.search(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*$/)
+    const runRPr =
+      runStart >= 0
+        ? /<w:rPr\b[^>]*>[\s\S]*?<\/w:rPr>/.exec(leadingXml.slice(runStart))?.[0]
+        : undefined
+    const styleDisplay = ctx
+      ? (ctx.styles.get(tagAttr(pPr ?? '', 'w:pStyle', 'w:val') ?? '') ?? ctx.defaultParaStyle)
+          ?.display
+      : undefined
     const markRPr = pPr ? /<w:rPr\b[^>]*>[\s\S]*?<\/w:rPr>/.exec(pPr)?.[0] : undefined
-    if (markRPr) {
-      const fonts = /<w:rFonts\b[^>]*\/?>/.exec(markRPr)?.[0] ?? ''
-      const font = /w:ascii="([^"]+)"/.exec(fonts)?.[1] ?? /w:hAnsi="([^"]+)"/.exec(fonts)?.[1]
-      if (font) meta.imageMarkFont = font
-      const eastAsia = /w:eastAsia="([^"]+)"/.exec(fonts)?.[1]
-      if (eastAsia) meta.imageMarkFontEastAsia = eastAsia
-      const sz = Number(/<w:sz\b[^>]*w:val="(\d+)"/.exec(markRPr)?.[1] ?? NaN)
-      if (Number.isFinite(sz) && sz > 0) meta.imageMarkSizeHalfPoints = sz
+    const rFontsOf = (rPr: string | undefined) => {
+      const tag = rPr ? /<w:rFonts\b[^>]*\/?>/.exec(rPr)?.[0] : undefined
+      if (!tag) return undefined
+      const attrs: Record<string, string> = {}
+      for (const m of tag.matchAll(/\b(w:[A-Za-z]+)="([^"]*)"/g)) attrs[m[1]] = m[2]
+      return themedRFonts(attrs, ctx?.themeFonts)
     }
+    const szOf = (rPr: string | undefined) => {
+      const sz = Number(/<w:sz\b[^>]*w:val="(\d+)"/.exec(rPr ?? '')?.[1] ?? NaN)
+      return Number.isFinite(sz) && sz > 0 ? sz : undefined
+    }
+    const runFonts = rFontsOf(runRPr)
+    const markFonts = rFontsOf(markRPr)
+    const font =
+      runFonts?.ascii ??
+      runFonts?.hAnsi ??
+      styleDisplay?.fontAscii ??
+      ctx?.docDefaults?.asciiFont ??
+      markFonts?.ascii ??
+      markFonts?.hAnsi
+    if (font) meta.imageMarkFont = font
+    const eastAsia =
+      runFonts?.eastAsia ??
+      styleDisplay?.eastAsiaFont ??
+      ctx?.docDefaults?.eastAsiaFont ??
+      markFonts?.eastAsia
+    if (eastAsia) meta.imageMarkFontEastAsia = eastAsia
+    const sz =
+      szOf(runRPr) ??
+      styleDisplay?.sizeHalfPoints ??
+      ctx?.docDefaults?.sizeHalfPoints ??
+      szOf(markRPr)
+    if (sz) meta.imageMarkSizeHalfPoints = sz
   }
   const extent = /<wp:extent[^>]*\/?>/.exec(xml)?.[0]
   if (extent) {
@@ -7329,7 +7442,14 @@ function imageMeta(xml: string): ImageMeta {
     const posVFrom = /<wp:positionV[^>]*relativeFrom="([^"]+)"/.exec(xml)?.[1]
     const alignH = /<wp:align>(left|center|right)<\/wp:align>/.exec(posHBody)?.[1]
     const alignV = /<wp:align>(top|center|bottom)<\/wp:align>/.exec(posVBody)?.[1]
-    if ((posVFrom === 'page' || posVFrom === 'margin') && offsetY !== undefined && !alignV)
+    // line-relative offsets measure from the anchor line, paragraph-relative
+    // ones from the paragraph top above its spacing-before (the renderer
+    // distinguishes them; both default to the hosting paragraph's box)
+    if (
+      (posVFrom === 'page' || posVFrom === 'margin' || posVFrom === 'line') &&
+      offsetY !== undefined &&
+      !alignV
+    )
       meta.imageRelV = posVFrom
     if ((posHFrom === 'page' || posHFrom === 'margin') && offsetX !== undefined && !alignH)
       meta.imageRelH = posHFrom

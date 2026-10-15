@@ -186,10 +186,15 @@ test('context menu offers spelling suggestions and applies one', async () => {
     await expect.poll(() => pageText(editor), POLL).toContain(`fox ${suggestion} over`)
     await expect.poll(() => pageText(editor), POLL).not.toContain('jumsp')
     // the fix went through Blink, so the paragraph's other misspelling keeps
-    // its marker (a scripted text-node rewrite would have dropped it)
+    // its marker (a scripted text-node rewrite would have dropped it). Blink
+    // re-checks the edited paragraph on idle, so the marker can be briefly gone
     await editor.mouse.click(blank.x, blank.y)
-    await editor.waitForTimeout(500)
-    expect(await redUnder(editor, (await wordRect(editor, 'lazyy'))!)).toBeGreaterThan(0)
+    await expect
+      .poll(async () => redUnder(editor, (await wordRect(editor, 'lazyy'))!), {
+        ...POLL,
+        message: 'squiggle back on lazyy after the replacement',
+      })
+      .toBeGreaterThan(0)
 
     await editor.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
     await expect.poll(() => pageText(editor), POLL).toContain('jumsp')

@@ -340,7 +340,9 @@ export const fr = {
   appFullLoadRunning:
     'Chargement complet du classeur en cours — le tri et le filtrage seront disponibles une fois terminé…',
   appFullLoadTooLarge:
-    'Ce classeur est trop volumineux pour être chargé entièrement en mémoire ; le tri et le filtrage sont indisponibles pour ce fichier.',
+    "Ce classeur est trop volumineux pour être chargé entièrement en mémoire ; le tri et le déplacement de plages sont indisponibles pour ce fichier. Le filtrage s'exécute directement sur le fichier.",
+  appLargeFilterLoading: 'Lecture de la colonne de filtre depuis le fichier…',
+  appLargeFilterApplying: 'Application du filtre sur le fichier…',
   appSortValueModeFormulas:
     'Cette plage contient des formules qui ne sont pas calculées en direct dans ce grand classeur — la trier ou la déplacer les enregistrerait comme simples valeurs. Choisissez une plage sans formules.',
   appSortRangeTooLarge:
@@ -1141,6 +1143,9 @@ export const fr = {
   appHeadings: 'En-têtes',
   appHeadingsHidden: 'En-têtes masqués.',
   appHeadingsShown: 'En-têtes affichés.',
+  appRightToLeft: 'De droite à gauche',
+  appRightToLeftOn: 'Sens de la grille : de droite à gauche.',
+  appRightToLeftOff: 'Sens de la grille : de gauche à droite.',
   appPrintHeadingsTitle: 'Imprimer les en-têtes de lignes et de colonnes',
   appGroupFunctionLibrary: 'Bibliothèque de fonctions',
   appInsertFunction: 'Insérer une fonction',

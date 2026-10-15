@@ -573,7 +573,23 @@ const fieldName = (v: unknown, ctx: OpContext, kind?: string): string => {
     )
   if (ctx.fieldNames?.has(name) && !(kind === 'radio' && ctx.radioGroups?.has(name)))
     throw new GuidedError(`A form field named "${name}" already exists; pick another name`)
+  // "a" next to an existing "a.b" would become an ambiguous sibling of that group
+  for (const taken of ctx.fieldNames ?? [])
+    if (taken.startsWith(`${name}.`))
+      throw new GuidedError(
+        `"${name}" is already a field group in this document; pick another name`,
+      )
   return name
+}
+
+const choiceOptions = (v: unknown): string[] => {
+  if (!Array.isArray(v)) throw new GuidedError('field.options must be an array of strings')
+  if (!v.every((o) => typeof o === 'string'))
+    throw new GuidedError('field.options must be an array of strings')
+  const options = [...new Set(v.map((o: string) => o.trim()).filter(Boolean))]
+  if (options.length === 0)
+    throw new GuidedError('field.options must list at least one option for a choice field')
+  return options
 }
 
 const fieldRect = (v: unknown, field: string): Rect => {
@@ -594,9 +610,9 @@ register({
     fieldName(f.name, ctx, f.kind)
     pageIndex(f.pageIndex, ctx, 'field.pageIndex')
     fieldRect(f.rect, 'field.rect')
-    if (f.kind === 'radio') str(f.exportValue, 'field.exportValue')
-    if (f.kind === 'choice' && (!Array.isArray(f.options) || f.options.length === 0))
-      throw new GuidedError('field.options must list at least one option for a choice field')
+    if (f.kind === 'radio' && !(typeof f.exportValue === 'string' && f.exportValue.trim()))
+      throw new GuidedError('field.exportValue must not be empty for a radio button')
+    if (f.kind === 'choice') choiceOptions(f.options)
   },
   advance(op, ctx) {
     const f = op.field as FormFieldInput
@@ -608,7 +624,17 @@ register({
   },
   apply(op, s) {
     const f = op.field as FormFieldInput
-    const added: LocalFormField = { id: id(op), input: { ...f, name: f.name.trim() } }
+    const options = f.kind === 'choice' ? choiceOptions(f.options) : undefined
+    const added: LocalFormField = {
+      id: id(op),
+      input: {
+        ...f,
+        name: f.name.trim(),
+        ...(options
+          ? { options, value: options.includes(f.value ?? '') ? f.value : undefined }
+          : {}),
+      },
+    }
     return { formFields: [...s.formFields, added] }
   },
 })
@@ -623,22 +649,33 @@ register({
       throw new GuidedError('kind and pageIndex cannot be patched; remove and add the field')
     if ('name' in patch) fieldName(patch.name, ctx, op.kind as string | undefined)
     if ('rect' in patch) fieldRect(patch.rect, 'input.rect')
+    if (
+      'exportValue' in patch &&
+      !(typeof patch.exportValue === 'string' && patch.exportValue.trim())
+    )
+      throw new GuidedError('input.exportValue must not be empty for a radio button')
+    if ('options' in patch) choiceOptions(patch.options)
   },
   apply(op, s) {
     const patch = op.input as Partial<FormFieldInput>
     return {
-      formFields: s.formFields.map((f) =>
-        f.id === op.id
-          ? {
-              ...f,
-              input: {
-                ...f.input,
-                ...patch,
-                ...(typeof patch.name === 'string' ? { name: patch.name.trim() } : {}),
-              },
-            }
-          : f,
-      ),
+      formFields: s.formFields.map((f) => {
+        if (f.id !== op.id) return f
+        const input = {
+          ...f.input,
+          ...patch,
+          ...(typeof patch.name === 'string' ? { name: patch.name.trim() } : {}),
+          ...(typeof patch.exportValue === 'string'
+            ? { exportValue: patch.exportValue.trim() }
+            : {}),
+        }
+        if (patch.options) {
+          input.options = choiceOptions(patch.options)
+          // A preselected option that was just removed must not be written to the file
+          if (input.value && !input.options.includes(input.value)) input.value = undefined
+        }
+        return { ...f, input }
+      }),
     }
   },
 })

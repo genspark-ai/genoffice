@@ -30,20 +30,31 @@ export async function streamForProvider(
   if (endpoint.protocol === 'codex-app-server') {
     return streamCodexAppServer(config, system, messages, tools, maxTokens, cb)
   }
+  // A model the user declared a ceiling for outranks the caller's budget; the
+  // endpoint's own 400 would otherwise cost a billed round trip.
+  const cap = endpoint.maxTokens !== undefined ? Math.min(maxTokens, endpoint.maxTokens) : maxTokens
   const protocol: Exclude<AiProtocol, 'codex-app-server'> = endpoint.protocol
-  return withOutputCapFallback(baseUrl, config.model, maxTokens, (cap) => {
+  return withOutputCapFallback(baseUrl, config.model, cap, (tokens) => {
     switch (protocol) {
       case 'anthropic':
-        return streamAnthropic(config, system, messages, tools, cap, cb, baseUrl)
+        return streamAnthropic(config, system, messages, tools, tokens, cb, baseUrl, {
+          headers: endpoint.headers,
+          idleTimeoutMs: endpoint.idleTimeoutMs,
+        })
       case 'gemini':
-        return streamGemini(config, system, messages, tools, cap, cb, baseUrl, {
+        return streamGemini(config, system, messages, tools, tokens, cb, baseUrl, {
           omitTemperature: endpoint.omitTemperature,
+          headers: endpoint.headers,
+          idleTimeoutMs: endpoint.idleTimeoutMs,
         })
       case 'openai-compatible':
-        return streamOpenAiCompatible(baseUrl, config, system, messages, tools, cap, cb, {
+        return streamOpenAiCompatible(baseUrl, config, system, messages, tools, tokens, cb, {
           omitTemperature: endpoint.omitTemperature,
           useMaxCompletionTokens: endpoint.useMaxCompletionTokens,
           bodyExtras: endpoint.bodyExtras,
+          echoReasoning: endpoint.echoReasoning,
+          headers: endpoint.headers,
+          idleTimeoutMs: endpoint.idleTimeoutMs,
         })
     }
   })

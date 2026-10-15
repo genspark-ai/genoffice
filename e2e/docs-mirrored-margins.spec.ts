@@ -219,12 +219,10 @@ test.describe('docs mirrored margins', () => {
       expect(lefts[0]).toBeCloseTo(1800 * PT_PER_TWIP, 0)
       expect(lefts[1]).toBeCloseTo(1440 * PT_PER_TWIP, 0)
 
-      // the exported PDF opens in its own tab: return to the document, close the
-      // preview the export opened, then Normal from the dialog clears the shift
+      // the exported PDF opens in its own tab: return to the document (the
+      // export closed the preview it opened), then Normal from the dialog clears the shift
       const shellPage = await waitForPageWithUrl(launched.app, 'shell/out')
       await shellPage.locator('.tab-bar .tab-item', { hasText: 'mirror.docx' }).click()
-      await expect(page.locator('.pagination-preview')).toBeVisible()
-      await page.keyboard.press('Escape')
       await expect(page.locator('.pagination-preview')).toBeHidden()
       await showTab(page, /^Layout$/)
       await page.getByRole('button', { name: 'Margins', exact: true }).click()

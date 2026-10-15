@@ -30,7 +30,7 @@ Claro / Escuro / Seguir o Sistema. O modo Seguir o Sistema acompanha o aspeto do
 Não são interruptores — cada capacidade escolhe o fornecedor que a serve, e a chave e o URL base de um fornecedor são introduzidos uma vez e partilhados:
 
 - **Busca na web**, **Geração de imagens**, **Análise de imagens** e **Análise de vídeo**, cada uma com um fornecedor, um modelo, uma chave e um URL base.
-- **Pesquisa de arquivos locais** é executada nesta máquina. Por baixo dela está a **Reordenação com Jev**, **desativada por predefinição**. Ative-a e os excertos dos 20 melhores resultados locais — até 1200 caracteres de cada documento, mais os nomes dos ficheiros e das pastas — são enviados para o modelo Jev da TypeSafe e reordenados por relevância. Com ela desativada, nada sai do dispositivo.
+- A **busca de arquivos local** roda nesta máquina. Abaixo dela, o **reranking de busca Jev** vem **desligado por padrão**. Ao ligar, os trechos dos 20 primeiros acertos locais — até 1.200 caracteres por documento, mais nomes de arquivos e pastas — vão para o endpoint de decisão escolhido (Jev via OpenRouter ou TypeSafe, Perplexity, Liquid AI d1, Cloudflare, um motor local ou URL própria) para reordenar por relevância. Desligado, nada sai do aparelho.
 
 ## Sobre
 

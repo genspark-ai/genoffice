@@ -58,6 +58,17 @@ describe('resolveImageSrc', () => {
   it('returns the authored value when relative with no base dir', () => {
     expect(resolveImageSrc('assets/p.png', null)).toBe('assets/p.png')
   })
+
+  it('does not double-encode an already percent-encoded path', () => {
+    expect(resolveImageSrc('%E5%9B%BE_files/image1.jpg', '/n')).toBe(
+      'md-asset:///n/%E5%9B%BE_files/image1.jpg',
+    )
+    expect(resolveImageSrc('/tmp/%E5%9B%BE.png', null)).toBe('md-asset:///tmp/%E5%9B%BE.png')
+  })
+
+  it('keeps a bare percent sign that is not an escape', () => {
+    expect(resolveImageSrc('100%.png', '/n')).toBe('md-asset:///n/100%25.png')
+  })
 })
 
 describe('slash block commands inside a list (lift-first behavior)', () => {

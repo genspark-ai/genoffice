@@ -30,7 +30,7 @@ Claro / Oscuro / Seguir el sistema. «Seguir el sistema» sigue la apariencia de
 No son conmutadores: cada capacidad elige el proveedor que la sirve, y la clave y la URL base de un proveedor se introducen una vez y se comparten:
 
 - **Búsqueda web**, **Generación de imágenes**, **Análisis de imágenes** y **Análisis de vídeo**, cada una con un proveedor, un modelo, una clave y una URL base.
-- **Búsqueda de archivos locales** se ejecuta en este equipo. Debajo está **Reordenación con Jev**, que está **desactivada de forma predeterminada**. Si la activas, los extractos de los 20 mejores resultados locales — hasta 1.200 caracteres de cada documento, más los nombres de archivo y carpeta — se envían al modelo Jev de TypeSafe para reordenarlos por relevancia. Con ella desactivada, nada sale del dispositivo.
+- La **búsqueda de archivos local** corre en esta máquina. Debajo, el **reranking de búsqueda Jev** está **desactivado por defecto**. Al activarlo, los extractos de los 20 primeros aciertos locales — hasta 1.200 caracteres por documento, más nombres de archivos y carpetas — van al punto final de decisión que elijas (Jev vía OpenRouter o TypeSafe, Perplexity, Liquid AI d1, Cloudflare, un motor local o una URL propia) para reordenarlos por relevancia. Desactivado, nada deja el dispositivo.
 
 ## Acerca de
 

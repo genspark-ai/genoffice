@@ -172,7 +172,7 @@ const PROBE_ERRORS: Record<string, string> = {
   'missing-account': 'Enter the Cloudflare account ID',
   'bad-url': 'Server URL is not a valid address',
   'insecure-url': 'Server URL must be https:// (http:// only for this machine)',
-  'unsupported-model': 'Cloudflare only serves clef and clef-flash',
+  'unsupported-model': 'Cloudflare only serves clef, clef-flash and clef-omni',
   'empty-request': 'Nothing to judge',
   'rate-limit': 'Rate limited — try again shortly',
   'response-too-large': 'The reply was too large',

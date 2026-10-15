@@ -176,3 +176,32 @@ describe('a withheld span survives the file', () => {
     expect(reopened.getMarkdown()).toBe(`please call ${SECRET} confirm the order`)
   })
 })
+
+describe('the persisted span is robust to markup in the words', () => {
+  it('keeps a literal closing tag inside the hidden words hidden on reopen', () => {
+    const words = 'token </span> trailing'
+    const editor = makeEditor()
+    editor.commands.setContent({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: `prefix ${words} suffix` }] }],
+    })
+    selectText(editor, words)
+    editor.commands.setRedaction('secret')
+    const saved = editor.getMarkdown()
+    expect(saved).toContain('&lt;/span&gt;')
+    const reopened = makeEditor(saved)
+    expect(reopened.getText()).toContain(words)
+    expect(redactCount(reopened)).toBe(1)
+    let marked = ''
+    reopened.state.doc.descendants((node) => {
+      if (node.marks.some((m) => m.type.name === 'redaction')) marked += node.text ?? ''
+    })
+    expect(marked).toBe(words)
+  })
+
+  it('leaves the span markup alone inside a code span', () => {
+    const editor = makeEditor('see `<span data-redaction="" data-label="x">hidden</span>` here')
+    expect(redactCount(editor)).toBe(0)
+    expect(editor.getText()).toContain('<span data-redaction=""')
+  })
+})

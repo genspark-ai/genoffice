@@ -80,6 +80,7 @@ describe('runsToInline image runs', () => {
       { type: 'text', text: 'caption', marks: [{ type: 'bold' }] },
       {
         type: 'docInlineImage',
+        marks: [{ type: 'bold' }],
         attrs: {
           dataUrl: 'data:image/png;base64,QUJD',
           widthPx: 96,

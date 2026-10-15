@@ -46,7 +46,7 @@ A new document opens untitled; the file on disk is only created at the first sav
 | Open this manual | F1    | F1              |
 | Fold the ribbon  | ⌥⌘R   | Ctrl+F1         |
 
-**Folding the ribbon** works in every editor. The tab row stays and the command band below it hides; the selected tab doubles as the collapse control, so while the ribbon is folded no tab is selected and pressing any tab brings the band back. Double-clicking a tab does the same. Which way you left it is remembered per editor.
+**Folding the ribbon** works in every editor. The tab row stays and the command band below it hides; the selected tab doubles as the collapse control, so while the ribbon is folded no tab is selected and pressing any tab brings the band back. Double-clicking a tab does the same. Which way you left it is remembered per editor. Docs adds a middle density: **⌥⌘K** / Ctrl+Alt+K compacts the band to icons only, remembered the same way.
 
 Shortcuts inside each editor (format painter, find & replace, table ops, ...) are in their chapters; Docs additionally ships a searchable keyboard-shortcuts dialog (**⌘/**) covering its own chords in full.
 

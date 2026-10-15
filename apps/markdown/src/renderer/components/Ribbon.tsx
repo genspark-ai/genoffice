@@ -109,7 +109,7 @@ const toggleList = (editor: Editor | null, list: ListKind) =>
   editor && uiOp(editor, { op: 'toggleList', target: 'selection', list })
 
 /** doc + sparkle / pen + sparkle / lines + sparkle, same glyphs as the docs ribbon */
-function AiFeatureIcon({ kind }: { kind: 'summarize' | 'polish' | 'tidy' }) {
+function AiFeatureIcon({ kind }: { kind: 'summarize' | 'polish' | 'tidy' | 'mindmap' }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -141,6 +141,14 @@ function AiFeatureIcon({ kind }: { kind: 'summarize' | 'polish' | 'tidy' }) {
           <path d="M4 9H16" />
           <path d="M4 13H11" />
           <path d="M4 17H10" />
+        </>
+      )}
+      {kind === 'mindmap' && (
+        <>
+          <rect x="2.5" y="9.5" width="6" height="5" rx="1.5" />
+          <rect x="15.5" y="4" width="6" height="5" rx="1.5" />
+          <rect x="15.5" y="15" width="6" height="5" rx="1.5" />
+          <path d="M8.5 12h3.5M12 12V6.5h3.5M12 12v5.5h3.5" />
         </>
       )}
       {kind !== 'polish' && (
@@ -354,6 +362,7 @@ export function Ribbon({
       btn: 'aiTidyBtn',
       prompt: () => t(hasSelection() ? 'aiTidySelectionPrompt' : 'aiTidyPrompt'),
     },
+    { kind: 'mindmap', btn: 'aiMindMapBtn', prompt: () => t('aiMindMapPrompt') },
   ] as const
 
   return (
@@ -652,7 +661,11 @@ export function Ribbon({
                 <IconOutlineView size={ICON} />
               </IconBtn>
             )}
-            <ThemePicker mdTheme={mdTheme} disabled={disabled} onPick={onMarkdownTheme} />
+            <ThemePicker
+              mdTheme={mdTheme}
+              disabled={disabled || sourceMode || sourceViewOpen}
+              onPick={onMarkdownTheme}
+            />
             <IconBtn
               title={t('spellcheck')}
               active={spellcheck}

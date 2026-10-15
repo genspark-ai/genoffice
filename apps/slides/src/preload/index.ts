@@ -198,6 +198,8 @@ const api: SlidesApi = {
   setSlideSize: (op: SetSlideSizeOp) => ipcRenderer.invoke('slides:set-slide-size', op),
   getSlideSize: () => ipcRenderer.invoke('slides:get-slide-size'),
   editTransform: (op: EditTransformOp) => ipcRenderer.invoke('slides:edit-transform', op),
+  cancelTransformPreview: (op: { slideIndex: number }) =>
+    ipcRenderer.invoke('slides:cancel-transform-preview', op),
   editTransformMulti: (op: EditTransformMultiOp) =>
     ipcRenderer.invoke('slides:edit-transform-multi', op),
   editConnectorEndpoints: (op: EditConnectorEndpointsOp) =>

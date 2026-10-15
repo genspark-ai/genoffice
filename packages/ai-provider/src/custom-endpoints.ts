@@ -1,8 +1,12 @@
-// Several user-hosted OpenAI-compatible servers side by side. The request path
-// only ever reads `providers.custom`, so the list is kept next to it and the
-// active entry is copied into that slot on every change: nothing downstream
-// learns about endpoints, and a settings file from before the list existed
-// still works because its single slot becomes the first entry.
+// Several user-hosted model servers side by side. The request path only ever
+// reads `providers.custom`, so the list is kept next to it and the active
+// entry is copied into that slot on every change: nothing downstream learns
+// about endpoints, and a settings file from before the list existed still
+// works because its single slot becomes the first entry. An entry also carries
+// its declarative profile (protocol, headers, timeouts, per-model switches —
+// see ./custom-profile.ts), which rides into the slot so the registry can read
+// it from the config alone.
+import { normalizeCustomProfile } from './custom-profile'
 import type { AiCustomEndpoint, AiProviderConfig, AiSettings } from './types'
 
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -17,6 +21,22 @@ const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
 function configuredSlot(config: AiProviderConfig | undefined): boolean {
   return Boolean(str(config?.baseUrl) || str(config?.model) || str(config?.apiKey))
+}
+
+/** The profile fields of a stored entry, normalized (unknown keys dropped, bounds applied). */
+function profileFieldsOf(raw: Record<string, unknown>): Partial<AiCustomEndpoint> {
+  const profile = normalizeCustomProfile(raw)
+  if (!profile) return {}
+  return {
+    ...(profile.api ? { api: profile.api } : {}),
+    ...(profile.apiKeyEnv ? { apiKeyEnv: profile.apiKeyEnv } : {}),
+    ...(profile.headers ? { headers: profile.headers } : {}),
+    ...(profile.idleTimeoutMs !== undefined ? { idleTimeoutMs: profile.idleTimeoutMs } : {}),
+    ...(profile.compat ? { compat: profile.compat } : {}),
+    ...(profile.bodyExtras ? { bodyExtras: profile.bodyExtras } : {}),
+    ...(profile.modelProfiles ? { modelProfiles: profile.modelProfiles } : {}),
+    ...(profile.probedProfiles ? { probedProfiles: profile.probedProfiles } : {}),
+  }
 }
 
 function normalizeEndpoints(raw: unknown): AiCustomEndpoint[] {
@@ -42,6 +62,7 @@ function normalizeEndpoints(raw: unknown): AiCustomEndpoint[] {
       baseUrl: str(e.baseUrl),
       apiKey: str(e.apiKey),
       model: str(e.model),
+      ...profileFieldsOf(e),
       ...(models && models.length > 0 ? { models } : {}),
     })
   }
@@ -51,7 +72,8 @@ function normalizeEndpoints(raw: unknown): AiCustomEndpoint[] {
 /**
  * The endpoint list and the `custom` slot made consistent. A file with a slot
  * but no list gets a one-entry list; a stale active id falls to the first
- * entry; the active entry is copied into the slot. Pure: returns a new object.
+ * entry; the active entry (profile included) is copied into the slot. Pure:
+ * returns a new object.
  */
 export function resolveCustomEndpoints(settings: AiSettings): AiSettings {
   let endpoints = normalizeEndpoints(settings.customEndpoints)
@@ -64,6 +86,7 @@ export function resolveCustomEndpoints(settings: AiSettings): AiSettings {
         baseUrl: str(slot?.baseUrl),
         apiKey: str(slot?.apiKey),
         model: str(slot?.model),
+        ...profileFieldsOf((slot?.profile ?? {}) as Record<string, unknown>),
       },
     ]
   }
@@ -74,13 +97,28 @@ export function resolveCustomEndpoints(settings: AiSettings): AiSettings {
   const active =
     endpoints.find((e) => e.id === str(settings.customEndpoint)) ??
     (endpoints[0] as AiCustomEndpoint)
+  const {
+    id: _id,
+    name: _name,
+    baseUrl: _baseUrl,
+    apiKey: _apiKey,
+    model: _model,
+    models: _models,
+    ...profile
+  } = active
+  const profileOnly = Object.keys(profile).length > 0 ? profile : undefined
   return {
     ...settings,
     customEndpoints: endpoints,
     customEndpoint: active.id,
     providers: {
       ...settings.providers,
-      custom: { apiKey: active.apiKey, model: active.model, baseUrl: active.baseUrl },
+      custom: {
+        apiKey: active.apiKey,
+        model: active.model,
+        baseUrl: active.baseUrl,
+        ...(profileOnly ? { profile } : {}),
+      },
     },
   }
 }

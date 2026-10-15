@@ -269,7 +269,9 @@ it('localizes the strip labels', () => {
       }),
     ),
   )
-  expect(host.querySelector('.ai-queue-toggle')!.textContent).toContain('1 条排队中')
+  expect(host.querySelector('.ai-queue-toggle')!.textContent).toContain(
+    '1 \u6761\u6392\u961f\u4e2d',
+  )
 })
 
 /**

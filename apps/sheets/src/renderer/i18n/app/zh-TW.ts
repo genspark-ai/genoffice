@@ -271,7 +271,10 @@ export const zhTW = {
     '此活頁簿較大，目前以串流方式僅載入了部分資料。排序、篩選和移動範圍需要完整資料才能給出正確結果。要現在完整載入整個活頁簿嗎？',
   appFullLoadStart: '完整載入',
   appFullLoadRunning: '正在完整載入活頁簿，完成後即可排序和篩選……',
-  appFullLoadTooLarge: '此活頁簿過大，無法完整載入記憶體，排序和篩選在此檔案上暫不可用。',
+  appFullLoadTooLarge:
+    '此活頁簿過大，無法完整載入記憶體，排序和移動範圍在此檔案上暫不可用；篩選可直接在檔案上進行。',
+  appLargeFilterLoading: '正在從檔案讀取篩選欄……',
+  appLargeFilterApplying: '正在對檔案套用篩選……',
   appSortValueModeFormulas:
     '所選範圍含有公式，而此大型活頁簿中公式不是即時計算的——排序或移動會把它們儲存為純數值。請選擇不含公式的範圍。',
   appSortRangeTooLarge: '所選範圍過大，無法一次排序或移動，請減少選取的儲存格。',
@@ -990,6 +993,9 @@ export const zhTW = {
   appHeadings: '標題',
   appHeadingsHidden: '列欄標題已隱藏。',
   appHeadingsShown: '列欄標題已顯示。',
+  appRightToLeft: '從右到左',
+  appRightToLeftOn: '網格方向：從右到左。',
+  appRightToLeftOff: '網格方向：從左到右。',
   appPrintHeadingsTitle: '列印列號欄標',
   appGroupFunctionLibrary: '函數程式庫',
   appInsertFunction: '插入函數',

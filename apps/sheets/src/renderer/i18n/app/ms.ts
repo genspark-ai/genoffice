@@ -310,7 +310,9 @@ export const ms = {
   appFullLoadRunning:
     'Memuatkan seluruh buku kerja — pengisihan dan penapisan tersedia selepas selesai…',
   appFullLoadTooLarge:
-    'Buku kerja ini terlalu besar untuk dimuatkan sepenuhnya ke ingatan; pengisihan dan penapisan tidak tersedia untuk fail ini.',
+    'Buku kerja ini terlalu besar untuk dimuatkan sepenuhnya ke memori; pengisihan dan pemindahan julat tidak tersedia untuk fail ini. Penapisan dijalankan terus pada fail.',
+  appLargeFilterLoading: 'Membaca lajur penapis daripada fail…',
+  appLargeFilterApplying: 'Menggunakan penapis pada fail…',
   appSortValueModeFormulas:
     'Julat ini mengandungi formula yang tidak dikira secara langsung dalam buku kerja besar ini — mengisih atau mengalihkannya akan menyimpannya sebagai nilai biasa. Pilih julat tanpa formula.',
   appSortRangeTooLarge:
@@ -1077,6 +1079,9 @@ export const ms = {
   appHeadings: 'Tajuk',
   appHeadingsHidden: 'Tajuk disembunyikan.',
   appHeadingsShown: 'Tajuk ditunjukkan.',
+  appRightToLeft: 'Dari kanan ke kiri',
+  appRightToLeftOn: 'Arah grid: dari kanan ke kiri.',
+  appRightToLeftOff: 'Arah grid: dari kiri ke kanan.',
   appPrintHeadingsTitle: 'Cetak tajuk baris dan lajur',
   appGroupFunctionLibrary: 'Pustaka Fungsi',
   appInsertFunction: 'Selitkan Fungsi',
