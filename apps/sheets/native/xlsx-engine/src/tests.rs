@@ -4858,3 +4858,352 @@ fn reads_xml_entry_that_matches_its_declaration() {
     let value = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml").unwrap();
     assert!(value.contains("sheetData"));
 }
+
+// ── legacy .xls formula import (genoffice#2017) ────────────────────────────
+//
+// calamine decodes BIFF8 FORMULA tokens for us, but its decoder misread the
+// relative flags (tArea ignored them outright, tRef3d read the wrong bits),
+// mangled columns past `BA`, and parsed neither the SHRFMLA record nor the
+// PtgExp members it feeds — so `convert_to_xlsx` shipped `SUM($USM$1:$USM$4)`
+// for `SUM(A1:A4)`, landed `Data!H8` on `$C$8`, and dropped every member of a
+// filled-down formula. The fixtures below hand-assemble the BIFF8 records
+// Excel itself writes, so the expectations can be read straight off the token
+// bytes.
+
+/// One BIFF8 record: id, payload.
+fn biff(id: u16, body: &[u8]) -> Vec<u8> {
+    let mut out = id.to_le_bytes().to_vec();
+    out.extend_from_slice(&(body.len() as u16).to_le_bytes());
+    out.extend_from_slice(body);
+    out
+}
+
+fn biff_bof(substream: u16) -> Vec<u8> {
+    let mut body = 0x0600u16.to_le_bytes().to_vec();
+    body.extend_from_slice(&substream.to_le_bytes());
+    body.extend_from_slice(&[0xCD, 0x0C, 0x09, 0x0C, 0x00, 0x00, 0x00, 0x00]);
+    biff(0x0809, &body)
+}
+
+/// 4-byte rows, 2-byte cols, then a 2-byte reserved word.
+fn biff_dimensions(rows: u32, cols: u16) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&0u32.to_le_bytes());
+    body.extend_from_slice(&rows.to_le_bytes());
+    body.extend_from_slice(&0u16.to_le_bytes());
+    body.extend_from_slice(&cols.to_le_bytes());
+    body.extend_from_slice(&0u16.to_le_bytes());
+    biff(0x0200, &body)
+}
+
+fn biff_number(row: u16, col: u16, value: f64) -> Vec<u8> {
+    let mut body = row.to_le_bytes().to_vec();
+    body.extend_from_slice(&col.to_le_bytes());
+    body.extend_from_slice(&0u16.to_le_bytes());
+    body.extend_from_slice(&value.to_le_bytes());
+    biff(0x0203, &body)
+}
+
+/// FORMULA record: cached value as f64, then the RPN token stream.
+fn biff_formula(row: u16, col: u16, value: f64, tokens: &[u8]) -> Vec<u8> {
+    let mut body = row.to_le_bytes().to_vec();
+    body.extend_from_slice(&col.to_le_bytes());
+    body.extend_from_slice(&0u16.to_le_bytes());
+    body.extend_from_slice(&value.to_le_bytes());
+    body.extend_from_slice(&0u16.to_le_bytes());
+    body.extend_from_slice(&0u32.to_le_bytes());
+    body.extend_from_slice(&(tokens.len() as u16).to_le_bytes());
+    body.extend_from_slice(tokens);
+    biff(0x0006, &body)
+}
+
+/// SHRFMLA record: the group's bounds, then the one token stream every member
+/// of the group replays with its own cell as the anchor.
+fn biff_shrfmla(
+    row_first: u16,
+    row_last: u16,
+    col_first: u8,
+    col_last: u8,
+    c_use: u8,
+    tokens: &[u8],
+) -> Vec<u8> {
+    let mut body = row_first.to_le_bytes().to_vec();
+    body.extend_from_slice(&row_last.to_le_bytes());
+    body.push(col_first);
+    body.push(col_last);
+    body.push(0); // reserved
+    body.push(c_use);
+    body.extend_from_slice(&(tokens.len() as u16).to_le_bytes());
+    body.extend_from_slice(tokens);
+    biff(0x04BC, &body)
+}
+
+/// tRef, BIFF8: plain row, then 14-bit column with bit 15 = row relative and
+/// bit 14 = column relative.
+fn t_ref(row: u16, col: u16, row_rel: bool, col_rel: bool) -> Vec<u8> {
+    let flags = (u16::from(row_rel) << 15) | (u16::from(col_rel) << 14);
+    let mut out = vec![0x24];
+    out.extend_from_slice(&row.to_le_bytes());
+    out.extend_from_slice(&(col | flags).to_le_bytes());
+    out
+}
+
+/// tRefN, BIFF8: the shared-formula twin of tRef, storing both coordinates as
+/// offsets from the cell replaying the group's tokens.
+fn t_refn(row_off: u16, col_off: u16) -> Vec<u8> {
+    let mut out = vec![0x4C];
+    out.extend_from_slice(&row_off.to_le_bytes());
+    out.extend_from_slice(&((0xC000u16) | col_off).to_le_bytes());
+    out
+}
+
+/// tArea, BIFF8: two plain rows then two flagged column fields.
+fn t_area(r1: u16, r2: u16, c1: u16, c2: u16) -> Vec<u8> {
+    let mut out = vec![0x25];
+    out.extend_from_slice(&r1.to_le_bytes());
+    out.extend_from_slice(&r2.to_le_bytes());
+    out.extend_from_slice(&((0xC000u16) | c1).to_le_bytes());
+    out.extend_from_slice(&((0xC000u16) | c2).to_le_bytes());
+    out
+}
+
+/// tRef3d, BIFF8: XTI index, plain row, flagged column field.
+fn t_ref3d(ixti: u16, row: u16, col: u16, row_rel: bool, col_rel: bool) -> Vec<u8> {
+    let flags = (u16::from(row_rel) << 15) | (u16::from(col_rel) << 14);
+    let mut out = vec![0x3A];
+    out.extend_from_slice(&ixti.to_le_bytes());
+    out.extend_from_slice(&row.to_le_bytes());
+    out.extend_from_slice(&(col | flags).to_le_bytes());
+    out
+}
+
+/// tFuncVar: explicit argument count first (SUM is variadic, so Excel never
+/// emits the fixed-arity tFunc form for it).
+fn t_func_sum() -> Vec<u8> {
+    vec![0x22, 0x01, 0x04, 0x00]
+}
+
+/// tExp pointing back at the cell that carries the group's real tokens.
+fn t_exp(row: u16, col: u16) -> Vec<u8> {
+    let mut out = vec![0x01];
+    out.extend_from_slice(&row.to_le_bytes());
+    out.extend_from_slice(&col.to_le_bytes());
+    out
+}
+
+/// A minimal-but-honest CFB container: one 512-byte FAT sector, one directory
+/// sector, then the Workbook stream. The stream is padded past the 4096-byte
+/// mini-stream cutoff so the whole file stays in the regular FAT.
+fn write_cfb_xls(path: &std::path::Path, stream: &[u8]) {
+    assert!(stream.len() > 4096, "fixture relies on the regular FAT");
+    const ENDOFCHAIN: u32 = 0xFFFF_FFFE;
+    const FATSECT: u32 = 0xFFFF_FFFD;
+    const FREESECT: u32 = 0xFFFF_FFFF;
+
+    let stream_sectors = stream.len().div_ceil(512);
+    // sector 0: FAT, sector 1: directory, sectors 2..: stream
+
+    let mut fat = vec![FREESECT; 128];
+    fat[0] = FATSECT;
+    fat[1] = ENDOFCHAIN;
+    for i in 0..stream_sectors {
+        fat[2 + i] = if i + 1 == stream_sectors { ENDOFCHAIN } else { 2 + i as u32 + 1 };
+    }
+    let mut fat_sector = Vec::with_capacity(512);
+    for entry in fat {
+        fat_sector.extend_from_slice(&entry.to_le_bytes());
+    }
+
+    let entry = |name: &str, kind: u8, start: u32, size: u32| {
+        let mut e = vec![0u8; 128];
+        let utf16: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        e[..utf16.len()].copy_from_slice(&utf16);
+        e[64..66].copy_from_slice(&((name.chars().count() as u16 + 1) * 2).to_le_bytes());
+        e[66] = kind;
+        e[67] = 1; // black
+        for slot in [0x44, 0x48, 0x4C] {
+            e[slot..slot + 4].copy_from_slice(&FREESECT.to_le_bytes());
+        }
+        e[0x4C..0x50].copy_from_slice(&start.to_le_bytes());
+        e[0x74..0x78].copy_from_slice(&start.to_le_bytes());
+        e[0x78..0x80].copy_from_slice(&(size as u64).to_le_bytes());
+        e
+    };
+    let mut directory = entry("Root Entry", 5, 2, 0);
+    directory[0x4C..0x50].copy_from_slice(&1u32.to_le_bytes()); // child: Workbook
+    directory.extend_from_slice(&entry("Workbook", 2, 2, stream.len() as u32));
+    // a directory sector holds four entries; the unused slots stay zeroed
+    directory.resize(512, 0);
+
+    let mut header = vec![0u8; 512];
+    header[..8].copy_from_slice(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+    header[0x18..0x1A].copy_from_slice(&0x003Eu16.to_le_bytes());
+    header[0x1A..0x1C].copy_from_slice(&0x0003u16.to_le_bytes());
+    header[0x1C..0x1E].copy_from_slice(&0xFFFEu16.to_le_bytes());
+    header[0x1E..0x20].copy_from_slice(&9u16.to_le_bytes());
+    header[0x20..0x22].copy_from_slice(&6u16.to_le_bytes());
+    header[0x2C..0x30].copy_from_slice(&1u32.to_le_bytes()); // FAT sectors
+    header[0x30..0x34].copy_from_slice(&1u32.to_le_bytes()); // first directory sector
+    header[0x38..0x3C].copy_from_slice(&4096u32.to_le_bytes());
+    header[0x3C..0x40].copy_from_slice(&ENDOFCHAIN.to_le_bytes());
+    header[0x44..0x48].copy_from_slice(&ENDOFCHAIN.to_le_bytes());
+    header[0x4C..0x50].copy_from_slice(&0u32.to_le_bytes()); // DIFAT: FAT in sector 0
+
+    let mut padded = stream.to_vec();
+    padded.resize(512 * stream_sectors, 0);
+
+    let mut file = File::create(path).unwrap();
+    file.write_all(&header).unwrap();
+    file.write_all(&fat_sector).unwrap();
+    file.write_all(&directory).unwrap();
+    file.write_all(&padded).unwrap();
+}
+
+/// The workbook from genoffice#2017: BIFF8 records exactly as Excel writes
+/// them for a filled-down formula, an absolute and a relative SUM range, and
+/// two cross-sheet references with mixed relative flags.
+fn issue_2017_workbook_stream() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend(biff_bof(0x0005)); // workbook globals
+    // one internal XTI: count = 1, then itabFirst = itabLast = 0 ("Data")
+    data.extend(biff(0x0017, &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]));
+    let boundsheet = |name: &str, pos: u32| {
+        let mut body = pos.to_le_bytes().to_vec();
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.push(name.len() as u8);
+        body.push(0); // compressed unicode
+        body.extend_from_slice(name.as_bytes());
+        biff(0x0085, &body)
+    };
+    // the sheet positions are patched in once the sizes are known
+    let data_boundsheet_at = data.len() + 4;
+    data.extend(boundsheet("Data", 0));
+    let summary_boundsheet_at = data.len() + 4;
+    data.extend(boundsheet("Summary", 0));
+    data.extend(biff(0x000A, &[])); // globals EOF
+
+    let sheet = |records: &[Vec<u8>]| {
+        let mut out = biff_bof(0x0010); // worksheet
+        for r in records {
+            out.extend_from_slice(r);
+        }
+        out.extend(biff(0x000A, &[])); // sheet EOF
+        out
+    };
+
+    // pad so the stream clears the 4096-byte mini-stream cutoff; the sheet
+    // offsets below are computed against the final layout
+    let mut xls_records = Vec::new();
+    xls_records.push(biff_dimensions(30, 9));
+    xls_records.push(biff_number(0, 0, 10.0));
+    xls_records.push(biff_number(1, 0, 20.0));
+    xls_records.push(biff_number(2, 0, 30.0));
+    xls_records.push(biff_number(3, 0, 40.0));
+    // A5: SUM(A1:A4), relative corners — one column, so both column fields
+    // are zero
+    let mut sum_relative = t_area(0, 3, 0, 0);
+    sum_relative.extend(t_func_sum());
+    xls_records.push(biff_formula(4, 0, 100.0, &sum_relative));
+    // B5: SUM($B$1:$B$4), absolute corners
+    let mut sum_absolute = vec![0x25];
+    sum_absolute.extend_from_slice(&0u16.to_le_bytes());
+    sum_absolute.extend_from_slice(&3u16.to_le_bytes());
+    sum_absolute.extend_from_slice(&1u16.to_le_bytes());
+    sum_absolute.extend_from_slice(&1u16.to_le_bytes());
+    sum_absolute.extend(t_func_sum());
+    xls_records.push(biff_formula(4, 1, 10.0, &sum_absolute));
+    // E1..E30: =A1*2 filled down, laid out the way Excel writes it: every
+    // member — the master included — carries a lone tExp back at E1, and the
+    // group's tokens live once in a SHRFMLA record. tRefN stores the A column
+    // as the offset 0xFC ≡ -4 (mod 256) from each member's own cell.
+    xls_records.push(biff_formula(0, 4, 20.0, &t_exp(0, 4)));
+    let mut shared = t_refn(0, 0xFC);
+    shared.extend_from_slice(&[0x1E, 0x02, 0x00]); // tInt 2
+    shared.push(0x05); // tMul
+    xls_records.push(biff_shrfmla(0, 29, 4, 4, 30, &shared));
+    for row in 1u16..30 {
+        xls_records.push(biff_formula(row, 4, (row as f64 + 1.0) * 10.0, &t_exp(0, 4)));
+    }
+
+    let mut summary_records = Vec::new();
+    // A1: Data!A2 (relative), A2: Data!$A$3 (absolute)
+    summary_records.push(biff_formula(0, 0, 20.0, &t_ref3d(0, 1, 0, true, true)));
+    summary_records.push(biff_formula(1, 0, 30.0, &t_ref3d(0, 2, 0, false, false)));
+    // A3: A1+A2
+    let mut sum_local = t_ref(0, 0, true, true);
+    sum_local.extend(t_ref(1, 0, true, true));
+    sum_local.push(0x03); // tAdd
+    summary_records.push(biff_formula(2, 0, 50.0, &sum_local));
+    // C6: Data!H8, C7: Data!G9 — the two rows the issue table land wrong
+    summary_records.push(biff_formula(5, 2, 111.0, &t_ref3d(0, 7, 7, true, true)));
+    summary_records.push(biff_formula(6, 2, 222.0, &t_ref3d(0, 8, 6, true, true)));
+
+    let data_sheet_at = data.len() as u32;
+    data.extend(sheet(&xls_records));
+    let summary_sheet_at = data.len() as u32;
+    data.extend(sheet(&summary_records));
+    data[data_boundsheet_at..data_boundsheet_at + 4].copy_from_slice(&data_sheet_at.to_le_bytes());
+    data[summary_boundsheet_at..summary_boundsheet_at + 4]
+        .copy_from_slice(&summary_sheet_at.to_le_bytes());
+    // clear the CFB mini-stream cutoff so the fixture stays in the regular FAT
+    data.resize(4200, 0);
+    data
+}
+
+#[test]
+fn legacy_xls_formulas_keep_their_refs_and_shared_slaves() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("repro.xls");
+    let target = dir.path().join("repro.xlsx");
+    write_cfb_xls(&source, &issue_2017_workbook_stream());
+
+    let result = crate::convert::convert_to_xlsx(&source, &target).unwrap();
+    assert_eq!(result.sheets, 2);
+
+    let mut archive = zip::ZipArchive::new(File::open(&target).unwrap()).unwrap();
+    let mut read = |name: &str| crate::xml_util::read_zip_string(&mut archive, name).unwrap();
+
+    let data = read("xl/worksheets/sheet1.xml");
+    assert!(data.contains("<f>SUM(A1:A4)</f>"), "A5: {data}");
+    assert!(data.contains("<f>SUM($B$1:$B$4)</f>"), "B5: {data}");
+    // the shared group survives: every member — master included — gets its
+    // formula back from the SHRFMLA replay
+    assert!(data.contains("<f>A1*2</f>"), "E1: {data}");
+    assert!(data.contains("<f>A2*2</f>"), "E2: {data}");
+    assert!(data.contains("<f>A30*2</f>"), "E30: {data}");
+
+    let summary = read("xl/worksheets/sheet2.xml");
+    assert!(summary.contains("<f>Data!A2</f>"), "Summary!A1: {summary}");
+    assert!(summary.contains("<f>Data!$A$3</f>"), "Summary!A2: {summary}");
+    assert!(summary.contains("<f>Data!H8</f>"), "Summary!C6: {summary}");
+    assert!(summary.contains("<f>Data!G9</f>"), "Summary!C7: {summary}");
+}
+
+/// The same SHRFMLA replay, but against a real Excel-written workbook rather
+/// than a hand-assembled stream: `Orig Sched` of the vendored
+/// `optional_records.xls` (see tests/fixtures/README.md) holds three shared
+/// groups whose members all carry lone tExp tokens.
+#[test]
+fn legacy_xls_shared_groups_from_a_real_excel_workbook() {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/optional_records.xls");
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("converted.xlsx");
+
+    let result = crate::convert::convert_to_xlsx(&source, &target).unwrap();
+    assert_eq!(result.sheets, 2);
+
+    let mut archive = zip::ZipArchive::new(File::open(&target).unwrap()).unwrap();
+    let data = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml").unwrap();
+
+    // M10:M36 replay N10/1000 with the row anchored at each member.
+    assert!(data.contains("<f>N10/1000</f>"), "M10: {data}");
+    assert!(data.contains("<f>N11/1000</f>"), "M11: {data}");
+    assert!(data.contains("<f>N36/1000</f>"), "M36: {data}");
+    // AA11:AA74 and AA75:AA92 replay N<row>; check both group masters and
+    // the last member.
+    assert!(data.contains("<f>N11</f>"), "AA11: {data}");
+    assert!(data.contains("<f>N12</f>"), "AA12: {data}");
+    assert!(data.contains("<f>N75</f>"), "AA75: {data}");
+    assert!(data.contains("<f>N92</f>"), "AA92: {data}");
+}

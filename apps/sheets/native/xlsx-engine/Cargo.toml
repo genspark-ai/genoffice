@@ -12,7 +12,11 @@ single-thread = []
 
 [dependencies]
 base64 = "0.22.1"
-calamine = "0.36.0"
+# Pinned to the fork until tafia/calamine merges the formula-decode fixes:
+# the reference-token flags, the bijective column letters, and the SHRFMLA
+# parsing that reconstructs shared-formula members. Upstream thread:
+# https://github.com/tafia/calamine/pull/740
+calamine = { git = "https://github.com/tokg-venv/calamine", rev = "017e287b72bf9041e5246227b88dcbed436dee33" }
 ironcalc = "0.7.1"
 quick-xml = { version = "0.38", features = ["encoding"] }
 roxmltree = "0.21.1"
