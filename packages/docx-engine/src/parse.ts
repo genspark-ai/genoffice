@@ -4045,6 +4045,7 @@ function extractRuns(
                 text: fieldCached || `«${merge[1] ?? merge[2]}»`,
                 instrField: fieldInstr.trim(),
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(link ? { link } : {}),
               },
               rev,
             )
