@@ -80,7 +80,9 @@ describe('chart rendering: deleted axes, spacer series, legend order, pie of pie
       legendOrder: [0, 2],
     }
     const node = buildChartNode('r', 'e', model, box, vp, metrics)!
-    expect(node.swatches).toHaveLength(2)
+    // bar key as a swatch, line key as a line segment; the deleted entry draws neither
+    expect(node.swatches).toHaveLength(1)
+    expect(node.polylines.filter((l) => l.points.length === 4)).toHaveLength(1)
     expect(texts(node)).toContain('CCA')
     expect(texts(node)).toContain('Growth')
     expect(texts(node)).not.toContain('Empty')

@@ -1,9 +1,11 @@
 import type { DocumentTabKind } from '../shared/tabs-api'
 
 // shared by the open route, the open-dialog filter and the rename gate so they cannot drift
-const DOCX_RE = /\.docx$/i
-const XLSX_RE = /\.(xlsx|xlsm|xls|csv|tsv)$/i
-const PPTX_RE = /\.pptx$/i
+// .odt/.odp (and the .ott/.ots/.otp templates) open through the docs/slides/sheets
+// import filters (converted copies)
+const DOCX_RE = /\.(docx|odt|ott)$/i
+const XLSX_RE = /\.(xlsx|xlsm|xls|csv|tsv|ods|ots)$/i
+const PPTX_RE = /\.(pptx|odp|otp)$/i
 const PDF_RE = /\.pdf$/i
 const HTML_RE = /\.html?$/i
 

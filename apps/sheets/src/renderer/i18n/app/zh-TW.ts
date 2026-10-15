@@ -594,6 +594,7 @@ export const zhTW = {
   appTabReview: '校閱',
   appRibbonCollapse: '摺疊功能區',
   appRibbonExpand: '展開功能區',
+  appRibbonCompact: '緊湊功能區（僅圖示）',
   appTabView: '檢視',
   appTabAi: 'AI',
   appTabChartDesign: '圖表設計',

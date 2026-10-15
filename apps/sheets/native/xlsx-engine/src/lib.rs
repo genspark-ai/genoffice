@@ -16,6 +16,7 @@ use zip::ZipArchive;
 pub mod archive;
 pub mod convert;
 pub mod find;
+pub mod odf;
 pub mod protocol;
 pub mod recalc;
 mod richdata;

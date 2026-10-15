@@ -5,8 +5,11 @@ import {} from '@tiptap/pm/tables'
 import { WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import {
   autospaceBoundaries,
+  autospaceMode,
   autospacePadBetween,
+  autospacePadClass,
   codePointLengthAt,
+  type AutospaceMode,
   cssAutoLineMult,
   cssCsFontFamily,
   hangulSpaceOffsets,
@@ -64,6 +67,7 @@ import {
   type TableParagraph,
   type TextboxDisplay,
   type TextboxParaDisplay,
+  type AutoSpace,
 } from '@genoffice/docx-engine'
 
 /**
@@ -1810,16 +1814,17 @@ export type RunNeighbours = { prev?: string; next?: string }
  */
 function padSegments(
   text: string,
-  pads: boolean,
+  pads: AutospaceMode | null,
   leadPad: boolean,
   neighbours: RunNeighbours,
 ): unknown[] {
   const wraps: Array<[number, number, object]> = []
   if (pads) {
-    const cuts = autospaceBoundaries(text)
+    const cuts = autospaceBoundaries(text, pads)
     if (leadPad && text) cuts.unshift(0)
+    const attrs = pads === true ? AUTOSPACE_PAD_ATTRS : { class: autospacePadClass(pads) }
     for (const cut of cuts) {
-      wraps.push([cut, cut + codePointLengthAt(text, cut), AUTOSPACE_PAD_ATTRS])
+      wraps.push([cut, cut + codePointLengthAt(text, cut), attrs])
     }
   }
   if (hangulSpaceWideningOn()) {
@@ -1843,7 +1848,7 @@ function padSegments(
 /** run → styled <span> (+ inline <img>) specs, shared by textbox and table-cell rendering */
 export function runSpanSpecs(
   run: Run,
-  autoSpace?: boolean,
+  autoSpace?: AutoSpace,
   leadPad = false,
   neighbours: RunNeighbours = {},
 ): DomSpec[] {
@@ -1875,7 +1880,7 @@ export function runSpanSpecs(
 
 function textSpanSpec(
   run: Run,
-  autoSpace?: boolean,
+  autoSpace?: AutoSpace,
   leadPad = false,
   neighbours: RunNeighbours = {},
 ): DomSpec {
@@ -1907,11 +1912,11 @@ function textSpanSpec(
     run.caps === 'small' ? 'font-variant-caps:small-caps' : '',
     run.caps === 'none' ? 'text-transform:none;font-variant-caps:normal' : '',
     // explicit autoSpaceDE/DN off also disables the browser's native gap (same as the editor path)
-    autoSpace === false ? 'text-autospace:no-autospace' : '',
+    autoSpace != null && autoSpace !== true ? 'text-autospace:no-autospace' : '',
   ]
     .filter(Boolean)
     .join(';')
-  const content = padSegments(run.text, autoSpace !== false, leadPad, neighbours)
+  const content = padSegments(run.text, autospaceMode(autoSpace), leadPad, neighbours)
   // hyperlink runs keep the editable path's look (.doc-link) and real href;
   // App-level click handling prevents in-place navigation (jump on mod+click)
   const attrs: Record<string, string> = {}
@@ -1940,7 +1945,7 @@ function adjacentRunText(runs: Run[], k: number, step: 1 | -1): string {
 }
 
 /** run spans with pads at run-boundary CJK-Latin seams (empty runs keep their span, no pad) */
-function runSpansWithPads(runs: Run[], autoSpace?: boolean): DomSpec[] {
+function runSpansWithPads(runs: Run[], autoSpace?: AutoSpace): DomSpec[] {
   const out: DomSpec[] = []
   let prevText = ''
   runs.forEach((run, k) => {
@@ -1950,7 +1955,8 @@ function runSpansWithPads(runs: Run[], autoSpace?: boolean): DomSpec[] {
       next: adjacentRunText(runs, k, 1),
     }
     if (run.text !== '') {
-      leadPad = autoSpace !== false && autospacePadBetween(prevText, run.text)
+      const mode = autospaceMode(autoSpace)
+      leadPad = mode !== null && autospacePadBetween(prevText, run.text, mode)
       prevText = run.text
     }
     out.push(...runSpanSpecs(run, autoSpace, leadPad, neighbours))

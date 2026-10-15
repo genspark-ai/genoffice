@@ -13,14 +13,18 @@
  * file, so they are stripped before matching and the fragment is handed back
  * for the caller to apply after opening.
  */
-import { existsSync, readdirSync, statSync } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, join } from 'node:path'
+import { readdir, stat } from 'node:fs/promises'
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
+
+export interface Listing {
+  files: string[]
+  dirs: string[]
+}
 
 /** a filesystem the resolver walks; injectable so tests drive a real temp tree */
 export interface WikiFs {
-  exists(path: string): boolean
-  isFile(path: string): boolean
-  list(dir: string): { files: string[]; dirs: string[] }
+  isFile(path: string): Promise<boolean>
+  list(dir: string): Promise<Listing>
 }
 
 /** directories never entered: version control, dependency trees, app sandboxes */
@@ -44,24 +48,46 @@ export const MAX_DEPTH = 6
 /** entries under one walk step, so a huge library cannot stall the UI */
 const MAX_ENTRIES = 20000
 
+/** a listing is trusted this long without a stat; a typing burst re-resolves far more often */
+const LISTING_TTL_MS = 2000
+
+const MAX_CACHED_DIRS = 8000
+
+interface CachedListing extends Listing {
+  mtimeMs: number
+  checkedAt: number
+}
+
+/** the real filesystem; listings are cached per instance and revalidated by directory mtime */
 export function nodeFs(): WikiFs {
+  const cache = new Map<string, CachedListing>()
   return {
-    exists: (path) => existsSync(path),
-    isFile: (path) => {
+    isFile: async (path) => {
       try {
-        return statSync(path).isFile()
+        return (await stat(path)).isFile()
       } catch {
         return false
       }
     },
-    list: (dir) => {
+    list: async (dir) => {
+      const now = Date.now()
+      const hit = cache.get(dir)
+      if (hit && now - hit.checkedAt < LISTING_TTL_MS) return hit
+      const mtimeMs = (await stat(dir)).mtimeMs
+      if (hit && hit.mtimeMs === mtimeMs) {
+        hit.checkedAt = now
+        return hit
+      }
       const files: string[] = []
       const dirs: string[] = []
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
         if (entry.isDirectory()) dirs.push(entry.name)
         else if (entry.isFile()) files.push(entry.name)
       }
-      return { files, dirs }
+      if (cache.size >= MAX_CACHED_DIRS) cache.clear()
+      const listing = { files, dirs, mtimeMs, checkedAt: now }
+      cache.set(dir, listing)
+      return listing
     },
   }
 }
@@ -109,12 +135,16 @@ function candidatePaths(dir: string, name: string): string[] {
   return NOTE_EXTS.map((ext) => join(dir, `${name}${ext}`))
 }
 
-function firstExisting(fs: WikiFs, dir: string, name: string): string | null {
+async function firstExisting(fs: WikiFs, dir: string, name: string): Promise<string | null> {
   for (const candidate of candidatePaths(dir, name)) {
-    if (fs.exists(candidate) && fs.isFile(candidate)) return candidate
+    if (await fs.isFile(candidate)) return candidate
   }
   return null
 }
+
+const hasDir = (name: string): boolean => /[\\/]/.test(name)
+
+const slashes = (path: string): string => path.split(sep).join('/')
 
 export interface ResolveOptions {
   /** absolute path of the document holding the links; '' for an untitled one */
@@ -129,11 +159,11 @@ export interface ResolveOptions {
  * hands the caller the answer for every link so the unresolved ones can be
  * marked without a second look.
  */
-export function resolveWikiLinks(
+export async function resolveWikiLinks(
   targets: readonly string[],
   options: ResolveOptions,
   fs: WikiFs = nodeFs(),
-): Map<string, ResolvedLink> {
+): Promise<Map<string, ResolvedLink>> {
   const out = new Map<string, ResolvedLink>()
   if (targets.length === 0) return out
 
@@ -153,43 +183,64 @@ export function resolveWikiLinks(
   }
   if (pending.length === 0) return out
 
-  // 1. the document's own directory — a link beside its target needs nothing else
+  // 1. the document's own directory — a link beside its target needs nothing
+  //    else; a path with a directory is also tried from the root, the way
+  //    Obsidian reads `[[folder/Note]]`
   const remaining: typeof pending = []
-  if (options.fromPath) {
-    const here = dirname(options.fromPath)
-    for (const item of pending) {
-      const hit = firstExisting(fs, here, item.name)
-      if (hit) out.set(item.raw, { path: hit, fragment: item.fragment, found: true })
-      else remaining.push(item)
+  const bases = [options.fromPath ? dirname(options.fromPath) : '', options.root].filter(Boolean)
+  for (const item of pending) {
+    let hit: string | null = null
+    for (const base of bases) {
+      if (base === options.root && !hasDir(item.name)) continue
+      hit = await firstExisting(fs, base, item.name)
+      if (hit) break
     }
-  } else remaining.push(...pending)
+    if (hit) out.set(item.raw, { path: hit, fragment: item.fragment, found: true })
+    else remaining.push(item)
+  }
 
   // 2. breadth-first from the root: a shallower file beats a deeper one of the
   //    same name, which is what makes an unqualified name unambiguous
   if (remaining.length > 0 && options.root) {
     const wanted = new Map<string, typeof remaining>()
+    /** `[[dir/Note]]` keys match as a suffix of the root-relative path */
+    const wantedPaths: string[] = []
     for (const item of remaining) {
-      const list = wanted.get(item.name)
+      const key = hasDir(item.name) ? slashes(item.name) : item.name
+      const list = wanted.get(key)
       if (list) list.push(item)
-      else wanted.set(item.name, [item])
+      else {
+        wanted.set(key, [item])
+        if (hasDir(key)) wantedPaths.push(key)
+      }
     }
     if (wanted.size > 0) {
       let queue: { dir: string; depth: number }[] = [{ dir: options.root, depth: 0 }]
       let budget = MAX_ENTRIES
       while (queue.length > 0 && wanted.size > 0 && budget > 0) {
         const next: typeof queue = []
-        for (const { dir, depth } of queue) {
-          let listing: { files: string[]; dirs: string[] }
-          try {
-            listing = fs.list(dir)
-          } catch {
-            continue // unreadable directory, same as an unplugged root
-          }
+        const listings = await Promise.all(
+          // an unreadable directory reads as empty, same as an unplugged root
+          queue.map((step) => fs.list(step.dir).catch((): Listing => ({ files: [], dirs: [] }))),
+        )
+        for (const [i, { dir, depth }] of queue.entries()) {
+          const listing = listings[i]!
           budget -= listing.files.length + listing.dirs.length
+          const relDir = slashes(relative(options.root, dir))
           for (const file of listing.files) {
             // indexed under both spellings: a bare `[[Name]]` matches the stem,
             // an explicit `[[Figure 1.png]]` has to match the file as written
-            const names = new Set([file, basename(file, extname(file))])
+            const stem = basename(file, extname(file))
+            const names = new Set([file, stem])
+            if (wantedPaths.length > 0 && relDir) {
+              for (const key of wantedPaths) {
+                if (!wanted.has(key)) continue
+                const tail = `/${key}`
+                for (const spelled of [`${relDir}/${file}`, `${relDir}/${stem}`]) {
+                  if (spelled.endsWith(tail)) names.add(key)
+                }
+              }
+            }
             let taken: string | null = null
             for (const key of names) {
               const items = wanted.get(key)

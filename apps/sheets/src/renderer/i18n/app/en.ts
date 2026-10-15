@@ -659,6 +659,7 @@ export const en = {
   appTabReview: 'Review',
   appRibbonCollapse: 'Collapse the Ribbon',
   appRibbonExpand: 'Expand the Ribbon',
+  appRibbonCompact: 'Compact Ribbon (icons only)',
   appTabView: 'View',
   appTabAi: 'AI',
   appTabChartDesign: 'Chart Design',

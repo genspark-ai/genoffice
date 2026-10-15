@@ -1923,3 +1923,14 @@ export function IconSelectAll(props: IconProps) {
     </Svg>
   )
 }
+
+export function IconConvert(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3.5 6.5a5 5 0 0 1 8.8-1.4" />
+      <path d="M12.4 2.8v2.6H9.8" />
+      <path d="M12.5 9.5a5 5 0 0 1-8.8 1.4" />
+      <path d="M3.6 13.2v-2.6h2.6" />
+    </Svg>
+  )
+}

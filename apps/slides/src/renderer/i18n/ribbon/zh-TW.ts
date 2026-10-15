@@ -15,6 +15,7 @@ export const zhTW = {
   ribbonTabReview: '校閱',
   ribbonCollapse: '摺疊功能區',
   ribbonExpand: '展開功能區',
+  ribbonCompact: '緊湊功能區（僅圖示）',
   ribbonTabView: '檢視',
   ribbonTabTableDesign: '表格設計',
   ribbonTabChartDesign: '圖表設計',

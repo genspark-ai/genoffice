@@ -69,6 +69,20 @@
   font-display: block;
 }
 
+/* Cambria Math is an Office-private face Chromium cannot see; its Latin text
+ * glyphs carry Cambria's advances and the face has no bold cut, so Word
+ * emboldens the regular outlines (probe 2026-10-14: bold headings measure
+ * 0.92x Caladea Bold, Caladea Regular within 0.5% once kerned). One
+ * regular-weight face lets Chromium synthesise bold the same way; math
+ * symbols fall through to STIX. */
+@font-face {
+  font-family: 'Cambria Math GO';
+  src: url('./Caladea-Regular.ttf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 @font-face {
   font-family: 'Liberation Serif';
   src: url('./LiberationSerif-Regular.ttf');
@@ -493,6 +507,24 @@
   font-family: 'Noto Sans Arabic W';
   src: url('./NotoSansArabic-Regular-subset.woff2') format('woff2');
   size-adjust: 87%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+/* Calibri ships its own compact Arabic; Carlito has none, so Arabic in a
+ * cs="Calibri" run would fall through to Geeza Pro (8.6% wider, taller box).
+ * Scale = shaped width of a 57-letter Arabic pangram in Calibri vs the bundled
+ * Noto Sans Arabic subset (harfbuzz over the real files, 2026-10-14: 278 vs
+ * 325 at 12 pt; bold cut 0.902, synthesized from the regular group). Box
+ * pinned to Calibri's hhea 1536/512 over 2048 so the fallback face never
+ * lifts a Calibri line. */
+@font-face {
+  font-family: 'Calibri Arabic GO';
+  src: url('./NotoSansArabic-Regular-subset.woff2') format('woff2');
+  size-adjust: 85.5%;
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF;
+  ascent-override: 75%;
+  descent-override: 25%;
   font-weight: normal;
   font-style: normal;
   font-display: block;

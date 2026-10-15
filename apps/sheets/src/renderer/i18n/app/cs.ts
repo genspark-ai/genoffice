@@ -680,6 +680,7 @@ export const cs = {
   appTabReview: 'Revize',
   appRibbonCollapse: 'Sbalit pás karet',
   appRibbonExpand: 'Rozbalit pás karet',
+  appRibbonCompact: 'Kompaktní pás karet (pouze ikony)',
   appTabView: 'Zobrazení',
   appTabAi: 'AI',
   appTabChartDesign: 'Návrh grafu',

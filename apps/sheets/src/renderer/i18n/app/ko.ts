@@ -690,6 +690,7 @@ export const ko = {
   appTabReview: '검토',
   appRibbonCollapse: '리본 축소',
   appRibbonExpand: '리본 확장',
+  appRibbonCompact: '간단 리본(아이콘만)',
   appTabView: '보기',
   appTabAi: 'AI',
   appTabChartDesign: '차트 디자인',

@@ -730,6 +730,7 @@ export const de = {
   appTabReview: 'Überprüfen',
   appRibbonCollapse: 'Menüband reduzieren',
   appRibbonExpand: 'Menüband erweitern',
+  appRibbonCompact: 'Kompaktes Menüband (nur Symbole)',
   appTabView: 'Ansicht',
   appTabAi: 'KI',
   appTabChartDesign: 'Diagrammentwurf',

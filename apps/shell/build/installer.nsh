@@ -8,6 +8,67 @@
 ; in either pass is a warning makensis treats as an error, hence the guards.
 !include "WinMessages.nsh"
 !include "StrFunc.nsh"
+!include "nsProcess.nsh"
+
+!macro GenOfficeKillHelper NAME
+  ${nsProcess::FindProcess} "${NAME}" $R0
+  ${if} $R0 == 0
+    ${nsProcess::KillProcess} "${NAME}" $R0
+    Sleep 300
+  ${endIf}
+!macroend
+
+; electron-builder's stock CHECK_APP_RUNNING runs powershell.exe via nsExec
+; (CREATE_NEW_CONSOLE + SW_HIDE); Windows Terminal as default host ignores
+; SW_HIDE, so every silent update flashed a PowerShell window. nsProcess does
+; the same work in-process. Used by both the installer and the uninstaller.
+!macro customCheckAppRunning
+  ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+  ${if} $R0 == 0
+    ${if} ${isUpdated}
+      ; let the app finish quitting on its own
+      Sleep 1000
+      Goto genofficeStopApp
+    ${endIf}
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK genofficeStopApp
+    Quit
+
+    genofficeStopApp:
+    DetailPrint "$(appClosing)"
+    ${nsProcess::CloseProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    Sleep 300
+    StrCpy $R1 0
+
+    genofficeWaitLoop:
+      IntOp $R1 $R1 + 1
+      ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+      ${if} $R0 == 0
+        Sleep 1000
+        ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        ${if} $R0 == 0
+          DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
+          Sleep 2000
+        ${else}
+          Goto genofficeAppClosed
+        ${endIf}
+      ${else}
+        Goto genofficeAppClosed
+      ${endIf}
+      ${if} $R1 > 1
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY genofficeWaitLoop
+        Quit
+      ${else}
+        Goto genofficeWaitLoop
+      ${endIf}
+    genofficeAppClosed:
+  ${endIf}
+  ; the stock macro closed every process under $INSTDIR; a killed app can
+  ; orphan its helpers, which keep their binaries locked
+  !insertmacro GenOfficeKillHelper "xlsx-sidecar.exe"
+  !insertmacro GenOfficeKillHelper "win-ocr.exe"
+  ${nsProcess::Unload}
+!macroend
 
 !define GENOFFICE_PATH_MAX 7900
 

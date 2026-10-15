@@ -544,6 +544,12 @@ html.genoffice-popover-open .ribbon-tabs {
   cursor: default;
 }
 
+.file-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 .file-menu-key {
   color: var(--text-dim);
   font-size: 12px;
@@ -4454,6 +4460,10 @@ th.cell-rev-del {
 .doc-autospace-pad {
   margin-inline-start: var(--doc-autospace-pad, 0.125em);
 }
+/* only one of autoSpaceDE/DN is off: the native gap is disabled, the pad carries all of it */
+.doc-autospace-pad-full {
+  margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * 2);
+}
 
 /* a space with a hangul neighbour advances 0.5em in Word whatever the run font
    (line-metrics hangulSpaceOffsets); the half-width space face supplies that
@@ -6708,6 +6718,15 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 /* a column break ending a paragraph is one line in Word (the mark opens the
    next column); the trailing-break phantom after it would add a second */
 .doc-page br.doc-col-br + br.ProseMirror-trailingBreak {
+  display: none;
+}
+
+/* a column break leading a paragraph with text (.doc-lead-col-br) has no
+   line of its own: Word opens the next column with the first text line
+   (CNKI/PDF-converter output breaks every second column this way); a
+   break-only paragraph keeps its line */
+.doc-page .doc-lead-col-br > br.doc-col-br:first-child,
+.doc-page .doc-lead-col-br > :first-child br.doc-col-br:first-of-type {
   display: none;
 }
 
@@ -13541,4 +13560,53 @@ tr > .page-gap-cut {
     outline: 1px dashed var(--border-strong);
     outline-offset: -1px;
   }
+}
+
+/* ---- withheld spans: text kept in the document, hidden from the model ----
+   An underline rather than a fill, because every other decoration here is
+   either a fill (search hits) or a style (bold, highlight), and the reader has
+   to be able to tell at a glance that this one means "the model cannot see
+   this". The ink is the app accent, so the mark follows the theme instead of
+   carrying a colour of its own. */
+.redact-span {
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+/* the marker is a screen affordance; the printed page shows the plain run */
+@media print {
+  .redact-span {
+    border: none;
+    background: none;
+    color: inherit;
+    padding: 0;
+  }
+}
+
+.redact-span.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+.redact-desc {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* the marker the model will see, shown before anything is committed */
+.redact-preview {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, var(--ui-cjk), monospace;
+  font-size: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 2px;
+  padding: 4px 6px;
+  margin-bottom: 14px;
+  word-break: break-all;
 }

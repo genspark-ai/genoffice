@@ -434,6 +434,16 @@ describe('markerTabAdvance (default tab after the marker)', () => {
     expect(markerTabAdvance(0, 360, 360)).toBeNull()
   })
 
+  it('a custom stop between the marker end and the hanging indent catches the tab', () => {
+    // numbered heading: level left=720 hanging=720, paragraph stops 450/1350/3060,
+    // one-digit marker ~160 twips -> Word starts the text at 450, not at 720
+    expect(markerTabAdvance(0, 160, 720, 720, [450, 1350, 3060, 720])).toBe(450)
+    // stops at or past the indent change nothing
+    expect(markerTabAdvance(0, 160, 720, 720, [720, 1350])).toBeNull()
+    // a stop under the marker itself is skipped
+    expect(markerTabAdvance(0, 500, 720, 720, [450])).toBeNull()
+  })
+
   it('jumps to the next default-tab-grid stop when the marker overflows', () => {
     // "NEW-1-FORMAT" at ind left=360 hanging=360: marker 0..~1476 -> stop at 2160
     expect(markerTabAdvance(0, 1476, 360)).toBe(2160)

@@ -30,6 +30,15 @@ export {
 } from './app-menu'
 export { GITHUB_REPO_URL } from './github-menu'
 export {
+  AUTHOR_NAME_KEY,
+  AUTHOR_NAME_MAX,
+  configuredAuthorName,
+  readAuthorNameSetting,
+  resolveAuthorName,
+  sanitizeAuthorName,
+  systemAuthorName,
+} from './author-name'
+export {
   saveAsSuggestion,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,

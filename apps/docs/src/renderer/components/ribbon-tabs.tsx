@@ -24,6 +24,7 @@ import { stepDocsZoom } from '../wheel-zoom'
 import { defaultParagraphStyleId, headingStyleId, type StyleMap } from '../style-gallery'
 import { tableModelToPmNode } from '../editor/convert'
 import { insertPageBreak } from '../editor/page-break'
+import { insertPictureAtSelection } from '../editor/insert-picture'
 import { isStraightLineKind } from '../editor/shape-svg'
 import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
@@ -387,27 +388,14 @@ export async function insertImageFromDataUrl(
   try {
     const natural = await imageSizeOf(dataUrl)
     const scale = Math.min(1, MAX_IMAGE_WIDTH_PX / natural.width)
-    editor
-      .chain()
-      .focus()
-      .insertContent({
-        type: 'docProtected',
-        attrs: {
-          docxIndex: null,
-          blockType: 'image',
-          label,
-          imageDataUrl: dataUrl,
-          imageWidthPx: Math.round(natural.width * scale),
-          imageHeightPx: Math.round(natural.height * scale),
-          genImage: {
-            base64: m[2],
-            mime,
-            widthPx: Math.round(natural.width * scale),
-            heightPx: Math.round(natural.height * scale),
-          },
-        },
-      })
-      .run()
+    insertPictureAtSelection(editor, {
+      dataUrl,
+      base64: m[2],
+      mime,
+      widthPx: Math.round(natural.width * scale),
+      heightPx: Math.round(natural.height * scale),
+      label,
+    })
     // Pasting into an empty document leaves the image as the ONLY node with a
     // node-selection on it: there is no text position to type at, and the
     // next keystroke REPLACES the picture. Ensure a

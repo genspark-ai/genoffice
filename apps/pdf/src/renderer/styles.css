@@ -481,6 +481,77 @@ button {
   background: var(--hover);
 }
 
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), docs parity, see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops to icon-only on a shorter band. The band keeps the HARD-fixed
+ * height contract (switching tabs, including the contextual fill/form tabs,
+ * never resizes the row) and the horizontal scroll.
+ */
+.ribbon-compact .ribbon-body {
+  /* same fixed-height contract as the full band, only shorter (docs measured
+     45px as the smallest band that holds every tab unclipped; pdf's tallest
+     compact content is the 26px zoom row, so it fits the same band) */
+  height: 45px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+}
+
+.ribbon-compact .rb-big {
+  /* the label is taken out of flow entirely (below), so the button is just
+     the icon row plus its padding */
+  gap: 0;
+  padding: 2px 5px;
+}
+
+.ribbon-compact .rb-big-icon {
+  min-height: 22px;
+  flex: none;
+  /* the base padding is sized for the full band's taller icon plate */
+  padding: 1px 3px;
+  margin: 0 -2px;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name. */
+.ribbon-compact .rb-big > span:not(.rb-big-icon) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Groups centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 3px;
+}
+
+/* `.rb-col` stacks two rows (the page-number/zoom block) that cannot fit a
+ * short band — side by side, exactly the docs treatment of .rb-col. */
+.ribbon-compact .rb-col {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+/* the highlight split caret is absolutely placed against the full band's
+ * 30px icon plate; recentre it on the shorter one, and keep the gutter its
+ * padding carved out of the right edge (the compact .rb-big padding above
+ * would otherwise reclaim it) */
+.ribbon-compact .rb-highlight-main {
+  padding-right: 16px;
+}
+
+.ribbon-compact .rb-highlight-caret {
+  top: 2px;
+  height: 22px;
+}
+
 .rb-icon {
   min-width: 27px;
   height: 26px;
@@ -1454,6 +1525,35 @@ button {
 .pdf-modal-row .pdf-modal-input {
   flex: 1;
   min-width: 0;
+}
+
+.pdf-print-field > span {
+  flex: 1;
+}
+
+.pdf-print-field select.pdf-modal-input {
+  flex: 1.6;
+  color: var(--text);
+}
+
+.pdf-print-copies {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.pdf-print-copies .pdf-modal-input {
+  width: 64px;
+}
+
+.pdf-print-divider {
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
+
+.pdf-print-empty {
+  color: var(--danger);
 }
 
 .pdf-modal-check {

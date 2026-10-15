@@ -23,18 +23,46 @@ export function blockRangePositions(
 
 const hasDelMark = (node: ProseMirrorNode) => node.marks.some((m) => m.type.name === 'del')
 
-/** block text as it reads once pending tracked deletions are applied (textContent minus del runs) */
-export function liveText(node: ProseMirrorNode): string {
+/**
+ * Block text as it reads once pending tracked deletions are applied
+ * (textContent minus del runs) and, by default, with withheld spans replaced
+ * by their markers.
+ *
+ * Most callers are building something for a model, and a span exists precisely
+ * so its words do not travel. Redacting here rather than at each call site
+ * matters because the failure is silent and total: one caller left reading the
+ * raw text hands over the whole document. `forDisplay` opts out for the two
+ * places a person is the reader — a comment preview, and a field's own value.
+ */
+export function liveText(node: ProseMirrorNode, forDisplay = false): string {
   if ((node.attrs?.blockRevision as { kind?: string } | null)?.kind === 'del') return ''
   let out = ''
   const walk = (child: ProseMirrorNode): void => {
     if (hasDelMark(child)) return
+    if (!forDisplay && hasRedactMark(child)) {
+      out += redactMarkerFor(child)
+      return
+    }
     if (child.isText) out += child.text ?? ''
-    else if (child.isLeaf) out += child.type.spec.leafText?.(child) ?? ''
-    else child.forEach(walk)
+    else if (child.isLeaf) {
+      // a picture carries no text; a withheld one still needs its marker
+      if (!forDisplay && hasRedactMark(child)) out += redactMarkerFor(child)
+      else out += child.type.spec.leafText?.(child) ?? ''
+    } else child.forEach(walk)
   }
   node.forEach(walk)
   return out
+}
+
+const hasRedactMark = (node: ProseMirrorNode): boolean =>
+  node.marks.some((m) => m.type.name === 'redaction')
+
+const redactMarkerFor = (node: ProseMirrorNode): string => {
+  const attrs = node.marks.find((m) => m.type.name === 'redaction')?.attrs as
+    { label?: unknown } | undefined
+  return typeof attrs?.label === 'string' && attrs.label.trim() !== ''
+    ? `{{${attrs.label.trim()}}}`
+    : '{{private}}'
 }
 
 /**

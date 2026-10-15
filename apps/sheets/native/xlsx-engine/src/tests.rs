@@ -4791,7 +4791,9 @@ fn rejects_xml_entry_that_inflates_past_its_declared_size() {
         let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
-        writer.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
         writer.write_all(&vec![b'A'; 4 * 1024 * 1024]).unwrap();
         writer.finish().unwrap();
     }
@@ -4848,7 +4850,9 @@ fn reads_xml_entry_that_matches_its_declaration() {
         let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
-        writer.start_file("xl/worksheets/sheet1.xml", options).unwrap();
+        writer
+            .start_file("xl/worksheets/sheet1.xml", options)
+            .unwrap();
         writer
             .write_all(br#"<worksheet><sheetData><row r="1"/></sheetData></worksheet>"#)
             .unwrap();

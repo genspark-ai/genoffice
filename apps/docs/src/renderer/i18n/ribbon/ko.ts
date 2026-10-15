@@ -67,6 +67,12 @@ export const ko = {
   ribbonOpen: '열기…',
   ribbonSave: '저장',
   ribbonSaveAs: '다른 이름으로 저장…',
+  ribbonConvert: '변환',
+  ribbonConvertTip: 'PDF, HTML, Markdown 또는 이미지로 변환',
+  ribbonConvertPdf: 'PDF로 변환…',
+  ribbonConvertHtml: 'HTML로 변환…',
+  ribbonConvertMarkdown: 'Markdown으로 변환…',
+  ribbonConvertImages: '이미지로 내보내기…',
   // Home · Clipboard
   ribbonPaste: '붙여넣기',
   ribbonCutTip: '잘라내기 (⌘X)',

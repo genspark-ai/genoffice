@@ -716,6 +716,7 @@ export const it = {
   appTabReview: 'Revisione',
   appRibbonCollapse: 'Riduci a icona la barra multifunzione',
   appRibbonExpand: 'Espandi la barra multifunzione',
+  appRibbonCompact: 'Barra multifunzione compatta (solo icone)',
   appTabView: 'Visualizza',
   appTabAi: 'IA',
   appTabChartDesign: 'Struttura grafico',

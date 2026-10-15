@@ -80,6 +80,17 @@ describe('containsUnresolvedNames', () => {
     expect(containsUnresolvedNames('CONCAT("[1]",A1)')).toBe(false)
   })
 
+  it('does not read error literals as defined names (genoffice#2024 sample)', () => {
+    expect(containsUnresolvedNames('((D2*#REF!)+(E2))/C2')).toBe(false)
+    expect(containsUnresolvedNames('#REF!')).toBe(false)
+    expect(containsUnresolvedNames('IF(A1>0,#N/A,#DIV/0!)+#VALUE!+#NAME?+#NUM!+#NULL!')).toBe(false)
+    expect(containsUnresolvedNames("'Sheet 1'!#REF!*2")).toBe(false)
+    expect(containsUnresolvedNames('Sheet1!#REF!*2')).toBe(false)
+    expect(containsUnresolvedNames('SUM(Data.2024!#REF!)')).toBe(false)
+    expect(containsUnresolvedNames("'Bob''s Sheet'!#REF!*2")).toBe(false)
+    expect(containsUnresolvedNames('#REF!*Total')).toBe(true)
+  })
+
   it('flags path-qualified external-workbook references (issue 235)', () => {
     expect(containsUnresolvedNames("'C:\\data\\[source.xlsx]Sheet1'!A1*2")).toBe(true)
     expect(containsUnresolvedNames('[source.xlsm]Sheet1!A1')).toBe(true)

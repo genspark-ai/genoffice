@@ -625,6 +625,7 @@ export const he = {
   appTabReview: 'סקירה',
   appRibbonCollapse: 'כווץ את רצועת הכלים',
   appRibbonExpand: 'הרחב את רצועת הכלים',
+  appRibbonCompact: 'רצועת כלים מצומצמת (סמלים בלבד)',
   appTabView: 'תצוגה',
   appTabAi: 'AI',
   appTabChartDesign: 'עיצוב תרשים',

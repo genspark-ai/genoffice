@@ -14,6 +14,13 @@ import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-fo
 import { TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import {
+  modelTextOf,
+  projectedNodeText,
+  redactNode,
+  redactTextBetween,
+  type RedactableNode,
+} from './redact-view'
 import { opSignatures } from './ops'
 import { pageSetupContextLines, type AiSectionState } from './page-setup'
 import { listRevisionEntries } from './revision-ops'
@@ -158,7 +165,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- Summarizing is read-only: do not modify the document, and never try to accept or reject revisions — the user does that in the Review tab.',
   '',
   '# Mind map',
-  '- When the user asks for a mind map / 思维导图 / 脑图 / knowledge structure / overview diagram of the document or a topic, call generate_mindmap with the whole tree in one call — never draw it with text or ask the user to confirm first;',
+  '- When the user asks for a mind map / knowledge structure / overview diagram of the document or a topic, call generate_mindmap with the whole tree in one call — never draw it with text or ask the user to confirm first;',
   '- The root is the document title (or the focus topic when the user named one — also pass it as `focus`); its children are the main sections/headings, then key concepts, 2-5 per node, 2-4 levels deep;',
   "- Labels are short phrases (2-8 words) in the document's own language and wording, taken from its headings and key sentences — never invent topics the document does not cover;",
   "- Cite each node's source with `block` (a block index from the current block list); omit it for nodes that span several blocks. Only cite indexes that exist;",
@@ -434,7 +441,11 @@ export function serializeRangeToHtml(
   sel?: { from: number; to: number } | null,
   image?: ImageSrcMapper,
 ): string {
-  const json = editor.getJSON() as PmNode
+  // The model's view, not the document's: a withheld span's words must
+  // not travel in the HTML this produces. `redactNode` is total, so a
+  // shape it does not recognise still comes through rather than
+  // throwing and falling back to the unredacted text.
+  const json = redactNode(editor.getJSON() as RedactableNode) as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
   let listBuffer: { kind: string; items: string[] } | null = null
@@ -732,7 +743,8 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
         .split(' ')
         .filter(Boolean)) {
         const entry = found.get(id) ?? { blockIndex: index, text: '' }
-        entry.text += node.text ?? ''
+        // a comment can anchor across a withheld span; the model sees the placeholder
+        entry.text += projectedNodeText(node as unknown as RedactableNode)
         found.set(id, entry)
       }
     })
@@ -740,7 +752,15 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
       ? (block.attrs.commentStarts as string[])
       : []
     for (const id of starts) {
-      if (!found.has(id)) found.set(id, { blockIndex: index, text: block.textContent })
+      if (!found.has(id))
+        found.set(id, {
+          blockIndex: index,
+          // Through `toJSON()`, never the live node. `redactNode` walks
+          // `content` as an array, and a live ProseMirror node holds a
+          // Fragment there, so the whole subtree would come back untouched and
+          // a withheld span would travel verbatim.
+          text: modelTextOf(block.toJSON() as RedactableNode),
+        })
     }
     index++
   })
@@ -819,8 +839,10 @@ export function buildDocContext(
         SELECTION_MAX_CHARS,
       )
     : ''
+  // `textBetween` would read the words; the context quotes the selection back
+  // to the model, so it has to be the projected read
   const selectedText = partial
-    ? editor.state.doc.textBetween(partial.from, partial.to, '\n', ' ')
+    ? redactTextBetween(editor.getJSON() as RedactableNode, partial.from, partial.to)
     : ''
   const selectionLines = partial
     ? [

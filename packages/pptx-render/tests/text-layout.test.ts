@@ -77,6 +77,21 @@ describe('2.3 metrics', () => {
 })
 
 describe('2.3 text layout', () => {
+  it('small caps: lowercase letters set as capitals at 80% of the run size (PowerPoint probe)', () => {
+    const lay = layoutText({
+      body: body({ paragraphs: [{ runs: [{ text: 'Red de', fontSize: 20, cap: 'small' }] }] }),
+      boxWidthPx: 800,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = lay.lines[0]!.runs.filter((r) => r.text.trim())
+    expect(runs.map((r) => r.text)).toEqual(['R', 'ED', 'DE'])
+    expect(runs[1]!.fontSizePx).toBeCloseTo(runs[0]!.fontSizePx * 0.8, 5)
+    expect(runs[2]!.fontSizePx).toBeCloseTo(runs[0]!.fontSizePx * 0.8, 5)
+    expect(runs.every((r) => r.srcRunIdx === 0)).toBe(true)
+  })
+
   it('vertical layout stamps effective rtl on columns (ribbon/editor state parity with horizontal)', () => {
     const lay = (vert: 'eaVert' | 'vert') =>
       layoutText({
