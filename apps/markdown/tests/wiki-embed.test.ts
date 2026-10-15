@@ -128,6 +128,28 @@ describe('syntax', () => {
 })
 
 describe('resolution', () => {
+  it('a picture the asset handler refuses falls back to its card, not an empty box', async () => {
+    // the resolver walks the whole vault but md-asset only serves files under
+    // an open document's own directory, so this one resolves and then 403s
+    const { editor } = open('![[diagram.png]]', {
+      answers: { 'diagram.png': { path: '/vault/assets/diagram.png', fragment: '', found: true } },
+    })
+    await settled()
+    const node = editor.view.dom.querySelector('[data-wiki-embed]') as HTMLElement | null
+    expect(node).not.toBeNull()
+    expect(node!.className).toContain('wiki-embed-image')
+    const img = editor.view.dom.querySelector('img.wiki-embed-img') as HTMLImageElement
+    expect(img).not.toBeNull()
+
+    img.dispatchEvent(new Event('error'))
+    await settled()
+    const after = editor.view.dom.querySelector('[data-wiki-embed]') as HTMLElement | null
+    expect(after).not.toBeNull()
+    // the card is the honest rendering: the text is back and the class is off
+    expect(after!.className).not.toContain('wiki-embed-image')
+    expect(editor.view.dom.querySelector('img.wiki-embed-img')).toBeNull()
+  })
+
   it('a resolved note embed carries its answer and opens on a plain click', async () => {
     const onOpen = vi.fn()
     const { editor } = open('![[Gamma#Section]]', {

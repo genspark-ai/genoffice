@@ -38,6 +38,16 @@ export function filterWikiNotes(entries: WikiNoteEntry[], query: string): WikiNo
   )
 }
 
+/**
+ * A query the user already closed carries its own `]]`. Without this the
+ * `allowSpaces` match keeps running to the end of the paragraph, so every
+ * later keystroke re-opens an empty "No results" box that trails the caret.
+ * (Embeds are unaffected — the wikiEmbed atom breaks the text match.)
+ */
+export function wikiQueryOpen(query: string): boolean {
+  return !query.includes(']]')
+}
+
 /** the text an item completes to, keeping whatever alias/fragment was typed */
 function completionFor(entry: WikiNoteEntry, query: string, embed: boolean): string {
   const open = embed ? '![[' : '[['
@@ -47,11 +57,15 @@ function completionFor(entry: WikiNoteEntry, query: string, embed: boolean): str
 
 function insertCompletion(editor: Editor, range: Range, text: string, embed: boolean): void {
   if (embed) {
+    // `range` covers `[[query` only; the bang that made this an embed sits just
+    // before it. completionFor adds its own `!`, so deleting only `range` would
+    // leave the typed one behind and save `!![[Beta]]`.
+    const from = range.from - 1
     editor
       .chain()
       .focus()
-      .deleteRange(range)
-      .insertContentAt(range.from, [{ type: 'wikiEmbed', attrs: { raw: text } }])
+      .deleteRange({ from, to: range.to })
+      .insertContentAt(from, [{ type: 'wikiEmbed', attrs: { raw: text } }])
       .run()
     return
   }
@@ -148,6 +162,10 @@ export const WikiSuggest = Extension.create<WikiSuggestOptions>({
         // turns the completion into an embed — a letter prefix stays plain text
         allowedPrefixes: ['!', ' '],
         allowSpaces: true,
+        // a query the user closed by hand is no longer a query: let the plugin
+        // exit instead of following the caret with an empty box
+        allow: ({ state, range }) =>
+          wikiQueryOpen(state.doc.textBetween(range.from, range.to, ' ')),
         minQueryLength: 0,
         items: ({ query }) => {
           refreshWikiNotes()

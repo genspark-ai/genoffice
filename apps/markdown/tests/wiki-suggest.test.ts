@@ -10,6 +10,7 @@ import { buildExtensions } from '../src/renderer/editor/extensions'
 import {
   filterWikiNotes,
   refreshWikiNotes,
+  wikiQueryOpen,
   type WikiSuggestState,
 } from '../src/renderer/editor/wikiSuggest'
 import type { WikiNoteEntry } from '../src/shared/ipc'
@@ -57,7 +58,10 @@ describe('filterWikiNotes', () => {
 })
 
 describe('completion', () => {
-  function mount(): { editor: Editor; states: WikiSuggestState[] } {
+  function mount(opts: { onClose?: () => void } = {}): {
+    editor: Editor
+    states: WikiSuggestState[]
+  } {
     const states: WikiSuggestState[] = []
     const editor = new Editor({
       extensions: buildExtensions({
@@ -67,7 +71,7 @@ describe('completion', () => {
           onOpen: (s) => states.push(s),
           onUpdate: (s) => states.push(s),
           onKeyDown: () => false,
-          onClose: () => {},
+          onClose: () => opts.onClose?.(),
         },
       }),
       content: '',
@@ -85,6 +89,29 @@ describe('completion', () => {
     const state = states.at(-1)
     expect(state).not.toBeNull()
     expect(state!.items.map((n) => n.name)).toEqual(['Alpha', 'Beta', 'Alpine'])
+  })
+
+  it('a query the user closed by hand is no longer a query', () => {
+    expect(wikiQueryOpen('Alp')).toBe(true)
+    expect(wikiQueryOpen('Alp|My Title')).toBe(true)
+    expect(wikiQueryOpen('Alp#Heading')).toBe(true)
+    expect(wikiQueryOpen('Alp]]')).toBe(false)
+    expect(wikiQueryOpen('Alp]] tail')).toBe(false)
+  })
+
+  it('does not keep offering after the user closed the brackets by hand', async () => {
+    refreshWikiNotes()
+    await new Promise((r) => setTimeout(r, 0))
+    let closes = 0
+    const { editor } = mount({ onClose: () => (closes += 1) })
+    editor.commands.insertContent('See [[')
+    await new Promise((r) => setTimeout(r, 0))
+    // type the rest of a link and close it by hand, then keep typing after it
+    editor.commands.insertContent('Alpha]] tail')
+    await new Promise((r) => setTimeout(r, 0))
+    // the plugin must have exited: an open suggester would keep re-emitting
+    // onUpdate with 0 items for every later keystroke
+    expect(closes).toBeGreaterThan(0)
   })
 
   it('completing a note writes a real marked link, not plain text', async () => {
@@ -120,7 +147,10 @@ describe('completion', () => {
     editor.commands.insertContent('Look ![[')
     await new Promise((r) => setTimeout(r, 0))
     states.at(-1)!.command(NOTES[1]!)
-    expect(editor.state.doc.textContent).toBe('Look !')
+    // the typed bang belongs to the embed, and completionFor adds its own — the
+    // one in the text must go, or every completed embed saves as `!![[Beta]]`
+    expect(editor.getMarkdown()).toBe('Look ![[Beta]]')
+    expect(editor.state.doc.textContent).toBe('Look ')
     let embeds = 0
     editor.state.doc.descendants((n) => {
       if (n.type.name === 'wikiEmbed') {
