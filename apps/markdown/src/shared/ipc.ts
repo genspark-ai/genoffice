@@ -18,8 +18,6 @@ export const MARKDOWN_CHANNELS = {
   rememberWikiFragment: 'markdown:remember-wiki-fragment',
   /** take the fragment remembered for a path, '' when there is none */
   takeWikiFragment: 'markdown:take-wiki-fragment',
-  /** list the vault's notes for the `[[` suggester, breadth-first from the root */
-  listWikiNotes: 'markdown:list-wiki-notes',
   /** notes whose links land on the given path (the backlinks panel) */
   wikiBacklinks: 'markdown:wiki-backlinks',
   /** the vault's link graph (nodes + resolved edges, the graph view) */
@@ -79,18 +77,6 @@ export interface WikiLinkResolved {
   found: boolean
 }
 
-/** one vault note offered by the `[[` suggester, in the resolver's own order */
-export interface WikiNoteEntry {
-  /** absolute path, the shape `resolveWikiLinks` answers with */
-  path: string
-  /** file name with extension, as `[[Figure 1.png]]` addresses it */
-  file: string
-  /** stem without extension, as a bare `[[Figure 1]]` addresses it */
-  name: string
-  /** path relative to the walk root, shown under the name in the menu */
-  relPath: string
-}
-
 /** a note whose link lands on the asked-for path */
 export interface WikiBacklink {
   /** absolute path of the note carrying the link */
@@ -118,6 +104,14 @@ export interface WikiGraphEdge {
 export interface WikiGraph {
   nodes: WikiGraphNode[]
   edges: WikiGraphEdge[]
+  /**
+   * the vault held more notes than the node cap, so this is a slice: the nodes
+   * are the first `MAX_GRAPH_NODES` in walk order and the edges only those among
+   * them. Callers say so rather than presenting a cut graph as the whole vault.
+   */
+  truncated: boolean
+  /** how many notes the walk found in total (never below nodes.length) */
+  totalNotes: number
 }
 
 export type UiTheme = 'light' | 'dark' | 'system'
@@ -297,7 +291,6 @@ export interface MarkdownApi {
    * breadth-first (the order the resolver matches in), capped so a huge
    * library cannot stall the popup.
    */
-  listWikiNotes(): Promise<WikiNoteEntry[]>
   /** Notes whose links resolve to `path` (the backlinks panel); '' answers []. */
   wikiBacklinks(path: string): Promise<WikiBacklink[]>
   /** The vault's link graph, notes as nodes and resolved links as edges. */

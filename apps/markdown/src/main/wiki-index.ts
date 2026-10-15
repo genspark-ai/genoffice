@@ -115,6 +115,10 @@ function indexFor(root: string): IndexState {
 function refreshFiles(root: string, fs: VaultFs): IndexState {
   const state = indexFor(root)
   const seen = new Set<string>()
+  // taken BEFORE the walk: a note the walk is about to add is not in the set
+  // yet, which is the whole point — after the walk both sets look identical
+  const before = new Set(state.files.keys())
+  let setMoved = false
   let queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }]
   let budget = MAX_INDEX_FILES * 4
   while (queue.length > 0 && seen.size < MAX_INDEX_FILES && budget > 0) {
@@ -152,12 +156,26 @@ function refreshFiles(root: string, fs: VaultFs): IndexState {
     }
     queue = next
   }
+  // A memoized edge answers "does this target exist?", so it is only valid
+  // while the file SET is what it was resolved against. Creating the target a
+  // link pointed at, or renaming it away, changes the answer without changing
+  // the source file at all — keyed on the source mtime alone, A keeps its dead
+  // path until A is re-saved. Drop every memo when the set moved.
   for (const path of [...state.files.keys()]) {
     if (!seen.has(path)) {
       state.files.delete(path)
-      state.edges.delete(path)
+      setMoved = true
     }
   }
+  // compare the paths, not the sizes: a walk that stops on the file cap can add
+  // a note while another falls out, leaving the count unchanged
+  for (const path of seen) {
+    if (!before.has(path)) {
+      setMoved = true
+      break
+    }
+  }
+  if (setMoved) state.edges.clear()
   return state
 }
 
@@ -232,6 +250,10 @@ export interface WikiGraphEdge {
 export interface WikiGraph {
   nodes: WikiGraphNode[]
   edges: WikiGraphEdge[]
+  /** the node cap cut the vault short: this is a slice, not the whole graph */
+  truncated: boolean
+  /** notes the walk found, which is at least nodes.length and larger when cut */
+  totalNotes: number
 }
 
 /** the graph's node cap; a bigger vault takes the first walk order */
@@ -246,6 +268,7 @@ export function wikiGraph(root: string, fs: VaultFs): WikiGraph {
   const edges = refreshEdges(root, fs)
   const nodes: WikiGraphNode[] = []
   const state = indexFor(root)
+  const totalNotes = state.files.size
   for (const path of state.files.keys()) {
     nodes.push({
       path,
@@ -267,5 +290,7 @@ export function wikiGraph(root: string, fs: VaultFs): WikiGraph {
       out.push({ from, to: edge.path })
     }
   }
-  return { nodes, edges: out }
+  // a cut graph is a slice: say so instead of letting a 400-of-3000 draw
+  // read as the whole vault
+  return { nodes, edges: out, truncated: totalNotes > nodes.length, totalNotes }
 }

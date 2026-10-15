@@ -59,7 +59,6 @@ import type {
   WikiLinkResolveRequest,
   WikiLinkResolved,
 } from '../shared/ipc'
-import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { nodeVaultFs, wikiBacklinks, wikiGraph } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
@@ -800,12 +799,6 @@ function registerMarkdownIpc(): void {
     typeof path === 'string' ? takeWikiFragment(path) : '',
   )
 
-  ipcMain.handle(
-    MARKDOWN_CHANNELS.wikiBacklinks,
-    (_e, path: unknown): WikiBacklink[] =>
-      typeof path === 'string'
-        ? wikiBacklinks(configuredDefaultSaveDir(app), path, nodeVaultFs())
-        : [],
   )
 
   ipcMain.handle(MARKDOWN_CHANNELS.wikiGraph, (): WikiGraph =>

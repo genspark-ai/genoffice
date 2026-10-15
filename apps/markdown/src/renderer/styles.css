@@ -3641,6 +3641,14 @@ div.tiptap-mathematics-render {
   color: var(--text);
 }
 
+/* the node cap cut the vault: say so rather than let a 400-of-3000 draw
+   read as the whole vault */
+.graph-truncated {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-left: 10px;
+}
+
 .graph-close {
   border: none;
   background: none;
@@ -3678,4 +3686,4 @@ div.tiptap-mathematics-render {
   justify-content: center;
   font-size: 13px;
   color: var(--text-muted);
-
+}

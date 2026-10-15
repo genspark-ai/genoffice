@@ -55,7 +55,7 @@ export function GraphView({
     // The browser test harness has no Electron channel; an absent API is an
     // empty graph, not a failed one.
     if (typeof window.markdownApi?.wikiGraph !== 'function') {
-      setGraph({ nodes: [], edges: [] })
+      setGraph({ nodes: [], edges: [], truncated: false, totalNotes: 0 })
       return
     }
     window.markdownApi
@@ -230,6 +230,11 @@ export function GraphView({
     <div className="graph-overlay" role="dialog" aria-label={t('graph')}>
       <div className="graph-head">
         <span className="graph-title">{t('graph')}</span>
+        {graph?.truncated === true && (
+          <span className="graph-truncated">
+            {t('graphTruncated', { shown: graph.nodes.length, total: graph.totalNotes })}
+          </span>
+        )}
         <button
           type="button"
           className="graph-close"

@@ -3,12 +3,18 @@
  * counts as a link when a whole vault is scanned, how links invert into
  * backlinks, and that the mtime memo does not serve stale edges.
  */
-import { mkdirSync, mkdtempSync, writeFileSync, utimesSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { extractWikiTargets, nodeVaultFs, wikiBacklinks, wikiGraph } from '../src/main/wiki-index'
+import {
+  MAX_GRAPH_NODES,
+  extractWikiTargets,
+  nodeVaultFs,
+  wikiBacklinks,
+  wikiGraph,
+} from '../src/main/wiki-index'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -93,9 +99,56 @@ describe('wikiBacklinks', () => {
     utimesSync(join(root, 'A.md'), later, later)
     expect(wikiBacklinks(root, b, fs)).toEqual([])
   })
+
+  it('picks up a link whose target did not exist when A was indexed', () => {
+    // A is parsed while B is missing, so its edge memo records "not found" and
+    // is keyed only on A's mtime. Creating B changes nothing about A, so without
+    // dropping the memo on a file-set change the link stays invisible until A is
+    // touched again — the graph never draws A -> B.
+    const root = vault({ 'A.md': '[[B]]' })
+    const fs = nodeVaultFs()
+    expect(wikiBacklinks(root, join(root, 'B.md'), fs)).toEqual([])
+
+    writeFileSync(join(root, 'B.md'), 'now it exists')
+    expect(wikiBacklinks(root, join(root, 'B.md'), fs)).toEqual([
+      { source: join(root, 'A.md'), target: 'B' },
+    ])
+  })
+
+  it('drops the edge when a target is renamed away', () => {
+    const root = vault({ 'A.md': '[[B]]', 'B.md': 'x' })
+    const fs = nodeVaultFs()
+    expect(wikiBacklinks(root, join(root, 'B.md'), fs)).toHaveLength(1)
+
+    renameSync(join(root, 'B.md'), join(root, 'C.md'))
+    expect(wikiBacklinks(root, join(root, 'B.md'), fs)).toEqual([])
+  })
 })
 
 describe('wikiGraph', () => {
+  it('a vault inside the node cap is not reported as truncated', () => {
+    const graph = wikiGraph(vault({ 'A.md': 'x', 'B.md': 'y' }), nodeVaultFs())
+    expect(graph.truncated).toBe(false)
+    expect(graph.totalNotes).toBe(2)
+  })
+
+  it('says so when the node cap cut the vault, and reports the real count', () => {
+    // walk order, not a neighbourhood: the cap takes the first N and the edges
+    // only those among them, so a 400-of-3000 draw must not read as the vault
+    const files: Record<string, string> = {}
+    for (let i = 0; i < MAX_GRAPH_NODES + 5; i += 1) files[`N${i}.md`] = `[[N${i + 1}]]`
+    const graph = wikiGraph(vault(files), nodeVaultFs())
+    expect(graph.nodes).toHaveLength(MAX_GRAPH_NODES)
+    expect(graph.truncated).toBe(true)
+    expect(graph.totalNotes).toBe(MAX_GRAPH_NODES + 5)
+    // every edge is between nodes that made the cut, never a dangling target
+    const paths = new Set(graph.nodes.map((n) => n.path))
+    for (const e of graph.edges) {
+      expect(paths.has(e.from)).toBe(true)
+      expect(paths.has(e.to)).toBe(true)
+    }
+  })
+
   it('every note is a node — orphans included — and links are the edges', () => {
     const root = vault({
       'A.md': '[[B]]',
