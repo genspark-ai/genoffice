@@ -799,7 +799,7 @@ function registerMarkdownIpc(): void {
     typeof path === 'string' ? takeWikiFragment(path) : '',
   )
 
-  ipcMain.handle(MARKDOWN_CHANNELS.listWikiNotes, (): WikiNoteEntry[] =>
+  ipcMain.handle(MARKDOWN_CHANNELS.listWikiNotes, async (): Promise<WikiNoteEntry[]> =>
     listWikiNotes(configuredDefaultSaveDir(app), nodeFs()),
   )
 

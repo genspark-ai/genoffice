@@ -31,7 +31,11 @@ const SUGGEST_EXTS = new Set([
   '.ico',
 ])
 
-export function listWikiNotes(root: string, fs: WikiFs, cap = MAX_NOTES): WikiNoteEntry[] {
+export async function listWikiNotes(
+  root: string,
+  fs: WikiFs,
+  cap = MAX_NOTES,
+): Promise<WikiNoteEntry[]> {
   const out: WikiNoteEntry[] = []
   if (!root) return out
   let queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }]
@@ -41,7 +45,7 @@ export function listWikiNotes(root: string, fs: WikiFs, cap = MAX_NOTES): WikiNo
     for (const { dir, depth } of queue) {
       let listing: { files: string[]; dirs: string[] }
       try {
-        listing = fs.list(dir)
+        listing = await fs.list(dir)
       } catch {
         continue // unreadable directory, same as an unplugged root
       }

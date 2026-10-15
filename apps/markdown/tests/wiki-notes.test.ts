@@ -9,9 +9,8 @@ import type { WikiFs } from '../src/main/wiki-resolve'
 function fakeFs(tree: Record<string, string[]>): WikiFs {
   const norm = (dir: string): string => dir.replace(/\/+$/, '') || '/'
   return {
-    exists: () => false,
-    isFile: () => true,
-    list: (dir) => {
+    isFile: async () => true,
+    list: async (dir) => {
       const entries = tree[norm(dir)]
       if (!entries) throw new Error('missing dir')
       return {
@@ -25,8 +24,8 @@ function fakeFs(tree: Record<string, string[]>): WikiFs {
 const ROOT = '/vault'
 
 describe('listWikiNotes', () => {
-  it('walks breadth-first, so a shallower note precedes a deeper one', () => {
-    const notes = listWikiNotes(
+  it('walks breadth-first, so a shallower note precedes a deeper one', async () => {
+    const notes = await listWikiNotes(
       ROOT,
       fakeFs({
         '/vault': ['Deep', 'Top.md', 'cover.png'],
@@ -36,8 +35,8 @@ describe('listWikiNotes', () => {
     expect(notes.map((n) => n.relPath)).toEqual(['Top.md', 'cover.png', join('Deep', 'Buried.md')])
   })
 
-  it('names the stem and the file', () => {
-    const notes = listWikiNotes(ROOT, fakeFs({ '/vault': ['My Note.md'] }))
+  it('names the stem and the file', async () => {
+    const notes = await listWikiNotes(ROOT, fakeFs({ '/vault': ['My Note.md'] }))
     expect(notes[0]).toMatchObject({
       name: 'My Note',
       file: 'My Note.md',
@@ -45,8 +44,8 @@ describe('listWikiNotes', () => {
     })
   })
 
-  it('skips dependency and app dirs', () => {
-    const notes = listWikiNotes(
+  it('skips dependency and app dirs', async () => {
+    const notes = await listWikiNotes(
       ROOT,
       fakeFs({
         '/vault': ['node_modules', '.obsidian', 'Real.md'],
@@ -57,24 +56,26 @@ describe('listWikiNotes', () => {
     expect(notes.map((n) => n.file)).toEqual(['Real.md'])
   })
 
-  it('offers only suggestable file types', () => {
-    const notes = listWikiNotes(ROOT, fakeFs({ '/vault': ['note.md', 'data.xlsx', 'app.exe'] }))
+  it('offers only suggestable file types', async () => {
+    const notes = await listWikiNotes(
+      ROOT,
+      fakeFs({ '/vault': ['note.md', 'data.xlsx', 'app.exe'] }),
+    )
     expect(notes.map((n) => n.file)).toEqual(['note.md'])
   })
 
-  it('caps the listing and stops walking once full', () => {
+  it('caps the listing and stops walking once full', async () => {
     const tree: Record<string, string[]> = { '/vault': [] }
     for (let i = 0; i < MAX_NOTES + 300; i++) tree['/vault'].push(`Note ${i}.md`)
-    const notes = listWikiNotes(ROOT, fakeFs(tree))
+    const notes = await listWikiNotes(ROOT, fakeFs(tree))
     expect(notes).toHaveLength(MAX_NOTES)
   })
 
-  it('returns nothing without a root and survives an unreadable directory', () => {
-    expect(listWikiNotes('', fakeFs({ '/vault': ['A.md'] }))).toEqual([])
-    const notes = listWikiNotes(ROOT, {
-      exists: () => false,
-      isFile: () => true,
-      list: () => {
+  it('returns nothing without a root and survives an unreadable directory', async () => {
+    expect(await listWikiNotes('', fakeFs({ '/vault': ['A.md'] }))).toEqual([])
+    const notes = await listWikiNotes(ROOT, {
+      isFile: async () => true,
+      list: async () => {
         throw new Error('EACCES')
       },
     })

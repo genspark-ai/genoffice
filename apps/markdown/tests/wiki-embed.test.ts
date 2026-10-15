@@ -218,13 +218,14 @@ describe('resolution', () => {
       resolve: async (_from, targets) => {
         seen.push(targets)
         return {
-          '[[Alpha]]': { path: '/a.md', fragment: '', found: true },
+          Alpha: { path: '/a.md', fragment: '', found: true },
           Beta: { path: '/b.md', fragment: '', found: true },
         }
       },
     })
     await settled()
-    expect(seen[0]).toEqual(['[[Alpha]]', 'Beta'])
+    // the resolver is asked for file names; decorations key the answers back by the literal
+    expect(seen[0]).toEqual(['Alpha', 'Beta'])
     const linkEl = editor.view.dom.querySelector('.wiki-link-resolved')
     expect(linkEl).not.toBeNull()
     const embedEl = editor.view.dom.querySelector('.wiki-embed-resolved')
