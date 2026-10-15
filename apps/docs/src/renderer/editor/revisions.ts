@@ -19,7 +19,7 @@ import {
   ReplaceAroundStep,
   ReplaceStep,
 } from '@tiptap/pm/transform'
-import { t } from '../i18n/locale'
+import { authorName } from '../author-name'
 
 export interface RevisionRange {
   from: number
@@ -588,7 +588,7 @@ export const TrackChangesExtension = Extension.create<object, TrackChangesStorag
   name: 'trackChanges',
 
   addStorage() {
-    return { enabled: false, author: t('editorDefaultAuthor') }
+    return { enabled: false, author: authorName() }
   },
 
   addKeyboardShortcuts() {

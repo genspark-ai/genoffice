@@ -7,7 +7,7 @@ import type { Block, Run } from './types'
  * keeps it an instrField run), so what is missing is everything that gives the
  * field a value. This module reads a recipient list, substitutes the fields
  * with one record's data and honours Word's control fields (NEXT / SKIPIF / IF).
- * #1984.
+ * genoffice#1984.
  *
  * Deliberately no UI here: the panel, the recipient list, the preview and the
  * batch export are all built on top of these two functions, and none of them
@@ -55,24 +55,62 @@ export function placeholderText(name: string): string {
   return `«${name}»`
 }
 
-/**
- * A record set ready for substitution. Built once per recipient row so the
- * control fields and the MERGEFIELDs read from the same snapshot.
- */
-export interface MergeCursor {
-  readonly record: MergeRecord
-  /** the NEXT field already consumed this row: another copy must not repeat it */
-  readonly advanced: boolean
-  /** a SKIPIF in this row tested true */
-  readonly skipped: boolean
+export interface MergeFieldSwitches {
+  /** `\b "…"`: text placed before the value, only when the value is non-empty */
+  before: string
+  /** `\f "…"`: text placed after the value, only when the value is non-empty */
+  after: string
+  /** `\* Upper | Lower | FirstCap | Caps` */
+  caseFormat: string | null
 }
 
-/** the record a cursor position reads; a NEXT past the last row repeats it, the way
- *  Word keeps the current record rather than emptying every field */
+/**
+ * Word's Address Block and Greeting Line write `\f " "` on every name part, so
+ * dropping the switches runs the parts together ("AdaLovelace").
+ */
+export function mergeFieldSwitches(instr: string): MergeFieldSwitches {
+  const out: MergeFieldSwitches = { before: '', after: '', caseFormat: null }
+  const re = /\\([bf*])\s+(?:"([^"]*)"|(\S+))/g
+  for (const m of instr.matchAll(re)) {
+    const arg = m[2] ?? m[3] ?? ''
+    if (m[1] === 'b') out.before = arg
+    else if (m[1] === 'f') out.after = arg
+    else if (!/^MERGEFORMAT$/i.test(arg) && !/^CHARFORMAT$/i.test(arg)) out.caseFormat = arg
+  }
+  return out
+}
+
+function applyCaseFormat(value: string, format: string | null): string {
+  switch (format?.toLowerCase()) {
+    case 'upper':
+      return value.toUpperCase()
+    case 'lower':
+      return value.toLowerCase()
+    case 'firstcap':
+      return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
+    case 'caps':
+      return value
+        .toLowerCase()
+        .replace(/(^|[\s-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase())
+    default:
+      return value
+  }
+}
+
+/** the text a MERGEFIELD run shows for one record, switches applied */
+export function mergeFieldText(instr: string, record: MergeRecord): string {
+  const name = mergeFieldName(instr)
+  if (!name) return ''
+  const value = applyCaseFormat(valueOf(record, name), mergeFieldSwitches(instr).caseFormat)
+  if (value === '') return ''
+  const { before, after } = mergeFieldSwitches(instr)
+  return before + value + after
+}
+
+/** the record a cursor position reads; past the last row every field is empty,
+ *  the way the trailing labels of Word's last sheet come out blank */
 function recordAt(data: MergeData, index: number): MergeRecord {
-  if (data.records.length === 0) return {}
-  const clamped = Math.min(Math.max(index, 0), data.records.length - 1)
-  return data.records[clamped] ?? {}
+  return data.records[Math.max(index, 0)] ?? {}
 }
 
 /** the value a record holds for `name`, or '' when the column is absent */
@@ -103,6 +141,20 @@ export function compareOperands(
 ): boolean {
   const a = resolveOperand(left, record)
   const b = resolveOperand(right, record)
+  // Word compares numerically when both sides are numbers: `IF 9 < 50` is true
+  const na = numeric(a)
+  const nb = numeric(b)
+  if (na !== null && nb !== null) return compareValues(na, nb, op)
+  return compareValues(a, b, op)
+}
+
+function numeric(text: string): number | null {
+  const t = text.trim()
+  if (t === '' || !/^[-+]?(\d+\.?\d*|\.\d+)$/.test(t)) return null
+  return Number(t)
+}
+
+function compareValues<T extends string | number>(a: T, b: T, op: string): boolean {
   switch (op) {
     case '=':
     case '<>':
@@ -243,11 +295,10 @@ function mergeRun(
   if (!instr) return { run, effect: null, untouched: false }
   const [keyword] = splitInstruction(instr)
   // keep the run's formatting, drop the instruction — the value replaces both
-  const { instrField: _dropped, ...rest } = run
+  const { instrField: _dropped, fldDirty: _dirty, ...rest } = run
   if (keyword === 'MERGEFIELD') {
-    const name = mergeFieldName(instr)
     return {
-      run: { ...rest, text: name ? valueOf(record, name) : '' },
+      run: { ...rest, text: mergeFieldText(instr, record) },
       effect: null,
       untouched: false,
     }
@@ -263,7 +314,7 @@ function mergeRun(
 }
 
 /** the run-position cursor a single template pass walks with */
-interface MergeCursorState {
+export interface MergeCursorState {
   /** index into data.records; NEXT moves it forward */
   index: number
   /** a NEXT fired during this pass */
@@ -381,6 +432,7 @@ function mergeTable(
             ...para,
             runs: mergeRuns(para.runs, data, cursor),
           }))
+          next.paras = next.richParas.map((para) => (para.runs ?? []).map((r) => r.text).join(''))
         }
         // nestedTables are display-only: the outer table keeps their original
         // bytes on save, so substituting inside one would change what is shown
@@ -404,13 +456,9 @@ export function mergeBlockTree(blocks: readonly Block[], data: MergeData): Block
   for (let round = 0; index < data.records.length && round <= data.records.length; round += 1) {
     const { blocks: merged, cursor } = mergeRecords(blocks, data, index)
     if (!cursor.skipped) out.push(merged)
-    if (cursor.next) {
-      // A NEXT-driven template (a directory, a label sheet) lays every record
-      // end to end inside ONE output; the pass already consumed them all, so a
-      // second pass would repeat the first record.
-      break
-    }
-    index += 1
+    // a NEXT-driven pass (a label sheet) consumed several records; the next
+    // sheet starts after the last one read
+    index = cursor.index + 1
   }
   return out
 }

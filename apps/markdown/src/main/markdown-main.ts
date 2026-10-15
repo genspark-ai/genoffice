@@ -53,7 +53,7 @@ import { createMarkdownConversionSession, writeMarkdownConversion } from './conv
 import { normalizeMarkdownTheme, type MarkdownTheme } from '../shared/markdown-theme'
 import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
 import type { ImageHostConfig, WikiLinkResolveRequest, WikiLinkResolved } from '../shared/ipc'
-import { resolveWikiLinks } from './wiki-resolve'
+import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
@@ -406,6 +406,7 @@ const saveWaiters = new Map<number, (ok: boolean) => void>()
 const readTextWaiters = new Map<number, (result: { text: string } | { error: string }) => void>()
 /** one read per tab at a time: concurrent callers share this promise */
 const readTextInFlight = new Map<number, Promise<string>>()
+const vaultFs = nodeFs()
 
 /** Fired after a save lands on a NEW path (untitled first save / Save As) — the shell syncs tab title, recents, projects */
 let fileSavedHook: ((wc: WebContents, path: string) => void) | null = null
@@ -767,15 +768,16 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(
     MARKDOWN_CHANNELS.resolveWikiLinks,
-    (_e, request: WikiLinkResolveRequest): Record<string, WikiLinkResolved> => {
+    async (_e, request: WikiLinkResolveRequest): Promise<Record<string, WikiLinkResolved>> => {
       const fromPath = typeof request?.fromPath === 'string' ? request.fromPath : ''
       const targets = Array.isArray(request?.targets)
         ? request.targets.filter((t): t is string => typeof t === 'string')
         : []
-      const resolved = resolveWikiLinks(targets, {
-        fromPath,
-        root: configuredDefaultSaveDir(app),
-      })
+      const resolved = await resolveWikiLinks(
+        targets,
+        { fromPath, root: configuredDefaultSaveDir(app) },
+        vaultFs,
+      )
       // a Map is structured-cloneable but arrives as an empty object; ship the
       // shape the renderer asked for
       return Object.fromEntries(resolved)

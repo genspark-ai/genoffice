@@ -37,6 +37,59 @@ function exceedsCap(entry: JSZipObject): boolean {
   return declaredSize(entry) > MAX_ODF_PART_BYTES
 }
 
+/**
+ * Inflate an entry while counting what actually comes out: a local header can
+ * declare less than the stream yields, so the declared-size gate alone would
+ * let a mislabelled part through.
+ */
+interface ChunkStream {
+  on(event: 'data', fn: (chunk: Uint8Array) => void): ChunkStream
+  on(event: 'error', fn: (err: Error) => void): ChunkStream
+  on(event: 'end', fn: () => void): ChunkStream
+  pause(): ChunkStream
+  resume(): ChunkStream
+}
+
+function inflateCapped(entry: JSZipObject): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = []
+    let total = 0
+    // JSZip's typings stop at async(); internalStream is the public chunked API
+    const stream = (
+      entry as unknown as { internalStream(type: 'uint8array'): ChunkStream }
+    ).internalStream('uint8array')
+    stream.on('data', (chunk) => {
+      total += chunk.length
+      if (total > MAX_ODF_PART_BYTES) {
+        stream.pause()
+        reject(new OdfConvertError('unreadable'))
+        return
+      }
+      chunks.push(chunk)
+    })
+    stream.on('error', (err) => reject(err))
+    stream.on('end', () => {
+      const out = new Uint8Array(total)
+      let offset = 0
+      for (const chunk of chunks) {
+        out.set(chunk, offset)
+        offset += chunk.length
+      }
+      resolve(out)
+    })
+    stream.resume()
+  })
+}
+
+async function inflateText(entry: JSZipObject): Promise<string | null> {
+  if (exceedsCap(entry)) return null
+  try {
+    return new TextDecoder().decode(await inflateCapped(entry))
+  } catch {
+    return null
+  }
+}
+
 export interface OdfPackage {
   contentRoots: XNode[]
   stylesRoots: XNode[] | null
@@ -52,14 +105,17 @@ export async function loadOdfPackage(bytes: Uint8Array): Promise<OdfPackage | nu
     return null
   }
   const contentEntry = zip.file('content.xml')
-  if (!contentEntry || exceedsCap(contentEntry)) return null
-  const content = await contentEntry.async('string')
+  if (!contentEntry) return null
+  const content = await inflateText(contentEntry)
   if (!content) return null
   const contentRoots = parseOdfXml(content)
   if (!contentRoots) return null
   const stylesEntry = zip.file('styles.xml')
-  if (stylesEntry && exceedsCap(stylesEntry)) return null
-  const stylesXml = await stylesEntry?.async('string')
+  let stylesXml: string | null = null
+  if (stylesEntry) {
+    stylesXml = await inflateText(stylesEntry)
+    if (stylesXml === null) return null
+  }
   const stylesRoots = stylesXml ? parseOdfXml(stylesXml) : null
   return {
     contentRoots,
@@ -75,8 +131,9 @@ export async function loadOdfPackage(bytes: Uint8Array): Promise<OdfPackage | nu
         throw new OdfConvertError('unreadable')
       }
       try {
-        return await entry.async('uint8array')
-      } catch {
+        return await inflateCapped(entry)
+      } catch (err) {
+        if (err instanceof OdfConvertError) throw err
         return null
       }
     },

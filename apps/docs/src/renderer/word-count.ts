@@ -7,9 +7,8 @@
  * Asian-character figure.
  */
 
-import type { Node as PmNode } from '@tiptap/pm/model'
-import type { Selection } from '@tiptap/pm/state'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Selection } from '@tiptap/pm/state'
 
 // Han (incl. radicals/compat/ext-B+), kana, hangul, bopomofo, CJK symbols
 // and punctuation (U+3001 up: the ideographic space stays whitespace),
@@ -53,7 +52,7 @@ export function countWords(text: string): number {
  * a text range) both yield no text, and `countWords('')` is 0 — no separate
  * guard needed.
  */
-export function selectedWordCount(doc: PmNode, selection: Selection): number {
+export function selectedWordCount(doc: ProseMirrorNode, selection: Selection): number {
   return countWords(doc.textBetween(selection.from, selection.to, ' ', ' '))
 }
 

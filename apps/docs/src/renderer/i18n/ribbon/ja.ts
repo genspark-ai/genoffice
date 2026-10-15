@@ -68,6 +68,12 @@ export const ja = {
   ribbonOpen: '開く…',
   ribbonSave: '保存',
   ribbonSaveAs: '名前を付けて保存…',
+  ribbonConvert: '変換',
+  ribbonConvertTip: 'PDF、HTML、Markdown、画像に変換',
+  ribbonConvertPdf: 'PDF に変換…',
+  ribbonConvertHtml: 'HTML に変換…',
+  ribbonConvertMarkdown: 'Markdown に変換…',
+  ribbonConvertImages: '画像として書き出し…',
   // Home · Clipboard
   ribbonPaste: '貼り付け',
   ribbonCutTip: '切り取り (⌘X)',

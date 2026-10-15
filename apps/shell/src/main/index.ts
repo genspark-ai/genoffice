@@ -76,6 +76,10 @@ import {
   checkUpdatesMenuItem,
   setUpdateCheckInvoker,
   installRendererProtocol,
+  AUTHOR_NAME_KEY,
+  readAuthorNameSetting,
+  sanitizeAuthorName,
+  systemAuthorName,
 } from '@genoffice/electron-utils'
 import {
   readAppSettings,
@@ -268,6 +272,7 @@ import {
 import type {
   AccountLoginEvent,
   AutoSaveDefault,
+  AuthorNameSetting,
   FolderListing,
   FolderRoot,
   MoveConflictPolicy,
@@ -3332,7 +3337,7 @@ const tMain = createI18n({
     menuTabPrint: '列印…',
     menuTabRename: '重新命名',
     menuTabDuplicate: '建立複本（複製已儲存的檔案）',
-    menuTabSplitBeside: '左右分屏',
+    menuTabSplitBeside: '並排顯示',
     menuTabCopyPath: '複製路徑',
     menuTabCopyName: '複製檔案名稱',
     menuTabReveal: '在資料夾中顯示',
@@ -4934,6 +4939,28 @@ function registerHomeIpc(): void {
     for (const wc of webContents.getAllWebContents()) wc.send('app:document-theme-changed', theme)
   })
 
+  // comment / tracked-change author (Word: Options → General → User name);
+  // the editor mains resolve the same key via configuredAuthorName
+  const authorNameSetting = (): AuthorNameSetting => ({
+    value: readAuthorNameSetting(APP_SETTINGS_PATH()),
+    fallback: systemAuthorName(),
+  })
+  ipcMain.handle(HOME_CHANNELS.getAuthorName, (): AuthorNameSetting => authorNameSetting())
+  ipcMain.handle('app:get-author-name', (): string => {
+    const { value, fallback } = authorNameSetting()
+    return value || fallback
+  })
+  ipcMain.handle(HOME_CHANNELS.setAuthorName, (_event, raw: unknown): AuthorNameSetting => {
+    const value = sanitizeAuthorName(raw)
+    if (value !== readAuthorNameSetting(APP_SETTINGS_PATH())) {
+      writeAppSetting(APP_SETTINGS_PATH(), AUTHOR_NAME_KEY, value)
+      const effective = value || systemAuthorName()
+      for (const wc of webContents.getAllWebContents())
+        wc.send('app:author-name-changed', effective)
+    }
+    return authorNameSetting()
+  })
+
   ipcMain.handle(HOME_CHANNELS.getAutoSaveDefault, (): AutoSaveDefault => currentAutoSaveDefault())
   ipcMain.handle('app:get-auto-save-default', (): AutoSaveDefault => currentAutoSaveDefault())
 
@@ -5477,8 +5504,18 @@ function tabMenuActions(): TabMenuActions {
       const area = screen.getDisplayMatching(shellWindow.getBounds()).workArea
       const half = Math.floor(area.width / 2)
       if (shellWindow.isMaximized()) shellWindow.unmaximize()
-      if (shellWindow.isFullScreen()) shellWindow.setFullScreen(false)
-      shellWindow.setBounds({ x: area.x, y: area.y, width: half, height: area.height })
+      const tile = () => {
+        if (!shellWindow || shellWindow.isDestroyed()) return
+        shellWindow.setBounds({ x: area.x, y: area.y, width: half, height: area.height })
+      }
+      // leaving fullscreen is asynchronous (macOS animates it) and restores the
+      // pre-fullscreen bounds on completion, which would undo an immediate tile
+      if (shellWindow.isFullScreen()) {
+        shellWindow.once('leave-full-screen', tile)
+        shellWindow.setFullScreen(false)
+      } else {
+        tile()
+      }
       win.setBounds({ x: area.x + half, y: area.y, width: area.width - half, height: area.height })
       win.focus()
     },

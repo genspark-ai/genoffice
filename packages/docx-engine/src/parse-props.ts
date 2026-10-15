@@ -33,6 +33,7 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from './types'
+import type { AutoSpace } from './types'
 import { resolveThemeColor } from './theme'
 import { isOn } from './checkbox-control'
 
@@ -278,13 +279,17 @@ export const JC_ALIGN: Record<string, ParaFormat['align']> = {
   distribute: 'distribute',
 }
 
-/** w:autoSpaceDE/DN (Word default on): false only when both are explicitly off */
-export function autoSpaceOf(pPr: XNode): boolean | undefined {
-  const de = onOffOf(pPr, 'w:autoSpaceDE')
-  const dn = onOffOf(pPr, 'w:autoSpaceDN')
+/** w:autoSpaceDE (CJK/Latin letters) and w:autoSpaceDN (CJK/digits) as written, Word default on */
+export function autoSpaceFlagsOf(pPr: XNode): { de?: boolean; dn?: boolean } {
+  return { de: onOffOf(pPr, 'w:autoSpaceDE'), dn: onOffOf(pPr, 'w:autoSpaceDN') }
+}
+
+/** the two switches folded into the renderer's mode; undefined when neither is written */
+export function autoSpaceMode(de?: boolean, dn?: boolean): AutoSpace | undefined {
+  if (de === undefined && dn === undefined) return undefined
+  if (de !== false && dn !== false) return true
   if (de === false && dn === false) return false
-  if (de === true || dn === true) return true
-  return undefined
+  return de === false ? 'digits' : 'latin'
 }
 
 /** pPr <w:tabs> → TabStop[] (shared by direct paragraph format and style display) */

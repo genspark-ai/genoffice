@@ -111,11 +111,15 @@ fn read_reference(chars: &[char], open: usize) -> Option<(String, usize)> {
         sheets.push(sheet);
         references.push(reference);
     }
-    // ODF qualifies every endpoint of a range, so all endpoints must agree: a
-    // mixed pair would silently move a reference to another sheet, and a
-    // two-sheet range has no two-sheet spelling in A1 semantics.
+    // LibreOffice spells the second endpoint of a same-sheet range without the
+    // sheet (`[$Data.A1:.B2]`), so an omitted sheet inherits the first one; two
+    // different sheets have no spelling in A1 semantics.
     let sheet = sheets[0].clone();
-    if sheets.iter().any(|name| *name != sheet) {
+    if sheets
+        .iter()
+        .skip(1)
+        .any(|name| name.is_some() && *name != sheet)
+    {
         return None;
     }
     let mut out = sheet.map_or_else(String::new, |name| format!("{name}!"));
@@ -217,9 +221,9 @@ fn cell_reference(text: &str) -> Option<String> {
 }
 
 fn row_number(digits: &[char]) -> u64 {
-    digits
-        .iter()
-        .fold(0u64, |value, digit| value * 10 + u64::from(*digit as u8 - b'0'))
+    digits.iter().fold(0u64, |value, digit| {
+        value * 10 + u64::from(*digit as u8 - b'0')
+    })
 }
 
 fn eat_dollar(chars: &[char], index: &mut usize) -> bool {
@@ -235,9 +239,7 @@ fn quoted_sheet_name(name: &str) -> Option<String> {
     if name.is_empty() || name.chars().any(char::is_control) {
         return None;
     }
-    let plain = name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    let plain = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         && !name.chars().next().is_some_and(|c| c.is_ascii_digit());
     if plain {
         return Some(name.to_string());
@@ -288,7 +290,10 @@ mod tests {
     #[test]
     fn qualifies_sheet_names_and_quotes_the_ones_needing_it() {
         assert_eq!(translated("[Other.B1]*2").as_deref(), Some("Other!B1*2"));
-        assert_eq!(translated("[My Sheet.A1]").as_deref(), Some("'My Sheet'!A1"));
+        assert_eq!(
+            translated("[My Sheet.A1]").as_deref(),
+            Some("'My Sheet'!A1")
+        );
         assert_eq!(
             translated("[Q1.Revenue.A1]").as_deref(),
             Some("'Q1.Revenue'!A1")
@@ -297,6 +302,11 @@ mod tests {
             translated("SUM([Data.A1:Data.B2])").as_deref(),
             Some("SUM(Data!A1:B2)")
         );
+        assert_eq!(
+            translated("SUM([$Data.A1:.B2])").as_deref(),
+            Some("SUM(Data!A1:B2)")
+        );
+        assert_eq!(translated("[Data.A1:Other.B2]"), None);
     }
 
     // LibreOffice writes every other-sheet reference in the absolute-sheet

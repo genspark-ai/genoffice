@@ -88,7 +88,12 @@ import { pruneUnreferencedNumbering } from './numbering-actions'
 import { applySectPrRewrites, type SectPrRewrite } from './sectpr-rewrite'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
-import { hangulSpaceWideningFor, setDocFontTable, setHangulSpaceWidening } from './line-metrics'
+import {
+  hangulSpaceWideningFor,
+  loadBundledStandIns,
+  setDocFontTable,
+  setHangulSpaceWidening,
+} from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
 import { defaultEastAsiaFontFor } from './font-list'
 import { clearPrintZoom, setPrintZoom } from './print-zoom'
@@ -311,7 +316,10 @@ function resetEditorHistory(editor: Editor): void {
 function caretMarksSnapshot(editor: Editor): string | null {
   const { state } = editor
   const { $from } = state.selection
-  return serializeMarks(state.storedMarks ?? $from.marks())
+  // an explicit empty list is "user cleared the formatting" and must survive
+  // as such, or the caret inherits the surrounding text again after the rewrite
+  if (state.storedMarks) return serializeMarks(state.storedMarks) ?? '[]'
+  return serializeMarks($from.marks())
 }
 
 /**
@@ -333,7 +341,7 @@ export function restoreMarksAfterDocRewrite(editor: Editor, snapshot: string | n
     const type = editor.schema.marks[entry.type]
     return type && FORMAT_MARKS.has(entry.type) ? [type.create(entry.attrs)] : []
   })
-  if (marks.length === 0) return false
+  if (marks.length === 0 && entries.length > 0) return false
   editor.view.dispatch(editor.state.tr.setStoredMarks(marks))
   return true
 }
@@ -477,6 +485,8 @@ export async function loadFile(
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return 'superseded'
     setDocFontTable(parsed.fontTable)
+    await loadBundledStandIns(collectDocFonts(parsed))
+    if (generation !== openGeneration) return 'superseded'
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
     ctx.editor.storage.listNumbering.defs = parsed.numbering
@@ -626,6 +636,8 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
+    await loadBundledStandIns(collectDocFonts(parsed))
+    if (generation !== openGeneration) return
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
     ctx.editor.storage.listNumbering.defs = parsed.numbering
@@ -821,6 +833,7 @@ export async function buildDocBytes(ctx: FileActionContext): Promise<Uint8Array 
     links: ctx.hfLinks,
   })
   const bytes = await saveDocx(doc.parsed, saveBlocks, {
+    newPictures: Object.keys(plan.newPictures).length > 0 ? plan.newPictures : undefined,
     section: ctx.sectionDirty && ctx.section ? ctx.section : undefined,
     sectionStartType: ctx.trailingStartType ?? undefined,
     pgNumType: ctx.pgNumEdit ?? undefined,
@@ -1048,12 +1061,6 @@ async function saveOnce(
     // identity snapshot: detects edits that arrive while the save is in flight
     const fontSettingsVersion = ctx.fontSettingsVersionRef?.current
     const docSnapshot = editor.state.doc
-    const selectionPos = editor.state.selection.from
-    // The caret's marks — the ribbon's font/size live here as storedMarks and
-    // apply to whatever is typed next. The reparse below replaces the doc, so
-    // they have to travel with the selection or an autosave silently drops the
-    // font the user just picked (#2004).
-    const caretMarks = caretMarksSnapshot(editor)
     const bytes = await buildDocBytes(ctx)
     if (!bytes) return false
     const buffer = bytes.buffer.slice(
@@ -1163,6 +1170,14 @@ async function saveOnce(
     }
     // Equal doc: skip the rewrite so undo history, caret and scroll survive.
     if (!unchanged) {
+      // The caret's marks — the ribbon's font/size live here as storedMarks and
+      // apply to whatever is typed next. setContent replaces the doc, so they
+      // have to travel with the selection or an autosave silently drops the
+      // font the user just picked (genoffice#2004). Both are read live, not
+      // before the await: a font chosen or a caret moved during the save must
+      // win, and the marks must belong to the position they are restored at.
+      const selectionPos = editor.state.selection.from
+      const caretMarks = caretMarksSnapshot(editor)
       editor.commands.setContent(rebasedPm as never)
       resetEditorHistory(editor)
       const chain = editor

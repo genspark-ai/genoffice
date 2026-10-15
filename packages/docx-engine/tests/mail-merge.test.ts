@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Block } from '../src/types'
 import {
+  compareOperands,
   mergeBlockTree,
   mergeDataFromRows,
   mergeFieldName,
+  mergeFieldText,
   mergeRecords,
   type MergeData,
 } from '../src/mail-merge'
@@ -11,7 +13,7 @@ import {
 /**
  * Mail merge, engine half: substitute MERGEFIELD runs with a recipient row's
  * values and honour Word's control fields (NEXT / SKIPIF / IF). Requested in
- * #1984; the field itself survives a round-trip via the parse whitelist, this
+ * genoffice#1984; the field itself survives a round-trip via the parse whitelist, this
  * is what gives it a value.
  */
 
@@ -43,6 +45,25 @@ describe('mergeFieldName', () => {
   it('returns null for another keyword and for a name-less MERGEFIELD', () => {
     expect(mergeFieldName('PAGE')).toBeNull()
     expect(mergeFieldName('MERGEFIELD')).toBeNull()
+  })
+})
+
+describe('mergeFieldText', () => {
+  const rec = { First: 'ada', Last: 'LOVELACE', Empty: '' }
+
+  it('applies \\b and \\f only around a non-empty value', () => {
+    expect(mergeFieldText('MERGEFIELD First \\f " "', rec)).toBe('ada ')
+    expect(mergeFieldText('MERGEFIELD Empty \\b "(" \\f ")"', rec)).toBe('')
+    expect(mergeFieldText('MERGEFIELD Last \\b "Ms. "', rec)).toBe('Ms. LOVELACE')
+  })
+
+  it('applies the case switches and ignores MERGEFORMAT', () => {
+    expect(mergeFieldText('MERGEFIELD First \\* Upper', rec)).toBe('ADA')
+    expect(mergeFieldText('MERGEFIELD Last \\* Lower', rec)).toBe('lovelace')
+    expect(mergeFieldText('MERGEFIELD Last \\* FirstCap \\* MERGEFORMAT', rec)).toBe('Lovelace')
+    expect(mergeFieldText('MERGEFIELD Last \\* Caps', { Last: 'van der berg' })).toBe(
+      'Van Der Berg',
+    )
   })
 })
 
@@ -174,9 +195,9 @@ describe('mergeRecords — control fields', () => {
     expect(cursor.next).toBe(true)
   })
 
-  it('a NEXT past the last record stops advancing instead of running off the list', () => {
+  it('a NEXT past the last record reads empty fields, like a blank trailing label', () => {
     const { blocks } = mergeRecords([mergeName(), control('NEXT'), mergeName()], data, 2)
-    expect(lines(blocks)).toEqual(['Linus', 'Linus'])
+    expect(lines(blocks)).toEqual(['Linus', ''])
   })
 
   it('a paragraph that held only a control field does not survive the merge', () => {
@@ -195,13 +216,13 @@ describe('mergeRecords — control fields', () => {
     expect(cursor.skipped).toBe(false)
   })
 
-  it('SKIPIF compares values the way a data column does: as text', () => {
-    const nums: MergeData = { fields: ['N'], records: [{ N: '5' }, { N: '50' }] }
-    // "5" and "50" are strings, so "<" is lexicographic: "50" < "5" is false
-    const first = mergeRecords([control('SKIPIF «N» < "50"')], nums, 0)
-    expect(first.cursor.skipped).toBe(true)
-    const second = mergeRecords([control('SKIPIF «N» < "50"')], nums, 1)
-    expect(second.cursor.skipped).toBe(false)
+  it('SKIPIF compares numerically when both sides are numbers, as Word does', () => {
+    const nums: MergeData = { fields: ['N'], records: [{ N: '9' }, { N: '50' }, { N: '5' }] }
+    expect(mergeRecords([control('SKIPIF «N» < "50"')], nums, 0).cursor.skipped).toBe(true)
+    expect(mergeRecords([control('SKIPIF «N» < "50"')], nums, 1).cursor.skipped).toBe(false)
+    expect(mergeRecords([control('SKIPIF «N» = "5.0"')], nums, 2).cursor.skipped).toBe(true)
+    // one side is text, so the comparison stays textual
+    expect(compareOperands('"9"', '<', '"50a"', {})).toBe(false)
   })
 
   it('IF picks the matching branch for each record', () => {
@@ -276,12 +297,26 @@ describe('mergeBlockTree', () => {
     ])
   })
 
-  it('a NEXT-driven template lays the records end to end instead', () => {
+  it('a NEXT-driven template lays the records end to end, one sheet per batch', () => {
     const out = mergeBlockTree([mergeName(), control('NEXT'), mergeName()], {
       fields: ['Name'],
       records: [{ Name: 'A' }, { Name: 'B' }, { Name: 'C' }],
     })
-    expect(out.map(lines)).toEqual([['A', 'B']])
+    expect(out.map(lines)).toEqual([
+      ['A', 'B'],
+      ['C', ''],
+    ])
+  })
+
+  it('a SKIPIF on a NEXT sheet drops that sheet and still moves on', () => {
+    const out = mergeBlockTree(
+      [mergeName(), control('SKIPIF «Name» = "A"'), control('NEXT'), mergeName()],
+      {
+        fields: ['Name'],
+        records: [{ Name: 'A' }, { Name: 'B' }, { Name: 'C' }, { Name: 'D' }],
+      },
+    )
+    expect(out.map(lines)).toEqual([['C', 'D']])
   })
 
   it('drops a record a SKIPIF rejected', () => {

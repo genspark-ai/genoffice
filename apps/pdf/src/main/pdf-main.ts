@@ -31,6 +31,7 @@ import {
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool, documentMediaRoots } from '@genoffice/ai-search'
 import { PDF_CHANNELS } from '../shared/ipc'
+import { printJobOptions } from '@genoffice/electron-utils/print-job'
 import { buildExportImagePaths, hasValidExportPageNumbers } from './export-images'
 import type {
   ExportImagesRequest,
@@ -1149,6 +1150,24 @@ function registerPdfIpc(): void {
     } catch {
       return ''
     }
+  })
+
+  ipcMain.handle(PDF_CHANNELS.printers, async (e) => {
+    const printers = await e.sender.getPrintersAsync()
+    return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }))
+  })
+
+  ipcMain.handle(PDF_CHANNELS.print, (e, job: unknown) => {
+    const opts = printJobOptions(job)
+    // the renderer's print stylesheet already lays one rasterized page per sheet
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      e.sender.print({ margins: { marginType: 'none' }, ...opts }, (success, failureReason) => {
+        resolve({
+          ok: success,
+          ...(failureReason && !/cancel/i.test(failureReason) ? { error: failureReason } : {}),
+        })
+      })
+    })
   })
 
   ipcMain.handle(PDF_CHANNELS.readFile, async (e, path: unknown) => {

@@ -67,6 +67,12 @@ export const zh = {
   ribbonOpen: '打开…',
   ribbonSave: '保存',
   ribbonSaveAs: '另存为…',
+  ribbonConvert: '转换',
+  ribbonConvertTip: '转换为 PDF、HTML、Markdown 或图片',
+  ribbonConvertPdf: '转换为 PDF…',
+  ribbonConvertHtml: '转换为 HTML…',
+  ribbonConvertMarkdown: '转换为 Markdown…',
+  ribbonConvertImages: '导出为图片…',
   // Home · Clipboard
   ribbonPaste: '粘贴',
   ribbonCutTip: '剪切 (⌘X)',

@@ -25,12 +25,16 @@ export {
   mergeBlockTree,
   mergeDataFromRows,
   mergeFieldName,
+  mergeFieldSwitches,
+  mergeFieldText,
   mergeRecords,
   placeholderText,
   splitInstruction,
   valueOf,
   type ControlEffect,
+  type MergeCursorState,
   type MergeData,
+  type MergeFieldSwitches,
   type MergeRecord,
 } from './mail-merge'
 export { assertZipInflatesWithinLimits, assertZipWithinLimits, DOCX_ZIP_LIMITS } from './zip-load'
@@ -89,6 +93,9 @@ export {
   type ImagePatch,
   type TextboxParaPatch,
   type TextboxParasPatchSet,
+  inlinePictureDrawingXml,
+  NEW_PICTURE_TOKEN_PREFIX,
+  type InlinePictureXmlOptions,
   type TableGenOptions,
   type TocEntry,
 } from './generate'
