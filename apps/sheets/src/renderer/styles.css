@@ -872,6 +872,12 @@ html.genoffice-popover-open .ribbon-tabs {
   height: 48px;
   padding-top: 5px;
   padding-bottom: 1px;
+  /* Linux fallback fonts carry emoji and CJK glyphs on line boxes up to
+     ~2.5em tall (Noto Color Emoji's win metrics); left at `normal` they poke
+     below the group boxes and read as scrollable overflow in a band that
+     never scrolls vertically. Pinning the line box makes the layout
+     independent of whichever font a distro picks. */
+  line-height: 1.2;
 }
 
 .ribbon-compact .ribbon-tool.large {

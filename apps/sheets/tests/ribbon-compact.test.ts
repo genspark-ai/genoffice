@@ -27,7 +27,7 @@ describe('sheets ribbon compact density', () => {
   })
 
   it('The compact band is a shorter, still fixed-height band', () => {
-    expect(css).toMatch(/\.ribbon-compact \.ribbon \{[^}]*height: 46px;/s)
+    expect(css).toMatch(/\.ribbon-compact \.ribbon \{[^}]*height: 48px;/s)
   })
 
   it('tall tools drop to icon-only with the label kept for accessibility', () => {
