@@ -177,8 +177,11 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
         'To *edit* one of these documents, pass its id (or path) as the `document` argument of the ' +
         'family content tools (insert_content / apply_ops / apply_sheet_ops / apply_slide_ops): no ' +
         'session is needed, and the UI switches to that tab so the user sees the change land. ' +
-        'PDF tabs are listed but cannot be read or closed here: the pdf app is a viewer, so an ' +
-        'open PDF has no readable or savable state through this tool.',
+        'PDF tabs are listed and can be closed, but this tool does not read or save them: the ' +
+        'pdf app is a viewer, so an open PDF has no live editable content. Read a PDF with ' +
+        'read_pdf (and search it with search_pdf); it cannot be written back. Closing one just ' +
+        'drops the tab — a PDF with unsaved annotations (its only unsaved state) must be closed ' +
+        'with unsaved:"discard".',
       inputSchema: {
         action: z.enum(['list', 'read', 'close']).describe('what to do'),
         target: z
@@ -210,8 +213,8 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
         if (action === 'read') {
           if (!READABLE_KINDS.has(doc.kind)) {
             throw new Error(
-              `"${doc.title}" is a PDF: the pdf app is a viewer, so an open PDF has no readable ` +
-                'content through this tool',
+              `"${doc.title}" is a PDF: the pdf app is a viewer, so this tool cannot read it — ` +
+                'read_pdf returns its text',
             )
           }
           return {

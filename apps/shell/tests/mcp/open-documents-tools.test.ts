@@ -250,14 +250,14 @@ describe('open_documents tool', () => {
     expect(result.discardedUnsavedChanges).toBe(true)
   })
 
-  it('refuses to read a PDF, naming the reason', async () => {
+  it('refuses to read a PDF through this tool, pointing at read_pdf', async () => {
     await startService(controlOf())
     const result = await client!.callTool({
       name: 'open_documents',
       arguments: { action: 'read', target: 'C:/docs/six.pdf' },
     })
     expect(result.isError).toBe(true)
-    expect(textOf(result.content)).toContain('viewer')
+    expect(textOf(result.content)).toContain('read_pdf')
   })
 
   it('lists an unknown target as an error that names what is open', async () => {
