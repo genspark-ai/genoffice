@@ -1490,6 +1490,11 @@ export const pt = {
   appTableRowsNotLoaded:
     'As linhas da tabela ainda estão carregando — tente novamente em instantes.',
   appTableTotalLabel: 'Total',
+  appNotePicturesPaneTitle: 'Imagens das anotações',
+  appNotePicturesClose: 'Fechar',
+  appNotePicturesNone: 'Nenhuma anotação desta pasta de trabalho exibe uma imagem.',
+  appNotePictureUnavailable: 'Não é possível exibir esta imagem.',
+  appNotePicturesToggle: 'Imagens das anotações',
   appCommentsPaneTitle: 'Comentários',
   appThreadReply: 'Responder',
   appThreadReplyPlaceholder: 'Responder…',

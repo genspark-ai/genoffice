@@ -7133,3 +7133,131 @@ body > div:has([data-u-comp='find-replace-dialog']) {
 .visual-dialog-remove {
   align-self: flex-start;
 }
+
+/* A note's picture has nowhere to go inside Univer's note popup, so it gets a
+   pane of its own. Both panes want the right edge, so each steps aside while
+   the other is open rather than covering it. */
+.note-pictures-pane {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  bottom: 48px;
+  z-index: 121;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 32px));
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+body:has(.note-pictures-pane) .threaded-comments-pane {
+  right: 380px;
+}
+
+.note-pictures-pane > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.note-pictures-pane .np-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.note-pictures-pane .np-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.note-pictures-pane .np-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.note-pictures-pane .np-empty {
+  margin: 0;
+  padding: 16px 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.note-pictures-pane .np-card {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.note-pictures-pane .np-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+}
+
+.note-pictures-pane .np-cell {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.note-pictures-pane .np-cell:hover {
+  color: var(--accent);
+}
+
+.note-pictures-pane .np-author {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.note-pictures-pane .np-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.note-pictures-pane .np-image-missing {
+  margin: 0;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.note-pictures-pane .np-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

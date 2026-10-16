@@ -1490,6 +1490,11 @@ export const it = {
   appTableRowsNotLoaded:
     'Le righe della tabella sono ancora in caricamento: riprovare tra un istante.',
   appTableTotalLabel: 'Totale',
+  appNotePicturesPaneTitle: 'Immagini delle note',
+  appNotePicturesClose: 'Chiudi',
+  appNotePicturesNone: "Nessuna nota di questa cartella di lavoro contiene un'immagine.",
+  appNotePictureUnavailable: 'Non è possibile mostrare questa immagine.',
+  appNotePicturesToggle: 'Immagini delle note',
   appCommentsPaneTitle: 'Commenti',
   appThreadReply: 'Rispondi',
   appThreadReplyPlaceholder: 'Rispondi…',

@@ -1504,6 +1504,11 @@ export const de = {
   appTableRowsNotLoaded:
     'Die Tabellenzeilen werden noch geladen – versuchen Sie es gleich noch einmal.',
   appTableTotalLabel: 'Ergebnis',
+  appNotePicturesPaneTitle: 'Bilder in Notizen',
+  appNotePicturesClose: 'Schließen',
+  appNotePicturesNone: 'Keine Notiz in dieser Arbeitsmappe zeigt ein Bild.',
+  appNotePictureUnavailable: 'Dieses Bild kann nicht angezeigt werden.',
+  appNotePicturesToggle: 'Bilder in Notizen',
   appCommentsPaneTitle: 'Kommentare',
   appThreadReply: 'Antworten',
   appThreadReplyPlaceholder: 'Antworten…',

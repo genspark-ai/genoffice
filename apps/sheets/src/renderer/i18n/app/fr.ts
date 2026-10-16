@@ -1516,6 +1516,11 @@ export const fr = {
   appTableRowsNotLoaded:
     'Les lignes du tableau sont encore en cours de chargement : réessayez dans un instant.',
   appTableTotalLabel: 'Total',
+  appNotePicturesPaneTitle: 'Images des notes',
+  appNotePicturesClose: 'Fermer',
+  appNotePicturesNone: "Aucune note de ce classeur ne contient d'image.",
+  appNotePictureUnavailable: 'Cette image ne peut pas être affichée.',
+  appNotePicturesToggle: 'Images des notes',
   appCommentsPaneTitle: 'Commentaires',
   appThreadReply: 'Répondre',
   appThreadReplyPlaceholder: 'Répondre…',

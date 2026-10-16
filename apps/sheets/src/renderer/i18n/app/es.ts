@@ -1493,6 +1493,11 @@ export const es = {
   appTableRowsNotLoaded:
     'Las filas de la tabla aún se están cargando; inténtelo de nuevo en un momento.',
   appTableTotalLabel: 'Total',
+  appNotePicturesPaneTitle: 'Imágenes de notas',
+  appNotePicturesClose: 'Cerrar',
+  appNotePicturesNone: 'Ninguna nota de este libro muestra una imagen.',
+  appNotePictureUnavailable: 'No se puede mostrar esta imagen.',
+  appNotePicturesToggle: 'Imágenes de notas',
   appCommentsPaneTitle: 'Comentarios',
   appThreadReply: 'Responder',
   appThreadReplyPlaceholder: 'Responder…',
