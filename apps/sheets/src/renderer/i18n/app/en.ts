@@ -1,6 +1,20 @@
 import type { zh } from './zh'
 
 export const en = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Hide the selection from AI',
+  redactDialogDesc:
+    'The selection stays in the document and in the file; the model sees the placeholder below instead. Name it so the model knows what it stands for.',
+  redactDialogScope:
+    "Hiding covers this app's AI. The CLI, MCP tools and headless export read the file directly, and they still see these words.",
+  redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
+  redactCancel: 'Cancel',
+  redactInsert: 'Hide',
+  redactEnable: 'Right-click a selection to hide it from the model.',
+  redactNeedsSavedRow: 'This row is not in the file yet. Save first, then hide a cell in it.',
+  redactRecoveredFromNames:
+    'Another app rewrote this file and dropped the record of what is hidden. The hidden cells were recovered from the names in the workbook; saving restores the full record.',
+
   appMergeWorkbooks: 'Merge Workbooks',
   appMergeWorkbooksTip: 'Append sheets from other Excel files into this workbook',
   appMergeWorkbooksPicking: 'Choose files to merge…',

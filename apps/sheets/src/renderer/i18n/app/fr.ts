@@ -1,6 +1,21 @@
 import type { zh } from './zh'
 
 export const fr = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Masquer la sélection à l’IA',
+  redactDialogDesc:
+    'La sélection reste dans le document et dans le fichier ; le modèle ne voit que le marqueur ci-dessous. Donnez-lui un nom pour qu’il sache ce qu’il désigne.',
+  redactDialogScope:
+    'Le masquage ne concerne que l’IA de cette application. La CLI, les outils MCP et l’exportation sans interface lisent le fichier directement et voient toujours ces mots.',
+  redactDialogPlaceholder: 'Nom du placeholder, ex. : téléphone du client',
+  redactCancel: 'Annuler',
+  redactInsert: 'Masquer',
+  redactEnable: 'Clic droit sur une sélection pour la masquer au modèle.',
+  redactNeedsSavedRow:
+    "Cette ligne n'est pas encore dans le fichier. Enregistrez d'abord, puis masquez la cellule.",
+  redactRecoveredFromNames:
+    'Une autre application a réécrit ce fichier et effacé la trace de ce qui est masqué. Les cellules masquées ont été retrouvées dans les noms du classeur ; la sauvegarde restaure la trace complète.',
+
   appMergeWorkbooks: 'Fusionner des classeurs',
   appMergeWorkbooksTip: "Ajouter les feuilles d'autres fichiers Excel à ce classeur",
   appMergeWorkbooksPicking: 'Choisissez les fichiers à fusionner…',

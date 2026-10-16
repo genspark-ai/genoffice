@@ -76,30 +76,48 @@ export function applyDefinedNamesState(workbookXml: string, state: DefinedNamesS
     )
     .join('')
 
+  return appendDefinedNames(xml, additions)
+}
+
+/**
+ * Append entries to the workbook's `<definedNames>` section, creating the
+ * section where there is none.
+ *
+ * Shared with the redaction mirror (`applyRedactionNameMirror`), which writes
+ * into the same section with a different idea of what an entry means. The
+ * schema order is the fiddly part — `<definedNames>` follows `<sheets>`, but
+ * only after `<functionGroups>` and `<externalReferences>` when those are
+ * present — so it is done once here rather than twice.
+ */
+export function appendDefinedNames(workbookXml: string, additions: string): string {
   const section = /<definedNames\b[^>]*>([\s\S]*?)<\/definedNames>|<definedNames\b[^>]*\/>/.exec(
-    xml,
+    workbookXml,
   )
   if (section) {
     const inner = (section[1] ?? '') + additions
     const replacement = inner === '' ? '' : `<definedNames>${inner}</definedNames>`
-    return xml.slice(0, section.index) + replacement + xml.slice(section.index + section[0].length)
+    return (
+      workbookXml.slice(0, section.index) +
+      replacement +
+      workbookXml.slice(section.index + section[0].length)
+    )
   }
-  if (additions === '') return xml
+  if (additions === '') return workbookXml
   // Schema order: definedNames follows sheets (and functionGroups/externalReferences).
-  const anchor = /<\/sheets>|<sheets\b[^>]*\/>/.exec(xml)
+  const anchor = /<\/sheets>|<sheets\b[^>]*\/>/.exec(workbookXml)
   if (!anchor) throw new DefinedNameError('workbook.xml has no sheets element.')
   const groups = /<functionGroups\b[^>]*>[\s\S]*?<\/functionGroups>|<functionGroups\b[^>]*\/>/.exec(
-    xml,
+    workbookXml,
   )
   const externals =
     /<externalReferences\b[^>]*>[\s\S]*?<\/externalReferences>|<externalReferences\b[^>]*\/>/.exec(
-      xml,
+      workbookXml,
     )
   let at = externals ? externals.index + externals[0].length : anchor.index + anchor[0].length
   // functionGroups only counts when externalReferences is absent: the later
   // element is the one the section must follow
   if (!externals && groups) at = groups.index + groups[0].length
-  return `${xml.slice(0, at)}<definedNames>${additions}</definedNames>${xml.slice(at)}`
+  return `${workbookXml.slice(0, at)}<definedNames>${additions}</definedNames>${workbookXml.slice(at)}`
 }
 
 /** Shared by table names, which follow the same rules (minus the `_xlnm` reservation). */
@@ -123,7 +141,7 @@ function validateName(name: string): void {
   }
 }
 
-function unescapeXml(input: string): string {
+export function unescapeXml(input: string): string {
   return input
     .replaceAll('&quot;', '"')
     .replaceAll('&lt;', '<')
@@ -131,7 +149,7 @@ function unescapeXml(input: string): string {
     .replaceAll('&amp;', '&')
 }
 
-function escapeXmlText(input: string): string {
+export function escapeXmlText(input: string): string {
   return input.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 

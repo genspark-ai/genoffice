@@ -8,6 +8,7 @@ import {
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from '../src/renderer/univer-sync'
 import type { FindCellsOptions } from '../src/renderer/ai/tools'
 import type { WorkbookReadContext } from '../src/renderer/ai/workbook-readers'
+import { buildRedactionIndex } from '../src/renderer/ai/redact'
 
 vi.mock('../src/renderer/univer-sync', () => ({
   readSheetRangeMapped: vi.fn(),
@@ -133,39 +134,6 @@ describe('findWorkbookCells: demo workbook', () => {
     expect(result.error).toContain('Unknown sheet: ghost')
   })
 })
-
-function lazyCtx(state: unknown, worksheets: unknown[]): WorkbookReadContext {
-  return {
-    univerRef: {
-      current: {
-        univerAPI: {
-          getActiveWorkbook: () => ({
-            getSheets: () => worksheets,
-            getActiveSheet: () => worksheets[0],
-          }),
-        },
-      },
-    },
-    lazyWorkbookRef: { current: state },
-    adapterRef: { current: { getSnapshot: () => ({ revision: 0, sheets: [] }) } },
-  } as unknown as WorkbookReadContext
-}
-
-function lazyState(journalCells: Map<string, Map<string, unknown>>) {
-  return {
-    file: {
-      sessionId: 'session-1',
-      sheets: [{ id: 'sh1', name: 'Data', rowCount: 4, columnCount: 2 }],
-    },
-    editJournal: { cells: journalCells, structuralOps: new Map() },
-  }
-}
-
-const DATA_SHEET = {
-  getSheetId: () => 'sh1',
-  getSheetName: () => 'Data',
-  getRange: (address: string) => ({ getValue: () => (address === 'A3' ? '#DIV/0!' : null) }),
-}
 
 describe('findWorkbookCells: lazy workbook', () => {
   it('overlays journal edits and shadows the file cell underneath', async () => {
@@ -388,7 +356,226 @@ describe('findWorkbookCells: lazy workbook via sidecar', () => {
     expect(sidecarFind).not.toHaveBeenCalled()
   })
 
+  it('drops a withheld cell the sidecar returns', async () => {
+    // The sidecar reads the file, so it is the one search path that never saw
+    // the index until now. `shadowed` cannot help either: it only holds cells
+    // edited this session, and a mark made weeks ago touches neither.
+    const sidecarFind = vi.fn().mockResolvedValue({
+      matches: [
+        { sheetId: 'sh1', row: 1, column: 1, value: '13800138000', valueText: '13800138000' },
+        { sheetId: 'sh1', row: 2, column: 1, value: '13800138001', valueText: '13800138001' },
+      ],
+      complete: true,
+      indexingComplete: true,
+    })
+    vi.stubGlobal('window', { desktopApi: { findWorkbookCells: sidecarFind } })
+    const ctx = {
+      ...lazyCtx(lazyState(new Map()), [DATA_SHEET]),
+      redactionIndexRef: {
+        current: buildRedactionIndex(
+          [
+            {
+              sheetName: 'Data',
+              marks: [
+                { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' },
+              ],
+            },
+          ],
+          [{ name: 'Data', id: 'sh1' }],
+        ),
+      },
+    }
+    const result = await findWorkbookCells(ctx, options({ query: '1380013800' }))
+    // B2 is withheld, B3 holds the neighbouring number and is not: if both
+    // vanished the search would be broken rather than merely quiet.
+    expect(result.matches.map((m) => m.address)).toEqual(['B3'])
+    expect(JSON.stringify(result)).not.toContain('13800138000')
+  })
+
   function findWorkbookCells_(opts: FindCellsOptions) {
     return findWorkbookCells(lazyCtx(lazyState(new Map()), [DATA_SHEET]), opts)
   }
 })
+
+describe('find_cells treats a withheld cell as absent', () => {
+  /**
+   * The leak is not only the matched content. Reporting "Customers!B2 matches"
+   * is an oracle: the model can test candidate values one after another and
+   * learn which one the reader hid, without ever seeing a cell. A withheld
+   * cell therefore never matches at all.
+   */
+  function ctxWithRedaction(): WorkbookReadContext {
+    return {
+      univerRef: { current: null },
+      lazyWorkbookRef: { current: null },
+      adapterRef: {
+        current: {
+          getSnapshot: () => ({
+            revision: 0,
+            sheets: [
+              {
+                id: 'sh1',
+                name: 'Customers',
+                cells: {
+                  A1: { value: 'name' },
+                  B1: { value: 'phone' },
+                  A2: { value: 'Acme' },
+                  B2: { value: '13800138000' },
+                  B3: { value: '13800138001' },
+                },
+              },
+            ],
+          }),
+        },
+      },
+      redactionIndexRef: {
+        current: buildRedactionIndex(
+          [
+            {
+              sheetName: 'Customers',
+              marks: [
+                { startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' },
+              ],
+            },
+          ],
+          [{ id: 'sh1', name: 'Customers' }],
+        ),
+      },
+    } as unknown as WorkbookReadContext
+  }
+
+  it('does not confirm that a guessed value sits in a withheld cell', async () => {
+    const result = await findWorkbookCells(ctxWithRedaction(), options({ query: '13800138000' }))
+    expect(result.matches).toEqual([])
+  })
+
+  it('still finds the same value in a cell that is not withheld', async () => {
+    // B3 holds the same number and is not marked: if it stopped matching too,
+    // the search would be silently broken rather than merely quiet.
+    const result = await findWorkbookCells(ctxWithRedaction(), options({ query: '1380013800' }))
+    expect(result.matches.map((match) => match.address)).toEqual(['B3'])
+  })
+
+  it('never puts the withheld value in a result', async () => {
+    const result = await findWorkbookCells(ctxWithRedaction(), options({ query: '1' }))
+    expect(JSON.stringify(result)).not.toContain('13800138000')
+  })
+})
+
+describe('find_cells on a streaming workbook treats a withheld cell as absent', () => {
+  /// A mark over B2 on the `Data` fixture sheet.
+  const withheldB2 = () =>
+    buildRedactionIndex(
+      [
+        {
+          sheetName: 'Data',
+          marks: [{ startRow: 1, endRow: 1, startColumn: 1, endColumn: 1, label: 'client phone' }],
+        },
+      ],
+      [{ id: 'sh1', name: 'Data' }],
+    )
+
+  function lazyRedactionCtx(state: unknown): WorkbookReadContext {
+    return {
+      ...lazyCtx(state, [DATA_SHEET]),
+      redactionIndexRef: { current: withheldB2() },
+    } as unknown as WorkbookReadContext
+  }
+
+  it('does not confirm a guessed value sitting in a streamed cell', async () => {
+    vi.mocked(readSheetRangeMapped).mockResolvedValue({
+      screen: {
+        cells: [
+          { row: 1, column: 0, value: 'findable' },
+          { row: 1, column: 1, value: '13800138000' },
+        ],
+        rows: [],
+        merges: [],
+        hyperlinks: [],
+      },
+      raw: { indexingComplete: true },
+      indexedThroughScreen: 3,
+      fileEndRow: 3,
+    } as never)
+
+    const result = await findWorkbookCells(
+      lazyRedactionCtx(lazyState(new Map())),
+      options({ query: '13800138000' }),
+    )
+    expect(result.matches).toEqual([])
+  })
+
+  it('still searches the cells around a withheld one', async () => {
+    vi.mocked(readSheetRangeMapped).mockResolvedValue({
+      screen: {
+        cells: [
+          { row: 1, column: 0, value: 'findable' },
+          { row: 1, column: 1, value: '13800138000' },
+        ],
+        rows: [],
+        merges: [],
+        hyperlinks: [],
+      },
+      raw: { indexingComplete: true },
+      indexedThroughScreen: 3,
+      fileEndRow: 3,
+    } as never)
+
+    const result = await findWorkbookCells(
+      lazyRedactionCtx(lazyState(new Map())),
+      options({ query: 'findable' }),
+    )
+    expect(result.matches.map((match) => match.address)).toEqual(['A2'])
+  })
+
+  it('does not confirm a guessed value in a cell written this session', async () => {
+    vi.mocked(readSheetRangeMapped).mockResolvedValue({
+      screen: { cells: [], rows: [], merges: [], hyperlinks: [] },
+      raw: { indexingComplete: true },
+      indexedThroughScreen: 3,
+      fileEndRow: 3,
+    } as never)
+    const journal = new Map([
+      ['sh1', new Map([['1:1', { row: 1, column: 1, hasValue: true, value: '13800138000' }]])],
+    ])
+
+    const result = await findWorkbookCells(
+      lazyRedactionCtx(lazyState(journal)),
+      options({ query: '13800138000' }),
+    )
+    expect(result.matches).toEqual([])
+  })
+})
+
+function lazyCtx(state: unknown, worksheets: unknown[]): WorkbookReadContext {
+  return {
+    univerRef: {
+      current: {
+        univerAPI: {
+          getActiveWorkbook: () => ({
+            getSheets: () => worksheets,
+            getActiveSheet: () => worksheets[0],
+          }),
+        },
+      },
+    },
+    lazyWorkbookRef: { current: state },
+    adapterRef: { current: { getSnapshot: () => ({ revision: 0, sheets: [] }) } },
+  } as unknown as WorkbookReadContext
+}
+
+function lazyState(journalCells: Map<string, Map<string, unknown>>) {
+  return {
+    file: {
+      sessionId: 'session-1',
+      sheets: [{ id: 'sh1', name: 'Data', rowCount: 4, columnCount: 2 }],
+    },
+    editJournal: { cells: journalCells, structuralOps: new Map() },
+  }
+}
+
+const DATA_SHEET = {
+  getSheetId: () => 'sh1',
+  getSheetName: () => 'Data',
+  getRange: (address: string) => ({ getValue: () => (address === 'A3' ? '#DIV/0!' : null) }),
+}
