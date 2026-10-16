@@ -213,6 +213,9 @@ const worksheetMetadataSchema = z
           author: z.string(),
           text: z.string(),
           thread: sheetThreadSchema.extend({ text: z.string() }).optional(),
+          /// The picture the note's shape is showing, fetched with readMedia
+          /// under this id — the same shape a cell image would use.
+          image: z.object({ id: z.string() }).strict().optional(),
         })
         .strict(),
     ),
