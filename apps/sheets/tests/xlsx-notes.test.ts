@@ -206,15 +206,12 @@ describe('note pictures', () => {
 
   it('leaves the VML relationships and the media part alone', async () => {
     const plan = await planNotes(NOTES, await workbookWithPictureNote())
-    const rels = [
-      ...plan.replaced.entries(),
-      ...plan.added.entries(),
-    ].filter(([path]) => path.endsWith('vmlDrawing1.vml.rels'))
+    const rels = [...plan.replaced.entries(), ...plan.added.entries()].filter(([path]) =>
+      path.endsWith('vmlDrawing1.vml.rels'),
+    )
     expect(rels).toHaveLength(0)
     expect(
-      [...plan.replaced.keys(), ...plan.added.keys()].some((path) =>
-        path.startsWith('xl/media/'),
-      ),
+      [...plan.replaced.keys(), ...plan.added.keys()].some((path) => path.startsWith('xl/media/')),
     ).toBe(false)
   })
 

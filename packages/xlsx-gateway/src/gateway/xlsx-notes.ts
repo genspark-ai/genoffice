@@ -164,12 +164,7 @@ function noteImageKey(note: SheetNote): string {
   return `${note.column}:${note.row}`
 }
 
-function noteShape(
-  note: SheetNote,
-  index: number,
-  firstId: number,
-  picture?: string,
-): string {
+function noteShape(note: SheetNote, index: number, firstId: number, picture?: string): string {
   // Anchor: from one column right of the cell, spanning ~3 columns / 4 rows.
   const anchor = [note.column + 1, 15, note.row, 2, note.column + 4, 15, note.row + 4, 2].join(',')
   // A shape showing a picture keeps neither the yellow fill nor the drop
@@ -178,9 +173,7 @@ function noteShape(
     ? ' o:insetmode="auto">'
     : ' fillcolor="#ffffe1" o:insetmode="auto">' +
       '<v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/>'
-  const imagedata = picture
-    ? `<v:imagedata r:id="${picture}" o:relid="${picture}"/>`
-    : ''
+  const imagedata = picture ? `<v:imagedata r:id="${picture}" o:relid="${picture}"/>` : ''
   return (
     `<v:shape id="_x0000_s${firstId + index}" type="#_x0000_t202"` +
     ' style="position:absolute;margin-left:80pt;margin-top:2pt;width:108pt;height:60pt;' +
@@ -367,9 +360,7 @@ export async function applySheetNotes(
     if (end === -1) throw new NoteEditError(`${existingVmlPath} is not a VML drawing.`)
     const firstId = nextShapeId(vml)
     const shapes = notes
-      .map((note, index) =>
-        noteShape(note, index, firstId, pictures.get(noteImageKey(note))),
-      )
+      .map((note, index) => noteShape(note, index, firstId, pictures.get(noteImageKey(note))))
       .join('')
     pkg.write(existingVmlPath, vml.slice(0, end) + shapes + vml.slice(end))
     touchedEntries.add(existingVmlPath)
