@@ -51,11 +51,13 @@ const RICH_VALUE_REL_CONTENT_TYPE = 'application/vnd.ms-excel.richvaluerel+xml'
 const RICH_VALUE_REL_REL_TYPE =
   'http://schemas.microsoft.com/office/2022/10/relationships/richValueRel'
 const IMAGE_REL_TYPE = `${OFFICE_REL_NS}/image`
-/// Excel's own capability flags for the XLRICHVALUE metadata type.
+/// Excel's own capability flags for the XLRICHVALUE metadata type. `cellMeta`
+/// is deliberately absent: Excel's files omit it, and carrying it makes Excel
+/// repair the workbook and drop every cell picture on open.
 const RICH_VALUE_METADATA_TYPE =
   '<metadataType name="XLRICHVALUE" minSupportedVersion="120000" copy="1" pasteAll="1" ' +
   'pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" ' +
-  'clearComments="1" assign="1" coerce="1" cellMeta="1"/>'
+  'clearComments="1" assign="1" coerce="1"/>'
 /// The extension Excel wraps each `xlrd:rvb` record in.
 const RICH_VALUE_BK_EXT_URI = '{3e2802c4-a4d2-4d8b-9148-e3be6c30e623}'
 /// The rich value's `CalcOrigin` for a picture inserted from a file.

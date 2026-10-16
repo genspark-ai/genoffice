@@ -100,6 +100,9 @@ describe('cell image additions: fresh rich-value parts', () => {
     )
     expect(metadata).toContain('<metadataTypes count="1">')
     expect(metadata).toContain('<metadataType name="XLRICHVALUE"')
+    // Excel repairs a workbook whose XLRICHVALUE type carries `cellMeta` and
+    // drops every cell picture on open, so the flag must stay out.
+    expect(metadata).not.toContain('cellMeta')
     expect(metadata).toContain('<futureMetadata name="XLRICHVALUE" count="2">')
     expect(metadata).toContain('<xlrd:rvb i="0"/>')
     expect(metadata).toContain('<xlrd:rvb i="1"/>')
