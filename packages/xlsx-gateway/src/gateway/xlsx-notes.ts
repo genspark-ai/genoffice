@@ -151,7 +151,7 @@ function noteShapePictures(vmlXml: string): Map<string, string> {
   for (const shape of vmlXml.matchAll(/<v:shape\b[\s\S]*?<\/v:shape>/g)) {
     if (!shape[0].includes('ObjectType="Note"')) continue
     const image = /<v:imagedata\b[^>]*\br:id="([^"]+)"/.exec(shape[0])
-    if (!image) continue
+    if (!image?.[1]) continue
     const row = /<x:Row>(\d+)<\/x:Row>/.exec(shape[0])
     const column = /<x:Column>(\d+)<\/x:Column>/.exec(shape[0])
     if (!row || !column) continue
