@@ -19,6 +19,28 @@ export function genofficeUserDataDir(env: NodeJS.ProcessEnv): string {
   return join(base, 'GenOffice')
 }
 
+/**
+ * Every directory a live GenOffice may have published its registries under: the
+ * packaged profile, then the dev profiles.
+ *
+ * The dev profile has been spelled two ways. It was `<name> Dev` until
+ * genoffice#1879 moved the shell to `<name>-Dev` — a space breaks XDG config
+ * entries, which are meant to be one token (#1817) — and the shell renames the
+ * old directory on first run after that. Both spellings are scanned here, new
+ * first, because a profile that was never migrated still has to be reachable:
+ * a custom `GENOFFICE_USER_DATA`, a checkout whose shell has not run since the
+ * rename, or a migration that could not move a busy directory.
+ *
+ * Both readers used to spell this list out on their own, and genoffice#1879
+ * changed the shell without either of them, so the CLI went on looking for a
+ * directory nothing wrote to any more.
+ */
+export function genofficeUserDataDirs(env: NodeJS.ProcessEnv): string[] {
+  if (env.GENOFFICE_USER_DATA) return [env.GENOFFICE_USER_DATA]
+  const packaged = genofficeUserDataDir(env)
+  return [packaged, `${packaged}-Dev`, `${packaged} Dev`]
+}
+
 export interface GuiOpenDocuments {
   pid: number
   paths: string[]
@@ -31,9 +53,7 @@ export interface GuiOpenDocuments {
  */
 export function guiOpenDocuments(
   env: NodeJS.ProcessEnv,
-  dirs = env.GENOFFICE_USER_DATA
-    ? [env.GENOFFICE_USER_DATA]
-    : [genofficeUserDataDir(env), `${genofficeUserDataDir(env)} Dev`],
+  dirs = genofficeUserDataDirs(env),
 ): GuiOpenDocuments[] {
   const live: GuiOpenDocuments[] = []
   for (const dir of dirs) {
