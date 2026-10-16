@@ -205,6 +205,86 @@ test.describe('theme visual adoption', () => {
     }
   })
 
+  // genoffice#2041: Univer renders its menus from the DOCUMENT theme while
+  // `color-scheme` on :root follows the APP theme. With a dark app and the
+  // document theme pinned light the UA button text went white, so every
+  // context-menu label vanished on the light menu surface.
+  test('sheets context menu stays readable with a dark app and a light document theme', async () => {
+    const launched = await launchShell({
+      onboardingSeen: true,
+      videoDir: 'theme-visual-sheets-menu',
+      settings: { documentTheme: 'light' },
+    })
+    try {
+      const shellPage = await findShellPage(launched.app)
+      await shellPage.locator('.quick-card', { hasText: 'AI Sheets' }).click()
+      const editorPage = await waitForPageWithUrl(launched.app, '://sheets/')
+      await editorPage.waitForFunction(() => document.body.textContent?.includes('Sheet1'), null, {
+        timeout: 30_000,
+      })
+      await editorPage.waitForTimeout(1_500)
+
+      await setTheme(shellPage, 'dark')
+      await expect
+        .poll(() => editorPage.evaluate(() => document.documentElement.getAttribute('data-theme')))
+        .toBe('dark')
+      // the document theme stays pinned light, so Univer keeps its light palette
+      await expect
+        .poll(() =>
+          editorPage.evaluate(() => document.documentElement.getAttribute('data-doc-theme')),
+        )
+        .toBe('light')
+      expect(
+        await editorPage.evaluate(() => document.documentElement.classList.contains('univer-dark')),
+      ).toBe(false)
+
+      // right-click cell A2 → the Univer cell context menu
+      const grid = await editorPage.evaluate(() => {
+        for (const canvas of document.querySelectorAll('canvas')) {
+          const rect = canvas.getBoundingClientRect()
+          if (rect.width > 500 && rect.height > 300) return { x: rect.x, y: rect.y }
+        }
+        return null
+      })
+      if (!grid) throw new Error('worksheet canvas not found')
+      await editorPage.mouse.click(grid.x + 60, grid.y + 60, { button: 'right' })
+      await expect(editorPage.getByText('Number Format', { exact: true })).toBeVisible({
+        timeout: 10_000,
+      })
+
+      const probe = await editorPage.evaluate(() => {
+        const panels = Array.from(
+          document.querySelectorAll<HTMLElement>('div.univer-min-w-52'),
+        ).filter((el) => {
+          const r = el.getBoundingClientRect()
+          return r.x >= 0 && r.y >= 0 && r.width > 0 && r.height > 0
+        })
+        const panel = panels[0]
+        if (!panel) return null
+        // read the same item the text assertion above targeted
+        const item = Array.from(panel.querySelectorAll('button')).find((b) =>
+          (b.textContent ?? '').includes('Number Format'),
+        )
+        if (!item) return null
+        const label = item.querySelector('span')
+        return {
+          panelBg: getComputedStyle(panel).backgroundColor,
+          labelColor: getComputedStyle(label ?? item).color,
+          labelText: (item.textContent ?? '').trim(),
+        }
+      })
+      expect(probe).not.toBeNull()
+      expect(probe?.labelText.length ?? 0).toBeGreaterThan(0)
+      // the menu surface is light (document theme) …
+      expect(luminance(probe!.panelBg)).toBeGreaterThan(180)
+      // … and the label reads dark ink on it, not the UA dark-scheme white
+      expect(luminance(probe!.labelColor)).toBeLessThan(120)
+      await editorPage.screenshot({ path: screenshotPath('theme-sheets-menu-mixed') })
+    } finally {
+      await closeAndSaveVideo(launched, 'theme-visual-sheets-menu')
+    }
+  })
+
   test('pdf chrome follows dark theme while the page stays paper-white', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'genoffice-theme-pdf-'))
     const pdfPath = join(dir, 'doc.pdf')

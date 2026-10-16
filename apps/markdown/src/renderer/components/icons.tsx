@@ -220,3 +220,24 @@ export function IconPalette(props: IconProps) {
     </Svg>
   )
 }
+
+export function IconBacklinks(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9.5 3.5h4.2v9H9.5z" />
+      <path d="M1.8 5.5h4.4M6.2 5.5L4.6 3.9M6.2 5.5L4.6 7.1" />
+      <path d="M1.8 10.5h4.4M6.2 10.5L4.6 8.9M6.2 10.5l-1.6 1.6" />
+    </Svg>
+  )
+}
+
+export function IconGraph(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="3.4" r="1.9" />
+      <circle cx="3" cy="12.2" r="1.9" />
+      <circle cx="13" cy="12.2" r="1.9" />
+      <path d="M7.1 5.1L3.9 10.4M8.9 5.1l3.2 5.3M4.9 12.2h6.2" />
+    </Svg>
+  )
+}

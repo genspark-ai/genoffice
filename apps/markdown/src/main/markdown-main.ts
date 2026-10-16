@@ -54,12 +54,15 @@ import { normalizeMarkdownTheme, type MarkdownTheme } from '../shared/markdown-t
 import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
 import type {
   ImageHostConfig,
+  WikiBacklink,
+  WikiGraph,
   WikiLinkResolveRequest,
   WikiLinkResolved,
   WikiNoteEntry,
 } from '../shared/ipc'
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { listWikiNotes } from './wiki-notes'
+import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
 import {
@@ -744,7 +747,13 @@ function registerMarkdownIpc(): void {
 
   registerImageProtocol()
 
-  ipcMain.handle(MARKDOWN_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
+  ipcMain.handle(MARKDOWN_CHANNELS.consumePending, (e) => {
+    const pending = openPathByWc.get(e.sender.id) ?? null
+    // the vault root is known from here on: start the index so the backlinks
+    // panel and the graph usually find it already built
+    if (pending) warmWikiIndex(configuredDefaultSaveDir(app))
+    return pending
+  })
 
   // ---- headless export mode (--headless-export) ----
 
@@ -801,6 +810,16 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.listWikiNotes, async (): Promise<WikiNoteEntry[]> =>
     listWikiNotes(configuredDefaultSaveDir(app), nodeFs()),
+  )
+
+  ipcMain.handle(MARKDOWN_CHANNELS.wikiBacklinks, (_e, path: unknown): Promise<WikiBacklink[]> =>
+    typeof path === 'string'
+      ? wikiBacklinks(configuredDefaultSaveDir(app), path, nodeVaultFs())
+      : Promise.resolve([]),
+  )
+
+  ipcMain.handle(MARKDOWN_CHANNELS.wikiGraph, (): Promise<WikiGraph> =>
+    wikiGraph(configuredDefaultSaveDir(app), nodeVaultFs()),
   )
 
   ipcMain.handle(
