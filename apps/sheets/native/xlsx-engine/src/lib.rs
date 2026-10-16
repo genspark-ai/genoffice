@@ -268,6 +268,7 @@ impl WorkbookSessions {
         let rich_value_images = richdata::read_rich_value_images(&mut archive);
         let wps_cell_images = read_wps_cell_images(&mut archive);
         let mut cell_image_count = 0usize;
+        let mut note_image_count = 0usize;
         let mut sheets = Vec::with_capacity(declarations.len());
         let mut runtimes = Vec::with_capacity(declarations.len());
         let mut visual_sources = Vec::with_capacity(declarations.len());
@@ -305,15 +306,27 @@ impl WorkbookSessions {
             )?;
             let comments = visuals::read_comments(&mut archive, &worksheet_path)?
                 .into_iter()
-                .filter_map(|(reference, author, text, thread)| {
-                    let anchor = reference.split(':').next().unwrap_or(&reference);
+                .filter_map(|comment| {
+                    let anchor = comment
+                        .reference
+                        .split(':')
+                        .next()
+                        .unwrap_or(&comment.reference);
                     let (row, column) = parse_address(&anchor.replace('$', "")).ok()?;
+                    let image = comment.image_media_path.map(|media_path| {
+                        note_image_count += 1;
+                        CommentImageInfo {
+                            id: format!("note-picture-{note_image_count}"),
+                            media_path,
+                        }
+                    });
                     Some(CommentInfo {
                         row,
                         column,
-                        author,
-                        text,
-                        thread,
+                        author: comment.author,
+                        text: comment.text,
+                        thread: comment.thread,
+                        image,
                     })
                 })
                 .collect();
@@ -591,6 +604,21 @@ impl WorkbookSessions {
                     .flat_map(|sheet| sheet.cell_images.iter())
                     .find(|image| image.id == visual_id)
                     .map(|image| image.media_path.as_str())
+            })
+            .or_else(|| {
+                // A picture inside a note is reachable the same way, under the
+                // id its comment carries.
+                session
+                    .sheets
+                    .iter()
+                    .flat_map(|sheet| sheet.comments.iter())
+                    .find_map(|comment| {
+                        comment
+                            .image
+                            .as_ref()
+                            .filter(|image| image.id == visual_id)
+                            .map(|image| image.media_path.as_str())
+                    })
             })
             .map(str::to_owned)
             .or_else(|| session.header_footer_picture_path(visual_id))

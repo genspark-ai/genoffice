@@ -1448,10 +1448,114 @@ pub fn read_pivot_tables(
     Ok(infos)
 }
 
+/// One comment as the reader found it, before it becomes a `CommentInfo`.
+pub struct ReadComment {
+    pub reference: String,
+    pub author: String,
+    pub text: String,
+    pub thread: Option<ThreadInfo>,
+    /// Where the picture this note's shape is showing lives in the package.
+    pub image_media_path: Option<String>,
+}
+
+/// The picture each note is showing, by cell reference.
+///
+/// Excel draws a note's picture onto the note's own VML shape as an
+/// `imagedata` relationship, resolved through the VML part's own rels — the
+/// same place `read_header_footer_pictures` looks. A picture that is in the
+/// package but belongs to no note shape is not a note picture, and a shape
+/// whose relationship no longer resolves is skipped rather than guessed at.
+fn note_picture_paths(
+    archive: &mut ZipArchive<File>,
+    worksheet_path: &str,
+) -> HashMap<String, String> {
+    let mut pictures = HashMap::new();
+    let Ok(relationships) = read_relationships(archive, worksheet_path) else {
+        return pictures;
+    };
+    let Some(vml) = relationships
+        .values()
+        .find(|relationship| relationship.relationship_type.ends_with("/vmlDrawing"))
+    else {
+        return pictures;
+    };
+    let Ok(vml_path) = resolve_part_target(worksheet_path, &vml.target) else {
+        return pictures;
+    };
+    let Ok(media_relationships) = read_relationships(archive, &vml_path) else {
+        return pictures;
+    };
+    let Some(xml) = read_optional_xml(archive, &vml_path).ok().flatten() else {
+        return pictures;
+    };
+    let Ok(document) = Document::parse(&xml) else {
+        return pictures;
+    };
+    for shape in document
+        .descendants()
+        .filter(|node| node.has_tag_name("shape"))
+    {
+        // Only a note shape names the cell it is anchored to.
+        let Some(client) = direct_child(shape, "ClientData") else {
+            continue;
+        };
+        if client.attribute("ObjectType") != Some("Note") {
+            continue;
+        }
+        let (Some(row), Some(column)) = (
+            direct_child(client, "Row").and_then(|node| node.text()),
+            direct_child(client, "Column").and_then(|node| node.text()),
+        ) else {
+            continue;
+        };
+        let (Ok(row), Ok(column)) = (row.trim().parse::<usize>(), column.trim().parse::<usize>())
+        else {
+            continue;
+        };
+        let Some(image_data) = direct_child(shape, "imagedata") else {
+            continue;
+        };
+        // Excel writes o:relid; some producers use r:id instead.
+        let Some(relationship_id) = image_data
+            .attributes()
+            .find(|attribute| attribute.name() == "relid" || attribute.name() == "id")
+            .map(|attribute| attribute.value())
+        else {
+            continue;
+        };
+        let Some(media) = media_relationships.get(relationship_id) else {
+            continue;
+        };
+        let Ok(media_path) = resolve_part_target(&vml_path, &media.target) else {
+            continue;
+        };
+        if media_type_for_path(&media_path).is_none() {
+            continue;
+        }
+        pictures.insert(
+            format!("{}{}", column_label(column), row + 1),
+            media_path,
+        );
+    }
+    pictures
+}
+
+/// Column 0 as `A`, 26 as `AA`.
+fn column_label(mut index: usize) -> String {
+    let mut label = String::new();
+    loop {
+        label.insert(0, char::from(b'A' + (index % 26) as u8));
+        if index < 26 {
+            return label;
+        }
+        index = index / 26 - 1;
+    }
+}
+
 pub fn read_comments(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
-) -> Result<Vec<(String, String, String, Option<ThreadInfo>)>, SidecarError> {
+) -> Result<Vec<ReadComment>, SidecarError> {
     let relationships = read_relationships(archive, worksheet_path)?;
     let Some(comments_relationship) = relationships
         .values()
@@ -1484,17 +1588,34 @@ pub fn read_comments(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let pictures = note_picture_paths(archive, worksheet_path);
     Ok(document
         .descendants()
         .filter(|node| node.has_tag_name("comment"))
         .filter_map(|comment| {
             let reference = comment.attribute("ref")?.to_owned();
+            let picture = pictures
+                .get(
+                    reference
+                        .split(':')
+                        .next()
+                        .unwrap_or(&reference)
+                        .replace('$', "")
+                        .as_str(),
+                )
+                .cloned();
             if let Some(thread) = threads.get(&reference) {
                 let body = std::iter::once(thread.text.as_str())
                     .chain(thread.replies.iter().map(|reply| reply.text.as_str()))
                     .collect::<Vec<_>>()
                     .join("\n\n");
-                return Some((reference, thread.author.clone(), body, Some(thread.clone())));
+                return Some(ReadComment {
+                    reference,
+                    author: thread.author.clone(),
+                    text: body,
+                    thread: Some(thread.clone()),
+                    image_media_path: picture,
+                });
             }
             let author = comment
                 .attribute("authorId")
@@ -1507,7 +1628,13 @@ pub fn read_comments(
                 .filter(|node| node.has_tag_name("t"))
                 .filter_map(|node| node.text())
                 .collect::<String>();
-            Some((reference, author, text, None))
+            Some(ReadComment {
+                reference,
+                author,
+                text,
+                thread: None,
+                image_media_path: picture,
+            })
         })
         .collect())
 }

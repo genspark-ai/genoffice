@@ -4434,6 +4434,103 @@ fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
     assert_eq!(number(value_at(1, 1)), 50.0);
 }
 
+/// A picture inside a note comes back as an id the client fetches with
+/// `read_media`, and the bytes that come back are the picture itself.
+#[test]
+fn reads_the_picture_a_note_is_showing() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r##"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"##,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"##,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r##"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="B1"><v>1</v></c></row></sheetData><legacyDrawing r:id="rId2"/></worksheet>"##,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/></Relationships>"##,
+        ),
+        (
+            "xl/comments1.xml",
+            r##"<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>Ada</author></authors><commentList><comment ref="$B$1" authorId="0"><text><t>the old photograph</t></text></comment></commentList></comments>"##,
+        ),
+        (
+            "xl/drawings/vmlDrawing1.vml",
+            r##"<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:schemas-microsoft-com:office:excel"><v:shape id="_x0000_s1025" type="#_x0000_t202" style="position:absolute;visibility:hidden" o:insetmode="auto"><v:imagedata r:id="rId1" o:relid="rId1"/><x:ClientData ObjectType="Note"><x:Row>0</x:Row><x:Column>1</x:Column></x:ClientData></v:shape><v:shape id="_x0000_s1026" type="#_x0000_t201" style="position:absolute"><v:imagedata r:id="rId2" o:relid="rId2"/><x:ClientData ObjectType="Checkbox"><x:Row>0</x:Row><x:Column>1</x:Column></x:ClientData></v:shape></xml>"##,
+        ),
+        (
+            "xl/drawings/_rels/vmlDrawing1.vml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/></Relationships>"##,
+        ),
+        ("xl/media/image1.png", "the picture bytes"),
+        ("xl/media/image2.png", "a checkbox glyph, not a note"),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let comments = &metadata.sheets[0].comments;
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "the old photograph");
+    let image = comments[0].image.as_ref().expect("the note has a picture");
+    assert_eq!(image.media_path, "xl/media/image1.png");
+
+    // The id the comment carries resolves through read_media like any other.
+    let media = sessions
+        .read_media(&metadata.session_id, &image.id)
+        .unwrap();
+    assert_eq!(media.media_type, "image/png");
+    assert_eq!(
+        base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &media.base64,
+        )
+        .unwrap(),
+        b"the picture bytes"
+    );
+}
+
+/// A note with no picture — the ordinary case — must not grow one, and neither
+/// must a note whose shape points at a relationship the package does not have.
+#[test]
+fn a_note_without_a_working_picture_reports_none() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r##"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"##,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"##,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r##"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><legacyDrawing r:id="rId2"/></worksheet>"##,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/></Relationships>"##,
+        ),
+        (
+            "xl/comments1.xml",
+            r##"<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>Ada</author></authors><commentList><comment ref="A1" authorId="0"><text><t>just words</t></text></comment></commentList></comments>"##,
+        ),
+        (
+            "xl/drawings/vmlDrawing1.vml",
+            r##"<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:schemas-microsoft-com:office:excel"><v:shape id="_x0000_s1025" type="#_x0000_t202" style="position:absolute;visibility:hidden"><x:ClientData ObjectType="Note"><x:Row>0</x:Row><x:Column>0</x:Column></x:ClientData></v:shape><v:shape id="_x0000_s1026" type="#_x0000_t202" style="position:absolute;visibility:hidden"><v:imagedata r:id="rIdGone"/><x:ClientData ObjectType="Note"><x:Row>2</x:Row><x:Column>0</x:Column></x:ClientData></v:shape></xml>"##,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let comments = &metadata.sheets[0].comments;
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "just words");
+    assert!(comments[0].image.is_none(), "{:?}", comments[0].image);
+}
+
 /// A threaded comment shows its real body (root text plus replies) under
 /// the person's display name, not the legacy mirror's boilerplate.
 #[test]
