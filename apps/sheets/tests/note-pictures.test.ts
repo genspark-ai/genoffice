@@ -36,9 +36,9 @@ describe('collectNotePictures', () => {
       [1, 2],
       [4, 0],
     ])
-    expect(pictures[0].imageId).toBe('note-picture-1')
-    expect(pictures[0].sheetName).toBe('Data')
-    expect(pictures[0].author).toBe('Ada')
+    expect(pictures[0]?.imageId).toBe('note-picture-1')
+    expect(pictures[0]?.sheetName).toBe('Data')
+    expect(pictures[0]?.author).toBe('Ada')
   })
 
   it('carries a picture across sheets, keeping sheet order', () => {
