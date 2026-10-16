@@ -9,7 +9,7 @@
  * tree once, re-reads only what changed, and the expensive half (resolving
  * every target to a file) runs just for those.
  */
-import { readFileSync, statSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { basename, extname, join, relative } from 'node:path'
 
 import { MAX_DEPTH, SKIP_DIRS, nodeFs, resolveWikiLinks } from './wiki-resolve'
@@ -21,24 +21,27 @@ const NOTE_EXTS = new Set(['.md', '.markdown', '.txt'])
 /** notes one build may walk, mirroring the suggester's cap */
 export const MAX_INDEX_FILES = 2000
 
-/** a filesystem the index walks; injectable so tests drive a real temp tree */
+/**
+ * A filesystem the index walks; injectable so tests drive a real temp tree.
+ *
+ * WikiFs is already awaited (isFile / list return promises, the listing cached
+ * per directory), so the two reads a build adds are awaited too: the whole
+ * index runs off the blocking filesystem calls.
+ */
 export interface VaultFs extends WikiFs {
-  read(path: string): string
-  mtimeMs(path: string): number
+  read(path: string): Promise<string>
+  mtimeMs(path: string): Promise<number>
 }
 
 export function nodeVaultFs(): VaultFs {
   const fs = nodeFs()
   return {
     ...fs,
-    read: (path) => readFileSync(path, 'utf8'),
-    mtimeMs: (path) => {
-      try {
-        return statSync(path).mtimeMs
-      } catch {
-        return 0
-      }
-    },
+    read: (path) => readFile(path, 'utf8'),
+    mtimeMs: (path) =>
+      stat(path)
+        .then((s) => s.mtimeMs)
+        .catch(() => 0),
   }
 }
 
@@ -98,6 +101,9 @@ interface IndexState {
 
 const indexes = new Map<string, IndexState>()
 
+/** in-flight builds per root, chained — see refreshEdges */
+const building = new Map<string, Promise<Map<string, { target: string; path: string }[]>>>()
+
 function indexFor(root: string): IndexState {
   let state = indexes.get(root)
   if (!state) {
@@ -112,7 +118,7 @@ function indexFor(root: string): IndexState {
  * Same root walk as the resolver and the suggester, so the three surfaces
  * always see the same vault.
  */
-function refreshFiles(root: string, fs: VaultFs): IndexState {
+function refreshFiles(root: string, fs: VaultFs): Promise<IndexState> {
   const state = indexFor(root)
   const seen = new Set<string>()
   // taken BEFORE the walk: a note the walk is about to add is not in the set
@@ -121,88 +127,109 @@ function refreshFiles(root: string, fs: VaultFs): IndexState {
   let setMoved = false
   let queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }]
   let budget = MAX_INDEX_FILES * 4
-  while (queue.length > 0 && seen.size < MAX_INDEX_FILES && budget > 0) {
-    const next: typeof queue = []
-    for (const { dir, depth } of queue) {
-      let listing: { files: string[]; dirs: string[] }
-      try {
-        listing = fs.list(dir)
-      } catch {
-        continue
-      }
-      budget -= listing.files.length + listing.dirs.length
-      for (const file of listing.files) {
-        if (!NOTE_EXTS.has(extname(file).toLowerCase())) continue
-        const path = join(dir, file)
-        if (seen.has(path)) continue
-        seen.add(path)
-        const mtimeMs = fs.mtimeMs(path)
-        const known = state.files.get(path)
-        if (known && known.mtimeMs === mtimeMs) continue
-        let targets: string[]
+  return (async () => {
+    while (queue.length > 0 && seen.size < MAX_INDEX_FILES && budget > 0) {
+      const next: typeof queue = []
+      for (const { dir, depth } of queue) {
+        let listing: { files: string[]; dirs: string[] }
         try {
-          targets = extractWikiTargets(fs.read(path))
+          listing = await fs.list(dir)
         } catch {
-          continue // unreadable this round; the next one retries
+          continue
         }
-        state.files.set(path, { path, mtimeMs, targets })
-        state.edges.delete(path)
+        budget -= listing.files.length + listing.dirs.length
+        for (const file of listing.files) {
+          if (!NOTE_EXTS.has(extname(file).toLowerCase())) continue
+          const path = join(dir, file)
+          if (seen.has(path)) continue
+          seen.add(path)
+          const mtimeMs = await fs.mtimeMs(path)
+          const known = state.files.get(path)
+          if (known && known.mtimeMs === mtimeMs) continue
+          let targets: string[]
+          try {
+            targets = extractWikiTargets(await fs.read(path))
+          } catch {
+            continue // unreadable this round; the next one retries
+          }
+          state.files.set(path, { path, mtimeMs, targets })
+          state.edges.delete(path)
+        }
+        if (seen.size >= MAX_INDEX_FILES || depth + 1 > MAX_DEPTH) continue
+        for (const sub of listing.dirs) {
+          if (SKIP_DIRS.has(sub)) continue
+          next.push({ dir: join(dir, sub), depth: depth + 1 })
+        }
       }
-      if (seen.size >= MAX_INDEX_FILES || depth + 1 > MAX_DEPTH) continue
-      for (const sub of listing.dirs) {
-        if (SKIP_DIRS.has(sub)) continue
-        next.push({ dir: join(dir, sub), depth: depth + 1 })
+      queue = next
+    }
+    // A memoized edge answers "does this target exist?", so it is only valid
+    // while the file SET is what it was resolved against. Creating the target a
+    // link pointed at, or renaming it away, changes the answer without changing
+    // the source file at all — keyed on the source mtime alone, A keeps its dead
+    // path until A is re-saved. Drop every memo when the set moved.
+    for (const path of [...state.files.keys()]) {
+      if (!seen.has(path)) {
+        state.files.delete(path)
+        setMoved = true
       }
     }
-    queue = next
-  }
-  // A memoized edge answers "does this target exist?", so it is only valid
-  // while the file SET is what it was resolved against. Creating the target a
-  // link pointed at, or renaming it away, changes the answer without changing
-  // the source file at all — keyed on the source mtime alone, A keeps its dead
-  // path until A is re-saved. Drop every memo when the set moved.
-  for (const path of [...state.files.keys()]) {
-    if (!seen.has(path)) {
-      state.files.delete(path)
-      setMoved = true
+    // compare the paths, not the sizes: a walk that stops on the file cap can add
+    // a note while another falls out, leaving the count unchanged
+    for (const path of seen) {
+      if (!before.has(path)) {
+        setMoved = true
+        break
+      }
     }
-  }
-  // compare the paths, not the sizes: a walk that stops on the file cap can add
-  // a note while another falls out, leaving the count unchanged
-  for (const path of seen) {
-    if (!before.has(path)) {
-      setMoved = true
-      break
-    }
-  }
-  if (setMoved) state.edges.clear()
-  return state
+    if (setMoved) state.edges.clear()
+    return state
+  })()
 }
 
-/** resolved outgoing edges for every indexed file, computing what is missing */
-function refreshEdges(root: string, fs: VaultFs): Map<string, { target: string; path: string }[]> {
-  const state = refreshFiles(root, fs)
-  const out = new Map<string, { target: string; path: string }[]>()
-  for (const [path, entry] of state.files) {
-    const done = state.edges.get(path)
-    if (done && done.mtimeMs === entry.mtimeMs) {
-      out.set(path, done.to)
-      continue
-    }
-    const answers =
-      entry.targets.length > 0
-        ? resolveWikiLinks(entry.targets, { fromPath: path, root }, fs)
-        : new Map()
-    const to: { target: string; path: string }[] = []
-    for (const [target, answer] of answers) {
-      if (answer.found && answer.path && answer.path !== path) {
-        to.push({ target, path: answer.path })
+/**
+ * Resolved outgoing edges for every indexed file, computing what is missing.
+ *
+ * Chained per root. The panel and the graph usually open together, and each
+ * builds walks the tree and writes one shared IndexState — left unchained they
+ * interleave across their awaits and read a half-written file set. The second
+ * caller waits and then finds the memo warm.
+ */
+function refreshEdges(
+  root: string,
+  fs: VaultFs,
+): Promise<Map<string, { target: string; path: string }[]>> {
+  const previous = building.get(root) ?? Promise.resolve(new Map())
+  const next = previous
+    .catch(() => new Map())
+    .then(async () => {
+      const state = await refreshFiles(root, fs)
+      const out = new Map<string, { target: string; path: string }[]>()
+      for (const [path, entry] of state.files) {
+        const done = state.edges.get(path)
+        if (done && done.mtimeMs === entry.mtimeMs) {
+          out.set(path, done.to)
+          continue
+        }
+        const answers =
+          entry.targets.length > 0
+            ? await resolveWikiLinks(entry.targets, { fromPath: path, root }, fs)
+            : new Map()
+        const to: { target: string; path: string }[] = []
+        for (const [target, answer] of answers) {
+          if (answer.found && answer.path && answer.path !== path) {
+            to.push({ target, path: answer.path })
+          }
+        }
+        state.edges.set(path, { mtimeMs: entry.mtimeMs, to })
+        out.set(path, to)
       }
-    }
-    state.edges.set(path, { mtimeMs: entry.mtimeMs, to })
-    out.set(path, to)
-  }
-  return out
+      return out
+    })
+  building.set(root, next)
+  return next.finally(() => {
+    if (building.get(root) === next) building.delete(root)
+  })
 }
 
 export interface WikiBacklink {
@@ -217,9 +244,13 @@ export interface WikiBacklink {
  * note itself) are answers too, but they point a note at itself — excluded,
  * same as the graph, because a panel of a note linking to itself is noise.
  */
-export function wikiBacklinks(root: string, path: string, fs: VaultFs): WikiBacklink[] {
+export async function wikiBacklinks(
+  root: string,
+  path: string,
+  fs: VaultFs,
+): Promise<WikiBacklink[]> {
   if (!path) return []
-  const edges = refreshEdges(root, fs)
+  const edges = await refreshEdges(root, fs)
   const out: WikiBacklink[] = []
   const seen = new Set<string>()
   for (const [source, list] of edges) {
@@ -264,8 +295,8 @@ export const MAX_GRAPH_NODES = 400
  * orphans are half the point of a graph), every resolved inter-note link an
  * edge. Self-links are dropped, matching the backlinks panel.
  */
-export function wikiGraph(root: string, fs: VaultFs): WikiGraph {
-  const edges = refreshEdges(root, fs)
+export async function wikiGraph(root: string, fs: VaultFs): Promise<WikiGraph> {
+  const edges = await refreshEdges(root, fs)
   const nodes: WikiGraphNode[] = []
   const state = indexFor(root)
   const totalNotes = state.files.size
@@ -293,4 +324,16 @@ export function wikiGraph(root: string, fs: VaultFs): WikiGraph {
   // a cut graph is a slice: say so instead of letting a 400-of-3000 draw
   // read as the whole vault
   return { nodes, edges: out, truncated: totalNotes > nodes.length, totalNotes }
+}
+
+/**
+ * Start a build without waiting for it.
+ *
+ * Called once the vault root is known, so the panel and the graph usually meet
+ * a warm index instead of waiting out a cold build. The mtime memo means a
+ * later request pays only for what changed.
+ */
+export function warmWikiIndex(root: string, fs: VaultFs = nodeVaultFs()): void {
+  if (!root) return
+  void refreshEdges(root, fs).catch(() => undefined)
 }
