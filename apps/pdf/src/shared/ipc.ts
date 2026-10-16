@@ -896,7 +896,45 @@ export interface ImageSearchResponse {
 }
 
 /** API exposed by preload to the renderer (window.pdfApi) */
+import type { FeatureRecord, ScriptRunOutcome } from '@genoffice/agent-core'
+
 export interface PdfApi {
+  /**
+   * The feature registry the shell keeps, read-only: the editor binds the shared
+   * slot renderer to it. Same channel the shell's own panels use.
+   */
+  featuresList(): Promise<FeatureRecord[]>
+  /**
+   * Run a script feature read-only against one document. There is deliberately no
+   * apply here: writing stays the user's decision in the feature panel.
+   */
+  featuresRun(
+    id: string,
+    request: { path: string; input?: Record<string, unknown>; timeoutMs?: number },
+  ): Promise<ScriptRunOutcome>
+  /** the knowledge base's files: the starred corpus and every source a knowledge feature registered */
+  kbList(): Promise<
+    Array<{
+      path: string
+      folder: string
+      folderPath: string
+      name: string
+      ext: string
+      sizeBytes: number
+      sourceId?: string
+      sourceLabel?: string
+    }>
+  >
+  /** full-text search over the enabled corpus */
+  kbSearch(query: {
+    q: string
+    limit?: number
+  }): Promise<Array<{ path: string; name: string; ext: string; folder: string; snippet: string }>>
+  /** one page of a corpus file's parsed text (path must be in kbList) */
+  kbRead(
+    path: string,
+    offset: number,
+  ): Promise<{ text: string; totalChars: number; offset: number }>
   /** Take the pdf path pending for this view (queued at tab creation); null if none */
   consumePending(): Promise<string | null>
   /** open any shell-routed document path (an AI answer's filenav citation) */

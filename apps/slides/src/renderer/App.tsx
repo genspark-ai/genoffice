@@ -113,6 +113,7 @@ import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
 import { t, useI18n } from './i18n/locale'
 import { AiPanel } from './ai/AiPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import { ChartDataDialog } from './components/ChartDataDialog'
 import type { BrushFormat } from './format-brush'
 import { isTextUndoTarget, shouldRouteHistoryToDeck } from './undo-routing'
@@ -485,6 +486,11 @@ export function App() {
   const [showFormat, setShowFormat] = useState(false)
   const [showBgFormat, setShowBgFormat] = useState(false)
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
+  /** a slot's press hands its prompt to this editor's own assistant */
+  const askFromSlot = useCallback((prompt: string): void => {
+    setShowAi(true)
+    setAiPreset({ text: prompt, nonce: Date.now(), autoRun: true })
+  }, [])
   const [aiPreset, setAiPreset] = useState<{
     text: string
     nonce: number
@@ -3565,6 +3571,8 @@ export function App() {
               !aiSidebarEnabled && !showAi ? ' ai-dock-off' : ''
             }`}
           >
+            {/* features a mod added to this editor's own dock */}
+            <EditorSlots place="editor.side" onAsk={askFromSlot} />
             {/* always mounted once settings load: collapse must not drop state or in-flight runs */}
             {aiSettings ? (
               <AiPanel

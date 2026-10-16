@@ -1,0 +1,343 @@
+/* ── slots: chrome a feature draws, painted by the host ──
+   Every color is a shared token, so a slot follows light/dark, text scaling and
+   the shell's accent without knowing about any of them. */
+
+.slot-place {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.slot-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* a sidebar row reads like the built-in nav items */
+.slot-place--home-sidebar {
+  margin-top: 2px;
+}
+.slot-place--home-sidebar .slot-button {
+  justify-content: flex-start;
+  width: 100%;
+}
+.slot-place--home-sidebar .slot-text {
+  padding: 0 10px;
+}
+
+/* an editor rail: a narrow section in the editor's own side dock */
+.slot-place--editor-side {
+  width: 220px;
+  min-width: 180px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 12px 10px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+/* a card sits in the hero row beside the built-in quick cards */
+.slot-place--home-card {
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+.slot-place--home-card:hover {
+  border-color: var(--border-hover);
+}
+
+/* ── elements ── */
+.slot-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.slot-text--muted {
+  color: var(--text-muted);
+}
+.slot-text--danger {
+  color: var(--danger);
+}
+.slot-text--caption {
+  font-size: 11.5px;
+}
+.slot-markdown > * {
+  margin: 0;
+}
+.slot-divider {
+  width: 100%;
+  height: 1px;
+  margin: 2px 0;
+  border: none;
+  background: var(--border-subtle);
+}
+.slot-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.slot-button:hover {
+  background: var(--hover);
+  border-color: var(--border-hover);
+}
+.slot-button--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.slot-button--primary:hover {
+  background: var(--accent-hover);
+}
+.slot-button:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.slot-input {
+  display: flex;
+  gap: 8px;
+}
+.slot-input-field,
+.slot-select-field {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.slot-input-field:focus,
+.slot-select-field:focus {
+  border-color: var(--accent);
+}
+.slot-select {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.slot-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.slot-list-item:hover:not(:disabled) {
+  border-color: var(--border-subtle);
+  background: var(--hover);
+}
+
+/* ── a feature's own full panel ── */
+.slot-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 28px 36px 24px;
+  background: var(--bg-content);
+}
+.slot-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.slot-panel-titles {
+  min-width: 0;
+}
+.slot-panel-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.slot-panel-sub {
+  margin: 6px 0 0;
+  max-width: 780px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.slot-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.slot-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.slot-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+/* ── the native view slot (K5): the host's frame around a real view ──
+   Only the frame is painted here: the shell mounts a WebContentsView over the
+   body, and the body keeps its tint for the moment before the view attaches. */
+.slot-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.slot-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-subtle);
+}
+.slot-view-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+.slot-view-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.slot-view-url {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.slot-view-body {
+  position: relative;
+  flex: 1;
+  min-height: 160px;
+  background: var(--surface-subtle);
+}
+.slot-view-placeholder {
+  position: absolute;
+  inset: 16px;
+  border-radius: 8px;
+  background: var(--hover);
+  animation: slot-view-wait 1.4s ease-in-out infinite;
+}
+@keyframes slot-view-wait {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slot-view-placeholder {
+    animation: none;
+  }
+}
+
+/* ── the overlay slot (K4): a screen-only layer ──
+   Inert: no pointer events, so every press reaches the app underneath. The tones
+   below are the only colours an overlay can use, and they are the shell's tokens. */
+.slot-overlay-host {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.slot-overlay {
+  position: absolute;
+  inset: 0;
+}
+.slot-overlay-svg {
+  display: block;
+}
+.slot-overlay-frame {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.slot-overlay-frame--dashed,
+.slot-overlay-line--dashed {
+  stroke-dasharray: 6 4;
+}
+.slot-overlay-line {
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.slot-overlay-dot {
+  fill: currentColor;
+}
+.slot-overlay-label {
+  fill: currentColor;
+  font-size: 11px;
+  font-weight: 600;
+}
+.slot-overlay-tone-accent {
+  color: var(--accent);
+}
+.slot-overlay-tone-muted {
+  color: var(--text-tertiary);
+}
+.slot-overlay-tone-success {
+  color: var(--success);
+}
+.slot-overlay-tone-danger {
+  color: var(--danger);
+}

@@ -17,12 +17,14 @@ import {
   AgentLoop,
   composeSkills,
   createKnowledgeBaseSkill,
+  createModsSkill,
   streamText,
   type AgentImage,
   type KbFileInfo,
   type MindMapTreeNode,
 } from '@genoffice/agent-core'
 import { redactTextBetween, type RedactableNode } from './redact-view'
+import { currentEditorFeatures } from '../mods/EditorSlots'
 import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -854,6 +856,13 @@ export function AiPanel({
           () => mediaAnalysisAvailable(settingsRef.current, gskLoggedInRef.current),
         ),
         createFilesSkill(availableAttachments),
+        // the mod features the user added: the assistant may plan with them,
+        // and the writing half stays with the user in the feature panel
+        createModsSkill({
+          snapshot: currentEditorFeatures,
+          list: () => window.desktop.featuresList(),
+          dryRun: (id, request) => window.desktop.featuresRun(id, request),
+        }),
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {

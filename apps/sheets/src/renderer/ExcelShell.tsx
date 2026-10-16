@@ -1,5 +1,5 @@
 import type { IFunctionInfo } from '@univerjs/engine-formula'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
@@ -75,6 +75,7 @@ import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/char
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { AttachmentMeta } from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import { AiSelectionAsk } from './ai/AiSelectionAsk'
 import type { SelectionAskAnchor } from './ai/selection-ask'
 import {
@@ -561,9 +562,14 @@ export function ExcelShell({
   useEffect(() => {
     rememberAiPanelOpen('ai-sheets-show-ai', isCopilotOpen)
   }, [isCopilotOpen])
-  // the "show the AI sidebar" setting off hides the copilot rail (soft hide):
-  // an explicit AI action (ribbon run, toggle) still opens the panel, and
-  // closing it returns to hidden — no dead affordances, no invisible runs
+  /** a slot's press opens the copilot and hands it the prompt */
+  const askFromSlot = useCallback(
+    (prompt: string): void => {
+      setIsCopilotOpen(true)
+      onPromptChange(prompt)
+    },
+    [onPromptChange],
+  )
   const [showFormatCells, setShowFormatCells] = useState(false)
   const [axisSizeTarget, setAxisSizeTarget] = useState<'row' | 'col' | null>(null)
   const [showLinkDialog, setShowLinkDialog] = useState(false)
@@ -956,6 +962,8 @@ export function ExcelShell({
 
       {/* AI panel docks on the left, full height under the ribbon (unified with docs) */}
       <div className="sheet-body">
+        {/* features a mod added to this editor's own dock */}
+        <EditorSlots place="editor.side" onAsk={askFromSlot} />
         <AiChatPanel
           isOpen={isCopilotOpen}
           hideRail={!aiSidebarEnabled}

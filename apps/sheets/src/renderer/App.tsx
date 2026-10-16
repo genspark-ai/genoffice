@@ -137,11 +137,15 @@ import {
 } from './table-design-actions'
 
 import {
+  createKnowledgeBaseSkill,
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
   composeSkills,
+  createModsSkill,
   type AgentImage,
+  type KbFileInfo,
 } from '@genoffice/agent-core'
+import { currentEditorFeatures } from './mods/EditorSlots'
 import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
 import { type WorkbookOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import {
@@ -1369,6 +1373,21 @@ export function App({
   /** true once any tool of the run mutated the workbook */
   const runMutatedRef = useRef(false)
 
+  // the knowledge base's files (the shell main assembles the corpus of sources);
+  // refreshed on mount, so a new source or star is answerable next send
+  const kbFilesRef = useRef<KbFileInfo[]>([])
+  const refreshKbFiles = (): void => {
+    if (typeof window.desktopApi?.kbList !== 'function') return
+    void window.desktopApi
+      .kbList()
+      .then((files) => {
+        kbFilesRef.current = files
+      })
+      .catch(() => undefined)
+  }
+  useEffect(() => {
+    refreshKbFiles()
+  }, [])
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
@@ -1377,6 +1396,24 @@ export function App({
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
         createFilesSkill(availableAttachments),
+        // the mod features the user added: the assistant may plan with them, and
+        // the writing half stays with the user in the feature panel
+        // the knowledge base: the user's starred files plus the sources their
+        // knowledge features registered; search and page reads go through the base
+        ...(typeof window.desktopApi?.kbList === 'function'
+          ? [
+              createKnowledgeBaseSkill({
+                listFiles: () => kbFilesRef.current,
+                search: (query, limit) => window.desktopApi.kbSearch({ q: query, limit }),
+                read: (path, offset) => window.desktopApi.kbRead(path, offset),
+              }),
+            ]
+          : []),
+        createModsSkill({
+          snapshot: currentEditorFeatures,
+          list: () => window.desktopApi.featuresList(),
+          dryRun: (id, request) => window.desktopApi.featuresRun(id, request),
+        }),
         createMergeSkill({
           getAttachments: availableAttachments,
           mergePaths: (paths) => {

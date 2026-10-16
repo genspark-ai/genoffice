@@ -165,6 +165,9 @@ import {
   authorizeMcpDocWrite,
 } from '../../../docs/src/main/docs-main'
 import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
+import { registerFeaturesIpc } from './features-ipc'
+import { registerFeaturesView } from './features-view'
+import { installSaveGuard } from './feature-hooks'
 import { blankPdfBuffer } from '../../../pdf/src/main/blank-pdf'
 import {
   applyMcpSettings,
@@ -342,12 +345,19 @@ import { FileIndexer } from './file-index/indexer'
 import { FileIndexStore } from './file-index/store'
 import { normalizeFileSearchSettings, probeDecision, SearchReranker } from './file-index/rerank'
 import {
+  assembleCorpus,
   createKnowledgeDocument,
+  indexableCorpusPaths,
+  KB_STARRED_SOURCE_ID,
   listKnowledgeFiles,
   parseKbCreateRequest,
   readKnowledgeFilePage,
   searchKnowledgeBase,
+  sourcesFromFeatures,
+  type KbSource,
 } from './knowledge-base'
+import { listKnowledgeEntries, pathForEntry } from './feature-knowledge-host'
+import { listFeatures } from './feature-store'
 import { createFileViaCli } from './mcp/headless-cli'
 import { sanitizeFileBase } from './mcp/tools/document-tools'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
@@ -552,9 +562,30 @@ const publishOpenDocumentsIfOwner = (paths: readonly string[]) => {
   if (ownsOpenDocumentsRegistry) publishOpenDocuments(OPEN_DOCUMENTS_PATH(), paths)
 }
 
+// The hooks may see a save before it happens. Installed here, before any app
+// registers its handlers, so every save-ish channel goes through the guard; with
+// no document.will-save hook the guard calls straight through.
+installSaveGuard(ipcMain)
+
+/** the feature registry's handle, so hooks can be told about document events */
+let featuresIpc: {
+  emitHook(event: 'document.opened' | 'document.closed', path: string): void
+} | null = null
+let lastOpenFiles = new Set<string>()
+
 /** every open file: the shell's tabs plus the detached editor windows */
 function publishAllOpenDocuments(): void {
-  publishOpenDocumentsIfOwner([...(tabManager?.openFilePaths() ?? []), ...detachedFilePaths()])
+  const paths = [...(tabManager?.openFilePaths() ?? []), ...detachedFilePaths()]
+  publishOpenDocumentsIfOwner(paths)
+  // the hook kind's event source: what opened or closed since the last publish
+  const current = new Set(paths)
+  for (const path of current) {
+    if (!lastOpenFiles.has(path)) featuresIpc?.emitHook('document.opened', path)
+  }
+  for (const path of lastOpenFiles) {
+    if (!current.has(path)) featuresIpc?.emitHook('document.closed', path)
+  }
+  lastOpenFiles = current
 }
 setDetachedChangedListener(publishAllOpenDocuments)
 
@@ -3622,6 +3653,48 @@ let fileIndexStore: FileIndexStore | null = null
 let fileIndexer: FileIndexer | null = null
 let searchReranker: SearchReranker | null = null
 
+// ── the knowledge base's sources (knowledge-base.ts): the starred corpus plus
+// every folder/file source a knowledge feature registers; per-source enabled
+// state persists in app settings, and a source whose path is missing stays
+// listed, flagged, and never searched (§9.5.9) ──
+function readKbDisabledSources(): Set<string> {
+  const saved = readAppSettings(APP_SETTINGS_PATH()).kbSources
+  const list =
+    saved && typeof saved === 'object' ? (saved as { disabled?: unknown }).disabled : null
+  return new Set(
+    Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [],
+  )
+}
+
+/** the corpus as of now: the starred files and every enabled knowledge source */
+function kbCorpus(): { sources: KbSource[]; files: ReturnType<typeof listKnowledgeFiles> } {
+  const dir = join(app.getPath('userData'), 'features')
+  const features = existsSync(dir) ? listFeatures(dir) : []
+  const sources = sourcesFromFeatures(features, readKbDisabledSources())
+  return assembleCorpus(readStarredFiles(), sources, kbEntriesOf, kbPathOfEntry)
+}
+
+/** the mod host's reader, bridged to the corpus shape; an unreadable source
+ *  contributes nothing rather than breaking the whole corpus */
+function kbEntriesOf(source: KbSource): readonly { name: string; bytes: number }[] {
+  try {
+    if (!source.path) return []
+    return listKnowledgeEntries({
+      source: source.kind === 'file' ? 'file' : 'folder',
+      path: source.path,
+    })
+  } catch {
+    return []
+  }
+}
+
+function kbPathOfEntry(source: KbSource, entry: string): string {
+  return pathForEntry(
+    { source: source.kind === 'file' ? 'file' : 'folder', path: source.path! },
+    entry,
+  )
+}
+
 function readFileSearchSettings(): FileSearchSettings {
   return normalizeFileSearchSettings(readAppSettings(APP_SETTINGS_PATH()).fileSearch)
 }
@@ -3637,7 +3710,14 @@ function ensureFileIndexer(): FileIndexer | null {
   }
   fileIndexer = new FileIndexer(fileIndexStore, extractWorkerPath, {
     roots: () => folderRootPaths().filter((root) => existsSync(root)),
-    extraPaths: () => [...readRecentFiles(), ...readStarredFiles()],
+    // the corpus rides the index like the starred files do, so its files are
+    // searchable with the same freshness rules (§9.5.3); a names-only source
+    // stays out — its files are listed and readable, never searched
+    extraPaths: () => [
+      ...readRecentFiles(),
+      ...readStarredFiles(),
+      ...indexableCorpusPaths(kbCorpus()),
+    ],
   })
   return fileIndexer
 }
@@ -4587,11 +4667,39 @@ function registerHomeIpc(): void {
     }
   })
 
-  // Knowledge-base channel: the AI-side read access to the reader's starred
-  // files (docs wires these into its panel; see knowledge-base.ts). Path
-  // arguments are validated against the starred set — a corpus file is the
-  // only thing a knowledge tool may read.
-  ipcMain.handle('kb:list', (): unknown => listKnowledgeFiles(readStarredFiles()))
+  // Knowledge-base channel: the AI-side read access to the corpus of sources —
+  // the reader's starred files plus every folder/file source a knowledge
+  // feature registers (see knowledge-base.ts). Path arguments are validated
+  // against the assembled corpus — a corpus file is the only thing a knowledge
+  // tool may read. Per-source controls live here too: enable/disable persists
+  // in app settings, a missing path is flagged and never searched (§9.5.9).
+  ipcMain.handle('kb:list', (): unknown => kbCorpus().files)
+
+  ipcMain.handle('kb:sources', (): unknown => kbCorpus().sources)
+
+  ipcMain.handle('kb:source-set-enabled', (_event, raw: unknown): unknown => {
+    const request = (raw && typeof raw === 'object' ? raw : {}) as {
+      id?: unknown
+      enabled?: unknown
+    }
+    const id = typeof request.id === 'string' ? request.id : ''
+    if (!id || id === KB_STARRED_SOURCE_ID) {
+      throw new Error(
+        'only a registered source can be disabled (the starred corpus is the built-in one)',
+      )
+    }
+    const disabled = readKbDisabledSources()
+    if (request.enabled === false) disabled.add(id)
+    else disabled.delete(id)
+    writeAppSetting(APP_SETTINGS_PATH(), 'kbSources', { disabled: [...disabled] })
+    ensureFileIndexer()?.refresh()
+    return kbCorpus().sources
+  })
+
+  ipcMain.handle('kb:reindex', (): unknown => {
+    ensureFileIndexer()?.refresh()
+    return ensureFileIndexer()?.progress() ?? { indexed: 0, pending: 0, scanning: false }
+  })
 
   ipcMain.handle('kb:search', (_event, raw: unknown): unknown => {
     const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; limit?: unknown }
@@ -4601,7 +4709,7 @@ function registerHomeIpc(): void {
     const store = fileIndexStore
     if (!q.trim() || !store) return []
     ensureFileIndexer()?.refreshIfStale(60_000)
-    const starred = readStarredFiles()
+    const corpus = kbCorpus().files.map((file) => file.path)
     const hits = searchKnowledgeBase(
       (qq, pool) =>
         store.search(qq, { limit: pool }).hits.map((h) => ({
@@ -4611,7 +4719,7 @@ function registerHomeIpc(): void {
           snippetText: (h.snippet ?? []).map((part) => part.text).join(''),
         })),
       q,
-      starred,
+      corpus,
       Math.min(limit, 20),
     )
     return hits
@@ -4625,7 +4733,7 @@ function registerHomeIpc(): void {
     const path = typeof req.path === 'string' ? req.path : ''
     const offsetRaw = Number(req.offset)
     const offset = Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0
-    if (!path || !readStarredFiles().includes(path)) {
+    if (!path || !kbCorpus().files.some((file) => file.path === path)) {
       throw new Error('path is not in the knowledge base')
     }
     return readKnowledgeFilePage(path, offset)
@@ -6600,6 +6708,16 @@ app.on('second-instance', (_event, argv, _cwd, additionalData) => {
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
 registerAiIpc()
+// the mod assistant's registry: records only, nothing executes a feature yet
+featuresIpc = registerFeaturesIpc({
+  dir: join(app.getPath('userData'), 'features'),
+  // the pack dialogs belong to the shell window
+  window: () => shellWindow,
+  // a document open in a tab belongs to that editor: an apply refuses it
+  isDocumentOpen: (path) => (tabManager?.openFilePaths() ?? []).includes(path),
+})
+// the native view slot mounts real views into the shell window
+registerFeaturesView({ window: () => shellWindow })
 ipcMain.handle('ai:open-model-settings', () => {
   const win = shellWindow
   if (!win || win.isDestroyed()) return

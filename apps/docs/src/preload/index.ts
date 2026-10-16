@@ -20,6 +20,14 @@ import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 
 const api: DesktopApi = {
+  // the shell's feature registry, read-only: the editor draws the slots it holds
+  featuresList: () => ipcRenderer.invoke('features:list'),
+  // read-only: the assistant may see what a script would do, never write
+  featuresKnowledgeList: (id: string) => ipcRenderer.invoke('features:knowledge-list', { id }),
+  featuresKnowledgeRead: (id: string, entry: string) =>
+    ipcRenderer.invoke('features:knowledge-read', { id, entry }),
+  featuresRun: (id: string, request: unknown) =>
+    ipcRenderer.invoke('features:run', { id, ...(request as Record<string, unknown>) }),
   getLanguage: () => ipcRenderer.invoke('app:get-language'),
   getSystemLocale: () => ipcRenderer.invoke('docs:system-locale'),
   onLanguageChanged: (handler) => {

@@ -31,3 +31,24 @@ export function normalizeMarkdownTheme(value: unknown): MarkdownTheme {
     ? (String(value) as MarkdownTheme)
     : 'default'
 }
+
+/** Dark themes flip the paper regardless of the light/dark document theme.
+ *  Blubook stays light: its signature is a light paper with deep-blue code fences. */
+export function isMarkdownThemeDark(theme: MarkdownTheme): boolean {
+  return theme === 'notion-dark' || theme === 'drake-dark' || theme === 'nord'
+}
+
+/**
+ * Which paper the editor shows, from the two people who may ask: the user's
+ * ribbon pick wins outright; only a `default` pick defers to the mod
+ * appearance (a palette id, or a custom object that renders as 'custom').
+ */
+export function resolvePaperTheme(
+  user: MarkdownTheme,
+  mod: MarkdownTheme | import('@genoffice/agent-core').MarkdownCustomTheme | undefined,
+): MarkdownTheme | 'custom' {
+  if (user !== 'default') return user
+  if (typeof mod === 'string' && mod !== 'default') return mod
+  if (mod && typeof mod === 'object') return 'custom'
+  return 'default'
+}

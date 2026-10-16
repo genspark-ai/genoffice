@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeMarkdownTheme } from '../src/shared/markdown-theme'
+import { isMarkdownThemeDark, normalizeMarkdownTheme } from '../src/shared/markdown-theme'
 
 describe('normalizeMarkdownTheme', () => {
   it('passes known ids through', () => {
@@ -17,5 +17,17 @@ describe('normalizeMarkdownTheme', () => {
     expect(normalizeMarkdownTheme('solarized')).toBe('default')
     expect(normalizeMarkdownTheme(42)).toBe('default')
     expect(normalizeMarkdownTheme({})).toBe('default')
+  })
+})
+
+describe('isMarkdownThemeDark', () => {
+  it('classifies the dark palettes', () => {
+    expect(isMarkdownThemeDark('nord')).toBe(true)
+    expect(isMarkdownThemeDark('notion-dark')).toBe(true)
+    expect(isMarkdownThemeDark('drake-dark')).toBe(true)
+    expect(isMarkdownThemeDark('blubook')).toBe(false) // light paper, deep-blue code fences
+    expect(isMarkdownThemeDark('notion-light')).toBe(false)
+    expect(isMarkdownThemeDark('newsprint')).toBe(false)
+    expect(isMarkdownThemeDark('default')).toBe(false)
   })
 })

@@ -45,6 +45,7 @@ import { wikiFragmentPosition } from './editor/wikilink'
 import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
 import type { MarkdownTheme } from '../shared/markdown-theme'
+import { applyMarkdownTheme } from './mods/EditorSlots'
 import { ImageHostDialog } from './components/ImageHostDialog'
 import { RedactMenu } from './components/RedactMenu'
 import { OutlinePane } from './components/OutlinePane'
@@ -58,6 +59,7 @@ import { TableMenu } from './components/TableMenu'
 import { FrontmatterPanel } from './components/FrontmatterPanel'
 import { AiAskPopover } from './components/AiAskPopover'
 import { AiPanel, GensparkMark, type AiPreset, type MarkdownAiDeps } from './ai/AiPanel'
+import { EditorSlots } from './mods/EditorSlots'
 import { EDIT_QUEUE_MAX, selectionForAnchor, type EditQueueItem } from './ai/edit-queue'
 import { addQueueAnchor, clearQueueAnchors, removeQueueAnchors } from './editor/aiQueueAnchors'
 import { DOCX_MAX_IMAGE_PX, exportDocxBytes } from './export/docxExport'
@@ -163,6 +165,11 @@ export default function App() {
   const [fmText, setFmText] = useState('')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [aiOpen, setAiOpen] = useState(() => aiPanelInitiallyOpen('mdapp.showAi'))
+  /** a slot's press hands its prompt to this editor's own assistant */
+  const askFromSlot = useCallback((prompt: string): void => {
+    setAiOpen(true)
+    setAiPreset({ text: prompt, nonce: Date.now() })
+  }, [])
   // the sidebar switch is a soft hide; it closes the panel when it turns off
   const aiSidebarEnabled = useAiSidebarEnabled(setAiOpen)
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
@@ -198,9 +205,9 @@ export default function App() {
   }, [])
   const pickMarkdownTheme = (theme: MarkdownTheme): void => {
     setMdTheme(theme)
-    // the boot path sets this once; live picks re-scope it here
-    if (theme === 'default') document.documentElement.removeAttribute('data-markdown-theme')
-    else document.documentElement.setAttribute('data-markdown-theme', theme)
+    // the boot path applies once; live picks re-scope through the one writer,
+    // which also re-applies the mod appearance when the pick returns to default
+    applyMarkdownTheme(theme)
     window.markdownApi.setMarkdownTheme(theme).catch(() => {})
   }
   // off by default: it takes over the editor's right-click menu, and a reader
@@ -1184,6 +1191,8 @@ export default function App() {
             !aiSidebarEnabled && !aiOpen ? ' ai-dock-off' : ''
           }`}
         >
+          {/* features a mod added to this editor's own dock */}
+          <EditorSlots place="editor.side" onAsk={askFromSlot} mdTheme={mdTheme} />
           {!aiOpen && aiSidebarEnabled && (
             <button
               className="ai-rail"

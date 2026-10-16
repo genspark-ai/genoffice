@@ -53,10 +53,7 @@ export function InkLayer({
     <div className="ink-layer" style={{ width, height }}>
       <canvas ref={canvasRef} style={{ width, height }} />
       {laser && (
-        <div
-          className="ink-laser"
-          style={{ left: laser.x * width, top: laser.y * height }}
-        />
+        <div className="ink-laser" style={{ left: laser.x * width, top: laser.y * height }} />
       )}
     </div>
   )

@@ -1,0 +1,531 @@
+/* ── mod assistant: the feature registry's chat surface ──
+   Chrome only, in the home screen's own language: a hero line, the conversation
+   in a card, the registry beside it. Every color is a shared token, so light and
+   dark follow the shell. */
+
+.mods-assistant {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px 36px 24px;
+  background: var(--bg-content);
+  overflow: hidden;
+}
+
+/* ── hero ── */
+.mods-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.mods-hero-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mods-hero-text {
+  min-width: 0;
+}
+.mods-hero-title {
+  margin: 3px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.mods-hero-sub {
+  margin: 6px 0 0;
+  max-width: 780px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ── body: conversation + registry ── */
+.mods-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+}
+
+.mods-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.mods-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 6px;
+}
+.mods-intro {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 12px;
+  max-width: 420px;
+  text-align: center;
+}
+.mods-intro-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mods-intro-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── messages ── */
+.mods-msg {
+  max-width: 88%;
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: normal;
+  word-break: break-word;
+}
+.mods-msg-user {
+  align-self: flex-end;
+  padding: 9px 13px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.mods-msg-reply {
+  align-self: flex-start;
+  color: var(--text);
+}
+.mods-msg-error {
+  color: var(--danger);
+}
+.mods-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.mods-tool-note {
+  padding: 3px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 99px;
+  background: var(--surface-subtle);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.mods-composer {
+  flex-shrink: 0;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+/* ── registry ── */
+.mods-registry {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.mods-registry-head {
+  flex-shrink: 0;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mods-registry-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mods-registry-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  list-style: none;
+}
+.mods-feature {
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface);
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+.mods-feature:hover {
+  border-color: var(--border-hover);
+  background: var(--hover);
+}
+.mods-feature-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mods-feature-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mods-feature-kind {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+}
+.mods-feature-desc {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.mods-feature-id {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.mods-registry-empty {
+  margin: 0;
+  padding: 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+/* the registry moves under the conversation when the window is narrow */
+@media (max-width: 1040px) {
+  .mods-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .mods-registry {
+    max-height: 220px;
+  }
+}
+
+/* ── composer ──
+   The shared AiComposer markup (.ai-*) is styled by each editor app's own
+   stylesheet; the shell never had one, so the home panel brings its own through
+   the shell tokens. */
+
+.mods-assistant .ai-input-box {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: border-color 0.12s;
+}
+.mods-assistant .ai-input-box:focus-within {
+  border-color: var(--accent);
+}
+.mods-assistant .ai-input-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  max-height: 160px;
+  margin: 0;
+  padding: 12px 14px 2px;
+  overflow-y: auto;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+  resize: none;
+  outline: none;
+}
+.mods-assistant .ai-input-box textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.mods-assistant .ai-input-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px 12px;
+}
+.mods-assistant .ai-input-hint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.mods-assistant .ai-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 76px;
+  height: 30px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mods-assistant .ai-send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.mods-assistant .ai-send-btn:disabled {
+  background: var(--surface-subtle);
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.mods-assistant .ai-stop-btn {
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+.mods-assistant .ai-stop-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+/* ── scripts: a feature the user can try, then deliberately apply ──
+   Two steps on purpose: a dry run shows the plan, and only then does Apply
+   become available. The main process still checks both gates. */
+.mods-scripts {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.mods-scripts-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.mods-scripts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mods-script {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.mods-script-pick {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.mods-script-pick:focus {
+  border-color: var(--accent);
+}
+.mods-script-actions {
+  display: flex;
+  gap: 8px;
+}
+.mods-script-btn {
+  flex: 1;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mods-script-btn:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--border-hover);
+}
+.mods-script-btn:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.mods-script-btn--apply:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.mods-script-btn--apply:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+.mods-script-plan {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+.mods-script-plan--done {
+  background: var(--success-bg);
+}
+.mods-script-count {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.mods-script-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mods-script-lines li {
+  padding: 2px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+.mods-script-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+.mods-script-result {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+/* ── hooks: what a feature observed, as a record rather than a control ── */
+.mods-hook {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.mods-hook-when {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
+.mods-hook-line {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+/* ── packs: what a file declares before it is installed ── */
+.mods-registry-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.mods-ghost-btn {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mods-ghost-btn:hover {
+  background: var(--hover);
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.mods-pack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.mods-pack-count {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.mods-pack-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mods-pack-lines > li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* the kind badge is a pill, not a row: keep it to its own width inside a pack line */
+.mods-pack-lines .mods-feature-kind {
+  align-self: flex-start;
+}

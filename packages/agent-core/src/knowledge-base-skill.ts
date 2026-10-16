@@ -2,13 +2,18 @@ import type { AgentToolDef } from './types'
 import type { AgentSkill } from './skill'
 
 /**
- * The reader's starred files (the star corpus) as a searchable, readable body.
+ * The knowledge base as one corpus of sources, askable and citable.
  *
- * The skill is storage-agnostic on purpose: deps inject the three main-process
- * operations (list / search / read), so it carries no electron or index
- * dependency and is testable with mocks. The shell's knowledge-base gateway
- * (apps/shell/src/main/knowledge-base.ts) is the intended backing; the docs
- * panel is the first consumer.
+ * The corpus is a set of sources: the reader's starred files (the built-in
+ * source) plus the folder and file sources a knowledge feature registers
+ * (mods-implementation-report.md §9). Retrieval never cares where a source came
+ * from: the skill sees one file list and one search, and the host assembles the
+ * corpus and owns per-source controls.
+ *
+ * The skill is storage-agnostic on purpose: deps inject the main-process
+ * operations (list / sources / search / read), so it carries no electron or
+ * index dependency and is testable with mocks. The shell's knowledge-base
+ * gateway (apps/shell/src/main/knowledge-base.ts) is the intended backing.
  *
  * Citation contract: when an answer draws on corpus content it must cite the
  * source as [file name](filenav:///abs/path) — the same primitive the editors'
@@ -28,6 +33,34 @@ export interface KbFileInfo {
   name: string
   ext: string
   sizeBytes: number
+  /** the source this file belongs to, when the host tracks sources */
+  sourceId?: string
+  /** the source's display label, when the host tracks sources */
+  sourceLabel?: string
+}
+
+/** One source of the corpus, as the host reports it (the Ask panel's list). */
+export interface KbSourceInfo {
+  /** 'starred' for the built-in source, else the feature id */
+  id: string
+  kind: 'starred' | 'folder' | 'file'
+  label: string
+  /** absolute path of a folder or file source; absent for starred */
+  path?: string
+  /** a disabled source is kept, never searched, and named in the coverage */
+  enabled: boolean
+  /** the path does not exist on this machine: flagged, never searched */
+  missing?: boolean
+  /**
+   * how the source is indexed; 'names' means its files are listed and readable
+   * but their content is not in the search index, so a full-text search cannot
+   * hit them — the coverage line says so
+   */
+  index?: 'full-text' | 'names'
+  /** files the source contributes to the corpus right now */
+  documents: number
+  /** their total size, for the Sources section */
+  bytes?: number
 }
 
 export interface KbSearchHit {
@@ -35,7 +68,6 @@ export interface KbSearchHit {
   name: string
   ext: string
   folder: string
-  /** plain text around the first match (marks stripped) */
   snippet: string
 }
 
@@ -49,6 +81,12 @@ export interface KbReadPage {
 export interface KnowledgeBaseDeps {
   /** the corpus as of this turn (a synchronous snapshot; the panel refreshes it on the starred-list IPC) */
   listFiles(): KbFileInfo[]
+  /**
+   * the source registry behind the corpus, for the context line and the search
+   * coverage; absent means the host tracks no sources and every line that needs
+   * them is skipped
+   */
+  sources?(): KbSourceInfo[]
   search(query: string, limit: number): Promise<KbSearchHit[]>
   /** one page of parsed text; path must be a corpus file */
   read(path: string, offset: number): Promise<KbReadPage>
@@ -67,8 +105,10 @@ export function formatKbSize(bytes: number): string {
 }
 
 const KB_SYSTEM_PROMPT = `## Knowledge base
-The user's starred files form a knowledge base; each turn's context
-lists them (index | folder | file | type | size, with the absolute path).
+The user's knowledge base is a set of sources: their starred files, plus any
+folder or file sources registered by features (added with the feature assistant).
+Each turn's context lists the sources and the files in them
+(index | source | folder | file | type | size, with the absolute path).
 - Use it only when the request refers to those files or their contents; drafting,
   rewriting or formatting the open document from the request alone never needs it.
 - When the request touches the knowledge base, search it first (search_knowledge_base)
@@ -77,6 +117,9 @@ lists them (index | folder | file | type | size, with the absolute path).
 - A full-text search matches literal words only: if it returns nothing, retry
   with synonyms or the other language before
   concluding the corpus does not cover the topic.
+- The search result's first line is the coverage: which sources and how many
+  documents were searched. A source the coverage names as disabled or missing was
+  NOT searched — say so when the answer may have been in it.
 - Long files are paged: the result reports totalChars and the next offset; keep
   reading with offset while it matters.
 - Cite what you used: right after a statement drawn from a file, write
@@ -84,6 +127,28 @@ lists them (index | folder | file | type | size, with the absolute path).
   result gives it (it is already encoded). Cite ONLY links that appear there;
   never invent or edit one.
 - Say so plainly when the knowledge base does not contain the answer.`
+
+/** The coverage line a search reports, from the source registry (never a guess). */
+export function kbCoverageLine(sources: readonly KbSourceInfo[], hits: number): string {
+  const searchable = (source: KbSourceInfo): boolean =>
+    source.enabled && !source.missing && source.index !== 'names'
+  const searched = sources.filter(searchable)
+  const documents = searched.reduce((sum, source) => sum + source.documents, 0)
+  const skipped = sources
+    .filter((source) => !searchable(source))
+    .map(
+      (source) =>
+        `${source.label} (${
+          source.missing
+            ? 'needs attention: path missing'
+            : !source.enabled
+              ? 'disabled'
+              : 'file names only, not indexed'
+        })`,
+    )
+  const line = `Searched ${searched.length} source(s), ${documents} document(s); ${hits} hit(s).`
+  return skipped.length ? `${line} Not searched: ${skipped.join(', ')}.` : line
+}
 
 /**
  * Same encoding as @genoffice/ui file-nav (agent-core must not depend on the
@@ -127,8 +192,8 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       {
         name: 'search_knowledge_base',
         description:
-          'Full-text search over the knowledge base (the user’s starred files), for requests that refer to those files; not for writing or formatting from the request alone. ' +
-          'Returns the matching files with a snippet around the first hit. Literal-word matching: ' +
+          'Full-text search over the knowledge base (the user’s starred files and every source their features registered), for requests that refer to those files; not for writing or formatting from the request alone. ' +
+          'Returns a coverage line, then the matching files with a snippet around the first hit. Literal-word matching: ' +
           'retry with synonyms or the other language when it returns nothing.',
         inputSchema: {
           type: 'object',
@@ -143,8 +208,12 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
     buildContext: () => {
       const files = deps.listFiles()
       if (files.length === 0) return ''
-      const plain = files.map(
-        (f, i) => `${i} | ${f.folder} | ${f.name} | .${f.ext} | ${formatKbSize(f.sizeBytes)}`,
+      const sources = deps.sources?.() ?? []
+      const sourced = files.some((f) => f.sourceId !== undefined)
+      const plain = files.map((f, i) =>
+        sourced
+          ? `${i} | ${f.sourceLabel ?? f.sourceId} | ${f.folder} | ${f.name} | .${f.ext} | ${formatKbSize(f.sizeBytes)}`
+          : `${i} | ${f.folder} | ${f.name} | .${f.ext} | ${formatKbSize(f.sizeBytes)}`,
       )
       const paths = files.map((f, i) => `${i} = ${f.path}\n    cite: ${kbCiteHref(f.path)}`)
       const withPaths = `${plain.join('\n')}\n\nAbsolute paths and cite links:\n${paths.join('\n')}`
@@ -154,7 +223,19 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
         withPaths.length <= KB_CONTEXT_MAX_CHARS
           ? withPaths
           : `${plain.join('\n')}\n\n(The corpus is large; cite links come with search results.)`
-      return `Knowledge base — the user's starred files (index | folder | file | type | size):\n${body}`
+      const head = sources.length
+        ? `Knowledge base — sources: ${sources
+            .map(
+              (source) =>
+                `${source.label} (${source.documents} file(s)${source.enabled ? '' : ', disabled'}${
+                  source.missing ? ', needs attention: path missing' : ''
+                }${source.index === 'names' ? ', file names only' : ''})`,
+            )
+            .join(', ')}:`
+        : sourced
+          ? `Knowledge base — the sources the user registered (index | source | folder | file | type | size):`
+          : `Knowledge base — the user's starred files (index | folder | file | type | size):`
+      return `${head}\n${body}`
     },
     executeTool: async (call) => {
       if (deps.listFiles().length === 0) {
@@ -170,13 +251,21 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
           ? Math.min(Math.max(1, Math.floor(limitRaw)), 20)
           : 8
         const hits = await deps.search(query, limit)
+        const sources = deps.sources?.() ?? []
+        const head = sources.length ? kbCoverageLine(sources, hits.length) + '\n' : ''
         if (hits.length === 0)
-          return { output: 'no match. Retry with synonyms or the other language.', summary: query }
+          return {
+            output: `${head}no match. Retry with synonyms or the other language.`,
+            summary: query,
+          }
         const lines = hits.map(
           (h) =>
             `${h.folder}/${h.name}\n  path: ${h.path}\n  cite: ${kbCiteHref(h.path)}\n  snippet: ${h.snippet}`,
         )
-        return { output: lines.join('\n'), summary: `${query} → ${hits.length}` }
+        return {
+          output: head + lines.join('\n'),
+          summary: `${query} → ${hits.length}`,
+        }
       }
       if (call.name === 'read_knowledge_file') {
         const files = deps.listFiles()

@@ -363,3 +363,34 @@ html[data-markdown-theme='newsprint'] .doc-editor blockquote {
   border-left: 5px solid var(--mdt-quote-border);
   color: var(--mdt-quote-text);
 }
+
+/* ---- a feature's own theme (mod appearance.markdown as an object) ----
+   The paper, ink and accent arrive as root variables the appearance validator
+   checked for readability (WCAG >= 4.5:1 for the ink, >= 3:1 for the accent);
+   the derived tones mix here. Screen media only, like every theme above. */
+@media screen {
+  html[data-markdown-theme='custom'] .doc-page {
+    --surface: var(--md-custom-paper);
+    --text: var(--md-custom-ink);
+    --text-primary: var(--md-custom-ink);
+    --text-secondary: color-mix(in srgb, var(--md-custom-ink) 72%, var(--md-custom-paper));
+    --text-muted: color-mix(in srgb, var(--md-custom-ink) 60%, var(--md-custom-paper));
+    --text-dim: color-mix(in srgb, var(--md-custom-ink) 60%, var(--md-custom-paper));
+    --border: color-mix(in srgb, var(--md-custom-ink) 18%, var(--md-custom-paper));
+    --border-strong: color-mix(in srgb, var(--md-custom-ink) 28%, var(--md-custom-paper));
+    --border-subtle: color-mix(in srgb, var(--md-custom-ink) 10%, var(--md-custom-paper));
+    --hover: color-mix(in srgb, var(--md-custom-ink) 6%, var(--md-custom-paper));
+    --md-link: var(--md-custom-accent, #0969da);
+    --md-code-bg: color-mix(in srgb, var(--md-custom-ink) 7%, var(--md-custom-paper));
+    --md-code-inline-bg: color-mix(in srgb, var(--md-custom-ink) 9%, var(--md-custom-paper));
+    --md-table-header-bg: color-mix(in srgb, var(--md-custom-ink) 5%, var(--md-custom-paper));
+    background: var(--md-custom-paper);
+    color-scheme: var(--md-custom-scheme, light);
+  }
+  html[data-markdown-theme='custom'][data-md-font='serif'] .doc-page {
+    font-family: Georgia, 'Iowan Old Style', 'Songti SC', 'Noto Serif CJK SC', serif;
+  }
+  html[data-markdown-theme='custom'][data-md-font='mono'] .doc-page {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Noto Sans Mono CJK SC', monospace;
+  }
+}

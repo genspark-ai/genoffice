@@ -1,0 +1,40 @@
+/* The slot, view and overlay styles live in @genoffice/ui (mods.css) so every
+   app draws them the same way. What stays here is the shell chrome: appearance. */
+
+/* ── appearance (K8): the chrome a feature may ask for ──
+   A mod picks a name; the values live here, so dark mode, contrast and the
+   theme-token rules stay the shell's business. Only chrome variables are
+   re-pointed: a document surface, a page background and the print/export path
+   never see any of this. */
+html[data-slot-background='surface'] {
+  --bg-content: var(--surface);
+}
+html[data-slot-background='surface-subtle'] {
+  --bg-content: var(--surface-subtle);
+}
+html[data-slot-background='accent-tint'] {
+  --bg-content: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+html[data-slot-accent] {
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+html[data-slot-accent='blue'] {
+  --accent: #0f7fff;
+  --accent-hover: #0e72e5;
+}
+html[data-slot-accent='violet'] {
+  --accent: #7c5cff;
+  --accent-hover: #6a4ae6;
+}
+html[data-slot-accent='teal'] {
+  --accent: #0e9f8f;
+  --accent-hover: #0c8a7c;
+}
+html[data-slot-accent='amber'] {
+  --accent: #c77700;
+  --accent-hover: #ad6800;
+}
+html[data-slot-accent='rose'] {
+  --accent: #d6336c;
+  --accent-hover: #bd2c5f;
+}

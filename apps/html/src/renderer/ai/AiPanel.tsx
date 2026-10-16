@@ -6,7 +6,14 @@ import {
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
-import { AgentLoop, composeSkills } from '@genoffice/agent-core'
+import {
+  createKnowledgeBaseSkill,
+  AgentLoop,
+  composeSkills,
+  createModsSkill,
+  type KbFileInfo,
+} from '@genoffice/agent-core'
+import { currentEditorFeatures } from '../mods/EditorSlots'
 import type { AgentImage } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -676,6 +683,21 @@ export function AiPanel({
   const runBriefWriterRef = useRef(runBriefWriter)
   runBriefWriterRef.current = runBriefWriter
 
+  // the knowledge base's files (the shell main assembles the corpus of sources);
+  // refreshed on mount, so a new source or star is answerable next send
+  const kbFilesRef = useRef<KbFileInfo[]>([])
+  const refreshKbFiles = (): void => {
+    if (typeof window.htmlApi?.kbList !== 'function') return
+    void window.htmlApi
+      .kbList()
+      .then((files) => {
+        kbFilesRef.current = files
+      })
+      .catch(() => undefined)
+  }
+  useEffect(() => {
+    refreshKbFiles()
+  }, [])
   const loopRef = useRef<AgentLoop<DocSnapshot> | null>(null)
   if (!loopRef.current) {
     loopRef.current = new AgentLoop<DocSnapshot>({
@@ -709,6 +731,24 @@ export function AiPanel({
         }),
         createSearchSkill(),
         createFilesSkill(availableAttachments),
+        // the mod features the user added: the assistant may plan with them, and
+        // the writing half stays with the user in the feature panel
+        // the knowledge base: the user's starred files plus the sources their
+        // knowledge features registered; search and page reads go through the base
+        ...(typeof window.htmlApi?.kbList === 'function'
+          ? [
+              createKnowledgeBaseSkill({
+                listFiles: () => kbFilesRef.current,
+                search: (query, limit) => window.htmlApi.kbSearch({ q: query, limit }),
+                read: (path, offset) => window.htmlApi.kbRead(path, offset),
+              }),
+            ]
+          : []),
+        createModsSkill({
+          snapshot: currentEditorFeatures,
+          list: () => window.htmlApi.featuresList(),
+          dryRun: (id, request) => window.htmlApi.featuresRun(id, request),
+        }),
         createIntentSkill(
           () => intentRef.current,
           () => isDocEmpty(depsRef.current.access.getText()),
