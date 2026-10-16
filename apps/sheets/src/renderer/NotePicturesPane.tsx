@@ -3,7 +3,7 @@
  * image is fetched by id through readWorkbookMedia, the same route an in-cell
  * picture takes, so the bytes never travel with the workbook metadata.
  */
-import { useState, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 
