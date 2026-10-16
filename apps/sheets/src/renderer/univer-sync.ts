@@ -160,6 +160,7 @@ import {
   installWorkbookVisuals,
   isChartEditorOpen,
   isVisualDragActive,
+  type CellImageState,
   type ChartEditData,
   type ChartVectorRead,
   type ShapeEditChanges,
@@ -7946,8 +7947,19 @@ export function queueSparklineInstall(
           cells: entry.cells,
         })),
     ]
-    // In-cell rich-value pictures share the per-cell float DOM lifecycle.
-    const cellImages = sheetMeta?.cellImages ?? []
+    // In-cell rich-value pictures share the per-cell float DOM lifecycle;
+    // session embeds render from their inline bytes on top of the file's.
+    const cellImages: CellImageState[] = [
+      ...(sheetMeta?.cellImages ?? []),
+      ...state.editJournal.cellImageAdds
+        .filter((entry) => entry.sheetId === sheetId)
+        .map((entry) => ({
+          id: `session-${entry.row}-${entry.column}`,
+          row: entry.row,
+          column: entry.column,
+          dataUrl: entry.dataUrl,
+        })),
+    ]
     sparklineDisposablesRef.current = [
       ...(sparklines.length === 0 ? [] : installSparklines(runtime, sparklines, sheetId)),
       ...(cellImages.length === 0
