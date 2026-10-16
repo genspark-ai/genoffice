@@ -25,10 +25,12 @@ pub struct ConvertResult {
 /// a friendlier sentence helps. `None` keeps the reader's own error.
 ///
 /// Legacy workbooks are OLE2/CFB containers; a file that starts with anything
-/// else was almost certainly renamed rather than exported. The common real
-/// case is an XML spreadsheet (SpreadsheetML) saved as `.xls` — Excel sniffs
-/// the content and opens it fine, so the file "works in Excel" and then
-/// surfaces here as a raw `Invalid OLE (signature ...)` error.
+/// else was renamed rather than exported. Excel sniffs content over extension
+/// and opens plenty of those happily, so the reader's `Invalid OLE (signature
+/// ...)` tells the person holding the file nothing they can act on.
+///
+/// An XML spreadsheet is not one of these: genoffice#2044 reads it directly,
+/// and this only has to speak about files no reader should open at all.
 fn unreadable_container_hint(source: &Path) -> Option<String> {
     let mut head = [0u8; 1024];
     let read = File::open(source).ok()?.read(&mut head).ok()?;
@@ -41,16 +43,6 @@ fn unreadable_container_hint(source: &Path) -> Option<String> {
     let trimmed = text.trim_start_matches('\u{FEFF}').trim_start();
     if !trimmed.starts_with("<?xml") && !trimmed.starts_with('<') {
         return None;
-    }
-    if text.contains("urn:schemas-microsoft-com:office:spreadsheet")
-        || text.contains("<Workbook")
-        || text.contains("<ss:Worksheet")
-    {
-        return Some(
-            "This file is an XML spreadsheet (SpreadsheetML 2003) saved under a legacy \
-             workbook name. Open it in Excel or LibreOffice and re-save it as .xlsx."
-                .into(),
-        );
     }
     let first_line = trimmed.lines().next().unwrap_or("").trim();
     let first_line = if first_line.chars().count() > 60 {
@@ -625,11 +617,11 @@ mod tests {
     }
 
     #[test]
-    fn a_renamed_xml_spreadsheet_gets_the_spreadsheetml_hint() {
-        // The shape genoffice#2038 reports: an XML spreadsheet (SpreadsheetML 2003)
-        // saved under a legacy name. Excel sniffs content over extension and
-        // opens it, so it reaches the converter and used to die as a raw
-        // "Invalid OLE (signature ...)".
+    fn an_xml_spreadsheet_is_the_converter_s_business_not_a_dead_end() {
+        // genoffice#2044 opens this shape instead of refusing it. Until that
+        // lands the reader still turns it away, and all this PR promises about
+        // it is that the refusal is a sentence about the file rather than a
+        // quoted byte signature.
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("report.xls");
         std::fs::write(
@@ -646,11 +638,26 @@ mod tests {
         )
         .unwrap();
         let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
-            panic!("a SpreadsheetML file must not convert");
+            panic!("without genoffice#2044 this file must still be refused");
         };
         let message = error.to_string();
-        assert!(message.contains("SpreadsheetML"), "{message}");
-        assert!(message.contains("re-save it as .xlsx"), "{message}");
+        assert!(message.contains("not a workbook container"), "{message}");
+        assert!(message.contains("<?xml"), "{message}");
+    }
+
+    #[test]
+    fn a_binary_file_that_is_no_container_at_all_keeps_the_reader_error() {
+        // Neither a CFB nor anything text-shaped. Guessing what it might have
+        // been would be worse than the reader's own message, and this is the
+        // branch that keeps it.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("blob.xls");
+        std::fs::write(&source, [0x00u8, 0x01, 0x02, 0x03, 0xFE, 0xFF]).unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("a binary blob must not convert");
+        };
+        let message = error.to_string();
+        assert!(message.contains("Unable to read the workbook"), "{message}");
     }
 
     #[test]
