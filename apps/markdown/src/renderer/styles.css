@@ -388,6 +388,71 @@ html[data-doc-theme='light'] .doc-page {
   color: var(--text-muted);
 }
 
+/* Obsidian-style ![[embeds]]. The literal renders as a card: a resolved one
+ * shows its source, an unresolved one stays dashed so the typo is visible.
+ * A resolved picture swaps the literal for the picture itself (the widget the
+ * resolver adds next to the node); the node's own text is hidden then. */
+.wiki-embed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 0.94em;
+  vertical-align: baseline;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-embed-resolved {
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--md-link);
+  background: var(--surface);
+}
+
+.wiki-embed-resolved.wiki-embed-image {
+  display: none;
+}
+
+.wiki-embed-img {
+  display: block;
+  max-width: min(100%, 480px);
+  max-height: 420px;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.wiki-suggest-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wiki-suggest-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-suggest-path {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
 .doc-editor img {
   max-width: 100%;
   height: auto;
