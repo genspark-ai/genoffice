@@ -47,9 +47,8 @@ fn unreadable_container_hint(source: &Path) -> Option<String> {
         || text.contains("<ss:Worksheet")
     {
         return Some(
-            "This file holds an XML spreadsheet (SpreadsheetML 2003) saved with a legacy \
-             workbook name. GenOffice cannot convert that format: open the file in Excel \
-             or LibreOffice and re-save it as .xlsx."
+            "This file is an XML spreadsheet (SpreadsheetML 2003) saved under a legacy \
+             workbook name. Open it in Excel or LibreOffice and re-save it as .xlsx."
                 .into(),
         );
     }
