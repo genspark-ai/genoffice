@@ -50,7 +50,7 @@
 
 .kb-ask-thread-del:hover {
   background: var(--hover);
-  color: var(--danger, #c0392b);
+  color: var(--danger);
 }
 
 .kb-ask-thread-new {
