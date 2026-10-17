@@ -1710,6 +1710,19 @@ export const workbookVisualAddSchema = z
     { message: 'A visual addition carries exactly one of chart, shape, or image.' },
   )
 
+/// A picture embedded in a cell ("Place in Cell"): the save writes Excel's
+/// rich-value parts and marks the host cell with `vm=`.
+export const workbookCellImageAddSchema = z
+  .object({
+    sheetId: z.string().min(1),
+    row: z.number().int().nonnegative().max(1_048_575),
+    column: z.number().int().nonnegative().max(16_383),
+    mediaType: z.enum(['image/png', 'image/jpeg', 'image/gif']),
+    /// ~20MB decoded
+    base64: z.string().min(1).max(28_000_000),
+  })
+  .strict()
+
 /// Declarative note snapshot: the sheet's full comment set after the edit
 /// (empty list removes all comments).
 export const workbookNoteStateSchema = z
@@ -2015,6 +2028,7 @@ export const workbookSaveRequestSchema = z
     chartEdits: z.array(workbookChartEditSchema).max(100),
     visualEdits: z.array(workbookVisualEditSchema).max(100),
     visualAdditions: z.array(workbookVisualAddSchema).max(50),
+    cellImageAdditions: z.array(workbookCellImageAddSchema).max(50).optional(),
     tableAdditions: z.array(workbookTableAddSchema).max(50),
     tableEdits: z.array(workbookTableEditSchema).max(100).optional(),
     pivotAdditions: z.array(workbookPivotAddSchema).max(20),
@@ -2208,6 +2222,7 @@ export const workbookSaveRequestSchema = z
       request.workbookProtectionState !== null ||
       request.protectedRangeStates.length > 0 ||
       request.visualAdditions.length > 0 ||
+      (request.cellImageAdditions?.length ?? 0) > 0 ||
       request.tableAdditions.length > 0 ||
       (request.tableEdits?.length ?? 0) > 0 ||
       request.pivotAdditions.length > 0 ||
@@ -2478,6 +2493,7 @@ export type ScreenCaptureRequest = z.infer<typeof screenCaptureRequestSchema>
 export type ScreenCaptureResult = z.infer<typeof screenCaptureResultSchema>
 export type WorkbookVisualObject = z.infer<typeof visualObjectSchema>
 export type WorkbookVisualAdd = z.infer<typeof workbookVisualAddSchema>
+export type WorkbookCellImageAdd = z.infer<typeof workbookCellImageAddSchema>
 export type WorkbookTableAdd = z.infer<typeof workbookTableAddSchema>
 export type WorkbookTableEdit = z.infer<typeof workbookTableEditSchema>
 export type WorkbookPivotAdd = z.infer<typeof workbookPivotAddSchema>
