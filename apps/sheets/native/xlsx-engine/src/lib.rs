@@ -21,6 +21,7 @@ pub mod protocol;
 pub mod recalc;
 mod richdata;
 mod shared_formulas;
+pub mod spreadsheetml;
 mod visuals;
 
 mod cell_images;
@@ -32,6 +33,7 @@ mod tests;
 mod types;
 mod workbook;
 mod worksheet;
+mod xlsx_package;
 mod xml_util;
 
 use cell_images::*;
