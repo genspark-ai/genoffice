@@ -18,6 +18,10 @@ export const MARKDOWN_CHANNELS = {
   rememberWikiFragment: 'markdown:remember-wiki-fragment',
   /** take the fragment remembered for a path, '' when there is none */
   takeWikiFragment: 'markdown:take-wiki-fragment',
+  /** notes whose links land on the given path (the backlinks panel) */
+  wikiBacklinks: 'markdown:wiki-backlinks',
+  /** the vault's link graph (nodes + resolved edges, the graph view) */
+  wikiGraph: 'markdown:wiki-graph',
   save: 'markdown:save',
   saveRequest: 'markdown:save-request',
   saveRequestAck: 'markdown:save-request-ack',
@@ -71,6 +75,43 @@ export interface WikiLinkResolved {
   /** the `#Heading` / `#^block` part, '' when there was none */
   fragment: string
   found: boolean
+}
+
+/** a note whose link lands on the asked-for path */
+export interface WikiBacklink {
+  /** absolute path of the note carrying the link */
+  source: string
+  /** the target as written there (`Note`, `Note#Heading`) */
+  target: string
+}
+
+export interface WikiGraphNode {
+  /** absolute path */
+  path: string
+  /** stem, the label a node carries */
+  name: string
+  /** path relative to the vault root, the label's smaller half */
+  relPath: string
+}
+
+export interface WikiGraphEdge {
+  /** absolute path of the linking note */
+  from: string
+  /** absolute path of the linked note */
+  to: string
+}
+
+export interface WikiGraph {
+  nodes: WikiGraphNode[]
+  edges: WikiGraphEdge[]
+  /**
+   * the vault held more notes than the node cap, so this is a slice: the nodes
+   * are the first `MAX_GRAPH_NODES` in walk order and the edges only those among
+   * them. Callers say so rather than presenting a cut graph as the whole vault.
+   */
+  truncated: boolean
+  /** how many notes the walk found in total (never below nodes.length) */
+  totalNotes: number
 }
 
 export type UiTheme = 'light' | 'dark' | 'system'
@@ -245,6 +286,15 @@ export interface MarkdownApi {
   rememberWikiFragment(path: string, fragment: string): Promise<void>
   /** Take the fragment remembered for `path`; '' when there is none (it is consumed) */
   takeWikiFragment(path: string): Promise<string>
+  /**
+   * List the vault's notes for the `[[` suggester: the resolution root walked
+   * breadth-first (the order the resolver matches in), capped so a huge
+   * library cannot stall the popup.
+   */
+  /** Notes whose links resolve to `path` (the backlinks panel); '' answers []. */
+  wikiBacklinks(path: string): Promise<WikiBacklink[]>
+  /** The vault's link graph, notes as nodes and resolved links as edges. */
+  wikiGraph(): Promise<WikiGraph>
   /** Headless export mode: the PDF path this hidden renderer must export to, null in normal use */
   consumeHeadlessExport(): Promise<string | null>
   /** Headless export mode: report the export outcome so the main process can quit */

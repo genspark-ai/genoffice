@@ -73,7 +73,7 @@ Ejen yang tidak tahu kosa kata op akan meneka. Skill itu membawa rujukan dan pan
 Pelayan itu tidak terhad kepada fail pada cakera. Selagi GenOffice berjalan, ejen juga boleh bekerja melalui tetingkap:
 
 - **`open_in_genoffice`** membuka fail dalam satu tab dan memberikan tumpu kepadanya.
-- **`open_documents`** menyenaraikan setiap dokumen yang anda buka — id, jenis, laluan, dan sama ada ia mempunyai perubahan yang belum disimpan —, kemudian membaca kandungan terkini sesuatu dokumen atau menutupnya, dengan menyimpan dahulu melainkan anda menyuruhnya membuang.
+- **`open_documents`** menyenaraikan setiap dokumen yang anda buka — id, jenis, laluan, dan sama ada ia mempunyai perubahan yang belum disimpan —, kemudian membaca kandungan terkini sesuatu dokumen, menyimpannya di tempatnya, atau menutupnya, dengan menyimpan dahulu melainkan anda menyuruhnya membuang.
 - **Alat kandungan** mengambil id itu (atau laluannya) sebagai argumen `document`, jadi satu suntingan mendarat pada tab yang memang sudah anda buka, dan tetingkap bertukar untuk mempaparkannya.
 
 Dua perkara kekal di luar jangkauan: tiada panel AI, dan dialog kemas kini dalam aplikasi tidak terpakai.

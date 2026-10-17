@@ -73,7 +73,7 @@ Un agente que no conoce el vocabulario de las ops adivinará. El skill lleva la 
 El servidor no se limita a los archivos del disco. Mientras GenOffice está en marcha, el agente también puede trabajar a través de la ventana:
 
 - **`open_in_genoffice`** abre un archivo en una pestaña y le da el foco.
-- **`open_documents`** enumera todos los documentos que tiene abiertos —id, tipo, ruta y si tienen cambios sin guardar— y después lee el contenido actual de uno o lo cierra, guardando antes salvo que le pida que lo descarte.
+- **`open_documents`** enumera todos los documentos que tiene abiertos —id, tipo, ruta y si tienen cambios sin guardar— y después lee el contenido actual de uno, lo guarda en su sitio o lo cierra, guardando antes salvo que le pida que lo descarte.
 - **Las herramientas de contenido** toman ese id (o la ruta) como argumento `document`, así que una edición cae en la pestaña que ya tenía abierta y la ventana cambia para mostrarla.
 
 Dos cosas quedan fuera de alcance: no hay panel de IA, y el diálogo de actualización dentro de la aplicación no se aplica.

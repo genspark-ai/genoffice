@@ -5676,6 +5676,21 @@ textarea:focus {
   --univer-primary-600: currentColor;
 }
 
+/* Univer paints its popups (right-click menus, dropdowns, dialogs) from the
+ * DOCUMENT theme, while `color-scheme` on :root follows the APP chrome. When
+ * the two differ — a dark app with the document theme pinned light — the UA
+ * system colors inside the popups resolve to their dark variants: the menu
+ * item buttons only carry Univer's dark-mode text class, so their labels turn
+ * white on the light menu surface and vanish (genoffice#2041). Track Univer's
+ * own dark flag so its popups get the UA scheme matching what they render. */
+.univer-popup {
+  color-scheme: light;
+}
+
+.univer-dark .univer-popup {
+  color-scheme: dark;
+}
+
 .ai-msg-undelivered {
   margin-top: 6px;
   display: flex;

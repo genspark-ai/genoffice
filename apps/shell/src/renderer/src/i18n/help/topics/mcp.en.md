@@ -73,7 +73,7 @@ An agent that does not know the op vocabulary will guess. The skill carries the 
 The server is not limited to files on disk. While GenOffice is running, the agent can also work through the window:
 
 - **`open_in_genoffice`** opens a file in a tab and focuses it.
-- **`open_documents`** lists every document you have open — id, type, path, and whether it has unsaved changes — then reads one's live content or closes it, saving first unless you ask it to discard.
+- **`open_documents`** lists every document you have open — id, type, path, and whether it has unsaved changes — then reads one's live content, saves it in place, or closes it, saving first unless you ask it to discard.
 - **The content tools** take that id (or path) as their `document` argument, so an edit lands in the tab you already have open and the window switches to show it.
 
 Two things stay out of reach: there is no AI panel, and the in-app update dialog does not apply.

@@ -50,6 +50,8 @@ import { RedactMenu } from './components/RedactMenu'
 import { OutlinePane } from './components/OutlinePane'
 import { SourcePane } from './components/SourcePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
+import { BacklinksPane } from './components/BacklinksPane'
+import { GraphView } from './components/GraphView'
 import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
 import { TableMenu } from './components/TableMenu'
@@ -175,6 +177,8 @@ export default function App() {
   const [outlineWidth, setOutlineWidth] = useState(
     () => Number(localStorage.getItem('mdapp.outlineWidth')) || undefined,
   )
+  const [backlinksOpen, setBacklinksOpen] = useState(false)
+  const [graphOpen, setGraphOpen] = useState(false)
   const [sourceViewOpen, setSourceViewOpen] = useState(false)
   const [sourceText, setSourceText] = useState('')
   const sourceViewOpenRef = useRef(false)
@@ -1154,6 +1158,9 @@ export default function App() {
         outlineOpen={outlineOpen}
         onToggleOutline={() => setOutlineOpen((v) => !v)}
         hasOutline={outlineItems.length > 0}
+        backlinksOpen={backlinksOpen}
+        onToggleBacklinks={() => setBacklinksOpen((v) => !v)}
+        onOpenGraph={() => setGraphOpen(true)}
         spellcheck={spellcheck}
         onToggleSpellcheck={() => setSpellcheck((v) => !v)}
         sourceMode={sourceMode}
@@ -1209,6 +1216,12 @@ export default function App() {
             onJump={jumpToOutline}
             width={outlineWidth}
             onResize={setOutlineWidth}
+          />
+        )}
+        {backlinksOpen && !sourceMode && (
+          <BacklinksPane
+            path={filePath}
+            onOpen={(path) => void window.markdownApi.openSourcePath(path)}
           />
         )}
         <div className="app-content">
@@ -1311,6 +1324,16 @@ export default function App() {
       )}
       <RedactMenu editor={editor} enabled={redactEnabled} />
       <ToastHost />
+      {graphOpen && (
+        <GraphView
+          current={filePath}
+          onClose={() => setGraphOpen(false)}
+          onOpen={(path) => {
+            setGraphOpen(false)
+            void window.markdownApi.openSourcePath(path)
+          }}
+        />
+      )}
       {imageHostOpen && (
         <ImageHostDialog onClose={() => setImageHostOpen(false)} onSaved={() => {}} />
       )}

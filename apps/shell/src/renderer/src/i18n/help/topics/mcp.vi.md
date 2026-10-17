@@ -73,7 +73,7 @@ Một tác nhân không biết từ vựng thao tác sẽ đoán mò. Kỹ năng
 Máy chủ không chỉ dừng ở các tệp trên đĩa. Chừng nào GenOffice còn chạy, tác nhân cũng có thể làm việc qua cửa sổ:
 
 - **`open_in_genoffice`** mở một tệp trong một thẻ và đưa thẻ đó lên tiền cảnh.
-- **`open_documents`** liệt kê mọi tài liệu bạn đang mở — id, loại, đường dẫn và có thay đổi chưa lưu hay không —, rồi đọc nội dung hiện tại của một tài liệu hoặc đóng nó lại, lưu trước trừ khi bạn bảo nó bỏ thay đổi.
+- **`open_documents`** liệt kê mọi tài liệu bạn đang mở — id, loại, đường dẫn và có thay đổi chưa lưu hay không —, rồi đọc nội dung hiện tại của một tài liệu, lưu tại chỗ hoặc đóng nó lại, lưu trước trừ khi bạn bảo nó bỏ thay đổi.
 - **Các công cụ nội dung** nhận id (hoặc đường dẫn) đó làm tham số `document`, nên một thay đổi sẽ rơi vào đúng thẻ bạn đang mở và cửa sổ chuyển sang hiển thị nó.
 
 Có hai thứ vẫn nằm ngoài tầm với: không có bảng AI, và hộp thoại cập nhật trong ứng dụng không áp dụng.

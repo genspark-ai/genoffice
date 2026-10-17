@@ -6,6 +6,8 @@
 //! cannot be proven correct keep only their cached result.
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 
 use calamine::{Data, Reader, open_workbook_auto};
@@ -21,6 +23,42 @@ pub struct ConvertResult {
     pub cells: usize,
 }
 
+/// Why the reader refused a file, when the refusal is about the container and
+/// a friendlier sentence helps. `None` keeps the reader's own error.
+///
+/// Legacy workbooks are OLE2/CFB containers; a file that starts with anything
+/// else was renamed rather than exported. Excel sniffs content over extension
+/// and opens plenty of those happily, so the reader's `Invalid OLE (signature
+/// ...)` tells the person holding the file nothing they can act on.
+///
+/// An XML spreadsheet is not one of these: genoffice#2044 reads it directly,
+/// and this only has to speak about files no reader should open at all.
+fn unreadable_container_hint(source: &Path) -> Option<String> {
+    let mut head = [0u8; 1024];
+    let read = File::open(source).ok()?.read(&mut head).ok()?;
+    let head = &head[..read];
+    if head.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
+        // a real CFB container: whatever is wrong inside is the reader's to explain
+        return None;
+    }
+    let text = String::from_utf8_lossy(head);
+    let trimmed = text.trim_start_matches('\u{FEFF}').trim_start();
+    if !trimmed.starts_with("<?xml") && !trimmed.starts_with('<') {
+        return None;
+    }
+    let first_line = trimmed.lines().next().unwrap_or("").trim();
+    let first_line = if first_line.chars().count() > 60 {
+        let cut: String = first_line.chars().take(60).collect();
+        format!("{cut}…")
+    } else {
+        first_line.to_string()
+    };
+    Some(format!(
+        "This file is not a workbook container: its content is text or XML rather than \
+         an Excel/ODF package, and it begins with \"{first_line}\"."
+    ))
+}
+
 pub fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertResult, SidecarError> {
     let mut workbook = match open_workbook_auto(source) {
         Ok(workbook) => workbook,
@@ -28,13 +66,15 @@ pub fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertResult, Si
             // Excel opens an XML spreadsheet saved under a legacy name by
             // sniffing content rather than extension, so one reaches here with
             // nothing in its header for calamine to go on. The SpreadsheetML
-            // importer is the only reader that can still make sense of it.
+            // importer is the only reader that can still make sense of it;
+            // the container hint below covers everything left over.
             if spreadsheetml::probe(source) {
                 return spreadsheetml::convert_to_xlsx(source, target);
             }
-            return Err(SidecarError::Workbook(format!(
-                "Unable to read the workbook: {error}"
-            )));
+            return Err(SidecarError::Workbook(match unreadable_container_hint(source) {
+                Some(hint) => hint,
+                None => format!("Unable to read the workbook: {error}"),
+            }));
         }
     };
     let names: Vec<String> = workbook.sheet_names().to_vec();
@@ -420,5 +460,77 @@ mod tests {
             r#"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:B2"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Name &amp; Co</t></is></c><c r="B1"><v>42</v></c></row><row r="2"><c r="A2" t="b"><v>1</v></c><c r="B2"><f>B1*2</f><v>84</v></c></row></sheetData></worksheet>"#,
         );
         writer.finish().unwrap();
+    }
+
+    #[test]
+    fn an_xml_spreadsheet_is_the_converter_s_business_not_a_dead_end() {
+        // genoffice#2044 opens this shape instead of refusing it: the XML
+        // spreadsheet converts, and the container hint keeps speaking only
+        // for text a reader cannot open at all.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("report.xls");
+        std::fs::write(
+            &source,
+            r#"<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="Data">
+  <Table><Row><Cell><Data ss:Type="Number">42</Data></Cell></Row></Table>
+ </Worksheet>
+</Workbook>
+"#,
+        )
+        .unwrap();
+        let result = convert_to_xlsx(&source, &dir.path().join("out.xlsx"))
+            .expect("an XML spreadsheet under a legacy name converts (genoffice#2044)");
+        assert_eq!(result.sheets, 1, "sheets: {}", result.sheets);
+        assert_eq!(result.cells, 1, "cells: {}", result.cells);
+    }
+
+    #[test]
+    fn a_binary_file_that_is_no_container_at_all_keeps_the_reader_error() {
+        // Neither a CFB nor anything text-shaped. Guessing what it might have
+        // been would be worse than the reader's own message, and this is the
+        // branch that keeps it.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("blob.xls");
+        std::fs::write(&source, [0x00u8, 0x01, 0x02, 0x03, 0xFE, 0xFF]).unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("a binary blob must not convert");
+        };
+        let message = error.to_string();
+        assert!(message.contains("Unable to read the workbook"), "{message}");
+    }
+
+    #[test]
+    fn other_text_content_says_what_the_file_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("page.xls");
+        std::fs::write(
+            &source,
+            "<html><body><table><tr><td>1</td></tr></table></body></html>\n",
+        )
+        .unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("html is not a workbook");
+        };
+        let message = error.to_string();
+        assert!(message.contains("not a workbook container"), "{message}");
+        assert!(message.contains("<html>"), "{message}");
+    }
+
+    #[test]
+    fn a_real_container_keeps_the_reader_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("broken.xls");
+        let mut bytes = vec![0xD0u8, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+        bytes.extend(vec![0u8; 600]);
+        std::fs::write(&source, &bytes).unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("a truncated container must not convert");
+        };
+        let message = error.to_string();
+        assert!(message.contains("Unable to read the workbook"), "{message}");
     }
 }

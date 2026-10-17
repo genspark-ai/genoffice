@@ -266,6 +266,21 @@ function buildFont(baseFontXml: string, delta: WorkbookStyleEdit): string {
   }
   if (delta.fontFamily !== undefined) {
     override(/<name\b[^>]*\/?>/g, `<name val="${escapeXmlAttribute(delta.fontFamily)}"/>`)
+    // A theme-provenance <scheme val="major|minor"/> wins over the cached
+    // <name val> on read (Excel resolves the family from the theme, and the
+    // name may be a stale cache), so an explicit family that left the scheme
+    // in place would silently revert to the theme font on reopen. The format
+    // has no separate "explicit" flag — the scheme element's presence is that
+    // flag — so a reader cannot tell an explicit family from a cached name;
+    // the choice must be recorded here, on write. Drop it, as Excel does when
+    // a font is picked.
+    //
+    // TODO(OOXML fidelity): when the picked family equals the theme's
+    // major/minor face, Excel keeps the scheme so the cell keeps following
+    // theme-font changes; we drop it unconditionally, pinning the cell to that
+    // family. Aligning needs the theme fonts (xl/theme/theme1.xml) here, which
+    // only receives styles.xml.
+    override(/<scheme\b[^>]*\/?>/g, '')
   }
   const content = `${added.join('')}${inner}`
   return content === '' ? '<font/>' : `<font>${content}</font>`
