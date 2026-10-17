@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatMessage, ProjectApi } from '@genoffice/project-store'
+import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store'
 
-import { claimThread, restoreAskMessages, type AskMessage } from '../src/renderer/src/KbAskPanel'
+import {
+  claimThread,
+  firstQuestionOf,
+  listThreads,
+  restoreAskMessages,
+  type AskMessage,
+} from '../src/renderer/src/KbAskPanel'
 
 function stored(over: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -92,6 +98,7 @@ describe('claiming the panel thread', () => {
     const shown: AskMessage[][] = []
     await claimThread(
       api,
+      'kb-ask',
       [],
       (m) => shown.push(m),
       () => true,
@@ -108,6 +115,7 @@ describe('claiming the panel thread', () => {
     const { api, calls } = recorder([])
     await claimThread(
       api,
+      'kb-ask',
       [
         { role: 'user', text: 'first' },
         { role: 'assistant', text: 'first answer' },
@@ -134,6 +142,7 @@ describe('claiming the panel thread', () => {
     const shown: AskMessage[][] = []
     await claimThread(
       api,
+      'kb-ask',
       [],
       (m) => shown.push(m),
       () => false,
@@ -146,6 +155,7 @@ describe('claiming the panel thread', () => {
     await expect(
       claimThread(
         api,
+        'kb-ask',
         [],
         () => undefined,
         () => true,
@@ -154,5 +164,79 @@ describe('claiming the panel thread', () => {
       projectId: 'default',
       chatId: 'kb-ask',
     })
+  })
+})
+
+describe('listing the stored threads', () => {
+  const meta = (chatId: string, updatedAt: string): ChatMeta => ({
+    chatId,
+    updatedAt,
+    approxCount: 4,
+  })
+
+  it('puts the most recent conversation on top', () => {
+    const listed = listThreads(
+      [meta('old', '2026-10-15T09:00:00.000Z'), meta('new', '2026-10-17T09:00:00.000Z')],
+      () => undefined,
+    )
+    expect(listed.map((t) => t.chatId)).toEqual(['new', 'old'])
+  })
+
+  it('labels a conversation by its own first question', () => {
+    const first: Record<string, string> = {
+      a: 'who is in the photograph',
+      b: 'what did the letter say',
+    }
+    const listed = listThreads(
+      [meta('a', '2026-10-17T09:00:00.000Z'), meta('b', '2026-10-16T09:00:00.000Z')],
+      (chatId) => first[chatId],
+    )
+    expect(listed.map((t) => t.label)).toEqual([
+      'who is in the photograph',
+      'what did the letter say',
+    ])
+  })
+
+  it('collapses a question that wrapped and truncates a long one', () => {
+    expect(
+      listThreads([meta('a', '2026-10-17T09:00:00.000Z')], () => 'a\n\n  b   c')[0]?.label,
+    ).toBe('a b c')
+    const long = 'x'.repeat(200)
+    expect(listThreads([meta('a', '2026-10-17T09:00:00.000Z')], () => long)[0]?.label).toHaveLength(
+      60,
+    )
+  })
+
+  it('falls back to the id when a conversation has no question to name it by', () => {
+    // An empty thread, or one whose read failed: the id is unique and
+    // copyable, which a blank row would not be.
+    expect(
+      listThreads([meta('kb-ask-1731', '2026-10-17T09:00:00.000Z')], () => undefined)[0]?.label,
+    ).toBe('kb-ask-1731')
+    expect(
+      listThreads([meta('kb-ask-1731', '2026-10-17T09:00:00.000Z')], () => '   ')[0]?.label,
+    ).toBe('kb-ask-1731')
+  })
+
+  it('is empty when nothing was ever asked', () => {
+    expect(listThreads([], () => 'anything')).toEqual([])
+  })
+})
+
+describe('naming a conversation by its first question', () => {
+  it('takes the first user turn, not the first turn of any kind', () => {
+    expect(
+      firstQuestionOf([
+        stored({ role: 'assistant', text: 'an answer that came first', seq: 0 }),
+        stored({ role: 'user', text: 'the actual question', seq: 1 }),
+      ]),
+    ).toBe('the actual question')
+  })
+
+  it('is undefined when the thread opens with answers', () => {
+    expect(
+      firstQuestionOf([stored({ role: 'assistant', text: 'orphan answer', seq: 0 })]),
+    ).toBeUndefined()
+    expect(firstQuestionOf([])).toBeUndefined()
   })
 })
