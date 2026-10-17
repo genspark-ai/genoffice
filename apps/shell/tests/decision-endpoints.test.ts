@@ -14,6 +14,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { bodyModel, endpointUrl, type DecisionCallOptions } from '../src/main/file-index/decider'
+import {
+  DEFAULT_FILE_SEARCH_SETTINGS,
+  normalizeFileSearchSettings,
+} from '../src/main/file-index/rerank'
 import type { DecisionEndpoint } from '../src/shared/home-api'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -88,6 +92,13 @@ describe('the settings dropdown matches the endpoint table', () => {
   const modalSource = readFileSync(join(here, '../src/renderer/src/SettingsModal.tsx'), 'utf8')
   const rerankSource = readFileSync(join(here, '../src/main/file-index/rerank.ts'), 'utf8')
 
+  const knownEndpoints = (): DecisionEndpoint[] => {
+    const start = rerankSource.indexOf('const ENDPOINT_IDS')
+    return [
+      ...rerankSource.slice(start, rerankSource.indexOf('\n]', start)).matchAll(/'([a-z0-9-]+)'/g),
+    ].map((m) => m[1] as DecisionEndpoint)
+  }
+
   it('offers exactly every endpoint the code knows, and nothing else', () => {
     // Only the decision-model list, not the other dozen pickers in this file.
     // The type annotation carries its own "]", so the block ends at a "]"
@@ -97,13 +108,7 @@ describe('the settings dropdown matches the endpoint table', () => {
     const offered = [...block.matchAll(/\{ value: '([a-z0-9-]+)', label:/g)].map(
       (m) => m[1] as DecisionEndpoint,
     )
-    const idsStart = rerankSource.indexOf('const ENDPOINT_IDS')
-    const known = rerankSource
-      .slice(idsStart, rerankSource.indexOf('\n]', idsStart))
-      .matchAll(/'([a-z0-9-]+)'/g)
-      .map((m) => m[1] as DecisionEndpoint)
-
-    expect([...known].sort()).toEqual([...offered].sort())
+    expect(knownEndpoints().sort()).toEqual([...offered].sort())
     // the four routes this PR added, so the comparison above cannot quietly
     // pass because both lists shrank together
     for (const added of [
@@ -117,17 +122,23 @@ describe('the settings dropdown matches the endpoint table', () => {
   })
 
   it('gives every endpoint a key slot in the defaults', () => {
-    const keysBlock = rerankSource.slice(
-      rerankSource.indexOf('keys: {'),
-      rerankSource.indexOf('customBaseUrl'),
-    )
-    for (const added of [
-      'perplexity-v12',
-      'perplexity-flash',
-      'liquid-ultra',
-      'cloudflare-flash',
-    ] as const) {
-      expect(keysBlock).toContain(`'${added}'`)
+    // The saved settings shape is what an existing app-settings.json carries
+    // into every launch, so a route with no slot would read as a missing key.
+    // The Electron e2e asserts this end to end; this is the fast one.
+    const defaults = DEFAULT_FILE_SEARCH_SETTINGS
+    expect(Object.keys(defaults.keys).sort()).toEqual([...knownEndpoints()].sort())
+    expect(normalizeFileSearchSettings({ ...defaults }).keys['liquid-ultra']).toBe('')
+  })
+
+  it('keeps a saved key when an older settings file predates a route', () => {
+    // A file written before liquid-ultra existed has no slot for it; that must
+    // read as no key rather than throw on the way to the defaults.
+    const legacy = {
+      ...DEFAULT_FILE_SEARCH_SETTINGS,
+      keys: { openrouter: 'sk-old' } as Record<DecisionEndpoint, string>,
     }
+    const normalized = normalizeFileSearchSettings(legacy)
+    expect(normalized.keys.openrouter).toBe('sk-old')
+    expect(normalized.keys['liquid-ultra']).toBe('')
   })
 })
