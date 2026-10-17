@@ -28,6 +28,8 @@ export type {
   CreateDocumentSkill,
 } from './create-document-skill'
 export type { AgentSkill, ExecutedToolCall } from './skill'
+export type { SkillFrontmatter, SkillRelevance } from './imported-skill'
+export { classifySkill, parseSkillFrontmatter, SKILL_FORMAT_TOKENS } from './imported-skill'
 export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
