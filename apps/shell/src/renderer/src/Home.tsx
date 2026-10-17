@@ -3542,6 +3542,23 @@ export function Home() {
               </svg>
             </button>
           )}
+          {/* The manual is a tab of its own, not a view of the home screen, so it
+              takes no `active` state and leaves the sidebar's selection alone —
+              what genoffice#1863 built, and what the 2026-10-11 snapshot (#1959)
+              took out together with the label's 21 translations. */}
+          <button className="nav-item" onClick={() => void window.aiOffice.openHelp()}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M6.05 6.4a2.06 2.06 0 1 1 2.9 1.88c-.58.29-.95.89-.95 1.54v.28"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+              />
+              <circle cx="8" cy="12.6" r="0.85" fill="currentColor" />
+              <circle cx="8" cy="8" r="6.6" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+            <span className="nav-label">{t('navUserGuide')}</span>
+          </button>
         </nav>
         <div className="sidebar-divider" />
         {renderFolderPanel()}
