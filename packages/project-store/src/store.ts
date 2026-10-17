@@ -832,7 +832,7 @@ export class ProjectStore {
     try {
       unlinkSync(path)
     } catch (err) {
-      throw new Error(`Could not delete the conversation: ${String(err)}`)
+      throw new Error(`Could not delete the conversation: ${String(err)}`, { cause: err })
     }
   }
 
