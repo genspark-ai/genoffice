@@ -4562,6 +4562,15 @@ fn reads_sheet_protection_flags_hash_and_unlocked_styles() {
     let protection = result.sheet_protection.expect("sheetProtection parsed");
     assert!(protection.protected);
     assert!(protection.has_password);
+    assert_eq!(
+        serde_json::to_value(&protection).unwrap()["password"],
+        serde_json::json!({
+            "algorithmName": "SHA-512",
+            "hashValue": "aGFzaA==",
+            "saltValue": "c2FsdA==",
+            "spinCount": 100_000,
+        })
+    );
     match protection.password {
         Some(SheetPasswordHash::Hashed {
             algorithm_name,
