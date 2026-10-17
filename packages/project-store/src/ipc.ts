@@ -76,4 +76,8 @@ export interface ProjectApi {
   loadChat(args: LoadChatArgs): Promise<ChatMessage[]>
   /** Renames the JSONL file (called after the file first hits disk); returns the new projectId/chatId */
   rebindChat(args: RebindChatArgs): Promise<ResolveChatResult>
+  /** Every conversation in a project, so a host can list what it kept. */
+  listChats(args: { projectId: string }): Promise<ChatMeta[]>
+  /** Removes one conversation's transcript. */
+  deleteChat(args: { projectId: string; chatId: string }): Promise<void>
 }

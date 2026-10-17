@@ -813,6 +813,30 @@ export class ProjectStore {
   }
 
   /**
+   * Removes one chat's transcript. Unlike deleteProject this is not a soft
+   * delete: a conversation has no files to migrate out of it, and a reader who
+   * dismisses a thread means for it to be gone. The chatId is checked against
+   * the directory's own contents rather than trusted, so a crafted id cannot
+   * reach outside the project's chats directory.
+   */
+  deleteChat(projectId: string, chatId: string): void {
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
+    const path = this.chatPath(projectId, chatId)
+    // A user turn that has not been answered yet is still only in the pending
+    // buffer, so a conversation whose file was never written is the normal case
+    // for a question the reader has just asked and then dismissed. Dropping the
+    // queue is what deletes it; the file below may well not exist yet.
+    this.pendingFirstWrite.delete(this.seqKey(projectId, chatId))
+    if (!existsSync(path)) return
+    try {
+      unlinkSync(path)
+    } catch (err) {
+      throw new Error(`Could not delete the conversation: ${String(err)}`, { cause: err })
+    }
+  }
+
+  /**
    * Moves chats/<fromId>.jsonl to chats/<toId>.jsonl (possibly across projects).
    * If the target exists, don't overwrite: renumber the source messages' seq and
    * append them at the target's end (old conversations of a same-named file are kept).

@@ -33,6 +33,7 @@
     "@genoffice/pptx-render": "*",
     "@genoffice/sheets": "*",
     "@genoffice/slides": "*",
+    "@genoffice/project-store": "*",
     "@genoffice/ui": "*",
     "@genoffice/xlsx-gateway": "*",
     "@modelcontextprotocol/sdk": "^1.32.1",
