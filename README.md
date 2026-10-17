@@ -71,7 +71,7 @@ details and requirements in [Download](#download).
 
 ## Demo
 
-Six apps, one AI panel, a file search reranked by TypeSafe Jev, an Ask AI
+Seven apps, one AI panel, a file search reranked by TypeSafe Jev, an Ask AI
 that answers from your starred files with sources, and a command line for
 your coding agent. Every
 screenshot is the real app on macOS, with the AI driven from the prompt you
@@ -211,7 +211,26 @@ Ask AI searches the same on-device full-text index as
 and reads files in pages, so the model only sees the hits and the passages it
 asked for, through the provider you chose.
 
-### 9 · CLI — your coding agent drives GenOffice, on your machine
+### 9 · Mail — offline-first mail with hardened handling
+
+Mail syncs IMAP, Gmail, and Outlook accounts to a local encrypted store, so
+reading, composing, moving, flagging, and deleting keep working offline;
+queued sends go first on reconnect, then queued changes. When both sides
+change the same message, the server wins for flags, labels, and moves, while
+your queued sends and draft text always win. Per-account send caps apply
+(IMAP 50 MB / Gmail 35 MB / Outlook 4 MB). Credentials stay in
+`safeStorage`-encrypted blobs with memory-only access tokens (session-only
+on machines without a keyring); attachments are scanned staged-temp →
+quarantine → store and executables are never previewed; the AI triage,
+summaries, compose-assist, and ask-mail answer with message-id citations
+inside your picker-selected accounts only. Details in
+[docs/mail/sync-semantics.md](docs/mail/sync-semantics.md),
+[docs/mail/ai-features.md](docs/mail/ai-features.md), and
+[docs/mail/hardening-notes.md](docs/mail/hardening-notes.md). Forks ship
+their own OAuth client IDs and branding (see
+[docs/mail/oauth-verification.md](docs/mail/oauth-verification.md)).
+
+### 10 · CLI — your coding agent drives GenOffice, on your machine
 
 GenOffice ships a `genoffice` command line and an agent skill. Install the
 skill and Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode or
@@ -231,7 +250,7 @@ same engines as the apps, without opening a window.
 </tr>
 </table>
 
-### 10 · MCP — the same tools over the Model Context Protocol
+### 11 · MCP — the same tools over the Model Context Protocol
 
 Every `genoffice` command is also an MCP tool. Claude Code, Claude Desktop,
 Cursor and any other MCP client can start `genoffice mcp` themselves, with no

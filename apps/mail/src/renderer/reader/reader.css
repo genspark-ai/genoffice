@@ -1,0 +1,155 @@
+/* Reader chrome (Lane R owns). Semantic tokens only — the quarantined
+ * body itself lives in mail-quarantine.css and never references these. */
+.mail-reader {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-content);
+}
+
+.mail-reader-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mail-reader-head {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mail-reader-subject {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mail-reader-meta {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.mail-reader-meta > div {
+  display: flex;
+  gap: 8px;
+}
+
+.mail-reader-meta dt {
+  flex: none;
+  width: 64px;
+  color: var(--text-muted);
+}
+
+.mail-reader-meta dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.mail-reader-addr {
+  color: var(--text);
+}
+
+.mail-reader-flags {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mail-reader-flag {
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.mail-reader-attachments {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+.mail-reader-imagebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 20px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mail-reader-imagebar button {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.mail-reader-imagebar button:hover {
+  background: var(--bg-hover);
+}
+
+.mail-reader-linkconfirm {
+  margin: 12px 20px 0;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mail-reader-linkconfirm-title {
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+.mail-reader-linkconfirm-url {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+
+.mail-reader-linkconfirm button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.mail-reader-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px 20px;
+}
+
+.mail-reader-status {
+  color: var(--text-muted);
+  font-size: 13px;
+}

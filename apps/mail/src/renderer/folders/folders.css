@@ -1,0 +1,148 @@
+/* Folder tree chrome (Lane R owns). Semantic tokens only. */
+.mail-folders {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 12px 8px;
+}
+
+.mail-folders-accounts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 8px;
+}
+
+.mail-folders-heading {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.mail-folders-add {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.mail-folders-add:hover {
+  background: var(--bg-hover);
+}
+
+.mail-folders-account {
+  margin-bottom: 12px;
+}
+
+.mail-folders-account-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.mail-folders-account-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-folders-session {
+  font-size: 11px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.mail-folders-remove {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mail-folders-remove:hover {
+  color: var(--danger);
+}
+
+.mail-folders-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mail-folders-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.mail-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mail-folder:hover {
+  background: var(--bg-hover);
+}
+
+.mail-folder.is-active {
+  background: var(--active-bg);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.mail-folder-glyph {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--icon-muted);
+  flex: none;
+}
+
+.mail-folder-inbox {
+  background: var(--accent);
+}
+
+.mail-folder-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-folder-unread {
+  flex: none;
+  min-width: 20px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text-secondary);
+  padding: 1px 6px;
+}

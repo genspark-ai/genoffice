@@ -17,8 +17,10 @@ import { sanitizeFileBase, uniquePathIn } from './document-tools'
  * a fake.
  */
 
-/** tab kind -> format family (the registry's vocabulary, for the type label) */
-const FAMILY_BY_KIND: Record<Exclude<TabKind, 'home' | 'help'>, EditorFamily> = {
+/** tab kind -> format family (the registry's vocabulary, for the type label).
+ * Mail tabs carry a renderer-side mailRef, never a file, so they have no
+ * format family and stay out of this map (typeLabel handles them directly). */
+const FAMILY_BY_KIND: Record<Exclude<TabKind, 'home' | 'help' | 'mail'>, EditorFamily> = {
   docs: 'docx',
   sheets: 'xlsx',
   slides: 'pptx',
@@ -117,6 +119,13 @@ export function resolveOpenDocumentOfFamily(
 ): OpenDocumentTab {
   const doc = resolveOpenDocument(documents, target)
   if (!doc) throw noMatch(target, documents)
+  // Mail tabs carry a renderer-side mailRef, never a file, so they have no
+  // format family and stay out of FAMILY_BY_KIND (see the map comment above).
+  if (doc.kind === 'mail') {
+    throw new Error(
+      `"${doc.title}" is a mail tab, which this tool cannot edit; mail is read through the Mail app`,
+    )
+  }
   const actual = FAMILY_BY_KIND[doc.kind]
   if (actual !== family) {
     throw new Error(
@@ -138,6 +147,7 @@ function noMatch(target: string, documents: readonly OpenDocumentTab[]): Error {
 }
 
 function typeLabel(doc: OpenDocumentTab): string {
+  if (doc.kind === 'mail') return 'Mail message'
   return familyLabel(FAMILY_BY_KIND[doc.kind])
 }
 
@@ -161,6 +171,12 @@ function describeDocument(doc: OpenDocumentTab): Record<string, unknown> {
  */
 export function closeSavePath(doc: OpenDocumentTab, defaultSaveDir: () => string): string {
   if (doc.filePath) return doc.filePath
+  if (doc.kind === 'mail') {
+    throw new Error(
+      'a mail tab cannot be saved to a file through this tool: mail messages live ' +
+        'in the mailbox, not on disk (close it with unsaved:"discard" to drop drafts)',
+    )
+  }
   const name = `${sanitizeFileBase(doc.title)}${extensionFor(FAMILY_BY_KIND[doc.kind])}`
   return uniquePathIn(defaultSaveDir(), name)
 }
@@ -217,6 +233,12 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
 
         if (action === 'read') {
           if (!READABLE_KINDS.has(doc.kind)) {
+            if (doc.kind === 'mail') {
+              throw new Error(
+                `"${doc.title}" is a mail message: mailbox content is not readable ` +
+                  'through this tool',
+              )
+            }
             throw new Error(
               `"${doc.title}" is a PDF: the pdf app is a viewer, so an open PDF has no readable ` +
                 'content through this tool',

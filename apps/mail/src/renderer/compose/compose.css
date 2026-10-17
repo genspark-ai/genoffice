@@ -1,0 +1,164 @@
+/* Compose chrome (Lane C owns). Semantic tokens only, no raw colors. */
+.mail-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.mail-compose-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mail-compose-label {
+  flex: none;
+  width: 64px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.mail-compose-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-content);
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.mail-compose-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.mail-compose-body {
+  min-height: 120px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-content);
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.mail-compose-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+}
+
+.mail-compose-notice {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-hover-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.mail-compose-notice--warn {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.mail-compose-notice--error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.mail-compose-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mail-compose-attach-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mail-compose-attach-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-compose-attach-hint {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.mail-compose-remove {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.mail-compose-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mail-compose-send {
+  border: 1px solid var(--color-btn-primary);
+  border-radius: 8px;
+  background: var(--color-btn-primary);
+  color: var(--color-btn-primary-text);
+  font-size: 13px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.mail-compose-send:hover:not(:disabled) {
+  background: var(--color-btn-primary-hover);
+}
+
+.mail-compose-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mail-compose-save,
+.mail-compose-attach {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.mail-compose-save:hover,
+.mail-compose-attach:hover {
+  background: var(--bg-hover);
+}
+
+.mail-compose-dirty {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}

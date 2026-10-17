@@ -31,7 +31,8 @@ export const DOCX_MEDIA_SCHEME_PRIVILEGE: CustomScheme = {
   },
 }
 
-export type RendererHost = 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html' | 'help'
+export type RendererHost =
+  'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html' | 'help' | 'mail'
 
 export const MAX_RENDERER_QUERY_ENTRIES = 20
 export const MAX_RENDERER_QUERY_CHARS = 4_000

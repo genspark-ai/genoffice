@@ -1,0 +1,53 @@
+/* Mail app layout (Lane R owns). Chrome tokens only; message bodies
+ * render in quarantined mail-quarantine.css with authored colors. */
+.mail-app {
+  display: grid;
+  grid-template-columns: 264px minmax(280px, 360px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--gs-font-sans);
+}
+
+.mail-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface-subtle);
+}
+
+.mail-listpane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.mail-readerpane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-content);
+}
+
+.mail-notice {
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.mail-compose-mount {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.mail-compose-stub {
+  min-height: 0;
+}

@@ -8,6 +8,10 @@
  * renderer/main graph into out/ and no node_modules directory is packaged, so
  * several genuinely-bundled libraries are declared as devDependencies.
  *
+ * Nested duplicates with different versions get one section per installed
+ * copy, since the bundled app resolves the nested copy rather than the
+ * hoisted one.
+ *
  * The Chromium part is too large (18MB); electron-builder extraResources ships
  * LICENSES.chromium.html separately, referenced from the body text.
  */
@@ -31,6 +35,7 @@ const BUILTIN = new Set(builtinModules)
 const SRC_GLOBS = [
   'apps/docs/src',
   'apps/html/src',
+  'apps/mail/src',
   'apps/markdown/src',
   'apps/pdf/src',
   'apps/sheets/src',
@@ -136,19 +141,29 @@ function topLevelPackages() {
   ]
 }
 
-/** npm hoists, so the root copy is the usual answer; fall back to a nested one */
-function pkgDir(name) {
-  const root = join(ROOT, 'node_modules', name)
-  if (existsSync(join(root, 'package.json'))) return root
+/** npm hoists, so the root copy is the usual answer; fall back to a nested one.
+ * candidateDirs lists every installed copy in that same priority order, so
+ * callers can also credit the copies the single-answer lookup hides. */
+function candidateDirs(name) {
+  const dirs = []
+  const seen = new Set()
+  const consider = (dir) => {
+    if (seen.has(dir)) return
+    seen.add(dir)
+    if (existsSync(join(dir, 'package.json'))) dirs.push(dir)
+  }
+  consider(join(ROOT, 'node_modules', name))
   for (const owner of topLevelPackages()) {
-    const nested = join(ROOT, 'node_modules', owner, 'node_modules', name)
-    if (existsSync(join(nested, 'package.json'))) return nested
+    consider(join(ROOT, 'node_modules', owner, 'node_modules', name))
   }
   for (const modules of WORKSPACE_MODULES) {
-    const own = join(modules, name)
-    if (existsSync(join(own, 'package.json'))) return own
+    consider(join(modules, name))
   }
-  return null
+  return dirs
+}
+
+function pkgDir(name) {
+  return candidateDirs(name)[0] ?? null
 }
 
 const manifest = (dir) => JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
@@ -228,6 +243,44 @@ function rustCrates() {
 const hr = (title) => `\n${'='.repeat(72)}\n${title}\n${'='.repeat(72)}\n`
 const sub = (title) => `\n${'-'.repeat(72)}\n${title}\n${'-'.repeat(72)}\n`
 
+/** Nested duplicates the single-answer lookup hides: other installed copies
+ * of a resolved package whose version differs from the attributed one.
+ * The bundled app resolves the nested copy, so without this the credited
+ * version drifts with the install layout (e.g. harfbuzzjs 1.5.0 attributed
+ * vs 0.10.3 bundled under apps/pdf; nodemailer 10.1.1 vs 9.0.3 under
+ * imapflow). Same-version copies need no extra section. */
+function extraCopies(name, primaryDir, primaryVersion) {
+  const extras = []
+  const seenVersions = new Set([primaryVersion])
+  for (const dir of candidateDirs(name)) {
+    if (dir === primaryDir) continue
+    const pkg = manifest(dir)
+    if (seenVersions.has(pkg.version)) continue
+    seenVersions.add(pkg.version)
+    extras.push({ dir, pkg })
+  }
+  extras.sort((a, b) => a.dir.localeCompare(b.dir))
+  return extras
+}
+
+const noText = []
+
+/** one notice section for a single installed copy (primary or nested) */
+function packageSection(name, dir, pkg, label) {
+  let section = sub(label)
+  const text = licenseText(name, dir) ?? NOTE[name]
+  if (text) {
+    section += text + '\n'
+  } else {
+    noText.push(label)
+    const repo = repoOf(pkg)
+    section += `Licensed under ${spdxOf(name, pkg)}.${repo ? `\n${repo}` : ''}\n`
+  }
+  const notice = noticeText(dir)
+  if (notice) section += `\nNOTICE:\n${notice}\n`
+  return section
+}
+
 const seed = importedNames()
 const { resolved, missing } = closure(seed)
 resolved.sort(([a], [b]) => a.localeCompare(b))
@@ -242,19 +295,25 @@ licenses — see LICENSES.chromium.html next to this file.
 `
 
 out += hr(`1. npm packages (${resolved.length})`)
-const noText = []
+let extraSections = 0
 for (const [name, { dir, pkg }] of resolved) {
-  out += sub(`${name} v${pkg.version} — ${spdxOf(name, pkg)}`)
-  const text = licenseText(name, dir) ?? NOTE[name]
-  if (text) {
-    out += text + '\n'
-  } else {
-    noText.push(name)
-    const repo = repoOf(pkg)
-    out += `Licensed under ${spdxOf(name, pkg)}.${repo ? `\n${repo}` : ''}\n`
+  out += packageSection(name, dir, pkg, `${name} v${pkg.version} — ${spdxOf(name, pkg)}`)
+  for (const extra of extraCopies(name, dir, pkg.version)) {
+    extraSections += 1
+    const where = relative(ROOT, extra.dir).replaceAll('\\', '/')
+    out += packageSection(
+      name,
+      extra.dir,
+      extra.pkg,
+      `${name} v${extra.pkg.version} — ${spdxOf(name, extra.pkg)} (nested copy at ${where})`,
+    )
   }
-  const notice = noticeText(dir)
-  if (notice) out += `\nNOTICE:\n${notice}\n`
+}
+if (extraSections > 0) {
+  out = out.replace(
+    `1. npm packages (${resolved.length})`,
+    `1. npm packages (${resolved.length} packages, ${extraSections} nested-copy sections)`,
+  )
 }
 
 const crates = rustCrates()

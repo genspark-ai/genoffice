@@ -1,0 +1,30 @@
+{
+  "name": "@genoffice/mail-protocols",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure-TS mail protocol layer: MailProvider/MailStore interfaces, MIME to view-model, address handling, attachment staging, sync-state and intent-replay helpers. No Electron, no native deps.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./query": "./src/query.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "googleapis": "^185.0.0",
+    "imapflow": "1.5.0",
+    "nodemailer": "10.1.1",
+    "postal-mime": "^4.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/nodemailer": "^6.4.17",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

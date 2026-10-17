@@ -1,0 +1,303 @@
+/* Outbox + offline-status chrome (Lane O owns). UI chrome only: every color
+ * references the semantic tokens in packages/ui/src/tokens.css (light
+ * defaults in :root, dark overrides under [data-theme='dark']). Message
+ * bodies stay quarantined in the reader layer and never use these tokens. */
+
+.mail-outbox-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-8);
+}
+
+.mail-outbox-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mail-outbox-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mail-outbox-sync {
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-6);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mail-outbox-sync:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.mail-outbox-load-error {
+  padding: 8px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-6);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.mail-outbox-empty {
+  padding: 16px 12px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.mail-outbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mail-outbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-8);
+  background: var(--surface);
+}
+
+.mail-outbox-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.mail-outbox-badge.is-queued,
+.mail-outbox-badge.is-sending {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.mail-outbox-badge.is-failed {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.mail-outbox-badge.is-sent {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.mail-outbox-badge.is-cancelled {
+  color: var(--text-tertiary);
+}
+
+.mail-outbox-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mail-outbox-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mail-outbox-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mail-outbox-failed-note {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.mail-outbox-error {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mail-outbox-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.mail-outbox-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-6);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mail-outbox-actions button:disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+/* The P3 banner root (.mail-notice) is defined in layout.css; this lane
+ * only adds the outbox segments so the banner is extended, not forked. */
+.mail-outbox-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mail-outbox-banner-offline {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.mail-outbox-banner-open {
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mail-offline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-30);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mail-offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.mail-offline-chip.is-offline {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.mail-offline-chip.is-offline .mail-offline-dot {
+  background: var(--danger);
+}
+
+.mail-sync-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-8);
+  background: var(--surface);
+}
+
+.mail-sync-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-6);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.mail-sync-badge.is-syncing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.mail-sync-badge.is-idle {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.mail-sync-note {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mail-sync-caps {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.mail-sync-caps-title {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.mail-sync-caps-detail {
+  color: var(--text-tertiary);
+}
+
+/* Shell dialog hosting the outbox panel (UI mount owns). Token-only. */
+.mail-outbox-dialog {
+  position: fixed;
+  top: 10%;
+  right: 12px;
+  width: min(420px, calc(100% - 24px));
+  max-height: 80%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--shadow-menu);
+  z-index: 30;
+}
+
+.mail-outbox-close {
+  align-self: flex-end;
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-6);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}

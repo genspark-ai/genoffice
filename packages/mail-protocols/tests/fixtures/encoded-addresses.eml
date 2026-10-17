@@ -1,0 +1,8 @@
+From: =?UTF-8?B?5byg5LiJ5a2Y?= <mei@example.com>
+To: "Doe, John" <john@example.com>, Friends: anne@example.com, ben@example.com;
+Subject: =?UTF-8?Q?Encoded_=E2=80=93_subject?=
+Message-ID: <enc-005@example.com>
+Date: Tue, 14 Oct 2026 09:20:00 +0800
+Content-Type: text/plain; charset=utf-8
+
+Encoded display names above must decode for the envelope view.

@@ -1,0 +1,20 @@
+From:files@example.com
+To:me@example.com
+Subject: Monthly notes attachment
+Message-ID: <attach-003@example.com>
+Date:Tue,14 Oct 2026 09:10:00 +0800
+MIME-Version:1.0
+Content-Type:multipart/mixed;boundary="MIXBOUND"
+
+--MIXBOUND
+Content-Type:text/plain;charset=utf-8
+
+See attached notes.
+
+--MIXBOUND
+Content-Type:text/plain;name="notes.txt"
+Content-Disposition:attachment;filename="notes.txt"
+Content-Transfer-Encoding:base64
+
+aGVsbG8gYXR0YWNobWVudCBjb250ZW50Cg==
+--MIXBOUND--

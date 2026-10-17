@@ -1,0 +1,19 @@
+From: shady@example.com
+To: victim@example.com
+Subject: You won
+Message-ID: <hostile-004@example.com>
+Date: Tue, 14 Oct 2026 09:15:00 +0800
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="HOSTILE"
+
+--HOSTILE
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Claim now</p><script>alert(document.cookie)</script><img src="http://tracker.example.com/pixel.gif" width="1" height="1"><a href="http://phish.example.com/login">login</a></body></html>
+--HOSTILE
+Content-Type: application/octet-stream; name="../../evil.exe"
+Content-Disposition: attachment; filename="../../evil.exe"
+Content-Transfer-Encoding: base64
+
+TVo=
+--HOSTILE--

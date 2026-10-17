@@ -259,6 +259,8 @@ export interface HomeApi {
   newHtml(opts?: NewFileOpts): Promise<void>
   /** create a blank single-page PDF in the default save folder and open it */
   newPdf(opts?: NewFileOpts): Promise<void>
+  /** open a mail tab at its start screen (mail tabs carry a mailRef, never a file — `opts.dir` is ignored) */
+  newMail(opts?: NewFileOpts): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** unstar files in bulk (Starred view selection bar); the recents list and the files are untouched */
@@ -577,6 +579,7 @@ export const HOME_CHANNELS = {
   newMarkdown: 'home:new-markdown',
   newHtml: 'home:new-html',
   newPdf: 'home:new-pdf',
+  newMail: 'home:new-mail',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',

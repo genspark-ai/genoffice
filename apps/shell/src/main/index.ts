@@ -48,6 +48,8 @@ import menuPdfIcon1x from './assets/menu-pdf.png?asset'
 import menuPdfIcon2x from './assets/menu-pdf@2x.png?asset'
 import menuMdIcon1x from './assets/menu-md.png?asset'
 import menuMdIcon2x from './assets/menu-md@2x.png?asset'
+import menuMailIcon1x from './assets/menu-mail.png?asset'
+import menuMailIcon2x from './assets/menu-mail@2x.png?asset'
 import menuHtmlIcon1x from './assets/menu-html.png?asset'
 import menuHtmlIcon2x from './assets/menu-html@2x.png?asset'
 import menuHomeIcon1x from './assets/menu-home.png?asset'
@@ -269,6 +271,10 @@ import {
   setHtmlPresentHooks,
   setHtmlProvisionalTitleHook,
 } from '../../../html/src/main/html-main'
+import { configureMailRuntime } from '../../../mail/src/main/mail-main'
+import { registerMailShellHandlers } from '../../../mail/src/main/mail-shell-host'
+import { MAIL_CHANNELS } from '../../../mail/src/shared/ipc'
+import { mailOpenMessageSchema } from '../../../mail/src/shared/ipc-schemas'
 import type {
   AccountLoginEvent,
   AutoSaveDefault,
@@ -500,6 +506,9 @@ const MARKDOWN_OUT = app.isPackaged
 const HTML_OUT = app.isPackaged
   ? join(process.resourcesPath, 'modules', 'html')
   : join(APPS_ROOT, 'html', 'out')
+const MAIL_OUT = app.isPackaged
+  ? join(process.resourcesPath, 'modules', 'mail')
+  : join(APPS_ROOT, 'mail', 'out')
 const SIDECAR_BIN = app.isPackaged
   ? join(process.resourcesPath, 'native', SIDECAR_EXE)
   : join(APPS_ROOT, 'sheets', 'native', 'xlsx-engine', 'target', 'release', SIDECAR_EXE)
@@ -543,6 +552,11 @@ configureHtmlRuntime({
   rendererUrl: process.env.HTML_RENDERER_URL,
   rendererFile: join(HTML_OUT, 'renderer', 'index.html'),
   openGeneratedPath: (path) => openGeneratedDocument(path),
+})
+configureMailRuntime({
+  preloadPath: join(MAIL_OUT, 'preload', 'index.js'),
+  rendererUrl: process.env.MAIL_RENDERER_URL,
+  rendererFile: join(MAIL_OUT, 'renderer', 'index.html'),
 })
 // privileged-scheme registration is only legal before app ready
 registerPrivilegedSchemes()
@@ -822,10 +836,12 @@ const tMain = createI18n({
     untitledDoc: '未命名文档',
     untitledDeck: '未命名演示文稿',
     untitledMarkdown: '未命名 Markdown',
+    untitledMail: '未命名 Mail',
     untitledHtml: '未命名 HTML',
     untitledPdf: '未命名 PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: '导出为 PDF…',
@@ -944,10 +960,12 @@ const tMain = createI18n({
     untitledDoc: 'Untitled Document',
     untitledDeck: 'Untitled Presentation',
     untitledMarkdown: 'Untitled Markdown',
+    untitledMail: 'Untitled Mail',
     untitledHtml: 'Untitled HTML',
     untitledPdf: 'Untitled PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Export as PDF…',
@@ -1069,10 +1087,12 @@ const tMain = createI18n({
     untitledDeck: 'Bản trình bày chưa có tiêu đề',
     untitledMarkdown: 'Markdown chưa có tiêu đề',
     untitledHtml: 'HTML chưa có tiêu đề',
+    untitledMail: 'Mail chưa có tiêu đề',
     untitledPdf: 'PDF chưa có tiêu đề',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
     menuNewHtml: 'AI HTML',
+    menuNewMail: 'AI Mail',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Xuất dưới dạng PDF…',
     menuExportImages: 'Xuất dưới dạng hình ảnh…',
@@ -1196,10 +1216,12 @@ const tMain = createI18n({
     untitledDoc: '無題のドキュメント',
     untitledDeck: '無題のプレゼンテーション',
     untitledMarkdown: '無題の Markdown',
+    untitledMail: '無題の Mail',
     untitledHtml: '無題の HTML',
     untitledPdf: '無題の PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'PDF として書き出す…',
@@ -1324,10 +1346,12 @@ const tMain = createI18n({
     untitledDoc: '제목 없는 문서',
     untitledDeck: '제목 없는 프레젠테이션',
     untitledMarkdown: '제목 없는 Markdown',
+    untitledMail: '제목 없는 Mail',
     untitledHtml: '제목 없는 HTML',
     untitledPdf: '제목 없는 PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'PDF로 내보내기…',
@@ -1451,10 +1475,12 @@ const tMain = createI18n({
     untitledDoc: 'Document sans titre',
     untitledDeck: 'Présentation sans titre',
     untitledMarkdown: 'Markdown sans titre',
+    untitledMail: 'Mail sans titre',
     untitledHtml: 'HTML sans titre',
     untitledPdf: 'PDF sans titre',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exporter en PDF…',
@@ -1580,10 +1606,12 @@ const tMain = createI18n({
     untitledDoc: 'Unbenanntes Dokument',
     untitledDeck: 'Unbenannte Präsentation',
     untitledMarkdown: 'Unbenanntes Markdown',
+    untitledMail: 'Unbenanntes Mail',
     untitledHtml: 'Unbenanntes HTML',
     untitledPdf: 'Unbenanntes PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Als PDF exportieren…',
@@ -1710,10 +1738,12 @@ const tMain = createI18n({
     untitledDoc: 'Documento sin título',
     untitledDeck: 'Presentación sin título',
     untitledMarkdown: 'Markdown sin título',
+    untitledMail: 'Mail sin título',
     untitledHtml: 'HTML sin título',
     untitledPdf: 'PDF sin título',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exportar como PDF…',
@@ -1839,10 +1869,12 @@ const tMain = createI18n({
     untitledDoc: 'เอกสารไม่มีชื่อ',
     untitledDeck: 'งานนำเสนอไม่มีชื่อ',
     untitledMarkdown: 'Markdown ไม่มีชื่อ',
+    untitledMail: 'Mail ไม่มีชื่อ',
     untitledHtml: 'HTML ไม่มีชื่อ',
     untitledPdf: 'PDF ไม่มีชื่อ',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'ส่งออกเป็น PDF…',
@@ -1964,10 +1996,12 @@ const tMain = createI18n({
     untitledDoc: 'Dokumen tanpa judul',
     untitledDeck: 'Presentasi tanpa judul',
     untitledMarkdown: 'Markdown tanpa judul',
+    untitledMail: 'Mail tanpa judul',
     untitledHtml: 'HTML tanpa judul',
     untitledPdf: 'PDF tanpa judul',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Ekspor sebagai PDF…',
@@ -2093,10 +2127,12 @@ const tMain = createI18n({
     untitledDoc: 'Документ без названия',
     untitledDeck: 'Презентация без названия',
     untitledMarkdown: 'Markdown без названия',
+    untitledMail: 'Mail без названия',
     untitledHtml: 'HTML без названия',
     untitledPdf: 'PDF без названия',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Экспортировать в PDF…',
@@ -2222,10 +2258,12 @@ const tMain = createI18n({
     untitledDoc: 'مستند بدون عنوان',
     untitledDeck: 'عرض تقديمي بدون عنوان',
     untitledMarkdown: 'Markdown بدون عنوان',
+    untitledMail: 'Mail بدون عنوان',
     untitledHtml: 'HTML بدون عنوان',
     untitledPdf: 'PDF بدون عنوان',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'تصدير بتنسيق PDF…',
@@ -2347,10 +2385,12 @@ const tMain = createI18n({
     untitledDoc: 'Documento sem título',
     untitledDeck: 'Apresentação sem título',
     untitledMarkdown: 'Markdown sem título',
+    untitledMail: 'Mail sem título',
     untitledHtml: 'HTML sem título',
     untitledPdf: 'PDF sem título',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exportar como PDF…',
@@ -2476,10 +2516,12 @@ const tMain = createI18n({
     untitledDoc: 'Documento senza titolo',
     untitledDeck: 'Presentazione senza titolo',
     untitledMarkdown: 'Markdown senza titolo',
+    untitledMail: 'Mail senza titolo',
     untitledHtml: 'HTML senza titolo',
     untitledPdf: 'PDF senza titolo',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Esporta come PDF…',
@@ -2605,10 +2647,12 @@ const tMain = createI18n({
     untitledDoc: 'Dokument bez tytułu',
     untitledDeck: 'Prezentacja bez tytułu',
     untitledMarkdown: 'Markdown bez tytułu',
+    untitledMail: 'Mail bez tytułu',
     untitledHtml: 'HTML bez tytułu',
     untitledPdf: 'PDF bez tytułu',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Eksportuj jako PDF…',
@@ -2734,10 +2778,12 @@ const tMain = createI18n({
     untitledDoc: 'Dokument bez názvu',
     untitledDeck: 'Prezentace bez názvu',
     untitledMarkdown: 'Markdown bez názvu',
+    untitledMail: 'Mail bez názvu',
     untitledHtml: 'HTML bez názvu',
     untitledPdf: 'PDF bez názvu',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exportovat jako PDF…',
@@ -2861,10 +2907,12 @@ const tMain = createI18n({
     untitledDoc: 'Naamloos document',
     untitledDeck: 'Naamloze presentatie',
     untitledMarkdown: 'Naamloos Markdown',
+    untitledMail: 'Naamloos Mail',
     untitledHtml: 'Naamloos HTML',
     untitledPdf: 'Naamloze PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Exporteren als PDF…',
@@ -2990,10 +3038,12 @@ const tMain = createI18n({
     untitledDoc: 'Dokumen tanpa tajuk',
     untitledDeck: 'Persembahan tanpa tajuk',
     untitledMarkdown: 'Markdown tanpa tajuk',
+    untitledMail: 'Mail tanpa tajuk',
     untitledHtml: 'HTML tanpa tajuk',
     untitledPdf: 'PDF tanpa tajuk',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'Eksport sebagai PDF…',
@@ -3118,10 +3168,12 @@ const tMain = createI18n({
     untitledDoc: 'מסמך ללא שם',
     untitledDeck: 'מצגת ללא שם',
     untitledMarkdown: 'Markdown ללא שם',
+    untitledMail: 'Mail ללא שם',
     untitledHtml: 'HTML ללא שם',
     untitledPdf: 'PDF ללא שם',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'ייצוא כ-PDF…',
@@ -3243,10 +3295,12 @@ const tMain = createI18n({
     untitledDoc: 'बिना शीर्षक दस्तावेज़',
     untitledDeck: 'बिना शीर्षक प्रस्तुति',
     untitledMarkdown: 'अनाम Markdown',
+    untitledMail: 'अनाम Mail',
     untitledHtml: 'अनाम HTML',
     untitledPdf: 'अनाम PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: 'PDF के रूप में निर्यात…',
@@ -3372,10 +3426,12 @@ const tMain = createI18n({
     untitledDoc: '未命名文件',
     untitledDeck: '未命名簡報',
     untitledMarkdown: '未命名 Markdown',
+    untitledMail: '未命名 Mail',
     untitledHtml: '未命名 HTML',
     untitledPdf: '未命名 PDF',
     menuNewSlide: 'AI Slides',
     menuNewMarkdown: 'AI Markdown',
+    menuNewMail: 'AI Mail',
     menuNewHtml: 'AI HTML',
     menuNewPdf: 'AI PDF',
     menuExportPdf: '匯出為 PDF…',
@@ -3744,6 +3800,9 @@ function applyMenuFor(kind: TabKind): void {
     case 'markdown':
       buildMarkdownMenu()
       break
+    case 'mail':
+      buildHomeMenu()
+      break
     case 'html':
       buildHtmlMenu()
       break
@@ -3923,9 +3982,11 @@ function createShellWindow(): void {
             ? tm('untitledDeck')
             : kind === 'markdown'
               ? tm('untitledMarkdown')
-              : kind === 'html'
-                ? tm('untitledHtml')
-                : tm('untitledSheet'),
+              : kind === 'mail'
+                ? tm('untitledMail')
+                : kind === 'html'
+                  ? tm('untitledHtml')
+                  : tm('untitledSheet'),
     // the tab strip is interface chrome, so its height follows the scale
     () => currentUiScale,
   )
@@ -4477,6 +4538,17 @@ function newHtmlTab(): void {
   }
 }
 
+// Mail tabs hold no files: no pending-dir binding and no star-prompt counting
+// (those are file-tab flows); analytics keeps the per-kind file_new event.
+function newMailTab(): void {
+  try {
+    tabManager?.openMailTab()
+    analytics.track('file_new', { kind: 'mail' })
+  } catch (err) {
+    surfaceNewTabError(err)
+  }
+}
+
 /**
  * "New PDF" creates a blank single-page .pdf in the default folder up front and
  * opens it as a regular file tab — the PDF module has no in-memory blank mode
@@ -4807,6 +4879,14 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.newPdf, (_event, opts?: NewFileOpts) => {
     rememberPendingDir('pdf', opts)
     void newPdfTab()
+  })
+
+  // Mail tabs hold no files, so unlike the editors above there is no
+  // pending-dir to remember — the opener is just the tab itself. This is the
+  // automation-reachable path (Playwright: `aiOffice.newMail()`); the native
+  // "+"/File menus call newMailTab() directly and take no synthetic input.
+  ipcMain.handle(HOME_CHANNELS.newMail, () => {
+    newMailTab()
   })
 
   ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
@@ -5367,6 +5447,7 @@ interface MenuIconSet {
   pptx: NativeImage
   pdf: NativeImage
   md: NativeImage
+  mail: NativeImage
   html: NativeImage
   home: NativeImage
 }
@@ -5378,6 +5459,7 @@ function menuIcons(): MenuIconSet {
     pptx: loadMenuIcon(menuPptxIcon1x, menuPptxIcon2x),
     pdf: loadMenuIcon(menuPdfIcon1x, menuPdfIcon2x),
     md: loadMenuIcon(menuMdIcon1x, menuMdIcon2x),
+    mail: loadMenuIcon(menuMailIcon1x, menuMailIcon2x),
     html: loadMenuIcon(menuHtmlIcon1x, menuHtmlIcon2x),
     home: loadMenuIcon(menuHomeIcon1x, menuHomeIcon2x),
   }
@@ -5391,6 +5473,7 @@ const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
   slides: 'pptx',
   pdf: 'pdf',
   markdown: 'md',
+  mail: 'mail',
   html: 'html',
   help: 'home',
 }
@@ -5574,6 +5657,14 @@ function registerTabsIpc(): void {
     if (typeof id !== 'string' || !id) return
     return tabManager?.closeTab(id)
   })
+  // Mail has no file extension: the open path is an explicit mail:open-message
+  // invoke with a zod-validated mailRef (locked D4). Focuses the existing tab
+  // for that ref or opens one; routeDocumentPath stays untouched.
+  ipcMain.handle(MAIL_CHANNELS.openMessage, (_event, payload: unknown) => {
+    const parsed = mailOpenMessageSchema.safeParse(payload)
+    if (!parsed.success) throw new Error('mail: bad open-message payload')
+    return tabManager?.openOrFocusMailTab(parsed.data.mailRef) ?? null
+  })
   ipcMain.handle(TABS_CHANNELS.reorder, (_event, id: string, toIndex: number) => {
     if (typeof id === 'string' && Number.isInteger(toIndex)) tabManager?.reorderTab(id, toIndex)
   })
@@ -5683,6 +5774,11 @@ function registerTabsIpc(): void {
         click: () => newHtmlTab(),
       },
       {
+        label: tm('menuNewMail'),
+        icon: menuIcons().mail,
+        click: () => newMailTab(),
+      },
+      {
         label: tm('menuNewPdf'),
         icon: menuIcons().pdf,
         click: () => void newPdfTab(),
@@ -5731,6 +5827,7 @@ function buildHomeMenu(): void {
         { label: tm('menuNewSlide'), click: () => newSlideTab() },
         { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
         { label: tm('menuNewHtml'), click: () => newHtmlTab() },
+        { label: tm('menuNewMail'), click: () => newMailTab() },
         { label: tm('menuNewPdf'), click: () => void newPdfTab() },
         { type: 'separator' },
         {
@@ -6533,6 +6630,7 @@ function installDockMenu(): void {
       },
       { label: tm('menuNewSlide'), click: () => newSlideTab() },
       { label: tm('menuNewMarkdown'), click: () => newMarkdownTab() },
+      { label: tm('menuNewMail'), click: () => newMailTab() },
       { label: tm('menuNewPdf'), click: () => void newPdfTab() },
     ]),
   )
@@ -6650,6 +6748,16 @@ registerIntegrationsIpc({
     : join(APPS_ROOT, '..', 'packages', 'cli', 'package.json'),
 })
 registerTabsIpc()
+// Mail P3 merge lane: shell-hosted mail tabs serve reads + compose from the
+// shell main process over fakes (demo mailbox, never real accounts).
+registerMailShellHandlers(
+  {
+    handle: (channel, listener) => {
+      ipcMain.handle(channel, (_event, payload) => listener(payload))
+    },
+  },
+  { openExternal: (url) => shell.openExternal(url) },
+)
 registerDroppedFilesIpc()
 
 // sheets' project:resolveChat goes through the handler registered by docs-main; the sessionId reverse lookup hooks in here
@@ -6709,6 +6817,7 @@ app.whenReady().then(async () => {
     html: join(HTML_OUT, 'renderer'),
     // the manual shares the shell's own renderer bundle (help mode)
     help: join(__dirname, '../renderer'),
+    mail: join(MAIL_OUT, 'renderer'),
   })
   if (headlessArgv.kind !== 'none') {
     await runHeadlessExportEntry(headlessArgv)

@@ -287,6 +287,30 @@ describe('open_documents tool', () => {
     expect(textOf(result.content)).toContain('viewer')
   })
 
+  it('labels a mail tab and refuses to read it as a mailbox, not a PDF', async () => {
+    const mail = doc({ id: 'tm', kind: 'mail', title: 'Subject here', dirty: true })
+    await startService(controlOf({ list: vi.fn(async () => [mail]) }))
+    const listed = jsonOf(
+      await client!.callTool({ name: 'open_documents', arguments: { action: 'list' } }),
+    )
+    const rows = listed.documents as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.type).toBe('Mail message')
+    expect(rows[0]!.path).toBeNull()
+
+    const read = await client!.callTool({
+      name: 'open_documents',
+      arguments: { action: 'read', target: 'tm' },
+    })
+    expect(read.isError).toBe(true)
+    expect(textOf(read.content)).toContain('mail message')
+  })
+
+  it('refuses a file save path for a mail tab', () => {
+    const mail = doc({ id: 'tm', kind: 'mail', title: 'Subject here', dirty: true })
+    expect(() => closeSavePath(mail, () => dir)).toThrow('mailbox')
+  })
+
   it('lists an unknown target as an error that names what is open', async () => {
     await startService(controlOf())
     const result = await client!.callTool({

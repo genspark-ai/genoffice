@@ -28,6 +28,7 @@
     "@genoffice/electron-utils": "*",
     "@genoffice/cli": "*",
     "@genoffice/i18n": "*",
+    "@genoffice/mail-protocols": "*",
     "@genoffice/pipelines": "*",
     "@genoffice/pptx-engine": "*",
     "@genoffice/pptx-render": "*",

@@ -1,0 +1,9 @@
+From: Alice Example <alice@example.com>
+To: Bob Example <bob@example.com>
+Subject: Hello plain text
+Message-ID: <basic-001@example.com>
+Date: Tue, 14 Oct 2026 09:00:00 +0800
+Content-Type: text/plain; charset=utf-8
+
+Hi Bob, this is a plain text body for the view-model test.
+Second line here.

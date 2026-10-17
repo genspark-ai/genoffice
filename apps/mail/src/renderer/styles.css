@@ -1,0 +1,53 @@
+/* Mail chrome styles (Lane S owns). Chrome tokens (surface/text/border/…)
+ * come from @genoffice/ui/tokens.css; nothing here may shadow those names.
+ * Message bodies render in quarantined mail-quarantine.css (Lane R) with
+ * authored colors — never chrome tokens. */
+:root {
+  --accent: #1f6feb;
+  --accent-dark: #1a5fc7;
+  --accent-soft: #e4effe;
+  --mail-on-accent: #ffffff;
+}
+
+[data-theme='dark'] {
+  --accent: #4a9eff;
+  --accent-dark: #3a8eef;
+  --accent-soft: #1e3a5f;
+  --mail-on-accent: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --accent: #4a9eff;
+    --accent-dark: #3a8eef;
+    --accent-soft: #1e3a5f;
+    --mail-on-accent: #ffffff;
+  }
+}
+
+.mail-stub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--gs-font-sans);
+}
+
+.mail-stub-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mail-stub-banner {
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--accent-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 12px;
+}

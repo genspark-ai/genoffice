@@ -35,6 +35,10 @@ const EXCEPTIONS = {
   '@univerjs/telemetry': 'Apache-2.0',
   // mermaid dependency; ships an MIT `license` file but no package.json field
   khroma: 'MIT',
+  // googleapis-common dependency; package.json says bare "BSD" but the
+  // shipped LICENSE file is the BSD-3-Clause text (verified 2026-10-14,
+  // url-template 2.0.8). Required for the Gmail API transport.
+  'url-template': 'BSD-3-Clause',
 }
 
 /** Minimal SPDX expression check: OR passes if any branch is allowed,
@@ -88,7 +92,10 @@ for (const [path, info] of Object.entries(lock.packages)) {
   if (idx === -1) continue // workspace roots
   if (info.dev || info.link) continue
   const name = path.slice(idx + 'node_modules/'.length)
-  const license = info.license || EXCEPTIONS[name]
+  // A verified EXCEPTIONS entry wins over the published field: some
+  // packages ship a bare ambiguous field (e.g. "BSD") while the LICENSE
+  // file on disk names the exact grant. Unlisted packages are unchanged.
+  const license = EXCEPTIONS[name] || info.license
   if (!license) {
     violations.push(`${name}: no license field in lockfile (add to EXCEPTIONS after verifying)`)
   } else if (!isAllowed(license)) {

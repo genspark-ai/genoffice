@@ -1,0 +1,125 @@
+/* Quarantined message-body styles (Lane R owns). Bodies carry AUTHORED
+ * colors that render identically in both themes: this layer defines its
+ * own --mq-* custom properties and must never reference chrome tokens
+ * (same rule as PDF surfaces). check-theme-colors only permits raw
+ * values on custom-property definition lines, so every rule below
+ * consumes var(--mq-*) — no bare values, no chrome tokens. */
+.mq-body {
+  --mq-paper: #ffffff;
+  --mq-ink: #1f2328;
+  --mq-muted: #59636e;
+  --mq-line: #d0d7de;
+  --mq-link: #0969da;
+  --mq-mark: #fff8c5;
+  --mq-code: #f6f8fa;
+  --mq-quote: #57606a;
+  --mq-blocked-bg: #f6f8fa;
+  --mq-blocked-line: #d0d7de;
+  --mq-blocked-ink: #59636e;
+  background: var(--mq-paper);
+  color: var(--mq-ink);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.mq-body p,
+.mq-body div {
+  margin: 0 0 8px;
+}
+
+.mq-body h1,
+.mq-body h2,
+.mq-body h3,
+.mq-body h4,
+.mq-body h5,
+.mq-body h6 {
+  color: var(--mq-ink);
+  line-height: 1.3;
+  margin: 12px 0 8px;
+}
+
+.mq-body a {
+  color: var(--mq-link);
+  text-decoration: underline;
+}
+
+.mq-body blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--mq-line);
+  color: var(--mq-quote);
+}
+
+.mq-body pre,
+.mq-body code {
+  background: var(--mq-code);
+  color: var(--mq-ink);
+  font-family: Consolas, Menlo, monospace;
+  font-size: 13px;
+}
+
+.mq-body pre {
+  padding: 8px 12px;
+  overflow-x: auto;
+}
+
+.mq-body pre.mq-text {
+  background: var(--mq-paper);
+  padding: 0;
+  white-space: pre-wrap;
+}
+
+.mq-body mark {
+  background: var(--mq-mark);
+  color: var(--mq-ink);
+}
+
+.mq-body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  max-width: 100%;
+}
+
+.mq-body td,
+.mq-body th {
+  border: 1px solid var(--mq-line);
+  padding: 4px 8px;
+  color: var(--mq-ink);
+}
+
+.mq-body th {
+  background: var(--mq-code);
+}
+
+.mq-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.mq-body hr {
+  border: none;
+  border-top: 1px solid var(--mq-line);
+  margin: 12px 0;
+}
+
+.mq-body ul,
+.mq-body ol {
+  color: var(--mq-ink);
+  padding-left: 24px;
+}
+
+.mq-body .mq-muted {
+  color: var(--mq-muted);
+}
+
+.mq-blocked {
+  display: inline-block;
+  min-width: 120px;
+  min-height: 32px;
+  border: 1px dashed var(--mq-blocked-line);
+  border-radius: 6px;
+  background: var(--mq-blocked-bg);
+  color: var(--mq-blocked-ink);
+}

@@ -168,6 +168,18 @@ vi.mock('../../html/src/main/html-main', () => ({
   requestHtmlClose: (...args: unknown[]) => requestHtmlClose(...(args as [])),
 }))
 
+const createMailView = vi.fn(() => makeFakeView())
+const mailIsDirty = vi.fn(() => false)
+const mailRefOf = vi.fn((): string | undefined => undefined)
+const requestMailClose = vi.fn(() => Promise.resolve(true))
+
+vi.mock('../../mail/src/main/mail-main', () => ({
+  createMailView: (...args: unknown[]) => createMailView(...(args as [])),
+  mailIsDirty: (...args: unknown[]) => mailIsDirty(...(args as [])),
+  mailRefOf: (...args: unknown[]) => mailRefOf(...(args as [])),
+  requestMailClose: (...args: unknown[]) => requestMailClose(...(args as [])),
+}))
+
 import { TabManager } from '../src/main/tab-manager'
 import type { TabKind } from '../src/shared/tabs-api'
 
@@ -215,6 +227,9 @@ beforeEach(() => {
   pdfIsDirty.mockImplementation(() => false)
   sheetsPendingEditCount.mockImplementation(() => 0)
   slidesIsDirty.mockImplementation(() => false)
+  mailIsDirty.mockImplementation(() => false)
+  mailRefOf.mockImplementation(() => undefined)
+  requestMailClose.mockImplementation(() => Promise.resolve(true))
   shellWindow = makeShellWindow()
   onChanged = vi.fn()
   applyMenuFor = vi.fn()
@@ -817,9 +832,10 @@ describe('file path bookkeeping', () => {
       const after = manager.list()
       if (after.length > before) opened.push(after[after.length - 1]!.kind)
     }
-    // file-less tabs (the in-app manual) have no path to rename, so they are
+    // file-less tabs (the in-app manual and mail, which carries a mailRef and
+    // never a file path) have no path to rename, so they are
     // opened by the enumeration but must not demand a RENAMABLE case
-    const fileless = new Set(['help'])
+    const fileless = new Set(['help', 'mail'])
     expect([...new Set(opened.filter((k) => !fileless.has(k)))].sort()).toEqual(
       RENAMABLE.map((c) => c.kind).sort(),
     )
@@ -1041,5 +1057,129 @@ describe('detach / attach (Open in New Window, tear-off, dock)', () => {
     expect(teardownDocsRenderer).toHaveBeenCalledWith(record.view.webContents)
     expect(record.view.webContents.close).not.toHaveBeenCalled()
     expect(manager.list()).toHaveLength(1)
+  })
+})
+describe('mail tabs', () => {
+  it('opens a mail tab with the untitled mail title and routes the menu at it', () => {
+    const id = manager.openMailTab()
+    expect(createMailView).toHaveBeenCalledTimes(1)
+    expect(createMailView).toHaveBeenCalledWith(undefined)
+    expect(manager.list()[1]).toMatchObject({
+      id,
+      kind: 'mail',
+      title: 'AI Mail',
+      closable: true,
+      active: true,
+    })
+    expect(shellWindow.contentView.addChildView).toHaveBeenCalledTimes(1)
+    expect(applyMenuFor).toHaveBeenLastCalledWith('mail')
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('forwards the mailRef to the mail view factory', () => {
+    manager.openMailTab('mail://demo/INBOX/1')
+    expect(createMailView).toHaveBeenCalledWith('mail://demo/INBOX/1')
+  })
+
+  it('lists only live mail tabs', () => {
+    const mailId = manager.openMailTab()
+    const mailView = lastCreatedView(createMailView)
+    manager.openDocsTab()
+    manager.openSheetsTab()
+    expect(manager.mailTabs().map((t) => t.id)).toEqual([mailId])
+    expect(manager.mailTabs()[0]!.webContents).toBe(mailView.webContents)
+  })
+
+  it('lists only mail tabs whose renderer reports an unsent draft', () => {
+    const dirtyId = manager.openMailTab()
+    const dirtyView = lastCreatedView(createMailView)
+    manager.openMailTab()
+    mailIsDirty.mockImplementation((id: number) => id === dirtyView.webContents.id)
+    expect(manager.dirtyMailTabs().map((t) => t.id)).toEqual([dirtyId])
+  })
+
+  it('closes a clean mail tab without asking the draft guard', async () => {
+    const id = manager.openMailTab()
+    await manager.closeTab(id)
+    expect(mailIsDirty).toHaveBeenCalled()
+    expect(requestMailClose).not.toHaveBeenCalled()
+    expect(manager.list()).toHaveLength(1)
+  })
+
+  it("closes a dirty mail tab when the guard resolves true (Save / Don't save)", async () => {
+    mailIsDirty.mockImplementation(() => true)
+    requestMailClose.mockImplementation(() => Promise.resolve(true))
+    const id = manager.openMailTab()
+    await manager.closeTab(id)
+    expect(requestMailClose).toHaveBeenCalledTimes(1)
+    expect(manager.list()).toHaveLength(1)
+  })
+
+  it('keeps a dirty mail tab open when the guard resolves false (Cancel)', async () => {
+    mailIsDirty.mockImplementation(() => true)
+    requestMailClose.mockImplementation(() => Promise.resolve(false))
+    const id = manager.openMailTab()
+    await manager.closeTab(id)
+    expect(requestMailClose).toHaveBeenCalledTimes(1)
+    expect(manager.list().map((t) => t.id)).toEqual(['home', id])
+  })
+
+  it('activates a dirty background mail tab before showing its close guard', async () => {
+    mailIsDirty.mockImplementation(() => true)
+    requestMailClose.mockImplementation(() => Promise.resolve(false))
+    const mailId = manager.openMailTab()
+    manager.openDocsTab()
+    await manager.closeTab(mailId)
+    expect(requestMailClose).toHaveBeenCalledTimes(1)
+    expect(manager.list().find((t) => t.id === mailId)?.active).toBe(true)
+  })
+
+  it('never leaks mail tabs into the file-path registry (mail has no filePath)', () => {
+    manager.openMailTab('mail://demo/INBOX/1')
+    manager.openDocsTab('/tmp/report.docx')
+    expect(manager.openFilePaths()).toEqual(['/tmp/report.docx'])
+  })
+
+  it('reports mail tabs with their draft state in openDocuments', async () => {
+    const cleanId = manager.openMailTab()
+    const cleanView = lastCreatedView(createMailView)
+    manager.openMailTab()
+    const dirtyView = lastCreatedView(createMailView)
+    mailIsDirty.mockImplementation((id: number) => id === dirtyView.webContents.id)
+    const docs = await manager.openDocuments()
+    expect(docs).toEqual([
+      { id: cleanId, kind: 'mail', title: 'AI Mail', active: false, dirty: false },
+      { id: 't2', kind: 'mail', title: 'AI Mail', active: true, dirty: true },
+    ])
+    expect(cleanView.webContents.id).not.toBe(dirtyView.webContents.id)
+  })
+})
+
+describe('mail:open-message focus-existing route', () => {
+  it('opens a new tab for an unseen mailRef', () => {
+    const id = manager.openOrFocusMailTab('mail://demo/INBOX/1')
+    expect(createMailView).toHaveBeenCalledWith('mail://demo/INBOX/1')
+    expect(manager.list()[1]).toMatchObject({ id, kind: 'mail', active: true })
+  })
+
+  it('focuses the existing tab for a seen mailRef instead of opening one', () => {
+    const first = manager.openOrFocusMailTab('mail://demo/INBOX/1')
+    const view = lastCreatedView(createMailView)
+    mailRefOf.mockImplementation((id: number) =>
+      id === view.webContents.id ? 'mail://demo/INBOX/1' : undefined,
+    )
+    manager.openDocsTab()
+    const focused = manager.openOrFocusMailTab('mail://demo/INBOX/1')
+    expect(focused).toBe(first)
+    expect(createMailView).toHaveBeenCalledTimes(1)
+    expect(manager.list().find((t) => t.id === first)?.active).toBe(true)
+  })
+
+  it('ignores blank mail tabs (no mailRef) when focusing', () => {
+    manager.openMailTab()
+    const id = manager.openOrFocusMailTab('mail://demo/INBOX/9')
+    expect(createMailView).toHaveBeenCalledTimes(2)
+    expect(manager.list()).toHaveLength(3)
+    expect(manager.list().find((t) => t.id === id)?.active).toBe(true)
   })
 })

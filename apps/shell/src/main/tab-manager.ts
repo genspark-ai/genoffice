@@ -19,6 +19,12 @@ import {
   requestMarkdownClose,
 } from '../../../markdown/src/main/markdown-main'
 import {
+  createMailView,
+  mailIsDirty,
+  mailRefOf,
+  requestMailClose,
+} from '../../../mail/src/main/mail-main'
+import {
   createHtmlPresentView,
   createHtmlView,
   htmlIsDirty,
@@ -299,6 +305,8 @@ export class TabManager {
         return pdfIsDirty(wc.id)
       case 'markdown':
         return markdownIsDirty(wc.id)
+      case 'mail':
+        return mailIsDirty(wc.id)
       case 'html':
         return htmlIsDirty(wc.id)
       case 'slides':
@@ -457,6 +465,41 @@ export class TabManager {
     return id
   }
 
+  /**
+   * Mail tabs carry no filePath (locked D3) — identity is the renderer's
+   * mailRef. The initial title is the untitled default; the renderer updates
+   * it to the message subject (fallback sender + date) once loaded.
+   */
+  openMailTab(mailRef?: string | null): string {
+    const view = createMailView(mailRef)
+    const id = `t${this.nextId++}`
+    this.shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    this.trackHtmlFullScreen(view)
+    this.tabs.push({
+      id,
+      kind: 'mail',
+      view,
+      title: this.untitled('mail', 'AI Mail'),
+    })
+    this.activateTab(id)
+    return id
+  }
+
+  /**
+   * `mail:open-message` route: focus the live tab already showing this
+   * mailRef, else open one. Identity is the renderer's mailRef (mail tabs
+   * carry no filePath) — the initial blank tab has none, so it never matches.
+   */
+  openOrFocusMailTab(mailRef: string): string {
+    const existing = this.mailTabs().find((tab) => mailRefOf(tab.webContents.id) === mailRef)
+    if (existing) {
+      this.activateTab(existing.id)
+      return existing.id
+    }
+    return this.openMailTab(mailRef)
+  }
+
   /** Present → New tab: a chrome-free html tab showing the owner tab's live preview */
   openHtmlPresentTab(owner: WebContents, title: string): string {
     const view = createHtmlPresentView(owner, title)
@@ -602,6 +645,13 @@ export class TabManager {
       .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
   }
 
+  /** mail tabs with an unsent draft (shell-close guard) */
+  dirtyMailTabs(): Array<{ id: string; webContents: WebContents }> {
+    return this.tabs
+      .filter((t) => t.kind === 'mail' && t.view && mailIsDirty(t.view.webContents.id))
+      .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
+  }
+
   /** html tabs whose renderer reports unsaved edits (shell-close guard) */
   dirtyHtmlTabs(): Array<{ id: string; webContents: WebContents }> {
     return this.tabs
@@ -637,6 +687,13 @@ export class TabManager {
       .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
   }
 
+  /** all live mail tabs (`mail:open-message` focuses an existing tab through this) */
+  mailTabs(): Array<{ id: string; webContents: WebContents }> {
+    return this.tabs
+      .filter((t) => t.kind === 'mail' && t.view)
+      .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
+  }
+
   /** closes whichever tab is currently active; no-op for Home (Cmd+W target) */
   closeActiveTab(): void {
     void this.closeTab(this.activeId)
@@ -654,11 +711,13 @@ export class TabManager {
           ? requestPdfClose
           : tab.kind === 'markdown' && markdownIsDirty(tab.view.webContents.id)
             ? requestMarkdownClose
-            : tab.kind === 'html' && htmlIsDirty(tab.view.webContents.id)
-              ? requestHtmlClose
-              : tab.kind === 'slides' && slidesIsDirty(tab.view.webContents.id)
-                ? requestSlidesClose
-                : null)
+            : tab.kind === 'mail' && mailIsDirty(tab.view.webContents.id)
+              ? requestMailClose
+              : tab.kind === 'html' && htmlIsDirty(tab.view.webContents.id)
+                ? requestHtmlClose
+                : tab.kind === 'slides' && slidesIsDirty(tab.view.webContents.id)
+                  ? requestSlidesClose
+                  : null)
     // docs dirty state lives in the renderer and needs an async query; skip the guard when clean (avoids a flash activation)
     if (!closeGuard && tab.kind === 'docs' && tab.view) {
       this.closingIds.add(id)
