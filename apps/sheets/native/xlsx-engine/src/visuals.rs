@@ -1460,11 +1460,15 @@ pub struct ReadComment {
 
 /// The picture each note is showing, by cell reference.
 ///
-/// Excel draws a note's picture onto the note's own VML shape as an
-/// `imagedata` relationship, resolved through the VML part's own rels — the
-/// same place `read_header_footer_pictures` looks. A picture that is in the
-/// package but belongs to no note shape is not a note picture, and a shape
-/// whose relationship no longer resolves is skipped rather than guessed at.
+/// Excel draws a note's picture onto the note's own VML shape as a picture
+/// fill — `<v:fill type="frame">` carrying the relationship on `o:relid` —
+/// resolved through the VML part's own rels, the same place
+/// `read_header_footer_pictures` looks. A relationship on an `imagedata`
+/// child is the older spelling; WPS writes an empty `imagedata` on every
+/// note, and with no relationship behind it, it matches nothing. A picture
+/// that is in the package but belongs to no note shape is not a note
+/// picture, and a shape whose relationship no longer resolves is skipped
+/// rather than guessed at.
 fn note_picture_paths(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
@@ -1512,18 +1516,25 @@ fn note_picture_paths(
         else {
             continue;
         };
-        let Some(image_data) = direct_child(shape, "imagedata") else {
-            continue;
-        };
+        // The fill only carries a picture when it is a frame fill and names
+        // the relationship; the yellow note fill is a plain color2 element.
+        let painted = direct_child(shape, "fill").filter(|fill| {
+            fill.attributes().any(|attribute| {
+                attribute.name() == "type" && attribute.value() == "frame"
+            }) && fill.attributes().any(|attribute| {
+                attribute.name() == "relid" || attribute.name() == "id"
+            })
+        });
+        let carrying = painted.or_else(|| direct_child(shape, "imagedata"));
         // Excel writes o:relid; some producers use r:id instead.
-        let Some(relationship_id) = image_data
-            .attributes()
-            .find(|attribute| attribute.name() == "relid" || attribute.name() == "id")
-            .map(|attribute| attribute.value())
-        else {
+        let Some(relationship_id) = carrying.and_then(|node| {
+            node.attributes()
+                .find(|attribute| attribute.name() == "relid" || attribute.name() == "id")
+                .map(|attribute| attribute.value().to_owned())
+        }) else {
             continue;
         };
-        let Some(media) = media_relationships.get(relationship_id) else {
+        let Some(media) = media_relationships.get(relationship_id.as_str()) else {
             continue;
         };
         let Ok(media_path) = resolve_part_target(&vml_path, &media.target) else {

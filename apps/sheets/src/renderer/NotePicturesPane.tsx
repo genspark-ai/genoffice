@@ -16,9 +16,10 @@ import type { UniverRuntime } from './univer-state'
 
 /** One picture, at the width the pane gives it. A failure leaves the text. */
 function Picture({ sessionId, imageId }: { readonly sessionId: string; readonly imageId: string }) {
+  const { t } = useI18n()
   const { url, unavailable } = useWorkbookMediaUrl(sessionId, imageId)
   if (url) return <img className="np-image" src={url} alt="" />
-  if (unavailable) return <p className="np-image-missing">{unavailable}</p>
+  if (unavailable) return <p className="np-image-missing">{t('appNotePictureUnavailable')}</p>
   return null
 }
 

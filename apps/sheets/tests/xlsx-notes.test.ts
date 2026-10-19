@@ -156,8 +156,12 @@ describe('note snapshots', () => {
 
 /// A workbook Excel wrote where B1's note carries a picture — the shape
 /// genealogy charts and old-photo sheets put in a popup. The picture lives in
-/// `xl/media` and the shape reaches it through the VML part's own rels.
-async function workbookWithPictureNote(): Promise<Buffer> {
+/// `xl/media`, and the shape paints it as a frame fill that reaches it through
+/// the VML part's own rels. Older producers hang the same relationship on a
+/// `v:imagedata` child instead; WPS writes an empty one on every note.
+async function workbookWithPictureNote(
+  notePicture: string = '<v:fill o:relid="rId1" o:title="photo.png" recolor="t" rotate="t" type="frame"/>',
+): Promise<Buffer> {
   const zip = await JSZip.loadAsync(await buildKitchenSinkFixture())
   zip.file(
     'xl/drawings/vmlDrawing1.vml',
@@ -172,7 +176,7 @@ async function workbookWithPictureNote(): Promise<Buffer> {
       '<v:shape id="_x0000_s1025" type="#_x0000_t202"' +
       ' style="position:absolute;width:96pt;height:79.5pt;visibility:hidden"' +
       ' o:insetmode="auto">' +
-      '<v:imagedata r:id="rId1" o:relid="rId1"/>' +
+      notePicture +
       '<x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/>' +
       '<x:Anchor>2, 15, 0, 2, 4, 15, 3, 2</x:Anchor>' +
       '<x:AutoFill>False</x:AutoFill>' +
@@ -200,8 +204,32 @@ describe('note pictures', () => {
       plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
       plan.added.get('xl/drawings/vmlDrawing1.vml')
     expect(vml).toBeDefined()
-    expect(vml).toContain('<v:imagedata')
-    expect(vml).toContain('r:id="rId1"')
+    // the picture rides on the rebuilt shape as the frame fill it came in as
+    expect(vml).toContain(
+      '<v:fill o:relid="rId1" o:title="photo.png" recolor="t" rotate="t" type="frame"/>',
+    )
+  })
+
+  it('reads back a picture an older producer hung on v:imagedata', async () => {
+    const plan = await planNotes(
+      NOTES,
+      await workbookWithPictureNote('<v:imagedata r:id="rId1" o:relid="rId1"/>'),
+    )
+    const vml =
+      plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
+      plan.added.get('xl/drawings/vmlDrawing1.vml')
+    expect(vml).toContain('<v:imagedata r:id="rId1" o:relid="rId1"/>')
+  })
+
+  it('an imagedata placeholder without a relationship is no picture', async () => {
+    // WPS writes an empty <v:imagedata> on every note; nothing may grow a
+    // picture from it.
+    const plan = await planNotes(NOTES, await workbookWithPictureNote('<v:imagedata o:title=""/>'))
+    const vml =
+      plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
+      plan.added.get('xl/drawings/vmlDrawing1.vml')
+    expect(vml).not.toContain('type="frame"')
+    expect(vml).not.toContain('<v:imagedata')
   })
 
   it('leaves the VML relationships and the media part alone', async () => {
@@ -222,7 +250,7 @@ describe('note pictures', () => {
       plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
       plan.added.get('xl/drawings/vmlDrawing1.vml')
     const shapes = vml!.split('<v:shape ').slice(1)
-    const withPicture = shapes.filter((shape) => shape.includes('<v:imagedata'))
+    const withPicture = shapes.filter((shape) => shape.includes('type="frame"'))
     expect(withPicture).toHaveLength(1)
     expect(withPicture[0]).toContain('<x:Row>0</x:Row><x:Column>1</x:Column>')
     // the yellow fill is painted behind the picture and would hide it
