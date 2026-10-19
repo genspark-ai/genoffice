@@ -169,7 +169,7 @@ dependencies = [
 [[package]]
 name = "calamine"
 version = "0.36.1"
-source = "git+https://github.com/tokg-venv/calamine?rev=017e287b72bf9041e5246227b88dcbed436dee33#017e287b72bf9041e5246227b88dcbed436dee33"
+source = "git+https://github.com/tokg-venv/calamine?rev=61b57393b3b5278c79a376bb2ca170bd69f3220b#61b57393b3b5278c79a376bb2ca170bd69f3220b"
 dependencies = [
  "atoi_simd",
  "byteorder",

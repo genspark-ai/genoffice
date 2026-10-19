@@ -16,7 +16,7 @@ base64 = "0.22.1"
 # the reference-token flags, the bijective column letters, and the SHRFMLA
 # parsing that reconstructs shared-formula members. Upstream thread:
 # https://github.com/tafia/calamine/pull/740
-calamine = { git = "https://github.com/tokg-venv/calamine", rev = "017e287b72bf9041e5246227b88dcbed436dee33" }
+calamine = { git = "https://github.com/tokg-venv/calamine", rev = "61b57393b3b5278c79a376bb2ca170bd69f3220b" }
 ironcalc = "0.7.1"
 quick-xml = { version = "0.38", features = ["encoding"] }
 roxmltree = "0.21.1"
