@@ -32,7 +32,11 @@ describe('createMainProcessProxyDispatcher', () => {
     // port 9 (discard) is not listening: a request that reached the "proxy"
     // would fail with ECONNREFUSED instead of this assertion passing
     const dispatcher = await createMainProcessProxyDispatcher('http://127.0.0.1:9')
-    const { statusCode, body } = await dispatcher.request({ origin: origin.url, path: '/', method: 'GET' })
+    const { statusCode, body } = await dispatcher.request({
+      origin: origin.url,
+      path: '/',
+      method: 'GET',
+    })
     expect(statusCode).toBe(200)
     expect(await body.text()).toBe('loopback direct')
     await dispatcher.close()
@@ -54,7 +58,11 @@ describe('createMainProcessProxyDispatcher', () => {
     process.env.no_proxy = '127.0.0.1'
     try {
       const dispatcher = await createMainProcessProxyDispatcher('http://127.0.0.1:9')
-      const { statusCode } = await dispatcher.request({ origin: origin.url, path: '/', method: 'GET' })
+      const { statusCode } = await dispatcher.request({
+        origin: origin.url,
+        path: '/',
+        method: 'GET',
+      })
       expect(statusCode).toBe(200)
       await dispatcher.close()
     } finally {
