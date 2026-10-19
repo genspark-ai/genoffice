@@ -10,7 +10,7 @@ import {
 } from '@genoffice/ui'
 import type { AiFontSize, AiPanelPrefs, AiPanelSide } from '@genoffice/ui'
 import type { DecisionEndpoint, DefaultAppStatus, FileSearchSettings } from '../../shared/home-api'
-import { AUTHOR_NAME_MAX } from '../../shared/home-api'
+import { AUTHOR_NAME_MAX, isCloudflareEndpoint } from '../../shared/home-api'
 import type { UpdateUiState } from '../../shared/update-api'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
@@ -372,12 +372,19 @@ function AiModelPane({ t }: { t: TFunc }) {
   // endpoint itself. Keyed on the catalog's `needsBaseUrl` flag rather than on
   // the literal 'custom' id, so it follows the slot rather than the name, and
   // stays a no-op while any other provider is selected — a local server saved
-  // months ago is never contacted while Genspark is in use.
-  const endpointProvider = catalog.find(
-    (entry) => entry.id === settings?.provider && entry.needsBaseUrl,
-  )?.id
+  // months ago is never contacted while Genspark is in use. Aggregators flagged
+  // `liveModels` (OpenRouter) join in at their default address, their shipped
+  // list standing in until the catalog answers.
+  const liveEntry = catalog.find(
+    (entry) => entry.id === settings?.provider && (entry.needsBaseUrl || entry.liveModels),
+  )
+  const endpointProvider = liveEntry?.id
   const endpointConfig = settings ? settings.providers[settings.provider] : undefined
-  const endpointBaseUrl = (endpointConfig?.baseUrl ?? '').trim()
+  const endpointBaseUrl =
+    (endpointConfig?.baseUrl ?? '').trim() ||
+    (liveEntry?.liveModels ? liveEntry.defaultBaseUrl : '')
+  /** the lists as shipped, restored when a live list is withdrawn */
+  const shippedModelsRef = useRef(new Map(catalog.map((entry) => [entry.id, entry.models])))
   const endpointApiKey = endpointConfig?.apiKey ?? ''
   // The probe speaks the endpoint's declared protocol: an Anthropic- or
   // Gemini-shaped gateway answers a different route, and the list it returns
@@ -402,7 +409,7 @@ function AiModelPane({ t }: { t: TFunc }) {
     if (listedForRef.current && listedForRef.current !== endpointBaseUrl) {
       listedForRef.current = ''
       probedProfilesRef.current = undefined
-      setCatalog(foldModels(endpointProvider, []))
+      setCatalog(foldModels(endpointProvider, shippedModelsRef.current.get(endpointProvider) ?? []))
     }
     if (!endpointBaseUrl || !window.aiOffice.getCustomModels) return
     let cancelled = false
@@ -698,6 +705,7 @@ function AiModelPane({ t }: { t: TFunc }) {
             ariaLabel={t('setAiModelId')}
             options={meta.models.map((m) => ({ value: m, label: m }))}
             onPick={(m) => updateConfig({ model: m })}
+            searchPlaceholder={meta.models.length > 12 ? t('setAiModelSearch') : undefined}
           />
         ) : (
           <input
@@ -1600,15 +1608,16 @@ function AiMediaPane({
                   )}
                 </>
               )}
+              {isCloudflareEndpoint(fileSearch.endpoint) &&
+                textRow(
+                  'set-search-jev-account',
+                  'setSearchRerankAccount',
+                  fileSearch.cloudflareAccountId,
+                  '',
+                  (v) => setFileSearch({ ...fileSearch, cloudflareAccountId: v }),
+                )}
               {fileSearch.endpoint === 'cloudflare' && (
                 <>
-                  {textRow(
-                    'set-search-jev-account',
-                    'setSearchRerankAccount',
-                    fileSearch.cloudflareAccountId,
-                    '',
-                    (v) => setFileSearch({ ...fileSearch, cloudflareAccountId: v }),
-                  )}
                   {textRow(
                     'set-search-jev-cf-model',
                     'setSearchRerankCustomModel',

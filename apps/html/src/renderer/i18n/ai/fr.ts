@@ -37,6 +37,8 @@ export const fr = {
     'Problème réseau : impossible de joindre le service IA. Vérifiez votre connexion et réessayez',
   aiNewChat: 'Nouvelle conversation',
   aiNoReply: '(aucune réponse)',
+  aiRegionError:
+    'Le fournisseur de ce modèle ne dessert pas votre région actuelle — choisissez un autre modèle ou changez de réseau',
   aiOverloadedError: "Le service d'IA est actuellement surchargé — réessayez dans un instant",
   aiRegenerateTitle: 'Régénérer',
   aiRetry: 'Réessayer',

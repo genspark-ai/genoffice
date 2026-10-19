@@ -365,6 +365,117 @@ describe('AgentLoop', () => {
     expect(onDone).toHaveBeenCalledWith({ text: 'finished', cancelled: false, turnLimit: false })
   })
 
+  it('nudges then aborts a run that keeps getting the same read result from new inputs', async () => {
+    let n = 0
+    const newKeyword = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'x', name: 'do_thing', input: { query: `keyword ${n++}` } })
+      cb.onDone()
+    }
+    const transport = scriptedTransport(Array.from({ length: 20 }, () => newKeyword))
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(() => ({ output: '(no images)', summary: 'search' })),
+      events: { onError, onDone },
+    })
+    loop.run('go')
+    for (let i = 0; i < 40; i++) await flush()
+    // first call seeds; the 4th redundant result carries the nudge; the 12th aborts
+    const toolMsgs = loop.messages.filter((m) => m.role === 'tool')
+    expect(toolMsgs).toHaveLength(0) // rolled back
+    expect(transport.requests).toHaveLength(13)
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('re-reading'))
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  it('the same query repeated with churning results is a loop from the third call on', async () => {
+    let n = 0
+    const sameQuery = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'x', name: 'do_thing', input: { query: 'nurses tv review' } })
+      cb.onDone()
+    }
+    const transport = scriptedTransport(Array.from({ length: 24 }, () => sameQuery))
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      // results differ every time, as a live web search does
+      skill: makeSkill(() => ({ output: `result ${n++}`, summary: 'search' })),
+      events: { onError, onDone },
+    })
+    loop.run('go')
+    for (let i = 0; i < 50; i++) await flush()
+    // calls 1-2 are free, calls 3..14 are twelve redundant turns, then the run aborts
+    expect(transport.requests).toHaveLength(14)
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('re-reading'))
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  it('the redundant-read nudge is appended to the tool result once per streak', async () => {
+    let n = 0
+    const newKeyword = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'x', name: 'do_thing', input: { query: `keyword ${n++}` } })
+      cb.onDone()
+    }
+    const done = (cb: AgentStreamCallbacks) => {
+      cb.onDelta('finished')
+      cb.onDone()
+    }
+    const transport = scriptedTransport([...Array.from({ length: 6 }, () => newKeyword), done])
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill(() => ({ output: '(no images)', summary: 'search' })),
+      events: { onDone },
+    })
+    loop.run('go')
+    for (let i = 0; i < 20; i++) await flush()
+    expect(onDone).toHaveBeenCalledWith({ text: 'finished', cancelled: false, turnLimit: false })
+    const outputs = loop.messages
+      .filter((m): m is Extract<AgentMessage, { role: 'tool' }> => m.role === 'tool')
+      .map((m) => m.results[0]!.output)
+    expect(outputs.filter((o) => o.includes('[System] Recent tool calls'))).toHaveLength(1)
+    expect(outputs[4]).toContain('[System] Recent tool calls')
+  })
+
+  it('an edit resets the redundant-read streak; distinct reads never count', async () => {
+    let n = 0
+    const sameResult = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'x', name: 'do_thing', input: { query: `k${n++}` } })
+      cb.onDone()
+    }
+    const edit = (cb: AgentStreamCallbacks) => {
+      cb.onToolCall({ id: 'e', name: 'do_thing', input: { edit: true } })
+      cb.onDone()
+    }
+    const done = (cb: AgentStreamCallbacks) => {
+      cb.onDelta('finished')
+      cb.onDone()
+    }
+    const transport = scriptedTransport([
+      ...Array.from({ length: 10 }, () => sameResult),
+      edit,
+      ...Array.from({ length: 10 }, () => sameResult),
+      done,
+    ])
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: makeSkill((call) =>
+        call.input.edit
+          ? { output: 'ok', summary: 'edit', mutated: true }
+          : { output: '(no images)', summary: 'search' },
+      ),
+      events: { onError, onDone },
+    })
+    loop.run('go')
+    for (let i = 0; i < 50; i++) await flush()
+    expect(onError).not.toHaveBeenCalled()
+    expect(onDone).toHaveBeenCalledWith({ text: 'finished', cancelled: false, turnLimit: false })
+  })
+
   it('aborts after eight consecutive turns where every tool call failed', async () => {
     const failingTurn = (n: number) => (cb: AgentStreamCallbacks) => {
       // vary the input so the identical-turn guard does not trip first

@@ -187,7 +187,7 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
         'session is needed, and the UI switches to that tab so the user sees the change land. ' +
         'PDF tabs are listed and can be closed, but this tool does not read or save them: the ' +
         'pdf app is a viewer, so an open PDF has no live editable content. Read a PDF with ' +
-        'read_pdf (and search it with search_pdf); it cannot be written back. Closing one just ' +
+        'read_pdf; it cannot be written back. Closing one just ' +
         'drops the tab — a PDF with unsaved annotations (its only unsaved state) must be closed ' +
         'with unsaved:"discard".',
       inputSchema: {

@@ -2099,19 +2099,20 @@ function buildTextParagraph(
     }
   }
 
-  // --- deleted paragraph mark (w:pPr/w:rPr/w:del) ---
-  let paraMarkDel: Block['paraMarkDel']
-  {
+  // --- deleted / inserted paragraph mark (w:pPr/w:rPr/w:del, w:pPr/w:rPr/w:ins) ---
+  const paraMarkRevision = (tag: string): Block['paraMarkDel'] => {
     const pRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
-    const delEl = pRPr ? findChild(pRPr, 'w:del') : undefined
-    if (delEl) {
-      const a = attrsOf(delEl)
-      paraMarkDel = { author: a['w:author'] ?? '' }
-      if (a['w:date']) paraMarkDel.date = a['w:date']
-      if (a['w16du:dateUtc']) paraMarkDel.dateUtc = a['w16du:dateUtc']
-      if (a['w:id']) paraMarkDel.id = a['w:id']
-    }
+    const el = pRPr ? findChild(pRPr, tag) : undefined
+    if (!el) return undefined
+    const a = attrsOf(el)
+    const info: NonNullable<Block['paraMarkDel']> = { author: a['w:author'] ?? '' }
+    if (a['w:date']) info.date = a['w:date']
+    if (a['w16du:dateUtc']) info.dateUtc = a['w16du:dateUtc']
+    if (a['w:id']) info.id = a['w:id']
+    return info
   }
+  const paraMarkDel = paraMarkRevision('w:del') ?? paraMarkRevision('w:moveFrom')
+  const paraMarkIns = paraMarkRevision('w:ins') ?? paraMarkRevision('w:moveTo')
 
   // list item?
   const listRef = listRefOf(ctx, pPr, styleId)
@@ -2123,6 +2124,7 @@ function buildTextParagraph(
     ...(moveRevision ? { moveRevision } : {}),
     ...(pPrChangeInfo ? { pPrChangeInfo } : {}),
     ...(paraMarkDel ? { paraMarkDel } : {}),
+    ...(paraMarkIns ? { paraMarkIns } : {}),
   }
   if (listRef) {
     const kind = listKindOf(ctx, listRef.numId, listRef.ilvl)

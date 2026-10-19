@@ -1726,6 +1726,27 @@ html.genoffice-popover-open .ribbon-tabs {
   background: var(--docs-table-handle-hover);
 }
 
+.doc-table-resize {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--docs-table-handle-border);
+  border-radius: 3px;
+  background: var(--docs-table-handle-bg);
+  color: var(--docs-table-handle-ink);
+  cursor: nwse-resize;
+  box-shadow: var(--docs-shadow-chip);
+}
+
+.doc-table-resize:hover {
+  background: var(--docs-table-handle-hover);
+}
+
 .table-cell {
   width: 18px;
   height: 16px;
@@ -2690,26 +2711,6 @@ th.cell-rev-del {
 
 .ProseMirror-focused .ProseMirror-gapcursor {
   display: block;
-}
-
-/* While an IME composition is live — the ScriptFonts plugin's compositionstart
-   handler sets this class on the editor root, which is also the .doc-page
-   element that defines --doc-latin-chain; prosemirror-view itself does not —
-   the span under the caret inherits its pre-edit string, a
-   pinyin sequence that must resolve Latin glyphs through the document's
-   Latin chain (Word's per-script behavior), not the EA face's half-width
-   Latin. The EA slot stays last so Han typed in the same span still renders
-   in the EA face. Scoped to compositions on purpose: the span's rendered
-   declaration stays EA-primary (its inline style from script-fonts.ts), so
-   the inline box and the strut share one half-leading geometry and no line
-   moves while nobody is typing — only the line under the caret may reflow,
-   and the decoration rebuild settles it when the composition ends. */
-.ProseMirror-composing .doc-east-asian-font {
-  /* !important is what lets a stylesheet rule out-shout the decoration's
-     inline font-family while typing; the moment the class drops, the inline
-     EA-primary declaration is the whole story again */
-  font-family:
-    var(--doc-latin-chain, 'Latin Sans GO'), var(--doc-east-asian-font, inherit) !important;
 }
 
 /* ---- Word basics: marks / columns / page border / header-footer / nav / ruler ---- */
@@ -5729,11 +5730,16 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   text-align: inherit;
 }
 
-.doc-table .selectedCell {
+/* the move handle / Select Table pick the table as a node: Word tints every cell, same as a cell selection */
+.doc-table .selectedCell,
+.doc-table.ProseMirror-selectednode > tbody > tr:not(.page-gap-table) > td,
+.doc-table.ProseMirror-selectednode > tbody > tr:not(.page-gap-table) > th {
   position: relative;
 }
 
-.doc-table .selectedCell::after {
+.doc-table .selectedCell::after,
+.doc-table.ProseMirror-selectednode > tbody > tr:not(.page-gap-table) > td::after,
+.doc-table.ProseMirror-selectednode > tbody > tr:not(.page-gap-table) > th::after {
   position: absolute;
   inset: 0;
   content: '';
@@ -5743,6 +5749,12 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .doc-page.resize-cursor {
   cursor: col-resize;
+}
+
+.doc-page.row-resize-cursor,
+.row-resize-cursor .doc-table td,
+.row-resize-cursor .doc-table th {
+  cursor: row-resize;
 }
 
 /* the handle is an absolute child of its cell; cells are positioned only while a
@@ -9318,6 +9330,7 @@ body.docs-crop-active
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   padding: 4px 8px 8px 10px;
 }
 
@@ -9357,7 +9370,8 @@ body.docs-crop-active
   gap: 5px;
   height: 24px;
   padding: 0 10px;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-30);
   background: none;
@@ -9368,6 +9382,13 @@ body.docs-crop-active
   transition: all var(--transition-fast);
 }
 
+.ai-track-btn .ai-track-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-track-btn:hover {
   background: var(--color-bg-subtle);
   color: var(--color-text-primary);
@@ -9376,6 +9397,7 @@ body.docs-crop-active
 .ai-track-btn .ai-track-dot {
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: var(--color-border-strong);
 }

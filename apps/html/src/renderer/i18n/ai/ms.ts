@@ -37,6 +37,8 @@ export const ms = {
     'Masalah rangkaian: tidak dapat menghubungi perkhidmatan AI. Semak sambungan anda dan cuba lagi',
   aiNewChat: 'Sembang baharu',
   aiNoReply: '(tiada balasan)',
+  aiRegionError:
+    'Penyedia model ini tidak memberi perkhidmatan di rantau semasa anda — pilih model lain atau tukar rangkaian',
   aiOverloadedError: 'Perkhidmatan AI sedang sibuk — sila cuba lagi sebentar lagi',
   aiRegenerateTitle: 'Jana semula',
   aiRetry: 'Cuba lagi',

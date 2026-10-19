@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core'
+import { REDACT_MARK } from './redact'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import {
@@ -75,6 +76,8 @@ export const OPS_GUIDE = [
   '- "Center all images" → ops: [{"op":"setImageProperties","target":{"nodeType":"image"},"align":"center"}]',
   '- "In block 5, change 8% to 9%" → ops: [{"op":"findReplace","find":"8%","replace":"9%","target":{"blockIndexes":[5]}}]',
   '- "Bold every TODO:" → ops: [{"op":"setMatchedFont","text":"TODO:","bold":true}]',
+  '- "Turn all the red text back to normal" → ops: [{"op":"setMatchedFont","matchColor":"#FF0000","color":null}]  (read_blocks shows the red runs as <span style="color:#FF0000">; links and other colors are untouched)',
+  '- "Make every 9 pt run 10.5 pt" → ops: [{"op":"setMatchedFont","matchFontSize":9,"fontSize":10.5}]',
   '- "Make the selected words 14 pt blue" (partial selection) → ops: [{"op":"setFont","target":{"scope":"selection"},"fontSize":14,"color":"#1A73E8"}]',
   '- "Two-character first-line indent for the whole document" (11 pt font) → one setParagraphFormat for docParagraph with "indentFirstLine":440',
   '- "Insert a table of contents at the beginning" → ops: [{"op":"insertToc","afterBlockIndex":-1}]; if the user wants the TOC on its own page, also setParagraphFormat the first body block after the TOC with "pageBreakBefore":true',
@@ -101,6 +104,8 @@ export const HTML_RULES = [
   '- Use <formula>LaTeX</formula> for math (produces native Word equations): as a top-level block it becomes its own centered paragraph; placed inside <p>/<li>/<h*> text it is an inline formula flowing with the text, e.g. <p>From <formula>E = mc^2</formula> we know…</p>; supports the common subset of \\frac \\sqrt super/subscripts \\sum \\int \\lim matrix environments Greek letters etc., the align environment is not supported; invalid LaTeX fails the whole call — fix and retry',
   '- Do not include <html>/<body>, markdown code fences, or explanatory text',
   "- <sel>…</sel> appears only in the context to mark the user's selection; it is not a tag you may write",
+  '- <img src="doc:B.I"> in read_blocks output is picture I of block B. To keep a picture when you replace its block, copy that exact tag into the new HTML where the picture should sit; a replaced range whose pictures you leave out loses them (the tool result says so). Any other <img> is ignored — new pictures go through insert_picture',
+  '- <span style="color:#RRGGBB;font-size:Npt"> appears only in read_blocks output, on runs whose color or size differs from the rest of the block (color:auto / font-size:default = back to the block\'s normal style); it is read-only — writing <span> has no effect, change colors and sizes with the apply_ops formatting commands',
   '- Organize long content into sections with h2/h3 (unless the user only wants a single paragraph)',
   '- Keep the same language as the original document / user instruction, unless translation is requested',
 ].join('\n')
@@ -124,7 +129,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML); replaced blocks pass their paragraph and text formatting (font, size, color, indent, spacing, alignment) on to the new blocks automatically, and a rewritten table keeps its widths, borders, shading and cell formatting, so a rewrite never needs follow-up formatting commands;',
   '- Long new content (drafting a whole document, a chapter, a full report/article/translation — anything beyond a few paragraphs) goes through write_document: you pass the plan and the reference material, and the system writer streams the text into the document while the user watches; never paste long content into insert_content. When the document is blank and the user asks for content, use write_document;',
   '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_ops — do not rewrite whole blocks with replace_blocks;',
-  '- Small in-place text fixes (changing a few words inside a sentence) go through apply_ops findReplace with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses setMatchedFont;',
+  '- Small in-place text fixes (changing a few words inside a sentence) go through apply_ops findReplace with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses setMatchedFont, and so does restyling every run of a given color or size (matchColor / matchFontSize) — never rewrite blocks or restyle whole blocks to fix a few runs;',
   '- When the user has text selected, the message includes the selection block indexes and content; rewrite-style requests apply to the selection by default;',
   '- When only part of a block is selected, the selected span is delimited by <sel>…</sel> and repeated as "Selected text": "this"/"the selected text" means exactly that span. Restyle it with apply_ops and target {"scope":"selection"} (run-level ops then touch only the selected characters); rewrite it with replace_selection. Never restyle or rewrite the whole block for a partial selection;',
   '- Web search: use web_search when you need up-to-date information/data/fact checking; search before writing about uncertain facts — do not fabricate;',
@@ -248,7 +253,55 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function wrapInlineText(raw: string, marks: PmMark[]): string {
+/** The run style a block's text mostly uses; runs that differ from it are the ones worth showing. */
+interface RunStyle {
+  color: string | null
+  sizeHalfPoints: number | null
+}
+
+function runStyleOf(marks: PmMark[]): RunStyle {
+  const ts = marks.find((m: PmMark) => m.type === 'docTextStyle')
+  const color = ts?.attrs?.color
+  const size = ts?.attrs?.sizeHalfPoints
+  return {
+    // 'auto' is Word's explicit automatic color: the same as no color
+    color: typeof color === 'string' && color && color !== 'auto' ? color.toUpperCase() : null,
+    sizeHalfPoints: typeof size === 'number' ? size : null,
+  }
+}
+
+function dominantRunStyle(content: PmNode[] | undefined): RunStyle {
+  const colors = new Map<string | null, number>()
+  const sizes = new Map<number | null, number>()
+  for (const node of content ?? []) {
+    if (node.type !== 'text' || !node.text) continue
+    // pending deletions are hidden from the model, so they must not set its baseline
+    if ((node.marks ?? []).some((m: PmMark) => m.type === 'del')) continue
+    const { color, sizeHalfPoints } = runStyleOf(node.marks ?? [])
+    colors.set(color, (colors.get(color) ?? 0) + node.text.length)
+    sizes.set(sizeHalfPoints, (sizes.get(sizeHalfPoints) ?? 0) + node.text.length)
+  }
+  const top = <T>(m: Map<T, number>, fallback: T): T =>
+    [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? fallback
+  return { color: top(colors, null), sizeHalfPoints: top(sizes, null) }
+}
+
+/**
+ * Color / size the model needs to see: only where a run departs from the
+ * block's dominant style, so a uniformly styled document reads as plain text
+ * and a red correction or an oversized word stands out. Read-only markup —
+ * the parser drops <span> styles (formatting goes through apply_ops).
+ */
+function styleAttr(marks: PmMark[], base: RunStyle): string {
+  const { color, sizeHalfPoints } = runStyleOf(marks)
+  const decl: string[] = []
+  if (color !== base.color) decl.push(`color:${color ? `#${color}` : 'auto'}`)
+  if (sizeHalfPoints !== base.sizeHalfPoints)
+    decl.push(`font-size:${sizeHalfPoints === null ? 'default' : `${sizeHalfPoints / 2}pt`}`)
+  return decl.length ? ` style="${decl.join(';')}"` : ''
+}
+
+function wrapInlineText(raw: string, marks: PmMark[], base?: RunStyle): string {
   let text = escapeHtml(raw)
   const has = (type: string) => marks.some((m: PmMark) => m.type === type)
   if (has('bold')) text = `<strong>${text}</strong>`
@@ -257,17 +310,37 @@ function wrapInlineText(raw: string, marks: PmMark[]): string {
   if (has('strike')) text = `<s>${text}</s>`
   const link = marks.find((m: PmMark) => m.type === 'link')
   if (link?.attrs?.href) text = `<a href="${escapeHtml(String(link.attrs.href))}">${text}</a>`
+  const style = base ? styleAttr(marks, base) : ''
+  if (style) text = `<span${style}>${text}</span>`
   return text
 }
 
 /** Export hook: maps a picture's source to the `src` the restricted HTML should carry; null drops it. */
 export type ImageSrcMapper = (src: string) => string | null
 
-function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper): string {
+/** `doc:B.I` — the I-th picture of block B; read_blocks shows it, replace_blocks resolves it back to the picture */
+export const IMAGE_REF_PREFIX = 'doc:'
+const IMAGE_REF_RE = /^doc:(\d+)\.(\d+)$/
+
+/** per-block counter handing out picture ordinals while a block serializes */
+interface ImageRefs {
+  block: number
+  next: number
+}
+
+function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper, refs?: ImageRefs): string {
   if (node.type === 'hardBreak') return '<br>'
   if (node.type === 'docInlineImage') {
-    const src = image && !node.attrs?.rule ? image(String(node.attrs?.dataUrl ?? '')) : null
-    return src ? `<img src="${escapeHtml(src)}">` : ''
+    // a rule image is decoration; a withheld picture must never become a fetchable ref
+    if (node.attrs?.rule || node.attrs?.redact) return ''
+    if (image) {
+      const src = image(String(node.attrs?.dataUrl ?? ''))
+      return src ? `<img src="${escapeHtml(src)}">` : ''
+    }
+    // the model's view: a picture is content it must see (an image-only
+    // paragraph used to read as <p></p> and got replaced away), and the ref
+    // lets it keep the picture when rewriting the block
+    return refs ? `<img src="${IMAGE_REF_PREFIX}${refs.block}.${refs.next++}">` : ''
   }
   if (node.type === 'docInlineMath') {
     // editor-created formulas round-trip as LaTeX; parsed-from-docx ones
@@ -294,8 +367,10 @@ function inlineToHtml(
   content: PmNode[] | undefined,
   sel?: InlineSelection,
   image?: ImageSrcMapper,
+  refs?: ImageRefs,
 ): string {
   if (!content) return ''
+  const base = dominantRunStyle(content)
   let html = ''
   let pos = 0
   let open = false
@@ -324,13 +399,14 @@ function inlineToHtml(
       cuts.push(end)
       for (let i = 0; i < cuts.length - 1; i++) {
         boundary(cuts[i])
-        if (!deleted) html += wrapInlineText(text.slice(cuts[i] - pos, cuts[i + 1] - pos), marks)
+        if (!deleted)
+          html += wrapInlineText(text.slice(cuts[i] - pos, cuts[i + 1] - pos), marks, base)
       }
       pos = end
       continue
     }
     boundary(pos)
-    if (!deleted) html += inlineAtomToHtml(node, image)
+    if (!deleted) html += inlineAtomToHtml(node, image, refs)
     pos += 1
   }
   boundary(pos)
@@ -472,25 +548,28 @@ export function serializeRangeToHtml(
       flushList()
       continue
     }
+    const refs: ImageRefs | undefined = image ? undefined : { block: startIndex + i, next: 0 }
     if (node.type === 'docHeading') {
       flushList()
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6)
-      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i), image)}</h${level}>`)
+      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i), image, refs)}</h${level}>`)
     } else if (node.type === 'docListItem') {
       const kind = (node.attrs?.kind as string) ?? 'bullet'
       if (!listBuffer || listBuffer.kind !== kind) {
         flushList()
         listBuffer = { kind, items: [] }
       }
-      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i), image)}</li>`)
+      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i), image, refs)}</li>`)
     } else if (node.type === 'docParagraph') {
       flushList()
       if (isCodeParagraph(node)) {
         parts.push(`<pre>${codeToHtml(node.content, inlineSel(i))}</pre>`)
       } else if (isQuoteParagraph(node)) {
-        parts.push(`<blockquote>${inlineToHtml(node.content, inlineSel(i), image)}</blockquote>`)
+        parts.push(
+          `<blockquote>${inlineToHtml(node.content, inlineSel(i), image, refs)}</blockquote>`,
+        )
       } else {
-        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i), image)}</p>`)
+        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i), image, refs)}</p>`)
       }
     } else if (node.type === 'docTable') {
       flushList()
@@ -611,9 +690,10 @@ export function buildDocumentContext(
       // deleted blocks show their struck text so the model can talk about the
       // revision, but that text never counts as current content
       preview = deleted ? node.textContent : live
-      // the stats text follows the status bar's word-count rules — blocks are
-      // separated (or their words merge) and inline formulas/ruby carry text —
-      // while still excluding deleted revisions and withheld spans
+      if (!deleted && !live.trim()) {
+        const pictures = inlineImagesOf(node).length
+        if (pictures > 0) preview = `(${pictures} picture${pictures === 1 ? '' : 's'}, no text)`
+      }
       if (!deleted)
         appendFullText(
           liveText(node, false, {
@@ -708,6 +788,8 @@ const REVISION_KIND_LABEL: Record<RevisionRange['kind'], string> = {
   // never part of the base document; both accept and reject remove it
   both: 'inserted then deleted (not in the base document)',
   pPrChange: 'paragraph formatting changed',
+  paraMarkDel: 'paragraph mark deleted (joins the next paragraph)',
+  paraMarkIns: 'paragraph mark inserted',
   rPrChange: 'text formatting changed',
   moveFrom: 'moved away',
   moveTo: 'moved here',
@@ -941,9 +1023,27 @@ function parseInline(element: Node, marks: PmMark[]): PmNode[] {
       nodes.push({ type: 'hardBreak' })
       return
     }
+    // HTML whitespace collapsing eats literal tabs, so a tab character needs a marker;
+    // a self-closing <span data-tab /> is an open tag in HTML, so its "children" are the
+    // text that follows and still have to be read
+    if (el.hasAttribute('data-tab')) {
+      nodes.push({ type: 'text', text: '\t', ...(marks.length > 0 ? { marks: [...marks] } : {}) })
+      nodes.push(...parseInline(el, marks))
+      return
+    }
     if (tag === 'a') {
       const href = el.getAttribute('href') ?? ''
       nodes.push(...parseInline(el, [...marks, { type: 'link', attrs: { href, rId: null } }]))
+      return
+    }
+    if (tag === 'img') {
+      const ref = IMAGE_REF_RE.exec(el.getAttribute('src') ?? '')
+      if (ref)
+        nodes.push({
+          type: IMAGE_REF_NODE,
+          attrs: { block: Number(ref[1]), index: Number(ref[2]) },
+        })
+      // any other <img> is not restricted HTML: pictures come in through insert_picture
       return
     }
     if (tag === 'formula') {
@@ -1109,6 +1209,66 @@ function parseBlockquote(el: Element): PmNode | null {
  * Parse a restricted HTML fragment returned by the model into top-level PmNodes.
  * Tolerates markdown code fences and plain-text responses.
  */
+/** placeholder emitted by the parser for `<img src="doc:B.I">`; resolveImageRefs swaps in the real picture */
+const IMAGE_REF_NODE = '__imageRef'
+
+/** the pictures read_blocks showed for this block, in the same order: no rules, no pending deletions, no withheld pictures */
+function inlineImagesOf(block: ProseMirrorNode): ProseMirrorNode[] {
+  const out: ProseMirrorNode[] = []
+  block.descendants((n) => {
+    if (
+      n.type.name === 'docInlineImage' &&
+      !n.attrs.rule &&
+      !n.marks.some((m) => m.type.name === 'del' || m.type.name === REDACT_MARK)
+    )
+      out.push(n)
+    return true
+  })
+  return out
+}
+
+/**
+ * Swap `<img src="doc:B.I">` placeholders for the pictures they name in the
+ * current document (before the edit lands). Unknown refs are dropped.
+ * Returns the blocks that were referenced, so replace_blocks can tell which
+ * pictures of the replaced range survive.
+ */
+export function resolveImageRefs(
+  editor: Editor,
+  nodes: PmNode[],
+): { nodes: PmNode[]; kept: Array<{ block: number; index: number }>; unresolved: number } {
+  const kept: Array<{ block: number; index: number }> = []
+  let unresolved = 0
+  const doc = editor.state.doc
+  const visit = (list: PmNode[]): PmNode[] =>
+    list.flatMap((n) => {
+      if (n.type === IMAGE_REF_NODE) {
+        const block = Number(n.attrs?.block)
+        const index = Number(n.attrs?.index)
+        const picture =
+          block >= 0 && block < doc.childCount ? inlineImagesOf(doc.child(block))[index] : undefined
+        if (!picture) {
+          unresolved++
+          return []
+        }
+        kept.push({ block, index })
+        return [picture.toJSON() as PmNode]
+      }
+      return n.content ? [{ ...n, content: visit(n.content) }] : [n]
+    })
+  return { nodes: visit(nodes), kept, unresolved }
+}
+
+/** pictures (non-rule inline images) inside top-level blocks [start, end] */
+export function countInlineImages(editor: Editor, start: number, end: number): number {
+  let n = 0
+  for (let i = start; i <= end && i < editor.state.doc.childCount; i++) {
+    const block = editor.state.doc.child(i)
+    if (!isTrackedDeleted(block)) n += inlineImagesOf(block).length
+  }
+  return n
+}
+
 export function parseHtmlFragment(raw: string, numIds: NumIds): PmNode[] {
   let text = raw.trim()
   const fence = /```(?:html)?\s*([\s\S]*?)```/.exec(text)

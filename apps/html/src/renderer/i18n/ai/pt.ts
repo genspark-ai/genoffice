@@ -37,6 +37,8 @@ export const pt = {
     'Problema de rede: não foi possível conectar ao serviço de IA. Verifique sua conexão e tente novamente',
   aiNewChat: 'Nova conversa',
   aiNoReply: '(sem resposta)',
+  aiRegionError:
+    'O fornecedor deste modelo não atende à sua região atual — escolha outro modelo ou mude de rede',
   aiOverloadedError:
     'O serviço de IA está sobrecarregado no momento — tente novamente em instantes',
   aiRegenerateTitle: 'Gerar novamente',

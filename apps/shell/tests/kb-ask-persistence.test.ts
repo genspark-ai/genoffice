@@ -104,24 +104,26 @@ describe('claiming the panel thread', () => {
     expect(shown[0]).toEqual([{ role: 'user', text: 'older question', toolNotes: [] }])
   })
 
-  it('writes the turns asked before the ids landed, before reading back', async () => {
+  it('writes the turns asked before the ids landed, after reading back, and drains them', async () => {
     const { api, calls } = recorder([])
+    const queued = [
+      { role: 'user' as const, text: 'first' },
+      { role: 'assistant' as const, text: 'first answer' },
+    ]
     await claimThread(
       api,
-      [
-        { role: 'user', text: 'first' },
-        { role: 'assistant', text: 'first answer' },
-      ],
+      queued,
       () => undefined,
       () => true,
     )
     expect(calls.map((c) => c.method)).toEqual([
       'resolveChat',
-      'appendChat',
-      'appendChat',
       'loadChat',
+      'appendChat',
+      'appendChat',
     ])
-    expect(calls[1]?.args).toEqual({
+    expect(queued).toEqual([])
+    expect(calls[2]?.args).toEqual({
       projectId: 'default',
       chatId: 'kb-ask',
       role: 'user',

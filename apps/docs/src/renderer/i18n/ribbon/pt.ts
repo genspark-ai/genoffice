@@ -248,6 +248,7 @@ export const pt = {
   ribbonTableColsLabel: 'Número de colunas',
   ribbonTableRowsLabel: 'Número de linhas',
   ribbonTableHandleTip: 'Selecionar a tabela; arraste para mover',
+  ribbonTableResizeTip: 'Arraste para redimensionar a tabela',
   ribbonTableDeleteMenu: 'Excluir',
   ribbonSelectRow: 'Selecionar Linha',
   ribbonSelectColumn: 'Selecionar Coluna',

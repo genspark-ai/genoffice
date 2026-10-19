@@ -215,7 +215,7 @@ function createGridContentTools(deps: SheetsToolDeps, host: SessionHost): McpToo
       description:
         'Apply workbook DSL operations to the visible spreadsheet (the same vocabulary the CLI ' +
         'and the built-in AI use). Common ops: set_cell, set_formula, clear_cell, set_range, ' +
-        'clear_range, fill_range, copy_range, convert_to_values, insert_rows, delete_rows, ' +
+        'clear_range, fill_range, copy_range, move_range, convert_to_values, insert_rows, delete_rows, ' +
         'insert_cols, delete_cols, add_sheet, delete_sheet, add_chart, add_table, set_filter, ' +
         'set_hyperlink, add_conditional_format, set_data_validation, set_note. Address a worksheet ' +
         "by NAME with `sheet` (also `sourceSheet`/`targetSheet`) — the CLI's stable vocabulary — " +

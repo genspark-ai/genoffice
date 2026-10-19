@@ -49,9 +49,16 @@ export interface MultiSelectOptions {
   readonly className: string
 }
 
-/** the ⌘/ctrl modifier, without the alt/shift combos that mean something else */
+const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+
+/** the platform's ⌘/ctrl modifier (ctrl+click is the right click on a Mac), without alt/shift */
 export function isMultiSelectModifier(e: MouseEvent): boolean {
-  return (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey
+  return (mac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey
+}
+
+/** ⌘/ctrl+click on a link or TOC entry already means "follow it" in Docs */
+function isNavigationTarget(e: MouseEvent): boolean {
+  return e.target instanceof Element && e.target.closest('a[href], .doc-toc-line') !== null
 }
 
 /** the ranges currently added, [] when there are none */
@@ -108,6 +115,28 @@ function wordRangeAt(view: EditorView, pos: number): MultiSelectRange | null {
   return { from: base + seg.start, to: base + seg.end }
 }
 
+/**
+ * The click's own range is the word under the cursor, which becomes the live
+ * selection; the range the user had before joins the added ranges (a
+ * plain-text selection only — a node selection is not a text range).
+ */
+function addClickedWord(view: EditorView, pos: number, before: Selection | null): void {
+  const ranges: MultiSelectRange[] = []
+  if (before instanceof TextSelection && before.from < before.to) {
+    ranges.push({ from: before.from, to: before.to })
+  }
+  const word = wordRangeAt(view, pos)
+  if (word) ranges.push(word)
+  addRanges(view, ranges)
+  if (word) {
+    view.dispatch(
+      view.state.tr
+        .setSelection(TextSelection.create(view.state.doc, word.from, word.to))
+        .setMeta('pointer', true),
+    )
+  }
+}
+
 export const MultiSelect = Extension.create<MultiSelectOptions>({
   name: 'multiSelect',
 
@@ -122,6 +151,29 @@ export const MultiSelect = Extension.create<MultiSelectOptions>({
     // the pre-gesture range can only be kept from the mousedown side
     let beforeGesture: Selection | null = null
     let gestureStart: { x: number; y: number } | null = null
+
+    // runs after ProseMirror's own mouseup: a click has already gone through
+    // handleClick (which resets the gesture), so only a drag is left here
+    const onGestureEnd = (view: EditorView, e: MouseEvent) => {
+      const before = beforeGesture
+      const start = gestureStart
+      beforeGesture = null
+      gestureStart = null
+      if (!before || !start || e.button !== 0 || !isMultiSelectModifier(e)) return
+      const dragged = Math.abs(e.clientX - start.x) > 4 || Math.abs(e.clientY - start.y) > 4
+      if (!dragged) return
+      const { from, to } = view.state.selection
+      if (from < to) {
+        addRanges(view, [
+          { from: before.from, to: before.to },
+          { from, to },
+        ])
+        return
+      }
+      // moved past the threshold but dragged no text (pointer jitter): a click
+      const hit = view.posAtCoords({ left: e.clientX, top: e.clientY })
+      if (hit) addClickedWord(view, hit.pos, before)
+    }
 
     return [
       new Plugin<MultiSelectState>({
@@ -161,56 +213,22 @@ export const MultiSelect = Extension.create<MultiSelectOptions>({
                 clearMultiSelect(view)
                 return false
               }
+              if (isNavigationTarget(e)) return false
               beforeGesture = view.state.selection
               gestureStart = { x: e.clientX, y: e.clientY }
-              return false
-            },
-            mouseup: (view, event) => {
-              const e = event as MouseEvent
-              if (e.button !== 0 || !isMultiSelectModifier(e)) return false
-              const before = beforeGesture
-              if (!before || !gestureStart) return false
-              // ProseMirror's own drag threshold: past it this is a drag, and
-              // the browser has already replaced the selection with the range
-              // it dragged, which handleClick never sees
-              const dragged =
-                Math.abs(e.clientX - gestureStart.x) > 4 || Math.abs(e.clientY - gestureStart.y) > 4
-              if (!dragged) return false // a click: handleClick does the work
-              const { from, to } = view.state.selection
-              addRanges(view, [
-                { from: before.from, to: before.to },
-                { from, to },
-              ])
-              beforeGesture = null
-              gestureStart = null
+              // the release may land outside the editor (sidebar, window
+              // chrome), where the editor's own mouseup never fires
+              window.addEventListener('mouseup', (up) => onGestureEnd(view, up), { once: true })
               return false
             },
           },
           handleClick: (view, pos, event) => {
             const e = event as MouseEvent
-            if (e.button !== 0 || !isMultiSelectModifier(e)) return false
+            if (e.button !== 0 || !isMultiSelectModifier(e) || isNavigationTarget(e)) return false
             const before = beforeGesture
             beforeGesture = null
             gestureStart = null
-            // mouseup side: the range the user had before this click joins the
-            // added ranges (a plain-text selection only — a node selection is
-            // not a text range)...
-            const ranges: MultiSelectRange[] = []
-            if (before instanceof TextSelection && before.from < before.to) {
-              ranges.push({ from: before.from, to: before.to })
-            }
-            // ...and the click's own range is the word under the cursor, which
-            // becomes the live selection
-            const word = wordRangeAt(view, pos)
-            if (word) ranges.push(word)
-            addRanges(view, ranges)
-            if (word) {
-              view.dispatch(
-                view.state.tr
-                  .setSelection(TextSelection.create(view.state.doc, word.from, word.to))
-                  .setMeta('pointer', true),
-              )
-            }
+            addClickedWord(view, pos, before)
             // never let PM's selectClickedNode turn the paragraph into a NodeSelection
             return true
           },

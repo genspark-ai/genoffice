@@ -37,6 +37,8 @@ export const ja = {
     'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
   aiNewChat: '新しいチャット',
   aiNoReply: '（返信なし）',
+  aiRegionError:
+    'このモデルの提供元は現在の地域ではサービスを提供していません。別のモデルを選ぶか、ネットワークを切り替えてください',
   aiOverloadedError: 'AI サービスが混み合っています。しばらくしてからもう一度お試しください',
   aiRegenerateTitle: '再生成',
   aiRetry: '再試行',

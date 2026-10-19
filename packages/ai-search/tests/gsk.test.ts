@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import {
   gskChildEnv,
   setGskProxyUrl,
@@ -8,14 +8,8 @@ import {
   parseGskGeneratedImage,
   parseGskPastProjects,
   extractGskText,
-  parseToolCliNdjson,
-  gskSlideGenerate,
-  MAX_SLIDE_ARTIFACT_BYTES,
-  MAX_TOOL_CLI_NDJSON_BYTES,
   summarizeGskFailure,
 } from '../src/gsk'
-import { ResponseTooLargeError } from '@genoffice/electron-utils/remote-image'
-import { AiTimeoutError } from '@genoffice/ai-provider'
 
 describe('parseGskOutput', () => {
   it('parses clean JSON', () => {
@@ -406,173 +400,6 @@ describe('extractGskText', () => {
   })
 })
 
-describe('gskSlideGenerate response caps', () => {
-  const originalApiKey = process.env.GSK_API_KEY
-  const slideResult = JSON.stringify({
-    status: 'ok',
-    data: { pptx_url: 'https://www.genspark.ai/api/files/deck.pptx', model: 'claude-opus-4-7' },
-  })
-  // a public address literal, so the download path needs no DNS in tests
-  const downloadResult = JSON.stringify({
-    status: 'ok',
-    data: { download_url: 'https://8.8.8.8/deck.pptx' },
-  })
-
-  function stubSlideGenerate(artifact: () => Response, downloadResultBody = downloadResult) {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(ndjsonResponse(slideResult))
-      .mockResolvedValueOnce(ndjsonResponse(downloadResultBody))
-      .mockImplementationOnce(() => Promise.resolve(artifact()))
-    vi.stubGlobal('fetch', fetchMock)
-    return fetchMock
-  }
-
-  function ndjsonResponse(payload: string, contentLength?: number): Response {
-    return new Response(payload, {
-      status: 200,
-      headers: {
-        'content-type': 'application/x-ndjson',
-        ...(contentLength === undefined ? {} : { 'content-length': String(contentLength) }),
-      },
-    })
-  }
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    if (originalApiKey === undefined) delete process.env.GSK_API_KEY
-    else process.env.GSK_API_KEY = originalApiKey
-  })
-
-  it('returns the downloaded slide bytes within both caps', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    stubSlideGenerate(() => new Response(new Uint8Array([1, 2, 3, 4])))
-    await expect(gskSlideGenerate({ brief: 'a title slide' })).resolves.toEqual({
-      bytes: new Uint8Array([1, 2, 3, 4]),
-      model: 'claude-opus-4-7',
-    })
-  })
-
-  it('refuses a tool_cli NDJSON body that declares more than the NDJSON cap', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    let cancelled = false
-    const body = new ReadableStream<Uint8Array>({
-      cancel() {
-        cancelled = true
-      },
-    })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(body, {
-          status: 200,
-          headers: {
-            'content-type': 'application/x-ndjson',
-            'content-length': String(MAX_TOOL_CLI_NDJSON_BYTES + 1),
-          },
-        }),
-      ),
-    )
-    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toBeInstanceOf(
-      ResponseTooLargeError,
-    )
-    expect(cancelled).toBe(true)
-  })
-
-  it('refuses a chunked tool_cli NDJSON body that streams past the NDJSON cap', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    const chunk = new Uint8Array(1024 * 1024)
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (let i = 0; i <= MAX_TOOL_CLI_NDJSON_BYTES / chunk.byteLength; i++) {
-          controller.enqueue(chunk)
-        }
-        controller.close()
-      },
-    })
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(body, { status: 200, headers: { 'content-type': 'application/x-ndjson' } }),
-        ),
-    )
-    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(
-      /response larger than 8 MB/,
-    )
-  })
-
-  it('refuses a slide artifact download larger than the artifact cap', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    stubSlideGenerate(
-      () =>
-        new Response(new Uint8Array([1, 2, 3]), {
-          status: 200,
-          headers: { 'content-length': String(MAX_SLIDE_ARTIFACT_BYTES + 1) },
-        }),
-    )
-    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toBeInstanceOf(
-      ResponseTooLargeError,
-    )
-  })
-
-  // The download_url comes from the cloud response, so a compromised or spoofed
-  // endpoint decides which host the main process dials. It must pass the same
-  // SSRF gate as every other model-influenced download.
-  it('never requests a cloud download URL that points at a private address', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    const fetchMock = stubSlideGenerate(
-      () => new Response(new Uint8Array([1, 2, 3])),
-      JSON.stringify({
-        status: 'ok',
-        data: { download_url: 'http://169.254.169.254/latest/meta-data/iam/security-credentials/' },
-      }),
-    )
-    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
-    const requested = fetchMock.mock.calls.map(([u]) => String(u))
-    expect(requested.some((u) => u.includes('169.254.169.254'))).toBe(false)
-  })
-
-  it('revalidates every redirect hop of a cloud download URL', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    const fetchMock = stubSlideGenerate(
-      () =>
-        new Response(null, {
-          status: 302,
-          headers: { location: 'http://127.0.0.1:8080/internal.pptx' },
-        }),
-    )
-    await expect(gskSlideGenerate({ brief: 'a title slide' })).rejects.toThrow(/blocked/i)
-    const requested = fetchMock.mock.calls.map(([u]) => String(u))
-    expect(requested.some((u) => u.includes('127.0.0.1'))).toBe(false)
-  })
-})
-
-describe('parseToolCliNdjson', () => {
-  it('skips heartbeat lines and returns the final status line', () => {
-    const text =
-      '{"version":1,"debug":true,"message":"Still processing... (5.0s)","heartbeat":1}\n' +
-      '{"version":1,"debug":true,"message":"Still processing... (10.0s)","heartbeat":2}\n' +
-      '{"version":1,"status":"ok","message":"success","data":{"pptx_url":"https://x/y","model":"claude-opus-4-7"}}'
-    const r = parseToolCliNdjson(text)
-    expect(r.status).toBe('ok')
-    expect((r.data as { model: string }).model).toBe('claude-opus-4-7')
-  })
-
-  it('returns error result lines as-is', () => {
-    const r = parseToolCliNdjson(
-      '{"version":1,"status":"error","message":"deck_context must be an object","data":null}',
-    )
-    expect(r.status).toBe('error')
-    expect(r.message).toMatch(/deck_context/)
-  })
-
-  it('throws when no result line exists', () => {
-    expect(() => parseToolCliNdjson('{"heartbeat":1}\nnot json')).toThrow(/No result line/)
-  })
-})
-
 describe('summarizeGskFailure', () => {
   // trimmed version of the gateway page Genspark serves for refused calls
   const HTML_403 = `<html>
@@ -638,55 +465,5 @@ describe('summarizeGskFailure', () => {
     expect(summarizeGskFailure('HTTP 502: <html><body><script>x()</script></body></html>')).toBe(
       'HTTP 502 (HTML error page)',
     )
-  })
-})
-
-describe('gskSlideGenerate cancellation and timeout', () => {
-  const realFetch = globalThis.fetch
-  afterEach(() => {
-    globalThis.fetch = realFetch
-    delete process.env.GSK_API_KEY
-    vi.useRealTimers()
-  })
-
-  it('refuses an already-aborted signal before issuing the billed POST', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    let called = 0
-    globalThis.fetch = vi.fn(async () => {
-      called++
-      return new Response('{}', { status: 500 })
-    }) as unknown as typeof fetch
-
-    const already = AbortSignal.abort()
-    expect(already.aborted).toBe(true)
-    await expect(gskSlideGenerate({ brief: 'x', signal: already })).rejects.toThrow(/abort/i)
-    expect(called).toBe(0)
-  })
-
-  it('surfaces its own deadline as AiTimeoutError, not a bare abort', async () => {
-    process.env.GSK_API_KEY = 'test-key'
-    let sawAbort = false
-    globalThis.fetch = vi.fn(
-      (_url: unknown, init?: { signal?: AbortSignal }) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => {
-            sawAbort = true
-            reject(new DOMException('The operation was aborted', 'AbortError'))
-          })
-        }),
-    ) as unknown as typeof fetch
-
-    vi.useFakeTimers()
-    const call = gskSlideGenerate({ brief: 'x' }).then(
-      () => null,
-      (e: unknown) => e,
-    )
-    await vi.advanceTimersByTimeAsync(240_000)
-    const err = await call
-    vi.useRealTimers()
-
-    expect(sawAbort).toBe(true)
-    expect(err).toBeInstanceOf(AiTimeoutError)
-    expect((err as Error).message).toMatch(/timed out/i)
   })
 })

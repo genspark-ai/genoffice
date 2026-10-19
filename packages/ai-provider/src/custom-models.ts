@@ -47,6 +47,14 @@ function entryId(entry: unknown): string | undefined {
   return id
 }
 
+/**
+ * OpenRouter publishes every model a second time as `<id>:batch`: the
+ * asynchronous batch tier, answered minutes to hours later and never
+ * streamed. A chat picker cannot use it, so the variant is dropped; the
+ * interactive `:free` / `:nitro` / `:thinking` variants stay.
+ */
+const isBatchVariant = (id: string): boolean => /:batch$/i.test(id)
+
 const posInt = (v: unknown): number | undefined =>
   typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined
 
@@ -113,6 +121,22 @@ function probeSpec(
 }
 
 /**
+ * OpenRouter's `/models/user` is the public catalog filtered by the account's
+ * own provider allow/ignore settings — the list the key can actually route to.
+ * Only that host has the route; a keyless probe (or a refused key) falls back
+ * to the public `/models`.
+ */
+function keyedCatalogUrl(base: string, key: string): string | undefined {
+  if (!key) return undefined
+  try {
+    if (new URL(base).hostname !== 'openrouter.ai') return undefined
+  } catch {
+    return undefined
+  }
+  return endpointUrl(base, 'models/user')
+}
+
+/**
  * The model ids a user-hosted endpoint advertises, probed on the route its
  * declared protocol speaks (absent = the historic OpenAI-compatible shape).
  *
@@ -152,13 +176,18 @@ export async function listCustomModels(
       // never ask a route the chat turn would not use.
       const base = customProtocolBaseUrl(api ?? 'openai-compatible', baseUrl)
       const probe = probeSpec(api ?? 'openai-compatible', base, key)
-      const response = await fetch(
-        probe.url,
-        withUserAgent({
-          headers: { Accept: 'application/json', ...probe.headers },
-          signal: watchdog.signal,
-        }),
-      )
+      const get = (url: string) =>
+        fetch(
+          url,
+          withUserAgent({
+            headers: { Accept: 'application/json', ...probe.headers },
+            signal: watchdog.signal,
+          }),
+        )
+      const keyedUrl =
+        (api ?? 'openai-compatible') === 'openai-compatible' && keyedCatalogUrl(base, key)
+      let response = keyedUrl ? await get(keyedUrl) : undefined
+      if (!response?.ok) response = await get(probe.url)
       if (!response.ok) return emptyCatalog()
       const text = await readCappedResponseText(response, { maxBytes: MAX_BODY_BYTES })
       const body = JSON.parse(text) as { data?: unknown; models?: unknown } | null
@@ -169,7 +198,7 @@ export async function listCustomModels(
       const profiles: AiCustomModelProfile[] = []
       for (const entry of list) {
         const id = entryId(entry)?.trim()
-        if (!id || seen.has(id)) continue
+        if (!id || seen.has(id) || isBatchVariant(id)) continue
         seen.add(id)
         const profile = profileOf(entry)
         // an entry that declares nothing beyond its id is not a declaration

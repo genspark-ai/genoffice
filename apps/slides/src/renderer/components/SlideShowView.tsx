@@ -353,13 +353,20 @@ export function SlideShowView({
     else goTo(pos + 1, true)
   }, [ended, pos, order.length, goTo, player.advance]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Saved timings (Rehearse Timings, Record) advance the show as in PowerPoint; clicks still do
+  // Saved timings (Rehearse Timings, Record) advance the show as in PowerPoint; clicks still do.
+  // The timer turns the page outright: a slide's recorded time covers its click animations too,
+  // so stepping one animation per timer would stall on an animated slide.
   const advanceMs = curIdx == null ? null : (timings?.[curIdx]?.advanceMs ?? null)
-  const nextRef = useRef(next)
-  nextRef.current = next
+  const turnPage = useCallback(() => {
+    if (ended) return
+    if (pos >= order.length - 1) setEnded(true)
+    else goTo(pos + 1, true)
+  }, [ended, pos, order.length, goTo])
+  const turnPageRef = useRef(turnPage)
+  turnPageRef.current = turnPage
   useEffect(() => {
     if (recordMode || rehearseMode || ended || advanceMs == null) return
-    const timer = window.setTimeout(() => nextRef.current(), advanceMs)
+    const timer = window.setTimeout(() => turnPageRef.current(), advanceMs)
     return () => window.clearTimeout(timer)
   }, [pos, advanceMs, ended, recordMode, rehearseMode])
 

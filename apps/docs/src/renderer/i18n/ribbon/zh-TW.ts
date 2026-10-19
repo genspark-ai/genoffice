@@ -243,6 +243,7 @@ export const zhTW = {
   ribbonTableColsLabel: '欄數',
   ribbonTableRowsLabel: '列數',
   ribbonTableHandleTip: '選取表格;拖曳可移動表格',
+  ribbonTableResizeTip: '拖曳可縮放表格',
   ribbonTableDeleteMenu: '刪除',
   ribbonSelectRow: '選取列',
   ribbonSelectColumn: '選取欄',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AgentLoop,
   composeSkills,
@@ -11,6 +11,8 @@ import {
 } from '@genoffice/agent-core'
 import {
   AiComposer,
+  AiModelPicker,
+  type AiModelPickerBridge,
   AiTypingIndicator,
   AiUsageChip,
   addTokenUsage,
@@ -19,6 +21,7 @@ import {
   type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
+import { activeProvider } from '@genoffice/ai-provider/browser'
 import type { ChatMessage, ProjectApi } from '@genoffice/project-store'
 import { useI18n } from './locale'
 import sendEnterOn from './assets/send-enter-on.png'
@@ -69,8 +72,11 @@ interface AskMessage {
 }
 
 /**
- * Claims the panel's transcript: resolves its ids, writes whatever turns were
- * asked before the ids landed, then reads back what is already stored.
+ * Claims the panel's transcript: resolves its ids, reads back what is already
+ * stored, then writes whatever turns were asked before the ids landed — the
+ * stored thread is older than anything asked meanwhile, so it is shown and
+ * written first. `queued` is drained; a turn queued after the drain is the
+ * caller's to flush once the ids are in hand.
  *
  * Split out of the effect so the ordering is testable without a DOM — the
  * panel is the only conversation in the app that belongs to no file, so
@@ -83,11 +89,11 @@ export async function claimThread(
   stillCurrent: () => boolean,
 ): Promise<{ projectId: string; chatId: string }> {
   const ids = await api.resolveChat({ filePath: null, tempChatId: CHAT_ID })
-  for (const entry of queued) {
-    await api.appendChat({ ...ids, ...entry })
-  }
   const stored = await api.loadChat({ ...ids, limit: 200 })
   if (stored.length > 0 && stillCurrent()) show(restoreAskMessages(stored))
+  for (const entry of queued.splice(0)) {
+    await api.appendChat({ ...ids, ...entry })
+  }
   return ids
 }
 
@@ -105,9 +111,12 @@ export function restoreAskMessages(stored: ChatMessage[]): AskMessage[] {
 export function KbAskPanel({
   onOpenPath,
   onGoToRecents,
+  onOpenModelSettings,
 }: {
   onOpenPath: (path: string) => void
   onGoToRecents: () => void
+  /** Settings › AI Model, the model chip's last row */
+  onOpenModelSettings: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
@@ -115,6 +124,7 @@ export function KbAskPanel({
   const [busy, setBusy] = useState(false)
   const [corpusCount, setCorpusCount] = useState<number | null>(null)
   const [gskEmail, setGskEmail] = useState<string | null>(null)
+  const [provider, setProvider] = useState<string | null>(null)
   const corpusRef = useRef<KbFileInfo[]>([])
   const settingsRef = useRef<AiSettings | null>(null)
   const loopRef = useRef<AgentLoop<unknown> | null>(null)
@@ -149,9 +159,17 @@ export function KbAskPanel({
     const api = window.projectApi
     if (!api) return
     let current = true
-    void claimThread(api, pendingRef.current, setMessages, () => current)
+    // a question asked while the thread was loading stays on screen, below it
+    const show = (restored: AskMessage[]): void => {
+      setMessages((prev) => [...restored, ...prev])
+      messagesRef.current = [...restored, ...messagesRef.current]
+      loopRef.current?.restore(restored.map((m) => ({ role: m.role, text: m.text })))
+    }
+    void claimThread(api, pendingRef.current, show, () => current)
       .then((ids) => {
-        if (current) chatIdsRef.current = ids
+        if (!current) return
+        chatIdsRef.current = ids
+        for (const entry of pendingRef.current.splice(0)) persist(entry)
       })
       .catch(() => undefined)
     return () => {
@@ -164,9 +182,23 @@ export function KbAskPanel({
       .aiGetSettings()
       .then((settings) => {
         settingsRef.current = settings
+        setProvider(activeProvider(settings))
       })
       .catch(() => undefined)
   }
+
+  useEffect(() => window.aiOffice.onAiSettingsChanged?.(refreshSettings), [])
+
+  const modelBridge = useMemo<AiModelPickerBridge>(
+    () => ({
+      getSettings: () => window.aiOffice.aiGetSettings(),
+      setSettings: (settings) => window.aiOffice.setAiSettings(settings),
+      onSettingsChanged: (handler) => window.aiOffice.onAiSettingsChanged(handler),
+      gskLoggedIn: () => window.aiOffice.aiGskStatus().then((s) => !!s.loggedIn),
+      openModelSettings: onOpenModelSettings,
+    }),
+    [onOpenModelSettings],
+  )
 
   useEffect(() => {
     // one corpus snapshot per mount; sends refresh it again (see ask()).
@@ -243,30 +275,32 @@ export function KbAskPanel({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
 
+  // Stream patches land on the ref synchronously as well as on state: onText
+  // and onDone can arrive in one tick, and finishLast must see the final text
+  // before React has rendered it.
   const patchLast = (
     patch: Partial<AskMessage> | ((last: AskMessage) => Partial<AskMessage>),
   ): void => {
-    setMessages((prev) => {
+    const apply = (prev: AskMessage[]): AskMessage[] => {
       if (prev.length === 0 || prev[prev.length - 1]!.role !== 'assistant') return prev
       const last = prev[prev.length - 1]!
       const delta = typeof patch === 'function' ? patch(last) : patch
       return [...prev.slice(0, -1), { ...last, ...delta }]
-    })
+    }
+    messagesRef.current = apply(messagesRef.current)
+    setMessages(apply)
   }
 
   const finishLast = (): void => {
-    setMessages((prev) => {
-      if (prev.length === 0) return prev
-      const last = prev[prev.length - 1]!
-      return [...prev.slice(0, -1), { ...last, streaming: false }]
-    })
     // The answer is whole for the first time here; streaming it as it grows
     // would store every intermediate state. The `streaming` guard is what
-    // keeps a second finish from storing the same turn twice.
+    // keeps a second finish (Stop, then the loop's own onDone) from storing
+    // the same turn twice.
     const last = messagesRef.current[messagesRef.current.length - 1]
     if (last?.role === 'assistant' && last.streaming && last.text) {
       persist({ role: 'assistant', text: last.text })
     }
+    patchLast({ streaming: false })
     setBusy(false)
   }
 
@@ -465,7 +499,9 @@ export function KbAskPanel({
           {t('askNoSave')}
         </p>
       )}
-      {gskEmail === null && <p className="kb-ask-login">{t('askNeedsLogin')}</p>}
+      {gskEmail === null && provider === 'genspark' && (
+        <p className="kb-ask-login">{t('askNeedsLogin')}</p>
+      )}
       <AiComposer
         value={draft}
         busy={busy}
@@ -480,7 +516,10 @@ export function KbAskPanel({
         sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
         stopIcon={<img src={sendStop} alt="" aria-hidden />}
         footerStart={
-          sessionUsage ? <AiUsageChip usage={sessionUsage} session lang={lang} /> : undefined
+          <>
+            <AiModelPicker bridge={modelBridge} lang={lang} />
+            {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
+          </>
         }
         onChange={setDraft}
         onSend={() => void ask()}

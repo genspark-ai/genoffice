@@ -248,6 +248,7 @@ export const id = {
   ribbonTableColsLabel: 'Jumlah kolom',
   ribbonTableRowsLabel: 'Jumlah baris',
   ribbonTableHandleTip: 'Pilih tabel; seret untuk memindahkan',
+  ribbonTableResizeTip: 'Seret untuk mengubah ukuran tabel',
   ribbonTableDeleteMenu: 'Hapus',
   ribbonSelectRow: 'Pilih Baris',
   ribbonSelectColumn: 'Pilih Kolom',

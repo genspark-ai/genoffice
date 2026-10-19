@@ -248,6 +248,7 @@ export const ms = {
   ribbonTableColsLabel: 'Bilangan lajur',
   ribbonTableRowsLabel: 'Bilangan baris',
   ribbonTableHandleTip: 'Pilih jadual; seret untuk mengalihkannya',
+  ribbonTableResizeTip: 'Seret untuk mengubah saiz jadual',
   ribbonTableDeleteMenu: 'Padam',
   ribbonSelectRow: 'Pilih Baris',
   ribbonSelectColumn: 'Pilih Lajur',

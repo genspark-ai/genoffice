@@ -12,6 +12,7 @@ import {
   journalSize,
   recordCellImageAdd,
   recordVisualAdd,
+  removeCellImageAdd,
   recordVisualEdit,
   removeVisualAdd,
   reorderVisualAdd,
@@ -158,7 +159,7 @@ export function handleVisualCommand(
       return true
     }
     case 'embed-in-cell':
-      void embedVisualInCell(ctx, state, visual)
+      void embedVisualInCell(ctx, runtime, state, visual)
       return true
     case 'z':
       reorder(ctx, runtime, state, visual, argument as ZOrderOp)
@@ -510,9 +511,11 @@ async function copyVisual(
 /// "Embed Image in Cell": the picture leaves the drawing layer and becomes
 /// the content of the cell under its top-left corner (Excel's "Place in
 /// Cell"). The bytes move into the journal, the cell's value is cleared, and
-/// the save writes the workbook's rich-value parts.
+/// the save writes the workbook's rich-value parts. The picture's move is one
+/// undo step; the cell clear stays Univer's own step beneath it.
 async function embedVisualInCell(
   ctx: VisualArrangeContext,
+  runtime: UniverRuntime,
   state: LazyWorkbookState,
   visual: WorkbookVisualObject,
 ): Promise<void> {
@@ -526,23 +529,50 @@ async function embedVisualInCell(
     ctx.setMessage(t('appVisualEmbedFailed'))
     return
   }
+  const journal = state.editJournal
   const { fromRow: row, fromColumn: column } = visual.anchor
+  const chartPath = state.file.visuals.find((candidate) => candidate.id === visual.id)?.chartPath
   // The picture becomes the cell's content: any value behind it goes (the
-  // cell's formatting stays, matching Excel).
-  ctx.univerRef.current?.univerAPI
+  // cell's formatting stays, matching Excel). Runs before the journal moves
+  // so a failed clear leaves the picture where it was.
+  runtime.univerAPI
     .getActiveWorkbook()
     ?.getSheetBySheetId(visual.sheetId)
     ?.getRange(row, column)
     .clearContent()
-  ctx.shapeEditRef.current(visual.id, { remove: true })
-  recordCellImageAdd(state.editJournal, {
-    sheetId: visual.sheetId,
-    row,
-    column,
-    mediaType,
-    dataUrl,
+  const before = captureVisualJournal(state, visual.id, chartPath)
+  if (!removeVisualAdd(journal, visual.id)) {
+    const file = state.file.visuals.find((candidate) => candidate.id === visual.id)
+    if (!file || !recordVisualEdit(journal, file, { remove: true })) {
+      ctx.setMessage(t('appVisualEmbedFailed'))
+      return
+    }
+  }
+  clearVisualSelection(visual.id)
+  const after = captureVisualJournal(state, visual.id, chartPath)
+  const entry = { sheetId: visual.sheetId, row, column, mediaType, dataUrl }
+  const displaced = recordCellImageAdd(journal, entry)
+  const refresh = (): void => {
+    ctx.setPendingEdits(journalSize(journal))
+    ctx.refreshLazyVisuals(state)
+    ctx.refreshCellImages(state)
+  }
+  pushVisualUndo(runtime, {
+    undo: () => {
+      removeCellImageAdd(journal, visual.sheetId, row, column)
+      if (displaced) recordCellImageAdd(journal, displaced)
+      restoreVisualJournal(state, visual.id, chartPath, before)
+      clearVisualSelection(visual.id)
+      refresh()
+    },
+    redo: () => {
+      restoreVisualJournal(state, visual.id, chartPath, after)
+      recordCellImageAdd(journal, entry)
+      clearVisualSelection(visual.id)
+      refresh()
+    },
   })
-  ctx.refreshCellImages(state)
+  refresh()
 }
 
 /// The picture's bytes as a data URL: session pictures carry them inline,

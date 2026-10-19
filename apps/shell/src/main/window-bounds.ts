@@ -38,6 +38,12 @@ const MAX_DIMENSION = 8192
 
 /** How much of the title strip must show on a display for the window to count as reachable. */
 const MIN_VISIBLE_WIDTH = 120
+/**
+ * How many rows of the strip must show. Less than the full strip, because a
+ * window flush with the top of a display can sit a few rows under the menu
+ * bar or a top-docked taskbar and still be grabbable.
+ */
+const MIN_VISIBLE_STRIP_HEIGHT = 12
 const TITLE_STRIP_HEIGHT = 40
 
 /**
@@ -97,7 +103,7 @@ export function parseShellWindowState(value: unknown): ShellWindowState | null {
  * Whether some display can still show the window's title strip — the part a
  * user grabs to bring the window back. The strip is the top of the window
  * (the tab bar doubles as the title bar on Windows/Linux); at least 120px of
- * it must overlap a work area, fully inside that area's height. A window
+ * it must overlap a work area, with most of its height inside. A window
  * whose visible remainder is a sliver of its bottom edge fails here on
  * purpose: nothing left to grab means the user cannot move it back.
  */
@@ -108,7 +114,10 @@ export function isShellWindowVisible(state: WindowRect, workAreas: readonly Wind
       Math.min(state.x + state.width, area.x + area.width) - Math.max(state.x, area.x)
     const overlapHeight =
       Math.min(state.y + strip, area.y + area.height) - Math.max(state.y, area.y)
-    return overlapWidth >= MIN_VISIBLE_WIDTH && overlapHeight >= strip
+    return (
+      overlapWidth >= MIN_VISIBLE_WIDTH &&
+      overlapHeight >= Math.min(strip, MIN_VISIBLE_STRIP_HEIGHT)
+    )
   })
 }
 
@@ -128,6 +137,7 @@ export function readShellWindowState(
 /** The members the save path needs off a live window (BrowserWindow satisfies this). */
 export interface ShellWindowSource {
   isMaximized(): boolean
+  isMinimized?(): boolean
   getNormalBounds(): WindowRect
 }
 
@@ -139,12 +149,17 @@ export interface ShellWindowSource {
  */
 export function persistShellWindowState(settingsPath: string, win: ShellWindowSource): void {
   const { x, y, width, height } = win.getNormalBounds()
+  // A minimized window reports isMaximized() false even when it will restore
+  // maximized; keep the flag from the last save made while it was visible.
+  const maximized = win.isMinimized?.()
+    ? (parseShellWindowState(readAppSettings(settingsPath)[WINDOW_BOUNDS_KEY])?.maximized ?? false)
+    : win.isMaximized()
   writeAppSetting(settingsPath, WINDOW_BOUNDS_KEY, {
     x: Math.round(x),
     y: Math.round(y),
     width: Math.round(width),
     height: Math.round(height),
-    maximized: win.isMaximized(),
+    maximized,
   })
 }
 

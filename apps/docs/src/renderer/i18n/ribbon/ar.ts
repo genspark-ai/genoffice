@@ -246,6 +246,7 @@ export const ar = {
   ribbonTableColsLabel: 'عدد الأعمدة',
   ribbonTableRowsLabel: 'عدد الصفوف',
   ribbonTableHandleTip: 'تحديد الجدول؛ اسحب لنقله',
+  ribbonTableResizeTip: 'اسحب لتغيير حجم الجدول',
   ribbonTableDeleteMenu: 'حذف',
   ribbonSelectRow: 'تحديد الصف',
   ribbonSelectColumn: 'تحديد العمود',

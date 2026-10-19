@@ -823,15 +823,27 @@ export function recordVisualAdd(journal: EditJournal, visual: WorkbookVisualObje
 
 /// Records a picture embedded in a cell; a second embed on the same cell
 /// replaces the earlier bytes (the save writes one picture per cell).
-export function recordCellImageAdd(journal: EditJournal, entry: CellImageAdd): void {
+/// Returns the session picture the new one displaces from that cell, if any.
+export function recordCellImageAdd(
+  journal: EditJournal,
+  entry: CellImageAdd,
+): CellImageAdd | undefined {
+  const displaced = removeCellImageAdd(journal, entry.sheetId, entry.row, entry.column)
+  journal.cellImageAdds.push(entry)
+  return displaced
+}
+
+export function removeCellImageAdd(
+  journal: EditJournal,
+  sheetId: string,
+  row: number,
+  column: number,
+): CellImageAdd | undefined {
   const at = journal.cellImageAdds.findIndex(
     (existing) =>
-      existing.sheetId === entry.sheetId &&
-      existing.row === entry.row &&
-      existing.column === entry.column,
+      existing.sheetId === sheetId && existing.row === row && existing.column === column,
   )
-  if (at >= 0) journal.cellImageAdds.splice(at, 1)
-  journal.cellImageAdds.push(entry)
+  return at >= 0 ? journal.cellImageAdds.splice(at, 1)[0] : undefined
 }
 
 export function cellImageAddAt(
@@ -2465,6 +2477,9 @@ export function journalSize(journal: EditJournal): number {
   }
   for (const sparkline of journal.sparklineAdds) {
     if (!isSheetRemoved(journal, sparkline.sheetId)) total += 1
+  }
+  for (const image of journal.cellImageAdds) {
+    if (!isSheetRemoved(journal, image.sheetId)) total += 1
   }
   for (const sheetId of journal.filterDirty) {
     if (!isSheetRemoved(journal, sheetId)) total += 1

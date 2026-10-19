@@ -35,6 +35,7 @@ export const he = {
   aiNetworkError: 'בעיית רשת: לא ניתן להתחבר לשירות ה-AI. בדוק את החיבור ונסה שוב',
   aiNewChat: 'שיחה חדשה',
   aiNoReply: '(אין תשובה)',
+  aiRegionError: 'ספק המודל הזה אינו פועל באזור הנוכחי שלך — בחרו מודל אחר או החליפו רשת',
   aiOverloadedError: 'שירות ה-AI עמוס כרגע — נסו שוב בעוד רגע',
   aiRegenerateTitle: 'יצירה מחדש',
   aiRetry: 'נסו שוב',
