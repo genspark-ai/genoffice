@@ -15,6 +15,7 @@ import type {
   WorkbookVisualAdd,
   WorkbookVisualEdit,
   WorkbookVisualObject,
+  WorkbookCellImageAdd,
 } from '../shared/desktop-api'
 import { columnLabel, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { fillDisplayColor, resolveStyleColor } from '@genoffice/xlsx-gateway/domain/style-color'
@@ -138,6 +139,17 @@ export interface SheetJournal {
   orderDirty: boolean
 }
 
+/// A picture embedded in a cell this session: the bytes stay as a data URL so
+/// the in-session overlay renders without a media round trip, and the save
+/// splits off the base64 payload.
+export interface CellImageAdd {
+  readonly sheetId: string
+  readonly row: number
+  readonly column: number
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+  readonly dataUrl: string
+}
+
 export interface EditJournal {
   readonly cells: Map<string, Map<string, JournalEntry>>
   /// Constant range fills stay declarative so whole-column AI operations do
@@ -150,6 +162,11 @@ export interface EditJournal {
   /// Floating visuals created this session; the save writes each as a new
   /// drawing/chart part pair.
   readonly visualAdds: WorkbookVisualObject[]
+  /// Pictures embedded in cells this session ("Place in Cell"); the save
+  /// writes each into the workbook's Excel rich-value parts and marks its
+  /// host cell with vm=. Coordinates live in post-operation space, like
+  /// cell entries.
+  readonly cellImageAdds: CellImageAdd[]
   /// Edits to visuals already in the file, keyed by visual id: an anchor
   /// rewrite (move/resize) or a removal, located by (drawingPath, index).
   readonly visualEdits: Map<string, VisualEditEntry>
@@ -280,6 +297,7 @@ export function createEditJournal(): EditJournal {
     chartEdits: new Map(),
     visualAdds: [],
     visualEdits: new Map(),
+    cellImageAdds: [],
     tableAdds: [],
     tableEdits: new Map(),
     pivotAdds: [],
@@ -803,6 +821,30 @@ export function recordVisualAdd(journal: EditJournal, visual: WorkbookVisualObje
   journal.visualAdds.push(visual)
 }
 
+/// Records a picture embedded in a cell; a second embed on the same cell
+/// replaces the earlier bytes (the save writes one picture per cell).
+export function recordCellImageAdd(journal: EditJournal, entry: CellImageAdd): void {
+  const at = journal.cellImageAdds.findIndex(
+    (existing) =>
+      existing.sheetId === entry.sheetId &&
+      existing.row === entry.row &&
+      existing.column === entry.column,
+  )
+  if (at >= 0) journal.cellImageAdds.splice(at, 1)
+  journal.cellImageAdds.push(entry)
+}
+
+export function cellImageAddAt(
+  journal: EditJournal,
+  sheetId: string,
+  row: number,
+  column: number,
+): CellImageAdd | undefined {
+  return journal.cellImageAdds.find(
+    (entry) => entry.sheetId === sheetId && entry.row === row && entry.column === column,
+  )
+}
+
 /// Arrange-tab properties shared by file-visual edits and session visuals.
 export interface VisualArrangeChanges {
   readonly rotation?: number
@@ -1011,6 +1053,25 @@ function clampWireText(text: string, max: number): string {
 
 function clampCategories(categories: readonly string[]): string[] {
   return categories.map((label) => clampWireText(label, CHART_CATEGORY_WIRE_MAX))
+}
+
+/// Converts session pictures in cells to the save-request wire shape. Skips
+/// entries on removed sheets and anything with no usable bytes.
+export function toSaveCellImageAdds(journal: EditJournal): WorkbookCellImageAdd[] {
+  const additions: WorkbookCellImageAdd[] = []
+  for (const entry of journal.cellImageAdds) {
+    if (isSheetRemoved(journal, entry.sheetId)) continue
+    const base64 = entry.dataUrl.split(',')[1]
+    if (!base64) continue
+    additions.push({
+      sheetId: entry.sheetId,
+      row: entry.row,
+      column: entry.column,
+      mediaType: entry.mediaType,
+      base64,
+    })
+  }
+  return additions
 }
 
 /// Converts session visuals to the save-request wire shape. Skips visuals on
@@ -1566,6 +1627,14 @@ export function recordStructuralOp(
   journal.visualAdds.forEach((visual, at) => {
     journal.visualAdds[at] = shiftVisualForStructuralOp(visual, sheetId, sheetName, op)
   })
+  for (let at = journal.cellImageAdds.length - 1; at >= 0; at -= 1) {
+    const entry = journal.cellImageAdds[at]
+    if (!entry || entry.sheetId !== sheetId) continue
+    const moved = movePosition(axis === 'row' ? entry.row : entry.column)
+    if (moved === null) journal.cellImageAdds.splice(at, 1)
+    else if (axis === 'row') journal.cellImageAdds[at] = { ...entry, row: moved }
+    else journal.cellImageAdds[at] = { ...entry, column: moved }
+  }
   for (const [id, entry] of journal.visualEdits) {
     if (entry.sheetId !== sheetId || entry.anchor === undefined) continue
     journal.visualEdits.set(id, { ...entry, anchor: shiftVisualAnchor(entry.anchor, shift) })

@@ -58,8 +58,10 @@ import type {
   WikiGraph,
   WikiLinkResolveRequest,
   WikiLinkResolved,
+  WikiNoteEntry,
 } from '../shared/ipc'
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
+import { listWikiNotes } from './wiki-notes'
 import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
@@ -804,6 +806,10 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.takeWikiFragment, (_e, path: unknown): string =>
     typeof path === 'string' ? takeWikiFragment(path) : '',
+  )
+
+  ipcMain.handle(MARKDOWN_CHANNELS.listWikiNotes, async (): Promise<WikiNoteEntry[]> =>
+    listWikiNotes(configuredDefaultSaveDir(app), nodeFs()),
   )
 
   ipcMain.handle(MARKDOWN_CHANNELS.wikiBacklinks, (_e, path: unknown): Promise<WikiBacklink[]> =>

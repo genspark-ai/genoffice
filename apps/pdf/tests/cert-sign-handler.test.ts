@@ -12,7 +12,7 @@ import { readPdfSignatures } from '../src/main/pdf-signatures'
 vi.mock('../src/main/system-certificates', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/system-certificates')>()),
   listSystemCertificates: vi.fn(),
-  exportSystemCertificate: vi.fn(),
+  openSystemSigner: vi.fn(),
 }))
 
 type Handler = (event: { sender: FakeContents }, ...args: any[]) => any
@@ -52,7 +52,7 @@ vi.mock('electron', () => ({
 import { createPdfView, setPdfRedactionSavedHook } from '../src/main/pdf-main'
 import {
   SystemStoreError,
-  exportSystemCertificate,
+  openSystemSigner,
   listSystemCertificates,
 } from '../src/main/system-certificates'
 
@@ -196,7 +196,8 @@ describe('certificate signing handlers', () => {
     it('hands the renderer opaque ids, signs with the exported key and drops it afterwards', async () => {
       const s = await setup()
       vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })
-      vi.mocked(exportSystemCertificate).mockImplementation(async () => ({
+      vi.mocked(openSystemSigner).mockImplementation(async () => ({
+        kind: 'p12' as const,
         p12: new Uint8Array(p12),
         password: PASSWORD,
       }))
@@ -209,14 +210,14 @@ describe('certificate signing handlers', () => {
         ok: true,
         signer: { commonName: 'Handler Test' },
       })
-      expect(exportSystemCertificate).toHaveBeenCalledTimes(1)
+      expect(openSystemSigner).toHaveBeenCalledTimes(1)
       pickSave.mockResolvedValue({ canceled: false, filePath: s.signedCopy })
       expect(await s.sign({ certId: item.certId, password: '' })).toEqual({
         ok: true,
         path: s.signedCopy,
       })
       // The inspect-time export was reused for the signature, then forgotten
-      expect(exportSystemCertificate).toHaveBeenCalledTimes(1)
+      expect(openSystemSigner).toHaveBeenCalledTimes(1)
       const [sig] = await readPdfSignatures(new Uint8Array(await readFile(s.signedCopy)))
       expect(sig!.signer?.commonName).toBe('Handler Test')
     })
@@ -225,9 +226,7 @@ describe('certificate signing handlers', () => {
       const s = await setup()
       vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })
       const { certs } = await s.call(PDF_CHANNELS.listSystemCertificates)
-      vi.mocked(exportSystemCertificate).mockRejectedValue(
-        new SystemStoreError('cert-not-exportable'),
-      )
+      vi.mocked(openSystemSigner).mockRejectedValue(new SystemStoreError('cert-not-exportable'))
       expect(await s.call(PDF_CHANNELS.inspectCertificate, certs[0].certId, '')).toEqual({
         ok: false,
         error: 'cert-not-exportable',
@@ -242,10 +241,10 @@ describe('certificate signing handlers', () => {
     it('unlocks the store again when a released identity has to be re-exported for signing', async () => {
       const s = await setup()
       vi.mocked(listSystemCertificates).mockResolvedValue({ certs: [listed], issues: [] })
-      vi.mocked(exportSystemCertificate).mockClear()
-      vi.mocked(exportSystemCertificate).mockImplementation(async (_ref, storePassword) => {
+      vi.mocked(openSystemSigner).mockClear()
+      vi.mocked(openSystemSigner).mockImplementation(async (_ref, storePassword) => {
         if (storePassword !== 'store-pw') throw new SystemStoreError('cert-store-locked')
-        return { p12: new Uint8Array(p12), password: PASSWORD }
+        return { kind: 'p12' as const, p12: new Uint8Array(p12), password: PASSWORD }
       })
       const { certs } = await s.call(PDF_CHANNELS.listSystemCertificates, 'store-pw')
       expect(
@@ -256,7 +255,7 @@ describe('certificate signing handlers', () => {
       expect(
         await s.sign({ certId: certs[0].certId, password: '', storePassword: 'store-pw' }),
       ).toEqual({ ok: true, path: s.signedCopy })
-      expect(exportSystemCertificate).toHaveBeenCalledTimes(2)
+      expect(openSystemSigner).toHaveBeenCalledTimes(2)
     })
 
     it('forgets ids from an earlier listing when the store is listed again', async () => {

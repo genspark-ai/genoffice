@@ -603,7 +603,7 @@ pub struct SheetProtectionAllow {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase", untagged)]
+#[serde(rename_all_fields = "camelCase", untagged)]
 pub enum SheetPasswordHash {
     Legacy {
         legacy: String,

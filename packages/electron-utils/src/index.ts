@@ -47,6 +47,7 @@ export {
   DEFAULT_SAVE_DIR_KEY,
   configuredDefaultSaveDir,
   isUsableSaveDir,
+  mkdirDirs,
   readDefaultSaveDirSetting,
   resolveDefaultSaveDir,
   type PathProvider,

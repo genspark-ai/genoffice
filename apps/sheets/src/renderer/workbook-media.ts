@@ -14,6 +14,18 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes
 }
 
+/// A workbook media part as a data URL; metafiles rasterize to PNG first.
+/// Null when the bytes cannot be rendered.
+export async function workbookMediaDataUrl(media: {
+  readonly mediaType: string
+  readonly base64: string
+}): Promise<string | null> {
+  if (isMetafileMime(media.mediaType)) {
+    return metafileToDataUrl(base64ToBytes(media.base64), media.mediaType)
+  }
+  return `data:${media.mediaType};base64,${media.base64}`
+}
+
 /// Lazily fetches a workbook image as a data URL (metafiles rasterize to PNG
 /// first). Pass an undefined sessionId to skip fetching.
 export function useWorkbookMediaUrl(
@@ -29,9 +41,7 @@ export function useWorkbookMediaUrl(
     void window.desktopApi
       .readWorkbookMedia({ sessionId, visualId })
       .then(async (media) => {
-        const next = isMetafileMime(media.mediaType)
-          ? await metafileToDataUrl(base64ToBytes(media.base64), media.mediaType)
-          : `data:${media.mediaType};base64,${media.base64}`
+        const next = await workbookMediaDataUrl(media)
         if (!isCurrent) return
         if (next) setUrl(next)
         else setUnavailable(true)

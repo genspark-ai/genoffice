@@ -42,6 +42,18 @@ describe('sheet context menu action', () => {
     })
   })
 
+  it('does not open statistics on the grid range-selector host or its overlays', () => {
+    const canvas = el('canvas', 'div|id=univer-container', 'section|data-range-selector=')
+    const overlay = document.createElement('div')
+    canvas.parentElement?.prepend(overlay)
+    for (const target of [canvas, overlay]) {
+      expect(sheetContextMenuAction(target)).toEqual({
+        statsMenu: false,
+        suppressNativeMenu: true,
+      })
+    }
+  })
+
   it('keeps the native edit menu on editable surfaces (formula bar, in-cell editor)', () => {
     const input = el('input', 'div|id=univer-container', 'div|data-u-comp=formula-bar')
     expect(sheetContextMenuAction(input)).toEqual({
@@ -64,7 +76,11 @@ describe('sheet context menu action', () => {
     // real footer shape: section[data-range-selector] > [tab strip, stats area]
     const section = document.createElement('section')
     section.setAttribute('data-range-selector', '')
-    section.appendChild(document.createElement('div')) // the sheet tab strip
+    const strip = document.createElement('div')
+    const tabBar = document.createElement('div')
+    tabBar.setAttribute('data-u-comp', 'slide-tab-bar')
+    strip.appendChild(tabBar)
+    section.appendChild(strip)
     const stats = document.createElement('div')
     section.appendChild(stats)
     const container = document.createElement('div')
@@ -77,13 +93,18 @@ describe('sheet context menu action', () => {
   })
 
   it('leaves the sheet tab strip to Univer (suppresses the native menu, no stats menu)', () => {
-    // the strip is the section's firstElementChild, so it is not ours to handle
+    // SheetBar's wrapper contains both the tabs and sibling controls.
     const tabs = el(
       'button',
       'div|id=univer-container',
       'section|data-range-selector=',
       'div|class=tab-strip',
     )
+    const tabBar = document.createElement('div')
+    tabBar.setAttribute('data-u-comp', 'slide-tab-bar')
+    tabs.parentElement?.appendChild(tabBar)
+    // Footer children may move: the tab strip is identified by its marker.
+    tabs.parentElement?.parentElement?.prepend(document.createElement('div'))
     expect(sheetContextMenuAction(tabs)).toEqual({
       statsMenu: false,
       suppressNativeMenu: true,

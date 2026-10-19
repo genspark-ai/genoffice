@@ -21,10 +21,14 @@ export interface SheetContextMenuAction {
 
 export function sheetContextMenuAction(target: EventTarget | null): SheetContextMenuAction {
   if (!(target instanceof Element)) return { statsMenu: false, suppressNativeMenu: false }
-  const footer = target.closest('#univer-container section[data-range-selector]')
-  // Univer owns the footer; right-clicking it outside the tab strip opens ours.
-  if (footer && !footer.firstElementChild?.contains(target))
-    return { statsMenu: true, suppressNativeMenu: true }
+  // The grid viewport also has data-range-selector; only the footer hosts sheet tabs.
+  const section = target.closest('#univer-container section[data-range-selector]')
+  const tabBar = section?.querySelector('[data-u-comp="slide-tab-bar"]')
+  if (section && tabBar) {
+    // Include the tab bar's sibling controls without depending on footer child order.
+    const tabStrip = Array.from(section.children).find((child) => child.contains(tabBar))
+    if (tabStrip && !tabStrip.contains(target)) return { statsMenu: true, suppressNativeMenu: true }
+  }
   if (target.closest('#univer-container')) {
     // Editable surfaces keep the native cut/copy/paste menu — Univer shows
     // nothing of its own there. closest() also covers elements inside a

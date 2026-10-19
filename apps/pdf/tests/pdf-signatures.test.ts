@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { PDFDocument, degrees } from 'pdf-lib'
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, degrees } from 'pdf-lib'
+import type { PDFObject, PDFRawStream } from 'pdf-lib'
 import forge from 'node-forge'
 import { PNG } from 'pngjs'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -180,6 +181,20 @@ describe('signing and reading back', () => {
     expect(sig!.problems).not.toContain('digest-mismatch')
   })
 
+  it('keeps a binary trailer /ID byte-for-byte in the signature revision', async () => {
+    const doc = await PDFDocument.create()
+    doc.addPage([200, 200])
+    const bytes = Uint8Array.from([0xc3, 0x89, 0x80, 0xff, 0x00, 0x41, 0x7f, 0xa0])
+    doc.context.trailerInfo.ID = doc.context.obj([
+      PDFHexString.of(Buffer.from(bytes).toString('hex')),
+      PDFHexString.of('00112233445566778899AABBCCDDEEFF'),
+    ])
+    const original = await doc.save({ useObjectStreams: false })
+    const signed = await signPdf(original, { p12, password: PASSWORD })
+    const text = Buffer.from(signed).subarray(original.length).toString('latin1')
+    expect(text).toContain('/ID [ <C38980FF00417FA0> <00112233445566778899AABBCCDDEEFF> ]')
+  })
+
   it('reports no signatures for an unsigned or non-PDF input', async () => {
     expect(await readPdfSignatures(await samplePdf())).toEqual([])
     expect(await readPdfSignatures(Buffer.from('not a pdf /ByteRange'))).toEqual([])
@@ -224,6 +239,53 @@ describe('visible signatures', () => {
       expect(sig!.problems).toEqual(['self-signed'])
     })
   }
+
+  it('keeps the image behind a nested form: Acrobat rejects an appearance that paints it directly', async () => {
+    const signed = await signPdf(await samplePdf({ pages: 1 }), {
+      p12,
+      password: PASSWORD,
+      visible: {
+        pageIndex: 0,
+        position: 'bottom-right',
+        width: 160,
+        height: 60,
+        png: pngBox(32, 12),
+      },
+    })
+    const doc = await PDFDocument.load(signed, { updateMetadata: false })
+    const { context } = doc
+    const annots = context.lookup(doc.getPages()[0]!.node.get(PDFName.of('Annots')), PDFArray)
+    const widget = context.lookup(annots.get(0), PDFDict)
+    const ap = context.lookup(widget.get(PDFName.of('AP')), PDFDict)
+    const xobjectsOf = (stream: PDFObject): [string, PDFObject][] => {
+      const dict = (stream as PDFRawStream).dict
+      const resources = context.lookup(dict.get(PDFName.of('Resources')), PDFDict)
+      const xobject = context.lookupMaybe(resources.get(PDFName.of('XObject')), PDFDict)
+      return (xobject?.entries() ?? []).map(([name, ref]) => [
+        name.decodeText(),
+        context.lookup(ref),
+      ])
+    }
+    const subtype = (object: PDFObject) =>
+      (object as PDFRawStream).dict.get(PDFName.of('Subtype'))?.toString()
+    let level: PDFObject[] = [context.lookup(ap.get(PDFName.of('N')))]
+    const seen: string[] = []
+    while (level.length > 0) {
+      const next: PDFObject[] = []
+      for (const form of level) {
+        expect(subtype(form)).toBe('/Form')
+        for (const [, child] of xobjectsOf(form)) {
+          seen.push(subtype(child)!)
+          // A form that references an image is only fine when it is not the field's own N stream
+          if (subtype(child) === '/Image')
+            expect(form).not.toBe(context.lookup(ap.get(PDFName.of('N'))))
+          if (subtype(child) === '/Form') next.push(child)
+        }
+      }
+      level = next
+    }
+    expect(seen).toContain('/Image')
+  })
 })
 
 describe('certificate files', () => {

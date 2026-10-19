@@ -1,4 +1,5 @@
 import { ScriptFonts } from './script-fonts'
+import { MultiSelect } from './multi-select'
 import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
@@ -7089,6 +7090,7 @@ export const editorExtensions = [
   InsMark,
   DelMark,
   UndoRedo,
+  MultiSelect,
   SearchHighlightExtension,
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,

@@ -28,6 +28,7 @@ import type {
   FileSearchRerank,
   FileSearchSettings,
 } from '../shared/home-api'
+import type { ProjectApi } from '@genoffice/project-store'
 import { HOME_CHANNELS } from '../shared/home-api'
 import { INTEGRATIONS_CHANNELS } from '../shared/integrations-api'
 import type {
@@ -621,6 +622,18 @@ function asCloudProjectsSnapshot(result: unknown): CloudProjectsSnapshot | null 
 }
 
 contextBridge.exposeInMainWorld('aiOffice', homeApi)
+
+// The same project:* channels the editor preloads use; the home screen's
+// knowledge-base ask panel keeps its thread through them. The handlers are
+// registered once by the docs main process in shell mode (registerProjectIpc).
+const projectApi: ProjectApi = {
+  resolveChat: (args) => ipcRenderer.invoke('project:resolveChat', args),
+  appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
+  loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
+  rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
+}
+
+contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 const integrationsApi: IntegrationsApi = {
   async status() {

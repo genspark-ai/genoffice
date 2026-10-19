@@ -80,6 +80,23 @@ describe('selectedWordCount', () => {
     expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(0)
   })
 
+  it('counts an inline formula the way the total does', () => {
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: null },
+        content: [
+          {
+            type: 'docInlineMath',
+            attrs: { omml: '', mathml: '', latex: 'E=mc^2', text: 'E=mc2' },
+          },
+        ],
+      },
+    ])
+    editor.commands.setTextSelection({ from: 1, to: 2 })
+    expect(selectedWordCount(editor.state.doc, editor.state.selection)).toBe(2)
+  })
+
   it('a NodeSelection (an image) has no text range, so the figure is 0', () => {
     const editor = createEditor([
       { type: 'docImage', attrs: { docxIndex: null, src: 'data:image/png;base64,AA' } },
