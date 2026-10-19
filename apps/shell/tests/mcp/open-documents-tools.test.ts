@@ -14,9 +14,9 @@ import {
 } from '../../src/main/mcp/tools/open-documents-tools'
 
 /**
- * `open_documents` over a real MCP session: the list/read/close actions against
- * a fake control, plus the pure helpers (target resolution, the default save
- * path an untitled dirty document is written to before closing).
+ * `open_documents` over a real MCP session: the list/read/save/close actions
+ * against a fake control, plus the pure helpers (target resolution, the default
+ * save path an untitled dirty document is written to before closing).
  */
 
 let service: McpServerService | undefined
@@ -104,6 +104,7 @@ function controlOf(overrides: Partial<OpenDocumentsControl> = {}): OpenDocuments
     list: vi.fn(async () => DOCUMENTS),
     read: vi.fn(async (tab: OpenDocumentTab) => ({ content: `live:${tab.id}` })),
     close: vi.fn(async () => ({})),
+    save: vi.fn(async () => ({ savedPath: 'C:/docs/four.md' })),
     ...overrides,
   }
 }
@@ -221,6 +222,32 @@ describe('open_documents tool', () => {
     expect(result.path).toBeNull()
   })
 
+  it('saves an open document in place, reporting where it landed and leaving it open', async () => {
+    const save = vi.fn(async () => ({ savedPath: 'C:/docs/four.md' }))
+    await startService(controlOf({ save }))
+    const result = jsonOf(
+      await client!.callTool({
+        name: 'open_documents',
+        arguments: { action: 'save', target: 'C:/docs/four.md' },
+      }),
+    )
+    expect(result.saved).toBe(true)
+    expect(result.savedTo).toBe('C:/docs/four.md')
+    // saving is not closing: no `closed` flag, and the control's save was the one called
+    expect(result.closed).toBeUndefined()
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: 't4' }))
+  })
+
+  it('refuses to save a PDF, naming the reason', async () => {
+    await startService(controlOf())
+    const result = await client!.callTool({
+      name: 'open_documents',
+      arguments: { action: 'save', target: 'C:/docs/six.pdf' },
+    })
+    expect(result.isError).toBe(true)
+    expect(textOf(result.content)).toContain('viewer')
+  })
+
   it('closes with save by default, reporting where it was saved', async () => {
     const close = vi.fn(async () => ({ savedPath: 'C:/docs/three.pptx' }))
     await startService(controlOf({ close }))
@@ -250,14 +277,14 @@ describe('open_documents tool', () => {
     expect(result.discardedUnsavedChanges).toBe(true)
   })
 
-  it('refuses to read a PDF, naming the reason', async () => {
+  it('refuses to read a PDF through this tool, pointing at read_pdf', async () => {
     await startService(controlOf())
     const result = await client!.callTool({
       name: 'open_documents',
       arguments: { action: 'read', target: 'C:/docs/six.pdf' },
     })
     expect(result.isError).toBe(true)
-    expect(textOf(result.content)).toContain('viewer')
+    expect(textOf(result.content)).toContain('read_pdf')
   })
 
   it('lists an unknown target as an error that names what is open', async () => {
@@ -272,9 +299,9 @@ describe('open_documents tool', () => {
     expect(message).toContain('C:/docs/one.docx')
   })
 
-  it('requires a target for read and close', async () => {
+  it('requires a target for read, save and close', async () => {
     await startService(controlOf())
-    for (const action of ['read', 'close']) {
+    for (const action of ['read', 'save', 'close']) {
       const result = await client!.callTool({ name: 'open_documents', arguments: { action } })
       expect(result.isError).toBe(true)
       expect(textOf(result.content)).toContain('needs a target')

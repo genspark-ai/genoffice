@@ -324,7 +324,9 @@ export const cs = {
   appFullLoadStart: 'Načíst vše',
   appFullLoadRunning: 'Načítá se celý sešit — řazení a filtrování se odemknou po dokončení…',
   appFullLoadTooLarge:
-    'Tento sešit je příliš velký na úplné načtení do paměti; řazení a filtrování nejsou pro tento soubor k dispozici.',
+    'Tento sešit je příliš velký na úplné načtení do paměti; řazení a přesouvání oblastí nejsou pro tento soubor k dispozici. Filtrování běží přímo nad souborem.',
+  appLargeFilterLoading: 'Čtení sloupce filtru ze souboru…',
+  appLargeFilterApplying: 'Použití filtru na soubor…',
   appSortValueModeFormulas:
     'Tato oblast obsahuje vzorce, které se v tomto velkém sešitu nepočítají živě — řazení nebo přesun by je uložily jako prosté hodnoty. Vyberte oblast bez vzorců.',
   appSortRangeTooLarge:
@@ -553,6 +555,8 @@ export const cs = {
   appPrintCanceled: 'Tisk zrušen.',
   appPrintFailed: 'Nelze tisknout.',
   appPrintNeedsFullLoad: 'Tisk vyžaduje úplné načtení sešitu – počkejte na dokončení načítání.',
+  appPrintWorkbookTooLarge:
+    'Tento sešit je příliš velký na to, aby se dal celý načíst do paměti, proto jej nelze vytisknout ani exportovat do PDF.',
   appCsvExportNeedsFullLoad:
     'Export do CSV vyžaduje plně načtený sešit — počkejte na dokončení načítání.',
   appCsvExportTooLarge: 'List je příliš velký na export do CSV.',
@@ -690,6 +694,7 @@ export const cs = {
   appTabReview: 'Revize',
   appRibbonCollapse: 'Sbalit pás karet',
   appRibbonExpand: 'Rozbalit pás karet',
+  appRibbonCompact: 'Kompaktní pás karet (pouze ikony)',
   appTabView: 'Zobrazení',
   appTabAi: 'AI',
   appTabChartDesign: 'Návrh grafu',
@@ -1090,6 +1095,9 @@ export const cs = {
   appHeadings: 'Záhlaví',
   appHeadingsHidden: 'Záhlaví skryta.',
   appHeadingsShown: 'Záhlaví zobrazena.',
+  appRightToLeft: 'Zprava doleva',
+  appRightToLeftOn: 'Směr mřížky: zprava doleva.',
+  appRightToLeftOff: 'Směr mřížky: zleva doprava.',
   appPrintHeadingsTitle: 'Tisknout záhlaví řádků a sloupců',
   appGroupFunctionLibrary: 'Knihovna funkcí',
   appInsertFunction: 'Vložit funkci',
@@ -1232,6 +1240,10 @@ export const cs = {
   appFontSizeTip: 'Velikost písma',
   appZoomIn: 'Přiblížit',
   appZoomOut: 'Oddálit',
+  appImgActualSize: 'Skutečná velikost',
+  appImgFitWindow: 'Přizpůsobit oknu',
+  appImgSaveAs: 'Uložit obrázek jako…',
+  appImgClose: 'Zavřít (Esc)',
   appZoomSheetTitle: 'Přiblížit nebo oddálit list',
   appResetZoom: 'Obnovit lupu',
   appZoomToSelection: 'Přiblížit na výběr',
@@ -1498,6 +1510,8 @@ export const cs = {
   appVisualSendBackward: 'Přenést dál',
   appVisualSizeProperties: 'Velikost a vlastnosti…',
   appVisualHyperlink: 'Hypertextový odkaz…',
+  appVisualEmbedInCell: 'Vložit obrázek do buňky',
+  appVisualEmbedFailed: 'Tento obrázek se nepodařilo vložit do buňky.',
   appVisualDelete: 'Odstranit',
   appVisualArranged: 'Objekt aktualizován — uložte pomocí ⌘S.',
   appVisualCopied: 'Objekt zkopírován.',

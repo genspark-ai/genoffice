@@ -46,7 +46,7 @@ Ein neues Dokument öffnet sich ohne Namen; die Datei auf dem Datenträger entst
 | Dieses Handbuch öffnen | F1    | F1              |
 | Menüband reduzieren    | ⌥⌘R   | Ctrl+F1         |
 
-**Das Reduzieren des Menübands** funktioniert in jedem Editor. Die Registerreihen bleibt stehen, und das Befehlsband darunter wird ausgeblendet; die ausgewählte Registerkarte dient zugleich als Reduzierungsschalter – solange das Menüband reduziert ist, ist keine Registerkarte ausgewählt, und ein Klick auf eine beliebige Karte holt das Band zurück. Ein Doppelklick auf eine Registerkarte tut dasselbe. Wie Sie es zuletzt hatten, wird pro Editor gemerkt.
+**Das Reduzieren des Menübands** funktioniert in jedem Editor. Die Registerreihen bleibt stehen, und das Befehlsband darunter wird ausgeblendet; die ausgewählte Registerkarte dient zugleich als Reduzierungsschalter – solange das Menüband reduziert ist, ist keine Registerkarte ausgewählt, und ein Klick auf eine beliebige Karte holt das Band zurück. Ein Doppelklick auf eine Registerkarte tut dasselbe. Wie Sie es zuletzt hatten, wird pro Editor gemerkt. Docs fügt eine mittlere Dichte hinzu: **⌥⌘K** / Ctrl+Alt+K staucht das Band auf reine Icons, ebenfalls gemerkt.
 
 Tastenkürzel innerhalb der einzelnen Editoren (Format übertragen, Suchen und Ersetzen, Tabellenbefehle, …) stehen in den jeweiligen Kapiteln; Docs bringt zusätzlich einen durchsuchbaren Dialog für Tastenkombinationen (**⌘/**) mit (siehe sein Kapitel).
 

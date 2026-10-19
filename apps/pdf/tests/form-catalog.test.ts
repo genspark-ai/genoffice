@@ -10,16 +10,50 @@ import {
   type RawFormAnnotation,
 } from '../src/renderer/form-catalog'
 
-function fakeDoc(pages: RawFormAnnotation[][]): PDFDocumentProxy {
+function fakeDoc(
+  pages: RawFormAnnotation[][],
+  fieldObjects?: Record<string, unknown>,
+): PDFDocumentProxy {
   return {
     numPages: pages.length,
     getPage: async (page: number) => ({
       getAnnotations: async () => pages[page - 1] ?? [],
     }),
+    ...(fieldObjects ? { getFieldObjects: async () => fieldObjects } : {}),
   } as unknown as PDFDocumentProxy
 }
 
 describe('form catalog', () => {
+  it('keeps names of widget-less fields and push buttons as taken', async () => {
+    const catalog = await buildFormCatalog(
+      fakeDoc(
+        [
+          [
+            {
+              id: 'n',
+              subtype: 'Widget',
+              fieldType: 'Tx',
+              fieldName: 'name',
+              rect: [0, 0, 10, 10],
+            },
+            {
+              id: 'b',
+              subtype: 'Widget',
+              fieldType: 'Btn',
+              fieldName: 'Submit',
+              rect: [0, 0, 10, 10],
+              pushButton: true,
+            },
+          ],
+        ],
+        { name: [], Submit: [], 'group.child': [] },
+      ),
+    )
+    expect([...catalog.fields.keys()]).toEqual(['name'])
+    expect([...catalog.otherFieldNames].sort()).toEqual(['Submit', 'group.child'])
+    expect((await buildFormCatalog(fakeDoc([[]]))).otherFieldNames.size).toBe(0)
+  })
+
   it('builds one document catalog with page order and aggregated radio options', async () => {
     const catalog = await buildFormCatalog(
       fakeDoc([

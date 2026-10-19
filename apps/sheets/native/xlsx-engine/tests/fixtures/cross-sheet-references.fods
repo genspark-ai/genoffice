@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  office:version="1.3"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Probe">
+    <table:table-row>
+     <table:table-cell office:value-type="float" office:value="10"><text:p>10</text:p></table:table-cell>
+     <table:table-cell office:value-type="float" office:value="5"><text:p>5</text:p></table:table-cell>
+     <table:table-cell table:formula="=[$Other.A1]*2" office:value-type="float" office:value="200"><text:p>200</text:p></table:table-cell>
+     <table:table-cell table:formula="=[$'My Sheet'.A1]+1" office:value-type="float" office:value="11"><text:p>11</text:p></table:table-cell>
+     <table:table-cell table:formula="=SUM([$Data.A1:$Data.B2])" office:value-type="float" office:value="30"><text:p>30</text:p></table:table-cell>
+     <table:table-cell table:formula="=SUM($Data.$A$1:$Data.$B$2)" office:value-type="float" office:value="30"><text:p>30</text:p></table:table-cell>
+     <table:table-cell table:formula="=SUM([.A1:.B1])" office:value-type="float" office:value="15"><text:p>15</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+   <table:table table:name="Other">
+    <table:table-row>
+     <table:table-cell office:value-type="float" office:value="100"><text:p>100</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+   <table:table table:name="My Sheet">
+    <table:table-row>
+     <table:table-cell office:value-type="float" office:value="10"><text:p>10</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+   <table:table table:name="Data">
+    <table:table-row>
+     <table:table-cell office:value-type="float" office:value="10"><text:p>10</text:p></table:table-cell>
+     <table:table-cell office:value-type="float" office:value="20"><text:p>20</text:p></table:table-cell>
+    </table:table-row>
+   </table:table>
+  </office:spreadsheet>
+ </office:body>
+</office:document>

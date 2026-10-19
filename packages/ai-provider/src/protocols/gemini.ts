@@ -2,7 +2,7 @@ import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent
 import { aiFetch } from '../fetch'
 import { httpBodyDetail } from '../http-error'
 import { gensparkAttributionHeaders, opencodeSessionHeaders } from '../providers'
-import type { AiChatResponse, AiProviderConfig } from '../types'
+import type { AiChatResponse, AiProviderConfig, AiTokenUsage } from '../types'
 import { createStreamWatchdog, type StreamWatchdog } from '../watchdog'
 import { toGeminiSchema } from './gemini-schema'
 import {
@@ -14,10 +14,24 @@ import {
   sseDataEvents,
   throwIfCreditsNotice,
   throwIfToolCountOverBudget,
+  usageCount,
   type StreamCallbacks,
 } from './shared'
 
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
+
+/** Merge a Gemini usageMetadata object into an accumulator (every stream chunk carries
+ * one; the last chunk's counts are the turn's totals). */
+function mergeGeminiUsage(
+  target: AiTokenUsage,
+  usage: { promptTokenCount?: unknown; candidatesTokenCount?: unknown } | undefined,
+): void {
+  if (!usage) return
+  const input = usageCount(usage.promptTokenCount)
+  const output = usageCount(usage.candidatesTokenCount)
+  if (input !== undefined) target.inputTokens = input
+  if (output !== undefined) target.outputTokens = output
+}
 
 // Gemini 3 rejects a model turn whose first functionCall lacks its thoughtSignature;
 // calls that never had one (other provider's history) go back with Google's bypass sentinel.
@@ -103,17 +117,20 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
       finishReason?: string
     }>
     promptFeedback?: { blockReason?: string }
+    usageMetadata?: { promptTokenCount?: unknown; candidatesTokenCount?: unknown }
     error?: { message?: string } | string
   }>
   let emitted = false
   let toolCallCount = 0
   let stopReason: string | undefined
   let abnormalFinish: string | undefined
+  const usage: AiTokenUsage = {}
   for (const event of events) {
     if (event.error) throw new Error(sseErrorText(event.error, 'Gemini error'))
     if (event.promptFeedback?.blockReason) {
       throw new Error(`Gemini blocked the prompt (${event.promptFeedback.blockReason})`)
     }
+    mergeGeminiUsage(usage, event.usageMetadata)
     const finishReason = event.candidates?.[0]?.finishReason
     if (finishReason === 'MAX_TOKENS') stopReason = 'max_tokens'
     else if (finishReason && finishReason !== 'STOP') abnormalFinish = finishReason
@@ -139,11 +156,16 @@ function emitGeminiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     )
   }
   if (stopReason) cb.onStopReason?.(stopReason)
+  if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) cb.onUsage?.(usage)
 }
 
 /** Per-endpoint request shaping resolved from the provider registry. */
 export interface GeminiRequestOptions {
   omitTemperature?: boolean | undefined
+  /** static headers a user-hosted Gemini-shaped endpoint needs (merged last, so they win) */
+  headers?: Record<string, string> | undefined
+  /** stream idle budget override for slow local servers */
+  idleTimeoutMs?: number | undefined
 }
 
 export async function streamGemini(
@@ -156,7 +178,7 @@ export async function streamGemini(
   baseUrl = GEMINI_BASE_URL,
   options: GeminiRequestOptions = {},
 ): Promise<void> {
-  const wd = createStreamWatchdog(cb.signal)
+  const wd = createStreamWatchdog(cb.signal, undefined, options.idleTimeoutMs)
   return wd.guard(() =>
     geminiTurn(config, system, messages, tools, maxTokens, cb, baseUrl, wd, options),
   )
@@ -186,6 +208,7 @@ async function geminiTurn(
       'x-goog-api-key': config.apiKey,
       ...gensparkAttributionHeaders(baseUrl),
       ...opencodeSessionHeaders(baseUrl, cb.sessionId),
+      ...options.headers,
     },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
@@ -231,6 +254,7 @@ async function geminiTurn(
   let sawFinish = false
   let emitted = false
   let toolCallCount = 0
+  const turnUsage: AiTokenUsage = {}
   for await (const sse of sseDataEvents(response.body, onBytes)) {
     // A truncated frame or a non-JSON keep-alive from a proxy skips that event
     // rather than killing the turn.
@@ -241,12 +265,15 @@ async function geminiTurn(
         finishReason?: string
       }>
       promptFeedback?: { blockReason?: string }
+      usageMetadata?: { promptTokenCount?: unknown; candidatesTokenCount?: unknown }
       error?: { message?: string } | string
     }
     if (event.error) throw new Error(sseErrorText(event.error, 'Gemini stream error'))
     if (event.promptFeedback?.blockReason) {
       throw new Error(`Gemini blocked the prompt (${event.promptFeedback.blockReason})`)
     }
+    // every chunk carries usageMetadata; later chunks supersede earlier ones
+    mergeGeminiUsage(turnUsage, event.usageMetadata)
     const finishReason = event.candidates?.[0]?.finishReason
     if (finishReason) sawFinish = true
     if (finishReason === 'MAX_TOKENS') stopReason = 'max_tokens'
@@ -277,6 +304,8 @@ async function geminiTurn(
     throw new Error('Gemini stream ended before a finishReason')
   }
   if (stopReason) cb.onStopReason?.(stopReason)
+  if (turnUsage.inputTokens !== undefined || turnUsage.outputTokens !== undefined)
+    cb.onUsage?.(turnUsage)
 }
 
 export async function chatGemini(
@@ -296,6 +325,7 @@ export async function chatGemini(
       'x-goog-api-key': config.apiKey,
       ...gensparkAttributionHeaders(baseUrl),
       ...opencodeSessionHeaders(baseUrl),
+      ...options.headers,
     },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },

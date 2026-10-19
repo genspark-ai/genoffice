@@ -15,6 +15,7 @@ export const ms = {
   ribbonTabReview: 'Semakan',
   ribbonCollapse: 'Runtuhkan Reben',
   ribbonExpand: 'Kembangkan Reben',
+  ribbonCompact: 'Reben Padat (ikon sahaja)',
   ribbonTabView: 'Pandangan',
   ribbonTabTableDesign: 'Reka Bentuk Jadual',
   ribbonTabChartDesign: 'Reka Bentuk Carta',
@@ -389,6 +390,12 @@ export const ms = {
   ribbonRehearseTip:
     'Raptai pemasaan: jalankan tayangan dari awal dan rekodkan masa setiap slaid; simpan sebagai pemasaan mara automatik (disimpan dalam pptx)',
   ribbonRecord: 'Rakam',
+  ribbonRecordTip:
+    'Rakam naratif: mainkan tayangan slaid dan rakam suara anda serta masa setiap slaid',
+  ribbonRecordFromBeginning: 'Rakam dari Permulaan',
+  ribbonRecordFromCurrent: 'Rakam dari Slaid Semasa',
+  ribbonClearNarrationCurrent: 'Kosongkan Naratif pada Slaid Semasa',
+  ribbonClearNarrationAll: 'Kosongkan Naratif pada Semua Slaid',
   ribbonGroupProofing: 'Pembacaan Pruf',
   ribbonSpellCheck: 'Ejaan',
   ribbonSpellCheckTip:

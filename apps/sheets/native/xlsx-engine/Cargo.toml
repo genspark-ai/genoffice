@@ -5,6 +5,11 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 
+[features]
+# Run indexing and recalc inline instead of on threads, as WebAssembly builds
+# without threads must; lets that path be tested on any machine.
+single-thread = []
+
 [dependencies]
 base64 = "0.22.1"
 calamine = "0.36.0"

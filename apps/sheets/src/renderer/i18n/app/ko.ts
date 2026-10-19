@@ -327,7 +327,9 @@ export const ko = {
   appFullLoadRunning:
     '통합 문서 전체를 로드하는 중입니다. 완료되면 정렬과 필터를 사용할 수 있습니다…',
   appFullLoadTooLarge:
-    '이 통합 문서는 너무 커서 메모리에 전부 로드할 수 없습니다. 이 파일에서는 정렬과 필터를 사용할 수 없습니다.',
+    '이 통합 문서는 너무 커서 메모리에 전부 로드할 수 없습니다. 이 파일에서는 정렬과 범위 이동을 사용할 수 없습니다. 필터는 파일에서 직접 실행됩니다.',
+  appLargeFilterLoading: '파일에서 필터 열을 읽는 중…',
+  appLargeFilterApplying: '파일에 필터를 적용하는 중…',
   appSortValueModeFormulas:
     '선택한 범위에 수식이 있지만 이 큰 통합 문서에서는 수식이 실시간으로 계산되지 않습니다. 정렬하거나 이동하면 수식이 값으로 저장됩니다. 수식이 없는 범위를 선택하세요.',
   appSortRangeTooLarge:
@@ -560,6 +562,8 @@ export const ko = {
   appPrintFailed: '인쇄할 수 없습니다.',
   appPrintNeedsFullLoad:
     '인쇄하려면 워크북이 완전히 로드되어야 합니다. 로드가 끝날 때까지 기다려 주세요.',
+  appPrintWorkbookTooLarge:
+    '이 통합 문서는 너무 커서 메모리에 완전히 불러올 수 없으므로 인쇄하거나 PDF로 내보낼 수 없습니다.',
   appCsvExportNeedsFullLoad:
     'CSV 내보내기에는 통합 문서 전체 로드가 필요합니다 — 로드가 완료될 때까지 기다리십시오.',
   appCsvExportTooLarge: '시트가 너무 커서 CSV로 내보낼 수 없습니다.',
@@ -701,6 +705,7 @@ export const ko = {
   appTabReview: '검토',
   appRibbonCollapse: '리본 축소',
   appRibbonExpand: '리본 확장',
+  appRibbonCompact: '간단 리본(아이콘만)',
   appTabView: '보기',
   appTabAi: 'AI',
   appTabChartDesign: '차트 디자인',
@@ -1110,6 +1115,9 @@ export const ko = {
   appHeadings: '머리글',
   appHeadingsHidden: '머리글을 숨겼습니다.',
   appHeadingsShown: '머리글을 표시했습니다.',
+  appRightToLeft: '오른쪽에서 왼쪽',
+  appRightToLeftOn: '눈금 방향: 오른쪽에서 왼쪽.',
+  appRightToLeftOff: '눈금 방향: 왼쪽에서 오른쪽.',
   appPrintHeadingsTitle: '행/열 머리글 인쇄',
   // Formulas tab
   appGroupFunctionLibrary: '함수 라이브러리',
@@ -1254,6 +1262,10 @@ export const ko = {
   appFontSizeTip: '글꼴 크기',
   appZoomIn: '확대',
   appZoomOut: '축소',
+  appImgActualSize: '실제 크기',
+  appImgFitWindow: '창에 맞춤',
+  appImgSaveAs: '그림을 다른 이름으로 저장…',
+  appImgClose: '닫기 (Esc)',
   appZoomSheetTitle: '시트 확대/축소',
   appResetZoom: '확대/축소 다시 설정',
   appZoomToSelection: '선택 영역 확대/축소',
@@ -1519,6 +1531,8 @@ export const ko = {
   appVisualSendBackward: '뒤로 보내기',
   appVisualSizeProperties: '크기 및 속성…',
   appVisualHyperlink: '하이퍼링크…',
+  appVisualEmbedInCell: '셀에 그림 포함',
+  appVisualEmbedFailed: '이 그림을 셀에 포함할 수 없습니다.',
   appVisualDelete: '삭제',
   appVisualArranged: '개체가 업데이트됨 — ⌘S로 저장하세요.',
   appVisualCopied: '개체가 복사되었습니다.',

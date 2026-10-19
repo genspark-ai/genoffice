@@ -1,0 +1,24 @@
+/* Token-usage chip under assistant replies and beside the composer footer.
+   Neutral by design: it reports what the provider billed, it must not look like
+   an action button or an error. */
+
+.ai-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* sits on its own quiet line under the reply text */
+.ai-message-usage {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0 2px;
+  margin-top: -2px;
+}

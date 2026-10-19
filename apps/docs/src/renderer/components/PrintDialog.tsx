@@ -1,7 +1,8 @@
 /**
  * Print dialog modeled on Word's print sheet (same pattern as the slides app):
  * live page preview on the left (a scaled clone of the pagination-preview page
- * that will actually print), range options on the right. "Print" hides the
+ * that will actually print), printer/copies/duplex and range options on the
+ * right (a chosen printer prints silently; "System print dialog" defers to the OS). "Print" hides the
  * unselected .pv-page sheets via pv-print-skip and hands the preview pages to
  * the system print dialog.
  *
@@ -10,11 +11,20 @@
  * preview source, so what the dialog shows is exactly what prints.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PrintDuplex, PrinterInfo } from '../../shared/ipc'
 import { useI18n } from '../i18n/locale'
 import { parsePrintRange } from '../print-range'
 import { clearPrintZoom, setPrintZoom } from '../print-zoom'
 
 type RangeMode = 'all' | 'current' | 'custom'
+
+/// Printer option values that are not device names (Electron: '' = OS default).
+const DEFAULT_PRINTER = ''
+const SYSTEM_DIALOG = '\u0000system-dialog'
+// macOS's print sheet already carries copies/duplex/paper, so it stays the
+// default there; Windows 11's dialog buries them under "More settings".
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
+const DUPLEX_MODES: PrintDuplex[] = ['simplex', 'longEdge', 'shortEdge']
 
 const pvPages = (): HTMLElement[] => [
   ...document.querySelectorAll<HTMLElement>('.pagination-preview .pv-page'),
@@ -33,6 +43,12 @@ export function PrintDialog({
   const [rangeMode, setRangeMode] = useState<RangeMode>('all')
   const [customRange, setCustomRange] = useState('')
   const [printing, setPrinting] = useState(false)
+  const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  const [deviceName, setDeviceName] = useState(IS_MAC ? SYSTEM_DIALOG : DEFAULT_PRINTER)
+  const [copies, setCopies] = useState(1)
+  const [collate, setCollate] = useState(true)
+  const [duplex, setDuplex] = useState<PrintDuplex>('simplex')
+  const systemDialog = deviceName === SYSTEM_DIALOG
   const paneRef = useRef<HTMLDivElement | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
 
@@ -46,6 +62,19 @@ export function PrintDialog({
       last = n
     }, 250)
     return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    window.desktop
+      .listPrinters()
+      .then((list) => {
+        if (alive) setPrinters(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
   }, [])
 
   useEffect(() => {
@@ -118,9 +147,12 @@ export function PrintDialog({
     // pv-print-skip only takes effect in the print stylesheet: the on-screen
     // (hidden) preview keeps its layout while unselected sheets don't print.
     els.forEach((el, i) => el.classList.toggle('pv-print-skip', !sel.has(i)))
-    const scale = setPrintZoom()
+    const scale = setPrintZoom('printer')
     try {
-      const r = await window.desktop.print(scale)
+      const r = await window.desktop.print(
+        scale,
+        systemDialog ? { deviceName: null } : { deviceName, copies, collate, duplex },
+      )
       if (r.ok) {
         onClose()
         return
@@ -172,6 +204,66 @@ export function PrintDialog({
             )}
           </div>
           <div className="print-options">
+            <fieldset>
+              <legend>{t('appPrintPrinter')}</legend>
+              <select
+                className="print-select"
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+              >
+                <option value={DEFAULT_PRINTER}>{t('appPrintDefaultPrinter')}</option>
+                {printers.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.displayName}
+                  </option>
+                ))}
+                <option value={SYSTEM_DIALOG}>{t('appPrintSystemDialog')}</option>
+              </select>
+              <label className="print-field">
+                <span>{t('appPrintCopies')}</span>
+                <input
+                  type="number"
+                  className="print-copies"
+                  min={1}
+                  max={999}
+                  value={copies}
+                  disabled={systemDialog}
+                  onChange={(e) =>
+                    setCopies(Math.min(999, Math.max(1, Math.round(Number(e.target.value)) || 1)))
+                  }
+                />
+              </label>
+              <label className="print-radio">
+                <input
+                  type="checkbox"
+                  checked={collate}
+                  disabled={systemDialog || copies < 2}
+                  onChange={(e) => setCollate(e.target.checked)}
+                />
+                {t('appPrintCollate')}
+              </label>
+              <label className="print-field">
+                <span>{t('appPrintDuplex')}</span>
+                <select
+                  className="print-select"
+                  value={duplex}
+                  disabled={systemDialog}
+                  onChange={(e) => setDuplex(e.target.value as PrintDuplex)}
+                >
+                  {DUPLEX_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {t(
+                        m === 'simplex'
+                          ? 'appPrintDuplexOff'
+                          : m === 'longEdge'
+                            ? 'appPrintDuplexLong'
+                            : 'appPrintDuplexShort',
+                      )}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </fieldset>
             <fieldset>
               <legend>{t('appPrintRange')}</legend>
               <label className="print-radio">

@@ -5,7 +5,13 @@ import {
   measureBlocks,
   pinnedFloatPage,
 } from '../src/renderer/pagination'
-import { hoistWindow, pinnedCloneCss } from '../src/renderer/components/PaginationPreview'
+import {
+  hoistPlan,
+  hoistSlotOf,
+  hoistWindow,
+  pinnedCloneCss,
+} from '../src/renderer/components/PaginationPreview'
+import type { FloatBox } from '../src/renderer/pagination-types'
 
 const rectOf = (top: number, height: number) =>
   ({
@@ -221,5 +227,49 @@ describe('measureBlocks — zero-height pageBreakBefore carriers', () => {
     )
     expect(slices.length).toBe(4)
     expect(floats.map((f) => pinnedFloatPage(slices, f.anchorTop))).toEqual([1, 2, 3])
+  })
+})
+
+describe('hoistPlan', () => {
+  const f = (over: Partial<FloatBox>): FloatBox => ({
+    el: null as unknown as HTMLElement,
+    top: 0,
+    height: 10,
+    anchorTop: 0,
+    pinned: false,
+    pageRelV: false,
+    ...over,
+  })
+  it('re-pins every box of an all anchor-relative wrapper', () => {
+    const boxes = [f({ top: 5 }), f({ top: 30 })]
+    expect(hoistPlan(boxes)).toEqual({ boxes, mixed: false })
+  })
+  it('skips wrappers that are pinned or entirely page-relative', () => {
+    expect(hoistPlan([f({ pinned: true }), f({})])).toBeNull()
+    expect(hoistPlan([f({ pageRelV: true }), f({ pageRelV: true })])).toBeNull()
+  })
+  it('hoists only the anchor-relative boxes of a mixed wrapper and flags it', () => {
+    const anchored = f({ top: 12 })
+    expect(hoistPlan([f({ pageRelV: true }), anchored])).toEqual({ boxes: [anchored], mixed: true })
+  })
+})
+
+describe('hoistSlotOf', () => {
+  const box = (style: string) => ({ el: { getAttribute: () => style } as unknown as HTMLElement })
+  it('reads plain, paper-edge and paper-clamped left offsets as the left slot', () => {
+    expect(hoistSlotOf(box('position:absolute;left:12.5px;top:3px'))).toBe('left')
+    expect(hoistSlotOf(box('left:calc(40px - var(--doc-margin-left,0px));top:0px'))).toBe('left')
+    expect(
+      hoistSlotOf(
+        box(
+          'position:absolute;left:clamp(calc(0px - var(--doc-margin-left,0px)), -30.0px, calc(var(--doc-content-w,100%) - 200px + var(--doc-margin-right,0px)));top:4px',
+        ),
+      ),
+    ).toBe('left')
+  })
+  it('keeps the centre and right slots and rejects unknown offsets', () => {
+    expect(hoistSlotOf(box('left:50%;top:0px'))).toBe('center')
+    expect(hoistSlotOf(box('right:0;top:0px'))).toBe('right')
+    expect(hoistSlotOf(box('top:0px'))).toBeNull()
   })
 })

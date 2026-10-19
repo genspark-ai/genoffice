@@ -6,22 +6,36 @@
  * drift reaches several pixels and the fixed page clips cut through glyphs at
  * the seams. Zooming the sheets by the screen ratio and printing at the inverse
  * scale reproduces the screen rounding, so print geometry equals measurement.
+ *
+ * The printer job's scale is a whole percent, so its zoom is that percent's
+ * exact inverse (1.5 against 67% spills a 0.5% strip onto a blank page), and
+ * Windows ignores `scaleFactor` outright (genoffice#1970), so it prints unzoomed.
  */
+
+export type PrintJob = 'pdf' | 'printer'
 
 // Chromium accepts printToPDF scales in 0.1..2
 const MAX_ZOOM = 10
 const MIN_ZOOM = 0.5
 
-export function printZoom(dpr: number = window.devicePixelRatio): number {
+const isWindows = (platform: string) => /^win/i.test(platform)
+
+export function printZoom(
+  dpr: number = window.devicePixelRatio,
+  job: PrintJob = 'pdf',
+  platform: string = navigator.platform,
+): number {
   if (!(dpr > 0) || Math.abs(dpr - 1) < 1e-3) return 1
-  return Math.min(Math.max(dpr, MIN_ZOOM), MAX_ZOOM)
+  if (job === 'printer' && isWindows(platform)) return 1
+  const zoom = Math.min(Math.max(dpr, MIN_ZOOM), MAX_ZOOM)
+  return job === 'printer' ? 100 / Math.round(100 / zoom) : zoom
 }
 
 const previewRoot = () => document.querySelector<HTMLElement>('.pagination-preview')
 
 /** Zooms the preview sheets for print (print media only) and returns the job's print scale. */
-export function setPrintZoom(): number {
-  const zoom = printZoom()
+export function setPrintZoom(job: PrintJob = 'pdf'): number {
+  const zoom = printZoom(undefined, job)
   if (zoom !== 1) previewRoot()?.style.setProperty('--pv-print-zoom', String(zoom))
   return 1 / zoom
 }

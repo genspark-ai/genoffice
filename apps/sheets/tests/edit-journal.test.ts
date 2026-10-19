@@ -40,6 +40,7 @@ import {
   toSavePivotAdds,
   toSaveTableAdds,
   toSaveSheetOps,
+  toSavePageSetupStates,
   toSaveStructuralOps,
 } from '../src/renderer/edit-journal'
 
@@ -1272,5 +1273,18 @@ describe('recordStructuralOp page-break remapping', () => {
     recordStructuralOp(journal, 'sheet-1', { kind: 'remove-rows', index: 0, count: 4 })
     expect(journal.structuralOps.get('sheet-1')).toBeUndefined()
     expect(journal.pageSetup.get('sheet-1')?.rowBreaks).toEqual([6])
+  })
+})
+
+describe('right-to-left page-setup journal', () => {
+  it('merges the direction flag with other sheet-view state and saves it', () => {
+    const journal = createEditJournal()
+    recordPageSetup(journal, 'sheet-1', { showGridlines: false })
+    recordPageSetup(journal, 'sheet-1', { rightToLeft: true })
+    recordPageSetup(journal, 'sheet-2', { rightToLeft: false })
+    expect(toSavePageSetupStates(journal)).toEqual([
+      { sheetId: 'sheet-1', showGridlines: false, rightToLeft: true },
+      { sheetId: 'sheet-2', rightToLeft: false },
+    ])
   })
 })

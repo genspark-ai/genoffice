@@ -66,6 +66,9 @@ Enam alat disediakan: **dakwat, segi empat, elips, anak panah, dan nota**, serta
 - **Tandatangan dakwat**: lukis tanda tangan itu dan ia boleh dikaitkan dengan medan tanda tangan borang.
 - **Tandatangan imej**: letakkan gambar sebagai tanda tangan.
 - Tandatangan yang telah disimpan boleh digunakan semula.
+- **Tandatangan sertifikat** (tab Anotasi): tandatangani dengan sertifikat daripada storan sistem atau fail .p12/.pfx; pilihan tunjukkan tandatangan pada halaman, dan pilihan bersertifikatkan dokumen daripada perubahan kemudian.
+- Menandatangani sentiasa menulis **fail baharu** (kemas kini bertambah — tandatangan terdahulu kekal sah) dan membuka salinan bertandatangan di tempatnya. Simpan dahulu: tandatangan meliputi fail seperti tersimpan pada cakera.
+- Sepanduk di atas dokumen menyenaraikan tandatangan sedia ada; **Lihat tandatangan** menunjukkan kesahihan, liputan dan rantaian sertifikat setiap satu. Pembatalan (CRL/OCSP) tidak disemak.
 
 ## Operasi halaman (Halaman)
 

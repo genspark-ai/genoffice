@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import type { StyleInfo, StyleParaProps, StyleRunProps, StyleUpsert } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
 import { fontFamiliesFor } from '../font-list'
+import { cssFontFamily } from '../line-metrics'
 import { styleLabel, type StyleMap } from '../style-gallery'
 import { useModalKeys } from './modal-keys'
 
@@ -15,6 +16,8 @@ export interface StyleFormValues {
   type: 'paragraph' | 'character'
   basedOn: string | null
   font: string
+  /** East Asian face (w:rFonts w:eastAsia); empty = the style does not set one */
+  eastAsiaFont: string
   sizePt: number | null
   bold: boolean
   italic: boolean
@@ -39,6 +42,7 @@ export function formValuesOf(info: StyleInfo): StyleFormValues {
     type: info.type === 'character' ? 'character' : 'paragraph',
     basedOn: info.basedOn ?? null,
     font: d.fontAscii ?? d.font ?? '',
+    eastAsiaFont: d.eastAsiaFont ?? '',
     sizePt: d.sizeHalfPoints !== undefined ? d.sizeHalfPoints / 2 : null,
     bold: !!d.bold,
     italic: !!d.italic,
@@ -72,6 +76,7 @@ export function upsertFromForm(
   if (has('basedOn')) up.basedOn = values.basedOn
   const rPr: StyleRunProps = {}
   if (has('font')) rPr.font = values.font.trim() || null
+  if (has('eastAsiaFont')) rPr.eastAsiaFont = values.eastAsiaFont.trim() || null
   if (has('sizePt')) rPr.sizeHalfPoints = values.sizePt ? Math.round(values.sizePt * 2) : null
   if (has('bold')) rPr.bold = values.bold
   if (has('italic')) rPr.italic = values.italic
@@ -114,11 +119,13 @@ export function StyleDialog({ target, initial, styles, pending, onSubmit, onClos
     setTouched((prev) => new Set(prev).add(f))
   }
   const creating = target === null
-  const fonts = useMemo(() => {
+  const fontList = (picked: string) => {
     const list = [...fontFamiliesFor(lang)]
-    if (values.font && !list.includes(values.font)) list.unshift(values.font)
+    if (picked && !list.includes(picked)) list.unshift(picked)
     return list
-  }, [lang, values.font])
+  }
+  const fonts = useMemo(() => fontList(values.font), [lang, values.font])
+  const eastAsiaFonts = useMemo(() => fontList(values.eastAsiaFont), [lang, values.eastAsiaFont])
   const bases = useMemo(
     () =>
       [...styles.values()].filter(
@@ -147,7 +154,11 @@ export function StyleDialog({ target, initial, styles, pending, onSubmit, onClos
     onSubmit(upsertFromForm(id, values, creating ? 'all' : touched, creating))
   }
   const preview: CSSProperties = {
-    fontFamily: values.font ? `"${values.font}"` : undefined,
+    fontFamily:
+      [values.font, values.eastAsiaFont]
+        .filter(Boolean)
+        .map((f) => cssFontFamily(f))
+        .join(', ') || undefined,
     fontSize: values.sizePt ? `${Math.min(28, Math.max(9, values.sizePt))}px` : undefined,
     fontWeight: values.bold ? 700 : 400,
     fontStyle: values.italic ? 'italic' : 'normal',
@@ -209,10 +220,24 @@ export function StyleDialog({ target, initial, styles, pending, onSubmit, onClos
         </div>
         <div className="font-dialog-row">
           <label>
-            {t('appFontTabFont')}
+            {t('ribbonFontLatin')}
             <select value={values.font} onChange={(e) => set('font', e.target.value)}>
               <option value="">{'\u2014'}</option>
               {fonts.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t('ribbonFontEastAsia')}
+            <select
+              value={values.eastAsiaFont}
+              onChange={(e) => set('eastAsiaFont', e.target.value)}
+            >
+              <option value="">{'\u2014'}</option>
+              {eastAsiaFonts.map((f) => (
                 <option key={f} value={f}>
                   {f}
                 </option>

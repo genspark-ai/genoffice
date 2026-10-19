@@ -5,6 +5,12 @@ use std::borrow::Cow;
 
 use super::*;
 
+/// Budget for the parts `read_zip_string` materialises whole (workbook.xml,
+/// its rels, styles, table definitions). These never approach this size in a
+/// real workbook, whereas `MAX_EXTRACTED_ENTRY_BYTES` is sized for densely
+/// styled worksheets and would let one metadata part inflate to 500 MiB.
+pub(crate) const MAX_METADATA_PART_BYTES: u64 = 64 * 1024 * 1024;
+
 pub(crate) fn decode_uri_path(value: &str) -> Result<String, SidecarError> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -72,14 +78,29 @@ pub(crate) fn zip_entry<'a>(
     archive.by_name(resolved.as_deref().unwrap_or(name))
 }
 
+/// Reads a zip entry as a string under a metered limit (see
+/// `copy_entry_bounded` for why a declared size alone bounds nothing): one
+/// byte past the smaller of the claim and `MAX_METADATA_PART_BYTES` is read,
+/// and a part that inflates past that is refused rather than materialised.
+///
+/// This is the path nearly every workbook part arrives through, so an uncapped
+/// read here undoes the work genoffice#781 did for media and `@genoffice/zip-gate` does
+/// for the docx and pptx hosts.
 pub(crate) fn read_zip_string(
     archive: &mut ZipArchive<File>,
     path: &str,
 ) -> Result<String, SidecarError> {
     let mut entry = zip_entry(archive, path)?;
-    let mut value = String::new();
-    entry.read_to_string(&mut value)?;
-    Ok(value)
+    let declared = entry.size();
+    if declared > MAX_METADATA_PART_BYTES {
+        return Err(SidecarError::Workbook(format!(
+            "{path} is {declared} bytes uncompressed, above the {MAX_METADATA_PART_BYTES} byte metadata part limit."
+        )));
+    }
+    let mut out: Vec<u8> = Vec::with_capacity(declared.min(1 << 20) as usize);
+    copy_entry_bounded(&mut entry, declared, MAX_METADATA_PART_BYTES, &mut out)?;
+    String::from_utf8(out)
+        .map_err(|_| SidecarError::Workbook(format!("{path} is not valid UTF-8.")))
 }
 
 /// `ZipFile::size()` is only the declared length and zip bounds just the

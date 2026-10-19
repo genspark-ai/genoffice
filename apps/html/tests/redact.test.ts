@@ -210,6 +210,12 @@ describe('offsets survive the substitution', () => {
     expect(p.projectRange(mid, html.length)).toBe(' three</p>')
   })
 
+  it('projects exactly the span to its marker, not to nothing', () => {
+    const p = project(html)
+    const [span] = p.spans
+    expect(p.projectRange(span!.rawFrom, span!.rawTo)).toBe(placeholderSource(LABEL))
+  })
+
   it('a withheld line is still a line: numbering does not shift the count', () => {
     const p = project(html)
     expect(p.view.split('\n')).toHaveLength(html.split('\n').length)
@@ -227,7 +233,7 @@ describe('offsets survive the substitution', () => {
     // place: both substitutions happened, so its shift is the sum of both. The
     // tail runs to the end of the file, wrapper and all.
     const afterLast = p.toViewOffset(p.spans[1]!.rawTo)
-    expect(p.view.slice(afterLast)).toBe(`${placeholderSource('two')}</span></p>`)
+    expect(p.view.slice(afterLast)).toBe('</span></p>')
     // and the end of the document maps onto the end of the view
     expect(p.toViewOffset(two.length)).toBe(p.view.length)
   })

@@ -51,6 +51,7 @@ Menu đi theo chỗ bạn nhấp chuột phải:
 
 - Thẻ AI Slides ở Trang chủ: đưa một chủ đề hoặc dàn ý, AI sẽ dựng cả bộ trang chiếu; nếu tạo trên đám mây thất bại thì tự động chuyển sang tạo tại máy.
 - Bạn có thể tiếp tục điều chỉnh bằng bảng AI.
+- Chuột phải vào vùng chọn chữ hay phần tử hình/video/âm thanh ▸ **Ẩn vùng chọn khỏi AI** để giấu khỏi mắt mô hình (chi tiết ở chương bảng AI); slide có nội dung ẩn sẽ bỏ qua bước kiểm tra chụp màn hình tự động.
 
 ## Trình chiếu và xuất
 

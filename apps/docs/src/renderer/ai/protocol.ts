@@ -12,8 +12,15 @@ import { pmTableToModel, tableModelToPmNode, type PmMark, type PmNode } from '..
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
 import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-formatting'
 import { TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
-import { countWords } from '../word-count'
+import { countWords, documentTextForWordCount, leafTextForWordCount } from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import {
+  modelTextOf,
+  projectedNodeText,
+  redactNode,
+  redactTextBetween,
+  type RedactableNode,
+} from './redact-view'
 import { opSignatures } from './ops'
 import { pageSetupContextLines, type AiSectionState } from './page-setup'
 import { listRevisionEntries } from './revision-ops'
@@ -157,6 +164,13 @@ export const AGENT_SYSTEM_PROMPT = [
   '- Redline summary shape: overall counts first (insertions/deletions, authors, date range), then the changes grouped by document section using the heading structure from the block list, one line each; end with a "Potential concerns" list flagging risky edits (deleted obligations or qualifiers, changed numbers/dates/amounts, weakened commitments). Cite block indexes so the user can locate each change.',
   '- Summarizing is read-only: do not modify the document, and never try to accept or reject revisions — the user does that in the Review tab.',
   '',
+  '# Mind map',
+  '- When the user asks for a mind map / knowledge structure / overview diagram of the document or a topic, call generate_mindmap with the whole tree in one call — never draw it with text or ask the user to confirm first;',
+  '- The root is the document title (or the focus topic when the user named one — also pass it as `focus`); its children are the main sections/headings, then key concepts, 2-5 per node, 2-4 levels deep;',
+  "- Labels are short phrases (2-8 words) in the document's own language and wording, taken from its headings and key sentences — never invent topics the document does not cover;",
+  "- Cite each node's source with `block` (a block index from the current block list); omit it for nodes that span several blocks. Only cite indexes that exist;",
+  '- generate_mindmap does not modify the document. After it returns, reply with one short sentence (e.g. that the map is ready and branches can be expanded).',
+  '',
   '# HTML fragment rules',
   HTML_RULES,
   '',
@@ -164,7 +178,7 @@ export const AGENT_SYSTEM_PROMPT = [
   OPS_GUIDE,
 ].join('\n')
 
-export { countWords }
+export { countWords, documentTextForWordCount }
 
 // ---- selection scope ----
 
@@ -246,8 +260,15 @@ function wrapInlineText(raw: string, marks: PmMark[]): string {
   return text
 }
 
-function inlineAtomToHtml(node: PmNode): string {
+/** Export hook: maps a picture's source to the `src` the restricted HTML should carry; null drops it. */
+export type ImageSrcMapper = (src: string) => string | null
+
+function inlineAtomToHtml(node: PmNode, image?: ImageSrcMapper): string {
   if (node.type === 'hardBreak') return '<br>'
+  if (node.type === 'docInlineImage') {
+    const src = image && !node.attrs?.rule ? image(String(node.attrs?.dataUrl ?? '')) : null
+    return src ? `<img src="${escapeHtml(src)}">` : ''
+  }
   if (node.type === 'docInlineMath') {
     // editor-created formulas round-trip as LaTeX; parsed-from-docx ones
     // degrade to the flat token strip (structure lost if the model rewrites)
@@ -269,7 +290,11 @@ export interface InlineSelection {
  * delimited by <sel>…</sel> (text nodes split at the boundaries). Every inline
  * node other than text is an atom, so it occupies exactly one position.
  */
-function inlineToHtml(content: PmNode[] | undefined, sel?: InlineSelection): string {
+function inlineToHtml(
+  content: PmNode[] | undefined,
+  sel?: InlineSelection,
+  image?: ImageSrcMapper,
+): string {
   if (!content) return ''
   let html = ''
   let pos = 0
@@ -305,7 +330,7 @@ function inlineToHtml(content: PmNode[] | undefined, sel?: InlineSelection): str
       continue
     }
     boundary(pos)
-    if (!deleted) html += inlineAtomToHtml(node)
+    if (!deleted) html += inlineAtomToHtml(node, image)
     pos += 1
   }
   boundary(pos)
@@ -362,12 +387,42 @@ function isQuoteParagraph(node: PmNode): boolean {
 
 /** table block -> restricted <table> HTML so the model can read and rewrite it */
 function tableToHtml(table: TableModel): string {
-  const headerRow =
-    table.rows.length > 1 && table.rows[0].every((c) => c.bold || c.fill !== undefined)
+  const headerRow = isHeaderRowTable(table)
   const rows = table.rows.map((row, r) => {
     const tag = headerRow && r === 0 ? 'th' : 'td'
     const cells = row
       .map((cell) => `<${tag}>${cell.paras.map(escapeHtml).join('<br>')}</${tag}>`)
+      .join('')
+    return `<tr>${cells}</tr>`
+  })
+  return `<table>${rows.join('')}</table>`
+}
+
+function isHeaderRowTable(table: TableModel): boolean {
+  return table.rows.length > 1 && table.rows[0].every((c) => c.bold || c.fill !== undefined)
+}
+
+/**
+ * Export variant: cells keep their inline pictures (the table model is text
+ * only). The grid comes from the model so merged cells keep their columns;
+ * each non-continuation entry maps to the row's next physical cell node.
+ */
+function tableToHtmlWithImages(node: PmNode, image: ImageSrcMapper): string {
+  const model = pmTableToModel(node)
+  const headerRow = isHeaderRowTable(model)
+  const rows = model.rows.map((row, r) => {
+    const tag = headerRow && r === 0 ? 'th' : 'td'
+    const physical = node.content?.[r]?.content ?? []
+    let next = 0
+    const cells = row
+      .map((entry) => {
+        if (entry.vMerge === 'continue') return `<${tag}></${tag}>`
+        const cell = physical[next++]
+        const paras = (cell?.content ?? [])
+          .filter((n) => n.type === 'docParagraph' || n.type === 'docListItem')
+          .map((n) => inlineToHtml(n.content, undefined, image))
+        return `<${tag}>${paras.join('<br>')}</${tag}>`
+      })
       .join('')
     return `<tr>${cells}</tr>`
   })
@@ -384,8 +439,13 @@ export function serializeRangeToHtml(
   startIndex: number,
   endIndex: number,
   sel?: { from: number; to: number } | null,
+  image?: ImageSrcMapper,
 ): string {
-  const json = editor.getJSON() as PmNode
+  // The model's view, not the document's: a withheld span's words must
+  // not travel in the HTML this produces. `redactNode` is total, so a
+  // shape it does not recognise still comes through rather than
+  // throwing and falling back to the unredacted text.
+  const json = redactNode(editor.getJSON() as RedactableNode) as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
   let listBuffer: { kind: string; items: string[] } | null = null
@@ -415,26 +475,26 @@ export function serializeRangeToHtml(
     if (node.type === 'docHeading') {
       flushList()
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6)
-      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i))}</h${level}>`)
+      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i), image)}</h${level}>`)
     } else if (node.type === 'docListItem') {
       const kind = (node.attrs?.kind as string) ?? 'bullet'
       if (!listBuffer || listBuffer.kind !== kind) {
         flushList()
         listBuffer = { kind, items: [] }
       }
-      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i))}</li>`)
+      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i), image)}</li>`)
     } else if (node.type === 'docParagraph') {
       flushList()
       if (isCodeParagraph(node)) {
         parts.push(`<pre>${codeToHtml(node.content, inlineSel(i))}</pre>`)
       } else if (isQuoteParagraph(node)) {
-        parts.push(`<blockquote>${inlineToHtml(node.content, inlineSel(i))}</blockquote>`)
+        parts.push(`<blockquote>${inlineToHtml(node.content, inlineSel(i), image)}</blockquote>`)
       } else {
-        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i))}</p>`)
+        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i), image)}</p>`)
       }
     } else if (node.type === 'docTable') {
       flushList()
-      parts.push(tableToHtml(pmTableToModel(node)))
+      parts.push(image ? tableToHtmlWithImages(node, image) : tableToHtml(pmTableToModel(node)))
     } else {
       flushList()
       const formula = node.attrs?.formulaDisplay as { tokens?: string[]; latex?: string } | null
@@ -522,6 +582,12 @@ export function buildDocumentContext(
   let index = 0
   let fullText = ''
   let hasPendingDeletions = false
+  // textBetween's blockSeparator: between block units, never leading or trailing
+  let fullTextFirst = true
+  const appendFullText = (text: string) => {
+    fullText += fullTextFirst ? text : ` ${text}`
+    fullTextFirst = false
+  }
   editor.state.doc.forEach((node) => {
     let type: string
     let preview: string
@@ -538,14 +604,23 @@ export function buildDocumentContext(
         preview = `(picture, no text — use analyze_media with blockIndex ${index} to see it)`
       }
       if (deleted) hasPendingDeletions = true
-      else fullText += node.textContent
+      else if (node.textContent !== '') appendFullText(node.textContent)
     } else {
       deleted = isTrackedDeleted(node)
       const live = liveText(node)
       // deleted blocks show their struck text so the model can talk about the
       // revision, but that text never counts as current content
       preview = deleted ? node.textContent : live
-      if (!deleted) fullText += live
+      // the stats text follows the status bar's word-count rules — blocks are
+      // separated (or their words merge) and inline formulas/ruby carry text —
+      // while still excluding deleted revisions and withheld spans
+      if (!deleted)
+        appendFullText(
+          liveText(node, false, {
+            blockSeparator: ' ',
+            leafText: leafTextForWordCount,
+          }),
+        )
       if (deleted || live !== node.textContent) hasPendingDeletions = true
       if (node.type.name === 'docHeading') {
         type = `h${Math.min(Math.max(Number(node.attrs.level) || 1, 1), 6)}`
@@ -683,7 +758,8 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
         .split(' ')
         .filter(Boolean)) {
         const entry = found.get(id) ?? { blockIndex: index, text: '' }
-        entry.text += node.text ?? ''
+        // a comment can anchor across a withheld span; the model sees the placeholder
+        entry.text += projectedNodeText(node as unknown as RedactableNode)
         found.set(id, entry)
       }
     })
@@ -691,7 +767,15 @@ export function commentAnchors(editor: Editor): Map<string, CommentAnchor> {
       ? (block.attrs.commentStarts as string[])
       : []
     for (const id of starts) {
-      if (!found.has(id)) found.set(id, { blockIndex: index, text: block.textContent })
+      if (!found.has(id))
+        found.set(id, {
+          blockIndex: index,
+          // Through `toJSON()`, never the live node. `redactNode` walks
+          // `content` as an array, and a live ProseMirror node holds a
+          // Fragment there, so the whole subtree would come back untouched and
+          // a withheld span would travel verbatim.
+          text: modelTextOf(block.toJSON() as RedactableNode),
+        })
     }
     index++
   })
@@ -770,8 +854,10 @@ export function buildDocContext(
         SELECTION_MAX_CHARS,
       )
     : ''
+  // `textBetween` would read the words; the context quotes the selection back
+  // to the model, so it has to be the projected read
   const selectedText = partial
-    ? editor.state.doc.textBetween(partial.from, partial.to, '\n', ' ')
+    ? redactTextBetween(editor.getJSON() as RedactableNode, partial.from, partial.to)
     : ''
   const selectionLines = partial
     ? [

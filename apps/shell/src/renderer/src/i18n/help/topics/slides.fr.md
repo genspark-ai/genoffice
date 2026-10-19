@@ -51,6 +51,7 @@ Le menu dépend de l’endroit du clic droit:
 
 - La carte AI Slides de l’accueil: donnez un sujet ou un plan et l’IA construit le diaporama; si la génération dans le cloud échoue, elle bascule sur la génération locale.
 - Continuez à ajuster ensuite avec le panneau IA.
+- Clic droit sur une sélection de texte ou un élément image/vidéo/audio ▸ **Masquer la sélection à l'IA** la soustrait aux yeux du modèle (détails au chapitre du panneau IA) ; une diapositive au contenu masqué saute le contrôle automatique par capture.
 
 ## Présentation et export
 

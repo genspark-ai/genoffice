@@ -16,6 +16,7 @@ export const fr = {
   ribbonTabReview: 'Révision',
   ribbonCollapse: 'Réduire le ruban',
   ribbonExpand: 'Développer le ruban',
+  ribbonCompact: 'Ruban compact (icônes uniquement)',
   ribbonTabView: 'Affichage',
   ribbonTabTableDesign: 'Création de tableau',
   ribbonTabChartDesign: 'Création de graphique',
@@ -397,6 +398,12 @@ export const fr = {
   ribbonRehearseTip:
     'Vérification du minutage : lancer le diaporama depuis le début et enregistrer le temps par diapositive ; enregistrer ensuite comme minutage de défilement automatique (enregistré dans le pptx)',
   ribbonRecord: 'Enregistrer',
+  ribbonRecordTip:
+    'Enregistrer la narration : lancer le diaporama et enregistrer votre voix et le minutage de chaque diapositive',
+  ribbonRecordFromBeginning: 'Enregistrer à partir du début',
+  ribbonRecordFromCurrent: 'Enregistrer à partir de la diapositive actuelle',
+  ribbonClearNarrationCurrent: 'Effacer la narration de la diapositive actuelle',
+  ribbonClearNarrationAll: 'Effacer la narration de toutes les diapositives',
   ribbonGroupProofing: 'Vérification',
   ribbonSpellCheck: 'Orthographe',
   ribbonSpellCheckTip:

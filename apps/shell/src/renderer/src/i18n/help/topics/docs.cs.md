@@ -4,9 +4,9 @@ Docs je textový procesor podobný Wordu: čte a zapisuje skutečné soubory .do
 
 ## Pásek
 
-Karty: **Domů / Vložení / Kreslení / Rozložení / Návrh / Odkazy / Revize / Zobrazení**, navíc kontextové karty pro vybraný objekt (Návrh tabulky a rozložení, Formát obrázku, Záhlaví a patka).
+Karty: **Domů / Vložení / Kreslení / Rozložení / Návrh / Odkazy / Revize / Zobrazení**, navíc kontextové karty pro vybraný objekt (Návrh tabulky a rozložení, Formát obrázku, Záhlaví a patka). Pás příkazů má ve Docs vlastní hustotu: **kompaktní** (⌥⌘K / Ctrl+Alt+K) nechá ikony a shodí popisky a volba se pamatuje.
 
-- **Domů**: schránka; písmo (včetně velikostí CJK a zvýrazňovacích znaků) s **Vymazat veškeré formátování** a přepínačem **Zobrazit/skrýt formátovací značky**; odstavec (zarovnání/odsazení/řádkování/seznamy) plus **Definovat novou odrážku / Definovat nový formát čísla / Víceúrovňový seznam**, které uloží vaše vlastní styly seznamů do dokumentu; styly (Nadpis 1-6/Normální/Citace, upravitelné); **Podokno stylů** zobrazí úplný seznam.
+- **Domů**: schránka; písmo (včetně velikostí CJK a zvýrazňovacích znaků) s **Vymazat veškeré formátování** a přepínačem **Zobrazit/skrýt formátovací značky**; odstavec (zarovnání/odsazení/řádkování/seznamy) plus **Definovat novou odrážku / Definovat nový formát čísla / Víceúrovňový seznam**, které uloží vaše vlastní styly seznamů do dokumentu; styly (Nadpis 1-6/Normální/Citace, upravitelné); **Podokno stylů** zobrazí úplný seznam. Styl může nastavit východoasijské a latinské písmo zvlášť (třeba CJK písmo plus Times New Roman); pár přeje .docx tam a zpět.
 - **Vložení**: zalomení stránky a oddílu; tabulky (mřížka řádků × sloupců, nebo **Vložit tabulku…** pro přesnou velikost); obrázky, tvary, textová pole; **Titulní strana** a **Prázdná stránka** z připravené galerie; **Graf**; **Iniciála**; **WordArt**; pole (datum, čas, číslo stránky, celkem stránek, název souboru); odkazy, **Záložka** a křížové odkazy; komentáře; záhlaví a zápatí a čísla stránek; symboly a rovnice.
   - **Graf** vloží skutečný grafický objekt s vlastními daty — sloupcový, spojnicový nebo výsečový — a nikoli obrázek. Příkaz _Upravit data_ ve Wordu otevře čísla, která jsou za ním.
 - **Kreslení**: inkoust na stránce, ve skupině **Nástroje kreslení** — **Vybrat** se vrátí k úpravě textu, pak **Pero**, **Zvýrazňovač** a **Guma** (jedno kliknutí nebo jedno přetření odstraní celou stopu). Vedle nich je **Styl pera** / **Styl zvýrazňovače** jeden ovládací prvek s barevnými vzorky a řadou šířek; jeho popisek sleduje aktivní nástroj. Inkoust se ukládá do dokumentu jako poznámka plovoucí nad textem, takže přežije uložení i znovu otevření, a **Vymazat vše** v další skupině ho odstraní celý.
@@ -64,7 +64,7 @@ Klikněte pravým tlačítkem kamkoli do textu — nabídka se přizpůsobí tom
 
 - Najít a nahradit (ctrl+F / ctrl+H): rozlišení velikosti písmen, celá slova, regulární výrazy.
 - Formátovací štětec; hluboké zpět / znovu; možnosti vkládání.
-- Tabulky: sloučení a rozdělení buněk, práce s řádky a sloupci, rámečky a stínování, řazení, vzorce.
+- Tabulky: sloučení a rozdělení buněk, práce s řádky a sloupci, rámečky a stínování, řazení, vzorce. Řádky se lámou mezi stránkami tam, kde musí, a Ctrl+Enter uvnitř buňky otočí stránku přesně tam — tisk a PDF stejně.
 - Obrázky: zarovnání textu kolem, oříznutí, komprese; kreslicí plátno.
 
 ## CJK typografie

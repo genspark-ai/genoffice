@@ -13,7 +13,7 @@ To cała powierzchnia na jednym ekranie — każde polecenie z wierszem, który 
 
 ## Zdobycie polecenia
 
-Systemy macOS i Windows dostarczają je w pakiecie aplikacji. Aby używać go po nazwie, uruchom raz `genoffice install-cli`: tworzy dowiązanie symboliczne do dołączonego pliku binarnego w `/usr/local/bin` albo w `PATH` użytkownika w systemie Windows.
+W macOS i Windows polecenie siedzi w pakiecie aplikacji. Aby wołać je po imieniu, uruchom raz `genoffice install-cli`: podlinkuje binarium z pakietu do katalogu na Twoim PATH — w macOS `/usr/local/bin`, o ile to nie prefiks Homebrew (katalogi samego Homebrew nigdy nie są ruszane), inaczej do Twojego bin użytkownika — albo do użytkowniczego `PATH` w Windows.
 
 ## Polecenia warte znajomości
 

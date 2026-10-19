@@ -30,6 +30,15 @@ export {
 } from './app-menu'
 export { GITHUB_REPO_URL } from './github-menu'
 export {
+  AUTHOR_NAME_KEY,
+  AUTHOR_NAME_MAX,
+  configuredAuthorName,
+  readAuthorNameSetting,
+  resolveAuthorName,
+  sanitizeAuthorName,
+  systemAuthorName,
+} from './author-name'
+export {
   saveAsSuggestion,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -38,6 +47,7 @@ export {
   DEFAULT_SAVE_DIR_KEY,
   configuredDefaultSaveDir,
   isUsableSaveDir,
+  mkdirDirs,
   readDefaultSaveDirSetting,
   resolveDefaultSaveDir,
   type PathProvider,
@@ -55,6 +65,7 @@ export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-ur
 export {
   fetchWithSsrfGuard,
   isBlockedAddress,
+  isFakeIpDnsArtifact,
   isSafeRemoteUrl,
   type FetchWithSsrfGuardOptions,
 } from './safe-remote-url'
@@ -110,3 +121,4 @@ export {
   type PrintDocumentOptions,
 } from './print-window'
 export { abortOnDestroyed, type DestroyableSender } from './abort-on-destroyed'
+export { recoveryCopyDiskNewer } from './recovery-copy'

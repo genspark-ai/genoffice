@@ -4,6 +4,8 @@
  * Functions take the ActionCtx built fresh per call.
  */
 import type { ActionCtx } from './action-context'
+import { recordedSlides } from './narration/encode'
+import type { NarrationTake } from './narration/use-recording'
 import type { CustomShow } from './slideshow-utils'
 import { t } from './i18n/locale'
 
@@ -86,6 +88,48 @@ export async function saveRehearseTimings(ctx: ActionCtx): Promise<void> {
     ctx.setDirty(true)
     ctx.setStatus(t('appStatusRehearseSaved', { count: times.length }))
   }
+}
+
+export function startRecordShow(ctx: ActionCtx, fromStart: boolean): void {
+  if (ctx.slides.length === 0 || ctx.slideShow || ctx.presenter) return
+  dropShowCurtain()
+  ctx.setEditing(null)
+  ctx.setCtxMenu(null)
+  const first = ctx.slides.findIndex((s) => !s.hidden)
+  ctx.setSlideShow({ startAt: fromStart ? Math.max(0, first) : ctx.current, record: true })
+}
+
+/** Recording ended: once the microphone stops, prompt "keep the recording?" */
+export function onRecordDone(ctx: ActionCtx, take: Promise<NarrationTake | null>): void {
+  void take.then((recorded) => {
+    if (recorded && recorded.endMs > 0) ctx.setPendingRecording(recorded)
+  })
+}
+
+/** Keep the recording: each recorded slide gets its narration and its time as advance time */
+export async function saveRecording(ctx: ActionCtx): Promise<void> {
+  const take = ctx.pendingRecording
+  if (!take) return
+  ctx.setPendingRecording(null)
+  try {
+    const slides = await recordedSlides(take.audio, take.marks, take.endMs)
+    const all = slides.length > 0 ? await window.slidesApi.saveRecording({ slides }) : null
+    if (!all) throw new Error('the recording was not saved')
+    ctx.setSlides(all)
+    ctx.setDirty(true)
+    ctx.setStatus(t('appStatusRecordSaved', { count: slides.length }))
+  } catch {
+    ctx.setStatus(t('appStatusRecordFailed'))
+  }
+}
+
+export async function clearNarration(ctx: ActionCtx, all: boolean): Promise<void> {
+  const indexes = all ? ctx.slides.map((_, i) => i) : [ctx.current]
+  const updated = await window.slidesApi.clearNarration(indexes)
+  if (!updated) return
+  ctx.setSlides(updated)
+  ctx.setDirty(true)
+  ctx.setStatus(t('appStatusNarrationCleared'))
 }
 
 /** Presenter view (single-window version, entry aligned with the show) */

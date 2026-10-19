@@ -128,12 +128,18 @@ const BEHIND_GROUP_ANCHOR =
   '<wps:wsp><wps:spPr><a:xfrm><a:off x="2000250" y="10"/><a:ext cx="2165350" cy="304800"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="EFF5FF"/></a:solidFill></wps:spPr><wps:bodyPr><a:noAutofit/></wps:bodyPr></wps:wsp>' +
   '</wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict/></mc:Fallback></mc:AlternateContent>'
 
-function pictureAnchor(id: number, offX: number, offY: number, ext: number): string {
+function pictureAnchor(
+  id: number,
+  offX: number,
+  offY: number,
+  ext: number,
+  opts: { layoutInCell?: '0' | '1'; relV?: string; relH?: string } = {},
+): string {
   return (
-    `<w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="${id}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="${id}" behindDoc="0" locked="0" layoutInCell="${opts.layoutInCell ?? '1'}" allowOverlap="1">` +
     '<wp:simplePos x="0" y="0"/>' +
-    `<wp:positionH relativeFrom="column"><wp:posOffset>${offX}</wp:posOffset></wp:positionH>` +
-    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${offY}</wp:posOffset></wp:positionV>` +
+    `<wp:positionH relativeFrom="${opts.relH ?? 'column'}"><wp:posOffset>${offX}</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="${opts.relV ?? 'paragraph'}"><wp:posOffset>${offY}</wp:posOffset></wp:positionV>` +
     `<wp:extent cx="${ext}" cy="${ext}"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="${id}" name="Picture ${id}"/>` +
     '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
     `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>` +
@@ -181,6 +187,40 @@ describe('flow-less and picture anchors inside table cells', () => {
     expect(b.heightPx).toBe(111)
     // the pictures no longer ride the cell runs (they would float below each other)
     expect(cell.richParas![0].runs.some((r) => r.image)).toBe(false)
+  })
+
+  it('flags layoutInCell="0" page-positioned pictures so the renderer pins them to the page', async () => {
+    const xml = pictureCellXml([
+      pictureAnchor(1, 212090, 644525, 838200, { layoutInCell: '0', relV: 'page' }),
+      pictureAnchor(2, 635, 12700, 7559040, { layoutInCell: '0', relV: 'page', relH: 'page' }),
+      pictureAnchor(3, 635, 12700, 7559040, { layoutInCell: '0', relV: 'page', relH: 'margin' }),
+    ])
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    expect(cell.anchoredBoxes).toHaveLength(3)
+    for (const box of cell.anchoredBoxes!) {
+      expect(box.outsideCell).toBe(true)
+      expect(box.pageRelV).toBe(true)
+      expect(box.pageRelVFrom).toBe('page')
+    }
+    const [column, page, margin] = cell.anchoredBoxes!
+    expect(column.pageRelX).toBeUndefined()
+    expect(page.pageRelX).toBe(true)
+    expect(page.pageRelXFrom).toBe('page')
+    expect(margin.pageRelX).toBe(true)
+    expect(margin.pageRelXFrom).toBeUndefined()
+    // the in-cell default keeps the flag off
+    const inCell = await parseDocx(
+      await buildDocx({
+        bodyXml: pictureCellXml([
+          pictureAnchor(1, 0, 0, 100000, { relV: 'page' }),
+          pictureAnchor(2, 0, 0, 100000, { relV: 'page' }),
+        ]),
+        withImage: true,
+      }),
+    )
+    for (const box of inCell.blocks[0].table!.rows[0][0].anchoredBoxes!)
+      expect(box.outsideCell).toBeUndefined()
   })
 
   it('keeps a lone anchored picture on the run-image path', async () => {

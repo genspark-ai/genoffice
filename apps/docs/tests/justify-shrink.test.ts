@@ -86,6 +86,43 @@ describe('decideLineShrinks — Word compat15 pull rule', () => {
     expect(decideLineShrinks([l])[0]).toBeNull()
   })
 
+  it('stretches a break-ended line to the column when expandBreaks is on', () => {
+    // 10 words, natural width 300 of a 468 column: 168 of slack over 9 spaces
+    const l = line(10, 0, 0)
+    l.boundary = null
+    l.hardBreak = true
+    l.wordWidths = Array.from({ length: 10 }, () => (300 - 9 * SP) / 10)
+    expect(decideLineShrinks([l])[0]).toBeNull()
+    const d = decideLineShrinks([l], { expandBreaks: true })[0]
+    expect(d).not.toBeNull()
+    expect(d!.gaps).toHaveLength(9)
+    expect(d!.perChar).toBeLessThan(0)
+    expect(-d!.perChar * 9).toBeCloseTo(167.75, 3)
+  })
+
+  it('leaves a break-ended line alone when it has no spaces or already fills the column', () => {
+    const full = line(10, 0, 0)
+    full.boundary = null
+    full.hardBreak = true
+    full.wordWidths = Array.from({ length: 10 }, () => (COL - 9 * SP) / 10)
+    expect(decideLineShrinks([full], { expandBreaks: true })[0]).toBeNull()
+    const single: ShrinkLine = {
+      wordWidths: [100],
+      gaps: [],
+      boundary: null,
+      avail: COL,
+      nextWordWidth: null,
+      hardBreak: true,
+    }
+    expect(decideLineShrinks([single], { expandBreaks: true })[0]).toBeNull()
+  })
+
+  it('expandBreaks without the compat15 rule never shrinks', () => {
+    expect(
+      decideLineShrinks([line(10, 3, 13.21)], { shrink: false, expandBreaks: true })[0],
+    ).toBeNull()
+  })
+
   it('pulls a word that overflows by a single LayoutUnit (Word fits it by twip rounding)', () => {
     // Cyrillic Times 14pt line whose natural width equals the column to the twip:
     // Chromium wraps the last word by ~1/64px, Word keeps it

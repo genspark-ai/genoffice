@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sniffImageMime, displayMime } from '../src/main/media-mime'
+import { rasterImageExt, sniffImageMime, displayMime } from '../src/main/media-mime'
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0])
@@ -30,5 +30,21 @@ describe('displayMime', () => {
     const unknown = new Uint8Array([0x00, 0x11, 0x22, 0x33])
     expect(displayMime('ppt/media/a.wmf', unknown)).toBe('image/x-wmf')
     expect(displayMime('ppt/media/a.xyz', unknown)).toBe('image/png')
+  })
+})
+
+describe('rasterImageExt', () => {
+  it('labels the three formats the insert pipeline can store', () => {
+    expect(rasterImageExt(PNG)).toBe('png')
+    expect(rasterImageExt(JPEG)).toBe('jpg')
+    expect(rasterImageExt(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))).toBe('gif')
+  })
+
+  it('refuses containers and non-images an AI fetch could return', () => {
+    expect(rasterImageExt(EMF)).toBeNull()
+    expect(rasterImageExt(TIFF)).toBeNull()
+    expect(rasterImageExt(new Uint8Array([0x3c, 0x68, 0x74, 0x6d, 0x6c]))).toBeNull() // "<html"
+    expect(rasterImageExt(new Uint8Array([0x7b, 0x22, 0x65, 0x72, 0x72]))).toBeNull() // '{"err'
+    expect(rasterImageExt(new Uint8Array())).toBeNull()
   })
 })

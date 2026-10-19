@@ -4,8 +4,8 @@
 /// in userData/app-settings.json (set from the home screen's account menu).
 /// Every editor main module resolves through here so they all honor the same
 /// setting.
-import { accessSync, constants, mkdirSync, readFileSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 /** the subset of Electron's `app` needed here (kept structural: this package has no Electron dependency) */
 export interface PathProvider {
@@ -13,6 +13,30 @@ export interface PathProvider {
 }
 
 export const DEFAULT_SAVE_DIR_KEY = 'defaultSaveDir'
+
+/**
+ * Create `dir` and any missing parents one level at a time.
+ *
+ * `mkdirSync(dir, { recursive: true })` cannot be used on the startup path: when
+ * the filesystem refuses the leaf with ENOENT while its parent exists, libuv's
+ * recursive implementation keeps re-attempting the parent (EEXIST) and the leaf
+ * (ENOENT) forever and pins the calling process at 100% CPU. Windows Defender's
+ * Controlled Folder Access does exactly that for Documents, which froze the
+ * whole app on launch. A plain per-level mkdir lets the refusal surface as a
+ * thrown error that the callers below already handle.
+ */
+export function mkdirDirs(dir: string): void {
+  const missing: string[] = []
+  let probe = resolve(dir)
+  for (;;) {
+    if (existsSync(probe)) break
+    missing.push(probe)
+    const parent = dirname(probe)
+    if (parent === probe) break
+    probe = parent
+  }
+  for (const path of missing.reverse()) mkdirSync(path)
+}
 
 /** the configured folder from app-settings.json, or null when unset/unreadable */
 export function readDefaultSaveDirSetting(settingsPath: string): string | null {
@@ -29,7 +53,8 @@ export function readDefaultSaveDirSetting(settingsPath: string): string | null {
 /** true when the directory exists (or could be created) and is writable */
 export function isUsableSaveDir(dir: string): boolean {
   try {
-    mkdirSync(dir, { recursive: true })
+    mkdirDirs(dir)
+    if (!statSync(dir).isDirectory()) return false
     accessSync(dir, constants.W_OK)
     return true
   } catch {

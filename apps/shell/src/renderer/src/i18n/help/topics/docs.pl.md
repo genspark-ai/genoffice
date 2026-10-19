@@ -4,9 +4,9 @@ Docs to edytor tekstu podobny do Worda: otwiera i zapisuje prawdziwe pliki .docx
 
 ## Wstążka
 
-Karty: **Narzędzia główne / Wstawianie / Rysowanie / Układ / Projektowanie / Odwołania / Recenzja / Widok**, a także karty kontekstowe pojawiające się dla zaznaczonego obiektu (Projekt i układ tabeli, Formatowanie obrazu, nagłówek i stopka).
+Karty: **Narzędzia główne / Wstawianie / Rysowanie / Układ / Projektowanie / Odwołania / Recenzja / Widok**, a także karty kontekstowe pojawiające się dla zaznaczonego obiektu (Projekt i układ tabeli, Formatowanie obrazu, nagłówek i stopka). Taśma poleceń ma w Docs własną gęstość: **kompaktową** (⌥⌘K / Ctrl+Alt+K) — zostają ikony, znikają podpisy, a wybór jest pamiętany.
 
-- **Narzędzia główne**: schowek; czcionka (w tym rozmiary CJK i znaki wyróżnienia) z **Wyczyść całe formatowanie** i przełącznikiem **Pokaż/ukryj znaki formatowania**; akapit (wyrównanie/wcięcie/odstępy/wykazy) plus **Zdefiniuj nowy punktor / Zdefiniuj nowy format numeracji / Lista wielopoziomowa**, które zapisują własne style wykazów w dokumencie; style (Nagłówek 1-6/Normalny/Cytat, edytowalne); **Okienko stylów** pokazuje pełną listę.
+- **Narzędzia główne**: schowek; czcionka (w tym rozmiary CJK i znaki wyróżnienia) z **Wyczyść całe formatowanie** i przełącznikiem **Pokaż/ukryj znaki formatowania**; akapit (wyrównanie/wcięcie/odstępy/wykazy) plus **Zdefiniuj nowy punktor / Zdefiniuj nowy format numeracji / Lista wielopoziomowa**, które zapisują własne style wykazów w dokumencie; style (Nagłówek 1-6/Normalny/Cytat, edytowalne); **Okienko stylów** pokazuje pełną listę. Styl może ustawić osobno czcionkę wschodnioazjatycką i łacińską (np. czcionka CJK plus Times New Roman); para przeżywa zapis i odczyt .docx.
 - **Wstawianie**: podziały strony i sekcji; tabele (siatka wierszy × kolumn albo **Wstaw tabelę…** dla dokładnego rozmiaru); obrazy, kształty, ramki tekstowe; **Strona tytułowa** i **Pusta strona** z galerii gotowych wzorów; **Wykres**; **Inicjał**; **WordArt**; pola (data, godzina, numer strony, łączna liczba stron, nazwa pliku); hiperłącza, **Zakładka** i odsyłacze; komentarze; nagłówek i stopka oraz numery stron; symbole i równania.
   - **Wykres** wstawia prawdziwy obiekt wykresu z własnymi danymi — słupkowym, liniowym lub kołowym — a nie obraz. _Edytuj dane_ w programie Word otwiera liczby, które są pod nim.
 - **Rysowanie**: tusz na stronie, w grupie **Narzędzia do rysowania** — **Zaznacz** wraca do edycji tekstu, a następnie **Pióro**, **Zakreślacz** i **Gumka** (jedno kliknięcie albo przesunięcie usuwa cały ślad). Obok nich **Styl pióra** / **Styl zakreślacza** to jeden element sterujący, który zawiera próbki kolorów i rząd grubości; jego etykieta podąża za aktywnym narzędziem. Tusz jest zapisywany w dokumencie jako adnotacja unosząca się nad tekstem, więc przetrwa zapisanie i ponowne otwarcie, a **Wyczyść wszystko** w następnej grupie usuwa go w całości.
@@ -66,7 +66,7 @@ Kliknij prawym przyciskiem w dowolnym miejscu tekstu — menu dostosowuje się d
 
 - Znajdź i zamień (ctrl+F / ctrl+H): rozróżnianie wielkości liter, dopasowanie całego słowa, wyrażenia regularne.
 - Malarz formatów; głębokie cofanie i ponawianie; opcje wklejania.
-- Tabele: scalanie i dzielenie komórek, operacje na wierszach i kolumnach, obramowania i cieniowanie, sortowanie, formuły.
+- Tabele: scalanie i dzielenie komórek, operacje na wierszach i kolumnach, obramowania i cieniowanie, sortowanie, formuły. Wiersze łamią się między stronami tam, gdzie trzeba, a Ctrl+Enter w komórce przewraca stronę dokładnie w tym miejscu — druk i PDF tak samo.
 - Obrazy: zawijanie tekstu, kadrowanie, kompresja; obszar rysowania.
 
 ## Typografia CJK

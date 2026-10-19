@@ -49,6 +49,7 @@ Menu berubah mengikut tempat anda klik kanan:
 
 - Kad AI Slides pada Laman Utama: berikan topik atau rangka kerja, dan AI akan menyediakan persembahan tersebut. Jika penjanaan dalam awan gagal, sistem akan berpatah balik kepada penjanaan setempat.
 - Anda boleh terus menyelaraskan dengan panel AI, yang mengubah gaya teks melalui skrip dalam persekitaran terkawal, iaitu mekanisme yang sama seperti dalam [Sheets].
+- Klik kanan pada pemilihan teks atau elemen gambar/video/audio ▸ **Sembunyikan pemilihan daripada AI** menjauhkannya daripada mata model (butiran dalam bab panel AI); slaid dengan kandungan tersembunyi melangkau semakan tangkapan skrin automatik.
 
 ## Pertunjukan dan eksport
 

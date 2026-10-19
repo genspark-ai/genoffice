@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { installCliLink } from '@genoffice/cli/install'
-import { readAppSettings, writeAppSetting } from './app-settings'
+import { writeAppSetting } from './app-settings'
 
 const SETTING_KEY = 'cliLink'
 
@@ -17,9 +17,11 @@ interface CliLinkRecord {
  * Every launch: record where the genoffice launcher lives so agents can find it
  * without a PATH (the `genoffice` skill reads `~/.genoffice/launcher`), then
  * try to expose it on the PATH. The dmg has no installer step to do that, so
- * macOS retries on each start until a writable directory turns up; Windows
- * gets its PATH entry from the installer and only re-checks once per version
- * (the check spawns PowerShell). Silent and best effort.
+ * macOS retries on each start until a writable directory turns up. Windows
+ * gets its PATH entry from the NSIS installer on every install and update, so
+ * nothing runs here: the PATH probe spawns PowerShell, and with Windows
+ * Terminal as the default console host a hidden child still flashes a window
+ * on the first launch of each version (genoffice#2011). Silent and best effort.
  */
 export function installCliLinkBestEffort(settingsPath: string): void {
   if (!app.isPackaged) return
@@ -32,10 +34,9 @@ export function installCliLinkBestEffort(settingsPath: string): void {
     }
     const dir = join(process.resourcesPath, 'cli')
     writeLauncherFile(launcherFilePath(process.env), dir)
+    if (process.platform === 'win32') return
     const version = app.getVersion()
-    const previous = readAppSettings(settingsPath)[SETTING_KEY] as CliLinkRecord | undefined
-    if (process.platform === 'win32' && previous?.version === version) return
-    const launcher = join(dir, process.platform === 'win32' ? 'genoffice.cmd' : 'genoffice')
+    const launcher = join(dir, 'genoffice')
     const outcome = installCliLink({ launcher })
     console.log(
       `[genoffice] cli link: ${outcome.status}${outcome.location ? ` (${outcome.location})` : ''}` +

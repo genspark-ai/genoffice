@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## الحصول على الأمر
 
-يشحنه macOS وWindows داخل حزمة التطبيق. لاستخدامه باسمه، شغّل `genoffice install-cli` مرة واحدة: فهو ينشئ ارتباطًا رمزيًا للملف التنفيذي المضمّن في `/usr/local/bin`، أو في `PATH` الخاص بمستخدمك على Windows.
+في macOS وWindows يأتي الأمر داخل حزمة التطبيق. لمناداته بالاسم شغّل `genoffice install-cli` مرة واحدة: يصل الملف الثنائي من الحزمة بدليل على PATH لديك — في macOS إلى ‎/usr/local/bin‎ ما لم يكن بادئة Homebrew ‏(أدلة Homebrew نفسها لا تُمس أبدًا)، وإلا إلى دليل bin الخاص بك — أو في Windows إلى ‏`PATH`‎ المستخدم.
 
 ## الأوامر التي تستحق المعرفة
 

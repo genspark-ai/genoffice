@@ -66,7 +66,7 @@ import {
   vertices,
   type PathCmd,
 } from './edit-points'
-import { isDuplicateDragModifier, isToggleModifier } from './platform-modifiers'
+import { isDuplicateDragModifier, isMac, isToggleModifier } from './platform-modifiers'
 import { constrainAxis } from './drag-axis-lock'
 import { dblClickActionFor } from './dblclick-action'
 import type { ContextTab } from './components/context-tabs'
@@ -432,8 +432,23 @@ interface Props {
   zoom?: number
   /** Rubber-band selection (drag a rectangle on blank area): set of elements fully inside the rectangle */
   onMarqueeSelect?: (sourceIds: string[]) => void
-  /** Ctrl+drag (Option+drag on mac) duplicate: original snaps back, a copy is created at the drop offset (dx/dy in slide px) */
-  onDuplicateTo?: (sourceId: string, dxPx: number, dyPx: number) => void
+  /** Ctrl+drag (Option+drag on mac) duplicate: originals snap back, copies are created at the drop offset (dx/dy in slide px) */
+  onDuplicateTo?: (sourceIds: string[], dxPx: number, dyPx: number) => void
+  /** Escape cancelled a resize whose live preview already reached the model: roll the gesture
+   * back (startBox is the pre-gesture model box, for hosts that can only commit) */
+  onTransformCancel?: (
+    sourceId: string,
+    startBox: { x: number; y: number; w: number; h: number; rotationDeg: number },
+    groupId?: string,
+  ) => void
+  /** Multi-selection mouse gesture (drag/resize/rotate) commits every element in one undo step */
+  onTransformMulti?: (
+    items: Array<{
+      sourceId: string
+      groupId?: string
+      box: { x: number; y: number; w: number; h: number; rotationDeg: number }
+    }>,
+  ) => void
   /** Group being edited from inside after double-click-into-group (its children are selectable/editable) */
   enteredGroupId?: string | null
   /** Double-click a group to enter in-group editing (childId is the child hit by the double-click, may be empty) */
@@ -837,6 +852,8 @@ export function SlideCanvas({
   zoom = 1,
   onMarqueeSelect,
   onDuplicateTo,
+  onTransformMulti,
+  onTransformCancel,
   enteredGroupId,
   onEnterGroup,
   onEditConnectorEndpoints,
@@ -943,6 +960,59 @@ export function SlideCanvas({
     null,
   )
   const marqueeRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const marqueeCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => marqueeCleanupRef.current?.(), [])
+  // The gesture is tracked on window, not the Stage: a release outside the canvas (over the
+  // thumbnail strip, the ribbon, another monitor) must still end it, or the rectangle keeps
+  // following a pointer whose button is already up and hijacks the next click as its release.
+  const beginMarquee = (
+    stage: Konva.Stage,
+    start: { x: number; y: number },
+    keep: string[] | null,
+  ) => {
+    marqueeCleanupRef.current?.()
+    marqueeRef.current = { x1: start.x, y1: start.y, x2: start.x, y2: start.y }
+    setMarquee(null) // Only show after moving past the threshold
+    const onMove = (ev: MouseEvent) => {
+      const m = marqueeRef.current
+      if (!m) return
+      stage.setPointersPositions(ev)
+      const raw = stage.getPointerPosition()
+      if (!raw) return
+      m.x2 = raw.x - CANVAS_BLEED
+      m.y2 = raw.y - CANVAS_BLEED
+      // Within 3 screen px counts as a click; don't show the selection rectangle
+      if (Math.hypot(m.x2 - m.x1, m.y2 - m.y1) * zoom > 3) setMarquee({ ...m })
+    }
+    const finish = () => {
+      marqueeCleanupRef.current?.()
+      const m = marqueeRef.current
+      marqueeRef.current = null
+      if (!m) return
+      setMarquee(null)
+      if (Math.hypot(m.x2 - m.x1, m.y2 - m.y1) * zoom <= 3) return // A click, not a rubber-band selection
+      suppressClickRef.current = true
+      const [lx, rx] = m.x1 < m.x2 ? [m.x1, m.x2] : [m.x2, m.x1]
+      const [ty, by] = m.y1 < m.y2 ? [m.y1, m.y2] : [m.y2, m.y1]
+      const inside = slide.nodes
+        .filter((n) => {
+          if (n.decoration || n.background) return false
+          const b = n.box
+          return b.x >= lx && b.x + b.w <= rx && b.y >= ty && b.y + b.h <= by
+        })
+        .map((n) => n.sourceId)
+      const ids = keep ? [...keep, ...inside.filter((id) => !keep.includes(id))] : inside
+      if (ids.length) onMarqueeSelect!(ids)
+      else if (!keep) onSelect(null) // A marquee that started on a background node skipped the mousedown clear
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', finish)
+    marqueeCleanupRef.current = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', finish)
+      marqueeCleanupRef.current = null
+    }
+  }
 
   // Handles keep a constant on-screen size at zoom ≥ 1, but shrink gently (√zoom) when zoomed
   // out so they stay proportionate to the shrinking content. Chrome sizing follows the
@@ -1030,7 +1100,10 @@ export function SlideCanvas({
     }
   }, [drawMode, onDrawCancel])
 
-  // Hold Shift while rotating -> snap in 15° steps; release restores the default 45° snaps
+  // Resize modifiers (PowerPoint): Shift keeps the aspect ratio and snaps rotation to 15° steps;
+  // Ctrl on Windows scales about the center (Konva itself honours Alt/Option for that).
+  const [shiftHeld, setShiftHeld] = useState(false)
+  const [ctrlHeld, setCtrlHeld] = useState(false)
   useEffect(() => {
     const setSnaps = (fine: boolean) => {
       const tr = trRef.current
@@ -1038,15 +1111,97 @@ export function SlideCanvas({
       tr.rotationSnaps(fine ? Array.from({ length: 24 }, (_, i) => i * 15) : ROTATION_SNAPS)
       tr.rotationSnapTolerance(fine ? 7.5 : ROTATION_SNAP_TOLERANCE)
     }
-    const down = (e: KeyboardEvent) => e.key === 'Shift' && setSnaps(true)
-    const up = (e: KeyboardEvent) => e.key === 'Shift' && setSnaps(false)
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
+    const onKey = (e: KeyboardEvent) => {
+      setSnaps(e.shiftKey)
+      setShiftHeld(e.shiftKey)
+      setCtrlHeld(e.ctrlKey)
+    }
+    const onBlur = () => {
+      setSnaps(false)
+      setShiftHeld(false)
+      setCtrlHeld(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKey)
+    window.addEventListener('blur', onBlur)
     return () => {
-      window.removeEventListener('keydown', down)
-      window.removeEventListener('keyup', up)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKey)
+      window.removeEventListener('blur', onBlur)
     }
   }, [])
+
+  // Escape cancels the drag / resize in flight: every selected node snaps back to its model
+  // box and nothing is committed. The flag is shared because Konva ends all proxied drags
+  // at once, so per-node flags would miss the siblings whose dragend fires first.
+  const gestureCancelRef = useRef(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const stage = stageRef.current
+      const tr = trRef.current
+      if (!stage) return
+      if (marqueeRef.current) {
+        e.preventDefault()
+        e.stopPropagation()
+        marqueeCleanupRef.current?.()
+        marqueeRef.current = null
+        setMarquee(null)
+        return
+      }
+      const dragging = stage.find((n: Konva.Node) => n.isDragging())
+      const transforming = !!tr && (tr as unknown as { _transforming?: boolean })._transforming
+      if (!dragging.length && !transforming) return
+      e.preventDefault()
+      e.stopPropagation()
+      gestureCancelRef.current = true
+      if (transforming) tr!.stopTransform()
+      dragging[0]?.stopDrag()
+      queueMicrotask(() => {
+        gestureCancelRef.current = false
+      })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  // Final commits of one pointer gesture arrive synchronously per node (Konva fires every
+  // proxied dragend / transformend in the same mouseup); they are collected and flushed in a
+  // microtask so a multi-selection move is one undo step, like PowerPoint.
+  type GestureItem = Parameters<NonNullable<Props['onTransformMulti']>>[0][number]
+  const gestureBatchRef = useRef<{
+    items: GestureItem[]
+    dup: { ids: string[]; dx: number; dy: number } | null
+    scheduled: boolean
+  }>({ items: [], dup: null, scheduled: false })
+  const scheduleGestureFlush = () => {
+    const b = gestureBatchRef.current
+    if (b.scheduled) return
+    b.scheduled = true
+    queueMicrotask(() => {
+      const { items, dup } = b
+      b.items = []
+      b.dup = null
+      b.scheduled = false
+      if (dup && onDuplicateTo) onDuplicateTo(dup.ids, dup.dx, dup.dy)
+      if (items.length > 1 && onTransformMulti) onTransformMulti(items)
+      else for (const it of items) onTransform(it.sourceId, it.box, undefined, it.groupId)
+    })
+  }
+  const commitGesture: Props['onTransform'] = (sourceId, box, preview, groupId) => {
+    if (preview) {
+      onTransform(sourceId, box, preview, groupId)
+      return
+    }
+    gestureBatchRef.current.items.push({ sourceId, box, ...(groupId ? { groupId } : {}) })
+    scheduleGestureFlush()
+  }
+  const requestDuplicate = (sourceId: string, dx: number, dy: number) => {
+    const b = gestureBatchRef.current
+    if (b.dup) b.dup.ids.push(sourceId)
+    else b.dup = { ids: [sourceId], dx, dy }
+    scheduleGestureFlush()
+  }
 
   // Selection changed -> attach the Transformer to all selected nodes (except connectors: selectable but no transform handles)
   useEffect(() => {
@@ -1056,7 +1211,9 @@ export function SlideCanvas({
     const nodes = selectedIds
       .filter((id) => {
         const n = findNodeDeep(slide.nodes, id)
-        return n && !isConnectorNode(n) && id !== editPoints?.sourceId
+        // A lone connector keeps its endpoint handles instead of a frame; in a multi-selection
+        // it must be attached, or the Transformer's proxy drag leaves it behind
+        return n && (selectedIds.length > 1 || !isConnectorNode(n)) && id !== editPoints?.sourceId
       })
       .map((id) => layer.findOne(`#node_${id}`))
       .filter((n): n is Konva.Node => !!n)
@@ -1102,6 +1259,77 @@ export function SlideCanvas({
     }
   }, [selectedIds, slide])
 
+  const ratioLocked =
+    shiftHeld ||
+    (selectedIds.length > 0 &&
+      selectedIds.every((id) => findNodeDeep(slide.nodes, id)?.type === 'picture'))
+
+  // Resizing snaps the moving edges of the frame to neighbour edges/centers and page lines
+  // (PowerPoint smart guides work while sizing too, not just while moving). Unrotated frames
+  // only; an edge that same-size snapping already fixed is left alone.
+  const resizeGuideKeyRef = useRef('')
+  const snapResizeEdges = (
+    old: { x: number; y: number; width: number; height: number; rotation: number },
+    next: { x: number; y: number; width: number; height: number; rotation: number },
+    sized: { w: boolean; h: boolean } | null,
+  ) => {
+    const out = { ...next }
+    const guides: Guide[] = []
+    // Transformer boxes are stage-absolute; snap targets live in layer (slide) coordinates
+    const off = trRef.current?.getParent()?.getAbsoluteTransform().point({ x: 0, y: 0 }) ?? {
+      x: 0,
+      y: 0,
+    }
+    if (next.rotation === 0 && !editPoints) {
+      const thr = 3 / Math.max(zoom, 0.1)
+      const targets = snapTargets(selectedIds)
+      const nearest = (val: number, axis: 'v' | 'h') => {
+        let best: number | null = null
+        for (const t of targets)
+          for (const v of t[axis])
+            if (
+              Math.abs(v - val) <= thr &&
+              (best == null || Math.abs(v - val) < Math.abs(best - val))
+            )
+              best = v
+        return best
+      }
+      const eps = 1e-6
+      const leftMoved = Math.abs(next.x - old.x) > eps
+      const rightMoved = Math.abs(next.x + next.width - (old.x + old.width)) > eps
+      const topMoved = Math.abs(next.y - old.y) > eps
+      const bottomMoved = Math.abs(next.y + next.height - (old.y + old.height)) > eps
+      if (!sized?.w && leftMoved !== rightMoved) {
+        const edge = (leftMoved ? next.x : next.x + next.width) - off.x
+        const v = nearest(edge, 'v')
+        if (v != null) {
+          if (leftMoved) {
+            out.width = next.x + next.width - (v + off.x)
+            out.x = v + off.x
+          } else out.width = v + off.x - next.x
+          guides.push({ axis: 'v', pos: v })
+        }
+      }
+      if (!sized?.h && topMoved !== bottomMoved) {
+        const edge = (topMoved ? next.y : next.y + next.height) - off.y
+        const h = nearest(edge, 'h')
+        if (h != null) {
+          if (topMoved) {
+            out.height = next.y + next.height - (h + off.y)
+            out.y = h + off.y
+          } else out.height = h + off.y - next.y
+          guides.push({ axis: 'h', pos: h })
+        }
+      }
+    }
+    const key = guides.map((g) => `${g.axis}${g.pos}`).join(',')
+    if (key !== resizeGuideKeyRef.current) {
+      resizeGuideKeyRef.current = key
+      setGuides(guides)
+    }
+    return out
+  }
+
   return (
     <Stage
       ref={stageRef}
@@ -1129,14 +1357,15 @@ export function SlideCanvas({
         const onBackground =
           hitId != null && backgroundIds.has(hitId) && !selectedIds.includes(hitId)
         if (!isBlank && !onBackground) return
-        if (isBlank) onSelect(null)
+        // Shift/⌘ (Ctrl) held: the rubber band adds to the current selection (PowerPoint)
+        const additive = isToggleModifier(e.evt)
+        if (isBlank && !additive) onSelect(null)
         // Mouse-down on blank area -> start rubber-band selection (on release, elements fully inside the rectangle are selected)
         if (e.evt.button !== 0) return
         const raw = e.target.getStage()?.getPointerPosition()
         if (!raw || !onMarqueeSelect) return
         const start = { x: raw.x - CANVAS_BLEED, y: raw.y - CANVAS_BLEED }
-        marqueeRef.current = { x1: start.x, y1: start.y, x2: start.x, y2: start.y }
-        setMarquee(null) // Only show after moving past the threshold
+        beginMarquee(e.target.getStage()!, start, additive ? selectedIds : null)
       }}
       onMouseMove={(e) => {
         if (drawMode) {
@@ -1152,14 +1381,6 @@ export function SlideCanvas({
             setDrawPreview(resolveDrawRect(drawMode.kind, d.x1, d.y1, d.x2, d.y2, d.shift))
           return
         }
-        const m = marqueeRef.current
-        if (!m) return
-        const raw = e.target.getStage()?.getPointerPosition()
-        if (!raw) return
-        m.x2 = raw.x - CANVAS_BLEED
-        m.y2 = raw.y - CANVAS_BLEED
-        // Within 3 screen px counts as a click; don't show the selection rectangle
-        if (Math.hypot(m.x2 - m.x1, m.y2 - m.y1) * zoom > 3) setMarquee({ ...m })
       }}
       onMouseUp={() => {
         if (drawMode) {
@@ -1175,23 +1396,6 @@ export function SlideCanvas({
           onDrawCommit(rect)
           return
         }
-        const m = marqueeRef.current
-        marqueeRef.current = null
-        if (!m) return
-        setMarquee(null)
-        if (Math.hypot(m.x2 - m.x1, m.y2 - m.y1) * zoom <= 3) return // A click, not a rubber-band selection
-        suppressClickRef.current = true
-        const [lx, rx] = m.x1 < m.x2 ? [m.x1, m.x2] : [m.x2, m.x1]
-        const [ty, by] = m.y1 < m.y2 ? [m.y1, m.y2] : [m.y2, m.y1]
-        const ids = slide.nodes
-          .filter((n) => {
-            if (n.decoration || n.background) return false
-            const b = n.box
-            return b.x >= lx && b.x + b.w <= rx && b.y >= ty && b.y + b.h <= by
-          })
-          .map((n) => n.sourceId)
-        if (ids.length) onMarqueeSelect!(ids)
-        else onSelect(null) // A marquee that started on a background node skipped the mousedown clear
       }}
       onContextMenu={(e) => {
         e.evt.preventDefault()
@@ -1257,7 +1461,9 @@ export function SlideCanvas({
             node={n}
             onSelect={onSelect}
             onEditText={onEditText}
-            onTransform={onTransform}
+            onTransform={commitGesture}
+            gestureCancelRef={gestureCancelRef}
+            onTransformCancel={onTransformCancel}
             onEditTableCell={onEditTableCell}
             onPlayMedia={onPlayMedia}
             onOpenContextTab={onOpenContextTab}
@@ -1271,7 +1477,7 @@ export function SlideCanvas({
             livePreview={selectedIds.length === 1}
             zoom={zoom}
             multiDrag={selectedIds.length > 1 && selectedIds.includes(n.sourceId)}
-            onDuplicateTo={onDuplicateTo}
+            onDuplicateTo={onDuplicateTo ? requestDuplicate : undefined}
             entered={n.sourceId === enteredGroupId}
             onEnterGroup={onEnterGroup}
             selectedIds={selectedIds}
@@ -1338,19 +1544,6 @@ export function SlideCanvas({
               />
             )
           })}
-        {marquee && (
-          <Rect
-            x={Math.min(marquee.x1, marquee.x2)}
-            y={Math.min(marquee.y1, marquee.y2)}
-            width={Math.abs(marquee.x2 - marquee.x1)}
-            height={Math.abs(marquee.y2 - marquee.y1)}
-            fill="rgba(64,128,255,0.08)"
-            stroke="#4080ff"
-            strokeWidth={1 / Math.max(zoom, 0.1)}
-            dash={[4, 4]}
-            listening={false}
-          />
-        )}
         {/* Shape-draw preview: live ghost of the actual shape being drawn (PowerPoint drag behavior) */}
         {drawMode &&
           drawPreview &&
@@ -1556,10 +1749,8 @@ export function SlideCanvas({
           rotationSnaps={ROTATION_SNAPS}
           rotationSnapTolerance={ROTATION_SNAP_TOLERANCE}
           // Pictures default to proportional scaling (corner handles); shapes/text boxes scale freely
-          keepRatio={
-            selectedIds.length > 0 &&
-            selectedIds.every((id) => findNodeDeep(slide.nodes, id)?.type === 'picture')
-          }
+          keepRatio={ratioLocked}
+          centeredScaling={ctrlHeld && !isMac}
           borderStroke={selStroke}
           anchorStroke={selStroke}
           anchorFill="#ffffff"
@@ -1573,17 +1764,19 @@ export function SlideCanvas({
           }
           rotateAnchorCursor={rotateCursor}
           boundBoxFunc={(old, next) => {
-            // Same-size snapping: when resizing a single, unrotated, non-picture element (keepRatio conflicts),
-            // snap when width/height is close to another element's and highlight the matched element
+            // A locked ratio (Shift, pictures) wins over every snap: a snapped edge would break it
             if (
-              selectedIds.length !== 1 ||
+              ratioLocked ||
               next.rotation !== old.rotation ||
               Math.abs(next.width - old.width) + Math.abs(next.height - old.height) < 1e-6
             )
               return next
+            if (selectedIds.length !== 1) return snapResizeEdges(old, next, null)
+            // Same-size snapping: when resizing a single, unrotated, non-picture element (keepRatio conflicts),
+            // snap when width/height is close to another element's and highlight the matched element
             const sel = slide.nodes.find((n) => n.sourceId === selectedIds[0])
             if (!sel || sel.box.rotationDeg || sel.type === 'picture' || isConnectorNode(sel))
-              return next
+              return snapResizeEdges(old, next, null)
             const thr = 6 / Math.max(zoom, 0.1)
             const cands = slide.nodes.filter((n) => !n.decoration && n.sourceId !== sel.sourceId)
             const nearest = (val: number, dim: 'w' | 'h') => {
@@ -1618,11 +1811,13 @@ export function SlideCanvas({
               sizeMatchKeyRef.current = key
               setSizeMatch(w != null || h != null ? match : null)
             }
-            return out
+            return snapResizeEdges(old, out, { w: w != null, h: h != null })
           }}
           onTransformEnd={() => {
             sizeMatchKeyRef.current = ''
             setSizeMatch(null)
+            resizeGuideKeyRef.current = ''
+            setGuides([])
           }}
         />
         {editPoints &&
@@ -1664,6 +1859,19 @@ export function SlideCanvas({
               />
             )
           })()}
+        {marquee && (
+          <Rect
+            x={Math.min(marquee.x1, marquee.x2)}
+            y={Math.min(marquee.y1, marquee.y2)}
+            width={Math.abs(marquee.x2 - marquee.x1)}
+            height={Math.abs(marquee.y2 - marquee.y1)}
+            fill="rgba(64,128,255,0.08)"
+            stroke="#4080ff"
+            strokeWidth={1 / Math.max(zoom, 0.1)}
+            dash={[4, 4]}
+            listening={false}
+          />
+        )}
       </Layer>
     </Stage>
   )
@@ -1826,6 +2034,9 @@ interface NodeProps {
   onPlayMedia?: Props['onPlayMedia']
   onOpenContextTab?: Props['onOpenContextTab']
   onDragGuides: (g: Guide[], spacing?: SpacingIndicator[]) => void
+  /** Set by the canvas when Escape cancels the gesture in flight: dragend/transformend restore instead of committing */
+  gestureCancelRef?: React.MutableRefObject<boolean>
+  onTransformCancel?: Props['onTransformCancel']
   snapTargets: (excludeIds: string[]) => SnapTarget[]
   /** Neighbor boxes for equal-spacing snapping (excluding the dragged selection) */
   spacingBoxes?: (excludeIds: string[]) => Array<{ x: number; y: number; w: number; h: number }>
@@ -1838,7 +2049,8 @@ interface NodeProps {
   zoom: number
   /** This node is part of a multi-select drag: disable per-node snapping (each node snapping separately would break relative positions within the selection) */
   multiDrag?: boolean
-  onDuplicateTo?: Props['onDuplicateTo']
+  /** Per-node duplicate request; the canvas collects a multi-selection into one call */
+  onDuplicateTo?: (sourceId: string, dxPx: number, dyPx: number) => void
   /** This group is in in-group editing mode: children are interactive, whole-group hit area is off */
   entered?: boolean
   onEnterGroup?: Props['onEnterGroup']
@@ -1868,6 +2080,8 @@ function NodeView({
   onPlayMedia,
   onOpenContextTab,
   onDragGuides,
+  gestureCancelRef,
+  onTransformCancel,
   snapTargets,
   spacingBoxes,
   selBBox,
@@ -1896,6 +2110,9 @@ function NodeView({
   const boxRef = useRef({ w: box.w, h: box.h })
   const transformingRef = useRef(false)
   const lastPreviewRef = useRef(0)
+  const previewSentRef = useRef(false)
+  /** Model box at transformstart: live preview rewrites `box` mid-gesture, a cancel needs the original */
+  const startBoxRef = useRef(box)
   /** Node position captured on every transform event: boxPivotProps derives Konva x/y from
    * box.w/h, so a live-preview re-render would otherwise teleport the node mid-gesture. */
   const gesturePosRef = useRef<{ x: number; y: number } | null>(null)
@@ -2010,7 +2227,7 @@ function NodeView({
       dragPosRef.current = null
       // Konva stops routing mousemove to shapes while dragging: pin the move cursor here
       setStageCursor(e, 'move')
-      if (!(onDuplicateTo && !multiDrag && !insideGroupId)) return
+      if (!(onDuplicateTo && !insideGroupId)) return
       const onKey = (ev: KeyboardEvent) => setDupDrag(isDuplicateDragModifier(ev))
       window.addEventListener('keydown', onKey)
       window.addEventListener('keyup', onKey)
@@ -2022,15 +2239,7 @@ function NodeView({
     },
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
       // Duplicate modifier held mid-drag shows the ghost (it can be pressed/released at any time during the drag)
-      setDupDrag(
-        !!(
-          e.evt &&
-          isDuplicateDragModifier(e.evt) &&
-          onDuplicateTo &&
-          !multiDrag &&
-          !insideGroupId
-        ),
-      )
+      setDupDrag(!!(e.evt && isDuplicateDragModifier(e.evt) && onDuplicateTo && !insideGroupId))
       const t = e.target
       const free = { x: t.x() - box.w / 2, y: t.y() - box.h / 2 }
       // Shift = axis lock. Every selected node measures its own delta from its own model box, so a
@@ -2044,8 +2253,9 @@ function NodeView({
         onDragGuides([])
         return
       }
-      // Snap threshold semantics are "6 screen px": convert back by the canvas CSS zoom (same as dragDistance)
-      const thr = 6 / Math.max(zoom, 0.1)
+      // Snap pull is "3 screen px" (PowerPoint-tight; wider bands make the drag feel glued to
+      // every neighbour), converted back by the canvas CSS zoom. Narrower than dragDistance on purpose.
+      const thr = 3 / Math.max(zoom, 0.1)
       // Multi-select drag: snap the selection bounding box as a whole. All selected
       // nodes fire their own dragmove under the Transformer's proxy drag, but each computes the same snap
       // delta from the same model bounding box + its own fixed offset -> relative positions stay unchanged.
@@ -2098,6 +2308,10 @@ function NodeView({
       dragPosRef.current = null
       setDupDrag(false)
       onDragGuides([])
+      if (gestureCancelRef?.current) {
+        e.target.position({ x: box.x + box.w / 2, y: box.y + box.h / 2 })
+        return
+      }
       let dropX = e.target.x() - box.w / 2
       let dropY = e.target.y() - box.h / 2
       // Shift pressed after the last move (still pointer) must still constrain the drop
@@ -2106,15 +2320,10 @@ function NodeView({
         dropX = box.x + lock.dx
         dropY = box.y + lock.dy
       }
-      // Ctrl+drag (Option+drag on mac) = duplicate at the drop point;
-      // original snaps back (model unchanged, the Konva node position must be manually restored); multi-select/in-group gestures not supported yet
-      if (
-        e.evt &&
-        isDuplicateDragModifier(e.evt) &&
-        onDuplicateTo &&
-        !multiDrag &&
-        !insideGroupId
-      ) {
+      // Ctrl+drag (Option+drag on mac) = duplicate at the drop point; the original snaps back
+      // (model unchanged, so the Konva position is restored by hand). A multi-selection collects
+      // into one duplicate call; in-group children are not supported yet.
+      if (e.evt && isDuplicateDragModifier(e.evt) && onDuplicateTo && !insideGroupId) {
         e.target.position({ x: box.x + box.w / 2, y: box.y + box.h / 2 })
         onDuplicateTo(node.sourceId, dropX - box.x, dropY - box.y)
         return
@@ -2135,6 +2344,8 @@ function NodeView({
     onTransformStart: () => {
       transformingRef.current = true
       lastPreviewRef.current = 0
+      previewSentRef.current = false
+      startBoxRef.current = box
       gesturePosRef.current = null
     },
     onTransform: (e: Konva.KonvaEventObject<Event>) => {
@@ -2152,6 +2363,7 @@ function NodeView({
       const now = performance.now()
       if (now - lastPreviewRef.current < PREVIEW_THROTTLE_MS) return
       lastPreviewRef.current = now
+      previewSentRef.current = true
       onTransform(
         node.sourceId,
         {
@@ -2168,6 +2380,16 @@ function NodeView({
       transformingRef.current = false
       gesturePosRef.current = null
       const t = e.target
+      if (gestureCancelRef?.current) {
+        // Live preview frames already wrote intermediate boxes into the model: roll the
+        // gesture back (the main process pops the preview's undo snapshot) so nothing remains
+        const start = startBoxRef.current
+        if (previewSentRef.current) onTransformCancel?.(node.sourceId, start, insideGroupId)
+        previewSentRef.current = false
+        t.setAttrs({ ...boxPivotProps(start), scaleX: 1, scaleY: 1 })
+        t.getLayer()?.batchDraw()
+        return
+      }
       const sx = Math.abs(t.scaleX())
       const sy = Math.abs(t.scaleY())
       onTransform(
@@ -2218,6 +2440,8 @@ function NodeView({
               onPlayMedia={onPlayMedia}
               onOpenContextTab={onOpenContextTab}
               onDragGuides={onDragGuides}
+              gestureCancelRef={gestureCancelRef}
+              onTransformCancel={onTransformCancel}
               snapTargets={snapTargets}
               images={images}
               editingText={editingText}

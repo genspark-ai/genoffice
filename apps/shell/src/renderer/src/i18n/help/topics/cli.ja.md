@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## コマンドを用意する
 
-macOS と Windows ではアプリバンドルの中にあります。名前で呼び出すには `genoffice install-cli` を一度実行してください。同梱のバイナリを `/usr/local/bin` に、Windows ではユーザーの `PATH` にシンボリックリンクします。
+macOS と Windows ではアプリバンドル内に同梱されています。名前で呼ぶには `genoffice install-cli` を一度実行します：バンドル内のバイナリを PATH 上のディレクトリにリンクします — macOS では Homebrew プレフィックスでない限り `/usr/local/bin`（Homebrew 自身のディレクトリには決して書き込みません）、それ以外はユーザーの bin へ。Windows ではユーザーの `PATH` にリンクします。
 
 ## 覚えておきたいコマンド
 

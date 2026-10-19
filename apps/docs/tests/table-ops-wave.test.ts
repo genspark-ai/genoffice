@@ -529,7 +529,9 @@ describe('cell properties', () => {
     expect(xml).toContain(
       '<w:noWrap/><w:tcMar><w:top w:w="100" w:type="dxa"/><w:left w:w="200" w:type="dxa"/></w:tcMar>',
     )
-    expect(editor.view.dom.querySelector('td')!.style.whiteSpace).toBe('nowrap')
+    expect(editor.view.dom.querySelector('td')!.style.whiteSpace).toBe(
+      'var(--doc-cell-nowrap,nowrap)',
+    )
     run(editor, setCellProps({ cellMar: null, noWrap: null }))
     xml = savedTableXml(editor, parsed)
     const first = xml.match(/<w:tc>[\s\S]*?<\/w:tc>/)![0]

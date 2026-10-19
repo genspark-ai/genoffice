@@ -13,7 +13,7 @@ To je celá plocha na jedné obrazovce — každý příkaz s řádkem, který �
 
 ## Získání příkazu
 
-Systémy macOS a Windows jej dodávají uvnitř balíčku aplikace. Chcete-li jej volat jménem, spusťte jednou `genoffice install-cli`: vytvoří symbolický odkaz na přiložený spustitelný soubor v `/usr/local/bin`, nebo v uživatelské `PATH` v systému Windows.
+V macOS i Windows je příkaz uvnitř balíčku aplikace. Chcete-li ho volat jménem, spusťte jednou `genoffice install-cli`: napojí binárku z balíčku do adresáře na vaší PATH — v macOS `/usr/local/bin`, pokud to není prefix Homebrew (adresáře samotného Homebrew se nikdy nedotýká), jinak do vašeho uživatelského bin — nebo na Windows do uživatelské `PATH`.
 
 ## Příkazy, které stojí za to znát
 

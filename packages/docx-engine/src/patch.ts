@@ -1,10 +1,13 @@
 import JSZip from 'jszip'
+import { REDACT_EL, REDACT_NS, REDACT_PREFIX } from '@genoffice/agent-core/redact-range'
 import {
   applyImageWrap,
   generateParagraphXml,
   inlineRunsXml,
   mergePPrFormat,
   splitXmlChildren,
+  inlinePictureDrawingXml,
+  NEW_PICTURE_TOKEN_PREFIX,
 } from './generate'
 import {
   NOTE_CONTENT_TYPE,
@@ -68,6 +71,7 @@ import type {
   NewInkImage,
   NoteInfo,
   ParsedDoc,
+  RevisionInfo,
   SdtShell,
   SectionSettings,
   SourceInfo,
@@ -359,12 +363,15 @@ export type SaveBlock = (
   | { kind: 'chart'; chart: NewChart; extentPx?: { w: number; h: number } }
 ) & {
   /** Top-level tracked insertion/deletion wrapper. */
-  revision?: { kind: 'ins' | 'del'; author: string; date?: string; id?: string }
+  revision?: { kind: 'ins' | 'del' } & RevisionInfo
 }
 
 export interface SaveOptions {
   /** save timestamp (ISO), written to docProps/core.xml dcterms:modified; default = now */
   savedAt?: string
+  /** bytes of pictures the editor placed inside existing paragraphs (table cells),
+   *  keyed by the placeholder token their drawing XML carries (NEW_PICTURE_TOKEN_PREFIX) */
+  newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
   /** Zotero document preferences; written as Word-compatible 255-character custom-property chunks */
   zoteroDocumentData?: string
   /** replace the trailing w:sectPr with this XML before the field-level options below apply (headless editors that keep the sectPr itself) */
@@ -485,8 +492,8 @@ export interface SaveOptions {
   footnotes?: NoteInfo[]
   endnotes?: NoteInfo[]
   /**
-   * Watermark in the default page header: a string / text spec / picture spec
-   * sets it, null removes it, undefined keeps whatever the header already has.
+   * Watermark in every active section header: a string / text spec / picture spec
+   * sets it, null removes it, undefined keeps each header's existing watermark.
    */
   watermark?: Watermark | null
   /**
@@ -562,8 +569,6 @@ const IMAGE_EXT: Record<NewImage['mime'], string> = {
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
 }
-
-const EMU_PER_PX = 9525
 
 /**
  * Given the original docx bytes and a chart part path (e.g.
@@ -755,6 +760,7 @@ export async function saveDocx(
     listParagraphStyleId: parsed.listParagraphStyleId,
     allocateHyperlinkRel,
     allocateBookmarkId: nextBookmarkIdAllocator(documentXml),
+    allocateRevisionId: nextRevisionIdAllocator(documentXml),
   }
 
   const newMedia: Array<{ path: string; base64: string }> = []
@@ -810,17 +816,6 @@ export async function saveDocx(
   }
   const embedImage = (image: NewImage): string => {
     const rId = embedImageMedia(image)
-    const cx = Math.max(1, Math.round(image.widthPx * EMU_PER_PX))
-    const cy = Math.max(1, Math.round(image.heightPx * EMU_PER_PX))
-    // Word lays the drawing out against the unrotated wp:extent plus
-    // wp:effectExtent: a rotated non-square picture needs the bounding-box
-    // overflow recorded there (same math as patchImageParagraphXml)
-    const rot = image.rotDeg ? ((Math.round(image.rotDeg) % 360) + 360) % 360 : 0
-    const rad = (rot * Math.PI) / 180
-    const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
-    const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
-    const eeX = Math.max(0, Math.round((bw - cx) / 2))
-    const eeY = Math.max(0, Math.round((bh - cy) / 2))
     // dedup means imageSeq does not advance for repeated bytes — docPr ids need their own counter
     const docPrId = DOCPR_ID_BASE + ++docPrSeq
     const ps = image.paraSpacing
@@ -835,23 +830,38 @@ export async function saveDocx(
     const spacing = spacingAttrs.length > 0 ? `<w:spacing ${spacingAttrs.join(' ')}/>` : ''
     const jc = image.align && image.align !== 'left' ? `<w:jc w:val="${image.align}"/>` : ''
     const pPr = spacing || jc ? `<w:pPr>${spacing}${jc}</w:pPr>` : ''
-    const xml =
-      `<w:p>${pPr}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
-      `<wp:extent cx="${cx}" cy="${cy}"/>` +
-      `<wp:effectExtent l="${eeX}" t="${eeY}" r="${eeX}" b="${eeY}"/>` +
-      `<wp:docPr id="${docPrId}" name="Picture ${docPrId}"${image.altText ? ` descr="${escapeXmlAttr(image.altText)}"` : ''}/>` +
-      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
-      '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-      '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
-      `<pic:nvPicPr><pic:cNvPr id="${docPrId}" name="Picture ${docPrId}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-      `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-      `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${image.flipH ? ' flipH="1"' : ''}${image.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
-      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
-      '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    const drawing = inlinePictureDrawingXml({ ...image, rId, docPrId })
+    const xml = `<w:p>${pPr}<w:r>${drawing}</w:r></w:p>`
     return image.wrap
       ? applyImageWrap(xml, image.wrap, image.posOffsetEmu, undefined, image.zOrder)
       : xml
   }
+  /** Pictures the editor inserted into existing paragraphs (table cells) carry
+   *  a placeholder token for r:embed and the docPr id; land their bytes and
+   *  swap in the real ids. Two drawings never share a token, so the docPr id
+   *  minted per token stays unique. */
+  const resolveNewPictures = (xml: string): string => {
+    const pictures = options.newPictures
+    if (!pictures || !xml.includes(NEW_PICTURE_TOKEN_PREFIX)) return xml
+    const docPrIdOf = (token: string): number => {
+      let id = newPictureDocPrIds.get(token)
+      if (id === undefined) {
+        id = DOCPR_ID_BASE + ++docPrSeq
+        newPictureDocPrIds.set(token, id)
+      }
+      return id
+    }
+    return xml.replace(
+      new RegExp(`(r:embed|id|name)="(Picture )?(${NEW_PICTURE_TOKEN_PREFIX}[0-9]+)"`, 'g'),
+      (whole, attr: string, prefix: string | undefined, token: string) => {
+        const picture = pictures[token]
+        if (!picture) return whole
+        if (attr === 'r:embed') return `r:embed="${embedImageMedia(picture)}"`
+        return `${attr}="${prefix ?? ''}${docPrIdOf(token)}"`
+      },
+    )
+  }
+  const newPictureDocPrIds = new Map<string, number>()
   /** the pictures' runs collected into the first picture's holder paragraph */
   const embedImages = (images: NewImage[]): string => {
     const paras = images.map(embedImage)
@@ -1032,9 +1042,7 @@ export async function saveDocx(
   const planHeaderFooter = async (
     kind: 'header' | 'footer',
     hf: HeaderFooter | undefined,
-    watermark: Watermark | null | undefined = undefined,
     hfType: 'default' | 'first' | 'even' = 'default',
-    watermarkOnly = false,
   ) => {
     if (hf === undefined) return
     const refs = hfReferenceTags(trailingSectPr, kind)
@@ -1052,16 +1060,7 @@ export async function saveDocx(
       if (!path) return
       const file = zip.file(path)
       const originalXml = file ? await file.async('string') : null
-      const wmXml =
-        kind === 'header' ? await watermarkXmlFor(watermark, path, originalXml) : undefined
-      // A watermark-only change patches the original part in place (tables/logos/fields
-      // all preserved); header text edits use paragraph replace-merge (non-paragraph
-      // children preserved).
-      let partXml: string | null = null
-      if (watermarkOnly && kind === 'header' && originalXml && wmXml !== undefined) {
-        partXml = patchWatermarkInPart(originalXml, wmXml)
-      }
-      if (partXml === null) partXml = headerFooterPartXml(kind, hf, wmXml, originalXml)
+      const partXml = headerFooterPartXml(kind, hf, undefined, originalXml)
       hfParts.push({ path, xml: partXml })
     } else {
       let n = 1
@@ -1071,9 +1070,7 @@ export async function saveDocx(
       )
         n++
       const filename = `${kind}${n}.xml`
-      const wmXml =
-        kind === 'header' ? await watermarkXmlFor(watermark, `word/${filename}`, null) : undefined
-      const partXml = headerFooterPartXml(kind, hf, wmXml)
+      const partXml = headerFooterPartXml(kind, hf)
       const newRId = `rId${nextRelNum++}`
       newRels.push({ rId: newRId, type: HF_REL_TYPE[kind], target: filename, external: false })
       hfParts.push({ path: `word/${filename}`, xml: partXml })
@@ -1083,24 +1080,14 @@ export async function saveDocx(
       )
     }
   }
-  // A watermark change forces a header-part rewrite even when the header text
-  // itself is untouched; a header rewrite without a watermark change keeps the
-  // part's own watermark bytes.
-  const effectiveHeader =
-    options.header ??
-    (options.watermark !== undefined ? { text: parsed.headerText ?? '' } : undefined)
-  await planHeaderFooter(
-    'header',
-    effectiveHeader,
-    options.watermark,
-    'default',
-    options.header === undefined,
-  )
+  // Header text edits keep each part's own watermark. Apply a pending watermark
+  // separately, after all section references and text edits have landed.
+  await planHeaderFooter('header', options.header)
   await planHeaderFooter('footer', options.footer)
-  await planHeaderFooter('header', options.headerFirst, undefined, 'first')
-  await planHeaderFooter('footer', options.footerFirst, undefined, 'first')
-  await planHeaderFooter('header', options.headerEven, undefined, 'even')
-  await planHeaderFooter('footer', options.footerEven, undefined, 'even')
+  await planHeaderFooter('header', options.headerFirst, 'first')
+  await planHeaderFooter('footer', options.footerFirst, 'first')
+  await planHeaderFooter('header', options.headerEven, 'even')
+  await planHeaderFooter('footer', options.footerEven, 'even')
 
   // ---- Per-section header/footer (non-last sections): with a reference, rewrite the
   // part; without one, create a part + inject the reference ----
@@ -1490,6 +1477,7 @@ export async function saveDocx(
     } else {
       xml = embedImage(fb.image)
     }
+    xml = resolveNewPictures(xml)
     // Inject newly created per-section header/footer references into the section's sectPr
     // (the reference must be the first sectPr child)
     const refTags = fbDocxIndex !== undefined ? sectionRefTags.get(fbDocxIndex) : undefined
@@ -1512,7 +1500,8 @@ export async function saveDocx(
       const attrs =
         ` w:id="${escapeXmlAttr(revision.id ?? '0')}"` +
         ` w:author="${escapeXmlAttr(revision.author)}"` +
-        (revision.date ? ` w:date="${escapeXmlAttr(revision.date)}"` : '')
+        (revision.date ? ` w:date="${escapeXmlAttr(revision.date)}"` : '') +
+        (revision.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(revision.dateUtc)}"` : '')
       xml = `<w:${revision.kind}${attrs}>${xml}</w:${revision.kind}>`
     }
     if (fbDocxIndex !== undefined && fb.kind !== 'original') {
@@ -1570,6 +1559,77 @@ export async function saveDocx(
     )
   }
 
+  if (options.watermark !== undefined) {
+    // Missing references inherit the previous section's same variant, including
+    // first/even headers while that variant is disabled in an intermediate section.
+    const inherited = new Map<string, string>()
+    const touched = new Set<string>()
+    const sections = [
+      ...newDocumentXml.matchAll(/<w:sectPr\b[^>]*\/>|<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g),
+    ]
+    const replacements: string[] = []
+    const even = options.evenAndOddHeaders ?? parsed.evenAndOddHeaders ?? false
+    for (const match of sections) {
+      let sectionXml = match[0]
+      for (const ref of hfReferenceTags(sectionXml, 'header')) {
+        const type = hfReferenceType(ref)
+        const id = hfReferenceRId(ref)
+        if (id) inherited.set(type === 'odd' || type === undefined ? 'default' : type, id)
+      }
+      const titleTag = /<w:titlePg\b[^>]*\/?\s*>/.exec(sectionXml)?.[0]
+      const first = titleTag && !/\bw:val\s*=\s*["'](?:0|false|off)["']/.test(titleTag)
+      const variants = ['default', ...(first ? ['first'] : []), ...(even ? ['even'] : [])]
+      for (const variant of variants) {
+        const id = inherited.get(variant)
+        const target = id
+          ? (relTargets.get(id) ?? newRels.find((r) => r.rId === id)?.target)
+          : undefined
+        let path = target ? resolveRelationshipTargetPath(docPath, target) : null
+        if (!path) {
+          // Removing a watermark must not materialize otherwise blank headers.
+          if (options.watermark === null || id) continue
+          let n = 1
+          while (
+            zip.file(`word/header${n}.xml`) ||
+            hfParts.some((p) => p.path === `word/header${n}.xml`)
+          )
+            n++
+          const filename = `header${n}.xml`
+          path = `word/${filename}`
+          const rId = `rId${nextRelNum++}`
+          newRels.push({ rId, type: HF_REL_TYPE.header, target: filename, external: false })
+          hfOverrides.push(
+            `<Override PartName="/${path}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`,
+          )
+          sectionXml = injectIntoSectPr(
+            sectionXml,
+            `<w:headerReference w:type="${variant}" r:id="${rId}"/>`,
+          )
+          inherited.set(variant, rId)
+        }
+        if (touched.has(path)) continue
+        touched.add(path)
+        // Apply after header text edits, so a batch can edit both without losing
+        // either change. Shared/inherited parts are rewritten exactly once.
+        const pending = hfParts.find((p) => p.path === path)
+        const originalXml = pending?.xml ?? (await zip.file(path)?.async('string')) ?? null
+        const wmXml = await watermarkXmlFor(options.watermark, path, originalXml)
+        const xml = originalXml
+          ? patchWatermarkInPart(originalXml, wmXml!)
+          : headerFooterPartXml('header', { text: '' }, wmXml)
+        if (xml === null) continue
+        if (pending) pending.xml = xml
+        else hfParts.push({ path, xml })
+      }
+      replacements.push(sectionXml)
+    }
+    let sectionIndex = 0
+    newDocumentXml = newDocumentXml.replace(
+      /<w:sectPr\b[^>]*\/>|<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g,
+      () => replacements[sectionIndex++]!,
+    )
+  }
+
   if (options.comments !== undefined) {
     newDocumentXml = removeDeletedCommentMarkers(
       newDocumentXml,
@@ -1583,6 +1643,75 @@ export async function saveDocx(
     newDocumentXml = newDocumentXml.replace(
       /<w:document /,
       '<w:document xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" ',
+    )
+  }
+
+  // The same for the "withheld from the model" marker. An undeclared prefix is
+  // not a warning, it is a parse error: Word and LibreOffice both offer to
+  // repair the file and drop the run that carried it, which loses the reader's
+  // mark and hands the span back to the model on the next open.
+  //
+  // `mc:Ignorable` is the mechanism OOXML provides for exactly this — an
+  // element in a namespace the consumer does not know is skipped rather than
+  // treated as a schema violation, so the label rides along without the
+  // border's run failing a strict validator.
+  //
+  // A root that already declares `xmlns:mc` (every Word-saved file does) must
+  // not get a second one: a duplicate attribute is the same parse error this
+  // block exists to prevent. Its existing Ignorable list is extended instead.
+  if (
+    newDocumentXml.includes(`<${REDACT_EL}`) &&
+    !new RegExp(`<w:document[^>]*xmlns:${REDACT_PREFIX}=`).test(newDocumentXml)
+  ) {
+    const root = /<w:document\b[^>]*>/.exec(newDocumentXml)?.[0]
+    if (root) {
+      let next = root
+      if (!/xmlns:mc=/.test(next)) {
+        next = next.replace(
+          '<w:document',
+          '<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+        )
+      }
+      next = next.replace('<w:document', `<w:document xmlns:${REDACT_PREFIX}="${REDACT_NS}"`)
+      const ignorable = /mc:Ignorable="([^"]*)"/.exec(next)
+      if (ignorable) {
+        if (!new RegExp(`\\b${REDACT_PREFIX}\\b`).test(ignorable[1] ?? '')) {
+          const existing = (ignorable[1] ?? '').trim()
+          next = next.replace(
+            /mc:Ignorable="[^"]*"/,
+            `mc:Ignorable="${existing ? `${existing} ${REDACT_PREFIX}` : REDACT_PREFIX}"`,
+          )
+        }
+      } else {
+        next = next.replace('<w:document', `<w:document mc:Ignorable="${REDACT_PREFIX}"`)
+      }
+      // a Word re-save drops every element whose namespace it does not process
+      // unless the root asks for it to be preserved verbatim — and a root that
+      // already preserves other elements needs ours added to that list, the
+      // same way the Ignorable list above is extended
+      const preserve = /mc:PreserveElements="([^"]*)"/.exec(next)
+      if (preserve) {
+        if (!new RegExp(`\\b${REDACT_EL}\\b`).test(preserve[1] ?? '')) {
+          const existing = (preserve[1] ?? '').trim()
+          next = next.replace(
+            /mc:PreserveElements="[^"]*"/,
+            `mc:PreserveElements="${existing ? `${existing} ${REDACT_EL}` : REDACT_EL}"`,
+          )
+        }
+      } else {
+        next = next.replace('<w:document', `<w:document mc:PreserveElements="${REDACT_EL}"`)
+      }
+      newDocumentXml = newDocumentXml.replace(root, next)
+    }
+  }
+
+  if (
+    newDocumentXml.includes(' w16du:dateUtc=') &&
+    !/<w:document[^>]*xmlns:w16du=/.test(newDocumentXml)
+  ) {
+    newDocumentXml = newDocumentXml.replace(
+      /<w:document /,
+      '<w:document xmlns:w16du="http://schemas.microsoft.com/office/word/2023/wordml/word16du" ',
     )
   }
 
@@ -2567,6 +2696,14 @@ function maxDocPrId(documentXml: string): number {
 function nextBookmarkIdAllocator(documentXml: string): (name: string) => number {
   let next = maxBookmarkId(documentXml) + 1
   return () => next++
+}
+
+/** revision w:id is unique across every annotation in the part, so start above all existing ids */
+function nextRevisionIdAllocator(documentXml: string): () => string {
+  let next = 9001
+  for (const m of documentXml.matchAll(/\bw:id\s*=\s*["'](\d+)["']/g))
+    next = Math.max(next, parseInt(m[1], 10) + 1)
+  return () => String(next++)
 }
 
 /** Highest w:bookmarkStart/@w:id in the document, 0 when it holds no bookmark. */

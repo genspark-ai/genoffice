@@ -16,6 +16,7 @@ export const ko = {
   ribbonTabReview: '검토',
   ribbonCollapse: '리본 축소',
   ribbonExpand: '리본 확장',
+  ribbonCompact: '간단 리본(아이콘만)',
   ribbonTabView: '보기',
   ribbonTabTableDesign: '테이블 디자인',
   ribbonTabChartDesign: '차트 디자인',
@@ -386,6 +387,12 @@ export const ko = {
   ribbonRehearseTip:
     '예행 연습: 처음부터 진행하며 슬라이드별 시간을 기록하고, 종료 후 자동 전환 시간으로 저장 가능(pptx에 저장)',
   ribbonRecord: '녹화',
+  ribbonRecordTip:
+    '내레이션 녹음: 슬라이드 쇼를 재생하며 음성과 각 슬라이드의 표시 시간을 녹음합니다',
+  ribbonRecordFromBeginning: '처음부터 녹음',
+  ribbonRecordFromCurrent: '현재 슬라이드부터 녹음',
+  ribbonClearNarrationCurrent: '현재 슬라이드의 내레이션 지우기',
+  ribbonClearNarrationAll: '모든 슬라이드의 내레이션 지우기',
   // Review
   ribbonGroupProofing: '언어 교정',
   ribbonSpellCheck: '맞춤법 검사',

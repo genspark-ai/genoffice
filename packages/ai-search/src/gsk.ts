@@ -25,7 +25,13 @@ import {
   type ImageSearchResult,
   type WebSearchResult,
 } from './shared'
-import { genofficeApiKey, genofficeAuthPath, reloadGenofficeAuth } from './genoffice-auth'
+import {
+  genofficeApiKey,
+  genofficeAuthPath,
+  recoverFromRejectedGskKey,
+  reloadGenofficeAuth,
+  type GskRecoveryOutcome,
+} from './genoffice-auth'
 // deep import: the package root re-exports Electron-bound modules, and this file also runs in the genoffice CLI
 import { readBodyCapped } from '@genoffice/electron-utils/remote-image'
 import { createStreamWatchdog } from '@genoffice/ai-provider'
@@ -88,17 +94,94 @@ function electronCompatArgs(): string[] {
  * key_name) → shared gsk CLI login (bills to the Claw bucket).
  */
 export function gskApiKey(): string {
-  if (process.env.GSK_API_KEY) return process.env.GSK_API_KEY
+  const env = process.env.GSK_API_KEY
+  if (env && !rejectedKeys.has(env)) return env
   const own = genofficeApiKey()
-  if (own) return own
+  if (own && !rejectedKeys.has(own)) return own
   try {
     const configPath = join(homedir(), '.genspark-tool-cli', 'config.json')
     if (!existsSync(configPath)) return ''
     const config = JSON.parse(readFileSync(configPath, 'utf-8')) as { api_key?: string }
-    return config.api_key ?? ''
+    const shared = config.api_key ?? ''
+    return rejectedKeys.has(shared) ? '' : shared
   } catch {
     return ''
   }
+}
+
+// ── Rejected keys (401) ─────────────────────────────────────────────
+
+/**
+ * Keys the server answered 401 for (expired / revoked). GenOffice's own key
+ * is also deleted from disk; env and shared gsk CLI keys belong to someone
+ * else, so they are only skipped for the rest of this process.
+ */
+const rejectedKeys = new Set<string>()
+
+/** Thrown when a gsk-key call is refused with 401 and no fresh key could be minted. */
+export class GskAuthError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GskAuthError'
+  }
+}
+
+/** Whether an error text reports an HTTP 401 (gsk CLI, tool_cli, LLM proxy shapes). */
+export function isGskUnauthorizedText(text: unknown): boolean {
+  return /\bHTTP 401\b|\b401 Unauthorized\b/i.test(String(text ?? ''))
+}
+
+/**
+ * Records that `key` was refused with 401: it stops being offered (so
+ * hasGskAuth() / ai:gsk-status report signed-out and the existing sign-in UI
+ * appears) and the re-mint / re-login recovery starts. The invalidation is
+ * synchronous, before the first await, so a caller can report the failure
+ * right after this returns.
+ */
+export function noteGskKeyRejected(
+  key: string,
+  options: { allowLogin?: boolean } = {},
+): Promise<GskRecoveryOutcome> {
+  if (key) rejectedKeys.add(key)
+  return recoverFromRejectedGskKey(key, options)
+}
+
+/**
+ * For callers that used the gsk key outside this module (the Genspark LLM
+ * proxy chat/stream): when `error` reports a 401, drop the key and start the
+ * recovery in the background. Returns whether it was an auth failure.
+ */
+export function noteGskCallFailure(key: string, error: unknown): boolean {
+  if (!key) return false
+  const text = error instanceof Error ? error.message : String(error ?? '')
+  if (!isGskUnauthorizedText(text)) return false
+  void noteGskKeyRejected(key).catch(() => {})
+  return true
+}
+
+/**
+ * Runs `call` with the current key; on a 401 drops the key and, when the
+ * stored session minted a replacement, retries exactly once with it.
+ */
+async function withKeyRecovery<T>(
+  call: (key: string) => Promise<T>,
+  options: { allowLogin?: boolean } = {},
+): Promise<T> {
+  const key = gskApiKey()
+  try {
+    return await call(key)
+  } catch (err) {
+    if (!(err instanceof GskAuthError)) throw err
+    const outcome = await noteGskKeyRejected(key, options)
+    const next = gskApiKey()
+    if (outcome !== 'reminted' || !next || next === key) throw err
+    return call(next)
+  }
+}
+
+/** Test hook: forget rejected keys. */
+export function resetGskRejectedKeys(): void {
+  rejectedKeys.clear()
 }
 
 /**
@@ -284,11 +367,28 @@ export function parseGskOutput(stdout: string): unknown {
   throw new Error(`No JSON found in gsk output: ${summarizeGskFailure(stdout, '')}`)
 }
 
-function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<unknown> {
+/** `passive`: a status/background call — a rejected key is dropped but no browser login opens */
+function runGsk(
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+  passive = false,
+): Promise<unknown> {
   const entry = resolveGskEntry()
   if (!entry) return Promise.reject(new Error('@genspark/cli is not installed'))
+  return withKeyRecovery((key) => runGskOnce(entry, key, args, timeoutMs, signal), {
+    allowLogin: !passive,
+  })
+}
+
+function runGskOnce(
+  entry: string,
+  key: string,
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
   // inject the resolved key so the CLI bills the same identity as our direct HTTP calls
-  const key = gskApiKey()
   return new Promise((resolve, reject) => {
     execFile(
       process.execPath,
@@ -308,21 +408,24 @@ function runGsk(args: string[], timeoutMs: number, signal?: AbortSignal): Promis
           // page); err.message only repeats the command line, so use it alone
           // when stderr has nothing
           const stderrText = summarizeGskFailure(stderr, '')
-          reject(
-            new Error(
-              stderrText
-                ? `gsk failed: ${stderrText}`
-                : summarizeGskFailure((err as Error).message, 'gsk failed'),
-            ),
-          )
+          const message = stderrText
+            ? `gsk failed: ${stderrText}`
+            : summarizeGskFailure((err as Error).message, 'gsk failed')
+          // the CLI prints a refused call's {status:'error', message:'HTTP 401…'} on stdout
+          const unauthorized =
+            !!key && (isGskUnauthorizedText(stdout) || isGskUnauthorizedText(stderr))
+          reject(unauthorized ? new GskAuthError(message) : new Error(message))
           return
         }
         try {
           const result = parseGskOutput(String(stdout))
           const rec = asRecord(result)
           if (rec.status && rec.status !== 'ok') {
+            const message = `gsk returned an error: ${summarizeGskFailure(rec.message ?? rec.status)}`
             reject(
-              new Error(`gsk returned an error: ${summarizeGskFailure(rec.message ?? rec.status)}`),
+              key && isGskUnauthorizedText(rec.message)
+                ? new GskAuthError(message)
+                : new Error(message),
             )
             return
           }
@@ -540,8 +643,17 @@ async function toolCliPost(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const key = gskApiKey()
-  if (!key) throw new Error('Not logged in to Genspark (gsk login)')
+  if (!gskApiKey()) throw new Error('Not logged in to Genspark (gsk login)')
+  return withKeyRecovery((key) => toolCliPostOnce(key, path, body, timeoutMs, signal))
+}
+
+async function toolCliPostOnce(
+  key: string,
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
   // A listener added to an already-aborted signal never fires; the billed POST would go out.
   if (signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError')
   // The shared watchdog surfaces our own deadline as AiTimeoutError instead of a bare abort.
@@ -559,7 +671,10 @@ async function toolCliPost(
       signal: watchdog.signal,
     })
     const text = new TextDecoder().decode(await readBodyCapped(resp, MAX_TOOL_CLI_NDJSON_BYTES))
-    if (!resp.ok) throw new Error(`tool_cli ${path} HTTP ${resp.status}: ${text.slice(0, 200)}`)
+    if (!resp.ok) {
+      const message = `tool_cli ${path} HTTP ${resp.status}: ${text.slice(0, 200)}`
+      throw resp.status === 401 ? new GskAuthError(message) : new Error(message)
+    }
     const result = parseToolCliNdjson(text)
     if (result.status !== 'ok') {
       throw new Error(`tool_cli ${path} failed: ${result.message ?? result.status}`)
@@ -749,7 +864,8 @@ export async function gskListPastProjects(
   if (options.artifactTypes?.length) args.push('--artifact_types', ...options.artifactTypes)
   if (options.limit !== undefined) args.push('--limit', String(options.limit))
   if (options.offset) args.push('--offset', String(options.offset))
-  const raw = await runGsk(args, SEARCH_TIMEOUT_MS, options.signal)
+  // background sync: never the reason a browser window opens
+  const raw = await runGsk(args, SEARCH_TIMEOUT_MS, options.signal, true)
   return parseGskPastProjects(raw)
 }
 
@@ -762,7 +878,7 @@ export interface GskLoginInfo {
 /** Current login info; null when not logged in */
 export async function gskLoginInfo(): Promise<GskLoginInfo | null> {
   try {
-    const raw = await runGsk(['login-info'], SEARCH_TIMEOUT_MS)
+    const raw = await runGsk(['login-info'], SEARCH_TIMEOUT_MS, undefined, true)
     const d = asRecord(asRecord(raw).data ?? raw)
     if (!d.email) return null
     const info: GskLoginInfo = {

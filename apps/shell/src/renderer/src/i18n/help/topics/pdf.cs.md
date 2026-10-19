@@ -64,6 +64,9 @@ Co očekávat:
 - **Ruční podpis**: nakreslete jej; lze jej připojit k poli podpisu ve formuláři.
 - **Podpis jako obrázek**: umístěte podpis jako obrázek.
 - Uložené podpisy lze opakovaně používat.
+- **Podpis certifikátem** (karta Anotovat): podepište certifikátem ze systémového úložiště nebo ze souboru .p12/.pfx; volitelně ukážete podpis na stránce a volitelně certifikujete dokument proti pozdějším změnám.
+- Podepsání vždy zapíše **nový soubor** (přírůstková aktualizace — dřívější podpisy zůstávají platné) a podepsaná kopie se otevře na místě. Nejdřív uložte: podpis kryje soubor takový, jaký leží na disku.
+- Banner nad dokumentem vypíše existující podpisy; **Zobrazit podpisy** ukáže platnost, pokrytí a řetěz certifikátů každého z nich. Odvolání (CRL/OCSP) se nekontroluje.
 
 ## Operace se stránkami (Stránky)
 

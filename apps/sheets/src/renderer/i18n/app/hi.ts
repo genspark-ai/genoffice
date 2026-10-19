@@ -324,7 +324,9 @@ export const hi = {
   appFullLoadRunning:
     'पूरी वर्कबुक लोड हो रही है — पूरा होते ही क्रमबद्ध करना और फ़िल्टर उपलब्ध होंगे…',
   appFullLoadTooLarge:
-    'यह वर्कबुक मेमोरी में पूरी तरह लोड करने के लिए बहुत बड़ी है; इस फ़ाइल पर क्रमबद्ध करना और फ़िल्टर उपलब्ध नहीं हैं।',
+    'यह वर्कबुक मेमोरी में पूरी तरह लोड करने के लिए बहुत बड़ी है; इस फ़ाइल के लिए सॉर्ट और रेंज स्थानांतरण उपलब्ध नहीं हैं। फ़िल्टर सीधे फ़ाइल पर चलता है।',
+  appLargeFilterLoading: 'फ़ाइल से फ़िल्टर कॉलम पढ़ा जा रहा है…',
+  appLargeFilterApplying: 'फ़ाइल पर फ़िल्टर लागू किया जा रहा है…',
   appSortValueModeFormulas:
     'इस श्रेणी में सूत्र हैं जो इस बड़ी वर्कबुक में लाइव गणना नहीं होते — इसे क्रमबद्ध या स्थानांतरित करने पर वे सादे मानों के रूप में सहेजे जाएँगे। बिना सूत्र वाली श्रेणी चुनें।',
   appSortRangeTooLarge:
@@ -551,6 +553,8 @@ export const hi = {
   appPrintFailed: 'प्रिंट नहीं किया जा सका।',
   appPrintNeedsFullLoad:
     'प्रिंट करने के लिए कार्यपुस्तिका पूरी लोड होनी चाहिए — लोडिंग पूरी होने तक प्रतीक्षा करें।',
+  appPrintWorkbookTooLarge:
+    'यह वर्कबुक इतनी बड़ी है कि इसे पूरी तरह मेमोरी में लोड नहीं किया जा सकता, इसलिए इसे प्रिंट या PDF में निर्यात नहीं किया जा सकता।',
   appCsvExportNeedsFullLoad:
     'CSV निर्यात के लिए पूरी तरह लोड की गई कार्यपुस्तिका चाहिए — लोडिंग पूरी होने तक प्रतीक्षा करें।',
   appCsvExportTooLarge: 'शीट बहुत बड़ी है, CSV के रूप में निर्यात नहीं की जा सकती।',
@@ -689,6 +693,7 @@ export const hi = {
   appTabReview: 'समीक्षा',
   appRibbonCollapse: 'रिबन संक्षिप्त करें',
   appRibbonExpand: 'रिबन विस्तृत करें',
+  appRibbonCompact: 'कॉम्पैक्ट रिबन (केवल आइकन)',
   appTabView: 'दृश्य',
   appTabAi: 'AI',
   appTabChartDesign: 'चार्ट डिज़ाइन',
@@ -1088,6 +1093,9 @@ export const hi = {
   appHeadings: 'शीर्षक',
   appHeadingsHidden: 'शीर्षक छिपाए गए।',
   appHeadingsShown: 'शीर्षक दिखाए गए।',
+  appRightToLeft: 'दाएँ से बाएँ',
+  appRightToLeftOn: 'ग्रिड दिशा: दाएँ से बाएँ।',
+  appRightToLeftOff: 'ग्रिड दिशा: बाएँ से दाएँ।',
   appPrintHeadingsTitle: 'पंक्ति और स्तंभ शीर्षक मुद्रित करें',
   appGroupFunctionLibrary: 'फ़ंक्शन लाइब्रेरी',
   appInsertFunction: 'फ़ंक्शन सम्मिलित करें',
@@ -1230,6 +1238,10 @@ export const hi = {
   appFontSizeTip: 'फ़ॉन्ट का आकार',
   appZoomIn: 'ज़ूम इन',
   appZoomOut: 'ज़ूम आउट',
+  appImgActualSize: 'वास्तविक आकार',
+  appImgFitWindow: 'विंडो में फ़िट करें',
+  appImgSaveAs: 'चित्र इस रूप में सहेजें…',
+  appImgClose: 'बंद करें (Esc)',
   appZoomSheetTitle: 'शीट ज़ूम करें',
   appResetZoom: 'ज़ूम रीसेट करें',
   appZoomToSelection: 'चयन पर ज़ूम करें',
@@ -1496,6 +1508,8 @@ export const hi = {
   appVisualSendBackward: 'पीछे भेजें (एक स्तर)',
   appVisualSizeProperties: 'आकार और गुण…',
   appVisualHyperlink: 'हाइपरलिंक…',
+  appVisualEmbedInCell: 'छवि को कक्ष में एम्बेड करें',
+  appVisualEmbedFailed: 'इस छवि को कक्ष में एम्बेड नहीं किया जा सका।',
   appVisualDelete: 'हटाएँ',
   appVisualArranged: 'ऑब्जेक्ट अपडेट हुआ — ⌘S से सहेजें।',
   appVisualCopied: 'ऑब्जेक्ट कॉपी हुआ।',

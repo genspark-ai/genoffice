@@ -309,7 +309,7 @@ const TOOLS: AgentToolDef[] = [
       "- setBox(id, {x?,y?,w?,h?,rotation?}): set an element's target box, pass only fields to change\n" +
       '- moveBy(id, dx, dy): relative move (left = negative dx, up = negative dy)\n' +
       '- resizeBy(id, dw, dh): relative resize\n' +
-      '- setText(id, textOrParagraphs): replace text entirely; pass a string (split into paragraphs by \\n) or a paragraph array (same format as apply_ops setText paragraphs)\n' +
+      '- setText(id, textOrParagraphs): replace text entirely; pass a string (split into paragraphs by \\n) or a paragraph array (same format as apply_ops setText paragraphs). Plain runs/strings inherit the original size, color and font — do not add fontSize/color/fontFamily unless the user asked to restyle\n' +
       '- setStyle(id, {fontSize?,color?,bold?,italic?,underline?,align?,fontFamily?}): change style without changing text, pass only fields to change\n' +
       "- setFill(id, colorOrNone): solid fill '#RRGGBB' or 'none'\n" +
       '- setStroke(id, {color?,widthPt?} | null): stroke; pass null to remove\n' +
@@ -737,7 +737,7 @@ const TOOLS: AgentToolDef[] = [
     description:
       '[Canonical edit surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). This is THE tool for every edit without a dedicated tool (fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, table cells, structure and styling, page background, speaker notes, page delete/move/duplicate, transitions, sections, theme) and for multi-page or many-element batches; a single op is a perfectly fine batch. For one-page layout math prefer execute_slide_script.\n' +
       'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +
-      'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt.\n' +
+      'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt. setText on an existing element: runs with only `text` inherit the original run formatting (size, color, font) — leave fontSize/color/fontFamily out unless the user asked to change the style.\n' +
       'Full op reference (the same executor every editing surface uses), one signature per op; ? marks optional fields:\n' +
       opSignatureIndex() +
       '\naddChart additionally takes dataSource:"user"|"document"|"search"|"sample" (figure provenance, checked before the batch runs; "search" needs a web_search in this conversation).' +
@@ -1469,8 +1469,9 @@ async function executeTool(
       if (counts.fill > 0) parts.push(`fill ${counts.fill} item(s)`)
       if (counts.stroke > 0) parts.push(`stroke ${counts.stroke} item(s)`)
       const issues = auditSlideLayout(applied.slide)
+      const notesStr = applied.notes?.length ? `\nNote:\n${applied.notes.join('\n')}` : ''
       return {
-        output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${formatAudit(issues)}`,
+        output: `Applied the edit script to page ${idx + 1}: ${parts.join(', ')}.${returnedStr}${logsStr}${notesStr}${formatAudit(issues)}`,
         mutated: true,
         summary: t('aiSumScript', { n: idx + 1, count: r.ops.length + r.edits.length }),
       }
@@ -2581,10 +2582,14 @@ async function executeTool(
       const doneStr = (r.records ?? [])
         .map((rec) => `${rec.op}${rec.target ? ` @${rec.target}` : ''}`)
         .join(', ')
+      const notes = (r.records ?? [])
+        .filter((rec) => rec.note)
+        .map((rec) => `${rec.target ?? rec.op}: ${rec.note}`)
       return {
         output:
           `Applied ${r.records?.length ?? 0} op(s): ${doneStr}.` +
           (created.length ? ` New element ids: ${created.join(', ')}.` : '') +
+          (notes.length ? `\nNote:\n${notes.join('\n')}` : '') +
           (failLines ? `\nSkipped (per_op):\n${failLines}` : '') +
           (pre.sampleData ? SAMPLE_DATA_NOTE : '') +
           auditTouchedPages(r.records, r.slides!),

@@ -46,7 +46,7 @@ O documento novo abre sem título; o ficheiro no disco só é criado no primeiro
 | Abrir este manual          | F1    | F1              |
 | Recolher a Faixa de Opções | ⌥⌘R   | Ctrl+F1         |
 
-**Recolher a Faixa de Opções** funciona em todos os editores. A linha de guias mantém-se e a faixa de comandos por baixo desaparece; a guia selecionada serve também de controlo de recolha, pelo que enquanto a faixa estiver recolhida não há nenhuma guia selecionada e premir qualquer uma das guias traz a faixa de volta. Um duplo clique numa guia faz o mesmo. O sentido em que a deixou é guardado editor a editor.
+**Recolher a Faixa de Opções** funciona em todos os editores. A linha de guias mantém-se e a faixa de comandos por baixo desaparece; a guia selecionada serve também de controlo de recolha, pelo que enquanto a faixa estiver recolhida não há nenhuma guia selecionada e premir qualquer uma das guias traz a faixa de volta. Um duplo clique numa guia faz o mesmo. O sentido em que a deixou é guardado editor a editor. O Docs acrescenta uma densidade intermediária: **⌥⌘K** / Ctrl+Alt+K compacta a faixa só em ícones, memorizada do mesmo jeito.
 
 Os atalhos dentro de cada editor (pincel de formatação, pesquisar e substituir, operações de tabela, ...) estão nos respetivos capítulos; o Docs traz ainda uma janela de atalhos de teclado pesquisável (**⌘/**) (consulte o seu capítulo).
 

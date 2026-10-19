@@ -202,6 +202,8 @@ export interface DrawingAnchorMeta {
   pageYEmu?: number
   /** wp:wrapTopAndBottom: body text is excluded from the drawing's vertical band */
   topBottom?: boolean
+  /** layoutInCell="0": a cell-anchored drawing positions against the page/column, not its cell */
+  outsideCell?: boolean
   anchored?: boolean
   /** wp:positionH/V relativeFrom */
   relH?: string
@@ -215,9 +217,11 @@ export interface DrawingAnchorMeta {
   /** wp:extent (drawing size) */
   extentXEmu?: number
   extentYEmu?: number
-  /** wp:anchor distL/distR: text clearance beside a side-wrapped drawing */
+  /** wp:anchor distL/distR/distT/distB: text clearance around a side-wrapped drawing */
   distLEmu?: number
   distREmu?: number
+  distTEmu?: number
+  distBEmu?: number
   /** relativeHeight − Word's 251658240 base: paint order among overlapping anchors */
   z?: number
 }
@@ -277,7 +281,7 @@ export function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
   }
   meta.offsetXEmu = posOf('H')
   meta.offsetYEmu = posOf('V')
-  for (const side of ['L', 'R'] as const) {
+  for (const side of ['L', 'R', 'T', 'B'] as const) {
     const v = parseInt(
       new RegExp(`\\bdist${side}\\s*=\\s*["'](\\d+)["']`).exec(anchorTag)?.[1] ?? '',
       10,
@@ -320,6 +324,7 @@ export function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
   const relHeight = Number(/relativeHeight\s*=\s*["'](\d+)["']/.exec(anchorTag)?.[1] ?? NaN)
   if (Number.isFinite(relHeight) && relHeight - 251658240 !== 0) meta.z = relHeight - 251658240
   if (ownXml.includes('<wp:wrapTopAndBottom')) meta.topBottom = true
+  if (/layoutInCell\s*=\s*["'](?:0|false)["']/.test(anchorTag)) meta.outsideCell = true
   return meta
 }
 

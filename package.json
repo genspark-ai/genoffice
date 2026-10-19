@@ -46,12 +46,13 @@
   },
   "overrides": {
     "nanoid@3": "^3.3.17",
-    "nanoid@5": "^5.1.16"
+    "nanoid@5": "^5.1.16",
+    "katex": "^0.18.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
-    "concurrently": "^9.2.4",
+    "concurrently": "^9.2.5",
     "cross-env": "^10.1.0",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",

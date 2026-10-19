@@ -30,6 +30,25 @@ describe('w:doNotUseIndentAsNumberingTabStop', () => {
   })
 })
 
+describe('w:doNotExpandShiftReturn', () => {
+  it('surfaces the compat flag', async () => {
+    const on = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraParts: [settingsPart('<w:doNotExpandShiftReturn/>')],
+      }),
+    )
+    expect(on.doNotExpandShiftReturn).toBe(true)
+    const off = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraParts: [settingsPart('<w:doNotExpandShiftReturn w:val="false"/>')],
+      }),
+    )
+    expect(off.doNotExpandShiftReturn).toBeUndefined()
+  })
+})
+
 describe('w:sz clamp', () => {
   it('lays out w:sz=0 at one half-point like Word, not at the default size', async () => {
     const doc = await parseDocx(

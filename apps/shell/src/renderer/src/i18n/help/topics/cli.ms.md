@@ -13,7 +13,7 @@ Itulah keseluruhan permukaannya dalam satu skrin — setiap arahan dengan satu b
 
 ## Mendapatkan perintah itu
 
-macOS dan Windows menghantarnya di dalam bungkus aplikasi. Untuk menggunakannya mengikut nama, jalankan `genoffice install-cli` sekali: ia membuat symlink bagi binari yang dibungkus itu ke dalam `/usr/local/bin`, atau ke dalam `PATH` pengguna anda pada Windows.
+macOS dan Windows menyertainya dalam bungkusan aplikasi. Untuk memanggilnya dengan nama, jalankan sekali `genoffice install-cli`: ia memautkan binari bungkusan ke direktori pada PATH anda — pada macOS `/usr/local/bin` selagi itu bukan prefiks Homebrew (direktori milik Homebrew tidak pernah disentuh), jika tidak ke bin pengguna anda — atau pada Windows ke `PATH` pengguna anda.
 
 ## Perintah yang perlu diketahui
 

@@ -176,4 +176,17 @@ export const he = {
   aiCmdImages: 'עודכנו {count} תמונות',
   aiCmdToc: 'הוסף תוכן עניינים ({count} ערכים)',
   aiCmdSkipped: ' (דולגו {count} בלוקים מוגנים)',
+  aiStarterMindMap: 'צור מפת חשיבה של המסמך הזה',
+  aiMindMapBtn: 'מפת חשיבה AI',
+  aiMindMapPrompt:
+    'צור מפת חשיבה של המסמך הזה וארגן את הנושאים המרכזיים והמושגים המפתח לפי מבח הסעיפים',
+  aiSumMindMap: 'יצירת מפת חשיבה',
+  aiMindMapTitle: 'מפת חשיבה',
+  aiMindMapNodes: '{count} צמתים',
+  aiMindMapAskPrompt: 'ספר לי על «{label}» במסמך הזה',
+  aiMindMapJump: 'מעבר לקטע המצוטט',
+  aiMindMapExport: 'ייצוא PNG',
+  aiMindMapReset: 'איפוס תצוגה',
+  aiMindMapExpand: 'הרחב ענף',
+  aiMindMapCollapse: 'כווץ ענף',
 } satisfies Record<keyof typeof zh, string>

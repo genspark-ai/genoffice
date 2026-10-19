@@ -251,6 +251,15 @@ export const ru = {
     'Общая продолжительность показа: {duration}. Сохранить время показа слайдов для автоматической смены?',
   appRehearseDiscard: 'Не сохранять',
   appRehearseSave: 'Сохранить',
+  appRecordTitle: 'Записать речевое сопровождение',
+  appRecordSummary:
+    'Длительность записи: {duration}. Сохранить речевое сопровождение и время каждого слайда?',
+  appRecordDiscard: 'Не сохранять',
+  appRecordSave: 'Сохранить',
+  appStatusRecordSaved:
+    'Речевое сопровождение сохранено, слайдов: {count} (PowerPoint его тоже воспроизводит)',
+  appStatusRecordFailed: 'Не удалось сохранить запись',
+  appStatusNarrationCleared: 'Речевое сопровождение очищено',
   appSettingsTitle: 'Настройки ИИ',
   appSettingsAccount: 'Учетная запись Genspark',
   appSettingsChecking: 'Проверка…',

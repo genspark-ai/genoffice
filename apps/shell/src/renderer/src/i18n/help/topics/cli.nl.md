@@ -13,7 +13,7 @@ Dat is het hele oppervlak op één scherm — elke opdracht met een regel die ze
 
 ## De opdracht bemachtigen
 
-macOS en Windows leveren hem mee in de app-bundel. Wil je hem bij naam gebruiken, voer dan eenmalig `genoffice install-cli` uit: die maakt een symbolische koppeling naar het meegeleverde binaire bestand in `/usr/local/bin`, of in je gebruikers-`PATH` op Windows.
+macOS en Windows leveren het mee in de app-bundel. Om het bij naam aan te roepen, voer eenmaal `genoffice install-cli` uit: het koppelt de gebundelde binary in een map op uw PATH — op macOS `/usr/local/bin` zolang dat geen Homebrew-prefix is (Homebrews eigen mappen worden nooit aangeraakt), anders uw gebruikers-bin — of in uw gebruikers-`PATH` op Windows.
 
 ## De opdrachten die je moet kennen
 

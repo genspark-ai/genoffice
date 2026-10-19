@@ -345,7 +345,9 @@ export const pt = {
   appFullLoadRunning:
     'Carregando toda a pasta de trabalho — classificar e filtrar ficarão disponíveis ao concluir…',
   appFullLoadTooLarge:
-    'Esta pasta de trabalho é grande demais para ser totalmente carregada na memória; classificar e filtrar não estão disponíveis para este arquivo.',
+    'Esta pasta de trabalho é grande demais para ser carregada por completo na memória; ordenar e mover intervalos não estão disponíveis para este arquivo. A filtragem é executada diretamente no arquivo.',
+  appLargeFilterLoading: 'Lendo a coluna do filtro a partir do arquivo…',
+  appLargeFilterApplying: 'Aplicando o filtro no arquivo…',
   appSortValueModeFormulas:
     'Este intervalo contém fórmulas que não são calculadas ao vivo nesta pasta grande — classificá-lo ou movê-lo as salvaria como valores simples. Escolha um intervalo sem fórmulas.',
   appSortRangeTooLarge:
@@ -588,6 +590,8 @@ export const pt = {
   appPrintFailed: 'Não foi possível imprimir.',
   appPrintNeedsFullLoad:
     'A impressão requer que a pasta de trabalho esteja totalmente carregada; aguarde o fim do carregamento.',
+  appPrintWorkbookTooLarge:
+    'Esta pasta de trabalho é grande demais para ser carregada por completo na memória, por isso não pode ser impressa nem exportada para PDF.',
   appCsvExportNeedsFullLoad:
     'A exportação de CSV requer a pasta de trabalho totalmente carregada — aguarde o carregamento terminar.',
   appCsvExportTooLarge: 'A planilha é grande demais para exportar como CSV.',
@@ -728,6 +732,7 @@ export const pt = {
   appTabReview: 'Revisão',
   appRibbonCollapse: 'Recolher a Faixa de Opções',
   appRibbonExpand: 'Expandir a Faixa de Opções',
+  appRibbonCompact: 'Faixa compacta (somente ícones)',
   appTabView: 'Exibir',
   appTabAi: 'IA',
   appTabChartDesign: 'Design do Gráfico',
@@ -1128,6 +1133,9 @@ export const pt = {
   appHeadings: 'Títulos',
   appHeadingsHidden: 'Cabeçalhos ocultos.',
   appHeadingsShown: 'Cabeçalhos exibidos.',
+  appRightToLeft: 'Da direita para a esquerda',
+  appRightToLeftOn: 'Direção da grade: da direita para a esquerda.',
+  appRightToLeftOff: 'Direção da grade: da esquerda para a direita.',
   appPrintHeadingsTitle: 'Imprimir títulos de linha e coluna',
   appGroupFunctionLibrary: 'Biblioteca de Funções',
   appInsertFunction: 'Inserir Função',
@@ -1271,6 +1279,10 @@ export const pt = {
   appFontSizeTip: 'Tamanho da fonte',
   appZoomIn: 'Ampliar',
   appZoomOut: 'Reduzir',
+  appImgActualSize: 'Tamanho real',
+  appImgFitWindow: 'Ajustar à janela',
+  appImgSaveAs: 'Salvar imagem como…',
+  appImgClose: 'Fechar (Esc)',
   appZoomSheetTitle: 'Aplicar zoom na planilha',
   appResetZoom: 'Redefinir zoom',
   appZoomToSelection: 'Zoom na Seleção',
@@ -1541,6 +1553,8 @@ export const pt = {
   appVisualSendBackward: 'Recuar',
   appVisualSizeProperties: 'Tamanho e propriedades…',
   appVisualHyperlink: 'Hiperligação…',
+  appVisualEmbedInCell: 'Inserir imagem na célula',
+  appVisualEmbedFailed: 'Não foi possível inserir esta imagem na célula.',
   appVisualDelete: 'Eliminar',
   appVisualArranged: 'Objeto atualizado — guarde com ⌘S.',
   appVisualCopied: 'Objeto copiado.',

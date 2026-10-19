@@ -25,13 +25,14 @@ import type { TextBlock } from '../text-block'
 import { joinBlockLines, measurePt, wrapText } from '../text-wrap'
 import { isScannedText } from '../ocr-layer'
 import { t } from '../i18n/locale'
-import { buildFormCatalog } from '../form-catalog'
+import { buildFormCatalog, type FormWidget } from '../form-catalog'
 import { flattenThread, type NoteThreadItem } from '../note-threads'
 import type { StampConfig } from '../edit-state'
 import { boldToken } from '../text-edit-preview'
 import type { LocalTextInsert } from '../text-edit-preview'
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK } from '../stamps'
 import { STATIC_FORM_MARK_SIZE } from '../static-form-fill'
+import { checkboxWidgetAt, markRectForBox, printedBoxAt } from '../form-mark-target'
 import { PAPER_SIZES, parsePageRanges } from '../view-config'
 import { DEFAULT_CUTOUT_TOLERANCE, cropRect } from '../image-bake'
 import type { CropFractions, ImageBakeOp } from '../image-bake'
@@ -119,6 +120,10 @@ export interface PdfAiDeps {
     kind: 'check' | 'cross',
     rect: [number, number, number, number],
   ): void
+  /** Interactive widgets on a page (PDF user space rects) */
+  formWidgets(origIdx: number): readonly FormWidget[]
+  /** Drawn-path boxes on a page (PDF user space), for fitting marks to printed check boxes */
+  pageBoxes(origIdx: number): Promise<readonly (readonly [number, number, number, number])[]>
   /** Queue a new text block; returns its pending id */
   /** Record id of the new insert; null with the reason when the edit was rejected */
   insertText(input: TextInsertInput): { id: string } | { error: string }
@@ -183,10 +188,13 @@ export interface PdfAiDeps {
   createDocument(request: CreateDocumentRequest): Promise<CreateDocumentResult>
   /** Inline confirmation card for a file-level operation; false when the user declines, the run is stopped, or the panel goes away */
   confirmFileOp(req: FileOpConfirm, signal?: AbortSignal): Promise<boolean>
+  /** Pending edit (undoable, saved with the document): a blank page after the given original page; null = first */
+  insertBlankPage(
+    afterOrigIdx: number | null,
+  ): { ok: true; pageIndex: number } | { ok: false; error: string }
   /** File-level page operations (below): flush unsaved edits, rewrite the file on disk or write a new
       one, reload. Irreversible, so every call must pass confirmFileOp first. Page indices are positions
       in the flushed file, i.e. visible positions. */
-  insertBlankPage(afterVisIdx: number): Promise<FileOpResult>
   setPageSize(width: number, height: number): Promise<FileOpResult>
   cropPages(visIdxs: number[], rect: CropRect): Promise<FileOpResult>
   /** main pops a native picker for the replacement PDF */
@@ -548,7 +556,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'add_form_mark',
     description:
-      'Place a check mark or cross on a page (drawn as new content; takes effect on save). Use it to tick check boxes printed on non-interactive forms — interactive check boxes are set with apply_ops setFormValue instead. Position exactly like insert_text: anchor_text (verbatim fragment, e.g. the label next to the box) plus placement, with the mark centered against that side of the anchor, or x/y as the TOP-LEFT corner of the mark in points from the page top-left as displayed.',
+      'Place a check mark or cross on a page (drawn as new content; takes effect on save). Use it to tick check boxes printed on non-interactive forms — interactive check boxes are set with apply_ops setFormValue instead. Position exactly like insert_text: anchor_text (verbatim fragment, e.g. the label next to the box) plus placement, with the mark centered against that side of the anchor, or x/y as the TOP-LEFT corner of the mark in points from the page top-left as displayed. The mark fits itself to a printed box under its center; when that spot is an interactive check box the field is ticked instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -918,7 +926,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'apply_ops',
     description:
-      "Apply a list of canonical pending edits as ONE transaction and ONE undo step — atomic: any invalid op rejects the whole batch and nothing is applied. This is THE tool for rotating, deleting and reordering pages, filling form fields (call list_form_fields first) and setting document properties, and for removing a pending highlight or inserted text block or rewriting a pending note; a single op is a perfectly fine batch. Everything stays unsaved until the user saves. Page numbers are the document's 1-based numbers like every other tool (to rotate every page, list them all); ids are the P… / T… ids the read tools report.\n" +
+      "Apply a list of canonical pending edits as ONE transaction and ONE undo step — atomic: any invalid op rejects the whole batch and nothing is applied. This is THE tool for rotating, deleting and reordering pages, filling form fields (call list_form_fields first), authoring new fillable fields (addFormField) and setting document properties, and for removing a pending highlight or inserted text block or rewriting a pending note; a single op is a perfectly fine batch. Everything stays unsaved until the user saves. Page numbers are the document's 1-based numbers like every other tool (to rotate every page, list them all); ids are the P… / T… ids the read tools report.\n" +
       'Set dry_run:true to validate the batch without changing anything. A failing op returns its exact signature; an unknown op name returns the full vocabulary.\n' +
       'Op reference (? marks optional fields):\n' +
       opSignatureIndex(),
@@ -942,7 +950,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'insert_blank_page',
     description:
-      'Insert a blank page (same size as its neighbor) after the given page; after_page 0 inserts it as the first page. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer apply_ops (deletePage / setPageOrder / rotatePages) when it suffices.',
+      'Insert a blank page (same size as its neighbor) after the given page; after_page 0 inserts it as the first page. A pending edit like rotatePages/deletePage: it shows up immediately, the user can drag or undo it, and it is written to the file when they save. Existing pages keep their original numbers; the result tells you the original page number to use when addressing the new page in later tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1767,28 +1775,21 @@ async function insertBlankPageTool(
   input: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<ToolExecution> {
+  void signal
   const after = Number(input.after_page)
-  const resolveAfterVis = (): number | { bad: string } => {
-    if (after === 0) return -1
+  let afterOrig: number | null = null
+  if (after !== 0) {
     const r = resolvePage(deps, input.after_page)
-    if ('bad' in r) return r
-    const vis = deps.pageOrder().indexOf(r.origIdx)
-    return vis < 0 ? { bad: `Page ${after} is not in the page order` } : vis
+    if ('bad' in r) return err(r.bad, t('aiToolInsertBlankPage', { pos: '?' }))
+    afterOrig = r.origIdx
   }
-  const afterVis = resolveAfterVis()
-  if (typeof afterVis !== 'number')
-    return err(afterVis.bad, t('aiToolInsertBlankPage', { pos: '?' }))
-  const pos = afterVis + 2
+  const pos = (afterOrig === null ? 0 : deps.pageOrder().indexOf(afterOrig) + 1) + 1
   const summary = t('aiToolInsertBlankPage', { pos })
   if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-  const denied = await fileOpGate(deps, { summary }, signal)
-  if (denied) return { output: denied, summary }
-  if (resolveAfterVis() !== afterVis) return { output: LAYOUT_CHANGED_OUTPUT, summary }
-  const r = await deps.insertBlankPage(afterVis)
+  const r = deps.insertBlankPage(afterOrig)
   if (!r.ok) return err(r.error, summary)
-  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
   return {
-    output: `Inserted a blank page as page ${pos}; every page from there on moved down by one.${reloadedNote(r.pageCount)}`,
+    output: `Inserted a blank page as page ${pos} (pending until the user saves; undoable). Like every pending edit it is addressed by its original page number, ${r.pageIndex + 1}; existing pages keep their original numbers.`,
     mutated: true,
     summary,
   }
@@ -2287,10 +2288,26 @@ async function addFormMarkTool(
   ty = Math.min(Math.max(ty, 0), Math.max(disp.height - size, 0))
 
   if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
-  deps.addFormMark(r.origIdx, kind, dispToPdfRect(geom, tx, ty, size, size))
+  const [px, py] = viewToPdf(geom, tx + size / 2, ty + size / 2)
+  const widget = checkboxWidgetAt(deps.formWidgets(r.origIdx), px, py, size / 2)
+  if (widget) {
+    deps.applyOps([
+      { op: 'setFormValue', value: { name: widget.fieldName, kind: 'checkbox', checked: true } },
+    ])
+    deps.gotoPage(r.origIdx + 1)
+    return {
+      output: `That position is the interactive check box "${widget.fieldName}"; set it to checked instead of drawing a mark (unsaved; save with ⌘S).`,
+      mutated: true,
+      summary,
+    }
+  }
+  const box = printedBoxAt(await deps.pageBoxes(r.origIdx), px, py, size / 2)
+  const rect = box ? markRectForBox(box) : dispToPdfRect(geom, tx, ty, size, size)
+  deps.addFormMark(r.origIdx, kind, rect)
   deps.gotoPage(r.origIdx + 1)
+  const placed = box ? `fitted to the ${fmt(rect[2] - rect[0])} pt printed box` : `${fmt(size)} pt`
   return {
-    output: `Placed a ${kind === 'check' ? 'check mark' : 'cross'} on page ${r.origIdx + 1}: ${fmt(size)} pt at x=${fmt(tx)}, y=${fmt(ty)} (unsaved; the user can drag/resize it, undo with ⌘Z, save with ⌘S).`,
+    output: `Placed a ${kind === 'check' ? 'check mark' : 'cross'} on page ${r.origIdx + 1}: ${placed} at x=${fmt(tx)}, y=${fmt(ty)} (unsaved; the user can drag/resize it, undo with ⌘Z, save with ⌘S).`,
     mutated: true,
     summary,
   }
@@ -3407,6 +3424,41 @@ async function applyOpsTool(
           meta[k] = String(given[k]).trim()
         }
         ops.push({ op: o.op, metadata: { ...meta } })
+        break
+      }
+      case 'addFormField': {
+        const f = (o.field ?? {}) as Record<string, unknown>
+        const r = resolvePage(deps, f.page)
+        if ('bad' in r) {
+          bad(r.bad)
+          continue
+        }
+        const geom = deps.pageGeom(r.origIdx)
+        const nums = ['x', 'y', 'width', 'height'].map((k) => Number(f[k]))
+        if (!geom || nums.some((n) => !Number.isFinite(n)) || nums[2]! <= 0 || nums[3]! <= 0) {
+          bad(
+            'field needs x, y (top-left, points from the page top-left) and positive width, height',
+          )
+          continue
+        }
+        const [x, y, w, h] = nums as [number, number, number, number]
+        const a = viewToPdf(geom, x, y)
+        const b = viewToPdf(geom, x + w, y + h)
+        const { page: _page, x: _x, y: _y, width: _w, height: _h, ...rest } = f
+        focusPage ??= Number(f.page)
+        ops.push({
+          op: o.op,
+          field: {
+            ...rest,
+            pageIndex: r.origIdx,
+            rect: [
+              Math.min(a[0], b[0]),
+              Math.min(a[1], b[1]),
+              Math.max(a[0], b[0]),
+              Math.max(a[1], b[1]),
+            ],
+          },
+        })
         break
       }
       default:

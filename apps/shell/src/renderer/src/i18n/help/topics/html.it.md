@@ -7,6 +7,7 @@ L'editor HTML apre i file .html / .htm con due modalità: **anteprima** (la pagi
 - **Modalità sorgente**: modifica l'HTML; ctrl+F per cercare, Sostituisci tutto salva il markup riscritto.
 - **Salvataggio**: fedele byte per byte (BOM/CRLF/riga finale preservati); i salvataggi senza modifiche non riscrivono nulla.
 - **Zoom**: ctrl+rotellina / pizzicata ridimensiona l'anteprima; ctrl+Z dentro l'anteprima annulla l'ultima modifica.
+- **Nascondi all'IA**: in modalità sorgente, clic destro su una selezione — contenuti, valori di attributo, stringhe di script — e il modello vede un segnaposto; la pagina renderizzata non cambia mai (dettagli nel capitolo del pannello IA).
 
 ## La barra degli strumenti
 

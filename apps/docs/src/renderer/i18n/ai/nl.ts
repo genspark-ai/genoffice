@@ -185,4 +185,17 @@ export const nl = {
   aiCmdImages: '{count} afbeelding(en) bijgewerkt',
   aiCmdToc: 'Inhoudsopgave ingevoegd ({count} vermeldingen)',
   aiCmdSkipped: ' ({count} beveiligde blok(ken) overgeslagen)',
+  aiStarterMindMap: 'Maak een mindmap van dit document',
+  aiMindMapBtn: 'AI-mindmap',
+  aiMindMapPrompt:
+    'Maak een mindmap van dit document en orden de hoofdonderwerpen en kernconcepten naar de sectiestructuur',
+  aiSumMindMap: 'Mindmap maken',
+  aiMindMapTitle: 'Mindmap',
+  aiMindMapNodes: '{count} knooppunten',
+  aiMindMapAskPrompt: 'Vertel me over "{label}" in dit document',
+  aiMindMapJump: 'Ga naar het geciteerde fragment',
+  aiMindMapExport: 'PNG exporteren',
+  aiMindMapReset: 'Weergave opnieuw instellen',
+  aiMindMapExpand: 'Tak uitklappen',
+  aiMindMapCollapse: 'Tak inklappen',
 } satisfies Record<keyof typeof zh, string>

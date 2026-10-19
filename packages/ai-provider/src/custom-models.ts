@@ -1,6 +1,10 @@
-// Live model list for the `custom` provider — a user-hosted OpenAI-compatible
-// endpoint (OMLX, Ollama, LM Studio, vLLM, OpenRouter…) — over the one endpoint
-// they all implement: `GET {baseUrl}/models` returning `{ data: [{ id }] }`.
+// Live model list for the `custom` provider — a user-hosted endpoint (OMLX,
+// Ollama, LM Studio, vLLM, OpenRouter…) — over the listing route its declared
+// protocol speaks: `GET {baseUrl}/models` for OpenAI-compatible servers,
+// `GET {baseUrl}/v1/models` for Anthropic-shaped gateways, `GET
+// {baseUrl}/models` with the Google header for Gemini-shaped ones. A server
+// that answers the wrong probe simply yields the empty catalogue, so the
+// protocol-aware form degrades to the old behavior rather than breaking.
 // `codex` gets the same list from its app-server's `model/list`; the settings
 // screen turns either into a picker.
 //
@@ -8,7 +12,8 @@
 // failure, which is right for a chat turn and wrong for a background probe of a
 // local server that is very often simply not running. The user agent it would
 // have added is still set, since gateways reject a bare `node`.
-import type { CodexModelCatalog } from './types'
+import { customProtocolBaseUrl } from './custom-profile'
+import type { AiCustomModelProfile, AiCustomProtocol, CodexModelCatalog } from './types'
 import { withUserAgent } from './fetch'
 import { endpointUrl, readCappedResponseText } from './protocols/shared'
 import { createStreamWatchdog } from './watchdog'
@@ -27,8 +32,89 @@ function emptyCatalog(): CodexModelCatalog {
   return { models: [], defaultModel: '' }
 }
 
+/** Pull the id out of one list entry in any of the three protocols' shapes. */
+function entryId(entry: unknown): string | undefined {
+  if (typeof entry === 'string') return entry
+  if (typeof entry !== 'object' || entry === null) return undefined
+  const e = entry as Record<string, unknown>
+  // OpenAI: { id }; Anthropic: { id } already namespaced as "claude-…";
+  // Gemini: { name: "models/gemini-3.5-flash" } — strip the resource prefix.
+  const geminiName =
+    typeof e.name === 'string' && e.name.startsWith('models/')
+      ? e.name.slice('models/'.length)
+      : undefined
+  const id = typeof e.id === 'string' ? e.id : geminiName
+  return id
+}
+
+const posInt = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : undefined
+
 /**
- * The model ids a user-hosted OpenAI-compatible endpoint advertises.
+ * The capability declaration one list entry carries, when the endpoint
+ * publishes any. Field names differ per shape:
+ *
+ * - OpenAI-compatible gateways (the rich ones — vLLM, and aggregators that
+ *   serve many labs behind one key) answer `supports_images`,
+ *   `max_output_tokens`, `context_length` and a display `name`;
+ * - Gemini answers `inputTokenLimit` / `outputTokenLimit` and a resource
+ *   `name`, and says nothing about image input;
+ * - Anthropic answers a `display_name` and nothing else.
+ *
+ * Anything absent stays absent: the model declaration then falls through to
+ * the endpoint switches and the shipped heuristics, exactly as before.
+ */
+function profileOf(entry: unknown): AiCustomModelProfile | undefined {
+  const id = entryId(entry)?.trim()
+  if (!id) return undefined
+  if (typeof entry !== 'object' || entry === null) return { id }
+  const e = entry as Record<string, unknown>
+  const name = typeof e.name === 'string' && !e.name.startsWith('models/') ? e.name : undefined
+  const displayName = typeof e.display_name === 'string' ? e.display_name : undefined
+  const vision = typeof e.supports_images === 'boolean' ? e.supports_images : undefined
+  const maxTokens = posInt(e.max_output_tokens) ?? posInt(e.outputTokenLimit)
+  const contextWindow = posInt(e.context_length) ?? posInt(e.inputTokenLimit)
+  return {
+    id,
+    ...(displayName || name ? { name: (displayName ?? name)!.slice(0, 128) } : {}),
+    ...(vision !== undefined ? { vision } : {}),
+    ...(maxTokens !== undefined ? { maxTokens } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+  }
+}
+
+/** The listing route a protocol speaks, from the same base the chat request uses. */
+function probeSpec(
+  api: AiCustomProtocol,
+  base: string,
+  key: string,
+): { url: string; headers: Record<string, string>; listKey: 'data' | 'models' } {
+  if (api === 'anthropic') {
+    // anthropicTurn appends v1/messages to the base; the list rides the same v1 route
+    return {
+      url: endpointUrl(base, 'v1/models'),
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      listKey: 'data',
+    }
+  }
+  if (api === 'gemini') {
+    // geminiTurn appends models/<id>:generateContent to a versioned root
+    return {
+      url: endpointUrl(base, 'models'),
+      headers: { 'x-goog-api-key': key },
+      listKey: 'models',
+    }
+  }
+  return {
+    url: endpointUrl(base, 'models'),
+    headers: key ? { Authorization: `Bearer ${key}` } : {},
+    listKey: 'data',
+  }
+}
+
+/**
+ * The model ids a user-hosted endpoint advertises, probed on the route its
+ * declared protocol speaks (absent = the historic OpenAI-compatible shape).
  *
  * Never throws and never rejects: a refused, unreachable, slow, oversized,
  * non-JSON or unexpectedly shaped answer all return an empty catalogue, because
@@ -36,9 +122,10 @@ function emptyCatalog(): CodexModelCatalog {
  * box. An endpoint that cannot answer must not break the field the user types
  * into, and must not make noise about it either.
  *
- * The key is sent as `Authorization: Bearer …` only when one is given — an empty
- * `Bearer ` is a malformed credential that strict servers reject, and local
- * servers usually need no key at all.
+ * The key is sent under the protocol's own header (Bearer, x-api-key, or
+ * x-goog-api-key) only when one is given — an empty `Bearer ` is a malformed
+ * credential that strict servers reject, and local servers usually need no key
+ * at all.
  *
  * Server order is preserved, duplicate, non-string and blank ids are dropped,
  * and `defaultModel` is always `''`: `/models` carries no `isDefault` marker to
@@ -51,34 +138,49 @@ function emptyCatalog(): CodexModelCatalog {
 export async function listCustomModels(
   baseUrl: string,
   apiKey?: string,
+  api?: AiCustomProtocol,
 ): Promise<CodexModelCatalog> {
-  const base = baseUrl.trim().replace(/\/+$/, '')
-  if (!base) return emptyCatalog()
+  if (!baseUrl.trim()) return emptyCatalog()
   const key = (apiKey ?? '').trim()
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  if (key) headers.Authorization = `Bearer ${key}`
 
   const watchdog = createStreamWatchdog(undefined, REQUEST_TIMEOUT_MS)
   try {
     return await watchdog.guard(async () => {
+      // Inside the guard: an unparsable base URL is the old behavior's "empty
+      // catalogue", not a rejection. The base is composed exactly as the
+      // request path composes it (customProtocolBaseUrl), so the probe can
+      // never ask a route the chat turn would not use.
+      const base = customProtocolBaseUrl(api ?? 'openai-compatible', baseUrl)
+      const probe = probeSpec(api ?? 'openai-compatible', base, key)
       const response = await fetch(
-        endpointUrl(base, 'models'),
-        withUserAgent({ headers, signal: watchdog.signal }),
+        probe.url,
+        withUserAgent({
+          headers: { Accept: 'application/json', ...probe.headers },
+          signal: watchdog.signal,
+        }),
       )
       if (!response.ok) return emptyCatalog()
       const text = await readCappedResponseText(response, { maxBytes: MAX_BODY_BYTES })
-      const body = JSON.parse(text) as { data?: unknown } | null
-      const data = body?.data
-      if (!Array.isArray(data)) return emptyCatalog()
+      const body = JSON.parse(text) as { data?: unknown; models?: unknown } | null
+      // OpenAI and Anthropic answer { data: [...] }; Gemini answers { models: [...] }
+      const list = body?.[probe.listKey]
+      if (!Array.isArray(list)) return emptyCatalog()
       const seen = new Set<string>()
-      for (const entry of data) {
-        const id = (entry as { id?: unknown } | null)?.id
-        if (typeof id !== 'string') continue
-        const trimmed = id.trim()
-        if (trimmed) seen.add(trimmed)
+      const profiles: AiCustomModelProfile[] = []
+      for (const entry of list) {
+        const id = entryId(entry)?.trim()
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        const profile = profileOf(entry)
+        // an entry that declares nothing beyond its id is not a declaration
+        if (profile && Object.keys(profile).length > 1) profiles.push(profile)
         if (seen.size >= MAX_MODELS) break
       }
-      return { models: [...seen], defaultModel: '' }
+      return {
+        models: [...seen],
+        defaultModel: '',
+        ...(profiles.length > 0 ? { profiles } : {}),
+      }
     })
   } catch {
     return emptyCatalog()
@@ -89,13 +191,18 @@ export async function listCustomModels(
  * `listCustomModels` behind an `unknown` IPC payload.
  *
  * The validation lives here rather than in the main process so the hook there
- * stays one line: `{ baseUrl: string; apiKey?: string }`, anything else coerced
- * to "no base URL", which returns the empty catalogue.
+ * stays one line: `{ baseUrl: string; apiKey?: string; api?: string }`, anything
+ * else coerced to "no base URL", which returns the empty catalogue.
  */
 export function listCustomModelsForIpc(input: unknown): Promise<CodexModelCatalog> {
-  const raw = (input ?? {}) as { baseUrl?: unknown; apiKey?: unknown }
+  const raw = (input ?? {}) as { baseUrl?: unknown; apiKey?: unknown; api?: unknown }
+  const api =
+    raw.api === 'anthropic' || raw.api === 'gemini' || raw.api === 'openai-compatible'
+      ? raw.api
+      : undefined
   return listCustomModels(
     typeof raw.baseUrl === 'string' ? raw.baseUrl : '',
     typeof raw.apiKey === 'string' ? raw.apiKey : undefined,
+    api,
   )
 }

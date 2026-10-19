@@ -64,6 +64,9 @@ Sáu công cụ: **Vẽ, Hình chữ nhật, Hình elip, Mũi tên, Ghi chú**, 
 - **Chữ ký viết tay**: vẽ ra; có thể gắn vào một trường chữ ký trong biểu mẫu.
 - **Chữ ký dạng ảnh**: đặt một hình ảnh làm chữ ký.
 - Chữ ký đã lưu có thể dùng lại.
+- **Ký bằng chứng chỉ** (thẻ Ghi chú): ký với chứng chỉ từ kho hệ thống hoặc tệp .p12/.pfx; tùy chọn hiện chữ ký trên trang, và tùy chọn chứng chỉ tài liệu chống sửa đổi sau này.
+- Ký luôn ghi ra một **tệp mới** (bản cập nhật tăng dần — các chữ ký trước vẫn hợp lệ) và mở bản đã ký ngay tại chỗ. Lưu trước: chữ ký phủ tệp đúng như nó nằm trên đĩa.
+- Băng rôn phía trên tài liệu liệt kê các chữ ký sẵn có; **Xem chữ ký** cho thấy tính hợp lệ, phạm vi và chuỗi chứng chỉ của từng cái. Thu hồi (CRL/OCSP) không được kiểm tra.
 
 ## Thao tác trang (Trang)
 

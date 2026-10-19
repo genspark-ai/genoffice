@@ -7,6 +7,7 @@ Edytor HTML otwiera pliki .html / .htm w dwóch trybach: **podgląd** (wyrendero
 - **Tryb źródła**: edycja HTML; ctrl+F do wyszukiwania, Zastąp wszystko zapisuje przepisany znacznik.
 - **Zapisywanie**: wierne bajt w bajt (BOM/CRLF/końcowa nowa linia zachowane); zapis bez zmian nic nie przepisuje.
 - **Powiększenie**: ctrl+kółko / gest szczypania zmienia skalę podglądu; ctrl+Z wewnątrz podglądu cofa ostatnią zmianę.
+- **Ukryj przed AI**: w trybie źródła prawy przycisk na zaznaczeniu — treść elementu, wartość atrybutu, napisy skryptu — a model widzi zastępczą; wyrenderowana strona nigdy się nie zmienia (szczegóły w rozdziale o panelu AI).
 
 ## Pasek narzędzi
 

@@ -1179,7 +1179,8 @@ export function makeHfFloatImgEl(img: HfImage, box: HfFloatBox, host: 'gap' | 'l
   const transform = hfFloatTransform(img, p)
   if (transform) el.style.transform = transform
   if (img.widthPx) el.style.width = `${img.widthPx}px`
-  if (img.heightPx) el.style.height = `${img.heightPx}px`
+  // hairline shapes (a 0.25pt rule) still get one device pixel, as in Word
+  if (img.heightPx) el.style.height = `${Math.max(1, img.heightPx)}px`
   if (img.washout) el.style.filter = hfWashoutFilter(img.washout)
   return el
 }
@@ -1312,7 +1313,7 @@ export function hfAnchoredImgStyle(img: HfImage, geom?: HfStripGeom): Record<str
     if (pos.translateX) style.transform = `translateX(${pos.translateX}%)`
   } else style.left = `${img.posXPx ?? 0}px`
   if (img.widthPx) style.width = `${img.widthPx}px`
-  if (img.heightPx) style.height = `${img.heightPx}px`
+  if (img.heightPx) style.height = `${Math.max(1, img.heightPx)}px`
   if (img.behind) style.zIndex = '-1'
   return style
 }

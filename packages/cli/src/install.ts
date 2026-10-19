@@ -48,17 +48,50 @@ export interface InstallOutcome {
  * `/usr/local/bin` is on every login shell's PATH and on the PATH GUI apps
  * inherit, so it is the target even when it does not exist yet: a missing
  * directory is reported as unwritable (creating it needs root), not skipped.
- * `/opt/homebrew/bin` is only a fallback because shells see it solely through
- * `brew shellenv`. When neither system dir is writable the user's own bin dir
- * takes the link, so a non-admin install still gets a `genoffice` command.
+ * When it is not writable the user's own bin dir takes the link, so a
+ * non-admin install still gets a `genoffice` command.
+ *
+ * The Homebrew prefix is never a candidate (genoffice#1914): `/opt/homebrew/bin` on
+ * Apple Silicon, `/usr/local/bin` on an Intel Mac with a classic install,
+ * `/home/linuxbrew/.linuxbrew/bin` on Linux. Homebrew manages and tracks that
+ * directory itself; a link we leave there is untracked by brew, dangles once
+ * the app is removed, and comes back on the next launch. Homebrew declined
+ * three cask PRs over exactly this. The prefix is detected at run time
+ * (`$HOMEBREW_PREFIX`, else a `bin/brew` under the usual roots) so a machine
+ * without Homebrew keeps `/usr/local/bin`.
+ *
+ * A user who wants it there anyway still can: `ln -sf "$(dirname "$(which
+ * genoffice)")/genoffice" "$(brew --prefix)/bin/genoffice"`. What is removed
+ * is the uninvited write, not the possibility.
  */
 export function defaultCandidateDirs(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv = process.env,
+  exists: (path: string) => boolean = existsSync,
 ): string[] {
-  if (platform === 'darwin') return ['/usr/local/bin', '/opt/homebrew/bin', ...userBinDirs(env)]
-  if (platform === 'linux') return ['/usr/local/bin', ...userBinDirs(env)]
-  return []
+  if (platform !== 'darwin' && platform !== 'linux') return []
+  const brew = new Set(homebrewBinDirs(platform, env, exists))
+  return ['/usr/local/bin', ...userBinDirs(env)].filter((d) => !brew.has(d))
+}
+
+const HOMEBREW_ROOTS: Record<string, string[]> = {
+  darwin: ['/opt/homebrew', '/usr/local'],
+  linux: ['/home/linuxbrew/.linuxbrew'],
+}
+
+/** `<prefix>/bin` for every Homebrew install this machine has: `$HOMEBREW_PREFIX` plus any usual root holding `bin/brew`. */
+export function homebrewBinDirs(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  exists: (path: string) => boolean = existsSync,
+): string[] {
+  const roots = new Set<string>()
+  const fromEnv = env.HOMEBREW_PREFIX?.replace(/\/+$/, '')
+  if (fromEnv && isAbsolute(fromEnv)) roots.add(fromEnv)
+  for (const root of HOMEBREW_ROOTS[platform] ?? []) {
+    if (exists(join(root, 'bin', 'brew'))) roots.add(root)
+  }
+  return [...roots].map((r) => join(r, 'bin'))
 }
 
 /** `$XDG_BIN_HOME`, then `~/.local/bin`: created on demand because a fresh account rarely has them. */

@@ -4,9 +4,9 @@ Docs là trình xử lý văn bản giống Word: đọc và ghi .docx thật v�
 
 ## Dải ruy-băng
 
-Các thẻ: **Trang chủ / Chèn / Vẽ / Bố trí / Thiết kế / Tham khảo / Xem lại / Chế độ xem**, cộng thêm các thẻ theo ngữ cảnh cho đối tượng đang chọn (thiết kế và bố trí bảng, hình ảnh, đầu và chân trang).
+Các thẻ: **Trang chủ / Chèn / Vẽ / Bố trí / Thiết kế / Tham khảo / Xem lại / Chế độ xem**, cộng thêm các thẻ theo ngữ cảnh cho đối tượng đang chọn (thiết kế và bố trí bảng, hình ảnh, đầu và chân trang). Dải lệnh ở Docs có riêng một mật độ: **gọn** (⌥⌘K / Ctrl+Alt+K) giữ biểu tượng và bỏ nhãn, và lựa chọn được ghi nhớ.
 
-- **Trang chủ**: bảng tạm; phông chữ (kể cả cỡ chữ CJK và dấu nhấn mạnh) với **Xóa toàn bộ định dạng** và một nút bật/tắt **Hiện/ẩn ký hiệu định dạng**; đoạn văn (căn chỉnh/thụt lề/rãnh dòng/danh sách) cộng thêm **Định nghĩa dấu đầu dòng mới / Định nghĩa định dạng số mới / Danh sách đa cấp**, lưu chính các kiểu danh sách của bạn vào tài liệu; kiểu (Tiêu đề 1-6/Văn bản/Trích dẫn, có thể sửa) với **Ngăn kiểu** cho danh sách đầy đủ.
+- **Trang chủ**: bảng tạm; phông chữ (kể cả cỡ chữ CJK và dấu nhấn mạnh) với **Xóa toàn bộ định dạng** và một nút bật/tắt **Hiện/ẩn ký hiệu định dạng**; đoạn văn (căn chỉnh/thụt lề/rãnh dòng/danh sách) cộng thêm **Định nghĩa dấu đầu dòng mới / Định nghĩa định dạng số mới / Danh sách đa cấp**, lưu chính các kiểu danh sách của bạn vào tài liệu; kiểu (Tiêu đề 1-6/Văn bản/Trích dẫn, có thể sửa) với **Ngăn kiểu** cho danh sách đầy đủ. Một kiểu chữ có thể đặt riêng phông Đông Á và phông Latinh (ví dụ phông CJK cùng Times New Roman); cặp đó sống sót qua vòng .docx.
 - **Chèn**: ngắt trang/mục; bảng (lưới hàng × cột, hoặc **Chèn bảng…** để chọn kích thước chính xác); hình ảnh, hình dạng, hộp văn bản; **Trang bìa** và **Trang trống** từ thư viện dựng sẵn; **Biểu đồ**; **Chữ hoa đầu dòng (Drop Cap)**; **Chữ nghệ thuật (WordArt)**; trường (ngày, giờ, số trang, tổng số trang, tên tệp); liên kết, **Thẻ đánh dấu** và tham chiếu chéo; nhận xét; đầu và chân trang và số trang; ký hiệu và phương trình.
   - **Biểu đồ** chèn một đối tượng biểu đồ thật với dữ liệu riêng — dạng cột, dạng đường hoặc dạng hình tròn — chứ không phải một hình ảnh. Lệnh _Chỉnh sửa dữ liệu_ của Word mở ra những con số đứng sau nó.
 - **Vẽ**: mực viết đè lên trang, trong nhóm **Công cụ vẽ** — **Chọn** đưa bạn trở lại chỉnh sửa văn bản, rồi đến **Bút**, **Bút dạ quang** và **Tẩy** (một cú nhấp hoặc một nét quét xóa sạch cả nét vẽ). Bên cạnh, **Kiểu bút** / **Kiểu bút dạ quang** là một bộ điều khiển duy nhất chứa các ô màu và một hàng độ rộng; nhãn của nó theo công cụ đang hoạt động. Mực được lưu trong tài liệu dưới dạng chú thích nổi lên trên văn bản, nên vẫn còn sau khi lưu và mở lại, và **Xóa tất cả** ở nhóm kế tiếp xóa sạch nó.
@@ -55,7 +55,7 @@ Nhấp chuột phải ở bất kỳ đâu trong nội dung — menu đi theo th
 
 - Tìm và thay thế (ctrl+F / ctrl+H): phân biệt chữ hoa thường, khớp trọn từ, biểu thức chính quy.
 - Công cụ định dạng; hoàn tác/làm lại nhiều cấp; tùy chọn dán.
-- Bảng: gộp/tách ô, thao tác hàng và cột, đường viền và nền, sắp xếp, công thức.
+- Bảng: gộp/tách ô, thao tác hàng và cột, đường viền và nền, sắp xếp, công thức. Hàng tự tách qua trang khi cần, và Ctrl+Enter trong ô lật trang ngay tại đó — in và PDF cũng vậy.
 - Hình ảnh: bọc văn bản, cắt, nén; vùng vẽ.
 
 ## Kiểu chữ CJK

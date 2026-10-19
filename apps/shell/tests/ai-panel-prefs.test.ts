@@ -25,6 +25,13 @@ describe('normalizeAiPanelPrefs', () => {
       ...DEFAULT_AI_PANEL_PREFS,
       spellcheck: false,
     })
+    expect(normalizeAiPanelPrefs({ showAiSidebar: false })).toEqual({
+      ...DEFAULT_AI_PANEL_PREFS,
+      showAiSidebar: false,
+    })
+    // absent field means on: settings files written before the toggle existed
+    // must not disable the sidebar
+    expect(normalizeAiPanelPrefs({}).showAiSidebar).toBe(true)
   })
 
   it('clamps and rounds the custom size, accepting numeric strings from old settings files', () => {

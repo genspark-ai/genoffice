@@ -7,8 +7,8 @@ Beranda adalah halaman awal GenOffice: bilah navigasi di sebelah kiri, daftar fi
 ## Navigasi bilah sisi
 
 - **Terbaru**: file yang baru saja Anda buka. Setiap baris diberi cap waktu — hari ini, kemarin, atau tanggalnya.
-- **Berbintang**: file yang Anda beri bintang. Arahkan kursor ke baris file lalu klik bintang untuk menambah atau menghapusnya.
-- **Panduan Pengguna**: membuka panduan ini.
+- **Berbintang**: file yang Anda beri bintang. Arahkan kursor ke baris file lalu klik bintang untuk menambah atau menghapusnya. **Pindahkan ke grup** di menu ⋯ menyortir berkas berbintang ke grup bernama; tampilan Berbintang menyaring menurutnya.
+- **Ask AI**: panel basis pengetahuan — ajukan pertanyaan dan dapatkan jawaban yang mengutip berkas berbintang Anda (lihat di bawah).
 - **Genspark Projects**: setelah masuk ke akun Genspark, menampilkan proyek yang Anda buat dengan Genspark AI di web; klik salah satunya untuk melanjutkan pengeditan di browser. Pencarian, pengurutan menurut waktu, penyegaran, dan muat lebih banyak tersedia.
 - **Folder**: direktori yang Anda tambahkan ke bilah sisi dengan **Tambah folder…**, atau Anda seret ke sana dari aplikasi file. Masing-masing menjadi akar yang bisa Anda buka, buat subfolder di dalamnya, ganti namanya, dan hapus; akar yang jadi luring ditampilkan sebagai tidak tersedia dan bisa dilepas dari daftar. **Folder baru** membuat folder lagi.
 
@@ -52,9 +52,17 @@ Apa yang dilakukan tiap kartu:
 - **AI Markdown** (.md): dokumen Markdown kosong di editor Markdown.
 - **AI HTML** (.html): halaman web kosong di editor HTML.
 - **AI PDF** (.pdf): berbeda dari yang lain — kartu ini **segera** membuat PDF kosong satu halaman yang sungguhan di folder tujuan dan membukanya sebagai file biasa (editor PDF bekerja pada file asli). Bagus untuk memberi anotasi, menutupi bagian, atau menambahkan teks; file bisa diberi nama otomatis dari isinya saat penyimpanan pertama.
-- **Buka File Lokal**: pemilih file sistem untuk Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown), dan halaman web (.html/.htm). Bisa memilih banyak file sekaligus; tiap file mendapat tabnya sendiri.
+- **Buka File Lokal**: pemilih file sistem untuk Word (.docx/.doc), Excel (.xlsx/.xlsm/.xls/.csv/.tsv), PowerPoint (.pptx/.ppt), PDF, Markdown (.md/.markdown), dan halaman web (.html/.htm). Bisa memilih banyak file sekaligus; tiap file mendapat tabnya sendiri. Berkas teks (.txt, .json) juga terbuka di sini — mereka masuk ke tampilan sumber editor Markdown.
 
 > Tip: menu Arquivo ▸ Novo di bilah menu membuat jenis dokumen yang sama (⌘N/Ctrl+N memakai dokumen teks secara bawaan); menyeret file ke jendela akan membukanya.
+
+## Tanya basis pengetahuan Anda
+
+- Bintangi berkas dulu (jenis apa pun yang aplikasi baca); kepala panel menghitung korpus, dan basis kosong mengajak Anda membintangi sesuatu.
+- Jawaban mengutip berkas sumbernya; klik kutipan untuk membuka berkas di editornya.
+- Perlu masuk ke Genspark. Percakapan hanya hidup di memori — menutup aplikasi mengakhirinya.
+- Pencarian berjalan di indeks berkas lokal, seperti pencarian Beranda; berkas yang hilang diam-diam keluar dari korpus.
+- Grup hanya merapikan daftar Berbintang — basis pengetahuan selalu mencakup semua berkas berbintang.
 
 ## Proyek cloud (Genspark Projects)
 

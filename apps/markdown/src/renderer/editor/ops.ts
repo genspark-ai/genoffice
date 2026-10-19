@@ -1,6 +1,7 @@
 import type { Editor, ChainedCommands, SingleCommands } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection, type Transaction } from '@tiptap/pm/state'
+import { checkPlaceholders, collectPlaceholders, modelTextOf } from './redact'
 import type { Mapping } from '@tiptap/pm/transform'
 import { createTable } from '@tiptap/extension-table'
 import { stripLegacyFencedDivs } from '../markdown/docText'
@@ -418,7 +419,28 @@ export function selectionBlockRange(editor: Editor): Range {
   return blockRange(editor.state.doc, startIndex, endIndex)
 }
 
+/**
+ * Refuse model output that would damage a placeholder.
+ *
+ * A withheld span is several characters wide, so unlike an atom it *is*
+ * splittable: a model writing prose can answer with the marker carrying an
+ * extra space inside, or interleave two markers. Parsing that would put a mangled marker into a document that
+ * is about to be saved, and the file would look fine. The write is refused
+ * here, before anything reaches the document.
+ */
+function assertPlaceholdersIntact(editor: Editor, markdown: string): void {
+  const markers = collectPlaceholders(modelTextOf(editor.getJSON() as never))
+  if (markers.length === 0) return
+  const issues = checkPlaceholders(markers.join(' '), markdown)
+  if (issues.length > 0) {
+    fail(
+      `this edit would damage ${issues.length} private placeholder(s) (dropped, renamed, split or duplicated) — the model must copy each {{...}} exactly; rephrase around them instead`,
+    )
+  }
+}
+
 export function parseMarkdownToNodes(editor: Editor, markdown: string): PmNode[] {
+  assertPlaceholdersIntact(editor, markdown)
   // model output guard: `:::` fenced divs are not GFM and would land as
   // literal text — strip the fences and keep the body (same as file open).
   // Raw HTML needs no guard: parse runs it through the schema, so semantic

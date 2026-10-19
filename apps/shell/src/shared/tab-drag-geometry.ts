@@ -8,6 +8,18 @@
 export const TAB_STRIP_HEIGHT = 40
 
 /**
+ * The strip's rendered height at an interface scale.
+ *
+ * The main process positions every editor view at `y = tabStripHeight()` so it
+ * starts below the strip. When the strip is scaled but that number is not, a
+ * 150% strip paints 20px down into the document — the exact clipping genoffice#1913
+ * asks to avoid, and invisible until someone looks at the seam.
+ */
+export function tabStripHeight(scale = 1): number {
+  return Math.round(TAB_STRIP_HEIGHT * scale)
+}
+
+/**
  * How far (px) the pointer must leave the strip's vertical band before a
  * drag-to-reorder becomes a tear-off. Chrome uses a similar dead zone so a
  * wobbly horizontal drag never accidentally detaches.
@@ -31,6 +43,22 @@ export interface Rect {
   height: number
 }
 
+/**
+ * A client rect the OS has actually settled on: finite coordinates, positive
+ * size. A minimized or mid-restore window can report a degenerate content
+ * rect; applying one would blank the views it is meant to fit.
+ */
+export function isSettledRect(rect: Rect): boolean {
+  return (
+    Number.isFinite(rect.x) &&
+    Number.isFinite(rect.y) &&
+    Number.isFinite(rect.width) &&
+    Number.isFinite(rect.height) &&
+    rect.width > 0 &&
+    rect.height > 0
+  )
+}
+
 /** true when `y` is more than `slack` px outside the [top, bottom] band */
 export function isBeyondBand(y: number, top: number, bottom: number, slack: number): boolean {
   return y < top - slack || y > bottom + slack
@@ -45,12 +73,16 @@ export function pointInRect(x: number, y: number, rect: Rect): boolean {
  * the shell: the tab strip at the top of the shell window's content area,
  * grown by `slack` above and below.
  */
-export function dockBand(shellContentBounds: Rect, slack: number = DOCK_BAND_SLACK): Rect {
+export function dockBand(
+  shellContentBounds: Rect,
+  slack: number = DOCK_BAND_SLACK,
+  scale = 1,
+): Rect {
   return {
     x: shellContentBounds.x,
     y: shellContentBounds.y - slack,
     width: shellContentBounds.width,
-    height: TAB_STRIP_HEIGHT + 2 * slack,
+    height: tabStripHeight(scale) + 2 * slack,
   }
 }
 

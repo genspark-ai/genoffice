@@ -4,9 +4,9 @@ O Docs é o processador de texto parecido com o Word: lê e escreve .docx a sér
 
 ## O friso
 
-Separadores: **Página Inicial / Inserir / Desenhar / Layout / Design / Referências / Revisão / Exibir**, mais separadores contextuais para o objeto selecionado (design e layout da tabela, imagens, cabeçalho e rodapé).
+Separadores: **Página Inicial / Inserir / Desenhar / Layout / Design / Referências / Revisão / Exibir**, mais separadores contextuais para o objeto selecionado (design e layout da tabela, imagens, cabeçalho e rodapé). A faixa de comandos tem uma densidade própria no Docs: **compacta** (⌥⌘K / Ctrl+Alt+K) deixa os ícones e descarta os rótulos, e a escolha fica memorizada.
 
-- **Página Inicial**: área de transferência; fonte (incluindo tamanhos CJK e marcas de ênfase) com **Limpar Toda a Formatação** e um interruptor para **Mostrar/ocultar marcas de formatação**; parágrafo (alinhamento/recuo/espaçamento/listas) mais **Definir novo marcador / Definir novo formato de número / Lista de Vários Níveis**, que guardam os seus próprios estilos de lista no documento; estilos (Título 1-6/Normal/Citação, modificáveis) com um **Painel de Estilos** para a lista completa.
+- **Página Inicial**: área de transferência; fonte (incluindo tamanhos CJK e marcas de ênfase) com **Limpar Toda a Formatação** e um interruptor para **Mostrar/ocultar marcas de formatação**; parágrafo (alinhamento/recuo/espaçamento/listas) mais **Definir novo marcador / Definir novo formato de número / Lista de Vários Níveis**, que guardam os seus próprios estilos de lista no documento; estilos (Título 1-6/Normal/Citação, modificáveis) com um **Painel de Estilos** para a lista completa. Um estilo pode definir separadamente a fonte do Leste Asiático e a latina (uma fonte CJK mais Times New Roman, por exemplo); o par sobrevive ao vai-e-vem do .docx.
 - **Inserir**: quebras de página e de secção; tabelas (uma grelha de linhas × colunas, ou **Inserir Tabela…** para um tamanho exato); imagens, formas, caixas de texto; **Folha de Rosto** e **Página em Branco** a partir de uma galeria predefinida; **Gráfico**; **Letra Capitular**; **WordArt**; campos (data, hora, número de página, total de páginas, nome do arquivo); hiperligações, **Indicador** e referências cruzadas; comentários; cabeçalho e rodapé e números de página; símbolos e equações.
   - **Gráfico** insere um verdadeiro objeto de gráfico com os seus próprios dados — de barras, de linhas ou circular — e não uma imagem. _Editar dados_ do Word abre os números que estão por trás.
 - **Desenhar**: tinta sobre a página, no grupo **Ferramentas de Desenho** — **Selecionar** volta à edição de texto, depois **Caneta**, **Marca-Texto** e **Borracha** (um clique ou um gesto apaga o traço inteiro). Ao lado, **Estilo da Caneta** / **Estilo do Marca-Texto** é um único controlo com amostras de cor e uma fila de espessuras; o respetivo rótulo segue a ferramenta ativa. A tinta é guardada no documento como uma anotação que flutua por cima do texto, por isso sobrevive a guardar e reabrir, e **Limpar Tudo**, no grupo seguinte, remove-a toda.
@@ -55,7 +55,7 @@ Clique com o botão direito em qualquer ponto do texto — o menu acompanha aqui
 
 - Pesquisar e substituir (ctrl+F / ctrl+H): diferenciar maiúsculas de minúsculas, palavra inteira, expressões regulares.
 - Pincel de formatação; desfazer/refazer profundo; opções de colagem.
-- Tabelas: mesclar/dividir células, operações de linhas e colunas, bordas e sombreamento, classificação, fórmulas.
+- Tabelas: mesclar/dividir células, operações de linhas e colunas, bordas e sombreamento, classificação, fórmulas. As linhas quebram entre páginas quando preciso, e Ctrl+Enter dentro de uma célula vira a página ali mesmo — impressão e PDF idem.
 - Imagens: quebra de texto, corte, compactação; tela de desenho.
 
 ## Tipografia CJK

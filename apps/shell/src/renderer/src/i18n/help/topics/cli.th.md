@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## หาคำสั่งมาใช้
 
-macOS และ Windows แถมคำสั่งนี้ไว้ในแพ็กเกจของแอป ถ้าอยากเรียกด้วยชื่อ ให้รัน `genoffice install-cli` ครั้งเดียว คำสั่งจะสร้างลิงก์ไปยังไฟล์ไบนารีที่แถมมาไว้ใน `/usr/local/bin` หรือใน `PATH` ของผู้ใช้บน Windows
+บน macOS และ Windows คำสั่งนี้อยู่ในชุดแอป จะเรียกใช้ตามชื่อให้รัน `genoffice install-cli` ครั้งเดียว: มันลิงก์ไบนารีจากชุดแอปเข้ากับไดเรกทอรีบน PATH ของคุณ — บน macOS คือ `/usr/local/bin` เมื่อไม่ใช่ prefix ของ Homebrew (ไดเรกทอรีของ Homebrew เองจะไม่ถูกแตะต้องเด็ดขาด) ไม่เช่นนั้นไปที่ bin ของผู้ใช้ — บน Windows ลิงก์เข้า `PATH` ของผู้ใช้
 
 ## คำสั่งที่ควรรู้จัก
 

@@ -28,6 +28,7 @@ function withWrapFields(box: TextboxDisplay, wrap: ImageWrap | null): TextboxDis
   delete next.behind
   delete next.noWrap
   delete next.wrapSides
+  delete next.wrapDistPx
   delete next.wrapSide
   delete next.wrapEdgePx
   delete next.wrapGapPx

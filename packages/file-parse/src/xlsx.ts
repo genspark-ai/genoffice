@@ -185,6 +185,64 @@ async function zipText(zip: JSZip, path: string): Promise<string | undefined> {
   return file ? file.async('text') : undefined
 }
 
+interface ZipPrefix {
+  text: string
+  truncated: boolean
+}
+
+/// What nodeStream() wraps; typed here because JSZip's d.ts leaves it out.
+interface JSZipStream {
+  on(event: 'data', cb: (chunk: Uint8Array) => void): JSZipStream
+  on(event: 'end', cb: () => void): JSZipStream
+  on(event: 'error', cb: (err: Error) => void): JSZipStream
+  pause(): void
+  resume(): void
+}
+
+/** Inflate only the first maxBytes of a part; a 232 MB sheet never becomes a string. */
+function zipTextPrefix(zip: JSZip, path: string, maxBytes: number): Promise<ZipPrefix | undefined> {
+  const file = zip.file(path)
+  if (!file) return Promise.resolve(undefined)
+  if (!Number.isFinite(maxBytes))
+    return file.async('text').then((text) => ({ text, truncated: false }))
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = []
+    let size = 0
+    let settled = false
+    const finish = (truncated: boolean): void => {
+      if (settled) return
+      settled = true
+      const buf = new Uint8Array(size)
+      let offset = 0
+      for (const chunk of chunks) {
+        buf.set(chunk, offset)
+        offset += chunk.length
+      }
+      resolve({ text: new TextDecoder().decode(buf), truncated })
+    }
+    const stream = (
+      file as unknown as { internalStream(type: 'uint8array'): JSZipStream }
+    ).internalStream('uint8array')
+    stream.on('data', (chunk: Uint8Array) => {
+      if (settled) return
+      chunks.push(chunk)
+      size += chunk.length
+      if (size >= maxBytes) {
+        stream.pause()
+        finish(true)
+      }
+    })
+    stream.on('end', () => finish(false))
+    stream.on('error', (err: Error) => {
+      if (!settled) {
+        settled = true
+        reject(err)
+      }
+    })
+    stream.resume()
+  })
+}
+
 /** Malformed refs (e.g. XXXXXX99) would otherwise grow the cells array by
  *  millions via the padding loop below. */
 export const MAX_XLSX_COLS = 16_384
@@ -211,8 +269,41 @@ function joinRowCells(cells: readonly string[]): string {
   return out.join(' | ')
 }
 
+export interface XlsxTextOptions {
+  /// Sheet XML past this many extracted characters is not even parsed: the DOM
+  /// of a 100k-row sheet costs ~1 GB of heap for text nobody keeps (genoffice#2011).
+  maxChars?: number
+}
+
+const XML_BYTES_PER_TEXT_CHAR = 8
+const XML_CLIP_SLACK = 256 * 1024
+const EMPTY_SHEET_XML = '<worksheet><sheetData/></worksheet>'
+
+export function sheetXmlByteLimit(budgetChars: number): number {
+  return budgetChars * XML_BYTES_PER_TEXT_CHAR + XML_CLIP_SLACK
+}
+
+const ROW_END_RE = /<\/([\w.-]+:)?row>/g
+const SHEET_DATA_RE = /<([\w.-]+:)?sheetData[\s>]/
+
+/** Drop whole rows past the budget, keeping the document well-formed; a
+ *  truncated prefix is always cut back to its last complete row. */
+export function clipSheetXml(xml: string, budgetChars: number, truncated = false): string {
+  const limit = sheetXmlByteLimit(budgetChars)
+  if (!truncated && xml.length <= limit) return xml
+  const head = xml.slice(0, limit)
+  let last: RegExpExecArray | null = null
+  for (const m of head.matchAll(ROW_END_RE)) last = m
+  const dataAt = SHEET_DATA_RE.exec(head)?.index ?? -1
+  if (!last || dataAt < 0 || last.index < dataAt) return truncated ? EMPTY_SHEET_XML : xml
+  const ns = last[1] ?? ''
+  return `${head.slice(0, last.index + last[0].length)}</${ns}sheetData></${ns}worksheet>`
+}
+
 /** extract sheet text from an xlsx: one "# SheetName" section per sheet, cells joined with " | " */
-export async function xlsxToText(bytes: Uint8Array): Promise<string> {
+export async function xlsxToText(bytes: Uint8Array, opts: XlsxTextOptions = {}): Promise<string> {
+  const maxChars = opts.maxChars ?? Infinity
+  let used = 0
   // The declared-size pass below is advisory; this metered gate is the one that
   // holds when a part lies about its size (GH #759).
   await assertZipInflatesWithinLimits(bytes)
@@ -252,11 +343,16 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
   let sheetsWithData = 0
   let imageOnlySheets = 0
   for (const sheet of sheets) {
+    if (used >= maxChars) break
     const path = relTargets.get(relationshipId(sheet))
-    const sheetXml = path ? await zipText(zip, path) : undefined
-    if (!sheetXml) continue
+    const budget = maxChars - used
+    const raw = path ? await zipTextPrefix(zip, path, sheetXmlByteLimit(budget)) : undefined
+    if (!raw?.text) continue
+    const sheetXml =
+      maxChars === Infinity ? raw.text : clipSheetXml(raw.text, budget, raw.truncated)
     const worksheet = parser.parse(sheetXml) as Record<string, any>
     const lines: string[] = [`# ${String(sheet['@_name'] ?? '')}`]
+    let sheetChars = lines[0].length
     const rows = asArray(worksheet.worksheet?.sheetData?.row) as Array<Record<string, unknown>>
     let hasData = false
     const sharedFormulas: SharedFormulas = new Map()
@@ -287,8 +383,12 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
         if (!slot) cells.push('')
         else for (let j = slot.length - 1; j >= 0; j--) cells.push(slot[j])
       }
-      lines.push(joinRowCells(cells))
+      const line = joinRowCells(cells)
+      lines.push(line)
+      sheetChars += line.length + 1
+      if (used + sheetChars >= maxChars) break
     }
+    used += sheetChars
     if (hasData) sheetsWithData += 1
     else if (path && worksheet.worksheet?.drawing) {
       imageOnlySheets += 1

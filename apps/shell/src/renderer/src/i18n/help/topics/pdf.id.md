@@ -64,6 +64,9 @@ Enam alat: **Gambar, Persegi, Elips, Panah, Catatan**, ditambah **Redaksi area**
 - **Tanda tangan tinta**: gambar tangan; dapat ditautkan ke bidang tanda tangan formulir.
 - **Tanda tangan gambar**: tempatkan sebuah gambar sebagai tanda tangan.
 - Tanda tangan yang tersimpan dapat digunakan lagi.
+- **Tanda tangan sertifikat** (tab Anotasi): tanda tangani dengan sertifikat dari penyimpanan sistem atau berkas .p12/.pfx; opsional tampilkan tanda tangan di halaman, dan opsional sertifikatkan dokumen terhadap perubahan lanjutan.
+- Menandatangani selalu menulis **berkas baru** (pembaruan inkremental — tanda tangan sebelumnya tetap sah) dan membuka salinan bertanda tangan di tempatnya. Simpan dulu: tanda tangan mencakup berkas sebagaimana tersimpan di diska.
+- Spanduk di atas dokumen mendaftar tanda tangan yang ada; **Lihat tanda tangan** menampilkan validitas, cakupan, dan rantai sertifikat masing-masing. Pencabutan (CRL/OCSP) tidak diperiksa.
 
 ## Operasi halaman (Halaman)
 

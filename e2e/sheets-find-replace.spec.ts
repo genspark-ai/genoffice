@@ -110,7 +110,10 @@ test('sheets: Excel-style Find & Replace panel', async () => {
     // Replace tab: replace all occurrences
     await panel.getByRole('tab', { name: 'Replace' }).click()
     const inputs = panel.locator('.fr-grid input:not([type="checkbox"])')
-    await inputs.nth(1).fill('pear')
+    // typed key by key: the box must keep every character, not just the last
+    await inputs.nth(1).click()
+    await sheets.keyboard.type('pear')
+    await expect(inputs.nth(1)).toHaveValue('pear')
     await sheets.waitForTimeout(1_200)
     await panel.getByRole('button', { name: 'Replace All' }).click()
     await expect(panel.locator('.fr-status')).toContainText('3', { timeout: 10_000 })

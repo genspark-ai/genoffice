@@ -15,6 +15,7 @@ export const it = {
   ribbonTabReview: 'Revisione',
   ribbonCollapse: 'Riduci a icona la barra multifunzione',
   ribbonExpand: 'Espandi la barra multifunzione',
+  ribbonCompact: 'Barra multifunzione compatta (solo icone)',
   ribbonTabView: 'Visualizza',
   ribbonTabTableDesign: 'Progettazione Tabella',
   ribbonTabChartDesign: 'Progettazione Grafico',
@@ -398,6 +399,12 @@ export const it = {
   ribbonRehearseTip:
     "Prova intervalli: avvia la presentazione dall'inizio e registra il tempo per diapositiva; salva come intervalli di avanzamento automatico (salvato nel pptx)",
   ribbonRecord: 'Registra',
+  ribbonRecordTip:
+    'Registra commento: avvia la presentazione e registra la tua voce e la durata di ogni diapositiva',
+  ribbonRecordFromBeginning: 'Registra dall’inizio',
+  ribbonRecordFromCurrent: 'Registra dalla diapositiva corrente',
+  ribbonClearNarrationCurrent: 'Cancella il commento nella diapositiva corrente',
+  ribbonClearNarrationAll: 'Cancella il commento in tutte le diapositive',
   ribbonGroupProofing: 'Strumenti di Correzione',
   ribbonSpellCheck: 'Controllo Ortografia',
   ribbonSpellCheckTip:

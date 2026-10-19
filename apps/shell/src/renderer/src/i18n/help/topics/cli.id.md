@@ -13,7 +13,7 @@ Itulah seluruh permukaannya dalam satu layar — setiap perintah dengan satu bar
 
 ## Mendapatkan perintahnya
 
-macOS dan Windows menyertakannya di dalam bundel aplikasi. Untuk memakainya dengan namanya, jalankan `genoffice install-cli` sekali: perintah ini membuat symbolic link dari biner yang disertakan ke `/usr/local/bin`, atau ke `PATH` milik pengguna Anda di Windows.
+macOS dan Windows menyertakannya di dalam bundel aplikasi. Untuk memanggilnya dengan nama, jalankan sekali `genoffice install-cli`: ia menautkan biner bundel ke direktori di PATH Anda — di macOS `/usr/local/bin` selama itu bukan prefiks Homebrew (direktori milik Homebrew tak pernah disentuh), kalau tidak ke bin pengguna Anda — atau di Windows ke `PATH` pengguna Anda.
 
 ## Perintah yang perlu diketahui
 

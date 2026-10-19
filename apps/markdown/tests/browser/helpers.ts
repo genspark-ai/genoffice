@@ -20,6 +20,8 @@ export async function openSource(
       window.markdownApi = {
         getLanguage: async () => 'en',
         getTheme: async () => 'light',
+        getMarkdownTheme: async () => 'default',
+        setMarkdownTheme: async () => 'default',
         onLanguageChanged: () => off,
         onThemeChanged: () => off,
         getAutoSaveDefault: async () => ({ on: false, updatedAt: 0 }),
@@ -32,6 +34,8 @@ export async function openSource(
         onAiPanelPrefsChanged: () => off,
         consumePending: async () => '/fixtures/polish.md',
         readFile: async () => text,
+        rememberWikiFragment: async () => {},
+        takeWikiFragment: async () => '',
         consumeHeadlessExport: async () => null,
         headlessExportDone: () => {},
         setDirty: () => {},

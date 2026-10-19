@@ -339,7 +339,9 @@ export const pl = {
   appFullLoadRunning:
     'Trwa pełne wczytywanie skoroszytu — sortowanie i filtrowanie będą dostępne po zakończeniu…',
   appFullLoadTooLarge:
-    'Ten skoroszyt jest zbyt duży, aby w pełni zmieścić się w pamięci; sortowanie i filtrowanie są niedostępne dla tego pliku.',
+    'Ten skoroszyt jest zbyt duży, aby w całości załadować go do pamięci; sortowanie i przenoszenie zakresów są niedostępne dla tego pliku. Filtrowanie działa bezpośrednio na pliku.',
+  appLargeFilterLoading: 'Odczyt kolumny filtru z pliku…',
+  appLargeFilterApplying: 'Stosowanie filtru do pliku…',
   appSortValueModeFormulas:
     'Ten zakres zawiera formuły, które w tym dużym skoroszycie nie są obliczane na żywo — sortowanie lub przeniesienie zapisałoby je jako zwykłe wartości. Wybierz zakres bez formuł.',
   appSortRangeTooLarge:
@@ -574,6 +576,8 @@ export const pl = {
   appPrintFailed: 'Nie można wydrukować.',
   appPrintNeedsFullLoad:
     'Drukowanie wymaga pełnego wczytania skoroszytu — poczekaj na zakończenie wczytywania.',
+  appPrintWorkbookTooLarge:
+    'Ten skoroszyt jest zbyt duży, aby w pełni załadować go do pamięci, dlatego nie można go wydrukować ani wyeksportować do pliku PDF.',
   appCsvExportNeedsFullLoad:
     'Eksport do CSV wymaga w pełni załadowanego skoroszytu — poczekaj na zakończenie ładowania.',
   appCsvExportTooLarge: 'Arkusz jest za duży, aby wyeksportować go do CSV.',
@@ -715,6 +719,7 @@ export const pl = {
   appTabReview: 'Recenzja',
   appRibbonCollapse: 'Zwiń Wstążkę',
   appRibbonExpand: 'Rozwiń Wstążkę',
+  appRibbonCompact: 'Zwinięta Wstążka (tylko ikony)',
   appTabView: 'Widok',
   appTabAi: 'AI',
   appTabChartDesign: 'Projekt wykresu',
@@ -1116,6 +1121,9 @@ export const pl = {
   appHeadings: 'Nagłówki',
   appHeadingsHidden: 'Nagłówki ukryte.',
   appHeadingsShown: 'Nagłówki widoczne.',
+  appRightToLeft: 'Od prawej do lewej',
+  appRightToLeftOn: 'Kierunek siatki: od prawej do lewej.',
+  appRightToLeftOff: 'Kierunek siatki: od lewej do prawej.',
   appPrintHeadingsTitle: 'Drukuj nagłówki wierszy i kolumn',
   appGroupFunctionLibrary: 'Biblioteka funkcji',
   appInsertFunction: 'Wstaw funkcję',
@@ -1258,6 +1266,10 @@ export const pl = {
   appFontSizeTip: 'Rozmiar czcionki',
   appZoomIn: 'Powiększ',
   appZoomOut: 'Pomniejsz',
+  appImgActualSize: 'Rzeczywisty rozmiar',
+  appImgFitWindow: 'Dopasuj do okna',
+  appImgSaveAs: 'Zapisz obraz jako…',
+  appImgClose: 'Zamknij (Esc)',
   appZoomSheetTitle: 'Powiększ arkusz',
   appResetZoom: 'Resetuj powiększenie',
   appZoomToSelection: 'Powiększ do zaznaczenia',
@@ -1525,6 +1537,8 @@ export const pl = {
   appVisualSendBackward: 'Przesuń do tyłu',
   appVisualSizeProperties: 'Rozmiar i właściwości…',
   appVisualHyperlink: 'Hiperłącze…',
+  appVisualEmbedInCell: 'Osadź obraz w komórce',
+  appVisualEmbedFailed: 'Nie udało się osadzić tego obrazu w komórce.',
   appVisualDelete: 'Usuń',
   appVisualArranged: 'Obiekt zaktualizowany — zapisz za pomocą ⌘S.',
   appVisualCopied: 'Obiekt skopiowany.',

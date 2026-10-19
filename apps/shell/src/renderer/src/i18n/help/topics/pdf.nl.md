@@ -64,6 +64,9 @@ Zes gereedschappen: **inkt, rechthoek, ellips, pijl, notitie**, plus de **zwartm
 - **Inkthandtekening**: teken hem; hij kan aan een handtekeningveld van een formulier worden gekoppeld.
 - **Afbeeldingshandtekening**: plaats een afbeelding als handtekening.
 - Opgeslagen handtekeningen zijn herbruikbaar.
+- **Certificaatondertekening** (tabblad Aantekenen): onderteken met een certificaat uit het systeemarchief of een .p12/.pfx-bestand; toon desgewenst de ondertekening op de pagina en certificeer desgewenst het document tegen latere wijzigingen.
+- Ondertekenen schrijft altijd een **nieuw bestand** (incrementele update — eerdere ondertekeningen blijven geldig) en opent de ondertekende kopie op zijn plek. Sla eerst op: een ondertekening dekt het bestand zoals het op schijf staat.
+- Een banner boven het document somt bestaande ondertekeningen op; **Ondertekeningen bekijken** toont geldigheid, dekking en certificaatketen van elk. Intrekking (CRL/OCSP) wordt niet gecontroleerd.
 
 ## Paginabewerkingen (Pagina's)
 

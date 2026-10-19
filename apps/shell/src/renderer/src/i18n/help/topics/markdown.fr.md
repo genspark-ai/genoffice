@@ -1,13 +1,13 @@
 # L’éditeur Markdown
 
-L’éditeur Markdown ouvre les .md / .markdown avec une expérience source + aperçu rendu.
+L'éditeur Markdown ouvre .md / .markdown — et .txt / .json, directement en vue source — avec source plus aperçu rendu.
 
 - **Ouvrir** : depuis l’accueil ou Fichier ▸ Ouvrir ; la ligne de commande fonctionne aussi.
 - **Modifier** : édition en texte brut ; les extensions GFM (tableaux, listes de tâches, barré, liens automatiques) sont rendues dans l’aperçu.
 - **Aperçu** : en direct ; les ressources relatives comme les images se résolvent à côté du document.
 - **Enregistrement** : fidèle octet pour octet — le BOM, les CRLF et la présence ou non d’un saut de ligne final sont préservés ; un enregistrement sans modification ne réécrit pas le fichier.
 - **Rechercher et remplacer** : ctrl+F cherche dans la source ; Remplacer tout réécrit.
-- **IA** : des boutons prédéfinis permettent à l’assistant de réécrire, de développer ou de traduire le document.
+- **IA** : des boutons prédéfinis permettent à l’assistant de réécrire, de développer ou de traduire le document. Une sélection peut être masquée à l'IA (voir le chapitre du panneau IA).
 
 ## La barre d’outils
 
@@ -24,6 +24,7 @@ Une rangée de boutons au-dessus de l’éditeur (survolez pour les infobulles) 
 - **Propriétés** : insère le bloc YAML front matter en tête de fichier ou y saute.
 - **Plan** : navigation par hiérarchie de titres.
 - **Orthographe** : active ou désactive la vérification orthographique pour ce document.
+- **Réglages d'hébergeur d'images** : les images collées ou déposées partent d'abord vers votre propre stockage — compatible S3 (R2/OSS/COS/MinIO), SM.MS ou GitHub — la copie assets locale restant en repli.
 
 Trois exemples rapides :
 
@@ -46,4 +47,4 @@ La barre d’outils porte un interrupteur **Source** (localisé avec l’applica
 - **L’édition est fidèle octet pour octet.** Un enregistrement depuis la vue source produit les mêmes octets qu’un enregistrement depuis l’éditeur — le BOM, les CRLF et la présence d’un saut de ligne final survivent tous.
 - **C’est le même document.** Basculez librement dans les deux sens ; la source est le texte de l’éditeur lui-même, pas une copie qu’il faudrait fusionner.
 - **La barre de mise en forme est indisponible** tant que la vue est ouverte, parce que la plupart de ces boutons insèrent des constructions d’éditeur qui n’ont de sens que du côté rendu. Elle revient quand vous fermez la vue.
-- **Les fichiers JSON et autres fichiers en mode source** s’ouvrent ici directement : il n’y a rien à rendre, donc la source _est_ le document.
+- **.txt et .json** s'ouvrent ici directement en vue source : il n'y a rien à rendre, donc la source _est_ le document.

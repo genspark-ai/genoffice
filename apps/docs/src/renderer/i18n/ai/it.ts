@@ -187,4 +187,17 @@ export const it = {
   aiCmdImages: '{count} immagine/i aggiornata/e',
   aiCmdToc: 'Sommario inserito ({count} voci)',
   aiCmdSkipped: ' ({count} blocco/i protetto/i ignorato/i)',
+  aiStarterMindMap: 'Genera una mappa mentale di questo documento',
+  aiMindMapBtn: 'Mappa mentale IA',
+  aiMindMapPrompt:
+    'Genera una mappa mentale di questo documento, organizzando i temi principali e i concetti chiave secondo la struttura delle sezioni',
+  aiSumMindMap: 'Genera mappa mentale',
+  aiMindMapTitle: 'Mappa mentale',
+  aiMindMapNodes: '{count} nodi',
+  aiMindMapAskPrompt: 'Parlami di "{label}" in questo documento',
+  aiMindMapJump: 'Vai al passaggio citato',
+  aiMindMapExport: 'Esporta PNG',
+  aiMindMapReset: 'Reimposta vista',
+  aiMindMapExpand: 'Espandi ramo',
+  aiMindMapCollapse: 'Comprimi ramo',
 } satisfies Record<keyof typeof zh, string>

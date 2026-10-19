@@ -1,13 +1,13 @@
 # The Markdown editor
 
-The Markdown editor opens .md / .markdown with a source + rendered-preview experience.
+The Markdown editor opens .md / .markdown — and .txt / .json, straight into source view — with a source + rendered-preview experience.
 
 - **Open**: from Home or File ▸ Open; the CLI works too.
 - **Edit**: plain-text editing; GFM extensions (tables, task lists, strikethrough, autolinks) render in the preview.
 - **Preview**: live; relative assets like images resolve next to the document.
 - **Saving**: byte-faithful — BOM, CRLF and the presence of a trailing newline are preserved; an unmodified save does not rewrite the file.
 - **Find & replace**: ctrl+F searches the source; Replace All writes back.
-- **AI**: preset buttons let the assistant rewrite, extend or translate the document.
+- **AI**: preset buttons let the assistant rewrite, extend or translate the document. A selection can be hidden from the AI (see the AI panel chapter).
 
 ## The toolbar
 
@@ -24,6 +24,7 @@ One row of buttons above the editor (hover for tooltips):
 - **Properties**: insert or jump to the YAML front matter block at the top of the file.
 - **Outline**: jump by heading hierarchy.
 - **Spellcheck**: toggle spellcheck for this document.
+- **Image host settings**: send pasted and dropped pictures to your own storage first — S3-compatible (R2/OSS/COS/MinIO), SM.MS or GitHub — with the local assets copy as the fallback.
 
 Three quick examples:
 
@@ -46,4 +47,4 @@ The ribbon carries a **Source** toggle (localized with the app). Turn it on and 
 - **Editing is byte-faithful.** A save from source view produces the same bytes a save from the editor does — BOM, CRLF and the presence of a trailing newline all survive.
 - **It is the same document.** Toggle back and forth freely; the source is the editor's own text, not a copy that has to be merged.
 - **The formatting toolbar is unavailable** while it is open, because most of those buttons insert editor constructs that only mean something in the rendered side. It comes back when you close the view.
-- **JSON and other source-mode files** open here directly: there is nothing to render, so the source _is_ the document.
+- **.txt and .json** open here directly in source view: there is nothing to render, so the source _is_ the document.

@@ -48,10 +48,18 @@ test('Jev reranking lives in the AI Media & Search pane, saves with it, and repo
         rerank: true,
         endpoint: 'direct',
         keys: {
+          // one entry per decision endpoint, in ENDPOINT_IDS order: `toEqual` on
+          // the saved shape is the tripwire that makes adding an endpoint a
+          // deliberate act rather than a silent new key in every settings file
           openrouter: '',
           direct: 'ts-key',
           perplexity: '',
+          'perplexity-v12': '',
+          'perplexity-flash': '',
+          liquid: '',
+          'liquid-ultra': '',
           cloudflare: '',
+          'cloudflare-flash': '',
           kev: '',
           rizzo: '',
           custom: '',

@@ -1,13 +1,13 @@
 # Editor Markdown
 
-Editor Markdown membuka .md / .markdown dengan pengalaman sumber + pratinjau hasil render.
+Editor Markdown membuka .md / .markdown — dan .txt / .json, langsung ke tampilan sumber — dengan sumber plus pratinjau terender.
 
 - **Buka**: dari Beranda atau File ▸ Buka…; perintah baris perintah juga bisa.
 - **Sunting**: penyuntingan teks biasa; ekstensi GFM (tabel, daftar tugas, coret, autolink) dirender di pratinjau.
 - **Pratinjau**: langsung; aset relatif seperti gambar diselesaikan di samping dokumen.
 - **Menyimpan**: setia byte demi byte — BOM, CRLF, dan keberadaan baris baru di akhir file dipertahankan; penyimpanan tanpa perubahan tidak menulis ulang file.
 - **Cari dan ganti**: ctrl+F mencari di sumber; Ganti Semua menuliskan hasilnya kembali.
-- **AI**: tombol siap pakai membiarkan asisten menulis ulang, memperpanjang, atau menerjemahkan dokumen.
+- **AI**: tombol siap pakai membiarkan asisten menulis ulang, memperpanjang, atau menerjemahkan dokumen. Seleksi bisa disembunyikan dari AI (lihat bab panel AI).
 
 ## Bilah alat
 
@@ -24,6 +24,7 @@ Satu baris tombol di atas editor (arahkan kursor untuk melihat keterangan):
 - **Properti**: menyisipkan atau melompat ke blok YAML front matter di bagian atas file.
 - **Kerangka**: melompat menurut hierarki judul.
 - **Ejaan**: menyalakan atau mematikan pemeriksaan ejaan untuk dokumen ini.
+- **Pengaturan host gambar**: gambar yang ditempel dan dijatuhkan pergi lebih dulu ke penyimpanan Anda sendiri — kompatibel S3 (R2/OSS/COS/MinIO), SM.MS, atau GitHub — salinan assets lokal tetap menjadi cadangan.
 
 Tiga contoh singkat:
 
@@ -46,4 +47,4 @@ Pita memuat sakelar **Sumber** (ikut dilokalkan bersama aplikasi). Nyalakan, dan
 - **Penyuntingan setia byte demi byte.** Penyimpanan dari tampilan sumber menghasilkan byte yang sama dengan penyimpanan dari editor — BOM, CRLF, dan keberadaan baris baru di akhir file semuanya tetap utuh.
 - **Ini dokumen yang sama.** Berganti bolak-balik sesuka hati; sumber itu adalah teks milik editor itu sendiri, bukan salinan yang harus digabungkan.
 - **Bilah alat format tidak tersedia** selama tampilan ini terbuka, karena sebagian besar tombol itu menyisipkan konstruksi editor yang hanya bermakna di sisi hasil render. Bilah alat itu kembali begitu Anda menutup tampilan ini.
-- **JSON dan berkas mode sumber lainnya** terbuka langsung di sini: tidak ada yang perlu dirender, jadi sumber _adalah_ dokumennya.
+- **.txt dan .json** terbuka di sini langsung dalam tampilan sumber: tak ada yang perlu dirender, jadi sumbernya _adalah_ dokumennya.

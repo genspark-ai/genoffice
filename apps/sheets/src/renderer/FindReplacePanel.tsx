@@ -101,6 +101,11 @@ export function FindReplacePanel({
     loadHistory(globalThis.localStorage, REPLACE_HISTORY_KEY),
   )
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null)
+  // Univer's state$ snapshots omit replaceString, so a controlled input bound
+  // to it resets on every keystroke; the panel owns the text and mirrors it
+  // into the service.
+  const [replaceString, setReplaceString] = useState('')
+  const replaceStringRef = useRef('')
 
   const findInputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -121,6 +126,11 @@ export function FindReplacePanel({
   useEffect(() => {
     if (revealed) findInputRef.current?.focus()
   }, [revealed, replaceTab])
+
+  // a new session starts from Univer's empty replace string; restore the panel's
+  useEffect(() => {
+    if (revealed) service.changeReplaceString(replaceStringRef.current)
+  }, [revealed, service])
 
   const cancelLiveSearch = (): void => {
     if (liveSearchTimer.current === null) return
@@ -182,10 +192,8 @@ export function FindReplacePanel({
     setFindHistory(
       pushHistory(globalThis.localStorage, FIND_HISTORY_KEY, state.inputtingFindString),
     )
-    if (replaceTab && (state.replaceString ?? '') !== '') {
-      setReplaceHistory(
-        pushHistory(globalThis.localStorage, REPLACE_HISTORY_KEY, state.replaceString ?? ''),
-      )
+    if (replaceTab && replaceString !== '') {
+      setReplaceHistory(pushHistory(globalThis.localStorage, REPLACE_HISTORY_KEY, replaceString))
     }
   }
 
@@ -356,9 +364,11 @@ export function FindReplacePanel({
               {t('dlgFrReplaceWith')}
               <input
                 list="fr-replace-history"
-                value={state.replaceString ?? ''}
+                value={replaceString}
                 onChange={(event) => {
                   setReplaceReport(null)
+                  replaceStringRef.current = event.target.value
+                  setReplaceString(event.target.value)
                   service.changeReplaceString(event.target.value)
                 }}
                 onKeyDown={(event) => {

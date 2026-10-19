@@ -640,8 +640,11 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
           source.length > SELECTION_MAX_CHARS
             ? `${source.slice(0, SELECTION_MAX_CHARS)}\n… (truncated; read_source sid=${selected.sid} for the rest)`
             : source
-        const l1 = lineOf(text, selected.range[0])
-        const l2 = lineOf(text, Math.max(selected.range[0], selected.range[1] - 1))
+        const l1 = lineOf(proj.view, proj.toViewOffset(selected.range[0]))
+        const l2 = lineOf(
+          proj.view,
+          proj.toViewOffset(Math.max(selected.range[0], selected.range[1] - 1)),
+        )
         selection = `\n\n## User selection\nsid=${selected.sid} <${selected.tag}> L${l1}-L${l2}\nEdit/rewrite-style requests apply to this element by default.\n\`\`\`html\n${clipped}\n\`\`\``
       }
       const brief = parseBrief(text)

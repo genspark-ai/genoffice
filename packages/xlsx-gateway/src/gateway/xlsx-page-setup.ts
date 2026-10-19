@@ -33,6 +33,8 @@ export interface SheetPageSetupState {
   readonly zoomScale?: number | undefined
   readonly showFormulas?: boolean | undefined
   readonly showHeadings?: boolean | undefined
+  /// Mirrored grid (column A at the right edge of the sheet).
+  readonly rightToLeft?: boolean | undefined
   readonly printArea?: string | null | undefined
   readonly printTitles?: string | null | undefined
   readonly frozenRows?: number | undefined
@@ -216,6 +218,13 @@ function setFrozenPane(xml: string, rows: number, columns: number): string {
   return result.slice(0, at) + pane + result.slice(at)
 }
 
+/// A lone `&` that does not start an Excel code (`&&` literal, section,
+/// field, formatting, font size, font spec, `&[Page]` named code) is written
+/// as `&&`, the way Excel's own dialog does; anything else stays verbatim.
+function escapeStrayAmpersands(text: string): string {
+  return text.replace(/&&|&(?![LCRPNDTFAGBIUSEXYZOHK0-9"[])/gi, '&&')
+}
+
 /// Left/center/right → Excel's `&L..&C..&R..` code string, empty sections
 /// omitted; the caller XML-escapes the result.
 function encodeHeaderFooterSections(parts: HeaderFooterParts): string {
@@ -226,7 +235,7 @@ function encodeHeaderFooterSections(parts: HeaderFooterParts): string {
   ]
   return sections
     .filter(([, text]) => text !== undefined && text !== '')
-    .map(([marker, text]) => marker + (text ?? ''))
+    .map(([marker, text]) => marker + escapeStrayAmpersands(text ?? ''))
     .join('')
 }
 
@@ -364,6 +373,10 @@ export function applyPageSetupState(worksheetXml: string, state: SheetPageSetupS
   if (state.showHeadings !== undefined) {
     // showRowColHeaders defaults to true; write "0" to hide.
     xml = setSheetViewAttr(xml, 'showRowColHeaders', state.showHeadings ? null : '0')
+  }
+  if (state.rightToLeft !== undefined) {
+    // rightToLeft defaults to false; drop the attribute to restore it.
+    xml = setSheetViewAttr(xml, 'rightToLeft', state.rightToLeft ? '1' : null)
   }
 
   const printOptions: Record<string, string | null> = {}

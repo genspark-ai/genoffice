@@ -228,6 +228,99 @@ describe('sanitizeAiSettings', () => {
   })
 })
 
+describe('sanitizeAiSettings: custom endpoint profiles', () => {
+  const withProfile = (profile: unknown) => ({
+    provider: 'custom',
+    providers: {
+      custom: {
+        apiKey: 'sk-test',
+        model: 'glm-4.6',
+        baseUrl: 'https://gw.example.com/v1',
+        profile,
+      },
+    },
+  })
+
+  const withEndpoints = (entry: Record<string, unknown>) => ({
+    provider: 'custom',
+    providers: {
+      custom: { apiKey: 'sk-test', model: 'glm-4.6', baseUrl: 'https://gw.example.com/v1' },
+    },
+    customEndpoint: 'ep-1',
+    customEndpoints: [{ id: 'ep-1', name: 'gateway', ...entry }],
+  })
+
+  it('keeps a well-formed nested slot profile verbatim', () => {
+    const profile = {
+      api: 'anthropic',
+      apiKeyEnv: 'GW_API_KEY',
+      headers: { 'X-Tenant': 'office' },
+      idleTimeoutMs: 300000,
+      compat: { omitTemperature: true, vision: false },
+      bodyExtras: { chat_template_kwargs: { thinking: false } },
+      modelProfiles: [{ id: 'glm-4.6', alias: 'glm-4.6-air', vision: true, maxTokens: 8192 }],
+    }
+    const sanitized = sanitizeAiSettings(withProfile(profile))
+    expect(sanitized!.providers.custom!.profile).toEqual(profile)
+  })
+
+  it('keeps a flat endpoint profile from the customEndpoints list', () => {
+    const sanitized = sanitizeAiSettings(
+      withEndpoints({
+        baseUrl: 'https://gw.example.com/v1',
+        apiKey: 'sk-test',
+        model: 'glm-4.6',
+        api: 'gemini',
+        headers: { 'X-Tenant': 'office' },
+      }),
+    )
+    const entry = sanitized!.customEndpoints![0]!
+    expect(entry.api).toBe('gemini')
+    expect(entry.headers).toEqual({ 'X-Tenant': 'office' })
+    expect(entry.name).toBe('gateway')
+  })
+
+  it('drops a profile that is not an object, and an unknown protocol inside it', () => {
+    expect(sanitizeAiSettings(withProfile('anthropic'))!.providers.custom!.profile).toBeUndefined()
+    const out = sanitizeAiSettings(withProfile({ api: 'ollama-native', idleTimeoutMs: 1000 }))
+    expect(out!.providers.custom!.profile).toEqual({ idleTimeoutMs: 1000 })
+  })
+
+  it('rejects header injection and malformed header names', () => {
+    const crlf = sanitizeAiSettings(withProfile({ headers: { 'X-Evil': 'a\r\nX-Forged: 1' } }))
+    expect(crlf!.providers.custom!.profile?.headers).toBeUndefined()
+    const badName = sanitizeAiSettings(withProfile({ headers: { 'bad name': 'v' } }))
+    expect(badName!.providers.custom!.profile?.headers).toBeUndefined()
+  })
+
+  it('caps header count, drops oversized bodyExtras and non-boolean compat', () => {
+    const many = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`X-K${i}`, 'v']))
+    const out = sanitizeAiSettings(
+      withProfile({
+        headers: many,
+        bodyExtras: { blob: 'x'.repeat(70_000) },
+        compat: { omitTemperature: 'yes', echoReasoning: true },
+      }),
+    )
+    const profile = out!.providers.custom!.profile!
+    expect(Object.keys(profile.headers!)).toHaveLength(16)
+    expect(profile.bodyExtras).toBeUndefined()
+    expect(profile.compat).toEqual({ echoReasoning: true })
+  })
+
+  it('bounds the idle timeout and model profile entries', () => {
+    const out = sanitizeAiSettings(
+      withProfile({
+        idleTimeoutMs: 5,
+        modelProfiles: [{ id: 'm', maxTokens: 0.5 }, { alias: 'no-id' }, 'junk'],
+      }),
+    )
+    const profile = out!.providers.custom!.profile!
+    expect(profile.idleTimeoutMs).toBe(5)
+    expect(profile.modelProfiles).toEqual([{ id: 'm' }])
+  })
+})
+
 describe('validCliPath', () => {
   it('accepts an existing file path and bare commands', () => {
     const real = existingFilePath()

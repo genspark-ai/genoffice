@@ -102,6 +102,8 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     editText: vi.fn(async () => null),
     moveTextBlock: vi.fn(async (_idx, _block, d: [number, number]) => ({ moveBy: d })),
     addFormMark: vi.fn(),
+    formWidgets: () => [],
+    pageBoxes: async () => [],
     insertText: vi.fn(() => ({ id: 'i1' })),
     textInserts: () => [],
     updateTextInsert: vi.fn(),
@@ -135,7 +137,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     stamps: () => null,
     setStamps: vi.fn(),
     confirmFileOp: vi.fn(async () => true),
-    insertBlankPage: vi.fn(async () => ({ ok: true, pageCount: 3 })),
+    insertBlankPage: vi.fn(() => ({ ok: true, pageIndex: 2 })),
     setPageSize: vi.fn(async () => ({ ok: true, pageCount: 2 })),
     cropPages: vi.fn(async () => ({ ok: true, pageCount: 2 })),
     replacePages: vi.fn(async () => ({ ok: true, pageCount: 4 })),
@@ -2272,9 +2274,41 @@ describe('add_form_mark', () => {
     expect(result.isError).toBeUndefined()
     expect(result.mutated).toBe(true)
     expect(result.output).toContain('unsaved')
-    // anchor box is [0,700,110,712]: mark (22 pt) starts 4 pt right of it, centered on its middle
-    expect(deps.addFormMark).toHaveBeenCalledWith(0, 'check', [114, 695, 136, 717])
+    // anchor box is [0,700,110,712]: mark (12 pt) starts 4 pt right of it, centered on its middle
+    expect(deps.addFormMark).toHaveBeenCalledWith(0, 'check', [114, 700, 126, 712])
     expect(deps.gotoPage).toHaveBeenCalledWith(1)
+  })
+
+  it('ticks the interactive check box under the mark instead of drawing', async () => {
+    const deps = makeDeps()
+    deps.formWidgets = () => [
+      {
+        kind: 'checkbox',
+        fieldName: 'agree',
+        readOnly: false,
+        rect: [116, 702, 124, 710],
+      } as never,
+    ]
+    const result = await executePdfTool(
+      deps,
+      call('add_form_mark', { page: 1, kind: 'check', anchor_text: 'Hello World' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(deps.addFormMark).not.toHaveBeenCalled()
+    expect(deps.applyOps).toHaveBeenCalledWith([
+      { op: 'setFormValue', value: { name: 'agree', kind: 'checkbox', checked: true } },
+    ])
+    expect(result.output).toContain('agree')
+  })
+
+  it('fits the mark to a printed box under it', async () => {
+    const deps = makeDeps()
+    deps.pageBoxes = async () => [[117, 701, 125, 709]]
+    await executePdfTool(
+      deps,
+      call('add_form_mark', { page: 1, kind: 'cross', anchor_text: 'Hello World' }),
+    )
+    expect(deps.addFormMark).toHaveBeenCalledWith(0, 'cross', [117, 701, 125, 709])
   })
 
   it('places a cross at explicit top-left coordinates with a custom size', async () => {
@@ -2612,32 +2646,30 @@ describe('file-level page operations', () => {
   const fourPages = (over: Partial<PdfAiDeps> = {}) =>
     makeDeps({ pageCount: () => 4, pageOrder: () => [0, 1, 2, 3], ...over })
 
-  it('insert_blank_page runs after the user confirms and tells the model to re-read', async () => {
-    const deps = fourPages({ insertBlankPage: vi.fn(async () => ({ ok: true, pageCount: 5 })) })
+  it('insert_blank_page is a pending edit: no confirmation card, undoable', async () => {
+    const deps = fourPages({ insertBlankPage: vi.fn(() => ({ ok: true, pageIndex: 4 })) })
     const result = await executePdfTool(deps, call('insert_blank_page', { after_page: 2 }))
-    expect(deps.confirmFileOp).toHaveBeenCalledTimes(1)
+    expect(deps.confirmFileOp).not.toHaveBeenCalled()
     expect(deps.insertBlankPage).toHaveBeenCalledWith(1)
     expect(result.isError).toBeUndefined()
     expect(result.mutated).toBe(true)
     expect(result.output).toContain('page 3')
-    expect(result.output).toContain('5 pages')
-    expect(result.output).toContain('re-read')
+    expect(result.output).toContain('undoable')
+    expect(result.output).toContain('original page number, 5')
   })
 
   it('insert_blank_page 0 inserts at the front', async () => {
     const deps = fourPages()
     const result = await executePdfTool(deps, call('insert_blank_page', { after_page: 0 }))
-    expect(deps.insertBlankPage).toHaveBeenCalledWith(-1)
+    expect(deps.insertBlankPage).toHaveBeenCalledWith(null)
     expect(result.output).toContain('page 1')
   })
 
-  it('a declined card is a plain non-error output and nothing runs', async () => {
-    const deps = fourPages({ confirmFileOp: vi.fn(async () => false) })
+  it('insert_blank_page surfaces a rejected op as an error', async () => {
+    const deps = fourPages({ insertBlankPage: vi.fn(() => ({ ok: false, error: 'read-only' })) })
     const result = await executePdfTool(deps, call('insert_blank_page', { after_page: 1 }))
-    expect(result.isError).toBeUndefined()
-    expect(result.mutated).toBeUndefined()
-    expect(result.output).toContain('declined')
-    expect(deps.insertBlankPage).not.toHaveBeenCalled()
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('read-only')
   })
 
   it('stopping the run while the card is open reports the stop', async () => {
@@ -2664,7 +2696,6 @@ describe('file-level page operations', () => {
       }),
     })
     for (const c of [
-      call('insert_blank_page', { after_page: 2 }),
       call('crop_pages', { pages: '2', left: 0.1, top: 0, right: 0.9, bottom: 1 }),
       call('extract_pages', { pages: '2-3' }),
       call('replace_pages', { pages: '2' }),
@@ -2698,8 +2729,10 @@ describe('file-level page operations', () => {
 
   it('translates original page numbers through the visible order', async () => {
     const deps = fourPages({ pageOrder: () => [2, 0, 1, 3] })
-    await executePdfTool(deps, call('insert_blank_page', { after_page: 1 }))
-    expect(deps.insertBlankPage).toHaveBeenCalledWith(1)
+    // Pending edit: the op addresses the original page index (page 1 on screen is original page 2)
+    const inserted = await executePdfTool(deps, call('insert_blank_page', { after_page: 1 }))
+    expect(deps.insertBlankPage).toHaveBeenCalledWith(0)
+    expect(inserted.output).toContain('page 3')
     await executePdfTool(
       deps,
       call('crop_pages', { pages: '1,3', left: 0.1, top: 0, right: 0.9, bottom: 1 }),

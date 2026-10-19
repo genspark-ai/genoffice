@@ -421,7 +421,7 @@ function patchRunProps(runXml: string, run: TextRun): string {
     // run. Apply or clear it when the model disagrees, otherwise clearing a mark
     // in the editor would silently keep withholding the words on disk.
     if (run.redact) {
-      if (!hasRedactExtIn(runXml)) runXml = syncRedactExt(runXml, 'a:rPr', run.redact)
+      runXml = syncRedactExt(runXml, 'a:rPr', run.redact)
     } else if (hasRedactExtIn(runXml)) {
       runXml = syncRedactExt(runXml, 'a:rPr')
     }
@@ -815,9 +815,11 @@ export function generateParagraphXml(p: Paragraph): string {
     pPrAttrs.push(`indent="${clampInt(p.indent, -51206400, 51206400)}"`)
   if (p.align && want('align')) pPrAttrs.push(`algn="${alignMap[p.align]}"`)
   if (p.rtl != null) pPrAttrs.push(`rtl="${p.rtl ? 1 : 0}"`)
-  if (p.eaLnBrk === false) pPrAttrs.push('eaLnBrk="0"')
-  if (p.latinLnBrk) pPrAttrs.push('latinLnBrk="1"')
-  if (p.hangingPunct === false) pPrAttrs.push('hangingPunct="0"')
+  if (p.eaLnBrk != null && want('eaLnBrk')) pPrAttrs.push(`eaLnBrk="${p.eaLnBrk ? 1 : 0}"`)
+  if (p.latinLnBrk != null && want('latinLnBrk'))
+    pPrAttrs.push(`latinLnBrk="${p.latinLnBrk ? 1 : 0}"`)
+  if (p.hangingPunct != null && want('hangingPunct'))
+    pPrAttrs.push(`hangingPunct="${p.hangingPunct ? 1 : 0}"`)
   if (p.level) pPrAttrs.push(`lvl="${p.level}"`)
 
   // CT_TextParagraphProperties child order: lnSpc → spcBef → spcAft → buClr → buSzPct → buFont → bu*

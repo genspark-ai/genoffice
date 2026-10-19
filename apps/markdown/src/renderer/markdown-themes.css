@@ -1,0 +1,365 @@
+/* Markdown document paper themes (markdownTheme preference →
+ * html[data-markdown-theme]). Loaded AFTER styles.css: each block re-scopes
+ * the paper variables that `html[data-doc-theme='light'] .doc-page` owns, so
+ * a picked theme wins over the light/dark document theme for the paper.
+ *
+ * Provenance of each palette lives in shared/markdown-theme.ts. Structural
+ * rules beyond the variable blocks are kept minimal: font stacks, the couple
+ * of signature details each design is known by, and nothing else — the
+ * document typography stays the app's own. Every colour is introduced as a
+ * custom property (--mdt-*, one block per theme) and only ever referenced
+ * through var() elsewhere, per the theme-colours gate.
+ */
+
+/* ---- Notion Light (MIT reference: adrian-fuertes/typora-notion-theme) ---- */
+html[data-markdown-theme='notion-light'] {
+  --mdt-canvas: #e8e7e4;
+  --mdt-quote-border: #37352f;
+  --mdt-quote-bg: #f7f7f7;
+  --mdt-quote-text: #37352f;
+}
+
+html[data-markdown-theme='notion-light'] .doc-page {
+  --surface: #ffffff;
+  --md-paper-light: #ffffff;
+  --text: #37352f;
+  --text-primary: #37352f;
+  --text-secondary: #73726e;
+  --text-muted: #73726e;
+  --text-tertiary: #73726e;
+  --text-dim: #73726e;
+  --border: #e9e9e7;
+  --border-strong: #d3d1cb;
+  --border-subtle: #f1f1ef;
+  --surface-subtle: #f7f6f3;
+  --bg-content: #f7f6f3;
+  --hover: #e8e7e4;
+  --accent: #2eaadc;
+  --md-link: #37352f;
+  --md-code-bg: #f7f6f3;
+  --md-code-inline-bg: rgb(135 131 120 / 15%);
+  --md-table-header-bg: #f7f7f7;
+  --md-selection: rgb(192 229 244 / 60%);
+  --md-text-selection: #c0e5f4;
+  color-scheme: light;
+}
+
+html[data-markdown-theme='notion-light'] .editor-scroll {
+  background: var(--mdt-canvas);
+}
+
+html[data-markdown-theme='notion-light'] .doc-editor {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif, 'Apple Color Emoji';
+  line-height: 1.6;
+}
+
+html[data-markdown-theme='notion-light'] .doc-editor h1 {
+  border-bottom: none;
+  font-size: 1.875em;
+}
+
+html[data-markdown-theme='notion-light'] .doc-editor a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html[data-markdown-theme='notion-light'] .doc-editor blockquote {
+  border-left: 4px solid var(--mdt-quote-border);
+  background: var(--mdt-quote-bg);
+  border-radius: 3px;
+  color: var(--mdt-quote-text);
+}
+
+/* ---- Notion Dark (MIT reference: adrian-fuertes/typora-notion-theme) ---- */
+html[data-markdown-theme='notion-dark'] {
+  --mdt-canvas: #26282b;
+  --mdt-quote-border: #ebebeb;
+  --mdt-quote-bg: #3c4144;
+  --mdt-quote-text: #ebebeb;
+}
+
+html[data-markdown-theme='notion-dark'] .doc-page {
+  --surface: #2f3437;
+  --md-paper-light: #2f3437;
+  --text: #ebebeb;
+  --text-primary: #ebebeb;
+  --text-secondary: #9b9a97;
+  --text-muted: #9b9a97;
+  --text-tertiary: #9b9a97;
+  --text-dim: #9b9a97;
+  --border: #3f4447;
+  --border-strong: #4b5053;
+  --border-subtle: #3a3e41;
+  --surface-subtle: #3f4447;
+  --bg-content: #3f4447;
+  --hover: #4b5053;
+  --accent: #2eaadc;
+  --md-link: #ebebeb;
+  --md-code-bg: #3f4447;
+  --md-code-inline-bg: rgb(255 255 255 / 10%);
+  --md-table-header-bg: #3f4447;
+  --md-selection: rgb(46 87 103 / 70%);
+  --md-text-selection: #2e5767;
+  color-scheme: dark;
+}
+
+html[data-markdown-theme='notion-dark'] .editor-scroll {
+  background: var(--mdt-canvas);
+}
+
+html[data-markdown-theme='notion-dark'] .doc-editor {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif, 'Apple Color Emoji';
+  line-height: 1.6;
+}
+
+html[data-markdown-theme='notion-dark'] .doc-editor h1 {
+  border-bottom: none;
+  font-size: 1.875em;
+}
+
+html[data-markdown-theme='notion-dark'] .doc-editor a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html[data-markdown-theme='notion-dark'] .doc-editor blockquote {
+  border-left: 4px solid var(--mdt-quote-border);
+  background: var(--mdt-quote-bg);
+  border-radius: 3px;
+  color: var(--mdt-quote-text);
+}
+
+/* ---- Drake Dark (MIT reference: liangjingkanji/DrakeTyporaTheme) ---- */
+html[data-markdown-theme='drake-dark'] {
+  --mdt-canvas: #222222;
+  --mdt-heading: #bbc9d7;
+  --mdt-h2-border: #bbc9d7;
+  --mdt-quote-border: #3473b0;
+  --mdt-quote-bg: rgb(52 115 176 / 10%);
+  --mdt-quote-text: #acb7c4;
+  --mdt-code-fence-bg: #222222;
+  --mdt-code-fence-text: #a9b7c6;
+  --mdt-inline-code-text: #58a1d6;
+  --mdt-inline-code-bg: #222222;
+}
+
+html[data-markdown-theme='drake-dark'] .doc-page {
+  --surface: #2b2b2b;
+  --md-paper-light: #2b2b2b;
+  --text: #acb7c4;
+  --text-primary: #bbc9d7;
+  --text-secondary: rgb(172 183 196 / 65%);
+  --text-muted: rgb(172 183 196 / 50%);
+  --text-tertiary: rgb(172 183 196 / 50%);
+  --text-dim: rgb(172 183 196 / 50%);
+  --border: #383838;
+  --border-strong: #444444;
+  --border-subtle: #333333;
+  --surface-subtle: #222222;
+  --bg-content: #222222;
+  --hover: #222222;
+  --accent: #3473b0;
+  --md-link: #58a1d6;
+  --md-code-bg: var(--mdt-code-fence-bg);
+  --md-code-inline-bg: var(--mdt-inline-code-bg);
+  --md-table-header-bg: #222222;
+  --md-selection: rgb(52 115 176 / 41%);
+  --md-text-selection: rgb(52 115 176 / 41%);
+  --md-page-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+  color-scheme: dark;
+}
+
+html[data-markdown-theme='drake-dark'] .editor-scroll {
+  background: var(--mdt-canvas);
+}
+
+html[data-markdown-theme='drake-dark'] .doc-editor h1,
+html[data-markdown-theme='drake-dark'] .doc-editor h2,
+html[data-markdown-theme='drake-dark'] .doc-editor h3,
+html[data-markdown-theme='drake-dark'] .doc-editor strong {
+  color: var(--mdt-heading);
+}
+
+/* Drake's signature: an underlined h2 in the title color */
+html[data-markdown-theme='drake-dark'] .doc-editor h2 {
+  border-bottom: 1px solid var(--mdt-h2-border);
+  padding-bottom: 0.2em;
+}
+
+html[data-markdown-theme='drake-dark'] .doc-editor blockquote {
+  border-left: 3px solid var(--mdt-quote-border);
+  background: var(--mdt-quote-bg);
+  color: var(--mdt-quote-text);
+}
+
+html[data-markdown-theme='drake-dark'] .doc-editor code {
+  color: var(--mdt-inline-code-text);
+}
+
+/* ---- Blubook (Apache-2.0 reference: FishionYu/typora-blubook-theme) ----
+   light paper with the signature deep-blue code fences and the blue spine on
+   the quote's left edge */
+html[data-markdown-theme='blubook'] {
+  --mdt-quote-border: #3884fe;
+  --mdt-quote-bg: #f5f7f9;
+  --mdt-quote-text: #827676;
+  --mdt-code-fence-bg: #183055;
+  --mdt-code-fence-text: #f8f8f2;
+}
+
+html[data-markdown-theme='blubook'] .doc-page {
+  --surface: #ffffff;
+  --md-paper-light: #ffffff;
+  --text: #242a31;
+  --text-primary: #242a31;
+  --text-secondary: rgb(36 42 49 / 62%);
+  --text-muted: rgb(36 42 49 / 55%);
+  --text-tertiary: #b4b4b4;
+  --text-dim: #b4b4b4;
+  --border: #e8ecf0;
+  --border-strong: #d5dce2;
+  --border-subtle: #eef1f4;
+  --surface-subtle: #f5f7f9;
+  --bg-content: #f5f7f9;
+  --hover: #f0f3f6;
+  --accent: #3884fe;
+  --md-link: #3884fe;
+  --md-code-bg: var(--mdt-code-fence-bg);
+  --md-code-inline-bg: #f5f7f9;
+  --md-table-header-bg: #f5f7f9;
+  --md-selection: rgb(56 132 254 / 18%);
+  --md-text-selection: rgb(56 132 254 / 22%);
+  color-scheme: light;
+}
+
+html[data-markdown-theme='blubook'] .doc-editor blockquote {
+  border-left: none;
+  background: var(--mdt-quote-bg);
+  border-radius: 6px;
+  color: var(--mdt-quote-text);
+  padding: 0.8em 1em;
+  position: relative;
+}
+
+html[data-markdown-theme='blubook'] .doc-editor blockquote::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0.3rem;
+  background: var(--mdt-quote-border);
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+html[data-markdown-theme='blubook'] .doc-editor pre,
+html[data-markdown-theme='blubook'] .md-codeblock pre {
+  background: var(--mdt-code-fence-bg);
+  color: var(--mdt-code-fence-text);
+  border-radius: 6px;
+}
+
+html[data-markdown-theme='blubook'] .doc-editor pre code {
+  background: transparent;
+  color: var(--mdt-code-fence-text);
+}
+
+/* ---- Nord (clean-room reimplementation over the published Nord palette) ---- */
+html[data-markdown-theme='nord'] {
+  --mdt-canvas: #2b303b;
+  --mdt-quote-border: #d8dee9;
+  --mdt-quote-text: #d8dee9;
+}
+
+html[data-markdown-theme='nord'] .doc-page {
+  --surface: #2e3440;
+  --md-paper-light: #2e3440;
+  --text: #eceff4;
+  --text-primary: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted: #d8dee9;
+  --text-tertiary: #d8dee9;
+  --text-dim: #d8dee9;
+  --border: #3b4252;
+  --border-strong: #434c5e;
+  --border-subtle: #353c48;
+  --surface-subtle: #3b4252;
+  --bg-content: #3b4252;
+  --hover: #3b4252;
+  --accent: #81a1c1;
+  --md-link: #81a1c1;
+  --md-code-bg: #3b4252;
+  --md-code-inline-bg: rgb(216 222 233 / 12%);
+  --md-table-header-bg: #3b4252;
+  --md-selection: rgb(150 156 170 / 35%);
+  --md-text-selection: rgb(150 156 170 / 35%);
+  --md-page-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+  color-scheme: dark;
+}
+
+html[data-markdown-theme='nord'] .editor-scroll {
+  background: var(--mdt-canvas);
+}
+
+html[data-markdown-theme='nord'] .doc-editor blockquote {
+  border-left: 4px solid var(--mdt-quote-border);
+  color: var(--mdt-quote-text);
+}
+
+/* ---- Newsprint (clean-room reimplementation over the official palette) ---- */
+html[data-markdown-theme='newsprint'] {
+  --mdt-canvas: #e6e4de;
+  --mdt-quote-border: #1f0909;
+  --mdt-quote-text: #1f0909;
+}
+
+html[data-markdown-theme='newsprint'] .doc-page {
+  --surface: #f3f2ee;
+  --md-paper-light: #f3f2ee;
+  --text: #1f0909;
+  --text-primary: #1f0909;
+  --text-secondary: #57534e;
+  --text-muted: #6b6660;
+  --text-tertiary: #6b6660;
+  --text-dim: #6b6660;
+  --border: #d9d6cf;
+  --border-strong: #b8b4ac;
+  --border-subtle: #e5e2db;
+  --surface-subtle: #eae8e3;
+  --bg-content: #eae8e3;
+  --hover: #e5e2db;
+  --accent: #065588;
+  --md-link: #065588;
+  --md-code-bg: #eae8e3;
+  --md-code-inline-bg: rgb(31 9 9 / 8%);
+  --md-table-header-bg: #eae8e3;
+  --md-selection: rgb(32 43 51 / 30%);
+  --md-text-selection: rgb(32 43 51 / 30%);
+  color-scheme: light;
+}
+
+html[data-markdown-theme='newsprint'] .editor-scroll {
+  background: var(--mdt-canvas);
+}
+
+html[data-markdown-theme='newsprint'] .doc-editor {
+  font-family: Georgia, 'PT Serif', 'Songti SC', 'SimSun', 'Times New Roman', serif;
+}
+
+html[data-markdown-theme='newsprint'] .doc-editor h1,
+html[data-markdown-theme='newsprint'] .doc-editor h2,
+html[data-markdown-theme='newsprint'] .doc-editor h3,
+html[data-markdown-theme='newsprint'] .doc-editor h4,
+html[data-markdown-theme='newsprint'] .doc-editor code,
+html[data-markdown-theme='newsprint'] .doc-editor pre {
+  font-family: Georgia, 'PT Serif', 'Songti SC', 'SimSun', 'Times New Roman', serif;
+}
+
+/* the broad ink rule of the newsprint quote */
+html[data-markdown-theme='newsprint'] .doc-editor blockquote {
+  border-left: 5px solid var(--mdt-quote-border);
+  color: var(--mdt-quote-text);
+}

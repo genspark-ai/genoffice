@@ -46,7 +46,7 @@ Dokumen baru terbuka tanpa nama; file di disk baru dibuat saat disimpan pertama 
 | Buka panduan ini | F1    | F1              |
 | Ciutkan Pita     | ⌥⌘R   | Ctrl+F1         |
 
-**Ciutkan Pita** berfungsi di setiap editor. Baris tab tetap ada dan pita perintah di bawahnya tersembunyi; tab yang sedang dipilih sekaligus menjadi kendali pencetakan, sehingga selama pita terlipat tidak ada tab yang dipilih dan menekan tab mana pun mengembalikan pita itu. Klik ganda pada tab melakukan hal yang sama. Cara Anda meninggalkannya diingat per editor.
+**Ciutkan Pita** berfungsi di setiap editor. Baris tab tetap ada dan pita perintah di bawahnya tersembunyi; tab yang sedang dipilih sekaligus menjadi kendali pencetakan, sehingga selama pita terlipat tidak ada tab yang dipilih dan menekan tab mana pun mengembalikan pita itu. Klik ganda pada tab melakukan hal yang sama. Cara Anda meninggalkannya diingat per editor. Docs menambah kepadatan menengah: **⌥⌘K** / Ctrl+Alt+K memampatkan pita menjadi ikon saja, diingat dengan cara yang sama.
 
 Pintasan di dalam tiap editor (penyalin format, cari dan ganti, operasi tabel, ...) ada di bab masing-masing; Docs juga menyediakan dialog pintasan papan tikik yang bisa dicari (**⌘/**) (lihat babnya).
 

@@ -338,7 +338,9 @@ export const nl = {
   appFullLoadRunning:
     'De hele werkmap wordt geladen — sorteren en filteren zijn beschikbaar zodra dit klaar is…',
   appFullLoadTooLarge:
-    'Deze werkmap is te groot om volledig in het geheugen te laden; sorteren en filteren zijn niet beschikbaar voor dit bestand.',
+    'Deze werkmap is te groot om volledig in het geheugen te laden; sorteren en bereiken verplaatsen zijn voor dit bestand niet beschikbaar. Filteren gebeurt rechtstreeks op het bestand.',
+  appLargeFilterLoading: 'Filterkolom wordt uit het bestand gelezen…',
+  appLargeFilterApplying: 'Filter wordt op het bestand toegepast…',
   appSortValueModeFormulas:
     'Dit bereik bevat formules die in deze grote werkmap niet live worden berekend — sorteren of verplaatsen zou ze als gewone waarden opslaan. Kies een bereik zonder formules.',
   appSortRangeTooLarge:
@@ -583,6 +585,8 @@ export const nl = {
   appPrintFailed: 'Kan niet afdrukken.',
   appPrintNeedsFullLoad:
     'Afdrukken vereist dat de werkmap volledig is geladen. Wacht tot het laden is voltooid.',
+  appPrintWorkbookTooLarge:
+    'Deze werkmap is te groot om volledig in het geheugen te laden, dus hij kan niet worden afgedrukt of als pdf worden geëxporteerd.',
   appCsvExportNeedsFullLoad:
     'CSV-export vereist een volledig geladen werkmap — wacht tot het laden is voltooid.',
   appCsvExportTooLarge: 'Het blad is te groot om als CSV te exporteren.',
@@ -726,6 +730,7 @@ export const nl = {
   appTabReview: 'Controleren',
   appRibbonCollapse: 'Het lint samenvouwen',
   appRibbonExpand: 'Het lint uitvouwen',
+  appRibbonCompact: 'Compact lint (alleen pictogrammen)',
   appTabView: 'Beeld',
   appTabAi: 'AI',
   appTabChartDesign: 'Grafiekontwerp',
@@ -1125,6 +1130,9 @@ export const nl = {
   appHeadings: 'Koppen',
   appHeadingsHidden: 'Kopteksten verborgen.',
   appHeadingsShown: 'Kopteksten weergegeven.',
+  appRightToLeft: 'Van rechts naar links',
+  appRightToLeftOn: 'Raster Richting: van rechts naar links.',
+  appRightToLeftOff: 'Raster Richting: van links naar rechts.',
   appPrintHeadingsTitle: 'Rij- en kolomkoppen afdrukken',
   appGroupFunctionLibrary: 'Functiebibliotheek',
   appInsertFunction: 'Functie invoegen',
@@ -1267,6 +1275,10 @@ export const nl = {
   appFontSizeTip: 'Tekengrootte',
   appZoomIn: 'Inzoomen',
   appZoomOut: 'Uitzoomen',
+  appImgActualSize: 'Ware grootte',
+  appImgFitWindow: 'Aanpassen aan venster',
+  appImgSaveAs: 'Afbeelding opslaan als…',
+  appImgClose: 'Sluiten (Esc)',
   appZoomSheetTitle: 'In-/uitzoomen op het werkblad',
   appResetZoom: 'Zoomniveau herstellen',
   appZoomToSelection: 'Inzoomen op selectie',
@@ -1537,6 +1549,8 @@ export const nl = {
   appVisualSendBackward: 'Naar achteren',
   appVisualSizeProperties: 'Grootte en eigenschappen…',
   appVisualHyperlink: 'Hyperlink…',
+  appVisualEmbedInCell: 'Afbeelding in cel insluiten',
+  appVisualEmbedFailed: 'Deze afbeelding kon niet in de cel worden ingesloten.',
   appVisualDelete: 'Verwijderen',
   appVisualArranged: 'Object bijgewerkt — opslaan met ⌘S.',
   appVisualCopied: 'Object gekopieerd.',

@@ -20,7 +20,8 @@ Rules:
 - Page numbers are shown to the user starting at 1; the slideIndex tool argument is 0-based.
 - **The user's "page N" always means the current order in this turn's latest <deck outline> (row N is page N)**. The user may add/remove/move/swap pages at any time; page order from history or earlier turns may be stale — locate pages only by this turn's latest outline, never by generation order, content semantics, or old conversation.
 - Canvas coordinate system: pixels, origin top-left, width 1280, height in the outline's first line (720 for 16:9). All element positions/sizes use it.
-- Font size unit is pt: large titles 36–44, subtitles 20–26, body 14–18. Colors are #RRGGBB.
+- Font size unit is pt. The ranges large titles 36–44, subtitles 20–26, body 14–18 apply ONLY to elements you create. Colors are #RRGGBB.
+- **Rewriting the text of an EXISTING element keeps its formatting**: in setText (apply_ops or script) pass runs with `text` only — no fontSize, color, fontFamily, bold/italic — and the new words inherit the original run's size, color and font exactly. Never re-apply a default size from the ranges above to an existing box; set those fields only when the user explicitly asks to change the style.
 - Element colors are readable: the outline shows each page's main fills; read_slide and script els expose per-element fill/textColor/strokeColor (hex, read-only — change them with setFill/setStyle/setStroke in a script, or apply_ops setFill/setStroke). Picture/chart colors are not readable; don't guess them.
 - For editing existing elements (position/size/text/style/fill/stroke) prefer execute_slide_script; a single-property change on one element is one apply_ops op. Multi-property/multi-element/relative nudges/align-distribute always use a script.
 

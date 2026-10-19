@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { PrintJobOptions } from '../shared/ipc'
 
 /** Baseline raster density (previous behavior — quality never drops below this). */
 const BASE_DPI = 150
@@ -75,7 +76,21 @@ function waitForPrintDialog(timeoutMs: number): Promise<void> {
   })
 }
 
-export async function printPdf(doc: PDFDocumentProxy, pages?: number[]): Promise<void> {
+/** Keep every other page of a file-page list, Word's "odd pages / even pages" subset. */
+export function filterPageParity(pages: number[], parity: PageParity): number[] {
+  if (parity === 'all') return pages
+  return pages.filter((n) => n % 2 === (parity === 'odd' ? 1 : 0))
+}
+
+export type PageParity = 'all' | 'odd' | 'even'
+
+/** `job`: a chosen printer prints silently through the main process with its
+    copies/duplex options; omitted, the system print dialog takes over. */
+export async function printPdf(
+  doc: PDFDocumentProxy,
+  pages?: number[],
+  job?: PrintJobOptions,
+): Promise<void> {
   const root = document.createElement('div')
   root.className = 'pdf-print-root'
   const canvas = document.createElement('canvas')
@@ -157,7 +172,12 @@ export async function printPdf(doc: PDFDocumentProxy, pages?: number[]): Promise
   document.body.appendChild(root)
   try {
     await Promise.all([...root.querySelectorAll('img')].map((img) => img.decode()))
-    await waitForPrintDialog(PRINT_DIALOG_TIMEOUT_MS)
+    if (job) {
+      const r = await window.pdfApi.print(job)
+      if (!r.ok && r.error) throw new Error(r.error)
+    } else {
+      await waitForPrintDialog(PRINT_DIALOG_TIMEOUT_MS)
+    }
   } finally {
     root.remove()
   }

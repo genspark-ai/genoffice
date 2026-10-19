@@ -168,8 +168,9 @@ function buildChartNodeTitled(
   }
   // With a title: the content area yields a top row; shift everything down and draw the title
   // centered on top. Explicit c:title size wins (txPr default, else the first rich run);
-  // otherwise PowerPoint sizes the auto title at 1.2× the chart's default text.
-  const titleSizePx = ptToPx(model.titlePt ?? chartTextPt(model) * 1.2, vp.scale)
+  // otherwise PowerPoint's auto title is 18pt whatever the chart's default text size
+  // (probe: chartSpace txPr 10pt and 18pt both render the title at 18pt).
+  const titleSizePx = ptToPx(model.titlePt ?? 18, vp.scale)
   const titleBold = model.titleBold ?? true
   const measureTitle = (t: string) =>
     metrics.measure(t, {
@@ -178,8 +179,10 @@ function buildChartNodeTitled(
       bold: titleBold,
       italic: !!model.titleItalic,
     })
-  const titleLines = wrapToWidth(model.title, Math.max(box.w - 16, 40), measureTitle)
-  const titleH = titleSizePx * 1.4 * titleLines.length + titleSizePx * 0.3
+  // PowerPoint wraps the title inside ~80% of the frame width and stacks lines at 1.17em
+  // below a 0.55em top gap (probe: 4"/6"/8" frames, 3–12 word titles)
+  const titleLines = wrapToWidth(model.title, Math.max(box.w * 0.8, 40), measureTitle)
+  const titleH = titleSizePx * (0.5 + 1.17 * titleLines.length) - 1
   // A manual plot layout already positions the plot in full-frame fractions (title space
   // included), so the content must not shrink or shift — but only the cartesian builder
   // consumes plotLayout; pie/scatter/radar still lay out from the (shrunk) frame
@@ -208,7 +211,7 @@ function buildChartNodeTitled(
     node.labels.push({
       text: line,
       x: Math.max((box.w - measureTitle(line)) / 2, 4),
-      y: titleSizePx * 0.3 + i * titleSizePx * 1.4,
+      y: titleSizePx * 0.55 + i * titleSizePx * 1.17,
       fontSizePx: titleSizePx,
       color:
         model.titleColor ?? model.defaultTextColor ?? (model.hasStylePart ? '#333333' : '#000000'),
@@ -651,11 +654,15 @@ function buildChartNodeInner(
     catTitleH -
     (legendPos === 'b' ? legendH : 0)
   const L = model.plotLayout
+  // PowerPoint keeps the value-axis labels inside the frame: a manual inner rect that
+  // starts closer to the edge than the labels need is pushed right (right edge kept)
+  const manualMinX = valRight || valNoReserve ? 0 : yLabelW + valLabelGap
+  const manualX = L ? Math.max(L.x * box.w, manualMinX) : 0
   const plot = L
     ? {
-        x: L.x * box.w,
+        x: manualX,
         y: L.y * box.h,
-        w: Math.max(L.w * box.w, 10),
+        w: Math.max((L.x + L.w) * box.w - manualX, 10),
         h: Math.max(L.h * box.h, 10),
       }
     : {
@@ -794,16 +801,17 @@ function buildChartNodeInner(
   // x axis at the category-axis crossing (autoZero clamped into the range; 3D stages
   // keep it on the front floor edge) + y axis (left, on the back wall; skipped when deleted)
   const crossY = depth3d ? plot.y + plot.h : yOf(Math.min(Math.max(0, min), max))
-  node.axisLines.push({
-    x1: plot.x,
-    y1: crossY,
-    x2: plot.x + plot.w,
-    y2: crossY,
-    color: axisColor,
-    widthPx: axisW,
-  })
+  if (!model.catAxis?.lineHidden)
+    node.axisLines.push({
+      x1: plot.x,
+      y1: crossY,
+      x2: plot.x + plot.w,
+      y2: crossY,
+      color: axisColor,
+      widthPx: axisW,
+    })
   const valAxisX = valRight ? plot.x + plot.w : plot.x + depth3d * 0.5
-  if (!valHidden)
+  if (!valHidden && !model.valAxis?.lineHidden)
     node.axisLines.push({
       x1: valAxisX,
       y1: plot.y - depth3d,
@@ -816,14 +824,15 @@ function buildChartNodeInner(
   // Secondary value axis (right): axis line + independent tick labels; gridlines are drawn for the primary only, so two grids don't fight
   if (sec) {
     const secLabelColor = model.valAxis2?.labelColor ?? labelColor
-    node.axisLines.push({
-      x1: plot.x + plot.w,
-      y1: plot.y,
-      x2: plot.x + plot.w,
-      y2: plot.y + plot.h,
-      color: model.valAxis2?.lineColor ?? axisColor,
-      widthPx: axisW,
-    })
+    if (!model.valAxis2?.lineHidden)
+      node.axisLines.push({
+        x1: plot.x + plot.w,
+        y1: plot.y,
+        x2: plot.x + plot.w,
+        y2: plot.y + plot.h,
+        color: model.valAxis2?.lineColor ?? axisColor,
+        widthPx: axisW,
+      })
     sec.ticks.forEach((t, i) => {
       node.labels.push({
         text: secTickLabels[i]!,
@@ -1036,7 +1045,7 @@ function buildChartNodeInner(
       color: inside
         ? '#FFFFFF'
         : (ov?.color ?? model.defaultTextColor ?? (dlBold ? '#000000' : '#404040')),
-      ...(dlBold ? { bold: true } : {}),
+      ...((ov?.text != null ? ov.bold : dlBold) ? { bold: true } : {}),
       ...labelBoxOf(model, si, catIdx, measure(text, size)),
     })
   }
@@ -1252,22 +1261,38 @@ function buildChartNodeInner(
     const items = (model.legendOrder ?? model.series.map((_, i) => i)).map((i) => ({
       label: model.series[i]?.name ?? '',
       color: seriesColor(i),
+      line: !!model.series[i] && serKind(model.series[i]!) === 'line',
+      marker: !!model.series[i]?.marker,
     }))
-    const itemWs = items.map((it) => sw + 4 + legendMeasure(it.label) + legendSizePx * 0.5)
+    // A line series key is a ~2.25em line segment with its marker (PowerPoint measured 27px at
+    // 12px text); every key in that legend takes the same width so the labels align
+    const keyW = items.some((it) => it.line) ? legendSizePx * 2.25 : sw
+    const itemWs = items.map((it) => keyW + 4 + legendMeasure(it.label) + legendSizePx * 0.5)
     const legendEntry = (x: number, y: number, it: (typeof items)[number]) => {
-      node.swatches.push({
-        x,
-        y: y + legendSizePx * 0.3,
-        w: sw,
-        h: legendSizePx * 0.5,
-        color: it.color,
-      })
+      if (it.line) {
+        const cy = y + legendSizePx * 0.55
+        node.polylines.push({
+          points: [x, cy, x + keyW, cy],
+          color: it.color,
+          widthPx: Math.max(1.5, ptToPx(2.25, vp.scale)),
+        })
+        if (it.marker)
+          node.markers.push({ x: x + keyW / 2, y: cy, r: legendSizePx * 0.28, color: it.color })
+      } else {
+        node.swatches.push({
+          x,
+          y: y + legendSizePx * 0.3,
+          w: keyW,
+          h: legendSizePx * 0.5,
+          color: it.color,
+        })
+      }
       node.labels.push({
         text: it.label,
-        x: x + sw + 4,
+        x: x + keyW + 4,
         y,
         fontSizePx: legendSizePx,
-        color: labelColor,
+        color: model.legendColor ?? labelColor,
         ...(legendBold ? { bold: true } : {}),
       })
     }
@@ -1476,7 +1501,7 @@ function buildOfPieNode(
         x: x + sw + 4,
         y,
         fontSizePx: labelSizePx,
-        color: labelColor,
+        color: model.legendColor ?? labelColor,
       })
     }
     if (legendPos === 't' || legendPos === 'b') {
@@ -1578,7 +1603,12 @@ function buildPieNode(
     label: cat,
     color: swatchColor(i),
   }))
-  const legendRowH = labelSizePx * 1.5
+  // Side legend geometry (probe, 10–24pt): swatch 0.55em + 0.25em gap + text + 16px frame
+  // margin; rows step 1.2em + 8px (px at 96dpi on a 13.33" slide, hence EMU-scaled)
+  const px96 = (n: number) => emuToPx(n * 9525, vp.scale)
+  const legendRowH = labelSizePx * 1.2 + px96(8)
+  const sw = labelSizePx * 0.55
+  const swGap = labelSizePx * 0.25
   let plotW = box.w - pad * 2
   let plotH = box.h - pad * 2
   let plotX = pad
@@ -1591,7 +1621,9 @@ function buildPieNode(
             legendItems.map((it) => measure(it.label)),
             0,
           ) +
-            labelSizePx * 2.2,
+            sw +
+            swGap +
+            px96(16),
         )
       : 0
   if (legendPos === 'r' || legendPos === 'tr') plotW -= sideLegendW
@@ -1746,7 +1778,7 @@ function buildPieNode(
       const text = composeDataLabel(model, 0, i, valueText)
       const dlPt = ov?.sizePt ?? model.dataLabelPt
       const dlSize = dlPt ? ptToPx(dlPt, vp.scale) : labelSizePx * 0.9
-      const dlBold = !!model.dataLabelBold
+      const dlBold = ov?.text != null ? !!ov.bold : !!model.dataLabelBold
       const dlW = metrics.measure(text, { ...style, fontSizePx: dlSize, bold: dlBold })
       if (text)
         node.labels.push({
@@ -1764,7 +1796,6 @@ function buildPieNode(
 
   // Legend
   if (legendPos) {
-    const sw = labelSizePx * 0.5
     const lay = model.legendLayout
     const rtl = !!model.legendRtl
     const entry = (
@@ -1777,7 +1808,7 @@ function buildPieNode(
       // RTL entries mirror: swatch at the right edge, text tight against it —
       // itemW's trailing 0.5em stays as the inter-item gap on the left side
       const swX = rtl ? x + itemW - sw : x
-      const txX = rtl ? x + itemW - sw - 4 - textW : x + sw + 4
+      const txX = rtl ? x + itemW - sw - swGap - textW : x + sw + swGap
       node.swatches.push({
         x: swX,
         y: y + labelSizePx * 0.25,
@@ -1785,11 +1816,17 @@ function buildPieNode(
         h: labelSizePx * 0.5,
         color: it.color,
       })
-      node.labels.push({ text: it.label, x: txX, y, fontSizePx: labelSizePx, color: labelColor })
+      node.labels.push({
+        text: it.label,
+        x: txX,
+        y,
+        fontSizePx: labelSizePx,
+        color: model.legendColor ?? labelColor,
+      })
     }
     if (legendPos === 't' || legendPos === 'b') {
       const textWs = legendItems.map((it) => measure(it.label))
-      const itemWs = textWs.map((w) => sw + 4 + w + labelSizePx * 0.5)
+      const itemWs = textWs.map((w) => sw + swGap + w + labelSizePx * 0.5)
       const totalW = itemWs.reduce((a, b) => a + b, 0)
       const rect =
         lay?.w !== undefined && lay.x !== undefined && lay.xMode === 'edge'
@@ -1834,15 +1871,15 @@ function buildPieNode(
           x,
           y: y + labelSizePx * 0.25,
           w: sw,
-          h: labelSizePx * 0.5,
+          h: sw,
           color: it.color,
         })
         node.labels.push({
           text: it.label,
-          x: x + sw + 4,
+          x: x + sw + swGap,
           y,
           fontSizePx: labelSizePx,
-          color: labelColor,
+          color: model.legendColor ?? labelColor,
         })
         y += legendRowH
       }
@@ -2002,7 +2039,15 @@ function buildBar3DNode(
   const axisW = Math.max(1, ptToPx(1, vp.scale))
   const [fblx, fbly] = px(0, Hf, 0)
   const [fbrx, fbry] = px(Wf, Hf, 0)
-  node.axisLines.push({ x1: fblx, y1: fbly, x2: fbrx, y2: fbry, color: axisColor, widthPx: axisW })
+  if (!model.catAxis?.lineHidden)
+    node.axisLines.push({
+      x1: fblx,
+      y1: fbly,
+      x2: fbrx,
+      y2: fbry,
+      color: axisColor,
+      widthPx: axisW,
+    })
 
   // ── Value tick labels along the front-left edge ──
   if (!valLabelsOff)
@@ -2288,7 +2333,15 @@ function buildArea3DNode(
   const axisW = Math.max(1, ptToPx(1, vp.scale))
   const [fblx, fbly] = px(0, Hf, 0)
   const [fbrx, fbry] = px(Wf, Hf, 0)
-  node.axisLines.push({ x1: fblx, y1: fbly, x2: fbrx, y2: fbry, color: axisColor, widthPx: axisW })
+  if (!model.catAxis?.lineHidden)
+    node.axisLines.push({
+      x1: fblx,
+      y1: fbly,
+      x2: fbrx,
+      y2: fbry,
+      color: axisColor,
+      widthPx: axisW,
+    })
 
   if (!valLabelsOff)
     ticks.forEach((t, i) => {
@@ -2604,22 +2657,24 @@ function buildHBarNode(
   })
   const axisColor = model.valAxis?.lineColor ?? model.catAxis?.lineColor ?? '#888888'
   const axisW = Math.max(1, ptToPx(1, vp.scale))
-  node.axisLines.push({
-    x1: plot.x,
-    y1: plot.y + plot.h,
-    x2: plot.x + plot.w,
-    y2: plot.y + plot.h,
-    color: axisColor,
-    widthPx: axisW,
-  })
-  node.axisLines.push({
-    x1: plot.x,
-    y1: plot.y,
-    x2: plot.x,
-    y2: plot.y + plot.h,
-    color: axisColor,
-    widthPx: axisW,
-  })
+  if (!model.valAxis?.lineHidden)
+    node.axisLines.push({
+      x1: plot.x,
+      y1: plot.y + plot.h,
+      x2: plot.x + plot.w,
+      y2: plot.y + plot.h,
+      color: axisColor,
+      widthPx: axisW,
+    })
+  if (!model.catAxis?.lineHidden)
+    node.axisLines.push({
+      x1: plot.x,
+      y1: plot.y,
+      x2: plot.x,
+      y2: plot.y + plot.h,
+      color: axisColor,
+      widthPx: axisW,
+    })
 
   if (model.valAxis?.title) {
     const a = model.valAxis
@@ -2690,6 +2745,7 @@ function buildHBarNode(
       y: yMid - size * 0.55,
       fontSizePx: size,
       color: inside ? '#FFFFFF' : (ov?.color ?? '#404040'),
+      ...((ov?.text != null ? ov.bold : model.dataLabelBold) ? { bold: true } : {}),
       ...labelBoxOf(model, si, catIdx, measure(text, size)),
     })
   }
@@ -2909,22 +2965,24 @@ function buildScatterNode(
   })
   const axisColor = model.valAxis?.lineColor ?? model.catAxis?.lineColor ?? '#888888'
   const axisW = Math.max(1, ptToPx(1, vp.scale))
-  node.axisLines.push({
-    x1: plot.x,
-    y1: plot.y + plot.h,
-    x2: plot.x + plot.w,
-    y2: plot.y + plot.h,
-    color: axisColor,
-    widthPx: axisW,
-  })
-  node.axisLines.push({
-    x1: plot.x,
-    y1: plot.y,
-    x2: plot.x,
-    y2: plot.y + plot.h,
-    color: axisColor,
-    widthPx: axisW,
-  })
+  if (!model.catAxis?.lineHidden)
+    node.axisLines.push({
+      x1: plot.x,
+      y1: plot.y + plot.h,
+      x2: plot.x + plot.w,
+      y2: plot.y + plot.h,
+      color: axisColor,
+      widthPx: axisW,
+    })
+  if (!model.valAxis?.lineHidden)
+    node.axisLines.push({
+      x1: plot.x,
+      y1: plot.y,
+      x2: plot.x,
+      y2: plot.y + plot.h,
+      color: axisColor,
+      widthPx: axisW,
+    })
 
   // Series: scatterStyle decides the line/marker defaults; an explicit series marker overrides
   const st = model.scatterStyle ?? 'lineMarker'
@@ -3396,7 +3454,7 @@ function addSeriesLegend(
         x: x + sw + 4,
         y,
         fontSizePx: labelSizePx,
-        color: labelColor,
+        color: model.legendColor ?? labelColor,
       })
       x += itemWs[i]!
     })
@@ -3416,7 +3474,7 @@ function addSeriesLegend(
         x: x + sw + 4,
         y,
         fontSizePx: labelSizePx,
-        color: labelColor,
+        color: model.legendColor ?? labelColor,
       })
       y += labelSizePx * 1.5
     })
@@ -3596,6 +3654,7 @@ function composeDataLabel(
 ): string {
   const ov = pointLabelOverride(model, si, catIdx)
   if (ov?.hidden) return ''
+  if (ov?.text != null) return ov.text
   const parts: string[] = []
   if (ov ? ov.ser : model.dataLabelSerName) parts.push(model.series[si]?.name ?? '')
   if (ov ? ov.cat : model.dataLabelCatName) parts.push(model.categories?.[catIdx] ?? '')

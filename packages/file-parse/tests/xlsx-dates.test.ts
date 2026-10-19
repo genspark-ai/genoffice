@@ -75,6 +75,18 @@ describe('classifyFormatCode', () => {
     expect(classifyFormatCode('hh:mm;yyyy-mm-dd')).toMatchObject({ date: false, time: true })
     expect(classifyFormatCode('\\";yyyy-mm-dd')).toBeNull()
   })
+
+  it.each(['\\"', '_"', '*"'])(
+    'keeps a literal quote from exposing quoted date letters after %s',
+    (quote) => {
+      expect(classifyFormatCode(`0.00${quote} "days"`)).toBeNull()
+    },
+  )
+
+  it('keeps time tokens between escaped literal quotes', () => {
+    expect(classifyFormatCode('\\"hh:mm\\"')).toMatchObject({ date: false, time: true })
+    expect(classifyFormatCode('\\"[h]:mm\\"')).toMatchObject({ elapsed: true, time: true })
+  })
 })
 
 describe('builtinDateFormat', () => {
@@ -178,6 +190,27 @@ describe('xlsxToText date cells', () => {
         '</row>',
     })
     expect(await xlsxToText(bytes)).toContain('12:00 | 100 | 2024-01-01 12:00')
+  })
+
+  it('extracts numeric and time cells with literal quotes without changing the workbook', async () => {
+    const bytes = await workbook({
+      numFmts:
+        '<numFmt numFmtId="164" formatCode="0.00\\&quot; &quot;days&quot;"/>' +
+        '<numFmt numFmtId="165" formatCode="0.00_&quot; &quot;days&quot;"/>' +
+        '<numFmt numFmtId="166" formatCode="0.00*&quot; &quot;days&quot;"/>' +
+        '<numFmt numFmtId="167" formatCode="\\&quot;hh:mm\\&quot;"/>',
+      xfs: '<xf numFmtId="164"/><xf numFmtId="165"/><xf numFmtId="166"/>' + '<xf numFmtId="167"/>',
+      sheetXml:
+        '<row r="1">' +
+        '<c r="A1" s="0"><v>100</v></c>' +
+        '<c r="B1" s="1"><v>100</v></c>' +
+        '<c r="C1" s="2"><v>100</v></c>' +
+        '<c r="D1" s="3"><v>0.5</v></c>' +
+        '</row>',
+    })
+    const original = bytes.slice()
+    expect(await xlsxToText(bytes)).toContain('100 | 100 | 100 | 12:00')
+    expect(bytes).toEqual(original)
   })
 
   it('renders date-styled serials as ISO dates and leaves other numbers alone', async () => {

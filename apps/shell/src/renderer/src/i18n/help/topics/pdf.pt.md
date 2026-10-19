@@ -64,6 +64,9 @@ Seis ferramentas: **Desenho livre, Retângulo, Elipse, Seta, Nota**, mais a **Ce
 - **Assinatura manuscrita**: desenhe-a; pode ser associada a um campo de assinatura de um formulário.
 - **Assinatura por imagem**: coloque uma imagem como assinatura.
 - As assinaturas guardadas podem ser reutilizadas.
+- **Assinatura com certificado** (aba Anotar): assine com um certificado do repositório do sistema ou de um arquivo .p12/.pfx; mostre opcionalmente a assinatura na página e certifique opcionalmente o documento contra mudanças posteriores.
+- Assinar sempre grava um **novo arquivo** (atualização incremental — assinaturas anteriores seguem válidas) e abre a cópia assinada no lugar. Salve antes: a assinatura cobre o arquivo como está no disco.
+- Uma faixa acima do documento lista as assinaturas existentes; **Ver assinaturas** mostra validade, cobertura e cadeia de certificados de cada uma. Revogação (CRL/OCSP) não é verificada.
 
 ## Operações de página (Páginas)
 

@@ -28,6 +28,9 @@ export interface BlockBox {
    *  lineBoxes offsets); the engine turns the page there and the text before
    *  stays on the current page like Word */
   innerBreaks?: number[]
+  /** a page-break-before paragraph lives inside a cell: the row data must exist
+   *  even when the table fits its page, or the instruction is invisible */
+  hasCellBreak?: boolean
   /** zero-height break carrier (floating-textbox anchor): the break survives a blank page */
   breakForce?: boolean
   /** block contains a column break (w:br type=column): force a column change after it (new page on last column) */
@@ -81,12 +84,25 @@ export interface BlockBox {
    *  block starts this many px above its flow position (Word hangs it above
    *  the anchor paragraph, into the top margin on a page start) */
   liftPx?: number
+  /** text-anchored w:tblpPr table (floated or flowed inline): Word starts it on
+   *  the next page when it does not fit the rest of the current one (probe
+   *  2026-10-13; the split at row boundaries only begins from there) */
+  floatPushWhole?: true
+  /** anchor paragraph whose side-wrapped drawings are page obstacles: Word
+   *  turns the page before it when a drawing would pass the body bottom and
+   *  cannot be pulled up to end there (probe 2026-10-13); floatBottom is the
+   *  lowest drawing bottom, floatMaxH the tallest drawing */
+  floatKeepWhole?: true
+  floatMaxH?: number
   /** in-block line boundaries (relative to block top, ascending, each = a line's starting Y): used to split page-crossing blocks by line */
   lineOffsets?: number[]
   /** min lines kept on each side of a split (widow/orphan control): paragraphs 2, table rows 1 (default) */
   splitMinLines?: number
   /** no visible text/image (empty paragraph mark): flows but doesn't count toward column-balance quotas */
   emptyPara?: boolean
+  /** no text and no inline picture: the paragraph's only runs are anchored drawings
+   *  (its flow footprint is the mark's strut line) */
+  anchorOnly?: boolean
   /** non-reflowable block's rendered width (tables, protected textboxes/objects):
    *  such a block never advances into a narrower column (Word turns the page instead) */
   fixedWidthPx?: number
@@ -174,6 +190,10 @@ export interface TableRowBox {
   /** in-row safe cut points (relative to row top, px, ascending): spanning all cells without splitting any text line/image.
    *  Word allows in-row page breaks by default; without cut points or with cantSplit the row is atomic */
   cutYs?: number[]
+  /** forced in-row cut points (relative to row top, px, ascending): page breaks the
+   *  author instructed inside a cell (a page-break-before paragraph) — they turn the
+   *  page at their position regardless of what fits, unlike the content-line cutYs */
+  forcedCuts?: number[]
   /** bottom of the lowest content band (text/image rects) relative to row top (px, 0 = empty row):
    *  lets pagination clip declared-height fill below the content instead of pushing pages */
   contentBottom?: number

@@ -16,6 +16,7 @@ export const id = {
   ribbonTabReview: 'Tinjau',
   ribbonCollapse: 'Ciutkan Pita',
   ribbonExpand: 'Perluas Pita',
+  ribbonCompact: 'Pita Ringkas (hanya ikon)',
   ribbonTabView: 'Tampilan',
   ribbonTabTableDesign: 'Desain Tabel',
   ribbonTabChartDesign: 'Desain Bagan',
@@ -386,6 +387,12 @@ export const id = {
   ribbonRehearseTip:
     'Latih pengaturan waktu: putar peragaan dari awal dan catat waktu tiap slide; dapat disimpan sebagai waktu peralihan otomatis (disimpan ke pptx)',
   ribbonRecord: 'Rekam',
+  ribbonRecordTip:
+    'Rekam narasi: putar tayangan slide dan rekam suara Anda serta waktu setiap slide',
+  ribbonRecordFromBeginning: 'Rekam dari Awal',
+  ribbonRecordFromCurrent: 'Rekam dari Slide Saat Ini',
+  ribbonClearNarrationCurrent: 'Hapus Narasi di Slide Saat Ini',
+  ribbonClearNarrationAll: 'Hapus Narasi di Semua Slide',
   ribbonGroupProofing: 'Pemeriksaan',
   ribbonSpellCheck: 'Ejaan',
   ribbonSpellCheckTip:

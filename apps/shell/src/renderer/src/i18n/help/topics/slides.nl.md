@@ -51,6 +51,7 @@ Het menu volgt de plek waar je met de rechtermuisknop klikt:
 
 - De AI-dia-kaart op Start: geef een onderwerp of een outline en de AI bouwt de presentatie; lukt genereren in de cloud niet, dan valt het terug op lokaal genereren.
 - Ga daarna door met het AI-paneel.
+- Rechtsklik op een tekstselectie of een afbeeldings/video/audio-element ▸ **Selectie voor AI verbergen** houdt het uit het zicht van het model (details in het hoofdstuk over het AI-paneel); een dia met verborgen inhoud slaat de automatische screenshotcontrole over.
 
 ## Presenteren en exporteren
 

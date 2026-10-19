@@ -6,6 +6,7 @@ import type {
   ImageWrap,
   ParaFormat,
   ParaFrame,
+  RevisionInfo,
   Run,
   TabStop,
   TableCell,
@@ -28,6 +29,8 @@ export interface GenerateContext {
    * keeps them unique among themselves but is not coordinated with a part.
    */
   allocateBookmarkId?: (name: string) => number
+  /** Mint w:id for a tracked change that has none; document-wide so two edited paragraphs never share ids */
+  allocateRevisionId?: () => string
 }
 
 const EMU_PER_PX = 9525
@@ -1870,7 +1873,8 @@ function revisionPPrChangeXml(changeJson: string): string | null {
   const attrs =
     ` w:id="${escapeXmlAttr(String(change.id ?? '0'))}"` +
     ` w:author="${escapeXmlAttr(String(change.author ?? ''))}"` +
-    (change.date ? ` w:date="${escapeXmlAttr(String(change.date))}"` : '')
+    (change.date ? ` w:date="${escapeXmlAttr(String(change.date))}"` : '') +
+    (change.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(String(change.dateUtc))}"` : '')
   return `<w:pPrChange${attrs}><w:pPr>${children.map((child) => child.xml).join('')}</w:pPr></w:pPrChange>`
 }
 
@@ -2436,6 +2440,53 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
   return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
 }
 
+/** rId / docPr placeholder of a picture inserted by the editor; saveDocx resolves
+ *  it against SaveOptions.newPictures once the bytes land as a media part */
+export const NEW_PICTURE_TOKEN_PREFIX = 'aidocs-new-pic-'
+
+export interface InlinePictureXmlOptions {
+  rId: string
+  /** wp:docPr / pic:cNvPr id (a placeholder token until the save mints a real one) */
+  docPrId: string | number
+  widthPx: number
+  heightPx: number
+  altText?: string
+  rotDeg?: number
+  flipH?: boolean
+  flipV?: boolean
+}
+
+/** `<w:drawing>` of an inline picture (wp:inline + pic:pic), the run and paragraph excluded */
+export function inlinePictureDrawingXml(o: InlinePictureXmlOptions): string {
+  const cx = Math.max(1, Math.round(o.widthPx * EMU_PER_PX))
+  const cy = Math.max(1, Math.round(o.heightPx * EMU_PER_PX))
+  // Word lays the drawing out against the unrotated wp:extent plus
+  // wp:effectExtent: a rotated non-square picture needs the bounding-box
+  // overflow recorded there (same math as patchImageParagraphXml)
+  const rot = o.rotDeg ? ((Math.round(o.rotDeg) % 360) + 360) % 360 : 0
+  const rad = (rot * Math.PI) / 180
+  const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
+  const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
+  const eeX = Math.max(0, Math.round((bw - cx) / 2))
+  const eeY = Math.max(0, Math.round((bh - cy) / 2))
+  const id = String(o.docPrId)
+  const name = `Picture ${id}`
+  return (
+    '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    `<wp:extent cx="${cx}" cy="${cy}"/>` +
+    `<wp:effectExtent l="${eeX}" t="${eeY}" r="${eeX}" b="${eeY}"/>` +
+    `<wp:docPr id="${id}" name="${name}"${o.altText ? ` descr="${escapeXmlAttr(o.altText)}"` : ''}/>` +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+    '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${o.rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${o.flipH ? ' flipH="1"' : ''}${o.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>'
+  )
+}
+
 /**
  * Generate a self-contained w:tbl fragment (inline borders, no style reference),
  * so the patched file never needs styles.xml modifications.
@@ -2563,7 +2614,7 @@ export function generateIndexFieldXml(terms: string[]): string[] {
 }
 
 function generateRunsXml(runs: Run[], ctx: GenerateContext): string {
-  return runsXml(runs, ctx.allocateHyperlinkRel)
+  return runsXml(runs, ctx.allocateHyperlinkRel, ctx.allocateRevisionId)
 }
 
 /** OOXML runs without relationship allocation (header/footer parts, ...) */
@@ -2576,7 +2627,11 @@ export function inlineRunsXml(runs: Run[]): string {
  * pass null where no relationship allocation is possible (textbox patches) —
  * links without an existing rId then degrade to plain runs.
  */
-function runsXml(runs: Run[], allocate: ((href: string) => string) | null): string {
+function runsXml(
+  runs: Run[],
+  allocate: ((href: string) => string) | null,
+  allocateRevisionId?: () => string,
+): string {
   // comment ranges: re-emit start/end/reference markers around the first..last
   // run each id covers, so editing a commented paragraph keeps its comments
   const firstOf = new Map<string, number>()
@@ -2660,17 +2715,29 @@ function runsXml(runs: Run[], allocate: ((href: string) => string) | null): stri
       ? JSON.stringify([
           r.ins?.author ?? null,
           r.ins?.date ?? null,
+          r.ins?.dateUtc ?? null,
           r.ins?.id ?? null,
           r.del?.author ?? null,
           r.del?.date ?? null,
+          r.del?.dateUtc ?? null,
           r.del?.id ?? null,
         ])
       : ''
   let revSeq = 9001
-  const revAttrs = (info: { author: string; date?: string; id?: string }) =>
-    ` w:id="${escapeXmlAttr(info.id ?? String(revSeq++))}"` +
+  const mintRevisionId = allocateRevisionId ?? (() => String(revSeq++))
+  // a later edit splitting one w:ins in two leaves both halves with the stored id
+  const emittedIds = new Set<string>()
+  const revisionId = (info: RevisionInfo) => {
+    let id = info.id && !emittedIds.has(info.id) ? info.id : mintRevisionId()
+    while (emittedIds.has(id)) id = mintRevisionId()
+    emittedIds.add(id)
+    return id
+  }
+  const revAttrs = (info: RevisionInfo) =>
+    ` w:id="${escapeXmlAttr(revisionId(info))}"` +
     ` w:author="${escapeXmlAttr(info.author)}"` +
-    (info.date ? ` w:date="${escapeXmlAttr(info.date)}"` : '')
+    (info.date ? ` w:date="${escapeXmlAttr(info.date)}"` : '') +
+    (info.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(info.dateUtc)}"` : '')
 
   let g = 0
   while (g < runs.length) {
@@ -2736,10 +2803,13 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   }
   if (run.noteRef) {
     const tag = run.noteRef.kind === 'footnote' ? 'w:footnoteReference' : 'w:endnoteReference'
-    return (
-      '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr>' +
-      `<${tag} w:id="${escapeXmlAttr(run.noteRef.id)}"/></w:r>`
-    )
+    // a marker parsed from the file keeps its own rPr bytes verbatim — rStyle,
+    // fonts, size — whatever else in the paragraph the save rebuilds (the
+    // marker is an atom no text op can target, so there is nothing to merge).
+    // A marker the app minted has no rPr and keeps the superscript it has
+    // always carried.
+    const markerRPr = run.rawRPr ?? '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>'
+    return `<w:r>${markerRPr}<${tag} w:id="${escapeXmlAttr(run.noteRef.id)}"/></w:r>`
   }
   if (run.refField !== undefined) {
     // cross-reference: full REF field, run text is the cached display result;
@@ -3024,7 +3094,8 @@ function revisionRPrChangeXml(run: Run): string | null {
   const attrs =
     ` w:id="${escapeXmlAttr(change.id ?? '0')}"` +
     ` w:author="${escapeXmlAttr(change.author)}"` +
-    (change.date ? ` w:date="${escapeXmlAttr(change.date)}"` : '')
+    (change.date ? ` w:date="${escapeXmlAttr(change.date)}"` : '') +
+    (change.dateUtc ? ` w16du:dateUtc="${escapeXmlAttr(change.dateUtc)}"` : '')
   return `<w:rPrChange${attrs}><w:rPr>${props.join('')}</w:rPr></w:rPrChange>`
 }
 

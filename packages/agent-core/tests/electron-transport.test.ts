@@ -44,6 +44,7 @@ function setup(
     onReasoning: vi.fn(),
     onToolCall: vi.fn(),
     onStopReason: vi.fn(),
+    onUsage: vi.fn(),
     onDone: vi.fn(),
     onError: vi.fn(),
   }
@@ -223,5 +224,22 @@ describe('createIpcTransport', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(cb.onError).toHaveBeenCalledWith('no handler registered')
     expect(cb.onDone).not.toHaveBeenCalled()
+  })
+})
+
+describe('createIpcTransport usage', () => {
+  it('forwards a usage chunk to onUsage before done', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'usage', usage: { inputTokens: 12, outputTokens: 3 } })
+    emit({ type: 'done' })
+    expect(cb.onUsage).toHaveBeenCalledWith({ inputTokens: 12, outputTokens: 3 })
+    expect(cb.onUsage).toHaveBeenCalledTimes(1)
+    expect(cb.onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a usage chunk with no payload', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'usage' })
+    expect(cb.onUsage).not.toHaveBeenCalled()
   })
 })

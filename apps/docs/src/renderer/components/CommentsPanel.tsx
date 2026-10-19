@@ -20,7 +20,9 @@ function formatDate(iso?: string): string {
 /** anchor text quoted from the document, to orient comments whose range spans paragraphs (one DOM pass for all threads) */
 function collectAnchorTexts(): Map<string, string> {
   const out = new Map<string, string>()
-  for (const span of document.querySelectorAll<HTMLElement>('.ProseMirror .doc-comment')) {
+  for (const span of document.querySelectorAll<HTMLElement>(
+    '.ProseMirror:not(.mp-page) .doc-comment',
+  )) {
     const text = span.textContent ?? ''
     for (const id of (span.dataset.commentIds ?? '').split(' ')) {
       if (id) out.set(id, (out.get(id) ?? '') + text)
@@ -30,7 +32,7 @@ function collectAnchorTexts(): Map<string, string> {
 }
 
 function jumpTo(id: string) {
-  const spans = document.querySelectorAll<HTMLElement>('.ProseMirror .doc-comment')
+  const spans = document.querySelectorAll<HTMLElement>('.ProseMirror:not(.mp-page) .doc-comment')
   const targets = [...spans].filter((s) => (s.dataset.commentIds ?? '').split(' ').includes(id))
   if (targets.length === 0) return
   targets[0].scrollIntoView({ behavior: 'smooth', block: 'center' })

@@ -10,6 +10,7 @@ Chaque éditeur a ses propres combinaisons de touches, et seules quelques-unes f
 | ------------------------------------------------------------------------ | ----- | --------------- |
 | Ouvrir le guide de l’utilisateur — fonctionne partout dans l’application | F1    | F1              |
 | Réduire / agrandir le ruban — tous les éditeurs                          | ⌥⌘R   | Ctrl+F1         |
+| Ruban compact — Docs seulement                                           | ⌥⌘K   | Ctrl+Alt+K      |
 | Ouvrir la feuille des raccourcis clavier — Word uniquement               | ⌘/    | Ctrl+/          |
 
 - **F1 ouvre ce manuel**, pas la feuille des raccourcis. Cette touche appartient au menu de l’application : elle fonctionne donc aussi bien depuis Word, Sheets, Slides, PDF ou l’onglet Home.

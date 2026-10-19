@@ -344,7 +344,9 @@ export const es = {
   appFullLoadRunning:
     'Cargando el libro completo: ordenar y filtrar estarán disponibles al terminar…',
   appFullLoadTooLarge:
-    'Este libro es demasiado grande para cargarlo por completo en memoria; ordenar y filtrar no están disponibles para este archivo.',
+    'Este libro es demasiado grande para cargarlo por completo en memoria; ordenar y mover rangos no están disponibles para este archivo. El filtrado se ejecuta directamente sobre el archivo.',
+  appLargeFilterLoading: 'Leyendo la columna de filtro desde el archivo…',
+  appLargeFilterApplying: 'Aplicando el filtro sobre el archivo…',
   appSortValueModeFormulas:
     'Este rango contiene fórmulas que no se calculan en vivo en este libro grande: ordenarlo o moverlo las guardaría como valores simples. Elija un rango sin fórmulas.',
   appSortRangeTooLarge:
@@ -590,6 +592,8 @@ export const es = {
   appPrintFailed: 'No se puede imprimir.',
   appPrintNeedsFullLoad:
     'Para imprimir, el libro debe estar completamente cargado; espere a que termine la carga.',
+  appPrintWorkbookTooLarge:
+    'Este libro es demasiado grande para cargarse por completo en la memoria, por lo que no se puede imprimir ni exportar a PDF.',
   appCsvExportNeedsFullLoad:
     'La exportación a CSV requiere el libro completamente cargado — espere a que termine la carga.',
   appCsvExportTooLarge: 'La hoja es demasiado grande para exportarla como CSV.',
@@ -731,6 +735,7 @@ export const es = {
   appTabReview: 'Revisar',
   appRibbonCollapse: 'Contraer la cinta de opciones',
   appRibbonExpand: 'Expandir la cinta de opciones',
+  appRibbonCompact: 'Cinta compacta (solo iconos)',
   appTabView: 'Vista',
   appTabAi: 'IA',
   appTabChartDesign: 'Diseño de gráfico',
@@ -1132,6 +1137,9 @@ export const es = {
   appHeadings: 'Encabezados',
   appHeadingsHidden: 'Encabezados ocultos.',
   appHeadingsShown: 'Encabezados mostrados.',
+  appRightToLeft: 'De derecha a izquierda',
+  appRightToLeftOn: 'Dirección de la cuadrícula: de derecha a izquierda.',
+  appRightToLeftOff: 'Dirección de la cuadrícula: de izquierda a derecha.',
   appPrintHeadingsTitle: 'Imprimir encabezados de fila y columna',
   appGroupFunctionLibrary: 'Biblioteca de funciones',
   appInsertFunction: 'Insertar función',
@@ -1274,6 +1282,10 @@ export const es = {
   appFontSizeTip: 'Tamaño de fuente',
   appZoomIn: 'Acercar',
   appZoomOut: 'Alejar',
+  appImgActualSize: 'Tamaño real',
+  appImgFitWindow: 'Ajustar a la ventana',
+  appImgSaveAs: 'Guardar imagen como…',
+  appImgClose: 'Cerrar (Esc)',
   appZoomSheetTitle: 'Hacer zoom en la hoja',
   appResetZoom: 'Restablecer zoom',
   appZoomToSelection: 'Ampliar selección',
@@ -1544,6 +1556,8 @@ export const es = {
   appVisualSendBackward: 'Enviar atrás',
   appVisualSizeProperties: 'Tamaño y propiedades…',
   appVisualHyperlink: 'Hipervínculo…',
+  appVisualEmbedInCell: 'Insertar imagen en la celda',
+  appVisualEmbedFailed: 'No se pudo insertar esta imagen en la celda.',
   appVisualDelete: 'Eliminar',
   appVisualArranged: 'Objeto actualizado — guarda con ⌘S.',
   appVisualCopied: 'Objeto copiado.',

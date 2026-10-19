@@ -1,9 +1,17 @@
-import type { ReactElement } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import { Dropdown } from '@genoffice/ui'
 import { pdfRectToCss } from './annotations'
 import type { PageGeom } from './annotations'
 import type { FormValueInput } from '../shared/ipc'
 import type { FormWidget } from './form-catalog'
+import {
+  formatDate,
+  isDateOnlyFormat,
+  isValidDateInput,
+  normalizeDateInput,
+  readDateParts,
+  toIsoDate,
+} from './date-format'
 export {
   widgetsFromAnnotations,
   type FormWidget as Widget,
@@ -20,6 +28,8 @@ export function FormLayer({
   activeWidgetId,
   signedWidgetIds,
   signatureLabel = 'Sign',
+  dateInvalidLabel = (format: string) => format,
+  datePickLabel = 'Pick a date',
   registerControl,
   onFocus,
   onSignature,
@@ -33,6 +43,8 @@ export function FormLayer({
   activeWidgetId?: string | null
   signedWidgetIds?: ReadonlySet<string>
   signatureLabel?: string
+  dateInvalidLabel?: (format: string) => string
+  datePickLabel?: string
   registerControl?: (id: string, element: HTMLElement | null) => void
   onFocus?: (widget: FormWidget) => void
   onSignature?: (widget: FormWidget) => void
@@ -169,6 +181,25 @@ export function FormLayer({
             />
           )
         }
+        if (w.dateFormat) {
+          return (
+            <DateInput
+              key={w.id}
+              widget={w}
+              format={w.dateFormat}
+              value={value}
+              className={className}
+              style={{ ...style, fontSize, textAlign: w.textAlignment }}
+              disabled={readOnly || w.readOnly}
+              missing={missing}
+              invalidLabel={dateInvalidLabel(w.dateFormat)}
+              pickLabel={datePickLabel}
+              registerControl={registerControl}
+              onFocus={onFocus}
+              onEdit={onEdit}
+            />
+          )
+        }
         return (
           <input
             key={w.id}
@@ -189,5 +220,151 @@ export function FormLayer({
         )
       })}
     </div>
+  )
+}
+
+/**
+ * Acrobat-style date field. Complete dates in the field's format commit as typed; on leaving
+ * the box other recognisable layouts are rewritten into the format, anything else is reverted
+ * with the expected format shown under the box. A calendar button opens the native picker.
+ */
+function DateInput({
+  widget,
+  format,
+  value,
+  className,
+  style,
+  disabled,
+  missing,
+  invalidLabel,
+  pickLabel,
+  registerControl,
+  onFocus,
+  onEdit,
+}: {
+  widget: FormWidget
+  format: string
+  value: string
+  className: string
+  style: CSSProperties & { left: number; top: number; width: number; height: number }
+  disabled: boolean
+  missing: boolean
+  invalidLabel: string
+  pickLabel: string
+  registerControl?: (id: string, element: HTMLElement | null) => void
+  onFocus?: (widget: FormWidget) => void
+  onEdit: (value: FormValueInput) => void
+}): ReactElement {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [rejected, setRejected] = useState(false)
+  const pickerRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!rejected) return
+    const timer = window.setTimeout(() => setRejected(false), 3000)
+    return () => window.clearTimeout(timer)
+  }, [rejected])
+  const commit = (next: string) => {
+    if (next !== value) onEdit({ name: widget.fieldName, kind: 'text', value: next })
+  }
+  const { left, top, width, height } = style
+  const picker = !disabled && height >= 10 && isDateOnlyFormat(format)
+  const button = Math.min(height, 28)
+  return (
+    <>
+      <input
+        ref={(element) => registerControl?.(widget.id, element)}
+        type="text"
+        className={`${className}${rejected ? ' is-invalid' : ''}`}
+        style={picker ? { ...style, paddingRight: button } : style}
+        disabled={disabled}
+        value={draft ?? value}
+        placeholder={format}
+        required={widget.required}
+        aria-required={widget.required}
+        aria-invalid={missing || rejected}
+        title={widget.fieldName}
+        onFocus={() => {
+          setRejected(false)
+          onFocus?.(widget)
+        }}
+        onChange={(e) => {
+          const next = e.target.value
+          setDraft(next)
+          if (next.trim() && isValidDateInput(next, format)) commit(next.trim())
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+        onBlur={() => {
+          if (draft !== null) {
+            const normalized = normalizeDateInput(draft, format)
+            if (normalized === null) setRejected(true)
+            else commit(normalized)
+          }
+          setDraft(null)
+        }}
+      />
+      {picker && (
+        <>
+          <button
+            type="button"
+            className="pdf-form-date-pick"
+            style={{
+              left: left + width - button,
+              top: top + (height - button) / 2,
+              width: button,
+              height: button,
+            }}
+            tabIndex={-1}
+            title={pickLabel}
+            aria-label={pickLabel}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const native = pickerRef.current
+              if (!native) return
+              const parts = readDateParts(value, format)
+              native.value = parts ? toIsoDate(parts) : ''
+              onFocus?.(widget)
+              try {
+                native.showPicker()
+              } catch {
+                native.click()
+              }
+            }}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              aria-hidden
+            >
+              <rect x="2" y="3" width="12" height="11" rx="1.5" />
+              <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" />
+            </svg>
+          </button>
+          <input
+            ref={pickerRef}
+            type="date"
+            className="pdf-form-date-native"
+            style={{ left: left + width - button, top, width: button, height }}
+            tabIndex={-1}
+            aria-hidden
+            onChange={(e) => {
+              const [y, m, d] = e.target.value.split('-').map(Number)
+              if (!y || !m || !d) return
+              setDraft(null)
+              setRejected(false)
+              commit(formatDate({ year: y, month: m, day: d }, format))
+            }}
+          />
+        </>
+      )}
+      {rejected && (
+        <span role="alert" className="pdf-form-date-error" style={{ left, top: top + height + 2 }}>
+          {invalidLabel}
+        </span>
+      )}
+    </>
   )
 }

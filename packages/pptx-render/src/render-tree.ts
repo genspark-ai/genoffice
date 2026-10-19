@@ -211,7 +211,8 @@ export interface GlyphRun {
    * label. Set from the engine's `TextRun.redact`; layout splits a run into tokens,
    * so every token of a marked run carries the same label.
    */
-  redact?: string /** Numbered bullet: its buAutoNum scheme (ribbon highlight / toggle semantics) */
+  redact?: string
+  /** Numbered bullet: its buAutoNum scheme (ribbon highlight / toggle semantics) */
   numType?: string
   /** Numbered bullet: the paragraph's explicit startAt (editing preview counts from it) */
   startAt?: number

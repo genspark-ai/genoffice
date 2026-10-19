@@ -8,6 +8,7 @@ import {
   insertionIndexForX,
   isBeyondBand,
   pointInRect,
+  tabStripHeight,
 } from '../src/shared/tab-drag-geometry'
 
 /**
@@ -100,5 +101,37 @@ describe('insertionIndexForX', () => {
   it('appends at slot 1 when only Home is open', () => {
     expect(insertionIndexForX([{ left: 0, width: 60 }], 500)).toBe(1)
     expect(insertionIndexForX([], 500)).toBe(1)
+  })
+})
+
+describe('tabStripHeight', () => {
+  it('is the unscaled constant by default', () => {
+    expect(tabStripHeight()).toBe(TAB_STRIP_HEIGHT)
+    expect(tabStripHeight(1)).toBe(TAB_STRIP_HEIGHT)
+  })
+
+  it('grows with the interface scale', () => {
+    // The strip is `zoom`ed by `--ui-scale` (apps/shell/src/main/ui-scale.ts),
+    // and the main process positions every editor view at this number. Using
+    // the unscaled 40 would leave a 150% strip painting 20px down into the
+    // document — the document under a tab strip, with nothing on screen saying
+    // why.
+    expect(tabStripHeight(1.5)).toBe(60)
+    expect(tabStripHeight(1.25)).toBe(50)
+  })
+
+  it('rounds to whole pixels', () => {
+    // The strip is a CSS box: a fractional height makes the view bounds below
+    // it land on a half pixel, and the seam shows.
+    expect(Number.isInteger(tabStripHeight(1.1))).toBe(true)
+    expect(tabStripHeight(1.1)).toBe(44)
+  })
+
+  it('grows the dock band with it', () => {
+    // The band is what a natively dragged window hovers over to dock back, so
+    // it has to be the strip's *rendered* height, not its layout height.
+    const bounds = { x: 0, y: 100, width: 800, height: 600 }
+    expect(dockBand(bounds).height).toBe(TAB_STRIP_HEIGHT + 2 * DOCK_BAND_SLACK)
+    expect(dockBand(bounds, DOCK_BAND_SLACK, 1.5).height).toBe(60 + 2 * DOCK_BAND_SLACK)
   })
 })

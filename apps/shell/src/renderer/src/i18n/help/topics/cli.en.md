@@ -13,7 +13,7 @@ That is the whole surface in one screen — every command with a line saying wha
 
 ## Getting the command
 
-macOS and Windows ship it inside the app bundle. To use it by name, run `genoffice install-cli` once: it symlinks the bundled binary into `/usr/local/bin`, or into your user `PATH` on Windows.
+macOS and Windows ship it inside the app bundle. To use it by name, run `genoffice install-cli` once: it links the bundled binary into a directory on your PATH — on macOS `/usr/local/bin` where that is not a Homebrew prefix (Homebrew's own directories are never touched), otherwise your user bin — or into your user `PATH` on Windows.
 
 ## The commands worth knowing
 

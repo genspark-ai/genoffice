@@ -64,6 +64,9 @@ Seis herramientas: **Dibujar, Rectángulo, Elipse, Flecha, Nota**, más **Censur
 - **Firma manuscrita**: dibújela; puede vincularse a un campo de firma de formulario.
 - **Firma de imagen**: coloque una imagen como firma.
 - Las firmas guardadas se pueden reutilizar.
+- **Firma con certificado** (pestaña Anotar): firma con un certificado del almacén del sistema o un archivo .p12/.pfx; muestra opcionalmente la firma en la página y certifica opcionalmente el documento contra cambios posteriores.
+- Firmar escribe siempre un **archivo nuevo** (actualización incremental — las firmas anteriores siguen válidas) y abre la copia firmada en su lugar. Guarda antes: una firma cubre el archivo tal cual está en disco.
+- Un banner sobre el documento lista las firmas existentes; **Ver firmas** muestra la validez, cobertura y cadena de certificados de cada una. La revocación (CRL/OCSP) no se comprueba.
 
 ## Operaciones de página (Páginas)
 

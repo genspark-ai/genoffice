@@ -10,6 +10,7 @@ Every editor has its own key bindings, and only a few of them work everywhere. T
 | ----------------------------------------------- | ----- | --------------- |
 | Open the User Guide — works anywhere in the app | F1    | F1              |
 | Collapse / expand the ribbon — every editor     | ⌥⌘R   | Ctrl+F1         |
+| Compact the ribbon — Docs only                  | ⌥⌘K   | Ctrl+Alt+K      |
 | Open the Keyboard Shortcuts sheet — Word only   | ⌘/    | Ctrl+/          |
 
 - **F1 opens this manual**, not the shortcut sheet. It belongs to the application menu, so it works from Word, Sheets, Slides, PDF or the Home tab alike.

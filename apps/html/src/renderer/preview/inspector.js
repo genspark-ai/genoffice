@@ -471,7 +471,9 @@
       rawBefore: el.innerHTML,
     }
     el.setAttribute(`${MARK}-editing`, '')
-    el.setAttribute('contenteditable', 'plaintext-only')
+    // not plaintext-only: Chromium forces white-space: pre-wrap on it (past any stylesheet),
+    // surfacing the source's newlines and indentation; plain text is enforced in beforeinput
+    el.setAttribute('contenteditable', 'true')
     el.focus()
     setCursor(null)
     let range = null
@@ -953,6 +955,33 @@
     if (msg) post(msg)
   }
   document.addEventListener('selectionchange', postTextSelection, true)
+  // Chromium turns a typed '\n' into <br>/<div> where white-space collapses: feed it (and pasted
+  // whitespace runs) as the single space it would collapse to anyway
+  const plainFor = (el, text) =>
+    /^(normal|nowrap)$/.test(window.getComputedStyle(el).whiteSpace)
+      ? text.replace(/\s+/g, ' ')
+      : text
+  document.addEventListener(
+    'beforeinput',
+    (e) => {
+      if (!editing || e.target !== editing.el) return
+      const t = e.inputType
+      if (t.startsWith('format') || t === 'insertHorizontalRule' || t === 'insertLink') {
+        e.preventDefault()
+      } else if (t === 'insertParagraph' || t === 'insertLineBreak') {
+        e.preventDefault()
+        document.execCommand('insertText', false, plainFor(editing.el, '\n'))
+      } else if (
+        e.dataTransfer &&
+        (t === 'insertFromPaste' || t === 'insertFromDrop' || t === 'insertReplacementText')
+      ) {
+        e.preventDefault()
+        const text = plainFor(editing.el, e.dataTransfer.getData('text/plain'))
+        if (text) document.execCommand('insertText', false, text)
+      }
+    },
+    true,
+  )
   document.addEventListener(
     'keydown',
     (e) => {

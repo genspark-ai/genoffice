@@ -5,7 +5,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defaultAiSettings } from '@genoffice/ai-provider'
+import { defaultAiSettings, resolveCustomEndpoints } from '@genoffice/ai-provider'
 import type { AiSettings, CodexModelCatalog } from '@genoffice/ai-provider'
 import type { HomeApi } from '../src/shared/home-api'
 import { LocaleProvider } from '../src/renderer/src/locale'
@@ -152,9 +152,13 @@ async function tick(ms = DEBOUNCE_MS): Promise<void> {
 }
 
 /** answer the nth outstanding call */
-async function answer(index: number, models: string[]): Promise<void> {
+async function answer(
+  index: number,
+  models: string[],
+  profiles?: CodexModelCatalog['profiles'],
+): Promise<void> {
   await act(async () => {
-    calls[index]!.resolve({ models, defaultModel: '' })
+    calls[index]!.resolve({ models, defaultModel: '', profiles })
     await Promise.resolve()
   })
 }
@@ -272,6 +276,82 @@ describe('the refresh touches the catalog and nothing else', () => {
     // an embedding model must never be silently adopted as the chat model
     expect(picker('Model')!.textContent).toBe('')
     expect(host.textContent).not.toContain('text-embedding-nomic-embed-text-v1.5')
+  })
+})
+
+describe('saving a refreshed probe cache', () => {
+  function cachedSettings(): AiSettings {
+    const settings = storedSettings({ model: 'a' })
+    settings.customEndpoint = 'ep-cache'
+    settings.customEndpoints = [
+      {
+        id: 'ep-cache',
+        name: '',
+        baseUrl: BASE_URL,
+        apiKey: 'k',
+        model: 'a',
+        models: ['b'],
+        modelProfiles: [{ id: 'manual', vision: true }],
+        probedProfiles: [{ id: 'a', vision: false, maxTokens: 8192 }],
+      },
+    ]
+    return resolveCustomEndpoints(settings)
+  }
+
+  async function saveDraft(): Promise<AiSettings> {
+    await type(field('set-ai-endpoint-name'), 'Updated endpoint')
+    const save = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Save',
+    )!
+    await click(save)
+    return setAiSettings.mock.calls[0]![0] as AiSettings
+  }
+
+  it('clears old capability facts when a successful listing has no metadata', async () => {
+    installApi(cachedSettings())
+    await openAiPane()
+    await tick()
+    await answer(0, ['a', 'b'])
+    const saved = await saveDraft()
+    expect(saved.customEndpoints![0]!.probedProfiles).toBeUndefined()
+    expect(saved.providers.custom.profile?.probedProfiles).toBeUndefined()
+    expect(saved.customEndpoints![0]!.modelProfiles).toEqual([{ id: 'manual', vision: true }])
+  })
+
+  it('clears stale model ids when only the selected model is still served', async () => {
+    installApi(cachedSettings())
+    await openAiPane()
+    await tick()
+    await answer(0, ['a'])
+    const saved = await saveDraft()
+    expect(saved.customEndpoints![0]!.models ?? []).toEqual([])
+    expect(saved.customEndpoints![0]!.probedProfiles).toBeUndefined()
+  })
+
+  it('replaces the cache without merging probe facts into user declarations', async () => {
+    installApi(cachedSettings())
+    await openAiPane()
+    await tick()
+    const profiles = [{ id: 'c', vision: true, maxTokens: 4096 }]
+    await answer(0, ['a', 'c'], profiles)
+    const saved = await saveDraft()
+    expect(saved.customEndpoints![0]!.models).toEqual(['c'])
+    expect(saved.customEndpoints![0]!.probedProfiles).toEqual(profiles)
+    expect(saved.providers.custom.profile?.probedProfiles).toEqual(profiles)
+    expect(saved.customEndpoints![0]!.modelProfiles).toEqual([{ id: 'manual', vision: true }])
+  })
+
+  it('retains the saved cache when the probe cannot supply a catalogue', async () => {
+    const settings = cachedSettings()
+    installApi(settings)
+    await openAiPane()
+    await tick()
+    await answer(0, [])
+    const saved = await saveDraft()
+    expect(saved.customEndpoints![0]!.models).toEqual(settings.customEndpoints![0]!.models)
+    expect(saved.customEndpoints![0]!.probedProfiles).toEqual(
+      settings.customEndpoints![0]!.probedProfiles,
+    )
   })
 })
 

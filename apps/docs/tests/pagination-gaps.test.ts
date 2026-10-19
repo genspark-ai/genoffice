@@ -9,6 +9,7 @@ import {
   syncPageSheets,
   syncPhantomRowspans,
   clampCellBoxTops,
+  pinCellBoxesToPage,
   clampCellImageTops,
   pageBorderArtStripStyle,
   pageBorderStyleOf,
@@ -245,6 +246,113 @@ describe('clampCellBoxTops', () => {
     box.getBoundingClientRect = () => ({ top: 0, bottom: 45, height: 45, width: 100 }) as DOMRect
     clampCellBoxTops(pm, 0, 1)
     expect(box.style.getPropertyValue('--page-float-dy')).toBe('62.0px')
+  })
+})
+
+describe('pinCellBoxesToPage', () => {
+  const rect = (top: number, left: number, height: number, width: number) =>
+    ({ top, left, bottom: top + height, right: left + width, height, width }) as DOMRect
+  const pageBox = (
+    pm: HTMLElement,
+    top: number,
+    left: number,
+    data: Record<string, string>,
+  ): HTMLElement => {
+    const strut = document.createElement('div')
+    strut.className = 'doc-cell-boxes doc-cell-boxes-page'
+    const box = document.createElement('div')
+    box.className = 'doc-textbox'
+    Object.assign(box.dataset, { cellPage: '1', pageRelV: '1', ...data })
+    box.getBoundingClientRect = () => rect(top, left, 108, 88)
+    strut.appendChild(box)
+    pm.appendChild(strut)
+    return box
+  }
+  const paper = (): HTMLElement => {
+    const pm = document.createElement('div')
+    pm.style.paddingTop = '94px'
+    pm.style.paddingLeft = '113px'
+    pm.getBoundingClientRect = () => rect(0, 0, 3000, 794)
+    return pm
+  }
+
+  it('moves a page-relative box from its cell origin to the page position and stamps the page', () => {
+    const pm = paper()
+    // first page: cell at y=172 hosts the avatar (page Y 67.7) and a full-width bar (page X 0.1)
+    const avatar = pageBox(pm, 172 + 67.7, 113 + 22.3, {
+      cellPageX: '22.3',
+      cellPageY: '67.7',
+      pageRelFrom: 'page',
+    })
+    const bar = pageBox(pm, 172 + 1.3, 113 + 0.1, {
+      cellPageX: '0.1',
+      cellPageY: '1.3',
+      pageRelFrom: 'page',
+      pageRelX: '1',
+      pageRelXFrom: 'page',
+    })
+    // margin-relative X keeps the column origin (only a paper-edge X skips the margin)
+    const marginX = pageBox(pm, 172 + 1.3, 113 + 40, {
+      cellPageX: '30',
+      cellPageY: '1.3',
+      pageRelFrom: 'page',
+      pageRelX: '1',
+    })
+    pinCellBoxesToPage(pm, 1)
+    expect(avatar.style.getPropertyValue('--cell-page-dy')).toBe('-172.0px')
+    expect(avatar.style.getPropertyValue('--cell-page-dx')).toBe('0.0px')
+    expect(avatar.dataset.pinPage).toBe('0')
+    expect(bar.style.getPropertyValue('--cell-page-dy')).toBe('-172.0px')
+    expect(bar.style.getPropertyValue('--cell-page-dx')).toBe('-113.0px')
+    expect(marginX.style.getPropertyValue('--cell-page-dx')).toBe('-10.0px')
+  })
+
+  it('adds the centered page offset (--page-cx) of the owning block', () => {
+    const pm = paper()
+    const box = pageBox(pm, 172 + 1.3, 60 + 113 + 0.1, {
+      cellPageX: '0.1',
+      cellPageY: '1.3',
+      pageRelFrom: 'page',
+      pageRelX: '1',
+      pageRelXFrom: 'page',
+    })
+    box.parentElement!.style.setProperty('--page-cx', '60px')
+    pinCellBoxesToPage(pm, 1)
+    expect(box.style.getPropertyValue('--cell-page-dx')).toBe('-113.0px')
+  })
+
+  it('resolves against the paper of the page the box sits on; margin-relative Y adds that page top margin', () => {
+    const pm = paper()
+    const gap = makeGapEl({ ...m, marginTop: 80, marginLeft: 100 }, 'block')
+    // gap bottom at 1300: the second paper starts at 1300 - 80
+    gap.getBoundingClientRect = () => rect(1300 - 80 - GAP_BAND - 96, 0, 80 + GAP_BAND + 96, 794)
+    pm.appendChild(gap)
+    const box = pageBox(pm, 1500, 300, { cellPageX: '10', cellPageY: '20', pageRelFrom: 'margin' })
+    pinCellBoxesToPage(pm, 1)
+    // target top = 1220 + 80 + 20 = 1320; target left = 100 + 10
+    expect(box.style.getPropertyValue('--cell-page-dy')).toBe('-180.0px')
+    expect(box.style.getPropertyValue('--cell-page-dx')).toBe('-190.0px')
+    expect(box.dataset.pinPage).toBe('1')
+  })
+
+  it('is idempotent: a re-run against the shifted rect keeps the shift', () => {
+    const pm = paper()
+    const box = pageBox(pm, 239.7, 135.3, {
+      cellPageX: '22.3',
+      cellPageY: '67.7',
+      pageRelFrom: 'page',
+    })
+    pinCellBoxesToPage(pm, 1)
+    box.getBoundingClientRect = () => rect(67.7, 135.3, 108, 88)
+    pinCellBoxesToPage(pm, 1)
+    expect(box.style.getPropertyValue('--cell-page-dy')).toBe('-172.0px')
+  })
+
+  it('clampCellBoxTops leaves page-positioned boxes alone', () => {
+    const pm = paper()
+    const box = pageBox(pm, -20, 0, { cellPageX: '0', cellPageY: '0', pageRelFrom: 'page' })
+    clampCellBoxTops(pm, 0, 1)
+    expect(box.style.getPropertyValue('--page-float-dy')).toBe('')
   })
 })
 

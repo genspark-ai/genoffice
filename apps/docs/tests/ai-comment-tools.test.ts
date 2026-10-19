@@ -106,6 +106,31 @@ describe('comments context', () => {
     expect(anchors.get('1')).toEqual({ blockIndex: 1, excerpt: 'he comment' })
   })
 
+  it('a comment anchored by block attr never carries a withheld span verbatim', () => {
+    // `commentStarts` is what an imported docx carries when a comment anchors a
+    // whole paragraph instead of a span. Nothing in the editor writes it, so
+    // the block has to be built here rather than through `add_comment`.
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: null, commentStarts: ['7'] },
+        content: [
+          { type: 'text', text: 'Call the client on ' },
+          {
+            type: 'text',
+            text: '13800138000',
+            marks: [{ type: 'redaction', attrs: { label: 'client phone' } }],
+          },
+          { type: 'text', text: ' to confirm.' },
+        ],
+      },
+      para('Closing paragraph.'),
+    ])
+    const excerpt = commentAnchors(editor).get('7')?.excerpt ?? ''
+    expect(excerpt).toContain('{{client phone}}')
+    expect(excerpt).not.toContain('13800138000')
+  })
+
   it('unresolved threads ride along in the per-turn context, resolved ones drop out', () => {
     const { editor, comments } = setup()
     const context = buildDocContext(editor, undefined, comments)

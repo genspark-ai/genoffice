@@ -13,7 +13,7 @@ genoffice guide slides    # the op reference, for writing your own
 
 ## 명령 준비하기
 
-macOS와 Windows에서는 앱 번들 안에 있습니다. 이름으로 부르려면 `genoffice install-cli`을 한 번 실행하세요. 번들에 들어 있는 바이너리를 `/usr/local/bin`에, Windows에서는 사용자 `PATH`에 심볼릭 링크로 연결합니다.
+macOS와 Windows에서는 앱 번들 안에 들어 있습니다. 이름으로 호출하려면 `genoffice install-cli`를 한 번 실행하세요: 번들 안의 바이너리를 PATH의 디렉터리에 연결합니다 — macOS에서는 Homebrew 접두어가 아닌 경우 `/usr/local/bin`(Homebrew 자체 디렉터리에는 절대 쓰지 않습니다), 그 외에는 사용자 bin으로, Windows에서는 사용자 `PATH`로 연결합니다.
 
 ## 알아 둘 만한 명령
 

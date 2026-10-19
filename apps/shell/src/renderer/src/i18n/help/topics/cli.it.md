@@ -13,7 +13,7 @@ Ecco tutta la superficie in una sola schermata: ogni comando con una riga che di
 
 ## Ottenere il comando
 
-macOS e Windows lo includono dentro il bundle dell'app. Per usarlo per nome, esegui una volta `genoffice install-cli`: crea un collegamento simbolico del binario incluso in `/usr/local/bin`, o nel `PATH` dell'utente su Windows.
+macOS e Windows lo includono nel pacchetto dell'app. Per richiamarlo per nome, esegui una volta `genoffice install-cli`: collega il binario del pacchetto in una directory del tuo PATH — su macOS `/usr/local/bin` quando non è un prefisso Homebrew (le directory di Homebrew non vengono mai toccate), altrimenti il tuo bin utente — o nel tuo `PATH` utente su Windows.
 
 ## I comandi da conoscere
 

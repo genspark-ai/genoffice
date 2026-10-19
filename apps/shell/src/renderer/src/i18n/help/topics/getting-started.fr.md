@@ -46,7 +46,7 @@ Un nouveau document s’ouvre sans titre ; le fichier sur le disque n’est cré
 | Ouvrir ce manuel | F1    | F1              |
 | Réduire le ruban | ⌥⌘R   | Ctrl+F1         |
 
-**La réduction du ruban** fonctionne dans tous les éditeurs. La rangée d'onglets reste en place et la bande de commandes qui se trouve en dessous disparaît ; l'onglet sélectionné sert aussi de commande de réduction : tant que le ruban est réduit, aucun onglet n'est sélectionné, et appuyer sur n'importe quel onglet fait revenir la bande. Un double-clic sur un onglet fait de même. La façon dont vous l'avez laissée est mémorisée éditeur par éditeur.
+**La réduction du ruban** fonctionne dans tous les éditeurs. La rangée d'onglets reste en place et la bande de commandes qui se trouve en dessous disparaît ; l'onglet sélectionné sert aussi de commande de réduction : tant que le ruban est réduit, aucun onglet n'est sélectionné, et appuyer sur n'importe quel onglet fait revenir la bande. Un double-clic sur un onglet fait de même. La façon dont vous l'avez laissée est mémorisée éditeur par éditeur. Docs ajoute une densité intermédiaire : **⌥⌘K** / Ctrl+Alt+K compacte le bandeau en icônes seules, mémorisé de la même façon.
 
 Les raccourcis propres à chaque éditeur (copier la mise en forme, rechercher et remplacer, opérations sur les tableaux, …) sont dans leurs chapitres ; Docs fournit en plus une boîte de dialogue de raccourcis clavier consultable (**⌘/**) (voir son chapitre).
 

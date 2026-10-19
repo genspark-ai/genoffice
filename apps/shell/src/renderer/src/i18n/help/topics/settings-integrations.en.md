@@ -30,7 +30,7 @@ Light / Dark / System. System follows the OS appearance, and the editors re-skin
 Not switches — each capability picks the vendor that serves it, and a vendor's key and base URL are entered once and shared:
 
 - **Web search**, **Image generation**, **Image analysis** and **Video analysis**, each with a provider, a model, a key and a base URL.
-- **Local file search** runs on this machine. Under it, **Jev search reranking** is **off by default**. Switch it on and the excerpts of the top 20 local hits — up to 1,200 characters of each document, plus the file and folder names — are sent to TypeSafe's Jev model to be reordered by relevance. With it off, nothing leaves the device.
+- **Local file search** runs on this machine. Under it, **Jev search reranking** is **off by default**. Switch it on and the excerpts of the top 20 local hits — up to 1,200 characters of each document, plus the file and folder names — go to the decision endpoint you pick (Jev via OpenRouter or TypeSafe, Perplexity, Liquid AI d1, Cloudflare, a local engine, or a custom URL) to be reordered by relevance. With it off, nothing leaves the device.
 
 ## About
 

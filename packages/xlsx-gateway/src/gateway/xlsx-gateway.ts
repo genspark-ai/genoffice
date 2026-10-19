@@ -23,6 +23,7 @@ import { decodeXlsxEscapes, encodeXlsxEscapes } from './xlsx-escapes'
 import { MINIMAL_STYLESHEET_XML } from './xlsx-default-styles'
 import { applyChartEdit } from './xlsx-chart'
 import { applyVisualEdits } from './xlsx-drawing-edit'
+import { applyCellImageAdditions } from './xlsx-cell-image-add'
 import {
   applyVisualAdditions,
   type ChartAdd,
@@ -653,6 +654,7 @@ export async function applyCellEditsToXlsx(
     [],
     [],
     [],
+    [],
     redactionStates,
   )
   return assembleWithJsZip(source, plan)
@@ -669,6 +671,16 @@ export interface SheetVisualAddition {
   readonly chart?: ChartAdd | undefined
   readonly shape?: ShapeAdd | undefined
   readonly image?: ImageAdd | undefined
+}
+
+/// One session-created picture in a cell ("Place in Cell"): the save writes
+/// its media and rich-value parts and marks the host cell.
+export interface SheetCellImageAddition {
+  readonly sheetName: string
+  readonly row: number
+  readonly column: number
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+  readonly base64: string
 }
 
 export interface SheetTableAddition {
@@ -763,9 +775,10 @@ export async function planCellEditsToXlsx(
   bulkConstantFills: readonly BulkConstantFill[] = [],
   tabColorStates: readonly SheetTabColorState[] = [],
   tableEdits: readonly SheetTableEdit[] = [],
-  // Last, deliberately: every caller written against upstream's order would
-  // otherwise see `tabColorStates` land here and a parsed table edit parsed as
-  // a tab colour.
+  cellImageAdditions: readonly SheetCellImageAddition[] = [],
+  // Last, deliberately: every caller written against an older order would
+  // otherwise see `tabColorStates` or a cell image land here and a parsed
+  // table edit parsed as a tab colour.
   redactionStates: readonly SheetRedactionState[] = [],
 ): Promise<MutationPlan> {
   // A pending pivot pins final coordinates for its source and output; shifts
@@ -1299,6 +1312,30 @@ export async function planCellEditsToXlsx(
       })
     }
     await applyVisualAdditions(pkg, resolved, touchedEntries)
+  }
+
+  // Pictures placed in cells write Excel's rich-value parts and a vm-marked
+  // host cell; they also run on the flushed worksheet XML.
+  if (cellImageAdditions.length > 0) {
+    const resolved: {
+      worksheetPath: string
+      row: number
+      column: number
+      mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+      base64: string
+    }[] = []
+    for (const addition of cellImageAdditions) {
+      resolved.push({
+        worksheetPath:
+          additionPaths.get(addition.sheetName) ??
+          (await resolveWorksheetPath(pkg, addition.sheetName)),
+        row: addition.row,
+        column: addition.column,
+        mediaType: addition.mediaType,
+        base64: addition.base64,
+      })
+    }
+    await applyCellImageAdditions(pkg, resolved, touchedEntries)
   }
 
   // Note snapshots replace each dirty sheet's whole comment set; they run

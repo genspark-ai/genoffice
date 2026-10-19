@@ -6,7 +6,9 @@
  * reports the two addends separately — Chinese users care about the
  * Asian-character figure.
  */
+
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Selection } from '@tiptap/pm/state'
 
 // Han (incl. radicals/compat/ext-B+), kana, hangul, bopomofo, CJK symbols
 // and punctuation (U+3001 up: the ideographic space stays whitespace),
@@ -39,11 +41,34 @@ export function countWords(text: string): number {
   return asianCharCount(text) + nonAsianWordCount(text)
 }
 
+/**
+ * Words inside the current selection, for the status bar's "selected/total"
+ * figure. Word shows that pair while a selection exists and the plain total
+ * once the caret collapses; GenOffice reported only the total, so the selected
+ * figure was reachable from the AI panel alone.
+ *
+ * Every no-selection case falls out of the counting rule itself: a collapsed
+ * caret and a NodeSelection (an image or a table is selected as a node, not
+ * a text range) both yield no text, and `countWords('')` is 0 — no separate
+ * guard needed.
+ */
+export function selectedWordCount(doc: ProseMirrorNode, selection: Selection): number {
+  // the same leaf reader as the total: an inline formula's text counts in both
+  return countWords(doc.textBetween(selection.from, selection.to, ' ', leafTextForWordCount))
+}
+
 export function documentTextForWordCount(doc: ProseMirrorNode): string {
   // ProseMirror textContent skips Tiptap renderText serializers on atomic leaves.
-  return doc.textBetween(0, doc.content.size, ' ', (leaf) => {
-    if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
-    if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
-    return leaf.type.spec.leafText?.(leaf) ?? ''
-  })
+  return doc.textBetween(0, doc.content.size, ' ', leafTextForWordCount)
+}
+
+/**
+ * Text an atomic inline leaf contributes to a word count. No doc schema
+ * defines `spec.leafText`, so only the two nodes with text of their own
+ * (inline math, ruby base) need naming; every other atom contributes nothing.
+ */
+export function leafTextForWordCount(leaf: ProseMirrorNode): string {
+  if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
+  if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
+  return leaf.type.spec.leafText?.(leaf) ?? ''
 }

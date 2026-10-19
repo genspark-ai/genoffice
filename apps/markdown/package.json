@@ -63,10 +63,11 @@
   "author": "GenOffice",
   "dependencies": {
     "@tiptap/extension-mathematics": "3.31.0",
-    "katex": "^0.16.47",
+    "katex": "^0.18.2",
     "json5": "^2.2.3",
     "mermaid": "^11.17.2",
     "wavedrom": "^3.7.0",
-    "pdfjs-dist": "^6.2.108"
+    "pdfjs-dist": "^6.2.108",
+    "@genoffice/agent-core": "*"
   }
 }

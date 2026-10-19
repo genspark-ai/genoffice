@@ -4,9 +4,9 @@ Docs est le processeur de texte analogue à Word : il lit et écrit de vrais .do
 
 ## Le ruban
 
-Onglets : **Accueil / Insertion / Dessin / Mise en page / Création / Références / Révision / Affichage**, plus des onglets contextuels pour l’objet sélectionné (Création de tableau et mise en page, Format de l’image, en-tête et pied de page).
+Onglets : **Accueil / Insertion / Dessin / Mise en page / Création / Références / Révision / Affichage**, plus des onglets contextuels pour l’objet sélectionné (Création de tableau et mise en page, Format de l’image, en-tête et pied de page). Le bandeau a sa propre densité dans Docs : **compact** (⌥⌘K / Ctrl+Alt+K) garde les icônes et laisse tomber les libellés, et le choix est mémorisé.
 
-- **Accueil** : presse-papiers ; police (y compris tailles et signes d’emphase est-asiatiques) avec **Effacer toute la mise en forme** et une case à cocher pour **Afficher/masquer les marques de mise en forme** ; paragraphe (alignement/retrait/interligne/listes) plus **Définir une nouvelle puce / Définir un nouveau format de numérotation / Liste à plusieurs niveaux**, qui enregistrent vos propres styles de liste dans le document ; styles (Titre 1-6/Normal/Citation, modifiables) avec un **Volet Styles** pour la liste complète.
+- **Accueil** : presse-papiers ; police (y compris tailles et signes d’emphase est-asiatiques) avec **Effacer toute la mise en forme** et une case à cocher pour **Afficher/masquer les marques de mise en forme** ; paragraphe (alignement/retrait/interligne/listes) plus **Définir une nouvelle puce / Définir un nouveau format de numérotation / Liste à plusieurs niveaux**, qui enregistrent vos propres styles de liste dans le document ; styles (Titre 1-6/Normal/Citation, modifiables) avec un **Volet Styles** pour la liste complète. Un style peut fixer séparément la police est-asiatique et la police latine (une police CJK plus Times New Roman, par exemple) ; la paire survit à l'aller-retour .docx.
 - **Insertion** : sauts de page et de section ; tableaux (une grille lignes × colonnes, ou **Insérer un tableau…** pour une taille exacte) ; images, formes, zones de texte ; **Page de garde** et **Page vierge** issues d’une galerie prédéfinie ; **Graphique** ; **Lettrine** ; **WordArt** ; champs (date, heure, numéro de page, nombre total de pages, nom de fichier) ; hyperliens, **Signet** et renvois ; commentaires ; en-tête et pied de page et numéros de page ; symboles et équations.
   - **Graphique** insère un véritable objet graphique avec ses propres données — en barres, en courbes ou en secteurs — et non une image. _Modifier les données_ de Word ouvre les chiffres qui sont derrière.
 - **Dessin** : encre sur la page, dans le groupe **Outils de dessin** — **Sélectionner** revient à l’édition du texte, puis **Stylet**, **Surligneur** et **Gomme** (un clic ou un balayage supprime tout le trait). À côté, **Style de stylet** / **Style de surligneur** est une seule commande qui contient des pastilles de couleur et une rangée d’épaisseurs ; son libellé suit l’outil actif. L’encre est enregistrée dans le document comme une annotation flottant au-dessus du texte, elle survit donc à l’enregistrement et à la réouverture, et **Tout effacer** dans le groupe suivant la supprime entièrement.
@@ -55,7 +55,7 @@ Clic droit n’importe où dans le corps — le menu correspond à ce que vous a
 
 - Rechercher et remplacer (ctrl+F / ctrl+H) : respect de la casse, mot entier, expressions régulières.
 - Copier la mise en forme ; annuler/rétablir étendu ; options de collage.
-- Tableaux : fusionner/fractionner les cellules, opérations sur les lignes et colonnes, bordures et trames, tri, formules.
+- Tableaux : fusionner/fractionner les cellules, opérations sur les lignes et colonnes, bordures et trames, tri, formules. Les lignes se coupent entre pages quand il le faut, et Ctrl+Entrée dans une cellule tourne la page à cet endroit précis — impression et PDF suivent.
 - Images : habillage du texte, rognage, compression ; canevas de dessin.
 
 ## Typographie est-asiatique

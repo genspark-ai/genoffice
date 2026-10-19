@@ -10,6 +10,7 @@ Každý editor má vlastní přiřazení kláves a funguje všude jen několik z
 | ---------------------------------------------------------- | ----- | --------------- |
 | Otevřít uživatelskou příručku — funguje kdekoli v aplikaci | F1    | F1              |
 | Složit / rozbalit pás — každý editor                       | ⌥⌘R   | Ctrl+F1         |
+| Kompaktní pás — jen Docs                                   | ⌥⌘K   | Ctrl+Alt+K      |
 | Otevřít list Klávesové zkratky — pouze Word                | ⌘/    | Ctrl+/          |
 
 - **F1 otevírá tuto příručku**, ne list zkratek. Patří do menu aplikace, takže funguje z Wordu, Sheets, Slides, PDF i panelu Home.

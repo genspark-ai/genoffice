@@ -11,6 +11,19 @@ describe('printZoom', () => {
     expect(printZoom(1.5)).toBe(1.5)
   })
 
+  it('printer jobs take the exact inverse of a whole-percent scale', () => {
+    expect(printZoom(1.5, 'printer', 'MacIntel')).toBeCloseTo(100 / 67, 10)
+    expect(printZoom(2, 'printer', 'MacIntel')).toBe(2)
+    expect(printZoom(1.25, 'printer', 'MacIntel')).toBe(1.25)
+    expect(printZoom(1.5, 'pdf', 'MacIntel')).toBe(1.5)
+  })
+
+  it('Windows printer jobs print unzoomed: the print pipeline ignores scaleFactor', () => {
+    expect(printZoom(2, 'printer', 'Win32')).toBe(1)
+    expect(printZoom(1.5, 'printer', 'Win32')).toBe(1)
+    expect(printZoom(2, 'pdf', 'Win32')).toBe(2)
+  })
+
   it('clamps to the range Chromium print scales can invert', () => {
     expect(printZoom(20)).toBe(10)
     expect(printZoom(0.25)).toBe(0.5)

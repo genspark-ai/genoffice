@@ -124,7 +124,10 @@ export function PdfThumb({
 export interface ThumbMenu {
   x: number
   y: number
-  origIdx: number
+  /** null = opened on the pane gap rather than a page; insert-only menu */
+  origIdx: number | null
+  /** gap menus: page the insert goes after (null = before the first page) */
+  afterOrigIdx?: number | null
 }
 
 /** Read-only mirror of the pending-edit overlays, scaled into a page thumbnail so the

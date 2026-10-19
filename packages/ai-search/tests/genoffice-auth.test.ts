@@ -3,6 +3,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  classifyMintResponse,
+  FRESH_AUTH_REQUIRED,
+  invalidateGenofficeKey,
+  recoverFromRejectedGskKey,
+  setGenofficeLoginOpener,
   genofficeApiKey,
   genofficeAuthPath,
   genofficeLoginInFlight,
@@ -391,5 +396,224 @@ describe('watchGskApiKey', () => {
     } finally {
       stop()
     }
+  })
+})
+
+describe('classifyMintResponse', () => {
+  it('reads a minted key', () => {
+    expect(
+      classifyMintResponse(200, { status: 0, data: { key_id: 'kid', token: 'gsk-x' } }),
+    ).toEqual({ kind: 'ok', apiKey: 'gsk-x', keyId: 'kid' })
+  })
+
+  it('recognises the fresh-login refusal', () => {
+    expect(classifyMintResponse(403, { detail: FRESH_AUTH_REQUIRED })).toEqual({
+      kind: 'fresh_auth_required',
+    })
+  })
+
+  it('keeps other refusals plain errors', () => {
+    expect(classifyMintResponse(403, { detail: 'forbidden' })).toEqual({
+      kind: 'error',
+      reason: 'forbidden',
+    })
+    expect(classifyMintResponse(500, {})).toEqual({
+      kind: 'error',
+      reason: 'API key creation failed (HTTP 500)',
+    })
+    expect(classifyMintResponse(200, { status: -1, message: 'nope' })).toEqual({
+      kind: 'error',
+      reason: 'nope',
+    })
+  })
+})
+
+describe('login mint refused with fresh_browser_authentication_required', () => {
+  it('reports fresh_auth_required and stores nothing', async () => {
+    const flow = stubFlow()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (String(input).includes('/api_tokens/create')) {
+          return jsonResponse({ detail: FRESH_AUTH_REQUIRED }, { status: 403 })
+        }
+        return flow(input, init)
+      }),
+    )
+    const events = await loginAndCollect()
+    expect(events.at(-1)).toEqual({ phase: 'error', error: 'fresh_auth_required' })
+    expect(loadGenofficeAuth()).toBeNull()
+  })
+})
+
+describe('recoverFromRejectedGskKey', () => {
+  afterEach(() => setGenofficeLoginOpener(null))
+
+  async function signIn(): Promise<void> {
+    stubFlow()
+    await loginAndCollect()
+    expect(genofficeApiKey()).toBe('gsk-genoffice-key')
+  }
+
+  /** fetch stub for the silent re-mint: session ok, create answers `create` */
+  function stubRemint(create: () => Response) {
+    const flow = stubFlow({ pendingPolls: 0 })
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      if (String(input).includes('/api_tokens/create')) return create()
+      return flow(input, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('drops the rejected key from memory and disk', async () => {
+    await signIn()
+    expect(invalidateGenofficeKey('gsk-other')).toBe(false)
+    expect(invalidateGenofficeKey('gsk-genoffice-key')).toBe(true)
+    expect(genofficeApiKey()).toBe('')
+    expect(existsSync(genofficeAuthPath())).toBe(false)
+  })
+
+  it('re-mints with the stored session when the server still allows it (gate off)', async () => {
+    await signIn()
+    const opener = vi.fn()
+    setGenofficeLoginOpener(opener)
+    const fetchMock = stubRemint(() =>
+      jsonResponse({ status: 0, data: { key_id: 'kid-2', token: 'gsk-reminted' } }),
+    )
+    await expect(recoverFromRejectedGskKey('gsk-genoffice-key')).resolves.toBe('reminted')
+    expect(genofficeApiKey()).toBe('gsk-reminted')
+    expect(opener).not.toHaveBeenCalled()
+    // no device code: the stored Bearer rebuilt the session
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/device_code'))).toBe(false)
+  })
+
+  it('falls back to one device-code login when the re-mint needs a fresh login', async () => {
+    await signIn()
+    const opener = vi.fn()
+    setGenofficeLoginOpener(opener)
+    let creates = 0
+    stubRemint(() => {
+      // the silent re-mint is refused; the post-login mint (fresh session) succeeds
+      if (++creates === 1) return jsonResponse({ detail: FRESH_AUTH_REQUIRED }, { status: 403 })
+      return jsonResponse({ status: 0, data: { key_id: 'kid-3', token: 'gsk-fresh' } })
+    })
+    await expect(recoverFromRejectedGskKey('gsk-genoffice-key')).resolves.toBe('login_started')
+    expect(genofficeApiKey()).toBe('')
+    await vi.waitFor(() => expect(opener).toHaveBeenCalledWith(AUTH_URL))
+    await vi.waitFor(() => expect(genofficeApiKey()).toBe('gsk-fresh'))
+    expect(creates).toBe(2)
+  })
+
+  it('launches the login at most once per failure streak', async () => {
+    await signIn()
+    const opener = vi.fn()
+    setGenofficeLoginOpener(opener)
+    // the device code is never approved: the user abandoned the browser
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('/office_addin_auth/session')) {
+          return jsonResponse({}, { setCookie: 'session_id=old; Path=/' })
+        }
+        if (url.includes('/api_tokens/create')) {
+          return jsonResponse({ detail: FRESH_AUTH_REQUIRED }, { status: 403 })
+        }
+        if (url.includes('/device_code')) return jsonResponse(deviceCodeOk)
+        return jsonResponse({ status: 'expired' })
+      }),
+    )
+    const [a, b] = await Promise.all([
+      recoverFromRejectedGskKey('gsk-genoffice-key'),
+      recoverFromRejectedGskKey('gsk-genoffice-key'),
+    ])
+    expect([a, b]).toEqual(['login_started', 'login_started'])
+    await vi.waitFor(() => expect(genofficeLoginInFlight()).toBe(false))
+    // further rejected calls leave the inline sign-in button to the user
+    await expect(recoverFromRejectedGskKey('gsk-genoffice-key')).resolves.toBe('login_required')
+    await expect(recoverFromRejectedGskKey('')).resolves.toBe('login_required')
+    expect(opener).toHaveBeenCalledTimes(1)
+  })
+
+  it('a reminted key rejected again goes straight to login instead of re-minting forever', async () => {
+    await signIn()
+    const opener = vi.fn()
+    setGenofficeLoginOpener(opener)
+    let creates = 0
+    stubRemint(() => {
+      creates++
+      return jsonResponse({ status: 0, data: { key_id: `kid-${creates}`, token: 'gsk-reminted' } })
+    })
+    await expect(recoverFromRejectedGskKey('gsk-genoffice-key')).resolves.toBe('reminted')
+    await expect(recoverFromRejectedGskKey('gsk-reminted')).resolves.toBe('login_started')
+    expect(creates).toBe(1)
+  })
+
+  it('without an opener only signs out locally', async () => {
+    await signIn()
+    stubRemint(() => jsonResponse({ detail: FRESH_AUTH_REQUIRED }, { status: 403 }))
+    await expect(recoverFromRejectedGskKey('gsk-genoffice-key')).resolves.toBe('login_required')
+    expect(genofficeApiKey()).toBe('')
+    expect(genofficeLoginInFlight()).toBe(false)
+  })
+})
+
+describe('sign-out during recovery', () => {
+  afterEach(() => setGenofficeLoginOpener(null))
+
+  it('a re-mint still in flight at logout neither saves a key nor opens the login', async () => {
+    stubFlow()
+    await loginAndCollect()
+    const opener = vi.fn()
+    setGenofficeLoginOpener(opener)
+    let releaseCreate: ((r: Response) => void) | null = null
+    const flow = stubFlow({ pendingPolls: 0 })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (String(input).includes('/api_tokens/create')) {
+          return new Promise<Response>((resolve) => (releaseCreate = resolve))
+        }
+        return flow(input, init)
+      }),
+    )
+    const pending = recoverFromRejectedGskKey('gsk-genoffice-key')
+    // hold the re-mint at the create call, then sign out underneath it
+    await vi.waitFor(() => expect(releaseCreate).not.toBeNull())
+    await genofficeLogout()
+    releaseCreate!(jsonResponse({ status: 0, data: { key_id: 'kid-9', token: 'gsk-late' } }))
+    await expect(pending).resolves.toBe('login_required')
+    expect(genofficeApiKey()).toBe('')
+    expect(existsSync(genofficeAuthPath())).toBe(false)
+    expect(opener).not.toHaveBeenCalled()
+  })
+
+  it('callers sharing the cancelled recovery do not relaunch the login after sign-out', async () => {
+    stubFlow()
+    await loginAndCollect()
+    const opener = vi.fn()
+    setGenofficeLoginOpener(opener)
+    let releaseCreate: ((r: Response) => void) | null = null
+    const flow = stubFlow({ pendingPolls: 0 })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (String(input).includes('/api_tokens/create')) {
+          return new Promise<Response>((resolve) => (releaseCreate = resolve))
+        }
+        return flow(input, init)
+      }),
+    )
+    const first = recoverFromRejectedGskKey('gsk-genoffice-key')
+    const second = recoverFromRejectedGskKey('gsk-genoffice-key')
+    await vi.waitFor(() => expect(releaseCreate).not.toBeNull())
+    await genofficeLogout()
+    releaseCreate!(jsonResponse({ status: 0, data: { key_id: 'kid-9', token: 'gsk-late' } }))
+    await expect(first).resolves.toBe('login_required')
+    await expect(second).resolves.toBe('login_required')
+    expect(opener).not.toHaveBeenCalled()
+    expect(genofficeLoginInFlight()).toBe(false)
+    expect(genofficeApiKey()).toBe('')
   })
 })

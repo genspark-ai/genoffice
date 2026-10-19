@@ -7,6 +7,7 @@ import {
   TEXT_STYLE_FIELDS,
   type RevisionRange,
 } from '../editor/revisions'
+import { redactTextBetween } from './redact-view'
 
 export type RevisionType = 'insertion' | 'deletion' | 'formatting' | 'move'
 
@@ -142,7 +143,9 @@ export function listRevisionEntries(doc: PmNode): RevisionEntry[] {
       author: r.author || 'unknown',
       ...(r.date ? { date: r.date } : {}),
       blockIndex: blockIndexOfPos(doc, r.from),
-      text: doc.textBetween(r.from, r.to, '\n', ' ').replace(/\s+/g, ' ').trim(),
+      // the model's copy, not the document's: a revision range can cover a
+      // withheld span, and this text is sent to the model as-is
+      text: redactTextBetween(doc.toJSON(), r.from, r.to, ' ').replace(/\s+/g, ' ').trim(),
       ...(change ? { change } : {}),
       from: r.from,
       to: r.to,

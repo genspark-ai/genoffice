@@ -10,6 +10,7 @@ Elke editor heeft een eigen toetsenindeling en slechts een paar werken overal. D
 | -------------------------------------------------------- | ----- | --------------- |
 | De gebruikershandleiding openen — werkt overal in de app | F1    | F1              |
 | Lint in- of uitklappen — elke editor                     | ⌥⌘R   | Ctrl+F1         |
+| Lint compact — alleen Docs                               | ⌥⌘K   | Ctrl+Alt+K      |
 | Het blad Sneltoetsen openen — alleen Word                | ⌘/    | Ctrl+/          |
 
 - **F1 opent deze handleiding**, niet het sneltoetsenblad. De toets hoort bij het toepassingsmenu en werkt dus vanuit Word, Sheets, Slides, PDF of het tabblad Home.

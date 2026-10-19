@@ -10,6 +10,7 @@ Ogni editor ha le proprie combinazioni di tasti, e solo poche funzionano ovunque
 | -------------------------------------------------------- | ----- | --------------- |
 | Apri la guida utente — funziona ovunque nell’app         | F1    | F1              |
 | Comprimi / espandi il nastro — ogni editor               | ⌥⌘R   | Ctrl+F1         |
+| Barra compatta — solo Docs                               | ⌥⌘K   | Ctrl+Alt+K      |
 | Apri il foglio delle scorciatoie da tastiera — solo Word | ⌘/    | Ctrl+/          |
 
 - **F1 apre questo manuale**, non il foglio delle scorciatoie. Il tasto appartiene al menu dell’applicazione, quindi funziona allo stesso modo da Word, Sheets, Slides, PDF o dalla scheda Home.

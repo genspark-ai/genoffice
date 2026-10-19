@@ -24,6 +24,8 @@ import type { HeaderFooterResult } from './HeaderFooterDialog'
 import { t } from './i18n/locale'
 import { effectivePageBreaks } from './page-break-preview'
 import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './themes'
+import { startFullLoad } from './full-load'
+import { fitsFullLoad, workbookCellCounts } from './load-budget'
 import { loadVisibleRange } from './univer-sync'
 import {
   layoutSheetPrint,
@@ -544,25 +546,94 @@ export function createPrintPreviewHost(ctx: PageLayoutContext): PrintPreviewHost
   }
 }
 
+const FULL_LOAD_TIMEOUT_MS = 180_000
+
+/// Print and PDF export lay out every cell, so a streamed workbook is fully
+/// loaded first (the same load as the Load-all prompt, joined if one already
+/// runs) instead of refusing and leaving the user to wait and retry. `notLoaded`
+/// is the status shown while it runs. False (after a status message) when the
+/// workbook is too large to load, the load failed or timed out, or the user
+/// switched workbooks meanwhile.
+async function loadWorkbookForPrint(
+  ctx: PageLayoutContext,
+  state: LazyWorkbookState,
+  messages: { readonly notLoaded: string; readonly failed: string },
+): Promise<boolean> {
+  if (state.flags.preloadComplete) return true
+  if (!fitsFullLoad(workbookCellCounts(state.file.sheets))) {
+    ctx.setMessage(t('appPrintWorkbookTooLarge'))
+    return false
+  }
+  const runtime = ctx.univerRef.current
+  if (!runtime) {
+    ctx.setMessage(messages.failed)
+    return false
+  }
+  ctx.setMessage(messages.notLoaded)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), FULL_LOAD_TIMEOUT_MS)
+  })
+  const settled = startFullLoad(runtime, ctx.lazyWorkbookRef, ctx.setMessage).then(
+    () => 'settled' as const,
+    () => 'failed' as const,
+  )
+  const outcome = await Promise.race([settled, timeout]).finally(() => clearTimeout(timer))
+  // The workbook was replaced: whatever replaced it owns the status line.
+  if (ctx.lazyWorkbookRef.current !== state) return false
+  if (outcome !== 'settled' || !state.flags.preloadComplete) {
+    ctx.setMessage(messages.failed)
+    return false
+  }
+  return true
+}
+
+/// File → Print: loads a streamed workbook first, then opens the Print
+/// dialog's host; null (after a status message) when it cannot be opened.
+export async function openPrintPreviewHost(
+  ctx: PageLayoutContext,
+): Promise<PrintPreviewHost | null> {
+  const state = ctx.lazyWorkbookRef.current
+  if (state && !state.flags.preloadComplete) {
+    if (!ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()) {
+      ctx.setMessage(t('appActiveSheetUnavailable'))
+      return null
+    }
+    const loaded = await loadWorkbookForPrint(ctx, state, {
+      notLoaded: t('appPrintNeedsFullLoad'),
+      failed: t('appPrintFailed'),
+    })
+    if (!loaded) return null
+  }
+  return createPrintPreviewHost(ctx)
+}
+
 /// The active sheet laid out as print HTML with its Page Layout settings, or
 /// null (after a status message) when the workbook is not ready for it.
 async function activeSheetPrintPayload(
   ctx: PageLayoutContext,
-  messages: { readonly notLoaded: string; readonly preparing: string },
+  messages: { readonly notLoaded: string; readonly preparing: string; readonly failed: string },
 ): Promise<WorkbookExportPdfRequest | null> {
-  const runtime = ctx.univerRef.current
-  const worksheet = runtime?.univerAPI.getActiveWorkbook()?.getActiveSheet()
-  if (!runtime || !worksheet) {
+  const activeSheet = () => ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+  if (!activeSheet()) {
     ctx.setMessage(t('appActiveSheetUnavailable'))
     return null
   }
   const state = ctx.lazyWorkbookRef.current
-  if (state && !state.flags.preloadComplete) {
-    ctx.setMessage(messages.notLoaded)
+  if (state && !(await loadWorkbookForPrint(ctx, state, messages))) return null
+
+  // The load awaited: take the sheet again, it may have changed meanwhile.
+  const worksheet = activeSheet()
+  if (!worksheet) {
+    ctx.setMessage(t('appActiveSheetUnavailable'))
     return null
   }
+  if (ctx.lazyWorkbookRef.current !== state) return null
+
   ctx.setMessage(messages.preparing)
+  const sheetId = worksheet.getSheetId()
   const document = await sheetPrintDocument(ctx, state, worksheet, {}, null, new Date(), true)
+  if (ctx.lazyWorkbookRef.current !== state || activeSheet()?.getSheetId() !== sheetId) return null
   return printRequest([document], `${document.fileName}.pdf`)
 }
 
@@ -575,6 +646,7 @@ export async function handleExportPdf(ctx: PageLayoutContext, outPath?: string):
     const payload = await activeSheetPrintPayload(ctx, {
       notLoaded: t('appPdfNeedsFullLoad'),
       preparing: t('appPdfRendering'),
+      failed: t('appPdfExportFailed'),
     })
     if (!payload) return false
     const result = await window.desktopApi.exportPdf({

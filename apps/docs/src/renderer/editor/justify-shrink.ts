@@ -47,12 +47,23 @@ export interface ShrinkLine {
   /** natural width of that word's head up to its first break opportunity (a
    *  hyphen fragment); null = the word breaks nowhere */
   nextFragmentWidth?: number | null
+  /** the line ends in a line break (w:br / w:cr), not at the paragraph end */
+  hardBreak?: boolean
 }
 
 export interface ShrinkDecision {
   gaps: ShrinkGap[]
-  /** negative word-spacing per space char, px */
+  /** negative word-spacing per space char, px (negative = expand) */
   perChar: number
+}
+
+export interface ShrinkOptions {
+  /** compat15 pull rule (default on) */
+  shrink?: boolean
+  /** Word's default "expand shift return": a justified line ending in a line
+   *  break is stretched to the column like any other line (off under
+   *  settings.xml doNotExpandShiftReturn) */
+  expandBreaks?: boolean
 }
 
 const SPACE_SHRINK_MAX = 0.25
@@ -65,8 +76,16 @@ const SHRINK_EPS = 0.5
 const NOISE = 1 / 128
 /** Blink's LayoutUnit: a cap missed by less than one is a measurement artefact */
 const LAYOUT_UNIT = 1 / 64
+/** a stretched break-ended line stops this short of the column so that
+ *  sub-LayoutUnit measurement noise can never re-wrap its last word */
+const EXPAND_SHORTFALL = 0.25
 
-export function decideLineShrinks(lines: ShrinkLine[]): Array<ShrinkDecision | null> {
+export function decideLineShrinks(
+  lines: ShrinkLine[],
+  opts: ShrinkOptions = {},
+): Array<ShrinkDecision | null> {
+  const shrink = opts.shrink !== false
+  const expandBreaks = opts.expandBreaks === true
   return lines.map((line) => {
     const spaceW = line.gaps.reduce((s, g) => s + g.width, 0)
     const spaceChars = line.gaps.reduce((s, g) => s + g.chars, 0)
@@ -75,9 +94,16 @@ export function decideLineShrinks(lines: ShrinkLine[]): Array<ShrinkDecision | n
     if (needed > NOISE) {
       // the line already holds a word pulled by a previous round: keep the
       // compression that fits it (recomputed fresh from natural widths)
-      if (spaceChars === 0) return null
+      if (!shrink || spaceChars === 0) return null
       return { gaps: line.gaps, perChar: (needed + SHRINK_EPS) / spaceChars }
     }
+    if (line.hardBreak) {
+      // CSS leaves a line ending in <br> ragged; Word stretches it
+      const slack = -needed - EXPAND_SHORTFALL
+      if (!expandBreaks || spaceChars === 0 || slack <= NOISE) return null
+      return { gaps: line.gaps, perChar: -slack / spaceChars }
+    }
+    if (!shrink) return null
     // a zero-char boundary is a hyphen break: the line's own spaces carry the pull
     const b = line.boundary
     if (!b || line.nextWordWidth == null) return null
@@ -120,6 +146,8 @@ export function breakOpportunity(text: string): number {
 export interface JustifyShrinkStorage {
   /** settings.xml compatibilityMode >= 15 (legacy modes never shrink) */
   enabled: boolean
+  /** stretch justified lines that end in a line break (see ShrinkOptions) */
+  expandBreakLines: boolean
 }
 
 declare module '@tiptap/core' {
@@ -169,7 +197,7 @@ interface MeasuredShrink {
 type Token =
   | { kind: 'word'; from: number; to: number; atom: boolean; text?: string }
   | { kind: 'space'; from: number; to: number; chars: number }
-  | { kind: 'break' }
+  | { kind: 'break'; expand: boolean }
 
 interface WordBox {
   width: number
@@ -193,6 +221,7 @@ interface LineAcc {
   words: WordBox[]
   gaps: ShrinkGap[]
   boundary: ShrinkGap | null
+  hardBreak: boolean
   left: number
   right: number
 }
@@ -325,7 +354,7 @@ class JustifyShrinkView {
       return
     }
     const old = justifyShrinkPluginKey.getState(view.state)
-    if (!this.storage.enabled) {
+    if (!this.storage.enabled && !this.storage.expandBreakLines) {
       if (old && old !== DecorationSet.empty)
         view.dispatch(
           view.state.tr.setMeta(justifyShrinkPluginKey, []).setMeta('addToHistory', false),
@@ -381,7 +410,7 @@ class JustifyShrinkView {
     const decos = shrinks.map((s) =>
       Decoration.inline(s.from, s.to, {
         class: 'doc-jshrink',
-        style: `word-spacing:-${s.perChar}px`,
+        style: `word-spacing:${-s.perChar}px`,
       }),
     )
     view.dispatch(
@@ -399,14 +428,23 @@ class JustifyShrinkView {
     if (el.offsetWidth === 0) return null
     const rect = el.getBoundingClientRect()
     if (rect.width === 0) return null
-    // rects are screen px (page zoom transform); emitted widths are layout px
-    const zoom = rect.width / el.offsetWidth
     const cs = window.getComputedStyle(el)
     if (cs.direction === 'rtl' || cs.textAlign !== 'justify') return []
     // content-box width (layout px): capacity reference for the ragged last
-    // line, whose rendered extent shrinks with its own compression
-    const contentW =
-      el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)
+    // line and for break-ended lines, whose rendered extent is their own
+    // natural width. Read off the used style, not the integer clientWidth:
+    // a borderline pull (natural within 0.1px of the column) flips with a
+    // rounded capacity and the loop never settles
+    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
+    const borderX = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0)
+    const cssW = parseFloat(cs.width)
+    const contentW = Number.isFinite(cssW)
+      ? cs.boxSizing === 'border-box'
+        ? cssW - padX - borderX
+        : cssW
+      : el.clientWidth - padX
+    // rects are screen px (page zoom transform); emitted widths are layout px
+    const zoom = rect.width / (contentW + padX + borderX)
     const textIndent = parseFloat(cs.textIndent) || 0
 
     const tokens: Token[] = []
@@ -433,7 +471,9 @@ class JustifyShrinkView {
             })
         }
       } else if (child.type.name === 'hardBreak') {
-        tokens.push({ kind: 'break' })
+        // page and column breaks end the page, not just the line
+        const expand = !child.attrs.pageBreak && !child.attrs.colBreak
+        tokens.push({ kind: 'break', expand })
       } else {
         tokens.push({ kind: 'word', from: base, to: base + child.nodeSize, atom: true })
       }
@@ -528,6 +568,7 @@ class JustifyShrinkView {
     let lastWord: WordBox | null = null
     let pendingSpaces: Array<Extract<Token, { kind: 'space' }>> = []
     let pendingBreak = false
+    let pendingExpandBreak = false
     let pendingHyphen = false
     let pendingWord: WordBox | null = null // mark-split word pieces merge until a space
 
@@ -552,13 +593,24 @@ class JustifyShrinkView {
         cur.left = Math.min(cur.left, w.left)
         cur.right = Math.max(cur.right, w.right)
       } else {
-        if (cur) cur.boundary = pendingBreak ? null : pendingHyphen ? HYPHEN_GAP : mergedGap()
-        cur = { words: [w], gaps: [], boundary: null, left: w.left, right: w.right }
+        if (cur) {
+          cur.boundary = pendingBreak ? null : pendingHyphen ? HYPHEN_GAP : mergedGap()
+          cur.hardBreak = pendingExpandBreak
+        }
+        cur = {
+          words: [w],
+          gaps: [],
+          boundary: null,
+          hardBreak: false,
+          left: w.left,
+          right: w.right,
+        }
         lines.push(cur)
       }
       lastWord = w
       pendingSpaces = []
       pendingBreak = false
+      pendingExpandBreak = false
       pendingHyphen = false
     }
 
@@ -592,6 +644,7 @@ class JustifyShrinkView {
       } else if (t.kind === 'break') {
         flushWord()
         pendingBreak = true
+        pendingExpandBreak = t.expand
         pendingSpaces = []
       } else {
         const w = measureWord(t)
@@ -610,6 +663,8 @@ class JustifyShrinkView {
     // a paragraph a previous round compressed onto a single line must keep its
     // compression (needed > 0 path), so only a lineless paragraph bails
     if (lines.length === 0) return []
+    // a break closing the paragraph's last text line still ends that line
+    if (pendingExpandBreak) lines[lines.length - 1].hardBreak = true
 
     const shrinkLines: ShrinkLine[] = lines.map((l, k) => ({
       wordWidths: l.words.map((w) => w.width),
@@ -619,17 +674,29 @@ class JustifyShrinkView {
       // ragged last line reports its own compressed extent instead, which
       // would ratchet the keep-compression by EPS every round — use the
       // paragraph content box (minus the first line's text-indent) there
+      // a break-ended line is ragged like the last one: its capacity is the
+      // content box too (CSS never stretched it, so its extent is its natural width)
       avail:
-        k === lines.length - 1 ? contentW - (k === 0 ? textIndent : 0) : (l.right - l.left) / zoom,
+        k === lines.length - 1 || l.hardBreak
+          ? contentW - (k === 0 ? textIndent : 0)
+          : (l.right - l.left) / zoom,
       nextWordWidth: l.boundary ? (lines[k + 1]?.words[0]?.width ?? null) : null,
       nextFragmentWidth: l.boundary ? (lines[k + 1]?.words[0]?.frag ?? null) : null,
+      ...(l.hardBreak ? { hardBreak: true } : {}),
     }))
 
     const out: MeasuredShrink[] = []
-    for (const d of decideLineShrinks(shrinkLines)) {
+    const decisions = decideLineShrinks(shrinkLines, {
+      shrink: this.storage.enabled,
+      expandBreaks: this.storage.expandBreakLines,
+    })
+    for (const d of decisions) {
       if (!d) continue
-      const perChar = Math.round(d.perChar * 100) / 100
-      if (perChar <= 0) continue
+      // shrinks round up (the pull must happen), expansions round toward zero
+      // (the stretched line must not re-wrap)
+      const perChar =
+        d.perChar > 0 ? Math.round(d.perChar * 100) / 100 : -Math.floor(-d.perChar * 100) / 100
+      if (perChar === 0) continue
       for (const g of d.gaps) {
         if (g.chars === 0) continue
         out.push({ from: g.from, to: g.to, perChar })
@@ -642,7 +709,7 @@ class JustifyShrinkView {
 export const JustifyShrinkExtension = Extension.create({
   name: 'justifyShrink',
   addStorage(): JustifyShrinkStorage {
-    return { enabled: false }
+    return { enabled: false, expandBreakLines: false }
   },
   addProseMirrorPlugins() {
     const storage = this.storage as JustifyShrinkStorage

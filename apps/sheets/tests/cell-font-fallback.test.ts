@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   CELL_FONT_ALIASES,
+  registerCellFontAliases,
+  registerTextDingbatsFace,
   rewriteScopedFamilies,
   withSansSerifFallback,
+  richRunFamilies,
+  workbookFontFamilies,
 } from '../src/renderer/cell-font-fallback'
 
 const EMOJI = '"Cell Text Dingbats", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
@@ -521,5 +525,110 @@ describe('CELL_FONT_ALIASES', () => {
         family,
       ).toBe(true)
     }
+  })
+})
+
+describe('registerCellFontAliases', () => {
+  /// FontFace and document.fonts as the renderer sees them; records each face's sources.
+  function stubFontFaces(): string[] {
+    const sources: string[] = []
+    vi.stubGlobal(
+      'FontFace',
+      class {
+        constructor(_family: string, source: string) {
+          sources.push(source)
+        }
+        load() {
+          return Promise.reject(new Error('not installed'))
+        }
+      },
+    )
+    vi.stubGlobal('document', { fonts: { add() {} } })
+    return sources
+  }
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('looks up the faces of the families named, once each, and no other', async () => {
+    const sources = stubFontFaces()
+    await registerCellFontAliases(['Cambria', 'cambria', 'Not An Office Font'])
+    await registerCellFontAliases(['Cambria'])
+    const cambria = CELL_FONT_ALIASES.find((alias) => alias.family === 'Cambria')!
+    expect(sources.join()).toContain(`local('${cambria.regular[0]}')`)
+    expect(sources.join()).not.toMatch(/Yu Mincho|YuMincho|PingFang|Kaiti/)
+    const lookedUp = sources.length
+    await registerCellFontAliases(['Cambria'])
+    expect(sources).toHaveLength(lookedUp)
+  })
+
+  it('a second caller waits for the load the first one started', async () => {
+    let settle!: () => void
+    const pending = new Promise<void>((resolve) => (settle = resolve))
+    vi.stubGlobal(
+      'FontFace',
+      class {
+        load() {
+          return pending
+        }
+      },
+    )
+    vi.stubGlobal('document', { fonts: { add() {} } })
+    const first = registerCellFontAliases(['Garamond'])
+    let secondDone = false
+    const second = registerCellFontAliases(['Garamond']).then(() => (secondDone = true))
+    await Promise.resolve()
+    expect(secondDone).toBe(false)
+    settle()
+    await Promise.all([first, second])
+    expect(secondDone).toBe(true)
+  })
+
+  it('starts with the dingbats face only: no system font is looked up for nothing', async () => {
+    const sources = stubFontFaces()
+    await registerTextDingbatsFace()
+    expect(sources).toHaveLength(1)
+    expect(sources[0]).toContain("local('Segoe UI Symbol')")
+  })
+
+  it('loads a family the workbook names, even one macOS installs on demand', async () => {
+    const sources = stubFontFaces()
+    await registerCellFontAliases(['Yu Mincho'])
+    expect(sources.some((source) => source.includes('Yu Mincho'))).toBe(true)
+  })
+})
+
+describe('workbookFontFamilies', () => {
+  it('lists the cell, theme and Normal fonts a workbook names', () => {
+    const families = workbookFontFamilies({
+      styles: [{ fontFamily: 'Yu Mincho' }, { fontFamily: 'Calibri' }, {}],
+      themeFonts: { major: 'Calibri Light', minor: 'Calibri', minorEa: '游ゴシック' },
+      normalFontName: 'ＭＳ Ｐゴシック',
+    } as unknown as Parameters<typeof workbookFontFamilies>[0])
+    expect([...families]).toEqual([
+      'Yu Mincho',
+      'Calibri',
+      'Calibri Light',
+      '游ゴシック',
+      'ＭＳ Ｐゴシック',
+    ])
+  })
+
+  it('splits comma lists, strips quotes and includes conditional-format fonts', () => {
+    const families = workbookFontFamilies({
+      styles: [{ fontFamily: '"Yu Mincho", Meiryo' }, { fontFamily: ' Calibri ,Calibri' }],
+      dxfStyles: [{ fontFamily: 'Segoe UI' }, {}],
+    } as unknown as Parameters<typeof workbookFontFamilies>[0])
+    expect([...families]).toEqual(['Yu Mincho', 'Meiryo', 'Calibri', 'Segoe UI'])
+  })
+})
+
+describe('richRunFamilies', () => {
+  it('collects the families rich-text runs name, split like cell fonts', () => {
+    const families = richRunFamilies([
+      { rich: [{ family: 'Yu Mincho' }, { family: '"Segoe UI",Arial' }, {}] },
+      {},
+      { rich: [{ family: 'Yu Mincho' }] },
+    ])
+    expect([...families]).toEqual(['Yu Mincho', 'Segoe UI', 'Arial'])
   })
 })

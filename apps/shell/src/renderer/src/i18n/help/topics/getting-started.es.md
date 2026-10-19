@@ -46,7 +46,7 @@ Un documento nuevo se abre sin título; el archivo en el disco solo se crea al g
 | Abrir este manual | F1    | F1              |
 | Contraer la cinta | ⌥⌘R   | Ctrl+F1         |
 
-**Contraer la cinta de opciones** funciona en todos los editores. La fila de pestañas permanece y la banda de comandos que hay debajo se oculta; la pestaña seleccionada hace doble función como control de contracción, de modo que mientras la cinta está contraída no hay ninguna pestaña seleccionada y pulsar cualquier pestaña vuelve a mostrar la banda. Hacer doble clic en una pestaña hace lo mismo. La forma en que la dejó se recuerda editor por editor.
+**Contraer la cinta de opciones** funciona en todos los editores. La fila de pestañas permanece y la banda de comandos que hay debajo se oculta; la pestaña seleccionada hace doble función como control de contracción, de modo que mientras la cinta está contraída no hay ninguna pestaña seleccionada y pulsar cualquier pestaña vuelve a mostrar la banda. Hacer doble clic en una pestaña hace lo mismo. La forma en que la dejó se recuerda editor por editor. Docs añade una densidad intermedia: **⌥⌘K** / Ctrl+Alt+K compacta la banda a solo iconos, recordada igual.
 
 Los atajos dentro de cada editor (copiar formato, buscar y reemplazar, operaciones de tabla, …) están en sus capítulos; Docs incluye además un cuadro de diálogo de atajos de teclado en el que se puede buscar (**⌘/**) (véase su capítulo).
 

@@ -3,6 +3,7 @@ import type {
   AgentImage,
   AgentMessage,
   AgentStreamHandle,
+  AgentTokenUsage,
   AgentToolCall,
   AgentToolDef,
   AgentToolResult,
@@ -28,6 +29,8 @@ export interface AgentRunResult {
   turnLimit: boolean
   /** the final turn hit the token limit (stop_reason max_tokens): text is incomplete; set only when true */
   truncated?: boolean
+  /** tokens billed across all turns of the run; absent when the provider never reported usage */
+  usage?: AgentTokenUsage
 }
 
 export interface AgentLoopEvents<TSnapshot> {
@@ -38,6 +41,8 @@ export interface AgentLoopEvents<TSnapshot> {
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
   /** a turn requested tools and they ran; the loop is going back to the model */
   onTurnEnd?(): void
+  /** tokens the provider billed for the turn that just streamed (per model call; compaction summary turns are not reported) */
+  onUsage?(usage: AgentTokenUsage): void
   onDone?(result: AgentRunResult): void
   onError?(error: string): void
 }
@@ -488,6 +493,10 @@ export class AgentLoop<TSnapshot = unknown> {
   private verifyRetryUsed = false
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
+  /** usage the provider reported for the turn now streaming (null until it reports) */
+  private turnUsage: AgentTokenUsage | null = null
+  /** usage summed across the turns of the in-flight run (null when nothing reported) */
+  private runUsage: AgentTokenUsage | null = null
   /** invalidates stale transport callbacks after cancel/reset */
   private generation = 0
   /** per-run abort: aborted on cancel(); long tools (e.g. generate_deck) use it to break internal loops */
@@ -635,6 +644,7 @@ export class AgentLoop<TSnapshot = unknown> {
     }
     this.runUserMsg = userMsg
     this.history.push(userMsg)
+    this.runUsage = null
     this.startTurn()
   }
 
@@ -796,6 +806,7 @@ export class AgentLoop<TSnapshot = unknown> {
   cancel(): void {
     if (!this.running) return
     this.cancelled = true
+    this.turnUsage = null
     // abort lets long tools mid-execution (internal LLM loops etc.) stop promptly
     this.abortController?.abort()
     // Waiting out a retry backoff: finalize here. A run that already committed
@@ -867,6 +878,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.handle?.cancel()
     this.handle = null
     this.running = false
+    this.turnUsage = null
     this.rollbackFailedRun()
     try {
       this.options.events?.onError?.(message)
@@ -888,6 +900,21 @@ export class AgentLoop<TSnapshot = unknown> {
     })
   }
 
+  /** Fold the turn's reported usage into the run total: every turn bills its own
+   * prompt and completion afresh, so the run's figures are the per-turn sum
+   * (sides the provider never reported stay absent). Consumes the turn's figure
+   * so a later fold (the next turn's start or the run's onDone) cannot double it. */
+  private mergeRunUsage(): void {
+    if (!this.turnUsage) return
+    const usage: AgentTokenUsage = { ...(this.runUsage ?? {}) }
+    if (this.turnUsage.inputTokens !== undefined)
+      usage.inputTokens = (usage.inputTokens ?? 0) + this.turnUsage.inputTokens
+    if (this.turnUsage.outputTokens !== undefined)
+      usage.outputTokens = (usage.outputTokens ?? 0) + this.turnUsage.outputTokens
+    this.runUsage = usage
+    this.turnUsage = null
+  }
+
   /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request. */
   private trimHistory(): void {
     const max = this.options.maxHistory ?? 40
@@ -903,10 +930,13 @@ export class AgentLoop<TSnapshot = unknown> {
 
   private startTurn(retriesUsed = 0): void {
     const generation = this.generation
+    // a tool turn is ending here: fold its usage into the run total before the new turn resets it
+    this.mergeRunUsage()
     this.turnText = ''
     this.turnReasoning = ''
     this.toolCalls = []
     this.turnStopReason = null
+    this.turnUsage = null
     // Some transports emit an extra onDone after cancel — this turn may finalize only once
     let settled = false
     try {
@@ -953,6 +983,16 @@ export class AgentLoop<TSnapshot = unknown> {
           onStopReason: (reason) => {
             if (generation !== this.generation || settled) return
             this.turnStopReason = reason
+          },
+          onUsage: (usage) => {
+            if (generation !== this.generation || settled) return
+            this.turnUsage = usage
+            try {
+              this.options.events?.onUsage?.(usage)
+            } catch (err) {
+              settled = true
+              this.failRun(err instanceof Error ? err.message : String(err))
+            }
           },
           onDone: () => {
             if (generation !== this.generation || settled) return
@@ -1049,12 +1089,14 @@ export class AgentLoop<TSnapshot = unknown> {
       this.history.push({ role: 'assistant', text: this.turnText || COMPLETED_VIA_TOOLS_TEXT })
       this.running = false
       this.runUserMsg = null
+      this.mergeRunUsage()
       events?.onDone?.({
         text: this.turnText,
         cancelled: this.cancelled,
         turnLimit: this.finalizing,
         // set only when true so exact-shape consumers/tests stay unaffected
         ...(this.turnStopReason === 'max_tokens' && !this.cancelled ? { truncated: true } : {}),
+        ...(this.runUsage ? { usage: this.runUsage } : {}),
       })
       return
     }

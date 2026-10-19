@@ -4,9 +4,9 @@ Docs adalah pengolah kata mirip Word: membaca dan menulis .docx asli dengan peno
 
 ## Pita
 
-Tab: **Beranda / Sisipkan / Gambar / Tata Letak / Desain / Referensi / Tinjau / Tampilan**, ditambah tab kontekstual untuk objek yang dipilih (desain dan tata letak tabel, gambar, header/footer).
+Tab: **Beranda / Sisipkan / Gambar / Tata Letak / Desain / Referensi / Tinjau / Tampilan**, ditambah tab kontekstual untuk objek yang dipilih (desain dan tata letak tabel, gambar, header/footer). Pita perintah punya kepadatan sendiri di Docs: **kompak** (⌥⌘K / Ctrl+Alt+K) menyisakan ikon dan melepas label, dan pilihannya diingat.
 
-- **Beranda**: papan klip; font (termasuk ukuran CJK dan tanda penekanan) dengan **Hapus Semua Pemformatan** dan sakelar untuk **Tampilkan/sembunyikan tanda pemformatan**; paragraf (perataan/indens/spasi/daftar) ditambah **Tentukan butir baru / Tentukan format nomor baru / Daftar Multitingkat**, yang menyimpan gaya daftar Anda sendiri ke dalam dokumen; gaya (Judul 1-6/Normal/Kutipan, dapat diubah) dengan **Panel Gaya** untuk daftar lengkap.
+- **Beranda**: papan klip; font (termasuk ukuran CJK dan tanda penekanan) dengan **Hapus Semua Pemformatan** dan sakelar untuk **Tampilkan/sembunyikan tanda pemformatan**; paragraf (perataan/indens/spasi/daftar) ditambah **Tentukan butir baru / Tentukan format nomor baru / Daftar Multitingkat**, yang menyimpan gaya daftar Anda sendiri ke dalam dokumen; gaya (Judul 1-6/Normal/Kutipan, dapat diubah) dengan **Panel Gaya** untuk daftar lengkap. Sebuah gaya bisa menata huruf Asia Timur dan huruf Latin secara terpisah (misal huruf CJK plus Times New Roman); pasangannya selamat dari pulang-pergi .docx.
 - **Sisipkan**: pemisah halaman/seksi; tabel (kisi baris × kolom, atau **Sisipkan Tabel…** untuk ukuran pasti); gambar, bentuk, kotak teks; **Halaman Sampul** dan **Halaman Kosong** dari galeri siap pakai; **Bagan**; **Drop Cap**; **WordArt**; field (tanggal, waktu, nomor halaman, jumlah halaman, nama file); tautan, **Bookmark** dan referensi silang; komentar; header/footer dan nomor halaman; simbol dan persamaan.
   - **Bagan** menyisipkan objek bagan sungguhan dengan datanya sendiri — batang, garis, atau lingkaran — bukan gambar. _Edit Data_ di Word membuka angka di baliknya.
 - **Gambar**: tinta di atas halaman, dalam grup **Alat Menggambar** — **Pilih** kembali ke pengeditan teks, lalu **Pena**, **Stabilo** dan **Penghapus** (satu klik atau satu usapan menghapus seluruh goresan). Di sebelahnya, **Gaya Pena** / **Gaya Stabilo** adalah satu kendali yang memuat contoh warna dan sebaris lebar; labelnya mengikuti alat yang sedang aktif. Tinta disimpan di dalam dokumen sebagai anotasi yang melayang di atas teks, jadi ia bertahan setelah disimpan dan dibuka kembali, dan **Hapus Semua** di grup berikutnya menghapusnya seluruhnya.
@@ -55,7 +55,7 @@ Klik kanan di mana saja pada isi dokumen — menu menyesuaikan dengan yang Anda 
 
 - Cari dan ganti (ctrl+F / ctrl+H): sensitif huruf besar-kecil, seluruh kata, regex.
 - Penyalin format; urungkan/ulangi yang mendalam; opsi tempel.
-- Tabel: gabungkan/pisahkan sel, operasi baris/kolom, batas dan arsir, urutkan, rumus.
+- Tabel: gabungkan/pisahkan sel, operasi baris/kolom, batas dan arsir, urutkan, rumus. Baris terbelah antar halaman bila perlu, dan Ctrl+Enter di dalam sel membalik halaman tepat di situ — cetak dan PDF mengikuti.
 - Gambar: pembungkusan teks, pemotongan, kompresi; kanvas gambar.
 
 ## Tipografi CJK

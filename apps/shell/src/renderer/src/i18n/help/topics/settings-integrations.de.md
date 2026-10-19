@@ -30,7 +30,7 @@ Hell / Dunkel / System folgen. „System folgen“ richtet sich nach dem Erschei
 Keine Schalter — jede Fähigkeit wählt den Anbieter, der sie bedient, und Schlüssel und Basis-URL eines Anbieters werden einmal eingetragen und gemeinsam genutzt:
 
 - **Websuche**, **Bildgenerierung**, **Bildanalyse** und **Videoanalyse**, jede mit Anbieter, Modell, Schlüssel und Basis-URL.
-- **Lokale Dateisuche** läuft auf diesem Rechner. Darunter ist **Jev-Neusortierung**, die **standardmäßig aus** ist. Schalten Sie sie ein, werden die Auszüge der 20 besten lokalen Treffer — bis zu 1.200 Zeichen je Dokument, dazu die Datei- und Ordnernamen — an das Jev-Modell von TypeSafe gesendet und nach Relevanz neu sortiert. Ist sie aus, verlässt nichts dieses Gerät.
+- **Lokale Dateisuche** läuft auf diesem Rechner. Darunter ist **Jev-Such-Reranking** **standardmäßig aus**. Ein schaltet es ein, gehen die Auszüge der Top-20-Treffer — bis zu 1.200 Zeichen je Dokument, plus Datei- und Ordnernamen — an den von Ihnen gewählten Entscheidungs-Endpunkt (Jev über OpenRouter oder TypeSafe, Perplexity, Liquid AI d1, Cloudflare, ein lokales Modell oder eine eigene URL) und werden nach Relevanz neu geordnet. Aus bleibt alles auf dem Gerät.
 
 ## Über
 

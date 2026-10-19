@@ -73,7 +73,7 @@ Un agent qui ne connaît pas le vocabulaire des ops devine. La compétence embar
 Le serveur ne se limite pas aux fichiers sur le disque. Tant que GenOffice tourne, l’agent peut aussi travailler par la fenêtre :
 
 - **`open_in_genoffice`** ouvre un fichier dans un onglet et le met au premier plan.
-- **`open_documents`** liste tous les documents que vous avez ouverts — id, type, chemin, et s’ils ont des modifications non enregistrées —, puis lit le contenu actuel de l’un d’eux ou le ferme, en enregistrant d’abord, sauf si vous lui demandez de jeter.
+- **`open_documents`** liste tous les documents que vous avez ouverts — id, type, chemin, et s’ils ont des modifications non enregistrées —, puis lit le contenu actuel de l’un d’eux, l’enregistre sur place ou le ferme, en enregistrant d’abord, sauf si vous lui demandez de jeter.
 - **Les outils de contenu** prennent cet id (ou le chemin) comme argument `document`, si bien qu’une modification atterrit dans l’onglet que vous avez déjà ouvert et que la fenêtre bascule pour l’afficher.
 
 Deux choses restent hors de portée : il n’y a pas de panneau IA, et la boîte de dialogue de mise à jour de l’application ne s’applique pas.

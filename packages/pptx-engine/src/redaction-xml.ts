@@ -81,7 +81,7 @@ export function hasRedactExtIn(xml: string): boolean {
 
 /**
  * Sync our mark on the element named `tag` inside `xml` — `a:rPr` for a run, the
- * picture's `nvPr` for media. A `label` of undefined removes it.
+ * picture's `p:spPr` for media. A `label` of undefined removes it.
  *
  * Both save paths call this: the aligned patch path, which would otherwise leave
  * a mark the model no longer claims, and the rebuild path, which has just
@@ -121,7 +121,7 @@ const OUR_EXT_RE = new RegExp(
 /** An `<a:extLst>` left holding nothing, either form. */
 const EMPTY_EXTLST_RE = /<a:extLst\b[^>]*?\/>|<a:extLst\b[^>]*>([\s\S]*?)<\/a:extLst>/g
 
-/** Remove our extension from a raw `<a:rPr>` / `nvPr` string, leaving everything else. */
+/** Remove our extension from a raw `<a:rPr>` / `<p:spPr>` string, leaving everything else. */
 export function stripRedactExt(xml: string): string {
   const withoutOurs = xml.replace(OUR_EXT_RE, '')
   // an apply/unapply cycle would otherwise leave an empty <a:extLst> behind,

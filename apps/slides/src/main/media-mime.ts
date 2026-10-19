@@ -47,6 +47,25 @@ export function sniffImageMime(bytes: Uint8Array): string | null {
   return null
 }
 
+/**
+ * The extension an AI-fetched image may be stored under, or null when the bytes
+ * are not a raster image the insert pipeline can label (PNG/JPEG/GIF only:
+ * content-type headers are attacker-influenced, so the magic bytes decide —
+ * a response that is HTML, JSON or SVG must never land in a deck as a picture).
+ */
+export function rasterImageExt(bytes: Uint8Array): 'png' | 'jpg' | 'gif' | null {
+  switch (sniffImageMime(bytes)) {
+    case 'image/png':
+      return 'png'
+    case 'image/jpeg':
+      return 'jpg'
+    case 'image/gif':
+      return 'gif'
+    default:
+      return null
+  }
+}
+
 /** Effective display mime: sniffed container first, then the extension, then PNG. */
 export function displayMime(mediaRef: string, bytes: Uint8Array): string {
   const sniffed = sniffImageMime(bytes)

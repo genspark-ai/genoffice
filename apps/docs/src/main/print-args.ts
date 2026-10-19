@@ -34,3 +34,6 @@ export function printScaleOption(scale: unknown): { scale: number } | Record<str
     ? { scale }
     : {}
 }
+
+export { printJobOptions } from '@genoffice/electron-utils/print-job'
+export type { PrintDuplex, PrintJobOptions } from '@genoffice/electron-utils/print-job'

@@ -9,8 +9,7 @@
   /* aliases only: the values live in tokens.css, which owns both themes */
   --help-bg: var(--color-bg-page);
   --help-accent: var(--color-brand-secondary);
-  --help-accent-soft: var(--bg-hover-accent);
-  --help-glass: var(--color-bg-overlay);
+  --help-glass: var(--surface-subtle);
   --help-card: var(--surface);
   --help-line-faint: var(--border-subtle);
   --help-line-soft: var(--border);
@@ -94,9 +93,7 @@
   background: var(--help-fill-hover);
 }
 .help-topic.active {
-  background: var(--help-accent-soft);
-  color: var(--help-accent);
-  font-weight: 600;
+  background: var(--help-fill);
 }
 
 .help-main {

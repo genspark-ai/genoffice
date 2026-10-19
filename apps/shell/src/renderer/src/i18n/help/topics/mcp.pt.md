@@ -73,7 +73,7 @@ Um agente que não conhece o vocabulário das operações vai adivinhar. A skill
 O servidor não se limita aos ficheiros em disco. Enquanto o GenOffice estiver a correr, o agente também pode trabalhar através da janela:
 
 - **`open_in_genoffice`** abre um ficheiro num separador e dá-lhe o foco.
-- **`open_documents`** lista todos os documentos que tem abertos — id, tipo, caminho e se têm alterações por guardar —, e depois lê o conteúdo atual de um deles ou fecha-o, guardando primeiro, a não ser que lhe peça para descartar.
+- **`open_documents`** lista todos os documentos que tem abertos — id, tipo, caminho e se têm alterações por guardar —, e depois lê o conteúdo atual de um deles, guarda-o no próprio sítio ou fecha-o, guardando primeiro, a não ser que lhe peça para descartar.
 - **As ferramentas de conteúdo** recebem esse id (ou o caminho) como argumento `document`, pelo que uma alteração aterra no separador que já tem aberto e a janela muda para o mostrar.
 
 Ficam fora do alcance duas coisas: não existe painel de IA, e a janela de atualização da aplicação não se aplica.

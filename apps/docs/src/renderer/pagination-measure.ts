@@ -38,6 +38,11 @@ export function lineLeadPx(el: HTMLElement): number {
   // typed line grids centre the multiple's extra in the snapped cell (unprobed at
   // the page bottom): keep charging the full box there
   if (cs.getPropertyValue('--doc-grid-pitch').trim()) return 0
+  // a picture line's extra is the bottom padding past its effectExtent (styles.css --doc-pic-extra)
+  if (el.classList.contains('doc-img-para')) {
+    const effect = parseFloat(el.style.getPropertyValue('--doc-pic-effect-b')) || 0
+    return Math.max(0, (parseFloat(cs.paddingBottom) || 0) - effect)
+  }
   const lh = parseFloat(cs.lineHeight)
   if (!Number.isFinite(lh) || lh <= 0) return 0
   return lh * (1 - 1 / mult)
@@ -91,6 +96,10 @@ export function measureBlocks(
   const colBreaksByBlock = bucketByBlock(pm, '.doc-col-br')
   const gapInlinesByBlock = bucketByBlock(pm, '.page-gap-inline')
   const relImgsByBlock = bucketByBlock(pm, '.doc-inline-img-anchor > img[data-page-rel-v="1"]')
+  const relXImgsByBlock = bucketByBlock(
+    pm,
+    '.doc-inline-img-anchor > img[data-page-rel-x="1"]:not([data-page-rel-v="1"])',
+  )
   const imgsByBlock = bucketByBlock(pm, 'img')
   const tablesByBlock = bucketByBlock(pm, 'table')
   for (const el of Array.from(pm.children) as HTMLElement[]) {
@@ -151,6 +160,20 @@ export function measureBlocks(
         pinned: false,
         pageRelV: true,
         ...(img.dataset.pageRelFrom === 'page' ? { pageRelFromPage: true } : {}),
+      })
+    }
+    // page-relative X only: the preview hoists them out of the column window
+    for (const img of relXImgsByBlock.get(el) ?? []) {
+      const b = img.getBoundingClientRect()
+      if (b.height <= 0) continue
+      floats.push({
+        el: img,
+        top: (b.top - origin - gapAccum) / zoomFactor,
+        height: b.height / zoomFactor,
+        anchorTop: (rect.top - origin - gapAccum) / zoomFactor,
+        pinned: false,
+        pageRelV: false,
+        noSpill: true,
       })
     }
     // sectPr-only paragraph: the section-break mark itself has no height in Word
@@ -270,7 +293,17 @@ export function measureBlocks(
     const relVAnchor = el.dataset.tblpVanchor
     const relVSpec = el.dataset.tblpVspec
     const relVApplied = Number.isFinite(relVy) ? parseFloat(el.dataset.tblpDy ?? '') || 0 : 0
-    const emptyPara = !(el.textContent ?? '').trim() && !imgsByBlock.get(el)?.length
+    const blockImgs = imgsByBlock.get(el) ?? []
+    const emptyPara = !(el.textContent ?? '').trim() && blockImgs.length === 0
+    const pictures = blockImgs.filter((i) => !i.classList.contains('ProseMirror-separator'))
+    const anchorOnly =
+      el.tagName === 'P' &&
+      !(el.textContent ?? '').trim() &&
+      pictures.length > 0 &&
+      pictures.every(
+        (i) => i.closest('.doc-inline-img-anchor') || /(?:^|\s)doc-inline-img--/.test(i.className),
+      )
+    const hasCellBreak = !!el.querySelector('tr p.page-break-before')
     // non-reflowable blocks keep their rendered width in any column (tables,
     // anchored/inline textbox shapes; protected text paragraphs still reflow)
     const fixedWidth =
@@ -315,8 +348,16 @@ export function measureBlocks(
       ...(floatTable ? { floatTable: true } : {}),
       ...(floatFlowed ? { floatFlowed: true } : {}),
       ...(liftPx > 0 ? { liftPx } : {}),
+      ...(el.dataset.tblpPush === '1' ? { floatPushWhole: true } : {}),
       ...(bandKeep ? { bandKeep: true } : {}),
       ...(bandKeep && keepFloatBottom !== undefined ? { floatBottom: keepFloatBottom } : {}),
+      ...(!bandKeep && el.dataset.obsBottom !== undefined && el.dataset.obsMaxh !== undefined
+        ? {
+            floatKeepWhole: true,
+            floatBottom: top - relVApplied + (parseFloat(el.dataset.obsBottom) || 0),
+            floatMaxH: parseFloat(el.dataset.obsMaxh) || 0,
+          }
+        : {}),
       ...(Number.isFinite(relVy) && (relVAnchor === 'page' || relVAnchor === 'margin')
         ? {
             pageRelVyPx: relVy,
@@ -327,6 +368,7 @@ export function measureBlocks(
           }
         : {}),
       ...(emptyPara ? { emptyPara: true } : {}),
+      ...(anchorOnly ? { anchorOnly: true } : {}),
       ...(fixedWidth
         ? { fixedWidthPx: rect.width / zoomFactor }
         : { widthPx: rect.width / zoomFactor }),
@@ -336,6 +378,7 @@ export function measureBlocks(
       breakAfter: trailingCount > 0 || undefined,
       ...(trailingCount > 1 ? { extraBreaksAfter: trailingCount - 1 } : {}),
       ...(innerBreaks.length > 0 ? { innerBreaks } : {}),
+      ...(hasCellBreak ? { hasCellBreak: true } : {}),
       colBreakBefore: leadingColBreak || undefined,
       colBreakAfter: (hasColBreak && !leadingColBreak) || undefined,
       breakForce: (hasBreak && rect.height <= 0) || undefined,
@@ -544,8 +587,9 @@ export function appendFloatSpillBlock(
 
 /** Extract each tr's tblHeader/cantSplit/keepNext/atLeast-trHeight flags from table XML (header
  *  repetition across breaks / unsplittable rows / rows kept with the next row / reserved row heights).
- *  `styleKeepNext` resolves a cell paragraph's pStyle to its keepNext (Word probe 2026-09-17: one
- *  keepNext paragraph anywhere in the row chains it to the next row). */
+ *  `styleKeepNext` resolves a cell paragraph's pStyle to its keepNext. Only the FIRST paragraph
+ *  of the row's FIRST cell counts (Word probes 2026-09-17 / 2026-10-13: its keepNext chains the
+ *  row to the next row; a keepNext on a later paragraph or in a later cell does nothing). */
 export function tableRowFlags(
   tableXml: string,
   styleKeepNext?: (styleId: string) => boolean,
@@ -559,14 +603,17 @@ export function tableRowFlags(
   for (const m of tableXml.matchAll(/<w:tr[\s>][\s\S]*?(?=<w:tr[\s>]|<\/w:tbl>)/g)) {
     const trPr = m[0].match(/<w:trPr>[\s\S]*?<\/w:trPr>/)?.[0] ?? ''
     let keepNext = false
-    for (const pp of m[0].matchAll(/<w:pPr>([\s\S]*?)<\/w:pPr>/g)) {
-      const direct = /<w:keepNext\b[^>]*>/.exec(pp[1])?.[0]
-      if (direct) {
-        if (!/w:val="(?:0|false)"/.test(direct)) keepNext = true
-        continue
+    const firstCell = /<w:tc[\s>]([\s\S]*?)(?=<w:tc[\s>]|<\/w:tr>|$)/.exec(m[0])?.[1] ?? ''
+    const firstP =
+      /<w:p(?:\s[^>]*)?\/>|<w:p[\s>][\s\S]*?(?=<\/w:p>|<w:p[\s>])/.exec(firstCell)?.[0] ?? ''
+    const pPr = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(firstP)?.[1]
+    if (pPr) {
+      const direct = /<w:keepNext\b[^>]*>/.exec(pPr)?.[0]
+      if (direct) keepNext = !/w:val="(?:0|false)"/.test(direct)
+      else {
+        const styleId = /<w:pStyle w:val="([^"]+)"/.exec(pPr)?.[1]
+        if (styleId && styleKeepNext?.(styleId)) keepNext = true
       }
-      const styleId = /<w:pStyle w:val="([^"]+)"/.exec(pp[1])?.[1]
-      if (styleId && styleKeepNext?.(styleId)) keepNext = true
     }
     // non-exact w:trHeight = atLeast (parse.ts semantics); exact rows keep the
     // split path (deliberate clip deviation, see _placeTable). Clamp mirrors

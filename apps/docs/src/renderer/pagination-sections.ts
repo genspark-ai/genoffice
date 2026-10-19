@@ -127,9 +127,31 @@ export function docCharSpacePt(sections: SectionInfo[]): number | null {
   return v !== 0 ? v : null
 }
 
-/** Column count of a section (w:cols w:num; covers equal and explicit-width columns) */
+/** Nothing Word produces is narrower than this; smaller "columns" are the
+ *  degenerate state of corrupt cols metadata, not a layout (genoffice#1952). */
+const MIN_USABLE_COL_PX = 36
+
+/** Narrowest wrap width a block takes from its landing column. PDF-converter
+ *  output keeps formula numbers in a gutter-sized column; a paragraph the
+ *  engine lands there (its measured top fell into that slot) would wrap one
+ *  glyph per line and grow tall enough to stay there, so it wraps at the
+ *  region's widest column instead (genoffice#1970). */
+const MIN_BLOCK_WRAP_PX = 72
+
+/** Column count of a section (w:cols w:num; covers equal and explicit-width columns).
+ *  A count that would divide the content width below `MIN_USABLE_COL_PX` per
+ *  column (or past Word's 45-column ceiling) is corrupt metadata: rendering it
+ *  collapses every column to one-or-two characters beside a blank page (the
+ *  catastrophic shape reported in genoffice#1952) — one-column flow is the fallback. */
 export function sectionColumns(s: SectionInfo): number {
-  return Math.max(1, s.settings.columns ?? 1)
+  const num = Math.max(1, s.settings.columns ?? 1)
+  if (num === 1) return 1
+  const set = s.settings
+  const contentW = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
+  const gapPx = twipsToPx(set.colSpace ?? 720)
+  const even = (contentW - gapPx * (num - 1)) / num
+  if (num > 45 || even < MIN_USABLE_COL_PX) return 1
+  return num
 }
 
 /** Section column geometry (px). Equal-width columns divide evenly per w:cols
@@ -157,10 +179,12 @@ export function sectionColGeom(s: SectionInfo): {
   if (cols > 1 && /<w:cols[^>]*w:equalWidth="0"/.test(s.sectPrXml ?? '')) {
     const colsXml = /<w:cols\b[^>]*>([\s\S]*?)<\/w:cols>/.exec(s.sectPrXml ?? '')?.[1] ?? ''
     const list = Array.from(colsXml.matchAll(/<w:col\b([^>]*)\/?>/g), (m) => ({
-      w: twipsToPx(parseInt(/w:w="(\d+)"/.exec(m[1])?.[1] ?? '0', 10)),
-      space: twipsToPx(parseInt(/w:space="(\d+)"/.exec(m[1])?.[1] ?? '0', 10)),
+      w: twipsToPx(parseFloat(/w:w="([\d.]+)"/.exec(m[1])?.[1] ?? '0')),
+      space: twipsToPx(parseFloat(/w:space="([\d.]+)"/.exec(m[1])?.[1] ?? '0')),
     }))
-    if (list.length === cols && list.every((c) => c.w > 0)) {
+    // a list entry below the usable floor (CNKI/PDF-converter output sometimes
+    // carries one) must not drag the real columns down with it
+    if (list.length === cols && list.every((c) => c.w >= MIN_USABLE_COL_PX)) {
       equalWidth = false
       widths = list.map((c) => c.w)
       gaps = list.slice(0, -1).map((c) => c.space)
@@ -227,6 +251,7 @@ export function columnLayoutSpecs(
     end: number
     section: number
     widthPx: number | undefined
+    widestPx: number
     dx: number
     dy: number
     natural: boolean
@@ -239,6 +264,7 @@ export function columnLayoutSpecs(
         end: slice.end,
         section: -1,
         widthPx: undefined,
+        widestPx: 0,
         dx: 0,
         dy: 0,
         natural: true,
@@ -258,6 +284,7 @@ export function columnLayoutSpecs(
         x += geom.widths[c] + (geom.gaps[c] ?? 0)
       }
       const totalW = x
+      const widestPx = Math.max(...geom.widths)
       for (let c = 0; c < region.columns.length; c++) {
         const col = region.columns[c]
         const w = geom.widths[Math.min(c, geom.widths.length - 1)]
@@ -269,6 +296,7 @@ export function columnLayoutSpecs(
           end: col.end,
           section: region.section,
           widthPx,
+          widestPx,
           dx,
           dy,
           // untouched single-column region at its natural place: no decorations
@@ -297,7 +325,8 @@ export function columnLayoutSpecs(
         })
         continue
       }
-      if (widthPx !== undefined) {
+      if (widthPx !== undefined && isGutter(b.el, widthPx, col.widestPx)) widthPx = col.widestPx
+      else if (widthPx !== undefined) {
         const bottom = b.top + b.height - (b.footnoteExtraPx ?? 0) - (b.spaceAfterPx ?? 0)
         for (let j = k + 1; j < cols.length && cols[j].start < bottom - 0.5; j++) {
           const next = cols[j]
@@ -409,6 +438,11 @@ const isTableBlock = (el: HTMLElement) =>
  *  preview clips the last glyphs of every line */
 function blockColumnWidth(el: HTMLElement, colW: number): number {
   return Math.max(0, colW - blockInlineExtraPx(el))
+}
+
+/** landing column too narrow to hold the block's text while the region has a real column */
+function isGutter(el: HTMLElement, colW: number, widestPx: number): boolean {
+  return blockColumnWidth(el, colW) < MIN_BLOCK_WRAP_PX && widestPx > colW
 }
 
 /** horizontal margins/padding/borders the block loses from its column width (0 for tables and fixed-width blocks) */

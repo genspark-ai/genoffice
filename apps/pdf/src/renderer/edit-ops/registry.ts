@@ -21,10 +21,15 @@ export interface Op {
 
 export interface OpContext {
   readOnly: boolean
+  /** Every addressable page: the document's pages plus the session's pending blank pages */
   pageCount: number
   deleted: ReadonlySet<number>
   /** `pageIndex:rectKey` of existing images already claimed by a pending edit */
   claimedImages: ReadonlySet<string>
+  /** Names of the document's AcroForm fields plus pending authored ones; new fields must not collide */
+  fieldNames?: ReadonlySet<string>
+  /** Names that are radio groups (saved or pending): a new radio button may join them */
+  radioGroups?: ReadonlySet<string>
 }
 
 export interface OpRecord {
@@ -72,6 +77,9 @@ export const BUCKETS: Bucket[] = [
   'imageEdits',
   'stampCfg',
   'formEdits',
+  'formFields',
+  'formWidgetEdits',
+  'blankPages',
   'rotations',
   'deleted',
   'order',
