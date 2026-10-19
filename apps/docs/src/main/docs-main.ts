@@ -4517,6 +4517,18 @@ export function registerProjectIpc(): void {
     },
   )
 
+  /** Lists the conversations in a project, newest first. */
+  ipcMain.handle('project:listChats', (_event, args: { projectId: string }) => {
+    const store = getProjectStore()
+    return store.listChats(args.projectId)
+  })
+
+  /** Deletes one conversation. A file-less chat is the home screen's ask panel. */
+  ipcMain.handle('project:deleteChat', (_event, args: { projectId: string; chatId: string }) => {
+    const store = getProjectStore()
+    store.deleteChat(args.projectId, args.chatId)
+  })
+
   /** rebind chat (called after a file first hits disk): newFilePath/sessionId take priority; the main process computes chatId and records fileMap */
   ipcMain.handle(
     'project:rebindChat',

@@ -19,7 +19,7 @@ import {
   type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
-import type { ChatMessage, ProjectApi } from '@genoffice/project-store'
+import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store'
 import { useI18n } from './locale'
 import sendEnterOn from './assets/send-enter-on.png'
 import sendEnterOff from './assets/send-enter-off.png'
@@ -69,6 +69,43 @@ interface AskMessage {
 }
 
 /**
+ * The panel's conversations, newest first, labelled by their own first question.
+ *
+ * A stored conversation has no title — the store writes `<chat-id>.jsonl` and
+ * nothing else — so the first thing said in it is the only honest label. A
+ * blank one falls back to the id, which at least is unique and copyable.
+ *
+ * The list is sorted here rather than trusting the store to: `listChats`
+ * returns directory order, and a reader opening the panel expects the thread
+ * they were just in to be on top.
+ */
+export interface ListedThread {
+  readonly chatId: string
+  readonly label: string
+  readonly updatedAt: string
+  readonly approxCount: number
+}
+
+export function listThreads(
+  metas: readonly ChatMeta[],
+  firstQuestionOf: (chatId: string) => string | undefined,
+): ListedThread[] {
+  return metas
+    .map((meta) => ({
+      chatId: meta.chatId,
+      label: firstQuestionOf(meta.chatId)?.replace(/\s+/g, ' ').trim().slice(0, 60) || meta.chatId,
+      updatedAt: meta.updatedAt,
+      approxCount: meta.approxCount,
+    }))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+/** The first question in a stored conversation, which is how it is labelled. */
+export function firstQuestionOf(stored: readonly ChatMessage[]): string | undefined {
+  return stored.find((message) => message.role === 'user')?.text
+}
+
+/**
  * Claims the panel's transcript: resolves its ids, writes whatever turns were
  * asked before the ids landed, then reads back what is already stored.
  *
@@ -78,11 +115,12 @@ interface AskMessage {
  */
 export async function claimThread(
   api: ProjectApi,
+  chatId: string,
   queued: Array<{ role: 'user' | 'assistant'; text: string }>,
   show: (messages: AskMessage[]) => void,
   stillCurrent: () => boolean,
 ): Promise<{ projectId: string; chatId: string }> {
-  const ids = await api.resolveChat({ filePath: null, tempChatId: CHAT_ID })
+  const ids = await api.resolveChat({ filePath: null, tempChatId: chatId })
   for (const entry of queued) {
     await api.appendChat({ ...ids, ...entry })
   }
@@ -129,6 +167,8 @@ export function KbAskPanel({
   const messagesRef = useRef<AskMessage[]>([])
   messagesRef.current = messages
   /** where this panel's transcript lives, once project-store has answered */
+  const [activeChat, setActiveChat] = useState<string>(CHAT_ID)
+  const [threads, setThreads] = useState<ListedThread[]>([])
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
   /** turns asked before the ids came back, written once they do */
   const pendingRef = useRef<Array<{ role: 'user' | 'assistant'; text: string }>>([])
@@ -149,15 +189,70 @@ export function KbAskPanel({
     const api = window.projectApi
     if (!api) return
     let current = true
-    void claimThread(api, pendingRef.current, setMessages, () => current)
+    void claimThread(api, CHAT_ID, pendingRef.current, setMessages, () => current)
       .then((ids) => {
         if (current) chatIdsRef.current = ids
       })
       .catch(() => undefined)
+    void refreshThreads(api)
     return () => {
       current = false
     }
-  }, [])
+  }, [activeChat])
+
+  const refreshThreads = async (api: ProjectApi): Promise<void> => {
+    try {
+      const ids = await api.resolveChat({ filePath: null, tempChatId: CHAT_ID })
+      const metas = await api.listChats({ projectId: ids.projectId })
+      // The label needs each thread's own first question, so every id is read
+      // back; a chat with hundreds of turns still costs one short read each.
+      const labelled = await Promise.all(
+        metas.map(async (meta) => {
+          let label: string | undefined
+          try {
+            label = firstQuestionOf(await api.loadChat({ ...ids, chatId: meta.chatId, limit: 20 }))
+          } catch {
+            label = undefined
+          }
+          return [meta, label] as const
+        }),
+      )
+      setThreads(
+        listThreads(
+          labelled.map(([meta]) => meta),
+          (chatId) => labelled.find(([meta]) => meta.chatId === chatId)?.[1],
+        ),
+      )
+    } catch {
+      setThreads([])
+    }
+  }
+
+  /** Switching is a state change: the effect re-reads whichever thread is now active. */
+  const openThread = (chatId: string): void => {
+    setActiveChat(chatId)
+    setMessages([])
+  }
+
+  /** A fresh id, so a new thread does not append to the one being read. */
+  const startThread = (): void => {
+    setActiveChat(`kb-ask-${Date.now()}`)
+    setMessages([])
+  }
+
+  const removeThread = async (chatId: string): Promise<void> => {
+    const api = window.projectApi
+    if (!api) return
+    try {
+      const ids = await api.resolveChat({ filePath: null, tempChatId: CHAT_ID })
+      await api.deleteChat({ projectId: ids.projectId, chatId })
+      if (chatId === activeChat) startThread()
+      await refreshThreads(api)
+    } catch {
+      // A delete that did not happen leaves the list as it was, which is the
+      // honest outcome; the reader sees the thread still listed.
+    }
+  }
 
   const refreshSettings = (): void => {
     void window.aiOffice
@@ -341,6 +436,43 @@ export function KbAskPanel({
         <div className="kb-ask-headbar">
           <b>{t('askTitle')}</b>
           <span>{t('askCorpusCount', { n: String(corpusCount) })}</span>
+        </div>
+      )}
+      {threads.length > 0 && (
+        <div className="kb-ask-threads" role="tablist" aria-label={t('askThreadsTitle')}>
+          {threads.map((thread) => (
+            <div
+              key={thread.chatId}
+              className={`kb-ask-thread-chip${thread.chatId === activeChat ? ' active' : ''}`}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={thread.chatId === activeChat}
+                title={thread.label}
+                onClick={() => openThread(thread.chatId)}
+              >
+                {thread.label}
+              </button>
+              <button
+                type="button"
+                className="kb-ask-thread-del"
+                aria-label={t('askThreadDelete', { label: thread.label })}
+                onClick={() => void removeThread(thread.chatId)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="kb-ask-thread-new"
+            aria-label={t('askThreadNew')}
+            title={t('askThreadNew')}
+            onClick={startThread}
+          >
+            +
+          </button>
         </div>
       )}
       <div className="kb-ask-thread" ref={scrollRef}>

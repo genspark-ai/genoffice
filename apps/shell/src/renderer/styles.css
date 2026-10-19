@@ -1,0 +1,70 @@
+/* The conversation list: a chip per stored thread, newest first, plus the
+   action that starts another one. */
+.kb-ask-threads {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.kb-ask-thread-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+}
+
+.kb-ask-thread-chip.active {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.kb-ask-thread-chip > button:first-child {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 4px 3px 10px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-ask-thread-del {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 7px 3px 2px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.kb-ask-thread-del:hover {
+  background: var(--hover);
+  color: var(--danger);
+}
+
+.kb-ask-thread-new {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 10px 4px;
+  cursor: pointer;
+}
+
+.kb-ask-thread-new:hover {
+  background: var(--hover);
+  color: var(--text);
+}
