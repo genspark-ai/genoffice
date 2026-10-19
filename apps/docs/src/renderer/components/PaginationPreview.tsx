@@ -30,6 +30,7 @@ import {
   anchorBoxLift,
   applyLeadSpills,
   applyLiftTops,
+  pageRelHang,
   anchorShiftPx,
   sectionBidi,
   sectionColGeom,
@@ -724,6 +725,38 @@ export function leadLeakCss(blocks: BlockBox[], slices: PageSlice[]): string {
         `.pv-page[data-pv-page="${i}"] .pv-content tr[data-pv-lead="${leadRows}"] > * > *{visibility:hidden;}`,
       )
       leadRows++
+    }
+    // a page-anchored table lifted into the next page's top margin starts
+    // inside this page's window (a negative margin pulls a float over the
+    // flow before it); it belongs to the page whose window opens for it
+    for (const b of blocks) {
+      const hang = pageRelHang(b)
+      if (hang >= 0 || b.top < slice.end - 0.5 || b.top + hang >= slice.end - 0.5) continue
+      const next = slices[i + 1]
+      if (b.top >= next.end - 0.5 && next.end > next.start) continue
+      const idx = b.el?.dataset.idx
+      if (idx === undefined) continue
+      rules.push(
+        `.pv-page[data-pv-page="${i}"] .pv-content > [data-idx="${idx}"]{visibility:hidden;}`,
+      )
+    }
+  })
+  // a window opened into the top margin for a hanging table also shows the
+  // previous page's blocks ending in that band: hide them (floats included);
+  // only lifted tables hang there by design and pinned carriers are owned by
+  // the pin rules
+  slices.forEach((slice, i) => {
+    if (i === 0 || !slice.liftTop || slice.regions) return
+    for (const b of blocks) {
+      if (b.top + b.height > slice.start + 0.5 || b.top + b.height <= slice.start - slice.liftTop)
+        continue
+      if (b.liftPx) continue
+      const idx = b.el?.dataset.idx
+      if (idx === undefined || b.el!.matches(pinCarrier) || b.el!.querySelector(pinCarrier))
+        continue
+      rules.push(
+        `.pv-page[data-pv-page="${i}"] .pv-content > [data-idx="${idx}"]{visibility:hidden;}`,
+      )
     }
   })
   return rules.join('\n')

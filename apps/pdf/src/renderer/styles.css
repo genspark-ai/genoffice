@@ -1527,6 +1527,35 @@ button {
   min-width: 0;
 }
 
+.pdf-print-field > span {
+  flex: 1;
+}
+
+.pdf-print-field select.pdf-modal-input {
+  flex: 1.6;
+  color: var(--text);
+}
+
+.pdf-print-copies {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.pdf-print-copies .pdf-modal-input {
+  width: 64px;
+}
+
+.pdf-print-divider {
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
+
+.pdf-print-empty {
+  color: var(--danger);
+}
+
 .pdf-modal-check {
   display: inline-flex;
   align-items: center;

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use calamine::{Data, Reader, open_workbook_auto};
@@ -21,9 +21,48 @@ pub struct ConvertResult {
     pub cells: usize,
 }
 
+/// Why the reader refused a file, when the refusal is about the container and
+/// a friendlier sentence helps. `None` keeps the reader's own error.
+///
+/// Legacy workbooks are OLE2/CFB containers; a file that starts with anything
+/// else was renamed rather than exported. Excel sniffs content over extension
+/// and opens plenty of those happily, so the reader's `Invalid OLE (signature
+/// ...)` tells the person holding the file nothing they can act on.
+///
+/// An XML spreadsheet is not one of these: genoffice#2044 reads it directly,
+/// and this only has to speak about files no reader should open at all.
+fn unreadable_container_hint(source: &Path) -> Option<String> {
+    let mut head = [0u8; 1024];
+    let read = File::open(source).ok()?.read(&mut head).ok()?;
+    let head = &head[..read];
+    if head.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
+        // a real CFB container: whatever is wrong inside is the reader's to explain
+        return None;
+    }
+    let text = String::from_utf8_lossy(head);
+    let trimmed = text.trim_start_matches('\u{FEFF}').trim_start();
+    if !trimmed.starts_with("<?xml") && !trimmed.starts_with('<') {
+        return None;
+    }
+    let first_line = trimmed.lines().next().unwrap_or("").trim();
+    let first_line = if first_line.chars().count() > 60 {
+        let cut: String = first_line.chars().take(60).collect();
+        format!("{cut}…")
+    } else {
+        first_line.to_string()
+    };
+    Some(format!(
+        "This file is not a workbook container: its content is text or XML rather than \
+         an Excel/ODF package, and it begins with \"{first_line}\"."
+    ))
+}
+
 pub fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertResult, SidecarError> {
-    let mut workbook = open_workbook_auto(source)
-        .map_err(|error| SidecarError::Workbook(format!("Unable to read the workbook: {error}")))?;
+    let mut workbook =
+        open_workbook_auto(source).map_err(|error| match unreadable_container_hint(source) {
+            Some(hint) => SidecarError::Workbook(hint),
+            None => SidecarError::Workbook(format!("Unable to read the workbook: {error}")),
+        })?;
     let names: Vec<String> = workbook.sheet_names().to_vec();
     if names.is_empty() {
         return Err(SidecarError::Workbook("The workbook has no sheets.".into()));
@@ -266,7 +305,11 @@ fn unsigned_number(text: &str) -> Option<f64> {
 fn days_in_month(year: i64, month: i64) -> u32 {
     const LENGTHS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let leap = month == 2 && (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
-    if leap { 29 } else { LENGTHS[(month - 1) as usize] }
+    if leap {
+        29
+    } else {
+        LENGTHS[(month - 1) as usize]
+    }
 }
 
 /// Days from the civil calendar epoch 1970-01-01 (Howard Hinnant's algorithm).
@@ -274,8 +317,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let shifted = if month <= 2 { year - 1 } else { year };
     let era = if shifted >= 0 { shifted } else { shifted - 399 } / 400;
     let year_of_era = shifted - era * 400;
-    let day_of_year =
-        (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     era * 146_097 + day_of_era - 719_468
 }
@@ -439,8 +481,8 @@ mod tests {
     #[test]
     fn converts_a_libreoffice_saved_workbook_with_absolute_sheet_references() {
         let dir = tempfile::tempdir().unwrap();
-        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/cross-sheet-references.ods");
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cross-sheet-references.ods");
         let target = dir.path().join("converted.xlsx");
 
         let result = convert_to_xlsx(&source, &target).unwrap();
@@ -512,7 +554,10 @@ mod tests {
                 "100",
             ),
             "</table:table-row><table:table-row>",
-            &cell(r#"office:value-type="date" office:date-value="2026-03-05""#, "2026-03-05"),
+            &cell(
+                r#"office:value-type="date" office:date-value="2026-03-05""#,
+                "2026-03-05",
+            ),
             "</table:table-row></table:table>",
         ]
         .join("");
@@ -532,7 +577,10 @@ mod tests {
             writer.write_all(body.as_bytes()).unwrap();
         };
         add("mimetype", mimetype);
-        add("META-INF/manifest.xml", r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>"#);
+        add(
+            "META-INF/manifest.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>"#,
+        );
         add("content.xml", &content);
         writer.finish().unwrap();
     }
@@ -566,5 +614,80 @@ mod tests {
             r#"<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:B2"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Name &amp; Co</t></is></c><c r="B1"><v>42</v></c></row><row r="2"><c r="A2" t="b"><v>1</v></c><c r="B2"><f>B1*2</f><v>84</v></c></row></sheetData></worksheet>"#,
         );
         writer.finish().unwrap();
+    }
+
+    #[test]
+    fn an_xml_spreadsheet_is_the_converter_s_business_not_a_dead_end() {
+        // genoffice#2044 opens this shape instead of refusing it. Until that
+        // lands the reader still turns it away, and all this PR promises about
+        // it is that the refusal is a sentence about the file rather than a
+        // quoted byte signature.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("report.xls");
+        std::fs::write(
+            &source,
+            r#"<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="Data">
+  <Table><Row><Cell><Data ss:Type="Number">42</Data></Cell></Row></Table>
+ </Worksheet>
+</Workbook>
+"#,
+        )
+        .unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("without genoffice#2044 this file must still be refused");
+        };
+        let message = error.to_string();
+        assert!(message.contains("not a workbook container"), "{message}");
+        assert!(message.contains("<?xml"), "{message}");
+    }
+
+    #[test]
+    fn a_binary_file_that_is_no_container_at_all_keeps_the_reader_error() {
+        // Neither a CFB nor anything text-shaped. Guessing what it might have
+        // been would be worse than the reader's own message, and this is the
+        // branch that keeps it.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("blob.xls");
+        std::fs::write(&source, [0x00u8, 0x01, 0x02, 0x03, 0xFE, 0xFF]).unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("a binary blob must not convert");
+        };
+        let message = error.to_string();
+        assert!(message.contains("Unable to read the workbook"), "{message}");
+    }
+
+    #[test]
+    fn other_text_content_says_what_the_file_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("page.xls");
+        std::fs::write(
+            &source,
+            "<html><body><table><tr><td>1</td></tr></table></body></html>\n",
+        )
+        .unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("html is not a workbook");
+        };
+        let message = error.to_string();
+        assert!(message.contains("not a workbook container"), "{message}");
+        assert!(message.contains("<html>"), "{message}");
+    }
+
+    #[test]
+    fn a_real_container_keeps_the_reader_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("broken.xls");
+        let mut bytes = vec![0xD0u8, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+        bytes.extend(vec![0u8; 600]);
+        std::fs::write(&source, &bytes).unwrap();
+        let Err(error) = convert_to_xlsx(&source, &dir.path().join("out.xlsx")) else {
+            panic!("a truncated container must not convert");
+        };
+        let message = error.to_string();
+        assert!(message.contains("Unable to read the workbook"), "{message}");
     }
 }

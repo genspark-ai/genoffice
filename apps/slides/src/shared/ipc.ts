@@ -627,6 +627,18 @@ export interface SetAdvanceTimesOp {
   times: Array<{ slideIndex: number; ms: number | null }>
 }
 
+/** What the show needs to play a slide by itself: its saved advance time and its narration. */
+export interface ShowTiming {
+  advanceMs: number | null
+  /** Element ids of the slide's recorded narration pictures, hidden during the show */
+  narrationIds: string[]
+}
+
+/** Slide Show > Record: each recorded slide's narration (16-bit WAV) and time on screen. */
+export interface SaveRecordingOp {
+  slides: Array<{ slideIndex: number; wavBase64: string; durationMs: number; advanceMs: number }>
+}
+
 // ── Section management ────────────────────────────────────────────────
 
 /** Add a section before slide atSlideIndex (the section covers this page to the end of its containing section). */
@@ -1367,7 +1379,7 @@ export interface SlidesApi {
   headlessExportDone: (result: { ok: boolean; error?: string }) => void
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>
-  /** Land generated pages: each pageMarkers entry is a marker (cloudpptx:<path>) redeemable for a one-slide pptx.
+  /** Land generated pages: each pageMarkers entry is a marker (genpptx:<path>) redeemable for a one-slide pptx.
    *  mode="append" merges the new pages onto the existing deck (appendedFrom = existing page count);
    *  mode="replace_at" redoes page atIndex in place from a single marker (other pages untouched, undoable, replacedIndex = that page's index);
    *  mode="insert_at" inserts a new page at atIndex from a single marker (later pages shift back, undoable, insertedIndex = that page's index);
@@ -1389,21 +1401,7 @@ export interface SlidesApi {
       })
     | { error: string }
   >
-  /** Whether cloud single-page generation (gsk slide_generate) is available (GENOFFICE_CLOUD_SLIDE=1 + gsk login) */
-  cloudGenStatus: () => Promise<{ enabled: boolean }>
-  /** Abort every in-flight cloud page generation of this window (AI panel stop) */
-  cloudPageCancel: () => Promise<void>
-  /** Cloud single-page generation: brief → one-slide pptx temp file; the marker goes into a landGeneratedPages pageMarkers slot */
-  cloudGeneratePage: (op: {
-    brief: string
-    title?: string
-    styleSkill?: string
-    deckContext?: Record<string, unknown>
-    images?: { url: string; caption?: string }[]
-    width?: number
-    height?: number
-  }) => Promise<{ ok: boolean; marker?: string; error?: string }>
-  /** Local single-page generation: a JSON slide spec (LLM output) built directly into a one-slide pptx; same marker kind as the cloud path */
+  /** Single-page generation: a JSON slide spec (LLM output) built directly into a one-slide pptx; the marker goes into a landGeneratedPages pageMarkers slot */
   localGeneratePage: (op: {
     specJson: string
   }) => Promise<{ ok: boolean; marker?: string; error?: string; imageFailures?: string[] }>
@@ -1618,8 +1616,14 @@ export interface SlidesApi {
   setTransition: (op: SetTransitionOp) => Promise<boolean>
   /** The current page's transition effect (echoed on page switch) */
   getTransition: (slideIndex: number) => Promise<TransitionKind>
+  getShowTiming: (slideIndex: number) => Promise<ShowTiming>
   /** Batch-write each page's auto-advance time (rehearsal timing save; the saved pptx auto-advances in PowerPoint shows); returns success */
   setAdvanceTimes: (op: SetAdvanceTimesOp) => Promise<boolean>
+  /** Replaces the recorded slides' narration and advance time in one undo step; the whole deck back. */
+  saveRecording: (op: SaveRecordingOp) => Promise<RenderSlide[] | null>
+  clearNarration: (slideIndexes: number[]) => Promise<RenderSlide[] | null>
+  /** Asks the OS for the microphone where it gates it (macOS); false when refused. */
+  microphoneAccess: () => Promise<boolean>
   /** The current page's animation list (read by the Animations tab / during shows) */
   getAnimations: (slideIndex: number) => Promise<AnimationItem[]>
   /** Morph pairing keys of the current page's elements (matched against same-name/same-id elements on the previous page during morph tweening) */

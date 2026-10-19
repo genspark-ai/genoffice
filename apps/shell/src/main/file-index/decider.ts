@@ -12,8 +12,9 @@
  * OpenRouter hosts Jev behind a routing envelope with provider pinning.
  */
 
-export type DecisionEndpoint =
-  'openrouter' | 'direct' | 'perplexity' | 'liquid' | 'cloudflare' | 'kev' | 'rizzo' | 'custom'
+/** The endpoint list lives in the shared settings contract: this file used to
+    keep its own copy of the union, and adding a route meant editing both. */
+import { isCloudflareEndpoint, type DecisionEndpoint } from '../../shared/home-api'
 
 export interface DecisionCallOptions {
   endpoint: DecisionEndpoint
@@ -42,10 +43,28 @@ const ENDPOINTS: Record<Exclude<DecisionEndpoint, 'custom'>, EndpointSpec> = {
   openrouter: { url: 'https://openrouter.ai/api/alpha/decisions', model: 'typesafe/jev-1.13' },
   direct: { url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.13.0' },
   perplexity: { url: 'https://api.perplexity.ai/v1/decisions', model: 'pplx-decider-v1-27b' },
+  'perplexity-v12': {
+    url: 'https://api.perplexity.ai/v1/decisions',
+    model: 'pplx-decider-v1.2',
+  },
+  'perplexity-flash': {
+    url: 'https://api.perplexity.ai/v1/decisions',
+    model: 'pplx-decider-flash-v1.2',
+  },
   liquid: { url: 'https://api.liquid.ai/decisions/v1/systemone', model: 'd1' },
+  'liquid-ultra': { url: 'https://api.liquid.ai/decisions/v1/systemone', model: 'd1-ultra' },
   cloudflare: { url: '', model: '@cf/cloudflare/clef' },
+  'cloudflare-flash': { url: '', model: '@cf/cloudflare/clef-flash' },
   kev: { url: KEV_URL, model: 'kev-latest', local: true },
   rizzo: { url: RIZZO_URL, model: 'rizzo-latest', local: true },
+}
+
+/** Both Workers AI routes share the account-scoped URL and the bare-id body rule. */
+/** only the plain `cloudflare` route lets the reader type a model; the others are pinned */
+function cloudflareModelPath(opts: DecisionCallOptions): string {
+  if (opts.endpoint === 'cloudflare')
+    return opts.cloudflareModel.trim() || ENDPOINTS.cloudflare.model
+  return ENDPOINTS[opts.endpoint as Exclude<DecisionEndpoint, 'custom'>].model
 }
 
 /** Workers AI takes the model in the URL path but only the bare Clef ids in the body. */
@@ -65,12 +84,12 @@ export function endpointUrl(opts: DecisionCallOptions): string {
     if (!base) throw new Error('missing-url')
     return assertCustomUrl(base)
   }
-  if (opts.endpoint === 'cloudflare') {
+  if (isCloudflareEndpoint(opts.endpoint)) {
     const account = opts.cloudflareAccountId.trim()
     if (!account) throw new Error('missing-account')
     // the model path keeps its literal "@cf/..." spelling: "@" and "/" are legal
     // path characters and Workers AI does not decode percent-escapes there
-    const model = opts.cloudflareModel.trim() || ENDPOINTS.cloudflare.model
+    const model = cloudflareModelPath(opts)
     return `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/ai/run/${model}`
   }
   return ENDPOINTS[opts.endpoint].url
@@ -93,11 +112,11 @@ function assertCustomUrl(base: string): string {
 }
 
 /** Model id sent in the request body; mirroring servers may ignore it. */
-function bodyModel(opts: DecisionCallOptions): string {
+export function bodyModel(opts: DecisionCallOptions): string {
   if (opts.endpoint === 'custom') return opts.customModel.trim() || 'decision'
-  if (opts.endpoint === 'cloudflare') {
+  if (isCloudflareEndpoint(opts.endpoint)) {
     // the URL keeps "@cf/cloudflare/clef"; the body wants the bare id
-    const id = (opts.cloudflareModel.trim() || ENDPOINTS.cloudflare.model).split('/').pop() ?? ''
+    const id = cloudflareModelPath(opts).split('/').pop() ?? ''
     if (!CLOUDFLARE_BODY_MODEL.test(id)) throw new Error('unsupported-model')
     return id
   }
@@ -209,7 +228,7 @@ function num(v: unknown, min: number, max: number): number {
 
 /** Workers AI wraps every reply in a `{ result }` envelope; the protocol does not. */
 function unwrap(raw: unknown, endpoint: DecisionEndpoint): unknown {
-  if (endpoint !== 'cloudflare') return raw
+  if (!isCloudflareEndpoint(endpoint)) return raw
   const r = obj(raw)
   return 'result' in r ? r.result : r
 }

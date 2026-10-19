@@ -62,6 +62,8 @@ export const cs = {
   aiUnknownError: 'Neznámá chyba',
   aiTimeoutError:
     'Časový limit požadavku AI vypršel: ze sítě nepřišla žádná odpověď, běh byl zastaven. Zkontrolujte připojení a zkuste to znovu',
+  aiRegionError:
+    'Poskytovatel tohoto modelu neposkytuje služby ve vaší aktuální oblasti — vyberte jiný model nebo změňte síť',
   aiOverloadedError: 'Služba AI je právě zaneprázdněná — zkuste to prosím za chvíli znovu',
   aiNetworkError:
     'Problém se sítí: službu AI se nepodařilo kontaktovat. Zkontrolujte připojení a zkuste to znovu',

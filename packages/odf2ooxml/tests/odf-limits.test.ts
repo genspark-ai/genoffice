@@ -106,6 +106,18 @@ describe('oversized zip entries', () => {
     await expect(convertOdtToDocx(await buildOdt('content'))).rejects.toThrow(OdfConvertError)
   })
 
+  it('refuses a part that inflates past the cap whatever its header declares', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'content.xml',
+      `<?xml version="1.0" encoding="UTF-8"?><office:document-content ${NAMESPACES} office:version="1.2"><office:body><office:text>${PARAGRAPH + IMAGE_FRAME}</office:text></office:body></office:document-content>`,
+    )
+    zip.file('Pictures/pic.png', new Uint8Array(MAX_ODF_PART_BYTES + 1))
+    const archive = await zip.generateAsync({ type: 'uint8array' })
+    const lying = forgeDeclaredSize(archive, 'Pictures/pic.png', 100)
+    await expect(convertOdtToDocx(lying)).rejects.toThrow(OdfConvertError)
+  }, 30_000)
+
   it('refuses an oversized image instead of inflating it', async () => {
     // an image that fails to load is otherwise counted as dropped, which would
     // hand the user a document with its pictures missing and no explanation

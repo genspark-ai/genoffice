@@ -7,9 +7,8 @@
  * Asian-character figure.
  */
 
-import type { Node as PmNode } from '@tiptap/pm/model'
-import type { Selection } from '@tiptap/pm/state'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Selection } from '@tiptap/pm/state'
 
 // Han (incl. radicals/compat/ext-B+), kana, hangul, bopomofo, CJK symbols
 // and punctuation (U+3001 up: the ideographic space stays whitespace),
@@ -53,15 +52,23 @@ export function countWords(text: string): number {
  * a text range) both yield no text, and `countWords('')` is 0 — no separate
  * guard needed.
  */
-export function selectedWordCount(doc: PmNode, selection: Selection): number {
-  return countWords(doc.textBetween(selection.from, selection.to, ' ', ' '))
+export function selectedWordCount(doc: ProseMirrorNode, selection: Selection): number {
+  // the same leaf reader as the total: an inline formula's text counts in both
+  return countWords(doc.textBetween(selection.from, selection.to, ' ', leafTextForWordCount))
 }
 
 export function documentTextForWordCount(doc: ProseMirrorNode): string {
   // ProseMirror textContent skips Tiptap renderText serializers on atomic leaves.
-  return doc.textBetween(0, doc.content.size, ' ', (leaf) => {
-    if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
-    if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
-    return leaf.type.spec.leafText?.(leaf) ?? ''
-  })
+  return doc.textBetween(0, doc.content.size, ' ', leafTextForWordCount)
+}
+
+/**
+ * Text an atomic inline leaf contributes to a word count. No doc schema
+ * defines `spec.leafText`, so only the two nodes with text of their own
+ * (inline math, ruby base) need naming; every other atom contributes nothing.
+ */
+export function leafTextForWordCount(leaf: ProseMirrorNode): string {
+  if (leaf.type.name === 'docInlineMath') return String(leaf.attrs.text ?? '')
+  if (leaf.type.name === 'docRuby') return String(leaf.attrs.base ?? '')
+  return leaf.type.spec.leafText?.(leaf) ?? ''
 }

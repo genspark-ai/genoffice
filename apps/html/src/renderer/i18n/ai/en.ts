@@ -37,6 +37,8 @@ export const en = {
     'Network problem: could not reach the AI service. Check your connection and try again',
   aiNewChat: 'New chat',
   aiNoReply: '(no reply)',
+  aiRegionError:
+    "This model's provider does not serve your current region — pick another model or change your network",
   aiOverloadedError: 'The AI service is busy right now — please try again in a moment',
   aiRegenerateTitle: 'Regenerate',
   aiRetry: 'Retry',

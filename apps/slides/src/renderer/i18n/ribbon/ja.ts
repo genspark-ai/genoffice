@@ -395,6 +395,12 @@ export const ja = {
   ribbonRehearseTip:
     'リハーサル：最初から放映して各スライドの所要時間を記録し、終了後に自動切り替えのタイミングとして保存可能（pptx に保存）',
   ribbonRecord: '記録',
+  ribbonRecordTip:
+    'ナレーションの録音：スライドショーを再生し、音声と各スライドの表示時間を記録します',
+  ribbonRecordFromBeginning: '先頭から録音',
+  ribbonRecordFromCurrent: '現在のスライドから録音',
+  ribbonClearNarrationCurrent: '現在のスライドのナレーションをクリア',
+  ribbonClearNarrationAll: 'すべてのスライドのナレーションをクリア',
   // Review
   ribbonGroupProofing: '文章校正',
   ribbonSpellCheck: 'スペルチェック',

@@ -63,6 +63,8 @@ export const de = {
   aiUnknownError: 'Unbekannter Fehler',
   aiTimeoutError:
     'Zeitüberschreitung der KI-Anfrage: keine Antwort vom Netzwerk, der Vorgang wurde abgebrochen. Prüfe deine Verbindung und versuche es erneut',
+  aiRegionError:
+    'Der Anbieter dieses Modells bedient Ihre aktuelle Region nicht — wählen Sie ein anderes Modell oder wechseln Sie das Netzwerk',
   aiOverloadedError: 'Der KI-Dienst ist derzeit überlastet — bitte gleich erneut versuchen',
   aiNetworkError:
     'Netzwerkproblem: Der KI-Dienst ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut',

@@ -329,6 +329,27 @@ export function coerceArgumentFields(
  */
 const MAX_IDENTICAL_TURNS = 3
 const MAX_ALL_ERROR_TURNS = 8
+/**
+ * Redundant-read guard. The identical-turn guard misses the common weak-model
+ * loop where every call differs slightly yet nothing moves: image_search with a
+ * new keyword each turn and "(no images)" every time, or re-reading an
+ * attachment slice already read. A non-mutating turn is redundant when a call
+ * repeats an earlier (tool, input) with the same output, or an earlier (tool,
+ * output) from a different input. The streak is nudged first, then aborted.
+ */
+const REDUNDANT_READ_NUDGE_TURNS = 4
+const MAX_REDUNDANT_READ_TURNS = 12
+/** identical (tool, input) calls allowed before the next one counts as redundant regardless of its output */
+const REPEATED_INPUT_FREE_CALLS = 2
+const REDUNDANT_READ_NOTE =
+  '[System] Recent tool calls re-read material already read, or returned the same result as an earlier call, without making progress. ' +
+  'Stop gathering: continue the task with what you already have, or tell the user what is missing.'
+
+function hashString(s: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return `${s.length}:${h >>> 0}`
+}
 
 /**
  * Backoff schedule for in-place same-turn retries on empty-stream errors.
@@ -481,6 +502,12 @@ export class AgentLoop<TSnapshot = unknown> {
   /** signature (text + tool calls) of the previous turn, for the identical-turn guard */
   private lastTurnSig = ''
   private identicalTurns = 0
+  /** non-mutating calls since the last edit: (tool, input) → output hash, and the set of (tool, output) hashes */
+  private readOutputs = new Map<string, string>()
+  /** how often each (tool, input) was called since the last edit */
+  private readInputCounts = new Map<string, number>()
+  private readOutputSigs = new Set<string>()
+  private redundantReadTurns = 0
   private allErrorTurns = 0
   private turnStopReason: string | null = null
   private turnText = ''
@@ -590,6 +617,10 @@ export class AgentLoop<TSnapshot = unknown> {
     this.lastTurnSig = ''
     this.identicalTurns = 0
     this.allErrorTurns = 0
+    this.readOutputs.clear()
+    this.readOutputSigs.clear()
+    this.readInputCounts.clear()
+    this.redundantReadTurns = 0
     this.executedCalls = []
     this.verifyRetryUsed = false
     this.abortController = new AbortController()
@@ -1122,6 +1153,7 @@ export class AgentLoop<TSnapshot = unknown> {
     const generation = this.generation
     const results: AgentToolResult[] = []
     let turnMutated = false
+    let redundantRead = false
     // unusable-input streak is counted per turn: a batch of empty calls in one
     // turn is one failed attempt, and any executed call in the turn resets it
     let unusableInTurn = false
@@ -1201,6 +1233,22 @@ export class AgentLoop<TSnapshot = unknown> {
       if (execution.mutated) {
         this.mutationSeen = true
         turnMutated = true
+      } else {
+        const inSig = `${call.name}\0${JSON.stringify(call.input)}`
+        const outHash = hashString(execution.output)
+        const outSig = `${call.name}\0${outHash}`
+        const seen = this.readInputCounts.get(inSig) ?? 0
+        // the same query a third time is a loop even when the results keep
+        // shuffling (web search churn); one repeat stays free for poll-style tools
+        if (
+          this.readOutputs.get(inSig) === outHash ||
+          this.readOutputSigs.has(outSig) ||
+          seen >= REPEATED_INPUT_FREE_CALLS
+        )
+          redundantRead = true
+        this.readInputCounts.set(inSig, seen + 1)
+        this.readOutputs.set(inSig, outHash)
+        this.readOutputSigs.add(outSig)
       }
       results.push({
         id: call.id,
@@ -1213,6 +1261,19 @@ export class AgentLoop<TSnapshot = unknown> {
         execution,
         snapshotBefore: firstMutation ? snapshot : undefined,
       })
+    }
+    if (turnMutated) {
+      this.readOutputs.clear()
+      this.readOutputSigs.clear()
+      this.readInputCounts.clear()
+      this.redundantReadTurns = 0
+    } else if (redundantRead) {
+      if (++this.redundantReadTurns === REDUNDANT_READ_NUDGE_TURNS) {
+        const last = results[results.length - 1]!
+        last.output = `${last.output}\n\n${REDUNDANT_READ_NOTE}`
+      }
+    } else {
+      this.redundantReadTurns = 0
     }
     this.history.push({ role: 'tool', results })
     if (executedInTurn) this.inputParseFails = 0
@@ -1245,6 +1306,15 @@ export class AgentLoop<TSnapshot = unknown> {
       this.rollbackFailedRun()
       events?.onError?.(
         `Every tool call failed for ${MAX_ALL_ERROR_TURNS} turns in a row; the run was stopped. Please send the request again`,
+      )
+      return
+    }
+
+    if (this.redundantReadTurns >= MAX_REDUNDANT_READ_TURNS) {
+      this.running = false
+      this.rollbackFailedRun()
+      events?.onError?.(
+        `The model kept re-reading the same material or getting the same result for ${MAX_REDUNDANT_READ_TURNS} turns without making progress; the run was stopped. Please send the request again`,
       )
       return
     }

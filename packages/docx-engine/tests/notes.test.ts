@@ -116,10 +116,7 @@ describe('footnotes / endnotes', () => {
   })
 
   it('an edit to the paragraph keeps the reference run its own rPr', async () => {
-    // genoffice#2005: the paragraph is rebuilt because one of its runs changed,
-    // and the marker run used to come out as a bare superscript — the
-    // FootnoteReference style, the fonts, the colour and the size all gone.
-    // The rPr parsed off the marker must ride the rebuild verbatim.
+    // genoffice#2005: a rebuilt paragraph used to emit the marker as a bare superscript
     const STYLED_REF_P =
       '<w:p><w:r><w:t xml:space="preserve">The court held so. </w:t></w:r>' +
       '<w:r><w:t>.</w:t></w:r>' +
@@ -146,9 +143,7 @@ describe('footnotes / endnotes', () => {
     expect(refRun?.rawRPr).toContain('w:rStyle w:val="FootnoteReference"')
     // now rebuild the paragraph: the first run's text changes, the marker must not
     runs[0] = { ...runs[0], text: 'The court held that. ' }
-    const out = await saveDocx(doc, [
-      { kind: 'generated', block: { type: 'paragraph', runs } },
-    ])
+    const out = await saveDocx(doc, [{ kind: 'generated', block: { type: 'paragraph', runs } }])
     const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
     const at = xml.indexOf('<w:footnoteReference')
     const refRunXml = xml.slice(xml.lastIndexOf('<w:r>', at), xml.indexOf('</w:r>', at) + 6)

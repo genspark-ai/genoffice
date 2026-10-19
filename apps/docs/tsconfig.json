@@ -18,6 +18,7 @@
       ],
       "@genoffice/electron-utils": ["../../packages/electron-utils/src/index.ts"],
       "@genoffice/ai-provider": ["../../packages/ai-provider/src/index.ts"],
+      "@genoffice/agent-core": ["../../packages/agent-core/src/index.ts"],
       "@genoffice/i18n": ["../../packages/i18n/src/index.ts"],
       "@genoffice/ui": ["../../packages/ui/src/index.ts"]
     }

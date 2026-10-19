@@ -54,7 +54,12 @@ describe('provider registry', () => {
       protocol: 'openai-compatible',
       baseUrl: 'https://api.deepseek.com/v1',
     })
-    // the listed V4.1 Flash name is the pool spelling; the vendor only serves `deepseek-flash`
+    // the listed Flash id is the vendor's own, so it goes out untouched
+    expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deepseek-flash'))).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.deepseek.com/v1',
+    })
+    // a config still carrying the Genspark pool spelling goes out as the vendor id
     expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deep-seek-v4.1-flash'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://api.deepseek.com/v1',

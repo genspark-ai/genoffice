@@ -1834,6 +1834,44 @@ export function mergePPrFormat(
  * Used when the editor accepts or rejects a paragraph-property revision,
  * so the saved file no longer contains the pPrChange record.
  */
+/** hex color of the paragraph mark (pPr/rPr w:color), ignoring the pPrChange history */
+export function paraMarkColor(rawPPr: string): string | undefined {
+  const live = stripPPrChange(rawPPr)
+  const rPr = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(live)?.[1]
+  const color = rPr ? /<w:color\b[^>]*\bw:val="#?([^"]+)"/.exec(rPr)?.[1] : undefined
+  return color && color !== 'auto' ? color.toUpperCase() : undefined
+}
+
+/**
+ * Drop the paragraph mark's w:color (pPr/rPr). Word types new text at the end
+ * of a paragraph in the mark's formatting, so a mark left red after every red
+ * run was recolored would resurrect the red on the next keystroke.
+ */
+export function stripParaMarkColor(rawPPr: string): string {
+  const changeStart = rawPPr.indexOf('<w:pPrChange')
+  const live = changeStart === -1 ? rawPPr : rawPPr.slice(0, changeStart)
+  const tail = changeStart === -1 ? '' : rawPPr.slice(changeStart)
+  const stripped = live.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/, (_m, inner: string) => {
+    // self-closing or paired form
+    const rest = inner.replace(/<w:color\b[^>]*(?:\/>|>[\s\S]*?<\/w:color>)/, '')
+    return rest.trim() ? `<w:rPr>${rest}</w:rPr>` : ''
+  })
+  return stripped + tail
+}
+
+/** drop the paragraph mark's tracked w:del / w:ins record (pPr/rPr) once the revision is accepted or rejected */
+export function stripParaMarkRevision(rawPPr: string, kind: 'del' | 'ins'): string {
+  const changeStart = rawPPr.indexOf('<w:pPrChange')
+  const live = changeStart === -1 ? rawPPr : rawPPr.slice(0, changeStart)
+  const tail = changeStart === -1 ? '' : rawPPr.slice(changeStart)
+  const tags = kind === 'del' ? 'del|moveFrom' : 'ins|moveTo'
+  const stripped = live.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/, (_m, inner: string) => {
+    const rest = inner.replace(new RegExp(`<w:(?:${tags})\\b[^>]*/>`), '')
+    return rest.trim() ? `<w:rPr>${rest}</w:rPr>` : ''
+  })
+  return stripped + tail
+}
+
 export function stripPPrChange(rawPPr: string): string {
   // pPrChange nests a <w:pPr> inside it, so we need depth-aware removal.
   // Pattern: <w:pPrChange ...> ... </w:pPrChange>
@@ -2438,6 +2476,53 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
     )
   }
   return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
+}
+
+/** rId / docPr placeholder of a picture inserted by the editor; saveDocx resolves
+ *  it against SaveOptions.newPictures once the bytes land as a media part */
+export const NEW_PICTURE_TOKEN_PREFIX = 'aidocs-new-pic-'
+
+export interface InlinePictureXmlOptions {
+  rId: string
+  /** wp:docPr / pic:cNvPr id (a placeholder token until the save mints a real one) */
+  docPrId: string | number
+  widthPx: number
+  heightPx: number
+  altText?: string
+  rotDeg?: number
+  flipH?: boolean
+  flipV?: boolean
+}
+
+/** `<w:drawing>` of an inline picture (wp:inline + pic:pic), the run and paragraph excluded */
+export function inlinePictureDrawingXml(o: InlinePictureXmlOptions): string {
+  const cx = Math.max(1, Math.round(o.widthPx * EMU_PER_PX))
+  const cy = Math.max(1, Math.round(o.heightPx * EMU_PER_PX))
+  // Word lays the drawing out against the unrotated wp:extent plus
+  // wp:effectExtent: a rotated non-square picture needs the bounding-box
+  // overflow recorded there (same math as patchImageParagraphXml)
+  const rot = o.rotDeg ? ((Math.round(o.rotDeg) % 360) + 360) % 360 : 0
+  const rad = (rot * Math.PI) / 180
+  const bw = Math.abs(cx * Math.cos(rad)) + Math.abs(cy * Math.sin(rad))
+  const bh = Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad))
+  const eeX = Math.max(0, Math.round((bw - cx) / 2))
+  const eeY = Math.max(0, Math.round((bh - cy) / 2))
+  const id = String(o.docPrId)
+  const name = `Picture ${id}`
+  return (
+    '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    `<wp:extent cx="${cx}" cy="${cy}"/>` +
+    `<wp:effectExtent l="${eeX}" t="${eeY}" r="${eeX}" b="${eeY}"/>` +
+    `<wp:docPr id="${id}" name="${name}"${o.altText ? ` descr="${escapeXmlAttr(o.altText)}"` : ''}/>` +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+    '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${o.rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm${rot ? ` rot="${rot * 60000}"` : ''}${o.flipH ? ' flipH="1"' : ''}${o.flipV ? ' flipV="1"' : ''}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>'
+  )
 }
 
 /**

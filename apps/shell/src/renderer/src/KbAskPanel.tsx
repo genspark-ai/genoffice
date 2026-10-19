@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AgentLoop,
   composeSkills,
@@ -13,6 +13,8 @@ import {
 } from '@genoffice/agent-core'
 import {
   AiComposer,
+  AiModelPicker,
+  type AiModelPickerBridge,
   AiTypingIndicator,
   AiUsageChip,
   addTokenUsage,
@@ -21,6 +23,8 @@ import {
   type AiTokenUsageView,
 } from '@genoffice/ui'
 import type { AiSettings } from '@genoffice/ai-provider'
+import { activeProvider } from '@genoffice/ai-provider/browser'
+import type { ChatMessage, ProjectApi } from '@genoffice/project-store'
 import { useI18n } from './locale'
 import sendEnterOn from './assets/send-enter-on.png'
 import sendEnterOff from './assets/send-enter-off.png'
@@ -37,13 +41,22 @@ import sendStop from './assets/send-stop.png'
  * cite the folder and file they came from and clicking a citation opens that
  * file in the app that owns it.
  *
- * The conversation lives in memory only; it does not survive a restart (the
- * editor panels persist through project-store — wiring that here is a
- * deliberate later step, not an oversight). An empty corpus gets an
- * onboarding hero instead of a bare hint: the only useful move there is
- * going to Recents and starring files, so the panel says so and offers the
- * jump as a button.
+ * The conversation persists through project-store under a fixed chat id, the
+ * one place in the app where a conversation belongs to no file: with no
+ * `filePath` the store takes the caller's id verbatim, so the panel passes a
+ * constant and finds its own transcript again on the next launch. An empty
+ * corpus gets an onboarding hero instead of a bare hint: the only useful move
+ * there is going to Recents and starring files, so the panel says so and
+ * offers the jump as a button.
+ *
+ * That constant is also the limit of what exists so far: one transcript, no
+ * list, no name, and nothing to start a second conversation. A reader with two
+ * questions on two days gets one long thread — a list, per-conversation ids
+ * and a name are the next layer, not this one.
  */
+
+/** The one transcript the panel keeps. Stable across launches by design. */
+const CHAT_ID = 'kb-ask'
 
 /** one tool a turn used, badge-shaped; the icon follows the call name */
 interface ToolNote {
@@ -63,15 +76,55 @@ interface AskMessage {
   saved?: { path: string; name: string } | { error: string } | 'saving'
 }
 
+/**
+ * Claims the panel's transcript: resolves its ids, reads back what is already
+ * stored, then writes whatever turns were asked before the ids landed — the
+ * stored thread is older than anything asked meanwhile, so it is shown and
+ * written first. `queued` is drained; a turn queued after the drain is the
+ * caller's to flush once the ids are in hand.
+ *
+ * Split out of the effect so the ordering is testable without a DOM — the
+ * panel is the only conversation in the app that belongs to no file, so
+ * nothing else exercises the file-less `resolveChat` path end to end.
+ */
+export async function claimThread(
+  api: ProjectApi,
+  queued: Array<{ role: 'user' | 'assistant'; text: string }>,
+  show: (messages: AskMessage[]) => void,
+  stillCurrent: () => boolean,
+): Promise<{ projectId: string; chatId: string }> {
+  const ids = await api.resolveChat({ filePath: null, tempChatId: CHAT_ID })
+  const stored = await api.loadChat({ ...ids, limit: 200 })
+  if (stored.length > 0 && stillCurrent()) show(restoreAskMessages(stored))
+  for (const entry of queued.splice(0)) {
+    await api.appendChat({ ...ids, ...entry })
+  }
+  return ids
+}
+
+/**
+ * The stored turns as the panel renders them. Only role and text come back:
+ * a turn read from disk has this session's badges, token chip and "save as"
+ * outcome long gone, and rendering them as absent is truer than guessing.
+ */
+export function restoreAskMessages(stored: ChatMessage[]): AskMessage[] {
+  return stored
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({ role: message.role, text: message.text, toolNotes: [] }))
+}
+
 export function KbAskPanel({
   onOpenPath,
   onOpenMods,
   onGoToRecents,
+  onOpenModelSettings,
 }: {
   onOpenPath: (path: string) => void
   /** open the feature assistant: that is where a source is added (a knowledge feature) */
   onOpenMods?: () => void
   onGoToRecents: () => void
+  /** Settings › AI Model, the model chip's last row */
+  onOpenModelSettings: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
   const [messages, setMessages] = useState<AskMessage[]>([])
@@ -82,6 +135,7 @@ export function KbAskPanel({
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [reindexing, setReindexing] = useState(false)
   const [gskEmail, setGskEmail] = useState<string | null>(null)
+  const [provider, setProvider] = useState<string | null>(null)
   const corpusRef = useRef<KbFileInfo[]>([])
   const sourcesRef = useRef<KbSourceInfo[]>([])
   const settingsRef = useRef<AiSettings | null>(null)
@@ -93,15 +147,70 @@ export function KbAskPanel({
   const runUsageRef = useRef<AiTokenUsageView | undefined>(undefined)
   /** tokens billed across the panel's session (the composer chip) */
   const [sessionUsage, setSessionUsage] = useState<AiTokenUsageView | undefined>(undefined)
+  /** the rendered thread, readable from callbacks that close over an older one */
+  const messagesRef = useRef<AskMessage[]>([])
+  messagesRef.current = messages
+  /** where this panel's transcript lives, once project-store has answered */
+  const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  /** turns asked before the ids came back, written once they do */
+  const pendingRef = useRef<Array<{ role: 'user' | 'assistant'; text: string }>>([])
+
+  const persist = (entry: { role: 'user' | 'assistant'; text: string }): void => {
+    const ids = chatIdsRef.current
+    if (!ids) {
+      pendingRef.current.push(entry)
+      return
+    }
+    void window.projectApi?.appendChat({ ...ids, ...entry }).catch(() => undefined)
+  }
+
+  useEffect(() => {
+    // Reopening the panel should show the thread that was already there. The
+    // ids resolve in the background, so a turn asked before they land is
+    // queued by persist() and flushed here rather than lost.
+    const api = window.projectApi
+    if (!api) return
+    let current = true
+    // a question asked while the thread was loading stays on screen, below it
+    const show = (restored: AskMessage[]): void => {
+      setMessages((prev) => [...restored, ...prev])
+      messagesRef.current = [...restored, ...messagesRef.current]
+      loopRef.current?.restore(restored.map((m) => ({ role: m.role, text: m.text })))
+    }
+    void claimThread(api, pendingRef.current, show, () => current)
+      .then((ids) => {
+        if (!current) return
+        chatIdsRef.current = ids
+        for (const entry of pendingRef.current.splice(0)) persist(entry)
+      })
+      .catch(() => undefined)
+    return () => {
+      current = false
+    }
+  }, [])
 
   const refreshSettings = (): void => {
     void window.aiOffice
       .aiGetSettings()
       .then((settings) => {
         settingsRef.current = settings
+        setProvider(activeProvider(settings))
       })
       .catch(() => undefined)
   }
+
+  useEffect(() => window.aiOffice.onAiSettingsChanged?.(refreshSettings), [])
+
+  const modelBridge = useMemo<AiModelPickerBridge>(
+    () => ({
+      getSettings: () => window.aiOffice.aiGetSettings(),
+      setSettings: (settings) => window.aiOffice.setAiSettings(settings),
+      onSettingsChanged: (handler) => window.aiOffice.onAiSettingsChanged(handler),
+      gskLoggedIn: () => window.aiOffice.aiGskStatus().then((s) => !!s.loggedIn),
+      openModelSettings: onOpenModelSettings,
+    }),
+    [onOpenModelSettings],
+  )
 
   const refreshCorpus = (): void => {
     void window.aiOffice
@@ -195,23 +304,32 @@ export function KbAskPanel({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
 
+  // Stream patches land on the ref synchronously as well as on state: onText
+  // and onDone can arrive in one tick, and finishLast must see the final text
+  // before React has rendered it.
   const patchLast = (
     patch: Partial<AskMessage> | ((last: AskMessage) => Partial<AskMessage>),
   ): void => {
-    setMessages((prev) => {
+    const apply = (prev: AskMessage[]): AskMessage[] => {
       if (prev.length === 0 || prev[prev.length - 1]!.role !== 'assistant') return prev
       const last = prev[prev.length - 1]!
       const delta = typeof patch === 'function' ? patch(last) : patch
       return [...prev.slice(0, -1), { ...last, ...delta }]
-    })
+    }
+    messagesRef.current = apply(messagesRef.current)
+    setMessages(apply)
   }
 
   const finishLast = (): void => {
-    setMessages((prev) => {
-      if (prev.length === 0) return prev
-      const last = prev[prev.length - 1]!
-      return [...prev.slice(0, -1), { ...last, streaming: false }]
-    })
+    // The answer is whole for the first time here; streaming it as it grows
+    // would store every intermediate state. The `streaming` guard is what
+    // keeps a second finish (Stop, then the loop's own onDone) from storing
+    // the same turn twice.
+    const last = messagesRef.current[messagesRef.current.length - 1]
+    if (last?.role === 'assistant' && last.streaming && last.text) {
+      persist({ role: 'assistant', text: last.text })
+    }
+    patchLast({ streaming: false })
     setBusy(false)
   }
 
@@ -239,6 +357,8 @@ export function KbAskPanel({
         { role: 'user', text: instruction, toolNotes: [] },
         { role: 'assistant', text: t('askEmptyCorpus'), toolNotes: [] },
       ])
+      persist({ role: 'user', text: instruction })
+      persist({ role: 'assistant', text: t('askEmptyCorpus') })
       setBusy(false)
       return
     }
@@ -247,6 +367,7 @@ export function KbAskPanel({
       { role: 'user', text: instruction, toolNotes: [] },
       { role: 'assistant', text: '', toolNotes: [], streaming: true },
     ])
+    persist({ role: 'user', text: instruction })
     try {
       await loopRef.current!.run(instruction)
     } catch {
@@ -489,7 +610,9 @@ export function KbAskPanel({
           {t('askNoSave')}
         </p>
       )}
-      {gskEmail === null && <p className="kb-ask-login">{t('askNeedsLogin')}</p>}
+      {gskEmail === null && provider === 'genspark' && (
+        <p className="kb-ask-login">{t('askNeedsLogin')}</p>
+      )}
       <AiComposer
         value={draft}
         busy={busy}
@@ -504,7 +627,10 @@ export function KbAskPanel({
         sendIconDisabled={<img src={sendEnterOff} alt="" aria-hidden />}
         stopIcon={<img src={sendStop} alt="" aria-hidden />}
         footerStart={
-          sessionUsage ? <AiUsageChip usage={sessionUsage} session lang={lang} /> : undefined
+          <>
+            <AiModelPicker bridge={modelBridge} lang={lang} />
+            {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
+          </>
         }
         onChange={setDraft}
         onSend={() => void ask()}

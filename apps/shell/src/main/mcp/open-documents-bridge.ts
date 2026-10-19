@@ -8,7 +8,7 @@ import type { SheetsControl } from './tools/sheets-tools'
 import type { EditorFamily } from './tools/formats'
 
 /**
- * The shell's implementation of the `open_documents` control: the three actions
+ * The shell's implementation of the `open_documents` control: the four actions
  * over the tab-manager plus each family's own bridge, so an MCP agent reaches
  * the documents the *user* has open (the bridges are addressed by webContents
  * id, so they do not care who opened the tab).
@@ -193,18 +193,32 @@ export function createOpenDocumentsControl(deps: OpenDocumentsBridgeDeps): OpenD
 
     read: readDocument,
 
+    save: async (tab) => {
+      // the caller's snapshot may predate an edit: settle against the live state
+      const live = (await deps.list()).find((doc) => doc.id === tab.id)
+      if (!live) throw new Error(`"${tab.title}" is already closed`)
+      const savedPath = closeSavePath(live, deps.defaultSaveDir)
+      await saveTo(live, savedPath)
+      return { savedPath }
+    },
+
     close: async (tab, { unsaved }) => {
-      if (tab.kind === 'pdf') {
-        throw new Error(
-          'a PDF tab cannot be closed through this tool: the pdf app is a viewer, so it has no ' +
-            'unsaved state to settle',
-        )
-      }
       // the caller's snapshot may predate an edit: settle against the live state
       const live = (await deps.list()).find((doc) => doc.id === tab.id)
       if (!live) throw new Error(`"${tab.title}" is already closed`)
       let savedPath: string | undefined
-      if (unsaved === 'save' && live.dirty) {
+      if (live.kind === 'pdf') {
+        // A PDF has no content this tool can write back, so a close can only drop
+        // the tab. Its one unsaved state — annotations drawn in the viewer — cannot
+        // be saved here, so refuse to lose it silently when a save-close is asked
+        // for; an explicit discard (or a clean PDF) just closes.
+        if (unsaved === 'save' && live.dirty) {
+          throw new Error(
+            `"${live.title}" has unsaved changes, and a PDF cannot be saved through this tool: ` +
+              'close it with unsaved:"discard" to drop them, or save it in GenOffice first',
+          )
+        }
+      } else if (unsaved === 'save' && live.dirty) {
         savedPath = closeSavePath(live, deps.defaultSaveDir)
         await saveTo(live, savedPath)
       } else if (unsaved === 'discard') {

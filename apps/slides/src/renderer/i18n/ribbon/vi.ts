@@ -385,6 +385,12 @@ export const vi = {
   ribbonRehearseTip:
     'Tập dượt thời gian: chạy trình chiếu từ đầu và ghi lại thời gian trên mỗi trang; lưu thành thời gian tự động chuyển trang (lưu vào pptx)',
   ribbonRecord: 'Ghi hình',
+  ribbonRecordTip:
+    'Ghi tường thuật: phát bản trình chiếu và ghi giọng nói của bạn cùng thời gian của từng trang chiếu',
+  ribbonRecordFromBeginning: 'Ghi từ đầu',
+  ribbonRecordFromCurrent: 'Ghi từ trang chiếu hiện tại',
+  ribbonClearNarrationCurrent: 'Xóa tường thuật trên trang chiếu hiện tại',
+  ribbonClearNarrationAll: 'Xóa tường thuật trên tất cả trang chiếu',
   ribbonGroupProofing: 'Soát lỗi',
   ribbonSpellCheck: 'Chính tả',
   ribbonSpellCheckTip:

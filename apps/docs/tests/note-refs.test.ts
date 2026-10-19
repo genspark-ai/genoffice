@@ -30,9 +30,7 @@ function createEditor(content: PmNode[]): Editor {
 
 describe('footnote / endnote reference conversion', () => {
   it('a styled reference keeps its rPr through an edit to its own paragraph', async () => {
-    // genoffice#2005: the apply path rebuilds the edited paragraph and the
-    // marker used to come out as a bare superscript — style, fonts, colour and
-    // size gone. The rPr rides the parse, the atom and the save plan verbatim.
+    // genoffice#2005: a rebuilt paragraph used to emit the marker as a bare superscript
     const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
     const body =
@@ -68,9 +66,7 @@ describe('footnote / endnote reference conversion', () => {
     editor.commands.insertContentAt(2, 'X')
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     const out = await saveDocx(parsed, plan.saveBlocks)
-    const xml = await JSZip.loadAsync(out).then((z) =>
-      z.file('word/document.xml')!.async('string'),
-    )
+    const xml = await JSZip.loadAsync(out).then((z) => z.file('word/document.xml')!.async('string'))
     const at = xml.indexOf('<w:footnoteReference')
     const refRun = xml.slice(xml.lastIndexOf('<w:r>', at), xml.indexOf('</w:r>', at) + 6)
     expect(refRun).toContain('<w:rStyle w:val="FootnoteReference"/>')

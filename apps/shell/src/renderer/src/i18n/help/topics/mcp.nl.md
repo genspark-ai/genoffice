@@ -73,7 +73,7 @@ Een agent die de op-woordenlijst niet kent, gaat gokken. De skill neemt de refer
 De server is niet beperkt tot bestanden op schijf. Zolang GenOffice draait, kan de agent ook via het venster werken:
 
 - **`open_in_genoffice`** opent een bestand in een tabblad en brengt dat tabblad op de voorgrond.
-- **`open_documents`** somt elk document op dat je open hebt — id, type, pad en of er onopgeslagen wijzigingen zijn —, en leest daarna de actuele inhoud van een document of sluit het, waarbij eerst wordt opgeslagen tenzij je hem vraagt het weg te gooien.
+- **`open_documents`** somt elk document op dat je open hebt — id, type, pad en of er onopgeslagen wijzigingen zijn —, en leest daarna de actuele inhoud van een document, slaat het ter plaatse op of sluit het, waarbij eerst wordt opgeslagen tenzij je hem vraagt het weg te gooien.
 - **De inhoudsgereedschappen** nemen die id (of dat pad) als hun `document`-argument, zodat een bewerking terechtkomt in het tabblad dat je al open hebt en het venster ernaar toe overschakelt.
 
 Twee dingen blijven buiten bereik: er is geen AI-paneel, en het updatevenster in de app geldt hier niet.

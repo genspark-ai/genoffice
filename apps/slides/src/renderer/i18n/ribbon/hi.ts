@@ -386,6 +386,12 @@ export const hi = {
   ribbonRehearseTip:
     'समय का पूर्वाभ्यास: शो को शुरुआत से चलाएँ और प्रत्येक स्लाइड का समय रिकॉर्ड करें; स्वचालित अग्रगमन समय के रूप में सहेजें (pptx में सहेजा गया)',
   ribbonRecord: 'रिकॉर्ड करें',
+  ribbonRecordTip:
+    'कथन रिकॉर्ड करें: स्लाइड शो चलाएँ और अपनी आवाज़ तथा हर स्लाइड का समय रिकॉर्ड करें',
+  ribbonRecordFromBeginning: 'शुरुआत से रिकॉर्ड करें',
+  ribbonRecordFromCurrent: 'वर्तमान स्लाइड से रिकॉर्ड करें',
+  ribbonClearNarrationCurrent: 'वर्तमान स्लाइड का कथन साफ़ करें',
+  ribbonClearNarrationAll: 'सभी स्लाइडों का कथन साफ़ करें',
   ribbonGroupProofing: 'प्रूफ़िंग',
   ribbonSpellCheck: 'वर्तनी',
   ribbonSpellCheckTip:

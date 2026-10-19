@@ -59,8 +59,10 @@ function metaOf(id: AiProviderId): AiProviderMeta {
 }
 
 /**
- * The direct API 400s on the versioned pool spelling we list (verified
- * 2026-09-21: GET /v1/models serves only `deepseek-flash` and `deepseek-v4-pro`).
+ * The pool spelling is not a vendor id: the direct API 400s on it (verified
+ * 2026-09-21 — GET /v1/models serves only `deepseek-flash` and
+ * `deepseek-v4-pro`). Settings read from disk are rewritten by RETIRED_MODELS,
+ * but in-memory state bypasses that, so the adapter still maps the alias here.
  */
 const DEEPSEEK_WIRE_IDS: Record<string, string> = { [DEEPSEEK_V41_FLASH]: 'deepseek-flash' }
 

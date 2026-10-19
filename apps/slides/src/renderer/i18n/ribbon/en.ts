@@ -379,6 +379,11 @@ export const en = {
   ribbonRehearseTip:
     'Rehearse timings: run the show from the start and record time per slide; save as auto-advance timings (saved to pptx)',
   ribbonRecord: 'Record',
+  ribbonRecordTip: "Record narration: play the show and record your voice and each slide's timing",
+  ribbonRecordFromBeginning: 'Record from Beginning',
+  ribbonRecordFromCurrent: 'Record from Current Slide',
+  ribbonClearNarrationCurrent: 'Clear Narration on Current Slide',
+  ribbonClearNarrationAll: 'Clear Narration on All Slides',
   ribbonGroupProofing: 'Proofing',
   ribbonSpellCheck: 'Spelling',
   ribbonSpellCheckTip:

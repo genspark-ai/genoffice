@@ -26,6 +26,7 @@ const resolved =
     Promise.resolve(v)
 ;(window as unknown as { slidesApi: unknown }).slidesApi = {
   getTransition: resolved('none'),
+  getShowTiming: resolved({ advanceMs: null, narrationIds: [] }),
   getAnimations: resolved([]),
   getShapeKeys: resolved([]),
   getSlideLinks: resolved([]),

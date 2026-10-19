@@ -1,7 +1,16 @@
 import { X509Certificate } from 'node:crypto'
 import { deflateSync } from 'node:zlib'
 import forge from 'node-forge'
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, PDFString } from 'pdf-lib'
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFNumber,
+  PDFRef,
+  PDFString,
+} from 'pdf-lib'
 import type { PDFObject } from 'pdf-lib'
 import type {
   CertificateErrorCode,
@@ -28,6 +37,22 @@ export interface LoadedCertificate {
   privateKey: forge.pki.rsa.PrivateKey
   certificate: forge.pki.Certificate
   /** Signer certificate first, then any other certificate shipped in the file */
+  chain: forge.pki.Certificate[]
+}
+
+/**
+ * A signer whose private key never leaves the operating system (Windows CNG/CryptoAPI): the
+ * library hands it the digest to sign and gets the PKCS#1 v1.5 RSA signature back.
+ */
+export interface ExternalSigner {
+  /** DER certificates, signer first */
+  chainDer: Uint8Array[]
+  /** `digest` is the SHA-256 of the signed attributes */
+  signDigest(digest: Uint8Array): Promise<Uint8Array>
+}
+
+export interface ExternalCertificate {
+  certificate: forge.pki.Certificate
   chain: forge.pki.Certificate[]
 }
 
@@ -118,6 +143,32 @@ export function openCertificate(
   }
 }
 
+/** Parse the certificates an external signer reports; only RSA signer keys are supported */
+export function openExternalCertificate(
+  signer: ExternalSigner,
+):
+  | { ok: true; loaded: ExternalCertificate; info: CertificateInfo[] }
+  | { ok: false; error: CertificateErrorCode } {
+  try {
+    const chain = signer.chainDer.map((der) =>
+      forge.pki.certificateFromAsn1(
+        forge.asn1.fromDer(forge.util.createBuffer(Buffer.from(der).toString('binary'))),
+      ),
+    )
+    const certificate = chain[0]
+    if (!certificate) return { ok: false, error: 'cert-invalid' }
+    if (!(certificate.publicKey as forge.pki.rsa.PublicKey).n)
+      return { ok: false, error: 'cert-unsupported-key' }
+    return {
+      ok: true,
+      loaded: { certificate, chain },
+      info: chain.map((cert) => describeCertificate(toX509(cert))),
+    }
+  } catch {
+    return { ok: false, error: 'cert-invalid' }
+  }
+}
+
 export function inspectCertificate(
   p12: Uint8Array,
   password: string,
@@ -140,8 +191,10 @@ export interface VisibleSignature {
 export interface SignPdfOptions {
   /** Already decrypted by openCertificate; skips decrypting p12 again */
   loaded?: LoadedCertificate
-  p12: Uint8Array
-  password: string
+  p12?: Uint8Array
+  password?: string
+  /** Sign through the OS key store instead of a PKCS#12 (the key is never read) */
+  external?: { signer: ExternalSigner; loaded: ExternalCertificate }
   /** Lower-case SHA-1 of the signer certificate when the bundle holds several identities */
   signerSha1?: string
   reason?: string
@@ -382,14 +435,42 @@ async function assemble(
     const radians = (rotation * Math.PI) / 180
     const cos = Math.round(Math.cos(radians))
     const sin = Math.round(Math.sin(radians))
-    const stream = context.stream(`q ${placed.w} 0 0 ${placed.h} 0 0 cm /Sig0 Do Q`, {
-      Type: 'XObject',
-      Subtype: 'Form',
-      BBox: [0, 0, placed.w, placed.h],
-      Matrix: [cos, sin, -sin, cos, 0, 0],
-      Resources: { XObject: { Sig0: image.ref } },
-    })
-    appearanceRef = context.register(stream)
+    // Acrobat rejects the signature ("Expected a dict object") when the appearance form paints
+    // an image XObject directly, so mirror its own layout: N -> FRM -> n0 (blank) + n2 (content).
+    const paint = context.register(
+      context.stream(`q ${placed.w} 0 0 ${placed.h} 0 0 cm /Sig0 Do Q`, {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, placed.w, placed.h],
+        Resources: { XObject: { Sig0: image.ref } },
+      }),
+    )
+    const blank = context.register(
+      context.stream('% DSBlank', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 100, 100],
+        Resources: {},
+      }),
+    )
+    const layers = context.register(
+      context.stream('q 1 0 0 1 0 0 cm /n0 Do Q q 1 0 0 1 0 0 cm /n2 Do Q', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, placed.w, placed.h],
+        Resources: { XObject: { n0: blank, n2: paint } },
+      }),
+    )
+    appearanceRef = context.register(
+      context.stream('/FRM Do', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, placed.w, placed.h],
+        // Only a rotated page needs the matrix; the identity is left out like Acrobat does
+        ...(rotation === 0 ? {} : { Matrix: [cos, sin, -sin, cos, 0, 0] }),
+        Resources: { XObject: { FRM: layers } },
+      }),
+    )
   }
 
   // Fresh objects created above (image, appearance) are everything past `firstNew`; the two
@@ -500,7 +581,15 @@ async function assemble(
   const info = context.trailerInfo.Info
   if (info instanceof PDFRef) trailer.set('Info', `${info.objectNumber} ${info.generationNumber} R`)
   const id = context.trailerInfo.ID
-  if (id instanceof PDFArray) trailer.set('ID', id.toString())
+  if (id instanceof PDFArray) {
+    // Re-emit the identifier bytes as they are; a string's text form would re-encode binary IDs
+    const parts = id.asArray().map((entry) => {
+      if (!(entry instanceof PDFString) && !(entry instanceof PDFHexString)) return null
+      return `<${Buffer.from(entry.asBytes()).toString('hex').toUpperCase()}>`
+    })
+    if (parts.length > 0 && parts.every((part) => part !== null))
+      trailer.set('ID', `[ ${parts.join(' ')} ]`)
+  }
   trailer.set('Prev', String(previous.offset))
 
   const xrefOffset = length
@@ -527,24 +616,48 @@ async function assemble(
 }
 
 /** Detached CMS over the two signed ranges; returns the DER bytes */
-function createSignature(data: Buffer, loaded: LoadedCertificate, signingTime: Date): Buffer {
-  const p7 = forge.pkcs7.createSignedData()
-  p7.content = forge.util.createBuffer(data.toString('binary'))
-  for (const cert of loaded.chain) p7.addCertificate(cert)
-  p7.addSigner({
-    key: loaded.privateKey,
-    certificate: loaded.certificate,
-    digestAlgorithm: forge.pki.oids.sha256,
-    authenticatedAttributes: [
-      { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
-      { type: forge.pki.oids.messageDigest },
-      { type: forge.pki.oids.signingTime, value: signingTime as unknown as string },
-    ],
-  })
-  p7.sign({ detached: true })
-  const asn1 = p7.toAsn1()
-  restoreSignerIssuer(asn1, loaded.certificate)
-  return Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary')
+async function createSignature(
+  data: Buffer,
+  loaded: ExternalCertificate & { privateKey?: forge.pki.rsa.PrivateKey },
+  signingTime: Date,
+  external?: ExternalSigner,
+): Promise<Buffer> {
+  // forge signs synchronously but an OS signer is async: a first pass records the digest forge
+  // wants signed (the attribute set is deterministic), the OS signs it, and a second pass
+  // replays that signature into the same structure.
+  const recorded: { digest?: Uint8Array; signature?: Uint8Array } = {}
+  const key = external
+    ? {
+        sign: (md: forge.md.MessageDigest): string => {
+          recorded.digest = Buffer.from(md.digest().getBytes(), 'binary')
+          return Buffer.from(recorded.signature ?? new Uint8Array(0)).toString('binary')
+        },
+      }
+    : loaded.privateKey!
+  const build = (): Buffer => {
+    const p7 = forge.pkcs7.createSignedData()
+    p7.content = forge.util.createBuffer(data.toString('binary'))
+    for (const cert of loaded.chain) p7.addCertificate(cert)
+    p7.addSigner({
+      key: key as forge.pki.rsa.PrivateKey,
+      certificate: loaded.certificate,
+      digestAlgorithm: forge.pki.oids.sha256,
+      authenticatedAttributes: [
+        { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
+        { type: forge.pki.oids.messageDigest },
+        { type: forge.pki.oids.signingTime, value: signingTime as unknown as string },
+      ],
+    })
+    p7.sign({ detached: true })
+    const asn1 = p7.toAsn1()
+    restoreSignerIssuer(asn1, loaded.certificate)
+    return Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary')
+  }
+  if (!external) return build()
+  build()
+  if (!recorded.digest) throw new SignError('sign-failed')
+  recorded.signature = await external.signDigest(recorded.digest)
+  return build()
 }
 
 /**
@@ -571,8 +684,10 @@ function restoreSignerIssuer(root: forge.asn1.Asn1, cert: forge.pki.Certificate)
 /** Sign `bytes` with a PKCS#12 certificate; the result is the original bytes plus one signature revision */
 export async function signPdf(bytes: Uint8Array, options: SignPdfOptions): Promise<Uint8Array> {
   if (bytes.byteLength > MAX_SIGNABLE_BYTES) throw new SignError('sign-failed')
-  const loaded =
-    options.loaded ?? loadCertificate(options.p12, options.password, options.signerSha1)
+  const loaded: ExternalCertificate & { privateKey?: forge.pki.rsa.PrivateKey } =
+    options.external?.loaded ??
+    options.loaded ??
+    loadCertificate(options.p12 ?? new Uint8Array(), options.password ?? '', options.signerSha1)
   const original = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const signingTime = options.signingTime ?? new Date()
   const withTime = { ...options, signingTime }
@@ -587,7 +702,7 @@ export async function signPdf(bytes: Uint8Array, options: SignPdfOptions): Promi
     const rangeText = `[${range[0]} ${String(range[1]).padStart(BYTE_RANGE_DIGITS, '0')} ${String(range[2]).padStart(BYTE_RANGE_DIGITS, '0')} ${String(range[3]).padStart(BYTE_RANGE_DIGITS, '0')}]`
     file.write(rangeText, byteRangeAt, 'latin1')
     const signed = Buffer.concat([file.subarray(0, contentsStart), file.subarray(contentsEnd)])
-    const cms = createSignature(signed, loaded, signingTime)
+    const cms = await createSignature(signed, loaded, signingTime, options.external?.signer)
     if (cms.length > placeholderBytes) continue
     file.write(cms.toString('hex').toUpperCase(), contentsStart + 1, 'latin1')
     return file

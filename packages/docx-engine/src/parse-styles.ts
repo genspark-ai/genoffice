@@ -14,7 +14,7 @@ import {
 import { autoColorOf, colorFrom, lineTwipsOf, onOffOf, stripHash } from './parse-xml-text'
 import {
   EA_LANG_DEFAULT_FONT,
-  autoSpaceOf,
+  autoSpaceFlagsOf,
   cellMarginsOf,
   charIndentsOf,
   indentTwipsOf,
@@ -622,8 +622,9 @@ function styleDisplayOf(
       const ctx = onOffOf(pPr, 'w:contextualSpacing')
       if (ctx !== undefined) display.contextualSpacing = ctx
     }
-    const autoSpace = autoSpaceOf(pPr)
-    if (autoSpace !== undefined) display.autoSpace = autoSpace
+    const autoSpace = autoSpaceFlagsOf(pPr)
+    if (autoSpace.de !== undefined) display.autoSpaceDE = autoSpace.de
+    if (autoSpace.dn !== undefined) display.autoSpaceDN = autoSpace.dn
     const wordWrap = onOffOf(pPr, 'w:wordWrap')
     if (wordWrap !== undefined) display.wordWrap = wordWrap
     const overflowPunct = onOffOf(pPr, 'w:overflowPunct')

@@ -3,6 +3,7 @@ import type { StyleParaProps, StyleRunProps, StyleUpsert } from '@genoffice/docx
 import type { AgentToolDef } from '../../shared/ipc'
 import { parsePoints } from './lengths'
 import type { Op, OpContext, OpDef, OpResult, RunEnv, SelRange, Target, TopBlock } from './ops'
+import { tabSpecsToStops, validateTabs, type TabSpec } from './tab-stops'
 
 /** A style as the AI sees it: the styles.xml entry plus definitions pending in this session. */
 export interface AiStyleInfo {
@@ -104,6 +105,12 @@ export const DEFINE_STYLE_TOOL: AgentToolDef = {
             type: ['integer', 'null'],
             description:
               '1-9: the style becomes a heading of that level in the navigation pane / TOC',
+          },
+          tabs: {
+            type: ['array', 'null'],
+            description:
+              'tab stops of the style (replaces its w:tabs; [] or null removes them): [{ pos: twips or "6.5in", align?: left|center|right|decimal|bar, leader?: none|dot|hyphen|underscore|middleDot, clear?: true }]',
+            items: { type: 'object' },
           },
         },
       },
@@ -239,6 +246,11 @@ function paraProps(input: Record<string, unknown>): Result<StyleParaProps> {
     if (v !== null && !(Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 9))
       return err('paragraph.outlineLevel must be 1-9 or null')
     out.outlineLevel = v as number | null
+  }
+  if (input.tabs !== undefined) {
+    const error = validateTabs(input.tabs, 'paragraph')
+    if (error) return err(error)
+    out.tabStops = tabSpecsToStops(input.tabs as TabSpec[] | null)
   }
   return { value: out }
 }

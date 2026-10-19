@@ -15,6 +15,7 @@ import {
   nativeImage,
   session as electronSession,
   shell,
+  systemPreferences,
   webContents,
   WebContentsView,
 } from 'electron'
@@ -23,12 +24,11 @@ import { execFile } from 'node:child_process'
 import { readFile, writeFile, rm, stat, mkdir, open } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { cleanupExpiredGeneratedPages } from './generated-page-temp'
 import { exportSlidesPdf } from './pdf-export'
 import { printSlidesHtml } from './print-window'
-import { gskApiKey, gskSlideGenerate, setGskProxyUrl } from '@genoffice/ai-search'
+import { setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
   configuredDefaultSaveDir,
@@ -49,6 +49,7 @@ import {
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
   recoveryCopyDiskNewer,
+  configuredAuthorName,
 } from '@genoffice/electron-utils'
 import {
   resolveGroupChildId,
@@ -102,6 +103,8 @@ import {
   getSlideNotes,
   getSlideTransition,
   elementSpid,
+  narrationSpids,
+  getSlideAdvanceTime,
   getSlideAnimations,
   listEmbeddedFonts,
   openPptx,
@@ -223,7 +226,9 @@ import type {
   SetTableCellAnchorOp,
   TableStructureIpcOp,
   ReorderElementOp,
+  SaveRecordingOp,
   SetAdvanceTimesOp,
+  ShowTiming,
   SetAnimationsOp,
   SetNotesOp,
   SetSlideHiddenOp,
@@ -296,10 +301,10 @@ let slideClipboard: { bundles: SlideBundle[]; pngs?: string[] } | null = null
 /** The immediately preceding slide paste per webContents, so the paste-options floater can redo it with another mode. */
 const lastSlidePaste = new Map<number, { afterIndex: number; undoLen: number }>()
 
-// Cloud-generated single-page pptx: marker strings travel in pageMarkers slots; only paths issued
-// by slides:cloud-page-generate are readable (the renderer can't point the reader at arbitrary files)
-const CLOUD_PAGE_PREFIX = 'cloudpptx:'
-const issuedCloudPages = new Set<string>()
+// Generated single-page pptx: marker strings travel in pageMarkers slots; only paths issued
+// by slides:local-page-generate are readable (the renderer can't point the reader at arbitrary files)
+const GENERATED_PAGE_PREFIX = 'genpptx:'
+const issuedGeneratedPages = new Set<string>()
 import { registerPresenterIpc } from './presenter-show'
 import { registerAttachmentIpc } from './attachments-ipc'
 
@@ -495,13 +500,9 @@ export async function saveSessionDeckTo(session: Session, filePath: string): Pro
 
 const RECENT_PATH = () => join(app.getPath('userData'), 'slides-recent.json')
 
-/** Comment author name: system username, falling back to a generic "User" label. */
+/** Settings → General author name, falling back to the OS account */
 function commentAuthorName(): string {
-  try {
-    return userInfo().username || 'User'
-  } catch {
-    return 'User'
-  }
+  return configuredAuthorName(app)
 }
 
 async function readRecent(): Promise<string[]> {
@@ -1841,89 +1842,9 @@ export function registerSlidesIpc(): void {
     }
     return rendered ? { slide: rendered, ...(notes.length ? { notes } : {}) } : null
   })
-  // ── Cloud single-page generation (gsk slide_generate): brief → cloud HTML+conversion → one-slide
-  // pptx saved to a temp file. Returns a marker string that slides:land-generated-pages redeems for
-  // the bytes. Enabled when gsk is logged in; GENOFFICE_CLOUD_SLIDE=0 is the kill switch.
-  const cloudSlideEnabled = () => process.env.GENOFFICE_CLOUD_SLIDE !== '0' && !!gskApiKey()
-
-  ipcMain.handle('slides:cloud-gen-status', () => ({ enabled: cloudSlideEnabled() }))
-
-  // In-flight cloud generations keyed by the requesting window: stop in one
-  // panel aborts all of that window's pages (a deck batch shares one stop
-  // signal) and none of another window's
-  const cloudPageAborts = new Map<number, Set<AbortController>>()
-
-  ipcMain.handle('slides:cloud-page-cancel', (e) => {
-    const aborts = cloudPageAborts.get(e.sender.id)
-    if (!aborts) return
-    for (const c of aborts) c.abort()
-    cloudPageAborts.delete(e.sender.id)
-  })
-
-  ipcMain.handle(
-    'slides:cloud-page-generate',
-    async (
-      e,
-      op: {
-        brief: string
-        title?: string
-        styleSkill?: string
-        deckContext?: Record<string, unknown>
-        images?: { url: string; caption?: string }[]
-        width?: number
-        height?: number
-      },
-    ): Promise<{ ok: boolean; marker?: string; error?: string }> => {
-      if (!cloudSlideEnabled()) return { ok: false, error: 'cloud slide generation is disabled' }
-      try {
-        // Ultra resolves to the opus-class slide model server-side; standard is the
-        // lighter MiniMax M3 model. Keep an explicit escape hatch for quality
-        // comparisons and emergency rollback.
-        const tier = process.env.GENOFFICE_CLOUD_SLIDE_TIER === 'standard' ? 'standard' : 'ultra'
-        const started = Date.now()
-        // Stop must reach the cloud request: without this the generation keeps
-        // running (and billing) after the user pressed stop
-        const abort = new AbortController()
-        const windowAborts = cloudPageAborts.get(e.sender.id) ?? new Set<AbortController>()
-        windowAborts.add(abort)
-        cloudPageAborts.set(e.sender.id, windowAborts)
-        let bytes: Uint8Array
-        let model: string
-        try {
-          ;({ bytes, model } = await gskSlideGenerate({
-            tier,
-            brief: String(op.brief ?? ''),
-            title: op.title ? String(op.title) : undefined,
-            styleSkill: op.styleSkill ? String(op.styleSkill) : undefined,
-            deckContext: op.deckContext,
-            images: Array.isArray(op.images) ? op.images : undefined,
-            width: op.width,
-            height: op.height,
-            signal: abort.signal,
-          }))
-        } finally {
-          windowAborts.delete(abort)
-          if (windowAborts.size === 0) cloudPageAborts.delete(e.sender.id)
-        }
-        console.log(
-          `[cloud-slide] page generated: tier=${tier} model=${model} bytes=${bytes.length} ms=${Date.now() - started}`,
-        )
-        const dir = join(app.getPath('temp'), 'genoffice-cloud-pages')
-        mkdirSync(dir, { recursive: true })
-        const path = join(dir, `${randomUUID()}.pptx`)
-        await writeFile(path, bytes)
-        issuedCloudPages.add(path)
-        return { ok: true, marker: CLOUD_PAGE_PREFIX + path }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      }
-    },
-  )
-
-  // ── Local single-page generation (no gsk needed, e.g. BYOK): a JSON slide spec written by
-  // the renderer's LLM call is built directly into a one-slide pptx with pptx-engine
-  // primitives — no HTML intermediate. Returns the same marker kind as the cloud path, so
-  // landing (slides:land-generated-pages) is shared.
+  // ── Single-page generation: a JSON slide spec written by the renderer's LLM call is built
+  // directly into a one-slide pptx with pptx-engine primitives. Returns a marker that
+  // slides:land-generated-pages redeems for the bytes.
   ipcMain.handle(
     'slides:local-page-generate',
     async (
@@ -1968,10 +1889,10 @@ export function registerSlidesIpc(): void {
         mkdirSync(dir, { recursive: true })
         const path = join(dir, `${randomUUID()}.pptx`)
         await writeFile(path, bytes)
-        issuedCloudPages.add(path)
+        issuedGeneratedPages.add(path)
         return {
           ok: true,
-          marker: CLOUD_PAGE_PREFIX + path,
+          marker: GENERATED_PAGE_PREFIX + path,
           ...(imageFailures.length ? { imageFailures } : {}),
         }
       } catch (err) {
@@ -1999,16 +1920,17 @@ export function registerSlidesIpc(): void {
         })
       | { error: string }
     > => {
-      // Every page arrives as a cloud marker (cloudpptx:<path> written by
-      // slides:cloud-page-generate, pointing at a one-slide pptx temp file); this handler only
+      // Every page arrives as a marker (genpptx:<path> written by
+      // slides:local-page-generate, pointing at a one-slide pptx temp file); this handler only
       // reads and lands the bytes.
       // replace: assemble the whole batch into one multi-page pptx as the new deck base.
       // append/replace_at/insert_at: land the extracted pages as insertSlidePptx ops
       // (earlier pages are untouched; landing shows up in the op journal like any edit).
       const readCloudPage = async (marker: string): Promise<{ bytes: Uint8Array }> => {
-        if (!marker.startsWith(CLOUD_PAGE_PREFIX)) throw new Error('expected a cloud page marker')
-        const path = marker.slice(CLOUD_PAGE_PREFIX.length)
-        if (!issuedCloudPages.has(path)) throw new Error('unknown cloud page marker')
+        if (!marker.startsWith(GENERATED_PAGE_PREFIX))
+          throw new Error('expected a generated page marker')
+        const path = marker.slice(GENERATED_PAGE_PREFIX.length)
+        if (!issuedGeneratedPages.has(path)) throw new Error('unknown generated page marker')
         return { bytes: new Uint8Array(await readFile(path)) }
       }
       const assembleDeck = async (): Promise<{ bytes: Uint8Array }> => {
@@ -4204,6 +4126,18 @@ export function registerSlidesIpc(): void {
     return slide ? getSlideTransition(slide) : 'none'
   })
 
+  ipcMain.handle('slides:get-show-timing', (e, slideIndex: number): ShowTiming => {
+    const slide = sessions.get(e.sender.id)?.opened.deck.slides[slideIndex]
+    if (!slide) return { advanceMs: null, narrationIds: [] }
+    const narration = new Set(narrationSpids(slide))
+    return {
+      advanceMs: getSlideAdvanceTime(slide),
+      narrationIds: slide.elements
+        .filter((el) => narration.has(elementSpid(el) ?? -1))
+        .map((el) => el.id),
+    }
+  })
+
   // Rehearsal timing save: batch-write each page's auto-advance time (<p:transition advTm>, ms)
   ipcMain.handle('slides:set-advance-times', (e, op: SetAdvanceTimesOp) => {
     const session = sessions.get(e.sender.id)
@@ -4219,6 +4153,46 @@ export function registerSlidesIpc(): void {
       })),
     })
     return r !== null
+  })
+
+  // ── Slide Show > Record: narration per slide plus its advance time, one undo step ──
+  ipcMain.handle('slides:save-recording', (e, op: SaveRecordingOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session) return null
+    const slides = session.opened.deck.slides
+    const recorded = op.slides.filter((s) => slides[s.slideIndex])
+    if (recorded.length === 0) return null
+    const r = sessionTxn(session, {
+      ops: recorded.flatMap((s) => [
+        {
+          op: 'addNarration',
+          target: { slide: s.slideIndex },
+          bytes: s.wavBase64,
+          ext: 'wav',
+          durationMs: s.durationMs,
+        },
+        { op: 'setAdvanceTime', target: { slide: s.slideIndex }, ms: s.advanceMs },
+      ]),
+    })
+    return r ? slides.map((_, i) => rebuildSlide(session, i)) : null
+  })
+
+  ipcMain.handle('slides:clear-narration', (e, slideIndexes: number[]) => {
+    const session = sessions.get(e.sender.id)
+    if (!session) return null
+    const slides = session.opened.deck.slides
+    const targets = slideIndexes.filter((i) => slides[i] && narrationSpids(slides[i]).length > 0)
+    if (targets.length === 0) return null
+    const r = sessionTxn(session, {
+      ops: targets.map((i) => ({ op: 'clearNarration', target: { slide: i } })),
+    })
+    return r ? slides.map((_, i) => rebuildSlide(session, i)) : null
+  })
+
+  ipcMain.handle('slides:microphone-access', async () => {
+    if (process.platform !== 'darwin') return true
+    if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true
+    return systemPreferences.askForMediaAccess('microphone')
   })
 
   // ── Shape animations (<p:timing>; the spid <-> temporary element id mapping happens here) ──

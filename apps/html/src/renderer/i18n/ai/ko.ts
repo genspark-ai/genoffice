@@ -37,6 +37,8 @@ export const ko = {
     '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
   aiNewChat: '새 대화',
   aiNoReply: '(응답 없음)',
+  aiRegionError:
+    '이 모델의 제공업체는 현재 지역에서 서비스를 제공하지 않습니다. 다른 모델을 선택하거나 네트워크를 변경하세요',
   aiOverloadedError: 'AI 서비스가 혼잡합니다. 잠시 후 다시 시도해 주세요',
   aiRegenerateTitle: '다시 생성',
   aiRetry: '다시 시도',

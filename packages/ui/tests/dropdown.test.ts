@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextEnabledIndex, reconcileActiveIndex } from '../src/dropdown'
+import { filterOptions, nextEnabledIndex, reconcileActiveIndex } from '../src/dropdown'
 
 describe('Dropdown keyboard navigation', () => {
   const options = [{ disabled: true }, {}, { disabled: true }, {}]
@@ -27,5 +27,24 @@ describe('Dropdown keyboard navigation', () => {
     expect(reconcileActiveIndex(choices, 2, 'right')).toBe(3)
     expect(reconcileActiveIndex(choices, 8, 'center')).toBe(3)
     expect(reconcileActiveIndex([{ value: 'auto', disabled: true }], 0, 'auto')).toBe(-1)
+  })
+})
+
+describe('filterOptions', () => {
+  const options = [
+    { value: 'anthropic/claude-opus-5.5', label: 'anthropic/claude-opus-5.5' },
+    { value: 'openai/gpt-6-astra', label: 'openai/gpt-6-astra' },
+    { value: 'moonshotai/kimi-k3', label: 'moonshotai/kimi-k3' },
+  ]
+
+  it('matches case-insensitively on any substring', () => {
+    expect(filterOptions(options, 'OPUS').map((o) => o.value)).toEqual([
+      'anthropic/claude-opus-5.5',
+    ])
+  })
+
+  it('requires every whitespace-separated term', () => {
+    expect(filterOptions(options, 'openai astra')).toHaveLength(1)
+    expect(filterOptions(options, 'openai kimi')).toHaveLength(0)
   })
 })

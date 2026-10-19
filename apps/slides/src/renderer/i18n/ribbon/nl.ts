@@ -392,6 +392,12 @@ export const nl = {
   ribbonRehearseTip:
     'Tijdsinstellingen repeteren: start de voorstelling vanaf het begin en registreert de tijd per dia; sla op als tijden voor automatisch doorgaan (opgeslagen in pptx)',
   ribbonRecord: 'Opnemen',
+  ribbonRecordTip:
+    'Gesproken tekst opnemen: de diavoorstelling afspelen en uw stem en de tijd per dia opnemen',
+  ribbonRecordFromBeginning: 'Opnemen vanaf het begin',
+  ribbonRecordFromCurrent: 'Opnemen vanaf huidige dia',
+  ribbonClearNarrationCurrent: 'Gesproken tekst op huidige dia wissen',
+  ribbonClearNarrationAll: 'Gesproken tekst op alle dia’s wissen',
   ribbonGroupProofing: 'Controle',
   ribbonSpellCheck: 'Spelling',
   ribbonSpellCheckTip:

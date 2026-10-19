@@ -39,10 +39,13 @@ import { OverlayLayer } from './slots/OverlayLayer'
 import { CommandPalette } from './CommandPalette'
 import { requestAssistant } from './slots/assistant-bridge'
 
+import type { ProjectApi } from '@genoffice/project-store'
+
 declare global {
   interface Window {
     aiOffice: HomeApi
     aiOfficeIntegrations?: IntegrationsApi
+    projectApi: ProjectApi
   }
 }
 
@@ -61,9 +64,15 @@ const GREET_ASK_KEYS = [
 
 const FILE_ICONS: Record<string, string> = {
   docx: iconDocx,
+  odt: iconDocx,
+  ott: iconDocx,
   xlsx: iconXlsx,
   xlsm: iconXlsx,
+  ods: iconXlsx,
+  ots: iconXlsx,
   pptx: iconPptx,
+  odp: iconPptx,
+  otp: iconPptx,
   pdf: iconPdf,
   md: iconMd,
   markdown: iconMd,
@@ -3677,6 +3686,7 @@ export function Home() {
             setModsMode(true)
           }}
           onGoToRecents={() => changeView('recent')}
+          onOpenModelSettings={() => setSettingsRequest({ section: 'aiModel' })}
         />
       ) : slotPanelId ? (
         <SlotPanel

@@ -61,7 +61,8 @@ function tableHasRevisions(table: TableModel): boolean {
 /** any w:ins / w:del / w:rPrChange / w:pPrChange (incl. moves, row/cell/block revisions) in the parsed body */
 export function blocksHaveRevisions(blocks: Block[]): boolean {
   for (const b of blocks) {
-    if (b.pPrChangeInfo || b.paraMarkDel || b.moveRevision || b.blockRevision) return true
+    if (b.pPrChangeInfo || b.paraMarkDel || b.paraMarkIns || b.moveRevision || b.blockRevision)
+      return true
     if (b.runs?.some((r) => r.ins || r.del || r.rPrChange)) return true
     if (b.table && tableHasRevisions(b.table)) return true
   }

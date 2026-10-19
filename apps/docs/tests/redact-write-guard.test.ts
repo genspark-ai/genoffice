@@ -30,10 +30,12 @@ interface JsonNode {
   marks?: Array<{ type: string; attrs?: Record<string, unknown> }>
 }
 
-async function open(text: string): Promise<Editor> {
-  const parsed = await parseDocx(
-    await buildDocx({ bodyXml: `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>` }),
-  )
+async function open(text: string, inTable = false): Promise<Editor> {
+  const para = `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
+  const bodyXml = inTable
+    ? `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>${para}</w:tc></w:tr></w:tbl><w:p/>`
+    : para
+  const parsed = await parseDocx(await buildDocx({ bodyXml }))
   const editor = new Editor({
     element: document.createElement('div'),
     extensions,
@@ -46,9 +48,9 @@ async function open(text: string): Promise<Editor> {
 function selectText(editor: Editor, needle: string) {
   let start = -1
   editor.state.doc.descendants((node, pos) => {
-    if (start >= 0) return
-    const at = node.textContent.indexOf(needle)
-    if (at >= 0) start = pos + 1 + at
+    if (start >= 0 || !node.isText) return
+    const at = node.text!.indexOf(needle)
+    if (at >= 0) start = pos + at
   })
   expect(start).toBeGreaterThan(0)
   editor.view.dispatch(
@@ -58,8 +60,8 @@ function selectText(editor: Editor, needle: string) {
   )
 }
 
-async function marked(): Promise<Editor> {
-  const editor = await open(`Call ${SECRET} now`)
+async function marked(inTable = false): Promise<Editor> {
+  const editor = await open(`Call ${SECRET} now`, inTable)
   selectText(editor, SECRET)
   editor.commands.setRedaction('client phone')
   return editor
@@ -107,6 +109,34 @@ describe('the write guard on model output', () => {
     const out = executeOps(editor, replaceOps(SECRET, 'the number'))
     expect(out.ok).toBe(false)
     expect(out.error).toMatch(/placeholder/i)
+  })
+
+  it('refuses a batch that overwrites a span inside a table cell', async () => {
+    const editor = await marked(true)
+    expect(editor.getText()).toContain(SECRET)
+    const out = executeOps(editor, replaceOps(SECRET, 'the number'))
+    expect(out.ok).toBe(false)
+    expect(out.error).toMatch(/placeholder/i)
+  })
+
+  it('marks the range re-asserted in the same chain, not the live selection', async () => {
+    const editor = await open(`Call ${SECRET} now`)
+    let start = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (start < 0 && node.isText && node.text?.includes(SECRET))
+        start = pos + node.text.indexOf(SECRET)
+    })
+    editor.commands.setTextSelection(1)
+    editor
+      .chain()
+      .setTextSelection({ from: start, to: start + SECRET.length })
+      .setRedaction('client phone')
+      .run()
+    const spans: string[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.isText && node.marks.some((m) => m.type.name === 'redaction')) spans.push(node.text!)
+    })
+    expect(spans).toEqual([SECRET])
   })
 
   it('refuses a batch that swaps the words back for the marker they stand in for', async () => {

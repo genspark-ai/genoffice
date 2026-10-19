@@ -1,5 +1,10 @@
 import { basename, dirname } from 'node:path'
-import type { DecisionEndpoint, FileSearchRerank, FileSearchSettings } from '../../shared/home-api'
+import {
+  isCloudflareEndpoint,
+  type DecisionEndpoint,
+  type FileSearchRerank,
+  type FileSearchSettings,
+} from '../../shared/home-api'
 import {
   evaluate,
   isLocalEndpoint,
@@ -20,8 +25,12 @@ export const DEFAULT_FILE_SEARCH_SETTINGS: FileSearchSettings = {
     openrouter: '',
     direct: '',
     perplexity: '',
+    'perplexity-v12': '',
+    'perplexity-flash': '',
     liquid: '',
+    'liquid-ultra': '',
     cloudflare: '',
+    'cloudflare-flash': '',
     kev: '',
     rizzo: '',
     custom: '',
@@ -36,8 +45,12 @@ const ENDPOINT_IDS: readonly DecisionEndpoint[] = [
   'openrouter',
   'direct',
   'perplexity',
+  'perplexity-v12',
+  'perplexity-flash',
   'liquid',
+  'liquid-ultra',
   'cloudflare',
+  'cloudflare-flash',
   'kev',
   'rizzo',
   'custom',
@@ -108,7 +121,7 @@ export class SearchReranker {
     // local servers (Kev, Rizzo Flow, a custom URL) run without credentials
     if (!settings.rerank || (!isLocalEndpoint(settings.endpoint) && !opts.key)) return null
     if (settings.endpoint === 'custom' && !settings.customBaseUrl.trim()) return null
-    if (settings.endpoint === 'cloudflare' && !settings.cloudflareAccountId.trim()) return null
+    if (isCloudflareEndpoint(settings.endpoint) && !settings.cloudflareAccountId.trim()) return null
     const hits = this.store.excerptsFor(paths.slice(0, MAX_DOCS), q, EXCERPT_CHARS)
     if (hits.length < 2) return null
     const cacheKey = [

@@ -8,6 +8,8 @@ export const GENERATED_PAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const GENERATED_PAGE_NAME =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.pptx$/i
 
+// genoffice-cloud-pages is the retired cloud pipeline's directory: still swept so
+// files from older builds expire
 const GENERATED_PAGE_DIRS = ['genoffice-cloud-pages', 'genoffice-local-pages']
 
 /**

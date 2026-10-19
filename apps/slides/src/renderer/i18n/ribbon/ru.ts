@@ -388,6 +388,12 @@ export const ru = {
   ribbonRehearseTip:
     'Настройка времени: показ с начала с записью времени на каждый слайд; после завершения можно сохранить как время автоматической смены (сохраняется в pptx)',
   ribbonRecord: 'Запись',
+  ribbonRecordTip:
+    'Записать речевое сопровождение: воспроизвести показ и записать ваш голос и время каждого слайда',
+  ribbonRecordFromBeginning: 'Записать с начала',
+  ribbonRecordFromCurrent: 'Записать с текущего слайда',
+  ribbonClearNarrationCurrent: 'Очистить речевое сопровождение текущего слайда',
+  ribbonClearNarrationAll: 'Очистить речевое сопровождение всех слайдов',
   ribbonGroupProofing: 'Правописание',
   ribbonSpellCheck: 'Орфография',
   ribbonSpellCheckTip:

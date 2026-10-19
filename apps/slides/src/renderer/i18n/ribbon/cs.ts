@@ -382,6 +382,11 @@ export const cs = {
   ribbonRehearseTip:
     'Vyzkoušet časování: spustí prezentaci od začátku a zaznamená čas na každý snímek; uloží se jako časování automatického přechodu (uloží se do pptx)',
   ribbonRecord: 'Záznam',
+  ribbonRecordTip: 'Nahrát komentář: přehrát prezentaci a nahrát váš hlas a čas každého snímku',
+  ribbonRecordFromBeginning: 'Nahrávat od začátku',
+  ribbonRecordFromCurrent: 'Nahrávat od aktuálního snímku',
+  ribbonClearNarrationCurrent: 'Vymazat komentář na aktuálním snímku',
+  ribbonClearNarrationAll: 'Vymazat komentář na všech snímcích',
   ribbonGroupProofing: 'Kontrola pravopisu',
   ribbonSpellCheck: 'Pravopis',
   ribbonSpellCheckTip:

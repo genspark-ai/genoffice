@@ -9350,3 +9350,62 @@ body.show-curtain::after {
   user-select: none;
   pointer-events: none;
 }
+
+/* ── Slide Show > Record: the recording bar ─────────────────────── */
+
+.slideshow .ss-record {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--slides-show-pill-bg);
+  border: 1px solid var(--slides-show-line-15);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--slides-show-ink);
+  z-index: 2;
+}
+
+.slideshow .ss-record-failed {
+  pointer-events: none;
+}
+
+.slideshow .ss-record-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--slides-show-ink-60);
+}
+
+.slideshow .ss-record-dot.on {
+  background: var(--danger);
+}
+
+.slideshow .ss-record-state {
+  font-size: 13px;
+}
+
+.slideshow .ss-record-cur {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.slideshow .ss-record-total {
+  color: var(--slides-show-ink-60);
+  font-size: 12px;
+}
+
+.slideshow .ss-record-btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--slides-show-ink);
+  background: transparent;
+  border: 1px solid var(--slides-show-line-15);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}

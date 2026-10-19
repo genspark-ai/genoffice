@@ -133,16 +133,12 @@ repository:
 BUILD_DIR=/tmp/genoffice-release npm run dist:mac
 ```
 
-`dist:win` additionally expects the xlsx sidecar at the MinGW cross-compilation
-path. Building on Windows leaves it under the MSVC target instead, so stage it
-first:
-
-```bash
-cargo build --release --target x86_64-pc-windows-gnu   # from apps/sheets/native/xlsx-engine
-```
-
-or copy an existing `target/release/xlsx-sidecar.exe` to
-`target/x86_64-pc-windows-gnu/release/`.
+`dist:win` takes the xlsx sidecar from the MinGW cross-compilation path when it
+is there (that is what the release pipeline builds). On a Windows host the plain
+`npm run build:all` compiles it with the host toolchain into
+`target/release/xlsx-sidecar.exe` instead, and packaging accepts that build as
+long as the host architecture matches the packaged one (`GENOFFICE_WIN_ARM64=1`
+still needs a cross build for `aarch64-pc-windows-msvc`).
 
 ## Environment variables
 
@@ -155,7 +151,6 @@ testing and local overrides:
 | `GENOFFICE_USER_DATA`                                                                             | Override the Electron userData directory (test isolation)                        |
 | `GENOFFICE_LANG`                                                                                  | Force the UI language instead of following the OS locale                         |
 | `GENOFFICE_FAKE_UPDATE`                                                                           | Exercise the updater UI without a real release feed                              |
-| `GENOFFICE_CLOUD_SLIDE`, `GENOFFICE_CLOUD_SLIDE_TIER`                                             | Route slide generation through the cloud endpoint                                |
 | `GSK_API_KEY`, `GSK_CLI_PATH`                                                                     | Genspark credentials / CLI location for the built-in AI provider                 |
 | `AI_SEARCH_DISABLE_GSK`, `SERPER_API_KEY`, `SERPLY_API_KEY`, `TAVILY_API_KEY`, `PARALLEL_API_KEY` | Disable the gsk search backend / supply a Serper, Serply, Tavily or Parallel key |
 | `XLSX_SIDECAR_PATH`, `XLSX_OPEN_PATH`, `XLSX_DEBUG_PORT`                                          | Point at a locally built xlsx sidecar and its debug port                         |

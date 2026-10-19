@@ -63,6 +63,16 @@ export type UiTheme = 'light' | 'dark' | 'system'
 export type DocTheme = 'follow' | 'light' | 'dark'
 
 /** shell-wide AutoSave default for every editor; updatedAt is 0 until first set */
+/** mirrors AUTHOR_NAME_MAX in @genoffice/electron-utils (the renderer cannot import it) */
+export const AUTHOR_NAME_MAX = 120
+
+export interface AuthorNameSetting {
+  /** stored override; '' means "use fallback" */
+  value: string
+  /** the OS account name */
+  fallback: string
+}
+
 export interface AutoSaveDefault {
   on: boolean
   updatedAt: number
@@ -147,13 +157,29 @@ export interface FileSearchHit extends RecentEntry {
 }
 
 /**
- * Endpoints the search reranker can judge against. The hosted Jev routes are
- * OpenRouter and TypeSafe's own API; Perplexity, Cloudflare and Liquid AI host
- * their own decision models; Kev and Rizzo Flow are local /v1/systemone
- * servers; `custom` points at any other /v1/systemone-compatible server.
+ * The decision-model routes the app can call. Several vendors publish more
+ * than one size or generation behind the same URL, and the difference is only
+ * the `model` in the body — but they are listed separately rather than folded
+ * into one option with a model picker, because picking the wrong one costs
+ * real money per call and a dropdown that names them is the safer surface.
  */
 export type DecisionEndpoint =
-  'openrouter' | 'direct' | 'perplexity' | 'liquid' | 'cloudflare' | 'kev' | 'rizzo' | 'custom'
+  | 'openrouter'
+  | 'direct'
+  | 'perplexity'
+  | 'perplexity-v12'
+  | 'perplexity-flash'
+  | 'liquid'
+  | 'liquid-ultra'
+  | 'cloudflare'
+  | 'cloudflare-flash'
+  | 'kev'
+  | 'rizzo'
+  | 'custom'
+
+export function isCloudflareEndpoint(endpoint: DecisionEndpoint): boolean {
+  return endpoint === 'cloudflare' || endpoint === 'cloudflare-flash'
+}
 
 /** home search options persisted in app-settings.json under `fileSearch` */
 export interface FileSearchSettings {
@@ -166,9 +192,9 @@ export interface FileSearchSettings {
   customBaseUrl: string
   /** `custom` endpoint only: model id the server expects */
   customModel: string
-  /** `cloudflare` endpoint only: Workers AI account id */
+  /** `cloudflare`/`cloudflare-flash` only: Workers AI account id */
   cloudflareAccountId: string
-  /** `cloudflare` endpoint only: Workers AI model path, e.g. @cf/cloudflare/clef or @cf/cloudflare/clef-omni */
+  /** `cloudflare`/`cloudflare-flash` only: Workers AI model path, e.g. @cf/cloudflare/clef */
   cloudflareModel: string
 }
 
@@ -364,6 +390,10 @@ export interface HomeApi {
   getAnalyticsEnabled(): Promise<boolean>
   /** persist an explicit analytics opt-in or opt-out */
   setAnalyticsEnabled(enabled: boolean): Promise<boolean>
+  /** name on comments and tracked changes; `value` is the stored override ('' = use `fallback`, the OS account) */
+  getAuthorName(): Promise<AuthorNameSetting>
+  /** persist; broadcasts 'app:author-name-changed' (the effective name) to all web contents */
+  setAuthorName(value: string): Promise<AuthorNameSetting>
   /** AI panel text size + chat-input spellcheck (persisted in userData/app-settings.json) */
   getAiPanelPrefs(): Promise<AiPanelPrefs>
   /** merge + persist; broadcasts 'app:ai-panel-prefs-changed' to all web contents */
@@ -685,6 +715,8 @@ export const HOME_CHANNELS = {
   openMcpLogFile: 'home:open-mcp-log-file',
   getAnalyticsEnabled: 'home:get-analytics-enabled',
   setAnalyticsEnabled: 'home:set-analytics-enabled',
+  getAuthorName: 'home:get-author-name',
+  setAuthorName: 'home:set-author-name',
   getAiPanelPrefs: 'home:get-ai-panel-prefs',
   setAiPanelPrefs: 'home:set-ai-panel-prefs',
   getDefaultSaveDir: 'home:get-default-save-dir',

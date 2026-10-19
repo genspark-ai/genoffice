@@ -329,9 +329,41 @@ function hasWideChar(text: string): boolean {
 const LATIN_WORD_RE = /^[\u0020-\u024f\u1e00-\u1eff\u2000-\u206f\u20a0-\u20cf\u2100-\u214f]+$/
 const HALFWIDTH_KANA_RE = /[\uff61-\uff9f]/
 
+/** PowerPoint small caps: lowercase letters set as capitals at 80% of the run size (probe: Calibri/Arial, 16/40pt). */
+const SMALL_CAP_SCALE = 0.8
+function expandSmallCaps(runs: Paragraph['runs']): Array<{ run: TextRun; srcRun: number }> {
+  const out: Array<{ run: TextRun; srcRun: number }> = []
+  runs.forEach((run, srcRun) => {
+    if (run.cap !== 'small' || run.fontSize == null || !run.text) {
+      out.push({ run, srcRun })
+      return
+    }
+    let seg = ''
+    let segLower: boolean | undefined
+    const flush = () => {
+      if (!seg) return
+      out.push({
+        run: segLower
+          ? { ...run, text: seg, fontSize: run.fontSize! * SMALL_CAP_SCALE }
+          : { ...run, text: seg },
+        srcRun,
+      })
+      seg = ''
+    }
+    for (const ch of run.text) {
+      const lower = ch !== ch.toUpperCase() && [...ch.toUpperCase()].length === 1
+      if (segLower !== undefined && lower !== segLower) flush()
+      segLower = lower
+      seg += ch
+    }
+    flush()
+  })
+  return out
+}
+
 function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Token[] {
   const tokens: Token[] = []
-  p.runs.forEach((run, srcRun) => {
+  expandSmallCaps(p.runs).forEach(({ run, srcRun }) => {
     const style = runStyle(run, scale, fontScale)
     // Latin characters of a CJK-bucket run draw with the run's a:latin face (PowerPoint):
     // the script hint stays with the CJK glyphs, Latin substitutes as western

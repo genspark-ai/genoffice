@@ -93,8 +93,10 @@ describe('Ribbon source mode', () => {
     // 14 block-formatting controls, plus this PR's withhold toggle, plus the
     // markdown-only source-view toggle (absent for a .txt/.json, which has no
     // use for it), plus the image-host button, which is not a formatting
-    // control and so renders in either mode, plus the paper-theme picker.
-    expect(markdown.iconButtons).toBe(18)
+    // control and so renders in either mode, plus the paper-theme picker and
+    // the backlinks and graph buttons, which are markdown-only views like the
+    // source-view toggle.
+    expect(markdown.iconButtons).toBe(20)
     // source mode keeps exactly two: the spellcheck toggle (the withhold
     // toggle gates the block editor's marks, which source mode does not carry)
     // and the paper-theme picker, disabled there (source text sits outside
@@ -149,9 +151,9 @@ describe('Ribbon source mode', () => {
   it('shows the formatting controls again for a markdown file', () => {
     const { styleDropdown, iconButtons } = counts(renderRibbon(false))
     expect(styleDropdown).toBe(1)
-    // 18 here too: the source-view toggle is present here and absent above,
-    // the withhold toggle, the image-host button and the paper-theme picker
-    // are present in both
-    expect(iconButtons).toBe(18)
+    // 20 here too: the source-view toggle is present here and absent above,
+    // the withhold toggle, the image-host button, the paper-theme picker and
+    // the backlinks and graph buttons are present in both
+    expect(iconButtons).toBe(20)
   })
 })

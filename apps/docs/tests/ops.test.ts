@@ -486,6 +486,20 @@ describe('envelope validation', () => {
     expect(outcome.error).toContain('usage: { op: "setFont"')
   })
 
+  it('scope "document" is a whole-document target', () => {
+    const editor = createEditor(fixtureDoc())
+    const outcome = executeOps(editor, [
+      { op: 'setFont', target: { scope: 'document' }, bold: true },
+    ])
+    expect(outcome.ok, outcome.error).toBe(true)
+    let plain = 0
+    editor.state.doc.descendants((n) => {
+      if (n.isText && n.text?.trim() && !n.marks.some((m) => m.type.name === 'bold')) plain++
+      return true
+    })
+    expect(plain).toBe(0)
+  })
+
   it('empty target rejects', () => {
     const editor = createEditor(fixtureDoc())
     const outcome = executeOps(editor, [{ op: 'deleteBlocks', target: {} }])

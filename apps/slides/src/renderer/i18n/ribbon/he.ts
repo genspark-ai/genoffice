@@ -372,6 +372,11 @@ export const he = {
   ribbonRehearseTip:
     'חזרה על תזמונים: הפעלת ההצגה מההתחלה ורישום הזמן לכל שקופית; שמירה כתזמוני התקדמות אוטומטית (נשמר ב-pptx)',
   ribbonRecord: 'הקלטה',
+  ribbonRecordTip: 'הקלטת קריינות: הפעלת המצגת והקלטת הקול שלך והתזמון של כל שקופית',
+  ribbonRecordFromBeginning: 'הקלט מההתחלה',
+  ribbonRecordFromCurrent: 'הקלט מהשקופית הנוכחית',
+  ribbonClearNarrationCurrent: 'נקה קריינות בשקופית הנוכחית',
+  ribbonClearNarrationAll: 'נקה קריינות בכל השקופיות',
   ribbonGroupProofing: 'הגהה',
   ribbonSpellCheck: 'בדיקת איות',
   ribbonSpellCheckTip: 'ה-AI בודק כל שקופית לאיתור שגיאות כתיב, דקדוק ופיסוק ומתקן אותן ישירות',

@@ -495,7 +495,7 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       '{op:"set_cell",sheetId,address,value} | {op:"set_formula",sheetId,address,formula(starts with =)} | ' +
       '{op:"clear_cell",sheetId,address} | {op:"rename_sheet",sheetId,name}. ' +
       'Field definitions for the remaining operations live in the guides — load_guide before using them: ' +
-      'writing(set_range/fill_range/copy_range/convert_to_values/clear_range/find_replace) | formatting(format_range) | ' +
+      'writing(set_range/fill_range/copy_range/move_range/convert_to_values/clear_range/find_replace) | formatting(format_range) | ' +
       'layout(sort_range/merge_cells/unmerge_cells/set_row_height/set_col_width/set_rows_hidden/set_cols_hidden/set_freeze/set_page_setup) | ' +
       'structure(insert_rows/delete_rows/insert_cols/delete_cols/add_sheet/delete_sheet/' +
       'duplicate_sheet/set_sheet_hidden/move_sheet/protect_sheet) | ' +
@@ -505,9 +505,9 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       'data(set_hyperlink/set_filter/clear_filter/set_filter_criteria/add_conditional_format/' +
       'clear_conditional_formats/set_data_validation/set_note/add_defined_name/delete_defined_name). ' +
       'Limits: structural operations (row/column insert-delete, sheet add/delete/duplicate/move/hide) cannot share a batch with other classes; at most 2000 expanded cell changes — ' +
-      'except the range-level bulk ops fill_range / copy_range / convert_to_values / clear_range / find_replace / sort_range / format_range, which handle up to 200,000 cells in one op ' +
+      'except the range-level bulk ops fill_range / copy_range / move_range / convert_to_values / clear_range / find_replace / sort_range / format_range, which handle up to 200,000 cells in one op ' +
       '(use fill_range to fill a formula or pattern down a whole column instead of huge set_range batches, ' +
-      'copy_range to duplicate a large block once, convert_to_values to freeze formulas into their computed values); ' +
+      'copy_range to duplicate a large block once, move_range to move/cut a block — also to another sheet — instead of re-typing it cell by cell, convert_to_values to freeze formulas into their computed values); ' +
       'sheetId must be an id returned by get_workbook_context.',
     inputSchema: {
       type: 'object',
@@ -1309,11 +1309,11 @@ export function executeWorkbookTool(
         const formulaCells: { sheetId: string; address: string }[] = outcome.plan.cellChanges
           .filter((c) => c.after.formula)
           .map((c) => ({ sheetId: c.sheetId, address: c.address }))
-        // fill_range / copy_range apply as range-level bulk writes (no
+        // fill_range / copy_range / move_range apply as range-level bulk writes (no
         // per-cell plan entries), so read back each target's corners to
         // confirm the write actually landed and its shifted formulas compute.
         for (const op of operations) {
-          if (op.op !== 'fill_range' && op.op !== 'copy_range') continue
+          if (op.op !== 'fill_range' && op.op !== 'copy_range' && op.op !== 'move_range') continue
           const bounds = op.op === 'fill_range' ? parseRange(op.target) : copyTargetBounds(op)
           const first = formatAddress(bounds.startRow, bounds.startColumn)
           formulaCells.push({ sheetId: op.sheetId, address: first })

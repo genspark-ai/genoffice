@@ -124,3 +124,42 @@ describe('leadLeakCss short rows', () => {
     expect(trs[2].dataset.pvLead).toBe('0')
   })
 })
+
+describe('leadLeakCss hanging page-anchored floats', () => {
+  const pages = [slice(0, 739), slice(739, 1500), slice(1500, 2000)]
+
+  it('hides a float hanging above its page start on the page before', () => {
+    const table = block(9, 760, 300, { floated: true, pageRelVyPx: 0, pageRelVAnchor: 'page' })
+    table.el!.dataset.tblpDy = '-80'
+    const empty = block(8, 739, 21, { emptyPara: true })
+    const body = block(3, 600, 100)
+    expect(hidden(leadLeakCss([body, empty, table], pages))).toEqual([
+      [0, 8],
+      [0, 9],
+    ])
+  })
+
+  it('hides the previous page blocks closing inside an opened lift band', () => {
+    const lifted = [slice(0, 739), slice(739, 1500, { liftTop: 60 }), slice(1500, 2000)]
+    const earlier = block(6, 600, 70)
+    const tail = block(7, 700, 39)
+    const opener = block(8, 739, 21)
+    expect(hidden(leadLeakCss([earlier, tail, opener], lifted))).toEqual([
+      [0, 8],
+      [1, 7],
+    ])
+  })
+
+  it('hides a previous-page float closing in the band, keeps lifted tables and pinned carriers', () => {
+    const lifted = [slice(0, 739), slice(739, 1500, { liftTop: 60 }), slice(1500, 2000)]
+    const hangingTable = block(5, 690, 49, { liftPx: 60, floatTable: true })
+    const carrier = block(6, 700, 39)
+    carrier.el!.dataset.pinPage = '1'
+    const tail = block(7, 700, 39)
+    const picturePara = block(4, 710, 29, { floated: true })
+    expect(hidden(leadLeakCss([picturePara, hangingTable, carrier, tail], lifted))).toEqual([
+      [1, 4],
+      [1, 7],
+    ])
+  })
+})

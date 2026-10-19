@@ -188,6 +188,16 @@ describe('createKnowledgeBaseSkill', () => {
 })
 
 describe('createKnowledgeBaseSkill with no starred files', () => {
+  it('an empty corpus mounts no tools and no prompt section; starring brings them back', () => {
+    let files = [] as typeof CORPUS
+    const skill = createKnowledgeBaseSkill({ ...makeDeps(), listFiles: () => files })
+    expect(skill.tools).toEqual([])
+    expect(skill.systemPrompt).toBe('')
+    files = CORPUS
+    expect(skill.tools.map((t) => t.name)).toEqual(['read_knowledge_file', 'search_knowledge_base'])
+    expect(skill.systemPrompt).toContain('## Knowledge base')
+  })
+
   it('answers both tools without calling the backend', async () => {
     const deps = makeDeps()
     const skill = createKnowledgeBaseSkill({ ...deps, listFiles: () => [] })

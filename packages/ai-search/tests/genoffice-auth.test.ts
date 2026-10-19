@@ -29,6 +29,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'genoffice-auth-'))
   process.env.GENOFFICE_AUTH_DIR = dir
   delete process.env.GSK_API_KEY
+  delete process.env.GENOFFICE_NATIVE_WAF
   resetGenofficeAuthCache()
 })
 
@@ -37,6 +38,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
   delete process.env.GENOFFICE_AUTH_DIR
   delete process.env.GSK_API_KEY
+  delete process.env.GENOFFICE_NATIVE_WAF
   setGskProxyUrl('')
   resetGenofficeAuthCache()
 })
@@ -68,11 +70,15 @@ function stubFlow(
     deviceCode?: Record<string, unknown>
     /** keep answering "pending", so only the expiry can end the flow */
     alwaysPending?: boolean
+    nativePass?: string
   } = {},
 ) {
   let tokenPolls = 0
   const fetchMock = vi.fn(async (input: string | URL, _init?: RequestInit) => {
     const url = String(input)
+    if (url.endsWith('/api/native-waf/pass') && opts.nativePass) {
+      return Response.json({ data: { token: opts.nativePass } })
+    }
     if (url.includes('/office_addin_auth/device_code')) {
       return jsonResponse({ ...deviceCodeOk, ...opts.deviceCode })
     }
@@ -114,6 +120,22 @@ async function loginAndCollect(): Promise<GskLoginProgress[]> {
 }
 
 describe('startGenofficeLogin', () => {
+  it('opt-in signs the cookie mint only and preserves Bearer session exchange', async () => {
+    process.env.GENOFFICE_NATIVE_WAF = '1'
+    const token = `${Math.floor(Date.now() / 1000)}-${'a'.repeat(43)}`
+    const fetchMock = stubFlow({ nativePass: token, pendingPolls: 0 })
+    const events = await loginAndCollect()
+    expect(events.at(-1)?.phase).toBe('success')
+    const calls = fetchMock.mock.calls
+    const mint = calls.find(([u]) => String(u).includes('/api_tokens/create'))!
+    expect(new Headers(mint[1]?.headers).get('X-Genspark-Native-Pass')).toBe(token)
+    expect(new Headers(mint[1]?.headers).get('Cookie')).toBe('session_id=sess-abc')
+    expect(mint[1]?.redirect).toBe('manual')
+    const session = calls.find(([u]) => String(u).includes('/office_addin_auth/session'))!
+    expect(new Headers(session[1]?.headers).get('Authorization')).toBe('Bearer bearer-token')
+    expect(new Headers(session[1]?.headers).has('X-Genspark-Native-Pass')).toBe(false)
+    expect(calls.filter(([u]) => String(u).endsWith('/api/native-waf/pass'))).toHaveLength(1)
+  })
   it('runs device_code → poll → session → key create and stores the key', async () => {
     const fetchMock = stubFlow({ pendingPolls: 2 })
     const events = await loginAndCollect()

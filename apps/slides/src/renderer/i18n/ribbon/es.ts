@@ -397,6 +397,12 @@ export const es = {
   ribbonRehearseTip:
     'Ensayar intervalos: reproducir la presentación desde el principio y registrar el tiempo por diapositiva; guardar como intervalos de avance automático (guardado en pptx)',
   ribbonRecord: 'Grabar',
+  ribbonRecordTip:
+    'Grabar narración: reproducir la presentación y grabar su voz y el tiempo de cada diapositiva',
+  ribbonRecordFromBeginning: 'Grabar desde el principio',
+  ribbonRecordFromCurrent: 'Grabar desde la diapositiva actual',
+  ribbonClearNarrationCurrent: 'Borrar la narración de la diapositiva actual',
+  ribbonClearNarrationAll: 'Borrar la narración de todas las diapositivas',
   ribbonGroupProofing: 'Revisión',
   ribbonSpellCheck: 'Ortografía',
   ribbonSpellCheckTip:

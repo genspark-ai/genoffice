@@ -17,6 +17,26 @@ export {
   type ParseExtras,
   type ParseOptions,
 } from './parse'
+export {
+  compareOperands,
+  conditionHolds,
+  controlEffect,
+  ifBranch,
+  mergeBlockTree,
+  mergeDataFromRows,
+  mergeFieldName,
+  mergeFieldSwitches,
+  mergeFieldText,
+  mergeRecords,
+  placeholderText,
+  splitInstruction,
+  valueOf,
+  type ControlEffect,
+  type MergeCursorState,
+  type MergeData,
+  type MergeFieldSwitches,
+  type MergeRecord,
+} from './mail-merge'
 export { assertZipInflatesWithinLimits, assertZipWithinLimits, DOCX_ZIP_LIMITS } from './zip-load'
 export { LAZY_MEDIA_SCHEME, isLazyMediaPart, lazyMediaUrl, parseLazyMediaUrl } from './lazy-media'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
@@ -53,6 +73,9 @@ export {
   mergePPrFormat,
   setPPrChange,
   stripPPrChange,
+  stripParaMarkRevision,
+  paraMarkColor,
+  stripParaMarkColor,
   patchFieldParagraphXml,
   patchImageParagraphXml,
   patchMathTokens,
@@ -73,6 +96,9 @@ export {
   type ImagePatch,
   type TextboxParaPatch,
   type TextboxParasPatchSet,
+  inlinePictureDrawingXml,
+  NEW_PICTURE_TOKEN_PREFIX,
+  type InlinePictureXmlOptions,
   type TableGenOptions,
   type TocEntry,
 } from './generate'
@@ -186,3 +212,11 @@ export {
 } from './list-markers'
 
 export { previewFontSettings } from './font-settings'
+export {
+  applyTrackedChangesXml,
+  countTrackedChangesXml,
+  type RevisionXmlFilter,
+  type RevisionXmlMode,
+  type RevisionXmlResult,
+  type RevisionXmlType,
+} from './revision-xml'
