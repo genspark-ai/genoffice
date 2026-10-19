@@ -248,6 +248,7 @@ export const de = {
   ribbonTableColsLabel: 'Spaltenanzahl',
   ribbonTableRowsLabel: 'Zeilenanzahl',
   ribbonTableHandleTip: 'Tabelle auswählen; zum Verschieben ziehen',
+  ribbonTableResizeTip: 'Ziehen, um die Tabellengröße zu ändern',
   ribbonTableDeleteMenu: 'Löschen',
   ribbonSelectRow: 'Zeile auswählen',
   ribbonSelectColumn: 'Spalte auswählen',

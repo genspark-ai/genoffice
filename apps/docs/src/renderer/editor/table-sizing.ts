@@ -136,8 +136,13 @@ function writeGridWidths(
     }
   }
   const total = widths.reduce((sum, width) => sum + width, 0)
+  // Word turns an AutoFit table into a fixed grid the moment a border is
+  // dragged; leaving 'window' would keep rendering it at the full content width
+  const autoFit =
+    table.attrs.tblAutoFit === 'fixed' ? {} : { tblAutoFit: 'fixed', tblAutoFitEdited: true }
   tr = tr.setNodeMarkup(tableStart - 1, undefined, {
     ...table.attrs,
+    ...autoFit,
     widthPx: total,
     widthPct: null,
     colWidthsPct: widths.map((width) => (width / total) * 100),

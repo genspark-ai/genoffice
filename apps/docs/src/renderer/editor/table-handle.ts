@@ -1,13 +1,17 @@
 import { Extension } from '@tiptap/core'
 import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { TableMap } from '@tiptap/pm/tables'
 import { t } from '../i18n/locale'
+import { paintPreview, restorePreview, scaleTableGrid, startPreview } from './table-column-drag'
+import { setTableGridAtCell, tableGridAtCell } from './table-sizing'
 
 /**
  * Word-style table move handle: a small ⣿-cross button floating at the top-left
  * corner of the hovered table. Clicking it selects the whole table (NodeSelection);
  * dragging it hands the table to ProseMirror's native drag machinery, so dropping
- * repositions the table in the document.
+ * repositions the table in the document. A second handle at the bottom-right
+ * corner scales the whole column grid, like Word's table resize handle.
  */
 export const TableHandle = Extension.create({
   name: 'tableHandle',
@@ -54,12 +58,22 @@ const MOVE_SVG =
   '<path d="M8 1v14M1 8h14M8 1 6 3M8 1l2 2M8 15l-2-2M8 15l2-2M1 8l2-2M1 8l2 2M15 8l-2-2M15 8l-2 2"/>' +
   '</svg>'
 
+const RESIZE_SVG =
+  '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M2 14 14 2M14 7v7H7"/></svg>'
+
+function sectionContentWidth(view: EditorView, fallback: number): number {
+  const width = Number.parseFloat(
+    getComputedStyle(view.dom).getPropertyValue('--section-content-w'),
+  )
+  return Number.isFinite(width) && width > 0 ? width : fallback
+}
+
 function tableHandlePlugin(): Plugin {
   return new Plugin({
     key: new PluginKey('tableHandle'),
     view(view) {
-      const container = view.dom.parentElement
-
       const handle = document.createElement('button')
       handle.type = 'button'
       handle.className = 'doc-table-handle'
@@ -70,10 +84,26 @@ function tableHandlePlugin(): Plugin {
       handle.setAttribute('aria-label', t('ribbonTableHandleTip'))
       handle.setAttribute('contenteditable', 'false')
 
-      if (container) {
-        container.style.position ||= 'relative'
-        container.append(handle)
+      const resizer = document.createElement('button')
+      resizer.type = 'button'
+      resizer.className = 'doc-table-resize'
+      resizer.style.display = 'none'
+      resizer.innerHTML = RESIZE_SVG
+      resizer.title = t('ribbonTableResizeTip')
+      resizer.setAttribute('aria-label', t('ribbonTableResizeTip'))
+      resizer.setAttribute('contenteditable', 'false')
+
+      // tiptap mounts the view into a temporary element and React later moves its
+      // children (these buttons included) under the real one, so the host is
+      // re-resolved on every placement instead of captured once
+      const host = (): HTMLElement | null => {
+        const parent = view.dom.parentElement
+        if (!parent) return null
+        parent.style.position ||= 'relative'
+        if (handle.parentElement !== parent) parent.append(handle, resizer)
+        return parent
       }
+      host()
 
       let tablePos: number | null = null
       let suppressClick = false
@@ -81,10 +111,12 @@ function tableHandlePlugin(): Plugin {
 
       const hideHandle = () => {
         handle.style.display = 'none'
+        resizer.style.display = 'none'
         tablePos = null
       }
 
       const placeHandle = (pos: number) => {
+        const container = host()
         if (!container) return
         const dom = view.nodeDOM(pos)
         if (!(dom instanceof HTMLElement)) return hideHandle()
@@ -98,6 +130,18 @@ function tableHandlePlugin(): Plugin {
         handle.style.display = 'flex'
         handle.style.top = `${(tableRect.top - containerRect.top) / scale + container.scrollTop - 18}px`
         handle.style.left = `${(tableRect.left - containerRect.left) / scale - 18}px`
+        placeResizer(dom)
+      }
+
+      const placeResizer = (dom: HTMLElement) => {
+        const container = host()
+        if (!container) return
+        const tableRect = dom.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        const scale = container.offsetWidth ? containerRect.width / container.offsetWidth : 1
+        resizer.style.display = 'flex'
+        resizer.style.top = `${(tableRect.bottom - containerRect.top) / scale + container.scrollTop + 2}px`
+        resizer.style.left = `${(tableRect.right - containerRect.left) / scale + 2}px`
       }
 
       const onMouseMove = (event: MouseEvent) => {
@@ -213,6 +257,78 @@ function tableHandlePlugin(): Plugin {
         window.addEventListener('mouseup', onUp)
       }
 
+      // Word's corner handle: the pointer's horizontal travel scales every
+      // column by the same factor; the preview paints the grid the commit will
+      // render, so what the user sees while dragging is the result.
+      const onResizeDown = (event: MouseEvent) => {
+        if (event.button !== 0 || tablePos === null || !view.editable) return
+        const node = view.state.doc.nodeAt(tablePos)
+        if (!node || node.type.name !== 'docTable') return
+        const tableStart = tablePos + 1
+        const cellPos = tableStart + TableMap.get(node).map[0]
+        const table = view.nodeDOM(tablePos)
+        if (!(table instanceof HTMLTableElement)) return
+        const maxWidth = sectionContentWidth(view, table.parentElement?.clientWidth || 624)
+        const grid = tableGridAtCell(view.state, cellPos, maxWidth)
+        if (!grid) return
+        const preview = startPreview(table, grid.widths.length)
+        if (!preview) return
+        event.preventDefault()
+        event.stopPropagation()
+        cancelHide()
+
+        const start = grid.widths
+        const startTotal = start.reduce((sum, width) => sum + width, 0)
+        const rect = table.getBoundingClientRect()
+        const screenPerModel = rect.width > 0 ? rect.width / startTotal : 1
+        const cssPerModel = table.offsetWidth > 0 ? table.offsetWidth / startTotal : 1
+        // the handle sits on the visual right edge whatever the text direction
+        const startX = event.clientX
+        const widthsAt = (clientX: number) =>
+          scaleTableGrid(start, (clientX - startX) / screenPerModel, maxWidth)
+        const paint = (widths: number[]) => {
+          const total = widths.reduce((sum, width) => sum + width, 0)
+          paintPreview(preview, widths, total * cssPerModel)
+          placeResizer(table)
+        }
+        const cleanup = () => {
+          window.removeEventListener('mousemove', onMove)
+          window.removeEventListener('mouseup', onUp)
+          window.removeEventListener('keydown', onKey, true)
+          stopFloatDrag = null
+        }
+        const onMove = (e: MouseEvent) => {
+          if (e.buttons === 0) return onUp(e)
+          paint(widthsAt(e.clientX))
+        }
+        const onUp = (e: MouseEvent) => {
+          cleanup()
+          const widths = widthsAt(e.clientX)
+          const changed = widths.some((width, index) => Math.abs(width - start[index]) > 0.01)
+          if (!changed || !setTableGridAtCell(cellPos, widths)(view.state, view.dispatch)) {
+            restorePreview(preview)
+          }
+          hideHandle()
+        }
+        const onKey = (e: KeyboardEvent) => {
+          if (e.key !== 'Escape') return
+          e.preventDefault()
+          e.stopPropagation()
+          cleanup()
+          restorePreview(preview)
+          hideHandle()
+        }
+        stopFloatDrag?.()
+        stopFloatDrag = () => {
+          cleanup()
+          restorePreview(preview)
+        }
+        paint(start)
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
+        window.addEventListener('keydown', onKey, true)
+      }
+
       // the handle floats outside the table's corner, so reaching it always
       // leaves the table box first — hide on a grace period, not instantly
       let hideTimer: number | null = null
@@ -240,6 +356,10 @@ function tableHandlePlugin(): Plugin {
       handle.addEventListener('mousedown', onMouseDown)
       handle.addEventListener('click', onClick)
       handle.addEventListener('dragstart', onDragStart)
+      resizer.addEventListener('mousemove', (e) => e.stopPropagation())
+      resizer.addEventListener('mouseenter', cancelHide)
+      resizer.addEventListener('mouseleave', scheduleHide)
+      resizer.addEventListener('mousedown', onResizeDown)
       document.addEventListener('scroll', onScroll, true)
 
       return {
@@ -254,6 +374,7 @@ function tableHandlePlugin(): Plugin {
           view.dom.removeEventListener('mouseleave', scheduleHide)
           document.removeEventListener('scroll', onScroll, true)
           handle.remove()
+          resizer.remove()
         },
       }
     },

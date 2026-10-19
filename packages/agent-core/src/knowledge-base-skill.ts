@@ -119,27 +119,32 @@ export function createKnowledgeBaseSkill(deps: KnowledgeBaseDeps): AgentSkill {
       required: ['index'],
     },
   }
+  const searchTool: AgentToolDef = {
+    name: 'search_knowledge_base',
+    description:
+      'Full-text search over the knowledge base (the user’s starred files), for requests that refer to those files; not for writing or formatting from the request alone. ' +
+      'Returns the matching files with a snippet around the first hit. Literal-word matching: ' +
+      'retry with synonyms or the other language when it returns nothing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'search words' },
+        limit: { type: 'integer', description: 'max results, default 8, at most 20' },
+      },
+      required: ['query'],
+    },
+  }
+  const empty = () => deps.listFiles().length === 0
   return {
     id: 'knowledge-base',
-    systemPrompt: KB_SYSTEM_PROMPT,
-    tools: [
-      readTool,
-      {
-        name: 'search_knowledge_base',
-        description:
-          'Full-text search over the knowledge base (the user’s starred files), for requests that refer to those files; not for writing or formatting from the request alone. ' +
-          'Returns the matching files with a snippet around the first hit. Literal-word matching: ' +
-          'retry with synonyms or the other language when it returns nothing.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'search words' },
-            limit: { type: 'integer', description: 'max results, default 8, at most 20' },
-          },
-          required: ['query'],
-        },
-      },
-    ],
+    // nothing starred: no prompt section and no tools, so a model that searches
+    // on reflex (BYOK/local endpoints did, repeatedly) has nothing to call
+    get systemPrompt() {
+      return empty() ? '' : KB_SYSTEM_PROMPT
+    },
+    get tools() {
+      return empty() ? [] : [readTool, searchTool]
+    },
     buildContext: () => {
       const files = deps.listFiles()
       if (files.length === 0) return ''

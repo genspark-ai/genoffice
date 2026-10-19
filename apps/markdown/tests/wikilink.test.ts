@@ -9,6 +9,7 @@ import { Editor } from '@tiptap/core'
 import { buildExtensions } from '../src/renderer/editor/extensions'
 import {
   collectWikiTargets,
+  wikiTargetOf,
   wikilinkStart,
   wikiFragmentPosition,
 } from '../src/renderer/editor/wikilink'
@@ -100,6 +101,11 @@ function clickWikiLink(editor: Editor, raw: string, modifier = true): boolean {
 }
 
 describe('syntax', () => {
+  it('wikiTargetOf drops the alias or width hint from a link and from an embed inner', () => {
+    expect(wikiTargetOf('[[Note|shown]]')).toBe('Note')
+    expect(wikiTargetOf('img.png|200')).toBe('img.png')
+    expect(wikiTargetOf('Note#Heading')).toBe('Note#Heading')
+  })
   it('wikilinkStart points at the first unescaped [[', () => {
     expect(wikilinkStart('a [[Note]] b')).toBe(2)
     expect(wikilinkStart('no brackets here')).toBe(-1)

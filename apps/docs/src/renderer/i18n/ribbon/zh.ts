@@ -254,6 +254,7 @@ export const zh = {
   ribbonTableColsLabel: '列数',
   ribbonTableRowsLabel: '行数',
   ribbonTableHandleTip: '选择表格;拖动可移动表格',
+  ribbonTableResizeTip: '拖动可缩放表格',
   ribbonTableDeleteMenu: '删除',
   ribbonSelectRow: '选择行',
   ribbonSelectColumn: '选择列',

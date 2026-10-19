@@ -127,12 +127,11 @@ describe('anti hand-building from scratch', () => {
     expect(r.isError).toBeUndefined()
     expect((window as any).slidesApi.applyTxn).toHaveBeenCalledOnce()
   })
-  it('after cloud generation has run, allowed even with an empty deck (tweak scenario)', async () => {
+  it('after deck generation has run, allowed even with an empty deck (tweak scenario)', async () => {
     const access = {
       ...mkAccess([blankDeck]),
       retryBackoffMs: 0,
-      isCloudPageGenEnabled: async () => true,
-      generatePageCloud: async () => ({ ok: true, marker: 'cloudpptx:/tmp/x.pptx' }),
+      generatePageLocal: async () => ({ ok: true, marker: 'genpptx:/tmp/x.pptx' }),
     } as unknown as DeckAccess
     const skill = createSlidesSkill(access)
     // First run one generate_deck to set htmlGenerated=true

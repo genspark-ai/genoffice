@@ -37,6 +37,8 @@ export const pl = {
     'Problem z siecią: nie można połączyć się z usługą AI. Sprawdź połączenie i spróbuj ponownie',
   aiNewChat: 'Nowy czat',
   aiNoReply: '(brak odpowiedzi)',
+  aiRegionError:
+    'Dostawca tego modelu nie obsługuje Twojego obecnego regionu — wybierz inny model lub zmień sieć',
   aiOverloadedError: 'Usługa AI jest obecnie przeciążona — spróbuj ponownie za chwilę',
   aiRegenerateTitle: 'Wygeneruj ponownie',
   aiRetry: 'Ponów',

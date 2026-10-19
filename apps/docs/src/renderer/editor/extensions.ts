@@ -177,6 +177,7 @@ import {
 import { inlineMathML } from './equation'
 import { constrainTableWidthAtCell } from './table-sizing'
 import { tableColumnDrag } from './table-column-drag'
+import { tableRowDrag } from './table-row-drag'
 import { PERSISTABLE_IMAGE_URL } from './persistable-image'
 
 /**
@@ -348,6 +349,8 @@ const anchorAttrs = {
   pPrChange: { default: null as string | null },
   /** JSON {author,date?,id?} when the paragraph mark is a tracked deletion (w:pPr/w:rPr/w:del) */
   paraMarkDel: { default: null as string | null },
+  /** JSON {author,date?,id?} when the paragraph mark is a tracked insertion (w:pPr/w:rPr/w:ins) */
+  paraMarkIns: { default: null as string | null },
   /** top-level insertion/deletion revision ({kind,author,date?}) */
   blockRevision: { default: null as Record<string, string> | null },
   /** JSON marks snapshot for an empty block's caret (Word's pilcrow
@@ -4198,6 +4201,7 @@ export const NativeTableSupport = Extension.create({
         },
       }),
       tableColumnDrag(),
+      tableRowDrag(),
       columnResizing({ View: null, cellMinWidth: 40, lastColumnResizable: true }),
       tableEditing({ allowTableNodeSelection: true }),
       // Word never ends a body with a table: without a paragraph below it the

@@ -245,6 +245,7 @@ export const vi = {
   ribbonTableColsLabel: 'Số cột',
   ribbonTableRowsLabel: 'Số hàng',
   ribbonTableHandleTip: 'Chọn bảng; kéo để di chuyển bảng',
+  ribbonTableResizeTip: 'Kéo để thay đổi kích thước bảng',
   ribbonTableDeleteMenu: 'Xóa',
   ribbonSelectRow: 'Chọn hàng',
   ribbonSelectColumn: 'Chọn cột',

@@ -245,6 +245,7 @@ export const he = {
   ribbonTableColsLabel: 'מספר עמודות',
   ribbonTableRowsLabel: 'מספר שורות',
   ribbonTableHandleTip: 'בחר טבלה; גרור כדי להזיז אותה',
+  ribbonTableResizeTip: 'גרור כדי לשנות את גודל הטבלה',
   ribbonTableDeleteMenu: 'מחיקה',
   ribbonSelectRow: 'בחר שורה',
   ribbonSelectColumn: 'בחר עמודה',

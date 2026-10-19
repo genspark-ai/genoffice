@@ -105,7 +105,10 @@ function wikiSpans(doc: PmNode): WikiSpan[] {
 
 /** the file part of a link as written: `[[Note|Alias]]` -> `Note`, `[[Note#H]]` -> `Note#H` */
 export function wikiTargetOf(raw: string): string {
-  return WIKI_LINK_RE.exec(raw)?.[1]?.trim() ?? raw
+  // an embed's inner `Note#Heading|200` arrives without brackets; its hint is
+  // not part of the file name either
+  const inner = WIKI_LINK_RE.exec(raw)?.[1] ?? raw.split('|')[0]!
+  return inner.trim()
 }
 
 /** every distinct wiki link in the document as written, in document order */

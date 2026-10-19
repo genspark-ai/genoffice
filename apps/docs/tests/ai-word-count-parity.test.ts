@@ -59,7 +59,7 @@ describe('AI snapshot word count vs office_doc_info', () => {
   it('still agrees on ordinary prose with punctuation and CJK', () => {
     const editor = createEditor([
       para(text('Hello, world.')),
-      para(text('第二段文字')),
+      para(text('\u7B2C\u4E8C\u6BB5\u6587\u5B57')),
       para(text('Third block ends with Latin')),
     ])
     const infoWords = countWords(documentTextForWordCount(editor.state.doc))

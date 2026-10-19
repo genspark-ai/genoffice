@@ -249,6 +249,7 @@ export const nl = {
   ribbonTableColsLabel: 'Aantal kolommen',
   ribbonTableRowsLabel: 'Aantal rijen',
   ribbonTableHandleTip: 'Tabel selecteren; sleep om te verplaatsen',
+  ribbonTableResizeTip: 'Sleep om de tabel te vergroten of verkleinen',
   ribbonTableDeleteMenu: 'Verwijderen',
   ribbonSelectRow: 'Rij selecteren',
   ribbonSelectColumn: 'Kolom selecteren',

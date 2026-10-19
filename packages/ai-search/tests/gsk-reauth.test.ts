@@ -13,14 +13,12 @@ vi.mock('node:os', async (importOriginal) => {
 
 import {
   FRESH_AUTH_REQUIRED,
-  genofficeApiKey,
   resetGenofficeAuthCache,
   setGenofficeLoginOpener,
 } from '../src/genoffice-auth'
 import {
   GskAuthError,
   gskApiKey,
-  gskSlideGenerate,
   gskWebSearch,
   hasGskAuth,
   isGskUnauthorizedText,
@@ -80,7 +78,6 @@ function stubServer(create: () => Response) {
       const key = (init?.headers as Record<string, string>)['X-Api-Key']!
       toolKeys.push(key)
       if (key === 'gsk-expired') return response('{"detail":"invalid api key"}', 401)
-      if (url.endsWith('/slide_generate')) return ndjsonOk({ pptx_url: 'https://x/api/files/1' })
       return ndjsonOk({ download_url: 'https://93.184.216.34/deck.pptx' })
     }
     if (url.includes('/office_addin_auth/session')) {
@@ -92,7 +89,6 @@ function stubServer(create: () => Response) {
     }
     if (url.includes('/office_addin_auth/token')) return response({ status: 'pending' })
     if (url.includes('/api_tokens/revoke')) return response({ status: 0 })
-    if (url.endsWith('/deck.pptx')) return response('PK')
     throw new Error(`unexpected fetch: ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -106,46 +102,6 @@ describe('isGskUnauthorizedText', () => {
     expect(isGskUnauthorizedText('Claude HTTP 401: {"error":"invalid key"}')).toBe(true)
     expect(isGskUnauthorizedText('HTTP 4011')).toBe(false)
     expect(isGskUnauthorizedText('HTTP 403: forbidden')).toBe(false)
-  })
-})
-
-describe('tool_cli 401 recovery', () => {
-  it('drops the key, re-mints with the stored session and retries once', async () => {
-    const { toolKeys } = stubServer(() =>
-      response({ status: 0, data: { key_id: 'kid-2', token: 'gsk-new' } }),
-    )
-    const opener = vi.fn()
-    setGenofficeLoginOpener(opener)
-    await expect(gskSlideGenerate({ brief: 'x' })).resolves.toMatchObject({
-      bytes: expect.any(Uint8Array),
-    })
-    expect(toolKeys).toEqual(['gsk-expired', 'gsk-new', 'gsk-new'])
-    expect(genofficeApiKey()).toBe('gsk-new')
-    expect(opener).not.toHaveBeenCalled()
-  })
-
-  it('signs out and opens the device-code login once when the re-mint needs a fresh login', async () => {
-    const { toolKeys } = stubServer(() => response({ detail: FRESH_AUTH_REQUIRED }, 403))
-    const opener = vi.fn()
-    setGenofficeLoginOpener(opener)
-    await expect(gskSlideGenerate({ brief: 'x' })).rejects.toBeInstanceOf(GskAuthError)
-    // the expired key is not retried and ai:gsk-status now reports signed-out
-    expect(toolKeys).toEqual(['gsk-expired'])
-    expect(gskApiKey()).toBe('')
-    expect(hasGskAuth()).toBe(false)
-    await vi.waitFor(() => expect(opener).toHaveBeenCalledWith(AUTH_URL))
-    // with no key left, the next action fails fast instead of looping
-    await expect(gskSlideGenerate({ brief: 'x' })).rejects.toThrow(/Not logged in/)
-    expect(opener).toHaveBeenCalledTimes(1)
-  })
-
-  it('leaves non-401 failures alone', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => response('boom', 500)),
-    )
-    await expect(gskSlideGenerate({ brief: 'x' })).rejects.toThrow(/HTTP 500/)
-    expect(genofficeApiKey()).toBe('gsk-expired')
   })
 })
 

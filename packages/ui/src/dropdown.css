@@ -85,6 +85,42 @@
   box-shadow: var(--shadow-menu);
 }
 
+/* with a filter box the popover stops scrolling itself: the box stays put
+ * above an inner scroller, so it never rides out of view with the list */
+.gs-dd-pop.has-search {
+  overflow: hidden;
+}
+
+.gs-dd-list {
+  display: contents;
+}
+
+.gs-dd-pop.has-search .gs-dd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.gs-dd-search {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  margin: 0 0 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.gs-dd-search:focus {
+  border-color: var(--accent);
+}
+
 .gs-dd-item {
   display: flex;
   align-items: center;

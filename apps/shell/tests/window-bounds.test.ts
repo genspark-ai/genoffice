@@ -111,6 +111,13 @@ describe('isShellWindowVisible', () => {
     )
   })
 
+  it('accepts a window flush with the top, a few strip rows under the menu bar', () => {
+    const belowMenuBar = { ...primary, y: 25, height: primary.height - 25 }
+    expect(isShellWindowVisible({ x: 100, y: 0, width: 1200, height: 800 }, [belowMenuBar])).toBe(
+      true,
+    )
+  })
+
   it('rejects a window pushed off the top — the strip is not reachable', () => {
     expect(isShellWindowVisible({ x: 100, y: -800, width: 1200, height: 800 }, [primary])).toBe(
       false,

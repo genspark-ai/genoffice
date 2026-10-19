@@ -248,6 +248,7 @@ export const es = {
   ribbonTableColsLabel: 'Número de columnas',
   ribbonTableRowsLabel: 'Número de filas',
   ribbonTableHandleTip: 'Seleccionar la tabla; arrastre para moverla',
+  ribbonTableResizeTip: 'Arrastra para cambiar el tamaño de la tabla',
   ribbonTableDeleteMenu: 'Eliminar',
   ribbonSelectRow: 'Seleccionar fila',
   ribbonSelectColumn: 'Seleccionar columna',

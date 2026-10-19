@@ -734,6 +734,103 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
     expect(after.json().detail.revisions).toEqual([])
   })
 
+  it('accept_changes all: moves keep untouched text, paragraph marks merge, headers and footers are included (genoffice#2086)', async () => {
+    const { buildDocx } = await import(HELPERS)
+    const dir = tempDir()
+    const path = join(dir, 'tracked.docx')
+    const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
+    const R = (t: string) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
+    const DR = (t: string) => `<w:r><w:delText xml:space="preserve">${t}</w:delText></w:r>`
+    const hfPart = (tag: string, inner: string) =>
+      `${XML_DECL}<w:${tag} ${W_NS}><w:p>${inner}</w:p></w:${tag}>`
+    writeFileSync(
+      path,
+      await buildDocx({
+        bodyXml:
+          `<w:p>${R('P0 intro')}</w:p>` +
+          `<w:p>${R('P1 alpha ')}<w:moveFromRangeStart w:id="1" ${AT} w:name="m"/><w:moveFrom w:id="2" ${AT}>${DR('MOVED ')}</w:moveFrom><w:moveFromRangeEnd w:id="1"/>${R('beta')}</w:p>` +
+          `<w:p>${R('P2 gamma ')}<w:moveToRangeStart w:id="3" ${AT} w:name="m"/><w:moveTo w:id="4" ${AT}>${R('MOVED ')}</w:moveTo><w:moveToRangeEnd w:id="3"/>${R('delta')}</w:p>` +
+          `<w:p><w:pPr><w:rPr><w:del w:id="5" ${AT}/></w:rPr></w:pPr>${R('P3 joins ')}</w:p>` +
+          `<w:p><w:pPr><w:rPr><w:ins w:id="6" ${AT}/></w:rPr></w:pPr>${R('P4 tail')}</w:p>`,
+        extraParts: [
+          {
+            path: 'word/header1.xml',
+            xml: hfPart(
+              'hdr',
+              `${R('H ')}<w:ins w:id="7" ${AT}>${R('new')}</w:ins><w:del w:id="8" ${AT}>${DR(' old')}</w:del>`,
+            ),
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+          },
+          {
+            path: 'word/footer1.xml',
+            xml: hfPart(
+              'ftr',
+              `${R('F ')}<w:del w:id="9" ${AT}>${DR('dropped ')}</w:del>${R('end')}`,
+            ),
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml',
+          },
+        ],
+        extraRels:
+          '<Relationship Id="rId60" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' +
+          '<Relationship Id="rId61" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+        sectPrExtra:
+          '<w:headerReference w:type="default" r:id="rId60"/><w:footerReference w:type="default" r:id="rId61"/>',
+      }),
+    )
+    const listed = await run(['docs', 'read', path, '--revisions', '--json'])
+    const detail = listed.json().detail
+    expect(detail.revisions.map((r: Record<string, unknown>) => [r.id, r.type, r.text])).toEqual([
+      ['r1', 'move', 'MOVED'],
+      ['r2', 'move', 'MOVED'],
+      ['r3', 'deletion', 'P3 joins'],
+      ['r4', 'insertion', 'P4 tail'],
+    ])
+    expect(detail.revisionsElsewhere.count).toBe(3)
+
+    // ids address the body only; the message says what is left elsewhere
+    const opsFile = join(dir, 'ops.json')
+    writeFileSync(opsFile, JSON.stringify([{ op: 'accept_changes', ids: ['r1'] }]))
+    const partial = await run([
+      'docs',
+      'apply',
+      path,
+      '--ops',
+      opsFile,
+      '--out',
+      join(dir, 'partial.docx'),
+      '--json',
+    ])
+    expect(partial.code).toBe(0)
+    expect(partial.json().detail.results[0].output).toMatch(
+      /Accepted 1 tracked change\(s\) \(r1\)\. Still 3 pending.*and 3 in headers, footers and notes \(ids address the body/,
+    )
+
+    writeFileSync(opsFile, JSON.stringify([{ op: 'accept_changes', all: true }]))
+    const applied = await run(['docs', 'apply', path, '--ops', opsFile, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail.results[0].output).toBe(
+      'Accepted 4 tracked change(s) (r1, r2, r3, r4) and 3 in headers, footers and notes. No tracked changes remain.',
+    )
+    const zip = await JSZip.loadAsync(readFileSync(path))
+    const body = await zip.file('word/document.xml')!.async('string')
+    const texts = [...body.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map((m) =>
+      [...m[0].matchAll(/<w:t[^>]*>([^<]*)</g)].map((t) => t[1]).join(''),
+    )
+    expect(texts).toEqual(['P0 intro', 'P1 alpha beta', 'P2 gamma MOVED delta', 'P3 joins P4 tail'])
+    const header = await zip.file('word/header1.xml')!.async('string')
+    const footer = await zip.file('word/footer1.xml')!.async('string')
+    for (const xml of [body, header, footer])
+      expect(xml).not.toMatch(/<w:(?:ins|del|moveFrom|moveTo|delText)\b/)
+    expect(header).toContain('new')
+    expect(header).not.toContain('old')
+    expect(footer).not.toContain('dropped')
+    const after = await run(['docs', 'read', path, '--revisions', '--json'])
+    expect(after.json().detail.revisions).toEqual([])
+    expect(after.json().detail.revisionsElsewhere).toBeUndefined()
+  })
+
   it('replies to and resolves comment threads, saving comments.xml', async () => {
     const dir = tempDir()
     const path = await reviewFixture(dir)

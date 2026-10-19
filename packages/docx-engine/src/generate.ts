@@ -1834,6 +1834,44 @@ export function mergePPrFormat(
  * Used when the editor accepts or rejects a paragraph-property revision,
  * so the saved file no longer contains the pPrChange record.
  */
+/** hex color of the paragraph mark (pPr/rPr w:color), ignoring the pPrChange history */
+export function paraMarkColor(rawPPr: string): string | undefined {
+  const live = stripPPrChange(rawPPr)
+  const rPr = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(live)?.[1]
+  const color = rPr ? /<w:color\b[^>]*\bw:val="#?([^"]+)"/.exec(rPr)?.[1] : undefined
+  return color && color !== 'auto' ? color.toUpperCase() : undefined
+}
+
+/**
+ * Drop the paragraph mark's w:color (pPr/rPr). Word types new text at the end
+ * of a paragraph in the mark's formatting, so a mark left red after every red
+ * run was recolored would resurrect the red on the next keystroke.
+ */
+export function stripParaMarkColor(rawPPr: string): string {
+  const changeStart = rawPPr.indexOf('<w:pPrChange')
+  const live = changeStart === -1 ? rawPPr : rawPPr.slice(0, changeStart)
+  const tail = changeStart === -1 ? '' : rawPPr.slice(changeStart)
+  const stripped = live.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/, (_m, inner: string) => {
+    // self-closing or paired form
+    const rest = inner.replace(/<w:color\b[^>]*(?:\/>|>[\s\S]*?<\/w:color>)/, '')
+    return rest.trim() ? `<w:rPr>${rest}</w:rPr>` : ''
+  })
+  return stripped + tail
+}
+
+/** drop the paragraph mark's tracked w:del / w:ins record (pPr/rPr) once the revision is accepted or rejected */
+export function stripParaMarkRevision(rawPPr: string, kind: 'del' | 'ins'): string {
+  const changeStart = rawPPr.indexOf('<w:pPrChange')
+  const live = changeStart === -1 ? rawPPr : rawPPr.slice(0, changeStart)
+  const tail = changeStart === -1 ? '' : rawPPr.slice(changeStart)
+  const tags = kind === 'del' ? 'del|moveFrom' : 'ins|moveTo'
+  const stripped = live.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/, (_m, inner: string) => {
+    const rest = inner.replace(new RegExp(`<w:(?:${tags})\\b[^>]*/>`), '')
+    return rest.trim() ? `<w:rPr>${rest}</w:rPr>` : ''
+  })
+  return stripped + tail
+}
+
 export function stripPPrChange(rawPPr: string): string {
   // pPrChange nests a <w:pPr> inside it, so we need depth-aware removal.
   // Pattern: <w:pPrChange ...> ... </w:pPrChange>
