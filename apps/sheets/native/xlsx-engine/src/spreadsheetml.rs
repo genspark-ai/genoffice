@@ -27,6 +27,11 @@ use crate::xlsx_package::{
 /// default namespace and behind the conventional `ss:` prefix.
 const NAMESPACE: &str = "urn:schemas-microsoft-com:office:spreadsheet";
 
+/// Excel hangs workbook-level options off the worksheet in this namespace —
+/// notably the `Visible` element that says a sheet is hidden, because the
+/// SpreadsheetML schema gives `<Worksheet>` no attribute for it.
+const EXCEL_NAMESPACE: &str = "urn:schemas-microsoft-com:office:excel";
+
 const MAX_ROW: u32 = 1_048_576;
 const MAX_COLUMN: u32 = 16_384;
 
@@ -78,10 +83,10 @@ pub(crate) fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertRes
         let name = attribute(worksheet, "Name")
             .map(str::to_string)
             .unwrap_or_else(|| format!("Sheet{}", sheets.len() + 1));
-        let hidden = flag(worksheet, "Hidden");
+        let state = worksheet_state(worksheet);
         let parsed = parse_worksheet(worksheet);
         cells += parsed.cells;
-        sheets.push(SheetSpec { name, hidden });
+        sheets.push(SheetSpec { name, state });
         sheet_xmls.push(parsed.xml);
     }
     if sheets.is_empty() {
@@ -95,6 +100,29 @@ pub(crate) fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertRes
         sheets: sheets.len(),
         cells,
     })
+}
+
+/// How Excel hides a worksheet: `<WorksheetOptions>` (Excel's own namespace)
+/// carries `<Visible>SheetHidden</Visible>` — or `SheetVeryHidden`, the state
+/// even the tab menu will not undo. Anything else is a visible sheet.
+fn worksheet_state(worksheet: Node) -> Option<&'static str> {
+    let in_excel_namespace = |node: &Node| {
+        matches!(
+            node.tag_name().namespace(),
+            None | Some(NAMESPACE) | Some(EXCEL_NAMESPACE)
+        )
+    };
+    let options = worksheet
+        .children()
+        .find(|node| node.is_element() && node.tag_name().name() == "WorksheetOptions")?;
+    let visible = options.children().find(|node| {
+        node.is_element() && node.tag_name().name() == "Visible" && in_excel_namespace(node)
+    })?;
+    match visible.text()?.trim() {
+        "SheetHidden" => Some("hidden"),
+        "SheetVeryHidden" => Some("veryHidden"),
+        _ => None,
+    }
 }
 
 /// One built worksheet: the part to zip, and how many cells it carries.
@@ -129,7 +157,13 @@ fn parse_worksheet(worksheet: Node) -> ParsedSheet {
             next_column = index as u32 - 1;
         }
         let first = next_column;
-        next_column = first.saturating_add(1);
+        // A `Span` covers the columns the writer left out after this one, so
+        // the next implied index sits past the span, not one column over.
+        let column_span = span(column, "Span");
+        next_column = first
+            .saturating_add(1)
+            .saturating_add(column_span)
+            .min(MAX_COLUMN);
 
         let width = measure(column, "Width").filter(|value| *value > 0.0);
         let hidden = flag(column, "Hidden");
@@ -143,7 +177,7 @@ fn parse_worksheet(worksheet: Node) -> ParsedSheet {
         columns.push(format!(
             r#"<col min="{}" max="{}"{width}{hidden}/>"#,
             first + 1,
-            first + 1
+            (first + column_span).min(MAX_COLUMN - 1) + 1
         ));
     }
 
@@ -157,7 +191,14 @@ fn parse_worksheet(worksheet: Node) -> ParsedSheet {
             next_row = index as u32 - 1;
         }
         let index = next_row;
-        next_row = next_row.saturating_add(1);
+        // Rows Excel left out because they repeat this one's height or style
+        // are spelled `Span` on the row before them, and the next written row
+        // lands past the span.
+        let row_span = span(row_node, "Span");
+        next_row = index
+            .saturating_add(1)
+            .saturating_add(row_span)
+            .min(MAX_ROW);
 
         let mut next_cell_column = 0u32;
         let mut cells: Vec<(u32, String)> = Vec::new();
@@ -168,13 +209,14 @@ fn parse_worksheet(worksheet: Node) -> ParsedSheet {
                 next_cell_column = value as u32 - 1;
             }
             let column = next_cell_column;
-            next_cell_column = next_cell_column.saturating_add(1);
-
-            if let Some(area) = attribute(cell_node, "MergeArea").and_then(clean_area) {
-                merges.push(area);
-            }
             let across = span(cell_node, "MergeAcross");
             let down = span(cell_node, "MergeDown");
+            // The cells a merge covers are not written out either: a following
+            // cell without an Index starts past the merge, not one column over.
+            next_cell_column = column
+                .saturating_add(across)
+                .saturating_add(1)
+                .min(MAX_COLUMN);
             if across > 0 || down > 0 {
                 merges.push(format!(
                     "{}:{}",
@@ -390,11 +432,12 @@ fn text_content(node: Node) -> String {
 }
 
 /// SpreadsheetML writes every reference in R1C1, so `=SUM(R[-1]C:R[-1]C[2])`
-/// has to be respelled before OOXML will take it. A bare `R` or `C` standing
-/// for a whole row or column is not something this translates, and neither is
-/// anything the scanner cannot read as a complete `R<row>C<column>` pair — in
-/// both cases `None` leaves the cell holding only its cached value rather than
-/// a formula Excel would offer to repair.
+/// has to be respelled before OOXML will take it. A whole row or column — a
+/// bare `R` or `C`, or one carrying a coordinate like `R1` or `C[-5]` — is not
+/// something this translates, and neither is anything the scanner cannot read
+/// as a complete `R<row>C<column>` pair; in every such case `None` leaves the
+/// cell holding only its cached value rather than a formula Excel would offer
+/// to repair.
 fn r1c1_to_a1(formula: &str, row: u32, column: u32) -> Option<String> {
     let body = formula.trim().trim_start_matches('=');
     if body.is_empty() {
@@ -468,7 +511,9 @@ fn translate(body: &[u8], row: u32, column: u32, relative_allowed: bool) -> Opti
 /// `Ok(Some(..))` is a reference that has been respelled, `Ok(None)` says
 /// this position does not open one, and `Err(())` says it does open one that
 /// has no A1 spelling — which the caller must not paper over by copying the
-/// R1C1 token through.
+/// R1C1 token through. `Err` also covers the axis forms: `R<n>` standing alone
+/// names a whole row and `C<n>` a whole column (`=SUM(R1)` sums row 1, not the
+/// cell R1), and an A1 has no spelling for those that keeps the meaning.
 fn reference_at(
     body: &[u8],
     start: usize,
@@ -481,12 +526,24 @@ fn reference_at(
     if start > 0 && is_identifier_byte(body[start - 1]) {
         return Ok(None);
     }
+    if body.get(start) == Some(&b'C') {
+        let (_, _, after_column) = coordinate(body, start + 1).ok_or(())?;
+        // `C5` or `C[-1]` is a whole-column axis reference, not the cell C5.
+        if after_column > start + 1 {
+            return Err(());
+        }
+        return Ok(None);
+    }
     if body.get(start) != Some(&b'R') {
         return Ok(None);
     }
     let (row_value, row_absolute, after_row) = coordinate(body, start + 1).ok_or(())?;
     if body.get(after_row) != Some(&b'C') {
-        // `R` opening something that is not a column token at all.
+        // `R1` or `R[-1]` with no column token behind it names a whole row.
+        if after_row > start + 1 {
+            return Err(());
+        }
+        // A bare `R` opening something else entirely (`ROUND(`).
         return Ok(None);
     }
     let (column_value, column_absolute, after_column) = coordinate(body, after_row + 1).ok_or(())?;
@@ -618,9 +675,10 @@ fn defined_names(root: Node) -> String {
         let Some(target) = attribute(entry, "RefersTo").and_then(named_range_to_a1) else {
             continue;
         };
-        // Excel keeps bookkeeping ranges in here too, which mean nothing once
-        // the file has become a fresh workbook.
-        if name.starts_with('_') {
+        // Excel's own bookkeeping ranges (`_xlnm.Print_Area`,
+        // `_FilterDatabase`) mean nothing once the file has become a fresh
+        // workbook; a user's `_tax` is not one of those and stays.
+        if name.starts_with("_xlnm") || name == "_FilterDatabase" {
             continue;
         }
         let hidden = if flag(entry, "Hidden") {
@@ -672,13 +730,6 @@ fn is_truthy(text: &str) -> bool {
     matches!(text.trim(), "1" | "true" | "True" | "TRUE")
 }
 
-/// A merge area as the source spells it, minus the absolute markers Excel does
-/// not use and OOXML does not want.
-fn clean_area(area: &str) -> Option<String> {
-    let cleaned = area.trim().replace('$', "");
-    (!cleaned.is_empty()).then_some(cleaned)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -687,8 +738,10 @@ mod tests {
     use std::path::PathBuf;
 
     /// The shape Excel 2003 writes: one XML file, every attribute behind the
-    /// `ss:` prefix, cells sparse enough to need `ss:Index`, and formulas in
-    /// R1C1 — which is the whole reason this importer exists.
+    /// `ss:` prefix, cells sparse enough to need `ss:Index`, spanned blank
+    /// rows and columns, and formulas in R1C1 — which is the whole reason
+    /// this importer exists. Sheet visibility rides in `WorksheetOptions`,
+    /// the way Excel spells it.
     const FIXTURE: &str = r#"<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
@@ -698,12 +751,14 @@ mod tests {
  xmlns:html="http://www.w3.org/TR/REC-html40">
  <Names>
   <NamedRange ss:Name="Rates" ss:RefersTo="=Data!R5C2"/>
+  <NamedRange ss:Name="_tax" ss:RefersTo="=Data!R1C1:R2C1"/>
   <NamedRange ss:Name="_xlnm._FilterDatabase" ss:RefersTo="=Data!R1C1:R8C3" ss:Hidden="1"/>
  </Names>
  <Worksheet ss:Name="Data">
-  <Table ss:ExpandedColumnCount="4" ss:ExpandedRowCount="8">
+  <Table ss:ExpandedColumnCount="5" ss:ExpandedRowCount="10">
    <Column ss:Index="1" ss:Width="120"/>
-   <Column ss:Index="4" ss:Width="60" ss:Hidden="1"/>
+   <Column ss:Index="2" ss:Width="80" ss:Span="2"/>
+   <Column ss:Width="60" ss:Hidden="1"/>
    <Row>
     <Cell><Data ss:Type="String">Name &amp; Co</Data></Cell>
     <Cell><Data ss:Type="Number">42</Data></Cell>
@@ -721,12 +776,26 @@ mod tests {
    </Row>
    <Row>
     <Cell ss:MergeAcross="2" ss:MergeDown="1"><Data ss:Type="String">merged</Data></Cell>
+    <Cell><Data ss:Type="String">after merge</Data></Cell>
    </Row>
    <Row ss:Hidden="1"/>
+   <Row ss:Index="7" ss:Span="2" ss:Height="30"/>
+   <Row>
+    <Cell><Data ss:Type="String">row ten</Data></Cell>
+   </Row>
   </Table>
  </Worksheet>
- <Worksheet ss:Name="Old" ss:Hidden="1">
+ <Worksheet ss:Name="Old">
   <Table><Row><Cell><Data ss:Type="String">archive</Data></Cell></Row></Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <Visible>SheetHidden</Visible>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="Vault">
+  <Table/>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <Visible>SheetVeryHidden</Visible>
+  </WorksheetOptions>
  </Worksheet>
 </Workbook>
 "#;
@@ -760,7 +829,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (target, result) = convert_fixture(dir.path());
 
-        assert_eq!(result.sheets, 2);
+        assert_eq!(result.sheets, 3);
         let sheet = read_entry(&target, "xl/worksheets/sheet1.xml");
 
         // values, each in the type the source declared
@@ -798,10 +867,28 @@ mod tests {
             "{sheet}"
         );
 
-        assert!(sheet.contains(r#"<dimension ref="A1:D4"/>"#), "{sheet}");
-        assert!(sheet.contains(r#"<cols><col min="1" max="1" width="120"/><col min="4" max="4" width="60" hidden="1"/></cols>"#), "{sheet}");
+        // the cell behind a merge starts past the merge, not inside it
+        assert!(
+            sheet.contains(
+                r#"<c r="D4" t="inlineStr"><is><t xml:space="preserve">after merge</t></is></c>"#
+            ),
+            "{sheet}"
+        );
+
+        assert!(sheet.contains(r#"<dimension ref="A1:D10"/>"#), "{sheet}");
+        // a `Span` covers the columns the writer left out behind it
+        assert!(sheet.contains(r#"<cols><col min="1" max="1" width="120"/><col min="2" max="4" width="80"/><col min="5" max="5" width="60" hidden="1"/></cols>"#), "{sheet}");
         assert!(sheet.contains(r#"<row r="2" ht="24">"#), "{sheet}");
         assert!(sheet.contains(r#"<row r="5" hidden="1"></row>"#), "{sheet}");
+        // a spanned blank row occupies the rows the writer did not spell out,
+        // and the next written row lands past it
+        assert!(sheet.contains(r#"<row r="7" ht="30"></row>"#), "{sheet}");
+        assert!(
+            sheet.contains(
+                r#"<row r="10"><c r="A10" t="inlineStr"><is><t xml:space="preserve">row ten</t></is></c></row>"#
+            ),
+            "{sheet}"
+        );
         assert!(
             sheet.contains(r#"<mergeCells count="1"><mergeCell ref="A4:C5"/></mergeCells>"#),
             "{sheet}"
@@ -812,12 +899,22 @@ mod tests {
             workbook.contains(r#"<sheet name="Data" sheetId="1" r:id="rId1"/>"#),
             "{workbook}"
         );
+        // visibility arrives through WorksheetOptions/Visible, as Excel writes it
         assert!(
             workbook.contains(r#"<sheet name="Old" sheetId="2" r:id="rId2" state="hidden"/>"#),
             "{workbook}"
         );
         assert!(
+            workbook.contains(r#"<sheet name="Vault" sheetId="3" r:id="rId3" state="veryHidden"/>"#),
+            "{workbook}"
+        );
+        assert!(
             workbook.contains(r#"<definedName name="Rates">Data!$B$5</definedName>"#),
+            "{workbook}"
+        );
+        // an underscore name of the user's own is not Excel's bookkeeping
+        assert!(
+            workbook.contains(r#"<definedName name="_tax">Data!$A$1:$A$2</definedName>"#),
             "{workbook}"
         );
         // Excel's own bookkeeping range has no meaning in a converted file
@@ -878,6 +975,12 @@ mod tests {
         assert_eq!(r1c1_to_a1("=SUM(R)", 0, 0), None);
         assert_eq!(r1c1_to_a1("=SUM(C:C)", 0, 0), None);
         assert_eq!(r1c1_to_a1("=SUM(R[", 0, 0), None);
+        // a coordinate does not rescue one either: `SUM(R1)` sums row 1, not
+        // the cell R1, and `C[-5]` walks the column five to the left
+        assert_eq!(r1c1_to_a1("=SUM(R1)", 0, 0), None);
+        assert_eq!(r1c1_to_a1("=SUM(C1)", 0, 0), None);
+        assert_eq!(r1c1_to_a1("=SUM(R[2])", 4, 2), None);
+        assert_eq!(r1c1_to_a1("=SUM(C[-5])", 0, 0), None);
         // a reference that would point off the sheet is not one either
         assert_eq!(r1c1_to_a1("=R[-9]C", 2, 0), None);
         assert_eq!(r1c1_to_a1("=R0C1", 0, 0), None);
@@ -921,13 +1024,16 @@ mod tests {
     fn merged_areas_keep_only_their_anchor() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("swallowed.xls");
-        // A1 merges across two columns, yet the source still spells out B1.
+        // A1 merges across two columns; a source that spells B1 out anyway has
+        // it swallowed by the merge, while the cell behind it (no Index) has
+        // to land at C1, past the merge.
         std::fs::write(
             &source,
             r#"<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="S"><Table><Row>
  <Cell ss:MergeAcross="1"><Data ss:Type="String">left</Data></Cell>
- <Cell><Data ss:Type="String">swallowed</Data></Cell>
+ <Cell ss:Index="2"><Data ss:Type="String">swallowed</Data></Cell>
+ <Cell><Data ss:Type="String">after merge</Data></Cell>
  </Row></Table></Worksheet></Workbook>"#,
         )
         .unwrap();
@@ -942,6 +1048,12 @@ mod tests {
             "{sheet}"
         );
         assert!(!sheet.contains("swallowed"), "{sheet}");
+        assert!(
+            sheet.contains(
+                r#"<c r="C1" t="inlineStr"><is><t xml:space="preserve">after merge</t></is></c>"#
+            ),
+            "{sheet}"
+        );
         assert!(sheet.contains(r#"<mergeCell ref="A1:B1"/>"#), "{sheet}");
     }
 

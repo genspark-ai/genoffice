@@ -117,7 +117,7 @@ pub fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertResult, Si
         .iter()
         .map(|name| SheetSpec {
             name: name.clone(),
-            hidden: false,
+            state: None,
         })
         .collect();
     write_package(target, &sheets, "", &sheet_xmls)?;

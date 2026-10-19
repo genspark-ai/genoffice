@@ -16,8 +16,9 @@ use crate::SidecarError;
 /// One entry of the workbook's sheet list, in document order.
 pub(crate) struct SheetSpec {
     pub(crate) name: String,
-    /// Hidden in the source dialect; OOXML spells the same thing `state="hidden"`.
-    pub(crate) hidden: bool,
+    /// OOXML `state` attribute: `None` is the visible default, and the source
+    /// dialect's hidden/very-hidden states arrive already translated.
+    pub(crate) state: Option<&'static str>,
 }
 
 /// Writes the whole package. `sheet_xmls` runs in the same order as `sheets`:
@@ -201,11 +202,10 @@ fn workbook_xml(sheets: &[SheetSpec], defined_names: &str) -> String {
         .iter()
         .enumerate()
         .map(|(index, sheet)| {
-            let state = if sheet.hidden {
-                r#" state="hidden""#
-            } else {
-                ""
-            };
+            let state = sheet
+                .state
+                .map(|value| format!(r#" state="{value}""#))
+                .unwrap_or_default();
             format!(
                 r#"<sheet name="{}" sheetId="{}" r:id="rId{}"{state}/>"#,
                 escape_xml(&sheet.name),
