@@ -210,6 +210,7 @@ export type RibbonPanelKey =
   | 'collapse'
   | 'pen'
   | 'slideShow'
+  | 'record'
 
 /** Ribbon popups are mutually exclusive: a trigger closes every sibling popup
  *  on mousedown, before its own click-toggle runs. A trigger rendered inside
@@ -431,6 +432,10 @@ export interface Props {
   onCustomShow: () => void
   /** Start rehearsal timing (plays the show recording each page's dwell time; can be saved as auto-advance times afterwards) */
   onRehearse: () => void
+  /** Slide Show > Record from the start (true) or from the current slide */
+  onRecord: (fromStart: boolean) => void
+  /** Clear the recorded narration of all slides (true) or of the current one */
+  onClearNarration: (all: boolean) => void
   /** Whether the current page is hidden (hide-slide button display) */
   currentHidden: boolean
   /** Hide/unhide the current page */

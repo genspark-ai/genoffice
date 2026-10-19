@@ -73,7 +73,7 @@ Agent, který nezná slovní zásobu op, bude hádat. Skill přináší referen�
 Server není omezen na soubory na disku. Dokud GenOffice běží, může agent pracovat i přes okno:
 
 - **`open_in_genoffice`** otevře soubor v kartě a dá jí fokus.
-- **`open_documents`** vypíše každý dokument, který máte otevřený — id, typ, cestu a zda v něm jsou neuložené změny — a pak přečte aktuální obsah jednoho z nich nebo ho zavře, přičemž nejdřív uloží, pokud mu neřeknete, aby změny zahodil.
+- **`open_documents`** vypíše každý dokument, který máte otevřený — id, typ, cestu a zda v něm jsou neuložené změny — a pak přečte aktuální obsah jednoho z nich, uloží ho na místě, nebo ho zavře, přičemž nejdřív uloží, pokud mu neřeknete, aby změny zahodil.
 - **Nástroje pro obsah** berou to id (nebo cestu) jako svůj argument `document`, takže úprava dopadne do karty, kterou už otevřenou máte, a okno se na ni přepne.
 
 Dvě věci zůstávají mimo dosah: není tu panel AI a dialog aktualizace v aplikaci zde neplatí. Pokud nějaký krok potřebuje okno, soubor otevřete.

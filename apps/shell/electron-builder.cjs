@@ -592,6 +592,12 @@ const config = {
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
+    // Slides' Slide Show > Record: the hardened runtime refuses the microphone without the
+    // audio-input entitlement, and macOS asks for it with this text
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        'GenOffice records your narration when you record a slide show.',
+    },
     notarize: true,
     extraResources: [
       {

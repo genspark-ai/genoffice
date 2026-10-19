@@ -8,7 +8,7 @@ import type { SheetsControl } from './tools/sheets-tools'
 import type { EditorFamily } from './tools/formats'
 
 /**
- * The shell's implementation of the `open_documents` control: the three actions
+ * The shell's implementation of the `open_documents` control: the four actions
  * over the tab-manager plus each family's own bridge, so an MCP agent reaches
  * the documents the *user* has open (the bridges are addressed by webContents
  * id, so they do not care who opened the tab).
@@ -192,6 +192,15 @@ export function createOpenDocumentsControl(deps: OpenDocumentsBridgeDeps): OpenD
     list: deps.list,
 
     read: readDocument,
+
+    save: async (tab) => {
+      // the caller's snapshot may predate an edit: settle against the live state
+      const live = (await deps.list()).find((doc) => doc.id === tab.id)
+      if (!live) throw new Error(`"${tab.title}" is already closed`)
+      const savedPath = closeSavePath(live, deps.defaultSaveDir)
+      await saveTo(live, savedPath)
+      return { savedPath }
+    },
 
     close: async (tab, { unsaved }) => {
       if (tab.kind === 'pdf') {

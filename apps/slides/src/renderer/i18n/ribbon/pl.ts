@@ -389,6 +389,11 @@ export const pl = {
   ribbonRehearseTip:
     'Próba tempa: uruchamia pokaz od początku i rejestruje czas każdego slajdu; zapisz jako czasy automatycznej zmiany slajdów (zapisywane w pptx)',
   ribbonRecord: 'Nagrywaj',
+  ribbonRecordTip: 'Nagraj narrację: odtwórz pokaz i nagraj swój głos oraz czas każdego slajdu',
+  ribbonRecordFromBeginning: 'Nagrywaj od początku',
+  ribbonRecordFromCurrent: 'Nagrywaj od bieżącego slajdu',
+  ribbonClearNarrationCurrent: 'Wyczyść narrację na bieżącym slajdzie',
+  ribbonClearNarrationAll: 'Wyczyść narrację na wszystkich slajdach',
   ribbonGroupProofing: 'Sprawdzanie',
   ribbonSpellCheck: 'Pisownia',
   ribbonSpellCheckTip:

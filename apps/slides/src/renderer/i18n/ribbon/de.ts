@@ -395,6 +395,12 @@ export const de = {
   ribbonRehearseTip:
     'Neue Einblendezeiten testen: Präsentation von Beginn an abspielen und die Zeit pro Folie aufzeichnen; anschließend als automatische Einblendezeiten speichern (in pptx gespeichert)',
   ribbonRecord: 'Aufzeichnen',
+  ribbonRecordTip:
+    'Kommentar aufzeichnen: Bildschirmpräsentation abspielen und Ihre Stimme sowie die Anzeigedauer jeder Folie aufzeichnen',
+  ribbonRecordFromBeginning: 'Von Beginn an aufzeichnen',
+  ribbonRecordFromCurrent: 'Ab aktueller Folie aufzeichnen',
+  ribbonClearNarrationCurrent: 'Kommentar auf aktueller Folie löschen',
+  ribbonClearNarrationAll: 'Kommentar auf allen Folien löschen',
   ribbonGroupProofing: 'Dokumentprüfung',
   ribbonSpellCheck: 'Rechtschreibung',
   ribbonSpellCheckTip:

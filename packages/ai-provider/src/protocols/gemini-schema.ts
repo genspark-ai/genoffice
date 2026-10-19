@@ -14,6 +14,11 @@
  *   "Unknown name ...: Cannot find field".
  * - `enum` is a repeated string: numeric members -> "Invalid value (TYPE_STRING)".
  * - `items` must be one schema, not a tuple list.
+ * - every array needs `items`: an array without one is legal JSON Schema, but
+ *   the proto field is not optional and the API rejects the whole request with
+ *   "...properties[children].items: missing field" (genoffice#2059). A missing
+ *   `items` is filled with the property-less `{ type: 'object' }` accepted per
+ *   the next line.
  * - Empty `properties: {}` and property-less `{ type: 'object' }` are accepted,
  *   as are `anyOf`, `oneOf` and any `format` value.
  */
@@ -116,6 +121,10 @@ function convert(schema: unknown, root: Json, depth: number, refStack: string[])
     out.items = Array.isArray(out.items)
       ? { anyOf: out.items.map((sub) => convert(sub, root, depth + 1, refStack)) }
       : convert(out.items, root, depth + 1, refStack)
+  } else if (out.type === 'array') {
+    // The proto has no optional-`items` array; the API refuses the whole
+    // request without one. Fill in the schema it documents as accepting.
+    out.items = { type: 'object' }
   }
   if (Array.isArray(out.anyOf)) {
     out.anyOf = out.anyOf.map((sub) => convert(sub, root, depth + 1, refStack))

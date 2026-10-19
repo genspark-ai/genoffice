@@ -312,6 +312,14 @@ export {
   type NewMediaOptions,
   type NewModel3dOptions,
 } from './media-insert'
+export {
+  addNarration,
+  clearNarration,
+  narrationSpids,
+  setShowNarration,
+  NARRATION_NAME,
+  type NarrationAudio,
+} from './narration'
 export { applyHeaderFooter, readHeaderFooter, type HeaderFooterOptions } from './headerfooter'
 export {
   getSections,

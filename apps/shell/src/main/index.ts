@@ -356,6 +356,14 @@ import { tabMenuTemplate, type TabMenuActions, isProgramFile } from './tab-menu'
 import { runTabDocumentAction, type TabDocumentAction } from './tab-document-actions'
 import { duplicateDocumentFile } from './tab-duplicate'
 import { closeTabsInOrder, createRecentlyClosedTracker } from './tab-lifecycle'
+import {
+  installShellWindowBoundsPersistence,
+  readShellWindowState,
+  SHELL_WINDOW_DEFAULT_HEIGHT,
+  SHELL_WINDOW_DEFAULT_WIDTH,
+  SHELL_WINDOW_MIN_HEIGHT,
+  SHELL_WINDOW_MIN_WIDTH,
+} from './window-bounds'
 import { installShellCloseGuard } from './window-close-guard'
 import {
   activateDetached,
@@ -3842,11 +3850,21 @@ function refreshTitleBarOverlay(): void {
 }
 
 function createShellWindow(): void {
+  // Last session's geometry, when a display can still show it (issue #2049).
+  // A saved position on an unplugged monitor falls back to the default
+  // placement rather than opening where it cannot be grabbed.
+  const restored = readShellWindowState(
+    APP_SETTINGS_PATH(),
+    screen.getAllDisplays().map((display) => display.workArea),
+  )
   const win = new BrowserWindow({
-    width: 1360,
-    height: 900,
-    minWidth: 720,
-    minHeight: 550,
+    width: restored?.width ?? SHELL_WINDOW_DEFAULT_WIDTH,
+    height: restored?.height ?? SHELL_WINDOW_DEFAULT_HEIGHT,
+    // x/y only when a saved position survived validation; omitting them keeps
+    // Electron's default placement on a first run
+    ...(restored ? { x: restored.x, y: restored.y } : {}),
+    minWidth: SHELL_WINDOW_MIN_WIDTH,
+    minHeight: SHELL_WINDOW_MIN_HEIGHT,
     title: 'GenOffice',
     // vibrancy: editor modules punch translucent regions (e.g. the slides
     // thumbnail pane) through to the desktop
@@ -3867,12 +3885,17 @@ function createShellWindow(): void {
       sandbox: true,
     },
   })
+  // the stored rectangle is the normal-state one, so a maximized session
+  // reopens maximized instead of as a screen-sized ordinary window
+  if (restored?.maximized) win.maximize()
   shellWindow = win
   nativeTheme.on('updated', refreshTitleBarOverlay)
   win.once('closed', () => nativeTheme.off('updated', refreshTitleBarOverlay))
   // dragging the window by the tab strip's blank (draggable) area produces no
   // DOM event anywhere — will-move is the only signal to dismiss popovers
   win.on('will-move', () => broadcastChromePressed())
+  // remember the window's position and size for the next launch (issue #2049)
+  installShellWindowBoundsPersistence(APP_SETTINGS_PATH(), win)
   // A detached editor window claims the process-global menu/active-editor targets
   // while focused; take them back when the shell window regains focus. Keyboard
   // focus must land back on the active tab's view too — regaining window focus

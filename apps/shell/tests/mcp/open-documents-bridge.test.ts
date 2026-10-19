@@ -150,6 +150,36 @@ describe('open_documents close: PDF guard', () => {
   })
 })
 
+describe('open_documents save: writes without closing', () => {
+  it('writes a document back to its own file and leaves the tab open', async () => {
+    const saved: string[] = []
+    const doc = tab({ id: 't1', kind: 'slides', title: 'deck.pptx', filePath: 'C:/docs/deck.pptx' })
+    const { call } = await controlWith([doc], {
+      slides: {
+        openBlankTab: async () => 1,
+        runTxn: async () => ({}),
+        readDeck: async () => ({}),
+        saveDeck: async (_wcId, path) => {
+          saved.push(path)
+          return { path }
+        },
+      },
+    })
+
+    const result = await call({ action: 'save', target: 't1' })
+    expect(result.saved).toBe(true)
+    expect(result.savedTo).toBe('C:/docs/deck.pptx')
+    expect(result.closed).toBeUndefined()
+    expect(saved).toEqual(['C:/docs/deck.pptx'])
+  })
+
+  it('refuses to save a PDF, naming the reason', async () => {
+    const doc = tab({ id: 't6', kind: 'pdf', title: 'six.pdf', filePath: 'C:/docs/six.pdf' })
+    const { call } = await controlWith([doc])
+    await expect(call({ action: 'save', target: 't6' })).rejects.toThrow(/viewer/)
+  })
+})
+
 describe('open target resolver: focusing the document the agent edits', () => {
   it('activates the named tab and reveals the window', async () => {
     const activate = vi.fn()

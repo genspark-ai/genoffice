@@ -8,9 +8,9 @@ import { sanitizeFileBase, uniquePathIn } from './document-tools'
 
 /**
  * MCP access to the documents the *user* has open — the tab-manager's list of
- * editor tabs, not the single blank session `create_session` owns. The three
- * actions share one tool because they are steps of one workflow: discover,
- * then act on what was discovered.
+ * editor tabs, not the single blank session `create_session` owns. The actions
+ * share one tool because they are steps of one workflow: discover, read or
+ * commit the file, then act on what was discovered.
  *
  * The control object is injected so this module never imports Electron: the
  * shell implements it over TabManager and the per-family bridges, tests pass
@@ -50,6 +50,12 @@ export interface OpenDocumentsControl {
     tab: OpenDocumentTab,
     options: { unsaved: 'save' | 'discard' },
   ) => Promise<{ savedPath?: string }>
+  /**
+   * Write the document's live content back to its own file, or into the default
+   * save folder when it has never been saved. Unlike `close`, the tab stays open,
+   * so the user can keep editing after the agent commits the file to disk.
+   */
+  save: (tab: OpenDocumentTab) => Promise<{ savedPath: string }>
 }
 
 export interface OpenDocumentsDeps {
@@ -169,10 +175,12 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
         'Work with the documents the user currently has open in GenOffice tabs — not just the ' +
         'one a session opened. Actions: "list" (no target) returns every open document with its ' +
         'id, type, path, title, whether it has ever been saved, and whether it has unsaved ' +
-        'changes; "read" returns one document\'s live content including unsaved edits; "close" ' +
+        'changes; "read" returns one document\'s live content including unsaved edits; "save" ' +
+        "writes that live content back to the document's own file (or a fresh file in the " +
+        'default save folder when it has never been saved) and leaves the tab open; "close" ' +
         'closes one, saving it first by default (pass unsaved:"discard" to drop the changes). ' +
-        'Note that "close" writes over the document\'s own file when it has a path — it does not ' +
-        'stop to ask, so the saved file replaces whatever was on disk. ' +
+        'Both "save" and "close" write over the document\'s own file when it has a path — they ' +
+        'do not stop to ask, so the saved file replaces whatever was on disk. ' +
         'Identify a document by its path, or by the id from "list" when it has never been saved. ' +
         'To *edit* one of these documents, pass its id (or path) as the `document` argument of the ' +
         'family content tools (insert_content / apply_ops / apply_sheet_ops / apply_slide_ops): no ' +
@@ -180,7 +188,7 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
         'PDF tabs are listed but cannot be read or closed here: the pdf app is a viewer, so an ' +
         'open PDF has no readable or savable state through this tool.',
       inputSchema: {
-        action: z.enum(['list', 'read', 'close']).describe('what to do'),
+        action: z.enum(['list', 'read', 'save', 'close']).describe('what to do'),
         target: z
           .string()
           .optional()
@@ -225,6 +233,24 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
           }
         }
 
+        if (action === 'save') {
+          if (doc.kind === 'pdf') {
+            throw new Error(
+              `"${doc.title}" is a PDF: the pdf app is a viewer, so an open PDF has nothing ` +
+                'to save through this tool',
+            )
+          }
+          const { savedPath } = await control.save(doc)
+          return {
+            saved: true,
+            id: doc.id,
+            type: typeLabel(doc),
+            title: doc.title,
+            path: doc.filePath ?? null,
+            savedTo: savedPath,
+          }
+        }
+
         if (action === 'close') {
           const unsaved = args.unsaved === 'discard' ? 'discard' : 'save'
           const { savedPath } = await control.close(doc, { unsaved })
@@ -239,7 +265,7 @@ export function createOpenDocumentTools(deps: OpenDocumentsDeps): McpToolDefinit
           }
         }
 
-        throw new Error(`unknown action "${action}" — use "list", "read" or "close"`)
+        throw new Error(`unknown action "${action}" — use "list", "read", "save" or "close"`)
       },
     },
   ]

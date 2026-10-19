@@ -388,6 +388,12 @@ export const pt = {
   ribbonRehearseTip:
     'Testar intervalos: executa a apresentação desde o início e registra o tempo por slide; salve como intervalos de avanço automático (salvo no pptx)',
   ribbonRecord: 'Gravar',
+  ribbonRecordTip:
+    'Gravar narração: reproduzir a apresentação e gravar sua voz e o tempo de cada slide',
+  ribbonRecordFromBeginning: 'Gravar do Início',
+  ribbonRecordFromCurrent: 'Gravar do Slide Atual',
+  ribbonClearNarrationCurrent: 'Limpar Narração do Slide Atual',
+  ribbonClearNarrationAll: 'Limpar Narração de Todos os Slides',
   ribbonGroupProofing: 'Revisão de Texto',
   ribbonSpellCheck: 'Ortografia',
   ribbonSpellCheckTip:

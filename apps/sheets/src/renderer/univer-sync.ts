@@ -405,9 +405,12 @@ export function applyFormatPatchToRange(
   }
   if (patch.numberFormat !== undefined) range.setNumberFormat(patch.numberFormat ?? 'General')
   if (patch.horizontalAlign !== undefined) {
-    range.setHorizontalAlignment(
-      (patch.horizontalAlign ?? 'normal') as 'left' | 'center' | 'normal',
-    )
+    // The facade helper only accepts 'left' | 'center' | 'normal' — and
+    // 'normal' (confusingly) maps to RIGHT — so a raw 'right' hits its
+    // throwing default branch; translate it first (same as the ribbon's align
+    // command). null keeps the existing fallback to 'normal'.
+    const align = (patch.horizontalAlign ?? 'normal') as 'left' | 'center' | 'right' | 'normal'
+    range.setHorizontalAlignment(align === 'right' ? 'normal' : align)
   }
   if (patch.verticalAlign !== undefined) {
     if (patch.verticalAlign === null) range.setValue({ s: { vt: null } } as unknown as ICellData)

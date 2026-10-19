@@ -377,6 +377,11 @@ export const th = {
   ribbonRehearseTip:
     'ซ้อมการตั้งเวลา: นำเสนอตั้งแต่ต้นและบันทึกเวลาของแต่ละสไลด์ เมื่อจบสามารถบันทึกเป็นเวลาเปลี่ยนสไลด์อัตโนมัติ (บันทึกลง pptx)',
   ribbonRecord: 'บันทึก',
+  ribbonRecordTip: 'บันทึกคำบรรยาย: เล่นสไลด์โชว์และบันทึกเสียงของคุณพร้อมเวลาของแต่ละสไลด์',
+  ribbonRecordFromBeginning: 'บันทึกตั้งแต่ต้น',
+  ribbonRecordFromCurrent: 'บันทึกจากสไลด์ปัจจุบัน',
+  ribbonClearNarrationCurrent: 'ล้างคำบรรยายในสไลด์ปัจจุบัน',
+  ribbonClearNarrationAll: 'ล้างคำบรรยายในทุกสไลด์',
   ribbonGroupProofing: 'การพิสูจน์อักษร',
   ribbonSpellCheck: 'ตรวจการสะกด',
   ribbonSpellCheckTip: 'AI ตรวจคำผิด ไวยากรณ์ และเครื่องหมายวรรคตอนทีละสไลด์และแก้ไขให้โดยตรง',

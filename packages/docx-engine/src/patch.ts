@@ -492,8 +492,8 @@ export interface SaveOptions {
   footnotes?: NoteInfo[]
   endnotes?: NoteInfo[]
   /**
-   * Watermark in the default page header: a string / text spec / picture spec
-   * sets it, null removes it, undefined keeps whatever the header already has.
+   * Watermark in every active section header: a string / text spec / picture spec
+   * sets it, null removes it, undefined keeps each header's existing watermark.
    */
   watermark?: Watermark | null
   /**
@@ -1042,9 +1042,7 @@ export async function saveDocx(
   const planHeaderFooter = async (
     kind: 'header' | 'footer',
     hf: HeaderFooter | undefined,
-    watermark: Watermark | null | undefined = undefined,
     hfType: 'default' | 'first' | 'even' = 'default',
-    watermarkOnly = false,
   ) => {
     if (hf === undefined) return
     const refs = hfReferenceTags(trailingSectPr, kind)
@@ -1062,16 +1060,7 @@ export async function saveDocx(
       if (!path) return
       const file = zip.file(path)
       const originalXml = file ? await file.async('string') : null
-      const wmXml =
-        kind === 'header' ? await watermarkXmlFor(watermark, path, originalXml) : undefined
-      // A watermark-only change patches the original part in place (tables/logos/fields
-      // all preserved); header text edits use paragraph replace-merge (non-paragraph
-      // children preserved).
-      let partXml: string | null = null
-      if (watermarkOnly && kind === 'header' && originalXml && wmXml !== undefined) {
-        partXml = patchWatermarkInPart(originalXml, wmXml)
-      }
-      if (partXml === null) partXml = headerFooterPartXml(kind, hf, wmXml, originalXml)
+      const partXml = headerFooterPartXml(kind, hf, undefined, originalXml)
       hfParts.push({ path, xml: partXml })
     } else {
       let n = 1
@@ -1081,9 +1070,7 @@ export async function saveDocx(
       )
         n++
       const filename = `${kind}${n}.xml`
-      const wmXml =
-        kind === 'header' ? await watermarkXmlFor(watermark, `word/${filename}`, null) : undefined
-      const partXml = headerFooterPartXml(kind, hf, wmXml)
+      const partXml = headerFooterPartXml(kind, hf)
       const newRId = `rId${nextRelNum++}`
       newRels.push({ rId: newRId, type: HF_REL_TYPE[kind], target: filename, external: false })
       hfParts.push({ path: `word/${filename}`, xml: partXml })
@@ -1093,24 +1080,14 @@ export async function saveDocx(
       )
     }
   }
-  // A watermark change forces a header-part rewrite even when the header text
-  // itself is untouched; a header rewrite without a watermark change keeps the
-  // part's own watermark bytes.
-  const effectiveHeader =
-    options.header ??
-    (options.watermark !== undefined ? { text: parsed.headerText ?? '' } : undefined)
-  await planHeaderFooter(
-    'header',
-    effectiveHeader,
-    options.watermark,
-    'default',
-    options.header === undefined,
-  )
+  // Header text edits keep each part's own watermark. Apply a pending watermark
+  // separately, after all section references and text edits have landed.
+  await planHeaderFooter('header', options.header)
   await planHeaderFooter('footer', options.footer)
-  await planHeaderFooter('header', options.headerFirst, undefined, 'first')
-  await planHeaderFooter('footer', options.footerFirst, undefined, 'first')
-  await planHeaderFooter('header', options.headerEven, undefined, 'even')
-  await planHeaderFooter('footer', options.footerEven, undefined, 'even')
+  await planHeaderFooter('header', options.headerFirst, 'first')
+  await planHeaderFooter('footer', options.footerFirst, 'first')
+  await planHeaderFooter('header', options.headerEven, 'even')
+  await planHeaderFooter('footer', options.footerEven, 'even')
 
   // ---- Per-section header/footer (non-last sections): with a reference, rewrite the
   // part; without one, create a part + inject the reference ----
@@ -1579,6 +1556,77 @@ export async function saveDocx(
     newDocumentXml = newDocumentXml.replace(
       /(<w:sectPr(?:\s[^>]*)?>)(?!<w:headerReference|<w:footerReference)/g,
       `$1${hfRefTags.join('')}`,
+    )
+  }
+
+  if (options.watermark !== undefined) {
+    // Missing references inherit the previous section's same variant, including
+    // first/even headers while that variant is disabled in an intermediate section.
+    const inherited = new Map<string, string>()
+    const touched = new Set<string>()
+    const sections = [
+      ...newDocumentXml.matchAll(/<w:sectPr\b[^>]*\/>|<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g),
+    ]
+    const replacements: string[] = []
+    const even = options.evenAndOddHeaders ?? parsed.evenAndOddHeaders ?? false
+    for (const match of sections) {
+      let sectionXml = match[0]
+      for (const ref of hfReferenceTags(sectionXml, 'header')) {
+        const type = hfReferenceType(ref)
+        const id = hfReferenceRId(ref)
+        if (id) inherited.set(type === 'odd' || type === undefined ? 'default' : type, id)
+      }
+      const titleTag = /<w:titlePg\b[^>]*\/?\s*>/.exec(sectionXml)?.[0]
+      const first = titleTag && !/\bw:val\s*=\s*["'](?:0|false|off)["']/.test(titleTag)
+      const variants = ['default', ...(first ? ['first'] : []), ...(even ? ['even'] : [])]
+      for (const variant of variants) {
+        const id = inherited.get(variant)
+        const target = id
+          ? (relTargets.get(id) ?? newRels.find((r) => r.rId === id)?.target)
+          : undefined
+        let path = target ? resolveRelationshipTargetPath(docPath, target) : null
+        if (!path) {
+          // Removing a watermark must not materialize otherwise blank headers.
+          if (options.watermark === null || id) continue
+          let n = 1
+          while (
+            zip.file(`word/header${n}.xml`) ||
+            hfParts.some((p) => p.path === `word/header${n}.xml`)
+          )
+            n++
+          const filename = `header${n}.xml`
+          path = `word/${filename}`
+          const rId = `rId${nextRelNum++}`
+          newRels.push({ rId, type: HF_REL_TYPE.header, target: filename, external: false })
+          hfOverrides.push(
+            `<Override PartName="/${path}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`,
+          )
+          sectionXml = injectIntoSectPr(
+            sectionXml,
+            `<w:headerReference w:type="${variant}" r:id="${rId}"/>`,
+          )
+          inherited.set(variant, rId)
+        }
+        if (touched.has(path)) continue
+        touched.add(path)
+        // Apply after header text edits, so a batch can edit both without losing
+        // either change. Shared/inherited parts are rewritten exactly once.
+        const pending = hfParts.find((p) => p.path === path)
+        const originalXml = pending?.xml ?? (await zip.file(path)?.async('string')) ?? null
+        const wmXml = await watermarkXmlFor(options.watermark, path, originalXml)
+        const xml = originalXml
+          ? patchWatermarkInPart(originalXml, wmXml!)
+          : headerFooterPartXml('header', { text: '' }, wmXml)
+        if (xml === null) continue
+        if (pending) pending.xml = xml
+        else hfParts.push({ path, xml })
+      }
+      replacements.push(sectionXml)
+    }
+    let sectionIndex = 0
+    newDocumentXml = newDocumentXml.replace(
+      /<w:sectPr\b[^>]*\/>|<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>/g,
+      () => replacements[sectionIndex++]!,
     )
   }
 

@@ -364,6 +364,11 @@ export const zhTW = {
   ribbonRehearseTip:
     '排練計時：從頭放映並記錄每頁停留時間，結束後可儲存為自動換頁時間（寫入 pptx）',
   ribbonRecord: '錄製',
+  ribbonRecordTip: '錄製旁白：放映並錄製您的聲音和每頁的停留時間',
+  ribbonRecordFromBeginning: '從頭開始錄製',
+  ribbonRecordFromCurrent: '從目前投影片開始錄製',
+  ribbonClearNarrationCurrent: '清除目前投影片中的旁白',
+  ribbonClearNarrationAll: '清除所有投影片中的旁白',
   ribbonGroupProofing: '校訂',
   ribbonSpellCheck: '拼字檢查',
   ribbonSpellCheckTip: 'AI 逐頁檢查錯別字、文法和標點並直接修正',

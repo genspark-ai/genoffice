@@ -375,6 +375,11 @@ export const zh = {
   ribbonRehearseTip:
     '排练计时：从头放映并记录每页停留时间，结束后可保存为自动换片时间（写入 pptx）',
   ribbonRecord: '录制',
+  ribbonRecordTip: '录制旁白：放映并录制您的声音和每页的停留时间',
+  ribbonRecordFromBeginning: '从头开始录制',
+  ribbonRecordFromCurrent: '从当前幻灯片开始录制',
+  ribbonClearNarrationCurrent: '清除当前幻灯片中的旁白',
+  ribbonClearNarrationAll: '清除所有幻灯片中的旁白',
   // Review
   ribbonGroupProofing: '校对',
   ribbonSpellCheck: '拼写检查',

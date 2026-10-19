@@ -375,6 +375,11 @@ export const ar = {
   ribbonRehearseTip:
     'التمرن على التوقيت: تشغيل العرض من البداية وتسجيل زمن كل شريحة؛ يمكن حفظه كتوقيت تقدم تلقائي (يُحفظ في pptx)',
   ribbonRecord: 'تسجيل',
+  ribbonRecordTip: 'تسجيل التعليق الصوتي: تشغيل العرض وتسجيل صوتك وتوقيت كل شريحة',
+  ribbonRecordFromBeginning: 'التسجيل من البداية',
+  ribbonRecordFromCurrent: 'التسجيل من الشريحة الحالية',
+  ribbonClearNarrationCurrent: 'مسح التعليق الصوتي من الشريحة الحالية',
+  ribbonClearNarrationAll: 'مسح التعليق الصوتي من كل الشرائح',
   ribbonGroupProofing: 'تدقيق',
   ribbonSpellCheck: 'تدقيق إملائي',
   ribbonSpellCheckTip:

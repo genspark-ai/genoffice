@@ -41,8 +41,9 @@ export const MIND_MAP_EXPORT_COLORS = {
   toggleText: '#606366',
 } as const
 
-/** Bounded recursion: the schema inlines down to the enforced depth limit; deeper
- *  levels (which the parser trims anyway) carry a generic children description. */
+/** Bounded recursion: the schema inlines down to the enforced depth limit; the
+ *  deepest level carries a leaf-node shape, because Gemini's function schema
+ *  refuses an array without `items` for the whole request (genoffice#2059). */
 const nodeSchema = (depth: number): Record<string, unknown> => ({
   type: 'object',
   properties: {
@@ -66,6 +67,16 @@ const nodeSchema = (depth: number): Record<string, unknown> => ({
         : {
             type: 'array',
             description: 'sub-topics; 2-5 per node reads best',
+            items: {
+              type: 'object',
+              properties: {
+                label: {
+                  type: 'string',
+                  description: "short node label (2-8 words) in the document's language",
+                },
+              },
+              required: ['label'],
+            },
           },
   },
   required: ['label'],

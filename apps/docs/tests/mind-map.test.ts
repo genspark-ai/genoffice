@@ -416,3 +416,21 @@ describe('generate_mindmap tool', () => {
     editor.destroy()
   })
 })
+
+describe('MIND_MAP_TOOL schema', () => {
+  it('gives every array an items schema (Gemini refuses the whole request without one)', () => {
+    // genoffice#2059: the leaf `children` array carried only a description,
+    // and the API answered "...properties[children].items: missing field".
+    const walk = (node: unknown): void => {
+      if (typeof node !== 'object' || node === null) return
+      if (Array.isArray(node)) {
+        node.forEach(walk)
+        return
+      }
+      const record = node as Record<string, unknown>
+      if (record.type === 'array') expect(record.items).toBeDefined()
+      for (const value of Object.values(record)) walk(value)
+    }
+    walk(MIND_MAP_TOOL.inputSchema)
+  })
+})
