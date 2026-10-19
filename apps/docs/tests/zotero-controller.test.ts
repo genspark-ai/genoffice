@@ -109,6 +109,15 @@ describe('ZoteroDocumentController', () => {
 
     await call('Document_setDocumentData', [1, '<data data-version="3"/>'])
     expect(await call('Document_getDocumentData', [1])).toBe('<data data-version="3"/>')
+    // the session speaks LibreOffice storages, the store speaks Word fields:
+    // what the bridge reports lands as Field, and reads back as ReferenceMark
+    const sessionPrefs =
+      '<data data-version="3"><prefs><pref name="fieldType"><value>ReferenceMark</value></pref></prefs></data>'
+    await call('Document_setDocumentData', [1, sessionPrefs])
+    expect(documentData).toBe(
+      '<data data-version="3"><prefs><pref name="fieldType"><value>Field</value></pref></prefs></data>',
+    )
+    expect(await call('Document_getDocumentData', [1])).toBe(sessionPrefs)
     await call('Field_removeCode', [1, inserted[0]])
     expect(editor.getText()).toBe('(Smith, 2024)')
     expect(await call('Document_getFields', [1, 'ReferenceMark'])).toEqual([[], [], [], []])
