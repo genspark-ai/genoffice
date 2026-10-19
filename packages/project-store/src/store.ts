@@ -205,6 +205,35 @@ function readChatTail(filePath: string): string {
   }
 }
 
+/// The first user turn in a transcript, read from the file's head. A list of
+/// threads must not read every transcript in full to label them, and the
+/// first question sits on the first lines by construction; a window that ends
+/// mid-record just fails to parse and yields no label.
+function firstQuestionInFile(filePath: string): string | undefined {
+  const size = statSync(filePath).size
+  if (size === 0) return undefined
+  const fd = openSync(filePath, 'r')
+  try {
+    const buffer = Buffer.allocUnsafe(Math.min(size, 8192))
+    const bytesRead = readSync(fd, buffer, 0, buffer.length, 0)
+    for (const line of buffer.subarray(0, bytesRead).toString('utf8').split('\n')) {
+      try {
+        const record = JSON.parse(line) as { role?: string; text?: string }
+        if (record.role === 'user' && typeof record.text === 'string' && record.text.trim()) {
+          return record.text
+        }
+      } catch {
+        // a torn line at the window's edge, or a record we can't read: no label
+      }
+    }
+    return undefined
+  } catch {
+    return undefined
+  } finally {
+    closeSync(fd)
+  }
+}
+
 function parseChatRecords(raw: string): ChatMessage[] {
   const messages: ChatMessage[] = []
   for (const line of raw.split('\n')) {
@@ -805,7 +834,13 @@ export class ProjectStore {
         } catch {
           // use defaults if stat fails
         }
-        return { chatId, updatedAt, approxCount }
+        const firstQuestion = firstQuestionInFile(fullPath)
+        return {
+          chatId,
+          updatedAt,
+          approxCount,
+          ...(firstQuestion === undefined ? {} : { firstQuestion }),
+        }
       })
     } catch {
       return []
@@ -828,6 +863,15 @@ export class ProjectStore {
     // for a question the reader has just asked and then dismissed. Dropping the
     // queue is what deletes it; the file below may well not exist yet.
     this.pendingFirstWrite.delete(this.seqKey(projectId, chatId))
+    // A transcript bound to a document leaves its path mapping behind; drop
+    // every entry that points at the deleted id so a future file at the same
+    // path is not handed the deleted conversation's identity.
+    const index = this.readIndex()
+    const bound = Object.entries(index.chatIdByPath ?? {}).filter(([, id]) => id === chatId)
+    if (bound.length > 0) {
+      for (const [key] of bound) delete index.chatIdByPath![key]
+      this.writeIndex(index)
+    }
     if (!existsSync(path)) return
     try {
       unlinkSync(path)

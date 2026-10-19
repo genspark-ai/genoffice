@@ -100,6 +100,16 @@ export function listThreads(
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
+/**
+ * This panel's threads, and nothing else. Unsaved editor documents write
+ * their AI history into the same default project under `unsaved-` ids, and a
+ * list that showed those would offer deleting a document's transcript from a
+ * panel that has nothing to do with it.
+ */
+export function panelThreads(metas: readonly ChatMeta[]): ChatMeta[] {
+  return metas.filter((meta) => meta.chatId === CHAT_ID || meta.chatId.startsWith(`${CHAT_ID}-`))
+}
+
 /** The first question in a stored conversation, which is how it is labelled. */
 export function firstQuestionOf(stored: readonly ChatMessage[]): string | undefined {
   return stored.find((message) => message.role === 'user')?.text
@@ -183,13 +193,14 @@ export function KbAskPanel({
   }
 
   useEffect(() => {
-    // Reopening the panel should show the thread that was already there. The
-    // ids resolve in the background, so a turn asked before they land is
-    // queued by persist() and flushed here rather than lost.
+    // Claim whichever thread is active — the fixed home thread on mount, the
+    // chosen id after a chip click or a new thread. The ids resolve in the
+    // background, so a turn asked before they land is queued by persist() and
+    // flushed here rather than lost.
     const api = window.projectApi
     if (!api) return
     let current = true
-    void claimThread(api, CHAT_ID, pendingRef.current, setMessages, () => current)
+    void claimThread(api, activeChat, pendingRef.current, setMessages, () => current)
       .then((ids) => {
         if (current) chatIdsRef.current = ids
       })
@@ -203,25 +214,14 @@ export function KbAskPanel({
   const refreshThreads = async (api: ProjectApi): Promise<void> => {
     try {
       const ids = await api.resolveChat({ filePath: null, tempChatId: CHAT_ID })
-      const metas = await api.listChats({ projectId: ids.projectId })
-      // The label needs each thread's own first question, so every id is read
-      // back; a chat with hundreds of turns still costs one short read each.
-      const labelled = await Promise.all(
-        metas.map(async (meta) => {
-          let label: string | undefined
-          try {
-            label = firstQuestionOf(await api.loadChat({ ...ids, chatId: meta.chatId, limit: 20 }))
-          } catch {
-            label = undefined
-          }
-          return [meta, label] as const
-        }),
-      )
+      // Only this panel's own threads belong in the list: the default project
+      // also keeps every editor document's AI history, and listing those
+      // would offer deleting them from here.
+      const metas = panelThreads(await api.listChats({ projectId: ids.projectId }))
+      // Labels ride on the listing itself, so a refresh is one call however
+      // many threads are stored.
       setThreads(
-        listThreads(
-          labelled.map(([meta]) => meta),
-          (chatId) => labelled.find(([meta]) => meta.chatId === chatId)?.[1],
-        ),
+        listThreads(metas, (chatId) => metas.find((meta) => meta.chatId === chatId)?.firstQuestion),
       )
     } catch {
       setThreads([])
@@ -240,7 +240,12 @@ export function KbAskPanel({
     setMessages([])
   }
 
-  const removeThread = async (chatId: string): Promise<void> => {
+  const removeThread = async (chatId: string, label: string): Promise<void> => {
+    // A transcript gone is gone; the ×  on a chip should not be a hair-trigger.
+    const thread = threads.find((entry) => entry.chatId === chatId)
+    if (!window.confirm(t('askThreadDeleteConfirm', { label: thread?.label ?? label }))) {
+      return
+    }
     const api = window.projectApi
     if (!api) return
     try {
@@ -458,7 +463,7 @@ export function KbAskPanel({
                 type="button"
                 className="kb-ask-thread-del"
                 aria-label={t('askThreadDelete', { label: thread.label })}
-                onClick={() => void removeThread(thread.chatId)}
+                onClick={() => void removeThread(thread.chatId, thread.label)}
               >
                 ×
               </button>

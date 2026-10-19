@@ -6,6 +6,7 @@ import {
   claimThread,
   firstQuestionOf,
   listThreads,
+  panelThreads,
   restoreAskMessages,
   type AskMessage,
 } from '../src/renderer/src/KbAskPanel'
@@ -238,5 +239,53 @@ describe('naming a conversation by its first question', () => {
       firstQuestionOf([stored({ role: 'assistant', text: 'orphan answer', seq: 0 })]),
     ).toBeUndefined()
     expect(firstQuestionOf([])).toBeUndefined()
+  })
+})
+
+describe('choosing which conversations the panel lists', () => {
+  const meta = (chatId: string): ChatMeta => ({
+    chatId,
+    updatedAt: '2026-10-17T09:00:00.000Z',
+    approxCount: 4,
+  })
+
+  it('keeps the home thread and the threads a new conversation started', () => {
+    expect(
+      panelThreads([meta('kb-ask'), meta('kb-ask-1731'), meta('kb-ask-1732')]).map((m) => m.chatId),
+    ).toEqual(['kb-ask', 'kb-ask-1731', 'kb-ask-1732'])
+  })
+
+  it("never lists another document's AI history, however many are stored", () => {
+    // Unsaved editor documents write into the same default project; a
+    // list that showed them would offer deleting their transcripts from a
+    // panel that has nothing to do with them.
+    const listed = panelThreads([
+      meta('kb-ask'),
+      meta('unsaved-1728000000000'),
+      meta('a1b2c3d4e5f6a7b8'),
+      meta('kb-asks'),
+      meta('ask-kb-ask'),
+    ])
+    expect(listed.map((m) => m.chatId)).toEqual(['kb-ask'])
+  })
+})
+
+describe('claiming the thread the panel switched to', () => {
+  it('resolves the activated id, not the home thread', async () => {
+    // A chip click or a new conversation changes the id; if the claim still
+    // asked for the home thread, every turn would land in `kb-ask` no matter
+    // which conversation was on screen.
+    const { api, calls } = recorder([])
+    await claimThread(
+      api,
+      'kb-ask-1731',
+      [],
+      () => undefined,
+      () => true,
+    )
+    expect(calls[0]).toEqual({
+      method: 'resolveChat',
+      args: { filePath: null, tempChatId: 'kb-ask-1731' },
+    })
   })
 })

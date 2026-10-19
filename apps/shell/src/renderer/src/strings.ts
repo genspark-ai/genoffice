@@ -10,6 +10,7 @@ export const strings = {
     navAsk: 'AI 问答',
     askThreadsTitle: '对话',
     askThreadDelete: '删除对话「{label}」',
+    askThreadDeleteConfirm: '删除对话「{label}」？删除后无法恢复。',
     askThreadNew: '新建对话',
     askTitle: '问知识库',
     askEmptyCorpusHint: '还没有收藏文件——先在最近或文件夹里点星收藏,AI 就能读它们。',
@@ -485,6 +486,7 @@ export const strings = {
     navAsk: 'Ask AI',
     askThreadsTitle: 'Conversations',
     askThreadDelete: 'Delete the conversation "{label}"',
+    askThreadDeleteConfirm: 'Delete "{label}"? Its turns cannot be recovered.',
     askThreadNew: 'New conversation',
     askTitle: 'Ask your knowledge base',
     askEmptyCorpusHint: 'No starred files yet — star some files first and the AI can read them.',
@@ -975,6 +977,7 @@ export const strings = {
     navAsk: 'Hỏi AI',
     askThreadsTitle: 'Cuộc trò chuyện',
     askThreadDelete: 'Xoá cuộc trò chuyện "{label}"',
+    askThreadDeleteConfirm: 'Xóa cuộc trò chuyện "{label}"? Không thể khôi phục lại.',
     askThreadNew: 'Cuộc trò chuyện mới',
     askTitle: 'Hỏi cơ sở tri thức của bạn',
     askEmptyCorpusHint:
@@ -1469,6 +1472,7 @@ export const strings = {
     navAsk: 'AIに質問',
     askThreadsTitle: '会話',
     askThreadDelete: '会話「{label}」を削除',
+    askThreadDeleteConfirm: '「{label}」の会話を削除しますか？削除すると元に戻せません。',
     askThreadNew: '新しい会話',
     askTitle: 'ナレッジベースに質問',
     askEmptyCorpusHint:
@@ -1974,6 +1978,7 @@ export const strings = {
     navAsk: 'AI 질문',
     askThreadsTitle: '대화',
     askThreadDelete: '대화 "{label}" 삭제',
+    askThreadDeleteConfirm: '"{label}" 대화를 삭제할까요? 삭제 후에는 복구할 수 없습니다.',
     askThreadNew: '새 대화',
     askTitle: '지식 베이스에 질문',
     askEmptyCorpusHint:
@@ -2469,6 +2474,8 @@ export const strings = {
     navAsk: 'Demander à l’IA',
     askThreadsTitle: 'Conversations',
     askThreadDelete: 'Supprimer la conversation « {label} »',
+    askThreadDeleteConfirm:
+      'Supprimer la conversation « {label} » ? Elle ne pourra pas être récupérée.',
     askThreadNew: 'Nouvelle conversation',
     askTitle: 'Interroger votre base de connaissances',
     askEmptyCorpusHint:
@@ -2983,6 +2990,7 @@ export const strings = {
     navAsk: 'KI fragen',
     askThreadsTitle: 'Unterhaltungen',
     askThreadDelete: 'Unterhaltung „{label}“ löschen',
+    askThreadDeleteConfirm: 'Gespräch „{label}" löschen? Es lässt sich nicht wiederherstellen.',
     askThreadNew: 'Neue Unterhaltung',
     askTitle: 'Ihre Wissensbasis befragen',
     askEmptyCorpusHint:
@@ -3498,6 +3506,7 @@ export const strings = {
     navAsk: 'Preguntar a la IA',
     askThreadsTitle: 'Conversaciones',
     askThreadDelete: 'Eliminar la conversación «{label}»',
+    askThreadDeleteConfirm: '¿Eliminar la conversación "{label}"? No se podrá recuperar.',
     askThreadNew: 'Nueva conversación',
     askTitle: 'Consulta tu base de conocimientos',
     askEmptyCorpusHint:
@@ -4011,6 +4020,7 @@ export const strings = {
     navAsk: 'ถาม AI',
     askThreadsTitle: 'การสนทนา',
     askThreadDelete: 'ลบการสนทนา "{label}"',
+    askThreadDeleteConfirm: 'ลบบทสนทนา "{label}" ใช่ไหม ลบแล้วจะไม่สามารถกู้คืนได้',
     askThreadNew: 'การสนทนาใหม่',
     askTitle: 'ถามคลังความรู้ของคุณ',
     askEmptyCorpusHint: 'ยังไม่มีไฟล์ที่ติดดาว — ติดดาวไฟล์ก่อนเพื่อให้ AI อ่านได้',
@@ -4501,6 +4511,7 @@ export const strings = {
     navAsk: 'Tanya AI',
     askThreadsTitle: 'Percakapan',
     askThreadDelete: 'Hapus percakapan "{label}"',
+    askThreadDeleteConfirm: 'Hapus percakapan "{label}"? Isinya tidak dapat dikembalikan.',
     askThreadNew: 'Percakapan baru',
     askTitle: 'Tanya basis pengetahuan anda',
     askEmptyCorpusHint:
@@ -5006,6 +5017,7 @@ export const strings = {
     navAsk: 'Спросить ИИ',
     askThreadsTitle: 'Диалоги',
     askThreadDelete: 'Удалить диалог «{label}»',
+    askThreadDeleteConfirm: 'Удалить переписку «{label}»? Восстановить её будет нельзя.',
     askThreadNew: 'Новый диалог',
     askTitle: 'Спросите базу знаний',
     askEmptyCorpusHint:
@@ -5510,6 +5522,7 @@ export const strings = {
     navAsk: 'اسأل الذكاء الاصطناعي',
     askThreadsTitle: 'المحادثات',
     askThreadDelete: 'حذف المحادثة "{label}"',
+    askThreadDeleteConfirm: 'حذف المحادثة "{label}"؟ لا يمكن استرجاعها بعد الحذف.',
     askThreadNew: 'محادثة جديدة',
     askTitle: 'اسأل قاعدة معارفك',
     askEmptyCorpusHint:
@@ -6002,6 +6015,7 @@ export const strings = {
     navAsk: 'Perguntar à IA',
     askThreadsTitle: 'Conversas',
     askThreadDelete: 'Eliminar a conversa "{label}"',
+    askThreadDeleteConfirm: 'Excluir a conversa "{label}"? Ela não poderá ser recuperada.',
     askThreadNew: 'Nova conversa',
     askTitle: 'Consulte sua base de conhecimento',
     askEmptyCorpusHint:
@@ -6503,6 +6517,8 @@ export const strings = {
     navAsk: 'Chiedi all’IA',
     askThreadsTitle: 'Conversazioni',
     askThreadDelete: 'Elimina la conversazione «{label}»',
+    askThreadDeleteConfirm:
+      'Eliminare la conversazione "{label}"? Non potrà più essere recuperata.',
     askThreadNew: 'Nuova conversazione',
     askTitle: 'Interroga la tua base di conoscenza',
     askEmptyCorpusHint:
@@ -7003,6 +7019,7 @@ export const strings = {
     navAsk: 'Zapytaj AI',
     askThreadsTitle: 'Rozmowy',
     askThreadDelete: 'Usuń rozmowę „{label}”',
+    askThreadDeleteConfirm: 'Usunąć rozmowę „{label}"? Nie będzie można jej odzyskać.',
     askThreadNew: 'Nowa rozmowa',
     askTitle: 'Zapytaj swoją bazę wiedzy',
     askEmptyCorpusHint:
@@ -7497,6 +7514,7 @@ export const strings = {
     navAsk: 'Zeptat se AI',
     askThreadsTitle: 'Konverzace',
     askThreadDelete: 'Smazat konverzaci „{label}“',
+    askThreadDeleteConfirm: 'Smazat konverzaci „{label}"? Nebude možné ji obnovit.',
     askThreadNew: 'Nová konverzace',
     askTitle: 'Ptejte se své znalostní databáze',
     askEmptyCorpusHint:
@@ -7989,6 +8007,8 @@ export const strings = {
     navAsk: 'Vraag het de AI',
     askThreadsTitle: 'Gesprekken',
     askThreadDelete: 'Gesprek „{label}” verwijderen',
+    askThreadDeleteConfirm:
+      'Gesprek "{label}" verwijderen? De beurten kunnen niet worden hersteld.',
     askThreadNew: 'Nieuw gesprek',
     askTitle: 'Vraag je kennisbank',
     askEmptyCorpusHint: 'Nog geen favorieten — markeer eerst bestanden zodat de AI ze kan lezen.',
@@ -8484,6 +8504,8 @@ export const strings = {
     navAsk: 'Tanya AI',
     askThreadsTitle: 'Perbualan',
     askThreadDelete: 'Padam perbualan "{label}"',
+    askThreadDeleteConfirm:
+      'Padam perbualan "{label}"? Ia tidak dapat dikembalikan selepas dipadam.',
     askThreadNew: 'Perbualan baharu',
     askTitle: 'Tanya pangkalan pengetahuan anda',
     askEmptyCorpusHint:
@@ -8983,6 +9005,7 @@ export const strings = {
     navAsk: 'שאל את ה-AI',
     askThreadsTitle: 'שיחות',
     askThreadDelete: 'מחק את השיחה "{label}"',
+    askThreadDeleteConfirm: 'למחוק את השיחה "{label}"? לא ניתן לשחזר אותה.',
     askThreadNew: 'שיחה חדשה',
     askTitle: 'שאל את בסיס הידע שלך',
     askEmptyCorpusHint:
@@ -9462,6 +9485,7 @@ export const strings = {
     navAsk: 'AI से पूछें',
     askThreadsTitle: 'बातचीत',
     askThreadDelete: 'बातचीत "{label}" हटाएँ',
+    askThreadDeleteConfirm: '"{label}" बातचीत हटाएँ? इसे वापस नहीं किया जा सकेगा।',
     askThreadNew: 'नई बातचीत',
     askTitle: 'अपने नॉलेज बेस से पूछें',
     askEmptyCorpusHint:
@@ -9955,6 +9979,7 @@ export const strings = {
     navAsk: 'AI 問答',
     askThreadsTitle: '對話',
     askThreadDelete: '刪除對話「{label}」',
+    askThreadDeleteConfirm: '刪除對話「{label}」？刪除後無法復原。',
     askThreadNew: '新增對話',
     askTitle: '問知識庫',
     askEmptyCorpusHint: '還沒有收藏檔案——先在最近或資料夾裡點星收藏,AI 就能讀取它們。',

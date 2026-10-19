@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -72,5 +72,27 @@ describe('deleteChat', () => {
     // The default project is still there to be written to again.
     store.appendChatMessage('default', 'kb-ask', { role: 'user', text: 'again' })
     expect(store.loadChat('default', 'kb-ask')).toHaveLength(1)
+  })
+
+  it('drops the path mapping a document-bound transcript left behind', () => {
+    // resolveChatForFile registers the file → chatId pair; deleting the
+    // transcript without dropping the mapping would leave the index pointing
+    // at a chat whose file is gone.
+    const doc = join(tmpDir, 'report.docx')
+    store.appendChatMessage('default', 'unsaved-1', { role: 'user', text: 'about the report' })
+    store.appendChatMessage('default', 'unsaved-1', { role: 'assistant', text: 'an answer' })
+    const bound = store.rebindChatToFile('default', 'unsaved-1', doc)
+    const indexBefore = JSON.parse(
+      readFileSync(join(tmpDir, 'projects', 'index.json'), 'utf8'),
+    ) as {
+      chatIdByPath?: Record<string, string>
+    }
+    expect(Object.values(indexBefore.chatIdByPath ?? {})).toContain(bound.chatId)
+
+    store.deleteChat(bound.projectId, bound.chatId)
+    const indexAfter = JSON.parse(readFileSync(join(tmpDir, 'projects', 'index.json'), 'utf8')) as {
+      chatIdByPath?: Record<string, string>
+    }
+    expect(Object.values(indexAfter.chatIdByPath ?? {})).not.toContain(bound.chatId)
   })
 })
