@@ -11,6 +11,7 @@
  * (`aislides-3d:{partPath}`, model3dPartOf).
  */
 import { deflateSync } from 'node:zlib'
+import { crc32 } from './crc32'
 import { glbBounds } from './glb-bounds'
 import {
   GLB_CONTENT_TYPE,
