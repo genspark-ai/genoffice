@@ -1,3 +1,5 @@
+import type { DocumentProperties } from './doc-properties'
+
 /** Picture watermark found in a header part (VML picture frame behind the body). */
 export interface PictureWatermarkInfo {
   /** header-part relationship of the image */
@@ -2279,6 +2281,8 @@ export interface ParsedDoc {
   blocks: Block[]
   /** Zotero document preferences stored in Word custom properties */
   zoteroDocumentData: string
+  /** the docProps parts of the package: core, extended (app) and custom properties */
+  properties: DocumentProperties
   /** comments from word/comments.xml, in file order */
   comments: CommentInfo[]
   /** footnotes from word/footnotes.xml (separators excluded), file order */

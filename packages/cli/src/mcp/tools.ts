@@ -222,6 +222,7 @@ export const TOOLS: ToolSpec[] = [
       'sections',
       'fields',
       'notes',
+      'properties',
     ],
   },
   {

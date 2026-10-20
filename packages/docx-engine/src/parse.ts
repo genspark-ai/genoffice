@@ -21,6 +21,7 @@ import {
 import { findSourcesPart, parseSourcesXml } from './sources'
 import { decodeSymbolText, symbolGlyph } from './symbol-fonts'
 import { readZoteroDocumentData } from './zotero-doc-props'
+import { emptyDocumentProperties, readDocumentProperties } from './doc-properties'
 import { computeListMarkerInfos, type ListItemRef } from './list-markers'
 import { FONT_TABLE_PART_PATH, parseFontTable, readEmbeddedFonts } from './font-table'
 import { DEFAULT_THEME_COLORS, THEME_PART_PATH, readThemeColors, readThemeFonts } from './theme'
@@ -372,6 +373,8 @@ export async function parseDocx(
   const sources = await parseSources(zip)
   // a damaged docProps/custom.xml must not keep the document from opening
   const zoteroDocumentData = await readZoteroDocumentData(zip).catch(() => '')
+  // the same goes for the other docProps parts: a broken one is simply empty
+  const properties = await readDocumentProperties(zip).catch(() => emptyDocumentProperties())
   const fontTableFile = zip.file(FONT_TABLE_PART_PATH)
   const fontTable = fontTableFile ? parseFontTable(await fontTableFile.async('string')) : []
   const embeddedFonts = await readEmbeddedFonts(zip, fontTable)
@@ -575,6 +578,7 @@ export async function parseDocx(
   return {
     blocks,
     zoteroDocumentData,
+    properties,
     comments,
     protection,
     writeProtection,

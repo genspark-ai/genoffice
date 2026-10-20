@@ -11,6 +11,7 @@ import {
   nextNoteId,
   parseChartPartXml,
   parseDocx,
+  parsePropertyChanges,
   patchChartPartXml,
   patchChartWorkbookXlsxBase64,
   pendingHeadingLevel,
@@ -18,9 +19,11 @@ import {
   readSections,
   saveDocx,
   type CommentInfo,
+  type DocumentProperties,
   type HeaderFooter,
   type HfPartInfo,
   type NoteInfo,
+  type PropertyChanges,
   type RevisionXmlFilter,
   type SaveOptions,
   type StyleUpsert,
@@ -136,6 +139,8 @@ interface SideState {
   /** header / footer / footnote / endnote part XML by zip path, loaded on the first accept_changes / reject_changes */
   revisionParts: Map<string, string> | null
   revisionPartsDirty: Set<string>
+  /** set_properties changes; written into the docProps parts on save */
+  properties?: PropertyChanges
 }
 
 export interface OpenDocument {
@@ -237,6 +242,7 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
     watermark: side.watermark,
     footnotes: side.notesDirty ? side.footnotes : undefined,
     endnotes: side.notesDirty ? side.endnotes : undefined,
+    properties: side.properties,
     ...(await chartPartPatches(doc, plan.chartPatches)),
   }
   for (const path of side.revisionPartsDirty) {
@@ -589,6 +595,10 @@ export async function applyDocOps(
       const r = await setPictureWatermark(doc, op, opts)
       if (r.error) failed = rejected(r.error)
       else results.push({ index, op: name, output: r.output! })
+    } else if (name === 'set_properties') {
+      const r = setDocumentProperties(doc, op)
+      if (r.error) failed = rejected(r.error)
+      else results.push({ index, op: name, output: r.output! })
     } else if (name === 'accept_changes' || name === 'reject_changes') {
       const r = await applyRevisionOp(doc, op, name === 'accept_changes' ? 'accept' : 'reject')
       if (r.error) failed = rejected(r.error)
@@ -623,6 +633,56 @@ export async function applyDocOps(
     }
   }
   return { results, failures, skipped: 0 }
+}
+
+/**
+ * set_properties: the docProps parts (core, extended, custom) are written on
+ * save, so the op only records the change; the document body is untouched.
+ */
+function setDocumentProperties(
+  doc: OpenDocument,
+  op: Record<string, unknown>,
+): { output?: string; error?: string } {
+  let changes: PropertyChanges
+  try {
+    changes = parsePropertyChanges(op)
+  } catch (err) {
+    return { error: (err as Error).message }
+  }
+  doc.side.properties = mergePropertyChanges(doc.side.properties, changes)
+  return { output: `set document properties: ${describePropertyChanges(changes)}` }
+}
+
+/** two set_properties ops in one batch compose: the later value wins */
+function mergePropertyChanges(
+  current: PropertyChanges | undefined,
+  next: PropertyChanges,
+): PropertyChanges {
+  if (!current) return next
+  const merged: PropertyChanges = { ...current }
+  if (next.clear) merged.clear = next.clear
+  for (const section of ['core', 'app', 'custom'] as const) {
+    const values = next[section]
+    if (!values) continue
+    merged[section] = { ...(current[section] ?? {}), ...values }
+  }
+  return merged
+}
+
+function describePropertyChanges(changes: PropertyChanges): string {
+  const parts: string[] = []
+  if (changes.clear === 'all') parts.push('clear all')
+  for (const section of ['core', 'app', 'custom'] as const) {
+    for (const [key, value] of Object.entries(changes[section] ?? {})) {
+      parts.push(`${section}.${key}=${value === null ? 'null' : JSON.stringify(value)}`)
+    }
+  }
+  return parts.join(', ')
+}
+
+/** the document properties (core, extended/app, custom) of the open document */
+export function listProperties(doc: OpenDocument): DocumentProperties {
+  return doc.parsed.properties
 }
 
 /** insert_content / insert_chart without a position append at the end; the in-app default ("after the cursor") has no meaning headless. */
@@ -1242,6 +1302,7 @@ const CONTENT_OPS = [
   'edit_note',
   'delete_note',
   'delete_comment',
+  'set_properties',
 ] as const
 
 const CONTENT_NOTES: Record<(typeof CONTENT_OPS)[number], string> = {
@@ -1285,6 +1346,8 @@ const CONTENT_NOTES: Record<(typeof CONTENT_OPS)[number], string> = {
     'kind footnote|endnote and an id from `genoffice docs read --notes`; removes the reference mark too',
   delete_comment:
     'removes the comment and its anchor; a thread root with replies needs withReplies: true, a reply id removes just that reply',
+  set_properties:
+    'the document properties of the file: core (title, subject, creator, keywords, description, lastModifiedBy, revision, created, modified, category, contentStatus, identifier, language, version), app (template, totalTime, pages, words, characters, application, docSecurity, lines, paragraphs, scaleCrop, company, linksUpToDate, charactersWithSpaces, sharedDoc, hyperlinksChanged, appVersion, manager) and custom (by name); a string sets the value, null removes the property, clear: "all" empties all three parts; `genoffice docs read --properties` lists the current ones',
 }
 
 const AFTER_BLOCK_INDEX =
@@ -1298,6 +1361,38 @@ const INSERT_IMAGE_SCHEMA: JsonSchema = {
     afterBlockIndex: { type: 'integer', description: AFTER_BLOCK_INDEX },
   },
   required: ['url'],
+}
+
+/** set_properties: the values of a property part, by key (a string sets, null removes) */
+const PROPERTY_VALUES: JsonSchema = {
+  type: 'object',
+  additionalProperties: { type: ['string', 'null'] },
+}
+
+const SET_PROPERTIES_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    core: {
+      ...PROPERTY_VALUES,
+      description:
+        'core properties by friendly key (title, subject, creator, keywords, description, lastModifiedBy, …); a string sets the value, null removes the element',
+    },
+    app: {
+      ...PROPERTY_VALUES,
+      description:
+        'extended (app) properties by friendly key (company, template, application, manager, …); a string sets the value, null removes the element',
+    },
+    custom: {
+      ...PROPERTY_VALUES,
+      description:
+        'custom properties by name (MatterId, Reviewer, …); a string sets the value, null removes the property',
+    },
+    clear: {
+      type: 'string',
+      enum: ['all'],
+      description: 'remove every property of all three parts',
+    },
+  },
 }
 
 /** insert_picture / set_watermark headless: the in-app schema, with the image source widened to local paths */
@@ -1339,15 +1434,19 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
   const tools = new Map(mods.tools.AGENT_TOOLS.map((t) => [t.name, t]))
   const content: OpEntry[] = CONTENT_OPS.map((op) => {
     const tool = tools.get(op)
-    if (!tool && op !== 'insert_image') throw new Error(`docs op catalog: no tool named ${op}`)
+    if (!tool && op !== 'insert_image' && op !== 'set_properties') {
+      throw new Error(`docs op catalog: no tool named ${op}`)
+    }
     const schema =
       op === 'insert_image'
         ? INSERT_IMAGE_SCHEMA
-        : op === 'insert_picture'
-          ? insertPictureSchema(tool!.inputSchema as JsonSchema)
-          : op === 'set_watermark'
-            ? insertPictureSchema(tool!.inputSchema as JsonSchema, 'image')
-            : cliToolSchema(tool!.inputSchema as JsonSchema)
+        : op === 'set_properties'
+          ? SET_PROPERTIES_SCHEMA
+          : op === 'insert_picture'
+            ? insertPictureSchema(tool!.inputSchema as JsonSchema)
+            : op === 'set_watermark'
+              ? insertPictureSchema(tool!.inputSchema as JsonSchema, 'image')
+              : cliToolSchema(tool!.inputSchema as JsonSchema)
     return {
       op,
       group: 'content',
