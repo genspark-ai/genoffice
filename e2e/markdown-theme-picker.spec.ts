@@ -83,3 +83,62 @@ test('markdown theme picker applies, persists and restarts', async () => {
     if (!closed) await closeAndSaveVideo(launched, 'markdown-theme-picker')
   }
 })
+
+/** The theme menu must be fully visible: the ribbon row clips its overflow, so
+ *  a menu anchored with position: absolute loses its right edge (and its
+ *  bottom) to the window. It has to escape the clip and stay inside the
+ *  viewport (genoffice#2104). */
+test('the theme menu stays whole: inside the viewport, not clipped by the ribbon', async () => {
+  test.setTimeout(300_000)
+  const dir = join(__dirname, 'artifacts')
+  mkdirSync(dir, { recursive: true })
+  const docPath = join(dir, 'theme-menu-fit.md')
+  writeFileSync(docPath, '# Fit\n\nbody\n')
+
+  const launched = await launchShell({
+    onboardingSeen: true,
+    openFile: docPath,
+    videoDir: 'markdown-theme-menu-fit',
+  })
+  const { app } = launched
+  try {
+    const page = await waitForPageWithUrl(app, '://markdown/')
+    await awaitDocsEditor(page)
+
+    const themeButton = page.locator('.md-theme-wrap > .rb-btn').first()
+    await themeButton.click()
+    const menu = page.locator('.md-theme-menu')
+    await expect(menu).toBeVisible()
+
+    const geom = await page.evaluate(() => {
+      const el = document.querySelector('.md-theme-menu') as HTMLElement
+      const r = el.getBoundingClientRect()
+      // what actually paints at the menu's bottom-left corner: the menu
+      // itself, or whatever covers it (the page canvas)?
+      const hit = document.elementFromPoint(r.left + 4, r.bottom - 4)
+      return {
+        viewportW: window.innerWidth,
+        viewportH: window.innerHeight,
+        left: r.left,
+        right: r.right,
+        top: r.top,
+        bottom: r.bottom,
+        width: r.width,
+        height: r.height,
+        cornerIsMenu: Boolean(hit?.closest('.md-theme-menu')),
+      }
+    })
+
+    // every edge inside the window
+    expect(geom.left).toBeGreaterThanOrEqual(0)
+    expect(geom.right).toBeLessThanOrEqual(geom.viewportW)
+    expect(geom.top).toBeGreaterThanOrEqual(0)
+    expect(geom.bottom).toBeLessThanOrEqual(geom.viewportH)
+    // and nothing paints over the menu
+    expect(geom.cornerIsMenu).toBe(true)
+
+    await page.screenshot({ path: 'artifacts/md-theme-menu-fit.png' })
+  } finally {
+    await closeAndSaveVideo(launched, 'markdown-theme-menu-fit')
+  }
+})

@@ -3549,14 +3549,24 @@ div.tiptap-mathematics-render {
 
 /* ---- document paper theme picker (ribbon) ---- */
 
+/* Anchor for the theme menu, which is position: fixed so it escapes the
+   ribbon-body scroll clip while tracking its trigger through ribbon
+   scrolling (same pattern as .rb-link-pop and the docs ribbon dropdowns) */
 .md-theme-wrap {
   position: relative;
+  anchor-name: --md-theme-wrap;
+  anchor-scope: --md-theme-wrap;
 }
 
 .md-theme-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
+  position-anchor: --md-theme-wrap;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  /* the palette button sits at the right end of the ribbon, so a menu that
+     opens to the right leaves the window; flip-inline mirrors it back */
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
   z-index: 30;
   min-width: 190px;
   padding: 5px;
