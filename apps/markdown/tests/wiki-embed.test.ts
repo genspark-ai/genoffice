@@ -205,7 +205,7 @@ describe('resolution', () => {
 
   it('a picture embed with a width hint sizes the image', async () => {
     const { editor } = open('![[pic.png|120]]', {
-      answers: { 'pic.png|120': { path: '/notes/pic.png', fragment: '', found: true } },
+      answers: { 'pic.png': { path: '/notes/pic.png', fragment: '', found: true } },
     })
     await settled()
     const img = editor.view.dom.querySelector('img.wiki-embed-img') as HTMLImageElement | null

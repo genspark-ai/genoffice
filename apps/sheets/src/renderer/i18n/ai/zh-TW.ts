@@ -59,6 +59,7 @@ export const zhTW = {
   aiSave: '儲存',
   aiUnknownError: '未知錯誤',
   aiTimeoutError: 'AI 請求逾時：網路長時間無回應，已停止。請檢查網路後重試',
+  aiRegionError: '該模型的廠商不向目前地區提供服務，請換一個模型或切換網路',
   aiOverloadedError: 'AI 服務目前繁忙，請稍後重試',
   aiNetworkError: '網路有問題，無法連接 AI 服務。請檢查網路後重試',
   aiCreditsExhausted: 'Genspark 點數已用完，請前往 genspark.ai/pricing 儲值後重試',

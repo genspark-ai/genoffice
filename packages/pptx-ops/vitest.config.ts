@@ -15,6 +15,10 @@ export default defineConfig({
         here,
         '../pptx-engine/src/background-promote.ts',
       ),
+      '@genoffice/pptx-engine/chart-workbook': resolve(
+        here,
+        '../pptx-engine/src/chart-workbook.ts',
+      ),
       '@genoffice/pptx-engine': resolve(here, '../pptx-engine/src/index.ts'),
       '@genoffice/docx-engine/math': resolve(here, '../docx-engine/src/math.ts'),
     },

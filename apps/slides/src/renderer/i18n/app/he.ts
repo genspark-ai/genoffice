@@ -58,7 +58,8 @@ export const he = {
   appStatusVideoInserted: 'הווידאו נוסף (מוטבע בקובץ ‎.pptx; ניתן להפעלה ב-PowerPoint)',
   appStatusAudioInserted: 'השמע נוסף (מוטבע בקובץ ‎.pptx)',
   appStatusModel3dInserted:
-    'מודל תלת-ממד הוטבע (הבד מציג מציין מיקום; קובץ המודל נשמר בקובץ ‎.pptx)',
+    'המודל התלת-ממדי נוסף: בחר בו כדי לסובב אותו (גם PowerPoint מציג אותו בתלת-ממד)',
+  appStatusModel3dNoPreview: 'לא ניתן היה לצייר כאן את המודל התלת-ממדי; התמונה שלו לא השתנתה',
   appStatusRecordingEmpty: 'ההקלטה ריקה; לא נוסף דבר',
   appStatusRecordingInserted: 'הקלטת המסך נוספה לשקופית הנוכחית (webm מוטבע)',
   appStatusRecording: 'מקליט את המסך… לחץ שוב על "הקלטת מסך" כדי לעצור ולהוסיף',

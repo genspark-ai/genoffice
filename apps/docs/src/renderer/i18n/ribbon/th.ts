@@ -245,6 +245,7 @@ export const th = {
   ribbonTableColsLabel: 'จำนวนคอลัมน์',
   ribbonTableRowsLabel: 'จำนวนแถว',
   ribbonTableHandleTip: 'เลือกตาราง ลากเพื่อย้าย',
+  ribbonTableResizeTip: 'ลากเพื่อปรับขนาดตาราง',
   ribbonTableDeleteMenu: 'ลบ',
   ribbonSelectRow: 'เลือกแถว',
   ribbonSelectColumn: 'เลือกคอลัมน์',

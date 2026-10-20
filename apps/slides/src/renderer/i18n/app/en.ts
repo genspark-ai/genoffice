@@ -60,7 +60,8 @@ export const en = {
   appStatusVideoInserted: 'Video inserted (embedded in the .pptx; plays in PowerPoint)',
   appStatusAudioInserted: 'Audio inserted (embedded in the .pptx)',
   appStatusModel3dInserted:
-    '3D model embedded (canvas shows a placeholder; the model file is stored in the .pptx)',
+    '3D model inserted: select it to turn it (PowerPoint shows it in 3D too)',
+  appStatusModel3dNoPreview: 'The 3D model could not be drawn here; its picture is unchanged',
   appStatusRecordingEmpty: 'Recording is empty; nothing was inserted',
   appStatusRecordingInserted: 'Screen recording inserted on the current slide (embedded webm)',
   appStatusRecording: 'Recording… click "Screen Recording" again to stop and insert',

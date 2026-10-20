@@ -270,7 +270,9 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     id: 'openrouter',
     label: 'OpenRouter',
     // vendor-prefixed slugs exactly as openrouter.ai/api/v1/models lists them —
-    // there is no `openai/gpt-5.6` alias there, only the per-tier ids
+    // there is no `openai/gpt-5.6` alias there, only the per-tier ids. Shown
+    // until the live catalog (several hundred ids) replaces them.
+    liveModels: true,
     models: [
       'openrouter/auto',
       'anthropic/claude-opus-5.5',

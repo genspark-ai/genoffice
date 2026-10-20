@@ -122,6 +122,8 @@ export interface ParseContext {
   chartUserShapes?: Map<string, string>
   /** Audio/video rId → media zip path or external URL (r:link of videoFile/audioFile) */
   avRels?: Map<string, { target: string; external?: boolean }>
+  /** 3D model rId → .glb zip path (am3d:model3d r:embed) */
+  model3dRels?: Map<string, string>
   /** SmartArt: diagramData rId (dgm:relIds@r:dm) → data part content (fallback layout without a drawing part) */
   diagramDatas?: Map<string, string>
   /** SmartArt: diagramData rId (dgm:relIds@r:dm) → prerendered drawing part content */
@@ -413,6 +415,24 @@ function parseShapeFragment(
       const pic = Array.isArray(picRaw) ? picRaw[0] : picRaw
       if (pic) {
         const el = parsePicture(pic, anchor, ctx)
+        const model = choices
+          .map((ch) => {
+            const gf = ch?.['p:graphicFrame']
+            return (Array.isArray(gf) ? gf[0] : gf)?.['a:graphic']?.['a:graphicData']?.[
+              'am3d:model3d'
+            ]
+          })
+          .find(Boolean)
+        if (model) {
+          const rot = model['am3d:trans']?.['am3d:rot']
+          const angle = (name: string) => Number(rot?.[`@_${name}`] ?? 0) || 0
+          const target = ctx.model3dRels?.get(String(model['@_r:embed']))
+          el.model3d = {
+            ...(target ? { target } : {}),
+            rot: { ax: angle('ax'), ay: angle('ay'), az: angle('az') },
+          }
+          return el
+        }
         // Ink (p:contentPart) fallback bitmaps are placed by the ink's own p14:xfrm; the
         // fallback picture's box is often a much taller strip that PowerPoint never shows
         const inkXfrm = choices

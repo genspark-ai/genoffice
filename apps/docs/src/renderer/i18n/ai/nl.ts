@@ -113,6 +113,8 @@ export const nl = {
   aiUnknownError: 'Onbekende fout',
   aiTimeoutError:
     'AI-verzoek verlopen: geen reactie van het netwerk, uitvoering gestopt. Controleer je verbinding en probeer het opnieuw',
+  aiRegionError:
+    'De aanbieder van dit model bedient uw huidige regio niet — kies een ander model of wissel van netwerk',
   aiOverloadedError: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
   aiNetworkError:
     'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
@@ -122,6 +124,9 @@ export const nl = {
   aiSumImageAttachment: 'Afbeeldingsbijlage {name}',
   aiSumRead: '{name} lezen',
   aiSumReadAttachmentName: 'Bijlage {name} lezen',
+  aiSumSkillsList: 'Geïnstalleerde skills opgelijst',
+  aiSumSkillRead: 'Skill {name} gelezen',
+  aiSumRunCli: '{args} uitgevoerd',
   aiSumWebSearch: 'Zoeken op internet',
   aiSumWebSearchDone: 'Gezocht naar "{query}" ({count} resultaten)',
   aiSumImageSearch: 'Afbeeldingen zoeken',

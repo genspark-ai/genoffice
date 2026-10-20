@@ -146,12 +146,6 @@ export interface FileSearchHit extends RecentEntry {
 }
 
 /**
- * Endpoints the search reranker can judge against. The hosted Jev routes are
- * OpenRouter and TypeSafe's own API; Perplexity, Cloudflare and Liquid AI host
- * their own decision models; Kev and Rizzo Flow are local /v1/systemone
- * servers; `custom` points at any other /v1/systemone-compatible server.
- */
-/**
  * The decision-model routes the app can call. Several vendors publish more
  * than one size or generation behind the same URL, and the difference is only
  * the `model` in the body — but they are listed separately rather than folded
@@ -171,6 +165,10 @@ export type DecisionEndpoint =
   | 'kev'
   | 'rizzo'
   | 'custom'
+
+export function isCloudflareEndpoint(endpoint: DecisionEndpoint): boolean {
+  return endpoint === 'cloudflare' || endpoint === 'cloudflare-flash'
+}
 
 /** home search options persisted in app-settings.json under `fileSearch` */
 export interface FileSearchSettings {

@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { BooleanNumber, numfmt } from '@univerjs/core'
-import { isMetafileMime, metafileToDataUrl } from '@genoffice/docx-engine/metafile'
 import { Dropdown, shapePreviewPath, useDismissablePopover } from '@genoffice/ui'
 
 import type { createUniver } from './create-univer'
@@ -41,6 +40,7 @@ import {
   valueAxisLayout,
 } from './chart-text-scale'
 import type { ChartAxisText, ChartTextBox } from './chart-text-scale'
+import { useWorkbookMediaUrl } from './workbook-media'
 
 type UniverRuntime = ReturnType<typeof createUniver>
 type ActiveWorkbook = NonNullable<ReturnType<UniverRuntime['univerAPI']['getActiveWorkbook']>>
@@ -1679,59 +1679,6 @@ function ShapeVisual({
       {content}
     </div>
   )
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-  return bytes
-}
-
-/// A workbook media part as a data URL; metafiles rasterize to PNG first.
-/// Null when the bytes cannot be rendered.
-export async function workbookMediaDataUrl(media: {
-  readonly mediaType: string
-  readonly base64: string
-}): Promise<string | null> {
-  if (isMetafileMime(media.mediaType)) {
-    return metafileToDataUrl(base64ToBytes(media.base64), media.mediaType)
-  }
-  return `data:${media.mediaType};base64,${media.base64}`
-}
-
-/// Lazily fetches a visual's media bytes as a data URL (metafiles rasterize
-/// to PNG first). Pass an undefined sessionId to skip fetching.
-function useWorkbookMediaUrl(
-  sessionId: string | undefined,
-  visualId: string,
-): { url: string | null; unavailable: boolean } {
-  const [url, setUrl] = useState<string | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
-
-  useEffect(() => {
-    if (sessionId === undefined) return
-    let isCurrent = true
-    void window.desktopApi
-      .readWorkbookMedia({ sessionId, visualId })
-      .then(async (media) => {
-        const next = await workbookMediaDataUrl(media)
-        if (!isCurrent) return
-        if (next) setUrl(next)
-        else setUnavailable(true)
-      })
-      .catch((reason: unknown) => {
-        // Unsupported or unreadable media degrades to an empty frame; the
-        // grid must never show the failure text.
-        console.warn(`workbook media unavailable (${visualId})`, reason)
-        if (isCurrent) setUnavailable(true)
-      })
-    return () => {
-      isCurrent = false
-    }
-  }, [sessionId, visualId])
-
-  return { url, unavailable }
 }
 
 function ImageVisual({

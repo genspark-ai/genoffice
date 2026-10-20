@@ -248,6 +248,7 @@ export const hi = {
   ribbonTableColsLabel: 'स्तंभों की संख्या',
   ribbonTableRowsLabel: 'पंक्तियों की संख्या',
   ribbonTableHandleTip: 'तालिका चुनें; ले जाने के लिए खींचें',
+  ribbonTableResizeTip: 'तालिका का आकार बदलने के लिए खींचें',
   ribbonTableDeleteMenu: 'हटाएँ',
   ribbonSelectRow: 'पंक्ति चुनें',
   ribbonSelectColumn: 'स्तंभ चुनें',

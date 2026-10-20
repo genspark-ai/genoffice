@@ -37,6 +37,8 @@ export const de = {
     'Netzwerkproblem: Der KI-Dienst ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut',
   aiNewChat: 'Neuer Chat',
   aiNoReply: '(keine Antwort)',
+  aiRegionError:
+    'Der Anbieter dieses Modells bedient Ihre aktuelle Region nicht — wählen Sie ein anderes Modell oder wechseln Sie das Netzwerk',
   aiOverloadedError: 'Der KI-Dienst ist derzeit überlastet — bitte gleich erneut versuchen',
   aiRegenerateTitle: 'Neu generieren',
   aiRetry: 'Erneut versuchen',

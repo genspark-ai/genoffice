@@ -110,6 +110,8 @@ export const ko = {
   aiErrUnknown: '알 수 없는 오류',
   aiErrStreamTimeout:
     'AI 요청 시간 초과: 네트워크 응답이 없어 중단되었습니다. 연결을 확인한 후 다시 시도해 주세요',
+  aiErrRegion:
+    '이 모델의 제공업체는 현재 지역에서 서비스를 제공하지 않습니다. 다른 모델을 선택하거나 네트워크를 변경하세요',
   aiErrOverloaded: 'AI 서비스가 혼잡합니다. 잠시 후 다시 시도해 주세요',
   aiErrNetwork:
     '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
@@ -223,5 +225,4 @@ export const ko = {
   aiSumSaveTemplate: '스타일 템플릿 "{name}" 저장',
   aiSumTemplatesEmpty: '스타일 템플릿 목록(비어 있음)',
   aiSumListTemplates: '스타일 템플릿 {count}개 나열',
-  aiPageCloudToLocal: '클라우드 생성 불가 — 로컬로 생성',
 } satisfies Record<keyof typeof zh, string>

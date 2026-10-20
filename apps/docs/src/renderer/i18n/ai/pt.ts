@@ -113,6 +113,8 @@ export const pt = {
   aiUnknownError: 'Erro desconhecido',
   aiTimeoutError:
     'A solicitação de IA expirou: sem resposta da rede, a execução foi interrompida. Verifique sua conexão e tente novamente',
+  aiRegionError:
+    'O fornecedor deste modelo não atende à sua região atual — escolha outro modelo ou mude de rede',
   aiOverloadedError:
     'O serviço de IA está sobrecarregado no momento — tente novamente em instantes',
   aiNetworkError:
@@ -123,6 +125,9 @@ export const pt = {
   aiSumImageAttachment: 'Imagem anexada {name}',
   aiSumRead: 'Ler {name}',
   aiSumReadAttachmentName: 'Ler anexo {name}',
+  aiSumSkillsList: 'Habilidades instaladas listadas',
+  aiSumSkillRead: 'Skill {name} lida',
+  aiSumRunCli: 'Executou {args}',
   aiSumWebSearch: 'Pesquisa na web',
   aiSumWebSearchDone: 'Pesquisou "{query}" ({count} resultados)',
   aiSumImageSearch: 'Pesquisa de imagens',

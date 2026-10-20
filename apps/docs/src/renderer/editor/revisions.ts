@@ -14,6 +14,7 @@ import type { Node as PmNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import {
   AddMarkStep,
+  canJoin,
   Mapping,
   RemoveMarkStep,
   ReplaceAroundStep,
@@ -29,6 +30,8 @@ export interface RevisionRange {
     | 'del'
     | 'both'
     | 'pPrChange'
+    | 'paraMarkDel'
+    | 'paraMarkIns'
     | 'moveFrom'
     | 'moveTo'
     | 'rPrChange'
@@ -181,37 +184,48 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
   const isSuppressed = (pos: number, kind: 'ins' | 'del' | 'both') =>
     suppressed.some((s) => pos >= s.from && pos < s.to && (kind === 'both' || s.kind === kind))
 
-  // First pass: collect paragraph revisions at any depth, including table cells.
+  // First pass: paragraph-level revisions at any depth, including table cells.
+  // A moved paragraph's text carries plain ins / del marks (the parser maps
+  // moveTo / moveFrom onto them); the paragraph attr only says they are a move.
+  const moveParas: Array<{
+    from: number
+    to: number
+    kind: 'moveFrom' | 'moveTo'
+    hasRuns?: boolean
+  }> = []
+  const credit = (raw: string | null): { author: string; date?: string } => {
+    try {
+      const parsed = raw ? JSON.parse(raw) : null
+      return { author: parsed?.author ?? '', ...(parsed?.date ? { date: parsed.date } : {}) }
+    } catch {
+      return { author: '' }
+    }
+  }
   doc.descendants((node, pos) => {
     if (!PARAGRAPH_NODE_TYPES.has(node.type.name)) return
+    const range = { from: pos, to: pos + node.nodeSize }
     const pPrChange = node.attrs?.pPrChange as string | null
+    const paraMarkDel = node.attrs?.paraMarkDel as string | null
+    const paraMarkIns = node.attrs?.paraMarkIns as string | null
     const moveRevision = node.attrs?.moveRevision as string | null
-    if (pPrChange) {
-      let author = ''
-      let date: string | undefined
-      try {
-        const parsed = JSON.parse(pPrChange)
-        author = parsed?.author ?? ''
-        date = parsed?.date
-      } catch {
-        /* ignore */
-      }
-      out.push({
-        from: pos,
-        to: pos + node.nodeSize,
-        kind: 'pPrChange',
-        author,
-        ...(date ? { date } : {}),
-      })
-    } else if (moveRevision === 'from' || moveRevision === 'to') {
-      out.push({
-        from: pos,
-        to: pos + node.nodeSize,
+    if (pPrChange) out.push({ ...range, kind: 'pPrChange', ...credit(pPrChange) })
+    if (paraMarkDel) out.push({ ...range, kind: 'paraMarkDel', ...credit(paraMarkDel) })
+    if (paraMarkIns) out.push({ ...range, kind: 'paraMarkIns', ...credit(paraMarkIns) })
+    if (moveRevision === 'from' || moveRevision === 'to')
+      moveParas.push({
+        ...range,
         kind: moveRevision === 'from' ? 'moveFrom' : 'moveTo',
-        author: '',
+        // a moved paragraph mark is handled as that mark's revision
+        hasRuns: !!(paraMarkDel || paraMarkIns),
       })
-    }
   })
+  const moveKindAt = (pos: number, kind: 'ins' | 'del'): 'moveFrom' | 'moveTo' | null => {
+    const para = moveParas.find((m) => pos >= m.from && pos < m.to)
+    if (!para) return null
+    const match = para.kind === 'moveFrom' ? kind === 'del' : kind === 'ins'
+    if (match) para.hasRuns = true
+    return match ? para.kind : null
+  }
 
   // Second pass: collect run-level text revisions (ins/del marks)
   doc.descendants((node, pos) => {
@@ -236,8 +250,9 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
       }
       return
     }
-    const kind: 'ins' | 'del' | 'both' = ins && del ? 'both' : ins ? 'ins' : 'del'
-    if (isSuppressed(pos, kind)) return
+    const textKind: 'ins' | 'del' | 'both' = ins && del ? 'both' : ins ? 'ins' : 'del'
+    if (isSuppressed(pos, textKind)) return
+    const kind = (textKind === 'both' ? null : moveKindAt(pos, textKind)) ?? textKind
     const src = del ?? ins!
     const author = String(src.attrs.author ?? '')
     const prev = out[out.length - 1]
@@ -253,6 +268,9 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
       })
     }
   })
+  // a moved paragraph with no run-level marks (empty, or the mark alone moved) is the revision itself
+  for (const m of moveParas)
+    if (!m.hasRuns) out.push({ from: m.from, to: m.to, kind: m.kind, author: '' })
   out.push(...tableRevs)
   return out.sort((a, b) => a.from - b.from)
 }
@@ -378,33 +396,19 @@ export function applyRevisions(
       continue
     }
 
-    if (r.kind === 'moveFrom' || r.kind === 'moveTo') {
-      // moveFrom/moveTo: translate to del/ins logic using the same remove/keep semantics
-      const effectiveKind = r.kind === 'moveFrom' ? 'del' : 'ins'
-      const removeText = mode === 'accept' ? effectiveKind !== 'ins' : effectiveKind !== 'del'
-      if (removeText) {
-        const $from = state.doc.resolve(r.from)
-        const $to = state.doc.resolve(r.to)
-        if ($from.depth >= 1 && $from.sameParent($to) && state.doc.childCount > 1) {
-          tr.delete($from.before(), $to.after())
-        } else {
-          tr.delete(r.from, r.to)
-        }
-      } else if (mode === 'accept') {
-        tr.removeMark(r.from, r.to, state.schema.marks.ins)
-      } else {
-        tr.removeMark(r.from, r.to, state.schema.marks.del)
-      }
-      // Also clear the moveRevision attr from the node
-      try {
-        const $pos = state.doc.resolve(r.from + 1)
-        const nodePos = $pos.before($pos.depth)
-        if ($pos.parent.attrs?.moveRevision) {
-          tr.setNodeMarkup(nodePos, undefined, { ...$pos.parent.attrs, moveRevision: null })
-        }
-      } catch {
-        /* ignore if node is being deleted */
-      }
+    if (r.kind === 'paraMarkDel' || r.kind === 'paraMarkIns') {
+      // the mark itself is the revision: accepting a deletion / rejecting an
+      // insertion joins the paragraph into the next one (Word keeps the first
+      // paragraph's properties); the record leaves either way
+      const pos = tr.mapping.map(r.from, 1)
+      const node = tr.doc.nodeAt(pos)
+      if (!node || !node.attrs?.[r.kind]) continue
+      // a moved mark (w:pPr/w:rPr/w:moveFrom|moveTo) also flagged the paragraph as a move
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, [r.kind]: null, moveRevision: null })
+      const join = (mode === 'accept') === (r.kind === 'paraMarkDel')
+      const after = pos + node.nodeSize
+      if (join && tr.doc.resolve(after).nodeAfter?.isTextblock && canJoin(tr.doc, after))
+        tr.join(after)
       continue
     }
 
@@ -465,7 +469,25 @@ export function applyRevisions(
       continue
     }
 
-    const removeText = mode === 'accept' ? r.kind !== 'ins' : r.kind !== 'del'
+    // moved text is a deletion at its source and an insertion at its destination
+    const textKind = r.kind === 'moveFrom' ? 'del' : r.kind === 'moveTo' ? 'ins' : r.kind
+    if (r.kind === 'moveFrom' || r.kind === 'moveTo') {
+      const block = state.doc.nodeAt(r.from)
+      if (block && PARAGRAPH_NODE_TYPES.has(block.type.name) && r.to === r.from + block.nodeSize) {
+        // whole-paragraph move with no run-level marks: the paragraph goes or stays as a block
+        const pos = tr.mapping.map(r.from, 1)
+        const node = tr.doc.nodeAt(pos)
+        if (!node?.attrs?.moveRevision) continue
+        const drop = (mode === 'accept') === (r.kind === 'moveFrom')
+        if (drop && tr.doc.resolve(pos).parent.childCount > 1) tr.delete(pos, pos + node.nodeSize)
+        else tr.setNodeMarkup(pos, undefined, { ...node.attrs, moveRevision: null })
+        continue
+      }
+      const $para = state.doc.resolve(r.from)
+      if ($para.parent.attrs?.moveRevision)
+        tr.setNodeMarkup($para.before(), undefined, { ...$para.parent.attrs, moveRevision: null })
+    }
+    const removeText = mode === 'accept' ? textKind !== 'ins' : textKind !== 'del'
     if (removeText) {
       // a revision covering a block's entire content removes the block itself
       // (Word: rejecting an inserted paragraph deletes the paragraph, not just

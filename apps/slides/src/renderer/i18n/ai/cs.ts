@@ -111,6 +111,8 @@ export const cs = {
   aiErrUnknown: 'Neznámá chyba',
   aiErrStreamTimeout:
     'Požadavek na AI vypršel: ze sítě nepřišla žádná odpověď, běh byl zastaven. Zkontrolujte připojení a zkuste to znovu',
+  aiErrRegion:
+    'Poskytovatel tohoto modelu neposkytuje služby ve vaší aktuální oblasti — vyberte jiný model nebo změňte síť',
   aiErrOverloaded: 'Služba AI je momentálně zaneprázdněná — zkuste to prosím za chvíli znovu',
   aiErrNetwork:
     'Problém se sítí: službu AI se nepodařilo kontaktovat. Zkontrolujte připojení a zkuste to znovu',
@@ -224,5 +226,4 @@ export const cs = {
   aiSumSaveTemplate: 'Uložena šablona stylu „{name}“',
   aiSumTemplatesEmpty: 'Šablony stylu (prázdné)',
   aiSumListTemplates: 'Vypsáno šablon stylu: {count}',
-  aiPageCloudToLocal: 'Cloud není dostupný — vygenerováno lokálně',
 } satisfies Record<keyof typeof zh, string>

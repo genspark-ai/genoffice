@@ -81,6 +81,7 @@ import {
   sanitizeAuthorName,
   systemAuthorName,
 } from '@genoffice/electron-utils'
+import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import {
   readAppSettings,
   writeAppSetting,
@@ -93,6 +94,7 @@ import { controlHandler } from './control-handlers'
 import { installCliLinkBestEffort } from './cli-link'
 import { createDefaultAppService, execFileRunner } from './default-app'
 import { registerIntegrationsIpc } from './integrations-ipc'
+import { makeUserCliRunner, registerUserSkillsIpc } from './user-cli'
 import {
   ANALYTICS_ENABLED_KEY,
   analyticsEnabledFrom,
@@ -6571,12 +6573,14 @@ async function installMainProcessProxy(): Promise<void> {
   // the dispatcher below — forward the proxy to them via env
   setGskProxyUrl(proxyUrl)
   try {
-    const { ProxyAgent, setGlobalDispatcher } = await import('undici')
-    setGlobalDispatcher(new ProxyAgent(proxyUrl))
+    const { setGlobalDispatcher } = await import('undici')
+    // loopback stays direct: a Custom provider on 127.0.0.1 must not ride
+    // the proxy as an absolute-form request (#2084)
+    setGlobalDispatcher(await createMainProcessProxyDispatcher(proxyUrl))
     // strip user:pass credentials before logging
     console.log('[proxy] main-process fetch via', proxyUrl.replace(/\/\/[^@/]*@/, '//***@'))
   } catch (e) {
-    console.warn('[proxy] failed to set ProxyAgent:', e)
+    console.warn('[proxy] failed to set proxy dispatcher:', e)
   }
 }
 
@@ -6651,6 +6655,7 @@ registerIntegrationsIpc({
 })
 registerTabsIpc()
 registerDroppedFilesIpc()
+registerUserSkillsIpc({ cliRunner: makeUserCliRunner })
 
 // sheets' project:resolveChat goes through the handler registered by docs-main; the sessionId reverse lookup hooks in here
 setSessionPathResolver(resolveSheetsSessionPath)

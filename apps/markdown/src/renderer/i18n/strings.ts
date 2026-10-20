@@ -195,6 +195,7 @@ export const strings = {
     blockGripHint: '拖拽移动，点击打开菜单',
     aiUnknownError: 'AI 请求失败，请重试',
     aiTimeoutError: 'AI 响应超时',
+    aiRegionError: '该模型的厂商不向当前地区提供服务，请换一个模型或切换网络',
     aiOverloadedError: 'AI 服务当前繁忙，请稍后重试',
     aiNetworkError: '网络有问题，无法连接 AI 服务。请检查网络后重试',
     aiCreditsExhausted: '积分不足，请前往 genspark.ai 充值',
@@ -458,6 +459,8 @@ export const strings = {
     blockGripHint: 'Drag to move, click for menu',
     aiUnknownError: 'AI request failed, please retry',
     aiTimeoutError: 'AI response timed out',
+    aiRegionError:
+      "This model's provider does not serve your current region — pick another model or change your network",
     aiOverloadedError: 'The AI service is busy right now — please try again in a moment',
     aiNetworkError:
       'Network problem: could not reach the AI service. Check your connection and try again',
@@ -725,6 +728,8 @@ export const strings = {
     blockGripHint: 'Kéo để di chuyển, nhấp để mở menu',
     aiUnknownError: 'Yêu cầu AI thất bại, vui lòng thử lại',
     aiTimeoutError: 'Phản hồi từ AI đã hết thời gian chờ',
+    aiRegionError:
+      'Nhà cung cấp của mô hình này không phục vụ khu vực hiện tại của bạn — hãy chọn mô hình khác hoặc đổi mạng',
     aiOverloadedError: 'Dịch vụ AI hiện đang bận — vui lòng thử lại sau giây lát',
     aiNetworkError: 'Sự cố mạng: không thể kết nối với dịch vụ AI. Kiểm tra kết nối và thử lại',
     aiCreditsExhausted: 'Đã hết tín dụng — nạp thêm tại genspark.ai',
@@ -989,6 +994,8 @@ export const strings = {
     blockGripHint: 'ドラッグで移動、クリックでメニュー',
     aiUnknownError: 'AI リクエストに失敗しました。再試行してください',
     aiTimeoutError: 'AI の応答がタイムアウトしました',
+    aiRegionError:
+      'このモデルの提供元は現在の地域ではサービスを提供していません。別のモデルを選ぶか、ネットワークを切り替えてください',
     aiOverloadedError: 'AI サービスが混み合っています。しばらくしてからもう一度お試しください',
     aiNetworkError:
       'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
@@ -1255,6 +1262,8 @@ export const strings = {
     blockGripHint: '드래그로 이동, 클릭하면 메뉴',
     aiUnknownError: 'AI 요청이 실패했습니다. 다시 시도하세요',
     aiTimeoutError: 'AI 응답 시간 초과',
+    aiRegionError:
+      '이 모델의 제공업체는 현재 지역에서 서비스를 제공하지 않습니다. 다른 모델을 선택하거나 네트워크를 변경하세요',
     aiOverloadedError: 'AI 서비스가 혼잡합니다. 잠시 후 다시 시도해 주세요',
     aiNetworkError:
       '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
@@ -1524,6 +1533,8 @@ export const strings = {
     blockGripHint: 'Glisser pour déplacer, cliquer pour le menu',
     aiUnknownError: 'La requête IA a échoué, réessayez',
     aiTimeoutError: 'Délai de réponse IA dépassé',
+    aiRegionError:
+      'Le fournisseur de ce modèle ne dessert pas votre région actuelle — choisissez un autre modèle ou changez de réseau',
     aiOverloadedError: "Le service d'IA est actuellement surchargé — réessayez dans un instant",
     aiNetworkError:
       'Problème réseau : impossible de joindre le service IA. Vérifiez votre connexion et réessayez',
@@ -1796,6 +1807,8 @@ export const strings = {
     blockGripHint: 'Ziehen zum Verschieben, Klick für Menü',
     aiUnknownError: 'KI-Anfrage fehlgeschlagen, bitte erneut versuchen',
     aiTimeoutError: 'Zeitüberschreitung der KI-Antwort',
+    aiRegionError:
+      'Der Anbieter dieses Modells bedient Ihre aktuelle Region nicht — wählen Sie ein anderes Modell oder wechseln Sie das Netzwerk',
     aiOverloadedError: 'Der KI-Dienst ist derzeit überlastet — bitte gleich erneut versuchen',
     aiNetworkError:
       'Netzwerkproblem: Der KI-Dienst ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut',
@@ -2065,6 +2078,8 @@ export const strings = {
     blockGripHint: 'Arrastra para mover, clic para el menú',
     aiUnknownError: 'La solicitud de IA falló, reinténtalo',
     aiTimeoutError: 'La respuesta de IA agotó el tiempo',
+    aiRegionError:
+      'El proveedor de este modelo no da servicio en tu región actual — elige otro modelo o cambia de red',
     aiOverloadedError:
       'El servicio de IA está saturado en este momento; inténtalo de nuevo en unos instantes',
     aiNetworkError:
@@ -2331,6 +2346,8 @@ export const strings = {
     blockGripHint: 'ลากเพื่อย้าย คลิกเพื่อเปิดเมนู',
     aiUnknownError: 'คำขอ AI ล้มเหลว โปรดลองอีกครั้ง',
     aiTimeoutError: 'การตอบกลับของ AI หมดเวลา',
+    aiRegionError:
+      'ผู้ให้บริการของโมเดลนี้ไม่ให้บริการในภูมิภาคปัจจุบันของคุณ — โปรดเลือกโมเดลอื่นหรือเปลี่ยนเครือข่าย',
     aiOverloadedError: 'บริการ AI มีผู้ใช้งานจำนวนมากในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่',
     aiNetworkError:
       'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
@@ -2597,6 +2614,8 @@ export const strings = {
     blockGripHint: 'Seret untuk memindahkan, klik untuk menu',
     aiUnknownError: 'Permintaan AI gagal, coba lagi',
     aiTimeoutError: 'Respons AI kehabisan waktu',
+    aiRegionError:
+      'Penyedia model ini tidak melayani wilayah Anda saat ini — pilih model lain atau ganti jaringan',
     aiOverloadedError: 'Layanan AI sedang sibuk — silakan coba lagi sebentar lagi',
     aiNetworkError:
       'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',
@@ -2864,6 +2883,8 @@ export const strings = {
     blockGripHint: 'Перетащите для перемещения, клик — меню',
     aiUnknownError: 'Сбой запроса ИИ, попробуйте ещё раз',
     aiTimeoutError: 'Тайм-аут ответа ИИ',
+    aiRegionError:
+      'Поставщик этой модели не обслуживает ваш текущий регион — выберите другую модель или смените сеть',
     aiOverloadedError: 'Сервис ИИ сейчас перегружен — повторите попытку чуть позже',
     aiNetworkError:
       'Проблема с сетью: не удалось подключиться к сервису ИИ. Проверьте подключение и повторите попытку',
@@ -3127,6 +3148,8 @@ export const strings = {
     blockGripHint: 'اسحب للنقل، وانقر لفتح القائمة',
     aiUnknownError: 'فشل طلب الذكاء الاصطناعي، أعد المحاولة',
     aiTimeoutError: 'انتهت مهلة استجابة الذكاء الاصطناعي',
+    aiRegionError:
+      'مزوّد هذا النموذج لا يقدم الخدمة في منطقتك الحالية — اختر نموذجًا آخر أو غيّر الشبكة',
     aiOverloadedError: 'خدمة الذكاء الاصطناعي مشغولة حاليًا — يرجى المحاولة مرة أخرى بعد قليل',
     aiNetworkError:
       'مشكلة في الشبكة: تعذّر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مجددًا',
@@ -3395,6 +3418,8 @@ export const strings = {
     blockGripHint: 'Arraste para mover, clique para o menu',
     aiUnknownError: 'A solicitação de IA falhou, tente novamente',
     aiTimeoutError: 'A resposta da IA expirou',
+    aiRegionError:
+      'O fornecedor deste modelo não atende à sua região atual — escolha outro modelo ou mude de rede',
     aiOverloadedError:
       'O serviço de IA está sobrecarregado no momento — tente novamente em instantes',
     aiNetworkError:
@@ -3664,6 +3689,8 @@ export const strings = {
     blockGripHint: 'Trascina per spostare, clicca per il menu',
     aiUnknownError: 'Richiesta IA non riuscita, riprova',
     aiTimeoutError: 'Timeout della risposta IA',
+    aiRegionError:
+      'Il fornitore di questo modello non serve la tua regione attuale — scegli un altro modello o cambia rete',
     aiOverloadedError: 'Il servizio IA è momentaneamente sovraccarico — riprova tra poco',
     aiNetworkError:
       'Problema di rete: impossibile raggiungere il servizio IA. Controlla la connessione e riprova',
@@ -3932,6 +3959,8 @@ export const strings = {
     blockGripHint: 'Przeciągnij, aby przenieść; kliknij, aby otworzyć menu',
     aiUnknownError: 'Żądanie AI nie powiodło się, spróbuj ponownie',
     aiTimeoutError: 'Przekroczono czas odpowiedzi AI',
+    aiRegionError:
+      'Dostawca tego modelu nie obsługuje Twojego obecnego regionu — wybierz inny model lub zmień sieć',
     aiOverloadedError: 'Usługa AI jest obecnie przeciążona — spróbuj ponownie za chwilę',
     aiNetworkError:
       'Problem z siecią: nie można połączyć się z usługą AI. Sprawdź połączenie i spróbuj ponownie',
@@ -4184,6 +4213,8 @@ export const strings = {
     blockGripHint: 'Přetažením přesunete, kliknutím otevřete nabídku',
     aiUnknownError: 'Požadavek na AI se nezdařil, zkuste to znovu',
     aiTimeoutError: 'Odpověď AI vypršela',
+    aiRegionError:
+      'Poskytovatel tohoto modelu neposkytuje služby ve vaší aktuální oblasti — vyberte jiný model nebo změňte síť',
     aiOverloadedError: 'Služba AI je právě zaneprázdněna – zkuste to za chvíli znovu',
     aiNetworkError:
       'Problém se sítí: službu AI se nepodařilo kontaktovat. Zkontrolujte připojení a zkuste to znovu',
@@ -4466,6 +4497,8 @@ export const strings = {
     blockGripHint: 'Sleep om te verplaatsen, klik voor menu',
     aiUnknownError: 'AI-verzoek mislukt, probeer opnieuw',
     aiTimeoutError: 'AI-antwoord time-out',
+    aiRegionError:
+      'De aanbieder van dit model bedient uw huidige regio niet — kies een ander model of wissel van netwerk',
     aiOverloadedError: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
     aiNetworkError:
       'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
@@ -4732,6 +4765,8 @@ export const strings = {
     blockGripHint: 'Seret untuk alih, klik untuk menu',
     aiUnknownError: 'Permintaan AI gagal, cuba lagi',
     aiTimeoutError: 'Respons AI tamat masa',
+    aiRegionError:
+      'Penyedia model ini tidak memberi perkhidmatan di rantau semasa anda — pilih model lain atau tukar rangkaian',
     aiOverloadedError: 'Perkhidmatan AI sedang sibuk — sila cuba lagi sebentar lagi',
     aiNetworkError:
       'Masalah rangkaian: tidak dapat menghubungi perkhidmatan AI. Semak sambungan anda dan cuba lagi',
@@ -4994,6 +5029,7 @@ export const strings = {
     blockGripHint: 'גרירה להזזה, לחיצה לתפריט',
     aiUnknownError: 'בקשת ה-AI נכשלה, נסו שוב',
     aiTimeoutError: 'תגובת ה-AI חרגה מהזמן',
+    aiRegionError: 'ספק המודל הזה אינו פועל באזור הנוכחי שלך — בחרו מודל אחר או החליפו רשת',
     aiOverloadedError: 'שירות ה-AI עמוס כרגע — נסו שוב בעוד רגע',
     aiNetworkError: 'בעיית רשת: לא ניתן להתחבר לשירות ה-AI. בדוק את החיבור ונסה שוב',
     aiCreditsExhausted: 'נגמרו הקרדיטים — טענו ב-genspark.ai',
@@ -5259,6 +5295,8 @@ export const strings = {
     blockGripHint: 'खींचकर स्थानांतरित करें, मेनू के लिए क्लिक करें',
     aiUnknownError: 'AI अनुरोध विफल, पुनः प्रयास करें',
     aiTimeoutError: 'AI प्रतिक्रिया समय समाप्त',
+    aiRegionError:
+      'इस मॉडल का प्रदाता आपके वर्तमान क्षेत्र में सेवा नहीं देता — कोई दूसरा मॉडल चुनें या नेटवर्क बदलें',
     aiOverloadedError: 'AI सेवा अभी व्यस्त है — कृपया थोड़ी देर बाद फिर से प्रयास करें',
     aiNetworkError:
       'नेटवर्क समस्या: AI सेवा से कनेक्ट नहीं हो सका। कनेक्शन जांचें और फिर से प्रयास करें',
@@ -5493,11 +5531,11 @@ export const strings = {
     sourceView: '原始碼',
     sourceViewHint: '直接編輯 Markdown 原始碼，與儲存到檔案的文字完全一致',
     outlineEmpty: '尚無標題',
-    backlinks: 'बैकलिंक',
-    backlinksEmpty: 'अभी कोई नोट यहाँ लिंक नहीं करता।',
-    backlinksRefresh: 'बैकलिंक रीफ़्रेश करें',
-    graph: 'ग्राफ़ दृश्य',
-    graphClose: 'ग्राफ़ बंद करें',
+    backlinks: '反向連結',
+    backlinksEmpty: '還沒有筆記連結到這裡。',
+    backlinksRefresh: '重新整理反向連結',
+    graph: '關係圖譜',
+    graphClose: '關閉圖譜',
     graphEmpty: '庫中還沒有筆記。',
     graphTruncated: '筆記太多，圖譜只畫出了前 {shown} / {total} 篇。',
     codeCopy: '複製',
@@ -5521,6 +5559,7 @@ export const strings = {
     blockGripHint: '拖曳移動，點擊開啟選單',
     aiUnknownError: 'AI 請求失敗，請重試',
     aiTimeoutError: 'AI 回應逾時',
+    aiRegionError: '該模型的廠商不向目前地區提供服務，請換一個模型或切換網路',
     aiOverloadedError: 'AI 服務目前繁忙，請稍後重試',
     aiNetworkError: '網路有問題，無法連接 AI 服務。請檢查網路後重試',
     aiCreditsExhausted: '點數不足，請前往 genspark.ai 儲值',

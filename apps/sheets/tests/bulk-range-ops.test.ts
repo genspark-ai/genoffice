@@ -68,6 +68,43 @@ describe('copy_range validation and expansion', () => {
   })
 })
 
+describe('move_range expansion', () => {
+  it('desugars into a copy_range followed by clearing the source', () => {
+    const expanded = expandToPrimitiveOps(
+      [{ op: 'move_range', sheetId: 's2', sourceSheetId: 's1', source: 'A2:C4', target: 'A1' }],
+      readCell,
+    )
+    expect(expanded[0]).toEqual({
+      op: 'copy_range',
+      sheetId: 's2',
+      sourceSheetId: 's1',
+      source: 'A2:C4',
+      target: 'A1',
+    })
+    const clears = expanded.slice(1)
+    expect(clears).toHaveLength(9)
+    expect(clears.every((op) => op.op === 'clear_cell' && op.sheetId === 's1')).toBe(true)
+    expect(clears.map((op) => (op.op === 'clear_cell' ? op.address : ''))).toContain('C4')
+  })
+
+  it('keeps a large source clear range-level', () => {
+    const expanded = expandToPrimitiveOps(
+      [{ op: 'move_range', sheetId: 's1', source: 'A1:F5000', target: 'H1' }],
+      readCell,
+    )
+    expect(expanded.map((op) => op.op)).toEqual(['copy_range', 'clear_range'])
+  })
+
+  it('applies copy_range geometry guards', () => {
+    expect(() =>
+      expandToPrimitiveOps(
+        [{ op: 'move_range', sheetId: 's1', source: 'A1:C10', target: 'B5' }],
+        readCell,
+      ),
+    ).toThrow(/overlap/)
+  })
+})
+
 describe('convert_to_values expansion', () => {
   it('passes through as a single range-level primitive', () => {
     const expanded = expandToPrimitiveOps(
@@ -241,6 +278,20 @@ describe('InMemoryWorkbookAdapter (demo mode)', () => {
     expect(sheet?.cells.E2?.value).toBe(10)
     // The source stays in place — copy, not move.
     expect(sheet?.cells.A1?.value).toBe('Header')
+  })
+
+  it('moves a block: target written, source cleared', () => {
+    const workbook = adapter()
+    const plan = workbook.plan(
+      batch([{ op: 'move_range', sheetId: 'sheet-1', source: 'A1:B2', target: 'D1' }]),
+    )
+    workbook.apply(plan)
+    const sheet = workbook.getSnapshot().sheets[0]
+    expect(sheet?.cells.D1?.value).toBe('Header')
+    expect(sheet?.cells.D2?.formula).toBe('=E2*2')
+    expect(sheet?.cells.A1?.value ?? null).toBeNull()
+    expect(sheet?.cells.A2?.formula).toBeUndefined()
+    expect(sheet?.cells.B3?.value).toBe(20)
   })
 
   it('caps demo copies at the per-cell expansion limit', () => {

@@ -110,6 +110,8 @@ export const en = {
   aiUnknownError: 'Unknown error',
   aiTimeoutError:
     'AI request timed out: no response from the network, so the run was stopped. Check your connection and try again',
+  aiRegionError:
+    "This model's provider does not serve your current region — pick another model or change your network",
   aiOverloadedError: 'The AI service is busy right now — please try again in a moment',
   aiNetworkError:
     'Network problem: could not reach the AI service. Check your connection and try again',
@@ -119,6 +121,9 @@ export const en = {
   aiSumImageAttachment: 'Image attachment {name}',
   aiSumRead: 'Read {name}',
   aiSumReadAttachmentName: 'Read attachment {name}',
+  aiSumSkillsList: 'Listed installed skills',
+  aiSumSkillRead: 'Read skill {name}',
+  aiSumRunCli: 'Ran {args}',
   aiSumWebSearch: 'Web search',
   aiSumWebSearchDone: 'Searched "{query}" ({count} results)',
   aiSumImageSearch: 'Image search',

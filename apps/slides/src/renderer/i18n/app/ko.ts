@@ -61,7 +61,8 @@ export const ko = {
   appStatusVideoInserted: '비디오를 삽입했습니다(pptx에 포함됨, PowerPoint에서 재생 가능)',
   appStatusAudioInserted: '오디오를 삽입했습니다(pptx에 포함됨)',
   appStatusModel3dInserted:
-    '3D 모델을 포함했습니다(캔버스에는 자리 표시자가 표시되며 모델 파일은 pptx에 저장됨)',
+    '3D 모델을 삽입했습니다: 선택하면 회전할 수 있습니다(PowerPoint에서도 3D로 표시됨)',
+  appStatusModel3dNoPreview: '여기서 3D 모델을 그릴 수 없습니다. 그림은 바뀌지 않았습니다',
   appStatusRecordingEmpty: '녹화 내용이 비어 있어 삽입하지 않았습니다',
   appStatusRecordingInserted: '화면 녹화를 현재 슬라이드에 삽입했습니다(webm 포함)',
   appStatusRecording: '화면 녹화 중… "화면 녹화"를 다시 클릭하면 중지하고 삽입합니다',

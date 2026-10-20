@@ -611,6 +611,11 @@ export interface PictureElement extends ElementBase {
    * frame; target is the media file's zip path or an external URL (external).
    */
   media?: { kind: 'video' | 'audio'; target?: string; external?: boolean }
+  /**
+   * A 3D model (mc:AlternateContent: am3d:model3d in the Choice, this picture in the Fallback):
+   * the .glb zip path and am3d:rot in 60,000ths of a degree.
+   */
+  model3d?: { target?: string; rot: { ax: number; ay: number; az: number } }
   /** Picture outline geometry <a:prstGeom> (ellipse avatars/rounded-corner frames etc. from picture styles; rect omitted) */
   presetGeometry?: string
   adjust?: Record<string, number>

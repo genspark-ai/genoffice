@@ -64,7 +64,8 @@ export const ja = {
   appStatusVideoInserted: 'ビデオを挿入しました（pptx に埋め込み済み。PowerPoint で再生可能）',
   appStatusAudioInserted: 'オーディオを挿入しました（pptx に埋め込み済み）',
   appStatusModel3dInserted:
-    '3D モデルを埋め込みました（キャンバスにはプレースホルダーを表示。モデル ファイルは pptx に保存済み）',
+    '3D モデルを挿入しました：選択すると回転できます（PowerPoint でも 3D で表示されます）',
+  appStatusModel3dNoPreview: 'ここでは 3D モデルを描画できませんでした。画像は変更されていません',
   appStatusRecordingEmpty: '録画内容が空のため、挿入しませんでした',
   appStatusRecordingInserted: '画面録画を現在のスライドに挿入しました（webm 埋め込み）',
   appStatusRecording: '画面録画中…もう一度「画面録画」をクリックすると停止して挿入',

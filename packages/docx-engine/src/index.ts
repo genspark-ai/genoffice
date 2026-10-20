@@ -73,6 +73,9 @@ export {
   mergePPrFormat,
   setPPrChange,
   stripPPrChange,
+  stripParaMarkRevision,
+  paraMarkColor,
+  stripParaMarkColor,
   patchFieldParagraphXml,
   patchImageParagraphXml,
   patchMathTokens,
@@ -209,3 +212,11 @@ export {
 } from './list-markers'
 
 export { previewFontSettings } from './font-settings'
+export {
+  applyTrackedChangesXml,
+  countTrackedChangesXml,
+  type RevisionXmlFilter,
+  type RevisionXmlMode,
+  type RevisionXmlResult,
+  type RevisionXmlType,
+} from './revision-xml'

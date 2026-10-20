@@ -37,6 +37,8 @@ export const es = {
     'Problema de red: no se pudo conectar con el servicio de IA. Comprueba tu conexión e inténtalo de nuevo',
   aiNewChat: 'Nueva conversación',
   aiNoReply: '(sin respuesta)',
+  aiRegionError:
+    'El proveedor de este modelo no da servicio en tu región actual — elige otro modelo o cambia de red',
   aiOverloadedError:
     'El servicio de IA está saturado en este momento; inténtalo de nuevo en unos instantes',
   aiRegenerateTitle: 'Regenerar',

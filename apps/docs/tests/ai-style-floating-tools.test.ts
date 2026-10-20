@@ -126,6 +126,10 @@ describe('define_style', () => {
           indentLeft: '1in',
           firstLineIndent: -18,
           align: 'justify',
+          tabs: [
+            { pos: '6.5in', align: 'right', leader: 'dot' },
+            { pos: 720, clear: true },
+          ],
         },
         run: { italic: true, color: '#1A73E8', fontSize: 11, fontFamily: 'Georgia' },
       },
@@ -142,6 +146,10 @@ describe('define_style', () => {
         indentLeftTwips: 1440,
         firstLineTwips: -360,
         align: 'justify',
+        tabStops: [
+          { pos: 9360, val: 'right', leader: 'dot' },
+          { pos: 720, val: 'clear' },
+        ],
       },
       rPr: { italic: true, color: '1A73E8', sizeHalfPoints: 22, font: 'Georgia' },
     })

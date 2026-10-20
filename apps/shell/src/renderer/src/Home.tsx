@@ -3561,6 +3561,7 @@ export function Home() {
         <KbAskPanel
           onOpenPath={(path) => void window.aiOffice.openPath(path)}
           onGoToRecents={() => changeView('recent')}
+          onOpenModelSettings={() => setSettingsRequest({ section: 'aiModel' })}
         />
       ) : cloudMode ? (
         <CloudProjectsView />

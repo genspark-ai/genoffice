@@ -373,6 +373,8 @@ export interface PictureRenderNode extends RenderNodeBase {
   softEdgePx?: number
   /** Audio/video (the image is the poster frame): the render layer overlays a play/speaker badge */
   media?: 'video' | 'audio'
+  /** A 3D model (the image is its latest rendering): am3d:rot, 60,000ths of a degree */
+  model3d?: { ax: number; ay: number; az: number }
   stroke?: RenderStroke
   shadow?: RenderShadow
   glow?: RenderGlow

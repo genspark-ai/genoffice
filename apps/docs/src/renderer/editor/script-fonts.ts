@@ -27,15 +27,6 @@ function decorationsIn(doc: PmNode, from: number, to: number): Decoration[] {
 
 const key = new PluginKey<DecorationSet>('scriptFonts')
 
-/**
- * styles.css switches the span to the document's Latin chain only while this
- * class sits on the editor root, so the IME pre-edit string resolves Latin
- * glyphs there instead of inheriting the span's EA-only family. prosemirror-view
- * (1.42.x) never sets it — its compositionstart/end handlers only flip
- * `view.input.composing` — so this plugin owns the class for the duration.
- */
-const COMPOSING = 'ProseMirror-composing'
-
 export const ScriptFonts = Extension.create({
   name: 'scriptFonts',
   addProseMirrorPlugins() {
@@ -66,21 +57,7 @@ export const ScriptFonts = Extension.create({
         },
         props: {
           decorations: (state) => key.getState(state),
-          // returning false lets prosemirror-view run its own handler after us
-          handleDOMEvents: {
-            compositionstart: (view) => {
-              view.dom.classList.add(COMPOSING)
-              return false
-            },
-            compositionend: (view) => {
-              view.dom.classList.remove(COMPOSING)
-              return false
-            },
-          },
         },
-        // an editor torn down mid-composition must not leave the class behind
-        // (prosemirror-view calls destroy() with no arguments, so close over the view)
-        view: (view) => ({ destroy: () => view.dom.classList.remove(COMPOSING) }),
       }),
     ]
   },

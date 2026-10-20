@@ -97,9 +97,10 @@ describe('isMultiSelectModifier', () => {
   const ev = (init: Partial<MouseEvent>) =>
     ({ metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...init }) as MouseEvent
 
-  it('accepts ctrl or cmd on its own', () => {
+  it("accepts the platform's modifier on its own and ignores the other", () => {
+    // jsdom reports no platform, so the plugin takes the non-Mac branch
     expect(isMultiSelectModifier(ev({ ctrlKey: true }))).toBe(true)
-    expect(isMultiSelectModifier(ev({ metaKey: true }))).toBe(true)
+    expect(isMultiSelectModifier(ev({ metaKey: true }))).toBe(false)
   })
 
   it('rejects the combos that already mean something else', () => {
@@ -159,6 +160,19 @@ describe('MultiSelect', () => {
     expect(multiSelectRanges(editor.view)).toEqual([{ from: 7, to: 12 }])
   })
 
+  it('a ctrl+click on a link leaves the gesture to the link, adding nothing', () => {
+    const editor = makeEditor()
+    editor.commands.setTextSelection({ from: 1, to: 6 })
+    editor.view.posAtCoords = () => ({ pos: 9, inside: 1 })
+    const link = document.createElement('a')
+    link.href = 'https://example.com'
+    editor.view.dom.appendChild(link)
+    const init = { ctrlKey: true, metaKey: true, clientX: 0, clientY: 0 }
+    link.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, ...init }))
+    link.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, ...init }))
+    expect(multiSelectRanges(editor.view)).toEqual([])
+  })
+
   it('a plain click clears every added range', () => {
     const editor = makeEditor()
     ctrlClick(editor, 9)
@@ -185,6 +199,37 @@ describe('MultiSelect', () => {
     // what the browser's drag selects while the button is down
     editor.commands.setTextSelection({ from: 7, to: 12 })
     dispatchMouse(editor, 'mouseup', { ctrlKey: true, clientX: 20, clientY: 0 })
+    expect(multiSelectRanges(editor.view)).toEqual([
+      { from: 1, to: 6 },
+      { from: 7, to: 12 },
+    ])
+    expect(
+      editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to),
+    ).toBe('bravo')
+  })
+
+  it('a ctrl+drag released outside the editor still adds both ranges', () => {
+    const editor = makeEditor()
+    editor.commands.setTextSelection({ from: 1, to: 6 })
+    dispatchMouse(editor, 'mousedown', { ctrlKey: true, clientX: 0, clientY: 0 })
+    editor.commands.setTextSelection({ from: 7, to: 12 })
+    document.body.dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, ctrlKey: true, clientX: 20, clientY: 0 }),
+    )
+    expect(multiSelectRanges(editor.view)).toEqual([
+      { from: 1, to: 6 },
+      { from: 7, to: 12 },
+    ])
+  })
+
+  it('a ctrl+click that jittered past the drag threshold still selects the word', () => {
+    const editor = makeEditor()
+    editor.commands.setTextSelection({ from: 1, to: 6 })
+    editor.view.posAtCoords = () => ({ pos: 9, inside: -1 })
+    dispatchMouse(editor, 'mousedown', { ctrlKey: true, clientX: 0, clientY: 0 })
+    // the wobble dragged no text: the browser left the selection collapsed
+    editor.commands.setTextSelection({ from: 9, to: 9 })
+    dispatchMouse(editor, 'mouseup', { ctrlKey: true, clientX: 6, clientY: 0 })
     expect(multiSelectRanges(editor.view)).toEqual([
       { from: 1, to: 6 },
       { from: 7, to: 12 },

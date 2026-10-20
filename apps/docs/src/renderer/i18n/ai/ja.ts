@@ -111,6 +111,8 @@ export const ja = {
   aiUnknownError: '不明なエラー',
   aiTimeoutError:
     'AIリクエストがタイムアウトしました：ネットワークからの応答がないため中断しました。接続を確認して再試行してください',
+  aiRegionError:
+    'このモデルの提供元は現在の地域ではサービスを提供していません。別のモデルを選ぶか、ネットワークを切り替えてください',
   aiOverloadedError: 'AI サービスが混み合っています。しばらくしてからもう一度お試しください',
   aiNetworkError:
     'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
@@ -120,6 +122,9 @@ export const ja = {
   aiSumImageAttachment: '画像添付 {name}',
   aiSumRead: '{name} を読み取り',
   aiSumReadAttachmentName: '添付ファイル {name} を読み取り',
+  aiSumSkillsList: 'インストール済みスキルを一覧表示',
+  aiSumSkillRead: 'スキル {name} を読み込み',
+  aiSumRunCli: '{args} を実行',
   aiSumWebSearch: 'ウェブ検索',
   aiSumWebSearchDone: '「{query}」を検索({count} 件)',
   aiSumImageSearch: '画像検索',

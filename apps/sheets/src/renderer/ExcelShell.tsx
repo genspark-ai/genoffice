@@ -3301,6 +3301,7 @@ function Ribbon({
             { value: 'note-show-toggle', label: t('appShowHideNote') },
             { value: 'note-show-all', label: t('appShowAllNotes') },
             { value: 'notes-convert', label: t('appConvertToNotes') },
+            { value: 'note-pictures-pane-toggle', label: t('appNotePicturesToggle') },
           ])}
         </RibbonGroup>
         <RibbonGroup label={t('appGroupProtection')}>

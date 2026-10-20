@@ -20,6 +20,7 @@ import {
   AiTimeoutError,
   isAiNetworkError,
   isAiOverloadedError,
+  isAiRegionBlockedError,
   defaultAiSettings,
   activeProvider,
   maxOutputTokensOf,
@@ -289,7 +290,9 @@ export function registerAiIpc(): void {
                 ? { errorCode: 'network' as const }
                 : isAiOverloadedError(err)
                   ? { errorCode: 'overloaded' as const }
-                  : {}),
+                  : isAiRegionBlockedError(err)
+                    ? { errorCode: 'region' as const }
+                    : {}),
         })
       }
     } finally {

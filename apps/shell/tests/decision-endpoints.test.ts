@@ -68,7 +68,18 @@ describe('decision model routes', () => {
     expect(bodyModel(cloudflare)).toBe('clef-flash')
   })
 
-  it('honours a Workers AI model the reader typed over either default', () => {
+  it('cloudflare-flash stays clef-flash after settings normalization refills the model', () => {
+    const settings = normalizeFileSearchSettings({
+      endpoint: 'cloudflare-flash',
+      cloudflareAccountId: 'acct',
+    })
+    const call = opts({ ...settings, key: '' })
+    expect(settings.cloudflareModel).toBe('@cf/cloudflare/clef')
+    expect(endpointUrl(call)).toContain('/ai/run/@cf/cloudflare/clef-flash')
+    expect(bodyModel(call)).toBe('clef-flash')
+  })
+
+  it('honours a Workers AI model the reader typed on the plain cloudflare route', () => {
     const custom = opts({
       endpoint: 'cloudflare',
       cloudflareAccountId: 'acct',

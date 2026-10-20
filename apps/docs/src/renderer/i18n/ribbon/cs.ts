@@ -246,6 +246,7 @@ export const cs = {
   ribbonTableColsLabel: 'Počet sloupců',
   ribbonTableRowsLabel: 'Počet řádků',
   ribbonTableHandleTip: 'Vybrat tabulku; tažením ji přesunete',
+  ribbonTableResizeTip: 'Tažením změníte velikost tabulky',
   ribbonTableDeleteMenu: 'Odstranit',
   ribbonSelectRow: 'Vybrat řádek',
   ribbonSelectColumn: 'Vybrat sloupec',

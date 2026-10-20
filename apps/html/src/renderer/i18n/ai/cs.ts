@@ -37,6 +37,8 @@ export const cs = {
     'Problém se sítí: službu AI se nepodařilo kontaktovat. Zkontrolujte připojení a zkuste to znovu',
   aiNewChat: 'Nový chat',
   aiNoReply: '(bez odpovědi)',
+  aiRegionError:
+    'Poskytovatel tohoto modelu neposkytuje služby ve vaší aktuální oblasti — vyberte jiný model nebo změňte síť',
   aiOverloadedError: 'Služba AI je právě zaneprázdněná — zkuste to prosím za chvíli',
   aiRegenerateTitle: 'Vygenerovat znovu',
   aiRetry: 'Zkusit znovu',

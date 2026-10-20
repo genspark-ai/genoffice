@@ -61,6 +61,8 @@ export const id = {
   aiUnknownError: 'Kesalahan tidak dikenal',
   aiTimeoutError:
     'Permintaan AI habis waktu: jaringan tidak merespons sehingga proses dihentikan. Periksa koneksi Anda lalu coba lagi',
+  aiRegionError:
+    'Penyedia model ini tidak melayani wilayah Anda saat ini — pilih model lain atau ganti jaringan',
   aiOverloadedError: 'Layanan AI sedang sibuk — silakan coba lagi sebentar lagi',
   aiNetworkError:
     'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',

@@ -62,7 +62,8 @@ export const cs = {
   appStatusVideoInserted: 'Video vloženo (vložené v .pptx; přehrává se v PowerPointu)',
   appStatusAudioInserted: 'Zvuk vložen (vložený v .pptx)',
   appStatusModel3dInserted:
-    '3D model vložen (na plátně se zobrazuje zástupný symbol; soubor modelu je uložen v .pptx)',
+    '3D model vložen: po výběru ho můžete otáčet (PowerPoint ho také zobrazí ve 3D)',
+  appStatusModel3dNoPreview: '3D model tu nelze vykreslit; jeho obrázek zůstává beze změny',
   appStatusRecordingEmpty: 'Nahrávka je prázdná; nic nebylo vloženo',
   appStatusRecordingInserted: 'Nahrávka obrazovky vložena na aktuální snímek (vložené webm)',
   appStatusRecording: 'Nahrává se… dalším kliknutím na „Nahrávání obrazovky“ zastavíte a vložíte',

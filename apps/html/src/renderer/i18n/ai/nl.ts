@@ -37,6 +37,8 @@ export const nl = {
     'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
   aiNewChat: 'Nieuwe chat',
   aiNoReply: '(geen antwoord)',
+  aiRegionError:
+    'De aanbieder van dit model bedient uw huidige regio niet — kies een ander model of wissel van netwerk',
   aiOverloadedError: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
   aiRegenerateTitle: 'Opnieuw genereren',
   aiRetry: 'Opnieuw proberen',

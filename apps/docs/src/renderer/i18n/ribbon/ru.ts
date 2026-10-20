@@ -247,6 +247,7 @@ export const ru = {
   ribbonTableColsLabel: 'Число столбцов',
   ribbonTableRowsLabel: 'Число строк',
   ribbonTableHandleTip: 'Выделить таблицу; перетащите, чтобы переместить',
+  ribbonTableResizeTip: 'Перетащите, чтобы изменить размер таблицы',
   ribbonTableDeleteMenu: 'Удалить',
   ribbonSelectRow: 'Выделить строку',
   ribbonSelectColumn: 'Выделить столбец',

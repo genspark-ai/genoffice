@@ -20,8 +20,8 @@ export interface IpcStreamChunk {
   text?: string
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause; maps to the localized timeout/credits/network/overloaded message */
-  errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded'
+  /** machine-readable error cause; maps to the localized timeout/credits/network/overloaded/region message */
+  errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded' | 'region'
   /** normalized stop reason on 'done' ('max_tokens' = cut off by the token limit) */
   stopReason?: string
   /** tokens the provider billed for this turn, carried on 'usage' (always sent before 'done') */
@@ -66,6 +66,8 @@ export interface IpcTransportOptions<S> {
   networkErrorText?(): string
   /** localized message for capacity/rate-limit failures (errorCode 'overloaded') */
   overloadedErrorText?(): string
+  /** localized message when the vendor refuses the request origin (errorCode 'region') */
+  regionErrorText?(): string
 }
 
 /**
@@ -129,7 +131,9 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
                   ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
                   : chunk.errorCode === 'overloaded'
                     ? (options.overloadedErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                    : (chunk.error ?? options.unknownErrorText()),
+                    : chunk.errorCode === 'region'
+                      ? (options.regionErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                      : (chunk.error ?? options.unknownErrorText()),
           )
         } else {
           // A chunk kind this build predates must not kill the run; traffic proves it is alive.

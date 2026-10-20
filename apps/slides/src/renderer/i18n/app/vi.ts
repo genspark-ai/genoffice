@@ -61,8 +61,8 @@ export const vi = {
   appStatusEquationInserted: 'Đã chèn phương trình',
   appStatusVideoInserted: 'Đã chèn video (được nhúng trong tệp .pptx; phát được trong PowerPoint)',
   appStatusAudioInserted: 'Đã chèn âm thanh (được nhúng trong tệp .pptx)',
-  appStatusModel3dInserted:
-    'Đã nhúng mô hình 3D (vùng vẽ hiển thị phần giữ chỗ; tệp mô hình được lưu trong tệp .pptx)',
+  appStatusModel3dInserted: 'Đã chèn mô hình 3D: chọn để xoay (PowerPoint cũng hiển thị ở dạng 3D)',
+  appStatusModel3dNoPreview: 'Không thể vẽ mô hình 3D tại đây; hình ảnh của nó không thay đổi',
   appStatusRecordingEmpty: 'Bản ghi trống; không có gì được chèn',
   appStatusRecordingInserted: 'Đã chèn bản ghi màn hình vào trang chiếu hiện tại (nhúng webm)',
   appStatusRecording: 'Đang ghi hình… nhấp lại vào "Ghi màn hình" để dừng và chèn',

@@ -93,6 +93,7 @@ import {
   IconReplacePicture,
   IconRotateLeft,
   IconRotateRight,
+  Icon3d,
 } from './icons'
 // brand-supplied Review AI icon art (44px = 22px @2x), color baked in
 import iconSpelling from '../assets/icon-spelling.png'
@@ -124,6 +125,8 @@ import { RibbonHomeTab } from './RibbonHomeTab'
 import { RibbonInsertTab } from './RibbonInsertTab'
 import { ShapeGalleryContent } from './ShapeGalleryPopover'
 import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
+import { MODEL3D_VIEWS } from '../model3d/views'
+import { NO_ROTATION } from '@genoffice/pptx-engine/model3d'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** shell tab mode: the tab strip above owns traffic lights / caption buttons */
@@ -171,6 +174,7 @@ const TAB_LABEL: Record<MainTab | ContextTab, StringKey> = {
   tableDesign: 'ribbonTabTableDesign',
   chartDesign: 'ribbonTabChartDesign',
   pictureFormat: 'ribbonTabPictureFormat',
+  model3dFormat: 'ribbonTabModel3d',
   shapeFormat: 'ribbonTabShapeFormat',
 }
 
@@ -1227,6 +1231,7 @@ export function Ribbon({
   recording,
   onToggleScreenRecord,
   contextElementType,
+  onModel3dView,
   tabRequest,
   contextElementId: _contextElementId,
   contextSlideIndex: _contextSlideIndex,
@@ -3317,6 +3322,34 @@ export function Ribbon({
               </div>
             </Group>
           </>
+        ) : tab === 'model3dFormat' ? (
+          <Group label={t('ribbonModel3dViews')}>
+            <button
+              className="rb-big"
+              disabled={!onModel3dView}
+              onClick={() => onModel3dView?.(NO_ROTATION)}
+            >
+              <span className="rb-big-icon">
+                <Icon3d size={BIG} />
+              </span>
+              <span>{t('ribbonModel3dReset')}</span>
+            </button>
+            {[0, 3, 6].map((start) => (
+              <div key={start} className="rb-col">
+                {MODEL3D_VIEWS.slice(start, start + 3).map(({ label, rot }) => (
+                  <button
+                    key={label}
+                    className="rb-small"
+                    disabled={!onModel3dView}
+                    onClick={() => onModel3dView?.(rot)}
+                  >
+                    <Icon3d size={18} />
+                    <span>{t(label)}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </Group>
         ) : tab === 'shapeFormat' ? (
           <>
             <Group label={t('ribbonShapes')}>

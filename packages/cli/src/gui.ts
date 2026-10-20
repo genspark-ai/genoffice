@@ -25,7 +25,7 @@ export function genofficeUserDataDir(env: NodeJS.ProcessEnv): string {
  *
  * The dev profile has been spelled two ways. It was `<name> Dev` until
  * genoffice#1879 moved the shell to `<name>-Dev` — a space breaks XDG config
- * entries, which are meant to be one token (#1817) — and the shell renames the
+ * entries, which are meant to be one token (genoffice#1817) — and the shell renames the
  * old directory on first run after that. Both spellings are scanned here, new
  * first, because a profile that was never migrated still has to be reachable:
  * a custom `GENOFFICE_USER_DATA`, a checkout whose shell has not run since the

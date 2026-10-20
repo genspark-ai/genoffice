@@ -255,6 +255,7 @@ export const ko = {
   ribbonTableColsLabel: '열 개수',
   ribbonTableRowsLabel: '행 개수',
   ribbonTableHandleTip: '표 선택, 드래그하여 이동',
+  ribbonTableResizeTip: '드래그하여 표 크기 조정',
   ribbonTableDeleteMenu: '삭제',
   ribbonSelectRow: '행 선택',
   ribbonSelectColumn: '열 선택',

@@ -109,6 +109,8 @@ export const th = {
   aiUnknownError: 'ข้อผิดพลาดที่ไม่รู้จัก',
   aiTimeoutError:
     'คำขอ AI หมดเวลา: เครือข่ายไม่ตอบสนอง จึงหยุดการทำงาน โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
+  aiRegionError:
+    'ผู้ให้บริการของโมเดลนี้ไม่ให้บริการในภูมิภาคปัจจุบันของคุณ — โปรดเลือกโมเดลอื่นหรือเปลี่ยนเครือข่าย',
   aiOverloadedError: 'บริการ AI มีผู้ใช้งานจำนวนมากในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่',
   aiNetworkError:
     'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
@@ -118,6 +120,9 @@ export const th = {
   aiSumImageAttachment: 'รูปภาพแนบ {name}',
   aiSumRead: 'อ่าน {name}',
   aiSumReadAttachmentName: 'อ่านสิ่งที่แนบ {name}',
+  aiSumSkillsList: 'รายการสกิลที่ติดตั้ง',
+  aiSumSkillRead: 'อ่านสกิล {name}',
+  aiSumRunCli: 'รัน {args} แล้ว',
   aiSumWebSearch: 'ค้นหาเว็บ',
   aiSumWebSearchDone: 'ค้นหา "{query}" ({count} รายการ)',
   aiSumImageSearch: 'ค้นหารูปภาพ',

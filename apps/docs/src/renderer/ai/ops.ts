@@ -2,10 +2,11 @@ import { checkPlaceholders, placeholderSource, REDACT_MARK } from './redact'
 import type { Editor } from '@tiptap/core'
 import type { Node as PmDocNode, Schema } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
-import { generateTocFieldXml, type TocEntry } from '@genoffice/docx-engine'
+import { generateTocFieldXml, type TabStop, type TocEntry } from '@genoffice/docx-engine'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import { tabSpecsToStops, validateTabs, type TabSpec } from './tab-stops'
 import { styleOpDefs, type AiStyleAccess } from './style-ops'
 import { fieldOpDefs } from './field-ops'
 import { tableOpDefs } from './table-ops'
@@ -67,6 +68,8 @@ export interface ParagraphFields {
   shadingFill?: string | null
   /** Paragraph borders, a subset of "tblr" */
   borders?: string | null
+  /** the paragraph's own tab stops; [] or null clears them, a `clear` entry cancels a style stop */
+  tabs?: TabSpec[] | null
 }
 
 export interface Op {
@@ -202,6 +205,7 @@ const PARA_KEYS = [
   'pageBreakBefore',
   'shadingFill',
   'borders',
+  'tabs',
 ] as const
 const IMAGE_KEYS = ['widthPx', 'heightPx', 'align'] as const
 
@@ -235,8 +239,10 @@ function validateTarget(target: unknown, where: string): string | null {
     typeof tg.containsText === 'string' ||
     (Array.isArray(tg.blockIndexes) && tg.blockIndexes.length > 0) ||
     tg.scope === 'selection' ||
+    tg.scope === 'document' ||
     tg.range !== undefined
-  if (!hasCondition) return `${where}: target requires at least one condition`
+  if (!hasCondition)
+    return `${where}: target requires at least one condition (use {"scope":"document"} for the whole document)`
   return null
 }
 
@@ -365,10 +371,32 @@ function validateParagraphFields(op: Op, where: string): string | null {
       return `${where}: borders must be a subset of "tblr" (or null)`
     }
   }
+  if (op.tabs !== undefined) {
+    const error = validateTabs(op.tabs, where)
+    if (error) return error
+  }
   if (present(op, PARA_KEYS).length === 0) {
     return `${where}: give at least one paragraph field (${PARA_KEYS.join(', ')})`
   }
   return null
+}
+
+/** the paragraph's tabStops attr with its own stops replaced; display-only (style-inherited,
+ *  w:ptab) entries survive except where a new stop or a clear sits at their position */
+function mergeTabStopsAttr(existing: unknown, direct: TabStop[]): string {
+  let displayOnly: TabStop[] = []
+  if (typeof existing === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(existing)
+      if (Array.isArray(parsed))
+        displayOnly = (parsed as TabStop[]).filter((s) => s.inherited || s.rel)
+    } catch {
+      /* malformed attr: no display-only stops */
+    }
+  }
+  const taken = new Set(direct.map((s) => s.pos))
+  const kept = displayOnly.filter((s) => !taken.has(s.pos))
+  return JSON.stringify([...direct, ...kept].sort((a, b) => a.pos - b.pos))
 }
 
 function validateAfterBlockIndex(op: Op, where: string): string | null {
@@ -559,6 +587,8 @@ function applyParagraphPatch(
     }
     for (const p of paragraphsIn(b, scoped)) {
       const attrs = { ...p.node.attrs, ...patch }
+      if (Array.isArray(patch.tabStops))
+        attrs.tabStops = mergeTabStopsAttr(p.node.attrs.tabStops, patch.tabStops as TabStop[])
       const dirty = Object.keys(patch).some((k) => attrs[k] !== p.node.attrs[k])
       if (!dirty) continue
       tr.setNodeMarkup(p.pos, undefined, changedAttrs(ctx, attrs))
@@ -660,6 +690,7 @@ function runSetParagraphFormat(op: Op, env: RunEnv): OpResult {
   for (const k of present(op, PARA_KEYS)) {
     if (k === 'shadingFill') patch.shadingFill = normalizeHex(op.shadingFill, op.op, 'shadingFill')
     else if (k === 'pageBreakBefore') patch.pageBreakBefore = op.pageBreakBefore === true
+    else if (k === 'tabs') patch.tabStops = tabSpecsToStops(op.tabs as TabSpec[] | null)
     else patch[k] = op[k] ?? null
   }
   return applyParagraphPatch(env, op, patch)
@@ -979,11 +1010,29 @@ function runFindReplace(op: Op, env: RunEnv): OpResult {
   }
 }
 
+/** does this text node currently carry the color / size the op asks to match? */
+function runStyleMatches(child: PmDocNode, op: Op): boolean {
+  const ts = child.marks.find((m) => m.type.name === 'docTextStyle')
+  if (op.matchColor !== undefined) {
+    const raw = ts?.attrs.color
+    const have = typeof raw === 'string' && raw && raw !== 'auto' ? raw.toUpperCase() : null
+    const want = op.matchColor === 'auto' ? null : normalizeHex(op.matchColor, op.op, 'matchColor')
+    if (have !== want) return false
+  }
+  if (op.matchFontSize !== undefined) {
+    const have = typeof ts?.attrs.sizeHalfPoints === 'number' ? ts.attrs.sizeHalfPoints : null
+    const want =
+      op.matchFontSize === 'default' ? null : Math.round((op.matchFontSize as number) * 2)
+    if (have !== want) return false
+  }
+  return true
+}
+
 function runSetMatchedFont(op: Op, env: RunEnv): OpResult {
   const { tr, ctx, sel } = env
-  const text = String(op.text)
+  const text = typeof op.text === 'string' ? op.text : null
   const matchCase = op.matchCase !== false
-  const needle = matchCase ? text : text.toLowerCase()
+  const needle = text === null ? null : matchCase ? text : text.toLowerCase()
   const blocks = op.target ? matchTarget(tr.doc, targetOf(op), sel) : topLevelBlocks(tr.doc)
   const scoped = op.target ? scopedRange(targetOf(op), sel) : null
   const boolKeys = present(op, Object.keys(BOOL_MARK_TYPES))
@@ -995,7 +1044,7 @@ function runSetMatchedFont(op: Op, env: RunEnv): OpResult {
 
   for (const b of blocks) {
     if (b.node.type.name === 'docProtected') {
-      if (blockText(b.node).includes(text)) skippedProtected++
+      if (text === null || blockText(b.node).includes(text)) skippedProtected++
       continue
     }
     const blockDeleted = isTrackedDeleted(b.node)
@@ -1004,12 +1053,30 @@ function runSetMatchedFont(op: Op, env: RunEnv): OpResult {
       const contentFrom = p.pos + 1
       p.node.forEach((child, offset) => {
         if (!child.isText || !child.text) return
+        if (!runStyleMatches(child, op)) return
         const struck = paraDeleted || child.marks.some((m) => m.type.name === 'del')
-        const hay = matchCase ? child.text : child.text.toLowerCase()
-        let at = hay.indexOf(needle)
-        while (at !== -1) {
-          const from = contentFrom + offset + at
-          const to = from + needle.length
+        // no text to match: the whole run is one match
+        const ranges: Array<[number, number]> = []
+        if (needle === null) {
+          ranges.push([0, child.text.length])
+        } else {
+          const hay = matchCase ? child.text : child.text.toLowerCase()
+          let at = hay.indexOf(needle)
+          while (at !== -1) {
+            ranges.push([at, at + needle.length])
+            at = hay.indexOf(needle, at + needle.length)
+          }
+        }
+        for (const [start, end] of ranges) {
+          let from = contentFrom + offset + start
+          let to = contentFrom + offset + end
+          if (needle === null) {
+            // a style match is the whole run; a selection may cut into it, so clip instead of skipping
+            if (b.clip) [from, to] = [Math.max(from, b.clip.from), Math.min(to, b.clip.to)]
+            if (scoped && !b.node.isTextblock && scoped.from !== scoped.to)
+              [from, to] = [Math.max(from, scoped.from), Math.min(to, scoped.to)]
+            if (from >= to) continue
+          }
           if (struck) {
             skippedDeleted++
           } else if (insideScope(b, scoped, from, to)) {
@@ -1017,7 +1084,6 @@ function runSetMatchedFont(op: Op, env: RunEnv): OpResult {
             styledCount++
             touched.add(b.index)
           }
-          at = hay.indexOf(needle, at + needle.length)
         }
       })
     }
@@ -1240,15 +1306,30 @@ register({
 
 register({
   name: 'setMatchedFont',
-  signature: `{ op: "setMatchedFont", text, matchCase?, target?, ${FONT_SIGNATURE_FIELDS} }  // character-level: styles only the occurrences of text (not the whole block); target narrows the scanned blocks, omitted = whole document (table cells included)`,
-  keys: ['text', 'matchCase', ...FONT_KEYS],
+  signature: `{ op: "setMatchedFont", text?, matchCase?, matchColor?: "#RRGGBB"|"auto", matchFontSize?: pt|"default", target?, ${FONT_SIGNATURE_FIELDS} }  // character-level: styles only the runs that match (not the whole block) — occurrences of text, and/or runs currently in matchColor / at matchFontSize (as shown by read_blocks spans); give at least one of text / matchColor / matchFontSize; target narrows the scanned blocks, omitted = whole document (table cells included)`,
+  keys: ['text', 'matchCase', 'matchColor', 'matchFontSize', ...FONT_KEYS],
   target: 'optional',
   validate(op, where) {
     const shape = validateShape(op, this, where)
     if (shape) return shape
-    if (typeof op.text !== 'string' || op.text === '') return `${where}: text must not be empty`
+    if (op.text !== undefined && (typeof op.text !== 'string' || op.text === ''))
+      return `${where}: text must not be empty`
     if (op.matchCase !== undefined && typeof op.matchCase !== 'boolean') {
       return `${where}: matchCase must be a boolean`
+    }
+    if (op.matchColor !== undefined && op.matchColor !== 'auto') {
+      const error = checkHex(op.matchColor, where, 'matchColor')
+      if (error) return error
+    }
+    if (
+      op.matchFontSize !== undefined &&
+      op.matchFontSize !== 'default' &&
+      !(typeof op.matchFontSize === 'number' && isFontSizeOrNull(op.matchFontSize))
+    ) {
+      return `${where}: matchFontSize must be ${MIN_FONT_SIZE_PT}-${MAX_FONT_SIZE_PT}pt or "default" (runs without an explicit size)`
+    }
+    if (op.text === undefined && op.matchColor === undefined && op.matchFontSize === undefined) {
+      return `${where}: give text, matchColor or matchFontSize (what to match)`
     }
     return validateFontFields(op, where)
   },
@@ -1258,7 +1339,7 @@ register({
 register({
   name: 'setParagraphFormat',
   signature:
-    '{ op: "setParagraphFormat", target, align?: "left"|"center"|"right"|"justify"|null, lineSpacing?, indentLeft?, indentRight?, indentFirstLine?, spaceBefore?, spaceAfter?, pageBreakBefore?: boolean, shadingFill?: "#RRGGBB"|null, borders?: subset of "tblr"|null }  // paragraph format of the targeted blocks (whole blocks, even for a partial selection); lengths in twips, lineSpacing as a multiple; indentFirstLine positive = first-line indent, negative = hanging; a two-character CJK indent ≈ font size in pt × 40 twips',
+    '{ op: "setParagraphFormat", target, align?: "left"|"center"|"right"|"justify"|null, lineSpacing?, indentLeft?, indentRight?, indentFirstLine?, spaceBefore?, spaceAfter?, pageBreakBefore?: boolean, shadingFill?: "#RRGGBB"|null, borders?: subset of "tblr"|null, tabs?: [{ pos: twips|"6.5in", align?: "left"|"center"|"right"|"decimal"|"bar", leader?: "none"|"dot"|"hyphen"|"underscore"|"middleDot", clear?: true }]|null }  // paragraph format of the targeted blocks (whole blocks, even for a partial selection); lengths in twips, lineSpacing as a multiple; indentFirstLine positive = first-line indent, negative = hanging; a two-character CJK indent ≈ font size in pt × 40 twips; tabs replaces the paragraph\'s own stops ([] / null clears them, clear: true cancels a style stop); a tab character in HTML is <span data-tab></span>',
   keys: PARA_KEYS,
   target: 'required',
   validate(op, where) {

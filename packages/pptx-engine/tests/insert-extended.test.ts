@@ -19,7 +19,6 @@ import {
   addSmartArt,
   addMedia,
   addModel3d,
-  model3dPartOf,
   solidPng,
   setElementLink,
   getElementLink,
@@ -474,7 +473,7 @@ describe('addMedia / addModel3d', () => {
     expect(el.media?.kind).toBe('audio')
   })
 
-  it('3d model embeds glb part and poster picture with descr marker', async () => {
+  it('3d model embeds the glb as a model3d part behind its picture', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46]) // "glTF"
     const r = addModel3d(opened, 0, { bytes: glb, ext: 'glb', offset: { ...OFF } })
@@ -483,9 +482,8 @@ describe('addMedia / addModel3d', () => {
     const reopened = await openPptx(await savePptx(opened))
     const el = reopened.deck.slides[0]!.elements.at(-1) as PictureElement
     expect(el.type).toBe('picture')
-    const part = model3dPartOf(el)
-    expect(part).toMatch(/^ppt\/media\/media\d+\.glb$/)
-    expect(reopened.archive.readBytes(part!)).toEqual(glb)
+    expect(el.model3d?.target).toMatch(/^ppt\/media\/model3d\d+\.glb$/)
+    expect(reopened.archive.readBytes(el.model3d!.target!)).toEqual(glb)
   })
 
   it('solidPng produces a decodable png signature', () => {

@@ -82,17 +82,26 @@ function buildIco(entries) {
   return Buffer.concat([header, dir, ...entries.map((e) => e.png)])
 }
 
-async function renderPng(page, svgDataUrl, canvasSize, contentSize) {
-  await page.setViewportSize({ width: canvasSize, height: canvasSize })
+// Fresh page per frame: resizing one page's viewport between renders leaves
+// Chrome compositing a stale raster at exactly 256x256 (file-json.svg came
+// out doubled and clipped in both json.ico and json.icns).
+async function renderPng(browser, svgDataUrl, canvasSize, contentSize) {
+  const page = await browser.newPage({
+    deviceScaleFactor: 1,
+    viewport: { width: canvasSize, height: canvasSize },
+  })
   await page.setContent(
     `<body style="margin:0"><div style="width:${canvasSize}px;height:${canvasSize}px;display:flex;align-items:center;justify-content:center">` +
       `<img src="${svgDataUrl}" style="width:${contentSize}px;height:${contentSize}px"></div></body>`,
   )
-  return page.screenshot({ omitBackground: true })
+  try {
+    return await page.screenshot({ omitBackground: true })
+  } finally {
+    await page.close()
+  }
 }
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
-const page = await browser.newPage({ deviceScaleFactor: 1 })
 const tmp = mkdtempSync(join(tmpdir(), 'genoffice-file-icons-'))
 
 try {
@@ -102,7 +111,10 @@ try {
 
     const macPngs = new Map()
     for (const size of MAC_CANVAS_SIZES) {
-      macPngs.set(size, await renderPng(page, dataUrl, size, Math.round(size * MAC_CONTENT_RATIO)))
+      macPngs.set(
+        size,
+        await renderPng(browser, dataUrl, size, Math.round(size * MAC_CONTENT_RATIO)),
+      )
     }
     const iconset = join(tmp, `${type}.iconset`)
     mkdirSync(iconset, { recursive: true })
@@ -113,7 +125,7 @@ try {
 
     const winEntries = []
     for (const size of WIN_SIZES) {
-      winEntries.push({ size, png: await renderPng(page, dataUrl, size, size) })
+      winEntries.push({ size, png: await renderPng(browser, dataUrl, size, size) })
     }
     writeFileSync(join(outDir, `${type}.ico`), buildIco(winEntries))
 

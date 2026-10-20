@@ -111,6 +111,8 @@ export const id = {
   aiErrUnknown: 'Kesalahan tidak dikenal',
   aiErrStreamTimeout:
     'Permintaan AI habis waktu: jaringan tidak merespons sehingga proses dihentikan. Periksa koneksi Anda lalu coba lagi',
+  aiErrRegion:
+    'Penyedia model ini tidak melayani wilayah Anda saat ini — pilih model lain atau ganti jaringan',
   aiErrOverloaded: 'Layanan AI sedang sibuk — silakan coba lagi sebentar lagi',
   aiErrNetwork:
     'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',
@@ -224,5 +226,4 @@ export const id = {
   aiSumSaveTemplate: 'Menyimpan templat gaya "{name}"',
   aiSumTemplatesEmpty: 'Daftar templat gaya (kosong)',
   aiSumListTemplates: 'Menampilkan {count} templat gaya',
-  aiPageCloudToLocal: 'Awan tidak tersedia — dibuat secara lokal',
 } satisfies Record<keyof typeof zh, string>

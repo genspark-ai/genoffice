@@ -369,6 +369,8 @@ export type SaveBlock = (
 export interface SaveOptions {
   /** save timestamp (ISO), written to docProps/core.xml dcterms:modified; default = now */
   savedAt?: string
+  /** total page count at save time: the cached result written into NUMPAGES fields (viewers that do not recompute fields show it); default 1 */
+  pageCount?: number
   /** bytes of pictures the editor placed inside existing paragraphs (table cells),
    *  keyed by the placeholder token their drawing XML carries (NEW_PICTURE_TOKEN_PREFIX) */
   newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
@@ -1060,7 +1062,7 @@ export async function saveDocx(
       if (!path) return
       const file = zip.file(path)
       const originalXml = file ? await file.async('string') : null
-      const partXml = headerFooterPartXml(kind, hf, undefined, originalXml)
+      const partXml = headerFooterPartXml(kind, hf, undefined, originalXml, options.pageCount)
       hfParts.push({ path, xml: partXml })
     } else {
       let n = 1
@@ -1070,7 +1072,7 @@ export async function saveDocx(
       )
         n++
       const filename = `${kind}${n}.xml`
-      const partXml = headerFooterPartXml(kind, hf)
+      const partXml = headerFooterPartXml(kind, hf, undefined, null, options.pageCount)
       const newRId = `rId${nextRelNum++}`
       newRels.push({ rId: newRId, type: HF_REL_TYPE[kind], target: filename, external: false })
       hfParts.push({ path: `word/${filename}`, xml: partXml })
@@ -1120,9 +1122,12 @@ export async function saveDocx(
       if (!path) continue
       const file = zip.file(path)
       const originalXml = file ? await file.async('string') : null
-      hfParts.push({ path, xml: headerFooterPartXml(edit.kind, edit.hf, undefined, originalXml) })
+      hfParts.push({
+        path,
+        xml: headerFooterPartXml(edit.kind, edit.hf, undefined, originalXml, options.pageCount),
+      })
     } else {
-      const partXml = headerFooterPartXml(edit.kind, edit.hf)
+      const partXml = headerFooterPartXml(edit.kind, edit.hf, undefined, null, options.pageCount)
       let n = 1
       while (
         zip.file(`word/${edit.kind}${n}.xml`) ||
@@ -2135,6 +2140,7 @@ function headerFooterPartXml(
   hf: HeaderFooter,
   watermarkXml: string | undefined = undefined,
   originalXml: string | null = null,
+  pageCount = 1,
 ): string {
   const root = kind === 'header' ? 'w:hdr' : 'w:ftr'
   const textRun = (t: string) =>
@@ -2149,7 +2155,7 @@ function headerFooterPartXml(
     '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
     '<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>' +
     '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
-    '<w:r><w:t>1</w:t></w:r>' +
+    `<w:r><w:t>${Math.max(1, Math.round(pageCount))}</w:t></w:r>` +
     '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
   let content: string
   if (hf.paras) {

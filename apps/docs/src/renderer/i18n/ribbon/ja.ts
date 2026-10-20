@@ -257,6 +257,7 @@ export const ja = {
   ribbonTableColsLabel: '列数',
   ribbonTableRowsLabel: '行数',
   ribbonTableHandleTip: '表を選択。ドラッグで移動',
+  ribbonTableResizeTip: 'ドラッグで表のサイズを変更',
   ribbonTableDeleteMenu: '削除',
   ribbonSelectRow: '行の選択',
   ribbonSelectColumn: '列の選択',

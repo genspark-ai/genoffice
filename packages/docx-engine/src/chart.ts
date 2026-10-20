@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { chartWorkbookParts, colLetter } from '@genoffice/pptx-engine/chart-workbook'
 import type { ChartAxis, ChartDisplay, ChartSeries, NewChart, ThemeColors } from './types'
 import {
   attrsOf,
@@ -11,6 +12,8 @@ import {
   xmlParser,
   type XNode,
 } from './xml-utils'
+
+export { CHART_WORKBOOK_REL_TYPE, colLetter } from '@genoffice/pptx-engine/chart-workbook'
 
 const CHART_KINDS: Record<string, ChartDisplay['kind']> = {
   'c:barChart': 'bar',
@@ -734,23 +737,6 @@ function chartTitle(chart: XNode): string | undefined {
   return deleted ? undefined : 'Chart Title'
 }
 
-const _XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-export const CHART_WORKBOOK_REL_TYPE =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/package'
-
-// Series data columns start at B (column A holds the categories):
-// 0 → B … 24 → Z, 25 → AA, 26 → AB, … (plain charCode arithmetic breaks past Z).
-export const colLetter = (i: number): string => {
-  let n = i + 2 // 1-based column number: A = 1, B = 2
-  let label = ''
-  while (n > 0) {
-    const rem = (n - 1) % 26
-    label = String.fromCharCode(65 + rem) + label
-    n = Math.floor((n - 1) / 26)
-  }
-  return label
-}
-
 function strCacheXml(values: string[], f: string): string {
   return (
     `<c:strRef><c:f>${escapeXmlText(f)}</c:f><c:strCache><c:ptCount val="${values.length}"/>` +
@@ -1008,107 +994,15 @@ function innerTextRanges(
 
 // ---- embedded xlsx workbook ----
 
-const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-
-/**
- * Build a minimal but valid xlsx file containing one Sheet1 with the chart
- * data (header row + data rows). Returns base64-encoded bytes.
- *
- * Layout:
- *   A1        | B1 (ser 0 name) | C1 (ser 1 name) ...
- *   A2 (cat0) | B2 (val 0,0)    | C2 (val 1,0)   ...
- *   A3 (cat1) | B3 (val 0,1)    | C3 (val 1,1)   ...
- */
+/** The chart's embedded workbook (pptx-engine's chart-workbook.ts), base64-encoded. */
 export async function buildChartWorkbookXlsxBase64(
   categories: string[],
   series: Array<{ name: string; values: (number | null)[] }>,
 ): Promise<string> {
-  const rows = categories.length
-  const serCount = series.length
-
-  // shared strings: all text cells collected in order
-  const strings: string[] = []
-  const si = (s: string): number => {
-    const idx = strings.indexOf(s)
-    if (idx !== -1) return idx
-    strings.push(s)
-    return strings.length - 1
-  }
-
-  // Build sheetData rows
-  const headerCells: string[] = []
-  // A1: empty label cell
-  headerCells.push(`<c r="A1" t="s"><v>${si('')}</v></c>`)
-  for (let j = 0; j < serCount; j++) {
-    headerCells.push(`<c r="${colLetter(j)}1" t="s"><v>${si(series[j].name)}</v></c>`)
-  }
-  const dataRows: string[] = []
-  for (let i = 0; i < rows; i++) {
-    const rowNum = i + 2
-    const cells: string[] = []
-    cells.push(`<c r="A${rowNum}" t="s"><v>${si(categories[i])}</v></c>`)
-    for (let j = 0; j < serCount; j++) {
-      const val = series[j].values[i]
-      if (val !== null && val !== undefined) {
-        cells.push(`<c r="${colLetter(j)}${rowNum}"><v>${val}</v></c>`)
-      }
-    }
-    dataRows.push(`<row r="${rowNum}">${cells.join('')}</row>`)
-  }
-
-  const sheetXml =
-    XML_DECL +
-    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    '<sheetData>' +
-    `<row r="1">${headerCells.join('')}</row>` +
-    dataRows.join('') +
-    '</sheetData>' +
-    '</worksheet>'
-
-  const sharedStringsXml =
-    XML_DECL +
-    `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">` +
-    strings.map((s) => `<si><t>${escapeXmlText(s)}</t></si>`).join('') +
-    '</sst>'
-
-  const workbookXml =
-    XML_DECL +
-    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
-    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-    '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>' +
-    '</workbook>'
-
-  const workbookRels =
-    XML_DECL +
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
-    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>' +
-    '</Relationships>'
-
-  const topRels =
-    XML_DECL +
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
-    '</Relationships>'
-
-  const contentTypes =
-    XML_DECL +
-    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-    '<Default Extension="xml" ContentType="application/xml"/>' +
-    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
-    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
-    '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>' +
-    '</Types>'
-
   const zip = new JSZip()
-  zip.file('[Content_Types].xml', contentTypes)
-  zip.file('_rels/.rels', topRels)
-  zip.file('xl/workbook.xml', workbookXml)
-  zip.file('xl/_rels/workbook.xml.rels', workbookRels)
-  zip.file('xl/worksheets/sheet1.xml', sheetXml)
-  zip.file('xl/sharedStrings.xml', sharedStringsXml)
-
+  for (const [path, xml] of Object.entries(chartWorkbookParts({ categories, series }))) {
+    zip.file(path, xml)
+  }
   return zipToBase64(zip)
 }
 
