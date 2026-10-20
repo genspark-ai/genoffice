@@ -23,7 +23,8 @@
         "../../packages/pipelines/src/slides/layout-audit.ts"
       ],
       "@genoffice/docx-engine/metafile": ["../../packages/docx-engine/src/metafile.ts"],
-      "@genoffice/docx-engine/math": ["../../packages/docx-engine/src/math.ts"]
+      "@genoffice/docx-engine/math": ["../../packages/docx-engine/src/math.ts"],
+      "@genoffice/electron-utils": ["../../packages/electron-utils/src/index.ts"]
     }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]

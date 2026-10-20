@@ -58,6 +58,7 @@ import {
   DROP_OPEN_CHANNEL,
   GITHUB_REPO_URL,
   appMenuLabels,
+  appMenuTemplate,
   contextMenuLabels,
   editMenuTemplate,
   installContextMenu,
@@ -74,7 +75,9 @@ import {
   windowMenuTemplate,
   aboutMenuItem,
   checkUpdatesMenuItem,
+  setSettingsInvoker,
   setUpdateCheckInvoker,
+  settingsMenuItem,
   installRendererProtocol,
   AUTHOR_NAME_KEY,
   readAuthorNameSetting,
@@ -5714,9 +5717,15 @@ async function openFileViaDialog(): Promise<void> {
 }
 
 function buildHomeMenu(): void {
-  const isMac = process.platform === 'darwin'
+  const labels = appMenuLabels(currentLang())
+  // macOS only: the application menu is spelled out so it can carry a
+  // Settings entry of our own (role:'appMenu' is a fixed template)
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels)],
+  })
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(appMenu ? [appMenu] : []),
     {
       label: tm('menuFile'),
       submenu: [
@@ -5742,6 +5751,8 @@ function buildHomeMenu(): void {
         },
         { type: 'separator' },
         { role: 'close', label: tm('menuClose') },
+        { type: 'separator' },
+        settingsMenuItem(labels),
       ],
     },
     viewMenuTemplate(),
@@ -5766,9 +5777,15 @@ function buildHomeMenu(): void {
 // ---- pdf menu (pdf-main has no menu of its own; the shell owns pdf tabs, so it builds one) ----
 
 function buildPdfMenu(): void {
-  const isMac = process.platform === 'darwin'
+  const labels = appMenuLabels(currentLang())
+  // macOS only: the application menu is spelled out so it can carry a
+  // Settings entry of our own (role:'appMenu' is a fixed template)
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels)],
+  })
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(appMenu ? [appMenu] : []),
     {
       label: tm('menuFile'),
       submenu: [
@@ -5828,6 +5845,8 @@ function buildPdfMenu(): void {
           accelerator: 'CmdOrCtrl+W',
           click: () => closeFocusedEditor(),
         },
+        { type: 'separator' },
+        settingsMenuItem(labels),
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
@@ -5849,9 +5868,15 @@ function buildPdfMenu(): void {
 // ---- markdown menu (markdown-main has no menu of its own; the shell owns markdown tabs) ----
 
 function buildMarkdownMenu(): void {
-  const isMac = process.platform === 'darwin'
+  const labels = appMenuLabels(currentLang())
+  // macOS only: the application menu is spelled out so it can carry a
+  // Settings entry of our own (role:'appMenu' is a fixed template)
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels)],
+  })
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(appMenu ? [appMenu] : []),
     {
       label: tm('menuFile'),
       submenu: [
@@ -5927,6 +5952,8 @@ function buildMarkdownMenu(): void {
           accelerator: 'CmdOrCtrl+W',
           click: () => closeFocusedEditor(),
         },
+        { type: 'separator' },
+        settingsMenuItem(labels),
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
@@ -5948,9 +5975,15 @@ function buildMarkdownMenu(): void {
 // ---- html menu (html-main has no menu of its own; the shell owns html tabs) ----
 
 function buildHtmlMenu(): void {
-  const isMac = process.platform === 'darwin'
+  const labels = appMenuLabels(currentLang())
+  // macOS only: the application menu is spelled out so it can carry a
+  // Settings entry of our own (role:'appMenu' is a fixed template)
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels)],
+  })
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(appMenu ? [appMenu] : []),
     {
       label: tm('menuFile'),
       submenu: [
@@ -6019,6 +6052,8 @@ function buildHtmlMenu(): void {
           accelerator: 'CmdOrCtrl+W',
           click: () => closeFocusedEditor(),
         },
+        { type: 'separator' },
+        settingsMenuItem(labels),
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
@@ -6520,6 +6555,20 @@ function installBackToHomeItems(): void {
   setSlidesExtraFileMenuItems([backToHomeItem])
 }
 
+/** The Settings view lives in the Home tab, so every app's menu points here:
+ *  ⌘, lands on it from anywhere in the suite. The window comes back first if
+ *  it was hidden or minimized, and asking again re-opens the same panel —
+ *  the renderer keeps one. */
+function openSettingsView(): void {
+  const win = shellWindow ?? BrowserWindow.getFocusedWindow()
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  tabManager?.openHomeTab()
+  win.webContents.send(HOME_CHANNELS.openSettings, { section: 'general' })
+}
+
 function installDockMenu(): void {
   if (process.platform !== 'darwin') return
   app.dock?.setMenu(
@@ -6900,6 +6949,8 @@ app.whenReady().then(async () => {
   installBackToHomeItems()
   installDockMenu()
   setUpdateCheckInvoker(() => void checkForUpdatesNow())
+  // every app's Settings entry (⌘, / Ctrl+,) lands on the shell's Settings view
+  setSettingsInvoker(() => openSettingsView())
   initAutoUpdater(() => shellWindow, currentUpdateChannel())
   // resource watchdog: a renderer that stays hot for minutes gets diagnostics
   // recorded and the user an offer to close the document (headless exports

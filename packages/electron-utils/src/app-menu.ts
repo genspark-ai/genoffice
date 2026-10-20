@@ -24,6 +24,7 @@ export interface AppMenuLabels extends ContextMenuLabels {
   about: string
   checkUpdates: string
   version: string
+  settings: string
 }
 
 type Labels = Omit<AppMenuLabels, keyof ContextMenuLabels>
@@ -48,6 +49,7 @@ const EN: Labels = {
   about: 'About GenOffice',
   checkUpdates: 'Check for Updates…',
   version: 'Version',
+  settings: 'Settings…',
 }
 
 // Shared table, same rationale as context-menu.ts: one copy instead of
@@ -73,6 +75,7 @@ const LABELS: Record<string, Labels> = {
     about: '关于 GenOffice',
     checkUpdates: '检查更新…',
     version: '版本',
+    settings: '设置…',
   },
   en: EN,
   ja: {
@@ -95,6 +98,7 @@ const LABELS: Record<string, Labels> = {
     about: 'GenOffice について',
     checkUpdates: '更新を確認…',
     version: 'バージョン',
+    settings: '設定…',
   },
   ko: {
     window: '창',
@@ -116,6 +120,7 @@ const LABELS: Record<string, Labels> = {
     about: 'GenOffice 정보',
     checkUpdates: '업데이트 확인…',
     version: '버전',
+    settings: '설정…',
   },
   fr: {
     window: 'Fenêtre',
@@ -137,6 +142,7 @@ const LABELS: Record<string, Labels> = {
     about: 'À propos de GenOffice',
     checkUpdates: 'Rechercher les mises à jour…',
     version: 'Version',
+    settings: 'Réglages…',
   },
   de: {
     window: 'Fenster',
@@ -158,6 +164,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Über GenOffice',
     checkUpdates: 'Nach Updates suchen…',
     version: 'Version',
+    settings: 'Einstellungen…',
   },
   es: {
     window: 'Ventana',
@@ -179,6 +186,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Acerca de GenOffice',
     checkUpdates: 'Buscar actualizaciones…',
     version: 'Versión',
+    settings: 'Ajustes…',
   },
   th: {
     window: 'หน้าต่าง',
@@ -200,6 +208,7 @@ const LABELS: Record<string, Labels> = {
     about: 'เกี่ยวกับ GenOffice',
     checkUpdates: 'ตรวจหาการอัปเดต…',
     version: 'เวอร์ชัน',
+    settings: 'การตั้งค่า…',
   },
   id: {
     window: 'Jendela',
@@ -221,6 +230,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Tentang GenOffice',
     checkUpdates: 'Periksa Pembaruan…',
     version: 'Versi',
+    settings: 'Pengaturan…',
   },
   ru: {
     window: 'Окно',
@@ -242,6 +252,7 @@ const LABELS: Record<string, Labels> = {
     about: 'О GenOffice',
     checkUpdates: 'Проверить обновления…',
     version: 'Версия',
+    settings: 'Настройки…',
   },
   ar: {
     window: 'نافذة',
@@ -263,6 +274,7 @@ const LABELS: Record<string, Labels> = {
     about: 'حول GenOffice',
     checkUpdates: 'التحقق من التحديثات…',
     version: 'الإصدار',
+    settings: 'الإعدادات…',
   },
   pt: {
     window: 'Janela',
@@ -284,6 +296,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Sobre o GenOffice',
     checkUpdates: 'Procurar atualizações…',
     version: 'Versão',
+    settings: 'Configurações…',
   },
   it: {
     window: 'Finestra',
@@ -305,6 +318,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Informazioni su GenOffice',
     checkUpdates: 'Controlla aggiornamenti…',
     version: 'Versione',
+    settings: 'Impostazioni…',
   },
   pl: {
     window: 'Okno',
@@ -326,6 +340,7 @@ const LABELS: Record<string, Labels> = {
     about: 'O programie GenOffice',
     checkUpdates: 'Sprawdź aktualizacje…',
     version: 'Wersja',
+    settings: 'Ustawienia…',
   },
   cs: {
     window: 'Okno',
@@ -347,6 +362,7 @@ const LABELS: Record<string, Labels> = {
     about: 'O aplikaci GenOffice',
     checkUpdates: 'Zkontrolovat aktualizace…',
     version: 'Verze',
+    settings: 'Nastavení…',
   },
   nl: {
     window: 'Venster',
@@ -368,6 +384,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Over GenOffice',
     checkUpdates: 'Controleren op updates…',
     version: 'Versie',
+    settings: 'Instellingen…',
   },
   ms: {
     window: 'Tetingkap',
@@ -389,6 +406,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Perihal GenOffice',
     checkUpdates: 'Semak Kemas Kini…',
     version: 'Versi',
+    settings: 'Tetapan…',
   },
   he: {
     window: 'חלון',
@@ -410,6 +428,7 @@ const LABELS: Record<string, Labels> = {
     about: 'אודות GenOffice',
     checkUpdates: 'בדוק עדכונים…',
     version: 'גרסה',
+    settings: 'הגדרות…',
   },
   hi: {
     window: 'विंडो',
@@ -431,6 +450,7 @@ const LABELS: Record<string, Labels> = {
     about: 'GenOffice के बारे में',
     checkUpdates: 'अपडेट जांचें…',
     version: 'संस्करण',
+    settings: 'सेटिंग्स…',
   },
   vi: {
     window: 'Cửa sổ',
@@ -452,6 +472,7 @@ const LABELS: Record<string, Labels> = {
     about: 'Giới thiệu GenOffice',
     checkUpdates: 'Kiểm tra bản cập nhật…',
     version: 'Phiên bản',
+    settings: 'Cài đặt…',
   },
   'zh-TW': {
     window: '視窗',
@@ -473,6 +494,7 @@ const LABELS: Record<string, Labels> = {
     about: '關於 GenOffice',
     checkUpdates: '檢查更新…',
     version: '版本',
+    settings: '設定…',
   },
 }
 
@@ -632,6 +654,58 @@ export function aboutMenuItem(labels: AppMenuLabels): MenuItemConstructorOptions
       if (response === 1) clipboard.writeText(`GenOffice ${version}`)
       if (response === 2) updateCheckInvoker?.()
     },
+  }
+}
+
+/** The Settings entry, shared by every app: one label, one accelerator
+ * (⌘, on macOS and Ctrl+, elsewhere), one action. The shell owns the
+ * Settings view, so it registers the action; an app running on its own
+ * falls back to its own preferences entry. */
+let settingsInvoker: (() => void) | null = null
+
+export function setSettingsInvoker(invoke: (() => void) | null): void {
+  settingsInvoker = invoke
+}
+
+export function settingsMenuItem(
+  labels: AppMenuLabels,
+  fallback?: () => void,
+): MenuItemConstructorOptions {
+  return {
+    label: labels.settings,
+    accelerator: 'CmdOrCtrl+,',
+    click: () => (settingsInvoker ?? fallback)?.(),
+  }
+}
+
+/** macOS application menu — the one under the app name. Electron's
+ * role:'appMenu' is a fixed template, so an entry of our own means spelling
+ * the menu out; the native roles keep the standard order and labels. Only
+ * macOS has this menu, so every other platform gets undefined. */
+export function appMenuTemplate(
+  platform: NodeJS.Platform,
+  labels: AppMenuLabels,
+  {
+    extra = [],
+    appLabel = 'GenOffice',
+  }: { extra?: MenuItemConstructorOptions[]; appLabel?: string } = {},
+): MenuItemConstructorOptions | undefined {
+  if (platform !== 'darwin') return undefined
+  return {
+    // Electron rejects a menu item that has neither label, role nor type
+    label: appLabel,
+    submenu: [
+      { role: 'about', label: labels.about },
+      ...extra,
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' },
+      { role: 'hideOthers' },
+      { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ],
   }
 }
 

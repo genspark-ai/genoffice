@@ -40,6 +40,7 @@ import { z } from 'zod'
 import {
   abortOnDestroyed,
   appMenuLabels,
+  appMenuTemplate,
   buildPrintableHtml,
   configuredDefaultSaveDir,
   contextMenuLabels,
@@ -54,6 +55,7 @@ import {
   helpMenuTemplate,
   viewMenuTemplate,
   windowMenuTemplate,
+  settingsMenuItem,
   installRendererProtocol,
   registerRendererScheme,
   rendererUrl,
@@ -4798,9 +4800,13 @@ export function setSheetsCloseTabHook(fn: (() => void) | null): void {
 function installApplicationMenu(): void {
   const sendMenuAction = sendSheetsMenuAction
   const labels = appMenuLabels(getUiLang())
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels)],
+  })
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
-      ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+      ...(appMenu ? [appMenu] : []),
       {
         label: tm('menuFile'),
         submenu: [
@@ -4848,6 +4854,8 @@ function installApplicationMenu(): void {
             : process.platform === 'darwin'
               ? { role: 'close' as const, label: tm('menuClose') }
               : { role: 'quit' as const, label: tm('menuQuit') },
+          { type: 'separator' },
+          settingsMenuItem(labels),
         ],
       },
       {

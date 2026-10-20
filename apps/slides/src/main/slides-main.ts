@@ -31,6 +31,7 @@ import { printSlidesHtml } from './print-window'
 import { setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
+  appMenuTemplate,
   configuredDefaultSaveDir,
   contextMenuLabels,
   fetchRemoteImage,
@@ -43,6 +44,7 @@ import {
   showSaveDialogWithMemory,
   helpMenuTemplate,
   toggleDevToolsItem,
+  settingsMenuItem,
   installRendererProtocol,
   registerRendererScheme,
   rendererUrl,
@@ -5034,8 +5036,12 @@ export function buildSlidesMenu(): Menu {
     )
   const isMac = process.platform === 'darwin'
   const labels = appMenuLabels(getUiLang())
+  const appMenu = appMenuTemplate(process.platform, labels, {
+    appLabel: app.name,
+    extra: [settingsMenuItem(labels)],
+  })
   const template: Electron.MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(appMenu ? [appMenu] : []),
     {
       label: tm('menuFile'),
       submenu: [
@@ -5072,6 +5078,8 @@ export function buildSlidesMenu(): Menu {
           : isMac
             ? { role: 'close' as const, label: tm('menuClose') }
             : { role: 'quit' as const, label: tm('menuQuit') },
+        { type: 'separator' },
+        settingsMenuItem(labels),
       ],
     },
     {
