@@ -12,7 +12,8 @@
     "./identity": "./src/identity.ts",
     "./model3d": "./src/model3d.ts",
     "./named-action": "./src/named-action.ts",
-    "./background-promote": "./src/background-promote.ts"
+    "./background-promote": "./src/background-promote.ts",
+    "./chart-workbook": "./src/chart-workbook.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
