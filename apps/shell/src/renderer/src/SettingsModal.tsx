@@ -18,6 +18,7 @@ import {
   MIN_MAX_OUTPUT_TOKENS,
   activeCustomEndpoint,
   clampMaxOutputTokens,
+  providerPickerModels,
   customEndpointLabel,
   newCustomEndpointId,
   removeCustomEndpoint,
@@ -703,7 +704,10 @@ function AiModelPane({ t }: { t: TFunc }) {
             className="set-dd"
             value={config.model || meta.defaultModel}
             ariaLabel={t('setAiModelId')}
-            options={meta.models.map((m) => ({ value: m, label: m }))}
+            options={providerPickerModels(provider, meta.models, config.model).map((m) => ({
+              value: m,
+              label: m,
+            }))}
             onPick={(m) => updateConfig({ model: m })}
             searchPlaceholder={meta.models.length > 12 ? t('setAiModelSearch') : undefined}
           />

@@ -241,9 +241,9 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'minimax',
     label: 'MiniMax',
-    // M3 is the current agentic/tool-use model; M2.5 moved to the legacy tier
-    models: ['MiniMax-M3', 'MiniMax-M2.7'],
-    defaultModel: 'MiniMax-M3',
+    // Current text choices; saved legacy ids remain valid in provider settings.
+    models: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
+    defaultModel: 'MiniMax-M3.1-Flash',
     keyPlaceholder: 'eyJ...',
   },
   {
@@ -282,6 +282,8 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'openai/gpt-6-luna',
       'openai/gpt-5.6-sol',
       'moonshotai/kimi-k3',
+      'minimax/minimax-m3.1-flash:free',
+      'minimax/minimax-m3',
     ],
     defaultModel: 'openrouter/auto',
     keyPlaceholder: 'sk-or-...',
@@ -348,7 +350,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     // (2026-10-08, public endpoint, no key needed); the rest of the 117-model
     // catalog works as-is when typed in. Chat, temperature and — for the
     // multimodal ids — data-URI image input are live-verified. The text-only
-    // ids (deepseek-v4-*, glm-5.3, both MiniMax) are listed in
+    // ids (deepseek-v4-*, glm-5.3, MiniMax M3) are listed in
     // modelLacksVision(); Atlas Cloud serves MiniMax M3 text-only even though
     // MiniMax's own API takes images.
     models: [
@@ -361,7 +363,6 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'qwen/qwen3.8-max',
       'qwen/qwen3.5-flash',
       'minimaxai/minimax-m3',
-      'minimaxai/minimax-m2.5',
     ],
     defaultModel: 'deepseek-ai/deepseek-v4-pro',
     keyPlaceholder: 'apikey-...',
@@ -386,6 +387,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'deepseek-v4-pro',
       'deepseek-v4-flash',
       'glm-5.2',
+      'minimax-m3.1-flash-free',
       'minimax-m3',
       'qwen3.6-plus',
     ],
@@ -412,7 +414,6 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'qwen3.8-max',
       'qwen3.8-flash',
       'minimax-m3',
-      'minimax-m2.7',
       'mimo-v2.5-pro',
       'mimo-v2.6-pro',
       'mimo-v2.6-flash',
@@ -433,6 +434,27 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     needsBaseUrl: true,
   },
 ]
+
+/** Filter ordinary live choices without rewriting a saved or hand-typed model. */
+export function providerPickerModels(
+  provider: AiProviderId,
+  models: string[],
+  selected = '',
+): string[] {
+  let choices = models
+  if (provider === 'openrouter') {
+    const current = ['minimax/minimax-m3.1-flash:free', 'minimax/minimax-m3']
+    const available = current.filter((id) => models.includes(id))
+    let inserted = false
+    choices = models.flatMap((id) => {
+      if (!id.toLowerCase().startsWith('minimax/')) return [id]
+      if (inserted) return []
+      inserted = true
+      return available
+    })
+  }
+  return selected && !choices.includes(selected) ? [selected, ...choices] : choices
+}
 
 /**
  * Fresh settings with every provider's default model and an empty key,

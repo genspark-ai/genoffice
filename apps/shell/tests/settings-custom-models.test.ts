@@ -211,6 +211,51 @@ async function pickProvider(label: string): Promise<void> {
   await click(option!)
 }
 
+describe('current MiniMax choices in the live gateway picker', () => {
+  it.each(['openrouter/auto', 'minimax/minimax-m2.7'])(
+    'preserves the saved selection %s while filtering ordinary choices',
+    async (selected) => {
+      const settings = defaultAiSettings()
+      settings.provider = 'openrouter'
+      settings.providers.openrouter.model = selected
+      installApi(settings)
+      const shipped = window.aiOffice.getAiProviders()
+      window.aiOffice.getAiProviders = () => [
+        ...shipped,
+        {
+          id: 'openrouter',
+          label: 'OpenRouter',
+          models: ['openrouter/auto'],
+          defaultModel: 'openrouter/auto',
+          keyPlaceholder: 'API Key',
+          defaultBaseUrl: 'https://openrouter.ai/api/v1',
+          liveModels: true,
+        },
+      ]
+      await openAiPane()
+      await tick()
+      await answer(0, [
+        'openrouter/auto',
+        'minimax/minimax-m2.5',
+        'minimax/minimax-m3',
+        'minimax/minimax-m2.7',
+        'minimax/minimax-m3.1-flash:free',
+      ])
+      const options = await modelOptions()
+      expect(options).not.toContain('minimax/minimax-m2.5')
+      expect(options).toContain(selected)
+      expect(options.indexOf('minimax/minimax-m3.1-flash:free')).toBeLessThan(
+        options.indexOf('minimax/minimax-m3'),
+      )
+      if (selected === 'openrouter/auto') expect(options).not.toContain('minimax/minimax-m2.7')
+      expect(setAiSettings).not.toHaveBeenCalled()
+      expect(settings.providers.openrouter.model).toBe(selected)
+      await pickModel('minimax/minimax-m3.1-flash:free')
+      expect(await modelOptions()).not.toContain('minimax/minimax-m2.7')
+    },
+  )
+})
+
 // ── 1. it never writes settings ───────────────────────────
 
 describe('the refresh touches the catalog and nothing else', () => {
