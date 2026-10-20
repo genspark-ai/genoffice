@@ -2099,8 +2099,9 @@ function buildTextParagraph(
     }
   }
 
-  // --- deleted paragraph mark (w:pPr/w:rPr/w:del) ---
+  // --- deleted / inserted paragraph mark (w:pPr/w:rPr/w:del, w:pPr/w:rPr/w:ins) ---
   let paraMarkDel: Block['paraMarkDel']
+  let paraMarkIns: Block['paraMarkIns']
   {
     const pRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
     const delEl = pRPr ? findChild(pRPr, 'w:del') : undefined
@@ -2110,6 +2111,14 @@ function buildTextParagraph(
       if (a['w:date']) paraMarkDel.date = a['w:date']
       if (a['w16du:dateUtc']) paraMarkDel.dateUtc = a['w16du:dateUtc']
       if (a['w:id']) paraMarkDel.id = a['w:id']
+    }
+    const insEl = pRPr ? findChild(pRPr, 'w:ins') : undefined
+    if (insEl) {
+      const a = attrsOf(insEl)
+      paraMarkIns = { author: a['w:author'] ?? '' }
+      if (a['w:date']) paraMarkIns.date = a['w:date']
+      if (a['w16du:dateUtc']) paraMarkIns.dateUtc = a['w16du:dateUtc']
+      if (a['w:id']) paraMarkIns.id = a['w:id']
     }
   }
 
@@ -2123,6 +2132,7 @@ function buildTextParagraph(
     ...(moveRevision ? { moveRevision } : {}),
     ...(pPrChangeInfo ? { pPrChangeInfo } : {}),
     ...(paraMarkDel ? { paraMarkDel } : {}),
+    ...(paraMarkIns ? { paraMarkIns } : {}),
   }
   if (listRef) {
     const kind = listKindOf(ctx, listRef.numId, listRef.ilvl)

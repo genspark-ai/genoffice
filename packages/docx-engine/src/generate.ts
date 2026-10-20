@@ -1834,6 +1834,19 @@ export function mergePPrFormat(
  * Used when the editor accepts or rejects a paragraph-property revision,
  * so the saved file no longer contains the pPrChange record.
  */
+/** Removes a tracked paragraph-mark revision record (`w:del`/`w:ins` inside
+ * the pPr's own `w:rPr`) once the editor has accepted or rejected it; an rPr
+ * left holding nothing goes with it. */
+export function stripParaMarkRevision(rawPPr: string, tag: 'w:del' | 'w:ins'): string {
+  if (!rawPPr) return rawPPr
+  let out = rawPPr.replace(
+    new RegExp(`<${tag}[^>]*/>|<${tag}[^>]*>[\\s\\S]*?</${tag}>`, 'g'),
+    '',
+  )
+  out = out.replace(/<w:rPr(?:\s[^>]*)?>\s*<\/w:rPr>/g, '')
+  return out
+}
+
 export function stripPPrChange(rawPPr: string): string {
   // pPrChange nests a <w:pPr> inside it, so we need depth-aware removal.
   // Pattern: <w:pPrChange ...> ... </w:pPrChange>

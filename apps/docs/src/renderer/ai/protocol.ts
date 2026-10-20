@@ -717,6 +717,8 @@ const REVISION_KIND_LABEL: Record<RevisionRange['kind'], string> = {
   cellDel: 'table cell deleted',
   blockIns: 'block inserted',
   blockDel: 'block deleted',
+  paraMarkIns: 'paragraph mark inserted',
+  paraMarkDel: 'paragraph mark deleted (paragraphs merge on accept)',
 }
 
 /** flat listing of every pending tracked change; backs the read_revisions tool */

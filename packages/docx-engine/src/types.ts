@@ -1704,6 +1704,7 @@ export interface Block {
   blockRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** Tracked deletion of the paragraph mark (w:pPr/w:rPr/w:del): Word joins the paragraph into the next one. */
   paraMarkDel?: { author: string; date?: string; dateUtc?: string; id?: string }
+  paraMarkIns?: { author: string; date?: string; dateUtc?: string; id?: string }
 }
 
 /** numbering marker of a textbox paragraph, resolved at parse time (display only) */
@@ -1915,6 +1916,13 @@ export interface GeneratedBlock {
    * applyRawPPr then strips <w:pPrChange> from rawPPr so the saved file is clean.
    */
   pPrChange?: string | null
+  /** JSON {author,date?,id?} when the paragraph mark is a tracked insertion
+   *  (w:pPr/w:rPr/w:ins). Null means the revision was accepted or rejected;
+   *  applyRawPPr then strips the record from rawPPr so the saved file is clean. */
+  paraMarkIns?: string | null
+  /** same lifecycle as paraMarkIns, for a tracked paragraph-mark deletion
+   *  (w:pPr/w:rPr/w:del): accepting merges the paragraph into the next one */
+  paraMarkDel?: string | null
   /** Used by editor dirty detection; SaveBlock carries the actual wrapper metadata. */
   blockRevision?: ({ kind: 'ins' | 'del' } & RevisionInfo) | null
 }

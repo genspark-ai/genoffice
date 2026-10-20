@@ -3,6 +3,7 @@ import {
   parseLazyMediaUrl,
   setPPrChange,
   stripPPrChange,
+  stripParaMarkRevision,
   ommlToLatex,
   patchFieldParagraphXml,
   applyImageWrap,
@@ -760,6 +761,7 @@ function blockToPmNode(
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+          paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -781,6 +783,7 @@ function blockToPmNode(
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+          paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -801,6 +804,7 @@ function blockToPmNode(
           moveRevision: block.moveRevision ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+          paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -3074,6 +3078,14 @@ function applyRawPPr(generated: GeneratedBlock, original: Block): void {
   } else if (generated.pPrChange) {
     rawPPr = setPPrChange(rawPPr, generated.pPrChange)
   }
+  // Same lifecycle for the tracked paragraph mark: null means the editor
+  // accepted or rejected it, and the record must not survive into the file
+  if (generated.paraMarkDel === null && original.paraMarkDel !== undefined) {
+    rawPPr = stripParaMarkRevision(rawPPr, 'w:del')
+  }
+  if (generated.paraMarkIns === null && original.paraMarkIns !== undefined) {
+    rawPPr = stripParaMarkRevision(rawPPr, 'w:ins')
+  }
   generated.rawPPr = rawPPr
 }
 
@@ -3185,6 +3197,8 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
   const commentEnds = nodeBookmarks(node, 'commentEnds')
   if (node.type === 'docHeading') {
     const pPrChange = node.attrs?.pPrChange as string | null | undefined
+    const paraMarkDel = node.attrs?.paraMarkDel as string | null | undefined
+    const paraMarkIns = node.attrs?.paraMarkIns as string | null | undefined
     const blockRevision = node.attrs?.blockRevision as GeneratedBlock['blockRevision']
     return {
       type: 'heading',
@@ -3198,6 +3212,8 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
       commentEnds,
       runs,
       ...(pPrChange !== undefined ? { pPrChange: pPrChange ?? null } : {}),
+      ...(paraMarkDel !== undefined ? { paraMarkDel: paraMarkDel ?? null } : {}),
+      ...(paraMarkIns !== undefined ? { paraMarkIns: paraMarkIns ?? null } : {}),
       ...(blockRevision !== undefined ? { blockRevision: blockRevision ?? null } : {}),
     }
   }
@@ -3205,6 +3221,8 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
     const numId = node.attrs?.numId as string | null
     if (numId) {
       const pPrChange = node.attrs?.pPrChange as string | null | undefined
+      const paraMarkDel = node.attrs?.paraMarkDel as string | null | undefined
+      const paraMarkIns = node.attrs?.paraMarkIns as string | null | undefined
       const blockRevision = node.attrs?.blockRevision as GeneratedBlock['blockRevision']
       return {
         type: 'listItem',
@@ -3221,6 +3239,8 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
         commentEnds,
         runs,
         ...(pPrChange !== undefined ? { pPrChange: pPrChange ?? null } : {}),
+        ...(paraMarkDel !== undefined ? { paraMarkDel: paraMarkDel ?? null } : {}),
+        ...(paraMarkIns !== undefined ? { paraMarkIns: paraMarkIns ?? null } : {}),
         ...(blockRevision !== undefined ? { blockRevision: blockRevision ?? null } : {}),
       }
     }
@@ -3248,6 +3268,8 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
     : undefined
   // pPrChange: propagate to GeneratedBlock so applyRawPPr can strip it when accepted
   const pPrChange = node.attrs?.pPrChange as string | null | undefined
+  const paraMarkDel = node.attrs?.paraMarkDel as string | null | undefined
+  const paraMarkIns = node.attrs?.paraMarkIns as string | null | undefined
   const blockRevision = node.attrs?.blockRevision as GeneratedBlock['blockRevision']
   return {
     type: 'paragraph',
@@ -3261,6 +3283,8 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
     ...(sdtShell ? { sdtShell } : {}),
     // carry pPrChange through: null means "user accepted/rejected, strip from rawPPr"
     ...(pPrChange !== undefined ? { pPrChange: pPrChange ?? null } : {}),
+    ...(paraMarkDel !== undefined ? { paraMarkDel: paraMarkDel ?? null } : {}),
+    ...(paraMarkIns !== undefined ? { paraMarkIns: paraMarkIns ?? null } : {}),
     ...(blockRevision !== undefined ? { blockRevision: blockRevision ?? null } : {}),
   }
 }
@@ -3738,6 +3762,8 @@ export function signatureOfBlock(block: Block): string {
     runs: normalizedRuns(block.runs ?? []),
     // include pPrChangeInfo in signature: present = has pPrChange, absent = clean
     pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+    paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+    paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
     blockRevision: block.blockRevision ?? null,
   })
 }
@@ -3756,6 +3782,8 @@ export function signatureOfGenerated(block: GeneratedBlock): string {
     runs: normalizedRuns(block.runs),
     // include pPrChange in signature: null (accepted/rejected) != non-null (has pPrChange)
     pPrChange: block.pPrChange ?? null,
+    paraMarkDel: block.paraMarkDel ?? null,
+    paraMarkIns: block.paraMarkIns ?? null,
     blockRevision: block.blockRevision ?? null,
   })
 }

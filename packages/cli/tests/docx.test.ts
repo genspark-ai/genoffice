@@ -1301,3 +1301,68 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
     expect(rejected.json().message).toContain('no style "Nope"')
   })
 })
+
+describe('accept_changes {all: true} (#2086)', () => {
+  const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
+  const run_ = (text: string) => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`
+  const HF = 'application/vnd.openxmlformats-officedocument.wordprocessingml.'
+
+  /** the issue's fixture: a Word move between two paragraphs that keep text
+   *  of their own, a tracked paragraph mark, and a header with an insertion */
+  async function fixture(dir: string): Promise<string> {
+    const { buildDocx } = await import(HELPERS)
+    const path = join(dir, 'moves.docx')
+    const body =
+      `<w:p>${run_('P0 intro')}</w:p>` +
+      `<w:p>${run_('P1 alpha ')}<w:moveFromRangeStart w:id="1" ${AT} w:name="move1"/>` +
+      `<w:moveFrom w:id="2" ${AT}>${run_('MOVED ')}</w:moveFrom><w:moveFromRangeEnd w:id="1"/>${run_('beta')}</w:p>` +
+      `<w:p>${run_('P2 gamma ')}<w:moveToRangeStart w:id="3" ${AT} w:name="move1"/>` +
+      `<w:moveTo w:id="4" ${AT}>${run_('MOVED ')}</w:moveTo><w:moveToRangeEnd w:id="3"/>${run_('delta')}</w:p>` +
+      `<w:p><w:pPr><w:rPr><w:del w:id="5" ${AT}/></w:rPr></w:pPr>${run_('P3 joins ')}</w:p>` +
+      `<w:p>${run_('P4 tail')}</w:p>`
+    const header =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      `<w:p>${run_('Header ')}<w:ins w:id="9" ${AT}>${run_('added')}</w:ins></w:p></w:hdr>`
+    writeFileSync(
+      path,
+      await buildDocx({
+        bodyXml: body,
+        sectPrExtra: '<w:headerReference w:type="default" r:id="rId40"/>',
+        extraRels:
+          '<Relationship Id="rId40" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+        extraParts: [{ path: 'word/header1.xml', xml: header, contentType: `${HF}header+xml` }],
+      }),
+    )
+    return path
+  }
+
+  it('matches Word: moved text lands once, marks merge, the header comes along', async () => {
+    const dir = tempDir()
+    const path = await fixture(dir)
+    const ops = join(dir, 'ops.json')
+    writeFileSync(ops, JSON.stringify([{ op: 'accept_changes', all: true }]))
+    const r = await run(['docs', 'apply', path, '--ops', ops, '--json'])
+    expect(r.code).toBe(0)
+    const output = r.json().detail.results[0].output as string
+    expect(output).toContain('No tracked changes remain')
+    expect(output).toContain('Accepted 1 more in headers/footers/footnotes/endnotes')
+
+    const read = await run(['docs', 'read', path, '--json'])
+    const texts = (read.json().detail.items as Array<{ text?: string }>).map((b) => b.text)
+    expect(texts).toEqual([
+      'P0 intro',
+      'P1 alpha beta',
+      'P2 gamma MOVED delta',
+      'P3 joins P4 tail',
+    ])
+    const xml = await documentXml(path)
+    expect(xml).not.toMatch(/<w:(ins|del|moveFrom|moveTo)\b/)
+    const zip = await zipOf(path)
+    const header = await zip.file('word/header1.xml')!.async('string')
+    expect(header).toContain(`${run_('Header ')}${run_('added')}`)
+    expect(header).not.toContain('<w:ins')
+    const after = await run(['docs', 'read', path, '--revisions', '--json'])
+    expect(after.json().detail.revisions).toEqual([])
+  })
+})

@@ -11,6 +11,7 @@
  */
 import { Extension, type Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
+import { Slice } from '@tiptap/pm/model'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import {
   AddMarkStep,
@@ -38,6 +39,8 @@ export interface RevisionRange {
     | 'cellDel'
     | 'blockIns'
     | 'blockDel'
+    | 'paraMarkIns'
+    | 'paraMarkDel'
   author: string
   date?: string
 }
@@ -211,6 +214,32 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
         author: '',
       })
     }
+    // A tracked paragraph mark: the deletion merges the paragraph into the
+    // next one on accept; the insertion simply becomes permanent.
+    const paraMarkDel = node.attrs?.paraMarkDel as string | null
+    const paraMarkIns = node.attrs?.paraMarkIns as string | null
+    for (const [raw, kind] of [
+      [paraMarkDel, 'paraMarkDel'],
+      [paraMarkIns, 'paraMarkIns'],
+    ] as const) {
+      if (!raw) continue
+      let author = ''
+      let date: string | undefined
+      try {
+        const parsed = JSON.parse(raw)
+        author = parsed?.author ?? ''
+        date = parsed?.date
+      } catch {
+        /* ignore */
+      }
+      out.push({
+        from: pos,
+        to: pos + node.nodeSize,
+        kind,
+        author,
+        ...(date ? { date } : {}),
+      })
+    }
   })
 
   // Second pass: collect run-level text revisions (ins/del marks)
@@ -379,32 +408,56 @@ export function applyRevisions(
     }
 
     if (r.kind === 'moveFrom' || r.kind === 'moveTo') {
-      // moveFrom/moveTo: translate to del/ins logic using the same remove/keep semantics
-      const effectiveKind = r.kind === 'moveFrom' ? 'del' : 'ins'
-      const removeText = mode === 'accept' ? effectiveKind !== 'ins' : effectiveKind !== 'del'
-      if (removeText) {
-        const $from = state.doc.resolve(r.from)
-        const $to = state.doc.resolve(r.to)
-        if ($from.depth >= 1 && $from.sameParent($to) && state.doc.childCount > 1) {
-          tr.delete($from.before(), $to.after())
-        } else {
-          tr.delete(r.from, r.to)
-        }
-      } else if (mode === 'accept') {
-        tr.removeMark(r.from, r.to, state.schema.marks.ins)
-      } else {
-        tr.removeMark(r.from, r.to, state.schema.marks.del)
+      // The parser spells a move as ordinary ins/del marks on the moved runs
+      // (moveTo becomes ins, moveFrom becomes del), which are their own
+      // revision entries: accepting keeps the destination text and drops the
+      // source text, rejecting the reverse. This paragraph-level entry only
+      // carries the styling marker, so both outcomes just clear it — deleting
+      // or keeping text here would act on the whole paragraph and collide
+      // with the overlapping ins/del entries in the same transaction.
+      const $pos = tr.doc.resolve(tr.mapping.map(r.from, -1) + 1)
+      const parent = $pos.parent
+      if (parent.attrs?.moveRevision) {
+        tr.setNodeMarkup($pos.before($pos.depth), undefined, {
+          ...parent.attrs,
+          moveRevision: null,
+        })
       }
-      // Also clear the moveRevision attr from the node
-      try {
-        const $pos = state.doc.resolve(r.from + 1)
-        const nodePos = $pos.before($pos.depth)
-        if ($pos.parent.attrs?.moveRevision) {
-          tr.setNodeMarkup(nodePos, undefined, { ...$pos.parent.attrs, moveRevision: null })
+      continue
+    }
+
+    if (r.kind === 'paraMarkDel' || r.kind === 'paraMarkIns') {
+      const nodePos = tr.mapping.map(r.from, -1)
+      const node = tr.doc.nodeAt(nodePos)
+      if (!node || !node.isTextblock) continue
+      const $node = tr.doc.resolve(nodePos)
+      // Word: a deleted paragraph mark merges the paragraph with the next one
+      // (the surviving mark, and so the properties, are the next's); a
+      // rejected inserted mark joins the paragraph back into the previous one.
+      const mergeIntoNext = r.kind === 'paraMarkDel' ? mode === 'accept' : mode === 'reject'
+      if (mergeIntoNext) {
+        const index = $node.index(0)
+        const next = tr.doc.maybeChild(index + 1)
+        if (next && next.isTextblock) {
+          const nextStart = nodePos + node.nodeSize + 1
+          // this paragraph's runs splice in front of the next's content,
+          // then the emptied paragraph goes away
+          tr.replace(nextStart, nextStart, new Slice(node.content, 0, 0))
+          const after = tr.mapping.map(nodePos, -1)
+          const emptied = tr.doc.nodeAt(after)
+          if (emptied && tr.doc.childCount > 1) tr.delete(after, after + emptied.nodeSize)
+          continue
         }
-      } catch {
-        /* ignore if node is being deleted */
+        // no next paragraph to merge into: leave the revision pending rather
+        // than pretend it was accepted
+        continue
       }
+      // accept mark-ins / reject mark-del: the mark stays, only the record goes
+      tr.setNodeMarkup(nodePos, undefined, {
+        ...node.attrs,
+        paraMarkDel: null,
+        paraMarkIns: null,
+      })
       continue
     }
 

@@ -73,6 +73,7 @@ export {
   mergePPrFormat,
   setPPrChange,
   stripPPrChange,
+  stripParaMarkRevision,
   patchFieldParagraphXml,
   patchImageParagraphXml,
   patchMathTokens,
@@ -209,3 +210,4 @@ export {
 } from './list-markers'
 
 export { previewFontSettings } from './font-settings'
+export { acceptRevisionsInPartXml, acceptRevisionsInSideParts } from './revision-parts'

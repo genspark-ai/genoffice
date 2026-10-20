@@ -60,6 +60,8 @@ const TYPE_OF: Record<RevisionRange['kind'], RevisionType> = {
   rPrChange: 'formatting',
   moveFrom: 'move',
   moveTo: 'move',
+  paraMarkDel: 'deletion',
+  paraMarkIns: 'insertion',
 }
 
 function blockIndexOfPos(doc: PmNode, pos: number): number {

@@ -13,6 +13,7 @@ import {
   pendingHeadingLevel,
   readDocxPartBase64,
   readSections,
+  acceptRevisionsInSideParts,
   saveDocx,
   type CommentInfo,
   type HeaderFooter,
@@ -129,6 +130,9 @@ interface SideState {
   footnotes: NoteInfo[]
   endnotes: NoteInfo[]
   notesDirty: boolean
+  /** header/footer/footnote/endnote parts whose tracked changes an
+   *  accept_changes {all:true} accepted; written into the package on save */
+  revisionPartXml: Record<string, string>
 }
 
 export interface OpenDocument {
@@ -183,6 +187,7 @@ function sideStateOf(parsed: Parsed): SideState {
     footnotes: [...parsed.footnotes],
     endnotes: [...parsed.endnotes],
     notesDirty: false,
+    revisionPartXml: {},
   }
 }
 
@@ -229,6 +234,9 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
     footnotes: side.notesDirty ? side.footnotes : undefined,
     endnotes: side.notesDirty ? side.endnotes : undefined,
     ...(await chartPartPatches(doc, plan.chartPatches)),
+  }
+  if (Object.keys(doc.side.revisionPartXml).length > 0) {
+    options.partXml = { ...doc.side.revisionPartXml, ...options.partXml }
   }
   return saveDocx(doc.parsed, sectionEdits.saveBlocks, options)
 }
@@ -529,7 +537,27 @@ export async function applyDocOps(
       // the in-app executor reports a target that matched nothing as a soft result; for a
       // scripted batch that is a wrong index, so the op counts as rejected
       if (exec.isError || /^No matching blocks/i.test(exec.output)) failed = rejected(exec.output)
-      else results.push({ index, op: name, output: exec.output })
+      else {
+        let output = exec.output
+        if (name === 'accept_changes' && op.all === true) {
+          // the body's revisions went through the editor; the parts the editor
+          // never opens need this raw-XML pass or accept-all misses them
+          try {
+            const parts = await acceptRevisionsInSideParts(doc.parsed.internal.originalBytes)
+            if (parts.accepted > 0 || parts.unhandledParaMarks > 0) {
+              doc.side.revisionPartXml = parts.parts
+              const where = 'headers/footers/footnotes/endnotes'
+              if (parts.accepted > 0) output += ` Accepted ${parts.accepted} more in ${where}.`
+              if (parts.unhandledParaMarks > 0) {
+                output += ` ${parts.unhandledParaMarks} tracked paragraph mark(s) in ${where} remain (accepting one merges paragraphs; Word handles them).`
+              }
+            }
+          } catch {
+            // a part the pass cannot read stays as it was; the body result stands
+          }
+        }
+        results.push({ index, op: name, output })
+      }
     }
     if (failed && mode === 'stop_on_error') {
       return { results, failures, skipped: ops.length - index - 1 }

@@ -1117,3 +1117,137 @@ describe('repeated backspace under track changes', () => {
     editor.destroy()
   })
 })
+
+describe('accepting moves and paragraph marks (#2086)', () => {
+  const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
+  const run = (text: string) => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`
+
+  async function openDoc(bodyXml: string) {
+    const parsed = await parseDocx(await buildDocx({ bodyXml }))
+    const editor = new Editor({ extensions: editorExtensions, content: blocksToPmDoc(parsed.blocks) })
+    return { editor, parsed }
+  }
+
+  const paragraphs = (editor: Editor): string[] =>
+    Array.from({ length: editor.state.doc.childCount }, (_, i) =>
+      editor.state.doc.child(i).textContent,
+    )
+
+  // the fixture's trailing sectPr parses as a hidden block; only the body counts
+  const visible = (doc: Awaited<ReturnType<typeof parseDocx>>) => doc.blocks.filter((b) => !b.hidden)
+
+  async function saved(editor: Editor, parsed: Awaited<ReturnType<typeof parseDocx>>) {
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    return parseDocx(await saveDocx(parsed, plan.saveBlocks))
+  }
+
+  // the issue's fixture: a well-formed Word move with range markers,
+  // between two paragraphs that each keep text of their own
+  const MOVE_BODY =
+    `<w:p>${run('P0 intro')}</w:p>` +
+    `<w:p>${run('P1 alpha ')}<w:moveFromRangeStart w:id="1" ${AT} w:name="move1"/>` +
+    `<w:moveFrom w:id="2" ${AT}>${run('MOVED ')}</w:moveFrom><w:moveFromRangeEnd w:id="1"/>` +
+    `${run('beta')}</w:p>` +
+    `<w:p>${run('P2 gamma ')}<w:moveToRangeStart w:id="3" ${AT} w:name="move1"/>` +
+    `<w:moveTo w:id="4" ${AT}>${run('MOVED ')}</w:moveTo><w:moveToRangeEnd w:id="3"/>` +
+    `${run('delta')}</w:p>` +
+    `<w:p>${run('P3 tail')}</w:p>`
+
+  it('accepting a move keeps the text the move never touched', async () => {
+    // Before: the paragraph-level moveFrom entry deleted the whole of P1,
+    // and the text-level del entry then struck six stale positions out of
+    // P2 — the issue's "mma MOVED delta".
+    const { editor, parsed } = await openDoc(MOVE_BODY)
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual([
+      'P0 intro',
+      'P1 alpha beta',
+      'P2 gamma MOVED delta',
+      'P3 tail',
+    ])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    const reopened = await saved(editor, parsed)
+    expect(visible(reopened).map((b) => (b.type === 'paragraph' ? b.runs.map((r) => r.text).join('') : ''))).toEqual([
+      'P0 intro',
+      'P1 alpha beta',
+      'P2 gamma MOVED delta',
+      'P3 tail',
+    ])
+    expect(reopened.internal.documentXml).not.toMatch(/<w:move(From|To)[\s>]/)
+    editor.destroy()
+  })
+
+  it('rejecting a move puts the text back where it came from', async () => {
+    const { editor } = await openDoc(MOVE_BODY)
+    rejectAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual([
+      'P0 intro',
+      'P1 alpha MOVED beta',
+      'P2 gamma delta',
+      'P3 tail',
+    ])
+    editor.destroy()
+  })
+
+  it('a deleted paragraph mark merges the paragraph into the next one on accept', async () => {
+    const body =
+      `<w:p><w:pPr><w:rPr><w:del w:id="5" ${AT}/></w:rPr></w:pPr>${run('first')}</w:p>` +
+      `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${run('second')}</w:p>`
+    const { editor, parsed } = await openDoc(body)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['firstsecond'])
+    // the surviving mark is the next paragraph's, so its properties win
+    expect(editor.state.doc.firstChild?.attrs.align).toBe('center')
+    const reopened = await saved(editor, parsed)
+    expect(reopened.internal.documentXml).not.toContain('w:id="5"')
+    expect(visible(reopened)).toHaveLength(1)
+    editor.destroy()
+  })
+
+  it('a rejected paragraph-mark deletion keeps both paragraphs and drops the record', async () => {
+    const body =
+      `<w:p><w:pPr><w:rPr><w:del w:id="5" ${AT}/></w:rPr></w:pPr>${run('first')}</w:p>` +
+      `<w:p>${run('second')}</w:p>`
+    const { editor, parsed } = await openDoc(body)
+    rejectAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['first', 'second'])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    const reopened = await saved(editor, parsed)
+    expect(reopened.internal.documentXml).not.toContain('<w:del')
+    editor.destroy()
+  })
+
+  it('an inserted paragraph mark becomes permanent on accept and merges back on reject', async () => {
+    // Enter pressed inside one paragraph while tracking: the new mark is the
+    // first paragraph's, so rejecting it joins the two halves back together
+    const body =
+      `<w:p><w:pPr><w:rPr><w:ins w:id="6" ${AT}/></w:rPr></w:pPr>${run('first')}</w:p>` +
+      `<w:p>${run('second')}</w:p>`
+    const accepted = await openDoc(body)
+    expect(collectRevisions(accepted.editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkIns'])
+    acceptAllRevisions(accepted.editor)
+    expect(paragraphs(accepted.editor)).toEqual(['first', 'second'])
+    const reopened = await saved(accepted.editor, accepted.parsed)
+    expect(reopened.internal.documentXml).not.toContain('<w:ins')
+    expect(visible(reopened)).toHaveLength(2)
+
+    const rejected = await openDoc(body)
+    rejectAllRevisions(rejected.editor)
+    expect(paragraphs(rejected.editor)).toEqual(['firstsecond'])
+    accepted.editor.destroy()
+    rejected.editor.destroy()
+  })
+
+  it('leaves a deleted mark on the last paragraph pending rather than inventing a merge', async () => {
+    const body =
+      `<w:p>${run('first')}</w:p>` +
+      `<w:p><w:pPr><w:rPr><w:del w:id="7" ${AT}/></w:rPr></w:pPr>${run('last')}</w:p>`
+    const { editor } = await openDoc(body)
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['first', 'last'])
+    // still listed, so the op reports it instead of claiming a clean document
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
+    editor.destroy()
+  })
+})
