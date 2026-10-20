@@ -4434,6 +4434,121 @@ fn malformed_cell_address_does_not_make_the_workbook_unopenable() {
     assert_eq!(number(value_at(1, 1)), 50.0);
 }
 
+/// A picture inside a note comes back as an id the client fetches with
+/// `read_media`, and the bytes that come back are the picture itself. Excel
+/// paints it as a frame fill on the note shape; the `imagedata` spelling
+/// some older producers write still resolves.
+#[test]
+fn reads_the_picture_a_note_is_showing() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r##"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"##,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"##,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r##"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>1</v></c></row></sheetData><legacyDrawing r:id="rId2"/></worksheet>"##,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/></Relationships>"##,
+        ),
+        (
+            "xl/comments1.xml",
+            r##"<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>Ada</author></authors><commentList><comment ref="A1" authorId="0"><text><t>the older spelling</t></text></comment><comment ref="$B$1" authorId="0"><text><t>the old photograph</t></text></comment></commentList></comments>"##,
+        ),
+        (
+            "xl/drawings/vmlDrawing1.vml",
+            r##"<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:schemas-microsoft-com:office:excel"><v:shape id="_x0000_s1025" type="#_x0000_t202" style="position:absolute;visibility:hidden" o:insetmode="auto"><v:imagedata r:id="rId1" o:relid="rId1"/><x:ClientData ObjectType="Note"><x:Row>0</x:Row><x:Column>0</x:Column></x:ClientData></v:shape><v:shape id="_x0000_s1026" type="#_x0000_t202" style="position:absolute;visibility:hidden" o:insetmode="auto"><v:fill o:relid="rId2" o:title="photo.png" recolor="t" rotate="t" type="frame"/><x:ClientData ObjectType="Note"><x:Row>0</x:Row><x:Column>1</x:Column></x:ClientData></v:shape></xml>"##,
+        ),
+        (
+            "xl/drawings/_rels/vmlDrawing1.vml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/></Relationships>"##,
+        ),
+        ("xl/media/image1.png", "the older picture bytes"),
+        ("xl/media/image2.png", "the picture bytes"),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let comments = &metadata.sheets[0].comments;
+    assert_eq!(comments.len(), 2);
+    let older = comments
+        .iter()
+        .find(|comment| comment.row == 0 && comment.column == 0)
+        .expect("the A1 comment");
+    let older_image = older.image.as_ref().expect("the imagedata spelling resolves");
+    assert_eq!(older_image.media_path, "xl/media/image1.png");
+    let filled = comments
+        .iter()
+        .find(|comment| comment.row == 0 && comment.column == 1)
+        .expect("the B1 comment");
+    assert_eq!(filled.text, "the old photograph");
+    let image = filled.image.as_ref().expect("the note has a picture");
+    assert_eq!(image.media_path, "xl/media/image2.png");
+
+    // The id the comment carries resolves through read_media like any other.
+    let media = sessions
+        .read_media(&metadata.session_id, &image.id)
+        .unwrap();
+    assert_eq!(media.media_type, "image/png");
+    assert_eq!(
+        base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &media.base64,
+        )
+        .unwrap(),
+        b"the picture bytes"
+    );
+}
+
+/// A note with no picture — the ordinary case — must not grow one, and neither
+/// must a note whose shape points at a relationship the package does not have,
+/// or one carrying the relationship-less `imagedata` placeholder WPS writes on
+/// every note.
+#[test]
+fn a_note_without_a_working_picture_reports_none() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r##"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"##,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"##,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r##"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><legacyDrawing r:id="rId2"/></worksheet>"##,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing1.vml"/></Relationships>"##,
+        ),
+        (
+            "xl/comments1.xml",
+            r##"<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><authors><author>Ada</author></authors><commentList><comment ref="A1" authorId="0"><text><t>just words</t></text></comment><comment ref="A3" authorId="0"><text><t>placeholder only</t></text></comment><comment ref="A5" authorId="0"><text><t>pointing nowhere</t></text></comment></commentList></comments>"##,
+        ),
+        (
+            "xl/drawings/vmlDrawing1.vml",
+            r##"<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:schemas-microsoft-com:office:excel"><v:shape id="_x0000_s1025" type="#_x0000_t202" style="position:absolute;visibility:hidden"><x:ClientData ObjectType="Note"><x:Row>0</x:Row><x:Column>0</x:Column></x:ClientData></v:shape><v:shape id="_x0000_s1026" type="#_x0000_t202" style="position:absolute;visibility:hidden"><v:imagedata o:title=""/><x:ClientData ObjectType="Note"><x:Row>2</x:Row><x:Column>0</x:Column></x:ClientData></v:shape><v:shape id="_x0000_s1027" type="#_x0000_t202" style="position:absolute;visibility:hidden"><v:imagedata r:id="rIdGone"/><x:ClientData ObjectType="Note"><x:Row>4</x:Row><x:Column>0</x:Column></x:ClientData></v:shape></xml>"##,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let comments = &metadata.sheets[0].comments;
+    assert_eq!(comments.len(), 3);
+    for comment in comments {
+        assert!(comment.image.is_none(), "{:?}", comment.image);
+    }
+    assert_eq!(comments[0].text, "just words");
+    assert_eq!(comments[1].text, "placeholder only");
+    assert_eq!(comments[2].text, "pointing nowhere");
+}
+
 /// A threaded comment shows its real body (root text plus replies) under
 /// the person's display name, not the legacy mirror's boilerplate.
 #[test]
@@ -4870,4 +4985,24 @@ fn reads_xml_entry_that_matches_its_declaration() {
     let mut archive = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
     let value = crate::xml_util::read_zip_string(&mut archive, "xl/worksheets/sheet1.xml").unwrap();
     assert!(value.contains("sheetData"));
+}
+
+/// A password-encrypted .xlsx is an OLE2 compound container, not a ZIP
+/// package: the open must explain that instead of surfacing the zip
+/// reader's "invalid Zip archive: Could not find EOCD" (#2076).
+#[test]
+fn encrypted_workbook_reports_password_protection() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("encrypted.xlsx");
+    let mut bytes = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    bytes.extend_from_slice(&[0u8; 512]);
+    std::fs::write(&path, &bytes).unwrap();
+
+    let mut sessions = WorkbookSessions::new();
+    let error = sessions.open(&path).unwrap_err();
+    let message = error.to_string();
+    assert!(
+        message.contains("password-protected"),
+        "expected a password-protection explanation, got: {message}"
+    );
 }

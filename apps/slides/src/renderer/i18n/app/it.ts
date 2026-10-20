@@ -66,7 +66,9 @@ export const it = {
     'Video inserito (incorporato nel file .pptx; riproducibile in PowerPoint)',
   appStatusAudioInserted: 'Audio inserito (incorporato nel file .pptx)',
   appStatusModel3dInserted:
-    "Modello 3D incorporato (l'area di lavoro mostra un segnaposto; il file del modello è salvato nel .pptx)",
+    'Modello 3D inserito: selezionalo per ruotarlo (anche PowerPoint lo mostra in 3D)',
+  appStatusModel3dNoPreview:
+    'Impossibile disegnare qui il modello 3D; la sua immagine resta invariata',
   appStatusRecordingEmpty: 'La registrazione è vuota; non è stato inserito nulla',
   appStatusRecordingInserted:
     'Registrazione dello schermo inserita nella diapositiva corrente (webm incorporato)',

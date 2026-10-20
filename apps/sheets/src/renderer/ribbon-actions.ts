@@ -746,6 +746,7 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     case 'comment-prev':
     case 'comment-next':
     case 'comments-pane-toggle':
+    case 'note-pictures-pane-toggle':
     case 'note-show-all':
     case 'notes-convert':
       handleThreadedCommentCommand(ctx, command, (fallback) => handleRibbonCommand(ctx, fallback))

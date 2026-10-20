@@ -140,14 +140,58 @@ function nextShapeId(vmlXml: string): number {
   return next
 }
 
-function noteShape(note: SheetNote, index: number, firstId: number): string {
+/// Excel puts a picture into a note by painting that note's shape with a
+/// picture fill — a `<v:fill type="frame">` element carrying the image
+/// relationship on `o:relid` (`r:id` on some producers) — resolved through
+/// the VML part's own rels. The rewrite below throws every Note shape away
+/// and builds fresh ones, so without this map the media is left related but
+/// painted by nothing: the picture is still in the package and no longer
+/// shown by anything. The whole fill element travels with the map so the
+/// relationship, the title, and the recolor/rotate flags survive together.
+/// (WPS writes an empty `<v:imagedata>` on every note; it carries no
+/// relationship and matches nothing here.)
+function noteShapePictures(vmlXml: string): Map<string, string> {
+  const pictures = new Map<string, string>()
+  for (const shape of vmlXml.matchAll(/<v:shape\b[\s\S]*?<\/v:shape>/g)) {
+    if (!shape[0].includes('ObjectType="Note"')) continue
+    let tag: string | null = null
+    const fill = /<v:fill\b[^>]*\/>/.exec(shape[0])?.[0]
+    if (fill && fill.includes('type="frame"')) {
+      // Excel writes o:relid; some producers use r:id on the same element.
+      if (/\b(?:o:)?relid="/.test(fill) || /\br:id="/.test(fill)) tag = fill
+    }
+    if (tag === null) {
+      const image = /<v:imagedata\b[^>]*\br:id="([^"]+)"[^>]*\/>/.exec(shape[0])
+      if (image?.[1]) tag = image[0]
+    }
+    if (tag === null) continue
+    const row = /<x:Row>(\d+)<\/x:Row>/.exec(shape[0])
+    const column = /<x:Column>(\d+)<\/x:Column>/.exec(shape[0])
+    if (!row || !column) continue
+    pictures.set(`${column[1]}:${row[1]}`, tag)
+  }
+  return pictures
+}
+
+function noteImageKey(note: SheetNote): string {
+  return `${note.column}:${note.row}`
+}
+
+function noteShape(note: SheetNote, index: number, firstId: number, picture?: string): string {
   // Anchor: from one column right of the cell, spanning ~3 columns / 4 rows.
   const anchor = [note.column + 1, 15, note.row, 2, note.column + 4, 15, note.row + 4, 2].join(',')
+  // A shape showing a picture keeps neither the yellow fill nor the drop
+  // shadow: painted behind, they would hide the picture the note exists for.
+  // The picture rides on the shape as its fill, spelled the way the source
+  // spelled it.
+  const paint = picture
+    ? ` o:insetmode="auto">${picture}`
+    : ' fillcolor="#ffffe1" o:insetmode="auto">' +
+      '<v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/>'
   return (
     `<v:shape id="_x0000_s${firstId + index}" type="#_x0000_t202"` +
     ' style="position:absolute;margin-left:80pt;margin-top:2pt;width:108pt;height:60pt;' +
-    `z-index:${index + 1};visibility:hidden" fillcolor="#ffffe1" o:insetmode="auto">` +
-    '<v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/>' +
+    `z-index:${index + 1};visibility:hidden"${paint}` +
     '<v:path o:connecttype="none"/>' +
     '<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>' +
     '<x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/>' +
@@ -322,11 +366,15 @@ export async function applySheetNotes(
 
   // VML part: keep foreign shapes, replace the note shapes.
   if (existingVmlPath !== null && (await pkg.has(existingVmlPath))) {
-    const vml = stripNoteShapes(await pkg.readText(existingVmlPath))
+    const original = await pkg.readText(existingVmlPath)
+    const pictures = noteShapePictures(original)
+    const vml = stripNoteShapes(original)
     const end = vml.lastIndexOf('</xml>')
     if (end === -1) throw new NoteEditError(`${existingVmlPath} is not a VML drawing.`)
     const firstId = nextShapeId(vml)
-    const shapes = notes.map((note, index) => noteShape(note, index, firstId)).join('')
+    const shapes = notes
+      .map((note, index) => noteShape(note, index, firstId, pictures.get(noteImageKey(note))))
+      .join('')
     pkg.write(existingVmlPath, vml.slice(0, end) + shapes + vml.slice(end))
     touchedEntries.add(existingVmlPath)
   } else {

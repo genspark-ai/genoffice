@@ -32,6 +32,7 @@
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^43.7.6",
     "electron-builder": "^26.0.12",
@@ -42,6 +43,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-konva": "^19.0.10",
+    "three": "^0.186.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.1.11"

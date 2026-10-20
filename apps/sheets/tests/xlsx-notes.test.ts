@@ -153,3 +153,108 @@ describe('note snapshots', () => {
     expect(plan.replaced.has('xl/worksheets/sheet1.xml')).toBe(false)
   })
 })
+
+/// A workbook Excel wrote where B1's note carries a picture — the shape
+/// genealogy charts and old-photo sheets put in a popup. The picture lives in
+/// `xl/media`, and the shape paints it as a frame fill that reaches it through
+/// the VML part's own rels. Older producers hang the same relationship on a
+/// `v:imagedata` child instead; WPS writes an empty one on every note.
+async function workbookWithPictureNote(
+  notePicture: string = '<v:fill o:relid="rId1" o:title="photo.png" recolor="t" rotate="t" type="frame"/>',
+): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(await buildKitchenSinkFixture())
+  zip.file(
+    'xl/drawings/vmlDrawing1.vml',
+    '<xml xmlns:v="urn:schemas-microsoft-com:vml"' +
+      ' xmlns:o="urn:schemas-microsoft-com:office:office"' +
+      ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+      ' xmlns:x="urn:schemas-microsoft-com:office:excel">' +
+      '<v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202"' +
+      ' path="m,l,21600r21600,l21600,xe">' +
+      '<v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/>' +
+      '</v:shapetype>' +
+      '<v:shape id="_x0000_s1025" type="#_x0000_t202"' +
+      ' style="position:absolute;width:96pt;height:79.5pt;visibility:hidden"' +
+      ' o:insetmode="auto">' +
+      notePicture +
+      '<x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/>' +
+      '<x:Anchor>2, 15, 0, 2, 4, 15, 3, 2</x:Anchor>' +
+      '<x:AutoFill>False</x:AutoFill>' +
+      '<x:Row>0</x:Row><x:Column>1</x:Column></x:ClientData></v:shape>' +
+      '</xml>',
+  )
+  zip.file(
+    'xl/drawings/_rels/vmlDrawing1.vml.rels',
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1"' +
+      ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"' +
+      ' Target="../media/image1.png"/></Relationships>',
+  )
+  zip.file('xl/media/image1.png', Buffer.from('89504e470d0a1a0a', 'hex'))
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
+describe('note pictures', () => {
+  it('keeps the picture a note was carrying when the note is rewritten', async () => {
+    // Editing anything else in the sheet and saving must not quietly empty a
+    // popup the user had put a photograph in.
+    const plan = await planNotes(NOTES, await workbookWithPictureNote())
+    const vml =
+      plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
+      plan.added.get('xl/drawings/vmlDrawing1.vml')
+    expect(vml).toBeDefined()
+    // the picture rides on the rebuilt shape as the frame fill it came in as
+    expect(vml).toContain(
+      '<v:fill o:relid="rId1" o:title="photo.png" recolor="t" rotate="t" type="frame"/>',
+    )
+  })
+
+  it('reads back a picture an older producer hung on v:imagedata', async () => {
+    const plan = await planNotes(
+      NOTES,
+      await workbookWithPictureNote('<v:imagedata r:id="rId1" o:relid="rId1"/>'),
+    )
+    const vml =
+      plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
+      plan.added.get('xl/drawings/vmlDrawing1.vml')
+    expect(vml).toContain('<v:imagedata r:id="rId1" o:relid="rId1"/>')
+  })
+
+  it('an imagedata placeholder without a relationship is no picture', async () => {
+    // WPS writes an empty <v:imagedata> on every note; nothing may grow a
+    // picture from it.
+    const plan = await planNotes(NOTES, await workbookWithPictureNote('<v:imagedata o:title=""/>'))
+    const vml =
+      plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
+      plan.added.get('xl/drawings/vmlDrawing1.vml')
+    expect(vml).not.toContain('type="frame"')
+    expect(vml).not.toContain('<v:imagedata')
+  })
+
+  it('leaves the VML relationships and the media part alone', async () => {
+    const plan = await planNotes(NOTES, await workbookWithPictureNote())
+    const rels = [...plan.replaced.entries(), ...plan.added.entries()].filter(([path]) =>
+      path.endsWith('vmlDrawing1.vml.rels'),
+    )
+    expect(rels).toHaveLength(0)
+    expect(
+      [...plan.replaced.keys(), ...plan.added.keys()].some((path) => path.startsWith('xl/media/')),
+    ).toBe(false)
+  })
+
+  it('does not hand a picture to a note that never had one', async () => {
+    // A5 is a new note in the same sheet; it must not inherit B1's image.
+    const plan = await planNotes(NOTES, await workbookWithPictureNote())
+    const vml =
+      plan.replaced.get('xl/drawings/vmlDrawing1.vml') ??
+      plan.added.get('xl/drawings/vmlDrawing1.vml')
+    const shapes = vml!.split('<v:shape ').slice(1)
+    const withPicture = shapes.filter((shape) => shape.includes('type="frame"'))
+    expect(withPicture).toHaveLength(1)
+    expect(withPicture[0]).toContain('<x:Row>0</x:Row><x:Column>1</x:Column>')
+    // the yellow fill is painted behind the picture and would hide it
+    expect(withPicture[0]).not.toContain('fillcolor')
+    expect(shapes.filter((shape) => shape.includes('fillcolor'))).toHaveLength(1)
+  })
+})

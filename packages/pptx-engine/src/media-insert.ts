@@ -6,16 +6,23 @@
  *   both relationships pointing at the same embedded ppt/media/mediaN.ext part;
  *   blipFill is the poster frame.
  *
- * 3D models (simplified): glb bytes embedded in the package + a poster placeholder
- * image element (cNvPr descr records the model part path so it is recoverable);
- * no am3d extension XML is written (the schema is complex and easily triggers
- * repair); shows as the poster image in PowerPoint.
+ * 3D models: am3d:model3d with a picture fallback, as PowerPoint writes them (model3d.ts).
+ * Decks from before carry a plain picture whose cNvPr descr names the model part
+ * (`aislides-3d:{partPath}`, model3dPartOf).
  */
 import { deflateSync } from 'node:zlib'
+import { glbBounds } from './glb-bounds'
+import {
+  GLB_CONTENT_TYPE,
+  MODEL3D_REL_TYPE,
+  model3dXml,
+  setModel3dRotationXml,
+  type Model3dRotation,
+} from './model3d'
 import type { EmuRect, Slide } from './types'
 import { creationIdXml, escapeXmlAttr, hasDefaultFor, maxRelationshipIdNumber } from './xml-utils'
 import { relsPathFor } from './zip'
-import { appendRawElements, type OpenedPptx } from './index'
+import { appendRawElements, replacePictureBytes, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
 
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -38,27 +45,9 @@ const MEDIA_MIME: Record<string, string> = {
   m4a: 'audio/mp4',
   aac: 'audio/aac',
   ogg: 'audio/ogg',
-  glb: 'model/gltf-binary',
-  gltf: 'model/gltf+json',
 }
 
 // ── Solid-color PNG generation (poster frame fallback, no canvas dependency) ──
-
-const CRC_TABLE = (() => {
-  const t = new Int32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    t[n] = c
-  }
-  return t
-})()
-
-function crc32(buf: Uint8Array): number {
-  let c = -1
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8)
-  return (c ^ -1) >>> 0
-}
 
 function pngChunk(type: string, data: Uint8Array): Buffer {
   const head = Buffer.alloc(8)
@@ -96,7 +85,7 @@ export function solidPng(w: number, h: number, rgb: [number, number, number]): B
 
 // ── Shared part / rels surgery ─────────────────────────────────────────
 
-function ensureDefaultContentType(opened: OpenedPptx, ext: string, mime: string): void {
+export function ensureDefaultContentType(opened: OpenedPptx, ext: string, mime: string): void {
   const ctPath = '[Content_Types].xml'
   const ct = opened.archive.readText(ctPath)
   if (ct && !hasDefaultFor(ct, ext)) {
@@ -220,38 +209,31 @@ export function addMedia(
   return r ? { slide: r.slide, elementId: r.elementIds[r.elementIds.length - 1]! } : null
 }
 
-// ── 3D models (simplified) ─────────────────────────────────────────────
+// ── 3D models ──────────────────────────────────────────────────────────
 
 export interface NewModel3dOptions {
+  /** glTF binary */
   bytes: Uint8Array
-  /** glb/gltf */
   ext: string
-  /** Poster image (dark gray placeholder by default) */
+  /** The model's rendering: the Fallback picture and am3d:raster (a placeholder when omitted) */
   poster?: { bytes: Uint8Array; ext: string }
   offset: EmuRect
   name?: string
+  rot?: Model3dRotation
 }
 
-/**
- * Embed a 3D model: model bytes go into the package (PowerPoint preserves unknown
- * parts) + a poster placeholder image element; descr records
- * `aislides-3d:{partPath}` for recognition on reopen. No am3d extension is written.
- */
+/** Insert a 3D model as PowerPoint stores it (model3d.ts). Only .glb is embedded, as PowerPoint does. */
 export function addModel3d(
   opened: OpenedPptx,
   slideIndex: number,
   opts: NewModel3dOptions,
 ): { slide: Slide; elementId: string } | null {
   const slide = opened.deck.slides[slideIndex]
-  if (!slide) return null
-  const ext = opts.ext.toLowerCase()
-  const mime = MEDIA_MIME[ext]
-  if (!mime) return null
+  if (!slide || opts.ext.toLowerCase() !== 'glb') return null
 
-  const modelPath = newMediaPart(opened, 'media', ext, opts.bytes)
-  ensureDefaultContentType(opened, ext, mime)
-
-  const poster = opts.poster ?? { bytes: solidPng(16, 9, [58, 58, 66]), ext: 'png' }
+  const modelPath = newMediaPart(opened, 'model3d', 'glb', opts.bytes)
+  ensureDefaultContentType(opened, 'glb', GLB_CONTENT_TYPE)
+  const poster = opts.poster ?? { bytes: solidPng(16, 16, [58, 58, 66]), ext: 'png' }
   const posterExt = poster.ext.toLowerCase()
   const posterPath = newMediaPart(opened, 'image', posterExt, poster.bytes)
   ensureDefaultContentType(
@@ -259,26 +241,50 @@ export function addModel3d(
     posterExt,
     posterExt === 'jpg' || posterExt === 'jpeg' ? 'image/jpeg' : 'image/png',
   )
-
-  const [ridPoster] = appendRels(opened, slide, [
+  const [modelRId, posterRId] = appendRels(opened, slide, [
+    { type: MODEL3D_REL_TYPE, target: `../media/${modelPath.split('/').pop()}` },
     { type: IMAGE_REL_TYPE, target: `../media/${posterPath.split('/').pop()}` },
-  ]) as [string]
+  ]) as [string, string]
 
   const id = nextCNvPrId(slide)
-  const name = opts.name ?? `3D Model ${id}`
-  const o = opts.offset
-  const xml =
-    `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="${escapeXmlAttr(`aislides-3d:${modelPath}`)}">${creationIdXml()}</p:cNvPr>` +
-    '<p:cNvPicPr/><p:nvPr/></p:nvPicPr>' +
-    `<p:blipFill><a:blip r:embed="${ridPoster}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
-    `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
-    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>'
-
+  const xml = model3dXml({
+    id,
+    name: opts.name ?? `3D Model ${id}`,
+    offset: opts.offset,
+    modelRId,
+    posterRId,
+    bounds: glbBounds(opts.bytes),
+    ...(opts.rot ? { rot: opts.rot } : {}),
+  })
   const r = appendRawElements(opened, slideIndex, [xml])
   return r ? { slide: r.slide, elementId: r.elementIds[r.elementIds.length - 1]! } : null
 }
 
-/** Check whether a picture element is a 3D model placeholder (for render-layer badges). */
+/**
+ * Turns a 3D model to `rot` and, with `poster`, replaces its rendering (the Fallback picture
+ * and am3d:raster): the editor renders the model, the engine only stores what it drew.
+ */
+export function setModel3dView(
+  opened: OpenedPptx,
+  slide: Slide,
+  elementId: string,
+  view: { rot: Model3dRotation; poster?: { bytes: Uint8Array; ext: string } },
+): boolean {
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (el?.type !== 'picture' || !el.model3d) return false
+  if (
+    view.poster &&
+    !replacePictureBytes(opened, slide, elementId, view.poster.bytes, view.poster.ext)
+  ) {
+    return false
+  }
+  el.anchor.originalXml = setModel3dRotationXml(el.anchor.originalXml, view.rot)
+  el.model3d.rot = { ...view.rot }
+  slide.structureDirty = true
+  return true
+}
+
+/** The model part of a picture placeholder written before models were stored as am3d. */
 export function model3dPartOf(el: { descr?: string }): string | null {
   const m = el.descr && /^aislides-3d:(.+)$/.exec(el.descr)
   return m ? m[1]! : null

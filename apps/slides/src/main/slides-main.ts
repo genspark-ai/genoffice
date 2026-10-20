@@ -51,6 +51,7 @@ import {
   recoveryCopyDiskNewer,
   configuredAuthorName,
 } from '@genoffice/electron-utils'
+import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import {
   resolveGroupChildId,
   runTxn,
@@ -158,6 +159,8 @@ import type {
   AddImageBytesOp,
   AddInkOp,
   ReplacePictureBytesOp,
+  AddModel3dOp,
+  SetModel3dViewOp,
   AddMediaBytesOp,
   AddMediaResult,
   AddBlankSlideOp,
@@ -3950,54 +3953,76 @@ export function registerSlidesIpc(): void {
   })
 
   // 3D model (simplified): glb embed + poster placeholder image
-  ipcMain.handle('slides:insert-model3d', async (e, slideIndex: number, fitWidthPx: number) => {
-    const session = sessions.get(e.sender.id)
-    if (!session || !session.opened.deck.slides[slideIndex]) return null
-    const parent = dialogParent()
-    const options = {
+  ipcMain.handle('slides:pick-model3d', async () => {
+    const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
       title: tm('dlgInsert3d'),
       properties: ['openFile' as const],
-      filters: [{ name: tm('filter3d'), extensions: ['glb', 'gltf'] }],
-    }
-    const r = await showOpenDialogWithMemory(dialog, parent, options)
+      filters: [{ name: tm('filter3d'), extensions: ['glb'] }],
+    })
     if (r.canceled || !r.filePaths[0]) return null
-    const filePath = r.filePaths[0]
-    const bytes = await readFile(filePath)
-    const ext = filePath.split('.').pop()!.toLowerCase()
+    const bytes = await readFile(r.filePaths[0])
+    return { name: baseName(r.filePaths[0]), bytes: new Uint8Array(bytes) }
+  })
 
-    let poster: { bytes: Uint8Array; ext: string } | undefined
-    try {
-      const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: 640, height: 640 })
-      if (!thumb.isEmpty()) poster = { bytes: new Uint8Array(thumb.toPNG()), ext: 'png' }
-    } catch {
-      /* Dark-gray fallback */
-    }
-
+  ipcMain.handle('slides:add-model3d', (e, op: AddModel3dOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session || !session.opened.deck.slides[op.slideIndex]) return null
     const deckSize = session.opened.deck.size
     const cy = Math.round(deckSize.cy * 0.5)
-    const cx = cy
+    const cx = Math.round(cy * op.aspect)
     const txn = sessionTxn(session, {
       ops: [
         {
           op: 'addModel3d',
-          target: { slide: slideIndex },
-          bytes: new Uint8Array(bytes),
-          ext,
-          ...(poster ? { poster } : {}),
+          target: { slide: op.slideIndex },
+          bytes: op.bytes,
+          ext: 'glb',
+          ...(op.posterBase64
+            ? {
+                poster: {
+                  bytes: new Uint8Array(Buffer.from(op.posterBase64, 'base64')),
+                  ext: 'png',
+                },
+              }
+            : {}),
           offset: {
             x: Math.round((deckSize.cx - cx) / 2),
             y: Math.round((deckSize.cy - cy) / 2),
             cx,
             cy,
           },
-          name: baseName(filePath),
+          name: op.name,
         },
       ],
     })
     if (!txn) return null
-    session.fitWidthPx = fitWidthPx
-    const rebuilt = rebuildSlide(session, slideIndex)
+    session.fitWidthPx = op.fitWidthPx
+    const rebuilt = rebuildSlide(session, op.slideIndex)
     return rebuilt ? { slide: rebuilt, sourceId: txn.records![0]!.created![0]! } : null
+  })
+
+  ipcMain.handle('slides:model3d-data', (e, slideIndex: number, sourceId: string) => {
+    const session = sessions.get(e.sender.id)
+    const el = session?.opened.deck.slides[slideIndex]?.elements.find((x) => x.id === sourceId)
+    const target = el?.type === 'picture' ? el.model3d?.target : undefined
+    const bytes = target ? session!.opened.archive.readBytes(target) : undefined
+    return bytes ? new Uint8Array(bytes) : null
+  })
+
+  ipcMain.handle('slides:set-model3d-view', (e, op: SetModel3dViewOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session?.opened.deck.slides[op.slideIndex]) return null
+    const r = sessionTxn(session, {
+      ops: [
+        {
+          op: 'setModel3dView',
+          target: { slide: op.slideIndex, el: op.sourceId },
+          ...op.rot,
+          ...(op.posterBase64 ? { poster: op.posterBase64, posterExt: 'png' } : {}),
+        },
+      ],
+    })
+    return r ? rebuildSlide(session, op.slideIndex) : null
   })
 
   ipcMain.handle('slides:set-link', (e, op: SetLinkOp) => {
@@ -5097,12 +5122,14 @@ async function applyMainProcessProxy(): Promise<void> {
     // dispatcher below — forward the proxy to them via env
     setGskProxyUrl(proxyUrl)
     try {
-      const { ProxyAgent, setGlobalDispatcher } = await import('undici')
-      setGlobalDispatcher(new ProxyAgent(proxyUrl))
+      const { setGlobalDispatcher } = await import('undici')
+      // loopback stays direct: a Custom provider on 127.0.0.1 must not ride
+      // the proxy as an absolute-form request (#2084)
+      setGlobalDispatcher(await createMainProcessProxyDispatcher(proxyUrl))
       // strip user:pass credentials before logging
       console.log('[proxy] main-process fetch via', proxyUrl.replace(/\/\/[^@/]*@/, '//***@'))
     } catch (e) {
-      console.warn('[proxy] failed to set ProxyAgent:', e)
+      console.warn('[proxy] failed to set proxy dispatcher:', e)
     }
   }
   const envProxy =

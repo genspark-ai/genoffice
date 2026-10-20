@@ -606,6 +606,7 @@ function buildPicture(
     ...(el.opacity != null ? { opacity: el.opacity } : {}),
     ...(el.softEdge ? { softEdgePx: emuToPx(el.softEdge, vp.scale) } : {}),
     ...(el.media ? { media: el.media.kind } : {}),
+    ...(el.model3d ? { model3d: { ...el.model3d.rot } } : {}),
     ...(el.redact ? { redact: el.redact } : {}),
     ...(el.name ? { name: el.name } : {}),
     ...(el.descr ? { descr: el.descr } : {}),

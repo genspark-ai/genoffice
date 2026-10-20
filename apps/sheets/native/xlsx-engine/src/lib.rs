@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -21,6 +21,7 @@ pub mod protocol;
 pub mod recalc;
 mod richdata;
 mod shared_formulas;
+pub mod spreadsheetml;
 mod visuals;
 
 mod cell_images;
@@ -32,6 +33,7 @@ mod tests;
 mod types;
 mod workbook;
 mod worksheet;
+mod xlsx_package;
 mod xml_util;
 
 use cell_images::*;
@@ -205,6 +207,19 @@ pub struct WorkbookSessions {
     sessions: HashMap<String, WorkbookSession>,
 }
 
+/// Excel wraps password-encrypted workbooks in an OLE2 compound container
+/// rather than a ZIP package. Detect that signature before the zip reader
+/// runs so the open fails with an explanation instead of "invalid Zip
+/// archive: Could not find EOCD" (#2076). The file cursor is rewound so the
+/// caller can keep reading from the start.
+fn is_ole2_container(file: &mut File) -> std::io::Result<bool> {
+    const OLE2_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    let mut magic = [0u8; 8];
+    let read = file.read(&mut magic)?;
+    file.rewind()?;
+    Ok(read == OLE2_MAGIC.len() && magic == OLE2_MAGIC)
+}
+
 impl WorkbookSessions {
     pub fn new() -> Self {
         Self {
@@ -240,7 +255,14 @@ impl WorkbookSessions {
             return Err(SidecarError::cancelled());
         }
         let canonical_path = canonicalize(path)?;
-        let file = File::open(&canonical_path)?;
+        let mut file = File::open(&canonical_path)?;
+        if is_ole2_container(&mut file)? {
+            return Err(SidecarError::Workbook(
+                "This workbook is password-protected. GenOffice Sheets cannot open \
+                 encrypted workbooks yet."
+                    .into(),
+            ));
+        }
         let mut archive = ZipArchive::new(file)?;
         archive::validate_entries(&mut archive)?;
         // The archive is open and validated and nothing has been written to
@@ -268,6 +290,7 @@ impl WorkbookSessions {
         let rich_value_images = richdata::read_rich_value_images(&mut archive);
         let wps_cell_images = read_wps_cell_images(&mut archive);
         let mut cell_image_count = 0usize;
+        let mut note_image_count = 0usize;
         let mut sheets = Vec::with_capacity(declarations.len());
         let mut runtimes = Vec::with_capacity(declarations.len());
         let mut visual_sources = Vec::with_capacity(declarations.len());
@@ -305,15 +328,27 @@ impl WorkbookSessions {
             )?;
             let comments = visuals::read_comments(&mut archive, &worksheet_path)?
                 .into_iter()
-                .filter_map(|(reference, author, text, thread)| {
-                    let anchor = reference.split(':').next().unwrap_or(&reference);
+                .filter_map(|comment| {
+                    let anchor = comment
+                        .reference
+                        .split(':')
+                        .next()
+                        .unwrap_or(&comment.reference);
                     let (row, column) = parse_address(&anchor.replace('$', "")).ok()?;
+                    let image = comment.image_media_path.map(|media_path| {
+                        note_image_count += 1;
+                        CommentImageInfo {
+                            id: format!("note-picture-{note_image_count}"),
+                            media_path,
+                        }
+                    });
                     Some(CommentInfo {
                         row,
                         column,
-                        author,
-                        text,
-                        thread,
+                        author: comment.author,
+                        text: comment.text,
+                        thread: comment.thread,
+                        image,
                     })
                 })
                 .collect();
@@ -591,6 +626,21 @@ impl WorkbookSessions {
                     .flat_map(|sheet| sheet.cell_images.iter())
                     .find(|image| image.id == visual_id)
                     .map(|image| image.media_path.as_str())
+            })
+            .or_else(|| {
+                // A picture inside a note is reachable the same way, under the
+                // id its comment carries.
+                session
+                    .sheets
+                    .iter()
+                    .flat_map(|sheet| sheet.comments.iter())
+                    .find_map(|comment| {
+                        comment
+                            .image
+                            .as_ref()
+                            .filter(|image| image.id == visual_id)
+                            .map(|image| image.media_path.as_str())
+                    })
             })
             .map(str::to_owned)
             .or_else(|| session.header_footer_picture_path(visual_id))

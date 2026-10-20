@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatMessage, ProjectApi } from '@genoffice/project-store'
+import type { ChatMessage, ChatMeta, ProjectApi } from '@genoffice/project-store'
 
-import { claimThread, restoreAskMessages, type AskMessage } from '../src/renderer/src/KbAskPanel'
+import {
+  claimThread,
+  firstQuestionOf,
+  listThreads,
+  panelThreads,
+  restoreAskMessages,
+  type AskMessage,
+} from '../src/renderer/src/KbAskPanel'
 
 function stored(over: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -92,6 +99,7 @@ describe('claiming the panel thread', () => {
     const shown: AskMessage[][] = []
     await claimThread(
       api,
+      'kb-ask',
       [],
       (m) => shown.push(m),
       () => true,
@@ -112,6 +120,7 @@ describe('claiming the panel thread', () => {
     ]
     await claimThread(
       api,
+      'kb-ask',
       queued,
       () => undefined,
       () => true,
@@ -136,6 +145,7 @@ describe('claiming the panel thread', () => {
     const shown: AskMessage[][] = []
     await claimThread(
       api,
+      'kb-ask',
       [],
       (m) => shown.push(m),
       () => false,
@@ -148,6 +158,7 @@ describe('claiming the panel thread', () => {
     await expect(
       claimThread(
         api,
+        'kb-ask',
         [],
         () => undefined,
         () => true,
@@ -155,6 +166,128 @@ describe('claiming the panel thread', () => {
     ).resolves.toEqual({
       projectId: 'default',
       chatId: 'kb-ask',
+    })
+  })
+})
+
+describe('listing the stored threads', () => {
+  const meta = (chatId: string, updatedAt: string): ChatMeta => ({
+    chatId,
+    updatedAt,
+    approxCount: 4,
+  })
+
+  it('puts the most recent conversation on top', () => {
+    const listed = listThreads(
+      [meta('old', '2026-10-15T09:00:00.000Z'), meta('new', '2026-10-17T09:00:00.000Z')],
+      () => undefined,
+    )
+    expect(listed.map((t) => t.chatId)).toEqual(['new', 'old'])
+  })
+
+  it('labels a conversation by its own first question', () => {
+    const first: Record<string, string> = {
+      a: 'who is in the photograph',
+      b: 'what did the letter say',
+    }
+    const listed = listThreads(
+      [meta('a', '2026-10-17T09:00:00.000Z'), meta('b', '2026-10-16T09:00:00.000Z')],
+      (chatId) => first[chatId],
+    )
+    expect(listed.map((t) => t.label)).toEqual([
+      'who is in the photograph',
+      'what did the letter say',
+    ])
+  })
+
+  it('collapses a question that wrapped and truncates a long one', () => {
+    expect(
+      listThreads([meta('a', '2026-10-17T09:00:00.000Z')], () => 'a\n\n  b   c')[0]?.label,
+    ).toBe('a b c')
+    const long = 'x'.repeat(200)
+    expect(listThreads([meta('a', '2026-10-17T09:00:00.000Z')], () => long)[0]?.label).toHaveLength(
+      60,
+    )
+  })
+
+  it('falls back to the id when a conversation has no question to name it by', () => {
+    // An empty thread, or one whose read failed: the id is unique and
+    // copyable, which a blank row would not be.
+    expect(
+      listThreads([meta('kb-ask-1731', '2026-10-17T09:00:00.000Z')], () => undefined)[0]?.label,
+    ).toBe('kb-ask-1731')
+    expect(
+      listThreads([meta('kb-ask-1731', '2026-10-17T09:00:00.000Z')], () => '   ')[0]?.label,
+    ).toBe('kb-ask-1731')
+  })
+
+  it('is empty when nothing was ever asked', () => {
+    expect(listThreads([], () => 'anything')).toEqual([])
+  })
+})
+
+describe('naming a conversation by its first question', () => {
+  it('takes the first user turn, not the first turn of any kind', () => {
+    expect(
+      firstQuestionOf([
+        stored({ role: 'assistant', text: 'an answer that came first', seq: 0 }),
+        stored({ role: 'user', text: 'the actual question', seq: 1 }),
+      ]),
+    ).toBe('the actual question')
+  })
+
+  it('is undefined when the thread opens with answers', () => {
+    expect(
+      firstQuestionOf([stored({ role: 'assistant', text: 'orphan answer', seq: 0 })]),
+    ).toBeUndefined()
+    expect(firstQuestionOf([])).toBeUndefined()
+  })
+})
+
+describe('choosing which conversations the panel lists', () => {
+  const meta = (chatId: string): ChatMeta => ({
+    chatId,
+    updatedAt: '2026-10-17T09:00:00.000Z',
+    approxCount: 4,
+  })
+
+  it('keeps the home thread and the threads a new conversation started', () => {
+    expect(
+      panelThreads([meta('kb-ask'), meta('kb-ask-1731'), meta('kb-ask-1732')]).map((m) => m.chatId),
+    ).toEqual(['kb-ask', 'kb-ask-1731', 'kb-ask-1732'])
+  })
+
+  it("never lists another document's AI history, however many are stored", () => {
+    // Unsaved editor documents write into the same default project; a
+    // list that showed them would offer deleting their transcripts from a
+    // panel that has nothing to do with them.
+    const listed = panelThreads([
+      meta('kb-ask'),
+      meta('unsaved-1728000000000'),
+      meta('a1b2c3d4e5f6a7b8'),
+      meta('kb-asks'),
+      meta('ask-kb-ask'),
+    ])
+    expect(listed.map((m) => m.chatId)).toEqual(['kb-ask'])
+  })
+})
+
+describe('claiming the thread the panel switched to', () => {
+  it('resolves the activated id, not the home thread', async () => {
+    // A chip click or a new conversation changes the id; if the claim still
+    // asked for the home thread, every turn would land in `kb-ask` no matter
+    // which conversation was on screen.
+    const { api, calls } = recorder([])
+    await claimThread(
+      api,
+      'kb-ask-1731',
+      [],
+      () => undefined,
+      () => true,
+    )
+    expect(calls[0]).toEqual({
+      method: 'resolveChat',
+      args: { filePath: null, tempChatId: 'kb-ask-1731' },
     })
   })
 })

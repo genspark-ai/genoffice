@@ -14,6 +14,8 @@ import type {
   AddInkOp,
   AddMediaBytesOp,
   ReplacePictureBytesOp,
+  AddModel3dOp,
+  SetModel3dViewOp,
   AddSmartArtOp,
   ApplyThemeOp,
   AddBlankSlideOp,
@@ -298,8 +300,11 @@ const api: SlidesApi = {
   addMediaBytes: (op: AddMediaBytesOp) => ipcRenderer.invoke('slides:add-media-bytes', op),
   getMediaData: (slideIndex: number, sourceId: string) =>
     ipcRenderer.invoke('slides:media-data', slideIndex, sourceId),
-  insertModel3d: (slideIndex: number, fitWidthPx: number) =>
-    ipcRenderer.invoke('slides:insert-model3d', slideIndex, fitWidthPx),
+  pickModel3d: () => ipcRenderer.invoke('slides:pick-model3d'),
+  addModel3d: (op: AddModel3dOp) => ipcRenderer.invoke('slides:add-model3d', op),
+  getModel3dData: (slideIndex: number, sourceId: string) =>
+    ipcRenderer.invoke('slides:model3d-data', slideIndex, sourceId),
+  setModel3dView: (op: SetModel3dViewOp) => ipcRenderer.invoke('slides:set-model3d-view', op),
   setLink: (op: SetLinkOp) => ipcRenderer.invoke('slides:set-link', op),
   getLink: (slideIndex: number, sourceId: string) =>
     ipcRenderer.invoke('slides:get-link', slideIndex, sourceId),
@@ -502,6 +507,8 @@ const projectApi: ProjectApi = {
   appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
   loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
   rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
+  listChats: (args) => ipcRenderer.invoke('project:listChats', args),
+  deleteChat: (args) => ipcRenderer.invoke('project:deleteChat', args),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)
 

@@ -1036,6 +1036,28 @@ export type AddImageBytesOp = {
 )
 
 /** Swap a picture's backing image in place: frame, z-order, border and effects survive. */
+/** A 3D model the renderer read and rendered: inserted centred, half the slide high. */
+export interface AddModel3dOp {
+  slideIndex: number
+  /** glTF binary */
+  bytes: Uint8Array
+  name: string
+  /** The model's first rendering, base64 PNG without the data: prefix */
+  posterBase64?: string
+  /** Frame width / height */
+  aspect: number
+  fitWidthPx: number
+}
+
+/** Turn a 3D model (am3d:rot, 60,000ths of a degree) and store the rendering the renderer drew. */
+export interface SetModel3dViewOp {
+  slideIndex: number
+  sourceId: string
+  rot: { ax: number; ay: number; az: number }
+  /** base64 PNG without the data: prefix */
+  posterBase64?: string
+}
+
 export interface ReplacePictureBytesOp {
   slideIndex: number
   sourceId: string
@@ -1587,11 +1609,12 @@ export interface SlidesApi {
     slideIndex: number,
     sourceId: string,
   ) => Promise<{ kind: 'video' | 'audio'; dataUrl: string } | null>
-  /** Show a dialog to pick a 3D model (glb/gltf), embed + poster placeholder */
-  insertModel3d: (
-    slideIndex: number,
-    fitWidthPx: number,
-  ) => Promise<{ slide: RenderSlide; sourceId: string } | null>
+  /** Show a dialog to pick a 3D model (.glb) and read it */
+  pickModel3d: () => Promise<{ name: string; bytes: Uint8Array } | null>
+  addModel3d: (op: AddModel3dOp) => Promise<{ slide: RenderSlide; sourceId: string } | null>
+  /** A 3D model element's glTF binary */
+  getModel3dData: (slideIndex: number, sourceId: string) => Promise<Uint8Array | null>
+  setModel3dView: (op: SetModel3dViewOp) => Promise<RenderSlide | null>
   /** Set/clear an element hyperlink; the whole page's element ids update, requiring a whole-page replace and clearing the selection */
   setLink: (op: SetLinkOp) => Promise<RenderSlide | null>
   /** Read the element's current hyperlink (dialog echo) */

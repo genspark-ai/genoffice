@@ -5,6 +5,7 @@ import type {
   SkillInstallStatus,
 } from '@genoffice/cli/agent-skills'
 import type { InstallOutcome } from '@genoffice/cli/install'
+import type { FoundSkill } from './found-skill'
 
 export type { AgentId, AgentTarget, SkillInstallState, SkillInstallStatus }
 
@@ -39,10 +40,26 @@ export interface IntegrationsApi {
   saveSkillZip(title: string): Promise<string | null>
   /** put text on the clipboard (paths, the manual PATH command) */
   copyText(text: string): Promise<void>
+  /**
+   * Every SKILL.md this machine can offer: the ones under the save directory
+   * (usable without asking) first, then the coding agents' own as candidates.
+   * Nothing here has been copied or run.
+   */
+  listSkills(): Promise<FoundSkill[]>
+  /** the body of one SKILL.md, frontmatter stripped, for the turn that runs it */
+  skillBody(path: string): Promise<string>
+  /**
+   * Copy a skill the user picked into our own folder. Only ever called from an
+   * explicit click — scanning never copies.
+   */
+  importSkill(path: string): Promise<FoundSkill>
 }
 
 export const INTEGRATIONS_CHANNELS = {
   status: 'integrations:status',
+  listSkills: 'integrations:list-skills',
+  skillBody: 'integrations:skill-body',
+  importSkill: 'integrations:import-skill',
   installSkill: 'integrations:install-skill',
   uninstallSkill: 'integrations:uninstall-skill',
   pickSkillDir: 'integrations:pick-skill-dir',

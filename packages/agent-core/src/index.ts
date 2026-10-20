@@ -119,6 +119,8 @@ export type {
   FeatureRecord,
   FeatureRegistryDeps,
 } from './features-skill'
+export type { SkillFrontmatter, SkillRelevance } from './imported-skill'
+export { classifySkill, parseSkillFrontmatter, SKILL_FORMAT_TOKENS } from './imported-skill'
 export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
