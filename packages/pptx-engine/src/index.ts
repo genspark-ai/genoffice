@@ -2393,6 +2393,8 @@ export function materializeSlide(opened: OpenedPptx, slideIndex: number): Slide 
   archive.entries.set(slide.path, Buffer.from(patchSlideXml(slide), 'utf8'))
   const fresh = parseSlideFromArchive(archive, slide.path)
   if (!fresh) return null
+  // a reparse is not a save: the edits it baked into the XML are still unsaved
+  if (slideIsDirty(slide)) fresh.structureDirty = true
   deck.slides[slideIndex] = fresh
   return fresh
 }

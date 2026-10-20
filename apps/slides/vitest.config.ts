@@ -30,6 +30,10 @@ export default defineConfig({
         '../../packages/pptx-engine/src/custgeom.ts',
       ),
       '@genoffice/pptx-engine/model3d': resolve(here, '../../packages/pptx-engine/src/model3d.ts'),
+      '@genoffice/pptx-engine/chart-workbook': resolve(
+        here,
+        '../../packages/pptx-engine/src/chart-workbook.ts',
+      ),
       '@genoffice/pptx-engine': resolve(here, '../../packages/pptx-engine/src/index.ts'),
       '@genoffice/pptx-ops/op-docs': resolve(here, '../../packages/pptx-ops/src/op-docs.ts'),
       '@genoffice/pptx-ops/font-size': resolve(here, '../../packages/pptx-ops/src/font-size.ts'),
