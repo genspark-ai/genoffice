@@ -402,7 +402,17 @@ export const InstrFieldMark = Mark.create({
     }
   },
   parseHTML() {
-    return [{ tag: 'span[data-instr-field]' }]
+    return [
+      {
+        tag: 'span[data-instr-field]',
+        // read the instruction back out of the clipboard payload. Without
+        // getAttrs the mark falls back to its defaults, so a pasted citation
+        // loses its instruction and saves as an empty w:instrText — which the
+        // next parse turns into a protected passthrough, locking the whole
+        // paragraph (genoffice#2099).
+        getAttrs: (el) => ({ instr: el.getAttribute('data-instr-field') ?? '' }),
+      },
+    ]
   },
   renderHTML({ mark }) {
     const instruction = String(mark.attrs.instr)
