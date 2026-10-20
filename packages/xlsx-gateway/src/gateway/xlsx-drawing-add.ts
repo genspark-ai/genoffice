@@ -952,7 +952,7 @@ export async function appendRelationship(
 }
 
 /// Media extensions register as package-wide Defaults rather than per-part Overrides.
-async function registerContentTypeDefault(
+export async function registerContentTypeDefault(
   pkg: MutablePackage,
   extension: string,
   contentType: string,

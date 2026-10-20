@@ -111,6 +111,8 @@ export const ms = {
   aiUnknownError: 'Ralat tidak diketahui',
   aiTimeoutError:
     'Permintaan AI tamat masa: rangkaian tidak memberi respons, proses dihentikan. Semak sambungan anda dan cuba lagi',
+  aiRegionError:
+    'Penyedia model ini tidak memberi perkhidmatan di rantau semasa anda — pilih model lain atau tukar rangkaian',
   aiOverloadedError: 'Perkhidmatan AI sedang sibuk — sila cuba lagi sebentar lagi',
   aiNetworkError:
     'Masalah rangkaian: tidak dapat menghubungi perkhidmatan AI. Semak sambungan anda dan cuba lagi',
@@ -120,6 +122,9 @@ export const ms = {
   aiSumImageAttachment: 'Lampiran imej {name}',
   aiSumRead: 'Baca {name}',
   aiSumReadAttachmentName: 'Baca lampiran {name}',
+  aiSumSkillsList: 'Senarai skill dipasang',
+  aiSumSkillRead: 'Baca skill {name}',
+  aiSumRunCli: 'Jalankan {args}',
   aiSumWebSearch: 'Carian web',
   aiSumWebSearchDone: 'Mencari "{query}" ({count} hasil)',
   aiSumImageSearch: 'Carian imej',

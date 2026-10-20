@@ -180,6 +180,14 @@ export function buildRenderSlide(
       if (i < bgLeading) node.background = true
       nodes.push(node)
     }
+    // chartUserShapes overlays ride on top of their chart, read-only like decorations
+    for (const us of el.type === 'chart' ? ((el as ChartElement).userShapes ?? []) : []) {
+      const n = buildNode(us, vp, metrics, opts.media, { x: 0, y: 0 })
+      if (n && n.type !== 'placeholder-chip') {
+        n.decoration = true
+        nodes.push(n)
+      }
+    }
   }
   // Hidden-slide flag (<p:sld show="0">). Same logic as the engine's readSlideHiddenXml,
   // inlined here as a small regex so we only depend on pptx-engine types (safe to bundle in the renderer).
@@ -598,6 +606,7 @@ function buildPicture(
     ...(el.opacity != null ? { opacity: el.opacity } : {}),
     ...(el.softEdge ? { softEdgePx: emuToPx(el.softEdge, vp.scale) } : {}),
     ...(el.media ? { media: el.media.kind } : {}),
+    ...(el.model3d ? { model3d: { ...el.model3d.rot } } : {}),
     ...(el.redact ? { redact: el.redact } : {}),
     ...(el.name ? { name: el.name } : {}),
     ...(el.descr ? { descr: el.descr } : {}),

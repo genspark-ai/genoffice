@@ -3,6 +3,9 @@ import {
   parseLazyMediaUrl,
   setPPrChange,
   stripPPrChange,
+  stripParaMarkRevision,
+  paraMarkColor,
+  stripParaMarkColor,
   ommlToLatex,
   patchFieldParagraphXml,
   applyImageWrap,
@@ -21,6 +24,8 @@ import {
   type TextboxSizePatch,
   patchTextboxParas,
   generateTableModelXml,
+  inlinePictureDrawingXml,
+  NEW_PICTURE_TOKEN_PREFIX,
   symbolGlyph,
   symbolPuaChar,
   type Block,
@@ -45,6 +50,7 @@ import {
   type TextboxDisplay,
   type TextboxParaPatch,
   type TextboxParasPatchSet,
+  type AutoSpace,
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { symbolFontCovers } from '../font-check'
@@ -108,6 +114,20 @@ export function pmDocOptions(parsed: {
       ...(asciiFont ? { font: asciiFont } : {}),
     },
   }
+}
+
+/** the element this editor writes into a run's rPr to carry the label */
+const REDACT_RPR_RE = /<go:redact\b/
+const REDACT_LABEL_RE = /<go:redact\b[^>]*\bw:label="([^"]*)"/
+
+function redactLabelIn(rawRPr: string): string {
+  const found = REDACT_LABEL_RE.exec(rawRPr)
+  const label = found?.[1] ?? 'private'
+  return label
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
 }
 
 export function blocksToPmDoc(
@@ -743,6 +763,7 @@ function blockToPmNode(
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+          paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -764,6 +785,7 @@ function blockToPmNode(
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+          paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -784,6 +806,7 @@ function blockToPmNode(
           moveRevision: block.moveRevision ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
           paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+          paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format, block.runs),
         },
@@ -1256,7 +1279,9 @@ function inlineFormattingSignature(content: PmNode[] | undefined): string[] {
               .map((mark) => [mark.type, mark.attrs ?? null]),
           )
         : node.type
-    if (styles[styles.length - 1] !== style) styles.push(style)
+    // a picture adds no text, so one placed next to another must count on its own
+    const atom = node.type === 'docInlineImage'
+    if (atom || styles[styles.length - 1] !== style) styles.push(style)
   }
   return styles
 }
@@ -1752,6 +1777,19 @@ function runMarks(run: Run): PmMark[] {
       run.charScalePct && !/\s/.test(run.text) && !run.underline && !run.strike && !run.link
         ? charScaleXAttr(run.text, run.charScalePct, charScaleEm(run.text, run.charScalePct))
         : null
+    // A run whose rPr carries our element came back from a file this editor
+    // wrote. The parser has no schema for a custom element, so the label is
+    // lifted out of the raw rPr and the run is re-tagged: without it the
+    // border survives a reopen but the document quietly stops withholding
+    // anything, and a model can read the whole thing again.
+    if (typeof run.rawRPr === 'string' && REDACT_RPR_RE.test(run.rawRPr)) {
+      marks.push({
+        type: 'redaction',
+        // bdr and rawRPr are what the save path needs to write the mark back;
+        // docTextStyle already carries the border, this re-asserts it on ours
+        attrs: { label: redactLabelIn(run.rawRPr), rawRPr: run.rawRPr },
+      })
+    }
     marks.push({
       type: 'docTextStyle',
       attrs: {
@@ -1818,6 +1856,8 @@ export interface SavePlan {
   /** count of original blocks removed */
   deletedCount: number
   totalOriginal: number
+  /** cell pictures inserted by the editor, for SaveOptions.newPictures */
+  newPictures: Record<string, { base64: string; mime: NewImage['mime'] }>
 }
 
 const ZOTERO_FIELD_INSTR_RE = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i
@@ -1964,6 +2004,9 @@ export function normalizeZoteroFieldParts(doc: PmNode): PmNode {
 }
 
 export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): SavePlan {
+  newPictures.clear()
+  newPictureSeq = 0
+  newPictureTokenOf = new WeakMap()
   const doc = normalizeZoteroFieldParts(inputDoc)
   const originalByIndex = new Map<number, Block>()
   for (const block of originalBlocks) {
@@ -2576,6 +2619,7 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
     saveBlocks,
     chartPatches,
     saveBlockIndexByDocx,
+    newPictures: Object.fromEntries(newPictures),
     changedCount,
     deletedCount,
     totalOriginal: originalByIndex.size,
@@ -3036,6 +3080,16 @@ function applyRawPPr(generated: GeneratedBlock, original: Block): void {
   } else if (generated.pPrChange) {
     rawPPr = setPPrChange(rawPPr, generated.pPrChange)
   }
+  if (generated.paraMarkDel === null && original.paraMarkDel)
+    rawPPr = stripParaMarkRevision(rawPPr, 'del')
+  if (generated.paraMarkIns === null && original.paraMarkIns)
+    rawPPr = stripParaMarkRevision(rawPPr, 'ins')
+  const markColor = paraMarkColor(rawPPr)
+  if (markColor && generated.runs.some((r) => r.text)) {
+    const hasColor = (runs: Run[] | undefined) =>
+      (runs ?? []).some((r) => (r.color ?? '').toUpperCase() === markColor)
+    if (hasColor(original.runs) && !hasColor(generated.runs)) rawPPr = stripParaMarkColor(rawPPr)
+  }
   generated.rawPPr = rawPPr
 }
 
@@ -3086,7 +3140,7 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
     if (node.attrs?.[key] != null) format[key] = node.attrs[key] as boolean
   if (node.attrs?.pageBreakBefore) format.pageBreakBefore = true
   if (node.attrs?.bidi) format.bidi = true
-  if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as boolean
+  if (node.attrs?.autoSpace != null) format.autoSpace = node.attrs.autoSpace as AutoSpace
   if (node.attrs?.wordWrap != null) format.wordWrap = node.attrs.wordWrap as boolean
   if (node.attrs?.overflowPunct != null) {
     format.overflowPunct = node.attrs.overflowPunct as boolean
@@ -3107,7 +3161,8 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.tabStops) {
     try {
       const parsed = JSON.parse(String(node.attrs.tabStops))
-      if (Array.isArray(parsed) && parsed.length > 0) format.tabStops = parsed
+      // [] is an explicit clear (setParagraphFormat tabs: []): save then drops w:tabs
+      if (Array.isArray(parsed)) format.tabStops = parsed
     } catch {
       /* ignore malformed */
     }
@@ -3161,6 +3216,7 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
       runs,
       ...(pPrChange !== undefined ? { pPrChange: pPrChange ?? null } : {}),
       ...(blockRevision !== undefined ? { blockRevision: blockRevision ?? null } : {}),
+      ...paraMarkRevisions(node),
     }
   }
   if (node.type === 'docListItem') {
@@ -3184,6 +3240,7 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
         runs,
         ...(pPrChange !== undefined ? { pPrChange: pPrChange ?? null } : {}),
         ...(blockRevision !== undefined ? { blockRevision: blockRevision ?? null } : {}),
+        ...paraMarkRevisions(node),
       }
     }
     // list item without a docx numbering id degrades to a plain paragraph with marker
@@ -3224,6 +3281,15 @@ export function pmNodeToGeneratedBlock(node: PmNode): GeneratedBlock {
     // carry pPrChange through: null means "user accepted/rejected, strip from rawPPr"
     ...(pPrChange !== undefined ? { pPrChange: pPrChange ?? null } : {}),
     ...(blockRevision !== undefined ? { blockRevision: blockRevision ?? null } : {}),
+    ...paraMarkRevisions(node),
+  }
+}
+
+/** null = no pending paragraph-mark revision; applyRawPPr strips the record the original carried */
+function paraMarkRevisions(node: PmNode): Pick<GeneratedBlock, 'paraMarkDel' | 'paraMarkIns'> {
+  return {
+    paraMarkDel: (node.attrs?.paraMarkDel as string | null | undefined) ?? null,
+    paraMarkIns: (node.attrs?.paraMarkIns as string | null | undefined) ?? null,
   }
 }
 
@@ -3233,6 +3299,41 @@ function nodeBookmarks(
 ): string[] | undefined {
   const value = node.attrs?.[attr] as string[] | null | undefined
   return Array.isArray(value) && value.length > 0 ? value : undefined
+}
+
+/** pictures the editor placed in cells this save: placeholder token -> bytes (see SaveOptions.newPictures) */
+const newPictures = new Map<string, { base64: string; mime: NewImage['mime'] }>()
+let newPictureSeq = 0
+// the same node is converted more than once per save (signatures, text, save)
+let newPictureTokenOf = new WeakMap<PmNode, string>()
+
+function newPictureBytes(dataUrl: string): { base64: string; mime: NewImage['mime'] } | null {
+  const m = /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/s.exec(dataUrl)
+  return m ? { base64: m[2], mime: m[1] as NewImage['mime'] } : null
+}
+
+/** a cell picture inserted by the editor has bytes but no drawing yet: emit one
+ *  around a placeholder the save resolves once the media part exists */
+function newPictureXml(node: PmNode): string {
+  const widthPx = Number(node.attrs?.widthPx)
+  const heightPx = Number(node.attrs?.heightPx)
+  const bytes = newPictureBytes(String(node.attrs?.dataUrl ?? ''))
+  if (!bytes || !(widthPx > 0) || !(heightPx > 0)) return ''
+  let token = newPictureTokenOf.get(node)
+  if (!token) {
+    token = `${NEW_PICTURE_TOKEN_PREFIX}${++newPictureSeq}`
+    newPictureTokenOf.set(node, token)
+  }
+  newPictures.set(token, bytes)
+  return inlinePictureDrawingXml({
+    rId: token,
+    docPrId: token,
+    widthPx,
+    heightPx,
+    rotDeg: node.attrs?.rotDeg ? Number(node.attrs.rotDeg) : undefined,
+    flipH: !!node.attrs?.flipH,
+    flipV: !!node.attrs?.flipV,
+  })
 }
 
 export function inlineToRuns(content: PmNode[]): Run[] {
@@ -3297,8 +3398,8 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     }
     if (node.type === 'docInlineImage') {
       const dataUrl = String(node.attrs?.dataUrl ?? '')
-      const xml = String(node.attrs?.xml ?? '')
       const rule = node.attrs?.rule as NonNullable<Run['image']>['rule'] | null | undefined
+      const xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
       if ((dataUrl || rule) && xml) {
         runs.push({
           ...atomBase(node),
@@ -3352,7 +3453,15 @@ function atomBase(node: PmNode): Partial<Run> {
 function runFromMarks(text: string, marks: PmMark[]): Run {
   const run: Run = { text }
   for (const mark of marks) {
-    if (mark.type === 'bold') run.bold = true
+    if (mark.type === 'redaction') {
+      // rawRPr is the whole story: it carries both the w:bdr Word draws and the
+      // custom element holding the label, and the save path writes it back
+      // byte for byte because the run model never manages a custom element.
+      // Setting run.bdr as well would only duplicate what rPr already has.
+      if (typeof mark.attrs?.rawRPr === 'string' && mark.attrs.rawRPr) {
+        run.rawRPr = mark.attrs.rawRPr
+      }
+    } else if (mark.type === 'bold') run.bold = true
     else if (mark.type === 'italic') run.italic = true
     else if (mark.type === 'underline') run.underline = true
     else if (mark.type === 'strike') run.strike = true
@@ -3657,6 +3766,8 @@ export function signatureOfBlock(block: Block): string {
     runs: normalizedRuns(block.runs ?? []),
     // include pPrChangeInfo in signature: present = has pPrChange, absent = clean
     pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+    paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
+    paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
     blockRevision: block.blockRevision ?? null,
   })
 }
@@ -3675,6 +3786,8 @@ export function signatureOfGenerated(block: GeneratedBlock): string {
     runs: normalizedRuns(block.runs),
     // include pPrChange in signature: null (accepted/rejected) != non-null (has pPrChange)
     pPrChange: block.pPrChange ?? null,
+    paraMarkDel: block.paraMarkDel ?? null,
+    paraMarkIns: block.paraMarkIns ?? null,
     blockRevision: block.blockRevision ?? null,
   })
 }

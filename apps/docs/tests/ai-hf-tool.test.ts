@@ -95,6 +95,15 @@ describe('set_header_footer tool', () => {
     expect(writes[1]).toEqual({ kind: 'header', view: 'first', text: 'Cover' })
   })
 
+  it('turns a doubly escaped newline into a real line break', () => {
+    const editor = createEditor()
+    const { access, writes } = makeAccess(emptyState())
+    run(editor, { kind: 'footer', text: 'Confidential\\nPage {PAGE} of {NUMPAGES}' }, access)
+    expect(writes[0].text).toBe('Confidential\nPage {PAGE} of {NUMPAGES}')
+    run(editor, { kind: 'footer', text: 'real\nbreak keeps \\n as typed' }, access)
+    expect(writes[1].text).toBe('real\nbreak keeps \\n as typed')
+  })
+
   it('validates input and surfaces access errors', () => {
     const editor = createEditor()
     const { access } = makeAccess(emptyState())

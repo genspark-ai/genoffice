@@ -449,16 +449,6 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin)
 }
 
-export async function insertModel3dFile(ctx: ActionCtx): Promise<void> {
-  if (!ctx.slide) return
-  const r = await window.slidesApi.insertModel3d(ctx.current, FIT_WIDTH)
-  if (r) {
-    ctx.applySlide(ctx.current, r.slide)
-    ctx.setSelectedIds([r.sourceId])
-    ctx.setStatus(t('appStatusModel3dInserted'))
-  }
-}
-
 /** Screen recording: getDisplayMedia + MediaRecorder; when stopped, inserted into the current page as webm video. */
 export async function toggleScreenRecord(ctx: ActionCtx): Promise<void> {
   if (ctx.recorderRef.current) {

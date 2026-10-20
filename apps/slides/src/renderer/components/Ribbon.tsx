@@ -93,6 +93,7 @@ import {
   IconReplacePicture,
   IconRotateLeft,
   IconRotateRight,
+  Icon3d,
 } from './icons'
 // brand-supplied Review AI icon art (44px = 22px @2x), color baked in
 import iconSpelling from '../assets/icon-spelling.png'
@@ -124,6 +125,8 @@ import { RibbonHomeTab } from './RibbonHomeTab'
 import { RibbonInsertTab } from './RibbonInsertTab'
 import { ShapeGalleryContent } from './ShapeGalleryPopover'
 import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
+import { MODEL3D_VIEWS } from '../model3d/views'
+import { NO_ROTATION } from '@genoffice/pptx-engine/model3d'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** shell tab mode: the tab strip above owns traffic lights / caption buttons */
@@ -171,6 +174,7 @@ const TAB_LABEL: Record<MainTab | ContextTab, StringKey> = {
   tableDesign: 'ribbonTabTableDesign',
   chartDesign: 'ribbonTabChartDesign',
   pictureFormat: 'ribbonTabPictureFormat',
+  model3dFormat: 'ribbonTabModel3d',
   shapeFormat: 'ribbonTabShapeFormat',
 }
 
@@ -1182,6 +1186,8 @@ export function Ribbon({
   onPresenterView,
   onCustomShow,
   onRehearse,
+  onRecord,
+  onClearNarration,
   currentHidden,
   onToggleHidden,
   inkTool,
@@ -1225,6 +1231,7 @@ export function Ribbon({
   recording,
   onToggleScreenRecord,
   contextElementType,
+  onModel3dView,
   tabRequest,
   contextElementId: _contextElementId,
   contextSlideIndex: _contextSlideIndex,
@@ -1313,6 +1320,7 @@ export function Ribbon({
   const [translateOpen, setTranslateOpen] = useState(false)
   const [arrangeOpen, setArrangeOpen] = useState(false)
   const [slideShowOpen, setSlideShowOpen] = useState(false)
+  const [recordOpen, setRecordOpen] = useState(false)
   const [slideShowFromStart, setSlideShowFromStart] = useState(false)
   // Insert tab dropdown galleries (at most one open at a time)
   const [insertDrop, setInsertDrop] = useState<
@@ -1359,6 +1367,7 @@ export function Ribbon({
     if (!keep.includes('collapse')) setCollapseOpen(null)
     if (!keep.includes('pen')) setPenFlyout(null)
     if (!keep.includes('slideShow')) setSlideShowOpen(false)
+    if (!keep.includes('record')) setRecordOpen(false)
   }, [])
 
   // Any ribbon popup open? Drives outside-press dismissal AND suspends the
@@ -1384,6 +1393,7 @@ export function Ribbon({
     slideSizeOpen ||
     transparencyOpen ||
     lineSpacingOpen ||
+    recordOpen ||
     collapseOpen != null
 
   // Clicking elsewhere collapses every popup (the font color palette uses
@@ -1401,6 +1411,9 @@ export function Ribbon({
   const collapse = useRibbonCollapse('ai-slides-ribbon-collapsed', {
     collapse: t('ribbonCollapse'),
     expand: t('ribbonExpand'),
+    // ⌥⌘K / Ctrl+Alt+K: the icon-only middle density (docs parity, see #362)
+    compact: t('ribbonCompact'),
+    expandFull: t('ribbonExpand'),
   })
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const inlineWidthsRef = useRef(new Map<string, number>())
@@ -2492,7 +2505,63 @@ export function Ribbon({
                 </span>
                 <span>{t('ribbonRehearse')}</span>
               </button>
-              <DisabledBig icon={<IconRecord size={BIG} />} label={t('ribbonRecord')} />
+              <div className="rb-drop-wrap">
+                <button
+                  className={`rb-big${recordOpen ? ' active' : ''}`}
+                  disabled={!hasDoc}
+                  onMouseDown={(e) => closeSiblingPanels(e, closePanels, 'record')}
+                  onClick={() => setRecordOpen((v) => !v)}
+                  data-tip={t('ribbonRecordTip')}
+                >
+                  <span className="rb-big-icon">
+                    <IconRecord size={BIG} />
+                  </span>
+                  <span>{t('ribbonRecord')}</span>
+                </button>
+                {recordOpen && (
+                  <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => {
+                        setRecordOpen(false)
+                        onRecord(true)
+                      }}
+                    >
+                      <span className="rb-menu-glyph">
+                        <IconPlayFromStart size={20} />
+                      </span>
+                      {t('ribbonRecordFromBeginning')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRecordOpen(false)
+                        onRecord(false)
+                      }}
+                    >
+                      <span className="rb-menu-glyph">
+                        <IconPlayCurrent size={20} />
+                      </span>
+                      {t('ribbonRecordFromCurrent')}
+                    </button>
+                    <div className="rb-menu-sep" />
+                    <button
+                      onClick={() => {
+                        setRecordOpen(false)
+                        onClearNarration(false)
+                      }}
+                    >
+                      {t('ribbonClearNarrationCurrent')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRecordOpen(false)
+                        onClearNarration(true)
+                      }}
+                    >
+                      {t('ribbonClearNarrationAll')}
+                    </button>
+                  </div>
+                )}
+              </div>
             </Group>
           </>
         ) : tab === 'review' ? (
@@ -3253,6 +3322,34 @@ export function Ribbon({
               </div>
             </Group>
           </>
+        ) : tab === 'model3dFormat' ? (
+          <Group label={t('ribbonModel3dViews')}>
+            <button
+              className="rb-big"
+              disabled={!onModel3dView}
+              onClick={() => onModel3dView?.(NO_ROTATION)}
+            >
+              <span className="rb-big-icon">
+                <Icon3d size={BIG} />
+              </span>
+              <span>{t('ribbonModel3dReset')}</span>
+            </button>
+            {[0, 3, 6].map((start) => (
+              <div key={start} className="rb-col">
+                {MODEL3D_VIEWS.slice(start, start + 3).map(({ label, rot }) => (
+                  <button
+                    key={label}
+                    className="rb-small"
+                    disabled={!onModel3dView}
+                    onClick={() => onModel3dView?.(rot)}
+                  >
+                    <Icon3d size={18} />
+                    <span>{t(label)}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </Group>
         ) : tab === 'shapeFormat' ? (
           <>
             <Group label={t('ribbonShapes')}>

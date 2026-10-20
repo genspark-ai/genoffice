@@ -112,6 +112,8 @@ export const ru = {
   aiUnknownError: 'Неизвестная ошибка',
   aiTimeoutError:
     'Тайм-аут запроса ИИ: сеть не отвечает, выполнение остановлено. Проверьте подключение и повторите попытку',
+  aiRegionError:
+    'Поставщик этой модели не обслуживает ваш текущий регион — выберите другую модель или смените сеть',
   aiOverloadedError: 'Сервис ИИ сейчас перегружен — повторите попытку чуть позже',
   aiNetworkError:
     'Проблема с сетью: не удалось подключиться к сервису ИИ. Проверьте подключение и повторите попытку',
@@ -121,6 +123,9 @@ export const ru = {
   aiSumImageAttachment: 'Вложенное изображение {name}',
   aiSumRead: 'Чтение {name}',
   aiSumReadAttachmentName: 'Чтение вложения {name}',
+  aiSumSkillsList: 'Список установленных навыков',
+  aiSumSkillRead: 'Прочитан навык {name}',
+  aiSumRunCli: 'Выполнено: {args}',
   aiSumWebSearch: 'Поиск в Интернете',
   aiSumWebSearchDone: 'Поиск «{query}» ({count} результатов)',
   aiSumImageSearch: 'Поиск изображений',

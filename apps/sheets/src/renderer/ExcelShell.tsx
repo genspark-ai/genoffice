@@ -548,6 +548,9 @@ export function ExcelShell({
   const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed', {
     collapse: t('appRibbonCollapse'),
     expand: t('appRibbonExpand'),
+    // ⌥⌘K / Ctrl+Alt+K: the icon-only middle density (docs parity, see #362)
+    compact: t('appRibbonCompact'),
+    expandFull: t('appRibbonExpand'),
   })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [isCopilotOpen, setIsCopilotOpen] = useState(() =>
@@ -830,7 +833,9 @@ export function ExcelShell({
 
   return (
     <main
-      className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}`}
+      className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}${
+        !isCopilotOpen && !aiSidebarEnabled ? ' copilot-off' : ''
+      }`}
       inert={openingWorkbook}
       aria-busy={openingWorkbook}
     >
@@ -3296,6 +3301,7 @@ function Ribbon({
             { value: 'note-show-toggle', label: t('appShowHideNote') },
             { value: 'note-show-all', label: t('appShowAllNotes') },
             { value: 'notes-convert', label: t('appConvertToNotes') },
+            { value: 'note-pictures-pane-toggle', label: t('appNotePicturesToggle') },
           ])}
         </RibbonGroup>
         <RibbonGroup label={t('appGroupProtection')}>

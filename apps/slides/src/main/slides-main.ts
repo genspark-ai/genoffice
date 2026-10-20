@@ -15,6 +15,7 @@ import {
   nativeImage,
   session as electronSession,
   shell,
+  systemPreferences,
   webContents,
   WebContentsView,
 } from 'electron'
@@ -23,12 +24,11 @@ import { execFile } from 'node:child_process'
 import { readFile, writeFile, rm, stat, mkdir, open } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { cleanupExpiredGeneratedPages } from './generated-page-temp'
 import { exportSlidesPdf } from './pdf-export'
 import { printSlidesHtml } from './print-window'
-import { gskApiKey, gskSlideGenerate, setGskProxyUrl } from '@genoffice/ai-search'
+import { setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
   configuredDefaultSaveDir,
@@ -49,7 +49,9 @@ import {
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
   recoveryCopyDiskNewer,
+  configuredAuthorName,
 } from '@genoffice/electron-utils'
+import { createMainProcessProxyDispatcher } from '@genoffice/electron-utils/main-proxy'
 import {
   resolveGroupChildId,
   runTxn,
@@ -61,6 +63,7 @@ import {
 } from '@genoffice/pptx-ops'
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { buildPagePptx, parsePageSpec } from '@genoffice/pipelines/slides'
+import { convertOdpToPptx } from '../../../../packages/odf2ooxml/src'
 import { sniffImageMime } from './media-mime'
 import {
   newPasteCascade,
@@ -101,6 +104,8 @@ import {
   getSlideNotes,
   getSlideTransition,
   elementSpid,
+  narrationSpids,
+  getSlideAdvanceTime,
   getSlideAnimations,
   listEmbeddedFonts,
   openPptx,
@@ -136,6 +141,9 @@ import {
   type RenderSlide,
   type RenderTextLayout,
 } from '@genoffice/pptx-render'
+// From its own electron-utils subpath rather than the package barrel: the
+// barrel drags Electron-only modules into headless bundles.
+import { atomicWriteFile } from '@genoffice/electron-utils/atomic-write'
 import { DEFAULT_PICTURE_DPI, pictureFrame } from './picture-frame'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
 import { cfbKind, isCfbHeader } from './cfb-sniff'
@@ -143,6 +151,7 @@ import { unplayableAudioCodec } from './mp4-audio-sniff'
 import { audioFrame, videoFrame, videoSize, type Point, type Size } from './video-size'
 import { AUDIO_EXTS, VIDEO_EXTS } from '../shared/media-kinds'
 import { baseName } from '../shared/base-name'
+import { OPENABLE_DECK_EXTENSIONS, deckExtension } from '../shared/deck-open-formats'
 import type {
   AddChartOp,
   AddCommentOp,
@@ -150,6 +159,8 @@ import type {
   AddImageBytesOp,
   AddInkOp,
   ReplacePictureBytesOp,
+  AddModel3dOp,
+  SetModel3dViewOp,
   AddMediaBytesOp,
   AddMediaResult,
   AddBlankSlideOp,
@@ -218,7 +229,9 @@ import type {
   SetTableCellAnchorOp,
   TableStructureIpcOp,
   ReorderElementOp,
+  SaveRecordingOp,
   SetAdvanceTimesOp,
+  ShowTiming,
   SetAnimationsOp,
   SetNotesOp,
   SetSlideHiddenOp,
@@ -291,10 +304,10 @@ let slideClipboard: { bundles: SlideBundle[]; pngs?: string[] } | null = null
 /** The immediately preceding slide paste per webContents, so the paste-options floater can redo it with another mode. */
 const lastSlidePaste = new Map<number, { afterIndex: number; undoLen: number }>()
 
-// Cloud-generated single-page pptx: marker strings travel in pageMarkers slots; only paths issued
-// by slides:cloud-page-generate are readable (the renderer can't point the reader at arbitrary files)
-const CLOUD_PAGE_PREFIX = 'cloudpptx:'
-const issuedCloudPages = new Set<string>()
+// Generated single-page pptx: marker strings travel in pageMarkers slots; only paths issued
+// by slides:local-page-generate are readable (the renderer can't point the reader at arbitrary files)
+const GENERATED_PAGE_PREFIX = 'genpptx:'
+const issuedGeneratedPages = new Set<string>()
 import { registerPresenterIpc } from './presenter-show'
 import { registerAttachmentIpc } from './attachments-ipc'
 
@@ -490,13 +503,9 @@ export async function saveSessionDeckTo(session: Session, filePath: string): Pro
 
 const RECENT_PATH = () => join(app.getPath('userData'), 'slides-recent.json')
 
-/** Comment author name: system username, falling back to a generic "User" label. */
+/** Settings → General author name, falling back to the OS account */
 function commentAuthorName(): string {
-  try {
-    return userInfo().username || 'User'
-  } catch {
-    return 'User'
-  }
+  return configuredAuthorName(app)
 }
 
 async function readRecent(): Promise<string[]> {
@@ -759,6 +768,59 @@ async function maybeRecoverBytes(
   }
   await rm(asPath, { force: true })
   return { bytes: original, recovered: false }
+}
+
+/**
+ * An .odp opens only as a converted .pptx deck: confirm the lossy import,
+ * pick the destination (the sibling .pptx by default), convert, write the
+ * file and open it — the explicit-destination flow the PDF "Export as
+ * PowerPoint" path already uses, so every later Save lands in the copy the
+ * user chose. Anything that is not an .odp passes through unchanged; null
+ * cancels the open.
+ */
+async function preparePresentationForOpen(filePath: string): Promise<string | null> {
+  const extension = deckExtension(filePath)
+  if (extension !== 'odp' && extension !== 'otp') return filePath
+  const parent = dialogParent()
+  const options = {
+    type: 'warning' as const,
+    message: tm('odpImportMsg', { ext: extension }),
+    detail: tm('odpImportDetail'),
+    buttons: [tm('odpImportConvertBtn'), tm('btnCancel')],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  }
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options)
+  if (response !== 0) return null
+  const r = await showSaveDialogWithMemory(
+    dialog,
+    parent,
+    {
+      defaultPath: join(dirname(filePath), basename(filePath).replace(/\.(odp|otp)$/i, '.pptx')),
+      filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+    },
+    getDraftsDir(),
+  )
+  if (r.canceled || !r.filePath) return null
+  try {
+    const result = await convertOdpToPptx(new Uint8Array(await readFile(filePath)))
+    // atomic like the Docs and shell copies: a plain write leaves a truncated
+    // .pptx where the user expects a deck if the process dies mid-write
+    await atomicWriteFile(r.filePath, Buffer.from(result.pptx))
+  } catch {
+    const errorOptions = {
+      type: 'error' as const,
+      message: tm('odpImportFailedTitle'),
+      detail: tm('odpImportFailedBody'),
+    }
+    if (parent) await dialog.showMessageBox(parent, errorOptions)
+    else await dialog.showMessageBox(errorOptions)
+    return null
+  }
+  return r.filePath
 }
 
 /**
@@ -1386,18 +1448,22 @@ export function registerSlidesIpc(): void {
     const parent = dialogParent()
     const options = {
       properties: ['openFile' as const],
-      filters: [{ name: 'PowerPoint', extensions: ['pptx', 'ppt'] }],
+      filters: [{ name: 'PowerPoint', extensions: [...OPENABLE_DECK_EXTENSIONS] }],
     }
     const r = await showOpenDialogWithMemory(dialog, parent, options)
     if (r.canceled || !r.filePaths[0]) return null
-    if (await rejectLegacyPpt(r.filePaths[0])) return null
-    return openAndBuild(e.sender, r.filePaths[0], fitWidthPx)
+    const prepared = await preparePresentationForOpen(r.filePaths[0])
+    if (!prepared) return null
+    if (await rejectLegacyPpt(prepared)) return null
+    return openAndBuild(e.sender, prepared, fitWidthPx)
   })
 
   ipcMain.handle('slides:open-path', async (e, path: string, fitWidthPx: number) => {
     if (!path || !existsSync(path)) return null
-    if (await rejectLegacyPpt(path)) return null
-    return openAndBuild(e.sender, path, fitWidthPx)
+    const prepared = await preparePresentationForOpen(path)
+    if (!prepared) return null
+    if (await rejectLegacyPpt(prepared)) return null
+    return openAndBuild(e.sender, prepared, fitWidthPx)
   })
 
   ipcMain.handle('slides:consume-pending-open', async (e, fitWidthPx: number) => {
@@ -1412,12 +1478,13 @@ export function registerSlidesIpc(): void {
       }
       // A CFB file (legacy .ppt / encrypted, possibly misnamed .pptx) can never
       // parse: tell the user and drop it, or every relaunch restores a blank tab
-      if (await rejectLegacyPpt(queued)) {
+      const prepared = await preparePresentationForOpen(queued)
+      if (!prepared || (await rejectLegacyPpt(prepared))) {
         dropQueued()
         return null
       }
       // Clear the queue only after a successful open: keep it on parse failure or a mid-flight renderer reload, so a remount can retry
-      const result = await openAndBuild(e.sender, queued, fitWidthPx)
+      const result = await openAndBuild(e.sender, prepared, fitWidthPx)
       dropQueued()
       return result
     }
@@ -1778,89 +1845,9 @@ export function registerSlidesIpc(): void {
     }
     return rendered ? { slide: rendered, ...(notes.length ? { notes } : {}) } : null
   })
-  // ── Cloud single-page generation (gsk slide_generate): brief → cloud HTML+conversion → one-slide
-  // pptx saved to a temp file. Returns a marker string that slides:land-generated-pages redeems for
-  // the bytes. Enabled when gsk is logged in; GENOFFICE_CLOUD_SLIDE=0 is the kill switch.
-  const cloudSlideEnabled = () => process.env.GENOFFICE_CLOUD_SLIDE !== '0' && !!gskApiKey()
-
-  ipcMain.handle('slides:cloud-gen-status', () => ({ enabled: cloudSlideEnabled() }))
-
-  // In-flight cloud generations keyed by the requesting window: stop in one
-  // panel aborts all of that window's pages (a deck batch shares one stop
-  // signal) and none of another window's
-  const cloudPageAborts = new Map<number, Set<AbortController>>()
-
-  ipcMain.handle('slides:cloud-page-cancel', (e) => {
-    const aborts = cloudPageAborts.get(e.sender.id)
-    if (!aborts) return
-    for (const c of aborts) c.abort()
-    cloudPageAborts.delete(e.sender.id)
-  })
-
-  ipcMain.handle(
-    'slides:cloud-page-generate',
-    async (
-      e,
-      op: {
-        brief: string
-        title?: string
-        styleSkill?: string
-        deckContext?: Record<string, unknown>
-        images?: { url: string; caption?: string }[]
-        width?: number
-        height?: number
-      },
-    ): Promise<{ ok: boolean; marker?: string; error?: string }> => {
-      if (!cloudSlideEnabled()) return { ok: false, error: 'cloud slide generation is disabled' }
-      try {
-        // Ultra resolves to the opus-class slide model server-side; standard is the
-        // lighter MiniMax M3 model. Keep an explicit escape hatch for quality
-        // comparisons and emergency rollback.
-        const tier = process.env.GENOFFICE_CLOUD_SLIDE_TIER === 'standard' ? 'standard' : 'ultra'
-        const started = Date.now()
-        // Stop must reach the cloud request: without this the generation keeps
-        // running (and billing) after the user pressed stop
-        const abort = new AbortController()
-        const windowAborts = cloudPageAborts.get(e.sender.id) ?? new Set<AbortController>()
-        windowAborts.add(abort)
-        cloudPageAborts.set(e.sender.id, windowAborts)
-        let bytes: Uint8Array
-        let model: string
-        try {
-          ;({ bytes, model } = await gskSlideGenerate({
-            tier,
-            brief: String(op.brief ?? ''),
-            title: op.title ? String(op.title) : undefined,
-            styleSkill: op.styleSkill ? String(op.styleSkill) : undefined,
-            deckContext: op.deckContext,
-            images: Array.isArray(op.images) ? op.images : undefined,
-            width: op.width,
-            height: op.height,
-            signal: abort.signal,
-          }))
-        } finally {
-          windowAborts.delete(abort)
-          if (windowAborts.size === 0) cloudPageAborts.delete(e.sender.id)
-        }
-        console.log(
-          `[cloud-slide] page generated: tier=${tier} model=${model} bytes=${bytes.length} ms=${Date.now() - started}`,
-        )
-        const dir = join(app.getPath('temp'), 'genoffice-cloud-pages')
-        mkdirSync(dir, { recursive: true })
-        const path = join(dir, `${randomUUID()}.pptx`)
-        await writeFile(path, bytes)
-        issuedCloudPages.add(path)
-        return { ok: true, marker: CLOUD_PAGE_PREFIX + path }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      }
-    },
-  )
-
-  // ── Local single-page generation (no gsk needed, e.g. BYOK): a JSON slide spec written by
-  // the renderer's LLM call is built directly into a one-slide pptx with pptx-engine
-  // primitives — no HTML intermediate. Returns the same marker kind as the cloud path, so
-  // landing (slides:land-generated-pages) is shared.
+  // ── Single-page generation: a JSON slide spec written by the renderer's LLM call is built
+  // directly into a one-slide pptx with pptx-engine primitives. Returns a marker that
+  // slides:land-generated-pages redeems for the bytes.
   ipcMain.handle(
     'slides:local-page-generate',
     async (
@@ -1905,10 +1892,10 @@ export function registerSlidesIpc(): void {
         mkdirSync(dir, { recursive: true })
         const path = join(dir, `${randomUUID()}.pptx`)
         await writeFile(path, bytes)
-        issuedCloudPages.add(path)
+        issuedGeneratedPages.add(path)
         return {
           ok: true,
-          marker: CLOUD_PAGE_PREFIX + path,
+          marker: GENERATED_PAGE_PREFIX + path,
           ...(imageFailures.length ? { imageFailures } : {}),
         }
       } catch (err) {
@@ -1936,16 +1923,17 @@ export function registerSlidesIpc(): void {
         })
       | { error: string }
     > => {
-      // Every page arrives as a cloud marker (cloudpptx:<path> written by
-      // slides:cloud-page-generate, pointing at a one-slide pptx temp file); this handler only
+      // Every page arrives as a marker (genpptx:<path> written by
+      // slides:local-page-generate, pointing at a one-slide pptx temp file); this handler only
       // reads and lands the bytes.
       // replace: assemble the whole batch into one multi-page pptx as the new deck base.
       // append/replace_at/insert_at: land the extracted pages as insertSlidePptx ops
       // (earlier pages are untouched; landing shows up in the op journal like any edit).
       const readCloudPage = async (marker: string): Promise<{ bytes: Uint8Array }> => {
-        if (!marker.startsWith(CLOUD_PAGE_PREFIX)) throw new Error('expected a cloud page marker')
-        const path = marker.slice(CLOUD_PAGE_PREFIX.length)
-        if (!issuedCloudPages.has(path)) throw new Error('unknown cloud page marker')
+        if (!marker.startsWith(GENERATED_PAGE_PREFIX))
+          throw new Error('expected a generated page marker')
+        const path = marker.slice(GENERATED_PAGE_PREFIX.length)
+        if (!issuedGeneratedPages.has(path)) throw new Error('unknown generated page marker')
         return { bytes: new Uint8Array(await readFile(path)) }
       }
       const assembleDeck = async (): Promise<{ bytes: Uint8Array }> => {
@@ -3965,54 +3953,76 @@ export function registerSlidesIpc(): void {
   })
 
   // 3D model (simplified): glb embed + poster placeholder image
-  ipcMain.handle('slides:insert-model3d', async (e, slideIndex: number, fitWidthPx: number) => {
-    const session = sessions.get(e.sender.id)
-    if (!session || !session.opened.deck.slides[slideIndex]) return null
-    const parent = dialogParent()
-    const options = {
+  ipcMain.handle('slides:pick-model3d', async () => {
+    const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
       title: tm('dlgInsert3d'),
       properties: ['openFile' as const],
-      filters: [{ name: tm('filter3d'), extensions: ['glb', 'gltf'] }],
-    }
-    const r = await showOpenDialogWithMemory(dialog, parent, options)
+      filters: [{ name: tm('filter3d'), extensions: ['glb'] }],
+    })
     if (r.canceled || !r.filePaths[0]) return null
-    const filePath = r.filePaths[0]
-    const bytes = await readFile(filePath)
-    const ext = filePath.split('.').pop()!.toLowerCase()
+    const bytes = await readFile(r.filePaths[0])
+    return { name: baseName(r.filePaths[0]), bytes: new Uint8Array(bytes) }
+  })
 
-    let poster: { bytes: Uint8Array; ext: string } | undefined
-    try {
-      const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: 640, height: 640 })
-      if (!thumb.isEmpty()) poster = { bytes: new Uint8Array(thumb.toPNG()), ext: 'png' }
-    } catch {
-      /* Dark-gray fallback */
-    }
-
+  ipcMain.handle('slides:add-model3d', (e, op: AddModel3dOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session || !session.opened.deck.slides[op.slideIndex]) return null
     const deckSize = session.opened.deck.size
     const cy = Math.round(deckSize.cy * 0.5)
-    const cx = cy
+    const cx = Math.round(cy * op.aspect)
     const txn = sessionTxn(session, {
       ops: [
         {
           op: 'addModel3d',
-          target: { slide: slideIndex },
-          bytes: new Uint8Array(bytes),
-          ext,
-          ...(poster ? { poster } : {}),
+          target: { slide: op.slideIndex },
+          bytes: op.bytes,
+          ext: 'glb',
+          ...(op.posterBase64
+            ? {
+                poster: {
+                  bytes: new Uint8Array(Buffer.from(op.posterBase64, 'base64')),
+                  ext: 'png',
+                },
+              }
+            : {}),
           offset: {
             x: Math.round((deckSize.cx - cx) / 2),
             y: Math.round((deckSize.cy - cy) / 2),
             cx,
             cy,
           },
-          name: baseName(filePath),
+          name: op.name,
         },
       ],
     })
     if (!txn) return null
-    session.fitWidthPx = fitWidthPx
-    const rebuilt = rebuildSlide(session, slideIndex)
+    session.fitWidthPx = op.fitWidthPx
+    const rebuilt = rebuildSlide(session, op.slideIndex)
     return rebuilt ? { slide: rebuilt, sourceId: txn.records![0]!.created![0]! } : null
+  })
+
+  ipcMain.handle('slides:model3d-data', (e, slideIndex: number, sourceId: string) => {
+    const session = sessions.get(e.sender.id)
+    const el = session?.opened.deck.slides[slideIndex]?.elements.find((x) => x.id === sourceId)
+    const target = el?.type === 'picture' ? el.model3d?.target : undefined
+    const bytes = target ? session!.opened.archive.readBytes(target) : undefined
+    return bytes ? new Uint8Array(bytes) : null
+  })
+
+  ipcMain.handle('slides:set-model3d-view', (e, op: SetModel3dViewOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session?.opened.deck.slides[op.slideIndex]) return null
+    const r = sessionTxn(session, {
+      ops: [
+        {
+          op: 'setModel3dView',
+          target: { slide: op.slideIndex, el: op.sourceId },
+          ...op.rot,
+          ...(op.posterBase64 ? { poster: op.posterBase64, posterExt: 'png' } : {}),
+        },
+      ],
+    })
+    return r ? rebuildSlide(session, op.slideIndex) : null
   })
 
   ipcMain.handle('slides:set-link', (e, op: SetLinkOp) => {
@@ -4141,6 +4151,18 @@ export function registerSlidesIpc(): void {
     return slide ? getSlideTransition(slide) : 'none'
   })
 
+  ipcMain.handle('slides:get-show-timing', (e, slideIndex: number): ShowTiming => {
+    const slide = sessions.get(e.sender.id)?.opened.deck.slides[slideIndex]
+    if (!slide) return { advanceMs: null, narrationIds: [] }
+    const narration = new Set(narrationSpids(slide))
+    return {
+      advanceMs: getSlideAdvanceTime(slide),
+      narrationIds: slide.elements
+        .filter((el) => narration.has(elementSpid(el) ?? -1))
+        .map((el) => el.id),
+    }
+  })
+
   // Rehearsal timing save: batch-write each page's auto-advance time (<p:transition advTm>, ms)
   ipcMain.handle('slides:set-advance-times', (e, op: SetAdvanceTimesOp) => {
     const session = sessions.get(e.sender.id)
@@ -4156,6 +4178,46 @@ export function registerSlidesIpc(): void {
       })),
     })
     return r !== null
+  })
+
+  // ── Slide Show > Record: narration per slide plus its advance time, one undo step ──
+  ipcMain.handle('slides:save-recording', (e, op: SaveRecordingOp) => {
+    const session = sessions.get(e.sender.id)
+    if (!session) return null
+    const slides = session.opened.deck.slides
+    const recorded = op.slides.filter((s) => slides[s.slideIndex])
+    if (recorded.length === 0) return null
+    const r = sessionTxn(session, {
+      ops: recorded.flatMap((s) => [
+        {
+          op: 'addNarration',
+          target: { slide: s.slideIndex },
+          bytes: s.wavBase64,
+          ext: 'wav',
+          durationMs: s.durationMs,
+        },
+        { op: 'setAdvanceTime', target: { slide: s.slideIndex }, ms: s.advanceMs },
+      ]),
+    })
+    return r ? slides.map((_, i) => rebuildSlide(session, i)) : null
+  })
+
+  ipcMain.handle('slides:clear-narration', (e, slideIndexes: number[]) => {
+    const session = sessions.get(e.sender.id)
+    if (!session) return null
+    const slides = session.opened.deck.slides
+    const targets = slideIndexes.filter((i) => slides[i] && narrationSpids(slides[i]).length > 0)
+    if (targets.length === 0) return null
+    const r = sessionTxn(session, {
+      ops: targets.map((i) => ({ op: 'clearNarration', target: { slide: i } })),
+    })
+    return r ? slides.map((_, i) => rebuildSlide(session, i)) : null
+  })
+
+  ipcMain.handle('slides:microphone-access', async () => {
+    if (process.platform !== 'darwin') return true
+    if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true
+    return systemPreferences.askForMediaAccess('microphone')
   })
 
   // ── Shape animations (<p:timing>; the spid <-> temporary element id mapping happens here) ──
@@ -5060,12 +5122,14 @@ async function applyMainProcessProxy(): Promise<void> {
     // dispatcher below — forward the proxy to them via env
     setGskProxyUrl(proxyUrl)
     try {
-      const { ProxyAgent, setGlobalDispatcher } = await import('undici')
-      setGlobalDispatcher(new ProxyAgent(proxyUrl))
+      const { setGlobalDispatcher } = await import('undici')
+      // loopback stays direct: a Custom provider on 127.0.0.1 must not ride
+      // the proxy as an absolute-form request (#2084)
+      setGlobalDispatcher(await createMainProcessProxyDispatcher(proxyUrl))
       // strip user:pass credentials before logging
       console.log('[proxy] main-process fetch via', proxyUrl.replace(/\/\/[^@/]*@/, '//***@'))
     } catch (e) {
-      console.warn('[proxy] failed to set ProxyAgent:', e)
+      console.warn('[proxy] failed to set proxy dispatcher:', e)
     }
   }
   const envProxy =

@@ -418,6 +418,10 @@ export interface CharIndents {
   hanging?: number
 }
 
+/** which CJK auto-space gaps a paragraph gets: true = letters and digits, false = none,
+ *  'latin' = letters only (w:autoSpaceDN off), 'digits' = digits only (w:autoSpaceDE off) */
+export type AutoSpace = boolean | 'latin' | 'digits'
+
 export interface ParaFormat {
   /** w:jc */
   align?: ParaAlign
@@ -472,8 +476,12 @@ export interface ParaFormat {
   widowControl?: boolean
   /** snap lines to the section docGrid (w:snapToGrid; default on) — false only when explicitly off */
   snapToGrid?: boolean
-  /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN; Word default=true); false when both are explicitly off */
-  autoSpace?: boolean
+  /** CJK auto spacing after merging the style chain (w:autoSpaceDE/DN; Word default both on) */
+  autoSpace?: AutoSpace
+  /** w:autoSpaceDE as written on the paragraph (CJK/Latin letters) */
+  autoSpaceDE?: boolean
+  /** w:autoSpaceDN as written on the paragraph (CJK/digits) */
+  autoSpaceDN?: boolean
   /** w:wordWrap (Word default on); false = lines may break inside hangul words */
   wordWrap?: boolean
   /** w:overflowPunct (Word default on); false = a trailing CJK stop never hangs past the margin */
@@ -1696,6 +1704,8 @@ export interface Block {
   blockRevision?: { kind: 'ins' | 'del' } & RevisionInfo
   /** Tracked deletion of the paragraph mark (w:pPr/w:rPr/w:del): Word joins the paragraph into the next one. */
   paraMarkDel?: { author: string; date?: string; dateUtc?: string; id?: string }
+  /** Tracked insertion of the paragraph mark (w:pPr/w:rPr/w:ins): rejecting joins the paragraph into the next one. */
+  paraMarkIns?: { author: string; date?: string; dateUtc?: string; id?: string }
 }
 
 /** numbering marker of a textbox paragraph, resolved at parse time (display only) */
@@ -1907,6 +1917,9 @@ export interface GeneratedBlock {
    * applyRawPPr then strips <w:pPrChange> from rawPPr so the saved file is clean.
    */
   pPrChange?: string | null
+  /** JSON paragraph-mark revision; null = accepted/rejected, strip the w:del / w:ins from the mark's rPr */
+  paraMarkDel?: string | null
+  paraMarkIns?: string | null
   /** Used by editor dirty detection; SaveBlock carries the actual wrapper metadata. */
   blockRevision?: ({ kind: 'ins' | 'del' } & RevisionInfo) | null
 }
@@ -1991,8 +2004,10 @@ export interface StyleDisplay {
   shadingFill?: string
   /** paragraph borders from the style (w:pPr w:pBdr, theme colors resolved; display-only) */
   borderSides?: ParaBorderSides
-  /** CJK-Latin/digit auto spacing from the style pPr (w:autoSpaceDE/DN) */
-  autoSpace?: boolean
+  /** w:autoSpaceDE from the style pPr (CJK/Latin letters) */
+  autoSpaceDE?: boolean
+  /** w:autoSpaceDN from the style pPr (CJK/digits) */
+  autoSpaceDN?: boolean
   /** w:wordWrap from the style pPr; false = character-level breaking of hangul words */
   wordWrap?: boolean
   /** w:overflowPunct from the style pPr; false = no hanging line-end punctuation */

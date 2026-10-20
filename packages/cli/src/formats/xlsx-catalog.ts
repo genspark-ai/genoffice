@@ -20,6 +20,7 @@ export const SHEET_OP_GROUPS: Record<string, readonly string[]> = {
     'clear_range',
     'fill_range',
     'copy_range',
+    'move_range',
     'find_replace',
     'sort_range',
     'convert_to_values',
@@ -97,6 +98,8 @@ const NOTES: Record<string, string> = {
     'sourceRange first row = field names; the output is written as cells at targetCell (must be empty) plus a native pivot Excel can refresh; targetSheet must already exist in the file; not in a batch with sheet or row/column ops',
   add_sparkline:
     'one sparkline per row of dataRange (at most 200 rows per op), in the column right of it unless targetCell; type line|column|stacked',
+  move_range:
+    'cut → paste as one op: copies source (values and formulas) to target, then clears the source cells; sourceSheet for another sheet; source and target must not overlap',
   convert_to_values:
     'replaces the formulas in range with the values the workbook engine computes; cells that evaluate to an error keep their formula',
   set_col_width: 'px',

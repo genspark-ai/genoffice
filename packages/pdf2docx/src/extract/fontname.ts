@@ -121,6 +121,9 @@ export function stripTrailingStyleWords(family: string): string {
 export function familyFromPsName(psName: string): string {
   const name = psName.replace(SUBSET_PREFIX, '').trim()
   if (!name || name.includes(' ')) return name
+  // kaiu.ttf uses this PostScript name for the DFKai-SB family (genoffice#1890).
+  // FreeType records the pair in src/truetype/ttobjs.c.
+  if (name === 'DFKaiShu-SB-Estd-BF') return 'DFKai-SB'
   // these names are the family verbatim — no splitting, no suffix surgery
   if (VERBATIM_FAMILY_PS_NAMES.has(name)) return name
   // suffix segments that are pure style modifiers get dropped

@@ -37,6 +37,8 @@ export const vi = {
     'Lỗi mạng: không thể kết nối với dịch vụ AI. Vui lòng kiểm tra kết nối và thử lại',
   aiNewChat: 'Cuộc trò chuyện mới',
   aiNoReply: '(không có phản hồi)',
+  aiRegionError:
+    'Nhà cung cấp của mô hình này không phục vụ khu vực hiện tại của bạn — hãy chọn mô hình khác hoặc đổi mạng',
   aiOverloadedError: 'Dịch vụ AI hiện đang bận — vui lòng thử lại sau giây lát',
   aiRegenerateTitle: 'Tạo lại',
   aiRetry: 'Thử lại',

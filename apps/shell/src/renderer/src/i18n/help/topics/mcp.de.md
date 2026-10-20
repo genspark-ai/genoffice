@@ -73,7 +73,7 @@ Ein Agent, der das op-Vokabular nicht kennt, wird raten. Der Skill bringt die Re
 Der Server ist nicht auf Dateien auf der Festplatte beschränkt. Solange GenOffice läuft, kann der Agent auch durch das Fenster arbeiten:
 
 - **`open_in_genoffice`** öffnet eine Datei in einem Tab und holt ihn in den Vordergrund.
-- **`open_documents`** listet jedes Dokument auf, das Sie geöffnet haben — id, Typ, Pfad und ob es ungespeicherte Änderungen gibt —, und liest dann den aktuellen Inhalt eines Dokuments oder schließt es, wobei vorher gesichert wird, sofern Sie es nicht dem Verwerfen überlassen.
+- **`open_documents`** listet jedes Dokument auf, das Sie geöffnet haben — id, Typ, Pfad und ob es ungespeicherte Änderungen gibt —, und liest dann den aktuellen Inhalt eines Dokuments, speichert es an Ort und Stelle, oder schließt es, wobei vorher gesichert wird, sofern Sie es nicht dem Verwerfen überlassen.
 - **Die Inhaltswerkzeuge** nehmen diese id (oder den Pfad) als ihr `document`-Argument, sodass eine Änderung in dem Tab landet, den Sie ohnehin geöffnet haben, und das Fenster darauf umschaltet.
 
 Zwei Dinge bleiben außer Reichweite: Es gibt keinen KI-Bereich, und der Aktualisierungsdialog in der App gilt hierfür nicht.

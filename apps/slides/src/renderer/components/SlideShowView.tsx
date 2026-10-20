@@ -13,7 +13,15 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RenderNode, RenderSlide, ShapeRenderNode } from '@genoffice/pptx-render'
-import type { AnimationItem, LinkTargetOp, ShapeKey, TransitionKind } from '../../shared/ipc'
+import type {
+  AnimationItem,
+  LinkTargetOp,
+  ShapeKey,
+  ShowTiming,
+  TransitionKind,
+} from '../../shared/ipc'
+import { RecordingBar } from '../narration/RecordingBar'
+import { useNarrationRecording, type NarrationTake } from '../narration/use-recording'
 import { AnimatedSlideStage, useAnimPlayer } from './AnimatedSlide'
 import { ShowMediaLayer } from './ShowMediaLayer'
 import { useI18n } from '../i18n/locale'
@@ -63,6 +71,8 @@ export function SlideShowView({
   customOrder,
   rehearseMode,
   onRehearseDone,
+  recordMode,
+  onRecordDone,
 }: {
   slides: RenderSlide[]
   images: Map<string, HTMLImageElement>
@@ -76,6 +86,10 @@ export function SlideShowView({
   rehearseMode?: boolean
   /** Rehearsal-end callback (called before onExit on exit); perPageSec is by original page index, unvisited pages are 0 */
   onRehearseDone?: (perPageSec: number[]) => void
+  /** Record mode (Slide Show > Record): records the microphone narration of each slide */
+  recordMode?: boolean
+  /** Called before onExit with the recording, which resolves once the microphone stops */
+  onRecordDone?: (take: Promise<NarrationTake | null>) => void
 }) {
   const { t } = useI18n()
   // Playback sequence (original indexes): hidden pages skipped (except the start page); custom shows use the given order
@@ -96,6 +110,8 @@ export function SlideShowView({
   const [covered, setCovered] = useState(false)
   /** Per-page transition effects (prefetched once when the show starts, zero IPC on page turns) */
   const transRef = useRef<TransitionKind[]>([])
+  /** Per-page advance time and narration (also prefetched once) */
+  const [timings, setTimings] = useState<ShowTiming[] | null>(null)
   /** Per-page animation lists (also prefetched once) */
   const [allAnims, setAllAnims] = useState<AnimationItem[][] | null>(null)
   /** Per-page element Morph pairing keys (also prefetched once) */
@@ -129,6 +145,9 @@ export function SlideShowView({
     void Promise.all(slides.map((_, i) => window.slidesApi.getTransition(i))).then((kinds) => {
       if (!cancelled) transRef.current = kinds
     })
+    void Promise.all(slides.map((_, i) => window.slidesApi.getShowTiming(i))).then((list) => {
+      if (!cancelled) setTimings(list)
+    })
     void Promise.all(slides.map((_, i) => window.slidesApi.getAnimations(i))).then((lists) => {
       if (!cancelled) setAllAnims(lists)
     })
@@ -157,6 +176,18 @@ export function SlideShowView({
 
   const slide = slides[order[pos]!]
   const player = useAnimPlayer(slide?.heightPx ?? 540, slide?.widthPx ?? 960)
+  /** The slide as shown: a recorded narration plays without its picture */
+  const narrationIds = useMemo(
+    () => new Set(timings?.[order[pos]!]?.narrationIds ?? []),
+    [timings, order, pos],
+  )
+  const shownSlide = useMemo(
+    () =>
+      slide && narrationIds.size > 0
+        ? { ...slide, nodes: slide.nodes.filter((n) => !narrationIds.has(n.sourceId)) }
+        : slide,
+    [slide, narrationIds],
+  )
 
   // ── Rehearsal timing: start timing the first page on entry; accumulate the previous page's dwell on turn; redraw the timer bar every 500ms ──
   const rehearseRef = useRef<RehearseTiming | null>(null)
@@ -181,8 +212,11 @@ export function SlideShowView({
     player.load(allAnims?.[order[pos]!] ?? [], navModeRef.current)
   }, [allAnims, pos, order, player.load]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const recording = useNarrationRecording(!!recordMode, curIdx, ended)
+
   const exitRef = useRef(() => {})
   exitRef.current = () => {
+    if (recordMode && onRecordDone) onRecordDone(recording.finish())
     // Rehearsal mode: report each page's dwell seconds before exit (ref nulled to prevent duplicate fullscreenchange triggers)
     const t = rehearseRef.current
     if (rehearseMode && onRehearseDone && t) {
@@ -318,6 +352,23 @@ export function SlideShowView({
     if (pos >= order.length - 1) setEnded(true)
     else goTo(pos + 1, true)
   }, [ended, pos, order.length, goTo, player.advance]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Saved timings (Rehearse Timings, Record) advance the show as in PowerPoint; clicks still do.
+  // The timer turns the page outright: a slide's recorded time covers its click animations too,
+  // so stepping one animation per timer would stall on an animated slide.
+  const advanceMs = curIdx == null ? null : (timings?.[curIdx]?.advanceMs ?? null)
+  const turnPage = useCallback(() => {
+    if (ended) return
+    if (pos >= order.length - 1) setEnded(true)
+    else goTo(pos + 1, true)
+  }, [ended, pos, order.length, goTo])
+  const turnPageRef = useRef(turnPage)
+  turnPageRef.current = turnPage
+  useEffect(() => {
+    if (recordMode || rehearseMode || ended || advanceMs == null) return
+    const timer = window.setTimeout(() => turnPageRef.current(), advanceMs)
+    return () => window.clearTimeout(timer)
+  }, [pos, advanceMs, ended, recordMode, rehearseMode])
 
   const prev = useCallback(() => {
     if (ended) {
@@ -538,14 +589,15 @@ export function SlideShowView({
                 }}
               >
                 <AnimatedSlideStage
-                  slide={slide}
+                  slide={shownSlide!}
                   images={images}
                   width={fitW}
                   states={player.states}
                 />
                 <ShowMediaLayer
                   key={order[pos]!}
-                  slide={slide}
+                  slide={recordMode ? shownSlide! : slide}
+                  hiddenIds={narrationIds}
                   slideIndex={order[pos]!}
                   width={fitW}
                   commands={player.mediaCmds}
@@ -554,6 +606,14 @@ export function SlideShowView({
                 />
               </div>
             </div>
+          )}
+          {recordMode && (
+            <RecordingBar
+              phase={recording.phase}
+              slideElapsedMs={recording.slideElapsedMs}
+              elapsedMs={recording.elapsedMs}
+              onTogglePause={recording.togglePause}
+            />
           )}
           {rehearseMode && rehearse && (
             <div className="ss-rehearse" data-tip={t('paneShowRehearseTip')}>

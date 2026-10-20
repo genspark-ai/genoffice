@@ -9,12 +9,16 @@ import {
   addElement,
   addMedia,
   addModel3d,
+  addNarration,
   addPicture,
   addSmartArt,
   addTable,
+  clearNarration,
   MAX_INSERT_TABLE_DIM,
   pasteElements,
   replacePictureBytes,
+  setModel3dView,
+  setShowNarration,
   type NewChartKind,
   type NewChartOptions,
   type NewElementOptions,
@@ -331,6 +335,40 @@ register({
   },
 })
 
+// ── addNarration / clearNarration (Slide Show > Record) ─────────────────
+register({
+  name: 'addNarration',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+    reqBytes(op)
+    if (typeof op.ext !== 'string' || !op.ext)
+      throw new GuidedError('op "addNarration" needs "ext".')
+    requireFinite(op.durationMs, 'addNarration', 'durationMs')
+  },
+  apply(op, ctx): OpRecord {
+    const { index } = resolveSlide(ctx, op)
+    const added = addNarration(ctx.opened, index, {
+      bytes: reqBytes(op),
+      ext: String(op.ext),
+      durationMs: Number(op.durationMs),
+    })
+    if (!added) throw new GuidedError('op "addNarration": the narration could not be embedded.')
+    setShowNarration(ctx.opened)
+    return { op, created: [added.elementId] }
+  },
+})
+
+register({
+  name: 'clearNarration',
+  validate(op, ctx) {
+    resolveSlide(ctx, op)
+  },
+  apply(op, ctx): OpRecord {
+    clearNarration(ctx.opened, resolveSlide(ctx, op).index)
+    return { op }
+  },
+})
+
 register({
   name: 'addModel3d',
   validate(op, ctx) {
@@ -350,6 +388,34 @@ register({
     })
     if (!added) throw new GuidedError('op "addModel3d": the model could not be embedded.')
     return { op, created: [added.elementId] }
+  },
+})
+
+register({
+  name: 'setModel3dView',
+  validate(op, ctx) {
+    const { el } = resolveElement(ctx, op)
+    if (el.type !== 'picture' || !el.model3d) {
+      throw new GuidedError(`op "setModel3dView": element "${el.id}" is not a 3D model.`)
+    }
+    for (const axis of ['ax', 'ay', 'az']) requireFinite(op[axis], 'setModel3dView', axis)
+    if (op.poster !== undefined) {
+      reqBytes(op, 'poster')
+      if (typeof op.posterExt !== 'string' || !op.posterExt) {
+        throw new GuidedError('op "setModel3dView" needs "posterExt" with "poster".')
+      }
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide, el } = resolveElement(ctx, op)
+    const ok = setModel3dView(ctx.opened, slide, el.id, {
+      rot: { ax: Number(op.ax), ay: Number(op.ay), az: Number(op.az) },
+      ...(op.poster !== undefined
+        ? { poster: { bytes: reqBytes(op, 'poster'), ext: String(op.posterExt) } }
+        : {}),
+    })
+    if (!ok) throw new GuidedError(`op "setModel3dView": element "${el.id}" could not be turned.`)
+    return { op }
   },
 })
 

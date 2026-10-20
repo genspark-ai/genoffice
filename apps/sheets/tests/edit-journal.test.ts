@@ -42,6 +42,7 @@ import {
   toSaveSheetOps,
   toSavePageSetupStates,
   toSaveStructuralOps,
+  recordCellImageAdd,
 } from '../src/renderer/edit-journal'
 
 describe('bulk constant-fill journal', () => {
@@ -1286,5 +1287,45 @@ describe('right-to-left page-setup journal', () => {
       { sheetId: 'sheet-1', showGridlines: false, rightToLeft: true },
       { sheetId: 'sheet-2', rightToLeft: false },
     ])
+  })
+})
+
+describe('cell picture journal', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo='
+  it('counts an embedded picture as a pending edit unless its sheet is removed', () => {
+    const journal = createEditJournal()
+    recordCellImageAdd(journal, {
+      sheetId: 's1',
+      row: 1,
+      column: 1,
+      mediaType: 'image/png',
+      dataUrl: png,
+    })
+    recordCellImageAdd(journal, {
+      sheetId: 's2',
+      row: 1,
+      column: 1,
+      mediaType: 'image/png',
+      dataUrl: png,
+    })
+    expect(journalSize(journal)).toBe(2)
+    recordSheetRemove(journal, 's2')
+    expect(journalSize(journal)).toBe(2) // s1 picture + the sheet removal
+  })
+
+  it('a second picture in the same cell displaces the first', () => {
+    const journal = createEditJournal()
+    const first = {
+      sheetId: 's1',
+      row: 3,
+      column: 4,
+      mediaType: 'image/png' as const,
+      dataUrl: png,
+    }
+    expect(recordCellImageAdd(journal, first)).toBeUndefined()
+    expect(
+      recordCellImageAdd(journal, { ...first, dataUrl: 'data:image/gif;base64,R0lGODlh' }),
+    ).toEqual(first)
+    expect(journal.cellImageAdds).toHaveLength(1)
   })
 })

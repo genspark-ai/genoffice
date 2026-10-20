@@ -320,7 +320,7 @@ export interface Paragraph {
   alignSrc?: string
   /** Paragraph base direction (a:pPr rtl): true = RTL base, false = explicit LTR base, absent = inferred from the first strong character */
   rtl?: boolean
-  /** <a:pPr hangingPunct="0"> switches off East Asian hanging punctuation (a trailing closing mark may overhang the margin); absent = PowerPoint's default, on */
+  /** Effective East Asian hanging-punctuation switch (own pPr, else lstStyle/master level); absent = PowerPoint default, on */
   hangingPunct?: boolean
   /** <a:pPr latinLnBrk="1"> ("allow Latin text to wrap in the middle of a word"): Hangul words then break per syllable like CJK; absent = word wrap */
   latinLnBrk?: boolean
@@ -394,6 +394,9 @@ export interface Paragraph {
     indent?: boolean
     tabLst?: boolean
     defTabSz?: boolean
+    hangingPunct?: boolean
+    latinLnBrk?: boolean
+    eaLnBrk?: boolean
   }
 }
 
@@ -608,6 +611,11 @@ export interface PictureElement extends ElementBase {
    * frame; target is the media file's zip path or an external URL (external).
    */
   media?: { kind: 'video' | 'audio'; target?: string; external?: boolean }
+  /**
+   * A 3D model (mc:AlternateContent: am3d:model3d in the Choice, this picture in the Fallback):
+   * the .glb zip path and am3d:rot in 60,000ths of a degree.
+   */
+  model3d?: { target?: string; rot: { ax: number; ay: number; az: number } }
   /** Picture outline geometry <a:prstGeom> (ellipse avatars/rounded-corner frames etc. from picture styles; rect omitted) */
   presetGeometry?: string
   adjust?: Record<string, number>
@@ -711,6 +719,8 @@ export interface ChartElement extends ElementBase {
   type: 'chart'
   /** Parsed chart data model (see chart.ts) */
   chart: import('./chart').ChartModel
+  /** c:userShapes text/shape overlays, already in slide coordinates; render-only (never saved back) */
+  userShapes?: TextElement[]
 }
 
 export type SlideElement =

@@ -112,6 +112,8 @@ export const nl = {
   aiErrUnknown: 'Onbekende fout',
   aiErrStreamTimeout:
     'AI-verzoek verlopen: geen reactie van het netwerk, uitvoering gestopt. Controleer je verbinding en probeer het opnieuw',
+  aiErrRegion:
+    'De aanbieder van dit model bedient uw huidige regio niet — kies een ander model of wissel van netwerk',
   aiErrOverloaded: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
   aiErrNetwork:
     'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
@@ -225,5 +227,4 @@ export const nl = {
   aiSumSaveTemplate: 'Stijlsjabloon "{name}" opgeslagen',
   aiSumTemplatesEmpty: 'Stijlsjablonen (leeg)',
   aiSumListTemplates: '{count} stijlsjablonen weergegeven',
-  aiPageCloudToLocal: 'Cloud niet beschikbaar — lokaal gegenereerd',
 } satisfies Record<keyof typeof zh, string>

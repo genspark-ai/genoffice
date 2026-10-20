@@ -104,6 +104,7 @@ import {
   recordHyperlinkEdit,
   recordSetRangeValues,
   toRecalcUserInput,
+  type CellImageAdd,
   type EditJournal,
   type VisualEditEntry,
 } from './edit-journal'
@@ -160,6 +161,7 @@ import {
   installWorkbookVisuals,
   isChartEditorOpen,
   isVisualDragActive,
+  type CellImageState,
   type ChartEditData,
   type ChartVectorRead,
   type ShapeEditChanges,
@@ -405,9 +407,15 @@ export function applyFormatPatchToRange(
   }
   if (patch.numberFormat !== undefined) range.setNumberFormat(patch.numberFormat ?? 'General')
   if (patch.horizontalAlign !== undefined) {
-    range.setHorizontalAlignment(
-      (patch.horizontalAlign ?? 'normal') as 'left' | 'center' | 'normal',
-    )
+    // The facade helper only accepts 'left' | 'center' | 'normal' — and
+    // 'normal' (confusingly) maps to RIGHT — so a raw 'right' hits its
+    // throwing default branch; translate it first (same as the ribbon's align
+    // command). null clears the alignment like the other null branches.
+    if (patch.horizontalAlign === null) range.setValue({ s: { ht: null } } as unknown as ICellData)
+    else
+      range.setHorizontalAlignment(
+        patch.horizontalAlign === 'right' ? 'normal' : patch.horizontalAlign,
+      )
   }
   if (patch.verticalAlign !== undefined) {
     if (patch.verticalAlign === null) range.setValue({ s: { vt: null } } as unknown as ICellData)
@@ -7918,6 +7926,26 @@ export function queueVisualInstall(
 /// Sparklines install separately from the floating visuals: dragging a
 /// chart re-installs the visual pool, and rebuilding up to 200 sparkline
 /// float DOMs with it would make every drag commit crawl.
+/// Session embeds render from their inline bytes; one replaces the file's
+/// picture in the same cell (the save overwrites that cell's rich value too).
+export function mergeCellImages(
+  fileImages: readonly CellImageState[],
+  sessionAdds: readonly CellImageAdd[],
+  sheetId: string,
+): CellImageState[] {
+  const session = sessionAdds.filter((entry) => entry.sheetId === sheetId)
+  const taken = new Set(session.map((entry) => `${entry.row}:${entry.column}`))
+  return [
+    ...fileImages.filter((image) => !taken.has(`${image.row}:${image.column}`)),
+    ...session.map((entry) => ({
+      id: `session-${entry.row}-${entry.column}`,
+      row: entry.row,
+      column: entry.column,
+      dataUrl: entry.dataUrl,
+    })),
+  ]
+}
+
 export function queueSparklineInstall(
   runtime: UniverRuntime,
   lazyWorkbookRef: { current: LazyWorkbookState | null },
@@ -7947,7 +7975,11 @@ export function queueSparklineInstall(
         })),
     ]
     // In-cell rich-value pictures share the per-cell float DOM lifecycle.
-    const cellImages = sheetMeta?.cellImages ?? []
+    const cellImages = mergeCellImages(
+      sheetMeta?.cellImages ?? [],
+      state.editJournal.cellImageAdds,
+      sheetId,
+    )
     sparklineDisposablesRef.current = [
       ...(sparklines.length === 0 ? [] : installSparklines(runtime, sparklines, sheetId)),
       ...(cellImages.length === 0

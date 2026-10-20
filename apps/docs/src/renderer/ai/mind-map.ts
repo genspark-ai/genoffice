@@ -3,7 +3,7 @@ import type { AgentToolDef, MindMapTreeNode } from '@genoffice/agent-core'
 /**
  * Mind map generation for the docs assistant: the tool definition the model
  * calls with the whole tree in one shot, strict-but-forgiving parsing of that
- * tree, and a pure horizontal tidy-tree layout the card component renders.
+ * tree, and a pure top-down tidy-tree layout the card component renders.
  * No runtime dependencies — layout is plain arithmetic, rendering is SVG.
  */
 
@@ -41,8 +41,9 @@ export const MIND_MAP_EXPORT_COLORS = {
   toggleText: '#606366',
 } as const
 
-/** Bounded recursion: the schema inlines down to the enforced depth limit; deeper
- *  levels (which the parser trims anyway) carry a generic children description. */
+/** Bounded recursion: the schema inlines down to the enforced depth limit; the
+ *  deepest level carries a leaf-node shape, because Gemini's function schema
+ *  refuses an array without `items` for the whole request (genoffice#2059). */
 const nodeSchema = (depth: number): Record<string, unknown> => ({
   type: 'object',
   properties: {
@@ -66,6 +67,16 @@ const nodeSchema = (depth: number): Record<string, unknown> => ({
         : {
             type: 'array',
             description: 'sub-topics; 2-5 per node reads best',
+            items: {
+              type: 'object',
+              properties: {
+                label: {
+                  type: 'string',
+                  description: "short node label (2-8 words) in the document's language",
+                },
+              },
+              required: ['label'],
+            },
           },
   },
   required: ['label'],
@@ -80,7 +91,7 @@ export const MIND_MAP_TOOL: AgentToolDef = {
   name: 'generate_mindmap',
   description:
     'Render an interactive mind map of the document (or of one focused aspect) as a diagram card in the chat. ' +
-    'Call it when the user asks for a mind map / 思维导图 / 脑图 / knowledge structure / overview diagram of the document or a topic. ' +
+    'Call it when the user asks for a mind map / knowledge structure / overview diagram of the document or a topic. ' +
     'Pass the entire tree in this single call: the root is the document title or the focus topic, its children are the main sections, and so on. ' +
     "Labels must be short phrases in the document's own language and wording — never invent topics the document does not cover. " +
     'Cite the block index each node summarizes in `block` so the user can jump to the passage. ' +
@@ -308,7 +319,7 @@ export interface MindMapLayoutNode {
 
 export interface MindMapLayoutEdge {
   id: string
-  /** SVG path `d`: cubic from parent right edge to child left edge */
+  /** SVG path `d`: cubic from the parent bottom border to the child top border */
   d: string
 }
 
@@ -319,18 +330,23 @@ export interface MindMapLayout {
   height: number
 }
 
+/**
+ * Vertical connector for the top-down layout: it leaves the parent at the
+ * centre of its bottom border and arrives at the centre of the child's top
+ * border, with the handles inside the gap so the curve never enters a box.
+ */
 function edgePath(parent: { x: number; y: number }, child: { x: number; y: number }): string {
-  const px = parent.x + MIND_MAP_METRICS.nodeWidth
-  const py = parent.y + MIND_MAP_METRICS.nodeHeight / 2
-  const cx = child.x
-  const cy = child.y + MIND_MAP_METRICS.nodeHeight / 2
-  const k = (cx - px) / 2
-  return `M ${px} ${py} C ${px + k} ${py}, ${cx - k} ${cy}, ${cx} ${cy}`
+  const px = parent.x + MIND_MAP_METRICS.nodeWidth / 2
+  const py = parent.y + MIND_MAP_METRICS.nodeHeight
+  const cx = child.x + MIND_MAP_METRICS.nodeWidth / 2
+  const cy = child.y
+  const k = Math.max(0, (cy - py) / 2)
+  return `M ${px} ${py} C ${px} ${py + k}, ${cx} ${cy - k}, ${cx} ${cy}`
 }
 
 /**
- * Horizontal tidy tree: leaves take sequential x slots, parents center over
- * their children, depth maps to y. Collapsed subtrees are skipped entirely
+ * Top-down tidy tree: depth maps to y and leaves take sequential x slots, with
+ * parents centered over their children. Collapsed subtrees are skipped entirely
  * (the node keeps a +N badge). Pure — same inputs always lay out the same.
  */
 export function layoutMindMap(
@@ -339,7 +355,8 @@ export function layoutMindMap(
 ): MindMapLayout {
   const nodes: MindMapLayoutNode[] = []
   const edges: MindMapLayoutEdge[] = []
-  let nextX = 0
+  const { padding } = MIND_MAP_METRICS
+  let nextX = padding
   let maxDepth = 0
 
   const place = (node: MindMapTreeNode, id: string, depth: number): MindMapLayoutNode => {
@@ -363,7 +380,7 @@ export function layoutMindMap(
       block: node.block,
       depth,
       x,
-      y: depth * (MIND_MAP_METRICS.nodeHeight + MIND_MAP_METRICS.depthGap),
+      y: depth * (MIND_MAP_METRICS.nodeHeight + MIND_MAP_METRICS.depthGap) + padding,
       hasChildren: kids.length > 0,
       childCount: kids.length,
       descendants: countMindMapNodes(node) - 1,
@@ -377,11 +394,11 @@ export function layoutMindMap(
   }
 
   place(root, '0', 0)
-  const { nodeWidth: w, nodeHeight: h, depthGap, siblingGap, padding } = MIND_MAP_METRICS
+  const { nodeWidth: w, nodeHeight: h, depthGap, siblingGap } = MIND_MAP_METRICS
   return {
     nodes,
     edges,
-    width: Math.max(w, nextX - siblingGap) + padding * 2,
+    width: Math.max(w, nextX - siblingGap - padding) + padding * 2,
     height: (maxDepth + 1) * (h + depthGap) - depthGap + padding * 2,
   }
 }

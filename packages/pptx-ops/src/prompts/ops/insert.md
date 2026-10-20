@@ -237,11 +237,29 @@ Inserts a SmartArt-style diagram built from grouped shapes.
 
 Embeds a video or audio file; bytes payload from the UI file picker.
 
+### addNarration (not-ai-callable)
+
+`{bytes:base64|dataURL,ext,durationMs}`
+
+Replaces the slide's recorded narration (Slide Show > Record): a hidden audio picture that plays from the slide start. Also turns on the deck's showNarration.
+
+### clearNarration (not-ai-callable)
+
+`{}`
+
+Removes the slide's recorded narration.
+
 ### addModel3d (not-ai-callable)
 
 `{bytes,ext,offset} — bytes payload`
 
-Embeds a 3D model; bytes payload from the UI file picker.
+Embeds a glTF binary (.glb) 3D model; bytes payload from the UI file picker.
+
+### setModel3dView (not-ai-callable)
+
+`{ax,ay,az,poster?,posterExt?} — rendering payload`
+
+Turns a 3D model (angles in 60,000ths of a degree) and stores the rendering the editor drew.
 
 ### pasteElements (not-ai-callable)
 

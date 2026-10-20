@@ -11,7 +11,7 @@ import { serializeMarks } from '../src/renderer/editor/caret-marks'
  * storedMarks — the marks Tiptap applies to text typed *next*. A font the
  * user picked from the ribbon therefore survives only until the next autosave
  * tick (30s, or on window blur), after which new typing falls back to the
- * paragraph default. #2004.
+ * paragraph default. genofficegenoffice#2004.
  */
 
 const para = (t: string) => ({
@@ -91,6 +91,14 @@ describe('restoreMarksAfterDocRewrite', () => {
     const firstText = editor.state.doc.child(0).child(0)
     expect(firstText.marks.map((m) => m.type.name)).not.toContain('docTextStyle')
     expect(editor.state.storedMarks).not.toBeNull()
+  })
+
+  it('keeps an explicitly cleared caret cleared', () => {
+    const editor = makeEditor()
+    editor.chain().setTextSelection(1).setMark('bold').run()
+    rewriteLikeSave(editor)
+    expect(restoreMarksAfterDocRewrite(editor, '[]')).toBe(true)
+    expect(editor.state.storedMarks).toEqual([])
   })
 
   it('is a no-op when there was nothing to restore', () => {

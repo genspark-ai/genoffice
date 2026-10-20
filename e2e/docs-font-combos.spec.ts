@@ -26,6 +26,16 @@ test.describe('docs font and size combos', () => {
         undefined,
         { timeout: 30_000 },
       )
+      // the open type-ahead list hangs over the page's upper half, so blur
+      // clicks land on the page's far corner instead of its centre
+      const blurToPage = async () => {
+        const box = (await editorPage.locator('.doc-page').boundingBox())!
+        const bottom = Math.min(
+          box.y + box.height,
+          await editorPage.evaluate(() => window.innerHeight),
+        )
+        await editorPage.mouse.click(box.x + box.width - 40, bottom - 40)
+      }
       const attrs = () =>
         editorPage.evaluate(() =>
           (window as unknown as AidocsWindow).__aidocs!.editor!.getAttributes('docTextStyle'),
@@ -67,7 +77,7 @@ test.describe('docs font and size combos', () => {
       // blur without Enter keeps the selection's font
       await fontBox.click()
       await editorPage.keyboard.type('Impact')
-      await editorPage.locator('.doc-page').click()
+      await blurToPage()
       await expect(fontBox).toHaveValue('Tahoma')
       expect((await attrs()).fontAscii).toBe('Tahoma')
       await editorPage.locator('.rb-font-group .rb-combo-caret').first().click()
@@ -85,7 +95,7 @@ test.describe('docs font and size combos', () => {
       await expect(sizeBox).toHaveValue(shownSize)
       await sizeBox.click()
       await editorPage.keyboard.type('30')
-      await editorPage.locator('.doc-page').click()
+      await blurToPage()
       await expect(sizeBox).toHaveValue(shownSize)
       expect((await attrs()).sizeHalfPoints ?? null).not.toBe(60)
       await editorPage.keyboard.press('ControlOrMeta+a')

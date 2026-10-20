@@ -65,6 +65,7 @@ import {
   type ContextTabRequest,
 } from './components/context-tabs'
 import { SlideShowView } from './components/SlideShowView'
+import type { NarrationTake } from './narration/use-recording'
 import { IconNotes, IconPlayBoxed } from './components/icons'
 import { PresenterView } from './components/PresenterView'
 import { CustomShowDialog } from './components/CustomShowDialog'
@@ -139,6 +140,9 @@ import { formatRulerValue, type RulerUnit } from './ruler-ticks'
 import * as fileActions from './file-actions'
 import * as clipboardActions from './clipboard-actions'
 import * as insertActions from './insert-actions'
+import * as model3dActions from './model3d/actions'
+import { Model3dTurnHandle } from './model3d/Model3dTurnHandle'
+import type { Model3dRotation } from '@genoffice/pptx-engine/model3d'
 import { bytesToBase64 } from './insert-actions'
 import { classifyDroppedFile, fileExt } from '../shared/media-kinds'
 import * as animationActions from './animation-actions'
@@ -556,6 +560,7 @@ export function App() {
   const [findOpen, setFindOpen] = useState(false)
   /** Per-page dwell seconds awaiting confirmation after rehearsal (non-null shows the "save?" confirmation dialog) */
   const [pendingRehearse, setPendingRehearse] = useState<number[] | null>(null)
+  const [pendingRecording, setPendingRecording] = useState<NarrationTake | null>(null)
   const [showRuler, setShowRuler] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
   const [showGuides, setShowGuides] = useState(false)
@@ -1705,7 +1710,7 @@ export function App() {
     (kind: 'video' | 'audio') => insertActions.insertMediaFile(ctxRef.current, kind),
     [],
   )
-  const insertModel3dFile = useCallback(() => insertActions.insertModel3dFile(ctxRef.current), [])
+  const insertModel3dFile = useCallback(() => model3dActions.insertModel3dFile(ctxRef.current), [])
   const toggleScreenRecord = useCallback(() => insertActions.toggleScreenRecord(ctxRef.current), [])
 
   // Reflect the current page's transition effect on page/document changes
@@ -1907,6 +1912,19 @@ export function App() {
     [],
   )
   const saveRehearseTimings = useCallback(() => showActions.saveRehearseTimings(ctxRef.current), [])
+  const startRecordShow = useCallback(
+    (fromStart: boolean) => showActions.startRecordShow(ctxRef.current, fromStart),
+    [],
+  )
+  const onRecordDone = useCallback(
+    (take: Promise<NarrationTake | null>) => showActions.onRecordDone(ctxRef.current, take),
+    [],
+  )
+  const saveRecording = useCallback(() => showActions.saveRecording(ctxRef.current), [])
+  const clearNarration = useCallback(
+    (all: boolean) => void showActions.clearNarration(ctxRef.current, all),
+    [],
+  )
   const startPresenterView = useCallback(
     (fromStart: boolean) => showActions.startPresenterView(ctxRef.current, fromStart),
     [],
@@ -2834,6 +2852,14 @@ export function App() {
     [selectedIds, findNodeCtx],
   )
 
+  const model3dNode = useMemo(
+    () =>
+      selectedNode?.type === 'picture' && selectedNode.model3d
+        ? (selectedNode as PictureRenderNode & { model3d: Model3dRotation })
+        : null,
+    [selectedNode],
+  )
+
   const [selectedChartData, setSelectedChartData] = useState<Awaited<
     ReturnType<typeof window.slidesApi.getChartData>
   > | null>(null)
@@ -3114,6 +3140,8 @@ export function App() {
     setCustomShowDlgOpen,
     pendingRehearse,
     setPendingRehearse,
+    pendingRecording,
+    setPendingRecording,
     sections,
     setSections,
     renamingSec,
@@ -3354,6 +3382,8 @@ export function App() {
         onPresenterView={startPresenterView}
         onCustomShow={() => setCustomShowDlgOpen(true)}
         onRehearse={startRehearseShow}
+        onRecord={startRecordShow}
+        onClearNarration={clearNarration}
         currentHidden={!!slide?.hidden}
         onToggleHidden={() => void toggleHidden()}
         inkTool={inkTool}
@@ -3397,6 +3427,17 @@ export function App() {
         recording={recording}
         onToggleScreenRecord={() => void toggleScreenRecord()}
         contextElementType={contextElementType}
+        onModel3dView={
+          model3dNode
+            ? (rot) =>
+                void model3dActions.storeModel3dView(
+                  ctxRef.current,
+                  model3dNode.sourceId,
+                  model3dNode.box,
+                  rot,
+                )
+            : undefined
+        }
         tabRequest={contextTabRequest}
         contextElementId={selectedNode?.sourceId}
         contextSlideIndex={current}
@@ -3580,6 +3621,7 @@ export function App() {
                 settings={aiSettings}
                 preset={aiPreset}
                 open={showAi}
+                hideRail={!aiSidebarEnabled}
                 onExpand={toggleAi}
                 onCollapse={toggleAi}
                 onUndo={() => void undo()}
@@ -4209,6 +4251,22 @@ export function App() {
                                 onContextMenu={onTextContextMenu}
                               />
                             )}
+                            {model3dNode && !mediaPlay && !cropTarget && (
+                              <Model3dTurnHandle
+                                key={model3dNode.sourceId}
+                                node={model3dNode}
+                                slideIndex={current}
+                                onTurn={(rot, view) =>
+                                  model3dActions.storeModel3dView(
+                                    ctxRef.current,
+                                    model3dNode.sourceId,
+                                    model3dNode.box,
+                                    rot,
+                                    view,
+                                  )
+                                }
+                              />
+                            )}
                             {mediaPlay && mediaPlayNode && (
                               <div
                                 style={{
@@ -4473,6 +4531,8 @@ export function App() {
           customOrder={slideShow.customOrder}
           rehearseMode={slideShow.rehearse}
           onRehearseDone={onRehearseDone}
+          recordMode={slideShow.record}
+          onRecordDone={onRecordDone}
           onExit={exitSlideShow}
         />
       )}
@@ -4595,6 +4655,23 @@ export function App() {
               <button onClick={() => setPendingRehearse(null)}>{t('appRehearseDiscard')}</button>
               <button className="primary" onClick={() => void saveRehearseTimings()}>
                 {t('appRehearseSave')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingRecording && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>{t('appRecordTitle')}</h2>
+            <p className="rehearse-summary">
+              {t('appRecordSummary', { duration: formatClock(pendingRecording.endMs) })}
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setPendingRecording(null)}>{t('appRecordDiscard')}</button>
+              <button className="primary" onClick={() => void saveRecording()}>
+                {t('appRecordSave')}
               </button>
             </div>
           </div>

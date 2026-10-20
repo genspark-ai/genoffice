@@ -627,6 +627,18 @@ export interface SetAdvanceTimesOp {
   times: Array<{ slideIndex: number; ms: number | null }>
 }
 
+/** What the show needs to play a slide by itself: its saved advance time and its narration. */
+export interface ShowTiming {
+  advanceMs: number | null
+  /** Element ids of the slide's recorded narration pictures, hidden during the show */
+  narrationIds: string[]
+}
+
+/** Slide Show > Record: each recorded slide's narration (16-bit WAV) and time on screen. */
+export interface SaveRecordingOp {
+  slides: Array<{ slideIndex: number; wavBase64: string; durationMs: number; advanceMs: number }>
+}
+
 // ── Section management ────────────────────────────────────────────────
 
 /** Add a section before slide atSlideIndex (the section covers this page to the end of its containing section). */
@@ -1024,6 +1036,28 @@ export type AddImageBytesOp = {
 )
 
 /** Swap a picture's backing image in place: frame, z-order, border and effects survive. */
+/** A 3D model the renderer read and rendered: inserted centred, half the slide high. */
+export interface AddModel3dOp {
+  slideIndex: number
+  /** glTF binary */
+  bytes: Uint8Array
+  name: string
+  /** The model's first rendering, base64 PNG without the data: prefix */
+  posterBase64?: string
+  /** Frame width / height */
+  aspect: number
+  fitWidthPx: number
+}
+
+/** Turn a 3D model (am3d:rot, 60,000ths of a degree) and store the rendering the renderer drew. */
+export interface SetModel3dViewOp {
+  slideIndex: number
+  sourceId: string
+  rot: { ax: number; ay: number; az: number }
+  /** base64 PNG without the data: prefix */
+  posterBase64?: string
+}
+
 export interface ReplacePictureBytesOp {
   slideIndex: number
   sourceId: string
@@ -1329,7 +1363,7 @@ export interface SlidesApi {
   headlessExportDone: (result: { ok: boolean; error?: string }) => void
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>
-  /** Land generated pages: each pageMarkers entry is a marker (cloudpptx:<path>) redeemable for a one-slide pptx.
+  /** Land generated pages: each pageMarkers entry is a marker (genpptx:<path>) redeemable for a one-slide pptx.
    *  mode="append" merges the new pages onto the existing deck (appendedFrom = existing page count);
    *  mode="replace_at" redoes page atIndex in place from a single marker (other pages untouched, undoable, replacedIndex = that page's index);
    *  mode="insert_at" inserts a new page at atIndex from a single marker (later pages shift back, undoable, insertedIndex = that page's index);
@@ -1351,21 +1385,7 @@ export interface SlidesApi {
       })
     | { error: string }
   >
-  /** Whether cloud single-page generation (gsk slide_generate) is available (GENOFFICE_CLOUD_SLIDE=1 + gsk login) */
-  cloudGenStatus: () => Promise<{ enabled: boolean }>
-  /** Abort every in-flight cloud page generation of this window (AI panel stop) */
-  cloudPageCancel: () => Promise<void>
-  /** Cloud single-page generation: brief → one-slide pptx temp file; the marker goes into a landGeneratedPages pageMarkers slot */
-  cloudGeneratePage: (op: {
-    brief: string
-    title?: string
-    styleSkill?: string
-    deckContext?: Record<string, unknown>
-    images?: { url: string; caption?: string }[]
-    width?: number
-    height?: number
-  }) => Promise<{ ok: boolean; marker?: string; error?: string }>
-  /** Local single-page generation: a JSON slide spec (LLM output) built directly into a one-slide pptx; same marker kind as the cloud path */
+  /** Single-page generation: a JSON slide spec (LLM output) built directly into a one-slide pptx; the marker goes into a landGeneratedPages pageMarkers slot */
   localGeneratePage: (op: {
     specJson: string
   }) => Promise<{ ok: boolean; marker?: string; error?: string; imageFailures?: string[] }>
@@ -1551,11 +1571,12 @@ export interface SlidesApi {
     slideIndex: number,
     sourceId: string,
   ) => Promise<{ kind: 'video' | 'audio'; dataUrl: string } | null>
-  /** Show a dialog to pick a 3D model (glb/gltf), embed + poster placeholder */
-  insertModel3d: (
-    slideIndex: number,
-    fitWidthPx: number,
-  ) => Promise<{ slide: RenderSlide; sourceId: string } | null>
+  /** Show a dialog to pick a 3D model (.glb) and read it */
+  pickModel3d: () => Promise<{ name: string; bytes: Uint8Array } | null>
+  addModel3d: (op: AddModel3dOp) => Promise<{ slide: RenderSlide; sourceId: string } | null>
+  /** A 3D model element's glTF binary */
+  getModel3dData: (slideIndex: number, sourceId: string) => Promise<Uint8Array | null>
+  setModel3dView: (op: SetModel3dViewOp) => Promise<RenderSlide | null>
   /** Set/clear an element hyperlink; the whole page's element ids update, requiring a whole-page replace and clearing the selection */
   setLink: (op: SetLinkOp) => Promise<RenderSlide | null>
   /** Read the element's current hyperlink (dialog echo) */
@@ -1580,8 +1601,14 @@ export interface SlidesApi {
   setTransition: (op: SetTransitionOp) => Promise<boolean>
   /** The current page's transition effect (echoed on page switch) */
   getTransition: (slideIndex: number) => Promise<TransitionKind>
+  getShowTiming: (slideIndex: number) => Promise<ShowTiming>
   /** Batch-write each page's auto-advance time (rehearsal timing save; the saved pptx auto-advances in PowerPoint shows); returns success */
   setAdvanceTimes: (op: SetAdvanceTimesOp) => Promise<boolean>
+  /** Replaces the recorded slides' narration and advance time in one undo step; the whole deck back. */
+  saveRecording: (op: SaveRecordingOp) => Promise<RenderSlide[] | null>
+  clearNarration: (slideIndexes: number[]) => Promise<RenderSlide[] | null>
+  /** Asks the OS for the microphone where it gates it (macOS); false when refused. */
+  microphoneAccess: () => Promise<boolean>
   /** The current page's animation list (read by the Animations tab / during shows) */
   getAnimations: (slideIndex: number) => Promise<AnimationItem[]>
   /** Morph pairing keys of the current page's elements (matched against same-name/same-id elements on the previous page during morph tweening) */

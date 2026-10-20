@@ -484,12 +484,14 @@ export function computeListMarkers(
 
 /**
  * Word's default tab after a numbering marker: when the marker fits the hanging
- * area the text starts at the text indent; otherwise it jumps to the next tab
- * stop past the marker end — the paragraph's custom stops first, the default
- * grid only beyond the last custom stop (a custom stop clears the default stops
- * left of it). All positions are twips relative to the text column edge.
- * Returns the marker-box width (marker start -> text start), or null when the
- * hanging area already fits.
+ * area the text starts at the text indent, unless a custom stop sits between
+ * the marker end and that indent (the text indent is only an implicit stop;
+ * explicit stops before it still catch the tab). Otherwise it jumps to the
+ * next tab stop past the marker end — the paragraph's custom stops first, the
+ * default grid only beyond the last custom stop (a custom stop clears the
+ * default stops left of it). All positions are twips relative to the text
+ * column edge. Returns the marker-box width (marker start -> text start), or
+ * null when the text starts at the hanging indent.
  */
 export function markerTabAdvance(
   markerStart: number,
@@ -499,7 +501,10 @@ export function markerTabAdvance(
   customStops: number[] = [],
 ): number | null {
   const end = markerStart + markerWidth
-  if (markerStart < textIndent && end <= textIndent) return null
+  if (markerStart < textIndent && end <= textIndent) {
+    const inside = customStops.filter((s) => s > end && s < textIndent).sort((a, b) => a - b)[0]
+    return inside === undefined ? null : inside - markerStart
+  }
   const custom = customStops.filter((s) => s > end).sort((a, b) => a - b)[0]
   if (custom !== undefined) return custom - markerStart
   // no default grid (w:defaultTabStop 0): the text follows the marker directly

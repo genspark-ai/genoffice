@@ -37,6 +37,8 @@ export const it = {
     'Problema di rete: impossibile raggiungere il servizio IA. Controlla la connessione e riprova',
   aiNewChat: 'Nuova chat',
   aiNoReply: '(nessuna risposta)',
+  aiRegionError:
+    'Il fornitore di questo modello non serve la tua regione attuale — scegli un altro modello o cambia rete',
   aiOverloadedError: 'Il servizio IA è momentaneamente sovraccarico — riprova tra poco',
   aiRegenerateTitle: 'Rigenera',
   aiRetry: 'Riprova',

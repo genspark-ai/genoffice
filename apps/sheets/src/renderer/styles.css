@@ -854,6 +854,93 @@ html.genoffice-popover-open .ribbon-tabs {
   background: transparent;
 }
 
+/* ---- Compact ribbon (⌥⌘K / Ctrl+Alt+K), docs parity, see #362 ----
+ * The middle density: the band stays and every command stays reachable, it
+ * just drops the tall buttons to icon-only on a shorter band. The band keeps
+ * its HARD-fixed height (switching tabs, including the contextual chart /
+ * table / shape tabs, never resizes the row) and the horizontal scroll.
+ * Small icon-beside-label rows keep their labels, like the docs compact band.
+ */
+.ribbon-compact .ribbon {
+  /* Two px taller than the docs/slides/pdf band. This header's rows sit on
+     * .5px offsets, and against the 5px classic scrollbar lane Chromium rounds
+     * the scrolled content up: a 45px band offered 40, a 46px band measured
+     * 41 on macOS but still read scrollHeight 43 on Linux, where the Review
+     * tab's letterform glyphs (🧮 U+6587 🗨) sit on font-metric fractions no other
+     * tab hits. 48px gives the rounded content room without moving anything
+     * inside the band. */
+  height: 48px;
+  padding-top: 5px;
+  padding-bottom: 1px;
+  /* Linux fallback fonts carry emoji and CJK glyphs on line boxes up to
+     ~2.5em tall (Noto Color Emoji's win metrics); left at `normal` they poke
+     below the group boxes and read as scrollable overflow in a band that
+     never scrolls vertically. Pinning the line box makes the layout
+     independent of whichever font a distro picks. */
+  line-height: 1.2;
+}
+
+.ribbon-compact .ribbon-tool.large {
+  /* the label is taken out of flow entirely (below), so the button is just
+     the icon row plus its padding; 1px of button padding (not 2) because the
+     28px glyph + plate already fills the 34px content box to the exact px,
+     and the group's .5px centering offsets round scrollHeight a pixel over */
+  gap: 0;
+  padding: 1px 5px;
+}
+
+.ribbon-compact .ribbon-tool.large .tool-icon-row {
+  min-height: 22px;
+  padding: 1px 3px;
+  margin: 0 -2px;
+}
+
+/* Keep the label in the accessibility tree and in the DOM (Playwright's
+ * hasText and getByRole(name) both read it) but take it out of the visual
+ * flow. display: none here would strip the accessible name. */
+.ribbon-compact .ribbon-tool.large > span:not(.tool-icon-row) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Groups centre on the shorter band. */
+.ribbon-compact .ribbon-group {
+  padding: 0 4px;
+}
+
+/* Stacked rows become single rows — the docs treatment of .rb-col: the font
+ * group's two 30px control rows, the cut/copy/format-painter mini column,
+ * the styles/theme row stacks and the Page Layout check columns all fit a
+ * short band only side by side. */
+.ribbon-compact .ribbon-rows,
+.ribbon-compact .row-stack,
+.ribbon-compact .styles-stack,
+.ribbon-compact .check-column {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.ribbon-compact .tool-stack {
+  grid-auto-flow: column;
+}
+
+/* The Insert tab's chart-type cluster is a 3×3 grid of 17px cells (53px
+ * tall); transposed to two rows it fits with room to spare. */
+.ribbon-compact .chart-grid {
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+}
+
 /* Bare colored ribbon glyphs — no chip background.
    Icon-beside-label rows use the slides ribbon's .rb-small icon size (14px);
    the tall .large buttons scale theirs up to 28px below. */
@@ -1836,6 +1923,11 @@ button.check-item:hover {
 
 .app-shell.copilot-collapsed .sheet-body {
   grid-template-columns: 34px minmax(0, 1fr);
+}
+
+/* sidebar setting off: the rail is not mounted, so the sheet takes the whole row */
+.app-shell.copilot-off .sheet-body {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sheet-main {
@@ -5584,6 +5676,21 @@ textarea:focus {
   --univer-primary-600: currentColor;
 }
 
+/* Univer paints its popups (right-click menus, dropdowns, dialogs) from the
+ * DOCUMENT theme, while `color-scheme` on :root follows the APP chrome. When
+ * the two differ — a dark app with the document theme pinned light — the UA
+ * system colors inside the popups resolve to their dark variants: the menu
+ * item buttons only carry Univer's dark-mode text class, so their labels turn
+ * white on the light menu surface and vanish (genoffice#2041). Track Univer's
+ * own dark flag so its popups get the UA scheme matching what they render. */
+.univer-popup {
+  color-scheme: light;
+}
+
+.univer-dark .univer-popup {
+  color-scheme: dark;
+}
+
 .ai-msg-undelivered {
   margin-top: 6px;
   display: flex;
@@ -7025,4 +7132,132 @@ body > div:has([data-u-comp='find-replace-dialog']) {
 
 .visual-dialog-remove {
   align-self: flex-start;
+}
+
+/* A note's picture has nowhere to go inside Univer's note popup, so it gets a
+   pane of its own. Both panes want the right edge, so each steps aside while
+   the other is open rather than covering it. */
+.note-pictures-pane {
+  position: fixed;
+  top: 96px;
+  right: 24px;
+  bottom: 48px;
+  z-index: 121;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 32px));
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+body:has(.note-pictures-pane) .threaded-comments-pane {
+  right: 380px;
+}
+
+.note-pictures-pane > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.note-pictures-pane .np-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.note-pictures-pane .np-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.note-pictures-pane .np-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.note-pictures-pane .np-empty {
+  margin: 0;
+  padding: 16px 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.note-pictures-pane .np-card {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.note-pictures-pane .np-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+}
+
+.note-pictures-pane .np-cell {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.note-pictures-pane .np-cell:hover {
+  color: var(--accent);
+}
+
+.note-pictures-pane .np-author {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.note-pictures-pane .np-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.note-pictures-pane .np-image-missing {
+  margin: 0;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.note-pictures-pane .np-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

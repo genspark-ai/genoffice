@@ -29,9 +29,20 @@ describe('w:autoSpaceDE/DN parsing', () => {
     expect(block.format?.autoSpace).toBe(false)
   })
 
-  it('only one of DE/DN off keeps the default (the other class still gets the gap)', async () => {
-    const block = await parseFirst('<w:autoSpaceDE w:val="0"/>')
-    expect(block.format?.autoSpace).toBeUndefined()
+  it('only DE off keeps the digit gap, only DN off keeps the letter gap', async () => {
+    expect((await parseFirst('<w:autoSpaceDE w:val="0"/>')).format?.autoSpace).toBe('digits')
+    expect((await parseFirst('<w:autoSpaceDN w:val="0"/>')).format?.autoSpace).toBe('latin')
+  })
+
+  it('one switch off on the paragraph merges with the other off in the style', async () => {
+    const styles =
+      '<w:style w:type="paragraph" w:styleId="NoDigits"><w:name w:val="No Digits"/>' +
+      '<w:basedOn w:val="Normal"/><w:pPr><w:autoSpaceDN w:val="0"/></w:pPr></w:style>'
+    const block = await parseFirst('<w:pStyle w:val="NoDigits"/><w:autoSpaceDE w:val="0"/>', styles)
+    expect(block.format?.autoSpace).toBe(false)
+    expect((await parseFirst('<w:pStyle w:val="NoDigits"/>', styles)).format?.autoSpace).toBe(
+      'latin',
+    )
   })
 
   it('unchanged paragraphs keep the raw autoSpace bytes on merge', async () => {

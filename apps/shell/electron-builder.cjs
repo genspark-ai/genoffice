@@ -75,7 +75,21 @@ if (winArm64 && !process.env.ELECTRON_BUILDER_7Z_FILTER) {
 }
 const winArch = winArm64 ? 'arm64' : 'x64'
 const winSidecarTarget = winArm64 ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-gnu'
-const WIN_SIDECAR = `../sheets/native/xlsx-engine/target/${winSidecarTarget}/release/xlsx-sidecar.exe`
+// Where the release pipeline puts the sidecar: an explicit cross-compilation
+// triple (CI builds it that way). A Windows contributor's plain
+// `npm run build:all` instead leaves it in cargo's host-native target/release
+// (MSVC, statically linked per native/xlsx-engine/.cargo/config.toml), so that
+// output is accepted too — but only when the host arch really matches the
+// packaged one: an x64 host build must never be shipped inside an arm64
+// installer, which has to come from a cross build.
+const winSidecarCandidates = [
+  `../sheets/native/xlsx-engine/target/${winSidecarTarget}/release/xlsx-sidecar.exe`,
+  ...(process.platform === 'win32' && (process.arch === 'arm64') === winArm64
+    ? ['../sheets/native/xlsx-engine/target/release/xlsx-sidecar.exe']
+    : []),
+]
+const WIN_SIDECAR =
+  winSidecarCandidates.find((rel) => existsSync(join(__dirname, rel))) ?? winSidecarCandidates[0]
 
 function assertExtraResourceSources() {
   for (const rel of [
@@ -355,6 +369,51 @@ const FILE_ASSOCIATIONS = [
     mimeType: 'text/tab-separated-values',
   },
   {
+    // import-only: opens as a converted .xlsx copy, GenOffice never writes ODF
+    ext: 'ods',
+    name: 'OpenDocument Spreadsheet',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet',
+  },
+  {
+    ext: 'ots',
+    name: 'OpenDocument Spreadsheet Template',
+    role: 'Editor',
+    icon: 'xlsx',
+    mimeType: 'application/vnd.oasis.opendocument.spreadsheet-template',
+  },
+  {
+    // import-only: opens as a converted .docx copy, GenOffice never writes ODF
+    ext: 'odt',
+    name: 'OpenDocument Text',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.oasis.opendocument.text',
+  },
+  {
+    ext: 'ott',
+    name: 'OpenDocument Text Template',
+    role: 'Editor',
+    icon: 'docx',
+    mimeType: 'application/vnd.oasis.opendocument.text-template',
+  },
+  {
+    // import-only: opens as a converted .pptx copy, GenOffice never writes ODF
+    ext: 'odp',
+    name: 'OpenDocument Presentation',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.oasis.opendocument.presentation',
+  },
+  {
+    ext: 'otp',
+    name: 'OpenDocument Presentation Template',
+    role: 'Editor',
+    icon: 'pptx',
+    mimeType: 'application/vnd.oasis.opendocument.presentation-template',
+  },
+  {
     ext: 'pdf',
     name: 'PDF Document',
     role: 'Editor',
@@ -547,6 +606,12 @@ const config = {
     gatekeeperAssess: false,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
+    // Slides' Slide Show > Record: the hardened runtime refuses the microphone without the
+    // audio-input entitlement, and macOS asks for it with this text
+    extendInfo: {
+      NSMicrophoneUsageDescription:
+        'GenOffice records your narration when you record a slide show.',
+    },
     notarize: true,
     extraResources: [
       {
@@ -683,7 +748,8 @@ const config = {
     }
     if (context.electronPlatformName === 'win32' && !existsSync(join(__dirname, WIN_SIDECAR))) {
       throw new Error(
-        `win extraResources source missing: ${WIN_SIDECAR} (cargo build --target ${winSidecarTarget} first)`,
+        `win extraResources source missing: ${winSidecarCandidates.join(' or ')} ` +
+          `(run "npm run native:build -w @genoffice/sheets", or cargo build --target ${winSidecarTarget})`,
       )
     }
   },

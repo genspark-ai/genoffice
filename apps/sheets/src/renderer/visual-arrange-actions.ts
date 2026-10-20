@@ -10,7 +10,9 @@ import type { WorkbookVisualObject } from '../shared/desktop-api'
 import {
   isSheetRemoved,
   journalSize,
+  recordCellImageAdd,
   recordVisualAdd,
+  removeCellImageAdd,
   recordVisualEdit,
   removeVisualAdd,
   reorderVisualAdd,
@@ -42,6 +44,7 @@ import {
   sheetMetrics,
   type SheetMetrics,
 } from './visual-geometry'
+import { workbookMediaDataUrl } from './workbook-media'
 import {
   clearVisualSelection,
   EMU_PER_PIXEL,
@@ -62,6 +65,8 @@ export interface VisualArrangeContext {
   openDialog: (kind: VisualDialogKind, visualId: string) => void
   /// Re-converges a restored chart onto its live cell refs (undo/redo).
   resyncChart: (state: LazyWorkbookState, editKey: string) => void
+  /// Reinstalls the in-cell picture overlays after a session embed.
+  refreshCellImages: (state: LazyWorkbookState) => void
 }
 
 /// Pixel size of the frame the dialog edits (unzoomed sheet pixels).
@@ -153,6 +158,9 @@ export function handleVisualCommand(
       else ctx.shapeEditRef.current(visualId, { remove: true })
       return true
     }
+    case 'embed-in-cell':
+      void embedVisualInCell(ctx, runtime, state, visual)
+      return true
     case 'z':
       reorder(ctx, runtime, state, visual, argument as ZOrderOp)
       return true
@@ -498,6 +506,100 @@ async function copyVisual(
   clipboard = copy
   visualPasteDisabled$.next(false)
   return true
+}
+
+/// "Embed Image in Cell": the picture leaves the drawing layer and becomes
+/// the content of the cell under its top-left corner (Excel's "Place in
+/// Cell"). The bytes move into the journal, the cell's value is cleared, and
+/// the save writes the workbook's rich-value parts. The picture's move is one
+/// undo step; the cell clear stays Univer's own step beneath it.
+async function embedVisualInCell(
+  ctx: VisualArrangeContext,
+  runtime: UniverRuntime,
+  state: LazyWorkbookState,
+  visual: WorkbookVisualObject,
+): Promise<void> {
+  if (visual.kind !== 'image') {
+    ctx.setMessage(t('appVisualEmbedFailed'))
+    return
+  }
+  const dataUrl = await pictureDataUrl(state, visual)
+  const mediaType = dataUrl === null ? null : embeddedImageType(dataUrl)
+  if (dataUrl === null || mediaType === null) {
+    ctx.setMessage(t('appVisualEmbedFailed'))
+    return
+  }
+  const journal = state.editJournal
+  const { fromRow: row, fromColumn: column } = visual.anchor
+  const chartPath = state.file.visuals.find((candidate) => candidate.id === visual.id)?.chartPath
+  // The picture becomes the cell's content: any value behind it goes (the
+  // cell's formatting stays, matching Excel). Runs before the journal moves
+  // so a failed clear leaves the picture where it was.
+  runtime.univerAPI
+    .getActiveWorkbook()
+    ?.getSheetBySheetId(visual.sheetId)
+    ?.getRange(row, column)
+    .clearContent()
+  const before = captureVisualJournal(state, visual.id, chartPath)
+  if (!removeVisualAdd(journal, visual.id)) {
+    const file = state.file.visuals.find((candidate) => candidate.id === visual.id)
+    if (!file || !recordVisualEdit(journal, file, { remove: true })) {
+      ctx.setMessage(t('appVisualEmbedFailed'))
+      return
+    }
+  }
+  clearVisualSelection(visual.id)
+  const after = captureVisualJournal(state, visual.id, chartPath)
+  const entry = { sheetId: visual.sheetId, row, column, mediaType, dataUrl }
+  const displaced = recordCellImageAdd(journal, entry)
+  const refresh = (): void => {
+    ctx.setPendingEdits(journalSize(journal))
+    ctx.refreshLazyVisuals(state)
+    ctx.refreshCellImages(state)
+  }
+  pushVisualUndo(runtime, {
+    undo: () => {
+      removeCellImageAdd(journal, visual.sheetId, row, column)
+      if (displaced) recordCellImageAdd(journal, displaced)
+      restoreVisualJournal(state, visual.id, chartPath, before)
+      clearVisualSelection(visual.id)
+      refresh()
+    },
+    redo: () => {
+      restoreVisualJournal(state, visual.id, chartPath, after)
+      recordCellImageAdd(journal, entry)
+      clearVisualSelection(visual.id)
+      refresh()
+    },
+  })
+  refresh()
+}
+
+/// The picture's bytes as a data URL: session pictures carry them inline,
+/// file pictures round-trip through the media IPC (metafiles rasterize to
+/// PNG, matching the overlay's own rendering).
+async function pictureDataUrl(
+  state: LazyWorkbookState,
+  visual: WorkbookVisualObject,
+): Promise<string | null> {
+  if (visual.mediaDataUrl !== undefined && visual.mediaDataUrl.startsWith('data:')) {
+    return visual.mediaDataUrl
+  }
+  try {
+    const media = await window.desktopApi.readWorkbookMedia({
+      sessionId: state.file.sessionId,
+      visualId: visual.id,
+    })
+    return await workbookMediaDataUrl(media)
+  } catch {
+    return null
+  }
+}
+
+/// The media type an embedded picture can carry; null for anything else.
+function embeddedImageType(dataUrl: string): 'image/png' | 'image/jpeg' | 'image/gif' | null {
+  const mime = /^data:([^;,]+)[;,]/.exec(dataUrl)?.[1]
+  return (['image/png', 'image/jpeg', 'image/gif'] as const).find((type) => type === mime) ?? null
 }
 
 function pasteVisual(ctx: VisualArrangeContext): void {

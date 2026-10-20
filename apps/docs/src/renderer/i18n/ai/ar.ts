@@ -109,6 +109,8 @@ export const ar = {
   aiUnknownError: 'خطأ غير معروف',
   aiTimeoutError:
     'انتهت مهلة طلب الذكاء الاصطناعي: لا توجد استجابة من الشبكة وتم الإيقاف. تحقق من الاتصال وحاول مجددًا',
+  aiRegionError:
+    'مزوّد هذا النموذج لا يقدم الخدمة في منطقتك الحالية — اختر نموذجًا آخر أو غيّر الشبكة',
   aiOverloadedError: 'خدمة الذكاء الاصطناعي مشغولة حاليًا — يرجى المحاولة مرة أخرى بعد قليل',
   aiNetworkError:
     'مشكلة في الشبكة: تعذّر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مجددًا',
@@ -118,6 +120,9 @@ export const ar = {
   aiSumImageAttachment: 'مرفق صورة {name}',
   aiSumRead: 'قراءة {name}',
   aiSumReadAttachmentName: 'قراءة المرفق {name}',
+  aiSumSkillsList: 'سرد المهارات المثبتة',
+  aiSumSkillRead: 'قراءة المهارة {name}',
+  aiSumRunCli: 'تنفيذ {args}',
   aiSumWebSearch: 'بحث على الويب',
   aiSumWebSearchDone: 'تم البحث عن «{query}» ({count} نتيجة)',
   aiSumImageSearch: 'بحث عن صور',

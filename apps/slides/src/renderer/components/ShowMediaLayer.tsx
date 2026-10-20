@@ -20,6 +20,7 @@ export function ShowMediaLayer({
   mediaBase,
   muted = false,
   interactive = true,
+  hiddenIds,
 }: {
   slide: RenderSlide
   slideIndex: number
@@ -33,6 +34,8 @@ export function ShowMediaLayer({
   muted?: boolean
   /** false = clicks fall through (presenter stage keeps its ink tools) */
   interactive?: boolean
+  /** Media that play without anything on screen (a recorded narration) */
+  hiddenIds?: ReadonlySet<string>
 }) {
   const k = width / slide.widthPx
   const nodes = slide.nodes.filter(
@@ -123,6 +126,18 @@ export function ShowMediaLayer({
                 e.stopPropagation()
                 toggle(e.currentTarget)
               }}
+              onPlay={onPlay}
+              onPause={onPause}
+            />
+          )
+        }
+        if (hiddenIds?.has(n.sourceId)) {
+          return (
+            <audio
+              key={n.sourceId}
+              ref={ref(n.sourceId)}
+              src={media.dataUrl}
+              muted={muted}
               onPlay={onPlay}
               onPause={onPause}
             />

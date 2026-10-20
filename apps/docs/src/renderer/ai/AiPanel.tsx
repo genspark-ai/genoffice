@@ -22,6 +22,7 @@ import {
   type KbFileInfo,
   type MindMapTreeNode,
 } from '@genoffice/agent-core'
+import { redactTextBetween, type RedactableNode } from './redact-view'
 import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -61,6 +62,7 @@ import { DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { waitForFullContent } from '../phased-content'
 import { currentDocGeneration } from '../file-actions'
 import { createFilesSkill } from './files-skill'
+import { createSkillsSkill } from './skills-skill'
 import { boundChatHistory } from './chat-retention'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
@@ -823,7 +825,7 @@ export function AiPanel({
     loopRef.current = new AgentLoop<PmNode>({
       transport: transportRef.current,
       systemSuffix: aiLangDirective,
-      skill: composeSkills('docs+files', '', [
+      skill: composeSkills('docs+files+skills', '', [
         // the reader's starred files; empty while the user stars nothing —
         // buildContext then returns '' and the skill stays out of the way.
         // Mounted only when the bridge carries the kb channel at all: a test
@@ -853,6 +855,7 @@ export function AiPanel({
           () => mediaAnalysisAvailable(settingsRef.current, gskLoggedInRef.current),
         ),
         createFilesSkill(availableAttachments),
+        createSkillsSkill(),
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {
@@ -1011,7 +1014,14 @@ export function AiPanel({
   const liveSelection = editor.state.selection
   const selectionText = liveSelection.empty
     ? ''
-    : editor.state.doc.textBetween(liveSelection.from, liveSelection.to, '\n', ' ').trim()
+    : redactTextBetween(
+        editor.getJSON() as RedactableNode,
+        liveSelection.from,
+        liveSelection.to,
+        '\n',
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
   const hasScopeSelection = selectionText.length > 0
 
   /** the × on the scope chip: collapse the selection so the run targets the whole document */
@@ -1022,7 +1032,9 @@ export function AiPanel({
   const selectionScopeQuote = (): AiScopeQuoteData | undefined => {
     const { from, to, empty } = editor.state.selection
     if (empty) return undefined
-    const text = editor.state.doc.textBetween(from, to, ' ', ' ').replace(/\s+/g, ' ').trim()
+    const text = redactTextBetween(editor.getJSON() as RedactableNode, from, to, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
     if (!text) return undefined
     return {
       label: t('aiScopeSelection', { words: countWords(text) }),
@@ -1824,7 +1836,7 @@ export function AiPanel({
                 data-tip={trackChanges ? t('aiTrackOnTitle') : t('aiTrackOffTitle')}
               >
                 <span className="ai-track-dot" aria-hidden />
-                {t('aiTrackChanges')}
+                <span className="ai-track-label">{t('aiTrackChanges')}</span>
               </button>
             </>
           }

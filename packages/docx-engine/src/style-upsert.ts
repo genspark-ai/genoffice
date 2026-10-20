@@ -1,5 +1,6 @@
 import { PPR_CHILD_ORDER, RPR_CHILD_ORDER, splitXmlChildren } from './generate'
 import { escapeXmlAttr } from './xml-utils'
+import type { TabStop } from './types'
 
 /** Run properties of a style definition; a present key sets, null clears, absent keeps. */
 export interface StyleRunProps {
@@ -38,6 +39,8 @@ export interface StyleParaProps {
   outlineLevel?: number | null
   /** list level linked to the style (w:numPr); null removes it */
   numPr?: { numId: string; ilvl: number } | null
+  /** w:tabs of the style; [] or null removes the element */
+  tabStops?: TabStop[] | null
 }
 
 /**
@@ -315,6 +318,19 @@ function patchPara(children: Children, pp: StyleParaProps): void {
       pp.outlineLevel === null ? null : `<w:outlineLvl w:val="${num(pp.outlineLevel - 1)}"/>`,
     )
   }
+  if (pp.tabStops !== undefined) {
+    const stops = pp.tabStops ?? []
+    children.set(
+      'w:tabs',
+      stops.length === 0 ? null : `<w:tabs>${stops.map(tabXml).join('')}</w:tabs>`,
+    )
+  }
+}
+
+function tabXml(ts: TabStop): string {
+  let xml = `<w:tab w:val="${escapeXmlAttr(ts.val)}" w:pos="${num(ts.pos)}"`
+  if (ts.leader && ts.leader !== 'none') xml += ` w:leader="${escapeXmlAttr(ts.leader)}"`
+  return xml + '/>'
 }
 
 /** The w:style element after applying `up` to `existing` (null = create). */

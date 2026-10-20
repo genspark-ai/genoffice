@@ -214,6 +214,20 @@ const copyRangeSchema = z.object({
   filterValues: z.array(z.string().trim().min(1).max(32_767)).min(1).max(100).optional(),
 })
 
+// Excel's cut → paste as one operation: a copy_range followed by clearing
+// the source block. Exists so "move / cut these rows to that sheet" has a
+// direct op instead of a per-cell rewrite.
+const moveRangeSchema = z.object({
+  op: z.literal('move_range'),
+  sheetId: z.string().min(1),
+  /** block to move, e.g. "A2:V14" (up to 200,000 cells) */
+  source: cellRangeSchema,
+  /** sheet the source lives on; defaults to the target sheet */
+  sourceSheetId: z.string().min(1).optional(),
+  /** destination: its top-left cell, or a range exactly the source's size */
+  target: cellRangeSchema,
+})
+
 // Freezes formulas into their current computed values (Excel's copy →
 // paste-values onto the same cells). Non-formula cells and all formatting
 // stay untouched.
@@ -1040,6 +1054,7 @@ export const workbookOperationSchema = z.discriminatedUnion('op', [
   clearRangeSchema,
   fillRangeSchema,
   copyRangeSchema,
+  moveRangeSchema,
   convertToValuesSchema,
   formatRangeSchema,
   sortRangeSchema,
@@ -1220,6 +1235,7 @@ export type DeleteTableOperation = z.infer<typeof deleteTableSchema>
 export type AddSparklineOperation = z.infer<typeof addSparklineSchema>
 export type FindReplaceOperation = z.infer<typeof findReplaceSchema>
 export type CopyRangeOperation = z.infer<typeof copyRangeSchema>
+export type MoveRangeOperation = z.infer<typeof moveRangeSchema>
 export type ConvertToValuesOperation = z.infer<typeof convertToValuesSchema>
 export type SortRangeOperation = z.infer<typeof sortRangeSchema>
 export type CellContentOperation = SetCellOperation | SetFormulaOperation | ClearCellOperation
@@ -1299,6 +1315,7 @@ const CELL_CONTENT_OPS = new Set([
   'clear_range',
   'fill_range',
   'copy_range',
+  'move_range',
   'convert_to_values',
   'format_range',
   'sort_range',
@@ -1399,7 +1416,7 @@ function validateFillRange(operation: FillRangeOperation): void {
  * the paste anchor and extends to the source's size; a multi-cell target
  * must already match the source exactly.
  */
-export function copyTargetBounds(operation: CopyRangeOperation): {
+export function copyTargetBounds(operation: CopyRangeOperation | MoveRangeOperation): {
   startRow: number
   endRow: number
   startColumn: number
@@ -1541,7 +1558,7 @@ export function convertToValuesBatchError(operations: readonly WorkbookOperation
       } else if (op.op === 'fill_range') {
         if (op.sheetId !== convert.sheetId) continue
         writes = parseRange(op.target)
-      } else if (op.op === 'copy_range') {
+      } else if (op.op === 'copy_range' || op.op === 'move_range') {
         if (op.sheetId !== convert.sheetId) continue
         writes = copyTargetBounds(op)
       } else {
@@ -1566,6 +1583,16 @@ export function convertToValuesBatchError(operations: readonly WorkbookOperation
 
 export function fillOpLabel(op: FillRangeOperation): string {
   return `Fill ${op.source} → ${op.target}`
+}
+
+export function moveRangeToCopy(op: MoveRangeOperation): CopyRangeOperation {
+  return {
+    op: 'copy_range',
+    sheetId: op.sheetId,
+    source: op.source,
+    sourceSheetId: op.sourceSheetId,
+    target: op.target,
+  }
 }
 
 export function copyOpLabel(op: CopyRangeOperation): string {
@@ -1683,8 +1710,21 @@ export function expandToPrimitiveOps(
       throw new Error(`The batch expands to more than ${MAX_EXPANDED_CELL_OPS} cell edits.`)
     }
   }
-  for (const operation of operations) {
-    if (operation.op === 'set_range') {
+  // move_range desugars into copy_range + clear_range of the source; the
+  // queue keeps that order (apply runs range-level ops in op order, and the
+  // clear's per-cell edits land after the copy lane anyway).
+  const queue: WorkbookOperation[] = [...operations]
+  for (let index = 0; index < queue.length; index += 1) {
+    const operation = queue[index] as WorkbookOperation
+    if (operation.op === 'move_range') {
+      const copy = moveRangeToCopy(operation)
+      validateCopyRange(copy)
+      queue.splice(index + 1, 0, copy, {
+        op: 'clear_range',
+        sheetId: operation.sourceSheetId ?? operation.sheetId,
+        range: operation.source,
+      })
+    } else if (operation.op === 'set_range') {
       const origin = setRangeOrigin(operation)
       operation.values.forEach((rowValues, rowOffset) => {
         rowValues.forEach((value, columnOffset) => {

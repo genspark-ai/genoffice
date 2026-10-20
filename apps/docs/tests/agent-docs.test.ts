@@ -3,7 +3,7 @@ import { Editor } from '@tiptap/core'
 import { AgentLoop, type AgentStreamCallbacks, type AgentTransport } from '@genoffice/agent-core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { createDocsSkill } from '../src/renderer/ai/docs-skill'
-import { buildDocContext, countWords } from '../src/renderer/ai/protocol'
+import { buildDocContext, countWords, documentTextForWordCount } from '../src/renderer/ai/protocol'
 import { executeTool } from '../src/renderer/ai/tools'
 import { appendStreamedNodes } from '../src/renderer/file-actions'
 
@@ -89,7 +89,7 @@ describe('word-count stats (answer-style requests)', () => {
   it('each turn context carries full-text stats matching the status bar so the model can quote them directly', async () => {
     const editor = createEditor(fixture())
     const context = buildDocContext(editor)
-    const expected = countWords(editor.state.doc.textContent)
+    const expected = countWords(documentTextForWordCount(editor.state.doc))
     expect(context).toContain(`Full-text stats: words ${expected}`)
     expect(context).toContain('0|h1|Chapter 1 Overview')
     expect(context).toContain('3|p|This document is for reference only.')
@@ -104,7 +104,7 @@ describe('word-count stats (answer-style requests)', () => {
       NUM_IDS,
     )
     expect(exec.mutated).toBe(false)
-    expect(exec.output).toContain(`words ${countWords(editor.state.doc.textContent)}`)
+    expect(exec.output).toContain(`words ${countWords(documentTextForWordCount(editor.state.doc))}`)
     expect(JSON.stringify(editor.getJSON())).toBe(before)
   })
 

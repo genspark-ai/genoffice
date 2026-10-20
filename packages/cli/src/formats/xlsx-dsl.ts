@@ -109,6 +109,7 @@ export const ADAPTER_DSL_OPS = [
   'clear_range',
   'fill_range',
   'copy_range',
+  'move_range',
   'find_replace',
   'sort_range',
   'format_range',

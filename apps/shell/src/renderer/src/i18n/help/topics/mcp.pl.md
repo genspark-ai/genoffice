@@ -73,7 +73,7 @@ Agent, który nie zna słownictwa op, będzie zgadywał. Skill zabiera ze sobą 
 Serwer nie ogranicza się do plików na dysku. Dopóki GenOffice działa, agent może pracować także przez okno:
 
 - **`open_in_genoffice`** otwiera plik w karcie i ustawia na niej fokus.
-- **`open_documents`** wymienia każdy otwarty dokument — id, typ, ścieżkę i to, czy ma niezapisane zmiany —, a następnie czyta bieżącą zawartość jednego z nich albo go zamyka, najpierw zapisując, chyba że każesz mu odrzucić zmiany.
+- **`open_documents`** wymienia każdy otwarty dokument — id, typ, ścieżkę i to, czy ma niezapisane zmiany —, a następnie czyta bieżącą zawartość jednego z nich, zapisuje go w miejscu albo go zamyka, najpierw zapisując, chyba że każesz mu odrzucić zmiany.
 - **Narzędzia od treści** przyjmują to id (albo ścieżkę) jako argument `document`, więc zmiana trafia do karty, którą już masz otwartą, a okno przełącza się na jej pokazanie.
 
 Dwie rzeczy pozostają poza zasięgiem: nie ma panelu AI, a okno aktualizacji w aplikacji nie ma tu zastosowania.

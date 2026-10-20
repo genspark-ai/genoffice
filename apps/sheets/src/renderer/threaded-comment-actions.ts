@@ -7,6 +7,7 @@
 import { t } from './i18n/locale'
 import type { RibbonCommandContext } from './ribbon-actions'
 import { neighbourThread, threadPane, threadStore, type CellThread } from './threaded-comments'
+import { notePicturesPane } from './note-pictures'
 import { revealCellBelowFreeze } from './univer-sync'
 
 interface Position {
@@ -62,6 +63,9 @@ export function handleThreadedCommentCommand(
       return
     case 'comments-pane-toggle':
       threadPane.toggle()
+      return
+    case 'note-pictures-pane-toggle':
+      notePicturesPane.toggle()
       return
     case 'comment-prev':
     case 'comment-next': {

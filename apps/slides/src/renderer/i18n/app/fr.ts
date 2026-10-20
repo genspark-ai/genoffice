@@ -65,7 +65,8 @@ export const fr = {
   appStatusVideoInserted: 'Vidéo insérée (incorporée dans le .pptx ; lisible dans PowerPoint)',
   appStatusAudioInserted: 'Audio inséré (incorporé dans le .pptx)',
   appStatusModel3dInserted:
-    'Modèle 3D incorporé (le canevas affiche un espace réservé ; le fichier du modèle est stocké dans le .pptx)',
+    'Modèle 3D inséré : sélectionnez-le pour le faire pivoter (PowerPoint l’affiche aussi en 3D)',
+  appStatusModel3dNoPreview: 'Le modèle 3D n’a pas pu être dessiné ici ; son image reste inchangée',
   appStatusRecordingEmpty: 'L’enregistrement est vide ; rien n’a été inséré',
   appStatusRecordingInserted:
     'Enregistrement d’écran inséré dans la diapositive actuelle (webm incorporé)',
@@ -257,6 +258,14 @@ export const fr = {
     'La durée totale du diaporama était de {duration}. Voulez-vous enregistrer le minutage des diapositives pour le défilement automatique ?',
   appRehearseDiscard: 'Ne pas enregistrer',
   appRehearseSave: 'Enregistrer',
+  appRecordTitle: 'Enregistrer la narration',
+  appRecordSummary:
+    'Durée de l’enregistrement : {duration}. Enregistrer la narration et le minutage de chaque diapositive ?',
+  appRecordDiscard: 'Ne pas enregistrer',
+  appRecordSave: 'Enregistrer',
+  appStatusRecordSaved: 'Narration enregistrée sur {count} diapositives (PowerPoint la lit aussi)',
+  appStatusRecordFailed: 'L’enregistrement n’a pas pu être sauvegardé',
+  appStatusNarrationCleared: 'Narration effacée',
   appSettingsTitle: 'Paramètres IA',
   appSettingsAccount: 'Compte Genspark',
   appSettingsChecking: 'Vérification…',

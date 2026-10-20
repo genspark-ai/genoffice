@@ -8,6 +8,7 @@ import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { nextNoteId, parseDocx, type CommentInfo, type NoteInfo } from '@genoffice/docx-engine'
 import type { Dispatch, SetStateAction } from 'react'
+import { authorName } from './author-name'
 import { fetchDocBytes } from './doc-bytes'
 import type { DocState } from './doc-state'
 import {
@@ -170,7 +171,7 @@ export function submitNewComment(ctx: ReviewContext, text: string): void {
     return
   }
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-  ctx.setComments((prev) => [...prev, { id, author: 'User', date: now, text }])
+  ctx.setComments((prev) => [...prev, { id, author: authorName(), date: now, text }])
   ctx.setCommentsDirty(true)
   ctx.setCommentComposing(false)
   ctx.dirtyRef.current = true
@@ -204,7 +205,7 @@ export function replyToComment(
   ctx: ReviewContext,
   parentId: string,
   text: string,
-  author = 'User',
+  author = authorName(),
 ): boolean {
   if (!ctx.editor) return false
   const id = nextCommentId(ctx.comments)

@@ -16,16 +16,33 @@ import {
 
 describe('format registry', () => {
   it('mirrors the shell open routing for the mcp-driven families', () => {
-    expect(formatFamily('docx').editorOpen).toEqual(['docx'])
-    expect(formatFamily('xlsx').editorOpen).toEqual(['xlsx', 'xlsm', 'xls', 'csv', 'tsv'])
-    expect(formatFamily('pptx').editorOpen).toEqual(['pptx'])
+    expect(formatFamily('docx').editorOpen).toEqual(['docx', 'odt', 'ott'])
+    expect(formatFamily('xlsx').editorOpen).toEqual([
+      'xlsx',
+      'xlsm',
+      'xls',
+      'csv',
+      'tsv',
+      'ods',
+      'ots',
+    ])
+    expect(formatFamily('pptx').editorOpen).toEqual(['pptx', 'odp', 'otp'])
   })
 
-  it('keeps .tsv open-only: it converts on open and saves as .xlsx', () => {
-    const sheet = formatFamily('xlsx')
-    expect(sheet.editorOpen).toContain('tsv')
-    expect(sheet.editorSave).not.toContain('tsv')
-    expect(sheet.mcp?.save).not.toContain('tsv')
+  it('keeps the converted-copy formats open-only: they convert on open and never save as ODF', () => {
+    // the xlsx family converts .tsv/.ods to .xlsx; docx/pptx take .odt/.odp the same way
+    for (const [family, exts] of [
+      ['xlsx', ['tsv', 'ods', 'ots']],
+      ['docx', ['odt', 'ott']],
+      ['pptx', ['odp', 'otp']],
+    ] as const) {
+      const entry = formatFamily(family)
+      for (const ext of exts) {
+        expect(entry.editorOpen).toContain(ext)
+        expect(entry.editorSave).not.toContain(ext)
+        expect(entry.mcp?.save).not.toContain(ext)
+      }
+    }
   })
 
   it('keeps the editor-only families (md/html) without an mcp block', () => {
@@ -97,7 +114,7 @@ describe('capabilityReport', () => {
     const report = capabilityReport()
     expect(report.map((r) => r.family)).toEqual(['docx', 'xlsx', 'pptx', 'md', 'html', 'pdf'])
     const docx = report.find((r) => r.family === 'docx')!
-    expect(docx.editor.open).toEqual(['docx'])
+    expect(docx.editor.open).toEqual(['docx', 'odt', 'ott'])
     expect(docx.editor.export).toEqual(['pdf'])
     expect(docx.mcp).toEqual({ generate: 'docx', save: ['docx'], read: 'docx' })
     // editor-only family carries no mcp key

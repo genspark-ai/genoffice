@@ -14,6 +14,8 @@ import type {
   AddInkOp,
   AddMediaBytesOp,
   ReplacePictureBytesOp,
+  AddModel3dOp,
+  SetModel3dViewOp,
   AddSmartArtOp,
   ApplyThemeOp,
   AddBlankSlideOp,
@@ -47,6 +49,7 @@ import type {
   TableStructureIpcOp,
   TableMergeIpcOp,
   ReorderElementOp,
+  SaveRecordingOp,
   SetAdvanceTimesOp,
   SetAnimationsOp,
   SetSlideHiddenOp,
@@ -166,17 +169,6 @@ const api: SlidesApi = {
       atIndex,
       deckName,
     ),
-  cloudGenStatus: () => ipcRenderer.invoke('slides:cloud-gen-status'),
-  cloudPageCancel: () => ipcRenderer.invoke('slides:cloud-page-cancel'),
-  cloudGeneratePage: (op: {
-    brief: string
-    title?: string
-    styleSkill?: string
-    deckContext?: Record<string, unknown>
-    images?: { url: string; caption?: string }[]
-    width?: number
-    height?: number
-  }) => ipcRenderer.invoke('slides:cloud-page-generate', op),
   localGeneratePage: (op: { specJson: string }) =>
     ipcRenderer.invoke('slides:local-page-generate', op),
   editText: (op: EditTextOp) => ipcRenderer.invoke('slides:edit-text', op),
@@ -298,8 +290,11 @@ const api: SlidesApi = {
   addMediaBytes: (op: AddMediaBytesOp) => ipcRenderer.invoke('slides:add-media-bytes', op),
   getMediaData: (slideIndex: number, sourceId: string) =>
     ipcRenderer.invoke('slides:media-data', slideIndex, sourceId),
-  insertModel3d: (slideIndex: number, fitWidthPx: number) =>
-    ipcRenderer.invoke('slides:insert-model3d', slideIndex, fitWidthPx),
+  pickModel3d: () => ipcRenderer.invoke('slides:pick-model3d'),
+  addModel3d: (op: AddModel3dOp) => ipcRenderer.invoke('slides:add-model3d', op),
+  getModel3dData: (slideIndex: number, sourceId: string) =>
+    ipcRenderer.invoke('slides:model3d-data', slideIndex, sourceId),
+  setModel3dView: (op: SetModel3dViewOp) => ipcRenderer.invoke('slides:set-model3d-view', op),
   setLink: (op: SetLinkOp) => ipcRenderer.invoke('slides:set-link', op),
   getLink: (slideIndex: number, sourceId: string) =>
     ipcRenderer.invoke('slides:get-link', slideIndex, sourceId),
@@ -311,7 +306,12 @@ const api: SlidesApi = {
   applyTheme: (op: ApplyThemeOp) => ipcRenderer.invoke('slides:apply-theme', op),
   setTransition: (op: SetTransitionOp) => ipcRenderer.invoke('slides:set-transition', op),
   getTransition: (slideIndex: number) => ipcRenderer.invoke('slides:get-transition', slideIndex),
+  getShowTiming: (slideIndex: number) => ipcRenderer.invoke('slides:get-show-timing', slideIndex),
   setAdvanceTimes: (op: SetAdvanceTimesOp) => ipcRenderer.invoke('slides:set-advance-times', op),
+  saveRecording: (op: SaveRecordingOp) => ipcRenderer.invoke('slides:save-recording', op),
+  clearNarration: (slideIndexes: number[]) =>
+    ipcRenderer.invoke('slides:clear-narration', slideIndexes),
+  microphoneAccess: () => ipcRenderer.invoke('slides:microphone-access'),
   getAnimations: (slideIndex: number) => ipcRenderer.invoke('slides:get-animations', slideIndex),
   getShapeKeys: (slideIndex: number) => ipcRenderer.invoke('slides:get-shape-keys', slideIndex),
   setAnimations: (op: SetAnimationsOp) => ipcRenderer.invoke('slides:set-animations', op),
@@ -497,6 +497,8 @@ const projectApi: ProjectApi = {
   appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
   loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
   rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
+  listChats: (args) => ipcRenderer.invoke('project:listChats', args),
+  deleteChat: (args) => ipcRenderer.invoke('project:deleteChat', args),
 }
 contextBridge.exposeInMainWorld('projectApi', projectApi)
 

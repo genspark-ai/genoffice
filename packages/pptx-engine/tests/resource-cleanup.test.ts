@@ -111,8 +111,8 @@ describe('deleted resource cleanup', () => {
     })!
     const modelPath = mediaParts(opened).find((path) => path.endsWith('.glb'))!
     const second = duplicateSlide(opened, 0)!
-    const duplicateModel = second.elements.find((element) =>
-      element.descr?.startsWith('aislides-3d:'),
+    const duplicateModel = second.elements.find(
+      (element) => element.type === 'picture' && element.model3d,
     )!
 
     expect(deleteElement(opened, added.slide, added.elementId)).toBe(true)
@@ -321,15 +321,20 @@ describe('superseded shape picture-fill cleanup', () => {
 })
 
 describe('3D marker scan is limited to shape-tree parts', () => {
+  /** A model placeholder as decks saved before am3d support carry it: a picture whose descr names the model part. */
   async function withModel() {
     const opened = await openPptx(await createBlankPptx())
-    const added = addModel3d(opened, 0, {
-      bytes: new Uint8Array([0x67, 0x6c, 0x54, 0x46]),
-      ext: 'glb',
-      offset: OFF,
-    })!
-    const modelPath = mediaParts(opened).find((path) => path.endsWith('.glb'))!
-    return { opened, added, modelPath }
+    const slide = opened.deck.slides[0]!
+    const modelPath = 'ppt/media/media9.glb'
+    opened.archive.entries.set(modelPath, new Uint8Array([0x67, 0x6c, 0x54, 0x46]))
+    const picture = addPicture(opened, slide, { bytes: PNG_1PX, ext: 'png', offset: OFF })!
+    const marker = `aislides-3d:${modelPath}`
+    picture.anchor.originalXml = picture.anchor.originalXml.replace(
+      /<p:cNvPr\b/,
+      `<p:cNvPr descr="${marker}"`,
+    )
+    picture.descr = marker
+    return { opened, added: { slide, elementId: picture.id }, modelPath }
   }
 
   const plant = (opened: Awaited<ReturnType<typeof openPptx>>, path: string, xml: string) =>

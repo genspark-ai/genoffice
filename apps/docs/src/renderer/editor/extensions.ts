@@ -1,4 +1,5 @@
 import { ScriptFonts } from './script-fonts'
+import { MultiSelect } from './multi-select'
 import { Editor, Extension, Node } from '@tiptap/core'
 import { SHAPE_INLINE_WRAP } from './floating-z-order'
 import { StreamingTailGuardExtension } from './streaming-tail-guard'
@@ -33,7 +34,10 @@ import {
 import {
   asciiOnlyCjkFace,
   autospaceBoundaries,
+  autospaceMode,
   autospacePadBetween,
+  autospacePadClass,
+  type AutospaceMode,
   codePointLengthAt,
   cjkDeclaredLineFactor,
   cjkScriptRanges,
@@ -173,6 +177,7 @@ import {
 import { inlineMathML } from './equation'
 import { constrainTableWidthAtCell } from './table-sizing'
 import { tableColumnDrag } from './table-column-drag'
+import { tableRowDrag } from './table-row-drag'
 import { PERSISTABLE_IMAGE_URL } from './persistable-image'
 
 /**
@@ -215,6 +220,7 @@ import {
   TextStyleMark,
   UnderlineMark,
 } from './marks'
+import { DocRedaction } from './redaction'
 import {
   DropCapExtension,
   EaHintQuotesExtension,
@@ -297,8 +303,9 @@ const anchorAttrs = {
   /** render-only RTL inferred from run w:rtl / RTL script when w:bidi is absent
       (HTML-converted docs); align is the visual value as-is, never saved */
   bidiInferred: { default: false },
-  /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN); null = Word default on */
-  autoSpace: { default: null as boolean | null },
+  /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN); null = Word default on,
+   *  'latin' / 'digits' = only that kind of gap */
+  autoSpace: { default: null as boolean | 'latin' | 'digits' | null },
   /** w:wordWrap; false = hangul words may break between syllables (Word's allow-word-split option) */
   wordWrap: { default: null as boolean | null },
   /** w:overflowPunct; false = a line-end CJK stop never hangs into the margin */
@@ -342,6 +349,8 @@ const anchorAttrs = {
   pPrChange: { default: null as string | null },
   /** JSON {author,date?,id?} when the paragraph mark is a tracked deletion (w:pPr/w:rPr/w:del) */
   paraMarkDel: { default: null as string | null },
+  /** JSON {author,date?,id?} when the paragraph mark is a tracked insertion (w:pPr/w:rPr/w:ins) */
+  paraMarkIns: { default: null as string | null },
   /** top-level insertion/deletion revision ({kind,author,date?}) */
   blockRevision: { default: null as Record<string, string> | null },
   /** JSON marks snapshot for an empty block's caret (Word's pilcrow
@@ -805,7 +814,7 @@ export function clipboardParaAttrs(el: HTMLElement): Record<string, unknown> | n
   const attrs: Record<string, unknown> = {}
   for (const [key, type] of Object.entries(CLIPBOARD_PARA_ATTR_TYPES)) {
     const v = (parsed as Record<string, unknown>)[key]
-    if (typeof v !== type) continue
+    if (typeof v !== type && !(key === 'autoSpace' && (v === 'latin' || v === 'digits'))) continue
     if (type === 'number' && !Number.isFinite(v)) continue
     attrs[key] = v
   }
@@ -851,6 +860,7 @@ function blockAttrs(
     attrs: Record<string, unknown>
     textContent?: string
     childCount?: number
+    firstChild?: PmNode | null
     descendants?: PmNode['descendants']
   },
   {
@@ -880,6 +890,11 @@ function blockAttrs(
   // tcMar 40 cell makes a 23.52pt row; a text run beside it adds its descent)
   const picOnly = !node.textContent && (node.childCount ?? 0) > 0 && isPictureOnlyContent(node)
   if (picOnly) classes.push('doc-p-pic')
+  // a column break leading a paragraph with text has no line of its own: Word
+  // opens the next column with the first text line (CSS hides the break)
+  const lead = node.firstChild
+  if (lead?.type.name === 'hardBreak' && lead.attrs.colBreak && node.textContent)
+    classes.push('doc-lead-col-br')
   if (node.attrs.pageBreakBefore) {
     classes.push('page-break-before')
     attrs['data-page-break-label'] = t('editorPageBreak')
@@ -893,8 +908,11 @@ function blockAttrs(
     // table's dir="rtl" mirrors column order but must not reorder cell text
     styles.push('direction:ltr')
   }
-  // explicit autoSpaceDE/DN off also disables the browser's native 1/8em gap
-  if (node.attrs.autoSpace === false) styles.push('text-autospace:no-autospace')
+  // explicit autoSpaceDE/DN off also disables the browser's native 1/8em gap;
+  // with only one switch off the pads supply the remaining kind of gap alone
+  if (node.attrs.autoSpace != null && node.attrs.autoSpace !== true) {
+    styles.push('text-autospace:no-autospace')
+  }
   if (node.attrs.align) styles.push(textAlignDecl(String(node.attrs.align)))
   // the line-height factor follows paragraph content (approximating Word's max-of-inline-fonts
   // line height): CJK paragraphs get the CJK factor, pure-Western ones the document's
@@ -2210,7 +2228,7 @@ function simsunGapRanges(
  * ranges (relative to the block's content start) of the character after each
  * CJK-Latin pad boundary; that character carries the pad margin (.doc-autospace-pad)
  */
-function autospaceRanges(node: PmNode): Array<{ from: number; to: number }> {
+function autospaceRanges(node: PmNode, mode: AutospaceMode): Array<{ from: number; to: number }> {
   let ranges = autospaceRangesCache.get(node)
   if (ranges === undefined) {
     const found: Array<{ from: number; to: number }> = []
@@ -2219,8 +2237,8 @@ function autospaceRanges(node: PmNode): Array<{ from: number; to: number }> {
     node.forEach((child) => {
       if (child.isText && child.text) {
         const text = child.text
-        const cuts = autospaceBoundaries(text)
-        if (autospacePadBetween(prevText, text)) cuts.unshift(0)
+        const cuts = autospaceBoundaries(text, mode)
+        if (autospacePadBetween(prevText, text, mode)) cuts.unshift(0)
         for (const i of cuts) {
           found.push({ from: offset + i, to: offset + i + codePointLengthAt(text, i) })
         }
@@ -2394,11 +2412,11 @@ function pushLineFactorDecos(
         )
       }
     }
-    if (node.attrs.autoSpace !== false) {
-      for (const r of autospaceRanges(node)) {
-        decos.push(
-          Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { class: 'doc-autospace-pad' }),
-        )
+    const padMode = autospaceMode(node.attrs.autoSpace)
+    if (padMode) {
+      const padClass = autospacePadClass(padMode)
+      for (const r of autospaceRanges(node, padMode)) {
+        decos.push(Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { class: padClass }))
       }
     }
     for (const r of hangulSpaceRanges(node)) {
@@ -4183,6 +4201,7 @@ export const NativeTableSupport = Extension.create({
         },
       }),
       tableColumnDrag(),
+      tableRowDrag(),
       columnResizing({ View: null, cellMinWidth: 40, lastColumnResizable: true }),
       tableEditing({ allowTableNodeSelection: true }),
       // Word never ends a body with a table: without a paragraph below it the
@@ -7069,11 +7088,13 @@ export const editorExtensions = [
   CtrlCheckboxMark,
   RprChangeMark,
   TextStyleMark,
+  DocRedaction,
   FormatOffClearExtension,
   CommentMark,
   InsMark,
   DelMark,
   UndoRedo,
+  MultiSelect,
   SearchHighlightExtension,
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,

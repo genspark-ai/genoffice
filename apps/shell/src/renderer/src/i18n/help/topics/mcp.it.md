@@ -73,7 +73,7 @@ Un agente che non conosce il vocabolario delle op indovinerà. La skill porta co
 Il server non è limitato ai file su disco. Finché GenOffice è in esecuzione, l'agente può lavorare anche attraverso la finestra:
 
 - **`open_in_genoffice`** apre un file in una scheda e la porta in primo piano.
-- **`open_documents`** elenca ogni documento che hai aperto — id, tipo, percorso e se ha modifiche non salvate — e poi legge il contenuto attuale di uno o lo chiude, salvando prima a meno che tu non gli chieda di scartare.
+- **`open_documents`** elenca ogni documento che hai aperto — id, tipo, percorso e se ha modifiche non salvate — e poi legge il contenuto attuale di uno, lo salva sul posto o lo chiude, salvando prima a meno che tu non gli chieda di scartare.
 - **Gli strumenti di contenuto** prendono quell'id (o il percorso) come argomento `document`, così una modifica finisce nella scheda che hai già aperto e la finestra passa a mostrarla.
 
 Restano fuori portata due cose: non c'è il pannello IA e la finestra di aggiornamento dell'app non si applica.

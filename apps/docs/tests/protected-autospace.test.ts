@@ -127,6 +127,23 @@ describe('renderTableSpec autospace pads', () => {
     expect(dom.querySelector('td')!.textContent).toBe('ペン12A漢')
   })
 
+  it('keeps only the letter seams as full pads when autoSpaceDN is off', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          {
+            paras: ['ペン12A\u6f22'],
+            richParas: [{ runs: [{ text: 'ペン12A\u6f22' }], autoSpace: 'latin' }],
+          },
+        ],
+      ],
+    }
+    const dom = render(renderTableSpec(model))
+    expect(Array.from(pads(dom), (el) => el.textContent)).toEqual(['\u6f22'])
+    expect(dom.querySelectorAll('.doc-autospace-pad-full')).toHaveLength(1)
+    expect(dom.querySelector('td span')!.getAttribute('style')).toMatch(/no-autospace/)
+  })
+
   it('gates pads per paragraph: only the autoSpace-off one loses them', () => {
     const model: TableModel = {
       rows: [

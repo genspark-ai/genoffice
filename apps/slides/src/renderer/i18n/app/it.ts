@@ -66,7 +66,9 @@ export const it = {
     'Video inserito (incorporato nel file .pptx; riproducibile in PowerPoint)',
   appStatusAudioInserted: 'Audio inserito (incorporato nel file .pptx)',
   appStatusModel3dInserted:
-    "Modello 3D incorporato (l'area di lavoro mostra un segnaposto; il file del modello è salvato nel .pptx)",
+    'Modello 3D inserito: selezionalo per ruotarlo (anche PowerPoint lo mostra in 3D)',
+  appStatusModel3dNoPreview:
+    'Impossibile disegnare qui il modello 3D; la sua immagine resta invariata',
   appStatusRecordingEmpty: 'La registrazione è vuota; non è stato inserito nulla',
   appStatusRecordingInserted:
     'Registrazione dello schermo inserita nella diapositiva corrente (webm incorporato)',
@@ -258,6 +260,14 @@ export const it = {
     "Il tempo totale della presentazione è stato {duration}. Vuoi salvare gli intervalli delle diapositive per l'avanzamento automatico?",
   appRehearseDiscard: 'Non salvare',
   appRehearseSave: 'Salva',
+  appRecordTitle: 'Registra commento',
+  appRecordSummary:
+    'Durata della registrazione: {duration}. Salvare il commento e la durata di ogni diapositiva?',
+  appRecordDiscard: 'Non salvare',
+  appRecordSave: 'Salva',
+  appStatusRecordSaved: 'Commento salvato in {count} diapositive (riprodotto anche da PowerPoint)',
+  appStatusRecordFailed: 'Impossibile salvare la registrazione',
+  appStatusNarrationCleared: 'Commento cancellato',
   appSettingsTitle: 'Impostazioni IA',
   appSettingsAccount: 'Account Genspark',
   appSettingsChecking: 'Verifica in corso…',

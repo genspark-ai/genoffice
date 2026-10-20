@@ -88,6 +88,10 @@ export interface LevelTextStyle {
   spaceAfter?: number
   spaceBeforePct?: number
   spaceAfterPct?: number
+  /** <a:lvlNpPr hangingPunct/latinLnBrk/eaLnBrk> line-break switches; absent = inherit */
+  hangingPunct?: boolean
+  latinLnBrk?: boolean
+  eaLnBrk?: boolean
 }
 
 /** Default styles for the 9 levels (index = level, 0-based). */
@@ -359,6 +363,11 @@ function parseLvlPPr(
   if (pPr['@_indent'] != null) {
     const v = parseInt(String(pPr['@_indent']), 10)
     if (!Number.isNaN(v)) out.indent = v
+  }
+  for (const k of ['hangingPunct', 'latinLnBrk', 'eaLnBrk'] as const) {
+    const v = pPr[`@_${k}`]
+    if (v === '1' || v === 'true') out[k] = true
+    else if (v === '0' || v === 'false') out[k] = false
   }
   Object.assign(out, parseDefRPrStyle(pPr['a:defRPr'], theme))
   return Object.keys(out).length ? out : undefined
@@ -666,6 +675,9 @@ export function mergeTextStyleChain(
     if (out.bullet == null && lvl.bullet != null) out.bullet = lvl.bullet
     if (out.marL == null && lvl.marL != null) out.marL = lvl.marL
     if (out.indent == null && lvl.indent != null) out.indent = lvl.indent
+    if (out.hangingPunct == null && lvl.hangingPunct != null) out.hangingPunct = lvl.hangingPunct
+    if (out.latinLnBrk == null && lvl.latinLnBrk != null) out.latinLnBrk = lvl.latinLnBrk
+    if (out.eaLnBrk == null && lvl.eaLnBrk != null) out.eaLnBrk = lvl.eaLnBrk
     // Line/paragraph spacing inherit as attribute pairs (pct and pts are two value forms of the same lnSpc/spcBef/spcAft node)
     if (
       out.lineHeight == null &&

@@ -358,6 +358,21 @@ pub struct CommentInfo {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread: Option<ThreadInfo>,
+    /// The picture the note's shape is showing, when it has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<CommentImageInfo>,
+}
+
+/// A note's picture, fetched through the `read_media` command rather than
+/// carried inline: the bytes of a photograph do not belong in the metadata a
+/// workbook hands back for every sheet it has.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentImageInfo {
+    /// Media lookup key for the read_media command.
+    pub id: String,
+    #[serde(skip_serializing)]
+    pub media_path: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -588,7 +603,7 @@ pub struct SheetProtectionAllow {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase", untagged)]
+#[serde(rename_all_fields = "camelCase", untagged)]
 pub enum SheetPasswordHash {
     Legacy {
         legacy: String,

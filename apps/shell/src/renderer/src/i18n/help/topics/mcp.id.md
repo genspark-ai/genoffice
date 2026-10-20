@@ -73,7 +73,7 @@ Agen yang tidak mengenal kosakata op akan menebak. Skill itu membawa referensi d
 Server itu tidak dibatasi pada berkas di disk. Selama GenOffice berjalan, agen juga bisa bekerja melalui jendela:
 
 - **`open_in_genoffice`** membuka berkas di sebuah tab dan memfokuskannya.
-- **`open_documents`** mencantumkan setiap dokumen yang Anda buka — id, jenis, path, dan apakah ada perubahan yang belum disimpan —, lalu membaca isi terkini salah satunya atau menutupnya, dengan menyimpan lebih dulu kecuali Anda menyuruhnya membuang.
+- **`open_documents`** mencantumkan setiap dokumen yang Anda buka — id, jenis, path, dan apakah ada perubahan yang belum disimpan —, lalu membaca isi terkini salah satunya, menyimpannya di tempatnya, atau menutupnya, dengan menyimpan lebih dulu kecuali Anda menyuruhnya membuang.
 - **Alat konten** mengambil id itu (atau path-nya) sebagai argumen `document`, sehingga hasil suntingan mendarat di tab yang memang sudah Anda buka, dan jendela beralih menampilkannya.
 
 Dua hal tetap di luar jangkauan: tidak ada panel AI, dan dialog pembaruan di dalam aplikasi tidak berlaku.

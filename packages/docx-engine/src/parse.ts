@@ -154,7 +154,8 @@ import {
   SIMPLE_INLINE_FIELD_RE,
   ZOTERO_INLINE_FIELD_RE,
   activeCharIndents,
-  autoSpaceOf,
+  autoSpaceFlagsOf,
+  autoSpaceMode,
   bookmarkNamesOf,
   cellMarginsOf,
   charIndentsOf,
@@ -2098,19 +2099,20 @@ function buildTextParagraph(
     }
   }
 
-  // --- deleted paragraph mark (w:pPr/w:rPr/w:del) ---
-  let paraMarkDel: Block['paraMarkDel']
-  {
+  // --- deleted / inserted paragraph mark (w:pPr/w:rPr/w:del, w:pPr/w:rPr/w:ins) ---
+  const paraMarkRevision = (tag: string): Block['paraMarkDel'] => {
     const pRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
-    const delEl = pRPr ? findChild(pRPr, 'w:del') : undefined
-    if (delEl) {
-      const a = attrsOf(delEl)
-      paraMarkDel = { author: a['w:author'] ?? '' }
-      if (a['w:date']) paraMarkDel.date = a['w:date']
-      if (a['w16du:dateUtc']) paraMarkDel.dateUtc = a['w16du:dateUtc']
-      if (a['w:id']) paraMarkDel.id = a['w:id']
-    }
+    const el = pRPr ? findChild(pRPr, tag) : undefined
+    if (!el) return undefined
+    const a = attrsOf(el)
+    const info: NonNullable<Block['paraMarkDel']> = { author: a['w:author'] ?? '' }
+    if (a['w:date']) info.date = a['w:date']
+    if (a['w16du:dateUtc']) info.dateUtc = a['w16du:dateUtc']
+    if (a['w:id']) info.id = a['w:id']
+    return info
   }
+  const paraMarkDel = paraMarkRevision('w:del') ?? paraMarkRevision('w:moveFrom')
+  const paraMarkIns = paraMarkRevision('w:ins') ?? paraMarkRevision('w:moveTo')
 
   // list item?
   const listRef = listRefOf(ctx, pPr, styleId)
@@ -2122,6 +2124,7 @@ function buildTextParagraph(
     ...(moveRevision ? { moveRevision } : {}),
     ...(pPrChangeInfo ? { pPrChangeInfo } : {}),
     ...(paraMarkDel ? { paraMarkDel } : {}),
+    ...(paraMarkIns ? { paraMarkIns } : {}),
   }
   if (listRef) {
     const kind = listKindOf(ctx, listRef.numId, listRef.ilvl)
@@ -3435,7 +3438,12 @@ function inheritStyleBreakFlags(
 ): ParaFormat | undefined {
   const d = style?.display
   let out = format
-  if (out?.autoSpace === undefined && d?.autoSpace === false) out = { ...out, autoSpace: false }
+  // the two switches merge per attribute, so a style's DN off survives a paragraph's own DE
+  const autoSpace = autoSpaceMode(
+    out?.autoSpaceDE ?? d?.autoSpaceDE,
+    out?.autoSpaceDN ?? d?.autoSpaceDN,
+  )
+  if (autoSpace !== undefined && autoSpace !== out?.autoSpace) out = { ...out, autoSpace }
   if (out?.wordWrap === undefined && d?.wordWrap === false) out = { ...out, wordWrap: false }
   if (out?.overflowPunct === undefined && d?.overflowPunct === false) {
     out = { ...out, overflowPunct: false }
@@ -3633,8 +3641,11 @@ function extractParaFormat(
     const ctx = onOffOf(pPr, 'w:contextualSpacing')
     if (ctx !== undefined) format.contextualSpacing = ctx
   }
-  const autoSpace = autoSpaceOf(pPr)
-  if (autoSpace !== undefined) format.autoSpace = autoSpace
+  const autoSpace = autoSpaceFlagsOf(pPr)
+  if (autoSpace.de !== undefined) format.autoSpaceDE = autoSpace.de
+  if (autoSpace.dn !== undefined) format.autoSpaceDN = autoSpace.dn
+  const autoSpaceAll = autoSpaceMode(autoSpace.de, autoSpace.dn)
+  if (autoSpaceAll !== undefined) format.autoSpace = autoSpaceAll
   const wordWrap = onOffOf(pPr, 'w:wordWrap')
   if (wordWrap !== undefined) format.wordWrap = wordWrap
   const overflowPunct = onOffOf(pPr, 'w:overflowPunct')
@@ -3975,6 +3986,7 @@ function extractRuns(
       } else if (type === 'end') {
         fieldDepth = Math.max(0, fieldDepth - 1)
         if (fieldDepth === 0) {
+          let merge: RegExpExecArray | null
           const xe = XE_INSTR_RE.exec(fieldInstr)
           const ref = REF_INSTR_RE.exec(fieldInstr)
           const hyper = convertibleHyperlink(fieldInstr)
@@ -4033,18 +4045,18 @@ function extractRuns(
           } else if (ZOTERO_INLINE_FIELD_RE.test(fieldInstr)) {
             if (zoteroField) pushZoteroCachedRuns(zoteroField.part, rev)
             else pushZoteroCachedRuns('single', rev)
-          } else if (MERGEFIELD_INSTR_RE.test(fieldInstr)) {
+          } else if ((merge = MERGEFIELD_INSTR_RE.exec(fieldInstr))) {
             // Mail merge: Word fills the result in from a data source, so an
             // unmerged main document caches nothing. Show the guillemet
             // placeholder Word uses instead of an empty run; the value is not
             // dirtied because only the merge itself can supply it.
-            const merge = MERGEFIELD_INSTR_RE.exec(fieldInstr)!
             pushRun(
               {
                 ...resultFormat(),
                 text: fieldCached || `«${merge[1] ?? merge[2]}»`,
                 instrField: fieldInstr.trim(),
                 ...(fieldDirty ? { fldDirty: true } : {}),
+                ...(link ? { link } : {}),
               },
               rev,
             )

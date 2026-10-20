@@ -14,5 +14,6 @@ export function createElectronTransport(getSettings: () => AiSettings): AgentTra
     creditsErrorText: () => t('aiCreditsExhausted'),
     networkErrorText: () => t('aiNetworkError'),
     overloadedErrorText: () => t('aiOverloadedError'),
+    regionErrorText: () => t('aiRegionError'),
   })
 }

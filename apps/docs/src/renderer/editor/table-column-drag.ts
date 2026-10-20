@@ -35,6 +35,24 @@ export function dragColumnBorder(
   return widths
 }
 
+/**
+ * Word's corner drag: the whole grid scales with the pointer so columns keep
+ * their proportions; the table never grows past the section content width.
+ */
+export function scaleTableGrid(
+  start: readonly number[],
+  delta: number,
+  maxTotal: number,
+  minimum = MIN_TABLE_COLUMN_PX,
+): number[] {
+  const total = start.reduce((sum, width) => sum + width, 0)
+  if (!(total > 0) || !Number.isFinite(delta)) return start.slice()
+  // uniform scaling stops once the narrowest column reaches the minimum
+  const minFactor = Math.max(...start.map((width) => Math.min(minimum, width) / width))
+  const target = Math.min(Math.max(maxTotal, total), Math.max(total * minFactor, total + delta))
+  return start.map((width) => (width / total) * target)
+}
+
 function tableDomAt(view: EditorView, tableStart: number): HTMLTableElement | null {
   let dom: Node | null = view.domAtPos(tableStart).node
   while (dom && dom.nodeName !== 'TABLE') dom = dom.parentNode
@@ -47,7 +65,7 @@ function sectionContentWidth(view: EditorView, fallback: number): number {
   return Number.isFinite(width) && width > 0 ? width : fallback
 }
 
-interface Preview {
+export interface Preview {
   table: HTMLTableElement
   colgroup: HTMLElement
   /** inline styles to put back when the drag ends without a commit */
@@ -56,7 +74,7 @@ interface Preview {
   createdCols: HTMLElement[]
 }
 
-function startPreview(table: HTMLTableElement, columns: number): Preview | null {
+export function startPreview(table: HTMLTableElement, columns: number): Preview | null {
   const colgroup = table.firstElementChild as HTMLElement | null
   if (!colgroup || colgroup.tagName !== 'COLGROUP') return null
   const createdCols: HTMLElement[] = []
@@ -79,7 +97,7 @@ function startPreview(table: HTMLTableElement, columns: number): Preview | null 
  * Paint a grid onto the table the way renderHTML will after the commit
  * (colgroup percentages of a fixed table width), so the preview is the result.
  */
-function paintPreview(preview: Preview, widths: number[], tableCssWidth: number): void {
+export function paintPreview(preview: Preview, widths: number[], tableCssWidth: number): void {
   const total = widths.reduce((sum, width) => sum + width, 0)
   const { table, colgroup } = preview
   table.style.width = `${tableCssWidth}px`
@@ -91,7 +109,7 @@ function paintPreview(preview: Preview, widths: number[], tableCssWidth: number)
   })
 }
 
-function restorePreview(preview: Preview): void {
+export function restorePreview(preview: Preview): void {
   const { table, colgroup, tableStyle, colStyles, createdCols } = preview
   if (tableStyle === null) table.removeAttribute('style')
   else table.setAttribute('style', tableStyle)

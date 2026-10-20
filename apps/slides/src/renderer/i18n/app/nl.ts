@@ -67,7 +67,9 @@ export const nl = {
     'Video ingevoegd (ingesloten in het .pptx-bestand; afspeelbaar in PowerPoint)',
   appStatusAudioInserted: 'Audio ingevoegd (ingesloten in het .pptx-bestand)',
   appStatusModel3dInserted:
-    '3D-model ingesloten (het canvas toont een tijdelijke aanduiding; het modelbestand is opgeslagen in het .pptx-bestand)',
+    '3D-model ingevoegd: selecteer het om het te draaien (PowerPoint toont het ook in 3D)',
+  appStatusModel3dNoPreview:
+    'Het 3D-model kan hier niet worden getekend; de afbeelding blijft ongewijzigd',
   appStatusRecordingEmpty: 'De opname is leeg; er is niets ingevoegd',
   appStatusRecordingInserted: 'Schermopname ingevoegd op de huidige dia (ingesloten webm)',
   appStatusRecording:
@@ -259,6 +261,14 @@ export const nl = {
     'De totale duur van de voorstelling was {duration}. Wilt u de diatijden opslaan voor automatische diadoorloop?',
   appRehearseDiscard: 'Niet opslaan',
   appRehearseSave: 'Opslaan',
+  appRecordTitle: 'Gesproken tekst opnemen',
+  appRecordSummary: 'Opnameduur {duration}. De gesproken tekst en de tijd van elke dia opslaan?',
+  appRecordDiscard: 'Niet opslaan',
+  appRecordSave: 'Opslaan',
+  appStatusRecordSaved:
+    'Gesproken tekst opgeslagen op {count} dia’s (PowerPoint speelt die ook af)',
+  appStatusRecordFailed: 'De opname kan niet worden opgeslagen',
+  appStatusNarrationCleared: 'Gesproken tekst gewist',
   appSettingsTitle: 'AI-instellingen',
   appSettingsAccount: 'Genspark-account',
   appSettingsChecking: 'Controleren…',

@@ -24,6 +24,7 @@ import JSZip from 'jszip'
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom'
 
 const MC = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
+const AM3D = 'http://schemas.microsoft.com/office/drawing/2017/model3d'
 const SCHEMA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'schemas')
 const PART_SCHEMA = [
   [
@@ -118,6 +119,19 @@ export async function validatePptx(input) {
       fs.writeFileSync(file, mcePreprocess(await zip.file(name).async('string')))
       if (!groups.has(schema)) groups.set(schema, [])
       groups.get(schema).push({ name, file })
+    }
+    // A 3D model sits in an mc:Choice, which preprocessing drops: each am3d:model3d is checked
+    // on its own against [MS-ODRAWXML]'s schema
+    for (const name of Object.keys(zip.files)) {
+      if (!/^ppt\/slides\/[^/]+\.xml$/.test(name) || malformed.has(name)) continue
+      const doc = new DOMParser().parseFromString(await zip.file(name).async('string'), 'text/xml')
+      const models = Array.from(doc.getElementsByTagNameNS(AM3D, 'model3d'))
+      models.forEach((model, i) => {
+        const file = path.join(tmp, `${name.replace(/\//g, '__')}__model3d${i}.xml`)
+        fs.writeFileSync(file, new XMLSerializer().serializeToString(model))
+        if (!groups.has('am3d.xsd')) groups.set('am3d.xsd', [])
+        groups.get('am3d.xsd').push({ name, file })
+      })
     }
     for (const [schema, parts] of groups) {
       const r = spawnSync(

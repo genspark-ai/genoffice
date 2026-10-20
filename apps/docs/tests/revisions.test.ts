@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import JSZip from 'jszip'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { addRowAfter, deleteRow } from '@tiptap/pm/tables'
@@ -1115,5 +1116,149 @@ describe('repeated backspace under track changes', () => {
     expect(struck).toContain('B')
     expect(editor.state.doc.textContent).toBe('ABCD')
     editor.destroy()
+  })
+})
+
+describe('moves and paragraph marks (genoffice#2086)', () => {
+  const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
+  const R = (t: string) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
+  const DR = (t: string) => `<w:r><w:delText xml:space="preserve">${t}</w:delText></w:r>`
+  const MOVE_XML =
+    `<w:p>${R('P0 intro')}</w:p>` +
+    `<w:p>${R('P1 alpha ')}<w:moveFromRangeStart w:id="1" ${AT} w:name="m"/><w:moveFrom w:id="2" ${AT}>${DR('MOVED ')}</w:moveFrom><w:moveFromRangeEnd w:id="1"/>${R('beta')}</w:p>` +
+    `<w:p>${R('P2 gamma ')}<w:moveToRangeStart w:id="3" ${AT} w:name="m"/><w:moveTo w:id="4" ${AT}>${R('MOVED ')}</w:moveTo><w:moveToRangeEnd w:id="3"/>${R('delta')}</w:p>` +
+    `<w:p>${R('P3 tail')}</w:p>`
+  const paragraphs = (editor: Editor) => {
+    const out: string[] = []
+    editor.state.doc.forEach((n) => out.push(n.textContent))
+    return out
+  }
+  async function openEditor(bodyXml: string) {
+    const parsed = await parseDocx(await buildDocx({ bodyXml }))
+    const editor = new Editor({
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks),
+    })
+    return { parsed, editor }
+  }
+  async function savedXml(editor: Editor, parsed: Awaited<ReturnType<typeof parseDocx>>) {
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const zip = await JSZip.loadAsync(await saveDocx(parsed, plan.saveBlocks))
+    return zip.file('word/document.xml')!.async('string')
+  }
+
+  it('a move is two run-level revisions; accepting removes only the moved text at its source', async () => {
+    const { parsed, editor } = await openEditor(MOVE_XML)
+    const ranges = collectRevisions(editor.state.doc)
+    expect(ranges.map((r) => [r.kind, editor.state.doc.textBetween(r.from, r.to)])).toEqual([
+      ['moveFrom', 'MOVED '],
+      ['moveTo', 'MOVED '],
+    ])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual([
+      'P0 intro',
+      'P1 alpha beta',
+      'P2 gamma MOVED delta',
+      'P3 tail',
+    ])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    expect(await savedXml(editor, parsed)).not.toMatch(/<w:(?:ins|del|moveFrom|moveTo)\b/)
+    editor.destroy()
+
+    const again = await openEditor(MOVE_XML)
+    rejectAllRevisions(again.editor)
+    expect(paragraphs(again.editor)).toEqual([
+      'P0 intro',
+      'P1 alpha MOVED beta',
+      'P2 gamma delta',
+      'P3 tail',
+    ])
+    again.editor.destroy()
+  })
+
+  it('an empty moved paragraph is a block-level move: gone on accept at the source, kept on reject', async () => {
+    const xml =
+      `<w:p>${R('before')}</w:p>` +
+      `<w:p><w:moveFrom w:id="7" ${AT}><w:r><w:t></w:t></w:r></w:moveFrom></w:p>` +
+      `<w:p>${R('after')}</w:p>`
+    const { editor } = await openEditor(xml)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['moveFrom'])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['before', 'after'])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    editor.destroy()
+
+    const again = await openEditor(xml)
+    rejectAllRevisions(again.editor)
+    expect(paragraphs(again.editor)).toEqual(['before', '', 'after'])
+    expect(collectRevisions(again.editor.state.doc)).toEqual([])
+    again.editor.destroy()
+  })
+
+  it('a paragraph mark inside a move is a paragraph-mark revision', async () => {
+    const xml =
+      `<w:p><w:pPr><w:rPr><w:moveFrom w:id="8" ${AT}/></w:rPr></w:pPr><w:moveFrom w:id="9" ${AT}>${DR('gone')}</w:moveFrom></w:p>` +
+      `<w:p>${R('after')}</w:p>`
+    const { parsed, editor } = await openEditor(xml)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual([
+      'paraMarkDel',
+      'moveFrom',
+    ])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['after'])
+    expect(await savedXml(editor, parsed)).not.toMatch(/moveFrom|<w:del\b/)
+    editor.destroy()
+  })
+
+  it('a moved paragraph mark with live text joins the next paragraph and leaves no move behind', async () => {
+    const xml =
+      `<w:p><w:pPr><w:rPr><w:moveFrom w:id="8" ${AT}/></w:rPr></w:pPr>${R('keep')}</w:p>` +
+      `<w:p>${R('after')}</w:p>`
+    const { parsed, editor } = await openEditor(xml)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['keepafter'])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    expect(await savedXml(editor, parsed)).not.toMatch(/moveFrom|moveRevision/)
+    editor.destroy()
+  })
+
+  it('a deleted paragraph mark joins the next paragraph on accept and stays a mark on reject', async () => {
+    const xml =
+      `<w:p><w:pPr><w:rPr><w:del w:id="5" ${AT}/><w:b/></w:rPr></w:pPr>${R('one')}</w:p>` +
+      `<w:p>${R('two')}</w:p><w:p>${R('three')}</w:p>`
+    const { parsed, editor } = await openEditor(xml)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkDel'])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['onetwo', 'three'])
+    expect(collectRevisions(editor.state.doc)).toEqual([])
+    const accepted = await savedXml(editor, parsed)
+    expect(accepted).not.toMatch(/<w:del\b/)
+    expect(accepted).toContain('<w:rPr><w:b/></w:rPr>')
+    editor.destroy()
+
+    const again = await openEditor(xml)
+    rejectAllRevisions(again.editor)
+    expect(paragraphs(again.editor)).toEqual(['one', 'two', 'three'])
+    const rejected = await savedXml(again.editor, again.parsed)
+    expect(rejected).not.toMatch(/<w:del\b/)
+    expect(rejected).toContain('<w:rPr><w:b/></w:rPr>')
+    again.editor.destroy()
+  })
+
+  it('an inserted paragraph mark becomes permanent on accept and joins on reject', async () => {
+    const xml = `<w:p><w:pPr><w:rPr><w:ins w:id="6" ${AT}/></w:rPr></w:pPr>${R('one')}</w:p><w:p>${R('two')}</w:p>`
+    const { parsed, editor } = await openEditor(xml)
+    expect(collectRevisions(editor.state.doc).map((r) => r.kind)).toEqual(['paraMarkIns'])
+    acceptAllRevisions(editor)
+    expect(paragraphs(editor)).toEqual(['one', 'two'])
+    expect(await savedXml(editor, parsed)).not.toMatch(/<w:ins\b|<w:rPr>/)
+    editor.destroy()
+
+    const again = await openEditor(xml)
+    rejectAllRevisions(again.editor)
+    expect(paragraphs(again.editor)).toEqual(['onetwo'])
+    expect(collectRevisions(again.editor.state.doc)).toEqual([])
+    again.editor.destroy()
   })
 })

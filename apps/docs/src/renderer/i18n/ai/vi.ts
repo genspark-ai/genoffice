@@ -111,6 +111,8 @@ export const vi = {
   aiUnknownError: 'Lỗi không xác định',
   aiTimeoutError:
     'Yêu cầu AI đã hết thời gian chờ: mạng không phản hồi nên quá trình xử lý đã dừng. Kiểm tra kết nối của bạn và thử lại',
+  aiRegionError:
+    'Nhà cung cấp của mô hình này không phục vụ khu vực hiện tại của bạn — hãy chọn mô hình khác hoặc đổi mạng',
   aiOverloadedError: 'Dịch vụ AI hiện đang bận — vui lòng thử lại sau giây lát',
   aiNetworkError:
     'Sự cố mạng: không thể kết nối tới dịch vụ AI. Kiểm tra kết nối của bạn và thử lại',
@@ -120,6 +122,9 @@ export const vi = {
   aiSumImageAttachment: 'Hình ảnh đính kèm {name}',
   aiSumRead: 'Đọc {name}',
   aiSumReadAttachmentName: 'Đọc tệp đính kèm {name}',
+  aiSumSkillsList: 'Đã liệt kê skill đã cài',
+  aiSumSkillRead: 'Đã đọc skill {name}',
+  aiSumRunCli: 'Đã chạy {args}',
   aiSumWebSearch: 'Tìm kiếm trên web',
   aiSumWebSearchDone: 'Đã tìm kiếm "{query}" ({count} kết quả)',
   aiSumImageSearch: 'Tìm kiếm hình ảnh',
