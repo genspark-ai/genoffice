@@ -11,7 +11,12 @@ import { open, rename, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { atomicCopyFile, atomicWriteFile, writeJsonAtomic } from '../src/atomic-write'
+import {
+  atomicCopyFile,
+  atomicWriteFile,
+  setFileWrittenHook,
+  writeJsonAtomic,
+} from '../src/atomic-write'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -260,5 +265,40 @@ describe('writeJsonAtomic', () => {
     })
     writeJsonAtomic(target, { ok: true })
     expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ ok: true })
+  })
+})
+
+describe('the file-written hook', () => {
+  it('reports the path after a write and after a copy', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'atomic-write-hook-'))
+    try {
+      const written: string[] = []
+      setFileWrittenHook((filePath) => written.push(filePath))
+      try {
+        const target = join(dir, 'doc.docx')
+        await atomicWriteFile(target, Buffer.from('bytes'))
+        expect(written).toEqual([target])
+
+        const copy = join(dir, 'copy.docx')
+        await atomicCopyFile(target, copy)
+        expect(written).toEqual([target, copy])
+      } finally {
+        setFileWrittenHook(null)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reports nothing when no hook is registered', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'atomic-write-hook-'))
+    try {
+      setFileWrittenHook(null)
+      await expect(
+        atomicWriteFile(join(dir, 'doc.docx'), Buffer.from('bytes')),
+      ).resolves.toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

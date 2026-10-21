@@ -84,6 +84,13 @@ export interface ProjectIndex {
    * Old data without this map falls back to sha256(path) derivation.
    */
   chatIdByPath?: Record<string, string>
+  /**
+   * Absolute path → the identity of the file that path held when the chat was
+   * registered ("dev:ino:birthtimeMs"). A path that now holds a different
+   * file must not inherit the old chat, and a save that replaced the file
+   * (GenOffice writes through a temp file and renames it) has to refresh it.
+   */
+  fileIdentityByPath?: Record<string, string>
 }
 
 export interface ChatMeta {

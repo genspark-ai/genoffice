@@ -27,6 +27,18 @@ const isRetryableRename = (error: unknown) => RETRYABLE_RENAME_CODES.has(errorCo
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
+/**
+ * Called after a file was written at a path. The project store uses it to
+ * refresh the file identity it recorded for that path: the atomic write
+ * gives the path a new inode, and without the refresh the next resolve would
+ * read the file as a different one and start a new chat (genoffice#1021).
+ */
+let fileWrittenHook: ((filePath: string) => void) | null = null
+
+export function setFileWrittenHook(hook: ((filePath: string) => void) | null): void {
+  fileWrittenHook = hook
+}
+
 const tempPathBeside = (filePath: string) =>
   join(dirname(filePath), `.${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`)
 
@@ -81,6 +93,7 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   }
   try {
     await renameWithRetry(tmp, filePath)
+    fileWrittenHook?.(filePath)
     return
   } catch {
     // fall through to the in-place write
@@ -89,6 +102,7 @@ export async function atomicWriteFile(filePath: string, data: Buffer): Promise<v
   // or the process dies, the new bytes still exist somewhere on disk.
   await writeFile(filePath, data)
   await unlink(tmp).catch(() => {})
+  fileWrittenHook?.(filePath)
 }
 
 async function renameWithRetry(tmp: string, filePath: string): Promise<void> {
@@ -115,6 +129,7 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
   }
   try {
     await renameWithRetry(tmp, filePath)
+    fileWrittenHook?.(filePath)
     return
   } catch {
     // fall through to the in-place write
@@ -122,6 +137,7 @@ export async function atomicCopyFile(source: string, filePath: string): Promise<
   // Keep the completed temp until the fallback lands, as atomicWriteFile does.
   await copyFile(source, filePath)
   await unlink(tmp).catch(() => {})
+  fileWrittenHook?.(filePath)
 }
 
 /**

@@ -166,6 +166,26 @@ function unresolvedPathKey(filePath: string): string {
   return filePath.normalize('NFC')
 }
 
+/**
+ * The identity of the file at a path: the device and inode it lives on, plus
+ * the inode's creation time. A file that is replaced at the same path gets a
+ * different identity, so a reused path can be told apart from the file the
+ * chat was opened against.
+ *
+ * A save through GenOffice replaces the file too (the write goes to a temp
+ * file and is renamed over it, which gives the path a new inode), so the
+ * recorded identity has to be refreshed after a save — see
+ * ProjectStore.refreshFileIdentity.
+ */
+export function fileIdentity(filePath: string): string | null {
+  try {
+    const st = statSync(filePath)
+    return `${st.dev}:${st.ino}:${st.birthtimeMs}`
+  } catch {
+    return null
+  }
+}
+
 function hashPathKey(key: string): string {
   return createHash('sha256').update(key).digest('hex').slice(0, 16)
 }
@@ -583,12 +603,59 @@ export class ProjectStore {
         ProjectStore.rekeyEntry(index.chatIdByPath!, mappedKey, key)
         this.writeIndex(index)
       }
+      // The path holds a different file than the chat was opened against (the
+      // old one was deleted and an unrelated one took its place), so the new
+      // file starts with an empty history instead of inheriting the old one.
+      const identity = fileIdentity(filePath)
+      const known = index.fileIdentityByPath?.[key]
+      if (identity !== null && known !== undefined && known !== identity) {
+        const fresh = this.mintChatId(projectId)
+        index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [key]: fresh }
+        index.fileIdentityByPath = { ...(index.fileIdentityByPath ?? {}), [key]: identity }
+        this.writeIndex(index)
+        return { projectId, chatId: fresh }
+      }
+      if (identity !== null && known === undefined) {
+        // the first resolve after the upgrade records what the path holds
+        index.fileIdentityByPath = { ...(index.fileIdentityByPath ?? {}), [key]: identity }
+        this.writeIndex(index)
+      }
       return { projectId, chatId }
     }
     const chatId = this.fallbackChatId(projectId, filePath)
     index.chatIdByPath = { ...(index.chatIdByPath ?? {}), [key]: chatId }
+    const identity = fileIdentity(filePath)
+    if (identity !== null) {
+      index.fileIdentityByPath = { ...(index.fileIdentityByPath ?? {}), [key]: identity }
+    }
     this.writeIndex(index)
     return { projectId, chatId }
+  }
+
+  /**
+   * A fresh chat id for a path whose file was replaced: the path hash would
+   * give back the id the old chat already uses, so this one is random.
+   */
+  private mintChatId(projectId: string): string {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const id = `f${randomBytes(8).toString('hex')}`
+      if (!existsSync(this.chatPath(projectId, id))) return id
+    }
+    return `f${Date.now().toString(36)}${randomBytes(4).toString('hex')}`
+  }
+
+  /**
+   * Called after GenOffice itself wrote the file: the atomic write gave the
+   * path a new inode, so the recorded identity has to follow it, or the next
+   * resolve would read the file as a different one and start a new chat.
+   */
+  refreshFileIdentity(filePath: string): void {
+    const identity = fileIdentity(filePath)
+    if (identity === null) return
+    const index = this.readIndex()
+    const key = canonicalPathKey(filePath)
+    index.fileIdentityByPath = { ...(index.fileIdentityByPath ?? {}), [key]: identity }
+    this.writeIndex(index)
   }
 
   /**

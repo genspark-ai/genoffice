@@ -69,6 +69,7 @@ import {
   rendererUrl,
   MAX_REMOTE_IMAGE_BYTES,
   readBodyCapped,
+  setFileWrittenHook,
   writeJsonAtomic,
   recoveryCopyDiskNewer,
 } from '@genoffice/electron-utils'
@@ -4417,7 +4418,13 @@ let projectStore: ProjectStore | null = null
 let projectIpcRegistered = false
 
 function getProjectStore(): ProjectStore {
-  if (!projectStore) projectStore = new ProjectStore(app.getPath('userData'))
+  if (!projectStore) {
+    projectStore = new ProjectStore(app.getPath('userData'))
+    // A save replaces the file (a temp file is renamed over it), so the path
+    // gets a new inode. The store has to learn that, or the next resolve reads
+    // the file as a different one and starts a new chat (genoffice#1021).
+    setFileWrittenHook((filePath) => projectStore?.refreshFileIdentity(filePath))
+  }
   return projectStore
 }
 
