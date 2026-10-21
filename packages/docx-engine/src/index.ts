@@ -247,3 +247,13 @@ export {
   type RevisionXmlResult,
   type RevisionXmlType,
 } from './revision-xml'
+export {
+  compareBlocks,
+  compareDocuments,
+  DEFAULT_COMPARE_AUTHOR,
+  type CompareGranularity,
+  type CompareIgnore,
+  type CompareOptions,
+  type CompareResult,
+  type CompareSummary,
+} from './compare'

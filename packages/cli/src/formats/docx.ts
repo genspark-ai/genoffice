@@ -6,6 +6,7 @@ import {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
   buildBlankDocx,
+  compareDocuments,
   countTrackedChangesXml,
   findChartWorkbookPath,
   nextNoteId,
@@ -19,6 +20,9 @@ import {
   readSections,
   saveDocx,
   type CommentInfo,
+  type CompareGranularity,
+  type CompareIgnore,
+  type CompareSummary,
   type DocumentProperties,
   type HeaderFooter,
   type HfPartInfo,
@@ -254,6 +258,31 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
     options.partXml = { ...options.partXml, [path]: side.revisionParts!.get(path)! }
   }
   return saveDocx(doc.parsed, sectionEdits.saveBlocks, options)
+}
+
+export interface DocxCompareOptions {
+  /** author recorded on every revision */
+  author?: string
+  /** ISO timestamp recorded on every revision */
+  date?: string
+  /** at what granularity a changed paragraph is diffed */
+  granularity?: CompareGranularity
+  /** what the comparison leaves out */
+  ignore?: readonly CompareIgnore[]
+}
+
+/**
+ * The redline of two documents: the revised one with the differences marked as
+ * tracked insertions and deletions, ready to be accepted or rejected.
+ */
+export async function compareDocxFiles(
+  original: Uint8Array,
+  revised: Uint8Array,
+  options: DocxCompareOptions = {},
+): Promise<{ bytes: Uint8Array; summary: CompareSummary }> {
+  const [originalDoc, revisedDoc] = await Promise.all([parseDocx(original), parseDocx(revised)])
+  const result = await compareDocuments(originalDoc, revisedDoc, options)
+  return { bytes: result.bytes, summary: result.summary }
 }
 
 const REVISION_PART_RE = /^word\/(?:header\d*|footer\d*|footnotes|endnotes)\.xml$/
