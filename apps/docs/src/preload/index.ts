@@ -15,6 +15,7 @@ import type {
   DocTheme,
   UiTheme,
   ZoteroRendererRequest,
+  MergeOutputRequest,
 } from '../shared/ipc'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
@@ -154,6 +155,9 @@ const api: DesktopApi = {
   signalMcpReady: () => ipcRenderer.send('docs:mcp-ready'),
   getRecentFiles: () => ipcRenderer.invoke('docs:recent'),
   pickImage: () => ipcRenderer.invoke('docs:pick-image'),
+  pickMergeDataSource: () => ipcRenderer.invoke('docs:merge-data-source'),
+  writeMergeOutput: (request: MergeOutputRequest) =>
+    ipcRenderer.invoke('docs:merge-output', request),
   fontMetrics: (family: string) => ipcRenderer.invoke('docs:font-metrics', family),
   print: (scale?: number, job?: PrintJobOptions) => ipcRenderer.invoke('docs:print', scale, job),
   listPrinters: () => ipcRenderer.invoke('docs:printers'),

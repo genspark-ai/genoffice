@@ -551,4 +551,7 @@ export const nl = {
     'Deze stijl bijwerken met de huidige selectie (teruggeschreven naar styles.xml)',
   appNewStyleFromSelection: 'Nieuwe stijl op basis van de huidige selectie',
   appStyleNamePlaceholder: 'Stijlnaam',
+  appMergeSourceLoaded: '{name} geladen ({n} records)',
+  appMergeWritten: '{n} documenten geschreven',
+  appMergeNothingToWrite: 'Er is niets te schrijven',
 } satisfies Record<keyof typeof zh, string>

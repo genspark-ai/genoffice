@@ -13640,3 +13640,122 @@ tr > .page-gap-cut {
   margin-bottom: 14px;
   word-break: break-all;
 }
+
+/* ---- Mailings: the mail merge panel and the field list ---- */
+
+.modal-mailmerge {
+  width: 560px;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+
+.mailmerge-section {
+  margin-bottom: 14px;
+}
+
+.mailmerge-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.mailmerge-source-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailmerge-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.mailmerge-field {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.mailmerge-field:hover {
+  background: var(--color-bg-subtle);
+}
+
+.mailmerge-empty {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.mailmerge-counter {
+  font-size: 12px;
+  color: var(--text-dim);
+  align-self: center;
+}
+
+.mailmerge-preview {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--color-bg-page);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.mailmerge-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.mailmerge-pattern {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.mailmerge-pattern input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.mailmerge-done {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.rb-field-list {
+  width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.rb-field-item {
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 5px 8px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.rb-field-item:hover {
+  background: var(--color-bg-subtle);
+}

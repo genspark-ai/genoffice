@@ -33,6 +33,53 @@ export interface PickImageResult {
   name: string
 }
 
+// ---- mail merge (genoffice#2097) ----
+
+/** a recipient list read from a local .xlsx or .csv */
+export interface MergeDataSource {
+  /** absolute path of the file the records came from */
+  path: string
+  /** the file's name, for the UI */
+  name: string
+  /** the column names, in file order */
+  fields: string[]
+  /** one entry per record */
+  records: Record<string, string>[]
+}
+
+/** the answer to a data-source pick: null when the user canceled the dialog */
+export type MergeDataSourceResponse =
+  { ok: true; source: MergeDataSource } | { ok: false; error: string } | null
+
+/** one merged document, ready to be written */
+export interface MergeOutputFile {
+  /** the file name, without a folder */
+  name: string
+  /** the .docx bytes */
+  data: ArrayBuffer
+}
+
+/** where the merged documents go: one file for all records, or one per record */
+export type MergeOutputMode = 'single' | 'perRecord'
+
+export interface MergeOutputRequest {
+  mode: MergeOutputMode
+  files: MergeOutputFile[]
+}
+
+export interface MergeOutputResponse {
+  ok: boolean
+  /** the file that was written (single mode) */
+  path?: string
+  /** the folder the files went into (per-record mode) */
+  folder?: string
+  /** how many documents were written */
+  count?: number
+  /** the user closed the dialog without choosing */
+  canceled?: boolean
+  error?: string
+}
+
 // ---- AI provider settings/config/streaming: canonical types live in @genoffice/ai-provider ----
 
 import type {
@@ -490,6 +537,10 @@ export interface DesktopApi {
   signalMcpReady(): void
   getRecentFiles(): Promise<string[]>
   pickImage(): Promise<PickImageResult | null>
+  /** Mailings tab: pick a local .xlsx or .csv and read it as a recipient list */
+  pickMergeDataSource(): Promise<MergeDataSourceResponse>
+  /** Mailings tab: write the merged documents (one file, or one per record) */
+  writeMergeOutput(request: MergeOutputRequest): Promise<MergeOutputResponse>
   /** vertical metrics of an installed family (exact name match), null when missing */
   fontMetrics(family: string): Promise<FaceVerticalMetrics | null>
   getAiSettings(): Promise<AiSettings>

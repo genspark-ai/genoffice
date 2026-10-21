@@ -20,7 +20,8 @@
       "@genoffice/ai-provider": ["../../packages/ai-provider/src/index.ts"],
       "@genoffice/agent-core": ["../../packages/agent-core/src/index.ts"],
       "@genoffice/i18n": ["../../packages/i18n/src/index.ts"],
-      "@genoffice/ui": ["../../packages/ui/src/index.ts"]
+      "@genoffice/ui": ["../../packages/ui/src/index.ts"],
+      "@genoffice/xlsx-gateway/*": ["../../packages/xlsx-gateway/src/*"]
     }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]
