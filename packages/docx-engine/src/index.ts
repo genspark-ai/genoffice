@@ -11,6 +11,15 @@ export {
 export { decodeEntities } from './parse-xml-text'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export {
+  buildContentControlXml,
+  isContentControlLock,
+  nextContentControlId,
+  CONTENT_CONTROL_LOCKS,
+  type ContentControlLock,
+  type ContentControlShell,
+  type ContentControlSpec,
+} from './content-control'
+export {
   parseDocx,
   reconcileGridColumns,
   styleRunFormat,

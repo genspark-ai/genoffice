@@ -93,7 +93,11 @@ describe('op catalogs', () => {
     const json = await run(['guide', 'docs', '--json'])
     expect(json.code).toBe(0)
     const detail = json.json().detail
-    expect(detail.groups.map((g: { name: string }) => g.name)).toEqual(['block', 'content'])
+    expect(detail.groups.map((g: { name: string }) => g.name)).toEqual([
+      'block',
+      'content',
+      'content-controls',
+    ])
     const byName = new Map(detail.ops.map((e: { op: string }) => [e.op, e]))
     expect(byName.get('findReplace')).toMatchObject({ group: 'block', target: 'optional' })
     expect((byName.get('findReplace') as { keys: string[] }).keys).toContain('replace')
@@ -102,6 +106,8 @@ describe('op catalogs', () => {
       group: 'content',
       signature: '{kind: header|footer, text, view?: default|first|even}',
     })
+    expect(byName.get('wrap_content_control')).toMatchObject({ group: 'content-controls' })
+    expect(byName.get('unwrap_content_control')).toMatchObject({ group: 'content-controls' })
     expect(
       (byName.get('insert_content') as { schema: any }).schema.properties.afterBlockIndex
         .description,

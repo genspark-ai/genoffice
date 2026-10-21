@@ -288,6 +288,14 @@ export interface SdtShell {
   /** programmatic tag (w:sdtPr/w:tag @w:val), may be empty */
   tag: string
   /**
+   * lock state (w:sdtPr/w:lock @w:val): 'sdtLocked' (the control cannot be
+   * deleted), 'contentLocked' (its content cannot be edited),
+   * 'sdtContentLocked' (both) or 'unlocked'; empty when the control has no lock
+   */
+  lock: string
+  /** control id (w:sdtPr/w:id @w:val), empty when the control carries none */
+  id: string
+  /**
    * control type: 'text' = plain/rich text, 'date' = date picker,
    * 'dropdown' = drop-down list/combo box, 'checkbox' = Word 2013 checkbox,
    * 'unknown' = unrecognised sdtPr content
