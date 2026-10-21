@@ -392,6 +392,8 @@ export const strings = {
     setAiSearchTavilyHint: 'Tavily 用你的 key 提供网页搜索；图片搜索改用免费来源。',
     setAiSearchParallelHint:
       '留空 API key 即可免费使用 Parallel 搜索（用量有限）。填写 key 可使用你的 Parallel 账户。图片搜索使用其他来源。',
+    setAiSearchKeenableHint:
+      '留空 API key 即可免费使用 Keenable 搜索（用量有限）。填写 key 可使用你的 Keenable 账户。图片搜索使用其他来源。',
     setAiCapImage: '生图',
     setAiCapAnalysis: '图片解析',
     setAiCapVideo: '视频解析',
@@ -890,6 +892,8 @@ export const strings = {
       'Tavily serves web search with your key; image search falls back to free sources.',
     setAiSearchParallelHint:
       'Leave the key blank for free Parallel search (limited usage). Add a key to use your Parallel account. Image search uses other sources.',
+    setAiSearchKeenableHint:
+      'Leave the key blank for free Keenable search (limited usage). Add a key to use your Keenable account. Image search uses other sources.',
     setAiCapImage: 'Image generation',
     setAiCapAnalysis: 'Image analysis',
     setAiCapVideo: 'Video analysis',
@@ -1396,6 +1400,8 @@ export const strings = {
       'Tavily cung cấp tìm kiếm web bằng khóa của bạn; tìm kiếm hình ảnh sẽ chuyển sang dùng các nguồn miễn phí.',
     setAiSearchParallelHint:
       'Để trống khóa để dùng tìm kiếm Parallel miễn phí (giới hạn lượt dùng). Nhập khóa để dùng tài khoản Parallel của bạn. Tìm kiếm hình ảnh sử dụng các nguồn khác.',
+    setAiSearchKeenableHint:
+      'Để trống khóa để dùng tìm kiếm Keenable miễn phí (giới hạn lượt dùng). Nhập khóa để dùng tài khoản Keenable của bạn. Tìm kiếm hình ảnh sử dụng các nguồn khác.',
     setAiCapImage: 'Tạo hình ảnh',
     setAiCapAnalysis: 'Phân tích hình ảnh',
     setAiCapVideo: 'Phân tích video',
@@ -1913,6 +1919,8 @@ export const strings = {
       'Tavily はあなたのキーで Web 検索を提供します。画像検索は無料ソースにフォールバックします。',
     setAiSearchParallelHint:
       'キーを空欄にすると Parallel 検索を無料で使えます（利用制限あり）。キーを入力すると自分の Parallel アカウントを使用します。画像検索には他のソースを使用します。',
+    setAiSearchKeenableHint:
+      'キーを空欄にすると Keenable 検索を無料で使えます（利用制限あり）。キーを入力すると自分の Keenable アカウントを使用します。画像検索には他のソースを使用します。',
     setAiCapImage: '画像生成',
     setAiCapAnalysis: '画像解析',
     setAiCapVideo: '動画解析',
@@ -2421,6 +2429,8 @@ export const strings = {
       'Tavily는 내 키로 웹 검색을 제공합니다. 이미지 검색은 무료 소스로 대체됩니다.',
     setAiSearchParallelHint:
       '키를 비워 두면 Parallel 검색을 무료로 사용할 수 있습니다(사용량 제한). 키를 입력하면 자신의 Parallel 계정을 사용합니다. 이미지 검색은 다른 소스를 사용합니다.',
+    setAiSearchKeenableHint:
+      '키를 비워 두면 Keenable 검색을 무료로 사용할 수 있습니다(사용량 제한). 키를 입력하면 자신의 Keenable 계정을 사용합니다. 이미지 검색은 다른 소스를 사용합니다.',
     setAiCapImage: '이미지 생성',
     setAiCapAnalysis: '이미지 분석',
     setAiCapVideo: '동영상 분석',
@@ -2947,6 +2957,8 @@ export const strings = {
       "Tavily assure la recherche web avec votre clé ; la recherche d'images se rabat sur des sources gratuites.",
     setAiSearchParallelHint:
       'Laissez la clé vide pour la recherche Parallel gratuite (usage limité). Ajoutez une clé pour utiliser votre compte Parallel. La recherche d’images utilise d’autres sources.',
+    setAiSearchKeenableHint:
+      'Laissez la clé vide pour la recherche Keenable gratuite (usage limité). Ajoutez une clé pour utiliser votre compte Keenable. La recherche d’images utilise d’autres sources.',
     setAiCapImage: "Génération d'images",
     setAiCapAnalysis: "Analyse d'images",
     setAiCapVideo: 'Analyse vidéo',
@@ -3476,6 +3488,8 @@ export const strings = {
       'Tavily liefert mit deinem Schlüssel die Websuche; die Bildsuche greift auf kostenlose Quellen zurück.',
     setAiSearchParallelHint:
       'Ohne Schlüssel ist die Parallel-Suche kostenlos (begrenzte Nutzung). Mit einem Schlüssel verwenden Sie Ihr Parallel-Konto. Die Bildsuche nutzt andere Quellen.',
+    setAiSearchKeenableHint:
+      'Ohne Schlüssel ist die Keenable-Suche kostenlos (begrenzte Nutzung). Mit einem Schlüssel verwenden Sie Ihr Keenable-Konto. Die Bildsuche nutzt andere Quellen.',
     setAiCapImage: 'Bildgenerierung',
     setAiCapAnalysis: 'Bildanalyse',
     setAiCapVideo: 'Videoanalyse',
@@ -4000,6 +4014,8 @@ export const strings = {
       'Tavily ofrece búsqueda web con tu clave; la búsqueda de imágenes recurre a fuentes gratuitas.',
     setAiSearchParallelHint:
       'Deja la clave vacía para usar la búsqueda gratuita de Parallel (uso limitado). Añade una clave para usar tu cuenta de Parallel. Las imágenes se buscan en otras fuentes.',
+    setAiSearchKeenableHint:
+      'Deja la clave vacía para usar la búsqueda gratuita de Keenable (uso limitado). Añade una clave para usar tu cuenta de Keenable. Las imágenes se buscan en otras fuentes.',
     setAiCapImage: 'Generación de imágenes',
     setAiCapAnalysis: 'Análisis de imágenes',
     setAiCapVideo: 'Análisis de vídeo',
@@ -4508,6 +4524,8 @@ export const strings = {
       'Tavily ให้บริการค้นหาเว็บด้วยคีย์ของคุณ ส่วนการค้นหาภาพจะใช้แหล่งข้อมูลฟรีแทน',
     setAiSearchParallelHint:
       'เว้นคีย์ว่างไว้เพื่อค้นหาด้วย Parallel ฟรี (จำกัดการใช้งาน) เพิ่มคีย์เพื่อใช้บัญชี Parallel ของคุณ การค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
+    setAiSearchKeenableHint:
+      'เว้นคีย์ว่างไว้เพื่อค้นหาด้วย Keenable ฟรี (จำกัดการใช้งาน) เพิ่มคีย์เพื่อใช้บัญชี Keenable ของคุณ การค้นหารูปภาพใช้แหล่งข้อมูลอื่น',
     setAiCapImage: 'สร้างภาพ',
     setAiCapAnalysis: 'วิเคราะห์ภาพ',
     setAiCapVideo: 'วิเคราะห์วิดีโอ',
@@ -5023,6 +5041,8 @@ export const strings = {
       'Tavily menyediakan pencarian web dengan kunci Anda; pencarian gambar memakai sumber gratis.',
     setAiSearchParallelHint:
       'Kosongkan kunci untuk pencarian Parallel gratis (penggunaan terbatas). Tambahkan kunci untuk menggunakan akun Parallel Anda. Pencarian gambar memakai sumber lain.',
+    setAiSearchKeenableHint:
+      'Kosongkan kunci untuk pencarian Keenable gratis (penggunaan terbatas). Tambahkan kunci untuk menggunakan akun Keenable Anda. Pencarian gambar memakai sumber lain.',
     setAiCapImage: 'Pembuatan gambar',
     setAiCapAnalysis: 'Analisis gambar',
     setAiCapVideo: 'Analisis video',
@@ -5539,6 +5559,8 @@ export const strings = {
       'Tavily обеспечивает веб-поиск с вашим ключом; поиск изображений использует бесплатные источники.',
     setAiSearchParallelHint:
       'Оставьте ключ пустым для бесплатного поиска Parallel (с ограничениями). Добавьте ключ для использования своего аккаунта Parallel. Поиск изображений использует другие источники.',
+    setAiSearchKeenableHint:
+      'Оставьте ключ пустым для бесплатного поиска Keenable (с ограничениями). Добавьте ключ для использования своего аккаунта Keenable. Поиск изображений использует другие источники.',
     setAiCapImage: 'Генерация изображений',
     setAiCapAnalysis: 'Анализ изображений',
     setAiCapVideo: 'Анализ видео',
@@ -6048,6 +6070,8 @@ export const strings = {
       'يوفّر Tavily البحث في الويب بمفتاحك؛ ويعود البحث في الصور إلى مصادر مجانية.',
     setAiSearchParallelHint:
       'اترك المفتاح فارغًا لاستخدام بحث Parallel مجانًا (استخدام محدود). أضف مفتاحًا لاستخدام حسابك في Parallel. يستخدم بحث الصور مصادر أخرى.',
+    setAiSearchKeenableHint:
+      'اترك المفتاح فارغًا لاستخدام بحث Keenable مجانًا (استخدام محدود). أضف مفتاحًا لاستخدام حسابك في Keenable. يستخدم بحث الصور مصادر أخرى.',
     setAiCapImage: 'توليد الصور',
     setAiCapAnalysis: 'تحليل الصور',
     setAiCapVideo: 'تحليل الفيديو',
@@ -6562,6 +6586,8 @@ export const strings = {
       'O Tavily oferece busca na web com a sua chave; a busca de imagens recorre a fontes gratuitas.',
     setAiSearchParallelHint:
       'Deixe a chave vazia para pesquisar gratuitamente com Parallel (uso limitado). Adicione uma chave para usar sua conta Parallel. A pesquisa de imagens usa outras fontes.',
+    setAiSearchKeenableHint:
+      'Deixe a chave vazia para pesquisar gratuitamente com Keenable (uso limitado). Adicione uma chave para usar sua conta Keenable. A pesquisa de imagens usa outras fontes.',
     setAiCapImage: 'Geração de imagens',
     setAiCapAnalysis: 'Análise de imagens',
     setAiCapVideo: 'Análise de vídeo',
@@ -7075,6 +7101,8 @@ export const strings = {
       'Tavily offre la ricerca web con la tua chiave; la ricerca di immagini ricorre a fonti gratuite.',
     setAiSearchParallelHint:
       'Lascia la chiave vuota per la ricerca Parallel gratuita (uso limitato). Aggiungi una chiave per usare il tuo account Parallel. Le immagini vengono cercate in altre fonti.',
+    setAiSearchKeenableHint:
+      'Lascia la chiave vuota per la ricerca Keenable gratuita (uso limitato). Aggiungi una chiave per usare il tuo account Keenable. Le immagini vengono cercate in altre fonti.',
     setAiCapImage: 'Generazione di immagini',
     setAiCapAnalysis: 'Analisi di immagini',
     setAiCapVideo: 'Analisi video',
@@ -7583,6 +7611,8 @@ export const strings = {
       'Tavily zapewnia wyszukiwanie w sieci z Twoim kluczem; wyszukiwanie obrazów używa darmowych źródeł.',
     setAiSearchParallelHint:
       'Pozostaw klucz pusty, aby bezpłatnie korzystać z wyszukiwania Parallel (z limitami). Dodaj klucz, aby używać swojego konta Parallel. Obrazy są wyszukiwane w innych źródłach.',
+    setAiSearchKeenableHint:
+      'Pozostaw klucz pusty, aby bezpłatnie korzystać z wyszukiwania Keenable (z limitami). Dodaj klucz, aby używać swojego konta Keenable. Obrazy są wyszukiwane w innych źródłach.',
     setAiCapImage: 'Generowanie obrazów',
     setAiCapAnalysis: 'Analiza obrazów',
     setAiCapVideo: 'Analiza wideo',
@@ -8051,6 +8081,8 @@ export const strings = {
       'Tavily zajišťuje webové vyhledávání s vaším klíčem; obrázkové vyhledávání použije bezplatné zdroje.',
     setAiSearchParallelHint:
       'Nechte klíč prázdný pro bezplatné vyhledávání Parallel (omezené použití). Zadejte klíč pro použití svého účtu Parallel. Obrázky se vyhledávají v jiných zdrojích.',
+    setAiSearchKeenableHint:
+      'Nechte klíč prázdný pro bezplatné vyhledávání Keenable (omezené použití). Zadejte klíč pro použití svého účtu Keenable. Obrázky se vyhledávají v jiných zdrojích.',
     setAiCapImage: 'Generování obrázků',
     setAiCapAnalysis: 'Analýza obrázků',
     setAiCapVideo: 'Analýza videí',
@@ -8597,6 +8629,8 @@ export const strings = {
       'Tavily levert webzoeken met je sleutel; afbeeldingszoeken valt terug op gratis bronnen.',
     setAiSearchParallelHint:
       'Laat de sleutel leeg voor gratis zoeken met Parallel (beperkt gebruik). Voeg een sleutel toe om je Parallel-account te gebruiken. Afbeeldingen komen uit andere bronnen.',
+    setAiSearchKeenableHint:
+      'Laat de sleutel leeg voor gratis zoeken met Keenable (beperkt gebruik). Voeg een sleutel toe om je Keenable-account te gebruiken. Afbeeldingen komen uit andere bronnen.',
     setAiCapImage: 'Afbeeldingen genereren',
     setAiCapAnalysis: 'Afbeeldingsanalyse',
     setAiCapVideo: 'Video-analyse',
@@ -9110,6 +9144,8 @@ export const strings = {
       'Tavily menyediakan carian web dengan kunci anda; carian imej menggunakan sumber percuma.',
     setAiSearchParallelHint:
       'Biarkan kunci kosong untuk carian Parallel percuma (penggunaan terhad). Tambah kunci untuk menggunakan akaun Parallel anda. Carian imej menggunakan sumber lain.',
+    setAiSearchKeenableHint:
+      'Biarkan kunci kosong untuk carian Keenable percuma (penggunaan terhad). Tambah kunci untuk menggunakan akaun Keenable anda. Carian imej menggunakan sumber lain.',
     setAiCapImage: 'Penjanaan imej',
     setAiCapAnalysis: 'Analisis imej',
     setAiCapVideo: 'Analisis video',
@@ -9606,6 +9642,8 @@ export const strings = {
       'Tavily מספק חיפוש באינטרנט עם המפתח שלך; חיפוש תמונות חוזר למקורות חינמיים.',
     setAiSearchParallelHint:
       'השאירו את המפתח ריק לחיפוש Parallel בחינם (שימוש מוגבל). הוסיפו מפתח כדי להשתמש בחשבון Parallel שלכם. חיפוש תמונות משתמש במקורות אחרים.',
+    setAiSearchKeenableHint:
+      'השאירו את המפתח ריק לחיפוש Keenable בחינם (שימוש מוגבל). הוסיפו מפתח כדי להשתמש בחשבון Keenable שלכם. חיפוש תמונות משתמש במקורות אחרים.',
     setAiCapImage: 'יצירת תמונות',
     setAiCapAnalysis: 'ניתוח תמונות',
     setAiCapVideo: 'ניתוח וידאו',
@@ -10109,6 +10147,8 @@ export const strings = {
       'Tavily आपकी कुंजी से वेब खोज देता है; इमेज खोज मुफ़्त स्रोतों पर लौट जाती है।',
     setAiSearchParallelHint:
       'मुफ़्त Parallel खोज के लिए कुंजी खाली छोड़ें (सीमित उपयोग)। अपने Parallel खाते का उपयोग करने के लिए कुंजी जोड़ें। इमेज खोज अन्य स्रोतों का उपयोग करती है।',
+    setAiSearchKeenableHint:
+      'मुफ़्त Keenable खोज के लिए कुंजी खाली छोड़ें (सीमित उपयोग)। अपने Keenable खाते का उपयोग करने के लिए कुंजी जोड़ें। इमेज खोज अन्य स्रोतों का उपयोग करती है।',
     setAiCapImage: 'इमेज जनरेशन',
     setAiCapAnalysis: 'इमेज विश्लेषण',
     setAiCapVideo: 'वीडियो विश्लेषण',
@@ -10597,6 +10637,8 @@ export const strings = {
     setAiSearchTavilyHint: 'Tavily 用你的 key 提供網頁搜尋；圖片搜尋改用免費來源。',
     setAiSearchParallelHint:
       '留空 API key 即可免費使用 Parallel 搜尋（用量有限）。填寫 key 可使用你的 Parallel 帳戶。圖片搜尋使用其他來源。',
+    setAiSearchKeenableHint:
+      '留空 API key 即可免費使用 Keenable 搜尋（用量有限）。填寫 key 可使用你的 Keenable 帳戶。圖片搜尋使用其他來源。',
     setAiCapImage: '生圖',
     setAiCapAnalysis: '圖片解析',
     setAiCapVideo: '影片解析',
