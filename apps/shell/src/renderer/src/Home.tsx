@@ -3396,6 +3396,8 @@ export function Home() {
       return parent?.folders.some((f) => f.path === p) ?? false
     })
 
+  const activeNav = !selectedFolder && !cloudMode ? (askMode ? 'ask' : view) : null
+
   return (
     <div className="home">
       <aside className="sidebar">
@@ -3404,7 +3406,8 @@ export function Home() {
         </div>
         <nav className="sidebar-nav">
           <button
-            className={`nav-item${view === 'recent' && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${activeNav === 'recent' ? ' active' : ''}`}
+            aria-current={activeNav === 'recent' ? 'page' : undefined}
             onClick={() => changeView('recent')}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -3420,7 +3423,8 @@ export function Home() {
             <span className="nav-count">{navCounts.recent}</span>
           </button>
           <button
-            className={`nav-item${view === 'starred' && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${activeNav === 'starred' ? ' active' : ''}`}
+            aria-current={activeNav === 'starred' ? 'page' : undefined}
             onClick={() => changeView('starred')}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -3435,7 +3439,8 @@ export function Home() {
             <span className="nav-count">{navCounts.starred}</span>
           </button>
           <button
-            className={`nav-item${askMode && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${activeNav === 'ask' ? ' active' : ''}`}
+            aria-current={activeNav === 'ask' ? 'page' : undefined}
             onClick={() => {
               setAskMode(true)
               setSelectedFolder(null)
