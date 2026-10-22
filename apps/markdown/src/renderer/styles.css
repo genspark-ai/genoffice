@@ -3753,6 +3753,8 @@ div.tiptap-mathematics-render {
 }
 
 .graph-close {
+  /* The graph overlaps the ribbon's native window drag strip. */
+  -webkit-app-region: no-drag;
   border: none;
   background: none;
   font-size: 15px;
