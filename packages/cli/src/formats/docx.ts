@@ -653,14 +653,13 @@ function setDocumentProperties(
   return { output: `set document properties: ${describePropertyChanges(changes)}` }
 }
 
-/** two set_properties ops in one batch compose: the later value wins */
+/** two set_properties ops in one batch compose: the later value wins, a later clear wipes the earlier values */
 function mergePropertyChanges(
   current: PropertyChanges | undefined,
   next: PropertyChanges,
 ): PropertyChanges {
-  if (!current) return next
+  if (!current || next.clear) return next
   const merged: PropertyChanges = { ...current }
-  if (next.clear) merged.clear = next.clear
   for (const section of ['core', 'app', 'custom'] as const) {
     const values = next[section]
     if (!values) continue

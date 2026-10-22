@@ -231,7 +231,10 @@ export function recentListPresets(kind: ListPresetKind): CustomNumberingLevel[][
 export function presetKey(levels: CustomNumberingLevel[]): string {
   return levels
     .slice(0, 3)
-    .map((l) => `${l.numFmt}|${l.lvlText}|${l.picBulletId ?? ''}|${l.font ?? ''}`)
+    .map(
+      (l) =>
+        `${l.numFmt}|${l.customFormat ?? ''}|${l.lvlText}|${l.picBulletId ?? ''}|${l.font ?? ''}`,
+    )
     .join('/')
 }
 

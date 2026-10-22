@@ -70,9 +70,9 @@ describe('docDefaults none-side w:space inside table cells', () => {
 
   it('a Normal-level none space that is not from docDefaults still pads cells', () => {
     const css = docStyleCss(parsedWith(undefined, {}))
-    expect(css).not.toContain(':is(td, th)')
+    expect(css).not.toContain(':is(td, th) :is(p,')
     const parsed = parsedWith(undefined)
     parsed.styles.get('Normal')!.display = { borderSides: DD }
-    expect(docStyleCss(parsed)).not.toContain(':is(td, th)')
+    expect(docStyleCss(parsed)).not.toContain(':is(td, th) :is(p,')
   })
 })

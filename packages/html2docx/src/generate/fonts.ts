@@ -61,4 +61,22 @@ function mapFont(fontFamily = '', mono = false, text = '') {
   return font
 }
 
-export { CJK_RE, HANGUL_RE, KANA_RE, FONT_RULES, mapFont }
+const CJK_SANS = new Set(['Microsoft YaHei', 'Malgun Gothic', 'Yu Gothic'])
+const CJK_SERIF = new Set(['SimSun', 'Batang', 'Yu Mincho'])
+
+/** Run font for docx: a CJK face goes on eastAsia only, since Word draws
+ *  Latin with a CJK font's half-width glyphs (the SimSun monospace look). */
+function runFont(fontFamily = '', mono = false, text = '') {
+  const font = mapFont(fontFamily, mono, text)
+  if (CJK_SANS.has(font)) return { ascii: 'Arial', hAnsi: 'Arial', cs: 'Arial', eastAsia: font }
+  if (CJK_SERIF.has(font))
+    return {
+      ascii: 'Times New Roman',
+      hAnsi: 'Times New Roman',
+      cs: 'Times New Roman',
+      eastAsia: font,
+    }
+  return font
+}
+
+export { CJK_RE, HANGUL_RE, KANA_RE, FONT_RULES, mapFont, runFont }

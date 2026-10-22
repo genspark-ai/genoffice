@@ -1,0 +1,60 @@
+{
+  "id": "render-grid-tail-fit",
+  "title": "A grid-snapped empty line fits the page bottom when its text box fits; the lower half-leading may overflow",
+  "section": "word-truths.md#L627",
+  "probe_date": "2026-10-22",
+  "class": "render",
+  "source": "exrow-probe3.pdf re-measured 2026-10-22: A4, pgMar 567, docGrid lines 364 (18.2pt), one exact row leaving remain pt, then an empty 8pt atLeast-240 paragraph, then NEXT; remain 5/8/10/12 -> the empty paragraph opens the next page (NEXT glyph top 51.5), remain 15/18/20 -> it stays (NEXT at 33.26)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 14
+    },
+    {
+      "kind": "blockPage",
+      "block": 1,
+      "expect": 2,
+      "note": "remain 5: moves"
+    },
+    {
+      "kind": "blockPage",
+      "block": 5,
+      "expect": 4,
+      "note": "remain 8: moves"
+    },
+    {
+      "kind": "blockPage",
+      "block": 9,
+      "expect": 6,
+      "note": "remain 10: moves"
+    },
+    {
+      "kind": "blockPage",
+      "block": 13,
+      "expect": 8,
+      "note": "remain 12: moves"
+    },
+    {
+      "kind": "blockPage",
+      "block": 17,
+      "expect": 9,
+      "note": "remain 15: stays (threshold ~14.5 = half pitch + half natural line)",
+      "status": "failing"
+    },
+    {
+      "kind": "blockPage",
+      "block": 21,
+      "expect": 11,
+      "note": "remain 18: stays",
+      "status": "failing"
+    },
+    {
+      "kind": "blockPage",
+      "block": 25,
+      "expect": 13,
+      "note": "remain 20: stays",
+      "status": "failing"
+    }
+  ],
+  "docx": "probe.docx"
+}

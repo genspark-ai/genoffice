@@ -114,3 +114,52 @@ describe('table cell paragraphs carry w:bidi (visual↔logical jc swap)', () => 
     expect(xml).toContain('<w:rtl/>')
   })
 })
+
+// Word reads an rtl run's size/weight from the Cs twins all the way up the chain
+// (prod corpus 20261021 sample 007: a Heading1 `<w:b/><w:sz 32/>` run carrying only
+// `<w:rtl/>` is 11pt regular; sample 023: a `<w:sz 36/><w:rtl/>` paragraph mark under
+// a szCs=24 style lays a 12pt empty line)
+describe('rtl runs inherit the Cs twins, not the base set', () => {
+  const STYLES =
+    '<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>' +
+    '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/>' +
+    '<w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style>' +
+    '<w:style w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/>' +
+    '<w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>' +
+    '<w:style w:type="character" w:styleId="Strong"><w:name w:val="Strong"/>' +
+    '<w:rPr><w:bCs/><w:szCs w:val="28"/></w:rPr></w:style>'
+  const wrap = (styles: string) =>
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${styles}</w:styles>`
+
+  it('a bare rtl run under a bold 16pt heading style is 11pt regular', async () => {
+    const body =
+      '<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:bidi/></w:pPr>' +
+      '<w:r><w:rPr><w:rtl/></w:rPr><w:t>שלום</w:t></w:r>' +
+      '<w:r><w:rPr><w:rStyle w:val="Strong"/><w:rtl/></w:rPr><w:t>עולם</w:t></w:r>' +
+      '<w:r><w:t>Latin</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, stylesXml: wrap(STYLES) }))
+    const [plain, strong, latin] = doc.blocks[0].runs!
+    expect(plain.cs).toBe(true)
+    expect(plain.sizeHalfPoints).toBeUndefined()
+    const cs = (r: typeof plain) => ({
+      sizeHalfPoints: r.effective!.sizeHalfPoints,
+      bold: r.effective!.bold,
+      italic: r.effective!.italic,
+    })
+    expect(plain.effective!.cs).toBe(true)
+    expect(cs(plain)).toEqual({ sizeHalfPoints: 22, bold: false, italic: false })
+    expect(cs(strong)).toEqual({ sizeHalfPoints: 28, bold: true, italic: false })
+    expect(latin.cs).toBeUndefined()
+    expect(latin.effective!.cs).toBe(false)
+  })
+
+  it('an rtl paragraph mark sizes the empty line by szCs, falling back to the style chain', async () => {
+    const body =
+      '<w:p><w:pPr><w:pStyle w:val="BodyText"/><w:rPr><w:b/><w:sz w:val="36"/><w:rtl/></w:rPr></w:pPr></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:sz w:val="36"/><w:szCs w:val="40"/><w:rtl/></w:rPr></w:pPr></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:sz w:val="36"/><w:szCs w:val="40"/></w:rPr></w:pPr></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body, stylesXml: wrap(STYLES) }))
+    const sizes = doc.blocks.slice(0, 3).map((b) => b.format?.emptyRunSizeHalfPoints)
+    expect(sizes).toEqual([24, 40, 36])
+  })
+})

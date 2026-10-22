@@ -172,7 +172,9 @@ export function installStatusBarFileStats(deps: StatusBarFileStatsDeps): { dispo
       if (endRow < bounds.startRow || endColumn < bounds.startColumn) return total
       return total + (endRow - bounds.startRow + 1) * (endColumn - bounds.startColumn + 1)
     }, 0)
-    if (clampedCells === 0 || clampedCells > MAX_STATUSBAR_AGGREGATE_CELLS) return
+    // A single-cell selection can never show statistics (COUNTA > 1 rule),
+    // so don't spend a sidecar round trip on the most common click.
+    if (clampedCells < 2 || clampedCells > MAX_STATUSBAR_AGGREGATE_CELLS) return
 
     const signature = selectionSignature()
     const parts: RangeAggregate[] = []
@@ -215,8 +217,12 @@ export function installStatusBarFileStats(deps: StatusBarFileStatsDeps): { dispo
     if (timer) clearTimeout(timer)
     timer = null
     seq += 1
-    // Univer cleared the footer (single cell, no selection): nothing to overwrite
-    if (!incoming || incoming.values.length === 0) return
+    // null = Univer cleared the footer (no selection): nothing to overwrite.
+    // An EMPTY values list still schedules a recompute: on a streamed
+    // workbook a selection in a never-loaded region counts 0/1 in the grid
+    // matrix, every statistic fails its visibility rule, and the footer
+    // would stay blank even though the file has the numbers.
+    if (!incoming) return
     timer = setTimeout(() => {
       timer = null
       void recompute(incoming.pattern)

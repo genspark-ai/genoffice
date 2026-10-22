@@ -80,19 +80,6 @@ pub(crate) fn cell_reference(row: u32, column: u32) -> String {
 }
 
 /// The locked spelling, for a reference the source marked absolute. R1C1's
-/// `R1C1` has to arrive as `$A$1`: the plain `A1` would drift the moment the
-/// formula was copied somewhere else.
-pub(crate) fn absolute_cell_reference(row: u32, column: u32) -> String {
-    let mut letters = String::new();
-    let mut remaining = column + 1;
-    while remaining > 0 {
-        remaining -= 1;
-        letters.insert(0, char::from(b'A' + (remaining % 26) as u8));
-        remaining /= 26;
-    }
-    format!("${letters}${}", row + 1)
-}
-
 pub(crate) fn escape_xml(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")

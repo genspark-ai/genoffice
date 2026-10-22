@@ -13,6 +13,7 @@ export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export {
   parseDocx,
   reconcileGridColumns,
+  paraCsFormat,
   styleRunFormat,
   type ParseExtras,
   type ParseOptions,
@@ -115,6 +116,7 @@ export {
   type TextboxParaPatch,
   type TextboxParasPatchSet,
   inlinePictureDrawingXml,
+  resizeInlinePictureXml,
   NEW_PICTURE_TOKEN_PREFIX,
   type InlinePictureXmlOptions,
   type TableGenOptions,
@@ -238,3 +240,17 @@ export {
   type RevisionXmlResult,
   type RevisionXmlType,
 } from './revision-xml'
+export {
+  resolveParagraphProps,
+  resolveCtxOf,
+  resolveParagraphPropsXml,
+  resolveRunProps,
+  shadowCompare,
+  type EffectivePPr,
+  type EffectiveRPr,
+  type PropSource,
+  type ResolveCompat,
+  type ResolveCtx,
+  type ResolveDiff,
+  type TableCond,
+} from './resolve-props'

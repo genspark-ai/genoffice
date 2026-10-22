@@ -975,6 +975,13 @@ export function computeSectionedSlicesF2(
               newColumn(y, section, headerH, headerTop)
             }
           }
+    // a natural break opens the column below the block's padded space-before
+    // (Word drops it there), so the pad costs the fresh column no capacity
+    const advancePastPad = (): void => {
+      const pad = block.padBeforePx ?? 0
+      advance(block.top + pad, curSection)
+      usedInCol -= pad
+    }
 
     // CSS-floated block (wrapped image / w:tblpPr table): following block boxes
     // stack ignoring it (only their line boxes shorten), so it consumes no column
@@ -1018,13 +1025,6 @@ export function computeSectionedSlicesF2(
         block.lifted && colCount === 1
           ? Math.max(0, block.top - pageStart + leadH - usedInCol)
           : leadH
-      // a lifted float turns the page at its flow position, not at its lifted visual top
-      if (!fits(leadNeed) && !colEmpty()) {
-        advance(
-          block.lifted && colCount === 1 ? pageStart + regionTop + usedInCol : block.top,
-          curSection,
-        )
-      }
       // page/margin-anchored w:tblpY: shift the float to its target Y on the
       // page it lands on. Never up past content already placed (flow position
       // is the floor, like the X clamp keeping floats on the page) — except at
@@ -1033,8 +1033,7 @@ export function computeSectionedSlicesF2(
       // could overprint, so they count as a page top too (Word pins the table
       // at its page Y with the blank lines under it). A table about to flow
       // gets no shift: the flowed pass could not strip it and would not re-run.
-      let floatDy = 0
-      if (block.pageRelVyPx !== undefined && !flowing) {
+      const pageRelShift = (): number => {
         const topPx = geomOf(curSection).topPx ?? 0
         const pageRel = block.pageRelVAnchor === 'page'
         const spanH = pageRel ? (geomOf(curSection).pageHeightPx ?? topPx + contentH) : contentH
@@ -1046,17 +1045,30 @@ export function computeSectionedSlicesF2(
               ? (spanH - block.height) / 2
               : spec === 'top'
                 ? 0
-                : block.pageRelVyPx
+                : block.pageRelVyPx!
         const target = pageRel ? alignY - topPx : alignY
         // single-column pages: the float's measured top is where CSS puts it
         // (below an earlier float it stacked under); the virtual flow position
         // stands in where columns make the DOM column-agnostic
         const flowY = colCount === 1 ? block.top - pageStart : regionTop + usedInCol
-        floatDy = target - flowY
-        if (floatDy < 0) {
-          floatDy =
-            pageBlank() || pageInkless() ? Math.max(floatDy, pageRel ? -topPx - flowY : -flowY) : 0
-        }
+        const dy = target - flowY
+        if (dy >= 0) return dy
+        return pageBlank() || pageInkless() ? Math.max(dy, pageRel ? -topPx - flowY : -flowY) : 0
+      }
+      const pageRelShifts = block.pageRelVyPx !== undefined && !flowing
+      // a lifted float turns the page at its flow position, not at its lifted
+      // visual top; a page-anchored float that lifts over blank lines fits
+      // from its lifted top (Word keeps the picture on their page)
+      const lift = pageRelShifts ? Math.min(pageRelShift(), 0) : 0
+      if (!fits(leadNeed + lift) && !colEmpty()) {
+        advance(
+          block.lifted && colCount === 1 ? pageStart + regionTop + usedInCol : block.top,
+          curSection,
+        )
+      }
+      let floatDy = 0
+      if (pageRelShifts) {
+        floatDy = pageRelShift()
         out?.floatVShifts?.push({ blockTop: block.top, dyPx: floatDy })
       }
       pageFloatBottom = Math.max(pageFloatBottom, block.top + floatDy + block.height)
@@ -1192,7 +1204,7 @@ export function computeSectionedSlicesF2(
       startPage(block.top, curSection)
     }
 
-    if (chainColStarts.has(bi) && !colEmpty()) advance(block.top, curSection)
+    if (chainColStarts.has(bi) && !colEmpty()) advancePastPad()
     const plannedHead = chainSplits.get(bi)
     if (plannedHead !== undefined) {
       placeSplit(block, plannedHead)
@@ -1345,7 +1357,7 @@ export function computeSectionedSlicesF2(
           // The 0.5 keeps chainH + need inside the raw <= freshColH guard below.
           anchorNeedH = Math.max(freshColH() - chainH - 0.5, 0)
         } else if (aLines?.length) {
-          const need = anchorBlock.widowControl !== false ? Math.min(2, aLines.length) : 1
+          const need = keepDemandLines(anchorBlock.widowControl !== false, aLines.length)
           anchorNeedH = anchorBlock.spaceBeforePx ?? 0
           for (let li = 0; li < need; li++) anchorNeedH += aLines[li].height
         } else {
@@ -1375,11 +1387,11 @@ export function computeSectionedSlicesF2(
           !colEmpty() &&
           chainPlusAnchorH - stackLead <= freshColH()
         ) {
-          advance(block.top, curSection)
+          advancePastPad()
         } else if (!fits(chainH - tailLead) && !colEmpty()) {
           // no page can hold chain + anchor demand: the constraint is dropped,
           // but the chain blocks still place whole (a heading must not be cut)
-          advance(block.top, curSection)
+          advancePastPad()
         }
         // place chain head through chain tail (the keepNext blocks)
         for (let k = bi; k <= effectiveChainEnd; k++) place(blocks[k].height)
@@ -1405,7 +1417,7 @@ export function computeSectionedSlicesF2(
           return tableOpenDemand(b, b.tableRows, freshColH(), !!out?.rowSplits)
         const ls = b.lineBoxes
         if (b.keepLines || !ls?.length) return b.height - (b.spaceAfterPx ?? 0)
-        const need = b.widowControl !== false ? Math.min(2, ls.length) : 1
+        const need = keepDemandLines(b.widowControl !== false, ls.length)
         let h = b.spaceBeforePx ?? 0
         for (let li = 0; li < need; li++) h += ls[li].height
         return h
@@ -1450,9 +1462,11 @@ export function computeSectionedSlicesF2(
             openColumnAt(segStart)
             break chain
           }
-          if (!colEmpty()) advance(block.top, curSection)
+          // the chain head opens the column: its padded space-before is dropped
+          const moved = !colEmpty()
+          if (moved) advancePastPad()
           avail = freshColH()
-          used = 0
+          used = moved ? -(block.padBeforePx ?? 0) : 0
           for (let j = bi; j < k; j++) used += blocks[j].height
           colTop = true
         }
@@ -1511,7 +1525,7 @@ export function computeSectionedSlicesF2(
     if (block.keepLines && !innerBroken(block)) {
       const textH = block.height - spaceAfterPx - (block.lineLeadPx ?? 0)
       if (!fits(textH) && textH <= freshColH() && !colEmpty()) {
-        advance(block.top, curSection)
+        advancePastPad()
       }
       if (!fits(textH)) {
         // paragraph exceeds one page: hard line-level cut (best effort)
@@ -1539,7 +1553,7 @@ export function computeSectionedSlicesF2(
           place(block.height - offset)
         }
       } else {
-        place(block.height)
+        place(textH + spaceAfterPx + (block.lineLeadPx ?? 0))
       }
       queueBreakAfter(block)
       if (block.colBreakAfter) pendingColBreak = true
@@ -1634,6 +1648,12 @@ export function computeSectionedSlicesF2(
 /** the row box below its lowest glyph band (line-box leading, grid strut, cell
  *  margin, border): every fragment carries it below its last line, so a fit
  *  test or a demand for a fragment must charge it on top of the glyph bottom */
+const childAfter = (c: RowCellBox, ch: number) => c.childAfter?.[ch] ?? 0
+/** space-before a fragment opening at line i keeps: the line's paragraph's own
+ *  when it is the paragraph's first line, none mid-paragraph */
+const childBefore = (c: RowCellBox, i: number) =>
+  i === 0 || c.childOf[i - 1] !== c.childOf[i] ? (c.childBefore?.[c.childOf[i]] ?? 0) : 0
+
 function rowBottomPad(row: TableRowBox): number {
   const naturalH = row.height - (row.splitExtra ?? 0)
   const lastBottom = (c: RowCellBox) => (c.lines.length ? c.lines[c.lines.length - 1][1] : 0)
@@ -1694,8 +1714,13 @@ export function planRowSplit(
       let fit = j
       // a fragment carries the row's bottom margin below its last line (Word
       // probe: 4 lines that fit with only the margin over the edge split 2+2)
+      // a paragraph ending mid-cell charges its space-after as well (Word
+      // probe 2026-10-20: lines that fit with only the after over the edge
+      // move the paragraph, or its last two lines, to the next page)
       for (let i = j; i < c.lines.length; i++) {
-        const pad = i === c.lines.length - 1 ? padB : padFrag
+        const last = i === c.lines.length - 1
+        const after = !last && c.childOf[i + 1] !== c.childOf[i] ? childAfter(c, c.childOf[i]) : 0
+        const pad = last ? padB : padFrag + after
         if (c.lines[i][1] + dy[k] - y + pad <= avail + 0.5) fit = i + 1
         else break
       }
@@ -1816,10 +1841,12 @@ export function planRowSplit(
       }
     })
     if (allDone) return { lastFragment: target - y, target, rules }
+    // a continuation opening at a paragraph keeps that paragraph's
+    // space-before below the fragment top (Word probe 2026-10-20)
     cells.forEach((c, k) => {
       const fit = cutIdx[k]
       next[k] = fit
-      if (fit < c.lines.length) dy[k] = y + step - lineTop(c, fit)
+      if (fit < c.lines.length) dy[k] = y + step - lineTop(c, fit) + childBefore(c, fit)
     })
     y += step
     avail = turn(step, y)
@@ -1850,7 +1877,8 @@ function firstLegalCut(
     let n = 0
     while (n < c.lines.length && c.paraOf[n] === c.paraOf[0]) n++
     const keep = !widow ? 1 : n >= 4 ? 2 : n
-    cut = Math.max(cut, c.lines[keep - 1][1])
+    const after = keep === n && n < c.lines.length ? childAfter(c, c.childOf[n - 1]) : 0
+    cut = Math.max(cut, c.lines[keep - 1][1] + after)
   }
   return Math.max(Math.min(cut + rowBottomPad(row), row.height), minH)
 }
@@ -1859,7 +1887,8 @@ function firstLegalCut(
  *  judge it: its first row, or under Word 2013+ layout the whole tblHeader
  *  block plus the first legal fragment of the first body row (the header is
  *  never left alone at a page bottom, so a keepNext chain anchored by the
- *  table must demand the same stack or it stays behind when the table turns) */
+ *  table must demand the same stack or it stays behind when the table turns);
+ *  a keepNext row chain at the table head extends the stack the same way */
 function tableOpenDemand(
   block: BlockBox,
   rows: TableRowBox[],
@@ -1867,17 +1896,34 @@ function tableOpenDemand(
   cellSplit: boolean,
 ): number {
   const first = rows[0]
-  const firstH = first.height + (first.notesPx ?? 0)
-  if (!block.modernTableHeaders || !first.isHeader) return firstH
+  const rowH = (r: TableRowBox) => r.height + (r.notesPx ?? 0)
+  const firstH = rowH(first)
+  const widow = block.modernTableHeaders === true && !block.cellWidowOff
+  const openCut = (r: TableRowBox) =>
+    firstLegalCut(r, widow, contentH, cellSplit) + (r.notesPx ?? 0)
+  // a body row opens with its first legal fragment (a plain first row splits
+  // like any row, probe 2026-09-17 cases 6/7/8); a keepNext row drags its row
+  // chain plus the chain anchor's first fragment along, exactly as _placeTable
+  // turns the page for it (an over-page chain is placed row by row there too)
+  const bodyDemand = (i: number): number => {
+    const open = openCut(rows[i])
+    if (!rows[i].keepNext) return open
+    let h = 0
+    let k = i
+    for (; k < rows.length && rows[k].keepNext; k++) h += rowH(rows[k])
+    const anchor = rows[k]
+    if (anchor) h += openCut(anchor)
+    return h <= contentH + 0.01 ? h : open
+  }
+  if (!first.isHeader) return bodyDemand(0)
+  if (!block.modernTableHeaders) return firstH
   let h = 0
   let i = 0
-  for (; i < rows.length && rows[i].isHeader; i++) h += rows[i].height + (rows[i].notesPx ?? 0)
+  for (; i < rows.length && rows[i].isHeader; i++) h += rowH(rows[i])
   if (h > contentH + 0.01) return firstH
   while (i < rows.length && rows[i].vMergeContinue) i++
-  const body = rows[i]
-  if (!body) return h
-  const widow = !block.cellWidowOff
-  return h + firstLegalCut(body, widow, contentH, cellSplit) + (body.notesPx ?? 0)
+  if (!rows[i]) return h
+  return h + bodyDemand(i)
 }
 
 /** height a floating table needs on its first page: the leading header rows
@@ -2208,6 +2254,17 @@ function noteBandHeights(block: BlockBox, lineBoxes: LineBox[]): Float64Array | 
  * Place a paragraph block (with widowControl).
  * With lineBoxes = null, degrades to F1 block-level placement.
  */
+/**
+ * Lines of a kept-with paragraph that must share the page with the keepNext block
+ * above: its orphan minimum (2 with widow control), but a paragraph the widow
+ * rules cannot split at all (3 lines: 1/2 is an orphan, 2/1 a widow) moves
+ * whole, so the heading must demand all of it (Word, prod corpus 20261020 031).
+ */
+export function keepDemandLines(widowOn: boolean, nLines: number): number {
+  if (!widowOn) return 1
+  return nLines <= 3 ? nLines : 2
+}
+
 function _placeParaBlock(
   block: BlockBox,
   lineBoxes: LineBox[] | null,
@@ -2250,6 +2307,18 @@ function _placeParaBlock(
   const totalH = block.height
   // the page's last line only needs its single-spacing extent (Word)
   const lead = block.lineLeadPx ?? 0
+  // a padded space-before (additive spacing) is dropped with the paragraph that
+  // opens a page by a natural break (Word probe 2026-10-22): the page window
+  // starts below it and it costs no capacity
+  const pad = block.padBeforePx ?? 0
+  const newPagePastPad = (): void => {
+    newPage(block.top + pad, curSection)
+    place(-pad)
+  }
+  const pushWhole = (): void => {
+    if (!pageEmpty()) newPagePastPad()
+    place(totalH)
+  }
 
   // whole paragraph (text + note reservation) fits: place directly. Trailing
   // space doesn't consume capacity (Word breaks by text only; it may overflow
@@ -2263,14 +2332,15 @@ function _placeParaBlock(
   if (!lineBoxes || lineBoxes.length === 0) {
     // F1 block-level placement: push to the next page if it doesn't fit (when <= one page), otherwise F1-style hard cut
     if (totalH <= contentH) {
-      if (!pageEmpty()) newPage(block.top, curSection)
+      pushWhole()
+      return
     } else if (multiCol && !pageEmpty()) {
       // over-column block in a column region: single-column pages place it
       // directly and the NEXT block turns the page, but short columns can see
       // a run of such blocks — placed directly they'd all stack in one column
       // (never advancing) and overprint the footer. Start each from a fresh
       // column so the pile-up is bounded to one block per column.
-      newPage(block.top, curSection)
+      newPagePastPad()
     }
     // over one page with no line data: place directly and let the next block
     // trigger the page turn (F1 handles a big block the same way)
@@ -2294,7 +2364,7 @@ function _placeParaBlock(
         sumH += lineBoxes[fitting].height + (bandH?.[fitting] ?? 0)
         if (!fits(sumH - lead)) break
       }
-      if (fitting < 2) newPage(block.top, curSection)
+      if (fitting < 2) newPagePastPad()
     }
     // paragraph exceeds one page: hard line-level cut
     _hardCutLines(
@@ -2394,8 +2464,7 @@ function _placeParaBlock(
 
   if (splitLine <= 0) {
     // push the whole paragraph to the next page
-    if (!pageEmpty()) newPage(block.top, curSection)
-    place(totalH)
+    pushWhole()
   } else {
     // break the page before line splitLine (each line carries its notes' reservation)
     if (spaceBeforePx > 0) place(spaceBeforePx)
@@ -2539,12 +2608,14 @@ function _hardCutLines(
  * page order (1-based) — exact when page numbers run from 1.
  */
 export function insertParityBlanks(slices: PageSlice[], geoms: SectionGeom[]): PageSlice[] {
-  if (!geoms.some((g) => g.startType === 'evenPage' || g.startType === 'oddPage')) return slices
+  const parityOf = (g: SectionGeom | undefined) =>
+    g?.startType === 'evenPage' || g?.startType === 'oddPage' ? g.startType : g?.numberingParity
+  if (!geoms.some((g) => parityOf(g))) return slices
   const out: PageSlice[] = []
   for (const s of slices) {
     const prev = out[out.length - 1]
     if (prev && s.section !== prev.section) {
-      const st = geoms[Math.max(0, Math.min(s.section, geoms.length - 1))]?.startType
+      const st = parityOf(geoms[Math.max(0, Math.min(s.section, geoms.length - 1))])
       const ordinal = out.length + 1
       if ((st === 'evenPage' && ordinal % 2 === 1) || (st === 'oddPage' && ordinal % 2 === 0)) {
         out.push({ start: s.start, end: s.start, section: prev.section })

@@ -122,10 +122,26 @@ describe('installStatusBarFileStats', () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(h.aggregate).not.toHaveBeenCalled()
     expect(h.setState).not.toHaveBeenCalled()
-    h.publish(upstream)
-    await vi.advanceTimersByTimeAsync(50)
+  })
+
+  it('recomputes on an empty values list so cold streamed regions still get footer stats', async () => {
+    const h = harness()
+    h.publish({ values: [], pattern: null })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(h.aggregate).toHaveBeenCalled()
+    const values = h.setState.mock.calls[0]![0].values as Array<{ func: string; value: number }>
+    expect(values.find((v) => v.func === 'COUNTA')?.value).toBe(10)
+  })
+
+  it('skips the file read for a single-cell selection', async () => {
+    const h = harness({
+      selections: [
+        { range: { startRow: 2, endRow: 2, startColumn: 0, endColumn: 0, rangeType: 0 } },
+      ],
+    })
     h.publish({ values: [], pattern: null })
     await vi.advanceTimersByTimeAsync(300)
+    expect(h.aggregate).not.toHaveBeenCalled()
     expect(h.setState).not.toHaveBeenCalled()
   })
 

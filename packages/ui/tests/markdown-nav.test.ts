@@ -48,6 +48,20 @@ describe('Markdown multi-scheme navs', () => {
     expect(onNavigate).toHaveBeenCalledWith('/Users/me/report.docx')
   })
 
+  it('keeps a nav link clickable inside bold or italic emphasis', () => {
+    const onNavigate = vi.fn()
+    render(
+      `**[Summary.xlsx](${fileNavHref('/Users/me/Summary.xlsx')})** and *[a b.docx](${fileNavHref('/Users/me/a b.docx')})*`,
+      [createFileNav(onNavigate)],
+    )
+    const links = host.querySelectorAll('a.ai-md-nav')
+    expect(links).toHaveLength(2)
+    expect(host.querySelector('strong a.ai-md-nav')?.textContent).toBe('Summary.xlsx')
+    expect(host.querySelector('em a.ai-md-nav')?.textContent).toBe('a b.docx')
+    click(links[0] as HTMLAnchorElement)
+    expect(onNavigate).toHaveBeenCalledWith('/Users/me/Summary.xlsx')
+  })
+
   it('matches each nav by its own scheme in one answer', () => {
     const gotoBlock = vi.fn()
     const openFile = vi.fn()

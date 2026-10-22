@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { FieldDisplay } from '@genoffice/docx-engine'
 import { renderFieldSpec } from '../src/renderer/editor/protected-render'
@@ -42,5 +44,16 @@ describe('TOC entry leader rendering', () => {
     expect(num[1].style).toBe('padding-left:24pt')
     expect(numTitle[1].style).toBeUndefined()
     expect(spans(base)[0][1].style).toBeUndefined()
+  })
+})
+
+describe('TOC entry line layout', () => {
+  const css = readFileSync(join(__dirname, '../src/renderer/styles.css'), 'utf8')
+  const block = (sel: string) =>
+    new RegExp(sel.replace(/\./g, '\\.') + '\\s*\\{([^}]*)\\}').exec(css)?.[1] ?? ''
+
+  it('a wrapped entry keeps the number on the first line and the leader + page on the last', () => {
+    expect(block('.doc-toc-line')).toMatch(/align-items:\s*flex-end/)
+    expect(block('.doc-toc-num')).toMatch(/align-self:\s*flex-start/)
   })
 })

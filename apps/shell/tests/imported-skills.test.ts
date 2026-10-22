@@ -1,26 +1,62 @@
-import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
+
+/** lets one test make the final rename of an install fail, without touching the disk */
+const h = vi.hoisted(() => ({ failRenameTo: '', failRmOf: '' }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    rmSync: (path: import('node:fs').PathLike, opts?: import('node:fs').RmOptions) => {
+      if (h.failRmOf && new RegExp(h.failRmOf).test(String(path))) {
+        const e = new Error('resource busy') as NodeJS.ErrnoException
+        e.code = 'EBUSY'
+        throw e
+      }
+      return actual.rmSync(path, opts)
+    },
+    renameSync: (from: import('node:fs').PathLike, to: import('node:fs').PathLike) => {
+      if (h.failRenameTo && String(to) === h.failRenameTo) {
+        // fail once: the restore of the parked copy is a plain rename to the same place
+        h.failRenameTo = ''
+        throw new Error('disk full')
+      }
+      return actual.renameSync(from, to)
+    },
+  }
+})
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import JSZip from 'jszip'
 import {
-  agentSkillDirs,
-  findSkills,
-  importSkill,
+  importSkillDir,
+  importSkillMd,
+  importSkillZip,
+  installRecommendedSkill,
   isKnownSkillPath,
-  knownSkillRoots,
   readSkillBody,
+  recommendedSkills,
+  removeSkill,
+  skillVersion,
   skillsRoot,
   usableSkills,
 } from '../src/main/imported-skills'
 
-/** a scratch tree: <root>/save/skills/<name>/SKILL.md and <root>/home/.claude/skills/… */
-/** a scratch tree: <root>/save/skills/<name>/SKILL.md and <root>/home/.agents/skills/<name>/SKILL.md */
-function scaffold(ours: Record<string, string> = {}, theirs: Record<string, string> = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'skills-scan-'))
+/** a scratch tree: <root>/save/skills/<name>/SKILL.md (ours) and <root>/src/<name>/… (to import) */
+function scaffold(ours: Record<string, string> = {}, picked: Record<string, string> = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'skills-import-'))
   const save = join(root, 'save')
-  const h = join(root, 'home')
+  const src = join(root, 'src')
   mkdirSync(save, { recursive: true })
-  mkdirSync(h, { recursive: true })
+  mkdirSync(src, { recursive: true })
   const put = (base: string, skills: Record<string, string>) => {
     for (const [name, body] of Object.entries(skills)) {
       mkdirSync(join(base, name), { recursive: true })
@@ -28,63 +64,41 @@ function scaffold(ours: Record<string, string> = {}, theirs: Record<string, stri
     }
   }
   put(join(save, 'skills'), ours)
-  put(join(h, '.agents', 'skills'), theirs)
-  return { root, save, home: h, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  put(src, picked)
+  return { root, save, src, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
 
 const SKILL = (name: string, description: string, body = 'Do the thing.') =>
   `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`
 
-const SHARED_BODY = SKILL('shared', 'Write a docx')
+async function zipOf(files: Record<string, string | Buffer>, dest: string): Promise<string> {
+  const zip = new JSZip()
+  for (const [name, data] of Object.entries(files)) zip.file(name, data)
+  writeFileSync(dest, await zip.generateAsync({ type: 'nodebuffer' }))
+  return dest
+}
 
-describe('findSkills', () => {
-  it('returns nothing when there is no skills folder and no agent home', async () => {
-    const { save, home, cleanup } = scaffold()
-    // home is passed explicitly on purpose: this machine really does have a
-    // populated ~/.agents/skills, and a bare findSkills() would read it
-    expect(await findSkills(save, {}, home)).toEqual([])
-    cleanup()
-  })
-
-  it('reads a skill we put in our own folder, and does not mark it as an agent one', async () => {
-    const { save, cleanup } = scaffold({ 'my-skill': SKILL('my-skill', 'Make a docx report') })
-    const [skill] = await usableSkills(save)
-    expect(skill.name).toBe('my-skill')
-    expect(skill.source).toBe('genoffice')
-    expect(skill.agent).toBeUndefined()
-    expect(skill.relevance.relevant).toBe(true)
-    cleanup()
-  })
-
-  it('offers an agent skill as a candidate rather than as usable', async () => {
-    const { save, home, cleanup } = scaffold(
-      {},
-      { 'pptx-builder': SKILL('pptx-builder', 'Build a pptx') },
-    )
-    const all = await findSkills(save, {}, home)
-    expect(all).toHaveLength(1)
-    expect(all[0].source).toBe('agent')
-    expect(all[0].agent).toBe('agents')
-    // ours-only: nothing was imported by merely looking
+describe('usableSkills', () => {
+  it('returns nothing when there is no skills folder', async () => {
+    const { save, cleanup } = scaffold()
     expect(await usableSkills(save)).toEqual([])
     cleanup()
   })
 
-  it('keeps our copy when an agent directory has the same name', async () => {
-    const { save, home, cleanup } = scaffold({ shared: SHARED_BODY }, { shared: SHARED_BODY })
-    const all = await findSkills(save, {}, home)
-    expect(all).toHaveLength(1)
-    expect(all[0].source).toBe('genoffice')
+  it('reads a skill in our own folder and classifies it', async () => {
+    const { save, cleanup } = scaffold({ 'my-skill': SKILL('my-skill', 'Make a docx report') })
+    const [skill] = await usableSkills(save)
+    expect(skill.name).toBe('my-skill')
+    expect(skill.relevance.relevant).toBe(true)
     cleanup()
   })
 
-  it('classifies a skill that is about deployment as not relevant, without hiding it', async () => {
-    const { save, home, cleanup } = scaffold(
-      {},
-      { deploy: SKILL('deploy', 'Roll back a Kubernetes release') },
-    )
-    const [skill] = await findSkills(save, {}, home)
-    expect(skill.relevance.relevant).toBe(false)
+  it('never looks in a coding agent directory', async () => {
+    const { root, save, cleanup } = scaffold()
+    const agents = join(root, 'home', '.agents', 'skills', 'deploy')
+    mkdirSync(agents, { recursive: true })
+    writeFileSync(join(agents, 'SKILL.md'), SKILL('deploy', 'Roll back a release'))
+    expect(await usableSkills(save)).toEqual([])
     cleanup()
   })
 
@@ -98,49 +112,10 @@ describe('findSkills', () => {
     expect((await usableSkills(save)).map((s) => s.name)).toEqual(['good'])
     cleanup()
   })
-
-  it('reads the home from the argument, not the real one', async () => {
-    const { save, home, cleanup } = scaffold({}, { x: SKILL('x', 'A pdf thing') })
-    // a home with nothing in it must not reach the developer's real ~/.claude
-    expect(await findSkills(save, {}, join(home, 'nowhere'))).toEqual([])
-    cleanup()
-  })
-
-  it('survives an unreadable directory by skipping it', async () => {
-    const { save, home, cleanup } = scaffold({}, { a: SKILL('a', 'docx') })
-    mkdirSync(join(home, '.agents', 'skills', 'not-a-dir'), { recursive: true })
-    writeFileSync(join(home, '.agents', 'skills', 'not-a-dir', 'SKILL.md'), SKILL('b', 'xlsx'))
-    await expect(findSkills(save, {}, home)).resolves.toHaveLength(2)
-    cleanup()
-  })
-})
-
-describe('agentSkillDirs', () => {
-  it('lists the cross-agent directory before the vendor ones', () => {
-    const dirs = agentSkillDirs({}, '/h')
-    expect(dirs[0].agent).toBe('agents')
-    expect(dirs.map((d) => d.dir)).toContain(join('/h', '.claude', 'skills'))
-  })
-
-  it('honours the config-dir environment variables those agents use', () => {
-    const dirs = agentSkillDirs(
-      { CLAUDE_CONFIG_DIR: '/cfg/claude', CODEX_HOME: '/cfg/codex' },
-      '/h',
-    )
-    expect(dirs.find((d) => d.agent === 'claude-code')!.dir).toBe('/cfg/claude/skills')
-    expect(dirs.find((d) => d.agent === 'codex')!.dir).toBe('/cfg/codex/skills')
-  })
-
-  it('ignores an empty config dir rather than joining onto it', () => {
-    const dirs = agentSkillDirs({ CLAUDE_CONFIG_DIR: '' }, '/h')
-    expect(dirs.find((d) => d.agent === 'claude-code')!.dir).toBe('/h/.claude/skills')
-  })
 })
 
 describe('skillsRoot / readSkillBody', () => {
   it('puts skills under userData, not where documents live', () => {
-    // Home lists every .md under the save directory as a document, so a skills
-    // folder there would show every imported SKILL.md to the user
     expect(skillsRoot('/app/userData')).toBe(join('/app/userData', 'skills'))
   })
 
@@ -152,148 +127,413 @@ describe('skillsRoot / readSkillBody', () => {
   })
 })
 
-describe('importSkill', () => {
+describe('importSkillDir', () => {
   it('copies the whole skill folder, not just SKILL.md', async () => {
-    const { save, home, cleanup } = scaffold({}, { 'pptx-builder': SKILL('pptx', 'Build a pptx') })
-    const src = join(home, '.agents', 'skills', 'pptx-builder')
-    // the reference files a skill ships alongside its instructions
-    mkdirSync(join(src, 'reference'), { recursive: true })
-    writeFileSync(join(src, 'reference', 'layout.md'), 'grid rules')
-    writeFileSync(join(src, 'notes.md'), 'side notes')
+    const { save, src, cleanup } = scaffold({}, { 'pptx-builder': SKILL('pptx', 'Build a pptx') })
+    const dir = join(src, 'pptx-builder')
+    mkdirSync(join(dir, 'reference'), { recursive: true })
+    writeFileSync(join(dir, 'reference', 'layout.md'), 'grid rules')
+    writeFileSync(join(dir, 'notes.md'), 'side notes')
 
-    const imported = importSkill(join(src, 'SKILL.md'), save)
-    expect(imported).toMatchObject({ name: 'pptx-builder', source: 'genoffice' })
-    expect(imported.agent).toBeUndefined()
+    const imported = importSkillDir(dir, save)
+    expect(imported.name).toBe('pptx-builder')
+    expect(imported.relevance.relevant).toBe(true)
     const dest = join(save, 'skills', 'pptx-builder')
     expect(existsSync(join(dest, 'reference', 'layout.md'))).toBe(true)
     expect(existsSync(join(dest, 'notes.md'))).toBe(true)
-    // and the copy is now one of ours, not a candidate
     expect((await usableSkills(save)).map((s) => s.name)).toEqual(['pptx-builder'])
     cleanup()
   })
 
-  it('classifies what it imported, and reads the file that landed', () => {
-    const { save, home, cleanup } = scaffold({}, { x: SKILL('x', 'Turn a pdf into html') })
-    const src = join(home, '.agents', 'skills', 'x')
-    const imported = importSkill(join(src, 'SKILL.md'), save)
-    expect(imported.relevance.relevant).toBe(true)
-    expect(readSkillBody(imported.path)).toBe('Do the thing.\n')
+  it('refuses a folder without a usable SKILL.md', () => {
+    const { save, src, cleanup } = scaffold()
+    mkdirSync(join(src, 'plain'))
+    writeFileSync(join(src, 'plain', 'README.md'), 'not a skill')
+    expect(() => importSkillDir(join(src, 'plain'), save)).toThrow('no SKILL.md')
+    mkdirSync(join(src, 'bare'))
+    writeFileSync(join(src, 'bare', 'SKILL.md'), 'no frontmatter')
+    expect(() => importSkillDir(join(src, 'bare'), save)).toThrow('frontmatter')
+    expect(existsSync(join(save, 'skills'))).toBe(false)
     cleanup()
   })
 
   it('refuses to overwrite a skill already in our folder, and leaves it alone', () => {
-    const { save, home, cleanup } = scaffold(
+    const { save, src, cleanup } = scaffold(
       { shared: SKILL('shared', 'Mine', 'mine wins') },
       { shared: SKILL('shared', 'Theirs', 'theirs loses') },
     )
-    const src = join(home, '.agents', 'skills', 'shared')
-    expect(() => importSkill(join(src, 'SKILL.md'), save)).toThrow('already there')
+    expect(() => importSkillDir(join(src, 'shared'), save)).toThrow('already there')
     expect(readSkillBody(join(save, 'skills', 'shared', 'SKILL.md'))).toBe('mine wins\n')
     cleanup()
   })
 
+  it('refuses a skill directory that is itself a symlink', () => {
+    const { save, src, cleanup } = scaffold({}, { real: SKILL('real', 'A docx thing') })
+    symlinkSync(join(src, 'real'), join(src, 'linked'))
+    expect(() => importSkillDir(join(src, 'linked'), save)).toThrow('symlink')
+    expect(existsSync(join(save, 'skills', 'linked'))).toBe(false)
+    cleanup()
+  })
+
   it('refuses a skill that ships a symlink instead of copying the reach-through', () => {
-    const { save, home, cleanup } = scaffold({}, { linked: SKILL('linked', 'A docx thing') })
-    const src = join(home, '.agents', 'skills', 'linked')
-    writeFileSync(join(src, 'outside.md'), 'somewhere else')
-    symlinkSync(join(src, 'outside.md'), join(src, 'reference.md'))
-    expect(() => importSkill(join(src, 'SKILL.md'), save)).toThrow('symlink')
+    const { save, src, cleanup } = scaffold({}, { linked: SKILL('linked', 'A docx thing') })
+    const dir = join(src, 'linked')
+    writeFileSync(join(dir, 'outside.md'), 'somewhere else')
+    symlinkSync(join(dir, 'outside.md'), join(dir, 'reference.md'))
+    expect(() => importSkillDir(dir, save)).toThrow('symlink')
     expect(existsSync(join(save, 'skills', 'linked'))).toBe(false)
     cleanup()
   })
 
   it('refuses a skill over the import size cap', () => {
-    const { save, home, cleanup } = scaffold({}, { heavy: SKILL('heavy', 'A docx thing') })
-    const src = join(home, '.agents', 'skills', 'heavy')
-    mkdirSync(join(src, 'corpus'), { recursive: true })
-    writeFileSync(join(src, 'corpus', 'big.bin'), Buffer.alloc(11 * 1024 * 1024, 0))
-    expect(() => importSkill(join(src, 'SKILL.md'), save)).toThrow('import cap')
+    const { save, src, cleanup } = scaffold({}, { heavy: SKILL('heavy', 'A docx thing') })
+    mkdirSync(join(src, 'heavy', 'corpus'), { recursive: true })
+    writeFileSync(join(src, 'heavy', 'corpus', 'big.bin'), Buffer.alloc(11 * 1024 * 1024, 0))
+    expect(() => importSkillDir(join(src, 'heavy'), save)).toThrow('import cap')
     expect(existsSync(join(save, 'skills', 'heavy'))).toBe(false)
     cleanup()
   })
 
-  it('names the folder after the directory it came from', () => {
-    const { save, home, cleanup } = scaffold(
-      {},
-      { 'pdf-tools': SKILL('different-name', 'A pdf thing') },
+  it('names the folder after the directory it came from, not the frontmatter', () => {
+    const { save, src, cleanup } = scaffold({}, { 'pdf-tools': SKILL('other', 'A pdf thing') })
+    expect(importSkillDir(join(src, 'pdf-tools'), save).name).toBe('pdf-tools')
+    cleanup()
+  })
+})
+
+describe('importSkillZip', () => {
+  it('unpacks a zip with one top-level folder, named after the folder', async () => {
+    const { root, save, cleanup } = scaffold()
+    const zip = await zipOf(
+      {
+        'pptx-builder/SKILL.md': SKILL('pptx', 'Build a pptx'),
+        'pptx-builder/reference/layout.md': 'grid rules',
+      },
+      join(root, 'anything.zip'),
     )
-    const src = join(home, '.agents', 'skills', 'pdf-tools')
-    // frontmatter says one thing, the folder says another; the folder wins,
-    // because the folder is what skillsRoot is keyed on
-    expect(importSkill(join(src, 'SKILL.md'), save).name).toBe('pdf-tools')
+    const imported = await importSkillZip(zip, save)
+    expect(imported.name).toBe('pptx-builder')
+    expect(existsSync(join(save, 'skills', 'pptx-builder', 'reference', 'layout.md'))).toBe(true)
+    expect(readSkillBody(imported.path)).toBe('Do the thing.\n')
+    cleanup()
+  })
+
+  it('unpacks a zip with SKILL.md at the root, named after the file', async () => {
+    const { root, save, cleanup } = scaffold()
+    const zip = await zipOf(
+      { 'SKILL.md': SKILL('x', 'A docx thing'), 'notes.md': 'side' },
+      join(root, 'docx-helper.zip'),
+    )
+    expect((await importSkillZip(zip, save)).name).toBe('docx-helper')
+    expect(existsSync(join(save, 'skills', 'docx-helper', 'notes.md'))).toBe(true)
+    cleanup()
+  })
+
+  it('imports a single markdown file, named from its frontmatter', () => {
+    const { root, save, cleanup } = scaffold()
+    const md = join(root, 'anything.md')
+    writeFileSync(md, SKILL('trip-planner', 'Plan a docx itinerary'))
+    const imported = importSkillMd(md, save)
+    expect(imported.name).toBe('trip-planner')
+    expect(imported.path).toBe(join(save, 'skills', 'trip-planner', 'SKILL.md'))
+    expect(readSkillBody(imported.path)).toBe('Do the thing.\n')
+    expect(() => importSkillMd(md, save)).toThrow(/already there/)
+    cleanup()
+  })
+
+  it('falls back to the file stem when the frontmatter name is not a folder name', () => {
+    const { root, save, cleanup } = scaffold()
+    const md = join(root, 'travel.md')
+    writeFileSync(md, SKILL('a/b', 'Plan a docx itinerary'))
+    expect(importSkillMd(md, save).name).toBe('travel')
+    cleanup()
+  })
+
+  it('refuses a markdown file without skill frontmatter', () => {
+    const { root, save, cleanup } = scaffold()
+    const md = join(root, 'notes.md')
+    writeFileSync(md, '# just notes\n')
+    expect(() => importSkillMd(md, save)).toThrow(/frontmatter/)
+    expect(existsSync(join(save, 'skills', 'notes'))).toBe(false)
+    cleanup()
+  })
+
+  it('removes a listed skill and refuses anything else', () => {
+    const { save, cleanup } = scaffold({ mine: SKILL('mine', 'docx') })
+    writeFileSync(join(save, 'stray.txt'), 'x')
+    expect(() => removeSkill('../stray.txt', save)).toThrow(/unknown skill/)
+    expect(() => removeSkill('absent', save)).toThrow(/unknown skill/)
+    removeSkill('mine', save)
+    expect(existsSync(join(save, 'skills', 'mine'))).toBe(false)
+    expect(existsSync(join(save, 'stray.txt'))).toBe(true)
+    cleanup()
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'removes a folder-imported skill whose name a zip would refuse',
+    async () => {
+      const { save, src, cleanup } = scaffold({}, { 'draft:v2': SKILL('draft', 'docx') })
+      importSkillDir(join(src, 'draft:v2'), save)
+      expect((await usableSkills(save)).map((s) => s.name)).toEqual(['draft:v2'])
+      removeSkill('draft:v2', save)
+      expect(existsSync(join(save, 'skills', 'draft:v2'))).toBe(false)
+      cleanup()
+    },
+  )
+
+  it('ignores the resource fork folder macOS adds', async () => {
+    const { root, save, cleanup } = scaffold()
+    const zip = await zipOf(
+      {
+        'tool/SKILL.md': SKILL('tool', 'A pdf thing'),
+        '__MACOSX/tool/._SKILL.md': 'junk',
+      },
+      join(root, 'a.zip'),
+    )
+    expect((await importSkillZip(zip, save)).name).toBe('tool')
+    expect(existsSync(join(save, 'skills', 'tool', '__MACOSX'))).toBe(false)
+    cleanup()
+  })
+
+  it('refuses a zip with no SKILL.md where one is expected', async () => {
+    const { root, save, cleanup } = scaffold()
+    const two = await zipOf(
+      { 'a/SKILL.md': SKILL('a', 'docx'), 'b/SKILL.md': SKILL('b', 'pdf') },
+      join(root, 'two.zip'),
+    )
+    await expect(importSkillZip(two, save)).rejects.toThrow('no SKILL.md')
+    const none = await zipOf({ 'a/README.md': 'hi' }, join(root, 'none.zip'))
+    await expect(importSkillZip(none, save)).rejects.toThrow('no SKILL.md')
+    cleanup()
+  })
+
+  it('refuses an entry that climbs out, and writes nothing', async () => {
+    const { root, save, cleanup } = scaffold()
+    const zip = await zipOf(
+      { 'tool/SKILL.md': SKILL('tool', 'docx'), '../escape.txt': 'out' },
+      join(root, 'bad.zip'),
+    )
+    // jszip itself may fold the `..` away; either way it is refused and nothing lands
+    await expect(importSkillZip(zip, save)).rejects.toThrow()
+    expect(existsSync(join(root, 'escape.txt'))).toBe(false)
+    expect(existsSync(join(save, 'skills', 'tool'))).toBe(false)
+    cleanup()
+  })
+
+  it('refuses a symlink entry', async () => {
+    const { root, save, cleanup } = scaffold()
+    const z = new JSZip()
+    z.file('tool/SKILL.md', SKILL('tool', 'docx'))
+    z.file('tool/link', '/etc/passwd', { unixPermissions: 0o120777 })
+    const zip = join(root, 'link.zip')
+    writeFileSync(zip, await z.generateAsync({ type: 'nodebuffer', platform: 'UNIX' }))
+    await expect(importSkillZip(zip, save)).rejects.toThrow('symlink')
+    expect(existsSync(join(save, 'skills', 'tool'))).toBe(false)
+    cleanup()
+  })
+
+  it('refuses a zip over the import cap and leaves no scratch behind', async () => {
+    const { root, save, cleanup } = scaffold()
+    const zip = await zipOf(
+      { 'heavy/SKILL.md': SKILL('heavy', 'docx'), 'heavy/big.bin': Buffer.alloc(11 * 1024 * 1024) },
+      join(root, 'heavy.zip'),
+    )
+    await expect(importSkillZip(zip, save)).rejects.toThrow('import cap')
+    expect(readdirSync(join(save, 'skills'))).toEqual([])
+    cleanup()
+  })
+
+  it('refuses to overwrite an installed skill', async () => {
+    const { root, save, cleanup } = scaffold({ tool: SKILL('tool', 'Mine', 'mine wins') })
+    const zip = await zipOf({ 'tool/SKILL.md': SKILL('tool', 'Theirs') }, join(root, 't.zip'))
+    await expect(importSkillZip(zip, save)).rejects.toThrow('already there')
+    expect(readSkillBody(join(save, 'skills', 'tool', 'SKILL.md'))).toBe('mine wins\n')
+    cleanup()
+  })
+
+  it('refuses a file that is not a zip', async () => {
+    const { root, save, cleanup } = scaffold()
+    const file = join(root, 'not.zip')
+    writeFileSync(file, 'plain text')
+    await expect(importSkillZip(file, save)).rejects.toThrow('not a zip')
     cleanup()
   })
 })
 
 describe('isKnownSkillPath', () => {
-  it('accepts every path the scan hands out, ours and the agents', async () => {
-    const { save, home, cleanup } = scaffold(
-      { mine: SKILL('mine', 'A docx thing') },
-      { theirs: SKILL('theirs', 'A pdf thing') },
-    )
-    const roots = knownSkillRoots(save, {}, home)
-    const found = await findSkills(save, {}, home)
-    expect(found).toHaveLength(2)
-    for (const skill of found) {
-      expect(isKnownSkillPath(skill.path, roots)).toBe(true)
+  it('accepts every path the listing hands out', async () => {
+    const { save, cleanup } = scaffold({ mine: SKILL('mine', 'A docx thing') })
+    for (const skill of await usableSkills(save)) {
+      expect(isKnownSkillPath(skill.path, skillsRoot(save))).toBe(true)
     }
     cleanup()
   })
 
-  it('rejects a file outside every skills root', () => {
-    expect(isKnownSkillPath('/etc/passwd', ['/save/skills'])).toBe(false)
-    expect(isKnownSkillPath('/Users/me/.ssh/id_rsa', ['/save/skills'])).toBe(false)
+  it('rejects a file outside the skills root', () => {
+    expect(isKnownSkillPath('/etc/passwd', '/save/skills')).toBe(false)
+    expect(isKnownSkillPath('/Users/me/.ssh/id_rsa', '/save/skills')).toBe(false)
   })
 
   it('rejects another file sitting beside a SKILL.md', () => {
-    // the guard is the file name as much as the directory: a skills folder can
-    // legitimately hold reference files, and those are not skills
-    expect(isKnownSkillPath('/save/skills/mine/notes.md', ['/save/skills'])).toBe(false)
-    expect(isKnownSkillPath('/save/skills/mine/scripts/evil.sh', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/save/skills/mine/notes.md', '/save/skills')).toBe(false)
+    expect(isKnownSkillPath('/save/skills/mine/scripts/evil.sh', '/save/skills')).toBe(false)
   })
 
-  it('rejects a SKILL.md reached by climbing out of a skills root', () => {
-    expect(isKnownSkillPath('/save/skills/../../.ssh/SKILL.md', ['/save/skills'])).toBe(false)
-    expect(isKnownSkillPath('/save/skills/../../../../../../etc/SKILL.md', ['/save/skills'])).toBe(
+  it('rejects a SKILL.md reached by climbing out of the skills root', () => {
+    expect(isKnownSkillPath('/save/skills/../../.ssh/SKILL.md', '/save/skills')).toBe(false)
+    expect(isKnownSkillPath('/save/skills/../../../../../../etc/SKILL.md', '/save/skills')).toBe(
       false,
     )
   })
 
   it('accepts a climb that lands back inside the root: it is the same skill', () => {
-    // the traversal test above is only about leaving; one that comes back is
-    // just an awkward spelling of a real path
-    expect(isKnownSkillPath('/save/skills/../skills/x/SKILL.md', ['/save/skills'])).toBe(true)
-    expect(isKnownSkillPath('/save/skills/a/../b/SKILL.md', ['/save/skills'])).toBe(true)
+    expect(isKnownSkillPath('/save/skills/../skills/x/SKILL.md', '/save/skills')).toBe(true)
+    expect(isKnownSkillPath('/save/skills/a/../b/SKILL.md', '/save/skills')).toBe(true)
   })
 
   it('rejects a root that merely starts with the same characters', () => {
-    expect(isKnownSkillPath('/save/skills-backup/x/SKILL.md', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/save/skills-backup/x/SKILL.md', '/save/skills')).toBe(false)
   })
 
   it('rejects a skills folder with the same last component but a different parent', () => {
-    // matching on the folder name alone would read any 'skills' directory on
-    // the machine, which is exactly the leak this guard exists to close
-    expect(isKnownSkillPath('/elsewhere/skills/mine/SKILL.md', ['/save/skills'])).toBe(false)
-    expect(isKnownSkillPath('/Users/me/.claude/skills/mine/SKILL.md', ['/save/skills'])).toBe(false)
-    expect(isKnownSkillPath('/private/tmp/agent/skills/x/SKILL.md', ['/save/skills'])).toBe(false)
+    expect(isKnownSkillPath('/elsewhere/skills/mine/SKILL.md', '/save/skills')).toBe(false)
+    expect(isKnownSkillPath('/Users/me/.claude/skills/mine/SKILL.md', '/save/skills')).toBe(false)
   })
 
   it('rejects anything that is not an absolute path', () => {
     for (const bad of ['', 'skills/mine/SKILL.md', undefined, null, 42, {}]) {
-      expect(isKnownSkillPath(bad, ['/save/skills'])).toBe(false)
+      expect(isKnownSkillPath(bad, '/save/skills')).toBe(false)
     }
   })
 
-  it('normalizes the incoming path, so an equivalent spelling is the same skill', () => {
-    expect(isKnownSkillPath('/save/./skills/mine/SKILL.md', ['/save/skills'])).toBe(true)
-    expect(isKnownSkillPath('/save/skills-backup/../skills/mine/SKILL.md', ['/save/skills'])).toBe(
-      true,
-    )
+  it('normalizes the incoming path and the root', () => {
+    expect(isKnownSkillPath('/save/./skills/mine/SKILL.md', '/save/skills')).toBe(true)
+    expect(isKnownSkillPath('/save/skills/mine/SKILL.md', '/save/./skills/')).toBe(true)
+  })
+})
+
+const VERSIONED = (name: string, version: string, body = 'Do the thing.') =>
+  `---\nname: ${name}\ndescription: Write a docx report\nmetadata:\n  version: ${version}\n---\n\n${body}\n`
+
+describe('recommendedSkills / installRecommendedSkill', () => {
+  it('reads the version from the metadata block, empty when absent', () => {
+    const { root, cleanup } = scaffold()
+    writeFileSync(join(root, 'a.md'), VERSIONED('a', '1.2.0'))
+    writeFileSync(join(root, 'b.md'), SKILL('b', 'docx'))
+    expect(skillVersion(join(root, 'a.md'))).toBe('1.2.0')
+    expect(skillVersion(join(root, 'b.md'))).toBe('')
+    expect(skillVersion(join(root, 'missing.md'))).toBe('')
+    cleanup()
   })
 
-  it('resolves the roots it compares against', () => {
-    // a root with a trailing slash or a dot segment is still the same root
-    const path = '/save/skills/mine/SKILL.md'
-    expect(isKnownSkillPath(path, ['/save/./skills/'])).toBe(true)
+  it('lists the shipped skills with missing / installed / outdated against our folder', async () => {
+    const { root, save, cleanup } = scaffold({
+      same: VERSIONED('same', '1.0.0'),
+      old: VERSIONED('old', '0.9.0', 'user edited'),
+    })
+    const rec = join(root, 'recommended')
+    for (const [n, v] of [
+      ['same', '1.0.0'],
+      ['old', '1.0.0'],
+      ['fresh', '1.0.0'],
+    ]) {
+      mkdirSync(join(rec, n), { recursive: true })
+      writeFileSync(join(rec, n, 'SKILL.md'), VERSIONED(n, v))
+    }
+    const list = await recommendedSkills(rec, save)
+    expect(list.map((s) => [s.name, s.state])).toEqual([
+      ['fresh', 'missing'],
+      ['old', 'outdated'],
+      ['same', 'installed'],
+    ])
+    // listing copies nothing and leaves the user's edited copy alone
+    expect((await usableSkills(save)).map((s) => s.name)).toEqual(['old', 'same'])
+    expect(readSkillBody(join(save, 'skills', 'old', 'SKILL.md'))).toBe('user edited\n')
+    cleanup()
+  })
+
+  it('returns nothing when the recommended directory is absent', async () => {
+    const { root, save, cleanup } = scaffold()
+    expect(await recommendedSkills(join(root, 'nowhere'), save)).toEqual([])
+    cleanup()
+  })
+
+  it('installs by name only from the recommended directory, replacing an outdated copy', async () => {
+    const { root, save, cleanup } = scaffold({ old: VERSIONED('old', '0.9.0', 'user edited') })
+    const rec = join(root, 'recommended')
+    mkdirSync(join(rec, 'old', 'reference'), { recursive: true })
+    writeFileSync(join(rec, 'old', 'SKILL.md'), VERSIONED('old', '1.0.0', 'shipped'))
+    writeFileSync(join(rec, 'old', 'reference', 'notes.md'), 'extra')
+    const installed = installRecommendedSkill('old', rec, save)
+    expect(installed.name).toBe('old')
+    expect(readSkillBody(installed.path)).toBe('shipped\n')
+    expect(existsSync(join(save, 'skills', 'old', 'reference', 'notes.md'))).toBe(true)
+    expect((await recommendedSkills(rec, save))[0]?.state).toBe('installed')
+    expect(readdirSync(join(save, 'skills')).filter((n) => n.startsWith('.'))).toEqual([])
+    cleanup()
+  })
+
+  it('keeps the installed copy when the swap fails half-way', () => {
+    const { root, save, cleanup } = scaffold({ old: VERSIONED('old', '0.9.0', 'user edited') })
+    const rec = join(root, 'recommended')
+    mkdirSync(join(rec, 'old'), { recursive: true })
+    writeFileSync(join(rec, 'old', 'SKILL.md'), VERSIONED('old', '1.0.0', 'shipped'))
+    const dest = join(save, 'skills', 'old')
+    h.failRenameTo = dest
+    try {
+      expect(() => installRecommendedSkill('old', rec, save)).toThrow('disk full')
+    } finally {
+      h.failRenameTo = ''
+    }
+    expect(readSkillBody(join(dest, 'SKILL.md'))).toBe('user edited\n')
+    expect(readdirSync(join(save, 'skills')).filter((n) => n.startsWith('.'))).toEqual([])
+    cleanup()
+  })
+
+  it('a locked leftover does not fail the install, and the leftover is not listed as a skill', async () => {
+    const { root, save, cleanup } = scaffold({ old: VERSIONED('old', '0.9.0', 'user edited') })
+    const rec = join(root, 'recommended')
+    mkdirSync(join(rec, 'old'), { recursive: true })
+    writeFileSync(join(rec, 'old', 'SKILL.md'), VERSIONED('old', '1.0.0', 'shipped'))
+    h.failRmOf = '\\.previous$'
+    try {
+      expect(installRecommendedSkill('old', rec, save).name).toBe('old')
+    } finally {
+      h.failRmOf = ''
+    }
+    expect(readSkillBody(join(save, 'skills', 'old', 'SKILL.md'))).toBe('shipped\n')
+    const leftovers = readdirSync(join(save, 'skills')).filter((n) => n.startsWith('.'))
+    expect(leftovers).toHaveLength(1)
+    expect((await usableSkills(save)).map((s) => s.name)).toEqual(['old'])
+    cleanup()
+  })
+
+  it('a locked scratch copy still restores the parked skill when the swap fails', () => {
+    const { root, save, cleanup } = scaffold({ old: VERSIONED('old', '0.9.0', 'user edited') })
+    const rec = join(root, 'recommended')
+    mkdirSync(join(rec, 'old'), { recursive: true })
+    writeFileSync(join(rec, 'old', 'SKILL.md'), VERSIONED('old', '1.0.0', 'shipped'))
+    const dest = join(save, 'skills', 'old')
+    h.failRenameTo = dest
+    h.failRmOf = '\\.install-[^/\\\\]+$'
+    try {
+      expect(() => installRecommendedSkill('old', rec, save)).toThrow('disk full')
+    } finally {
+      h.failRenameTo = ''
+      h.failRmOf = ''
+    }
+    expect(readSkillBody(join(dest, 'SKILL.md'))).toBe('user edited\n')
+    cleanup()
+  })
+
+  it('refuses a name that is not a shipped skill, including path-shaped ones', () => {
+    const { root, save, cleanup } = scaffold()
+    const rec = join(root, 'recommended')
+    mkdirSync(rec, { recursive: true })
+    for (const bad of ['nope', '../save', '/etc', '.hidden', 'a/b']) {
+      expect(() => installRecommendedSkill(bad, rec, save)).toThrow('unknown skill')
+    }
+    expect(existsSync(join(save, 'skills'))).toBe(false)
+    cleanup()
   })
 })

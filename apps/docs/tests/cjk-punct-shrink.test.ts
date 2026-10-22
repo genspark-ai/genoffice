@@ -19,6 +19,7 @@ import {
   isCompressible,
   measuresAlignment,
   shrinkStyle,
+  spacingHost,
   usesEastAsianRules,
   type HangLineChars,
   type ShrinkLineChars,
@@ -343,5 +344,26 @@ describe('mapTextNodes', () => {
     expect(mapTextNodes(p, fakePara([text('abcd')]), 0, ea)).toBeNull()
     p.innerHTML = 'ab<img>cd'
     expect(mapTextNodes(p, fakePara([text('ab'), image, text('cd')]), 0, ea)).toBeNull()
+  })
+})
+
+describe('spacingHost', () => {
+  it('reads the base letter-spacing past an active shrink span, so a second pass sees the same base', () => {
+    const p = document.createElement('p')
+    p.style.letterSpacing = '2px'
+    p.innerHTML =
+      '\u6f22<span class="doc-east-asian-font" style="letter-spacing:4px"><span class="doc-cjkshrink" style="letter-spacing:-3px">\u3002</span></span><span class="doc-cjkshrink" style="letter-spacing:-1px">\u3001</span>'
+    document.body.append(p)
+    const baseOf = (el: Element | null) =>
+      parseFloat(getComputedStyle(spacingHost(el)!).letterSpacing)
+    const [ea, bare] = [...p.querySelectorAll('.doc-cjkshrink')]
+    expect(spacingHost(ea.firstChild!.parentElement)).toBe(ea.parentElement)
+    expect(baseOf(ea)).toBe(4)
+    expect(baseOf(bare)).toBe(2)
+    expect(spacingHost(p)).toBe(p)
+    // pass two: the shrink decoration changes but the base it is computed from does not
+    ;(ea as HTMLElement).style.letterSpacing = '-5px'
+    expect(baseOf(ea)).toBe(4)
+    p.remove()
   })
 })

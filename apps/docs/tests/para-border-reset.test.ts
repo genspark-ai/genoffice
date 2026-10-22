@@ -88,14 +88,14 @@ describe('direct w:pBdr none over a style border', () => {
     expect(style.paddingRight).toBe('')
   })
 
-  it('pads drawn top/bottom sides by their w:space, left/right by the text inset', () => {
+  it('pads drawn top/bottom sides by their w:space, left/right never inset the text', () => {
     const style = paraStyle({
       borders: 'bl',
       borderLines: JSON.stringify({ b: { color: '4F81BD', szPt: 1, spacePt: 4 } }),
     })
     expect(style.paddingTop).toBe('')
     expect(style.paddingBottom).toBe('4pt')
-    expect(style.paddingLeft).toBe('4px')
+    expect(style.paddingLeft).toBe('')
     expect(style.paddingRight).toBe('')
   })
 

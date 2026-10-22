@@ -9,6 +9,11 @@ export const ar = {
   redactDialogPlaceholder: 'اسم العنصر، مثال: هاتف العميل',
   redactCancel: 'إلغاء',
   redactInsert: 'إخفاء',
+  diskChangedMsg: 'تم تغيير هذا الملف بواسطة برنامج آخر.',
+  diskConflictMsg: 'تغيّر هذا الملف على القرص؛ سيؤدي الحفظ إلى استبدال تلك التغييرات.',
+  diskReload: 'إعادة التحميل',
+  diskKeepMine: 'الاحتفاظ بنسختي',
+  diskOverwrite: 'الاستبدال على أي حال',
 
   loading: 'جارٍ التحميل…',
   loadFailed: 'تعذر فتح الملف',

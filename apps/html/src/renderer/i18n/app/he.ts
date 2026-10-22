@@ -9,6 +9,11 @@ export const he = {
   redactDialogPlaceholder: 'שם הסימון, לדוגמה: טלפון הלקוח',
   redactCancel: 'ביטול',
   redactInsert: 'הסתר',
+  diskChangedMsg: 'קובץ זה שונה על ידי תוכנית אחרת.',
+  diskConflictMsg: 'קובץ זה השתנה בדיסק; שמירה תדרוס את השינויים האלה.',
+  diskReload: 'טען מחדש',
+  diskKeepMine: 'השאר את שלי',
+  diskOverwrite: 'דרוס בכל זאת',
 
   loading: 'טוען…',
   loadFailed: 'לא ניתן לפתוח את הקובץ',

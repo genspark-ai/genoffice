@@ -15,13 +15,16 @@ import {
   hfImageHangsOnPara,
   hfCellSegStyle,
   hfCellTabLines,
-  hfDeclaredStrutPt,
+  hfParaLineFactorStyle,
+  hfParaStrutFontSize,
   hfLeadIndentCss,
+  hfIndentOverhangPx,
   hfRowStyle,
   hfSegHasImage,
   hfSegLeftCss,
   hfTabLeadNeedsStrut,
   hfTabSegImageHeightPx,
+  hfStripColumnPx,
   hfTabLines,
   hfTabOverflowPx,
   hfBoxAnchorEl,
@@ -38,7 +41,7 @@ import {
   hfStackedSpacingPx,
 } from '../editor/hf-dom'
 import { hfParasOf, PAGE_TOKEN } from '../editor/hf-text'
-import { mountHfEditor, type HfEditorHandle } from '../editor/hf-editor'
+import { hfEditablePara, mountHfEditor, type HfEditorHandle } from '../editor/hf-editor'
 import { dkStyleProps } from '../editor/dark-page'
 import { INLINE_RULE_CLASS, inlineRuleStyle } from '../editor/inline-rule'
 import { textColorValue } from '../editor/text-color'
@@ -82,9 +85,11 @@ function runStyle(run: Run): React.CSSProperties {
 
 /** document content colors (w:shd / w:pBdr) plus their dark-page twins; mirrors makeGapHfEl */
 function paraStyle(para: HfParagraph, merge?: ParaBorderMergeFlags): React.CSSProperties {
-  const style: React.CSSProperties = {}
+  const style: React.CSSProperties = hfParaLineFactorStyle(para.runs)
   const lh = hfParaLineHeightCss(para)
   if (lh) style.lineHeight = lh
+  const fs = hfParaStrutFontSize(para.runs)
+  if (fs) style.fontSize = fs
   if (para.bidi) style.direction = 'rtl'
   Object.assign(style, hfParaIndentStyle(para))
   if (para.align) {
@@ -190,21 +195,24 @@ export function HeaderFooterArea({
     return hfUsesLegacyHash(value) ? t.replace('#', String(pageNo ?? 1)) : t
   }
 
-  // run-declared strip strut (shrink-only), mirroring makeGapHfEl so the
-  // preview/export strips lay out like the canvas gaps and the push-down probe
-  const strutPt = hfDeclaredStrutPt(paras)
   const hasBoxes = boxGeom != null && paras.some((p) => p.box)
+  const firstEditable = hfEditorSlot(paras)
+  const indOver = hfIndentOverhangPx(paras)
   const tabOver = Math.max(
     0,
-    ...paras.map((p) => (p.cells ? 0 : hfTabOverflowPx(hfTabLines(p, display) ?? [], boxGeom))),
+    ...paras.map((p) =>
+      p.cells
+        ? 0
+        : hfTabOverflowPx(hfTabLines(p, display, hfStripColumnPx(boxGeom)) ?? [], boxGeom),
+    ),
   )
   return (
     <div
       ref={rootRef}
       className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}${hasBoxes ? ' page-hf-has-boxes' : ''}`}
       style={{
-        ...(strutPt != null ? { fontSize: `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))` } : {}),
         ...(tabOver > 0 ? { ['--hf-tab-over' as string]: `${tabOver.toFixed(1)}px` } : {}),
+        ...(indOver > 0 ? { ['--hf-ind-over' as string]: `${indOver.toFixed(1)}px` } : {}),
         ...style,
       }}
       data-tip={
@@ -250,7 +258,27 @@ export function HeaderFooterArea({
         </div>
       )}
       {editing ? (
-        <div ref={editRef} className="page-hf-edit-surface" />
+        // rows and floating boxes stay display-only around the editor (its doc
+        // holds the text paragraphs only), so a table-held logo does not vanish
+        <>
+          <HfContent
+            kind={kind}
+            paras={paras}
+            images={images}
+            display={display}
+            boxGeom={boxGeom}
+            only={(_, i) => i < firstEditable}
+          />
+          <div ref={editRef} className="page-hf-edit-surface" />
+          <HfContent
+            kind={kind}
+            paras={paras}
+            images={images}
+            display={display}
+            boxGeom={boxGeom}
+            only={(_, i) => i >= firstEditable}
+          />
+        </>
       ) : (
         <HfContent kind={kind} paras={paras} images={images} display={display} boxGeom={boxGeom} />
       )}
@@ -264,18 +292,30 @@ export function HeaderFooterArea({
   )
 }
 
-function HfContent({
+/** strip index the editor stands in for; with no editable paragraph it goes
+ *  last, where hfValueFromDoc appends typed text */
+export function hfEditorSlot(paras: HfParagraph[]): number {
+  const i = paras.findIndex(hfEditablePara)
+  return i === -1 ? paras.length : i
+}
+
+export function HfContent({
   kind,
   paras,
   images,
   display,
   boxGeom,
+  only,
 }: {
   kind: 'header' | 'footer'
   paras: HfParagraph[]
   images?: HfImage[]
   display: (text: string) => string
   boxGeom?: HfStripGeom
+  /** editing: this half of the strip owns these indices (spacing still
+   *  measures the whole strip); editable paragraphs live in the editor and
+   *  only lend their hosted boxes to the half they fall in */
+  only?: (para: HfParagraph, index: number) => boolean
 }) {
   const spacing = hfStackedSpacingPx(paras)
   const margins = (i: number): React.CSSProperties => ({
@@ -345,7 +385,7 @@ function HfContent({
                     <div
                       key={k}
                       className="page-hf-cell-para"
-                      style={hfCellParaStyle(props, undefined, runs)}
+                      style={hfCellParaStyle(props, undefined, runs, para.row)}
                     >
                       {runs.length === 0 ? ' ' : null}
                       {spans(runs)}
@@ -361,6 +401,7 @@ function HfContent({
                         props,
                         { first: m === 0, last: m === tabLines.length - 1 },
                         runs,
+                        para.row,
                       ),
                       textAlign: 'left',
                       ...(line.minHeightPt ? { minHeight: `${line.minHeightPt}pt` } : {}),
@@ -385,7 +426,7 @@ function HfContent({
       </div>
     ) : (
       (() => {
-        const tabLines = hfTabLines(para, display)
+        const tabLines = hfTabLines(para, display, hfStripColumnPx(boxGeom))
         if (!tabLines) {
           return (
             <div
@@ -404,15 +445,18 @@ function HfContent({
             </div>
           )
         }
-        // tab layout happens in left-aligned space; w:jc becomes an explicit shift
+        // tab layout happens in left-aligned space; w:jc becomes an explicit
+        // shift (a wrapping tail keeps the paragraph's own jc per line)
         const lineStyle = (tabbed: HfTabLayout): React.CSSProperties => {
           const leadIndent = hfLeadIndentCss(tabbed)
           return {
             ...(tabbed.minHeightPt ? { minHeight: `${tabbed.minHeightPt}pt` } : {}),
-            textAlign: 'left',
+            ...(tabbed.flow ? {} : { textAlign: 'left' }),
             ...(leadIndent ? { textIndent: leadIndent } : {}),
           }
         }
+        const lineClass = (tabbed: HfTabLayout) =>
+          `page-hf-tabbed${tabbed.flow ? ' page-hf-tabbed-flow' : ''}`
         const segImgH = (tabbed: HfTabLayout) => hfTabSegImageHeightPx(tabbed)
         const lineContent = (tabbed: HfTabLayout) => (
           <>
@@ -421,6 +465,12 @@ function HfContent({
               <span className="page-hf-tab-strut" style={{ height: segImgH(tabbed) }} />
             ) : null}
             {runSpans(tabbed.lead, 'page-hf-run-img')}
+            {tabbed.flow && tabbed.flow.gapPx > 0 ? (
+              <span className="page-hf-tab-gap" style={{ width: tabbed.flow.gapPx }} />
+            ) : null}
+            {tabbed.flow ? (
+              <span key="flow">{runSpans(tabbed.flow.runs, 'page-hf-run-img')}</span>
+            ) : null}
             {tabbed.segments.map((seg, k) => (
               <span
                 key={`t${k}`}
@@ -437,7 +487,7 @@ function HfContent({
           return (
             <div
               key={i}
-              className={`page-hf-para page-hf-tabbed${frame}`}
+              className={`page-hf-para ${lineClass(tabLines[0])}${frame}`}
               style={{
                 ...paraStyle(para, mergeFlags[i]),
                 ...margins(i),
@@ -457,7 +507,7 @@ function HfContent({
             style={{ ...paraStyle(para, mergeFlags[i]), ...margins(i) }}
           >
             {tabLines.map((tabbed, m) => (
-              <div key={m} className="page-hf-tabbed" style={lineStyle(tabbed)}>
+              <div key={m} className={lineClass(tabbed)} style={lineStyle(tabbed)}>
                 {lineContent(tabbed)}
               </div>
             ))}
@@ -469,9 +519,11 @@ function HfContent({
   // box (Word draws them at the anchor); everything else stacks as strip lines.
   // A box sharing its paragraph with text hangs off that paragraph instead.
   const indices = paras.map((_, i) => i)
+  const owned = (i: number) => !only || only(paras[i], i)
+  const drawn = (i: number) => owned(i) && !(only && hfEditablePara(paras[i]))
   const hostedBy = new Map<number, React.ReactNode[]>()
   for (const [n, img] of (images ?? []).filter(hfImageHangsOnPara).entries()) {
-    if (img.anchorPara! >= paras.length) continue
+    if (img.anchorPara! >= paras.length || !owned(img.anchorPara!)) continue
     const node = (
       <img
         key={`img${n}`}
@@ -488,12 +540,17 @@ function HfContent({
     const box = paras[i].box
     const css = box && boxGeom ? hfTextBoxStyle(box, kind, boxGeom) : null
     if (!css) {
-      out.push(indices[i])
+      if (drawn(i)) out.push(indices[i])
       i += 1
       continue
     }
     const items: React.ReactNode[] = []
     const start = i
+    const anchor = hfBoxAnchorEl(box!, indices)
+    if (!owned(anchor ?? start)) {
+      for (; i < paras.length && paras[i].box?.id === box?.id; i += 1);
+      continue
+    }
     for (; i < paras.length && paras[i].box?.id === box?.id; i += 1) {
       items.push(renderPara(paras[i], i))
     }
@@ -502,9 +559,12 @@ function HfContent({
         {items}
       </div>
     )
-    const anchor = hfBoxAnchorEl(box!, indices)
-    if (anchor != null) hostedBy.set(anchor, [...(hostedBy.get(anchor) ?? []), node])
-    else out.push(node)
+    if (anchor != null && drawn(anchor)) {
+      hostedBy.set(anchor, [...(hostedBy.get(anchor) ?? []), node])
+    } else out.push(node)
+  }
+  for (const [host, nodes] of hostedBy) {
+    if (!drawn(host)) out.push(...nodes)
   }
   return (
     <>

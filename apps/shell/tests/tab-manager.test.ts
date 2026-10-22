@@ -609,14 +609,13 @@ describe('closing tabs', () => {
     expect(view.webContents.close).toHaveBeenCalledTimes(1)
   })
 
-  it('detaches docs views without destroying the webContents (freeze workaround)', async () => {
+  it('tears down the docs bookkeeping, then destroys the docs renderer on close', async () => {
     const id = manager.openDocsTab()
     const view = lastCreatedView(createDocsView)
     await manager.closeTab(id)
     expect(shellWindow.contentView.removeChildView).toHaveBeenCalledWith(view)
-    expect(view.webContents.close).not.toHaveBeenCalled()
-    // the orphaned renderer must be told to go inert (recovery-copy resurrection guard)
     expect(teardownDocsRenderer).toHaveBeenCalledWith(view.webContents)
+    expect(view.webContents.close).toHaveBeenCalledTimes(1)
   })
 
   it('closes a clean docs tab after the async dirty query says clean', async () => {
@@ -1039,7 +1038,172 @@ describe('detach / attach (Open in New Window, tear-off, dock)', () => {
     const newId = manager.attachTab(record)
     await manager.closeTab(newId)
     expect(teardownDocsRenderer).toHaveBeenCalledWith(record.view.webContents)
-    expect(record.view.webContents.close).not.toHaveBeenCalled()
+    expect(record.view.webContents.close).toHaveBeenCalledTimes(1)
     expect(manager.list()).toHaveLength(1)
+  })
+})
+
+describe('tab sleep (background renderers released to free memory)', () => {
+  const policy = { maxLiveTabs: 2, idleMs: 1000 }
+  const IDLE = 5000
+
+  function openDocs(path: string): string {
+    return manager.openDocsTab(path)
+  }
+
+  it('sleeps the oldest idle background tab once more than maxLiveTabs are live', async () => {
+    const a = openDocs('/a.docx')
+    const b = openDocs('/b.docx')
+    const c = openDocs('/c.docx')
+    const viewA = createDocsView.mock.results[0]!.value as FakeView
+    const slept = await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    expect(slept).toEqual([a])
+    expect(shellWindow.contentView.removeChildView).toHaveBeenCalledWith(viewA)
+    expect(teardownDocsRenderer).toHaveBeenCalledWith(viewA.webContents)
+    expect(viewA.webContents.close).toHaveBeenCalledTimes(1)
+    const list = manager.list()
+    expect(list.find((t) => t.id === a)?.dormant).toBe(true)
+    expect(list.find((t) => t.id === b)?.dormant).toBeUndefined()
+    expect(list.find((t) => t.id === c)?.active).toBe(true)
+  })
+
+  it('leaves everything alone while the live count is within the cap', async () => {
+    openDocs('/a.docx')
+    openDocs('/b.docx')
+    expect(await manager.sleepIdleTabs(policy, Date.now() + IDLE)).toEqual([])
+  })
+
+  it('does not sleep a tab that has not been idle long enough', async () => {
+    openDocs('/a.docx')
+    openDocs('/b.docx')
+    openDocs('/c.docx')
+    expect(await manager.sleepIdleTabs(policy, Date.now())).toEqual([])
+  })
+
+  it('never sleeps the active, pinned, dirty or untitled tab', async () => {
+    const a = openDocs('/a.docx')
+    const b = openDocs('/b.docx')
+    const untitled = manager.openDocsTab()
+    openDocs('/d.docx')
+    manager.setPinned(a, true)
+    docsQueryDirty.mockImplementation((wc: { id: number }) =>
+      Promise.resolve(wc.id === (createDocsView.mock.results[1]!.value as FakeView).webContents.id),
+    )
+    const slept = await manager.sleepIdleTabs({ maxLiveTabs: 1, idleMs: 0 }, Date.now() + IDLE)
+    expect(slept).toEqual([])
+    expect(manager.list().filter((t) => t.dormant)).toHaveLength(0)
+    expect([a, b, untitled].every((id) => manager.list().some((t) => t.id === id))).toBe(true)
+  })
+
+  it('over the memory budget the oldest candidate sleeps even inside the cap', async () => {
+    const a = openDocs('/a.docx')
+    openDocs('/b.docs')
+    const slept = await manager.sleepIdleTabs({ maxLiveTabs: 10, idleMs: 60_000 }, Date.now(), true)
+    expect(slept).toEqual([a])
+  })
+
+  it('activating a sleeping tab rebuilds its view from the file, in place', async () => {
+    const a = openDocs('/a.docx')
+    openDocs('/b.docx')
+    openDocs('/c.docx')
+    await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    createDocsView.mockClear()
+    shellWindow.contentView.addChildView.mockClear()
+    manager.activateTab(a)
+    expect(createDocsView).toHaveBeenCalledWith('/a.docx')
+    const revived = lastCreatedView(createDocsView)
+    expect(shellWindow.contentView.addChildView).toHaveBeenCalledWith(revived)
+    expect(revived.setVisible).toHaveBeenLastCalledWith(true)
+    const tab = manager.list().find((t) => t.id === a)
+    expect(tab).toMatchObject({ active: true, filePath: '/a.docx' })
+    expect(tab?.dormant).toBeUndefined()
+    expect(manager.list().map((t) => t.id)).toEqual([
+      'home',
+      a,
+      expect.any(String),
+      expect.any(String),
+    ])
+  })
+
+  it('a sleeping sheets tab wakes with its workbook queued for the new view', async () => {
+    const a = manager.openSheetsTab('/a.xlsx')
+    manager.openSheetsTab('/b.xlsx')
+    manager.openSheetsTab('/c.xlsx')
+    await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    queueWorkbookForView.mockClear()
+    manager.activateTab(a)
+    const revived = lastCreatedView(createSheetsView)
+    expect(queueWorkbookForView).toHaveBeenCalledWith(revived.webContents, '/a.xlsx')
+  })
+
+  it('a dirty tab is skipped by the sweep so the clean tabs behind it still sleep', async () => {
+    const a = openDocs('/a.docx')
+    const b = openDocs('/b.docx')
+    openDocs('/c.docx')
+    const viewA = createDocsView.mock.results[0]!.value as FakeView
+    docsQueryDirty.mockImplementation((wc: { id: number }) =>
+      Promise.resolve(wc.id === viewA.webContents.id),
+    )
+    expect(await manager.sleepIdleTabs({ maxLiveTabs: 10, idleMs: 0 }, Date.now(), true)).toEqual([
+      b,
+    ])
+    expect(manager.list().find((t) => t.id === a)?.dormant).toBeUndefined()
+  })
+
+  it('asking a sleeping tab for its webContents (agents, CLI) wakes it in the background', async () => {
+    const a = openDocs('/a.docx')
+    openDocs('/b.docx')
+    const c = openDocs('/c.docx')
+    await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    createDocsView.mockClear()
+    const wc = manager.webContentsForTab(a)
+    expect(createDocsView).toHaveBeenCalledWith('/a.docx')
+    expect(wc).toBe(lastCreatedView(createDocsView).webContents)
+    expect(manager.list().find((t) => t.id === a)).toMatchObject({ active: false })
+    expect(manager.list().find((t) => t.id === a)?.dormant).toBeUndefined()
+    expect(manager.list().find((t) => t.id === c)?.active).toBe(true)
+    expect(lastCreatedView(createDocsView).setVisible).toHaveBeenLastCalledWith(false)
+    // a freshly woken tab is not put straight back to sleep by the next sweep
+    expect(await manager.sleepIdleTabs(policy, Date.now())).toEqual([])
+  })
+
+  it('findTabByPath wakes a sleeping tab and returns its new webContents', async () => {
+    const a = openDocs('/a.docx')
+    openDocs('/b.docx')
+    openDocs('/c.docx')
+    await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    const found = manager.findTabByPath('/a.docx')
+    expect(found?.id).toBe(a)
+    expect(found?.webContents).toBe(lastCreatedView(createDocsView).webContents)
+  })
+
+  it('renaming the file behind a sleeping tab updates the strip', async () => {
+    const a = openDocs('/a.docx')
+    openDocs('/b.docx')
+    openDocs('/c.docx')
+    await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    onChanged.mockClear()
+    expect(manager.renameTabFile('/a.docx', '/renamed.docx')).toEqual([])
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(manager.list().find((t) => t.id === a)).toMatchObject({
+      title: 'renamed.docx',
+      filePath: '/renamed.docx',
+    })
+  })
+
+  it('a sleeping tab still counts as the open tab for its path, closes without a prompt and is listed for agents', async () => {
+    const a = openDocs('/a.docx')
+    openDocs('/b.docx')
+    openDocs('/c.docx')
+    await manager.sleepIdleTabs(policy, Date.now() + IDLE)
+    expect(manager.findDocsTabByPath('/a.docx')).toBe(a)
+    expect(manager.openFilePaths()).toContain('/a.docx')
+    expect(manager.canDetachTab(a)).toBe(false)
+    const docs = await manager.openDocuments()
+    expect(docs.find((d) => d.id === a)).toMatchObject({ filePath: '/a.docx', dirty: false })
+    docsQueryDirty.mockClear()
+    await manager.closeTab(a)
+    expect(docsQueryDirty).not.toHaveBeenCalled()
+    expect(manager.list().some((t) => t.id === a)).toBe(false)
   })
 })

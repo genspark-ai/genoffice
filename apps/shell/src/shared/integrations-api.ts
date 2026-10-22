@@ -5,7 +5,7 @@ import type {
   SkillInstallStatus,
 } from '@genoffice/cli/agent-skills'
 import type { InstallOutcome } from '@genoffice/cli/install'
-import type { FoundSkill } from './found-skill'
+import type { FoundSkill, RecommendedSkill } from './found-skill'
 
 export type { AgentId, AgentTarget, SkillInstallState, SkillInstallStatus }
 
@@ -40,26 +40,31 @@ export interface IntegrationsApi {
   saveSkillZip(title: string): Promise<string | null>
   /** put text on the clipboard (paths, the manual PATH command) */
   copyText(text: string): Promise<void>
-  /**
-   * Every SKILL.md this machine can offer: the ones under the save directory
-   * (usable without asking) first, then the coding agents' own as candidates.
-   * Nothing here has been copied or run.
-   */
+  /** the skills in GenOffice's own folder; nothing else is scanned */
   listSkills(): Promise<FoundSkill[]>
-  /** the body of one SKILL.md, frontmatter stripped, for the turn that runs it */
+  /** the body of one listed SKILL.md, frontmatter stripped */
   skillBody(path: string): Promise<string>
-  /**
-   * Copy a skill the user picked into our own folder. Only ever called from an
-   * explicit click — scanning never copies.
-   */
-  importSkill(path: string): Promise<FoundSkill>
+  /** open-dialog for a skill folder, then copy it in; null when cancelled */
+  importSkillFolder(title: string): Promise<FoundSkill | null>
+  /** open-dialog for a skill zip or a single SKILL.md, then bring it in; null when cancelled */
+  importSkillZip(title: string): Promise<FoundSkill | null>
+  /** the skills GenOffice ships as suggestions, with each one's install state */
+  listRecommendedSkills(): Promise<RecommendedSkill[]>
+  /** copy (or, when outdated, replace) one recommended skill into our folder */
+  installRecommendedSkill(name: string): Promise<FoundSkill>
+  /** delete one of our skills by its folder name */
+  removeSkill(name: string): Promise<void>
 }
 
 export const INTEGRATIONS_CHANNELS = {
   status: 'integrations:status',
   listSkills: 'integrations:list-skills',
   skillBody: 'integrations:skill-body',
-  importSkill: 'integrations:import-skill',
+  importSkillFolder: 'integrations:import-skill-folder',
+  importSkillZip: 'integrations:import-skill-zip',
+  listRecommendedSkills: 'integrations:list-recommended-skills',
+  installRecommendedSkill: 'integrations:install-recommended-skill',
+  removeSkill: 'integrations:remove-skill',
   installSkill: 'integrations:install-skill',
   uninstallSkill: 'integrations:uninstall-skill',
   pickSkillDir: 'integrations:pick-skill-dir',

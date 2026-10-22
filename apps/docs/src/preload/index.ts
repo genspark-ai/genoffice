@@ -208,6 +208,7 @@ const api: DesktopApi = {
     return () => ipcRenderer.removeListener('ai:settings-changed', listener)
   },
   openAiModelSettings: () => ipcRenderer.invoke('ai:open-model-settings'),
+  openSkillsSettings: () => ipcRenderer.invoke('ai:open-skills-settings'),
   aiChat: (request: AiChatRequest) => ipcRenderer.invoke('ai:chat', request),
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   skillsList: () => ipcRenderer.invoke('ai:skills-list'),

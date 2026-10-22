@@ -20,12 +20,11 @@ import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
-import { createFileNav, Markdown } from '@genoffice/ui'
+import { AiSkillChips, AiSkillsMenu, createFileNav, Markdown } from '@genoffice/ui'
 import { SHEET_NAV_SCHEME } from './sheet-nav'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
-import attachIcon from '../assets/attach-icon.png'
 import filePdfIcon from '../assets/file-pdf.png'
 import fileWordIcon from '../assets/file-word.png'
 import fileExcelIcon from '../assets/file-excel.png'
@@ -220,6 +219,8 @@ export interface AiChatMessage {
   readonly autoApplied?: { readonly opCount: number; readonly undoSteps: number } | undefined
   /** attachments consumed from the composer by this user message (read-only echo chips) */
   readonly attachments?: readonly AttachmentMeta[] | undefined
+  /** skills the user attached to this message from the composer menu */
+  readonly skills?: readonly string[] | undefined
   /** the range this user message targeted, frozen at send */
   readonly scope?: AiScopeQuoteData | undefined
   /** tokens the provider billed for this reply, summed across its turns (absent when unreported) */
@@ -241,6 +242,8 @@ export function AiChatPanel({
   chat,
   historicChat = [],
   attachments,
+  attachedSkills,
+  onToggleSkill,
   attachNotice,
   onPickAttachments,
   onAddAttachmentPaths,
@@ -274,6 +277,9 @@ export function AiChatPanel({
   /// Chat attachments (chips + 📎 button + drag onto the panel), same structure
   /// as the docs/slides AI panels.
   readonly attachments: readonly AttachmentMeta[]
+  /// skills picked from the composer menu for the next message
+  readonly attachedSkills: readonly string[]
+  readonly onToggleSkill: (name: string) => void
   readonly attachNotice: string | null
   readonly onPickAttachments: () => void
   readonly onAddAttachmentPaths: (paths: readonly string[]) => void
@@ -501,6 +507,9 @@ export function AiChatPanel({
     void window.desktopApi.openSourcePath(path)
   })
 
+  const listSkillsForMenu = async () =>
+    (await window.desktopApi.skillsList()).map(({ name, description }) => ({ name, description }))
+
   const send = (): void => {
     if (!canSend) return
     stickToBottomRef.current = true
@@ -612,6 +621,9 @@ export function AiChatPanel({
                 {entry.role === 'user' && entry.attachments && entry.attachments.length > 0 && (
                   <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
                 )}
+                {entry.role === 'user' && entry.skills && (
+                  <AiSkillChips lang={lang} names={entry.skills} />
+                )}
                 {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
                 {entry.text && (
                   <div dir="auto">
@@ -644,6 +656,7 @@ export function AiChatPanel({
                 {entry.attachments && entry.attachments.length > 0 && (
                   <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
                 )}
+                {entry.skills && <AiSkillChips lang={lang} names={entry.skills} />}
                 <span dir="auto">{entry.text}</span>
                 {entry.undelivered && (
                   <div className="ai-msg-undelivered">
@@ -810,6 +823,7 @@ export function AiChatPanel({
                   </span>
                 </div>
               )}
+              <AiSkillChips lang={lang} names={attachedSkills} onRemove={onToggleSkill} />
               {attachments.length > 0 && (
                 <div className="ai-attachments" onScroll={onAttachmentsScroll}>
                   {attachments.map((attachment) =>
@@ -898,14 +912,14 @@ export function AiChatPanel({
             <>
               <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
               {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
-              <button
-                className="ai-attach-btn"
-                onClick={onPickAttachments}
-                data-tip={t('aiAttachTitle')}
-                aria-label={t('aiAttachTitle')}
-              >
-                <img src={attachIcon} alt="" aria-hidden />
-              </button>
+              <AiSkillsMenu
+                lang={lang}
+                listSkills={listSkillsForMenu}
+                selected={attachedSkills}
+                onToggle={onToggleSkill}
+                onAddFile={onPickAttachments}
+                onManage={() => void window.desktopApi.openSkillsSettings?.().catch(() => {})}
+              />
             </>
           }
           textareaRef={inputRef}

@@ -1737,6 +1737,12 @@ export interface SlidesApi {
   onAiSettingsChanged: (handler: () => void) => () => void
   /** shell only: switch to Home and open Settings › AI Model (rejects in standalone) */
   openAiModelSettings: () => Promise<void>
+  /** shell only: switch to Home and open Settings › Integrations (the skills list) */
+  openSkillsSettings: () => Promise<void>
+  /** the skills installed into GenOffice's own folder */
+  skillsList: () => Promise<UserSkillEntry[]>
+  /** one installed skill's body, by name; the main process resolves the path */
+  skillText: (name: string) => Promise<string>
   aiStream: (request: AiStreamRequest) => Promise<void>
   aiStreamCancel: (requestId: string) => Promise<void>
   /** Genspark account status (gsk login state); with withEmail also fetches the email (needs a network request, slower) */
@@ -1883,4 +1889,10 @@ declare global {
     slidesApi: SlidesApi
     desktop: DesktopFilesApi
   }
+}
+
+export interface UserSkillEntry {
+  name: string
+  description: string
+  relevant: boolean
 }

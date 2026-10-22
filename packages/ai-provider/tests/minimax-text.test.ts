@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chatForProvider } from '../src/chat'
-import { listCustomModels } from '../src/custom-models'
 import {
   AI_PROVIDERS,
   activeProvider,
   defaultAiSettings,
-  providerPickerModels,
   resolveAiSettings,
 } from '../src/providers'
 import { streamForProvider } from '../src/stream'
@@ -43,32 +41,6 @@ describe('MiniMax text choices', () => {
         id.startsWith('minimax-'),
       ),
     ).toEqual(['minimax-m3'])
-  })
-
-  it('filters the live gateway picker, preserving custom catalogs and saved legacy selections', async () => {
-    const ids = [
-      'other/model',
-      'minimax/minimax-m2.7',
-      'minimax/minimax-m3',
-      'minimax/minimax-m3.1-flash:free',
-      'last/model',
-    ]
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse({ data: ids.map((id) => ({ id })) })),
-    )
-    const live = await listCustomModels('https://openrouter.ai/api/v1')
-    expect(providerPickerModels('openrouter', live.models)).toEqual([
-      'other/model',
-      'minimax/minimax-m3.1-flash:free',
-      'minimax/minimax-m3',
-      'last/model',
-    ])
-    expect(providerPickerModels('openrouter', live.models, 'minimax/minimax-m2.7')[0]).toBe(
-      'minimax/minimax-m2.7',
-    )
-    expect(providerPickerModels('custom', live.models)).toEqual(ids)
-    expect(providerPickerModels('openrouter', ['other/model'])).toEqual(['other/model'])
   })
 
   it.each([undefined, 'https://api.minimaxi.com/v1'])(

@@ -1,0 +1,101 @@
+{
+  "id": "render-sectafter-no-blank",
+  "title": "A section-ending paragraph whose space-after overflows the body bottom pushes nothing; only a plain following paragraph is pushed",
+  "section": "word-truths.md#L570",
+  "probe_date": "2026-10-20",
+  "class": "render",
+  "source": "sectafter_probe.pdf re-measured 2026-10-22: A4 top 732 / bottom 726, TNR 12 exact-12pt fillers, cases A-H; LAST stays on its page, NEXT (next section) opens the following page directly, H-PLAIN (same section) is pushed; the empty D section-last paragraph is a sectbreak chip with no block entry, so D is read through D-NEXT",
+  "cases": [
+    {
+      "kind": "blockPage",
+      "block": 62,
+      "expect": 1,
+      "note": "A-LAST after=654 stays on page 1"
+    },
+    {
+      "kind": "blockPage",
+      "block": 63,
+      "expect": 2,
+      "note": "A-NEXT opens page 2, no blank"
+    },
+    {
+      "kind": "blockPage",
+      "block": 126,
+      "expect": 3
+    },
+    {
+      "kind": "blockPage",
+      "block": 127,
+      "expect": 4,
+      "note": "B after=0"
+    },
+    {
+      "kind": "blockPage",
+      "block": 188,
+      "expect": 5,
+      "note": "C-LAST: after fits"
+    },
+    {
+      "kind": "blockPage",
+      "block": 189,
+      "expect": 6
+    },
+    {
+      "kind": "blockPage",
+      "block": 253,
+      "expect": 8,
+      "note": "D-NEXT opens page 8"
+    },
+    {
+      "kind": "blockPage",
+      "block": 316,
+      "expect": 8,
+      "note": "E-LAST"
+    },
+    {
+      "kind": "blockPage",
+      "block": 317,
+      "expect": 9,
+      "note": "E-NEXT: continuous break, no blank"
+    },
+    {
+      "kind": "blockPage",
+      "block": 381,
+      "expect": 10
+    },
+    {
+      "kind": "blockPage",
+      "block": 382,
+      "expect": 11
+    },
+    {
+      "kind": "blockPage",
+      "block": 444,
+      "expect": 12
+    },
+    {
+      "kind": "blockPage",
+      "block": 445,
+      "expect": 13
+    },
+    {
+      "kind": "blockPage",
+      "block": 508,
+      "expect": 14,
+      "note": "H-LAST"
+    },
+    {
+      "kind": "blockPage",
+      "block": 509,
+      "expect": 15,
+      "note": "H-PLAIN: same-section paragraph is pushed"
+    },
+    {
+      "kind": "blockPage",
+      "block": 510,
+      "expect": 15,
+      "note": "H-NEXT follows on page 15"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -103,7 +103,7 @@ describe('protected field and formula editing', () => {
     // mid-paragraph space run must survive into the DOM (pre-wrap keeps it)
     expect(el.textContent).toContain('\u6cb3     \u5cb8')
     expect(el.style.fontSize).toBe('12pt')
-    expect(el.style.getPropertyValue('--doc-line-factor')).toBe('1.3029')
+    expect(el.style.getPropertyValue('--doc-line-factor')).toBe('1.3')
     expect(el.style.lineHeight).toContain('--doc-line-grid')
     expect(el.style.textAlign).toBe('left')
     // inline: prosemirror-view injects a higher-specificity white-space:normal

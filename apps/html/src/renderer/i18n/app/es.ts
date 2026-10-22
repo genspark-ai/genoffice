@@ -9,6 +9,11 @@ export const es = {
   redactDialogPlaceholder: 'Nombre del marcador, p. ej.: teléfono del cliente',
   redactCancel: 'Cancelar',
   redactInsert: 'Ocultar',
+  diskChangedMsg: 'Otro programa modificó este archivo.',
+  diskConflictMsg: 'Este archivo cambió en el disco; guardar sobrescribirá esos cambios.',
+  diskReload: 'Recargar',
+  diskKeepMine: 'Conservar el mío',
+  diskOverwrite: 'Sobrescribir de todos modos',
 
   loading: 'Cargando…',
   loadFailed: 'No se pudo abrir el archivo',

@@ -375,7 +375,7 @@ export function isCalendarDatePattern(pattern: string): boolean {
 
 const patternTypeCache = new Map<string, string>()
 
-function patternType(pattern: string): string {
+export function patternType(pattern: string): string {
   let type = patternTypeCache.get(pattern)
   if (type === undefined) {
     try {

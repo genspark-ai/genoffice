@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { parseDocx } from '../src/index'
 import { onOffTagIn } from '../src/parse-xml-text'
 import { parseNotesXml } from '../src/notes'
+import { standaloneNoteParagraphReader } from '../src/parse'
 import { buildDocx } from './helpers/build-docx'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
@@ -18,7 +19,7 @@ function footnotesXml(rPr: string): string {
 }
 
 function bodyRun(rPr: string): { bold?: boolean; text?: string } | undefined {
-  const notes = parseNotesXml(footnotesXml(rPr), 'footnote')
+  const notes = parseNotesXml(footnotesXml(rPr), 'footnote', standaloneNoteParagraphReader())
   return notes
     .flatMap((note) => note.richParas ?? [])
     .flat()

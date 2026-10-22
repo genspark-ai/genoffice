@@ -9,6 +9,11 @@ export const zhTW = {
   redactDialogPlaceholder: '佔位名稱，例如：客戶電話',
   redactCancel: '取消',
   redactInsert: '隱藏',
+  diskChangedMsg: '這個檔案已被其他程式修改。',
+  diskConflictMsg: '這個檔案在磁碟上已被修改，儲存會覆寫那些變更。',
+  diskReload: '重新載入',
+  diskKeepMine: '保留我的',
+  diskOverwrite: '仍然覆寫',
 
   loading: '載入中…',
   loadFailed: '無法開啟檔案',

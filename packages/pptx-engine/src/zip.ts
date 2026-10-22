@@ -63,7 +63,6 @@ export function assertZipWithinLimits(zip: JSZip): void {
 
 export class PackageArchive {
   private constructor(
-    private readonly zip: JSZip,
     /** Original bytes of every entry, keyed by path inside the zip */
     readonly entries: Map<string, Uint8Array>,
     readonly originalHash: string,
@@ -84,7 +83,10 @@ export class PackageArchive {
       if (file.dir) continue
       entries.set(name, await file.async('uint8array'))
     }
-    return new PackageArchive(zip, entries, originalHash)
+    // The JSZip object is not kept: it pins the caller's compressed bytes (a second copy of
+    // every part next to the inflated entries) and nothing reads it after this point — saves
+    // rebuild the package from `entries`.
+    return new PackageArchive(entries, originalHash)
   }
 
   has(path: string): boolean {

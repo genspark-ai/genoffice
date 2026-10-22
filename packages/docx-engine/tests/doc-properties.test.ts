@@ -8,18 +8,21 @@ const CORE_XML =
   '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
   'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
   'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-  '<dc:title>测试文档</dc:title><dc:subject>案号 2026-114</dc:subject><dc:creator>作者甲</dc:creator>' +
-  '<cp:keywords>保密</cp:keywords><cp:lastModifiedBy>作者甲</cp:lastModifiedBy><cp:revision>3</cp:revision>' +
+  '<dc:title>\u6d4b\u8bd5\u6587\u6863</dc:title><dc:subject>\u6848\u53f7 2026-114</dc:subject><dc:creator>\u4f5c\u8005\u7532</dc:creator>' +
+  '<cp:keywords>\u4fdd\u5bc6</cp:keywords><cp:lastModifiedBy>\u4f5c\u8005\u7532</cp:lastModifiedBy><cp:revision>3</cp:revision>' +
   '<dcterms:created xsi:type="dcterms:W3CDTF">2020-01-01T00:00:00Z</dcterms:created>' +
   '<dcterms:modified xsi:type="dcterms:W3CDTF">2020-01-02T00:00:00Z</dcterms:modified>' +
+  '<cp:lastPrinted>2020-01-03T00:00:00Z</cp:lastPrinted>' +
   '</cp:coreProperties>'
 
 const APP_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
   '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" ' +
   'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
-  '<Template>Normal.dotm</Template><Company>某某律师事务所</Company><Application>Microsoft Office Word</Application>' +
-  '<AppVersion>16.0000</AppVersion></Properties>'
+  '<Template>Normal.dotm</Template><Company>\u67d0\u67d0\u5f8b\u5e08\u4e8b\u52a1\u6240</Company><Application>Microsoft Office Word</Application>' +
+  '<AppVersion>16.0000</AppVersion>' +
+  '<TitlesOfParts><vt:vector size="1" baseType="lpstr"><vt:lpstr>Filing</vt:lpstr></vt:vector></TitlesOfParts>' +
+  '</Properties>'
 
 const CUSTOM_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -28,10 +31,14 @@ const CUSTOM_XML =
   '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="MatterId">' +
   '<vt:lpwstr>M-2026-114</vt:lpwstr></property>' +
   '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="3" name="Reviewer">' +
-  '<vt:lpwstr>乙律师</vt:lpwstr></property>' +
+  '<vt:lpwstr>\u4e59\u5f8b\u5e08</vt:lpwstr></property>' +
+  '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="4" name="Pages"><vt:i4>42</vt:i4></property>' +
+  '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="5" name="Final"><vt:bool>true</vt:bool></property>' +
+  '<property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="6" name="Filed">' +
+  '<vt:filetime>2026-01-02T00:00:00Z</vt:filetime></property>' +
   '</Properties>'
 
-const BODY = '<w:p><w:r><w:t>正文</w:t></w:r></w:p>'
+const BODY = '<w:p><w:r><w:t>\u6b63\u6587</w:t></w:r></w:p>'
 
 const docxWithProps = () =>
   buildDocx({
@@ -69,22 +76,28 @@ describe('document properties', () => {
   it('reads the core, app and custom properties of a package', async () => {
     const doc = await parseDocx(await docxWithProps())
     expect(doc.properties.core).toEqual({
-      title: '测试文档',
-      subject: '案号 2026-114',
-      creator: '作者甲',
-      keywords: '保密',
-      lastModifiedBy: '作者甲',
+      title: '\u6d4b\u8bd5\u6587\u6863',
+      subject: '\u6848\u53f7 2026-114',
+      creator: '\u4f5c\u8005\u7532',
+      keywords: '\u4fdd\u5bc6',
+      lastModifiedBy: '\u4f5c\u8005\u7532',
       revision: '3',
       created: '2020-01-01T00:00:00Z',
       modified: '2020-01-02T00:00:00Z',
     })
     expect(doc.properties.app).toEqual({
       template: 'Normal.dotm',
-      company: '某某律师事务所',
+      company: '\u67d0\u67d0\u5f8b\u5e08\u4e8b\u52a1\u6240',
       application: 'Microsoft Office Word',
       appVersion: '16.0000',
     })
-    expect(doc.properties.custom).toEqual({ MatterId: 'M-2026-114', Reviewer: '乙律师' })
+    expect(doc.properties.custom).toEqual({
+      MatterId: 'M-2026-114',
+      Reviewer: '\u4e59\u5f8b\u5e08',
+      Pages: '42',
+      Final: 'true',
+      Filed: '2026-01-02T00:00:00Z',
+    })
   })
 
   it('a document without docProps has no properties but still opens', async () => {
@@ -104,8 +117,8 @@ describe('document properties', () => {
     })
     const core = await partOf(out, 'docProps/core.xml')
     expect(core).toContain('<dc:title>Motion to Dismiss</dc:title>')
-    expect(core).toContain('<dc:subject>案号 2026-114</dc:subject>')
-    expect(core).toContain('<cp:keywords>保密</cp:keywords>')
+    expect(core).toContain('<dc:subject>\u6848\u53f7 2026-114</dc:subject>')
+    expect(core).toContain('<cp:keywords>\u4fdd\u5bc6</cp:keywords>')
     expect(core).toContain(
       '<dcterms:created xsi:type="dcterms:W3CDTF">2020-01-01T00:00:00Z</dcterms:created>',
     )
@@ -115,7 +128,7 @@ describe('document properties', () => {
     expect(app).toContain('<Application>Microsoft Office Word</Application>')
     const custom = await partOf(out, 'docProps/custom.xml')
     expect(custom).toContain('<vt:lpwstr>M-2026-999</vt:lpwstr>')
-    expect(custom).toContain('<vt:lpwstr>乙律师</vt:lpwstr>')
+    expect(custom).toContain('<vt:lpwstr>\u4e59\u5f8b\u5e08</vt:lpwstr>')
     expect(custom).toContain('name="MatterId"')
   })
 
@@ -131,8 +144,8 @@ describe('document properties', () => {
     const core = await partOf(out, 'docProps/core.xml')
     expect(core).not.toContain('dc:creator')
     expect(core).not.toContain('lastModifiedBy')
-    expect(core).toContain('<dc:title>测试文档</dc:title>')
-    expect(core).toContain('<cp:keywords>保密</cp:keywords>')
+    expect(core).toContain('<dc:title>\u6d4b\u8bd5\u6587\u6863</dc:title>')
+    expect(core).toContain('<cp:keywords>\u4fdd\u5bc6</cp:keywords>')
     const app = await partOf(out, 'docProps/app.xml')
     expect(app).not.toContain('Company')
     expect(app).toContain('<Template>Normal.dotm</Template>')
@@ -148,10 +161,12 @@ describe('document properties', () => {
     expect(core).not.toContain('dc:title')
     expect(core).not.toContain('dc:creator')
     expect(core).not.toContain('cp:keywords')
+    expect(core).not.toContain('lastPrinted')
     expect(core).toContain('<cp:coreProperties')
     const app = await partOf(out, 'docProps/app.xml')
     expect(app).not.toContain('Company')
     expect(app).not.toContain('Template')
+    expect(app).not.toContain('TitlesOfParts')
     expect(app).toContain('<Properties')
     const custom = await partOf(out, 'docProps/custom.xml')
     expect(custom).not.toContain('MatterId')
@@ -183,11 +198,11 @@ describe('document properties', () => {
   it('creates the docProps part of a document that has none', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
     const out = await saveDocx(doc, originalOrder(doc), {
-      properties: { core: { title: '新建文档' } },
+      properties: { core: { title: '\u65b0\u5efa\u6587\u6863' } },
     })
     const zip = await JSZip.loadAsync(out)
     const core = await zip.file('docProps/core.xml')!.async('string')
-    expect(core).toContain('<dc:title>新建文档</dc:title>')
+    expect(core).toContain('<dc:title>\u65b0\u5efa\u6587\u6863</dc:title>')
     expect(await zip.file('[Content_Types].xml')!.async('string')).toContain(
       'PartName="/docProps/core.xml"',
     )
@@ -196,7 +211,7 @@ describe('document properties', () => {
 
   it('a document without docProps still saves', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
-    const out = await saveDocx(doc, originalOrder(doc), { watermark: '草稿' })
+    const out = await saveDocx(doc, originalOrder(doc), { watermark: '\u8349\u7a3f' })
     expect((await JSZip.loadAsync(out)).file('docProps/core.xml')).toBeNull()
   })
 })

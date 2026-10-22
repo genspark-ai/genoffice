@@ -1,0 +1,36 @@
+{
+  "id": "builtin-normal-no-styles",
+  "title": "A package without styles.xml lays out in Word 365 built-in Normal: Aptos 12pt, after 8pt, line 1.15",
+  "section": "word-truths.md#L172",
+  "probe_date": "2026-09-12",
+  "source": "probe (PR #1693): 40-char line ink 292px = Aptos 12pt, baseline pitch 22.5px in-paragraph and 33.5px across paragraphs",
+  "cases": [
+    {
+      "kind": "docDefaults",
+      "expect": {
+        "asciiFont": "Aptos",
+        "sizeHalfPoints": 24,
+        "spaceAfterTwips": 160,
+        "lineRawTwips": 276,
+        "lineRule": "auto"
+      }
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 16.875,
+      "tol": 0.1,
+      "note": "in-paragraph pitch 22.5px = 12 x 1.22 x 1.15"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 0,
+      "to": 1,
+      "expect": 8,
+      "tol": 0.01,
+      "note": "cross-paragraph 33.5px = line + 8pt after"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

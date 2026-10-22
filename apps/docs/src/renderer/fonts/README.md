@@ -15,6 +15,7 @@ freely redistributable with the app. Licenses: Carlito and Liberation are
 | Liberation Mono  | OFL 1.1    | Courier New                        |
 | Aptos GO         | OFL 1.1    | Aptos (Carlito, size-adjusted)     |
 | Aptos Display GO | OFL 1.1    | Aptos Display (Carlito, adjusted)  |
+| Aptos Narrow GO  | OFL 1.1    | Aptos Narrow (Carlito, adjusted)   |
 
 "Carlito GO" (`Carlito-*.ttf`) is a derivative of Carlito 1.103: a build-time patch
 (`tools/patch-carlito-vi.py`) rebuilds Vietnamese precomposed glyphs whose above mark
@@ -31,14 +32,17 @@ pagination model (`tests/helpers/lo-fonts.ts` measures the same set of files).
 
 Registration lives in `fonts.css`; family-name mapping in `cssFontFamily()` of `line-metrics.ts`.
 
-"Aptos GO" / "Aptos Display GO" are not separate files: they are `size-adjust`ed
-views of the Carlito faces (Word probe 2026-09-03 against Word's bundled Aptos).
-Aptos letters run ~6.8% wider than Carlito's, digits +5.4%, the space 10%
-narrower, so each weight registers three faces (general, `U+0030-0039`,
-`U+0020/00A0`) — later faces win inside their unicode-range. Aptos Display is
-close to Carlito for letters but shares the narrow space. Pitch stays Calibri's
-1.22 (`lineHeightFactor`). `tests/aptos-alias-metrics.test.ts` holds the probed
-sentence widths.
+"Aptos GO" / "Aptos Display GO" / "Aptos Narrow GO" are not separate files: they
+are `size-adjust`ed views of the Carlito faces. Aptos is not a scale of Carlito
+(per glyph the ratio spans 0.87 to 1.22), so each face declares the
+corpus-weighted letter scale as its general rule plus one range-limited face per
+1.5% advance bucket of the ASCII letters, digits, space and common punctuation;
+later faces win inside their unicode-range. The ratios are Aptos hmtx (Word's
+bundled DFonts / cloud-font cache, which Word PDF char origins reproduce
+exactly) over Carlito hmtx; the block is generated from the font files, refit
+rather than hand-edit it. Pitch stays Calibri's 1.22 (`lineHeightFactor`).
+`tests/aptos-alias-metrics.test.ts` holds the Word-probed sentence widths
+(2026-09-03, 2026-10-20).
 
 ## CJK fallback
 
@@ -192,6 +196,24 @@ Tamil-letter ratio (`tools/build-tamil-font.py`; shaped sentence R vs Latha
 0.994, every probe sentence within ±2.3%). The face ships no Latin letters
 (upstream Noto Sans Tamil has none); Latin falls through the chain. Renamed
 per OFL ("Noto" is a Reserved Font Name; advances are modified).
+
+## Bengali fallback
+
+| Font                      | Role                                         |
+| ------------------------- | -------------------------------------------- |
+| GenOffice Bengali (woff2) | Nirmala UI-metric stand-in, Regular and Bold |
+
+Source: Noto Sans Bengali Regular/Bold from [notofonts](https://github.com/notofonts/notofonts.github.io)
+(SIL OFL 1.1). Word for Mac renders Nirmala UI for real (M365 cloud font);
+macOS has no twin and Chromium's fallback (Kohinoor Bangla) shapes ~8%
+narrower, so a two-page Bengali notice fits one page. Advances are rewritten
+to Nirmala UI's: the 132 cmap-shared codepoints exactly (86% of a legal
+notice's shaped width), remaining glyphs (conjuncts, half forms) by one scale
+fitted so the corpus' shaped width matches (`tools/build-bengali-font.py`;
+body paragraphs within 0.98-1.02, every paragraph within 0.93-1.07). The face
+ships no Latin letters or ASCII digits/periods (upstream has none); those fall
+through the chain to Kohinoor Bangla. Renamed per OFL ("Noto" is a Reserved
+Font Name; advances are modified).
 
 ## Arabic fallback
 

@@ -1,0 +1,63 @@
+{
+  "id": "office-private-cjk-alias",
+  "title": "Office-private CJK faces DengXian and PMingLiU: Word line geometry through metric alias faces",
+  "section": "word-truths.md#L333",
+  "probe_date": "2026-09-23",
+  "source": "probe build.py -> cjkmet_{deng,ming,grid}.pdf: DengXian pure-CJK single 14.88 @11 / 16.08 @12 (tabled 1.36), PMingLiU 15.60 @12 = 1.3029",
+  "cases": [
+    {
+      "kind": "aliasFace",
+      "font": "\u7b49\u7ebf",
+      "expect": "DengXian GO"
+    },
+    {
+      "kind": "aliasFace",
+      "font": "DengXian",
+      "expect": "DengXian GO"
+    },
+    {
+      "kind": "aliasFace",
+      "font": "\u65b0\u7d30\u660e\u9ad4",
+      "expect": "PMingLiU GO"
+    },
+    {
+      "kind": "aliasFace",
+      "font": "PMingLiU",
+      "expect": "PMingLiU GO"
+    },
+    {
+      "kind": "aliasFace",
+      "font": "Calibri",
+      "expect": null
+    },
+    {
+      "kind": "factor",
+      "font": "DengXian",
+      "expect": 1.3545,
+      "note": "DengXian 16.32 @12 (2026-08-13 / 08-25 probes); the 09-23 pure-CJK line read 1.34-1.353; 1.36 -> 1.3545 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "PMingLiU",
+      "expect": 1.3,
+      "note": "SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 14.88,
+      "tol": 0.1,
+      "note": "DengXian 11pt CJK->CJK pitch 14.88 (1.36 x 11 = 14.96)"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 15.6,
+      "tol": 0.05,
+      "note": "PMingLiU 12pt 15.60"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

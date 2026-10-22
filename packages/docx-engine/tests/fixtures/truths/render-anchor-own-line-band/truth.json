@@ -1,0 +1,138 @@
+{
+  "id": "render-anchor-own-line-band",
+  "title": "The anchor paragraph's own line drops below its wrapTopAndBottom box when the box cuts into the line's text box (compat 15)",
+  "section": "word-truths.md#L354",
+  "probe_date": "2026-09-23",
+  "class": "render",
+  "source": "p035_anchor15.pdf re-measured 2026-10-22: Letter, TNR 12, anchor paragraphs line=360 (20.71), 451.5pt-wide behindDoc wrapTopAndBottom rect at paragraph-relative offsets; PREVn -> NEXTn baseline distances (same page, same face/size: glyph-top distances)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 42.96,
+      "tol": 0.3,
+      "note": "1.5pt rule at offset 0: 1.5 + 20.71 + 20.71 (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 5,
+      "expect": 48.0,
+      "tol": 0.3,
+      "note": "5pt rule (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 6,
+      "to": 8,
+      "expect": 50.88,
+      "tol": 0.3,
+      "note": "8.18pt: compat 15 tests the text box (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 9,
+      "to": 11,
+      "expect": 54.72,
+      "tol": 0.3,
+      "note": "12pt (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 12,
+      "to": 14,
+      "expect": 41.28,
+      "tol": 0.3,
+      "note": "16pt: band lies in the extra leading, line only"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 15,
+      "to": 17,
+      "expect": 42.24,
+      "tol": 0.3,
+      "note": "20pt: band bottom (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 18,
+      "to": 20,
+      "expect": 47.04,
+      "tol": 0.3,
+      "note": "25pt: band bottom 26.33 (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 22,
+      "to": 24,
+      "expect": 51.12,
+      "tol": 0.3,
+      "note": "8.18pt + anchor text: text line moves below the box (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 25,
+      "to": 27,
+      "expect": 101.28,
+      "tol": 0.3,
+      "note": "60pt box at 0: 60 + 20.71 (gen 104.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 28,
+      "to": 30,
+      "expect": 111.36,
+      "tol": 0.3,
+      "note": "60pt box at offset 10 (gen 114.14: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 31,
+      "to": 33,
+      "expect": 36.0,
+      "tol": 0.3,
+      "note": "single-spaced anchor paragraph: 1.5 + 13.8 (gen 34.49: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 34,
+      "to": 36,
+      "expect": 41.52,
+      "tol": 0.3,
+      "note": "-5pt: a box above does not push"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 37,
+      "to": 39,
+      "expect": 52.32,
+      "tol": 0.3,
+      "note": "30pt (gen 41.39: the own line ignores the band; the 60pt boxes push 3pt too far)",
+      "status": "failing"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 40,
+      "to": 42,
+      "expect": 101.28,
+      "tol": 0.3,
+      "note": "60pt box + anchor text"
+    }
+  ],
+  "docx": "probe.docx"
+}

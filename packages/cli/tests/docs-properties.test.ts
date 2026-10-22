@@ -39,7 +39,7 @@ async function docxWithProps(path: string): Promise<string> {
     'word/document.xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
-      '<w:body><w:p><w:r><w:t>正文</w:t></w:r></w:p></w:body></w:document>',
+      '<w:body><w:p><w:r><w:t>\u6b63\u6587</w:t></w:r></w:p></w:body></w:document>',
   )
   zip.file(
     'docProps/core.xml',
@@ -47,14 +47,14 @@ async function docxWithProps(path: string): Promise<string> {
       '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"' +
       ' xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"' +
       ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-      '<dc:title>旧标题</dc:title><dc:creator>作者甲</dc:creator>' +
-      '<dc:subject>案号 2026-114</dc:subject></cp:coreProperties>',
+      '<dc:title>\u65e7\u6807\u9898</dc:title><dc:creator>\u4f5c\u8005\u7532</dc:creator>' +
+      '<dc:subject>\u6848\u53f7 2026-114</dc:subject></cp:coreProperties>',
   )
   zip.file(
     'docProps/app.xml',
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">' +
-      '<Template>Normal.dotm</Template><Company>某某律师事务所</Company></Properties>',
+      '<Template>Normal.dotm</Template><Company>\u67d0\u67d0\u5f8b\u5e08\u4e8b\u52a1\u6240</Company></Properties>',
   )
   zip.file(
     'docProps/custom.xml',
@@ -75,8 +75,12 @@ describe('genoffice docs (document properties)', () => {
     const read = await run(['docs', 'read', file, '--properties', '--json'])
     expect(read.code).toBe(0)
     expect(read.json().detail.properties).toEqual({
-      core: { title: '旧标题', creator: '作者甲', subject: '案号 2026-114' },
-      app: { template: 'Normal.dotm', company: '某某律师事务所' },
+      core: {
+        title: '\u65e7\u6807\u9898',
+        creator: '\u4f5c\u8005\u7532',
+        subject: '\u6848\u53f7 2026-114',
+      },
+      app: { template: 'Normal.dotm', company: '\u67d0\u67d0\u5f8b\u5e08\u4e8b\u52a1\u6240' },
       custom: { MatterId: 'M-2026-114' },
     })
   })
@@ -101,7 +105,7 @@ describe('genoffice docs (document properties)', () => {
     const core = await partOf(file, 'docProps/core.xml')
     expect(core).toContain('<dc:title>Motion to Dismiss</dc:title>')
     expect(core).not.toContain('dc:creator')
-    expect(core).toContain('<dc:subject>案号 2026-114</dc:subject>')
+    expect(core).toContain('<dc:subject>\u6848\u53f7 2026-114</dc:subject>')
     const app = await partOf(file, 'docProps/app.xml')
     expect(app).not.toContain('Company')
     expect(app).toContain('<Template>Normal.dotm</Template>')
@@ -137,6 +141,25 @@ describe('genoffice docs (document properties)', () => {
     expect(await partOf(file, 'docProps/custom.xml')).not.toContain('MatterId')
   })
 
+  it('a later clear: "all" wipes the values of an earlier op in the same batch', async () => {
+    const dir = tempDir()
+    const file = await docxWithProps(join(dir, 'motion.docx'))
+    const ops = join(dir, 'ops.json')
+    writeFileSync(
+      ops,
+      JSON.stringify([
+        { op: 'set_properties', core: { title: 'Motion' }, custom: { MatterId: 'M-1' } },
+        { op: 'set_properties', clear: 'all', core: { subject: 'Filed' } },
+      ]),
+    )
+    const applied = await run(['docs', 'apply', file, '--ops', ops, '--json'])
+    expect(applied.code).toBe(0)
+    const core = await partOf(file, 'docProps/core.xml')
+    expect(core).not.toContain('Motion')
+    expect(core).toContain('<dc:subject>Filed</dc:subject>')
+    expect(await partOf(file, 'docProps/custom.xml')).not.toContain('MatterId')
+  })
+
   it('rejects an unknown property and leaves the file alone', async () => {
     const dir = tempDir()
     const file = await docxWithProps(join(dir, 'motion.docx'))
@@ -154,7 +177,9 @@ describe('genoffice docs (document properties)', () => {
     const file = await docxWithProps(join(dir, 'motion.docx'))
     const info = await run(['info', file, '--json'])
     expect(info.code).toBe(0)
-    expect(info.json().detail.properties.core.title).toBe('旧标题')
-    expect(info.json().detail.properties.app.company).toBe('某某律师事务所')
+    expect(info.json().detail.properties.core.title).toBe('\u65e7\u6807\u9898')
+    expect(info.json().detail.properties.app.company).toBe(
+      '\u67d0\u67d0\u5f8b\u5e08\u4e8b\u52a1\u6240',
+    )
   })
 })

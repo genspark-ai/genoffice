@@ -1,7 +1,7 @@
 {
   "name": "@genoffice/shell",
   "productName": "GenOffice",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "license": "Apache-2.0",
   "homepage": "https://github.com/genspark-ai/genoffice",
   "private": true,
@@ -44,12 +44,13 @@
     "electron-builder": "^26.0.12",
     "electron-updater": "^6.8.9",
     "electron-vite": "^5.0.0",
+    "jszip": "^3.10.1",
     "officecrypto-tool": "^0.0.19",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vitest": "^4.1.11"
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
   },
   "author": "GenOffice"
 }

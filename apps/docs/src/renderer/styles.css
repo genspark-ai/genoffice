@@ -2771,19 +2771,24 @@ th.cell-rev-del {
   transform: translate(calc(var(--col-dx, 0px) + var(--page-cx, 0px)), var(--col-dy, 0px));
 }
 
-/* w:docGrid charSpace character grid (Word probes 2026-09-02): every character
-   in a typed linesAndChars section advances by natural width + charSpace/4096pt
-   — plain letter-spacing, inherited into tables and textboxes but not into the
-   header/footer strips (they live outside .doc-page). Uniform docs get the
-   variable from App.tsx's .doc-page injection; mixed docs set it per block via
-   the layout decoration channel (doc-charspace-block). Both selectors also
-   reach preview/export clones (.pv-content carries the doc-page class). */
+/* w:docGrid charSpace character grid (Word probes 2026-09-02, 2026-10-22):
+   every character in a typed linesAndChars section advances by natural width
+   + charSpace/4096pt — plain letter-spacing, inherited into tables and
+   textboxes but not into the header/footer strips (they live outside
+   .doc-page). Under balanceSingleByteDoubleByteWidth single-byte characters
+   get half (--doc-char-space-sb) and the .doc-east-asian-font spans restore
+   the full value. Uniform docs get the variables from App.tsx's .doc-page
+   injection; mixed docs set them per block via the layout decoration channel
+   (doc-charspace-block). Both selectors also reach preview/export clones
+   (.pv-content carries the doc-page class). */
 .doc-page {
-  letter-spacing: var(--doc-char-space, normal);
+  letter-spacing: var(--doc-char-space-sb, var(--doc-char-space, normal));
 }
 .doc-page .doc-charspace-block {
-  letter-spacing: var(--doc-char-space, normal);
+  letter-spacing: var(--doc-char-space-sb, var(--doc-char-space, normal));
 }
+/* the full-width restore rule is injected by App.tsx with the variables; a
+   run-level w:spacing (inline letter-spacing) keeps winning over the grid */
 /* per-page header/footer strips are page-gap widgets inside the editor root,
    but Word does not grid header/footer text (scope probe) */
 .doc-page .page-gap-hf {
@@ -2853,6 +2858,27 @@ th.cell-rev-del {
    instead of by arithmetic. */
 .editor-scroll .doc-page.measuring-natural .page-gap-inline {
   display: none !important;
+}
+
+/* block-level gaps leave the measuring flow too: an in-flow box between two
+   paragraphs stops their margins collapsing, so the measured distance across a
+   page turn was space-after + space-before instead of the larger of the two,
+   and every block below shifted by the difference — a different amount
+   wherever the previous pass had cut, so passes disagreed and page counts
+   oscillated. Hidden, the flow measures exactly as it would without pages. */
+.editor-scroll .doc-page.measuring-natural .page-gap:not(.page-gap-inline) {
+  display: none !important;
+}
+
+/* phantom table rows (gap rows, repeated header clones) must keep their grid
+   slot while hidden: syncPhantomRowspans grew the vMerge rowspans crossing
+   them, so a display:none row makes those spans overrun by one row and shifts
+   every later row a column right (cells collapse to 0 width, text wraps per
+   character, the ballooned heights get stamped as split-row fills). Collapse
+   removes the height but keeps the row in the grid. */
+.editor-scroll .doc-page.measuring-natural tr.page-gap-inline {
+  display: table-row !important;
+  visibility: collapse;
 }
 
 /* page border (w:pgBorders): per-page overlay boxes (see syncPageBorders);
@@ -3113,7 +3139,12 @@ th.cell-rev-del {
      --hf-tab-over (content box unchanged, so 100% still means the column) */
   box-sizing: content-box;
   padding-right: var(--hf-tab-over, 0px);
-  left: calc(50% + var(--hf-tab-over, 0px) / 2);
+  /* a layout table with a negative tblInd hangs into the start margin: the
+     clip box widens by --hf-ind-over on that side; the negative margin keeps
+     the content box where every left: override (preview, mixed widths) puts it */
+  padding-left: var(--hf-ind-over, 0px);
+  margin-left: calc(-1 * var(--hf-ind-over, 0px));
+  left: calc(50% + (var(--hf-tab-over, 0px) + var(--hf-ind-over, 0px)) / 2);
   z-index: 1;
   cursor: default;
 }
@@ -3143,6 +3174,15 @@ th.cell-rev-del {
 .page-hf-tabseg {
   position: absolute;
   white-space: nowrap;
+}
+
+/* text after the last tab that overflows the column wraps like body text */
+.page-hf-tabbed-flow {
+  white-space: pre-wrap;
+}
+
+.page-hf-tab-gap {
+  display: inline-block;
 }
 
 .page-hf-tabseg-center {
@@ -4465,6 +4505,17 @@ th.cell-rev-del {
 .doc-autospace-pad-full {
   margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * 2);
 }
+/* Latin -> CJK seam: Word's gap is half the Latin face's average char width
+   (line-metrics latinAutospaceGapEm); the span scales its share of the base */
+.doc-autospace-pad-le {
+  margin-inline-start: calc(var(--doc-autospace-pad, 0.125em) * var(--doc-autospace-pad-le, 1));
+}
+
+/* static-DOM word-joiner (protected-render padSegments): generated content keeps
+   the U+2060 out of innerText, so cell / textbox edits never commit it */
+.doc-kr-wj:empty::before {
+  content: '\2060';
+}
 
 /* a space with a hangul neighbour advances 0.5em in Word whatever the run font
    (line-metrics hangulSpaceOffsets); the half-width space face supplies that
@@ -4933,9 +4984,11 @@ th.cell-rev-del {
   display: none;
 }
 
-/* Word drops space-before on the lead block of a page forced by an explicit break;
-   !important beats the inline spacing style, unscoped so pv clones and direct print match */
-.page-break-lead {
+/* Word drops space-before on a page's lead block but still charges it for the fit on
+   the previous page: display-only, the measuring pass keeps the declared margin (else a
+   natural lead fits back, loses the gap, overflows again). !important beats the inline
+   spacing style; otherwise unscoped so pv clones and direct print match */
+.page-break-lead:not(.measuring-natural *) {
   margin-top: 0 !important;
 }
 
@@ -5332,6 +5385,51 @@ th.cell-rev-del {
   margin-top: 0 !important;
 }
 
+/* ...and across table boundaries: Word compares with the next paragraph in
+   cell-flow order (probe 2026-10-20) - the first cell's first paragraph after a
+   paragraph before the table, the next cell's first paragraph after a cell's
+   last one, and the end-of-row mark (default style) after the row's last cell */
+.doc-page
+  :is(p, .doc-li).ctx-sp:not([data-style]):has(
+    + table.doc-table
+      > tbody
+      > tr:first-child
+      > :is(td, th):first-child
+      > :is(p, .doc-li):not([data-style]):nth-child(1 of :not(.doc-cell-boxes)),
+    + table.doc-table
+      > tbody
+      > tr:first-child
+      > :is(td, th):first-child
+      > :is(.cell-clip, .cell-vert)
+      > :is(p, .doc-li):not([data-style]):nth-child(1 of :not(.doc-cell-boxes))
+  ),
+.doc-table
+  :is(
+    :is(td, th):is(
+        :last-child,
+        :has(
+          + :is(td, th) > :is(p, .doc-li):not([data-style]):nth-child(1 of :not(.doc-cell-boxes)),
+          + :is(td, th)
+            > :is(.cell-clip, .cell-vert)
+            > :is(p, .doc-li):not([data-style]):nth-child(1 of :not(.doc-cell-boxes))
+        )
+      )
+      > :is(p, .doc-li).ctx-sp:not([data-style]):nth-last-child(1 of :not(.doc-cell-boxes)),
+    :is(td, th):is(
+        :last-child,
+        :has(
+          + :is(td, th) > :is(p, .doc-li):not([data-style]):nth-child(1 of :not(.doc-cell-boxes)),
+          + :is(td, th)
+            > :is(.cell-clip, .cell-vert)
+            > :is(p, .doc-li):not([data-style]):nth-child(1 of :not(.doc-cell-boxes))
+        )
+      )
+      > :is(.cell-clip, .cell-vert)
+      > :is(p, .doc-li).ctx-sp:not([data-style]):nth-last-child(1 of :not(.doc-cell-boxes))
+  ) {
+  margin-bottom: 0 !important;
+}
+
 .doc-li::before {
   display: inline-block;
   /* --li-tab: measured marker escaped the hanging area; box widens to the next default tab stop.
@@ -5632,9 +5730,10 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 }
 
 /* w:hideMark: Word leaves the end-of-cell mark out of the row height, so a cell
-   holding nothing but one empty paragraph collapses to its margins (or trHeight) */
-.doc-table td[data-hide-mark] > .doc-p-empty:only-child,
-.doc-table th[data-hide-mark] > .doc-p-empty:only-child {
+   holding nothing but one empty paragraph collapses to its margins (or trHeight);
+   a picture-only paragraph is textless too but keeps its picture extent */
+.doc-table td[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):only-child,
+.doc-table th[data-hide-mark] > .doc-p-empty:not(.doc-p-pic):only-child {
   height: 0;
   min-height: 0;
   line-height: 0;
@@ -6332,16 +6431,6 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   margin: 0;
 }
 
-/* Word gives empty w:p elements no line box; only their explicit w:spacing
-   contributes height. Keeping browser-default <br> line boxes made fixed
-   textboxes clip valid content far above their actual bottom edge. */
-.doc-textbox-editor p:has(> br.ProseMirror-trailingBreak:only-child),
-.doc-textbox-para-empty {
-  height: 0;
-  min-height: 0;
-  line-height: 0;
-}
-
 .doc-textbox:focus-within {
   outline: 2px solid var(--word-blue);
   outline-offset: 1px;
@@ -6475,6 +6564,22 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   line-height: calc(var(--doc-run-lh) * 1em * var(--doc-line-mult, 1));
 }
 
+/* rtl run (marks.ts doc-cs): weight / style resolved by the engine through the whole
+   chain (table style, paragraph style, Cs twins, XOR). A user strong/em wrapper
+   still paints: the regular rules step aside inside it. */
+.doc-page span.doc-cs.doc-cs-b {
+  font-weight: 600;
+}
+.doc-page span.doc-cs.doc-cs-nb:not(strong *) {
+  font-weight: normal;
+}
+.doc-page span.doc-cs.doc-cs-i {
+  font-style: italic;
+}
+.doc-page span.doc-cs.doc-cs-ni:not(em *) {
+  font-style: normal;
+}
+
 /* Mixed Latin + complex-script paragraph (extensions paraCsMixedClass): Word sizes
    the line by the tallest face (Calibri 1.22 over Arial Arabic 1.15); Chromium
    centres the Arial span's box in the inherited line-height and the union runs
@@ -6485,6 +6590,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   :is(td, th)
   .doc-cs-mixed:not(.doc-lh-fixed)
   span[data-cs][style*='--doc-run-lh']:not([style*='vertical-align']) {
+  line-height: 0;
+}
+
+/* One-size paragraph with a bold/italic run of a per-cut size-adjusted alias
+   (extensions paraCutAdjustedClass): the span's box is another size than the
+   regular-cut strut and the union inflates the line; the strut paces it. The
+   strong/em wrapper lays its own box in the same cut, so it collapses too. */
+.doc-page .doc-cut-adjusted span[data-cut-adj]:not([style*='vertical-align']),
+.doc-page .doc-cut-adjusted :is(strong, em),
+.doc-table
+  :is(td, th)
+  .doc-cut-adjusted:not(.doc-lh-fixed)
+  span[data-cut-adj][style*='--doc-run-lh']:not([style*='vertical-align']) {
   line-height: 0;
 }
 
@@ -6645,6 +6763,23 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   border-color: var(--border-strong);
 }
 
+/* floating rule (connector line) anchored to an empty paragraph: Word keeps the
+   paragraph's full line in the flow and draws the line over it at its offset */
+.doc-protected-rule.doc-protected-rule-anchored {
+  position: relative;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  line-height: normal;
+}
+
+.doc-protected-rule-anchored > .doc-rule-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
 /* inline-level at full width: a line shortened by a float cannot hold it, so
    the rule drops below the float like Word's full-width rule picture */
 .doc-rule-line {
@@ -6713,6 +6848,17 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
    inline with !important) */
 .doc-inline-rule + .ProseMirror-separator,
 .doc-inline-rule + .ProseMirror-separator + .ProseMirror-trailingBreak {
+  display: none !important;
+}
+
+/* the same trailing break when a sized rule run is wrapped in its mark span
+   (the break sits outside the span, so the sibling rule above misses it;
+   only separator images may follow the rule inside the span) */
+.doc-page span:has(> .doc-inline-rule:last-of-type) + .ProseMirror-trailingBreak,
+.doc-page
+  span:has(> .doc-inline-rule:last-of-type)
+  + .ProseMirror-separator
+  + .ProseMirror-trailingBreak {
   display: none !important;
 }
 
@@ -6818,7 +6964,9 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 
 .doc-toc-line {
   display: flex;
-  align-items: baseline;
+  /* the leader and page number sit on the entry's LAST line (Word: a right
+     tab after the wrapped title), not level with its first baseline */
+  align-items: flex-end;
   /* inherit the document's paragraph metrics: a hardcoded 11pt/1.7 line made
      every TOC entry ~50% taller than Word/LO and drifted long TOCs a page+ */
   font-size: inherit;
@@ -6850,6 +6998,9 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .doc-toc-num {
   white-space: pre;
   margin-right: 8px;
+  /* the outline number stays beside the title's FIRST line (Word: a tab in
+     the same run as the title); only the leader and page drop to the last */
+  align-self: flex-start;
 }
 
 /* leader glyphs at the entry font's own advance (Word: a period every 0.25em
@@ -6876,6 +7027,11 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .ProseMirror [contenteditable='false'] .doc-toc-num,
 .ProseMirror [contenteditable='false'].doc-toc-num {
   white-space: pre;
+}
+/* the stray anchor-paragraph line keeps its w:br newlines like the .pv-content
+   clone it is paginated against (the injected `normal` collapsed them to one line) */
+.ProseMirror [contenteditable='false'] .doc-textbox-stray {
+  white-space: pre-wrap;
 }
 
 .doc-field-pagebreak {
@@ -7639,6 +7795,31 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   display: block;
 }
 
+/* inline run pictures (table / header cells): the editor wraps the img so
+   the selection frame and handles can hang off it. An inline-block with no
+   strut is exactly the picture's box and sits on the baseline like the bare
+   img did; max-width carries the cell clamp through to the picture */
+.doc-inline-pic {
+  display: inline-block;
+  position: relative;
+  line-height: 0;
+  max-width: 100%;
+}
+
+.ProseMirror-focused .doc-inline-pic.ProseMirror-selectednode > img {
+  outline: 1px solid var(--word-blue);
+  outline-offset: -1px;
+}
+
+.ProseMirror-focused .doc-inline-pic.ProseMirror-selectednode > .img-resize-handle {
+  display: block;
+}
+
+/* the cell clip would cut the handles hanging 5px outside the picture */
+.page-hf-cell:has(> * > .doc-inline-pic.ProseMirror-selectednode) {
+  overflow: visible;
+}
+
 .doc-image-anchor-marker {
   display: none;
   position: absolute;
@@ -7976,7 +8157,7 @@ body.docs-crop-active
 .ai-msg {
   position: relative;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -9312,7 +9493,7 @@ body.docs-crop-active
    * with the content, so clipped lines would sit flush against chips/footer */
   padding: 0 14px;
   margin: 12px 0 4px;
-  font-size: 16px;
+  font-size: 14px;
   font-family: inherit;
   line-height: 24px;
   outline: none;

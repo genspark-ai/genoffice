@@ -246,6 +246,8 @@ interface ExcelShellProps {
   /// Chat attachments (chips + 📎 button + drag-and-drop), same structure as the
   /// docs/slides AI panels.
   readonly attachments: readonly AttachmentMeta[]
+  readonly attachedSkills: readonly string[]
+  readonly onToggleSkill: (name: string) => void
   readonly attachNotice: string | null
   readonly onPickAttachments: () => void
   readonly onAddAttachmentPaths: (paths: readonly string[]) => void
@@ -458,6 +460,8 @@ export function ExcelShell({
   chat,
   historicChat,
   attachments,
+  attachedSkills,
+  onToggleSkill,
   attachNotice,
   onPickAttachments,
   onAddAttachmentPaths,
@@ -963,6 +967,8 @@ export function ExcelShell({
           chat={chat}
           {...(historicChat !== undefined ? { historicChat } : {})}
           attachments={attachments}
+          attachedSkills={attachedSkills}
+          onToggleSkill={onToggleSkill}
           attachNotice={attachNotice}
           onPickAttachments={onPickAttachments}
           onAddAttachmentPaths={onAddAttachmentPaths}

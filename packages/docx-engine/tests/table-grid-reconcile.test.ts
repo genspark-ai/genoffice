@@ -226,6 +226,32 @@ describe('grid reconciliation from tcW boundaries', () => {
   })
 })
 
+describe('content autofit flag', () => {
+  const pctTbl = (cells: string, layout = '') =>
+    `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/>${layout}</w:tblPr>` +
+    gridXml([3960, 3960]) +
+    `<w:tr>${cells}</w:tr></w:tbl>`
+
+  it('a pct table with no w:tcW on any cell autofits to content', async () => {
+    const table = await tableOf(pctTbl(tc('Domaine') + tc('Resultat')))
+    expect(table.contentAutofit).toBe(true)
+    expect(table.autoLayout).toBe(true)
+  })
+
+  it('any w:tcW, a fixed layout or a dxa width keeps the grid path', async () => {
+    const tcw = await tableOf(pctTbl(tc('a', '<w:tcW w:w="3960" w:type="dxa"/>') + tc('b')))
+    expect(tcw.contentAutofit).toBeUndefined()
+    const fixed = await tableOf(pctTbl(tc('a') + tc('b'), '<w:tblLayout w:type="fixed"/>'))
+    expect(fixed.contentAutofit).toBeUndefined()
+    const dxa = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="7920" w:type="dxa"/></w:tblPr>' +
+        gridXml([3960, 3960]) +
+        `<w:tr>${tc('a') + tc('b')}</w:tr></w:tbl>`,
+    )
+    expect(dxa.contentAutofit).toBeUndefined()
+  })
+})
+
 describe('gridBefore/gridAfter', () => {
   const STAGGERED =
     '<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr>' +

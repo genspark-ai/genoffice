@@ -47,6 +47,10 @@ export interface CliRunOptions {
   input?: string
   /** abort the child after this long; default 120s (the CLI lazily loads jsdom) */
   timeoutMs?: number
+  /** working directory relative paths resolve against (default: the app's) */
+  cwd?: string
+  /** per-run environment on top of the runner's (e.g. GENOFFICE_ALLOWED_ROOTS) */
+  env?: NodeJS.ProcessEnv
 }
 
 export interface CliRunner {
@@ -90,7 +94,8 @@ export function createCliRunner(paths: CliRunnerPaths): CliRunner {
         : 120_000
       return new Promise<CliRunOutcome>((resolve) => {
         const child = spawn(paths.executable, [paths.entry, ...args, '--json'], {
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...paths.env },
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...paths.env, ...options.env },
+          ...(options.cwd ? { cwd: options.cwd } : {}),
           windowsHide: true,
         })
         let stdout = ''

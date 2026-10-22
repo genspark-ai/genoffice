@@ -37,6 +37,7 @@ import {
   bulletPresetLevels,
   documentListPresets,
   numberPresetLevels,
+  presetKey,
   previewLevelText,
 } from '../src/renderer/list-presets'
 import { toggleParaSpace } from '../src/renderer/components/ribbon-tabs'
@@ -491,6 +492,28 @@ describe('Define New Number Format / Multilevel', () => {
     expect(presets.multi.some((p) => p[1].lvlText === '%1.%2.')).toBe(true)
     // the blank template's decimal list shows up once under numbers
     expect(presets.numbers.filter((p) => p[0].lvlText === '%1.')).toHaveLength(1)
+  })
+
+  it('document presets keep a w14 custom enumeration and tell two enumerations apart', async () => {
+    const h = await harness()
+    const czech = {
+      numFmt: 'custom',
+      customFormat: 'Za prvé, Za druhé, ...',
+      lvlText: '%1:',
+      indentLeft: 720,
+    }
+    const greek = { ...czech, customFormat: 'α, β, γ, ...' }
+    createCustomListDef(h.ctx, [czech])
+    createCustomListDef(h.ctx, [greek])
+    const store = h.editor.storage.listNumbering.defs as Map<string, NumberingDef>
+    const custom = documentListPresets(store.values()).numbers.filter(
+      (p) => p[0].numFmt === 'custom',
+    )
+    expect(custom.map((p) => p[0].customFormat).sort()).toEqual([
+      'Za prvé, Za druhé, ...',
+      'α, β, γ, ...',
+    ])
+    expect(presetKey([czech])).not.toBe(presetKey([greek]))
   })
 })
 

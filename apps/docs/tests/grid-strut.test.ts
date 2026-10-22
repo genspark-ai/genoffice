@@ -39,6 +39,10 @@ describe('blockAttrs .doc-grid-strut class', () => {
     })
     expect(pOf(editor).classList.contains('doc-grid-strut')).toBe(true)
     expect(pOf(editor).style.fontFamily).toBe('')
+    const run = pOf(editor).querySelector('span[style*="font-family"]') as HTMLElement
+    expect(run.style.getPropertyValue('--doc-run-ff').replace(/'/g, '"').replace(/,/g, ', ')).toBe(
+      run.style.fontFamily,
+    )
     editor.destroy()
   })
 
@@ -156,6 +160,11 @@ describe('docStyleCss grid strut face', () => {
     expect(css).toContain("@font-face { font-family:'GenOffice Grid Strut'")
     expect(css).toContain('ascent-override:88%')
     expect(css).toContain('.doc-page :is(.doc-grid-strut,.doc-ea-strut) {')
+    // the CJK spans lead with the strut face too: their loaded range alias is
+    // not the face the strut measured, and offset boxes union past the grid
+    expect(css).toContain(
+      ".doc-page :is(.doc-grid-strut,.doc-ea-strut) .doc-east-asian-font { font-family:'GenOffice Grid Strut',",
+    )
     expect(docStyleCss(parsedWith(null, '\uff2d\uff33 \u660e\u671d'))).toContain('.doc-ea-strut')
   })
 

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./atomic-write": "./src/atomic-write.ts",
+    "./disk-watch": "./src/disk-watch.ts",
     "./drop-open": "./src/drop-open.ts",
     "./font-catalog": "./src/font-catalog.ts",
     "./font-store": "./src/font-store.ts",
@@ -29,7 +30,7 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "parse5": "^8.0.1",

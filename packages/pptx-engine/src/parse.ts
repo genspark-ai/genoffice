@@ -3280,19 +3280,35 @@ function parseTableCell(
 
   if (tc['a:txBody']) {
     // Table-style text defaults (bold white header text etc.) injected at the end of the inheritance chain
-    const styleChain: TextStyleLevels[] =
-      part && (part.bold !== undefined || part.textColor)
-        ? [
-            {
-              levels: [
-                {
-                  ...(part.bold !== undefined ? { bold: part.bold } : {}),
-                  ...(part.textColor ? { color: part.textColor } : {}),
-                },
-              ],
-            },
-          ]
-        : []
+    const styleChain: TextStyleLevels[] = []
+    if (part && (part.bold !== undefined || part.textColor || part.fontRef || part.font)) {
+      const level: TextStyleLevels['levels'][number] = {
+        ...(part.bold !== undefined ? { bold: part.bold } : {}),
+        ...(part.textColor ? { color: part.textColor } : {}),
+      }
+      // fontRef picks the theme scheme as unresolved refs so a run re-resolves +mn-ea with
+      // its own script (ja-JP cells on a built-in style set kana in the theme's Jpan font,
+      // not in the master's Latin <a:ea>; PowerPoint ranks tcTxStyle above those defaults)
+      if (part.fontRef) {
+        const pre = part.fontRef === 'major' ? '+mj' : '+mn'
+        const latinFont = resolveFontRef(`${pre}-lt`, ctx.theme)
+        const eaFont = resolveFontRef(`${pre}-ea`, ctx.theme)
+        const csFont = resolveFontRef(`${pre}-cs`, ctx.theme)
+        if (latinFont) Object.assign(level, { latinFont, latinFontRef: `${pre}-lt` })
+        if (eaFont) Object.assign(level, { eaFont, eaFontRef: `${pre}-ea` })
+        if (csFont) level.csFont = csFont
+      }
+      if (part.font?.latin) {
+        level.latinFont = part.font.latin
+        delete level.latinFontRef
+      }
+      if (part.font?.ea) {
+        level.eaFont = part.font.ea
+        delete level.eaFontRef
+      }
+      if (part.font?.cs) level.csFont = part.font.cs
+      styleChain.push({ levels: [level], src: 'table style' })
+    }
     // Cell text without its own size sits on presentation.xml defaultTextStyle like any
     // non-placeholder shape (Google Slides export: 14pt default, PowerPoint draws 14pt)
     if (ctx.defaultTextStyle)

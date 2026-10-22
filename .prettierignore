@@ -10,6 +10,8 @@ coverage/
 package-lock.json
 apps/*/build/
 apps/shell/build/THIRD-PARTY-NOTICES.txt
+packages/font-metrics/word-faces.json
+apps/docs/src/renderer/fonts/stand-in-boxes.json
 
 # Local-only acceptance drivers are intentionally outside CI.
 scripts/drivers/driver.*.mjs

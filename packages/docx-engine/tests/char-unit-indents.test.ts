@@ -296,12 +296,12 @@ describe('character-unit indents: document grid and styles', () => {
     )
     expect(f[0]).toEqual({ indentFirstLine: 480 })
     // the style's twips indent renders through the style CSS, nothing to fold
-    expect(f[1]).toBeUndefined()
+    expect(f[1]).toEqual({})
     expect(f[2]).toEqual({ indentFirstLine: 480 })
     expect(f[3]).toEqual({ indentFirstLine: 720 })
     expect(f[4]).toEqual({ indentFirstLine: 480 })
     expect(f[5]).toEqual({ indentLeft: 420 })
-    expect(f[6]).toBeUndefined()
+    expect(f[6]).toEqual({})
   })
 
   it('a Normal-style firstLineChars reaches unstyled paragraphs but not list items', async () => {
@@ -323,7 +323,7 @@ describe('character-unit indents: document grid and styles', () => {
       charIndents: { firstLine: 200 },
     })
     expect(doc.blocks[1].type).toBe('listItem')
-    expect(doc.blocks[1].format).toBeUndefined()
+    expect(doc.blocks[1].format).toEqual({})
   })
 
   it('table cell paragraphs resolve their character indents too', async () => {

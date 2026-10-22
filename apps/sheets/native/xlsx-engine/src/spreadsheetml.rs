@@ -19,8 +19,7 @@ use roxmltree::{Document, Node};
 use crate::SidecarError;
 use crate::convert::ConvertResult;
 use crate::xlsx_package::{
-    SheetSpec, absolute_cell_reference, cell_reference, escape_xml, iso_serial, worksheet_document,
-    write_package,
+    SheetSpec, cell_reference, escape_xml, iso_serial, worksheet_document, write_package,
 };
 
 /// The namespace every SpreadsheetML element sits in. It is bound both as the
@@ -355,13 +354,30 @@ fn parse_reference(text: &str) -> Option<(u32, u32)> {
     }
     let mut column = 0u32;
     for letter in text[..letters].chars() {
-        column = column * 26 + u32::from(letter.to_ascii_uppercase()) - u32::from('A');
+        column = column * 26 + u32::from(letter.to_ascii_uppercase()) - u32::from('A') + 1;
     }
     let row: u32 = text[letters..].parse().ok()?;
     if row == 0 {
         return None;
     }
-    Some((row - 1, column))
+    Some((row - 1, column - 1))
+}
+
+/// `A1`, `$A1`, `A$1` or `$A$1`: each axis keeps its own lock.
+fn mixed_cell_reference(
+    row: u32,
+    row_absolute: bool,
+    column: u32,
+    column_absolute: bool,
+) -> String {
+    let plain = cell_reference(row, column);
+    let digits = plain.trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    let letters = &plain[..plain.len() - digits.len()];
+    format!(
+        "{}{letters}{}{digits}",
+        if column_absolute { "$" } else { "" },
+        if row_absolute { "$" } else { "" }
+    )
 }
 
 /// Builds the `<c>` element, or `None` when the cell holds neither a value nor
@@ -559,11 +575,7 @@ fn reference_at(
     }
     let target_row = resolve(row_value, row_absolute, row, MAX_ROW).ok_or(())?;
     let target_column = resolve(column_value, column_absolute, column, MAX_COLUMN).ok_or(())?;
-    let spelled = if row_absolute && column_absolute {
-        absolute_cell_reference(target_row, target_column)
-    } else {
-        cell_reference(target_row, target_column)
-    };
+    let spelled = mixed_cell_reference(target_row, row_absolute, target_column, column_absolute);
     Ok(Some((after_column - start, spelled)))
 }
 
@@ -687,7 +699,9 @@ fn defined_names(root: Node) -> String {
             ""
         };
         out.push_str(&format!(
-            r#"<definedName name="{name}"{hidden}>{target}</definedName>"#
+            r#"<definedName name="{}"{hidden}>{}</definedName>"#,
+            escape_xml(name),
+            escape_xml(&target)
         ));
     }
     out
@@ -905,7 +919,8 @@ mod tests {
             "{workbook}"
         );
         assert!(
-            workbook.contains(r#"<sheet name="Vault" sheetId="3" r:id="rId3" state="veryHidden"/>"#),
+            workbook
+                .contains(r#"<sheet name="Vault" sheetId="3" r:id="rId3" state="veryHidden"/>"#),
             "{workbook}"
         );
         assert!(
@@ -947,6 +962,11 @@ mod tests {
         // an absolute R1C1 reference has to arrive locked, or it drifts on copy
         assert_eq!(r1c1_to_a1("=R1C1+R1C2", 0, 0), Some("$A$1+$B$1".into()));
         assert_eq!(r1c1_to_a1("=Other!R1C1", 0, 0), Some("Other!$A$1".into()));
+        // past column Z the letters carry: AA is column 26, not column 0
+        assert_eq!(parse_reference("AA1"), Some((0, 26)));
+        assert_eq!(parse_reference("$AB$3"), Some((2, 27)));
+        // a lock on one axis only stays on that axis
+        assert_eq!(r1c1_to_a1("=R1C+RC1", 4, 2), Some("C$1+$A5".into()));
         // function names opening with R or C must not read as references
         assert_eq!(
             r1c1_to_a1("=ROUND(R[-1]C,2)", 4, 2),

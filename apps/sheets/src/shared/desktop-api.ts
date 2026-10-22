@@ -3063,6 +3063,12 @@ export interface DesktopApi {
   onAiSettingsChanged(handler: () => void): () => void
   /// shell only: switch to Home and open Settings › AI Model (rejects in standalone)
   openAiModelSettings(): Promise<void>
+  /// shell only: switch to Home and open Settings › Integrations (the skills list)
+  openSkillsSettings(): Promise<void>
+  /// the skills installed into GenOffice's own folder
+  skillsList(): Promise<UserSkillEntry[]>
+  /// one installed skill's body, by name; the main process resolves the path
+  skillText(name: string): Promise<string>
   aiChat(request: AiChatRequest): Promise<AiChatResponse>
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>
@@ -3125,4 +3131,10 @@ export interface ImageSearchResponse {
 export interface GenerateImageResult {
   url?: string
   error?: string
+}
+
+export interface UserSkillEntry {
+  name: string
+  description: string
+  relevant: boolean
 }

@@ -498,6 +498,8 @@ export interface DesktopApi {
   onAiSettingsChanged(handler: () => void): () => void
   /** shell only: switch to Home and open Settings › AI Model (rejects in standalone) */
   openAiModelSettings(): Promise<void>
+  /** shell: switch to Home and open Settings › Integrations (the skills list) */
+  openSkillsSettings(): Promise<void>
   /** print the current window; ok=false without error = canceled.
    *  scale: print scale inverting the preview's print zoom (print-zoom.ts).
    *  job: printer/copies/duplex from the in-app dialog; a named printer ('' = OS
@@ -679,10 +681,15 @@ export interface UserCliRun {
     command: string | null
     code?: number
     summary?: string
+    output_path?: string
     message?: string
   }
   stdout: string
   stderr: string
+  /** where relative paths resolved; absent in a window with no document and no save folder */
+  cwd?: string
+  /** the folders the CLI may read and write */
+  allowedRoots?: string[]
 }
 
 /** mirrors VIEW_IMAGE_CHANNEL in @genoffice/electron-utils (kept literal so the preload stays free of main-only deps) */

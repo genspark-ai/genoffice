@@ -105,4 +105,18 @@ describe('format off-switch clearing on toggle (task#426)', () => {
     const node = editor.state.doc.firstChild!.firstChild!
     expect(textStyleOf(node.marks)!.boldOff).toBe(true)
   })
+
+  it('an rtl run carries the .doc-cs gate class and no inline weight, so a bold toggle paints', () => {
+    const editor = offEditor({ cs: true, rtl: true })
+    const span = () => editor.view.dom.querySelector('span[data-doc-style]') as HTMLElement
+    expect(span().classList.contains('doc-cs')).toBe(true)
+    editor.commands.setTextSelection({ from: 1, to: 6 })
+    editor.commands.toggleMark('bold')
+    const node = editor.state.doc.firstChild!.firstChild!
+    expect(node.marks.some((m) => m.type.name === 'bold')).toBe(true)
+    expect(editor.view.dom.querySelector('strong span.doc-cs')).not.toBeNull()
+    expect(span().getAttribute('style') ?? '').not.toContain('font-weight')
+    editor.commands.toggleMark('bold')
+    expect(span().getAttribute('style') ?? '').not.toContain('font-weight')
+  })
 })

@@ -759,6 +759,23 @@ export function overlayLiveRowFlags(el: HTMLElement, rows: TableRowBox[]): void 
   })
 }
 
+/** Row boxes paired to trs by index from each tr's measured top offset (trs[0] is
+ *  pinned to 0: its own offset is only the collapsed-border half-width). Offsets are
+ *  clamped monotonic, so a collapsed 0px row keeps its slot instead of being
+ *  dropped and shifting every later row onto the wrong tr. */
+export function indexedRowBoxes(rowTops: number[], blockHeight: number): LineBox[] {
+  const tops: number[] = []
+  for (let i = 0; i < rowTops.length; i++) {
+    const prev = i === 0 ? 0 : tops[i - 1]
+    tops.push(i === 0 ? 0 : Math.min(Math.max(rowTops[i], prev), blockHeight))
+  }
+  if (tops.length === 0) tops.push(0)
+  return tops.map((top, i) => ({
+    offsetInBlock: top,
+    height: (i + 1 < tops.length ? tops[i + 1] : blockHeight) - top,
+  }))
+}
+
 function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number): TableRowBox[] {
   const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
     g.getBoundingClientRect(),
@@ -766,16 +783,11 @@ function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number):
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const elTop = el.getBoundingClientRect().top
   const trs = outerTableRows(el)
-  const tops: number[] = []
-  // skip trs[0]: the first row starts at box 0 by definition — its measured
-  // offset is just the collapsed-border half-width (1px at w:sz=12), and
-  // letting it through creates a phantom row that shifts the trs[i] pairing
-  for (const tr of trs.slice(1)) {
+  const tops = trs.map((tr) => {
     const trTop = tr.getBoundingClientRect().top
-    const off = (trTop - elTop - gapAbove(trTop)) / zoomFactor
-    if (off > 0.5) tops.push(off)
-  }
-  return tileBoxes(tops, blockHeight).map((b, i) => {
+    return (trTop - elTop - gapAbove(trTop)) / zoomFactor
+  })
+  return indexedRowBoxes(tops, blockHeight).map((b, i) => {
     if (!trs[i]) return { height: b.height }
     const { cuts, contentBottom, cells, forcedCuts } = rowCutYs(
       trs[i],
@@ -1007,7 +1019,20 @@ function cellBoxOf(
     const [t, b] = toBand(ch.getBoundingClientRect())
     return [t - alignDy, b - alignDy]
   })
-  return { ...cellLinesOf(shifted), childBox, alignDy, alignFrac }
+  // Word probe 2026-10-20: a cell paragraph's space-after must fit below its
+  // last line or the paragraph does not end on the page; a continuation that
+  // opens at a new paragraph keeps that paragraph's space-before, except when
+  // the previous paragraph's HTML auto space-after already collapsed it
+  const childAfter = Array.from(
+    cell.children,
+    (ch) => parseFloat(getComputedStyle(ch).marginBottom) || 0,
+  )
+  const childBefore = Array.from(cell.children, (ch, i) =>
+    i > 0 && cell.children[i - 1].classList.contains('sp-auto-a')
+      ? 0
+      : parseFloat(getComputedStyle(ch).marginTop) || 0,
+  )
+  return { ...cellLinesOf(shifted), childBox, childAfter, childBefore, alignDy, alignFrac }
 }
 
 /** Pure core of cellBoxOf: rect entries → clustered lines (same overlap rule as

@@ -535,8 +535,28 @@ describe('picture paragraph layout metadata', () => {
     expect(doc.blocks[0].type).toBe('image')
     expect(doc.blocks[0].imageParagraphSpaceBefore).toBe(200)
     expect(doc.blocks[0].imageParagraphSpaceAfter).toBe(280)
+    // no direct spacing: the docDefaults after-spacing the fixture declares (160) travels
+    // inline, the same value the base CSS rule gave the picture wrapper
     const bare = await parseDocx(await buildDocx({ bodyXml: IMAGE_PARAGRAPH_XML, withImage: true }))
-    expect(bare.blocks[0].imageParagraphSpaceAfter).toBeUndefined()
+    expect(bare.blocks[0].imageParagraphSpaceAfter).toBe(bare.docDefaults?.spaceAfterTwips)
+    expect(bare.blocks[0].imageParagraphSpaceAfter).toBe(160)
+  })
+
+  it('resolves an inline picture paragraph spacing through its style chain', async () => {
+    const extraStylesXml =
+      '<w:style w:type="paragraph" w:styleId="FigBase"><w:name w:val="Fig Base"/>' +
+      '<w:pPr><w:spacing w:before="240" w:after="240"/></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Fig"><w:name w:val="Fig"/>' +
+      '<w:basedOn w:val="FigBase"/><w:pPr><w:spacing w:after="60"/></w:pPr></w:style>'
+    const xml = IMAGE_PARAGRAPH_XML.replace('<w:p>', '<w:p><w:pPr><w:pStyle w:val="Fig"/></w:pPr>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true, extraStylesXml }))
+    expect(doc.blocks[0].imageParagraphSpaceBefore).toBe(240)
+    expect(doc.blocks[0].imageParagraphSpaceAfter).toBe(60)
+    const direct = xml.replace('</w:pPr>', '<w:spacing w:before="0"/></w:pPr>')
+    const d2 = await parseDocx(
+      await buildDocx({ bodyXml: direct, withImage: true, extraStylesXml }),
+    )
+    expect(d2.blocks[0].imageParagraphSpaceBefore).toBe(0)
   })
 
   it('keeps the inline picture effectExtent as extra line room', async () => {

@@ -1,0 +1,84 @@
+{
+  "id": "render-ctx-spacing-cells",
+  "title": "contextualSpacing across table boundaries follows cell-flow order",
+  "section": "word-truths.md#L555",
+  "probe_date": "2026-10-20",
+  "class": "render",
+  "source": "ctx_probe.pdf re-measured 2026-10-22: Letter, Calibri 11, Normal after=200 line=276, ListParagraph + contextualSpacing, 2-col 1-row tables sz=8; Hdr glyph top 72.05, table top/bottom rules C1 97.44/123.84, C2 87.36/114.0, C3 97.44/123.84, C4 87.36/114.0, C5 87.36/103.92, C6 97.44/123.84; Hdr glyph top -> After glyph top: C1 52.8, C2 42.96, C3 52.8, C4 42.96, C5 32.88, C6 52.8",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 6
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 0,
+      "to": 2,
+      "expect": 52.8,
+      "tol": 0.6,
+      "note": "C1 Normal heading keeps its 10pt after above the table; row keeps the after inside"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 3,
+      "to": 5,
+      "expect": 42.96,
+      "tol": 0.6,
+      "note": "C2 LP heading -> LP first cell swallows the heading after"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 6,
+      "to": 8,
+      "expect": 52.8,
+      "tol": 0.6,
+      "note": "C3 different first-cell style keeps it"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 9,
+      "to": 11,
+      "expect": 42.96,
+      "tol": 0.6,
+      "note": "C4 only the first cell counts"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 12,
+      "to": 14,
+      "expect": 32.88,
+      "tol": 0.6,
+      "note": "C5 heading after swallowed and Normal+ctx last cell swallows into the row mark"
+    },
+    {
+      "kind": "textTopDeltaPt",
+      "from": 15,
+      "to": 17,
+      "expect": 52.8,
+      "tol": 0.6,
+      "note": "C6 kept"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 1,
+      "expect": 26.4,
+      "tol": 1.2,
+      "note": "C1 row = line + 10 after + border"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 4,
+      "expect": 26.64,
+      "tol": 1.2,
+      "note": "C2 LP cells keep the after inside the row"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 13,
+      "expect": 16.56,
+      "tol": 1.2,
+      "note": "C5 Normal+ctx last cell -> end-of-row mark swallows: 15.49 + border"
+    }
+  ],
+  "docx": "probe.docx"
+}

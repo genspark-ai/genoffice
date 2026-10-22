@@ -12,13 +12,21 @@ import {
   type SectionSettings,
 } from '@genoffice/docx-engine'
 import {
+  asciiOnlyCjkFace,
+  cjkDeclaredLineFactor,
   cssLineHeight,
   cssRunFontFamily,
+  emptyEaSlotHangulFactor,
   estimateHfHeight,
+  isCjkFontName,
+  lineHeightFactor,
+  runLatinFactorFaces,
   runLetterSpacingCss,
   runsLineFactor,
+  textHasCjk,
 } from '../line-metrics'
 import { borderCssStyle, borderDrawnPx, cellDiagonalCss, isDrawnBorder } from './border-metrics'
+import { effectivePPrStyle, effectiveRPrStyle } from './effective-css'
 import { setDkBackground, setDkBackgroundImage, setDkBorder, setDkColor } from './dark-page'
 import { INLINE_RULE_CLASS, inlineRuleDecls } from './inline-rule'
 import { hfParasOf } from './hf-text'
@@ -65,8 +73,8 @@ export function paraBorderLinesWithPad(
  * (Word pads those too), as longhands so a direct side and a style-level side
  * on different edges layer per side (Word merges pBdr per side). Top/bottom:
  * the line sits w:space pt from the text and the gap is part of the paragraph
- * height; drawn left/right keep the legacy 4px text inset, none left/right
- * only widen the shading box (paraBorderShadowDecls).
+ * height; left/right sides never move the text (Word probe: x stays at the
+ * margin, w:space only widens the border/shading box).
  */
 export function paraBorderPadding(drawn: string, lines?: ParaBorderSideLines): ParaBorderPadding {
   const out: ParaBorderPadding = {}
@@ -76,9 +84,7 @@ export function paraBorderPadding(drawn: string, lines?: ParaBorderSideLines): P
   }
   const padded = (ch: 't' | 'b') => drawn.includes(ch) || lines?.[ch]?.none === true
   if (padded('t')) out.paddingTop = v('t')
-  if (drawn.includes('r')) out.paddingRight = '4px'
   if (padded('b')) out.paddingBottom = v('b')
-  if (drawn.includes('l')) out.paddingLeft = '4px'
   return out
 }
 
@@ -232,13 +238,18 @@ export function hfCellGeometry(cell: HfTableCell): HfCellGeometry {
   }
 }
 
+/** how far a layout-table row hangs into the start margin (negative tblInd), px */
+export function hfIndentOverhangPx(paras: readonly HfParagraph[]): number {
+  return Math.max(0, ...paras.map((p) => -(p.row?.indentTwips ?? 0) / TWIPS_PER_PX))
+}
+
 /** Layout-table row box: left offset of the table edge and the declared w:trHeight */
 export function hfRowStyle(row: HfTableRow | undefined): Record<string, string> {
   const style: Record<string, string> = {}
   if (!row) return style
-  // the strip clips at its edge, so a legacy table hanging into the margin
-  // (tblInd below the cell margin) starts flush with it instead
-  if (row.indentTwips && row.indentTwips > 0) {
+  // a negative indent hangs the table into the margin (the strip widens its
+  // clip box by --hf-ind-over) and the auto-width row grows by the overhang
+  if (row.indentTwips) {
     style[row.bidiVisual ? 'marginRight' : 'marginLeft'] = px(row.indentTwips)
   }
   if (row.bidiVisual) style.flexDirection = 'row-reverse'
@@ -260,12 +271,15 @@ export function hfParaIndentStyle(para: {
   indentFirstLine?: number
   runs?: Array<{ text: string }>
 }): Record<string, string> {
-  const style: Record<string, string> = {}
-  if (para.runs?.some((r) => r.text.includes('\t'))) return style
-  if (para.indentLeft) style.marginInlineStart = px(para.indentLeft)
-  if (para.indentRight) style.marginInlineEnd = px(para.indentRight)
-  if (para.indentFirstLine) style.textIndent = px(para.indentFirstLine)
-  return style
+  if (para.runs?.some((r) => r.text.includes('\t'))) return {}
+  return effectivePPrStyle(
+    {
+      indentLeftTwips: para.indentLeft || null,
+      indentRightTwips: para.indentRight || null,
+      indentFirstLineTwips: para.indentFirstLine || null,
+    },
+    { length: px },
+  )
 }
 
 /** cell paragraph box; a tab-wrapped paragraph spans several line boxes, so
@@ -275,14 +289,12 @@ export function hfCellParaStyle(
   props: HfCellParaProps | undefined,
   line: { first: boolean; last: boolean } = { first: true, last: true },
   runs?: Run[],
+  row?: Pick<HfTableRow, 'additiveSpacing'>,
 ): Record<string, string> {
-  const style: Record<string, string> = {}
-  // runs declaring a face size the line by Word's factor for that face, not
-  // by the browser metrics of whatever substitute renders it
-  if (runs?.some((r) => r.fontAscii)) {
-    style['--doc-line-factor'] = runsLineFactor(runs, runs.map((r) => r.text).join(''))
-    style.lineHeight = 'calc(var(--doc-line-factor, 1.2) * 1)'
-  }
+  const style: Record<string, string> = runs ? hfParaLineFactorStyle(runs) : {}
+  const fs = runs ? hfParaStrutFontSize(runs) : null
+  if (fs) style.fontSize = fs
+  else if (props?.sizeHalfPoints) style.fontSize = `${props.sizeHalfPoints / 2}pt`
   if (!props) return style
   if (props.align) {
     style.textAlign =
@@ -290,10 +302,19 @@ export function hfCellParaStyle(
         ? props.align
         : 'justify'
   }
-  if (props.indentLeft) style.paddingLeft = px(props.indentLeft)
-  if (line.first && props.indentFirstLine) style.textIndent = px(props.indentFirstLine)
-  if (line.first && props.spaceBefore) style.marginTop = px(props.spaceBefore)
-  if (line.last && props.spaceAfter) style.marginBottom = px(props.spaceAfter)
+  Object.assign(
+    style,
+    effectivePPrStyle(
+      {
+        spaceBeforeTwips: props.spaceBefore || null,
+        spaceAfterTwips: props.spaceAfter || null,
+        indentLeftTwips: props.indentLeft || null,
+        indentFirstLineTwips: props.indentFirstLine || null,
+        additiveSpacing: row?.additiveSpacing === true,
+      },
+      { length: px, indentLeftAsPadding: true, line },
+    ),
+  )
   const lh = hfParaLineHeightCss(props)
   if (lh) style.lineHeight = lh
   return style
@@ -308,20 +329,31 @@ function assignStyle(el: HTMLElement, style: Record<string, string>): void {
 }
 
 function applyRunStyle(span: HTMLElement, run: Run): void {
-  if (run.bold) span.style.fontWeight = '600'
-  else if (run.bold === false) span.style.fontWeight = 'normal'
-  if (run.italic) span.style.fontStyle = 'italic'
-  else if (run.italic === false) span.style.fontStyle = 'normal'
+  const cs = run.effective?.cs ? run.effective : undefined
+  const bold = run.bold ?? cs?.bold
+  const italic = run.italic ?? cs?.italic
+  assignStyle(
+    span,
+    effectiveRPrStyle(
+      {
+        sizeHalfPoints: run.sizeHalfPoints ?? cs?.sizeHalfPoints ?? null,
+        fontFamily: run.font || run.fontAscii ? (run.fontAscii ?? run.font ?? null) : null,
+        bold: bold === true,
+      },
+      { boldWeight: '600', fontFamilyCss: () => cssRunFontFamily(run.fontAscii, run.font) },
+    ),
+  )
+  if (bold === false) span.style.fontWeight = 'normal'
+  if (italic) span.style.fontStyle = 'italic'
+  else if (italic === false) span.style.fontStyle = 'normal'
   const deco = [run.underline && 'underline', run.strike && 'line-through'].filter(Boolean)
   if (deco.length > 0) span.style.textDecoration = deco.join(' ')
   if (run.color) {
     span.style.color = `#${run.color}`
     setDkColor(span, run.color) // dark-page twin; the authored color stays the declaration
   }
-  if (run.sizeHalfPoints) span.style.fontSize = `${run.sizeHalfPoints / 2}pt`
   const letterSpacing = runLetterSpacingCss(run)
   if (letterSpacing) span.style.letterSpacing = letterSpacing
-  if (run.font || run.fontAscii) span.style.fontFamily = cssRunFontFamily(run.fontAscii, run.font)
   if (run.caps === 'all') span.style.textTransform = 'uppercase'
   else if (run.caps === 'small') span.style.fontVariantCaps = 'small-caps'
   else if (run.caps === 'none') {
@@ -350,6 +382,10 @@ export interface HfTabLayout {
   shift?: { align: 'center' | 'right'; lineEndPx: number }
   /** runs a cell-edge tab pushed onto the next line (Word 2013+ wrap) */
   rest?: Run[]
+  /** text after the last tab that does not fit before the column edge: Word
+   *  wraps it like body text, so it stays in flow (gapPx = the tab's width)
+   *  and its continuation lines start at the paragraph indent */
+  flow?: { runs: Run[]; gapPx: number }
 }
 
 /** tab layout inside a table cell: stops measure from the cell text edge,
@@ -421,6 +457,7 @@ export function hfTabSegments(
   para: Pick<HfParagraph, 'runs' | 'tabStops' | 'ptabAligns' | 'align'>,
   display: (text: string) => string = (t) => t,
   cell?: HfCellTabOpts,
+  columnPx?: number,
 ): HfTabLayout | null {
   if (!para.runs.some((r) => r.text.includes('\t'))) return null
   const chunks: Run[][] = [[]]
@@ -441,6 +478,7 @@ export function hfTabSegments(
   const segments: HfTabSegment[] = []
   let usedPct = false
   let rest: Run[] | undefined
+  let flow: HfTabLayout['flow']
   let x = (cell?.startPx ?? 0) + hfRunsWidthPx(chunks[0], display)
   for (let k = 1; k < chunks.length; k++) {
     const runs = chunks[k].filter((r) => r.text !== '' || r.image)
@@ -491,6 +529,20 @@ export function hfTabSegments(
       x,
       val === 'center' ? target - segW / 2 : val === 'left' ? target : target - segW,
     )
+    // the tail of a strip paragraph overflowing the column (an explicit stop may
+    // sit in the margin and carry its text that far) wraps like body text
+    if (
+      !cell &&
+      columnPx != null &&
+      k === chunks.length - 1 &&
+      segments.length === 0 &&
+      !usedPct &&
+      runs.length > 0 &&
+      placed + segW > Math.max(columnPx, stop?.x ?? 0) + 0.5
+    ) {
+      flow = { runs, gapPx: Math.max(0, placed - x) }
+      break
+    }
     // only an explicit stop may carry text past the column (a default-grid tab wraps in Word)
     if (runs.length > 0) {
       segments.push({
@@ -505,15 +557,17 @@ export function hfTabSegments(
   // absolutely positioned segments add no flow height: an oversized run after a
   // tab (or an empty lead) would collapse to the strip's min-height and clip
   const maxHalfPoints = Math.max(0, ...para.runs.map((r) => r.sizeHalfPoints ?? 0))
+  const faceFactor = hfRunsFaceFactor(para.runs) ?? 1.3
   const align = para.align
   return {
     lead: chunks[0].filter((r) => r.text !== '' || r.image),
     segments,
-    ...(maxHalfPoints > 0 ? { minHeightPt: (maxHalfPoints / 2) * 1.3 } : {}),
-    ...(!usedPct && !cell && (align === 'center' || align === 'right')
+    ...(maxHalfPoints > 0 ? { minHeightPt: (maxHalfPoints / 2) * faceFactor } : {}),
+    ...(!usedPct && !cell && !flow && (align === 'center' || align === 'right')
       ? { shift: { align, lineEndPx: x } }
       : {}),
     ...(rest?.length ? { rest } : {}),
+    ...(flow ? { flow } : {}),
   }
 }
 
@@ -523,9 +577,12 @@ export function hfTabSegments(
 export function hfTabLines(
   para: Pick<HfParagraph, 'runs' | 'tabStops' | 'ptabAligns' | 'align'>,
   display: (text: string) => string = (t) => t,
+  columnPx?: number,
 ): HfTabLayout[] | null {
   if (!para.runs.some((r) => r.text.includes('\t'))) return null
-  if (!para.runs.some((r) => r.text.includes('\n'))) return [hfTabSegments(para, display)!]
+  if (!para.runs.some((r) => r.text.includes('\n'))) {
+    return [hfTabSegments(para, display, undefined, columnPx)!]
+  }
   const lines: Run[][] = [[]]
   for (const run of para.runs) {
     const pieces = run.text.split('\n')
@@ -537,7 +594,7 @@ export function hfTabLines(
     const line = { ...para, runs, ptabAligns: para.ptabAligns?.slice(tabsBefore) }
     tabsBefore += runs.reduce((n, r) => n + r.text.split('\t').length - 1, 0)
     return (
-      hfTabSegments(line, display) ?? {
+      hfTabSegments(line, display, undefined, columnPx) ?? {
         lead: runs.filter((r) => r.text !== '' || r.image),
         segments: [],
       }
@@ -558,6 +615,11 @@ export function hfTabSegImageHeightPx(layout: HfTabLayout): number {
 
 export function hfSegHasImage(seg: HfTabSegment): boolean {
   return seg.runs.some((r) => !!r.image && !r.image.rule)
+}
+
+/** text-column width (px) strip tabs lay out against */
+export function hfStripColumnPx(geom: HfStripGeom | undefined): number | undefined {
+  return geom ? geom.pageW - geom.marginLeft - geom.marginRight : undefined
 }
 
 /** How far (px) tab segments run past the text column: Word keeps a stop set
@@ -642,12 +704,56 @@ export function hfLeadIndentCss(layout: HfTabLayout): string | null {
     : `max(0px, calc(50% - ${(s.lineEndPx / 2).toFixed(1)}px))`
 }
 
-/**
- * Largest declared run size (pt) when every text-bearing run of the strip
- * declares one, else null (some run inherits the strip base). Whitespace-only
- * runs don't size lines in Word and only count when nothing else does (an
- * empty paragraph is sized by its mark).
- */
+/** Runs declaring a face size the line by Word's factor for that face (an 8pt
+ *  Times New Roman letterhead line is 9.2pt), not by the body font's factor
+ *  the strip inherits from .doc-page (Cambria 1.172: 9.4, +0.5pt per line
+ *  through the strut/run baseline mismatch) nor by browser metrics of the
+ *  substitute. The Normal / docDefaults auto multiple still applies (an
+ *  unstyled footer line under docDefaults line=276 is size x face x 1.15);
+ *  it cascades as --doc-line-mult, and a direct or style w:spacing multiple
+ *  overrides the whole line-height afterwards. */
+export function hfParaLineFactorStyle(runs: Run[]): Record<string, string> {
+  if (!runs.some((r) => r.fontAscii)) return {}
+  return {
+    '--doc-line-factor': runsLineFactor(runs, runs.map((r) => r.text).join('')),
+    lineHeight: HF_FACE_LINE_HEIGHT,
+  }
+}
+
+export const HF_FACE_LINE_HEIGHT = 'calc(var(--doc-line-factor, 1.2) * var(--doc-line-mult, 1))'
+
+/** Largest face factor among the paragraph's text runs when every one declares
+ *  a face, else null */
+export function hfRunsFaceFactor(runs: Run[]): number | null {
+  let max = 0
+  for (const run of runs) {
+    if (!(run.text ?? '').trim()) continue
+    let eaKnown = false
+    if (textHasCjk(run.text)) {
+      // CJK ink is sized by the East Asian face, as runsLineFactor picks it
+      const family =
+        run.eaSlotEmpty === true || asciiOnlyCjkFace(run) ? null : (run.font ?? run.fontAscii)
+      const emptySlotKr =
+        run.eaSlotEmpty === true ? emptyEaSlotHangulFactor(run.font, run.text) : null
+      if (emptySlotKr !== null) max = Math.max(max, emptySlotKr)
+      else if (family && isCjkFontName(family)) {
+        max = Math.max(max, cjkDeclaredLineFactor(family) ?? lineHeightFactor(family))
+      } else return null
+      if (!/[A-Za-z]/.test(run.text)) continue
+      eaKnown = true
+    }
+    for (const face of runLatinFactorFaces(run.text, run.fontAscii, run.csFont)) {
+      // a mixed-script run with no Latin face is still sized by its East Asian face
+      if (!face) {
+        if (eaKnown) continue
+        return null
+      }
+      max = Math.max(max, lineHeightFactor(face))
+    }
+  }
+  return max > 0 ? max : null
+}
+
 /** strip paragraph line-height from its (style-resolved) w:spacing; strips sit
  *  outside the body grid, so multiples stay plain unitless factors */
 export function hfParaLineHeightCss(para: {
@@ -664,30 +770,34 @@ export function hfParaLineHeightCss(para: {
   return m ? `calc(var(--doc-line-factor,1.2) * ${m})` : null
 }
 
-export function hfDeclaredStrutPt(paras: HfParagraph[]): number | null {
+/** Largest declared run size (pt) of one paragraph's runs when every text run
+ *  declares one, else null (a run inherits the strip base). Whitespace-only runs
+ *  only count when nothing else does (an empty paragraph is sized by its mark). */
+export function hfRunsStrutPt(runs: Run[]): number | null {
   let text: number | null = null
   let blank: number | null = null
-  const scan = (runs: Run[]): boolean => {
-    for (const run of runs) {
-      if (!run.text && run.image) continue
-      const sz = run.sizeHalfPoints
-      if (!(run.text ?? '').trim()) {
-        if (sz) blank = Math.max(blank ?? 0, sz)
-        continue
-      }
-      if (!sz) return false
-      text = Math.max(text ?? 0, sz)
+  for (const run of runs) {
+    if (!run.text && run.image) continue
+    const sz = run.sizeHalfPoints
+    if (!(run.text ?? '').trim()) {
+      if (sz) blank = Math.max(blank ?? 0, sz)
+      continue
     }
-    return true
-  }
-  for (const p of paras) {
-    if (p.boxAnchored) continue
-    if (p.cells) {
-      for (const c of p.cells) for (const runs of c.paras) if (!scan(runs)) return null
-    } else if (!scan(p.runs)) return null
+    if (!sz) return null
+    text = Math.max(text ?? 0, sz)
   }
   const half = text ?? blank
   return half ? half / 2 : null
+}
+
+/** Word sizes each strip line by its own runs: the paragraph font (the em
+ *  behind its strut / empty-line line-height) follows the paragraph's declared
+ *  run size, shrink-only against the strip base (growth would over-reserve the
+ *  push-down probe). One strip-wide max used to give every 8pt line of a
+ *  letterhead the 11pt title's strut (prod corpus 017/020: +18pt body shift). */
+export function hfParaStrutFontSize(runs: Run[]): string | null {
+  const pt = hfRunsStrutPt(runs)
+  return pt == null ? null : `min(${pt}pt, var(--hf-default-fs, 10.5pt))`
 }
 
 /** parsed parts carry PAGE fields as PAGE_MARK; only mark-free values fall back to the user-typed '#' (mirrors HeaderFooterArea) */
@@ -894,6 +1004,7 @@ export function hfReservedHeightPx(
       images: inline,
       pageNo: 88,
       pageTotal: 88,
+      columnPx: contentWidthPx,
     })
     el.style.position = 'static'
     el.style.left = 'auto'
@@ -1109,6 +1220,13 @@ function hfRunNodes(
     applyRunStyle(span, run)
     host.append(span)
   }
+}
+
+function hfTabGapNode(widthPx: number): HTMLElement {
+  const gap = document.createElement('span')
+  gap.className = 'page-hf-tab-gap'
+  gap.style.width = `${widthPx.toFixed(1)}px`
+  return gap
 }
 
 function hfTabStrutNode(heightPx: number): HTMLElement {
@@ -1341,8 +1459,11 @@ export function makeGapHfEl(opts: {
   pageTotal: number
   /** page geometry: floating textboxes render at their anchor position (absent: stacked) */
   geom?: HfStripGeom
+  /** text-column width tab tails wrap at when no geom is given (the height probe) */
+  columnPx?: number
 }): HTMLElement {
   const { kind, value, images, pageNo, pageTotal, geom } = opts
+  const columnPx = opts.columnPx ?? hfStripColumnPx(geom)
   const legacyHash = hfUsesLegacyHash(value)
   const display = (text: string) => {
     const substituted = text
@@ -1353,14 +1474,6 @@ export function makeGapHfEl(opts: {
   const wrap = document.createElement('div')
   wrap.className = `page-hf page-hf-${kind} page-gap-hf`
   wrap.contentEditable = 'false'
-  // Word sizes strip lines by their runs — the strip base is only the fallback
-  // for runs without w:sz. When every text run declares a size, the strip font
-  // (the em behind every strut/empty-line line-height) takes it, shrink-only
-  // (growth would over-reserve push-down, prod_008/091). SAS prod_043: an
-  // all-8pt header measured at the 10.5pt strut pushed the body top ~1px and
-  // cost every two-column page its 42nd grid row (+1 page).
-  const strutPt = hfDeclaredStrutPt(hfParasOf(value, images))
-  if (strutPt != null) wrap.style.fontSize = `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))`
   const stacked = (images ?? []).filter((img) => !img.floating)
   if (stacked.length > 0) {
     const imgWrap = document.createElement('div')
@@ -1400,8 +1513,11 @@ export function makeGapHfEl(opts: {
     const p = document.createElement('div')
     paraEls[index] = p
     p.className = 'page-hf-para'
+    if (!para.cells) assignStyle(p, hfParaLineFactorStyle(para.runs))
     const lh = hfParaLineHeightCss(para)
     if (lh) p.style.lineHeight = lh
+    const fs = para.cells ? null : hfParaStrutFontSize(para.runs)
+    if (fs) p.style.fontSize = fs
     // floating-box content: displayed in the strip, but the push-down probe
     // excludes it (Word draws it at the anchor, off the strip flow)
     if (para.boxAnchored) p.classList.add('page-hf-box-anchored')
@@ -1437,7 +1553,7 @@ export function makeGapHfEl(opts: {
           if (!tabLines) {
             const paraEl = document.createElement('div')
             paraEl.className = 'page-hf-cell-para'
-            assignStyle(paraEl, hfCellParaStyle(props, undefined, runs))
+            assignStyle(paraEl, hfCellParaStyle(props, undefined, runs, para.row))
             if (runs.length === 0) paraEl.textContent = ' '
             spansOf(runs, paraEl)
             cellEl.append(paraEl)
@@ -1447,7 +1563,7 @@ export function makeGapHfEl(opts: {
             const paraEl = document.createElement('div')
             paraEl.className = 'page-hf-cell-para page-hf-tabbed'
             const pos = { first: m === 0, last: m === tabLines.length - 1 }
-            assignStyle(paraEl, hfCellParaStyle(props, pos, runs))
+            assignStyle(paraEl, hfCellParaStyle(props, pos, runs, para.row))
             paraEl.style.textAlign = 'left'
             if (line.minHeightPt) paraEl.style.minHeight = `${line.minHeightPt}pt`
             spansOf(line.lead, paraEl)
@@ -1493,7 +1609,7 @@ export function makeGapHfEl(opts: {
         setDkBorder(p, side as 't' | 'b' | 'l' | 'r', css)
       }
     }
-    const tabLines = hfTabLines(para, display)
+    const tabLines = hfTabLines(para, display, columnPx)
     if (tabLines) {
       tabOver = Math.max(tabOver, hfTabOverflowPx(tabLines, geom))
       // a w:br paragraph stacks one positioned line per break inside the
@@ -1503,14 +1619,20 @@ export function makeGapHfEl(opts: {
         const line = single ? p : document.createElement('div')
         line.classList.add('page-hf-tabbed')
         if (tabbed.minHeightPt) line.style.minHeight = `${tabbed.minHeightPt}pt`
-        // tab layout happens in left-aligned space; w:jc becomes an explicit shift
-        line.style.textAlign = 'left'
+        // tab layout happens in left-aligned space; w:jc becomes an explicit
+        // shift (a wrapping tail keeps the paragraph's own jc per line)
+        if (tabbed.flow) line.classList.add('page-hf-tabbed-flow')
+        else line.style.textAlign = 'left'
         const leadIndent = hfLeadIndentCss(tabbed)
         if (leadIndent) line.style.textIndent = leadIndent
         if (hfTabLeadNeedsStrut(tabbed)) line.append('\u200b')
         const segImgH = hfTabSegImageHeightPx(tabbed)
         if (segImgH > 0) line.append(hfTabStrutNode(segImgH))
         hfRunNodes(tabbed.lead, line, display, 'page-hf-run-img')
+        if (tabbed.flow) {
+          if (tabbed.flow.gapPx > 0) line.append(hfTabGapNode(tabbed.flow.gapPx))
+          hfRunNodes(tabbed.flow.runs, line, display, 'page-hf-run-img')
+        }
         for (const seg of tabbed.segments) {
           const segEl = document.createElement('span')
           segEl.className = `page-hf-tabseg page-hf-tabseg-${seg.anchor}`
@@ -1532,6 +1654,8 @@ export function makeGapHfEl(opts: {
     host.append(p)
   }
   if (tabOver > 0) wrap.style.setProperty('--hf-tab-over', `${tabOver.toFixed(1)}px`)
+  const indOver = hfIndentOverhangPx(paras)
+  if (indOver > 0) wrap.style.setProperty('--hf-ind-over', `${indOver.toFixed(1)}px`)
   for (const img of (images ?? []).filter(hfImageHangsOnPara)) {
     const anchor = paraEls[img.anchorPara!]
     if (!anchor) continue

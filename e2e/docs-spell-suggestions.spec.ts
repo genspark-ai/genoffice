@@ -6,37 +6,32 @@
  */
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { PNG } from 'pngjs'
 import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 
 const POLL = { timeout: 15_000, intervals: [250, 500, 1000] }
 
 /**
- * Squiggles are native markers invisible to the DOM: count red-dominant
- * pixels under one word (its viewport rect, extended a few px below the
- * baseline where the marker is drawn). macOS paints a faint dotted line, so
- * the threshold is looser than a pure red check.
+ * Squiggles are native markers invisible to the DOM, and under CI's xvfb
+ * Chromium does not repaint them, so red pixels are no witness. The
+ * context menu is: Chromium hands the menu the misspelling under the pointer
+ * only when a marker is there, and the Docs menu then lists suggestions or
+ * Add to Dictionary. Right-click the word, read the menu, dismiss it with a
+ * click in the page's top-left margin (the menu opens below and to the right
+ * of the pointer): after Add to Dictionary the respell kick shields
+ * keystrokes for a moment, so an Escape could be swallowed.
  */
-async function redUnder(page: Page, rect: { x: number; y: number; w: number; h: number }) {
-  const doc = page.locator('.doc-page')
-  const box = (await doc.boundingBox())!
-  const png = PNG.sync.read(await doc.screenshot())
-  const scale = png.width / box.width
-  const x0 = Math.max(0, Math.round((rect.x - box.x) * scale))
-  const x1 = Math.min(png.width, Math.round((rect.x + rect.w - box.x) * scale))
-  const y0 = Math.max(0, Math.round((rect.y - box.y) * scale))
-  const y1 = Math.min(png.height, Math.round((rect.y + rect.h + 6 - box.y) * scale))
-  let n = 0
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const i = (y * png.width + x) * 4
-      const r = png.data[i]!,
-        g = png.data[i + 1]!,
-        b = png.data[i + 2]!
-      if (r > 150 && r - g > 60 && r - b > 60) n++
-    }
-  }
-  return n
+async function markedViaMenu(page: Page, at: { x: number; y: number }): Promise<boolean> {
+  await page.mouse.click(at.x, at.y, { button: 'right' })
+  const menu = page.locator('.ctx-menu')
+  await menu.waitFor()
+  await page.waitForTimeout(400)
+  const marked =
+    (await menu.locator('.ctx-item-strong').count()) > 0 ||
+    (await menu.locator('.ctx-item', { hasText: 'Add to Dictionary' }).count()) > 0
+  const pageBox = (await page.locator('.doc-page').boundingBox())!
+  await page.mouse.click(pageBox.x + 10, pageBox.y + 10)
+  await expect(menu).toHaveCount(0)
+  return marked
 }
 
 const pageText = (page: Page) =>
@@ -155,8 +150,6 @@ test('context menu offers spelling suggestions and applies one', async () => {
     const blank = { x: other.x, y: other.y + 200 }
     await editor.mouse.click(blank.x, blank.y)
     await editor.waitForTimeout(500)
-    const marked = await redUnder(editor, otherRect!)
-    expect(marked).toBeGreaterThan(0)
     const addToDict = editor.locator('.ctx-menu .ctx-item', { hasText: 'Add to Dictionary' })
     // Chromium reports the misspelling only once its marker is in place: retry the right-click
     for (let attempt = 0; attempt < 6 && !(await addToDict.count()); attempt++) {
@@ -171,13 +164,19 @@ test('context menu offers spelling suggestions and applies one', async () => {
     await addToDict.click()
     await editor.mouse.click(blank.x, blank.y)
     await expect
-      .poll(() => redUnder(editor, otherRect!), {
+      .poll(() => markedViaMenu(editor, other), {
         ...POLL,
-        message: 'squiggle gone after Add to Dictionary',
+        message: 'marker gone after Add to Dictionary',
       })
-      .toBe(0)
-    // the other misspelling keeps its marker: the dictionary changed, not the checker
-    expect(await redUnder(editor, targetRect!)).toBeGreaterThan(0)
+      .toBe(false)
+    // the other misspelling keeps its marker: the dictionary changed, not the
+    // checker (which re-walks the paragraph after the dictionary change)
+    await expect
+      .poll(() => markedViaMenu(editor, target), {
+        ...POLL,
+        message: 'marker kept on jumsp',
+      })
+      .toBe(true)
 
     // "jumsp" was typed too and never re-rendered, so its marker is still there
     await editor.mouse.click(target.x, target.y, { button: 'right' })
@@ -190,11 +189,11 @@ test('context menu offers spelling suggestions and applies one', async () => {
     // re-checks the edited paragraph on idle, so the marker can be briefly gone
     await editor.mouse.click(blank.x, blank.y)
     await expect
-      .poll(async () => redUnder(editor, (await wordRect(editor, 'lazyy'))!), {
+      .poll(async () => markedViaMenu(editor, center((await wordRect(editor, 'lazyy'))!)), {
         ...POLL,
-        message: 'squiggle back on lazyy after the replacement',
+        message: 'marker back on lazyy after the replacement',
       })
-      .toBeGreaterThan(0)
+      .toBe(true)
 
     await editor.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
     await expect.poll(() => pageText(editor), POLL).toContain('jumsp')

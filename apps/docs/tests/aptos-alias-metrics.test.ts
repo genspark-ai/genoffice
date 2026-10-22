@@ -72,16 +72,27 @@ describe('Aptos GO reproduces Word Aptos advances', () => {
   const regular = facesOf('Aptos GO', 'normal')
   const bold = facesOf('Aptos GO', 'bold')
 
-  it('declares general, digit and space faces for both weights', () => {
+  it('declares one general face plus range-limited advance buckets covering letters, digits and the space', () => {
     for (const faces of [regular, bold]) {
-      expect(faces.map((f) => f.ranges?.[0]?.[0] ?? null)).toEqual([
-        null,
-        0x30,
-        0x20,
-        0x5f,
-        0x21,
-        0x7c,
-      ])
+      expect(faces.filter((f) => !f.ranges)).toHaveLength(1)
+      const covered = (cp: number) =>
+        faces.some((f) => f.ranges?.some(([a, b]) => cp >= a && cp <= b))
+      expect(covered(0x20)).toBe(true)
+      expect(covered(0x30)).toBe(true)
+      expect(covered(0x43)).toBe(true) // C, +22% over Carlito
+      expect(covered(0x74)).toBe(true) // t, -10%
+    }
+  })
+
+  it('no-break space shares the space bucket in every Aptos face', () => {
+    for (const family of ['Aptos GO', 'Aptos Display GO', 'Aptos Narrow GO']) {
+      for (const weight of ['normal', 'bold'] as const) {
+        const faces = facesOf(family, weight)
+        const pick = (cp: number) =>
+          [...faces].reverse().find((f) => f.ranges?.some(([a, b]) => cp >= a && cp <= b))
+        expect(pick(0xa0)).toBeDefined()
+        expect(pick(0xa0)).toBe(pick(0x20))
+      }
     }
   })
 
@@ -94,6 +105,19 @@ describe('Aptos GO reproduces Word Aptos advances', () => {
     expect(Math.abs(widthEm(BODY, regular) / 58.2748 - 1)).toBeLessThan(0.015)
   })
 
+  // Word for Mac probe 2026-10-20 (DFonts Aptos 2024, 12pt, em = pt / 12, run
+  // not kerned); the aliases fold in the mean pair-kerning of a kerned run
+  // (-0.4%, the 2024 Normal template kerns everything), so unkerned truths sit
+  // ~0.4% above the alias
+  it('capitals and a body sentence within 0.7% of Word, both weights', () => {
+    const caps = 'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG'
+    const body = 'Third, it supports competitive pricing strategies for sustained market share.'
+    expect(Math.abs(widthEm(caps, regular) / 23.089 - 1)).toBeLessThan(0.007)
+    expect(Math.abs(widthEm(caps, bold) / 23.899 - 1)).toBeLessThan(0.007)
+    expect(Math.abs(widthEm(body, regular) / 32.237 - 1)).toBeLessThan(0.007)
+    expect(Math.abs(widthEm(body, bold) / 34.193 - 1)).toBeLessThan(0.007)
+  })
+
   it('unscaled Carlito would miss by more than 3%', () => {
     const plain = [{ adjust: 1, ranges: null, file: 'Regular' }]
     expect(widthEm(BODY, plain) / 58.2748).toBeLessThan(0.97)
@@ -101,10 +125,27 @@ describe('Aptos GO reproduces Word Aptos advances', () => {
 })
 
 describe('Aptos Display GO reproduces Word Aptos Display advances', () => {
+  const regular = facesOf('Aptos Display GO', 'normal')
   it('pangram within 2% of Word (22.9488em)', () => {
+    expect(Math.abs(widthEm(PANGRAM, regular) / 22.9488 - 1)).toBeLessThan(0.02)
+  })
+  it('capitals within 0.7% of Word (22.253em, probe 2026-10-20, unkerned)', () => {
     expect(
-      Math.abs(widthEm(PANGRAM, facesOf('Aptos Display GO', 'normal')) / 22.9488 - 1),
-    ).toBeLessThan(0.02)
+      Math.abs(widthEm('THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG', regular) / 22.253 - 1),
+    ).toBeLessThan(0.007)
+  })
+})
+
+// Word DFonts Aptos Narrow: letters ~Carlito but the space 0.2033em, so plain
+// Carlito ran the pangram 5% wide (probe 2026-10-20: 17.271em at 12pt)
+describe('Aptos Narrow GO reproduces Word Aptos Narrow advances', () => {
+  it('pangram within 0.7% of Word (unkerned), unscaled Carlito 5% over', () => {
+    const pangram = 'The quick brown fox jumps over the lazy dog'
+    const faces = facesOf('Aptos Narrow GO', 'normal')
+    expect(Math.abs(widthEm(pangram, faces) / 17.271 - 1)).toBeLessThan(0.007)
+    expect(
+      widthEm(pangram, [{ adjust: 1, ranges: null, file: 'Regular' }]) / 17.271,
+    ).toBeGreaterThan(1.04)
   })
 })
 

@@ -85,8 +85,8 @@ describe('appMenuLabels', () => {
 
   it('merges the context-menu clipboard labels', () => {
     const zh = appMenuLabels('zh')
-    expect(zh.copy).toBe('复制')
-    expect(zh.selectAll).toBe('全选')
+    expect(zh.copy).toBe('\u590d\u5236')
+    expect(zh.selectAll).toBe('\u5168\u9009')
   })
 })
 
@@ -111,8 +111,8 @@ describe('windowMenuTemplate', () => {
 
   it('localizes the Windows submenu', () => {
     const items = submenuOf(windowMenuTemplate('win32', appMenuLabels('zh')))
-    expect(items[0]!.label).toBe('最小化')
-    expect(items[2]!.label).toBe('关闭窗口')
+    expect(items[0]!.label).toBe('\u6700\u5c0f\u5316')
+    expect(items[2]!.label).toBe('\u5173\u95ed\u7a97\u53e3')
   })
 })
 
@@ -282,7 +282,7 @@ describe('settingsMenuItem', () => {
   })
 
   it('is localized', () => {
-    expect((settingsMenuItem(appMenuLabels('zh')) as Item).label).toBe('设置…')
+    expect((settingsMenuItem(appMenuLabels('zh')) as Item).label).toBe('\u8bbe\u7f6e…')
   })
 })
 

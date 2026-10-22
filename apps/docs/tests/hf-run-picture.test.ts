@@ -26,7 +26,12 @@ const geom: HfStripGeom = {
   footerDist: 47,
 }
 
-const picture = { dataUrl: 'data:image/png;base64,AA==', widthPx: 154, heightPx: 58, xml: '' }
+const picture = {
+  dataUrl: 'data:image/png;base64,AA==',
+  widthPx: 154,
+  heightPx: 58,
+  xml: '<w:drawing>orig</w:drawing>',
+}
 const para: HfParagraph = {
   tabStops: [{ val: 'left', pos: 7074 }],
   runs: [{ text: 'Brand | Template' }, { text: '\t' }, { text: '', image: picture }],
@@ -77,18 +82,21 @@ describe('pictures survive header text edits', () => {
     ])
   })
 
-  it('hfDocJson leaves pictures out of the editor and hfValueFromDoc restores them', () => {
+  it('hfDocJson shows pictures as inline atoms and hfValueFromDoc keeps their drawing', () => {
     const base = {
       text: 'Title',
       paras: [{ runs: [{ text: '', image: picture }, { text: 'Title' }] }],
     }
     const doc = hfDocJson(base)
-    expect(JSON.stringify(doc)).not.toContain('image')
+    const inline = doc.content![0].content!
+    expect(inline.map((n) => n.type)).toEqual(['docInlineImage', 'text'])
     const back = hfValueFromDoc(doc, base)
     expect(back.paras![0].runs.map((r) => [r.text, !!r.image])).toEqual([
       ['', true],
       ['Title', false],
     ])
+    expect(back.paras![0].runs[0].image?.xml).toBe(picture.xml)
+    expect(back.newPictures).toBeUndefined()
   })
 
   it('hfWithoutPageMarks keeps a paragraph that is only a picture once the field is gone', () => {

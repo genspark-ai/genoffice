@@ -141,6 +141,7 @@ import {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
   composeSkills,
+  withAttachedSkills,
   type AgentImage,
 } from '@genoffice/agent-core'
 import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
@@ -460,6 +461,7 @@ import {
   recordNoteChange,
   recordProtectedRangesChange,
   recordFilterChange,
+  recordRemoveNumfmt,
   recordSetNumfmt,
   recordSetRangeValues,
   recordSheetHidden,
@@ -1108,6 +1110,13 @@ export function App({
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
+  const [attachedSkills, setAttachedSkills] = useState<readonly string[]>([])
+  const attachedSkillsRef = useRef(attachedSkills)
+  attachedSkillsRef.current = attachedSkills
+  const toggleSkill = (name: string) =>
+    setAttachedSkills((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    )
   /** Attachments consumed by earlier sends this session: sending clears the composer, but the
       files skill must keep reading them mid-run and in follow-up turns. Deduped by path. */
   const sentAttachmentsRef = useRef<readonly AttachmentMeta[]>([])
@@ -1609,7 +1618,29 @@ export function App({
     return images
   }
 
-  function runAgent(instruction: string, sentAttachments: readonly AttachmentMeta[]): void {
+  /** the attached skills' full text in front of the request; a skill that vanished is skipped */
+  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+    if (names.length === 0) return instruction
+    const bodies = await Promise.all(
+      names.map(async (name) => {
+        try {
+          return { name, body: await window.desktopApi.skillText(name) }
+        } catch {
+          return null
+        }
+      }),
+    )
+    return withAttachedSkills(
+      instruction,
+      bodies.filter((b): b is { name: string; body: string } => b !== null),
+    )
+  }
+
+  function runAgent(
+    instruction: string,
+    sentAttachments: readonly AttachmentMeta[],
+    sentSkills: readonly string[] = [],
+  ): void {
     const loop = agentLoopRef.current
     if (!instruction.trim() || !loop || loop.busy || runStartingRef.current) return
     runStartingRef.current = true
@@ -1624,13 +1655,18 @@ export function App({
     setMessage(t('appAiThinking'))
     appendChat({ role: 'assistant', text: '', tools: [], streaming: true })
     void collectImageAttachments(sentAttachments)
-      .then((images) => {
+      .then(async (images) => {
+        const modelInstruction = await withSkillBodies(instruction, sentSkills)
         runStartingRef.current = false
-        loop.run(instruction, images)
+        loop.run(modelInstruction, images)
       })
-      .catch(() => {
+      .catch(async () => {
+        // an unreadable image must not strand the run, nor drop the skills the user attached
+        const modelInstruction = await withSkillBodies(instruction, sentSkills).catch(
+          () => instruction,
+        )
         runStartingRef.current = false
-        loop.run(instruction)
+        loop.run(modelInstruction)
       })
   }
 
@@ -1688,6 +1724,7 @@ export function App({
     // file context (availableAttachments merges sent + live) — same as docs
     // (#224) and slides. The typed draft itself is kept.
     setAttachments([])
+    setAttachedSkills([])
     setAttachNotice(null)
     sentAttachmentsRef.current = []
     setPreview(null)
@@ -2300,6 +2337,7 @@ export function App({
         if (
           event.id !== SET_RANGE_VALUES_MUTATION &&
           event.id !== SET_NUMFMT_MUTATION &&
+          event.id !== REMOVE_NUMFMT_MUTATION &&
           !rowColumn &&
           !merge &&
           !axisAttr &&
@@ -2815,12 +2853,14 @@ export function App({
         const recorded =
           event.id === SET_NUMFMT_MUTATION
             ? recordSetNumfmt(state.editJournal, params.subUnitId, params)
-            : recordSetRangeValues(
-                state.editJournal,
-                params.subUnitId,
-                params.cellValue,
-                sharedFormulaResolverFor(runtime, params.subUnitId),
-              )
+            : event.id === REMOVE_NUMFMT_MUTATION
+              ? recordRemoveNumfmt(state.editJournal, params.subUnitId, params)
+              : recordSetRangeValues(
+                  state.editJournal,
+                  params.subUnitId,
+                  params.cellValue,
+                  sharedFormulaResolverFor(runtime, params.subUnitId),
+                )
         if (recorded.length === 0) return
         setPendingEdits(journalSize(state.editJournal))
         const contentEdited = recorded.some(
@@ -3477,6 +3517,9 @@ export function App({
     // bubble, images multimodal, files via the files skill) and the composer clears.
     // Retry passes the failed message's original set instead.
     const sentAtts = overrideAttachments ?? attachmentsRef.current
+    // skills ride with this one message only: the chips clear like attachments do
+    const sentSkills = overrideInstruction ? [] : attachedSkillsRef.current
+    if (sentSkills.length > 0) setAttachedSkills([])
     const agentConfigured = isAgentConfigured()
     // Retry re-sends in place: drop the failed bubble and its error reply instead
     // of stacking a "Not sent" duplicate above the resent copy.
@@ -3502,6 +3545,7 @@ export function App({
       tools: [],
       persisted,
       ...(sentAtts.length > 0 ? { attachments: sentAtts } : {}),
+      ...(sentSkills.length > 0 ? { skills: sentSkills } : {}),
       ...(scope ? { scope } : {}),
     })
     if (!overrideInstruction) setPrompt('')
@@ -3518,7 +3562,7 @@ export function App({
     // otherwise fall back to the local, deterministic regex planner
     // (kept for offline use and for the fixed micro-DSL it still supports).
     if (agentConfigured) {
-      runAgent(instruction, sentAtts)
+      runAgent(instruction, sentAtts, sentSkills)
       return
     }
     const outcome = runDeterministicPlan(instruction)
@@ -4092,6 +4136,29 @@ export function App({
     )
   }
 
+  /// A clicked ribbon button keeps DOM focus, so arrow-key cell navigation
+  /// dies until the user clicks the grid — Excel hands the keyboard straight
+  /// back. Only the button that issued the command is sent back: text fields
+  /// commit on blur (focus is already moving on, e.g. Tab to the next box) and
+  /// the More Colors native input applies live while its picker stays open.
+  /// Two frames let a dialog or panel the command opened claim focus first.
+  function handleRibbonCommandFromRibbon(command: string): void {
+    const source = document.activeElement
+    handleRibbonCommand(command)
+    if (!(source instanceof HTMLElement) || !source.closest('[data-ribbon-body]')) return
+    if (source.matches('input, select, textarea, [contenteditable="true"]')) return
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        // a palette swatch unmounts when the popover closes, dropping focus to body
+        const dropped = !source.isConnected && (active === null || active === document.body)
+        if (active !== source && !dropped) return
+        source.blur()
+        focusSheetGrid()
+      }),
+    )
+  }
+
   function handleRibbonCommand(command: string): void {
     if (command === 'watch-window') {
       setWatchOpen((open) => !open)
@@ -4391,6 +4458,7 @@ export function App({
         engineOverBudget: recalcOverBudgetAtOpen(selected.fileBytes, cellCounts.gridCells),
         formulaCells: new Map(),
         overlay: new Map(),
+        incompleteRuns: new Set(),
         follow: new Map(),
         running: false,
         lastRunAt: 0,
@@ -5180,6 +5248,8 @@ export function App({
         chat={chat}
         historicChat={historicChat}
         attachments={attachments}
+        attachedSkills={attachedSkills}
+        onToggleSkill={toggleSkill}
         attachNotice={attachNotice}
         onPickAttachments={() => void handlePickAttachments()}
         onAddAttachmentPaths={(paths) => void handleAddAttachmentPaths(paths)}
@@ -5202,7 +5272,7 @@ export function App({
         onAiCitation={handleAiCitation}
         canUndo={univerHist.canUndo || (!lazyWorkbookRef.current && adapterRef.current.canUndo)}
         canRedo={univerHist.canRedo}
-        onCommand={handleRibbonCommand}
+        onCommand={handleRibbonCommandFromRibbon}
         onIsCellEditing={isCellEditing}
         zoomPercent={zoomPercent}
         statusBarFuncs={statusBarFuncs}

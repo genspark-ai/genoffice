@@ -30,7 +30,7 @@ function Card({
 }: {
   readonly picture: NotePicture
   readonly sessionId: string
-  readonly onJump: (row: number, column: number) => void
+  readonly onJump: (sheetId: string, row: number, column: number) => void
 }) {
   return (
     <article className="np-card">
@@ -38,7 +38,7 @@ function Card({
         <button
           type="button"
           className="np-cell"
-          onClick={() => onJump(picture.row, picture.column)}
+          onClick={() => onJump(picture.sheetId, picture.row, picture.column)}
           title={picture.sheetName}
         >
           {picture.sheetName}!{formatAddress(picture.row, picture.column)}
@@ -64,9 +64,12 @@ export function NotePicturesPane({
   if (!pane.open) return null
 
   const sessionId = file?.sessionId
-  const jump = (row: number, column: number): void => {
-    const sheet = getRuntime()?.univerAPI.getActiveWorkbook()?.getActiveSheet()
-    if (!sheet) return
+  const jump = (sheetId: string, row: number, column: number): void => {
+    const workbook = getRuntime()?.univerAPI.getActiveWorkbook()
+    const sheet = workbook?.getSheetBySheetId(sheetId)
+    if (!workbook || !sheet) return
+    if (sheet.getSheetId() !== workbook.getActiveSheet()?.getSheetId())
+      workbook.setActiveSheet(sheet)
     sheet.getRange(row, column, 1, 1).activate()
     void revealCellBelowFreeze(sheet, row, column)
   }

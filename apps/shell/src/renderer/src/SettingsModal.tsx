@@ -18,7 +18,6 @@ import {
   MIN_MAX_OUTPUT_TOKENS,
   activeCustomEndpoint,
   clampMaxOutputTokens,
-  providerPickerModels,
   customEndpointLabel,
   newCustomEndpointId,
   removeCustomEndpoint,
@@ -49,6 +48,7 @@ import type {
 } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
+import { FoundSkills } from './FoundSkills'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -168,7 +168,8 @@ function CustomFontSizeInput({
   )
 }
 
-export type SectionId = 'account' | 'aiModel' | 'aiMedia' | 'general' | 'integrations' | 'about'
+export type SectionId =
+  'account' | 'aiModel' | 'aiMedia' | 'general' | 'integrations' | 'skills' | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'account', labelKey: 'setSecAccount' },
@@ -176,6 +177,7 @@ const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'aiMedia', labelKey: 'setSecAiMedia' },
   { id: 'general', labelKey: 'setSecGeneral' },
   { id: 'integrations', labelKey: 'setSecIntegrations' },
+  { id: 'skills', labelKey: 'setSecSkills' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
@@ -223,6 +225,20 @@ function SectionIcon({ id }: { id: SectionId }) {
           strokeWidth="1.3"
           strokeLinecap="round"
         />
+      </svg>
+    )
+  }
+  if (id === 'skills') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M3 3.5h6.5l3.5 3.5v5.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        <path d="M9.5 3.5V7H13" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        <path d="M5 10.5h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     )
   }
@@ -704,7 +720,7 @@ function AiModelPane({ t }: { t: TFunc }) {
             className="set-dd"
             value={config.model || meta.defaultModel}
             ariaLabel={t('setAiModelId')}
-            options={providerPickerModels(provider, meta.models, config.model).map((m) => ({
+            options={meta.models.map((m) => ({
               value: m,
               label: m,
             }))}
@@ -1747,6 +1763,7 @@ export function SettingsModal({
   const [analyticsOn, setAnalyticsOn] = useState(true)
   const [analyticsSaving, setAnalyticsSaving] = useState(false)
   const [autoSaveOn, setAutoSaveOn] = useState(false)
+  const [tabSleepOn, setTabSleepOn] = useState(true)
   const [defaultApp, setDefaultApp] = useState<DefaultAppStatus | null>(null)
   const [defaultAppBusy, setDefaultAppBusy] = useState(false)
   const [defaultAppFailed, setDefaultAppFailed] = useState(false)
@@ -1773,6 +1790,9 @@ export function SettingsModal({
     })
     void window.aiOffice.getAutoSaveDefault?.().then((v) => {
       if (alive) setAutoSaveOn(v.on)
+    })
+    void window.aiOffice.getTabSleepEnabled?.().then((on) => {
+      if (alive) setTabSleepOn(on)
     })
     void window.aiOffice.getDefaultAppStatus?.().then((st) => {
       if (alive) setDefaultApp(st)
@@ -2188,6 +2208,25 @@ export function SettingsModal({
                 <div className="set-field">
                   <div className="set-field-text">
                     <div className="set-field-stack">
+                      <div className="set-field-label">{t('setTabSleep')}</div>
+                      <div className="set-field-desc">{t('setTabSleepDesc')}</div>
+                    </div>
+                  </div>
+                  <button
+                    className="set-switch"
+                    role="switch"
+                    aria-checked={tabSleepOn}
+                    aria-label={t('setTabSleep')}
+                    onClick={() => {
+                      const next = !tabSleepOn
+                      setTabSleepOn(next)
+                      void window.aiOffice.setTabSleepEnabled?.(next).catch(() => {})
+                    }}
+                  />
+                </div>
+                <div className="set-field">
+                  <div className="set-field-text">
+                    <div className="set-field-stack">
                       <div className="set-field-label">{t('setAnalytics')}</div>
                       <div className="set-field-desc">{t('setAnalyticsDesc')}</div>
                     </div>
@@ -2216,6 +2255,7 @@ export function SettingsModal({
             {section === 'integrations' && (
               <IntegrationsPane t={t} onStatus={(st) => onSkillUpdateDue?.(skillUpdateDue(st))} />
             )}
+            {section === 'skills' && <FoundSkills t={t} />}
             {section === 'about' && (
               <>
                 <h3 className="set-pane-title">{t('setSecAbout')}</h3>

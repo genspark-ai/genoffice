@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   MAX_PARA_ROUNDS,
   SettledParagraphCache,
+  measureNatural,
   noteFloatTransaction,
 } from '../src/renderer/editor/settled-measure'
 import type { EditorView } from '@tiptap/pm/view'
@@ -244,5 +245,54 @@ describe('SettledParagraphCache', () => {
     noteFloatTransaction(nodeInsert())
     pass()
     expect(scan).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('measureNatural', () => {
+  it('hides the inline page gaps of the paragraph while measuring and restores them', () => {
+    const el = document.createElement('p')
+    const gap = document.createElement('span')
+    gap.className = 'page-gap page-gap-inline'
+    gap.style.display = 'inline-block'
+    el.append('before', gap, 'after')
+    const seen = measureNatural(el, () => gap.style.display)
+    expect(seen).toBe('none')
+    expect(gap.style.display).toBe('inline-block')
+  })
+
+  it('restores the gaps when the measurement throws', () => {
+    const el = document.createElement('p')
+    const gap = document.createElement('span')
+    gap.className = 'page-gap-inline'
+    el.append(gap)
+    expect(() =>
+      measureNatural(el, () => {
+        throw new Error('x')
+      }),
+    ).toThrow('x')
+    expect(gap.style.display).toBe('')
+  })
+
+  it('keys the cache on the natural box, not the box with the gap in it', () => {
+    const el = document.createElement('p')
+    const gap = document.createElement('span')
+    gap.className = 'page-gap-inline'
+    el.append(gap)
+    sized(el, () => ({
+      width: 100,
+      height: !gap.isConnected || gap.style.display === 'none' ? 20 : 120,
+    }))
+    const view = fakeView(el)
+    const node = {} as ProseMirrorNode
+    const cache = new SettledParagraphCache<number[]>(shiftAll)
+    const fn = vi.fn<() => number[]>().mockReturnValue([1])
+    cache.beginPass(view)
+    cache.measure(view, node, 1, fn)
+    cache.beginPass(view)
+    cache.measure(view, node, 1, fn)
+    cache.beginPass(view)
+    gap.remove()
+    cache.measure(view, node, 1, fn)
+    expect(fn).toHaveBeenCalledTimes(2)
   })
 })

@@ -109,7 +109,7 @@ describe('renderTextboxSpec line rules', () => {
         paras: [{ runs: [{ text: '患者', font: 'ＭＳ Ｐゴシック', sizeHalfPoints: 24 }] }],
       }),
     )
-    expect(style).toContain('--doc-line-factor:1.3029')
+    expect(style).toContain('--doc-line-factor:1.3')
     expect(style).toContain('--doc-strut:12pt')
   })
 })

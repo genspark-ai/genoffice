@@ -29,3 +29,65 @@ describe('a:sysClr resolution', () => {
     ).toBe('#00000080')
   })
 })
+
+describe('repeated color modifiers', () => {
+  it('a repeated alpha keeps the last value (Google Slides gradient stops)', () => {
+    expect(
+      resolveColorNode(
+        {
+          'a:srgbClr': {
+            '@_val': 'FFFFFF',
+            'a:alpha': [{ '@_val': '0' }, { '@_val': '39870' }],
+          },
+        },
+        undefined,
+      ),
+    ).toBe('#FFFFFF66')
+    expect(
+      resolveColorNode(
+        {
+          'a:srgbClr': {
+            '@_val': '000000',
+            'a:alpha': [{ '@_val': '90196' }, { '@_val': '39870' }],
+          },
+        },
+        undefined,
+      ),
+    ).toBe('#00000066')
+  })
+
+  it('repeated multipliers compound and offsets add', () => {
+    expect(
+      resolveColorNode(
+        {
+          'a:srgbClr': {
+            '@_val': '808080',
+            'a:lumMod': [{ '@_val': '50000' }, { '@_val': '50000' }],
+          },
+        },
+        undefined,
+      ),
+    ).toBe(
+      resolveColorNode(
+        { 'a:srgbClr': { '@_val': '808080', 'a:lumMod': { '@_val': '25000' } } },
+        undefined,
+      ),
+    )
+    expect(
+      resolveColorNode(
+        {
+          'a:srgbClr': {
+            '@_val': '808080',
+            'a:lumOff': [{ '@_val': '10000' }, { '@_val': '10000' }],
+          },
+        },
+        undefined,
+      ),
+    ).toBe(
+      resolveColorNode(
+        { 'a:srgbClr': { '@_val': '808080', 'a:lumOff': { '@_val': '20000' } } },
+        undefined,
+      ),
+    )
+  })
+})

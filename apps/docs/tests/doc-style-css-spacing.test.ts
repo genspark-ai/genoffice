@@ -32,6 +32,23 @@ function parsedWith(styleId: string, display: StyleDisplay): ParsedDocFull {
 }
 
 describe('docStyleCss spacing', () => {
+  it('doNotUseHTMLParagraphAutoSpacing: space-before is padding and auto spacing is 0', () => {
+    // Word probe 2026-10-22: after=200 + before=220 lay out 21pt apart (the sum), not 11
+    const parsed = parsedWith('FormalParts', { spaceBeforeTwips: 220, spaceAfterTwips: 120 })
+    const plain = docStyleCss(parsed)
+    expect(plain).toContain('[data-style="FormalParts"] { margin-top:11.0pt;margin-bottom:6.0pt }')
+    const css = docStyleCss({ ...parsed, doNotUseHTMLParagraphAutoSpacing: true })
+    expect(css).toContain('[data-style="FormalParts"] { padding-top:11.0pt;margin-bottom:6.0pt }')
+    expect(css).toMatch(
+      /\.doc-page p, [^{]*\{ margin-top:0;padding-top:0\.0pt;margin-bottom:0\.0pt;/,
+    )
+    const auto = docStyleCss({
+      ...parsedWith('web', { spaceBeforeAuto: true, spaceAfterAuto: true }),
+      doNotUseHTMLParagraphAutoSpacing: true,
+    })
+    expect(auto).toContain('[data-style="web"] { padding-top:0.0pt;margin-bottom:0.0pt }')
+  })
+
   it('resolves style-level autospacing to Word auto 14pt and zeroes it between list items', () => {
     const css = docStyleCss(
       parsedWith('text-start', {
@@ -173,6 +190,103 @@ describe('docStyleCss spacing', () => {
     expect(css).toContain(
       '[data-style="SBul"] + [data-style="SBul"].ctx-sp { margin-top:0 !important }',
     )
+  })
+
+  // Word probe 2026-10-20: contextualSpacing compares with the next paragraph in
+  // cell-flow order - the first cell's first paragraph after a paragraph before
+  // the table, the next cell's first paragraph after a cell's last one, and the
+  // end-of-row mark (default style) after the row's last cell
+  const viaCell = (cell: string, para: string) => [
+    `${cell} > ${para}`,
+    `${cell} > :is(.cell-clip, .cell-vert) > ${para}`,
+  ]
+  const cellFirst = (cell: string, s: string) =>
+    viaCell(cell, `${s}:nth-child(1 of :not(.doc-cell-boxes))`)
+  const cellLast = (cell: string, s: string) =>
+    `:is(${viaCell(cell, `${s}:nth-last-child(1 of :not(.doc-cell-boxes))`).join(', ')})`
+  const beforeTable = (s: string) =>
+    `:has(${cellFirst('table.doc-table > tbody > tr:first-child > :is(td, th):first-child', s)
+      .map((p) => `+ ${p}`)
+      .join(', ')})`
+  const nextCell = (s: string) =>
+    `:is(td, th):has(${cellFirst(':is(td, th)', s)
+      .map((p) => `+ ${p}`)
+      .join(', ')})`
+
+  it('swallows the space-after before a table whose first cell opens with the same style', () => {
+    const lp = '[data-style="ListParagraph"]'
+    const css = docStyleCss(parsedWith('ListParagraph', { contextualSpacing: true }))
+    expect(css).toContain(
+      `.doc-page ${lp}${beforeTable(lp)}:not(.ctx-sp-off) { margin-bottom:0 !important }`,
+    )
+    const direct = docStyleCss(parsedWith('SBul', {}))
+    expect(direct).toContain(
+      `.doc-page [data-style="SBul"].ctx-sp${beforeTable('[data-style="SBul"]')} { margin-bottom:0 !important }`,
+    )
+  })
+
+  it('drops a cell-closing space-after only toward a same-style next cell or the default-style row end', () => {
+    const lp = '[data-style="ListParagraph"]'
+    const css = docStyleCss(parsedWith('ListParagraph', { contextualSpacing: true }))
+    expect(css).toContain(
+      `.doc-page .doc-table ${cellLast(nextCell(lp), `${lp}:not(.ctx-sp-off)`)} { margin-bottom:0 !important }`,
+    )
+    // a non-default style keeps its space-after in the row's last cell
+    expect(css).not.toContain(cellLast(':is(td, th):last-child', `${lp}:not(.ctx-sp-off)`))
+
+    const parsed = parsedWith('X', {})
+    parsed.styles.set('Normal', {
+      ...parsed.styles.get('Normal')!,
+      display: { contextualSpacing: true },
+    } as StyleInfo)
+    const dflt = docStyleCss(parsed)
+    const n = '[data-style="Normal"]'
+    expect(dflt).toContain(
+      `.doc-page .doc-table ${cellLast(':is(td, th):last-child', `${n}:not(.ctx-sp-off)`)} { margin-bottom:0 !important }`,
+    )
+    expect(dflt).toContain(
+      `.doc-page .doc-table ${cellLast(':is(td, th):last-child', ':is(p, .doc-li):not([data-style], .ctx-sp-off)')} { margin-bottom:0 !important }`,
+    )
+    const plain = docStyleCss(parsedWith('X', {}))
+    expect(plain).toContain(
+      `.doc-page .doc-table ${cellLast(':is(td, th):last-child', `${n}.ctx-sp`)} { margin-bottom:0 !important }`,
+    )
+  })
+
+  it('matches exact-height (.cell-clip) and vertical (.cell-vert) cell wrappers in the DOM', () => {
+    const lp = '[data-style="ListParagraph"]'
+    const css = docStyleCss(parsedWith('ListParagraph', { contextualSpacing: true }))
+    const decl = ' { margin-bottom:0 !important }'
+    const selectors = css
+      .split('\n')
+      .filter((l) => l.includes(lp) && l.includes('.doc-table') && l.endsWith(decl))
+      .map((l) => l.slice(0, -decl.length))
+    expect(selectors).toHaveLength(2)
+    const cell = (wrap: string, cls: string, ...ps: string[]) =>
+      `<td>${wrap ? `<div class="${wrap}">` : ''}${ps
+        .map((p) => `<p data-style="ListParagraph" class="${cls}">${p}</p>`)
+        .join('')}${wrap ? '</div>' : ''}</td>`
+    document.body.innerHTML = `<div class="doc-page">
+      <p id="before" data-style="ListParagraph">x</p>
+      <table class="doc-table"><tbody>
+        <tr>${cell('cell-clip', 'a1', 'a', 'a')}${cell('cell-vert', 'b1', 'b')}${cell('', 'c1', 'c')}</tr>
+      </tbody></table></div>`
+    // jsdom lacks `:nth-child(1 of S)`; no .doc-cell-boxes here so plain nth-child is equivalent
+    const q = (sel: string) =>
+      document.querySelectorAll(sel.replaceAll(' of :not(.doc-cell-boxes)', ''))
+    const hits = (sel: string) => [...q(sel)].map((el) => `${el.id}${el.className}`).sort()
+    // a and b are followed by a same-style cell; c closes the row with a non-default style
+    expect(hits(selectors.join(', '))).toEqual(['a1', 'b1', 'before'])
+    document.body.innerHTML = ''
+  })
+})
+
+describe('docStyleCss CJK line factor', () => {
+  it('a style declaring a missing Noto CJK JP East Asian face emits the SimSun factor', () => {
+    const css = docStyleCss(
+      parsedWith('body-ja', { font: 'Noto Sans CJK JP', fontAscii: 'Calibri' } as StyleDisplay),
+    )
+    expect(css).toContain('--doc-line-factor-cjk:1.3')
   })
 })
 

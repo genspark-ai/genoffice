@@ -398,6 +398,9 @@ const api: SlidesApi = {
     return () => ipcRenderer.removeListener('ai:settings-changed', listener)
   },
   openAiModelSettings: () => ipcRenderer.invoke('ai:open-model-settings'),
+  openSkillsSettings: () => ipcRenderer.invoke('ai:open-skills-settings'),
+  skillsList: () => ipcRenderer.invoke('ai:skills-list'),
+  skillText: (name: string) => ipcRenderer.invoke('ai:skill-text', name),
   aiStream: (request: AiStreamRequest) => ipcRenderer.invoke('ai:stream', request),
   aiStreamCancel: (requestId: string) => ipcRenderer.invoke('ai:stream-cancel', requestId),
   aiGskStatus: (withEmail?: boolean) => ipcRenderer.invoke('ai:gsk-status', withEmail),

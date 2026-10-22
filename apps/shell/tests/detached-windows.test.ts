@@ -74,6 +74,7 @@ const cursor = { x: 0, y: 0 }
 const workArea = { x: 0, y: 0, width: 2000, height: 1200 }
 
 vi.mock('electron', () => ({
+  app: { on: vi.fn(), quit: vi.fn() },
   BrowserWindow: FakeWindow,
   screen: {
     getCursorScreenPoint: () => ({ ...cursor }),

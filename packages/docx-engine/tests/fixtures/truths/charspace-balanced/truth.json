@@ -1,0 +1,58 @@
+{
+  "id": "charspace-balanced",
+  "title": "docGrid charSpace advances every character by charSpace/4096 pt; balanceSingleByteDoubleByteWidth halves it for single-byte text",
+  "section": "word-truths.md#L27",
+  "section_title": "2026-08-31 to 09-02 probe batch: docGrid charSpace",
+  "probe_date": "2026-10-22",
+  "class": "pure",
+  "source": "probe charspace-latin (2026-09-02 + 2026-10-22), Word for Mac direct PDF, pymupdf char origins: 11417 -> Latin +1.39 / CJK +2.79; 8192 -> 1.00/2.00; 4096 -> 0.50/1.00; -820 -> -0.10/-0.20",
+  "cases": [
+    {
+      "kind": "flags",
+      "expect": {
+        "balanceDbcsSpacing": true
+      }
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 0,
+      "expect": {
+        "fullWidth": 2.79,
+        "singleByte": 1.39
+      },
+      "tol": 0.01,
+      "note": "charSpace 11417"
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 1,
+      "expect": {
+        "fullWidth": 2.0,
+        "singleByte": 1.0
+      },
+      "tol": 0.001,
+      "note": "charSpace 8192"
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 2,
+      "expect": {
+        "fullWidth": 1.0,
+        "singleByte": 0.5
+      },
+      "tol": 0.001,
+      "note": "charSpace 4096"
+    },
+    {
+      "kind": "charSpacePt",
+      "section": 3,
+      "expect": {
+        "fullWidth": -0.2,
+        "singleByte": -0.1
+      },
+      "tol": 0.001,
+      "note": "charSpace -820"
+    }
+  ],
+  "docx": "probe.docx"
+}
