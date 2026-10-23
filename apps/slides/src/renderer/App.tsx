@@ -138,6 +138,7 @@ import { FIT_WIDTH } from './app-constants'
 import { StageRuler } from './components/StageRuler'
 import { formatRulerValue, type RulerUnit } from './ruler-ticks'
 import * as fileActions from './file-actions'
+import { noteDocumentSwapped } from './file-naming'
 import * as clipboardActions from './clipboard-actions'
 import * as insertActions from './insert-actions'
 import * as model3dActions from './model3d/actions'
@@ -868,6 +869,8 @@ export function App() {
     (result: { path: string; slides: RenderSlide[]; defaultFont?: string } | null) => {
       if (!result) return
       setSlides(result.slides)
+      // a different deck is now open: its first save may ask for a name
+      noteDocumentSwapped()
       setDefaultFont(result.defaultFont ?? null)
       setPath(result.path)
       setCurrent(0)
@@ -1014,6 +1017,7 @@ export function App() {
   }, [autoSave, path, editing, editingCell, save])
 
   const saveAs = useCallback(() => fileActions.saveAs(() => ctxRef.current), [])
+  const nameWithAi = useCallback(() => fileActions.nameWithAi(() => ctxRef.current), [])
   const exportImages = useCallback(() => fileActions.exportImages(ctxRef.current), [])
   const exportPdf = useCallback(() => void fileActions.exportPdf(ctxRef.current), [])
 
@@ -3275,6 +3279,7 @@ export function App() {
         onUndo={() => void undo()}
         onRedo={() => void redo()}
         onSaveAs={() => void saveAs()}
+        onNameWithAi={() => void nameWithAi()}
         onExportPdf={() => void exportPdf()}
         onPrint={() => setPrintDlgOpen(true)}
         onExportImages={() => void exportImages()}
