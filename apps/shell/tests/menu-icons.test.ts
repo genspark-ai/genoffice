@@ -148,7 +148,10 @@ describe('new-tab menu icons', () => {
         expect(png.height, `menu-${name}${suffix}.png height`).toBe(size)
         // The thinnest glyph in the set (the home outline) keeps 83 visible
         // pixels at 1x; the broken assets shipped with 0.
-        expect(visiblePixels(png), `menu-${name}${suffix}.png visible pixels`).toBeGreaterThanOrEqual(40)
+        expect(
+          visiblePixels(png),
+          `menu-${name}${suffix}.png visible pixels`,
+        ).toBeGreaterThanOrEqual(40)
       }
     }
   })
@@ -168,7 +171,10 @@ describe('new-tab menu icons', () => {
       const downsampled = boxDownsample(decodePng(readFileSync(`${ASSETS}menu-${name}@2x.png`)))
       // The intact icons sit at ~1-2 per channel against a box downsample;
       // anything shipping a different drawing at 1x would land far higher.
-      expect(averageDifference(oneX, downsampled), `menu-${name}.png vs @2x downsample`).toBeLessThan(16)
+      expect(
+        averageDifference(oneX, downsampled),
+        `menu-${name}.png vs @2x downsample`,
+      ).toBeLessThan(16)
     }
   })
 })
