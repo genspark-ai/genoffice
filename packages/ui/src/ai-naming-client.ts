@@ -54,8 +54,21 @@ interface NamingApi {
   setFileNamingEnabled?: (on: boolean) => Promise<boolean>
 }
 
+/**
+ * The naming bridge.
+ *
+ * One global, one name: every window that can name a file exposes the three
+ * channels as `aiNamingApi` — the shell for its settings row, each editor for
+ * its own first save.
+ *
+ * The shell's `aiOffice` namespace is deliberately **not** used here. It is
+ * the shell's home API, and a second, partial `aiOffice` in an editor window
+ * would shadow the real one in that window: `window.aiOffice.setTheme` would
+ * disappear, and anything that identifies the shell window by that global —
+ * the e2e suite included — would find the editor instead.
+ */
 function api(): NamingApi {
-  return (window as unknown as { aiOffice?: NamingApi }).aiOffice ?? {}
+  return (window as unknown as { aiNamingApi?: NamingApi }).aiNamingApi ?? {}
 }
 
 /**
