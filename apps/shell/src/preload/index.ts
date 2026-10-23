@@ -596,6 +596,23 @@ const homeApi: HomeApi = {
   async setAiSettings(settings) {
     await ipcRenderer.invoke('ai:set-settings', settings)
   },
+  /**
+   * Ask the model for a file name.
+   *
+   * `content` must be the caller's **model-facing** text, not the raw document:
+   * the main process cannot know what a given editor has withheld, so whatever
+   * arrives here is what the model sees. An app that passes raw text would undo
+   * its own redactions.
+   */
+  suggestFileName(input) {
+    return ipcRenderer.invoke('ai:suggest-file-name', input)
+  },
+  getFileNamingEnabled() {
+    return ipcRenderer.invoke('ai:get-file-naming')
+  },
+  setFileNamingEnabled(on) {
+    return ipcRenderer.invoke('ai:set-file-naming', on)
+  },
   getAiProviders() {
     return AI_PROVIDERS.map((meta) => {
       let defaultBaseUrl = ''

@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest'
+import {
+  buildNamingInstruction,
+  excerptForNaming,
+  hasNameableContent,
+  sanitizeFileStem,
+} from '../src/main/ai-naming'
+
+describe('sanitizeFileStem', () => {
+  it('keeps a plain name unchanged', () => {
+    expect(sanitizeFileStem('季度营收总结')).toBe('季度营收总结')
+    expect(sanitizeFileStem('Q3 Revenue Review')).toBe('Q3 Revenue Review')
+  })
+
+  it('drops a path, keeping the last segment', () => {
+    expect(sanitizeFileStem('reports/2026/Q3 营收')).toBe('Q3 营收')
+    expect(sanitizeFileStem('C:\\Users\\me\\notes')).toBe('notes')
+  })
+
+  it('drops an extension the model volunteered', () => {
+    expect(sanitizeFileStem('Q3 Revenue.md')).toBe('Q3 Revenue')
+    expect(sanitizeFileStem('data.json')).toBe('data')
+    // a name that is only an extension keeps its stem
+    expect(sanitizeFileStem('.gitignore')).toBe('gitignore')
+  })
+
+  it('strips quotes, bullets and trailing punctuation', () => {
+    expect(sanitizeFileStem('"Q3 Revenue"')).toBe('Q3 Revenue')
+    expect(sanitizeFileStem('**Q3 Revenue**')).toBe('Q3 Revenue')
+    expect(sanitizeFileStem('- Q3 Revenue')).toBe('Q3 Revenue')
+    expect(sanitizeFileStem('`Q3 Revenue`')).toBe('Q3 Revenue')
+  })
+
+  it('replaces every character Windows forbids', () => {
+    // a raw / would split the path; the rest are illegal on Windows
+    expect(sanitizeFileStem('a/b')).toBe('b')
+    expect(sanitizeFileStem('a?b')).toBe('a b')
+    expect(sanitizeFileStem('a*b')).toBe('a b')
+    expect(sanitizeFileStem('a:b')).toBe('a b')
+    expect(sanitizeFileStem('a<b>c')).toBe('a b c')
+    expect(sanitizeFileStem('a"b"c')).toBe('a b c')
+    expect(sanitizeFileStem('a|b')).toBe('a b')
+  })
+
+  it('never returns a name made of separators or empty', () => {
+    expect(sanitizeFileStem('///')).toBe('')
+    expect(sanitizeFileStem('')).toBe('')
+    expect(sanitizeFileStem('   ')).toBe('')
+    expect(sanitizeFileStem('...')).toBe('')
+  })
+
+  it('does not hide the file behind a leading dot', () => {
+    expect(sanitizeFileStem('.env')).toBe('env')
+    expect(sanitizeFileStem('...hidden')).toBe('hidden')
+  })
+
+  it('escapes a reserved Windows device name', () => {
+    expect(sanitizeFileStem('CON')).toBe('CON-file')
+    expect(sanitizeFileStem('con')).toBe('con-file')
+    expect(sanitizeFileStem('LPT1')).toBe('LPT1-file')
+    // a name that merely starts with one is fine
+    expect(sanitizeFileStem('CONTENT')).toBe('CONTENT')
+  })
+
+  it('caps the length without cutting mid-word when it can avoid it', () => {
+    const long = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ')
+    const out = sanitizeFileStem(long)
+    expect(out.length).toBeLessThanOrEqual(60)
+    // every surviving token is whole: no "word1" cut into "word"
+    for (const token of out.split(' ')) expect(token).toMatch(/^word\d+$/)
+  })
+
+  it('collapses a long unbroken token rather than dropping it', () => {
+    const out = sanitizeFileStem('x'.repeat(200))
+    expect(out).toHaveLength(60)
+  })
+
+  it('strips control characters a model can emit', () => {
+    expect(sanitizeFileStem('Q3\u0000Revenue')).toBe('Q3 Revenue')
+    expect(sanitizeFileStem('line1\nline2')).toBe('line1 line2')
+  })
+
+  it('is idempotent — cleaning twice changes nothing', () => {
+    for (const raw of ['Q3/Revenue.md', '"a*b"', 'CON', '...x', 'a\nb', 'x'.repeat(90)]) {
+      const once = sanitizeFileStem(raw)
+      expect(sanitizeFileStem(once)).toBe(once)
+    }
+  })
+})
+
+describe('buildNamingInstruction', () => {
+  it('asks for a bare name and names the language', () => {
+    const out = buildNamingInstruction('some text', '简体中文')
+    expect(out).toContain('file name')
+    expect(out).toContain('简体中文')
+    expect(out).toContain('some text')
+    expect(out).toContain('no extension')
+  })
+})
+
+describe('excerptForNaming', () => {
+  it('leaves a short document alone', () => {
+    expect(excerptForNaming('short text')).toBe('short text')
+  })
+
+  it('caps a long document and marks the cut', () => {
+    const out = excerptForNaming('y'.repeat(10_000))
+    expect(out.length).toBeLessThan(4100)
+    expect(out.endsWith('…')).toBe(true)
+  })
+
+  it('collapses runs of blank lines so the budget goes to content', () => {
+    expect(excerptForNaming('a\n\n\n\n\nb')).toBe('a\n\nb')
+  })
+})
+
+describe('hasNameableContent', () => {
+  it('is false for a blank or punctuation-only document', () => {
+    expect(hasNameableContent('')).toBe(false)
+    expect(hasNameableContent('   \n\n ')).toBe(false)
+    expect(hasNameableContent('# **---**')).toBe(false)
+    expect(hasNameableContent('- [ ] ')).toBe(false)
+  })
+
+  it('is true as soon as a word survives', () => {
+    expect(hasNameableContent('# Title')).toBe(true)
+    expect(hasNameableContent('{"a":1}')).toBe(true)
+  })
+})

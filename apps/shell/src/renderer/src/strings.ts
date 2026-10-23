@@ -518,6 +518,9 @@ export const strings = {
     setAiEndpointKeyEnvHint: '填写后不再保存明文密钥，改为从该环境变量读取。',
     setAiEndpointHeadersBad: '请求头格式无效：每行应为「名称: 值」。',
     setAiEndpointModelsBad: '模型声明格式无效：必须是 JSON 数组，例如 [{ "id": "m" }]。',
+    setAiAutoFileNaming: '用 AI 自动命名新文件',
+    setAiAutoFileNamingDesc:
+      '新文档第一次保存时，用 AI 根据内容起一个文件名（内容里对 AI 隐藏的部分只会显示为占位符）。',
   },
   en: {
     addFolderRoot: 'Add folder…',
@@ -1051,6 +1054,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Invalid header format: each line must be "Name: Value".',
     setAiEndpointModelsBad:
       'Invalid model declarations: must be a JSON array, e.g. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Name new files with AI',
+    setAiAutoFileNamingDesc:
+      "On a new document's first save, let the model suggest a name from its contents (anything you hid from the model shows up as a placeholder).",
   },
   vi: {
     addFolderRoot: 'Thêm thư mục…',
@@ -1587,6 +1593,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Định dạng header không hợp lệ: mỗi dòng phải là "Tên: Giá trị".',
     setAiEndpointModelsBad:
       'Khai báo mô hình không hợp lệ: phải là mảng JSON, ví dụ [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Đặt tên tệp mới bằng AI',
+    setAiAutoFileNamingDesc:
+      'Khi lưu tài liệu mới lần đầu, để AI đặt tên tệp từ nội dung (phần bạn đã ẩn khỏi AI sẽ hiện thành trình giữ chỗ).',
   },
   ja: {
     addFolderRoot: 'フォルダーを追加…',
@@ -2136,6 +2145,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'ヘッダーの形式が不正です。各行は「名前: 値」にしてください。',
     setAiEndpointModelsBad:
       'モデル宣言が不正です。JSON 配列（例: [{ "id": "m" }]）にしてください。',
+    setAiAutoFileNaming: 'AI で新規ファイルに名前を付ける',
+    setAiAutoFileNamingDesc:
+      '新規ドキュメントの初回保存時に、内容から AI がファイル名を提案します（AI から隠した部分はプレースホルダーとして表示されます）。',
   },
   ko: {
     addFolderRoot: '폴더 추가…',
@@ -2675,6 +2687,9 @@ export const strings = {
     setAiEndpointHeadersBad: '헤더 형식이 잘못되었습니다. 각 줄은 "이름: 값"이어야 합니다.',
     setAiEndpointModelsBad:
       '모델 선언이 잘못되었습니다. JSON 배열이어야 합니다(예: [{ "id": "m" }]).',
+    setAiAutoFileNaming: 'AI로 새 파일 이름 지정',
+    setAiAutoFileNamingDesc:
+      '새 문서의 첫 저장 시 AI가 내용에서 파일 이름을 제안합니다(AI에서 숨긴 부분은 자리표시자로 표시됩니다).',
   },
   fr: {
     addFolderRoot: 'Ajouter un dossier…',
@@ -3234,6 +3249,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Format d’en-tête invalide : chaque ligne doit être « Nom : Valeur ».',
     setAiEndpointModelsBad:
       'Déclarations de modèle invalides : doit être un tableau JSON, ex. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Nommer les nouveaux fichiers avec l’IA',
+    setAiAutoFileNamingDesc:
+      "À la première sauvegarde d'un nouveau document, l'IA propose un nom d'après son contenu (ce que vous avez masqué à l'IA n'apparaît que comme un espace réservé).",
   },
   de: {
     addFolderRoot: 'Ordner hinzufügen…',
@@ -3792,6 +3810,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Ungültiges Header-Format: jede Zeile muss „Name: Wert“ sein.',
     setAiEndpointModelsBad:
       'Ungültige Modell-Deklarationen: muss ein JSON-Array sein, z. B. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Neue Dateien mit der KI benennen',
+    setAiAutoFileNamingDesc:
+      'Beim ersten Speichern eines neuen Dokuments schlägt die KI einen Namen aus dem Inhalt vor (für die KI ausgeblendete Teile erscheinen nur als Platzhalter).',
   },
   es: {
     addFolderRoot: 'Añadir carpeta…',
@@ -4348,6 +4369,9 @@ export const strings = {
       'Formato de encabezado no válido: cada línea debe ser «Nombre: Valor».',
     setAiEndpointModelsBad:
       'Declaraciones de modelo no válidas: debe ser un array JSON, p. ej. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Nombrar archivos nuevos con IA',
+    setAiAutoFileNamingDesc:
+      'Al guardar por primera vez un documento nuevo, la IA propone un nombre a partir de su contenido (lo que ocultaste a la IA solo aparece como marcador).',
   },
   th: {
     addFolderRoot: 'เพิ่มโฟลเดอร์…',
@@ -4881,6 +4905,9 @@ export const strings = {
     setAiEndpointKeyEnvHint: 'เมื่อตั้งค่า จะไม่เก็บคีย์ที่นี่ แต่อ่านจากตัวแปรสภาพแวดล้อมนั้นแทน',
     setAiEndpointHeadersBad: 'รูปแบบส่วนหัวไม่ถูกต้อง: ทุกบรรทัดต้องเป็น "ชื่อ: ค่า"',
     setAiEndpointModelsBad: 'การประกาศโมเดลไม่ถูกต้อง: ต้องเป็นอาร์เรย์ JSON เช่น [{ "id": "m" }]',
+    setAiAutoFileNaming: 'ตั้งชื่อไฟล์ใหม่ด้วย AI',
+    setAiAutoFileNamingDesc:
+      'เมื่อบันทึกเอกสารใหม่ครั้งแรก AI จะเสนอชื่อไฟล์จากเนื้อหา (ส่วนที่คุณซ่อนจาก AI จะแสดงเป็นตัวแทนเท่านั้น)',
   },
   id: {
     addFolderRoot: 'Tambah folder…',
@@ -5429,6 +5456,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Format header tidak valid: setiap baris harus "Nama: Nilai".',
     setAiEndpointModelsBad:
       'Deklarasi model tidak valid: harus berupa array JSON, mis. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Beri nama file baru dengan AI',
+    setAiAutoFileNamingDesc:
+      'Saat dokumen baru disimpan pertama kali, AI mengusulkan nama file dari isinya (bagian yang disembunyikan dari AI hanya muncul sebagai placeholder).',
   },
   ru: {
     addFolderRoot: 'Добавить папку…',
@@ -5976,6 +6006,9 @@ export const strings = {
       'Неверный формат заголовка: каждая строка должна быть «Имя: Значение».',
     setAiEndpointModelsBad:
       'Неверные объявления моделей: нужен массив JSON, напр. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Именовать новые файлы с помощью ИИ',
+    setAiAutoFileNamingDesc:
+      'При первом сохранении нового документа ИИ предложит имя по содержимому (скрытое от ИИ показывается только как заполнитель).',
   },
   ar: {
     addFolderRoot: 'إضافة مجلد…',
@@ -6512,6 +6545,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'تنسيق رأس غير صالح: كل سطر يجب أن يكون "الاسم: القيمة".',
     setAiEndpointModelsBad:
       'إعلانات نماذج غير صالحة: يجب أن تكون مصفوفة JSON، مثل [{ "id": "m" }].',
+    setAiAutoFileNaming: 'تسمية الملفات الجديدة بالذكاء الاصطناعي',
+    setAiAutoFileNamingDesc:
+      'عند حفظ مستند جديد لأول مرة، يقترح الذكاء الاصطناعي اسماً من محتواه (ما أخفيته عن الذكاء الاصطناعي يظهر كعنصر نائب فقط).',
   },
   pt: {
     addFolderRoot: 'Adicionar pasta…',
@@ -7057,6 +7093,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Formato de cabeçalho inválido: cada linha deve ser "Nome: Valor".',
     setAiEndpointModelsBad:
       'Declarações de modelo inválidas: deve ser um array JSON, ex. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Nomear ficheiros novos com IA',
+    setAiAutoFileNamingDesc:
+      'Ao guardar um novo documento pela primeira vez, a IA sugere um nome a partir do seu conteúdo (o que ocultaste da IA aparece apenas como marcador).',
   },
   it: {
     addFolderRoot: 'Aggiungi cartella…',
@@ -7602,6 +7641,9 @@ export const strings = {
       'Formato intestazione non valido: ogni riga deve essere "Nome: Valore".',
     setAiEndpointModelsBad:
       'Dichiarazioni di modello non valide: deve essere un array JSON, es. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Assegna un nome AI ai nuovi file',
+    setAiAutoFileNamingDesc:
+      'Al primo salvataggio di un nuovo documento, l’IA propone un nome dal suo contenuto (ciò che hai nascosto all’IA compare solo come segnaposto).',
   },
   pl: {
     addFolderRoot: 'Dodaj folder…',
@@ -8140,6 +8182,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Nieprawidłowy format nagłówka: każdy wiersz to „Nazwa: Wartość”.',
     setAiEndpointModelsBad:
       'Nieprawidłowe deklaracje modeli: musi być tablicą JSON, np. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Nadaj nazwy nowym plikom za pomocą AI',
+    setAiAutoFileNamingDesc:
+      'Przy pierwszym zapisie nowego dokumentu AI zaproponuje nazwę na podstawie treści (ukryte przed AI widać tylko jako symbol zastępczy).',
   },
   cs: {
     addFolderRoot: 'Přidat složku…',
@@ -8675,6 +8720,9 @@ export const strings = {
       'Při nastavení se klíč zde neukládá; načítá se z té proměnné prostředí.',
     setAiEndpointHeadersBad: 'Neplatný formát hlavičky: každý řádek musí být „Název: Hodnota“.',
     setAiEndpointModelsBad: 'Neplatné deklarace modelů: musí být pole JSON, např. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Pojmenovat nové soubory pomocí AI',
+    setAiAutoFileNamingDesc:
+      'Při prvním uložení nového dokumentu AI navrhne název podle jeho obsahu (co jste AI skryli, se zobrazí jen jako zástupný symbol).',
   },
   nl: {
     addFolderRoot: 'Map toevoegen…',
@@ -9215,6 +9263,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Ongeldig headerformaat: elke regel moet "Naam: Waarde" zijn.',
     setAiEndpointModelsBad:
       'Ongeldige modelverklaringen: moet een JSON-array zijn, bijv. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Nieuwe bestanden met AI benoemen',
+    setAiAutoFileNamingDesc:
+      'Bij het eerst opslaan van een nieuw document stelt de AI een naam voor op basis van de inhoud (wat je voor de AI hebt verborgen, verschijnt alleen als placeholder).',
   },
   ms: {
     addFolderRoot: 'Tambah folder…',
@@ -9758,6 +9809,9 @@ export const strings = {
     setAiEndpointHeadersBad: 'Format header tidak sah: setiap baris mestilah "Nama: Nilai".',
     setAiEndpointModelsBad:
       'Pengisytiharan model tidak sah: mesti tatasusunan JSON, cth. [{ "id": "m" }].',
+    setAiAutoFileNaming: 'Namakan fail baharu dengan AI',
+    setAiAutoFileNamingDesc:
+      'When document baharu disimpan kali pertama, AI akan mencadangkan nama daripada kandungannya (apa yang anda sembunyikan daripada AI hanya muncul sebagai placeholder).',
   },
   he: {
     addFolderRoot: 'הוספת תיקייה…',
@@ -10280,6 +10334,9 @@ export const strings = {
     setAiEndpointKeyEnvHint: 'כאשר מוגדר, אין מפתח נשמר כאן; הוא נקרא ממשתנה הסביבה הזה.',
     setAiEndpointHeadersBad: 'פורמח הכותרים אינו חוקי: כל שורה חייבת להיות "שם: ערך".',
     setAiEndpointModelsBad: 'הצהרות מודל לא חוקיות: חייב להיות מערך JSON, למשל [{ "id": "m" }].',
+    setAiAutoFileNaming: 'מתן שמות לקבצים חדשים באמצעות AI',
+    setAiAutoFileNamingDesc:
+      'בשמירה הראשונה של מסמך חדש, ה-AI יציע שם לפי התוכן (מה שהוסתר מה-AI יופיע רק כממלא מקום).',
   },
   hi: {
     addFolderRoot: 'फ़ोल्डर जोड़ें…',
@@ -10816,6 +10873,9 @@ export const strings = {
       'सेट करने पर यहाँ कोई कुंजी संग्रहीत नहीं होती; वह उस पर्यावरण चर से पढ़ी जाती है।',
     setAiEndpointHeadersBad: 'अमान्य हेडर प्रारूप: प्रत्येक पंक्ति "नाम: मान" होनी चाहिए।',
     setAiEndpointModelsBad: 'अमान्य मॉडल घोषणाएँ: JSON सरणी होनी चाहिए, उदाहरण [{ "id": "m" }]।',
+    setAiAutoFileNaming: 'AI से नई फ़ाइलों का नाम रखें',
+    setAiAutoFileNamingDesc:
+      'नए दस्तावेज़ की पहली सहेज पर AI उसकी सामग्री से नाम सुझाएगा (जो आपने AI से छिपाया है वह केवल प्लेसहोल्डर के रूप में दिखेगा)।',
   },
   'zh-TW': {
     addFolderRoot: '加入資料夾…',
@@ -11328,5 +11388,8 @@ export const strings = {
     setAiEndpointKeyEnvHint: '填寫後不再保存明文金鑰，改為從該環境變數讀取。',
     setAiEndpointHeadersBad: '請求標頭格式無效：每行應為「名稱: 值」。',
     setAiEndpointModelsBad: '模型宣告格式無效：必須是 JSON 陣列，例如 [{ "id": "m" }]。',
+    setAiAutoFileNaming: '用 AI 自動命名新檔案',
+    setAiAutoFileNamingDesc:
+      '新文件第一次儲存時，用 AI 依內容取一個檔名（內容中對 AI 隱藏的部分只會顯示為預留位置）。',
   },
 } as const
