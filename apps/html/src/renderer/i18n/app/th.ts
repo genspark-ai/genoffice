@@ -66,6 +66,7 @@ export const th = {
   openExternal: 'เปิดลิงก์ในเบราว์เซอร์แล้ว',
   save: 'บันทึก (⌘S)',
   saveAs: 'บันทึกเป็น…',
+  aiNameFile: 'ตั้งชื่อด้วย AI…',
   ribbonCollapse: 'ยุบ Ribbon',
   ribbonExpand: 'ขยาย Ribbon',
   ribbonGroupInsert: 'แทรก',

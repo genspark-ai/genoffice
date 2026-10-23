@@ -70,6 +70,7 @@ export const es = {
   openExternal: 'Enlace abierto en el navegador',
   save: 'Guardar (⌘S)',
   saveAs: 'Guardar como…',
+  aiNameFile: 'Nombrar con IA…',
   ribbonCollapse: 'Contraer la cinta de opciones',
   ribbonExpand: 'Expandir la cinta de opciones',
   ribbonGroupInsert: 'Insertar',

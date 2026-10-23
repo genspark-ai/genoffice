@@ -65,6 +65,7 @@ export const zh = {
   openExternal: '已在浏览器中打开链接',
   save: '保存 (⌘S)',
   saveAs: '另存为…',
+  aiNameFile: '用 AI 命名…',
   ribbonCollapse: '折叠功能区',
   ribbonExpand: '展开功能区',
   ribbonGroupInsert: '插入',

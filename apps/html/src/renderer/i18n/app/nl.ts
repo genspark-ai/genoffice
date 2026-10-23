@@ -71,6 +71,7 @@ export const nl = {
   openExternal: 'Link geopend in de browser',
   save: 'Opslaan (⌘S)',
   saveAs: 'Opslaan als…',
+  aiNameFile: 'Naam geven met AI…',
   ribbonCollapse: 'Het lint samenvouwen',
   ribbonExpand: 'Het lint uitvouwen',
   ribbonGroupInsert: 'Invoegen',
