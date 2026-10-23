@@ -158,6 +158,7 @@ export function ChartBody({
           fill={l.color}
           fontStyle={[l.italic && 'italic', l.bold && 'bold'].filter(Boolean).join(' ') || 'normal'}
           {...(l.rotationDeg ? { rotation: l.rotationDeg } : {})}
+          {...(l.letterSpacingPx ? { letterSpacing: l.letterSpacingPx } : {})}
         />
       ))}
       {chart.border && (

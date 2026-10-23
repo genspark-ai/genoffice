@@ -32,4 +32,27 @@ describe('blank header/footer parts', () => {
     expect(parsed.footerParas![0].runs).toEqual([])
     expect(parsed.footerParas![1].runs).toEqual([])
   })
+
+  it('a paragraph of empty runs keeps its blank line like a bare w:p (genoffice#2116)', async () => {
+    const bytes = await buildDocx({
+      bodyXml: '<w:p><w:r><w:t>body</w:t></w:r></w:p>',
+      extraRels:
+        '<Relationship Id="rId80" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      extraParts: [
+        {
+          path: 'word/footer1.xml',
+          xml: ftrPart(
+            '<w:p><w:pPr><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr><w:r/><w:r><w:rPr><w:b/></w:rPr></w:r></w:p>' +
+              '<w:p><w:r><w:t>text</w:t></w:r></w:p>',
+          ),
+          contentType: FOOTER_TYPE,
+        },
+      ],
+      sectPrExtra: '<w:footerReference w:type="default" r:id="rId80"/>',
+    })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.footerParas).toHaveLength(2)
+    expect(parsed.footerParas![0]).toMatchObject({ runs: [], emptyRunSizeHalfPoints: 24 })
+    expect(parsed.footerParas![1].runs.map((r) => r.text)).toEqual(['text'])
+  })
 })

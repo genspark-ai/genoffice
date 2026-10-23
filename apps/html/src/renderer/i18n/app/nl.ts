@@ -9,6 +9,11 @@ export const nl = {
   redactDialogPlaceholder: 'Naam van placeholder, bv. telefoonnummer klant',
   redactCancel: 'Annuleren',
   redactInsert: 'Verbergen',
+  diskChangedMsg: 'Dit bestand is door een ander programma gewijzigd.',
+  diskConflictMsg: 'Dit bestand is op schijf gewijzigd; opslaan overschrijft die wijzigingen.',
+  diskReload: 'Opnieuw laden',
+  diskKeepMine: 'Mijn versie behouden',
+  diskOverwrite: 'Toch overschrijven',
 
   loading: 'Laden…',
   loadFailed: 'Kan het bestand niet openen',

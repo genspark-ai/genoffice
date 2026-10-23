@@ -1,0 +1,106 @@
+{
+  "id": "hg-missing-substitution",
+  "title": "Missing Ricoh HG and other JP names: Yu Gothic 1.44 wholesale, DFonts HG cuts real at 1.3029, SimSun for names off the table",
+  "section": "word-truths.md#L186",
+  "probe_date": "2026-09-16",
+  "source": "probe probe + run.py, 10pt line 240/285, Word for Mac direct PDF, pymupdf rawdict origins",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "HG\u6559\u79d1\u66f8\u4f53",
+      "expect": 1.433,
+      "note": "HG Kyokashotai missing -> Yu Gothic 14.4pt @10pt; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "HGP\u660e\u671dB",
+      "expect": 1.433,
+      "note": "HGP Mincho B -> Yu Gothic (a Mincho name turns sans); 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "HG\u884c\u66f8\u4f53",
+      "expect": 1.433,
+      "note": "HG Gyoshotai -> Yu Gothic; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro W3",
+      "expect": 1.433,
+      "note": "Hiragino Kaku Gothic Pro W3 by its JP name -> Yu Gothic; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "HG\u4e38\uff7a\uff9e\uff7c\uff6f\uff78M-PRO",
+      "expect": 1.3,
+      "note": "HG Maru Gothic M-PRO ships in DFonts: real, 12.96 @10pt; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\uff2d\uff33 \uff30\u660e\u671d",
+      "expect": 1.3,
+      "note": "MS PMincho real 12.96; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "MS UI Gothic",
+      "expect": 1.3,
+      "note": "MS UI Gothic real 12.96; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "Yu Gothic UI",
+      "expect": 1.728,
+      "note": "Yu Gothic UI real 17.28 @10pt = 1.728, not the Yu Gothic 1.44",
+      "status": "failing"
+    },
+    {
+      "kind": "factor",
+      "font": "UD \u30c7\u30b8\u30bf\u30eb \u6559\u79d1\u66f8\u4f53 N-R",
+      "expect": 1.5,
+      "note": "UD Digital Kyokasho N-R installed real: 15.0 @10pt",
+      "status": "failing"
+    },
+    {
+      "kind": "factor",
+      "font": "\u5c0f\u585a\u660e\u671d Pr6N R",
+      "expect": 1.3,
+      "note": "Kozuka Mincho missing, off the table -> SimSun 12.96; SimSun class 1.2970-1.3009, renderer 1.3 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\u67b6\u7a7a\u5b8b\u4f53",
+      "expect": 1.7151,
+      "note": "fictional Song-named face: Word routes the GB chain to Microsoft YaHei 17.04-17.28 @10pt; 1.7143 -> 1.7151 (probe 2026-10-22)",
+      "status": "failing",
+      "tol": 0.001
+    },
+    {
+      "kind": "factor",
+      "font": "\u6e38\u660e\u671d",
+      "expect": 1.433,
+      "note": "Yu Mincho 10.5pt 15.12; 1.44 -> 1.433 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 14.4,
+      "tol": 0.1,
+      "note": "HG Kyokashotai 10pt line = Yu Gothic"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 12.96,
+      "tol": 0.1,
+      "note": "HG Maru Gothic M-PRO 10pt"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

@@ -5,7 +5,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { rangeSlot } from '../dom-range'
 import { SettledParagraphCache, noteFloatTransaction } from './settled-measure'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
-import { DOC_CSS_COMMITTED_EVENT } from './cjk-punct-shrink'
+import { DOC_CSS_COMMITTED_EVENT, WRAP_WIDTHS_COMMITTED_EVENT } from './cjk-punct-shrink'
 
 /**
  * Word 2013+ (settings compatibilityMode >= 15) justified line breaking pulls
@@ -282,6 +282,7 @@ class JustifyShrinkView {
     this.measure()
     document.fonts?.addEventListener('loadingdone', this.onFontsLoaded)
     document.addEventListener(DOC_CSS_COMMITTED_EVENT, this.onDocCss)
+    document.addEventListener(WRAP_WIDTHS_COMMITTED_EVENT, this.onDocCss)
     document.addEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => {
@@ -324,6 +325,7 @@ class JustifyShrinkView {
   destroy() {
     document.fonts?.removeEventListener('loadingdone', this.onFontsLoaded)
     document.removeEventListener(DOC_CSS_COMMITTED_EVENT, this.onDocCss)
+    document.removeEventListener(WRAP_WIDTHS_COMMITTED_EVENT, this.onDocCss)
     document.removeEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
     this.resizeObserver?.disconnect()
     if (this.retryRaf) cancelAnimationFrame(this.retryRaf)

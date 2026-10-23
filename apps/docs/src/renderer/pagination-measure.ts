@@ -9,7 +9,7 @@ import type {
   PageSlice,
 } from './pagination-types'
 import { effectiveParaFlags } from './editor/para-flags'
-import { autoLineMultOf } from './line-metrics'
+import { additiveParagraphSpacing, autoLineMultOf } from './line-metrics'
 
 /**
  * Collect the editor's top-level block boxes (relative to the content-area top,
@@ -32,6 +32,11 @@ export function anchorShiftPx(el: HTMLElement): number {
  * box, space before/after always counts.
  */
 export function lineLeadPx(el: HTMLElement): number {
+  // a protected field block carries its line rule on the inner field element
+  const inner = el.classList.contains('doc-protected-field')
+    ? el.querySelector<HTMLElement>(':scope > .doc-toc-line, :scope > .doc-field-text')
+    : null
+  if (inner) el = inner
   const mult = autoLineMultOf(el)
   if (mult <= 1) return 0
   const cs = getComputedStyle(el)
@@ -214,7 +219,11 @@ export function measureBlocks(
     // 20260901: a double-spaced Calibri 11pt break line absorbs at 14pt remaining,
     // while an exact line demands its full exact height), so auto multiples above
     // 1 are divided out.
-    const breakOnly = hasBreak && !(el.textContent ?? '').trim() && !imgsByBlock.get(el)?.length
+    // ProseMirror's separator img (a layout stub before the trailing break) is not content
+    const breakOnly =
+      hasBreak &&
+      !(el.textContent ?? '').trim() &&
+      !(imgsByBlock.get(el) ?? []).some((i) => !i.classList.contains('ProseMirror-separator'))
     const brLines = breakOnly ? el.querySelectorAll('br:not(.ProseMirror-trailingBreak)').length : 0
     let breakOnlyLineH: number | undefined
     if (breakOnly) {
@@ -339,10 +348,15 @@ export function measureBlocks(
       (el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating'))
     const keepFloatBottom = wrapFloatBottom ?? paraFloatBottom
     const liftPx = parseFloat(el.dataset.tblpLift ?? '')
+    const padBeforePx =
+      additiveParagraphSpacing() && !el.matches('table')
+        ? parseFloat(getComputedStyle(el).paddingTop) || 0
+        : 0
     blocks.push({
       top: top - relVApplied,
       height,
       domHeight: height,
+      ...(padBeforePx > 0.5 ? { padBeforePx } : {}),
       ...(floated ? { floated: true } : {}),
       ...(floated && lifted ? { lifted: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),

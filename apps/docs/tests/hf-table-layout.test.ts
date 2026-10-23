@@ -5,6 +5,7 @@ import {
   hfCellParaStyle,
   hfCellSegStyle,
   hfCellTabLines,
+  hfIndentOverhangPx,
   hfRowStyle,
   makeGapHfEl,
 } from '../src/renderer/editor/hf-dom'
@@ -53,14 +54,21 @@ describe('header layout-table cell geometry', () => {
     expect(geom.textWidthPx).toBeUndefined()
   })
 
-  it('row: atLeast height floors, exact height clips, only a positive indent offsets', () => {
+  it('row: atLeast height floors, exact height clips, a signed indent offsets the edge', () => {
     expect(hfRowStyle({ heightTwips: 1428, heightRule: 'atLeast', indentTwips: 0 })).toEqual({
       minHeight: '95.2px',
     })
+    // negative tblInd hangs the table into the margin (prod corpus 20261021 sample 017 footer)
     expect(hfRowStyle({ heightTwips: 300, heightRule: 'exact', indentTwips: -108 })).toEqual({
+      marginLeft: '-7.2px',
       height: '20.0px',
       overflow: 'hidden',
     })
+    expect(hfIndentOverhangPx([{ runs: [], cells: [], row: { indentTwips: -1276 } }])).toBeCloseTo(
+      85.07,
+      1,
+    )
+    expect(hfIndentOverhangPx([{ runs: [], cells: [], row: { indentTwips: 70 } }])).toBe(0)
     expect(hfRowStyle({ indentTwips: 70 })).toEqual({ marginLeft: '4.7px' })
     expect(hfRowStyle({ indentTwips: 70, bidiVisual: true })).toEqual({
       marginRight: '4.7px',

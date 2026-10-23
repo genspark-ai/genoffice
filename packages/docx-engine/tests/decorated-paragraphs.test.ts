@@ -62,6 +62,32 @@ describe('paragraphs with decorative shapes + VML fallbacks', () => {
     expect(block.decorative).toBe(true)
   })
 
+  it('keeps the anchor paragraph line of a floating connector rule with its offset', async () => {
+    const connector =
+      '<w:r><w:drawing><wp:anchor behindDoc="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="3">' +
+      '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>-300990</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>86360</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="6398895" cy="0"/><wp:wrapNone/><wp:docPr id="6" name="AutoShape 4"/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvCnPr/>' +
+      '<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="6398895" cy="0"/></a:xfrm>' +
+      '<a:prstGeom prst="straightConnector1"><a:avLst/></a:prstGeom><a:ln/></wps:spPr></wps:wsp>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/><w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>' +
+          `${connector}</w:p>`,
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.decorative).toBe(true)
+    expect(block.imageOffsetYEmu).toBe(86360)
+    expect(block.anchorLine?.format?.lineSpacing).toBe(1.5)
+    expect(block.anchorLine?.format?.emptyRunSizeHalfPoints).toBe(24)
+  })
+
   it('still protects real VML embedded objects (w:pict outside mc:Fallback)', async () => {
     const doc = await parseDocx(
       await buildDocx({

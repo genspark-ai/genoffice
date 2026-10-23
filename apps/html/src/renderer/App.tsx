@@ -214,6 +214,15 @@ export default function App() {
   const envelopeRef = useRef<Envelope>(DEFAULT_ENVELOPE)
   const textRef = useRef('')
   const savedTextRef = useRef('')
+  /** text last read from or written to disk; a watcher tick that reads the same text is a touch, not an edit */
+  const diskTextRef = useRef<string | null>(null)
+  const overwriteRef = useRef(false)
+  const [diskNotice, setDiskNoticeState] = useState<'changed' | 'conflict' | null>(null)
+  const diskNoticeRef = useRef<'changed' | 'conflict' | null>(null)
+  const setDiskNotice = (next: 'changed' | 'conflict' | null) => {
+    diskNoticeRef.current = next
+    setDiskNoticeState(next)
+  }
   const savingRef = useRef(false)
   const statusRef = useRef<LoadStatus>('loading')
   const pushedTextRef = useRef<string | null>(null)
@@ -274,6 +283,7 @@ export default function App() {
         ])
         const raw = pending ? await window.htmlApi.readFile(pending) : ''
         if (cancelled) return
+        diskTextRef.current = raw
         const doc = parseDocText(raw)
         envelopeRef.current = doc.envelope
         textRef.current = doc.text
@@ -1180,6 +1190,11 @@ export default function App() {
   const doSave = useCallback(
     async (mode: SaveMode, suggestedName?: string): Promise<boolean> => {
       if (statusRef.current !== 'ready') return false
+      if (diskNoticeRef.current && !overwriteRef.current) {
+        // the user has not chosen between the two versions yet; autosave must not pick for them
+        setDiskNotice('conflict')
+        return false
+      }
       // uncommitted live style pokes belong to the document being saved
       flushPending()
       // a menu save or ⌘S during an autosave queues behind it instead of being dropped;
@@ -1196,8 +1211,12 @@ export default function App() {
           mode,
           suggestedName,
           defaultName: provisionalNameRef.current ?? undefined,
+          overwrite: overwriteRef.current,
         })
         if (result.ok && 'path' in result) {
+          diskTextRef.current = serialized
+          overwriteRef.current = false
+          setDiskNotice(null)
           const adopted = adoptImageRewrites(textAtSave, textRef.current, result.imageRewrites)
           if (adopted.liveText !== textRef.current) {
             editorRef.current?.setDoc(adopted.liveText)
@@ -1215,6 +1234,7 @@ export default function App() {
           pushPreview(adopted.liveText)
           return true
         }
+        if (!result.ok && result.conflict) setDiskNotice('conflict')
         setSaveState(result.ok ? 'idle' : 'failed')
         return false
       } catch (err) {
@@ -1227,6 +1247,47 @@ export default function App() {
     },
     [commitText, flushPending, pushPreview],
   )
+
+  /** another program wrote the file: swap the text in and show it as the saved state */
+  const reloadFromDisk = useCallback(
+    (raw: string) => {
+      diskTextRef.current = raw
+      overwriteRef.current = false
+      setDiskNotice(null)
+      const doc = parseDocText(raw)
+      envelopeRef.current = doc.envelope
+      editorRef.current?.setDoc(doc.text)
+      commitText(doc.text, false)
+      savedTextRef.current = doc.text
+      setSavedText(doc.text)
+      setSaveState('idle')
+      pushPreview(doc.text)
+    },
+    [commitText, pushPreview],
+  )
+
+  const reloadNow = useCallback(async () => {
+    const current = pathRef.current
+    if (!current) return
+    try {
+      window.htmlApi.ackFileChangedOnDisk()
+      reloadFromDisk(await window.htmlApi.readFile(current))
+    } catch (err) {
+      console.error('[html] reload from disk failed:', err)
+    }
+  }, [reloadFromDisk])
+
+  const keepMine = useCallback(() => {
+    overwriteRef.current = true
+    setDiskNotice(null)
+    window.htmlApi.ackFileChangedOnDisk()
+  }, [])
+
+  const overwriteNow = useCallback(() => {
+    overwriteRef.current = true
+    setDiskNotice(null)
+    void doSave('save')
+  }, [doSave])
 
   const zoomIn = useCallback(() => setZoom((z) => clampZoom(Math.round(z) + ZOOM_STEP)), [])
   const zoomOut = useCallback(() => setZoom((z) => clampZoom(Math.round(z) - ZOOM_STEP)), [])
@@ -1367,6 +1428,34 @@ export default function App() {
       })()
     })
     const offRenamed = window.htmlApi.onFileRenamed((next) => setPath(next))
+    const offDisk = window.htmlApi.onFileChangedOnDisk((changedPath) => {
+      // the watcher keeps refusing saves until the change is acknowledged; a
+      // change parked behind the bar stays unacknowledged until the user decides
+      let awaitingUser = false
+      void (async () => {
+        try {
+          if (changedPath !== pathRef.current || statusRef.current !== 'ready') return
+          const raw = await window.htmlApi.readFile(changedPath)
+          if (changedPath !== pathRef.current || raw === diskTextRef.current) return
+          // uncommitted style pokes are edits too, even though the text still equals the saved text
+          const dirtyNow =
+            textRef.current !== savedTextRef.current ||
+            Object.keys(pendingStylesRef.current).length > 0 ||
+            savingRef.current
+          if (dirtyNow) {
+            diskTextRef.current = raw
+            setDiskNotice('changed')
+            awaitingUser = true
+            return
+          }
+          reloadFromDisk(raw)
+        } catch (err) {
+          console.error('[html] reload after external change failed:', err)
+        } finally {
+          if (!awaitingUser) window.htmlApi.ackFileChangedOnDisk()
+        }
+      })()
+    })
     const offExport = window.htmlApi.onExportRequest((format) => void runExport(format))
     // Shell menu Print / ⌘P. The menu owns the accelerator, so this subscription
     // is the only route the keystroke takes; without it ⌘P did nothing at all.
@@ -1422,12 +1511,23 @@ export default function App() {
       offReadText()
       offClose()
       offRenamed()
+      offDisk()
       offExport()
       offPrint()
       offTheme()
       window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [doSave, runExport, runPrint, cycleView, zoomIn, zoomOut, flushPending, openFind])
+  }, [
+    doSave,
+    runExport,
+    runPrint,
+    cycleView,
+    zoomIn,
+    zoomOut,
+    flushPending,
+    openFind,
+    reloadFromDisk,
+  ])
 
   // pinch / ctrl+wheel over the stage chrome around the frame; wheel inside the frame arrives as gx:zoom
   useEffect(() => {
@@ -1618,6 +1718,17 @@ export default function App() {
           />
         </div>
         <div className="app-content">
+          {diskNotice && (
+            <div className="disk-notice" role="status">
+              <span>{t(diskNotice === 'changed' ? 'diskChangedMsg' : 'diskConflictMsg')}</span>
+              <button type="button" onClick={() => void reloadNow()}>
+                {t('diskReload')}
+              </button>
+              <button type="button" onClick={diskNotice === 'changed' ? keepMine : overwriteNow}>
+                {t(diskNotice === 'changed' ? 'diskKeepMine' : 'diskOverwrite')}
+              </button>
+            </div>
+          )}
           {findTarget && (
             <FindPanel
               target={findTarget}

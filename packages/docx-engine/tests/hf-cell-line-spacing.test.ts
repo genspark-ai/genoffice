@@ -51,3 +51,35 @@ describe('header table cell paragraph line spacing', () => {
     })
   })
 })
+
+describe('header table cell paragraph wordWrap', () => {
+  it('a pStyle-less cell paragraph inherits wordWrap off from the default paragraph style', async () => {
+    const stylesXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>' +
+      '<w:pPr><w:wordWrap w:val="0"/></w:pPr></w:style>' +
+      STYLES +
+      '</w:styles>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>Body</w:t></w:r></w:p>',
+        stylesXml,
+        extraRels:
+          '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+        sectPrExtra: '<w:headerReference w:type="default" r:id="rId20"/>',
+        extraParts: [
+          {
+            path: 'word/header1.xml',
+            xml: HEADER_XML,
+            contentType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml',
+          },
+        ],
+      }),
+    )
+    const row = Object.values(doc.hfParts ?? {})[0]?.paras[0]
+    expect(row?.cells?.[1].paraProps?.[0]?.wordWrap).toBe(false)
+    expect(row?.cells?.[0].paraProps?.[0]?.wordWrap).toBe(false)
+  })
+})

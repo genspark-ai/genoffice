@@ -24,10 +24,16 @@ const FONT_TABLE_PART = {
 }
 
 describe('parseFontTable', () => {
-  it('reads name / altName / panose / family / pitch per entry', () => {
+  it('reads name / altName / panose / charset / family / pitch per entry', () => {
     const entries = parseFontTable(FONT_TABLE_XML)
     expect(entries).toEqual([
-      { name: '원신한 Light', panose: '020B0303000000000000', family: 'modern', pitch: 'variable' },
+      {
+        name: '원신한 Light',
+        panose: '020B0303000000000000',
+        charset: '81',
+        family: 'modern',
+        pitch: 'variable',
+      },
       {
         name: '汉仪旗黑-50简',
         altName: '黑体',
@@ -163,6 +169,17 @@ describe('empty EA slot resolution priority', () => {
     ])
     expect(doc.docDefaults?.eastAsiaFont).toBe('SimSun')
     expect(doc.docDefaults?.eaFromLang).toBe(true)
+  })
+
+  it('a theme EA slot reference is flagged even when it stays unresolved', async () => {
+    const doc = await withDocDefaults(`${RFONTS}<w:lang w:val="en-US" w:eastAsia="en-US"/>`, [
+      themePart(''),
+      settingsPart('ja-JP'),
+    ])
+    expect(doc.docDefaults?.eastAsiaFont).toBeUndefined()
+    expect(doc.docDefaults?.eaThemeSlot).toBe(true)
+    const literal = await withDocDefaults('<w:rFonts w:eastAsia="Noto Sans CJK KR"/>', [])
+    expect(literal.docDefaults?.eaThemeSlot).toBeUndefined()
   })
 
   it('a literal declared EA face is not flagged as a lang backfill', async () => {

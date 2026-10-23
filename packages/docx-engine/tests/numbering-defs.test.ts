@@ -4,6 +4,8 @@ import {
   computeListMarkerInfos,
   computeListMarkers,
   customEnumItems,
+  customLevelFromNumberingLevel,
+  customLevelXml,
   formatNumber,
   markerTabAdvance,
   mergeLevelXml,
@@ -51,6 +53,38 @@ describe('numbering definitions (word/numbering.xml)', () => {
     // follow the abstractNum
     expect(num2.levels[1]).toEqual({ numFmt: 'upperRoman', lvlText: '%2:', start: 5 })
     expect(num2.levels[0]).toEqual({ numFmt: 'decimal', lvlText: '%1.', start: 1 })
+  })
+
+  it('reads level w:ind as logical start/end with an absent left = 0, and the level w:bidi', async () => {
+    // Word probe 2026-10-20: a bidi level `right=360 hanging=360` hangs the marker
+    // 18pt outside the start (right) margin and indents the end (left) side by 18pt
+    const numbering =
+      XML_DECL +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="bullet"/><w:lvlText w:val="-"/><w:lvlJc w:val="right"/>' +
+      '<w:pPr><w:bidi/><w:ind w:right="360" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="bullet"/><w:lvlText w:val="-"/>' +
+      '<w:pPr><w:ind w:start="720" w:end="120" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
+      '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>' +
+      '</w:numbering>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' +
+          '<w:jc w:val="left"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+        numberingXml: numbering,
+      }),
+    )
+    const rtl = doc.numbering.get('1')?.levels[0]
+    expect(rtl).toMatchObject({ indentLeft: 0, indentRight: 360, hanging: 360, bidi: true })
+    expect(doc.numbering.get('2')?.levels[0]).toMatchObject({ indentLeft: 720, indentRight: 120 })
+    expect(doc.numbering.get('2')?.levels[0]?.bidi).toBeUndefined()
+    // the level's w:bidi makes the paragraph bidi: w:jc left is the start edge (visual right)
+    const item = doc.blocks.find((b) => b.type === 'listItem')
+    expect(item && 'format' in item ? item.format?.align : undefined).toBe('right')
   })
 
   it('keeps the bullet/ordered classification for list blocks', async () => {
@@ -399,6 +433,76 @@ describe('w14 custom numFmt (mc:AlternateContent)', () => {
     expect(formatNumber(2, 'custom', 'α, β, γ, ...')).toBe('β')
     expect(formatNumber(5, 'custom', 'α, β, γ, ...')).toBe('β')
     expect(formatNumber(3, 'custom')).toBe('3')
+  })
+
+  // genoffice#2121: the dialog shape dropped the enumeration, so a reused or
+  // re-saved custom level came back as plain digits ("Za 1:")
+  it('customLevelFromNumberingLevel carries the enumeration', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        numberingXml: alternate('custom', 'α, β, γ, ...'),
+      }),
+    )
+    const custom = customLevelFromNumberingLevel(doc.numbering.get('1')!.levels[0])
+    expect(custom.numFmt).toBe('custom')
+    expect(custom.customFormat).toBe('α, β, γ, ...')
+  })
+
+  it('a new custom level is written as mc:AlternateContent and parses back', async () => {
+    const lvl = customLevelXml(
+      { numFmt: 'custom', customFormat: 'Za prvé, Za druhé, ...', lvlText: '%1:', indentLeft: 720 },
+      0,
+    )
+    expect(lvl).not.toMatch(/<w:numFmt w:val="custom"\/>/)
+    expect(lvl).toMatch(/<w:start[^>]*\/><mc:AlternateContent[^>]*><mc:Choice Requires="w14">/)
+    expect(lvl).toContain('<mc:Fallback><w:numFmt w:val="decimal"/></mc:Fallback>')
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        numberingXml:
+          XML_DECL +
+          '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+          `<w:abstractNum w:abstractNumId="0">${lvl}</w:abstractNum>` +
+          '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>',
+      }),
+    )
+    expect(doc.numbering.get('1')!.levels[0].customFormat).toBe('Za prvé, Za druhé, ...')
+    expect(
+      computeListMarkers(
+        [
+          { numId: '1', ilvl: 0 },
+          { numId: '1', ilvl: 0 },
+        ],
+        doc.numbering,
+      ),
+    ).toEqual(['Za prvé:', 'Za druhé:'])
+  })
+
+  it('mergeLevelXml replaces the custom numFmt in place instead of adding a bare one beside it', () => {
+    const existing =
+      '<w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+      '<mc:AlternateContent><mc:Choice Requires="w14"><w:numFmt w:val="custom" w:format="α, β, γ, ..."/></mc:Choice>' +
+      '<mc:Fallback><w:numFmt w:val="decimal"/></mc:Fallback></mc:AlternateContent>' +
+      '<w:lvlText w:val="%1."/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>'
+    const kept = mergeLevelXml(
+      existing,
+      { numFmt: 'custom', customFormat: 'α, β, γ, ...', lvlText: '%1.', indentLeft: 1440 },
+      0,
+    )
+    expect(kept.match(/<w:numFmt\b/g)).toHaveLength(2)
+    expect(kept.match(/<mc:AlternateContent\b/g)).toHaveLength(1)
+    expect(kept).toMatch(/<w:start[^>]*\/><mc:AlternateContent/)
+    expect(kept).toContain('w:format="α, β, γ, ..."')
+    expect(kept).toContain('<w:ind w:left="1440"')
+
+    const plain = mergeLevelXml(
+      existing,
+      { numFmt: 'upperRoman', lvlText: '%1.', indentLeft: 720 },
+      0,
+    )
+    expect(plain).not.toContain('AlternateContent')
+    expect(plain).toContain('<w:start w:val="1"/><w:numFmt w:val="upperRoman"/>')
   })
 })
 

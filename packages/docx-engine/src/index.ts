@@ -22,6 +22,7 @@ export {
 export {
   parseDocx,
   reconcileGridColumns,
+  paraCsFormat,
   styleRunFormat,
   type ParseExtras,
   type ParseOptions,
@@ -124,6 +125,7 @@ export {
   type TextboxParaPatch,
   type TextboxParasPatchSet,
   inlinePictureDrawingXml,
+  resizeInlinePictureXml,
   NEW_PICTURE_TOKEN_PREFIX,
   type InlinePictureXmlOptions,
   type TableGenOptions,

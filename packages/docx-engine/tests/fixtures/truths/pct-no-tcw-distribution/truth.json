@@ -1,0 +1,90 @@
+{
+  "id": "pct-no-tcw-distribution",
+  "title": "pct table with no w:tcW anywhere: the grid is ignored, columns share the width CSS-style from min/max-content",
+  "section": "word-truths.md#L520",
+  "probe_date": "2026-10-20",
+  "source": "probes build.py + build2.py -> pct_probe{,2}.pdf: A4 1440 margins = 9014 twips, min = widest word + 216, max = paragraph + 216; Word columns in the notes",
+  "cases": [
+    {
+      "kind": "tableProps",
+      "block": 1,
+      "expect": {
+        "contentAutofit": true
+      },
+      "note": "uniform grid, no tcW"
+    },
+    {
+      "kind": "tableProps",
+      "block": 3,
+      "expect": {
+        "contentAutofit": true
+      },
+      "note": "skewed grid, no tcW: same flag (identical columns in Word)"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 9014,
+      "mins": [1302, 1429],
+      "maxes": [13079, 3715],
+      "expect": [6580, 2434],
+      "tol": 20,
+      "note": "L1|L3: Word 6580/2434, formula 6564/2450"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 9014,
+      "mins": [1302, 1029],
+      "maxes": [13079, 1509],
+      "expect": [7752, 1262],
+      "tol": 32,
+      "note": "L1|Medium: Word 7752/1262, formula 7723/1291"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 9014,
+      "mins": [1015, 1349],
+      "maxes": [1749, 13079],
+      "expect": [1416, 7598],
+      "tol": 12,
+      "note": "Masse salariale|L1: Word 1416/7598, formula 1407/7607"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 9014,
+      "mins": [1302, 1349, 1429],
+      "maxes": [13079, 10699, 3715],
+      "expect": [3792, 3322, 1900],
+      "tol": 14,
+      "note": "L1|L2|L3: Word 3792/3322/1900, formula 3784/3319/1911"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 9014,
+      "mins": [389, 1509, 2982],
+      "maxes": [389, 1509, 2982],
+      "expect": [740, 2744, 5530],
+      "tol": 45,
+      "note": "Sum(max) <= W: extra in proportion to max (Word 740/2744/5530, proportional 718/2787/5508)"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 9014,
+      "mins": [1015, 1429],
+      "maxes": [1749, 3715],
+      "expect": [2852, 6162],
+      "tol": 35,
+      "note": "Masse salariale|L3 grow case: Word 2852/6162, proportional 2885/6129"
+    },
+    {
+      "kind": "distribute",
+      "tableTwips": 4508,
+      "mins": [389, 1029, 1429],
+      "maxes": [389, 1509, 2982],
+      "expect": [388, 1402, 2718],
+      "tol": 32,
+      "note": "pct 50 shrink case: Word 388/1402/2718, formula 389/1430/2689"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

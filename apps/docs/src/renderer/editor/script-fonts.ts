@@ -9,17 +9,40 @@ import { touchedTopLevelBlocks } from './touched-blocks'
 const eastAsianText =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303f\uff01-\uff60\uffe0-\uffee]+/gu
 
-const attrs = {
-  class: 'doc-east-asian-font',
-  style: 'font-family:var(--doc-east-asian-font, inherit)',
+// Halfwidth kana/hangul/symbols share the East Asian face but count as
+// single-byte text for the balanced character grid (Word probe 2026-10-22).
+const halfwidthForm = /[\uff61-\uffdc\uffe8-\uffee]/u
+const halfwidthRun = /[\uff61-\uffdc\uffe8-\uffee]+|[^\uff61-\uffdc\uffe8-\uffee]+/gu
+
+const EAST_ASIAN_CLASS = 'doc-east-asian-font'
+const HALFWIDTH_CLASS = 'doc-east-asian-halfwidth'
+const FONT_STYLE = 'font-family:var(--doc-east-asian-font, inherit)'
+
+const classFor = (text: string): string =>
+  halfwidthForm.test(text) ? `${EAST_ASIAN_CLASS} ${HALFWIDTH_CLASS}` : EAST_ASIAN_CLASS
+
+/** East Asian runs in `text`, split so each piece is uniformly half- or full-width */
+export function eastAsianSegments(text: string): { index: number; text: string }[] {
+  const out: { index: number; text: string }[] = []
+  for (const match of text.matchAll(eastAsianText)) {
+    for (const part of match[0].matchAll(halfwidthRun)) {
+      out.push({ index: match.index + part.index, text: part[0] })
+    }
+  }
+  return out
 }
 
 function decorationsIn(doc: PmNode, from: number, to: number): Decoration[] {
   const ranges: Decoration[] = []
   doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isText) return
-    for (const match of node.text!.matchAll(eastAsianText)) {
-      ranges.push(Decoration.inline(pos + match.index, pos + match.index + match[0].length, attrs))
+    for (const seg of eastAsianSegments(node.text!)) {
+      ranges.push(
+        Decoration.inline(pos + seg.index, pos + seg.index + seg.text.length, {
+          class: classFor(seg.text),
+          style: FONT_STYLE,
+        }),
+      )
     }
   })
   return ranges
@@ -72,18 +95,18 @@ export function scriptFontHtml(html: string): string {
   while (walker.nextNode()) texts.push(walker.currentNode as Text)
   for (const text of texts) {
     if (text.parentElement?.closest('script, style, svg, math')) continue
-    const matches = [...text.data.matchAll(eastAsianText)]
-    if (!matches.length) continue
+    const segments = eastAsianSegments(text.data)
+    if (!segments.length) continue
     const fragment = document.createDocumentFragment()
     let end = 0
-    for (const match of matches) {
-      fragment.append(text.data.slice(end, match.index))
+    for (const seg of segments) {
+      fragment.append(text.data.slice(end, seg.index))
       const span = document.createElement('span')
-      span.className = 'doc-east-asian-font'
+      span.className = classFor(seg.text)
       span.style.fontFamily = 'var(--doc-east-asian-font, inherit)'
-      span.textContent = match[0]
+      span.textContent = seg.text
       fragment.append(span)
-      end = match.index + match[0].length
+      end = seg.index + seg.text.length
     }
     fragment.append(text.data.slice(end))
     text.replaceWith(fragment)

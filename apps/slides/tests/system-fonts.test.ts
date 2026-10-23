@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { RunStyle } from '@genoffice/pptx-render'
 
 // Vitest turns ?asset imports into /@fs URLs, while font metrics reads the files from disk.
@@ -26,7 +27,12 @@ vi.mock('../src/main/shaped-metrics', () => ({
   complexScriptOf: () => null,
 }))
 
-import { createSystemFontMetrics } from '../src/main/fonts'
+import {
+  createSystemFontMetrics,
+  familyAvailable,
+  resetFontRegistry,
+  setUserFontDir,
+} from '../src/main/fonts'
 
 const style = (fontFamily: string, over: Partial<RunStyle> = {}): RunStyle => ({
   fontFamily,
@@ -69,6 +75,20 @@ describe.runIf(mac)(
       )
       expect(m.displayFamily!(style('PMingLiU'))).toMatch(office ? /MingLiU|Songti/ : /Songti/)
     })
+
+    it.runIf(office)(
+      'proportional MS faces inside msgothic/msmincho.ttc survive a bold request',
+      () => {
+        const kana = '\u30a2\u30a4\u30a6\u30a8\u30aa\u304b'
+        for (const fam of ['MS PGothic', 'MS UI Gothic', 'MS PMincho']) {
+          for (const bold of [false, true]) {
+            const s = style(fam, { bold, substScript: 'ja' })
+            expect(m.displayFamily!(s, kana)).toBe(fam)
+            expect(m.measure(kana, s)).toBeLessThan(560)
+          }
+        }
+      },
+    )
 
     it('ttc parsing yields real metrics: CJK full-width 1em, Latin non-heuristic', () => {
       expect(m.measure('あア亜', style('游ゴシック'))).toBeCloseTo(300, 0)
@@ -149,3 +169,50 @@ describe.runIf(mac)(
     })
   },
 )
+
+describe('variable-font family names alias to the static family and back', () => {
+  // Static "Zqvstat-*" weights and a lone "ZqvvarVariable" file, all Carlito copies: the
+  // filename index is what resolution keys on, so the face names stay Carlito
+  const carlito = resolve(process.cwd(), '../../packages/ui/src/fonts')
+  let dir: string
+  beforeAll(() => {
+    dir = mkdtempSync(resolve(tmpdir(), 'slides-vf-'))
+    copyFileSync(resolve(carlito, 'Carlito-Regular.ttf'), resolve(dir, 'Zqvstat-Regular.ttf'))
+    copyFileSync(resolve(carlito, 'Carlito-Bold.ttf'), resolve(dir, 'Zqvstat-Bold.ttf'))
+    copyFileSync(resolve(carlito, 'Carlito-Regular.ttf'), resolve(dir, 'ZqvvarVariable.ttf'))
+    setUserFontDir(dir)
+    resetFontRegistry()
+  })
+  afterAll(() => {
+    setUserFontDir(null as unknown as string)
+    resetFontRegistry()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('"X Variable" with only static X installed takes the static face of the right weight', () => {
+    const m = createSystemFontMetrics()
+    const regular = style('Zqvstat Variable')
+    const bold = style('Zqvstat Variable', { bold: true })
+    expect(m.displayFamily!(regular)).toMatch(/^Carlito/)
+    expect(m.displayFamily!(bold)).toMatch(/^Carlito/)
+    expect(m.measure('Hello', regular)).toBeCloseTo(m.measure('Hello', style('Carlito')), 5)
+    expect(m.measure('Hello', bold)).toBeCloseTo(
+      m.measure('Hello', style('Carlito', { bold: true })),
+      5,
+    )
+    expect(m.measure('Hello', bold)).not.toBeCloseTo(m.measure('Hello', regular), 0)
+  })
+
+  it('static X with only "X Variable" installed takes the variable file', () => {
+    const m = createSystemFontMetrics()
+    expect(m.displayFamily!(style('Zqvvar'))).toMatch(/^Carlito/)
+    expect(m.measure('Hello', style('Zqvvar'))).toBeCloseTo(m.measure('Hello', style('Carlito')), 5)
+  })
+
+  it('an unknown family stays a substitution either way round', () => {
+    expect(familyAvailable('Zqvnothing Variable')).toBe(false)
+    expect(familyAvailable('Zqvnothing')).toBe(false)
+    expect(familyAvailable('Zqvstat Variable')).toBe(true)
+    expect(familyAvailable('Zqvvar')).toBe(true)
+  })
+})

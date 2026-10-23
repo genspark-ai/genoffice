@@ -65,6 +65,7 @@ import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
 import { TABLE_TRAILING_SKIP, setLazyMediaHashes } from './editor/extensions'
+import { setStaticAsciiResolver } from './editor/protected-render'
 import { FORMAT_MARKS, serializeMarks } from './editor/caret-marks'
 import { TRACK_IGNORE } from './editor/revisions'
 import {
@@ -91,10 +92,12 @@ import { checkMissingFonts, collectDocFonts } from './font-check'
 import {
   hangulSpaceWideningFor,
   loadBundledStandIns,
+  setAdditiveParagraphSpacing,
   setDocFontTable,
   setHangulSpaceWidening,
 } from './line-metrics'
 import { adoptEmbeddedFonts } from './embedded-fonts'
+import { prefetchFaces } from './font-resolve'
 import { defaultEastAsiaFontFor } from './font-list'
 import { clearPrintZoom, setPrintZoom } from './print-zoom'
 import { collectPdfInternalLinks } from './pdf-internal-links'
@@ -360,11 +363,13 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   // Word stretches a justified line that ends in a line break (w:br / w:cr)
   // unless the document opts out with doNotExpandShiftReturn
   editor.storage.justifyShrink.expandBreakLines = parsed.doNotExpandShiftReturn !== true
+  setAdditiveParagraphSpacing(parsed.doNotUseHTMLParagraphAutoSpacing === true)
   editor.storage.cjkPunctShrink.enabled = parsed.compressPunctuation === true
   editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
   editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
   editor.storage.cjkPunctShrink.docEastAsiaLang = parsed.docDefaults?.eastAsiaLang ?? null
   setHangulSpaceWidening(hangulSpaceWideningFor(parsed))
+  setStaticAsciiResolver(() => editor.storage.listNumbering)
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
   const lang = parsed.autoHyphenation ? parsed.docDefaults?.lang : undefined
@@ -487,6 +492,7 @@ export async function loadFile(
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return 'superseded'
     setDocFontTable(parsed.fontTable)
+    await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
     if (generation !== openGeneration) return 'superseded'
     ctx.editor.storage.listNumbering.styles = parsed.styles
@@ -638,6 +644,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
+    await prefetchFaces(collectDocFonts(parsed))
     await loadBundledStandIns(collectDocFonts(parsed))
     if (generation !== openGeneration) return
     ctx.editor.storage.listNumbering.styles = parsed.styles

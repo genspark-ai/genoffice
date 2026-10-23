@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { SectionInfo } from '@genoffice/docx-engine'
+import type { FieldDisplay, SectionInfo } from '@genoffice/docx-engine'
 import {
   type SliceOutputs,
   appendEndnotesBlock,
@@ -26,11 +26,13 @@ import {
   docGridPitchPt,
   sectionCharSpaceSpecs,
   docCharSpacePt,
+  singleByteCharSpacePt,
   sectionColGeom,
   sectionColumns,
   computePageSlices,
   computeSectionedSlices,
   computeSectionedSlicesF2,
+  keepDemandLines,
   planRowSplit,
   cellLinesOf,
   rowSplitCss,
@@ -63,6 +65,7 @@ import {
   type TableRowBox,
 } from '../src/renderer/pagination'
 import { rowFillAttrs } from '../src/renderer/editor/pagination-gaps'
+import { renderFieldSpec } from '../src/renderer/editor/protected-render'
 import { bodyWindowHeight, verticalPageCss } from '../src/renderer/components/PaginationPreview'
 
 const block = (top: number, height: number, extra?: Partial<BlockBox>): BlockBox => ({
@@ -874,6 +877,30 @@ describe('sectionCharSpaceSpecs / docCharSpacePt — docGrid character grid', ()
     expect(docCharSpacePt([csSec(820)])).toBeCloseTo(820 / 4096, 6)
   })
 
+  // Word probe 2026-10-22 (charSpace 11417/8192/4096/-820, MS Mincho + Times
+  // New Roman/Arial 10.5/12pt): with settings.xml balanceSingleByteDoubleByteWidth
+  // single-byte characters advance by charSpace/8192 (+1.39pt at 11417),
+  // full-width ones still by charSpace/4096 (+2.79pt); without the flag every
+  // character gets the full delta
+  it('balanceSingleByteDoubleByteWidth halves the single-byte delta', () => {
+    const full = docCharSpacePt([csSec(11417)])!
+    expect(full).toBeCloseTo(11417 / 4096, 6)
+    expect(singleByteCharSpacePt(full, true)).toBeCloseTo(11417 / 8192, 6)
+    expect(singleByteCharSpacePt(full, false)).toBe(full)
+    const blocks = [
+      block(0, 100, { section: 0, el: el() }),
+      block(100, 100, { section: 1, el: el() }),
+    ]
+    const mixed = [csSec(11417), csSec(0)]
+    expect(sectionCharSpaceSpecs(blocks, mixed)).toEqual([
+      expect.objectContaining({ charSpacePt: 11417 / 4096 }),
+    ])
+    expect(sectionCharSpaceSpecs(blocks, mixed)[0]).not.toHaveProperty('charSpaceSbPt')
+    expect(sectionCharSpaceSpecs(blocks, mixed, true)).toEqual([
+      expect.objectContaining({ charSpacePt: 11417 / 4096, charSpaceSbPt: 11417 / 8192 }),
+    ])
+  })
+
   it('lines/default grids and charSpace 0 have no effect', () => {
     expect(docCharSpacePt([csSec(-820, 'lines')])).toBeNull()
     expect(docCharSpacePt([csSec(0)])).toBeNull()
@@ -1541,6 +1568,28 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     expect(aInPage2).toBe(true)
   })
 
+  it('keepNext chain head opening a page drops its padded space-before from the capacity', () => {
+    // page 1 holds 150 of 200; heading (20 pad + 40 line) + anchor's two lines
+    // (60) do not fit the remaining 50, so the chain opens page 2 at 170 (below
+    // the pad). Page 2 then carries 40 + 60 and a 100px block still fits.
+    const before = block(0, 150)
+    const heading = lineBlock(150, [40], { keepNext: true, spaceBeforePx: 20, padBeforePx: 20 })
+    const anchor = lineBlock(210, [30, 30])
+    const filler = block(270, 100)
+    const slices = computeSectionedSlicesF2([before, heading, anchor, filler], geoms1, 370)
+    expect(slices.map((s) => s.start)).toEqual([0, 170])
+  })
+
+  it('over-page paragraph opening a page by the orphan rule drops its padded space-before', () => {
+    // only one of the two orphan lines fits page 1, so the paragraph opens page
+    // 2 at 170 (below the 20px pad); its 20px space-before costs no capacity
+    // there, so eight 25px lines fill the 200px page before the cut (seven when it did)
+    const before = block(0, 150)
+    const para = lineBlock(150, Array(10).fill(25), { spaceBeforePx: 20, padBeforePx: 20 })
+    const slices = computeSectionedSlicesF2([before, para], geoms1, 420)
+    expect(slices.map((s) => s.start)).toEqual([0, 170, 390])
+  })
+
   it('pageBreakBefore has the highest priority (overrides keepNext)', () => {
     const a = block(0, 100, { keepNext: true })
     const b = block(100, 100, { breakBefore: true })
@@ -1571,6 +1620,24 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     const slices = computeSectionedSlicesF2([before, heading, body], geoms1, 280)
     expect(slices.length).toBe(2)
     expect(slices[1].start).toBe(120) // heading pushed together with the body
+  })
+
+  it('keepNext heading whose 3-line anchor cannot split moves with the whole paragraph', () => {
+    // 120 used, heading 30: the anchor's orphan minimum (2 x 20) fits (190 <= 200),
+    // but a 3-line paragraph has no widow-legal cut, so Word moves it whole and the
+    // heading with it (prod corpus 20261020 sample 031)
+    const before = block(0, 120)
+    const heading = lineBlock(120, [30], { keepNext: true, keepLines: true })
+    const body = lineBlock(150, [20, 20, 20])
+    const slices = computeSectionedSlicesF2([before, heading, body], geoms1, 210)
+    expect(slices.map((s) => s.start)).toEqual([0, 120])
+    // a 4-line anchor splits 2/2: the heading stays
+    const body4 = lineBlock(150, [20, 20, 20, 20])
+    const slices4 = computeSectionedSlicesF2([before, heading, body4], geoms1, 230)
+    expect(slices4.map((s) => s.start)).toEqual([0, 190])
+    expect(keepDemandLines(true, 3)).toBe(3)
+    expect(keepDemandLines(true, 4)).toBe(2)
+    expect(keepDemandLines(false, 3)).toBe(1)
   })
 
   it('keepNext heading whose anchor row cannot share any page still moves whole', () => {
@@ -2181,6 +2248,49 @@ describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
     ).toEqual(moved)
   })
 
+  it('a keepNext heading anchored by a plain splittable first row demands only its first legal cut', () => {
+    // 200px pages, 150 placed, heading 20 leaves 30. The table's only row has no
+    // tblHeader/cantSplit: an image cell (one 25px band, uncuttable) beside an
+    // 8-line text cell (10px lines). The demand is the image band (25), so the
+    // heading stays and the row splits under it; a cantSplit row still moves whole
+    const lines = (n: number, pitch: number) => ({
+      lines: Array.from({ length: n }, (_, i): [number, number] => [i * pitch, (i + 1) * pitch]),
+      childOf: Array.from({ length: n }, () => 0),
+      paraOf: Array.from({ length: n }, () => 0),
+      alignDy: 0,
+      alignFrac: 0,
+    })
+    const row = (cantSplit?: boolean): TableRowBox => ({
+      height: 80,
+      contentBottom: 80,
+      cutYs: [10, 20, 30, 40, 50, 60, 70],
+      cells: [lines(1, 25), lines(8, 10)],
+      ...(cantSplit ? { cantSplit } : {}),
+    })
+    const chain = (r: TableRowBox, modern: boolean) =>
+      computeSectionedSlicesF2(
+        [
+          { top: 0, height: 150 },
+          { top: 150, height: 20, keepNext: true, lineBoxes: [{ offsetInBlock: 0, height: 20 }] },
+          { ...makeTableBlock(170, [r]), modernTableHeaders: modern },
+        ],
+        [{ contentHeight: 200, forceBreak: false }],
+        250,
+        { rowSplits: [] },
+      ).map((s) => [s.start, s.end])
+    const split = [
+      [0, 200],
+      [200, 250],
+    ]
+    const moved = [
+      [0, 150],
+      [150, 250],
+    ]
+    expect(chain(row(), true)).toEqual(split)
+    expect(chain(row(), false)).toEqual(split)
+    expect(chain(row(true), true)).toEqual(moved)
+  })
+
   it('the anchor demand of a keepNext row charges the bottom cell margin like the split itself', () => {
     // 200px pages, paragraph 150 + keepNext row 20 leave 30; the anchor is a
     // 4-line paragraph (10px lines) over a bottom margin. Its first legal
@@ -2633,6 +2743,45 @@ describe('computeSectionedSlicesF2 — keepNext chain anchored by a table', () =
     expect(slices.map((slice) => slice.start)).toEqual([0, 130, 270])
   })
 
+  it('Word 2013+ layout: the heading demands the header row plus the keepNext row chain', () => {
+    // header 20 + three keepNext rows + the cantSplit anchor row = 100 do not
+    // fit the 80 left under the heading; _placeTable turns the page for the
+    // chain and retracts the header, so the heading must move with the table
+    const filler = block(0, 100)
+    const heading = block(100, 20, { keepNext: true })
+    const rows: TableRowBox[] = [
+      { height: 20, isHeader: true, contentBottom: 0 },
+      { height: 20, keepNext: true, cantSplit: true, contentBottom: 0 },
+      { height: 20, keepNext: true, cantSplit: true, contentBottom: 0 },
+      { height: 20, keepNext: true, cantSplit: true, contentBottom: 0 },
+      { height: 20, cantSplit: true, contentBottom: 0 },
+      { height: 20, cantSplit: true, contentBottom: 0 },
+    ]
+    const table = block(120, 120, { tableRows: rows, modernTableHeaders: true })
+    const slices = computeSectionedSlicesF2([filler, heading, table], geoms1, 240)
+    expect(slices.map((slice) => slice.start)).toEqual([0, 100])
+  })
+
+  it('a keepNext row chain taller than a page falls back to the plain opening demand', () => {
+    const filler = block(0, 100)
+    const heading = block(100, 20, { keepNext: true })
+    const rows: TableRowBox[] = [
+      { height: 20, isHeader: true, contentBottom: 0 },
+      ...Array.from({ length: 12 }, () => ({
+        height: 20,
+        keepNext: true,
+        cantSplit: true,
+        contentBottom: 0,
+      })),
+      { height: 20, cantSplit: true, contentBottom: 0 },
+    ]
+    const table = block(120, 280, { tableRows: rows, modernTableHeaders: true })
+    const slices = computeSectionedSlicesF2([filler, heading, table], geoms1, 400)
+    // heading + header + first row = 60 fit the 100 remainder: the heading stays
+    expect(slices[0].start).toBe(0)
+    expect(slices[1].start).toBeGreaterThan(120)
+  })
+
   it('legacy layout keeps demanding only the first row', () => {
     const filler = block(0, 130)
     const heading = block(130, 20, { keepNext: true })
@@ -2645,6 +2794,26 @@ describe('computeSectionedSlicesF2 — keepNext chain anchored by a table', () =
     const slices = computeSectionedSlicesF2([filler, heading, table], geoms1, 360)
     expect(slices[0].start).toBe(0)
     expect(slices[1].start).toBe(180)
+  })
+
+  it('legacy layout: the heading demands one line of a splittable first row (no cell widow gate)', () => {
+    // legacy _placeTable splits a cell after a single line; the chain must
+    // demand that same single line, not the two-line widow fragment
+    const filler = block(0, 150)
+    const heading = block(150, 20, { keepNext: true })
+    const cell = {
+      lines: Array.from({ length: 3 }, (_, i): [number, number] => [i * 20, (i + 1) * 20]),
+      childOf: [0, 0, 0],
+      paraOf: [0, 0, 0],
+      alignDy: 0,
+      alignFrac: 0,
+    }
+    const rows: TableRowBox[] = [{ height: 60, contentBottom: 60, cutYs: [20, 40], cells: [cell] }]
+    const table = block(170, 60, { tableRows: rows })
+    const slices = computeSectionedSlicesF2([filler, heading, table], geoms1, 230, {
+      rowSplits: [],
+    })
+    expect(slices.map((s) => s.start)).toEqual([0, 200])
   })
 })
 
@@ -3262,6 +3431,30 @@ describe('insertParityBlanks — even/odd section blank pages', () => {
   it('returns input unchanged when there are no even/odd sections', () => {
     const slices = [{ start: 0, end: 500, section: 0 }]
     expect(insertParityBlanks(slices, geoms(['nextPage']))).toBe(slices)
+  })
+
+  // Word (prod corpus 20261020 sample 032 probe): different odd/even headers +
+  // a nextPage section restarting at an odd page number on an even physical
+  // page -> a blank sheet without header/footer, exactly like an oddPage break
+  it('a numbering restart under evenAndOddHeaders acts like an odd/even page break', () => {
+    const slices = [
+      { start: 0, end: 500, section: 0 },
+      { start: 500, end: 900, section: 1 },
+    ]
+    const odd = [
+      { contentHeight: 800, forceBreak: false, startType: 'nextPage' as const },
+      {
+        contentHeight: 800,
+        forceBreak: true,
+        startType: 'nextPage' as const,
+        numberingParity: 'oddPage' as const,
+      },
+    ]
+    const out = insertParityBlanks(slices, odd)
+    expect(out).toHaveLength(3)
+    expect(out[1]).toEqual({ start: 500, end: 500, section: 0 })
+    const even = [odd[0], { ...odd[1], numberingParity: 'evenPage' as const }]
+    expect(insertParityBlanks(slices, even)).toHaveLength(2)
   })
 })
 
@@ -5150,6 +5343,95 @@ describe('computeSectionedSlicesF2 — multi-cell rows split per cell (Word row 
     expect(tiny).toMatchObject({ lastFragment: 20, target: 120 })
   })
 
+  it('a paragraph ending mid-cell needs its space-after below the last line (Word probe 2026-10-20)', () => {
+    // paragraph A: 5 x 20px lines + 14px after, paragraph B follows at 114.
+    // 110px of room holds every line of A but not its after: A cannot end on
+    // this page, so the widow rule cuts it 3+2; without the after the cut sits
+    // at the paragraph boundary
+    const cell = (after: number) => ({
+      lines: [...linesOf(5, 20, 5).lines, ...linesOf(3, 20, 3, 1, 100 + after).lines] as Array<
+        [number, number]
+      >,
+      childOf: [0, 0, 0, 0, 0, 1, 1, 1],
+      paraOf: [0, 0, 0, 0, 0, 1, 1, 1],
+      childBox: [
+        [0, 100],
+        [100 + after, 160 + after],
+      ] as Array<[number, number]>,
+      childAfter: [after, 0],
+      alignDy: 0,
+      alignFrac: 0,
+    })
+    const row = (after: number): TableRowBox => ({
+      height: 160 + after,
+      contentBottom: 160 + after,
+      cells: [cell(after)],
+    })
+    const plan = planRowSplit(row(14), 110, 200, () => 200)
+    expect(plan !== 'nofit' && plan?.rules[0]).toEqual({
+      from: 0,
+      cell: 0,
+      child: 0,
+      clipBottom: 40,
+    })
+    const flush = planRowSplit(row(0), 110, 200, () => 200)
+    expect(flush !== 'nofit' && flush?.rules[0]).toEqual({
+      from: 0,
+      cell: 0,
+      child: 1,
+      tail: true,
+      hide: true,
+    })
+  })
+
+  it('a continuation opening at a new paragraph keeps its space-before (Word probe 2026-10-20)', () => {
+    // paragraph A 2 x 20px, paragraph B 2 x 20px with 14px before (box at 54).
+    // 50px of room: A fits, B turns the page and sits 14px below the fragment
+    // top (shift 50 - 54 + 14); mid-paragraph cuts and auto-collapsed befores
+    // (childBefore 0) start flush
+    const row = (before: number): TableRowBox => ({
+      height: 94,
+      contentBottom: 94,
+      cells: [
+        {
+          lines: [
+            [0, 20],
+            [20, 40],
+            [54, 74],
+            [74, 94],
+          ],
+          childOf: [0, 0, 1, 1],
+          paraOf: [0, 0, 1, 1],
+          childBox: [
+            [0, 40],
+            [54, 94],
+          ],
+          childBefore: [0, before],
+          alignDy: 0,
+          alignFrac: 0,
+        },
+      ],
+    })
+    const plan = planRowSplit(row(14), 50, 200, () => 200)
+    expect(plan).toMatchObject({ lastFragment: 54, target: 104 })
+    expect(plan !== 'nofit' && plan?.rules).toContainEqual({
+      from: 50,
+      cell: 0,
+      child: 1,
+      tail: true,
+      dy: 10,
+    })
+    const flush = planRowSplit(row(0), 50, 200, () => 200)
+    expect(flush).toMatchObject({ lastFragment: 44, target: 94 })
+    expect(flush !== 'nofit' && flush?.rules).toContainEqual({
+      from: 50,
+      cell: 0,
+      child: 1,
+      tail: true,
+      dy: -4,
+    })
+  })
+
   it('a paragraph opening in the fragment carries two lines over instead of moving whole', () => {
     // 5 x 20px lines, 4 fit: Word cuts after 3 lines (widow), not before the paragraph
     const row: TableRowBox = {
@@ -5897,6 +6179,48 @@ describe('page-bottom fit: the last line needs only its single-spacing extent (l
     }
   })
 
+  it('lineLeadPx of a protected field block reads the inner TOC line rule', () => {
+    const el = document.createElement('div')
+    el.className = 'doc-protected doc-protected-field doc-protected-field-toc'
+    el.style.lineHeight = '20px'
+    const toc = document.createElement('div')
+    toc.className = 'doc-toc-line'
+    toc.style.lineHeight = '30px'
+    toc.style.setProperty('--doc-line-mult', '1.5')
+    el.appendChild(toc)
+    document.body.appendChild(el)
+    try {
+      expect(lineLeadPx(el)).toBeCloseTo(10, 5)
+    } finally {
+      el.remove()
+    }
+  })
+
+  it('lineLeadPx of an exact-rule TOC entry is 0 despite an inherited auto multiple', () => {
+    const el = document.createElement('div')
+    el.className = 'doc-protected doc-protected-field doc-protected-field-toc'
+    el.style.setProperty('--doc-line-mult', '1.5')
+    const spec = renderFieldSpec({
+      kind: 'tocLine',
+      left: 'Heading',
+      right: '3',
+      lineRule: 'exact',
+      lineRawTwips: 240,
+    } as FieldDisplay) as [string, Record<string, string>]
+    const toc = document.createElement('div')
+    toc.className = spec[1].class
+    toc.setAttribute('style', spec[1].style)
+    toc.style.lineHeight = '30px'
+    el.appendChild(toc)
+    document.body.appendChild(el)
+    try {
+      expect(spec[1].style).toContain('--doc-line-fixed:1')
+      expect(lineLeadPx(el)).toBe(0)
+    } finally {
+      el.remove()
+    }
+  })
+
   it('lineLeadPx of a picture paragraph is its bottom padding past the effectExtent', () => {
     const el = document.createElement('div')
     el.className = 'doc-protected doc-img-para'
@@ -6159,5 +6483,52 @@ describe('lifted floats', () => {
   it('an unlifted float that does not fit still turns the page', () => {
     const blocks = [block(0, 600), block(600, 380, { floated: true }), block(600, 50)]
     expect(computePageSlices(blocks, 700, 650).length).toBe(2)
+  })
+})
+
+describe('sectionGeoms — numbering restart parity under evenAndOddHeaders', () => {
+  const sec = (over: Partial<SectionInfo>): SectionInfo =>
+    ({
+      settings: {
+        pageWidth: 11904,
+        pageHeight: 16838,
+        orientation: 'portrait',
+        marginTop: 732,
+        marginRight: 1945,
+        marginBottom: 726,
+        marginLeft: 1988,
+        pageBorder: false,
+        columns: 1,
+      },
+      startType: 'nextPage',
+      firstBlockIndex: 0,
+      lastBlockIndex: 0,
+      sectPrXml: '',
+      titlePg: false,
+      headerRefs: {},
+      footerRefs: {},
+      ...over,
+    }) as SectionInfo
+
+  it('flags an odd/even restart only with evenAndOddHeaders on and a nextPage start', () => {
+    const secs = [
+      sec({}),
+      sec({ pageNumberStart: 1 }),
+      sec({ pageNumberStart: 2 }),
+      sec({ pageNumberStart: 3, startType: 'continuous' }),
+      sec({}),
+    ]
+    const on = sectionGeoms(secs, undefined, true)
+    expect(on.map((g) => g.numberingParity)).toEqual([
+      undefined,
+      'oddPage',
+      'evenPage',
+      undefined,
+      undefined,
+    ])
+    expect(sectionGeoms(secs).every((g) => g.numberingParity === undefined)).toBe(true)
+    expect(sectionGeoms([sec({ pageNumberStart: 1 })], undefined, true)[0].numberingParity).toBe(
+      undefined,
+    )
   })
 })

@@ -868,11 +868,20 @@ export type ExportImagesResult =
   | { ok: false; error: string }
 
 /** AI channels are app-wide shared ipcMain handlers (shell registers via docs-main registerAiIpc); pass-through only */
+export interface UserSkillEntry {
+  name: string
+  description: string
+  relevant: boolean
+}
+
 export const AI_CHANNELS = {
   getSettings: 'ai:get-settings',
   setSettings: 'ai:set-settings',
   settingsChanged: 'ai:settings-changed',
   openModelSettings: 'ai:open-model-settings',
+  openSkillsSettings: 'ai:open-skills-settings',
+  skillsList: 'ai:skills-list',
+  skillText: 'ai:skill-text',
   gskStatus: 'ai:gsk-status',
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
@@ -1025,6 +1034,12 @@ export interface PdfApi {
   onAiSettingsChanged(handler: () => void): () => void
   /** shell only: switch to Home and open Settings › AI Model (rejects in standalone) */
   openAiModelSettings(): Promise<void>
+  /** shell only: switch to Home and open Settings › Integrations (the skills list) */
+  openSkillsSettings(): Promise<void>
+  /** the skills the user installed into GenOffice */
+  skillsList(): Promise<UserSkillEntry[]>
+  /** one installed skill's body, by name */
+  skillText(name: string): Promise<string>
   /** Genspark login state (gsk); gates the cloud-only generate_image tool */
   gskStatus(): Promise<{ loggedIn: boolean }>
   aiStream(request: AiStreamRequest): Promise<void>

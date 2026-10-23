@@ -210,7 +210,7 @@ pub struct WorkbookSessions {
 /// Excel wraps password-encrypted workbooks in an OLE2 compound container
 /// rather than a ZIP package. Detect that signature before the zip reader
 /// runs so the open fails with an explanation instead of "invalid Zip
-/// archive: Could not find EOCD" (#2076). The file cursor is rewound so the
+/// archive: Could not find EOCD" (genoffice#2076). The file cursor is rewound so the
 /// caller can keep reading from the start.
 fn is_ole2_container(file: &mut File) -> std::io::Result<bool> {
     const OLE2_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];

@@ -9,6 +9,11 @@ export const th = {
   redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
   redactCancel: 'ยกเลิก',
   redactInsert: 'ซ่อน',
+  diskChangedMsg: 'ไฟล์นี้ถูกแก้ไขโดยโปรแกรมอื่น',
+  diskConflictMsg: 'ไฟล์นี้ถูกแก้ไขในดิสก์ การบันทึกจะเขียนทับการเปลี่ยนแปลงเหล่านั้น',
+  diskReload: 'โหลดใหม่',
+  diskKeepMine: 'เก็บของฉันไว้',
+  diskOverwrite: 'เขียนทับต่อไป',
 
   loading: 'กำลังโหลด…',
   loadFailed: 'ไม่สามารถเปิดไฟล์ได้',

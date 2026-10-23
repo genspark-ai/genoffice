@@ -1,0 +1,54 @@
+{
+  "id": "line-numbering-defaults",
+  "title": "w:lnNumType: no w:restart = newPage; w:start is a 0-based skip count",
+  "section": "word-truths.md#L180",
+  "probe_date": "2026-09-12",
+  "source": "Word probe probe (PR #1696)",
+  "cases": [
+    {
+      "kind": "sectionProps",
+      "section": 0,
+      "expect": {
+        "lineNumbers": {
+          "countBy": 1,
+          "start": 1,
+          "restart": "newPage"
+        }
+      },
+      "note": "omitted restart = newPage"
+    },
+    {
+      "kind": "sectionProps",
+      "section": 1,
+      "expect": {
+        "lineNumbers": {
+          "start": 6,
+          "restart": "newPage"
+        }
+      },
+      "note": "start=5 shows 6 first"
+    },
+    {
+      "kind": "sectionProps",
+      "section": 2,
+      "expect": {
+        "lineNumbers": {
+          "start": 1,
+          "restart": "continuous"
+        }
+      },
+      "note": "start=0 shows 1; explicit continuous kept"
+    },
+    {
+      "kind": "sectionProps",
+      "section": 3,
+      "expect": {
+        "lineNumbers": {
+          "restart": "newSection"
+        }
+      }
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

@@ -18,11 +18,16 @@ import { inspectCliLink } from '@genoffice/cli/install'
 import { readAppSettings, writeAppSetting } from './app-settings'
 import { isEphemeralInstall } from './cli-link'
 import {
-  findSkills,
-  importSkill,
+  importSkillDir,
+  importSkillMd,
+  importSkillZip,
+  installRecommendedSkill,
   isKnownSkillPath,
-  knownSkillRoots,
   readSkillBody,
+  removeSkill,
+  recommendedSkills,
+  skillsRoot,
+  usableSkills,
 } from './imported-skills'
 import { isInstallableSkillDir } from './skill-target'
 import {
@@ -31,7 +36,7 @@ import {
   type IntegrationsStatus,
   type SkillInstallState,
 } from '../shared/integrations-api'
-import type { FoundSkill } from '../shared/found-skill'
+import type { FoundSkill, RecommendedSkill } from '../shared/found-skill'
 
 export interface IntegrationsDeps {
   settingsPath: () => string
@@ -43,6 +48,8 @@ export interface IntegrationsDeps {
   skillPath: string
   /** packages/cli/package.json (its version is the CLI version) */
   cliPackageJson: string
+  /** skills/recommended (repo dir in dev, Resources/cli/skills/recommended packaged) */
+  recommendedSkillsDir: string
 }
 
 /** Settings → Integrations: probe, install, uninstall, zip. No write happens without a click in that pane. */
@@ -139,28 +146,64 @@ export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
     if (typeof text === 'string') clipboard.writeText(text)
   })
 
-  // reading a third-party skill: list what this machine has, then read one body.
-  // Listing copies nothing and runs nothing — it is a menu, not an import.
   ipcMain.handle(INTEGRATIONS_CHANNELS.listSkills, async (): Promise<FoundSkill[]> =>
-    findSkills(app.getPath('userData')),
+    usableSkills(app.getPath('userData')),
   )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.removeSkill, (_e, name: string): void => {
+    removeSkill(name, app.getPath('userData'))
+  })
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.listRecommendedSkills,
+    async (): Promise<RecommendedSkill[]> =>
+      recommendedSkills(deps.recommendedSkillsDir, app.getPath('userData')),
+  )
+
+  ipcMain.handle(INTEGRATIONS_CHANNELS.installRecommendedSkill, (_e, name: unknown): FoundSkill => {
+    if (typeof name !== 'string') throw new Error('unknown skill')
+    return installRecommendedSkill(name, deps.recommendedSkillsDir, app.getPath('userData'))
+  })
 
   ipcMain.handle(INTEGRATIONS_CHANNELS.skillBody, (_e, path: string): string => {
     // the path came from the renderer, so it is only a file we just listed
-    if (!isKnownSkillPath(path, knownSkillRoots(app.getPath('userData')))) {
+    const roots = [skillsRoot(app.getPath('userData')), deps.recommendedSkillsDir]
+    if (!roots.some((root) => isKnownSkillPath(path, root))) {
       throw new Error('unknown skill')
     }
     return readSkillBody(path)
   })
 
-  // the one write: a person pressed Import. Same guard as the read, because a
-  // copy is as much an escape as a read if the source is chosen by the renderer
-  ipcMain.handle(INTEGRATIONS_CHANNELS.importSkill, (_e, path: string): FoundSkill => {
-    if (!isKnownSkillPath(path, knownSkillRoots(app.getPath('userData')))) {
-      throw new Error('unknown skill')
-    }
-    return importSkill(path, app.getPath('userData'))
-  })
+  // the only writes: a person pressed Import and picked something in a dialog
+  // this process owns, so the source path never comes from the renderer
+  const pick = async (opts: Electron.OpenDialogOptions): Promise<string | null> => {
+    const win = deps.window()
+    const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts))
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  }
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.importSkillFolder,
+    async (_e, title: string): Promise<FoundSkill | null> => {
+      const dir = await pick({ title: String(title ?? ''), properties: ['openDirectory'] })
+      return dir ? importSkillDir(dir, app.getPath('userData')) : null
+    },
+  )
+
+  ipcMain.handle(
+    INTEGRATIONS_CHANNELS.importSkillZip,
+    async (_e, title: string): Promise<FoundSkill | null> => {
+      const file = await pick({
+        title: String(title ?? ''),
+        properties: ['openFile'],
+        filters: [{ name: 'Skill package', extensions: ['zip', 'md'] }],
+      })
+      if (!file) return null
+      return /\.md$/i.test(file)
+        ? importSkillMd(file, app.getPath('userData'))
+        : importSkillZip(file, app.getPath('userData'))
+    },
+  )
 }
 
 function cliVersion(packageJson: string): string {

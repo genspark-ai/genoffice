@@ -25,6 +25,7 @@ import {
   patchTextboxParas,
   generateTableModelXml,
   inlinePictureDrawingXml,
+  resizeInlinePictureXml,
   NEW_PICTURE_TOKEN_PREFIX,
   symbolGlyph,
   symbolPuaChar,
@@ -51,12 +52,15 @@ import {
   type TextboxParaPatch,
   type TextboxParasPatchSet,
   type AutoSpace,
+  type EffectivePPr,
+  type EffectiveRPr,
 } from '@genoffice/docx-engine'
 import { t } from '../i18n/locale'
 import { symbolFontCovers } from '../font-check'
 import {
   canvasMetrics,
   charScaleEm,
+  maxLineWidthPx,
   maxWordWidthPx,
   textHasComplexScript,
   type FontMetricsProvider,
@@ -167,8 +171,37 @@ export function inferredBidi(format: ParaFormat | undefined, runs: Run[] | undef
   return runs.some((r) => r.rtl)
 }
 
+/** Display-only: the cell-paragraph properties the table style (whole table or a
+ * tblStylePr condition) resolves and no other layer sets. blockAttrs paints them
+ * inline; the save path never reads them (the `td p` style CSS stays as the
+ * fallback for paragraphs typed or pasted into a cell). */
+function tableStyleParaAttr(eff: EffectivePPr | undefined): string | null {
+  if (!eff) return null
+  const by = (k: string) => eff.source[k] === 'tableStyle'
+  const t: Record<string, unknown> = {}
+  if (by('align') && eff.align) t.align = eff.align
+  if (by('spaceBefore')) t.spaceBefore = eff.spacing.before
+  if (by('spaceAfter')) t.spaceAfter = eff.spacing.after
+  if (by('line') && eff.spacing.line) t.line = eff.spacing.line
+  return Object.keys(t).length > 0 ? JSON.stringify(t) : null
+}
+
+/** Display-only twin for runs: non-toggle rPr the table style resolves (size, face,
+ * caps, spacing); bold/colour stay on the cell (styleBold/styleColor) and the style CSS */
+function tableStyleRunAttr(eff: EffectiveRPr | undefined): string | null {
+  if (!eff) return null
+  const by = (k: string) => eff.source[k] === 'tableStyle'
+  const t: Record<string, unknown> = {}
+  if (by('sizeHalfPoints')) t.sizeHalfPoints = eff.sizeHalfPoints
+  if (by('ascii') && eff.fonts.ascii) t.fontAscii = eff.fonts.ascii
+  if (by('caps')) t.caps = eff.caps
+  if (by('charSpacingTwips')) t.charSpacingTwips = eff.charSpacingTwips
+  return Object.keys(t).length > 0 ? JSON.stringify(t) : null
+}
+
 function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<string, unknown> {
   return {
+    tblPara: tableStyleParaAttr(format?.effective),
     align: format?.align ?? null,
     lineSpacing: format?.lineSpacing ?? null,
     lineRule: format?.lineRule ?? null,
@@ -527,18 +560,37 @@ function paraIndentPx(para: TableParagraph): number {
   return Math.max(leftTw + firstTw, 0) / 15
 }
 
-function cellMaxWordPx(
+type CellRuns = Parameters<typeof maxWordWidthPx>[0]
+
+/** widest paragraph of a cell (px), paragraph indent included. `word`: the
+ * widest unbreakable unit (min-content); `line`: the unwrapped line (max-content).
+ * An inline picture is an unbreakable unit of its own width; floating ones
+ * take no cell width. */
+function cellMeasurePx(
   cell: TableCell,
+  mode: 'word' | 'line',
   metrics: FontMetricsProvider | null,
   defaults?: RunDefaults,
 ): number {
-  const measure = (runs: Parameters<typeof maxWordWidthPx>[0]) =>
-    metrics ? maxWordWidthPx(runs, metrics) : maxWordWidthPx(runs)
+  const measureText = (runs: CellRuns) =>
+    mode === 'word'
+      ? metrics
+        ? maxWordWidthPx(runs, metrics)
+        : maxWordWidthPx(runs)
+      : metrics
+        ? maxLineWidthPx(runs, metrics)
+        : maxLineWidthPx(runs)
   let max = 0
   if (cell.richParas?.length) {
     for (const para of cell.richParas) {
-      const runs: Parameters<typeof maxWordWidthPx>[0] = []
+      const runs: CellRuns = []
+      let imgMax = 0
+      let imgSum = 0
       for (const r of para.runs) {
+        if (r.image && !r.image.wrap && (r.image.widthPx ?? 0) > 0) {
+          imgMax = Math.max(imgMax, r.image.widthPx!)
+          imgSum += r.image.widthPx!
+        }
         if (!r.text) continue
         // Latin words render in the ascii slot; `font` may be the East Asian face
         const family = r.fontAscii ?? r.font ?? defaults?.font
@@ -551,15 +603,17 @@ function cellMaxWordPx(
           ...(r.italic ? { italic: true } : {}),
         })
       }
-      if (!runs.length) continue
-      max = Math.max(max, measure(runs) + paraIndentPx(para))
+      const textPx = runs.length ? measureText(runs) : 0
+      const px = mode === 'word' ? Math.max(textPx, imgMax) : textPx + imgSum
+      if (px <= 0) continue
+      max = Math.max(max, px + paraIndentPx(para))
     }
   } else {
     for (const text of cell.paras) {
       if (!text) continue
       max = Math.max(
         max,
-        measure([
+        measureText([
           {
             text,
             ...(cell.bold ? { bold: true } : {}),
@@ -571,6 +625,100 @@ function cellMaxWordPx(
     }
   }
   return max
+}
+
+function cellMaxWordPx(
+  cell: TableCell,
+  metrics: FontMetricsProvider | null,
+  defaults?: RunDefaults,
+): number {
+  return cellMeasurePx(cell, 'word', metrics, defaults)
+}
+
+/** widest a nested table wants to be in its cell (twips): its grid plus indent
+ * and the straddled outer borders; pct tables follow the cell (0) */
+function nestedTablePreferredTwips(nt: TableModel): number {
+  const widths = nt.colWidthsTwips
+  if (!widths?.length || nt.widthPct) return 0
+  const border = ((borderTotalPt(nt.borders?.left) + borderTotalPt(nt.borders?.right)) / 2) * 20
+  return widths.reduce((a, b) => a + b, 0) + tableIndentTwips(nt) + border
+}
+
+/** per grid column (twips): widest unwrapped paragraph in single-span cells plus
+ * side padding (max-content) */
+function maxContentColTwips(
+  model: TableModel,
+  colCount: number,
+  metrics: FontMetricsProvider | null,
+  defaults?: RunDefaults,
+): number[] {
+  const slack = metrics ? MEASURED_SLACK : MIN_CONTENT_SLACK
+  const maxes = new Array<number>(colCount).fill(0)
+  for (const row of model.rows) {
+    let column = 0
+    for (const cell of row) {
+      const start = column
+      column += cell.colSpan ?? 1
+      if ((cell.colSpan ?? 1) !== 1 || start >= colCount) continue
+      if (cell.vMerge === 'continue' || cell.textDirection) continue
+      const mar = cell.cellMarTwips ?? model.cellMarTwips
+      const pad = (mar?.left ?? DEFAULT_CELL_MAR) + (mar?.right ?? DEFAULT_CELL_MAR)
+      for (const nt of cell.nestedTables ?? []) {
+        const ntMax = Math.max(
+          nestedTablePreferredTwips(nt),
+          nestedTableMinTwips(nt, metrics, defaults),
+        )
+        if (ntMax > 0) maxes[start] = Math.max(maxes[start], ntMax + pad)
+      }
+      let linePx = cellMeasurePx(cell, 'line', metrics, defaults)
+      if (linePx <= 0) continue
+      if (metrics) linePx += MEASURED_EDGE_PX
+      maxes[start] = Math.max(maxes[start], Math.ceil(linePx * slack * 15) + pad)
+    }
+  }
+  return maxes
+}
+
+/**
+ * Word autofit for a table whose cells carry no w:tcW (probe 2026-10-20, pct
+ * 100/50 tables, uniform and skewed grids): the grid is ignored and the table
+ * width is shared like CSS auto layout - over the max-content sum the extra is
+ * split in proportion to each column's max-content; under it every column
+ * starts at its min-content and the rest is split by (max - min).
+ */
+export function distributeContentAutofit(
+  tableTwips: number,
+  mins: number[],
+  maxes: number[],
+): number[] {
+  const n = mins.length
+  const lo = mins.map((m) => Math.max(1, m))
+  const hi = maxes.map((m, i) => Math.max(m, lo[i]))
+  const sumLo = lo.reduce((a, b) => a + b, 0)
+  const sumHi = hi.reduce((a, b) => a + b, 0)
+  let widths: number[]
+  if (tableTwips >= sumHi) {
+    const extra = tableTwips - sumHi
+    widths = hi.map((h) => h + (sumHi > 0 ? (extra * h) / sumHi : extra / n))
+  } else if (tableTwips > sumLo) {
+    const room = tableTwips - sumLo
+    const slack = hi.map((h, i) => h - lo[i])
+    const sumSlack = slack.reduce((a, b) => a + b, 0)
+    widths = lo.map((l, i) => l + (sumSlack > 0 ? (room * slack[i]) / sumSlack : room / n))
+  } else {
+    const scale = sumLo > 0 ? tableTwips / sumLo : 1
+    widths = lo.map((l) => l * scale)
+  }
+  const rounded = widths.map((w) => Math.max(1, Math.round(w)))
+  const drift = tableTwips - rounded.reduce((a, b) => a + b, 0)
+  if (drift !== 0 && rounded.length) {
+    let widest = 0
+    rounded.forEach((w, i) => {
+      if (w > rounded[widest]) widest = i
+    })
+    rounded[widest] = Math.max(1, rounded[widest] + drift)
+  }
+  return rounded
 }
 
 /**
@@ -611,6 +759,21 @@ export function expandAutofitColWidths(
     if (tableW > 0) {
       widths = model.colWidthsPct.map((p) => Math.round((p / 100) * tableW))
       resolvedPct = true
+      if (model.contentAutofit) {
+        const n = widths.length
+        const mins = minContentColTwips(model, n, metrics, false, defaults)
+        const maxes = maxContentColTwips(model, n, metrics, defaults)
+        if (maxes.some((m) => m > 0)) {
+          const sideMar = sideMarginTwips(model)
+          // an empty column still keeps its side margins
+          widths = distributeContentAutofit(
+            Math.round(tableW),
+            mins.map((m) => Math.max(m, Math.min(sideMar, Math.round(tableW) / n))),
+            maxes.map((m, i) => Math.max(m, mins[i])),
+          )
+          widthsChanged = true
+        }
+      }
     }
   }
   if (autofit && (resolvedPct || !model.widthPct) && widths?.length && budget > 0) {
@@ -857,6 +1020,9 @@ function blockToPmNode(
           imageParagraphIndentFirstLine: block.imageParagraphIndentFirstLine ?? null,
           imageParagraphSpaceBefore: block.imageParagraphSpaceBefore ?? null,
           imageParagraphSpaceAfter: block.imageParagraphSpaceAfter ?? null,
+          imageParagraphSpaceBeforeAuto: block.imageParagraphSpaceBeforeAuto ?? null,
+          imageParagraphSpaceAfterAuto: block.imageParagraphSpaceAfterAuto ?? null,
+          imageParagraphAdditiveSpacing: block.imageParagraphAdditiveSpacing ?? null,
           imageParagraphLineTwips: block.imageParagraphLineTwips ?? null,
           imageParagraphLineRule: block.imageParagraphLineRule ?? null,
           imageMarkFont: block.imageMarkFont ?? null,
@@ -865,6 +1031,7 @@ function blockToPmNode(
           imageEffectExtentTopPx: block.imageEffectExtentTopPx ?? null,
           imageEffectExtentBottomPx: block.imageEffectExtentBottomPx ?? null,
           imageAlign: block.imageAlign ?? null,
+          imageIndentLeftTwips: block.imageIndentLeftTwips ?? null,
           imageWrap: block.imageWrap ?? null,
           imageBand: block.imageBand ?? false,
           imageWrapDistTopEmu: block.imageWrapDistTopEmu ?? null,
@@ -953,15 +1120,15 @@ export function cellClipTwips(
   if (rowSpan > 1 || model.rowHeightRules?.[rowIndex] !== 'exact') return null
   const h = model.rowHeightsTwips?.[rowIndex]
   if (!h) return null
+  // the bottom margin sits below the declared height (rowHeightCss), the top one inside
   const padTop = cell.cellMarTwips?.top ?? model.cellMarTwips?.top ?? 0
-  const padBottom = cell.cellMarTwips?.bottom ?? model.cellMarTwips?.bottom ?? 0
   // collapsed borders straddle the row edges: half of each eats into the row height
   const bTop = cell.borders?.top ?? (rowIndex === 0 ? model.borders?.top : model.borders?.insideH)
   const bBottom =
     cell.borders?.bottom ??
     (rowIndex === model.rows.length - 1 ? model.borders?.bottom : model.borders?.insideH)
   const borderTwips = Math.round(((cellBorderPx(bTop) + cellBorderPx(bBottom)) / 2) * 15)
-  return Math.max(0, h - padTop - padBottom - borderTwips)
+  return Math.max(0, h - padTop - borderTwips)
 }
 
 /** free side beside a text-anchored float below which Word's side text is only word fragments */
@@ -1271,6 +1438,9 @@ function inlineFormattingSignature(content: PmNode[] | undefined): string[] {
   const styles: string[] = []
   for (const node of content ?? []) {
     // the schema re-sorts marks by rank on load, so the parse-side order must not count
+    // a picture adds no text, so one placed next to another must count on its
+    // own, and a resized one must regenerate the cell (its drawing carries the size)
+    const atom = node.type === 'docInlineImage'
     const style =
       node.type === 'text'
         ? JSON.stringify(
@@ -1278,9 +1448,9 @@ function inlineFormattingSignature(content: PmNode[] | undefined): string[] {
               .sort((a, b) => a.type.localeCompare(b.type))
               .map((mark) => [mark.type, mark.attrs ?? null]),
           )
-        : node.type
-    // a picture adds no text, so one placed next to another must count on its own
-    const atom = node.type === 'docInlineImage'
+        : atom
+          ? JSON.stringify([node.type, node.attrs?.widthPx ?? null, node.attrs?.heightPx ?? null])
+          : node.type
     if (atom || styles[styles.length - 1] !== style) styles.push(style)
   }
   return styles
@@ -1662,6 +1832,7 @@ let nextZoteroFieldId = 1
 
 function runMarks(run: Run): PmMark[] {
   const marks: PmMark[] = []
+  const cs = run.effective?.cs ? run.effective : undefined
   if (run.bold) marks.push({ type: 'bold' })
   if (run.italic) marks.push({ type: 'italic' })
   if (run.underline) marks.push({ type: 'underline' })
@@ -1830,6 +2001,12 @@ function runMarks(run: Run): PmMark[] {
         rawRPr: run.rawRPr ?? null,
         themeRFonts: run.themeRFonts ? JSON.stringify(run.themeRFonts) : null,
         themeColor: run.themeColor ?? null,
+        // the Cs size an rtl run inherits (strut input only; the .doc-cs style CSS paints it)
+        csSize: cs && run.sizeHalfPoints === undefined ? cs.sizeHalfPoints : null,
+        // the resolved weight / style of an rtl run (table style, Cs twins, XOR), display only
+        csBold: cs && run.bold === undefined ? cs.bold : null,
+        csItalic: cs && run.italic === undefined ? cs.italic : null,
+        tblRun: tableStyleRunAttr(run.effective),
       },
     })
   }
@@ -3399,7 +3576,10 @@ export function inlineToRuns(content: PmNode[]): Run[] {
     if (node.type === 'docInlineImage') {
       const dataUrl = String(node.attrs?.dataUrl ?? '')
       const rule = node.attrs?.rule as NonNullable<Run['image']>['rule'] | null | undefined
-      const xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
+      const w = Number(node.attrs?.widthPx)
+      const h = Number(node.attrs?.heightPx)
+      let xml = String(node.attrs?.xml ?? '') || (rule ? '' : newPictureXml(node))
+      if (xml && !rule && w > 0 && h > 0) xml = resizeInlinePictureXml(xml, w, h)
       if ((dataUrl || rule) && xml) {
         runs.push({
           ...atomBase(node),
@@ -3714,8 +3894,14 @@ function indentSame(a: ParaFormat | undefined, b: ParaFormat | undefined): boole
   )
 }
 
+/** a format that declares nothing (display-only keys such as `effective`) signs like no format */
 function normalizedFormat(format: ParaFormat | undefined): unknown {
   if (!format) return null
+  const fields = normalizedFormatFields(format)
+  return JSON.stringify(fields) === EMPTY_FORMAT_SIGNATURE ? null : fields
+}
+
+function normalizedFormatFields(format: ParaFormat): unknown[] {
   return [
     format.align ?? null,
     format.lineSpacing ?? null,
@@ -3751,6 +3937,8 @@ function normalizedFormat(format: ParaFormat | undefined): unknown {
     format.emptyRunSizeHalfPoints ?? null,
   ]
 }
+
+const EMPTY_FORMAT_SIGNATURE = JSON.stringify(normalizedFormatFields({}))
 
 export function signatureOfBlock(block: Block): string {
   return JSON.stringify({

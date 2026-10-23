@@ -81,25 +81,65 @@ export interface StatusBarStatsFilter {
   dispose(): void
 }
 
+interface StatusBarServiceFunction {
+  func: string
+  filter?: ((state: StatusBarState) => boolean) | undefined
+}
+
+/**
+ * Univer's StatusBarService decides per-function visibility (SUM/AVERAGE/
+ * MIN/MAX need COUNTA > 1 and COUNT > 0) by reading COUNT/COUNTA out of the
+ * values list it is given. Those rules must run on the FULL upstream state:
+ * once the preference filter removes an unticked COUNT entry, the service
+ * reads COUNT as 0 and hides every numeric statistic (the footer kept only
+ * the COUNTA count for any selection). Run the service's own rules here, then hand it a
+ * pre-decided list with the rules neutralized.
+ */
+export function applyStatusBarVisibilityRules(
+  state: StatusBarState | null,
+  rules: ReadonlyMap<string, ((state: StatusBarState) => boolean) | undefined>,
+): StatusBarState | null {
+  if (!state) return null
+  return {
+    values: state.values.filter((item) => {
+      const rule = rules.get(item.func)
+      return rule === undefined || rule(state)
+    }),
+    pattern: state.pattern,
+  }
+}
+
 export function installStatusBarStatsFilter(
   runtime: UniverRuntime,
   getEnabled: () => readonly StatusBarFunc[],
 ): StatusBarStatsFilter {
-  const service = runtime.univer.__getInjector().get(IStatusBarService) as {
+  // Univer's status types are not exported; the service's `pattern` is a
+  // wider Nullable, so the cast has to go through unknown.
+  const service = runtime.univer.__getInjector().get(IStatusBarService) as unknown as {
     setState(state: StatusBarState | null): void
+    getFunctions?(): StatusBarServiceFunction[]
   }
   const upstreamSetState = service.setState.bind(service)
+  const entries = service.getFunctions?.() ?? []
+  const rules = new Map(entries.map((entry) => [entry.func, entry.filter]))
+  for (const entry of entries) entry.filter = undefined
   let lastState: StatusBarState | null = null
+  const publish = (state: StatusBarState | null): void => {
+    upstreamSetState(
+      filterStatusBarState(applyStatusBarVisibilityRules(state, rules), getEnabled()),
+    )
+  }
   service.setState = (state) => {
     lastState = state
-    upstreamSetState(filterStatusBarState(state, getEnabled()))
+    publish(state)
   }
   return {
     refresh() {
-      upstreamSetState(filterStatusBarState(lastState, getEnabled()))
+      publish(lastState)
     },
     dispose() {
       service.setState = upstreamSetState
+      for (const entry of entries) entry.filter = rules.get(entry.func)
     },
   }
 }

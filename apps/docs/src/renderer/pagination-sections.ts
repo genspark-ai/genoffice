@@ -101,18 +101,25 @@ export function docGridPitchPt(sections: SectionInfo[]): number | null {
 
 /**
  * Character-grid letter-spacing delta (pt) of one section. Word probes
- * (2026-09-02, MS Mincho/Arial, sizes 10.5/12pt): with w:docGrid
- * type="linesAndChars" and w:charSpace=N, EVERY character in the section
- * (east-asian, latin, halfwidth) advances by its natural width + N/4096 pt —
- * a uniform letter-spacing, positive or negative. Types lines/default ignore
- * charSpace; snapToChars snaps to a Normal-style-based pitch instead (not
- * modeled). Table cells and snapToGrid=0 paragraphs are spaced too; headers
- * and footers are not.
+ * (2026-09-02 and 2026-10-22, MS Mincho/Times New Roman/Arial, 10.5/12pt):
+ * with w:docGrid type="linesAndChars" and w:charSpace=N, every character in
+ * the section advances by its natural width + N/4096 pt, positive or negative.
+ * Under settings.xml <w:balanceSingleByteDoubleByteWidth/> single-byte
+ * characters (Latin, digits, spaces, halfwidth kana, any font or size) get
+ * half of it (N/8192) while full-width ones keep N/4096
+ * (singleByteCharSpacePt). Types lines/default ignore charSpace; snapToChars
+ * snaps to a Normal-style-based pitch instead (not modeled). Table cells and
+ * snapToGrid=0 paragraphs are spaced too; headers and footers are not.
  */
 export function sectionCharSpacePt(s: SectionInfo): number {
   const g = s.settings.docGrid
   if (!g || g.type !== 'linesAndChars' || !g.charSpace) return 0
   return g.charSpace / 4096
+}
+
+/** letter-spacing of single-byte characters for a full-width delta of `pt` */
+export function singleByteCharSpacePt(pt: number, balanced: boolean): number {
+  return balanced ? pt / 2 : pt
 }
 
 /**
@@ -589,6 +596,7 @@ export function sectionGridPitchSpecs(
 export function sectionCharSpaceSpecs(
   blocks: BlockBox[],
   sections: SectionInfo[],
+  balanced = false,
 ): ColumnBlockPlacement[] {
   const deltas = sections.map(sectionCharSpacePt)
   if (!deltas.some((d) => d !== 0) || deltas.every((d) => d === deltas[0])) return []
@@ -597,7 +605,14 @@ export function sectionCharSpaceSpecs(
     if (!b.el) continue
     const si = Math.max(0, Math.min(b.section ?? 0, deltas.length - 1))
     const d = deltas[si] ?? 0
-    if (d !== 0) specs.push({ el: b.el, dx: 0, dy: 0, charSpacePt: d })
+    if (d !== 0)
+      specs.push({
+        el: b.el,
+        dx: 0,
+        dy: 0,
+        charSpacePt: d,
+        ...(balanced ? { charSpaceSbPt: singleByteCharSpacePt(d, true) } : {}),
+      })
   }
   return specs
 }
@@ -756,11 +771,18 @@ export function verticalTextSpecs(
 export function sectionGeoms(
   sections: SectionInfo[],
   hfHeights?: SectionHfHeights[],
+  evenOddHf = false,
 ): SectionGeom[] {
   return sections.map((s, i) => {
     const cols = sectionColumns(s)
     let forceBreak = false
     let colBreakStart = false
+    const numberingParity =
+      evenOddHf && i > 0 && s.startType === 'nextPage' && s.pageNumberStart !== undefined
+        ? s.pageNumberStart % 2 === 0
+          ? 'evenPage'
+          : 'oddPage'
+        : undefined
     if (i > 0) {
       // nextColumn with the same multi-column count advances one column (Word,
       // tdf#135343 c14/c15); a changed count or a single-column layout acts like a
@@ -803,6 +825,7 @@ export function sectionGeoms(
       pageHeightPx: twipsToPx(set.pageHeight),
       forceBreak,
       startType: s.startType,
+      ...(numberingParity ? { numberingParity } : {}),
       // colWidths only for explicit-width columns: the narrower-column gate is
       // meaningless when every column is the same width
       ...(cols > 1

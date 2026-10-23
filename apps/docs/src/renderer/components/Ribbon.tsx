@@ -10,7 +10,7 @@ import type {
   ReactNode,
 } from 'react'
 import type { ChainedCommands, Editor } from '@tiptap/core'
-import type { Command } from '@tiptap/pm/state'
+import { NodeSelection, type Command } from '@tiptap/pm/state'
 import { closeHistory } from '@tiptap/pm/history'
 import type { Mark, Node as PMNode, ResolvedPos } from '@tiptap/pm/model'
 import {
@@ -941,7 +941,7 @@ function RibbonInner({
   }, [inHf])
 
   // ---- Picture Format (contextual tab when an image block is selected, same mechanism as tables) ----
-  const inImage = !sub && fs.imageSelected
+  const inImage = fs.imageSelected && (!sub || fs.inlinePicture)
   const imageDataUrl = inImage ? fs.imageDataUrl : null
 
   useEffect(() => {
@@ -953,9 +953,12 @@ function RibbonInner({
       wasInImage.current = false
       setDropdown(null)
       setPictureDialog(null)
-      setTab((current) => (current === 'pictureFormat' ? lastRegularTab.current : current))
+      // a header / footer cell picture hands back to the strip's own tab
+      setTab((current) =>
+        current === 'pictureFormat' ? (inHf ? 'headerFooter' : lastRegularTab.current) : current,
+      )
     }
-  }, [inImage])
+  }, [inImage, inHf])
 
   // ---- Shape Format (contextual tab when a floating box is selected, same mechanism) ----
   // Unlike the picture tab this one survives `sub`: double-clicking into the
@@ -1147,44 +1150,69 @@ function RibbonInner({
 
   /** Set one side of the picture; with the aspect ratio locked the other side follows */
   const setPictureSize = (dim: 'w' | 'h', twips: number) => {
-    if (!canEdit) return
-    const attrs = editor.getAttributes('docProtected')
-    const w = Number(attrs?.imageWidthPx)
-    const h = Number(attrs?.imageHeightPx)
-    if (attrs?.blockType !== 'image' || !w || !h || !(twips > 0)) return
+    if (!canEdit || !(twips > 0)) return
+    const w = fs.imageWidthPx ?? 0
+    const h = fs.imageHeightPx ?? 0
+    if (!w || !h) return
     const px = twipsToPx(clampPictureTwips(twips))
     const side = Math.max(1, Math.round(px))
     const next =
       dim === 'w'
-        ? {
-            imageWidthPx: side,
-            imageHeightPx: lockAspect ? Math.max(1, Math.round((px * h) / w)) : h,
-          }
-        : {
-            imageWidthPx: lockAspect ? Math.max(1, Math.round((px * w) / h)) : w,
-            imageHeightPx: side,
-          }
-    editor.chain().focus().updateAttributes('docProtected', next).run()
+        ? { w: side, h: lockAspect ? Math.max(1, Math.round((px * h) / w)) : h }
+        : { w: lockAspect ? Math.max(1, Math.round((px * w) / h)) : w, h: side }
+    setPicturePx(next.w, next.h)
+  }
+
+  /** a cell picture resets to its cell's width at most (Word clips a wider one): the
+   *  text column stands in for every other host */
+  const inlinePictureHostWidthPx = (): number => {
+    if (!fs.inlinePicture) return sectionContentWidthPx
+    const sel = ed.state.selection
+    const dom =
+      sel instanceof NodeSelection ? (ed.view.nodeDOM(sel.from) as HTMLElement | null) : null
+    const cell = dom?.closest<HTMLElement>('.page-hf-cell, td, th')
+    if (!cell) return sectionContentWidthPx
+    const cs = getComputedStyle(cell)
+    const inner = cell.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    return inner > 0 ? inner : sectionContentWidthPx
+  }
+
+  /** inline run pictures size through their own node; block pictures through docProtected */
+  const setPicturePx = (widthPx: number, heightPx: number) => {
+    if (fs.inlinePicture) {
+      const { state, view } = ed
+      const sel = state.selection
+      if (!(sel instanceof NodeSelection)) return
+      // keep the picture selected: the Size boxes stay for the next edit
+      const tr = state.tr.setNodeMarkup(sel.from, undefined, {
+        ...sel.node.attrs,
+        widthPx,
+        heightPx,
+      })
+      view.dispatch(tr.setSelection(NodeSelection.create(tr.doc, sel.from)))
+      view.focus()
+      return
+    }
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { imageWidthPx: widthPx, imageHeightPx: heightPx })
+      .run()
   }
 
   /** Word's Reset Size: the picture's own pixel size at 96 dpi. A picture wider
    *  than the text column is fitted to it (the page cannot show the overflow). */
   const resetPictureSize = async () => {
     if (!canEdit) return
-    const attrs = editor.getAttributes('docProtected')
-    const url = attrs?.imageDataUrl as string | null
-    if (attrs?.blockType !== 'image' || !url) return
+    const url = fs.imageDataUrl
+    if (!inImage || !url) return
     try {
       const natural = await imageSizeOf(url)
-      const scale = Math.min(1, sectionContentWidthPx / natural.width)
-      editor
-        .chain()
-        .focus()
-        .updateAttributes('docProtected', {
-          imageWidthPx: Math.max(1, Math.round(natural.width * scale)),
-          imageHeightPx: Math.max(1, Math.round(natural.height * scale)),
-        })
-        .run()
+      const scale = Math.min(1, inlinePictureHostWidthPx() / natural.width)
+      setPicturePx(
+        Math.max(1, Math.round(natural.width * scale)),
+        Math.max(1, Math.round(natural.height * scale)),
+      )
     } catch {
       /* decode failed: leave as is */
     }
@@ -2339,140 +2367,144 @@ function RibbonInner({
           </div>
         ) : tab === 'pictureFormat' && inImage ? (
           <div className="table-ribbon-body">
-            {/* ---- Adjust: remove background / crop / replace picture ---- */}
-            <div className="ribbon-group">
-              <div className="ribbon-group-items">
-                <button
-                  className="rb-big"
-                  disabled={!canEdit}
-                  data-tip={t('ribbonRemoveBgTip')}
-                  onClick={() => setPictureDialog('cutout')}
-                >
-                  <span className="rb-big-icon">
-                    <IconRemoveBg size={28} />
-                  </span>
-                  <span>{t('ribbonRemoveBg')}</span>
-                </button>
-                <button
-                  className="rb-big"
-                  disabled={!canEdit}
-                  data-tip={t('ribbonCropTip')}
-                  onClick={() => setPictureDialog('crop')}
-                >
-                  <span className="rb-big-icon">
-                    <IconCrop size={28} />
-                  </span>
-                  <span>{t('ribbonCrop')}</span>
-                </button>
-                <button
-                  className="rb-big"
-                  disabled={!canEdit}
-                  data-tip={t('ribbonReplacePictureTip')}
-                  onClick={() => void replacePicture()}
-                >
-                  <span className="rb-big-icon">
-                    <IconReplacePicture size={28} />
-                  </span>
-                  <span>{t('ribbonReplacePicture')}</span>
-                </button>
-                <div className="rb-col">
-                  <button
-                    className="rb-small"
-                    disabled={!canEdit}
-                    onClick={() => rotatePicture(90)}
-                  >
-                    <IconRotateRight size={18} />
-                    <span>{t('ribbonRotateRight')}</span>
-                  </button>
-                  <button
-                    className="rb-small"
-                    disabled={!canEdit}
-                    onClick={() => rotatePicture(-90)}
-                  >
-                    <IconRotateLeft size={18} />
-                    <span>{t('ribbonRotateLeft')}</span>
-                  </button>
+            {!fs.inlinePicture && (
+              <>
+                {/* ---- Adjust: remove background / crop / replace picture ---- */}
+                <div className="ribbon-group">
+                  <div className="ribbon-group-items">
+                    <button
+                      className="rb-big"
+                      disabled={!canEdit}
+                      data-tip={t('ribbonRemoveBgTip')}
+                      onClick={() => setPictureDialog('cutout')}
+                    >
+                      <span className="rb-big-icon">
+                        <IconRemoveBg size={28} />
+                      </span>
+                      <span>{t('ribbonRemoveBg')}</span>
+                    </button>
+                    <button
+                      className="rb-big"
+                      disabled={!canEdit}
+                      data-tip={t('ribbonCropTip')}
+                      onClick={() => setPictureDialog('crop')}
+                    >
+                      <span className="rb-big-icon">
+                        <IconCrop size={28} />
+                      </span>
+                      <span>{t('ribbonCrop')}</span>
+                    </button>
+                    <button
+                      className="rb-big"
+                      disabled={!canEdit}
+                      data-tip={t('ribbonReplacePictureTip')}
+                      onClick={() => void replacePicture()}
+                    >
+                      <span className="rb-big-icon">
+                        <IconReplacePicture size={28} />
+                      </span>
+                      <span>{t('ribbonReplacePicture')}</span>
+                    </button>
+                    <div className="rb-col">
+                      <button
+                        className="rb-small"
+                        disabled={!canEdit}
+                        onClick={() => rotatePicture(90)}
+                      >
+                        <IconRotateRight size={18} />
+                        <span>{t('ribbonRotateRight')}</span>
+                      </button>
+                      <button
+                        className="rb-small"
+                        disabled={!canEdit}
+                        onClick={() => rotatePicture(-90)}
+                      >
+                        <IconRotateLeft size={18} />
+                        <span>{t('ribbonRotateLeft')}</span>
+                      </button>
+                    </div>
+                    <div className="rb-col">
+                      <button
+                        className={fs.imageFlipH ? 'rb-small active' : 'rb-small'}
+                        disabled={!canEdit}
+                        onClick={() => flipPicture('h')}
+                      >
+                        <IconFlipH size={18} />
+                        <span>{t('ribbonFlipH')}</span>
+                      </button>
+                      <button
+                        className={fs.imageFlipV ? 'rb-small active' : 'rb-small'}
+                        disabled={!canEdit}
+                        onClick={() => flipPicture('v')}
+                      >
+                        <IconFlipV size={18} />
+                        <span>{t('ribbonFlipV')}</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="ribbon-group-label">{t('ribbonGroupAdjust')}</div>
                 </div>
-                <div className="rb-col">
-                  <button
-                    className={fs.imageFlipH ? 'rb-small active' : 'rb-small'}
-                    disabled={!canEdit}
-                    onClick={() => flipPicture('h')}
-                  >
-                    <IconFlipH size={18} />
-                    <span>{t('ribbonFlipH')}</span>
-                  </button>
-                  <button
-                    className={fs.imageFlipV ? 'rb-small active' : 'rb-small'}
-                    disabled={!canEdit}
-                    onClick={() => flipPicture('v')}
-                  >
-                    <IconFlipV size={18} />
-                    <span>{t('ribbonFlipV')}</span>
-                  </button>
+                <div className="ribbon-sep" />
+                {/* ---- Arrange: wrap text / align ---- */}
+                <div className="table-tool-group">
+                  <div className="table-tool-row">
+                    <Dropdown
+                      className="rb-wrap-dd"
+                      disabled={!canEdit}
+                      tip={t('ribbonWrapText')}
+                      value={fs.imageWrap ?? ''}
+                      options={WRAP_OPTIONS.map((opt) => ({
+                        value: opt.value ?? '',
+                        label: t(opt.labelKey),
+                      }))}
+                      onPick={(v) => {
+                        if (!canEdit) return
+                        editor
+                          .chain()
+                          .focus()
+                          .updateAttributes('docProtected', { imageWrap: v || null })
+                          .run()
+                      }}
+                    />
+                  </div>
+                  <div className="table-tool-row">
+                    {(
+                      [
+                        ['left', <IconAlignLeft key="l" />, t('ribbonAlignLeftTip')],
+                        ['center', <IconAlignCenter key="c" />, t('ribbonAlignCenterTip')],
+                        ['right', <IconAlignRight key="r" />, t('ribbonAlignRightTip')],
+                      ] as const
+                    ).map(([value, icon, label]) => (
+                      <button
+                        key={value}
+                        className={
+                          (fs.imageAlign ?? 'left') === value
+                            ? 'table-tool-button active'
+                            : 'table-tool-button'
+                        }
+                        disabled={!canEdit}
+                        data-tip={label}
+                        aria-label={label}
+                        onClick={() => {
+                          if (!canEdit) return
+                          editor
+                            .chain()
+                            .focus()
+                            .updateAttributes('docProtected', {
+                              imageAlign: value === 'left' ? null : value,
+                            })
+                            .run()
+                        }}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
                 </div>
-              </div>
-              <div className="ribbon-group-label">{t('ribbonGroupAdjust')}</div>
-            </div>
-            <div className="ribbon-sep" />
-            {/* ---- Arrange: wrap text / align ---- */}
-            <div className="table-tool-group">
-              <div className="table-tool-row">
-                <Dropdown
-                  className="rb-wrap-dd"
-                  disabled={!canEdit}
-                  tip={t('ribbonWrapText')}
-                  value={fs.imageWrap ?? ''}
-                  options={WRAP_OPTIONS.map((opt) => ({
-                    value: opt.value ?? '',
-                    label: t(opt.labelKey),
-                  }))}
-                  onPick={(v) => {
-                    if (!canEdit) return
-                    editor
-                      .chain()
-                      .focus()
-                      .updateAttributes('docProtected', { imageWrap: v || null })
-                      .run()
-                  }}
-                />
-              </div>
-              <div className="table-tool-row">
-                {(
-                  [
-                    ['left', <IconAlignLeft key="l" />, t('ribbonAlignLeftTip')],
-                    ['center', <IconAlignCenter key="c" />, t('ribbonAlignCenterTip')],
-                    ['right', <IconAlignRight key="r" />, t('ribbonAlignRightTip')],
-                  ] as const
-                ).map(([value, icon, label]) => (
-                  <button
-                    key={value}
-                    className={
-                      (fs.imageAlign ?? 'left') === value
-                        ? 'table-tool-button active'
-                        : 'table-tool-button'
-                    }
-                    disabled={!canEdit}
-                    data-tip={label}
-                    aria-label={label}
-                    onClick={() => {
-                      if (!canEdit) return
-                      editor
-                        .chain()
-                        .focus()
-                        .updateAttributes('docProtected', {
-                          imageAlign: value === 'left' ? null : value,
-                        })
-                        .run()
-                    }}
-                  >
-                    {icon}
-                  </button>
-                ))}
-              </div>
-              <div className="ribbon-group-label">{t('ribbonGroupArrange')}</div>
-            </div>
-            <div className="ribbon-sep" />
+                <div className="ribbon-sep" />
+              </>
+            )}
             {/* ---- Size: height/width in the measurement unit, aspect lock, reset ---- */}
             <div className="table-tool-group">
               <div className="table-tool-row table-size-inputs" key={fs.imageKey ?? 'nosel'}>

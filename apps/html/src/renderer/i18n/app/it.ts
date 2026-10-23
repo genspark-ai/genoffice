@@ -9,6 +9,12 @@ export const it = {
   redactDialogPlaceholder: 'Nome del segnaposto, es. telefono del cliente',
   redactCancel: 'Annulla',
   redactInsert: 'Nascondi',
+  diskChangedMsg: 'Questo file è stato modificato da un altro programma.',
+  diskConflictMsg:
+    'Questo file è cambiato su disco; il salvataggio sovrascriverà quelle modifiche.',
+  diskReload: 'Ricarica',
+  diskKeepMine: 'Mantieni il mio',
+  diskOverwrite: 'Sovrascrivi comunque',
 
   loading: 'Caricamento…',
   loadFailed: 'Impossibile aprire il file',

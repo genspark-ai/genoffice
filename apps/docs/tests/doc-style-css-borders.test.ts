@@ -42,7 +42,7 @@ describe('docStyleCss paragraph borders', () => {
     const boxed = docStyleCss(
       parsedWith('Box', { borderSides: { t: { spacePt: 1 }, l: { spacePt: 4 }, b: {}, r: {} } }),
     )
-    expect(boxed).toContain('padding-top:1pt;padding-right:4px;padding-bottom:0;padding-left:4px }')
+    expect(boxed).toContain('padding-top:1pt;padding-bottom:0 }')
   })
 
   it('emits nothing for a side reset to none', () => {

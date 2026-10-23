@@ -1,0 +1,35 @@
+{
+  "id": "atleast-row-margins",
+  "title": "atLeast trHeight floors the cell content; margins and the gridline add on top",
+  "section": "word-truths.md#L245",
+  "probe_date": "2026-09-23",
+  "class": "pure",
+  "source": "probe trh build.py -> Word for Mac direct PDF, pymupdf rules; Letter, Calibri 11, 1-col 6000-twip table, tblBorders sz 8 = 1.0pt gridline (Word draws 0.97-1.12)",
+  "cases": [
+    {
+      "kind": "rowPt",
+      "block": 1,
+      "row": 0,
+      "expect": 33.12,
+      "tol": 0.15,
+      "note": "atLeast 440 + tblCellMar 100/100 = 22 + 10 + gridline"
+    },
+    {
+      "kind": "rowPt",
+      "block": 3,
+      "row": 0,
+      "expect": 23.04,
+      "tol": 0.15,
+      "note": "atLeast 440, margins 0 = 22 + gridline"
+    },
+    {
+      "kind": "rowPt",
+      "block": 5,
+      "row": 0,
+      "expect": 33.12,
+      "tol": 0.15,
+      "note": "plain trHeight (no hRule) is atLeast"
+    }
+  ],
+  "docx": "probe.docx"
+}

@@ -9,6 +9,11 @@ export const vi = {
   redactDialogPlaceholder: 'Tên placeholder, ví dụ: số điện thoại khách hàng',
   redactCancel: 'Hủy',
   redactInsert: 'Ẩn',
+  diskChangedMsg: 'Tệp này đã bị một chương trình khác thay đổi.',
+  diskConflictMsg: 'Tệp này đã thay đổi trên đĩa; lưu sẽ ghi đè các thay đổi đó.',
+  diskReload: 'Tải lại',
+  diskKeepMine: 'Giữ của tôi',
+  diskOverwrite: 'Vẫn ghi đè',
 
   loading: 'Đang tải…',
   loadFailed: 'Không thể mở tệp',

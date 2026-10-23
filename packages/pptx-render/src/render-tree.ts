@@ -454,6 +454,8 @@ export interface ChartLabel {
   fontFamily?: string
   /** Rotation angle (e.g. -90 for a value-axis title) */
   rotationDeg?: number
+  /** <a:rPr spc> letter spacing (px after each char) */
+  letterSpacingPx?: number
   /** Data-label box (c:dLbls/c:spPr): fill / outline color and the measured text width it wraps */
   fill?: string
   stroke?: string

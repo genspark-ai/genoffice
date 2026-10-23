@@ -23,6 +23,7 @@ Word, Excel, PowerPoint, PDF 파일을 당신과 당신의 AI가 함께 편집�
 
 <p align="center">
   <a href="#download"><b>다운로드</b></a> ·
+  <a href="#skills"><b>스킬</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>웹사이트</b></a> ·
@@ -222,6 +223,7 @@ Cursor 및 다른 모든 MCP 클라이언트는 스킬을 설치하거나 창을
   Word, Excel, PowerPoint로 변환하며, 스캔 문서는 시스템 OCR을 사용합니다.
 - **Markdown과 HTML도 지원**하며, 동일한 AI 패널과 로컬 Word 내보내기를 사용합
   니다.
+- **스킬.** 기본 제공되는 스킬이나 직접 만든 `SKILL.md`를 어느 AI 패널에서든 **+** 메뉴로 첨부합니다.
 - **스크립트로 다룰 수 있습니다.** `genoffice` 명령줄, 에이전트 스킬, MCP
   서버가 모든 엔진을 Claude Code, Claude Desktop, Codex, Cursor 및 다른
   에이전트가 쓸 수 있게 하며, 이 역시 기기 내에서 동작합니다.
@@ -246,6 +248,18 @@ OpenAI 호환 이미지 엔드포인트 중에서 선택합니다.
 전체 제품군은 라이트, 다크, 시스템 테마를 지원합니다. 테마는 화면에
 보이는 모습만 바꿀 뿐입니다: 내보내기, 인쇄, 저장된 파일은 항상 문서
 고유의 색상을 그대로 유지합니다.
+
+<a id="skills"></a>
+
+## 스킬
+
+스킬은 주간 보고서, NDA, 수업 계획처럼 한 가지 일을 잘 해내는 방법을 AI에 알려 주는 `SKILL.md` 파일입니다.
+GenOffice는 스킬 묶음을 기본 제공하고, 코딩 에이전트와 같은 형식의 사용자 스킬도 받습니다.
+
+- **설정 → 스킬.** 추천 스킬을 **설치**하거나 폴더, zip 또는 단일 `SKILL.md`를 **가져옵니다**. 가져오기 시 아무것도 실행되지 않습니다.
+- **채팅에서.** 어느 AI 패널에서든 입력창 옆 **+** 메뉴를 열고 **스킬**을 선택해 하나를 체크한 뒤 보냅니다. 스킬은 그 메시지에만 함께 전달됩니다.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

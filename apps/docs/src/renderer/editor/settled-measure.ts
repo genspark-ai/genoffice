@@ -64,6 +64,25 @@ function floatBandsOf(view: EditorView): number[][] {
   return bands
 }
 
+/**
+ * Run a paragraph measurement against its natural wrap. The paginator's
+ * inline page-gap widget forces a line break at the previous pass's cut, so
+ * a decision read with it in layout depends on when that pass ran relative
+ * to this one (two orders, two page counts); hidden, the paragraph wraps as
+ * the paginator itself measures it (its measuring-natural state).
+ */
+export function measureNatural<T>(el: HTMLElement, fn: () => T): T {
+  const gaps = el.querySelectorAll<HTMLElement>('.page-gap-inline')
+  if (gaps.length === 0) return fn()
+  const prev = Array.from(gaps, (g) => g.style.display)
+  gaps.forEach((g) => (g.style.display = 'none'))
+  try {
+    return fn()
+  } finally {
+    gaps.forEach((g, i) => (g.style.display = prev[i]))
+  }
+}
+
 interface Entry<T> {
   /** paragraph start when measured; results are stored at that offset */
   pos: number
@@ -151,6 +170,15 @@ export class SettledParagraphCache<T> {
   ): T | null {
     const el = dom ?? view.nodeDOM(pos)
     if (!(el instanceof HTMLElement)) return null
+    return measureNatural(el, () => this.measureEl(node, pos, el, measureParagraph))
+  }
+
+  private measureEl(
+    node: ProseMirrorNode,
+    pos: number,
+    el: HTMLElement,
+    measureParagraph: (el: HTMLElement) => T | null,
+  ): T | null {
     // layout px: a page-zoom transform changes no line break
     let rectKey = `${el.offsetHeight}:${el.offsetWidth}`
     if (this.floatBands.length > 0) {

@@ -7,7 +7,7 @@ import JSZip from 'jszip'
 import { afterAll, beforeAll, test } from 'vitest'
 import type { Browser } from 'playwright-core'
 
-import { convertHtmlToDocx, EXTRACTOR_SOURCE, mapFont } from '../src'
+import { convertHtmlToDocx, EXTRACTOR_SOURCE, mapFont, runFont } from '../src'
 import { launchChrome, PlaywrightDriver } from '../src/drivers/playwright'
 
 const A4 = { width: 794, height: 1123, deviceScaleFactor: 2 }
@@ -995,6 +995,23 @@ test('maps kana extensions, radicals, and astral CJK to CJK fonts', () => {
   assert.equal(mapFont('', false, '⺁'), 'Microsoft YaHei')
   assert.equal(mapFont('', false, '𠀋'), 'Microsoft YaHei')
   assert.equal(mapFont('', false, 'hello'), 'Arial')
+})
+
+test('keeps Latin proportional when a run maps to a CJK font', () => {
+  assert.deepEqual(runFont('"Noto Serif SC", "Songti SC", serif', false, '\u6458\u8981 ABSTRACT'), {
+    ascii: 'Times New Roman',
+    hAnsi: 'Times New Roman',
+    cs: 'Times New Roman',
+    eastAsia: 'SimSun',
+  })
+  assert.deepEqual(runFont('', false, '\u6807\u9898 Title'), {
+    ascii: 'Arial',
+    hAnsi: 'Arial',
+    cs: 'Arial',
+    eastAsia: 'Microsoft YaHei',
+  })
+  assert.equal(runFont('"Open Sans", sans-serif', false, 'hello'), 'Arial')
+  assert.equal(runFont('Menlo', true, '\u4ee3\u7801'), 'Consolas')
 })
 
 test('preserves colored literal bullets as editable runs', async () => {

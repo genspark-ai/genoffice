@@ -1,0 +1,81 @@
+{
+  "id": "malgun-line-pitch-sizes",
+  "title": "Malgun Gothic body pitch is the tabled factor at every size; line=259 scales it, exact and atLeast behave as rules",
+  "section": "word-truths.md#L443",
+  "probe_date": "2026-10-13",
+  "source": "probe build.py -> krmalgun.pdf (re-measured 2026-10-22: 8.5pt line 259 pitches 15.84/16.08, line 240 14.64/14.88); truth table 15.84/16.8/17.76/18.72/20.52 at 8.5-11pt, 276 -> 18.0, 288 -> 18.72, exact 360 -> 18.0, atLeast 240 -> 15.6 (9pt)",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 15.84,
+      "tol": 0.1,
+      "note": "8.5pt line 259"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 16.8,
+      "tol": 0.1,
+      "note": "9pt"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 17.76,
+      "tol": 0.1,
+      "note": "9.5pt"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 18.72,
+      "tol": 0.1,
+      "note": "10pt"
+    },
+    {
+      "kind": "linePt",
+      "block": 4,
+      "expect": 20.52,
+      "tol": 0.1,
+      "note": "11pt"
+    },
+    {
+      "kind": "linePt",
+      "block": 5,
+      "expect": 15.6,
+      "tol": 0.1,
+      "note": "9pt line 240 (table 14.64/15.6/16.44/17.28/19.08 for 8.5-11pt)"
+    },
+    {
+      "kind": "linePt",
+      "block": 6,
+      "expect": 18,
+      "tol": 0.12,
+      "note": "9pt line 276; 1.15 x 1.7292 x 9 = 17.90, Word snaps to 18.00 on its 0.24 grid"
+    },
+    {
+      "kind": "linePt",
+      "block": 7,
+      "expect": 18.72,
+      "tol": 0.1,
+      "note": "9pt line 288"
+    },
+    {
+      "kind": "linePt",
+      "block": 8,
+      "expect": 18,
+      "tol": 0.01,
+      "note": "exact 360"
+    },
+    {
+      "kind": "linePt",
+      "block": 9,
+      "expect": 15.6,
+      "tol": 0.1,
+      "note": "atLeast 240 = natural 15.57"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

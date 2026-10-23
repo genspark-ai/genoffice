@@ -23,6 +23,7 @@ Fichiers Word, Excel, PowerPoint et PDF, modifiés par vous et votre IA, enregis
 
 <p align="center">
   <a href="#download"><b>Télécharger</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Site web</b></a> ·
@@ -232,6 +233,7 @@ document Word dans un onglet d'éditeur visible pendant que vous regardez.
   système pour les scans.
 - **Markdown et HTML aussi**, avec le même panneau IA et un export local vers
   Word.
+- **Skills.** Des skills prêts à l’emploi ou votre propre `SKILL.md`, joints depuis le menu **+** de n’importe quel panneau IA.
 - **Scriptable.** Une ligne de commande `genoffice`, un skill d'agent et un
   serveur MCP mettent chaque moteur au service de Claude Code, Claude
   Desktop, Codex, Cursor et d'autres agents, toujours en local.
@@ -258,6 +260,18 @@ Toute la suite propose les thèmes clair, sombre et système. Les thèmes ne
 changent que ce qui est affiché à l'écran : les exports, les impressions et
 les fichiers enregistrés conservent toujours les couleurs propres au
 document.
+
+<a id="skills"></a>
+
+## Skills
+
+Un skill est un `SKILL.md` qui explique à l’IA comment bien faire une tâche : un rapport hebdomadaire, un NDA, un plan de cours.
+GenOffice en fournit une sélection et accepte les vôtres, au même format que celui des agents de codage.
+
+- **Réglages → Skills.** **Installer** un skill recommandé, ou **Importer** un dossier, un zip ou un seul `SKILL.md`. Rien n’est exécuté à l’import.
+- **Dans une conversation.** Ouvrez le menu **+** à côté du champ de saisie d’un panneau IA, choisissez **Skills**, cochez-en un, envoyez. Le skill n’accompagne que ce message.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

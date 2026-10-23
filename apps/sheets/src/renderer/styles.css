@@ -1605,6 +1605,15 @@ html.genoffice-popover-open .ribbon-tabs {
   align-content: center;
 }
 
+/* The View tab's Show group holds five toggles. Stacked in one column they
+   need 83px and the ribbon band has 75px, so the last one — the
+   cross-highlight toggle — was sliced off by the band's overflow clip.
+   Two columns fit with room to spare. */
+.check-column.check-column-view {
+  grid-template-columns: repeat(2, max-content);
+  column-gap: 14px;
+}
+
 /* Page Layout's Gridlines/Headings column captions. */
 .check-head {
   padding: 0 6px;
@@ -4497,7 +4506,7 @@ textarea:focus {
 .ai-msg {
   position: relative;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -5104,7 +5113,7 @@ textarea:focus {
    * with the content, so clipped lines would sit flush against chips/footer */
   padding: 0 14px;
   margin: 12px 0 4px;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 24px;
   outline: none;
   color: var(--color-text-primary);

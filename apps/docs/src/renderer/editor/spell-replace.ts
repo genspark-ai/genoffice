@@ -60,8 +60,12 @@ export function replaceMisspelledWord(
     .run()
 }
 
-/** Blink's edit and the IPC reply travel on different pipes: time for the edit to land. */
-const BLINK_REPLACE_GRACE_MS = 150
+/**
+ * Blink's edit and the IPC reply travel on different pipes, and on a loaded
+ * machine the edit can trail the reply by well over a frame. The fallback
+ * waits for the document to change, up to this long.
+ */
+const BLINK_REPLACE_GRACE_MS = 1500
 
 /**
  * Blink's replaceMisspelling first: a scripted ProseMirror replacement rewrites
@@ -89,11 +93,21 @@ export function applySpellingSuggestion(
   else if (!editor.state.selection.empty) return
   const before = editor.state.doc
   editor.view.focus()
-  void blinkReplace(replacement)
-    .catch(() => undefined)
-    .then(() => {
-      setTimeout(() => {
-        if (!editor.isDestroyed && editor.state.doc === before) fallback()
-      }, BLINK_REPLACE_GRACE_MS)
-    })
+  let settled = false
+  const finish = (landed: boolean) => {
+    if (settled) return
+    settled = true
+    editor.off('transaction', onTransaction)
+    clearTimeout(timer)
+    if (!landed && !editor.isDestroyed) fallback()
+  }
+  const onTransaction = () => {
+    if (editor.state.doc !== before) finish(true)
+  }
+  editor.on('transaction', onTransaction)
+  const timer = setTimeout(
+    () => finish(editor.isDestroyed || editor.state.doc !== before),
+    BLINK_REPLACE_GRACE_MS,
+  )
+  void blinkReplace(replacement).catch(() => finish(false))
 }

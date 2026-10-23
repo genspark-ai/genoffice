@@ -88,6 +88,14 @@ describe('classifySkill', () => {
     expect(classifySkill('word-report', 'Draft a Word report from notes').relevant).toBe(true)
   })
 
+  it('keeps a skill whose description names a format in CJK', () => {
+    const out = classifySkill('zhoubao', 'Write a weekly \u6587\u6863 and a \u8868\u683c')
+    expect(out.relevant).toBe(true)
+    expect(out.matched).toEqual(['\u6587\u6863', '\u8868\u683c'])
+    expect(classifySkill('s', 'Build a \u30d7\u30ec\u30bc\u30f3').relevant).toBe(true)
+    expect(classifySkill('s', 'Edit a \ubb38\uc11c').relevant).toBe(true)
+  })
+
   it('drops a skill about work GenOffice does not do', () => {
     const out = classifySkill('k8s-deploy', 'Deploy to Kubernetes, roll back releases, read logs')
     expect(out.relevant).toBe(false)

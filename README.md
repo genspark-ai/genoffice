@@ -24,6 +24,7 @@ Word, Excel, PowerPoint and PDF files, edited by you and your AI, saved back in 
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Website</b></a> ·
@@ -273,6 +274,8 @@ document in a visible editor tab while you watch.
   by TypeSafe Jev, the System One judgment model.
 - **Ask AI across your files.** Star the files that matter and ask questions
   in plain language; every answer cites the file it came from, one click away.
+- **Skills.** Ready-made skills, or your own `SKILL.md`, attached from
+  the **+** menu of any AI panel.
 - **Scriptable.** A `genoffice` command line, an agent skill and an MCP server
   put every engine at the service of Claude Code, Claude Desktop, Codex, Cursor
   and other agents, still on-device.
@@ -309,6 +312,19 @@ instead.
 The whole suite ships light, dark and system themes. Themes only change what
 is on screen: exports, prints and saved files always keep the document's own
 colors.
+
+## Skills
+
+A skill is a `SKILL.md` that tells the AI how to do one job well: a weekly
+report, an NDA, a lesson plan. GenOffice ships a set of them and takes your own,
+in the same format coding agents use.
+
+- **Settings → Skills.** **Install** a recommended skill, or **Import** a
+  folder, a zip or a single `SKILL.md`. Nothing runs on import.
+- **In a chat.** Open the **+** menu next to the composer of any AI panel,
+  pick **Skills**, tick one, send. The skill goes along with that message only.
+
+---
 
 ## Command line and agent skill
 

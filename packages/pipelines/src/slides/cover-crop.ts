@@ -14,7 +14,9 @@ export function coverCropFractions(
   if (!(imageW > 0) || !(imageH > 0) || !(frameW > 0) || !(frameH > 0)) return null
   const imageAspect = imageW / imageH
   const frameAspect = frameW / frameH
-  if (Math.abs(imageAspect - frameAspect) / frameAspect < 0.01) return null
+  // compare relative to the larger aspect ratio so the "already matches" tolerance
+  // is symmetric for wide vs. tall frames
+  if (Math.abs(imageAspect - frameAspect) / Math.max(imageAspect, frameAspect) < 0.01) return null
   if (imageAspect > frameAspect) {
     const crop = (1 - frameAspect / imageAspect) / 2
     return { l: crop, t: 0, r: crop, b: 0 }

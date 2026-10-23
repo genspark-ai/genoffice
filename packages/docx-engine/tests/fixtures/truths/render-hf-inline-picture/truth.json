@@ -1,0 +1,66 @@
+{
+  "id": "render-hf-inline-picture",
+  "title": "A header paragraph holding only an inline picture reserves exactly the picture height",
+  "section": "word-truths.md#L276",
+  "probe_date": "2026-09-23",
+  "class": "render",
+  "source": "hdrpic012.pdf re-measured 2026-10-22: A4, pgMar top 1134 / header 708, Arial 11, 7 sections; body first glyph tops (baseline - 9.99): S1 86.01, S2 88.17, S3 89.13, S4 95.85, S5 63.21 (text-only 24pt control), S6 65.61, S7 98.49",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 7
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 1,
+      "expect": 86.01,
+      "tol": 0.6,
+      "note": "S1 picture only 50.25pt: body top 85.65"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 2,
+      "expect": 88.17,
+      "tol": 0.6,
+      "note": "S2 picture + Hdr text: + text descent 2.33"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 3,
+      "expect": 89.13,
+      "tol": 0.6,
+      "note": "S3 line=300 auto adds the font line extra ~3.2 (gen 85.83: the multiple adds nothing to a picture-only strip paragraph)",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 4,
+      "expect": 95.85,
+      "tol": 0.6,
+      "note": "S4 after=200 adds 10 (gen 85.83: w:after of a picture-only strip paragraph is not reserved)",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 5,
+      "expect": 63.21,
+      "tol": 0.6,
+      "note": "S5 control 24pt text header -> 63.0"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 6,
+      "expect": 65.61,
+      "tol": 0.6,
+      "note": "S6 30pt picture -> 65.4"
+    },
+    {
+      "kind": "pageTextTopPt",
+      "page": 7,
+      "expect": 98.49,
+      "tol": 0.6,
+      "note": "S7 picture paragraph + text paragraph: + full 12.65 line"
+    }
+  ],
+  "docx": "probe.docx"
+}

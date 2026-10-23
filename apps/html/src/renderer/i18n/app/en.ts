@@ -9,6 +9,11 @@ export const en = {
   redactDialogPlaceholder: 'Placeholder name, e.g. client phone',
   redactCancel: 'Cancel',
   redactInsert: 'Hide',
+  diskChangedMsg: 'This file was changed by another program.',
+  diskConflictMsg: 'This file changed on disk; saving will overwrite those changes.',
+  diskReload: 'Reload',
+  diskKeepMine: 'Keep mine',
+  diskOverwrite: 'Overwrite anyway',
 
   loading: 'Loading…',
   loadFailed: 'Could not open the file',

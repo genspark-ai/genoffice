@@ -1,8 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   GAP_BAND,
   alignGapHfStrips,
+  canvasZoomOf,
   alignTableGapFills,
+  leadDropsSpaceBefore,
   makeGapEl,
   pageFramesFromGaps,
   syncCutOverlays,
@@ -962,5 +967,46 @@ describe('rowFillAttrs', () => {
       'data-split-extra': '10.0',
     })
     expect(rowFillAttrs(310.4, 0, 2)).toEqual({ style: 'height:308px' })
+  })
+})
+
+describe('leadDropsSpaceBefore', () => {
+  const blocks = [{ section: 0 }, { section: 0 }, { section: 1 }, {}]
+  it('drops the space-before of a page-leading block after a natural break', () => {
+    expect(leadDropsSpaceBefore(blocks, 1)).toBe(true)
+  })
+  it('keeps it on the first block of a new section and of the document', () => {
+    expect(leadDropsSpaceBefore(blocks, 2)).toBe(false)
+    expect(leadDropsSpaceBefore(blocks, 0)).toBe(false)
+  })
+  it('treats an unset section as section 0', () => {
+    expect(leadDropsSpaceBefore(blocks, 3)).toBe(false)
+  })
+})
+
+describe('page-break-lead margin drop', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+    'utf8',
+  )
+  it('is display-only: the measuring pass still sees the declared space-before', () => {
+    expect(css).toMatch(
+      /\.page-break-lead:not\(\.measuring-natural \*\)\s*\{\s*margin-top: 0 !important;/,
+    )
+    expect(css).not.toMatch(/\n\.page-break-lead\s*\{/)
+  })
+})
+
+describe('canvasZoomOf', () => {
+  it('reads the zoom the host applies, not the caller fallback', () => {
+    expect(canvasZoomOf({ style: { zoom: '0.84' } }, 1)).toBe(0.84)
+    expect(canvasZoomOf({ style: { zoom: '1' } }, 0.84)).toBe(1)
+  })
+  it('an unset or unusable inline zoom is the unzoomed canvas', () => {
+    expect(canvasZoomOf({ style: { zoom: '' } }, 0.84)).toBe(1)
+    expect(canvasZoomOf({ style: { zoom: 'abc' } }, 0.84)).toBe(1)
+  })
+  it('without a host the fallback stands', () => {
+    expect(canvasZoomOf(null, 0.84)).toBe(0.84)
   })
 })

@@ -97,21 +97,21 @@ describe('docLineFactor — CJK factor source', () => {
 
   it("Normal's declared EA face wins over docDefaults", () => {
     const parsed = parsedWith({ font: 'Noto Sans KR', fontAscii: 'Calibri' }, 'SimSun')
-    expect(docLineFactor(parsed, true)).toBe(1.3029)
+    expect(docLineFactor(parsed, true)).toBe(1.3)
   })
 
   it('a Latin-only Normal (font === fontAscii) does not override the docDefaults EA font', () => {
     const parsed = parsedWith({ font: 'Calibri', fontAscii: 'Calibri' }, 'SimSun')
-    expect(docLineFactor(parsed, true)).toBe(1.3029)
+    expect(docLineFactor(parsed, true)).toBe(1.3)
   })
 
   it('a same-slot Japanese Normal (Meiryo in every slot) is an EA choice, not Latin-only', () => {
     const parsed = parsedWith({ font: 'メイリオ', fontAscii: 'メイリオ' }, undefined)
-    expect(docLineFactor(parsed, true)).toBe(1.9429)
+    expect(docLineFactor(parsed, true)).toBe(1.95)
   })
 
   it('falls back to the SimSun-class factor without any declared EA font', () => {
-    expect(docLineFactor(parsedWith(undefined), true)).toBe(1.3029)
+    expect(docLineFactor(parsedWith(undefined), true)).toBe(1.3)
   })
 
   it('an EA-only Normal leaves the Latin line factor to the docDefaults ascii face', () => {
@@ -125,15 +125,15 @@ describe('docLineFactor — CJK factor source', () => {
   it('a same-slot Korean Normal (Malgun in both slots) still wins for the kr factor', () => {
     ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
     const parsed = parsedWith({ font: 'Malgun Gothic', fontAscii: 'Malgun Gothic' }, 'Batang')
-    expect(docStyleCss(parsed)).toContain('--doc-line-factor-kr:1.7371')
-    expect(docLineFactor(parsed, true)).toBe(1.7371)
+    expect(docStyleCss(parsed)).toContain('--doc-line-factor-kr:1.7291')
+    expect(docLineFactor(parsed, true)).toBe(1.7291)
   })
 
   it('kr factor skips a Latin-only Normal and reads the docDefaults EA font', () => {
     // node test env has no CSS.escape
     ;(globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s }
     const parsed = parsedWith({ font: 'Calibri', fontAscii: 'Calibri' }, 'Malgun Gothic')
-    expect(docStyleCss(parsed)).toContain('--doc-line-factor-kr:1.7371')
+    expect(docStyleCss(parsed)).toContain('--doc-line-factor-kr:1.7291')
   })
 })
 

@@ -9,6 +9,11 @@ export const ko = {
   redactDialogPlaceholder: '자리표시자 이름, 예: 고객 전화',
   redactCancel: '취소',
   redactInsert: '숨기기',
+  diskChangedMsg: '이 파일이 다른 프로그램에서 변경되었습니다.',
+  diskConflictMsg: '이 파일이 디스크에서 변경되었습니다. 저장하면 해당 변경 사항을 덮어씁니다.',
+  diskReload: '다시 불러오기',
+  diskKeepMine: '내 내용 유지',
+  diskOverwrite: '그래도 덮어쓰기',
 
   loading: '불러오는 중…',
   loadFailed: '파일을 열 수 없습니다',

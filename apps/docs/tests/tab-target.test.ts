@@ -68,16 +68,15 @@ describe('resolveTabTarget', () => {
   // TOC "<tab><tab>Box 1: ...<tab>9" with stops 397/900/8820 and left=360: the
   // first tab sits 2.5px before the 397 stop; Word still lands on it, GenOffice
   // used to skip to 900 and send the next tab to the far leader stop
-  it('takes a custom stop closer than the minimum advance and collapses to it', () => {
+  it('takes a custom stop closer than the minimum advance as a box of the exact advance', () => {
     const stops: TabTargetInput['stops'] = [
       { x: 26.5, val: 'left' },
       { x: 60, val: 'left' },
       { x: 588, val: 'right', leader: 'dot' },
     ]
     const first = resolveTabTarget({ ...base, x: 24, segWidth: 0, restWidth: 300, stops })
-    expect(first).toMatchObject({ val: 'left', leader: undefined, collapsed: true })
-    expect(first.target).toBeGreaterThan(24)
-    expect(first.target).toBeLessThan(26.5 + base.minAdv)
+    expect(first).toMatchObject({ val: 'left', leader: undefined, boxed: true, collapsed: false })
+    expect(first.target).toBe(26.5)
     expect(
       resolveTabTarget({ ...base, x: 26.5, segWidth: 300, restWidth: 300, stops }).target,
     ).toBe(60)
@@ -100,6 +99,30 @@ describe('resolveTabTarget', () => {
       restWidth: 40,
     })
     expect(r).toMatchObject({ target: 280, val: 'center', glue: true })
+  })
+
+  // a "Phone: <number><tab>Email:" line ending 0.4pt before a default stop: Word
+  // takes that stop; skipping to the next one wrapped "Email:"
+  it('takes a default stop closer than the minimum advance as a box of the exact advance', () => {
+    const r = resolveTabTarget({ ...base, x: 143.4, stops: [] })
+    expect(r).toMatchObject({ val: 'left', boxed: true, collapsed: false, target: 144, start: 144 })
+    // on (or within the LayoutUnit slack of) a stop: the next one; one twip short still lands
+    expect(resolveTabTarget({ ...base, x: 144, stops: [] }).target).toBe(192)
+    expect(resolveTabTarget({ ...base, x: 143.98, stops: [] }).target).toBe(192)
+    expect(resolveTabTarget({ ...base, x: 143.8, stops: [] }).target).toBe(144)
+  })
+
+  // "CORE FOCUS<tab><tab><tab>:" with the text ending 4px before a stop: the
+  // first tab collapses onto that stop and the next two chain 48px each from
+  // the stop, not from the collapsed tab's rendered 3px advance
+  it('chains the next tab from the stop a boxed near-stop tab landed on', () => {
+    // Word lands on a stop however close (truth 2026-10-20/22); the box renders it
+    const t0 = resolveTabTarget({ ...base, x: 140, segWidth: 0, restWidth: 0, stops: [] })
+    expect(t0).toMatchObject({ boxed: true, collapsed: false, target: 144, start: 144 })
+    const t1 = resolveTabTarget({ ...base, x: t0.start, segWidth: 0, restWidth: 0, stops: [] })
+    expect(t1).toMatchObject({ target: 192, start: 192, collapsed: false })
+    // a pinned right tab whose segment already passed the stop starts at x
+    expect(resolveTabTarget({ ...base, x: 615 }).start).toBe(615)
   })
 
   it('falls back to the default grid past the last custom stop', () => {
@@ -217,10 +240,21 @@ describe('resolveTabTarget with a hanging indent', () => {
     expect(r).toMatchObject({ target: 60, val: 'left', collapsed: false })
   })
 
-  it('collapses when the indent is closer than the minimum advance', () => {
+  it('boxes the advance when the indent is closer than the minimum advance', () => {
     const r = resolveTabTarget({ ...hang, x: 57 })
-    expect(r.collapsed).toBe(true)
+    expect(r).toMatchObject({ boxed: true, collapsed: false })
     expect(r.target).toBeCloseTo(60)
+  })
+
+  // "<tab><tab>text" with the first tab 4px before the indent: the first tab
+  // collapses onto the indent (its box is sized from start, so the rendered
+  // end is the indent even though the collapsed target falls short of it)
+  // and the second tab goes on to the next default stop, not back to the indent
+  it('chains a tab after a boxed hanging tab from the indent', () => {
+    const t0 = resolveTabTarget({ ...hang, x: 56, segWidth: 0, restWidth: 0, stops: [] })
+    expect(t0).toMatchObject({ boxed: true, collapsed: false, target: 60, start: 60 })
+    const t1 = resolveTabTarget({ ...hang, x: t0.start, hangingX: undefined, stops: [] })
+    expect(t1).toMatchObject({ target: 96, start: 96, collapsed: false })
   })
 })
 

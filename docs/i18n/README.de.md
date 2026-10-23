@@ -23,6 +23,7 @@ Word-, Excel-, PowerPoint- und PDF-Dateien, bearbeitet von dir und deiner KI, ge
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Website</b></a> ·
@@ -230,6 +231,7 @@ aufbauen, während du zusiehst.
   in Word, Excel oder PowerPoint konvertieren, mit System-OCR für Scans.
 - **Auch Markdown und HTML**, mit demselben KI-Panel und lokalem Export nach
   Word.
+- **Skills.** Mitgelieferte Skills oder deine eigene `SKILL.md`, angehängt über das **+**-Menü jedes KI-Panels.
 - **Skriptbar.** Eine `genoffice`-Befehlszeile, ein Agent-Skill und ein
   MCP-Server stellen jede Engine in den Dienst von Claude Code, Claude
   Desktop, Codex, Cursor und anderen Agenten – weiterhin auf dem Gerät.
@@ -255,6 +257,18 @@ Die gesamte Suite bringt ein helles, ein dunkles und einen
 Systemdesign-Modus mit. Designs ändern nur, was auf dem Bildschirm zu sehen
 ist: Exporte, Ausdrucke und gespeicherte Dateien behalten immer die eigenen
 Farben des Dokuments.
+
+<a id="skills"></a>
+
+## Skills
+
+Ein Skill ist eine `SKILL.md`, die der KI sagt, wie sie eine Aufgabe gut erledigt: einen Wochenbericht, eine NDA, einen Unterrichtsplan.
+GenOffice liefert eine Sammlung mit und nimmt deine eigenen an, im selben Format, das Coding-Agenten verwenden.
+
+- **Einstellungen → Skills.** Einen empfohlenen Skill **installieren** oder einen Ordner, ein Zip oder eine einzelne `SKILL.md` **importieren**. Beim Import wird nichts ausgeführt.
+- **Im Chat.** Das **+**-Menü neben dem Eingabefeld eines KI-Panels öffnen, **Skills** wählen, einen ankreuzen, senden. Der Skill geht nur mit dieser Nachricht mit.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

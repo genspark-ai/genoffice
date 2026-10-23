@@ -44,6 +44,22 @@ describe('docStyleCss first-line indent', () => {
   })
 })
 
+describe('docStyleCss toc style indent', () => {
+  it('a toc style with its own left indent switches off the level ladder padding', () => {
+    const css = docStyleCss(parsedWith('TOC2', { indentLeftTwips: 360 }))
+    expect(css).toContain(
+      '.doc-page [data-style="TOC2"] .doc-toc-line > span:first-child { padding-left:0 }',
+    )
+  })
+
+  it('a non-toc style and an indent-less toc style keep the ladder', () => {
+    expect(docStyleCss(parsedWith('Body', { indentLeftTwips: 360 }))).not.toContain(
+      '.doc-toc-line >',
+    )
+    expect(docStyleCss(parsedWith('TOC2', {}))).not.toContain('.doc-toc-line >')
+  })
+})
+
 describe('docStyleCss paragraph-style Latin line factor', () => {
   it('a style with its own Latin face re-anchors --doc-line-factor-latin', () => {
     const css = docStyleCss(parsedWith('Heading1', { fontAscii: 'Cambria', font: 'Cambria' }))

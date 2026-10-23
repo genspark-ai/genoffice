@@ -9,6 +9,11 @@ export const cs = {
   redactDialogPlaceholder: 'Název zástupného symbolu, např. telefon zákazníka',
   redactCancel: 'Zrušit',
   redactInsert: 'Skrýt',
+  diskChangedMsg: 'Tento soubor změnil jiný program.',
+  diskConflictMsg: 'Tento soubor se na disku změnil; uložení tyto změny přepíše.',
+  diskReload: 'Znovu načíst',
+  diskKeepMine: 'Ponechat moje',
+  diskOverwrite: 'Přesto přepsat',
 
   loading: 'Načítání…',
   loadFailed: 'Soubor nelze otevřít',

@@ -15,10 +15,17 @@ import {
   runLatinFactorFaces,
   latinRunsFactor,
   autospaceBoundaries,
+  autospaceLatinFirst,
   autospacePadBetween,
+  autospacePadScale,
+  autospaceSeams,
+  krNoBreakOffsets,
+  latinAutospaceGapEm,
+  latinLineFactor,
   isChromiumCjkSymbol,
   justifySymbolRanges,
   isCjkFontName,
+  isCjkNamedFont,
   setDocFontTable,
   computeLineHeight,
   cssGridLineExpr,
@@ -58,6 +65,15 @@ import {
   wordMetricAliasFace,
 } from '../src/renderer/line-metrics'
 import { hangulSpaceOffsets } from '../src/renderer/line-metrics'
+import { prefetchFaces, setFontMetricsProvider } from '../src/renderer/font-resolve'
+
+afterEach(() => setFontMetricsProvider(undefined))
+
+/** SimSun stand-in chain, hangul tail and Batang chain the substitution route emits */
+const SIMSUN =
+  "'SimSun','GenOffice SimSun Latin','GenOffice Songti SC','STSong','Noto Serif CJK SC'"
+const KOTAIL = "'GenOffice Batang','GenOffice Serif KR'"
+const KO_SERIF = "'GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR'"
 
 const TWIPS_TO_PX = 96 / 1440
 
@@ -144,6 +160,32 @@ describe('lineHeightFactor', () => {
     expect(lineHeightFactor('Webdings')).toBe(1.0)
     expect(lineHeightFactor('Segoe UI Symbol')).toBe(1.15)
   })
+  it('missing Noto/Source Han JP names: CJK text takes SimSun, Latin keeps the Cambria fallback', () => {
+    // Word substitutes per script (probe 2026-08-13): the CJK factor comes
+    // from cjkDeclaredLineFactor; Latin under the same name stays off 1.3
+    for (const n of [
+      'Noto Sans CJK JP',
+      'Noto Sans JP',
+      'Noto Serif CJK JP',
+      'Source Han Sans JP',
+    ]) {
+      expect(cjkDeclaredLineFactor(n), n).toBe(1.3)
+      expect(lineHeightFactor(n), n).toBe(1.172)
+    }
+  })
+  it('a fontTable entry for a missing Noto JP name does not turn its Latin into Calibri', () => {
+    setDocFontTable([
+      { name: 'Noto Sans JP', panose: '020B0500000000000000' },
+      { name: 'Noto Serif CJK JP', panose: '02020500000000000000' },
+    ])
+    try {
+      expect(lineHeightFactor('Noto Sans JP')).toBe(1.172)
+      expect(lineHeightFactor('Noto Serif CJK JP')).toBe(1.172)
+      expect(cjkDeclaredLineFactor('Noto Sans JP')).toBe(1.3)
+    } finally {
+      setDocFontTable(null)
+    }
+  })
 })
 
 describe('embedded face line boxes', () => {
@@ -170,10 +212,10 @@ describe('embedded face line boxes', () => {
       { family: '\uAD74\uB9BC', ascent: 0.859, descent: 0.141, lineGap: 0 },
       { family: 'PMingLiU', ascent: 0.801, descent: 0.199, lineGap: 0.199 },
     ])
-    expect(lineHeightFactor('\uB9D1\uC740 \uACE0\uB515')).toBe(1.7371)
-    expect(lineHeightFactor('Malgun Gothic')).toBe(1.7371)
-    expect(lineHeightFactor('\uAD74\uB9BC')).toBe(1.3029)
-    expect(lineHeightFactor('PMingLiU')).toBe(1.3029)
+    expect(lineHeightFactor('\uB9D1\uC740 \uACE0\uB515')).toBe(1.7291)
+    expect(lineHeightFactor('Malgun Gothic')).toBe(1.7291)
+    expect(lineHeightFactor('\uAD74\uB9BC')).toBe(1.3)
+    expect(lineHeightFactor('PMingLiU')).toBe(1.3)
   })
 
   it('implausible boxes are ignored', () => {
@@ -412,7 +454,7 @@ describe('ascii-only CJK face (no eastAsia slot)', () => {
   it('runsLineFactor: CJK text under an ascii-only YaHei run keeps the document EA var', () => {
     const text = '\u56e2\u961f\u5bb9\u6613'
     expect(runsLineFactor([{ text, ...yahei }], text)).toBe('var(--doc-line-factor-cjk,1.7)')
-    expect(runsLineFactor([{ text, ...yahei, eastAsiaFont: yahei.font }], text)).toBe('1.7143')
+    expect(runsLineFactor([{ text, ...yahei, eastAsiaFont: yahei.font }], text)).toBe('1.7157')
   })
 })
 
@@ -425,9 +467,9 @@ describe('SimSun-substitution ・/〜 line lift', () => {
   ]
 
   it('simsunGapLineFactor hits JP/SC/TC substitution and SimSun, not KR/YaHei', () => {
-    expect(simsunGapLineFactor('Noto Sans JP')).toBe(1.7143)
-    expect(simsunGapLineFactor('Noto Sans CJK SC')).toBe(1.7143)
-    expect(simsunGapLineFactor('SimSun')).toBe(1.7143)
+    expect(simsunGapLineFactor('Noto Sans JP')).toBe(1.7157)
+    expect(simsunGapLineFactor('Noto Sans CJK SC')).toBe(1.7157)
+    expect(simsunGapLineFactor('SimSun')).toBe(1.7157)
     expect(simsunGapLineFactor('Batang')).toBeNull()
     expect(simsunGapLineFactor('Noto Sans KR')).toBeNull()
     expect(simsunGapLineFactor('Microsoft YaHei')).toBeNull()
@@ -437,22 +479,22 @@ describe('SimSun-substitution ・/〜 line lift', () => {
     const xbs = '\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53'
     expect(lineHeightFactor(xbs)).toBe(lineHeightFactor('SimSun'))
     expect(simsunGapLineFactor(xbs)).toBe(simsunGapLineFactor('SimSun'))
-    expect(simsunGapLineFactor('FZXiaoBiaoSong-B05S')).toBe(1.7143)
+    expect(simsunGapLineFactor('FZXiaoBiaoSong-B05S')).toBe(1.7157)
   })
 
-  it('a line with ・ lifts to 1.7143 × size; a plain line stays at 1.3029', () => {
+  it('a line with \u30fb lifts to 1.7157 \u00d7 size; a plain line stays at 1.3', () => {
     const [plain] = simulateLines(jpRuns('日本語の本文'), 1000, metrics, sizePt, 'Noto Sans JP')
     const [lifted] = simulateLines(jpRuns('日本・語本文'), 1000, metrics, sizePt, 'Noto Sans JP')
-    expect(plain.naturalLineH).toBeCloseTo(sizePx * 1.3029, 1)
-    expect(lifted.naturalLineH).toBeCloseTo(sizePx * 1.7143, 1)
+    expect(plain.naturalLineH).toBeCloseTo(sizePx * 1.3, 1)
+    expect(lifted.naturalLineH).toBeCloseTo(sizePx * 1.7157, 1)
   })
 
   it('〜 lifts too; a YaHei-declared run does not change', () => {
     const [lifted] = simulateLines(jpRuns('期間は9時〜17時'), 1000, metrics, sizePt, 'Noto Sans JP')
-    expect(lifted.naturalLineH).toBeCloseTo(sizePx * 1.7143, 1)
+    expect(lifted.naturalLineH).toBeCloseTo(sizePx * 1.7157, 1)
     const yahei = [{ text: '項目・内容', fontFamily: 'Microsoft YaHei', sizeHalfPoints: 21 }]
     const [unchanged] = simulateLines(yahei, 1000, metrics, sizePt, 'Microsoft YaHei')
-    expect(unchanged.naturalLineH).toBeCloseTo(sizePx * 1.7143, 1) // YaHei's own factor, no extra lift
+    expect(unchanged.naturalLineH).toBeCloseTo(sizePx * 1.7157, 1) // YaHei's own factor, no extra lift
   })
 
   it('fixed-factor table-cell path keeps its pinned factor', () => {
@@ -481,7 +523,7 @@ describe('computeLineMetrics', () => {
     const sized = computeLineMetrics({ ...base, runs: [{ text: '', sizeHalfPoints: 28 }] })
     expect(sized.totalHeight).toBeCloseTo(14 * (96 / 72) * 1.22, 3)
     const kr = computeLineMetrics({ ...base, runs: [{ text: ' ', fontFamily: 'Malgun Gothic' }] })
-    expect(kr.totalHeight).toBeCloseTo(10.5 * (96 / 72) * 1.7371, 3)
+    expect(kr.totalHeight).toBeCloseTo(10.5 * (96 / 72) * 1.7291, 3)
     // unstyled whitespace runs keep the document default
     const plain = computeLineMetrics({ ...base, runs: [{ text: ' ' }] })
     expect(plain.totalHeight).toBeCloseTo(def.totalHeight, 3)
@@ -697,6 +739,24 @@ describe('cssLineHeight', () => {
 })
 
 /** canvas stub for isFontAvailable: listed families measure differently from the generic fallbacks */
+async function stubInstalled(families: string[]) {
+  stubCanvas(families)
+  const keys = new Set(families.map((f) => f.normalize('NFKC').toLowerCase()))
+  setFontMetricsProvider(async (family) =>
+    keys.has(family)
+      ? ({
+          unitsPerEm: 1000,
+          hheaAscender: 900,
+          hheaDescender: -200,
+          hheaLineGap: 0,
+          xAvgCharWidth: 500,
+          codePageRange1: 0x3e0000,
+        } as never)
+      : null,
+  )
+  await prefetchFaces(families)
+}
+
 function stubCanvas(availableFamilies: string[]) {
   const known = new Set(availableFamilies)
   let width = 50
@@ -729,9 +789,12 @@ describe('cssFontFamily', () => {
   })
 
   it('Simplified-Chinese office fonts map to real macOS/Windows families', () => {
+    // the corpus declares it with altName FangSong, which Word follows
+    setDocFontTable([{ name: '\u4eff\u5b8b_GB2312', altName: '\u4eff\u5b8b' }])
     expect(cssFontFamily('仿宋_GB2312')).toBe(
-      "'仿宋_GB2312','STFangsong','FangSong','Noto Serif CJK SC',serif",
+      "'\u4eff\u5b8b_GB2312','\u4eff\u5b8b','STFangsong','FangSong','Noto Serif CJK SC',serif",
     )
+    setDocFontTable([])
     // Word for Mac substitutes KaiTi GB2312 and FZ XiaoBiaoSong with Microsoft
     // YaHei wholesale (probe 2026-08-23) — not a Kai/Song face
     // DFKai-SB is missing on Word for Mac: Microsoft YaHei wholesale, with the
@@ -742,7 +805,7 @@ describe('cssFontFamily', () => {
     expect(cssFontFamily('DFKai-SB')).toBe(
       "'DFKai-SB','Microsoft YaHei','GenOffice YaHei Latin','PingFang SC','Noto Sans CJK SC',sans-serif",
     )
-    expect(lineHeightFactor('DFKai-SB')).toBe(1.7143)
+    expect(lineHeightFactor('DFKai-SB')).toBe(1.7157)
     expect(cssFontFamily('楷体_GB2312')).toBe(
       "'楷体_GB2312','Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif",
     )
@@ -754,13 +817,13 @@ describe('cssFontFamily', () => {
     )
     // FZ XiaoBiaoSong substitutes SimSun on Word for Mac (probe 2026-09-30)
     expect(cssFontFamily('\u65b9\u6b63\u5c0f\u6807\u5b8b_GBK')).toBe(
-      "'\u65b9\u6b63\u5c0f\u6807\u5b8b_GBK','GenOffice SimSun Latin','GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC',serif",
+      `'\u65b9\u6b63\u5c0f\u6807\u5b8b_GBK','KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`,
     )
     expect(cssFontFamily('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).not.toContain(
       "'Microsoft YaHei'",
     )
-    expect(lineHeightFactor('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).toBe(1.3029)
-    expect(lineHeightFactor('\u9ed1\u4f53')).toBe(1.3029)
+    expect(lineHeightFactor('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).toBe(1.3)
+    expect(lineHeightFactor('\u9ed1\u4f53')).toBe(1.3)
     expect(cssFontFamily('华文中宋')).toBe(
       "'华文中宋','STZhongsong','Songti SC','STSong','SimSun','Noto Serif CJK SC',serif",
     )
@@ -769,17 +832,18 @@ describe('cssFontFamily', () => {
     )
   })
 
-  it('unknown Latin-named family takes the CJK-range-only alias tail', () => {
-    expect(cssFontFamily('SomeCustomFont')).toBe(
-      "'SomeCustomFont','Noto Sans CJK GO','GenOffice PUA Blank',sans-serif",
-    )
-    expect(cssFontFamily('PT Serif Custom')).toBe(
-      "'PT Serif Custom','Noto Serif CJK GO','GenOffice PUA Blank',serif",
-    )
+  it('a Latin name without a fontTable entry draws Cambria (probe 2026-10-22)', () => {
+    for (const f of ['SomeCustomFont', 'PT Serif Custom']) {
+      expect(cssFontFamily(f)).toBe(
+        `'${f}','Cambria','Caladea','GenOffice Box Drawing','Noto Serif CJK SC',serif`,
+      )
+    }
   })
 
-  it('unknown CJK-named family keeps the full bundled subset tail', () => {
-    expect(cssFontFamily('华康娃娃体')).toBe("'华康娃娃体','Noto Sans CJK SC',sans-serif")
+  it('an unknown Han-named family draws SimSun, its Latin the Cambria substitute', () => {
+    expect(cssFontFamily('\u534e\u5eb7\u5a03\u5a03\u4f53')).toBe(
+      `'\u534e\u5eb7\u5a03\u5a03\u4f53','KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`,
+    )
   })
 
   it('monospace families map to a mono chain (Menlo first on macOS)', () => {
@@ -788,19 +852,9 @@ describe('cssFontFamily', () => {
     expect(cssFontFamily('Courier New')).toBe(
       "'Courier New','Menlo','Liberation Mono','Noto Sans CJK SC',monospace",
     )
-    for (const f of [
-      'Menlo',
-      'Monaco',
-      'Cascadia Code',
-      'SF Mono',
-      'JetBrains Mono',
-      'Source Code Pro',
-      'Fira Code',
-      'DejaVu Sans Mono',
-      'Lucida Console',
-    ]) {
-      expect(cssFontFamily(f)).toMatch(/,monospace$/)
-    }
+    for (const f of ['Menlo', 'Monaco']) expect(cssFontFamily(f)).toMatch(/,monospace$/)
+    // a mono name Word lacks draws its Calibri/Cambria substitute, proportional
+    expect(cssFontFamily('Cascadia Code')).toMatch(/^'Cascadia Code','Cambria',/)
   })
 
   it('mono css chain resolves the Consolas line factor, not Courier fallback', () => {
@@ -824,17 +878,17 @@ describe('cssFontFamily', () => {
     it('missing BIZ UDP names take the JA sans chain and the Yu Gothic factor, even the Mincho cut', () => {
       for (const name of ['BIZ UDPゴシック', 'BIZ UDPGothic', 'BIZ UDP明朝 Medium']) {
         expect(cssFontFamily(name)).toBe(
-          `'${name}','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif`,
+          `'${name}','Yu Gothic','Yu Gothic GO','Yu Gothic Sans GO','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif`,
         )
-        expect(lineHeightFactor(name)).toBe(1.44)
+        expect(lineHeightFactor(name)).toBe(1.4327)
         expect(isCjkFontName(name)).toBe(true)
       }
     })
 
-    it('an installed BIZ UD face renders real: MS-class pitch and its own classification', () => {
+    it('a canvas-visible BIZ UD face still follows the font index (no entry: Yu Gothic)', () => {
       stubCanvas(['BIZ UDGothic', 'BIZ UDMincho'])
-      expect(lineHeightFactor('BIZ UDGothic')).toBe(1.3029)
-      expect(cssFontFamily('BIZ UDMincho')).toMatch(/,serif$/)
+      expect(lineHeightFactor('BIZ UDGothic')).toBe(1.4327)
+      expect(cssFontFamily('BIZ UDMincho')).toMatch(/'Yu Gothic GO'.*,sans-serif$/)
     })
   })
 
@@ -850,26 +904,26 @@ describe('cssFontFamily', () => {
 
     it('missing non-shipped names take the JA sans chain and the Yu Gothic factor, even the Mincho cut', () => {
       for (const name of [kyokasho, minchoB, popTai, gothicM, hiraginoKakuGo]) {
-        expect(lineHeightFactor(name)).toBe(1.44)
+        expect(lineHeightFactor(name)).toBe(1.4327)
         expect(cssFontFamily(name)).toBe(
-          `'${name}','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif`,
+          `'${name}','Yu Gothic','Yu Gothic GO','Yu Gothic Sans GO','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif`,
         )
         expect(isCjkFontName(name)).toBe(true)
       }
     })
 
     it('the shipped cuts keep the MS-class pitch and their own classification', () => {
-      expect(lineHeightFactor(maruGothic)).toBe(1.3029)
-      expect(lineHeightFactor(minchoE)).toBe(1.3029)
+      expect(lineHeightFactor(maruGothic)).toBe(1.3)
+      expect(lineHeightFactor(minchoE)).toBe(1.3)
       // half-width spelling of the shipped Gothic E cut
-      expect(lineHeightFactor('HG\uff7a\uff9e\uff7c\uff6f\uff78E')).toBe(1.3029)
+      expect(lineHeightFactor('HG\uff7a\uff9e\uff7c\uff6f\uff78E')).toBe(1.3)
       expect(cssFontFamily(minchoE)).toMatch(/,serif$/)
     })
 
-    it('an installed face renders real', () => {
+    it('a canvas-visible HG face still follows the font index (no entry: Yu Gothic)', () => {
       const installed = 'HGS\u6559\u79d1\u66f8\u4f53'
       stubCanvas([installed])
-      expect(lineHeightFactor(installed)).toBe(1.3029)
+      expect(lineHeightFactor(installed)).toBe(1.4327)
     })
 
     it('the line simulator applies the Yu Gothic factor to half-width spellings too', () => {
@@ -892,9 +946,10 @@ describe('cssFontFamily', () => {
       "'メイリオ','Meiryo GO','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif",
     )
     expect(cssFontFamily('Meiryo')).toContain("'Meiryo GO'")
-    // localized UI spelling still selects the UI cut
-    expect(cssFontFamily('メイリオ UI')).toContain("'Meiryo UI GO'")
-    expect(lineHeightFactor('メイリオ UI')).toBe(1.65)
+    // localized UI spelling still selects the UI cut; no face carries that
+    // name, so the kana-lettered missing name meters as SimSun
+    expect(cssFontFamily('メイリオ UI')).toContain("'SimSun'")
+    expect(lineHeightFactor('\u30e1\u30a4\u30ea\u30aa UI')).toBe(1.3)
     // dual-slot runs keep the alias behind the Latin head so kana still reach it
     expect(cssDualFontFamily('Calibri', 'Meiryo UI')).toContain("'Meiryo UI GO'")
   })
@@ -921,7 +976,7 @@ describe('cssFontFamily', () => {
     expect(cssFontFamily('Berlin Sans FB Demi')).toContain("'Berlin Sans FB GO'")
     expect(cssFontFamily('Berlin Sans FB')).not.toContain("'Berlin Sans FB GO'")
     // MS Mincho shares the fixed-pitch Latin alias; other JP names are untouched
-    expect(cssFontFamily('ＭＳ ゴシック 太字')).not.toContain(' GO')
+    expect(cssFontFamily('ＭＳ ゴシック 太字')).not.toContain("'MS Gothic GO'")
     expect(cssFontFamily('MS Mincho')).toMatch(/^'MS Mincho','MS Mincho GO',/)
     expect(cssFontFamily('\uFF2D\uFF33 \u660E\u671D')).toContain("'MS Mincho GO'")
     expect(cssFontFamily('MS PMincho')).not.toContain(' GO')
@@ -950,45 +1005,43 @@ describe('cssFontFamily', () => {
 
     it('missing SC sans routes to the SimSun-class serif chain', () => {
       expect(cssFontFamily('Noto Sans SC')).toBe(
-        "'Noto Sans SC','GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC','GenOffice Batang','GenOffice Serif KR',serif",
+        `'Noto Sans SC','KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`,
       )
     })
 
     it('bundled subset faces count as missing and never lead the chain', () => {
-      expect(cssFontFamily('Noto Sans CJK SC')).toBe(
-        "'GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC','GenOffice Batang','GenOffice Serif KR',serif",
-      )
-      expect(cssFontFamily('Noto Serif CJK SC')).toBe(
-        "'GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC','GenOffice Batang','GenOffice Serif KR',serif",
-      )
+      for (const f of ['Noto Sans CJK SC', 'Noto Serif CJK SC']) {
+        expect(cssFontFamily(f)).toBe(`'KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`)
+      }
     })
 
     it('true SC serif declares keep their name at the head', () => {
       expect(cssFontFamily('Noto Serif SC')).toBe(
-        "'Noto Serif SC','GenOffice Songti SC','STSong','SimSun','Noto Serif CJK SC','GenOffice Batang','GenOffice Serif KR',serif",
+        `'Noto Serif SC','KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`,
       )
     })
 
-    it('locally installed SC sans keeps the declared name and a sans chain', () => {
-      stubCanvas(['Source Han Sans CN'])
+    it('locally installed SC sans keeps the declared name and a sans chain', async () => {
+      await stubInstalled(['Source Han Sans CN'])
       expect(cssFontFamily('Source Han Sans CN')).toBe(
         "'Source Han Sans CN','PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif",
       )
     })
 
     it('jp/kr/tc variants keep their same-script substitution', () => {
+      // every missing regional name draws SimSun (probe 2026-10-22), KR ones Batang
       expect(cssFontFamily('Noto Sans CJK JP')).toBe(
-        "'Noto Sans CJK JP','Yu Mincho','GenOffice Hiragino Mincho','GenOffice MS Mincho','Noto Serif JP','GenOffice Batang','GenOffice Serif KR',serif",
+        `'Noto Sans CJK JP','KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`,
       )
       expect(cssFontFamily('Source Han Sans K')).toBe(
-        "'Source Han Sans K','KR Theme Latin GO','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+        `'Source Han Sans K','KR Theme Latin GO','Batang',${KO_SERIF},serif`,
       )
       expect(cssFontFamily('Noto Sans CJK TC')).toBe(
-        "'Noto Sans CJK TC','GenOffice MingLiU','GenOffice Fullwidth TC','GenOffice Songti TC','Songti TC','Noto Serif TC','GenOffice Batang','GenOffice Serif KR',serif",
+        `'Noto Sans CJK TC','KR Theme Latin GO',${SIMSUN},${KOTAIL},serif`,
       )
     })
 
-    it('missing non-KR variants end in the 1em hangul faces Word substitutes (Batang), installed ones do not', () => {
+    it('missing non-KR variants end in the 1em hangul faces Word substitutes (Batang), installed ones do not', async () => {
       // Word probe 2026-09-06: hangul in a missing Noto Sans CJK SC/JP/KR run is
       // Batang for every w:lang; the SC/TC/JP chains alone would drop hangul on
       // the system sans (0.865em) and wrap a 3-line Korean cell in 2 (sample 027)
@@ -998,7 +1051,7 @@ describe('cssFontFamily', () => {
       expect(cssDualFontFamily('Calibri', 'Noto Sans CJK SC')).toMatch(
         /'GenOffice Serif KR',serif$/,
       )
-      stubCanvas(['Source Han Sans CN'])
+      await stubInstalled(['Source Han Sans CN'])
       expect(cssFontFamily('Source Han Sans CN')).not.toContain('GenOffice Serif KR')
     })
   })
@@ -1023,12 +1076,12 @@ describe('cssFontFamily', () => {
 
     it('missing KR variant gets the theme Latin head ahead of the Batang chain', () => {
       expect(cssFontFamily('Noto Sans CJK KR')).toBe(
-        "'Noto Sans CJK KR','KR Theme Latin GO','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+        `'Noto Sans CJK KR','KR Theme Latin GO','Batang',${KO_SERIF},serif`,
       )
     })
 
-    it('installed KR variant keeps its chain without the theme Latin head', () => {
-      stubCanvas(['Noto Serif CJK KR'])
+    it('installed KR variant keeps its chain without the theme Latin head', async () => {
+      await stubInstalled(['Noto Serif CJK KR'])
       expect(cssFontFamily('Noto Serif CJK KR')).toBe(
         "'Noto Serif CJK KR','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
       )
@@ -1054,8 +1107,19 @@ describe('cssFontFamily', () => {
 
     it('other source-vendor families keep the Batang-normalized serif chain', () => {
       expect(cssFontFamily('NanumBarunGothic')).toBe(
-        "'NanumBarunGothic','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+        `'NanumBarunGothic','Batang',${KO_SERIF},serif`,
       )
+    })
+
+    it('Nirmala UI leads the bundled Nirmala-metric Bengali face at its hhea pitch', () => {
+      expect(cssFontFamily('Nirmala UI')).toBe(
+        "'Nirmala UI','GenOffice Bengali','Kohinoor Bangla','Bangla Sangam MN',sans-serif",
+      )
+      expect(lineHeightFactor('Nirmala UI')).toBe(1.3301)
+    })
+
+    it('Helvetica Neue renders real at its hhea total (probe 2026-10-22)', () => {
+      expect(lineHeightFactor('Helvetica Neue')).toBe(1.193)
     })
 
     it('Latha leads the bundled Latha-metric face; other Tamil names lay out as Vijaya', () => {
@@ -1083,30 +1147,115 @@ describe('document fontTable substitution hints', () => {
     vi.restoreAllMocks()
   })
 
+  it('a missing Hangul-charset face substitutes Malgun unless its family is roman (probe 2026-10-20)', () => {
+    setDocFontTable([
+      {
+        name: '\ud568\ucd08\ub86c\ubc14\ud0d5',
+        panose: '02030604000101010101',
+        charset: '81',
+        family: 'modern',
+      },
+      { name: 'Squirrel Serif Probe', charset: '81', family: 'auto' },
+      { name: 'Squirrel Roman Probe', charset: '81', family: 'roman' },
+      {
+        name: '\ub2e4\ub78c\uc950\uc11c\uccb4',
+        panose: '020B0604000101010101',
+        charset: '81',
+        family: 'roman',
+      },
+      {
+        name: '\ub2e4\ub78c\uc950\uc11c\uccb42',
+        panose: '02030604000101010101',
+        charset: '00',
+        family: 'modern',
+      },
+    ])
+    // HCR Batang: serif PANOSE and a Korean serif name, still Malgun for hangul and Latin
+    expect(krLineFactor('\ud568\ucd08\ub86c\ubc14\ud0d5')).toBe(1.7291)
+    expect(lineHeightFactor('\ud568\ucd08\ub86c\ubc14\ud0d5')).toBe(1.7291)
+    expect(cssFontFamily('\ud568\ucd08\ub86c\ubc14\ud0d5')).toBe(
+      "'\ud568\ucd08\ub86c\ubc14\ud0d5','Malgun Gothic','GenOffice Sans KR','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+    )
+    // Latin-named entry without PANOSE: charset alone decides
+    expect(krLineFactor('Squirrel Serif Probe')).toBe(1.7291)
+    expect(lineHeightFactor('Squirrel Serif Probe')).toBe(1.7291)
+    expect(cssFontFamily('Squirrel Serif Probe')).toContain("'Malgun Gothic'")
+    // Latin-named roman entry: Batang geometry for the Latin run and chain alike
+    expect(krLineFactor('Squirrel Roman Probe')).toBe(1.3)
+    expect(lineHeightFactor('Squirrel Roman Probe')).toBe(1.3)
+    expect(cssFontFamily('Squirrel Roman Probe')).toBe(
+      "'Squirrel Roman Probe','Batang','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
+    )
+    // family roman wins over a sans PANOSE
+    expect(krLineFactor('\ub2e4\ub78c\uc950\uc11c\uccb4')).toBe(1.3)
+    expect(cssFontFamily('\ub2e4\ub78c\uc950\uc11c\uccb4')).toContain("'GenOffice Batang'")
+    // no Hangul charset: Batang-ward as before
+    expect(krLineFactor('\ub2e4\ub78c\uc950\uc11c\uccb42')).toBe(1.3)
+  })
+
+  it('MS Reference Sans Serif takes Verdana metrics and the local() alias', () => {
+    expect(lineHeightFactor('MS Reference Sans Serif')).toBe(1.2167)
+    expect(cssFontFamily('MS Reference Sans Serif')).toBe(
+      "'MS Reference Sans Serif','MS Reference Sans Serif GO','Verdana','Noto Sans CJK SC',sans-serif",
+    )
+  })
+
+  it('Merriweather keeps the serif class through the Georgia alias', () => {
+    expect(cssFontFamily('Merriweather')).toBe(
+      "'Merriweather','Merriweather GO','Georgia','GenOffice Box Drawing','Noto Serif CJK SC',serif",
+    )
+  })
+
   it('a hangul-named face whose altName is Batang lays out as Batang even when installed', () => {
     // Word for Mac ignores the installed Nanum Myeongjo behind its Korean name
     // (corpus 2026-09-24: Batang spans, 15.1pt @10pt x 1.15 for our 17.2)
     setDocFontTable([{ name: '\ub098\ub214\uba85\uc870', altName: '\ubc14\ud0d5' }])
     stubCanvas(['\ub098\ub214\uba85\uc870', 'NanumMyeongjo'])
-    expect(lineHeightFactor('\ub098\ub214\uba85\uc870')).toBe(1.3029)
+    expect(lineHeightFactor('\ub098\ub214\uba85\uc870')).toBe(1.3)
     // spaces keep the Batang subset's 0.333em; hangul-context ones widen
     // through .doc-hangul-space, not the chain
-    expect(cssFontFamily('\ub098\ub214\uba85\uc870')).toBe(
-      "'GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
-    )
-    // the Latin name keeps the real face
-    expect(lineHeightFactor('NanumMyeongjo')).toBe(1.5)
+    expect(cssFontFamily('\ub098\ub214\uba85\uc870')).toBe(`'\ubc14\ud0d5',${KO_SERIF},serif`)
+    // the Latin name keeps the real face (OS asset hhea 1.1504 x 1.3)
+    expect(lineHeightFactor('NanumMyeongjo')).toBe(1.4955)
     expect(cssFontFamily('NanumMyeongjo')).toContain("'NanumMyeongjo'")
   })
 
-  it('missing hangul-named face with a sans PANOSE takes the Malgun class', () => {
+  it('missing hangul-named face with a sans PANOSE stays Batang, its Latin Calibri (probe 2026-10-22)', () => {
     setDocFontTable([{ name: '원신한 Light', panose: '020B0303000000000000' }])
     expect(cssFontFamily('원신한 Light')).toBe(
-      "'원신한 Light','Malgun Gothic','GenOffice Sans KR','Apple SD Gothic Neo','Noto Sans KR',sans-serif",
+      `'원신한 Light','Carlito GO','Batang',${KO_SERIF},serif`,
     )
-    expect(krLineFactor('원신한 Light')).toBe(1.7371)
-    expect(cjkDeclaredLineFactor('원신한 Light')).toBe(1.7371)
+    expect(krLineFactor('\uc6d0\uc2e0\ud55c Light')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('\uc6d0\uc2e0\ud55c Light')).toBe(1.3)
+    expect(latinLineFactor('\uc6d0\uc2e0\ud55c Light')).toBe(1.22)
     expect(isCjkFontName('원신한 Light')).toBe(true)
+  })
+
+  it('an altName on a CJK-named missing face drives the Latin slot metrics, not only its chain', () => {
+    // Han names without any Latin family token: knownLineFactor has nothing to say
+    const hanSerif = '\u67d0\u67d0\u5b8b\u4f53\u63a2\u9488'
+    const hanSans = '\u5f20\u4e09\u4f53'
+    const hangul = '\ud55c\uae00\ud504\ub85c\ube0c'
+    setDocFontTable([
+      { name: hangul, altName: 'Arial' },
+      { name: hanSerif, altName: 'Times New Roman' },
+      { name: hanSans, altName: 'Arial' },
+    ])
+    expect(isCjkFontName(hanSans)).toBe(false)
+    expect(isCjkNamedFont(hanSans)).toBe(true)
+    for (const [name, target] of [
+      [hangul, 'Arial'],
+      [hanSerif, 'Times New Roman'],
+      [hanSans, 'Arial'],
+    ]) {
+      expect(cssFontFamily(name)).toContain(`'${target}'`)
+      expect(latinLineFactor(name)).toBe(lineHeightFactor(target))
+      expect(latinAutospaceGapEm(name)).toBe(latinAutospaceGapEm(target))
+      expect(latinLineFactor(name)).not.toBe(lineHeightFactor(name))
+    }
+    expect(latinLineFactor(hanSerif)).toBe(1.15)
+    expect(latinAutospaceGapEm(hanSerif)).not.toBe(latinAutospaceGapEm(hanSans))
+    setDocFontTable(null)
   })
 
   it('serif / all-zero / absent PANOSE keeps the Batang-ward default', () => {
@@ -1115,11 +1264,43 @@ describe('document fontTable substitution hints', () => {
       { name: '나래글꼴', panose: '00000000000000000000' },
     ])
     expect(cssFontFamily('가온글꼴')).toContain("'GenOffice Batang'")
-    expect(krLineFactor('가온글꼴')).toBe(1.3029)
+    expect(krLineFactor('\uac00\uc628\uae00\uaf34')).toBe(1.3)
     expect(cssFontFamily('나래글꼴')).toContain("'GenOffice Batang'")
-    expect(krLineFactor('나래글꼴')).toBe(1.3029)
-    expect(krLineFactor('다솜글꼴')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('다솜글꼴')).toBe(1.3029)
+    expect(krLineFactor('\ub098\ub798\uae00\uaf34')).toBe(1.3)
+    expect(krLineFactor('\ub2e4\uc19c\uae00\uaf34')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('\ub2e4\uc19c\uae00\uaf34')).toBe(1.3)
+  })
+
+  it('a missing Latin name with a fontTable entry substitutes Calibri, serif PANOSE Cambria (probe 2026-10-22)', () => {
+    setDocFontTable([
+      { name: 'Mont', panose: '00000700000000000000', charset: 'CC', family: 'auto' },
+      { name: 'Quokka Probe B' },
+      { name: 'Quokka Probe C', panose: '02030604000101010101', charset: '00', family: 'roman' },
+      { name: 'Quokka Probe D', panose: '020B0604000101010101', charset: '00', family: 'swiss' },
+    ])
+    for (const f of ['Mont', 'Quokka Probe B', 'Quokka Probe D']) {
+      expect(cssFontFamily(f)).toBe(
+        `'${f}','Calibri','Carlito GO','Calibri Arabic GO','Noto Sans CJK SC',sans-serif`,
+      )
+      expect(lineHeightFactor(f)).toBe(1.22)
+    }
+    expect(cssFontFamily('Quokka Probe C')).toBe(
+      "'Quokka Probe C','Cambria','Caladea','GenOffice Box Drawing','Noto Serif CJK SC',serif",
+    )
+    expect(lineHeightFactor('Quokka Probe C')).toBe(1.172)
+    // no fontTable entry: Cambria pitch, name-guessed chain
+    expect(lineHeightFactor('Quokka Probe E')).toBe(1.172)
+    expect(cssFontFamily('Quokka Probe E')).toBe(
+      "'Quokka Probe E','Cambria','Caladea','GenOffice Box Drawing','Noto Serif CJK SC',serif",
+    )
+    // cloud faces Word renders real keep their own chain and factor
+    setDocFontTable([
+      { name: 'Open Sans', panose: '020B0606030504020204', charset: '00', family: 'swiss' },
+    ])
+    expect(cssFontFamily('Open Sans')).not.toContain("'Carlito GO'")
+    expect(lineHeightFactor('Open Sans')).toBe(1.365)
+    setDocFontTable(null)
+    expect(lineHeightFactor('Mont')).toBe(1.172)
   })
 
   it('missing Noto Sans KR with a sans PANOSE takes the Malgun class (Word probe 2026-09-11)', () => {
@@ -1129,17 +1310,17 @@ describe('document fontTable substitution hints', () => {
     expect(css).not.toContain("'GenOffice Batang'")
     expect(css).not.toContain("'KR Theme Latin GO'")
     expect(css.endsWith('sans-serif')).toBe(true)
-    expect(lineHeightFactor('Noto Sans KR')).toBe(1.7371)
-    expect(cjkDeclaredLineFactor('Noto Sans KR')).toBe(1.7371)
-    expect(krLineFactor('Noto Sans KR')).toBe(1.7371)
+    expect(lineHeightFactor('Noto Sans KR')).toBe(1.7291)
+    expect(cjkDeclaredLineFactor('Noto Sans KR')).toBe(1.7291)
+    expect(krLineFactor('Noto Sans KR')).toBe(1.7291)
   })
 
   it('Noto Sans KR without a fontTable sans hint stays Batang-ward (Word probe 2026-08-13)', () => {
     setDocFontTable([{ name: 'Noto Sans KR', panose: '00000000000000000000' }])
     expect(cssFontFamily('Noto Sans KR')).toContain("'GenOffice Batang'")
-    expect(lineHeightFactor('Noto Sans KR')).toBe(1.3029)
+    expect(lineHeightFactor('Noto Sans KR')).toBe(1.3)
     setDocFontTable(null)
-    expect(cjkDeclaredLineFactor('Noto Sans KR')).toBe(1.3029)
+    expect(cjkDeclaredLineFactor('Noto Sans KR')).toBe(1.3)
   })
 
   it('Noto Sans CJK KR keeps its probed Batang-class behavior despite an altName', () => {
@@ -1148,8 +1329,8 @@ describe('document fontTable substitution hints', () => {
     ])
     expect(cssFontFamily('Noto Sans CJK KR')).toContain("'GenOffice Batang'")
     expect(cssFontFamily('Noto Sans CJK KR')).not.toContain("'Cambria'")
-    expect(cjkDeclaredLineFactor('Noto Sans CJK KR')).toBe(1.3029)
-    expect(krLineFactor('Noto Sans CJK KR')).toBe(1.3029)
+    expect(cjkDeclaredLineFactor('Noto Sans CJK KR')).toBe(1.3)
+    expect(krLineFactor('Noto Sans CJK KR')).toBe(1.3)
   })
 
   it('missing unknown face follows its altName chain', () => {
@@ -1159,13 +1340,16 @@ describe('document fontTable substitution hints', () => {
     )
   })
 
-  it('hei-class altNames are not followed (macOS Heiti Latin runs wide, unlike SimHei)', () => {
+  it('hei-class altNames are followed like any other (probe 2026-10-22: SimHei wholesale)', () => {
     setDocFontTable([{ name: '汉仪旗黑-50简', altName: '黑体' }])
-    expect(cssFontFamily('汉仪旗黑-50简')).toBe("'汉仪旗黑-50简','Noto Sans CJK SC',sans-serif")
+    expect(cssFontFamily('\u6c49\u4eea\u65d7\u9ed1-50\u7b80')).toBe(
+      "'\u6c49\u4eea\u65d7\u9ed1-50\u7b80','\u9ed1\u4f53','Heiti SC','STHeiti','SimHei','PingFang SC','Noto Sans CJK SC',sans-serif",
+    )
+    expect(lineHeightFactor('\u6c49\u4eea\u65d7\u9ed1-50\u7b80')).toBe(1.3)
   })
 
-  it('installed fonts skip the altName rewrite', () => {
-    stubCanvas(['InstalledCloudFont'])
+  it('installed fonts skip the altName rewrite', async () => {
+    await stubInstalled(['InstalledCloudFont'])
     setDocFontTable([{ name: 'InstalledCloudFont', altName: '仿宋' }])
     expect(cssFontFamily('InstalledCloudFont')).toBe(
       "'InstalledCloudFont','Noto Sans CJK GO','GenOffice PUA Blank',sans-serif",
@@ -1217,8 +1401,14 @@ describe('Aptos (M365 cloud face)', () => {
     expect(lineHeightFactor('Aptos Display')).toBe(1.22)
   })
 
-  it('other Aptos cuts keep unscaled Carlito (Narrow measures ~Carlito; Mono/Serif unprobed)', () => {
-    for (const name of ['Aptos Narrow', 'Aptos Mono', 'Aptos Serif']) {
+  it('Aptos Narrow takes its own alias (letters ~Carlito, space -17%)', () => {
+    expect(cssFontFamily('Aptos Narrow')).toBe(
+      "'Aptos Narrow','Aptos Narrow GO','GenOffice PUA Blank','Noto Sans CJK SC',sans-serif",
+    )
+  })
+
+  it('other Aptos cuts keep unscaled Carlito (Mono/Serif unprobed)', () => {
+    for (const name of ['Aptos Mono', 'Aptos Serif']) {
       expect(cssFontFamily(name)).toBe(
         `'${name}','Carlito GO','GenOffice PUA Blank','Noto Sans CJK SC',sans-serif`,
       )
@@ -1289,86 +1479,90 @@ describe('Korean line metrics', () => {
     expect(m.measure('한글날', style)).toBeCloseTo(48, 5)
   })
 
-  it('Korean font line factors: Batang-class 1.3029, Malgun 1.7371 (Word probe)', () => {
-    expect(lineHeightFactor('Batang')).toBe(1.3029)
-    expect(lineHeightFactor('바탕')).toBe(1.3029)
-    expect(lineHeightFactor('Gulim')).toBe(1.3029)
-    expect(lineHeightFactor('Dotum')).toBe(1.3029)
+  it('Korean font line factors: Batang-class 1.3, Malgun 1.7291 (Word probe)', () => {
+    // Word pitch: 11 pt body 19.05 pt (18.96/19.20 alternating), 10.5 pt
+    // empty table rows 18.17 pt; 1.7371 would give 19.11 / 18.24
+    expect(lineHeightFactor('Malgun Gothic') * 11).toBeCloseTo(19.04, 1)
+    expect(lineHeightFactor('Malgun Gothic') * 10.5).toBeCloseTo(18.17, 1)
+    expect(lineHeightFactor('Batang')).toBe(1.3)
+    expect(lineHeightFactor('\ubc14\ud0d5')).toBe(1.3)
+    expect(lineHeightFactor('Gulim')).toBe(1.3)
+    expect(lineHeightFactor('Dotum')).toBe(1.3)
     // NanumMyeongjo renders real via the OS downloadable asset (probe 2026-08-24)
-    expect(lineHeightFactor('NanumMyeongjo')).toBe(1.5)
-    expect(lineHeightFactor('\ub098\ub214\uba85\uc870')).toBe(1.5)
-    expect(lineHeightFactor('NanumBarunGothic')).toBe(1.3029)
+    expect(lineHeightFactor('NanumMyeongjo')).toBe(1.4955)
+    expect(lineHeightFactor('\ub098\ub214\uba85\uc870')).toBe(1.4955)
+    expect(lineHeightFactor('NanumBarunGothic')).toBe(1.3)
     expect(lineHeightFactor('NanumGothic')).toBe(1.495)
     expect(lineHeightFactor('나눔고딕')).toBe(1.495)
-    expect(lineHeightFactor('Malgun Gothic')).toBe(1.7371)
-    expect(lineHeightFactor('맑은 고딕')).toBe(1.7371)
-    expect(lineHeightFactor('Noto Sans CJK KR')).toBe(1.3029)
-    expect(lineHeightFactor('Noto Serif KR')).toBe(1.3029)
-    expect(lineHeightFactor('Source Han Sans K')).toBe(1.3029)
+    expect(lineHeightFactor('Malgun Gothic')).toBe(1.7291)
+    expect(lineHeightFactor('\ub9d1\uc740 \uace0\ub515')).toBe(1.7291)
+    expect(lineHeightFactor('Noto Sans CJK KR')).toBe(1.3)
+    expect(lineHeightFactor('Noto Serif KR')).toBe(1.3)
+    expect(lineHeightFactor('Source Han Sans K')).toBe(1.3)
   })
 
   it('Chinese/Japanese factors follow the Word probe (unprobed names keep LO values)', () => {
-    expect(lineHeightFactor('SimSun')).toBe(1.3029)
-    expect(lineHeightFactor('宋体')).toBe(1.3029)
-    // DengXian renders real in Office for Mac (probes 2026-08-13/25: 16.32pt @12pt)
-    expect(lineHeightFactor('DengXian')).toBe(1.36)
-    expect(lineHeightFactor('\u7b49\u7ebf')).toBe(1.36)
-    expect(lineHeightFactor('DengXian Light')).toBe(1.36)
+    expect(lineHeightFactor('SimSun')).toBe(1.3)
+    expect(lineHeightFactor('\u5b8b\u4f53')).toBe(1.3)
+    // DengXian renders real in Office for Mac (probe 2026-10-22: 13.545 @10pt = hhea 1.042 x 1.3)
+    expect(lineHeightFactor('DengXian')).toBe(1.3546)
+    expect(lineHeightFactor('\u7b49\u7ebf')).toBe(1.3546)
+    expect(lineHeightFactor('DengXian Light')).toBe(1.3546)
     // FangSong renders in the SimSun class (Word probe 2026-08-22)
-    expect(lineHeightFactor('FangSong')).toBe(1.3029)
-    expect(lineHeightFactor('仿宋')).toBe(1.3029)
-    expect(lineHeightFactor('仿宋_GB2312')).toBe(1.3029)
+    expect(lineHeightFactor('FangSong')).toBe(1.3)
+    expect(lineHeightFactor('\u4eff\u5b8b')).toBe(1.3)
+    expect(lineHeightFactor('\u4eff\u5b8b_GB2312')).toBe(1.3)
     // SimHei ships with Office and Word renders it at the SimSun-class pitch (probe 2026-08-23)
-    expect(lineHeightFactor('黑体')).toBe(1.3029)
-    expect(lineHeightFactor('SimHei')).toBe(1.3029)
+    expect(lineHeightFactor('\u9ed1\u4f53')).toBe(1.3)
+    expect(lineHeightFactor('SimHei')).toBe(1.3)
     // bare KaiTi ships with Office and renders real at the SimSun-class pitch (probe 2026-08-23)
-    expect(lineHeightFactor('楷体')).toBe(1.3029)
-    expect(lineHeightFactor('KaiTi')).toBe(1.3029)
+    expect(lineHeightFactor('\u6977\u4f53')).toBe(1.3)
+    expect(lineHeightFactor('KaiTi')).toBe(1.3)
     // KaiTi GB2312 substitutes to Microsoft YaHei (probe 2026-08-23); FZ
     // XiaoBiaoSong to SimSun (probe 2026-09-30)
-    expect(lineHeightFactor('楷体_GB2312')).toBe(1.7143)
-    expect(lineHeightFactor('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).toBe(1.3029)
+    expect(lineHeightFactor('\u6977\u4f53_GB2312')).toBe(1.7157)
+    expect(lineHeightFactor('\u65b9\u6b63\u5c0f\u6807\u5b8b\u7b80\u4f53')).toBe(1.3)
     // STZhongsong ships with Office and renders real (probe 2026-08-23)
-    expect(lineHeightFactor('华文中宋')).toBe(1.725)
-    expect(lineHeightFactor('STZhongsong')).toBe(1.725)
+    expect(lineHeightFactor('\u534e\u6587\u4e2d\u5b8b')).toBe(1.7225)
+    expect(lineHeightFactor('STZhongsong')).toBe(1.7225)
     // STXihei is a macOS system face Word renders real (probe 2026-08-23)
     expect(lineHeightFactor('华文细黑')).toBe(1.79)
     expect(lineHeightFactor('STXihei')).toBe(1.79)
-    expect(lineHeightFactor('ＭＳ 明朝')).toBe(1.3029)
-    expect(lineHeightFactor('MS Gothic')).toBe(1.3029)
-    expect(lineHeightFactor('游明朝')).toBe(1.44)
-    expect(lineHeightFactor('Meiryo')).toBe(1.9429)
+    expect(lineHeightFactor('\uff2d\uff33 \u660e\u671d')).toBe(1.3)
+    expect(lineHeightFactor('MS Gothic')).toBe(1.3)
+    expect(lineHeightFactor('\u6e38\u660e\u671d')).toBe(1.4327)
+    expect(lineHeightFactor('Meiryo')).toBe(1.95)
     // Meiryo UI is the compact UI cut (Word probe 2026-08-22)
-    expect(lineHeightFactor('Meiryo UI')).toBe(1.65)
-    expect(lineHeightFactor('Arial Unicode MS')).toBe(1.74)
-    expect(lineHeightFactor('PMingLiU')).toBe(1.3029)
-    expect(lineHeightFactor('Microsoft JhengHei')).toBe(1.775)
+    expect(lineHeightFactor('Meiryo UI')).toBe(1.6511)
+    expect(lineHeightFactor('Arial Unicode MS')).toBe(1.7417)
+    // Microsoft JhengHei ships with Office (probe 2026-10-22: 17.29 @10pt = hhea 1.3301 x 1.3)
+    expect(lineHeightFactor('Microsoft JhengHei')).toBe(1.7291)
     expect(lineHeightFactor('Calibri')).toBe(1.22)
     // Century Gothic ships with Office and renders real (probe 2026-08-23)
     expect(lineHeightFactor('Century Gothic')).toBe(1.226)
     // Helvetica renders real on Word for Mac: 12.6pt @10.5pt single (corpus 2026-09-24)
     expect(lineHeightFactor('Helvetica')).toBe(1.2)
-    expect(lineHeightFactor('Helvetica Neue')).toBe(1.0)
+    expect(lineHeightFactor('Helvetica Neue')).toBe(1.193)
   })
 
   it('missing SC-variant declares take the Word SimSun-substitution factor', () => {
-    expect(lineHeightFactor('Noto Sans CJK SC')).toBe(1.3029)
-    expect(lineHeightFactor('Noto Sans CJK TC')).toBe(1.3029)
-    expect(lineHeightFactor('Noto Sans HK')).toBe(1.3029)
-    expect(lineHeightFactor('Noto Serif SC')).toBe(1.3029)
-    expect(lineHeightFactor('Source Han Sans CN')).toBe(1.3029)
-    expect(lineHeightFactor('Noto Sans SC')).toBe(1.3029)
+    expect(lineHeightFactor('Noto Sans CJK SC')).toBe(1.3)
+    expect(lineHeightFactor('Noto Sans CJK TC')).toBe(1.3)
+    expect(lineHeightFactor('Noto Sans HK')).toBe(1.3)
+    expect(lineHeightFactor('Noto Serif SC')).toBe(1.3)
+    expect(lineHeightFactor('Source Han Sans CN')).toBe(1.3)
+    expect(lineHeightFactor('Noto Sans SC')).toBe(1.3)
   })
 
   it('cjkDeclaredLineFactor maps regional Noto/Source Han variants for CJK runs', () => {
-    expect(cjkDeclaredLineFactor('Noto Sans CJK JP')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Noto Serif JP')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Source Han Sans JP')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Noto Sans CJK TC')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Noto Sans HK')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Noto Sans CJK KR')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Noto Sans CJK SC')).toBe(1.3029)
-    expect(cjkDeclaredLineFactor('Source Han Sans CN')).toBe(1.3029)
+    expect(cjkDeclaredLineFactor('Noto Sans CJK JP')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Noto Serif JP')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Source Han Sans JP')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Noto Sans CJK TC')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Noto Sans HK')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Noto Sans CJK KR')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Noto Sans CJK SC')).toBe(1.3)
+    expect(cjkDeclaredLineFactor('Source Han Sans CN')).toBe(1.3)
     expect(cjkDeclaredLineFactor('SimSun')).toBeNull()
     expect(cjkDeclaredLineFactor('Calibri')).toBeNull()
   })
@@ -1388,15 +1582,15 @@ describe('Korean line metrics', () => {
   })
 
   it('paraLineFactorCss routes by script', () => {
-    expect(paraLineFactorCss('한국어')).toBe('var(--doc-line-factor-kr,1.3029)')
+    expect(paraLineFactorCss('\ud55c\uad6d\uc5b4')).toBe('var(--doc-line-factor-kr,1.3)')
     expect(paraLineFactorCss('\u4e2d\u6587')).toBe('var(--doc-line-factor-cjk,1.7)')
     expect(paraLineFactorCss('latin')).toBe('var(--doc-line-factor-latin,1.2)')
   })
 
   it('krLineFactor follows the EA face, defaulting to Batang-class', () => {
-    expect(krLineFactor('Batang')).toBe(1.3029)
-    expect(krLineFactor('맑은 고딕')).toBe(1.7371)
-    expect(krLineFactor(undefined)).toBe(1.3029)
+    expect(krLineFactor('Batang')).toBe(1.3)
+    expect(krLineFactor('\ub9d1\uc740 \uace0\ub515')).toBe(1.7291)
+    expect(krLineFactor(undefined)).toBe(1.3)
   })
 
   it('Korean ascii face in a dual-slot chain keeps only the literal family plus the Latin backstop', () => {
@@ -1452,7 +1646,7 @@ describe('Korean line metrics', () => {
     expect(cssFontFamily('Gungsuh')).toBe(
       "'Gungsuh','Courier New','GungSeo','GenOffice Batang','GenOffice Serif KR','GenOffice Myungjo','Noto Serif KR',serif",
     )
-    expect(lineHeightFactor('Gungsuh')).toBe(1.3029)
+    expect(lineHeightFactor('Gungsuh')).toBe(1.3)
     // Nunito Sans is an Office cloud font Word renders real
     expect(lineHeightFactor('Nunito Sans')).toBe(1.365)
     expect(lineHeightFactor('Microsoft New Tai Lue')).toBe(1.31)
@@ -1525,6 +1719,72 @@ describe('Korean line metrics', () => {
       'Batang',
     )
     expect(lines.map((ln) => ln.text.trim())).toEqual(['한글漢字한글', '다음'])
+  })
+})
+
+describe('Latin -> CJK autospace gap (Word probe 2026-10-20: half the Latin face xAvgCharWidth)', () => {
+  it('reads the Latin face table', () => {
+    expect(latinAutospaceGapEm('Cambria')).toBeCloseTo(0.3076, 3)
+    expect(latinAutospaceGapEm('Calibri')).toBeCloseTo(0.2605, 3)
+    expect(latinAutospaceGapEm('Times New Roman')).toBeCloseTo(0.2005, 3)
+    expect(latinAutospaceGapEm('Aptos')).toBeCloseTo(0.2803, 3)
+    expect(latinAutospaceGapEm('Garamond')).toBeCloseTo(0.1936, 3)
+  })
+
+  it('CJK-capable ascii faces and no face stay at 1/4 em', () => {
+    expect(latinAutospaceGapEm('Batang')).toBe(0.25)
+    expect(latinAutospaceGapEm('Malgun Gothic')).toBe(0.25)
+    expect(latinAutospaceGapEm('Yu Gothic')).toBe(0.25)
+    expect(latinAutospaceGapEm(null)).toBe(0.25)
+  })
+
+  it('a missing KR superfamily name lays its Latin out in Cambria', () => {
+    expect(latinAutospaceGapEm('Noto Sans CJK KR')).toBeCloseTo(0.3076, 3)
+    expect(latinAutospaceGapEm('Noto Sans CJK SC')).toBeCloseTo(0.3076, 3)
+  })
+
+  it('scales the pad share of the 1/8 em base per mode', () => {
+    expect(autospacePadScale(0.25, true)).toBe(1)
+    expect(autospacePadScale(0.3076, true)).toBeCloseTo(1.461, 3)
+    expect(autospacePadScale(0.3076, 'digits')).toBeCloseTo(2.461, 3)
+    expect(autospacePadScale(0.2005, true)).toBeCloseTo(0.604, 3)
+  })
+
+  it('autospaceSeams tells the Latin-first seams apart', () => {
+    expect(autospaceSeams('\uac00\uac001\uc6d0 C\ub97c')).toEqual([
+      { at: 2, latinFirst: false },
+      { at: 3, latinFirst: true },
+      { at: 6, latinFirst: true },
+    ])
+    expect(autospaceLatinFirst('PC')).toBe(true)
+    expect(autospaceLatinFirst('\uac00')).toBe(false)
+    expect(autospaceLatinFirst('')).toBe(false)
+  })
+})
+
+describe('krNoBreakOffsets (Korean word-wrap keeps punctuation on the hangul token)', () => {
+  it('glues middle-dot chains and brackets to their hangul neighbours', () => {
+    expect(krNoBreakOffsets('\uac00\u00b7\ub098\u00b7\ub2e4 \ub77c')).toEqual([1, 2, 3, 4])
+    expect(krNoBreakOffsets('\ub9e4\ud2b8(\uc81c\uc8fc')).toEqual([2])
+    expect(krNoBreakOffsets('5,000\uc6d0)\uc774')).toEqual([7])
+    expect(krNoBreakOffsets('[3]\uc544\ub0b4')).toEqual([3])
+  })
+
+  it('leaves spaces, sentence punctuation and Latin seams alone', () => {
+    expect(krNoBreakOffsets('\ucd94\uac00 (\uc81c\uc8fc')).toEqual([])
+    expect(krNoBreakOffsets('\ud655\uc778. \ucd08\ub85d')).toEqual([])
+    expect(krNoBreakOffsets('\ub2c8\ub2e4, \ud06c\uae30: PC\ub97c')).toEqual([])
+    expect(krNoBreakOffsets('plain latin (text)')).toEqual([])
+  })
+})
+
+describe('latinLineFactor', () => {
+  it('Latin lines of a missing KR superfamily follow the Cambria substitute', () => {
+    expect(latinLineFactor('Noto Sans CJK KR')).toBe(1.172)
+    expect(latinLineFactor('Source Han Sans K')).toBe(1.172)
+    expect(latinLineFactor('Noto Sans CJK SC')).toBe(1.172)
+    expect(latinLineFactor('Calibri')).toBe(lineHeightFactor('Calibri'))
+    expect(latinLineFactor('Batang')).toBe(1.3)
   })
 })
 
@@ -1671,7 +1931,7 @@ describe('cssFontFamily Arabic', () => {
         chain.indexOf("'Noto Naskh Arabic TNR'"),
       )
       expect(chain).toMatch(/,serif$/)
-      expect(lineHeightFactor(name)).toBe(1.1429)
+      expect(lineHeightFactor(name)).toBe(1.1499)
     }
   })
 
@@ -1681,8 +1941,10 @@ describe('cssFontFamily Arabic', () => {
     expect(cssFontFamily('Batang')).not.toContain('Arabic')
     expect(cssFontFamily('SomeCustomFont')).not.toContain('Arabic')
     expect(cssFontFamily('Bahnschrift')).not.toContain('Arabic')
-    // unknown Western names substitute to Cambria (probe 2026-08-23)
-    expect(lineHeightFactor('Bahnschrift')).toBe(1.172)
+    // unknown Western names substitute to Cambria (probe 2026-08-23); Bahnschrift
+    // itself is an M365 cloud face Word renders real (hhea 1.2002)
+    expect(lineHeightFactor('Squirrel Serif Probe')).toBe(1.172)
+    expect(lineHeightFactor('Bahnschrift')).toBe(1.2002)
   })
 })
 
@@ -1916,22 +2178,34 @@ describe('runLatinFactorFaces', () => {
 describe('hangul under an empty EA slot resolved to a non-Korean face', () => {
   const msGothic = 'ＭＳ ゴシック'
   it('krLineFactor: a Japanese face lays hangul at the Malgun fallback height', () => {
-    expect(krLineFactor(msGothic)).toBe(1.7371)
-    expect(krLineFactor('MS Mincho')).toBe(1.7371)
-    expect(krLineFactor('SimSun')).toBe(1.3029)
+    expect(krLineFactor(msGothic)).toBe(1.7291)
+    expect(krLineFactor('MS Mincho')).toBe(1.7291)
+    expect(krLineFactor('SimSun')).toBe(1.3)
   })
   it('emptyEaSlotHangulFactor applies to hangul text only, never to a Korean face', () => {
-    expect(emptyEaSlotHangulFactor(msGothic, '한글')).toBe(1.7371)
+    expect(emptyEaSlotHangulFactor(msGothic, '\ud55c\uae00')).toBe(1.7291)
     expect(emptyEaSlotHangulFactor(msGothic, 'ひらがな')).toBeNull()
-    expect(emptyEaSlotHangulFactor('SimSun', '한글')).toBe(1.3029)
+    expect(emptyEaSlotHangulFactor('SimSun', '\ud55c\uae00')).toBe(1.3)
     expect(emptyEaSlotHangulFactor('Malgun Gothic', '한글')).toBeNull()
     expect(emptyEaSlotHangulFactor('Calibri', '한글')).toBeNull()
   })
   it('runsLineFactor: an empty-slot MS Gothic run with hangul takes the fallback factor', () => {
     const text = '한글 테스트'
     const run = { text, font: msGothic, fontAscii: 'Calibri', eaSlotEmpty: true }
-    expect(runsLineFactor([run], text)).toBe('1.7371')
+    expect(runsLineFactor([run], text)).toBe('1.7291')
     const kana = 'ひらがな'
     expect(runsLineFactor([{ ...run, text: kana }], kana)).toBe('var(--doc-line-factor-cjk,1.7)')
+  })
+})
+
+describe('krNoBreakOffsets across run boundaries', () => {
+  it('a seam on the run boundary is offset 0 when the previous run ends the pair', () => {
+    expect(krNoBreakOffsets('이 다', '5,000원)')).toEqual([0])
+    expect(krNoBreakOffsets('·무게', '색')).toEqual([0, 1])
+    expect(krNoBreakOffsets('아내', '[3]')).toEqual([0])
+  })
+  it('no previous text or a space before leaves offset 0 alone', () => {
+    expect(krNoBreakOffsets('이다')).toEqual([])
+    expect(krNoBreakOffsets('이다', '원) ')).toEqual([])
   })
 })

@@ -36,9 +36,9 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "vite": "^7.3.7",
     "vite-plugin-static-copy": "^3.0.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "author": "GenOffice"
 }

@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IntegrationsApi } from '../src/shared/integrations-api'
-import type { FoundSkill } from '../src/shared/found-skill'
+import type { FoundSkill, RecommendedSkill } from '../src/shared/found-skill'
 import { FoundSkills } from '../src/renderer/src/FoundSkills'
 import { LocaleProvider } from '../src/renderer/src/locale'
 import { strings } from '../src/renderer/src/strings'
@@ -17,11 +17,9 @@ const t = ((key: string, params?: Record<string, string>) =>
   (en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => params?.[name] ?? `{${name}}`)) as never
 
 /**
- * The pane that offers the skills already on this machine.
- *
- * The point it has to keep making is the difference between a skill that is
- * ours and a skill that is only offered: one group has no button, the other
- * does, and pressing the button is the only thing that copies anything.
+ * The pane that lists the skills installed into GenOffice and lets the user
+ * import more from a folder or a zip. The only thing that copies anything is
+ * pressing one of those two buttons; the list itself is read-only.
  */
 
 const actEnvironment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -34,9 +32,7 @@ let imported: string[]
 const skill = (over: Partial<FoundSkill>): FoundSkill => ({
   name: 'pptx-builder',
   description: 'Build a pptx',
-  path: '/home/me/.agents/skills/pptx-builder/SKILL.md',
-  source: 'agent',
-  agent: 'agents',
+  path: '/app/skills/pptx-builder/SKILL.md',
   relevance: { relevant: true, formats: ['pptx'] },
   ...over,
 })
@@ -53,16 +49,29 @@ afterEach(() => {
   host.remove()
 })
 
-function mountApi(list: FoundSkill[], body = 'Do the thing.\n'): void {
+function mountApi(
+  list: FoundSkill[],
+  body = 'Do the thing.\n',
+  recommended: RecommendedSkill[] = [],
+): void {
   window.aiOfficeIntegrations = {
     listSkills: async () => list,
+    listRecommendedSkills: async () => recommended,
+    installRecommendedSkill: async (name: string) => {
+      imported.push(`recommended:${name}`)
+      return skill({ name, path: `/app/skills/${name}/SKILL.md` })
+    },
     skillBody: async (p: string) => {
       if (!p.endsWith('SKILL.md')) throw new Error('unknown skill')
       return body
     },
-    importSkill: async (p: string) => {
-      imported.push(p)
-      return skill({ path: '/save/skills/pptx-builder/SKILL.md', source: 'genoffice' })
+    importSkillFolder: async (title: string) => {
+      imported.push(`folder:${title}`)
+      return skill({ name: 'from-folder', path: '/app/skills/from-folder/SKILL.md' })
+    },
+    importSkillZip: async (title: string) => {
+      imported.push(`zip:${title}`)
+      return null
     },
   } as unknown as IntegrationsApi
 }
@@ -101,7 +110,7 @@ const disclosureFor = (name: string): HTMLDetailsElement | undefined => {
 }
 
 describe('FoundSkills', () => {
-  it('renders nothing until the scan answers', async () => {
+  it('renders nothing until the listing answers', async () => {
     mountApi([skill({})])
     let resolve: (v: FoundSkill[]) => void = () => {}
     ;(window.aiOfficeIntegrations as IntegrationsApi).listSkills = () =>
@@ -119,26 +128,41 @@ describe('FoundSkills', () => {
     expect(host.textContent).toContain('pptx-builder')
   })
 
-  it('offers a candidate with an Import button and does nothing until it is pressed', async () => {
+  it('imports from a folder only when the button is pressed, then relists', async () => {
     mountApi([skill({})])
     await render()
-    expect(host.textContent).toContain('Build a pptx')
-    expect(host.textContent).not.toContain('Does not mention a format GenOffice opens')
     expect(imported).toEqual([])
+    ;(window.aiOfficeIntegrations as IntegrationsApi).listSkills = async () => [
+      skill({}),
+      skill({ name: 'from-folder', path: '/app/skills/from-folder/SKILL.md' }),
+    ]
 
-    await click(buttonWithText('Import'))
-    expect(imported).toEqual(['/home/me/.agents/skills/pptx-builder/SKILL.md'])
-    expect(host.textContent).toContain('Imported pptx-builder')
+    await click(buttonWithText('Import folder…'))
+    expect(imported).toEqual(['folder:Choose a skill folder'])
+    expect(host.textContent).toContain('Imported from-folder')
+    expect(host.textContent).toContain('from-folder')
   })
 
-  it('gives a skill in our own folder no button: there is nothing to import', async () => {
-    mountApi([skill({ source: 'genoffice', agent: undefined })])
+  it('says nothing when the zip dialog is cancelled', async () => {
+    mountApi([skill({})])
     await render()
-    expect(host.textContent).toContain('In GenOffice')
-    expect(buttonWithText('Import')).toBeUndefined()
+    await click(buttonWithText('Import skill package (zip / .md)…'))
+    expect(imported).toEqual(['zip:Choose a skill zip or .md'])
+    expect(host.textContent).not.toContain('Imported')
+    expect(host.textContent).not.toContain('Import failed')
   })
 
-  it('marks a skill that is about another format, without hiding it', async () => {
+  it('shows the reason when an import is refused', async () => {
+    mountApi([])
+    ;(window.aiOfficeIntegrations as IntegrationsApi).importSkillZip = async () => {
+      throw new Error('the archive contains a symlink, and imports refuse those')
+    }
+    await render()
+    await click(buttonWithText('Import skill package (zip / .md)…'))
+    expect(host.textContent).toContain('Import failed: the archive contains a symlink')
+  })
+
+  it('shows a skill about another format like any other', async () => {
     mountApi([
       skill({
         description: 'Roll back a Kubernetes release',
@@ -147,13 +171,14 @@ describe('FoundSkills', () => {
     ])
     await render()
     expect(host.textContent).toContain('Roll back a Kubernetes release')
-    expect(host.textContent).toContain('Does not mention a format GenOffice opens')
+    expect(host.textContent).not.toContain('GenOffice opens')
   })
 
   it('says so when there is nothing to show', async () => {
     mountApi([])
     await render()
-    expect(host.textContent).toContain('No skills found.')
+    expect(host.textContent).toContain('No skills installed yet.')
+    expect(buttonWithText('Import folder…')).toBeTruthy()
   })
 
   it('fetches a body only when its disclosure is opened', async () => {
@@ -174,8 +199,87 @@ describe('FoundSkills', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(body).toHaveBeenCalledWith('/home/me/.agents/skills/pptx-builder/SKILL.md')
+    expect(body).toHaveBeenCalledWith('/app/skills/pptx-builder/SKILL.md')
     expect(host.textContent).toContain('Do the thing.')
+  })
+
+  it('offers shipped skills with Install, Update or an installed tag, and installs by name', async () => {
+    mountApi([], 'x', [
+      {
+        ...skill({ name: 'fresh', path: '/res/recommended/fresh/SKILL.md' }),
+        category: 'finance',
+        version: '1.0.0',
+        state: 'missing',
+      },
+      {
+        ...skill({ name: 'old', path: '/res/recommended/old/SKILL.md' }),
+        category: 'office',
+        version: '1.1.0',
+        state: 'outdated',
+      },
+      {
+        ...skill({ name: 'same', path: '/res/recommended/same/SKILL.md' }),
+        category: 'made-up',
+        version: '1.0.0',
+        state: 'installed',
+      },
+    ])
+    await render()
+    expect(host.textContent).toContain('Recommended')
+    // one tab per category in the fixed order; an unknown category lands under Other
+    const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('.set-intg-tab')]
+    expect(tabs().map((e) => e.textContent)).toEqual(['Office', 'Finance', 'Other'])
+    // the first tab is open: only its skill shows
+    expect(buttonWithText('Update')).toBeTruthy()
+    expect(buttonWithText('Install')).toBeFalsy()
+    await click(tabs()[2])
+    expect(host.textContent).toContain('Installed')
+    await click(tabs()[1])
+    expect(buttonWithText('Install')).toBeTruthy()
+    await click(buttonWithText('Install'))
+    expect(imported).toEqual(['recommended:fresh'])
+    expect(host.textContent).toContain('Imported fresh')
+  })
+
+  it('keeps installed and recommended skills on separate sections', async () => {
+    mountApi([skill({ name: 'mine-only' })], 'x', [
+      {
+        ...skill({ name: 'offered', path: '/res/recommended/offered/SKILL.md' }),
+        category: 'office',
+        version: '1.0.0',
+        state: 'missing',
+      },
+    ])
+    await render()
+    const sections = () => [...host.querySelectorAll<HTMLButtonElement>('.set-intg-seg')]
+    expect(sections().map((e) => e.textContent)).toEqual(['My skills (1)', 'Recommended'])
+    // with something installed the list opens on it; the catalog is one click away
+    expect(host.textContent).toContain('mine-only')
+    expect(host.textContent).not.toContain('offered')
+    await click(sections()[1])
+    expect(host.textContent).toContain('offered')
+    expect(host.textContent).not.toContain('mine-only')
+  })
+
+  it('opens on the catalog when nothing is installed and stays there after the first install', async () => {
+    const offered = {
+      ...skill({ name: 'offered', path: '/res/recommended/offered/SKILL.md' }),
+      category: 'office' as const,
+      version: '1.0.0',
+      state: 'missing' as const,
+    }
+    mountApi([], 'x', [offered])
+    await render()
+    const sections = () => [...host.querySelectorAll<HTMLButtonElement>('.set-intg-seg')]
+    expect(sections()[1]?.getAttribute('aria-selected')).toBe('true')
+    ;(window.aiOfficeIntegrations as IntegrationsApi).listSkills = async () => [
+      skill({ name: 'offered', path: '/app/skills/offered/SKILL.md' }),
+    ]
+    await click(buttonWithText('Install')!)
+    expect(imported).toEqual(['recommended:offered'])
+    // the relist found one installed skill; the catalog stays in view
+    expect(sections().map((e) => e.textContent)).toEqual(['My skills (1)', 'Recommended'])
+    expect(sections()[1]?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('survives a preload that predates the feature', async () => {

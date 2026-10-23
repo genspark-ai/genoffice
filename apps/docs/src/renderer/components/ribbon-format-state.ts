@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
 import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/tables'
 import type { DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
@@ -33,6 +34,8 @@ export interface RibbonFormatState {
   /** Split Table needs a row above the caret's */
   canSplitTable: boolean
   imageSelected: boolean
+  /** the selected picture is an inline run picture (table / header cell): Size only */
+  inlinePicture: boolean
   imageDataUrl: string | null
   imageWrap: string | null
   imageAlign: string | null
@@ -109,6 +112,7 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   canSplitCell: false,
   canSplitTable: false,
   imageSelected: false,
+  inlinePicture: false,
   imageDataUrl: null,
   imageWrap: null,
   imageAlign: null,
@@ -269,7 +273,8 @@ export function computeFormatState(
   }
 
   const protAttrs = editor.getAttributes('docProtected')
-  const imageSelected = protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl
+  const inlinePic = inlinePictureOf(ed)
+  const imageSelected = !!inlinePic || (protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl)
 
   const textAttrs = ed.getAttributes('docTextStyle')
   const fonts = selectedFonts(ed, styles, docDefaults)
@@ -303,18 +308,23 @@ export function computeFormatState(
     canSplitCell: inTable && !!splitCell(tableState),
     canSplitTable,
     imageSelected,
-    imageDataUrl: imageSelected ? str(protAttrs.imageDataUrl) : null,
+    inlinePicture: !!inlinePic,
+    imageDataUrl: inlinePic
+      ? str(inlinePic.dataUrl)
+      : imageSelected
+        ? str(protAttrs.imageDataUrl)
+        : null,
     imageWrap:
       Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0
         ? shapeWrapOf(protAttrs.textboxes[0] as TextboxDisplay)
         : str(protAttrs.imageWrap),
     imageAlign: str(protAttrs.imageAlign),
-    imageWidthPx: num(protAttrs.imageWidthPx),
-    imageHeightPx: num(protAttrs.imageHeightPx),
+    imageWidthPx: num(inlinePic ? inlinePic.widthPx : protAttrs.imageWidthPx),
+    imageHeightPx: num(inlinePic ? inlinePic.heightPx : protAttrs.imageHeightPx),
     imageFlipH: !!protAttrs.imageFlipH,
     imageFlipV: !!protAttrs.imageFlipV,
     imageHasDocxIndex: protAttrs.docxIndex != null,
-    imageKey: imageSelected ? editor.state.selection.from : null,
+    imageKey: imageSelected ? ed.state.selection.from : null,
     textboxSelected: Array.isArray(protAttrs.textboxes) && protAttrs.textboxes.length > 0,
     shapeFill: Array.isArray(protAttrs.textboxes)
       ? str((protAttrs.textboxes[0] as { fill?: string } | undefined)?.fill)
@@ -364,4 +374,12 @@ export function computeFormatState(
     spaceBefore: Number(mainPara.spaceBefore) || 0,
     spaceAfter: Number(mainPara.spaceAfter) || 0,
   }
+}
+
+/** attrs of the inline run picture under a node selection (rules and floating pictures excluded) */
+function inlinePictureOf(ed: Editor): Record<string, unknown> | null {
+  const sel = ed.state.selection
+  if (!(sel instanceof NodeSelection) || sel.node.type.name !== 'docInlineImage') return null
+  const attrs = sel.node.attrs
+  return attrs.rule || attrs.wrap || !attrs.dataUrl ? null : attrs
 }

@@ -725,6 +725,14 @@
   padding: 4px 0 8px;
 }
 
+.set-intg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
 .set-intg-warn {
   padding: 0 0 8px;
   color: var(--danger);
@@ -796,6 +804,80 @@
 
 .set-intg-list + .set-intg-list {
   margin-top: 18px;
+}
+
+.set-intg-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  margin: 8px 0 4px;
+  border-radius: 10px;
+  background: var(--checkbox-bg);
+}
+
+.set-intg-tab {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.set-intg-sections {
+  margin: 0;
+}
+
+.set-intg-seg {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.set-intg-seg:hover {
+  color: var(--text);
+}
+
+.set-intg-seg.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-pill);
+}
+
+.set-intg-skill .set-field {
+  min-height: 0;
+  padding: 10px 0 0;
+}
+
+.set-intg-skill .set-intg-details {
+  margin: 4px 0 10px;
+}
+
+.set-intg-skill .set-intg-details > summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.set-intg-tab:hover {
+  color: var(--text);
+}
+
+.set-intg-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-pill);
 }
 
 .set-intg-mcp-http {
@@ -1061,4 +1143,9 @@
   .set-pane-ai-model .set-ai-endpoint-row .set-dd {
     flex: 1 1 100%;
   }
+}
+
+.set-intg-state {
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
 }

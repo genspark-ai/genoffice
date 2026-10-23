@@ -1342,3 +1342,30 @@ describe('per-point picture fills', () => {
     })
   })
 })
+
+describe('legend top slot under a title with a manual plot layout', () => {
+  const base: ChartModel = {
+    kind: 'bar',
+    barDir: 'col',
+    categories: ['T1', 'T2'],
+    series: [
+      { name: 'Y1', color: '#5B9BD5', values: [1, 2] },
+      { name: 'Y2', color: '#ED7D31', values: [2, 3] },
+    ],
+    title: 'Total output',
+    titlePt: 30,
+    legendPos: 't',
+    plotLayout: { x: 0.05, y: 0.14, w: 0.95, h: 0.73 },
+  }
+  const legendY = (model: ChartModel) =>
+    buildChartNode('lg', 'lg', model, box, vp, metrics)!.labels.find((l) => l.text === 'Y1')!.y
+  const titleH = ptToPx(30, vp.scale) * (0.5 + 1.17) - 1
+
+  it('keeps the auto-placed legend below the title row', () => {
+    expect(legendY(base)).toBeGreaterThanOrEqual(titleH)
+  })
+
+  it('an overlay title reserves nothing', () => {
+    expect(legendY({ ...base, titleOverlay: true })).toBeLessThan(titleH)
+  })
+})

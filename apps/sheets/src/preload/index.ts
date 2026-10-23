@@ -46,6 +46,7 @@ import type {
   WebSearchResult,
   ImageSearchResponse,
   GenerateImageResult,
+  UserSkillEntry,
 } from '../shared/desktop-api'
 import {
   HEADER_FOOTER_PICTURE_POSITION,
@@ -518,6 +519,15 @@ const desktopApi: DesktopApi = {
   },
   async openAiModelSettings() {
     await ipcRenderer.invoke(IPC_CHANNELS.aiOpenModelSettings)
+  },
+  async openSkillsSettings() {
+    await ipcRenderer.invoke('ai:open-skills-settings')
+  },
+  skillsList() {
+    return ipcRenderer.invoke('ai:skills-list') as Promise<UserSkillEntry[]>
+  },
+  skillText(name: string) {
+    return ipcRenderer.invoke('ai:skill-text', name) as Promise<string>
   },
   async aiChat(request) {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.aiChat, request)
