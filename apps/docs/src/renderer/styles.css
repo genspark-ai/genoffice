@@ -11671,6 +11671,9 @@ ruby.doc-ruby rt {
 
 .doc-inline-math {
   display: inline-block;
+  /* The atom must not restart its paragraph's first-line indent or alignment. */
+  text-indent: 0;
+  text-align: left;
   vertical-align: baseline;
   padding: 0 1px;
   border-radius: 2px;
