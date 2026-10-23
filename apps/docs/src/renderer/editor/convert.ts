@@ -3978,6 +3978,9 @@ export function signatureOfBlock(block: Block): string {
     paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
     paraMarkIns: block.paraMarkIns ? JSON.stringify(block.paraMarkIns) : null,
     paraMarkRPrChange: block.paraMarkRPrChange ? JSON.stringify(block.paraMarkRPrChange) : null,
+    // the parsed Block never carries it; the key must exist so both signature
+    // objects serialize with the same key set (asymmetry marks every block changed)
+    paraMarkRPrRestore: null as string | null,
     blockRevision: block.blockRevision ?? null,
   })
 }
