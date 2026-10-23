@@ -72,7 +72,7 @@ function installBridge(api: {
   }) => Promise<unknown>
   getFileNamingEnabled: () => Promise<boolean>
 }): void {
-  ;(window as unknown as { aiOffice: unknown }).aiOffice = api
+  ;(window as unknown as { aiNamingApi: unknown }).aiNamingApi = api
 }
 
 beforeEach(() => {
@@ -96,7 +96,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  delete (window as unknown as { aiOffice?: unknown }).aiOffice
+  delete (window as unknown as { aiNamingApi?: unknown }).aiNamingApi
   vi.restoreAllMocks()
 })
 
@@ -164,7 +164,7 @@ describe('the first-save name falls back to the main-process default', () => {
   })
 
   it('proposes nothing when there is no naming bridge at all', async () => {
-    delete (window as unknown as { aiOffice?: unknown }).aiOffice
+    delete (window as unknown as { aiNamingApi?: unknown }).aiNamingApi
     expect(await firstSaveName(plainDeck())).toBe('')
   })
 

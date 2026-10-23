@@ -493,6 +493,9 @@ const api: SlidesApi = {
  * `content` crosses this bridge verbatim and the main process cannot see what
  * this editor withheld, so what the caller hands over is exactly what the model
  * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
  */
 const aiNamingApi = {
   suggestFileName: (input: {
@@ -505,7 +508,7 @@ const aiNamingApi = {
 }
 
 contextBridge.exposeInMainWorld('slidesApi', api)
-contextBridge.exposeInMainWorld('aiOffice', aiNamingApi)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
 
 // Chat attachment bridge: method names/signatures match the window.desktop attachment subset in docs, so the renderer's files-skill is copied over wholesale
 const filesApi: DesktopFilesApi = {

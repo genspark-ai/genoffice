@@ -107,7 +107,7 @@ beforeEach(() => {
   }
   vi.stubGlobal('window', {
     slidesApi,
-    aiOffice: {
+    aiNamingApi: {
       suggestFileName,
       getFileNamingEnabled: vi.fn(async () => true),
       setFileNamingEnabled: vi.fn(async () => true),
