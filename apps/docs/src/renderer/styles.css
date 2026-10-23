@@ -2855,6 +2855,17 @@ th.cell-rev-del {
   display: none !important;
 }
 
+/* …except a gap row inside a table: display:none removes the row from the
+   table grid, so a rowspan crossing it then extends over more rendered rows
+   and every later row's cells shift one column — a fixed-layout column
+   collapses to zero width and the row measures page-tall (genoffice#2114).
+   The row stays in the grid at its real height; domTableRows already
+   subtracts each gap's height from the rows below it (gapAbove), so the
+   virtual coordinates stay gapless by arithmetic. */
+.editor-scroll .doc-page.measuring-natural tr.page-gap {
+  display: table-row !important;
+}
+
 /* page border (w:pgBorders): per-page overlay boxes (see syncPageBorders);
    border color/width are document data and come inline from the sectPr */
 .page-border-overlays {
