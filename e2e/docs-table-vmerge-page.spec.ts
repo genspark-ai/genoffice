@@ -18,7 +18,7 @@
  * full-height gap band is inserted inside a merged table's cells.
  */
 import { test, expect, type Page } from '@playwright/test'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
