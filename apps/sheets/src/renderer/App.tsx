@@ -278,6 +278,7 @@ import {
   type WorkbookReadContext,
 } from './ai/workbook-readers'
 import { NO_REDACTIONS, sanitizeLabel, type RedactionIndex } from './ai/redact'
+import { firstSaveName, modelSaveAsName, noteDocumentSwapped } from './file-naming'
 import { redactionSessionFor } from './ai/redact-load'
 import { RedactDialog } from './components/RedactDialog'
 import { installRedactMenu, type SelectionRequest } from './redact-menu'
@@ -4666,6 +4667,8 @@ export function App({
     // Values verified against the previous workbook mean nothing for this one.
     clearVerifiedFormulaValues()
     const previous = lazyWorkbookRef.current
+    // a different workbook is now open: its first save may ask for a name
+    noteDocumentSwapped()
     if (previous) {
       clearLazyState(previous)
       void window.desktopApi.closeWorkbook(previous.file.sessionId).catch(() => undefined)
@@ -5057,10 +5060,46 @@ export function App({
     }
   }
 
+  /**
+   * Name a workbook that has never been saved, before its first save opens the
+   * Save As dialog.
+   *
+   * The model's name wins when the reader asked for model naming; the first
+   * AI-named sheet is the fallback. Both go through the main process's existing
+   * auto-rename channel, which no-ops unless the file still carries the shell's
+   * auto-created untitled name — so a workbook the reader has already named is
+   * never touched, and an unsaved new workbook gets its Save As dialog
+   * retargeted rather than a file moved on disk.
+   */
+  async function proposeFirstSaveName(): Promise<void> {
+    const state = lazyWorkbookRef.current
+    if (!state?.file.unsavedNew) return
+    const proposed = await firstSaveName(readContext())
+    if (proposed) {
+      try {
+        await window.desktopApi.autoRenameWorkbook(state.file.sessionId, proposed)
+      } catch {
+        // naming is best-effort; the save itself still happens
+      }
+      return
+    }
+    // Default worksheet names carry no content signal, so they never name the file.
+    const candidate = state.file.sheets
+      .map((sheet) => sheet.name.trim())
+      .find((name) => name.length > 0 && !DEFAULT_SHEET_NAME_RE.test(name))
+    if (!candidate) return
+    try {
+      await window.desktopApi.autoRenameWorkbook(state.file.sessionId, candidate)
+    } catch {
+      // naming is best-effort; the save itself still happens
+    }
+  }
+
   async function handleSave(
     mode: 'save' | 'save-as' | 'recovery',
     quiet = false,
     explicitTarget?: { path: string; overwrite: boolean },
+    defaultName?: string,
   ): Promise<SaveOutcome> {
     // Manual and AI saves take the same gate as the timers: a recovery copy
     // written beside a real save would outlive it as a phantom Restore prompt.
@@ -5068,8 +5107,27 @@ export function App({
     if (mode === 'recovery' && gate.busy) return { ok: false }
     return gate.run(async () => {
       if (!(await commitActiveEditor())) return { ok: false }
-      return handleSaveImpl(saveContext(), mode, quiet, explicitTarget)
+      // The name has to be settled before the save, because for an unsaved new
+      // workbook the save itself is what opens the dialog that offers it.
+      if (mode === 'save' && !quiet && !defaultName) await proposeFirstSaveName()
+      return handleSaveImpl(saveContext(), mode, quiet, explicitTarget, defaultName)
     })
+  }
+
+  /**
+   * Ask the model to name this workbook, on request, then open Save As with its
+   * answer prefilled.
+   *
+   * The stem goes into the dialog rather than renaming the file on disk: a
+   * workbook that may be open in another window, referenced from a note, or
+   * synced is not something to move behind the reader's back. A declined or
+   * empty answer leaves the dialog on the workbook's current name, so this is a
+   * no-op rather than a failure.
+   */
+  async function nameWithAi(): Promise<void> {
+    const stem = await modelSaveAsName(readContext(), lazyWorkbookRef.current?.file.path ?? null)
+    if (!stem) return
+    await handleSave('save-as', false, undefined, stem)
   }
   closeSaveRef.current = async () => {
     if (!(await commitActiveEditor())) {
@@ -5585,6 +5643,7 @@ export function App({
         onSave={() => void handleSave('save')}
         canSaveAs={workbookFile !== null}
         onSaveAs={() => void handleSave('save-as')}
+        onNameWithAi={() => void nameWithAi()}
         onRedo={handleRedo}
         autoSave={autoSave}
         onAutoSaveChange={setAutoSave}

@@ -740,6 +740,7 @@ export const nl = {
   appExportPdfTitle: 'Exporteren als PDF',
   appSaveTitle: 'Opslaan (⌘S)',
   appSaveAs: 'Opslaan als',
+  aiNameFile: 'Naam geven met AI…',
   appUndo: 'Ongedaan maken',
   appRedo: 'Opnieuw',
   appUnsavedEditOne: '● {count} niet-opgeslagen bewerking',

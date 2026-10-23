@@ -716,6 +716,7 @@ export const ko = {
   appExportPdfTitle: 'PDF로 내보내기',
   appSaveTitle: '저장(⌘S)',
   appSaveAs: '다른 이름으로 저장',
+  aiNameFile: 'AI로 이름 지정…',
   appUndo: '실행 취소',
   appRedo: '다시 실행',
   appUnsavedEditOne: '● 저장되지 않은 편집 {count}개',

@@ -695,6 +695,7 @@ export const vi = {
   appExportPdfTitle: 'Xuất dưới dạng PDF',
   appSaveTitle: 'Lưu (⌘S)',
   appSaveAs: 'Lưu dưới dạng',
+  aiNameFile: 'Đặt tên bằng AI…',
   appUndo: 'Hoàn tác',
   appRedo: 'Làm lại',
   appUnsavedEditOne: '● {count} chỉnh sửa chưa lưu',

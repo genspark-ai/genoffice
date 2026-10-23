@@ -116,6 +116,7 @@ export async function handleSave(
   mode: 'save' | 'save-as' | 'recovery',
   quiet = false,
   explicitTarget?: { path: string; overwrite: boolean },
+  defaultName?: string,
 ): Promise<SaveOutcome> {
   const state = ctx.lazyWorkbookRef.current
   // Captured at save start (the Ctrl+S moment): the post-save session swap
@@ -468,6 +469,8 @@ export async function handleSave(
       ...(restoreWriteBack ? { restoreWriteBack: true } : {}),
       ...(quiet ? { quiet: true } : {}),
       ...(csvContent === undefined ? {} : { csvContent }),
+      // a name the reader (or the model, via the ribbon) chose for the dialog
+      ...(defaultName === undefined ? {} : { defaultName }),
       // MCP explicit-path save: main skips the Save-As dialog for these
       ...(explicitTarget
         ? { targetPath: explicitTarget.path, overwrite: explicitTarget.overwrite }

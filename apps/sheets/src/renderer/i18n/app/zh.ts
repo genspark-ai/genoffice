@@ -633,6 +633,7 @@ export const zh = {
   appExportPdfTitle: '导出为 PDF',
   appSaveTitle: '保存（⌘S）',
   appSaveAs: '另存为',
+  aiNameFile: '用 AI 命名…',
   appUndo: '撤销',
   appRedo: '重做',
   appUnsavedEditOne: '● {count} 处未保存的编辑',

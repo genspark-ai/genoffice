@@ -741,6 +741,7 @@ export const ja = {
   appExportPdfTitle: 'PDF としてエクスポート',
   appSaveTitle: '保存（⌘S）',
   appSaveAs: '名前を付けて保存',
+  aiNameFile: 'AI で名前を変更…',
   appUndo: '元に戻す',
   appRedo: 'やり直し',
   appUnsavedEditOne: '● 未保存の編集 {count} 件',

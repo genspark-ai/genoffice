@@ -649,6 +649,7 @@ export const he = {
   appExportPdfTitle: 'ייצא כ-PDF',
   appSaveTitle: 'שמור (⌘S)',
   appSaveAs: 'שמירה בשם',
+  aiNameFile: 'מתן שם באמצעות AI…',
   appUndo: 'בטל',
   appRedo: 'בצע שוב',
   appUnsavedEditOne: '● {count} עריכה שלא נשמרה',
