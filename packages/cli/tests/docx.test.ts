@@ -831,6 +831,80 @@ describe('genoffice docs: comments, revisions, header/footer, images, charts', (
     expect(after.json().detail.revisionsElsewhere).toBeUndefined()
   })
 
+  /** the three w:rPrChange shapes of genoffice#2086's follow-up: on an inserted run, on a paragraph mark, on a plain run */
+  async function formattingRevisionsFixture(dir: string): Promise<string> {
+    const { buildDocx } = await import(HELPERS)
+    const path = join(dir, 'formatting.docx')
+    const AT = 'w:author="X" w:date="2026-01-01T00:00:00Z"'
+    const R = (t: string) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`
+    writeFileSync(
+      path,
+      await buildDocx({
+        bodyXml:
+          `<w:p>${R('P1 plain ')}<w:ins w:id="1" ${AT}><w:r><w:rPr><w:i/><w:rPrChange w:id="2" ${AT}><w:rPr/></w:rPrChange></w:rPr><w:t>inserted italic</w:t></w:r></w:ins></w:p>` +
+          `<w:p><w:pPr><w:rPr><w:caps/><w:rPrChange w:id="3" ${AT}><w:rPr><w:strike/></w:rPr></w:rPrChange></w:rPr></w:pPr>${R('P2 mark formatting changed')}</w:p>` +
+          `<w:p><w:r><w:rPr><w:b/><w:rPrChange w:id="4" ${AT}><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr><w:t>P3 now bold</w:t></w:r></w:p>`,
+      }),
+    )
+    return path
+  }
+
+  it('lists and accepts formatting changes on inserted runs and on paragraph marks (genoffice#2086)', async () => {
+    const dir = tempDir()
+    const path = await formattingRevisionsFixture(dir)
+    const listed = await run(['docs', 'read', path, '--revisions', '--json'])
+    const revisions = listed.json().detail.revisions as Array<Record<string, unknown>>
+    // the inserted run carries two revisions, as in Word's reviewing pane: "Inserted" and "Formatted"
+    expect(revisions.map((r) => [r.id, r.type, r.blockIndex])).toEqual([
+      ['r1', 'insertion', 0],
+      ['r2', 'formatting', 0],
+      ['r3', 'formatting', 1],
+      ['r4', 'formatting', 2],
+    ])
+    const opsFile = join(dir, 'ops.json')
+    writeFileSync(opsFile, JSON.stringify([{ op: 'accept_changes', all: true }]))
+    const applied = await run(['docs', 'apply', path, '--ops', opsFile, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail.results[0].output).toBe(
+      'Accepted 4 tracked change(s) (r1, r2, r3, r4). No tracked changes remain.',
+    )
+    const body = await documentXml(path)
+    expect(body).not.toContain('<w:rPrChange')
+    expect(body).not.toMatch(/<w:(?:ins|del)\b/)
+    // accept keeps the current formatting everywhere
+    expect(body).toContain('inserted italic')
+    expect(body).toContain('<w:caps/>')
+    expect(body).toContain('<w:b/>')
+    expect(body).not.toContain('<w:strike/>')
+    const after = await run(['docs', 'read', path, '--revisions', '--json'])
+    expect(after.json().detail.revisions).toEqual([])
+  })
+
+  it('rejects a paragraph-mark formatting change back to the recorded properties (genoffice#2086)', async () => {
+    const dir = tempDir()
+    const path = await formattingRevisionsFixture(dir)
+    const opsFile = join(dir, 'ops.json')
+    writeFileSync(opsFile, JSON.stringify([{ op: 'reject_changes', all: true }]))
+    const applied = await run(['docs', 'apply', path, '--ops', opsFile, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail.results[0].output).toBe(
+      'Rejected 4 tracked change(s) (r1, r2, r3, r4). No tracked changes remain.',
+    )
+    const body = await documentXml(path)
+    expect(body).not.toContain('<w:rPrChange')
+    // the inserted run goes, and its formatting record with it
+    expect(body).not.toContain('inserted italic')
+    // the paragraph mark gets its old properties back
+    const markRPr = /<w:pPr>(?:(?!<\/w:pPr>)[\s\S])*?<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(body)
+    expect(markRPr?.[1]).toBe('<w:strike/>')
+    expect(body).not.toContain('<w:caps/>')
+    // the plain run reverts to the recorded old formatting
+    expect(body).toContain('<w:i/>')
+    expect(body).not.toContain('<w:b/>')
+    const after = await run(['docs', 'read', path, '--revisions', '--json'])
+    expect(after.json().detail.revisions).toEqual([])
+  })
+
   it('replies to and resolves comment threads, saving comments.xml', async () => {
     const dir = tempDir()
     const path = await reviewFixture(dir)

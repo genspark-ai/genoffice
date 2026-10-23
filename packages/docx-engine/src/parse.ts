@@ -2099,7 +2099,7 @@ function buildTextParagraph(
     }
   }
 
-  // --- deleted / inserted paragraph mark (w:pPr/w:rPr/w:del, w:pPr/w:rPr/w:ins) ---
+  // --- deleted / inserted / reformatted paragraph mark (w:pPr/w:rPr/w:del, w:ins, w:rPrChange) ---
   const paraMarkRevision = (tag: string): Block['paraMarkDel'] => {
     const pRPr = pPr ? findChild(pPr, 'w:rPr') : undefined
     const el = pRPr ? findChild(pRPr, tag) : undefined
@@ -2113,6 +2113,7 @@ function buildTextParagraph(
   }
   const paraMarkDel = paraMarkRevision('w:del') ?? paraMarkRevision('w:moveFrom')
   const paraMarkIns = paraMarkRevision('w:ins') ?? paraMarkRevision('w:moveTo')
+  const paraMarkRPrChange = paraMarkRevision('w:rPrChange')
 
   // list item?
   const listRef = listRefOf(ctx, pPr, styleId)
@@ -2125,6 +2126,7 @@ function buildTextParagraph(
     ...(pPrChangeInfo ? { pPrChangeInfo } : {}),
     ...(paraMarkDel ? { paraMarkDel } : {}),
     ...(paraMarkIns ? { paraMarkIns } : {}),
+    ...(paraMarkRPrChange ? { paraMarkRPrChange } : {}),
   }
   if (listRef) {
     const kind = listKindOf(ctx, listRef.numId, listRef.ilvl)
