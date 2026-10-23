@@ -9,6 +9,14 @@ export {
   sfntLineMetrics,
 } from './font-table'
 export { decodeEntities } from './parse-xml-text'
+export {
+  resolveCtxOf,
+  resolveParagraphPropsXml,
+  resolveRunProps,
+  type EffectivePPr,
+  type EffectiveRPr,
+  type ResolveCtx,
+} from './resolve-props'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export {
   buildContentControlXml,
