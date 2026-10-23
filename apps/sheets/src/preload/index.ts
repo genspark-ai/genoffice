@@ -771,6 +771,9 @@ function parseAttachmentAddResult(input: unknown): AttachmentAddResult {
  * `content` crosses this bridge verbatim and the main process cannot see what
  * this editor withheld, so what the caller hands over is exactly what the model
  * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
  */
 const aiNamingApi = {
   suggestFileName: (input: {
@@ -783,7 +786,7 @@ const aiNamingApi = {
 }
 
 contextBridge.exposeInMainWorld('desktopApi', desktopApi)
-contextBridge.exposeInMainWorld('aiOffice', aiNamingApi)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
 
 const projectApi: ProjectApi = {
   resolveChat: (args) => ipcRenderer.invoke('project:resolveChat', args),

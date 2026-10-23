@@ -83,7 +83,7 @@ function installBridge(api: {
   }) => Promise<unknown>
   getFileNamingEnabled: () => Promise<boolean>
 }): void {
-  vi.stubGlobal('window', { aiOffice: api })
+  vi.stubGlobal('window', { aiNamingApi: api })
 }
 
 beforeEach(() => {
