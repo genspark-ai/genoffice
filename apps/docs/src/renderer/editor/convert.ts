@@ -52,9 +52,10 @@ import {
   type TextboxParaPatch,
   type TextboxParasPatchSet,
   type AutoSpace,
-  type EffectivePPr,
-  type EffectiveRPr,
 } from '@genoffice/docx-engine'
+// the resolved-property types live in their own module and are not re-exported
+// from the package entry point, so they are imported from where they are defined
+import type { EffectivePPr, EffectiveRPr } from '@genoffice/docx-engine/resolve-props'
 import { t } from '../i18n/locale'
 import { symbolFontCovers } from '../font-check'
 import {

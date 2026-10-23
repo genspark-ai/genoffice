@@ -45,6 +45,21 @@ async function open(text: string, inTable = false): Promise<Editor> {
   return editor
 }
 
+/** a document of several paragraphs, so a block can be policed apart from its neighbours */
+async function openParagraphs(texts: string[]): Promise<Editor> {
+  const bodyXml = texts
+    .map((text) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`)
+    .join('')
+  const parsed = await parseDocx(await buildDocx({ bodyXml }))
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions,
+    content: { type: 'doc', content: blocksToPmDoc(parsed.blocks).content as JsonNode[] },
+  })
+  editors.add(editor)
+  return editor
+}
+
 function selectText(editor: Editor, needle: string) {
   let start = -1
   editor.state.doc.descendants((node, pos) => {
@@ -191,6 +206,38 @@ describe('the write guard on model output', () => {
     const out = executeOps(editor, replaceOps('{{name}}', 'Ada'))
     expect(out.ok, out.error).toBe(true)
     expect(editor.state.doc.textContent).toBe('Invoice for Ada, due {{due.date}}')
+  })
+
+  it('lets a naming fill through, the way a mail-merge fill is', async () => {
+    // The naming feature asks the model for a name; a document waiting for one
+    // holds a slot for it, and filling that slot in is the whole request. A
+    // `{{token}}` the document already contained is content, not one of our
+    // markers — so the guard gives it the same answer it gives a mail-merge
+    // fill, and lets it through.
+    const editor = await open('Report for {{title}}')
+    const out = executeOps(editor, replaceOps('{{title}}', 'Q3 revenue'))
+    expect(out.ok, out.error).toBe(true)
+    expect(editor.state.doc.textContent).toBe('Report for Q3 revenue')
+  })
+
+  it('lets a naming fill through in a document that withholds something elsewhere', async () => {
+    // The guard polices a block, not the document: a withheld span in another
+    // block does not make this one policed, so the fill still goes through and
+    // the span keeps standing.
+    const editor = await openParagraphs([`Report for {{title}}`, `Call ${SECRET} about it`])
+    selectText(editor, SECRET)
+    editor.commands.setRedaction('client phone')
+    const out = executeOps(editor, replaceOps('{{title}}', 'Q3 revenue'))
+    expect(out.ok, out.error).toBe(true)
+    expect(editor.state.doc.textContent).toContain('Report for Q3 revenue')
+    // and the span is still withheld, untouched by the fill
+    let withheld = 0
+    editor.state.doc.descendants((n) => {
+      if (n.isText && n.marks.some((m) => m.type.name === 'redaction')) {
+        withheld += n.text?.length ?? 0
+      }
+    })
+    expect(withheld).toBe(SECRET.length)
   })
 
   it('refuses a template fill in a block that also holds a span', async () => {

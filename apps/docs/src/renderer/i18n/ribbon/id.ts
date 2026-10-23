@@ -66,6 +66,7 @@ export const id = {
   ribbonOpen: 'Buka…',
   ribbonSave: 'Simpan',
   ribbonSaveAs: 'Simpan Sebagai…',
+  ribbonNameWithAi: 'Beri nama dengan AI…',
   ribbonConvert: 'Konversi',
   ribbonConvertTip: 'Konversi ke PDF, HTML, Markdown, atau gambar',
   ribbonConvertPdf: 'Konversi ke PDF…',
