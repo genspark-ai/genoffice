@@ -65,7 +65,7 @@ let saved: Array<{ kind: string; name: string }> = []
 let statuses: string[] = []
 
 function installBridge(): void {
-  ;(window as unknown as { aiOffice: unknown }).aiOffice = {
+  ;(window as unknown as { aiNamingApi: unknown }).aiNamingApi = {
     suggestFileName: async (input: {
       content: string
       trigger: string
