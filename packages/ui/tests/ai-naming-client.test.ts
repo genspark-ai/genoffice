@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nameForSave } from '../src/ai-naming-client'
+import { fileNamingEnabled, nameForSave } from '../src/ai-naming-client'
 
 /**
  * The fallback contract is the whole point of this helper.
@@ -11,7 +11,7 @@ import { nameForSave } from '../src/ai-naming-client'
  */
 
 function stubApi(overrides: Record<string, unknown> = {}): void {
-  ;(window as unknown as { aiOffice: unknown }).aiOffice = {
+  ;(window as unknown as { aiNamingApi: unknown }).aiNamingApi = {
     suggestFileName: vi.fn(async () => ({ ok: true, name: 'Quarterly plan' })),
     getFileNamingEnabled: vi.fn(async () => true),
     setFileNamingEnabled: vi.fn(async (on: boolean) => on),
@@ -20,6 +20,7 @@ function stubApi(overrides: Record<string, unknown> = {}): void {
 }
 
 afterEach(() => {
+  delete (window as unknown as { aiNamingApi?: unknown }).aiNamingApi
   delete (window as unknown as { aiOffice?: unknown }).aiOffice
   vi.restoreAllMocks()
 })
@@ -77,8 +78,23 @@ describe('nameForSave', () => {
   })
 
   it('keeps the fallback when the bridge has no naming channel at all', async () => {
-    ;(window as unknown as { aiOffice: unknown }).aiOffice = {}
+    ;(window as unknown as { aiNamingApi: unknown }).aiNamingApi = {}
     expect(await ask()).toBe('Untitled.docx')
+  })
+
+  // the namespace the naming bridge must stay out of: `aiOffice` is the shell's
+  // home API, and an editor window exposing a partial one would shadow it there
+  it('does not look for the naming channels in the shell namespace', async () => {
+    ;(window as unknown as { aiOffice: unknown }).aiOffice = {
+      suggestFileName: vi.fn(async () => ({ ok: true, name: 'From the shell namespace' })),
+      getFileNamingEnabled: vi.fn(async () => true),
+    }
+    expect(await ask()).toBe('Untitled.docx')
+  })
+
+  it('reads the preference from the same bridge', async () => {
+    stubApi({ getFileNamingEnabled: vi.fn(async () => true) })
+    expect(await fileNamingEnabled()).toBe(true)
   })
 
   it('never asks about an empty document', async () => {
