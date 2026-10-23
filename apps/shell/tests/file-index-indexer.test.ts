@@ -38,6 +38,70 @@ const indexerWithShortTimeout = () =>
 const notesPath = () => join(dir, 'good', 'notes.md')
 const poisonPath = () => join(dir, 'hang', 'poison.pdf')
 
+describe('FileIndexer idle worker', () => {
+  it('retires the worker once scan and queue are idle, and spawns a fresh one for the next scan', async () => {
+    indexer = new FileIndexer(
+      store,
+      WORKER,
+      { roots: () => [dir], extraPaths: () => [] },
+      400,
+      256,
+      100,
+    )
+    await indexer.scan()
+    await vi.waitFor(
+      () => {
+        expect(store.listAll().get(notesPath())?.status).toBe('ok')
+        expect(store.listAll().get(poisonPath())?.status).toBe('error')
+      },
+      { timeout: 5_000, interval: 25 },
+    )
+    await vi.waitFor(() => expect(indexer!.workerIsRunning()).toBe(false), {
+      timeout: 2_000,
+      interval: 25,
+    })
+    const before = store.listAll().get(notesPath())!
+    writeFileSync(notesPath(), 'searchable body text, revised and longer')
+    await indexer.scan()
+    expect(indexer.workerIsRunning()).toBe(true)
+    await vi.waitFor(
+      () => {
+        const after = store.listAll().get(notesPath())
+        expect(after?.status).toBe('ok')
+        expect(after?.sizeBytes).toBeGreaterThan(before.sizeBytes)
+      },
+      { timeout: 5_000, interval: 25 },
+    )
+  })
+})
+
+describe('FileIndexer worker replacement', () => {
+  it('a scan started while the retired worker is still exiting is answered by the new one', async () => {
+    indexer = new FileIndexer(
+      store,
+      WORKER,
+      { roots: () => [dir], extraPaths: () => [] },
+      400,
+      256,
+      100,
+    )
+    await indexer.scan()
+    await vi.waitFor(() => expect(store.listAll().get(notesPath())?.status).toBe('ok'), {
+      timeout: 5_000,
+      interval: 25,
+    })
+    writeFileSync(join(dir, 'good', 'later.md'), 'added after the first scan')
+    // retire the worker and immediately scan: the old worker's exit event lands
+    // while the new worker's scan request is in flight
+    ;(indexer as unknown as { recycleWorker(): void }).recycleWorker()
+    await indexer.scan()
+    await vi.waitFor(
+      () => expect(store.listAll().get(join(dir, 'good', 'later.md'))?.status).toBe('ok'),
+      { timeout: 5_000, interval: 25 },
+    )
+  })
+})
+
 describe('FileIndexer wedged-worker recovery', () => {
   it('fails a hung extraction on timeout and keeps indexing the rest of the queue', async () => {
     indexer = indexerWithShortTimeout()

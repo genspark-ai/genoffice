@@ -104,7 +104,7 @@ describe('character-unit indents: saving an indent edit', () => {
     const xml = reparsed.internal.documentXml
     expect(xml).toContain('<w:pPr><w:ind w:firstLineChars="0"/></w:pPr>')
     expect(xml).toContain('<w:pPr><w:ind w:firstLineChars="0"/><w:jc w:val="both"/></w:pPr>')
-    expect(reparsed.blocks[0].format).toBeUndefined()
+    expect(reparsed.blocks[0].format).toEqual({})
     expect(reparsed.blocks[1].format).toEqual({ align: 'justify' })
   })
 

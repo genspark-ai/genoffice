@@ -36,6 +36,10 @@ import { ImageExportSessions } from './image-export'
 import { printMarkdownPdf } from './print-pdf'
 import { atomicWriteFile } from './atomic-write'
 import {
+  createDocumentDiskWatcher,
+  type DocumentDiskWatcher,
+} from '@genoffice/electron-utils/disk-watch'
+import {
   copyImageIntoOwnedAssets,
   discardPendingOwnedAssets,
   extractMarkdownImageSources,
@@ -406,6 +410,7 @@ const openPathByWc = new Map<number, string>()
 const allowedByWc = new Map<number, Set<string>>()
 /** Current save target per view; absent = untitled document */
 const savePathByWc = new Map<number, string>()
+const diskWatcherByWc = new Map<number, DocumentDiskWatcher>()
 /** Unsaved-changes flags mirrored from the renderer; drives the save prompt before closing a tab/window */
 const dirtyByWc = new Set<number>()
 const closeSaveWaiters = new Map<number, (ok: boolean) => void>()
@@ -465,6 +470,7 @@ export function markdownFileRenamed(contents: WebContents, oldPath: string, newP
   if (openPathByWc.get(wcId) === oldPath) openPathByWc.set(wcId, newPath)
   const allowed = allowedByWc.get(wcId)
   if (allowed?.has(oldPath)) allowed.add(newPath)
+  if (savePathByWc.get(wcId) === newPath) void diskWatcherByWc.get(wcId)?.watch(newPath)
   void renameOwnedAssetDocument(oldPath, newPath).catch((error) => {
     console.warn('[markdown] asset manifest rename sync failed:', error)
   })
@@ -774,6 +780,10 @@ function registerMarkdownIpc(): void {
     })
   })
 
+  ipcMain.on(MARKDOWN_CHANNELS.ackFileChangedOnDisk, (e) => {
+    void diskWatcherByWc.get(e.sender.id)?.acknowledge()
+  })
+
   ipcMain.handle(MARKDOWN_CHANNELS.readFile, async (e, path: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
       throw new Error('markdown: path not granted to this view')
@@ -867,11 +877,19 @@ function registerMarkdownIpc(): void {
             : null
         const textToWrite = prepared?.text ?? request.text
         const savedImageSources = prepared?.imageSources ?? imageSources
+        const watcher = diskWatcherByWc.get(e.sender.id)
+        if (watcher && !isNewPath && request.overwrite !== true && !(await watcher.isCurrent())) {
+          if (prepared) await rollbackPreparedSaveAsAssets(prepared).catch(() => {})
+          return done({ ok: false, error: 'markdown: file changed on disk', conflict: true })
+        }
+        watcher?.beginOwnWrite()
         try {
           await writeTextAtomic(target, textToWrite)
         } catch (error) {
           if (prepared) await rollbackPreparedSaveAsAssets(prepared).catch(() => {})
           throw error
+        } finally {
+          await watcher?.endOwnWrite(target)
         }
         savePathByWc.set(e.sender.id, target)
         // keep the reload path in sync — a stale openPathByWc would make a
@@ -1247,10 +1265,15 @@ function registerMarkdownIpc(): void {
 
 function grantAndTrack(wc: WebContents, openPath?: string | null): void {
   const wcId = wc.id
+  const watcher = createDocumentDiskWatcher((path) => {
+    if (!wc.isDestroyed()) wc.send(MARKDOWN_CHANNELS.fileChangedOnDisk, path)
+  })
+  diskWatcherByWc.set(wcId, watcher)
   if (openPath && existsSync(openPath)) {
     openPathByWc.set(wcId, openPath)
     savePathByWc.set(wcId, openPath)
     allowedByWc.set(wcId, new Set([openPath]))
+    void watcher.watch(openPath)
   }
   wc.setWindowOpenHandler(({ url }) => {
     const target = safeExternalUrl(url, { allowedProtocols: ['http:', 'https:', 'mailto:'] })
@@ -1261,6 +1284,8 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
     void imageExports
       .dispose(wcId)
       .catch((err) => console.warn('[markdown] image export cleanup:', err))
+    diskWatcherByWc.get(wcId)?.dispose()
+    diskWatcherByWc.delete(wcId)
     openPathByWc.delete(wcId)
     allowedByWc.delete(wcId)
     savePathByWc.delete(wcId)

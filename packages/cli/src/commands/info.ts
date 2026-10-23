@@ -81,6 +81,7 @@ async function describeDocx(path: string): Promise<Description> {
       footnotes: parsed.footnotes.length,
       endnotes: parsed.endnotes.length,
       protected: parsed.protection !== null,
+      properties: parsed.properties,
     },
   }
 }

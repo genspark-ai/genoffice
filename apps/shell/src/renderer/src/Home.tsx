@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
 import { KbAskPanel } from './KbAskPanel'
-import iconDocx from './assets/file-docx.svg'
-import iconXlsx from './assets/file-xlsx.svg'
-import iconPptx from './assets/file-pptx.svg'
-import iconPdf from './assets/file-pdf.svg'
-import iconMd from './assets/file-md.svg'
-import iconHtml from './assets/file-html.svg'
+import { FileBadge } from './file-badge'
+import { placeFolderMenu } from './folder-menu-position'
 import type {
   AccountStatus,
   CloudProjectKind,
@@ -57,24 +53,6 @@ const GREET_ASK_KEYS = [
   'greetAsk6',
 ] as const satisfies readonly StringKey[]
 
-const FILE_ICONS: Record<string, string> = {
-  docx: iconDocx,
-  odt: iconDocx,
-  ott: iconDocx,
-  xlsx: iconXlsx,
-  xlsm: iconXlsx,
-  ods: iconXlsx,
-  ots: iconXlsx,
-  pptx: iconPptx,
-  odp: iconPptx,
-  otp: iconPptx,
-  pdf: iconPdf,
-  md: iconMd,
-  markdown: iconMd,
-  html: iconHtml,
-  htm: iconHtml,
-}
-
 /* Formats the open-local card advertises. Too long for the card at any window
    width, so it ellipsizes and a hover ScreenTip carries the full list. Keep in
    sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
@@ -96,31 +74,6 @@ const TREE_STATE_KEY = 'home.folderTree'
  */
 function fixedViewportWidth(): number {
   return document.documentElement.clientWidth
-}
-
-function FileBadge({ ext, size }: { ext: string; size: number }) {
-  const icon = FILE_ICONS[ext]
-  if (icon) {
-    return <img src={icon} width={size} height={size} alt="" aria-hidden="true" />
-  }
-  const label = ext ? ext[0].toUpperCase() : '?'
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="7.5" fill="#98a2b3" />
-      <text
-        x="16"
-        y="16.5"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontSize={17}
-        fontWeight="700"
-        fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
-      >
-        {label}
-      </text>
-    </svg>
-  )
 }
 
 function FolderIcon({ size = 16, open = false }: { size?: number; open?: boolean }) {
@@ -1605,12 +1558,15 @@ export function Home() {
   const [folderMenu, setFolderMenu] = useState<{
     path: string
     where: 'tree' | 'table'
-    top: number
-    right: number
+    x: number
+    y: number
+    above: number
+    align: 'start' | 'end'
   } | null>(null)
   const menuOpenAt = (where: 'tree' | 'table', path: string) =>
     folderMenu?.where === where && folderMenu.path === path
   const folderMenuWrapRef = useRef<HTMLDivElement>(null)
+  const folderMenuPopRef = useRef<HTMLDivElement>(null)
   const [folderRenaming, setFolderRenaming] = useState<{
     path: string
     where: 'tree' | 'table'
@@ -1875,6 +1831,18 @@ export function Home() {
     const close = () => setFolderMenu(null)
     window.addEventListener('scroll', close, true)
     return () => window.removeEventListener('scroll', close, true)
+  }, [folderMenu])
+  // open to the right of the anchor, flipped above when short of room below, clamped to the viewport
+  useLayoutEffect(() => {
+    const el = folderMenuPopRef.current
+    if (!folderMenu || !el) return
+    const { left, top } = placeFolderMenu(
+      folderMenu,
+      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: fixedViewportWidth(), height: document.documentElement.clientHeight },
+    )
+    el.style.left = `${left}px`
+    el.style.top = `${top}px`
   }, [folderMenu])
 
   // Escape closes the row menu and the confirm dialogs
@@ -2381,19 +2349,17 @@ export function Home() {
           setFolderMenu({
             path: entry.path,
             where: 'tree',
-            top: rect.bottom + 4,
-            right: fixedViewportWidth() - rect.right,
+            x: rect.right,
+            y: rect.bottom + 4,
+            above: rect.top - 4,
+            align: 'end',
           })
         }}
       >
         <MoreDots />
       </button>
       {folderMenu && menuOpenAt('tree', entry.path) && (
-        <div
-          className="folder-menu"
-          role="menu"
-          style={{ top: folderMenu.top, right: folderMenu.right }}
-        >
+        <div className="folder-menu" role="menu" ref={folderMenuPopRef}>
           {editableAt(entry.path) && (
             <button role="menuitem" onClick={() => startCreateFolder(entry.path)}>
               {t('newSubfolder')}
@@ -2511,8 +2477,10 @@ export function Home() {
             setFolderMenu({
               path: entry.path,
               where: 'tree',
-              top: e.clientY + 2,
-              right: fixedViewportWidth() - e.clientX,
+              x: e.clientX + 2,
+              y: e.clientY + 2,
+              above: e.clientY + 2,
+              align: 'start',
             })
           }}
           draggable={!isRoot && !isRenaming}
@@ -2868,8 +2836,10 @@ export function Home() {
             setFolderMenu({
               path: entry.path,
               where: 'table',
-              top: e.clientY + 2,
-              right: fixedViewportWidth() - e.clientX,
+              x: e.clientX + 2,
+              y: e.clientY + 2,
+              above: e.clientY + 2,
+              align: 'start',
             })
           }}
         >
@@ -2920,19 +2890,17 @@ export function Home() {
                 setFolderMenu({
                   path: entry.path,
                   where: 'table',
-                  top: rect.bottom + 4,
-                  right: fixedViewportWidth() - rect.right,
+                  x: rect.right,
+                  y: rect.bottom + 4,
+                  above: rect.top - 4,
+                  align: 'end',
                 })
               }}
             >
               <MoreDots />
             </button>
             {folderMenu && menuOpenAt('table', entry.path) && (
-              <div
-                className="folder-menu"
-                role="menu"
-                style={{ top: folderMenu.top, right: folderMenu.right }}
-              >
+              <div className="folder-menu" role="menu" ref={folderMenuPopRef}>
                 <button
                   role="menuitem"
                   onClick={() => {
@@ -3444,6 +3412,8 @@ export function Home() {
       return parent?.folders.some((f) => f.path === p) ?? false
     })
 
+  const activeNav = !selectedFolder && !cloudMode ? (askMode ? 'ask' : view) : null
+
   return (
     <div className="home">
       <aside className="sidebar">
@@ -3452,7 +3422,8 @@ export function Home() {
         </div>
         <nav className="sidebar-nav">
           <button
-            className={`nav-item${view === 'recent' && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${activeNav === 'recent' ? ' active' : ''}`}
+            aria-current={activeNav === 'recent' ? 'page' : undefined}
             onClick={() => changeView('recent')}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -3468,7 +3439,8 @@ export function Home() {
             <span className="nav-count">{navCounts.recent}</span>
           </button>
           <button
-            className={`nav-item${view === 'starred' && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${activeNav === 'starred' ? ' active' : ''}`}
+            aria-current={activeNav === 'starred' ? 'page' : undefined}
             onClick={() => changeView('starred')}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -3483,7 +3455,8 @@ export function Home() {
             <span className="nav-count">{navCounts.starred}</span>
           </button>
           <button
-            className={`nav-item${askMode && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            className={`nav-item${activeNav === 'ask' ? ' active' : ''}`}
+            aria-current={activeNav === 'ask' ? 'page' : undefined}
             onClick={() => {
               setAskMode(true)
               setSelectedFolder(null)

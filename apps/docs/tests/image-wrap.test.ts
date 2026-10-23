@@ -662,6 +662,31 @@ describe('image wrap in the editor', () => {
     editor.destroy()
   })
 
+  it('margin-top aligned square wrap pins the turned bounding box on the landing page', async () => {
+    // prod corpus 20261020 sample 043: quarter-turned photo, positionH margin
+    // offset + positionV margin align=top (no vertical offset)
+    const { editor } = await openImageDoc()
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', {
+      imageWrap: 'square-left',
+      imageOffsetXEmu: -1265555,
+      imageOffsetYEmu: null,
+      imageRelV: 'margin',
+      imagePosV: 'top',
+      imageRotDeg: 90,
+      imageWidthPx: 880,
+      imageHeightPx: 449,
+    })
+    const el = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-square-left')!
+    expect(el.dataset.tblpVy).toBe('0.0')
+    expect(el.dataset.tblpVanchor).toBe('margin')
+    expect(el.style.marginTop).toBe('var(--tblp-dy,0px)')
+    // the inner wrap already reserves the turned box: no extra inset lift
+    const wrap = el.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(wrap.style.marginTop).toBe('')
+    editor.destroy()
+  })
+
   it('run-level square float honors posOffset X and sides by picture center (public issue #118)', async () => {
     // text + anchor share the paragraph -> run-level docInlineImage path;
     // left edge before mid-body but the wide body fills the right half

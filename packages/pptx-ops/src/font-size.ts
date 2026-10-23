@@ -38,7 +38,10 @@ export function stepFontSizePt(cur: number, dir: 1 | -1): number {
 }
 
 export function nudgeFontSizePt(cur: number, dir: 1 | -1): number {
-  return Math.min(FONT_SIZE_PT_MAX, Math.max(FONT_SIZE_PT_MIN, cur + dir))
+  // a non-finite size must not propagate as NaN (which would serialize sz="NaN");
+  // step from the body default instead, mirroring stepFontSizePt/applyFontSizeStep
+  const from = Number.isFinite(cur) ? cur : DEFAULT_FONT_SIZE_PT
+  return Math.min(FONT_SIZE_PT_MAX, Math.max(FONT_SIZE_PT_MIN, from + dir))
 }
 
 export function applyFontSizeStep(cur: number, step: FontSizeStep): number {

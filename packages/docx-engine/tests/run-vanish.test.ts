@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseDocx } from '../src/index'
+import { computeListMarkers } from '../src/list-markers'
 import { staysVanished } from '../src/parse-props'
 import { buildDocx } from './helpers/build-docx'
 
@@ -88,5 +89,37 @@ describe('staysVanished falsy variants', () => {
     expect(staysVanished('<w:p><w:rPr><w:vanish w:val="False"/></w:rPr></w:p>')).toBe(false)
     expect(staysVanished("<w:p><w:rPr><w:vanish w:val='off'/></w:rPr></w:p>")).toBe(false)
     expect(staysVanished('<w:p><w:rPr><w:vanish/></w:rPr></w:p>')).toBe(true)
+  })
+})
+
+describe('hidden empty numbered paragraph', () => {
+  it('collapses to an invisible block that still consumes its list number', async () => {
+    const hidden =
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr>' +
+      '<w:rPr><w:vanish/></w:rPr></w:pPr></w:p>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          hidden +
+          hidden +
+          '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>' +
+          '<w:r><w:t>third</w:t></w:r></w:p>',
+        numberingXml:
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+          '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+          '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/>' +
+          '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>' +
+          '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>',
+      }),
+    )
+    const blocks = doc.blocks.slice(0, 3)
+    expect(blocks.map((b) => [b.type, b.invisibleMarker ?? false])).toEqual([
+      ['passthrough', true],
+      ['passthrough', true],
+      ['listItem', false],
+    ])
+    expect(blocks[0].strayList).toEqual({ numId: '2', ilvl: 0 })
+    const refs = blocks.map((b) => b.list ?? b.strayList!)
+    expect(computeListMarkers(refs, doc.numbering)).toEqual(['1.', '2.', '3.'])
   })
 })

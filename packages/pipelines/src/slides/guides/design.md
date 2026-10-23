@@ -79,7 +79,7 @@ Canvas is 1280 × 720 px, origin top-left, integers only; nothing may cross the 
 
 **Fill the page**: spread content over the whole canvas; no content crammed into the top half above a blank field. Make text and images as large as the layout allows.
 
-**Visuals**: photos only from sources you actually have (local files, search results, generated images). Without photos, work with typography, color blocks and shapes; never fake a photo with a grey box. Icon-like decoration uses the allowed shapes, at most four or five per page, content-related. No emoji. Data visuals are composed from `rect`, `donut` and `line` shapes with sizes proportional to the real values. Solid colors only (alpha allowed).
+**Visuals**: photos only from sources you actually have (local files, search results, generated images), at most three image elements on a page, and only a photo that genuinely fits the page's content: an irrelevant or generic stock photo is worse than none. Without photos, work with typography, color blocks and shapes; never fake a photo with a grey box. Icon-like decoration uses the allowed shapes, at most four or five per page, content-related. No emoji. Data visuals are composed from `rect`, `donut` and `line` shapes with sizes proportional to the real values. Solid colors only (alpha allowed).
 
 ## 4. Anti-patterns (treat as defects)
 

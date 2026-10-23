@@ -1,66 +1,39 @@
 import type { AgentSkill } from '@genoffice/agent-core'
-import type { UserCliRun, UserSkillEntry } from '../../shared/ipc'
+import type { UserCliRun } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 
 /**
- * The skills a user installed as an AgentSkill, plus the CLI those skills teach.
+ * The command line the user's skills teach, as an AgentSkill.
  *
- * #1895 put the skills on disk (userData/skills); this is the half that reaches
- * the model. The main process owns every boundary — only installed skills are
- * listed, `read_skill` takes a name and the main process resolves the path, and
- * `run_cli` spawns the bundled genoffice CLI and nothing else (user-cli.ts) —
- * so this file is a caller, not a guard.
- *
- * buildContext is synchronous by contract, and the list lives across an IPC
- * call: the first turn of a session relies on the system prompt pointing at
- * list_skills, and every turn after one sees the cached list in context.
+ * Skills themselves are not offered to the model: no listing, no lookup. The
+ * only way a skill's text reaches a turn is the user attaching it from the
+ * composer "+" menu, and then it rides in front of the request (see
+ * withAttachedSkills). What stays here is `run_cli`, so an attached skill
+ * that says "run genoffice convert …" can be followed. The main process owns
+ * the boundary — it spawns the bundled genoffice CLI and nothing else
+ * (user-cli.ts) — so this file is a caller, not a guard.
  */
 
-const SKILLS_SYSTEM_PROMPT = `## User skills
-The user may have installed skills — short manuals for document workflows this
-app's command line can carry out. They are listed in the per-turn context when
-known; if that section is absent, call list_skills before assuming there are
-none.
-- read_skill returns one skill's full text, by its exact name. Follow its steps
-  with the document tools you already have; quote its constraints rather than
-  paraphrasing them, and prefer its steps over guessing.
+const SKILLS_SYSTEM_PROMPT = `## Attached skills and the command line
+The user may attach a skill to a message: its full text then appears at the
+top of that message inside <skill> tags. Follow its steps with the document
+tools you already have; quote its constraints rather than paraphrasing them,
+and prefer its steps over guessing. Never assume a skill the user did not
+attach.
 - run_cli executes the bundled genoffice command line (the same "genoffice …
-  --json" contract the skills describe). Use it when a skill directs you to, or
-  for batch work no single document call covers. It runs only this app's CLI —
-  it is not a general shell — and long output is truncated.`
+  --json" contract skills describe). Use it when an attached skill directs you
+  to, or for batch work no single document call covers. It runs only this
+  app's CLI — it is not a general shell — and long output is truncated.`
 
 export function createSkillsSkill(): AgentSkill {
-  let cache: UserSkillEntry[] | null = null
-
-  const contextLine = (s: UserSkillEntry): string =>
-    `- ${s.name} — ${s.description}${s.relevant ? '' : ' (not about document formats)'}`
-
   return {
     id: 'skills',
     systemPrompt: SKILLS_SYSTEM_PROMPT,
     tools: [
       {
-        name: 'list_skills',
-        description:
-          'List the skills the user installed in this app. Cheap; call it before assuming none exist.',
-        inputSchema: { type: 'object', properties: {} },
-      },
-      {
-        name: 'read_skill',
-        description:
-          'Read the full text of one installed skill, by its exact name from list_skills.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'the skill name, exactly as listed' },
-          },
-          required: ['name'],
-        },
-      },
-      {
         name: 'run_cli',
         description:
-          "Run the bundled genoffice command line (it always answers --json). Only this app's own CLI, not a general shell; the first argument must be a command such as convert, create, info.",
+          "Run the bundled genoffice command line (it always answers --json). Only this app's own CLI, not a general shell: document commands such as convert, create, info, docs, sheet, slides, pdf; no --force, and apply/replace must take --out. Relative paths resolve in the open document's folder; reads and writes stay inside the allowed folders the result names.",
         inputSchema: {
           type: 'object',
           properties: {
@@ -74,46 +47,8 @@ export function createSkillsSkill(): AgentSkill {
         },
       },
     ],
-    buildContext: () => {
-      if (!cache || cache.length === 0) return ''
-      return `Installed skills (read one with read_skill; use run_cli when a skill directs you to):\n${cache
-        .map(contextLine)
-        .join('\n')}`
-    },
     executeTool: async (call) => {
       try {
-        if (call.name === 'list_skills') {
-          cache = await window.desktop.skillsList()
-          if (cache.length === 0) {
-            return {
-              output:
-                'No skills are installed. The user can add some under Settings → Integrations.',
-              mutated: false,
-              summary: t('aiSumSkillsList'),
-            }
-          }
-          return {
-            output: `${cache.length} installed skill(s):\n${cache.map(contextLine).join('\n')}`,
-            mutated: false,
-            summary: t('aiSumSkillsList'),
-          }
-        }
-        if (call.name === 'read_skill') {
-          const name = call.input.name
-          if (typeof name !== 'string' || name.trim() === '') {
-            return {
-              output: 'a skill name is required',
-              isError: true,
-              summary: t('aiSumSkillRead', { name: '?' }),
-            }
-          }
-          const text = await window.desktop.skillText(name)
-          return {
-            output: text,
-            mutated: false,
-            summary: t('aiSumSkillRead', { name }),
-          }
-        }
         if (call.name === 'run_cli') {
           const args = call.input.args
           if (
@@ -128,18 +63,23 @@ export function createSkillsSkill(): AgentSkill {
             }
           }
           const out: UserCliRun = await window.desktop.runCli(args as string[])
-          const summary =
-            out.json &&
-            typeof out.json === 'object' &&
-            'summary' in (out.json as Record<string, unknown>)
-              ? `\nsummary: ${(out.json as { summary?: string }).summary}`
-              : ''
+          const json = (out.json ?? {}) as { summary?: string; output_path?: string }
+          const summary = typeof json.summary === 'string' ? `\nsummary: ${json.summary}` : ''
+          const where = [
+            out.cwd ? `cwd: ${out.cwd}` : '',
+            out.allowedRoots?.length ? `allowed folders: ${out.allowedRoots.join(', ')}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n')
           return {
             output: `exit ${out.code}${summary}\n${out.stdout}${
               out.stderr ? `\n[stderr]\n${out.stderr}` : ''
-            }`,
+            }${where ? `\n${where}` : ''}`,
             isError: !out.ok,
-            mutated: false,
+            // a CLI run that wrote a file changed the world, not this editor's
+            // document: count it as a mutation so the loop does not treat the
+            // repeat as a redundant read, and so the final answer reports it
+            mutated: out.ok && typeof json.output_path === 'string',
             summary: t('aiSumRunCli', { args: (args as string[]).join(' ') }),
           }
         }

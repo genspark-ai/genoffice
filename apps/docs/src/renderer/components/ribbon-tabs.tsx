@@ -81,6 +81,7 @@ export {
 } from './ribbon-insert-tab'
 export { DesignTab } from './ribbon-design-tab'
 export { LayoutTab } from './ribbon-layout-tab'
+export { MailingsTab } from './ribbon-mailings-tab'
 export { ReferencesTab } from './ribbon-references-tab'
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */

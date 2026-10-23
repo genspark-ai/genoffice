@@ -240,6 +240,15 @@ export default function App() {
     return map ? spliceMarkdown(current, current.state.doc, map) : current.getMarkdown()
   }
   const filePathRef = useRef<string | null>(null)
+  /** text last read from or written to disk; a watcher tick that reads the same text is a touch, not an edit */
+  const diskTextRef = useRef<string | null>(null)
+  const overwriteRef = useRef(false)
+  const [diskNotice, setDiskNoticeState] = useState<'changed' | 'conflict' | null>(null)
+  const diskNoticeRef = useRef<'changed' | 'conflict' | null>(null)
+  const setDiskNotice = (next: 'changed' | 'conflict' | null) => {
+    diskNoticeRef.current = next
+    setDiskNoticeState(next)
+  }
   const slashMenuRef = useRef<SlashMenuHandle>(null)
   const wikiSuggestMenuRef = useRef<WikiSuggestMenuHandle>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -366,6 +375,9 @@ export default function App() {
    */
   const loadFromPath = useCallback(
     (path: string, raw: string) => {
+      diskTextRef.current = raw
+      overwriteRef.current = false
+      setDiskNotice(null)
       const mode = textModeForPath(path)
       setTextMode(mode)
       if (sourceApplyTimerRef.current) clearTimeout(sourceApplyTimerRef.current)
@@ -455,16 +467,26 @@ export default function App() {
    */
   const doSaveSource = useCallback(async (mode: SaveMode): Promise<boolean> => {
     if (statusRef.current !== 'ready' || savingRef.current) return false
+    if (diskNoticeRef.current && !overwriteRef.current) {
+      // the user has not chosen between the two versions yet; autosave must not pick for them
+      setDiskNotice('conflict')
+      return false
+    }
     savingRef.current = true
     setSaveState('saving')
     const textAtSave = sourceTextRef.current
     try {
+      const written = writeSourceText(textAtSave, sourceFormatRef.current)
       const result = await window.markdownApi.save({
-        text: writeSourceText(textAtSave, sourceFormatRef.current),
+        text: written,
         imageSources: [],
         mode,
+        overwrite: overwriteRef.current,
       })
       if (result.ok && 'path' in result) {
+        diskTextRef.current = written
+        overwriteRef.current = false
+        setDiskNotice(null)
         // an edit that landed mid-write is still unsaved
         const unchanged = sourceTextRef.current === textAtSave
         setFilePath(result.path)
@@ -481,6 +503,7 @@ export default function App() {
         }
         return true
       }
+      if (!result.ok && result.conflict) setDiskNotice('conflict')
       setSaveState(result.ok ? 'idle' : 'failed')
       return false
     } catch (err) {
@@ -585,6 +608,10 @@ export default function App() {
       flushSource()
       const current = editorRef.current
       if (!current || statusRef.current !== 'ready' || savingRef.current) return false
+      if (diskNoticeRef.current && !overwriteRef.current) {
+        setDiskNotice('conflict')
+        return false
+      }
       savingRef.current = true
       setSaveState('saving')
       try {
@@ -601,8 +628,17 @@ export default function App() {
           sourceAtSave,
         )
         const imageSources = imageSourcesFromEditor(current)
-        const result = await window.markdownApi.save({ text, imageSources, mode, suggestedName })
+        const result = await window.markdownApi.save({
+          text,
+          imageSources,
+          mode,
+          suggestedName,
+          overwrite: overwriteRef.current,
+        })
         if (result.ok && 'path' in result) {
+          diskTextRef.current = result.writtenText ?? text
+          overwriteRef.current = false
+          setDiskNotice(null)
           const unchanged =
             editorRef.current?.state.doc === docAtSave &&
             envelopeRef.current.frontmatter === fmAtSave
@@ -658,6 +694,7 @@ export default function App() {
           }
           return true
         }
+        if (!result.ok && result.conflict) setDiskNotice('conflict')
         setSaveState(result.ok ? 'idle' : 'failed')
         return false
       } catch (err) {
@@ -670,6 +707,62 @@ export default function App() {
     },
     [flushSource, sourceMode, doSaveSource],
   )
+
+  /** another program wrote the file: swap the text in, keep caret and scroll, leave undo history alone */
+  const reloadFromDisk = useCallback(
+    (path: string, raw: string) => {
+      const current = editorRef.current
+      const caret = current?.state.selection.from ?? 1
+      const scrollTop = scrollRef.current?.scrollTop ?? 0
+      // loadFromPath replaces the content; with the status parked the resulting update is not an edit
+      statusRef.current = 'loading'
+      try {
+        loadFromPath(path, raw)
+        if (isSourceMode(textModeForPath(path))) sourceRef.current?.setDoc(readSourceText(raw).text)
+      } finally {
+        statusRef.current = 'ready'
+      }
+      if (current && !isSourceMode(textModeForPath(path))) {
+        current
+          .chain()
+          .setMeta('addToHistory', false)
+          .setMeta('uiOnly', true)
+          .setTextSelection(Math.min(caret, current.state.doc.content.size))
+          .run()
+      }
+      requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollTop
+      })
+      dirtyRef.current = false
+      setDirty(false)
+      window.markdownApi.setDirty(false)
+      setSaveState('idle')
+    },
+    [loadFromPath],
+  )
+
+  const reloadNow = useCallback(async () => {
+    const path = filePathRef.current
+    if (!path) return
+    try {
+      window.markdownApi.ackFileChangedOnDisk()
+      reloadFromDisk(path, await window.markdownApi.readFile(path))
+    } catch (err) {
+      console.error('[markdown] reload from disk failed:', err)
+    }
+  }, [reloadFromDisk])
+
+  const keepMine = useCallback(() => {
+    overwriteRef.current = true
+    setDiskNotice(null)
+    window.markdownApi.ackFileChangedOnDisk()
+  }, [])
+
+  const overwriteNow = useCallback(() => {
+    overwriteRef.current = true
+    setDiskNotice(null)
+    void doSave('save')
+  }, [doSave])
 
   /** `outPath` (headless export only) skips the save dialog; resolves true when a file was written. */
   const runExport = useCallback(
@@ -917,6 +1010,30 @@ export default function App() {
         window.markdownApi.sendCloseSaveResult(ok)
       })()
     })
+    const offDisk = window.markdownApi.onFileChangedOnDisk((changedPath) => {
+      // the watcher keeps refusing saves until the change is acknowledged; a
+      // change parked behind the bar stays unacknowledged until the user decides
+      let awaitingUser = false
+      void (async () => {
+        try {
+          if (changedPath !== filePathRef.current || statusRef.current !== 'ready') return
+          const raw = await window.markdownApi.readFile(changedPath)
+          if (changedPath !== filePathRef.current || raw === diskTextRef.current) return
+          const dirtyNow = dirtyRef.current || savingRef.current
+          if (dirtyNow) {
+            diskTextRef.current = raw
+            setDiskNotice('changed')
+            awaitingUser = true
+            return
+          }
+          reloadFromDisk(changedPath, raw)
+        } catch (err) {
+          console.error('[markdown] reload after external change failed:', err)
+        } finally {
+          if (!awaitingUser) window.markdownApi.ackFileChangedOnDisk()
+        }
+      })()
+    })
     const offRenamed = window.markdownApi.onFileRenamed((newPath) => {
       // A rename that changes the extension changes what the file is, so the
       // open document has to follow it onto the matching surface. Reloading
@@ -980,10 +1097,11 @@ export default function App() {
       offSave()
       offReadText()
       offClose()
+      offDisk()
       offRenamed()
       window.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [doSave, printDoc, zoomIn, zoomOut, openFind, toggleSource, loadFromPath, t])
+  }, [doSave, printDoc, zoomIn, zoomOut, openFind, toggleSource, loadFromPath, reloadFromDisk, t])
 
   // Chromium reports trackpad pinch as ctrl+wheel. Also support Cmd/Ctrl+scroll
   // while the pointer is over the document canvas.
@@ -1236,6 +1354,17 @@ export default function App() {
           />
         )}
         <div className="app-content">
+          {diskNotice && (
+            <div className="disk-notice" role="status">
+              <span>{t(diskNotice === 'changed' ? 'diskChangedMsg' : 'diskConflictMsg')}</span>
+              <button type="button" onClick={() => void reloadNow()}>
+                {t('diskReload')}
+              </button>
+              <button type="button" onClick={diskNotice === 'changed' ? keepMine : overwriteNow}>
+                {t(diskNotice === 'changed' ? 'diskKeepMine' : 'diskOverwrite')}
+              </button>
+            </div>
+          )}
           {showFind && findTarget && (
             <FindPanel
               target={findTarget}

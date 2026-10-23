@@ -1,0 +1,57 @@
+{
+  "id": "autofit-overwide-shrink",
+  "title": "tblW auto with tcW over the column: shrink to column minus signed tblInd, proportionally to tcW; the right edge never passes the margin",
+  "section": "word-truths.md#L207",
+  "probe_date": "2026-09-17",
+  "source": "probe probe.py + probe2.py, Letter 9360-twip column, Word for Mac direct PDF, pymupdf vertical rules (line centres)",
+  "cases": [
+    {
+      "kind": "autofitCols",
+      "block": 1,
+      "availTwips": 9360,
+      "expect": {
+        "sum": 9352
+      },
+      "tol": 20,
+      "note": "tcW 3600x3 -> 9352 (line centres), no tblInd"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 3,
+      "availTwips": 9360,
+      "expect": {
+        "sum": 9456
+      },
+      "tol": 24,
+      "note": "tblInd -108 widens the box by 108"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 5,
+      "availTwips": 9360,
+      "expect": {
+        "sum": 8794
+      },
+      "tol": 20,
+      "note": "tblInd +558 narrows it by 558"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 7,
+      "availTwips": 9360,
+      "expect": [1882, 4666, 2804],
+      "tol": 60,
+      "note": "shrink roughly in tcW proportion (Word 1882/4666/2804, exact proportion 1872/4680/2808)"
+    },
+    {
+      "kind": "autofitCols",
+      "block": 9,
+      "availTwips": 9360,
+      "expect": [3116, 3116, 3116],
+      "tol": 20,
+      "note": "stale non-uniform grid ignored: tcW 3600x3 drawn 3116 each"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

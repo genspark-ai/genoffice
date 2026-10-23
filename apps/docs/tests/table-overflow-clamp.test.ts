@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx, readSections, type Block, type TableModel } from '@genoffice/docx-engine'
+import {
+  parseDocx,
+  readSections,
+  type Block,
+  type TableCell,
+  type TableModel,
+} from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import {
   blocksToPmDoc,
   clampTableColWidths,
+  distributeContentAutofit,
   expandAutofitColWidths,
   legacyIndentTable,
   tableModelToPmNode,
@@ -992,5 +999,111 @@ describe('min-content follows the document default run', () => {
     // 15 chars x 0.5 x 14.67px = 110px -> 1650 + 216 twips; at 16px -> 1800 + 216
     expect(at11.colWidthsTwips![0]).toBe(Math.ceil(15 * 0.5 * (22 / 2) * (96 / 72) * 15) + 216)
     expect(at12.colWidthsTwips![0]).toBe(15 * 0.5 * 16 * 15 + 216)
+  })
+})
+
+describe('distributeContentAutofit', () => {
+  // Word probe 2026-10-20 (A4, TNR 12, cell margins 108, pct tables without tcW,
+  // column 9014 twips between border centres); min/max-content in twips incl. margins
+  it('under the max-content sum: min-content plus the room split by (max - min)', () => {
+    // three long/long/short paragraphs -> Word 3792/3322/1900
+    const widths = distributeContentAutofit(9014, [1302, 1349, 1429], [13079, 10699, 3715])
+    expect(widths).toEqual([3784, 3319, 1911])
+    // a one-word column stays at its word -> Word 1042/4272/3700
+    expect(distributeContentAutofit(9014, [1042, 1302, 1349], [1042, 13079, 10699])).toEqual([
+      1042, 4268, 3704,
+    ])
+  })
+
+  it('over the max-content sum: the extra is shared in proportion to max-content', () => {
+    // Word 740/2744/5530
+    const widths = distributeContentAutofit(9014, [389, 1029, 1189], [389, 1509, 2982])
+    expect(widths).toEqual([719, 2787, 5508])
+  })
+
+  it('below the min-content sum: min-contents scale down together', () => {
+    expect(distributeContentAutofit(1000, [1000, 1000], [2000, 3000])).toEqual([500, 500])
+  })
+})
+
+describe('expandAutofitColWidths content autofit', () => {
+  it('a tcW-less pct table ignores its placeholder grid and sizes columns by content', () => {
+    // every glyph 10px wide: "Domaine" 70px, the sentence 600px (past the column)
+    const metrics = {
+      measure: (text: string) => text.length * 10,
+      metrics: () => ({ ascent: 0, descent: 0, lineHeight: 0 }),
+    }
+    const sentence = 'Passee de 1,247 milliard (janvier 2026) a 1,166 milliard (sept.)'
+    const model: TableModel = {
+      rows: [[cell('Domaine'), cell(sentence.slice(0, 60))]],
+      colWidthsTwips: [3960, 3960],
+      colWidthsPct: [50, 50],
+      widthPct: 100,
+      autoLayout: true,
+      contentAutofit: true,
+    }
+    const expanded = expandAutofitColWidths(model, 9026, 9026, metrics)
+    const [w1, w2] = expanded.colWidthsTwips!
+    expect(w1 + w2).toBe(9026)
+    // col1 = its word (ceil(72 x 1.02 x 15) + 216 = 1318) plus nothing: the
+    // sentence's slack takes all the room since the short cell has none
+    expect(w1).toBe(1318)
+    expect(expanded.widthPct).toBeUndefined()
+    // without the flag the grid still rules
+    const plain = { ...model, contentAutofit: undefined }
+    expect(expandAutofitColWidths(plain, 9026, 9026, metrics)).toBe(plain)
+  })
+
+  it('an inline picture counts as an unbreakable unit of its own width', () => {
+    const metrics = {
+      measure: (text: string) => text.length * 10,
+      metrics: () => ({ ascent: 0, descent: 0, lineHeight: 0 }),
+    }
+    const sentence = 'Passee de 1,247 milliard (janvier 2026) a 1,166 milliard (sept.)'
+    const picture: TableCell = {
+      paras: [''],
+      richParas: [
+        {
+          runs: [{ text: '', image: { dataUrl: 'data:,', xml: '', widthPx: 200, heightPx: 100 } }],
+        },
+      ],
+    }
+    const model: TableModel = {
+      rows: [[picture, cell(sentence.slice(0, 60))]],
+      colWidthsTwips: [3960, 3960],
+      colWidthsPct: [50, 50],
+      widthPct: 100,
+      autoLayout: true,
+      contentAutofit: true,
+    }
+    const [w1, w2] = expandAutofitColWidths(model, 9026, 9026, metrics).colWidthsTwips!
+    expect(w1 + w2).toBe(9026)
+    // ceil((200 + 2 edge) x 1.02 x 15) + 216 = 3307: the picture column never collapses
+    expect(w1).toBe(3307)
+    // a floating picture takes no cell width
+    const floating: TableModel = {
+      ...model,
+      rows: [
+        [
+          {
+            paras: [''],
+            richParas: [
+              {
+                runs: [
+                  {
+                    text: '',
+                    image: { dataUrl: 'data:,', xml: '', widthPx: 200, wrap: 'square-left' },
+                  },
+                ],
+              },
+            ],
+          },
+          cell(sentence.slice(0, 60)),
+        ],
+      ],
+    }
+    expect(expandAutofitColWidths(floating, 9026, 9026, metrics).colWidthsTwips![0]).toBeLessThan(
+      3307,
+    )
   })
 })

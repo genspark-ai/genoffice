@@ -104,6 +104,7 @@ import {
   type LazyWorkbookState,
   type UniverRuntime,
 } from './univer-state'
+import { stepSelectionDecimals } from './decimal-step'
 import {
   handleInsertChart,
   handleInsertPicture,
@@ -599,13 +600,10 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       return
     case 'decimal-inc':
     case 'decimal-dec':
-      // Univer's decimal commands read the displayed value's decimals for
-      // General; SetNumfmt mutations journal like any format edit.
-      void runtime.univerAPI.executeCommand(
-        command === 'decimal-inc'
-          ? 'sheet.command.numfmt.add.decimal.command'
-          : 'sheet.command.numfmt.subtract.decimal.command',
-      )
+      // Not Univer's add/subtract-decimal commands: those read an explicit
+      // "General" record as 9 decimals, so one click exploded to 10 places.
+      // SetNumfmt mutations journal like any format edit either way.
+      stepSelectionDecimals(runtime, command === 'decimal-inc' ? 1 : -1)
       return
     case 'filter-toggle':
       void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter')

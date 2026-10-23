@@ -1,0 +1,64 @@
+{
+  "id": "render-exact-rows",
+  "title": "Rendered exact rows pitch at trHeight + bottom margin",
+  "section": "word-truths.md#L621",
+  "probe_date": "2026-10-22",
+  "class": "render",
+  "source": "probe exrow build.py -> Word for Mac direct PDF (2 pages), pymupdf horizontal rules; table heights = four row pitches + half of the outer top/bottom borders (CSS collapsed borders protrude by half)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 2
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 1,
+      "expect": 296.5,
+      "tol": 2,
+      "note": "A 4 x 74.0 + sz 4 halves"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 3,
+      "expect": 297.0,
+      "tol": 2,
+      "note": "B sz 8"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 5,
+      "expect": 299.0,
+      "tol": 2,
+      "note": "C sz 24: gridline inside the declared height"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 7,
+      "expect": 108.5,
+      "tol": 2,
+      "note": "D 4 x 27.0 (440 + margins 100/100) + sz 8 halves"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 9,
+      "expect": 88.5,
+      "tol": 2,
+      "note": "E 4 x 22.0"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 11,
+      "expect": 88.0,
+      "tol": 2,
+      "note": "F nil borders"
+    },
+    {
+      "kind": "tableHeightPt",
+      "block": 13,
+      "expect": 97.46,
+      "tol": 2,
+      "note": "G 4 x 24.24 + sz 4 halves"
+    }
+  ],
+  "docx": "probe.docx"
+}

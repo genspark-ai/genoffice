@@ -89,6 +89,36 @@ export const SKILL_FORMAT_TOKENS: readonly string[] = [
   'newsletter',
 ]
 
+/**
+ * The same formats and products as the user writes them in CJK. Those scripts
+ * have no word boundaries, so these are matched as substrings of the lowercased
+ * haystack rather than as tokens.
+ */
+export const SKILL_FORMAT_PHRASES: readonly string[] = [
+  // zh
+  '\u6587\u6863', // document
+  '\u6587\u7a3f', // manuscript
+  '\u8868\u683c', // table / spreadsheet
+  '\u5de5\u4f5c\u7c3f', // workbook
+  '\u5e7b\u706f\u7247', // slides
+  '\u6f14\u793a\u6587\u7a3f', // presentation
+  '\u7b80\u62a5', // briefing deck
+  '\u62a5\u8868', // report sheet
+  '\u7b80\u5386', // resume
+  '\u53d1\u7968', // invoice
+  // ja
+  '\u6587\u66f8', // document
+  '\u30b9\u30e9\u30a4\u30c9', // slide
+  '\u30d7\u30ec\u30bc\u30f3', // presentation
+  '\u8868\u8a08\u7b97', // spreadsheet
+  '\u8cc7\u6599', // deck / materials
+  // ko
+  '\ubb38\uc11c', // document
+  '\uc2a4\ud504\ub808\ub4dc\uc2dc\ud2b8', // spreadsheet
+  '\ud504\ub808\uc820\ud14c\uc774\uc158', // presentation
+  '\uc2ac\ub77c\uc774\ub4dc', // slide
+]
+
 export interface SkillRelevance {
   /** true when the skill talks about a file GenOffice can work with */
   relevant: boolean
@@ -117,6 +147,9 @@ export function classifySkill(name: string, description: string): SkillRelevance
       if (!part) continue
       if (SKILL_FORMAT_TOKENS.includes(part)) seen.add(part)
     }
+  }
+  for (const phrase of SKILL_FORMAT_PHRASES) {
+    if (haystack.includes(phrase)) seen.add(phrase)
   }
   return { relevant: seen.size > 0, matched: [...seen].sort() }
 }

@@ -51,11 +51,65 @@ describe('page-relative anchor vertical offsets', () => {
     expect(image.relV).toBeUndefined()
   })
 
-  it('ignores page-relative wp:align (no numeric offset to re-pin)', async () => {
+  it('page-relative wp:align top pins like a zero page offset', async () => {
     const doc = await open(`<w:p>${anchor(PAGE_ALIGN_V)}<w:r><w:t>School name</w:t></w:r></w:p>`)
     const image = doc.blocks[0].runs!.find((r) => r.image)!.image!
     expect(image.offsetYEmu).toBeUndefined()
+    expect(image.relV).toBe('page')
+  })
+
+  it('ignores page-relative wp:align center (needs the landing page height)', async () => {
+    const doc = await open(
+      `<w:p>${anchor(PAGE_ALIGN_V.replace('top', 'center'))}<w:r><w:t>School name</w:t></w:r></w:p>`,
+    )
+    const image = doc.blocks[0].runs!.find((r) => r.image)!.image!
     expect(image.relV).toBeUndefined()
+  })
+
+  it('margin-top aligned square wrap with a horizontal offset pins to the margin top', async () => {
+    // prod corpus 20261020 sample 043: quarter-turned photo, positionH margin
+    // posOffset + positionV margin align=top; Word turns the page and puts
+    // the photo at the top margin of the next page
+    const doc = await open(
+      `<w:p>${anchor(
+        '<wp:positionV relativeFrom="margin"><wp:align>top</wp:align></wp:positionV>',
+        '<wp:wrapSquare wrapText="bothSides"/>',
+        '0',
+      ).replace(
+        '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>',
+        '<wp:positionH relativeFrom="margin"><wp:posOffset>-1265555</wp:posOffset></wp:positionH>',
+      )}</w:p>`,
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageWrap).toBe('square-left')
+    expect(block.imageOffsetXEmu).toBe(-1265555)
+    expect(block.imageOffsetYEmu).toBeUndefined()
+    expect(block.imageRelV).toBe('margin')
+    expect(block.imagePosV).toBe('top')
+    expect(block.imagePosH).toBeUndefined()
+  })
+
+  it('a quarter-turned column-wide extent wraps on its turned bounding box, not as a band', async () => {
+    const turned = (rot: string) =>
+      `<w:p>${anchor(
+        '<wp:positionV relativeFrom="margin"><wp:align>top</wp:align></wp:positionV>',
+        '<wp:wrapSquare wrapText="bothSides"/>',
+        '0',
+      )
+        .replace(
+          '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>',
+          '<wp:positionH relativeFrom="margin"><wp:posOffset>-1265555</wp:posOffset></wp:positionH>',
+        )
+        .replace(/cx="1806363" cy="738967"/g, 'cx="8380730" cy="4276725"')
+        .replace('<a:xfrm>', `<a:xfrm${rot}>`)}</w:p>`
+    const flat = (await open(turned(''))).blocks[0]
+    expect(flat.imageBand).toBe(true)
+    const quarter = (await open(turned(' rot="5400000"'))).blocks[0]
+    expect(quarter.imageRotDeg).toBe(90)
+    expect(quarter.imageBand).toBeUndefined()
+    expect(quarter.imageWrap).toBe('square-left')
+    expect(quarter.imageRelV).toBe('margin')
   })
 
   it('flags a block-level square-wrapped picture anchored from the margin', async () => {

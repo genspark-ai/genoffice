@@ -48,6 +48,43 @@ describe('floating textbox anchor line', () => {
     expect(line?.[1].style).toContain('margin-bottom')
   })
 
+  it('lifts stray runs by their own face and puts the space-after on the wrapper', () => {
+    const out = DocProtected.config.renderHTML!.call(
+      DocProtected as never,
+      {
+        node: {
+          attrs: {
+            blockType: 'passthrough',
+            docxIndex: 3,
+            label: 'Text box',
+            textboxes: [{ paras: [], floating: true, widthPx: 83, heightPx: 62 }],
+            anchorLine: {
+              styleId: null,
+              spaceAfter: 480,
+              lineSpacing: 1.3,
+              lineRawTwips: 312,
+              lineRule: 'auto',
+            },
+            strayRuns: [{ text: 'Prepared For: ', font: 'Poppins', bold: true }, { text: 'x' }],
+          },
+        },
+        HTMLAttributes: {},
+      } as never,
+    ) as unknown as [string, Record<string, string>, ...unknown[]]
+    expect(out[1].style).toMatch(/margin-bottom:24(\.0)?pt/)
+    const stray = out
+      .slice(2)
+      .find(
+        (c) => Array.isArray(c) && (c[1] as Record<string, string>).class === 'doc-textbox-stray',
+      ) as [string, Record<string, string>, ...unknown[]]
+    expect(stray[1].style).not.toContain('margin-bottom')
+    expect(stray[1].style).toContain('--doc-line-mult:1.3')
+    const [poppins, plain] = stray.slice(2) as [string, Record<string, string>][]
+    expect(poppins[1].class).toContain('doc-run-lf')
+    expect(poppins[1].style).toMatch(/--doc-line-factor:1\.[0-9]+$/)
+    expect(plain[1].class ?? '').not.toContain('doc-run-lf')
+  })
+
   it('falls back to the bare strut without a format', () => {
     expect(childTags(spec(null))).toContainEqual(['div', 'doc-anchor-strut'])
   })

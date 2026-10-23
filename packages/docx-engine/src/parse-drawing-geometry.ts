@@ -188,6 +188,20 @@ export function colorNodeHex(
     .join('')
 }
 
+const COLOR_NODE_NAMES = ['a:srgbClr', 'a:schemeClr', 'a:sysClr', 'a:prstClr']
+
+/** a:alpha of a solid fill's color as 0..1; undefined when opaque or absent */
+export function solidFillAlpha(solidFill: XNode | undefined): number | undefined {
+  if (!solidFill) return undefined
+  for (const name of COLOR_NODE_NAMES) {
+    const color = findChild(solidFill, name)
+    if (!color) continue
+    const raw = parseInt(attrsOf(findChild(color, 'a:alpha') ?? {})['val'] ?? '', 10)
+    return Number.isFinite(raw) && raw >= 0 && raw < 100000 ? raw / 100000 : undefined
+  }
+  return undefined
+}
+
 /** anchored-drawing placement of one top-level w:drawing fragment */
 export interface DrawingAnchorMeta {
   offsetXEmu?: number

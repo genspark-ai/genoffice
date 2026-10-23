@@ -55,6 +55,53 @@ export function placeholderText(name: string): string {
   return `«${name}»`
 }
 
+/**
+ * The field code a merge field carries in a template.
+ *
+ * The name is quoted so a header with a space survives, and the MERGEFORMAT
+ * switch is the one Word writes: a template built here is then the same field
+ * a template built in Word carries, and both read back through mergeFieldName.
+ * genoffice#2097.
+ */
+export function mergeFieldInstruction(name: string): string {
+  return `MERGEFIELD "${name.replace(/"/g, '')}" \\* MERGEFORMAT`
+}
+
+/** the file name characters Windows and macOS refuse, plus the path separators */
+const ILLEGAL_FILE_NAME_CHARS = /[\\/:*?"<>|]/g
+
+/** the name a merged record is written under, derived from the record itself.
+ *
+ * `pattern` names a column of the data source; an empty pattern takes the
+ * first one. A pattern that is no column is a literal, and `{Column}` inside
+ * it is filled from the record. The result is reduced to what a file name can
+ * carry, so a value like "A/B" cannot escape the folder it is written into.
+ */
+export function mergeOutputFileName(
+  pattern: string,
+  record: MergeRecord,
+  fields: readonly string[],
+): string {
+  const trimmed = pattern.trim()
+  const source = trimmed === '' ? (fields[0] ?? '') : trimmed
+  // a pattern naming a column takes that column's value; anything else is literal
+  const literal = fields.includes(source) ? valueOf(record, source) : source
+  const filled = literal.replace(/\{([^{}]*)\}/g, (_match, name: string) =>
+    valueOf(record, name.trim()),
+  )
+  const cleaned = filled
+    .replace(ILLEGAL_FILE_NAME_CHARS, '_')
+    // control characters a pasted value can carry
+    .replace(/\p{Cc}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    // a name that is only dots is not a name on any file system
+    .replace(/^\.+/, '')
+    .trim()
+  if (cleaned === '') return 'document'
+  return cleaned.slice(0, 120)
+}
+
 export interface MergeFieldSwitches {
   /** `\b "…"`: text placed before the value, only when the value is non-empty */
   before: string

@@ -17,10 +17,15 @@ export interface FoundSkill {
   description: string
   /** absolute path of the SKILL.md, read when the user picks it */
   path: string
-  /** where it came from: our own folder, or an agent's directory */
-  source: 'genoffice' | 'agent'
-  /** the agent whose directory it came from, when source is 'agent' */
-  agent?: string
   /** whether it talks about a format GenOffice opens, and on what */
   relevance: SkillRelevance
+}
+
+/** a skill GenOffice ships as a suggestion, with where the user stands on it */
+export interface RecommendedSkill extends FoundSkill {
+  version: string
+  /** the frontmatter's `category`; groups the Recommended list (office, finance, ...) */
+  category: string
+  /** missing: not installed; installed: same version in our folder; outdated: ours is older */
+  state: 'missing' | 'installed' | 'outdated'
 }

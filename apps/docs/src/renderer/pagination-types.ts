@@ -125,6 +125,9 @@ export interface BlockBox {
   spaceBeforePx?: number
   /** leading space-before folded into height (top moved up by it) */
   leadFoldPx?: number
+  /** space-before laid out as padding inside the box (additive paragraph spacing);
+   *  Word drops it when the paragraph opens a page by a natural break */
+  padBeforePx?: number
   /** space after (px), from line-metrics output */
   spaceAfterPx?: number
   /** auto-multiple extra leading of one line (px): a page's last line needs only
@@ -221,6 +224,12 @@ export interface RowCellBox {
   /** border-box [top, bottom] of each direct child of the cell (clip-path insets
    *  are box-relative; a line's ink sits half a leading inside its box) */
   childBox?: Array<[number, number]>
+  /** per direct child: space-after that must fit below its last line when the
+   *  cell goes on (px); absent = none */
+  childAfter?: number[]
+  /** per direct child: space-before a fragment opening at the child keeps (px);
+   *  0 when the previous sibling's auto space-after already collapsed it */
+  childBefore?: number[]
   /** offset the canvas' vertical-align (middle/bottom) already applied to the content; 0 for top */
   alignDy: number
   /** 0 top, 0.5 middle, 1 bottom */
@@ -314,6 +323,10 @@ export interface SectionGeom {
   forceBreak: boolean
   /** section break type: evenPage/oddPage need physical blank pages inserted to align parity */
   startType?: SectionInfo['startType']
+  /** a nextPage section restarting page numbers under w:evenAndOddHeaders: Word
+   *  inserts a blank page when the restart number's parity does not match the
+   *  physical page, exactly like an evenPage/oddPage break */
+  numberingParity?: 'evenPage' | 'oddPage'
   /** equal-width column count (w:cols w:num, default 1): page capacity = columns × column height */
   cols?: number
   /** per-column widths (px, length cols) — differ under w:equalWidth="0" */
@@ -477,6 +490,8 @@ export interface ColumnBlockPlacement {
   gridPitchPt?: number
   /** owning section's character-grid letter-spacing delta (pt, docGrid charSpace/4096) */
   charSpacePt?: number
+  /** single-byte half of charSpacePt under balanceSingleByteDoubleByteWidth */
+  charSpaceSbPt?: number
   dx: number
   dy: number
   /** left edge of the block's page on the shared paper (--page-cx): pages narrower

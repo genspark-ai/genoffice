@@ -178,6 +178,11 @@ export interface LazyWorkbookState {
     engineOverBudget: boolean
     readonly formulaCells: Map<string, ReadonlySet<number>>
     readonly overlay: Map<string, Map<string, PinnedClosureCell>>
+    /// Sheets whose latest engine run had to keep at least one cached value
+    /// (the model lacks a function or reference, so every value derived from
+    /// the gap is suspect): the save must not refresh cached <v>s from such
+    /// an overlay — the file's own results are Excel's and stay authoritative.
+    readonly incompleteRuns: Set<string>
     /// per-sheet: viewport row the last SUCCESSFUL overlay window was
     /// anchored at and whether it covered every formula band; a partial
     /// window re-anchors when the user scrolls far from it. Written only

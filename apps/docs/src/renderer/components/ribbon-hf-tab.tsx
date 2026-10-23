@@ -9,6 +9,7 @@ import {
   IconFooter,
   IconHeader,
   IconPageNumber,
+  IconPicture,
 } from './icons'
 import { BIG, toggleDropdown, type TabProps } from './ribbon-tabs'
 import { LengthInput } from './LengthInput'
@@ -39,6 +40,7 @@ export type HfAction =
   | { type: 'pageNumberFormat' }
   | { type: 'removePageNumbers' }
   | { type: 'field'; instr: 'DATE' | 'TIME' }
+  | { type: 'picture' }
   | { type: 'linkToPrevious'; on: boolean }
   | { type: 'distance'; kind: 'header' | 'footer'; twips: number }
   | { type: 'titlePg'; on: boolean }
@@ -191,6 +193,16 @@ export function HeaderFooterTab({
               </div>
             )}
           </div>
+          <button
+            className="rb-big"
+            data-tip={t('ribbonPictureTip')}
+            onClick={() => act({ type: 'picture' })}
+          >
+            <span className="rb-big-icon">
+              <IconPicture size={BIG} />
+            </span>
+            <span>{t('ribbonPicture')}</span>
+          </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupHfInsert')}</div>
       </div>

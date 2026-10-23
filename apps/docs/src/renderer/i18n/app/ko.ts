@@ -566,4 +566,7 @@ export const ko = {
   appUpdateStyleTip: '현재 선택 영역의 서식으로 이 스타일을 업데이트합니다(styles.xml에 기록)',
   appNewStyleFromSelection: '선택 영역에서 새 스타일 만들기',
   appStyleNamePlaceholder: '스타일 이름',
+  appMergeSourceLoaded: '{name}({n}개 레코드)을 불러왔습니다',
+  appMergeWritten: '문서 {n}개를 저장했습니다',
+  appMergeNothingToWrite: '저장할 문서가 없습니다',
 } satisfies Record<keyof typeof zh, string>

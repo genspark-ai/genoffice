@@ -15,6 +15,7 @@ import {
   journalSize,
   recordPageSetup,
   recordProtectedRangesChange,
+  recordRemoveNumfmt,
   recordSetNumfmt,
   recordSetRangeValues,
   recordThemeColors,
@@ -510,6 +511,28 @@ describe('recordSetRangeValues', () => {
     })
     expect(recorded).toHaveLength(0)
     expect(journalSize(journal)).toBe(0)
+  })
+})
+
+describe('recordRemoveNumfmt', () => {
+  it('journals a cleared format as General so the save drops the old one', () => {
+    const journal = createEditJournal()
+    const recorded = recordRemoveNumfmt(journal, 'sheet-1', {
+      ranges: [{ startRow: 0, endRow: 1, startColumn: 6, endColumn: 6 }],
+    })
+    expect(recorded).toHaveLength(2)
+    expect(journal.cells.get('sheet-1')?.get('0:6')?.style).toEqual({ numberFormat: 'General' })
+    expect(journal.cells.get('sheet-1')?.get('1:6')?.style).toEqual({ numberFormat: 'General' })
+  })
+
+  it('ignores malformed or unbounded ranges', () => {
+    const journal = createEditJournal()
+    expect(recordRemoveNumfmt(journal, 'sheet-1', {})).toEqual([])
+    expect(
+      recordRemoveNumfmt(journal, 'sheet-1', {
+        ranges: [{ startRow: 0, endRow: Number.NaN, startColumn: 0, endColumn: 0 }],
+      }),
+    ).toEqual([])
   })
 })
 

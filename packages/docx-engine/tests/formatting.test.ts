@@ -89,7 +89,7 @@ describe('paragraph-level formatting (align / line spacing / indent)', () => {
       lineRule: 'auto',
     })
     expect(doc.blocks[2].format).toEqual({ align: 'justify', indentLeft: 720 })
-    expect(doc.blocks[3].format).toBeUndefined()
+    expect(doc.blocks[3].format).toEqual({})
   })
 
   it('parses and generates first-line and hanging indents', async () => {

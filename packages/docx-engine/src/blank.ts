@@ -162,6 +162,8 @@ function decimalLevels(): string {
 export interface CustomNumberingLevel {
   /** w:numFmt:decimal/bullet/lowerLetter/upperRoman/chineseCountingThousand… */
   numFmt: string
+  /** w14 enumeration behind numFmt "custom" ("Za prvé, Za druhé, …"), written as mc:AlternateContent */
+  customFormat?: string
   /** w:lvlText: a pattern like "%1." or a literal bullet symbol */
   lvlText: string
   /** w:ind w:left(twips) */
@@ -201,6 +203,7 @@ export function customLevelFromNumberingLevel(level: NumberingLevel): CustomNumb
     hanging: level.hanging ?? (level.indentLeft === undefined ? 360 : 0),
     start: level.start,
   }
+  if (level.customFormat) out.customFormat = level.customFormat
   if (level.suff) out.suff = level.suff
   if (level.lvlJc) out.lvlJc = level.lvlJc
   if (level.font) out.font = level.font
@@ -228,6 +231,7 @@ export function numberingLevelFromCustom(
     indentLeft: l.indentLeft,
     hanging: l.hanging ?? 360,
   }
+  if (l.customFormat) out.customFormat = l.customFormat
   if (l.suff) out.suff = l.suff
   if (l.lvlJc) out.lvlJc = l.lvlJc
   if (l.font) out.font = l.font
@@ -290,7 +294,11 @@ export function mergeLevelXml(existing: string, l: CustomNumberingLevel, ilvl: n
     else children.set(name, xml)
   }
   set('w:start', `<w:start w:val="${l.start ?? 1}"/>`)
-  set('w:numFmt', `<w:numFmt w:val="${escAttr(l.numFmt)}"/>`)
+  // a w14 custom format lives in mc:AlternateContent in the numFmt slot; the
+  // dialog's numFmt replaces whichever form the file had
+  for (const [name, xml] of children)
+    if (name.endsWith(':AlternateContent') && /<w:numFmt\b/.test(xml)) children.delete(name)
+  set('w:numFmt', numFmtXml(l))
   if (l.lvlRestart !== undefined) set('w:lvlRestart', `<w:lvlRestart w:val="${l.lvlRestart}"/>`)
   if (l.pStyle !== undefined)
     set('w:pStyle', l.pStyle ? `<w:pStyle w:val="${escAttr(l.pStyle)}"/>` : null)
@@ -379,9 +387,21 @@ export function mergeLevelXml(existing: string, l: CustomNumberingLevel, ilvl: n
 const escAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+/** Word's shape for a w14 enumeration: the format in mc:Choice, decimal for older readers.
+ *  Namespaces are declared on the element so the part's root needs no edit. */
+function numFmtXml(l: CustomNumberingLevel): string {
+  if (l.numFmt !== 'custom' || !l.customFormat) return `<w:numFmt w:val="${escAttr(l.numFmt)}"/>`
+  return (
+    '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"' +
+    ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">' +
+    `<mc:Choice Requires="w14"><w:numFmt w:val="custom" w:format="${escAttr(l.customFormat)}"/></mc:Choice>` +
+    '<mc:Fallback><w:numFmt w:val="decimal"/></mc:Fallback></mc:AlternateContent>'
+  )
+}
+
 /** One w:lvl in CT_Lvl child order */
 export function customLevelXml(l: CustomNumberingLevel, ilvl: number): string {
-  const parts = [`<w:start w:val="${l.start ?? 1}"/>`, `<w:numFmt w:val="${escAttr(l.numFmt)}"/>`]
+  const parts = [`<w:start w:val="${l.start ?? 1}"/>`, numFmtXml(l)]
   if (l.lvlRestart !== undefined) parts.push(`<w:lvlRestart w:val="${l.lvlRestart}"/>`)
   if (l.pStyle) parts.push(`<w:pStyle w:val="${escAttr(l.pStyle)}"/>`)
   if (l.isLgl) parts.push('<w:isLgl/>')

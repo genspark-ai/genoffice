@@ -1,16 +1,9 @@
-import { rename, rm, writeFile } from 'node:fs/promises'
+import { atomicWriteFile } from '@genoffice/electron-utils/atomic-write'
 
 /**
- * Write PDF bytes beside the destination, then atomically replace it.
- * Any failed write or rename removes the partially written temp file.
+ * Shared temp + rename writer: retries the transient Windows EPERM/EBUSY rename
+ * locks (Defender, indexer, an open preview) and falls back to an in-place write.
  */
 export async function writePdfAtomically(targetPath: string, bytes: Uint8Array): Promise<void> {
-  const tmp = `${targetPath}.gensave-${process.pid}.tmp`
-  try {
-    await writeFile(tmp, bytes)
-    await rename(tmp, targetPath)
-  } catch (err) {
-    await rm(tmp, { force: true })
-    throw err
-  }
+  await atomicWriteFile(targetPath, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))
 }

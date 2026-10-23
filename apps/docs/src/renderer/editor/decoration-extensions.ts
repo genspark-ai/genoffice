@@ -227,8 +227,9 @@ interface MeasuredTab {
    *  white-space:pre glues the tab to the word after it so a rounding
    *  overflow cannot strand the segment on the next line */
   glue?: boolean
-  /** first-line tab inside the hanging area: rendered as a box of this width
-   *  (layout px) because no tab-size can express its advance (see measureParagraph) */
+  /** rendered as a box of this width (layout px) because no tab-size can
+   *  express the advance: a first-line tab inside the hanging area, or a stop
+   *  closer than Chromium's minimum tab advance (see measureParagraph) */
   fixed?: number
 }
 
@@ -253,11 +254,24 @@ export interface TabTargetInput {
 
 export interface TabTarget {
   target: number
+  /** where the text after the tab logically starts: the stop itself for a
+   *  collapsed tab short of its stop (the rendered advance is only a
+   *  Chromium-safe approximation), so a following tab chains from the stop */
+  start: number
   val: TabStop['val']
   leader?: string
   collapsed: boolean
+  /** stop closer than Chromium's minimum tab advance: rendered as a box of the
+   *  exact advance (tab-size would skip to the following stop) */
+  boxed: boolean
   glue: boolean
 }
+
+// Word takes any stop strictly ahead of the tab, however close (probe
+// 2026-10-22: one twip short of a default or custom stop still lands on it;
+// exactly on it goes to the next). The slack only absorbs LayoutUnit (1/64 px)
+// measurement noise for text ending exactly on a stop.
+const STOP_SLACK = 1 / 32
 
 /**
  * Where a tab at `x` lands: the next custom stop, else the default grid.
@@ -289,9 +303,8 @@ export interface TabTarget {
  */
 export function resolveTabTarget(input: TabTargetInput): TabTarget {
   const { x, minAdv, segWidth, restWidth, paraW, gridPx, hangingX } = input
-  // Word takes any custom stop strictly ahead, however close: a stop nearer
-  // than the minimum advance collapses below instead of being skipped
-  let next = input.stops.find((s) => s.x > x + 0.5)
+  // a stop nearer than the minimum advance collapses below instead of being skipped
+  let next = input.stops.find((s) => s.x > x + STOP_SLACK)
   const inHang = hangingX !== undefined && x < hangingX
   if (inHang && !(next && next.x <= hangingX)) next = { x: hangingX, val: 'left' }
   let target: number
@@ -302,7 +315,8 @@ export function resolveTabTarget(input: TabTargetInput): TabTarget {
     val = next.val
     leader = next.leader
   } else if (gridPx > 0) {
-    target = (Math.floor((x + minAdv) / gridPx) + 1) * gridPx
+    // same rule for the default grid: a stop barely ahead is taken, not skipped
+    target = (Math.floor((x + STOP_SLACK) / gridPx) + 1) * gridPx
   } else {
     // defaultTabStop 0: Word advances the caret imperceptibly (tdf#168607)
     target = x + minAdv
@@ -321,18 +335,24 @@ export function resolveTabTarget(input: TabTargetInput): TabTarget {
   )
     target = paraW - 1 - restWidth
   let collapsed = false
+  let boxed = false
+  const start = Math.max(x, target)
   if (target < x + minAdv) {
-    // no room before the edge: Word collapses the tab to zero width. Chromium
-    // skips a tab whose distance to its stop is under half the paragraph
-    // font's space width to the *next* stop (a whole tab-size, pushing the
-    // segment onto the next line), so the smallest safe advance is half a
-    // space plus slack (minAdv = space + 1); font-size 0 does not lift it
-    collapsed = true
-    target = x + minAdv / 2 + 0.5
+    // Chromium skips a tab whose distance to its stop is under half the
+    // paragraph font's space width to the *next* stop (a whole tab-size,
+    // pushing the segment onto the next line). A stop barely ahead is Word's
+    // landing point, so it becomes a box of the exact advance; with no room
+    // before the edge Word collapses the tab to zero width, approximated by
+    // the smallest advance Chromium honours (minAdv = space + 1)
+    if (target > x) boxed = true
+    else {
+      collapsed = true
+      target = x + minAdv / 2 + 0.5
+    }
   }
   const glue =
     !collapsed && val !== 'left' && val !== 'bar' && segWidth > 0 && restWidth <= paraW / 2
-  return { target, val, leader, collapsed, glue }
+  return { target, start, val, leader, collapsed, boxed, glue }
 }
 
 /**
@@ -761,7 +781,7 @@ class TabLayoutView {
       const gridTwips = this.storage.defaultTabStopTwips ?? DEFAULT_TAB_TWIPS
       // first-line tab inside the hanging area (negative text-indent)
       const inHang = textIndent < 0 && x < contentEdge
-      const { target, leader, collapsed, glue } = resolveTabTarget({
+      const { target, start, leader, collapsed, boxed, glue } = resolveTabTarget({
         x,
         minAdv,
         segWidth,
@@ -778,9 +798,12 @@ class TabLayoutView {
       // rendered advance, or Chromium skips to the following multiple).
       // Chromium counts 0 (the content edge) as a multiple too, so a tab left
       // of the edge can neither cross it nor reach an arbitrary point before
-      // it; such tabs become a box of the exact advance instead
+      // it; such tabs become a box of the exact advance instead. The box is
+      // sized to the stop reached (start), not the collapsed approximation:
+      // an inline-block width has no multiple to skip to, and a shorter box
+      // would leave the next tab short of the edge, on Chromium's 0 multiple
       const cssSize = inHang ? 0 : Math.max(target - contentEdge, x - contentEdge + 0.6, 0.5)
-      prevEnd = target + segWidth
+      prevEnd = start + segWidth
       // 0.5px rounding damps measure→decorate→re-measure oscillation
       out.push({
         pos: tabPos,
@@ -789,7 +812,11 @@ class TabLayoutView {
         underlined: tabUnderlined.get(tabPos),
         collapsed,
         glue,
-        fixed: inHang ? Math.round((target - x) * 2) / 2 : undefined,
+        fixed: inHang
+          ? Math.round((start - x) * 2) / 2
+          : boxed
+            ? Math.round((target - x) * 64) / 64
+            : undefined,
       })
     }
     return out

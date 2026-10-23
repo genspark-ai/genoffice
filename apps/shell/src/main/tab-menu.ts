@@ -19,6 +19,8 @@ export type TabMenuStringKey =
   | 'menuTabCloseRight'
   | 'menuTabCloseAll'
   | 'menuTabReopen'
+  | 'menuTabPin'
+  | 'menuTabUnpin'
   | 'menuOpenInNewWindow'
   | 'menuClose'
 
@@ -38,6 +40,8 @@ export interface TabMenuActions {
   /** close these tabs one after another (a save prompt that is cancelled stops the rest) */
   closeTabs(ids: string[]): void
   reopenClosed(): void
+  /** keep the tab's renderer alive however long it sits in the background */
+  pin(id: string, pinned: boolean): void
 }
 
 export interface TabMenuInput {
@@ -207,6 +211,12 @@ export function tabMenuTemplate(input: TabMenuInput): MenuItemConstructorOptions
       click: () => actions.openDefault(file!),
     },
     { type: 'separator' },
+    {
+      id: 'pin',
+      label: tm(tab.pinned ? 'menuTabUnpin' : 'menuTabPin'),
+      enabled: tab.kind !== 'help',
+      click: () => actions.pin(tab.id, !tab.pinned),
+    },
     {
       id: 'moveLeft',
       label: tm('menuTabMoveLeft'),

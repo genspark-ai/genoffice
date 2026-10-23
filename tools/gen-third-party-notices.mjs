@@ -353,6 +353,11 @@ const FONTS = [
     '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',
   ],
   [
+    'GenOffice Bengali (Noto Sans Bengali derivative)',
+    'SIL OFL 1.1',
+    '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',
+  ],
+  [
     'KaTeX webfonts',
     'SIL OFL 1.1',
     'Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>)\n' +

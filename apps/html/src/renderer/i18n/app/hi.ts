@@ -9,6 +9,11 @@ export const hi = {
   redactDialogPlaceholder: 'प्लेसहोल्डर का नाम, जैसे ग्राहक का फ़ोन',
   redactCancel: 'रद्द करें',
   redactInsert: 'छिपाएँ',
+  diskChangedMsg: 'यह फ़ाइल किसी अन्य प्रोग्राम द्वारा बदली गई।',
+  diskConflictMsg: 'यह फ़ाइल डिस्क पर बदल गई है; सहेजने से वे बदलाव मिट जाएँगे।',
+  diskReload: 'फिर से लोड करें',
+  diskKeepMine: 'मेरा रखें',
+  diskOverwrite: 'फिर भी अधिलेखित करें',
 
   loading: 'लोड हो रहा है…',
   loadFailed: 'फ़ाइल नहीं खोली जा सकी',

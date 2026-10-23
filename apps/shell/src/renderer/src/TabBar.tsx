@@ -502,10 +502,14 @@ export function TabBar() {
           return (
             <div
               key={tab.id}
-              className={`tab-item ${tab.kind === 'home' ? 'tab-home' : ''} ${tab.active ? 'active' : ''} ${dragVisual?.id === tab.id ? 'drag-source' : ''}`}
+              className={`tab-item ${tab.kind === 'home' ? 'tab-home' : ''} ${tab.active ? 'active' : ''} ${tab.dormant ? 'tab-dormant' : ''} ${dragVisual?.id === tab.id ? 'drag-source' : ''}`}
               // long file names ellipsize in the strip — hover reveals the
               // full title and where the file is (the close button's own tooltip still wins there)
-              title={formatTabTooltip(tab)}
+              title={
+                tab.dormant
+                  ? `${formatTabTooltip(tab)} (${t('tabSleeping')})`
+                  : formatTabTooltip(tab)
+              }
               style={dragStyle}
               onContextMenu={(event) => {
                 event.preventDefault()

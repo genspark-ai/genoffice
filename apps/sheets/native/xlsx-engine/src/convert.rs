@@ -71,10 +71,12 @@ pub fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertResult, Si
             if spreadsheetml::probe(source) {
                 return spreadsheetml::convert_to_xlsx(source, target);
             }
-            return Err(SidecarError::Workbook(match unreadable_container_hint(source) {
-                Some(hint) => hint,
-                None => format!("Unable to read the workbook: {error}"),
-            }));
+            return Err(SidecarError::Workbook(
+                match unreadable_container_hint(source) {
+                    Some(hint) => hint,
+                    None => format!("Unable to read the workbook: {error}"),
+                },
+            ));
         }
     };
     let names: Vec<String> = workbook.sheet_names().to_vec();

@@ -1,0 +1,32 @@
+{
+  "id": "dfkai-yahei-factor",
+  "title": "DFKai-SB is missing on Word for Mac and lays out as Microsoft YaHei",
+  "section": "word-truths.md#L364",
+  "probe_date": "2026-09-23",
+  "source": "wave-3 probe: DFKai-SB 12pt line 20.6 = 1.7143 (Microsoft YaHei)",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "DFKai-SB",
+      "expect": 1.7151,
+      "tol": 0.001,
+      "note": "1.7143 -> 1.7151 (probe 2026-10-22)"
+    },
+    {
+      "kind": "factor",
+      "font": "\u6a19\u6977\u9ad4",
+      "expect": 1.7151,
+      "note": "by its traditional name; 1.7143 -> 1.7151 (probe 2026-10-22)",
+      "tol": 0.001
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 20.57,
+      "tol": 0.1,
+      "note": "12pt line 20.6"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

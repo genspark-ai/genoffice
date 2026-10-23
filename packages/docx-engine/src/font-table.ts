@@ -34,6 +34,8 @@ export function parseFontTable(xml: string): FontTableEntry[] {
     if (panose) entry.panose = panose
     const family = val('w:family')
     if (family) entry.family = family
+    const charset = val('w:charset')
+    if (charset) entry.charset = charset
     const pitch = val('w:pitch')
     if (pitch) entry.pitch = pitch
     const embedded = parseEmbedSlots(node)

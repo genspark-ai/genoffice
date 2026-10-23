@@ -1,8 +1,9 @@
 /**
  * Word's line strut follows run sizes: a paragraph whose runs all declare an
- * explicit size must carry that size (max of runs) on the block element, or the
- * inherited body size inflates every line box (table cells often run smaller
- * than Normal). Any run inheriting the body size keeps the inherited strut.
+ * explicit size must carry the smallest of them on the block element (larger
+ * runs lay their own line boxes), or the inherited body size inflates every
+ * line box (table cells often run smaller than Normal). Any run inheriting the
+ * body size keeps the inherited strut.
  */
 import { Editor } from '@tiptap/core'
 import { describe, expect, it } from 'vitest'
@@ -21,19 +22,19 @@ const editorWith = (content: unknown[]): Editor =>
     content: { type: 'doc', content } as never,
   })
 
-// jsdom's CSSOM drops the min() font-size, so assert the --doc-strut custom
-// property it references (font-size:min(var(--doc-strut), 1em) rides along)
+// jsdom's CSSOM drops the var() font-size, so assert the --doc-strut custom
+// property it references (font-size:var(--doc-strut) rides along)
 const pFontSize = (editor: Editor, index = 0): string => {
   const p = editor.view.dom.querySelectorAll('p')[index] as HTMLElement
   return p.style.getPropertyValue('--doc-strut')
 }
 
 describe('paragraph strut font-size from run sizes', () => {
-  it('all runs explicit: the paragraph carries the max run size', () => {
+  it('all runs explicit: the paragraph carries the smallest run size', () => {
     const editor = editorWith([
       { type: 'docParagraph', content: [sized('small ', 17), sized('big', 20)] },
     ])
-    expect(pFontSize(editor)).toBe('10pt')
+    expect(pFontSize(editor)).toBe('8.5pt')
     editor.destroy()
   })
 

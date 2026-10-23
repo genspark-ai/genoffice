@@ -1,0 +1,89 @@
+{
+  "id": "render-hf-anchor-reserve",
+  "title": "Header anchored pictures reserve nothing except wrapTopAndBottom; the header paragraph keeps its line",
+  "section": "word-truths.md#L260",
+  "probe_date": "2026-09-23",
+  "class": "render",
+  "source": "hdrp.pdf re-measured 2026-10-22: Letter, Calibri 11, header dist 36, 10 sections x one header (HDR text + 72x100pt PNG per case); first body glyph top 72.05 everywhere except the topAndBottom case 100.13; rendered as body-top deltas against the CASE00 control page (Calibri glyph-box tops differ between the PDF and Chromium by the ascent convention)",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 10
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 2,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE01: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 3,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE02: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 4,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE03: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 5,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE04: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 6,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE05: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 8,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE07 wrapSquare: Word does not push (gen estimateHfHeight pushes 64pt for every wrap other than none)",
+      "status": "failing"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 9,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE08: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 10,
+      "control": 1,
+      "expect": 0,
+      "tol": 0.3,
+      "note": "CASE09: body unpushed"
+    },
+    {
+      "kind": "pageTextTopDeltaPt",
+      "page": 7,
+      "control": 1,
+      "expect": 28.08,
+      "tol": 0.6,
+      "note": "CASE06 wrapTopAndBottom pushes: 110.64 baseline = 82.56 + 28.08 (gen pushes nothing: the header topAndBottom picture clamped to the page top is not reserved)",
+      "status": "failing"
+    }
+  ],
+  "docx": "probe.docx"
+}

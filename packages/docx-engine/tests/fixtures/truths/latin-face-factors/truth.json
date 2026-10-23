@@ -1,0 +1,71 @@
+{
+  "id": "latin-face-factors",
+  "title": "Cloud and system Latin face factors",
+  "section": "word-truths.md#L7",
+  "section_title": "Font line-height factors and substitutions (Word for Mac)",
+  "probe_date": "2026-08-24",
+  "class": "pure",
+  "source": "Word for Mac probes 2026-08-23/24 (#L7), 2026-09-17 (#L238) and 2026-10-22 Helvetica Neue / Nirmala UI (#L641)",
+  "cases": [
+    {
+      "kind": "factor",
+      "font": "Roboto",
+      "expect": 1.172,
+      "note": "hhea 1.1719, re-probed 2026-09-17"
+    },
+    {
+      "kind": "factor",
+      "font": "Lato",
+      "expect": 1.2
+    },
+    {
+      "kind": "factor",
+      "font": "Montserrat",
+      "expect": 1.219
+    },
+    {
+      "kind": "factor",
+      "font": "Open Sans",
+      "expect": 1.365
+    },
+    {
+      "kind": "factor",
+      "font": "Inter",
+      "expect": 1.21
+    },
+    {
+      "kind": "factor",
+      "font": "Trebuchet MS",
+      "expect": 1.1615
+    },
+    {
+      "kind": "factor",
+      "font": "Century Gothic",
+      "expect": 1.226
+    },
+    {
+      "kind": "factor",
+      "font": "Helvetica Neue",
+      "expect": 1.193,
+      "note": "renders real at its hhea total"
+    },
+    {
+      "kind": "factor",
+      "font": "Nirmala UI",
+      "expect": 1.3301,
+      "note": "hhea = win = 2724/2048"
+    },
+    {
+      "kind": "factor",
+      "font": "Verdana",
+      "expect": 1.2167
+    },
+    {
+      "kind": "factor",
+      "font": "Georgia Pro",
+      "expect": 0.98,
+      "note": "cloud face, typo metrics"
+    }
+  ],
+  "docx": "probe.docx"
+}

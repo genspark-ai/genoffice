@@ -8,14 +8,15 @@ export const CUSTOM_PROPERTIES_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.custom-properties+xml'
 
 const ZOTERO_PREF_NAME = /^ZOTERO_PREF(?:_(\d+))?$/
-const PROPERTY_RE =
+/** every <property> element of a custom-properties part */
+export const PROPERTY_RE =
   /<(?:[A-Za-z_][\w.-]*:)?property\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?property\s*>/g
 
 function codePointText(match: string, code: number): string {
   return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match
 }
 
-function decodeXmlText(value: string): string {
+export function decodeXmlText(value: string): string {
   return value
     .replace(/&#x([0-9a-f]+);/gi, (match, hex) => codePointText(match, parseInt(hex, 16)))
     .replace(/&#(\d+);/g, (match, decimal) => codePointText(match, parseInt(decimal, 10)))
@@ -26,12 +27,12 @@ function decodeXmlText(value: string): string {
     .replace(/&amp;/g, '&')
 }
 
-function attrValue(xml: string, name: string): string | null {
+export function attrValue(xml: string, name: string): string | null {
   const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`).exec(xml)
   return match ? decodeXmlText(match[1] ?? match[2] ?? '') : null
 }
 
-function propertyText(xml: string): string {
+export function propertyText(xml: string): string {
   const match =
     /<(?:[A-Za-z_][\w.-]*:)?lpwstr\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?lpwstr\s*>/.exec(xml)
   return decodeXmlText(match?.[1] ?? '')

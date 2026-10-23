@@ -1,6 +1,6 @@
-import { decodeEntities, onOffTagIn } from './parse-xml-text'
+import { decodeEntities } from './parse-xml-text'
 import { patchParagraphTexts } from './text-patch'
-import type { NoteInfo, NoteRun, TextOutline } from './types'
+import type { NoteInfo, NoteRun } from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 
 /**
@@ -69,126 +69,51 @@ export function rootAttributes(
  */
 const NOTE_REF_MARK_RE = /<w:(?:footnote|endnote)Ref\b\s*\/?>/
 
+/** one note paragraph read through the document's run extraction and property resolver */
+export interface NoteParagraph {
+  /** display runs, the self-reference mark run excluded */
+  runs: NoteRun[]
+  /** w:pStyle of the paragraph */
+  styleId?: string
+  /** before / after / line resolved through the style chain and docDefaults */
+  spacing: NonNullable<NoteInfo['spacing']>
+}
+
+/** supplied by the document parser; without it notes carry plain text only */
+export type NoteParagraphReader = (pXml: string) => NoteParagraph
+
 /** real notes (separator entries excluded), in file order */
-export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
+export function parseNotesXml(xml: string, kind: NoteKind, read?: NoteParagraphReader): NoteInfo[] {
   return noteEntriesOf(xml, kind).map(({ id, text, xml: entryXml }) => {
-    const richParas = noteRichParas(entryXml)
-    const hasFormat = richParas.some((paras) =>
-      paras.some(
-        (r) =>
-          r.bold ||
-          r.italic ||
-          r.underline ||
-          r.strike ||
-          r.color ||
-          r.sizeHalfPoints ||
-          r.caps ||
-          r.fontAscii ||
-          r.textOutline,
-      ),
-    )
-    const styleId = /<w:pStyle w:val="([^"]+)"/.exec(entryXml)?.[1]
-    const spacing = noteDirectSpacing(entryXml)
+    const paras = read ? noteParagraphsOf(entryXml).map(read) : []
+    const first = paras[0]
+    const richParas = paras.map((p) => p.runs)
+    // the first paragraph opens with the self-reference mark and a spacer; a
+    // spacer that was its own run empties out and is dropped entirely
+    if (richParas[0]?.[0]) {
+      richParas[0][0] = { ...richParas[0][0], text: richParas[0][0].text.replace(/^\s+/, '') }
+      if (richParas[0][0].text === '') richParas[0].shift()
+    }
+    const styleId = first ? first.styleId : /<w:pStyle w:val="([^"]+)"/.exec(entryXml)?.[1]
     // Word draws the entry number only where a self-reference mark run exists
     // (empty-body notes keep their line but show no numeral — Word probe 2026-09-01)
     const noRefMark = !NOTE_REF_MARK_RE.test(entryXml)
     return {
       id,
       text,
-      ...(hasFormat ? { richParas } : {}),
+      ...(first ? { richParas } : {}),
       ...(styleId ? { styleId } : {}),
       ...(/ADDIN\s+(?:ZOTERO_|CSL_)/.test(entryXml) ? { zoteroField: true as const } : {}),
-      ...(spacing ? { spacing } : {}),
+      ...(first ? { spacing: first.spacing } : {}),
       ...(noRefMark ? { noRefMark: true as const } : {}),
     }
   })
 }
 
-/** direct w:spacing attrs of the first note paragraph (they override the style chain) */
-function noteDirectSpacing(entryXml: string): NoteInfo['spacing'] {
-  const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(entryXml)?.[0]
-  const sp = pPr && /<w:spacing [^>]*\/>/.exec(pPr)?.[0]
-  if (!sp) return undefined
-  const num = (attr: string): number | undefined => {
-    const v = new RegExp(`w:${attr}="(-?\\d+)"`).exec(sp)?.[1]
-    return v === undefined ? undefined : parseInt(v, 10)
-  }
-  const rule = /w:lineRule="(auto|atLeast|exact)"/.exec(sp)?.[1] as
-    'auto' | 'atLeast' | 'exact' | undefined
-  const before = num('before')
-  const after = num('after')
-  const line = num('line')
-  if (before === undefined && after === undefined && line === undefined) return undefined
-  return {
-    ...(before !== undefined ? { beforeTwips: before } : {}),
-    ...(after !== undefined ? { afterTwips: after } : {}),
-    ...(line !== undefined ? { lineRawTwips: line, lineRule: rule ?? 'auto' } : {}),
-  }
-}
-
-/** Display runs per paragraph (bold/italic/underline/strike, color, size); the footnote self-reference mark run is skipped */
-function noteRichParas(entryXml: string): NoteRun[][] {
-  const out: NoteRun[][] = []
-  // the self-closing form first: the open-to-close alternative would swallow it
-  const pRe = /<w:p(?:\s[^>]*)?\/>|<w:p[\s>][\s\S]*?<\/w:p>/g
-  let p: RegExpExecArray | null
-  const flag = (rPr: string, tag: string) => onOffTagIn(rPr, `w:${tag}`) === true
-  while ((p = pRe.exec(entryXml)) !== null) {
-    const runs: NoteRun[] = []
-    const rRe = /<w:r(?:\s[^>]*)?>([\s\S]*?)<\/w:r>/g
-    let r: RegExpExecArray | null
-    while ((r = rRe.exec(p[0])) !== null) {
-      const inner = r[1]
-      if (NOTE_REF_MARK_RE.test(inner)) continue
-      const text = notePlainText(inner)
-      if (!text) continue
-      const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? ''
-      const run: NoteRun = { text }
-      if (flag(rPr, 'b')) run.bold = true
-      if (flag(rPr, 'i')) run.italic = true
-      // w:u is not a boolean prop: underline needs an explicit non-"none" w:val
-      const uVal = /<w:u\s[^>]*w:val="([^"]*)"/.exec(rPr)?.[1]
-      if (uVal && uVal !== 'none') run.underline = true
-      if (flag(rPr, 'strike')) run.strike = true
-      const color = /<w:color [^>]*w:val="([0-9A-Fa-f]{6})"/.exec(rPr)?.[1]
-      if (color) run.color = color.toUpperCase()
-      const sz = /<w:sz [^>]*w:val="(\d+)"/.exec(rPr)?.[1]
-      if (sz) run.sizeHalfPoints = parseInt(sz, 10)
-      const rFonts = /<w:rFonts\b[^>]*>/.exec(rPr)?.[0]
-      const fontAscii =
-        rFonts && (/\bw:ascii="([^"]+)"/.exec(rFonts) ?? /\bw:hAnsi="([^"]+)"/.exec(rFonts))?.[1]
-      if (fontAscii) run.fontAscii = fontAscii
-      if (flag(rPr, 'caps')) run.caps = 'all'
-      else if (flag(rPr, 'smallCaps')) run.caps = 'small'
-      const outline = noteTextOutline(rPr)
-      if (outline) run.textOutline = outline
-      runs.push(run)
-    }
-    out.push(runs)
-  }
-  // Strip the first paragraph's leading space (spacer after the self-reference
-  // mark); a spacer that was its own run empties out and is dropped entirely
-  if (out[0]?.[0]) {
-    out[0][0].text = out[0][0].text.replace(/^\s+/, '')
-    if (out[0][0].text === '') out[0].shift()
-  }
-  return out
-}
-
-/** w14:textOutline with a solid srgb fill (theme colours need the full parser) */
-function noteTextOutline(rPr: string): TextOutline | undefined {
-  const m = /<w14:textOutline\b([^>]*)>([\s\S]*?)<\/w14:textOutline>/.exec(rPr)
-  if (!m) return undefined
-  const widthEmu = parseInt(/\bw14:w="(\d+)"/.exec(m[1])?.[1] ?? '', 10)
-  const solid = /<w14:solidFill>([\s\S]*?)<\/w14:solidFill>/.exec(m[2])?.[1]
-  const color = solid && /<w14:srgbClr w14:val="([0-9A-Fa-f]{6})"/.exec(solid)?.[1]
-  if (!(widthEmu > 0) || !color) return undefined
-  const alphaRaw = parseInt(/<w14:alpha w14:val="(\d+)"/.exec(solid)?.[1] ?? '', 10)
-  return {
-    color: color.toUpperCase(),
-    widthPt: Math.round((widthEmu / 12700) * 100) / 100,
-    ...(alphaRaw >= 0 && alphaRaw < 100000 ? { alpha: alphaRaw / 100000 } : {}),
-  }
+/** the entry's paragraph slices in order (self-closing form first: the
+ *  open-to-close alternative would swallow it) */
+function noteParagraphsOf(entryXml: string): string[] {
+  return entryXml.match(/<w:p(?:\s[^>]*)?\/>|<w:p[\s>][\s\S]*?<\/w:p>/g) ?? []
 }
 
 /** typeless (real) note entries with their exact XML slice + plain text */

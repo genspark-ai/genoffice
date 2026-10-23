@@ -23,6 +23,7 @@ Word、Excel、PowerPoint、PDF ファイルを、あなたとあなたの AI �
 
 <p align="center">
   <a href="#download"><b>ダウンロード</b></a> ·
+  <a href="#skills"><b>スキル</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>ウェブサイト</b></a> ·
@@ -197,6 +198,7 @@ Word ドキュメントを組み立てる様子を見守ることもできます
   PDF を Word・Excel・PowerPoint に変換。スキャンにはシステム OCR を使用。
 - **Markdown と HTML にも対応**。同じ AI パネルを使い、ローカルで Word に書き出せ
   る。
+- **スキル。** 同梱の既製スキル、または自作の `SKILL.md` を、どの AI パネルでも **+** メニューから添付できます。
 - **スクリプト化できる。** `genoffice` コマンドライン、エージェントスキル、MCP
   サーバーにより、すべてのエンジンを Claude Code・Claude Desktop・Codex・Cursor
   などのエージェントから使える。もちろんオンデバイスのまま。
@@ -218,6 +220,18 @@ OpenAI、Gemini、Doubao/Seedream、GLM、Grok、Qwen、MiniMax、または任�
 
 スイート全体でライト・ダーク・システムのテーマに対応しています。テーマが変わるのは画面表示
 だけで、書き出し・印刷・保存されたファイルは常にドキュメント本来の色を保持します。
+
+<a id="skills"></a>
+
+## スキル
+
+スキルは `SKILL.md` 一枚で、週報、NDA、授業計画など、ひとつの仕事のやり方を AI に教えます。
+GenOffice には既製スキルが同梱され、コーディングエージェントと同じ形式で自作のものも取り込めます。
+
+- **設定 → スキル。** おすすめスキルを**インストール**するか、フォルダー、zip、または単一の `SKILL.md` を**インポート**します。インポート時に何かが実行されることはありません。
+- **チャットで。** どの AI パネルでも入力欄の横の **+** メニューを開き、**スキル**を選んでチェックを入れて送信します。スキルはそのメッセージにだけ添付されます。
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

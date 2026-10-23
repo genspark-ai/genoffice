@@ -139,6 +139,21 @@ describe('keyword-anchored float shifts in the slice engine', () => {
     ])
   })
 
+  it('a float lifting over blank lines fits from its lifted top instead of turning the page', () => {
+    // prod corpus 20261020 sample 043: margin-top aligned photo whose anchor
+    // lands after a few empty paragraphs at the top of a page
+    const out: SliceOutputs = { floatVShifts: [] }
+    const blocks = [
+      block(0, 40, { emptyPara: true }),
+      block(40, 40, { emptyPara: true }),
+      block(80, 560, { floated: true, pageRelVyPx: 0, pageRelVAnchor: 'margin' }),
+      block(80, 40),
+    ]
+    const slices = computeSectionedSlicesF2(blocks, geoms, 600, out)
+    expect(slices.filter((s) => s.end > s.start)).toHaveLength(1)
+    expect(out.floatVShifts).toEqual([{ blockTop: 80, dyPx: -80 }])
+  })
+
   it('never lifts a float above content already on the page', () => {
     const out: SliceOutputs = { floatVShifts: [] }
     const blocks = [

@@ -70,7 +70,7 @@ describe('misspelledRangeAt', () => {
 
 describe('applySpellingSuggestion', () => {
   const settle = async () => {
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(2000)
   }
 
   it('replaces through ProseMirror when Blink is unavailable', () => {
@@ -117,6 +117,20 @@ describe('applySpellingSuggestion', () => {
     await settle()
     expect(blink).not.toHaveBeenCalled()
     expect(editor.state.doc.textContent).toBe('mison encore la mison demain')
+  })
+
+  it('does not double up when the Blink edit lands after the IPC reply', async () => {
+    vi.useFakeTimers()
+    const editor = makeEditor('a mison b')
+    const blink = blinkStandIn(editor)
+    applySpellingSuggestion(editor, 1 + 4, 'mison', 'maison', async () => {
+      setTimeout(() => void blink('maison'), 600)
+    })
+    await vi.advanceTimersByTimeAsync(400)
+    expect(editor.state.doc.textContent).toBe('a mison b')
+    await settle()
+    expect(blink).toHaveBeenCalledTimes(1)
+    expect(editor.state.doc.textContent).toBe('a maison b')
   })
 
   it('falls back to ProseMirror when Blink does not act', async () => {

@@ -10,6 +10,7 @@ import {
   type SaveBlock,
 } from '@genoffice/docx-engine'
 import {
+  atHfCellEdge,
   hfDocJson,
   hfValueFromDoc,
   insertHfField,
@@ -61,10 +62,16 @@ const RICH: HeaderFooter = {
 }
 
 describe('hfDocJson / hfValueFromDoc', () => {
-  it('maps text paragraphs to editor nodes with field atoms and keeps rows out', () => {
+  it('maps text paragraphs to editor nodes with field atoms and rows to cell nodes', () => {
     const doc = hfDocJson(RICH)
-    expect(doc.content).toHaveLength(2)
-    const first = doc.content![0]
+    expect(doc.content).toHaveLength(3)
+    const row = doc.content![0]
+    expect(row.type).toBe('hfRow')
+    expect(row.attrs).toMatchObject({ hfIndex: 0 })
+    expect(row.content![0].type).toBe('hfCell')
+    expect(row.content![0].content![0]).toMatchObject({ type: 'docParagraph' })
+    expect(row.content![0].content![0].content![0]).toMatchObject({ text: 'logo row' })
+    const first = doc.content![1]
     expect(first.attrs).toMatchObject({ align: 'right', hfIndex: 1 })
     expect(JSON.parse(String(first.attrs!.tabStops))).toEqual([{ pos: 4680, val: 'right' }])
     const types = (first.content ?? []).map((n) => n.type)
@@ -94,16 +101,147 @@ describe('hfDocJson / hfValueFromDoc', () => {
 
   it('a new paragraph split from an existing one inherits that paragraph as its template', () => {
     const doc = hfDocJson(RICH)
-    const [p1, p2] = doc.content!
+    const [row, p1, p2] = doc.content!
     const extra: PmNode = {
       type: 'docParagraph',
       attrs: { ...p1.attrs },
       content: [{ type: 'text', text: 'new' }],
     }
-    const back = hfValueFromDoc({ type: 'doc', content: [p1, extra, p2] }, RICH)
+    const back = hfValueFromDoc({ type: 'doc', content: [row, p1, extra, p2] }, RICH)
     expect(back.paras!.map((p) => p.align)).toEqual([undefined, 'right', 'right', 'center'])
     expect(back.paras![2].runs[0].text).toBe('new')
     expect(back.text).toBe(`Report\tPage ${PAGE_MARK} of ${TOTAL_PAGES_MARK}newsecond line`)
+  })
+
+  it('an untouched row round-trips without a rewrite flag; an edited cell gets one', () => {
+    const same = hfValueFromDoc(hfDocJson(RICH), RICH)
+    expect(same.paras![0].cells![0].rewrite).toBeUndefined()
+    expect(same.paras![0].cells![0].paras).toEqual([[{ text: 'logo row' }]])
+
+    const doc = hfDocJson(RICH)
+    const cell = doc.content![0].content![0]
+    cell.content![0].content = [{ type: 'text', text: 'Company ', marks: [{ type: 'bold' }] }]
+    cell.content!.push({
+      type: 'docParagraph',
+      attrs: {},
+      content: [{ type: 'text', text: 'Ltd' }],
+    })
+    const back = hfValueFromDoc(doc, RICH)
+    const edited = back.paras![0].cells![0]
+    expect(edited.rewrite).toBe(true)
+    expect(edited.paras).toEqual([[{ text: 'Company ', bold: true }], [{ text: 'Ltd' }]])
+    // the row keeps its slot ahead of the text paragraphs
+    expect(back.paras![1].runs[0]).toMatchObject({ text: 'Report', bold: true })
+    expect(back.text).toBe(`Report\tPage ${PAGE_MARK} of ${TOTAL_PAGES_MARK}second line`)
+  })
+
+  it('Backspace at a cell start and Delete at a cell end are swallowed, inner joins still work', () => {
+    const { editor } = mount(RICH)
+    const posOf = (text: string, atEnd = false) => {
+      let pos = -1
+      editor.state.doc.descendants((n, p) => {
+        if (pos < 0 && n.isTextblock && n.textContent === text)
+          pos = atEnd ? p + 1 + n.content.size : p + 1
+        return pos < 0
+      })
+      return pos
+    }
+    const key = (k: 'Backspace' | 'Delete') =>
+      editor.view.someProp('handleKeyDown', (f) =>
+        f(editor.view, new KeyboardEvent('keydown', { key: k, cancelable: true })),
+      )
+    editor.commands.setTextSelection(posOf('logo row'))
+    const before = JSON.stringify(editor.getJSON())
+    expect(atHfCellEdge(editor.state, -1)).toBe(true)
+    expect(key('Backspace')).toBe(true)
+    editor.commands.setTextSelection(posOf('logo row', true))
+    expect(atHfCellEdge(editor.state, 1)).toBe(true)
+    expect(key('Delete')).toBe(true)
+    expect(JSON.stringify(editor.getJSON())).toBe(before)
+    // two paragraphs inside one cell still join on Backspace
+    editor.commands.splitBlock()
+    editor.commands.insertContent('more')
+    editor.commands.setTextSelection(posOf('more'))
+    expect(atHfCellEdge(editor.state, -1)).toBe(false)
+    expect(editor.commands.keyboardShortcut('Backspace')).toBe(true)
+    const cell = (editor.getJSON() as PmNode).content![0].content![0]
+    expect(cell.content).toHaveLength(1)
+    expect(cell.content![0].content![0].text).toBe('logo rowmore')
+  })
+
+  it('an untouched picture cell is not flagged when another cell changes; a format change is', () => {
+    const picture = {
+      dataUrl: 'data:image/png;base64,AA==',
+      widthPx: 40,
+      heightPx: 20,
+      xml: '<w:drawing>logo</w:drawing>',
+    }
+    const value: HeaderFooter = {
+      text: '',
+      paras: [
+        {
+          runs: [],
+          cells: [
+            { paras: [[{ text: '', image: picture }]], widthTwips: 2835 },
+            {
+              paras: [[{ text: 'Company' }], [{ text: 'Sub' }]],
+              paraProps: [undefined, { spaceAfter: 40 }],
+              widthTwips: 7370,
+            },
+          ],
+        },
+      ],
+    }
+    let committed: HeaderFooter | null = null
+    const { editor, handle } = mount(value, (next) => (committed = next))
+    // the loaded doc already carries the schema's non-null defaults (leadRule: false ...)
+    expect(handle.changed()).toBeNull()
+    let pos = -1
+    editor.state.doc.descendants((n, p) => {
+      if (pos < 0 && n.isTextblock && n.textContent === 'Company') pos = p + 1 + n.content.size
+      return pos < 0
+    })
+    editor.commands.setTextSelection(pos)
+    editor.commands.insertContent(' Ltd')
+    const next = handle.changed()!
+    expect(next.paras![0].cells![0].rewrite).toBeUndefined()
+    expect(next.paras![0].cells![1].rewrite).toBe(true)
+    expect(next.paras![0].cells![1].rewriteFormat).toBeUndefined()
+    expect(next.paras![0].cells![1].paras[0][0].text).toBe('Company Ltd')
+    // ribbon alignment on the second cell paragraph: that paragraph's pPr is rebuilt on save
+    let subPos = -1
+    editor.state.doc.descendants((n, p) => {
+      if (subPos < 0 && n.isTextblock && n.textContent === 'Sub') subPos = p
+      return subPos < 0
+    })
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(subPos, undefined, {
+        ...editor.state.doc.nodeAt(subPos)!.attrs,
+        align: 'right',
+      }),
+    )
+    const formatted = handle.changed()!
+    const cell = formatted.paras![0].cells![1]
+    expect(cell.rewriteFormat).toEqual([1])
+    expect(cell.paraProps![1]).toEqual({ spaceAfter: 40, align: 'right' })
+    expect(cell.priorParaProps).toEqual([undefined, { spaceAfter: 40 }])
+    handle.exit()
+    expect(committed).not.toBeNull()
+  })
+
+  it('a locked row (flattened nested table) stays out of the editor and in its slot', () => {
+    const locked: HeaderFooter = {
+      text: '',
+      paras: [
+        { runs: [], cells: [{ paras: [[{ text: 'nested' }]], locked: true }] },
+        { runs: [{ text: 'line' }] },
+      ],
+    }
+    const doc = hfDocJson(locked)
+    expect(doc.content!.map((n) => n.type)).toEqual(['docParagraph'])
+    const back = hfValueFromDoc(doc, locked)
+    expect(back.paras![0].cells![0].locked).toBe(true)
+    expect(back.paras![1].runs[0].text).toBe('line')
   })
 
   it('an empty legacy value edits as one paragraph; a typed PAGE field sets pageNumber', () => {

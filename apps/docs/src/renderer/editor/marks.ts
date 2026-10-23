@@ -3,7 +3,13 @@ import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssCsFontFamily, cssRunFontFamily, cssFontFamily, lineHeightFactor } from '../line-metrics'
+import {
+  cssCsFontFamily,
+  cssRunFontFamily,
+  cssFontFamily,
+  cutAdjustedAlias,
+  lineHeightFactor,
+} from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
@@ -402,7 +408,17 @@ export const InstrFieldMark = Mark.create({
     }
   },
   parseHTML() {
-    return [{ tag: 'span[data-instr-field]' }]
+    return [
+      {
+        tag: 'span[data-instr-field]',
+        // read the instruction back out of the clipboard payload. Without
+        // getAttrs the mark falls back to its defaults, so a pasted citation
+        // loses its instruction and saves as an empty w:instrText — which the
+        // next parse turns into a protected passthrough, locking the whole
+        // paragraph (genoffice#2099).
+        getAttrs: (el) => ({ instr: el.getAttribute('data-instr-field') ?? '' }),
+      },
+    ]
   },
   renderHTML({ mark }) {
     const instruction = String(mark.attrs.instr)
@@ -653,6 +669,15 @@ export const TextStyleMark = Mark.create({
       themeRFonts: { default: null as string | null, rendered: false },
       // Run.themeColor (theme-resolved hex); keeps the raw w:themeColor ref and cached w:val on save
       themeColor: { default: null as string | null, rendered: false },
+      // Cs size an rtl run inherits from its style chain: the paragraph strut reads it
+      // (markSizeHalfPoints); the paint comes from the .doc-cs style CSS. Never saved
+      csSize: { default: null as number | null, rendered: false },
+      // Run.effective bold / italic of an rtl run: painted as doc-cs-(n)b / doc-cs-(n)i
+      // classes (styles.css) so a user strong/em wrapper still shows. Never saved
+      csBold: { default: null as boolean | null, rendered: false },
+      csItalic: { default: null as boolean | null, rendered: false },
+      // JSON of the table-style run properties (convert.ts tableStyleRunAttr); display only
+      tblRun: { default: null as string | null, rendered: false },
     }
   },
   parseHTML() {
@@ -673,12 +698,14 @@ export const TextStyleMark = Mark.create({
   },
   renderHTML({ mark }) {
     const styles: string[] = []
+    let cutAdjusted = false
     const effect = parseTextEffectAttr(mark.attrs.textEffect)
     // authored colors stay the declaration; the --dk-* twins feed the dark page (dark-page.ts)
     if (mark.attrs.color && !paperColorEffect(effect))
       styles.push(...textColorDecls(String(mark.attrs.color)))
-    if (mark.attrs.sizeHalfPoints) {
-      const half = Number(mark.attrs.sizeHalfPoints)
+    const tbl = tblRunOf(mark.attrs)
+    if (mark.attrs.sizeHalfPoints || tbl?.sizeHalfPoints) {
+      const half = Number(mark.attrs.sizeHalfPoints || tbl?.sizeHalfPoints)
       styles.push(`font-size:${half / 2}pt`)
       // a spacer run of 1pt or less inherits the block's absolute line-height and, centred
       // on its own tiny glyph, would push the line box bottom down (Word: no effect)
@@ -693,23 +720,28 @@ export const TextStyleMark = Mark.create({
       const explicitEa = mark.attrs.eastAsiaFont ?? (!mark.attrs.rawRPr && ea !== ascii ? ea : null)
       if (explicitEa && !mark.attrs.eaSlotEmpty)
         styles.push(`--doc-east-asian-font:${cssFontFamily(String(explicitEa))}`)
-      styles.push(
-        `font-family:${
-          cs
-            ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
-            : cssRunFontFamily(ascii, ea)
-        }`,
-      )
+      const family = cs
+        ? cssCsFontFamily(cs, ascii ?? undefined, ea ?? undefined)
+        : cssRunFontFamily(ascii, ea)
+      // --doc-run-ff: doc-style-css re-heads the chain with the strut face in
+      // mixed paragraphs (.doc-grid-strut); font-family stays for DOM readers
+      styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
+      cutAdjusted = cutAdjustedAlias(family)
       // own-face line factor for cell paragraphs mixing faces (styles.css .doc-mixed-face)
       const lh = Math.max(...[cs, ascii ?? ea].filter(Boolean).map((f) => lineHeightFactor(f!)))
       styles.push(`--doc-run-lh:${lh}`)
     }
-    const spacingPt = mark.attrs.charSpacingTwips ? Number(mark.attrs.charSpacingTwips) / 20 : 0
+    if (!mark.attrs.font && !mark.attrs.fontAscii && !mark.attrs.csFont && tbl?.fontAscii) {
+      const family = cssRunFontFamily(tbl.fontAscii, null)
+      styles.push(`font-family:${family}`, `--doc-run-ff:${family}`)
+    }
+    const charSpacingTwips = mark.attrs.charSpacingTwips ?? tbl?.charSpacingTwips
+    const spacingPt = charSpacingTwips ? Number(charSpacingTwips) / 20 : 0
     const scaleEm = mark.attrs.charScaleEm ? Number(mark.attrs.charScaleEm) : 0
     if (spacingPt && scaleEm) styles.push(`letter-spacing:calc(${spacingPt}pt + ${scaleEm}em)`)
     else if (spacingPt) styles.push(`letter-spacing:${spacingPt}pt`)
     else if (scaleEm) styles.push(`letter-spacing:${scaleEm}em`)
-    else if (mark.attrs.charSpacingTwips === 0) styles.push('letter-spacing:0')
+    else if (charSpacingTwips === 0) styles.push('letter-spacing:0')
     if (mark.attrs.kern != null) styles.push(`font-kerning:${mark.attrs.kern ? 'normal' : 'none'}`)
     const shading = (mark.attrs.shadingDisplay ?? mark.attrs.shading) as string | null
     // shading first: when both are set the later highlight declaration wins (Word behavior)
@@ -756,10 +788,10 @@ export const TextStyleMark = Mark.create({
     if (mark.attrs.boldOff) styles.push('font-weight:normal')
     if (mark.attrs.italicOff) styles.push('font-style:normal')
     if (mark.attrs.vanish) styles.push('display:none')
-    if (mark.attrs.caps === 'all') styles.push('text-transform:uppercase')
-    else if (mark.attrs.caps === 'small') styles.push('font-variant-caps:small-caps')
-    else if (mark.attrs.caps === 'none')
-      styles.push('text-transform:none', 'font-variant-caps:normal')
+    const caps = mark.attrs.caps ?? tbl?.caps
+    if (caps === 'all') styles.push('text-transform:uppercase')
+    else if (caps === 'small') styles.push('font-variant-caps:small-caps')
+    else if (caps === 'none') styles.push('text-transform:none', 'font-variant-caps:normal')
     // the attr value carries the exact attrs for clipboard round-trip; '1'
     // (nothing set) keeps the attribute present for CSS/selector consumers
     const clip: Record<string, unknown> = {}
@@ -772,8 +804,19 @@ export const TextStyleMark = Mark.create({
       style: styles.join(';'),
     }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
+    // rtl run: the .doc-cs gate in doc-style-css paints the Cs size of its style
+    // chain; weight and style come resolved from the engine (includes the table
+    // style layer the paragraph-style CSS cannot see)
+    if (mark.attrs.cs) {
+      const cls = ['doc-cs']
+      if (mark.attrs.csBold != null) cls.push(mark.attrs.csBold ? 'doc-cs-b' : 'doc-cs-nb')
+      if (mark.attrs.csItalic != null) cls.push(mark.attrs.csItalic ? 'doc-cs-i' : 'doc-cs-ni')
+      attrs['class'] = cls.join(' ')
+    }
     // cs-slot run: styles.css .doc-cs-mixed collapses its line box
     if (mark.attrs.csFont) attrs['data-cs'] = ''
+    // bold/italic cut of a per-cut size-adjusted alias: styles.css .doc-cut-adjusted collapses its line box
+    if (cutAdjusted) attrs['data-cut-adj'] = ''
     {
       const ink = fillInk(shading)
       if (ink) attrs['data-ink'] = ink
@@ -781,6 +824,22 @@ export const TextStyleMark = Mark.create({
     return ['span', attrs, 0]
   },
 })
+
+interface TblRunProps {
+  sizeHalfPoints?: number
+  fontAscii?: string
+  caps?: 'none' | 'all' | 'small'
+  charSpacingTwips?: number
+}
+
+function tblRunOf(attrs: Record<string, unknown>): TblRunProps | undefined {
+  if (typeof attrs.tblRun !== 'string') return undefined
+  try {
+    return JSON.parse(attrs.tblRun) as TblRunProps
+  } catch {
+    return undefined
+  }
+}
 
 /** Imported runs carry explicit Word off-switches (w:b/w:i val=0 → docTextStyle
  * boldOff/italicOff, painted as font-weight/style:normal). They coexist with a

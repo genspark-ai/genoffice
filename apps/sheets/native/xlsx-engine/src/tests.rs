@@ -4480,7 +4480,10 @@ fn reads_the_picture_a_note_is_showing() {
         .iter()
         .find(|comment| comment.row == 0 && comment.column == 0)
         .expect("the A1 comment");
-    let older_image = older.image.as_ref().expect("the imagedata spelling resolves");
+    let older_image = older
+        .image
+        .as_ref()
+        .expect("the imagedata spelling resolves");
     assert_eq!(older_image.media_path, "xl/media/image1.png");
     let filled = comments
         .iter()
@@ -4496,11 +4499,7 @@ fn reads_the_picture_a_note_is_showing() {
         .unwrap();
     assert_eq!(media.media_type, "image/png");
     assert_eq!(
-        base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            &media.base64,
-        )
-        .unwrap(),
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &media.base64,).unwrap(),
         b"the picture bytes"
     );
 }
@@ -4989,7 +4988,7 @@ fn reads_xml_entry_that_matches_its_declaration() {
 
 /// A password-encrypted .xlsx is an OLE2 compound container, not a ZIP
 /// package: the open must explain that instead of surfacing the zip
-/// reader's "invalid Zip archive: Could not find EOCD" (#2076).
+/// reader's "invalid Zip archive: Could not find EOCD" (genoffice#2076).
 #[test]
 fn encrypted_workbook_reports_password_protection() {
     let dir = tempfile::tempdir().unwrap();

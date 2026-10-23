@@ -82,7 +82,8 @@ export function normalizeStyleColor(
   input: string | { theme: number | string; tint?: number | undefined },
 ): StyleColor {
   if (typeof input === 'string') {
-    if (/^#[0-9A-Fa-f]{6}$/.test(input)) return `#${input.slice(1).toUpperCase()}`
+    const trimmed = input.trim()
+    if (/^#[0-9A-Fa-f]{6}$/.test(trimmed)) return `#${trimmed.slice(1).toUpperCase()}`
     const match = THEME_SHORTHAND_PATTERN.exec(input.trim())
     if (!match) throw new Error(`Unknown color "${input}"`)
     const theme = themeSlotIndex(match[1]!)!

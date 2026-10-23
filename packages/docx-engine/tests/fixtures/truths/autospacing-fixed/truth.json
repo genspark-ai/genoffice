@@ -1,0 +1,44 @@
+{
+  "id": "autospacing-fixed",
+  "title": "HTML auto paragraph spacing is a fixed 14pt regardless of font size and collapses between neighbours",
+  "section": "word-truths.md#L14",
+  "section_title": "Paragraph, grid and compat rules",
+  "probe_date": "2026-08-23",
+  "class": "pure",
+  "source": "Word probe 2026-08-23: 11pt and 17pt runs both 14pt, adjacent auto margins collapse",
+  "cases": [
+    {
+      "kind": "format",
+      "block": 1,
+      "expect": {
+        "spaceBeforeAuto": true,
+        "spaceAfterAuto": true
+      }
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 0,
+      "to": 1,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "plain -> auto 11pt"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 1,
+      "to": 2,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "auto 11pt -> auto 17pt collapse to one 14pt"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 2,
+      "to": 3,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "auto 17pt -> plain"
+    }
+  ],
+  "docx": "probe.docx"
+}

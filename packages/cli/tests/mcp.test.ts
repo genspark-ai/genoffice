@@ -273,7 +273,8 @@ describe('mcp server', () => {
       expect(forbiddenConstructs(schema), tool.name).toEqual([])
     }
     const bytes = JSON.stringify(list).length
-    expect(bytes).toBeLessThanOrEqual(90 * 1024)
+    // 92 KB: the docs catalog grew with set_properties (the document properties op)
+    expect(bytes).toBeLessThanOrEqual(92 * 1024)
     expect(bytes).toBeGreaterThan(60 * 1024)
   })
 

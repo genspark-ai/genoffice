@@ -1904,6 +1904,36 @@ export function recordSetNumfmt(
   return recorded
 }
 
+/// Ingests a `sheet.mutation.remove.numfmt` payload (`{ranges}`). Univer
+/// clears a number format through this mutation — picking General in the
+/// ribbon and Convert-to-number both route here — so an unjournaled removal
+/// leaves the file's old format (text `@` included) to resurrect on save.
+/// The gateway maps the General pattern to numFmtId 0.
+export function recordRemoveNumfmt(
+  journal: EditJournal,
+  sheetId: string,
+  params: unknown,
+): JournalEntry[] {
+  if (typeof params !== 'object' || params === null) return []
+  const { ranges } = params as { ranges?: unknown }
+  if (!Array.isArray(ranges)) return []
+  const recorded: JournalEntry[] = []
+  for (const range of ranges) {
+    if (typeof range !== 'object' || range === null) continue
+    const { startRow, endRow, startColumn, endColumn } = range as Record<string, unknown>
+    if (![startRow, endRow, startColumn, endColumn].every(isBoundedIndex)) continue
+    for (let row = startRow as number; row <= (endRow as number); row += 1) {
+      for (let column = startColumn as number; column <= (endColumn as number); column += 1) {
+        const entry = mergeIntoJournal(journal, sheetId, row, column, {
+          s: { n: { pattern: 'General' } },
+        })
+        if (entry) recorded.push(entry)
+      }
+    }
+  }
+  return recorded
+}
+
 /// Guards the numfmt range expansion: a malformed huge range must not spin.
 function isBoundedIndex(value: unknown): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 1_048_576

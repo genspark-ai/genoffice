@@ -19,7 +19,7 @@ import {
   UnderlineType,
 } from 'docx'
 import { bookmarkName } from './bookmarks'
-import { mapFont } from './fonts'
+import { runFont } from './fonts'
 
 // An unloaded image measures 0, which would emit an invalid wp:extent.
 function finitePx(value) {
@@ -44,7 +44,7 @@ function makeRuns(context, runs, images: any = {}) {
           italics: r.italic || undefined,
           color: r.color || undefined,
           size: r.sizePx ? context.pxToHalfPoints(r.sizePx) : undefined,
-          font: mapFont(r.fontFamily, r.mono, r.text),
+          font: runFont(r.fontFamily, r.mono, r.text),
         }),
       )
       continue
@@ -89,7 +89,7 @@ function makeRuns(context, runs, images: any = {}) {
         ? undefined
         : r.symbol
           ? 'Arial Unicode MS'
-          : mapFont(r.fontFamily, r.mono, r.text),
+          : runFont(r.fontFamily, r.mono, r.text),
       characterSpacing: r.letterSpacing > 0.5 ? context.pxToTwips(r.letterSpacing) : undefined,
       superScript: r.superscript || undefined,
       subScript: r.subscript || undefined,
@@ -151,7 +151,7 @@ function makeNodeRuns(context, node, images: any = {}) {
       new TextRun({
         text: '\u00A0'.repeat(count),
         size: context.pxToHalfPoints(fontSizePx),
-        font: mapFont(sample.fontFamily, sample.mono, sample.text),
+        font: runFont(sample.fontFamily, sample.mono, sample.text),
         noProof: true,
       }),
     )

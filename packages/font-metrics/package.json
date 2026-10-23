@@ -6,7 +6,9 @@
   "type": "module",
   "description": "System font location and vertical-metrics extraction for the Electron main processes (targeted sfnt table reads, no whole-file parsing)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./resolve": "./src/resolve.ts",
+    "./word-faces.json": "./word-faces.json"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,6 +17,6 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }

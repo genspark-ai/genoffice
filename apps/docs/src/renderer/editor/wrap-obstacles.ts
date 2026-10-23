@@ -38,7 +38,12 @@ export interface ObstacleRect {
   right: number
   top: number
   bottom: number
+  /** wrapTopAndBottom band: a pushed paragraph keeps its space-before below it */
+  band?: boolean
 }
+
+/** smallest free row (px) between bands worth laying paragraphs into */
+const MIN_BAND_GAP = 4
 
 export interface LinePlacement {
   top: number
@@ -215,15 +220,30 @@ function collectWrapper(
   const all = Array.from(el.querySelectorAll<HTMLElement>(':scope > .doc-textbox'))
   const sides = all.filter((b) => b.dataset.wrapSide === '1')
   const data: Write['data'] = {}
+  const wr = rel(el.getBoundingClientRect())
+  dropWrapper(el, wr, rects, writes, factor)
   if (sides.length === 0) {
     if (el.dataset.obsBottom !== undefined) {
       writes.push({ el, style: {}, data: { obsBottom: undefined, obsMaxh: undefined } })
     }
-    restoreBand(el, writes)
-    dropStrut(el, rel(el.getBoundingClientRect()), rects, writes, factor)
+    dropStrut(el, wr, rects, writes, factor)
+    const bands = gapBandsOf(el, factor)
+    if (!bands) {
+      restoreBand(el, writes)
+      return
+    }
+    for (const [a, b] of bands) {
+      rects.push({
+        left: wr.left,
+        right: wr.right,
+        top: wr.top + a,
+        bottom: wr.top + b,
+        band: true,
+      })
+    }
+    collapseBand(el, rects, wr.top, rel, writes, factor)
     return
   }
-  const wr = rel(el.getBoundingClientRect())
   const wrTop = wr.top
   dropStrut(el, wr, rects, writes, factor)
   let bottom = 0
@@ -289,34 +309,31 @@ function syncBand(
     restoreBand(el, writes)
     return
   }
+  const line = lineOf(el, factor)
+  if (line <= 0 || !plainFlowWithinBand(el, line, band, [], factor)) {
+    restoreBand(el, writes)
+    return
+  }
+  collapseBand(el, rects, wrTop, rel, writes, factor)
+}
+
+/** the wrapper's band collapses to its anchor line (the drawings are tracked
+ *  as obstacles); the line sits beside its drawings when any gap is left
+ *  (probe: a V=0 picture shifts it sideways), else below the blocking one */
+function collapseBand(
+  el: HTMLElement,
+  rects: ObstacleRect[],
+  wrTop: number,
+  rel: (r: DOMRect) => ObstacleRect,
+  writes: Write[],
+  factor: number,
+): void {
   const strut = strutOf(el)
-  // syncAnchorBands pads the strut to drop the anchor line below the band
-  const strutPad = strut ? parseFloat(strut.style.paddingTop) || 0 : 0
-  const line = strut ? strut.getBoundingClientRect().height / factor - strutPad : 0
+  const line = lineOf(el, factor)
   if (!strut || line <= 0) {
     restoreBand(el, writes)
     return
   }
-  let acc = line
-  for (
-    let sib = el.nextElementSibling as HTMLElement | null;
-    sib && acc < band;
-    sib = sib.nextElementSibling as HTMLElement | null
-  ) {
-    if (sib.classList.contains('page-gap') || sib.classList.contains('page-float-host')) continue
-    const sibStrut = isWrapper(sib) ? strutOf(sib) : null
-    if (!isTextBlock(sib) && !sibStrut) {
-      restoreBand(el, writes)
-      return
-    }
-    const cs = getComputedStyle(sib)
-    acc +=
-      (sibStrut ?? sib).getBoundingClientRect().height / factor +
-      (parseFloat(cs.marginTop) || 0) +
-      (parseFloat(cs.marginBottom) || 0)
-  }
-  // the anchor's own line sits beside its drawings when any gap is left
-  // (probe: a V=0 picture shifts it sideways), else below the blocking one
   const wr = rel(el.getBoundingClientRect())
   const lineTop =
     wrTop + (strut.getBoundingClientRect().top - el.getBoundingClientRect().top) / factor
@@ -329,8 +346,163 @@ function syncBand(
   })
 }
 
+/**
+ * Walks the blocks after a band wrapper until the flow has passed the band:
+ * only plain paragraphs (or further anchors) may lie there, a table keeps the
+ * band route (its rows cannot be displaced). `bands` (wrapper-relative,
+ * merged) simulate the pushes so a table that lands below them still passes.
+ */
+function plainFlowWithinBand(
+  el: HTMLElement,
+  line: number,
+  band: number,
+  bands: ReadonlyArray<readonly [number, number]>,
+  factor: number,
+): boolean {
+  let acc = line
+  for (
+    let sib = el.nextElementSibling as HTMLElement | null;
+    sib && acc < band;
+    sib = sib.nextElementSibling as HTMLElement | null
+  ) {
+    if (sib.classList.contains('page-gap') || sib.classList.contains('page-float-host')) continue
+    const sibStrut = isWrapper(sib) ? strutOf(sib) : null
+    if (!isTextBlock(sib) && !sibStrut) return false
+    const cs = getComputedStyle(sib)
+    if (bands.length === 0) {
+      acc +=
+        (sibStrut ?? sib).getBoundingClientRect().height / factor +
+        (parseFloat(cs.marginTop) || 0) +
+        (parseFloat(cs.marginBottom) || 0)
+      continue
+    }
+    // undisplaced geometry: this pass's own pushes come off again
+    const applied = sibStrut
+      ? parseFloat(sib.dataset.obsWrapDrop ?? '') || 0
+      : sib.dataset.obsMode === '1'
+        ? (parseFloat(cs.paddingTop) || 0) -
+          (Number((sib.dataset.obsBase ?? '').split(' ')[0]) || 0)
+        : 0
+    const mt = (parseFloat(cs.marginTop) || 0) - (sibStrut ? applied : 0)
+    const h =
+      (sibStrut ?? sib).getBoundingClientRect().height / factor -
+      (sibStrut ? parseFloat(sibStrut.style.paddingTop) || 0 : applied)
+    let top = acc + mt
+    for (const [a, b] of bands) if (a < top + h && b > top) top = b + mt
+    acc = top + h + (parseFloat(cs.marginBottom) || 0)
+  }
+  return true
+}
+
+/**
+ * Word lays the paragraphs after a wrapTopAndBottom anchor into the free rows
+ * its bands leave (a stat-tile row above a title bar: three small paragraphs
+ * fit between them); the union band would push them all below. The merged
+ * band intervals (wrapper-relative px) when a usable gap exists and the band
+ * region is followed by plain flow; null keeps the band route.
+ */
+function gapBandsOf(el: HTMLElement, factor: number): Array<[number, number]> | null {
+  if (
+    el.dataset.bandKeep === '1' ||
+    el.dataset.bandBeside === '1' ||
+    el.dataset.bandAdj !== undefined ||
+    isWrapper(el.previousElementSibling) ||
+    isWrapper(el.nextElementSibling)
+  ) {
+    return null
+  }
+  const band = Math.round(parseFloat(el.dataset.band ?? '0') || 0)
+  if (band <= 0) return null
+  const line = lineOf(el, factor)
+  if (line <= 0) return null
+  const merged = bandGapRows(
+    (el.dataset.bands ?? '').split(' ').map((s) => s.split(':').map(Number) as [number, number]),
+    line,
+  )
+  return merged && plainFlowWithinBand(el, line, band, merged, factor) ? merged : null
+}
+
+/**
+ * Merged wrapTopAndBottom band intervals (anchor-relative px) when they leave
+ * a free row of at least MIN_BAND_GAP below the anchor line or between two
+ * bands; null when the union band already describes the flow exclusion.
+ */
+export function bandGapRows(
+  bands: ReadonlyArray<readonly [number, number]>,
+  line: number,
+): Array<[number, number]> | null {
+  const sorted = bands
+    .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b > a)
+    .sort((a, b) => a[0] - b[0])
+  const merged: Array<[number, number]> = []
+  for (const [a, b] of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b)
+    else merged.push([a, b])
+  }
+  if (merged.length === 0) return null
+  let gap = merged[0][0] - line
+  for (let i = 1; i < merged.length; i++) gap = Math.max(gap, merged[i][0] - merged[i - 1][1])
+  return gap >= MIN_BAND_GAP ? merged : null
+}
+
+/**
+ * An anchor paragraph whose own line falls into an EARLIER wrapper's band
+ * moves whole below it in Word, drawings included (they hang from the
+ * paragraph's actual top), so the push goes on the wrapper's margin rather
+ * than the strut. Idempotent via the recorded drop and inline base.
+ */
+function dropWrapper(
+  el: HTMLElement,
+  wr: ObstacleRect,
+  rects: ObstacleRect[],
+  writes: Write[],
+  factor: number,
+): void {
+  const bands = rects.filter((r) => r.band)
+  const applied = parseFloat(el.dataset.obsWrapDrop ?? '') || 0
+  if (bands.length === 0 && !applied) return
+  const strut = strutOf(el)
+  const line = lineOf(el, factor)
+  let drop = 0
+  if (strut && line > 0 && bands.length) {
+    const lineTop =
+      wr.top -
+      applied +
+      (strut.getBoundingClientRect().top - el.getBoundingClientRect().top) / factor
+    drop = placeLine(bands, lineTop, line, wr.left, wr.right, 0).top - lineTop
+  }
+  if (drop > 0.5) {
+    const base =
+      el.dataset.obsWrapBase !== undefined ? el.dataset.obsWrapBase : el.style.marginTop || ''
+    const baseMt = parseFloat(base) || 0
+    writes.push({
+      el,
+      style: { 'margin-top': px(baseMt + drop) },
+      data: { obsWrapDrop: px(drop), obsWrapBase: base },
+    })
+    wr.top -= applied - drop
+    wr.bottom -= applied - drop
+  } else if (applied) {
+    writes.push({
+      el,
+      style: { 'margin-top': el.dataset.obsWrapBase || '' },
+      data: { obsWrapDrop: undefined, obsWrapBase: undefined },
+    })
+    wr.top -= applied
+    wr.bottom -= applied
+  }
+}
+
 const strutOf = (el: HTMLElement): HTMLElement | null =>
   el.querySelector<HTMLElement>(':scope > .doc-anchor-strut, :scope > .doc-textbox-stray')
+
+/** the anchor line's height (px) without a drop pad written by an earlier pass */
+const lineOf = (el: HTMLElement, factor: number): number => {
+  const strut = strutOf(el)
+  if (!strut) return 0
+  return strut.getBoundingClientRect().height / factor - (parseFloat(strut.style.paddingTop) || 0)
+}
 
 /**
  * The anchor paragraph's own line against EARLIER obstacles: it stays where
@@ -462,9 +634,16 @@ function placeParagraph(
   const all = own.length ? [...rects, ...own] : rects
   const p = placeLine(all, top, lineH, colLeft, colRight, needW)
   rects.push(...own)
+  // a band pushes the paragraph whole: its space-before reopens below the band
+  // (probe: 3.75pt before + 8pt line landed 11.75pt under the band bottom)
+  const bandHit = rects.some(
+    (o) =>
+      o.band && o.top < top + lineH && o.bottom > top && o.right > colLeft && o.left < colRight,
+  )
+  const padTop = p.top - top + (bandHit && p.top - top > 0.5 ? parseFloat(cs.marginTop) || 0 : 0)
   paras.push({
     el,
     base: [base[0], base[1], base[2]],
-    pad: [p.top - top, p.left - colLeft, colRight - p.right],
+    pad: [padTop, p.left - colLeft, colRight - p.right],
   })
 }

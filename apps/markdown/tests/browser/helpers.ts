@@ -63,6 +63,8 @@ export async function openSource(
         onCloseSaveRequest: () => off,
         sendCloseSaveResult: () => {},
         onFileRenamed: () => off,
+        onFileChangedOnDisk: () => off,
+        ackFileChangedOnDisk: () => {},
         pickImage: async () => null,
         saveImage: async () => null,
         readImage: async () => null,

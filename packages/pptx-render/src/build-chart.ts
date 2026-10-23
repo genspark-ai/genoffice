@@ -172,16 +172,20 @@ function buildChartNodeTitled(
   // (probe: chartSpace txPr 10pt and 18pt both render the title at 18pt).
   const titleSizePx = ptToPx(model.titlePt ?? 18, vp.scale)
   const titleBold = model.titleBold ?? true
+  const titleSpcPx = model.titleSpcPt ? ptToPx(model.titleSpcPt, vp.scale) : 0
   const measureTitle = (t: string) =>
     metrics.measure(t, {
       fontFamily: chartFont(model),
       fontSizePx: titleSizePx,
       bold: titleBold,
       italic: !!model.titleItalic,
-    })
+    }) +
+    titleSpcPx * t.length
   // PowerPoint wraps the title inside ~80% of the frame width and stacks lines at 1.17em
   // below a 0.55em top gap (probe: 4"/6"/8" frames, 3–12 word titles)
-  const titleLines = wrapToWidth(model.title, Math.max(box.w * 0.8, 40), measureTitle)
+  const titleLines = applyCaps(model.title, model.titleCaps)
+    .split('\n')
+    .flatMap((para) => wrapToWidth(para.trim(), Math.max(box.w * 0.8, 40), measureTitle))
   const titleH = titleSizePx * (0.5 + 1.17 * titleLines.length) - 1
   // A manual plot layout already positions the plot in full-frame fractions (title space
   // included), so the content must not shrink or shift — but only the cartesian builder
@@ -194,6 +198,7 @@ function buildChartNodeTitled(
         model.kind === 'pie')) ||
     // <c:overlay val="1"/>: the title floats over the plot without reserving space
     !!model.titleOverlay
+  // The legend's auto "top" slot still sits below the title when the frame is not shrunk
   const node = buildChartNodeInner(
     id,
     sourceId,
@@ -202,6 +207,7 @@ function buildChartNodeTitled(
     vp,
     metrics,
     media,
+    manual && !model.titleOverlay ? titleH : 0,
   )
   if (!node) return null
   if (!manual) shiftChartNode(node, titleH)
@@ -217,27 +223,103 @@ function buildChartNodeTitled(
         model.titleColor ?? model.defaultTextColor ?? (model.hasStylePart ? '#333333' : '#000000'),
       bold: titleBold,
       ...(model.titleItalic ? { italic: true } : {}),
+      ...(titleSpcPx ? { letterSpacingPx: titleSpcPx } : {}),
     })
   })
   return node
 }
 
-/** Greedy word-wrap to a pixel width; a single overlong word stays on its own line. */
+const ROT_BAND_MAX_FRAC = 0.4
+// Data-table header cells: line pitch and padding fitted on 2/7/10-line PowerPoint headers
+const DT_HEADER_PITCH_EM = 1.6
+const DT_HEADER_PAD_EM = 1.05
+const DT_KEY_EM = 1.7
+
+/** Origin of a -90° (bottom-to-top) data label whose horizontal top-left would be (cx - w/2, y). */
+export function rotatedLabelOrigin(
+  cx: number,
+  y: number,
+  w: number,
+  size: number,
+  inside: boolean,
+): { x: number; y: number } {
+  return { x: cx - size * 0.55, y: inside ? y + size * 0.55 + w / 2 : y + size }
+}
+
+/** Trim to `maxW` with a trailing ellipsis (PowerPoint's rotated-label overflow). */
+export function truncateToWidth(
+  text: string,
+  maxW: number,
+  measure: (t: string) => number,
+): string {
+  if (!(maxW < Infinity) || measure(text) <= maxW) return text
+  const chars = Array.from(text)
+  let lo = 0
+  let hi = chars.length - 1
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (measure(chars.slice(0, mid).join('') + '\u2026') <= maxW) lo = mid
+    else hi = mid - 1
+  }
+  return chars.slice(0, lo).join('').trimEnd() + '\u2026'
+}
+
+/** cap="all" upper-cases at display time (PowerPoint keeps the authored text). */
+export function applyCaps(text: string, caps: boolean | undefined): string {
+  return caps ? text.toUpperCase() : text
+}
+
+const CJK_CHAR_RE =
+  /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef\uac00-\ud7af]/g
+const CJK_RE = new RegExp(CJK_CHAR_RE.source)
+const KINSOKU_NO_START =
+  '\u3001\u3002\uff0c\uff0e\uff09\u300d\u300f\u3011\u3015\u3009\u300b\uff5d\uff3d\u30fc\u3041\u3043\u3045\u3047\u3049\u3063\u3083\u3085\u3087\u308e\u30a1\u30a3\u30a5\u30a7\u30a9\u30c3\u30e3\u30e5\u30e7\u30ee\u30f5\u30f6\u30fb\u3005\uff1f\uff01\uff1a\uff1b'
+const KINSOKU_NO_END = '\uff08\u300c\u300e\u3010\u3014\u3008\u300a\uff5b\uff3b'
+
+/** Greedy word-wrap to a pixel width; an overlong word stays on its own line unless it is
+ *  CJK text, which breaks per character (no word boundaries, PowerPoint wraps it anywhere). */
 function wrapToWidth(text: string, maxW: number, measure: (t: string) => number): string[] {
   if (measure(text) <= maxW) return [text]
   const words = text.split(/\s+/).filter(Boolean)
   const lines: string[] = []
   let cur = ''
+  const flush = () => {
+    if (cur) lines.push(cur)
+    cur = ''
+  }
   for (const w of words) {
     const cand = cur ? `${cur} ${w}` : w
     if (cur && measure(cand) > maxW) {
-      lines.push(cur)
+      flush()
       cur = w
     } else {
       cur = cand
     }
+    if (measure(cur) > maxW && CJK_RE.test(cur)) {
+      // katakana runs are words: they only split when one alone overflows the line
+      const units = cur.match(/[\u30a0-\u30ff]+|[\s\S]/gu) ?? []
+      cur = ''
+      const place = (u: string): void => {
+        if (cur && measure(cur + u) > maxW) {
+          // kinsoku: closing marks / small kana never open a line, opening brackets never end
+          // one; the break walks back past a whole cluster (small kana + long vowel mark)
+          const canBreakAt = (i: number) =>
+            !KINSOKU_NO_START.includes(i < cur.length ? cur[i]! : u[0]!) &&
+            !KINSOKU_NO_END.includes(cur[i - 1]!)
+          let k = cur.length
+          while (k > 1 && !canBreakAt(k)) k--
+          const carry = cur.slice(k)
+          cur = cur.slice(0, k)
+          flush()
+          cur = carry
+        }
+        if (u.length > 1 && measure(cur + u) > maxW) Array.from(u).forEach(place)
+        else cur += u
+      }
+      units.forEach(place)
+    }
   }
-  if (cur) lines.push(cur)
+  flush()
   return lines
 }
 
@@ -290,8 +372,10 @@ function buildChartNodeInner(
   vp: Viewport,
   metrics: FontMetricsProvider,
   media?: MediaResolver,
+  /** Height already taken by a title drawn over this box (manual plot layouts) */
+  titleTopPx = 0,
 ): ChartRenderNode | null {
-  if (model.kind === 'pie') return buildPieNode(id, sourceId, model, box, vp, metrics)
+  if (model.kind === 'pie') return buildPieNode(id, sourceId, model, box, vp, metrics, titleTopPx)
   if (model.kind === 'scatter') return buildScatterNode(id, sourceId, model, box, vp, metrics)
   if (model.kind === 'radar') return buildRadarNode(id, sourceId, model, box, vp, metrics)
   if (model.kind === 'funnel') return buildFunnelNode(id, sourceId, model, box, vp, metrics)
@@ -359,11 +443,15 @@ function buildChartNodeInner(
 
   const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
+  // With a data table the category labels become its header row and take the table's
+  // text style (PowerPoint measured: 9pt axis txPr, labels drawn at the 12pt table size)
+  const dt = model.dataTable
   const catLabelSizePx = ptToPx(
-    model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
+    dt?.sizePt ?? model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
     vp.scale,
   )
-  const catLabelColor = model.catAxis?.labelColor ?? labelColor
+  const catLabelColor = dt?.textColor ?? model.catAxis?.labelColor ?? labelColor
+  const catLinePitch = catLabelSizePx * (dt ? DT_HEADER_PITCH_EM : 1.2)
   const style = (sizePx: number): RunStyle => ({
     fontFamily: chartFont(model),
     fontSizePx: sizePx,
@@ -371,6 +459,17 @@ function buildChartNodeInner(
     italic: false,
   })
   const measure = (text: string, sizePx: number) => metrics.measure(text, style(sizePx))
+  // Ideographs advance a full em; a metrics provider without the CJK face under-measures
+  // them, which would wrap category labels too loosely
+  const catSpcPx = model.catAxis?.labelSpcPt ? ptToPx(model.catAxis.labelSpcPt, vp.scale) : 0
+  const measureCat = (text: string) => {
+    const cjk = text.match(CJK_CHAR_RE)?.length ?? 0
+    const rest = cjk ? text.replace(CJK_CHAR_RE, '') : text
+    return (
+      (rest ? measure(rest, catLabelSizePx) : 0) + cjk * catLabelSizePx + catSpcPx * text.length
+    )
+  }
+  const cats = model.categories.map((c) => applyCaps(c, model.catAxis?.labelCaps))
 
   const palette = chartPalette(model)
   const seriesColor = (i: number) =>
@@ -471,8 +570,15 @@ function buildChartNodeInner(
     vp.scale,
   )
   const legendBold = !!model.legendBold
+  // An edge-positioned legend that left its own band (a "bottom" legend parked top-right)
+  // reserves no row: PowerPoint keeps the plot where the auto layout put it
+  const lay0 = model.legendLayout
+  const legendLeftBand =
+    lay0?.yMode === 'edge' && lay0.y !== undefined && lay0.y > 0.5 !== (legendPos === 'b')
   const legendH =
-    (legendPos === 't' || legendPos === 'b') && !model.legendOverlay ? legendSizePx * 1.6 : 0
+    (legendPos === 't' || legendPos === 'b') && !model.legendOverlay && !legendLeftBand
+      ? legendSizePx * 1.6
+      : 0
   const legendItems = model.series.some((s) => s.name) ? model.series.map((s) => s.name ?? '') : []
   // Side legends claim their true width (swatch + text at the legend's own size), so
   // the plot area shrinks instead of the legend clipping at the frame edge. Overlay
@@ -552,7 +658,11 @@ function buildChartNodeInner(
     model.valAxis2?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
     vp.scale,
   )
-  const secTickLabels = sec ? sec.ticks.map((t) => fmtNum(t)) : []
+  const secTickLabels = sec
+    ? sec.ticks.map((t) =>
+        model.valAxis2?.numFmt ? fmtDataLabel(t, model.valAxis2.numFmt) : fmtNum(t),
+      )
+    : []
   const y2LabelW = sec
     ? arrayMax(
         secTickLabels.map((t) => measure(t, secLabelSizePx)),
@@ -572,10 +682,26 @@ function buildChartNodeInner(
   const valRight =
     !model.pseudo3D && !sec && !!model.catAxis?.reversed !== (model.valAxis?.crosses === 'max')
   const valSideW = axisTitleW + yLabelW + valLabelGap
-  const plotX = pad + (valRight ? labelSizePx * 0.7 : valSideW)
+  // Data table (c:dTable): one row per series under the category labels, its legend-key
+  // column sharing the value-axis gutter (PowerPoint widens the gutter to fit the names);
+  // rows measured 2em tall
+  const dtSizePx = dt ? ptToPx(dt.sizePt ?? chartTextPt(model), vp.scale) : 0
+  const dtRowH = dtSizePx * 2
+  const dtRows = dt ? model.series.length : 0
+  const dtKeyW = dt
+    ? (dt.showKeys ? dtSizePx * (DT_KEY_EM + 0.1) : 0) +
+      arrayMax(
+        model.series.map((sr) => measure(sr.name ?? '', dtSizePx)),
+        0,
+      ) +
+      dtSizePx * 1.2
+    : 0
+  const plotX = pad + Math.max(valRight ? labelSizePx * 0.7 : valSideW, dtKeyW)
   // Headroom for the top tick label's upper half — whenever label space is reserved
   // (garbage-baseline labels keep the slot even though nothing draws)
-  const plotY = pad + (legendPos === 't' ? legendH + 4 : 0) + (valNoReserve ? 0 : labelSizePx * 0.6)
+  // (a data-table chart drops the frame pad top and bottom, PowerPoint measured)
+  const plotY =
+    (dt ? 0 : pad) + (legendPos === 't' ? legendH + 4 : 0) + (valNoReserve ? 0 : labelSizePx * 0.6)
   // Right side: no secondary axis → small gap (PowerPoint measured ≈1.5% width); with one, reserve space for tick labels + title
   const plotR =
     box.w -
@@ -584,7 +710,7 @@ function buildChartNodeInner(
     legendW
   const nCats = Math.max(model.categories.length, 1)
   const maxCatW = arrayMax(
-    model.categories.map((c) => measure(c, catLabelSizePx)),
+    cats.map((c) => measureCat(c)),
     1,
   )
   // Category label mode: an explicit txPr rotation wins; otherwise crowded labels wrap
@@ -595,14 +721,18 @@ function buildChartNodeInner(
   const lblSkip = model.catAxis?.tickLblSkip ?? 1
   const heuristicSlotW = (Math.max(plotR - plotX, 10) / nCats) * lblSkip
   const catRotDeg = model.catAxis?.labelRotDeg
+  // Word-wrapped labels stop at 3 lines; CJK labels (wrapped per character) stack as many
+  // lines as ~35% of the frame height holds before rotation kicks in (PowerPoint measured
+  // on a production deck: 18 Japanese categories wrapped 4-7 lines deep, none rotated)
+  const catMaxLines = cats.some((c) => CJK_RE.test(c))
+    ? Math.max(3, Math.floor((box.h * 0.35) / (catLabelSizePx * 1.2)))
+    : 3
   const catWrapLines = (slotW: number): string[][] | null => {
     if (model.categories.length < 2 || maxCatW <= slotW * 1.05) return null
     const maxLineW = slotW * 0.95
-    const wrapped = model.categories.map((c) =>
-      wrapToWidth(c, maxLineW, (t) => measure(t, catLabelSizePx)),
-    )
+    const wrapped = cats.map((c) => wrapToWidth(c, maxLineW, (t) => measureCat(t)))
     const fits = wrapped.every(
-      (ls) => ls.length <= 3 && ls.every((l) => measure(l, catLabelSizePx) <= slotW * 1.05),
+      (ls) => ls.length <= catMaxLines && ls.every((l) => measureCat(l) <= slotW * 1.05),
     )
     return fits && wrapped.some((ls) => ls.length > 1) ? wrapped : null
   }
@@ -621,12 +751,15 @@ function buildChartNodeInner(
   const rotReserveCos = Math.abs(Math.cos((catRotUsed * Math.PI) / 180))
   // Rotated labels reserve their full rotated extent (width·sin + glyph·cos, PPT-measured);
   // horizontal rows sit a 0.7em tick gap below the axis
+  // PowerPoint caps the rotated band at ~40% of the frame (production decks: 570px frame →
+  // 226px band; with a 3-row table, 523px → 190px) and truncates longer labels with an ellipsis
+  const rotBandMax = (box.h - (dtRows * dtRowH) / 2) * ROT_BAND_MAX_FRAC
   const catReserve = rotateCats
-    ? Math.min(maxCatW * rotReserve + catLabelSizePx * rotReserveCos, box.h * 0.35) +
+    ? Math.min(maxCatW * rotReserve + catLabelSizePx * rotReserveCos, rotBandMax) +
       catLabelSizePx * 0.2
-    : catLabelSizePx * 0.75 +
-      catLabelSizePx * 1.2 * (heuristicWrap ? arrayMax(heuristicWrap.map((l) => l.length)) : 1) +
-      catLabelSizePx * 0.15
+    : catLinePitch * (heuristicWrap ? arrayMax(heuristicWrap.map((l) => l.length)) : 1) +
+      // table header cells pad their lines more than bare axis labels (PPT measured)
+      catLabelSizePx * (dt ? DT_HEADER_PAD_EM : 0.9)
   // Value range spans zero (crosses=autoZero): the category axis and its labels sit at the
   // zero line, so the bottom keeps only the last tick label's half-height (PPT measured)
   // pseudo-3D stages pin the category axis to the plot floor, so their labels keep the bottom reserve
@@ -636,6 +769,7 @@ function buildChartNodeInner(
     model.catAxis?.tickLblPos !== 'low' &&
     !catNoReserve &&
     !rotateCats &&
+    !dt &&
     !model.categoryGroups &&
     !model.plotLayout &&
     !model.pseudo3D
@@ -645,15 +779,19 @@ function buildChartNodeInner(
       ? catTitleSizePx * 1.2 + catLabelSizePx * 0.4
       : 0
   const catGroupH = model.categoryGroups && !catNoReserve ? catLabelSizePx * 1.5 : 0
+  // the data table's outline sits on the frame bottom (PowerPoint measured, no pad)
   const plotB =
     box.h -
-    pad -
+    (dt ? 0 : pad) -
     (catNoReserve || catAtZero ? 0 : catReserve) -
     (catAtZero ? labelSizePx * 0.6 : 0) -
     catGroupH -
     catTitleH -
+    dtRows * dtRowH -
     (legendPos === 'b' ? legendH : 0)
-  const L = model.plotLayout
+  // PowerPoint lays the plot out automatically once a data table is present (measured:
+  // a saved inner layout of 64% frame height drew at 43%, exactly the auto reserve)
+  const L = dt ? undefined : model.plotLayout
   // PowerPoint keeps the value-axis labels inside the frame: a manual inner rect that
   // starts closer to the edge than the labels need is pushed right (right edge kept)
   const manualMinX = valRight || valNoReserve ? 0 : yLabelW + valLabelGap
@@ -955,14 +1093,17 @@ function buildChartNodeInner(
   // bottom otherwise) with a 0.75em tick gap, on the side away from positive values
   const catLabelBase = catAtZero ? crossY : plot.y + plot.h
   if (!catLabelsOff)
-    model.categories.forEach((cat, i) => {
+    cats.forEach((cat0, i) => {
       if (i % lblSkip) return
       const cx = plot.x + (catSlot(i) + 0.5) * slotW
+      const catSpc = catSpcPx ? { letterSpacingPx: catSpcPx } : {}
       if (drawRotate) {
         // Rotation is about the text's origin (left end). Negative angles slant up-right:
         // place the origin down-left so the right end lands just below the tick. Positive
         // angles slant down-right: the left end itself sits at the tick.
-        const w = measure(cat, catLabelSizePx)
+        const maxW = rotSin > 0.01 ? (rotBandMax - catLabelSizePx * rotCos) / rotSin : Infinity
+        const cat = truncateToWidth(cat0, maxW, measureCat)
+        const w = measureCat(cat)
         const neg = catRotUsed < 0
         node.labels.push({
           text: cat,
@@ -972,25 +1113,112 @@ function buildChartNodeInner(
           color: catLabelColor,
           rotationDeg: catRotUsed,
           ...catBold,
+          ...catSpc,
         })
         return
       }
-      const lines = drawWrap?.[i] ?? [cat]
-      const topY =
-        catAtZero && rev
+      const lines = drawWrap?.[i] ?? [cat0]
+      // data-table header cells center their lines vertically
+      const topY = dt
+        ? catLabelBase + (catReserve - catLinePitch * lines.length) / 2
+        : catAtZero && rev
           ? catLabelBase - catLabelSizePx * (1.75 + 1.2 * (lines.length - 1))
           : catLabelBase + catLabelSizePx * 0.75
       lines.forEach((line, li) => {
         node.labels.push({
           text: line,
-          x: cx - measure(line, catLabelSizePx) / 2,
-          y: topY + li * catLabelSizePx * 1.2,
+          x: cx - measureCat(line) / 2,
+          y: topY + li * catLinePitch,
           fontSizePx: catLabelSizePx,
           color: catLabelColor,
           ...catBold,
+          ...catSpc,
         })
       })
     })
+
+  // the table stays even when the category labels are hidden (PowerPoint keeps it); its
+  // rows start under the label band plus any multi-level group row
+  if (dt && dtRows) {
+    const lineColor = dt.lineColor ?? gridDefaults(model).major
+    const textColor = dt.textColor ?? catLabelColor
+    const top = plot.y + plot.h + (catNoReserve ? 0 : catReserve) + catGroupH
+    const bottom = top + dtRows * dtRowH
+    const left = plot.x - Math.min(dtKeyW, plot.x - pad)
+    const right = plot.x + plot.w
+    const line = (x1: number, y1: number, x2: number, y2: number) =>
+      node.gridLines.push({ x1, y1, x2, y2, color: lineColor, widthPx: 1 })
+    if (dt.outline) {
+      line(left, plot.y + plot.h, right, plot.y + plot.h)
+      line(left, bottom, right, bottom)
+      line(left, plot.y + plot.h, left, bottom)
+      line(right, plot.y + plot.h, right, bottom)
+    }
+    if (dt.horzBorder)
+      for (let r = 0; r < dtRows; r++) line(left, top + r * dtRowH, right, top + r * dtRowH)
+    if (dt.vertBorder) {
+      line(plot.x, plot.y + plot.h, plot.x, bottom)
+      for (let i = 1; i < n; i++)
+        line(plot.x + i * slotW, plot.y + plot.h, plot.x + i * slotW, bottom)
+    }
+    model.series.forEach((ser, si) => {
+      const rowY = top + si * dtRowH
+      const textY = rowY + (dtRowH - dtSizePx * 1.2) / 2
+      let kx = left + dtSizePx * 0.3
+      if (dt.showKeys) {
+        // keys share one ~1.7em column; a line series shows its line sample (+ marker)
+        // instead of a swatch, like the legend (PowerPoint measured)
+        const keyW = dtSizePx * DT_KEY_EM
+        if (serKind(ser) === 'line') {
+          const cy = rowY + dtRowH / 2
+          node.polylines.push({
+            points: [kx, cy, kx + keyW, cy],
+            color: seriesColor(si),
+            widthPx: Math.max(1.5, ptToPx(2.25, vp.scale)),
+          })
+          if (ser.marker)
+            node.markers.push({
+              x: kx + keyW / 2,
+              y: cy,
+              r: dtSizePx * 0.28,
+              color: seriesColor(si),
+            })
+        } else {
+          node.swatches.push({
+            x: kx,
+            y: rowY + dtRowH / 2 - dtSizePx * 0.25,
+            w: keyW,
+            h: dtSizePx * 0.5,
+            color: seriesColor(si),
+          })
+        }
+        kx += dtSizePx * (DT_KEY_EM + 0.1)
+      }
+      if (ser.name)
+        node.labels.push({
+          text: ser.name,
+          x: kx,
+          y: textY,
+          fontSizePx: dtSizePx,
+          color: textColor,
+        })
+      const fmt = ser.valFmt ?? (ser.secondaryAxis ? model.valAxis2?.numFmt : model.valAxis?.numFmt)
+      ser.values.forEach((v, i) => {
+        if (v == null || i >= n) return
+        const text = fmtDataLabel(v, fmt)
+        const w = measure(text, dtSizePx)
+        // overlong cells shrink to the slot instead of colliding with their neighbors
+        const size = w > slotW * 0.95 ? Math.max(dtSizePx * ((slotW * 0.95) / w), 4) : dtSizePx
+        node.labels.push({
+          text,
+          x: plot.x + (catSlot(i) + 0.5) * slotW - (w * size) / dtSizePx / 2,
+          y: textY + (dtSizePx - size) * 0.6,
+          fontSizePx: size,
+          color: textColor,
+        })
+      })
+    })
+  }
 
   // Multi-level category axis: outer-level group labels centered under their span,
   // with divider ticks between groups (Excel's boxed second row, simplified)
@@ -1029,24 +1257,35 @@ function buildChartNodeInner(
   // ── Data series (bar series + line/area series can coexist: combo charts) ──
   const dlSize = model.dataLabelPt ? ptToPx(model.dataLabelPt, vp.scale) : labelSizePx * 0.9
   const dlBold = !!model.dataLabelBold
+  const dlSpcPx = model.dataLabelSpcPt ? ptToPx(model.dataLabelSpcPt, vp.scale) : 0
+  const dlVertical = model.dataLabelRotDeg === -90
   // Data labels (c:dLbls showVal): white centered inside stacked segments, dark gray outside points/bars otherwise
   const dLbl = (si: number, catIdx: number, cx: number, y: number, v: number, inside: boolean) => {
     if (!(model.series[si]?.dataLabels ?? model.dataLabels)) return
-    const text = composeDataLabel(model, si, catIdx, fmtDataLabel(v, labelFmt(model, si)))
+    const text = applyCaps(
+      composeDataLabel(model, si, catIdx, fmtDataLabel(v, labelFmt(model, si))),
+      model.dataLabelCaps,
+    )
     if (!text) return
     // a point's own dLbl txPr (size/color) replaces the series look
     const ov = pointLabelOverride(model, si, catIdx)
     const size = ov?.sizePt ? ptToPx(ov.sizePt, vp.scale) : dlSize
+    const w = measure(text, size) + dlSpcPx * text.length
+    // bodyPr rot=-90: the label reads bottom-to-top, centered on the bar; callers pass
+    // the horizontal text top (1.3em above an outside bar end, 0.55em above the inside center)
+    const vert = dlVertical ? rotatedLabelOrigin(cx, y, w, size, inside) : null
     node.labels.push({
       text,
-      x: cx - measure(text, size) / 2,
-      y,
+      x: vert ? vert.x : cx - w / 2,
+      y: vert ? vert.y : y,
+      ...(vert ? { rotationDeg: -90 } : {}),
+      ...(dlSpcPx ? { letterSpacingPx: dlSpcPx } : {}),
       fontSizePx: size,
       color: inside
         ? '#FFFFFF'
         : (ov?.color ?? model.defaultTextColor ?? (dlBold ? '#000000' : '#404040')),
       ...((ov?.text != null ? ov.bold : dlBold) ? { bold: true } : {}),
-      ...labelBoxOf(model, si, catIdx, measure(text, size)),
+      ...labelBoxOf(model, si, catIdx, w),
     })
   }
   if (barSeriesIdx.length && stacked) {
@@ -1312,7 +1551,7 @@ function buildChartNodeInner(
     if (legendPos === 't' || legendPos === 'b') {
       const total = itemWs.reduce((a, b) => a + b, 0)
       const autoX = Math.max((box.w - total) / 2, pad)
-      const autoY = legendPos === 't' ? pad : box.h - pad - legendSizePx * 1.2
+      const autoY = legendPos === 't' ? pad + titleTopPx : box.h - pad - legendSizePx * 1.2
       const p = applyLayout(autoX, autoY, total, legendSizePx * 1.2)
       let x = p.x
       items.forEach((it, i) => {
@@ -1533,6 +1772,7 @@ function buildPieNode(
   box: PlacedBox,
   vp: Viewport,
   metrics: FontMetricsProvider,
+  titleTopPx = 0,
 ): ChartRenderNode | null {
   // Pie uses the first series; wedge colors prefer per-point colors (c:dPt), default palette by category index
   const ser = model.series[0]
@@ -1855,7 +2095,7 @@ function buildPieNode(
         const y = rect
           ? rect.y
           : legendPos === 't'
-            ? pad * 0.5
+            ? pad * 0.5 + titleTopPx
             : box.h - pad * 0.5 - labelSizePx * 1.2
         const ordered = rtl ? [...legendItems.keys()].reverse() : [...legendItems.keys()]
         for (const i of ordered) {
@@ -3627,7 +3867,7 @@ function round12(v: number): number {
 /** Compose a data label: optional series/category name parts plus the value (c:showSerName/showCatName). */
 /** Series-level c:dLbls/c:numFmt wins over the chart-level format. */
 function labelFmt(model: ChartModel, si: number): string | undefined {
-  return model.series[si]?.dataLabelFmt ?? model.dataLabelFmt
+  return model.series[si]?.dataLabelFmt ?? model.dataLabelFmt ?? model.series[si]?.valFmt
 }
 
 /** Data-label box colors (point dLbl → series dLbls) with the text width the box wraps. */
@@ -3673,7 +3913,8 @@ function pointLabelOverride(model: ChartModel, si: number, idx: number) {
 /** Data-label number format: the common Excel numeric codes ('0', '#,##0', '0.0', '0%' …);
  *  anything fancier falls back to the plain short form. */
 function fmtDataLabel(v: number, code: string | undefined): string {
-  if (!code) return fmtNum(round12(v))
+  // "General" prints no thousands separator (PowerPoint: 173021, not 173,021)
+  if (!code) return String(round12(v))
   const m = /^([#,0]*0)(?:\.(0+))?(%?)(?:;.*)?$/.exec(code.replace(/"[^"]*"/g, '').trim())
   if (!m) return fmtNum(round12(v))
   const dec = m[2]?.length ?? 0

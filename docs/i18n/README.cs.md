@@ -23,6 +23,7 @@ Soubory Word, Excel, PowerPoint a PDF, upravované vámi a vaší AI, ukládané
 
 <p align="center">
   <a href="#download"><b>Stažení</b></a> ·
+  <a href="#skills"><b>Skilly</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Web</b></a> ·
@@ -224,6 +225,7 @@ ve viditelné záložce editoru, zatímco se díváte.
 - **PDF udělané správně.** Upravujte text přímo na stránce a převádějte PDF
   do Word, Excel nebo PowerPoint na zařízení, se systémovým OCR pro skeny.
 - **Také Markdown a HTML**, se stejným panelem AI a místním exportem do Word.
+- **Skilly.** Hotové skilly nebo vlastní `SKILL.md`, připojené z nabídky **+** v kterémkoli AI panelu.
 - **Skriptovatelný.** Příkazový řádek `genoffice`, agentní skill a MCP
   server dávají každý engine do služeb Claude Code, Claude Desktop, Codex,
   Cursor a dalších agentů, stále na zařízení.
@@ -248,6 +250,18 @@ endpoint pro obrázky, generování obrázků a analýzu obrázků/videa.
 Celý balík nabízí světlý, tmavý a systémový vzhled. Vzhledy mění pouze to,
 co je vidět na obrazovce: exporty, tisky a uložené soubory si vždy zachovávají
 vlastní barvy dokumentu.
+
+<a id="skills"></a>
+
+## Skilly
+
+Skill je soubor `SKILL.md`, který AI říká, jak dobře zvládnout jeden úkol: týdenní report, NDA, plán hodiny.
+GenOffice jich sadu dodává a přijímá i vaše vlastní, ve stejném formátu, jaký používají programovací agenti.
+
+- **Nastavení → Skilly.** **Nainstalujte** doporučený skill nebo **Importujte** složku, zip či jediný `SKILL.md`. Při importu se nic nespouští.
+- **V chatu.** Otevřete nabídku **+** vedle pole pro zprávu v kterémkoli AI panelu, zvolte **Skilly**, jeden zaškrtněte a odešlete. Skill putuje jen s touto zprávou.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

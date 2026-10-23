@@ -1,25 +1,18 @@
 // @vitest-environment jsdom
 /**
- * The skills skill: three tools over the user's installed skills, with the
- * list cached into per-turn context once one call has fetched it. The bridge
- * (window.desktop) is a fake — the boundary guards live in the main process.
+ * The skills skill: only run_cli. Skills are never listed or read by the model;
+ * the user attaches them from the composer. The bridge (window.desktop) is a
+ * fake — the boundary guards live in the main process.
  */
 import { describe, expect, it, beforeEach } from 'vitest'
 import { createSkillsSkill } from '../src/renderer/ai/skills-skill'
-import type { UserCliRun, UserSkillEntry } from '../src/shared/ipc'
+import type { UserCliRun } from '../src/shared/ipc'
 
 const call = (name: string, input: Record<string, unknown> = {}) =>
   ({ id: 't1', name, input }) as never
 
-const SKILLS: UserSkillEntry[] = [
-  { name: 'batch-pdf', description: 'Convert a folder of docx to pdf', relevant: true },
-  { name: 'git-flow', description: 'Document a release process', relevant: false },
-]
-
 function installBridge(over: Partial<Record<string, unknown>> = {}): void {
   ;(window as unknown as { desktop: unknown }).desktop = {
-    skillsList: async () => SKILLS,
-    skillText: async (name: string) => `body of ${name}`,
     runCli: async (args: string[]): Promise<UserCliRun> => ({
       ok: true,
       code: 0,
@@ -34,23 +27,11 @@ function installBridge(over: Partial<Record<string, unknown>> = {}): void {
 describe('createSkillsSkill', () => {
   beforeEach(() => installBridge())
 
-  it('lists installed skills and caches them for the per-turn context', async () => {
+  it('offers run_cli only: the model cannot list or read skills on its own', () => {
     const skill = createSkillsSkill()
-    expect(skill.buildContext?.()).toBe('')
-    const out = await skill.executeTool!(call('list_skills'))
-    expect(out.isError).toBeUndefined()
-    expect(out.output).toContain('batch-pdf — Convert a folder of docx to pdf')
-    expect(out.output).toContain('git-flow — Document a release process')
-    expect(out.output).toContain('(not about document formats)')
-    expect(skill.buildContext?.()).toContain('batch-pdf')
-  })
-
-  it('reads one skill by name through the main-process bridge', async () => {
-    const skill = createSkillsSkill()
-    const out = await skill.executeTool!(call('read_skill', { name: 'batch-pdf' }))
-    expect(out.output).toBe('body of batch-pdf')
-    const bad = await skill.executeTool!(call('read_skill', {}))
-    expect(bad.isError).toBe(true)
+    expect(skill.tools.map((t) => t.name)).toEqual(['run_cli'])
+    expect(skill.buildContext).toBeUndefined()
+    expect(skill.systemPrompt).toContain('Never assume a skill')
   })
 
   it('reports the cli outcome with its exit code and the json summary', async () => {
@@ -62,6 +43,22 @@ describe('createSkillsSkill', () => {
     expect(out.output).toContain('exit 0')
     expect(out.output).toContain('summary: done')
     expect(out.output).toContain('{"status":"ok"}')
+    expect(out.mutated).toBe(false)
+  })
+
+  it('counts a run that wrote a file as a mutation', async () => {
+    installBridge({
+      runCli: async (): Promise<UserCliRun> => ({
+        ok: true,
+        code: 0,
+        json: { status: 'ok', command: 'convert', summary: 'done', output_path: '/out/a.pdf' },
+        stdout: '',
+        stderr: '',
+      }),
+    })
+    const skill = createSkillsSkill()
+    const out = await skill.executeTool!(call('run_cli', { args: ['convert', 'a.docx'] }))
+    expect(out.mutated).toBe(true)
   })
 
   it('marks a failing command as an error result', async () => {
@@ -83,10 +80,10 @@ describe('createSkillsSkill', () => {
 
   it('turns a missing main-process handler into a tool error, not a throw', async () => {
     installBridge({
-      skillsList: () => Promise.reject(new Error("No handler registered for 'ai:skills-list'")),
+      runCli: () => Promise.reject(new Error("No handler registered for 'ai:run-cli'")),
     })
     const skill = createSkillsSkill()
-    const out = await skill.executeTool!(call('list_skills'))
+    const out = await skill.executeTool!(call('run_cli', { args: ['info', 'a.docx'] }))
     expect(out.isError).toBe(true)
     expect(out.output).toContain('No handler registered')
   })
@@ -96,13 +93,5 @@ describe('createSkillsSkill', () => {
     const out = await skill.executeTool!(call('run_cli', { args: ['ok', 42] }))
     expect(out.isError).toBe(true)
     expect(out.output).toContain('non-empty array of strings')
-  })
-
-  it('says when no skills are installed', async () => {
-    installBridge({ skillsList: async () => [] })
-    const skill = createSkillsSkill()
-    const out = await skill.executeTool!(call('list_skills'))
-    expect(out.output).toContain('No skills are installed')
-    expect(skill.buildContext?.()).toBe('')
   })
 })

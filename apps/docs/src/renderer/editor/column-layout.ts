@@ -68,6 +68,7 @@ export interface ColumnBlockSpec {
   /** owning section's character-grid letter-spacing delta (pt) in docs whose
    *  sections disagree on docGrid charSpace (doc-charspace-block) */
   charSpacePt?: number
+  charSpaceSbPt?: number
   /** translate; dy < 0 pulls content up over vacated column space */
   dx: number
   dy: number
@@ -102,6 +103,7 @@ const PATCH_PROPS = [
   '--doc-margin-top',
   '--doc-grid-pitch',
   '--doc-char-space',
+  '--doc-char-space-sb',
   '--vert-mb',
 ]
 
@@ -174,6 +176,9 @@ export function setColumnLayout(
         ? `--doc-grid-pitch:${spec.gridPitchPt > 0 ? `${round2(spec.gridPitchPt)}pt` : '0.0001px'};`
         : '') +
       (spec.charSpacePt !== undefined ? `--doc-char-space:${round4(spec.charSpacePt)}pt;` : '') +
+      (spec.charSpaceSbPt !== undefined
+        ? `--doc-char-space-sb:${round4(spec.charSpaceSbPt)}pt;`
+        : '') +
       (spec.pageDx ? `--page-cx:${round2(spec.pageDx)}px;` : '') +
       (spec.vertical ? `--vert-mb:${round2(spec.vertical.marginBottomPx)}px;` : '') +
       `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`

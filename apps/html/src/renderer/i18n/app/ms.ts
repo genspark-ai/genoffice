@@ -9,6 +9,11 @@ export const ms = {
   redactDialogPlaceholder: 'Nama placeholder, cth. telefon pelanggan',
   redactCancel: 'Batal',
   redactInsert: 'Sembunyikan',
+  diskChangedMsg: 'Fail ini telah diubah oleh program lain.',
+  diskConflictMsg: 'Fail ini berubah pada cakera; menyimpan akan menulis ganti perubahan itu.',
+  diskReload: 'Muat semula',
+  diskKeepMine: 'Kekalkan milik saya',
+  diskOverwrite: 'Tulis ganti juga',
 
   loading: 'Memuatkan…',
   loadFailed: 'Tidak dapat membuka fail',

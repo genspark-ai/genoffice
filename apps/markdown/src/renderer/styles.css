@@ -198,6 +198,7 @@ button {
   margin: 0 auto;
   padding: 40px 72px 120px;
   background: var(--surface);
+  color: var(--text);
   box-shadow: var(--md-page-shadow);
 }
 
@@ -593,7 +594,7 @@ html.genoffice-popover-open .ribbon-tabs {
 }
 
 .qa-btn:disabled {
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   cursor: default;
 }
 
@@ -1285,7 +1286,7 @@ html.genoffice-popover-open .ribbon-tabs {
 .ai-msg {
   position: relative;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -2113,7 +2114,7 @@ html.genoffice-popover-open .ribbon-tabs {
   background: none;
   border-radius: var(--radius-16) var(--radius-16) 0 0;
   padding: 12px 14px 4px;
-  font-size: 16px;
+  font-size: 14px;
   font-family: inherit;
   line-height: 24px;
   outline: none;
@@ -2356,6 +2357,33 @@ html.genoffice-popover-open .ribbon-tabs {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+.disk-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+.disk-notice span {
+  flex: 1;
+  min-width: 0;
+}
+.disk-notice button {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.disk-notice button:hover {
+  background: var(--hover);
 }
 
 /* ---- main layout: AI dock (left) + editor ---- */
@@ -3549,14 +3577,24 @@ div.tiptap-mathematics-render {
 
 /* ---- document paper theme picker (ribbon) ---- */
 
+/* Anchor for the theme menu, which is position: fixed so it escapes the
+   ribbon-body scroll clip while tracking its trigger through ribbon
+   scrolling (same pattern as .rb-link-pop and the docs ribbon dropdowns) */
 .md-theme-wrap {
   position: relative;
+  anchor-name: --md-theme-wrap;
+  anchor-scope: --md-theme-wrap;
 }
 
 .md-theme-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
+  position-anchor: --md-theme-wrap;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  /* the palette button sits at the right end of the ribbon, so a menu that
+     opens to the right leaves the window; flip-inline mirrors it back */
+  position-try-fallbacks: flip-inline;
+  position-visibility: anchors-visible;
   z-index: 30;
   min-width: 190px;
   padding: 5px;
@@ -3715,6 +3753,8 @@ div.tiptap-mathematics-render {
 }
 
 .graph-close {
+  /* The graph overlaps the ribbon's native window drag strip. */
+  -webkit-app-region: no-drag;
   border: none;
   background: none;
   font-size: 15px;

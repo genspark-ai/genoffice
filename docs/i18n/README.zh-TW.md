@@ -23,6 +23,7 @@ Word、Excel、PowerPoint 與 PDF 檔案，由你與你的 AI 共同編輯，並
 
 <p align="center">
   <a href="#download"><b>下載</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>官網</b></a> ·
@@ -252,6 +253,7 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
 - **認真做好 PDF。** 直接在頁面內編輯文字，並在本機將 PDF 轉換為 Word、Excel 或
   PowerPoint，掃描檔案支援系統 OCR。
 - **同樣支援 Markdown 與 HTML**，共用同一套 AI 面板，並可在本機匯出為 Word。
+- **Skills。** 內建的現成 skill，或你自己的 `SKILL.md`，在任一 AI 面板的 **+** 選單中附帶。
 - **可寫成腳本。** `genoffice` 命令列、agent skill 與 MCP 伺服器讓每一個引擎
   都能供 Claude Code、Claude Desktop、Codex、Cursor 及其他代理使用，而且依然
   在本機執行。
@@ -273,6 +275,18 @@ Grok、Qwen、MiniMax，或任何相容 OpenAI 的圖片服務端點。
 
 整套軟體支援亮色、深色與跟隨系統三種主題。主題只會改變畫面顯示：
 匯出、列印與儲存的檔案永遠保留文件本身的原始色彩。
+
+<a id="skills"></a>
+
+## Skills
+
+Skill 是一份 `SKILL.md`，告訴 AI 怎樣把一件事做好：週報、保密協議、教案。
+GenOffice 內建了一批，也接受你自己的，格式與程式開發代理所用的相同。
+
+- **設定 → Skills。** **安裝**推薦的 skill，或**匯入**資料夾、zip 或單一 `SKILL.md`。匯入不會執行任何東西。
+- **在聊天中。** 開啟任一 AI 面板輸入框旁的 **+** 選單，選 **Skills**，勾選一個，送出。Skill 只隨這一則訊息送出。
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

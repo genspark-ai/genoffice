@@ -19,6 +19,8 @@ export const AI_SEARCH_PROVIDERS: AiSearchProviderMeta[] = [
   // exa/firecrawl: AI-search APIs without an image endpoint (like Tavily/Parallel)
   { id: 'exa', label: 'Exa', keyPlaceholder: 'Exa API key', imageSearch: false },
   { id: 'firecrawl', label: 'Firecrawl', keyPlaceholder: 'fc-...', imageSearch: false },
+  // keenable: keyless like Parallel; a key only raises the rate limits
+  { id: 'keenable', label: 'Keenable', keyPlaceholder: 'Keenable API key', imageSearch: false },
 ]
 
 export function defaultAiSearchSettings(): AiSearchSettings {
@@ -31,6 +33,7 @@ export function defaultAiSearchSettings(): AiSearchSettings {
       parallel: { apiKey: '' },
       exa: { apiKey: '' },
       firecrawl: { apiKey: '' },
+      keenable: { apiKey: '' },
     },
   }
 }
@@ -41,19 +44,30 @@ export function resolveAiSearchSettings(
   const defaults = defaultAiSearchSettings()
   if (!stored) return defaults
   const providers = { ...defaults.providers }
-  for (const id of ['serper', 'serply', 'tavily', 'parallel', 'exa', 'firecrawl'] as const) {
+  for (const id of [
+    'serper',
+    'serply',
+    'tavily',
+    'parallel',
+    'exa',
+    'firecrawl',
+    'keenable',
+  ] as const) {
     const key = stored.providers?.[id]?.apiKey
     if (typeof key === 'string') providers[id] = { apiKey: key.trim() }
   }
   return { provider: stored.provider ?? defaults.provider, providers }
 }
 
-/** Parallel can run keylessly; other custom providers require a key or fall back to Genspark. */
+/**
+ * Parallel and Keenable can run keylessly; other custom providers require a key or fall back
+ * to Genspark.
+ */
 export function activeSearchProvider(settings: Pick<AiSettings, 'search'>): AiSearchProviderId {
   const search = settings.search
   if (!search || search.provider === 'genspark') return 'genspark'
   if (!AI_SEARCH_PROVIDERS.some((m) => m.id === search.provider)) return 'genspark'
-  if (search.provider === 'parallel') return 'parallel'
+  if (search.provider === 'parallel' || search.provider === 'keenable') return search.provider
   // Trim-aware: a whitespace-only key from in-memory settings falls back
   // instead of sending `Bearer    ` to the search backend.
   return search.providers?.[search.provider]?.apiKey?.trim() ? search.provider : 'genspark'

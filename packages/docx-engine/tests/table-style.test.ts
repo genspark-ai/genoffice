@@ -49,6 +49,56 @@ describe('table styles (tblStyle display)', () => {
     expect(rows[3][0].fill).toBe('D9E2F3')
   })
 
+  it('layers conditional tcBorders / tcMar under explicit cell properties', async () => {
+    const style =
+      '<w:style w:type="table" w:styleId="Rule"><w:name w:val="Rule"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="12" w:space="0" w:color="666666"/></w:tcBorders>' +
+      '<w:tcMar><w:bottom w:w="60" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr>' +
+      '<w:tblStylePr w:type="firstCol"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="2"/><w:right w:val="single" w:sz="8"/></w:tcBorders>' +
+      '</w:tcPr></w:tblStylePr></w:style>'
+    const explicit =
+      '<w:tcBorders><w:bottom w:val="nil"/></w:tcBorders><w:tcMar><w:bottom w:w="20" w:type="dxa"/></w:tcMar>'
+    const table = (look: string) =>
+      `<w:tbl><w:tblPr><w:tblStyle w:val="Rule"/>${look}</w:tblPr>` +
+      `<w:tr><w:tc><w:tcPr>${explicit}</w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>` +
+      '<w:tc><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr>' +
+      row('c', 'd') +
+      '</w:tbl>'
+    const on = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="1" w:firstColumn="1"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    const rows = on.blocks[0].table!.rows
+    // first row beats first column on the shared side; explicit nil / tcMar win
+    expect(rows[0][0].borders).toEqual({
+      bottom: { style: 'nil' },
+      right: { style: 'single', szEighths: 8 },
+    })
+    expect(rows[0][0].cellMarTwips).toEqual({ bottom: 20 })
+    expect(rows[0][1].borders).toEqual({
+      bottom: { style: 'single', szEighths: 12, color: '666666' },
+    })
+    expect(rows[0][1].cellMarTwips).toEqual({ bottom: 60 })
+    expect(rows[1][0].borders).toEqual({
+      bottom: { style: 'single', szEighths: 2 },
+      right: { style: 'single', szEighths: 8 },
+    })
+    expect(rows[1][1].borders).toBeUndefined()
+
+    const off = await parseDocx(
+      await buildDocx({
+        bodyXml: table('<w:tblLook w:firstRow="0" w:firstColumn="0"/>'),
+        extraStylesXml: style,
+      }),
+    )
+    expect(off.blocks[0].table!.rows[0][1].borders).toBeUndefined()
+    expect(off.blocks[0].table!.rows[1][0].borders).toBeUndefined()
+  })
+
   it('honors noHBand and firstRow=0 flags', async () => {
     const doc = await parseDocx(
       await buildDocx({
@@ -139,6 +189,25 @@ describe('table styles (tblStyle display)', () => {
       lineRawTwips: 240,
       lineSpacing: 1,
     })
+  })
+
+  it('deep-merges conditional tcBorders through basedOn (child keeps parent sides)', async () => {
+    const styles =
+      '<w:style w:type="table" w:styleId="RuleParent"><w:name w:val="Rule Parent"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="12"/></w:tcBorders>' +
+      '<w:tcMar><w:top w:w="40" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr></w:style>' +
+      '<w:style w:type="table" w:styleId="RuleChild"><w:name w:val="Rule Child"/><w:basedOn w:val="RuleParent"/>' +
+      '<w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders>' +
+      '<w:bottom w:val="single" w:sz="2"/></w:tcBorders>' +
+      '<w:tcMar><w:bottom w:w="60" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr></w:style>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>', extraStylesXml: styles }),
+    )
+    const first = doc.styles.get('RuleChild')!.tableDisplay?.firstRow
+    expect(first?.borders?.top).toBeTruthy()
+    expect(first?.borders?.bottom).toMatchObject({ szEighths: 2 })
+    expect(first?.cellMarTwips).toMatchObject({ top: 40, bottom: 60 })
   })
 
   it('style-derived display keeps untouched tables byte-identical', async () => {

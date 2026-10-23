@@ -13,7 +13,7 @@ import {
   type XNode,
 } from './xml-utils'
 import { customEnumItems } from './list-markers'
-import { decodeNumericCharRefs, type RelInfo } from './parse-xml-text'
+import { decodeNumericCharRefs, onOffOf, type RelInfo } from './parse-xml-text'
 import type {
   CommentInfo,
   DocProtection,
@@ -272,6 +272,7 @@ function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
   const lvlRestart = parseInt(attrsOf(findChild(lvlNode, 'w:lvlRestart') ?? {})['w:val'] ?? '', 10)
   if (Number.isFinite(lvlRestart)) level.lvlRestart = lvlRestart
   const lvlPPr = findChild(lvlNode, 'w:pPr')
+  if (lvlPPr && onOffOf(lvlPPr, 'w:bidi')) level.bidi = true
   const tabs = lvlPPr ? findChild(lvlPPr, 'w:tabs') : undefined
   const tabPos = tabs ? parseInt(attrsOf(findChild(tabs, 'w:tab') ?? {})['w:pos'] ?? '', 10) : NaN
   if (Number.isFinite(tabPos)) level.tabStop = tabPos
@@ -279,9 +280,13 @@ function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
   if (ind) {
     const attrs = attrsOf(ind)
     // an explicit 0 is a real value: left="0" firstLine="0" puts the marker at the
-    // margin with no hanging area (Word then tabs to the next default stop)
+    // margin with no hanging area (Word then tabs to the next default stop); an
+    // absent left is 0 too (Word probe 2026-10-20: `right=360 hanging=360` hangs
+    // the marker 18pt outside the start margin), left/right are logical start/end
     const left = parseInt(attrs['w:left'] ?? attrs['w:start'] ?? '', 10)
-    if (left >= 0) level.indentLeft = left
+    level.indentLeft = Number.isFinite(left) ? left : 0
+    const right = parseInt(attrs['w:right'] ?? attrs['w:end'] ?? '', 10)
+    if (Number.isFinite(right)) level.indentRight = right
     const hanging = parseInt(attrs['w:hanging'] ?? '', 10)
     if (hanging > 0) level.hanging = hanging
     const firstLine = parseInt(attrs['w:firstLine'] ?? '', 10)

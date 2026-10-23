@@ -12,6 +12,10 @@ export interface TabSummary {
   active: boolean
   /** absolute path behind the tab; absent while the document is untitled */
   filePath?: string
+  /** renderer released to free memory; reopens its file when shown */
+  dormant?: boolean
+  /** excluded from sleeping (tab context menu) */
+  pinned?: boolean
 }
 
 /**

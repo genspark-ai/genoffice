@@ -23,6 +23,7 @@ Word, Excel, PowerPoint और PDF फ़ाइलें, आपके और �
 
 <p align="center">
   <a href="#download"><b>डाउनलोड</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>वेबसाइट</b></a> ·
@@ -197,6 +198,7 @@ skill इंस्टॉल करने की ज़रूरत, न को�
   ऑन-डिवाइस Word, Excel या PowerPoint में कन्वर्ट करें, स्कैन के लिए सिस्टम OCR के
   साथ।
 - **Markdown और HTML भी**, उसी AI पैनल और Word में लोकल एक्सपोर्ट के साथ।
+- **Skills।** तैयार skills या आपकी अपनी `SKILL.md`, किसी भी AI पैनल के **+** मेनू से जोड़ें।
 - **स्क्रिप्ट करने योग्य।** एक `genoffice` कमांड लाइन, एक एजेंट skill और एक
   MCP सर्वर हर इंजन को Claude Code, Claude Desktop, Codex, Cursor और दूसरे
   एजेंट्स की सेवा में लगा देते हैं, वह भी ऑन-डिवाइस।
@@ -209,6 +211,18 @@ skill इंस्टॉल करने की ज़रूरत, न को�
 **या अपनी खुद की key लाएँ।** Settings → AI में Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty और OpenCode Zen/Go लिस्ट किए गए हैं, साथ ही किसी भी OpenAI-compatible endpoint (base URL + key) के लिए एक कस्टम स्लॉट है, जिसमें लोकल मॉडल सर्वर भी शामिल हैं। सर्च और मीडिया के अपने अलग, हर-कैपेबिलिटी प्रोवाइडर **AI Media & Search** के तहत हैं: वेब सर्च के लिए Serper या Tavily, और इमेज जनरेशन व इमेज/वीडियो एनालिसिस के लिए OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax या कोई भी OpenAI-compatible images endpoint।
 
 पूरा सूट लाइट, डार्क और सिस्टम थीम के साथ आता है। थीम सिर्फ़ स्क्रीन पर दिखने वाली चीज़ बदलती है: एक्सपोर्ट, प्रिंट और सेव की गई फ़ाइलें हमेशा डॉक्यूमेंट के अपने असली रंग बरकरार रखती हैं।
+
+<a id="skills"></a>
+
+## Skills
+
+Skill एक `SKILL.md` फ़ाइल है जो AI को बताती है कि एक काम अच्छे से कैसे करना है: साप्ताहिक रिपोर्ट, NDA, पाठ योजना।
+GenOffice में skills का एक सेट शामिल है और यह आपकी अपनी skills भी स्वीकार करता है, उसी प्रारूप में जो कोडिंग एजेंट उपयोग करते हैं।
+
+- **सेटिंग्स → Skills।** कोई अनुशंसित skill **इंस्टॉल** करें, या कोई फ़ोल्डर, zip या एक `SKILL.md` **इम्पोर्ट** करें। इम्पोर्ट पर कुछ भी चलता नहीं।
+- **चैट में।** किसी भी AI पैनल में टेक्स्ट बॉक्स के पास **+** मेनू खोलें, **Skills** चुनें, एक पर टिक करें और भेजें। Skill सिर्फ़ उसी संदेश के साथ जाती है।
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

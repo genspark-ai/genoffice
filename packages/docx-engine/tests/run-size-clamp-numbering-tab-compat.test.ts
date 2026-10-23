@@ -63,3 +63,22 @@ describe('w:sz clamp', () => {
     expect(runs.map((r) => r.sizeHalfPoints)).toEqual([21, 1, 1])
   })
 })
+
+describe('w:doNotUseHTMLParagraphAutoSpacing', () => {
+  it('surfaces the compat flag', async () => {
+    const on = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraParts: [settingsPart('<w:doNotUseHTMLParagraphAutoSpacing/>')],
+      }),
+    )
+    expect(on.doNotUseHTMLParagraphAutoSpacing).toBe(true)
+    const off = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraParts: [settingsPart('<w:doNotUseIndentAsNumberingTabStop/>')],
+      }),
+    )
+    expect(off.doNotUseHTMLParagraphAutoSpacing).toBeUndefined()
+  })
+})

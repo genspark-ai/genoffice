@@ -16,6 +16,7 @@ function dirtyWorkbookState(overrides: Partial<Parameters<typeof shouldRunSaveTi
     saveInFlight: false,
     hasWorkbook: true,
     journalEmpty: false,
+    redactionsPendingSave: false,
     editingCell: false,
     needsSaveAsNotUnsavedNew: false,
     isCsv: false,
@@ -113,5 +114,42 @@ describe('createSaveGate', () => {
     expect(await gate.run(async () => 'ok')).toBe('ok')
     await settle()
     expect(gate.busy).toBe(false)
+  })
+})
+
+describe('a workbook whose only edit is a withheld cell still saves', () => {
+  /**
+   * A mark lives in a package part, not in the edit journal, so the journal
+   * looks empty. Before this was checked, such a workbook was skipped by both
+   * ticks: no AutoSave, no crash-recovery copy, and the mark lost on close —
+   * with the reader having watched it get drawn.
+   */
+  const onlyRedactions = { journalEmpty: true, redactionsPendingSave: true }
+
+  it('runs the AutoSave tick', () => {
+    expect(shouldRunSaveTick(dirtyWorkbookState({ ...onlyRedactions, kind: 'save' }))).toBe(true)
+  })
+
+  it('runs the crash-recovery tick', () => {
+    expect(shouldRunSaveTick(dirtyWorkbookState({ ...onlyRedactions, kind: 'recovery' }))).toBe(
+      true,
+    )
+  })
+
+  it('still skips when nothing at all is pending', () => {
+    // The flag is what makes the difference, so a workbook that is genuinely
+    // clean must keep skipping — otherwise every idle workbook would save
+    // every thirty seconds.
+    expect(
+      shouldRunSaveTick(
+        dirtyWorkbookState({ journalEmpty: true, redactionsPendingSave: false, kind: 'save' }),
+      ),
+    ).toBe(false)
+  })
+
+  it('still honours the in-cell editor guard', () => {
+    expect(
+      shouldRunSaveTick(dirtyWorkbookState({ ...onlyRedactions, kind: 'save', editingCell: true })),
+    ).toBe(false)
   })
 })
