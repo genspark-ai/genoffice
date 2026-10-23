@@ -532,4 +532,7 @@ export const he = {
   appUpdateStyleTip: 'עדכון סגנון זה לפי הקטע המסומן הנוכחי (נכתב חזרה אל styles.xml)',
   appNewStyleFromSelection: 'סגנון חדש מהקטע המסומן הנוכחי',
   appStyleNamePlaceholder: 'שם הסגנון',
+  appMergeSourceLoaded: '{name} נטען ({n} רשומות)',
+  appMergeWritten: 'נכתבו {n} מסמכים',
+  appMergeNothingToWrite: 'אין מה לכתוב',
 } satisfies Record<keyof typeof zh, string>

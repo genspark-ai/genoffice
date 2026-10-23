@@ -9,7 +9,8 @@ const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
 
 // numId 1: Symbol bullet with a hanging indent; numId 2: decimal level without any w:ind;
 // numId 3: picture bullet; numId 4: decimal level with a 24pt w:sz above the 11pt text;
-// numId 5: Symbol bullet (scaled substitute glyph) with the same 24pt w:sz
+// numId 5: Symbol bullet (scaled substitute glyph) with the same 24pt w:sz; numId 6: bidi level
+// with an end indent and no w:left
 const NUMBERING =
   XML_DECL +
   '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
@@ -32,7 +33,10 @@ const NUMBERING =
   '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>' +
   '<w:num w:numId="3"><w:abstractNumId w:val="2"/></w:num>' +
   '<w:num w:numId="4"><w:abstractNumId w:val="3"/></w:num>' +
+  '<w:abstractNum w:abstractNumId="5"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>' +
+  '<w:lvlText w:val="-"/><w:pPr><w:bidi/><w:ind w:right="360" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
   '<w:num w:numId="5"><w:abstractNumId w:val="4"/></w:num>' +
+  '<w:num w:numId="6"><w:abstractNumId w:val="5"/></w:num>' +
   '</w:numbering>'
 
 const NUMBERING_RELS = {
@@ -59,6 +63,7 @@ const TXBX_CONTENT =
   li('3', 'picture bullet') +
   li('4', 'oversized number') +
   li('5', 'oversized symbol bullet') +
+  li('6', 'bidi end indent') +
   '</w:txbxContent>'
 
 const TEXTBOX_PARAGRAPH =
@@ -103,10 +108,19 @@ describe('list markers rendered inside a textbox', () => {
       '',
       '1.',
       '\u25cf',
+      '-',
     ])
 
-    const [bullet, emptyBullet, plainNumber, emptyPlain, picture, oversized, oversizedBullet] =
-      paras
+    const [
+      bullet,
+      emptyBullet,
+      plainNumber,
+      emptyPlain,
+      picture,
+      oversized,
+      oversizedBullet,
+      bidi,
+    ] = paras
     expect(bullet.style.getPropertyValue('margin-inline-start')).toBe('36pt')
     expect(bullet.style.getPropertyValue('--li-hang')).toBe('18pt')
     expect(bullet.style.textIndent).toBe('0pt')
@@ -138,6 +152,11 @@ describe('list markers rendered inside a textbox', () => {
     expect(plainNumber.style.getPropertyValue('--li-marker-lh')).toBe('')
     // a substitute glyph draws in the size-adjusted alias at the declared size
     expect(bullet.style.getPropertyValue('--li-marker-font')).toBe("'Symbol Bullet GO'")
+    // level w:ind right/end reaches the item like left does; an absent left is 0
+    expect(bidi.style.getPropertyValue('margin-inline-end')).toBe('18pt')
+    expect(bidi.style.getPropertyValue('margin-inline-start')).toBe('0pt')
+    expect(bidi.style.getPropertyValue('--li-hang')).toBe('18pt')
+    expect(bullet.style.getPropertyValue('margin-inline-end')).toBe('')
     expect(bullet.style.getPropertyValue('--li-marker-lh')).toBe('')
     expect(oversizedBullet.style.getPropertyValue('--li-marker-scale')).toBe('')
     expect(oversizedBullet.style.getPropertyValue('--li-marker-lh')).toBe(

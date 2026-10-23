@@ -96,6 +96,22 @@ describe('measureBlocks — whole-flow break scan (genoffice#526 bucketing)', ()
     expect(blocks[1].emptyPara).toBe(true)
   })
 
+  it('a break-only paragraph keeps its dedicated line height despite the ProseMirror separator img', () => {
+    const pm = flowOf([
+      { top: 0, height: 20, inner: 'one' },
+      {
+        top: 20,
+        height: 30,
+        inner:
+          '<img class="ProseMirror-separator" alt=""><br class="doc-page-br"><br class="ProseMirror-trailingBreak">',
+      },
+      { top: 50, height: 20, inner: 'after' },
+    ])
+    const { blocks } = measureBlocks(pm, 0, 1)
+    expect(blocks[1].breakAfter).toBe(true)
+    expect(blocks[1].breakOnlyLineH).toBe(30)
+  })
+
   it('a leading break found through nested markup leads its block to the next page', () => {
     const pm = flowOf([
       {

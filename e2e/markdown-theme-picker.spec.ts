@@ -43,6 +43,14 @@ test('markdown theme picker applies, persists and restarts', async () => {
     await expect(menu).toBeVisible()
     // every theme is listed
     expect(await menu.locator('.md-theme-item').count()).toBe(7)
+    // the button sits in the ribbon's right group: the menu must flip so its
+    // long "Default (follow the document theme)" row stays inside the window
+    const box = (await menu.boundingBox())!
+    const innerWidth = await page.evaluate(() => window.innerWidth)
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(innerWidth)
+    const row = (await menu.locator('.md-theme-item').first().boundingBox())!
+    expect(row.x + row.width).toBeLessThanOrEqual(innerWidth)
 
     await menu.locator('.md-theme-item', { hasText: 'Nord' }).click()
     await expect(menu).toBeHidden()
@@ -51,10 +59,13 @@ test('markdown theme picker applies, persists and restarts', async () => {
     const applied = await page.evaluate(() => ({
       attr: document.documentElement.getAttribute('data-markdown-theme'),
       paper: getComputedStyle(document.querySelector('.doc-page')!).backgroundColor,
+      ink: getComputedStyle(document.querySelector('.doc-editor p')!).color,
       canvas: getComputedStyle(document.querySelector('.editor-scroll')!).backgroundColor,
     }))
     expect(applied.attr).toBe('nord')
     expect(applied.paper).toBe('rgb(46, 52, 64)') // nord0 #2e3440
+    // the paper must re-resolve its ink, not inherit the UI theme's colour
+    expect(applied.ink).toBe('rgb(236, 239, 244)') // nord6 #eceff4
     await page.screenshot({ path: 'artifacts/md-theme-nord.png' })
 
     // a real restart: close this instance, then boot again on the same

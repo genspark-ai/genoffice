@@ -24,6 +24,7 @@ Tệp Word, Excel, PowerPoint và PDF do bạn và AI của bạn cùng chỉnh 
 
 <p align="center">
   <a href="#download"><b>Tải xuống</b></a> ·
+  <a href="#skills"><b>Skill</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Trang chủ</b></a> ·
@@ -351,6 +352,7 @@ trình soạn thảo Word hiện rõ. Cả hai được mô tả ở
 - **Ask AI trên toàn bộ tệp của bạn.** Gắn sao những tệp quan trọng và hỏi
   bằng ngôn ngữ thường ngày; mọi câu trả lời đều trích dẫn tệp nguồn, cách
   một cú bấm.
+- **Skill.** Skill có sẵn hoặc `SKILL.md` của riêng bạn, đính kèm từ menu **+** của bất kỳ bảng AI nào.
 - **Viết script được.** Dòng lệnh `genoffice`, một agent skill và một máy
   chủ MCP đặt mọi engine phục vụ Claude Code, Claude Desktop, Codex, Cursor
   và các agent khác — vẫn ngay trên máy.
@@ -389,6 +391,18 @@ Parallel dưới Web search và nhập khoá
 Toàn bộ bộ ứng dụng có giao diện sáng, tối và theo hệ thống. Giao diện chỉ
 thay đổi những gì trên màn hình: xuất, in và tệp đã lưu luôn giữ màu riêng
 của tài liệu.
+
+<a id="skills"></a>
+
+## Skill
+
+Skill là một tệp `SKILL.md` chỉ cho AI cách làm tốt một việc: báo cáo tuần, NDA, giáo án.
+GenOffice đi kèm một bộ skill và nhận cả skill của bạn, cùng định dạng mà các agent lập trình dùng.
+
+- **Cài đặt → Skill.** **Cài** một skill được đề xuất, hoặc **Nhập** một thư mục, một tệp zip hay một `SKILL.md` đơn lẻ. Không có gì chạy khi nhập.
+- **Trong trò chuyện.** Mở menu **+** cạnh ô nhập của bất kỳ bảng AI nào, chọn **Skill**, tích một cái rồi gửi. Skill chỉ đi kèm đúng tin nhắn đó.
+
+---
 
 ## Dòng lệnh và agent skill
 

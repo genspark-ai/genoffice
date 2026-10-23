@@ -1934,3 +1934,41 @@ export function IconConvert(props: IconProps) {
     </Svg>
   )
 }
+
+/** the Mailings tab: a letter */
+export function IconMail(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1" />
+      <path d="M 2.9 4.4 8 8.4 13.1 4.4" />
+    </Svg>
+  )
+}
+
+/** the merge field of a mail merge template: the guillemets Word writes */
+export function IconMergeField(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 6.4 4.2 3.6 8l2.8 3.8" />
+      <path d="M 11.2 4.2 14 8l-2.8 3.8" />
+    </Svg>
+  )
+}
+
+/** the previous record of a mail merge */
+export function IconChevronLeft(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 10 3.5 5.5 8l4.5 4.5" />
+    </Svg>
+  )
+}
+
+/** the next record of a mail merge */
+export function IconChevronRight(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 6 3.5 10.5 8 6 12.5" />
+    </Svg>
+  )
+}

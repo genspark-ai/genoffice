@@ -37,7 +37,7 @@ describe('header paragraph indent', () => {
     })
     const p = el.querySelector<HTMLElement>('.page-hf-para')!
     expect(p.style.marginInlineStart).toBe('75.6px')
-    expect(p.style.paddingLeft).toBe('4px')
+    expect(p.style.paddingLeft).toBe('')
   })
 
   it('a tabbed paragraph keeps its column-relative tab layout (no indent margins)', () => {

@@ -47,7 +47,7 @@ describe('explicit zero indents', () => {
     expect(rightOnly).toMatchObject({ indentRight: 0 })
     expect(rightOnly?.indentFirstLine).toBeUndefined()
     expect(rightOnly?.indentLeft).toBeUndefined()
-    expect(plain).toBeUndefined()
+    expect(plain).toEqual({})
   })
 
   it('a child style zero overrides the basedOn chain, absent components inherit', async () => {

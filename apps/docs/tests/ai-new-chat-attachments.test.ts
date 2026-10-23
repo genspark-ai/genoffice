@@ -99,11 +99,14 @@ describe('AiPanel new chat attachments', () => {
       try {
         await flush()
         await flush()
-        // Stage a file through the attach button.
-        const attach = container.querySelector<HTMLButtonElement>('.ai-attach-btn')
-        expect(attach).not.toBeNull()
+        // Stage a file through the "+" menu's Add file item.
+        const plus = container.querySelector<HTMLButtonElement>('.ai-plus-btn')
+        expect(plus).not.toBeNull()
+        act(() => plus!.click())
+        const addFile = container.querySelector<HTMLButtonElement>('.ai-plus-pop .ai-plus-item')
+        expect(addFile).not.toBeNull()
         await act(async () => {
-          attach!.click()
+          addFile!.click()
           await new Promise((resolve) => setTimeout(resolve, 0))
         })
         await flush()

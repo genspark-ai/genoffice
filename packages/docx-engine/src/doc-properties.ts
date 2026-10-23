@@ -178,12 +178,20 @@ export function parseAppPropertiesXml(xml: string): Record<string, string> {
   return out
 }
 
+const VT_VALUE_RE =
+  /<(?:[A-Za-z_][\w.-]*:)?(lpwstr|lpstr|bstr|i1|i2|i4|i8|ui1|ui2|ui4|ui8|int|uint|r4|r8|bool|filetime|date|decimal)\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?\1\s*>/
+
+function customPropertyValue(property: string): string {
+  const match = VT_VALUE_RE.exec(property)
+  return match ? decodeXmlText(match[2]) : propertyText(property)
+}
+
 /** the custom properties of a custom.xml part, by property name */
 export function parseCustomPropertiesXml(xml: string): Record<string, string> {
   const out: Record<string, string> = {}
   for (const property of xml.match(PROPERTY_RE) ?? []) {
     const name = attrValue(property, 'name')
-    if (name) out[name] = propertyText(property)
+    if (name) out[name] = customPropertyValue(property)
   }
   return out
 }
@@ -233,22 +241,20 @@ function blankCustomPropertiesXml(): string {
   )
 }
 
-/** every core property element goes; the part itself stays */
-function clearCorePropertiesXml(xml: string): string {
-  let out = xml
-  for (const { local } of Object.values(CORE_PROPERTIES)) {
-    out = out.replace(elementRe(local), '')
-  }
-  return out
+/** every child of the root goes, known or not; the root itself stays */
+function clearRootChildrenXml(xml: string, root: string): string {
+  const re = new RegExp(
+    `(<(?:[A-Za-z_][\\w.-]*:)?${root}(?=[\\s>])[^>]*>)[\\s\\S]*(</(?:[A-Za-z_][\\w.-]*:)?${root}\\s*>)`,
+  )
+  return xml.replace(re, '$1$2')
 }
 
-/** every extended property element goes; the part itself stays */
+function clearCorePropertiesXml(xml: string): string {
+  return clearRootChildrenXml(xml, 'coreProperties')
+}
+
 function clearAppPropertiesXml(xml: string): string {
-  let out = xml
-  for (const local of Object.values(APP_PROPERTIES)) {
-    out = out.replace(elementRe(local), '')
-  }
-  return out
+  return clearRootChildrenXml(xml, 'Properties')
 }
 
 /** every custom property goes; the part itself stays */

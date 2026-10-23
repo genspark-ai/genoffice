@@ -23,7 +23,10 @@ const numberingXml =
   '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>' +
   '<w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>' +
   '<w:num w:numId="3"><w:abstractNumId w:val="2"/></w:num>' +
+  '<w:abstractNum w:abstractNumId="4"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>' +
+  '<w:lvlText w:val="-"/><w:pPr><w:bidi/><w:ind w:right="360" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
   '<w:num w:numId="4"><w:abstractNumId w:val="3"/></w:num>' +
+  '<w:num w:numId="5"><w:abstractNumId w:val="4"/></w:num>' +
   '</w:numbering>'
 
 const numberingRels = {
@@ -103,6 +106,22 @@ describe('list markers inside textboxes', () => {
     const paras = await textboxParas(['3'])
     // an explicit left="0" is kept: it beats a style indent
     expect(paras[0].listMarker).toEqual({ text: '-', indentLeft: 0, firstLine: 420 })
+  })
+
+  it('carries a bidi level end indent and swaps w:jc like the body does', async () => {
+    const xml = textboxXml(['5']).replace(
+      '<w:numId w:val="5"/></w:numPr>',
+      '<w:numId w:val="5"/></w:numPr><w:jc w:val="left"/>',
+    )
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml, numberingXml }))
+    const paras = parsed.blocks.flatMap((b) => b.textboxes ?? [])[0]!.paras
+    expect(paras[0].listMarker).toEqual({
+      text: '-',
+      indentLeft: 0,
+      indentRight: 360,
+      hanging: 360,
+    })
+    expect(paras[0].align).toBe('right')
   })
 
   it('continues numbering across content-control (w:sdt) boundaries', async () => {

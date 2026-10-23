@@ -45,8 +45,8 @@
     "react-konva": "^19.0.10",
     "three": "^0.186.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vitest": "^4.1.11"
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
   },
   "author": "GenOffice",
   "build": {

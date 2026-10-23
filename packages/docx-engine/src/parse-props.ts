@@ -38,13 +38,33 @@ import { resolveThemeColor } from './theme'
 import { isOn } from './checkbox-control'
 
 /** No run un-hides itself and nothing anchors here (bookmarks, comments, sectPr,
- *  drawings, numbering): safe to collapse a style-vanished paragraph entirely */
+ *  drawings): safe to collapse a style-vanished paragraph entirely. Numbering is
+ *  fine: the hidden item still advances the counter (see hiddenParagraph) */
 export function staysVanished(xml: string): boolean {
   if (/<w:vanish\s[^>]*w:val=(?:"(?:0|false|none|off)"|'(?:0|false|none|off)')/i.test(xml))
     return false
-  return !/<w:(?:drawing|pict|object|sectPr|bookmarkStart|commentRangeStart|commentRangeEnd|numPr)[\s/>]/.test(
+  return !/<w:(?:drawing|pict|object|sectPr|bookmarkStart|commentRangeStart|commentRangeEnd)[\s/>]/.test(
     xml,
   )
+}
+
+/** Every run of the paragraph is w:vanish (not specVanish): with a hidden mark
+ *  Word gives such a paragraph no height (probe 2026-10-22: after=120 ->
+ *  hidden text paragraph -> before=120 pitches like no paragraph at all).
+ *  Runs inside hyperlinks, fields and revisions count; w:pPr is skipped. */
+export function allRunsVanished(node: XNode): boolean {
+  for (const child of childrenOf(node)) {
+    const name = nameOf(child)
+    if (name === 'w:pPr' || name === 'w:rPr') continue
+    if (name === 'w:r') {
+      const rPr = findChild(child, 'w:rPr')
+      if (!rPr || onOffOf(rPr, 'w:vanish') !== true || onOffOf(rPr, 'w:specVanish') === true)
+        return false
+      continue
+    }
+    if (!allRunsVanished(child)) return false
+  }
+  return true
 }
 
 /** Text-less run content that still affects layout (breaks, tabs, note marks,
@@ -384,8 +404,10 @@ export function fieldCharsBalanced(xml: string): boolean {
   return depth === 0
 }
 
-/** Zotero Word fields. Their cached result is the visible citation/bibliography text. */
-export const ZOTERO_INLINE_FIELD_RE = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)(?:ITEM|BIBL|TEMP)\b/i
+/** Zotero (ZOTERO_ITEM/BIBL/TEMP) and Mendeley (CSL_CITATION/CSL_BIBLIOGRAPHY) Word fields.
+ * Their cached result is the visible citation/bibliography text. */
+export const ZOTERO_INLINE_FIELD_RE =
+  /^\s*(?:ADDIN\s+)?(?:ZOTERO_(?:ITEM|BIBL|TEMP)|CSL_(?:ITEM|BIBL|TEMP|CITATION|BIBLIOGRAPHY))\b/i
 
 /** HYPERLINK "url" (optional \o "tip"): the only field form folded into an editable link run;
  * any other switch (\l bookmark, \t frame...) keeps the protected-passthrough path */
@@ -400,11 +422,39 @@ export function convertibleHyperlink(instr: string): { href: string; tooltip?: s
 /** every field instruction is EMBED/LINK (the object-field forms of legacy OLE) */
 export function onlyOleFields(xml: string): boolean {
   if (xml.includes('<w:fldSimple')) return false
-  const instrs = xml.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? []
+  const instrs = fieldInstructions(xml)
   if (instrs.length === 0) return false
-  return instrs.every((fragment) =>
-    /^\s*(EMBED|LINK)\b/.test(decodeEntities(fragment.replace(/<[^>]+>/g, ''))),
-  )
+  return instrs.every((text) => /^\s*(EMBED|LINK)\b/.test(text))
+}
+
+/** Complex-field instructions, one string per field: Word splits a long
+ * instruction (Mendeley/Zotero JSON) over several w:instrText runs, so the
+ * fragments must be joined before any instruction regex sees them. Nested
+ * fields contribute their own entry. */
+export function fieldInstructions(xml: string): string[] {
+  const out: string[] = []
+  const stack: { text: string; inResult: boolean }[] = []
+  const re = /<w:fldChar\b[^>]*>|<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    if (m[0].startsWith('<w:instrText')) {
+      const top = stack[stack.length - 1]
+      if (top && !top.inResult) top.text += decodeEntities(m[1])
+      else if (!top) out.push(decodeEntities(m[1]))
+      continue
+    }
+    const type = /\bw:fldCharType\s*=\s*["'](begin|separate|end)["']/.exec(m[0])?.[1]
+    if (type === 'begin') stack.push({ text: '', inResult: false })
+    else if (type === 'separate') {
+      const top = stack[stack.length - 1]
+      if (top) top.inResult = true
+    } else if (type === 'end') {
+      const top = stack.pop()
+      if (top) out.push(top.text)
+    }
+  }
+  for (const open of stack) out.push(open.text)
+  return out
 }
 
 export function onlyXeFields(xml: string): boolean {
@@ -414,7 +464,7 @@ export function onlyXeFields(xml: string): boolean {
     (m) => /\bw:instr="([^"]*)"/.exec(m[1])?.[1],
   )
   if (simple.some((instr) => instr === undefined)) return false
-  const instrs = xml.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? []
+  const instrs = fieldInstructions(xml)
   if (instrs.length === 0 && simple.length === 0) return false
   if (!fieldCharsBalanced(xml)) return false
   const simpleOk = simple.every((raw) => {
@@ -428,8 +478,7 @@ export function onlyXeFields(xml: string): boolean {
   })
   if (!simpleOk) return false
   let checkboxInstrs = 0
-  const ok = instrs.every((fragment) => {
-    const text = decodeEntities(fragment.replace(/<[^>]+>/g, ''))
+  const ok = instrs.every((text) => {
     if (/^\s*FORMCHECKBOX\s*$/.test(text)) {
       checkboxInstrs++
       return true
@@ -613,13 +662,24 @@ export function emptyParaSizeHalfPoints(
   pNode: XNode,
   pPr: XNode | undefined,
   markOnly = false,
+  csSizeHalfPoints?: number,
 ): number | undefined {
-  let sz = pPr
-    ? attrsOf(findChild(findChild(pPr, 'w:rPr') ?? {}, 'w:sz') ?? {})['w:val']
-    : undefined
+  // an rtl mark is sized by its Cs twin, the chain's szCs when it has none (Word:
+  // a `<w:sz 36/><w:rtl/>` mark under a szCs=24 style lays a 12pt empty line)
+  const sizeOf = (rPr: XNode | undefined): string | undefined => {
+    if (!rPr) return undefined
+    if (onOffOf(rPr, 'w:rtl') === true) {
+      return (
+        attrsOf(findChild(rPr, 'w:szCs') ?? {})['w:val'] ??
+        (csSizeHalfPoints !== undefined ? String(csSizeHalfPoints) : undefined)
+      )
+    }
+    return attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val']
+  }
+  let sz = pPr ? sizeOf(findChild(pPr, 'w:rPr')) : undefined
   if (!sz && !markOnly) {
     for (const r of findChildren(pNode, 'w:r')) {
-      const v = attrsOf(findChild(findChild(r, 'w:rPr') ?? {}, 'w:sz') ?? {})['w:val']
+      const v = sizeOf(findChild(r, 'w:rPr'))
       if (v) sz = v
     }
   }

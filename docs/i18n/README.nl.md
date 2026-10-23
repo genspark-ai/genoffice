@@ -23,6 +23,7 @@ Word-, Excel-, PowerPoint- en PDF-bestanden, bewerkt door jou en je AI, opgeslag
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Website</b></a> ·
@@ -227,6 +228,7 @@ editortabblad terwijl je toekijkt.
   naar Word, Excel of PowerPoint on-device, met systeem-OCR voor scans.
 - **Ook Markdown en HTML**, met hetzelfde AI-paneel en lokale export naar
   Word.
+- **Skills.** Kant-en-klare skills of je eigen `SKILL.md`, toegevoegd via het **+**-menu van elk AI-paneel.
 - **Scriptbaar.** Een `genoffice`-opdrachtregel, een agent-skill en een
   MCP-server stellen elke engine ter beschikking van Claude Code, Claude
   Desktop, Codex, Cursor en andere agents, nog altijd on-device.
@@ -251,6 +253,18 @@ beeldgeneratie en analyse van beeld en video.
 De hele suite wordt geleverd met een licht, donker en systeemthema. Thema's
 veranderen alleen wat er op je scherm te zien is: exports, afdrukken en
 opgeslagen bestanden behouden altijd de eigen kleuren van het document.
+
+<a id="skills"></a>
+
+## Skills
+
+Een skill is een `SKILL.md` die de AI vertelt hoe één taak goed te doen: een weekrapport, een NDA, een lesplan.
+GenOffice levert een set mee en accepteert je eigen skills, in hetzelfde formaat dat coding-agents gebruiken.
+
+- **Instellingen → Skills.** **Installeer** een aanbevolen skill, of **Importeer** een map, een zip of één `SKILL.md`. Bij importeren wordt niets uitgevoerd.
+- **In een chat.** Open het **+**-menu naast het invoerveld van een AI-paneel, kies **Skills**, vink er een aan en verstuur. De skill gaat alleen met dat bericht mee.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

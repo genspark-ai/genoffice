@@ -255,6 +255,10 @@ body.overlay-title-bar .tab-bar-drag-spacer {
   align-items: center;
 }
 
+.tab-item.tab-dormant .tab-title {
+  opacity: 0.55;
+}
+
 .tab-title {
   flex: 1 1 auto;
   overflow: hidden;

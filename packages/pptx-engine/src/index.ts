@@ -278,6 +278,7 @@ export {
   type ChartSeries,
   type ChartKind,
   type ChartAxisStyle,
+  type ChartDataTable,
 } from './chart'
 export { parseChartExXml } from './chartex'
 export { getSlideNotes, setSlideNotes, notesPathForSlide, unescapeXml } from './notes'

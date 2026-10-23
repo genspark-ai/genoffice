@@ -1,6 +1,20 @@
 import type { zh } from './zh'
 
 export const th = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'ซ่อนส่วนที่เลือกจาก AI',
+  redactDialogDesc:
+    'เนื้อหาที่เลือกยังอยู่ในเอกสารและไฟล์ แต่ AI จะเห็นเพียงตัวแทนด้านล่าง ตั้งชื่อเพื่อให้ AI รู้ว่าแทนอะไร',
+  redactDialogScope:
+    'การซ่อนครอบคลุมเฉพาะ AI ในแอปนี้ CLI เครื่องมือ MCP และการส่งออกแบบไม่มีหน้าต่างอ่านไฟล์โดยตรง และยังเห็นคำเหล่านี้อยู่',
+  redactDialogPlaceholder: 'ชื่อตัวแทน เช่น เบอร์โทรศัพท์ลูกค้า',
+  redactCancel: 'ยกเลิก',
+  redactInsert: 'ซ่อน',
+  redactEnable: 'คลิกขวาที่ข้อความที่เลือกเพื่อซ่อนจาก AI',
+  redactNeedsSavedRow: 'แถวนี้ยังไม่อยู่ในไฟล์ กรุณาบันทึกก่อน แล้วจึงซ่อนเซลล์',
+  redactRecoveredFromNames:
+    'แอปอื่นเขียนไฟล์นี้ขึ้นใหม่และทำให้บันทึกสิ่งที่ถูกซ่อนหายไป เซลล์ที่ซ่อนไว้กู้คืนมาจากชื่อที่กำหนดไว้ในเวิร์กบุ๊ก การบันทึกจะคืนบันทึกทั้งหมด',
+
   appMergeWorkbooks: 'รวมเวิร์กบุ๊ก',
   appMergeWorkbooksTip: 'นำชีตจากไฟล์ Excel อื่นมารวมในเวิร์กบุ๊กนี้',
   appMergeWorkbooksPicking: 'เลือกไฟล์ที่จะรวม…',

@@ -5,7 +5,12 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
-import { generateParagraphXml, mergePPrFormat, parseDocx } from '@genoffice/docx-engine'
+import {
+  generateParagraphXml,
+  mergePPrFormat,
+  parseDocx,
+  type ParaFormat,
+} from '@genoffice/docx-engine'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import {
@@ -228,6 +233,29 @@ describe('live pagination reads the edited flags off the element', () => {
   })
 })
 
+/** a format carrying only the resolved pagination flags, layered like the resolver:
+ *  direct > style > docDefaults > builtin */
+function effFmt(
+  direct: Record<string, boolean> | undefined,
+  style?: Record<string, boolean>,
+  docDefaults?: Record<string, boolean>,
+): ParaFormat {
+  const keys = ['keepNext', 'keepLines', 'pageBreakBefore', 'widowControl', 'suppressLineNumbers']
+  const eff: Record<string, unknown> = { source: {} }
+  const source = eff.source as Record<string, string>
+  for (const k of keys) {
+    const layers: Array<[Record<string, boolean> | undefined, string]> = [
+      [direct, 'direct'],
+      [style, 'paraStyle'],
+      [docDefaults, 'docDefaults'],
+    ]
+    const hit = layers.find(([l]) => l?.[k] !== undefined)
+    eff[k] = hit ? hit[0]![k] : k === 'widowControl'
+    source[k] = hit ? hit[1] : 'builtin'
+  }
+  return { effective: eff as unknown as NonNullable<ParaFormat['effective']> }
+}
+
 describe('review follow-ups', () => {
   it('Ctrl+Q clears the direct pagination flags', async () => {
     const editor = await openDoc(p('<w:keepNext/><w:widowControl w:val="0"/>', 'a'))
@@ -242,22 +270,26 @@ describe('review follow-ups', () => {
   })
 
   it('parse-layer meta never carries a direct page break (the element class does)', () => {
-    expect(paraPaginationMeta({ pageBreakBefore: true }, undefined)).toBeUndefined()
-    expect(paraPaginationMeta(undefined, { pageBreakBefore: true })).toMatchObject({
+    expect(paraPaginationMeta(effFmt({ pageBreakBefore: true }))).toBeUndefined()
+    expect(paraPaginationMeta(effFmt(undefined, { pageBreakBefore: true }))).toMatchObject({
       breakBefore: true,
     })
     expect(
-      paraPaginationMeta({ pageBreakBefore: false }, { pageBreakBefore: true }),
+      paraPaginationMeta(effFmt({ pageBreakBefore: false }, { pageBreakBefore: true })),
     ).toBeUndefined()
     // pPrDefault widowControl off is the base of every style chain
-    expect(paraPaginationMeta(undefined, undefined, { widowControl: false })).toMatchObject({
-      widowControl: false,
-      paraStyle: { widowControl: false },
-    })
-    const styleOn = paraPaginationMeta(undefined, { widowControl: true }, { widowControl: false })
+    expect(paraPaginationMeta(effFmt(undefined, undefined, { widowControl: false }))).toMatchObject(
+      {
+        widowControl: false,
+        paraStyle: { widowControl: false },
+      },
+    )
+    const styleOn = paraPaginationMeta(
+      effFmt(undefined, { widowControl: true }, { widowControl: false }),
+    )
     expect(styleOn?.widowControl).toBeUndefined()
     expect(styleOn?.paraStyle).toEqual({ widowControl: true })
-    expect(paraPaginationMeta({ keepNext: true }, { widowControl: false })).toMatchObject({
+    expect(paraPaginationMeta(effFmt({ keepNext: true }, { widowControl: false }))).toMatchObject({
       keepNext: true,
       widowControl: false,
     })
@@ -299,7 +331,7 @@ describe('Ctrl+Q resets a parsed flag to the style for real', () => {
     editors.add(editor)
     const original = parsed.blocks[0]
     expect(original.format?.keepNext).toBe(true)
-    const meta = paraPaginationMeta(original.format, undefined)
+    const meta = paraPaginationMeta(original.format)
     expect(meta).toMatchObject({ keepNext: true })
 
     editor.commands.setTextSelection(2)
@@ -323,7 +355,7 @@ describe('Ctrl+Q resets a parsed flag to the style for real', () => {
   })
 
   it('style-inherited flags still reach a measured paragraph', () => {
-    const meta = paraPaginationMeta(undefined, { keepLines: true, widowControl: false })
+    const meta = paraPaginationMeta(effFmt(undefined, { keepLines: true, widowControl: false }))
     const el = document.createElement('p')
     el.setAttribute('data-para', '{"styleId":"Normal"}')
     expect(effectiveParaFlags(el, meta)).toEqual({ keepLines: true, widowControl: false })

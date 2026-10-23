@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeLine, type ObstacleRect } from '../src/renderer/editor/wrap-obstacles'
+import { bandGapRows, placeLine, type ObstacleRect } from '../src/renderer/editor/wrap-obstacles'
 import { computeSectionedSlicesF2, type BlockBox } from '../src/renderer/pagination'
 
 // column 0..624 px (468pt), 200pt picture = 266.7 px, 9pt clearance = 12 px
@@ -113,5 +113,47 @@ describe('anchor paragraph page turn (Word probe 2026-10-13)', () => {
   it('never turns a page it opens', () => {
     const blocks: BlockBox[] = [anchor(0, 1200, 1200), { top: 20, height: 20 }]
     expect(computeSectionedSlicesF2(blocks, geoms, 40)[0].start).toBe(0)
+  })
+})
+
+describe('bandGapRows (prod corpus 20261020 sample 026, stat tiles above a title bar)', () => {
+  // anchor line 6 px; hairline at 8, five tiles 18..84, title bar 94..127
+  const bands: Array<[number, number]> = [
+    [8, 9],
+    [18, 84],
+    [18, 84],
+    [18, 84],
+    [18, 84],
+    [18, 84],
+    [94, 127],
+  ]
+
+  it('merges overlapping tiles and keeps the rows between the bands', () => {
+    expect(bandGapRows(bands, 6)).toEqual([
+      [8, 9],
+      [18, 84],
+      [94, 127],
+    ])
+  })
+
+  it('a single band hugging the anchor line keeps the union-band route', () => {
+    expect(bandGapRows([[0, 60]], 20)).toBeNull()
+    expect(bandGapRows([[22, 60]], 20)).toBeNull()
+  })
+
+  it('a band starting well below the anchor line leaves a usable row', () => {
+    expect(bandGapRows([[40, 60]], 20)).toEqual([[40, 60]])
+  })
+
+  it('ignores degenerate intervals', () => {
+    expect(
+      bandGapRows(
+        [
+          [10, 10],
+          [Number.NaN, 5],
+        ],
+        6,
+      ),
+    ).toBeNull()
   })
 })

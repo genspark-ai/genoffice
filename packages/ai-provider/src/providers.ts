@@ -435,27 +435,6 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   },
 ]
 
-/** Filter ordinary live choices without rewriting a saved or hand-typed model. */
-export function providerPickerModels(
-  provider: AiProviderId,
-  models: string[],
-  selected = '',
-): string[] {
-  let choices = models
-  if (provider === 'openrouter') {
-    const current = ['minimax/minimax-m3.1-flash:free', 'minimax/minimax-m3']
-    const available = current.filter((id) => models.includes(id))
-    let inserted = false
-    choices = models.flatMap((id) => {
-      if (!id.toLowerCase().startsWith('minimax/')) return [id]
-      if (inserted) return []
-      inserted = true
-      return available
-    })
-  }
-  return selected && !choices.includes(selected) ? [selected, ...choices] : choices
-}
-
 /**
  * Fresh settings with every provider's default model and an empty key,
  * except providers listed in `defaultApiKeys` (e.g. an app-specific

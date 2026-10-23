@@ -203,6 +203,7 @@ describe('native editable tables', () => {
           fontAscii: 'Calibri',
           eastAsiaFont: 'Calibri',
           csFont: null,
+          csItalic: null,
           charSpacingTwips: null,
           charScaleEm: null,
           charScalePct: null,
@@ -227,12 +228,15 @@ describe('native editable tables', () => {
           vanishOwn: null,
           eaLang: null,
           cs: null,
+          csBold: null,
           rtl: null,
           styleId: null,
           rawRPr:
             '<w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="Calibri"/><w:b/><w:color w:val="1F4E78"/></w:rPr>',
           themeRFonts: null,
           themeColor: null,
+          csSize: null,
+          tblRun: null,
         },
       },
     ])
@@ -824,13 +828,27 @@ describe('native editable tables', () => {
     expect(css).toMatch(/\.doc-table \{[^}]*--doc-row-eat: 0px;[^}]*--doc-row-grid: 1;/s)
   })
 
-  it('adds the cell margins on top of an atLeast trHeight, but not for hRule=exact (Word probe 2026-09-23)', () => {
+  it('adds the cell margins on top of an atLeast trHeight, only the bottom one for hRule=exact (Word probes 2026-09-23 / 2026-10-22)', () => {
     // trHeight 440 twips = 22pt floors the content; tcMar 100 twips (5pt) per side
-    // makes the row 33.12pt in Word, exact rows keep the bare 22pt
+    // makes the row 33.12pt in Word; an exact row is 27.0 (top margin inside, bottom added)
     const mar = { top: 100, bottom: 100 }
     const noLine = { top: { style: 'nil' }, bottom: { style: 'nil' } }
     expect(rowHeightCss(440, [noLine], [mar])).toBe('height:calc(29.3px + 6.67px + 6.67px)')
-    expect(rowHeightCss(440, [noLine], [mar], 'exact')).toBe('height:29.3px')
+    expect(rowHeightCss(440, [noLine], [mar], 'exact')).toBe('height:calc(29.333px + 6.67px)')
+    expect(rowHeightCss(440, [noLine], [{ top: 100, bottom: 0 }], 'exact')).toBe(
+      'height:calc(29.333px + 0.00px)',
+    )
+    // exact rows never add the gridline: sz 4/8/24 borders all pitch 74.0pt for trHeight 1480
+    const sz24 = {
+      top: { style: 'single', szEighths: 24 },
+      bottom: { style: 'single', szEighths: 24 },
+    }
+    expect(rowHeightCss(1480, [sz24], [{ top: 0, bottom: 0 }], 'exact')).toBe(
+      'height:calc(98.667px + 0.00px)',
+    )
+    expect(rowHeightCss(1480, [null], [null], 'exact')).toBe(
+      'height:calc(98.667px + var(--doc-cell-pad-b,0px))',
+    )
     // a cell with no w:tcMar falls back to the table default
     expect(rowHeightCss(440, [noLine, noLine], [mar, null])).toBe(
       'height:calc(29.3px + max(6.67px, var(--doc-cell-pad-t,0px)) + max(6.67px, var(--doc-cell-pad-b,0px)))',
@@ -934,9 +952,9 @@ describe('native editable tables', () => {
     editor.destroy()
   })
 
-  it('still wraps an exact row whose padding consumes the whole height (clip height 0)', async () => {
+  it('still wraps an exact row whose top padding consumes the whole height (clip height 0)', async () => {
     const xml =
-      '<w:tbl><w:tblPr><w:tblCellMar><w:top w:w="500" w:type="dxa"/>' +
+      '<w:tbl><w:tblPr><w:tblCellMar><w:top w:w="1000" w:type="dxa"/>' +
       '<w:bottom w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
       '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
       '<w:tr><w:trPr><w:trHeight w:val="907" w:hRule="exact"/></w:trPr>' +

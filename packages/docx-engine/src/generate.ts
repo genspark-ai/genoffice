@@ -547,7 +547,7 @@ export function patchMathTokens(xml: string, tokens: readonly string[]): string 
 // ---- table cell text patching ----
 
 /** top-level segments of `tag` between [from, to), depth-aware for nesting */
-function xmlSegments(
+export function xmlSegments(
   xml: string,
   tag: string,
   from: number,
@@ -666,14 +666,17 @@ function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | 
           : `<w:p>${firstPPr}<w:r>${rPr}${cellRunContentXml(entry)}</w:r>${keep}</w:p>`
       }
       const template = originals[Math.min(i, originals.length - 1)] ?? ''
-      const emitted = runsXml(entry.runs, null)
+      const pPr = entry.format
+        ? mergeCellParaFormat(pPrOf(template), entry.format, entry.original)
+        : pPrOf(template)
+      const emitted = entry.xml ?? runsXml(entry.runs, null)
       const emittedMedia = new Set(mediaRIds(emitted))
       const keep = aligned
         ? carriedRunsOf(template, emittedMedia)
         : i === 0
           ? originals.map((p) => carriedRunsOf(p, emittedMedia)).join('')
           : ''
-      return `<w:p>${pPrOf(template)}${emitted}${keep}</w:p>`
+      return `<w:p>${pPr}${emitted}${keep}</w:p>`
     })
     .join('')
   return openTag + tcPr + body + '</w:tc>'
@@ -701,7 +704,17 @@ function cellRunContentXml(text: string): string {
 }
 
 /** one cell paragraph: control-char text (legacy first-run-rPr rebuild), rich runs, or null = keep the original paragraph bytes */
-export type CellParaPatch = string | { runs: Run[] } | null
+export type CellParaPatch =
+  | string
+  | {
+      runs: Run[]
+      /** pre-rendered run XML (fields etc.) used instead of runsXml(runs) */
+      xml?: string
+      /** paragraph format: only the pPr groups that differ from `original` are rebuilt (mergeCellParaFormat) */
+      format?: ParaFormat
+      original?: ParaFormat
+    }
+  | null
 
 /** per-cell patch: paragraph patches, or nested-table cell texts by nested index */
 export type CellTextsPatch =
@@ -1757,10 +1770,119 @@ function pprGroupUnchanged(
  * (character-unit indents resolved at parse time), and its `charIndents` say
  * which cancel attributes an indent edit has to write.
  */
+/** pPr groups a header/footer cell paragraph models, by the format fields that feed them */
+const CELL_PPR_GROUPS: Array<[tag: string, fields: Array<keyof ParaFormat>]> = [
+  ['w:jc', ['align']],
+  ['w:spacing', ['spaceBefore', 'spaceAfter', 'lineSpacing', 'lineRule', 'lineRawTwips']],
+  ['w:ind', ['indentLeft', 'indentFirstLine']],
+  ['w:tabs', ['tabStops']],
+]
+
+/** attributes of w:ind / w:spacing the cell model drives, by group with the
+ *  ParaFormat fields that drive it: only a group whose fields changed is rebuilt
+ *  (a cleared field goes away with its character-unit and autospacing twins);
+ *  the other groups, and attributes outside any group (right indent, …), keep
+ *  their raw value — the parser drops explicit zeros, so an untouched
+ *  `w:after="0"` must never be regenerated from the model */
+const CELL_MODELED_ATTR_GROUPS: Record<
+  string,
+  Array<{ attrs: string[]; fields: Array<keyof ParaFormat> }>
+> = {
+  'w:ind': [
+    { attrs: ['w:left', 'w:start', 'w:leftChars', 'w:startChars'], fields: ['indentLeft'] },
+    {
+      attrs: ['w:firstLine', 'w:hanging', 'w:firstLineChars', 'w:hangingChars'],
+      fields: ['indentFirstLine'],
+    },
+  ],
+  'w:spacing': [
+    { attrs: ['w:before', 'w:beforeLines', 'w:beforeAutospacing'], fields: ['spaceBefore'] },
+    { attrs: ['w:after', 'w:afterLines', 'w:afterAutospacing'], fields: ['spaceAfter'] },
+    { attrs: ['w:line', 'w:lineRule'], fields: ['lineSpacing', 'lineRule', 'lineRawTwips'] },
+  ],
+}
+
+function elementAttrs(xml: string): Array<[string, string]> {
+  return [...xml.matchAll(/([\w:]+)="([^"]*)"/g)].map((m) => [m[1], m[2]])
+}
+
+/** replace one self-closing pPr child by attribute merge: the groups in
+ *  `rebuilt` come from `freshEl` (absent group = cleared), everything else keeps
+ *  its raw value; an element left without attributes is dropped, a new one lands
+ *  in schema order */
+function mergeCellElementAttrs(
+  pPr: string,
+  tag: string,
+  freshEl: string | undefined,
+  rebuilt: ReadonlySet<string>,
+): string {
+  const elRe = new RegExp(`<${tag}(?:\\s[^>]*)?/>`)
+  const rawEl = elRe.exec(pPr)?.[0]
+  const fresh = elementAttrs(freshEl ?? '').filter(([n]) => rebuilt.has(n))
+  const freshNames = new Set(fresh.map(([n]) => n))
+  const kept = elementAttrs(rawEl ?? '').filter(([n]) => !rebuilt.has(n) && !freshNames.has(n))
+  const attrs = [...fresh, ...kept]
+  if (attrs.length === 0) return rawEl ? pPr.replace(rawEl, '') : pPr
+  const merged = `<${tag} ${attrs.map(([n, v]) => `${n}="${v}"`).join(' ')}/>`
+  if (rawEl) return pPr.replace(rawEl, merged)
+  const open = /^<w:pPr(?: [^>]*)?>/.exec(pPr)?.[0] ?? '<w:pPr>'
+  const inner = pPr.startsWith(open) ? pPr.slice(open.length, pPr.length - '</w:pPr>'.length) : ''
+  const rank = (n: string) => PPR_CHILD_ORDER.indexOf(n)
+  const children = splitXmlChildren(inner).map((c) => c.xml)
+  const names = splitXmlChildren(inner).map((c) => c.name)
+  let at = children.length
+  for (let i = 0; i < names.length; i++) {
+    if (rank(names[i]) > rank(tag)) {
+      at = i
+      break
+    }
+  }
+  children.splice(at, 0, merged)
+  return `${open}${children.join('')}</w:pPr>`
+}
+
+/**
+ * Paragraph format edit inside a layout-table cell: only the groups whose
+ * fields differ from `original` are rewritten, so unmodeled pPr children
+ * (bidi, borders, shading, page break) and style-resolved values the editor
+ * merely reports stay as they were. w:jc / w:tabs go through mergePPrFormat;
+ * w:ind / w:spacing merge attribute-wise so their unmodeled attributes survive.
+ */
+export function mergeCellParaFormat(
+  rawPPr: string,
+  format: ParaFormat,
+  original: ParaFormat | undefined,
+): string {
+  const differs = (k: keyof ParaFormat) =>
+    JSON.stringify(format[k] ?? null) !== JSON.stringify(original?.[k] ?? null)
+  const tags = new Set(CELL_PPR_GROUPS.filter(([, f]) => f.some(differs)).map(([tag]) => tag))
+  if (tags.size === 0) return rawPPr
+  let out = !rawPPr || /^<w:pPr(?:\s[^>]*)?\/>$/.test(rawPPr) ? '<w:pPr></w:pPr>' : rawPPr
+  const realStops = (format.tabStops ?? []).filter((ts) => !ts.rel && !ts.inherited)
+  if (tags.has('w:tabs') && realStops.length === 0) {
+    // mergePPrFormat only manages w:tabs while stops exist: clearing them all is done here
+    out = out.replace(/<w:tabs>[\s\S]*?<\/w:tabs>|<w:tabs\/>/, '')
+    tags.delete('w:tabs')
+  }
+  const viaMerge = new Set([...tags].filter((t) => t === 'w:jc' || t === 'w:tabs'))
+  if (viaMerge.size > 0) out = mergePPrFormat(out, format, undefined, viaMerge) || '<w:pPr></w:pPr>'
+  const fresh = formatPPrChildren(format)
+  for (const tag of ['w:spacing', 'w:ind']) {
+    if (!tags.has(tag)) continue
+    const rebuilt = new Set(
+      CELL_MODELED_ATTR_GROUPS[tag].filter((g) => g.fields.some(differs)).flatMap((g) => g.attrs),
+    )
+    out = mergeCellElementAttrs(out, tag, fresh.find((c) => c.name === tag)?.xml, rebuilt)
+  }
+  return /^<w:pPr(?: [^>]*)?><\/w:pPr>$/.test(out) ? '' : out
+}
+
 export function mergePPrFormat(
   rawPPr: string,
   format: ParaFormat | undefined,
   original?: ParaFormat,
+  /** restrict the managed groups (others keep their raw bytes whatever the format says) */
+  onlyTags?: ReadonlySet<string>,
 ): string {
   const open = /^<w:pPr(?: [^>]*)?>/.exec(rawPPr)?.[0]
   const fresh = formatPPrChildren(format)
@@ -1801,6 +1923,7 @@ export function mergePPrFormat(
   if (format?.textDirection !== undefined) managedTags.add('w:textDirection')
   // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
   if (format?.emptyRunSizeHalfPoints !== undefined) managedTags.add('w:rPr')
+  if (onlyTags) for (const tag of [...managedTags]) if (!onlyTags.has(tag)) managedTags.delete(tag)
   const rawChildren = splitXmlChildren(inner)
   const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
   const rebuilt = new Set(
@@ -2492,6 +2615,26 @@ export interface InlinePictureXmlOptions {
   rotDeg?: number
   flipH?: boolean
   flipV?: boolean
+}
+
+/** The drawing re-sized to widthPx x heightPx: wp:extent and the picture's own
+ *  a:ext follow (effectExtent is left alone). Unchanged when the extent already
+ *  reads these sizes, so an untouched picture saves byte-identical. */
+export function resizeInlinePictureXml(xml: string, widthPx: number, heightPx: number): string {
+  if (!(widthPx > 0) || !(heightPx > 0) || !/<wp:inline[\s>]/.test(xml)) return xml
+  const cx = Math.max(1, Math.round(widthPx * EMU_PER_PX))
+  const cy = Math.max(1, Math.round(heightPx * EMU_PER_PX))
+  const extent = /<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/.exec(xml)
+  if (!extent) return xml
+  const samePx = (emu: string, px: number) =>
+    Math.round((Number(emu) / EMU_PER_PX) * 100) / 100 === px
+  if (samePx(extent[1], widthPx) && samePx(extent[2], heightPx)) return xml
+  const ext = (tag: string) =>
+    tag.replace(/\bcx="\d+"/, `cx="${cx}"`).replace(/\bcy="\d+"/, `cy="${cy}"`)
+  let out = xml.replace(/<wp:extent\b[^>]*>/, ext)
+  const pic = /<pic:spPr[\s>][\s\S]*?<\/pic:spPr>/.exec(out)
+  if (pic) out = out.replace(pic[0], pic[0].replace(/<a:ext\b[^>]*>/, ext))
+  return out
 }
 
 /** `<w:drawing>` of an inline picture (wp:inline + pic:pic), the run and paragraph excluded */

@@ -541,4 +541,7 @@ export const pt = {
   appUpdateStyleTip: 'Atualizar este estilo com a seleção atual (gravado de volta em styles.xml)',
   appNewStyleFromSelection: 'Novo estilo a partir da seleção atual',
   appStyleNamePlaceholder: 'Nome do estilo',
+  appMergeSourceLoaded: '{name} carregado ({n} registros)',
+  appMergeWritten: '{n} documentos gravados',
+  appMergeNothingToWrite: 'Não há nada a gravar',
 } satisfies Record<keyof typeof zh, string>

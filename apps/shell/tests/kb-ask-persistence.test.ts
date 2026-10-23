@@ -31,9 +31,9 @@ describe('restoring a stored knowledge-base thread', () => {
       stored({ role: 'user', text: 'second question', seq: 2 }),
     ])
     expect(restored).toEqual([
-      { role: 'user', text: 'first question', toolNotes: [] },
-      { role: 'assistant', text: 'first answer', toolNotes: [] },
-      { role: 'user', text: 'second question', toolNotes: [] },
+      { role: 'user', text: 'first question', toolNotes: [], artifacts: [] },
+      { role: 'assistant', text: 'first answer', toolNotes: [], artifacts: [] },
+      { role: 'user', text: 'second question', toolNotes: [], artifacts: [] },
     ])
   })
 
@@ -44,7 +44,7 @@ describe('restoring a stored knowledge-base thread', () => {
       stored({ role: 'user', text: 'kept', seq: 0 }),
       stored({ role: 'system', text: 'dropped', seq: 1 } as Partial<ChatMessage>),
     ])
-    expect(restored).toEqual([{ role: 'user', text: 'kept', toolNotes: [] }])
+    expect(restored).toEqual([{ role: 'user', text: 'kept', toolNotes: [], artifacts: [] }])
   })
 
   it('restores no badges, because a stored turn has none', () => {
@@ -60,7 +60,12 @@ describe('restoring a stored knowledge-base thread', () => {
       }),
     ])
     expect(restored[0]?.toolNotes).toEqual([])
-    expect(Object.keys(restored[0] ?? {}).sort()).toEqual(['role', 'text', 'toolNotes'])
+    expect(Object.keys(restored[0] ?? {}).sort()).toEqual([
+      'artifacts',
+      'role',
+      'text',
+      'toolNotes',
+    ])
   })
 
   it('is empty for an empty transcript', () => {
@@ -109,7 +114,9 @@ describe('claiming the panel thread', () => {
       method: 'resolveChat',
       args: { filePath: null, tempChatId: 'kb-ask' },
     })
-    expect(shown[0]).toEqual([{ role: 'user', text: 'older question', toolNotes: [] }])
+    expect(shown[0]).toEqual([
+      { role: 'user', text: 'older question', toolNotes: [], artifacts: [] },
+    ])
   })
 
   it('writes the turns asked before the ids landed, after reading back, and drains them', async () => {

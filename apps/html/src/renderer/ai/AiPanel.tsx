@@ -3,10 +3,12 @@ import {
   AiPanelSideButton,
   AiModelPicker,
   type AiModelPickerBridge,
+  AiSkillChips,
+  AiSkillsMenu,
 } from '@genoffice/ui'
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 'react'
-import { AgentLoop, composeSkills } from '@genoffice/agent-core'
+import { AgentLoop, composeSkills, withAttachedSkills } from '@genoffice/agent-core'
 import type { AgentImage } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -29,7 +31,6 @@ import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
-import attachIcon from '../assets/attach-icon.png'
 import fileDocumentIcon from '../assets/file-document.png'
 import fileExcelIcon from '../assets/file-excel.png'
 import fileGeneralIcon from '../assets/file-general.png'
@@ -223,6 +224,8 @@ interface ChatEntry {
   queueRun?: boolean
   /** attachments consumed from the composer by this message (echoed read-only; retries resend them) */
   attachments?: AttachmentMeta[]
+  /** skills the user attached to this message from the composer menu */
+  skills?: string[]
   tools?: ToolActivity[]
   /** the element this user message targeted, frozen at send */
   scope?: AiScopeQuoteData
@@ -349,6 +352,9 @@ export function AiPanel({
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
+  const [attachedSkills, setAttachedSkills] = useState<string[]>([])
+  const attachedSkillsRef = useRef(attachedSkills)
+  attachedSkillsRef.current = attachedSkills
   const sendSeqRef = useRef(0)
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -411,6 +417,31 @@ export function AiPanel({
     showAttachNotice(result.rejected)
   }
   const pickAttachments = async () => mergeAttachments(await window.htmlApi.pickAttachments())
+
+  /** the attached skills' full text in front of the request; a skill that vanished is skipped */
+  const withSkillBodies = async (instruction: string, names: readonly string[]) => {
+    if (names.length === 0) return instruction
+    const bodies = await Promise.all(
+      names.map(async (name) => {
+        try {
+          return { name, body: await window.htmlApi.skillText(name) }
+        } catch {
+          return null
+        }
+      }),
+    )
+    return withAttachedSkills(
+      instruction,
+      bodies.filter((b): b is { name: string; body: string } => b !== null),
+    )
+  }
+
+  const listSkillsForMenu = async () =>
+    (await window.htmlApi.skillsList()).map(({ name, description }) => ({ name, description }))
+  const toggleSkill = (name: string) =>
+    setAttachedSkills((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    )
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -922,6 +953,8 @@ export function AiPanel({
     queueRun = false,
     attachmentsOverride?: AttachmentMeta[],
     scope?: AiScopeQuoteData,
+    /** only the composer's own send takes the attached skills along */
+    attachSkills = false,
   ): boolean => {
     const instruction = text.trim()
     const loop = loopRef.current
@@ -936,6 +969,9 @@ export function AiPanel({
       ]
       if (!attachmentsOverride) setAttachments([])
     }
+    // skills ride with this one message only: the chips clear like attachments do
+    const sentSkills = attachSkills ? attachedSkillsRef.current : []
+    if (sentSkills.length > 0) setAttachedSkills([])
     stickToBottomRef.current = true
     queueRunRef.current = queueRun
     lastQueueRunRef.current = queueRun
@@ -954,6 +990,7 @@ export function AiPanel({
         instruction: displayText ? instruction : undefined,
         queueRun: queueRun || undefined,
         attachments: sentAtts.length > 0 ? sentAtts : undefined,
+        skills: sentSkills.length > 0 ? sentSkills : undefined,
         scope,
       },
       { role: 'assistant', text: '', streaming: true },
@@ -970,7 +1007,9 @@ export function AiPanel({
         settingsRef.current = await window.htmlApi.getAiSettings()
         const images = sentAtts.length > 0 ? await collectImages(sentAtts) : []
         if (!mountedRef.current || seq !== sendSeqRef.current) return
-        await loop.run(instruction, images.length > 0 ? images : undefined)
+        const withSkills = await withSkillBodies(instruction, sentSkills)
+        if (!mountedRef.current || seq !== sendSeqRef.current) return
+        await loop.run(withSkills, images.length > 0 ? images : undefined)
       } catch (err) {
         // a send cancelled during its pre-run reads must not paint its error onto a later turn's bubble
         if (!mountedRef.current || seq !== sendSeqRef.current) return
@@ -1203,6 +1242,7 @@ export function AiPanel({
                 setChat([])
                 setReceipts([])
                 setAttachments([])
+                setAttachedSkills([])
                 setAttachNotice(null)
                 sentAttachmentsRef.current = []
               }}
@@ -1276,6 +1316,7 @@ export function AiPanel({
                     <AttachmentList atts={entry.attachments} previews={attachmentPreviews} />
                   </div>
                 )}
+                {entry.skills && <AiSkillChips lang={lang} names={entry.skills} />}
                 <span dir="auto">{entry.text}</span>
                 {own.map((r, k) =>
                   r.qa ? (
@@ -1551,6 +1592,7 @@ export function AiPanel({
             onSend={sendQueue}
           />
         )}
+        <AiSkillChips lang={lang} names={attachedSkills} onRemove={toggleSkill} />
         {attachments.length > 0 && (
           <div className="ai-attachments">
             <AttachmentList
@@ -1590,7 +1632,7 @@ export function AiPanel({
           stopIcon={<img src={sendStop} alt="" aria-hidden />}
           textareaRef={inputRef}
           onChange={setPrompt}
-          onSend={() => send(prompt)}
+          onSend={() => send(prompt, undefined, false, undefined, undefined, true)}
           onStop={stop}
           onPasteFiles={(files) => void onPasteFiles(files)}
           onPasteText={onPasteText}
@@ -1598,15 +1640,14 @@ export function AiPanel({
             <>
               <AiModelPicker bridge={MODEL_BRIDGE} lang={lang} />
               {sessionUsage && <AiUsageChip usage={sessionUsage} session lang={lang} />}
-              <button
-                type="button"
-                className="ai-attach-btn"
-                onClick={() => void pickAttachments()}
-                data-tip={t('aiAttachTitle')}
-                aria-label={t('aiAttachTitle')}
-              >
-                <img src={attachIcon} alt="" aria-hidden />
-              </button>
+              <AiSkillsMenu
+                lang={lang}
+                listSkills={listSkillsForMenu}
+                selected={attachedSkills}
+                onToggle={toggleSkill}
+                onAddFile={() => void pickAttachments()}
+                onManage={() => void window.htmlApi.openSkillsSettings?.()}
+              />
             </>
           }
         />

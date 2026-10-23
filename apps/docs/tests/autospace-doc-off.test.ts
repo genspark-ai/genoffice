@@ -88,18 +88,32 @@ describe('docAutospaceOff', () => {
     expect(docAutospaceOff(parsedDoc({}))).toBe(false)
   })
 
-  it('the default paragraph style EA face also gates', () => {
+  const notoNormal = {
+    styleId: 'Normal',
+    name: 'Normal',
+    type: 'paragraph',
+    isDefault: true,
+    display: { font: 'Noto Sans CJK JP', fontAscii: 'Calibri' },
+  } as StyleInfo
+
+  it('the default paragraph style EA face gates when docDefaults declare none', () => {
+    expect(docAutospaceOff(parsedDoc({ styles: [notoNormal] }))).toBe(true)
+  })
+
+  it('a docDefaults theme EA slot keeps the gaps over a missing Normal-style face', () => {
+    // prod corpus 20261020 sample 023: empty minorEastAsia slot + themeFontLang,
+    // Normal "Noto Sans CJK KR"; Word pads every digit-hangul seam
     const doc = parsedDoc({
+      docDefaults: { eaThemeSlot: true, lang: 'en-US' },
       styles: [
-        {
-          styleId: 'Normal',
-          name: 'Normal',
-          type: 'paragraph',
-          isDefault: true,
-          display: { font: 'Noto Sans CJK JP', fontAscii: 'Calibri' },
-        } as StyleInfo,
+        { ...notoNormal, display: { font: 'Noto Sans CJK KR', fontAscii: 'Noto Sans CJK KR' } },
       ],
     })
-    expect(docAutospaceOff(doc)).toBe(true)
+    expect(docAutospaceOff(doc)).toBe(false)
+  })
+
+  it('a declared installed docDefaults face outranks the Normal-style face', () => {
+    const doc = parsedDoc({ docDefaults: { eastAsiaFont: 'Batang' }, styles: [notoNormal] })
+    expect(docAutospaceOff(doc)).toBe(false)
   })
 })

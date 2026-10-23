@@ -1,0 +1,54 @@
+{
+  "id": "table-style-ppr-spacing",
+  "title": "A table style's root w:pPr spacing applies to cell paragraphs; w:linkStyles swaps docDefaults for Normal.dotm's and pushes differing values onto Normal",
+  "section": "word-truths.md#L601",
+  "probe_date": "2026-10-20",
+  "source": "probes build.py -> tg_*.pdf (A4, Arial 12, compat 15): TableGrid after=0 line=240 -> cell pitch 13.80 / after 0; direct line 480 -> 27.60; package 240/0 + linkStyles -> table paragraphs 16.92 (12 x 1.22 x 278/240 Aptos) and after 7.92",
+  "cases": [
+    {
+      "kind": "styleProps",
+      "styleId": "TableGrid",
+      "expect": {
+        "tableDisplay": {
+          "paraSpacing": {
+            "afterTwips": 0,
+            "lineRawTwips": 240
+          }
+        }
+      },
+      "note": "style-root pPr spacing is read for cell paragraphs"
+    },
+    {
+      "kind": "docDefaults",
+      "expect": {
+        "asciiFont": "Arial",
+        "sizeHalfPoints": 24,
+        "lineRawTwips": 240,
+        "spaceAfterTwips": 0
+      },
+      "note": "package docDefaults without the flag"
+    },
+    {
+      "kind": "docDefaults",
+      "docx": "probe-link.docx",
+      "expect": {
+        "sizeHalfPoints": 24,
+        "lineRawTwips": 278,
+        "spaceAfterTwips": 160
+      },
+      "note": "w:linkStyles: Normal.dotm docDefaults (12pt, line 278, after 8pt)"
+    },
+    {
+      "kind": "styleProps",
+      "docx": "probe-link.docx",
+      "styleId": "Normal",
+      "expect": {
+        "spaceAfterTwips": 160,
+        "lineRawTwips": 278
+      },
+      "note": "the package declared 240/0, both differ from the template -> written onto Normal, outranking the table style for exactly those attributes (table pitch 16.92, after 7.92)"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

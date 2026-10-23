@@ -190,5 +190,27 @@ describe('buildAnchoredTextboxParagraphXml (P20 region container)', () => {
     expect(box!.readOnly).not.toBe(true)
     expect(box!.widthPx).toBe(Math.round(5486400 / 9525))
     expect(box!.insetLeftPx).toBeCloseTo(182880 / 9525, 1)
+    expect(box!.fillAlpha).toBeUndefined()
+  })
+
+  it('records the host paragraph left indent for the inline-box renderer', async () => {
+    const xml = cardXml().replace('<w:pPr>', '<w:pPr><w:ind w:left="6619"/>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const block = parsed.blocks.find((b) => b.textboxes?.length)
+    expect(block?.imageIndentLeftTwips).toBe(6619)
+    const plain = await parseDocx(await buildDocx({ bodyXml: cardXml() }))
+    expect(plain.blocks.find((b) => b.textboxes?.length)?.imageIndentLeftTwips).toBeUndefined()
+  })
+
+  it('keeps a solid fill alpha (a 1.5% black label tint is not a black bar)', async () => {
+    const xml = cardXml().replace(
+      /<a:srgbClr val="1A1A2E"\/>/,
+      '<a:srgbClr val="1A1A2E"><a:alpha val="1568"/></a:srgbClr>',
+    )
+    expect(xml).toContain('<a:alpha val="1568"/>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const box = parsed.blocks.flatMap((b) => b.textboxes ?? [])[0]
+    expect(box!.fill?.toUpperCase()).toBe('1A1A2E')
+    expect(box!.fillAlpha).toBeCloseTo(0.01568, 4)
   })
 })

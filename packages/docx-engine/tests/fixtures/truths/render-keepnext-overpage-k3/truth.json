@@ -1,0 +1,41 @@
+{
+  "id": "render-keepnext-overpage-k3",
+  "title": "Over-page keepNext chain of three blocks: the two that fit open page 2 together, the 400pt block opens page 3",
+  "section": "word-truths.md#L477",
+  "probe_date": "2026-10-14",
+  "class": "render",
+  "source": "w3b_k3.pdf re-measured 2026-10-22: same layout as k1 with exact 200 + 200 + 400pt blocks; p2 = HEAD + BLOCK1 + BLOCK2, p3 = BLOCK3 + caption",
+  "cases": [
+    {
+      "kind": "pages",
+      "expect": 3
+    },
+    {
+      "kind": "blockPage",
+      "block": 20,
+      "expect": 2
+    },
+    {
+      "kind": "blockPage",
+      "block": 21,
+      "expect": 2
+    },
+    {
+      "kind": "blockPage",
+      "block": 22,
+      "expect": 2
+    },
+    {
+      "kind": "blockPage",
+      "block": 23,
+      "expect": 3,
+      "note": "400pt block opens page 3"
+    },
+    {
+      "kind": "blockPage",
+      "block": 24,
+      "expect": 3
+    }
+  ],
+  "docx": "probe.docx"
+}

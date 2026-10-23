@@ -1,0 +1,146 @@
+{
+  "id": "numbering-ind-merge-precedence",
+  "title": "Numbering-level w:ind merges per attribute (direct > level > style, firstLine/hanging one slot); an oversized number grows the line by ascent only",
+  "section": "word-truths.md#L543",
+  "probe_date": "2026-10-20",
+  "source": "probe mk.py -> lvlind.pdf (re-measured 2026-10-22: marker x 107.0 / 143.0 / 90.0 / 108.0 / 88.0 pt on a 72pt margin = 700 / 1420 / 360 / 720 / 320 twips); TNR 12 text, level sz 14/18/22 grow the first line +1.8/+5.9/+9.2 = 0.934 x delta",
+  "cases": [
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 0
+      },
+      "styleFirstLine": 700,
+      "left": 0,
+      "expect": 700,
+      "note": "A: level left=0 keeps the style firstLine 700 (marker 107pt)"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 720
+      },
+      "styleFirstLine": 700,
+      "left": 720,
+      "expect": 1420,
+      "note": "B: 143pt"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 720,
+        "hanging": 360
+      },
+      "styleFirstLine": 700,
+      "left": 720,
+      "expect": 360,
+      "note": "C: level hanging replaces the style firstLine (90pt)"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 720,
+        "firstLine": 0
+      },
+      "styleFirstLine": 700,
+      "left": 720,
+      "expect": 720,
+      "note": "D: explicit firstLine=0 kills the style firstLine (108pt)"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 720
+      },
+      "styleFirstLine": -400,
+      "left": 720,
+      "expect": 320,
+      "note": "E: style hanging 400 survives a level left=720 (88pt)"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": null,
+      "level": {
+        "indentLeft": 0,
+        "hanging": 360
+      },
+      "styleFirstLine": 700,
+      "left": 1440,
+      "expect": 1080,
+      "note": "F: level hanging survives a direct left=1440 (126pt)"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": 0,
+      "level": {
+        "indentLeft": 0
+      },
+      "styleFirstLine": 700,
+      "left": 0,
+      "expect": 0,
+      "note": "G: direct firstLine=0 (72pt)"
+    },
+    {
+      "kind": "listMarkerStartTw",
+      "own": -200,
+      "level": {
+        "indentLeft": 0
+      },
+      "styleFirstLine": 700,
+      "left": 0,
+      "expect": -200,
+      "note": "H: direct hanging=200 (62pt)"
+    },
+    {
+      "kind": "numberingLevel",
+      "numId": 6,
+      "ilvl": 0,
+      "expect": {
+        "szHalfPoints": 36,
+        "indentLeft": 0
+      }
+    },
+    {
+      "kind": "oversizedMarkerExtraPt",
+      "markerFont": "Times New Roman",
+      "markerPt": 14,
+      "textPt": 12,
+      "expect": 1.8,
+      "tol": 0.35,
+      "note": "sz 14: (14 - 12) x (1.15 - 0.2163) = 1.87, Word +1.8"
+    },
+    {
+      "kind": "oversizedMarkerExtraPt",
+      "markerFont": "Times New Roman",
+      "markerPt": 18,
+      "textPt": 12,
+      "expect": 5.9,
+      "tol": 0.35,
+      "note": "sz 18: 5.60, Word +5.9"
+    },
+    {
+      "kind": "oversizedMarkerExtraPt",
+      "markerFont": "Times New Roman",
+      "markerPt": 22,
+      "textPt": 12,
+      "expect": 9.2,
+      "tol": 0.35,
+      "note": "sz 22: 9.34, Word +9.2"
+    },
+    {
+      "kind": "oversizedMarkerExtraPt",
+      "markerFont": "Times New Roman",
+      "markerPt": 10,
+      "textPt": 12,
+      "expect": null,
+      "note": "a smaller marker changes nothing"
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

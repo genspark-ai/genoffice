@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./install": "./src/install.ts",
+    "./args": "./src/args.ts",
     "./agent-skills": "./src/agent-skills.ts",
     "./mcp-launch": "./src/mcp-launch.ts",
     "./control-protocol": "./src/control-protocol.ts"
@@ -45,6 +46,6 @@
     "@types/node": "^24.10.1",
     "esbuild": "^0.25.12",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }

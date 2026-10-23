@@ -1,0 +1,39 @@
+{
+  "id": "spacing-merge-max",
+  "title": "Body paragraph spacing merge = max(after, before); HTML auto spacing = 14pt",
+  "section": "word-truths.md#L159",
+  "probe_date": "2026-09-11",
+  "class": "pure",
+  "source": "probe dnu_off.docx (flag absent) -> Word for Mac direct PDF, pymupdf baselines: M 23.04 / N 22.08 / H 25.92 = 12pt line + gap; confirms the 2026-09-11 max rule and the 14pt auto value (#L14)",
+  "cases": [
+    {
+      "kind": "flagsOff",
+      "expect": ["doNotUseHTMLParagraphAutoSpacing"]
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 0,
+      "to": 1,
+      "expect": 11,
+      "tol": 0.001,
+      "note": "M: max(10, 11)"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 4,
+      "to": 5,
+      "expect": 10,
+      "tol": 0.001,
+      "note": "N: max(10, 0)"
+    },
+    {
+      "kind": "paraGapPt",
+      "from": 8,
+      "to": 9,
+      "expect": 14,
+      "tol": 0.001,
+      "note": "H: beforeAutospacing = 14pt, max(10, 14)"
+    }
+  ],
+  "docx": "probe.docx"
+}

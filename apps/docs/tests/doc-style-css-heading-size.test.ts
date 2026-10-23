@@ -45,8 +45,8 @@ describe('paragraph style with a Korean East Asian face', () => {
       ),
     )
     const rule = (id: string) => css.split('\n').find((l) => l.includes(`[data-style="${id}"]`))
-    expect(css).toContain('--doc-line-factor-kr:1.7371')
-    expect(rule('NormalWeb')).toContain('--doc-line-factor-kr:1.3029')
+    expect(css).toContain('--doc-line-factor-kr:1.7291')
+    expect(rule('NormalWeb')).toContain('--doc-line-factor-kr:1.3')
     expect(rule('Body')).not.toContain('--doc-line-factor-kr')
   })
 })
@@ -90,7 +90,7 @@ describe('empty EA theme slot resolved to a Japanese face', () => {
   const rule = (css: string) => css.split('\n').find((l) => l.includes('[data-style="Title"]'))
 
   it('sizes hangul lines by the Malgun fallback under themeFontLang ja-JP', async () => {
-    expect(rule(await cssFor('ja-JP'))).toContain('--doc-line-factor-kr:1.7371')
+    expect(rule(await cssFor('ja-JP'))).toContain('--doc-line-factor-kr:1.7291')
   })
 
   it('leaves a Korean face resolved under ko-KR to the document factor', async () => {

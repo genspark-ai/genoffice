@@ -98,6 +98,12 @@ import { applyTabColor } from './xlsx-tab-color'
 import { applyThemeState, type WorkbookThemeState } from './xlsx-theme'
 import { applySheetNotes, type SheetNote } from './xlsx-notes'
 import {
+  applyRedactionNameMirror,
+  applyRedactionPart,
+  rekeyRedactionStates,
+  type SheetRedactionState,
+} from './xlsx-redaction'
+import {
   applySparklineAdditions,
   type SheetSparklineAddition,
   type SparklineGroupAdd,
@@ -540,6 +546,91 @@ export async function readBasicWorkbook(buffer: Buffer): Promise<ImportedXlsx> {
   }
 }
 
+/**
+ * A worksheet read as plain text rows — the values as the file stores them.
+ *
+ * The editable model (readBasicWorkbook) keeps a formula as a formula and
+ * drops the value Excel cached for it, which is the wrong answer for a reader
+ * that wants the data itself: a data source (the recipient list of a mail
+ * merge) holds what the file last calculated. So the cell's own <v> is what
+ * this reads, exactly like the pivot source reader does.
+ *
+ * The first sheet is read unless a sheet is named. genoffice#2097.
+ */
+export async function readSheetRows(buffer: Buffer, sheetName?: string): Promise<string[][]> {
+  const zip = await createBufferEntrySource(buffer)
+  const workbookXml = await zip.readText('xl/workbook.xml')
+  const sharedStrings = await readSharedStrings(zip)
+  const name = sheetName ?? firstSheetName(workbookXml)
+  const worksheetXml = await zip.readText(await resolveWorksheetPath(zip, name))
+  return worksheetRows(worksheetXml, sharedStrings)
+}
+
+/** the name of the first sheet in workbook.xml */
+function firstSheetName(workbookXml: string): string {
+  const sheetPattern = /<sheet\b((?:"[^"]*"|'[^']*'|[^>"'])*?)\/?>/g
+  const match = sheetPattern.exec(workbookXml)
+  const name = match ? readXmlAttribute(match[1] ?? '', 'name') : undefined
+  if (!name) throw new Error('Workbook contains no readable worksheets.')
+  return decodeXmlText(name)
+}
+
+/** the zero-based column an A1 address names */
+function columnIndexOf(address: string): number {
+  const match = /^\$?([A-Z]+)\$?[0-9]+$/.exec(address)
+  if (!match) return -1
+  let column = 0
+  for (const character of match[1]!) column = column * 26 + character.charCodeAt(0) - 64
+  return column - 1
+}
+
+/** the text of one cell, whatever the file stored it as */
+function cellText(
+  body: string,
+  type: string | undefined,
+  sharedStrings: readonly string[],
+): string {
+  if (type === 'inlineStr') {
+    return [...body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
+      .join('')
+  }
+  const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
+  if (rawValue === undefined) return ''
+  if (type === 's') return sharedStrings[Number(rawValue)] ?? ''
+  if (type === 'str') return decodeCellText(rawValue)
+  if (type === 'b') return rawValue === '1' ? 'TRUE' : 'FALSE'
+  // a number keeps the file's own spelling: a date column then reads as the
+  // serial the file holds, not as a locale-formatted date
+  return decodeCellText(rawValue)
+}
+
+/** the rows of a worksheet, in file order; a row that is not there is empty */
+function worksheetRows(worksheetXml: string, sharedStrings: readonly string[]): string[][] {
+  const rows: string[][] = []
+  const rowPattern = /<row\b([^>]*)>([\s\S]*?)<\/row>/g
+  let rowMatch: RegExpExecArray | null
+  while ((rowMatch = rowPattern.exec(worksheetXml)) !== null) {
+    const rowNumber = Number(readXmlAttribute(rowMatch[1] ?? '', 'r'))
+    const rowIndex = Number.isFinite(rowNumber) && rowNumber > 0 ? rowNumber - 1 : rows.length
+    const cells: string[] = []
+    const cellPattern = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g
+    let cellMatch: RegExpExecArray | null
+    while ((cellMatch = cellPattern.exec(rowMatch[2] ?? '')) !== null) {
+      const attributes = cellMatch[1] ?? ''
+      const address = readXmlAttribute(attributes, 'r')
+      const column = address ? columnIndexOf(address) : cells.length
+      if (column < 0) continue
+      const value = cellText(cellMatch[2] ?? '', readXmlAttribute(attributes, 't'), sharedStrings)
+      while (cells.length < column) cells.push('')
+      cells[column] = value
+    }
+    while (rows.length < rowIndex) rows.push([])
+    rows[rowIndex] = cells
+  }
+  return rows
+}
+
 export async function inventoryXlsx(buffer: Buffer): Promise<readonly PackageEntry[]> {
   const zip = await loadSafeZip(buffer)
   const entries: PackageEntry[] = []
@@ -612,6 +703,7 @@ export async function applyCellEditsToXlsx(
   pageSetupStates: readonly SheetPageSetupState[] = [],
   noteStates: readonly SheetNoteState[] = [],
   formulaValues: readonly SheetFormulaValues[] = [],
+  redactionStates: readonly SheetRedactionState[] = [],
 ): Promise<XlsxMutation> {
   const plan = await planCellEditsToXlsx(
     await createBufferEntrySource(source),
@@ -635,6 +727,20 @@ export async function applyCellEditsToXlsx(
     [],
     [],
     formulaValues,
+    // The slots between formulaValues and redactionStates (theme, workbook
+    // protection, protected ranges, bulk fills, tab colours, table edits) are
+    // features this wrapper does not expose. They must stay positional:
+    // planCellEditsToXlsx takes one long ordered list, so inserting a
+    // placeholder here shifts nothing — but dropping one would silently
+    // re-target every later argument, a table edit included.
+    null,
+    null,
+    [],
+    [],
+    [],
+    [],
+    [],
+    redactionStates,
   )
   return assembleWithJsZip(source, plan)
 }
@@ -755,6 +861,10 @@ export async function planCellEditsToXlsx(
   tabColorStates: readonly SheetTabColorState[] = [],
   tableEdits: readonly SheetTableEdit[] = [],
   cellImageAdditions: readonly SheetCellImageAddition[] = [],
+  // Last, deliberately: every caller written against an older order would
+  // otherwise see `tabColorStates` or a cell image land here and a parsed
+  // table edit parsed as a tab colour.
+  redactionStates: readonly SheetRedactionState[] = [],
 ): Promise<MutationPlan> {
   // A pending pivot pins final coordinates for its source and output; shifts
   // on either sheet, and sheet renames (worksheetSource@sheet), would desync
@@ -1024,6 +1134,20 @@ export async function planCellEditsToXlsx(
   )
   const dynamicArrayCm =
     spillEdits.length > 0 ? await ensureDynamicArrayMetadata(pkg, touchedEntries) : null
+
+  // Withheld cells travel in a package part of their own, so they are written
+  // here rather than with the worksheets. A sheet renamed or removed in this
+  // same save takes its marks with it first — see rekeyRedactionStates.
+  // Unconditional, including for an empty list. Clearing the last mark has to
+  // remove the part, and a call guarded on "there is something to write" is
+  // exactly the call that never happens when the reader un-hides everything.
+  const rekeyed = rekeyRedactionStates(
+    redactionStates,
+    sheetPlan?.renames ?? [],
+    sheetPlan?.removals ?? [],
+    structuralOps,
+  )
+  await applyRedactionPart(pkg, touchedEntries, rekeyed)
 
   const editsBySheet = groupBySheet(edits)
   const fillsBySheet = groupBySheet(bulkConstantFills)
@@ -1485,6 +1609,18 @@ export async function planCellEditsToXlsx(
   // Excel trusts cached formula values on open, so formulas that depend on an
   // edited cell would show stale results without a forced recalculation.
   workbookXml = ensureFullCalcOnLoad(workbookXml)
+
+  // The defined-name mirror goes in last, on the final XML: it records each
+  // sheet by its position in workbook order, so it has to be written against
+  // the sheet list this save actually produced, not the one it started from.
+  // (The part above is the record; this is only what survives a reader that
+  // rebuilds the package and drops the part — see applyRedactionNameMirror.)
+  workbookXml = applyRedactionNameMirror(
+    workbookXml,
+    rekeyed,
+    parseSheetElements(workbookXml).map((sheet) => sheet.name),
+  )
+
   if (workbookXml !== originalWorkbookXml) {
     pkg.write(workbookPath, workbookXml)
     touchedEntries.add(workbookPath)

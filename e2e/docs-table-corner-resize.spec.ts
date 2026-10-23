@@ -42,7 +42,7 @@ async function docx(): Promise<Buffer> {
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
-test('corner handle drag shrinks the whole table and the width sticks', async () => {
+test('corner handle drag scales width and height and both stick', async () => {
   test.setTimeout(150_000)
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-corner-resize-')))
   const docPath = join(dir, 'table.docx')
@@ -64,7 +64,19 @@ test('corner handle drag shrinks the whole table and the width sticks', async ()
         const t = document.querySelector('.doc-page table.doc-table') as HTMLTableElement
         return Math.round(t.getBoundingClientRect().width)
       })
+    const columnWidths = () =>
+      page.evaluate(() => {
+        const t = document.querySelector('.doc-page table.doc-table') as HTMLTableElement
+        return Array.from(t.rows[0].cells).map((c) => c.getBoundingClientRect().width)
+      })
+    const tableHeight = () =>
+      page.evaluate(() => {
+        const t = document.querySelector('.doc-page table.doc-table') as HTMLTableElement
+        return Math.round(t.getBoundingClientRect().height)
+      })
     const before = await tableWidth()
+    const heightBefore = await tableHeight()
+    const columnsBefore = await columnWidths()
     const cell = await table.locator('td').first().boundingBox()
     if (!cell) throw new Error('no first cell')
     await page.mouse.move(cell.x + cell.width / 2, cell.y + cell.height / 2)
@@ -77,22 +89,24 @@ test('corner handle drag shrinks the whole table and the width sticks', async ()
     await page.mouse.move(x, y)
     await page.mouse.down()
     for (let step = 1; step <= 10; step++) {
-      await page.mouse.move(x - step * 20, y)
+      // left and down: narrower but taller, like Word's corner handle
+      await page.mouse.move(x - step * 20, y + step * 6)
       await page.waitForTimeout(30)
     }
     await expect.poll(tableWidth, { timeout: 3_000 }).toBeLessThan(before - 150)
+    await expect.poll(tableHeight, { timeout: 3_000 }).toBeGreaterThan(heightBefore + 40)
     await page.mouse.up()
     await page.waitForTimeout(500)
     const after = await tableWidth()
     expect(after).toBeLessThan(before - 150)
+    // the committed w:trHeight paints the dragged height, within a pixel per row
+    expect(Math.abs((await tableHeight()) - (heightBefore + 60))).toBeLessThan(4)
     await page.screenshot({ path: join(dir, '..', 'corner-resize-after.png') })
-    // every column scaled by the same factor
-    const widths = await page.evaluate(() => {
-      const t = document.querySelector('.doc-page table.doc-table') as HTMLTableElement
-      return Array.from(t.rows[0].cells).map((c) => c.getBoundingClientRect().width)
-    })
-    expect(Math.abs(widths[0] - widths[1])).toBeLessThan(3)
-    expect(Math.abs(widths[1] - widths[2])).toBeLessThan(3)
+    // every column scaled by the same factor (the content-autofit columns of
+    // 'A' / 'B' / 'C' start out slightly unequal, so compare ratios, not widths)
+    const widths = await columnWidths()
+    const scale = after / before
+    widths.forEach((w, i) => expect(Math.abs(w - columnsBefore[i] * scale)).toBeLessThan(3))
   } finally {
     await closeAndSaveVideo(launched)
     rmSync(dir, { recursive: true, force: true })

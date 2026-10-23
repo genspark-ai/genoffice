@@ -245,8 +245,8 @@ describe('renderTableSpec paragraph line box', () => {
         ],
       ],
     })
-    expect(style).toContain('--doc-strut:7pt')
-    expect(style).toContain('font-size:min(var(--doc-strut), 1em)')
+    expect(style).toContain('--doc-strut:6pt')
+    expect(style).toContain('font-size:var(--doc-strut)')
     expect(style).toContain('--doc-line-factor:var(--doc-line-factor-latin,1.2)')
     // explicit w:line=240 (single): re-evaluated at the paragraph's own strut size
     expect(style).toContain(SINGLE_LH)
@@ -354,14 +354,14 @@ describe('renderTableSpec paragraph line box', () => {
     const [style] = paraStyles({
       rows: [[cell(['宋体字'], [{ runs: [{ text: '宋体字', font: 'SimSun' }] }])]],
     })
-    expect(style).toContain('--doc-line-factor:1.3029')
+    expect(style).toContain('--doc-line-factor:1.3')
   })
 
   it('JP-variant Noto run fonts take the JA substitution factor', () => {
     const [style] = paraStyles({
       rows: [[cell(['日本語'], [{ runs: [{ text: '日本語', font: 'Noto Sans CJK JP' }] }])]],
     })
-    expect(style).toContain('--doc-line-factor:1.3029')
+    expect(style).toContain('--doc-line-factor:1.3')
   })
 
   it('plain-paras cells get script-based line factors per paragraph', () => {

@@ -535,4 +535,7 @@ export const en = {
   appUpdateStyleTip: 'Update this style from the current selection (written back to styles.xml)',
   appNewStyleFromSelection: 'New style from the current selection',
   appStyleNamePlaceholder: 'Style name',
+  appMergeSourceLoaded: 'Loaded {name} ({n} records)',
+  appMergeWritten: '{n} documents written',
+  appMergeNothingToWrite: 'There is nothing to write',
 } satisfies Record<keyof typeof zh, string>

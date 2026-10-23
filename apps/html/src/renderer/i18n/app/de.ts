@@ -9,6 +9,12 @@ export const de = {
   redactDialogPlaceholder: 'Name des Platzhalters, z. B. Telefonnummer des Kunden',
   redactCancel: 'Abbrechen',
   redactInsert: 'Verbergen',
+  diskChangedMsg: 'Diese Datei wurde von einem anderen Programm geändert.',
+  diskConflictMsg:
+    'Diese Datei wurde auf der Festplatte geändert; Speichern überschreibt diese Änderungen.',
+  diskReload: 'Neu laden',
+  diskKeepMine: 'Meine behalten',
+  diskOverwrite: 'Trotzdem überschreiben',
 
   loading: 'Wird geladen…',
   loadFailed: 'Datei konnte nicht geöffnet werden',

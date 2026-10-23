@@ -1,17 +1,18 @@
 import { Extension } from '@tiptap/core'
-import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import { TableMap } from '@tiptap/pm/tables'
 import { t } from '../i18n/locale'
 import { paintPreview, restorePreview, scaleTableGrid, startPreview } from './table-column-drag'
 import { setTableGridAtCell, tableGridAtCell } from './table-sizing'
+import { previewRowHeights, rowChromePx } from './table-row-drag'
 
 /**
  * Word-style table move handle: a small ⣿-cross button floating at the top-left
  * corner of the hovered table. Clicking it selects the whole table (NodeSelection);
  * dragging it hands the table to ProseMirror's native drag machinery, so dropping
  * repositions the table in the document. A second handle at the bottom-right
- * corner scales the whole column grid, like Word's table resize handle.
+ * corner scales the column grid and the row heights, like Word's table resize handle.
  */
 export const TableHandle = Extension.create({
   name: 'tableHandle',
@@ -68,6 +69,38 @@ function sectionContentWidth(view: EditorView, fallback: number): number {
     getComputedStyle(view.dom).getPropertyValue('--section-content-w'),
   )
   return Number.isFinite(width) && width > 0 ? width : fallback
+}
+
+const MIN_ROW_PX = 4
+
+interface RowStart {
+  pos: number
+  cssHeight: number
+}
+
+/** the table's model rows with their painted <tr> (paginated clones are not rows) */
+function rowStarts(view: EditorView, tablePos: number): RowStart[] {
+  const table = view.state.doc.nodeAt(tablePos)
+  if (!table) return []
+  const rows: RowStart[] = []
+  table.forEach((row, offset) => {
+    if (row.type.name !== 'docTableRow') return
+    const pos = tablePos + 1 + offset
+    const tr = view.nodeDOM(pos)
+    if (!(tr instanceof HTMLTableRowElement)) return
+    const cssHeight = tr.offsetHeight
+    if (cssHeight > 0) rows.push({ pos, cssHeight })
+  })
+  return rows
+}
+
+/** every row keeps its share of the table height; the shortest row stops at the minimum */
+export function scaleRowHeights(start: readonly number[], delta: number): number[] {
+  const total = start.reduce((sum, height) => sum + height, 0)
+  if (!(total > 0) || !Number.isFinite(delta)) return start.slice()
+  const minFactor = Math.max(...start.map((height) => Math.min(MIN_ROW_PX, height) / height))
+  const factor = Math.max(minFactor, (total + delta) / total)
+  return start.map((height) => height * factor)
 }
 
 function tableHandlePlugin(): Plugin {
@@ -282,14 +315,32 @@ function tableHandlePlugin(): Plugin {
         const rect = table.getBoundingClientRect()
         const screenPerModel = rect.width > 0 ? rect.width / startTotal : 1
         const cssPerModel = table.offsetWidth > 0 ? table.offsetWidth / startTotal : 1
+        const rows = rowStarts(view, tablePos)
+        const rowHeights = rows.map((row) => row.cssHeight)
+        const screenPerCss =
+          rect.height > 0 && table.offsetHeight > 0 ? rect.height / table.offsetHeight : 1
         // the handle sits on the visual right edge whatever the text direction
         const startX = event.clientX
+        const startY = event.clientY
         const widthsAt = (clientX: number) =>
           scaleTableGrid(start, (clientX - startX) / screenPerModel, maxWidth)
-        const paint = (widths: number[]) => {
+        const heightsAt = (clientY: number) =>
+          scaleRowHeights(rowHeights, (clientY - startY) / screenPerCss)
+        const paint = (widths: number[], heights: number[]) => {
           const total = widths.reduce((sum, width) => sum + width, 0)
+          // the row decoration redraws the rows, which leaves the colgroup alone
+          if (rows.length) {
+            previewRowHeights(
+              view,
+              rows.map((row, index) => ({ pos: row.pos, heightPx: heights[index] })),
+            )
+          }
           paintPreview(preview, widths, total * cssPerModel)
           placeResizer(table)
+        }
+        const restore = () => {
+          restorePreview(preview)
+          if (rows.length) previewRowHeights(view, null)
         }
         const cleanup = () => {
           window.removeEventListener('mousemove', onMove)
@@ -299,31 +350,69 @@ function tableHandlePlugin(): Plugin {
         }
         const onMove = (e: MouseEvent) => {
           if (e.buttons === 0) return onUp(e)
-          paint(widthsAt(e.clientX))
+          paint(widthsAt(e.clientX), heightsAt(e.clientY))
         }
         const onUp = (e: MouseEvent) => {
           cleanup()
           const widths = widthsAt(e.clientX)
-          const changed = widths.some((width, index) => Math.abs(width - start[index]) > 0.01)
-          if (!changed || !setTableGridAtCell(cellPos, widths)(view.state, view.dispatch)) {
-            restorePreview(preview)
-          }
+          const heights = heightsAt(e.clientY)
+          const widthChanged = widths.some((width, index) => Math.abs(width - start[index]) > 0.01)
+          const heightChanged = heights.some(
+            (height, index) => Math.abs(height - rowHeights[index]) > 0.5,
+          )
+          restore()
           hideHandle()
+          if (!widthChanged && !heightChanged) return
+          let tr: Transaction | null = null
+          if (widthChanged) setTableGridAtCell(cellPos, widths)(view.state, (next) => (tr = next))
+          tr ??= view.state.tr
+          commitRowHeights(tr, rows, heightChanged ? heights : null)
         }
         const onKey = (e: KeyboardEvent) => {
           if (e.key !== 'Escape') return
           e.preventDefault()
           e.stopPropagation()
           cleanup()
-          restorePreview(preview)
+          restore()
           hideHandle()
+        }
+        // w:trHeight is a content floor under the cell margins and gridlines, so
+        // the painted row is measured and the chrome taken back out (same undo step)
+        const commitRowHeights = (tr: Transaction, rows: RowStart[], heights: number[] | null) => {
+          const twipsOf = (row: RowStart, cssHeight: number) => ({
+            ...view.state.doc.nodeAt(row.pos)!.attrs,
+            heightTwips: Math.round(Math.max(MIN_ROW_PX, cssHeight) * 15),
+            heightRule:
+              view.state.doc.nodeAt(row.pos)!.attrs.heightRule === 'exact' ? 'exact' : 'atLeast',
+          })
+          if (heights) {
+            rows.forEach((row, index) =>
+              tr.setNodeMarkup(row.pos, undefined, twipsOf(row, heights[index])),
+            )
+          }
+          view.dispatch(tr)
+          if (!heights) return
+          let fix: Transaction | null = null
+          rows.forEach((row, index) => {
+            const painted = view.nodeDOM(row.pos)
+            const attrs = view.state.doc.nodeAt(row.pos)?.attrs
+            if (!(painted instanceof HTMLElement) || !attrs) return
+            const chrome = rowChromePx(painted, attrs.heightTwips)
+            if (chrome <= 0.5) return
+            fix ??= view.state.tr.setMeta('addToHistory', false)
+            fix.setNodeMarkup(row.pos, undefined, {
+              ...attrs,
+              heightTwips: Math.max(15, Math.round((heights[index] - chrome) * 15)),
+            })
+          })
+          if (fix) view.dispatch(fix)
         }
         stopFloatDrag?.()
         stopFloatDrag = () => {
           cleanup()
-          restorePreview(preview)
+          restore()
         }
-        paint(start)
+        paint(start, rowHeights)
         window.addEventListener('mousemove', onMove)
         window.addEventListener('mouseup', onUp)
         window.addEventListener('keydown', onKey, true)

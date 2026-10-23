@@ -23,6 +23,7 @@
 
 <p align="center" dir="rtl">
   <a href="#download"><b>הורדה</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>אתר</b></a> ·
@@ -218,6 +219,7 @@ skill ובלי לפתוח חלון, ולקבל 29 כלים בתוספת מדרי
 - **PDF שמטופל כמו שצריך.** ערכו טקסט ישירות בתוך העמוד, והמירו PDF ל-Word,
   Excel או PowerPoint במכשיר עצמו, עם OCR מובנה למסמכים סרוקים.
 - **גם Markdown ו-HTML**, עם אותו פאנל AI וייצוא מקומי ל-Word.
+- **Skills.** skills מוכנים או `SKILL.md` משלך, מצורפים מתפריט **+** בכל חלונית AI.
 - **ניתן לסקריפטים.** שורת פקודה `genoffice`, skill לסוכנים ושרת MCP
   מעמידים כל מנוע לרשות Claude Code,‏ Claude Desktop,‏ Codex,‏ Cursor וסוכנים
   אחרים, עדיין על המכשיר.
@@ -240,6 +242,18 @@ OpenRouter,‏ Requesty ו-OpenCode Zen/Go, ובנוסף שדה מותאם אי�
 כל החבילה מגיעה עם ערכות עיצוב בהיר, כהה ומצב מערכת. ערכות העיצוב משנות רק
 את מה שמוצג על המסך: קבצים מיוצאים, מודפסים ונשמרים תמיד שומרים על הצבעים
 המקוריים של המסמך.
+
+<a id="skills"></a>
+
+## Skills
+
+Skill הוא קובץ `SKILL.md` שמסביר ל-AI איך לבצע היטב משימה אחת: דוח שבועי, NDA, מערך שיעור.
+GenOffice מגיע עם אוסף כזה ומקבל גם skills משלך, באותו פורמט שבו משתמשים סוכני הקוד.
+
+- **הגדרות ← Skills.** **התקן** skill מומלץ, או **ייבא** תיקייה, zip או `SKILL.md` יחיד. בייבוא לא מורץ דבר.
+- **בשיחה.** פתח את תפריט **+** ליד תיבת ההקלדה בכל חלונית AI, בחר **Skills**, סמן אחד ושלח. ה-skill מצורף להודעה הזו בלבד.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

@@ -1,0 +1,131 @@
+{
+  "id": "arabic-cs-face-pitch",
+  "title": "An Arabic-only line in its cs face paces exactly that face's Latin factor; missing Arabic names substitute Times New Roman",
+  "section": "word-truths.md#L449",
+  "probe_date": "2026-10-13",
+  "source": "probe alp.docx -> alp.pdf (re-measured 2026-10-22: cs Arial 12pt pitches 13.68/13.92 = 13.80); truth: Simplified Arabic 19.92/23.28 (276: 22.80/26.64), Traditional Arabic 18.00/20.88 (20.64/24.00), Sakkal Majalla 16.80/19.56 (19.20/22.56), Arabic Transparent -> TNR 13.80",
+  "cases": [
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.8,
+      "tol": 0.05,
+      "note": "cs Arial 12",
+      "font": "Arial"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 16.08,
+      "tol": 0.05,
+      "note": "cs Arial 14",
+      "font": "Arial"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 15.84,
+      "tol": 0.05,
+      "note": "cs Arial 12 line 276",
+      "font": "Arial"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 19.92,
+      "tol": 0.05,
+      "note": "Simplified Arabic 12",
+      "font": "Simplified Arabic"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 23.28,
+      "tol": 0.05,
+      "note": "Simplified Arabic 14",
+      "font": "Simplified Arabic"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 22.8,
+      "tol": 0.15,
+      "note": "Simplified Arabic 12 line 276 (Word 22.80 on its 0.24pt grid, factor 22.91)",
+      "font": "Simplified Arabic"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 18.0,
+      "tol": 0.05,
+      "note": "Traditional Arabic 12",
+      "font": "Traditional Arabic"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 20.88,
+      "tol": 0.2,
+      "note": "Traditional Arabic 14 (21.0 by the factor)",
+      "font": "Traditional Arabic"
+    },
+    {
+      "kind": "linePt",
+      "block": 3,
+      "expect": 24.0,
+      "tol": 0.2,
+      "note": "Traditional Arabic 14 line 276",
+      "font": "Traditional Arabic"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 16.8,
+      "tol": 0.05,
+      "note": "Sakkal Majalla 12",
+      "font": "Sakkal Majalla"
+    },
+    {
+      "kind": "linePt",
+      "block": 1,
+      "expect": 19.56,
+      "tol": 0.05,
+      "note": "Sakkal Majalla 14",
+      "font": "Sakkal Majalla"
+    },
+    {
+      "kind": "linePt",
+      "block": 2,
+      "expect": 19.2,
+      "tol": 0.1,
+      "note": "Sakkal Majalla 12 line 276",
+      "font": "Sakkal Majalla"
+    },
+    {
+      "kind": "linePt",
+      "block": 0,
+      "expect": 13.8,
+      "tol": 0.05,
+      "note": "Arabic Transparent missing -> Times New Roman 1.15 (13.80); the 2026-08-13 naskh value 1.1429 gives 13.71",
+      "font": "Arabic Transparent",
+      "status": "failing"
+    },
+    {
+      "kind": "factor",
+      "font": "Simplified Arabic",
+      "expect": 1.66
+    },
+    {
+      "kind": "factor",
+      "font": "Traditional Arabic",
+      "expect": 1.5
+    },
+    {
+      "kind": "factor",
+      "font": "Sakkal Majalla",
+      "expect": 1.3965
+    }
+  ],
+  "class": "pure",
+  "docx": "probe.docx"
+}

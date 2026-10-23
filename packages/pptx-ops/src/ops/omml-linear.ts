@@ -115,7 +115,12 @@ function lin(n: Node): string {
       return `${part('m:e')}_${group(part('m:lim'))}`
     case 'm:limUpp':
       return `${part('m:e')}^${group(part('m:lim'))}`
-    case 'm:bar':
+    case 'm:bar': {
+      const pr = child(n, 'm:barPr')
+      const pos = pr ? attr(child(pr, 'm:pos'), 'm:val') : undefined
+      const mark = pos === 'bot' ? '\u0332' : '\u0304'
+      return `${part('m:e')}${mark}`
+    }
     case 'm:acc': {
       const pr = child(n, 'm:accPr')
       return `${part('m:e')}${(pr && attr(child(pr, 'm:chr'), 'm:val')) ?? '\u0304'}`

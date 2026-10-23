@@ -28,6 +28,7 @@ import {
   themedRFonts,
 } from './parse-props'
 import { w14TextOutlineOf } from './parse-drawing-geometry'
+import { xmlFlagOn } from './section'
 import type {
   DocDefaults,
   Run,
@@ -54,6 +55,77 @@ const BUILT_IN_DOC_DEFAULTS: DocDefaults = {
   asciiFont: 'Aptos',
   sizeHalfPoints: 24,
   ...BUILT_IN_PARA_DEFAULTS,
+}
+
+/** Word probe 2026-10-20: settings.xml w:linkStyles ("automatically update document
+ *  styles") with no w:attachedTemplate swaps the package's docDefaults and its
+ *  default styles for Normal.dotm's on open (Normal's own pPr/rPr are dropped, the
+ *  stock template's Normal is empty). Stock Normal.dotm: 12pt, kern 2, after 8pt,
+ *  line 278 auto; font slots stay theme refs so the document theme still decides. */
+const NORMAL_TEMPLATE_DEFAULTS: Pick<
+  DocDefaults,
+  | 'sizeHalfPoints'
+  | 'sizeCsHalfPoints'
+  | 'kernHalfPoints'
+  | 'spaceAfterTwips'
+  | 'lineRawTwips'
+  | 'lineRule'
+  | 'lineSpacing'
+> = {
+  sizeHalfPoints: 24,
+  sizeCsHalfPoints: 24,
+  kernHalfPoints: 2,
+  spaceAfterTwips: 160,
+  lineRawTwips: 278,
+  lineRule: 'auto',
+  lineSpacing: 278 / 240,
+}
+
+async function linksNormalTemplate(zip: JSZip): Promise<boolean> {
+  const file = zip.file('word/settings.xml')
+  if (!file) return false
+  const xml = await file.async('string')
+  return xmlFlagOn(xml, 'w:linkStyles') && !/<w:attachedTemplate\b/.test(xml)
+}
+
+/** Word probe 2026-10-20 (PR fix/docs-tablegrid-line-013): the swap keeps the
+ *  template look for every pPrDefault spacing value the package declared
+ *  differently by writing that value onto Normal itself, so it outranks a table
+ *  style's w:pPr (TableGrid after=0/line=240 is ignored for exactly those
+ *  attributes); values equal to the template stay off Normal and the table
+ *  style keeps winning. */
+function normalTemplateOverrides(dd: DocDefaults): StyleDisplay | undefined {
+  const own: StyleDisplay = {}
+  if (
+    dd.spaceAfterTwips !== undefined &&
+    dd.spaceAfterTwips !== NORMAL_TEMPLATE_DEFAULTS.spaceAfterTwips
+  )
+    own.spaceAfterTwips = NORMAL_TEMPLATE_DEFAULTS.spaceAfterTwips
+  const sameLine =
+    dd.lineRawTwips === NORMAL_TEMPLATE_DEFAULTS.lineRawTwips &&
+    (dd.lineRule ?? 'auto') === NORMAL_TEMPLATE_DEFAULTS.lineRule
+  if (dd.lineRawTwips !== undefined && !sameLine) {
+    own.lineRawTwips = NORMAL_TEMPLATE_DEFAULTS.lineRawTwips
+    own.lineRule = NORMAL_TEMPLATE_DEFAULTS.lineRule
+    own.lineSpacing = NORMAL_TEMPLATE_DEFAULTS.lineSpacing
+  }
+  return Object.keys(own).length > 0 ? own : undefined
+}
+
+function applyNormalTemplate(dd: DocDefaults): DocDefaults {
+  const {
+    spaceBeforeTwips: _b,
+    spaceBeforeAuto: _ba,
+    spaceAfterAuto: _aa,
+    bold: _bold,
+    italic: _it,
+    color: _c,
+    borderSides: _bs,
+    widowControl: _w,
+    suppressAutoHyphens: _h,
+    ...kept
+  } = dd
+  return { ...kept, ...NORMAL_TEMPLATE_DEFAULTS }
 }
 
 /** w:numPr as declared on one style (either child may be absent) */
@@ -89,6 +161,7 @@ export async function parseStyles(
   if (!root) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
 
   let docDefaults: DocDefaults | undefined
+  let declaredPPrDefault = false
   const defaultsNode = findChild(root, 'w:docDefaults')
   if (!defaultsNode) docDefaults = { ...BUILT_IN_PARA_DEFAULTS }
   else {
@@ -96,6 +169,8 @@ export async function parseStyles(
     const rPr = findChild(findChild(defaultsNode, 'w:rPrDefault') ?? {}, 'w:rPr')
     const sz = rPr ? attrsOf(findChild(rPr, 'w:sz') ?? {})['w:val'] : undefined
     if (sz) dd.sizeHalfPoints = parseInt(sz, 10) || undefined
+    const szCs = rPr ? attrsOf(findChild(rPr, 'w:szCs') ?? {})['w:val'] : undefined
+    if (szCs) dd.sizeCsHalfPoints = parseInt(szCs, 10) || undefined
     const rfAttrs = rPr ? attrsOf(findChild(rPr, 'w:rFonts') ?? {}) : {}
     const ddRf = themedRFonts(rfAttrs, themeFonts)
     if (ddRf.ascii ?? ddRf.hAnsi) dd.asciiFont = ddRf.ascii ?? ddRf.hAnsi
@@ -107,6 +182,7 @@ export async function parseStyles(
     }
     // docDefaults keeps the lang-based backfill below for the empty-slot case
     if (ddRf.eastAsia && !ddRf.eaSlotEmpty) dd.eastAsiaFont = ddRf.eastAsia
+    if (rfAttrs['w:eastAsiaTheme']) dd.eaThemeSlot = true
     if (ddRf.cs) dd.csFont = ddRf.cs
     // Empty EA slot + w:lang w:eastAsia backfill: when the backfill would fire,
     // a face settings.xml themeFontLang resolves (script table / probed locale
@@ -133,6 +209,8 @@ export async function parseStyles(
     if (rPr) {
       if (onOffOf(rPr, 'w:b')) dd.bold = true
       if (onOffOf(rPr, 'w:i')) dd.italic = true
+      if (onOffOf(rPr, 'w:bCs')) dd.boldCs = true
+      if (onOffOf(rPr, 'w:iCs')) dd.italicCs = true
       const color = colorFrom(rPr, theme)
       if (color) dd.color = color
       const kern = attrsOf(findChild(rPr, 'w:kern') ?? {})['w:val']
@@ -142,6 +220,7 @@ export async function parseStyles(
     }
     const pPrDefault = findChild(defaultsNode, 'w:pPrDefault')
     if (!pPrDefault) Object.assign(dd, BUILT_IN_PARA_DEFAULTS)
+    else declaredPPrDefault = true
     const pPr = findChild(pPrDefault ?? {}, 'w:pPr')
     const spacingAttrs = pPr ? attrsOf(findChild(pPr, 'w:spacing') ?? {}) : {}
     if (spacingAttrs['w:line']) {
@@ -172,6 +251,11 @@ export async function parseStyles(
     if (ddBorders) dd.borderSides = ddBorders
     if (Object.keys(dd).length > 0) docDefaults = dd
   }
+  const linkedTemplate = await linksNormalTemplate(zip)
+  // only values the package wrote itself count; the built-in fallback above is not a declaration
+  const normalOverrides =
+    linkedTemplate && declaredPPrDefault ? normalTemplateOverrides(docDefaults ?? {}) : undefined
+  if (linkedTemplate) docDefaults = applyNormalTemplate(docDefaults ?? {})
 
   const basedOnIds = new Map<string, string>()
   const ownNumPrs = new Map<string, OwnNumPr>()
@@ -261,6 +345,16 @@ export async function parseStyles(
     for (const type of new Set([...declared.keys(), ...normalOfType.keys()])) {
       const pick = declared.get(type) ?? normalOfType.get(type)
       if (pick) pick.isDefault = true
+    }
+    // Normal.dotm's Normal has no own props and no basedOn; drop the parent link
+    // too, or basedOn resolution below copies the parent's props straight back
+    const normal = linkedTemplate && (normalOfType.get('paragraph') ?? declared.get('paragraph'))
+    if (normal) {
+      normal.display = normalOverrides
+      normal.basedOn = undefined
+      basedOnIds.delete(normal.styleId)
+      ownNumPrs.delete(normal.styleId)
+      normal.numPr = undefined
     }
   }
 
@@ -385,11 +479,44 @@ function mergeTableDisplay(
   const merged: TableStyleDisplay = { ...parent, ...(child ?? {}) }
   const DEEP = ['wholeTable', 'firstRow', 'firstCol', 'lastCol', 'lastRow', 'paraSpacing'] as const
   for (const key of DEEP) {
-    if (parent[key] || child?.[key]) {
-      merged[key] = { ...(parent[key] ?? {}), ...(child?.[key] ?? {}) } as never
+    const a = parent[key] as Record<string, unknown> | undefined
+    const b = child?.[key] as Record<string, unknown> | undefined
+    if (!a && !b) continue
+    const m: Record<string, unknown> = { ...(a ?? {}), ...(b ?? {}) }
+    for (const side of ['borders', 'cellMarTwips']) {
+      if (a?.[side] && b?.[side]) {
+        m[side] = { ...(a[side] as object), ...(b[side] as object) }
+      }
     }
+    merged[key] = m as never
   }
   return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+/** w:pPr spacing / w:jc a table style (or one of its conditions) hands its cell paragraphs */
+function tableParaProps(pPr: XNode | undefined): Pick<TableCondFormat, 'paraSpacing' | 'paraJc'> {
+  const out: Pick<TableCondFormat, 'paraSpacing' | 'paraJc'> = {}
+  if (!pPr) return out
+  const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
+  if (jc) out.paraJc = jc
+  const spacing = findChild(pPr, 'w:spacing')
+  if (spacing) {
+    const a = attrsOf(spacing)
+    const ps: NonNullable<TableCondFormat['paraSpacing']> = {}
+    const before = parseInt(a['w:before'] ?? '', 10)
+    if (before >= 0 && a['w:before'] !== undefined) ps.beforeTwips = before
+    const after = parseInt(a['w:after'] ?? '', 10)
+    if (after >= 0 && a['w:after'] !== undefined) ps.afterTwips = after
+    const line = lineTwipsOf(a['w:line'])
+    if (line > 0) {
+      ps.lineRawTwips = line
+      const rule = (a['w:lineRule'] ?? 'auto') as 'auto' | 'atLeast' | 'exact'
+      ps.lineRule = rule
+      if (rule === 'auto') ps.lineSpacing = Math.round((line / 240) * 100) / 100
+    }
+    if (Object.keys(ps).length > 0) out.paraSpacing = ps
+  }
+  return out
 }
 
 /** fills / first-row formatting a table style contributes on screen */
@@ -448,6 +575,11 @@ function tableStyleDisplayOf(
         const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
         if (!Number.isNaN(spc)) fmt.charSpacingTwips = spc
       }
+      const borders = mergedBorderLinesOf(tcPr, 'w:tcBorders', false)
+      if (borders) fmt.borders = borders
+      const tcMar = cellMarginsOf(findChild(tcPr ?? {}, 'w:tcMar'))
+      if (tcMar) fmt.cellMarTwips = tcMar
+      Object.assign(fmt, tableParaProps(findChild(cond, 'w:pPr')))
       if (Object.keys(fmt).length > 0) display[type] = fmt
     } else if (type === 'band1Horz' && fill) {
       display.band1Fill = fill
@@ -462,26 +594,7 @@ function tableStyleDisplayOf(
   if (borders) display.borders = borders
   const cellMar = cellMarginsOf(findChild(styleTblPr ?? {}, 'w:tblCellMar'))
   if (cellMar) display.cellMarTwips = cellMar
-  const stylePPr = findChild(styleNode, 'w:pPr')
-  const jc = attrsOf(findChild(stylePPr ?? {}, 'w:jc') ?? {})['w:val']
-  if (jc) display.paraJc = jc
-  const stylePPrSpacing = findChild(stylePPr ?? {}, 'w:spacing')
-  if (stylePPrSpacing) {
-    const a = attrsOf(stylePPrSpacing)
-    const ps: NonNullable<TableStyleDisplay['paraSpacing']> = {}
-    const before = parseInt(a['w:before'] ?? '', 10)
-    if (before >= 0 && a['w:before'] !== undefined) ps.beforeTwips = before
-    const after = parseInt(a['w:after'] ?? '', 10)
-    if (after >= 0 && a['w:after'] !== undefined) ps.afterTwips = after
-    const line = lineTwipsOf(a['w:line'])
-    if (line > 0) {
-      ps.lineRawTwips = line
-      const rule = (a['w:lineRule'] ?? 'auto') as 'auto' | 'atLeast' | 'exact'
-      ps.lineRule = rule
-      if (rule === 'auto') ps.lineSpacing = Math.round((line / 240) * 100) / 100
-    }
-    if (Object.keys(ps).length > 0) display.paraSpacing = ps
-  }
+  Object.assign(display, tableParaProps(findChild(styleNode, 'w:pPr')))
   return Object.keys(display).length > 0 ? display : undefined
 }
 
@@ -499,6 +612,26 @@ export function styleRunFormat(
   return cs
     ? { bold: display.boldCs, italic: display.italicCs, sizeHalfPoints: display.sizeCsHalfPoints }
     : { bold: display.bold, italic: display.italic, sizeHalfPoints: display.sizeHalfPoints }
+}
+
+export type CsFormat = { sizeHalfPoints: number; bold: boolean; italic: boolean }
+
+/**
+ * Cs set a paragraph hands its rtl runs for the twins they do not carry: paragraph
+ * style, then docDefaults. A twin nobody sets is regular / 10pt — the base w:b /
+ * w:sz of the chain never leak in (prod corpus 20261021 sample 007: a Heading1
+ * `<w:b/><w:sz 32/>` run with only `<w:rtl/>` is 11pt regular in Word).
+ */
+export function paraCsFormat(
+  paraStyle: StyleDisplay | undefined,
+  docDefaults: DocDefaults | undefined,
+): CsFormat {
+  const p = styleRunFormat(paraStyle, true)
+  return {
+    sizeHalfPoints: p.sizeHalfPoints ?? docDefaults?.sizeCsHalfPoints ?? 20,
+    bold: p.bold ?? docDefaults?.boldCs ?? false,
+    italic: p.italic ?? docDefaults?.italicCs ?? false,
+  }
 }
 
 /** w:bdr -> Run.bdr; undefined for none/nil */

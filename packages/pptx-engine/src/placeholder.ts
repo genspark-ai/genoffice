@@ -500,6 +500,14 @@ function findStyleInMap(
   return hit?.textStyle
 }
 
+/** The layer has the placeholder this one inherits from (same type and idx). Its bodyPr
+ *  decides even when it leaves an attribute unset — the chain then continues to the
+ *  master, not to a same-type sibling (a layout's anchor="b" body idx="1" must not reach
+ *  the slide's idx="2" content placeholder whose own layout entry has no anchor). */
+function hasExactEntry(map: PlaceholderMap, t: string, i: string): boolean {
+  return i !== '' && map.entries.some((e) => e.type === t && e.idx === i)
+}
+
 /** Find the bodyPr anchor in a layer's map by placeholder (type, idx). No idx-only
  *  step: master placeholders reuse idx values across types (a dt idx="2" must not
  *  anchor a body idx="2" to the bottom). */
@@ -513,6 +521,7 @@ function findAnchorInMap(
   const i = idx ?? ''
   const anchored = map.entries.filter((e) => e.anchor)
   let hit = anchored.find((e) => e.type === t && e.idx === i)
+  if (!hit && hasExactEntry(map, t, i)) return undefined
   if (!hit) hit = anchored.find((e) => e.type === t)
   if (!hit && TITLE_TYPES.has(t)) hit = anchored.find((e) => TITLE_TYPES.has(e.type))
   if (!hit && BODY_TYPES.has(t)) hit = anchored.find((e) => BODY_TYPES.has(e.type))
@@ -530,6 +539,7 @@ function findInsetsInMap(
   const i = idx ?? ''
   const carriers = map.entries.filter((e) => e.insets)
   let hit = carriers.find((e) => e.type === t && e.idx === i)
+  if (!hit && hasExactEntry(map, t, i)) return undefined
   if (!hit) hit = carriers.find((e) => e.type === t)
   if (!hit && TITLE_TYPES.has(t)) hit = carriers.find((e) => TITLE_TYPES.has(e.type))
   if (!hit && BODY_TYPES.has(t)) hit = carriers.find((e) => BODY_TYPES.has(e.type))
@@ -574,6 +584,7 @@ function findAnchorCtrInMap(
   const i = idx ?? ''
   const marked = map.entries.filter((e) => e.anchorCtr !== undefined)
   let hit = marked.find((e) => e.type === t && e.idx === i)
+  if (!hit && hasExactEntry(map, t, i)) return undefined
   if (!hit) hit = marked.find((e) => e.type === t)
   if (!hit && TITLE_TYPES.has(t)) hit = marked.find((e) => TITLE_TYPES.has(e.type))
   if (!hit && BODY_TYPES.has(t)) hit = marked.find((e) => BODY_TYPES.has(e.type))

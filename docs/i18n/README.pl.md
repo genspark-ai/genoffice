@@ -23,6 +23,7 @@ Pliki Word, Excel, PowerPoint i PDF, edytowane przez Ciebie i Twoją AI, zapisyw
 
 <p align="center">
   <a href="#download"><b>Pobierz</b></a> ·
+  <a href="#skills"><b>Skille</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Strona internetowa</b></a> ·
@@ -228,6 +229,7 @@ Word w widocznej karcie edytora, podczas gdy Ty patrzysz.
   Word, Excel lub PowerPoint lokalnie, z systemowym OCR dla skanów.
 - **Także Markdown i HTML**, z tym samym panelem AI i lokalnym eksportem do
   Word.
+- **Skille.** Gotowe skille albo własny `SKILL.md`, dołączane z menu **+** dowolnego panelu AI.
 - **Skryptowalne.** Wiersz poleceń `genoffice`, skill dla agentów i serwer
   MCP oddają każdy silnik do dyspozycji Claude Code, Claude Desktop, Codex,
   Cursor i innych agentów — nadal lokalnie na urządzeniu.
@@ -253,6 +255,18 @@ obrazu i wideo.
 Cały pakiet obsługuje motywy jasny, ciemny i systemowy. Motywy zmieniają
 tylko to, co widać na ekranie: eksporty, wydruki i zapisane pliki zawsze
 zachowują oryginalne kolory dokumentu.
+
+<a id="skills"></a>
+
+## Skille
+
+Skill to plik `SKILL.md`, który mówi AI, jak dobrze wykonać jedno zadanie: raport tygodniowy, NDA, plan lekcji.
+GenOffice dostarcza ich zestaw i przyjmuje własne, w tym samym formacie, którego używają agenty programistyczne.
+
+- **Ustawienia → Skille.** **Zainstaluj** polecany skill albo **Importuj** folder, zip lub pojedynczy `SKILL.md`. Import niczego nie uruchamia.
+- **W czacie.** Otwórz menu **+** obok pola wpisywania w dowolnym panelu AI, wybierz **Skille**, zaznacz jeden i wyślij. Skill trafia tylko z tą wiadomością.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

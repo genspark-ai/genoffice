@@ -1,4 +1,5 @@
 import type { DocumentProperties } from './doc-properties'
+import type { EffectivePPr, EffectiveRPr } from './resolve-props'
 
 /** Picture watermark found in a header part (VML picture frame behind the body). */
 export interface PictureWatermarkInfo {
@@ -118,6 +119,10 @@ export interface Run {
   /** rtl run (explicit w:rtl, or inherited from its style chain): bold/italic/size
    * were read from the Cs twins (w:bCs/w:iCs/w:szCs) */
   cs?: boolean
+  /** the run resolved through its whole chain (docDefaults, table style, paragraph
+   *  style, character style, direct; Cs twins by the rtl chain, toggles XOR'd).
+   *  Display only: the direct fields above are what saves */
+  effective?: EffectiveRPr
   /** superscript / subscript (w:vertAlign) */
   vertAlign?: 'superscript' | 'subscript'
   /** East Asian emphasis mark (w:em). Display only; saving is kept faithful by rawRPr */
@@ -287,6 +292,14 @@ export interface SdtShell {
   alias: string
   /** programmatic tag (w:sdtPr/w:tag @w:val), may be empty */
   tag: string
+  /**
+   * lock state (w:sdtPr/w:lock @w:val): 'sdtLocked' (the control cannot be
+   * deleted), 'contentLocked' (its content cannot be edited),
+   * 'sdtContentLocked' (both) or 'unlocked'; empty when the control has no lock
+   */
+  lock: string
+  /** control id (w:sdtPr/w:id @w:val), empty when the control carries none */
+  id: string
   /**
    * control type: 'text' = plain/rich text, 'date' = date picker,
    * 'dropdown' = drop-down list/combo box, 'checkbox' = Word 2013 checkbox,
@@ -548,6 +561,8 @@ export interface ParaFormat {
   emptyRunFontFamily?: string
   /** w:sz (half-points) of the paragraph-mark rPr: Word sizes a list number or bullet from the mark, not from the first run */
   markSizeHalfPoints?: number
+  /** the paragraph resolved through its whole chain (display only; the direct fields above are what saves) */
+  effective?: EffectivePPr
 }
 
 /** Section line numbering (sectPr w:lnNumType) */
@@ -714,8 +729,8 @@ export interface HfParagraph extends ParaFormat {
    *  (anchored logo, textbox, picture watermark). Display-only — saving keeps
    *  that paragraph's original bytes, so the writer must not emit it again. */
   lineOnly?: boolean
-  /** layout-table row: one entry per cell, rendered as columns. Display-only —
-   *  saving keeps the part's original w:tbl bytes and never serializes cells. */
+  /** layout-table row: one entry per cell, rendered as columns. Saving keeps the
+   *  part's original w:tbl bytes and only regenerates cells flagged `rewrite`. */
   cells?: HfTableCell[]
   /** geometry of the layout-table row the cells belong to */
   row?: HfTableRow
@@ -736,6 +751,11 @@ export interface HfTableRow {
   tabOverflow?: 'wrap' | 'clip'
   /** w:bidiVisual: cells run right to left */
   bidiVisual?: boolean
+  /** settings.xml doNotUseHTMLParagraphAutoSpacing: cell paragraph spacing adds instead of collapsing */
+  additiveSpacing?: boolean
+  /** where the row came from: index of the w:tbl among the part's top-level
+   *  tables and of the w:tr inside it (saving patches edited cells there) */
+  source?: { tbl: number; tr: number }
 }
 
 /** display props of one paragraph inside a layout-table cell */
@@ -750,7 +770,12 @@ export type HfCellParaProps = Pick<
   | 'lineRule'
   | 'lineRawTwips'
   | 'lineSpacing'
->
+  | 'wordWrap'
+> & {
+  styleId?: string
+  /** the paragraph style's run size; runs without their own w:sz inherit it */
+  sizeHalfPoints?: number
+}
 
 /** floating textbox holding header/footer paragraphs; placement fields mirror
  *  HfImage. Consecutive HfParagraph entries with the same id share one box. */
@@ -802,6 +827,16 @@ export interface HfTableCell {
   /** cell margins (twips): w:tcMar over w:tblCellMar; absent sides use Word's
    *  defaults (0 top/bottom, 108 left/right) */
   marTwips?: CellMargins
+  /** paras were flattened out of a nested table: display-only, not editable */
+  locked?: true
+  /** editor-side: the cell's paragraphs changed; saving regenerates them from
+   *  `paras` inside the original w:tc */
+  rewrite?: true
+  /** editor-side: indexes of paragraphs whose `paraProps` changed; saving
+   *  rebuilds only the pPr groups that differ from `priorParaProps` */
+  rewriteFormat?: number[]
+  /** editor-side: paraProps as loaded, aligned with `paras` */
+  priorParaProps?: Array<HfCellParaProps | undefined>
 }
 
 /** one w:lvl of a numbering definition */
@@ -820,8 +855,13 @@ export interface NumberingLevel {
   isLgl?: boolean
   /** w:lvlJc: which edge of the marker sits at the marker position */
   lvlJc?: 'left' | 'center' | 'right'
-  /** w:pPr/w:ind left (twips); fallback geometry for items without their own w:ind */
+  /** w:pPr/w:ind left/start (twips); fallback geometry for items without their own w:ind.
+   *  Any w:ind on the level sets it (0 when the attribute is absent). */
   indentLeft?: number
+  /** w:pPr/w:ind right/end (twips): the end-side indent of the item's text */
+  indentRight?: number
+  /** w:pPr/w:bidi: the level's items lay out right-to-left (start = right edge) */
+  bidi?: boolean
   /** w:pPr/w:ind hanging (twips): width reserved for the number/bullet marker */
   hanging?: number
   /** w:pPr/w:ind positive firstLine (twips): the marker starts right of the text indent */
@@ -870,6 +910,9 @@ export interface HeaderFooter {
    * set). Absent = legacy single centered line.
    */
   paras?: HfParagraph[]
+  /** editor-side: bytes of pictures inserted into the part, keyed by the
+   *  placeholder token their drawing XML carries (see SaveOptions.newPictures) */
+  newPictures?: Record<string, { base64: string; mime: NewImage['mime'] }>
 }
 
 /** Placeholder for NUMPAGES (total pages) fields in headers/footers; the renderer substitutes the total page count and saving writes the field back (PAGE uses PAGE_MARK the same way) */
@@ -972,7 +1015,7 @@ export interface NoteInfo {
   /** the note body holds a Zotero citation field (note text is displayed flat, so the
    *  field is invisible to the Zotero bridge until note fields are editable) */
   zoteroField?: true
-  /** direct w:spacing of the first note paragraph (overrides the style chain) */
+  /** spacing of the first note paragraph resolved through its style chain and docDefaults (twips) */
   spacing?: {
     beforeTwips?: number
     afterTwips?: number
@@ -1021,6 +1064,9 @@ export interface FieldDisplay {
   szHalfPoints?: number
   /** face of the visible result runs (text fields: dominant; tocLine: leading run): drives the line factor */
   fontFamily?: string
+  /** tocLine: eastAsia face of the first result run with CJK ink when the leading run is Latin;
+   *  Word sizes the line by the tallest face on it */
+  eaFontFamily?: string
   /** tocLine whose leading result run is bold */
   bold?: boolean
   /** character style (w:rStyle) of the tocLine's leading result run */
@@ -1030,16 +1076,27 @@ export interface FieldDisplay {
   /** formatted result runs of a text field (italic journal names, a manual
    *  drop-cap letter next to body text); their joined text equals `left` */
   runs?: FieldRun[]
+  /** text field with no visible result (a paragraph holding only a fldChar end):
+   *  Word shows an empty paragraph, so the renderer keeps its line box */
+  emptyLine?: boolean
   /** explicit paragraph alignment (text fields): overrides the doc default */
   align?: 'left' | 'center' | 'right' | 'justify'
   lineRule?: 'auto' | 'atLeast' | 'exact'
   lineRawTwips?: number
   lineSpacing?: number
-  /** direct w:spacing before/after and w:ind left of the field paragraph (twips): the
-   *  protected wrapper otherwise inherits the document default paragraph spacing */
+  /** direct w:spacing before/after and w:ind of the field paragraph (twips): the
+   *  protected wrapper otherwise inherits the document default paragraph spacing.
+   *  A hanging indent is a negative first line. */
   spaceBeforeTwips?: number
   spaceAfterTwips?: number
+  /** direct w:beforeAutospacing / w:afterAutospacing (Word's HTML auto spacing) */
+  spaceBeforeAuto?: boolean
+  spaceAfterAuto?: boolean
   indentLeftTwips?: number
+  indentRightTwips?: number
+  indentFirstLineTwips?: number
+  /** settings.xml doNotUseHTMLParagraphAutoSpacing: spacing lays out as padding, auto = 0 */
+  additiveSpacing?: boolean
 }
 
 /** Editable text tokens inside an OMML formula; the surrounding math tree is preserved. */
@@ -1058,7 +1115,12 @@ export interface FormulaDisplay {
   /** direct w:spacing / w:ind of the equation paragraph (twips), as on FieldDisplay */
   spaceBeforeTwips?: number
   spaceAfterTwips?: number
+  spaceBeforeAuto?: boolean
+  spaceAfterAuto?: boolean
   indentLeftTwips?: number
+  indentRightTwips?: number
+  indentFirstLineTwips?: number
+  additiveSpacing?: boolean
 }
 
 /** One axis of an embedded chart (c:catAx / c:valAx / c:dateAx) */
@@ -1324,6 +1386,9 @@ export interface TableModel {
   /** colWidthsTwips are the unequal w:tblGrid Word saved for an autofit (tblW auto or dxa) table: Word's own
    * layout, already sized to its words, so display widens a column only past a true overflow */
   layoutGrid?: boolean
+  /** autofit pct table with no w:tcW on any cell: Word ignores the grid and sizes the columns
+   * from their content (min/max-content distribution), so display must do the same */
+  contentAutofit?: boolean
   /** editable Word AutoFit mode (w:tblLayout + w:tblW) */
   autoFit?: TableAutoFitMode
   /** explicit positive w:tblW type="dxa" without a fixed layout: Word draws a left-aligned
@@ -1562,9 +1627,14 @@ export interface Block {
   imageParagraphIndentLeft?: number
   imageParagraphIndentRight?: number
   imageParagraphIndentFirstLine?: number
-  /** direct w:spacing before/after (twips) of an inline picture's paragraph */
+  /** effective w:spacing before/after (twips) of the picture's paragraph: direct,
+   *  else the style chain / docDefaults (the wrapper carries no data-style) */
   imageParagraphSpaceBefore?: number
   imageParagraphSpaceAfter?: number
+  imageParagraphSpaceBeforeAuto?: boolean
+  imageParagraphSpaceAfterAuto?: boolean
+  /** settings.xml doNotUseHTMLParagraphAutoSpacing, as FieldDisplay.additiveSpacing */
+  imageParagraphAdditiveSpacing?: boolean
   /** direct w:spacing line rule of the picture paragraph: an auto multiple adds
    *  (m - 1) x the mark's single line below the picture */
   imageParagraphLineTwips?: number
@@ -1582,6 +1652,10 @@ export interface Block {
   anchorLine?: { styleId?: string; format?: ParaFormat; clear?: 'all' | 'left' | 'right' }
   /** paragraph alignment of the image (w:jc) */
   imageAlign?: 'left' | 'center' | 'right'
+  /** the drawing paragraph's own w:ind left (twips): an inline text box
+   *  starts at the indent like any inline content (a photo caption box
+   *  indented into the right column) */
+  imageIndentLeftTwips?: number
   /** text wrapping of a floating image (wp:anchor); absent = inline (in line with text) */
   imageWrap?: ImageWrap
   /** side-wrapped picture that no text fits beside (a floating table takes the
@@ -1717,8 +1791,9 @@ export interface TextboxListMarker {
   symbol?: boolean
   /** picture bullet (w:lvlPicBulletId): data URL drawn in place of the text */
   picBulletSrc?: string
-  /** numbering level w:ind left/hanging/firstLine (twips), used when the paragraph has no w:ind of its own */
+  /** numbering level w:ind left/right/hanging/firstLine (twips), used when the paragraph has no w:ind of its own */
   indentLeft?: number
+  indentRight?: number
   hanging?: number
   firstLine?: number
   /** numbering level w:rPr/w:sz (half-points) */
@@ -1746,6 +1821,8 @@ export interface TextboxParaDisplay extends ParaFormat {
 export interface TextboxDisplay {
   /** hex without '#' */
   fill?: string
+  /** a:alpha of a solid fill, 0..1 (only when below 1) */
+  fillAlpha?: number
   /** hex without '#' */
   borderColor?: string
   /** box width from wp:extent in CSS px (render fidelity) */
@@ -2032,6 +2109,21 @@ export interface TableCondFormat {
   /** Latin-slot font (w:rFonts ascii/hAnsi, theme refs resolved) */
   fontAscii?: string
   charSpacingTwips?: number
+  /** conditional cell borders (w:tcPr w:tcBorders); layered under explicit cell borders */
+  borders?: CellBorders
+  /** conditional cell margins (w:tcPr w:tcMar) */
+  cellMarTwips?: CellMargins
+  /** conditional w:pPr spacing / w:jc of the cell paragraphs (read by the property resolver) */
+  paraSpacing?: TableParaSpacing
+  paraJc?: string
+}
+
+export interface TableParaSpacing {
+  beforeTwips?: number
+  afterTwips?: number
+  lineRawTwips?: number
+  lineRule?: 'auto' | 'atLeast' | 'exact'
+  lineSpacing?: number
 }
 
 export interface TableStyleDisplay {
@@ -2063,13 +2155,7 @@ export interface TableStyleDisplay {
   cellMarTwips?: CellMargins
   /** style-level w:pPr spacing applied to every cell paragraph (TableGrid carries
    * after=0/line=240 — the reason Word tables are tight while body text is loose) */
-  paraSpacing?: {
-    beforeTwips?: number
-    afterTwips?: number
-    lineRawTwips?: number
-    lineRule?: 'auto' | 'atLeast' | 'exact'
-    lineSpacing?: number
-  }
+  paraSpacing?: TableParaSpacing
   /** style-level w:pPr w:jc applied to every cell paragraph (Calendar styles center) */
   paraJc?: string
 }
@@ -2111,6 +2197,10 @@ export interface StyleInfo {
 /** document-wide defaults from styles.xml w:docDefaults (display-only) */
 export interface DocDefaults {
   sizeHalfPoints?: number
+  /** rPrDefault Cs twins (w:szCs / w:bCs / w:iCs) */
+  sizeCsHalfPoints?: number
+  boldCs?: boolean
+  italicCs?: boolean
   /** pPrDefault w:widowControl: false = widow/orphan protection off for the whole document */
   widowControl?: boolean
   /** rPrDefault w:kern threshold in half-points (0 = explicitly off) */
@@ -2123,6 +2213,8 @@ export interface DocDefaults {
   eaSlotEmpty?: boolean
   /** eastAsiaFont was backfilled from w:lang w:eastAsia, not declared */
   eaFromLang?: boolean
+  /** rPrDefault references the theme EA slot (w:eastAsiaTheme); Word always resolves it to an installed face */
+  eaThemeSlot?: boolean
   /** default complex-script font (rPrDefault w:rFonts w:cs / w:cstheme, theme-resolved) */
   csFont?: string
   /** bold/italic/color from rPrDefault (display-layer defaults, used by canvas CSS) */
@@ -2229,6 +2321,8 @@ export interface FontTableEntry {
   panose?: string
   /** w:family — roman / swiss / modern / script / decorative / auto */
   family?: string
+  /** w:charset hex (81 = Hangul) */
+  charset?: string
   /** w:pitch — fixed / variable / default */
   pitch?: string
   /** w:embedRegular / embedBold / embedItalic / embedBoldItalic parts */
@@ -2356,6 +2450,9 @@ export interface ParsedDoc {
   indentNotNumberingTabStop?: boolean
   /** settings.xml w:compat <w:doNotExpandShiftReturn/> — a justified line ending in a line break stays ragged (Word's default stretches it) */
   doNotExpandShiftReturn?: boolean
+  /** settings.xml w:compat <w:doNotUseHTMLParagraphAutoSpacing/> — adjacent paragraphs' space-after and
+   *  space-before add up instead of merging to the larger one, and HTML auto spacing counts as 0 */
+  doNotUseHTMLParagraphAutoSpacing?: boolean
   /** settings.xml w:defaultTabStop in twips (absent = Word's 720); 0 = zero-width default tabs */
   defaultTabStopTwips?: number
   /** first-page header/footer parts (w:type="first"), null when absent */

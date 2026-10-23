@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { scriptFontHtml } from '../src/renderer/editor/script-fonts'
+import { eastAsianSegments, scriptFontHtml } from '../src/renderer/editor/script-fonts'
 
 const editors: Editor[] = []
 afterEach(() => editors.splice(0).forEach((e) => e.destroy()))
@@ -29,6 +29,25 @@ describe('ScriptFonts decorations', () => {
   it('wraps only the East Asian runs', () => {
     const editor = open(['Report \u62a5\u544a 2026', 'plain', '\u4e2d\u6587'])
     expect(decorated(editor)).toEqual(['\u62a5\u544a', '\u4e2d\u6587'])
+  })
+
+  // Word probe 2026-10-22: under balanceSingleByteDoubleByteWidth halfwidth kana
+  // take the single-byte grid delta, so they must not share the full-width span
+  it('splits halfwidth kana off the full-width runs', () => {
+    const editor = open(['\u30ab\u30bf\uff76\uff85\u6f22 x'])
+    const spans = [...editor.view.dom.querySelectorAll('.doc-east-asian-font')]
+    expect(
+      spans.map((el) => [el.textContent, el.classList.contains('doc-east-asian-halfwidth')]),
+    ).toEqual([
+      ['\u30ab\u30bf', false],
+      ['\uff76\uff85', true],
+      ['\u6f22', false],
+    ])
+    expect(eastAsianSegments('a\uff76\u3002\uffa1b')).toEqual([
+      { index: 1, text: '\uff76' },
+      { index: 2, text: '\u3002' },
+      { index: 3, text: '\uffa1' },
+    ])
   })
 
   it('tracks an edit in one block without losing the others', () => {

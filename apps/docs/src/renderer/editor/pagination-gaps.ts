@@ -121,6 +121,15 @@ export function rowFillAttrs(
   return { style: `height:${h}px`, ...(extra > 0 ? { 'data-split-extra': extra.toFixed(1) } : {}) }
 }
 
+/** the canvas zoom as applied to the `.doc-zoom` host (its inline `zoom`), not
+ *  the React state a closure captured: a pass that measures the DOM at factor 1
+ *  while the host is still zoomed lands every split-row fill in zoomed px */
+export function canvasZoomOf(zoomEl: { style: { zoom: string } } | null, fallback: number): number {
+  if (!zoomEl) return fallback
+  const z = parseFloat(zoomEl.style.zoom || '1')
+  return Number.isFinite(z) && z > 0 ? z : 1
+}
+
 /** vertical border-spacing of the row's table (w:tblCellSpacing tables), else 0 */
 function rowGapPx(tr: Element): number {
   const table = tr.closest('table')
@@ -299,17 +308,28 @@ export function setFloatVShifts(
     try {
       // a top-level table / protected block resolves from the walk; nested ones (cell content) still scan
       const top = shift.el.parentElement === view.dom ? positions.of(shift.el) : null
-      const $inside = view.state.doc.resolve(top ? top.from + 1 : view.posAtDOM(shift.el, 0))
-      for (let d = $inside.depth; d > 0; d--) {
-        const name = $inside.node(d).type.name
-        if (name !== 'docTable' && name !== 'docProtected') continue
-        const from = $inside.before(d)
+      let range: [number, number] | null = null
+      // a top-level protected picture is a leaf: no inside position to walk up from
+      const leaf = top ? view.state.doc.nodeAt(top.from) : null
+      if (leaf && leaf.type.name === 'docProtected' && leaf.content.size === 0) {
+        range = [top!.from, top!.from + leaf.nodeSize]
+      } else {
+        const $inside = view.state.doc.resolve(top ? top.from + 1 : view.posAtDOM(shift.el, 0))
+        for (let d = $inside.depth; d > 0; d--) {
+          const name = $inside.node(d).type.name
+          if (name !== 'docTable' && name !== 'docProtected') continue
+          range = [$inside.before(d), $inside.after(d)]
+          break
+        }
+      }
+      if (range) {
+        const [from, to] = range
         if (shift.flow) {
           flowKeys.push(String(from))
           decos.push(
             Decoration.node(
               from,
-              $inside.after(d),
+              to,
               { class: 'doc-table-float-flow' },
               { key: `tblp-flow-${i}`, flow: true },
             ),
@@ -318,13 +338,12 @@ export function setFloatVShifts(
           decos.push(
             Decoration.node(
               from,
-              $inside.after(d),
+              to,
               { style: `--tblp-dy:${dy}px`, 'data-tblp-dy': String(dy) },
               { key: `tblp-dy-${i}-${dy}` },
             ),
           )
         }
-        break
       }
     } catch {
       // unmapped DOM: skip, the table keeps its flow position
@@ -368,6 +387,14 @@ export interface GapMetrics {
    *  documents center narrower pages); absent = the page spans the paper */
   pageLeft?: number
   pageWidth?: number
+}
+
+/** Word drops the space-before of a block that opens a page after a natural
+ *  break too (probe 2026-10-20: a before=360 heading pushed by overflow or by
+ *  its keepNext chain lands at the plain first-line position, compat 14 and
+ *  15); only a section's first page keeps it */
+export function leadDropsSpaceBefore(blocks: { section?: number }[], i: number): boolean {
+  return i > 0 && (blocks[i].section ?? 0) === (blocks[i - 1].section ?? 0)
 }
 
 /** height of the gray inter-page band inside a page gap */

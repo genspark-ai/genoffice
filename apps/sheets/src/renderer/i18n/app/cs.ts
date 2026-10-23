@@ -1,6 +1,20 @@
 import type { zh } from './zh'
 
 export const cs = {
+  // ── Withholding cells from the model ──
+  redactMenuLabel: 'Skrýt výběr před AI',
+  redactDialogDesc:
+    'Vybraný obsah zůstane v dokumentu i v souboru; model uvidí jen zástupný symbol. Pojmenujte ho, aby věděl, co zastupuje.',
+  redactDialogScope:
+    'Skrýtí se týká jen AI v této aplikaci. CLI, nástroje MCP a headless export čtou soubor přímo a tato slova stále vidí.',
+  redactDialogPlaceholder: 'Název zástupného symbolu, např. telefon zákazníka',
+  redactCancel: 'Zrušit',
+  redactInsert: 'Skrýt',
+  redactEnable: 'Pravým klikem na výběr jej skryjete před modelem.',
+  redactNeedsSavedRow: 'Tento řádek zatím není v souboru. Nejprve uložte, pak buňku skryjte.',
+  redactRecoveredFromNames:
+    'Jiná aplikace tento soubor přepsala a zahodila záznam o tom, co je skrytoé. Skryté buňky byly obnoveny z názvů v sešitě; uložením se obnoví celý záznam.',
+
   appMergeWorkbooks: 'Sloučit sešity',
   appMergeWorkbooksTip: 'Připojit listy z jiných souborů Excelu do tohoto sešitu',
   appMergeWorkbooksPicking: 'Vyberte soubory ke sloučení…',

@@ -537,4 +537,7 @@ export const th = {
   appUpdateStyleTip: 'อัปเดตสไตล์นี้ด้วยรูปแบบของส่วนที่เลือกปัจจุบัน (เขียนกลับไปยัง styles.xml)',
   appNewStyleFromSelection: 'สร้างสไตล์ใหม่จากส่วนที่เลือกปัจจุบัน',
   appStyleNamePlaceholder: 'ชื่อสไตล์',
+  appMergeSourceLoaded: 'โหลด {name} แล้ว ({n} ระเบียน)',
+  appMergeWritten: 'เขียนเอกสารแล้ว {n} ฉบับ',
+  appMergeNothingToWrite: 'ไม่มีเอกสารให้เขียน',
 } satisfies Record<keyof typeof zh, string>

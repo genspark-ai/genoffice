@@ -6,6 +6,7 @@ import {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
   buildBlankDocx,
+  compareDocuments,
   countTrackedChangesXml,
   findChartWorkbookPath,
   nextNoteId,
@@ -19,6 +20,9 @@ import {
   readSections,
   saveDocx,
   type CommentInfo,
+  type CompareGranularity,
+  type CompareIgnore,
+  type CompareSummary,
   type DocumentProperties,
   type HeaderFooter,
   type HfPartInfo,
@@ -29,6 +33,8 @@ import {
   type StyleUpsert,
   type PictureWatermarkSpec,
   type WatermarkSpec,
+  isContentControlLock,
+  type ContentControlSpec,
 } from '@genoffice/docx-engine'
 import type { FloatSpec } from '../../../../apps/docs/src/renderer/ai/floating-ops'
 import type { AiNotesAccess, NoteKind } from '../../../../apps/docs/src/renderer/ai/note-ops'
@@ -141,6 +147,8 @@ interface SideState {
   revisionPartsDirty: Set<string>
   /** set_properties changes; written into the docProps parts on save */
   properties?: PropertyChanges
+  /** block-level content controls to write on save: wrap a range of body blocks in one new control, or unwrap the control with a tag */
+  contentControls?: SaveOptions['contentControls']
 }
 
 export interface OpenDocument {
@@ -243,12 +251,38 @@ export async function saveDocument(doc: OpenDocument): Promise<Uint8Array> {
     footnotes: side.notesDirty ? side.footnotes : undefined,
     endnotes: side.notesDirty ? side.endnotes : undefined,
     properties: side.properties,
+    contentControls: side.contentControls,
     ...(await chartPartPatches(doc, plan.chartPatches)),
   }
   for (const path of side.revisionPartsDirty) {
     options.partXml = { ...options.partXml, [path]: side.revisionParts!.get(path)! }
   }
   return saveDocx(doc.parsed, sectionEdits.saveBlocks, options)
+}
+
+export interface DocxCompareOptions {
+  /** author recorded on every revision */
+  author?: string
+  /** ISO timestamp recorded on every revision */
+  date?: string
+  /** at what granularity a changed paragraph is diffed */
+  granularity?: CompareGranularity
+  /** what the comparison leaves out */
+  ignore?: readonly CompareIgnore[]
+}
+
+/**
+ * The redline of two documents: the revised one with the differences marked as
+ * tracked insertions and deletions, ready to be accepted or rejected.
+ */
+export async function compareDocxFiles(
+  original: Uint8Array,
+  revised: Uint8Array,
+  options: DocxCompareOptions = {},
+): Promise<{ bytes: Uint8Array; summary: CompareSummary }> {
+  const [originalDoc, revisedDoc] = await Promise.all([parseDocx(original), parseDocx(revised)])
+  const result = await compareDocuments(originalDoc, revisedDoc, options)
+  return { bytes: result.bytes, summary: result.summary }
 }
 
 const REVISION_PART_RE = /^word\/(?:header\d*|footer\d*|footnotes|endnotes)\.xml$/
@@ -269,6 +303,63 @@ export async function countRevisionsElsewhere(doc: OpenDocument): Promise<number
   let n = 0
   for (const xml of (await revisionParts(doc)).values()) n += countTrackedChangesXml(xml)
   return n
+}
+
+/**
+ * wrap_content_control / unwrap_content_control: the control is written on
+ * save, so the op only records the change; the document body is untouched.
+ */
+function setContentControl(
+  doc: OpenDocument,
+  op: Record<string, unknown>,
+  name: 'wrap_content_control' | 'unwrap_content_control',
+): { error?: string; output?: string } {
+  const { side } = doc
+  const controls = side.contentControls ?? {}
+  if (name === 'unwrap_content_control') {
+    const tag = typeof op.tag === 'string' ? op.tag.trim() : ''
+    if (!tag) return { error: 'unwrap_content_control needs a tag' }
+    side.contentControls = { ...controls, unwrap: [...(controls.unwrap ?? []), { tag }] }
+    return { output: `unwrap the content control tagged ${tag}` }
+  }
+  const start = Number(op.startBlockIndex)
+  const end = Number(op.endBlockIndex ?? op.startBlockIndex)
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) {
+    return {
+      error:
+        'wrap_content_control needs startBlockIndex and endBlockIndex (endBlockIndex >= startBlockIndex)',
+    }
+  }
+  const root = doc.editor.state.doc
+  if (end >= root.childCount) {
+    return { error: `block ${end} is past the end of the document (${root.childCount} blocks)` }
+  }
+  const docxIndexes: number[] = []
+  for (let i = start; i <= end; i++) {
+    const docxIndex = root.child(i).attrs.docxIndex
+    if (typeof docxIndex !== 'number') {
+      return { error: `block ${i} has no original document index, so it cannot be wrapped` }
+    }
+    docxIndexes.push(docxIndex)
+  }
+  const spec: ContentControlSpec = {}
+  if (typeof op.tag === 'string' && op.tag.trim()) spec.tag = op.tag.trim()
+  if (typeof op.title === 'string' && op.title.trim()) spec.title = op.title.trim()
+  if (op.lock !== undefined && op.lock !== null) {
+    if (!isContentControlLock(op.lock)) {
+      return {
+        error: `unknown lock "${String(op.lock)}": none, sdtLocked, contentLocked or sdtContentLocked`,
+      }
+    }
+    spec.lock = op.lock
+  }
+  side.contentControls = {
+    ...controls,
+    wrap: [...(controls.wrap ?? []), { docxIndexes, spec }],
+  }
+  return {
+    output: `wrap blocks ${start}-${end} in a content control${spec.tag ? ` tagged ${spec.tag}` : ''}`,
+  }
 }
 
 /**
@@ -369,8 +460,22 @@ export interface BlockSummary {
   text: string
   /** native tables: grid size, merged cells and the table style, for the table ops */
   table?: ReturnType<Modules['tableOps']['describeTable']>
+  /** the block-level content control this block sits in (w:sdt), when it is in one */
+  contentControl?: ContentControlSummary
   /** the text was clipped to the preview length; `--full` or `--max-chars` returns the rest */
   truncated?: true
+}
+
+/** what a block-level content control (w:sdt) carries */
+export interface ContentControlSummary {
+  /** programmatic tag (w:sdtPr/w:tag) */
+  tag: string
+  /** human-visible title (w:sdtPr/w:alias) */
+  title: string
+  /** lock state (w:sdtPr/w:lock); empty when the control carries none */
+  lock: string
+  /** control id (w:sdtPr/w:id); empty when the control carries none */
+  id: string
 }
 
 export const PREVIEW_CHARS = 200
@@ -393,6 +498,7 @@ export function describeDocument(
       ...(typeof node.attrs.level === 'number' ? { level: node.attrs.level } : {}),
       ...(node.type.name === 'docProtected' ? { kind: protectedKind(node.attrs) } : {}),
       ...(node.type.name === 'docTable' ? { table: doc.mods.tableOps.describeTable(node) } : {}),
+      ...(contentControlOf(doc, node) ? { contentControl: contentControlOf(doc, node)! } : {}),
       text,
       ...(truncated ? { truncated } : {}),
     })
@@ -405,6 +511,18 @@ export function listTableStyles(doc: OpenDocument): Array<{ id: string; name: st
   return [...doc.parsed.styles.values()]
     .filter((s) => s.type === 'table')
     .map((s) => ({ id: s.styleId, name: s.name }))
+}
+
+/** the content control (w:sdt) a block sits in: the editor block keeps the body index of its original, and the shell rides on it */
+function contentControlOf(
+  doc: OpenDocument,
+  block: Editor['state']['doc'],
+): ContentControlSummary | null {
+  const docxIndex = block.attrs.docxIndex
+  if (typeof docxIndex !== 'number') return null
+  const shell = doc.parsed.blocks[docxIndex]?.sdtShell
+  if (!shell) return null
+  return { tag: shell.tag, title: shell.alias, lock: shell.lock, id: shell.id }
 }
 
 /** native docx charts are passthrough blocks carrying chartDisplay; edit_chart targets them like AI-made ones */
@@ -538,6 +656,54 @@ const SIDE_TOOLS = new Set([
   'read_notes',
 ])
 
+/**
+ * Block-level content controls (w:sdt). These are CLI-only ops: the app has
+ * no AI tool for them, so the catalog carries their schema here.
+ */
+const CONTENT_CONTROL_OPS = ['wrap_content_control', 'unwrap_content_control'] as const
+
+const CONTENT_CONTROL_SCHEMAS: Record<(typeof CONTENT_CONTROL_OPS)[number], JsonSchema> = {
+  wrap_content_control: {
+    type: 'object',
+    properties: {
+      startBlockIndex: {
+        type: 'integer',
+        description:
+          'the first block of the range to wrap (0-based, as `genoffice docs read` numbers them)',
+      },
+      endBlockIndex: {
+        type: 'integer',
+        description: 'the last block of the range to wrap; defaults to startBlockIndex',
+      },
+      tag: {
+        type: 'string',
+        description: 'programmatic tag (w:sdtPr/w:tag): how a downstream check finds the control',
+      },
+      title: { type: 'string', description: 'human-visible title (w:sdtPr/w:alias)' },
+      lock: {
+        type: 'string',
+        enum: ['none', 'sdtLocked', 'contentLocked', 'sdtContentLocked'],
+        description: 'lock state; none writes no lock at all',
+      },
+    },
+    required: ['startBlockIndex'],
+  },
+  unwrap_content_control: {
+    type: 'object',
+    properties: {
+      tag: { type: 'string', description: 'the tag of the control to unwrap' },
+    },
+    required: ['tag'],
+  },
+}
+
+const CONTENT_CONTROL_NOTES: Record<(typeof CONTENT_CONTROL_OPS)[number], string> = {
+  wrap_content_control:
+    'put a block range into one block-level content control (w:sdt); the blocks stay editable and the control carries the tag/title/lock; `genoffice docs read` shows the control on every block in it',
+  unwrap_content_control:
+    'remove the content control with that tag and leave its blocks as plain body blocks',
+}
+
 export interface ApplyOptions {
   ctx?: PathContext
   /** folder of the ops file, for relative image paths */
@@ -599,6 +765,10 @@ export async function applyDocOps(
       const r = setDocumentProperties(doc, op)
       if (r.error) failed = rejected(r.error)
       else results.push({ index, op: name, output: r.output! })
+    } else if (name === 'wrap_content_control' || name === 'unwrap_content_control') {
+      const r = setContentControl(doc, op, name)
+      if (r.error) failed = rejected(r.error)
+      else results.push({ index, op: name, output: r.output! })
     } else if (name === 'accept_changes' || name === 'reject_changes') {
       const r = await applyRevisionOp(doc, op, name === 'accept_changes' ? 'accept' : 'reject')
       if (r.error) failed = rejected(r.error)
@@ -653,14 +823,13 @@ function setDocumentProperties(
   return { output: `set document properties: ${describePropertyChanges(changes)}` }
 }
 
-/** two set_properties ops in one batch compose: the later value wins */
+/** two set_properties ops in one batch compose: the later value wins, a later clear wipes the earlier values */
 function mergePropertyChanges(
   current: PropertyChanges | undefined,
   next: PropertyChanges,
 ): PropertyChanges {
-  if (!current) return next
+  if (!current || next.clear) return next
   const merged: PropertyChanges = { ...current }
-  if (next.clear) merged.clear = next.clear
   for (const section of ['core', 'app', 'custom'] as const) {
     const values = next[section]
     if (!values) continue
@@ -1455,6 +1624,13 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
       schema,
     }
   })
+  const controls: OpEntry[] = CONTENT_CONTROL_OPS.map((op) => ({
+    op,
+    group: 'content-controls',
+    signature: signatureFromSchema(CONTENT_CONTROL_SCHEMAS[op]),
+    note: CONTENT_CONTROL_NOTES[op],
+    schema: CONTENT_CONTROL_SCHEMAS[op],
+  }))
   const groups = [
     {
       name: 'block',
@@ -1467,9 +1643,14 @@ export async function docsCatalog(): Promise<{ catalog: OpCatalog; htmlRules: st
         'new content, pictures, text boxes, charts, header/footer, page setup, watermark, styles, comments, tracked changes, footnotes',
       ops: [...CONTENT_OPS],
     },
+    {
+      name: 'content-controls',
+      summary: 'block-level content controls (w:sdt): wrap blocks in one, or unwrap it',
+      ops: [...CONTENT_CONTROL_OPS],
+    },
   ]
   return {
-    catalog: withFingerprint({ domain: 'docs', groups, ops: [...block, ...content] }),
+    catalog: withFingerprint({ domain: 'docs', groups, ops: [...block, ...content, ...controls] }),
     htmlRules: mods.protocol.HTML_RULES,
   }
 }

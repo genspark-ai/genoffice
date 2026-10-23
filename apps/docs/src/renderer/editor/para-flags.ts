@@ -30,10 +30,10 @@ export function directParaFlags(el: Element | undefined | null): DirectParaFlags
   return out
 }
 
-/** Pagination constraints of a paragraph the parser emitted without a format model
- *  (picture-only paragraphs become image blocks), read from its own pPr so a keepNext
- *  picture still chains to its heading and the next picture (Word). The block is no
- *  paragraph node, nothing edits its flags: they also fill the style slot the element
+/** Pagination constraints of a block without a format model (picture-only
+ *  paragraphs, field passthrough), read from its own pPr so a keepNext picture
+ *  still chains to its heading and the next picture (Word). Nothing edits the
+ *  flags of such a block, so its own values also fill the style slot the element
  *  path reads. */
 export function imageParaPaginationMeta(
   xml: string | null | undefined,
@@ -41,7 +41,13 @@ export function imageParaPaginationMeta(
   docDefaults?: Pick<DocDefaults, 'widowControl'>,
 ): BlockMeta | undefined {
   const own = paraFlagsFromXml(xml)
-  const meta = paraPaginationMeta(own.format, styleOf(own.styleId), docDefaults)
+  const style = styleOf(own.styleId)
+  const inherited: ParaFlags = {}
+  for (const key of KEYS) if (typeof style?.[key] === 'boolean') inherited[key] = style[key]
+  if (inherited.widowControl === undefined && docDefaults?.widowControl === false)
+    inherited.widowControl = false
+  if (style?.pageBreakBefore !== undefined) inherited.pageBreakBefore = style.pageBreakBefore
+  const meta = metaOf(own.format ?? {}, inherited)
   if (!meta || !own.format) return meta
   const paraStyle = { ...meta.paraStyle }
   for (const key of KEYS) if (typeof own.format[key] === 'boolean') paraStyle[key] = own.format[key]
@@ -76,23 +82,37 @@ export function paraFlagsFromXml(xml: string | null | undefined): {
   return { format, ...(styleId ? { styleId } : {}) }
 }
 
-/** Parse-layer pagination constraints of a paragraph block (direct pPr, else its style).
+type ParaFlags = DirectParaFlags & { pageBreakBefore?: boolean }
+
+const FLAG_KEYS = [...KEYS, 'pageBreakBefore'] as const
+
+/** Parse-layer pagination constraints of a paragraph block, from the resolved
+ *  paragraph properties: the direct layer and the inherited layers (style chain,
+ *  docDefaults, table style) are told apart by `source`, so the element path can
+ *  still let a live edit of the direct flags win.
  *  A direct page break is left out on purpose: the element's page-break-before class
  *  already carries it, and an unchecked one must not be restored from the parsed block. */
-export function paraPaginationMeta(
-  format: ParaFormat | undefined,
-  style: StyleDisplay | undefined,
-  docDefaults?: Pick<DocDefaults, 'widowControl'>,
-): BlockMeta | undefined {
-  const keepNext = format?.keepNext ?? style?.keepNext
-  const keepLines = format?.keepLines ?? style?.keepLines
-  const breakBefore = format?.pageBreakBefore === undefined && style?.pageBreakBefore
-  const styleWidow = style?.widowControl ?? docDefaults?.widowControl
-  const widowOff = (format?.widowControl ?? styleWidow) === false
-  const noLineNo = format?.suppressLineNumbers ?? style?.suppressLineNumbers
+export function paraPaginationMeta(format: ParaFormat | undefined): BlockMeta | undefined {
+  const eff = format?.effective
+  if (!eff) return undefined
+  const direct: ParaFlags = {}
+  const inherited: ParaFlags = {}
+  for (const key of FLAG_KEYS) {
+    const src = eff.source[key]
+    if (src === 'direct') direct[key] = eff[key]
+    else if (src !== undefined && src !== 'builtin') inherited[key] = eff[key]
+  }
+  return metaOf(direct, inherited)
+}
+
+function metaOf(direct: ParaFlags, inherited: ParaFlags): BlockMeta | undefined {
+  const keepNext = direct.keepNext ?? inherited.keepNext
+  const keepLines = direct.keepLines ?? inherited.keepLines
+  const breakBefore = direct.pageBreakBefore === undefined && inherited.pageBreakBefore
+  const widowOff = (direct.widowControl ?? inherited.widowControl) === false
+  const noLineNo = direct.suppressLineNumbers ?? inherited.suppressLineNumbers
   const paraStyle: DirectParaFlags = {}
-  for (const key of KEYS) if (typeof style?.[key] === 'boolean') paraStyle[key] = style[key]
-  if (paraStyle.widowControl === undefined && styleWidow === false) paraStyle.widowControl = false
+  for (const key of KEYS) if (typeof inherited[key] === 'boolean') paraStyle[key] = inherited[key]
   if (
     !keepNext &&
     !keepLines &&

@@ -23,6 +23,7 @@ Fail Word, Excel, PowerPoint dan PDF, disunting oleh anda dan AI anda, disimpan 
 
 <p align="center">
   <a href="#download"><b>Muat Turun</b></a> ·
+  <a href="#skills"><b>Skill</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Laman Web</b></a> ·
@@ -229,6 +230,7 @@ tab editor yang kelihatan sementara anda memerhati.
   sistem untuk hasil imbasan.
 - **Markdown dan HTML juga**, dengan panel AI yang sama dan eksport setempat
   ke Word.
+- **Skill.** Skill sedia ada atau `SKILL.md` anda sendiri, dilampirkan dari menu **+** di mana-mana panel AI.
 - **Boleh dijalankan melalui skrip.** Baris arahan `genoffice`, skill agen
   dan pelayan MCP meletakkan setiap enjin di bawah khidmat Claude Code,
   Claude Desktop, Codex, Cursor dan agen lain, masih di peranti sendiri.
@@ -253,6 +255,18 @@ imej serasi OpenAI untuk penjanaan imej dan analisis imej/video.
 Keseluruhan rangkaian ini disertakan dengan tema terang, gelap dan sistem.
 Tema hanya mengubah apa yang dipaparkan pada skrin: eksport, cetakan dan fail
 yang disimpan sentiasa mengekalkan warna sebenar dokumen itu.
+
+<a id="skills"></a>
+
+## Skill
+
+Skill ialah fail `SKILL.md` yang memberitahu AI cara melakukan satu tugas dengan baik: laporan mingguan, NDA, rancangan pengajaran.
+GenOffice menyertakan satu set skill dan menerima skill anda sendiri, dalam format yang sama digunakan oleh agen pengekodan.
+
+- **Tetapan → Skill.** **Pasang** skill yang disyorkan, atau **Import** folder, zip atau satu fail `SKILL.md`. Tiada apa-apa dijalankan semasa import.
+- **Dalam sembang.** Buka menu **+** di sebelah kotak mesej mana-mana panel AI, pilih **Skill**, tandakan satu, lalu hantar. Skill hanya disertakan dengan mesej itu.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

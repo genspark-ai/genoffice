@@ -70,7 +70,7 @@ let dir = ''
 /** stands in for app.getPath('userData') — where the skills root now lives, so
  *  that no imported SKILL.md lands among the user's documents */
 let userData = ''
-/** a fake home so the agent-directory half of the scan cannot read the real one */
+/** a fake home, so nothing here can touch the real one */
 let fakeHome = ''
 let realHome: string | undefined
 
@@ -91,6 +91,7 @@ beforeEach(() => {
     cliDir: dir,
     skillPath: join(dir, 'SKILL.md'),
     cliPackageJson: join(dir, 'package.json'),
+    recommendedSkillsDir: join(dir, 'recommended'),
   })
 })
 
@@ -143,34 +144,28 @@ describe('integrations:list-skills', () => {
   const ours = (name: string) => plant(join(userData, 'skills'), name)
   const agents = (name: string) => plant(join(fakeHome, '.agents', 'skills'), name)
 
-  it('offers a skill under the save directory, and copies nothing', async () => {
+  it('lists a skill in our folder, and copies nothing', async () => {
     const path = ours('pdf-to-html')
     const before = readdirSync(join(userData, 'skills')).sort()
-    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as { path: string }[]
+    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as {
+      path: string
+      name: string
+      relevance: { relevant: boolean }
+    }[]
     const skill = found.find((s) => s.path === path)
-    expect(skill).toMatchObject({ name: 'pdf-to-html', source: 'genoffice' })
-    expect(skill.relevance.relevant).toBe(true)
-    // listing is a menu: the folder is exactly as it was afterwards
+    expect(skill?.name).toBe('pdf-to-html')
+    expect(skill?.relevance.relevant).toBe(true)
     expect(readdirSync(join(userData, 'skills')).sort()).toEqual(before)
   })
 
-  it('offers an agent skill as a candidate, without importing it', async () => {
-    const path = agents('pptx-builder')
-    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as {
-      path: string
-      source: string
-      agent?: string
-    }[]
-    expect(found.find((s) => s.path === path)).toMatchObject({
-      source: 'agent',
-      agent: 'agents',
-    })
-    // it did not move itself into our folder just by being seen
-    expect(existsSync(join(userData, 'skills', 'pptx-builder'))).toBe(false)
+  it('does not look in a coding agent directory', async () => {
+    agents('pptx-builder')
+    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as { name: string }[]
+    expect(found.map((s) => s.name)).toEqual([])
   })
 
-  it('reads the body of a skill it just offered', () => {
-    const path = agents('pdf-to-html')
+  it('reads the body of a skill it just listed', () => {
+    const path = ours('pdf-to-html')
     expect(invoke(INTEGRATIONS_CHANNELS.skillBody, path)).toBe('Step one.\n')
   })
 
@@ -179,10 +174,11 @@ describe('integrations:list-skills', () => {
     const outside = join(userData, 'secrets.txt')
     writeFileSync(outside, 'private')
     expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, outside)).toThrow('unknown skill')
-    // the same file, reached by climbing out of the skills root
     expect(() =>
       invoke(INTEGRATIONS_CHANNELS.skillBody, join(userData, 'skills', '..', 'secrets.txt')),
     ).toThrow('unknown skill')
+    // an agent's SKILL.md is a real skill file, but not one this app listed
+    expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, agents('theirs'))).toThrow('unknown skill')
     expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, '/etc/passwd')).toThrow('unknown skill')
     expect(() => invoke(INTEGRATIONS_CHANNELS.skillBody, null)).toThrow('unknown skill')
   })
@@ -196,44 +192,102 @@ describe('integrations:list-skills', () => {
   })
 })
 
-describe('integrations:import-skill', () => {
-  it('copies a picked candidate into our folder, and reports it as ours', async () => {
-    const src = join(fakeHome, '.agents', 'skills', 'pptx-builder')
+describe('integrations:import-skill-folder / -zip', () => {
+  const plantSrc = (name: string, description: string, body: string) => {
+    const src = join(fakeHome, 'Downloads', name)
     mkdirSync(src, { recursive: true })
     writeFileSync(
       join(src, 'SKILL.md'),
-      '---\nname: pptx-builder\ndescription: Build a pptx\n---\n\nDo it.\n',
+      `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`,
     )
+    return src
+  }
+
+  it('copies the folder picked in the dialog into our folder', async () => {
+    const src = plantSrc('pptx-builder', 'Build a pptx', 'Do it.')
     writeFileSync(join(src, 'grid.md'), 'layout rules')
+    h.dialogResult = { canceled: false, filePaths: [src] }
 
-    const imported = invoke(INTEGRATIONS_CHANNELS.importSkill, join(src, 'SKILL.md'))
-    expect(imported).toMatchObject({ name: 'pptx-builder', source: 'genoffice' })
-    expect(existsSync(join(userData, 'skills', 'pptx-builder', 'grid.md'))).toBe(true)
-
-    // and on the next listing it is ours, not a candidate
-    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as {
+    const imported = (await invoke(INTEGRATIONS_CHANNELS.importSkillFolder, 'Pick')) as {
       name: string
-      source: string
-    }[]
-    expect(found.find((s) => s.name === 'pptx-builder')?.source).toBe('genoffice')
+    }
+    expect(imported.name).toBe('pptx-builder')
+    expect(existsSync(join(userData, 'skills', 'pptx-builder', 'grid.md'))).toBe(true)
+    const found = (await invoke(INTEGRATIONS_CHANNELS.listSkills)) as { name: string }[]
+    expect(found.map((s) => s.name)).toEqual(['pptx-builder'])
   })
 
-  it('refuses to import from a path that is not a skill', () => {
-    expect(() => invoke(INTEGRATIONS_CHANNELS.importSkill, '/etc/hosts')).toThrow('unknown skill')
-    expect(() => invoke(INTEGRATIONS_CHANNELS.importSkill, undefined)).toThrow('unknown skill')
+  it('returns null and copies nothing when the dialog is cancelled', async () => {
+    plantSrc('pptx-builder', 'Build a pptx', 'Do it.')
+    expect(await invoke(INTEGRATIONS_CHANNELS.importSkillFolder, 'Pick')).toBeNull()
+    expect(await invoke(INTEGRATIONS_CHANNELS.importSkillZip, 'Pick')).toBeNull()
+    expect(existsSync(join(userData, 'skills'))).toBe(false)
   })
 
-  it('refuses to replace a skill already in our folder', () => {
+  it('takes the source only from the dialog, never from the renderer', async () => {
+    // the renderer's argument is a dialog title; a path there is just a title
+    const src = plantSrc('sneaky', 'Build a pptx', 'Do it.')
+    h.dialogResult = { canceled: true, filePaths: [] }
+    expect(await invoke(INTEGRATIONS_CHANNELS.importSkillFolder, src)).toBeNull()
+    expect(existsSync(join(userData, 'skills', 'sneaky'))).toBe(false)
+  })
+
+  it('refuses to replace a skill already in our folder', async () => {
     const at = join(userData, 'skills', 'shared')
     mkdirSync(at, { recursive: true })
     writeFileSync(join(at, 'SKILL.md'), '---\nname: shared\ndescription: Mine\n---\n\nmine\n')
-    const src = join(fakeHome, '.agents', 'skills', 'shared')
-    mkdirSync(src, { recursive: true })
-    writeFileSync(join(src, 'SKILL.md'), '---\nname: shared\ndescription: Theirs\n---\n\ntheirs\n')
+    h.dialogResult = { canceled: false, filePaths: [plantSrc('shared', 'Theirs', 'theirs')] }
 
-    expect(() => invoke(INTEGRATIONS_CHANNELS.importSkill, join(src, 'SKILL.md'))).toThrow(
+    await expect(invoke(INTEGRATIONS_CHANNELS.importSkillFolder, 'Pick')).rejects.toThrow(
       'already there',
     )
     expect(invoke(INTEGRATIONS_CHANNELS.skillBody, join(at, 'SKILL.md'))).toBe('mine\n')
+  })
+})
+
+describe('integrations:list-recommended-skills / install-recommended-skill', () => {
+  const ship = (name: string, version = '1.0.0') => {
+    const at = join(dir, 'recommended', name)
+    mkdirSync(at, { recursive: true })
+    writeFileSync(
+      join(at, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: Write a docx report\nmetadata:\n  version: ${version}\n---\n\nShipped.\n`,
+    )
+    return join(at, 'SKILL.md')
+  }
+
+  it('lists shipped skills without installing them, and lets the body be read', async () => {
+    const path = ship('business-report')
+    const list = (await invoke(INTEGRATIONS_CHANNELS.listRecommendedSkills)) as {
+      name: string
+      state: string
+      version: string
+    }[]
+    expect(list).toEqual([
+      expect.objectContaining({ name: 'business-report', state: 'missing', version: '1.0.0' }),
+    ])
+    expect(existsSync(join(userData, 'skills'))).toBe(false)
+    expect(invoke(INTEGRATIONS_CHANNELS.skillBody, path)).toBe('Shipped.\n')
+  })
+
+  it('installs by name into our folder and reports it installed afterwards', async () => {
+    ship('business-report')
+    const got = (await invoke(
+      INTEGRATIONS_CHANNELS.installRecommendedSkill,
+      'business-report',
+    )) as { name: string }
+    expect(got.name).toBe('business-report')
+    expect(existsSync(join(userData, 'skills', 'business-report', 'SKILL.md'))).toBe(true)
+    const list = (await invoke(INTEGRATIONS_CHANNELS.listRecommendedSkills)) as { state: string }[]
+    expect(list[0]?.state).toBe('installed')
+  })
+
+  it('refuses a name it does not ship, whatever the renderer sends', () => {
+    ship('business-report')
+    for (const bad of ['other', '../recommended/business-report', 42, null]) {
+      expect(() => invoke(INTEGRATIONS_CHANNELS.installRecommendedSkill, bad)).toThrow(
+        'unknown skill',
+      )
+    }
   })
 })

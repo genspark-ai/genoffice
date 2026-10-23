@@ -10,6 +10,8 @@
       // would typecheck against the other checkout's (possibly stale) types
       "@genoffice/docx-engine": ["../../packages/docx-engine/src/index.ts"],
       "@genoffice/font-metrics": ["../../packages/font-metrics/src/index.ts"],
+      "@genoffice/font-metrics/resolve": ["../../packages/font-metrics/src/resolve.ts"],
+      "@genoffice/font-metrics/word-faces.json": ["../../packages/font-metrics/word-faces.json"],
       "@genoffice/electron-utils/headless-export": [
         "../../packages/electron-utils/src/headless-export.ts"
       ],
@@ -20,7 +22,8 @@
       "@genoffice/ai-provider": ["../../packages/ai-provider/src/index.ts"],
       "@genoffice/agent-core": ["../../packages/agent-core/src/index.ts"],
       "@genoffice/i18n": ["../../packages/i18n/src/index.ts"],
-      "@genoffice/ui": ["../../packages/ui/src/index.ts"]
+      "@genoffice/ui": ["../../packages/ui/src/index.ts"],
+      "@genoffice/xlsx-gateway/*": ["../../packages/xlsx-gateway/src/*"]
     }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]

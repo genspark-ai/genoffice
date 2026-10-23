@@ -11,6 +11,7 @@ import type { WorkbookChartEdit, WorkbookVisualEdit } from '../shared/edit-schem
 import type { SheetFilterState } from './xlsx-filter'
 import type { DefinedNamesState } from './xlsx-defined-names'
 import type { SheetPageSetupState } from './xlsx-page-setup'
+import type { SheetRedactionState } from './xlsx-redaction'
 import type {
   CellEdit,
   BulkConstantFill,
@@ -113,6 +114,7 @@ export interface StreamingSaveRequest {
   readonly workbookProtectionState?: { readonly lockStructure: boolean } | null | undefined
   readonly protectedRangeStates?: readonly SheetProtectedRangesState[] | undefined
   readonly tabColorStates?: readonly SheetTabColorState[] | undefined
+  readonly redactionStates?: readonly SheetRedactionState[] | undefined
 }
 
 export interface StreamingSaveResult {
@@ -183,6 +185,7 @@ export async function saveWorkbookViaSidecar(
       request.tabColorStates ?? [],
       request.tableEdits ?? [],
       request.cellImageAdditions ?? [],
+      request.redactionStates ?? [],
     )
 
     const replacements = await writePlanContents(workDir, 'replace', plan.replaced)

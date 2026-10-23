@@ -3,12 +3,21 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { columnResizingPluginKey } from '@tiptap/pm/tables'
 import type { EditorView } from '@tiptap/pm/view'
 
-interface DragPreview {
+export interface RowHeightPreview {
   pos: number
   heightPx: number
 }
 
-export const tableRowDragKey = new PluginKey<DragPreview | null>('docTableRowDrag')
+export const tableRowDragKey = new PluginKey<RowHeightPreview[] | null>('docTableRowDrag')
+
+/**
+ * Paint rows at the given heights while a drag is live (null ends the preview).
+ * A node decoration, not an inline style: a style written straight onto the
+ * <tr> is a DOM mutation ProseMirror redraws away.
+ */
+export function previewRowHeights(view: EditorView, rows: RowHeightPreview[] | null): void {
+  view.dispatch(view.state.tr.setMeta(tableRowDragKey, rows))
+}
 
 /** pointer distance from a row's bottom border that arms the drag (screen px) */
 const EDGE_PX = 4
@@ -92,12 +101,8 @@ function startDrag(view: EditorView, event: MouseEvent, target: RowTarget): bool
   const startY = event.clientY
   const cssAt = (clientY: number) =>
     Math.max(MIN_ROW_PX, startCss + (clientY - startY) / screenPerCss)
-  // the preview is a node decoration: an inline style written straight onto the
-  // <tr> is a DOM mutation ProseMirror redraws away
   const preview = (heightPx: number | null) =>
-    view.dispatch(
-      view.state.tr.setMeta(tableRowDragKey, heightPx === null ? null : { pos, heightPx }),
-    )
+    previewRowHeights(view, heightPx === null ? null : [{ pos, heightPx }])
 
   const cleanup = () => {
     win.removeEventListener('mousemove', move)
@@ -148,16 +153,20 @@ function startDrag(view: EditorView, event: MouseEvent, target: RowTarget): bool
 
 /** Word's horizontal border drag: pulling a row's bottom border sets that row's height */
 export function tableRowDrag(): Plugin {
-  return new Plugin<DragPreview | null>({
+  return new Plugin<RowHeightPreview[] | null>({
     key: tableRowDragKey,
     state: {
       init: () => null,
       apply(tr, prev) {
-        const meta = tr.getMeta(tableRowDragKey) as DragPreview | null | undefined
+        const meta = tr.getMeta(tableRowDragKey) as RowHeightPreview[] | null | undefined
         if (meta !== undefined) return meta
         if (!prev || !tr.docChanged) return prev
-        const pos = tr.mapping.mapResult(prev.pos)
-        return pos.deleted ? null : { ...prev, pos: pos.pos }
+        const kept: RowHeightPreview[] = []
+        for (const row of prev) {
+          const pos = tr.mapping.mapResult(row.pos)
+          if (!pos.deleted) kept.push({ ...row, pos: pos.pos })
+        }
+        return kept.length ? kept : null
       },
     },
     view(view) {
@@ -179,13 +188,16 @@ export function tableRowDrag(): Plugin {
     props: {
       decorations(state) {
         const drag = tableRowDragKey.getState(state)
-        const row = drag ? state.doc.nodeAt(drag.pos) : null
-        if (!drag || !row || row.type.name !== 'docTableRow') return DecorationSet.empty
-        return DecorationSet.create(state.doc, [
-          Decoration.node(drag.pos, drag.pos + row.nodeSize, {
-            style: `height:${drag.heightPx.toFixed(1)}px`,
-          }),
-        ])
+        if (!drag) return DecorationSet.empty
+        const decorations: Decoration[] = []
+        for (const { pos, heightPx } of drag) {
+          const row = state.doc.nodeAt(pos)
+          if (!row || row.type.name !== 'docTableRow') continue
+          decorations.push(
+            Decoration.node(pos, pos + row.nodeSize, { style: `height:${heightPx.toFixed(1)}px` }),
+          )
+        }
+        return DecorationSet.create(state.doc, decorations)
       },
       handleDOMEvents: {
         mousedown: (view, event) => {

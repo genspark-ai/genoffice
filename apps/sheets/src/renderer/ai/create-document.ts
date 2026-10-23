@@ -4,7 +4,12 @@
 /// forward AI-authored content untouched (the shell routes them into the
 /// docs-owned creation flow).
 
-import { csvSheetById, serializeActiveSheetCsv, sheetHasFormulas } from '../csv-export'
+import {
+  cellPatternLookup,
+  csvSheetById,
+  serializeActiveSheetCsv,
+  sheetHasFormulas,
+} from '../csv-export'
 import type { LazyWorkbookState, UniverRuntime } from '../univer-state'
 import type { CreateDocumentToolOutcome, CreateDocumentToolRequest } from './tools'
 
@@ -55,7 +60,14 @@ export async function createAiDocument(
         'On very large streamed workbooks, copy the needed rows into a new sheet (add_sheet + copy_range) and export that sheet instead.',
     }
   }
-  const content = serializeActiveSheetCsv(sheet, state)
+  const runtime = ctx.univerRef.current
+  const content = serializeActiveSheetCsv(
+    sheet,
+    state,
+    runtime
+      ? cellPatternLookup(runtime, sheet.getSheetId(), state?.file.date1904 === true)
+      : undefined,
+  )
   if (content === 'too-large') {
     return { ok: false, error: 'The worksheet is too large to export as a standalone file.' }
   }

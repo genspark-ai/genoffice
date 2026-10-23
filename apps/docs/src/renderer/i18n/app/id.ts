@@ -543,4 +543,7 @@ export const id = {
     'Perbarui gaya ini dengan format pilihan saat ini (ditulis kembali ke styles.xml)',
   appNewStyleFromSelection: 'Gaya baru dari pilihan saat ini',
   appStyleNamePlaceholder: 'Nama gaya',
+  appMergeSourceLoaded: '{name} dimuat ({n} record)',
+  appMergeWritten: '{n} dokumen ditulis',
+  appMergeNothingToWrite: 'Tidak ada yang ditulis',
 } satisfies Record<keyof typeof zh, string>

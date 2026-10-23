@@ -23,6 +23,7 @@ Archivos Word, Excel, PowerPoint y PDF, editados por ti y tu IA, guardados de nu
 
 <p align="center">
   <a href="#download"><b>Descargar</b></a> ·
+  <a href="#skills"><b>Skills</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Sitio web</b></a> ·
@@ -229,6 +230,7 @@ mientras lo observas.
   sistema para escaneos.
 - **También Markdown y HTML**, con el mismo panel de IA y exportación local a
   Word.
+- **Skills.** Skills listos para usar o tu propio `SKILL.md`, adjuntos desde el menú **+** de cualquier panel de IA.
 - **Automatizable.** Una línea de comandos `genoffice`, un skill de agente y
   un servidor MCP ponen todos los motores al servicio de Claude Code, Claude
   Desktop, Codex, Cursor y otros agentes, siempre en el dispositivo.
@@ -254,6 +256,18 @@ análisis de imagen/video.
 Toda la suite incluye temas claro, oscuro y del sistema. Los temas solo
 cambian lo que se ve en pantalla: las exportaciones, las impresiones y los
 archivos guardados siempre conservan los colores propios del documento.
+
+<a id="skills"></a>
+
+## Skills
+
+Un skill es un `SKILL.md` que le dice a la IA cómo hacer bien una tarea: un informe semanal, un NDA, un plan de clase.
+GenOffice incluye un conjunto y acepta los tuyos, en el mismo formato que usan los agentes de código.
+
+- **Ajustes → Skills.** **Instala** un skill recomendado o **Importa** una carpeta, un zip o un único `SKILL.md`. Al importar no se ejecuta nada.
+- **En un chat.** Abre el menú **+** junto al cuadro de texto de cualquier panel de IA, elige **Skills**, marca uno y envía. El skill solo acompaña a ese mensaje.
+
+---
 
 <a id="command-line-and-agent-skill"></a>
 

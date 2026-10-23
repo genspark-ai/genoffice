@@ -57,7 +57,9 @@ export function parseSdtBlock(sdtXml: string): { shell: SdtShell; pXml: string }
   }
 }
 
-export function sdtMeta(sdtXml: string): Pick<SdtShell, 'alias' | 'tag' | 'controlType'> {
+export function sdtMeta(
+  sdtXml: string,
+): Pick<SdtShell, 'alias' | 'tag' | 'controlType' | 'lock' | 'id'> {
   const sdtPrXml = /<w:sdtPr>([\s\S]*?)<\/w:sdtPr>/.exec(sdtXml)?.[1] ?? ''
   // w:val may be single- or double-quoted; the caller slices out the single open
   // tag first so the value can't belong to a later sibling element
@@ -67,12 +69,16 @@ export function sdtMeta(sdtXml: string): Pick<SdtShell, 'alias' | 'tag' | 'contr
   }
   const alias = attrVal(/<w:alias[^>]*>/.exec(sdtPrXml)?.[0] ?? '')
   const tag = attrVal(/<w:tag[^>]*>/.exec(sdtPrXml)?.[0] ?? '')
+  // the lock state and the control id: a downstream check finds a control by
+  // its tag and confirms it is still locked, so both are read with the tag
+  const lock = attrVal(/<w:lock[^>]*>/.exec(sdtPrXml)?.[0] ?? '')
+  const id = attrVal(/<w:id[^>]*>/.exec(sdtPrXml)?.[0] ?? '')
   let controlType: SdtShell['controlType'] = 'text'
   if (/<w:date[\s/>]/.test(sdtPrXml)) controlType = 'date'
   else if (/<w:dropDownList[\s/>]|<w:comboBox[\s/>]/.test(sdtPrXml)) controlType = 'dropdown'
   else if (/<w:checkbox[\s/>]/.test(sdtPrXml)) controlType = 'checkbox'
   else if (/<w:text[\s/>]|<w:richText[\s/>]/.test(sdtPrXml)) controlType = 'text'
-  return { alias, tag, controlType }
+  return { alias, tag, controlType, lock, id }
 }
 
 interface SdtPart {

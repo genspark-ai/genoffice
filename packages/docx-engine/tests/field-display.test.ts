@@ -199,6 +199,21 @@ describe('field paragraph display model', () => {
       '</w:del></w:p>'
     const del = await parseDocx(await buildDocx({ bodyXml: deleted }))
     expect(del.blocks[0].fieldDisplay).toMatchObject({ deleted: true, fontFamily: 'SimSun' })
+    // a Latin "1.1 " run ahead of a KaiTi title: the CJK face still sizes the line
+    const rFonts =
+      '<w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="DFKai-SB" w:hAnsi="Times New Roman"/></w:rPr>'
+    const numbered = entry(rFonts).replace(
+      '<w:t>Annexe 1-1 : Classification</w:t>',
+      `<w:t xml:space="preserve">1.1 </w:t></w:r><w:r>${rFonts}<w:t>\u5951\u7d04</w:t>`,
+    )
+    const mixed = await parseDocx(await buildDocx({ bodyXml: numbered }))
+    expect(mixed.blocks[0].fieldDisplay).toMatchObject({
+      fontFamily: 'Times New Roman',
+      eaFontFamily: 'DFKai-SB',
+    })
+    // the leading run already resolves the CJK face: no duplicate
+    expect(doc.blocks[0].fieldDisplay?.eaFontFamily).toBeUndefined()
+    expect(del.blocks[0].fieldDisplay?.eaFontFamily).toBeUndefined()
   })
 
   it('TOC bold respects off/none/case variants (onOff parity)', async () => {
@@ -220,6 +235,22 @@ describe('field paragraph display model', () => {
     }
     const on = await parseDocx(await buildDocx({ bodyXml: offEntry('<w:b w:val="true"/>') }))
     expect(on.blocks[0].fieldDisplay?.bold).toBe(true)
+  })
+
+  it('a lone field-end paragraph keeps its empty line with its own line rule', async () => {
+    const xml =
+      '<w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:rPr><w:b/></w:rPr></w:pPr>' +
+      '<w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].label).toBe('Field end marker')
+    expect(doc.blocks[0].fieldDisplay).toEqual({
+      kind: 'text',
+      left: '',
+      emptyLine: true,
+      lineRule: 'auto',
+      lineRawTwips: 360,
+      lineSpacing: 1.5,
+    })
   })
 
   it('field-end + page break paragraph shows as a pageBreak marker', async () => {
@@ -248,6 +279,55 @@ describe('field paragraph display model', () => {
     expect(reparsed.blocks[0].runs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ text: '(Smith, 2024)', instrField: ZOTERO_CITATION_INSTR }),
+      ]),
+    )
+  })
+
+  it('Mendeley CSL_CITATION fields fold into an inline run and keep the paragraph indent', async () => {
+    const instr = 'ADDIN CSL_CITATION {"citationItems":[{"id":"ITEM-1"}],"mendeley":{}}'
+    const body =
+      '<w:p><w:pPr><w:ind w:left="0" w:right="0" w:firstLine="720"/></w:pPr>' +
+      '<w:r><w:t>Evidence </w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin" w:fldLock="1"/></w:r>' +
+      `<w:r><w:instrText xml:space="preserve"> ${instr} </w:instrText></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:rPr><w:noProof/></w:rPr><w:t>(Yu &amp; Zin, 2022)</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:t>.</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect(block.format).toMatchObject({ indentRight: 0, indentFirstLine: 720 })
+    expect(block.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: '(Yu & Zin, 2022)', instrField: instr }),
+      ]),
+    )
+  })
+
+  // Word writes a long Mendeley instruction as several w:instrText runs; a
+  // continuation fragment alone never matches the field regex, and the
+  // paragraph used to drop to the passthrough path, losing its w:ind
+  it('a CSL_CITATION instruction split over several instrText runs keeps the paragraph editable', async () => {
+    const head = 'ADDIN CSL_CITATION {"citationItems":[{"id":"ITEM-1","itemData":{"con'
+    const tail = 'tainer-title":"Jurnal Pendidikan IPA Indonesia"}}],"mendeley":{}}'
+    const body =
+      '<w:p><w:pPr><w:ind w:left="0" w:right="0" w:firstLine="720"/><w:rPr><w:lang w:val="fi-FI"/></w:rPr></w:pPr>' +
+      '<w:r><w:t>Evidence </w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin" w:fldLock="1"/></w:r>' +
+      `<w:r><w:instrText xml:space="preserve">${head}</w:instrText></w:r>` +
+      `<w:r><w:instrText xml:space="preserve">${tail}</w:instrText></w:r>` +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:rPr><w:noProof/></w:rPr><w:t>(Yu &amp; Zin, 2022)</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:t>.</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect(block.format).toMatchObject({ indentRight: 0, indentFirstLine: 720 })
+    expect(block.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: '(Yu & Zin, 2022)', instrField: head + tail }),
       ]),
     )
   })
@@ -375,6 +455,31 @@ describe('field paragraph display model', () => {
       lineRule: 'auto',
       lineRawTwips: 360,
       lineSpacing: 1.5,
+    })
+  })
+
+  it('a text field paragraph keeps its direct first-line and right indents (Word lays the citation body out with them)', async () => {
+    const withInd = (ind: string) =>
+      INCLUDEPICTURE_PARAGRAPH.replace(
+        '<w:pPr><w:jc w:val="left"/>',
+        `<w:pPr>${ind}<w:jc w:val="left"/>`,
+      )
+    const first = await parseDocx(
+      await buildDocx({ bodyXml: withInd('<w:ind w:left="60" w:right="240" w:firstLine="420"/>') }),
+    )
+    expect(first.blocks[0].fieldDisplay).toMatchObject({
+      kind: 'text',
+      indentLeftTwips: 60,
+      indentRightTwips: 240,
+      indentFirstLineTwips: 420,
+    })
+    const hanging = await parseDocx(
+      await buildDocx({ bodyXml: withInd('<w:ind w:start="720" w:end="0" w:hanging="360"/>') }),
+    )
+    expect(hanging.blocks[0].fieldDisplay).toMatchObject({
+      indentLeftTwips: 720,
+      indentRightTwips: 0,
+      indentFirstLineTwips: -360,
     })
   })
 

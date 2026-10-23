@@ -1244,6 +1244,7 @@ function emitChart(b: PageBuilder, chart: ChartRenderNode): string {
           'font-size': l.fontSizePx,
           'font-weight': l.bold ? 700 : undefined,
           'font-style': l.italic ? 'italic' : undefined,
+          'letter-spacing': l.letterSpacingPx ? n(l.letterSpacingPx) : undefined,
           fill: l.color,
           'xml:space': 'preserve',
           transform: l.rotationDeg ? `rotate(${n(l.rotationDeg)} ${n(l.x)} ${n(l.y)})` : undefined,

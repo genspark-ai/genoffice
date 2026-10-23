@@ -5,6 +5,7 @@ import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-doc
 import { blocksToPmDoc, pmTableToModel, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { scaleTableGrid } from '../src/renderer/editor/table-column-drag'
+import { scaleRowHeights } from '../src/renderer/editor/table-handle'
 
 // three 4000-twip columns: 266.67px each, 800px in all
 const TABLE =
@@ -12,7 +13,10 @@ const TABLE =
   '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
   '<w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>' +
   '<w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>' +
-  '<w:tc><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+  '<w:tc><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc></w:tr>' +
+  '<w:tr><w:tc><w:p><w:r><w:t>D</w:t></w:r></w:p></w:tc>' +
+  '<w:tc><w:p><w:r><w:t>E</w:t></w:r></w:p></w:tc>' +
+  '<w:tc><w:p><w:r><w:t>F</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
 
 const sum = (widths: number[]) => widths.reduce((total, width) => total + width, 0)
 
@@ -52,14 +56,54 @@ function gridOf(editor: Editor): number[] {
   return model.colWidthsTwips!.map((twips) => Math.round(twips / 15))
 }
 
-function mouse(type: string, clientX: number, buttons = 1): MouseEvent {
-  return new MouseEvent(type, { clientX, clientY: 10, buttons, button: 0, bubbles: true })
+function mouse(type: string, clientX: number, buttons = 1, clientY = 10): MouseEvent {
+  return new MouseEvent(type, { clientX, clientY, buttons, button: 0, bubbles: true })
 }
+
+const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+
+/** jsdom lays nothing out: rows are 30px tall, the table 60px */
+function layoutRows(): void {
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.tagName === 'TR' ? 30 : this.tagName === 'TABLE' ? 60 : 0
+    },
+  })
+}
+
+describe('scaleRowHeights (Word corner drag)', () => {
+  it('scales every row by the same factor and stops at the row minimum', () => {
+    expect(scaleRowHeights([20, 40], 30)).toEqual([30, 60])
+    expect(scaleRowHeights([20, 40], -100)).toEqual([4, 8])
+  })
+})
 
 describe('table corner resize handle', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight)
     document.body.innerHTML = ''
+  })
+
+  it('a vertical drag scales the row heights into w:trHeight', async () => {
+    layoutRows()
+    const { editor, table } = await openTable()
+    table.querySelector('td')!.dispatchEvent(mouse('mousemove', 10))
+    const resizer = document.querySelector<HTMLElement>('.doc-table-resize')!
+    resizer.dispatchEvent(mouse('mousedown', 800, 1, 60))
+    window.dispatchEvent(mouse('mousemove', 800, 1, 90))
+    expect(Array.from(table.rows).map((tr) => tr.style.height)).toEqual(['45px', '45px'])
+    window.dispatchEvent(mouse('mouseup', 800, 0, 90))
+    const rows: { heightTwips: number; heightRule: string }[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'docTableRow') rows.push(node.attrs as never)
+    })
+    expect(rows.map((row) => row.heightTwips)).toEqual([675, 675])
+    expect(rows.every((row) => row.heightRule === 'atLeast')).toBe(true)
+    // the grid was not touched
+    expect(gridOf(editor)).toEqual([267, 267, 267])
+    editor.destroy()
   })
 
   it('appears on hover and commits a proportionally scaled grid on drop', async () => {

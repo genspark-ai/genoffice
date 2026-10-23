@@ -208,6 +208,12 @@ function fakeSheet(rows: string[][], options: FakeSheetOptions = {}): CsvWorkshe
           for (let c = column; c < column + numColumns; c += 1) out.push(sourceRow[c] ?? '')
           return out
         }),
+      getRawValues: () =>
+        rows.slice(row, row + numRows).map((sourceRow) => {
+          const out: unknown[] = []
+          for (let c = column; c < column + numColumns; c += 1) out.push(sourceRow[c] ?? '')
+          return out
+        }),
     }),
     getSheet: () => ({
       getCellMatrix: () => ({

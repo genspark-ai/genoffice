@@ -8,10 +8,19 @@ import { readFileSync } from 'node:fs'
 import { Editor } from '@tiptap/core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Run } from '@genoffice/docx-engine'
-import { editorExtensions } from '../src/renderer/editor/extensions'
-import { runSpanSpecs } from '../src/renderer/editor/protected-render'
+import { autospaceRanges, editorExtensions } from '../src/renderer/editor/extensions'
 import {
+  renderTableSpec,
+  renderTextboxSpec,
+  runSpanSpecs,
+  setStaticAsciiResolver,
+} from '../src/renderer/editor/protected-render'
+import { DOMSerializer } from '@tiptap/pm/model'
+import type { TableModel, TextboxDisplay } from '@genoffice/docx-engine'
+import {
+  autospacePadScale,
   codePointLengthAt,
+  latinAutospaceGapEm,
   hangulSpaceWideningFor,
   setHangulSpaceWidening,
 } from '../src/renderer/line-metrics'
@@ -253,5 +262,137 @@ describe('hangul-space advance', () => {
     // GenOfficeCheLatinKR advances every glyph 0.5em (tools/build-kr-che-latin-font.py)
     expect(face?.[1]).toContain('GenOfficeCheLatinKR.woff2')
     expect(face?.[1]).toContain('unicode-range: U+0020;')
+  })
+})
+
+describe('Latin-first pad scale follows the inherited ascii face', () => {
+  const KR = '\uc6d0'
+  const styles = (ascii: string) =>
+    new Map([
+      ['Normal', { isDefault: true, type: 'paragraph', display: { fontAscii: ascii } }],
+    ]) as never
+  const scale = (ascii: string) => String(autospacePadScale(latinAutospaceGapEm(ascii), true))
+
+  it('autospaceRanges recomputes when the style table changes the inherited face', () => {
+    const editor = makeEditor(paragraphDoc(`C${KR}`))
+    const node = editor.state.doc.firstChild!
+    const first = autospaceRanges(node, true, () => 'Cambria')
+    expect(first[0].scale).toBeCloseTo(autospacePadScale(latinAutospaceGapEm('Cambria'), true), 6)
+    expect(autospaceRanges(node, true, () => 'Cambria')).toBe(first)
+    const second = autospaceRanges(node, true, () => 'Times New Roman')
+    expect(second).not.toBe(first)
+    expect(second[0].scale).toBeCloseTo(
+      autospacePadScale(latinAutospaceGapEm('Times New Roman'), true),
+      6,
+    )
+    editor.destroy()
+  })
+
+  it('a static run without its own face carries the same pad as the editor', () => {
+    const editor = makeEditor(paragraphDoc(`C${KR}`))
+    editor.storage.listNumbering.styles = styles('Cambria')
+    editor.view.dispatch(editor.state.tr.insertText('x', 3))
+    const live = editor.view.dom.querySelector('.doc-autospace-pad-le') as HTMLElement
+    expect(live.style.getPropertyValue('--doc-autospace-pad-le').trim()).toBe(scale('Cambria'))
+    setStaticAsciiResolver(() => editor.storage.listNumbering)
+    try {
+      const padStyle = (runs: Run[] | null) => {
+        const model: TableModel = {
+          rows: [[{ paras: [`C${KR}`], ...(runs ? { richParas: [{ runs }] } : {}) }]],
+        }
+        const dom = DOMSerializer.renderSpec(document, renderTableSpec(model) as never)
+          .dom as HTMLElement
+        return (dom.querySelector('.doc-autospace-pad-le') as HTMLElement).style
+          .getPropertyValue('--doc-autospace-pad-le')
+          .trim()
+      }
+      expect(padStyle([{ text: `C${KR}` }])).toBe(scale('Cambria'))
+      expect(padStyle([{ text: `C${KR}`, fontAscii: 'Arial' }])).toBe(scale('Arial'))
+      expect(padStyle(null)).toBe(padStyle([{ text: `C${KR}` }]))
+    } finally {
+      setStaticAsciiResolver(() => undefined)
+    }
+    editor.destroy()
+  })
+})
+
+describe('Korean no-break word-joiners', () => {
+  const render = (spec: unknown): HTMLElement =>
+    DOMSerializer.renderSpec(document, spec as never).dom as HTMLElement
+  const WON_CLOSE_I = '5,000\uc6d0)\uc774 \ub2e4'
+
+  it('the static path marks hangul/punctuation seams without touching the text', () => {
+    const model: TableModel = { rows: [[{ paras: [WON_CLOSE_I] }]] }
+    const dom = render(renderTableSpec(model))
+    const wj = dom.querySelectorAll('.doc-kr-wj')
+    expect(wj).toHaveLength(1)
+    expect(wj[0].textContent).toBe('')
+    expect(wj[0].previousSibling?.textContent?.endsWith(')')).toBe(true)
+    expect(wj[0].nextSibling?.textContent?.startsWith('\uc774')).toBe(true)
+    expect(dom.querySelector('td')!.textContent).toBe(WON_CLOSE_I)
+  })
+
+  it('rich cells carry the seam across run boundaries and respect wordWrap off', () => {
+    const runs = [{ text: '5,000\uc6d0)' }, { text: '\uc774 \ub2e4', bold: true }]
+    const on: TableModel = {
+      rows: [[{ paras: [WON_CLOSE_I], richParas: [{ runs }] }]],
+    }
+    expect(render(renderTableSpec(on)).querySelectorAll('.doc-kr-wj')).toHaveLength(1)
+    const off: TableModel = {
+      rows: [[{ paras: [WON_CLOSE_I], richParas: [{ runs, wordWrap: false }] }]],
+    }
+    expect(render(renderTableSpec(off)).querySelectorAll('.doc-kr-wj')).toHaveLength(0)
+  })
+
+  it('header/footer table cells follow their own paragraph props, not the row paragraph', () => {
+    const storage = {
+      styles: new Map([
+        ['Normal', { isDefault: true, type: 'paragraph', display: { fontAscii: 'Cambria' } }],
+        ['Cell', { type: 'paragraph', display: { fontAscii: 'Arial' } }],
+      ]),
+    }
+    setStaticAsciiResolver(() => storage as never)
+    try {
+      const KR = '\ud55c'
+      const box: TextboxDisplay = {
+        paras: [
+          {
+            runs: [],
+            styleId: 'Normal',
+            cells: [
+              {
+                paras: [[{ text: `C${KR}` }], [{ text: WON_CLOSE_I }]],
+                paraProps: [{ styleId: 'Cell' }, { wordWrap: false }],
+              },
+            ],
+          },
+        ],
+      }
+      const dom = render(renderTextboxSpec(box))
+      const pad = dom.querySelector('.doc-autospace-pad-le') as HTMLElement
+      expect(pad.style.getPropertyValue('--doc-autospace-pad-le').trim()).toBe(
+        String(autospacePadScale(latinAutospaceGapEm('Arial'), true)),
+      )
+      expect(dom.querySelectorAll('.doc-kr-wj')).toHaveLength(0)
+    } finally {
+      setStaticAsciiResolver(() => undefined)
+    }
+  })
+
+  it('the editor joins a seam split over two text nodes', () => {
+    const editor = makeEditor({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            { type: 'text', text: '5,000\uc6d0)' },
+            { type: 'text', text: '\uc774 \ub2e4', marks: [{ type: 'bold' }] },
+          ],
+        },
+      ],
+    })
+    expect(editor.view.dom.querySelectorAll('.doc-kr-wj')).toHaveLength(1)
+    editor.destroy()
   })
 })

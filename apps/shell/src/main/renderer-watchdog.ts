@@ -19,7 +19,8 @@ export interface WatchdogDocumentInfo {
   filePath?: string
 }
 
-export type WatchdogStringKey = 'watchdogTitle' | 'watchdogBody' | 'watchdogWait' | 'watchdogClose'
+export type WatchdogStringKey =
+  'watchdogTitle' | 'watchdogBody' | 'watchdogWait' | 'watchdogClose' | 'watchdogIgnore'
 
 export interface RendererWatchdogOptions {
   /** the document a renderer shows; null for chrome (Home) renderers, which are logged but never prompted */
@@ -48,10 +49,24 @@ const DEFAULTS = {
   profileMs: 5_000,
 }
 
+/**
+ * A big-but-stable document re-prompted on every cooldown forever (field
+ * report: a large CSV sitting at ~1.9 GB redrew the dialog every quarter
+ * hour). After the first prompt, a memory-triggered report repeats only when
+ * the renderer has grown this much past the memory at the previous prompt;
+ * a CPU-triggered report (an actively burning core) still repeats on every
+ * cooldown.
+ */
+const MEMORY_REPROMPT_GROWTH = 1.25
+
 interface RendererState {
   hot: number
   reportedAt: number
   prompting: boolean
+  /** user chose "don't remind again" for this renderer */
+  ignored: boolean
+  /** memory at the previous prompt; gates memory-only re-prompts */
+  promptedMemoryMB?: number
   /** cumulative CPU seconds at the previous sample (absent on the first) */
   cpuSeconds?: number
   sampledAt?: number
@@ -135,7 +150,7 @@ export function startRendererWatchdog(options: RendererWatchdogOptions): () => v
           memory: Math.round(memoryMB),
           cpu: Math.round(cpu),
         }),
-        buttons: [opts.t('watchdogWait'), opts.t('watchdogClose')],
+        buttons: [opts.t('watchdogWait'), opts.t('watchdogClose'), opts.t('watchdogIgnore')],
         defaultId: 0,
         cancelId: 0,
       }
@@ -144,6 +159,7 @@ export function startRendererWatchdog(options: RendererWatchdogOptions): () => v
           ? await dialog.showMessageBox(parent, dialogOptions)
           : await dialog.showMessageBox(dialogOptions)
       if (response === 1 && !wc.isDestroyed()) await opts.closeDocument(wc)
+      if (response === 2) state.ignored = true
     } catch {
       /* a failed prompt only means the renderer keeps running */
     } finally {
@@ -166,7 +182,7 @@ export function startRendererWatchdog(options: RendererWatchdogOptions): () => v
       seen.add(wc.id)
       // workingSetSize is reported in kilobytes
       const memoryMB = metric.memory.workingSetSize / 1024
-      const state = states.get(wc.id) ?? { hot: 0, reportedAt: 0, prompting: false }
+      const state = states.get(wc.id) ?? { hot: 0, reportedAt: 0, prompting: false, ignored: false }
       states.set(wc.id, state)
       // percentCPUUsage is normalized differently per platform (a full core
       // read 10% on a 10-core Mac): derive one-core percent from the
@@ -184,14 +200,21 @@ export function startRendererWatchdog(options: RendererWatchdogOptions): () => v
         state.cpuSeconds = cpuSeconds
         state.sampledAt = now
       }
+      if (state.ignored) continue
       const hot = memoryMB > opts.memoryLimitMB || cpu > opts.cpuLimitPercent
       state.hot = hot ? state.hot + 1 : 0
+      const escalated =
+        state.promptedMemoryMB === undefined ||
+        cpu > opts.cpuLimitPercent ||
+        memoryMB >= state.promptedMemoryMB * MEMORY_REPROMPT_GROWTH
       if (
         state.hot >= opts.hotSamplesBeforeReport &&
         !state.prompting &&
+        escalated &&
         Date.now() - state.reportedAt >= opts.reportCooldownMs
       ) {
         state.reportedAt = Date.now()
+        state.promptedMemoryMB = memoryMB
         state.hot = 0
         void report(wc, metric, metrics, memoryMB, cpu)
       }

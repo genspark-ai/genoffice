@@ -58,8 +58,9 @@ export function checkResult(
 
 /** Trim a formula or text for the context field. */
 export function excerpt(text: string, max = 120): string {
+  const budget = Math.max(1, Math.trunc(max))
   const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+  return flat.length > budget ? `${flat.slice(0, budget - 1)}…` : flat
 }
 
 /**

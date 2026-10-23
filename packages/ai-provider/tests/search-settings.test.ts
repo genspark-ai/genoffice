@@ -18,6 +18,7 @@ describe('search settings', () => {
         parallel: { apiKey: '' },
         exa: { apiKey: '' },
         firecrawl: { apiKey: '' },
+        keenable: { apiKey: '' },
       },
     })
     expect(defaultAiSettings().search?.provider).toBe('genspark')
@@ -51,6 +52,7 @@ describe('search settings', () => {
             parallel: { apiKey: '' },
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
+            keenable: { apiKey: '' },
           },
         },
       }),
@@ -66,6 +68,7 @@ describe('search settings', () => {
             parallel: { apiKey: '' },
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
+            keenable: { apiKey: '' },
           },
         },
       }),
@@ -81,6 +84,7 @@ describe('search settings', () => {
             parallel: { apiKey: '' },
             exa: { apiKey: '' },
             firecrawl: { apiKey: '' },
+            keenable: { apiKey: '' },
           },
         },
       }),
@@ -171,6 +175,7 @@ describe('exa and firecrawl providers', () => {
           parallel: { apiKey: '' },
           exa: { apiKey: id === 'exa' ? apiKey : '' },
           firecrawl: { apiKey: id === 'firecrawl' ? apiKey : '' },
+          keenable: { apiKey: '' },
         },
       },
     })
@@ -191,5 +196,39 @@ describe('exa and firecrawl providers', () => {
     expect(s.providers.exa.apiKey).toBe('k')
     expect(s.providers.firecrawl.apiKey).toBe('fc')
     expect(s.provider).toBe('exa')
+  })
+})
+
+describe('Keenable search settings', () => {
+  it('is in the catalog without image search and defaults to an empty key', () => {
+    expect(AI_SEARCH_PROVIDERS.find((m) => m.id === 'keenable')?.imageSearch).toBe(false)
+    expect(defaultAiSearchSettings().providers.keenable.apiKey).toBe('')
+  })
+
+  it('keeps Keenable selected for free search when the key is blank', () => {
+    const settings = resolveAiSearchSettings(
+      JSON.parse(
+        JSON.stringify({
+          provider: 'keenable',
+          providers: { keenable: { apiKey: '   ' } },
+        }),
+      ),
+    )
+    expect(settings.providers.keenable.apiKey).toBe('')
+    expect(activeSearchProvider({ search: settings })).toBe('keenable')
+  })
+
+  it('restores and trims a saved Keenable key', () => {
+    const settings = resolveAiSearchSettings({
+      provider: 'keenable',
+      providers: { keenable: { apiKey: ' kn-key ' } } as never,
+    })
+    expect(settings.providers.keenable.apiKey).toBe('kn-key')
+    expect(activeSearchProvider({ search: settings })).toBe('keenable')
+  })
+
+  it('leaves the default provider on Genspark', () => {
+    expect(defaultAiSearchSettings().provider).toBe('genspark')
+    expect(activeSearchProvider({ search: defaultAiSearchSettings() })).toBe('genspark')
   })
 })
