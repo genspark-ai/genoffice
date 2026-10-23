@@ -477,24 +477,6 @@ export interface HomeApi {
   setAiSettings(settings: AiSettings): Promise<void>
   /** ai-settings.json was rewritten by any renderer (composer model chip, another window) */
   onAiSettingsChanged(handler: () => void): () => void
-  /**
-   * Ask the model for a file name, from the caller's model-facing text.
-   *
-   * `content` is whatever the model would be allowed to see: an app that has
-   * withheld spans from the model must pass the projected text, not the
-   * document. The main process cannot filter on the app's behalf — it does not
-   * know what any editor has hidden — so `ok: true` here means "this name is
-   * safe to show", and `ok: false` means the caller keeps the name it had.
-   */
-  suggestFileName(input: {
-    content: string
-    trigger: 'first-save' | 'manual'
-    /** the path being saved to, when there is one; the policy uses it to skip work */
-    filePath?: string | null
-  }): Promise<{ ok: boolean; name?: string; reason?: string }>
-  /** the Settings → General preference that turns naming on for first saves */
-  getFileNamingEnabled(): Promise<boolean>
-  setFileNamingEnabled(on: boolean): Promise<boolean>
   /** provider catalog with each fixed endpoint's default base URL (empty for genspark/custom) */
   getAiProviders(): AiCatalogEntry[]
   /** live Codex model catalog discovered through the current or overridden app-server */
