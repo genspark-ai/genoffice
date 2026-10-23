@@ -9,7 +9,6 @@
       // node_modules is a symlink into the main checkout, so bare specifiers
       // would typecheck against the other checkout's (possibly stale) types
       "@genoffice/docx-engine": ["../../packages/docx-engine/src/index.ts"],
-      "@genoffice/docx-engine/resolve-props": ["../../packages/docx-engine/src/resolve-props.ts"],
       "@genoffice/font-metrics": ["../../packages/font-metrics/src/index.ts"],
       "@genoffice/font-metrics/resolve": ["../../packages/font-metrics/src/resolve.ts"],
       "@genoffice/font-metrics/word-faces.json": ["../../packages/font-metrics/word-faces.json"],

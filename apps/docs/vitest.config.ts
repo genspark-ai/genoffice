@@ -10,9 +10,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@genoffice/docx-engine/lazy-media': local('../../packages/docx-engine/src/lazy-media.ts'),
-      '@genoffice/docx-engine/resolve-props': local(
-        '../../packages/docx-engine/src/resolve-props.ts',
-      ),
       '@genoffice/docx-engine': local('../../packages/docx-engine/src/index.ts'),
       '@genoffice/font-metrics/resolve': local('../../packages/font-metrics/src/resolve.ts'),
       '@genoffice/font-metrics/word-faces.json': local(

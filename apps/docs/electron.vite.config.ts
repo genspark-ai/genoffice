@@ -10,10 +10,6 @@ const localAlias = {
     __dirname,
     '../../packages/docx-engine/src/lazy-media.ts',
   ),
-  '@genoffice/docx-engine/resolve-props': resolve(
-    __dirname,
-    '../../packages/docx-engine/src/resolve-props.ts',
-  ),
   '@genoffice/docx-engine/zip-splice': resolve(
     __dirname,
     '../../packages/docx-engine/src/zip-splice.ts',
