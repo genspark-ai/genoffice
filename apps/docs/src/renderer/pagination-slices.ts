@@ -2019,6 +2019,24 @@ function _placeTable(
     const row = rows[ri]
 
     if (row.vMergeContinue) {
+      // A merged group consumes column height row by row like any other row:
+      // a page that ends inside the group turns between its rows (Word cuts a
+      // vMerge group between real rows, and the gap row rides under the
+      // bridged rowspan). Charging nothing and never checking let the computed
+      // boundary drift past the real DOM heights, so the gap builder could not
+      // match a row top and anchored an in-cell band instead (genoffice#2114).
+      // The parity model's zero-height continuations charge nothing and never
+      // turn, exactly as before.
+      if (!fits(row.height) && !pageEmpty()) {
+        retractable = false
+        newPage(
+          rowCursor,
+          curSection,
+          placedHeader && ri >= headerRows ? headerHeight : 0,
+          block.top,
+        )
+      }
+      place(row.height)
       rowCursor += row.height
       continue
     }
