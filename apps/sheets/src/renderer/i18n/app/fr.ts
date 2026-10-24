@@ -1540,6 +1540,11 @@ export const fr = {
   appNotePicturesNone: "Aucune note de ce classeur ne contient d'image.",
   appNotePictureUnavailable: 'Cette image ne peut pas être affichée.',
   appNotePicturesToggle: 'Images des notes',
+  appNoteInsertPicture: 'Insérer une image',
+  appNotePictureInserted:
+    'Image ajoutée au commentaire de {cell}. Enregistrez pour l’écrire dans le fichier.',
+  appNotePictureRemoved: 'Image retirée du commentaire de {cell}.',
+  appNotePictureRemove: 'Retirer l’image',
   appCommentsPaneTitle: 'Commentaires',
   appThreadReply: 'Répondre',
   appThreadReplyPlaceholder: 'Répondre…',

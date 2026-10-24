@@ -7276,6 +7276,23 @@ body:has(.note-pictures-pane) .threaded-comments-pane {
   font-size: 12px;
 }
 
+.note-pictures-pane .np-remove {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 5px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.note-pictures-pane .np-remove:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
 .note-pictures-pane .np-image {
   display: block;
   width: 100%;

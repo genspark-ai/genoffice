@@ -30,7 +30,11 @@ function harness(comments: Comment[], live: { row: number; col: number; note: st
     univerAPI: { getActiveWorkbook: () => workbook },
   } as unknown as UniverRuntime
   const state = {
-    editJournal: { noteDirty: new Set(['sheet1']), sheets: { removed: new Set<string>() } },
+    editJournal: {
+      noteDirty: new Set(['sheet1']),
+      notePictures: [],
+      sheets: { removed: new Set<string>() },
+    },
     file: { sheets: [{ id: 'sheet1', comments }] },
   } as unknown as LazyWorkbookState
   return { runtime, state }

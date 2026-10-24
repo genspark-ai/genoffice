@@ -1528,6 +1528,11 @@ export const de = {
   appNotePicturesNone: 'Keine Notiz in dieser Arbeitsmappe zeigt ein Bild.',
   appNotePictureUnavailable: 'Dieses Bild kann nicht angezeigt werden.',
   appNotePicturesToggle: 'Bilder in Notizen',
+  appNoteInsertPicture: 'Bild einfügen',
+  appNotePictureInserted:
+    'Bild dem Kommentar in {cell} hinzugefügt. Speichern, um es in die Datei zu schreiben.',
+  appNotePictureRemoved: 'Bild aus dem Kommentar in {cell} entfernt.',
+  appNotePictureRemove: 'Bild entfernen',
   appCommentsPaneTitle: 'Kommentare',
   appThreadReply: 'Antworten',
   appThreadReplyPlaceholder: 'Antworten…',
