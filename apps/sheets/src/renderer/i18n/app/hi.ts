@@ -703,6 +703,7 @@ export const hi = {
   appExportPdfTitle: 'PDF के रूप में निर्यात करें',
   appSaveTitle: 'सहेजें (⌘S)',
   appSaveAs: 'इस रूप में सहेजें',
+  aiNameFile: 'AI से नाम दें…',
   appUndo: 'पूर्ववत करें',
   appRedo: 'फिर से करें',
   appUnsavedEditOne: '● {count} असहेजा संपादन',

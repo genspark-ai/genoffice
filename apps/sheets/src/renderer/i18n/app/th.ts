@@ -671,6 +671,7 @@ export const th = {
   appExportPdfTitle: 'ส่งออกเป็น PDF',
   appSaveTitle: 'บันทึก (⌘S)',
   appSaveAs: 'บันทึกเป็น',
+  aiNameFile: 'ตั้งชื่อด้วย AI…',
   appUndo: 'เลิกทำ',
   appRedo: 'ทำซ้ำ',
   appUnsavedEditOne: '● การแก้ไข {count} รายการยังไม่บันทึก',

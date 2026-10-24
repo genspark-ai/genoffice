@@ -671,6 +671,7 @@ export const ar = {
   appExportPdfTitle: 'تصدير إلى PDF',
   appSaveTitle: 'حفظ (⌘S)',
   appSaveAs: 'حفظ باسم',
+  aiNameFile: 'التسمية بالذكاء الاصطناعي…',
   appUndo: 'تراجع',
   appRedo: 'إعادة',
   appUnsavedEditOne: '● {count} تعديل غير محفوظ',
