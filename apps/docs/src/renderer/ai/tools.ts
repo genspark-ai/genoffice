@@ -1605,7 +1605,7 @@ function executeSyncTool(
     }
 
     case 'edit_chart': {
-      const idx = Number(call.input.blockIndex)
+      const idx = Number.isFinite(Number(call.input.blockIndex)) ? Number(call.input.blockIndex) : 0
       if (!Number.isInteger(idx) || idx < 0 || idx >= editor.state.doc.childCount) {
         return fail(t('aiSumEditChart'), 'blockIndex invalid or out of range')
       }
