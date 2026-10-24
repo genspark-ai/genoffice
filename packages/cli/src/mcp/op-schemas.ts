@@ -108,7 +108,8 @@ export function shortDescription(text: string | undefined): string | undefined {
   const line = text.replace(/\s+/g, ' ').trim()
   if (!line) return undefined
   if (line.length <= DESCRIPTION_CHARS) return line
-  const cut = line.slice(0, DESCRIPTION_CHARS - 1)
+  const budget = Math.max(1, DESCRIPTION_CHARS)
+  const cut = line.slice(0, budget - 1)
   const space = cut.lastIndexOf(' ')
   return `${space > DESCRIPTION_CHARS / 2 ? cut.slice(0, space) : cut}…`
 }
