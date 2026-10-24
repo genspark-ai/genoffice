@@ -1473,6 +1473,11 @@ export const id = {
   appNotePicturesNone: 'Tidak ada catatan di buku kerja ini yang menampilkan gambar.',
   appNotePictureUnavailable: 'Gambar ini tidak dapat ditampilkan.',
   appNotePicturesToggle: 'Gambar catatan',
+  appNoteInsertPicture: 'Sisipkan gambar',
+  appNotePictureInserted:
+    'Gambar ditambahkan ke catatan di {cell}. Simpan untuk menulisnya ke file.',
+  appNotePictureRemoved: 'Gambar dihapus dari catatan di {cell}.',
+  appNotePictureRemove: 'Hapus gambar',
   appCommentsPaneTitle: 'Komentar',
   appThreadReply: 'Balas',
   appThreadReplyPlaceholder: 'Balas…',

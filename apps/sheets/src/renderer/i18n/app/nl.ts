@@ -1510,6 +1510,11 @@ export const nl = {
   appNotePicturesNone: 'Geen enkele notitie in deze werkmap toont een afbeelding.',
   appNotePictureUnavailable: 'Deze afbeelding kan niet worden getoond.',
   appNotePicturesToggle: 'Afbeeldingen bij notities',
+  appNoteInsertPicture: 'Afbeelding invoegen',
+  appNotePictureInserted:
+    'Afbeelding toegevoegd aan de notitie in {cell}. Opslaan om die naar het bestand te schrijven.',
+  appNotePictureRemoved: 'Afbeelding verwijderd uit de notitie in {cell}.',
+  appNotePictureRemove: 'Afbeelding verwijderen',
   appCommentsPaneTitle: 'Opmerkingen',
   appThreadReply: 'Beantwoorden',
   appThreadReplyPlaceholder: 'Beantwoorden…',

@@ -1522,6 +1522,11 @@ export const ja = {
   appNotePicturesNone: 'このブックに画像を表示しているメモはありません。',
   appNotePictureUnavailable: 'この画像は表示できません。',
   appNotePicturesToggle: 'メモの画像',
+  appNoteInsertPicture: '画像を挿入',
+  appNotePictureInserted:
+    '{cell} のコメントに画像を追加しました。保存するとファイルに書き込まれます。',
+  appNotePictureRemoved: '{cell} のコメントから画像を取り除きました。',
+  appNotePictureRemove: '画像を削除',
   appCommentsPaneTitle: 'コメント',
   appThreadReply: '返信',
   appThreadReplyPlaceholder: '返信…',

@@ -1490,6 +1490,11 @@ export const ru = {
   appNotePicturesNone: 'Ни одна заметка в этой книге не содержит изображения.',
   appNotePictureUnavailable: 'Это изображение не может быть показано.',
   appNotePicturesToggle: 'Изображения заметок',
+  appNoteInsertPicture: 'Вставить изображение',
+  appNotePictureInserted:
+    'Изображение добавлено в примечание в {cell}. Сохраните, чтобы записать его в файл.',
+  appNotePictureRemoved: 'Изображение удалено из примечания в {cell}.',
+  appNotePictureRemove: 'Убрать изображение',
   appCommentsPaneTitle: 'Примечания',
   appThreadReply: 'Ответить',
   appThreadReplyPlaceholder: 'Ответить…',
