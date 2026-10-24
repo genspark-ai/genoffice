@@ -1228,6 +1228,8 @@ export const he = {
   appOpenFileFirst: 'פתח קובץ תחילה',
   appNoPassword: 'ללא סיסמה',
   appProtectWorkbook: 'הגן על חוברת עבודה',
+  appChangePassword: 'שינוי סיסמה',
+  appWorkbookPasswordChanged: 'סיסמת חוברת העבודה עודכנה.',
   appAllowEditRanges: 'אפשר עריכת טווחים',
   appGroupClipboard: 'לוח',
   appPaste: 'הדבק',

@@ -33,6 +33,14 @@ export {
 } from './app-menu'
 export { GITHUB_REPO_URL } from './github-menu'
 export {
+  decryptOoxml,
+  encryptOoxml,
+  isCfbFile,
+  isEncryptedOoxml,
+  OoxmlDecryptError,
+  type OoxmlDecryptFailReason,
+} from './ooxml-encryption'
+export {
   AUTHOR_NAME_KEY,
   AUTHOR_NAME_MAX,
   configuredAuthorName,
@@ -115,7 +123,7 @@ export {
   type RendererHost,
 } from './renderer-scheme'
 export { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
-export { atomicWriteFile, writeJsonAtomic } from './atomic-write'
+export { atomicCopyFile, atomicWriteFile, writeJsonAtomic } from './atomic-write'
 export {
   PRINT_READY_SCRIPT,
   printHtmlDocument,

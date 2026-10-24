@@ -33,6 +33,7 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
+    "officecrypto-tool": "^0.0.19",
     "parse5": "^8.0.1",
     "undici": "^6.29.0"
   }

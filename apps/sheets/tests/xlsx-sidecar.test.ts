@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import { z } from 'zod'
 
+import { decryptOoxml, encryptOoxml, isEncryptedOoxml } from '@genoffice/electron-utils'
 import { blankXlsxBuffer } from '@genoffice/xlsx-gateway/gateway/csv-import'
 import { saveWorkbookViaSidecar } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
@@ -64,6 +65,59 @@ describe('XLSX Rust sidecar', () => {
         { row: 0, column: 0, value: 'Old', styleIndex: 0 },
         { row: 0, column: 1, value: 10, styleIndex: 0 },
       ])
+    } finally {
+      if (sessionId) await client.close(sessionId)
+      client.stop()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects encrypted OOXML and preserves workbook data through host-side password rotation', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-password-rotation-test-'))
+    const firstEncryptedPath = join(directory, 'first-password.xlsx')
+    const decryptedSnapshotPath = join(directory, 'decrypted-snapshot.xlsx')
+    const updatedEncryptedPath = join(directory, 'updated-password.xlsx')
+    const plainBytes = Buffer.from(await buildCompatibilityFixture())
+    const encryptedBytes = encryptOoxml(plainBytes, 'first-password')
+    expect(isEncryptedOoxml(encryptedBytes)).toBe(true)
+    await writeFile(firstEncryptedPath, encryptedBytes)
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    let sessionId: string | null = null
+    try {
+      await expect(client.open(firstEncryptedPath)).rejects.toThrow(/password-protected/)
+      const decryptedBytes = await decryptOoxml(encryptedBytes, 'first-password')
+      expect(isEncryptedOoxml(decryptedBytes)).toBe(false)
+      await expect(decryptOoxml(encryptedBytes, 'incorrect-password')).rejects.toThrow(
+        /password is incorrect/i,
+      )
+
+      await writeFile(decryptedSnapshotPath, decryptedBytes)
+      const opened = openResultSchema.parse(await client.open(decryptedSnapshotPath))
+      sessionId = opened.sessionId
+      const result = workbookRangeResultSchema.parse(
+        await client.readRange({
+          sessionId,
+          sheetId: 'sheet-1',
+          range: {
+            startRow: 0,
+            endRow: 0,
+            startColumn: 0,
+            endColumn: 1,
+          },
+        }),
+      )
+      expect(result.cells).toEqual([
+        { row: 0, column: 0, value: 'Old', styleIndex: 0 },
+        { row: 0, column: 1, value: 10, styleIndex: 0 },
+      ])
+
+      const updatedEncryptedBytes = encryptOoxml(decryptedBytes, 'updated-password')
+      await writeFile(updatedEncryptedPath, updatedEncryptedBytes)
+      const reopenedBytes = await readFile(updatedEncryptedPath)
+      await expect(decryptOoxml(reopenedBytes, 'first-password')).rejects.toThrow(
+        /password is incorrect/i,
+      )
+      expect(await decryptOoxml(reopenedBytes, 'updated-password')).toEqual(decryptedBytes)
     } finally {
       if (sessionId) await client.close(sessionId)
       client.stop()

@@ -1335,6 +1335,8 @@ export const ja = {
   appOpenFileFirst: '先にファイルを開いてください',
   appNoPassword: 'パスワードなし',
   appProtectWorkbook: 'ブックの保護',
+  appChangePassword: 'パスワードの変更',
+  appWorkbookPasswordChanged: 'ブックのパスワードを更新しました。',
   appAllowEditRanges: '範囲の編集を許可',
   // Home tab
   appGroupClipboard: 'クリップボード',

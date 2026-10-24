@@ -1312,6 +1312,8 @@ export const pl = {
   appOpenFileFirst: 'Najpierw otwórz plik',
   appNoPassword: 'Bez hasła',
   appProtectWorkbook: 'Chroń skoroszyt',
+  appChangePassword: 'Zmień hasło',
+  appWorkbookPasswordChanged: 'Hasło skoroszytu zostało zaktualizowane.',
   appAllowEditRanges: 'Zezwalaj na edytowanie zakresów',
   appGroupClipboard: 'Schowek',
   appPaste: 'Wklej',

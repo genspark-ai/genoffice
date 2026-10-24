@@ -1284,6 +1284,8 @@ export const hi = {
   appOpenFileFirst: 'पहले एक फ़ाइल खोलें',
   appNoPassword: 'कोई पासवर्ड नहीं',
   appProtectWorkbook: 'कार्यपुस्तिका सुरक्षित करें',
+  appChangePassword: 'पासवर्ड बदलें',
+  appWorkbookPasswordChanged: 'कार्यपुस्तिका का पासवर्ड अपडेट किया गया।',
   appAllowEditRanges: 'श्रेणियाँ संपादित करने दें',
   appGroupClipboard: 'क्लिपबोर्ड',
   appPaste: 'चिपकाएँ',

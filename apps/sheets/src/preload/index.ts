@@ -108,7 +108,56 @@ const desktopApi: DesktopApi = {
   },
   async selectWorkbook() {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.selectWorkbook)
+    if (result === null) return null
+    if (
+      typeof result === 'object' &&
+      result !== null &&
+      (result as { passwordRequired?: unknown }).passwordRequired === true &&
+      typeof (result as { path?: unknown }).path === 'string'
+    ) {
+      return { passwordRequired: true, path: (result as { path: string }).path }
+    }
+    return parseWorkbookFile(result)
+  },
+  async openEncryptedWorkbook(path, password) {
+    if (
+      typeof path !== 'string' ||
+      path.length === 0 ||
+      typeof password !== 'string' ||
+      password.length === 0
+    ) {
+      throw new Error('Invalid encrypted workbook request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.openEncryptedWorkbook, {
+      path,
+      password,
+    })
     return result === null ? null : parseWorkbookFile(result)
+  },
+  async updateWorkbookPassword(sessionId, newPassword) {
+    if (!isUuid(sessionId) || typeof newPassword !== 'string' || newPassword.length === 0) {
+      throw new Error('Invalid workbook password update request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.updateWorkbookPassword, {
+      sessionId,
+      newPassword,
+    })
+    if (
+      !isRecord(result) ||
+      typeof result.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/i.test(result.sha256) ||
+      typeof result.fileBytes !== 'number' ||
+      !Number.isSafeInteger(result.fileBytes) ||
+      result.fileBytes < 0 ||
+      result.passwordProtected !== true
+    ) {
+      throw new Error('Invalid workbook password update response.')
+    }
+    return {
+      sha256: result.sha256,
+      fileBytes: result.fileBytes,
+      passwordProtected: true as const,
+    }
   },
   async selectWorkbooksForMerge() {
     const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.selectWorkbooksForMerge)

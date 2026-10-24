@@ -1286,6 +1286,8 @@ export const cs = {
   appOpenFileFirst: 'Nejprve otevřete soubor',
   appNoPassword: 'Bez hesla',
   appProtectWorkbook: 'Zamknout sešit',
+  appChangePassword: 'Změnit heslo',
+  appWorkbookPasswordChanged: 'Heslo sešitu bylo aktualizováno.',
   appAllowEditRanges: 'Povolit úpravy oblastí',
   appGroupClipboard: 'Schránka',
   appPaste: 'Vložit',

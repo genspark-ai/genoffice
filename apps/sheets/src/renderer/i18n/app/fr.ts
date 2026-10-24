@@ -1350,6 +1350,8 @@ export const fr = {
   appOpenFileFirst: "Ouvrez d'abord un fichier",
   appNoPassword: 'Sans mot de passe',
   appProtectWorkbook: 'Protéger le classeur',
+  appChangePassword: 'Modifier le mot de passe',
+  appWorkbookPasswordChanged: 'Le mot de passe du classeur a été mis à jour.',
   appAllowEditRanges: 'Permettre la modification des plages',
   appGroupClipboard: 'Presse-papiers',
   appPaste: 'Coller',

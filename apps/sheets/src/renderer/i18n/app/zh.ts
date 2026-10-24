@@ -1224,6 +1224,8 @@ export const zh = {
   appOpenFileFirst: '请先打开文件',
   appNoPassword: '无密码',
   appProtectWorkbook: '保护工作簿',
+  appChangePassword: '更改密码',
+  appWorkbookPasswordChanged: '工作簿密码已更新。',
   appAllowEditRanges: '允许编辑区域',
   // Home tab
   appGroupClipboard: '剪贴板',

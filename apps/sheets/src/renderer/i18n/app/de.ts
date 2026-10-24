@@ -1338,6 +1338,8 @@ export const de = {
   appOpenFileFirst: 'Öffnen Sie zuerst eine Datei',
   appNoPassword: 'Kein Kennwort',
   appProtectWorkbook: 'Arbeitsmappe schützen',
+  appChangePassword: 'Kennwort ändern',
+  appWorkbookPasswordChanged: 'Das Arbeitsmappenkennwort wurde aktualisiert.',
   appAllowEditRanges: 'Bereiche zur Bearbeitung freigeben',
   appGroupClipboard: 'Zwischenablage',
   appPaste: 'Einfügen',

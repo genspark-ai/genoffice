@@ -1285,6 +1285,8 @@ export const id = {
   appOpenFileFirst: 'Buka file dahulu',
   appNoPassword: 'Tanpa kata sandi',
   appProtectWorkbook: 'Proteksi Buku Kerja',
+  appChangePassword: 'Ubah Kata Sandi',
+  appWorkbookPasswordChanged: 'Kata sandi buku kerja diperbarui.',
   appAllowEditRanges: 'Izinkan Edit Rentang',
   appGroupClipboard: 'Papan Klip',
   appPaste: 'Tempel',

@@ -1250,6 +1250,8 @@ export const ar = {
   appOpenFileFirst: 'افتح ملفًا أولاً',
   appNoPassword: 'بدون كلمة مرور',
   appProtectWorkbook: 'حماية المصنف',
+  appChangePassword: 'تغيير كلمة المرور',
+  appWorkbookPasswordChanged: 'تم تحديث كلمة مرور المصنف.',
   appAllowEditRanges: 'السماح بتحرير النطاقات',
   appGroupClipboard: 'الحافظة',
   appPaste: 'لصق',

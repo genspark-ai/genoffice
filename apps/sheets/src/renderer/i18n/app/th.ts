@@ -1250,6 +1250,8 @@ export const th = {
   appOpenFileFirst: 'เปิดไฟล์ก่อน',
   appNoPassword: 'ไม่มีรหัสผ่าน',
   appProtectWorkbook: 'ป้องกันเวิร์กบุ๊ก',
+  appChangePassword: 'เปลี่ยนรหัสผ่าน',
+  appWorkbookPasswordChanged: 'อัปเดตรหัสผ่านเวิร์กบุ๊กแล้ว',
   appAllowEditRanges: 'อนุญาตให้แก้ไขช่วง',
   appGroupClipboard: 'คลิปบอร์ด',
   appPaste: 'วาง',

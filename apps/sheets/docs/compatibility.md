@@ -39,6 +39,11 @@ Any save operation that cannot preserve these parts must fail closed. It must no
 
 The current PoC intentionally supports a narrower write set:
 
+- Password-encrypted `.xlsx` files using Agile or AES Standard encryption: enter
+  the file-open password to open them. Sheets decrypts the package in the
+  Electron main process for the session and encrypts it with the same password
+  when saving, including crash-recovery copies. The Review tab can change the
+  file-open password; worksheet-protection passwords remain separate.
 - Edit, clear, or add cell values and formulas in streamed external workbooks, saved back (or Save As) with a whole-file SHA-256 drift check; only the edited worksheet entries, `xl/styles.xml` (when styles changed), and `xl/workbook.xml` (forced recalculation flag) are rewritten, every other ZIP entry is verified byte-identical or the save fails closed. Cell style indices survive edits; shared-string cells are rewritten as inline strings; new rows and cells are inserted in schema order.
 - Ribbon style edits (bold/italic/underline/strikethrough, font family/size, arbitrary font/fill colors with a full picker, fill clearing, per-edge borders with 13 line styles and a border color, alignment, wrap, number formats) on streamed workbooks, written copy-on-write into `styles.xml`: new deduped cellXfs/fonts/fills/borders derived from each cell's original format (untouched border edges and diagonal attributes survive verbatim), built-in number-format ids mapped, custom ids allocated from 164. Style-only edits leave cell content byte-identical. Pattern-fill editing is deliberately out of scope (no editor model for it).
 - Rename a worksheet (demo workbook DSL flow).

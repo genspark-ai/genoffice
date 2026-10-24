@@ -1325,6 +1325,8 @@ export const pt = {
   appOpenFileFirst: 'Abra um arquivo primeiro',
   appNoPassword: 'Sem senha',
   appProtectWorkbook: 'Proteger Pasta de Trabalho',
+  appChangePassword: 'Alterar Senha',
+  appWorkbookPasswordChanged: 'A senha da pasta de trabalho foi atualizada.',
   appAllowEditRanges: 'Permitir Edição de Intervalos',
   appGroupClipboard: 'Área de Transferência',
   appPaste: 'Colar',

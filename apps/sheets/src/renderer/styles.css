@@ -3452,6 +3452,60 @@ textarea:focus {
   box-shadow: var(--shadow-modal);
 }
 
+.encrypted-workbook-password-dialog {
+  width: min(420px, calc(100vw - 32px));
+  min-width: 0;
+  gap: 14px;
+  padding: 18px;
+}
+
+.format-cells-dialog.encrypted-workbook-password-dialog header {
+  font-size: 15px;
+}
+
+.encrypted-workbook-password-dialog .dialog-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.encrypted-workbook-password-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.encrypted-workbook-password-dialog label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.encrypted-workbook-password-dialog input[type='password'] {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  color: var(--text);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.encrypted-workbook-password-dialog input[type='password']:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--sheets-focus-ring);
+}
+
+.encrypted-workbook-password-dialog .dialog-error {
+  margin: 0;
+}
+
 .format-cells-dialog header {
   font-size: 14px;
   font-weight: 600;

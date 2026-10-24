@@ -1308,6 +1308,8 @@ export const ko = {
   appOpenFileFirst: '먼저 파일을 여십시오',
   appNoPassword: '암호 없음',
   appProtectWorkbook: '통합 문서 보호',
+  appChangePassword: '암호 변경',
+  appWorkbookPasswordChanged: '통합 문서 암호를 업데이트했습니다.',
   appAllowEditRanges: '범위 편집 허용',
   // Home tab
   appGroupClipboard: '클립보드',

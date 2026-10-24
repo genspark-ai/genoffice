@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Seek, Write};
+#[cfg(unix)]
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -130,7 +132,10 @@ struct CacheDirectory {
 
 impl CacheDirectory {
     fn create(path: PathBuf) -> Result<Self, SidecarError> {
-        fs::create_dir(&path)?;
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        builder.mode(0o700);
+        builder.create(&path)?;
         Ok(Self {
             path,
             committed: false,
@@ -258,12 +263,11 @@ impl WorkbookSessions {
         let mut file = File::open(&canonical_path)?;
         if is_ole2_container(&mut file)? {
             return Err(SidecarError::Workbook(
-                "This workbook is password-protected. GenOffice Sheets cannot open \
-                 encrypted workbooks yet."
-                    .into(),
+                "This workbook is password-protected and must be decrypted by the host application.".into(),
             ));
         }
         let mut archive = ZipArchive::new(file)?;
+        let workbook_path = canonical_path.clone();
         archive::validate_entries(&mut archive)?;
         // The archive is open and validated and nothing has been written to
         // disk yet, so abandoning here costs only the parse already done.
@@ -494,7 +498,7 @@ impl WorkbookSessions {
         self.sessions.insert(
             session_id.clone(),
             WorkbookSession {
-                path: canonical_path,
+                path: workbook_path,
                 sheets: sheets.clone(),
                 runtimes,
                 shared_strings,
@@ -955,9 +959,12 @@ impl WorkbookSession {
                 let _ = handle.join();
             }
         }
-        if self.cache_directory.exists() {
-            fs::remove_dir_all(&self.cache_directory)?;
-        }
+        let cache_result = if self.cache_directory.exists() {
+            fs::remove_dir_all(&self.cache_directory)
+        } else {
+            Ok(())
+        };
+        cache_result?;
         Ok(())
     }
 }

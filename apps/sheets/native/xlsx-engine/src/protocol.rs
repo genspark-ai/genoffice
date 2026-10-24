@@ -517,12 +517,7 @@ pub fn handle_request(
             // longer can.
             let in_flight_cancelled = in_flight.flag();
             sessions
-                .open_with_locale(
-                    &path,
-                    &locale,
-                    short_date_format.as_deref(),
-                    &in_flight_cancelled,
-                )
+                .open_with_locale(&path, &locale, short_date_format.as_deref(), &in_flight_cancelled)
                 .and_then(to_json_value)
         }
         Command::ReadRange {
