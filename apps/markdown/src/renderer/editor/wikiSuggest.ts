@@ -2,7 +2,9 @@
  * The `[[` suggester. Typing the opening brackets offers the vault's notes
  * (the same breadth-first listing the resolver matches against), arrow keys
  * and Enter complete the link in place, `![[` completes the same list for an
- * embed. Completion inserts REAL wiki syntax — a marked run for links, an
+ * embed. A query nothing matches still offers to create that note, and the
+ * completion then carries the created file's stem — the spelling that
+ * resolves. Completion inserts REAL wiki syntax — a marked run for links, an
  * embed node for `![[` — because live typing does not re-run the markdown
  * tokenizers: plain text would stay plain text until the next reparse.
  */
@@ -11,7 +13,7 @@ import { PluginKey } from '@tiptap/pm/state'
 import { Suggestion } from '@tiptap/suggestion'
 import type { SuggestionProps } from '@tiptap/suggestion'
 import type { Editor, Range } from '@tiptap/core'
-import type { WikiNoteEntry } from '../../shared/ipc'
+import type { WikiCreateNoteResult, WikiNoteEntry } from '../../shared/ipc'
 
 /** the query part after `[[` up to an alias `|` or a fragment `#` */
 function queryNamePart(query: string): string {
@@ -19,6 +21,50 @@ function queryNamePart(query: string): string {
     ...[query.indexOf('|'), query.indexOf('#')].map((at) => (at < 0 ? query.length : at)),
   )
   return query.slice(0, cut)
+}
+
+/** what a created note would be named: the query's file part, trimmed */
+function createNameOf(props: SuggestionProps<WikiNoteEntry>): string {
+  return queryNamePart(props.query).trim()
+}
+
+/** the character just before `range`: the bang that makes a completion an embed */
+function embedPrefixBefore(editor: Editor, range: Range): string {
+  return editor.state.doc.textBetween(Math.max(0, range.from - 1), range.from, undefined, '\ufffc')
+}
+
+/** the file name without its directory or extension: `/vault/Folder/Note.md` -> `Note` */
+function stemOf(path: string): string {
+  const file = path.split(/[\\/]/).pop() ?? ''
+  const dot = file.lastIndexOf('.')
+  return dot > 0 ? file.slice(0, dot) : file
+}
+
+/**
+ * Create the note the query names, then finish the link in place with the
+ * created file's stem — the spelling that resolves, even where a sanitized
+ * character changed the name. The vault listing is dropped so the next
+ * keystroke offers the new note like any other.
+ */
+async function createNoteAndComplete(
+  props: SuggestionProps<WikiNoteEntry>,
+  embed: boolean,
+): Promise<void> {
+  // the browser test harness has no Electron channel: nothing to create with
+  if (typeof window.markdownApi?.createWikiNote !== 'function') return
+  const name = createNameOf(props)
+  if (!name) return
+  let result: WikiCreateNoteResult
+  try {
+    result = await window.markdownApi.createWikiNote({ target: name })
+  } catch {
+    return // an unavailable creator must not break typing
+  }
+  if (!result.ok || props.editor.isDestroyed) return
+  invalidateWikiNotes()
+  const open = embed ? '![[' : '[['
+  const text = `${open}${stemOf(result.path)}${querySuffixPart(props.query)}]]`
+  insertCompletion(props.editor, props.range, text, embed)
 }
 
 /** what the completion keeps of the query after the name: `|alias`, `#frag` */
@@ -81,6 +127,10 @@ export interface WikiSuggestState {
   items: WikiNoteEntry[]
   clientRect: DOMRect | null
   command: (item: WikiNoteEntry) => void
+  /** the query's file part, '' when there is nothing a new note could be named */
+  createName: string
+  /** create the note `createName` names and complete the link in place */
+  create: () => void
 }
 
 /** App-side sink for the suggestion lifecycle; the React menu renders from it */
@@ -121,6 +171,13 @@ export function refreshWikiNotes(): void {
     })
 }
 
+/** Forget the cached listing: a note just created must join the next suggestion */
+export function invalidateWikiNotes(): void {
+  cache.clear()
+  cacheAt = 0
+  refreshWikiNotes()
+}
+
 export function wikiSuggestItems(query: string): WikiNoteEntry[] {
   return filterWikiNotes([...cache.values()], query)
 }
@@ -144,11 +201,18 @@ export const WikiSuggest = Extension.create<WikiSuggestOptions>({
     const getController = () => this.options.controller
     // the key-down props carry no items; the render callbacks last saw them
     let visibleItems: WikiNoteEntry[] = []
-    const toState = (props: SuggestionProps<WikiNoteEntry>): WikiSuggestState => ({
-      items: props.items,
-      clientRect: props.clientRect?.() ?? null,
-      command: (item) => props.command(item),
-    })
+    /** whether the last render offered a create row; a key-down has no query either */
+    let visibleCreateName = ''
+    const toState = (props: SuggestionProps<WikiNoteEntry>): WikiSuggestState => {
+      const embed = embedPrefixBefore(props.editor, props.range) === '!'
+      return {
+        items: props.items,
+        clientRect: props.clientRect?.() ?? null,
+        command: (item) => props.command(item),
+        createName: createNameOf(props),
+        create: () => void createNoteAndComplete(props, embed),
+      }
+    }
     return [
       Suggestion<WikiNoteEntry>({
         editor: this.editor,
@@ -172,31 +236,30 @@ export const WikiSuggest = Extension.create<WikiSuggestOptions>({
           return wikiSuggestItems(query)
         },
         command: ({ editor, range, props: item }) => {
-          const before = editor.state.doc.textBetween(
-            Math.max(0, range.from - 1),
-            range.from,
-            undefined,
-            '\ufffc',
-          )
-          const embed = before === '!'
+          const embed = embedPrefixBefore(editor, range) === '!'
           const query = editor.state.doc.textBetween(range.from, range.to, undefined, '\ufffc')
           insertCompletion(editor, range, completionFor(item, query, embed), embed)
         },
         render: () => ({
           onStart: (props) => {
             visibleItems = props.items
+            visibleCreateName = createNameOf(props)
             getController()?.onOpen(toState(props))
           },
           onUpdate: (props) => {
             visibleItems = props.items
+            visibleCreateName = createNameOf(props)
             getController()?.onUpdate(toState(props))
           },
           onKeyDown: (props) => {
-            if (visibleItems.length === 0) return false
+            // the create row is pickable with nothing matched, so its keys
+            // must not fall through to the document either
+            if (visibleItems.length === 0 && !visibleCreateName) return false
             return getController()?.onKeyDown(props.event) ?? false
           },
           onExit: () => {
             visibleItems = []
+            visibleCreateName = ''
             getController()?.onClose()
           },
         }),

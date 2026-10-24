@@ -36,7 +36,7 @@ function open(
   source: string,
   wiki: {
     onOpen?: (path: string, fragment: string) => void
-    onUnresolved?: (target: string) => void
+    onUnresolved?: (target: string, embed: boolean) => void
     answers?: Record<string, WikiLinkResolved>
     documentPath?: string
     resolve?: (from: string, targets: string[]) => Promise<Record<string, WikiLinkResolved>>
@@ -334,7 +334,18 @@ describe('resolution', () => {
     await settled()
     expect(clickWikiLink(editor, '[[Nowhere]]')).toBe(true)
     expect(onOpen).not.toHaveBeenCalled()
-    expect(onUnresolved).toHaveBeenCalledWith('[[Nowhere]]')
+    expect(onUnresolved).toHaveBeenCalledWith('[[Nowhere]]', false)
+  })
+
+  it('clicking an unresolved embed reports it flagged as an embed', async () => {
+    const onOpen = vi.fn()
+    const onUnresolved = vi.fn()
+    const { editor } = open('![[Nowhere]]', { onOpen, onUnresolved, answers: ANSWERS })
+    await settled()
+    // an embed opens on a plain click, no modifier needed
+    expect(clickWikiLink(editor, 'Nowhere')).toBe(true)
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(onUnresolved).toHaveBeenCalledWith('Nowhere', true)
   })
 
   it('the resolution never becomes document state', async () => {

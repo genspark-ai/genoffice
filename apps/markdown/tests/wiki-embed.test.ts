@@ -188,7 +188,8 @@ describe('resolution', () => {
       return handled
     })
     expect(handled).toBe(true)
-    expect(onUnresolved).toHaveBeenCalledWith('Nowhere')
+    // an embed reports flagged, so a caller can decline to create from it
+    expect(onUnresolved).toHaveBeenCalledWith('Nowhere', true)
   })
 
   it('a resolved picture renders an image widget beside the hidden literal', async () => {
