@@ -1695,6 +1695,16 @@ button {
   white-space: nowrap;
 }
 
+/* Option toggles (Aa / W): same word-style active plate as the selection markup bar */
+.pdf-search-bar .pdf-search-opt {
+  font-size: 12px;
+}
+
+.pdf-search-bar .pdf-search-opt.is-active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .pdf-search-layer {
   position: absolute;
   inset: 0;

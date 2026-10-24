@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { foldCase } from '@genoffice/ui'
+import { foldCase, isWordChar } from '@genoffice/ui'
 
 /** One hit: original page + PDF user-space rects (multiple when spanning several text items) */
 export interface SearchMatch {
@@ -30,6 +30,33 @@ export interface PageEntry {
 export type SearchIndex = PageEntry[]
 
 const MAX_MATCHES = 1000
+
+/** Match modifiers for `searchInIndex`; both default off (plain case-insensitive scan) */
+export interface SearchOptions {
+  /** Case-sensitive matching — compare characters without folding case */
+  matchCase?: boolean
+  /** Whole-word matching — the hit must not continue a longer word on either side */
+  wholeWord?: boolean
+}
+
+/** CJK scripts (kana, hangul, ideographs, and the punctuation/fullwidth blocks
+    that travel with them): text written with these has no inter-word spaces */
+const CJK_RE =
+  /[\u1100-\u11FF\u2E80-\u318F\u31A0-\u31BF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7AF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF\u{20000}-\u{2FA1F}]/u
+
+/** Whole-word boundary check for the hit at [start, start + len) of `text`.
+    CJK characters never count as word characters here: CJK scripts do not
+    separate words with spaces, so there is no word boundary to assert inside
+    CJK runs — a CJK neighbour acts like a delimiter and a CJK match edge
+    imposes no boundary at all. That degrades whole-word matching to a plain
+    search for CJK sequences (and for the CJK side of mixed text) while Latin
+    runs glued into a longer word are still rejected. */
+function wordBoundaryOk(text: string, start: number, len: number): boolean {
+  const wordChar = (ch: string | undefined): boolean => !!ch && !CJK_RE.test(ch) && isWordChar(ch)
+  const left = !wordChar(text[start - 1]) || !wordChar(text[start])
+  const right = !wordChar(text[start + len]) || !wordChar(text[start + len - 1])
+  return left && right
+}
 
 interface RawTextItem {
   str?: string
@@ -103,17 +130,31 @@ export function createSearchIndexCache(): SearchIndexCache {
   }
 }
 
-/** Case-insensitive full-text search; rects linearly interpolated within items by char ratio (approximate; bounding box for rotated glyphs) */
-export function searchInIndex(index: SearchIndex, query: string): SearchMatch[] {
-  const q = foldCase(query)
+/** Full-text search with optional case/word modifiers; rects linearly interpolated within items by char ratio (approximate; bounding box for rotated glyphs) */
+export function searchInIndex(
+  index: SearchIndex,
+  query: string,
+  opts: SearchOptions = {},
+): SearchMatch[] {
+  const matchCase = opts.matchCase ?? false
+  const wholeWord = opts.wholeWord ?? false
+  const q = matchCase ? query : foldCase(query)
   if (!q) return []
   const matches: SearchMatch[] = []
   for (let pageIndex = 0; pageIndex < index.length; pageIndex++) {
-    const { lower, items } = index[pageIndex]!
+    const { text, lower, items } = index[pageIndex]!
+    // The sensitive path reads the original text; the insensitive path reuses
+    // the precomputed fold so a search never re-folds the whole page. foldCase
+    // is length-preserving, so hit offsets are valid in `text` either way.
+    const hay = matchCase ? text : lower
     let from = 0
     while (matches.length < MAX_MATCHES) {
-      const s = lower.indexOf(q, from)
+      const s = hay.indexOf(q, from)
       if (s < 0) break
+      if (wholeWord && !wordBoundaryOk(text, s, q.length)) {
+        from = s + 1
+        continue
+      }
       const e = s + q.length
       from = e
       const rects: [number, number, number, number][] = []
