@@ -203,8 +203,10 @@ export function LayoutTab({
   const isFloatingBox =
     Array.isArray(protAttrs?.textboxes) && (protAttrs.textboxes as unknown[]).length > 0
   const canWrap = hasDoc && (isImage || isFloatingBox)
-  // position presets go through imagePatchOf (original-document images only); newly inserted objects work after saving
-  const canPosition = hasDoc && isImage && protAttrs?.docxIndex != null
+  // position presets write imagePosH/imagePosV (and clear the drag offsets):
+  // original images patch through imagePatchOf, newly inserted ones save the
+  // same margin-relative align pair via NewImage.posH/posV
+  const canPosition = hasDoc && isImage
   const boxes = protAttrs?.textboxes as TextboxDisplay[] | undefined
   const currentWrap = boxes?.length
     ? shapeWrapOf(boxes[0])
