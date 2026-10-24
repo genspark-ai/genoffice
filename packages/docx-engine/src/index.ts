@@ -9,14 +9,6 @@ export {
   sfntLineMetrics,
 } from './font-table'
 export { decodeEntities } from './parse-xml-text'
-export {
-  resolveCtxOf,
-  resolveParagraphPropsXml,
-  resolveRunProps,
-  type EffectivePPr,
-  type EffectiveRPr,
-  type ResolveCtx,
-} from './resolve-props'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export {
   buildContentControlXml,
@@ -261,6 +253,20 @@ export {
   type RevisionXmlResult,
   type RevisionXmlType,
 } from './revision-xml'
+export {
+  resolveParagraphProps,
+  resolveCtxOf,
+  resolveParagraphPropsXml,
+  resolveRunProps,
+  shadowCompare,
+  type EffectivePPr,
+  type EffectiveRPr,
+  type PropSource,
+  type ResolveCompat,
+  type ResolveCtx,
+  type ResolveDiff,
+  type TableCond,
+} from './resolve-props'
 export {
   compareBlocks,
   compareDocuments,

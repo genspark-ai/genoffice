@@ -50,7 +50,11 @@ import {
   openAdvancedFilterDialog,
   type DataToolsContext,
 } from './data-tools-actions'
-import { handleTableDesignCommand, type TableDesignContext } from './table-design-actions'
+import {
+  handleTableDesignCommand,
+  selectedTableEcho,
+  type TableDesignContext,
+} from './table-design-actions'
 import { outlineSummarySettings, setOutlineSummary } from './outline-actions'
 import { handleVisualCommand, type VisualArrangeContext } from './visual-arrange-actions'
 import { dedupeRows } from './dedupe'
@@ -1214,7 +1218,13 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
       break
   }
   if (command.startsWith('format-as-table:')) {
-    handleFormatAsTable(ctx.dataToolsContext(), command.slice('format-as-table:'.length))
+    const style = command.slice('format-as-table:'.length)
+    const tableContext = ctx.tableDesignContext()
+    if (selectedTableEcho(tableContext)) {
+      handleTableDesignCommand(tableContext, `table-style:${style}`)
+    } else {
+      handleFormatAsTable(ctx.dataToolsContext(), style)
+    }
     return
   }
   if (command.startsWith('use-in-formula:')) {
