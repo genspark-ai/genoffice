@@ -5,7 +5,14 @@
 /// survive a rewrite untouched.
 
 import { encodeXlsxEscapes } from './xlsx-escapes'
-import { resolveRelTarget } from './xlsx-drawing-add'
+import {
+  allocatePartPath,
+  appendRelationship,
+  registerContentTypeDefault,
+  relativeTarget,
+  relsPathFor,
+  resolveRelTarget,
+} from './xlsx-drawing-add'
 import { ensureRelationshipNamespace } from './xlsx-namespace'
 import { nextFreeRelationshipId } from './xlsx-sheets'
 import {
@@ -20,6 +27,27 @@ export type { SheetThread, SheetThreadReply } from './xlsx-threaded-comments'
 
 export class NoteEditError extends Error {}
 
+/**
+ * A picture painted onto a note.
+ *
+ * Excel shows a picture in a note by painting it onto the note's shape as a
+ * picture fill, so the bytes live in `xl/media` and the note's shape reaches
+ * them through the VML part's own relationships.
+ */
+export interface NotePicture {
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+  readonly base64: string
+  /**
+   * The picture's pixel size. The shape is given the picture's own
+   * proportions: a fill is stretched to the shape's frame, so a shape the size
+   * of the text box would squash the photograph into it.
+   */
+  readonly widthPx: number
+  readonly heightPx: number
+  /// The file name, carried into the picture's title.
+  readonly name?: string | undefined
+}
+
 export interface SheetNote {
   readonly row: number
   readonly column: number
@@ -28,6 +56,13 @@ export interface SheetNote {
   /// Threaded comment metadata (text is the root text); `null` turns a
   /// threaded cell back into a plain note.
   readonly thread?: SheetThread | null | undefined
+  /**
+   * The picture this note shows.
+   *
+   * `undefined` says nothing about the picture: whatever the note was already
+   * carrying is kept. `null` takes the picture away.
+   */
+  readonly picture?: NotePicture | null | undefined
 }
 
 interface MutableNotePackage {
@@ -36,6 +71,7 @@ interface MutableNotePackage {
   readText(path: string): Promise<string>
   write(path: string, content: string): void
   add(path: string, content: string): void
+  addBinary(path: string, bytes: Uint8Array): void
   remove(path: string): void
 }
 
@@ -140,6 +176,16 @@ function nextShapeId(vmlXml: string): number {
   return next
 }
 
+/// A note's picture, as the shape paints it: the fill element that reaches
+/// the media, and the size the shape has to be given for the picture to keep
+/// its proportions. The two travel together — a fill without the size would
+/// stretch the photograph into the text box's frame.
+interface NoteShapePicture {
+  readonly fill: string
+  readonly width?: string | undefined
+  readonly height?: string | undefined
+}
+
 /// Excel puts a picture into a note by painting that note's shape with a
 /// picture fill — a `<v:fill type="frame">` element carrying the image
 /// relationship on `o:relid` (`r:id` on some producers) — resolved through
@@ -150,8 +196,8 @@ function nextShapeId(vmlXml: string): number {
 /// relationship, the title, and the recolor/rotate flags survive together.
 /// (WPS writes an empty `<v:imagedata>` on every note; it carries no
 /// relationship and matches nothing here.)
-function noteShapePictures(vmlXml: string): Map<string, string> {
-  const pictures = new Map<string, string>()
+function noteShapePictures(vmlXml: string): Map<string, NoteShapePicture> {
+  const pictures = new Map<string, NoteShapePicture>()
   for (const shape of vmlXml.matchAll(/<v:shape\b[\s\S]*?<\/v:shape>/g)) {
     if (!shape[0].includes('ObjectType="Note"')) continue
     let tag: string | null = null
@@ -168,7 +214,15 @@ function noteShapePictures(vmlXml: string): Map<string, string> {
     const row = /<x:Row>(\d+)<\/x:Row>/.exec(shape[0])
     const column = /<x:Column>(\d+)<\/x:Column>/.exec(shape[0])
     if (!row || !column) continue
-    pictures.set(`${column[1]}:${row[1]}`, tag)
+    // The shape's own size is the picture's size: a fill is stretched to the
+    // frame it paints, so keeping the frame is what keeps the photograph's
+    // proportions.
+    const style = / style="([^"]*)"/.exec(shape[0])?.[1] ?? ''
+    pictures.set(`${column[1]}:${row[1]}`, {
+      fill: tag,
+      width: /(?:^|;)\s*width:([^;]+)/.exec(style)?.[1],
+      height: /(?:^|;)\s*height:([^;]+)/.exec(style)?.[1],
+    })
   }
   return pictures
 }
@@ -177,7 +231,95 @@ function noteImageKey(note: SheetNote): string {
   return `${note.column}:${note.row}`
 }
 
-function noteShape(note: SheetNote, index: number, firstId: number, picture?: string): string {
+const IMAGE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+const IMAGE_EXTENSIONS: Record<NotePicture['mediaType'], string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpeg',
+  'image/gif': 'gif',
+}
+
+/// Excel's own ceiling for a note's shape. A photograph larger than that is
+/// scaled down — proportionally, so the picture keeps its shape.
+const MAX_NOTE_PICTURE_PT = 255
+
+/// The frame a picture is given: its own size in points (96 px per inch,
+/// 72 pt per inch), scaled down to Excel's ceiling.
+function notePictureSize(picture: NotePicture): { width: string; height: string } {
+  const widthPx = Math.max(1, Math.round(picture.widthPx))
+  const heightPx = Math.max(1, Math.round(picture.heightPx))
+  let widthPt = (widthPx * 72) / 96
+  let heightPt = (heightPx * 72) / 96
+  const scale = Math.min(1, MAX_NOTE_PICTURE_PT / Math.max(widthPt, heightPt))
+  widthPt *= scale
+  heightPt *= scale
+  const points = (value: number): string => `${Math.max(1, Math.round(value * 100) / 100)}pt`
+  return { width: points(widthPt), height: points(heightPt) }
+}
+
+/// Writes a picture into a note: the media part, the relationship that
+/// reaches it, and the fill the note's shape paints it with.
+///
+/// The relationship lives in the VML part's OWN rels — a different id space
+/// from the worksheet's — so the id is allocated there and cannot collide
+/// with a worksheet relationship.
+async function writeNotePicture(
+  pkg: MutableNotePackage,
+  vmlPath: string,
+  picture: NotePicture,
+  touchedEntries: Set<string>,
+): Promise<NoteShapePicture> {
+  const extension = IMAGE_EXTENSIONS[picture.mediaType]
+  const mediaPath = await allocatePartPath(pkg, 'xl/media/image', `.${extension}`)
+  pkg.addBinary(mediaPath, Uint8Array.from(Buffer.from(picture.base64, 'base64')))
+  touchedEntries.add(mediaPath)
+  await registerContentTypeDefault(pkg, extension, picture.mediaType, touchedEntries)
+  const relId = await appendRelationship(
+    pkg,
+    relsPathFor(vmlPath),
+    IMAGE_REL_TYPE,
+    relativeTarget(vmlPath, mediaPath),
+  )
+  const title = picture.name ? ` o:title="${escapeXml(picture.name)}"` : ''
+  const size = notePictureSize(picture)
+  return {
+    fill: `<v:fill o:relid="${relId}"${title} recolor="t" rotate="t" type="frame"/>`,
+    width: size.width,
+    height: size.height,
+  }
+}
+
+/// The picture each note shows, as its shape paints it.
+///
+/// A note that brings a picture of its own gets a new media part and a new
+/// relationship; a note that says nothing about its picture keeps the one it
+/// was already carrying; a note that says `null` loses it.
+async function notePictureFills(
+  pkg: MutableNotePackage,
+  vmlPath: string,
+  notes: readonly SheetNote[],
+  carried: ReadonlyMap<string, NoteShapePicture>,
+  touchedEntries: Set<string>,
+): Promise<Map<string, NoteShapePicture>> {
+  const fills = new Map<string, NoteShapePicture>()
+  for (const note of notes) {
+    const key = noteImageKey(note)
+    if (note.picture === null) continue
+    if (note.picture !== undefined) {
+      fills.set(key, await writeNotePicture(pkg, vmlPath, note.picture, touchedEntries))
+      continue
+    }
+    const previous = carried.get(key)
+    if (previous !== undefined) fills.set(key, previous)
+  }
+  return fills
+}
+
+function noteShape(
+  note: SheetNote,
+  index: number,
+  firstId: number,
+  picture?: NoteShapePicture,
+): string {
   // Anchor: from one column right of the cell, spanning ~3 columns / 4 rows.
   const anchor = [note.column + 1, 15, note.row, 2, note.column + 4, 15, note.row + 4, 2].join(',')
   // A shape showing a picture keeps neither the yellow fill nor the drop
@@ -185,13 +327,18 @@ function noteShape(note: SheetNote, index: number, firstId: number, picture?: st
   // The picture rides on the shape as its fill, spelled the way the source
   // spelled it.
   const paint = picture
-    ? ` o:insetmode="auto">${picture}`
+    ? ` o:insetmode="auto">${picture.fill}`
     : ' fillcolor="#ffffe1" o:insetmode="auto">' +
       '<v:fill color2="#ffffe1"/><v:shadow on="t" color="black" obscured="t"/>'
+  // The frame is the picture's size: a fill is stretched to the frame it
+  // paints, so a frame the size of the text box would squash the photograph.
+  const size = picture
+    ? `${picture.width ? `width:${picture.width};` : ''}${picture.height ? `height:${picture.height};` : ''}`
+    : 'width:108pt;height:60pt;'
   return (
     `<v:shape id="_x0000_s${firstId + index}" type="#_x0000_t202"` +
-    ' style="position:absolute;margin-left:80pt;margin-top:2pt;width:108pt;height:60pt;' +
-    `z-index:${index + 1};visibility:hidden"${paint}` +
+    ' style="position:absolute;margin-left:80pt;margin-top:2pt;' +
+    `${size}z-index:${index + 1};visibility:hidden"${paint}` +
     '<v:path o:connecttype="none"/>' +
     '<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>' +
     '<x:ClientData ObjectType="Note"><x:MoveWithCells/><x:SizeWithCells/>' +
@@ -367,11 +514,12 @@ export async function applySheetNotes(
   // VML part: keep foreign shapes, replace the note shapes.
   if (existingVmlPath !== null && (await pkg.has(existingVmlPath))) {
     const original = await pkg.readText(existingVmlPath)
-    const pictures = noteShapePictures(original)
+    const carried = noteShapePictures(original)
     const vml = stripNoteShapes(original)
     const end = vml.lastIndexOf('</xml>')
     if (end === -1) throw new NoteEditError(`${existingVmlPath} is not a VML drawing.`)
     const firstId = nextShapeId(vml)
+    const pictures = await notePictureFills(pkg, existingVmlPath, notes, carried, touchedEntries)
     const shapes = notes
       .map((note, index) => noteShape(note, index, firstId, pictures.get(noteImageKey(note))))
       .join('')
@@ -382,7 +530,12 @@ export async function applySheetNotes(
     const rid = nextFreeRelationshipId(relsXml)
     relsXml = appendRel(relsXml, rid, VML_REL_TYPE, `../drawings/${vmlPath.split('/').pop()}`)
     relsChanged = true
-    const shapes = notes.map((note, index) => noteShape(note, index, FIRST_NOTE_SHAPE_ID)).join('')
+    const pictures = await notePictureFills(pkg, vmlPath, notes, new Map(), touchedEntries)
+    const shapes = notes
+      .map((note, index) =>
+        noteShape(note, index, FIRST_NOTE_SHAPE_ID, pictures.get(noteImageKey(note))),
+      )
+      .join('')
     pkg.add(vmlPath, `${VML_HEADER}${shapes}</xml>`)
     touchedEntries.add(vmlPath)
     const worksheetXml = await pkg.readText(worksheetPath)
