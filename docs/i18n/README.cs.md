@@ -35,7 +35,10 @@ GenOffice je bezplatná open-source alternativa k Microsoft Office pro macOS,
 Windows a Linux. Otevírá a ukládá nativní soubory `.docx`, `.xlsx` a `.pptx`,
 upravuje PDF, Markdown a HTML a ke každému dokumentu přidává AI agenta —
 nejde o přilepené chatovací okno, ale o editor, který soubor přečte,
-provede požadovanou úpravu a přesně vám ukáže, čeho se dotkl.
+provede požadovanou úpravu a přesně vám ukáže, čeho se dotkl. Soubory ODF
+(`.odt`, `.ods`, `.odp` a šablony `.ott`/`.ots`/`.otp`) se otevírají jako
+editovatelné kopie OOXML; import podporuje jen otevírání — ukládání zapisuje
+výhradně OOXML, nikdy ODF.
 
 - **Skutečné formáty, zachování na úrovni bajtů.** Přepíše se jen to, co
   upravíte. Vše ostatní v souboru zůstává bajtově identické, takže dokumenty
@@ -43,7 +46,11 @@ provede požadovanou úpravu a přesně vám ukáže, čeho se dotkl.
 - **AI, kterou můžete zkontrolovat.** Úpravy přicházejí jako sledované změny
   a rozdíly s možností vrátit je jedním kliknutím. Tabulky získávají živé
   vzorce, ne vložená čísla. Prezentace a stránky se generují přímo na plochu
-  a zůstávají plně editovatelné.
+  a zůstávají plně editovatelné. Skryjete-li před modelem výběr v Docs nebo
+  oblast buněk v Sheets, uvidí AI jen pojmenovaný zástupný symbol; původní
+  slova zůstávají v souboru a vrací se zpět. Skrývání se týká jen AI této
+  aplikace — CLI, MCP nástroje a headless export čtou soubor přímo a tento
+  text stále vidí.
 - **Lokální už z principu.** Soubory se otevírají, upravují, ukládají
   i převádějí přímo na vašem počítači. PDF → Word / Excel / PowerPoint
   a Markdown → Word i HTML → Word běží celé na zařízení. Zařízení opouštějí
@@ -77,8 +84,8 @@ promptem, který si můžete přečíst v panelu.
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs: přehled společnosti s bannerovým obrázkem; AI zestručnila sekci Overview a vložila novou sekci s odrážkami, panel nabízí vrácení jedním kliknutím"></td>
 </tr>
 <tr>
-<td><b>Otevře soubor přesně tak, jak jej rozvrhl Word</b> — dvoukolonové sekce, obrázky přes celou stránku, podbarvené tabulky, záhlaví a zápatí, stránkování podle Wordových metrik řádkování. Styly, komentáře, sledované změny, rovnice i ruční poznámky se zachovají beze změny.</td>
-<td><b>Zadejte úpravu</b> — AI si přečte jen bloky, které potřebuje, přepíše sekci Overview a vloží novou sekci s odrážkami. Každé kolo AI je snímek, který lze vrátit; se zapnutým <b>sledováním změn</b> přicházejí úpravy jako revize ve stylu Wordu.</td>
+<td><b>Otevře soubor přesně tak, jak jej rozvrhl Word</b> — dvoukolonové sekce, obrázky přes celou stránku, podbarvené tabulky, záhlaví a zápatí, stránkování podle Wordových metrik řádkování. Styly, komentáře, sledované změny, rovnice, ruční poznámky i ovládací prvky obsahu se zachovají beze změny. Záložka <b>Mailings</b> promění dokument v šablonu hromadné korespondence: vyberte seznam příjemců <code>.xlsx</code> nebo <code>.csv</code>, vložte skutečná pole <code>MERGEFIELD</code>, prohlížejte náhled záznam po záznamu a sloučte vše do jednoho dokumentu, nebo do jednoho <code>.docx</code> na každý záznam.</td>
+<td><b>Zadejte úpravu</b> — AI si přečte jen bloky, které potřebuje, přepíše sekci Overview a vloží novou sekci s odrážkami. Každé kolo AI je snímek, který lze vrátit; se zapnutým <b>sledováním změn</b> přicházejí úpravy jako revize ve stylu Wordu. Požádáte-li místo toho o myšlenkovou mapu, odpovědí je interaktivní diagram celého dokumentu: větve lze sbalovat, lze přibližovat a posouvat, kliknutí na uzel položí doplňující otázku a citace skočí zpět na blok, ze kterého pocházejí.</td>
 </tr>
 </table>
 
@@ -91,7 +98,7 @@ promptem, který si můžete přečíst v panelu.
 </tr>
 <tr>
 <td><b>Vytvořte to</b> — z jedné věty agent přidá list Summary se skutečnými vzorci <code>SUMIF</code> podle regionu a kategorie, vloží sloupcový graf a všech 43 změn provede jako jednu dávku, kterou lze vrátit.</td>
-<td><b>Zeptejte se</b> — dotazy k sešitu se vracejí s odůvodněním a konkrétními buňkami použitými jako klikatelné citace. Pod kapotou: vlastní Rust engine `.xlsx`, kontingenční tabulky, filtry, podmíněné formátování a sledování vzorců.</td>
+<td><b>Zeptejte se</b> — dotazy k sešitu se vracejí s odůvodněním a konkrétními buňkami použitými jako klikatelné citace. Pod kapotou: vlastní Rust engine `.xlsx`, kontingenční tabulky, filtry, podmíněné formátování, sledování vzorců a obrázky vložené do buněk jako nativní rich values Excelu — Excel je po opětovném otevření najde stále v buňce.</td>
 </tr>
 </table>
 
@@ -106,9 +113,14 @@ promptem, který si můžete přečíst v panelu.
 </tr>
 <tr>
 <td><b>Jeden vstupní řádek</b> — „Vytvoř 10snímkovou investorskou prezentaci pro Aurora Home…“. GenOffice naplánuje dějovou linku, vyhledá čísla a vytvoří každý snímek na ploše jako skutečný soubor `.pptx`.</td>
-<td><b>Hotová prezentace na výstupu</b> — jedenáct navržených snímků s konzistentní typografií, obrázky a závěrečnou výzvou k akci; dál upravujte pomocí předloh, rozvržení, chytrých vodicích čar a nedestruktivního oříznutí, nebo požádejte panel o změnu stylu, přepsání a přeuspořádání.</td>
+<td><b>Hotová prezentace na výstupu</b> — jedenáct navržených snímků s konzistentní typografií, obrázky a závěrečnou výzvou k akci; dál upravujte pomocí předloh, rozvržení, chytrých vodicích čar a nedestruktivního oříznutí, nebo požádejte panel o změnu stylu, přepsání a přeuspořádání. Vložíte-li <code>.glb</code>, získáte skutečný 3D model: v editoru jej otočíte tažením, ukládá se tak, jak PowerPoint ukládá 3D, a v PowerPointu zůstává stále 3D.</td>
 </tr>
 </table>
+
+**Slide Show → Record** umožňuje prezentaci namluvit snímek po snímku,
+s možností pauzy a pokračování. Komentář i časy automatického posunu snímků
+změřené při nahrávání se uloží do `.pptx` a PowerPoint je přehraje stejným
+způsobem.
 
 ### 4 · PDF — upravujte text v PDF na místě, převádějte PDF do Wordu na zařízení
 
@@ -164,6 +176,12 @@ podle těchto tokenů vytvoří jeden samostatný soubor `.html`.
 <td><b>Vykresleno, uloženo jako čistý Markdown</b> — nadpisy, seznamy, tabulky, obrázky, blok kódu a diagramy Mermaid v blokovém editoru Tiptap, zapsané zpět jako čistý soubor `.md`, s plně lokálním exportem <b>Markdown → Word</b>.</td>
 </tr>
 </table>
+
+**Prolinkované poznámky, jako to umí Obsidian.** Kliknutí na `[[wiki links]]`
+přejde na poznámku, kterou pojmenovávají, po napsání `[[` se nabízí
+doplňování názvů poznámek a `![[…]]` vloží poznámku nebo obrázek přímo
+do textu. Panel **Backlinks** vypíše každou poznámku, která ukazuje na tu
+otevřenou, a pohled **Graph** zmapuje odkazy celého trezoru.
 
 ### 7 · CLI — váš kódovací agent řídí GenOffice, na vašem počítači
 
@@ -243,9 +261,11 @@ DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
 a OpenCode Zen/Go, plus vlastní slot pro jakýkoli OpenAI kompatibilní
 endpoint (base URL + klíč), včetně lokálních serverů s modely. Vyhledávání
 a média mají vlastní poskytovatele pro každou schopnost pod **AI Media
-& Search**: Serper nebo Tavily pro webové vyhledávání a OpenAI, Gemini,
-Doubao/Seedream, GLM, Grok, Qwen, MiniMax nebo jakýkoli OpenAI kompatibilní
-endpoint pro obrázky, generování obrázků a analýzu obrázků/videa.
+& Search**: Serper, Serply, Tavily, Parallel, Keenable, Exa nebo Firecrawl
+pro webové vyhledávání — i Keenable je bez klíče; klíč pouze zvýší limity
+počtu požadavků — a OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax
+nebo jakýkoli OpenAI kompatibilní endpoint pro obrázky, generování obrázků
+a analýzu obrázků/videa.
 
 Celý balík nabízí světlý, tmavý a systémový vzhled. Vzhledy mění pouze to,
 co je vidět na obrazovce: exporty, tisky a uložené soubory si vždy zachovávají
@@ -297,10 +317,11 @@ práci.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -543,6 +564,17 @@ pro Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
 Mistral, OpenRouter, Requesty a OpenCode Zen/Go, plus jakýkoli OpenAI kompatibilní
 endpoint — včetně lokálních serverů s modely. Vyhledávání, generování obrázků
 a analýza obrázků/videa mají vlastní klíče pod Nastavení → AI Media & Search.
+
+</details>
+
+<details>
+<summary><b>Lze AI panel vypnout?</b></summary>
+
+Ano. V Nastavení → AI je přepínač **Show the AI sidebar**. Když jej vypnete,
+každý editor panel skryje a nové dokumenty jej přestanou otevírat samy od
+sebe. Explicitní AI akce — tlačítko na pásu nástrojů, položka v nabídce —
+panel pro daný dokument stále otevře, a po zavření se vrátí do skrytého
+stavu.
 
 </details>
 

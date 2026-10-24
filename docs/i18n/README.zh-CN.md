@@ -35,12 +35,18 @@ GenOffice 是一款免费、开源的 Microsoft Office 替代品，支持 macOS�
 和 Linux。它可以直接打开并保存原生 `.docx`、`.xlsx` 和 `.pptx` 文件，编辑
 PDF、Markdown 和 HTML，并在每份文档旁边配备一个 AI 智能体 —— 不是在侧边硬
 塞一个聊天框，而是一个真正会读取文件、执行修改，并清楚展示改动之处的编辑器。
+ODF 文件（`.odt`、`.ods`、`.odp` 以及 `.ott`/`.ots`/`.otp` 模板）会以可编辑的
+OOXML 副本形式打开；这类导入是「仅打开」式的 —— 保存时写出的始终是 OOXML，
+绝不会是 ODF。
 
 - **原生格式，字节级保留。** 只有你编辑过的部分才会被重写，文件中的其他内容
   全部逐字节保留，文档在 Word、Excel 和 PowerPoint 中照常可用。
 - **可审阅的 AI。** 修改以修订痕迹和差异对比的形式呈现，一键即可回滚。表格
   得到的是实时公式，而不是粘贴进来的数字；幻灯片和网页直接生成到画布上，
-  仍然可以随意编辑。
+  仍然可以随意编辑。把 Docs 中的选区或 Sheets 中的单元格区域对模型隐藏，
+  AI 就只能看到一个具名占位符；原文仍保留在文件中，随时可以恢复。隐藏只
+  覆盖本应用内的 AI —— CLI、MCP 工具和无界面导出会直接读取文件，仍然
+  能看到这些原文。
 - **本地优先的设计。** 文件的打开、编辑、保存和转换都在你的电脑上完成。
   PDF → Word / Excel / PowerPoint、Markdown → Word、HTML → Word 全部在本机运行。
   只有 AI 调用会发送到你选择的服务商。
@@ -70,8 +76,8 @@ PDF、Markdown 和 HTML，并在每份文档旁边配备一个 AI 智能体 —�
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs：一份带横幅图片的公司简介；AI 精简了「概述」部分并插入了一个新的项目符号章节，面板提供一键回滚"></td>
 </tr>
 <tr>
-<td><b>按 Word 的排版方式打开文件</b> —— 双栏章节、出血图片、底纹表格、页眉页脚，并按 Word 的行度量分页。样式、批注、修订、公式和墨迹原样往返，不受影响。</td>
-<td><b>说出你想要的修改</b> —— AI 读取所需的内容块，重写「概述」并插入一个新的项目符号章节。每一轮 AI 操作都是一个可回滚的快照；开启<b>修订</b>后，改动会以 Word 风格的修订形式呈现。</td>
+<td><b>按 Word 的排版方式打开文件</b> —— 双栏章节、出血图片、底纹表格、页眉页脚，并按 Word 的行度量分页。样式、批注、修订、公式、墨迹和内容控件原样往返，不受影响。<b>Mailings</b> 标签页能把文档变成邮件合并模板：挑选 <code>.xlsx</code> 或 <code>.csv</code> 收件人名单，插入真正的 <code>MERGEFIELD</code>，逐条预览，然后合并成一份文档，或每条记录生成一个 <code>.docx</code>。</td>
+<td><b>说出你想要的修改</b> —— AI 读取所需的内容块，重写「概述」并插入一个新的项目符号章节。每一轮 AI 操作都是一个可回滚的快照；开启<b>修订</b>后，改动会以 Word 风格的修订形式呈现。改为索要一张思维导图，得到的则是整篇文档的交互式图：分支可折叠，支持缩放与平移，点击节点即可追问，引用还能跳回它所来源的内容块。</td>
 </tr>
 </table>
 
@@ -84,7 +90,7 @@ PDF、Markdown 和 HTML，并在每份文档旁边配备一个 AI 智能体 —�
 </tr>
 <tr>
 <td><b>让它来做</b> —— 只需一句话，智能体就会新增一张「汇总」工作表，按地区和类别写入真正的 <code>SUMIF</code> 公式，插入柱状图，并把这 43 项更改作为一个可撤销的批次一次应用。</td>
-<td><b>向它提问</b> —— 关于工作簿的问题会连同推理过程一起返回，所用的具体单元格以可点击的引用形式给出。底层是自研的 Rust <code>.xlsx</code> 引擎，支持数据透视表、切片器、条件格式和公式追踪。</td>
+<td><b>向它提问</b> —— 关于工作簿的问题会连同推理过程一起返回，所用的具体单元格以可点击的引用形式给出。底层是自研的 Rust <code>.xlsx</code> 引擎，支持数据透视表、切片器、条件格式、公式追踪，以及以 Excel 原生富值（rich value）形式嵌入单元格的图片 —— Excel 重新打开时，图片仍然在单元格中。</td>
 </tr>
 </table>
 
@@ -99,9 +105,11 @@ PDF、Markdown 和 HTML，并在每份文档旁边配备一个 AI 智能体 —�
 </tr>
 <tr>
 <td><b>输入一句话</b> —— “为 Aurora Home 制作一份 10 页的投资人融资演示文稿……”。GenOffice 规划故事线、调研数据，并把每一页直接生成到画布上，成为真正的 <code>.pptx</code>。</td>
-<td><b>产出一份完整的演示文稿</b> —— 十一页经过设计的幻灯片，字体、配图风格统一，并以行动号召收尾；可以继续用母版、版式、智能参考线和无损裁剪编辑，也可以让面板重新设计风格、改写文字或调整顺序。</td>
+<td><b>产出一份完整的演示文稿</b> —— 十一页经过设计的幻灯片，字体、配图风格统一，并以行动号召收尾；可以继续用母版、版式、智能参考线和无损裁剪编辑，也可以让面板重新设计风格、改写文字或调整顺序。插入一个 <code>.glb</code>，它就是真正的 3D 模型：在编辑器中拖动即可转动方向，按 PowerPoint 存储 3D 的方式保存，在 PowerPoint 里依然是一个 3D 模型。</td>
 </tr>
 </table>
+
+**Slide Show → Record** 可以为演示文稿逐页录制旁白，支持暂停和继续。录制到的旁白以及据此测得的自动换片时间会一并保存进 `.pptx`，PowerPoint 会以同样的方式播放。
 
 ### 4 · PDF —— 原位编辑 PDF 文字，本机将 PDF 转为 Word
 
@@ -156,6 +164,8 @@ PDF、Markdown 和 HTML，并在每份文档旁边配备一个 AI 智能体 —�
 <td><b>所见即渲染，保存为纯 Markdown</b> —— 标题、列表、表格、图片、代码块和 Mermaid 图表都在 Tiptap 块编辑器中呈现，写回时仍是纯 <code>.md</code>，并支持完全本地的 <b>Markdown → Word</b> 导出。</td>
 </tr>
 </table>
+
+**类 Obsidian 的互链笔记。** `[[wiki links]]` 点击即可跳转到它所指的笔记，输入 `[[` 会给出笔记名补全，`![[…]]` 则把一条笔记或一张图片内嵌进来。**Backlinks** 面板列出所有指向当前笔记的笔记，**Graph** 视图则以图谱形式呈现整个库的链接关系。
 
 ### 7 · CLI —— 让你的编程智能体在本机驱动 GenOffice
 
@@ -227,9 +237,10 @@ Word 文档，供你实时查看。
 **或者自带密钥。** 设置 → AI 中列出了 Claude、OpenAI、Gemini、DeepSeek、Kimi、
 GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty 和 OpenCode Zen/Go，另有
 一个自定义槽位可接入任何 OpenAI 兼容端点（Base URL + 密钥），包括本地模型服务。
-搜索和媒体能力在 **AI 媒体与搜索** 下按能力分别配置服务商：网页搜索可选 Serper
-或 Tavily；图片生成和图片/视频解析可选 OpenAI、Gemini、Doubao/Seedream、GLM、
-Grok、Qwen、MiniMax 或任何 OpenAI 兼容的图片端点。
+搜索和媒体能力在 **AI 媒体与搜索** 下按能力分别配置服务商：网页搜索可选 Serper、
+Serply、Tavily、Parallel、Keenable、Exa 或 Firecrawl —— 其中 Keenable 同样免密钥，
+配置密钥只会提高速率限额；图片生成和图片/视频解析可选 OpenAI、Gemini、
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax 或任何 OpenAI 兼容的图片端点。
 
 整个套件提供浅色、深色和跟随系统三种主题。主题只改变屏幕上的显示：导出、打印
 和保存的文件始终保留文档自身的颜色。
@@ -276,10 +287,11 @@ GenOffice 内置了一批，也接受你自己的，格式与编程智能体所�
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -504,6 +516,15 @@ GenOffice 正在积极开发中，你的反馈决定它的走向。
 DeepSeek、Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty 和
 OpenCode Zen/Go 的密钥，以及任何 OpenAI 兼容端点 —— 包括本地模型服务。搜索、
 图片生成和图片/视频解析在 设置 → AI 媒体与搜索 下使用各自的密钥。
+
+</details>
+
+<details>
+<summary><b>可以关闭 AI 面板吗？</b></summary>
+
+可以。设置 → AI 中有一个 **Show the AI sidebar**（显示 AI 侧栏）开关。关掉之后，
+所有编辑器都会隐藏侧栏，新文档也不再自动打开它。显式的 AI 操作 —— 比如功能区
+按钮或菜单项 —— 仍会为该文档打开面板，关掉后面板会恢复隐藏。
 
 </details>
 

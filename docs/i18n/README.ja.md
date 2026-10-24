@@ -31,10 +31,10 @@ Word、Excel、PowerPoint、PDF ファイルを、あなたとあなたの AI �
   <a href="../../PRIVACY.md"><b>プライバシー</b></a>
 </p>
 
-GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に代わる無料のオープンソース製品です。ネイティブの `.docx`・`.xlsx`・`.pptx` ファイルを開いて保存できるほか、PDF・Markdown・HTML の編集にも対応し、あらゆるドキュメントの隣に AI エージェントを配置します。取って付けたようなチャットボックスではなく、ファイルを読み込み、変更を加え、何をどう変更したかを正確に示してくれるエディタです。
+GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に代わる無料のオープンソース製品です。ネイティブの `.docx`・`.xlsx`・`.pptx` ファイルを開いて保存できるほか、PDF・Markdown・HTML の編集にも対応し、あらゆるドキュメントの隣に AI エージェントを配置します。取って付けたようなチャットボックスではなく、ファイルを読み込み、変更を加え、何をどう変更したかを正確に示してくれるエディタです。ODF ファイル（`.odt`・`.ods`・`.odp` と `.ott`/`.ots`/`.otp` の各テンプレート）は、編集可能な OOXML コピーとして開きます。このインポートは「開くだけ」で、保存時に書き出されるのは常に OOXML であり、ODF ではありません。
 
 - **実際のファイル形式、バイト単位で保持。** 編集した部分だけが書き換えられます。それ以外の部分はファイル内でバイト単位そのまま保持されるため、ドキュメントは Word・Excel・PowerPoint でも問題なく動作し続けます。
-- **レビューできる AI。** 編集内容は変更履歴と差分として反映され、ワンクリックで元に戻せます。スプレッドシートには貼り付けの数値ではなく、実際に機能する数式が入ります。デッキやページはキャンバス上に生成され、そのまま自由に編集できます。
+- **レビューできる AI。** 編集内容は変更履歴と差分として反映され、ワンクリックで元に戻せます。スプレッドシートには貼り付けの数値ではなく、実際に機能する数式が入ります。デッキやページはキャンバス上に生成され、そのまま自由に編集できます。Docs の選択範囲や Sheets のセル範囲をモデルから隠すと、AI に見えるのは名前付きのプレースホルダーだけです。元のテキストはファイル内にそのまま残り、あとで元に戻せます。この隠し機能の対象はこのアプリの AI だけです — CLI、MCP ツール、ヘッドレス書き出しはファイルを直接読み込むため、元のテキストもそのまま見えます。
 - **設計からローカル動作。** ファイルの開く・編集・保存・変換はすべてお使いのマシン上で行われます。PDF → Word / Excel / PowerPoint、Markdown → Word、HTML → Word の変換もすべてオンデバイスで実行されます。マシンの外に出るのは、選択した AI プロバイダーへの呼び出しだけです。
 - **キーを使うか使わないかはあなた次第。** Genspark でサインインすればキーの用意は不要です。あるいは、Claude、OpenAI、Gemini、DeepSeek、Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、または任意の OpenAI 互換エンドポイント（ローカルサーバーを含む）向けに、自分の API キーを持ち込むこともできます。
 - **スクリプト化でき、エージェントからも使える。** アプリには `genoffice` コマンドラインと、Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、OpenCode、Windsurf 向けのスキルが同梱されているため、コーディングエージェントはウィンドウを一つも開かずに、お使いのマシン上で本物の Office ファイルを作成・変換・読み取り・編集できます。
@@ -56,8 +56,8 @@ GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に�
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs：バナー画像付きの会社概要ページ。AI が Overview を整えて新しい箇条書きセクションを挿入し、パネルにはワンクリックで元に戻せるボタンが表示されている"></td>
 </tr>
 <tr>
-<td><b>Word と同じレイアウトでファイルを開く</b> — 2 段組セクション、フチなし画像、網掛けの表、ヘッダーとフッター、Word の行メトリクスに基づくページ送りまで再現します。スタイル、コメント、変更履歴、数式、手書き（インク）もそのまま保持されます。</td>
-<td><b>編集を依頼する</b> — AI が必要なブロックを読み取り、Overview を書き直して新しい箇条書きセクションを挿入します。AI の各ターンはロールバック可能なスナップショットとして記録され、<b>変更履歴の記録</b>を有効にすると、編集は Word 形式のリビジョンとして反映されます。</td>
+<td><b>Word と同じレイアウトでファイルを開く</b> — 2 段組セクション、フチなし画像、網掛けの表、ヘッダーとフッター、Word の行メトリクスに基づくページ送りまで再現します。スタイル、コメント、変更履歴、数式、手書き（インク）、コンテンツ コントロールもそのまま保持されます。<b>Mailings</b> タブで、ドキュメントを差し込み印刷のテンプレートにできます：<code>.xlsx</code> か <code>.csv</code> の宛先リストを選び、本物の <code>MERGEFIELD</code> を挿入し、レコードごとにプレビューしたうえで、1 つのドキュメントにまとめて差し込むことも、レコードごとに 1 つの <code>.docx</code> を作ることもできます。</td>
+<td><b>編集を依頼する</b> — AI が必要なブロックを読み取り、Overview を書き直して新しい箇条書きセクションを挿入します。AI の各ターンはロールバック可能なスナップショットとして記録され、<b>変更履歴の記録</b>を有効にすると、編集は Word 形式のリビジョンとして反映されます。代わりにマインドマップを頼めば、答えはドキュメント全体のインタラクティブな図になります：枝は折りたたむことができ、ズームやパンも可能で、ノードをクリックすればその場で続けて質問ができ、引用は出どころのブロックへジャンプして戻ります。</td>
 </tr>
 </table>
 
@@ -70,7 +70,7 @@ GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に�
 </tr>
 <tr>
 <td><b>作ってもらう</b> — 一文の指示だけで、エージェントが地域・カテゴリ別の本物の <code>SUMIF</code> 数式を使った Summary シートを追加し、縦棒グラフを挿入し、43 件の変更をひとまとめの取り消し可能な操作として適用します。</td>
-<td><b>質問する</b> — ワークブックについての質問には、根拠となる考え方と、実際に使用したセルへのクリック可能な引用付きで回答が返ってきます。内部では、自社開発の Rust 製 <code>.xlsx</code> エンジン、ピボットテーブル、スライサー、条件付き書式、数式トレースが動いています。</td>
+<td><b>質問する</b> — ワークブックについての質問には、根拠となる考え方と、実際に使用したセルへのクリック可能な引用付きで回答が返ってきます。内部では、自社開発の Rust 製 <code>.xlsx</code> エンジン、ピボットテーブル、スライサー、条件付き書式、数式トレース、そして Excel のネイティブなリッチ値としてセルに埋め込まれた画像が動いています — Excel で開き直しても、画像はセルの中にそのまま残っています。</td>
 </tr>
 </table>
 
@@ -85,9 +85,11 @@ GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に�
 </tr>
 <tr>
 <td><b>入力は 1 行だけ</b> — 「Aurora Home 向けの 10 枚構成の投資家向けピッチデッキを作って…」。GenOffice がストーリーラインを組み立て、数値をリサーチし、すべてのスライドを本物の <code>.pptx</code> としてキャンバスに描き出します。</td>
-<td><b>完成したデッキが出てくる</b> — 統一されたタイポグラフィと画像、締めの Call to Action を備えた、デザイン済みの 11 枚のスライド。マスター、レイアウト、スマートガイド、非破壊トリミングでそのまま編集を続けることも、パネルにデザインの変更・文章の書き直し・順序の入れ替えを頼むこともできます。</td>
+<td><b>完成したデッキが出てくる</b> — 統一されたタイポグラフィと画像、締めの Call to Action を備えた、デザイン済みの 11 枚のスライド。マスター、レイアウト、スマートガイド、非破壊トリミングでそのまま編集を続けることも、パネルにデザインの変更・文章の書き直し・順序の入れ替えを頼むこともできます。<code>.glb</code> を挿入すれば本物の 3D モデルになります：エディターでドラッグすれば向きを変えられ、PowerPoint が 3D を保存するのと同じ方法で保存され、PowerPoint で開いても 3D のままです。</td>
 </tr>
 </table>
+
+**Slide Show → Record** で、デッキにスライドごとのナレーションを吹き込めます。途中での一時停止と再開にも対応しています。吹き込んだナレーションと、そこで計測された自動的に進むタイミングは `.pptx` に保存され、PowerPoint でも同じように再生されます。
 
 ### 4 · PDF — PDF のテキストをその場で編集し、オンデバイスで Word に変換
 
@@ -141,6 +143,8 @@ GenOffice は、macOS・Windows・Linux で動作する、Microsoft Office に�
 <td><b>表示はリッチに、保存はプレーンな Markdown</b> — 見出し、リスト、表、画像、コードブロック、Mermaid 図を Tiptap ベースのブロックエディタで扱いながら、保存時はプレーンな <code>.md</code> として書き戻されます。<b>Markdown → Word</b> の書き出しも完全にローカルで行われます。</td>
 </tr>
 </table>
+
+**Obsidian 流のリンク付きノート。** `[[wiki links]]` はクリックするとリンク先のノートへジャンプし、`[[` と入力するとノート名が補完され、`![[…]]` はノートや画像をインラインで埋め込みます。**Backlinks** パネルには、開いているノートを指しているすべてのノートが一覧表示され、**Graph** ビューはボールト全体のリンクを地図のように描き出します。
 
 ### 7 · CLI — コーディングエージェントが、あなたのマシン上で GenOffice を操作
 
@@ -214,9 +218,10 @@ Word ドキュメントを組み立てる様子を見守ることもできます
 GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty、OpenCode Zen/Go が並び、さらに任意
 の OpenAI 互換エンドポイント（ベース URL + キー、ローカルモデルサーバーを含む）を登録できる
 カスタム枠も用意されています。検索とメディア関連は **AI メディア＆検索** の下で機能ごとに個
-別のプロバイダーを設定できます：Web 検索には Serper か Tavily、画像生成と画像／動画解析には
-OpenAI、Gemini、Doubao/Seedream、GLM、Grok、Qwen、MiniMax、または任意の OpenAI 互換の画像
-エンドポイントが使えます。
+別のプロバイダーを設定できます：Web 検索には Serper、Serply、Tavily、Parallel、Keenable、Exa、
+Firecrawl のいずれかが使えます — このうち Keenable はキーなしでも使え、キーを設定しても
+レート制限が緩和されるだけです。画像生成と画像／動画解析には OpenAI、Gemini、Doubao/Seedream、GLM、
+Grok、Qwen、MiniMax、または任意の OpenAI 互換の画像エンドポイントが使えます。
 
 スイート全体でライト・ダーク・システムのテーマに対応しています。テーマが変わるのは画面表示
 だけで、書き出し・印刷・保存されたファイルは常にドキュメント本来の色を保持します。
@@ -264,10 +269,11 @@ Claude Desktop とあらゆる MCP クライアントでも動作します。
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -503,6 +509,16 @@ DeepSeek、Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、
 に自分のキーを持ち込むことができ、任意の OpenAI 互換エンドポイント（ローカルモデルサーバー
 を含む）にも対応しています。検索、画像生成、画像／動画解析は、設定 → AI メディア＆検索でそ
 れぞれ別のキーを設定します。
+
+</details>
+
+<details>
+<summary><b>AI パネルをオフにできますか？</b></summary>
+
+はい。設定 → AI には **Show the AI sidebar**（AI サイドバーを表示）のスイッチがあります。
+オフにすると、すべてのエディターでサイドバーが隠れ、新しいドキュメントで自動的に開くことも
+なくなります。リボンのボタンやメニュー項目といった明示的な AI 操作では、そのドキュメントには
+パネルが開きますが、閉じればまた非表示に戻ります。
 
 </details>
 

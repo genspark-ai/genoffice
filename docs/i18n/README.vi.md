@@ -38,7 +38,9 @@ macOS, Windows và Linux. Ứng dụng mở và lưu các tệp `.docx`, `.xlsx`
 `.pptx` gốc, chỉnh sửa PDF, Markdown và HTML, và đặt một agent AI bên cạnh
 mọi tài liệu — không phải một ô chat gắn thêm bên hông, mà là một trình
 soạn thảo đọc tệp, thực hiện thay đổi, và chỉ cho bạn chính xác những gì nó
-đã động tới.
+đã động tới. Các tệp ODF (`.odt`, `.ods`, `.odp` cùng các mẫu
+`.ott`/`.ots`/`.otp`) được mở dưới dạng bản sao OOXML chỉnh sửa được; việc
+nhập chỉ theo chiều mở — lưu thì ghi OOXML, không bao giờ ghi ODF.
 
 - **Định dạng gốc, giữ nguyên từng byte.** Chỉ những phần bạn chỉnh sửa mới
   được ghi lại. Mọi thứ khác trong tệp được giữ nguyên từng byte, nên tài
@@ -46,7 +48,11 @@ soạn thảo đọc tệp, thực hiện thay đổi, và chỉ cho bạn chín
 - **AI có thể kiểm tra lại.** Thay đổi của AI được ghi dưới dạng theo dõi
   thay đổi (tracked changes) và diff, hoàn tác một cú bấm. Bảng tính nhận
   công thức sống, không phải con số dán vào. Slide và trang được tạo trực
-  tiếp lên khung vẽ và vẫn chỉnh sửa được toàn bộ.
+  tiếp lên khung vẽ và vẫn chỉnh sửa được toàn bộ. Ẩn một vùng chọn trong
+  Docs hay một dải ô trong Sheets khỏi mô hình và AI chỉ thấy một
+  placeholder có tên; chữ gốc vẫn nằm trong tệp và quay lại như cũ. Việc ẩn
+  chỉ bao phủ AI của ứng dụng này — CLI, công cụ MCP và xuất headless đọc
+  thẳng tệp nên vẫn thấy các chữ đó.
 - **Cục bộ ngay từ thiết kế.** Tệp được mở, chỉnh sửa, lưu và chuyển đổi
   ngay trên máy của bạn. PDF → Word / Excel / PowerPoint, Markdown → Word
   và HTML → Word đều chạy trên máy. Chỉ các lời gọi AI mới rời khỏi máy,
@@ -93,12 +99,19 @@ trên macOS, với AI được điều khiển bằng chính prompt bạn đọc
 <tr>
 <td><b>Mở tệp đúng như Word trình bày</b> — các phần nhiều cột, ảnh tràn khổ,
 bảng có nền tô, header và footer, phân trang theo thước dòng của Word.
-Style, comment, theo dõi thay đổi, công thức toán và mực viết tay được giữ
-nguyên hai chiều.</td>
+Style, comment, theo dõi thay đổi, công thức toán, mực viết tay và content
+control được giữ nguyên hai chiều. Tab <b>Mailings</b> biến tài liệu thành
+một mẫu trộn thư: chọn danh sách người nhận <code>.xlsx</code> hoặc
+<code>.csv</code>, chèn <code>MERGEFIELD</code> thật, xem trước từng bản
+ghi, rồi trộn ra một tài liệu duy nhất hoặc mỗi bản ghi một
+<code>.docx</code>.</td>
 <td><b>Yêu cầu AI chỉnh</b> — AI đọc những khối nó cần, viết lại phần Tổng
 quan và chèn một mục gạch đầu dòng mới. Mỗi lượt AI là một bản chụp có thể
 hoàn tác; bật <b>Theo dõi thay đổi</b> thì chỉnh sửa đến dưới dạng revision
-theo chuẩn Word.</td>
+theo chuẩn Word. Hỏi xin một sơ đồ tư duy thì câu trả lời là một sơ đồ
+tương tác của cả tài liệu: nhánh gập mở được, thu phóng và kéo di chuyển,
+bấm vào một node là hỏi tiếp, còn trích dẫn thì nhảy ngược về đúng khối mà
+nó đến từ.</td>
 </tr>
 </table>
 
@@ -116,7 +129,8 @@ thay đổi thành một lô hoàn tác được cùng lúc.</td>
 <td><b>Hỏi nó</b> — câu hỏi về sổ tính được trả lời kèm cách suy luận và
 đúng những ô đã dùng dưới dạng trích dẫn bấm được. Bên dưới: một engine
 <code>.xlsx</code> Rust tự phát triển, pivot table, slicer, định dạng có
-điều kiện và truy vết công thức.</td>
+điều kiện, truy vết công thức, và ảnh nhúng trong ô dưới dạng rich value
+gốc của Excel — mở lại trong Excel chúng vẫn nằm trong ô.</td>
 </tr>
 </table>
 
@@ -136,9 +150,17 @@ vẽ dưới dạng <code>.pptx</code> thật.</td>
 <td><b>Một bộ slide hoàn chỉnh ra</b> — mười một slide được thiết kế với
 typography, hình ảnh nhất quán và lời kêu gọi hành động ở slide cuối; tiếp
 tục chỉnh với master, layout, smart guide và cắt ảnh không phá hủy, hoặc
-bảo panel đổi phong cách, viết lại và sắp lại thứ tự.</td>
+bảo panel đổi phong cách, viết lại và sắp lại thứ tự. Chèn một tệp
+<code>.glb</code> và nó là một mô hình 3D thật: xoay bằng cách kéo trong
+trình soạn thảo, được lưu đúng cách PowerPoint lưu 3D, và vẫn là 3D trong
+PowerPoint.</td>
 </tr>
 </table>
+
+**Slide Show → Record** ghi lời thuyết trình cho bộ slide từng slide một,
+có tạm dừng và tiếp tục. Lời thuyết trình cùng các mốc thời gian tự chuyển
+slide mà nó đo được được lưu vào `.pptx`, và PowerPoint phát lại đúng như
+vậy.
 
 ### 4 · PDF — chỉnh sửa chữ PDF tại chỗ, chuyển PDF sang Word ngay trên máy
 
@@ -217,6 +239,12 @@ thành <code>.md</code> thuần, với xuất <b>Markdown → Word</b> hoàn to�
 </tr>
 </table>
 
+**Ghi chú liên kết với nhau, theo đúng cách Obsidian làm.** `[[wiki links]]`
+bấm vào là nhảy tới đúng ghi chú được nêu tên, gõ `[[` được gợi ý hoàn
+thiện tên ghi chú, và `![[…]]` nhúng một ghi chú hay một ảnh ngay tại chỗ.
+Panel **Backlinks** liệt kê mọi ghi chú đang trỏ tới ghi chú đang mở, và
+chế độ xem **Graph** vẽ bản đồ liên kết của toàn bộ vault.
+
 ### 7 · Search — tìm ra tệp trả lời được câu hỏi, với TypeSafe Jev
 
 Mọi tệp trong thư mục làm việc của bạn được lập chỉ mục ngay trên máy: tên,
@@ -256,13 +284,19 @@ Gắn sao những tệp bạn đang làm việc và **Ask AI** trên màn hình 
 chúng là một cơ sở tri thức. Đặt câu hỏi bằng ngôn ngữ thường ngày; agent
 tìm trong các tệp đã gắn sao, đọc những tệp nó cần và trả lời với một trích
 dẫn sau mỗi thông điệp. Bấm vào trích dẫn và tệp mở trong đúng ứng dụng.
+Đính kèm tệp vào câu hỏi bằng cách kéo thả, dán hoặc từ menu **+** — ảnh
+được đưa cho mô hình dưới dạng đầu vào thị giác — và mỗi câu hỏi được giữ
+như một cuộc trò chuyện riêng: chuyển giữa chúng, tạo cuộc mới, xóa bớt,
+danh sách vẫn còn sau khi khởi động lại.
 
 <img src="../assets/readme/home-ask-ai-motion.webp" alt="Bản ghi màn hình Ask AI của GenOffice: câu hỏi tóm tắt nhanh, điều gì thúc đẩy tăng trưởng quý 3 của chúng ta và khu vực châu Á – Thái Bình Dương thể hiện ra sao, được gõ trên màn hình chính; agent đọc hai tệp đã gắn sao và trả lời với việc ra mắt Aurora X1 và mở rộng châu Á – Thái Bình Dương, mỗi thông điệp theo sau là một chip trích dẫn nêu tên báo cáo quý hoặc sổ doanh số theo vùng; bấm vào chip sổ tính mở nó trong Sheets với hàng châu Á – Thái Bình Dương được tô sáng" width="100%">
 
 Ask AI tìm kiếm trên cùng chỉ mục toàn văn trên máy với
 [Search](#7--search--find-the-file-that-answers-the-question-with-typesafe-jev)
 và đọc tệp theo từng trang, nên mô hình chỉ thấy các kết quả trùng và đúng
-đoạn nó cần, qua nhà cung cấp bạn đã chọn.
+đoạn nó cần, qua nhà cung cấp bạn đã chọn. Nó cũng có thể gọi CLI
+`genoffice` tích hợp sẵn để tạo thẳng các tệp; mỗi tệp hiện ra dưới dạng
+một thẻ artifact dưới câu trả lời, bấm vào là mở.
 
 ### 9 · CLI — agent lập trình của bạn điều khiển GenOffice, ngay trên máy của bạn
 
@@ -370,10 +404,10 @@ OpenRouter, Requesty, Opper, Cheaper Inference, Atlas Cloud và OpenCode
 Zen/Go, cùng một ô tuỳ biến cho bất kỳ điểm cuối tương thích OpenAI nào
 (base URL + khoá), kể cả máy chủ mô hình cục bộ. Search và media có nhà
 cung cấp riêng theo từng khả năng dưới **AI Media & Search**: Serper,
-Serply, Tavily hoặc Parallel cho tìm kiếm web; OpenAI, Gemini,
-Doubao/Seedream, GLM, Grok, Qwen, MiniMax hoặc bất kỳ điểm cuối ảnh tương
-thích OpenAI nào cho tạo ảnh và phân tích ảnh/video, cùng DeepSeek V4.1
-Flash cho phân tích ảnh.
+Serply, Tavily, Parallel, Keenable, Exa hoặc Firecrawl cho tìm kiếm web;
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax hoặc bất kỳ điểm
+cuối ảnh tương thích OpenAI nào cho tạo ảnh và phân tích ảnh/video, cùng
+DeepSeek V4.1 Flash cho phân tích ảnh.
 
 **TypeSafe Jev** xếp lại thứ hạng tìm kiếm tệp trên màn hình chính. Dưới
 **AI Media & Search → Local file search**, bật Jev search reranking và chọn
@@ -387,6 +421,7 @@ quả cục bộ hàng đầu được gửi đi để phán đoán và không g
 Genspark hay khoá tìm kiếm, và chạy trước bước scrape DuckDuckGo. Chọn
 Parallel dưới Web search và nhập khoá
 [Parallel](https://platform.parallel.ai/) để dùng Search API thay thế.
+Keenable cũng không cần khoá; khoá chỉ giúp nâng giới hạn tần suất.
 
 Toàn bộ bộ ứng dụng có giao diện sáng, tối và theo hệ thống. Giao diện chỉ
 thay đổi những gì trên màn hình: xuất, in và tệp đã lưu luôn giữ màu riêng
@@ -435,10 +470,11 @@ kiểm tra sản phẩm của mình.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -703,6 +739,16 @@ MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper, Cheaper Inference,
 Atlas Cloud và OpenCode Zen/Go, cùng bất kỳ điểm cuối tương thích OpenAI
 nào — kể cả máy chủ mô hình cục bộ. Tìm kiếm, tạo ảnh và phân tích
 ảnh/video nhận khoá riêng dưới Settings → AI Media & Search.
+
+</details>
+
+<details>
+<summary><b>Có thể tắt panel AI không?</b></summary>
+
+Có. Settings → AI có một công tắc **Show the AI sidebar**. Tắt đi thì mọi
+trình soạn thảo đều ẩn sidebar; tài liệu mới không còn tự mở nó. Một hành
+động AI tường minh — một nút trên ribbon, một mục trong menu — vẫn mở panel
+cho tài liệu đó, và đóng nó lại là trở về trạng thái ẩn.
 
 </details>
 

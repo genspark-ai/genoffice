@@ -35,7 +35,10 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
 마이크로소프트 오피스 대체 프로그램입니다. 네이티브 `.docx`, `.xlsx`,
 `.pptx` 파일을 열고 저장하며, PDF, Markdown, HTML을 편집하고, 모든 문서
 옆에 AI 에이전트를 배치합니다 — 옆에 덧붙인 챗봇이 아니라, 파일을 읽고
-변경을 수행한 뒤 정확히 무엇을 수정했는지 보여주는 편집기입니다.
+변경을 수행한 뒤 정확히 무엇을 수정했는지 보여주는 편집기입니다. ODF
+파일(`.odt`, `.ods`, `.odp`와 `.ott`/`.ots`/`.otp` 템플릿)은 편집 가능한
+OOXML 사본으로 열립니다. 가져오기는 열기 전용이며 — 저장은 항상 OOXML로
+기록하고, 절대 ODF로 기록하지 않습니다.
 
 - **실제 포맷을 그대로, 바이트 단위로 보존합니다.** 편집한 부분만 다시
   작성되고, 파일의 나머지는 바이트 단위로 그대로 유지되어 문서가 Word,
@@ -43,7 +46,12 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
 - **검토할 수 있는 AI입니다.** 편집 내용은 변경 내용 추적과 diff로
   반영되며 원클릭 롤백이 가능합니다. 스프레드시트에는 붙여넣은 값이
   아니라 실시간으로 동작하는 수식이 들어갑니다. 슬라이드와 페이지는
-  캔버스에 직접 생성되어 계속 자유롭게 편집할 수 있습니다.
+  캔버스에 직접 생성되어 계속 자유롭게 편집할 수 있습니다. Docs의
+  선택 영역이나 Sheets의 셀 범위를 모델이 보지 못하도록 숨기면 AI에는
+  이름 붙은 자리 표시자만 보입니다. 원래 문구는 파일 안에 그대로 남아
+  있다가 다시 돌아옵니다. 숨기기는 이 앱의 AI에만 적용됩니다 — CLI,
+  MCP 도구, 헤드리스 내보내기는 파일을 직접 읽으므로 이 문구를 여전히
+  볼 수 있습니다.
 - **로컬 우선으로 설계되었습니다.** 파일은 사용자의 기기에서 열리고,
   편집되고, 저장되고, 변환됩니다. PDF → Word / Excel / PowerPoint,
   Markdown → Word, HTML → Word 변환 모두 기기 내에서 실행됩니다. 오직
@@ -77,8 +85,8 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs: 배너 이미지가 있는 회사 개요 문서에서 AI가 개요 섹션을 다듬고 새로운 글머리 기호 섹션을 삽입했으며, 패널에서 원클릭 롤백을 제공하는 화면"></td>
 </tr>
 <tr>
-<td><b>Word가 배치한 그대로 파일을 엽니다</b> — 2단 구성, 여백 없는 전체 이미지, 음영 표, 머리글과 바닥글, Word의 줄 단위 계량 기준을 따르는 페이지 나누기까지 그대로입니다. 스타일, 댓글, 변경 내용 추적, 수식, 잉크 주석도 손상 없이 그대로 유지됩니다.</td>
-<td><b>원하는 편집을 요청하세요</b> — AI가 필요한 블록을 읽어 개요를 다시 작성하고 새로운 글머리 기호 섹션을 삽입합니다. AI가 수행한 모든 작업은 롤백 가능한 스냅샷으로 남으며, <b>변경 내용 추적</b>을 켜면 편집 내용이 Word 스타일의 수정 내용으로 표시됩니다.</td>
+<td><b>Word가 배치한 그대로 파일을 엽니다</b> — 2단 구성, 여백 없는 전체 이미지, 음영 표, 머리글과 바닥글, Word의 줄 단위 계량 기준을 따르는 페이지 나누기까지 그대로입니다. 스타일, 댓글, 변경 내용 추적, 수식, 잉크 주석, 콘텐츠 컨트롤도 손상 없이 그대로 유지됩니다. <b>Mailings</b> 탭이 문서를 메일 병합 템플릿으로 바꿔 줍니다: <code>.xlsx</code> 또는 <code>.csv</code> 수신자 목록을 고르고, 실제 <code>MERGEFIELD</code>를 삽입하고, 레코드별로 미리 본 다음, 하나의 문서로 병합하거나 레코드마다 <code>.docx</code> 하나씩 만듭니다.</td>
+<td><b>원하는 편집을 요청하세요</b> — AI가 필요한 블록을 읽어 개요를 다시 작성하고 새로운 글머리 기호 섹션을 삽입합니다. AI가 수행한 모든 작업은 롤백 가능한 스냅샷으로 남으며, <b>변경 내용 추적</b>을 켜면 편집 내용이 Word 스타일의 수정 내용으로 표시됩니다. 대신 마인드맵을 요청하면 문서 전체의 인터랙티브 다이어그램이 답으로 돌아옵니다: 분기는 접었다 폈다 할 수 있고, 확대/축소와 이동이 가능하며, 노드를 클릭해 후속 질문을 하고, 출처는 해당 블록으로 다시 연결됩니다.</td>
 </tr>
 </table>
 
@@ -91,7 +99,7 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
 </tr>
 <tr>
 <td><b>직접 만들어 줍니다</b> — 한 문장의 요청만으로 에이전트가 지역 및 카테고리별 실제 <code>SUMIF</code> 수식이 담긴 Summary 시트를 추가하고, 세로 막대형 차트를 삽입하며, 43건의 변경을 실행 취소 가능한 하나의 배치로 적용합니다.</td>
-<td><b>물어보세요</b> — 워크북에 대한 질문에는 근거와 함께, 사용한 정확한 셀이 클릭 가능한 출처로 돌아옵니다. 내부적으로는 자체 개발한 Rust <code>.xlsx</code> 엔진, 피벗 테이블, 슬라이서, 조건부 서식, 수식 추적 기능이 동작합니다.</td>
+<td><b>물어보세요</b> — 워크북에 대한 질문에는 근거와 함께, 사용한 정확한 셀이 클릭 가능한 출처로 돌아옵니다. 내부적으로는 자체 개발한 Rust <code>.xlsx</code> 엔진, 피벗 테이블, 슬라이서, 조건부 서식, 수식 추적, 그리고 Excel의 네이티브 rich value로 셀에 삽입되는 그림까지 동작합니다 — Excel에서 다시 열어도 그림은 여전히 그 셀 안에 있습니다.</td>
 </tr>
 </table>
 
@@ -106,9 +114,13 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
 </tr>
 <tr>
 <td><b>한 줄만 입력하세요</b> — "Aurora Home을 위한 10장짜리 투자자 피치 덱을 만들어줘…"처럼요. GenOffice가 스토리라인을 구성하고, 필요한 숫자를 조사하고, 실제 <code>.pptx</code>로 모든 슬라이드를 캔버스에 초안 작성합니다.</td>
-<td><b>완성된 덱이 나옵니다</b> — 일관된 타이포그래피, 이미지, 마무리 행동 유도 문구까지 디자인이 완료된 11장의 슬라이드. 마스터, 레이아웃, 스마트 가이드, 비파괴 자르기로 계속 편집하거나, 패널에 스타일 변경, 재작성, 순서 재배치를 요청할 수 있습니다.</td>
+<td><b>완성된 덱이 나옵니다</b> — 일관된 타이포그래피, 이미지, 마무리 행동 유도 문구까지 디자인이 완료된 11장의 슬라이드. 마스터, 레이아웃, 스마트 가이드, 비파괴 자르기로 계속 편집하거나, 패널에 스타일 변경, 재작성, 순서 재배치를 요청할 수 있습니다. <code>.glb</code>를 삽입하면 진짜 3D 모델이 됩니다: 편집기에서 드래그해 돌릴 수 있고, PowerPoint가 3D를 저장하는 방식 그대로 저장되어 PowerPoint에서도 여전히 3D입니다.</td>
 </tr>
 </table>
+
+**Slide Show → Record**는 덱의 내레이션을 슬라이드마다 녹음하며, 일시정지했다가
+이어서 할 수 있습니다. 녹음된 내레이션과 함께 측정된 자동 진행 시간도 `.pptx`에
+저장되고, PowerPoint에서도 같은 방식으로 재생됩니다.
 
 ### 4 · PDF — PDF 텍스트를 그 자리에서 편집하고, 기기 내에서 Word로 변환합니다
 
@@ -164,6 +176,11 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
 <td><b>렌더링되지만 순수 Markdown으로 저장됩니다</b> — Tiptap 블록 에디터에서 제목, 목록, 표, 이미지, 코드 블록, Mermaid 다이어그램을 다루면서도 저장 시에는 순수 <code>.md</code>로 그대로 기록되며, 완전히 로컬에서 동작하는 <b>Markdown → Word</b> 내보내기도 지원합니다.</td>
 </tr>
 </table>
+
+**Obsidian 방식의 링크 노트.** `[[wiki links]]`를 클릭하면 이름이 가리키는 노트로
+이동하고, `[[`를 입력하면 노트 이름 자동 완성이 나타나며, `![[…]]`는 노트나
+그림을 인라인으로 끼워 넣습니다. **Backlinks** 패널은 열려 있는 노트를 가리키는
+모든 노트를 나열하고, **Graph** 뷰는 볼트 전체의 링크를 한눈에 보여 줍니다.
 
 ### 7 · CLI — 코딩 에이전트가 내 컴퓨터에서 GenOffice를 움직입니다
 
@@ -241,9 +258,11 @@ DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty,
 OpenCode Zen/Go가 있으며, 로컬 모델 서버를 포함한 모든 OpenAI 호환
 엔드포인트(기본 URL + 키)를 위한 사용자 지정 슬롯도 제공됩니다. 검색과
 미디어는 **AI 미디어 및 검색**에서 기능별로 별도 공급자를 설정할 수
-있습니다: 웹 검색은 Serper 또는 Tavily, 이미지 생성과 이미지/비디오
-분석은 OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax 또는
-OpenAI 호환 이미지 엔드포인트 중에서 선택합니다.
+있습니다: 웹 검색은 Serper, Serply, Tavily, Parallel, Keenable, Exa
+또는 Firecrawl(Keenable도 키 없이 쓸 수 있으며, 키가 있으면 속도
+제한만 완화됩니다), 이미지 생성과 이미지/비디오 분석은 OpenAI,
+Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax 또는 OpenAI 호환
+이미지 엔드포인트 중에서 선택합니다.
 
 전체 제품군은 라이트, 다크, 시스템 테마를 지원합니다. 테마는 화면에
 보이는 모습만 바꿀 뿐입니다: 내보내기, 인쇄, 저장된 파일은 항상 문서
@@ -294,10 +313,11 @@ OpenCode, Windsurf는 바로 사용할 수 있고, 스킬을 읽을 수 있는 �
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -539,6 +559,17 @@ OpenRouter, Requesty, OpenCode Zen/Go를 위한 직접 키 사용을 지원하�
 서버를 포함한 모든 OpenAI 호환 엔드포인트도 사용할 수 있습니다. 검색,
 이미지 생성, 이미지/비디오 분석은 설정 → AI 미디어 및 검색에서 별도의
 키를 설정합니다.
+
+</details>
+
+<details>
+<summary><b>AI 패널을 끌 수 있나요?</b></summary>
+
+네. 설정 → AI에는 **Show the AI sidebar**(AI 사이드바 표시) 스위치가
+있습니다. 끄면 모든 편집기에서 사이드바가 숨겨지고, 새 문서에서 더는
+자동으로 열리지 않습니다. 리본 버튼이나 메뉴 항목처럼 명시적인 AI
+동작은 해당 문서에서 여전히 패널을 열며, 닫으면 다시 숨겨진 상태로
+돌아갑니다.
 
 </details>
 

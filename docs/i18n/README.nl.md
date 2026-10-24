@@ -36,7 +36,10 @@ macOS, Windows en Linux. Het opent en bewaart native `.docx`-, `.xlsx`- en
 `.pptx`-bestanden, bewerkt PDF, Markdown en HTML, en zet bij elk document een
 AI-agent — geen los chatvenstertje erbij geplakt, maar een editor die het
 bestand leest, de wijziging doorvoert en je precies laat zien wat er is
-aangepast.
+aangepast. ODF-bestanden (`.odt`, `.ods`, `.odp` en de
+`.ott`/`.ots`/`.otp`-sjablonen) worden geopend als bewerkbare
+OOXML-kopieën; de import is open-only — opslaan schrijft OOXML, nooit
+ODF.
 
 - **Echte formaten, byte-behoudend.** Alleen wat je bewerkt, wordt herschreven.
   Al het overige in het bestand blijft byte-voor-byte behouden, zodat
@@ -44,7 +47,11 @@ aangepast.
 - **AI die je kunt controleren.** Wijzigingen komen binnen als tracked changes
   en diffs met terugdraaien in één klik. Spreadsheets krijgen live formules,
   geen geplakte getallen. Decks en pagina's worden op het canvas gegenereerd
-  en blijven volledig bewerkbaar.
+  en blijven volledig bewerkbaar. Verberg een Docs-selectie of een
+  Sheets-celbereik voor het model en de AI ziet alleen een benoemde
+  placeholder; de originele woorden blijven in het bestand staan en komen
+  terug. Verbergen geldt alleen voor de AI in de app — de CLI, MCP-tools en
+  headless export lezen het bestand direct en zien deze woorden nog steeds.
 - **Lokaal by design.** Bestanden worden op je eigen machine geopend, bewerkt,
   opgeslagen en geconverteerd. PDF → Word / Excel / PowerPoint, Markdown →
   Word en HTML → Word draaien allemaal on-device. Alleen de AI-aanroepen
@@ -78,8 +85,8 @@ prompt die je in het paneel kunt lezen.
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs: een bedrijfsoverzicht met een bannerafbeelding; de AI heeft de Overview compacter gemaakt en een nieuwe sectie met opsommingstekens toegevoegd, en het paneel biedt een terugdraaifunctie met één klik"></td>
 </tr>
 <tr>
-<td><b>Opent het bestand precies zoals Word het opmaakt</b> — secties in twee kolommen, beeldvullende afbeeldingen, tabellen met arcering, koppen en voetteksten, paginering op basis van Words regelmetriek. Stijlen, opmerkingen, tracked changes, vergelijkingen en inkt komen ongewijzigd terug.</td>
-<td><b>Vraag om de wijziging</b> — de AI leest de blokken die het nodig heeft, herschrijft de Overview en voegt een nieuwe sectie met opsommingstekens toe. Elke AI-beurt is een snapshot die je kunt terugdraaien; met <b>Track changes</b> ingeschakeld komen wijzigingen binnen als revisies in Word-stijl.</td>
+<td><b>Opent het bestand precies zoals Word het opmaakt</b> — secties in twee kolommen, beeldvullende afbeeldingen, tabellen met arcering, koppen en voetteksten, paginering op basis van Words regelmetriek. Stijlen, opmerkingen, tracked changes, vergelijkingen, inkt en content controls komen ongewijzigd terug. Het tabblad <b>Mailings</b> maakt van het document een samenvoegsjabloon: kies een ontvangerslijst als <code>.xlsx</code> of <code>.csv</code>, voeg echte <code>MERGEFIELD</code>s in, bekijk per record een voorbeeld en voeg samen tot één document of één <code>.docx</code> per record.</td>
+<td><b>Vraag om de wijziging</b> — de AI leest de blokken die het nodig heeft, herschrijft de Overview en voegt een nieuwe sectie met opsommingstekens toe. Elke AI-beurt is een snapshot die je kunt terugdraaien; met <b>Track changes</b> ingeschakeld komen wijzigingen binnen als revisies in Word-stijl. Vraag in plaats daarvan om een mindmap en het antwoord is een interactief diagram van het hele document: inklapbare takken, zoomen en pannen, een klik op een knooppunt stelt een vervolgvraag, en verwijzingen springen terug naar het blok waar ze vandaan komen.</td>
 </tr>
 </table>
 
@@ -92,7 +99,7 @@ prompt die je in het paneel kunt lezen.
 </tr>
 <tr>
 <td><b>Bouw het</b> — met één zin voegt de agent een Summary-blad toe met echte <code>SUMIF</code>-formules per regio en categorie, voegt een kolomdiagram in, en past de 43 wijzigingen toe als één batch die je in één keer ongedaan kunt maken.</td>
-<td><b>Stel een vraag</b> — vragen over de werkmap komen terug met de redenering en de exacte cellen als klikbare verwijzingen. Onder de motorkap: een eigen Rust-<code>.xlsx</code>-engine, draaitabellen, slicers, voorwaardelijke opmaak en formule-traceren.</td>
+<td><b>Stel een vraag</b> — vragen over de werkmap komen terug met de redenering en de exacte cellen als klikbare verwijzingen. Onder de motorkap: een eigen Rust-<code>.xlsx</code>-engine, draaitabellen, slicers, voorwaardelijke opmaak, formule-traceren en afbeeldingen die als Excel-native rich values in cellen zijn ingesloten — bij het opnieuw openen in Excel zitten ze nog steeds in de cel.</td>
 </tr>
 </table>
 
@@ -107,9 +114,14 @@ prompt die je in het paneel kunt lezen.
 </tr>
 <tr>
 <td><b>Eén regel als input</b> — "Create a 10-slide investor pitch deck for Aurora Home…". GenOffice bepaalt de verhaallijn, zoekt de cijfers uit en zet elke slide als een echte <code>.pptx</code> op het canvas.</td>
-<td><b>Een afgewerkt deck als resultaat</b> — elf vormgegeven slides met consistente typografie, beeldmateriaal en een afsluitende call-to-action; blijf bewerken met masters, layouts, slimme hulplijnen en niet-destructief bijsnijden, of laat het paneel de stijl, tekst en volgorde aanpassen.</td>
+<td><b>Een afgewerkt deck als resultaat</b> — elf vormgegeven slides met consistente typografie, beeldmateriaal en een afsluitende call-to-action; blijf bewerken met masters, layouts, slimme hulplijnen en niet-destructief bijsnijden, of laat het paneel de stijl, tekst en volgorde aanpassen. Voeg een <code>.glb</code> in en het is een echt 3D-model: draai het rond door te slepen in de editor, opgeslagen zoals PowerPoint 3D opslaat, nog steeds 3D in PowerPoint.</td>
 </tr>
 </table>
+
+**Slide Show → Record** spreekt het deck slide voor slide in, met pauzeren en
+hervatten. De voice-over en de tijden voor automatisch doorschakelen die hij
+meet, worden in de `.pptx` opgeslagen, en PowerPoint speelt ze op dezelfde
+manier af.
 
 ### 4 · PDF — bewerk PDF-tekst direct op de pagina, converteer PDF naar Word on-device
 
@@ -165,6 +177,13 @@ een **design brief** voor — hook, kleurenpalet, typografie en stijlrichtingen
 <td><b>Weergegeven, opgeslagen als platte Markdown</b> — koppen, lijsten, tabellen, afbeeldingen, codeblokken en Mermaid-diagrammen in een Tiptap-blokeditor, terugweggeschreven als platte <code>.md</code>, met een volledig lokale <b>Markdown → Word</b>-export.</td>
 </tr>
 </table>
+
+**Gekoppelde notities, zoals Obsidian dat doet.** `[[wiki links]]` springen
+bij een klik naar de notitie die ze noemen, typ je `[[` dan krijg je
+aanvulling van notitienamen, en `![[…]]` voegt een notitie of een afbeelding
+inline in. Een **Backlinks**-paneel zet elke notitie op een rij die naar de
+geopende verwijst, en de **Graph**-weergave brengt de koppelingen van de hele
+vault in kaart.
 
 ### 7 · CLI — je coding agent stuurt GenOffice aan, op je eigen machine
 
@@ -246,9 +265,11 @@ Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, R
 en OpenCode Zen/Go, plus een aangepast slot voor elk OpenAI-compatibel
 endpoint (base URL + key), inclusief lokale modelservers. Zoeken en media
 hebben elk hun eigen providers per capability onder **AI Media & Search**:
-Serper of Tavily voor webzoeken, en OpenAI, Gemini, Doubao/Seedream, GLM,
-Grok, Qwen, MiniMax of elk OpenAI-compatibel images-endpoint voor
-beeldgeneratie en analyse van beeld en video.
+Serper, Serply, Tavily, Parallel, Keenable, Exa of Firecrawl voor webzoeken —
+Keenable werkt ook keyless; een key verhoogt alleen de rate limits — en
+OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax of elk
+OpenAI-compatibel images-endpoint voor beeldgeneratie en analyse van beeld en
+video.
 
 De hele suite wordt geleverd met een licht, donker en systeemthema. Thema's
 veranderen alleen wat er op je scherm te zien is: exports, afdrukken en
@@ -301,10 +322,11 @@ voordat hij het bewerkt en hoe hij zijn eigen werk controleert.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -556,6 +578,17 @@ Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
 Mistral, OpenRouter, Requesty en OpenCode Zen/Go, plus elk OpenAI-compatibel endpoint —
 inclusief lokale modelservers. Search, beeldgeneratie en analyse van beeld en
 video gebruiken hun eigen keys onder Settings → AI Media & Search.
+
+</details>
+
+<details>
+<summary><b>Kan ik het AI-paneel uitzetten?</b></summary>
+
+Ja. Onder Settings → AI staat de schakelaar **Show the AI sidebar**. Zet hem
+uit en elke editor verbergt de zijbalk; nieuwe documenten openen hem niet
+meer automatisch. Een expliciete AI-actie — een knop in het lint, een
+menu-item — opent het paneel nog steeds voor dat document, en na het sluiten
+is hij weer verborgen.
 
 </details>
 
