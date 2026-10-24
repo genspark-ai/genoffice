@@ -58,7 +58,7 @@ export function createFilesSkill(getAttachments: () => AttachmentMeta[]): AgentS
         return { output: `unknown tool: ${call.name}`, isError: true, summary: call.name }
       }
       const list = getAttachments()
-      const index = Number(call.input.index)
+      const index = Number.isFinite(Number(call.input.index)) ? Number(call.input.index) : 0
       const att = Number.isInteger(index) ? list[index] : undefined
       if (!att) {
         return {
