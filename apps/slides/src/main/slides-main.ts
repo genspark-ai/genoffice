@@ -145,7 +145,7 @@ import {
 } from '@genoffice/pptx-render'
 // From its own electron-utils subpath rather than the package barrel: the
 // barrel drags Electron-only modules into headless bundles.
-import { atomicWriteFile } from '@genoffice/electron-utils/atomic-write'
+import { atomicWriteFile, atomicWriteVia } from '@genoffice/electron-utils/atomic-write'
 import { DEFAULT_PICTURE_DPI, pictureFrame } from './picture-frame'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
 import { cfbKind, isCfbHeader } from './cfb-sniff'
@@ -482,6 +482,16 @@ function syncAttachedPaths(session: Session, path: string): void {
 }
 
 /**
+ * savePptxToFile streams into whatever path it is given and truncates it
+ * first, so the deck goes out through a sibling temp that is renamed over
+ * `filePath` only once the stream has finished: a save that dies mid-way —
+ * the app killed, power lost — leaves the previous deck on disk, not a
+ * cut-off one. The password path already gets this from atomicWriteFile.
+ */
+const writeDeckFile = (opened: OpenedPptx, filePath: string) =>
+  atomicWriteVia(filePath, (tmp) => savePptxToFile(opened, tmp))
+
+/**
  * MCP save: write a visible session's deck to an explicit path with no dialogs
  * — the slides:save-as pipeline minus the dialog. Overwrite policy is the
  * caller's (the MCP tool layer guards clobbering); this commits the save side
@@ -492,7 +502,7 @@ export async function saveSessionDeckTo(session: Session, filePath: string): Pro
   // yet (the dialog-driven paths always land in an existing folder)
   await mkdir(dirname(filePath), { recursive: true })
   const metaRevAtSave = session.metaRev ?? 0
-  await savePptxToFile(session.opened, filePath)
+  await writeDeckFile(session.opened, filePath)
   session.path = filePath
   autosaveBackoff.delete(filePath)
   // mirror slides:save-as: a saved deck is no longer an unsaved untitled draft
@@ -631,7 +641,7 @@ setInterval(() => {
       }
       try {
         await mkdir(dirname(target), { recursive: true })
-        await savePptxToFile(session.opened, target)
+        await writeDeckFile(session.opened, target)
         autosaveBackoff.delete(backoffKey)
       } catch (error) {
         autosaveBackoff.set(backoffKey, AUTOSAVE_BACKOFF_TICKS)
@@ -4532,7 +4542,7 @@ export function registerSlidesIpc(): void {
     }
     try {
       const metaRevAtSave = session.metaRev ?? 0
-      await savePptxToFile(session.opened, session.path)
+      await writeDeckFile(session.opened, session.path)
       autosaveBackoff.delete(session.path)
       void rm(autosavePathFor(session.path), { force: true }).catch(() => {})
       dropUntitledRecovery(e.sender.id)
@@ -4564,7 +4574,7 @@ export function registerSlidesIpc(): void {
     if (r.canceled || !r.filePath) return { ok: false }
     try {
       const metaRevAtSave = session.metaRev ?? 0
-      await savePptxToFile(session.opened, r.filePath)
+      await writeDeckFile(session.opened, r.filePath)
       session.path = r.filePath
       autosaveBackoff.delete(r.filePath)
       dropUntitledRecovery(e.sender.id)

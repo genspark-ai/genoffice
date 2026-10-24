@@ -752,6 +752,11 @@ export async function savePptx(opened: OpenedPptx): Promise<Uint8Array> {
  * time. JSZip throws stream errors from inside its own scheduled callbacks, so the
  * stream's 'error' event — not just the returned promise — has to be handled or the
  * throw escapes as an uncaught exception and takes the process down.
+ *
+ * The stream truncates `filePath` before its first chunk lands, so a caller that
+ * replaces an existing deck hands this a sibling temp path and renames it over the
+ * deck once the promise resolves (Slides does so through atomicWriteVia); given the
+ * deck's own path, a save that dies mid-stream leaves it cut off.
  */
 export async function savePptxToFile(opened: OpenedPptx, filePath: string): Promise<void> {
   const { createWriteStream } = await import('node:fs')
