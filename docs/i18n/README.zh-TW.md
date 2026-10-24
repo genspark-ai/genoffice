@@ -35,13 +35,18 @@ GenOffice 是一套免費、開源的 Microsoft Office 替代方案，支援 mac
 Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
 檔案，也能編輯 PDF、Markdown 與 HTML，並在每份文件旁放上一個 AI
 代理——不是硬塞在旁邊的聊天視窗，而是真正讀懂檔案、動手修改，
-並清楚告訴你它改了哪裡的編輯器。
+並清楚告訴你它改了哪裡的編輯器。ODF 檔案（`.odt`、`.ods`、`.odp` 以及
+`.ott`/`.ots`/`.otp` 範本）會以可編輯的 OOXML 副本開啟；這類匯入是
+「僅開啟」式的——儲存時寫出的始終是 OOXML，絕不會是 ODF。
 
 - **原生格式，位元級保留。** 只有你編輯的部分會被重寫，檔案裡其他
   內容都會原樣保留，文件在 Word、Excel 與 PowerPoint 中依然能正常運作。
 - **AI 的每一步都能檢視。** 編輯以追蹤修訂與差異呈現，一鍵即可回復。
   試算表拿到的是即時公式，不是貼上的數字。投影片與頁面會直接生成在
-  畫面上，且完全可再編輯。
+  畫面上，且完全可再編輯。把 Docs 的選取範圍或 Sheets 的儲存格範圍對
+  模型隱藏，AI 就只會看到一個具名佔位符；原文仍保留在檔案中，隨時可以
+  恢復。隱藏只涵蓋這個應用程式內的 AI——CLI、MCP 工具與無介面匯出會
+  直接讀取檔案，仍然看得到這些原文。
 - **本機優先的設計。** 檔案的開啟、編輯、儲存與轉換都在你的裝置上完成。
   PDF → Word / Excel / PowerPoint、Markdown → Word、HTML → Word 全部
   在本機執行。只有 AI 呼叫會離開這台裝置，且僅送往你選擇的服務商。
@@ -74,11 +79,16 @@ Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
 </tr>
 <tr>
 <td><b>依 Word 排版方式開啟檔案</b>——雙欄版面、滿版出血圖片、灰底表格、
-頁首頁尾，分頁依 Word 的行距量測。樣式、註解、追蹤修訂、公式與手寫
-筆跡都能原樣往返不受影響。</td>
+頁首頁尾，分頁依 Word 的行距量測。樣式、註解、追蹤修訂、公式、手寫
+筆跡與內容控制項都能原樣往返不受影響。<b>Mailings</b> 索引標籤能把文件
+變成合併列印範本：挑選 <code>.xlsx</code> 或 <code>.csv</code> 收件者清單，插入真正的
+<code>MERGEFIELD</code>，逐筆預覽，然後合併成一份文件，或每筆記錄各產出一份
+<code>.docx</code>。</td>
 <td><b>直接說出想要的修改</b>——AI 只讀取需要的區塊，重寫概覽段落並插入
 新的條列區塊。每一次 AI 操作都是可回復的快照；開啟<b>追蹤修訂</b>後，
-編輯會以 Word 樣式修訂呈現。</td>
+編輯會以 Word 樣式修訂呈現。改為要求一張心智圖，得到的則是整份文件的
+互動式圖表：分支可收合，支援縮放與平移，點選節點即可追問，引用還能
+跳回它所來自的區塊。</td>
 </tr>
 </table>
 
@@ -95,7 +105,8 @@ Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
 整合成一次可復原的批次操作。</td>
 <td><b>直接詢問</b>——對工作簿的提問會附上推理過程，並把實際使用的
 儲存格做成可點擊的引用連結。背後是自研的 Rust `.xlsx` 引擎、樞紐分析表、
-篩選器、條件格式與公式追蹤。</td>
+篩選器、條件格式、公式追蹤，以及以 Excel 原生 rich value 形式嵌入儲存格的
+圖片——Excel 重新開啟時，圖片仍然在儲存格中。</td>
 </tr>
 </table>
 
@@ -114,9 +125,15 @@ GenOffice 會規劃敘事脈絡、研究相關數據，並把每一頁直接生�
 成為一份真正的 `.pptx`。</td>
 <td><b>拿到的是完整成品</b>——十一頁設計完整的投影片，字體排版、圖像
 風格一致，並以行動呼籲收尾；可繼續用母片、版面配置、智慧輔助線與
-不破壞原圖的裁切功能編輯，或請面板重新設計風格、改寫文字、調整順序。</td>
+不破壞原圖的裁切功能編輯，或請面板重新設計風格、改寫文字、調整順序。
+插入 <code>.glb</code>，它就是真正的 3D 模型：在編輯器中拖曳即可轉動方向，
+以 PowerPoint 儲存 3D 的方式保存，在 PowerPoint 裡依然是一個 3D 模型。</td>
 </tr>
 </table>
+
+**Slide Show → Record** 可以為簡報逐頁錄製旁白，支援暫停與繼續。錄製的
+旁白與據此量測到的自動換片時間會一併存入 `.pptx`，PowerPoint 會以同樣的
+方式播放。
 
 ### 4 · PDF — 就地編輯 PDF 文字，在本機把 PDF 轉成 Word
 
@@ -189,6 +206,11 @@ GenOffice 會規劃敘事脈絡、研究相關數據，並把每一頁直接生�
 純 `.md`，並支援完全在本機執行的 <b>Markdown → Word</b> 匯出。</td>
 </tr>
 </table>
+
+**類 Obsidian 的互連筆記。** `[[wiki links]]` 點擊即可跳至它所指名的筆記，
+輸入 `[[` 會提供筆記名稱的自動補全，`![[…]]` 則把一則筆記或一張圖片內嵌
+進來。**Backlinks** 面板列出所有指向目前筆記的筆記，**Graph** 視圖則以
+圖譜形式呈現整個筆記庫的連結關係。
 
 ### 7 · CLI — 讓你的程式開發代理在本機驅動 GenOffice
 
@@ -269,9 +291,11 @@ Cursor 及任何其他 MCP 用戶端都能自行啟動 `genoffice mcp`，不必�
 Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty 與
 OpenCode Zen/Go，另外還有一個自訂欄位可填入任何相容 OpenAI 的服務端點
 （base URL + 金鑰），也包括本機模型伺服器。搜尋與媒體功能則各自在
-**AI 媒體與搜尋**下設定獨立的服務商：網頁搜尋可選 Serper 或 Tavily，
-圖片生成與圖片／影片分析可選 OpenAI、Gemini、Doubao/Seedream、GLM、
-Grok、Qwen、MiniMax，或任何相容 OpenAI 的圖片服務端點。
+**AI 媒體與搜尋**下設定獨立的服務商：網頁搜尋可選 Serper、Serply、
+Tavily、Parallel、Keenable、Exa 或 Firecrawl——其中 Keenable 同樣免金鑰，
+設定金鑰只會提高速率限制；圖片生成與圖片／影片分析可選 OpenAI、Gemini、
+Doubao/Seedream、GLM、Grok、Qwen、MiniMax，或任何相容 OpenAI 的圖片
+服務端點。
 
 整套軟體支援亮色、深色與跟隨系統三種主題。主題只會改變畫面顯示：
 匯出、列印與儲存的檔案永遠保留文件本身的原始色彩。
@@ -319,10 +343,11 @@ HTML，用的是同一套引擎，且無需介面。它隨 GenOffice 一起安�
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -555,6 +580,16 @@ Office 中依然能正常使用。
 MiniMax、Grok、Mistral、OpenRouter、Requesty 與 OpenCode Zen/Go，以及任何相容
 OpenAI 的服務端點——包括本機模型伺服器。搜尋、圖片生成與圖片／影片
 分析則在「設定 → AI 媒體與搜尋」下使用各自獨立的金鑰。
+
+</details>
+
+<details>
+<summary><b>我可以關閉 AI 面板嗎？</b></summary>
+
+可以。「設定 → AI」裡有一個 **Show the AI sidebar**（顯示 AI 側邊欄）開關。
+關閉之後，所有編輯器都會隱藏側邊欄，新文件也不再自動開啟它。明確的
+AI 動作——例如功能區按鈕或選單項目——仍會為該文件開啟面板，關閉後
+面板會恢復隱藏。
 
 </details>
 
