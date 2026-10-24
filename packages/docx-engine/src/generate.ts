@@ -1995,6 +1995,43 @@ export function stripParaMarkRevision(rawPPr: string, kind: 'del' | 'ins'): stri
   return stripped + tail
 }
 
+/** the paragraph mark's w:rPrChange: self-closing, or paired around the old <w:rPr> snapshot (group 2) */
+const PARA_MARK_RPR_CHANGE = /<w:rPrChange\b[^>]*?(\/>|>([\s\S]*?)<\/w:rPrChange>)/
+
+/** drop the paragraph mark's w:rPrChange record (pPr/rPr) once the formatting revision is accepted */
+export function stripParaMarkRPrChange(rawPPr: string): string {
+  const changeStart = rawPPr.indexOf('<w:pPrChange')
+  const live = changeStart === -1 ? rawPPr : rawPPr.slice(0, changeStart)
+  const tail = changeStart === -1 ? '' : rawPPr.slice(changeStart)
+  // the record is the only element nesting another <w:rPr> inside the mark's
+  // rPr, so once it is gone the empty-rPr check below is a flat match
+  const flat = live.replace(PARA_MARK_RPR_CHANGE, '')
+  return flat.replace(/<w:rPr>\s*<\/w:rPr>/, '') + tail
+}
+
+const OLD_RPR_SNAPSHOT = /<w:rPr(?:\s[^>]*)?\/>|<w:rPr(?:\s[^>]*)?>[\s\S]*?<\/w:rPr>/
+
+/** rewrite the paragraph mark's rPr to the properties its w:rPrChange recorded (reject); null = no record */
+export function revertParaMarkRPrChange(rawPPr: string): string | null {
+  const changeStart = rawPPr.indexOf('<w:pPrChange')
+  const live = changeStart === -1 ? rawPPr : rawPPr.slice(0, changeStart)
+  const tail = changeStart === -1 ? '' : rawPPr.slice(changeStart)
+  const change = PARA_MARK_RPR_CHANGE.exec(live)
+  if (!change) return null
+  // the mark's rPr is the last one opened before the record and the first one closed after it
+  const opens = [...live.slice(0, change.index).matchAll(/<w:rPr(?:\s[^>]*)?>/g)]
+  const open = opens[opens.length - 1]
+  if (!open || open.index === undefined) return null
+  const close = live.indexOf('</w:rPr>', change.index + change[0].length)
+  if (close === -1) return null
+  const old = change[2] ? OLD_RPR_SNAPSHOT.exec(change[2]) : null
+  // an empty old snapshot restores "no properties": drop the mark rPr, like strip does
+  let oldXml = old ? old[0] : ''
+  if (/^<w:rPr(?:\s[^>]*)?\/>$/.test(oldXml) || oldXml === '<w:rPr></w:rPr>') oldXml = ''
+  const restored = live.slice(0, open.index) + oldXml + live.slice(close + '</w:rPr>'.length)
+  return restored + tail
+}
+
 export function stripPPrChange(rawPPr: string): string {
   // pPrChange nests a <w:pPr> inside it, so we need depth-aware removal.
   // Pattern: <w:pPrChange ...> ... </w:pPrChange>

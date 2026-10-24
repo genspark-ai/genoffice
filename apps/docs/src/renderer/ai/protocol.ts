@@ -790,6 +790,7 @@ const REVISION_KIND_LABEL: Record<RevisionRange['kind'], string> = {
   pPrChange: 'paragraph formatting changed',
   paraMarkDel: 'paragraph mark deleted (joins the next paragraph)',
   paraMarkIns: 'paragraph mark inserted',
+  paraMarkRPrChange: 'paragraph mark formatting changed',
   rPrChange: 'text formatting changed',
   moveFrom: 'moved away',
   moveTo: 'moved here',

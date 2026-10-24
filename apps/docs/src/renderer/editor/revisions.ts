@@ -32,6 +32,7 @@ export interface RevisionRange {
     | 'pPrChange'
     | 'paraMarkDel'
     | 'paraMarkIns'
+    | 'paraMarkRPrChange'
     | 'moveFrom'
     | 'moveTo'
     | 'rPrChange'
@@ -211,6 +212,9 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     if (pPrChange) out.push({ ...range, kind: 'pPrChange', ...credit(pPrChange) })
     if (paraMarkDel) out.push({ ...range, kind: 'paraMarkDel', ...credit(paraMarkDel) })
     if (paraMarkIns) out.push({ ...range, kind: 'paraMarkIns', ...credit(paraMarkIns) })
+    const paraMarkRPrChange = node.attrs?.paraMarkRPrChange as string | null
+    if (paraMarkRPrChange)
+      out.push({ ...range, kind: 'paraMarkRPrChange', ...credit(paraMarkRPrChange) })
     if (moveRevision === 'from' || moveRevision === 'to')
       moveParas.push({
         ...range,
@@ -227,20 +231,23 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
     return match ? para.kind : null
   }
 
-  // Second pass: collect run-level text revisions (ins/del marks)
+  // Second pass: collect run-level text revisions (ins/del marks). A formatting
+  // revision is its own entry even on inserted or deleted text — Word's
+  // reviewing pane lists "Inserted" and "Formatted" separately there — so it
+  // is kept apart from the ins/del adjacency merge and appended below.
+  const formatRevs: RevisionRange[] = []
   doc.descendants((node, pos) => {
     if (!node.isText) return
     const ins = node.marks.find((m) => m.type.name === 'ins')
     const del = node.marks.find((m) => m.type.name === 'del')
-    if (!ins && !del) {
-      const rpr = node.marks.find((m) => m.type.name === 'rprChange')
-      if (!rpr) return
+    const rpr = node.marks.find((m) => m.type.name === 'rprChange')
+    if (rpr) {
       const author = String(rpr.attrs.author ?? '')
-      const prev = out[out.length - 1]
-      if (prev && prev.to === pos && prev.kind === 'rPrChange' && prev.author === author) {
+      const prev = formatRevs[formatRevs.length - 1]
+      if (prev && prev.to === pos && prev.author === author) {
         prev.to = pos + node.nodeSize
       } else {
-        out.push({
+        formatRevs.push({
           from: pos,
           to: pos + node.nodeSize,
           kind: 'rPrChange',
@@ -248,8 +255,8 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
           ...(rpr.attrs.date ? { date: String(rpr.attrs.date) } : {}),
         })
       }
-      return
     }
+    if (!ins && !del) return
     const textKind: 'ins' | 'del' | 'both' = ins && del ? 'both' : ins ? 'ins' : 'del'
     if (isSuppressed(pos, textKind)) return
     const kind = (textKind === 'both' ? null : moveKindAt(pos, textKind)) ?? textKind
@@ -271,6 +278,7 @@ export function collectRevisions(doc: PmNode): RevisionRange[] {
   // a moved paragraph with no run-level marks (empty, or the mark alone moved) is the revision itself
   for (const m of moveParas)
     if (!m.hasRuns) out.push({ from: m.from, to: m.to, kind: m.kind, author: '' })
+  out.push(...formatRevs)
   out.push(...tableRevs)
   return out.sort((a, b) => a.from - b.from)
 }
@@ -350,49 +358,75 @@ export function applyRevisions(
 
     if (r.kind === 'rPrChange') {
       // accept = keep the current format; reject = restore the pre-revision modeled format subset.
-      // Both clear the rprChange mark and strip the w:rPrChange record from rawRPr (takes effect on save)
-      state.doc.nodesBetween(r.from, r.to, (node, pos) => {
-        if (!node.isText) return
-        const from = Math.max(pos, r.from)
-        const to = Math.min(pos + node.nodeSize, r.to)
-        const rpr = node.marks.find((m) => m.type.name === 'rprChange')
-        const ts = node.marks.find((m) => m.type.name === 'docTextStyle')
-        if (mode === 'reject' && rpr) {
-          const old = (rpr.attrs.old ?? {}) as Record<string, unknown>
-          for (const flag of ['bold', 'italic', 'underline', 'strike'] as const) {
-            const markType = state.schema.marks[flag]
-            if (!markType) continue
-            if (old[flag]) tr.addMark(from, to, markType.create())
-            else tr.removeMark(from, to, markType)
+      // Both clear the rprChange mark and strip the w:rPrChange record from rawRPr (takes effect on save).
+      // The range can overlap an ins / del entry on the same text, so positions
+      // go through the transaction's mapping and the (current) transaction doc.
+      const from = tr.mapping.map(r.from, 1)
+      const to = tr.mapping.map(r.to, -1)
+      if (from < to) {
+        tr.doc.nodesBetween(from, to, (node, pos) => {
+          if (!node.isText) return
+          const nFrom = Math.max(pos, from)
+          const nTo = Math.min(pos + node.nodeSize, to)
+          const rpr = node.marks.find((m) => m.type.name === 'rprChange')
+          const ts = node.marks.find((m) => m.type.name === 'docTextStyle')
+          if (mode === 'reject' && rpr) {
+            const old = (rpr.attrs.old ?? {}) as Record<string, unknown>
+            for (const flag of ['bold', 'italic', 'underline', 'strike'] as const) {
+              const markType = state.schema.marks[flag]
+              if (!markType) continue
+              if (old[flag]) tr.addMark(nFrom, nTo, markType.create())
+              else tr.removeMark(nFrom, nTo, markType)
+            }
+            const tsType = state.schema.marks.docTextStyle
+            if (tsType) {
+              const baseAttrs = ts ? { ...ts.attrs } : {}
+              const nextAttrs: Record<string, unknown> = { ...baseAttrs }
+              for (const field of TEXT_STYLE_FIELDS) nextAttrs[field] = old[field] ?? null
+              // Reject goes back to the modeled old format. rawRPr contains the new
+              // format plus the revision record, so rebuild instead of preserving it.
+              nextAttrs.rawRPr = null
+              const hasAny = TEXT_STYLE_FIELDS.some(
+                (field) => nextAttrs[field] !== null && nextAttrs[field] !== undefined,
+              )
+              if (ts || hasAny) tr.addMark(nFrom, nTo, tsType.create(nextAttrs))
+            }
           }
-          const tsType = state.schema.marks.docTextStyle
-          if (tsType) {
-            const baseAttrs = ts ? { ...ts.attrs } : {}
-            const nextAttrs: Record<string, unknown> = { ...baseAttrs }
-            for (const field of TEXT_STYLE_FIELDS) nextAttrs[field] = old[field] ?? null
-            // Reject goes back to the modeled old format. rawRPr contains the new
-            // format plus the revision record, so rebuild instead of preserving it.
-            nextAttrs.rawRPr = null
-            const hasAny = TEXT_STYLE_FIELDS.some(
-              (field) => nextAttrs[field] !== null && nextAttrs[field] !== undefined,
+          if (ts?.attrs.rawRPr && /<w:rPrChange/.test(String(ts.attrs.rawRPr))) {
+            const raw = String(ts.attrs.rawRPr).replace(
+              /<w:rPrChange[\s\S]*?<\/w:rPrChange>|<w:rPrChange[^>]*\/>/,
+              '',
             )
-            if (ts || hasAny) tr.addMark(from, to, tsType.create(nextAttrs))
+            // the reject branch already rebuilt docTextStyle above; strip the record here only on accept or when nothing was rebuilt
+            const cur = mode === 'reject' ? null : ts
+            if (cur) tr.addMark(nFrom, nTo, cur.type.create({ ...cur.attrs, rawRPr: raw }))
+            else if (mode === 'reject') {
+              // reject: drop the old format's rawRPr too (modeled fields restored, unmodeled attrs abandoned)
+            }
           }
-        }
-        if (ts?.attrs.rawRPr && /<w:rPrChange/.test(String(ts.attrs.rawRPr))) {
-          const raw = String(ts.attrs.rawRPr).replace(
-            /<w:rPrChange[\s\S]*?<\/w:rPrChange>|<w:rPrChange[^>]*\/>/,
-            '',
-          )
-          // the reject branch already rebuilt docTextStyle above; strip the record here only on accept or when nothing was rebuilt
-          const cur = mode === 'reject' ? null : ts
-          if (cur) tr.addMark(from, to, cur.type.create({ ...cur.attrs, rawRPr: raw }))
-          else if (mode === 'reject') {
-            // reject: drop the old format's rawRPr too (modeled fields restored, unmodeled attrs abandoned)
-          }
-        }
-      })
-      tr.removeMark(r.from, r.to, state.schema.marks.rprChange)
+        })
+        tr.removeMark(from, to, state.schema.marks.rprChange)
+      }
+      continue
+    }
+
+    if (r.kind === 'paraMarkRPrChange') {
+      // the record rides the paragraph attr: accept strips it (the save cleans
+      // the XML), reject also flags the save to restore the recorded old rPr
+      const pos = tr.mapping.map(r.from, 1)
+      const node = tr.doc.nodeAt(pos)
+      if (!node || !node.attrs?.paraMarkRPrChange) continue
+      tr.setNodeMarkup(
+        pos,
+        undefined,
+        mode === 'reject'
+          ? {
+              ...node.attrs,
+              paraMarkRPrChange: null,
+              paraMarkRPrRestore: node.attrs.paraMarkRPrChange,
+            }
+          : { ...node.attrs, paraMarkRPrChange: null },
+      )
       continue
     }
 

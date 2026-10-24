@@ -362,6 +362,10 @@ const anchorAttrs = {
   paraMarkDel: { default: null as string | null },
   /** JSON {author,date?,id?} when the paragraph mark is a tracked insertion (w:pPr/w:rPr/w:ins) */
   paraMarkIns: { default: null as string | null },
+  /** JSON {author,date?,id?} when the paragraph mark has a tracked formatting change (w:pPr/w:rPr/w:rPrChange) */
+  paraMarkRPrChange: { default: null as string | null },
+  /** set on reject of paraMarkRPrChange: the save rewrites the mark's rPr to the recorded old properties */
+  paraMarkRPrRestore: { default: null as string | null },
   /** top-level insertion/deletion revision ({kind,author,date?}) */
   blockRevision: { default: null as Record<string, string> | null },
   /** JSON marks snapshot for an empty block's caret (Word's pilcrow
