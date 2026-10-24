@@ -65,6 +65,7 @@ export const ru = {
   ribbonOpen: 'Открыть…',
   ribbonSave: 'Сохранить',
   ribbonSaveAs: 'Сохранить как…',
+  ribbonNameWithAi: 'Назвать с помощью ИИ…',
   ribbonConvert: 'Преобразовать',
   ribbonConvertTip: 'Преобразовать в PDF, HTML, Markdown или изображения',
   ribbonConvertPdf: 'Преобразовать в PDF…',

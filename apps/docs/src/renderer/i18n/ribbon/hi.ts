@@ -66,6 +66,7 @@ export const hi = {
   ribbonOpen: 'खोलें…',
   ribbonSave: 'सहेजें',
   ribbonSaveAs: 'इस रूप में सहेजें…',
+  ribbonNameWithAi: 'AI से नाम दें…',
   ribbonConvert: 'बदलें',
   ribbonConvertTip: 'PDF, HTML, Markdown या छवियों में बदलें',
   ribbonConvertPdf: 'PDF में बदलें…',

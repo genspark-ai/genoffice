@@ -66,6 +66,7 @@ export const ms = {
   ribbonOpen: 'Buka…',
   ribbonSave: 'Simpan',
   ribbonSaveAs: 'Simpan Sebagai…',
+  ribbonNameWithAi: 'Namakan dengan AI…',
   ribbonConvert: 'Tukar',
   ribbonConvertTip: 'Tukar kepada PDF, HTML, Markdown atau imej',
   ribbonConvertPdf: 'Tukar kepada PDF…',

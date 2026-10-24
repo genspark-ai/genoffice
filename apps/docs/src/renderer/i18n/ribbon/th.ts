@@ -65,6 +65,7 @@ export const th = {
   ribbonOpen: 'เปิด…',
   ribbonSave: 'บันทึก',
   ribbonSaveAs: 'บันทึกเป็น…',
+  ribbonNameWithAi: 'ตั้งชื่อด้วย AI…',
   ribbonConvert: 'แปลง',
   ribbonConvertTip: 'แปลงเป็น PDF, HTML, Markdown หรือรูปภาพ',
   ribbonConvertPdf: 'แปลงเป็น PDF…',

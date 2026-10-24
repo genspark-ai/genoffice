@@ -65,6 +65,7 @@ export const he = {
   ribbonOpen: 'פתח…',
   ribbonSave: 'שמור',
   ribbonSaveAs: 'שמירה בשם…',
+  ribbonNameWithAi: 'שם באמצעות AI…',
   ribbonConvert: 'המרה',
   ribbonConvertTip: 'המרה ל-PDF, HTML, Markdown או תמונות',
   ribbonConvertPdf: 'המרה ל-PDF…',
