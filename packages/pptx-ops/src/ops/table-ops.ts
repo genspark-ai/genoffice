@@ -289,11 +289,11 @@ function resolveTableStyle(op: Op): ResolvedTableStyle {
   if (
     op.shadingColor != null &&
     op.shadingColor !== 'none' &&
-    !HEX_RE.test(String(op.shadingColor))
+    !HEX_RE.test(String(op.shadingColor).trim())
   ) {
     throw new GuidedError('op "setTableStyle": shadingColor must be #RRGGBB or "none".')
   }
-  if (op.borderColor != null && !HEX_RE.test(String(op.borderColor))) {
+  if (op.borderColor != null && !HEX_RE.test(String(op.borderColor).trim())) {
     throw new GuidedError('op "setTableStyle": borderColor must be #RRGGBB.')
   }
   if (op.borderWidthPt != null) {
