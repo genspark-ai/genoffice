@@ -51,6 +51,10 @@ export const de = {
   aiTimeoutError: 'Zeitüberschreitung der KI-Antwort',
   aiToolWebSearch: 'Websuche',
   aiToolWebSearchDone: '„{query}" gesucht · {count} Treffer',
+  aiToolImageSearch: 'Bildersuche',
+  aiToolImageSearchDone: 'Bildersuche „{query}“ ({count} Bilder)',
+  aiToolGenImage: 'Bild generieren',
+  aiToolGenImageDone: 'KI-generiertes Bild eingefügt',
   aiTruncatedNote:
     '(Die Antwort wurde durch das Längenlimit abgeschnitten und ist möglicherweise unvollständig.)',
   aiTurnLimit: 'Schrittlimit pro Lauf erreicht — senden Sie eine weitere Anweisung.',

@@ -3,6 +3,8 @@ import { t } from '../i18n/locale'
 import type { ElementEntry, ParseMap } from '../document/parse-map'
 import type { HtmlOp, OpError } from '../document/ops'
 import { lineOf } from '../document/match'
+import { insertOp } from '../document/insert-presets'
+import type { ImageSearchResult } from '../../shared/ipc'
 import { buildProjection, type RedactionProjection } from './redact'
 import { redactGuardForOps } from './redact-guard'
 import {
@@ -402,6 +404,39 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       },
     },
   },
+  {
+    name: 'search_images',
+    description:
+      'Search the web for images. Returns a list of image URLs with titles and sizes; after picking one, place it with apply_ops (an <img> whose src is the imageUrl). For illustration/diagram-style art that search cannot find, or when the user asks you to generate/draw a picture, use generate_image instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'image search keywords (English works better)' },
+        maxResults: { type: 'integer', description: 'maximum number of results, default 8' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'generate_image',
+    description:
+      'Generate an illustration with AI from a text prompt and insert it into the page (after the selected element, else at the end of <body>). For illustration/diagram-style art that search_images cannot find, or when the user asks to generate/draw a picture.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'detailed English description of the image to generate',
+        },
+        aspectRatio: {
+          type: 'string',
+          description: 'e.g. "1:1", "16:9", "4:3"; omit for the default',
+        },
+        alt: { type: 'string', description: 'alt text describing the image' },
+      },
+      required: ['prompt'],
+    },
+  },
 ]
 
 const STALE_MESSAGE =
@@ -556,6 +591,86 @@ export async function expandAttachmentRefs(
   return { ops: expanded, errors }
 }
 
+/** attribute-value escaping for tool-authored markup (same set insert-presets escapes) */
+function escAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+}
+
+/** magic-byte sniff: the fetch handler's content-type mapping defaults unknown
+ *  types to jpeg, which would store webp/svg bytes under a lying extension */
+function sniffImageExt(base64: string): 'png' | 'jpg' | 'gif' | null {
+  let head: string
+  try {
+    head = atob(base64.slice(0, 12))
+  } catch {
+    return null
+  }
+  if (head.startsWith('\x89PNG')) return 'png'
+  if (head.startsWith('GIF8')) return 'gif'
+  if (head.charCodeAt(0) === 0xff && head.charCodeAt(1) === 0xd8) return 'jpg'
+  return null
+}
+
+/**
+ * Where an AI-sourced image lands in the document — the same chain the
+ * attachment:// expansion uses: assets/ next to a saved document, an inline
+ * data URL when the document has no saved location yet, the hot-linked URL
+ * itself when the host refused the download (the preview loads remote images).
+ */
+async function persistImageSrc(
+  url: string,
+): Promise<{ src: string; where: 'assets' | 'inline' | 'remote' }> {
+  try {
+    const fetched = await window.htmlApi.fetchImage(url)
+    if (fetched) {
+      const ext = sniffImageExt(fetched.base64)
+      if (ext) {
+        const rel = await window.htmlApi.saveImage({ base64: fetched.base64, ext })
+        if (rel) return { src: rel, where: 'assets' }
+      }
+      return { src: `data:${fetched.mime};base64,${fetched.base64}`, where: 'inline' }
+    }
+  } catch {
+    // fall through to the hot-linked URL
+  }
+  return { src: url, where: 'remote' }
+}
+
+/**
+ * search_images (read-only): the same main-process image search as
+ * docs/sheets/slides (Serper etc. with DuckDuckGo fallback). A backend failure
+ * must not read as an empty gallery — the model would fabricate image choices.
+ */
+async function executeImageSearch(call: AgentToolCall): Promise<ToolExecution> {
+  const summary = t('aiToolImageSearch')
+  const query = String(call.input.query ?? '').trim()
+  if (!query) return { output: 'query must not be empty', isError: true, summary }
+  const r: ImageSearchResult = await window.htmlApi.imageSearch(
+    query,
+    Number(call.input.maxResults) || 8,
+  )
+  if (r.method === 'error') {
+    return {
+      output: `image search failed (service error, not an empty result — you may retry): ${r.error ?? 'unknown error'}`,
+      isError: true,
+      summary,
+    }
+  }
+  const lines = r.images.map(
+    (im, i) =>
+      `${i + 1}. ${im.title || '(untitled)'} [${im.width ?? '?'}x${im.height ?? '?'}]\n   ${im.imageUrl}`,
+  )
+  return {
+    output: lines.join('\n') || '(no images)',
+    mutated: false,
+    summary: t('aiToolImageSearchDone', { query, count: r.images.length }),
+  }
+}
+
+/** hidden from the tool list while no image provider is reachable (see createHtmlSkill) */
+export const IMAGE_GEN_OFF_NOTE =
+  '\n\nNote: generate_image is currently unavailable (no image provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise it; use search_images for imagery.'
+
 export function createHtmlSkillCore(access: HtmlDocAccess): {
   buildContext(): string
   executeTool(call: AgentToolCall, signal?: AbortSignal): ToolExecution | Promise<ToolExecution>
@@ -608,6 +723,63 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
     access.replaceAll(injectBrief(access.getText(), brief), 'pin brief')
     markSeen()
     return true
+  }
+
+  /** generate_image: one AI illustration, landed like the attachment pipeline does (see persistImageSrc) */
+  const generateImage = async (call: AgentToolCall): Promise<ToolExecution> => {
+    const summary = t('aiToolGenImage')
+    const prompt = String(call.input.prompt ?? '').trim()
+    if (!prompt) return { output: 'prompt must not be empty', isError: true, summary }
+    const aspectRatio = String(call.input.aspectRatio ?? '').trim()
+    const generated = await window.htmlApi.aiGenerateImage({
+      prompt,
+      ...(aspectRatio ? { aspectRatio } : {}),
+    })
+    // never write after the user hit stop (generation may resolve long after the abort)
+    if (currentSignal?.aborted)
+      return { output: 'stopped by the user; the image was not inserted', isError: true, summary }
+    if (!generated.url)
+      return { output: generated.error ?? 'image generation failed', isError: true, summary }
+    const { src, where } = await persistImageSrc(generated.url)
+    if (currentSignal?.aborted)
+      return { output: 'stopped by the user; the image was not inserted', isError: true, summary }
+    // the generation + download can take long: user edits made meanwhile must
+    // keep the freshness baseline stale, so only our own insertion marks it seen
+    if (stale()) return { output: STALE_MESSAGE, isError: true, summary }
+    const alt = String(call.input.alt ?? '').trim()
+    const img = `<img src="${escAttr(src)}"${alt ? ` alt="${escAttr(alt)}"` : ''} style="max-width: 100%;">`
+    const selectedSid = access.getSelectedSid()
+    const op = insertOp(
+      access.getMap(),
+      selectedSid !== null ? access.getMap().bySid.get(selectedSid) : undefined,
+      img,
+    )
+    if (!op)
+      return {
+        output: 'the document has no element to anchor an image to',
+        isError: true,
+        summary,
+      }
+    const result = access.applyOps([op], 'generate_image')
+    if (!result.ok)
+      return {
+        output: result.errors.map((e) => `${e.kind.toUpperCase()}: ${e.message}`).join('\n'),
+        isError: true,
+        summary,
+      }
+    markSeen()
+    const at = lineOf(access.getText(), result.ranges[0]![0])
+    const landed =
+      where === 'assets'
+        ? `saved as ${src}`
+        : where === 'inline'
+          ? 'inlined as a data URL because the document has no saved location yet'
+          : `hot-linked (${src}); the host may expire it`
+    return {
+      output: `Inserted the image at L${at} (${landed}). Document is now version ${access.getVersion()}.`,
+      mutated: true,
+      summary: t('aiToolGenImageDone'),
+    }
   }
 
   return {
@@ -957,6 +1129,10 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
             '',
           )
         }
+        case 'search_images':
+          return executeImageSearch(call)
+        case 'generate_image':
+          return generateImage(call)
         default:
           return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
       }
@@ -968,14 +1144,22 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
 export function createHtmlSkill(
   access: HtmlDocAccess,
   systemPrompt: string | { readonly systemPrompt: string },
+  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  imageGenAvailable?: () => boolean,
 ): AgentSkill {
   const core = createHtmlSkillCore(access)
   return {
     id: 'html',
     get systemPrompt() {
-      return typeof systemPrompt === 'string' ? systemPrompt : systemPrompt.systemPrompt
+      const base = typeof systemPrompt === 'string' ? systemPrompt : systemPrompt.systemPrompt
+      return imageGenAvailable?.() === false ? `${base}${IMAGE_GEN_OFF_NOTE}` : base
     },
-    tools: AGENT_TOOLS,
+    // live like the prompt: the loop re-reads the tool list before every request
+    get tools() {
+      return imageGenAvailable?.() === false
+        ? AGENT_TOOLS.filter((tl) => tl.name !== 'generate_image')
+        : AGENT_TOOLS
+    },
     buildContext: () => core.buildContext(),
     executeTool: (call, signal) => core.executeTool(call, signal),
   }
