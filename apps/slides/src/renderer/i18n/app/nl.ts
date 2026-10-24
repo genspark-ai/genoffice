@@ -233,6 +233,8 @@ export const nl = {
   appMasterFillNone: 'Geen opvulling',
   appMasterStroke: 'Contourkleur…',
   appMasterStrokeNone: 'Geen contour',
+  appMasterInsertTextBox: 'Tekstvak',
+  appMasterInsertShape: 'Vormen',
   appStartOpening: 'Openen…',
   appReadingSlideTitle:
     'Klik om naar de volgende dia te gaan (Esc om de leesweergave af te sluiten)',

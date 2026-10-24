@@ -228,6 +228,8 @@ export const pl = {
   appMasterFillNone: 'Brak wypełnienia',
   appMasterStroke: 'Kolor konturu…',
   appMasterStrokeNone: 'Brak konturu',
+  appMasterInsertTextBox: 'Pole tekstowe',
+  appMasterInsertShape: 'Kształty',
   appStartOpening: 'Otwieranie…',
   appReadingSlideTitle:
     'Kliknij, aby przejść do następnego slajdu (Esc, aby wyjść z widoku do czytania)',

@@ -229,6 +229,8 @@ export const pt = {
   appMasterFillNone: 'Sem Preenchimento',
   appMasterStroke: 'Cor do Contorno…',
   appMasterStrokeNone: 'Sem Contorno',
+  appMasterInsertTextBox: 'Caixa de Texto',
+  appMasterInsertShape: 'Formas',
   appStartOpening: 'Abrindo…',
   appReadingSlideTitle:
     'Clique para ir ao próximo slide (Esc para sair do Modo de Exibição de Leitura)',

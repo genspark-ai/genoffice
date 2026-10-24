@@ -217,6 +217,8 @@ export const ko = {
   appMasterFillNone: '채우기 없음',
   appMasterStroke: '윤곽선 색…',
   appMasterStrokeNone: '윤곽선 없음',
+  appMasterInsertTextBox: '텍스트 상자',
+  appMasterInsertShape: '도형',
   appStartOpening: '여는 중…',
   appReadingSlideTitle: '클릭하면 다음 페이지로 이동(Esc 키로 읽기용 보기 종료)',
   appReadingPrev: '‹ 이전 페이지',

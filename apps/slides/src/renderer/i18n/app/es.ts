@@ -228,6 +228,8 @@ export const es = {
   appMasterFillNone: 'Sin relleno',
   appMasterStroke: 'Color del contorno…',
   appMasterStrokeNone: 'Sin contorno',
+  appMasterInsertTextBox: 'Cuadro de texto',
+  appMasterInsertShape: 'Formas',
   appStartOpening: 'Abriendo…',
   appReadingSlideTitle:
     'Haga clic para ir a la diapositiva siguiente (Esc para salir de la vista de lectura)',

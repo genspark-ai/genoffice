@@ -209,6 +209,8 @@ export const zhTW = {
   appMasterFillNone: '無填滿',
   appMasterStroke: '外框色彩…',
   appMasterStrokeNone: '無外框',
+  appMasterInsertTextBox: '文字方塊',
+  appMasterInsertShape: '圖案',
   appStartOpening: '正在開啟…',
   appReadingSlideTitle: '按一下翻到下一頁（Esc 離開閱讀檢視）',
   appReadingPrev: '‹ 上一頁',

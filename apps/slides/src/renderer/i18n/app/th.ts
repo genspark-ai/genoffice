@@ -215,6 +215,8 @@ export const th = {
   appMasterFillNone: 'ไม่เติมสี',
   appMasterStroke: 'สีเส้นกรอบ…',
   appMasterStrokeNone: 'ไม่มีเส้นกรอบ',
+  appMasterInsertTextBox: 'กล่องข้อความ',
+  appMasterInsertShape: 'รูปร่าง',
   appStartOpening: 'กำลังเปิด…',
   appReadingSlideTitle: 'คลิกเพื่อไปยังสไลด์ถัดไป (กด Esc เพื่อออกจากมุมมองการอ่าน)',
   appReadingPrev: '‹ ก่อนหน้า',

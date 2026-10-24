@@ -77,7 +77,9 @@ function fillExtFromDataUrl(op: Op, field = 'bytes'): void {
 register({
   name: 'addElement',
   validate(op, ctx) {
-    resolveSlide(ctx, op)
+    // allowPart: the master edit view inserts text boxes and shapes onto
+    // master/layout parts through the same op (their spTree is slide-shaped)
+    resolveSlide(ctx, op, { allowPart: true })
     reqRect(op)
     if (typeof op.kind !== 'string' || !op.kind) {
       throw new GuidedError('op "addElement" needs "kind": "textbox" or a preset geometry name.')
@@ -101,7 +103,7 @@ register({
     }
   },
   apply(op, ctx): OpRecord {
-    const { slide } = resolveSlide(ctx, op)
+    const { slide } = resolveSlide(ctx, op, { allowPart: true })
     const el = addElement(slide, {
       kind: String(op.kind),
       offset: reqRect(op),

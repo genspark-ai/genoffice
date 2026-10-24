@@ -230,6 +230,8 @@ export const fr = {
   appMasterFillNone: 'Aucun remplissage',
   appMasterStroke: 'Couleur du contour…',
   appMasterStrokeNone: 'Aucun contour',
+  appMasterInsertTextBox: 'Zone de texte',
+  appMasterInsertShape: 'Formes',
   appStartOpening: 'Ouverture…',
   appReadingSlideTitle:
     'Cliquez pour passer à la diapositive suivante (Échap pour quitter le mode Lecture)',
