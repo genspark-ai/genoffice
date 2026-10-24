@@ -228,6 +228,8 @@ export const ms = {
   appMasterFillNone: 'Tiada Isian',
   appMasterStroke: 'Warna Garis Luar…',
   appMasterStrokeNone: 'Tiada Garis Luar',
+  appMasterInsertTextBox: 'Kotak Teks',
+  appMasterInsertShape: 'Bentuk',
   appStartOpening: 'Membuka…',
   appReadingSlideTitle: 'Klik untuk ke slaid seterusnya (Esc untuk keluar dari Pandangan Baca)',
   appReadingPrev: '‹ Sebelumnya',

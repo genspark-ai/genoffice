@@ -89,6 +89,7 @@ import type {
   MasterEditFillOp,
   MasterEditStrokeOp,
   MasterDeleteElementOp,
+  MasterAddElementOp,
   ExportImagesOp,
   SavePictureOp,
   ExportPdfOp,
@@ -242,6 +243,7 @@ const api: SlidesApi = {
   masterEditStroke: (op: MasterEditStrokeOp) => ipcRenderer.invoke('slides:master-edit-stroke', op),
   masterDeleteElement: (op: MasterDeleteElementOp) =>
     ipcRenderer.invoke('slides:master-delete-element', op),
+  masterAddElement: (op: MasterAddElementOp) => ipcRenderer.invoke('slides:master-add-element', op),
   editFill: (op: EditFillOp) => ipcRenderer.invoke('slides:edit-fill', op),
   editStroke: (op: EditStrokeOp) => ipcRenderer.invoke('slides:edit-stroke', op),
   flipElements: (op: FlipElementOp) => ipcRenderer.invoke('slides:flip-elements', op),

@@ -9019,6 +9019,46 @@ body.show-curtain::after {
 .master-close-btn:hover {
   background: var(--slides-on-accent-hover);
 }
+/* Insert controls (text box / shapes gallery) in the master bar; the accent
+ * background needs its own on-accent tokens, same as the close button */
+.master-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.master-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--slides-on-accent);
+  cursor: pointer;
+}
+.master-tool:hover,
+.master-tool.active {
+  background: var(--slides-on-accent-hover);
+}
+.master-tool-anchor {
+  position: relative;
+  display: flex;
+}
+.master-tool-drop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--slides-shadow-drop);
+  color: var(--text);
+}
 .master-body {
   flex: 1;
   display: flex;

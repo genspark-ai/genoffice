@@ -234,6 +234,8 @@ export const de = {
   appMasterFillNone: 'Keine Füllung',
   appMasterStroke: 'Konturfarbe…',
   appMasterStrokeNone: 'Keine Kontur',
+  appMasterInsertTextBox: 'Textfeld',
+  appMasterInsertShape: 'Formen',
   appStartOpening: 'Wird geöffnet…',
   appReadingSlideTitle: 'Klicken für die nächste Folie (Esc zum Beenden der Leseansicht)',
   appReadingPrev: '‹ Zurück',

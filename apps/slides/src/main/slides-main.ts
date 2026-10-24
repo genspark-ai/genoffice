@@ -211,6 +211,7 @@ import type {
   MasterEditFillOp,
   MasterEditStrokeOp,
   MasterDeleteElementOp,
+  MasterAddElementOp,
   MasterEnterResult,
   PrintSlidesOp,
   EditPictureOpacityOp,
@@ -2940,6 +2941,39 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     return masterEditDone(session)
+  })
+
+  // Insert a text box / preset shape / line onto the current master or layout
+  // part. Pixel geometry converts like slides:add-element; the op is the same
+  // part-addressed addElement the slide path runs, so undo/journal/save all
+  // behave like the other master edits.
+  ipcMain.handle('slides:master-add-element', (e, op: MasterAddElementOp) => {
+    const session = sessions.get(e.sender.id)
+    const me = session?.masterEdit
+    if (!session || !me) return null
+    const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96
+    const scale = op.fitWidthPx / baseWidthPx
+    const toEmu = (px: number) => Math.round((px / scale) * EMU_PER_PX_96)
+    const r = masterTxn(session, me, {
+      op: 'addElement',
+      target: { part: me.partPath },
+      kind: op.kind,
+      offset: { x: toEmu(op.xPx), y: toEmu(op.yPx), cx: toEmu(op.wPx), cy: toEmu(op.hPx) },
+      ...(op.paragraphs?.length ? { paragraphs: op.paragraphs as Paragraph[] } : {}),
+      ...(op.fillColor ? { fill: op.fillColor } : {}),
+      ...(op.stroke
+        ? {
+            stroke: {
+              color: op.stroke.color,
+              widthEmu: Math.round(op.stroke.widthPt * EMU_PER_PT),
+            },
+          }
+        : {}),
+      ...(op.bodyPr ? { bodyPr: op.bodyPr } : {}),
+    })
+    const sourceId = r?.records?.[0]?.created?.[0]
+    if (!r || !sourceId) return null
+    return { slide: masterEditDone(session), sourceId }
   })
 
   ipcMain.handle('slides:edit-picture-opacity', (e, op: EditPictureOpacityOp) => {

@@ -224,6 +224,8 @@ export const ru = {
   appMasterFillNone: 'Без заливки',
   appMasterStroke: 'Цвет контура…',
   appMasterStrokeNone: 'Без контура',
+  appMasterInsertTextBox: 'Надпись',
+  appMasterInsertShape: 'Фигуры',
   appStartOpening: 'Открытие…',
   appReadingSlideTitle:
     'Щелкните, чтобы перейти к следующему слайду (Esc — выйти из режима чтения)',

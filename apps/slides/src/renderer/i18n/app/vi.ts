@@ -220,6 +220,8 @@ export const vi = {
   appMasterFillNone: 'Không tô màu',
   appMasterStroke: 'Màu viền…',
   appMasterStrokeNone: 'Không viền',
+  appMasterInsertTextBox: 'Hộp văn bản',
+  appMasterInsertShape: 'Hình dạng',
   appStartOpening: 'Đang mở…',
   appReadingSlideTitle: 'Nhấp để chuyển sang trang chiếu tiếp theo (Esc để thoát Chế độ đọc)',
   appReadingPrev: '‹ Trước',

@@ -331,6 +331,24 @@ export interface MasterDeleteElementOp {
   sourceId: string
 }
 
+/** Insert onto the current master/layout part; pixel coordinates like AddElementOp, the part is the session's edit target */
+export interface MasterAddElementOp {
+  kind: InsertKind
+  xPx: number
+  yPx: number
+  wPx: number
+  hPx: number
+  fitWidthPx: number
+  /** Rich-text paragraphs (a text box starts empty; shape defaults apply otherwise) */
+  paragraphs?: EditParagraph[]
+  /** Shape solid fill #RRGGBB */
+  fillColor?: string
+  /** Shape stroke (solid color + point width) */
+  stroke?: { color: string; widthPt: number }
+  /** Text body wrap / autofit (click-to-type text boxes); absent = wrap="square", no autofit */
+  bodyPr?: { wrap?: 'square' | 'none'; autoFit?: 'shrink' | 'resize' }
+}
+
 /** Find/replace: matches within runs across pages; firstOnly+elementId used by "Replace" for the current hit. */
 export interface FindReplaceOp {
   find: string
@@ -1861,6 +1879,10 @@ export interface SlidesApi {
   masterEditFill: (op: MasterEditFillOp) => Promise<RenderSlide | null>
   masterEditStroke: (op: MasterEditStrokeOp) => Promise<RenderSlide | null>
   masterDeleteElement: (op: MasterDeleteElementOp) => Promise<RenderSlide | null>
+  /** Insert a text box / preset shape / line onto the current master/layout part */
+  masterAddElement: (
+    op: MasterAddElementOp,
+  ) => Promise<{ slide: RenderSlide; sourceId: string } | null>
   // ── Presenter-view multi-screen show ────────────────────────────────
   /** Enter presenter view: detects multiple displays and opens a fullscreen audience show window on the external screen (sharing this session's document) */
   presenterStart: () => Promise<{ audience: boolean }>

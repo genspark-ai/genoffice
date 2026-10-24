@@ -220,6 +220,8 @@ export const ja = {
   appMasterFillNone: '塗りつぶしなし',
   appMasterStroke: '枠線の色…',
   appMasterStrokeNone: '枠線なし',
+  appMasterInsertTextBox: 'テキストボックス',
+  appMasterInsertShape: '図形',
   appStartOpening: '開いています…',
   appReadingSlideTitle: 'クリックで次のページへ（Esc で閲覧表示を終了）',
   appReadingPrev: '‹ 前のページ',
