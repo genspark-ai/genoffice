@@ -171,7 +171,33 @@ const projectApi: Pick<ProjectApi, 'resolveChat' | 'appendChat' | 'loadChat' | '
   rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
 }
 
+/**
+ * Model file naming: the transport half of `nameForSave`.
+ *
+ * Inlined rather than imported — a preload entry must stay a single-file bundle,
+ * or the sandbox drops every global it exposed. The three `ai:` channels are
+ * registered app-wide by the shell rather than by this app, the same arrangement
+ * the `project:*` bridge below already depends on.
+ *
+ * `content` crosses this bridge verbatim and the main process cannot see what
+ * this editor withheld, so what the caller hands over is exactly what the model
+ * sees. A caller that passed raw document text would undo its own redactions.
+ *
+ * The global is `aiNamingApi`, not `aiOffice`: `aiOffice` is the shell's home
+ * API, and a partial one in an editor window would shadow it there.
+ */
+const aiNamingApi = {
+  suggestFileName: (input: {
+    content: string
+    trigger: 'first-save' | 'manual'
+    filePath?: string | null
+  }) => ipcRenderer.invoke('ai:suggest-file-name', input),
+  getFileNamingEnabled: () => ipcRenderer.invoke('ai:get-file-naming'),
+  setFileNamingEnabled: (on: boolean) => ipcRenderer.invoke('ai:set-file-naming', on),
+}
+
 contextBridge.exposeInMainWorld('markdownApi', api)
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
 contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 // open documents dragged from the OS onto this tab as a new shell tab

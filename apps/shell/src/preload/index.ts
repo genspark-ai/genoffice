@@ -669,6 +669,30 @@ function asCloudProjectsSnapshot(result: unknown): CloudProjectsSnapshot | null 
 
 contextBridge.exposeInMainWorld('aiOffice', homeApi)
 
+/**
+ * Model file naming, for the shell's own settings row.
+ *
+ * The same three channels the editor apps expose under this name, so the
+ * shared client (`@genoffice/ui`) finds one bridge wherever it runs.
+ *
+ * A global of its own rather than part of `aiOffice`: `aiOffice` is the
+ * shell's home API, and an editor window that reused the name would shadow it
+ * there — `window.aiOffice.setTheme` would vanish with it.
+ */
+const aiNamingApi = {
+  suggestFileName(input: {
+    content: string
+    trigger: 'first-save' | 'manual'
+    filePath?: string | null
+  }) {
+    return ipcRenderer.invoke('ai:suggest-file-name', input)
+  },
+  getFileNamingEnabled: () => ipcRenderer.invoke('ai:get-file-naming'),
+  setFileNamingEnabled: (on: boolean) => ipcRenderer.invoke('ai:set-file-naming', on),
+}
+
+contextBridge.exposeInMainWorld('aiNamingApi', aiNamingApi)
+
 // The same project:* channels the editor preloads use; the home screen's
 // knowledge-base ask panel keeps its thread through them. The handlers are
 // registered once by the docs main process in shell mode (registerProjectIpc).
