@@ -176,7 +176,8 @@ export function repliesOf(comments: CommentInfo[], id: string): CommentInfo[] {
 }
 
 function clipText(s: string, max = 60): string {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s
+  const budget = Math.max(1, Math.trunc(max))
+  return s.length > budget ? `${s.slice(0, budget - 1)}…` : s
 }
 
 export const clipExcerpt = (text: string): string => clipText(text.replace(/\s+/g, ' ').trim(), 80)
