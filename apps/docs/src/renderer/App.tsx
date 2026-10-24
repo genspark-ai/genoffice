@@ -1887,6 +1887,14 @@ export function App() {
       !writeLocked && editRestriction === 'forms' && !readMode && !docLoading
   }, [editor, writeLocked, editRestriction, readMode, docLoading])
 
+  // outline view (View ▸ Outline View) folds: the plugin draws the ⊕/⊖ handles
+  // and hides folded heading rows only while the view mode is outline; leaving
+  // the view clears the collapsed set (view state, not document state)
+  useEffect(() => {
+    if (!editor) return
+    editor.commands.setOutlineViewActive(viewMode === 'outline')
+  }, [editor, viewMode])
+
   // window title follows the document, so the OS window list and Switch Window show file names
   useEffect(() => {
     document.title = doc ? doc.fileName : 'GenOffice Docs'

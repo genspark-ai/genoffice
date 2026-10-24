@@ -11519,19 +11519,29 @@ body.docs-crop-active
   margin-left: 130px;
 }
 
-/* Word outline view marks each heading with a ⊕ handle */
-.view-outline .doc-page h1::before,
-.view-outline .doc-page h2::before,
-.view-outline .doc-page h3::before,
-.view-outline .doc-page h4::before,
-.view-outline .doc-page h5::before,
-.view-outline .doc-page h6::before {
-  content: '⊕';
+/* Word outline view marks each heading with a collapse handle. The glyph is a
+   real DOM widget (editor/outline-view.ts) — the old ::before had no click
+   target — positioned into the indent gutter the heading padding reserves. */
+.view-outline .doc-page .outline-handle {
   position: absolute;
   left: 0;
+  top: 0.25em;
   color: var(--docs-paper-ink-faint);
   font-size: 0.8em;
-  top: 0.25em;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* a heading with nothing under it cannot fold: keep the mark, drop the affordance */
+.view-outline .doc-page .outline-handle.is-leaf {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* folding hides the deeper heading rows of the folded heading; body blocks are
+   already hidden by the :not(h1…) rule above */
+.view-outline .doc-page .outline-collapsed {
+  display: none;
 }
 
 /* ---- Gridlines: alignment grid inside the text area (content-box = inside margins) ---- */
