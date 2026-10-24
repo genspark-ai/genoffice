@@ -2627,8 +2627,10 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
         if (node.attrs.imageHeightPx) image.heightPx = Number(node.attrs.imageHeightPx)
         const align = node.attrs.imageAlign as NewImage['align'] | null
         if (align) image.align = align
-        const wrap = node.attrs.imageWrap as ImageWrap | null
-        if (wrap) image.wrap = wrap
+        // the attrs carry the live state (wrap/drag/position-preset edits
+        // mutate them, not the insert-time genImage payload): re-derive the
+        // floating position or the drag is silently lost on save
+        applyImageFloatAttrs(image, node.attrs)
         if (node.attrs.imageZOrder != null) image.zOrder = Number(node.attrs.imageZOrder)
         if (node.attrs.imageRotDeg) image.rotDeg = Number(node.attrs.imageRotDeg)
         if (node.attrs.imageFlipH) image.flipH = true
@@ -2803,6 +2805,49 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
   }
 }
 
+/**
+ * Floating-position payload (wrap + placement) from the live node attrs — the
+ * editor's source of truth after wrap/drag/position-preset edits, which mutate
+ * the attrs but never the insert-time genImage payload. Writes posOffsetEmu
+ * from the drag offsets, or the margin-relative align pair for Word position
+ * presets, and clears stale fields so e.g. back-to-inline drops the anchor.
+ */
+function applyImageFloatAttrs(image: NewImage, attrs: Record<string, unknown>): void {
+  const wrap = (attrs.imageWrap as ImageWrap | null) ?? null
+  if (wrap) image.wrap = wrap
+  else delete image.wrap
+  const offX = attrs.imageOffsetXEmu != null ? Number(attrs.imageOffsetXEmu) : undefined
+  const offY = attrs.imageOffsetYEmu != null ? Number(attrs.imageOffsetYEmu) : undefined
+  if (wrap && offX !== undefined && offY !== undefined) {
+    // NewImage.posOffsetEmu carries one basis for both axes: page wins over
+    // margin (relH/relV are only set for page/margin-pinned floats; plain
+    // drags keep the column/paragraph defaults applyImageWrap uses)
+    const relH = attrs.imageRelH as string | null | undefined
+    const relV = attrs.imageRelV as string | null | undefined
+    const relativeTo =
+      relH === 'page' || relV === 'page'
+        ? 'page'
+        : relH === 'margin' || relV === 'margin'
+          ? 'margin'
+          : undefined
+    image.posOffsetEmu = { x: offX, y: offY, ...(relativeTo ? { relativeTo } : {}) }
+  } else {
+    delete image.posOffsetEmu
+  }
+  const posH = attrs.imagePosH as NewImage['posH'] | null
+  const posV = attrs.imagePosV as NewImage['posV'] | null
+  if (wrap && image.posOffsetEmu === undefined && posH && posV) {
+    // margin-relative wp:align pair — the same bytes imagePatchOf produces for
+    // original images via applyImageWrap's marginAlign (numeric offsets win
+    // when both are present, matching applyImageWrap's own priority)
+    image.posH = posH
+    image.posV = posV
+  } else {
+    delete image.posH
+    delete image.posV
+  }
+}
+
 /** rebuild a pasted image copy from its preview bytes; null when not materializable */
 function imageFromProtectedAttrs(node: PmNode): NewImage | null {
   if (node.attrs?.blockType !== 'image') return null
@@ -2817,8 +2862,7 @@ function imageFromProtectedAttrs(node: PmNode): NewImage | null {
     : { base64: m![2], mime: m![1] as NewImage['mime'], widthPx, heightPx }
   const align = node.attrs?.imageAlign as NewImage['align'] | null
   if (align) image.align = align
-  const wrap = node.attrs?.imageWrap as ImageWrap | null
-  if (wrap) image.wrap = wrap
+  applyImageFloatAttrs(image, node.attrs)
   if (node.attrs?.imageZOrder != null) image.zOrder = Number(node.attrs.imageZOrder)
   if (node.attrs?.imageRotDeg) image.rotDeg = Number(node.attrs.imageRotDeg)
   if (node.attrs?.imageFlipH) image.flipH = true

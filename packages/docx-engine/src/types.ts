@@ -1529,6 +1529,15 @@ export interface NewImage {
    */
   posOffsetEmu?: { x: number; y: number; relativeTo?: 'page' | 'margin' }
   /**
+   * margin-relative align pair (Word position-gallery presets; only with
+   * `wrap`): written as <wp:align> relative to the margin box — the same
+   * bytes the original-image patch path (imagePatchOf.posH/posV) produces.
+   * Ignored when `posOffsetEmu` is set (numeric offsets win, like the patch
+   * path); needs both axes to take effect.
+   */
+  posH?: 'left' | 'center' | 'right'
+  posV?: 'top' | 'center' | 'bottom'
+  /**
    * stacking rank among anchored drawings (only with `wrap`): written as
    * relativeHeight base + zOrder, so overlapping behindDoc anchors keep a
    * deterministic paint order (higher = in front). Absent = base value.

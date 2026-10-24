@@ -869,8 +869,15 @@ export async function saveDocx(
     const pPr = spacing || jc ? `<w:pPr>${spacing}${jc}</w:pPr>` : ''
     const drawing = inlinePictureDrawingXml({ ...image, rId, docPrId })
     const xml = `<w:p>${pPr}<w:r>${drawing}</w:r></w:p>`
+    // posH/posV are the margin-relative align pair (Word position presets);
+    // applyImageWrap itself prefers posOffset when both are set, mirroring the
+    // original-image patch path (imagePatchOf)
+    const marginAlign =
+      image.posOffsetEmu === undefined && image.posH && image.posV
+        ? { h: image.posH, v: image.posV }
+        : undefined
     return image.wrap
-      ? applyImageWrap(xml, image.wrap, image.posOffsetEmu, undefined, image.zOrder)
+      ? applyImageWrap(xml, image.wrap, image.posOffsetEmu, marginAlign, image.zOrder)
       : xml
   }
   /** Pictures the editor inserted into existing paragraphs (table cells) carry
