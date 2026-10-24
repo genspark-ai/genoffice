@@ -219,7 +219,10 @@ export function protectedNoteMarkBlock(
   return found
 }
 
-const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s)
+const clip = (s: string, max: number) => {
+  const budget = Math.max(1, Math.trunc(max))
+  return s.length > budget ? `${s.slice(0, budget - 1)}…` : s
+}
 
 /** model-facing list: one line per note with id, number, anchored block and text */
 export function buildNotesContext(
