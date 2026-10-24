@@ -1209,9 +1209,21 @@ async function resolveSaveTarget(
   }
   const win =
     BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-  const defaultPath = current
-    ? join(dirname(current), basename(current))
-    : join(configuredDefaultSaveDir(app), `${fileNameBase(defaultName) || tm('untitledFile')}.html`)
+  // A name proposed by the model (or the page's own title) prefills the dialog
+  // rather than replacing it: the reader still chooses the location, and
+  // cancelling still cancels. Without one, the dialog opens on the file's own
+  // name, or on the untitled default for a page that has never been saved.
+  const proposed = fileNameBase(defaultName)
+  const defaultPath = proposed
+    ? // keep the open file's extension: an .html proposal must not offer to
+      // rewrite an opened .htm file, or a Save As on an .html one
+      join(
+        current ? dirname(current) : configuredDefaultSaveDir(app),
+        `${proposed}${current ? extname(current) : '.html'}`,
+      )
+    : current
+      ? join(dirname(current), basename(current))
+      : join(configuredDefaultSaveDir(app), `${tm('untitledFile')}.html`)
   const picked = await showSaveDialogWithMemory(dialog, win, {
     title: tm('dlgSaveTitle'),
     defaultPath,
