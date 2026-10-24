@@ -41,7 +41,7 @@ import { tiptapFindTarget } from './editor/findTarget'
 import { collectOutline, type OutlineItem } from './editor/outline'
 import { buildSlashItems } from './editor/slashCommand'
 import type { SlashController, SlashMenuState } from './editor/slashCommand'
-import { wikiFragmentPosition } from './editor/wikilink'
+import { wikiFragmentPosition, wikiTargetOf } from './editor/wikilink'
 import type { WikiSuggestController, WikiSuggestState } from './editor/wikiSuggest'
 import { dirOf, setImageBaseDir, VIEW_IMAGE_EVENT } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
@@ -302,6 +302,32 @@ export default function App() {
     })
   }, [])
 
+  /**
+   * Close an unresolved `[[link]]` the Obsidian way: create the note it names
+   * and open it. Main decides where the file lands (beside this document, or
+   * under the vault root when the target carries a directory) and never
+   * overwrites; the answer carries the `#fragment`, so opening rides the same
+   * path every resolved link takes and no document text has to change.
+   */
+  const createWikiNoteAndOpen = useCallback(
+    (target: string): void => {
+      // The browser test harness stubs markdownApi without the Electron-only
+      // wiki channels; a missing API leaves the link as written.
+      if (typeof window.markdownApi.createWikiNote !== 'function') return
+      void window.markdownApi.createWikiNote({ target }).then((result) => {
+        if (!result.ok) {
+          showToast(translate('wikiLinkUnresolved', { target }), 'error')
+          return
+        }
+        void window.markdownApi.rememberWikiFragment(result.path, result.fragment)
+        void window.markdownApi.openSourcePath(result.path)
+        // a link into the note already on screen opens no tab; jump here
+        if (filePathRef.current === result.path) jumpToWikiFragment(result.path)
+      })
+    },
+    [jumpToWikiFragment],
+  )
+
   const extensions = useMemo(() => {
     const controller: SlashController = {
       onOpen: setSlashState,
@@ -330,10 +356,18 @@ export default function App() {
         },
         // the module-level `t`, not the hook's: this memo holds the closure for
         // the life of the editor, and the hook's `t` is a new function each render
-        onUnresolved: (target) => showToast(translate('wikiLinkUnresolved', { target }), 'error'),
+        onUnresolved: (target, embed) => {
+          // an embed of a missing file usually names a picture, which an empty
+          // note cannot stand in for; only a link creates its note
+          if (embed) {
+            showToast(translate('wikiLinkUnresolved', { target }), 'error')
+            return
+          }
+          createWikiNoteAndOpen(wikiTargetOf(target))
+        },
       },
     })
-  }, [insertImage, jumpToWikiFragment])
+  }, [createWikiNoteAndOpen, insertImage, jumpToWikiFragment])
 
   const editor = useEditor({
     extensions,
