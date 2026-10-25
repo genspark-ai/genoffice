@@ -1292,13 +1292,13 @@ button {
   cursor: pointer;
 }
 .pdf-comment-row:hover {
-  background: var(--accent-soft, rgb(0 0 0 / 0.06));
+  background: var(--hover);
 }
 .pdf-comment-page {
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary);
 }
 .pdf-comment-body {
   display: flex;
@@ -1308,7 +1308,7 @@ button {
 }
 .pdf-comment-author {
   font-size: 11px;
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary);
 }
 .pdf-comment-text {
   font-size: 12px;
@@ -1320,7 +1320,7 @@ button {
   flex-shrink: 0;
   margin-left: auto;
   font-size: 11px;
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary);
 }
 
 .pdf-outline {
