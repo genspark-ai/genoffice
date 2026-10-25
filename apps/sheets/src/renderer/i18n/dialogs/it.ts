@@ -8,6 +8,7 @@ export const it = {
   dlgRangeRef: 'Intervallo',
   dlgRangeAdd: 'Aggiungi',
   dlgRangeDelete: 'Elimina',
+  dlgRangePassword: 'Password (facoltativa)',
   dlgRangeNameTaken: 'Immetti un titolo univoco e non vuoto.',
   dlgRangeRefInvalid: 'Immetti un intervallo come A1:B4.',
   dlgCancel: 'Annulla',

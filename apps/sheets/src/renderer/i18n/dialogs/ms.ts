@@ -8,6 +8,7 @@ export const ms = {
   dlgRangeRef: 'Julat',
   dlgRangeAdd: 'Tambah',
   dlgRangeDelete: 'Padam',
+  dlgRangePassword: 'Kata laluan (pilihan)',
   dlgRangeNameTaken: 'Masukkan tajuk unik yang tidak kosong.',
   dlgRangeRefInvalid: 'Masukkan julat seperti A1:B4.',
   dlgCancel: 'Batal',

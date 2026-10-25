@@ -51,6 +51,7 @@ import {
   type UniverRuntime,
   type UniverWorksheet,
 } from './univer-state'
+import { hashSheetPassword } from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
 import { applyChangePlan, planFromOps, type OpExecutorContext } from './op-executor'
 import { installSheetsMcpBridge, type McpSheetHandlers } from './mcp-bridge'
 import { renameChartRefsForSheet } from './workbook-ops'
@@ -5909,7 +5910,9 @@ export function App({
     return { ranges: file ?? [], error: null }
   }
 
-  function applyProtectedRanges(ranges: readonly { name: string; sqref: string }[]): string | null {
+  async function applyProtectedRanges(
+    ranges: readonly { name: string; sqref: string; password?: string }[],
+  ): Promise<string | null> {
     const state = lazyWorkbookRef.current
     const sheetId = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
     if (!state || !sheetId) return t('appProtectionNeedsFile')
@@ -5919,10 +5922,15 @@ export function App({
     if (snapshot.ranges.some((range) => range.hasPassword)) {
       return t('appRangesPasswordBlocked')
     }
-    state.sheetProtectedRanges.set(
-      sheetId,
-      ranges.map((range) => ({ name: range.name, sqref: range.sqref, hasPassword: false })),
+    const hashed = await Promise.all(
+      ranges.map(async (range) => ({
+        name: range.name,
+        sqref: range.sqref,
+        hasPassword: range.password !== undefined && range.password !== '',
+        ...(range.password ? { password: await hashSheetPassword(range.password) } : {}),
+      })),
     )
+    state.sheetProtectedRanges.set(sheetId, hashed)
     recordProtectedRangesChange(state.editJournal, sheetId)
     setPendingEdits(journalSize(state.editJournal))
     setMessage(t('appRangesRecorded', { count: ranges.length }))

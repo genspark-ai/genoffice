@@ -345,8 +345,8 @@ interface ExcelShellProps {
     error: string | null
   }
   readonly onApplyProtectedRanges: (
-    ranges: readonly { name: string; sqref: string }[],
-  ) => string | null
+    ranges: readonly { name: string; sqref: string; password?: string }[],
+  ) => Promise<string | null> | string | null
   /// Name Manager data + actions (actions return an error message or null).
   readonly onGetDefinedNames: () => {
     names: DefinedNameRow[]
@@ -1307,7 +1307,10 @@ export function ExcelShell({
             <AllowEditRangesDialog
               ranges={snapshot.error === null ? snapshot.ranges : []}
               defaultRef={activeCellA1}
-              onApply={(ranges) => snapshot.error ?? onApplyProtectedRanges(ranges)}
+              onApply={(ranges) => {
+                const failed = snapshot.error ?? onApplyProtectedRanges(ranges)
+                return failed instanceof Promise ? failed : Promise.resolve(failed)
+              }}
               onClose={() => setShowAllowEditRanges(false)}
             />
           )

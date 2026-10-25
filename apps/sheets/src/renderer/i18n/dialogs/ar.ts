@@ -8,6 +8,7 @@ export const ar = {
   dlgRangeRef: 'النطاق',
   dlgRangeAdd: 'إضافة',
   dlgRangeDelete: 'حذف',
+  dlgRangePassword: 'كلمة المرور (اختياري)',
   dlgRangeNameTaken: 'أدخل عنوانًا فريدًا وغير فارغ.',
   dlgRangeRefInvalid: 'أدخل نطاقًا مثل A1:B4.',
   dlgCancel: 'إلغاء',

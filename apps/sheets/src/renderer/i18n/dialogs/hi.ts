@@ -8,6 +8,7 @@ export const hi = {
   dlgRangeRef: 'रेंज',
   dlgRangeAdd: 'जोड़ें',
   dlgRangeDelete: 'हटाएँ',
+  dlgRangePassword: 'पासवर्ड (वैकल्पिक)',
   dlgRangeNameTaken: 'कोई अनोखा, खाली न हो ऐसा शीर्षक दर्ज करें।',
   dlgRangeRefInvalid: 'A1:B4 जैसी रेंज दर्ज करें।',
   dlgCancel: 'रद्द करें',

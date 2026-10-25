@@ -8,6 +8,7 @@ export const pl = {
   dlgRangeRef: 'Zakres',
   dlgRangeAdd: 'Dodaj',
   dlgRangeDelete: 'Usuń',
+  dlgRangePassword: 'Hasło (opcjonalnie)',
   dlgRangeNameTaken: 'Wprowadź unikatowy, niepusty tytuł.',
   dlgRangeRefInvalid: 'Wprowadź zakres, np. A1:B4.',
   dlgCancel: 'Anuluj',

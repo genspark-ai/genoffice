@@ -8,6 +8,7 @@ export const es = {
   dlgRangeRef: 'Rango',
   dlgRangeAdd: 'Agregar',
   dlgRangeDelete: 'Eliminar',
+  dlgRangePassword: 'Contraseña (opcional)',
   dlgRangeNameTaken: 'Escriba un título único y no vacío.',
   dlgRangeRefInvalid: 'Escriba un rango como A1:B4.',
   dlgCancel: 'Cancelar',

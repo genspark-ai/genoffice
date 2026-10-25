@@ -8,6 +8,7 @@ export const ja = {
   dlgRangeRef: '範囲',
   dlgRangeAdd: '追加',
   dlgRangeDelete: '削除',
+  dlgRangePassword: 'パスワード（任意）',
   dlgRangeNameTaken: '重複しない空でないタイトルを入力してください。',
   dlgRangeRefInvalid: 'A1:B4 のような範囲を入力してください。',
   dlgCancel: 'キャンセル',

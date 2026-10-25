@@ -8,6 +8,7 @@ export const fr = {
   dlgRangeRef: 'Plage',
   dlgRangeAdd: 'Ajouter',
   dlgRangeDelete: 'Supprimer',
+  dlgRangePassword: 'Mot de passe (facultatif)',
   dlgRangeNameTaken: 'Saisissez un titre unique et non vide.',
   dlgRangeRefInvalid: 'Saisissez une plage comme A1:B4.',
   dlgCancel: 'Annuler',

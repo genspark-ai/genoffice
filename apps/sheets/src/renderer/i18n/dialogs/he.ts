@@ -8,6 +8,7 @@ export const he = {
   dlgRangeRef: 'טווח',
   dlgRangeAdd: 'הוסף',
   dlgRangeDelete: 'מחק',
+  dlgRangePassword: 'סיסמה (אופציונלי)',
   dlgRangeNameTaken: 'הזן כותרת ייחודית שאינה ריקה.',
   dlgRangeRefInvalid: 'הזן טווח כמו A1:B4.',
   dlgCancel: 'ביטול',

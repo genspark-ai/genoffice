@@ -7,6 +7,7 @@ export const zhTW = {
   dlgRangeRef: '範圍',
   dlgRangeAdd: '新增',
   dlgRangeDelete: '刪除',
+  dlgRangePassword: '密碼（可選）',
   dlgRangeNameTaken: '請輸入不重複的非空標題。',
   dlgRangeRefInvalid: '請輸入類似 A1:B4 的範圍。',
   dlgCancel: '取消',

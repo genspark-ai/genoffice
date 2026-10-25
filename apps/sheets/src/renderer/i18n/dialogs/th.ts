@@ -8,6 +8,7 @@ export const th = {
   dlgRangeRef: 'ช่วง',
   dlgRangeAdd: 'เพิ่ม',
   dlgRangeDelete: 'ลบ',
+  dlgRangePassword: 'รหัสผ่าน (ไม่บังคับ)',
   dlgRangeNameTaken: 'โปรดใส่ชื่อเรื่องที่ไม่ซ้ำและไม่ว่างเปล่า',
   dlgRangeRefInvalid: 'โปรดใส่ช่วงเช่น A1:B4',
   dlgCancel: 'ยกเลิก',

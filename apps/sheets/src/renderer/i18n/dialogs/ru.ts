@@ -8,6 +8,7 @@ export const ru = {
   dlgRangeRef: 'Диапазон',
   dlgRangeAdd: 'Добавить',
   dlgRangeDelete: 'Удалить',
+  dlgRangePassword: 'Пароль (необязательно)',
   dlgRangeNameTaken: 'Введите уникальное непустое название.',
   dlgRangeRefInvalid: 'Введите диапазон, например A1:B4.',
   dlgCancel: 'Отмена',

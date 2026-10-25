@@ -8,6 +8,7 @@ export const id = {
   dlgRangeRef: 'Rentang',
   dlgRangeAdd: 'Tambah',
   dlgRangeDelete: 'Hapus',
+  dlgRangePassword: 'Kata sandi (opsional)',
   dlgRangeNameTaken: 'Masukkan judul yang unik dan tidak kosong.',
   dlgRangeRefInvalid: 'Masukkan rentang seperti A1:B4.',
   dlgCancel: 'Batal',

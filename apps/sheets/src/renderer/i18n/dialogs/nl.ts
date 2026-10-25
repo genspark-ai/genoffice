@@ -8,6 +8,7 @@ export const nl = {
   dlgRangeRef: 'Bereik',
   dlgRangeAdd: 'Toevoegen',
   dlgRangeDelete: 'Verwijderen',
+  dlgRangePassword: 'Wachtwoord (optioneel)',
   dlgRangeNameTaken: 'Voer een unieke, niet-lege titel in.',
   dlgRangeRefInvalid: 'Voer een bereik in zoals A1:B4.',
   dlgCancel: 'Annuleren',

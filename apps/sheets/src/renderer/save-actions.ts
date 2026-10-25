@@ -209,9 +209,10 @@ export async function handleSave(
     .filter((sheetId) => !isSheetRemoved(state.editJournal, sheetId))
     .map((sheetId) => ({
       sheetId,
-      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref }) => ({
+      ranges: (state.sheetProtectedRanges.get(sheetId) ?? []).map(({ name, sqref, password }) => ({
         name,
         sqref,
+        ...(password ? { password } : {}),
       })),
     }))
   const themeState =

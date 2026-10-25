@@ -8,6 +8,7 @@ export const de = {
   dlgRangeRef: 'Bereich',
   dlgRangeAdd: 'Hinzufügen',
   dlgRangeDelete: 'Löschen',
+  dlgRangePassword: 'Kennwort (optional)',
   dlgRangeNameTaken: 'Geben Sie einen eindeutigen, nicht leeren Titel ein.',
   dlgRangeRefInvalid: 'Geben Sie einen Bereich wie A1:B4 ein.',
   dlgCancel: 'Abbrechen',

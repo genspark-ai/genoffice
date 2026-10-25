@@ -8,6 +8,7 @@ export const en = {
   dlgRangeRef: 'Range',
   dlgRangeAdd: 'Add',
   dlgRangeDelete: 'Delete',
+  dlgRangePassword: 'Password (optional)',
   dlgRangeNameTaken: 'Enter a unique, non-empty title.',
   dlgRangeRefInvalid: 'Enter a range like A1:B4.',
   dlgCancel: 'Cancel',

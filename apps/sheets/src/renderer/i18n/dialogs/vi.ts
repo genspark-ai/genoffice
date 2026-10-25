@@ -8,6 +8,7 @@ export const vi = {
   dlgRangeRef: 'Dải ô',
   dlgRangeAdd: 'Thêm',
   dlgRangeDelete: 'Xóa',
+  dlgRangePassword: 'Mật khẩu (không bắt buộc)',
   dlgRangeNameTaken: 'Vui lòng nhập tiêu đề duy nhất và không được để trống.',
   dlgRangeRefInvalid: 'Vui lòng nhập dải ô dạng A1:B4.',
   dlgCancel: 'Hủy',

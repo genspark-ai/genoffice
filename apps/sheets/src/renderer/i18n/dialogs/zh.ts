@@ -6,6 +6,7 @@ export const zh = {
   dlgRangeRef: '区域',
   dlgRangeAdd: '添加',
   dlgRangeDelete: '删除',
+  dlgRangePassword: '密码（可选）',
   dlgRangeNameTaken: '请输入不重复的非空标题。',
   dlgRangeRefInvalid: '请输入类似 A1:B4 的区域。',
   dlgCancel: '取消',

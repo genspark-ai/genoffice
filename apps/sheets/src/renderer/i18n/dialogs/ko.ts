@@ -8,6 +8,7 @@ export const ko = {
   dlgRangeRef: '범위',
   dlgRangeAdd: '추가',
   dlgRangeDelete: '삭제',
+  dlgRangePassword: '암호(선택)',
   dlgRangeNameTaken: '비어 있지 않고 중복되지 않는 제목을 입력하세요.',
   dlgRangeRefInvalid: 'A1:B4 형식의 범위를 입력하세요.',
   dlgCancel: '취소',

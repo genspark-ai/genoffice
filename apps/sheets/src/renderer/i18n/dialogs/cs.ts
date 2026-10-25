@@ -8,6 +8,7 @@ export const cs = {
   dlgRangeRef: 'Oblast',
   dlgRangeAdd: 'Přidat',
   dlgRangeDelete: 'Odstranit',
+  dlgRangePassword: 'Heslo (volitelné)',
   dlgRangeNameTaken: 'Zadejte jedinečný, neprázdný název.',
   dlgRangeRefInvalid: 'Zadejte oblast, např. A1:B4.',
   dlgCancel: 'Zrušit',

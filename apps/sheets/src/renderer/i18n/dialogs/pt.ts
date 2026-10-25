@@ -8,6 +8,7 @@ export const pt = {
   dlgRangeRef: 'Intervalo',
   dlgRangeAdd: 'Adicionar',
   dlgRangeDelete: 'Excluir',
+  dlgRangePassword: 'Palavra-passe (opcional)',
   dlgRangeNameTaken: 'Insira um título exclusivo e não vazio.',
   dlgRangeRefInvalid: 'Insira um intervalo como A1:B4.',
   dlgCancel: 'Cancelar',
