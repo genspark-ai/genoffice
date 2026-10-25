@@ -706,6 +706,21 @@ export interface SavePdfRequest {
   /** New page order (array of original page indices, excluding deleted); omitted if unreordered */
   pageOrder?: number[]
   metadata?: MetadataInput
+  /** Full bookmark-tree replacement, written when the user edited the outline.
+   * Every entry must carry an explicit page target (0-based index); entries
+   * the writer cannot rebuild exactly make the save refuse the replacement
+   * (the file's own /Outlines stay untouched). */
+  outline?: OutlineEntryInput[]
+}
+
+/** One bookmark of a replacement outline; children nest one level deeper */
+export interface OutlineEntryInput {
+  title: string
+  /** 0-based page index the bookmark jumps to */
+  pageIndex: number
+  /** Vertical position on the page, PDF user space; null keeps the default */
+  top?: number | null
+  children?: OutlineEntryInput[]
 }
 
 /** A text edit that could not be matched to the document at save time and was skipped */

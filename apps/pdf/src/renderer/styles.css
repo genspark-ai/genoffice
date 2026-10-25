@@ -4787,3 +4787,40 @@ button {
   border: 1px solid var(--danger-border);
   border-radius: 6px;
 }
+
+/* Bookmark editing (pending outline tree) */
+.pdf-bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.pdf-bookmark-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.pdf-bookmark-actions {
+  display: none;
+  flex-shrink: 0;
+}
+.pdf-bookmark-row:hover .pdf-bookmark-actions {
+  display: inline-flex;
+}
+.pdf-bookmark-add {
+  margin: 4px 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}

@@ -1280,3 +1280,60 @@ describe('applySaveRequest', () => {
     expect(String(needAppearances)).toBe('true')
   })
 })
+
+describe('outline replacement', () => {
+  it('writes a bookmark tree the read path (pdf.js) resolves to pages', async () => {
+    const bytes = await makePdf([
+      [612, 792],
+      [612, 792],
+    ])
+    const saved = await apply(
+      bytes,
+      request({
+        outline: [
+          { title: 'Cover', pageIndex: 0 },
+          {
+            title: 'Part 1',
+            pageIndex: 1,
+            children: [{ title: 'Section', pageIndex: 1, top: 700 }],
+          },
+        ],
+      }),
+    )
+    const loadingTask = getDocument({ data: saved.slice() })
+    try {
+      const pdfJsDoc = await loadingTask.promise
+      const outline = await pdfJsDoc.getOutline()
+      expect(outline).toHaveLength(2)
+      expect(outline![0]!.title).toBe('Cover')
+      expect(outline![1]!.title).toBe('Part 1')
+      expect(outline![1]!.items).toHaveLength(1)
+      expect(outline![1]!.items![0]!.title).toBe('Section')
+      const pageOf = async (dest: unknown): Promise<number> => {
+        const array = dest as Array<{ num: number }>
+        return pdfJsDoc.getPageIndex({ num: array[0]!.num, gen: array[0]!.gen ?? 0 })
+      }
+      expect(await pageOf(outline![0]!.dest)).toBe(0)
+      expect(await pageOf(outline![1]!.dest)).toBe(1)
+      expect(await pageOf(outline![1]!.items![0]!.dest)).toBe(1)
+    } finally {
+      await loadingTask.destroy()
+    }
+  })
+
+  it('rejects entries pointing past the document and empty titles', () => {
+    const bytes = makePdf([[612, 792]])
+    return Promise.all([
+      bytes.then(async (b) => {
+        await expect(
+          apply(b, request({ outline: [{ title: 'x', pageIndex: 5 }] })),
+        ).rejects.toThrow(/points at page/)
+      }),
+      bytes.then(async (b) => {
+        await expect(
+          apply(b, request({ outline: [{ title: '  ', pageIndex: 0 }] })),
+        ).rejects.toThrow(/non-empty title/)
+      }),
+    ]).then(() => undefined)
+  })
+})

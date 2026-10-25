@@ -22,6 +22,7 @@ import { VISUAL_SIGNATURE_CONTENT_PREFIX } from '../shared/ipc'
 import type {
   BlankPageInput,
   DrawingInput,
+  OutlineEntryInput,
   FormFieldInput,
   FormWidgetEditInput,
   FormValueInput,
@@ -277,6 +278,87 @@ async function addImageStamp(
   annot.set(PDFName.of('T'), PDFHexString.fromText('GenOffice'))
   setVisualSignatureMetadata(annot, d.formFieldName)
   appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+}
+
+/**
+ * Full /Outlines replacement from an edited bookmark tree. Every entry
+ * carries an explicit page target (validated up front — a page index beyond
+ * the document aborts the whole replacement before anything is registered),
+ * so the graph is rebuilt deterministically: /First//Last//Next//Prev
+ * pointers, /Count as each item's visible-descendant tally, and /Dest
+ * [page /XYZ 0 top null] (top null keeps the viewer's zoom). The root dict
+ * replaces the catalog's /Outlines wholesale — untouched documents never
+ * reach this path (the request omits `outline`), so existing bookmarks stay
+ * byte-identical unless the user edited the tree.
+ */
+function applyOutline(pdfDoc: PDFDocument, entries: readonly OutlineEntryInput[]): void {
+  const verify = (list: readonly OutlineEntryInput[]): void => {
+    for (const entry of list) {
+      const title = typeof entry.title === 'string' ? entry.title.trim() : ''
+      if (title === '') throw new Error('Outline entries need a non-empty title.')
+      if (
+        !Number.isInteger(entry.pageIndex) ||
+        entry.pageIndex < 0 ||
+        entry.pageIndex >= pdfDoc.getPageCount()
+      ) {
+        throw new Error(`Outline entry "${title}" points at page ${entry.pageIndex}.`)
+      }
+      if (entry.children?.length) verify(entry.children)
+    }
+  }
+  verify(entries)
+
+  const pages = pdfDoc.getPages()
+  const rootRef = pdfDoc.context.register(pdfDoc.context.obj({ Type: 'Outlines' }))
+
+  /** Registers the list's items under parentRef; returns first/last refs and
+      the subtree's total item count (each item's /Count is set from its own
+      children's return). */
+  const build = (
+    list: readonly OutlineEntryInput[],
+    parentRef: PDFRef,
+  ): { first: PDFRef; last: PDFRef; total: number } => {
+    let first: PDFRef | null = null
+    let previous: PDFRef | null = null
+    let count = 0
+    for (const entry of list) {
+      const page = pages[entry.pageIndex]!
+      const dict = pdfDoc.context.obj({
+        Title: PDFHexString.fromText(entry.title.trim()),
+        Parent: parentRef,
+        Dest: pdfDoc.context.obj([
+          page.ref,
+          PDFName.of('XYZ'),
+          0,
+          typeof entry.top === 'number' ? num(entry.top) : null,
+          null,
+        ]),
+      })
+      const ref = pdfDoc.context.register(dict)
+      count += 1
+      if (previous !== null) {
+        ;(pdfDoc.context.lookup(previous, PDFDict) as PDFDict).set(PDFName.of('Next'), ref)
+        dict.set(PDFName.of('Prev'), previous)
+      }
+      if (first === null) first = ref
+      previous = ref
+      if (entry.children?.length) {
+        const child = build(entry.children, ref)
+        dict.set(PDFName.of('First'), child.first)
+        dict.set(PDFName.of('Last'), child.last)
+        dict.set(PDFName.of('Count'), PDFNumber.of(child.total))
+        count += child.total
+      }
+    }
+    return { first: first!, last: previous!, total: count }
+  }
+
+  const top = build(entries, rootRef)
+  const root = pdfDoc.context.lookup(rootRef, PDFDict) as PDFDict
+  root.set(PDFName.of('First'), top.first)
+  root.set(PDFName.of('Last'), top.last)
+  root.set(PDFName.of('Count'), PDFNumber.of(top.total))
+  pdfDoc.catalog.set(PDFName.of('Outlines'), rootRef)
 }
 
 /** Epoch ms → PDF date string, e.g. D:20260812175959+08'00' */
@@ -1317,6 +1399,9 @@ export async function applySaveRequest(
     })
   }
   if (request.metadata) applyMetadata(pdfDoc, request.metadata)
+  if (request.outline !== undefined && request.outline !== null) {
+    applyOutline(pdfDoc, request.outline)
+  }
   // Page thumbnails and producer piece-info can retain a pre-redaction rendering of
   // the same page. They are page-local derived data, so remove them for every affected
   // page before the native final serialization.
