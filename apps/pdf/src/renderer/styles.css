@@ -1267,6 +1267,62 @@ button {
   justify-content: center;
 }
 
+/* All-document comments panel (sidebar pane, same chrome as the outline pane) */
+.pdf-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  overflow-y: auto;
+}
+.pdf-comments-filter {
+  margin-bottom: 4px;
+}
+.pdf-comment-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.pdf-comment-row:hover {
+  background: var(--accent-soft, rgb(0 0 0 / 0.06));
+}
+.pdf-comment-page {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #666);
+}
+.pdf-comment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pdf-comment-author {
+  font-size: 11px;
+  color: var(--text-secondary, #666);
+}
+.pdf-comment-text {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-comment-replies {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary, #666);
+}
+
 .pdf-outline {
   display: flex;
   flex-direction: column;
