@@ -91,6 +91,15 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds Runcrate with lab-namespaced model ids', () => {
+    const runcrate = AI_PROVIDERS.find((provider) => provider.id === 'runcrate')!
+    expect(runcrate.models).toContain(runcrate.defaultModel)
+    expect(runcrate.needsBaseUrl).toBeUndefined()
+    for (const model of runcrate.models) {
+      expect(model).toMatch(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/)
+    }
+  })
+
   it('seeds Cheaper Inference with bare model ids (no vendor prefix)', () => {
     const ci = AI_PROVIDERS.find((provider) => provider.id === 'cheaperinference')!
     expect(ci.models).toContain(ci.defaultModel)
