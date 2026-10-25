@@ -22,6 +22,7 @@ import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { exportImages } from './export/imageExport'
 import type { StringKey } from './i18n/locale'
+import { countWords } from '../../../docs/src/renderer/word-count'
 import { t as translate, useI18n } from './i18n/locale'
 import {
   buildFrontmatterRaw,
@@ -335,6 +336,14 @@ export default function App() {
     })
   }, [insertImage, jumpToWikiFragment])
 
+  // status-bar text statistics: Word's CJK counting rule (asian chars count
+  // one by one, non-asian words by whitespace) shared with the docs status bar
+  const [docStats, setDocStats] = useState<{ words: number; chars: number } | null>(null)
+  const statsOf = (text: string) => ({
+    words: countWords(text),
+    chars: Array.from(text).length,
+  })
+
   const editor = useEditor({
     extensions,
     content: '',
@@ -344,6 +353,7 @@ export default function App() {
     onUpdate: ({ editor: updated, transaction }) => {
       if (!transaction.getMeta('uiOnly')) markDirty()
       setOutlineItems(collectOutline(updated))
+      setDocStats(statsOf(updated.getText()))
       syncSourceFromEditorRef.current()
     },
   })
@@ -389,6 +399,7 @@ export default function App() {
         const { text, format } = readSourceText(raw)
         sourceTextRef.current = text
         sourceFormatRef.current = format
+        setDocStats(statsOf(text))
         setFilePath(path)
         setFmText('')
         setFmOpen(false)
@@ -573,6 +584,7 @@ export default function App() {
     (text: string) => {
       setSourceText(text)
       pendingSourceRef.current = text
+      setDocStats(statsOf(text))
       markDirty()
       if (sourceApplyTimerRef.current) clearTimeout(sourceApplyTimerRef.current)
       sourceApplyTimerRef.current = setTimeout(flushSource, SOURCE_APPLY_DEBOUNCE_MS)
@@ -1421,6 +1433,14 @@ export default function App() {
                 </span>
               )}
               {fileName && <span className="status-item status-file">{fileName}</span>}
+              {fileName && docStats && (
+                <span className="status-item status-stats">
+                  {t('statusWords', { n: docStats.words })} ·{' '}
+                  {t('statusChars', {
+                    n: docStats.chars,
+                  })}
+                </span>
+              )}
             </div>
             <div className="status-right">
               {statusText && (
