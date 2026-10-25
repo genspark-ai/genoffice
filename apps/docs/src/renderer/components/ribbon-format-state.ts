@@ -361,8 +361,14 @@ export function computeFormatState(
     headingLevel: editor.isActive('docHeading')
       ? Number(editor.getAttributes('docHeading').level ?? 1)
       : null,
-    listBullet: editor.isActive('docListItem', { kind: 'bullet' }),
-    listOrdered: editor.isActive('docListItem', { kind: 'ordered' }),
+    // a textbox paragraph carries its list on the listMarker attr instead of a
+    // docListItem node, so the buttons reflect the marker's kind while inside
+    listBullet: sub
+      ? paraAttrs.listMarker?.kind === 'bullet'
+      : editor.isActive('docListItem', { kind: 'bullet' }),
+    listOrdered: sub
+      ? paraAttrs.listMarker?.kind === 'ordered'
+      : editor.isActive('docListItem', { kind: 'ordered' }),
     align: str(paraAttrs.align),
     bidi: paraAttrs.bidi === true || paraAttrs.bidiInferred === true,
     selectionBidi: effectiveBidi(paraAttrs) || (!sub && selectionHasBidi(editor)),

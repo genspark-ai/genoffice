@@ -1787,6 +1787,14 @@ export interface Block {
 /** numbering marker of a textbox paragraph, resolved at parse time (display only) */
 export interface TextboxListMarker {
   text: string
+  /** list identity for save-back (w:numPr): which numbering definition this
+   * marker comes from; absent on synthesized/edited markers is fine — the
+   * editor sets it when the user toggles a list inside the box */
+  numId?: string
+  ilvl?: number
+  /** 'bullet' | 'ordered', from the numbering level's numFmt; drives the
+   * sub-editor's list toggle state */
+  kind?: 'bullet' | 'ordered'
   /** bullet declared in a symbol-encoded font: drawn with the substitute-glyph styling */
   symbol?: boolean
   /** picture bullet (w:lvlPicBulletId): data URL drawn in place of the text */

@@ -84,6 +84,9 @@ describe('list markers inside textboxes', () => {
     expect(paras.map((p) => p.listMarker?.text)).toEqual(['•', '•', undefined])
     expect(paras[0].listMarker).toEqual({
       text: '•',
+      numId: '1',
+      ilvl: 0,
+      kind: 'bullet',
       symbol: true,
       indentLeft: 440,
       hanging: 440,
@@ -95,6 +98,9 @@ describe('list markers inside textboxes', () => {
     const paras = await textboxParas(['4', '1'])
     expect(paras[0].listMarker).toEqual({
       text: '',
+      numId: '4',
+      ilvl: 0,
+      kind: 'bullet',
       picBulletSrc: `data:image/png;base64,${TINY_PNG_BASE64}`,
       indentLeft: 360,
       hanging: 360,
@@ -105,7 +111,14 @@ describe('list markers inside textboxes', () => {
   it('carries a level first-line indent instead of a hanging one', async () => {
     const paras = await textboxParas(['3'])
     // an explicit left="0" is kept: it beats a style indent
-    expect(paras[0].listMarker).toEqual({ text: '-', indentLeft: 0, firstLine: 420 })
+    expect(paras[0].listMarker).toEqual({
+      text: '-',
+      numId: '3',
+      ilvl: 0,
+      kind: 'bullet',
+      indentLeft: 0,
+      firstLine: 420,
+    })
   })
 
   it('carries a bidi level end indent and swaps w:jc like the body does', async () => {
@@ -117,6 +130,9 @@ describe('list markers inside textboxes', () => {
     const paras = parsed.blocks.flatMap((b) => b.textboxes ?? [])[0]!.paras
     expect(paras[0].listMarker).toEqual({
       text: '-',
+      numId: '5',
+      ilvl: 0,
+      kind: 'bullet',
       indentLeft: 0,
       indentRight: 360,
       hanging: 360,

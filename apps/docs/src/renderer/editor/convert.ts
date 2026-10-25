@@ -3066,9 +3066,14 @@ function nestedTextsDiff(
   return changed ? grid : null
 }
 
-/** rich-run signature of one textbox paragraph, for per-paragraph change detection */
+/** rich-run signature of one textbox paragraph, for per-paragraph change detection.
+ * List identity (numId/ilvl/kind) participates: toggling a list on or off must
+ * reach the byte patch even when the runs are untouched; the marker TEXT stays
+ * out — its per-box counters are recomputed on both sides and may drift. */
 export function textboxParaSignature(para: TextboxDisplay['paras'][number]): string {
-  return JSON.stringify([para.align ?? null, normalizedRuns(para.runs)])
+  const m = para.listMarker
+  const list = m ? [m.numId ?? null, m.ilvl ?? null, m.kind ?? null] : null
+  return JSON.stringify([para.align ?? null, normalizedRuns(para.runs), list])
 }
 
 /** all-empty sub-editor content counts as "still no text" for a paras:[] box */
@@ -3103,13 +3108,26 @@ function textboxParasPatch(node: PmNode, original: Block): TextboxParasPatchSet 
         ) {
           return null
         }
-        // align is always explicit so a removed alignment also clears w:jc
-        return { runs: mergeRuns(p.runs), align: p.align ?? null }
+        // align/numPr are always explicit so a removed alignment or list
+        // membership also clears w:jc / w:numPr
+        const m = p.listMarker
+        return {
+          runs: mergeRuns(p.runs),
+          align: p.align ?? null,
+          numPr: m?.numId != null ? { numId: m.numId, ilvl: m.ilvl ?? 0 } : null,
+        }
       })
     } else if (origBox.shapeId) {
       inject.push({
         shapeId: origBox.shapeId,
-        paras: box.paras.map((p) => ({ runs: mergeRuns(p.runs), align: p.align ?? null })),
+        paras: box.paras.map((p) => ({
+          runs: mergeRuns(p.runs),
+          align: p.align ?? null,
+          numPr:
+            p.listMarker?.numId != null
+              ? { numId: p.listMarker.numId, ilvl: p.listMarker.ilvl ?? 0 }
+              : null,
+        })),
       })
     }
   })
