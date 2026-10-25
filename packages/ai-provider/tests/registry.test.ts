@@ -462,6 +462,7 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('deepseek-ai/deepseek-v4-flash')).toBe(true)
     expect(modelLacksVision('zai-org/glm-5.3-flash')).toBe(false)
     expect(modelLacksVision('moonshotai/kimi-k3')).toBe(false)
+    expect(modelLacksVision('moonshotai/kimi-k3.1-pro')).toBe(false)
     expect(modelLacksVision('moonshotai/kimi-k2.6')).toBe(false)
     expect(modelLacksVision('qwen/qwen3.8-max')).toBe(false)
     expect(modelLacksVision('qwen/qwen3.5-flash')).toBe(false)
