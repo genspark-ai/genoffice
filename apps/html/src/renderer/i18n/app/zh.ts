@@ -95,6 +95,7 @@ export const zh = {
   alignLeft: '左对齐',
   alignCenter: '居中',
   alignRight: '右对齐',
+  alignJustify: '两端对齐',
   fontSizeDec: '减小字号',
   fontSizeInc: '增大字号',
   typography: '文字排版',

@@ -96,6 +96,7 @@ export const zhTW = {
   alignLeft: '靠左對齊',
   alignCenter: '置中',
   alignRight: '靠右對齊',
+  alignJustify: '左右對齊',
   fontSizeDec: '縮小字型',
   fontSizeInc: '放大字型',
   typography: '文字排版',

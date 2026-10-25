@@ -15,6 +15,7 @@ import {
 } from '../document/image-style'
 import {
   IconAlignCenter,
+  IconAlignJustify,
   IconAlignLeft,
   IconAlignRight,
   IconCopy,
@@ -180,6 +181,7 @@ function TextTools(p: Props) {
           ['left', 'alignLeft', IconAlignLeft],
           ['center', 'alignCenter', IconAlignCenter],
           ['right', 'alignRight', IconAlignRight],
+          ['justify', 'alignJustify', IconAlignJustify],
         ] as const
       ).map(([value, key, Icon]) => (
         <button

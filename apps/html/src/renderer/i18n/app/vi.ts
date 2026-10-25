@@ -99,6 +99,7 @@ export const vi = {
   alignLeft: 'Căn trái',
   alignCenter: 'Căn giữa',
   alignRight: 'Căn phải',
+  alignJustify: 'Căn đều',
   fontSizeDec: 'Giảm cỡ chữ',
   fontSizeInc: 'Tăng cỡ chữ',
   typography: 'Kiểu chữ',

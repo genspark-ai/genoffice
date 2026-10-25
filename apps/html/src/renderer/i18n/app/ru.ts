@@ -98,6 +98,7 @@ export const ru = {
   alignLeft: 'По левому краю',
   alignCenter: 'По центру',
   alignRight: 'По правому краю',
+  alignJustify: 'По ширине',
   fontSizeDec: 'Уменьшить размер шрифта',
   fontSizeInc: 'Увеличить размер шрифта',
   typography: 'Типографика',

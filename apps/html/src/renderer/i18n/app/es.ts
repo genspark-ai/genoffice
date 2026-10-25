@@ -100,6 +100,7 @@ export const es = {
   alignLeft: 'Alinear a la izquierda',
   alignCenter: 'Centrar',
   alignRight: 'Alinear a la derecha',
+  alignJustify: 'Justificar',
   fontSizeDec: 'Reducir tamaño de fuente',
   fontSizeInc: 'Aumentar tamaño de fuente',
   typography: 'Tipografía',
