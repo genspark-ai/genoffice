@@ -340,6 +340,23 @@ export function buildPivotLayout(
         return numbers.reduce((max, value) => (value > max ? value : max))
       case 'min':
         return numbers.reduce((min, value) => (value < min ? value : min))
+      case 'var':
+      case 'stdDev': {
+        // sample statistics (n-1), matching the refresh engine; a one-value
+        // bucket is blank here where Excel shows #DIV/0!
+        if (numbers.length < 2) return null
+        const mean = numbers.reduce((t, v) => t + v, 0) / numbers.length
+        const variance =
+          numbers.reduce((t, v) => t + (v - mean) * (v - mean), 0) / (numbers.length - 1)
+        return spec.agg === 'var' ? variance : Math.sqrt(variance)
+      }
+      case 'varp':
+      case 'stdDevp': {
+        if (numbers.length === 0) return null
+        const mean = numbers.reduce((t, v) => t + v, 0) / numbers.length
+        const variance = numbers.reduce((t, v) => t + (v - mean) * (v - mean), 0) / numbers.length
+        return spec.agg === 'varp' ? variance : Math.sqrt(variance)
+      }
     }
   }
 
