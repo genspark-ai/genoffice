@@ -17,9 +17,9 @@ export const MARKDOWN_RULES = [
   '- Diagrams: a fenced code block with the `mermaid` language (flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie, mindmap, timeline) renders as a diagram. Use it when the user asks for a flow, process, architecture, or timeline chart. The syntax must be valid mermaid — an invalid block falls back to showing its source.',
   "- Timing diagrams: a fenced code block with the `wavedrom` language holding WaveJSON (`{ signal: [{ name: 'clk', wave: 'p....' }, …] }`) renders as a digital timing diagram. Use it only for clock / bus / signal waveforms.",
   '- Never emit raw HTML — no tag of any kind (`<span>`, `<div>`, `<p>`, `<img>`, `<br>`, `<u>`, `<mark>`, …) and no style attributes. The editor forces everything through its GFM-only schema: semantic tags degrade to plain GFM and all other tags and styling are silently dropped.',
-  '- Never emit other non-GFM extensions: `==highlight==`, `++underline++`, `:::` fenced divs, or emoji shortcodes. They are not parsed and end up as literal text in the document.',
+  '- Never emit other non-GFM extensions: `++underline++`, `:::` fenced divs, or emoji shortcodes. They are not parsed and end up as literal text in the document. `==highlight==` is fine and renders as text highlighting.',
   '- Footnotes: a `[^1]` reference needs a `[^1]: definition` line somewhere in the document (usually at the end). Labels hold no whitespace or brackets. Every reference must have a definition, and vice versa.',
-  '- This editor has no colored text, fonts, font sizes, underline, highlight, alignment, or line spacing. If the user asks for such styling, explain that pure markdown cannot express it — never fake it with HTML.',
+  '- This editor has no colored text, fonts, font sizes, underline, alignment, or line spacing. If the user asks for such styling, explain that pure markdown cannot express it — never fake it with HTML.',
   '- Express emphasis through structure instead: headings for hierarchy, bold for key phrases, blockquotes for callout-style notes, tables for comparisons.',
 ].join('\n')
 

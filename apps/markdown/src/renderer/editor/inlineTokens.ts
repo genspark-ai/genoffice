@@ -141,6 +141,95 @@ function dropNewlineAfterHardBreak(nodes: JSONContent[]): JSONContent[] {
   return nodes
 }
 
+/**
+ * `==highlight==` runs become synthetic tokens the Highlight mark parses back
+ * (marked ships no `==` tokenizer), matching Obsidian's rule: the run's
+ * content cannot contain `=` or a newline. Two shapes need handling:
+ *
+ *  - a complete run inside one text token (`==a== b ==c==`), split there —
+ *    code spans and nested token arrays are left alone the same way the
+ *    entity pass treats them;
+ *  - a run spanning sibling tokens (`==**bold**==`: marked cuts the `**`
+ *    into its own token), scanned open→close across the stream like the
+ *    redaction span pass does for its `<span>` markers.
+ *
+ * The pass runs after the entity pass: the parent's text is already decoded,
+ * and re-running it on the inner tokens would decode twice.
+ */
+const HIGHLIGHT_SAME_RE = /==([^=\n]+)==/g
+const HIGHLIGHT_OPEN_RE = /(?:^|[^=\n])==$/
+const HIGHLIGHT_CLOSE_RE = /^==(?:[^=\n]|$)/
+
+/** complete runs inside single text tokens; other tokens pass through */
+function highlightSameTokenRuns(tokens: InlineToken[]): InlineToken[] {
+  const out: InlineToken[] = []
+  for (const token of tokens) {
+    if (token.type !== 'text' || token.tokens || !token.text?.includes('==')) {
+      out.push(token)
+      continue
+    }
+    let last = 0
+    for (const m of token.text.matchAll(HIGHLIGHT_SAME_RE)) {
+      const index = m.index ?? 0
+      if (index > last) out.push({ type: 'text', text: token.text.slice(last, index) })
+      out.push({ type: 'highlight', tokens: [{ type: 'text', text: m[1]! }] })
+      last = index + m[0].length
+    }
+    if (last === 0) {
+      out.push(token)
+      continue
+    }
+    if (last < token.text.length) out.push({ type: 'text', text: token.text.slice(last) })
+  }
+  return out
+}
+
+/** runs opened in one text token and closed in a later one (delimiters around sibling tokens) */
+function highlightTokenStreams(tokens: InlineToken[]): InlineToken[] {
+  const out: InlineToken[] = []
+  let i = 0
+  while (i < tokens.length) {
+    const token = tokens[i]!
+    const opens =
+      token.type === 'text' &&
+      token.text !== undefined &&
+      !token.text.includes('\n') &&
+      HIGHLIGHT_OPEN_RE.test(token.text)
+    if (!opens) {
+      out.push(token)
+      i += 1
+      continue
+    }
+    let close = -1
+    for (let j = i + 1; j < tokens.length; j++) {
+      const t = tokens[j]!
+      if (
+        t.type === 'text' &&
+        t.text !== undefined &&
+        !t.text.includes('\n') &&
+        HIGHLIGHT_CLOSE_RE.test(t.text)
+      ) {
+        close = j
+        break
+      }
+    }
+    if (close === -1) {
+      out.push(token)
+      i += 1
+      continue
+    }
+    const opener = token.text!.slice(0, token.text!.length - 2)
+    const inner: InlineToken[] = []
+    if (opener) inner.push({ type: 'text', text: opener })
+    inner.push(...tokens.slice(i + 1, close))
+    const rest = tokens[close]!.text!.slice(2)
+    if (rest) inner.push({ type: 'text', text: rest })
+    out.push({ type: 'highlight', tokens: inner })
+    i = close + 1
+  }
+  return out
+}
+
 export function patchInlineParsing(manager: unknown): void {
   const parser = manager as InlineParser
   const upstream = parser.parseInlineTokens.bind(parser)
@@ -152,7 +241,8 @@ export function patchInlineParsing(manager: unknown): void {
     // that was already here — the order matters, since redactSpans turns an
     // inert <span> into a token prepareTokens would otherwise have dropped
     const spans = markSpanTokens(redactSpans(tokens))
-    return dropNewlineAfterHardBreak(upstream(prepareTokens(spans)))
+    const prepared = highlightSameTokenRuns(prepareTokens(spans))
+    return dropNewlineAfterHardBreak(upstream(highlightTokenStreams(prepared)))
   }
 }
 

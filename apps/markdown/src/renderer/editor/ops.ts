@@ -19,7 +19,7 @@ export type BlockTarget = 'selection' | { start: number; end?: number }
 /** block index to insert after (-1 = document start) or 'selection' = after the caret's block */
 export type InsertAnchor = 'selection' | number
 
-export const STYLABLE_MARKS = ['bold', 'italic', 'strike', 'code'] as const
+export const STYLABLE_MARKS = ['bold', 'italic', 'strike', 'code', 'highlight'] as const
 export const BLOCK_TYPES = ['paragraph', 'heading', 'blockquote', 'codeBlock'] as const
 export const LIST_KINDS = ['bullet', 'ordered', 'task'] as const
 export const TABLE_ACTIONS = [
