@@ -279,6 +279,41 @@ async function addImageStamp(
   appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
 }
 
+/**
+ * Hyperlink annotation: /A /URI for web targets, /Dest [page /XYZ null null null]
+ * for in-document jumps (nulls keep the viewer's current zoom/position). No
+ * appearance stream — every viewer draws its own hover affordance from /Rect,
+ * which is also what the read path (pdf.js getAnnotations) keys on.
+ */
+function addLinkAnnot(
+  pdfDoc: PDFDocument,
+  pages: PDFPage[],
+  page: PDFPage,
+  d: Extract<DrawingInput, { kind: 'link' }>,
+): void {
+  const annot = pdfDoc.context.obj({
+    Type: 'Annot',
+    Subtype: 'Link',
+    Rect: [num(d.rect[0]), num(d.rect[1]), num(d.rect[2]), num(d.rect[3])],
+    F: 4, // print
+    P: page.ref,
+  })
+  if (d.url) {
+    annot.set(
+      PDFName.of('A'),
+      pdfDoc.context.obj({ Type: 'Action', S: 'URI', URI: PDFString.of(d.url) }),
+    )
+  } else {
+    const target = pages[(d.destPage ?? 1) - 1]
+    if (!target) return
+    annot.set(
+      PDFName.of('Dest'),
+      pdfDoc.context.obj([target.ref, PDFName.of('XYZ'), null, null, null]),
+    )
+  }
+  appendAnnot(pdfDoc, page, pdfDoc.context.register(annot))
+}
+
 /** Epoch ms → PDF date string, e.g. D:20260812175959+08'00' */
 function pdfDateString(ms: number): string {
   const d = new Date(ms)
@@ -410,6 +445,7 @@ function addDrawing(
   noteRefs?: Map<string, PDFRef>,
 ): void {
   if (d.kind === 'image') return // handled by addImageStamp (needs async embed)
+  if (d.kind === 'link') return // handled by addLinkAnnot (needs the page list)
   const [r, g, b] = d.color
 
   if (d.kind === 'note') {
@@ -1285,6 +1321,7 @@ export async function applySaveRequest(
     const page = pages[d.pageIndex]
     if (!page) continue
     if (d.kind === 'image') await addImageStamp(pdfDoc, page, d)
+    else if (d.kind === 'link') addLinkAnnot(pdfDoc, pages, page, d)
     else addDrawing(pdfDoc, page, d, noteRefs)
   }
   // Note content edits go after the drawings: replies added above locate their /IRT

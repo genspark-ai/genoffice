@@ -311,6 +311,17 @@ export type DrawingInput =
     })
   | (DrawBase & { kind: 'rect'; rect: [number, number, number, number] })
   | (DrawBase & { kind: 'ellipse'; rect: [number, number, number, number] })
+  | {
+      /** Hyperlink placed by the user; written as a Link annotation */
+      kind: 'link'
+      pageIndex: number
+      /** PDF user space [x1,y1,x2,y2] */
+      rect: [number, number, number, number]
+      /** External target (http/https/mailto/…); exactly one of url / destPage is set */
+      url?: string
+      /** In-document jump: 1-based page number */
+      destPage?: number
+    }
   | (DrawBase & { kind: 'line'; from: [number, number]; to: [number, number] })
   | (DrawBase & { kind: 'arrow'; from: [number, number]; to: [number, number] })
   | {
