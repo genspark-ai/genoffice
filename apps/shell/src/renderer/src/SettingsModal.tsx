@@ -1077,6 +1077,7 @@ const DECISION_ENDPOINTS: { value: DecisionEndpoint; label: string }[] = [
   { value: 'perplexity-flash', label: 'Perplexity (Flash v1.2)' },
   { value: 'liquid', label: 'Liquid AI (d1)' },
   { value: 'liquid-ultra', label: 'Liquid AI (d1-ultra)' },
+  { value: 'openai', label: 'OpenAI (gpt-6-luna)' },
   { value: 'cloudflare', label: 'Cloudflare (Clef)' },
   { value: 'cloudflare-flash', label: 'Cloudflare (Clef-flash)' },
   { value: 'kev', label: 'Kev (local)' },
