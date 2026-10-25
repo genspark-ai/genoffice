@@ -752,7 +752,6 @@ export const ko = {
   appRemoveLink: '링크 제거',
   // Ribbon common
   appNotAvailableYet: '아직 사용할 수 없음',
-  appComingSoon: '곧 제공 예정',
   // Chart Design tab
   appGroupChartLayouts: '차트 레이아웃',
   appAddChartElement: '차트 요소 추가',

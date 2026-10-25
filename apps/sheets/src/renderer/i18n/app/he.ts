@@ -680,7 +680,6 @@ export const he = {
   appLinkPlaceholder: 'https://example.com או Sheet1!A1',
   appRemoveLink: 'הסר קישור',
   appNotAvailableYet: 'לא זמין עדיין',
-  appComingSoon: 'בקרוב',
   appGroupChartLayouts: 'פריסות תרשים',
   appAddChartElement: 'הוסף רכיב תרשים',
   appAddChartElementTitle: 'כותרות, תוויות נתונים, מקרא',

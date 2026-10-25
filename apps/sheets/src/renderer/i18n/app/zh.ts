@@ -668,7 +668,6 @@ export const zh = {
   appRemoveLink: '删除链接',
   // Ribbon common
   appNotAvailableYet: '暂不可用',
-  appComingSoon: '即将推出',
   // Chart Design tab
   appGroupChartLayouts: '图表布局',
   appAddChartElement: '添加图表元素',

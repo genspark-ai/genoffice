@@ -702,7 +702,6 @@ export const ar = {
   appLinkPlaceholder: 'مثل https://example.com أو Sheet1!A1',
   appRemoveLink: 'إزالة الارتباط',
   appNotAvailableYet: 'غير متوفر بعد',
-  appComingSoon: 'قريبًا',
   appGroupChartLayouts: 'تخطيطات المخططات',
   appAddChartElement: 'إضافة عنصر مخطط',
   appAddChartElementTitle: 'العناوين وتسميات البيانات ووسيلة الإيضاح',

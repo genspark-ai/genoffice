@@ -771,7 +771,6 @@ export const nl = {
   appLinkPlaceholder: 'https://example.com of Sheet1!A1',
   appRemoveLink: 'Koppeling verwijderen',
   appNotAvailableYet: 'Nog niet beschikbaar',
-  appComingSoon: 'Binnenkort beschikbaar',
   appGroupChartLayouts: 'Grafiekindelingen',
   appAddChartElement: 'Grafiekelement toevoegen',
   appAddChartElementTitle: 'Titels, gegevenslabels, legenda',

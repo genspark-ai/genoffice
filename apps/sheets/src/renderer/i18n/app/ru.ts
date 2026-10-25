@@ -753,7 +753,6 @@ export const ru = {
   appLinkPlaceholder: 'напр. https://example.com или Sheet1!A1',
   appRemoveLink: 'Удалить ссылку',
   appNotAvailableYet: 'Пока недоступно',
-  appComingSoon: 'Скоро будет',
   appGroupChartLayouts: 'Макеты диаграмм',
   appAddChartElement: 'Добавить элемент диаграммы',
   appAddChartElementTitle: 'Названия, подписи данных, легенда',

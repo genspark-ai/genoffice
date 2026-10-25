@@ -761,7 +761,6 @@ export const pl = {
   appLinkPlaceholder: 'https://example.com lub Sheet1!A1',
   appRemoveLink: 'Usuń link',
   appNotAvailableYet: 'Jeszcze niedostępne',
-  appComingSoon: 'Wkrótce',
   appGroupChartLayouts: 'Układy wykresu',
   appAddChartElement: 'Dodaj element wykresu',
   appAddChartElementTitle: 'Tytuły, etykiety danych, legenda',

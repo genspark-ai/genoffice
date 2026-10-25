@@ -714,7 +714,6 @@ export const en = {
   appLinkPlaceholder: 'https://example.com or Sheet1!A1',
   appRemoveLink: 'Remove Link',
   appNotAvailableYet: 'Not available yet',
-  appComingSoon: 'Coming soon',
   appGroupChartLayouts: 'Chart layouts',
   appAddChartElement: 'Add Chart Element',
   appAddChartElementTitle: 'Titles, data labels, legend',

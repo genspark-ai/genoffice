@@ -702,7 +702,6 @@ export const th = {
   appLinkPlaceholder: 'เช่น https://example.com หรือ Sheet1!A1',
   appRemoveLink: 'ลบลิงก์',
   appNotAvailableYet: 'ยังใช้ไม่ได้',
-  appComingSoon: 'เร็ว ๆ นี้',
   appGroupChartLayouts: 'เค้าโครงแผนภูมิ',
   appAddChartElement: 'เพิ่มองค์ประกอบแผนภูมิ',
   appAddChartElementTitle: 'ชื่อเรื่อง ป้ายชื่อข้อมูล คำอธิบายแผนภูมิ',

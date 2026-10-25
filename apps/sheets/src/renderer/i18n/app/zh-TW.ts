@@ -649,7 +649,6 @@ export const zhTW = {
   appLinkPlaceholder: '如 https://example.com 或 Sheet1!A1',
   appRemoveLink: '移除連結',
   appNotAvailableYet: '暫不可用',
-  appComingSoon: '即將推出',
   appGroupChartLayouts: '圖表版面配置',
   appAddChartElement: '新增圖表項目',
   appAddChartElementTitle: '標題、資料標籤、圖例',

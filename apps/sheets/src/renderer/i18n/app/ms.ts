@@ -735,7 +735,6 @@ export const ms = {
   appLinkPlaceholder: 'https://example.com atau Sheet1!A1',
   appRemoveLink: 'Alih Keluar Pautan',
   appNotAvailableYet: 'Belum tersedia',
-  appComingSoon: 'Akan datang',
   appGroupChartLayouts: 'Bentangan carta',
   appAddChartElement: 'Tambah Elemen Carta',
   appAddChartElementTitle: 'Tajuk, label data, petunjuk',

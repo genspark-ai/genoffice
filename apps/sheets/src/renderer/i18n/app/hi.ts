@@ -734,7 +734,6 @@ export const hi = {
   appLinkPlaceholder: 'https://example.com या Sheet1!A1',
   appRemoveLink: 'लिंक निकालें',
   appNotAvailableYet: 'अभी उपलब्ध नहीं',
-  appComingSoon: 'जल्द आ रहा है',
   appGroupChartLayouts: 'चार्ट लेआउट',
   appAddChartElement: 'चार्ट तत्व जोड़ें',
   appAddChartElementTitle: 'शीर्षक, डेटा लेबल, लीजेंड',

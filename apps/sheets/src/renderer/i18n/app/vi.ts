@@ -726,7 +726,6 @@ export const vi = {
   appLinkPlaceholder: 'https://example.com hoặc Sheet1!A1',
   appRemoveLink: 'Xóa liên kết',
   appNotAvailableYet: 'Chưa khả dụng',
-  appComingSoon: 'Sắp ra mắt',
   appGroupChartLayouts: 'Bố cục biểu đồ',
   appAddChartElement: 'Thêm thành phần biểu đồ',
   appAddChartElementTitle: 'Tiêu đề, nhãn dữ liệu, chú giải',

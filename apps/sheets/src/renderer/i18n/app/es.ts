@@ -777,7 +777,6 @@ export const es = {
   appLinkPlaceholder: 'https://example.com o Sheet1!A1',
   appRemoveLink: 'Quitar vínculo',
   appNotAvailableYet: 'Aún no disponible',
-  appComingSoon: 'Próximamente',
   appGroupChartLayouts: 'Diseños de gráfico',
   appAddChartElement: 'Agregar elemento de gráfico',
   appAddChartElementTitle: 'Títulos, etiquetas de datos, leyenda',

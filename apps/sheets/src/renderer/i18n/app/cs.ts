@@ -735,7 +735,6 @@ export const cs = {
   appLinkPlaceholder: 'https://example.com nebo List1!A1',
   appRemoveLink: 'Odebrat odkaz',
   appNotAvailableYet: 'Zatím není k dispozici',
-  appComingSoon: 'Již brzy',
   appGroupChartLayouts: 'Rozložení grafu',
   appAddChartElement: 'Přidat prvek grafu',
   appAddChartElementTitle: 'Názvy, popisky dat, legenda',

@@ -734,7 +734,6 @@ export const id = {
   appLinkPlaceholder: 'mis. https://example.com atau Sheet1!A1',
   appRemoveLink: 'Hapus Tautan',
   appNotAvailableYet: 'Belum tersedia',
-  appComingSoon: 'Segera hadir',
   appGroupChartLayouts: 'Tata letak bagan',
   appAddChartElement: 'Tambahkan Elemen Bagan',
   appAddChartElementTitle: 'Judul, label data, legenda',
