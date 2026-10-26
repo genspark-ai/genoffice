@@ -212,6 +212,8 @@ export const tr = {
   dlgPivotShowAsRankDesc: 'Büyükten Küçüğe Sırala…',
   dlgPivotShowAsIndex: 'Dizin',
   dlgPivotNotSupportedYet: 'henüz kullanılamıyor',
+  dlgPivotBaseField: 'Temel alan',
+  dlgPivotBaseItem: 'Temel öğe',
   dlgPivotReportFilterItem: 'Rapor filtresi öğesi',
   dlgPivotAllItems: '(Tümü)',
   dlgPivotErrNeedValue: 'Değerler’e en az bir alan ekleyin.',

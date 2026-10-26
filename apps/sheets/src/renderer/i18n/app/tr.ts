@@ -200,6 +200,13 @@ export const tr = {
   appInvalidGroupField: 'Geçersiz gruplama alanı.',
   appInvalidPageField: 'Geçersiz rapor filtresi alanı.',
   appPivotPageItemMissing: 'Rapor filtresi öğesi "{item}", "{label}" alanının üyesi değil.',
+  appInvalidPivotBaseField:
+    '"Değerleri göster" temel alanı Satırlar veya Sütunlar üzerinde olmalıdır.',
+  appPivotBaseFieldMissing:
+    'Bir değer alanının "değerleri göster" modu için bir temel alan gerekir.',
+  appPivotBaseFieldNotAxis:
+    'Temel alan "{label}" pivot satırları veya sütunları üzerinde olmalıdır.',
+  appPivotBaseItemMissing: 'Temel öğe "{item}", "{label}" alanının bir üyesi değil.',
   appInvalidLabelFilterField: 'Etiket filtresi alanı geçersiz.',
   appInvalidValueFieldIndex: 'Değer alanı dizini {index} geçersiz.',
   appInvalidValueField: 'Geçersiz değer alanı.',
