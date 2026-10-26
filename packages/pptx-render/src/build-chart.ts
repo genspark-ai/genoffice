@@ -234,6 +234,12 @@ const ROT_BAND_MAX_FRAC = 0.4
 const DT_HEADER_PITCH_EM = 1.6
 const DT_HEADER_PAD_EM = 1.05
 const DT_KEY_EM = 1.7
+/** Data table series rows (PowerPoint measured) */
+const DT_ROW_EM = 2
+/** Horizontal-bar tables draw their own category header row; PowerPoint packs the rows
+ *  tighter there (measured on a production deck: 1.44em header, 1.375em rows) */
+const DT_HBAR_ROW_EM = 1.375
+const DT_HBAR_HEADER_EM = 1.44
 
 /** Origin of a -90° (bottom-to-top) data label whose horizontal top-left would be (cx - w/2, y). */
 export function rotatedLabelOrigin(
@@ -469,7 +475,7 @@ function buildChartNodeInner(
       (rest ? measure(rest, catLabelSizePx) : 0) + cjk * catLabelSizePx + catSpcPx * text.length
     )
   }
-  const cats = model.categories.map((c) => applyCaps(c, model.catAxis?.labelCaps))
+  const cats = displayCategories(model).map((c) => applyCaps(c, model.catAxis?.labelCaps))
 
   const palette = chartPalette(model)
   const seriesColor = (i: number) =>
@@ -686,16 +692,9 @@ function buildChartNodeInner(
   // column sharing the value-axis gutter (PowerPoint widens the gutter to fit the names);
   // rows measured 2em tall
   const dtSizePx = dt ? ptToPx(dt.sizePt ?? chartTextPt(model), vp.scale) : 0
-  const dtRowH = dtSizePx * 2
+  const dtRowH = dtSizePx * DT_ROW_EM
   const dtRows = dt ? model.series.length : 0
-  const dtKeyW = dt
-    ? (dt.showKeys ? dtSizePx * (DT_KEY_EM + 0.1) : 0) +
-      arrayMax(
-        model.series.map((sr) => measure(sr.name ?? '', dtSizePx)),
-        0,
-      ) +
-      dtSizePx * 1.2
-    : 0
+  const dtKeyW = dt ? dataTableKeyW(model, dt, dtSizePx, measure) : 0
   const plotX = pad + Math.max(valRight ? labelSizePx * 0.7 : valSideW, dtKeyW)
   // Headroom for the top tick label's upper half — whenever label space is reserved
   // (garbage-baseline labels keep the slot even though nothing draws)
@@ -1139,86 +1138,22 @@ function buildChartNodeInner(
 
   // the table stays even when the category labels are hidden (PowerPoint keeps it); its
   // rows start under the label band plus any multi-level group row
-  if (dt && dtRows) {
-    const lineColor = dt.lineColor ?? gridDefaults(model).major
-    const textColor = dt.textColor ?? catLabelColor
-    const top = plot.y + plot.h + (catNoReserve ? 0 : catReserve) + catGroupH
-    const bottom = top + dtRows * dtRowH
-    const left = plot.x - Math.min(dtKeyW, plot.x - pad)
-    const right = plot.x + plot.w
-    const line = (x1: number, y1: number, x2: number, y2: number) =>
-      node.gridLines.push({ x1, y1, x2, y2, color: lineColor, widthPx: 1 })
-    if (dt.outline) {
-      line(left, plot.y + plot.h, right, plot.y + plot.h)
-      line(left, bottom, right, bottom)
-      line(left, plot.y + plot.h, left, bottom)
-      line(right, plot.y + plot.h, right, bottom)
-    }
-    if (dt.horzBorder)
-      for (let r = 0; r < dtRows; r++) line(left, top + r * dtRowH, right, top + r * dtRowH)
-    if (dt.vertBorder) {
-      line(plot.x, plot.y + plot.h, plot.x, bottom)
-      for (let i = 1; i < n; i++)
-        line(plot.x + i * slotW, plot.y + plot.h, plot.x + i * slotW, bottom)
-    }
-    model.series.forEach((ser, si) => {
-      const rowY = top + si * dtRowH
-      const textY = rowY + (dtRowH - dtSizePx * 1.2) / 2
-      let kx = left + dtSizePx * 0.3
-      if (dt.showKeys) {
-        // keys share one ~1.7em column; a line series shows its line sample (+ marker)
-        // instead of a swatch, like the legend (PowerPoint measured)
-        const keyW = dtSizePx * DT_KEY_EM
-        if (serKind(ser) === 'line') {
-          const cy = rowY + dtRowH / 2
-          node.polylines.push({
-            points: [kx, cy, kx + keyW, cy],
-            color: seriesColor(si),
-            widthPx: Math.max(1.5, ptToPx(2.25, vp.scale)),
-          })
-          if (ser.marker)
-            node.markers.push({
-              x: kx + keyW / 2,
-              y: cy,
-              r: dtSizePx * 0.28,
-              color: seriesColor(si),
-            })
-        } else {
-          node.swatches.push({
-            x: kx,
-            y: rowY + dtRowH / 2 - dtSizePx * 0.25,
-            w: keyW,
-            h: dtSizePx * 0.5,
-            color: seriesColor(si),
-          })
-        }
-        kx += dtSizePx * (DT_KEY_EM + 0.1)
-      }
-      if (ser.name)
-        node.labels.push({
-          text: ser.name,
-          x: kx,
-          y: textY,
-          fontSizePx: dtSizePx,
-          color: textColor,
-        })
-      const fmt = ser.valFmt ?? (ser.secondaryAxis ? model.valAxis2?.numFmt : model.valAxis?.numFmt)
-      ser.values.forEach((v, i) => {
-        if (v == null || i >= n) return
-        const text = fmtDataLabel(v, fmt)
-        const w = measure(text, dtSizePx)
-        // overlong cells shrink to the slot instead of colliding with their neighbors
-        const size = w > slotW * 0.95 ? Math.max(dtSizePx * ((slotW * 0.95) / w), 4) : dtSizePx
-        node.labels.push({
-          text,
-          x: plot.x + (catSlot(i) + 0.5) * slotW - (w * size) / dtSizePx / 2,
-          y: textY + (dtSizePx - size) * 0.6,
-          fontSizePx: size,
-          color: textColor,
-        })
-      })
+  if (dt && dtRows)
+    addDataTable(node, model, dt, {
+      headerTop: plot.y + plot.h,
+      rowsTop: plot.y + plot.h + (catNoReserve ? 0 : catReserve) + catGroupH,
+      rowH: dtRowH,
+      sizePx: dtSizePx,
+      left: plot.x - Math.min(dtKeyW, plot.x - pad),
+      plotX: plot.x,
+      plotW: plot.w,
+      nCols: n,
+      colOf: catSlot,
+      textColor: dt.textColor ?? catLabelColor,
+      measure,
+      seriesColor,
+      lineWidthPx: Math.max(1.5, ptToPx(2.25, vp.scale)),
     })
-  }
 
   // Multi-level category axis: outer-level group labels centered under their span,
   // with divider ticks between groups (Excel's boxed second row, simplified)
@@ -2706,6 +2641,138 @@ function buildArea3DNode(
   return node
 }
 
+/** Category texts as PowerPoint shows them: a chart without a category cache labels its
+ *  slots 1..N (the model keeps the names empty; the placeholder is display-only). */
+function displayCategories(model: ChartModel): string[] {
+  const cats = model.categories
+  return cats.length && cats.every((c) => c === '') ? cats.map((_, i) => String(i + 1)) : cats
+}
+
+interface DataTableLayout {
+  /** top of the table outline (the category header band starts here) */
+  headerTop: number
+  /** top of the first series row */
+  rowsTop: number
+  rowH: number
+  sizePx: number
+  left: number
+  plotX: number
+  plotW: number
+  nCols: number
+  /** column slot of category i (a reversed category axis mirrors the slots) */
+  colOf: (i: number) => number
+  textColor: string
+  measure: (text: string, sizePx: number) => number
+  seriesColor: (i: number) => string
+  lineWidthPx: number
+  /** header texts to draw (the vertical builder's header is the axis label band it already drew) */
+  header?: string[]
+}
+
+/** Data table (c:dTable): a legend-key column left of the plot, one row per series, one
+ *  cell per category slot; borders/outline per the table flags. */
+function addDataTable(
+  node: ChartRenderNode,
+  model: ChartModel,
+  dt: NonNullable<ChartModel['dataTable']>,
+  L: DataTableLayout,
+): void {
+  const { rowH, sizePx, left, plotX, plotW, nCols, colOf, textColor, measure, seriesColor } = L
+  const serKind = (ser: (typeof model.series)[number]) => ser.plotKind ?? model.kind
+  const lineColor = dt.lineColor ?? gridDefaults(model).major
+  const slotW = plotW / nCols
+  const right = plotX + plotW
+  const bottom = L.rowsTop + model.series.length * rowH
+  const line = (x1: number, y1: number, x2: number, y2: number) =>
+    node.gridLines.push({ x1, y1, x2, y2, color: lineColor, widthPx: 1 })
+  if (dt.outline) {
+    line(left, L.headerTop, right, L.headerTop)
+    line(left, bottom, right, bottom)
+    line(left, L.headerTop, left, bottom)
+    line(right, L.headerTop, right, bottom)
+  }
+  if (dt.horzBorder)
+    for (let r = 0; r < model.series.length; r++)
+      line(left, L.rowsTop + r * rowH, right, L.rowsTop + r * rowH)
+  if (dt.vertBorder) {
+    line(plotX, L.headerTop, plotX, bottom)
+    for (let i = 1; i < nCols; i++) line(plotX + i * slotW, L.headerTop, plotX + i * slotW, bottom)
+  }
+  const fitCell = (text: string, cx: number, y: number) => {
+    const w = measure(text, sizePx)
+    // overlong cells shrink to the slot instead of colliding with their neighbors
+    const size = w > slotW * 0.95 ? Math.max(sizePx * ((slotW * 0.95) / w), 4) : sizePx
+    node.labels.push({
+      text,
+      x: cx - (w * size) / sizePx / 2,
+      y: y + (sizePx - size) * 0.6,
+      fontSizePx: size,
+      color: textColor,
+    })
+  }
+  L.header?.forEach((text, i) => {
+    if (i >= nCols) return
+    const hdrH = L.rowsTop - L.headerTop
+    fitCell(text, plotX + (colOf(i) + 0.5) * slotW, L.headerTop + (hdrH - sizePx * 1.2) / 2)
+  })
+  model.series.forEach((ser, si) => {
+    const rowY = L.rowsTop + si * rowH
+    const textY = rowY + (rowH - sizePx * 1.2) / 2
+    let kx = left + sizePx * 0.3
+    if (dt.showKeys) {
+      // keys share one ~1.7em column; a line series shows its line sample (+ marker)
+      // instead of a swatch, like the legend (PowerPoint measured)
+      const keyW = sizePx * DT_KEY_EM
+      if (serKind(ser) === 'line') {
+        const cy = rowY + rowH / 2
+        node.polylines.push({
+          points: [kx, cy, kx + keyW, cy],
+          color: seriesColor(si),
+          widthPx: L.lineWidthPx,
+        })
+        if (ser.marker)
+          node.markers.push({ x: kx + keyW / 2, y: cy, r: sizePx * 0.28, color: seriesColor(si) })
+      } else {
+        node.swatches.push({
+          x: kx,
+          y: rowY + rowH / 2 - sizePx * 0.25,
+          w: keyW,
+          h: sizePx * 0.5,
+          color: seriesColor(si),
+        })
+      }
+      kx += sizePx * (DT_KEY_EM + 0.1)
+    }
+    // unnamed series take PowerPoint's "Series N" placeholder (N = c:idx + 1)
+    const name = ser.name ?? `Series${(ser.paletteIdx ?? si) + 1}`
+    node.labels.push({ text: name, x: kx, y: textY, fontSizePx: sizePx, color: textColor })
+    const fmt = ser.valFmt ?? (ser.secondaryAxis ? model.valAxis2?.numFmt : model.valAxis?.numFmt)
+    ser.values.forEach((v, i) => {
+      if (v == null || i >= nCols) return
+      fitCell(fmtDataLabel(v, fmt), plotX + (colOf(i) + 0.5) * slotW, textY)
+    })
+  })
+}
+
+/** Width of the data table's legend-key column: key swatch + widest series name + padding */
+function dataTableKeyW(
+  model: ChartModel,
+  dt: NonNullable<ChartModel['dataTable']>,
+  sizePx: number,
+  measure: (text: string, sizePx: number) => number,
+): number {
+  return (
+    (dt.showKeys ? sizePx * (DT_KEY_EM + 0.1) : 0) +
+    arrayMax(
+      model.series.map((sr, si) =>
+        measure(sr.name ?? `Series${(sr.paletteIdx ?? si) + 1}`, sizePx),
+      ),
+      0,
+    ) +
+    sizePx * 1.2
+  )
+}
+
 // ── Horizontal bars (barDir='bar': categories on the y axis, values on the x axis) ──
 
 function buildHBarNode(
@@ -2721,6 +2788,7 @@ function buildHBarNode(
   const grouping = model.grouping ?? 'clustered'
   const stacked = grouping === 'stacked' || grouping === 'percentStacked'
   const node = emptyChartNode(id, sourceId, box)
+  const hCats = displayCategories(model)
 
   const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
@@ -2804,7 +2872,7 @@ function buildHBarNode(
   const catLabelW = catNoReserve
     ? 0
     : arrayMax(
-        model.categories.map((c) => measure(c, catLabelSizePx)),
+        hCats.map((c) => measure(c, catLabelSizePx)),
         0,
       )
   // Axis titles: the category title stands on the left (rotated), the value title lies under the tick row
@@ -2822,7 +2890,15 @@ function buildHBarNode(
     model.valAxis?.title && !model.valAxis.titleOverlay
       ? valTitleStyle.fontSizePx * 1.2 + labelSizePx * 0.4
       : 0
-  const plotX = pad + catTitleW + Math.min(catLabelW, box.w * 0.35) + 8
+  // Data table under the plot: a category header row plus one row per series, its key
+  // column sharing the category-label gutter (PowerPoint widens the gutter to fit the names)
+  const dt = model.dataTable
+  const dtSizePx = dt ? ptToPx(dt.sizePt ?? chartTextPt(model), vp.scale) : 0
+  const dtRowH = dtSizePx * DT_HBAR_ROW_EM
+  const dtHeaderH = dt ? dtSizePx * DT_HBAR_HEADER_EM : 0
+  const dtRows = dt ? model.series.length : 0
+  const dtKeyW = dt ? dataTableKeyW(model, dt, dtSizePx, measure) : 0
+  const plotX = pad + catTitleW + Math.max(Math.min(catLabelW, box.w * 0.35) + 8, dtKeyW)
   const plotY = pad + (legendPos === 't' ? legendH + 4 : 0) + labelSizePx * 0.6
   // Side legends reserve their true column width (mirrors the vertical builder); addSeriesLegend
   // draws at plot.x + plot.w + 8 with 0.5em swatch + 4px gap entries
@@ -2840,11 +2916,14 @@ function buildHBarNode(
       : 0
   const plotR = box.w - pad - labelSizePx * 0.7 - legendW
   // Bottom row = 0.75em tick gap + one label line (PPT-measured ≈2em at 18pt)
+  const valRowH = labelSizePx * (valNoReserve ? (dt ? 0 : 0.5) : 2.0)
   const plotB =
     box.h -
     pad -
     valTitleH -
-    labelSizePx * (valNoReserve ? 0.5 : 2.0) -
+    valRowH -
+    dtHeaderH -
+    dtRows * dtRowH -
     (legendPos === 'b' ? legendH : 0)
   // An explicit inner plot rect wins over the heuristics — decks position hbar
   // frames partly off-slide and rely on the manual layout for what stays visible
@@ -2953,7 +3032,7 @@ function buildHBarNode(
     return plot.y + pos * slotH
   }
   if (!catLabelsOff)
-    model.categories.forEach((cat, i) => {
+    hCats.forEach((cat, i) => {
       node.labels.push({
         text: cat,
         x: plot.x - 8 - measure(cat, catLabelSizePx),
@@ -3048,6 +3127,26 @@ function buildHBarNode(
         const tipRight = v >= 0 !== rev
         dLbl(si, i, tipRight ? xR + 4 : xL - 4 - measure(lblText, dlSize), y + barH / 2, v, false)
       })
+    })
+  }
+
+  if (dt && dtRows) {
+    const top = plot.y + plot.h + valRowH
+    addDataTable(node, model, dt, {
+      headerTop: top,
+      rowsTop: top + dtHeaderH,
+      rowH: dtRowH,
+      sizePx: dtSizePx,
+      left: plot.x - Math.min(dtKeyW, plot.x - pad),
+      plotX: plot.x,
+      plotW: plot.w,
+      nCols: n,
+      colOf: (i) => i,
+      textColor: dt.textColor ?? catLabelColor,
+      measure,
+      seriesColor,
+      lineWidthPx: Math.max(1.5, ptToPx(2.25, vp.scale)),
+      header: hCats,
     })
   }
 

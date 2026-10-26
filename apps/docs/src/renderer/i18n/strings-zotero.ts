@@ -372,4 +372,23 @@ export const zoteroStrings = defineStrings({
       'Tài liệu này có chứa trích dẫn Zotero trong chú thích cuối trang hoặc chú thích cuối tài liệu mà GenOffice hiện chưa thể cập nhật. Các lệnh Zotero đã bị tắt tại đây để giữ nguyên danh mục tài liệu tham khảo.',
     zoteroGroup: 'Zotero',
   },
+  tr: {
+    zoteroCitation: 'Zotero Alıntısı',
+    zoteroCitationTip:
+      'Zotero ile alıntı ekleyin; düzenlemek için imleci bir alıntının içine getirin',
+    zoteroBibliography: 'Zotero Kaynakçası',
+    zoteroBibliographyTip: 'Zotero ile kaynakça ekleyin veya düzenleyin',
+    zoteroRefresh: 'Yenile',
+    zoteroRefreshTip: 'Tüm Zotero alıntılarını ve kaynakçalarını yenile',
+    zoteroDocumentSettings: 'Belge Ayarları',
+    zoteroDocumentSettingsTip: 'Zotero belge ayarları',
+    zoteroDocumentPreferences: 'Belge Tercihleri',
+    zoteroRemoveCodes: 'Alan Kodlarını Kaldır',
+    zoteroConnectionError:
+      'Zotero ile bağlantı kurulamadı. Zotero uygulamasını başlatın ve açık tutun.',
+    zoteroOperationError: 'Zotero işlemi başarısız oldu.',
+    zoteroNoteFieldsUnsupported:
+      'Bu belgenin dipnotlarında veya son notlarında GenOffice tarafından henüz güncellenemeyen Zotero alıntıları var. Kaynakçanın bozulmaması için Zotero komutları burada kapatıldı.',
+    zoteroGroup: 'Zotero',
+  },
 })

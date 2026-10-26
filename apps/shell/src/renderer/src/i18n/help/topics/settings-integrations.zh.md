@@ -10,7 +10,7 @@
 
 ## 语言
 
-- 设置里可选 **21 种界面语言**：简体中文、English、日本語、한국어、Français、Deutsch、Español、ไทย、Bahasa Indonesia、Русский、العربية、Português、Italiano、Polski、Čeština、Nederlands、Bahasa Melayu、עברית、हिन्दी、繁體中文、Tiếng Việt。
+- 设置里可选 **22 种界面语言**：简体中文、English、日本語、한국어、Français、Deutsch、Español、ไทย、Bahasa Indonesia、Русский、العربية、Português、Italiano、Polski、Čeština、Nederlands、Bahasa Melayu、עברית、हिन्दी、繁體中文、Tiếng Việt、Türkçe。
 - 切换立即生效并持久化；菜单栏（主进程菜单）随语言重建。
 
 ## 主题

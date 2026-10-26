@@ -51,7 +51,7 @@ interface IJumpParams {
 type MatrixCell = ICellData & { rowSpan?: number; colSpan?: number }
 
 /** Excel's rule: an entry is any value (including ""), rich text, or a formula */
-function excelCellHasValue(cell: MatrixCell | null | undefined): boolean {
+export function excelCellHasValue(cell: MatrixCell | null | undefined): boolean {
   if (cell == null) return false
   if (cell.v !== undefined && cell.v !== null) return true
   if (cell.p !== undefined && cell.p !== null) return true

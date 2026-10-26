@@ -39,6 +39,8 @@ describe('createWikiNote', () => {
     const docDir = await scratch('doc')
     const made = await createWikiNote('folder/Deep/Note', { root, fromDir: docDir })
     expect(made?.path).toBe(join(root, 'folder', 'Deep', 'Note.md'))
+    // the link keeps the directories: a bare `[[Note]]` could land elsewhere
+    expect(made?.target).toBe('folder/Deep/Note')
     expect(await readFile(join(root, 'folder', 'Deep', 'Note.md'), 'utf8')).toBe('')
   })
 
@@ -52,7 +54,12 @@ describe('createWikiNote', () => {
     const root = await scratch()
     await writeFile(join(root, 'Note.md'), 'precious words', 'utf8')
     const made = await createWikiNote('Note', { root, fromDir: '' })
-    expect(made).toEqual({ path: join(root, 'Note.md'), fragment: '', created: false })
+    expect(made).toEqual({
+      path: join(root, 'Note.md'),
+      target: 'Note',
+      fragment: '',
+      created: false,
+    })
     expect(await readFile(join(root, 'Note.md'), 'utf8')).toBe('precious words')
   })
 
@@ -60,6 +67,7 @@ describe('createWikiNote', () => {
     const root = await scratch()
     const made = await createWikiNote('a:b/c?d', { root, fromDir: '' })
     expect(made?.path).toBe(join(root, 'a_b', 'c_d.md'))
+    expect(made?.target).toBe('a_b/c_d')
   })
 
   it('a trailing dot or space is trimmed, so `Note.` cannot spell `Note..md`', async () => {

@@ -10,7 +10,7 @@ A configuração dos modelos tem o seu próprio artigo; em **Mídia e busca de I
 
 ## Idioma
 
-- As configurações oferecem **21 idiomas de interface**: inglês, chinês simplificado, japonês, coreano, francês, alemão, espanhol, tailandês, indonésio, russo, árabe, português, italiano, polaco, tcheco, neerlandês, malaio, hebraico, híndi, chinês tradicional e vietnamita.
+- As configurações oferecem **22 idiomas de interface**: inglês, chinês simplificado, japonês, coreano, francês, alemão, espanhol, tailandês, indonésio, russo, árabe, português, italiano, polaco, tcheco, neerlandês, malaio, hebraico, híndi, chinês tradicional, vietnamita e turco.
 - A troca aplica-se de imediato e persiste; e a barra de menus do sistema é reconstruída com o novo idioma.
 
 ## Tema

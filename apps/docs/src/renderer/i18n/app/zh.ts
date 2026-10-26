@@ -395,6 +395,7 @@ export const zh = {
   appLangHindi: '印地文',
   appLangTraditionalChinese: '繁体中文',
   appLangVietnamese: '越南文',
+  appLangTurkish: '土耳其文',
   appWrapTextMenu: '环绕文字',
   appViewImage: '查看图片',
   appSaveImageAs: '图片另存为…',

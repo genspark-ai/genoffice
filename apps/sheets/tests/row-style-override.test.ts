@@ -1,4 +1,4 @@
-import { composeStyles } from '@univerjs/core'
+import { BorderStyleTypes, composeStyles } from '@univerjs/core'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -91,8 +91,33 @@ describe('row/column style bleed overrides', () => {
     expect(s.fs).toBe(9)
   })
 
+  it('blocks a column-default border with a NONE edge the renderer skips', () => {
+    // <col style=> carries a light-gray thin border; the cells own
+    // an xf with borderId 1 (no border) and Excel paints no lines there.
+    const columnStyle: WorkbookCellStyle = {
+      ...baseStyle,
+      borderTop: { style: 'thin', color: '#D5D3D1' },
+      borderBottom: { style: 'thin', color: '#D5D3D1' },
+      borderLeft: { style: 'thin', color: '#D5D3D1' },
+      borderRight: { style: 'thin', color: '#D5D3D1' },
+    } as WorkbookCellStyle
+    const bleed = new Set(Object.keys(toUniverStyle(columnStyle)))
+    const composed = composeStyles(
+      toUniverStyle(columnStyle),
+      withRowColOverrides(toUniverStyle(cellStyle), bleed, baseStyle),
+    )
+    expect(composed.bd).toEqual({ t: { s: BorderStyleTypes.NONE, cl: { rgb: '#000000' } } })
+    // A cell with its own border keeps it untouched.
+    const bordered = withRowColOverrides(
+      { bd: { b: { s: BorderStyleTypes.THIN, cl: { rgb: '#000000' } } } },
+      bleed,
+      baseStyle,
+    )
+    expect(bordered.bd).toEqual({ b: { s: BorderStyleTypes.THIN, cl: { rgb: '#000000' } } })
+  })
+
   it('leaves keys without a safe stand-in alone', () => {
-    const s = withRowColOverrides({}, new Set(['pd', 'bd']), baseStyle)
+    const s = withRowColOverrides({}, new Set(['pd']), baseStyle)
     expect(s).toEqual({})
   })
 

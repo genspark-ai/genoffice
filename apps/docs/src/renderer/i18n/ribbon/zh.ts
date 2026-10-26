@@ -707,6 +707,7 @@ export const zh = {
   ribbonLangHindi: '印地文',
   ribbonLangTraditionalChinese: '繁体中文',
   ribbonLangVietnamese: '越南文',
+  ribbonLangTurkish: '土耳其文',
   ribbonGroupLanguage: '语言',
   ribbonNewComment: '新建批注',
   ribbonNewCommentTip: '为所选内容新建批注',

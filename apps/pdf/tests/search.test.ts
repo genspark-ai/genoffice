@@ -87,8 +87,8 @@ describe('buildSearchIndex', () => {
     expect(index[0]!.items[1]!.rot).toBe(true)
   })
 
-  it('synthetic italic shear (c ≠ 0, horizontal baseline) is not flagged as rotated', async () => {
-    // ~12° shear as writers emit for fake italics: b = 0, c = tan(12°) × size
+  it('synthetic italic shear (c \u2260 0, horizontal baseline) is not flagged as rotated', async () => {
+    // ~12\u00b0 shear as writers emit for fake italics: b = 0, c = tan(12\u00b0) \u00d7 size
     const doc = fakeDoc([
       [{ str: 'emphasis', transform: [12, 0, 2.55, 12, 100, 700], width: 48, height: 12 }],
     ])
@@ -168,16 +168,16 @@ describe('searchInIndex', () => {
   })
 
   it('keeps folded text the same length so rects stay aligned (dotted capital)', async () => {
-    const doc = fakeDoc([[item('İ', 10, 700, 10, 12)]])
+    const doc = fakeDoc([[item('\u0130', 10, 700, 10, 12)]])
     const index = await buildSearchIndex(doc)
     expect(index[0]!.lower.length).toBe(index[0]!.text.length)
     const matches = searchInIndex(index, 'i')
     expect(matches).toHaveLength(0)
-    expect(searchInIndex(index, 'İ')).toHaveLength(1)
+    expect(searchInIndex(index, '\u0130')).toHaveLength(1)
   })
 })
 
-describe('searchInIndex — matchCase', () => {
+describe('searchInIndex \u2014 matchCase', () => {
   const entry = (text: string): SearchIndex[number] => ({
     text,
     lower: foldCase(text),
@@ -197,11 +197,11 @@ describe('searchInIndex — matchCase', () => {
   })
 
   it('on: the precomputed fold is bypassed (original text is searched)', () => {
-    const index = [entry('İstanbul istanbul')]
-    // 'İ'.toLowerCase() grows a dot; the fold keeps it length-stable, so the
+    const index = [entry('\u0130stanbul istanbul')]
+    // '\u0130'.toLowerCase() grows a dot; the fold keeps it length-stable, so the
     // case-sensitive scan over the original text finds plain 'istanbul' only
     expect(searchInIndex(index, 'istanbul', { matchCase: true })).toHaveLength(1)
-    expect(searchInIndex(index, 'İstanbul', { matchCase: true })).toHaveLength(1)
+    expect(searchInIndex(index, '\u0130stanbul', { matchCase: true })).toHaveLength(1)
   })
 
   it('combines with wholeWord', () => {
@@ -211,7 +211,7 @@ describe('searchInIndex — matchCase', () => {
   })
 })
 
-describe('searchInIndex — wholeWord', () => {
+describe('searchInIndex \u2014 wholeWord', () => {
   const entry = (text: string): SearchIndex[number] => ({
     text,
     lower: foldCase(text),
@@ -239,19 +239,19 @@ describe('searchInIndex — wholeWord', () => {
   })
 
   it('degrades to plain matching for CJK sequences (CJK has no word boundaries)', () => {
-    const index = [entry('中文测试中文测试中文')]
-    expect(searchInIndex(index, '中文', { wholeWord: true })).toHaveLength(3)
+    const index = [entry('\u4e2d\u6587\u6d4b\u8bd5\u4e2d\u6587\u6d4b\u8bd5\u4e2d\u6587')]
+    expect(searchInIndex(index, '\u4e2d\u6587', { wholeWord: true })).toHaveLength(3)
   })
 
   it('treats a CJK neighbour as a delimiter on the Latin side', () => {
-    const index = [entry('中文word中文 word-word')]
+    const index = [entry('\u4e2d\u6587word\u4e2d\u6587 word-word')]
     // 'word' glued between CJK counts as whole, and both halves of the
     // hyphen-delimited 'word-word' are whole words of their own
     expect(searchInIndex(index, 'word', { wholeWord: true })).toHaveLength(3)
   })
 
   it('still rejects Latin runs glued into longer Latin words next to CJK', () => {
-    const index = [entry('中文wordy中文')]
+    const index = [entry('\u4e2d\u6587wordy\u4e2d\u6587')]
     expect(searchInIndex(index, 'word', { wholeWord: true })).toHaveLength(0)
   })
 

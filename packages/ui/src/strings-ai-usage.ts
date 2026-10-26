@@ -90,6 +90,10 @@ export const AI_USAGE_LABELS: Record<Lang, AiUsageLabels> = {
     runTitle: 'Token dùng cho câu trả lời này',
     sessionTitle: 'Token dùng trong phiên này',
   },
+  tr: {
+    runTitle: 'Bu yanıtın token kullanımı',
+    sessionTitle: 'Bu oturumun token kullanımı',
+  },
   'zh-TW': {
     runTitle: '本回覆 token 用量',
     sessionTitle: '本次工作階段累計用量',

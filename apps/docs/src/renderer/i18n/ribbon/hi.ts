@@ -702,6 +702,7 @@ export const hi = {
   ribbonLangHindi: 'हिंदी',
   ribbonLangTraditionalChinese: 'पारंपरिक चीनी',
   ribbonLangVietnamese: 'वियतनामी',
+  ribbonLangTurkish: 'तुर्की',
   ribbonGroupLanguage: 'भाषा',
   ribbonNewComment: 'नई टिप्पणी',
   ribbonNewCommentTip: 'चयन पर टिप्पणी जोड़ें',

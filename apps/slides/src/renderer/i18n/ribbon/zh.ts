@@ -433,6 +433,7 @@ export const zh = {
   ribbonLangHebrew: '希伯来文',
   ribbonLangHindi: '印地文',
   ribbonLangVietnamese: '越南文',
+  ribbonLangTurkish: '土耳其文',
   ribbonNewComment: '新建批注',
   ribbonCommentsPane: '批注窗格',
   ribbonCommentsPaneTip: '显示/隐藏批注窗格',
