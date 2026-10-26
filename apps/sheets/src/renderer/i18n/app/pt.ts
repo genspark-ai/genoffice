@@ -746,6 +746,7 @@ export const pt = {
   appExportPdfTitle: 'Exportar como PDF',
   appSaveTitle: 'Salvar (⌘S)',
   appSaveAs: 'Salvar Como',
+  aiNameFile: 'Nomear com IA…',
   appUndo: 'Desfazer',
   appRedo: 'Refazer',
   appUnsavedEditOne: '● {count} edição não salva',

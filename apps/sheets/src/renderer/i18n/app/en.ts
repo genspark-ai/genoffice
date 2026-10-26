@@ -685,6 +685,7 @@ export const en = {
   appExportPdfTitle: 'Export as PDF',
   appSaveTitle: 'Save (⌘S)',
   appSaveAs: 'Save As',
+  aiNameFile: 'Name with AI…',
   appUndo: 'Undo',
   appRedo: 'Redo',
   appUnsavedEditOne: '● {count} unsaved edit',

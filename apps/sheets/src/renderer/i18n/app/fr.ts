@@ -773,6 +773,7 @@ export const fr = {
   appExportPdfTitle: 'Exporter en PDF',
   appSaveTitle: 'Enregistrer (⌘S)',
   appSaveAs: 'Enregistrer sous',
+  aiNameFile: "Nommer avec l'IA…",
   appUndo: 'Annuler',
   appRedo: 'Rétablir',
   appUnsavedEditOne: '● {count} modification non enregistrée',

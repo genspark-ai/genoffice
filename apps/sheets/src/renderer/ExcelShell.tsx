@@ -304,6 +304,8 @@ interface ExcelShellProps {
   /// file-backed session (the in-memory demo workbook has nowhere to copy).
   readonly canSaveAs: boolean
   readonly onSaveAs: () => void
+  /** Ask the model for a name, then open Save As with it prefilled */
+  readonly onNameWithAi: () => void
   /// QAT redo (workbook history, same path as the app menu's ⇧⌘Z); undo
   /// shares the AI panel's onUndo above.
   readonly onRedo: () => void
@@ -545,6 +547,7 @@ export function ExcelShell({
   onSave,
   canSaveAs,
   onSaveAs,
+  onNameWithAi,
   onRedo,
   canUndo,
   canRedo,
@@ -888,6 +891,16 @@ export function ExcelShell({
             onClick={onSaveAs}
           >
             <SaveAsIcon />
+          </button>
+          <button
+            type="button"
+            className="qa-btn qa-name-with-ai"
+            data-tip={t('aiNameFile')}
+            aria-label={t('aiNameFile')}
+            disabled={!canSaveAs}
+            onClick={onNameWithAi}
+          >
+            <GensparkMark />
           </button>
           <button
             type="button"

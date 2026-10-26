@@ -726,6 +726,7 @@ export const ru = {
   appExportPdfTitle: 'Экспорт в PDF',
   appSaveTitle: 'Сохранить (⌘S)',
   appSaveAs: 'Сохранить как',
+  aiNameFile: 'Назвать с помощью ИИ…',
   appUndo: 'Отменить',
   appRedo: 'Вернуть',
   appUnsavedEditOne: '● Несохранённых изменений: {count}',

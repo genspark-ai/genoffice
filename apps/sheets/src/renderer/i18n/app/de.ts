@@ -761,6 +761,7 @@ export const de = {
   appExportPdfTitle: 'Als PDF exportieren',
   appSaveTitle: 'Speichern (⌘S)',
   appSaveAs: 'Speichern unter',
+  aiNameFile: 'Mit KI benennen…',
   appUndo: 'Rückgängig',
   appRedo: 'Wiederholen',
   appUnsavedEditOne: '● {count} ungespeicherte Bearbeitung',

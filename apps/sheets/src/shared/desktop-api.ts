@@ -2109,6 +2109,11 @@ export const workbookSaveRequestSchema = z
     /// Background save (AutoSave, AI-run autosave): an unsaved new workbook
     /// then writes its backing file in place instead of asking where to save.
     quiet: z.boolean().optional(),
+    /// Name offered by the Save As dialog in place of the file's own. A stem
+    /// the model proposed for a document the reader named by hand: it prefills
+    /// the dialog rather than replacing it, so the reader still chooses where
+    /// the file goes, and cancelling still cancels.
+    defaultName: z.string().min(1).max(1024).optional(),
     /// CSV session in-place save: the active sheet serialized as CSV text.
     /// Written back to the session's original .csv after the xlsx save.
     csvContent: z.string().max(MAX_CSV_EXPORT_CHARS).optional(),
