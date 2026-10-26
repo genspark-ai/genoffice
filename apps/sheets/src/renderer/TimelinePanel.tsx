@@ -8,8 +8,9 @@ import { useModalDialog } from './modal-dialog'
 
 /// Timeline: a month-granularity date-range filter bound to one pivot date
 /// field. Like slicers it drives the pivot's hidden entries (applyPivotSlicer)
-/// and exists only within the session; the filtered output area persists
-/// through the pivot refresh write-back path.
+/// and persists on save as xl/timelines + xl/timelineCaches parts (gateway
+/// xlsx-slicer); the restore carries the file identity below so a re-save
+/// updates the parts in place.
 
 export interface TimelineUiState {
   readonly id: string
@@ -24,6 +25,12 @@ export interface TimelineUiState {
   readonly maxMonth: MonthKey
   /// Selected inclusive month range; null = unfiltered.
   readonly range: { readonly start: MonthKey; readonly end: MonthKey } | null
+  /// timeline@name — file identity from the restore (absent until the first
+  /// save writes the parts).
+  readonly name?: string
+  readonly partPath?: string
+  readonly cachePath?: string
+  readonly cacheName?: string
 }
 
 function monthLabel(key: MonthKey): string {

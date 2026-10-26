@@ -108,6 +108,14 @@ import {
   type SheetSparklineAddition,
   type SparklineGroupAdd,
 } from './xlsx-sparkline'
+import {
+  applySlicerState,
+  SlicerAddError,
+  type SlicerRemovalWrite,
+  type SlicerStateWrite,
+  type SlicerControlWrite,
+  type TimelineControlWrite,
+} from './xlsx-slicer'
 import { setPivotRefreshOnLoad } from './xlsx-pivot'
 import { applyPivotLayoutExpansions, type PivotRefreshUpdate } from './xlsx-pivot-expand'
 import {
@@ -829,6 +837,31 @@ export interface SheetPivotAddition {
 export type { PivotRefreshUpdate } from './xlsx-pivot-expand'
 export { PivotExpandError } from './xlsx-pivot-expand'
 export type { SheetSparklineAddition } from './xlsx-sparkline'
+export {
+  SlicerAddError,
+  parseSlicerState,
+  SLICER_REL_TYPE,
+  TIMELINE_REL_TYPE,
+  type SlicerPartState,
+} from './xlsx-slicer'
+
+/// Renderer-facing slicer state: control writes addressed by sheet NAME (the
+/// main process resolves the session's sheet ids; the planner resolves the
+/// worksheet part), part paths are package-absolute. `removals` come from
+/// controls the session restored from the file and then deleted — file
+/// slicers outside the session's knowledge are never touched, so an
+/// unreadable foreign slicer survives a save.
+export type SheetSlicerAddition = Omit<SlicerControlWrite, 'worksheetPath'> & {
+  readonly sheetName: string
+}
+export type SheetTimelineAddition = Omit<TimelineControlWrite, 'worksheetPath'> & {
+  readonly sheetName: string
+}
+export interface SheetSlicerState {
+  readonly slicers: readonly SheetSlicerAddition[]
+  readonly timelines: readonly SheetTimelineAddition[]
+  readonly removals: readonly SlicerRemovalWrite[]
+}
 
 /// Assembler-independent planning: computes the patched entry contents for a
 /// set of edits without materializing the output archive.
@@ -865,6 +898,9 @@ export async function planCellEditsToXlsx(
   // otherwise see `tabColorStates` or a cell image land here and a parsed
   // table edit parsed as a tab colour.
   redactionStates: readonly SheetRedactionState[] = [],
+  // Truly last (same positional hazard): a nullable object after two array
+  // defaults would silently swallow an older caller's array.
+  slicerState: SheetSlicerState | null = null,
 ): Promise<MutationPlan> {
   // A pending pivot pins final coordinates for its source and output; shifts
   // on either sheet, and sheet renames (worksheetSource@sheet), would desync
@@ -885,6 +921,15 @@ export async function planCellEditsToXlsx(
           'sheets — save the pivot first.',
       )
     }
+  }
+  // Slicer state addresses its host sheet by name; a same-save rename would
+  // desync the resolution (the pivot guard's sheet-management half). Row and
+  // column shifts are fine — slicer parts carry no cell coordinates.
+  if (slicerState !== null && sheetPlan !== undefined) {
+    throw new SlicerAddError(
+      'Slicer changes cannot be saved together with sheet management changes — ' +
+        'save the slicers first.',
+    )
   }
   // A pending table add pins final coordinates; row/column shifts on the same
   // sheet would desync the recorded range. The renderer saves before allowing
@@ -1604,6 +1649,37 @@ export async function planCellEditsToXlsx(
       })
     }
     workbookXml = await applyPivotAdditions(pkg, resolvedPivots, workbookXml, touchedEntries)
+  }
+
+  // Slicer/timeline persistence runs after pivot additions: new pivots this
+  // save join the tabId enumeration, and the workbook-level cache exts land
+  // on the final workbook XML (before calcPr maintenance sees it).
+  if (
+    slicerState !== null &&
+    (slicerState.slicers.length > 0 ||
+      slicerState.timelines.length > 0 ||
+      slicerState.removals.length > 0)
+  ) {
+    const resolvedSlicers: SlicerControlWrite[] = []
+    for (const { sheetName, ...control } of slicerState.slicers) {
+      resolvedSlicers.push({
+        ...control,
+        worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
+      })
+    }
+    const resolvedTimelines: TimelineControlWrite[] = []
+    for (const { sheetName, ...control } of slicerState.timelines) {
+      resolvedTimelines.push({
+        ...control,
+        worksheetPath: additionPaths.get(sheetName) ?? (await resolveWorksheetPath(pkg, sheetName)),
+      })
+    }
+    const resolved: SlicerStateWrite = {
+      slicers: resolvedSlicers,
+      timelines: resolvedTimelines,
+      removals: slicerState.removals,
+    }
+    workbookXml = await applySlicerState(pkg, resolved, workbookXml, touchedEntries)
   }
 
   // Excel trusts cached formula values on open, so formulas that depend on an

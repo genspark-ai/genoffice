@@ -18,7 +18,12 @@ import {
   defaultDataFieldCaption,
   isPivotAggregation,
 } from '@genoffice/xlsx-gateway/domain/pivot-value-modes'
-import type { WorkbookFile, WorkbookPivotAdd, WorkbookPivotDefinition } from '../shared/desktop-api'
+import type {
+  WorkbookFile,
+  WorkbookPivotAdd,
+  WorkbookPivotDefinition,
+  WorkbookSlicerPart,
+} from '../shared/desktop-api'
 import { journalSize, recordPivotCacheRefresh, recordPivotRefreshUpdate } from './edit-journal'
 import { t } from './i18n/locale'
 import { isCalendarDatePattern } from './numfmt-fix'
@@ -96,6 +101,10 @@ export interface PivotActionContext {
     update: (current: readonly TimelineUiState[]) => readonly TimelineUiState[],
   ) => void
   setTimelinePicker: (value: TimelinePickerState | null) => void
+  /** Marks the slicer/timeline state dirty so the next save persists it. */
+  markSlicersChanged: () => void
+  /** Records a file-restored control's part identity for save-time cleanup. */
+  recordSlicerRemoval: (control: SlicerUiState | TimelineUiState) => void
   setMessage: (message: string) => void
   setPendingEdits: (count: number) => void
 }
@@ -830,6 +839,7 @@ export function handleCreateSlicer(ctx: PivotActionContext, field: number): stri
     const shared = definition.fields[field]?.sharedItems[item.x]
     members.push({
       member,
+      x: item.x,
       label:
         shared === null || shared === undefined || shared === '' ? t('appBlank') : String(shared),
     })
@@ -846,6 +856,7 @@ export function handleCreateSlicer(ctx: PivotActionContext, field: number): stri
     selected,
   }
   ctx.setSlicers((current) => [...current, slicer])
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerCreated', { name: slicer.fieldName }))
   return null
 }
@@ -942,6 +953,7 @@ export function handleSlicerToggle(
   ctx.setSlicers((current) =>
     current.map((entry) => (entry.id === slicerId ? { ...entry, selected: next } : entry)),
   )
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerApplied', { name: slicer.fieldName }))
 }
 
@@ -960,6 +972,7 @@ export function handleSlicerSelectAll(ctx: PivotActionContext, slicerId: string)
         : entry,
     ),
   )
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerCleared', { name: slicer.fieldName }))
 }
 
@@ -972,6 +985,8 @@ export function handleRemoveSlicer(ctx: PivotActionContext, slicerId: string): v
     return
   }
   ctx.setSlicers((current) => current.filter((entry) => entry.id !== slicerId))
+  ctx.recordSlicerRemoval(slicer)
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appSlicerRemoved', { name: slicer.fieldName }))
 }
 
@@ -1036,6 +1051,7 @@ export function handleCreateTimeline(ctx: PivotActionContext, field: number): st
     range: null,
   }
   ctx.setTimelines((current) => [...current, timeline])
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appTimelineCreated', { name: timeline.fieldName }))
   return null
 }
@@ -1064,6 +1080,7 @@ export function handleTimelineRange(
   ctx.setTimelines((current) =>
     current.map((entry) => (entry.id === timelineId ? { ...entry, range } : entry)),
   )
+  ctx.markSlicersChanged()
   ctx.setMessage(
     range === null
       ? t('appTimelineCleared', { name: timeline.fieldName })
@@ -1080,5 +1097,99 @@ export function handleRemoveTimeline(ctx: PivotActionContext, timelineId: string
     return
   }
   ctx.setTimelines((current) => current.filter((entry) => entry.id !== timelineId))
+  ctx.recordSlicerRemoval(timeline)
+  ctx.markSlicersChanged()
   ctx.setMessage(t('appTimelineRemoved', { name: timeline.fieldName }))
+}
+
+/// Restores slicer/timeline panels from the file's x14/x15 parts after the
+/// pivot definitions have loaded (open flow). Best effort: an entry whose
+/// pivot, field, or member list cannot be resolved is skipped — its parts
+/// stay in the file untouched (and invisible) rather than blocking the open.
+export function restoreSlicerPanels(
+  state: LazyWorkbookState,
+  entries: readonly WorkbookSlicerPart[],
+): { slicers: SlicerUiState[]; timelines: TimelineUiState[] } {
+  const slicers: SlicerUiState[] = []
+  const timelines: TimelineUiState[] = []
+  for (const entry of entries) {
+    if (entry.pivotCacheDefinitionPath === null) continue
+    // The panel binds to the first pivot on that cache with a loaded
+    // definition (the session model holds one pivot per control).
+    const host = state.file.sheets
+      .map((sheet) => ({
+        sheet,
+        pivot: sheet.pivotTables.find(
+          (pivot) => pivot.cachePath === entry.pivotCacheDefinitionPath,
+        ),
+      }))
+      .find((found) => found.pivot !== undefined)
+    if (!host || !host.pivot) continue
+    const definition = state.pivotDefinitions.get(host.pivot.path)
+    if (!definition) continue
+    const field = definition.fields.findIndex((meta) => meta.name === entry.sourceName)
+    if (field < 0) continue
+    const fieldName = definition.fields[field]?.name || t('appFieldN', { n: field + 1 })
+    if (entry.kind === 'slicer') {
+      const members: SlicerMember[] = []
+      definition.fieldItems[field]?.forEach((item, member) => {
+        if (item.x === null) return
+        const shared = definition.fields[field]?.sharedItems[item.x]
+        members.push({
+          member,
+          x: item.x,
+          label:
+            shared === null || shared === undefined || shared === ''
+              ? t('appBlank')
+              : String(shared),
+        })
+      })
+      if (members.length === 0) continue
+      const selectedX = entry.selectedItems
+      const selected =
+        selectedX === null
+          ? members.map((item) => item.member)
+          : members.filter((item) => selectedX.includes(item.x)).map((item) => item.member)
+      slicers.push({
+        id: `slicer-${Date.now().toString(36)}-${slicers.length + 1}`,
+        sheetId: host.sheet.id,
+        pivotPath: host.pivot.path,
+        field,
+        fieldName,
+        members,
+        // A cache with no readable selection (or an all-empty one) restores
+        // unfiltered rather than hiding everything.
+        selected: selected.length === 0 ? members.map((item) => item.member) : selected,
+        name: entry.name,
+        partPath: entry.partPath,
+        cachePath: entry.cachePath,
+        cacheName: entry.cacheName,
+      })
+    } else {
+      const domain = timelineDomainOf(
+        definition.fields[field]?.sharedItems ?? [],
+        definition.fieldItems[field] ?? [],
+      )
+      if (!domain) continue
+      timelines.push({
+        id: `timeline-${Date.now().toString(36)}-${timelines.length + 1}`,
+        sheetId: host.sheet.id,
+        pivotPath: host.pivot.path,
+        field,
+        fieldName,
+        members: domain.members,
+        minMonth: domain.minMonth,
+        maxMonth: domain.maxMonth,
+        range:
+          entry.range === null
+            ? null
+            : { start: entry.range.startMonth, end: entry.range.endMonth },
+        name: entry.name,
+        partPath: entry.partPath,
+        cachePath: entry.cachePath,
+        cacheName: entry.cacheName,
+      })
+    }
+  }
+  return { slicers, timelines }
 }

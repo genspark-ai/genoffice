@@ -2194,6 +2194,96 @@ export const workbookSaveRequestSchema = z
       )
       .max(50)
       .default([]),
+    /// Session slicer/timeline panels persisted as x14/x15 slicer parts on
+    /// this save (created, edited, or deleted this session; null = nothing
+    /// slicer-related rides the save, leaving any file parts untouched).
+    slicerState: z
+      .object({
+        slicers: z
+          .array(
+            z
+              .object({
+                sheetId: z.string().min(1),
+                /// Package-absolute pivot part path (file.sheets[].pivotTables).
+                pivotPath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+                /// Cache field name (slicerCacheDefinition@sourceName).
+                sourceName: z.string().min(1).max(255),
+                caption: z.string().max(255),
+                /// File identity from the restore; present = update in place.
+                name: z.string().min(1).max(255).optional(),
+                partPath: z
+                  .string()
+                  .regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/)
+                  .optional(),
+                cachePath: z
+                  .string()
+                  .regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/)
+                  .optional(),
+                cacheName: z.string().min(1).max(255).optional(),
+                /// Every member with its selection (x = sharedItems index).
+                items: z
+                  .array(
+                    z
+                      .object({
+                        x: z.number().int().nonnegative(),
+                        selected: z.boolean(),
+                      })
+                      .strict(),
+                  )
+                  .min(1)
+                  .max(100_000),
+              })
+              .strict(),
+          )
+          .max(100),
+        timelines: z
+          .array(
+            z
+              .object({
+                sheetId: z.string().min(1),
+                pivotPath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+                sourceName: z.string().min(1).max(255),
+                caption: z.string().max(255),
+                name: z.string().min(1).max(255).optional(),
+                partPath: z
+                  .string()
+                  .regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/)
+                  .optional(),
+                cachePath: z
+                  .string()
+                  .regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/)
+                  .optional(),
+                cacheName: z.string().min(1).max(255).optional(),
+                /// Inclusive month range; null = unfiltered.
+                range: z
+                  .object({
+                    startMonth: z.number().int().nonnegative(),
+                    endMonth: z.number().int().nonnegative(),
+                  })
+                  .strict()
+                  .nullable(),
+              })
+              .strict(),
+          )
+          .max(100),
+        /// Controls restored from the file and deleted this session: their
+        /// parts and references are removed; file slicers the session never
+        /// restored are never listed here (and never touched).
+        removals: z
+          .array(
+            z
+              .object({
+                kind: z.enum(['slicer', 'timeline']),
+                partPath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+                cachePath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+              })
+              .strict(),
+          )
+          .max(200),
+      })
+      .strict()
+      .nullable()
+      .default(null),
     /// Declarative defined-names snapshot (null = untouched). `preserveNames`
     /// lists file names the editor could not model — they stay verbatim, as do
     /// _xlnm.* built-ins and hidden names.
@@ -2306,6 +2396,7 @@ export const workbookSaveRequestSchema = z
       (request.tableEdits?.length ?? 0) > 0 ||
       request.pivotAdditions.length > 0 ||
       request.sparklineAdditions.length > 0 ||
+      request.slicerState !== null ||
       request.redactionStates.length > 0,
     { message: 'A save needs at least one edit.' },
   )
@@ -2399,6 +2490,44 @@ export const workbookPivotRequestSchema = z
     cachePath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
   })
   .strict()
+
+export const workbookSlicerStateRequestSchema = z.object({ sessionId: z.string().uuid() }).strict()
+
+/// One slicer/timeline control the file carries, as parsed by the gateway
+/// (see xlsx-slicer parseSlicerState). The renderer binds the pivot through
+/// pivotCacheDefinitionPath against the sheet metadata's pivotTables entries,
+/// then rebuilds the session panel (with file identity for update-in-place).
+export const workbookSlicerPartSchema = z
+  .object({
+    kind: z.enum(['slicer', 'timeline']),
+    /// `sheet-<sheetId>` — matches WorkbookFile sheets[].id.
+    sheetId: z.string().min(1),
+    worksheetPath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+    partPath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+    cachePath: z.string().regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/),
+    name: z.string().min(1).max(255),
+    cacheName: z.string().min(1).max(255),
+    sourceName: z.string().max(255),
+    caption: z.string().max(255),
+    pivotCacheDefinitionPath: z
+      .string()
+      .regex(/^xl\/[A-Za-z0-9._/-]+\.xml$/)
+      .nullable(),
+    /// Slicer: sharedItems indices of the selected members; null = the cache
+    /// carried no item list (treat as unfiltered).
+    selectedItems: z.array(z.number().int().nonnegative()).max(100_000).nullable(),
+    /// Timeline: inclusive month range (year*12+month-1); null = unfiltered.
+    range: z
+      .object({
+        startMonth: z.number().int().nonnegative(),
+        endMonth: z.number().int().nonnegative(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+
+export const workbookSlicerStateResultSchema = z.array(workbookSlicerPartSchema).max(1_000)
 
 export const workbookRedactionsRequestSchema = z
   .object({
@@ -2597,6 +2726,9 @@ export type WorkbookMediaRequest = z.infer<typeof workbookMediaRequestSchema>
 export type WorkbookMediaResult = z.infer<typeof workbookMediaResultSchema>
 export type WorkbookPivotRequest = z.infer<typeof workbookPivotRequestSchema>
 export type WorkbookPivotDefinition = z.infer<typeof workbookPivotDefinitionSchema>
+export type WorkbookSlicerStateRequest = z.infer<typeof workbookSlicerStateRequestSchema>
+export type WorkbookSlicerPart = z.infer<typeof workbookSlicerPartSchema>
+export type WorkbookSlicerState = z.infer<typeof workbookSlicerStateResultSchema>
 export type WorkbookRedactionsRequest = z.infer<typeof workbookRedactionsRequestSchema>
 export type WorkbookRedactionsResult = z.infer<typeof workbookRedactionsResultSchema>
 export type LocalImageRequest = z.infer<typeof localImageRequestSchema>
@@ -3104,6 +3236,9 @@ export interface DesktopApi {
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>
   readWorkbookMedia(request: WorkbookMediaRequest): Promise<WorkbookMediaResult>
   readPivotDefinition(request: WorkbookPivotRequest): Promise<WorkbookPivotDefinition>
+  /// Slicer/timeline controls the file carries; read once per open so the
+  /// session can restore the panels (and re-save them update-in-place).
+  readSlicerState(request: WorkbookSlicerStateRequest): Promise<WorkbookSlicerState>
   /**
    * The cells the reader withheld from the model, read once per open. An
    * unreadable part is reported as such rather than as "nothing withheld" —
