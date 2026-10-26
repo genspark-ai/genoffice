@@ -214,6 +214,8 @@ export const pt = {
   dlgPivotShowAsRankDesc: 'Classificar do Maior para o Menor…',
   dlgPivotShowAsIndex: 'Índice',
   dlgPivotNotSupportedYet: 'ainda não disponível',
+  dlgPivotBaseField: 'Campo base',
+  dlgPivotBaseItem: 'Item base',
   dlgPivotReportFilterItem: 'Item do filtro de relatório',
   dlgPivotAllItems: '(Tudo)',
   dlgPivotErrNeedValue: 'Adicione pelo menos um campo a Valores.',

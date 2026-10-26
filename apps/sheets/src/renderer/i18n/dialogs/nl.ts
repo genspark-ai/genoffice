@@ -213,6 +213,8 @@ export const nl = {
   dlgPivotShowAsRankDesc: 'Rang van groot naar klein…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'nog niet beschikbaar',
+  dlgPivotBaseField: 'Basisveld',
+  dlgPivotBaseItem: 'Basisitem',
   dlgPivotReportFilterItem: 'Rapportfilteritem',
   dlgPivotAllItems: '(Alles)',
   dlgPivotErrNeedValue: 'Voeg minstens één veld toe aan Waarden.',

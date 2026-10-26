@@ -211,6 +211,8 @@ export const ar = {
   dlgPivotShowAsRankDesc: 'الترتيب من الأكبر إلى الأصغر…',
   dlgPivotShowAsIndex: 'الفهرس',
   dlgPivotNotSupportedYet: 'غير متوفر بعد',
+  dlgPivotBaseField: 'الحقل الأساسي',
+  dlgPivotBaseItem: 'العنصر الأساسي',
   dlgPivotReportFilterItem: 'عنصر عامل تصفية التقرير',
   dlgPivotAllItems: '(الكل)',
   dlgPivotErrNeedValue: 'أضف حقلاً واحدًا على الأقل إلى القيم.',

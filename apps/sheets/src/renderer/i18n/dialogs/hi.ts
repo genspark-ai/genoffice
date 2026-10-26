@@ -211,6 +211,8 @@ export const hi = {
   dlgPivotShowAsRankDesc: 'सबसे बड़े से सबसे छोटे तक रैंक…',
   dlgPivotShowAsIndex: 'सूचकांक',
   dlgPivotNotSupportedYet: 'अभी उपलब्ध नहीं',
+  dlgPivotBaseField: 'आधार फ़ील्ड',
+  dlgPivotBaseItem: 'आधार आइटम',
   dlgPivotReportFilterItem: 'रिपोर्ट फ़िल्टर आइटम',
   dlgPivotAllItems: '(सभी)',
   dlgPivotErrNeedValue: 'मान क्षेत्र में कम से कम एक फ़ील्ड जोड़ें।',

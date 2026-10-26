@@ -215,6 +215,8 @@ export const pl = {
   dlgPivotShowAsRankDesc: 'Ranga od największej do najmniejszej…',
   dlgPivotShowAsIndex: 'Indeks',
   dlgPivotNotSupportedYet: 'jeszcze niedostępne',
+  dlgPivotBaseField: 'Pole podstawowe',
+  dlgPivotBaseItem: 'Element podstawowy',
   dlgPivotReportFilterItem: 'Element filtru raportu',
   dlgPivotAllItems: '(Wszystko)',
   dlgPivotErrNeedValue: 'Dodaj co najmniej jedno pole do obszaru Wartości.',

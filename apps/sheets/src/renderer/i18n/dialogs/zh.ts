@@ -204,6 +204,8 @@ export const zh = {
   dlgPivotShowAsRankDesc: '降序排列…',
   dlgPivotShowAsIndex: '指数',
   dlgPivotNotSupportedYet: '暂不支持',
+  dlgPivotBaseField: '基字段',
+  dlgPivotBaseItem: '基项',
   dlgPivotReportFilterItem: '报表筛选项',
   dlgPivotAllItems: '(全部)',
   dlgPivotErrNeedValue: '请至少向“值”区域添加一个字段。',

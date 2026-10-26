@@ -214,6 +214,8 @@ export const id = {
   dlgPivotShowAsRankDesc: 'Peringkat Terbesar ke Terkecil…',
   dlgPivotShowAsIndex: 'Indeks',
   dlgPivotNotSupportedYet: 'belum tersedia',
+  dlgPivotBaseField: 'Bidang dasar',
+  dlgPivotBaseItem: 'Item dasar',
   dlgPivotReportFilterItem: 'Item filter laporan',
   dlgPivotAllItems: '(Semua)',
   dlgPivotErrNeedValue: 'Tambahkan setidaknya satu bidang ke Nilai.',

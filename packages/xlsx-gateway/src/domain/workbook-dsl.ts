@@ -516,10 +516,26 @@ const addPivotSchema = z.object({
          * "Show values as" mode: percentOfTotal / percentOfRow / percentOfCol
          * divide by the grand, row, or column total; percentOfParentRow /
          * percentOfParentCol divide by the parent level's total; index =
-         * (cell × grand total) / (row total × column total). Defaults to the
-         * plain aggregate value.
+         * (cell × grand total) / (row total × column total); difference /
+         * percentDiff compare against a base item of a base field (value−base,
+         * (value−base)/base); percentOf = value/base; percentOfParent divides
+         * by the base field's parent-level subtotal; runTotal /
+         * percentOfRunningTotal accumulate along the base field's items;
+         * rankAscending / rankDescending rank the cell among the base field's
+         * items. Defaults to the plain aggregate value.
          */
         showDataAs: z.enum(PIVOT_SHOW_DATA_AS).optional(),
+        /**
+         * Base field of the showDataAs calculation (a row/column dimension
+         * header). Required by the base-field modes above; ignored otherwise.
+         */
+        baseField: z.string().min(1).max(255).optional(),
+        /**
+         * Base item of the showDataAs calculation: a member label of the base
+         * field. Required by difference / percentDiff / percentOf; ignored
+         * otherwise.
+         */
+        baseItem: z.string().max(255).optional(),
         /** Custom caption for the data field; default "Sum of <field>" */
         name: z.string().min(1).max(255).optional(),
         /**

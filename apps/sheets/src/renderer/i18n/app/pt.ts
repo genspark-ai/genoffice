@@ -207,6 +207,13 @@ export const pt = {
   appInvalidGroupField: 'Campo de agrupamento inválido.',
   appInvalidPageField: 'Campo de filtro de relatório inválido.',
   appPivotPageItemMissing: 'O item de filtro "{item}" não pertence ao campo "{label}".',
+  appInvalidPivotBaseField:
+    'O campo base de "Mostrar valores como" deve estar em linhas ou colunas.',
+  appPivotBaseFieldMissing:
+    'O modo "Mostrar valores como" de um campo de valores precisa de um campo base.',
+  appPivotBaseFieldNotAxis:
+    'O campo base "{label}" deve estar nas linhas ou colunas da tabela dinâmica.',
+  appPivotBaseItemMissing: 'O item base "{item}" não pertence ao campo "{label}".',
   appInvalidLabelFilterField: 'O campo do filtro de rótulo é inválido.',
   appInvalidValueFieldIndex: 'O índice do campo de valores {index} é inválido.',
   appInvalidValueField: 'Campo de valores inválido.',

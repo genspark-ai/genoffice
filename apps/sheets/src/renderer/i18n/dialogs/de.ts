@@ -217,6 +217,8 @@ export const de = {
   dlgPivotShowAsRankDesc: 'Rangfolge nach Größe (absteigend)…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'noch nicht verfügbar',
+  dlgPivotBaseField: 'Basisfeld',
+  dlgPivotBaseItem: 'Basiselement',
   dlgPivotReportFilterItem: 'Berichtsfilterelement',
   dlgPivotAllItems: '(Alle)',
   dlgPivotErrNeedValue: 'Fügen Sie mindestens ein Feld zu Werte hinzu.',

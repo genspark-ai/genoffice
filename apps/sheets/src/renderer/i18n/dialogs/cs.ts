@@ -214,6 +214,8 @@ export const cs = {
   dlgPivotShowAsRankDesc: 'Pořadí od největšího k nejmenšímu…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'zatím není k dispozici',
+  dlgPivotBaseField: 'Základní pole',
+  dlgPivotBaseItem: 'Základní položka',
   dlgPivotReportFilterItem: 'Položka filtru sestavy',
   dlgPivotAllItems: '(Vše)',
   dlgPivotErrNeedValue: 'Přidejte do oblasti Hodnoty alespoň jedno pole.',

@@ -209,6 +209,13 @@ export const de = {
   appInvalidPageField: 'Ungültiges Berichtsfilterfeld.',
   appPivotPageItemMissing:
     'Das Berichtsfilterelement „{item}“ ist kein Element des Felds „{label}“.',
+  appInvalidPivotBaseField:
+    'Das Basisfeld von „Werte anzeigen als“ muss sich in Zeilen oder Spalten befinden.',
+  appPivotBaseFieldMissing:
+    'Der Modus „Werte anzeigen als“ eines Wertefelds benötigt ein Basisfeld.',
+  appPivotBaseFieldNotAxis:
+    'Basisfeld „{label}“ muss sich in den Zeilen oder Spalten der PivotTable befinden.',
+  appPivotBaseItemMissing: 'Basiselement „{item}“ ist kein Mitglied des Felds „{label}“.',
   appInvalidLabelFilterField: 'Das Feld des Beschriftungsfilters ist ungültig.',
   appInvalidValueFieldIndex: 'Wertfeldindex {index} ist ungültig.',
   appInvalidValueField: 'Ungültiges Wertfeld.',

@@ -209,6 +209,8 @@ export const ko = {
   dlgPivotShowAsRankDesc: '내림차순 순위…',
   dlgPivotShowAsIndex: '인덱스',
   dlgPivotNotSupportedYet: '아직 지원되지 않음',
+  dlgPivotBaseField: '기준 필드',
+  dlgPivotBaseItem: '기준 항목',
   dlgPivotReportFilterItem: '보고서 필터 항목',
   dlgPivotAllItems: '(모두)',
   dlgPivotErrNeedValue: '값 영역에 필드를 하나 이상 추가하세요.',

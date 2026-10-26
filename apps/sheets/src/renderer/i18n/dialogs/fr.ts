@@ -217,6 +217,8 @@ export const fr = {
   dlgPivotShowAsRankDesc: 'Rang du plus grand au plus petit…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'pas encore disponible',
+  dlgPivotBaseField: 'Champ de base',
+  dlgPivotBaseItem: 'Élément de base',
   dlgPivotReportFilterItem: 'Élément du filtre du rapport',
   dlgPivotAllItems: '(Tous)',
   dlgPivotErrNeedValue: 'Ajoutez au moins un champ dans Valeurs.',

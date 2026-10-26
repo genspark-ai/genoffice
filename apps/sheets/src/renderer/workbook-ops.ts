@@ -313,6 +313,9 @@ const LAYOUT_ERROR_KEYS = {
   tooManyRowLines: 'appPivotTooManyRowLines',
   needsValues: 'appPivotNeedsValues',
   pageItemMissing: 'appPivotPageItemMissing',
+  baseFieldMissing: 'appPivotBaseFieldMissing',
+  baseFieldNotAxis: 'appPivotBaseFieldNotAxis',
+  baseItemMissing: 'appPivotBaseItemMissing',
 } satisfies Record<PivotLayoutErrorCode, Parameters<typeof t>[0]>
 
 /// Rows the report-filter block occupies above the table body: one per page
@@ -636,10 +639,25 @@ export function pivotConfigToOpParts(
       }
       const label = fields[v.fieldIndex]?.label
       if (!label) throw new Error(t('appInvalidValueFieldIndex', { index: v.fieldIndex }))
+      // "Show values as" base fields travel as header names; the base field
+      // must sit on rows or columns for the engine to resolve it.
+      let baseField: string | undefined
+      let baseItem: string | undefined
+      if (v.baseFieldIndex !== undefined) {
+        baseField = fields[v.baseFieldIndex]?.label
+        if (!baseField) throw new Error(t('appInvalidPivotBaseField'))
+        if (!rowFieldLabels.includes(baseField) && !columnFieldLabels.includes(baseField)) {
+          throw new Error(t('appInvalidPivotBaseField'))
+        }
+      }
+      if (baseField === undefined) baseItem = undefined
+      else if (v.baseItem !== undefined) baseItem = v.baseItem
       return {
         field: label,
         agg: v.agg,
         ...(v.showDataAs !== undefined ? { showDataAs: v.showDataAs } : {}),
+        ...(baseField !== undefined ? { baseField } : {}),
+        ...(baseItem !== undefined ? { baseItem } : {}),
         ...(v.name?.trim() ? { name: v.name.trim() } : {}),
       }
     })

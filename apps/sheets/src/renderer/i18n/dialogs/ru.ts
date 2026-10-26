@@ -214,6 +214,8 @@ export const ru = {
   dlgPivotShowAsRankDesc: 'Сортировка от максимального к минимальному…',
   dlgPivotShowAsIndex: 'Индекс',
   dlgPivotNotSupportedYet: 'пока недоступно',
+  dlgPivotBaseField: 'Базовое поле',
+  dlgPivotBaseItem: 'Базовый элемент',
   dlgPivotReportFilterItem: 'Элемент фильтра отчёта',
   dlgPivotAllItems: '(Все)',
   dlgPivotErrNeedValue: 'Добавьте хотя бы одно поле в область «Значения».',

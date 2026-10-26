@@ -205,6 +205,8 @@ export const zhTW = {
   dlgPivotShowAsRankDesc: '最大到最小排序…',
   dlgPivotShowAsIndex: '索引',
   dlgPivotNotSupportedYet: '尚未支援',
+  dlgPivotBaseField: '基準欄位',
+  dlgPivotBaseItem: '基準項目',
   dlgPivotReportFilterItem: '報表篩選項目',
   dlgPivotAllItems: '(全部)',
   dlgPivotErrNeedValue: '請至少把一個欄位加到「值」區域。',

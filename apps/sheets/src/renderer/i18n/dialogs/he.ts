@@ -208,6 +208,8 @@ export const he = {
   dlgPivotShowAsRankDesc: 'דירוג מהגדול לקטן…',
   dlgPivotShowAsIndex: 'אינדקס',
   dlgPivotNotSupportedYet: 'לא זמין עדיין',
+  dlgPivotBaseField: 'שדה בסיס',
+  dlgPivotBaseItem: 'פריט בסיס',
   dlgPivotReportFilterItem: 'פריט מסנן דוח',
   dlgPivotAllItems: '(הכל)',
   dlgPivotErrNeedValue: 'הוסף לפחות שדה אחד לערכים.',

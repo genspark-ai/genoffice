@@ -213,6 +213,8 @@ export const ms = {
   dlgPivotShowAsRankDesc: 'Pangkat Terbesar ke Terkecil…',
   dlgPivotShowAsIndex: 'Indeks',
   dlgPivotNotSupportedYet: 'belum tersedia',
+  dlgPivotBaseField: 'Medan asas',
+  dlgPivotBaseItem: 'Item asas',
   dlgPivotReportFilterItem: 'Item penapis laporan',
   dlgPivotAllItems: '(Semua)',
   dlgPivotErrNeedValue: 'Tambah sekurang-kurangnya satu medan ke Nilai.',

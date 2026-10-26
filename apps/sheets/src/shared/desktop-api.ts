@@ -1967,6 +1967,12 @@ export const workbookPivotAddSchema = z
             numFmt: z.string().min(1).max(255).optional(),
             /// "Show values as" mode; absent = plain aggregate value.
             showDataAs: z.enum(PIVOT_SHOW_DATA_AS).optional(),
+            /// "Show values as" base field (index into fieldNames; must sit on
+            /// rows/columns); present for the base-field modes.
+            baseFieldIndex: z.number().int().nonnegative().max(199).optional(),
+            /// Base item index within the base field's member list; present for
+            /// difference / percentDiff / percentOf.
+            baseItemIndex: z.number().int().nonnegative().max(9_999).optional(),
             /// Custom data-field caption; absent = "Sum of <field>".
             name: z.string().min(1).max(255).optional(),
             /// Calculated field: formula (referencing source field names) plus the new
@@ -2507,6 +2513,10 @@ export const workbookPivotDefinitionSchema = z
             subtotal: z.string().max(32),
             /// "Show values as" mode; the parser only carries it over when supported.
             showDataAs: z.enum(PIVOT_SHOW_DATA_AS).optional(),
+            /// Base field (cache-field index) / base item (fieldItems index) of
+            /// the "show values as" calculation; present for the base modes.
+            baseField: z.number().int().nonnegative().max(1_000).optional(),
+            baseItem: z.number().int().nonnegative().max(100_000).optional(),
             /// Calculated-field formula (carried when fld points at a cacheField with a
             /// formula).
             formula: z.string().max(2_048).optional(),

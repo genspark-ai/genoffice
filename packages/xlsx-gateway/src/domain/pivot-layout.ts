@@ -5,6 +5,8 @@ import {
   defaultDataFieldCaption,
   normalizePivotPageFields,
   showDataAsIsPercent,
+  showDataAsNeedsBaseField,
+  showDataAsNeedsBaseItem,
   type PivotAggregation,
   type PivotShowDataAs,
 } from './pivot-value-modes'
@@ -37,6 +39,9 @@ export type PivotLayoutErrorCode =
   | 'tooManyRowLines'
   | 'needsValues'
   | 'pageItemMissing'
+  | 'baseFieldMissing'
+  | 'baseFieldNotAxis'
+  | 'baseItemMissing'
 
 const MESSAGES: Record<PivotLayoutErrorCode, string> = {
   sourceNeedsRows: 'The pivot source needs a header row plus data rows.',
@@ -54,6 +59,9 @@ const MESSAGES: Record<PivotLayoutErrorCode, string> = {
   tooManyRowLines: 'The pivot has more than 20,000 row lines.',
   needsValues: 'The pivot needs one values entry.',
   pageItemMissing: 'Report filter item "{item}" is not a member of field "{label}".',
+  baseFieldMissing: 'The "show values as" mode of a value field needs a base field.',
+  baseFieldNotAxis: 'Base field "{label}" must sit on the pivot rows or columns.',
+  baseItemMissing: 'Base item "{item}" is not a member of field "{label}".',
 }
 
 export class PivotLayoutError extends Error {
@@ -78,6 +86,10 @@ export interface PivotLayoutValue {
   agg: PivotAggregation
   numFmt?: string | undefined
   showDataAs?: PivotShowDataAs | undefined
+  /** "show values as" base field (a row/column dimension field index) */
+  baseFieldIndex?: number | undefined
+  /** base item's index within the base field's member list */
+  baseItemIndex?: number | undefined
   /** custom caption; absent = "Sum of <field>" */
   name?: string | undefined
   formula?: string | undefined
@@ -127,6 +139,17 @@ export type PivotLayoutSpec = Pick<
   AddPivotOperation,
   'rowFields' | 'columnField' | 'pageFields' | 'values' | 'groupings' | 'filters'
 >
+
+/// Resolved "show values as" base field: which axis level it lives on, that
+/// level's members, the visible member indexes (display order, filter-hidden
+/// members excluded), and the base item for the difference/percent modes.
+export interface ResolvedShowAsBase {
+  readonly axis: 'row' | 'column'
+  readonly level: number
+  readonly items: readonly string[]
+  readonly visible: readonly number[]
+  readonly baseItemIndex: number | undefined
+}
 
 export { AGG_CAPTIONS } from './pivot-value-modes'
 
@@ -203,6 +226,9 @@ export function buildPivotLayout(
       // percent modes default to 0.00%, matching dataField numFmtId=10
       numFmt: value.numFmt ?? (showDataAsIsPercent(value.showDataAs) ? '0.00%' : undefined),
       showDataAs: value.showDataAs,
+      baseFieldLabel: value.baseField,
+      baseItemLabel: value.baseItem,
+      base: undefined as ResolvedShowAsBase | undefined,
       name: value.name?.trim() || undefined,
       ...(isCalc ? { formula: value.formula, calcName: value.field } : {}),
       caption: value.name?.trim() || defaultDataFieldCaption(value.agg, value.field),
@@ -429,6 +455,41 @@ export function buildPivotLayout(
   const rowHiddenItems = hiddenIndexesOf(rowFieldIndices, levelItems)
   const colHiddenItems = hiddenIndexesOf(columnFieldIndices, colLevelItems)
 
+  // "Show values as" base fields: resolved against the axis levels once member
+  // lists and filter-hidden items are known. A base field outside the axes, or
+  // a base item outside the base field's members, fails closed.
+  for (const spec of valueSpecs) {
+    const mode = spec.showDataAs
+    if (mode === undefined || !showDataAsNeedsBaseField(mode)) continue
+    const label = spec.baseFieldLabel
+    if (label === undefined) throw new PivotLayoutError('baseFieldMissing')
+    const fieldIdx = fieldIndex(label)
+    const rowLevel = rowFieldIndices.indexOf(fieldIdx)
+    const columnLevel = columnFieldIndices.indexOf(fieldIdx)
+    if (rowLevel < 0 && columnLevel < 0) {
+      throw new PivotLayoutError('baseFieldNotAxis', { label })
+    }
+    const axis: 'row' | 'column' = rowLevel >= 0 ? 'row' : 'column'
+    const level = rowLevel >= 0 ? rowLevel : columnLevel
+    const items = axis === 'row' ? levelItems[level]! : colLevelItems[level]!
+    const hidden = new Set(axis === 'row' ? rowHiddenItems[level]! : colHiddenItems[level]!)
+    let baseItemIndex: number | undefined
+    if (showDataAsNeedsBaseItem(mode)) {
+      const itemLabel = spec.baseItemLabel ?? ''
+      baseItemIndex = items.indexOf(itemLabel)
+      if (baseItemIndex < 0) {
+        throw new PivotLayoutError('baseItemMissing', { item: itemLabel, label })
+      }
+    }
+    spec.base = {
+      axis,
+      level,
+      items,
+      visible: items.flatMap((_, index) => (hidden.has(index) ? [] : [index])),
+      baseItemIndex,
+    }
+  }
+
   for (const row of visibleRows) {
     const path: string[] = []
     rowFieldIndices.forEach((fieldIdx) => {
@@ -472,16 +533,43 @@ export function buildPivotLayout(
       return true
     }) as PivotScalar[][]
 
+  // Running-total / rank accumulations per (value spec × group): the group is
+  // every coordinate except the base-field level, so the cumulative restarts
+  // for each new outer member of the base axis and each other-axis group —
+  // Excel's reset rule.
+  const showAsAccumulations = new Map<string, { cum: number[]; values: (number | null)[] }>()
+  const axisAggregate = (
+    spec: (typeof valueSpecs)[number],
+    ownPrefix: readonly string[],
+    otherPrefix: readonly string[],
+  ): number | null =>
+    spec.base?.axis === 'row'
+      ? aggregate(bucketRows(ownPrefix, otherPrefix), spec)
+      : aggregate(bucketRows(otherPrefix, ownPrefix), spec)
+
   const applyShowDataAs = (
     raw: number | null,
     spec: (typeof valueSpecs)[number],
     prefix: readonly string[],
     colPrefix: readonly string[],
   ): number | null => {
-    if (spec.showDataAs === undefined || raw === null) return raw
+    const mode = spec.showDataAs
+    if (mode === undefined || raw === null) return raw
     const ratio = (base: number | null): number | null =>
       base === null || base === 0 ? null : raw / base
-    switch (spec.showDataAs) {
+    const base = spec.base
+    // Per-axis prefixes of the base-field modes: `own` is the axis holding the
+    // base field; a cell whose own prefix does not fix the base level (a
+    // subtotal or grand total spanning it) shows blank, as in Excel.
+    const ownPrefix = base?.axis === 'column' ? colPrefix : prefix
+    const otherPrefix = base?.axis === 'column' ? prefix : colPrefix
+    const ownFixed = base !== undefined && ownPrefix.length > base.level
+    const replaceItem = (item: string): readonly string[] => {
+      const at = base!.level
+      return [...ownPrefix.slice(0, at), item, ...ownPrefix.slice(at + 1)]
+    }
+    const parentScope = (): readonly string[] => ownPrefix.slice(0, base!.level)
+    switch (mode) {
       case 'percentOfTotal':
         return ratio(aggregate(bucketRows([], []), spec))
       case 'percentOfRow':
@@ -499,6 +587,61 @@ export function buildPivotLayout(
         if (grand === null || rowTotal === null || colTotal === null) return null
         const denominator = rowTotal * colTotal
         return denominator === 0 ? null : (raw * grand) / denominator
+      }
+      case 'difference':
+      case 'percentDiff':
+      case 'percentOf': {
+        if (!base || !ownFixed || base.baseItemIndex === undefined) return null
+        const baseItem = base.items[base.baseItemIndex]!
+        // Difference and % difference are blank for the base item itself;
+        // "% Of" shows the natural raw/raw = 100%.
+        if (mode !== 'percentOf' && ownPrefix[base.level] === baseItem) return null
+        const baseValue = axisAggregate(spec, replaceItem(baseItem), otherPrefix)
+        if (baseValue === null) return null
+        if (mode === 'difference') return raw - baseValue
+        if (baseValue === 0) return null
+        return mode === 'percentOf' ? raw / baseValue : (raw - baseValue) / baseValue
+      }
+      case 'percentOfParent': {
+        if (!base) return null
+        return ratio(axisAggregate(spec, parentScope(), otherPrefix))
+      }
+      case 'runTotal':
+      case 'percentOfRunningTotal':
+      case 'rankAscending':
+      case 'rankDescending': {
+        if (!base || !ownFixed) return null
+        const ownIndex = base.items.indexOf(ownPrefix[base.level]!)
+        if (ownIndex < 0) return null
+        const groupKey =
+          `${spec.caption}\u0000${otherPrefix.join('\u0000')}\u0000` +
+          [...ownPrefix.slice(0, base.level), ...ownPrefix.slice(base.level + 1)].join('\u0000')
+        let acc = showAsAccumulations.get(groupKey)
+        if (acc === undefined) {
+          // Values per visible base item (item display order), then cumulative.
+          const values = base.visible.map((index) =>
+            axisAggregate(spec, replaceItem(base.items[index]!), otherPrefix),
+          )
+          let sum = 0
+          const cum = values.map((value) => (sum += value ?? 0))
+          acc = { cum, values }
+          showAsAccumulations.set(groupKey, acc)
+        }
+        const at = base.visible.indexOf(ownIndex)
+        if (at < 0) return null
+        if (mode === 'runTotal') return acc.cum[at] ?? null
+        if (mode === 'percentOfRunningTotal') {
+          const denominator = axisAggregate(spec, parentScope(), otherPrefix)
+          return denominator === null || denominator === 0 ? null : acc.cum[at]! / denominator
+        }
+        // RANK.EQ-style ties: equal values share the smaller rank.
+        const better = acc.values.filter(
+          (value, index) =>
+            index !== at &&
+            value !== null &&
+            (mode === 'rankAscending' ? value < raw : value > raw),
+        ).length
+        return better + 1
       }
     }
   }
@@ -617,14 +760,28 @@ export function buildPivotLayout(
       ...(filterEntries.length > 0
         ? { filters: filterEntries, rowHiddenItems, colHiddenItems }
         : {}),
-      values: valueSpecs.map((spec) => ({
-        fieldIndex: spec.fieldIndex,
-        agg: spec.agg,
-        ...(spec.numFmt ? { numFmt: spec.numFmt } : {}),
-        ...(spec.showDataAs ? { showDataAs: spec.showDataAs } : {}),
-        ...(spec.name !== undefined ? { name: spec.name } : {}),
-        ...(spec.formula !== undefined ? { formula: spec.formula, calcName: spec.calcName! } : {}),
-      })),
+      values: valueSpecs.map((spec) => {
+        const baseFieldIndex =
+          spec.base === undefined
+            ? undefined
+            : spec.base.axis === 'row'
+              ? rowFieldIndices[spec.base.level]!
+              : columnFieldIndices[spec.base.level]!
+        return {
+          fieldIndex: spec.fieldIndex,
+          agg: spec.agg,
+          ...(spec.numFmt ? { numFmt: spec.numFmt } : {}),
+          ...(spec.showDataAs ? { showDataAs: spec.showDataAs } : {}),
+          ...(baseFieldIndex !== undefined ? { baseFieldIndex } : {}),
+          ...(spec.base?.baseItemIndex !== undefined
+            ? { baseItemIndex: spec.base.baseItemIndex }
+            : {}),
+          ...(spec.name !== undefined ? { name: spec.name } : {}),
+          ...(spec.formula !== undefined
+            ? { formula: spec.formula, calcName: spec.calcName! }
+            : {}),
+        }
+      }),
     },
   }
 }

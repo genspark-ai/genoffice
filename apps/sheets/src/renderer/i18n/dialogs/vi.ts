@@ -212,6 +212,8 @@ export const vi = {
   dlgPivotShowAsRankDesc: 'Xếp hạng từ lớn đến nhỏ…',
   dlgPivotShowAsIndex: 'Chỉ số',
   dlgPivotNotSupportedYet: 'chưa hỗ trợ',
+  dlgPivotBaseField: 'Trường cơ sở',
+  dlgPivotBaseItem: 'Mục cơ sở',
   dlgPivotReportFilterItem: 'Mục bộ lọc báo cáo',
   dlgPivotAllItems: '(Tất cả)',
   dlgPivotErrNeedValue: 'Hãy thêm ít nhất một trường vào Giá trị.',

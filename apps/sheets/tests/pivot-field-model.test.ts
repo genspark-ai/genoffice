@@ -199,4 +199,42 @@ describe('validation and config', () => {
     // Groupings of fields no longer on an axis are dropped.
     expect(config.groupings).toEqual([{ fieldIndex: 0, rule: { kind: 'range', rangeStep: 10 } }])
   })
+
+  it('carries the show-values-as base field/item only with the modes that use them', () => {
+    const model: PivotLayoutModel = {
+      ...EMPTY_PIVOT_MODEL,
+      rows: [0],
+      values: [
+        // A mode without a base field drops stale picker choices.
+        {
+          fieldIndex: 2,
+          agg: 'sum',
+          showDataAs: 'percentOfTotal',
+          baseFieldIndex: 0,
+          baseItem: 'East',
+        },
+        {
+          fieldIndex: 3,
+          agg: 'sum',
+          showDataAs: 'difference',
+          baseFieldIndex: 0,
+          baseItem: 'East',
+        },
+        { fieldIndex: 2, agg: 'sum', showDataAs: 'runTotal', baseFieldIndex: 0, baseItem: 'East' },
+      ],
+    }
+    const config = modelToConfig(model, 'A1:D9', 'F1')
+    expect(config.values).toEqual([
+      { fieldIndex: 2, agg: 'sum', showDataAs: 'percentOfTotal' },
+      {
+        fieldIndex: 3,
+        agg: 'sum',
+        showDataAs: 'difference',
+        baseFieldIndex: 0,
+        baseItem: 'East',
+      },
+      // runTotal uses the base field but not the base item.
+      { fieldIndex: 2, agg: 'sum', showDataAs: 'runTotal', baseFieldIndex: 0 },
+    ])
+  })
 })

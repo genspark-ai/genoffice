@@ -207,6 +207,13 @@ export const nl = {
   appInvalidGroupField: 'Ongeldig groeperingsveld.',
   appInvalidPageField: 'Ongeldig rapportfilterveld.',
   appPivotPageItemMissing: 'Rapportfilteritem "{item}" is geen lid van veld "{label}".',
+  appInvalidPivotBaseField:
+    'Het basisveld van "Waarden weergeven als" moet in rijen of kolommen staan.',
+  appPivotBaseFieldMissing:
+    'De modus "Waarden weergeven als" van een waardeveld heeft een basisveld nodig.',
+  appPivotBaseFieldNotAxis:
+    'Basisveld "{label}" moet in de rijen of kolommen van de draaitabel staan.',
+  appPivotBaseItemMissing: 'Basisitem "{item}" is geen lid van veld "{label}".',
   appInvalidLabelFilterField: 'Het veld van het labelfilter is ongeldig.',
   appInvalidValueFieldIndex: 'Waardeveldindex {index} is ongeldig.',
   appInvalidValueField: 'Ongeldig waardeveld.',

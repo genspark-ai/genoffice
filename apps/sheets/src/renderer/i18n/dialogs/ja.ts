@@ -212,6 +212,8 @@ export const ja = {
   dlgPivotShowAsRankDesc: '降順での順位…',
   dlgPivotShowAsIndex: '指数',
   dlgPivotNotSupportedYet: '未対応',
+  dlgPivotBaseField: '基準フィールド',
+  dlgPivotBaseItem: '基準アイテム',
   dlgPivotReportFilterItem: 'レポート フィルターの項目',
   dlgPivotAllItems: '(すべて)',
   dlgPivotErrNeedValue: '「値」に少なくとも 1 つのフィールドを追加してください。',

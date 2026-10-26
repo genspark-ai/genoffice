@@ -213,6 +213,8 @@ export const en = {
   dlgPivotShowAsRankDesc: 'Rank Largest to Smallest…',
   dlgPivotShowAsIndex: 'Index',
   dlgPivotNotSupportedYet: 'not available yet',
+  dlgPivotBaseField: 'Base field',
+  dlgPivotBaseItem: 'Base item',
   dlgPivotReportFilterItem: 'Report filter item',
   dlgPivotAllItems: '(All)',
   dlgPivotErrNeedValue: 'Add at least one field to Values.',

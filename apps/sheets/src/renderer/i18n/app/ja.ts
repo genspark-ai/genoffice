@@ -206,6 +206,12 @@ export const ja = {
   appInvalidPageField: 'レポート フィルターのフィールドが無効です。',
   appPivotPageItemMissing:
     'レポート フィルターの項目「{item}」はフィールド「{label}」のメンバーではありません。',
+  appInvalidPivotBaseField: '「値の表示方法」の基準フィールドは行または列に配置してください。',
+  appPivotBaseFieldMissing: '値フィールドの「値の表示方法」には基準フィールドが必要です。',
+  appPivotBaseFieldNotAxis:
+    '基準フィールド「{label}」はピボットテーブルの行または列に配置してください。',
+  appPivotBaseItemMissing:
+    '基準アイテム「{item}」はフィールド「{label}」のメンバーではありません。',
   appInvalidLabelFilterField: 'ラベルフィルターのフィールドが無効です。',
   appInvalidValueFieldIndex: '値フィールドのインデックス {index} が無効です。',
   appInvalidValueField: '値フィールドが無効です。',

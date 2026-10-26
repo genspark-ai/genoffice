@@ -196,6 +196,13 @@ export const hi = {
   appInvalidGroupField: 'अमान्य समूहन फ़ील्ड।',
   appInvalidPageField: 'अमान्य रिपोर्ट फ़िल्टर फ़ील्ड।',
   appPivotPageItemMissing: 'रिपोर्ट फ़िल्टर आइटम "{item}" फ़ील्ड "{label}" का सदस्य नहीं है।',
+  appInvalidPivotBaseField:
+    '"मान इस रूप में दिखाएँ" का आधार फ़ील्ड पंक्तियों या कॉलम में होना चाहिए।',
+  appPivotBaseFieldMissing:
+    'वैल्यू फ़ील्ड के "मान इस रूप में दिखाएँ" मोड के लिए आधार फ़ील्ड आवश्यक है।',
+  appPivotBaseFieldNotAxis:
+    'आधार फ़ील्ड "{label}" पिवट तालिका की पंक्तियों या कॉलम में होना चाहिए।',
+  appPivotBaseItemMissing: 'आधार आइटम "{item}" फ़ील्ड "{label}" का सदस्य नहीं है।',
   appInvalidLabelFilterField: 'लेबल फ़िल्टर फ़ील्ड अमान्य है।',
   appInvalidValueFieldIndex: 'मान फ़ील्ड अनुक्रमांक {index} अमान्य है।',
   appInvalidValueField: 'अमान्य मान फ़ील्ड।',

@@ -209,6 +209,8 @@ export const th = {
   dlgPivotShowAsRankDesc: 'จัดอันดับจากมากไปน้อย…',
   dlgPivotShowAsIndex: 'ดัชนี',
   dlgPivotNotSupportedYet: 'ยังไม่รองรับ',
+  dlgPivotBaseField: 'ฟิลด์ฐาน',
+  dlgPivotBaseItem: 'รายการฐาน',
   dlgPivotReportFilterItem: 'รายการตัวกรองรายงาน',
   dlgPivotAllItems: '(ทั้งหมด)',
   dlgPivotErrNeedValue: 'เพิ่มเขตข้อมูลอย่างน้อยหนึ่งรายการในค่า',
