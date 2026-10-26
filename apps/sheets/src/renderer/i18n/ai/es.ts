@@ -19,6 +19,8 @@ export const es = {
   aiSettingsTitle: 'Configuración de IA',
   aiSetUp: 'Configurar IA',
   aiNewChat: 'Nueva conversación',
+  aiCopyReplyTitle: 'Copiar respuesta',
+  aiCopyCode: 'Copiar código',
   aiCollapsePanel: 'Contraer el panel de IA',
   aiHistorySep: '—— Conversación anterior ——',
   aiEmptyTitle: 'Pregunta a la IA sobre este libro',

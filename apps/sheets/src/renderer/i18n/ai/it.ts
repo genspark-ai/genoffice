@@ -18,6 +18,8 @@ export const it = {
   aiSettingsTitle: 'Impostazioni IA',
   aiSetUp: 'Configura IA',
   aiNewChat: 'Nuova conversazione',
+  aiCopyReplyTitle: 'Copia risposta',
+  aiCopyCode: 'Copia codice',
   aiCollapsePanel: 'Comprimi il pannello IA',
   aiHistorySep: '—— Conversazione precedente ——',
   aiEmptyTitle: "Chiedi all'IA informazioni su questa cartella di lavoro",

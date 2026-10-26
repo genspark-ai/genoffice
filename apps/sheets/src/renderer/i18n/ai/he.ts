@@ -17,6 +17,8 @@ export const he = {
   aiSettingsTitle: 'הגדרות AI',
   aiSetUp: 'הגדרת AI',
   aiNewChat: 'שיחה חדשה',
+  aiCopyReplyTitle: 'העתקת התשובה',
+  aiCopyCode: 'העתקת הקוד',
   aiCollapsePanel: 'כיווץ חלונית ה-AI',
   aiHistorySep: '—— השיחה הקודמת ——',
   aiEmptyTitle: 'שאלו את ה-AI על חוברת עבודה זו',

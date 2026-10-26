@@ -18,6 +18,8 @@ export const hi = {
   aiSettingsTitle: 'AI सेटिंग्स',
   aiSetUp: 'AI सेट करें',
   aiNewChat: 'नई बातचीत',
+  aiCopyReplyTitle: 'जवाब कॉपी करें',
+  aiCopyCode: 'कोड कॉपी करें',
   aiCollapsePanel: 'AI पैनल संक्षिप्त करें',
   aiHistorySep: '—— पिछली बातचीत ——',
   aiEmptyTitle: 'इस कार्यपुस्तिका के बारे में AI से पूछें',

@@ -17,6 +17,8 @@ export const ja = {
   aiSettingsTitle: 'AI 設定',
   aiSetUp: 'AI を設定',
   aiNewChat: '新しい会話',
+  aiCopyReplyTitle: '返信をコピー',
+  aiCopyCode: 'コードをコピー',
   aiCollapsePanel: 'AI パネルを折りたたむ',
   aiHistorySep: '—— ここまでが過去の会話 ——',
   aiEmptyTitle: 'このブックについて AI に質問',

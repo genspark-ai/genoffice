@@ -17,6 +17,8 @@ export const id = {
   aiSettingsTitle: 'Pengaturan AI',
   aiSetUp: 'Siapkan AI',
   aiNewChat: 'Percakapan baru',
+  aiCopyReplyTitle: 'Salin balasan',
+  aiCopyCode: 'Salin kode',
   aiCollapsePanel: 'Ciutkan panel AI',
   aiHistorySep: '—— Percakapan sebelumnya ——',
   aiEmptyTitle: 'Tanyakan kepada AI tentang buku kerja ini',

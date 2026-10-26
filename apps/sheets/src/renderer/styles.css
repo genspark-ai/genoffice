@@ -4592,6 +4592,60 @@ textarea:focus {
   cursor: pointer;
 }
 
+/* hover actions under assistant messages (copy):
+ * borderless 30px icon buttons, radius 8, hover = subtle gray fill (docs parity) */
+.ai-msg-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.ai-msg-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 30px;
+  min-width: 30px;
+  padding: 5px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-msg-tool-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ai-msg-tool-btn:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+}
+
+.ai-msg-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ai-msg-tool-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--sheets-focus-ring);
+}
+
+.ai-msg-tool-btn {
+  position: relative;
+}
+
+/* Global press feedback */
+.ai-msg-tool-btn:active {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
 /* Collapsible tool-activity group.
    Unlike docs/slides, this app renders the group BEFORE the reply text, so the
    gap to the surrounding content comes from margin-bottom, not margin-top. */

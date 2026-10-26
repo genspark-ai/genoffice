@@ -18,6 +18,8 @@ export const cs = {
   aiSettingsTitle: 'Nastavení AI',
   aiSetUp: 'Nastavit AI',
   aiNewChat: 'Nová konverzace',
+  aiCopyReplyTitle: 'Kopírovat odpověď',
+  aiCopyCode: 'Kopírovat kód',
   aiCollapsePanel: 'Sbalit panel AI',
   aiHistorySep: '—— Předchozí konverzace ——',
   aiEmptyTitle: 'Zeptejte se AI na tento sešit',

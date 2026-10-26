@@ -18,6 +18,8 @@ export const ru = {
   aiSettingsTitle: 'Параметры ИИ',
   aiSetUp: 'Настроить ИИ',
   aiNewChat: 'Новый диалог',
+  aiCopyReplyTitle: 'Копировать ответ',
+  aiCopyCode: 'Копировать код',
   aiCollapsePanel: 'Свернуть панель ИИ',
   aiHistorySep: '—— Предыдущий диалог ——',
   aiEmptyTitle: 'Спросите ИИ об этой книге',

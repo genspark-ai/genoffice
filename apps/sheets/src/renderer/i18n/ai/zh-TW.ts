@@ -17,6 +17,8 @@ export const zhTW = {
   aiSettingsTitle: 'AI 設定',
   aiSetUp: '設定 AI',
   aiNewChat: '新對話',
+  aiCopyReplyTitle: '複製回覆',
+  aiCopyCode: '複製程式碼',
   aiCollapsePanel: '收合 AI 面板',
   aiHistorySep: '—— 以上是歷史對話 ——',
   aiEmptyTitle: '向 AI 詢問這個活頁簿',

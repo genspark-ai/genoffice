@@ -19,6 +19,8 @@ export const de = {
   aiSettingsTitle: 'KI-Einstellungen',
   aiSetUp: 'KI einrichten',
   aiNewChat: 'Neue Unterhaltung',
+  aiCopyReplyTitle: 'Antwort kopieren',
+  aiCopyCode: 'Code kopieren',
   aiCollapsePanel: 'KI-Bereich einklappen',
   aiHistorySep: '—— Frühere Unterhaltung ——',
   aiEmptyTitle: 'KI zu dieser Arbeitsmappe befragen',

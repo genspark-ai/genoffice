@@ -19,6 +19,8 @@ export const fr = {
   aiSettingsTitle: 'Paramètres IA',
   aiSetUp: "Configurer l'IA",
   aiNewChat: 'Nouvelle conversation',
+  aiCopyReplyTitle: 'Copier la réponse',
+  aiCopyCode: 'Copier le code',
   aiCollapsePanel: 'Réduire le volet IA',
   aiHistorySep: '—— Conversation précédente ——',
   aiEmptyTitle: "Interroger l'IA sur ce classeur",

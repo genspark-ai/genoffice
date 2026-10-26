@@ -17,6 +17,8 @@ export const pl = {
   aiSettingsTitle: 'Ustawienia AI',
   aiSetUp: 'Skonfiguruj AI',
   aiNewChat: 'Nowa rozmowa',
+  aiCopyReplyTitle: 'Kopiuj odpowiedź',
+  aiCopyCode: 'Kopiuj kod',
   aiCollapsePanel: 'Zwiń panel AI',
   aiHistorySep: '—— Wcześniejsza rozmowa ——',
   aiEmptyTitle: 'Zapytaj AI o ten skoroszyt',

@@ -17,6 +17,8 @@ export const ar = {
   aiSettingsTitle: 'إعدادات الذكاء الاصطناعي',
   aiSetUp: 'إعداد الذكاء الاصطناعي',
   aiNewChat: 'محادثة جديدة',
+  aiCopyReplyTitle: 'نسخ الرد',
+  aiCopyCode: 'نسخ الكود',
   aiCollapsePanel: 'طي لوحة الذكاء الاصطناعي',
   aiHistorySep: '—— المحادثة السابقة ——',
   aiEmptyTitle: 'اسأل الذكاء الاصطناعي عن هذا المصنف',

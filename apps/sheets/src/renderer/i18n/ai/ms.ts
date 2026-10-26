@@ -18,6 +18,8 @@ export const ms = {
   aiSettingsTitle: 'Tetapan AI',
   aiSetUp: 'Sediakan AI',
   aiNewChat: 'Perbualan baharu',
+  aiCopyReplyTitle: 'Salin balasan',
+  aiCopyCode: 'Salin kod',
   aiCollapsePanel: 'Runtuhkan panel AI',
   aiHistorySep: '—— Perbualan terdahulu ——',
   aiEmptyTitle: 'Tanya AI tentang buku kerja ini',

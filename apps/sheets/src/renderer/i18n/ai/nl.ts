@@ -19,6 +19,8 @@ export const nl = {
   aiSettingsTitle: 'AI-instellingen',
   aiSetUp: 'AI instellen',
   aiNewChat: 'Nieuw gesprek',
+  aiCopyReplyTitle: 'Antwoord kopiëren',
+  aiCopyCode: 'Code kopiëren',
   aiCollapsePanel: 'AI-paneel samenvouwen',
   aiHistorySep: '—— Eerder gesprek ——',
   aiEmptyTitle: 'Stel de AI een vraag over deze werkmap',

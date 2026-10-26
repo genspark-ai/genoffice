@@ -22,6 +22,7 @@ import {
   AiTypingIndicator,
   AiUsageChip,
   addTokenUsage,
+  copyMarkdownRich,
   useChatRunQueue,
   type AiScopeQuoteData,
   type AiTokenUsageView,
@@ -153,6 +154,8 @@ export function AiPanel({
   const [scopePreviewOpen, setScopePreviewOpen] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
+  /** which assistant message shows the copied checkmark (null = none) */
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
   // ── Chat-history persistence (r142): same shared store Docs/Sheets use ──
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
@@ -745,6 +748,14 @@ export function AiPanel({
     void window.pdfApi.openSourcePath(path)
   })
 
+  const copyMessage = (text: string, idx: number) => {
+    // rich clipboard first (text/html + text/plain), plain-text fallback inside
+    void copyMarkdownRich(text).finally(() => {
+      setCopiedIdx(idx)
+      window.setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1200)
+    })
+  }
+
   return (
     <aside
       ref={asideRef}
@@ -862,7 +873,45 @@ export function AiPanel({
               )}
               {entry.text && (
                 <div dir="auto">
-                  <Markdown text={entry.text} navs={[pdfNav, fileNav]} />
+                  <Markdown
+                    text={entry.text}
+                    navs={[pdfNav, fileNav]}
+                    codeCopyLabel={t('aiCopyCode')}
+                  />
+                </div>
+              )}
+              {/* Reply actions: copy with a 1.2s checkmark flip (docs parity), shown
+                  once the reply finished streaming and holds text to copy */}
+              {!entry.streaming && entry.text && (
+                <div className="ai-msg-toolbar">
+                  <button
+                    className="ai-msg-tool-btn"
+                    onClick={() => copyMessage(entry.text, i)}
+                    aria-label={t('aiCopyReplyTitle')}
+                    data-tip={t('aiCopyReplyTitle')}
+                  >
+                    {copiedIdx === i ? (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path
+                          d="M14.6113 5.34253C16.0608 5.3428 17.2363 6.518 17.2363 7.96753V15.5066C17.2361 16.956 16.0607 18.1313 14.6113 18.1316H7.07227C5.62267 18.1316 4.44751 16.9561 4.44727 15.5066V7.96753C4.44732 6.51783 5.62255 5.34253 7.07227 5.34253H14.6113ZM7.07227 6.59253C6.31291 6.59253 5.69732 7.20819 5.69727 7.96753V15.5066C5.69751 16.2658 6.31302 16.8816 7.07227 16.8816H14.6113C15.3703 16.8813 15.9861 16.2656 15.9863 15.5066V7.96753C15.9863 7.20835 15.3705 6.5928 14.6113 6.59253H7.07227ZM10.0176 2.8689C10.3626 2.86905 10.6426 3.14882 10.6426 3.4939C10.6425 3.83888 10.3626 4.11874 10.0176 4.1189H4.59961C3.84022 4.1189 3.22461 4.73451 3.22461 5.4939V11.324C3.22433 11.6689 2.94461 11.949 2.59961 11.949C2.25461 11.949 1.97489 11.6689 1.97461 11.324V5.4939C1.97461 4.04415 3.14987 2.8689 4.59961 2.8689H10.0176Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    )}
+                  </button>
                 </div>
               )}
             </div>

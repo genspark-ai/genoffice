@@ -18,6 +18,8 @@ export const en = {
   aiSettingsTitle: 'AI Settings',
   aiSetUp: 'Set up AI',
   aiNewChat: 'New conversation',
+  aiCopyReplyTitle: 'Copy reply',
+  aiCopyCode: 'Copy code',
   aiCollapsePanel: 'Collapse AI panel',
   aiHistorySep: '—— Earlier conversation ——',
   aiEmptyTitle: 'Ask AI about this workbook',
