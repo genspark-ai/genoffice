@@ -272,4 +272,16 @@ export const AI_SKILLS_LABELS: Record<Lang, AiSkillsLabels> = {
     removeTitle: 'Gỡ kỹ năng',
     attachedTitle: 'Kỹ năng đính kèm tin nhắn này',
   },
+  tr: {
+    addTitle: 'Ekle',
+    addFile: 'Dosya ekle',
+    skills: 'Beceriler',
+    searchPlaceholder: 'Beceri ara',
+    noSkills: 'Henüz beceri yüklenmedi',
+    noMatch: 'Eşleşen beceri yok',
+    manage: 'Becerileri yönet',
+    back: 'Geri',
+    removeTitle: 'Beceriyi kaldır',
+    attachedTitle: 'Bu iletiye eklenen beceriler',
+  },
 }

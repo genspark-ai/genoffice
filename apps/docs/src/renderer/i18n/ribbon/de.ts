@@ -707,6 +707,7 @@ export const de = {
   ribbonLangHindi: 'Hindi',
   ribbonLangTraditionalChinese: 'Traditionelles Chinesisch',
   ribbonLangVietnamese: 'Vietnamesisch',
+  ribbonLangTurkish: 'Türkisch',
   ribbonGroupLanguage: 'Sprache',
   ribbonNewComment: 'Neuer Kommentar',
   ribbonNewCommentTip: 'Kommentar zur Auswahl hinzufügen',

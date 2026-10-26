@@ -160,6 +160,24 @@ describe('applyTrackedChangesXml', () => {
     expect(out.xml).toMatch(/<w:ins w:id="3"/)
   })
 
+  it('rejecting an empty-old format change on a paragraph mark keeps the mark’s other markers', () => {
+    const body =
+      p(
+        r('x'),
+        `<w:pPr><w:rPr><w:ins w:id="1" ${AT}/><w:caps/><w:rPrChange w:id="2" ${AT}><w:rPr/></w:rPrChange></w:rPr></w:pPr>`,
+      ) + p(r('y'))
+    const only = applyTrackedChangesXml(hdr(body), 'reject', { type: 'formatting' })
+    expect(only.applied).toBe(1)
+    expect(only.remaining).toBe(1)
+    expect(only.xml).toMatch(/<w:rPr><w:ins w:id="1"[^>]*\/><\/w:rPr>/)
+    expect(only.xml).not.toMatch(/rPrChange|caps/)
+    // one pass rejects the mark's insertion too: the paragraphs join and no holder lingers
+    const all = applyTrackedChangesXml(hdr(body), 'reject')
+    expect(all.remaining).toBe(0)
+    expect(all.xml).not.toMatch(/rPrChange|caps|<w:ins\b|<w:rPr>/)
+    expect(texts(all.xml)).toEqual(['xy'])
+  })
+
   it('leaves a part without revisions byte-identical', () => {
     const xml = hdr(p(r('plain')))
     expect(applyTrackedChangesXml(xml, 'accept')).toEqual({ xml, applied: 0, remaining: 0 })

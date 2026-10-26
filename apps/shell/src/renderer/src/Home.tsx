@@ -3436,11 +3436,15 @@ export function Home() {
   const onSidebarResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
     const startX = e.clientX
     const startW = sidebarRef.current?.getBoundingClientRect().width ?? SIDEBAR_MIN_WIDTH
+    const sign = getComputedStyle(e.currentTarget).direction === 'rtl' ? -1 : 1
     const el = e.currentTarget
     el.setPointerCapture(e.pointerId)
     let next = startW
     const move = (ev: PointerEvent) => {
-      next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startW + ev.clientX - startX))
+      next = Math.min(
+        SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_MIN_WIDTH, startW + sign * (ev.clientX - startX)),
+      )
       setSidebarWidth(next)
     }
     const up = () => {

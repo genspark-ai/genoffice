@@ -716,6 +716,7 @@ export const ko = {
   ribbonLangHindi: '힌디어',
   ribbonLangTraditionalChinese: '중국어 번체',
   ribbonLangVietnamese: '베트남어',
+  ribbonLangTurkish: '터키어',
   ribbonGroupLanguage: '언어',
   ribbonNewComment: '새 메모',
   ribbonNewCommentTip: '선택 영역에 메모 추가',

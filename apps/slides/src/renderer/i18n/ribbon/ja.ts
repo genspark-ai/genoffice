@@ -453,6 +453,7 @@ export const ja = {
   ribbonLangHebrew: 'ヘブライ語',
   ribbonLangHindi: 'ヒンディー語',
   ribbonLangVietnamese: 'ベトナム語',
+  ribbonLangTurkish: 'トルコ語',
   ribbonNewComment: '新しいコメント',
   ribbonCommentsPane: 'コメント ウィンドウ',
   ribbonCommentsPaneTip: 'コメント ウィンドウの表示/非表示',

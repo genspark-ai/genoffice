@@ -1452,8 +1452,13 @@ function parseAxis(ax: any, theme?: Theme): ChartAxisStyle | undefined {
   const markSkip = parseInt(ax['c:tickMarkSkip']?.['@_val'], 10)
   if (Number.isFinite(markSkip) && markSkip > 1) out.tickMarkSkip = markSkip
   // Axis title (all a:t inside c:title/c:tx/c:rich concatenated)
+  // rich text, else a cell-linked strRef cache; a <c:title> with no c:tx at all shows
+  // PowerPoint's "Axis Title" placeholder
   const titleNode = ax['c:title']
-  const title = collectText(titleNode?.['c:tx']?.['c:rich'])
+  const title =
+    collectText(titleNode?.['c:tx']?.['c:rich']) ??
+    readStrPoints(titleNode?.['c:tx'])[0] ??
+    (titleNode && !titleNode['c:tx'] ? 'Axis Title' : undefined)
   if (title) {
     out.title = title
     if (titleNode?.['c:overlay']?.['@_val'] === '1') out.titleOverlay = true

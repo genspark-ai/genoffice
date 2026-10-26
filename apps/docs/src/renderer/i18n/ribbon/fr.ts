@@ -708,6 +708,7 @@ export const fr = {
   ribbonLangHindi: 'hindi',
   ribbonLangTraditionalChinese: 'chinois traditionnel',
   ribbonLangVietnamese: 'vietnamien',
+  ribbonLangTurkish: 'turc',
   ribbonGroupLanguage: 'Langue',
   ribbonNewComment: 'Nouveau commentaire',
   ribbonNewCommentTip: 'Ajouter un commentaire sur la sélection',

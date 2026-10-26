@@ -319,8 +319,8 @@ function resolveTableStyle(op: Op): ResolvedTableStyle {
       ...(op.bandCol != null ? { bandCol: Boolean(op.bandCol) } : {}),
       ...(op.bandRow != null ? { bandRow: Boolean(op.bandRow) } : {}),
       ...(op.rtl != null ? { rtl: Boolean(op.rtl) } : {}),
-      ...(op.shadingColor != null ? { shadingColor: String(op.shadingColor) } : {}),
-      ...(op.borderColor != null ? { borderColor: String(op.borderColor) } : {}),
+      ...(op.shadingColor != null ? { shadingColor: String(op.shadingColor).trim() } : {}),
+      ...(op.borderColor != null ? { borderColor: String(op.borderColor).trim() } : {}),
       ...(op.borderWidthPt != null
         ? { borderWidthEmu: Math.round(Number(op.borderWidthPt) * EMU_PER_PT) }
         : {}),

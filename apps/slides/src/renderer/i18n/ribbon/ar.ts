@@ -435,6 +435,7 @@ export const ar = {
   ribbonLangHebrew: 'العبرية',
   ribbonLangHindi: 'الهندية',
   ribbonLangVietnamese: 'الفيتنامية',
+  ribbonLangTurkish: 'التركية',
   ribbonNewComment: 'تعليق جديد',
   ribbonCommentsPane: 'جزء التعليقات',
   ribbonCommentsPaneTip: 'إظهار أو إخفاء جزء التعليقات',

@@ -27,8 +27,10 @@ const isRetryableRename = (error: unknown) => RETRYABLE_RENAME_CODES.has(errorCo
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
+// No leading dot: the macOS SMB client marks dot-files hidden and the flag
+// survives the rename onto the real document (genoffice#2145).
 const tempPathBeside = (filePath: string) =>
-  join(dirname(filePath), `.${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`)
+  join(dirname(filePath), `${basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`)
 
 async function syncFileBestEffort(path: string): Promise<void> {
   let handle

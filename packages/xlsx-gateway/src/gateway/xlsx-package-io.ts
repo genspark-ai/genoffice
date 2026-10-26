@@ -114,7 +114,8 @@ export interface StreamingSaveRequest {
   readonly workbookProtectionState?: { readonly lockStructure: boolean } | null | undefined
   readonly protectedRangeStates?: readonly SheetProtectedRangesState[] | undefined
   readonly tabColorStates?: readonly SheetTabColorState[] | undefined
-  readonly redactionStates?: readonly SheetRedactionState[] | undefined
+  /** null/undefined = the caller does not know the marks; the part is left as it is */
+  readonly redactionStates?: readonly SheetRedactionState[] | null | undefined
 }
 
 export interface StreamingSaveResult {
@@ -150,7 +151,10 @@ export async function saveWorkbookViaSidecar(
   request: StreamingSaveRequest,
 ): Promise<StreamingSaveResult> {
   const workDir = await mkdtemp(join(tmpdir(), 'ai-excel-save-'))
-  const temporaryTarget = join(dirname(request.targetPath), `.${randomUUID()}.tmp.xlsx`)
+  const temporaryTarget = join(
+    dirname(request.targetPath),
+    `${basename(request.targetPath)}.${randomUUID()}.tmp`,
+  )
   try {
     const manifest = manifestResultSchema.parse(
       await request.client.archiveManifest(request.sourcePath),
@@ -185,7 +189,7 @@ export async function saveWorkbookViaSidecar(
       request.tabColorStates ?? [],
       request.tableEdits ?? [],
       request.cellImageAdditions ?? [],
-      request.redactionStates ?? [],
+      request.redactionStates ?? null,
     )
 
     const replacements = await writePlanContents(workDir, 'replace', plan.replaced)

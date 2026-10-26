@@ -151,3 +151,141 @@ describe('document comparison (tracked changes)', () => {
     expect(deleted[0]!.del).toMatchObject({ author: AUTHOR, date: DATE })
   })
 })
+
+const INLINE_PICTURE =
+  `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
+  `<wp:extent cx="914400" cy="914400"/><wp:docPr id="2" name="Picture 2"/>` +
+  `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+  `<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="Picture 2"/><pic:cNvPicPr/></pic:nvPicPr>` +
+  `<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+  `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm>` +
+  `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
+  `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`
+
+async function compareWithPictures(
+  originalBody: string,
+  revisedBody: string,
+): Promise<{ xml: string; summary: Awaited<ReturnType<typeof compareDocuments>>['summary'] }> {
+  const original = await parseDocx(await buildDocx({ bodyXml: originalBody, withImage: true }))
+  const revised = await parseDocx(await buildDocx({ bodyXml: revisedBody, withImage: true }))
+  const result = await compareDocuments(original, revised, { author: AUTHOR, date: DATE })
+  return { xml: await documentXml(result.bytes), summary: result.summary }
+}
+
+describe('document comparison (pictures, pending changes, ids)', () => {
+  it('keeps the inline picture of a paragraph whose text changed', async () => {
+    const before = `<w:p><w:r><w:t xml:space="preserve">Figure one </w:t></w:r>${INLINE_PICTURE}</w:p>`
+    const after = `<w:p><w:r><w:t xml:space="preserve">Figure two </w:t></w:r>${INLINE_PICTURE}</w:p>`
+    const { xml, summary } = await compareWithPictures(before, after)
+    expect(summary.changedParagraphs).toBe(1)
+    expect(xml).toContain('r:embed="rId10"')
+    expect(xml).not.toContain('￼')
+    expect(xml).toMatch(/<w:del\b[^>]*>[\s\S]*?<w:delText[^>]*>one<\/w:delText>/)
+  })
+
+  it('names a deleted picture of the original instead of carrying its media reference', async () => {
+    const pictureP = `<w:p>${INLINE_PICTURE}</w:p>`
+    const { xml, summary } = await compareWithPictures(UNCHANGED_P + pictureP, UNCHANGED_P)
+    expect(summary.deletedParagraphs).toBe(1)
+    expect(xml).not.toContain('r:embed')
+    expect(xml).toContain('[picture]')
+  })
+
+  it('marks a picture replaced by a different picture, and keeps an identical one', async () => {
+    const second = INLINE_PICTURE.replace('rId10', 'rId11')
+    const original = await parseDocx(
+      await buildDocx({ bodyXml: UNCHANGED_P + `<w:p>${INLINE_PICTURE}</w:p>`, withImage: true }),
+    )
+    const revised = await parseDocx(
+      await buildDocx({
+        bodyXml: UNCHANGED_P + `<w:p>${second}</w:p>`,
+        withImage: true,
+        extraRels:
+          '<Relationship Id="rId11" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/other.png"/>',
+        binaryParts: [
+          {
+            path: 'word/media/other.png',
+            base64:
+              'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP4z8DwHwyBNAMDACfkA/0W4kQ3AAAAAElFTkSuQmCC',
+            extension: 'png',
+            contentType: 'image/png',
+          },
+        ],
+      }),
+    )
+    const replaced = await compareDocuments(original, revised, { author: AUTHOR, date: DATE })
+    expect(replaced.summary.deletedParagraphs).toBe(1)
+    expect(replaced.summary.insertedParagraphs).toBe(1)
+    const same = await compareWithPictures(
+      UNCHANGED_P + `<w:p>${INLINE_PICTURE}</w:p>`,
+      UNCHANGED_P + `<w:p>${INLINE_PICTURE}</w:p>`,
+    )
+    expect(same.summary.unchangedParagraphs).toBe(2)
+    expect(same.xml).not.toContain('<w:del ')
+  })
+
+  it('compares the documents with their pending changes accepted', async () => {
+    const pending =
+      '<w:p><w:r><w:t xml:space="preserve">The quick </w:t></w:r>' +
+      `<w:del w:id="5" w:author="A" w:date="${DATE}"><w:r><w:delText xml:space="preserve">brown </w:delText></w:r></w:del>` +
+      `<w:ins w:id="6" w:author="A" w:date="${DATE}"><w:r><w:t xml:space="preserve">red </w:t></w:r></w:ins>` +
+      '<w:r><w:t>fox jumps.</w:t></w:r></w:p>'
+    const { summary } = await compare(pending, CHANGED_EDITED_P)
+    expect(summary.changedParagraphs).toBe(0)
+    expect(summary.unchangedParagraphs).toBe(1)
+  })
+
+  it('keeps every revision id unique when a deletion spans several runs', async () => {
+    const split =
+      '<w:p><w:r><w:t xml:space="preserve">The quick </w:t></w:r>' +
+      '<w:r><w:t>br</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">own </w:t></w:r>' +
+      '<w:r><w:t>fox jumps.</w:t></w:r></w:p>'
+    const { xml } = await compare(split + REMOVED_P, CHANGED_EDITED_P + ADDED_P)
+    const ids = revisionIds(xml)
+    expect(ids.length).toBeGreaterThan(2)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('passes an unchanged table through instead of marking it replaced', async () => {
+    const table =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const { xml, summary } = await compare(UNCHANGED_P + table, UNCHANGED_P + table)
+    expect(summary.unchangedParagraphs).toBe(2)
+    expect(summary.deletedParagraphs).toBe(0)
+    expect(summary.insertedParagraphs).toBe(0)
+    expect(xml).not.toContain('<w:del ')
+    expect(xml).not.toContain('<w:ins ')
+  })
+
+  it('keeps the content-control shell balanced around changed and deleted paragraphs', async () => {
+    const sdt = (second: string) =>
+      '<w:sdt><w:sdtPr><w:tag w:val="example:block"/><w:id w:val="7"/></w:sdtPr><w:sdtContent>' +
+      '<w:p><w:r><w:t>Caption one</w:t></w:r></w:p>' +
+      `<w:p><w:r><w:t>${second}</w:t></w:r></w:p>` +
+      '</w:sdtContent></w:sdt>'
+    const changed = await compare(
+      UNCHANGED_P + sdt('Signature block'),
+      UNCHANGED_P + sdt('Signature line'),
+    )
+    expect(changed.summary.changedParagraphs).toBe(1)
+    expect((changed.xml.match(/<w:sdt>/g) ?? []).length).toBe(1)
+    expect((changed.xml.match(/<\/w:sdt>/g) ?? []).length).toBe(1)
+    expect(changed.xml.indexOf('<w:sdt>')).toBeLessThan(changed.xml.indexOf('<w:del '))
+    const removed = await compare(UNCHANGED_P + sdt('Signature block'), UNCHANGED_P)
+    expect((removed.xml.match(/<w:sdt>/g) ?? []).length).toBe(1)
+    expect((removed.xml.match(/<\/w:sdt>/g) ?? []).length).toBe(1)
+    expect(removed.xml).not.toMatch(/<w:del\b[^>]*><w:sdt>/)
+    await expect(parseDocx(removed.bytes)).resolves.toBeTruthy()
+  })
+
+  it('anchors on unique paragraphs so repeated separators do not pair across sections', async () => {
+    const sep = '<w:p><w:r><w:t>---</w:t></w:r></w:p>'
+    const a = '<w:p><w:r><w:t>Section A text.</w:t></w:r></w:p>'
+    const b = '<w:p><w:r><w:t>Section B text.</w:t></w:r></w:p>'
+    const { summary } = await compare(a + sep + b + sep, sep + a + sep + b + sep)
+    expect(summary.unchangedParagraphs).toBe(4)
+    expect(summary.insertedParagraphs).toBe(1)
+    expect(summary.deletedParagraphs).toBe(0)
+  })
+})

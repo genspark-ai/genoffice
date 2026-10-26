@@ -253,6 +253,7 @@ describe('the tab context menu', () => {
       'zh',
       'en',
       'vi',
+      'tr',
       'ja',
       'ko',
       'fr',

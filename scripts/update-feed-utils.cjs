@@ -78,4 +78,33 @@ function releaseUploadDecision(candidate, current, { force = false, allowExistin
   }
 }
 
-module.exports = { ymlVersion, semverNewer, assertPromotable, releaseUploadDecision }
+/** electron-builder hashes each artifact when it is created, but the dmg is
+ * notarized and stapled afterwards (afterAllArtifactBuild), which appends
+ * the ticket; the feed written at the end still carries the pre-staple
+ * sha512/size. Rewrite the entries of the given files from their bytes. */
+function refreshFeedEntries(text, filesByName) {
+  const lines = text.split('\n')
+  let current = null
+  for (let i = 0; i < lines.length; i++) {
+    const url = /^\s*-\s+url:\s*(\S+)/.exec(lines[i])
+    if (url) {
+      current = filesByName[url[1].split('/').pop()] || null
+      continue
+    }
+    if (!current) continue
+    if (/^\s+sha512:/.test(lines[i]))
+      lines[i] = lines[i].replace(/sha512:.*/, `sha512: ${current.sha512}`)
+    else if (/^\s+size:/.test(lines[i]))
+      lines[i] = lines[i].replace(/size:.*/, `size: ${current.size}`)
+    else if (!/^\s{4,}\S/.test(lines[i])) current = null
+  }
+  return lines.join('\n')
+}
+
+module.exports = {
+  ymlVersion,
+  semverNewer,
+  assertPromotable,
+  releaseUploadDecision,
+  refreshFeedEntries,
+}

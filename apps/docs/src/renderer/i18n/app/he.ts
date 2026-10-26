@@ -379,6 +379,7 @@ export const he = {
   appLangHindi: 'הינדית',
   appLangTraditionalChinese: 'סינית מסורתית',
   appLangVietnamese: 'וייטנאמית',
+  appLangTurkish: 'טורקית',
   appWrapTextMenu: 'גלישת טקסט',
   appViewImage: 'הצג תמונה',
   appSaveImageAs: 'שמור תמונה בשם…',

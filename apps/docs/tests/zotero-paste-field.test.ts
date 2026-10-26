@@ -9,8 +9,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
+import { DOMSerializer } from '@tiptap/pm/model'
 import JSZip from 'jszip'
-import { buildBlankDocx, parseDocx, saveDocx } from '@genoffice/docx-engine'
+import { buildBlankDocx, parseDocx, saveDocx, type Block } from '@genoffice/docx-engine'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
@@ -89,6 +90,126 @@ describe('a pasted citation survives a save and a reopen', () => {
       const reopened = await parseDocx(bytes)
       const blocks = reopened.blocks.filter((block) => !block.hidden)
       expect(blocks.map((block) => block.type)).not.toContain('passthrough')
+    } finally {
+      editor.destroy()
+    }
+  })
+})
+
+/** The clipboard as the editor writes it: the schema's DOMSerializer over the
+ *  copied slice. Runtime attrs (fieldId/fieldPart) are not rendered, so the
+ *  paste has to rebuild the field structure from the instruction alone. */
+function copyHtml(editor: Editor, from: number, to: number): string {
+  const fragment = editor.state.doc.slice(from, to).content
+  const holder = document.createElement('div')
+  holder.appendChild(DOMSerializer.fromSchema(editor.schema).serializeFragment(fragment))
+  return holder.innerHTML
+}
+
+const citationRun = (text: string, fieldId: number, fieldPart: string) => ({
+  type: 'text',
+  text,
+  marks: [{ type: 'instrField', attrs: { instr: ZOTERO_INSTR, fieldId, fieldPart } }],
+})
+
+async function saveAndReopen(editor: Editor, parsed: Awaited<ReturnType<typeof parseDocx>>) {
+  const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+  const bytes = await saveDocx(parsed, plan.saveBlocks)
+  const xml = await (await JSZip.loadAsync(bytes)).file('word/document.xml')!.async('string')
+  const blocks = (await parseDocx(bytes)).blocks.filter((block) => !block.hidden)
+  return { xml, blocks }
+}
+
+const fieldTokens = (xml: string) =>
+  [...xml.matchAll(/w:fldCharType="(begin|end)"/g)].map((m) => m[1])
+const partsOf = (blocks: Block[]) =>
+  blocks.flatMap((block) => (block.runs ?? []).flatMap((run) => run.zoteroFieldPart ?? []))
+const idsOf = (blocks: Block[]) =>
+  new Set(blocks.flatMap((block) => (block.runs ?? []).flatMap((run) => run.zoteroFieldId ?? [])))
+
+describe('a copied citation pastes back as a balanced field', () => {
+  async function bibliographyEditor() {
+    const parsed = await parseDocx(await buildBlankDocx())
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        { type: 'docParagraph', content: [citationRun('Alpha (2024)', 1, 'begin')] },
+        { type: 'docParagraph', content: [citationRun('Beta (2023)', 1, 'inside')] },
+        { type: 'docParagraph', content: [citationRun('Gamma (2022)', 1, 'end')] },
+      ],
+    })
+    return { parsed, editor }
+  }
+
+  it('a whole multi-paragraph citation pastes as one begin/inside/end field', async () => {
+    const source = await bibliographyEditor()
+    const target = await bibliographyEditor()
+    try {
+      const html = copyHtml(source.editor, 0, source.editor.state.doc.content.size)
+      expect(html).toContain('data-instr-field')
+      target.editor.commands.setContent({ type: 'doc', content: [{ type: 'docParagraph' }] })
+      target.editor.commands.insertContent(html)
+      const { xml, blocks } = await saveAndReopen(target.editor, target.parsed)
+      expect(fieldTokens(xml)).toEqual(['begin', 'end'])
+      expect(partsOf(blocks)).toEqual(['begin', 'inside', 'end'])
+      expect(idsOf(blocks).size).toBe(1)
+    } finally {
+      source.editor.destroy()
+      target.editor.destroy()
+    }
+  })
+
+  it('a paragraph copied out of the middle of a field pastes as a complete field', async () => {
+    const source = await bibliographyEditor()
+    try {
+      const middle = source.editor.state.doc.child(0).nodeSize
+      const html = copyHtml(source.editor, middle + 1, middle + 1 + 'Beta (2023)'.length)
+      source.editor.commands.setContent({
+        type: 'doc',
+        content: [
+          { type: 'docParagraph', content: [{ type: 'text', text: 'before ' }] },
+          { type: 'docParagraph', content: [{ type: 'text', text: 'after' }] },
+        ],
+      })
+      source.editor.commands.setTextSelection(source.editor.state.doc.child(0).nodeSize - 1)
+      source.editor.commands.insertContent(html)
+      const { xml, blocks } = await saveAndReopen(source.editor, source.parsed)
+      expect(fieldTokens(xml)).toEqual(['begin', 'end'])
+      expect(blocks.map((block) => block.runs?.map((run) => run.text).join(''))).toEqual([
+        'before Beta (2023)',
+        'after',
+      ])
+      expect(partsOf(blocks)).toEqual(['single'])
+    } finally {
+      source.editor.destroy()
+    }
+  })
+
+  it('pasting a citation inside another citation ends the first instead of nesting', async () => {
+    const parsed = await parseDocx(await buildBlankDocx())
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [{ type: 'docParagraph', content: [citationRun('(Smith, 2020)', 1, 'single')] }],
+      },
+    })
+    try {
+      editor.commands.setTextSelection(1 + '(Smi'.length)
+      editor.commands.insertContent(
+        clipboardHtml(ZOTERO_INSTR.replace('ITEM-1', 'ITEM-2'), '(Doe, 2021)'),
+      )
+      const { xml, blocks } = await saveAndReopen(editor, parsed)
+      expect(fieldTokens(xml)).toEqual(['begin', 'end', 'begin', 'end', 'begin', 'end'])
+      expect(blocks[0].runs?.map((run) => run.text)).toEqual(['(Smi', '(Doe, 2021)', 'th, 2020)'])
+      expect(partsOf(blocks)).toEqual(['single', 'single', 'single'])
+      expect(idsOf(blocks).size).toBe(3)
     } finally {
       editor.destroy()
     }

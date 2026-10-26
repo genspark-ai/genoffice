@@ -111,7 +111,7 @@ const RENAME_RETRIES = 4
  * failing that, overwritten in place so a finished edit is never dropped.
  */
 export function writeOutput(abs: string, bytes: Uint8Array | string): void {
-  const tmp = join(dirname(abs), `.${basename(abs)}.${randomBytes(6).toString('hex')}.tmp`)
+  const tmp = join(dirname(abs), `${basename(abs)}.${randomBytes(6).toString('hex')}.tmp`)
   const mode = existsSync(abs) ? statSync(abs).mode & 0o7777 : undefined
   try {
     writeFileSync(tmp, bytes, mode === undefined ? {} : { mode })
