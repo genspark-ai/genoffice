@@ -375,6 +375,64 @@ body.vib .home {
   margin: 28px 0 20px;
 }
 
+/* "Set up AI" entry: shows only while no provider is configured; same card
+   language as the quick-start cards but accent-tinted so it reads first */
+.ai-setup-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.12s;
+}
+
+.ai-setup-entry:hover {
+  box-shadow: var(--shadow-btn-hover);
+}
+
+.ai-setup-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.ai-setup-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-setup-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ai-setup-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ai-setup-action {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--color-btn-primary-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .hero-title {
   margin: 0;
   font-size: 28px;

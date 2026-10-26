@@ -300,6 +300,38 @@
   background: var(--onb-brand);
 }
 
+/* slide 4's "Set up AI" CTA: same weighted outline treatment as the join
+ * button, since it is this slide's standout action (it opens the settings
+ * modal's AI Model section on top of the overlay) */
+.onb-setup {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.onb-setup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10.5px 22.5px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.154px;
+  color: var(--onb-brand);
+  background: var(--onb-cta-bg);
+  border: 1.5px solid var(--onb-brand);
+  border-radius: 12px;
+  box-shadow: var(--onb-cta-shadow);
+  cursor: pointer;
+  transition: all var(--onb-transition);
+}
+
+.onb-setup-btn:hover {
+  color: var(--onb-cta-hover-text);
+  background: var(--onb-brand);
+}
+
 /* footer: progress dots on the start side, Skip / Back / Next grouped on the end side */
 .onb-footer {
   display: flex;
@@ -399,6 +431,7 @@
 .onb-back:focus,
 .onb-skip:focus,
 .onb-join:focus,
+.onb-setup-btn:focus,
 .onb-star-btn:focus,
 .onb-consent-switch:focus,
 .onb-dot:focus {
@@ -409,6 +442,7 @@
 .onb-back:focus-visible,
 .onb-skip:focus-visible,
 .onb-join:focus-visible,
+.onb-setup-btn:focus-visible,
 .onb-star-btn:focus-visible,
 .onb-consent-switch:focus-visible,
 .onb-dot:focus-visible {
@@ -439,7 +473,8 @@
 }
 
 [data-theme='dark'] .onb-join,
-[data-theme='dark'] .onb-star-btn {
+[data-theme='dark'] .onb-star-btn,
+[data-theme='dark'] .onb-setup-btn {
   background: #2a2a2a;
 }
 
@@ -463,6 +498,7 @@
       0 2px 8px rgba(0, 0, 0, 0.3);
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .onb-join,
+  :root:not([data-theme='light']):not([data-theme='dark']) .onb-setup-btn,
   :root:not([data-theme='light']):not([data-theme='dark']) .onb-star-btn {
     background: #2a2a2a;
   }

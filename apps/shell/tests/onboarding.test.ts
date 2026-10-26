@@ -74,6 +74,24 @@ describe('analytics consent in onboarding', () => {
     await click('.onb-next')
     await click('.onb-next')
     await click('.onb-next')
+    await click('.onb-next')
     expect(onDone).toHaveBeenCalledWith()
+  })
+})
+
+describe('AI setup slide', () => {
+  it('opens Settings › AI Model from the final slide CTA', async () => {
+    const opener = vi.fn(async () => {})
+    window.aiOffice = { openAiModelSettings: opener } as Window['aiOffice']
+    renderOnboarding(vi.fn(async () => true))
+
+    // slide 4 is the last of four; its CTA must fire the deep link
+    await click('.onb-next')
+    await click('.onb-next')
+    await click('.onb-next')
+    expect(host.textContent).toContain('Connect your AI')
+    await click('.onb-setup-btn')
+    expect(opener).toHaveBeenCalledTimes(1)
+    delete window.aiOffice
   })
 })

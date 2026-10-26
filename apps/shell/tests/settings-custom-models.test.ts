@@ -35,11 +35,12 @@ actEnvironment.IS_REACT_ACT_ENVIRONMENT = true
 
 let host: HTMLDivElement
 let root: Root
-/** every getCustomModels call, resolvable by hand so replies can be ordered */
+/** every list request (the pane prefers probeCustomModels; both mocks land here
+ *  so `answer` serves either), resolvable by hand so replies can be ordered */
 let calls: Array<{
   baseUrl: string
   apiKey: string | undefined
-  resolve: (catalog: CodexModelCatalog) => void
+  resolve: (catalog: CodexModelCatalog & { error?: string; detail?: string }) => void
 }>
 let setAiSettings: ReturnType<typeof vi.fn>
 
@@ -106,6 +107,10 @@ function installApi(settings: AiSettings): void {
     setAiSettings,
     getCustomModels: (baseUrl: string, apiKey?: string) =>
       new Promise<CodexModelCatalog>((resolve) => calls.push({ baseUrl, apiKey, resolve })),
+    probeCustomModels: (baseUrl: string, apiKey?: string) =>
+      new Promise<CodexModelCatalog & { error?: string; detail?: string }>((resolve) =>
+        calls.push({ baseUrl, apiKey, resolve }),
+      ),
   } as unknown as HomeApi
 }
 
@@ -159,6 +164,17 @@ async function answer(
 ): Promise<void> {
   await act(async () => {
     calls[index]!.resolve({ models, defaultModel: '', profiles })
+    await Promise.resolve()
+  })
+}
+
+/** answer the nth outstanding diagnostic probe (same queue as `answer`, with a failure payload) */
+async function answerProbe(
+  index: number,
+  probe: { models?: string[]; error?: string; detail?: string },
+): Promise<void> {
+  await act(async () => {
+    calls[index]!.resolve({ models: [], defaultModel: '', ...probe })
     await Promise.resolve()
   })
 }
@@ -543,5 +559,107 @@ describe('request discipline', () => {
 
     await pickProvider('Custom')
     expect(modelBox()).not.toBeNull() // the abandoned reply folded nothing in
+  })
+})
+
+// ── 5. probe status is visible ────────────────────────────
+
+describe('the probe status pill', () => {
+  function statusPill(): HTMLElement | null {
+    return host.querySelector('.set-ai-status')
+  }
+
+  it('shows probing, then the fetched count', async () => {
+    installApi(storedSettings())
+    await openAiPane()
+    await tick()
+    expect(calls).toHaveLength(1)
+    expect(statusPill()!.textContent).toContain('Fetching model list')
+
+    await answer(0, ['alpha', 'beta', 'gamma'])
+    expect(statusPill()!.textContent).toContain('3 models fetched from endpoint')
+  })
+
+  it('shows the failure reason when the endpoint errors', async () => {
+    installApi(storedSettings())
+    await openAiPane()
+    await tick()
+    await answerProbe(0, { error: 'http', detail: 'HTTP 401' })
+    expect(statusPill()!.textContent).toContain('Model list fetch failed')
+    expect(statusPill()!.textContent).toContain('HTTP 401')
+  })
+
+  it('shows a failure (not silent emptiness) when the answer holds no models', async () => {
+    installApi(storedSettings())
+    await openAiPane()
+    await tick()
+    await answerProbe(0, { models: [] })
+    expect(statusPill()!.textContent).toContain('Model list fetch failed')
+  })
+
+  it('the refresh button re-probes the same address', async () => {
+    installApi(storedSettings())
+    await openAiPane()
+    await tick()
+    await answer(0, ['alpha'])
+    expect(calls).toHaveLength(1)
+
+    const refresh = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-btn')).find(
+      (b) => b.textContent === 'Refresh model list',
+    )!
+    await click(refresh)
+    await tick()
+    expect(calls).toHaveLength(2)
+    expect(calls[1]!.baseUrl).toBe(BASE_URL)
+    await answer(1, ['alpha', 'beta'])
+    expect(statusPill()!.textContent).toContain('2 models fetched from endpoint')
+  })
+
+  it('the refresh button is disabled while a probe is in flight', async () => {
+    installApi(storedSettings())
+    await openAiPane()
+    await tick()
+    const refresh = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-btn')).find(
+      (b) => b.textContent === 'Refresh model list',
+    )!
+    expect(refresh.disabled).toBe(true)
+    await answer(0, ['alpha'])
+    expect(refresh.disabled).toBe(false)
+  })
+})
+
+describe('the cached list note', () => {
+  function cachedEndpointSettings(): AiSettings {
+    const s = storedSettings()
+    s.customEndpoints = [
+      {
+        id: 'ep1',
+        name: 'Local',
+        baseUrl: BASE_URL,
+        apiKey: '',
+        model: 'alpha',
+        models: ['alpha', 'beta'],
+        modelsFetchedAt: Date.UTC(2026, 0, 15, 8, 30),
+      },
+    ]
+    s.customEndpoint = 'ep1'
+    return s
+  }
+
+  it('shows the cached count and fetch time when no fresh probe has succeeded', async () => {
+    installApi(cachedEndpointSettings())
+    await openAiPane()
+    await tick()
+    // the probe is still out; the cache note stands in for a live count
+    expect(host.textContent).toContain('2 models cached')
+  })
+
+  it('replaces the cache note with the live count once the probe lands', async () => {
+    installApi(cachedEndpointSettings())
+    await openAiPane()
+    await tick()
+    await answer(0, ['alpha', 'beta', 'gamma'])
+    expect(host.textContent).toContain('3 models fetched from endpoint')
+    expect(host.textContent).not.toContain('2 models cached')
   })
 })

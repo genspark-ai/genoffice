@@ -23,6 +23,8 @@ interface Slide {
   showStar?: boolean
   /** closing slide explains default-on analytics and how to disable it */
   showAnalyticsNotice?: boolean
+  /** AI slide shows the "Set up AI" primary action (opens Settings › AI Model) */
+  showAiSetup?: boolean
   art: 'logo' | 'gift' | 'check'
 }
 
@@ -37,6 +39,12 @@ const SLIDES: readonly Slide[] = [
     showStar: true,
     showAnalyticsNotice: true,
     art: 'check',
+  },
+  {
+    titleKey: 'onbTitle4',
+    subtitleKey: 'onbBody4',
+    showAiSetup: true,
+    art: 'logo',
   },
 ]
 
@@ -209,6 +217,25 @@ export function Onboarding({ onDone }: OnboardingProps) {
                       <path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.3l-5.8 3.1 1.1-6.5L2.6 9.3l6.5-.9L12 2.5z" />
                     </svg>
                     {t('starOnGitHub')}
+                  </button>
+                </div>
+              )}
+              {s.showAiSetup && (
+                <div className="onb-setup">
+                  <button
+                    className="onb-setup-btn"
+                    onClick={() => void window.aiOffice.openAiModelSettings?.()}
+                  >
+                    {t('onbSetupAi')}
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path
+                        d="M3.5 8.5 8.5 3.5M4.5 3.5h4v4"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </button>
                 </div>
               )}

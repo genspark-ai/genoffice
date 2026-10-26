@@ -6684,7 +6684,7 @@ function openSettingsView(): void {
   win.show()
   win.focus()
   tabManager?.openHomeTab()
-  win.webContents.send(HOME_CHANNELS.openSettings, { section: 'general' })
+  win.webContents.send(HOME_CHANNELS.openSettings, { section: 'aiModel' })
 }
 
 function installDockMenu(): void {

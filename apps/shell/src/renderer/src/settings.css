@@ -433,6 +433,38 @@
   min-width: 180px;
 }
 
+/* model row: picker/input + refresh button on one line */
+.set-ai-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-ai-model-row .set-dd,
+.set-ai-model-row .set-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* vision badge inside a dropdown option row */
+.set-ai-model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.set-ai-vision-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .set-dd .gs-dd-item {
   font-size: 13px;
 }

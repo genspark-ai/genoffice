@@ -314,6 +314,8 @@ export interface HomeApi {
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   /** Genspark login state (the default provider's auth source) */
   aiGskStatus(): Promise<{ loggedIn: boolean; email?: string }>
+  /** open Settings › AI Model (deep link for onboarding's "Set up AI" CTA) */
+  openAiModelSettings(): Promise<void>
   /** open an existing file, routing to the right module by extension */
   openHelp(): Promise<void>
   openPath(path: string): Promise<void>
@@ -487,6 +489,12 @@ export interface HomeApi {
     apiKey?: string,
     api?: AiCustomProtocol,
   ): Promise<CodexModelCatalog>
+  /** same probe with the failure classified, so the settings screen can show why no list appeared */
+  probeCustomModels(
+    baseUrl: string,
+    apiKey?: string,
+    api?: AiCustomProtocol,
+  ): Promise<CodexModelCatalog & { error?: string; detail?: string }>
   /** one-shot round trip against the given (possibly unsaved) settings — the settings-UI connection test */
   testAiSettings(settings: AiSettings): Promise<AiChatResponse>
   /** image generation / media analysis provider catalog */

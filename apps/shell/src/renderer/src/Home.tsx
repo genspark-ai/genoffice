@@ -28,6 +28,7 @@ import { SettingsModal } from './SettingsModal'
 import type { SettingsTarget } from './SettingsModal'
 import { skillUpdateDue } from './IntegrationsPane'
 import { onFilesChanged } from './file-events'
+import { aiSetupNeeded } from './ai-setup-state'
 
 import type { ProjectApi } from '@genoffice/project-store'
 
@@ -1530,6 +1531,35 @@ export function Home() {
     const name = on ? (s?.email ?? '').split('@')[0] : ''
     setAccountName(name ? name[0].toUpperCase() + name.slice(1) : '')
   }, [])
+  // AI setup entry: shows while no provider is configured and gsk is signed
+  // out; the ai:settings-changed broadcast re-checks it after any save
+  const [aiSetup, setAiSetup] = useState<'needed' | 'ready'>('ready')
+  const refreshAiSetup = useCallback(() => {
+    let alive = true
+    void window.aiOffice
+      .aiGetSettings()
+      .then((settings) =>
+        window.aiOffice
+          .aiGskStatus()
+          .then((gsk) => {
+            if (alive) setAiSetup(aiSetupNeeded(settings, gsk.loggedIn) ? 'needed' : 'ready')
+          })
+          .catch(() => undefined),
+      )
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    const off = refreshAiSetup()
+    const offSettings = window.aiOffice.onAiSettingsChanged?.(() => refreshAiSetup())
+    return () => {
+      off?.()
+      offSettings?.()
+    }
+  }, [refreshAiSetup])
+  const showAiSetupEntry = aiSetup === 'needed'
   const [greetAskKey] = useState(
     () => GREET_ASK_KEYS[Math.floor(Math.random() * GREET_ASK_KEYS.length)]!,
   )
@@ -3264,6 +3294,34 @@ export function Home() {
               <span className="hero-ask">{t(greetAskKey)}</span>
             </h1>
           </div>
+          {showAiSetupEntry && (
+            <button
+              className="ai-setup-entry"
+              onClick={() => setSettingsRequest({ section: 'aiModel' })}
+            >
+              <span className="ai-setup-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M8 1.8 9.5 6l4.2 1.5L9.5 9 8 13.2 6.5 9 2.3 7.5 6.5 6 8 1.8Z"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M12.8 11.2v3M11.3 12.7h3"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <span className="ai-setup-copy">
+                <span className="ai-setup-title">{t('homeAiSetupTitle')}</span>
+                <span className="ai-setup-body">{t('homeAiSetupBody')}</span>
+              </span>
+              <span className="ai-setup-action">{t('homeAiSetupAction')}</span>
+            </button>
+          )}
           {renderQuickCards()}
         </section>
 

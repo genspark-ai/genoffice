@@ -227,6 +227,9 @@ const homeApi: HomeApi = {
   async aiGskStatus() {
     return ipcRenderer.invoke('ai:gsk-status')
   },
+  async openAiModelSettings() {
+    await ipcRenderer.invoke('ai:open-model-settings')
+  },
   async openPath(path) {
     if (typeof path !== 'string' || !path) throw new Error('Invalid path.')
     await ipcRenderer.invoke(HOME_CHANNELS.openPath, path)
@@ -618,6 +621,13 @@ const homeApi: HomeApi = {
       apiKey,
       ...(api ? { api } : {}),
     })) as CodexModelCatalog
+  },
+  async probeCustomModels(baseUrl, apiKey, api) {
+    return (await ipcRenderer.invoke('ai:custom-models-probe', {
+      baseUrl,
+      apiKey,
+      ...(api ? { api } : {}),
+    })) as CodexModelCatalog & { error?: string; detail?: string }
   },
   async testAiSettings(settings) {
     const result: unknown = await ipcRenderer.invoke('ai:chat', {

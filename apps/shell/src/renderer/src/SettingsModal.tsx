@@ -417,6 +417,15 @@ function AiModelPane({ t }: { t: TFunc }) {
   const listedForRef = useRef('')
   /** the capability declarations that probe answered with, for the save merge */
   const probedProfilesRef = useRef<AiCustomModelProfile[] | undefined>(undefined)
+  /** probe lifecycle for the status pill: what the user sees beside the model field */
+  const [probe, setProbe] = useState<
+    | { kind: 'idle' }
+    | { kind: 'probing' }
+    | { kind: 'ok'; count: number; at: number }
+    | { kind: 'failed'; reason: string }
+  >({ kind: 'idle' })
+  /** bump to re-probe the same address (the refresh button) */
+  const [probeNonce, setProbeNonce] = useState(0)
 
   useEffect(() => {
     if (!endpointProvider) return
@@ -428,15 +437,33 @@ function AiModelPane({ t }: { t: TFunc }) {
       probedProfilesRef.current = undefined
       setCatalog(foldModels(endpointProvider, shippedModelsRef.current.get(endpointProvider) ?? []))
     }
-    if (!endpointBaseUrl || !window.aiOffice.getCustomModels) return
+    if (!endpointBaseUrl) {
+      setProbe({ kind: 'idle' })
+      return
+    }
+    // prefer the diagnostic probe; an older preload without it still gets the list
+    const probeFn = window.aiOffice.probeCustomModels ?? window.aiOffice.getCustomModels
+    if (!probeFn) return
     let cancelled = false
     const timer = setTimeout(() => {
-      void window.aiOffice
-        .getCustomModels(endpointBaseUrl, endpointApiKey, endpointApi)
+      setProbe({ kind: 'probing' })
+      void probeFn(endpointBaseUrl, endpointApiKey, endpointApi)
         .then((live) => {
-          // A server that will not answer leaves the current list alone: a blip
-          // must not wipe a picker mid-use.
-          if (cancelled || !live || live.models.length === 0) return
+          if (cancelled) return
+          if ('error' in live && live.error) {
+            // the reason replaces any stale success: a picker silently kept
+            // from a dead server reads as "still working"
+            setProbe({
+              kind: 'failed',
+              reason: live.detail ? `${live.error}: ${live.detail}` : live.error,
+            })
+            return
+          }
+          if (live.models.length === 0) {
+            // answered 200 with an empty/foreign list: reachable, but nothing to pick
+            setProbe({ kind: 'failed', reason: 'empty' })
+            return
+          }
           // A hand-typed id is pinned to the top so it never vanishes from the
           // picker. The catalog is the only thing written — writing settings
           // here would revert whatever the user typed while the probe was in
@@ -447,8 +474,15 @@ function AiModelPane({ t }: { t: TFunc }) {
           listedForRef.current = endpointBaseUrl
           probedProfilesRef.current = live.profiles
           setCatalog(foldModels(endpointProvider, models))
+          setProbe({ kind: 'ok', count: live.models.length, at: Date.now() })
         })
-        .catch(() => undefined)
+        .catch((err: unknown) => {
+          if (!cancelled)
+            setProbe({
+              kind: 'failed',
+              reason: err instanceof Error ? err.message : String(err),
+            })
+        })
     }, CUSTOM_MODELS_DEBOUNCE_MS)
     // React's own cleanup drops a superseded reply, so a slow answer from the
     // previous address can never overwrite a fast one from the current address.
@@ -456,7 +490,7 @@ function AiModelPane({ t }: { t: TFunc }) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [endpointProvider, endpointBaseUrl, endpointApiKey, endpointApi])
+  }, [endpointProvider, endpointBaseUrl, endpointApiKey, endpointApi, probeNonce])
 
   if (!settings) return null
   const provider = settings.provider
@@ -495,6 +529,21 @@ function AiModelPane({ t }: { t: TFunc }) {
   const endpointCompat = endpoint?.compat ?? {}
   /** The tri-state image-input control: undefined keeps the shipped heuristic. */
   const endpointVision = endpointCompat.vision
+  /** probe state mapped onto the pill's vocabulary; the reason text is only shown on failure */
+  const probeStatus: AiStatus | null =
+    probe.kind === 'probing'
+      ? { kind: 'testing', text: t('setAiModelsProbing') }
+      : probe.kind === 'ok'
+        ? { kind: 'ok', text: t('setAiModelsOk', { n: probe.count }) }
+        : probe.kind === 'failed'
+          ? { kind: 'err', text: t('setAiModelsFailed', { reason: probe.reason }) }
+          : null
+  /** models whose probed capabilities declare image input (user declarations win) */
+  const probedVision = new Set<string>(
+    [...(endpoint?.probedProfiles ?? []), ...(endpoint?.modelProfiles ?? [])]
+      .filter((m) => m.vision === true)
+      .map((m) => m.id),
+  )
   const headersText = Object.entries(endpoint?.headers ?? {})
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')
@@ -572,7 +621,7 @@ function AiModelPane({ t }: { t: TFunc }) {
       const { models: _models, probedProfiles: _probedProfiles, ...declarations } = endpoint
       toSave = upsertCustomEndpoint(settings, {
         ...declarations,
-        ...(live.length > 0 ? { models: live } : {}),
+        ...(live.length > 0 ? { models: live, modelsFetchedAt: Date.now() } : {}),
         ...(probed && probed.length > 0 ? { probedProfiles: probed } : {}),
       })
     }
@@ -714,29 +763,60 @@ function AiModelPane({ t }: { t: TFunc }) {
       <div className="set-field">
         <div className="set-field-text">
           <label className="set-field-label">{t('setAiModelId')}</label>
+          {/* probe status next to the field it feeds: fetching / count+time / failure reason */}
+          <AiStatusPill status={probeStatus} />
         </div>
-        {meta && meta.models.length > 0 ? (
-          <Dropdown
-            className="set-dd"
-            value={config.model || meta.defaultModel}
-            ariaLabel={t('setAiModelId')}
-            options={meta.models.map((m) => ({
-              value: m,
-              label: m,
-            }))}
-            onPick={(m) => updateConfig({ model: m })}
-            searchPlaceholder={meta.models.length > 12 ? t('setAiModelSearch') : undefined}
-          />
-        ) : (
-          <input
-            id="set-ai-model"
-            className="set-input"
-            type="text"
-            value={config.model}
-            placeholder="model-id"
-            spellCheck={false}
-            onChange={(e) => updateConfig({ model: e.target.value })}
-          />
+        <div className="set-ai-model-row">
+          {meta && meta.models.length > 0 ? (
+            <Dropdown
+              className="set-dd"
+              value={config.model || meta.defaultModel}
+              ariaLabel={t('setAiModelId')}
+              options={meta.models.map((m) => ({
+                value: m,
+                label: m,
+                render: probedVision.has(m) ? (
+                  <span className="set-ai-model-option">
+                    <span>{m}</span>
+                    <span className="set-ai-vision-badge">{t('setAiModelVision')}</span>
+                  </span>
+                ) : undefined,
+              }))}
+              onPick={(m) => updateConfig({ model: m })}
+              searchPlaceholder={meta.models.length > 12 ? t('setAiModelSearch') : undefined}
+            />
+          ) : (
+            <input
+              id="set-ai-model"
+              className="set-input"
+              type="text"
+              value={config.model}
+              placeholder="model-id"
+              spellCheck={false}
+              onChange={(e) => updateConfig({ model: e.target.value })}
+            />
+          )}
+          {endpointProvider && endpointBaseUrl && (
+            <button
+              className="set-btn"
+              type="button"
+              disabled={probe.kind === 'probing'}
+              onClick={() => setProbeNonce((n) => n + 1)}
+            >
+              {t('setAiModelsRefresh')}
+            </button>
+          )}
+        </div>
+        {/* offline cache note: the endpoint's last fetched list survives restarts */}
+        {endpoint?.models && endpoint.models.length > 0 && probe.kind !== 'ok' && (
+          <div className="set-field-desc">
+            {t('setAiModelsCached', {
+              n: endpoint.models.length,
+              time: endpoint.modelsFetchedAt
+                ? new Date(endpoint.modelsFetchedAt).toLocaleString()
+                : '—',
+            })}
+          </div>
         )}
       </div>
       {isCodex ? (
