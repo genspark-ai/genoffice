@@ -290,8 +290,34 @@ async function addImageStamp(
  * replaces the catalog's /Outlines wholesale — untouched documents never
  * reach this path (the request omits `outline`), so existing bookmarks stay
  * byte-identical unless the user edited the tree.
+ *
+ * `deleted` is the set of pages the same save removes. A bookmark on a page
+ * that is leaving the document would carry a /Dest to a page no longer in the
+ * page tree, so that entry goes with the page — and so do its children, which
+ * hang off it. The /Dest itself is a page *reference*, not an index, so the
+ * entries that survive a deletion elsewhere still point at the right page.
  */
-function applyOutline(pdfDoc: PDFDocument, entries: readonly OutlineEntryInput[]): void {
+function applyOutline(
+  pdfDoc: PDFDocument,
+  entries: readonly OutlineEntryInput[],
+  deleted: ReadonlySet<number>,
+): void {
+  /** The tree without the entries whose page is being deleted. */
+  const prune = (list: readonly OutlineEntryInput[]): OutlineEntryInput[] =>
+    list
+      .filter((entry) => !deleted.has(entry.pageIndex))
+      .map((entry) => ({
+        ...entry,
+        children: entry.children?.length ? prune(entry.children) : undefined,
+      }))
+
+  const kept = prune(entries)
+  // Every entry went with a deleted page: the edit has nothing left to say,
+  // so the file's own /Outlines stay as they are rather than being replaced by
+  // an empty graph. An empty tree the reader made is a different thing — that
+  // is a deliberate "no bookmarks", and it is written.
+  if (entries.length > 0 && kept.length === 0) return
+
   const verify = (list: readonly OutlineEntryInput[]): void => {
     for (const entry of list) {
       const title = typeof entry.title === 'string' ? entry.title.trim() : ''
@@ -306,7 +332,7 @@ function applyOutline(pdfDoc: PDFDocument, entries: readonly OutlineEntryInput[]
       if (entry.children?.length) verify(entry.children)
     }
   }
-  verify(entries)
+  verify(kept)
 
   const pages = pdfDoc.getPages()
   const rootRef = pdfDoc.context.register(pdfDoc.context.obj({ Type: 'Outlines' }))
@@ -317,7 +343,7 @@ function applyOutline(pdfDoc: PDFDocument, entries: readonly OutlineEntryInput[]
   const build = (
     list: readonly OutlineEntryInput[],
     parentRef: PDFRef,
-  ): { first: PDFRef; last: PDFRef; total: number } => {
+  ): { first: PDFRef | null; last: PDFRef | null; total: number } => {
     let first: PDFRef | null = null
     let previous: PDFRef | null = null
     let count = 0
@@ -344,19 +370,20 @@ function applyOutline(pdfDoc: PDFDocument, entries: readonly OutlineEntryInput[]
       previous = ref
       if (entry.children?.length) {
         const child = build(entry.children, ref)
-        dict.set(PDFName.of('First'), child.first)
-        dict.set(PDFName.of('Last'), child.last)
+        if (child.first) dict.set(PDFName.of('First'), child.first)
+        if (child.last) dict.set(PDFName.of('Last'), child.last)
         dict.set(PDFName.of('Count'), PDFNumber.of(child.total))
         count += child.total
       }
     }
-    return { first: first!, last: previous!, total: count }
+    return { first, last: previous, total: count }
   }
 
-  const top = build(entries, rootRef)
+  const top = build(kept, rootRef)
   const root = pdfDoc.context.lookup(rootRef, PDFDict) as PDFDict
-  root.set(PDFName.of('First'), top.first)
-  root.set(PDFName.of('Last'), top.last)
+  // An empty tree is a valid outline root: no /First means no entries.
+  if (top.first) root.set(PDFName.of('First'), top.first)
+  if (top.last) root.set(PDFName.of('Last'), top.last)
   root.set(PDFName.of('Count'), PDFNumber.of(top.total))
   pdfDoc.catalog.set(PDFName.of('Outlines'), rootRef)
 }
@@ -1437,7 +1464,9 @@ export async function applySaveRequest(
   }
   if (request.metadata) applyMetadata(pdfDoc, request.metadata)
   if (request.outline !== undefined && request.outline !== null) {
-    applyOutline(pdfDoc, request.outline)
+    // A bookmark on a page this save removes cannot be written as a /Dest —
+    // that page is leaving the page tree — so those entries go with it.
+    applyOutline(pdfDoc, request.outline, new Set(request.deletedPages ?? []))
   }
   // Page thumbnails and producer piece-info can retain a pre-redaction rendering of
   // the same page. They are page-local derived data, so remove them for every affected
