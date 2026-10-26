@@ -1603,4 +1603,35 @@ export const pt = {
   appVisualFlipV: 'Inverter verticalmente',
   appVisualFlipH: 'Inverter horizontalmente',
   appCtxPasteVisual: 'Colar imagem ou forma',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ortografia',
+  appSpellBtnDetail: 'Verificar o texto da planilha (F7)',
+  appSpellToggle: 'Verificar ortografia',
+  appSpellToggleTip:
+    'Ativa a verificação ortográfica (F7 e o botão Revisão); desativada, as caixas de comentário deixam de mostrar sublinhados',
+  appSpellOn: 'Verificação ortográfica ativada.',
+  appSpellOff: 'A verificação ortográfica está desativada. Ative-a em Revisão ▸ Revisão de Texto.',
+  appSpellAiNote:
+    'A verificação usa IA: os textos da planilha são enviados em lotes ao modelo configurado.',
+  appSpellProgress: 'Verificando {done}/{total}…',
+  appSpellCollecting: 'Coletando textos…',
+  appSpellStop: 'Parar',
+  appSpellRecheck: 'Verificar novamente',
+  appSpellNone: 'Nenhum erro de ortografia suspeito encontrado.',
+  appSpellCanceled: 'A verificação foi interrompida.',
+  appSpellFindings: '{count} erros suspeitos. Clique em uma linha para localizar.',
+  appSpellTruncated: 'Células de texto demais; somente as primeiras foram verificadas.',
+  appSpellUnconfigured:
+    'Nenhum serviço de IA configurado. Configure um nas Configurações antes de usar a verificação.',
+  appSpellError: 'Falha na verificação: {error}',
+  appSpellColWord: 'Suspeita',
+  appSpellIgnore: 'Ignorar',
+  appSpellIgnoreAll: 'Ignorar tudo',
+  appSpellLearn: 'Adicionar ao dicionário',
+  appSpellNoSuggestions: 'Sem sugestões',
+  appSpellIgnoredAll: '"{word}" não será mais sinalizado nesta sessão.',
+  appSpellLearned: '"{word}" foi adicionado ao dicionário.',
+  appSpellChanged: '{address} corrigido.',
+  appSpellChangeFailed: 'Não foi possível corrigir {address}.',
 } satisfies Record<keyof typeof zh, string>

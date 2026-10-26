@@ -1562,4 +1562,35 @@ export const id = {
   appVisualFlipV: 'Balik Vertikal',
   appVisualFlipH: 'Balik Horizontal',
   appCtxPasteVisual: 'Tempel Gambar atau Bentuk',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ejaan',
+  appSpellBtnDetail: 'Periksa teks lembar (F7)',
+  appSpellToggle: 'Periksa ejaan',
+  appSpellToggleTip:
+    'Mengaktifkan pemeriksaan ejaan (F7 dan tombol Tinjau); saat nonaktif, kotak komentar tidak lagi menampilkan garis bergelombang',
+  appSpellOn: 'Pemeriksaan ejaan diaktifkan.',
+  appSpellOff: 'Pemeriksaan ejaan nonaktif. Aktifkan di Tinjau ▸ Pemeriksaan.',
+  appSpellAiNote:
+    'Pemeriksaan ejaan dijalankan dengan AI: teks lembar dikirim dalam batch ke model yang dikonfigurasi.',
+  appSpellProgress: 'Memeriksa {done}/{total}…',
+  appSpellCollecting: 'Mengumpulkan teks…',
+  appSpellStop: 'Hentikan',
+  appSpellRecheck: 'Periksa ulang',
+  appSpellNone: 'Tidak ditemukan kesalahan ejaan yang dicurigai.',
+  appSpellCanceled: 'Pemeriksaan dihentikan.',
+  appSpellFindings: '{count} kesalahan yang dicurigai. Klik baris untuk menemukannya.',
+  appSpellTruncated: 'Terlalu banyak sel teks; hanya bagian awal yang diperiksa.',
+  appSpellUnconfigured:
+    'Belum ada layanan AI yang dikonfigurasi. Konfigurasikan di Pengaturan sebelum memakai pemeriksaan ini.',
+  appSpellError: 'Pemeriksaan ejaan gagal: {error}',
+  appSpellColWord: 'Dicurigai',
+  appSpellIgnore: 'Abaikan',
+  appSpellIgnoreAll: 'Abaikan semua',
+  appSpellLearn: 'Tambahkan ke kamus',
+  appSpellNoSuggestions: 'Tidak ada saran',
+  appSpellIgnoredAll: '"{word}" tidak akan ditandai lagi pada sesi ini.',
+  appSpellLearned: '"{word}" ditambahkan ke kamus.',
+  appSpellChanged: '{address} diperbaiki.',
+  appSpellChangeFailed: 'Gagal memperbaiki {address}.',
 } satisfies Record<keyof typeof zh, string>

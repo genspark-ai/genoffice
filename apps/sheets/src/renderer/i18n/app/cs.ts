@@ -1559,4 +1559,35 @@ export const cs = {
   appVisualFlipV: 'Převrátit svisle',
   appVisualFlipH: 'Převrátit vodorovně',
   appCtxPasteVisual: 'Vložit obrázek nebo obrazec',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Pravopis',
+  appSpellBtnDetail: 'Zkontrolovat text listu (F7)',
+  appSpellToggle: 'Kontrola pravopisu',
+  appSpellToggleTip:
+    'Zapne kontrolu pravopisu (F7 a tlačítko Revize); po vypnutí pole komentářů nezobrazují vlnkové podtržení',
+  appSpellOn: 'Kontrola pravopisu zapnuta.',
+  appSpellOff: 'Kontrola pravopisu je vypnutá. Zapněte ji v Revize ▸ Kontrola.',
+  appSpellAiNote:
+    'Kontrola pravopisu běží na AI: texty listu se posílají po dávkách nastavenému modelu.',
+  appSpellProgress: 'Kontroluje se {done}/{total}…',
+  appSpellCollecting: 'Sbírají se texty…',
+  appSpellStop: 'Zastavit',
+  appSpellRecheck: 'Zkontrolovat znovu',
+  appSpellNone: 'Nenalezeny žádné podezřelé pravopisné chyby.',
+  appSpellCanceled: 'Kontrola byla zastavena.',
+  appSpellFindings: 'Podezřelých chyb: {count}. Kliknutím na řádek přejdete na buňku.',
+  appSpellTruncated: 'Příliš mnoho textových buněk; zkontrolovány byly jen první.',
+  appSpellUnconfigured:
+    'Není nakonfigurována žádná AI služba. Nakonfigurujte ji v Nastavení, než kontrolu použijete.',
+  appSpellError: 'Kontrola pravopisu selhala: {error}',
+  appSpellColWord: 'Podezřelé',
+  appSpellIgnore: 'Ignorovat',
+  appSpellIgnoreAll: 'Ignorovat vše',
+  appSpellLearn: 'Přidat do slovníku',
+  appSpellNoSuggestions: 'Žádné návrhy',
+  appSpellIgnoredAll: 'Slovo „{word}“ už se v této relaci nebude označovat.',
+  appSpellLearned: 'Slovo „{word}“ bylo přidáno do slovníku.',
+  appSpellChanged: 'Opraveno {address}.',
+  appSpellChangeFailed: '{address} se nepodařilo opravit.',
 } satisfies Record<keyof typeof zh, string>

@@ -1586,4 +1586,35 @@ export const pl = {
   appVisualFlipV: 'Odbij w pionie',
   appVisualFlipH: 'Odbij w poziomie',
   appCtxPasteVisual: 'Wklej obraz lub kształt',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Pisownia',
+  appSpellBtnDetail: 'Sprawdź tekst arkusza (F7)',
+  appSpellToggle: 'Sprawdzanie pisowni',
+  appSpellToggleTip:
+    'Włącza sprawdzanie pisowni (F7 i przycisk Recenzja); po wyłączeniu pola komentarzy przestają pokazywać faliste podkreślenia',
+  appSpellOn: 'Sprawdzanie pisowni włączone.',
+  appSpellOff: 'Sprawdzanie pisowni jest wyłączone. Włącz je w Recenzja ▸ Sprawdzanie.',
+  appSpellAiNote:
+    'Sprawdzanie pisowni działa przez AI: teksty arkusza są wysyłane partiami do skonfigurowanego modelu.',
+  appSpellProgress: 'Sprawdzanie {done}/{total}…',
+  appSpellCollecting: 'Zbieranie tekstów…',
+  appSpellStop: 'Zatrzymaj',
+  appSpellRecheck: 'Sprawdź ponownie',
+  appSpellNone: 'Nie znaleziono podejrzanych błędów pisowni.',
+  appSpellCanceled: 'Sprawdzanie zatrzymano.',
+  appSpellFindings: 'Podejrzanych błędów: {count}. Kliknij wiersz, aby przejść.',
+  appSpellTruncated: 'Zbyt wiele komórek z tekstem; sprawdzono tylko pierwsze.',
+  appSpellUnconfigured:
+    'Nie skonfigurowano usługi AI. Skonfiguruj ją w Ustawieniach przed użyciem sprawdzania.',
+  appSpellError: 'Sprawdzanie pisowni nie powiodło się: {error}',
+  appSpellColWord: 'Podejrzane',
+  appSpellIgnore: 'Ignoruj',
+  appSpellIgnoreAll: 'Ignoruj wszystkie',
+  appSpellLearn: 'Dodaj do słownika',
+  appSpellNoSuggestions: 'Brak sugestii',
+  appSpellIgnoredAll: 'Słowo „{word}” nie będzie już oznaczane w tej sesji.',
+  appSpellLearned: 'Słowo „{word}” dodano do słownika.',
+  appSpellChanged: 'Poprawiono {address}.',
+  appSpellChangeFailed: 'Nie udało się poprawić {address}.',
 } satisfies Record<keyof typeof zh, string>

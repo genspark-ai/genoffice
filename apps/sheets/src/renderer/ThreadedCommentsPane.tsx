@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 import { useI18n } from './i18n/locale'
+import { spellcheckEnabled } from './spellcheck-pref'
 import type { ThreadHover } from './threaded-comment-marker'
 import {
   parseThreadTimestamp,
@@ -72,6 +73,11 @@ function Composer({
         placeholder={placeholder}
         autoFocus={autoFocus}
         rows={2}
+        // the comment box is the one real DOM edit surface in Sheets (Univer's
+        // cell editor is canvas-rendered), so the native squiggle the spelling
+        // preference promises can exist exactly here; read per mount, like
+        // docs' header/footer editors
+        spellCheck={spellcheckEnabled()}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {

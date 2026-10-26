@@ -1609,4 +1609,35 @@ export const ja = {
   appVisualFlipV: '上下反転',
   appVisualFlipH: '左右反転',
   appCtxPasteVisual: '図または図形を貼り付け',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'スペル チェック',
+  appSpellBtnDetail: 'ワークシートのテキストをチェック (F7)',
+  appSpellToggle: 'スペル チェック',
+  appSpellToggleTip:
+    'スペル チェック（F7 と Review ボタン）を有効にします。オフにするとコメント入力欄のスペルの波線が消えます',
+  appSpellOn: 'スペル チェックをオンにしました。',
+  appSpellOff: 'スペル チェックはオフです。Review ▸ 校対 からオンにできます。',
+  appSpellAiNote:
+    'スペル チェックは AI で行われます。シートのテキストを設定済みのモデルへ小分けに送信します。',
+  appSpellProgress: 'チェック中 {done}/{total}…',
+  appSpellCollecting: 'テキストを収集しています…',
+  appSpellStop: '停止',
+  appSpellRecheck: '再チェック',
+  appSpellNone: '疑わしいスペルミスは見つかりませんでした。',
+  appSpellCanceled: 'チェックを停止しました。',
+  appSpellFindings: '疑わしいスペルミスが {count} 件あります。行をクリックすると移動します。',
+  appSpellTruncated: 'テキスト セルが多すぎるため、前半のみチェックしました。',
+  appSpellUnconfigured:
+    'AI サービスが未設定です。設定で構成してからスペル チェックをご利用ください。',
+  appSpellError: 'スペル チェックに失敗しました：{error}',
+  appSpellColWord: '疑わしい語',
+  appSpellIgnore: '無視',
+  appSpellIgnoreAll: 'すべて無視',
+  appSpellLearn: '辞書に追加',
+  appSpellNoSuggestions: '修正候補なし',
+  appSpellIgnoredAll: 'このセッションでは「{word}」を表示しません。',
+  appSpellLearned: '「{word}」を辞書に追加しました。',
+  appSpellChanged: '{address} を修正しました。',
+  appSpellChangeFailed: '{address} を修正できませんでした。',
 } satisfies Record<keyof typeof zh, string>

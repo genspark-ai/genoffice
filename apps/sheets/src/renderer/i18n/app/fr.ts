@@ -1629,4 +1629,36 @@ export const fr = {
   appVisualFlipV: 'Retourner verticalement',
   appVisualFlipH: 'Retourner horizontalement',
   appCtxPasteVisual: "Coller l'image ou la forme",
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Orthographe',
+  appSpellBtnDetail: 'Vérifier le texte de la feuille (F7)',
+  appSpellToggle: "Vérifier l'orthographe",
+  appSpellToggleTip:
+    "Active la vérification orthographique (F7 et le bouton Révision) ; désactivée, les zones de commentaire n'affichent plus les soulignements",
+  appSpellOn: 'Vérification orthographique activée.',
+  appSpellOff:
+    'La vérification orthographique est désactivée. Réactivez-la dans Révision ▸ Vérification.',
+  appSpellAiNote:
+    "La vérification s'appuie sur l'IA : les textes de la feuille sont envoyés par lots au modèle configuré.",
+  appSpellProgress: 'Vérification {done}/{total}…',
+  appSpellCollecting: 'Collecte des textes…',
+  appSpellStop: 'Arrêter',
+  appSpellRecheck: 'Revérifier',
+  appSpellNone: "Aucune faute d'orthographe suspectée.",
+  appSpellCanceled: 'Vérification interrompue.',
+  appSpellFindings: '{count} fautes suspectées. Cliquez une ligne pour la localiser.',
+  appSpellTruncated: 'Trop de cellules de texte ; seules les premières ont été vérifiées.',
+  appSpellUnconfigured:
+    "Aucun service d'IA configuré. Configurez-en un dans les paramètres avant d'utiliser la vérification.",
+  appSpellError: 'Échec de la vérification : {error}',
+  appSpellColWord: 'Mot suspect',
+  appSpellIgnore: 'Ignorer',
+  appSpellIgnoreAll: 'Ignorer tout',
+  appSpellLearn: 'Ajouter au dictionnaire',
+  appSpellNoSuggestions: 'Aucune suggestion',
+  appSpellIgnoredAll: '« {word} » ne sera plus signalé pendant cette session.',
+  appSpellLearned: '« {word} » a été ajouté au dictionnaire.',
+  appSpellChanged: '{address} corrigé.',
+  appSpellChangeFailed: 'Impossible de corriger {address}.',
 } satisfies Record<keyof typeof zh, string>

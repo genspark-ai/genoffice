@@ -1577,4 +1577,35 @@ export const ru = {
   appVisualFlipV: 'Отразить сверху вниз',
   appVisualFlipH: 'Отразить слева направо',
   appCtxPasteVisual: 'Вставить рисунок или фигуру',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Орфография',
+  appSpellBtnDetail: 'Проверить текст листа (F7)',
+  appSpellToggle: 'Проверка орфографии',
+  appSpellToggleTip:
+    'Включает проверку орфографии (F7 и кнопка на вкладке «Рецензирование»); при выключении поле комментариев больше не показывает подчёркивания',
+  appSpellOn: 'Проверка орфографии включена.',
+  appSpellOff: 'Проверка орфографии выключена. Включите её в Рецензирование ▸ Правописание.',
+  appSpellAiNote:
+    'Проверка выполняется с помощью ИИ: тексты листа отправляются настроенной модели пакетами.',
+  appSpellProgress: 'Проверка {done}/{total}…',
+  appSpellCollecting: 'Сбор текстов…',
+  appSpellStop: 'Остановить',
+  appSpellRecheck: 'Проверить снова',
+  appSpellNone: 'Подозрительных орфографических ошибок не найдено.',
+  appSpellCanceled: 'Проверка остановлена.',
+  appSpellFindings: 'Подозрительных ошибок: {count}. Щёлкните строку, чтобы перейти.',
+  appSpellTruncated: 'Слишком много текстовых ячеек; проверены только первые.',
+  appSpellUnconfigured:
+    'Служба ИИ не настроена. Настройте её в параметрах, прежде чем использовать проверку.',
+  appSpellError: 'Не удалось выполнить проверку: {error}',
+  appSpellColWord: 'Сомнительное',
+  appSpellIgnore: 'Пропустить',
+  appSpellIgnoreAll: 'Пропустить все',
+  appSpellLearn: 'Добавить в словарь',
+  appSpellNoSuggestions: 'Нет вариантов',
+  appSpellIgnoredAll: 'Слово «{word}» больше не помечается в этом сеансе.',
+  appSpellLearned: 'Слово «{word}» добавлено в словарь.',
+  appSpellChanged: '{address} исправлено.',
+  appSpellChangeFailed: 'Не удалось исправить {address}.',
 } satisfies Record<keyof typeof zh, string>

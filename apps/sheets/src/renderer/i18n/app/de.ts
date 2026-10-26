@@ -1618,4 +1618,37 @@ export const de = {
   appVisualFlipV: 'Vertikal spiegeln',
   appVisualFlipH: 'Horizontal spiegeln',
   appCtxPasteVisual: 'Bild oder Form einfügen',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Rechtschreibung',
+  appSpellBtnDetail: 'Blatttext prüfen (F7)',
+  appSpellToggle: 'Rechtschreibung prüfen',
+  appSpellToggleTip:
+    'Aktiviert die Rechtschreibprüfung (F7 und die Review-Schaltfläche); ausgeschaltet zeigen Kommentarfelder keine Wellenlinien mehr',
+  appSpellOn: 'Rechtschreibprüfung eingeschaltet.',
+  appSpellOff:
+    'Die Rechtschreibprüfung ist aus. Aktivieren Sie sie unter Review ▸ Korrekturhilfen.',
+  appSpellAiNote:
+    'Die Rechtschreibprüfung läuft über KI: Die Blatttexte werden stapelweise an das konfigurierte Modell gesendet.',
+  appSpellProgress: 'Prüfung {done}/{total}…',
+  appSpellCollecting: 'Texte werden gesammelt…',
+  appSpellStop: 'Anhalten',
+  appSpellRecheck: 'Erneut prüfen',
+  appSpellNone: 'Keine verdächtigen Rechtschreibfehler gefunden.',
+  appSpellCanceled: 'Die Prüfung wurde angehalten.',
+  appSpellFindings:
+    '{count} verdächtige Fehler. Klicken Sie auf eine Zeile, um dorthin zu springen.',
+  appSpellTruncated: 'Zu viele Textzellen; nur die ersten wurden geprüft.',
+  appSpellUnconfigured:
+    'Kein KI-Dienst konfiguriert. Richten Sie ihn in den Einstellungen ein, bevor Sie die Prüfung nutzen.',
+  appSpellError: 'Rechtschreibprüfung fehlgeschlagen: {error}',
+  appSpellColWord: 'Verdächtig',
+  appSpellIgnore: 'Ignorieren',
+  appSpellIgnoreAll: 'Alle ignorieren',
+  appSpellLearn: 'Zum Wörterbuch hinzufügen',
+  appSpellNoSuggestions: 'Keine Vorschläge',
+  appSpellIgnoredAll: '„{word}“ wird in dieser Sitzung nicht mehr markiert.',
+  appSpellLearned: '„{word}“ wurde zum Wörterbuch hinzugefügt.',
+  appSpellChanged: '{address} korrigiert.',
+  appSpellChangeFailed: '{address} konnte nicht korrigiert werden.',
 } satisfies Record<keyof typeof zh, string>

@@ -1599,4 +1599,35 @@ export const nl = {
   appVisualFlipV: 'Verticaal spiegelen',
   appVisualFlipH: 'Horizontaal spiegelen',
   appCtxPasteVisual: 'Afbeelding of vorm plakken',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Spelling',
+  appSpellBtnDetail: 'Bladtekst controleren (F7)',
+  appSpellToggle: 'Spelling controleren',
+  appSpellToggleTip:
+    'Zet de spellingcontrole aan (F7 en de Review-knop); uitgeschakeld tonen commentaarvakken geen golflijnen meer',
+  appSpellOn: 'Spellingcontrole ingeschakeld.',
+  appSpellOff: 'Spellingcontrole staat uit. Schakel deze in bij Controleren ▸ Controle.',
+  appSpellAiNote:
+    'De spellingcontrole draait op AI: de tekst van het blad wordt in batches naar het geconfigureerde model gestuurd.',
+  appSpellProgress: 'Controleren {done}/{total}…',
+  appSpellCollecting: 'Teksten verzamelen…',
+  appSpellStop: 'Stoppen',
+  appSpellRecheck: 'Opnieuw controleren',
+  appSpellNone: 'Geen verdachte spelfouten gevonden.',
+  appSpellCanceled: 'De controle is gestopt.',
+  appSpellFindings: '{count} verdachte fouten. Klik op een rij om erheen te springen.',
+  appSpellTruncated: 'Te veel tekstcellen; alleen de eerste zijn gecontroleerd.',
+  appSpellUnconfigured:
+    'Geen AI-service geconfigureerd. Stel er een in via Instellingen voordat je de controle gebruikt.',
+  appSpellError: 'Spellingcontrole mislukt: {error}',
+  appSpellColWord: 'Verdacht',
+  appSpellIgnore: 'Negeren',
+  appSpellIgnoreAll: 'Alles negeren',
+  appSpellLearn: 'Toevoegen aan woordenlijst',
+  appSpellNoSuggestions: 'Geen suggesties',
+  appSpellIgnoredAll: '"{word}" wordt in deze sessie niet meer gemarkeerd.',
+  appSpellLearned: '"{word}" is toegevoegd aan de woordenlijst.',
+  appSpellChanged: '{address} gecorrigeerd.',
+  appSpellChangeFailed: 'Kan {address} niet corrigeren.',
 } satisfies Record<keyof typeof zh, string>

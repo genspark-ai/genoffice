@@ -1601,4 +1601,35 @@ export const it = {
   appVisualFlipV: 'Capovolgi verticalmente',
   appVisualFlipH: 'Capovolgi orizzontalmente',
   appCtxPasteVisual: 'Incolla immagine o forma',
+
+  // ── Spelling check (F7 / Review ▸ Proofing) ──
+  appSpellTitle: 'Ortografia',
+  appSpellBtnDetail: 'Controlla il testo del foglio (F7)',
+  appSpellToggle: 'Controllo ortografia',
+  appSpellToggleTip:
+    'Attiva il controllo ortografico (F7 e il pulsante Revisione); disattivato, le caselle dei commenti non mostrano più le sottolineature',
+  appSpellOn: 'Controllo ortografico attivato.',
+  appSpellOff: 'Il controllo ortografico è disattivato. Attivalo in Revisione ▸ Correzione.',
+  appSpellAiNote:
+    "Il controllo usa l'IA: i testi del foglio vengono inviati a lotti al modello configurato.",
+  appSpellProgress: 'Controllo {done}/{total}…',
+  appSpellCollecting: 'Raccolta dei testi…',
+  appSpellStop: 'Arresta',
+  appSpellRecheck: 'Ricontrolla',
+  appSpellNone: 'Nessun errore ortografico sospetto trovato.',
+  appSpellCanceled: 'Il controllo è stato arrestato.',
+  appSpellFindings: '{count} errori sospetti. Fai clic su una riga per individuarlo.',
+  appSpellTruncated: 'Troppe celle di testo; sono state controllate solo le prime.',
+  appSpellUnconfigured:
+    'Nessun servizio IA configurato. Configurane uno nelle Impostazioni prima di usare il controllo.',
+  appSpellError: 'Controllo non riuscito: {error}',
+  appSpellColWord: 'Sospetto',
+  appSpellIgnore: 'Ignora',
+  appSpellIgnoreAll: 'Ignora tutti',
+  appSpellLearn: 'Aggiungi al dizionario',
+  appSpellNoSuggestions: 'Nessun suggerimento',
+  appSpellIgnoredAll: '"{word}" non verrà più segnalato in questa sessione.',
+  appSpellLearned: '"{word}" è stato aggiunto al dizionario.',
+  appSpellChanged: '{address} corretto.',
+  appSpellChangeFailed: 'Impossibile correggere {address}.',
 } satisfies Record<keyof typeof zh, string>
