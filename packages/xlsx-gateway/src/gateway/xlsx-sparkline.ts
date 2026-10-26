@@ -33,10 +33,10 @@ function escapeXml(value: string): string {
 
 function toArgb(color: string | undefined): string {
   if (color === undefined) return DEFAULT_SERIES_ARGB
-  if (!/^#[0-9A-Fa-f]{6}$/.test(color)) {
+  if (!/^#[0-9A-Fa-f]{6}$/.test(color.trim())) {
     throw new SparklineAddError(`"${color}" is not a #RRGGBB color.`)
   }
-  return `FF${color.slice(1).toUpperCase()}`
+  return `FF${color.trim().slice(1).toUpperCase()}`
 }
 
 /// Backstop for the proposal-time check in the renderer: a host past XFD or

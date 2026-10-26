@@ -20,6 +20,8 @@ export const MARKDOWN_CHANNELS = {
   takeWikiFragment: 'markdown:take-wiki-fragment',
   /** list the vault's notes for the `[[` suggester, breadth-first from the root */
   listWikiNotes: 'markdown:list-wiki-notes',
+  /** create the note an unresolved `[[wiki link]]` names (never overwrites) */
+  createWikiNote: 'markdown:create-wiki-note',
   /** notes whose links land on the given path (the backlinks panel) */
   wikiBacklinks: 'markdown:wiki-backlinks',
   /** the vault's link graph (nodes + resolved edges, the graph view) */
@@ -92,6 +94,27 @@ export interface WikiNoteEntry {
   /** path relative to the walk root, shown under the name in the menu */
   relPath: string
 }
+
+export interface WikiCreateNoteRequest {
+  /**
+   * The link's target as written, alias dropped: `Note`, `folder/Note`,
+   * `Note#Heading`. The fragment rides back on the answer for the caller to
+   * open on; the file part is what gets created.
+   */
+  target: string
+}
+
+export type WikiCreateNoteResult =
+  | {
+      ok: true
+      /** absolute path of the note, created or already there */
+      path: string
+      /** the `#Heading` part of the target, '' when there was none */
+      fragment: string
+      /** false when a file already occupied the path and nothing was written */
+      created: boolean
+    }
+  | { ok: false }
 
 /** a note whose link lands on the asked-for path */
 export interface WikiBacklink {
@@ -310,6 +333,14 @@ export interface MarkdownApi {
    * library cannot stall the popup.
    */
   listWikiNotes(): Promise<WikiNoteEntry[]>
+  /**
+   * Create the note an unresolved `[[target]]` names — Obsidian's "create new
+   * note". A target with a directory lands under the vault root, a bare name
+   * beside the open document (both decided in main, where the open paths
+   * live). An existing file is opened, never overwritten. `ok: false` when
+   * the target cannot name a note at all.
+   */
+  createWikiNote(request: WikiCreateNoteRequest): Promise<WikiCreateNoteResult>
   /** Notes whose links resolve to `path` (the backlinks panel); '' answers []. */
   wikiBacklinks(path: string): Promise<WikiBacklink[]>
   /** The vault's link graph, notes as nodes and resolved links as edges. */

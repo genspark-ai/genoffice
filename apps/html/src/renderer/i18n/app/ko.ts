@@ -98,6 +98,7 @@ export const ko = {
   alignLeft: '왼쪽 맞춤',
   alignCenter: '가운데 맞춤',
   alignRight: '오른쪽 맞춤',
+  alignJustify: '양쪽 정렬',
   fontSizeDec: '글꼴 크기 줄이기',
   fontSizeInc: '글꼴 크기 키우기',
   typography: '타이포그래피',

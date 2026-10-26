@@ -35,7 +35,10 @@ GenOffice è un'alternativa gratuita e open source a Microsoft Office per
 macOS, Windows e Linux. Apre e salva file nativi `.docx`, `.xlsx` e `.pptx`,
 permette di modificare PDF, Markdown e HTML, e affianca un agente AI a ogni
 documento — non una chat incollata a fianco, ma un editor che legge il file,
-applica la modifica e ti mostra esattamente cosa ha toccato.
+applica la modifica e ti mostra esattamente cosa ha toccato. I file ODF
+(`.odt`, `.ods`, `.odp` e i modelli `.ott`/`.ots`/`.otp`) si aprono come copie
+OOXML modificabili; l'importazione è di sola apertura — il salvataggio scrive
+OOXML, mai ODF.
 
 - **Formati reali, preservati byte per byte.** Viene riscritto solo ciò che
   modifichi. Tutto il resto del file resta identico byte per byte, così i
@@ -43,7 +46,12 @@ applica la modifica e ti mostra esattamente cosa ha toccato.
 - **AI che puoi controllare.** Le modifiche arrivano come revisioni tracciate
   e diff con ripristino a un clic. I fogli di calcolo ottengono formule live,
   non numeri incollati. Le presentazioni e le pagine vengono generate
-  direttamente sulla canvas e restano completamente modificabili.
+  direttamente sulla canvas e restano completamente modificabili. Nascondi al
+  modello una selezione in Docs o un intervallo di celle in Sheets e l'AI vede
+  solo un segnaposto con nome; le parole originali restano nel file e tornano.
+  Il nascondimento riguarda l'AI di quest'app — la CLI, gli strumenti MCP e
+  l'esportazione headless leggono il file direttamente e vedono comunque
+  queste parole.
 - **Locale per progettazione.** I file si aprono, si modificano, si salvano e
   si convertono sul tuo computer. Le conversioni PDF → Word / Excel /
   PowerPoint, Markdown → Word e HTML → Word avvengono tutte in locale. Solo
@@ -77,8 +85,8 @@ prompt che puoi leggere nel pannello.
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs: una panoramica aziendale con un'immagine banner; l'AI ha reso più conciso il paragrafo Overview e inserito una nuova sezione a elenco puntato, e il pannello offre un ripristino a un clic"></td>
 </tr>
 <tr>
-<td><b>Apre il file esattamente come lo impagina Word</b> — sezioni a due colonne, immagini a piena pagina, tabelle con sfondo colorato, intestazioni e piè di pagina, impaginazione sulle stesse metriche di riga di Word. Stili, commenti, revisioni tracciate, equazioni e input a penna vengono preservati senza alterazioni.</td>
-<td><b>Chiedi la modifica</b> — l'AI legge i blocchi di cui ha bisogno, riscrive l'Overview e inserisce una nuova sezione a elenco puntato. Ogni intervento dell'AI è uno snapshot che puoi ripristinare; con <b>Revisioni</b> attivate, le modifiche arrivano come revisioni in stile Word.</td>
+<td><b>Apre il file esattamente come lo impagina Word</b> — sezioni a due colonne, immagini a piena pagina, tabelle con sfondo colorato, intestazioni e piè di pagina, impaginazione sulle stesse metriche di riga di Word. Stili, commenti, revisioni tracciate, equazioni, input a penna e content controls vengono preservati senza alterazioni. Una scheda <b>Mailings</b> trasforma il documento in un modello di stampa unione: scegli un elenco di destinatari <code>.xlsx</code> o <code>.csv</code>, inserisci veri <code>MERGEFIELD</code>, mostra l'anteprima record per record e unisci tutto in un unico documento o in un <code>.docx</code> per record.</td>
+<td><b>Chiedi la modifica</b> — l'AI legge i blocchi di cui ha bisogno, riscrive l'Overview e inserisce una nuova sezione a elenco puntato. Ogni intervento dell'AI è uno snapshot che puoi ripristinare; con <b>Revisioni</b> attivate, le modifiche arrivano come revisioni in stile Word. Chiedi invece una mappa mentale e la risposta è un diagramma interattivo dell'intero documento: rami comprimibili, zoom e panoramica, un clic su un nodo invia una domanda di approfondimento, e le citazioni riportano al blocco da cui provengono.</td>
 </tr>
 </table>
 
@@ -91,7 +99,7 @@ prompt che puoi leggere nel pannello.
 </tr>
 <tr>
 <td><b>Costruiscilo</b> — da una singola frase l'agente aggiunge un foglio Summary con vere <code>SUMIF</code> per area e categoria, inserisce un grafico a colonne e applica le 43 modifiche come un unico batch annullabile.</td>
-<td><b>Interrogalo</b> — le domande sulla cartella di lavoro ottengono risposta con il ragionamento e le celle esatte usate come citazioni cliccabili. Dietro le quinte: un motore <code>.xlsx</code> Rust proprietario, tabelle pivot, filtri dati, formattazione condizionale e tracciamento delle formule.</td>
+<td><b>Interrogalo</b> — le domande sulla cartella di lavoro ottengono risposta con il ragionamento e le celle esatte usate come citazioni cliccabili. Dietro le quinte: un motore <code>.xlsx</code> Rust proprietario, tabelle pivot, filtri dati, formattazione condizionale, tracciamento delle formule e immagini incorporate nelle celle come rich value nativi di Excel — Excel le riapre ancora nella cella.</td>
 </tr>
 </table>
 
@@ -106,9 +114,13 @@ prompt che puoi leggere nel pannello.
 </tr>
 <tr>
 <td><b>Una riga in ingresso</b> — "Crea una presentazione per investitori di 10 slide per Aurora Home…". GenOffice pianifica la storyline, ricerca i numeri e disegna ogni slide sulla canvas come una vera <code>.pptx</code>.</td>
-<td><b>Una presentazione finita in uscita</b> — undici slide progettate con tipografia e immagini coerenti e una call to action di chiusura; continua a modificare con master, layout, guide intelligenti e ritaglio non distruttivo, oppure chiedi al pannello di cambiare stile, riscrivere e riordinare.</td>
+<td><b>Una presentazione finita in uscita</b> — undici slide progettate con tipografia e immagini coerenti e una call to action di chiusura; continua a modificare con master, layout, guide intelligenti e ritaglio non distruttivo, oppure chiedi al pannello di cambiare stile, riscrivere e riordinare. Inserisci un <code>.glb</code> ed è un vero modello 3D: si fa girare trascinandolo nell'editor, viene salvato nel modo in cui PowerPoint salva i 3D e resta 3D in PowerPoint.</td>
 </tr>
 </table>
+
+**Slide Show → Record** narra la presentazione slide per slide, con pausa e
+ripresa. La narrazione e i tempi di avanzamento automatico che misura vengono
+salvati nel `.pptx`, e PowerPoint li riproduce allo stesso modo.
 
 ### 4 · PDF — modifica il testo dei PDF sul posto, converti PDF in Word in locale
 
@@ -164,6 +176,12 @@ costruisce un unico file `.html` autosufficiente basato su quei token.
 <td><b>Visualizzato, salvato come Markdown semplice</b> — titoli, elenchi, tabelle, immagini, blocchi di codice e diagrammi Mermaid in un block editor Tiptap, riscritti come <code>.md</code> semplice, con un'esportazione <b>Markdown → Word</b> completamente locale.</td>
 </tr>
 </table>
+
+**Note collegate, come fa Obsidian.** I `[[wiki links]]` portano con un clic
+alla nota che nominano, digitando `[[` si ottiene il completamento del nome
+della nota, e `![[…]]` incorpora una nota o un'immagine inline. Un pannello
+**Backlinks** elenca ogni nota che rimanda a quella aperta, e la vista
+**Graph** mappa i collegamenti dell'intero vault.
 
 ### 7 · CLI — il tuo agente di coding guida GenOffice, sul tuo computer
 
@@ -245,10 +263,10 @@ DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty 
 OpenCode Zen/Go, più uno slot personalizzato per qualsiasi endpoint
 compatibile con OpenAI (base URL + chiave), inclusi i server con modelli
 locali. Ricerca e media hanno i propri provider per singola funzionalità
-sotto **AI Media & Search**: Serper o Tavily per la ricerca web, e OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax o qualsiasi endpoint di
-immagini compatibile con OpenAI per la generazione di immagini e l'analisi
-di immagini/video.
+sotto **AI Media & Search**: Serper, Serply, Tavily, Parallel, Keenable, Exa o
+Firecrawl per la ricerca web, e OpenAI, Gemini, Doubao/Seedream, GLM, Grok,
+Qwen, MiniMax o qualsiasi endpoint di immagini compatibile con OpenAI per la
+generazione di immagini e l'analisi di immagini/video.
 
 L'intera suite include i temi chiaro, scuro e di sistema. I temi cambiano
 solo ciò che vedi a schermo: esportazioni, stampe e file salvati mantengono
@@ -301,10 +319,11 @@ come controllare il proprio lavoro.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -561,6 +580,17 @@ MiniMax, Grok, Mistral, OpenRouter, Requesty e OpenCode Zen/Go, più qualsiasi e
 compatibile con OpenAI — inclusi i server con modelli locali. Ricerca,
 generazione di immagini e analisi di immagini/video richiedono le proprie
 chiavi in Settings → AI Media & Search.
+
+</details>
+
+<details>
+<summary><b>Posso disattivare il pannello AI?</b></summary>
+
+Sì. Settings → AI include un interruttore **Show the AI sidebar**. Spento,
+ogni editor nasconde la barra laterale e i nuovi documenti smettono di aprirla
+da soli. Un'azione AI esplicita — un pulsante della barra multifunzione, una
+voce di menu — apre comunque il pannello per quel documento, e chiudendolo
+torna a essere nascosto.
 
 </details>
 

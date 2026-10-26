@@ -7,11 +7,16 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { open, rename, writeFile } from 'node:fs/promises'
+import { open, rename, writeFile, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { atomicCopyFile, atomicWriteFile, writeJsonAtomic } from '../src/atomic-write'
+import {
+  atomicCopyFile,
+  atomicWriteFile,
+  atomicWriteVia,
+  writeJsonAtomic,
+} from '../src/atomic-write'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -196,6 +201,104 @@ describe('atomicCopyFile', () => {
     await atomicCopyFile(source, target)
     expect(readFileSync(target, 'utf8')).toBe('pdf-bytes')
     expect(readdirSync(dir).sort()).toEqual(['a.pdf', 'b.pdf'])
+  })
+})
+
+// A streamed deck save (JSZip → createWriteStream) cannot go through the
+// Buffer-taking atomicWriteFile; the writer fills the temp itself and the same
+// sync → rename → in-place fallback contract publishes it (genoffice#2123).
+describe('atomicWriteVia', () => {
+  it('hands the writer a sibling temp, then fsyncs it before the rename publishes it', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-av-'))
+    const target = join(dir, 'a.pptx')
+    writeFileSync(target, 'old')
+    const order: string[] = []
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    vi.mocked(open).mockImplementationOnce(async (...args) => {
+      const handle = await actual.open(...(args as Parameters<typeof actual.open>))
+      const sync = handle.sync.bind(handle)
+      handle.sync = async () => {
+        order.push('sync')
+        await sync()
+      }
+      return handle
+    })
+    vi.mocked(rename).mockImplementationOnce(async (from, to) => {
+      order.push('rename')
+      await actual.rename(from, to)
+    })
+    await atomicWriteVia(target, async (tempPath) => {
+      order.push('write')
+      // beside the target, so the rename stays on one filesystem; never the target itself
+      expect(dirname(tempPath)).toBe(dir)
+      expect(tempPath).not.toBe(target)
+      expect(basename(tempPath)).toMatch(/a\.pptx\..{12}\.tmp$/)
+      expect(readFileSync(target, 'utf8')).toBe('old')
+      await actual.writeFile(tempPath, 'new')
+    })
+    expect(order).toEqual(['write', 'sync', 'rename'])
+    expect(readFileSync(target, 'utf8')).toBe('new')
+    expect(readdirSync(dir)).toEqual(['a.pptx'])
+  })
+
+  // The regression: the stream used to open the deck itself with 'w', so a
+  // save that died mid-way left a truncated .pptx with no copy to fall back to.
+  it('a writer that dies part-way leaves the previous file intact and no temp behind', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-av-'))
+    const target = join(dir, 'a.pptx')
+    writeFileSync(target, 'the whole old deck')
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    await expect(
+      atomicWriteVia(target, async (tempPath) => {
+        await actual.writeFile(tempPath, 'half a new d')
+        throw errnoError('EIO')
+      }),
+    ).rejects.toThrow('EIO')
+    expect(readFileSync(target, 'utf8')).toBe('the whole old deck')
+    expect(readdirSync(dir)).toEqual(['a.pptx'])
+  })
+
+  it('tolerates a refused flush and still renames atomically', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-av-'))
+    const target = join(dir, 'a.pptx')
+    writeFileSync(target, 'old')
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    vi.mocked(open).mockRejectedValueOnce(errnoError('EPERM'))
+    await atomicWriteVia(target, (tempPath) => actual.writeFile(tempPath, 'new'))
+    expect(readFileSync(target, 'utf8')).toBe('new')
+    expect(readdirSync(dir)).toEqual(['a.pptx'])
+  })
+
+  // Same fallback contract as atomicWriteFile (#1878): a mount that refuses
+  // rename-over-existing still receives the completed temp, copied in place.
+  it('falls back to an in-place copy when the mount refuses the rename', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-av-'))
+    const target = join(dir, 'a.pptx')
+    writeFileSync(target, 'old')
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    vi.mocked(rename).mockRejectedValueOnce(errnoError('EEXIST'))
+    await atomicWriteVia(target, (tempPath) => actual.writeFile(tempPath, 'new'))
+    expect(readFileSync(target, 'utf8')).toBe('new')
+    expect(readdirSync(dir)).toEqual(['a.pptx'])
+  })
+
+  it('surfaces the fallback copy failure and keeps the completed temp', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'eu-av-'))
+    const target = join(dir, 'a.pptx')
+    writeFileSync(target, 'old')
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    vi.mocked(rename).mockRejectedValueOnce(errnoError('EEXIST'))
+    vi.mocked(copyFile).mockRejectedValueOnce(errnoError('EACCES'))
+    await expect(
+      atomicWriteVia(target, (tempPath) => actual.writeFile(tempPath, 'new')),
+    ).rejects.toThrow('EACCES')
+    expect(readFileSync(target, 'utf8')).toBe('old')
+    // the fallback failed, so the completed temp is kept as the rescue copy
+    const leftovers = readdirSync(dir).sort((a, b) => a.length - b.length)
+    expect(leftovers).toHaveLength(2)
+    expect(leftovers[0]).toBe('a.pptx')
+    expect(leftovers[1]).toMatch(/a\.pptx\..{12}\.tmp$/)
+    expect(readFileSync(join(dir, leftovers[1]!), 'utf8')).toBe('new')
   })
 })
 

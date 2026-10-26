@@ -41,6 +41,11 @@ ul[data-type='taskList'] { list-style: none; padding-left: 0.4em; }
 ul[data-type='taskList'] li { display: flex; gap: 8px; }
 ul[data-type='taskList'] li > label { flex: 0 0 auto; margin-top: 0.3em; }
 ul[data-type='taskList'] li[data-checked='true'] > div { color: #8b929b; text-decoration: line-through; }
+sup.md-footnote-ref { color: #0a69da; font-size: 0.78em; }
+.md-footnote-def { display: grid; grid-template-columns: max-content 1fr; column-gap: 6px; font-size: 0.92em; color: #57606a; margin: 0.3em 0; }
+.md-footnote-def-label { white-space: pre; }
+.md-footnote-def-body > p { margin: 0.15em 0; }
+.md-footnote-def + .md-footnote-def { margin-top: 0.2em; }
 @media print {
   /* High-quality rendering for text */
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

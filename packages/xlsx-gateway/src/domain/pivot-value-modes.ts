@@ -10,6 +10,10 @@ export const PIVOT_AGGREGATIONS = [
   'min',
   'product',
   'countNums',
+  'stdDev',
+  'stdDevp',
+  'var',
+  'varp',
 ] as const
 export type PivotAggregation = (typeof PIVOT_AGGREGATIONS)[number]
 
@@ -33,6 +37,10 @@ export const AGG_CAPTIONS: Record<PivotAggregation, string> = {
   min: 'Min',
   product: 'Product',
   countNums: 'Count',
+  stdDev: 'StdDev',
+  stdDevp: 'StdDevp',
+  var: 'Var',
+  varp: 'Varp',
 }
 
 export function defaultDataFieldCaption(agg: PivotAggregation, field: string): string {

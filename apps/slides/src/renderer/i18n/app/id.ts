@@ -224,6 +224,8 @@ export const id = {
   appMasterFillNone: 'Tanpa isian',
   appMasterStroke: 'Warna garis luar…',
   appMasterStrokeNone: 'Tanpa garis luar',
+  appMasterInsertTextBox: 'Kotak Teks',
+  appMasterInsertShape: 'Bentuk',
   appStartOpening: 'Membuka…',
   appReadingSlideTitle: 'Klik untuk ke slide berikutnya (Esc untuk keluar dari Tampilan Baca)',
   appReadingPrev: '‹ Sebelumnya',

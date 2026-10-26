@@ -108,3 +108,22 @@ describe('StylePanel custom CSS drafts', () => {
     expect(onCustomCss).toHaveBeenCalledWith('box-shadow: 0 1px 2px red')
   })
 })
+
+describe('StylePanel text alignment', () => {
+  it('offers justify and shows it as the selected value for a justified element', async () => {
+    const draftRef: MutableRefObject<(() => void) | null> = { current: null }
+    const onCustomCss = vi.fn()
+    ;(computed as { textAlign: string }).textAlign = 'justify'
+    const host = await renderPanel(draftRef, onCustomCss)
+    const select = [...host.querySelectorAll('select')].find((s) =>
+      [...s.options].some((o) => o.value === 'justify'),
+    )!
+    expect(select).toBeTruthy()
+    const justifyOption = [...select.options].find((o) => o.value === 'justify')!
+    // label text follows the UI locale; only presence and value are invariant
+    expect(justifyOption.textContent).toBeTruthy()
+    // a justified element reports justify, not a fallback to left
+    expect(select.value).toBe('justify')
+    ;(computed as { textAlign: string }).textAlign = 'left'
+  })
+})

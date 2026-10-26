@@ -100,6 +100,7 @@ export const fr = {
   alignLeft: 'Aligner à gauche',
   alignCenter: 'Centrer',
   alignRight: 'Aligner à droite',
+  alignJustify: 'Justifier',
   fontSizeDec: 'Réduire la taille de police',
   fontSizeInc: 'Augmenter la taille de police',
   typography: 'Typographie',

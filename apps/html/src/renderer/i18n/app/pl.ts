@@ -97,6 +97,7 @@ export const pl = {
   alignLeft: 'Wyrównaj do lewej',
   alignCenter: 'Wyśrodkuj',
   alignRight: 'Wyrównaj do prawej',
+  alignJustify: 'Wyjustuj',
   fontSizeDec: 'Zmniejsz rozmiar czcionki',
   fontSizeInc: 'Zwiększ rozmiar czcionki',
   typography: 'Typografia',

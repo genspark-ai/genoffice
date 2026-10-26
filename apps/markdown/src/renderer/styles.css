@@ -389,6 +389,58 @@ html[data-doc-theme='light'] .doc-page {
   color: var(--text-muted);
 }
 
+/* GFM footnotes. The reference shows the label as written and jumps to its
+ * definition; the definition keeps its label in a fixed slot beside the body
+ * column. A separator opens the first definition of a run, echoing GitHub's
+ * footnotes section. */
+.doc-editor sup.md-footnote-ref {
+  color: var(--md-link);
+  cursor: pointer;
+  font-size: 0.78em;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.doc-editor sup.md-footnote-ref.ProseMirror-selectednode {
+  background: var(--md-selection);
+  border-radius: 3px;
+}
+
+.doc-editor .md-footnote-def {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 6px;
+  font-size: 0.92em;
+  color: var(--text-secondary);
+}
+
+.doc-editor > *:not(.md-footnote-def) + .md-footnote-def {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.doc-editor .md-footnote-def-label {
+  cursor: pointer;
+  user-select: none;
+  white-space: pre;
+}
+
+.doc-editor .md-footnote-def-label:hover {
+  color: var(--md-link);
+  text-decoration: underline;
+}
+
+.doc-editor .md-footnote-def-body > p {
+  margin: 0.15em 0;
+}
+
+.doc-editor .md-footnote-flash {
+  background: var(--md-selection);
+  border-radius: 3px;
+  transition: background 0.6s ease;
+}
+
 /* Obsidian-style ![[embeds]]. The literal renders as a card: a resolved one
  * shows its source, an unresolved one stays dashed so the typo is visible.
  * A resolved picture swaps the literal for the picture itself (the widget the

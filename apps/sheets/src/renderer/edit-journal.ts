@@ -150,6 +150,22 @@ export interface CellImageAdd {
   readonly dataUrl: string
 }
 
+/// A picture the reader put into a note this session: the bytes stay as a
+/// data URL so the in-session view can show them, and the save splits off the
+/// base64 payload. `picture: null` takes a picture away.
+export interface NotePictureAdd {
+  readonly sheetId: string
+  readonly row: number
+  readonly column: number
+  readonly picture: {
+    readonly mediaType: 'image/png' | 'image/jpeg' | 'image/gif'
+    readonly dataUrl: string
+    readonly widthPx: number
+    readonly heightPx: number
+    readonly name: string
+  } | null
+}
+
 export interface EditJournal {
   readonly cells: Map<string, Map<string, JournalEntry>>
   /// Constant range fills stay declarative so whole-column AI operations do
@@ -215,6 +231,10 @@ export interface EditJournal {
   /// Sheets whose notes changed; the save snapshots the live note set (same
   /// recipe as filters).
   readonly noteDirty: Set<string>
+  /// Pictures put into notes this session, keyed by cell. The save sends them
+  /// with the note they belong to; a picture the note was already carrying
+  /// needs no entry, because the saver keeps it.
+  readonly notePictures: NotePictureAdd[]
   /// pivotCacheDefinition part paths whose pivots were recomputed this
   /// session; the save flags them refreshOnLoad so Excel rebuilds its cache.
   readonly pivotCacheRefresh: Set<string>
@@ -321,6 +341,7 @@ export function createEditJournal(): EditJournal {
     hyperlinks: new Map(),
     pageSetup: new Map(),
     noteDirty: new Set(),
+    notePictures: [],
     pivotCacheRefresh: new Set(),
     pivotRefreshUpdates: new Map(),
   }
@@ -855,6 +876,43 @@ export function cellImageAddAt(
   return journal.cellImageAdds.find(
     (entry) => entry.sheetId === sheetId && entry.row === row && entry.column === column,
   )
+}
+
+/// Records a picture put into a note; a second picture on the same note
+/// replaces the earlier one (a note carries one picture).
+export function recordNotePicture(journal: EditJournal, entry: NotePictureAdd): void {
+  removeNotePicture(journal, entry.sheetId, entry.row, entry.column)
+  journal.notePictures.push(entry)
+}
+
+export function removeNotePicture(
+  journal: EditJournal,
+  sheetId: string,
+  row: number,
+  column: number,
+): void {
+  const at = journal.notePictures.findIndex(
+    (entry) => entry.sheetId === sheetId && entry.row === row && entry.column === column,
+  )
+  if (at >= 0) journal.notePictures.splice(at, 1)
+}
+
+/**
+ * The pictures one sheet's notes carry this session, keyed by "row:column".
+ *
+ * A `null` value is a picture taken away: the note keeps its text and loses
+ * its picture. A note with no entry says nothing about its picture, and the
+ * saver keeps the one the note was already carrying.
+ */
+export function notePicturesFor(
+  journal: EditJournal,
+  sheetId: string,
+): Map<string, NotePictureAdd['picture']> {
+  const pictures = new Map<string, NotePictureAdd['picture']>()
+  for (const entry of journal.notePictures) {
+    if (entry.sheetId === sheetId) pictures.set(`${entry.row}:${entry.column}`, entry.picture)
+  }
+  return pictures
 }
 
 /// Arrange-tab properties shared by file-visual edits and session visuals.
@@ -2535,6 +2593,9 @@ export function journalSize(journal: EditJournal): number {
   }
   for (const sheetId of journal.noteDirty) {
     if (!isSheetRemoved(journal, sheetId)) total += 1
+  }
+  for (const picture of journal.notePictures) {
+    if (!isSheetRemoved(journal, picture.sheetId)) total += 1
   }
   total += journal.pivotCacheRefresh.size
   for (const [sheetId, links] of journal.hyperlinks) {

@@ -227,6 +227,8 @@ export const hi = {
   appMasterFillNone: 'कोई भरण नहीं',
   appMasterStroke: 'रूपरेखा रंग…',
   appMasterStrokeNone: 'कोई रूपरेखा नहीं',
+  appMasterInsertTextBox: 'पाठ बॉक्स',
+  appMasterInsertShape: 'आकृतियाँ',
   appStartOpening: 'खोला जा रहा है…',
   appReadingSlideTitle:
     'अगली स्लाइड पर जाने के लिए क्लिक करें (पठन दृश्य से बाहर निकलने के लिए Esc)',

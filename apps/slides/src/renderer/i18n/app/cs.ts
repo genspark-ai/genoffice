@@ -221,6 +221,8 @@ export const cs = {
   appMasterFillNone: 'Bez výplně',
   appMasterStroke: 'Barva obrysu…',
   appMasterStrokeNone: 'Bez obrysu',
+  appMasterInsertTextBox: 'Textové pole',
+  appMasterInsertShape: 'Obrazce',
   appStartOpening: 'Otevírá se…',
   appReadingSlideTitle:
     'Kliknutím přejdete na další snímek (zobrazení pro čtení ukončíte klávesou Esc)',

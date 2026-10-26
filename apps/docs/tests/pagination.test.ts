@@ -2038,6 +2038,29 @@ describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
     expect(out2.rowFills).toEqual([{ blockTop: 0, row: 1, targetPx: 430 }])
   })
 
+  it('a vMerge group crossing the page turns between its rows and charges them (genoffice#2114)', () => {
+    // page 200px: header 20, the group's head row 30, then three 30px
+    // vMerge-continue rows carrying their own measured heights (the live DOM
+    // measures every tr; only the parity model folds them into the head). The
+    // pages must end on real row tops — charging nothing for the continuations
+    // let the page boundary drift past the row after the group, and the gap
+    // builder, finding no matching row top, anchored a full-height band inside
+    // a cell of the merged row.
+    const rows: TableRowBox[] = [
+      { height: 20, isHeader: true },
+      { height: 30 },
+      { height: 30, vMergeContinue: true },
+      { height: 30, vMergeContinue: true },
+      { height: 30, vMergeContinue: true },
+      { height: 100 },
+    ]
+    const b = makeTableBlock(0, rows)
+    const slices = computeSectionedSlicesF2([b], [{ contentHeight: 200, forceBreak: false }], 240)
+    expect(slices.length).toBe(2)
+    // page 1 ends on the group's last row: 20 + 30 + 3x30 = 140
+    expect(slices[0].end).toBe(140)
+  })
+
   it('split row without a declared height reports no fill', () => {
     const rows: TableRowBox[] = [{ height: 80 }, { height: 160, cutYs: [80], contentBottom: 160 }]
     const b = makeTableBlock(0, rows)

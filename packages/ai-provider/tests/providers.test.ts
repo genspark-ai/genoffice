@@ -99,6 +99,13 @@ describe('provider model catalog', () => {
       expect(model).not.toContain('/')
     }
   })
+
+  it('seeds Kimi with the K3.1 flagship ahead of the still-sold K3', () => {
+    const kimi = AI_PROVIDERS.find((provider) => provider.id === 'kimi')!
+    expect(kimi.models).toEqual(['kimi-k3.1-pro', 'kimi-k3'])
+    expect(kimi.defaultModel).toBe('kimi-k3.1-pro')
+    expect(kimi.needsBaseUrl).toBeUndefined()
+  })
 })
 
 describe('resolveAiSettings', () => {

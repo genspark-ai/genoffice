@@ -218,6 +218,8 @@ export const ar = {
   appMasterFillNone: 'بلا تعبئة',
   appMasterStroke: 'لون الحد…',
   appMasterStrokeNone: 'بلا حد',
+  appMasterInsertTextBox: 'مربع نص',
+  appMasterInsertShape: 'أشكال',
   appStartOpening: 'جارٍ الفتح…',
   appReadingSlideTitle: 'انقر للانتقال إلى الشريحة التالية (اضغط على Esc للخروج من عرض القراءة)',
   appReadingPrev: '‹ السابق',

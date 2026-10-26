@@ -4,7 +4,7 @@ import { pdfToView, viewToPdf } from './annotations'
 import type { PageGeom } from './annotations'
 import type { DrawingInput } from '../shared/ipc'
 
-export type DrawTool = 'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'note' | 'redact'
+export type DrawTool = 'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'note' | 'redact' | 'link'
 
 /** Displayed-pixel box (scaled) */
 interface Box {
@@ -60,6 +60,25 @@ function drawingShape(
   hit = false,
 ): ReactElement | null {
   if (d.kind === 'note') return null
+  if (d.kind === 'link') {
+    // Pending link boxes preview as dashed rects; saved links render in LinkLayer
+    const [ax, ay] = toView(geom, scale, d.rect[0], d.rect[1])
+    const [bx, by] = toView(geom, scale, d.rect[2], d.rect[3])
+    const stroke = hit ? 'transparent' : '#3b82f6'
+    const w = hit ? Math.max(16, 2 * scale * 4) : Math.max(1, 1.5 * scale)
+    return (
+      <rect
+        x={Math.min(ax, bx)}
+        y={Math.min(ay, by)}
+        width={Math.abs(bx - ax)}
+        height={Math.abs(by - ay)}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={w}
+        strokeDasharray={`${4 * scale} ${3 * scale}`}
+      />
+    )
+  }
   if (d.kind === 'image') {
     if (hit) return null // the image body is already a full-area hit target
     const [ax, ay] = toView(geom, scale, d.rect[0], d.rect[1])
@@ -252,6 +271,13 @@ export function DrawLayer({
         width: strokeWidth,
         rect: [Math.min(sx, at[0]), Math.min(sy, at[1]), Math.max(sx, at[0]), Math.max(sy, at[1])],
       })
+    } else if (tool === 'link') {
+      const [sx, sy] = startRef.current
+      setLive({
+        kind: 'link',
+        pageIndex: 0,
+        rect: [Math.min(sx, at[0]), Math.min(sy, at[1]), Math.max(sx, at[0]), Math.max(sy, at[1])],
+      })
     } else if (tool === 'line' || tool === 'arrow') {
       setLive({
         kind: tool,
@@ -272,7 +298,7 @@ export function DrawLayer({
     if (!pending) return
     // Discard empty shapes from a click-and-release
     if (pending.kind === 'ink' && (pending.paths[0]?.length ?? 0) < 6) return
-    if (pending.kind === 'rect' || pending.kind === 'ellipse') {
+    if (pending.kind === 'rect' || pending.kind === 'ellipse' || pending.kind === 'link') {
       const [x1, y1, x2, y2] = pending.rect
       if (x2 - x1 < 3 && y2 - y1 < 3) return
     }

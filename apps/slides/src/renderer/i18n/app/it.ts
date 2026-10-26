@@ -232,6 +232,8 @@ export const it = {
   appMasterFillNone: 'Nessun riempimento',
   appMasterStroke: 'Colore contorno…',
   appMasterStrokeNone: 'Nessun contorno',
+  appMasterInsertTextBox: 'Casella di Testo',
+  appMasterInsertShape: 'Forme',
   appStartOpening: 'Apertura…',
   appReadingSlideTitle:
     'Fai clic per passare alla diapositiva successiva (Esc per uscire dalla visualizzazione di lettura)',

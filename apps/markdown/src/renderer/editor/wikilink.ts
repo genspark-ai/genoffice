@@ -144,8 +144,12 @@ export interface WikiLinkOptions {
   getDocumentPath(): string
   /** a link whose target was found was activated */
   onOpen(path: string, fragment: string): void
-  /** a link whose target was not found was activated, with the target as written */
-  onUnresolved(target: string): void
+  /**
+   * a link whose target was not found was activated, with the target as
+   * written — the literal (brackets included) for a link, the inner text for
+   * an embed, which is flagged so a caller can decline to create from it
+   */
+  onUnresolved(target: string, embed: boolean): void
   /** seam for tests; defaults to the real IPC */
   resolve(fromPath: string, targets: string[]): Promise<Record<string, WikiLinkResolved>>
 }
@@ -331,7 +335,7 @@ export const WikiLinkResolve = Extension.create<WikiLinkOptions>({
             const raw = el.getAttribute('data-wiki-target') ?? ''
             const answer = (key.getState(view.state) ?? EMPTY).answers[raw]
             if (answer?.found) options.onOpen(answer.path, answer.fragment)
-            else options.onUnresolved(raw)
+            else options.onUnresolved(raw, embed)
             return true
           },
         },

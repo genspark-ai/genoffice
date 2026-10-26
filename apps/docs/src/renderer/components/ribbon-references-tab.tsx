@@ -152,6 +152,14 @@ const CAPTION_LABEL_KEYS = [
   'ribbonCaptionEquation',
 ] as const
 
+/** Caption labels are i18n strings interpolated into the SEQ matcher below.
+ * A label containing `(`, `+`, `.` or `$` (locale-dependent) would either
+ * throw from `new RegExp` - crashing the dialog, whose placeholder calls
+ * `nextNumber` on every render - or silently miscount fields. Escape the
+ * metacharacters (same set as the find bar's escapeRe) so labels count
+ * literally. */
+export const escapeReLiteral = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 /** Caption dialog: label + optional description, numbered by existing SEQ fields */
 function CaptionModal({
   editor,
@@ -169,7 +177,7 @@ function CaptionModal({
 
   const nextNumber = (lbl: string): number => {
     let count = 0
-    const re = new RegExp(`SEQ\\s+${lbl}[\\s\\\\]`)
+    const re = new RegExp(`SEQ\\s+${escapeReLiteral(lbl)}[\\s\\\\]`)
     editor.state.doc.forEach((node) => {
       if (node.type.name !== 'docProtected') return
       if (re.test(xmlOfNode(node as never, blocks))) count += 1

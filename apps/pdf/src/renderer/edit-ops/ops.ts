@@ -144,12 +144,20 @@ register({
   validate(op, ctx) {
     const d = obj<DrawingInput>(op.drawing, 'drawing')
     pageIndex(d.pageIndex, ctx, 'drawing.pageIndex')
-    if (!['ink', 'rect', 'ellipse', 'line', 'arrow', 'image', 'note'].includes(d.kind))
+    if (!['ink', 'rect', 'ellipse', 'line', 'arrow', 'image', 'note', 'link'].includes(d.kind))
       throw new GuidedError(
-        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note',
+        'drawing.kind must be ink | rect | ellipse | line | arrow | image | note | link',
       )
     if (d.kind === 'note' && typeof d.contents !== 'string')
       throw new GuidedError('a note drawing needs string contents')
+    if (d.kind === 'link') {
+      const hasUrl = typeof d.url === 'string' && d.url.length > 0
+      const page = d.destPage
+      if (hasUrl === (page !== undefined))
+        throw new GuidedError('a link drawing needs exactly one of url or destPage')
+      if (page !== undefined && (typeof page !== 'number' || !Number.isInteger(page) || page < 1))
+        throw new GuidedError('a link drawing destPage is a 1-based page number')
+    }
   },
   apply(op, s) {
     const drawing = op.drawing as DrawingInput

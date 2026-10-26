@@ -99,6 +99,7 @@ export const ja = {
   alignLeft: '左揃え',
   alignCenter: '中央揃え',
   alignRight: '右揃え',
+  alignJustify: '両端揃え',
   fontSizeDec: 'フォントサイズを縮小',
   fontSizeInc: 'フォントサイズを拡大',
   typography: 'タイポグラフィ',

@@ -12,7 +12,7 @@ single-thread = []
 
 [dependencies]
 base64 = "0.22.1"
-calamine = "0.36.0"
+calamine = "0.37.0"
 ironcalc = "0.7.1"
 quick-xml = { version = "0.38", features = ["encoding"] }
 roxmltree = "0.21.1"

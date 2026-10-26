@@ -42,6 +42,13 @@ describe('decision model routes', () => {
     expect(bodyModel(opts({ endpoint: 'perplexity-flash' }))).toBe('pplx-decider-flash-v1.2')
     expect(bodyModel(opts({ endpoint: 'liquid' }))).toBe('d1')
     expect(bodyModel(opts({ endpoint: 'liquid-ultra' }))).toBe('d1-ultra')
+    expect(bodyModel(opts({ endpoint: 'openai' }))).toBe('gpt-6-luna')
+  })
+
+  it('sends OpenAI its GA decisions endpoint', () => {
+    // /v1/decisions speaks OpenAI's own sibling protocol, not /v1/systemone —
+    // prepare and validate translate; only the URL and model are pinned here.
+    expect(endpointUrl(opts({ endpoint: 'openai' }))).toBe('https://api.openai.com/v1/decisions')
   })
 
   it('shares one URL between a vendor s sizes', () => {

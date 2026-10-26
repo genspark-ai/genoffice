@@ -195,6 +195,10 @@ const AGG_SUBTOTALS: Record<PivotAggregation, string | null> = {
   min: 'min',
   product: 'product',
   countNums: 'countNums',
+  stdDev: 'stdDev',
+  stdDevp: 'stdDevp',
+  var: 'var',
+  varp: 'varp',
 }
 
 /// Page fields with a member list are index fields like row/column levels.

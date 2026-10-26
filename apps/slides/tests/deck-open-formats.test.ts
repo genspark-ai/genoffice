@@ -60,7 +60,7 @@ describe('the ODF import route in the Slides main module', () => {
     // deck when the process dies mid-write
     expect(source).toContain('await atomicWriteFile(r.filePath, Buffer.from(result.pptx))')
     expect(source).toContain(
-      "import { atomicWriteFile } from '@genoffice/electron-utils/atomic-write'",
+      "import { atomicWriteFile, atomicWriteVia } from '@genoffice/electron-utils/atomic-write'",
     )
   })
 })

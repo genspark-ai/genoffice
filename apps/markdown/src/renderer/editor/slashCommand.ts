@@ -7,6 +7,7 @@ import { t } from '../i18n/locale'
 import { openMathCreate } from './mathEdit'
 import { MERMAID_TEMPLATE } from './mermaid'
 import { WAVEDROM_TEMPLATE } from './wavedrom'
+import { insertFootnote } from './footnote'
 import { uiOp, type MdOp } from './ops'
 
 export interface SlashItem {
@@ -131,6 +132,15 @@ export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem
       labelKey: 'insertWaveform',
       keywords: ['wavedrom', 'timing', 'waveform', 'signal', 'clock'],
       run: slashOp({ op: 'insertContent', after: 'selection', markdown: WAVEDROM_TEMPLATE }),
+    },
+    {
+      id: 'footnote',
+      labelKey: 'insertFootnote',
+      keywords: ['footnote', 'endnote', 'reference', 'citation'],
+      run: (e, r) => {
+        clear(e, r)
+        insertFootnote(e)
+      },
     },
   ]
   if (extra?.insertImage) {

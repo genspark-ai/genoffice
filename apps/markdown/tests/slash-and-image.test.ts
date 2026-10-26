@@ -209,6 +209,12 @@ describe('unresolveImageSrc', () => {
     expect(unresolveImageSrc(url, '/n')).toBe('assets/图 1.png')
   })
 
+  it('falls back to the raw path when the URL has a stray percent sign', () => {
+    // decodeURIComponent throws on a lone `%`; parseHTML feeds every md-asset
+    // src through unresolveImageSrc, so the throw would break paste/load.
+    expect(unresolveImageSrc('md-asset:///tmp/100%.png', '/docs')).toBe('/tmp/100%.png')
+  })
+
   it('keeps an absolute path when it lives outside the base dir', () => {
     expect(unresolveImageSrc('md-asset:///tmp/pic.png', '/docs')).toBe('/tmp/pic.png')
   })

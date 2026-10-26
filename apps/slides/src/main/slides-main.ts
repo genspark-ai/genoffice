@@ -92,6 +92,7 @@ import {
   getRunLinks,
   readHeaderFooter,
   createBlankPptx,
+  setSlideSize,
   copySlide,
   type SlideBundle,
   listSlideLayouts,
@@ -145,7 +146,7 @@ import {
 } from '@genoffice/pptx-render'
 // From its own electron-utils subpath rather than the package barrel: the
 // barrel drags Electron-only modules into headless bundles.
-import { atomicWriteFile } from '@genoffice/electron-utils/atomic-write'
+import { atomicWriteFile, atomicWriteVia } from '@genoffice/electron-utils/atomic-write'
 import { DEFAULT_PICTURE_DPI, pictureFrame } from './picture-frame'
 import { refineComplexWidths, shapedMetricsReady } from './shaped-metrics'
 import { cfbKind, isCfbHeader } from './cfb-sniff'
@@ -211,6 +212,7 @@ import type {
   MasterEditFillOp,
   MasterEditStrokeOp,
   MasterDeleteElementOp,
+  MasterAddElementOp,
   MasterEnterResult,
   PrintSlidesOp,
   EditPictureOpacityOp,
@@ -482,6 +484,16 @@ function syncAttachedPaths(session: Session, path: string): void {
 }
 
 /**
+ * savePptxToFile streams into whatever path it is given and truncates it
+ * first, so the deck goes out through a sibling temp that is renamed over
+ * `filePath` only once the stream has finished: a save that dies mid-way —
+ * the app killed, power lost — leaves the previous deck on disk, not a
+ * cut-off one. The password path already gets this from atomicWriteFile.
+ */
+const writeDeckFile = (opened: OpenedPptx, filePath: string) =>
+  atomicWriteVia(filePath, (tmp) => savePptxToFile(opened, tmp))
+
+/**
  * MCP save: write a visible session's deck to an explicit path with no dialogs
  * — the slides:save-as pipeline minus the dialog. Overwrite policy is the
  * caller's (the MCP tool layer guards clobbering); this commits the save side
@@ -492,7 +504,7 @@ export async function saveSessionDeckTo(session: Session, filePath: string): Pro
   // yet (the dialog-driven paths always land in an existing folder)
   await mkdir(dirname(filePath), { recursive: true })
   const metaRevAtSave = session.metaRev ?? 0
-  await savePptxToFile(session.opened, filePath)
+  await writeDeckFile(session.opened, filePath)
   session.path = filePath
   autosaveBackoff.delete(filePath)
   // mirror slides:save-as: a saved deck is no longer an unsaved untitled draft
@@ -631,7 +643,7 @@ setInterval(() => {
       }
       try {
         await mkdir(dirname(target), { recursive: true })
-        await savePptxToFile(session.opened, target)
+        await writeDeckFile(session.opened, target)
         autosaveBackoff.delete(backoffKey)
       } catch (error) {
         autosaveBackoff.set(backoffKey, AUTOSAVE_BACKOFF_TICKS)
@@ -2136,17 +2148,25 @@ export function registerSlidesIpc(): void {
     },
   )
 
-  ipcMain.handle('slides:new-blank', async (e, fitWidthPx: number): Promise<OpenResult> => {
-    const opened = await openPptx(await createBlankPptx())
-    sessions.set(e.sender.id, { path: '', opened, fitWidthPx, undoStack: [], redoStack: [] })
-    scheduleHistoryNotify(sessions.get(e.sender.id)!)
-    return {
-      path: '',
-      slides: buildAllRenderSlides(opened, fitWidthPx),
-      size: { cx: opened.deck.size.cx, cy: opened.deck.size.cy },
-      defaultFont: deckDefaultFont(opened),
-    }
-  })
+  ipcMain.handle(
+    'slides:new-blank',
+    async (e, fitWidthPx: number, size?: unknown): Promise<OpenResult> => {
+      const opened = await openPptx(await createBlankPptx())
+      // the renderer's saved default size; anything a .pptx cannot store keeps the template
+      const side = (v: unknown): v is number =>
+        typeof v === 'number' && Number.isInteger(v) && v >= 914400 && v <= 51206400
+      const s = size as { cx?: unknown; cy?: unknown } | undefined
+      if (s && side(s.cx) && side(s.cy)) setSlideSize(opened, s.cx, s.cy)
+      sessions.set(e.sender.id, { path: '', opened, fitWidthPx, undoStack: [], redoStack: [] })
+      scheduleHistoryNotify(sessions.get(e.sender.id)!)
+      return {
+        path: '',
+        slides: buildAllRenderSlides(opened, fitWidthPx),
+        size: { cx: opened.deck.size.cx, cy: opened.deck.size.cy },
+        defaultFont: deckDefaultFont(opened),
+      }
+    },
+  )
 
   ipcMain.handle('slides:add-element', (e, op: AddElementOp) => {
     const session = sessions.get(e.sender.id)
@@ -2940,6 +2960,39 @@ export function registerSlidesIpc(): void {
     })
     if (!r) return null
     return masterEditDone(session)
+  })
+
+  // Insert a text box / preset shape / line onto the current master or layout
+  // part. Pixel geometry converts like slides:add-element; the op is the same
+  // part-addressed addElement the slide path runs, so undo/journal/save all
+  // behave like the other master edits.
+  ipcMain.handle('slides:master-add-element', (e, op: MasterAddElementOp) => {
+    const session = sessions.get(e.sender.id)
+    const me = session?.masterEdit
+    if (!session || !me) return null
+    const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96
+    const scale = op.fitWidthPx / baseWidthPx
+    const toEmu = (px: number) => Math.round((px / scale) * EMU_PER_PX_96)
+    const r = masterTxn(session, me, {
+      op: 'addElement',
+      target: { part: me.partPath },
+      kind: op.kind,
+      offset: { x: toEmu(op.xPx), y: toEmu(op.yPx), cx: toEmu(op.wPx), cy: toEmu(op.hPx) },
+      ...(op.paragraphs?.length ? { paragraphs: op.paragraphs as Paragraph[] } : {}),
+      ...(op.fillColor ? { fill: op.fillColor } : {}),
+      ...(op.stroke
+        ? {
+            stroke: {
+              color: op.stroke.color,
+              widthEmu: Math.round(op.stroke.widthPt * EMU_PER_PT),
+            },
+          }
+        : {}),
+      ...(op.bodyPr ? { bodyPr: op.bodyPr } : {}),
+    })
+    const sourceId = r?.records?.[0]?.created?.[0]
+    if (!r || !sourceId) return null
+    return { slide: masterEditDone(session), sourceId }
   })
 
   ipcMain.handle('slides:edit-picture-opacity', (e, op: EditPictureOpacityOp) => {
@@ -4532,7 +4585,7 @@ export function registerSlidesIpc(): void {
     }
     try {
       const metaRevAtSave = session.metaRev ?? 0
-      await savePptxToFile(session.opened, session.path)
+      await writeDeckFile(session.opened, session.path)
       autosaveBackoff.delete(session.path)
       void rm(autosavePathFor(session.path), { force: true }).catch(() => {})
       dropUntitledRecovery(e.sender.id)
@@ -4564,7 +4617,7 @@ export function registerSlidesIpc(): void {
     if (r.canceled || !r.filePath) return { ok: false }
     try {
       const metaRevAtSave = session.metaRev ?? 0
-      await savePptxToFile(session.opened, r.filePath)
+      await writeDeckFile(session.opened, r.filePath)
       session.path = r.filePath
       autosaveBackoff.delete(r.filePath)
       dropUntitledRecovery(e.sender.id)

@@ -98,6 +98,7 @@ export const id = {
   alignLeft: 'Rata kiri',
   alignCenter: 'Rata tengah',
   alignRight: 'Rata kanan',
+  alignJustify: 'Rata kanan-kiri',
   fontSizeDec: 'Perkecil ukuran font',
   fontSizeInc: 'Perbesar ukuran font',
   typography: 'Tipografi',

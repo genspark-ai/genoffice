@@ -126,6 +126,13 @@ import { RibbonInsertTab } from './RibbonInsertTab'
 import { ShapeGalleryContent } from './ShapeGalleryPopover'
 import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
 import { MODEL3D_VIEWS } from '../model3d/views'
+import {
+  defaultNewSlideSize,
+  isPortrait,
+  matchSlideSizePreset,
+  presetSize,
+  saveDefaultNewSlideSize,
+} from '../slide-size'
 import { NO_ROTATION } from '@genoffice/pptx-engine/model3d'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
@@ -1164,7 +1171,8 @@ export function Ribbon({
   onSetLayout,
   onResetLayout,
   onSlideSize,
-  slideSizeKey,
+  getSlideSize,
+  onCustomSlideSize,
   onParagraphFormat,
   onInsertTable,
   transition,
@@ -1273,6 +1281,7 @@ export function Ribbon({
   const [paraOpen, setParaOpen] = useState(false)
   const [layoutPickOpen, setLayoutPickOpen] = useState(false)
   const [slideSizeOpen, setSlideSizeOpen] = useState(false)
+  const [deckSize, setDeckSize] = useState<{ cx: number; cy: number } | null>(null)
   const [transparencyOpen, setTransparencyOpen] = useState(false)
   const [pictureBorderOpen, setPictureBorderOpen] = useState(false)
   const [changeShapeOpen, setChangeShapeOpen] = useState(false)
@@ -2127,7 +2136,10 @@ export function Ribbon({
                     e.stopPropagation()
                     closeSiblingPanels(e, closePanels, 'slideSize')
                   }}
-                  onClick={() => setSlideSizeOpen((v) => !v)}
+                  onClick={() => {
+                    if (!slideSizeOpen) void getSlideSize().then(setDeckSize)
+                    setSlideSizeOpen((v) => !v)
+                  }}
                   data-tip={t('ribbonSlideSizeTip')}
                 >
                   <span className="rb-big-icon">
@@ -2140,21 +2152,72 @@ export function Ribbon({
                   <div className="rb-drop rb-menu" onMouseDown={(e) => e.stopPropagation()}>
                     {(
                       [
-                        ['16:9', t('ribbonSlideSize169'), 12192000, 6858000],
-                        ['4:3', t('ribbonSlideSize43'), 9144000, 6858000],
+                        ['16:9', t('ribbonSlideSize169')],
+                        ['4:3', t('ribbonSlideSize43')],
+                        ['A4', t('ribbonSlideSizeA4')],
+                        ['A3', t('ribbonSlideSizeA3')],
                       ] as const
-                    ).map(([key, label, cx, cy]) => (
+                    ).map(([key, label]) => (
                       <button
                         key={key}
-                        className={slideSizeKey === key ? 'on' : ''}
+                        className={
+                          deckSize && matchSlideSizePreset(deckSize) === key ? 'active' : ''
+                        }
                         onClick={() => {
                           setSlideSizeOpen(false)
+                          // a preset keeps the deck's orientation
+                          const { cx, cy } = presetSize(key, !!deckSize && isPortrait(deckSize))
                           onSlideSize(cx, cy)
                         }}
                       >
                         {label}
                       </button>
                     ))}
+                    <div className="rb-menu-sep" />
+                    {(
+                      [
+                        [false, t('ribbonSlideSizeLandscape')],
+                        [true, t('ribbonSlideSizePortrait')],
+                      ] as const
+                    ).map(([portrait, label]) => (
+                      <button
+                        key={label}
+                        className={deckSize && isPortrait(deckSize) === portrait ? 'active' : ''}
+                        disabled={!deckSize}
+                        onClick={() => {
+                          setSlideSizeOpen(false)
+                          if (deckSize && isPortrait(deckSize) !== portrait)
+                            onSlideSize(deckSize.cy, deckSize.cx)
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <div className="rb-menu-sep" />
+                    <button
+                      onClick={() => {
+                        setSlideSizeOpen(false)
+                        onCustomSlideSize()
+                      }}
+                    >
+                      {t('ribbonSlideSizeCustom')}
+                    </button>
+                    <button
+                      className={
+                        deckSize &&
+                        defaultNewSlideSize()?.cx === deckSize.cx &&
+                        defaultNewSlideSize()?.cy === deckSize.cy
+                          ? 'active'
+                          : ''
+                      }
+                      disabled={!deckSize}
+                      onClick={() => {
+                        setSlideSizeOpen(false)
+                        if (deckSize) saveDefaultNewSlideSize(deckSize)
+                      }}
+                    >
+                      {t('ribbonSlideSizeUseForNew')}
+                    </button>
                   </div>
                 )}
               </div>

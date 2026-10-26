@@ -176,3 +176,97 @@ describe('searchInIndex', () => {
     expect(searchInIndex(index, 'İ')).toHaveLength(1)
   })
 })
+
+describe('searchInIndex — matchCase', () => {
+  const entry = (text: string): SearchIndex[number] => ({
+    text,
+    lower: foldCase(text),
+    items: [{ start: 0, end: text.length, x: 0, y: 0, w: text.length * 10, h: 10 }],
+  })
+
+  it('off by default: matches ignore case', () => {
+    const index = [entry('Hello World')]
+    expect(searchInIndex(index, 'hElLo WoRlD')).toHaveLength(1)
+  })
+
+  it('on: only exact-case hits are returned', () => {
+    const index = [entry('Hello hello HELLO')]
+    expect(searchInIndex(index, 'Hello', { matchCase: true })).toHaveLength(1)
+    expect(searchInIndex(index, 'hello', { matchCase: true })).toHaveLength(1)
+    expect(searchInIndex(index, 'HELLO', { matchCase: true })).toHaveLength(1)
+  })
+
+  it('on: the precomputed fold is bypassed (original text is searched)', () => {
+    const index = [entry('İstanbul istanbul')]
+    // 'İ'.toLowerCase() grows a dot; the fold keeps it length-stable, so the
+    // case-sensitive scan over the original text finds plain 'istanbul' only
+    expect(searchInIndex(index, 'istanbul', { matchCase: true })).toHaveLength(1)
+    expect(searchInIndex(index, 'İstanbul', { matchCase: true })).toHaveLength(1)
+  })
+
+  it('combines with wholeWord', () => {
+    const index = [entry('Word word Word')]
+    expect(searchInIndex(index, 'word', { matchCase: true, wholeWord: true })).toHaveLength(1)
+    expect(searchInIndex(index, 'Word', { matchCase: true, wholeWord: true })).toHaveLength(2)
+  })
+})
+
+describe('searchInIndex — wholeWord', () => {
+  const entry = (text: string): SearchIndex[number] => ({
+    text,
+    lower: foldCase(text),
+    items: [{ start: 0, end: text.length, x: 0, y: 0, w: text.length * 10, h: 10 }],
+  })
+
+  it('off by default: substrings inside longer words match', () => {
+    const index = [entry('word words wordy')]
+    expect(searchInIndex(index, 'word')).toHaveLength(3)
+  })
+
+  it('on: hits glued into a longer word are rejected', () => {
+    const index = [entry('word words wordy a word')]
+    expect(searchInIndex(index, 'word', { wholeWord: true })).toHaveLength(2)
+  })
+
+  it('on: punctuation and digits delimit words', () => {
+    const index = [entry('foo.bar foo-bar (foo) foo1')]
+    expect(searchInIndex(index, 'foo', { wholeWord: true })).toHaveLength(3)
+  })
+
+  it('on: an underscore still counts as a word character', () => {
+    const index = [entry('foo_bar foo')]
+    expect(searchInIndex(index, 'foo', { wholeWord: true })).toHaveLength(1)
+  })
+
+  it('degrades to plain matching for CJK sequences (CJK has no word boundaries)', () => {
+    const index = [entry('中文测试中文测试中文')]
+    expect(searchInIndex(index, '中文', { wholeWord: true })).toHaveLength(3)
+  })
+
+  it('treats a CJK neighbour as a delimiter on the Latin side', () => {
+    const index = [entry('中文word中文 word-word')]
+    // 'word' glued between CJK counts as whole, and both halves of the
+    // hyphen-delimited 'word-word' are whole words of their own
+    expect(searchInIndex(index, 'word', { wholeWord: true })).toHaveLength(3)
+  })
+
+  it('still rejects Latin runs glued into longer Latin words next to CJK', () => {
+    const index = [entry('中文wordy中文')]
+    expect(searchInIndex(index, 'word', { wholeWord: true })).toHaveLength(0)
+  })
+
+  it('works across item boundaries where the hit spans two items', () => {
+    const index = [
+      {
+        text: 'abc def',
+        lower: 'abc def',
+        items: [
+          { start: 0, end: 4, x: 0, y: 0, w: 40, h: 10 },
+          { start: 4, end: 7, x: 40, y: 0, w: 30, h: 10 },
+        ],
+      },
+    ]
+    expect(searchInIndex(index, 'def', { wholeWord: true })).toHaveLength(1)
+    expect(searchInIndex(index, 'c d', { wholeWord: true })).toHaveLength(0)
+  })
+})

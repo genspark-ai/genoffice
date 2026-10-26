@@ -98,6 +98,7 @@ export const en = {
   alignLeft: 'Align left',
   alignCenter: 'Center',
   alignRight: 'Align right',
+  alignJustify: 'Justify',
   fontSizeDec: 'Decrease font size',
   fontSizeInc: 'Increase font size',
   typography: 'Typography',

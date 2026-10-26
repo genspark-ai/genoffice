@@ -68,7 +68,10 @@ function decodePath(path: string): string {
  */
 export function unresolveImageSrc(src: string, baseDir: string | null = imageBaseDir): string {
   if (!src.startsWith('md-asset://')) return src
-  let path = decodeURIComponent(src.slice('md-asset://'.length))
+  // Reuse the guarded decoder: a lone `%` (e.g. in a file named `100%.png`)
+  // throws a URIError from decodeURIComponent, and parseHTML calls this for
+  // every md-asset img, so the throw would break paste/document load.
+  let path = decodePath(src.slice('md-asset://'.length))
   // Windows drive paths were prefixed with '/' to form a valid URL path
   if (/^\/[a-zA-Z]:\//.test(path)) path = path.slice(1)
   if (baseDir) {

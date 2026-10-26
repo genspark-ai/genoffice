@@ -82,6 +82,8 @@ function pkgOf(files: Map<string, string>) {
     },
     write: (path: string, content: string) => void files.set(path, content),
     add: (path: string, content: string) => void files.set(path, content),
+    addBinary: (path: string, bytes: Uint8Array) =>
+      void files.set(path, new TextDecoder().decode(bytes)),
     remove: (path: string) => void files.delete(path),
   }
 }

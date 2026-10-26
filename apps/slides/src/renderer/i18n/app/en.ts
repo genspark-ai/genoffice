@@ -219,6 +219,8 @@ export const en = {
   appMasterFillNone: 'No Fill',
   appMasterStroke: 'Outline Color…',
   appMasterStrokeNone: 'No Outline',
+  appMasterInsertTextBox: 'Text Box',
+  appMasterInsertShape: 'Shapes',
   appStartOpening: 'Opening…',
   appReadingSlideTitle: 'Click to go to the next slide (Esc to exit Reading View)',
   appReadingPrev: '‹ Previous',

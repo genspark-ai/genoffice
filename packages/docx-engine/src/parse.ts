@@ -2542,6 +2542,13 @@ function txbxContentParas(
     const level = ctx.numbering.get(ref.numId ?? '')?.levels[Math.max(0, ref.ilvl)]
     para.listMarker = {
       text: info.text,
+      // identity + kind ride along so an edit inside the sub-editor can keep,
+      // clear or re-point the paragraph's w:numPr on save
+      ...(ref.numId != null ? { numId: ref.numId } : {}),
+      ilvl: Math.max(0, ref.ilvl),
+      ...(level
+        ? { kind: level.numFmt === 'bullet' ? ('bullet' as const) : ('ordered' as const) }
+        : {}),
       ...(info.symbolFont ? { symbol: true } : {}),
       ...(info.picBulletSrc ? { picBulletSrc: info.picBulletSrc } : {}),
       ...(level?.indentLeft !== undefined ? { indentLeft: level.indentLeft } : {}),

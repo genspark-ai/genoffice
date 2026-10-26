@@ -61,9 +61,20 @@ export function decodeDataUrl(url: string): { bytes: Buffer; mime: string | null
   const payload = m[3] ?? ''
   if (payload.length > MAX_DATA_URL_PAYLOAD_CHARS) return null
   const isBase64 = (m[2] ?? '').split(';').some((param) => param.toLowerCase() === 'base64')
-  const bytes = isBase64
-    ? Buffer.from(payload, 'base64')
-    : Buffer.from(decodeURIComponent(payload), 'utf8')
+  // A stray `%` in a non-base64 payload (an unencoded SVG or text URL copied
+  // from the web, for example) makes decodeURIComponent throw a URIError.
+  // This function's contract is `null` for malformed URLs - the caller turns
+  // that into "malformed or oversized data URL" - so trap the throw here
+  // instead of leaking "URIError: URI malformed" through every caller.
+  let decodedPayload = payload
+  if (!isBase64) {
+    try {
+      decodedPayload = decodeURIComponent(payload)
+    } catch {
+      return null
+    }
+  }
+  const bytes = isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodedPayload, 'utf8')
   if (bytes.length > MAX_REMOTE_IMAGE_BYTES) return null
   return { bytes, mime }
 }

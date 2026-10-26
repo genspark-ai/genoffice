@@ -96,6 +96,7 @@ export const th = {
   alignLeft: 'จัดชิดซ้าย',
   alignCenter: 'จัดกึ่งกลาง',
   alignRight: 'จัดชิดขวา',
+  alignJustify: 'จัดเต็มแนว',
   fontSizeDec: 'ลดขนาดตัวอักษร',
   fontSizeInc: 'เพิ่มขนาดตัวอักษร',
   typography: 'ตัวอักษร',

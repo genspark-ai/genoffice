@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 
 export {
   IconAlignCenter,
+  IconAlignJustify,
   IconAlignLeft,
   IconAlignRight,
   IconBullets,

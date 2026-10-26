@@ -99,6 +99,7 @@ export const hi = {
   alignLeft: 'बाएँ संरेखित करें',
   alignCenter: 'केंद्र में',
   alignRight: 'दाएँ संरेखित करें',
+  alignJustify: 'जस्टिफ़ाई',
   fontSizeDec: 'फ़ॉन्ट आकार घटाएँ',
   fontSizeInc: 'फ़ॉन्ट आकार बढ़ाएँ',
   typography: 'टाइपोग्राफी',

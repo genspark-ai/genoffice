@@ -101,6 +101,7 @@ export const nl = {
   alignLeft: 'Links uitlijnen',
   alignCenter: 'Centreren',
   alignRight: 'Rechts uitlijnen',
+  alignJustify: 'Uitvullen',
   fontSizeDec: 'Tekengrootte verkleinen',
   fontSizeInc: 'Tekengrootte vergroten',
   typography: 'Typografie',

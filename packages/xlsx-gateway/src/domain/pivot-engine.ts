@@ -105,6 +105,24 @@ function aggregate(subtotal: string, values: readonly SourceCell[]): number | nu
         : numbers.reduce((min, value) => Math.min(min, value), Infinity)
     case 'product':
       return numbers.length === 0 ? null : numbers.reduce((t, v) => t * v, 1)
+    case 'var':
+    case 'stdDev': {
+      // STDEV/VAR are sample statistics (n-1); Excel yields #DIV/0! for n<2,
+      // which this engine expresses as a blank cell (null), like every other
+      // empty-bucket case. Keep the arithmetic in sync with pivot-layout's bake.
+      if (numbers.length < 2) return null
+      const mean = numbers.reduce((t, v) => t + v, 0) / numbers.length
+      const variance =
+        numbers.reduce((t, v) => t + (v - mean) * (v - mean), 0) / (numbers.length - 1)
+      return subtotal === 'var' ? variance : Math.sqrt(variance)
+    }
+    case 'varp':
+    case 'stdDevp': {
+      if (numbers.length === 0) return null
+      const mean = numbers.reduce((t, v) => t + v, 0) / numbers.length
+      const variance = numbers.reduce((t, v) => t + (v - mean) * (v - mean), 0) / numbers.length
+      return subtotal === 'varp' ? variance : Math.sqrt(variance)
+    }
     default:
       throw new PivotRefreshError(`Aggregation "${subtotal}" does not support recompute.`)
   }

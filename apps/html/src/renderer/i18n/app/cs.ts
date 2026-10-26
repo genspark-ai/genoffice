@@ -86,6 +86,7 @@ export const cs = {
   alignLeft: 'Zarovnat vlevo',
   alignCenter: 'Na střed',
   alignRight: 'Zarovnat vpravo',
+  alignJustify: 'Zarovnat do bloku',
   fontSizeDec: 'Zmenšit písmo',
   fontSizeInc: 'Zvětšit písmo',
   typography: 'Typografie',

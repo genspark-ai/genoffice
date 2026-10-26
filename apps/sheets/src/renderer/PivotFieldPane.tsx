@@ -57,10 +57,10 @@ const AGG_OPTIONS: readonly { value: string; labelKey: StringKey; supported: boo
   { value: 'min', labelKey: 'dlgPivotAggMin', supported: true },
   { value: 'product', labelKey: 'dlgPivotAggProduct', supported: true },
   { value: 'countNums', labelKey: 'dlgPivotAggCountNums', supported: true },
-  { value: 'stdDev', labelKey: 'dlgPivotAggStdDev', supported: false },
-  { value: 'stdDevp', labelKey: 'dlgPivotAggStdDevp', supported: false },
-  { value: 'var', labelKey: 'dlgPivotAggVar', supported: false },
-  { value: 'varp', labelKey: 'dlgPivotAggVarp', supported: false },
+  { value: 'stdDev', labelKey: 'dlgPivotAggStdDev', supported: true },
+  { value: 'stdDevp', labelKey: 'dlgPivotAggStdDevp', supported: true },
+  { value: 'var', labelKey: 'dlgPivotAggVar', supported: true },
+  { value: 'varp', labelKey: 'dlgPivotAggVarp', supported: true },
 ]
 
 /// Every Excel "Show Values As" entry; '' = No Calculation. Modes the engine

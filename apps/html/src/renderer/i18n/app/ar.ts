@@ -97,6 +97,7 @@ export const ar = {
   alignLeft: 'محاذاة لليسار',
   alignCenter: 'توسيط',
   alignRight: 'محاذاة لليمين',
+  alignJustify: 'ضبط',
   fontSizeDec: 'تصغير حجم الخط',
   fontSizeInc: 'تكبير حجم الخط',
   typography: 'الطباعة',

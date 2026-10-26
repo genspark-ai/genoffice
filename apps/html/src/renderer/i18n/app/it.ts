@@ -102,6 +102,7 @@ export const it = {
   alignLeft: 'Allinea a sinistra',
   alignCenter: 'Centra',
   alignRight: 'Allinea a destra',
+  alignJustify: 'Giustifica',
   fontSizeDec: 'Riduci dimensione carattere',
   fontSizeInc: 'Aumenta dimensione carattere',
   typography: 'Tipografia',

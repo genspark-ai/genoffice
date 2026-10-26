@@ -59,6 +59,8 @@ import { MARKDOWN_CHANNELS, MAX_PASTED_IMAGE_BYTES } from '../shared/ipc'
 import type {
   ImageHostConfig,
   WikiBacklink,
+  WikiCreateNoteRequest,
+  WikiCreateNoteResult,
   WikiGraph,
   WikiLinkResolveRequest,
   WikiLinkResolved,
@@ -66,6 +68,7 @@ import type {
 } from '../shared/ipc'
 import { nodeFs, resolveWikiLinks } from './wiki-resolve'
 import { listWikiNotes } from './wiki-notes'
+import { createWikiNote } from './wiki-create'
 import { nodeVaultFs, warmWikiIndex, wikiBacklinks, wikiGraph } from './wiki-index'
 import { rememberWikiFragment, takeWikiFragment } from './wiki-fragment'
 import { isImageHostUsable, normalizeImageHostConfig, uploadImageToHost } from './image-host'
@@ -820,6 +823,22 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.listWikiNotes, async (): Promise<WikiNoteEntry[]> =>
     listWikiNotes(configuredDefaultSaveDir(app), nodeFs()),
+  )
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.createWikiNote,
+    async (e, request: WikiCreateNoteRequest): Promise<WikiCreateNoteResult> => {
+      const target = typeof request?.target === 'string' ? request.target : ''
+      if (!target) return { ok: false }
+      // where a bare name lands follows the document this view holds: the
+      // saved path wins (Save As moved it), the opened path is the fallback
+      const fromPath = savePathByWc.get(e.sender.id) ?? openPathByWc.get(e.sender.id) ?? ''
+      const made = await createWikiNote(target, {
+        root: configuredDefaultSaveDir(app),
+        fromDir: fromPath ? dirname(fromPath) : '',
+      }).catch(() => null)
+      return made ? { ok: true, ...made } : { ok: false }
+    },
   )
 
   ipcMain.handle(MARKDOWN_CHANNELS.wikiBacklinks, (_e, path: unknown): Promise<WikiBacklink[]> =>

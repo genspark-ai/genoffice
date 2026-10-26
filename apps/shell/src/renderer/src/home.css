@@ -107,9 +107,21 @@ body.vib .home {
   flex-direction: column;
   flex-shrink: 0;
   width: 232px;
+  /* a dragged width never crowds the file list out of a narrow window */
+  max-width: 45vw;
   padding: 18px 12px 16px;
   border-right: 1px solid var(--border);
   overflow-y: auto;
+}
+
+/* drag strip straddling the sidebar's right border (genoffice#2169) */
+.sidebar-resizer {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  width: 7px;
+  margin: 0 -4px 0 -3px;
+  cursor: col-resize;
 }
 
 .sidebar-logo {

@@ -44,6 +44,8 @@ describe('decodeDataUrl', () => {
   })
   it('rejects malformed input', () => {
     expect(decodeDataUrl('data:nope')).toBeNull()
+    // a lone `%` in a non-base64 payload must yield null, not a URIError
+    expect(decodeDataUrl('data:text/plain,100%done')).toBeNull()
   })
 
   it('parses every parameter run a real data URL can carry', () => {

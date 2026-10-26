@@ -36,7 +36,9 @@ macOS, Windows und Linux. Es öffnet und speichert native `.docx`-, `.xlsx`-
 und `.pptx`-Dateien, bearbeitet PDF, Markdown und HTML und stellt jedem
 Dokument einen KI-Agenten zur Seite – keine angeflanschte Chat-Box, sondern
 ein Editor, der die Datei liest, die Änderung vornimmt und genau zeigt, was
-er verändert hat.
+er verändert hat. ODF-Dateien (`.odt`, `.ods`, `.odp` und die
+`.ott`/`.ots`/`.otp`-Vorlagen) öffnen als bearbeitbare OOXML-Kopien; der
+Import umfasst nur das Öffnen – gespeichert wird OOXML, nie ODF.
 
 - **Echte Formate, byteerhaltend.** Nur das, was du bearbeitest, wird neu
   geschrieben. Alles andere in der Datei bleibt Byte für Byte erhalten,
@@ -45,7 +47,11 @@ er verändert hat.
   Änderungen und Diffs mit Rückgängig-Funktion per Klick an. Tabellen
   erhalten echte Formeln statt eingefügter Zahlen. Präsentationen und Seiten
   werden direkt auf der Arbeitsfläche erzeugt und bleiben vollständig
-  bearbeitbar.
+  bearbeitbar. Blendest du eine Docs-Auswahl oder einen Sheets-Zellbereich
+  für das Modell aus, sieht die KI nur einen benannten Platzhalter; die
+  Originalwörter bleiben in der Datei und kommen zurück. Das Ausblenden gilt
+  nur für die KI dieser App – die CLI, die MCP-Tools und der Headless-Export
+  lesen die Datei direkt und sehen diese Wörter weiterhin.
 - **Lokal von Grund auf.** Dateien werden auf deinem Rechner geöffnet,
   bearbeitet, gespeichert und konvertiert. PDF → Word / Excel / PowerPoint,
   Markdown → Word und HTML → Word laufen vollständig auf dem Gerät. Nur die
@@ -80,8 +86,8 @@ Prompt gesteuert wird, den du im Panel nachlesen kannst.
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs: eine Unternehmensübersicht mit einem Banner-Bild; die KI hat die Übersicht gestrafft und einen neuen Abschnitt mit Aufzählungspunkten eingefügt, und das Panel bietet ein Rückgängig per Klick"></td>
 </tr>
 <tr>
-<td><b>Öffnet die Datei genau so, wie Word sie layoutet</b> — zweispaltige Abschnitte, randlose Bilder, schattierte Tabellen, Kopf- und Fußzeilen, Seitenumbruch nach Words Zeilenmetrik. Formatvorlagen, Kommentare, nachverfolgte Änderungen, Formeln und Tinteneingaben bleiben beim Roundtrip unverändert.</td>
-<td><b>Frag nach der Änderung</b> — die KI liest die Blöcke, die sie braucht, schreibt die Übersicht neu und fügt einen neuen Abschnitt mit Aufzählungspunkten ein. Jeder KI-Durchgang ist ein Snapshot, den du zurücksetzen kannst; ist <b>Änderungen nachverfolgen</b> aktiviert, kommen die Bearbeitungen als Word-typische Überarbeitungen an.</td>
+<td><b>Öffnet die Datei genau so, wie Word sie layoutet</b> — zweispaltige Abschnitte, randlose Bilder, schattierte Tabellen, Kopf- und Fußzeilen, Seitenumbruch nach Words Zeilenmetrik. Formatvorlagen, Kommentare, nachverfolgte Änderungen, Formeln, Tinteneingaben und Inhaltssteuerelemente bleiben beim Roundtrip unverändert. Ein <b>Mailings</b>-Tab macht aus dem Dokument eine Seriendruck-Vorlage: eine <code>.xlsx</code>- oder <code>.csv</code>-Empfängerliste auswählen, echte <code>MERGEFIELD</code>s einfügen, Datensatz für Datensatz in der Vorschau prüfen und zu einem Dokument oder einer <code>.docx</code> pro Datensatz zusammenführen.</td>
+<td><b>Frag nach der Änderung</b> — die KI liest die Blöcke, die sie braucht, schreibt die Übersicht neu und fügt einen neuen Abschnitt mit Aufzählungspunkten ein. Jeder KI-Durchgang ist ein Snapshot, den du zurücksetzen kannst; ist <b>Änderungen nachverfolgen</b> aktiviert, kommen die Bearbeitungen als Word-typische Überarbeitungen an. Frag stattdessen nach einer Mindmap, und die Antwort ist ein interaktives Diagramm des gesamten Dokuments: einklappbare Zweige, Zoomen und Verschieben, ein Klick auf einen Knoten stellt eine Anschlussfrage, und Belege springen zu dem Block zurück, aus dem sie stammen.</td>
 </tr>
 </table>
 
@@ -94,7 +100,7 @@ Prompt gesteuert wird, den du im Panel nachlesen kannst.
 </tr>
 <tr>
 <td><b>Bau es</b> — aus einem einzigen Satz fügt der Agent ein Summary-Tabellenblatt mit echten <code>SUMIF</code>s nach Region und Kategorie hinzu, fügt ein Säulendiagramm ein und wendet die 43 Änderungen als einen einzigen, rückgängig machbaren Vorgang an.</td>
-<td><b>Frag es</b> — Fragen zur Arbeitsmappe werden mit der Begründung und den genau verwendeten Zellen als klickbare Belege beantwortet. Im Hintergrund: eine hausgemachte Rust-<code>.xlsx</code>-Engine, Pivot-Tabellen, Datenschnitte, bedingte Formatierung und Formel-Tracing.</td>
+<td><b>Frag es</b> — Fragen zur Arbeitsmappe werden mit der Begründung und den genau verwendeten Zellen als klickbare Belege beantwortet. Im Hintergrund: eine hausgemachte Rust-<code>.xlsx</code>-Engine, Pivot-Tabellen, Datenschnitte, bedingte Formatierung, Formel-Tracing und Bilder, die als native Rich Values von Excel in Zellen eingebettet sind — Excel zeigt sie beim erneuten Öffnen weiterhin in der Zelle.</td>
 </tr>
 </table>
 
@@ -109,9 +115,14 @@ Prompt gesteuert wird, den du im Panel nachlesen kannst.
 </tr>
 <tr>
 <td><b>Eine Zeile rein</b> — „Erstelle eine 10-Folien-Investoren-Präsentation für Aurora Home…“. GenOffice plant den Handlungsbogen, recherchiert die Zahlen und entwirft jede Folie direkt auf der Arbeitsfläche als echte <code>.pptx</code>.</td>
-<td><b>Eine fertige Präsentation raus</b> — elf gestaltete Folien mit einheitlicher Typografie, Bildsprache und einem abschließenden Call-to-Action; weiter bearbeiten mit Master-Folien, Layouts, intelligenten Hilfslinien und zerstörungsfreiem Zuschneiden, oder das Panel bitten, neu zu stylen, umzuschreiben und neu zu ordnen.</td>
+<td><b>Eine fertige Präsentation raus</b> — elf gestaltete Folien mit einheitlicher Typografie, Bildsprache und einem abschließenden Call-to-Action; weiter bearbeiten mit Master-Folien, Layouts, intelligenten Hilfslinien und zerstörungsfreiem Zuschneiden, oder das Panel bitten, neu zu stylen, umzuschreiben und neu zu ordnen. Füge eine <code>.glb</code> ein, und daraus wird ein echtes 3D-Modell: Im Editor drehst du es per Ziehen, gespeichert wird es so, wie PowerPoint 3D speichert, und in PowerPoint bleibt es 3D.</td>
 </tr>
 </table>
+
+**Slide Show → Record** spricht das Deck Folie für Folie ein, mit Pause und
+Fortsetzen. Der Sprecherkommentar und die dabei gemessenen automatischen
+Folienwechsel-Zeiten werden in der `.pptx` gespeichert, und PowerPoint gibt
+sie genauso wieder.
 
 ### 4 · PDF – PDF-Text direkt bearbeiten, PDF lokal in Word konvertieren
 
@@ -168,6 +179,13 @@ nach diesen Vorgaben.
 <td><b>Gerendert, gespeichert als reines Markdown</b> — Überschriften, Listen, Tabellen, Bilder, Codeblöcke und Mermaid-Diagramme in einem Tiptap-Block-Editor, zurückgeschrieben als reines <code>.md</code>, mit einem vollständig lokalen Markdown-→-Word-Export.</td>
 </tr>
 </table>
+
+**Verlinkte Notizen, wie Obsidian sie macht.** `[[wiki links]]` führen per
+Klick zu der Notiz, die sie benennen, die Eingabe von `[[` bietet eine
+Vervollständigung der Notiznamen an, und `![[…]]` bettet eine Notiz oder ein
+Bild inline ein. Ein **Backlinks**-Panel listet jede Notiz auf, die auf die
+geöffnete verweist, und die **Graph**-Ansicht bildet die Verknüpfungen des
+gesamten Vaults ab.
 
 ### 7 · CLI – dein Coding-Agent steuert GenOffice, auf deinem Rechner
 
@@ -249,9 +267,11 @@ Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
 Mistral, OpenRouter, Requesty und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
 jeden OpenAI-kompatiblen Endpunkt (Basis-URL + Schlüssel), einschließlich
 lokaler Modell-Server. Suche und Medien haben eigene Anbieter je Fähigkeit
-unter KI-Medien & Suche: Serper oder Tavily für die Websuche und OpenAI,
-Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax oder jeder
-OpenAI-kompatible Bild-Endpunkt für Bildgenerierung und Bild-/Videoanalyse.
+unter KI-Medien & Suche: Serper, Serply, Tavily, Parallel, Keenable, Exa oder
+Firecrawl für die Websuche – Keenable kommt ebenfalls ohne Schlüssel aus, ein
+Schlüssel hebt nur die Ratenlimits – und OpenAI, Gemini, Doubao/Seedream, GLM,
+Grok, Qwen, MiniMax oder jeder OpenAI-kompatible Bild-Endpunkt für
+Bildgenerierung und Bild-/Videoanalyse.
 
 Die gesamte Suite bringt ein helles, ein dunkles und einen
 Systemdesign-Modus mit. Designs ändern nur, was auf dem Bildschirm zu sehen
@@ -305,10 +325,11 @@ Bearbeiten liest und wie er seine eigene Arbeit prüft.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -563,6 +584,17 @@ GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty und OpenCode Zen
 plus jeden OpenAI-kompatiblen Endpunkt – einschließlich lokaler
 Modell-Server. Suche, Bildgenerierung und Bild-/Videoanalyse benötigen
 eigene Schlüssel unter Einstellungen → KI-Medien & Suche.
+
+</details>
+
+<details>
+<summary><b>Kann ich das KI-Panel ausschalten?</b></summary>
+
+Ja. Unter Einstellungen → KI gibt es den Schalter **Show the AI sidebar**.
+Ist er aus, blendet jeder Editor die Seitenleiste aus; neue Dokumente öffnen
+sie nicht mehr von selbst. Eine ausdrückliche KI-Aktion – eine
+Menüband-Schaltfläche, ein Menüeintrag – öffnet das Panel für dieses Dokument
+weiterhin, und nach dem Schließen ist es wieder ausgeblendet.
 
 </details>
 

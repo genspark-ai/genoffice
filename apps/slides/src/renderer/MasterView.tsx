@@ -11,6 +11,11 @@ import { SlideThumb } from './SlideThumb'
 import { TextEditOverlay } from './TextEditOverlay'
 import { armColorInput } from './color-input'
 import { ContextMenu, type CtxItem } from './components/ContextMenu'
+import { ShapeGalleryContent } from './components/ShapeGalleryPopover'
+import { IconShapes, IconTextBox } from './components/icons'
+import { defaultShapeStyle } from './default-shape'
+import { isLineDrawKind, type DrawRect } from './draw-shape'
+import { textBoxInsertSpec } from './textbox-insert'
 import type { EditParagraph, MasterPartItem } from '../shared/ipc'
 import { t } from './i18n/locale'
 
@@ -31,8 +36,12 @@ export function MasterView({ initialItems, onClose }: Props) {
     null,
   )
   const [images, setImages] = useState<Map<string, HTMLImageElement>>(new Map())
+  const [drawKind, setDrawKind] = useState<string | null>(null)
+  const [shapesOpen, setShapesOpen] = useState(false)
   const colorInputRef = useRef<HTMLInputElement>(null)
   const colorTargetRef = useRef<{ kind: 'fill' | 'stroke'; sourceId: string } | null>(null)
+  const drawKindRef = useRef<string | null>(null)
+  const toolsRef = useRef<HTMLDivElement>(null)
 
   const slide = items[sel]?.slide
 
@@ -152,6 +161,52 @@ export function MasterView({ initialItems, onClose }: Props) {
     [applyCurrent],
   )
 
+  const setDraw = useCallback((kind: string | null) => {
+    drawKindRef.current = kind
+    setDrawKind(kind)
+  }, [])
+
+  // Draw-mode commit: text box / shape / line onto the current part. A text box
+  // opens straight into typing like the slide path; shapes take the install's
+  // default shape style, lines a plain black stroke.
+  const commitDraw = useCallback(
+    async (rect: DrawRect) => {
+      const kind = drawKindRef.current
+      setDraw(null)
+      if (!kind || !slide) return
+      const box = kind === 'textbox' ? textBoxInsertSpec(rect) : null
+      const spec = box ?? rect
+      const r = await window.slidesApi.masterAddElement({
+        kind,
+        xPx: Math.round(spec.x),
+        yPx: Math.round(spec.y),
+        wPx: Math.round(spec.w),
+        hPx: Math.round(spec.h),
+        fitWidthPx: 1280,
+        ...(isLineDrawKind(kind)
+          ? { stroke: { color: '#000000', widthPt: 1 } }
+          : kind === 'textbox'
+            ? { bodyPr: box!.bodyPr }
+            : defaultShapeStyle()),
+      })
+      if (!r) return
+      applyCurrent(r.slide)
+      setSelectedIds([r.sourceId])
+      if (kind === 'textbox') setEditing({ sourceId: r.sourceId })
+    },
+    [applyCurrent, setDraw, slide],
+  )
+
+  // Close the shapes dropdown on any click outside the toolbar
+  useEffect(() => {
+    if (!shapesOpen) return
+    const onDown = (ev: MouseEvent) => {
+      if (toolsRef.current && !toolsRef.current.contains(ev.target as Node)) setShapesOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [shapesOpen])
+
   // Delete/Backspace deletes selected elements (not intercepted while editing)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -216,6 +271,37 @@ export function MasterView({ initialItems, onClose }: Props) {
     <div className="master-view">
       <div className="master-bar">
         <span className="master-bar-title">{t('appMasterTitle')}</span>
+        <div className="master-tools" ref={toolsRef}>
+          <button
+            className={`master-tool ${drawKind === 'textbox' ? 'active' : ''}`}
+            data-tip={t('appMasterInsertTextBox')}
+            aria-label={t('appMasterInsertTextBox')}
+            onClick={() => setDraw(drawKind === 'textbox' ? null : 'textbox')}
+          >
+            <IconTextBox size={16} />
+          </button>
+          <div className="master-tool-anchor">
+            <button
+              className={`master-tool ${drawKind && drawKind !== 'textbox' ? 'active' : ''}`}
+              data-tip={t('appMasterInsertShape')}
+              aria-label={t('appMasterInsertShape')}
+              onClick={() => setShapesOpen((v) => !v)}
+            >
+              <IconShapes size={16} />
+            </button>
+            {shapesOpen && (
+              <div className="master-tool-drop">
+                <ShapeGalleryContent
+                  includeLines
+                  onPick={(prst) => {
+                    setShapesOpen(false)
+                    setDraw(prst)
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
         <button className="master-close-btn" onClick={onClose}>
           {t('appMasterClose')}
         </button>
@@ -273,6 +359,9 @@ export function MasterView({ initialItems, onClose }: Props) {
               onMarqueeSelect={setSelectedIds}
               images={images}
               editingText={editing ? { sourceId: editing.sourceId } : null}
+              drawMode={drawKind ? { kind: drawKind } : null}
+              onDrawCommit={(rect) => void commitDraw(rect)}
+              onDrawCancel={() => setDraw(null)}
             />
             {editing && editNode && (
               <TextEditOverlay

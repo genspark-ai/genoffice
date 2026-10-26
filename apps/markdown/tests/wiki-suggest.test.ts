@@ -57,29 +57,30 @@ describe('filterWikiNotes', () => {
   })
 })
 
-describe('completion', () => {
-  function mount(opts: { onClose?: () => void } = {}): {
-    editor: Editor
-    states: WikiSuggestState[]
-  } {
-    const states: WikiSuggestState[] = []
-    const editor = new Editor({
-      extensions: buildExtensions({
-        slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
-        slashItems: () => [],
-        wikiSuggestController: {
-          onOpen: (s) => states.push(s),
-          onUpdate: (s) => states.push(s),
-          onKeyDown: () => false,
-          onClose: () => opts.onClose?.(),
-        },
-      }),
-      content: '',
-    })
-    editors.push(editor)
-    return { editor, states }
-  }
+/** an editor whose `[[` suggester reports to `states`, shared by both describes */
+function mount(opts: { onClose?: () => void } = {}): {
+  editor: Editor
+  states: WikiSuggestState[]
+} {
+  const states: WikiSuggestState[] = []
+  const editor = new Editor({
+    extensions: buildExtensions({
+      slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
+      slashItems: () => [],
+      wikiSuggestController: {
+        onOpen: (s) => states.push(s),
+        onUpdate: (s) => states.push(s),
+        onKeyDown: () => false,
+        onClose: () => opts.onClose?.(),
+      },
+    }),
+    content: '',
+  })
+  editors.push(editor)
+  return { editor, states }
+}
 
+describe('completion', () => {
   it('a typed [[ opens the suggester with the vault notes', async () => {
     refreshWikiNotes()
     await new Promise((r) => setTimeout(r, 0))
@@ -160,5 +161,86 @@ describe('completion', () => {
       return true
     })
     expect(embeds).toBe(1)
+  })
+})
+
+describe('create new note', () => {
+  function mountWithCreate(): { editor: Editor; states: WikiSuggestState[] } {
+    ;(window as any).markdownApi.createWikiNote = async () => ({
+      ok: true as const,
+      path: '/vault/My_Zzz.md',
+      fragment: '',
+      created: true,
+    })
+    return mount()
+  }
+
+  it('a query nothing matches offers its name for creation', async () => {
+    refreshWikiNotes()
+    await new Promise((r) => setTimeout(r, 0))
+    const { editor, states } = mountWithCreate()
+    editor.commands.insertContent('See [[')
+    await new Promise((r) => setTimeout(r, 0))
+    // the whole vault is on offer with nothing typed; creation needs a name
+    expect(states.at(-1)!.createName).toBe('')
+    editor.commands.insertContent('Zzz')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(states.at(-1)!.items).toEqual([])
+    expect(states.at(-1)!.createName).toBe('Zzz')
+  })
+
+  it('creating completes the link with the created file, not the typed text', async () => {
+    refreshWikiNotes()
+    await new Promise((r) => setTimeout(r, 0))
+    const { editor, states } = mountWithCreate()
+    editor.commands.insertContent('See [[Zzz')
+    await new Promise((r) => setTimeout(r, 0))
+    states.at(-1)!.create()
+    await new Promise((r) => setTimeout(r, 0))
+    // the stubbed note is `My_Zzz.md`: the sanitized stem is the spelling that
+    // resolves, so the completion carries it rather than the typed `Zzz`
+    expect(editor.state.doc.textContent).toBe('See [[My_Zzz]]')
+    let marked = false
+    editor.state.doc.descendants((n) => {
+      if (n.isText && n.marks.some((m) => m.type.name === 'wikiLink')) marked = true
+      return true
+    })
+    expect(marked).toBe(true)
+  })
+
+  it('a typed alias or fragment survives the creation', async () => {
+    refreshWikiNotes()
+    await new Promise((r) => setTimeout(r, 0))
+    const { editor, states } = mountWithCreate()
+    editor.commands.insertContent('[[Zzz|My Title')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(states.at(-1)!.createName).toBe('Zzz')
+    states.at(-1)!.create()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(editor.state.doc.textContent).toBe('[[My_Zzz|My Title]]')
+  })
+
+  it('creating from an embed completes into an embed node', async () => {
+    refreshWikiNotes()
+    await new Promise((r) => setTimeout(r, 0))
+    const { editor, states } = mountWithCreate()
+    editor.commands.insertContent('Look ![[Zzz')
+    await new Promise((r) => setTimeout(r, 0))
+    states.at(-1)!.create()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(editor.getMarkdown()).toBe('Look ![[My_Zzz]]')
+  })
+
+  it('a refused creation leaves the text alone', async () => {
+    refreshWikiNotes()
+    await new Promise((r) => setTimeout(r, 0))
+    const { editor, states } = mount()
+    ;(window as any).markdownApi.createWikiNote = async () => ({ ok: false as const })
+    editor.commands.insertContent('See [[../evil')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(states.at(-1)!.createName).toBe('../evil')
+    states.at(-1)!.create()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(editor.state.doc.textContent).toBe('See [[../evil')
   })
 })

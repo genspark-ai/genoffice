@@ -208,6 +208,8 @@ export const zh = {
   appMasterFillNone: '无填充',
   appMasterStroke: '边框颜色…',
   appMasterStrokeNone: '无边框',
+  appMasterInsertTextBox: '文本框',
+  appMasterInsertShape: '形状',
   appStartOpening: '正在打开…',
   appReadingSlideTitle: '单击翻到下一页（Esc 退出阅读视图）',
   appReadingPrev: '‹ 上一页',

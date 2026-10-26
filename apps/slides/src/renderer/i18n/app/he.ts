@@ -214,6 +214,8 @@ export const he = {
   appMasterFillNone: 'ללא מילוי',
   appMasterStroke: 'צבע קו מתאר…',
   appMasterStrokeNone: 'ללא קו מתאר',
+  appMasterInsertTextBox: 'תיבת טקסט',
+  appMasterInsertShape: 'צורות',
   appStartOpening: 'פותח…',
   appReadingSlideTitle: 'לחץ כדי לעבור לשקופית הבאה (Esc ליציאה מתצוגת הקריאה)',
   appReadingPrev: '‹ הקודמת',

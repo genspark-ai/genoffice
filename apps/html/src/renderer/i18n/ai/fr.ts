@@ -51,6 +51,10 @@ export const fr = {
   aiTimeoutError: 'Délai de réponse IA dépassé',
   aiToolWebSearch: 'Recherche Web',
   aiToolWebSearchDone: 'Recherche « {query} » · {count} résultats',
+  aiToolImageSearch: "Recherche d'images",
+  aiToolImageSearchDone: "Recherche d'images « {query} » ({count} images)",
+  aiToolGenImage: 'Générer une image',
+  aiToolGenImageDone: 'Image générée par IA insérée',
   aiTruncatedNote: '(La réponse a été tronquée par la limite de longueur et peut être incomplète.)',
   aiTurnLimit:
     "Limite d'étapes atteinte pour cette exécution — envoyez une autre instruction pour continuer.",

@@ -36,7 +36,10 @@ untuk macOS, Windows, dan Linux. Aplikasi ini membuka dan menyimpan file
 `.docx`, `.xlsx`, dan `.pptx` asli, mengedit PDF, Markdown, dan HTML, serta
 menghadirkan agen AI di samping setiap dokumen — bukan sekadar kotak obrolan
 yang ditempelkan di sisi layar, melainkan editor yang membaca file, membuat
-perubahan, dan menunjukkan dengan tepat bagian mana yang diubah.
+perubahan, dan menunjukkan dengan tepat bagian mana yang diubah. File ODF
+(`.odt`, `.ods`, `.odp`, serta templat `.ott`/`.ots`/`.otp`) terbuka sebagai
+salinan OOXML yang bisa diedit; impornya bersifat open-only — saat menyimpan,
+yang ditulis selalu OOXML, tidak pernah ODF.
 
 - **Format asli, byte-preserving.** Hanya bagian yang Anda edit yang ditulis
   ulang. Bagian lain dari file tetap sama persis, byte demi byte, sehingga
@@ -44,7 +47,11 @@ perubahan, dan menunjukkan dengan tepat bagian mana yang diubah.
 - **AI yang bisa Anda tinjau.** Perubahan tercatat sebagai tracked changes dan
   diff dengan opsi rollback satu klik. Spreadsheet mendapatkan rumus hidup,
   bukan angka yang ditempel. Deck dan halaman dibuat langsung di kanvas dan
-  tetap bisa diedit secara penuh.
+  tetap bisa diedit secara penuh. Sembunyikan sebuah seleksi Docs atau rentang
+  sel Sheets dari model, dan AI hanya melihat sebuah placeholder bernama;
+  kata-kata aslinya tetap ada di dalam file dan bisa kembali. Penyembunyian
+  hanya mencakup AI aplikasi ini — CLI, alat MCP, dan ekspor headless membaca
+  file secara langsung dan tetap melihat kata-kata tersebut.
 - **Lokal secara desain.** File dibuka, diedit, disimpan, dan dikonversi di
   perangkat Anda sendiri. Konversi PDF → Word / Excel / PowerPoint, Markdown →
   Word, dan HTML → Word semuanya berjalan on-device. Hanya panggilan AI yang
@@ -79,8 +86,8 @@ dari prompt yang bisa Anda baca di panel.
 <td width="50%"><img src="../assets/readme/docs-ai.webp" alt="GenOffice Docs: ringkasan perusahaan dengan gambar banner; AI mempersingkat bagian Overview dan menyisipkan bagian berpoin baru, dan panel menawarkan rollback satu klik"></td>
 </tr>
 <tr>
-<td><b>Membuka file sesuai tata letak Word</b> — bagian dua kolom, gambar full-bleed, tabel berlatar warna, header dan footer, penomoran halaman berdasarkan metrik baris Word. Gaya, komentar, tracked changes, rumus, dan tulisan tangan (ink) tetap utuh saat dibuka lagi.</td>
-<td><b>Minta perubahan yang Anda inginkan</b> — AI membaca blok yang diperlukan, menulis ulang bagian Overview, dan menyisipkan bagian berpoin baru. Setiap giliran AI adalah snapshot yang bisa di-rollback; dengan <b>Track changes</b> aktif, perubahan muncul sebagai revisi bergaya Word.</td>
+<td><b>Membuka file sesuai tata letak Word</b> — bagian dua kolom, gambar full-bleed, tabel berlatar warna, header dan footer, penomoran halaman berdasarkan metrik baris Word. Gaya, komentar, tracked changes, rumus, tulisan tangan (ink), dan content controls tetap utuh saat dibuka lagi. Tab <b>Mailings</b> mengubah dokumen menjadi templat merge: pilih daftar penerima <code>.xlsx</code> atau <code>.csv</code>, sisipkan <code>MERGEFIELD</code> yang sebenarnya, pratinjau record demi record, lalu gabungkan menjadi satu dokumen atau satu <code>.docx</code> per record.</td>
+<td><b>Minta perubahan yang Anda inginkan</b> — AI membaca blok yang diperlukan, menulis ulang bagian Overview, dan menyisipkan bagian berpoin baru. Setiap giliran AI adalah snapshot yang bisa di-rollback; dengan <b>Track changes</b> aktif, perubahan muncul sebagai revisi bergaya Word. Minta mind map sebagai gantinya, dan jawabannya adalah diagram interaktif dari seluruh dokumen: cabang bisa dilipat, zoom dan pan, klik pada node untuk mengajukan pertanyaan lanjutan, dan kutipan melompat kembali ke blok asalnya.</td>
 </tr>
 </table>
 
@@ -93,7 +100,7 @@ dari prompt yang bisa Anda baca di panel.
 </tr>
 <tr>
 <td><b>Bangun sheet-nya</b> — dari satu kalimat, agen menambahkan sheet Summary dengan rumus <code>SUMIF</code> yang sebenarnya per wilayah dan kategori, menyisipkan grafik kolom, dan menerapkan 43 perubahan sebagai satu batch yang bisa dibatalkan sekaligus.</td>
-<td><b>Tanyakan langsung</b> — pertanyaan tentang workbook dijawab lengkap dengan penalarannya, dan sel yang dipakai muncul sebagai kutipan yang bisa diklik. Di baliknya: mesin `.xlsx` Rust buatan sendiri, pivot table, slicer, pemformatan bersyarat, dan penelusuran rumus.</td>
+<td><b>Tanyakan langsung</b> — pertanyaan tentang workbook dijawab lengkap dengan penalarannya, dan sel yang dipakai muncul sebagai kutipan yang bisa diklik. Di baliknya: mesin `.xlsx` Rust buatan sendiri, pivot table, slicer, pemformatan bersyarat, penelusuran rumus, serta gambar yang disematkan ke dalam sel sebagai rich value native Excel — saat dibuka lagi di Excel, gambarnya tetap berada di sel.</td>
 </tr>
 </table>
 
@@ -108,9 +115,13 @@ dari prompt yang bisa Anda baca di panel.
 </tr>
 <tr>
 <td><b>Satu baris prompt masuk</b> — "Buat deck presentasi investor 10-slide untuk Aurora Home…". GenOffice merancang alur cerita, meriset angka-angkanya, dan menyusun setiap slide langsung ke kanvas sebagai `.pptx` yang sebenarnya.</td>
-<td><b>Deck jadi keluar</b> — sebelas slide terdesain dengan tipografi, citra visual yang konsisten, dan call to action penutup; lanjutkan mengedit dengan master, layout, smart guide, dan pemotongan gambar non-destruktif, atau minta panel untuk mengubah gaya, menulis ulang, dan menyusun ulang urutan.</td>
+<td><b>Deck jadi keluar</b> — sebelas slide terdesain dengan tipografi, citra visual yang konsisten, dan call to action penutup; lanjutkan mengedit dengan master, layout, smart guide, dan pemotongan gambar non-destruktif, atau minta panel untuk mengubah gaya, menulis ulang, dan menyusun ulang urutan. Sisipkan <code>.glb</code> dan hasilnya model 3D sungguhan: putar dengan menyeret di editor, tersimpan dengan cara PowerPoint menyimpan 3D, dan tetap 3D di PowerPoint.</td>
 </tr>
 </table>
+
+**Slide Show → Record** merekam narasi deck slide demi slide, bisa dijeda dan
+dilanjutkan. Narasi serta waktu pindah-slide otomatis yang diukurnya disimpan
+ke dalam `.pptx`, dan PowerPoint memutarnya kembali dengan cara yang sama.
 
 ### 4 · PDF — edit teks PDF langsung di tempat, konversi PDF ke Word secara on-device
 
@@ -166,6 +177,13 @@ lalu membangun satu file `.html` mandiri berdasarkan token-token tersebut.
 <td><b>Dirender, disimpan sebagai Markdown biasa</b> — heading, daftar, tabel, gambar, blok kode, dan diagram Mermaid dalam block editor Tiptap, ditulis kembali sebagai `.md` biasa, dengan ekspor <b>Markdown → Word</b> yang berjalan sepenuhnya lokal.</td>
 </tr>
 </table>
+
+**Catatan saling tertaut, seperti cara Obsidian melakukannya.** `[[wiki
+links]]` bisa diklik untuk melompat ke catatan yang disebutnya, mengetik `[[`
+menghadirkan pelengkapan nama catatan, dan `![[…]]` menyematkan catatan atau
+gambar secara inline. Panel **Backlinks** mencantumkan setiap catatan yang
+mengarah ke catatan yang sedang terbuka, dan tampilan **Graph** memetakan
+tautan di seluruh vault.
 
 ### 7 · CLI — coding agent Anda menjalankan GenOffice, di mesin Anda
 
@@ -246,9 +264,11 @@ Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, R
 dan OpenCode Zen/Go, plus slot khusus untuk endpoint apa pun yang kompatibel
 dengan OpenAI (base URL + kunci), termasuk server model lokal. Pencarian dan
 media memiliki penyedia tersendiri per kemampuan di bawah **AI Media &
-Search**: Serper atau Tavily untuk pencarian web, dan OpenAI, Gemini,
-Doubao/Seedream, GLM, Grok, Qwen, MiniMax, atau endpoint apa pun yang
-kompatibel dengan OpenAI untuk generasi gambar serta analisis gambar/video.
+Search**: Serper, Serply, Tavily, Parallel, Keenable, Exa, atau Firecrawl
+untuk pencarian web — Keenable juga tanpa kunci; kunci hanya menaikkan batas
+lajunya — dan OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, atau
+endpoint apa pun yang kompatibel dengan OpenAI untuk generasi gambar serta
+analisis gambar/video.
 
 Seluruh suite mendukung tema terang, gelap, dan sistem. Tema hanya mengubah
 tampilan di layar: ekspor, cetakan, dan file yang disimpan selalu
@@ -301,10 +321,11 @@ dan bagaimana memeriksa hasil kerjanya sendiri.
 ```bash
 genoffice --version
 genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
-genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, …
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx/md/html, odt/ods/odp → docx/xlsx/pptx, …
 genoffice create --type docx --from notes.md --out notes.docx
 genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
 genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice docs compare original.docx revised.docx --out redline.docx   # the differences as tracked Word revisions
 genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
 genoffice open sales.xlsx                          # hand the result to the editor
 ```
@@ -555,6 +576,17 @@ GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, dan OpenCode Ze
 plus endpoint apa pun yang kompatibel dengan OpenAI — termasuk server model
 lokal. Pencarian, generasi gambar, dan analisis gambar/video menggunakan
 kunci tersendiri di Settings → AI Media & Search.
+
+</details>
+
+<details>
+<summary><b>Bisakah saya mematikan panel AI?</b></summary>
+
+Ya. Settings → AI memiliki sakelar **Show the AI sidebar**. Saat dimatikan,
+setiap editor menyembunyikan sidebar tersebut, dan dokumen baru tidak lagi
+membukanya secara otomatis. Tindakan AI yang eksplisit — tombol di ribbon
+atau item menu — tetap membuka panel untuk dokumen itu, dan setelah ditutup,
+panel kembali tersembunyi.
 
 </details>
 
