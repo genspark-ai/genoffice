@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const ms = {
   dlgAllowEditRangesTitle: 'Benarkan Edit Julat',
   dlgAllowEditRangesHint:
-    'Julat ini kekal boleh diedit semasa helaian dilindungi. Ditulis semasa menyimpan; kata laluan tidak disokong.',
+    'Julat ini kekal boleh diedit semasa helaian dilindungi. Ditulis semasa menyimpan. Julat yang sudah ada kata laluan tidak boleh diubah atau dibuang di sini.',
   dlgRangeName: 'Tajuk',
   dlgRangeRef: 'Julat',
   dlgRangeAdd: 'Tambah',
   dlgRangeDelete: 'Padam',
+  dlgRangeLocked:
+    'Julat ini membawa kata laluan dalam fail; ia tidak boleh diubah atau dibuang di sini.',
   dlgRangePassword: 'Kata laluan (pilihan)',
   dlgRangeNameTaken: 'Masukkan tajuk unik yang tidak kosong.',
   dlgRangeRefInvalid: 'Masukkan julat seperti A1:B4.',

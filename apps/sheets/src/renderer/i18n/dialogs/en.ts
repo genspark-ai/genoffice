@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const en = {
   dlgAllowEditRangesTitle: 'Allow Edit Ranges',
   dlgAllowEditRangesHint:
-    'These ranges stay editable while the sheet is protected. Written on save; passwords are not supported.',
+    'These ranges stay editable while the sheet is protected. Written on save. A range that already carries a password cannot be changed or removed here.',
   dlgRangeName: 'Title',
   dlgRangeRef: 'Range',
   dlgRangeAdd: 'Add',
   dlgRangeDelete: 'Delete',
+  dlgRangeLocked:
+    'This range carries a password in the file; it cannot be changed or removed here.',
   dlgRangePassword: 'Password (optional)',
   dlgRangeNameTaken: 'Enter a unique, non-empty title.',
   dlgRangeRefInvalid: 'Enter a range like A1:B4.',

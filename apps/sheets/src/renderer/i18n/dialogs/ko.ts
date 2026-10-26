@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const ko = {
   dlgAllowEditRangesTitle: '범위 편집 허용',
   dlgAllowEditRangesHint:
-    '시트가 보호된 상태에서도 이 범위는 편집할 수 있습니다. 저장 시 기록되며 암호는 지원되지 않습니다.',
+    '시트가 보호된 상태에서도 이 범위는 편집할 수 있습니다. 저장 시 기록됩니다. 암호가 이미 설정된 범위는 여기서 변경하거나 삭제할 수 없습니다.',
   dlgRangeName: '제목',
   dlgRangeRef: '범위',
   dlgRangeAdd: '추가',
   dlgRangeDelete: '삭제',
+  dlgRangeLocked: '이 범위는 파일에서 암호가 설정되어 있어 여기서 변경하거나 삭제할 수 없습니다.',
   dlgRangePassword: '암호(선택)',
   dlgRangeNameTaken: '비어 있지 않고 중복되지 않는 제목을 입력하세요.',
   dlgRangeRefInvalid: 'A1:B4 형식의 범위를 입력하세요.',

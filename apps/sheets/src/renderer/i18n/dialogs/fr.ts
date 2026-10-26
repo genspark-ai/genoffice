@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const fr = {
   dlgAllowEditRangesTitle: 'Permettre la modification des plages',
   dlgAllowEditRangesHint:
-    "Ces plages restent modifiables quand la feuille est protégée. Écrites à l'enregistrement ; les mots de passe ne sont pas pris en charge.",
+    "Ces plages restent modifiables quand la feuille est protégée. Écrites à l'enregistrement. Une plage qui possède déjà un mot de passe ne peut pas être modifiée ni supprimée ici.",
   dlgRangeName: 'Titre',
   dlgRangeRef: 'Plage',
   dlgRangeAdd: 'Ajouter',
   dlgRangeDelete: 'Supprimer',
+  dlgRangeLocked:
+    'Cette plage porte un mot de passe dans le fichier ; elle ne peut pas être modifiée ni supprimée ici.',
   dlgRangePassword: 'Mot de passe (facultatif)',
   dlgRangeNameTaken: 'Saisissez un titre unique et non vide.',
   dlgRangeRefInvalid: 'Saisissez une plage comme A1:B4.',

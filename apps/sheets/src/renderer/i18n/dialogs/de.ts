@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const de = {
   dlgAllowEditRangesTitle: 'Bearbeitungsbereiche zulassen',
   dlgAllowEditRangesHint:
-    'Diese Bereiche bleiben bei geschütztem Blatt bearbeitbar. Wird beim Speichern geschrieben; Kennwörter werden nicht unterstützt.',
+    'Diese Bereiche bleiben bei geschütztem Blatt bearbeitbar. Wird beim Speichern geschrieben. Ein Bereich mit vorhandenem Kennwort kann hier nicht geändert oder entfernt werden.',
   dlgRangeName: 'Titel',
   dlgRangeRef: 'Bereich',
   dlgRangeAdd: 'Hinzufügen',
   dlgRangeDelete: 'Löschen',
+  dlgRangeLocked:
+    'Dieser Bereich trägt ein Kennwort in der Datei und kann hier nicht geändert oder entfernt werden.',
   dlgRangePassword: 'Kennwort (optional)',
   dlgRangeNameTaken: 'Geben Sie einen eindeutigen, nicht leeren Titel ein.',
   dlgRangeRefInvalid: 'Geben Sie einen Bereich wie A1:B4 ein.',

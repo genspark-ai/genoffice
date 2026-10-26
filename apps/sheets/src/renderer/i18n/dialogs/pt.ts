@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const pt = {
   dlgAllowEditRangesTitle: 'Permitir Edição de Intervalos',
   dlgAllowEditRangesHint:
-    'Estes intervalos permanecem editáveis enquanto a planilha está protegida. Gravados ao salvar; senhas não são suportadas.',
+    'Estes intervalos permanecem editáveis enquanto a planilha está protegida. Gravados ao salvar. Um intervalo que já tem senha não pode ser alterado nem removido aqui.',
   dlgRangeName: 'Título',
   dlgRangeRef: 'Intervalo',
   dlgRangeAdd: 'Adicionar',
   dlgRangeDelete: 'Excluir',
+  dlgRangeLocked:
+    'Este intervalo carrega uma senha no arquivo; não pode ser alterado nem removido aqui.',
   dlgRangePassword: 'Palavra-passe (opcional)',
   dlgRangeNameTaken: 'Insira um título exclusivo e não vazio.',
   dlgRangeRefInvalid: 'Insira um intervalo como A1:B4.',

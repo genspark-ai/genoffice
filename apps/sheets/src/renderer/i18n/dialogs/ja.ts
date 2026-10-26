@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const ja = {
   dlgAllowEditRangesTitle: '範囲の編集の許可',
   dlgAllowEditRangesHint:
-    'シート保護中もこれらの範囲は編集できます。保存時に書き込まれます。パスワードには対応していません。',
+    'シート保護中もこれらの範囲は編集できます。保存時に書き込まれます。パスワードが設定済みの範囲はここでは変更・削除できません。',
   dlgRangeName: 'タイトル',
   dlgRangeRef: '範囲',
   dlgRangeAdd: '追加',
   dlgRangeDelete: '削除',
+  dlgRangeLocked:
+    'この範囲にはファイル上パスワードが設定されており、ここでは変更・削除できません。',
   dlgRangePassword: 'パスワード（任意）',
   dlgRangeNameTaken: '重複しない空でないタイトルを入力してください。',
   dlgRangeRefInvalid: 'A1:B4 のような範囲を入力してください。',

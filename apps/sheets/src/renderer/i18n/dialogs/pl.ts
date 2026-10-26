@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const pl = {
   dlgAllowEditRangesTitle: 'Zezwalaj na edytowanie zakresów',
   dlgAllowEditRangesHint:
-    'Te zakresy pozostają edytowalne, gdy arkusz jest chroniony. Zapisywane przy zapisie; hasła nie są obsługiwane.',
+    'Te zakresy pozostają edytowalne, gdy arkusz jest chroniony. Zapisywane przy zapisie. Zakres, który ma już hasło, nie może być tutaj zmieniony ani usunięty.',
   dlgRangeName: 'Tytuł',
   dlgRangeRef: 'Zakres',
   dlgRangeAdd: 'Dodaj',
   dlgRangeDelete: 'Usuń',
+  dlgRangeLocked: 'Ten zakres ma hasło w pliku; nie można go tutaj zmienić ani usunąć.',
   dlgRangePassword: 'Hasło (opcjonalnie)',
   dlgRangeNameTaken: 'Wprowadź unikatowy, niepusty tytuł.',
   dlgRangeRefInvalid: 'Wprowadź zakres, np. A1:B4.',

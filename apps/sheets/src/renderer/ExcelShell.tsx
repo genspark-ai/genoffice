@@ -34,6 +34,8 @@ import { sheetContextMenuAction } from './sheet-context-menu'
 
 import { ColorDropdown } from './ColorDropdown'
 import { FormatCellsDialog } from './FormatCellsDialog'
+import type { SheetPasswordHash } from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
+
 import { AllowEditRangesDialog } from './AllowEditRangesDialog'
 import { ProtectSheetDialog } from './ProtectSheetDialog'
 import type { SheetProtectionAllow } from '@genoffice/xlsx-gateway/gateway/xlsx-protection'
@@ -341,7 +343,12 @@ interface ExcelShellProps {
   readonly crossHighlightVisible: boolean
   /// Allow-edit ranges of the active sheet, read when the dialog opens.
   readonly onGetProtectedRanges: () => {
-    ranges: readonly { name: string; sqref: string; hasPassword: boolean }[]
+    ranges: readonly {
+      name: string
+      sqref: string
+      hasPassword: boolean
+      password?: SheetPasswordHash
+    }[]
     error: string | null
   }
   readonly onApplyProtectedRanges: (
@@ -1305,7 +1312,16 @@ export function ExcelShell({
           const snapshot = onGetProtectedRanges()
           return (
             <AllowEditRangesDialog
-              ranges={snapshot.error === null ? snapshot.ranges : []}
+              ranges={
+                snapshot.error === null
+                  ? snapshot.ranges.map((range) => ({
+                      name: range.name,
+                      sqref: range.sqref,
+                      hasPassword: range.hasPassword,
+                      locked: range.hasPassword && range.password === undefined,
+                    }))
+                  : []
+              }
               defaultRef={activeCellA1}
               onApply={(ranges) => {
                 const failed = snapshot.error ?? onApplyProtectedRanges(ranges)

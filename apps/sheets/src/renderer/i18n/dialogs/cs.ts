@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const cs = {
   dlgAllowEditRangesTitle: 'Povolit úpravy oblastí',
   dlgAllowEditRangesHint:
-    'Tyto oblasti zůstanou upravitelné, i když je list zamknutý. Zapisují se při uložení; hesla nejsou podporována.',
+    'Tyto oblasti zůstanou upravitelné, i když je list zamknutý. Zapisují se při uložení. Oblast, která už má heslo, zde nelze změnit ani odstranit.',
   dlgRangeName: 'Název',
   dlgRangeRef: 'Oblast',
   dlgRangeAdd: 'Přidat',
   dlgRangeDelete: 'Odstranit',
+  dlgRangeLocked: 'Tato oblast má v souboru heslo; nelze ji zde změnit ani odstranit.',
   dlgRangePassword: 'Heslo (volitelné)',
   dlgRangeNameTaken: 'Zadejte jedinečný, neprázdný název.',
   dlgRangeRefInvalid: 'Zadejte oblast, např. A1:B4.',

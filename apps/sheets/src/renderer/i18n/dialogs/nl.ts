@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const nl = {
   dlgAllowEditRangesTitle: 'Bewerken van bereiken toestaan',
   dlgAllowEditRangesHint:
-    'Deze bereiken blijven bewerkbaar terwijl het blad is beveiligd. Wordt bij het opslaan geschreven; wachtwoorden worden niet ondersteund.',
+    'Deze bereiken blijven bewerkbaar terwijl het blad is beveiligd. Wordt bij het opslaan geschreven. Een bereik dat al een wachtwoord heeft kan hier niet worden gewijzigd of verwijderd.',
   dlgRangeName: 'Titel',
   dlgRangeRef: 'Bereik',
   dlgRangeAdd: 'Toevoegen',
   dlgRangeDelete: 'Verwijderen',
+  dlgRangeLocked:
+    'Dit bereik heeft een wachtwoord in het bestand; het kan hier niet worden gewijzigd of verwijderd.',
   dlgRangePassword: 'Wachtwoord (optioneel)',
   dlgRangeNameTaken: 'Voer een unieke, niet-lege titel in.',
   dlgRangeRefInvalid: 'Voer een bereik in zoals A1:B4.',

@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const id = {
   dlgAllowEditRangesTitle: 'Izinkan Edit Rentang',
   dlgAllowEditRangesHint:
-    'Rentang ini tetap dapat diedit saat lembar dilindungi. Ditulis saat disimpan; kata sandi tidak didukung.',
+    'Rentang ini tetap dapat diedit saat lembar dilindungi. Ditulis saat disimpan. Rentang yang sudah memiliki kata sandi tidak dapat diubah atau dihapus di sini.',
   dlgRangeName: 'Judul',
   dlgRangeRef: 'Rentang',
   dlgRangeAdd: 'Tambah',
   dlgRangeDelete: 'Hapus',
+  dlgRangeLocked:
+    'Rentang ini membawa kata sandi di dalam berkas; tidak dapat diubah atau dihapus di sini.',
   dlgRangePassword: 'Kata sandi (opsional)',
   dlgRangeNameTaken: 'Masukkan judul yang unik dan tidak kosong.',
   dlgRangeRefInvalid: 'Masukkan rentang seperti A1:B4.',

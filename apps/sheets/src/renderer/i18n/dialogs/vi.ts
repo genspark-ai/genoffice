@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const vi = {
   dlgAllowEditRangesTitle: 'Cho phép chỉnh sửa dải ô',
   dlgAllowEditRangesHint:
-    'Các dải ô này vẫn có thể chỉnh sửa khi trang tính được bảo vệ. Được lưu khi lưu tệp; không hỗ trợ mật khẩu.',
+    'Các dải ô này vẫn có thể chỉnh sửa khi trang tính được bảo vệ. Được lưu khi lưu tệp. Dải ô đã có mật khẩu không thể sửa hoặc xóa ở đây.',
   dlgRangeName: 'Tiêu đề',
   dlgRangeRef: 'Dải ô',
   dlgRangeAdd: 'Thêm',
   dlgRangeDelete: 'Xóa',
+  dlgRangeLocked: 'Dải ô này có mật khẩu trong tệp; không thể sửa hoặc xóa ở đây.',
   dlgRangePassword: 'Mật khẩu (không bắt buộc)',
   dlgRangeNameTaken: 'Vui lòng nhập tiêu đề duy nhất và không được để trống.',
   dlgRangeRefInvalid: 'Vui lòng nhập dải ô dạng A1:B4.',

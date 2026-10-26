@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const es = {
   dlgAllowEditRangesTitle: 'Permitir editar rangos',
   dlgAllowEditRangesHint:
-    'Estos rangos se pueden seguir editando mientras la hoja está protegida. Se escriben al guardar; no se admiten contraseñas.',
+    'Estos rangos se pueden seguir editando mientras la hoja está protegida. Se escriben al guardar. Un rango que ya tiene contraseña no se puede modificar ni eliminar aquí.',
   dlgRangeName: 'Título',
   dlgRangeRef: 'Rango',
   dlgRangeAdd: 'Agregar',
   dlgRangeDelete: 'Eliminar',
+  dlgRangeLocked:
+    'Este rango lleva una contraseña en el archivo; no se puede modificar ni eliminar aquí.',
   dlgRangePassword: 'Contraseña (opcional)',
   dlgRangeNameTaken: 'Escriba un título único y no vacío.',
   dlgRangeRefInvalid: 'Escriba un rango como A1:B4.',

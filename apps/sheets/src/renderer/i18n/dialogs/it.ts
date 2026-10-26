@@ -3,11 +3,13 @@ import type { zh } from './zh'
 export const it = {
   dlgAllowEditRangesTitle: 'Consenti modifica intervalli',
   dlgAllowEditRangesHint:
-    'Questi intervalli restano modificabili mentre il foglio è protetto. Scritti al salvataggio; le password non sono supportate.',
+    'Questi intervalli restano modificabili mentre il foglio è protetto. Scritti al salvataggio. Un intervallo che ha già una password non può essere modificato o rimosso qui.',
   dlgRangeName: 'Titolo',
   dlgRangeRef: 'Intervallo',
   dlgRangeAdd: 'Aggiungi',
   dlgRangeDelete: 'Elimina',
+  dlgRangeLocked:
+    'Questo intervallo porta una password nel file; non può essere modificato o rimosso qui.',
   dlgRangePassword: 'Password (facoltativa)',
   dlgRangeNameTaken: 'Immetti un titolo univoco e non vuoto.',
   dlgRangeRefInvalid: 'Immetti un intervallo come A1:B4.',

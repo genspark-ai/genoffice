@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const hi = {
   dlgAllowEditRangesTitle: 'रेंज संपादन की अनुमति दें',
   dlgAllowEditRangesHint:
-    'शीट सुरक्षित होने पर भी ये रेंज संपादन योग्य रहती हैं। सहेजते समय लिखी जाती हैं; पासवर्ड समर्थित नहीं हैं।',
+    'शीट सुरक्षित होने पर भी ये रेंज संपादन योग्य रहती हैं। सहेजते समय लिखी जाती हैं। जिस रेंज पर पहले से पासवर्ड है उसे यहाँ बदला या हटाया नहीं जा सकता।',
   dlgRangeName: 'शीर्षक',
   dlgRangeRef: 'रेंज',
   dlgRangeAdd: 'जोड़ें',
   dlgRangeDelete: 'हटाएँ',
+  dlgRangeLocked: 'इस रेंज पर फ़ाइल में पासवर्ड है; इसे यहाँ बदला या हटाया नहीं जा सकता।',
   dlgRangePassword: 'पासवर्ड (वैकल्पिक)',
   dlgRangeNameTaken: 'कोई अनोखा, खाली न हो ऐसा शीर्षक दर्ज करें।',
   dlgRangeRefInvalid: 'A1:B4 जैसी रेंज दर्ज करें।',

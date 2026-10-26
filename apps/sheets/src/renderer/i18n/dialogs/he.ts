@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const he = {
   dlgAllowEditRangesTitle: 'אפשר עריכת טווחים',
   dlgAllowEditRangesHint:
-    'טווחים אלה נשארים ניתנים לעריכה כשהגיליון מוגן. נכתבים בעת השמירה; סיסמאות אינן נתמכות.',
+    'טווחים אלה נשארים ניתנים לעריכה כשהגיליון מוגן. נכתבים בעת השמירה. טווח שכבר מוגן בסיסמה אינו ניתן לשינוי או הסרה כאן.',
   dlgRangeName: 'כותרת',
   dlgRangeRef: 'טווח',
   dlgRangeAdd: 'הוסף',
   dlgRangeDelete: 'מחק',
+  dlgRangeLocked: 'לטווח זה יש סיסמה בקובץ; לא ניתן לשנות או להסיר אותו כאן.',
   dlgRangePassword: 'סיסמה (אופציונלי)',
   dlgRangeNameTaken: 'הזן כותרת ייחודית שאינה ריקה.',
   dlgRangeRefInvalid: 'הזן טווח כמו A1:B4.',

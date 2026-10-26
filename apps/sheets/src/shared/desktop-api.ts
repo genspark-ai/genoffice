@@ -2222,7 +2222,9 @@ export const workbookSaveRequestSchema = z
       .strict()
       .nullable()
       .default(null),
-    /// Full allow-edit-range snapshots for sheets whose set changed.
+    /// Full allow-edit-range snapshots for sheets whose set changed. A range may
+    /// carry its password as the hash the renderer already computed (legacy or
+    /// spi form, see SheetPasswordHash); the file never hands hashes back.
     protectedRangeStates: z
       .array(
         z
@@ -2234,6 +2236,7 @@ export const workbookSaveRequestSchema = z
                   .object({
                     name: z.string().min(1).max(255),
                     sqref: z.string().min(1).max(1_024),
+                    password: sheetPasswordHashSchema.optional(),
                   })
                   .strict(),
               )

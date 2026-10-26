@@ -51,7 +51,10 @@ import {
   type UniverRuntime,
   type UniverWorksheet,
 } from './univer-state'
-import { hashSheetPassword } from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
+import {
+  hashSheetPassword,
+  type SheetPasswordHash,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-protection-hash'
 import { applyChangePlan, planFromOps, type OpExecutorContext } from './op-executor'
 import { installSheetsMcpBridge, type McpSheetHandlers } from './mcp-bridge'
 import { renameChartRefsForSheet } from './workbook-ops'
@@ -5897,7 +5900,13 @@ export function App({
 
   /// The active sheet's allow-edit ranges, or an error the dialog surfaces.
   function protectedRangesSnapshot(): {
-    ranges: readonly { name: string; sqref: string; hasPassword: boolean }[]
+    ranges: readonly {
+      name: string
+      sqref: string
+      hasPassword: boolean
+      /** the hash, when this session computed it; a file's own hashes stay in the file */
+      password?: SheetPasswordHash
+    }[]
     error: string | null
   } {
     const state = lazyWorkbookRef.current
@@ -5918,8 +5927,9 @@ export function App({
     if (!state || !sheetId) return t('appProtectionNeedsFile')
     const snapshot = protectedRangesSnapshot()
     if (snapshot.error !== null) return snapshot.error
-    // A rewrite cannot preserve per-range password hashes; fail closed.
-    if (snapshot.ranges.some((range) => range.hasPassword)) {
+    // A rewrite cannot preserve password hashes it does not know; fail closed.
+    // A hash this session computed travels in the request and survives.
+    if (snapshot.ranges.some((range) => range.hasPassword && range.password === undefined)) {
       return t('appRangesPasswordBlocked')
     }
     const hashed = await Promise.all(

@@ -3,11 +3,12 @@ import type { zh } from './zh'
 export const ar = {
   dlgAllowEditRangesTitle: 'السماح بتحرير النطاقات',
   dlgAllowEditRangesHint:
-    'تظل هذه النطاقات قابلة للتحرير أثناء حماية الورقة. تُكتب عند الحفظ؛ كلمات المرور غير مدعومة.',
+    'تظل هذه النطاقات قابلة للتحرير أثناء حماية الورقة. تُكتب عند الحفظ. النطاق الذي يحتوي بالفعل على كلمة مرور لا يمكن تعديله أو حذفه هنا.',
   dlgRangeName: 'العنوان',
   dlgRangeRef: 'النطاق',
   dlgRangeAdd: 'إضافة',
   dlgRangeDelete: 'حذف',
+  dlgRangeLocked: 'يحمل هذا النطاق كلمة مرور في الملف؛ لا يمكن تعديله أو حذفه هنا.',
   dlgRangePassword: 'كلمة المرور (اختياري)',
   dlgRangeNameTaken: 'أدخل عنوانًا فريدًا وغير فارغ.',
   dlgRangeRefInvalid: 'أدخل نطاقًا مثل A1:B4.',

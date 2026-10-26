@@ -2,11 +2,13 @@ import type { zh } from './zh'
 
 export const zhTW = {
   dlgAllowEditRangesTitle: '允許編輯範圍',
-  dlgAllowEditRangesHint: '工作表受保護時這些範圍仍可編輯。儲存時寫入；不支援密碼。',
+  dlgAllowEditRangesHint:
+    '工作表受保護時這些範圍仍可編輯。儲存時寫入。已帶密碼的範圍無法在此修改或刪除。',
   dlgRangeName: '標題',
   dlgRangeRef: '範圍',
   dlgRangeAdd: '新增',
   dlgRangeDelete: '刪除',
+  dlgRangeLocked: '該範圍在檔案中帶有密碼，無法在此修改或刪除。',
   dlgRangePassword: '密碼（可選）',
   dlgRangeNameTaken: '請輸入不重複的非空標題。',
   dlgRangeRefInvalid: '請輸入類似 A1:B4 的範圍。',

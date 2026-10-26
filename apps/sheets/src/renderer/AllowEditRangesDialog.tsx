@@ -11,10 +11,14 @@ import { useModalDialog } from './modal-dialog'
 export interface AllowEditRange {
   readonly name: string
   readonly sqref: string
-  /// Plaintext password for a new range; hashed before anything touches disk.
-  /// Existing password-protected ranges cannot be edited here at all (the read
-  /// side does not expose their hashes), so this is never a stored secret.
+  /// Plaintext password for a new range; hashed before anything touches disk,
+  /// so this is never a stored secret.
   readonly password?: string
+  /// Set for a range that carries a password; true together with `locked` only
+  /// when the hash is not known to this session (a file's own hash), which is
+  /// what makes the row unchangeable here.
+  readonly hasPassword?: boolean
+  readonly locked?: boolean
 }
 
 const RANGE_REF = /^\$?[A-Za-z]{1,3}\$?\d{1,7}(?::\$?[A-Za-z]{1,3}\$?\d{1,7})?$/
@@ -103,10 +107,19 @@ export function AllowEditRangesDialog({
             <ul className="allow-edit-list">
               {working.map((range) => (
                 <li key={range.name}>
-                  <span className="allow-edit-name">{range.name}</span>
+                  <span className="allow-edit-name">
+                    {range.name}
+                    {range.locked === true && (
+                      <span className="allow-edit-lock" aria-hidden="true">
+                        {' 🔒'}
+                      </span>
+                    )}
+                  </span>
                   <span className="allow-edit-ref">{range.sqref}</span>
                   <button
                     className="secondary"
+                    disabled={range.locked === true}
+                    title={range.locked === true ? t('dlgRangeLocked') : undefined}
                     onClick={() => setWorking(working.filter((entry) => entry.name !== range.name))}
                   >
                     {t('dlgRangeDelete')}

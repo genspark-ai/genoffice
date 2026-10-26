@@ -1,11 +1,13 @@
 /** dialogs strings, zh: defines the key set every other locale shard must match. */
 export const zh = {
   dlgAllowEditRangesTitle: '允许编辑区域',
-  dlgAllowEditRangesHint: '工作表受保护时这些区域仍可编辑。保存时写入；不支持密码。',
+  dlgAllowEditRangesHint:
+    '工作表受保护时这些区域仍可编辑。保存时写入。已带密码的区域无法在此修改或删除。',
   dlgRangeName: '标题',
   dlgRangeRef: '区域',
   dlgRangeAdd: '添加',
   dlgRangeDelete: '删除',
+  dlgRangeLocked: '该区域在文件中带有密码，无法在此修改或删除。',
   dlgRangePassword: '密码（可选）',
   dlgRangeNameTaken: '请输入不重复的非空标题。',
   dlgRangeRefInvalid: '请输入类似 A1:B4 的区域。',
