@@ -392,6 +392,7 @@ import { installFormulaStreamHold } from './formula-stream-hold'
 import { installRichTextBidiFix } from './rich-text-bidi-fix'
 import { installRtlTextDirectionFix } from './rtl-text-fix'
 import { installRtlGridMirror } from './rtl-grid-mirror'
+import { installVertAlignRender } from './vert-align-render'
 import { installMultiRowAutofit } from './autofit-multi-row'
 import { registerExcelJumpNav } from './excel-jump-nav'
 import { registerEditorWordJump } from './editor-word-jump'
@@ -2198,6 +2199,9 @@ export function App({
     // Paragraph-sized plain text cells: draw only the slice that can reach the
     // clip box instead of shaping the whole string every frame.
     installLongTextRender()
+    // A whole-cell superscript/subscript (Home ribbon, or <vertAlign> in the
+    // file) must draw raised/lowered; Univer's plain painter ignores `va`.
+    installVertAlignRender()
     installAutofitWrapBudget()
     // Wrapped auto rows must stack Excel's per-font row height, not the
     // canvas line box (Calibri 10: 12.75 pt per line, not ~10 pt).
